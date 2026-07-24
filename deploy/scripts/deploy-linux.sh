@@ -53,6 +53,14 @@ if [ "${role}" = "master" ]; then
   esac
 fi
 
+if [ "${GATEWAY_SSL_ENABLED:-true}" = "true" ]; then
+  gateway_keystore="${deploy_dir}/certs/gateway.p12"
+  test -f "${gateway_keystore}" || { echo "Missing ${gateway_keystore}" >&2; exit 1; }
+  # The container runs as a non-root user. PKCS#12 contents remain protected by
+  # GATEWAY_SSL_PASS while the bind-mounted file must be readable in-container.
+  chmod 0644 "${gateway_keystore}"
+fi
+
 detect_public_ipv4() {
   case "${role}" in
     master) host="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}" ;;

@@ -62,6 +62,8 @@ MASTER_BIND_IP=192.168.31.180
 
 这种模式下 Compose 只管理 WAO 自己的 Redis、Sentinel、App 和 Gateway。没有既有基础设施的新主机才设置 `MANAGE_MASTER_INFRA=true`，由 `managed-infra` profile 一并启动 MySQL、Nacos 与 DDNS-Go。
 
+Gateway 以非 root 用户运行。部署脚本会将加密的 `gateway.p12` 调整为 `0644` 以便容器读取；私钥仍由私有 `.env` 中的强随机 `GATEWAY_SSL_PASS` 保护，`.env` 本身保持 `0600`。
+
 安装脚本会把当前登录用户加入 `docker` 组；重新登录后再执行部署。主节点部署脚本会为当前用户安装每五分钟运行的公网 IP 刷新任务。
 
 Gateway 证书可以在重启前直接使用 Windows 已安装的 JDK 生成：

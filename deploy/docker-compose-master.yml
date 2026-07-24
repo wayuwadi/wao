@@ -85,6 +85,15 @@ services:
     depends_on:
       redis-master:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli --no-auth-warning -p 26379 -a $$REDIS_PASS ping | grep PONG",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 15
     logging: *default-logging
     networks: [wao]
 

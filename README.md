@@ -10,7 +10,7 @@ WAO 是一个由 AI 协作开发的前后端分离系统，采用 Spec-Driven De
 | 前端脚手架       | 已完成 | Vue 3、Vite、TypeScript、Pinia、Vue Router 4、Ant Design Vue     |
 | 本地 Demo        | 可运行 | 使用 `local` Profile，不依赖 Docker、MySQL、Redis 或 Nacos       |
 | 生产部署代码     | 已完成 | 双节点 Compose、MySQL 主从、Redis Sentinel、云 Nginx、TLS、CI/CD |
-| 三节点实机上线   | 进行中 | 云前端/HTTPS 已上线；Linux 主节点部署中，Windows 等待最后一次重启 |
+| 三节点实机上线   | 进行中 | 云前端/HTTPS 与 Linux 主节点已上线；Windows 等待最后一次重启       |
 | Phase 1 业务功能 | 待规格 | 需要设计稿、ER 模型和业务 API 契约                               |
 
 ## 技术栈

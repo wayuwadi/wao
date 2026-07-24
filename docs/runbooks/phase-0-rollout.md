@@ -24,6 +24,8 @@ Set-Location D:\CodeSpace\wao
 
 ## Linux 主节点（娃弟）
 
+当前状态：已完成。公网 Gateway、App、Redis、Sentinel、既有 MySQL 9.7 与 Nacos 均已通过健康检查，云端可经 `linux2.wayuwa.cn:9000` 回源。
+
 1. 确认 `linux2.wayuwa.cn` 可解析且 SSH 公网可达，把专用部署公钥加入 `wadi` 的 `authorized_keys`。
 2. 将项目放在 XDG 桌面目录的 `deploy/wao`，复制共享的私有 `deploy/.env`。
 3. 当前实机复用已有 MySQL 9.7、Nacos 与 DDNS-Go，在 `.env` 设置 `MANAGE_MASTER_INFRA=false`、`MYSQL_HOST=host.docker.internal`、`NACOS_SERVER_ADDR=host.docker.internal:8848`，并将 `MASTER_BIND_IP` 设为物理网卡地址。
@@ -32,6 +34,8 @@ Set-Location D:\CodeSpace\wao
 6. 确认现有 DDNS-Go 持续更新 `linux2.wayuwa.cn`，完成路由器端口映射并验证跨节点连通。
 
 ## 云服务器
+
+当前状态：已完成。`wao.wayuwa.cn` 已签发并自动续期 HTTPS 证书，静态前端已上线，API 已自动切换到 Linux Gateway。
 
 1. 把专用部署公钥加入 root 的 `authorized_keys`，将代码放在 `/opt/wao`；云机不复制包含数据库凭据的 `deploy/.env`。
 2. 将 `wao.wayuwa.cn` 的 A 记录指向 `8.136.152.131`，安全组放行 22、80、443。
