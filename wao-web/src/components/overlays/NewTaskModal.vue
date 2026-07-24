@@ -21,9 +21,9 @@ const due = ref('今天')
 
 const openProjects = data.projects.filter((p) => p.status !== '已完成')
 
-function create() {
+async function create() {
   if (!title.value.trim()) return
-  const t = data.addTask({
+  const t = await data.addTask({
     title: title.value.trim(), project: project.value, pr: pr.value, owner: owner.value,
     due: DUE_MAP[due.value] ?? data.today,
   })

@@ -19,9 +19,9 @@ const VIS_OPTS = [
   { label: '全部成员可见', desc: '组织内成员可查看', icon: 'ri-team-line' },
 ]
 
-function create() {
+async function create() {
   if (!name.value.trim()) return
-  const p = data.addProject({
+  const p = await data.addProject({
     name: name.value.trim(), area: area.value, goal: goal.value.trim(), visAll: vis.value === '全部成员可见',
   })
   ui.closeModal()

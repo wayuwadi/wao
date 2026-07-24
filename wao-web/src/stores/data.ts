@@ -1,7 +1,24 @@
 import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as F from '@/data/fixtures'
-import { fetchAreas, fetchProjects, fetchTasks } from '@/api/board'
+import {
+  apiCreateProject,
+  apiCreateTask,
+  apiPutTask,
+  fetchAreas,
+  fetchDocs,
+  fetchEvents,
+  fetchFiles,
+  fetchGoals,
+  fetchImages,
+  fetchJobs,
+  fetchKbs,
+  fetchProjects,
+  fetchSchedule,
+  fetchSuggestions,
+  fetchTasks,
+  fetchVault,
+} from '@/api/board'
 import { blocksToText, textToBlocks } from '@/utils/doc'
 import type { Doc, DocBlock, Project, Task } from '@/types'
 
@@ -53,19 +70,41 @@ export const useDataStore = defineStore('data', () => {
   const apiLive = ref(false)
 
   /**
-   * 从 /api 拉取领域 / 项目 / 任务替换 fixtures；后端不可用时静默保留 fixtures，应用仍可运行。
-   * 当前仅接管读路径；写路径（新建 / 局部更新）暂在本地乐观更新，后续接 POST/PATCH。
+   * 从 /api 拉取各域数据替换 fixtures；后端不可用时静默保留 fixtures，应用仍可运行。
+   *
+   * <p>按域独立容错（{@code Promise.allSettled}）：单个域（如内容域表尚未建好而 500）失败时，
+   * 其余域仍正常接管，且不会拖垮写路径。只要核心读路径（领域 / 项目 / 任务）可达即判定后端在线
+   * （{@code apiLive=true}），从而新建 / 更新会真正落库，而非仅本地乐观更新。
    */
   async function hydrate() {
-    try {
-      const [a, p, t] = await Promise.all([fetchAreas(), fetchProjects(), fetchTasks()])
-      if (a.length) areas.value = a
-      if (p.length) projects.value = p
-      if (t.length) tasks.value = t
-      apiLive.value = true
-    } catch {
-      apiLive.value = false
+    const settle = async <T>(p: Promise<T>): Promise<T | null> => {
+      try {
+        return await p
+      } catch {
+        return null
+      }
     }
+    const [a, p, t, kb, dc, jb, fl, im, va, ev, sc, sg, gl] = await Promise.all([
+      settle(fetchAreas()), settle(fetchProjects()), settle(fetchTasks()), settle(fetchKbs()),
+      settle(fetchDocs()), settle(fetchJobs()), settle(fetchFiles()), settle(fetchImages()),
+      settle(fetchVault()), settle(fetchEvents()), settle(fetchSchedule()),
+      settle(fetchSuggestions()), settle(fetchGoals()),
+    ])
+    if (a?.length) areas.value = a
+    if (p?.length) projects.value = p
+    if (t?.length) tasks.value = t
+    if (kb?.length) kbs.value = kb
+    if (dc?.length) dc.forEach((d) => (docs[d.id] = d))
+    if (jb?.length) autos.value = jb
+    if (fl?.length) files.value = fl
+    if (im?.length) imgs.value = im
+    if (va?.length) vault.value = va
+    if (ev?.length) calEvents.value = ev
+    if (sc?.length) schedule.value = sc
+    if (sg?.length) suggestions.value = sg
+    if (gl?.length) goals.value = gl
+    // 核心读路径任一可达即认为后端在线；写路径（POST/PUT）随之启用。
+    apiLive.value = a !== null && p !== null && t !== null
   }
 
   // ---- getters ----
@@ -139,10 +178,20 @@ export const useDataStore = defineStore('data', () => {
     if (!t) return
     Object.assign(t, fields)
     if (activityText) t.activity.unshift({ icon: 'ri-edit-line', color: '#9A9DA9', text: activityText, time: '刚刚' })
+    persistTask(id)
   }
 
-  /** 新建任务（表单提交），返回新任务。 */
-  function addTask(payload: Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'>): Task {
+  /** 新建任务；apiLive 时经后端创建（用服务端返回 id），否则本地乐观创建。 */
+  async function addTask(payload: Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'>): Promise<Task> {
+    if (apiLive.value) {
+      try {
+        const t = await apiCreateTask(payload)
+        tasks.value.unshift(t)
+        return t
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
     const t: Task = {
       id: 't' + Date.now(), status: '待办', parts: [], desc: '', steps: [], subs: [], files: [],
       docs: [], linkTasks: [], comments: [], custom: [],
@@ -153,8 +202,17 @@ export const useDataStore = defineStore('data', () => {
     return t
   }
 
-  /** 新建项目（表单提交），返回新项目。 */
-  function addProject(payload: { name: string; area: string; goal: string; visAll: boolean }): Project {
+  /** 新建项目；apiLive 时经后端创建，否则本地乐观创建。 */
+  async function addProject(payload: { name: string; area: string; goal: string; visAll: boolean }): Promise<Project> {
+    if (apiLive.value) {
+      try {
+        const p = await apiCreateProject(payload)
+        projects.value.unshift(p)
+        return p
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
     const p: Project = {
       id: 'p' + Date.now(), name: payload.name, area: payload.area, status: '规划中', health: '良好',
       progress: 0, owner: 'wg', members: payload.visAll ? ['wg', 'wd'] : ['wg'],
@@ -168,6 +226,13 @@ export const useDataStore = defineStore('data', () => {
     return p
   }
 
+  /** 把某任务的当前完整状态写透到后端（fire-and-forget）。 */
+  function persistTask(id: string) {
+    if (!apiLive.value) return
+    const t = taskById(id)
+    if (t) apiPutTask(id, t).catch(() => {})
+  }
+
   /** 完成 / 重新打开一个任务（列表勾选用）。 */
   function toggleComplete(id: string) {
     const t = taskById(id)
@@ -179,7 +244,10 @@ export const useDataStore = defineStore('data', () => {
   function toggleStep(id: string, idx: number, kind: 'steps' | 'subs') {
     const t = taskById(id)
     const item = t?.[kind][idx]
-    if (item) item.done = !item.done
+    if (item) {
+      item.done = !item.done
+      persistTask(id)
+    }
   }
 
   return {

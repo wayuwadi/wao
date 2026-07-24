@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,5 +46,10 @@ public class TaskController {
     @PatchMapping("/{id}")
     public ApiResponse<TaskDto> patch(@PathVariable String id, @RequestBody PatchTaskRequest request) {
         return ApiResponse.ok(taskService.patch(id, request));
+    }
+
+    @PutMapping("/{id}")
+    public ApiResponse<TaskDto> replace(@PathVariable String id, @RequestBody TaskDto request) {
+        return ApiResponse.ok(taskService.replace(id, request));
     }
 }

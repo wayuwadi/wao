@@ -75,6 +75,31 @@ paths:
       responses:
         '200': { description: OK }
         '404': { description: 不存在 }
+    put:
+      summary: 全量替换 / 新增任务（前端本地变更后的写透，upsert）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } }
+      responses:
+        '200': { description: OK }
+  # 内容 / 参考域（只读，payload 直通 JSON，字段与前端类型一致）
+  /kbs: { get: { summary: 知识库列表, responses: { '200': { description: OK } } } }
+  /docs: { get: { summary: 文档列表, responses: { '200': { description: OK } } } }
+  /docs/{id}:
+    get:
+      summary: 文档详情
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK }, '404': { description: 不存在 } }
+  /jobs: { get: { summary: 自动化 Job 列表, responses: { '200': { description: OK } } } }
+  /files: { get: { summary: 文件列表, responses: { '200': { description: OK } } } }
+  /images: { get: { summary: 图床列表, responses: { '200': { description: OK } } } }
+  /vault: { get: { summary: 密码库分组列表, responses: { '200': { description: OK } } } }
+  /calendar/events: { get: { summary: 日历事件列表, responses: { '200': { description: OK } } } }
+  /schedule: { get: { summary: 今日日程列表, responses: { '200': { description: OK } } } }
+  /suggestions: { get: { summary: AI 建议列表, responses: { '200': { description: OK } } } }
+  /goals: { get: { summary: 目标胶囊列表, responses: { '200': { description: OK } } } }
 components:
   schemas:
     ApiResponse:

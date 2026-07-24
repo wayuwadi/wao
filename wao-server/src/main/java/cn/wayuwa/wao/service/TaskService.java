@@ -113,6 +113,36 @@ public class TaskService {
         return toDto(e);
     }
 
+    /**
+     * 全量替换 / 新增任务（前端本地变更后的写透）。
+     *
+     * @param id  任务 id
+     * @param dto 完整任务
+     * @return 保存后的任务
+     */
+    public TaskDto replace(String id, TaskDto dto) {
+        TaskEntity e = new TaskEntity();
+        e.setId(id);
+        e.setTitle(dto.title());
+        e.setProjectId(dto.project());
+        e.setStatus(dto.status());
+        e.setPr(dto.pr());
+        e.setOwnerId(dto.owner());
+        e.setStartDate(dto.start());
+        e.setDueDate(dto.due());
+        e.setWaiting(dto.waiting());
+        e.setDescription(dto.desc());
+        TaskDetail detail = new TaskDetail(dto.parts(), dto.steps(), dto.subs(), dto.files(),
+                dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity());
+        e.setDetailJson(write(detail));
+        if (taskMapper.selectById(id) == null) {
+            taskMapper.insert(e);
+        } else {
+            taskMapper.updateById(e);
+        }
+        return toDto(e);
+    }
+
     private TaskEntity require(String id) {
         TaskEntity e = taskMapper.selectById(id);
         if (e == null) {
