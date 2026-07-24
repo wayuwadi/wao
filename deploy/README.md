@@ -84,6 +84,8 @@ Windows Server 不支持本项目所需的 Docker Desktop 运行方式，因此�
 .\deploy\scripts\deploy-windows.ps1
 ```
 
+CI/CD 向 Windows 发送 `D:\deploy\wao-release.zip`，由 PowerShell `Expand-Archive` 解压，以完整保留原版技术方案等中文文件名。MySQL 从库只复制 `wao.%`，不会同步 Linux 主机上已有的其他业务库。
+
 部署脚本会把公开端口从 Windows `0.0.0.0` 转发到 WSL 当前地址。WSL 重启后应再次执行部署脚本，或单独执行 `refresh-wsl-portproxy.ps1`。
 
 ## DDNS 与公网 IP 变化
