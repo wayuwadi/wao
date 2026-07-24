@@ -1,0 +1,26 @@
+name: wao-cloud-sentinel
+
+services:
+  sentinel-cloud:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${CLOUD_TAILSCALE_IP}:26379:26379"
+    environment:
+      REDIS_MASTER_HOST: ${MASTER_TAILSCALE_IP}
+      REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
+      REDIS_PASS: ${REDIS_PASS}
+      SENTINEL_ANNOUNCE_IP: ${CLOUD_TAILSCALE_IP}
+    command: ["/bin/sh", "/opt/wao/start-sentinel.sh"]
+    volumes:
+      - ./redis/start-sentinel.sh:/opt/wao/start-sentinel.sh:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [wao]
+
+networks:
+  wao:
+    name: wao-cloud-sentinel

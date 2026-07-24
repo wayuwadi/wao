@@ -1,0 +1,15 @@
+server:
+  ssl:
+    enabled: false
+
+spring:
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+    gateway:
+      routes:
+        - id: wao-server-api
+          uri: http://127.0.0.1:8080
+          predicates:
+            - Path=/api/**

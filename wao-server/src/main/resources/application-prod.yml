@@ -1,0 +1,22 @@
+spring:
+  data:
+    redis:
+      sentinel:
+        master: ${REDIS_MASTER_NAME:wao-master}
+        nodes: ${REDIS_SENTINEL_NODES}
+        password: ${REDIS_PASS}
+      password: ${REDIS_PASS}
+  cloud:
+    nacos:
+      discovery:
+        namespace: ${NACOS_NAMESPACE:public}
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    root: INFO

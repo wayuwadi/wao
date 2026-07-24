@@ -1,0 +1,9 @@
+spring:
+  cloud:
+    nacos:
+      discovery:
+        namespace: ${NACOS_NAMESPACE:public}
+
+logging:
+  level:
+    root: INFO

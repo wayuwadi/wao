@@ -1,0 +1,46 @@
+openapi: 3.0.3
+info:
+  title: WAO Phase 0 API
+  version: 0.1.0
+paths:
+  /api/hello:
+    get:
+      operationId: hello
+      summary: 验证前端、网关和应用服务链路
+      responses:
+        "200":
+          description: 调用成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelloEnvelope"
+components:
+  schemas:
+    HelloEnvelope:
+      type: object
+      required: [code, message, data, timestamp]
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: success
+        data:
+          $ref: "#/components/schemas/HelloData"
+        timestamp:
+          type: integer
+          format: int64
+    HelloData:
+      type: object
+      required: [message, service, serverTime]
+      properties:
+        message:
+          type: string
+          example: Hello from WAO
+        service:
+          type: string
+          example: wao-server
+        serverTime:
+          type: string
+          format: date-time

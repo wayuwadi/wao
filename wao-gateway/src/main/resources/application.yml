@@ -1,0 +1,39 @@
+server:
+  port: ${GATEWAY_PORT:9000}
+  forward-headers-strategy: framework
+  ssl:
+    enabled: ${GATEWAY_SSL_ENABLED:false}
+    key-store: ${GATEWAY_KEYSTORE:file:/run/secrets/gateway.p12}
+    key-store-type: PKCS12
+    key-store-password: ${GATEWAY_SSL_PASS:changeit}
+
+spring:
+  application:
+    name: wao-gateway
+  profiles:
+    default: dev
+  cloud:
+    nacos:
+      discovery:
+        enabled: ${NACOS_DISCOVERY_ENABLED:true}
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        username: ${NACOS_USERNAME:nacos}
+        password: ${NACOS_PASSWORD:nacos}
+        ip: ${NACOS_DISCOVERY_IP:}
+        port: ${GATEWAY_PORT:9000}
+    gateway:
+      routes:
+        - id: wao-server-api
+          uri: ${WAO_SERVER_URI:lb://wao-server}
+          predicates:
+            - Path=/api/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      probes:
+        enabled: true

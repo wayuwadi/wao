@@ -1,0 +1,234 @@
+name: wao-master
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  mysql-master:
+    image: mysql:9.0
+    restart: unless-stopped
+    ports:
+      - "${MASTER_TAILSCALE_IP}:3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASS}
+      MYSQL_DATABASE: ${DB_NAME:-wao}
+      MYSQL_USER: ${DB_USER:-wao_app}
+      MYSQL_PASSWORD: ${DB_PASS}
+      MYSQL_REPLICATION_USER: ${MYSQL_REPLICATION_USER:-wao_repl}
+      MYSQL_REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-master-data:/var/lib/mysql
+      - ./mysql/master.cnf:/etc/mysql/conf.d/master.cnf:ro
+      - ./mysql/init-master.sh:/docker-entrypoint-initdb.d/10-replication.sh:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+    logging: *default-logging
+    networks: [wao]
+
+  redis-master:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${MASTER_TAILSCALE_IP}:6379:6379"
+    environment:
+      REDIS_PASS: ${REDIS_PASS}
+    command:
+      - /bin/sh
+      - -ec
+      - exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$$REDIS_PASS" --masterauth "$$REDIS_PASS"
+    volumes:
+      - redis-master-data:/data
+      - ./redis/master.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASS ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 15
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    logging: *default-logging
+    networks: [wao]
+
+  sentinel-master:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${MASTER_TAILSCALE_IP}:26379:26379"
+    environment:
+      REDIS_MASTER_HOST: ${MASTER_TAILSCALE_IP}
+      REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
+      REDIS_PASS: ${REDIS_PASS}
+      SENTINEL_ANNOUNCE_IP: ${MASTER_TAILSCALE_IP}
+    command: ["/bin/sh", "/opt/wao/start-sentinel.sh"]
+    volumes:
+      - ./redis/start-sentinel.sh:/opt/wao/start-sentinel.sh:ro
+    depends_on:
+      redis-master:
+        condition: service_healthy
+    logging: *default-logging
+    networks: [wao]
+
+  nacos:
+    image: nacos/nacos-server:v2.4.3
+    restart: unless-stopped
+    ports:
+      - "${MASTER_TAILSCALE_IP}:8848:8848"
+      - "${MASTER_TAILSCALE_IP}:9848:9848"
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_TOKEN: ${NACOS_AUTH_TOKEN}
+      NACOS_AUTH_IDENTITY_KEY: ${NACOS_AUTH_IDENTITY_KEY}
+      NACOS_AUTH_IDENTITY_VALUE: ${NACOS_AUTH_IDENTITY_VALUE}
+      JVM_XMS: 1g
+      JVM_XMX: 1g
+      JVM_XMN: 512m
+    volumes:
+      - nacos-data:/home/nacos/data
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    logging: *default-logging
+    networks: [wao]
+
+  nacos-init-admin:
+    image: curlimages/curl:8.10.1
+    restart: "no"
+    environment:
+      NACOS_PASSWORD: ${NACOS_PASSWORD}
+    entrypoint: ["/bin/sh", "/opt/wao/init-admin.sh"]
+    volumes:
+      - ./nacos/init-admin.sh:/opt/wao/init-admin.sh:ro
+    depends_on:
+      nacos:
+        condition: service_started
+    logging: *default-logging
+    networks: [wao]
+
+  ddns-go:
+    image: jeessy/ddns-go:v6.17.2
+    restart: unless-stopped
+    ports:
+      - "${MASTER_TAILSCALE_IP}:9876:9876"
+    volumes:
+      - ddns-go-data:/root
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging: *default-logging
+    networks: [wao]
+
+  wao-server:
+    build:
+      context: ..
+      dockerfile: wao-server/Dockerfile
+    image: wao-server:${WAO_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${MASTER_TAILSCALE_IP}:8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      MYSQL_HOST: mysql-master
+      MYSQL_PORT: 3306
+      DB_NAME: ${DB_NAME:-wao}
+      DB_USER: ${DB_USER:-wao_app}
+      DB_PASS: ${DB_PASS}
+      REDIS_PASS: ${REDIS_PASS}
+      REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
+      REDIS_SENTINEL_NODES: ${REDIS_SENTINEL_NODES}
+      NACOS_SERVER_ADDR: ${MASTER_TAILSCALE_IP}:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD}
+      NACOS_DISCOVERY_IP: ${MASTER_TAILSCALE_IP}
+    depends_on:
+      mysql-master:
+        condition: service_healthy
+      redis-master:
+        condition: service_healthy
+      nacos:
+        condition: service_started
+      nacos-init-admin:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 2G
+    logging: *default-logging
+    networks: [wao]
+
+  wao-gateway:
+    build:
+      context: ..
+      dockerfile: wao-gateway/Dockerfile
+    image: wao-gateway:${WAO_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${MASTER_TAILSCALE_IP}:9000:9000"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      GATEWAY_PORT: 9000
+      GATEWAY_SSL_ENABLED: ${GATEWAY_SSL_ENABLED:-true}
+      GATEWAY_SSL_PASS: ${GATEWAY_SSL_PASS}
+      NACOS_SERVER_ADDR: ${MASTER_TAILSCALE_IP}:8848
+      NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
+      NACOS_PASSWORD: ${NACOS_PASSWORD}
+      NACOS_DISCOVERY_IP: ${MASTER_TAILSCALE_IP}
+    volumes:
+      - ./certs/gateway.p12:/run/secrets/gateway.p12:ro
+    depends_on:
+      wao-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-kfsS", "https://127.0.0.1:9000/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+    logging: *default-logging
+    networks: [wao]
+
+volumes:
+  mysql-master-data:
+  redis-master-data:
+  nacos-data:
+  ddns-go-data:
+
+networks:
+  wao:
+    name: wao-master

@@ -1,0 +1,29 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Java
+target/
+*.log
+*.hprof
+
+# Node
+node_modules/
+dist/
+coverage/
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Runtime data
+deploy/data/
+deploy/backups/
+deploy/nginx/wao.wayuwa.cn.conf

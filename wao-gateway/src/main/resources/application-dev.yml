@@ -1,0 +1,4 @@
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    cn.wayuwa.wao: DEBUG
