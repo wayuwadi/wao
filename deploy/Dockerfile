@@ -1,4 +1,6 @@
 FROM maven:3.9.9-eclipse-temurin-17 AS build
+ARG MAVEN_MIRROR_URL=https://repo.maven.apache.org/maven2
+ENV MAVEN_MIRROR_URL=${MAVEN_MIRROR_URL}
 WORKDIR /workspace
 COPY deploy/maven-settings.xml /root/.m2/settings.xml
 COPY pom.xml ./
@@ -11,8 +13,9 @@ COPY wao-gateway/src wao-gateway/src
 RUN mvn -B -pl wao-server,wao-gateway -am package -DskipTests
 
 FROM eclipse-temurin:17-jre-alpine AS runtime
+ARG ALPINE_MIRROR_HOST=dl-cdn.alpinelinux.org
 WORKDIR /app
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
+RUN sed -i "s/dl-cdn.alpinelinux.org/${ALPINE_MIRROR_HOST}/g" /etc/apk/repositories \
     && apk add --no-cache curl \
     && addgroup -S wao \
     && adduser -S wao -G wao

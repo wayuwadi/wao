@@ -159,6 +159,9 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       target: server-runtime
+      args:
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}
+        ALPINE_MIRROR_HOST: ${ALPINE_MIRROR_HOST:-mirrors.aliyun.com}
     image: wao-server:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
@@ -203,6 +206,9 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       target: gateway-runtime
+      args:
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}
+        ALPINE_MIRROR_HOST: ${ALPINE_MIRROR_HOST:-mirrors.aliyun.com}
     image: wao-gateway:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
