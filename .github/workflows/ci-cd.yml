@@ -2,9 +2,11 @@ name: WAO CI/CD
 
 on:
   workflow_dispatch:
+  # PR 负责特性分支的验证；push 只在 main 触发（合并即部署）。
+  # 这样「push 特性分支 → 开 PR → 合并 main」不再重复跑三次，只在 PR 与 main 各跑一次。
   pull_request:
   push:
-    branches: ["**"]
+    branches: [main]
 
 permissions:
   contents: read
@@ -137,6 +139,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.head_ref || github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.pull_request.title }}
+          COMMIT_URL: ${{ github.event.pull_request.html_url || format('{0}/{1}/commit/{2}', github.server_url, github.repository, github.sha) }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           ci_result="success"
@@ -147,12 +151,75 @@ jobs:
           done
 
           overall="✅ 成功"
+          header_color="green"
           if [ "$ci_result" != "success" ] || { [ "$DEPLOY_RESULT" != "success" ] && [ "$DEPLOY_RESULT" != "skipped" ]; }; then
             overall="❌ 失败"
+            header_color="red"
           fi
 
+          # 把 job 结果映射成带图标的可读状态。
+          status_label() {
+            case "$1" in
+              success) printf '✅ 成功' ;;
+              failure) printf '❌ 失败' ;;
+              cancelled) printf '🚫 取消' ;;
+              skipped) printf '⏭️ 跳过' ;;
+              *) printf '❔ %s' "$1" ;;
+            esac
+          }
+
           short_sha="$(printf '%s' "$COMMIT_SHA" | cut -c1-8)"
-          text="WAO CI/CD ${overall}\n仓库：${REPOSITORY}\n触发：${ACTOR} / ${EVENT_NAME}\n分支：${REF_NAME}\n提交：${short_sha}\n后端：${BACKEND_RESULT}\n前端：${FRONTEND_RESULT}\n容器：${CONTAINERS_RESULT}\n部署：${DEPLOY_RESULT}\n详情：${RUN_URL}"
-          payload="$(jq -n --arg text "$text" '{msg_type:"text",content:{text:$text}}')"
+          # 只取提交信息首行作为“本次改动”的标题；空则占位。
+          change_summary="$(printf '%s' "$COMMIT_MSG" | sed -n '1p')"
+          [ -n "$change_summary" ] || change_summary="（无提交信息）"
+
+          # 飞书交互式卡片（msg_type=interactive）：头部按成败着色，正文突出“本次改动”，并列出各阶段状态。
+          payload="$(jq -n \
+            --arg title "WAO CI/CD ${overall}" \
+            --arg template "$header_color" \
+            --arg repo "$REPOSITORY" \
+            --arg branch "$REF_NAME" \
+            --arg trigger "${ACTOR} / ${EVENT_NAME}" \
+            --arg sha "$short_sha" \
+            --arg sha_url "$COMMIT_URL" \
+            --arg change "$change_summary" \
+            --arg backend "$(status_label "$BACKEND_RESULT")" \
+            --arg frontend "$(status_label "$FRONTEND_RESULT")" \
+            --arg containers "$(status_label "$CONTAINERS_RESULT")" \
+            --arg deploy "$(status_label "$DEPLOY_RESULT")" \
+            --arg run_url "$RUN_URL" \
+            '{
+              msg_type: "interactive",
+              card: {
+                config: { wide_screen_mode: true },
+                header: {
+                  template: $template,
+                  title: { tag: "plain_text", content: $title }
+                },
+                elements: [
+                  { tag: "div", fields: [
+                    { is_short: true, text: { tag: "lark_md", content: ("**仓库**\n" + $repo) } },
+                    { is_short: true, text: { tag: "lark_md", content: ("**分支**\n" + $branch) } },
+                    { is_short: true, text: { tag: "lark_md", content: ("**触发**\n" + $trigger) } },
+                    { is_short: true, text: { tag: "lark_md", content: ("**提交**\n[" + $sha + "](" + $sha_url + ")") } }
+                  ] },
+                  { tag: "hr" },
+                  { tag: "div", text: { tag: "lark_md", content: ("**本次改动**\n" + $change) } },
+                  { tag: "hr" },
+                  { tag: "div", fields: [
+                    { is_short: true, text: { tag: "lark_md", content: ("**后端**\n" + $backend) } },
+                    { is_short: true, text: { tag: "lark_md", content: ("**前端**\n" + $frontend) } },
+                    { is_short: true, text: { tag: "lark_md", content: ("**容器**\n" + $containers) } },
+                    { is_short: true, text: { tag: "lark_md", content: ("**部署**\n" + $deploy) } }
+                  ] },
+                  { tag: "action", actions: [
+                    { tag: "button",
+                      text: { tag: "plain_text", content: "查看运行详情" },
+                      url: $run_url,
+                      type: "primary" }
+                  ] }
+                ]
+              }
+            }')"
           response="$(curl --fail --silent --show-error -X POST "$FEISHU_WEBHOOK_URL" -H 'Content-Type: application/json' --data "$payload")"
           printf '%s' "$response" | jq -e '(.code // .StatusCode // 0) == 0' >/dev/null
