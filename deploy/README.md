@@ -106,7 +106,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## GitHub Secrets
 
-启用 CD 前配置：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`，并将仓库变量 `DEPLOY_ENABLED` 设为 `true`。
+启用 CD 前配置：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`，并将仓库变量 `DEPLOY_ENABLED` 设为 `true`。
 
 - `MASTER_HOST`、`SLAVE_HOST` 使用 Tailscale IPv4。
 - `CLOUD_HOST` 使用云服务器固定公网地址。
@@ -114,3 +114,5 @@ sudo nginx -t && sudo systemctl reload nginx
 - Actions 只连接云服务器公网 SSH，再通过 `ProxyJump` 访问主、从节点。
 
 主节点发布到 `~/Desktop/deploy/wao`，从节点发布到 `D:\deploy\wao`，云服务器前端发布到 `/var/www/wao/dist`。密码登录仅用于首次安装公钥，流水线不保存 SSH 密码。
+
+`FEISHU_WEBHOOK_URL` 只保存在 GitHub Actions Secret。所有分支 push 和 Pull Request 都会通知 CI 结果；main 开启 CD 后，同一条通知还会包含三节点部署结果。Webhook 不得写入 `.env`、工作流 YAML 或文档。
