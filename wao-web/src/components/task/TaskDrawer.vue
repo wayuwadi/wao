@@ -85,6 +85,41 @@ function editTitle(e: Event) {
 function editDesc(e: Event) {
   if (task.value) data.patchTask(task.value.id, { desc: (e.target as HTMLTextAreaElement).value })
 }
+const MAX_IMG_BYTES = 3 * 1024 * 1024
+function addImageFile(file: File) {
+  const t = task.value
+  if (!t || !file.type.startsWith('image/')) return
+  if (file.size > MAX_IMG_BYTES) {
+    toast('图片超过 3MB，已跳过', 'ri-error-warning-line')
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = () => {
+    data.patchTask(t.id, { images: [...(t.images ?? []), { name: file.name || '粘贴的图片', url: String(reader.result) }] }, '你添加了图片')
+  }
+  reader.readAsDataURL(file)
+}
+function onDescPaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (const it of items) {
+    if (it.kind === 'file') {
+      const f = it.getAsFile()
+      if (f) {
+        addImageFile(f)
+        e.preventDefault()
+      }
+    }
+  }
+}
+function removeImage(idx: number) {
+  const t = task.value
+  if (!t?.images) return
+  data.patchTask(t.id, { images: t.images.filter((_, i) => i !== idx) })
+}
+function viewImage(url: string) {
+  window.open(url, '_blank')
+}
 function toggleStep(idx: number, kind: 'steps' | 'subs') {
   if (task.value) data.toggleStep(task.value.id, idx, kind)
 }
@@ -180,7 +215,17 @@ function demo(msg: string) {
 
           <div class="field">
             <div class="field-label">描述</div>
-            <textarea class="desc" :value="task.desc" rows="3" placeholder="补充背景、目标与边界…" @input="editDesc"></textarea>
+            <textarea class="desc" :value="task.desc" rows="3" placeholder="补充背景、目标与边界…（可粘贴截图）" @input="editDesc" @paste="onDescPaste"></textarea>
+          </div>
+
+          <div v-if="task.images && task.images.length" class="field">
+            <div class="field-label">图片</div>
+            <div class="img-grid">
+              <div v-for="(im, i) in task.images" :key="i" class="img-cell">
+                <img :src="im.url" :alt="im.name" @click="viewImage(im.url)" />
+                <button class="img-del" title="移除" @click="removeImage(i)"><i class="ri-close-line"></i></button>
+              </div>
+            </div>
           </div>
 
           <div v-if="stepsTotal" class="field">
@@ -606,6 +651,44 @@ function demo(msg: string) {
   padding: 4px 0;
 }
 
+.img-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 8px;
+}
+.img-cell {
+  position: relative;
+  aspect-ratio: 1;
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--wao-divider);
+}
+.img-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  cursor: zoom-in;
+}
+.img-del {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(23, 25, 35, 0.6);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.img-del i {
+  font-size: 12px;
+}
 .attach-list {
   display: flex;
   flex-direction: column;

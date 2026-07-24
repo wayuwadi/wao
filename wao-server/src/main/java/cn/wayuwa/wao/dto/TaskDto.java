@@ -22,5 +22,6 @@ public record TaskDto(
         List<TaskLink> linkTasks,
         List<CommentDto> comments,
         List<CustomProp> custom,
-        List<Activity> activity) {
+        List<Activity> activity,
+        List<ImageRef> images) {
 }

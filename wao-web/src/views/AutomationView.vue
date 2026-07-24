@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
+import DemoBanner from '@/components/ui/DemoBanner.vue'
 import type { AutomationJob } from '@/types'
 
 const data = useDataStore()
@@ -67,6 +68,12 @@ function newAuto() {
 
 <template>
   <div class="auto">
+    <DemoBanner
+      icon="ri-flashlight-line"
+      title="自动化 · 功能演示"
+      text="当前为示例自动化任务与运行记录，用于演示定时同步、归档与提醒的形态。可视化编排、触发器与真实执行引擎将在后续迭代交付。"
+      storage-key="automation"
+    />
     <!-- 列表 -->
     <template v-if="!sel">
       <div class="atop">

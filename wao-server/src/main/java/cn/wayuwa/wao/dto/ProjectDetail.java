@@ -14,5 +14,6 @@ public record ProjectDetail(
         List<Blocker> blockers,
         List<String> docs,
         List<FileRef> files,
-        List<Activity> activity) {
+        List<Activity> activity,
+        String icon) {
 }

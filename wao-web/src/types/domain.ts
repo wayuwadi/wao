@@ -34,9 +34,17 @@ export interface FileRef {
 
 export type ProjectStatus = '进行中' | '有风险' | '规划中' | '已完成'
 
+/** 任务 / 项目内嵌图片（url 为 data: 或远程链接）。 */
+export interface ImageRef {
+  name: string
+  url: string
+}
+
 export interface Project {
   id: string
   name: string
+  /** 项目图标（remixicon 类名，如 ri-stack-line）。 */
+  icon?: string
   area: string
   status: ProjectStatus
   health: string
@@ -101,6 +109,8 @@ export interface Task {
   comments: Comment[]
   custom: CustomProp[]
   activity: Activity[]
+  /** 内嵌图片（粘贴 / 上传的截图或参考图）。 */
+  images?: ImageRef[]
 }
 
 /** 文档块：以下字段互斥，命中哪个就渲染哪种块。 */

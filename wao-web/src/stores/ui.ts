@@ -13,6 +13,9 @@ export const useUiStore = defineStore('ui', () => {
 
   const celebrating = ref<string | null>(null)
 
+  /** 快捷键帮助浮层。 */
+  const helpOpen = ref(false)
+
   function openTask(id: string) {
     openTaskId.value = id
   }
@@ -46,8 +49,16 @@ export const useUiStore = defineStore('ui', () => {
     celebrating.value = null
   }
 
+  function toggleHelp() {
+    helpOpen.value = !helpOpen.value
+  }
+  function closeHelp() {
+    helpOpen.value = false
+  }
+
   return {
-    openTaskId, modal, modalProject, searchOpen, searchAI, celebrating,
+    openTaskId, modal, modalProject, searchOpen, searchAI, celebrating, helpOpen,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
+    toggleHelp, closeHelp,
   }
 })

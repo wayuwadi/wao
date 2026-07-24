@@ -65,10 +65,11 @@ public class TaskService {
         e.setPr(StringUtils.hasText(req.pr()) ? req.pr() : "P2");
         e.setOwnerId(StringUtils.hasText(req.owner()) ? req.owner() : "wg");
         e.setDueDate(StringUtils.hasText(req.due()) ? req.due() : TODAY);
-        e.setDescription("");
+        e.setDescription(req.desc() == null ? "" : req.desc());
         TaskDetail detail = new TaskDetail(
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(new Activity("ri-add-line", "#9A9DA9", "你创建了任务", "刚刚")));
+                List.of(new Activity("ri-add-line", "#9A9DA9", "你创建了任务", "刚刚")),
+                nn(req.images()));
         e.setDetailJson(write(detail));
         taskMapper.insert(e);
         return toDto(e);
@@ -107,7 +108,7 @@ public class TaskService {
         }
 
         TaskDetail updated = new TaskDetail(d.parts(), d.steps(), d.subs(), d.files(), d.docs(),
-                d.linkTasks(), d.comments(), d.custom(), activity);
+                d.linkTasks(), d.comments(), d.custom(), activity, d.images());
         e.setDetailJson(write(updated));
         taskMapper.updateById(e);
         return toDto(e);
@@ -133,7 +134,7 @@ public class TaskService {
         e.setWaiting(dto.waiting());
         e.setDescription(dto.desc());
         TaskDetail detail = new TaskDetail(dto.parts(), dto.steps(), dto.subs(), dto.files(),
-                dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity());
+                dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images());
         e.setDetailJson(write(detail));
         if (taskMapper.selectById(id) == null) {
             taskMapper.insert(e);
@@ -158,7 +159,7 @@ public class TaskService {
                 nn(d.parts()), e.getStartDate(), e.getDueDate(), e.getWaiting(),
                 e.getDescription() == null ? "" : e.getDescription(),
                 nn(d.steps()), nn(d.subs()), nn(d.files()), nn(d.docs()),
-                nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()));
+                nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()));
     }
 
     private static Activity edit(String text) {
@@ -167,12 +168,12 @@ public class TaskService {
 
     private TaskDetail parse(String detailJson) {
         if (detailJson == null || detailJson.isBlank()) {
-            return new TaskDetail(null, null, null, null, null, null, null, null, null);
+            return new TaskDetail(null, null, null, null, null, null, null, null, null, null);
         }
         try {
             return json.readValue(detailJson, TaskDetail.class);
         } catch (JsonProcessingException ex) {
-            return new TaskDetail(null, null, null, null, null, null, null, null, null);
+            return new TaskDetail(null, null, null, null, null, null, null, null, null, null);
         }
     }
 

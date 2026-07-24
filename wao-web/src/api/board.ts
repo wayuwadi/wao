@@ -6,6 +6,7 @@ import type {
   Doc,
   FileItem,
   ImageItem,
+  ImageRef,
   KnowledgeBase,
   Member,
   Org,
@@ -58,6 +59,8 @@ export interface CreateTaskPayload {
   pr: string
   owner: string
   due: string
+  desc?: string
+  images?: ImageRef[]
 }
 export async function apiCreateTask(payload: CreateTaskPayload): Promise<Task> {
   const res = await http.post<ApiResponse<Task>>('/api/tasks', payload)
@@ -91,4 +94,21 @@ export interface CreateProjectPayload {
 export async function apiCreateProject(payload: CreateProjectPayload): Promise<Project> {
   const res = await http.post<ApiResponse<Project>>('/api/projects', payload)
   return res.data.data
+}
+
+export interface PatchProjectPayload {
+  name?: string
+  area?: string
+  goal?: string
+  icon?: string
+}
+/** 局部更新项目（名称 / 领域 / 目标 / 图标）。 */
+export async function apiPatchProject(id: string, payload: PatchProjectPayload): Promise<Project> {
+  const res = await http.patch<ApiResponse<Project>>(`/api/projects/${id}`, payload)
+  return res.data.data
+}
+
+/** 删除项目。 */
+export async function apiDeleteProject(id: string): Promise<void> {
+  await http.delete<ApiResponse<void>>(`/api/projects/${id}`)
 }

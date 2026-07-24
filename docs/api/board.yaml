@@ -44,6 +44,23 @@ paths:
       responses:
         '200': { description: OK }
         '404': { description: 不存在（code=40400） }
+    patch:
+      summary: 局部更新项目（名称 / 领域 / 目标 / 图标，空字段不改）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PatchProjectRequest' } } }
+      responses:
+        '200': { description: OK }
+        '404': { description: 不存在（code=40400） }
+    delete:
+      summary: 删除项目
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: 不存在（code=40400） }
   /tasks:
     get:
       summary: 任务列表（跨项目）
@@ -123,6 +140,7 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
+        icon: { type: string, description: remixicon 类名，如 ri-stack-line }
         area: { type: string }
         status: { type: string, enum: [进行中, 有风险, 规划中, 已完成] }
         health: { type: string }
@@ -145,6 +163,14 @@ components:
         pr: { type: string, enum: [P0, P1, P2, P3] }
         owner: { type: string }
         due: { type: string }
+        images:
+          type: array
+          description: 内嵌图片（data: 或远程链接）
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              url: { type: string }
     CreateProjectRequest:
       type: object
       required: [name]
@@ -153,6 +179,14 @@ components:
         area: { type: string }
         goal: { type: string }
         visAll: { type: boolean }
+    PatchProjectRequest:
+      type: object
+      description: 空字段不改
+      properties:
+        name: { type: string }
+        area: { type: string }
+        goal: { type: string }
+        icon: { type: string }
     CreateTaskRequest:
       type: object
       required: [title, project]
@@ -162,6 +196,14 @@ components:
         pr: { type: string }
         owner: { type: string }
         due: { type: string, description: ISO 日期 }
+        desc: { type: string }
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              url: { type: string }
     PatchTaskRequest:
       type: object
       properties:

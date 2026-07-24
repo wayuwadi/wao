@@ -9,11 +9,13 @@ import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
 import NewProjectModal from '@/components/overlays/NewProjectModal.vue'
 import GlobalSearch from '@/components/overlays/GlobalSearch.vue'
 import Celebration from '@/components/overlays/CelebrationOverlay.vue'
+import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
 import { MODULES, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
+import { useShortcuts } from '@/composables/shortcuts'
 import type { ModuleId } from '@/types'
 
 const route = useRoute()
@@ -21,6 +23,8 @@ const nav = useNavStore()
 const tabs = useTabsStore()
 const ui = useUiStore()
 const data = useDataStore()
+
+useShortcuts()
 
 const plusOpen = ref(false)
 
@@ -67,8 +71,9 @@ function onKeydown(e: KeyboardEvent) {
     e.preventDefault()
     ui.openSearch()
   } else if (e.key === 'Escape') {
-    // 逐层关闭：庆祝 → 搜索 → 弹窗 → 新建下拉
+    // 逐层关闭：庆祝 → 帮助 → 搜索 → 弹窗 → 新建下拉
     if (ui.celebrating) ui.stopCelebrate()
+    else if (ui.helpOpen) ui.closeHelp()
     else if (ui.searchOpen) ui.closeSearch()
     else if (ui.modal) ui.closeModal()
     else plusOpen.value = false
@@ -115,6 +120,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           </template>
         </div>
 
+        <button class="bell" title="快捷键（?）" @click="ui.toggleHelp()">
+          <i class="ri-keyboard-line"></i>
+        </button>
         <button class="bell" title="通知" @click="bell">
           <i class="ri-notification-3-line"></i>
           <span class="bell-dot"></span>
@@ -132,6 +140,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <NewTaskModal v-if="ui.modal === 'task'" />
     <NewProjectModal v-if="ui.modal === 'project'" />
     <GlobalSearch v-if="ui.searchOpen" />
+    <ShortcutsHelp v-if="ui.helpOpen" />
     <Celebration v-if="ui.celebrating" />
   </div>
 </template>

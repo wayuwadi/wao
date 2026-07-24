@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
+import DemoBanner from '@/components/ui/DemoBanner.vue'
 
 const data = useDataStore()
 const tab = ref<'files' | 'img'>('files')
@@ -10,6 +11,12 @@ const tab = ref<'files' | 'img'>('files')
 
 <template>
   <div class="files">
+    <DemoBanner
+      icon="ri-hard-drive-2-line"
+      title="文件与图床 · 功能演示"
+      text="当前展示的是示例文件与图片。真实的上传、预览、下载与外链图床（含 CDN 加速与访问控制）将在后续迭代接入对象存储后开放。"
+      storage-key="files"
+    />
     <div class="ftop">
       <div class="ftitle">文件与图床</div>
       <div class="seg">

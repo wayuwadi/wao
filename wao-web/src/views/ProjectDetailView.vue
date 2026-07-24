@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -8,6 +8,8 @@ import { useTabsStore } from '@/stores/tabs'
 import { useDeco } from '@/composables/deco'
 import { fmtDate } from '@/utils/domain'
 import { toast } from '@/composables/toast'
+import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
+import type { TaskStatus } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,9 +31,40 @@ function setView(v: string) {
   router.replace({ query: { ...route.query, view: v === 'list' ? undefined : v } })
 }
 
-onMounted(() => {
-  if (project.value) tabs.setLabel(`proj:${pid.value}`, project.value.name)
-})
+// 项目名解析 / 变更后回填页签标签（修复刷新后页签仍显示「项目 <id>」占位）。
+watch(
+  () => project.value?.name,
+  (name) => {
+    if (name) tabs.setLabel(`proj:${pid.value}`, name)
+  },
+  { immediate: true },
+)
+
+const settingsOpen = ref(false)
+function onProjectDeleted() {
+  settingsOpen.value = false
+  const next = tabs.close(`proj:${pid.value}`)
+  router.push(next?.path ?? '/projects')
+  toast('项目已删除', 'ri-delete-bin-line')
+}
+
+// ---- 拖拽：看板改状态 / 列表排序 ----
+const dragId = ref<string | null>(null)
+function onDragStart(id: string) {
+  dragId.value = id
+}
+function onDropStatus(status: TaskStatus) {
+  const id = dragId.value
+  dragId.value = null
+  if (!id) return
+  const t = data.taskById(id)
+  if (t && t.status !== status) data.patchTask(id, { status }, `你将状态改为「${status}」`)
+}
+function onDropReorder(overId: string) {
+  const id = dragId.value
+  dragId.value = null
+  if (id) data.reorderTask(id, overId)
+}
 
 const BOARD_DOTS: Record<string, string> = { 待办: '#C9CDDA', 进行中: '#4358D6', 阻塞: '#D9A13B', 已完成: '#5CB88A' }
 
@@ -127,7 +160,7 @@ function comingSoon(msg: string) {
     <button class="back" @click="router.push('/projects')"><i class="ri-arrow-left-line"></i>全部项目</button>
 
     <div class="phead">
-      <div class="phead-icon" :style="{ background: pd.areaColor }"><i class="ri-stack-line"></i></div>
+      <div class="phead-icon" :style="{ background: pd.areaColor }"><i :class="pd.icon || 'ri-stack-line'"></i></div>
       <div class="phead-name-wrap">
         <div class="phead-name-row">
           <div class="phead-name">{{ pd.name }}</div>
@@ -141,6 +174,7 @@ function comingSoon(msg: string) {
         <span v-for="(mv, i) in pd.memberAvs" :key="i" class="phead-av" :style="{ background: mv.color }">{{ mv.initial }}</span>
       </div>
       <button class="btn-ghost" @click="comingSoon('邀请链接已复制（演示）· 可设置查看 / 编辑权限')"><i class="ri-user-add-line"></i>邀请</button>
+      <button class="btn-icon" title="项目设置" @click="settingsOpen = true"><i class="ri-settings-3-line"></i></button>
       <button class="btn-primary sm" @click="ui.openModal('task', pid)"><i class="ri-add-line"></i>新建任务</button>
     </div>
 
@@ -284,7 +318,18 @@ function comingSoon(msg: string) {
         </div>
       </div>
       <div v-if="pdTaskView === 'list'" class="task-list-card">
-        <div v-for="t in allTasks" :key="t.id" class="trow" @click="openTask(t.id)">
+        <div
+          v-for="t in allTasks"
+          :key="t.id"
+          class="trow"
+          :class="{ dragging: dragId === t.id }"
+          draggable="true"
+          @click="openTask(t.id)"
+          @dragstart="onDragStart(t.id)"
+          @dragover.prevent
+          @drop="onDropReorder(t.id)"
+        >
+          <i class="drag-grip ri-draggable" title="拖拽排序"></i>
           <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
           <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
           <span v-if="t.waitBadge" class="wait-badge">{{ t.waitBadge }}</span>
@@ -296,14 +341,29 @@ function comingSoon(msg: string) {
         <div v-if="allTasks.length === 0" class="empty-inline">还没有任务——点右上角「新建任务」开始拆解</div>
       </div>
       <div v-else class="board">
-        <div v-for="col in board" :key="col.label" class="board-col">
+        <div
+          v-for="col in board"
+          :key="col.label"
+          class="board-col"
+          :class="{ 'drop-hint': dragId }"
+          @dragover.prevent
+          @drop="onDropStatus(col.label)"
+        >
           <div class="board-col-head">
             <span class="board-dot" :style="{ background: col.dot }"></span>
             <span class="board-col-label">{{ col.label }}</span>
             <span class="board-col-count wao-tabular">{{ col.items.length }}</span>
           </div>
           <div class="board-cards">
-            <div v-for="t in col.items" :key="t.id" class="board-card" @click="openTask(t.id)">
+            <div
+              v-for="t in col.items"
+              :key="t.id"
+              class="board-card"
+              :class="{ dragging: dragId === t.id }"
+              draggable="true"
+              @click="openTask(t.id)"
+              @dragstart="onDragStart(t.id)"
+            >
               <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
               <div class="bc-foot">
                 <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
@@ -312,6 +372,7 @@ function comingSoon(msg: string) {
                 <span class="owner-av small" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
               </div>
             </div>
+            <div v-if="!col.items.length" class="board-empty">拖到此处标记为「{{ col.label }}」</div>
           </div>
         </div>
       </div>
@@ -357,6 +418,13 @@ function comingSoon(msg: string) {
         </div>
       </div>
     </div>
+
+    <ProjectSettingsModal
+      v-if="settingsOpen && project"
+      :project="project"
+      @close="settingsOpen = false"
+      @deleted="onProjectDeleted"
+    />
   </div>
 </template>
 
@@ -516,6 +584,25 @@ function comingSoon(msg: string) {
   height: 30px;
   padding: 0 12px;
   font-size: 12.5px;
+}
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--wao-line-strong);
+  background: #fff;
+  border-radius: 8px;
+  color: var(--wao-text-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-icon:hover {
+  background: #f4f5f8;
+  color: var(--wao-text-2);
+}
+.btn-icon i {
+  font-size: 15px;
 }
 
 .ptabs {
@@ -1070,6 +1157,20 @@ function comingSoon(msg: string) {
 .trow:hover {
   background: var(--wao-bg-hover);
 }
+.trow.dragging {
+  opacity: 0.5;
+}
+.drag-grip {
+  font-size: 15px;
+  color: var(--wao-text-faint-2);
+  cursor: grab;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.trow:hover .drag-grip {
+  opacity: 1;
+}
 .trow-title {
   flex: 1;
   min-width: 0;
@@ -1175,6 +1276,19 @@ function comingSoon(msg: string) {
   background: #f1f2f5;
   border-radius: 12px;
   padding: 10px;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.board-col.drop-hint {
+  background: #eaedfb;
+  box-shadow: inset 0 0 0 1.5px #c7d0f1;
+}
+.board-empty {
+  border: 1px dashed #cfd3de;
+  border-radius: 9px;
+  padding: 14px 8px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--wao-text-weak);
 }
 .board-col-head {
   display: flex;
@@ -1206,7 +1320,10 @@ function comingSoon(msg: string) {
   border: 1px solid var(--wao-line);
   border-radius: 10px;
   padding: 11px 12px;
-  cursor: pointer;
+  cursor: grab;
+}
+.board-card.dragging {
+  opacity: 0.5;
 }
 .board-card:hover {
   border-color: #c9cdda;

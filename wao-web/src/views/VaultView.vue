@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
+import DemoBanner from '@/components/ui/DemoBanner.vue'
 
 const data = useDataStore()
 const group = ref('全部')
@@ -49,6 +50,12 @@ function comingSoon() {
 
 <template>
   <div class="vault">
+    <DemoBanner
+      icon="ri-key-2-line"
+      title="密码库 · 功能演示"
+      text="当前为示例凭据，仅用于演示分组与检索形态，不含任何真实密码。端到端加密存储、主密码解锁与自动填充将在后续迭代交付。"
+      storage-key="vault"
+    />
     <div class="vtop">
       <div class="vtitle">密码库</div>
       <span class="vtip">分组管理 · 全部为虚构示例</span>

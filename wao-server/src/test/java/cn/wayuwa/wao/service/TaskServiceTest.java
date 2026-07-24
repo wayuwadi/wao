@@ -62,7 +62,7 @@ class TaskServiceTest {
     void createProducesTodoTask() {
         when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
 
-        TaskDto dto = service.create(new CreateTaskRequest("整理证件盒", "p2", "P1", "wd", "2026-07-30"));
+        TaskDto dto = service.create(new CreateTaskRequest("整理证件盒", "p2", "P1", "wd", "2026-07-30", null, null));
 
         assertThat(dto.id()).startsWith("t");
         assertThat(dto.status()).isEqualTo("待办");

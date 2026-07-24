@@ -6,7 +6,7 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { useDeco } from '@/composables/deco'
 import { statusMeta } from '@/utils/domain'
-import type { Project, ProjectStatus } from '@/types'
+import type { Project, ProjectStatus, TaskStatus } from '@/types'
 
 const data = useDataStore()
 const session = useSessionStore()
@@ -117,6 +117,19 @@ function openTask(id: string) {
 function toggleTask(id: string) {
   data.toggleComplete(id)
 }
+
+// 看板拖拽改状态
+const dragId = ref<string | null>(null)
+function onDragStart(id: string) {
+  dragId.value = id
+}
+function onDropStatus(status: TaskStatus) {
+  const id = dragId.value
+  dragId.value = null
+  if (!id) return
+  const t = data.taskById(id)
+  if (t && t.status !== status) data.patchTask(id, { status }, `你将状态改为「${status}」`)
+}
 </script>
 
 <template>
@@ -208,7 +221,10 @@ function toggleTask(id: string) {
           <div class="card-grid">
             <div v-for="p in g.items" :key="p.id" class="proj-card" @click="openProject(p.id)">
               <div class="pc-top">
-                <div class="pc-icon" :style="{ background: p.areaColor }">{{ p.initialChar }}</div>
+                <div class="pc-icon" :style="{ background: p.areaColor }">
+                  <i v-if="p.icon" :class="p.icon"></i>
+                  <template v-else>{{ p.initialChar }}</template>
+                </div>
                 <div class="pc-name-wrap">
                   <div class="pc-name">{{ p.name }}</div>
                   <div class="pc-sub">{{ p.areaName }} · 负责人 {{ p.ownerName }}</div>
@@ -288,14 +304,29 @@ function toggleTask(id: string) {
       </template>
 
       <div v-else class="board">
-        <div v-for="col in boardCols" :key="col.label" class="board-col">
+        <div
+          v-for="col in boardCols"
+          :key="col.label"
+          class="board-col"
+          :class="{ 'drop-hint': dragId }"
+          @dragover.prevent
+          @drop="onDropStatus(col.label as TaskStatus)"
+        >
           <div class="board-col-head">
             <span class="board-dot" :style="{ background: col.dot }"></span>
             <span class="board-col-label">{{ col.label }}</span>
             <span class="board-col-count wao-tabular">{{ col.items.length }}</span>
           </div>
           <div class="board-cards">
-            <div v-for="t in col.items" :key="t.id" class="board-card" @click="openTask(t.id)">
+            <div
+              v-for="t in col.items"
+              :key="t.id"
+              class="board-card"
+              :class="{ dragging: dragId === t.id }"
+              draggable="true"
+              @click="openTask(t.id)"
+              @dragstart="onDragStart(t.id)"
+            >
               <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
               <div class="bc-proj"><span class="proj-dot" :style="{ background: t.projColor }"></span><span class="ellip">{{ t.projName }}</span></div>
               <div class="bc-foot">
@@ -581,6 +612,9 @@ function toggleTask(id: string) {
   font-size: 16px;
   flex-shrink: 0;
 }
+.pc-icon i {
+  font-size: 19px;
+}
 .pc-name-wrap {
   flex: 1;
   min-width: 0;
@@ -823,6 +857,11 @@ function toggleTask(id: string) {
   background: #f1f2f5;
   border-radius: 12px;
   padding: 10px;
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.board-col.drop-hint {
+  background: #eaedfb;
+  box-shadow: inset 0 0 0 1.5px #c7d0f1;
 }
 .board-col-head {
   display: flex;
@@ -854,7 +893,10 @@ function toggleTask(id: string) {
   border: 1px solid var(--wao-line);
   border-radius: 10px;
   padding: 11px 12px;
-  cursor: pointer;
+  cursor: grab;
+}
+.board-card.dragging {
+  opacity: 0.5;
 }
 .board-card:hover {
   border-color: #c9cdda;

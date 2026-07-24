@@ -5,6 +5,7 @@ import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
+import DemoBanner from '@/components/ui/DemoBanner.vue'
 import type { KnowledgeBase } from '@/types'
 
 const data = useDataStore()
@@ -62,6 +63,12 @@ function comingSoon(msg: string) {
 
 <template>
   <div class="know">
+    <DemoBanner
+      icon="ri-book-2-line"
+      title="知识库 · 功能演示"
+      text="当前为交互演示：可浏览示例知识库、文档与双链。新建项目会自动生成一个默认知识库；完整的多人协作编辑、语义搜索与自动归档将在后续迭代交付。"
+      storage-key="knowledge"
+    />
     <div class="ktop">
       <div class="ktitle">知识库</div>
       <span class="ktip">按知识库组织文档；项目可关联自己的知识库</span>

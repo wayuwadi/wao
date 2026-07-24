@@ -32,7 +32,7 @@ class TaskControllerTest {
     private TaskDto sample() {
         return new TaskDto("t1", "设计任务详情抽屉交互稿", "p1", "进行中", "P0", "wg",
                 List.of(), null, "2026-07-24", null, "desc",
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     @Test

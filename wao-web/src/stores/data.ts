@@ -4,6 +4,8 @@ import * as F from '@/data/fixtures'
 import {
   apiCreateProject,
   apiCreateTask,
+  apiDeleteProject,
+  apiPatchProject,
   apiPutTask,
   fetchAreas,
   fetchDocs,
@@ -20,7 +22,7 @@ import {
   fetchVault,
 } from '@/api/board'
 import { blocksToText, textToBlocks } from '@/utils/doc'
-import type { Doc, DocBlock, Project, Task } from '@/types'
+import type { Doc, DocBlock, KnowledgeBase, Project, Task } from '@/types'
 
 /** 文档编辑覆盖（标题 / 正文 Markdown）。 */
 interface DocEdit {
@@ -105,6 +107,48 @@ export const useDataStore = defineStore('data', () => {
     if (gl?.length) goals.value = gl
     // 核心读路径任一可达即认为后端在线；写路径（POST/PUT）随之启用。
     apiLive.value = a !== null && p !== null && t !== null
+    // 每个项目都应有一个默认知识库（后端就绪前为前端内存态），刷新后由此保持。
+    projects.value.forEach((proj) => ensureProjectKb(proj))
+    if (apiLive.value) startSync()
+  }
+
+  /**
+   * 后台轮询：周期性从后端拉取项目与任务，让其他人 / 其他标签页的新建、状态变更
+   * 无需手动大刷即可出现（对齐「新建任务后别人要刷新才可见」的修复）。
+   * 仅在页面可见时轮询，避免后台标签页空转；页面重新获得焦点时立即同步一次。
+   */
+  let syncTimer: ReturnType<typeof setInterval> | null = null
+  let syncing = false
+  async function syncFromServer() {
+    if (!apiLive.value || syncing || document.hidden) return
+    syncing = true
+    try {
+      const [p, t] = await Promise.all([fetchProjects(), fetchTasks()])
+      if (Array.isArray(p)) mergeList(projects.value, p)
+      if (Array.isArray(t)) mergeList(tasks.value, t)
+    } catch {
+      /* 网络抖动时静默跳过，下个周期重试 */
+    } finally {
+      syncing = false
+    }
+  }
+  /** 用服务端列表就地合并本地数组：更新已存在项、追加新项、移除已删除项，保持数组引用稳定。 */
+  function mergeList<T extends { id: string }>(local: T[], remote: T[]) {
+    const remoteIds = new Set(remote.map((r) => r.id))
+    for (const r of remote) {
+      const existing = local.find((l) => l.id === r.id)
+      if (existing) Object.assign(existing, r)
+      else local.push(r)
+    }
+    for (let i = local.length - 1; i >= 0; i--) {
+      if (!remoteIds.has(local[i]!.id)) local.splice(i, 1)
+    }
+  }
+  function startSync() {
+    if (syncTimer) return
+    syncTimer = setInterval(syncFromServer, 15_000)
+    window.addEventListener('focus', syncFromServer)
+    document.addEventListener('visibilitychange', syncFromServer)
   }
 
   // ---- getters ----
@@ -181,11 +225,16 @@ export const useDataStore = defineStore('data', () => {
     persistTask(id)
   }
 
+  /** 新建任务负载：核心字段 + 可选描述 / 内嵌图片。 */
+  type NewTaskPayload = Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'> &
+    Pick<Task, 'desc' | 'images'>
+
   /** 新建任务；apiLive 时经后端创建（用服务端返回 id），否则本地乐观创建。 */
-  async function addTask(payload: Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'>): Promise<Task> {
+  async function addTask(payload: NewTaskPayload): Promise<Task> {
+    const { desc = '', images = [], ...core } = payload
     if (apiLive.value) {
       try {
-        const t = await apiCreateTask(payload)
+        const t = await apiCreateTask({ ...core, desc, images })
         tasks.value.unshift(t)
         return t
       } catch {
@@ -193,37 +242,82 @@ export const useDataStore = defineStore('data', () => {
       }
     }
     const t: Task = {
-      id: 't' + Date.now(), status: '待办', parts: [], desc: '', steps: [], subs: [], files: [],
-      docs: [], linkTasks: [], comments: [], custom: [],
+      id: 't' + Date.now(), status: '待办', parts: [], desc, steps: [], subs: [], files: [],
+      docs: [], linkTasks: [], comments: [], custom: [], images,
       activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '你创建了任务', time: '刚刚' }],
-      ...payload,
+      ...core,
     }
     tasks.value.unshift(t)
     return t
   }
 
-  /** 新建项目；apiLive 时经后端创建，否则本地乐观创建。 */
+  /** 新建项目；apiLive 时经后端创建，否则本地乐观创建。创建后自动生成一个默认知识库。 */
   async function addProject(payload: { name: string; area: string; goal: string; visAll: boolean }): Promise<Project> {
+    let created: Project | null = null
     if (apiLive.value) {
       try {
-        const p = await apiCreateProject(payload)
-        projects.value.unshift(p)
-        return p
+        created = await apiCreateProject(payload)
+        projects.value.unshift(created)
       } catch {
         /* 后端异常时回落本地 */
       }
     }
-    const p: Project = {
-      id: 'p' + Date.now(), name: payload.name, area: payload.area, status: '规划中', health: '良好',
-      progress: 0, owner: 'wg', members: payload.visAll ? ['wg', 'wd'] : ['wg'],
-      start: today, due: '2026-09-30',
-      visibility: payload.visAll ? '组织内 2 人 · 可查看' : '仅自己可见',
-      updated: '刚刚', goal: payload.goal || '尚未填写目标——打开项目后可补充。',
-      milestones: [], msDates: [], trend: [0, 0], blockers: [], docs: [], files: [],
-      activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '你创建了项目', time: '刚刚' }],
+    if (!created) {
+      created = {
+        id: 'p' + Date.now(), name: payload.name, icon: 'ri-stack-line', area: payload.area, status: '规划中', health: '良好',
+        progress: 0, owner: 'wg', members: payload.visAll ? ['wg', 'wd'] : ['wg'],
+        start: today, due: '2026-09-30',
+        visibility: payload.visAll ? '组织内 2 人 · 可查看' : '仅自己可见',
+        updated: '刚刚', goal: payload.goal || '尚未填写目标——打开项目后可补充。',
+        milestones: [], msDates: [], trend: [0, 0], blockers: [], docs: [], files: [],
+        activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '你创建了项目', time: '刚刚' }],
+      }
+      projects.value.unshift(created)
     }
-    projects.value.unshift(p)
-    return p
+    if (!created.icon) created.icon = 'ri-stack-line'
+    ensureProjectKb(created)
+    return created
+  }
+
+  /** 为项目创建一个默认知识库（若尚无关联库）。知识库为前端内存态，随项目一起出现。 */
+  function ensureProjectKb(p: Project): KnowledgeBase {
+    const existing = kbs.value.find((k) => k.project === p.id)
+    if (existing) return existing
+    const kb: KnowledgeBase = {
+      id: 'kb' + Date.now(), name: `${p.name} · 知识库`, icon: 'ri-book-2-line',
+      color: areaColor(p.area), project: p.id, desc: '项目资料、会议纪要与参考都沉淀在这里。',
+      folders: [{ id: 'f' + Date.now(), name: '文档', docs: [] }],
+    }
+    kbs.value.unshift(kb)
+    return kb
+  }
+
+  /** 更新项目字段（名称 / 领域 / 目标 / 图标）；apiLive 时写透后端。 */
+  async function updateProject(id: string, patch: { name?: string; area?: string; goal?: string; icon?: string }) {
+    const p = projectById(id)
+    if (!p) return
+    Object.assign(p, patch)
+    if (apiLive.value) {
+      try {
+        await apiPatchProject(id, patch)
+      } catch {
+        /* 保留本地乐观更新 */
+      }
+    }
+  }
+
+  /** 删除项目（连同其任务与关联知识库）；apiLive 时写透后端。 */
+  async function deleteProject(id: string) {
+    projects.value = projects.value.filter((p) => p.id !== id)
+    tasks.value = tasks.value.filter((t) => t.project !== id)
+    kbs.value = kbs.value.filter((k) => k.project !== id)
+    if (apiLive.value) {
+      try {
+        await apiDeleteProject(id)
+      } catch {
+        /* 后端删除失败时不回滚，避免残留幽灵项目困扰 UI */
+      }
+    }
   }
 
   /** 把某任务的当前完整状态写透到后端（fire-and-forget）。 */
@@ -238,6 +332,17 @@ export const useDataStore = defineStore('data', () => {
     const t = taskById(id)
     if (!t) return
     patchTask(id, { status: t.status === '已完成' ? '待办' : '已完成' })
+  }
+
+  /** 将任务移动到同项目内目标任务之前（列表拖拽排序，前端顺序态）。 */
+  function reorderTask(dragId: string, overId: string) {
+    if (dragId === overId) return
+    const arr = tasks.value
+    const from = arr.findIndex((t) => t.id === dragId)
+    if (from < 0) return
+    const [moved] = arr.splice(from, 1)
+    const to = arr.findIndex((t) => t.id === overId)
+    arr.splice(to < 0 ? arr.length : to, 0, moved!)
   }
 
   /** 勾选步骤 / 子任务。 */
@@ -255,6 +360,7 @@ export const useDataStore = defineStore('data', () => {
     calEvents, schedule, suggestions, goals, myGroups, apiLive, hydrate,
     areaById, projectById, taskById, tasksByProject, kbById, docById, areaColor,
     docEdits, setDocEdit, docOf, addDoc, addGroup, addFolder,
-    patchTask, toggleComplete, toggleStep, addTask, addProject,
+    patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
+    updateProject, deleteProject, ensureProjectKb, syncFromServer,
   }
 })

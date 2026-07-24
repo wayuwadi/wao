@@ -6,6 +6,7 @@ import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.dto.Activity;
 import cn.wayuwa.wao.dto.CreateProjectRequest;
+import cn.wayuwa.wao.dto.PatchProjectRequest;
 import cn.wayuwa.wao.dto.ProjectDetail;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.mapper.ProjectMapper;
@@ -75,10 +76,56 @@ public class ProjectService {
         ProjectDetail detail = new ProjectDetail(
                 req.visAll() ? List.of("wg", "wd") : List.of("wg"),
                 List.of(), List.of(), List.of(0, 0), List.of(), List.of(), List.of(),
-                List.of(new Activity("ri-add-line", "#9A9DA9", "你创建了项目", "刚刚")));
+                List.of(new Activity("ri-add-line", "#9A9DA9", "你创建了项目", "刚刚")),
+                "ri-stack-line");
         e.setDetailJson(write(detail));
         projectMapper.insert(e);
         return toDto(e);
+    }
+
+    /**
+     * 局部更新项目（名称 / 领域 / 目标 / 图标）。空字段不改。
+     *
+     * @param id  项目 id
+     * @param req 局部更新请求
+     * @return 更新后的项目
+     * @throws NotFoundException 项目不存在时
+     */
+    public ProjectDto update(String id, PatchProjectRequest req) {
+        ProjectEntity e = projectMapper.selectById(id);
+        if (e == null) {
+            throw new NotFoundException("项目不存在：" + id);
+        }
+        if (req.name() != null && !req.name().isBlank()) {
+            e.setName(req.name().trim());
+        }
+        if (req.area() != null && !req.area().isBlank()) {
+            e.setArea(req.area());
+        }
+        if (req.goal() != null) {
+            e.setGoal(req.goal().isBlank() ? "尚未填写目标——打开项目后可补充。" : req.goal().trim());
+        }
+        if (req.icon() != null && !req.icon().isBlank()) {
+            ProjectDetail d = parse(e.getDetailJson());
+            e.setDetailJson(write(new ProjectDetail(d.members(), d.milestones(), d.msDates(), d.trend(),
+                    d.blockers(), d.docs(), d.files(), d.activity(), req.icon())));
+        }
+        e.setUpdatedLabel("刚刚");
+        projectMapper.updateById(e);
+        return toDto(e);
+    }
+
+    /**
+     * 删除项目。
+     *
+     * @param id 项目 id
+     * @throws NotFoundException 项目不存在时
+     */
+    public void delete(String id) {
+        if (projectMapper.selectById(id) == null) {
+            throw new NotFoundException("项目不存在：" + id);
+        }
+        projectMapper.deleteById(id);
     }
 
     private ProjectDto toDto(ProjectEntity e) {
@@ -89,17 +136,18 @@ public class ProjectService {
                 nn(d.members()), e.getStartDate(), e.getDueDate(), e.getVisibility(),
                 e.getUpdatedLabel(), e.getGoal(),
                 nn(d.milestones()), nn(d.msDates()), nn(d.trend()), nn(d.blockers()),
-                nn(d.docs()), nn(d.files()), nn(d.activity()));
+                nn(d.docs()), nn(d.files()), nn(d.activity()),
+                d.icon() == null || d.icon().isBlank() ? "ri-stack-line" : d.icon());
     }
 
     private ProjectDetail parse(String detailJson) {
         if (detailJson == null || detailJson.isBlank()) {
-            return new ProjectDetail(null, null, null, null, null, null, null, null);
+            return new ProjectDetail(null, null, null, null, null, null, null, null, null);
         }
         try {
             return json.readValue(detailJson, ProjectDetail.class);
         } catch (JsonProcessingException ex) {
-            return new ProjectDetail(null, null, null, null, null, null, null, null);
+            return new ProjectDetail(null, null, null, null, null, null, null, null, null);
         }
     }
 

@@ -4,10 +4,13 @@ import java.util.List;
 
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.CreateProjectRequest;
+import cn.wayuwa.wao.dto.PatchProjectRequest;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.service.ProjectService;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,5 +41,16 @@ public class ProjectController {
     @PostMapping
     public ApiResponse<ProjectDto> create(@Valid @RequestBody CreateProjectRequest request) {
         return ApiResponse.ok(projectService.create(request));
+    }
+
+    @PatchMapping("/{id}")
+    public ApiResponse<ProjectDto> patch(@PathVariable String id, @RequestBody PatchProjectRequest request) {
+        return ApiResponse.ok(projectService.update(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(@PathVariable String id) {
+        projectService.delete(id);
+        return ApiResponse.ok(null);
     }
 }
