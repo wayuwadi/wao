@@ -70,6 +70,9 @@ detect_public_ipv4() {
 }
 
 NODE_PUBLIC_IP="${NODE_PUBLIC_IP:-$(detect_public_ipv4)}"
+if [ -z "${NODE_PUBLIC_IP}" ] && [ -f "${deploy_dir}/.public-ip" ]; then
+  NODE_PUBLIC_IP="$(sed -n '1p' "${deploy_dir}/.public-ip" | tr -d '\r\n')"
+fi
 if [ -z "${NODE_PUBLIC_IP}" ]; then
   NODE_PUBLIC_IP="$(curl -4fsS --max-time 10 https://api.ipify.org || curl -4fsS --max-time 10 https://4.ipw.cn)"
 fi
@@ -87,7 +90,17 @@ for service in wao-server wao-gateway; do
     run_docker tag "${image_id}" "${service}:rollback"
   fi
 done
-compose build wao-server wao-gateway
+case "${SKIP_IMAGE_BUILD:-false}" in
+  true)
+    run_docker image inspect \
+      "wao-server:${WAO_IMAGE_TAG:-latest}" \
+      "wao-gateway:${WAO_IMAGE_TAG:-latest}" >/dev/null
+    ;;
+  false)
+    compose build wao-server wao-gateway
+    ;;
+  *) echo 'SKIP_IMAGE_BUILD must be true or false.' >&2; exit 2 ;;
+esac
 
 if ! compose up -d --wait; then
   if run_docker image inspect wao-server:rollback wao-gateway:rollback >/dev/null 2>&1; then

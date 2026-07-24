@@ -212,6 +212,7 @@ services:
       GATEWAY_PORT: 9000
       GATEWAY_SSL_ENABLED: ${GATEWAY_SSL_ENABLED:-true}
       GATEWAY_SSL_PASS: ${GATEWAY_SSL_PASS}
+      WAO_SERVER_URI: http://wao-server:8080
       NACOS_SERVER_ADDR: ${NACOS_SERVER_ADDR:-nacos:8848}
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
@@ -225,7 +226,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
-      test: ["CMD", "curl", "-kfsS", "https://127.0.0.1:9000/actuator/health"]
+      test: ["CMD", "curl", "-kfsS", "https://127.0.0.1:9000/api/hello"]
       interval: 15s
       timeout: 5s
       retries: 15

@@ -1,6 +1,8 @@
 param(
     [string]$ArchivePath = 'D:\deploy\wao-release.zip',
-    [string]$TargetPath = 'D:\deploy\wao'
+    [string]$TargetPath = 'D:\deploy\wao',
+    [string]$ImageArchivePath = 'D:\deploy\wao-app-images.tar.gz',
+    [string]$Distribution = 'Ubuntu'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,4 +37,13 @@ if (-not (Test-Path -LiteralPath $deployScript -PathType Leaf)) {
     throw "Deployment script was not found after extraction: $deployScript"
 }
 
-& $deployScript
+$imageLoaded = $false
+if (Test-Path -LiteralPath $ImageArchivePath -PathType Leaf) {
+    . (Join-Path $target 'deploy\scripts\wsl-common.ps1')
+    $linuxImageArchive = ConvertTo-WaoWslPath $ImageArchivePath
+    & wsl.exe -d $Distribution -u root -- docker load -i $linuxImageArchive
+    if ($LASTEXITCODE -ne 0) { throw 'Application image import failed.' }
+    $imageLoaded = $true
+}
+
+& $deployScript -Distribution $Distribution -SkipImageBuild:$imageLoaded

@@ -10,7 +10,7 @@ WAO 是一个由 AI 协作开发的前后端分离系统，采用 Spec-Driven De
 | 前端脚手架       | 已完成 | Vue 3、Vite、TypeScript、Pinia、Vue Router 4、Ant Design Vue     |
 | 本地 Demo        | 可运行 | 使用 `local` Profile，不依赖 Docker、MySQL、Redis 或 Nacos       |
 | 生产部署代码     | 已完成 | 双节点 Compose、MySQL 主从、Redis Sentinel、云 Nginx、TLS、CI/CD |
-| 三节点实机上线   | 进行中 | 云前端/HTTPS 与 Linux 主节点已上线；Windows 等待最后一次重启       |
+| 三节点实机上线   | 已完成 | 云前端/HTTPS、Linux 主节点与 Windows 从节点均已通过公网验收       |
 | Phase 1 业务功能 | 待规格 | 需要设计稿、ER 模型和业务 API 契约                               |
 
 ## 技术栈
@@ -63,7 +63,7 @@ Invoke-RestMethod http://localhost:9000/api/hello
 
 MySQL、Redis、Nacos 和项目 Dockerfile 当前均使用 Linux 容器镜像，需要 Linux 内核提供容器运行能力。Docker Desktop 不支持 Windows Server，因此落地方案是在 Windows Server 的 WSL2 中安装轻量的 Ubuntu 24.04 和 Docker Engine。
 
-这不会把电脑改成 Ubuntu，也不会影响 Windows 日常使用：代码仍在 `D:\CodeSpace\wao`，部署目录仍在 `D:\deploy`，Ubuntu 只作为后台容器运行层。当前本地 Demo 直接使用 Windows 上已有的 Java 和 Node.js，所以现在完全可以不重启、不安装 WSL；只有准备启动生产 Compose 时才需要它。
+这不会把电脑改成 Ubuntu，也不会影响 Windows 日常使用：代码仍在 `D:\CodeSpace\wao`，部署目录仍在 `D:\deploy`，Ubuntu 只作为无桌面的后台容器运行层。实机将 WSL 限制为 4 核、8GB 内存和 2GB swap；当前完整副本运行约占 3GB 内存，动态 VHD 约 4GB。停止计划任务并执行 `wsl --shutdown` 后，运行内存会释放。
 
 ## 完整开发环境
 
@@ -95,7 +95,7 @@ wao/
 - [Phase 0 规格](docs/specs/phase-0.md)：当前纵向切片的验收标准。
 - [Hello API 契约](docs/api/hello.yaml)：OpenAPI 3.0 定义。
 - [Hello 页面规格](docs/pages/hello.md)：页面行为与状态说明。
-- [实机上线清单](docs/runbooks/phase-0-rollout.md)：三节点尚需执行的操作。
+- [实机上线清单](docs/runbooks/phase-0-rollout.md)：三节点当前状态、复现步骤与验收项。
 - [部署手册](deploy/README.md)：环境变量、证书、DDNS、备份和 CI/CD。
 - [公网直连决策](docs/adr/005-public-ddns-network.md)：不使用 Tailscale 后的网络与风险边界。
 - [贡献指南](CONTRIBUTING.md)：小伙伴拉取代码、提交业务架构/ER 图及发起 PR 的规则。

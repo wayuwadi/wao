@@ -67,6 +67,6 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_connect_timeout 5s;
         proxy_read_timeout 30s;
-        proxy_next_upstream error timeout http_502 http_503 http_504;
+        proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
     }
 }
