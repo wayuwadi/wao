@@ -74,10 +74,10 @@ services:
     ports:
       - "${MASTER_BIND_IP:-0.0.0.0}:26379:26379"
     environment:
-      REDIS_MASTER_HOST: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}
+      REDIS_MASTER_HOST: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
       REDIS_PASS: ${REDIS_PASS}
-      SENTINEL_ANNOUNCE_HOST: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}
+      SENTINEL_ANNOUNCE_HOST: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}
     command: ["/bin/sh", "/opt/wao/start-sentinel.sh"]
     volumes:
       - ./redis/start-sentinel.sh:/opt/wao/start-sentinel.sh:ro
@@ -160,7 +160,7 @@ services:
       REDIS_PASS: ${REDIS_PASS}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
       REDIS_SENTINEL_NODES: ${REDIS_SENTINEL_NODES}
-      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}:8848
+      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
       NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
@@ -200,7 +200,7 @@ services:
       GATEWAY_PORT: 9000
       GATEWAY_SSL_ENABLED: ${GATEWAY_SSL_ENABLED:-true}
       GATEWAY_SSL_PASS: ${GATEWAY_SSL_PASS}
-      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}:8848
+      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
       NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}

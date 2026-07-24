@@ -12,7 +12,7 @@ WAO 系统是一个由两名 Java 服务端工程师（娃哥、娃弟）主导�
 
 | 名称 | 角色 | 系统 | 配置 | 硬盘 | 网络 | 域名/IP |
 |------|------|------|------|------|------|---------|
-| 娃弟的电脑 | 主节点 | Ubuntu | 20 核 / 32G | 500G | 公网动态 IP | linux1.wayuwa.cn |
+| 娃弟的电脑 | 主节点 | Ubuntu | 20 核 / 32G | 500G | 公网动态 IP | linux2.wayuwa.cn |
 | 娃哥的电脑 | 从节点 | Windows Server 2025 | 20 核 / 32G | 100G | 公网动态 IP | windows1.wayuwa.cn |
 | 阿里云服务器 | 接入层 | Ubuntu | 2 核 / 2G | 50G | 固定 IP，开放 80/443 | 8.136.152.131 |
 
@@ -30,7 +30,7 @@ WAO 系统是一个由两名 Java 服务端工程师（娃哥、娃弟）主导�
 
 | 开发者 | 开发机 | 系统 | AI 工具 | GitHub 账号 |
 |--------|--------|------|---------|-------------|
-| 娃弟 | linux1.wayuwa.cn | Ubuntu | Claude（Claude Code） | wayuwadi |
+| 娃弟 | linux2.wayuwa.cn | Ubuntu | Claude（Claude Code） | wayuwadi |
 | 娃哥 | windows1.wayuwa.cn | Windows Server 2025 | Codex（OpenAI Codex CLI） | wayuwage |
 
 两人角色对等，均可参与前端、后端、部署等任何模块的开发。分工按迭代任务动态分配，不做固定绑定。
@@ -336,7 +336,7 @@ docs(api): update OpenAPI spec for user module
 | 服务网关 | Spring Cloud Gateway | API 路由、负载均衡、限流 |
 | 注册/配置中心 | Nacos 2.x | 服务发现 + 动态配置 |
 | ORM | MyBatis-Plus | 开发效率高 |
-| 数据库 | MySQL 9（自建，主从复制） | linux1 已有 MySQL 9，直接用最新版本 |
+| 数据库 | MySQL 9（自建，主从复制） | linux2 已有 MySQL 9，直接用最新版本 |
 | 缓存 | Redis 7（自建，主从 + 哨兵） | 自动故障转移 |
 | 接入层 | Nginx（阿里云服务器） | SSL 终止 + 静态文件 + 反向代理 |
 | 容器化 | Docker + Docker Compose | 全部服务容器化 |
@@ -358,7 +358,7 @@ graph TB
         NGX[Nginx<br/>SSL终止 + 静态文件 + 反向代理]
     end
 
-    subgraph NodeA[娃弟电脑 linux1.wayuwa.cn]
+    subgraph NodeA[娃弟电脑 linux2.wayuwa.cn]
         GW1[Spring Cloud Gateway :9000]
         APP1[Spring Boot App :8080]
         NACOS[Nacos :8848]
@@ -410,7 +410,7 @@ graph TB
 | 域名 | 用途 | 解析方式 |
 |------|------|----------|
 | wao.wayuwa.cn | 用户访问入口 | A 记录 → 8.136.152.131（固定） |
-| linux1.wayuwa.cn | 主节点回源 | DDNS 动态解析 |
+| linux2.wayuwa.cn | 主节点回源 | DDNS 动态解析 |
 | windows1.wayuwa.cn | 从节点回源 | DDNS 动态解析 |
 
 ### 3.4 Nginx 配置（阿里云服务器）
@@ -446,7 +446,7 @@ server {
 }
 
 upstream wao_gateway {
-    server linux1.wayuwa.cn:9000 max_fails=3 fail_timeout=30s;
+    server linux2.wayuwa.cn:9000 max_fails=3 fail_timeout=30s;
     server windows1.wayuwa.cn:9000 max_fails=3 fail_timeout=30s;
     keepalive 16;
 }
@@ -480,7 +480,7 @@ wget https://github.com/jeessy2/ddns-go/releases/latest/download/ddns-go_Linux_x
 tar -xzf ddns-go_Linux_x86_64.tar.gz
 sudo mv ddns-go /usr/local/bin/
 sudo ddns-go -s install
-# 访问 http://localhost:9876 配置，域名填 linux1.wayuwa.cn
+# 访问 http://localhost:9876 配置，域名填 linux2.wayuwa.cn
 ```
 
 Windows Server 2025（娃哥电脑）：
@@ -549,7 +549,7 @@ Nginx 代理配置对应改为 HTTPS 后端：
 
 ```nginx
 upstream wao_gateway {
-    server linux1.wayuwa.cn:9000 max_fails=3 fail_timeout=30s;
+    server linux2.wayuwa.cn:9000 max_fails=3 fail_timeout=30s;
     server windows1.wayuwa.cn:9000 max_fails=3 fail_timeout=30s;
     keepalive 16;
 }
@@ -672,7 +672,7 @@ nacos:
   restart: always
 ```
 
-Nacos 控制台：`http://linux1.wayuwa.cn:8848/nacos`（首次部署后必须修改默认密码，见 3.7 节）。
+Nacos 控制台：`http://linux2.wayuwa.cn:8848/nacos`（首次部署后必须修改默认密码，见 3.7 节）。
 
 #### Nacos 单点故障降级行为
 
@@ -967,7 +967,7 @@ wao/
 
 ### 8.1 MySQL 9 主从复制
 
-linux1.wayuwa.cn 已有 MySQL 9，直接使用最新版本。Docker 镜像使用 `mysql:9.0`。
+linux2.wayuwa.cn 已有 MySQL 9，直接使用最新版本。Docker 镜像使用 `mysql:9.0`。
 
 **主库配置（娃弟电脑）mysql-master.cnf**：
 
@@ -1344,9 +1344,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy to master (linux1)
+      - name: Deploy to master (linux2)
         run: |
-          ssh -o StrictHostKeyChecking=no root@linux1.wayuwa.cn << 'EOF'
+          ssh -o StrictHostKeyChecking=no root@linux2.wayuwa.cn << 'EOF'
             cd /opt/wao
             git pull origin main
             # 记录当前镜像 ID 用于回滚
@@ -1385,7 +1385,7 @@ jobs:
 
 ### 10.2 部署策略说明
 
-- SSH 目标使用域名 `linux1.wayuwa.cn` / `windows1.wayuwa.cn`，DDNS 保证解析正确，无需维护 IP secrets
+- SSH 目标使用域名 `linux2.wayuwa.cn` / `windows1.wayuwa.cn`，DDNS 保证解析正确，无需维护 IP secrets
 - 每次部署后等待 15 秒，curl Gateway 的 `/actuator/health` 验证服务存活
 - 健康检查失败时自动回滚：停止新容器，重启上一版本
 - 主从节点顺序部署：先主后从，主节点失败则不继续部署从节点
@@ -1518,7 +1518,7 @@ chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 #!/bin/bash
 # /opt/scripts/health_check.sh - 每分钟执行
 
-GATEWAY_MASTER="https://linux1.wayuwa.cn:9000/actuator/health"
+GATEWAY_MASTER="https://linux2.wayuwa.cn:9000/actuator/health"
 GATEWAY_SLAVE="https://windows1.wayuwa.cn:9000/actuator/health"
 ALERT_FILE="/tmp/wao_alert_sent"
 
@@ -1859,7 +1859,7 @@ Tailscale 是 SPOF——如果 Tailscale 服务挂了（虽然概率极低），
 
 ```bash
 # 紧急回退：将 Tailscale IP 替换为公网域名
-# 修改 .env 中的 MYSQL_HOST=linux1.wayuwa.cn，然后 docker compose up -d
+# 修改 .env 中的 MYSQL_HOST=linux2.wayuwa.cn，然后 docker compose up -d
 ```
 
 ### 13.6 备份恢复演练
