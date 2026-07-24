@@ -20,7 +20,7 @@ Set-Location D:\deploy\wao
 .\deploy\scripts\deploy-windows.ps1 -SkipImageBuild
 ```
 
-Windows 发布包使用 ZIP 而不是 tar.gz，确保中文技术方案文件名可在 Windows 上无损解压；GitHub Actions 同时下发预构建应用镜像，Windows 不依赖 Docker Hub。MySQL GTID 从库只复制 `wao.%`，复制双线程为 `Yes`、延迟为 0。
+Windows 发布包使用 ZIP 而不是 tar.gz，确保中文技术方案文件名可在 Windows 上无损解压；节点使用已预热的基础镜像本地构建，避免 GitHub Runner 跨境传输大镜像。MySQL GTID 从库只复制 `wao.%`，复制双线程为 `Yes`、延迟为 0。
 
 共享 Gateway 证书可在重启前用 Windows JDK 执行 `generate-gateway-cert.ps1` 生成。
 

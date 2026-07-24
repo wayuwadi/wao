@@ -1,18 +1,22 @@
-# syntax=docker/dockerfile:1.7
-
 FROM maven:3.9.9-eclipse-temurin-17 AS build
+ARG MAVEN_MIRROR_URL=https://repo.maven.apache.org/maven2
+ENV MAVEN_MIRROR_URL=${MAVEN_MIRROR_URL}
 WORKDIR /workspace
+COPY deploy/maven-settings.xml /root/.m2/settings.xml
 COPY pom.xml ./
 COPY wao-server/pom.xml wao-server/pom.xml
 COPY wao-gateway/pom.xml wao-gateway/pom.xml
+RUN mvn -B -pl wao-server,wao-gateway -am dependency:go-offline -DskipTests
+
 COPY wao-server/src wao-server/src
 COPY wao-gateway/src wao-gateway/src
-RUN --mount=type=cache,target=/root/.m2 \
-    mvn -B -pl wao-server,wao-gateway -am package -DskipTests
+RUN mvn -B -pl wao-server,wao-gateway -am package -DskipTests
 
 FROM eclipse-temurin:17-jre-alpine AS runtime
+ARG ALPINE_MIRROR_HOST=dl-cdn.alpinelinux.org
 WORKDIR /app
-RUN apk add --no-cache curl \
+RUN sed -i "s/dl-cdn.alpinelinux.org/${ALPINE_MIRROR_HOST}/g" /etc/apk/repositories \
+    && apk add --no-cache curl \
     && addgroup -S wao \
     && adduser -S wao -G wao
 USER wao
