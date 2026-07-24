@@ -10,7 +10,7 @@
 
 ## 决策
 
-- 主节点使用 `linux1.wayuwa.cn`，从节点使用 `windows1.wayuwa.cn`，云节点使用固定公网地址。
+- 主节点使用 `linux2.wayuwa.cn`，从节点使用 `windows1.wayuwa.cn`，云节点使用固定公网地址。
 - 两个家庭路由器将 SSH、Gateway、MySQL、Redis、Sentinel 和 DDNS-Go 所需端口转发到对应主机；主节点额外转发 Nacos 端口。
 - GitHub Actions 通过公网直接 SSH 到三个节点，使用专用 ED25519 密钥，并通过 `DEPLOY_SSH_KNOWN_HOSTS` 固定校验三台机器的 SSH 主机密钥。
 - Nginx 通过两个 DDNS 域名访问 Gateway；Redis 与主、从两个 Sentinel 宣告可解析的公网主机名；应用向 Nacos 注册当前公网 IPv4。

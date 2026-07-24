@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-MASTER_PUBLIC_HOST="${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}"
+MASTER_PUBLIC_HOST="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}"
 SLAVE_PUBLIC_HOST="${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}"
 
 check_gateway() {

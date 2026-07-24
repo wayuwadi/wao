@@ -6,7 +6,7 @@
 
 | 节点                   | 公网地址             | 目录                                 |
 | ---------------------- | -------------------- | ------------------------------------ |
-| Linux 主节点（娃弟）   | `linux1.wayuwa.cn`   | `~/Desktop/deploy/wao`               |
+| Linux 主节点（娃弟）   | `linux2.wayuwa.cn`   | `~/Desktop/deploy/wao`               |
 | Windows 从节点（娃哥） | `windows1.wayuwa.cn` | `D:\deploy\wao`                      |
 | 云节点                 | `8.136.152.131`      | `/opt/wao`；前端 `/var/www/wao/dist` |
 
@@ -22,7 +22,7 @@
 
 先确认两个家庭出口不是运营商 CGNAT，并将域名分别解析到对应公网 IPv4：
 
-- `linux1.wayuwa.cn` -> Linux 主节点所在出口；
+- `linux2.wayuwa.cn` -> Linux 主节点所在出口；
 - `windows1.wayuwa.cn` -> Windows 从节点所在出口；
 - `wao.wayuwa.cn` -> `8.136.152.131`。
 
@@ -77,7 +77,7 @@ Windows Server 不支持本项目所需的 Docker Desktop 运行方式，因此�
 
 主、从 Compose 都包含固定版本的 DDNS-Go。首次启动后访问对应节点的 `http://<公网域名>:9876`：
 
-- Linux 主节点配置 `linux1.wayuwa.cn`；
+- Linux 主节点配置 `linux2.wayuwa.cn`；
 - Windows 从节点配置 `windows1.wayuwa.cn`；
 - DNS 服务商 Token 只保存在各自 `ddns-go-data` 数据卷，不写入 `.env`、Git 或 CI。
 
@@ -121,7 +121,7 @@ https://wao.wayuwa.cn/api/hello
 
 CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。
 
-- `MASTER_HOST=linux1.wayuwa.cn`，`SLAVE_HOST=windows1.wayuwa.cn`，云节点使用固定公网地址；
+- `MASTER_HOST=linux2.wayuwa.cn`，`SLAVE_HOST=windows1.wayuwa.cn`，云节点使用固定公网地址；
 - Actions 从 GitHub 托管 Runner 直接 SSH 到三个公网目标，不使用跳板机；
 - `DEPLOY_SSH_KNOWN_HOSTS` 必须保存人工核验后的三个 SSH 主机公钥；
 - 密码登录仅用于首次安装公钥，流水线只使用专用部署密钥；

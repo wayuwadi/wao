@@ -24,10 +24,10 @@ Set-Location D:\CodeSpace\wao
 
 ## Linux 主节点（娃弟）
 
-1. 确认 `linux1.wayuwa.cn` 可解析且 SSH 公网可达，把专用部署公钥加入 `wadi` 的 `authorized_keys`。
+1. 确认 `linux2.wayuwa.cn` 可解析且 SSH 公网可达，把专用部署公钥加入 `wadi` 的 `authorized_keys`。
 2. 将项目放在桌面 `deploy/wao`，复制共享的私有 `deploy/.env`。
 3. 安装 Docker Engine，重新登录使 `docker` 组生效，生成 Gateway 证书，执行 `sh deploy/scripts/deploy-linux.sh master`。
-4. 配置 DDNS-Go 更新 `linux1.wayuwa.cn`，完成路由器端口映射并验证跨节点连通。
+4. 配置 DDNS-Go 更新 `linux2.wayuwa.cn`，完成路由器端口映射并验证跨节点连通。
 
 ## 云服务器
 

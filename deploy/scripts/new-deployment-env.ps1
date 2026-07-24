@@ -1,5 +1,5 @@
 param(
-    [string]$MasterPublicHost = 'linux1.wayuwa.cn',
+    [string]$MasterPublicHost = 'linux2.wayuwa.cn',
     [string]$SlavePublicHost = 'windows1.wayuwa.cn',
 
     [string]$OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.env')
