@@ -8,7 +8,8 @@ x-logging: &default-logging
 
 services:
   mysql-master:
-    image: mysql:9.0
+    image: mysql:9.7.0
+    profiles: ["managed-infra"]
     restart: unless-stopped
     ports:
       - "${MASTER_BIND_IP:-0.0.0.0}:3306:3306"
@@ -89,6 +90,7 @@ services:
 
   nacos:
     image: nacos/nacos-server:v2.4.3
+    profiles: ["managed-infra"]
     restart: unless-stopped
     ports:
       - "${MASTER_BIND_IP:-0.0.0.0}:8848:8848"
@@ -114,6 +116,7 @@ services:
 
   nacos-init-admin:
     image: curlimages/curl:8.10.1
+    profiles: ["managed-infra"]
     restart: "no"
     environment:
       NACOS_PASSWORD: ${NACOS_PASSWORD}
@@ -128,6 +131,7 @@ services:
 
   ddns-go:
     image: jeessy/ddns-go:v6.17.2
+    profiles: ["managed-infra"]
     restart: unless-stopped
     ports:
       - "${MASTER_BIND_IP:-0.0.0.0}:9876:9876"
@@ -152,7 +156,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SERVER_PORT: 8080
-      MYSQL_HOST: mysql-master
+      MYSQL_HOST: ${MYSQL_HOST:-mysql-master}
       MYSQL_PORT: 3306
       DB_NAME: ${DB_NAME:-wao}
       DB_USER: ${DB_USER:-wao_app}
@@ -160,19 +164,16 @@ services:
       REDIS_PASS: ${REDIS_PASS}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
       REDIS_SENTINEL_NODES: ${REDIS_SENTINEL_NODES}
-      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848
+      NACOS_SERVER_ADDR: ${NACOS_SERVER_ADDR:-nacos:8848}
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
+      NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
       NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
     depends_on:
-      mysql-master:
-        condition: service_healthy
       redis-master:
         condition: service_healthy
-      nacos:
-        condition: service_started
-      nacos-init-admin:
-        condition: service_completed_successfully
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/actuator/health"]
       interval: 15s
@@ -200,15 +201,18 @@ services:
       GATEWAY_PORT: 9000
       GATEWAY_SSL_ENABLED: ${GATEWAY_SSL_ENABLED:-true}
       GATEWAY_SSL_PASS: ${GATEWAY_SSL_PASS}
-      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848
+      NACOS_SERVER_ADDR: ${NACOS_SERVER_ADDR:-nacos:8848}
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
+      NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
       NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
     volumes:
       - ./certs/gateway.p12:/run/secrets/gateway.p12:ro
     depends_on:
       wao-server:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-kfsS", "https://127.0.0.1:9000/actuator/health"]
       interval: 15s

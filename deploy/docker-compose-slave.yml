@@ -8,7 +8,7 @@ x-logging: &default-logging
 
 services:
   mysql-slave:
-    image: mysql:9.0
+    image: mysql:9.7.0
     restart: unless-stopped
     ports:
       - "3306:3306"
@@ -128,6 +128,7 @@ services:
       NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
+      NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
       NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
     depends_on:
       mysql-slave:
@@ -164,6 +165,7 @@ services:
       NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
+      NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
       NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
     volumes:
       - ./certs/gateway.p12:/run/secrets/gateway.p12:ro

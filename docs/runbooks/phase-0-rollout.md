@@ -25,9 +25,11 @@ Set-Location D:\CodeSpace\wao
 ## Linux 主节点（娃弟）
 
 1. 确认 `linux2.wayuwa.cn` 可解析且 SSH 公网可达，把专用部署公钥加入 `wadi` 的 `authorized_keys`。
-2. 将项目放在桌面 `deploy/wao`，复制共享的私有 `deploy/.env`。
-3. 安装 Docker Engine，重新登录使 `docker` 组生效，生成 Gateway 证书，执行 `sh deploy/scripts/deploy-linux.sh master`。
-4. 配置 DDNS-Go 更新 `linux2.wayuwa.cn`，完成路由器端口映射并验证跨节点连通。
+2. 将项目放在 XDG 桌面目录的 `deploy/wao`，复制共享的私有 `deploy/.env`。
+3. 当前实机复用已有 MySQL 9.7、Nacos 与 DDNS-Go，在 `.env` 设置 `MANAGE_MASTER_INFRA=false`、`MYSQL_HOST=host.docker.internal`、`NACOS_SERVER_ADDR=host.docker.internal:8848`，并将 `MASTER_BIND_IP` 设为物理网卡地址。
+4. 使用宝塔保存的 MySQL 管理凭据在服务器内部创建 WAO 独立库、应用账号与复制账号；在现有 Nacos 创建 WAO 独立账号。不要输出或重置已有管理密码。
+5. 生成 Gateway 证书，执行 `sh deploy/scripts/deploy-linux.sh master`。脚本会在需要时自动通过免密 `sudo docker` 运行，不要求重登。
+6. 确认现有 DDNS-Go 持续更新 `linux2.wayuwa.cn`，完成路由器端口映射并验证跨节点连通。
 
 ## 云服务器
 
