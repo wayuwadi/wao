@@ -10,7 +10,7 @@ WAO 是一个由 AI 协作开发的前后端分离系统，采用 Spec-Driven De
 | 前端脚手架       | 已完成 | Vue 3、Vite、TypeScript、Pinia、Vue Router 4、Ant Design Vue     |
 | 本地 Demo        | 可运行 | 使用 `local` Profile，不依赖 Docker、MySQL、Redis 或 Nacos       |
 | 生产部署代码     | 已完成 | 双节点 Compose、MySQL 主从、Redis Sentinel、云 Nginx、TLS、CI/CD |
-| 三节点实机上线   | 进行中 | 公网/DDNS 直连已落地；等待节点、DNS、端口映射及 Windows 重启     |
+| 三节点实机上线   | 进行中 | 云前端/HTTPS 与 Linux 主节点已上线；Windows 等待最后一次重启       |
 | Phase 1 业务功能 | 待规格 | 需要设计稿、ER 模型和业务 API 契约                               |
 
 ## 技术栈
@@ -18,7 +18,7 @@ WAO 是一个由 AI 协作开发的前后端分离系统，采用 Spec-Driven De
 - Web：Vue 3、Vite、TypeScript、Ant Design Vue、Pinia、Vue Router 4
 - Server：Java 17、Spring Boot 3、MyBatis-Plus、Flyway
 - Gateway：Spring Cloud Gateway、Nacos 2.4.3
-- Data：MySQL 9、Redis 7 Sentinel
+- Data：MySQL 9.7、Redis 7 Sentinel
 - Delivery：Docker Compose、Nginx、GitHub Actions、公网 DDNS
 
 ## 五分钟启动 Demo（无需 Docker）
@@ -101,7 +101,7 @@ wao/
 - [贡献指南](CONTRIBUTING.md)：小伙伴拉取代码、提交业务架构/ER 图及发起 PR 的规则。
 - [业务架构资料入口](docs/business/README.md)：Phase 1 业务架构图的落位要求。
 
-原版方案与实际实现不一致时，以 `docs/adr/` 中已采纳的 ADR 和当前架构基线为准；原版方案保持不修改，确保决策过程可追溯。
+原版方案与实际实现不一致时，以 `docs/adr/` 中已采纳的 ADR 和当前架构基线为准；原版方案除已确认的主机名勘误外保持归档形态，确保决策过程可追溯。
 
 ## 团队协作
 

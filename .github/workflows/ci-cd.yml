@@ -50,10 +50,10 @@ jobs:
     needs: [backend, frontend]
     strategy:
       matrix:
-        dockerfile: [wao-server/Dockerfile, wao-gateway/Dockerfile]
+        target: [server-runtime, gateway-runtime]
     steps:
       - uses: actions/checkout@v6
-      - run: docker build -f "${{ matrix.dockerfile }}" .
+      - run: docker build -f deploy/Dockerfile --target "${{ matrix.target }}" .
 
   deploy:
     name: Deploy main
@@ -91,7 +91,7 @@ jobs:
           USER: ${{ secrets.MASTER_USER }}
         run: |
           scp wao-release.tgz "$USER@$HOST:/tmp/wao-release.tgz"
-          ssh "$USER@$HOST" 'mkdir -p "$HOME/Desktop/deploy/wao" && tar -xzf /tmp/wao-release.tgz -C "$HOME/Desktop/deploy/wao" && sh "$HOME/Desktop/deploy/wao/deploy/scripts/deploy-linux.sh" master'
+          ssh "$USER@$HOST" 'desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master'
       - name: Deploy slave node
         env:
           HOST: ${{ secrets.SLAVE_HOST }}

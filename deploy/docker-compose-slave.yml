@@ -8,7 +8,7 @@ x-logging: &default-logging
 
 services:
   mysql-slave:
-    image: mysql:9.0
+    image: mysql:9.7.0
     restart: unless-stopped
     ports:
       - "3306:3306"
@@ -88,6 +88,15 @@ services:
     depends_on:
       redis-slave:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli --no-auth-warning -p 26379 -a $$REDIS_PASS ping | grep PONG",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 15
     logging: *default-logging
     networks: [wao]
 
@@ -109,7 +118,8 @@ services:
   wao-server:
     build:
       context: ..
-      dockerfile: wao-server/Dockerfile
+      dockerfile: deploy/Dockerfile
+      target: server-runtime
     image: wao-server:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
@@ -128,6 +138,7 @@ services:
       NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
+      NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
       NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
     depends_on:
       mysql-slave:
@@ -151,7 +162,8 @@ services:
   wao-gateway:
     build:
       context: ..
-      dockerfile: wao-gateway/Dockerfile
+      dockerfile: deploy/Dockerfile
+      target: gateway-runtime
     image: wao-gateway:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
@@ -164,6 +176,7 @@ services:
       NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
+      NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
       NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
     volumes:
       - ./certs/gateway.p12:/run/secrets/gateway.p12:ro

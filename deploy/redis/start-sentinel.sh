@@ -10,8 +10,8 @@ port 26379
 bind 0.0.0.0
 protected-mode yes
 requirepass ${REDIS_PASS}
-resolve-hostnames yes
-announce-hostnames yes
+sentinel resolve-hostnames yes
+sentinel announce-hostnames yes
 sentinel announce-ip ${SENTINEL_ANNOUNCE_HOST}
 sentinel announce-port 26379
 sentinel monitor ${REDIS_MASTER_NAME:-wao-master} ${REDIS_MASTER_HOST} 6379 2

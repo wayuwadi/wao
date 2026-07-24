@@ -15,6 +15,7 @@
 - GitHub Actions 通过公网直接 SSH 到三个节点，使用专用 ED25519 密钥，并通过 `DEPLOY_SSH_KNOWN_HOSTS` 固定校验三台机器的 SSH 主机密钥。
 - Nginx 通过两个 DDNS 域名访问 Gateway；Redis 与主、从两个 Sentinel 宣告可解析的公网主机名；应用向 Nacos 注册当前公网 IPv4。
 - 云节点只运行 Nginx、Certbot 和静态前端，不安装 Docker，不承载数据库、缓存或 Sentinel。
+- Linux 主节点复用机器上已有的 MySQL 9.7、Nacos 与 DDNS-Go；WAO Compose 默认只新增 Redis、Sentinel、App 和 Gateway。`MANAGE_MASTER_INFRA=true` 仅用于没有既有基础设施的新机器。
 - DDNS 负责更新域名。主、从节点每五分钟检测公网 IPv4 变化，并在变化时重建应用与网关容器，刷新 Nacos 注册；云 Nginx 定期重载以重新解析上游域名。
 - 对外用户入口只使用 `https://wao.wayuwa.cn`。Gateway 节点间链路继续使用项目自签 TLS；密码和令牌使用随机强值并保存在节点私有 `.env` 或 GitHub Secrets。
 
