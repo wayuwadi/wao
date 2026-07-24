@@ -70,33 +70,41 @@ export const useDataStore = defineStore('data', () => {
   const apiLive = ref(false)
 
   /**
-   * 从 /api 拉取领域 / 项目 / 任务替换 fixtures；后端不可用时静默保留 fixtures，应用仍可运行。
-   * 当前仅接管读路径；写路径（新建 / 局部更新）暂在本地乐观更新，后续接 POST/PATCH。
+   * 从 /api 拉取各域数据替换 fixtures；后端不可用时静默保留 fixtures，应用仍可运行。
+   *
+   * <p>按域独立容错（{@code Promise.allSettled}）：单个域（如内容域表尚未建好而 500）失败时，
+   * 其余域仍正常接管，且不会拖垮写路径。只要核心读路径（领域 / 项目 / 任务）可达即判定后端在线
+   * （{@code apiLive=true}），从而新建 / 更新会真正落库，而非仅本地乐观更新。
    */
   async function hydrate() {
-    try {
-      const [a, p, t, kb, dc, jb, fl, im, va, ev, sc, sg, gl] = await Promise.all([
-        fetchAreas(), fetchProjects(), fetchTasks(), fetchKbs(), fetchDocs(), fetchJobs(),
-        fetchFiles(), fetchImages(), fetchVault(), fetchEvents(), fetchSchedule(),
-        fetchSuggestions(), fetchGoals(),
-      ])
-      if (a.length) areas.value = a
-      if (p.length) projects.value = p
-      if (t.length) tasks.value = t
-      if (kb.length) kbs.value = kb
-      if (dc.length) dc.forEach((d) => (docs[d.id] = d))
-      if (jb.length) autos.value = jb
-      if (fl.length) files.value = fl
-      if (im.length) imgs.value = im
-      if (va.length) vault.value = va
-      if (ev.length) calEvents.value = ev
-      if (sc.length) schedule.value = sc
-      if (sg.length) suggestions.value = sg
-      if (gl.length) goals.value = gl
-      apiLive.value = true
-    } catch {
-      apiLive.value = false
+    const settle = async <T>(p: Promise<T>): Promise<T | null> => {
+      try {
+        return await p
+      } catch {
+        return null
+      }
     }
+    const [a, p, t, kb, dc, jb, fl, im, va, ev, sc, sg, gl] = await Promise.all([
+      settle(fetchAreas()), settle(fetchProjects()), settle(fetchTasks()), settle(fetchKbs()),
+      settle(fetchDocs()), settle(fetchJobs()), settle(fetchFiles()), settle(fetchImages()),
+      settle(fetchVault()), settle(fetchEvents()), settle(fetchSchedule()),
+      settle(fetchSuggestions()), settle(fetchGoals()),
+    ])
+    if (a?.length) areas.value = a
+    if (p?.length) projects.value = p
+    if (t?.length) tasks.value = t
+    if (kb?.length) kbs.value = kb
+    if (dc?.length) dc.forEach((d) => (docs[d.id] = d))
+    if (jb?.length) autos.value = jb
+    if (fl?.length) files.value = fl
+    if (im?.length) imgs.value = im
+    if (va?.length) vault.value = va
+    if (ev?.length) calEvents.value = ev
+    if (sc?.length) schedule.value = sc
+    if (sg?.length) suggestions.value = sg
+    if (gl?.length) goals.value = gl
+    // 核心读路径任一可达即认为后端在线；写路径（POST/PUT）随之启用。
+    apiLive.value = a !== null && p !== null && t !== null
   }
 
   // ---- getters ----
