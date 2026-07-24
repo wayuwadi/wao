@@ -10,19 +10,21 @@
 
 ## Windows 从节点（娃哥）
 
-当前机器已经启用 WSL 可选功能，必须重启一次才能继续安装 Ubuntu 24.04。重启后以管理员 PowerShell 执行：
+当前状态：已完成。WSL 2.7.10、Ubuntu 24.04、Docker Engine/Compose、六个从节点容器、Windows `portproxy` 和开机保活任务均已运行；公网 Gateway 及数据复制已通过验收。WSL 位于 `D:\WSL\WAO-Ubuntu`，限制为 4 核/8GB。
+
+在 `wage` 的管理员 PowerShell/SSH 会话中可重复执行：
 
 ```powershell
-Set-Location D:\CodeSpace\wao
+Set-Location D:\deploy\wao
 .\deploy\scripts\provision-windows-node.ps1
-.\deploy\scripts\deploy-windows.ps1
+.\deploy\scripts\deploy-windows.ps1 -SkipImageBuild
 ```
 
-Windows 发布包使用 ZIP 而不是 tar.gz，确保中文技术方案文件名可在 Windows 上无损解压；MySQL GTID 从库已限定只复制 `wao.%`。
+Windows 发布包使用 ZIP 而不是 tar.gz，确保中文技术方案文件名可在 Windows 上无损解压；GitHub Actions 同时下发预构建应用镜像，Windows 不依赖 Docker Hub。MySQL GTID 从库只复制 `wao.%`，复制双线程为 `Yes`、延迟为 0。
 
 共享 Gateway 证书可在重启前用 Windows JDK 执行 `generate-gateway-cert.ps1` 生成。
 
-随后配置 DDNS-Go 更新 `windows1.wayuwa.cn`，配置路由器端口映射，并为 `refresh-public-ip.ps1` 建立每五分钟运行的任务计划。
+使用 `sh deploy/scripts/validate-slave.sh` 验证 MySQL、Redis、Sentinel 与 Gateway 全链路。DDNS-Go 的 DNS 服务商 Token 仅保存在本机数据卷；如尚未配置，需要在 `:9876` 管理页完成一次性设置。
 
 ## Linux 主节点（娃弟）
 
@@ -37,7 +39,7 @@ Windows 发布包使用 ZIP 而不是 tar.gz，确保中文技术方案文件名
 
 ## 云服务器
 
-当前状态：已完成。`wao.wayuwa.cn` 已签发并自动续期 HTTPS 证书，静态前端已上线，API 已自动切换到 Linux Gateway。
+当前状态：已完成。`wao.wayuwa.cn` 已签发并自动续期 HTTPS 证书，静态前端已上线，Nginx 已配置 Linux/Windows 双 Gateway 上游；云机保持前端-only，不运行 Docker。
 
 1. 把专用部署公钥加入 root 的 `authorized_keys`，将代码放在 `/opt/wao`；云机不复制包含数据库凭据的 `deploy/.env`。
 2. 将 `wao.wayuwa.cn` 的 A 记录指向 `8.136.152.131`，安全组放行 22、80、443。

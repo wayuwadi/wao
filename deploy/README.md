@@ -34,9 +34,9 @@
 |       3306 |   是   |   是   | MySQL 主从与运维        |
 |       6379 |   是   |   是   | Redis 主从              |
 |      26379 |   是   |   是   | Redis Sentinel          |
-|       8080 |   是   |   是   | Nacos 服务实例发现      |
+|       8080 |  可选  |  可选  | App 直连诊断；Gateway 不依赖公网 8080 |
 |       9000 |   是   |   是   | Gateway / 云 Nginx 上游 |
-|       9876 |   是   |   是   | DDNS-Go 管理            |
+|       9876 |  可选  |  可选  | DDNS-Go 管理            |
 | 8848、9848 |   是   |   否   | Nacos HTTP 与 gRPC      |
 
 云安全组只需放行 22、80 和 443。公网暴露家庭节点数据服务的风险已由项目所有者明确接受；仍必须使用生成脚本产生的强随机密码，不得使用示例值。
@@ -72,7 +72,7 @@ Gateway 证书可以在重启前直接使用 Windows 已安装的 JDK 生成：
 .\deploy\scripts\generate-gateway-cert.ps1
 ```
 
-Windows Server 不支持本项目所需的 Docker Desktop 运行方式，因此从节点在 WSL2 Ubuntu 24.04 的 Docker Engine 中运行 Linux 容器。首次准备需要管理员 PowerShell：
+Windows Server 不支持本项目所需的 Docker Desktop 运行方式，因此从节点在 WSL2 Ubuntu 24.04 的 Docker Engine 中运行 Linux 容器。首次准备需要以 CI/CD 使用的 `wage` 管理员账号执行 PowerShell，确保 WSL 发行版属于同一 Windows 用户：
 
 ```powershell
 .\deploy\scripts\provision-windows-node.ps1
@@ -86,7 +86,7 @@ Windows Server 不支持本项目所需的 Docker Desktop 运行方式，因此�
 
 CI/CD 向 Windows 发送 `D:\deploy\wao-release.zip`，由 PowerShell `Expand-Archive` 解压，以完整保留原版技术方案等中文文件名。MySQL 从库只复制 `wao.%`，不会同步 Linux 主机上已有的其他业务库。
 
-部署脚本会把公开端口从 Windows `0.0.0.0` 转发到 WSL 当前地址。WSL 重启后应再次执行部署脚本，或单独执行 `refresh-wsl-portproxy.ps1`。
+准备脚本在没有现有配置时将 WSL 限制为 4 核/8GB/2GB swap，并创建 `WAO WSL Keepalive` 开机计划任务。部署脚本会把公开端口从 Windows `0.0.0.0` 转发到 WSL 当前地址；每次发布都会刷新 WSL 动态 IP 对应的 `portproxy`。
 
 ## DDNS 与公网 IP 变化
 
@@ -114,11 +114,13 @@ sudo sh deploy/scripts/provision-cloud-node.sh <证书通知邮箱>
 
 ## 数据、备份与验收
 
-MySQL 从库只在数据卷首次初始化时自动配置 GTID 复制。验证：
+MySQL 从库只在数据卷首次初始化时自动配置 GTID 复制。MySQL 9 的复制密码最多 32 个字符，`new-deployment-env.ps1` 已为该字段生成 32 位十六进制随机值。验证：
 
 ```powershell
-docker compose --env-file deploy/.env -f deploy/docker-compose-slave.yml exec mysql-slave mysql -uroot -p -e "SHOW REPLICA STATUS\G"
+wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-slave.sh
 ```
+
+如果主库已经清理了从库所需的早期 binlog，先用 `mysqldump --single-transaction --set-gtid-purged=ON` 生成当前 `wao` 快照，再执行 `bootstrap-mysql-slave.sh <快照.sql.gz>`。该脚本只重置从库 GTID，不修改主库业务数据。
 
 Windows 任务计划每天执行 `deploy\scripts\backup-mysql.ps1`，每月执行 `deploy\scripts\restore-drill.ps1`。备份位于 `deploy\backups`，默认保留 7 天。
 
@@ -138,6 +140,7 @@ CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HO
 
 - `MASTER_HOST=linux2.wayuwa.cn`，`SLAVE_HOST=windows1.wayuwa.cn`，云节点使用固定公网地址；
 - Actions 从 GitHub 托管 Runner 直接 SSH 到三个公网目标，不使用跳板机；
+- Actions 统一构建 `wao-server`/`wao-gateway` 镜像并作为发布制品下发，两台节点只导入镜像和重启 Compose，避免生产节点依赖 Docker Hub 或重复 Maven 构建；
 - `DEPLOY_SSH_KNOWN_HOSTS` 必须保存人工核验后的三个 SSH 主机公钥；
 - 密码登录仅用于首次安装公钥，流水线只使用专用部署密钥；
 - 飞书 Webhook 只保存在 GitHub Secret。所有分支 push 和 Pull Request 都通知 CI 结果，开启 CD 后通知还包含部署结果。

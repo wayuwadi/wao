@@ -21,6 +21,18 @@ function New-RandomSecret {
     [Convert]::ToBase64String($bytes)
 }
 
+function New-MySqlReplicationSecret {
+    $bytes = New-Object byte[] 16
+    $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $generator.GetBytes($bytes)
+    }
+    finally {
+        $generator.Dispose()
+    }
+    ([BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+}
+
 $values = [ordered]@{
     NACOS_SERVER_ADDR            = "${MasterPublicHost}:8848"
     NACOS_USERNAME               = 'nacos'
@@ -34,7 +46,8 @@ $values = [ordered]@{
     DB_PASS                      = (New-RandomSecret)
     DB_ROOT_PASS                 = (New-RandomSecret)
     MYSQL_REPLICATION_USER       = 'wao_repl'
-    MYSQL_REPLICATION_PASSWORD   = (New-RandomSecret)
+    # MySQL 9 replication protocol accepts at most 32 password characters.
+    MYSQL_REPLICATION_PASSWORD   = (New-MySqlReplicationSecret)
     REDIS_PASS                   = (New-RandomSecret)
     REDIS_MASTER_NAME            = 'wao-master'
     REDIS_MASTER_HOST            = $MasterPublicHost
@@ -62,4 +75,4 @@ New-Item -ItemType Directory -Path $parent -Force | Out-Null
 )
 
 Write-Host "Created private deployment configuration at $destination"
-Write-Host 'Copy this same file to deploy/.env on all three nodes over an authenticated encrypted channel.'
+Write-Host 'Copy this same file to deploy/.env on the Linux master and Windows replica over an authenticated encrypted channel.'

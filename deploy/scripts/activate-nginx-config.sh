@@ -20,7 +20,7 @@ export MASTER_PUBLIC_HOST SLAVE_PUBLIC_HOST
 gateway_ready() {
   host="$1"
   getent ahostsv4 "${host}" >/dev/null 2>&1 &&
-    curl -kfsS --max-time 5 "https://${host}:9000/actuator/health" | grep -q '"status":"UP"'
+    curl -kfsS --max-time 5 "https://${host}:9000/api/hello" | grep -q '"code":0'
 }
 
 if gateway_ready "${MASTER_PUBLIC_HOST}" || gateway_ready "${SLAVE_PUBLIC_HOST}"; then

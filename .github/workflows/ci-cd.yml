@@ -48,21 +48,32 @@ jobs:
     name: Container build
     runs-on: ubuntu-latest
     needs: [backend, frontend]
-    strategy:
-      matrix:
-        target: [server-runtime, gateway-runtime]
     steps:
       - uses: actions/checkout@v6
-      - run: docker build -f deploy/Dockerfile --target "${{ matrix.target }}" .
+      - name: Build application images
+        run: |
+          docker build -f deploy/Dockerfile --target server-runtime -t wao-server:latest .
+          docker build -f deploy/Dockerfile --target gateway-runtime -t wao-gateway:latest .
+          docker save wao-server:latest wao-gateway:latest | gzip -1 > wao-app-images.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wao-app-images
+          path: wao-app-images.tar.gz
+          if-no-files-found: error
+          retention-days: 7
 
   deploy:
     name: Deploy main
     runs-on: ubuntu-latest
     needs: [backend, frontend, containers]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     environment: production
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: wao-app-images
+          path: .
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -93,7 +104,8 @@ jobs:
           USER: ${{ secrets.MASTER_USER }}
         run: |
           scp wao-release.tgz "$USER@$HOST:/tmp/wao-release.tgz"
-          ssh "$USER@$HOST" 'desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master'
+          scp wao-app-images.tar.gz "$USER@$HOST:/tmp/wao-app-images.tar.gz"
+          ssh "$USER@$HOST" 'gzip -dc /tmp/wao-app-images.tar.gz | sudo -n docker load; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; SKIP_IMAGE_BUILD=true sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master'
       - name: Deploy slave node
         env:
           HOST: ${{ secrets.SLAVE_HOST }}
@@ -101,6 +113,7 @@ jobs:
         shell: bash
         run: |
           scp wao-release.zip "$USER@$HOST:D:/deploy/wao-release.zip"
+          scp wao-app-images.tar.gz "$USER@$HOST:D:/deploy/wao-app-images.tar.gz"
           scp deploy/scripts/install-release-windows.ps1 "$USER@$HOST:D:/deploy/install-release-windows.ps1"
           ssh "$USER@$HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
       - name: Deploy cloud frontend

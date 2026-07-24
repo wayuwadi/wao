@@ -1,5 +1,5 @@
 param(
-    [string]$Distribution = 'Ubuntu-24.04',
+    [string]$Distribution = 'Ubuntu',
     [string]$ListenAddress = '0.0.0.0'
 )
 

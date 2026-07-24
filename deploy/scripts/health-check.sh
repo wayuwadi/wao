@@ -9,7 +9,7 @@ check_gateway() {
   host="$2"
   state_file="/tmp/wao_alert_${name}"
 
-  if curl -kfsS --max-time 10 "https://${host}:9000/actuator/health" | grep -q '"status":"UP"'; then
+  if curl -kfsS --max-time 10 "https://${host}:9000/api/hello" | grep -q '"code":0'; then
     rm -f "${state_file}"
     return 0
   fi
