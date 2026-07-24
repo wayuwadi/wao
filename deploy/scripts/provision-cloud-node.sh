@@ -20,7 +20,6 @@ install -d -m 0755 /var/www/wao/dist /var/www/certbot
 
 certificate_dir='/etc/letsencrypt/live/wao.wayuwa.cn'
 bootstrap_config='/etc/nginx/conf.d/wao.bootstrap.conf'
-final_config='/etc/nginx/conf.d/wao.wayuwa.cn.conf'
 
 if [ ! -f "${certificate_dir}/fullchain.pem" ]; then
   install -m 0644 "${deploy_dir}/nginx/wao.bootstrap.conf" "${bootstrap_config}"
@@ -36,18 +35,13 @@ if [ ! -f "${certificate_dir}/fullchain.pem" ]; then
     --domain wao.wayuwa.cn
 fi
 
-sh "${script_dir}/render-nginx-config.sh"
-install -m 0644 "${deploy_dir}/nginx/wao.wayuwa.cn.conf" "${final_config}"
-rm -f "${bootstrap_config}"
-
 renewal_hook='/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh'
 install -d -m 0755 "$(dirname -- "${renewal_hook}")"
 printf '%s\n' '#!/bin/sh' 'set -eu' 'nginx -t' 'systemctl reload nginx' >"${renewal_hook}"
 chmod 0755 "${renewal_hook}"
 
-nginx -t
-systemctl enable --now nginx
-systemctl reload nginx
+sh "${script_dir}/activate-nginx-config.sh"
+systemctl enable nginx
 cron_file='/etc/cron.d/wao-health'
 printf '%s\n' \
   'SHELL=/bin/sh' \
@@ -60,7 +54,7 @@ ddns_reload_cron='/etc/cron.d/wao-nginx-ddns-reload'
 printf '%s\n' \
   'SHELL=/bin/sh' \
   'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
-  '*/5 * * * * root nginx -t >/dev/null 2>&1 && systemctl reload nginx' \
+  "*/5 * * * * root ${script_dir}/activate-nginx-config.sh >/dev/null 2>&1" \
   >"${ddns_reload_cron}"
 chmod 0644 "${ddns_reload_cron}"
 

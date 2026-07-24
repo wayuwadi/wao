@@ -95,7 +95,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\wao\deploy\scr
 sudo sh deploy/scripts/provision-cloud-node.sh <证书通知邮箱>
 ```
 
-脚本只安装 Nginx 与 Certbot，签发 TLS 证书，安装健康检查与 Nginx DDNS 重载任务，并验证证书续期。云节点不安装 Docker、不运行数据库或 Sentinel；前端生产制品放在 `/var/www/wao/dist`。证书签发前的 HTTP 引导配置也会提供静态前端，`/api/` 暂时返回 503。
+脚本只安装 Nginx 与 Certbot，签发 TLS 证书，安装健康检查与 Nginx DDNS 激活任务，并验证证书续期。云节点不安装 Docker、不运行数据库或 Sentinel；前端生产制品放在 `/var/www/wao/dist`。证书签发前的 HTTP 引导配置会提供静态前端；证书签发后，如果两个 Gateway 健康端点均未就绪，则使用 HTTPS 待后端模式并让 `/api/` 返回 503。定时任务检测到至少一个 Gateway 健康端点可用后，会自动切换到正式双 Gateway 配置。
 
 ## 数据、备份与验收
 
