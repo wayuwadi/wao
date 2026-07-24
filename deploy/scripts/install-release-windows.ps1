@@ -1,5 +1,5 @@
 param(
-    [string]$ArchivePath = 'D:\deploy\wao-release.tgz',
+    [string]$ArchivePath = 'D:\deploy\wao-release.zip',
     [string]$TargetPath = 'D:\deploy\wao'
 )
 
@@ -17,8 +17,18 @@ if ($target -eq $targetRoot) {
 }
 
 New-Item -ItemType Directory -Path $target -Force | Out-Null
-& tar.exe -xzf $archive -C $target
-if ($LASTEXITCODE -ne 0) { throw 'Release extraction failed.' }
+switch ([IO.Path]::GetExtension($archive).ToLowerInvariant()) {
+    '.zip' {
+        Expand-Archive -LiteralPath $archive -DestinationPath $target -Force
+    }
+    '.tgz' {
+        & tar.exe -xzf $archive -C $target
+        if ($LASTEXITCODE -ne 0) { throw 'Release extraction failed.' }
+    }
+    default {
+        throw "Unsupported release archive: $archive"
+    }
+}
 
 $deployScript = Join-Path $target 'deploy\scripts\deploy-windows.ps1'
 if (-not (Test-Path -LiteralPath $deployScript -PathType Leaf)) {

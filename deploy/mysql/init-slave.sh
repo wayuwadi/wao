@@ -4,8 +4,14 @@ set -eu
 : "${MYSQL_SOURCE_HOST:?MYSQL_SOURCE_HOST is required}"
 : "${MYSQL_REPLICATION_USER:?MYSQL_REPLICATION_USER is required}"
 : "${MYSQL_REPLICATION_PASSWORD:?MYSQL_REPLICATION_PASSWORD is required}"
+: "${DB_NAME:?DB_NAME is required}"
 
-mysql --protocol=socket -uroot -p"${MYSQL_ROOT_PASSWORD}" <<SQL
+case "${DB_NAME}" in
+  *[!A-Za-z0-9_]*|'') echo 'DB_NAME must contain only letters, digits, and underscores.' >&2; exit 2 ;;
+esac
+
+MYSQL_PWD="${MYSQL_ROOT_PASSWORD}" mysql --protocol=socket -uroot <<SQL
+CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 CHANGE REPLICATION SOURCE TO
   SOURCE_HOST='${MYSQL_SOURCE_HOST}',
   SOURCE_PORT=3306,

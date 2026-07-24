@@ -18,6 +18,8 @@ Set-Location D:\CodeSpace\wao
 .\deploy\scripts\deploy-windows.ps1
 ```
 
+Windows 发布包使用 ZIP 而不是 tar.gz，确保中文技术方案文件名可在 Windows 上无损解压；MySQL GTID 从库已限定只复制 `wao.%`。
+
 共享 Gateway 证书可在重启前用 Windows JDK 执行 `generate-gateway-cert.ps1` 生成。
 
 随后配置 DDNS-Go 更新 `windows1.wayuwa.cn`，配置路由器端口映射，并为 `refresh-public-ip.ps1` 建立每五分钟运行的任务计划。

@@ -74,7 +74,9 @@ jobs:
           npm ci
           npm run build
       - name: Package release
-        run: tar --exclude=.git --exclude=node_modules --exclude=target -czf wao-release.tgz .
+        run: |
+          git archive --format=tar.gz -o wao-release.tgz HEAD
+          git archive --format=zip -o wao-release.zip HEAD
       - name: Configure SSH
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
@@ -98,7 +100,7 @@ jobs:
           USER: ${{ secrets.SLAVE_USER }}
         shell: bash
         run: |
-          scp wao-release.tgz "$USER@$HOST:D:/deploy/wao-release.tgz"
+          scp wao-release.zip "$USER@$HOST:D:/deploy/wao-release.zip"
           scp deploy/scripts/install-release-windows.ps1 "$USER@$HOST:D:/deploy/install-release-windows.ps1"
           ssh "$USER@$HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
       - name: Deploy cloud frontend
