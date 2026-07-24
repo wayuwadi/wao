@@ -182,6 +182,11 @@ services:
       NACOS_PASSWORD: ${NACOS_PASSWORD}
       NACOS_NAMESPACE: ${NACOS_NAMESPACE:-public}
       NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
+      FEISHU_LOGIN_ENABLED: ${FEISHU_LOGIN_ENABLED:-false}
+      FEISHU_APP_ID: ${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET: ${FEISHU_APP_SECRET:-}
+      FEISHU_REDIRECT_URI: ${FEISHU_REDIRECT_URI:-https://wao.wayuwa.cn/api/auth/feishu/callback}
+      FEISHU_FRONTEND_URL: ${FEISHU_FRONTEND_URL:-https://wao.wayuwa.cn}
     depends_on:
       redis-master:
         condition: service_healthy

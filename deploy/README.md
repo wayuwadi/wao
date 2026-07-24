@@ -138,6 +138,20 @@ https://wao.wayuwa.cn/api/hello
 
 CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。
 
+## 飞书登录
+
+将飞书 App ID 与 App Secret 仅写入主节点和从节点的私有 `deploy/.env`，不要提交 Git 或写入 GitHub Actions 日志：
+
+```dotenv
+FEISHU_LOGIN_ENABLED=true
+FEISHU_APP_ID=<飞书 App ID>
+FEISHU_APP_SECRET=<飞书 App Secret>
+FEISHU_REDIRECT_URI=https://wao.wayuwa.cn/api/auth/feishu/callback
+FEISHU_FRONTEND_URL=https://wao.wayuwa.cn
+```
+
+在飞书开发者后台的安全设置中添加同一个重定向 URL。网页应用的工作台在线网页主页配置为 `https://wao.wayuwa.cn/api/auth/feishu/workbench`；PC 端“跳转至浏览器打开新页面”配置为 `https://wao.wayuwa.cn/api/auth/feishu/browser`。修改后在各节点执行正常发布脚本重建 `wao-server` 容器。
+
 - `MASTER_HOST=linux2.wayuwa.cn`，`SLAVE_HOST=windows1.wayuwa.cn`，云节点使用固定公网地址；
 - Actions 从 GitHub 托管 Runner 直接 SSH 到三个公网目标，不使用跳板机；
 - Actions 在 Runner 上使用官方软件源执行容器构建检查，但 CD 只下发约百 KB 的源码发布包；两台家庭节点使用已预热的 Maven/Temurin 基础镜像和阿里云 Maven/Alpine 镜像本地分层构建，避免跨境传输百 MB 镜像制品；

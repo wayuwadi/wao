@@ -1,12 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/composables/toast'
-import { useSessionStore } from '@/stores/session'
+import { startFeishuLogin } from '@/api/feishu'
 
-const session = useSessionStore()
-const router = useRouter()
-const route = useRoute()
 const qrCanvas = ref<HTMLCanvasElement | null>(null)
 
 const feats = [
@@ -62,9 +58,10 @@ function refreshQR() {
 }
 
 function loginGo() {
-  session.login()
-  router.replace((route.query.redirect as string) || '/')
+  void startFeishuLogin('qr')
 }
+
+function authorizationLogin() { void startFeishuLogin('authorization') }
 
 function altLogin(label: string) {
   toast(`已预留「${label}」登录入口，本次演示未接入`)
@@ -107,6 +104,7 @@ onMounted(() => drawQR(20260723))
         <button class="primary" @click="loginGo">
           <i class="ri-qr-scan-2-line"></i>模拟扫码成功，进入系统
         </button>
+        <button class="sso" @click="authorizationLogin">使用飞书授权登录</button>
         <div class="divider"><span></span>其他登录方式（预留）<span></span></div>
         <div class="alts">
           <button v-for="a in alts" :key="a.label" class="alt" @click="altLogin(a.label)">
