@@ -12,7 +12,7 @@
 
 从节点启用 Windows Server 2025 官方支持的 WSL2，安装 Ubuntu 24.04，并在发行版内按 Docker 官方 Ubuntu 仓库安装 Docker Engine 与 Compose 插件。Compose 文件保存在 `D:\deploy\wao`，由 WSL 通过 `/mnt/d/deploy/wao` 访问；数据使用 Docker named volumes，避免数据库落在 `/mnt/d`。
 
-Windows 主机运行 Tailscale。容器端口发布到 WSL 的所有地址，再由 Windows `netsh interface portproxy` 仅监听 Tailscale IPv4 并转发到 WSL 动态 IP。每次 WSL 重启后必须刷新转发规则。
+容器端口发布到 WSL 的所有地址，再由 Windows `netsh interface portproxy` 监听 `0.0.0.0` 并转发到 WSL 动态 IP。每次 WSL 重启后必须刷新转发规则。公网通信决策见 ADR-005。
 
 ## 后果
 

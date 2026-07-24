@@ -11,7 +11,7 @@ services:
     image: mysql:9.0
     restart: unless-stopped
     ports:
-      - "${MASTER_TAILSCALE_IP}:3306:3306"
+      - "${MASTER_BIND_IP:-0.0.0.0}:3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASS}
       MYSQL_DATABASE: ${DB_NAME:-wao}
@@ -45,7 +45,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "${MASTER_TAILSCALE_IP}:6379:6379"
+      - "${MASTER_BIND_IP:-0.0.0.0}:6379:6379"
     environment:
       REDIS_PASS: ${REDIS_PASS}
     command:
@@ -72,12 +72,12 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "${MASTER_TAILSCALE_IP}:26379:26379"
+      - "${MASTER_BIND_IP:-0.0.0.0}:26379:26379"
     environment:
-      REDIS_MASTER_HOST: ${MASTER_TAILSCALE_IP}
+      REDIS_MASTER_HOST: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
       REDIS_PASS: ${REDIS_PASS}
-      SENTINEL_ANNOUNCE_IP: ${MASTER_TAILSCALE_IP}
+      SENTINEL_ANNOUNCE_HOST: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}
     command: ["/bin/sh", "/opt/wao/start-sentinel.sh"]
     volumes:
       - ./redis/start-sentinel.sh:/opt/wao/start-sentinel.sh:ro
@@ -91,8 +91,8 @@ services:
     image: nacos/nacos-server:v2.4.3
     restart: unless-stopped
     ports:
-      - "${MASTER_TAILSCALE_IP}:8848:8848"
-      - "${MASTER_TAILSCALE_IP}:9848:9848"
+      - "${MASTER_BIND_IP:-0.0.0.0}:8848:8848"
+      - "${MASTER_BIND_IP:-0.0.0.0}:9848:9848"
     environment:
       MODE: standalone
       NACOS_AUTH_ENABLE: "true"
@@ -130,7 +130,7 @@ services:
     image: jeessy/ddns-go:v6.17.2
     restart: unless-stopped
     ports:
-      - "${MASTER_TAILSCALE_IP}:9876:9876"
+      - "${MASTER_BIND_IP:-0.0.0.0}:9876:9876"
     volumes:
       - ddns-go-data:/root
     deploy:
@@ -148,7 +148,7 @@ services:
     image: wao-server:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
-      - "${MASTER_TAILSCALE_IP}:8080:8080"
+      - "${MASTER_BIND_IP:-0.0.0.0}:8080:8080"
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SERVER_PORT: 8080
@@ -160,10 +160,10 @@ services:
       REDIS_PASS: ${REDIS_PASS}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
       REDIS_SENTINEL_NODES: ${REDIS_SENTINEL_NODES}
-      NACOS_SERVER_ADDR: ${MASTER_TAILSCALE_IP}:8848
+      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
-      NACOS_DISCOVERY_IP: ${MASTER_TAILSCALE_IP}
+      NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
     depends_on:
       mysql-master:
         condition: service_healthy
@@ -194,16 +194,16 @@ services:
     image: wao-gateway:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
-      - "${MASTER_TAILSCALE_IP}:9000:9000"
+      - "${MASTER_BIND_IP:-0.0.0.0}:9000:9000"
     environment:
       SPRING_PROFILES_ACTIVE: prod
       GATEWAY_PORT: 9000
       GATEWAY_SSL_ENABLED: ${GATEWAY_SSL_ENABLED:-true}
       GATEWAY_SSL_PASS: ${GATEWAY_SSL_PASS}
-      NACOS_SERVER_ADDR: ${MASTER_TAILSCALE_IP}:8848
+      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
-      NACOS_DISCOVERY_IP: ${MASTER_TAILSCALE_IP}
+      NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
     volumes:
       - ./certs/gateway.p12:/run/secrets/gateway.p12:ro
     depends_on:

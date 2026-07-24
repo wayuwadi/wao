@@ -14,7 +14,7 @@ services:
       - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASS}
-      MYSQL_SOURCE_HOST: ${MASTER_TAILSCALE_IP}
+      MYSQL_SOURCE_HOST: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}
       MYSQL_REPLICATION_USER: ${MYSQL_REPLICATION_USER:-wao_repl}
       MYSQL_REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD}
       DB_NAME: ${DB_NAME:-wao}
@@ -49,13 +49,13 @@ services:
     ports:
       - "6379:6379"
     environment:
-      REDIS_MASTER_HOST: ${MASTER_TAILSCALE_IP}
+      REDIS_MASTER_HOST: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}
       REDIS_PASS: ${REDIS_PASS}
-      REDIS_REPLICA_ANNOUNCE_IP: ${SLAVE_TAILSCALE_IP}
+      REDIS_REPLICA_ANNOUNCE_HOST: ${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}
     command:
       - /bin/sh
       - -ec
-      - exec redis-server /usr/local/etc/redis/redis.conf --replicaof "$$REDIS_MASTER_HOST" 6379 --masterauth "$$REDIS_PASS" --requirepass "$$REDIS_PASS" --replica-announce-ip "$$REDIS_REPLICA_ANNOUNCE_IP" --replica-announce-port 6379
+      - exec redis-server /usr/local/etc/redis/redis.conf --replicaof "$$REDIS_MASTER_HOST" 6379 --masterauth "$$REDIS_PASS" --requirepass "$$REDIS_PASS" --replica-announce-ip "$$REDIS_REPLICA_ANNOUNCE_HOST" --replica-announce-port 6379
     volumes:
       - redis-slave-data:/data
       - ./redis/slave.conf:/usr/local/etc/redis/redis.conf:ro
@@ -78,10 +78,10 @@ services:
     ports:
       - "26379:26379"
     environment:
-      REDIS_MASTER_HOST: ${MASTER_TAILSCALE_IP}
+      REDIS_MASTER_HOST: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
       REDIS_PASS: ${REDIS_PASS}
-      SENTINEL_ANNOUNCE_IP: ${SLAVE_TAILSCALE_IP}
+      SENTINEL_ANNOUNCE_HOST: ${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}
     command: ["/bin/sh", "/opt/wao/start-sentinel.sh"]
     volumes:
       - ./redis/start-sentinel.sh:/opt/wao/start-sentinel.sh:ro
@@ -117,7 +117,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SERVER_PORT: 8080
-      MYSQL_HOST: ${MASTER_TAILSCALE_IP}
+      MYSQL_HOST: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}
       MYSQL_PORT: 3306
       DB_NAME: ${DB_NAME:-wao}
       DB_USER: ${DB_USER:-wao_app}
@@ -125,10 +125,10 @@ services:
       REDIS_PASS: ${REDIS_PASS}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
       REDIS_SENTINEL_NODES: ${REDIS_SENTINEL_NODES}
-      NACOS_SERVER_ADDR: ${MASTER_TAILSCALE_IP}:8848
+      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
-      NACOS_DISCOVERY_IP: ${SLAVE_TAILSCALE_IP}
+      NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
     depends_on:
       mysql-slave:
         condition: service_healthy
@@ -161,10 +161,10 @@ services:
       GATEWAY_PORT: 9000
       GATEWAY_SSL_ENABLED: ${GATEWAY_SSL_ENABLED:-true}
       GATEWAY_SSL_PASS: ${GATEWAY_SSL_PASS}
-      NACOS_SERVER_ADDR: ${MASTER_TAILSCALE_IP}:8848
+      NACOS_SERVER_ADDR: ${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}:8848
       NACOS_USERNAME: ${NACOS_USERNAME:-nacos}
       NACOS_PASSWORD: ${NACOS_PASSWORD}
-      NACOS_DISCOVERY_IP: ${SLAVE_TAILSCALE_IP}
+      NACOS_DISCOVERY_IP: ${NODE_PUBLIC_IP}
     volumes:
       - ./certs/gateway.p12:/run/secrets/gateway.p12:ro
     depends_on:

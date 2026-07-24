@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-: "${MASTER_TAILSCALE_IP:?MASTER_TAILSCALE_IP is required}"
-: "${SLAVE_TAILSCALE_IP:?SLAVE_TAILSCALE_IP is required}"
+MASTER_PUBLIC_HOST="${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}"
+SLAVE_PUBLIC_HOST="${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}"
 
 check_gateway() {
   name="$1"
@@ -32,6 +32,6 @@ check_gateway() {
 }
 
 failed=0
-check_gateway master "${MASTER_TAILSCALE_IP}" || failed=1
-check_gateway slave "${SLAVE_TAILSCALE_IP}" || failed=1
+check_gateway master "${MASTER_PUBLIC_HOST}" || failed=1
+check_gateway slave "${SLAVE_PUBLIC_HOST}" || failed=1
 exit "${failed}"

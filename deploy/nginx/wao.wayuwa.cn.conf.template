@@ -1,7 +1,7 @@
 upstream wao_gateway {
     least_conn;
-    server ${MASTER_TAILSCALE_IP}:9000 max_fails=3 fail_timeout=10s;
-    server ${SLAVE_TAILSCALE_IP}:9000 max_fails=3 fail_timeout=10s;
+    server ${MASTER_PUBLIC_HOST}:9000 max_fails=3 fail_timeout=10s;
+    server ${SLAVE_PUBLIC_HOST}:9000 max_fails=3 fail_timeout=10s;
     keepalive 32;
 }
 

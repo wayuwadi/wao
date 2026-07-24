@@ -12,19 +12,6 @@ fi
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 project_root="$(CDPATH= cd -- "${script_dir}/../.." && pwd)"
 deploy_dir="${project_root}/deploy"
-env_file="${deploy_dir}/.env"
-
-test -f "${env_file}" || { echo "Missing ${env_file}" >&2; exit 1; }
-set -a
-. "${env_file}"
-set +a
-: "${CLOUD_TAILSCALE_IP:?CLOUD_TAILSCALE_IP is required}"
-
-actual_tailscale_ip="$(tailscale ip -4)"
-if [ "${actual_tailscale_ip}" != "${CLOUD_TAILSCALE_IP}" ]; then
-  echo "Tailscale IP mismatch: expected ${CLOUD_TAILSCALE_IP}, got ${actual_tailscale_ip}" >&2
-  exit 1
-fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -61,15 +48,21 @@ chmod 0755 "${renewal_hook}"
 nginx -t
 systemctl enable --now nginx
 systemctl reload nginx
-sh "${script_dir}/deploy-linux.sh" cloud-sentinel
-
 cron_file='/etc/cron.d/wao-health'
 printf '%s\n' \
   'SHELL=/bin/sh' \
   'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
-  "* * * * * root set -a; . ${env_file}; set +a; ${script_dir}/health-check.sh" \
+  "* * * * * root ${script_dir}/health-check.sh" \
   >"${cron_file}"
 chmod 0644 "${cron_file}"
+
+ddns_reload_cron='/etc/cron.d/wao-nginx-ddns-reload'
+printf '%s\n' \
+  'SHELL=/bin/sh' \
+  'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
+  '*/5 * * * * root nginx -t >/dev/null 2>&1 && systemctl reload nginx' \
+  >"${ddns_reload_cron}"
+chmod 0644 "${ddns_reload_cron}"
 
 certbot renew --dry-run
 echo 'Cloud node provisioning completed.'

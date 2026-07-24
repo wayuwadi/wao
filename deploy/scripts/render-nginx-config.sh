@@ -3,14 +3,17 @@ set -eu
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 deploy_dir="$(CDPATH= cd -- "${script_dir}/.." && pwd)"
-set -a
-. "${deploy_dir}/.env"
-set +a
+if [ -f "${deploy_dir}/.env" ]; then
+  set -a
+  . "${deploy_dir}/.env"
+  set +a
+fi
 
-: "${MASTER_TAILSCALE_IP:?MASTER_TAILSCALE_IP is required}"
-: "${SLAVE_TAILSCALE_IP:?SLAVE_TAILSCALE_IP is required}"
+MASTER_PUBLIC_HOST="${MASTER_PUBLIC_HOST:-linux1.wayuwa.cn}"
+SLAVE_PUBLIC_HOST="${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}"
+export MASTER_PUBLIC_HOST SLAVE_PUBLIC_HOST
 
-envsubst '${MASTER_TAILSCALE_IP} ${SLAVE_TAILSCALE_IP}' \
+envsubst '${MASTER_PUBLIC_HOST} ${SLAVE_PUBLIC_HOST}' \
   <"${deploy_dir}/nginx/wao.wayuwa.cn.conf.template" \
   >"${deploy_dir}/nginx/wao.wayuwa.cn.conf"
 

@@ -1,15 +1,6 @@
 param(
-    [Parameter(Mandatory = $true)]
-    [ValidatePattern('^100\.')]
-    [string]$MasterTailscaleIp,
-
-    [Parameter(Mandatory = $true)]
-    [ValidatePattern('^100\.')]
-    [string]$SlaveTailscaleIp,
-
-    [Parameter(Mandatory = $true)]
-    [ValidatePattern('^100\.')]
-    [string]$CloudTailscaleIp,
+    [string]$MasterPublicHost = 'linux1.wayuwa.cn',
+    [string]$SlavePublicHost = 'windows1.wayuwa.cn',
 
     [string]$OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.env')
 )
@@ -31,7 +22,7 @@ function New-RandomSecret {
 }
 
 $values = [ordered]@{
-    NACOS_SERVER_ADDR            = "${MasterTailscaleIp}:8848"
+    NACOS_SERVER_ADDR            = "${MasterPublicHost}:8848"
     NACOS_USERNAME               = 'nacos'
     NACOS_PASSWORD               = (New-RandomSecret)
     NACOS_AUTH_TOKEN             = (New-RandomSecret -ByteCount 48)
@@ -45,11 +36,11 @@ $values = [ordered]@{
     MYSQL_REPLICATION_PASSWORD   = (New-RandomSecret)
     REDIS_PASS                   = (New-RandomSecret)
     REDIS_MASTER_NAME            = 'wao-master'
-    REDIS_MASTER_HOST            = $MasterTailscaleIp
-    REDIS_SENTINEL_NODES         = "${MasterTailscaleIp}:26379,${SlaveTailscaleIp}:26379,${CloudTailscaleIp}:26379"
-    MASTER_TAILSCALE_IP          = $MasterTailscaleIp
-    SLAVE_TAILSCALE_IP           = $SlaveTailscaleIp
-    CLOUD_TAILSCALE_IP           = $CloudTailscaleIp
+    REDIS_MASTER_HOST            = $MasterPublicHost
+    REDIS_SENTINEL_NODES         = "${MasterPublicHost}:26379,${SlavePublicHost}:26379"
+    MASTER_PUBLIC_HOST           = $MasterPublicHost
+    SLAVE_PUBLIC_HOST            = $SlavePublicHost
+    MASTER_BIND_IP               = '0.0.0.0'
     GATEWAY_SSL_ENABLED          = 'true'
     GATEWAY_SSL_PASS             = (New-RandomSecret)
     JWT_SECRET                   = (New-RandomSecret -ByteCount 48)
