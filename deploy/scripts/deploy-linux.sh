@@ -53,7 +53,18 @@ if [ "${role}" = "master" ]; then
   esac
 fi
 
-NODE_PUBLIC_IP="${NODE_PUBLIC_IP:-$(curl -4fsS --max-time 10 https://api.ipify.org)}"
+detect_public_ipv4() {
+  case "${role}" in
+    master) host="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}" ;;
+    slave) host="${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}" ;;
+  esac
+  getent ahostsv4 "${host}" 2>/dev/null | awk '$2 == "STREAM" { print $1; exit }'
+}
+
+NODE_PUBLIC_IP="${NODE_PUBLIC_IP:-$(detect_public_ipv4)}"
+if [ -z "${NODE_PUBLIC_IP}" ]; then
+  NODE_PUBLIC_IP="$(curl -4fsS --max-time 10 https://api.ipify.org || curl -4fsS --max-time 10 https://4.ipw.cn)"
+fi
 case "${NODE_PUBLIC_IP}" in
   *[!0-9.]*|'') echo "Invalid public IPv4 address: ${NODE_PUBLIC_IP}" >&2; exit 1 ;;
 esac
