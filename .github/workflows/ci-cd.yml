@@ -50,10 +50,10 @@ jobs:
     needs: [backend, frontend]
     strategy:
       matrix:
-        dockerfile: [wao-server/Dockerfile, wao-gateway/Dockerfile]
+        target: [server-runtime, gateway-runtime]
     steps:
       - uses: actions/checkout@v6
-      - run: docker build -f "${{ matrix.dockerfile }}" .
+      - run: docker build -f deploy/Dockerfile --target "${{ matrix.target }}" .
 
   deploy:
     name: Deploy main

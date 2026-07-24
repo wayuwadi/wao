@@ -148,7 +148,8 @@ services:
   wao-server:
     build:
       context: ..
-      dockerfile: wao-server/Dockerfile
+      dockerfile: deploy/Dockerfile
+      target: server-runtime
     image: wao-server:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:
@@ -191,7 +192,8 @@ services:
   wao-gateway:
     build:
       context: ..
-      dockerfile: wao-gateway/Dockerfile
+      dockerfile: deploy/Dockerfile
+      target: gateway-runtime
     image: wao-gateway:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
     ports:

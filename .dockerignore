@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+.vscode
+**/target
+**/node_modules
+wao-web
+deploy/.env
+deploy/certs
+deploy/backups
+*.log
+*.p12
