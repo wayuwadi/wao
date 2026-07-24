@@ -140,7 +140,7 @@ CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HO
 
 - `MASTER_HOST=linux2.wayuwa.cn`，`SLAVE_HOST=windows1.wayuwa.cn`，云节点使用固定公网地址；
 - Actions 从 GitHub 托管 Runner 直接 SSH 到三个公网目标，不使用跳板机；
-- Actions 统一构建 `wao-server`/`wao-gateway` 镜像并作为发布制品下发，两台节点只导入镜像和重启 Compose，避免生产节点依赖 Docker Hub 或重复 Maven 构建；
+- Actions 在 Runner 上执行容器构建检查，但 CD 只下发约百 KB 的源码发布包；两台家庭节点使用已预热的 Maven/Temurin 基础镜像和阿里云 Maven 镜像本地分层构建，避免跨境传输百 MB 镜像制品；
 - `DEPLOY_SSH_KNOWN_HOSTS` 必须保存人工核验后的三个 SSH 主机公钥；
 - 密码登录仅用于首次安装公钥，流水线只使用专用部署密钥；
 - 飞书 Webhook 只保存在 GitHub Secret。所有分支 push 和 Pull Request 都通知 CI 结果，开启 CD 后通知还包含部署结果。

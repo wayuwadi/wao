@@ -1,7 +1,7 @@
 param(
     [string]$ArchivePath = 'D:\deploy\wao-release.zip',
     [string]$TargetPath = 'D:\deploy\wao',
-    [string]$ImageArchivePath = 'D:\deploy\wao-app-images.tar.gz',
+    [string]$ImageArchivePath,
     [string]$Distribution = 'Ubuntu'
 )
 
@@ -38,7 +38,7 @@ if (-not (Test-Path -LiteralPath $deployScript -PathType Leaf)) {
 }
 
 $imageLoaded = $false
-if (Test-Path -LiteralPath $ImageArchivePath -PathType Leaf) {
+if ($ImageArchivePath -and (Test-Path -LiteralPath $ImageArchivePath -PathType Leaf)) {
     . (Join-Path $target 'deploy\scripts\wsl-common.ps1')
     $linuxImageArchive = ConvertTo-WaoWslPath $ImageArchivePath
     & wsl.exe -d $Distribution -u root -- docker load -i $linuxImageArchive
