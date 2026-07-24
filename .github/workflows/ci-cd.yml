@@ -120,3 +120,43 @@ jobs:
           response="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors https://wao.wayuwa.cn/api/hello)"
           printf '%s' "$response" | grep -q '"code":0'
           printf '%s' "$response" | grep -q '"service":"wao-server"'
+
+  notify:
+    name: Feishu notification
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [backend, frontend, containers, deploy]
+    env:
+      FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+      BACKEND_RESULT: ${{ needs.backend.result }}
+      FRONTEND_RESULT: ${{ needs.frontend.result }}
+      CONTAINERS_RESULT: ${{ needs.containers.result }}
+      DEPLOY_RESULT: ${{ needs.deploy.result }}
+    steps:
+      - name: Notify Feishu
+        if: env.FEISHU_WEBHOOK_URL != ''
+        env:
+          REPOSITORY: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.head_ref || github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          ci_result="success"
+          for result in "$BACKEND_RESULT" "$FRONTEND_RESULT" "$CONTAINERS_RESULT"; do
+            if [ "$result" != "success" ]; then
+              ci_result="failure"
+            fi
+          done
+
+          overall="✅ 成功"
+          if [ "$ci_result" != "success" ] || { [ "$DEPLOY_RESULT" != "success" ] && [ "$DEPLOY_RESULT" != "skipped" ]; }; then
+            overall="❌ 失败"
+          fi
+
+          short_sha="$(printf '%s' "$COMMIT_SHA" | cut -c1-8)"
+          text="WAO CI/CD ${overall}\n仓库：${REPOSITORY}\n触发：${ACTOR} / ${EVENT_NAME}\n分支：${REF_NAME}\n提交：${short_sha}\n后端：${BACKEND_RESULT}\n前端：${FRONTEND_RESULT}\n容器：${CONTAINERS_RESULT}\n部署：${DEPLOY_RESULT}\n详情：${RUN_URL}"
+          payload="$(jq -n --arg text "$text" '{msg_type:"text",content:{text:$text}}')"
+          response="$(curl --fail --silent --show-error -X POST "$FEISHU_WEBHOOK_URL" -H 'Content-Type: application/json' --data "$payload")"
+          printf '%s' "$response" | jq -e '(.code // .StatusCode // 0) == 0' >/dev/null
