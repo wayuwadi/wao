@@ -78,30 +78,35 @@ jobs:
       - name: Configure SSH
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-          MASTER_HOST: ${{ secrets.MASTER_HOST }}
-          SLAVE_HOST: ${{ secrets.SLAVE_HOST }}
-          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$MASTER_HOST" "$SLAVE_HOST" "$CLOUD_HOST" >> ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
       - name: Deploy master node
         env:
           HOST: ${{ secrets.MASTER_HOST }}
           USER: ${{ secrets.MASTER_USER }}
+          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
+          CLOUD_USER: ${{ secrets.CLOUD_USER }}
         run: |
-          scp wao-release.tgz "$USER@$HOST:/tmp/wao-release.tgz"
-          ssh "$USER@$HOST" 'mkdir -p "$HOME/Desktop/deploy/wao" && tar -xzf /tmp/wao-release.tgz -C "$HOME/Desktop/deploy/wao" && sh "$HOME/Desktop/deploy/wao/deploy/scripts/deploy-linux.sh" master'
+          proxy="$CLOUD_USER@$CLOUD_HOST"
+          scp -o ProxyJump="$proxy" wao-release.tgz "$USER@$HOST:/tmp/wao-release.tgz"
+          ssh -o ProxyJump="$proxy" "$USER@$HOST" 'mkdir -p "$HOME/Desktop/deploy/wao" && tar -xzf /tmp/wao-release.tgz -C "$HOME/Desktop/deploy/wao" && sh "$HOME/Desktop/deploy/wao/deploy/scripts/deploy-linux.sh" master'
       - name: Deploy slave node
         env:
           HOST: ${{ secrets.SLAVE_HOST }}
           USER: ${{ secrets.SLAVE_USER }}
+          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
+          CLOUD_USER: ${{ secrets.CLOUD_USER }}
         shell: bash
         run: |
-          scp wao-release.tgz "$USER@$HOST:D:/deploy/wao-release.tgz"
-          scp deploy/scripts/install-release-windows.ps1 "$USER@$HOST:D:/deploy/install-release-windows.ps1"
-          ssh "$USER@$HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
+          proxy="$CLOUD_USER@$CLOUD_HOST"
+          scp -o ProxyJump="$proxy" wao-release.tgz "$USER@$HOST:D:/deploy/wao-release.tgz"
+          scp -o ProxyJump="$proxy" deploy/scripts/install-release-windows.ps1 "$USER@$HOST:D:/deploy/install-release-windows.ps1"
+          ssh -o ProxyJump="$proxy" "$USER@$HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
       - name: Deploy cloud frontend
         env:
           HOST: ${{ secrets.CLOUD_HOST }}
@@ -110,3 +115,8 @@ jobs:
           ssh "$USER@$HOST" 'mkdir -p /tmp/wao-dist'
           scp -r wao-web/dist/. "$USER@$HOST:/tmp/wao-dist/"
           ssh "$USER@$HOST" 'install -d /var/www/wao/dist && find /var/www/wao/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && cp -a /tmp/wao-dist/. /var/www/wao/dist/ && nginx -t && systemctl reload nginx'
+      - name: Verify production
+        run: |
+          response="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors https://wao.wayuwa.cn/api/hello)"
+          printf '%s' "$response" | grep -q '"code":0'
+          printf '%s' "$response" | grep -q '"service":"wao-server"'
