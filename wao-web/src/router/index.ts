@@ -1,15 +1,46 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomeView from '@/views/HomeView.vue'
+import AppLayout from '@/layouts/AppLayout.vue'
+import { useSessionStore } from '@/stores/session'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
-      path: '/',
-      name: 'home',
-      component: HomeView,
+      path: '/login',
+      name: 'login',
+      component: () => import('@/views/LoginView.vue'),
+      meta: { public: true },
     },
+    {
+      path: '/',
+      component: AppLayout,
+      children: [
+        { path: '', name: 'home', component: () => import('@/views/HomeView.vue'), meta: { module: 'home', tabKind: 'module' } },
+        { path: 'projects', name: 'projects', component: () => import('@/views/ProjectsView.vue'), meta: { module: 'projects', tabKind: 'module' } },
+        { path: 'projects/:id', name: 'project', component: () => import('@/views/ProjectDetailView.vue'), meta: { module: 'projects', tabKind: 'project' } },
+        { path: 'calendar', name: 'calendar', component: () => import('@/views/CalendarView.vue'), meta: { module: 'calendar', tabKind: 'module' } },
+        { path: 'knowledge', name: 'knowledge', component: () => import('@/views/KnowledgeView.vue'), meta: { module: 'knowledge', tabKind: 'module' } },
+        { path: 'kb/:id', name: 'kb', component: () => import('@/views/KbDetailView.vue'), meta: { module: 'knowledge', tabKind: 'kb' } },
+        { path: 'whiteboard', name: 'whiteboard', component: () => import('@/views/WhiteboardView.vue'), meta: { module: 'whiteboard', tabKind: 'module' } },
+        { path: 'files', name: 'files', component: () => import('@/views/FilesView.vue'), meta: { module: 'files', tabKind: 'module' } },
+        { path: 'automation', name: 'automation', component: () => import('@/views/AutomationView.vue'), meta: { module: 'automation', tabKind: 'module' } },
+        { path: 'vault', name: 'vault', component: () => import('@/views/VaultView.vue'), meta: { module: 'vault', tabKind: 'module' } },
+        { path: 'settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { module: 'settings', tabKind: 'module' } },
+      ],
+    },
+    { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
+})
+
+router.beforeEach((to) => {
+  const session = useSessionStore()
+  if (!to.meta.public && !session.authed) {
+    return { name: 'login', query: to.fullPath !== '/' ? { redirect: to.fullPath } : undefined }
+  }
+  if (to.name === 'login' && session.authed) {
+    return { path: (to.query.redirect as string) || '/' }
+  }
+  return true
 })
 
 export default router

@@ -1,0 +1,72 @@
+import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
+import { dueInfo, priorityMeta, statusMeta } from '@/utils/domain'
+import type { Project, Task } from '@/types'
+
+/** 任务 / 项目的展示装饰 —— 对齐原型 decoTask / decoProj，供列表、看板、总览、抽屉复用。 */
+export function useDeco() {
+  const data = useDataStore()
+  const session = useSessionStore()
+
+  function decoTask(t: Task) {
+    const p = data.projectById(t.project)
+    const pr = priorityMeta(t.pr)
+    const st = statusMeta(t.status)
+    const due = dueInfo(t.due, data.today)
+    const owner = session.memberById(t.owner)
+    const done = t.status === '已完成'
+    return {
+      ...t,
+      done,
+      deco: done ? 'line-through' : 'none',
+      titleColor: done ? '#9A9DA9' : '#1A1C23',
+      checkBg: done ? '#4358D6' : '#FFFFFF',
+      checkBorder: done ? '#4358D6' : '#C9CDDA',
+      checkOp: done ? 1 : 0,
+      projName: p?.name ?? '未关联',
+      projColor: data.areaColor(p?.area ?? ''),
+      prBg: pr.bg,
+      prColor: pr.color,
+      stBg: st.bg,
+      stColor: st.color,
+      dueStr: due.label,
+      dueColor: due.color,
+      ownerName: owner.name,
+      ownerColor: owner.color,
+      ownerInitial: owner.initial,
+      waitBadge: t.waiting ?? '',
+    }
+  }
+
+  function decoProj(p: Project) {
+    const a = data.areaById(p.area)
+    const st = statusMeta(p.status)
+    const due = dueInfo(p.due, data.today)
+    const owner = session.memberById(p.owner)
+    const projectTasks = data.tasksByProject(p.id)
+    return {
+      ...p,
+      areaName: a?.name ?? '未分类',
+      areaColor: a?.color ?? '#9A9DA9',
+      stBg: st.bg,
+      stColor: st.color,
+      pct: p.progress,
+      progColor: p.status === '有风险' ? '#D9A13B' : p.status === '已完成' ? '#5CB88A' : '#4358D6',
+      dueStr: due.label,
+      dueColor: due.color,
+      ownerName: owner.name,
+      ownerColor: owner.color,
+      ownerInitial: owner.initial,
+      memberAvs: p.members.map((m) => {
+        const mm = session.memberById(m)
+        return { initial: mm.initial, color: mm.color }
+      }),
+      initialChar: (p.name || '·').slice(0, 1),
+      taskOpen: projectTasks.filter((t) => t.status !== '已完成').length,
+      taskTotal: projectTasks.length,
+      goalShort: p.goal,
+    }
+  }
+
+  return { decoTask, decoProj }
+}

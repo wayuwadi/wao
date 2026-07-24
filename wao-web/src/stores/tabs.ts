@@ -1,0 +1,147 @@
+import { ref } from 'vue'
+import { defineStore } from 'pinia'
+import type { Tab } from '@/types'
+import { moduleTab } from '@/config/nav'
+
+/**
+ * 页签 store：多页签栏的可视化路由栈。
+ * 「首页」固定不可关闭且恒在最左；页签列表 + 激活项持久化到 localStorage。
+ * 关闭操作返回「应导航到的新激活页签」，由调用方（AppLayout）执行 router.push。
+ */
+
+const TABS_KEY = 'wao-tabs-v1'
+
+interface Persisted {
+  tabs: Tab[]
+  activeKey: string
+}
+
+function load(): Persisted {
+  try {
+    const raw = localStorage.getItem(TABS_KEY)
+    if (raw) return JSON.parse(raw) as Persisted
+  } catch {
+    /* ignore */
+  }
+  return { tabs: [], activeKey: 'home' }
+}
+
+export const useTabsStore = defineStore('tabs', () => {
+  const persisted = load()
+  const tabs = ref<Tab[]>(persisted.tabs.length ? persisted.tabs : [moduleTab('home')])
+  const activeKey = ref(persisted.activeKey || 'home')
+  ensureHome()
+
+  function ensureHome() {
+    if (!tabs.value.some((t) => t.key === 'home')) tabs.value.unshift(moduleTab('home'))
+  }
+
+  function persist() {
+    localStorage.setItem(TABS_KEY, JSON.stringify({ tabs: tabs.value, activeKey: activeKey.value }))
+  }
+
+  /** 打开（或复用）一个页签并激活它。 */
+  function open(tab: Tab) {
+    const existing = tabs.value.find((t) => t.key === tab.key)
+    if (existing) {
+      existing.path = tab.path
+      if (tab.label) existing.label = tab.label
+    } else {
+      tabs.value.push(tab)
+    }
+    activeKey.value = tab.key
+    persist()
+  }
+
+  function activate(key: string) {
+    if (tabs.value.some((t) => t.key === key)) {
+      activeKey.value = key
+      persist()
+    }
+  }
+
+  /** 详情视图加载实体后回填页签标签。 */
+  function setLabel(key: string, label: string) {
+    const t = tabs.value.find((t) => t.key === key)
+    if (t && label) {
+      t.label = label
+      persist()
+    }
+  }
+
+  function activeTab(): Tab | undefined {
+    return tabs.value.find((t) => t.key === activeKey.value)
+  }
+
+  /** 关闭一个页签；若关闭的是激活页签，激活相邻页签。返回新激活页签用于导航。 */
+  function close(key: string): Tab | null {
+    const idx = tabs.value.findIndex((t) => t.key === key)
+    const target = tabs.value[idx]
+    if (idx < 0 || !target || !target.closable) return null
+    const wasActive = activeKey.value === key
+    tabs.value.splice(idx, 1)
+    ensureHome()
+    if (wasActive) {
+      const next = tabs.value[idx] ?? tabs.value[idx - 1] ?? tabs.value[0]
+      if (next) {
+        activeKey.value = next.key
+        persist()
+        return next
+      }
+    }
+    persist()
+    return null
+  }
+
+  function closeMany(predicate: (t: Tab, i: number) => boolean): Tab | null {
+    const kept = tabs.value.filter((t, i) => !t.closable || !predicate(t, i))
+    tabs.value = kept
+    ensureHome()
+    if (!tabs.value.some((t) => t.key === activeKey.value)) {
+      const next = tabs.value[tabs.value.length - 1] ?? tabs.value[0]
+      if (next) {
+        activeKey.value = next.key
+        persist()
+        return next
+      }
+    }
+    persist()
+    return null
+  }
+
+  /** 关闭其它（保留首页与目标）。 */
+  function closeOthers(key: string) {
+    return closeMany((t) => t.key !== key)
+  }
+
+  /** 关闭目标左边的可关页签。 */
+  function closeLeft(key: string) {
+    const idx = tabs.value.findIndex((t) => t.key === key)
+    return closeMany((_t, i) => i < idx)
+  }
+
+  /** 关闭目标右边的可关页签。 */
+  function closeRight(key: string) {
+    const idx = tabs.value.findIndex((t) => t.key === key)
+    return closeMany((_t, i) => i > idx)
+  }
+
+  /** 关闭全部（仅保留首页）。 */
+  function closeAll() {
+    return closeMany(() => true)
+  }
+
+  return {
+    tabs,
+    activeKey,
+    open,
+    activate,
+    setLabel,
+    activeTab,
+    close,
+    closeOthers,
+    closeLeft,
+    closeRight,
+    closeAll,
+  }
+})

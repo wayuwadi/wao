@@ -1,0 +1,28 @@
+# 测试环境：H2 内存库替代 MySQL，关闭 Flyway / Nacos / Redis，使上下文可在无外部依赖时启动。
+spring:
+  application:
+    name: wao-server
+  datasource:
+    url: jdbc:h2:mem:waotest;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  flyway:
+    enabled: false
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+
+management:
+  health:
+    redis:
+      enabled: false
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
