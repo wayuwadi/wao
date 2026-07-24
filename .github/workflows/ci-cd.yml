@@ -89,24 +89,18 @@ jobs:
         env:
           HOST: ${{ secrets.MASTER_HOST }}
           USER: ${{ secrets.MASTER_USER }}
-          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
-          CLOUD_USER: ${{ secrets.CLOUD_USER }}
         run: |
-          proxy="$CLOUD_USER@$CLOUD_HOST"
-          scp -o ProxyJump="$proxy" wao-release.tgz "$USER@$HOST:/tmp/wao-release.tgz"
-          ssh -o ProxyJump="$proxy" "$USER@$HOST" 'mkdir -p "$HOME/Desktop/deploy/wao" && tar -xzf /tmp/wao-release.tgz -C "$HOME/Desktop/deploy/wao" && sh "$HOME/Desktop/deploy/wao/deploy/scripts/deploy-linux.sh" master'
+          scp wao-release.tgz "$USER@$HOST:/tmp/wao-release.tgz"
+          ssh "$USER@$HOST" 'mkdir -p "$HOME/Desktop/deploy/wao" && tar -xzf /tmp/wao-release.tgz -C "$HOME/Desktop/deploy/wao" && sh "$HOME/Desktop/deploy/wao/deploy/scripts/deploy-linux.sh" master'
       - name: Deploy slave node
         env:
           HOST: ${{ secrets.SLAVE_HOST }}
           USER: ${{ secrets.SLAVE_USER }}
-          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
-          CLOUD_USER: ${{ secrets.CLOUD_USER }}
         shell: bash
         run: |
-          proxy="$CLOUD_USER@$CLOUD_HOST"
-          scp -o ProxyJump="$proxy" wao-release.tgz "$USER@$HOST:D:/deploy/wao-release.tgz"
-          scp -o ProxyJump="$proxy" deploy/scripts/install-release-windows.ps1 "$USER@$HOST:D:/deploy/install-release-windows.ps1"
-          ssh -o ProxyJump="$proxy" "$USER@$HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
+          scp wao-release.tgz "$USER@$HOST:D:/deploy/wao-release.tgz"
+          scp deploy/scripts/install-release-windows.ps1 "$USER@$HOST:D:/deploy/install-release-windows.ps1"
+          ssh "$USER@$HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
       - name: Deploy cloud frontend
         env:
           HOST: ${{ secrets.CLOUD_HOST }}

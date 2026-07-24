@@ -27,3 +27,4 @@ Thumbs.db
 deploy/data/
 deploy/backups/
 deploy/nginx/wao.wayuwa.cn.conf
+deploy/.public-ip

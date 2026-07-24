@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳。
+已被 [ADR-005](005-public-ddns-network.md) 取代。
 
 ## 决策
 

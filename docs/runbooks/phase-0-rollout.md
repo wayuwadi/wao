@@ -2,50 +2,50 @@
 
 ## 已完成
 
-- Java 17 多模块工程、统一响应、异常处理、Hello API 与测试。
-- Spring Cloud Gateway 路由、请求 ID、Nacos 2.x 服务发现配置与测试。
-- Vue 3 前端、Pinia 状态、Ant Design Vue 页面及单元测试。
-- Linux 主节点、Windows/WSL2 从节点、云 Sentinel 的 Docker Compose。
-- MySQL GTID 主从、Redis 主从与三 Sentinel、DDNS-Go、Gateway TLS、备份恢复脚本。
-- GitHub Actions 构建、测试、容器构建与基于 SSH 密钥的三节点发布。
-- 本机经 Vite -> Gateway -> wao-server 调用 `GET /api/hello` 验证 HTTP 200。
+- Java 17 多模块、Gateway、Nacos、Vue 3 前端与 Hello API 纵向切片。
+- Linux 主节点、Windows/WSL2 从节点及云前端节点的部署与运维脚本。
+- MySQL GTID 主从、Redis 主从与双 Sentinel、DDNS-Go、Gateway TLS、Nginx、备份恢复。
+- GitHub Actions 测试、容器构建、三节点 SSH 发布和飞书结果通知。
+- 本机 Vite -> Gateway -> WAO Server 的 `GET /api/hello` 验证。
 
 ## Windows 从节点（娃哥）
 
-当前机器已经启用 WSL 可选功能，Windows 必须重启一次才能继续。重启后，以管理员 PowerShell 在仓库根目录执行：
+当前机器已经启用 WSL 可选功能，必须重启一次才能继续安装 Ubuntu 24.04。重启后以管理员 PowerShell 执行：
 
 ```powershell
+Set-Location D:\CodeSpace\wao
 .\deploy\scripts\provision-windows-node.ps1
+.\deploy\scripts\deploy-windows.ps1
 ```
 
-脚本会把 Ubuntu 24.04 安装到 `D:\WSL\Ubuntu-24.04`，并在 WSL 内安装 Docker Engine。随后：
+共享 Gateway 证书可在重启前用 Windows JDK 执行 `generate-gateway-cert.ps1` 生成。
 
-1. 从 Tailscale 官方渠道下载 MSI，执行 `install-tailscale-windows.ps1` 并完成交互登录。
-2. 根据根目录 `.env.example` 创建 `deploy\.env`，使用新生成的强随机凭据。
-3. 执行 `generate-gateway-cert.ps1`，再执行 `deploy-windows.ps1`。
-4. 通过 Tailscale 打开 DDNS-Go 的 9876 端口，配置 `windows1.wayuwa.cn`。
+随后配置 DDNS-Go 更新 `windows1.wayuwa.cn`，配置路由器端口映射，并为 `refresh-public-ip.ps1` 建立每五分钟运行的任务计划。
 
 ## Linux 主节点（娃弟）
 
-1. 安装并登录 Tailscale，安装 Docker Engine 与 Compose 插件。
-2. 将项目放在桌面 `deploy/wao`，创建私有的 `deploy/.env`。
-3. 生成 Gateway 证书，执行 `sh deploy/scripts/deploy-linux.sh master`。
-4. 通过 Tailscale 打开 DDNS-Go 的 9876 端口，配置 `linux1.wayuwa.cn`。
+1. 确认 `linux1.wayuwa.cn` 可解析且 SSH 公网可达，把专用部署公钥加入 `wadi` 的 `authorized_keys`。
+2. 将项目放在桌面 `deploy/wao`，复制共享的私有 `deploy/.env`。
+3. 安装 Docker Engine，重新登录使 `docker` 组生效，生成 Gateway 证书，执行 `sh deploy/scripts/deploy-linux.sh master`。
+4. 配置 DDNS-Go 更新 `linux1.wayuwa.cn`，完成路由器端口映射并验证跨节点连通。
 
 ## 云服务器
 
-1. 执行 `install-tailscale-linux.sh` 并完成登录，安装 Docker Engine。
-2. 创建私有的 `deploy/.env`，启动 `cloud-sentinel`。
-3. 将 `wao.wayuwa.cn` 的公网 DNS 记录指向云服务器。
-4. 执行 `provision-cloud-node.sh <证书通知邮箱>`，完成 Nginx、证书、云 Sentinel、健康检查和续期验证。
-5. 构建并上传前端到 `/var/www/wao/dist`。
+1. 把专用部署公钥加入 root 的 `authorized_keys`，将代码放在 `/opt/wao`；云机不复制包含数据库凭据的 `deploy/.env`。
+2. 将 `wao.wayuwa.cn` 的 A 记录指向 `8.136.152.131`，安全组放行 22、80、443。
+3. 执行 `provision-cloud-node.sh <证书通知邮箱>`，完成 Nginx、证书、健康检查和续期验证。云机不安装 Docker，也不运行数据库或 Sentinel。
+4. 构建并上传前端到 `/var/www/wao/dist`。
+
+## CI/CD 开启条件
+
+- 三个公网 SSH 目标均已授权专用部署公钥；
+- 三个 SSH 主机公钥已人工核验并写入 `DEPLOY_SSH_KNOWN_HOSTS`；
+- 两个 DDNS 域名、公网端口映射和 `wao.wayuwa.cn` DNS 已生效；
+- 主、从节点已拥有同一份私有 `deploy/.env` 和对应 Gateway 证书；
+- 手工首发与数据复制验收通过后，再将 `DEPLOY_ENABLED` 设为 `true`。
 
 ## 上线验收
 
-```text
-https://wao.wayuwa.cn/api/hello
-```
+访问 `https://wao.wayuwa.cn/api/hello`，应得到 HTTP 200、`X-Request-Id` 和 `code=0`。随后检查 MySQL `SHOW REPLICA STATUS`、两个 Sentinel 的 master 视图、Nacos 的两组实例，以及一次备份恢复演练。双 Sentinel 只提供监控与发现；整机故障下的自动切换要等独立第三仲裁节点加入后再启用。
 
-应返回 HTTP 200、`X-Request-Id` 响应头和 `code=0` 的统一 JSON。随后检查 MySQL `SHOW REPLICA STATUS`、三个 Sentinel 的 master 视图、两台应用实例的 Nacos 注册状态，以及一次备份恢复演练。
-
-真实密码、Token、私钥和 DNS 服务商凭据不得写入仓库。SSH 密码只用于首次安装公钥，CI/CD 只使用专用部署密钥。
+真实密码、Token、私钥和 DNS 凭据不得写入仓库。SSH 密码只用于首次安装公钥，CI/CD 只使用专用部署密钥。

@@ -1,118 +1,128 @@
 # WAO 部署说明
 
-## 目录约定
+当前采用公网 + DDNS 三节点直连，不依赖 Tailscale。原版方案保持归档，实际网络决策以 [ADR-005](../docs/adr/005-public-ddns-network.md) 为准。
 
-- Linux 主节点：`~/Desktop/deploy/wao`
-- Windows 从节点：`D:\deploy\wao`
-- 云服务器：应用源码建议 `/opt/wao`，前端制品 `/var/www/wao/dist`
+## 节点与目录
 
-每台机器的 `deploy/.env` 都是私有文件，不提交 Git。以根目录 `.env.example` 为模板，只保留本机角色需要的值。
+| 节点                   | 公网地址             | 目录                                 |
+| ---------------------- | -------------------- | ------------------------------------ |
+| Linux 主节点（娃弟）   | `linux1.wayuwa.cn`   | `~/Desktop/deploy/wao`               |
+| Windows 从节点（娃哥） | `windows1.wayuwa.cn` | `D:\deploy\wao`                      |
+| 云节点                 | `8.136.152.131`      | `/opt/wao`；前端 `/var/www/wao/dist` |
 
-三台机器加入同一 Tailnet 并取得 IP 后，可在 Windows 管理节点一次性生成共享的强随机配置：
-
-```powershell
-.\deploy\scripts\new-deployment-env.ps1 `
-  -MasterTailscaleIp <主节点IP> `
-  -SlaveTailscaleIp <从节点IP> `
-  -CloudTailscaleIp <云节点IP>
-```
-
-通过已认证的加密通道把生成的同一份 `deploy/.env` 复制到三台机器，Linux 上执行 `chmod 600 deploy/.env`。脚本不向终端打印任何密钥。
-
-## 部署前置
-
-1. 三台机器安装并登录 Tailscale，记录私网 IP。
-2. Linux 主节点安装 Docker Engine；Windows Server 从节点执行 `provision-windows-node.ps1`，在 WSL2 Ubuntu 24.04 中安装 Docker Engine。不要在 Windows Server 安装 Docker Desktop。
-3. 防火墙只允许 Tailscale 网段访问 3306、6379、8848、9000、9876、26379。
-4. 在主、从节点分别生成 Gateway PKCS12：Linux 执行 `sh deploy/scripts/generate-gateway-cert.sh`，Windows 执行 `deploy\scripts\generate-gateway-cert.ps1`。
-
-Ubuntu 节点可先安装 Tailscale，再完成浏览器授权：
-
-```bash
-sudo sh deploy/scripts/install-tailscale-linux.sh
-sudo tailscale up
-```
-
-Windows 版 Tailscale 请从官方渠道下载 MSI，然后以管理员 PowerShell 校验签名并安装：
+每台机器的 `deploy/.env` 都是私有文件，不提交 Git。在 Windows 管理节点生成一份共享的强随机配置：
 
 ```powershell
-.\deploy\scripts\install-tailscale-windows.ps1 -MsiPath <下载的MSI路径>
-& "$env:ProgramFiles\Tailscale\tailscale.exe" up
+.\deploy\scripts\new-deployment-env.ps1
 ```
 
-## 启动
+通过已经校验主机密钥的 SSH/SCP 把同一份 `deploy/.env` 复制到主、从两个家庭节点，Linux 上执行 `chmod 600 deploy/.env`。生成脚本不向终端打印密钥。云节点只托管前端和 Nginx，不保存数据库或缓存凭据。
 
-主节点：
+## 公网与路由器前置
+
+先确认两个家庭出口不是运营商 CGNAT，并将域名分别解析到对应公网 IPv4：
+
+- `linux1.wayuwa.cn` -> Linux 主节点所在出口；
+- `windows1.wayuwa.cn` -> Windows 从节点所在出口；
+- `wao.wayuwa.cn` -> `8.136.152.131`。
+
+家庭路由器需要 TCP 端口映射：
+
+|       端口 | 主节点 | 从节点 | 用途                    |
+| ---------: | :----: | :----: | ----------------------- |
+|         22 |   是   |   是   | SSH / CI/CD             |
+|       3306 |   是   |   是   | MySQL 主从与运维        |
+|       6379 |   是   |   是   | Redis 主从              |
+|      26379 |   是   |   是   | Redis Sentinel          |
+|       8080 |   是   |   是   | Nacos 服务实例发现      |
+|       9000 |   是   |   是   | Gateway / 云 Nginx 上游 |
+|       9876 |   是   |   是   | DDNS-Go 管理            |
+| 8848、9848 |   是   |   否   | Nacos HTTP 与 gRPC      |
+
+云安全组只需放行 22、80 和 443。公网暴露家庭节点数据服务的风险已由项目所有者明确接受；仍必须使用生成脚本产生的强随机密码，不得使用示例值。
+
+## 节点初始化与启动
+
+Linux 主节点安装 Docker Engine 与 Compose 插件：
 
 ```bash
+sudo sh deploy/scripts/install-docker-engine.sh
+sh deploy/scripts/generate-gateway-cert.sh
 sh deploy/scripts/deploy-linux.sh master
 ```
 
-从节点（PowerShell）：
+安装脚本会把当前登录用户加入 `docker` 组；重新登录后再执行部署。主节点部署脚本会为当前用户安装每五分钟运行的公网 IP 刷新任务。
+
+Gateway 证书可以在重启前直接使用 Windows 已安装的 JDK 生成：
 
 ```powershell
-.\deploy\scripts\deploy-windows.ps1
+.\deploy\scripts\generate-gateway-cert.ps1
 ```
 
-从节点首次准备需要管理员 PowerShell 执行：
+Windows Server 不支持本项目所需的 Docker Desktop 运行方式，因此从节点在 WSL2 Ubuntu 24.04 的 Docker Engine 中运行 Linux 容器。首次准备需要管理员 PowerShell：
 
 ```powershell
 .\deploy\scripts\provision-windows-node.ps1
 ```
 
-如果脚本返回 3010，重启 Windows 后再次执行。部署脚本会刷新只监听 Tailscale IPv4 的 WSL 端口转发。
+如果返回 3010，重启 Windows 后再次执行。然后执行：
 
-## DDNS
+```powershell
+.\deploy\scripts\deploy-windows.ps1
+```
 
-主、从 Compose 都包含固定版本的 DDNS-Go。首次启动后只通过 Tailscale 访问 `http://<节点Tailscale-IP>:9876`：
+部署脚本会把公开端口从 Windows `0.0.0.0` 转发到 WSL 当前地址。WSL 重启后应再次执行部署脚本，或单独执行 `refresh-wsl-portproxy.ps1`。
 
-- Linux 主节点配置 `linux1.wayuwa.cn`。
-- Windows 从节点配置 `windows1.wayuwa.cn`。
-- DNS 服务商 Token 仅保存在各自的 `ddns-go-data` 数据卷，不写入 `.env`、仓库或 CI。
+## DDNS 与公网 IP 变化
 
-完成后从公网解析器验证两个记录都指向各自的公网出口地址。
+主、从 Compose 都包含固定版本的 DDNS-Go。首次启动后访问对应节点的 `http://<公网域名>:9876`：
+
+- Linux 主节点配置 `linux1.wayuwa.cn`；
+- Windows 从节点配置 `windows1.wayuwa.cn`；
+- DNS 服务商 Token 只保存在各自 `ddns-go-data` 数据卷，不写入 `.env`、Git 或 CI。
+
+Linux 主节点使用 `refresh-public-ip.sh master`；Windows 从节点使用 `refresh-public-ip.ps1`。公网地址变化时脚本会刷新 Nacos 中的实例注册地址。Windows 可在任务计划程序中让登录用户每五分钟运行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\wao\deploy\scripts\refresh-public-ip.ps1
+```
 
 ## 云节点
 
-先确认 `wao.wayuwa.cn` 已解析到云服务器、80/443 已放行，并将仓库放在 `/opt/wao`。然后一次性安装 Nginx/Certbot、签发证书、启动云 Sentinel、安装健康检查和验证续期：
+先确认 `wao.wayuwa.cn` 已解析到云服务器且 80/443 可访问。将代码放在 `/opt/wao` 后执行：
 
 ```bash
 sudo sh deploy/scripts/provision-cloud-node.sh <证书通知邮箱>
 ```
 
-MySQL 从库只在数据卷首次初始化时自动配置 GTID 复制。验证命令：
+脚本只安装 Nginx 与 Certbot，签发 TLS 证书，安装健康检查与 Nginx DDNS 重载任务，并验证证书续期。云节点不安装 Docker、不运行数据库或 Sentinel；前端生产制品放在 `/var/www/wao/dist`。
+
+## 数据、备份与验收
+
+MySQL 从库只在数据卷首次初始化时自动配置 GTID 复制。验证：
 
 ```powershell
 docker compose --env-file deploy/.env -f deploy/docker-compose-slave.yml exec mysql-slave mysql -uroot -p -e "SHOW REPLICA STATUS\G"
 ```
 
-## 备份
+Windows 任务计划每天执行 `deploy\scripts\backup-mysql.ps1`，每月执行 `deploy\scripts\restore-drill.ps1`。备份位于 `deploy\backups`，默认保留 7 天。
 
-Windows 任务计划每天执行 `deploy\scripts\backup-mysql.ps1`；每月执行 `deploy\scripts\restore-drill.ps1`。备份保存在 `deploy\backups`，默认保留 7 天。
+最终入口应为：
 
-## Nginx 与证书
-
-云服务器写好 `deploy/.env` 后，推荐使用上一节的 `provision-cloud-node.sh` 完成首次初始化。它先启用仅支持 ACME 的 HTTP 配置，证书签发成功后再切换到 HTTPS 生产配置，避免证书尚不存在时 `nginx -t` 失败。
-
-后续只需在模板变更时重新渲染：
-
-```bash
-sh deploy/scripts/render-nginx-config.sh
-sudo install -m 0644 deploy/nginx/wao.wayuwa.cn.conf /etc/nginx/conf.d/wao.wayuwa.cn.conf
-sudo nginx -t && sudo systemctl reload nginx
+```text
+https://wao.wayuwa.cn/api/hello
 ```
 
-前端生产制品同步到 `/var/www/wao/dist`，然后执行 `nginx -t && systemctl reload nginx`。
+应返回 HTTP 200、`X-Request-Id` 响应头和 `code=0` 的统一 JSON；随后检查 MySQL 复制、两个 Sentinel 的 master 视图和 Nacos 中的两台应用实例。
 
-## GitHub Secrets
+当前只有主、从两个 Sentinel。它们可提供监控和客户端发现，但任一整机离线后无法形成可靠多数派，因此不承诺整机故障下的 Redis 自动切换。后续如需自动故障转移，应增加独立的第三仲裁节点。
 
-启用 CD 前配置：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`，并将仓库变量 `DEPLOY_ENABLED` 设为 `true`。
+## GitHub Actions
 
-- `MASTER_HOST`、`SLAVE_HOST` 使用 Tailscale IPv4。
-- `CLOUD_HOST` 使用云服务器固定公网地址。
-- `DEPLOY_SSH_KNOWN_HOSTS` 固定保存三个目标的 SSH 主机公钥。
-- Actions 只连接云服务器公网 SSH，再通过 `ProxyJump` 访问主、从节点。
+CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。
 
-主节点发布到 `~/Desktop/deploy/wao`，从节点发布到 `D:\deploy\wao`，云服务器前端发布到 `/var/www/wao/dist`。密码登录仅用于首次安装公钥，流水线不保存 SSH 密码。
-
-`FEISHU_WEBHOOK_URL` 只保存在 GitHub Actions Secret。所有分支 push 和 Pull Request 都会通知 CI 结果；main 开启 CD 后，同一条通知还会包含三节点部署结果。Webhook 不得写入 `.env`、工作流 YAML 或文档。
+- `MASTER_HOST=linux1.wayuwa.cn`，`SLAVE_HOST=windows1.wayuwa.cn`，云节点使用固定公网地址；
+- Actions 从 GitHub 托管 Runner 直接 SSH 到三个公网目标，不使用跳板机；
+- `DEPLOY_SSH_KNOWN_HOSTS` 必须保存人工核验后的三个 SSH 主机公钥；
+- 密码登录仅用于首次安装公钥，流水线只使用专用部署密钥；
+- 飞书 Webhook 只保存在 GitHub Secret。所有分支 push 和 Pull Request 都通知 CI 结果，开启 CD 后通知还包含部署结果。
