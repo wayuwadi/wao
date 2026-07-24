@@ -4,13 +4,12 @@ import { shallowMount } from '@vue/test-utils'
 import App from '../App.vue'
 
 describe('App', () => {
-  it('renders the application shell', () => {
+  it('renders the router outlet', () => {
     const wrapper = shallowMount(App, {
       global: {
         stubs: ['RouterView'],
       },
     })
-    expect(wrapper.text()).toContain('WAO')
-    expect(wrapper.text()).toContain('PHASE 0')
+    expect(wrapper.find('router-view-stub').exists()).toBe(true)
   })
 })

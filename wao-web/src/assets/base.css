@@ -1,50 +1,79 @@
-:root {
-  --paper: #f5f3ed;
-  --surface: rgba(255, 255, 255, 0.72);
-  --ink: #18202c;
-  --muted: #687180;
-  --line: rgba(24, 32, 44, 0.12);
-  --accent: #ef6f4d;
-  --accent-soft: #fde8df;
-  --success: #2f8a6c;
-  --shadow: 0 24px 70px rgba(34, 43, 58, 0.1);
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
-  color: var(--ink);
-  background: var(--paper);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
+/* WAO 全局基线 —— 源自 init-design 原型 <style> 头部 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--wao-bg-page);
+}
+
+body {
+  font-family: var(--wao-font);
+  color: var(--wao-text);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
 }
 
 * {
   box-sizing: border-box;
 }
 
-html {
-  min-width: 320px;
-  min-height: 100%;
-  background:
-    radial-gradient(circle at 14% 12%, rgba(239, 111, 77, 0.12), transparent 30%),
-    radial-gradient(circle at 88% 30%, rgba(47, 138, 108, 0.1), transparent 26%), var(--paper);
-}
-
-body {
-  min-width: 320px;
+#app {
   min-height: 100vh;
-  margin: 0;
 }
 
-button,
 a {
+  color: var(--wao-primary);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--wao-primary-hover);
+  text-decoration: underline;
+}
+
+::selection {
+  background: #dce2f9;
+}
+
+input,
+textarea,
+button {
+  font-family: inherit;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--wao-text-faint);
+}
+
+button {
   font: inherit;
 }
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 
-a {
-  text-decoration: none;
+:focus-visible {
+  outline: 2px solid var(--wao-primary);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d9dbe3;
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.wao-tabular {
+  font-variant-numeric: tabular-nums;
+}
+.wao-mono {
+  font-family: var(--wao-font-mono);
 }

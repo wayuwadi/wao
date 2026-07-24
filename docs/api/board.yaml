@@ -1,0 +1,162 @@
+openapi: 3.0.3
+info:
+  title: WAO 核心域 API
+  version: 0.1.0
+  description: >
+    组织 / 成员 / 领域 / 项目 / 任务读写接口。所有响应统一包裹 ApiResponse（code=0 成功）。
+    与前端 wao-web/src/types 保持一致。
+servers:
+  - url: /api
+paths:
+  /members:
+    get:
+      summary: 成员列表
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MemberListResponse' } } } }
+  /org:
+    get:
+      summary: 组织信息
+      responses:
+        '200': { description: OK }
+  /areas:
+    get:
+      summary: 人生领域列表
+      responses:
+        '200': { description: OK }
+  /projects:
+    get:
+      summary: 项目列表
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectListResponse' } } } }
+    post:
+      summary: 新建项目
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateProjectRequest' } } }
+      responses:
+        '200': { description: OK }
+        '400': { description: 参数不合法（code=40001） }
+  /projects/{id}:
+    get:
+      summary: 项目详情
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: 不存在（code=40400） }
+  /tasks:
+    get:
+      summary: 任务列表（跨项目）
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/TaskListResponse' } } } }
+    post:
+      summary: 新建任务
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateTaskRequest' } } }
+      responses:
+        '200': { description: OK }
+        '400': { description: 参数不合法 }
+  /tasks/{id}:
+    get:
+      summary: 任务详情
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: 不存在 }
+    patch:
+      summary: 局部更新任务（空字段不改，改动写入活动时间线）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PatchTaskRequest' } } }
+      responses:
+        '200': { description: OK }
+        '404': { description: 不存在 }
+components:
+  schemas:
+    ApiResponse:
+      type: object
+      properties:
+        code: { type: integer, description: 0 为成功 }
+        message: { type: string }
+        data: {}
+        timestamp: { type: integer, format: int64 }
+    Member:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        initial: { type: string }
+        color: { type: string }
+        role: { type: string }
+    Project:
+      type: object
+      description: 字段与前端 Project 一致（含 milestones/trend/blockers/activity 等嵌套）
+      properties:
+        id: { type: string }
+        name: { type: string }
+        area: { type: string }
+        status: { type: string, enum: [进行中, 有风险, 规划中, 已完成] }
+        health: { type: string }
+        progress: { type: integer }
+        owner: { type: string }
+        members: { type: array, items: { type: string } }
+        start: { type: string }
+        due: { type: string }
+        visibility: { type: string }
+        updated: { type: string }
+        goal: { type: string }
+    Task:
+      type: object
+      description: 字段与前端 Task 一致（含 steps/subs/comments/activity 等嵌套）
+      properties:
+        id: { type: string }
+        title: { type: string }
+        project: { type: string }
+        status: { type: string, enum: [待办, 进行中, 阻塞, 已完成] }
+        pr: { type: string, enum: [P0, P1, P2, P3] }
+        owner: { type: string }
+        due: { type: string }
+    CreateProjectRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        area: { type: string }
+        goal: { type: string }
+        visAll: { type: boolean }
+    CreateTaskRequest:
+      type: object
+      required: [title, project]
+      properties:
+        title: { type: string }
+        project: { type: string }
+        pr: { type: string }
+        owner: { type: string }
+        due: { type: string, description: ISO 日期 }
+    PatchTaskRequest:
+      type: object
+      properties:
+        title: { type: string }
+        status: { type: string }
+        pr: { type: string }
+        owner: { type: string }
+        desc: { type: string }
+    MemberListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties: { data: { type: array, items: { $ref: '#/components/schemas/Member' } } }
+    ProjectListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties: { data: { type: array, items: { $ref: '#/components/schemas/Project' } } }
+    TaskListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties: { data: { type: array, items: { $ref: '#/components/schemas/Task' } } }
