@@ -1,7 +1,24 @@
 import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as F from '@/data/fixtures'
-import { fetchAreas, fetchProjects, fetchTasks } from '@/api/board'
+import {
+  apiCreateProject,
+  apiCreateTask,
+  apiPutTask,
+  fetchAreas,
+  fetchDocs,
+  fetchEvents,
+  fetchFiles,
+  fetchGoals,
+  fetchImages,
+  fetchJobs,
+  fetchKbs,
+  fetchProjects,
+  fetchSchedule,
+  fetchSuggestions,
+  fetchTasks,
+  fetchVault,
+} from '@/api/board'
 import { blocksToText, textToBlocks } from '@/utils/doc'
 import type { Doc, DocBlock, Project, Task } from '@/types'
 
@@ -58,10 +75,24 @@ export const useDataStore = defineStore('data', () => {
    */
   async function hydrate() {
     try {
-      const [a, p, t] = await Promise.all([fetchAreas(), fetchProjects(), fetchTasks()])
+      const [a, p, t, kb, dc, jb, fl, im, va, ev, sc, sg, gl] = await Promise.all([
+        fetchAreas(), fetchProjects(), fetchTasks(), fetchKbs(), fetchDocs(), fetchJobs(),
+        fetchFiles(), fetchImages(), fetchVault(), fetchEvents(), fetchSchedule(),
+        fetchSuggestions(), fetchGoals(),
+      ])
       if (a.length) areas.value = a
       if (p.length) projects.value = p
       if (t.length) tasks.value = t
+      if (kb.length) kbs.value = kb
+      if (dc.length) dc.forEach((d) => (docs[d.id] = d))
+      if (jb.length) autos.value = jb
+      if (fl.length) files.value = fl
+      if (im.length) imgs.value = im
+      if (va.length) vault.value = va
+      if (ev.length) calEvents.value = ev
+      if (sc.length) schedule.value = sc
+      if (sg.length) suggestions.value = sg
+      if (gl.length) goals.value = gl
       apiLive.value = true
     } catch {
       apiLive.value = false
@@ -139,10 +170,20 @@ export const useDataStore = defineStore('data', () => {
     if (!t) return
     Object.assign(t, fields)
     if (activityText) t.activity.unshift({ icon: 'ri-edit-line', color: '#9A9DA9', text: activityText, time: '刚刚' })
+    persistTask(id)
   }
 
-  /** 新建任务（表单提交），返回新任务。 */
-  function addTask(payload: Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'>): Task {
+  /** 新建任务；apiLive 时经后端创建（用服务端返回 id），否则本地乐观创建。 */
+  async function addTask(payload: Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'>): Promise<Task> {
+    if (apiLive.value) {
+      try {
+        const t = await apiCreateTask(payload)
+        tasks.value.unshift(t)
+        return t
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
     const t: Task = {
       id: 't' + Date.now(), status: '待办', parts: [], desc: '', steps: [], subs: [], files: [],
       docs: [], linkTasks: [], comments: [], custom: [],
@@ -153,8 +194,17 @@ export const useDataStore = defineStore('data', () => {
     return t
   }
 
-  /** 新建项目（表单提交），返回新项目。 */
-  function addProject(payload: { name: string; area: string; goal: string; visAll: boolean }): Project {
+  /** 新建项目；apiLive 时经后端创建，否则本地乐观创建。 */
+  async function addProject(payload: { name: string; area: string; goal: string; visAll: boolean }): Promise<Project> {
+    if (apiLive.value) {
+      try {
+        const p = await apiCreateProject(payload)
+        projects.value.unshift(p)
+        return p
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
     const p: Project = {
       id: 'p' + Date.now(), name: payload.name, area: payload.area, status: '规划中', health: '良好',
       progress: 0, owner: 'wg', members: payload.visAll ? ['wg', 'wd'] : ['wg'],
@@ -168,6 +218,13 @@ export const useDataStore = defineStore('data', () => {
     return p
   }
 
+  /** 把某任务的当前完整状态写透到后端（fire-and-forget）。 */
+  function persistTask(id: string) {
+    if (!apiLive.value) return
+    const t = taskById(id)
+    if (t) apiPutTask(id, t).catch(() => {})
+  }
+
   /** 完成 / 重新打开一个任务（列表勾选用）。 */
   function toggleComplete(id: string) {
     const t = taskById(id)
@@ -179,7 +236,10 @@ export const useDataStore = defineStore('data', () => {
   function toggleStep(id: string, idx: number, kind: 'steps' | 'subs') {
     const t = taskById(id)
     const item = t?.[kind][idx]
-    if (item) item.done = !item.done
+    if (item) {
+      item.done = !item.done
+      persistTask(id)
+    }
   }
 
   return {

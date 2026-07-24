@@ -1,5 +1,28 @@
 import { http, type ApiResponse } from './http'
-import type { Area, Member, Org, Project, Task } from '@/types'
+import type {
+  Area,
+  AutomationJob,
+  CalendarEvent,
+  Doc,
+  FileItem,
+  ImageItem,
+  KnowledgeBase,
+  Member,
+  Org,
+  Project,
+  ScheduleItem,
+  Suggestion,
+  Task,
+  VaultGroup,
+} from '@/types'
+
+/** 目标胶囊（首页右上）。 */
+export interface GoalDto {
+  id: string
+  name: string
+  color: string
+  pct: number
+}
 
 /**
  * 后端读写接口封装。组件不直接调用，统一经由 data store。
@@ -16,6 +39,18 @@ export const fetchOrg = () => get<Org>('/api/org')
 export const fetchAreas = () => get<Area[]>('/api/areas')
 export const fetchProjects = () => get<Project[]>('/api/projects')
 export const fetchTasks = () => get<Task[]>('/api/tasks')
+
+// 内容 / 参考域（只读）
+export const fetchKbs = () => get<KnowledgeBase[]>('/api/kbs')
+export const fetchDocs = () => get<Doc[]>('/api/docs')
+export const fetchJobs = () => get<AutomationJob[]>('/api/jobs')
+export const fetchFiles = () => get<FileItem[]>('/api/files')
+export const fetchImages = () => get<ImageItem[]>('/api/images')
+export const fetchVault = () => get<VaultGroup[]>('/api/vault')
+export const fetchEvents = () => get<CalendarEvent[]>('/api/calendar/events')
+export const fetchSchedule = () => get<ScheduleItem[]>('/api/schedule')
+export const fetchSuggestions = () => get<Suggestion[]>('/api/suggestions')
+export const fetchGoals = () => get<GoalDto[]>('/api/goals')
 
 export interface CreateTaskPayload {
   title: string
@@ -38,6 +73,12 @@ export interface PatchTaskPayload {
 }
 export async function apiPatchTask(id: string, payload: PatchTaskPayload): Promise<Task> {
   const res = await http.patch<ApiResponse<Task>>(`/api/tasks/${id}`, payload)
+  return res.data.data
+}
+
+/** 全量替换任务（本地变更后的写透）。 */
+export async function apiPutTask(id: string, task: Task): Promise<Task> {
+  const res = await http.put<ApiResponse<Task>>(`/api/tasks/${id}`, task)
   return res.data.data
 }
 

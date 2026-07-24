@@ -79,7 +79,11 @@ erDiagram
 | description | TEXT | 描述 |
 | detail_json | JSON | parts[], steps[], subs[], files[], docs[], linkTasks[], comments[], custom[], activity[] |
 
+## 内容 / 参考域（文档表）
+
+知识库、文档、自动化、文件、图床、密码库、日历、日程、AI 建议、目标等以纯展示为主的域，采用「文档表」`(id, ord, payload JSON)`：payload 存完整 JSON（与前端类型一致），`ord` 保证展示顺序。读接口经 `ContentMapper`（`@Select payload`）+ `ContentService`（JSON 直通）返回，不为其定义 DTO。表：`kb, doc, job, file_item, image_item, vault_group, calendar_event, schedule_item, suggestion, goal`。这些域当前只读；文档编辑仍在前端本地持久化（`wao-docs-v1`）。
+
 ## 迁移
-- `V1__core_schema.sql` 建表。
-- `V2__seed_demo.sql` 灌入演示数据（娃哥/娃弟、5 领域、6 项目、14 任务），与前端 fixtures 一致。
-- 已执行的 migration 不可修改；后续变更新增 `V3__...`。
+- `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
+- `V3__content_schema.sql` 内容域建表 + `V4__content_seed.sql` 种子。
+- 已执行的 migration 不可修改；后续变更新增 `V5__...`。
