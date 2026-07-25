@@ -37,16 +37,28 @@ jobs:
         env:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
+          WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
         run: |
           test -n "$FEISHU_APP_ID"
           test -n "$FEISHU_APP_SECRET"
           umask 077
+          wechat_enabled=false
+          if [ -n "$WECHAT_APP_ID" ] && [ -n "$WECHAT_APP_SECRET" ]; then wechat_enabled=true; fi
           printf '%s\n' \
             'FEISHU_LOGIN_ENABLED=true' \
             "FEISHU_APP_ID=$FEISHU_APP_ID" \
             "FEISHU_APP_SECRET=$FEISHU_APP_SECRET" \
             'FEISHU_REDIRECT_URI=https://wao.wayuwa.cn/api/auth/feishu/callback' \
-            'FEISHU_FRONTEND_URL=https://wao.wayuwa.cn' > wao-secrets.env
+            'FEISHU_FRONTEND_URL=https://wao.wayuwa.cn' \
+            'AUTH_PROTECTION_ENABLED=true' \
+            'AUTH_REGISTRATION_ENABLED=true' \
+            'SESSION_COOKIE_SECURE=true' \
+            "WECHAT_LOGIN_ENABLED=$wechat_enabled" \
+            "WECHAT_APP_ID=$WECHAT_APP_ID" \
+            "WECHAT_APP_SECRET=$WECHAT_APP_SECRET" \
+            'WECHAT_REDIRECT_URI=https://wao.wayuwa.cn/api/auth/wechat/callback' \
+            'WECHAT_FRONTEND_URL=https://wao.wayuwa.cn' > wao-secrets.env
       - name: Configure SSH
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}

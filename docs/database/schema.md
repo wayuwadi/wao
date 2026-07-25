@@ -16,6 +16,9 @@
 ```mermaid
 erDiagram
     ORG ||--o{ MEMBER : has
+    MEMBER ||--o| ACCOUNT : authenticates_as
+    ACCOUNT ||--o{ ACCOUNT_IDENTITY : logs_in_with
+    ACCOUNT ||--o| PASSWORD_CREDENTIAL : owns
     AREA ||--o{ PROJECT : categorizes
     MEMBER ||--o{ PROJECT : owns
     PROJECT ||--o{ TASK : contains
@@ -23,6 +26,8 @@ erDiagram
 ```
 
 ## 表与字段字典
+
+账号、身份与共享会话表见 [ADR-016](../adr/016-unified-account-and-session.md) 和 `V12__account_auth.sql`。`account` 关联唯一成员；`account_identity` 以 `(provider, provider_subject)` 保证外部身份唯一；`password_credential` 保存 BCrypt 哈希、失败次数和锁定时间；`SPRING_SESSION*` 保存跨节点 HttpOnly 会话。
 
 ### org（组织）
 | 列 | 类型 | 说明 |
@@ -197,4 +202,6 @@ erDiagram
 - `V5__knowledge_schema.sql` / `V6__knowledge_seed.sql`：知识库域关系表（替换 V3 的 `kb`/`doc` payload 表）。
 - `V7__automation_schema.sql` / `V8__automation_seed.sql`：自动化域关系表（替换 V3 的 `job` payload 表）。
 - `V9__vault_schema.sql` / `V10__vault_seed.sql`：密钥库域关系表（替换 V3 的 `vault_group` payload 表）。
-- 已执行的 migration 不可修改；后续变更新增 `V11__...`。
+- `V11__image_store.sql`：图片二进制存储。
+- `V12__account_auth.sql`：统一账号、身份、密码凭据与共享会话。
+- 已执行的 migration 不可修改；后续数据库变更新增 migration。

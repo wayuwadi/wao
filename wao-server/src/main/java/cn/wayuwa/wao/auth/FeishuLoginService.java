@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
+import java.util.Set;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.slf4j.Logger;
@@ -22,6 +23,7 @@ import org.springframework.web.client.RestClientResponseException;
 @Service
 public class FeishuLoginService {
     private static final Logger log = LoggerFactory.getLogger(FeishuLoginService.class);
+    private static final Set<String> SCENES = Set.of("qr", "authorization", "workbench", "browser", "link");
     private final FeishuLoginProperties properties;
     private final RestClient client;
     public FeishuLoginService(FeishuLoginProperties properties, RestClient.Builder builder) {
@@ -32,6 +34,12 @@ public class FeishuLoginService {
     /** Creates the OAuth authorization URL used by all four Web login scenarios. */
     public String authorizationUrl(String scene) {
         requireEnabled();
+        if (!SCENES.contains(scene)) throw new IllegalArgumentException("Unsupported Feishu login scene");
+        if (Set.of("qr", "workbench", "browser").contains(scene)) {
+            return "https://passport.feishu.cn/suite/passport/oauth/authorize?client_id="
+                    + encode(properties.appId()) + "&redirect_uri=" + encode(properties.redirectUri())
+                    + "&response_type=code&state=" + encode(signedState(scene));
+        }
         return properties.openApiBaseUrl() + "/open-apis/authen/v1/authorize?app_id=" + encode(properties.appId())
                 + "&redirect_uri=" + encode(properties.redirectUri()) + "&state=" + encode(signedState(scene));
     }
@@ -43,14 +51,11 @@ public class FeishuLoginService {
     }
     /** Exchanges the one-time code server-side and returns only basic user profile data. */
     public FeishuProfile exchange(String code, String state) {
-        verifyState(state);
+        StatePayload statePayload = verifyState(state);
         if (!StringUtils.hasText(code)) throw new IllegalArgumentException("Missing Feishu authorization code");
         try {
-            TokenResponse tokenResponse = client.post().uri("/open-apis/authen/v2/oauth/token")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(java.util.Map.of("grant_type", "authorization_code", "client_id", properties.appId(),
-                            "client_secret", properties.appSecret(), "code", code, "redirect_uri", properties.redirectUri()))
-                    .retrieve().body(TokenResponse.class);
+            TokenResponse tokenResponse = Set.of("qr", "workbench", "browser").contains(statePayload.scene())
+                    ? exchangeLegacyCode(code) : exchangeOAuthCode(code);
             String accessToken = tokenResponse == null ? null : tokenResponse.resolvedAccessToken();
             if (!StringUtils.hasText(accessToken)) {
                 String reason = tokenResponse == null ? "empty response" : tokenResponse.failureReason();
@@ -68,7 +73,7 @@ public class FeishuLoginService {
                         userResponse == null ? null : userResponse.code(), reason);
                 throw new FeishuLoginException("未能读取飞书用户身份，请确认应用已发布且用户在可用范围内");
             }
-            return new FeishuProfile(externalUserId, user.name(), user.avatarUrl());
+            return new FeishuProfile(externalUserId, user.name(), user.avatarUrl(), user.email(), statePayload.scene());
         } catch (RestClientResponseException exception) {
             log.warn("Feishu API request failed with HTTP {}", exception.getStatusCode());
             throw new FeishuLoginException("飞书认证服务暂时不可用，请稍后重试", exception);
@@ -77,20 +82,48 @@ public class FeishuLoginService {
             throw new FeishuLoginException("无法连接飞书认证服务，请稍后重试", exception);
         }
     }
+
+    private TokenResponse exchangeOAuthCode(String code) {
+        return client.post().uri("/open-apis/authen/v2/oauth/token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(java.util.Map.of("grant_type", "authorization_code", "client_id", properties.appId(),
+                        "client_secret", properties.appSecret(), "code", code,
+                        "redirect_uri", properties.redirectUri()))
+                .retrieve().body(TokenResponse.class);
+    }
+
+    private TokenResponse exchangeLegacyCode(String code) {
+        AppAccessTokenResponse appToken = client.post().uri("/open-apis/auth/v3/app_access_token/internal")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(java.util.Map.of("app_id", properties.appId(), "app_secret", properties.appSecret()))
+                .retrieve().body(AppAccessTokenResponse.class);
+        if (appToken == null || !StringUtils.hasText(appToken.appAccessToken())) {
+            log.warn("Feishu app access token lookup failed: {}", appToken == null ? "empty response" : appToken.msg());
+            throw new FeishuLoginException("飞书应用凭证交换失败，请联系管理员检查应用配置");
+        }
+        return client.post().uri("/open-apis/authen/v1/access_token")
+                .header("Authorization", "Bearer " + appToken.appAccessToken())
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(java.util.Map.of("grant_type", "authorization_code", "code", code,
+                        "app_id", properties.appId(), "app_secret", properties.appSecret()))
+                .retrieve().body(TokenResponse.class);
+    }
     private String signedState(String scene) {
         String payload = Instant.now().plusSeconds(300).getEpochSecond() + ":" + scene + ":" + UUID.randomUUID();
         return Base64.getUrlEncoder().withoutPadding().encodeToString(payload.getBytes(StandardCharsets.UTF_8)) + "." + sign(payload);
     }
-    private void verifyState(String state) {
+    private StatePayload verifyState(String state) {
         requireEnabled();
         try {
             String[] parts = state == null ? new String[0] : state.split("\\.", 2);
             if (parts.length != 2) throw new IllegalArgumentException("Invalid OAuth state");
             String payload = new String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8);
             String[] fields = payload.split(":", 3);
-            if (fields.length != 3 || Instant.now().getEpochSecond() > Long.parseLong(fields[0])
+            if (fields.length != 3 || !SCENES.contains(fields[1])
+                    || Instant.now().getEpochSecond() > Long.parseLong(fields[0])
                     || !java.security.MessageDigest.isEqual(sign(payload).getBytes(StandardCharsets.UTF_8), parts[1].getBytes(StandardCharsets.UTF_8)))
                 throw new IllegalArgumentException("Expired or invalid OAuth state");
+            return new StatePayload(fields[1]);
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("Expired or invalid OAuth state", exception);
         }
@@ -122,17 +155,21 @@ public class FeishuLoginService {
         }
     }
     private record TokenData(@JsonProperty("access_token") String accessToken) { }
+    private record AppAccessTokenResponse(Integer code, String msg,
+                                          @JsonProperty("app_access_token") String appAccessToken) { }
     private record UserInfoResponse(Integer code, String msg, User data) { }
     private record User(@JsonProperty("user_id") String userId,
                         @JsonProperty("open_id") String openId,
                         @JsonProperty("union_id") String unionId,
                         String name,
-                        @JsonProperty("avatar_url") String avatarUrl) {
+                        @JsonProperty("avatar_url") String avatarUrl,
+                        String email) {
         String stableId() {
             if (StringUtils.hasText(userId)) return userId;
             if (StringUtils.hasText(openId)) return openId;
             return unionId;
         }
     }
-    public record FeishuProfile(String userId, String name, String avatarUrl) { }
+    private record StatePayload(String scene) { }
+    public record FeishuProfile(String userId, String name, String avatarUrl, String email, String scene) { }
 }

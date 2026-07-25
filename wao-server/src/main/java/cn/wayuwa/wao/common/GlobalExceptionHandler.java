@@ -1,11 +1,13 @@
 package cn.wayuwa.wao.common;
 
 import cn.wayuwa.wao.auth.FeishuLoginException;
+import cn.wayuwa.wao.auth.WechatLoginException;
 import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -38,6 +40,25 @@ public class GlobalExceptionHandler {
         return ApiResponse.fail(40001, message);
     }
 
+    @ExceptionHandler(UnauthorizedException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public ApiResponse<Void> handleUnauthorized(UnauthorizedException exception) {
+        return ApiResponse.fail(40100, exception.getMessage());
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleConflict(ConflictException exception) {
+        return ApiResponse.fail(40900, exception.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleDataConflict(DataIntegrityViolationException exception) {
+        log.warn("Concurrent account identity update conflicted: {}", exception.getClass().getSimpleName());
+        return ApiResponse.fail(40901, "账号或登录身份刚刚被其他请求占用，请刷新后重试");
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleBadRequest(IllegalArgumentException exception) {
@@ -49,6 +70,13 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleFeishuLogin(FeishuLoginException exception) {
         log.warn("Feishu login failed: {}", exception.getMessage());
         return ApiResponse.fail(50201, exception.getMessage());
+    }
+
+    @ExceptionHandler(WechatLoginException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public ApiResponse<Void> handleWechatLogin(WechatLoginException exception) {
+        log.warn("Wechat login failed: {}", exception.getMessage());
+        return ApiResponse.fail(50202, exception.getMessage());
     }
 
     @ExceptionHandler(Exception.class)
