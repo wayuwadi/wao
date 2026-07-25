@@ -1,6 +1,8 @@
 package cn.wayuwa.wao.service;
 
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.dto.ImageRef;
@@ -28,16 +30,22 @@ public class ShareService {
     }
 
     /**
-     * 取一个任务的公开分享视图（含全部子任务）。
+     * 取一个任务的公开分享视图。
      *
-     * @param taskId 任务 id
+     * @param taskId   任务 id
+     * @param openOnly 为 true 时只带上未完成的子任务 —— 持续迭代的任务分享出去时，
+     *                 已经做完的条目属于噪音，过滤掉才好直接丢给 AI 继续做
      * @return 分享视图
      * @throws NotFoundException 任务不存在时
      */
-    public SharedTaskDto shareTask(String taskId) {
+    public SharedTaskDto shareTask(String taskId, boolean openOnly) {
         TaskDto t = tasks.get(taskId);
+        List<Step> subs = nn(t.subs());
+        if (openOnly) {
+            subs = subs.stream().filter(s -> !s.done()).toList();
+        }
         return new SharedTaskDto("task", t.id(), null, t.title(), t.status(), t.pr(), t.due(),
-                projectName(t.project()), nz(t.desc()), nn(t.images()), nn(t.subs()));
+                projectName(t.project()), nz(t.desc()), nn(t.images()), subs);
     }
 
     /**
@@ -65,10 +73,15 @@ public class ShareService {
     /**
      * 把分享视图渲染成 Markdown 全文 —— AI 直接 GET 这个地址就能读到完整上下文。
      *
-     * @param shared 分享视图
+     * <p>图片地址一律补成绝对地址：图床里存的是 {@code /api/images/{id}/raw} 这种
+     * 站内相对路径，Markdown 文本被复制到别处（AI、聊天窗口、其他文档）后相对路径
+     * 解析不出来，图就丢了。
+     *
+     * @param shared  分享视图
+     * @param baseUrl 公网访问的根地址，如 {@code https://wao.wayuwa.cn}
      * @return Markdown 文本
      */
-    public String toMarkdown(SharedTaskDto shared) {
+    public String toMarkdown(SharedTaskDto shared, String baseUrl) {
         StringBuilder sb = new StringBuilder();
         sb.append("# ").append(shared.title()).append("\n\n");
 
@@ -85,9 +98,10 @@ public class ShareService {
         sb.append('\n');
 
         sb.append("## 描述\n\n");
-        sb.append(shared.desc().isBlank() ? "（暂无描述）" : shared.desc()).append("\n\n");
+        sb.append(shared.desc().isBlank() ? "（暂无描述）" : absolutizeMarkdown(shared.desc(), baseUrl))
+                .append("\n\n");
 
-        appendImages(sb, shared.images());
+        appendImages(sb, shared.images(), baseUrl);
 
         if (!shared.subs().isEmpty()) {
             sb.append("## 子任务\n\n");
@@ -95,11 +109,12 @@ public class ShareService {
                 sb.append("- [").append(s.done() ? "x" : " ").append("] ").append(s.text()).append('\n');
                 if (s.desc() != null && !s.desc().isBlank()) {
                     // 子任务描述整体缩进两格，作为该条目的下级内容
-                    sb.append(s.desc().indent(2));
+                    sb.append(absolutizeMarkdown(s.desc(), baseUrl).indent(2));
                 }
                 if (s.images() != null) {
                     for (ImageRef im : s.images()) {
-                        sb.append("  ![").append(nz(im.name())).append("](").append(nz(im.url())).append(")\n");
+                        sb.append("  ![").append(nz(im.name())).append("](")
+                                .append(absolute(nz(im.url()), baseUrl)).append(")\n");
                     }
                 }
             }
@@ -108,15 +123,40 @@ public class ShareService {
         return sb.toString();
     }
 
-    private static void appendImages(StringBuilder sb, List<ImageRef> images) {
+    private static void appendImages(StringBuilder sb, List<ImageRef> images, String baseUrl) {
         if (images.isEmpty()) {
             return;
         }
         sb.append("## 图片\n\n");
         for (ImageRef im : images) {
-            sb.append("![").append(nz(im.name())).append("](").append(nz(im.url())).append(")\n");
+            sb.append("![").append(nz(im.name())).append("](")
+                    .append(absolute(nz(im.url()), baseUrl)).append(")\n");
         }
         sb.append('\n');
+    }
+
+    /** 匹配 Markdown 里指向站内绝对路径的图片 / 链接目标，如 {@code ](/api/images/x/raw)}。 */
+    private static final Pattern SITE_RELATIVE = Pattern.compile("(!?\\[[^\\]]*\\]\\()(/[^)\\s]*)");
+
+    /** 把描述正文里内联的站内图片地址补成绝对地址（编辑器插入的图就在这里）。 */
+    private static String absolutizeMarkdown(String markdown, String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return markdown;
+        }
+        return SITE_RELATIVE.matcher(markdown)
+                .replaceAll(m -> Matcher.quoteReplacement(m.group(1) + trimEnd(baseUrl) + m.group(2)));
+    }
+
+    /** 单个地址的绝对化；已经是绝对地址或 data URL 的原样返回。 */
+    private static String absolute(String url, String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank() || !url.startsWith("/")) {
+            return url;
+        }
+        return trimEnd(baseUrl) + url;
+    }
+
+    private static String trimEnd(String baseUrl) {
+        return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
     /** 与前端 {@code data.subKey} 保持一致：优先用子任务自身 id，历史数据回落到下标合成键。 */

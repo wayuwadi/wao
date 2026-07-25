@@ -186,6 +186,35 @@ describe('TaskDrawer', () => {
     expect((title.element as HTMLTextAreaElement).value).toBe('一个特别长的子任务标题'.repeat(6))
   })
 
+  it('有已完成子任务时，分享菜单给出「只分享未完成」开关', async () => {
+    data.addSub(taskId, '未完成的')
+    const doneId = data.addSub(taskId, '已完成的')!
+    data.updateSub(taskId, doneId, { done: true })
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+    await w.find('.share-wrap .icon-btn').trigger('click')
+
+    const filter = w.find('.share-filter')
+    expect(filter.exists()).toBe(true)
+    expect(filter.text()).toContain('只分享未完成的子任务')
+    expect(w.find('.share-scope').text()).toContain('全部子任务')
+
+    await filter.find('input').setValue(true)
+
+    expect(w.find('.share-scope').text()).toContain('未完成的子任务')
+  })
+
+  it('没有已完成子任务时不显示这个开关——没有可过滤的东西', async () => {
+    data.addSub(taskId, '只有未完成的')
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+    await w.find('.share-wrap .icon-btn').trigger('click')
+
+    expect(w.find('.share-filter').exists()).toBe(false)
+  })
+
   it('展开子任务时，分享范围收敛到该子任务', async () => {
     data.addSub(taskId, '扫描身份证')
     ui.openTask(taskId)

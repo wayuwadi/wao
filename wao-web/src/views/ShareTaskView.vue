@@ -18,6 +18,9 @@ const route = useRoute()
 const taskId = computed(() => String(route.params.id))
 const subId = computed(() => (route.params.subId ? String(route.params.subId) : null))
 
+/** ?openOnly=true 时只展示未完成的子任务，和复制链接时勾的开关一致。 */
+const openOnly = computed(() => route.query.openOnly === 'true')
+
 const shared = ref<SharedTask | null>(null)
 const loading = ref(true)
 const error = ref('')
@@ -28,7 +31,7 @@ async function load() {
   try {
     shared.value = subId.value
       ? await apiShareSub(taskId.value, subId.value)
-      : await apiShareTask(taskId.value)
+      : await apiShareTask(taskId.value, openOnly.value)
   } catch {
     shared.value = null
     error.value = '这个分享链接无效，或者对应的任务已被删除。'
@@ -37,10 +40,10 @@ async function load() {
   }
 }
 onMounted(load)
-watch([taskId, subId], load)
+watch([taskId, subId, openOnly], load)
 
 const descHtml = computed(() => renderMarkdown(shared.value?.desc ?? ''))
-const mdUrl = computed(() => shareMarkdownUrl(taskId.value, subId.value))
+const mdUrl = computed(() => shareMarkdownUrl(taskId.value, subId.value, openOnly.value))
 
 async function copyMd() {
   toast(
@@ -81,7 +84,10 @@ async function copyMd() {
         </template>
 
         <template v-if="shared.subs.length">
-          <div class="section-label">子任务 · {{ shared.subs.length }}</div>
+          <div class="section-label">
+            子任务 · {{ shared.subs.length }}
+            <span v-if="openOnly" class="filter-note">已过滤掉完成的条目</span>
+          </div>
           <div v-for="(s, i) in shared.subs" :key="s.id ?? i" class="sub">
             <div class="sub-head">
               <span class="sub-box" :class="{ done: s.done }"><i class="ri-check-line"></i></span>
@@ -174,6 +180,11 @@ async function copyMd() {
 }
 .empty {
   font-size: 13.5px;
+  color: var(--wao-text-faint);
+}
+.filter-note {
+  margin-left: 8px;
+  letter-spacing: 0;
   color: var(--wao-text-faint);
 }
 .imgs {

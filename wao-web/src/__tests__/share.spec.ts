@@ -18,4 +18,14 @@ describe('分享链接', () => {
     expect(shareMarkdownUrl('t1')).toBe(`${window.location.origin}/api/share/tasks/t1.md`)
     expect(shareMarkdownUrl('t1', 's9')).toBe(`${window.location.origin}/api/share/tasks/t1/subs/s9.md`)
   })
+
+  it('只分享未完成子任务时带上 openOnly', () => {
+    expect(shareUrl('t1', null, true)).toBe(`${window.location.origin}/s/t/t1?openOnly=true`)
+    expect(shareMarkdownUrl('t1', null, true)).toBe(`${window.location.origin}/api/share/tasks/t1.md?openOnly=true`)
+  })
+
+  it('子任务链接上 openOnly 无意义，不带这个参数', () => {
+    expect(shareUrl('t1', 's9', true)).toBe(`${window.location.origin}/s/t/t1/s9`)
+    expect(shareMarkdownUrl('t1', 's9', true)).toBe(`${window.location.origin}/api/share/tasks/t1/subs/s9.md`)
+  })
 })
