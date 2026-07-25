@@ -3,6 +3,7 @@ import type {
   Area,
   AutomationJob,
   CalendarEvent,
+  Comment,
   Doc,
   DocBlock,
   DocLink,
@@ -50,6 +51,10 @@ async function patch<T>(url: string, body?: unknown): Promise<T> {
   const res = await http.patch<ApiResponse<T>>(url, body)
   return res.data.data
 }
+async function put<T>(url: string, body?: unknown): Promise<T> {
+  const res = await http.put<ApiResponse<T>>(url, body)
+  return res.data.data
+}
 async function del(url: string): Promise<void> {
   await http.delete<ApiResponse<void>>(url)
 }
@@ -66,6 +71,13 @@ export const fetchKbGroups = () => get<KbGroup[]>('/api/kb-groups')
 export const fetchDocs = () => get<Doc[]>('/api/docs')
 export const fetchJobs = () => get<AutomationJob[]>('/api/jobs')
 export const fetchFiles = () => get<FileItem[]>('/api/files')
+export async function apiUploadFile(file: File): Promise<FileItem> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await http.post<ApiResponse<FileItem>>('/api/files', form, { timeout: 120_000 })
+  return res.data.data
+}
+export const apiDeleteFile = (id: string) => del(`/api/files/${id}`)
 export const fetchImages = () => get<ImageItem[]>('/api/images')
 export const fetchVault = () => get<VaultGroup[]>('/api/vault')
 export const fetchEvents = () => get<CalendarEvent[]>('/api/calendar/events')
@@ -104,6 +116,7 @@ export async function apiPutTask(id: string, task: Task): Promise<Task> {
   const res = await http.put<ApiResponse<Task>>(`/api/tasks/${id}`, task)
   return res.data.data
 }
+export const apiAddTaskComment = (id: string, text: string) => post<Comment>(`/api/tasks/${id}/comments`, { text })
 
 // ---------------- 图床 ----------------
 
@@ -274,6 +287,7 @@ export const apiReauthJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}
 export const apiCreateVaultGroup = (name: string) => post<VaultGroup>('/api/vault/groups', { name })
 export const apiRenameVaultGroup = (id: string, name: string) => patch<VaultGroup>(`/api/vault/groups/${id}`, { name })
 export const apiDeleteVaultGroup = (id: string) => del(`/api/vault/groups/${id}`)
+export const apiReorderVaultGroups = (ids: string[]) => put<void>('/api/vault/groups/order', { ids })
 
 export interface CreateVaultItemPayload {
   groupId: string

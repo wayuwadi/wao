@@ -1,16 +1,21 @@
 package cn.wayuwa.wao.service;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
 import cn.wayuwa.wao.dto.PatchTaskRequest;
 import cn.wayuwa.wao.dto.TaskDto;
+import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -18,7 +23,11 @@ import org.junit.jupiter.api.Test;
 class TaskServiceTest {
 
     private final TaskMapper mapper = mock(TaskMapper.class);
-    private final TaskService service = new TaskService(mapper, new ObjectMapper());
+    private final FeishuCommentNotifier notifier = mock(FeishuCommentNotifier.class);
+    private final MemberService members = mock(MemberService.class);
+    private final ProjectService projects = mock(ProjectService.class);
+    private final TaskService service = new TaskService(mapper, new ObjectMapper(),
+            notifier, members, projects);
 
     private TaskEntity todo() {
         TaskEntity e = new TaskEntity();
@@ -75,5 +84,19 @@ class TaskServiceTest {
     void getThrowsWhenMissing() {
         when(mapper.selectById("nope")).thenReturn(null);
         assertThatThrownBy(() -> service.get("nope")).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void addCommentPersistsAndNotifiesFeishu() {
+        when(mapper.selectById("t1")).thenReturn(todo());
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+        when(members.list()).thenReturn(List.of(new MemberDto("wg", "娃哥", "哥", "#4358D6", "管理员")));
+        when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在"));
+
+        var comment = service.addComment("t1", "wg", "  已验收  ");
+
+        assertThat(comment.text()).isEqualTo("已验收");
+        assertThat(comment.time()).endsWith("+08:00");
+        verify(notifier).notifyComment(any(TaskDto.class), eq(comment), eq("娃哥"), eq("p1"));
     }
 }

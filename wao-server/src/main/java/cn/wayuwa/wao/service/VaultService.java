@@ -29,6 +29,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class VaultService {
 
+    public static final String DEFAULT_GROUP_ID = "vg-default";
+
     private final VaultGroupMapper groupMapper;
     private final VaultItemMapper itemMapper;
     private final VaultCryptoService crypto;
@@ -41,6 +43,7 @@ public class VaultService {
 
     /** 列出全部分组及其条目（不含密码明文）。 */
     public List<VaultGroupDto> listGroups() {
+        ensureDefaultGroup();
         List<VaultGroupEntity> groups = groupMapper.selectList(
                 new LambdaQueryWrapper<VaultGroupEntity>().orderByAsc(VaultGroupEntity::getOrd));
         List<VaultItemEntity> items = itemMapper.selectList(
@@ -63,6 +66,20 @@ public class VaultService {
         return new VaultGroupDto(e.getId(), e.getName(), List.of());
     }
 
+    /** 持久化分组拖拽后的顺序；未知 id 被忽略，避免并发删除导致整个请求失败。 */
+    @Transactional
+    public void reorderGroups(List<String> ids) {
+        if (ids == null) return;
+        int ord = 1;
+        for (String id : ids) {
+            VaultGroupEntity group = groupMapper.selectById(id);
+            if (group != null) {
+                group.setOrd(ord++);
+                groupMapper.updateById(group);
+            }
+        }
+    }
+
     /** 重命名分组。 */
     public VaultGroupDto renameGroup(String id, PatchVaultGroupRequest req) {
         VaultGroupEntity e = requireGroup(id);
@@ -79,6 +96,9 @@ public class VaultService {
     /** 删除分组，级联删除其下条目。 */
     @Transactional
     public void deleteGroup(String id) {
+        if (DEFAULT_GROUP_ID.equals(id)) {
+            throw new IllegalArgumentException("默认分组不能删除");
+        }
         requireGroup(id);
         itemMapper.delete(new LambdaQueryWrapper<VaultItemEntity>().eq(VaultItemEntity::getGroupId, id));
         groupMapper.deleteById(id);
@@ -86,10 +106,11 @@ public class VaultService {
 
     /** 新建条目；secret 非空时立即加密存储，永不以明文落库。 */
     public VaultItemDto createItem(CreateVaultItemRequest req) {
-        requireGroup(req.groupId());
+        String groupId = req.groupId() == null || req.groupId().isBlank() ? ensureDefaultGroup().getId() : req.groupId();
+        requireGroup(groupId);
         VaultItemEntity e = new VaultItemEntity();
         e.setId("vi" + System.currentTimeMillis());
-        e.setGroupId(req.groupId());
+        e.setGroupId(groupId);
         e.setName(req.name().trim());
         e.setIcon(blankOr(req.icon(), "ri-key-2-line"));
         e.setUserName(req.user());
@@ -98,7 +119,7 @@ public class VaultService {
         applySecret(e, req.secret());
         e.setUpdatedLabel("刚刚");
         e.setOrd(nextOrd(itemMapper.selectCount(
-                new LambdaQueryWrapper<VaultItemEntity>().eq(VaultItemEntity::getGroupId, req.groupId()))));
+                new LambdaQueryWrapper<VaultItemEntity>().eq(VaultItemEntity::getGroupId, groupId))));
         itemMapper.insert(e);
         return toDto(e);
     }
@@ -170,6 +191,17 @@ public class VaultService {
             throw new NotFoundException("密钥库分组不存在：" + id);
         }
         return e;
+    }
+
+    private VaultGroupEntity ensureDefaultGroup() {
+        VaultGroupEntity existing = groupMapper.selectById(DEFAULT_GROUP_ID);
+        if (existing != null) return existing;
+        VaultGroupEntity group = new VaultGroupEntity();
+        group.setId(DEFAULT_GROUP_ID);
+        group.setName("未分组");
+        group.setOrd(0);
+        groupMapper.insert(group);
+        return group;
     }
 
     private VaultItemEntity requireItem(String id) {

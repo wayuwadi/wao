@@ -34,7 +34,6 @@ const firstDocId = () => {
   return null
 }
 const docId = ref<string | null>((route.query.doc as string) || firstDocId())
-const docWide = ref(false)
 const folderOpen = reactive<Record<string, boolean>>({})
 const scrollEl = ref<HTMLElement | null>(null)
 const titleEl = ref<HTMLInputElement | null>(null)
@@ -231,7 +230,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
     <!-- 文档区 -->
     <div ref="scrollEl" class="doc-scroll">
       <div class="doc-wrap">
-        <div class="doc-col" :style="{ maxWidth: docWide ? '1080px' : '760px' }">
+        <div class="doc-col">
           <div v-if="doc" class="doc-bar">
             <span class="ellip">{{ kb.name }}</span>
             <i class="ri-arrow-right-s-line b-sep"></i>
@@ -257,9 +256,6 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             <span class="saved">
               <i :class="saving ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ saving ? '保存中' : '已保存' }}
             </span>
-            <button class="icon-act" :title="docWide ? '切换为窄视图' : '切换为宽视图'" @click="docWide = !docWide">
-              <i class="ri-arrow-left-right-line"></i>
-            </button>
             <button class="icon-act danger" title="删除这篇文档（进回收站）" @click="removeDoc(docId!)">
               <i class="ri-delete-bin-line"></i>
             </button>
@@ -286,6 +282,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             <MarkdownEditor
               v-model="body"
               class="doc-body"
+              bare
               placeholder="开始写作…敲 ## 变标题、- 变列表，可直接粘贴截图"
               :min-height="360"
               :peers="peers"
@@ -640,6 +637,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 .doc-col {
   flex: 1;
   min-width: min(420px, 100%);
+  max-width: 1080px;
 }
 .doc-bar {
   display: flex;

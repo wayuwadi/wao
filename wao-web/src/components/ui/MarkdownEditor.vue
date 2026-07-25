@@ -40,10 +40,12 @@ const props = withDefaults(
     minHeight?: number
     /** 只读展示，不可编辑。 */
     readonly?: boolean
+    /** 文档正文等沉浸场景不显示输入框边框与底色。 */
+    bare?: boolean
     /** 此刻也在这篇文档里的人；空数组即不显示协作轨道。 */
     peers?: EditorPeer[]
   }>(),
-  { placeholder: '写点什么…支持 Markdown 快捷输入', minHeight: 84, readonly: false, peers: () => [] },
+  { placeholder: '写点什么…支持 Markdown 快捷输入', minHeight: 84, readonly: false, bare: false, peers: () => [] },
 )
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -178,7 +180,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="shell" class="md" :class="{ ro: readonly, collab: peers.length > 0 }">
+  <div ref="shell" class="md" :class="{ ro: readonly, collab: peers.length > 0, bare }">
     <div v-if="peerMarks.length" class="peer-track" aria-hidden="true">
       <template v-for="m in peerMarks" :key="m.id">
         <span v-if="m.editing" class="peer-line" :style="{ top: m.top + 'px', background: m.color }"></span>
@@ -249,6 +251,16 @@ onBeforeUnmount(() => {
 .md:not(.ro) .md-body:focus-within {
   border-color: var(--wao-line-control);
   background: #fff;
+}
+.md.bare .md-body,
+.md.bare:not(.ro) .md-body:hover,
+.md.bare:not(.ro) .md-body:focus-within {
+  border-color: transparent;
+  background: transparent;
+}
+.md.bare .md-body :deep(.tiptap) {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 /* ProseMirror 的可编辑区在 :deep 里 —— 正文排版与预览态保持一致 */

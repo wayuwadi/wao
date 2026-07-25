@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTabsStore } from '@/stores/tabs'
 import type { Tab } from '@/types'
@@ -8,6 +8,28 @@ const tabs = useTabsStore()
 const router = useRouter()
 
 const menu = reactive({ open: false, x: 0, y: 0, key: '' })
+const scroller = ref<HTMLElement | null>(null)
+const canLeft = ref(false)
+const canRight = ref(false)
+
+function measureScroll() {
+  const el = scroller.value
+  if (!el) return
+  canLeft.value = el.scrollLeft > 2
+  canRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
+}
+function scrollByPage(direction: -1 | 1) {
+  scroller.value?.scrollBy({ left: direction * Math.max(180, (scroller.value?.clientWidth ?? 400) * 0.7), behavior: 'smooth' })
+}
+function revealActive() {
+  void nextTick(() => {
+    const active = scroller.value?.querySelector<HTMLElement>('.tab.active')
+    active?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+    measureScroll()
+  })
+}
+watch(() => [tabs.activeKey, tabs.tabs.length], revealActive)
+onMounted(revealActive)
 
 const menuTargetClosable = computed(() => {
   const t = tabs.tabs.find((t) => t.key === menu.key)
@@ -51,7 +73,9 @@ function mCloseAll() {
 </script>
 
 <template>
-  <div class="tabbar">
+  <div class="tabbar-shell">
+    <button class="scroll-btn" :disabled="!canLeft" title="查看左侧页签" @click="scrollByPage(-1)"><i class="ri-arrow-left-s-line"></i></button>
+    <div ref="scroller" class="tabbar" @scroll.passive="measureScroll">
     <div
       v-for="tab in tabs.tabs"
       :key="tab.key"
@@ -72,6 +96,8 @@ function mCloseAll() {
         <i class="ri-close-line"></i>
       </button>
     </div>
+    </div>
+    <button class="scroll-btn" :disabled="!canRight" title="查看右侧页签" @click="scrollByPage(1)"><i class="ri-arrow-right-s-line"></i></button>
   </div>
 
   <template v-if="menu.open">
@@ -93,20 +119,36 @@ function mCloseAll() {
 </template>
 
 <style scoped>
-.tabbar {
+.tabbar-shell {
   height: var(--wao-tabbar-h);
   background: var(--wao-bg-tab);
   border-bottom: 1px solid var(--wao-line);
   display: flex;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.tabbar {
+  flex: 1;
+  min-width: 0;
+  display: flex;
   align-items: stretch;
   padding: 0 10px;
   gap: 2px;
-  flex-shrink: 0;
   overflow-x: auto;
 }
 .tabbar::-webkit-scrollbar {
   height: 0;
 }
+.scroll-btn {
+  width: 28px;
+  flex: 0 0 28px;
+  border: 0;
+  background: transparent;
+  color: var(--wao-text-3);
+  cursor: pointer;
+}
+.scroll-btn:hover:not(:disabled) { background: var(--wao-bg-hover-2); }
+.scroll-btn:disabled { opacity: 0.22; cursor: default; }
 .tab {
   display: flex;
   align-items: center;

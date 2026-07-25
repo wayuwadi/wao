@@ -233,6 +233,7 @@ export interface AutomationJob {
 }
 
 export interface FileItem {
+  id?: string
   name: string
   size: string
   icon: string
@@ -262,6 +263,7 @@ export interface SharedTask {
   status: string
   pr: string | null
   due: string | null
+  projectId: string | null
   project: string
   desc: string
   images: ImageRef[]

@@ -2,6 +2,7 @@ import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as F from '@/data/fixtures'
 import {
+  apiAddTaskComment,
   apiCreateDoc,
   apiCreateFolder,
   apiCreateJob,
@@ -14,6 +15,7 @@ import {
   apiCreateVaultItem,
   apiDeleteDoc,
   apiDeleteFolder,
+  apiDeleteFile,
   apiDeleteJob,
   apiDeleteKb,
   apiDeleteProject,
@@ -29,10 +31,12 @@ import {
   apiPutTask,
   apiReauthJob,
   apiUploadImage,
+  apiUploadFile,
   apiPurgeTrash,
   apiRenameFolder,
   apiRenameKbGroup,
   apiRenameVaultGroup,
+  apiReorderVaultGroups,
   apiRestoreTrash,
   apiResumeJob,
   apiRevealVaultItem,
@@ -89,7 +93,11 @@ function emptyDoc(id: string): Doc {
  */
 
 const DOC_KEY = 'wao-docs-v1'
-const clone = <T>(v: T): T => structuredClone(v)
+const TASK_DRAFT_KEY = 'wao-task-drafts-v1'
+// Pinia 返回的任务是 Proxy，structuredClone 会直接抛 DataCloneError；业务实体只含 JSON 数据。
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T
+
+export type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 /**
  * 本地 id 生成器。
@@ -115,6 +123,8 @@ export const useDataStore = defineStore('data', () => {
   const schedule = ref(clone(F.SCHED))
   const suggestions = ref(clone(F.SUGG))
   const goals = ref(clone(F.GOALS))
+  /** 尚未被服务端确认的任务快照；刷新或意外关闭页面后仍可恢复。 */
+  const taskDrafts = ref<Record<string, Task>>(loadTaskDrafts())
   /** 用户自建知识库分组（个人库归入其中）。 */
   const myGroups = ref([{ id: 'g1', name: '我的知识库' }])
 
@@ -144,7 +154,14 @@ export const useDataStore = defineStore('data', () => {
     ])
     if (a?.length) areas.value = a
     if (p?.length) projects.value = p
-    if (t?.length) tasks.value = t
+    if (t?.length) {
+      tasks.value = t
+      // 只叠加仍未收到服务端确认的本地草稿，避免刷新把刚输入的长文本吞掉。
+      for (const [id, draft] of Object.entries(taskDrafts.value)) {
+        const current = tasks.value.find((task) => task.id === id)
+        if (current) Object.assign(current, clone(draft))
+      }
+    }
     if (kb?.length) kbs.value = kb
     if (kg?.length) myGroups.value = kg
     if (dc?.length) dc.forEach((d) => (docs[d.id] = d))
@@ -160,7 +177,10 @@ export const useDataStore = defineStore('data', () => {
     apiLive.value = a !== null && p !== null && t !== null
     // 每个项目都应有一个默认知识库（后端就绪前为前端内存态），刷新后由此保持。
     projects.value.forEach((proj) => ensureProjectKb(proj))
-    if (apiLive.value) startSync()
+    if (apiLive.value) {
+      startSync()
+      Object.keys(taskDrafts.value).forEach(persistTask)
+    }
   }
 
   /**
@@ -176,7 +196,7 @@ export const useDataStore = defineStore('data', () => {
     try {
       const [p, t] = await Promise.all([fetchProjects(), fetchTasks()])
       if (Array.isArray(p)) mergeList(projects.value, p)
-      if (Array.isArray(t)) mergeList(tasks.value, t)
+      if (Array.isArray(t)) mergeList(tasks.value, t, taskProtectedIds())
     } catch {
       /* 网络抖动时静默跳过，下个周期重试 */
     } finally {
@@ -184,12 +204,15 @@ export const useDataStore = defineStore('data', () => {
     }
   }
   /** 用服务端列表就地合并本地数组：更新已存在项、追加新项、移除已删除项，保持数组引用稳定。 */
-  function mergeList<T extends { id: string }>(local: T[], remote: T[]) {
+  function mergeList<T extends { id: string }>(local: T[], remote: T[], protectedIds = new Set<string>()) {
     const remoteIds = new Set(remote.map((r) => r.id))
     for (const r of remote) {
       const existing = local.find((l) => l.id === r.id)
-      if (existing) Object.assign(existing, r)
-      else local.push(r)
+      if (existing) {
+        if (!protectedIds.has(r.id)) Object.assign(existing, r)
+      } else {
+        local.push(r)
+      }
     }
     for (let i = local.length - 1; i >= 0; i--) {
       const id = local[i]!.id
@@ -543,6 +566,90 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ---- task 变更 ----
+  function loadTaskDrafts(): Record<string, Task> {
+    try {
+      return JSON.parse(localStorage.getItem(TASK_DRAFT_KEY) || '{}')
+    } catch {
+      return {}
+    }
+  }
+
+  const taskPersistTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+  const taskPersistVersions: Record<string, number> = {}
+  const taskPersisting = reactive<Record<string, boolean>>({})
+  const taskSaveStates = reactive<Record<string, SaveState>>({})
+
+  function storeTaskDraft(task: Task) {
+    taskDrafts.value = { ...taskDrafts.value, [task.id]: clone(task) }
+    localStorage.setItem(TASK_DRAFT_KEY, JSON.stringify(taskDrafts.value))
+  }
+
+  function clearTaskDraft(id: string) {
+    const { [id]: _saved, ...rest } = taskDrafts.value
+    taskDrafts.value = rest
+    localStorage.setItem(TASK_DRAFT_KEY, JSON.stringify(rest))
+  }
+
+  function taskProtectedIds() {
+    return new Set([...Object.keys(taskDrafts.value), ...Object.keys(taskPersisting).filter((id) => taskPersisting[id])])
+  }
+
+  /** 当前任务自动保存状态，供富文本旁明确展示。 */
+  const taskSaveState = (id: string): SaveState => taskSaveStates[id] ?? 'idle'
+
+  /**
+   * 串行写透最新任务快照。写入期间若又有修改，旧请求完成后立刻续写最新版本；
+   * 后台轮询在草稿确认前也不会覆盖本地任务。
+   */
+  async function drainTask(id: string): Promise<void> {
+    if (taskPersisting[id]) return
+    const task = taskById(id)
+    if (!task) return
+    if (!apiLive.value) {
+      taskSaveStates[id] = 'saved'
+      return
+    }
+    const version = taskPersistVersions[id] ?? 0
+    const snapshot = clone(task)
+    taskPersisting[id] = true
+    try {
+      await apiPutTask(id, snapshot)
+      if ((taskPersistVersions[id] ?? 0) === version) {
+        clearTaskDraft(id)
+        taskSaveStates[id] = 'saved'
+      }
+    } catch {
+      taskSaveStates[id] = 'error'
+    } finally {
+      taskPersisting[id] = false
+      if ((taskPersistVersions[id] ?? 0) !== version) {
+        taskSaveStates[id] = 'saving'
+        void drainTask(id)
+      }
+    }
+  }
+
+  /** 关闭抽屉或切换上下文时立即启动写透，不再等待去抖计时。 */
+  async function flushTask(id: string) {
+    clearTimeout(taskPersistTimers[id])
+    await drainTask(id)
+    while (taskPersisting[id]) await new Promise((resolve) => window.setTimeout(resolve, 25))
+  }
+
+  /** 独立追加评论，避免评论与富文本全文自动保存互相覆盖。 */
+  async function addTaskComment(id: string, text: string) {
+    const task = taskById(id)
+    if (!task) return false
+    await flushTask(id)
+    try {
+      const comment = apiLive.value
+        ? await apiAddTaskComment(id, text)
+        : { who: currentAuthor(), time: nowIso(), text }
+      task.comments.push(comment)
+      return true
+    } catch { return false }
+  }
+
   /** 合并字段到任务，可选写入一条活动时间线（对齐原型 patchTask）。 */
   function patchTask(id: string, fields: Partial<Task>, activityText?: string) {
     const t = taskById(id)
@@ -663,11 +770,15 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
-  /** 把某任务的当前完整状态写透到后端（fire-and-forget）。 */
+  /** 把任务先落本地草稿，再以 600ms 去抖、严格串行的方式写透后端。 */
   function persistTask(id: string) {
-    if (!apiLive.value) return
     const t = taskById(id)
-    if (t) apiPutTask(id, t).catch(() => {})
+    if (!t) return
+    storeTaskDraft(t)
+    taskPersistVersions[id] = (taskPersistVersions[id] ?? 0) + 1
+    taskSaveStates[id] = apiLive.value ? 'saving' : 'saved'
+    clearTimeout(taskPersistTimers[id])
+    taskPersistTimers[id] = setTimeout(() => void drainTask(id), 600)
   }
 
   /** 完成 / 重新打开一个任务（列表勾选用）；两个方向都写进活动时间线。 */
@@ -830,6 +941,25 @@ export const useDataStore = defineStore('data', () => {
       from: source || '本地上传（未持久化）', c1: '#E8ECFA', c2: '#DDE3F6',
     })
     return { name, url }
+  }
+
+  const MAX_FILE_BYTES = 50 * 1024 * 1024
+  async function refreshFiles() {
+    if (!apiLive.value) return
+    try { files.value = await fetchFiles() } catch { /* 保留当前列表 */ }
+  }
+  async function uploadFile(file: File) {
+    if (!apiLive.value || file.size > MAX_FILE_BYTES) return null
+    try {
+      const item = await apiUploadFile(file)
+      files.value.unshift(item)
+      return item
+    } catch { return null }
+  }
+  async function deleteFile(id: string) {
+    if (!apiLive.value) return
+    await apiDeleteFile(id)
+    files.value = files.value.filter((file) => file.id !== id)
   }
 
   /** 重新拉取图床列表（图床页打开时刷新，让其他标签页 / 其他人上传的图也出现）。 */
@@ -999,6 +1129,13 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
+  /** 保存用户拖拽后的密钥库分组顺序。 */
+  async function reorderVaultGroups(ids: string[]) {
+    const byId = new Map(vault.value.map((group) => [group.id, group]))
+    vault.value = ids.map((id) => byId.get(id)).filter((group): group is VaultGroup => !!group)
+    if (apiLive.value) await apiReorderVaultGroups(ids)
+  }
+
   /** 新建密钥库条目；apiLive 时经后端创建，密码在传输与落库前均按需加密（服务端处理）。 */
   async function addVaultItem(payload: {
     groupId: string; name: string; icon?: string; user?: string; site?: string; note?: string; secret?: string
@@ -1070,12 +1207,13 @@ export const useDataStore = defineStore('data', () => {
     docEdits, setDocEdit, docOf, docPending, applyRemoteDoc, addDoc, addNote, notesKb,
     addGroup, renameGroup, addFolder, renameFolder, deleteFolder, deleteDoc,
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
-    patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
+    patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject, taskSaveState, flushTask, addTaskComment,
     subById, subKey, addSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
+    uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES,
     updateProject, deleteProject, ensureProjectKb, syncFromServer,
     jobById, createJob, updateJob, deleteJob, runJob, pauseJob, resumeJob, reauthJob,
-    vaultItemById, addVaultGroup, renameVaultGroup, deleteVaultGroup,
+    vaultItemById, addVaultGroup, renameVaultGroup, deleteVaultGroup, reorderVaultGroups,
     addVaultItem, updateVaultItem, deleteVaultItem, revealVaultItem,
   }
 })

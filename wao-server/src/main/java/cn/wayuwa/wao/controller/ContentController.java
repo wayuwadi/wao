@@ -24,11 +24,6 @@ public class ContentController {
         this.content = content;
     }
 
-    @GetMapping("/files")
-    public ApiResponse<List<JsonNode>> files() {
-        return ApiResponse.ok(content.files());
-    }
-
     @GetMapping("/calendar/events")
     public ApiResponse<List<JsonNode>> events() {
         return ApiResponse.ok(content.events());

@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 /** 新建密钥库条目请求。secret 明文只在本次请求中传输，落库前立即加密。 */
 public record CreateVaultItemRequest(
-        @NotBlank String groupId,
+        String groupId,
         @NotBlank String name,
         String icon,
         String user,

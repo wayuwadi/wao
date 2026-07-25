@@ -144,7 +144,7 @@ https://wao.wayuwa.cn/api/hello
 | --- | --- |
 | 应用 | `ImageService.MAX_BYTES` / `spring.servlet.multipart.max-file-size` |
 | 网关 | `spring.codec.max-in-memory-size: 16MB` |
-| 云 Nginx | `location /api/` 的 `client_max_body_size 12m`（留 2MB 给 multipart 边界） |
+| 云 Nginx | `location /api/` 的 `client_max_body_size 52m`（通用文件上限 50MB，留 2MB 给 multipart 边界） |
 
 云节点更新 Nginx 配置后记得 `nginx -t && systemctl reload nginx`，否则上传大图会返回 413。
 
@@ -168,6 +168,7 @@ FEISHU_APP_ID=<飞书 App ID>
 FEISHU_APP_SECRET=<飞书 App Secret>
 FEISHU_REDIRECT_URI=https://wao.wayuwa.cn/api/auth/feishu/callback
 FEISHU_FRONTEND_URL=https://wao.wayuwa.cn
+FEISHU_COMMENT_WEBHOOK_URL=<飞书群机器人 Webhook>
 AUTH_PROTECTION_ENABLED=true
 SESSION_COOKIE_SECURE=true
 ```
@@ -202,4 +203,4 @@ WAO_VAULT_KEY=<上面生成的值>
 - Actions 在 Runner 上使用官方软件源执行容器构建检查，但 CD 只下发约百 KB 的源码发布包；两台家庭节点使用已预热的 Maven/Temurin 基础镜像和阿里云 Maven/Alpine 镜像本地分层构建，避免跨境传输百 MB 镜像制品；
 - `DEPLOY_SSH_KNOWN_HOSTS` 必须保存人工核验后的三个 SSH 主机公钥；
 - 密码登录仅用于首次安装公钥，流水线只使用专用部署密钥；
-- 飞书 Webhook 只保存在 GitHub Secret。所有分支 push 和 Pull Request 都通知 CI 结果，开启 CD 后通知还包含部署结果。
+- 飞书 Webhook 只保存在 GitHub Secret。它同时用于 main 部署结果和 WAO 任务新评论通知；CD 会私密下发为 `FEISHU_COMMENT_WEBHOOK_URL`，不写入仓库。

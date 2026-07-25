@@ -81,6 +81,14 @@ paths:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
         '200': { description: OK }
+  /tasks/{id}/comments:
+    post:
+      summary: 原子追加评论；持久化成功后同步到配置的飞书群机器人
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string } } } } }
+      responses: { '200': { description: 返回新评论 }, '400': { description: 评论为空 }, '404': { description: 任务不存在 } }
         '404': { description: 不存在 }
     patch:
       summary: 局部更新任务（空字段不改，改动写入活动时间线）
@@ -178,7 +186,16 @@ paths:
   /jobs/{id}/pause: { post: { summary: 暂停（停止按计划自动执行）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/resume: { post: { summary: 恢复已暂停的任务, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/reauth: { post: { summary: 重新授权（「待修复」恢复为「正常」）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
-  /files: { get: { summary: 文件列表, responses: { '200': { description: OK } } } }
+  /files:
+    get: { summary: 文件元数据列表（不读取二进制正文）, responses: { '200': { description: OK } } }
+    post:
+      summary: 上传通用文件（单个不超过 50MB）
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } } } } }
+      responses: { '200': { description: 返回带直链的文件项 }, '400': { description: 空文件或超过限制 } }
+  /files/{id}/download:
+    get: { summary: 公开直链下载文件, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: 文件字节流 }, '404': { description: 不存在 } } }
+  /files/{id}:
+    delete: { summary: 删除文件, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   # 图床（见 docs/adr/012-markdown-rendering-and-image-store.md）
   /images:
     get:
@@ -281,8 +298,10 @@ paths:
   /vault/groups/{id}:
     patch: { summary: 重命名分组, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     delete: { summary: 删除分组（级联删除条目）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /vault/groups/order:
+    put: { summary: 保存拖拽后的分组顺序, responses: { '200': { description: OK } } }
   /vault/items:
-    post: { summary: 新建条目（secret 明文只在本次请求传输，落库前加密）, responses: { '200': { description: OK }, '404': { description: 分组不存在 } } }
+    post: { summary: 新建条目（groupId 可空，默认进入“未分组”；secret 落库前加密）, responses: { '200': { description: OK }, '404': { description: 分组不存在 } } }
   /vault/items/{id}:
     patch: { summary: 局部更新条目, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     delete: { summary: 删除条目, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }

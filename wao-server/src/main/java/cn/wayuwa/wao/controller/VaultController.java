@@ -7,6 +7,7 @@ import cn.wayuwa.wao.dto.CreateVaultGroupRequest;
 import cn.wayuwa.wao.dto.CreateVaultItemRequest;
 import cn.wayuwa.wao.dto.PatchVaultGroupRequest;
 import cn.wayuwa.wao.dto.PatchVaultItemRequest;
+import cn.wayuwa.wao.dto.ReorderVaultGroupsRequest;
 import cn.wayuwa.wao.dto.VaultGroupDto;
 import cn.wayuwa.wao.dto.VaultItemDto;
 import cn.wayuwa.wao.dto.VaultSecretDto;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 密钥库接口。密码明文只经 {@code /api/vault/items/{id}/reveal} 按需返回一次，其余接口从不携带。 */
@@ -50,6 +52,12 @@ public class VaultController {
     @DeleteMapping("/groups/{id}")
     public ApiResponse<Void> deleteGroup(@PathVariable String id) {
         vaultService.deleteGroup(id);
+        return ApiResponse.ok(null);
+    }
+
+    @PutMapping("/groups/order")
+    public ApiResponse<Void> reorderGroups(@RequestBody ReorderVaultGroupsRequest request) {
+        vaultService.reorderGroups(request.ids());
         return ApiResponse.ok(null);
     }
 

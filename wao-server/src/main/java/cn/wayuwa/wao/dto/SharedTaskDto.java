@@ -12,6 +12,7 @@ import java.util.List;
  * @param status  状态
  * @param pr      优先级（子任务分享时为 null）
  * @param due     截止日期（子任务分享时为 null）
+ * @param projectId 所属项目 id，用于登录后直接定位原任务
  * @param project 所属项目名
  * @param desc    描述（Markdown）
  * @param images  内嵌图片
@@ -25,6 +26,7 @@ public record SharedTaskDto(
         String status,
         String pr,
         String due,
+        String projectId,
         String project,
         String desc,
         List<ImageRef> images,

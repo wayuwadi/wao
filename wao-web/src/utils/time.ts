@@ -1,7 +1,8 @@
 /** 活动 / 评论时间戳的记录与展示。 */
 
 /** 记录一个时间点。存 ISO 字符串，展示时再转成相对描述。 */
-export const nowIso = () => new Date().toISOString()
+/** 统一用带 +08:00 偏移的上海时间写入业务数据，避免不同部署节点显示相差八小时。 */
+export const nowIso = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().replace('Z', '+08:00')
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const hhmm = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`

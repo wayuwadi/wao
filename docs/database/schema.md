@@ -218,6 +218,17 @@ erDiagram
 
 密码加密方案见 `docs/adr/009-vault-server-side-encryption.md`：密钥来自环境变量 `WAO_VAULT_KEY`（base64 32 字节），列表 / 详情接口从不返回明文，只在 `POST /api/vault/items/{id}/reveal` 按需解密一次。这是服务端静态加密，不是零知识端到端加密。
 
+## 通用文件
+
+### file_blob
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(64) PK | 文件 id |
+| name / content_type | VARCHAR | 安全文件名与 MIME 类型 |
+| byte_size | BIGINT | 字节数，单个文件最大 50MB |
+| created_by / created_at | VARCHAR / DATETIME(3) | 上传成员与上海时间 |
+| content | LONGBLOB | 文件二进制正文，列表查询不读取 |
+
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
 - `V3__content_schema.sql` 内容域建表 + `V4__content_seed.sql` 种子。
@@ -228,4 +239,5 @@ erDiagram
 - `V12__account_auth.sql`：统一账号、身份、密码凭据与共享会话。
 - `V13__drop_content_demo_seed.sql`：清空「文件与图床」的演示数据。
 - `V14__knowledge_enhance.sql`：小记知识库、文档真实时间戳与版本号、三张表的回收站列、`doc_presence` 在场表。
+- `V15__file_store.sql`：通用文件元数据与二进制正文持久化。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
