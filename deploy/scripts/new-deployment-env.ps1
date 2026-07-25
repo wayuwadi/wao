@@ -60,6 +60,7 @@ $values = [ordered]@{
     GATEWAY_SSL_ENABLED          = 'true'
     GATEWAY_SSL_PASS             = (New-RandomSecret)
     JWT_SECRET                   = (New-RandomSecret -ByteCount 48)
+    WAO_VAULT_KEY                = (New-RandomSecret)
     WAO_IMAGE_TAG                = 'latest'
     ALERT_WEBHOOK_URL            = ''
 }
