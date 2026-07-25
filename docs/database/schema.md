@@ -206,6 +206,36 @@ erDiagram
 
 全局唯一一份的键值配置。敏感值（webhook 地址、App Secret）复用 `VaultCryptoService` 的 AES-256-GCM 加密后落库，接口只回脱敏形态（`SettingService.mask`），明文只在服务端调飞书接口时解出来用；因此真实凭据既不进 Git 也不必写进环境变量。
 
+## AI Run 域（V18）
+
+### ai_project_config
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| project_id | VARCHAR(32) PK | 项目 id |
+| enabled | BOOLEAN | 是否允许该项目触发 AI Run |
+| repo_url / default_branch | VARCHAR | Git 仓库与基线分支 |
+| workspace_dir | VARCHAR(128) | 各 Runner 工作区根目录下的项目文件夹名 |
+| preferred_runner_id | VARCHAR(32) NULL | 固定执行电脑；空表示自动分配 |
+| max_parallel_runs | INT | 同一项目最大并发 |
+| updated_at | DATETIME | 最后更新时间 |
+
+### ai_runner_node / ai_runner_pair_code
+
+`ai_runner_node` 保存电脑名、平台、并发槽位、令牌 SHA-256 哈希和最后心跳；不保存令牌明文。
+`ai_runner_pair_code` 保存一次性配对码哈希、过期时间和使用时间，明文只在生成接口返回一次。
+
+### ai_task_run
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id / task_id / project_id | VARCHAR(32) | 运行、任务和项目 id |
+| status | VARCHAR(24) | queued / running / succeeded / failed / cancelled |
+| runner_id | VARCHAR(32) NULL | 实际领取的电脑 |
+| prompt_url / branch_name | VARCHAR | Markdown 任务地址与隔离分支 |
+| result_summary / session_id / exit_code | TEXT / VARCHAR / INT | Codex 摘要、会话 id 与退出码 |
+| created_at / claimed_at / started_at / finished_at | DATETIME | 完整运行时间线 |
+
 ## 密钥库域
 
 ### vault_group（分组）
@@ -254,4 +284,5 @@ erDiagram
 - `V15__file_store.sql`：通用文件元数据与二进制正文持久化。
 - `V16__task_status_retire_blocked.sql`：任务状态改版，存量「阻塞」迁到「进行中」。
 - `V17__system_setting_and_feishu_sync.sql`：系统级配置表、`automation_job.handler` 与内置的飞书群聊同步任务。
+- `V18__ai_task_runner.sql`：项目级 AI 配置、执行电脑、一次性配对码与任务运行队列。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

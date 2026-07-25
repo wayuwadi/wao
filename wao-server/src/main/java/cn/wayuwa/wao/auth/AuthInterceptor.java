@@ -28,7 +28,8 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     private boolean isPublic(HttpServletRequest request) {
         String path = request.getRequestURI();
-        if (path.equals("/api/hello") || path.startsWith("/api/auth/") || path.startsWith("/api/share/")) return true;
+        if (path.equals("/api/hello") || path.startsWith("/api/auth/") || path.startsWith("/api/share/")
+                || path.startsWith("/api/ai/runner/")) return true;
         // 下载确认页要在未登录状态下拿到文件名、出题并兑换票据；下载接口自身再校验票据或会话。
         if ("POST".equals(request.getMethod())
                 && (path.matches("/api/files/[^/]+/challenge") || path.matches("/api/files/[^/]+/ticket"))) return true;

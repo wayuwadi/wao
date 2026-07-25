@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
-import type { Project } from '@/types'
+import {
+  createAiPairCode,
+  fetchAiProjectConfig,
+  fetchAiRunners,
+  saveAiProjectConfig,
+} from '@/api/ai'
+import type { AiRunner, Project } from '@/types'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ close: []; deleted: [] }>()
@@ -14,6 +20,16 @@ const area = ref(props.project.area)
 const goal = ref(props.project.goal === '尚未填写目标——打开项目后可补充。' ? '' : props.project.goal)
 const icon = ref(props.project.icon || 'ri-stack-line')
 const confirming = ref(false)
+const aiLoading = ref(true)
+const aiEnabled = ref(false)
+const repoUrl = ref('')
+const defaultBranch = ref('main')
+const workspaceDir = ref('')
+const preferredRunnerId = ref('')
+const maxParallelRuns = ref(2)
+const runners = ref<AiRunner[]>([])
+const pairCode = ref('')
+const pairExpiresAt = ref('')
 
 /** 可选项目图标（remixicon）。 */
 const ICONS = [
@@ -25,20 +41,66 @@ const ICONS = [
 
 async function save() {
   if (!name.value.trim()) return
-  await data.updateProject(props.project.id, {
-    name: name.value.trim(),
-    area: area.value,
-    goal: goal.value.trim(),
-    icon: icon.value,
-  })
-  toast('项目设置已保存', 'ri-check-line')
-  emit('close')
+  try {
+    await data.updateProject(props.project.id, {
+      name: name.value.trim(),
+      area: area.value,
+      goal: goal.value.trim(),
+      icon: icon.value,
+    })
+    await saveAiProjectConfig(props.project.id, {
+      enabled: aiEnabled.value,
+      repoUrl: repoUrl.value.trim(),
+      defaultBranch: defaultBranch.value.trim() || 'main',
+      workspaceDir: workspaceDir.value.trim(),
+      preferredRunnerId: preferredRunnerId.value || null,
+      maxParallelRuns: maxParallelRuns.value,
+    })
+    toast('项目设置与 AI Run 配置已保存', 'ri-check-line')
+    emit('close')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '项目设置保存失败', 'ri-error-warning-line')
+  }
 }
 
 async function remove() {
   await data.deleteProject(props.project.id)
   emit('deleted')
 }
+
+async function loadAiConfig() {
+  aiLoading.value = true
+  try {
+    const [config, nodes] = await Promise.all([
+      fetchAiProjectConfig(props.project.id),
+      fetchAiRunners(),
+    ])
+    aiEnabled.value = config.enabled
+    repoUrl.value = config.repoUrl
+    defaultBranch.value = config.defaultBranch
+    workspaceDir.value = config.workspaceDir
+    preferredRunnerId.value = config.preferredRunnerId ?? ''
+    maxParallelRuns.value = config.maxParallelRuns
+    runners.value = nodes
+  } catch (error) {
+    toast(error instanceof Error ? error.message : 'AI Run 配置加载失败', 'ri-error-warning-line')
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+async function generatePairCode() {
+  try {
+    const result = await createAiPairCode()
+    pairCode.value = result.code
+    pairExpiresAt.value = result.expiresAt
+    toast('已生成一次性配对码，十分钟内有效', 'ri-computer-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '配对码生成失败', 'ri-error-warning-line')
+  }
+}
+
+onMounted(loadAiConfig)
 </script>
 
 <template>
@@ -77,6 +139,60 @@ async function remove() {
 
     <div class="label">项目描述 / 目标</div>
     <textarea v-model="goal" class="goal" rows="3" placeholder="这个项目做成了，会是什么样？"></textarea>
+
+    <section class="ai-section">
+      <div class="ai-head">
+        <div>
+          <div class="ai-title"><i class="ri-robot-2-line"></i>AI Run</div>
+          <div class="ai-sub">把任务派给在线电脑上的 Codex，自动开发、测试、提交和部署。</div>
+        </div>
+        <label class="switch">
+          <input v-model="aiEnabled" type="checkbox" :disabled="aiLoading" />
+          <span></span>
+        </label>
+      </div>
+
+      <div v-if="aiLoading" class="ai-loading"><i class="ri-loader-4-line spin"></i>正在读取执行配置…</div>
+      <div v-else class="ai-fields" :class="{ muted: !aiEnabled }">
+        <label class="form-field wide">
+          <span>GitHub 仓库</span>
+          <input v-model="repoUrl" placeholder="https://github.com/组织/仓库.git" />
+        </label>
+        <label class="form-field">
+          <span>默认分支</span>
+          <input v-model="defaultBranch" placeholder="main" />
+        </label>
+        <label class="form-field">
+          <span>本机工程文件夹</span>
+          <input v-model="workspaceDir" placeholder="wao" />
+        </label>
+        <label class="form-field">
+          <span>同项目最大并发</span>
+          <input v-model.number="maxParallelRuns" type="number" min="1" max="10" />
+        </label>
+        <label class="form-field">
+          <span>优先执行电脑</span>
+          <select v-model="preferredRunnerId">
+            <option value="">自动分配在线电脑</option>
+            <option v-for="runner in runners" :key="runner.id" :value="runner.id">
+              {{ runner.name }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
+            </option>
+          </select>
+        </label>
+      </div>
+
+      <div class="runner-box">
+        <div>
+          <b>接入一台新电脑</b>
+          <span>电脑只需配对一次，Codex 和 GitHub 凭据不会上传到 WAO。</span>
+        </div>
+        <button class="pair-btn" @click="generatePairCode"><i class="ri-link"></i>生成电脑配对码</button>
+      </div>
+      <div v-if="pairCode" class="pair-code">
+        <span>{{ pairCode }}</span>
+        <small>十分钟内有效 · 到期时间 {{ pairExpiresAt.replace('T', ' ') }}</small>
+      </div>
+    </section>
 
     <div class="danger-zone">
       <template v-if="!confirming">
@@ -257,6 +373,158 @@ async function remove() {
 .goal:focus {
   border-color: var(--wao-primary);
   box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
+}
+.ai-section {
+  margin-top: 18px;
+  padding: 15px;
+  border: 1px solid #dce1f8;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #f8f9ff, #fff);
+}
+.ai-head,
+.runner-box {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.ai-head > div,
+.runner-box > div {
+  flex: 1;
+  min-width: 0;
+}
+.ai-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--wao-primary-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+.ai-title i {
+  font-size: 17px;
+}
+.ai-sub,
+.runner-box span {
+  display: block;
+  margin-top: 3px;
+  color: var(--wao-text-weak);
+  font-size: 11.5px;
+}
+.switch input {
+  position: absolute;
+  opacity: 0;
+}
+.switch span {
+  position: relative;
+  display: block;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: #cfd3df;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.switch span::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px #0002;
+  transition: 0.2s;
+}
+.switch input:checked + span {
+  background: var(--wao-primary);
+}
+.switch input:checked + span::after {
+  transform: translateX(18px);
+}
+.ai-loading {
+  padding: 18px 0 4px;
+  text-align: center;
+  color: var(--wao-text-weak);
+  font-size: 12px;
+}
+.spin {
+  display: inline-block;
+  margin-right: 6px;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.ai-fields {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.ai-fields.muted {
+  opacity: 0.52;
+}
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--wao-text-weak);
+  font-size: 11.5px;
+}
+.form-field.wide {
+  grid-column: 1 / -1;
+}
+.form-field input,
+.form-field select {
+  width: 100%;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--wao-text);
+  font-size: 12px;
+  outline: none;
+}
+.form-field input:focus,
+.form-field select:focus {
+  border-color: var(--wao-primary);
+}
+.runner-box {
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e8f5;
+}
+.runner-box b {
+  font-size: 12.5px;
+}
+.pair-btn {
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid #cbd2f3;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--wao-primary-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.pair-code {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed #aeb9ee;
+  border-radius: 9px;
+  background: #f2f4ff;
+}
+.pair-code span {
+  display: block;
+  color: #273ba3;
+  font: 700 21px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: 2px;
+}
+.pair-code small {
+  color: var(--wao-text-weak);
+  font-size: 10.5px;
 }
 .danger-zone {
   margin-top: 18px;

@@ -280,6 +280,49 @@ export interface SharedTask {
   subs: TaskStep[]
 }
 
+/** 项目级 AI Run 配置。 */
+export interface AiProjectConfig {
+  projectId: string
+  enabled: boolean
+  repoUrl: string
+  defaultBranch: string
+  workspaceDir: string
+  preferredRunnerId: string | null
+  maxParallelRuns: number
+}
+
+/** 一台已和 WAO 配对的 Codex 执行电脑。 */
+export interface AiRunner {
+  id: string
+  name: string
+  platform: string
+  maxConcurrency: number
+  activeRuns: number
+  online: boolean
+  lastSeenAt: string | null
+}
+
+export type AiRunStatus = 'queued' | 'claimed' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+/** 一次从 WAO 派发到 Codex 的任务运行。 */
+export interface AiRun {
+  id: string
+  taskId: string
+  taskTitle: string
+  projectId: string
+  projectName: string
+  status: AiRunStatus
+  runnerId: string | null
+  runnerName: string | null
+  branchName: string | null
+  resultSummary: string | null
+  sessionId: string | null
+  exitCode: number | null
+  createdAt: string
+  startedAt: string | null
+  finishedAt: string | null
+}
+
 export interface VaultItem {
   id: string
   name: string
