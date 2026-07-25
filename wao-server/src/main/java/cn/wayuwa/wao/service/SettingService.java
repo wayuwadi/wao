@@ -1,0 +1,141 @@
+package cn.wayuwa.wao.service;
+
+import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.Set;
+
+import cn.wayuwa.wao.common.VaultCryptoService;
+import cn.wayuwa.wao.domain.SystemSettingEntity;
+import cn.wayuwa.wao.mapper.SystemSettingMapper;
+import org.springframework.stereotype.Service;
+
+/**
+ * 系统级配置读写：全局唯一一份的键值配置（飞书通知 webhook、群聊同步凭据与映射等）。
+ *
+ * <p>敏感值（{@link #SECRET_KEYS}）用 {@link VaultCryptoService} 的 AES-256-GCM 加密后落库，
+ * 密文以 {@value #ENC_PREFIX} 前缀标记；接口层只回 {@link #mask 脱敏形态}，明文只在服务端
+ * 调飞书接口时解出来用。真实凭据因此既不进 Git，也不会被前端读走。
+ */
+@Service
+public class SettingService {
+
+    /** 飞书通知 webhook（全局一个，见需求「全局使用一个就可以了」）。 */
+    public static final String FEISHU_WEBHOOK_URL = "feishu.webhook.url";
+    public static final String FEISHU_WEBHOOK_ENABLED = "feishu.webhook.enabled";
+    /** 飞书群聊同步：自建应用凭据、目标群与落点知识库。 */
+    public static final String CHAT_SYNC_APP_ID = "feishu.chat-sync.app-id";
+    public static final String CHAT_SYNC_APP_SECRET = "feishu.chat-sync.app-secret";
+    public static final String CHAT_SYNC_CHAT_ID = "feishu.chat-sync.chat-id";
+    public static final String CHAT_SYNC_CHAT_NAME = "feishu.chat-sync.chat-name";
+    public static final String CHAT_SYNC_KB_ID = "feishu.chat-sync.kb-id";
+    public static final String CHAT_SYNC_FOLDER_ID = "feishu.chat-sync.folder-id";
+    /** 发言人映射：JSON 数组 [{"id":"ou_x","name":"娃哥"}]。 */
+    public static final String CHAT_SYNC_SENDERS = "feishu.chat-sync.senders";
+
+    /** 这些键的值加密存储、对外脱敏。 */
+    private static final Set<String> SECRET_KEYS = Set.of(FEISHU_WEBHOOK_URL, CHAT_SYNC_APP_SECRET);
+    private static final String ENC_PREFIX = "enc:";
+
+    private final SystemSettingMapper mapper;
+    private final VaultCryptoService crypto;
+
+    public SettingService(SystemSettingMapper mapper, VaultCryptoService crypto) {
+        this.mapper = mapper;
+        this.crypto = crypto;
+    }
+
+    /**
+     * 读一个配置项的明文。
+     *
+     * @param key 配置键
+     * @return 明文值；没配过时返回 null
+     */
+    public String get(String key) {
+        SystemSettingEntity e = mapper.selectById(key);
+        return e == null ? null : decode(e.getCfgValue());
+    }
+
+    /**
+     * 读一个配置项，缺省时回落。
+     *
+     * @param key      配置键
+     * @param fallback 没配过或为空时返回的值
+     * @return 明文值或 fallback
+     */
+    public String get(String key, String fallback) {
+        String value = get(key);
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    /** 读一个布尔配置项（只有字面量 {@code true} 算真）。 */
+    public boolean getBoolean(String key) {
+        return "true".equalsIgnoreCase(get(key));
+    }
+
+    /**
+     * 写一个配置项。传 null 表示不改；传空串表示清空。
+     *
+     * <p>「传 null 不改」是为了让前端能提交一份不含密文的表单：密码框留空即保留原值，
+     * 用户不必每次保存都重新粘一遍 App Secret。
+     *
+     * @param key   配置键
+     * @param value 明文值，null 时保持原样
+     */
+    public void put(String key, String value) {
+        if (value == null) {
+            return;
+        }
+        SystemSettingEntity e = mapper.selectById(key);
+        boolean insert = e == null;
+        if (insert) {
+            e = new SystemSettingEntity();
+            e.setCfgKey(key);
+        }
+        e.setCfgValue(encode(key, value));
+        e.setUpdatedAt(LocalDateTime.now());
+        if (insert) {
+            mapper.insert(e);
+        } else {
+            mapper.updateById(e);
+        }
+    }
+
+    /**
+     * 脱敏展示：密钥只留首尾各 4 个字符，webhook 只留域名与末尾。
+     *
+     * @param value 明文值
+     * @return 可以安全回给前端的形态；空值返回空串
+     */
+    public static String mask(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String v = value.trim();
+        if (v.length() <= 8) {
+            return "••••";
+        }
+        return v.substring(0, 4) + "••••••" + v.substring(v.length() - 4);
+    }
+
+    private String encode(String key, String value) {
+        if (!SECRET_KEYS.contains(key) || value.isBlank()) {
+            return value;
+        }
+        VaultCryptoService.Encrypted enc = crypto.encrypt(value);
+        return ENC_PREFIX + Base64.getEncoder().encodeToString(enc.nonce())
+                + ":" + Base64.getEncoder().encodeToString(enc.ciphertext());
+    }
+
+    private String decode(String stored) {
+        if (stored == null || !stored.startsWith(ENC_PREFIX)) {
+            return stored;
+        }
+        String[] parts = stored.substring(ENC_PREFIX.length()).split(":", 2);
+        if (parts.length != 2) {
+            return "";
+        }
+        byte[] nonce = Base64.getDecoder().decode(parts[0]);
+        byte[] ciphertext = Base64.getDecoder().decode(parts[1]);
+        return crypto.decrypt(ciphertext, nonce);
+    }
+}

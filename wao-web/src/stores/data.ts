@@ -215,6 +215,26 @@ export const useDataStore = defineStore('data', () => {
   /** 领域色（找不到用弱灰）。 */
   const areaColor = (id: string) => areaById(id)?.color ?? '#9A9DA9'
 
+  // ---- 自动保存状态 ----
+  /**
+   * 「正在保存 / 上次保存成功」的登记簿，key 形如 {@code task:t17} / {@code doc:d3}。
+   *
+   * <p>所有会自动保存的编辑区（任务描述、子任务描述、知识库文档）都往这里记一笔，
+   * 右上角的 {@code SaveHint} 据此显示「自动保存成功 14:32」——不给回执，用户没法
+   * 确认东西真的写进去了。
+   */
+  const saveStates = reactive<Record<string, { saving: boolean; savedAt: string | null }>>({})
+  const EMPTY_SAVE = { saving: false, savedAt: null }
+  /** 读某个编辑区的保存状态（没登记过就是「没存过也没在存」）。 */
+  const saveState = (key: string) => saveStates[key] ?? EMPTY_SAVE
+  function markSaving(key: string) {
+    saveStates[key] = { saving: true, savedAt: saveStates[key]?.savedAt ?? null }
+  }
+  /** 一次写透结束：成功才推进「上次保存成功」的时间。 */
+  function markSaved(key: string, ok: boolean) {
+    saveStates[key] = { saving: false, savedAt: ok ? nowIso() : (saveStates[key]?.savedAt ?? null) }
+  }
+
   // ---- 文档 Markdown 编辑（持久化，对齐原型 wao-docs-v1） ----
   const docEdits = ref<Record<string, DocEdit>>(loadDocEdits())
   function loadDocEdits(): Record<string, DocEdit> {
@@ -239,6 +259,7 @@ export const useDataStore = defineStore('data', () => {
     localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
     if (!apiLive.value) return
     docDirty[id] = true
+    markSaving(`doc:${id}`)
     clearTimeout(docPersistTimers[id])
     docPersistTimers[id] = setTimeout(() => {
       const resolved = docOf(id)
@@ -247,8 +268,11 @@ export const useDataStore = defineStore('data', () => {
       // 重新灌一遍内容，光标当场跳回开头。覆盖由 applyRemoteDoc 在真的收到别人的
       // 版本时才清。
       apiPatchDoc(id, { title: resolved.title, blocks: resolved.blocks })
-        .then((saved) => (docs[id] = saved))
-        .catch(() => {})
+        .then((saved) => {
+          docs[id] = saved
+          markSaved(`doc:${id}`, true)
+        })
+        .catch(() => markSaved(`doc:${id}`, false))
         .finally(() => (docDirty[id] = false))
     }, 600)
   }
@@ -663,11 +687,16 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
-  /** 把某任务的当前完整状态写透到后端（fire-and-forget）。 */
+  /** 把某任务的当前完整状态写透到后端（fire-and-forget），并登记保存状态。 */
   function persistTask(id: string) {
     if (!apiLive.value) return
     const t = taskById(id)
-    if (t) apiPutTask(id, t).catch(() => {})
+    if (!t) return
+    const key = `task:${id}`
+    markSaving(key)
+    apiPutTask(id, t)
+      .then(() => markSaved(key, true))
+      .catch(() => markSaved(key, false))
   }
 
   /** 完成 / 重新打开一个任务（列表勾选用）；两个方向都写进活动时间线。 */
@@ -1067,7 +1096,8 @@ export const useDataStore = defineStore('data', () => {
     today, areas, projects, tasks, kbs, docs, autos, files, imgs, vault,
     calEvents, schedule, suggestions, goals, myGroups, apiLive, hydrate,
     areaById, projectById, taskById, tasksByProject, kbById, docById, areaColor,
-    docEdits, setDocEdit, docOf, docPending, applyRemoteDoc, addDoc, addNote, notesKb,
+    docEdits, setDocEdit, docOf, docPending, saveState, markSaving, markSaved,
+    applyRemoteDoc, addDoc, addNote, notesKb,
     addGroup, renameGroup, addFolder, renameFolder, deleteFolder, deleteDoc,
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,

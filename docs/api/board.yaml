@@ -178,6 +178,48 @@ paths:
   /jobs/{id}/pause: { post: { summary: 暂停（停止按计划自动执行）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/resume: { post: { summary: 恢复已暂停的任务, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/reauth: { post: { summary: 重新授权（「待修复」恢复为「正常」）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
+  # 系统配置（全局唯一一份；密钥类字段只回脱敏形态，见 docs/adr/019-feishu-chat-sync-and-system-settings.md）
+  /settings/feishu-webhook:
+    get:
+      summary: 飞书通知 webhook 配置（urlMask 脱敏 / urlSet / enabled）
+      responses: { '200': { description: OK } }
+    put:
+      summary: 保存 webhook（url 省略表示不改地址，只切换 enabled）
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SaveWebhookRequest' } } }
+      responses: { '200': { description: OK } }
+  /settings/feishu-webhook/test:
+    post:
+      summary: 用当前配置发一条测试通知
+      responses: { '200': { description: OK }, '502': { description: webhook 不可达或返回错误（code=50203） }, '400': { description: 尚未配置地址（code=40000） } }
+  # 飞书群聊同步知识库
+  /feishu/chat-sync/config:
+    get:
+      summary: 同步配置（appSecret 只回脱敏形态）
+      responses: { '200': { description: OK } }
+    put:
+      summary: 保存同步配置（appSecret 省略表示保留原值）
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SaveChatSyncConfigRequest' } } }
+      responses: { '200': { description: OK } }
+  /feishu/chat-sync/chats:
+    get:
+      summary: 机器人所在的群列表
+      responses: { '200': { description: OK }, '400': { description: 尚未填写应用凭据 }, '502': { description: 调用飞书失败（code=50203） } }
+  /feishu/chat-sync/members:
+    get:
+      summary: 群成员列表（已套用现有的 ID → 人名映射）
+      parameters:
+        - { name: chatId, in: query, required: false, schema: { type: string } }
+      responses: { '200': { description: OK }, '400': { description: 尚未选择群聊 } }
+  /feishu/chat-sync/run:
+    post:
+      summary: 手动同步某一天（默认今天），返回结果摘要
+      parameters:
+        - { name: day, in: query, required: false, schema: { type: string, format: date } }
+      responses: { '200': { description: OK }, '400': { description: 配置不完整 }, '502': { description: 调用飞书失败（code=50203） } }
   /files: { get: { summary: 文件列表, responses: { '200': { description: OK } } } }
   # 图床（见 docs/adr/012-markdown-rendering-and-image-store.md）
   /images:
@@ -334,7 +376,7 @@ components:
         id: { type: string }
         title: { type: string }
         project: { type: string }
-        status: { type: string, enum: [待办, 进行中, 阻塞, 已完成] }
+        status: { type: string, enum: [待办, 进行中, AI 进行中, 待验证, 已完成] }
         pr: { type: string, enum: [P0, P1, P2, P3] }
         owner: { type: string }
         due: { type: string }
@@ -456,6 +498,29 @@ components:
         line: { type: integer, description: 光标所在的顶层块序号，-1 表示只在查看 }
         editing: { type: boolean, description: 上一个心跳周期内是否有输入 }
         rev: { type: integer, description: 客户端手上的正文版本号 }
+    SaveWebhookRequest:
+      type: object
+      description: url 省略表示不修改地址；明文只在服务端使用，加密后落 system_setting
+      properties:
+        url: { type: string, description: 飞书群机器人 webhook 地址 }
+        enabled: { type: boolean }
+    FeishuSender:
+      type: object
+      description: 发言人映射，把飞书 open_id 对上 WAO 里显示的人名
+      properties:
+        id: { type: string, description: 飞书 open_id }
+        name: { type: string, description: 显示名，如 娃哥 / 娃弟 / 机器人通知 }
+    SaveChatSyncConfigRequest:
+      type: object
+      description: 字段为 null 表示不修改；appSecret 留空即保留已存的密钥
+      properties:
+        appId: { type: string }
+        appSecret: { type: string }
+        chatId: { type: string }
+        chatName: { type: string }
+        kbId: { type: string, description: 沉淀到哪个知识库 }
+        folderId: { type: string, description: 沉淀到哪个文件夹 }
+        senders: { type: array, items: { $ref: '#/components/schemas/FeishuSender' } }
     MemberListResponse:
       allOf:
         - $ref: '#/components/schemas/ApiResponse'

@@ -40,6 +40,12 @@ export function relativeTime(value: string, now: Date = new Date()): string {
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
 }
 
+/** 只取时分（HH:mm），用于「自动保存成功 14:32」这种就近发生的提示。 */
+export function clockTime(value: string): string {
+  const d = parse(value)
+  return d ? hhmm(d) : ''
+}
+
 /** 悬停时显示的完整时间；不是时间戳则返回空（不加 title）。 */
 export function absoluteTime(value: string): string {
   const d = parse(value)

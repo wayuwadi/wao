@@ -9,7 +9,6 @@ const GO_ROUTES: Record<string, string> = {
   p: '/projects',
   c: '/calendar',
   k: '/knowledge',
-  b: '/whiteboard',
   f: '/files',
   a: '/automation',
   v: '/vault',

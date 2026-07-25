@@ -5,12 +5,13 @@ import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useDeco } from '@/composables/deco'
-import { statusMeta, priorityMeta } from '@/utils/domain'
+import { statusMeta, priorityMeta, TASK_STATUSES } from '@/utils/domain'
 import { fmtDate } from '@/utils/domain'
 import { toast } from '@/composables/toast'
 // 异步加载：编辑器带着 ProseMirror（gzip 约 110KB），只有真正打开任务详情时才需要，
 // 不该压在首屏包里。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
+import SaveHint from '@/components/ui/SaveHint.vue'
 import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { useSettle } from '@/composables/completion'
@@ -83,7 +84,7 @@ const linkedDocs = computed(() =>
   (task.value?.docs ?? []).map((id) => ({ id, title: data.docById(id)?.title ?? '' })),
 )
 
-const STATUS_OPTS: TaskStatus[] = ['待办', '进行中', '阻塞', '已完成']
+const STATUS_OPTS: TaskStatus[] = TASK_STATUSES
 const PR_OPTS: { key: Priority; sub: string }[] = [
   { key: 'P0', sub: '当天必须处理' },
   { key: 'P1', sub: '影响里程碑' },
@@ -376,7 +377,11 @@ function demo(msg: string) {
           <input class="title-input" :value="task.title" @input="editTitle" />
 
           <div class="field">
-            <div class="field-label">描述</div>
+            <div class="label-row">
+              <div class="field-label nomb">描述</div>
+              <div class="spacer"></div>
+              <SaveHint :save-key="`task:${task.id}`" />
+            </div>
             <MarkdownEditor
               v-model="desc"
               placeholder="补充背景、目标与边界…敲 ## 变标题、- 变列表，可直接粘贴截图"
@@ -532,7 +537,11 @@ function demo(msg: string) {
           </div>
 
           <div class="sub-field">
-            <div class="props-label sm">描述</div>
+            <div class="label-row">
+              <div class="props-label sm nomb">描述</div>
+              <div class="spacer"></div>
+              <SaveHint :save-key="`task:${task.id}`" />
+            </div>
             <MarkdownEditor
               v-model="subDesc"
               placeholder="补充这个子任务的做法、验收标准…敲 ## 变标题、- 变列表，可直接粘贴截图"
@@ -789,6 +798,13 @@ function demo(msg: string) {
 }
 .field-label.nomb {
   margin-bottom: 0;
+}
+/* 标题一行：左边字段名，右边自动保存回执 */
+.label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 /* 分享菜单 */
 .share-wrap {
@@ -1347,6 +1363,9 @@ function demo(msg: string) {
 }
 .props-label.sm {
   margin-bottom: 2px;
+}
+.props-label.nomb {
+  margin-bottom: 0;
 }
 .prop-row {
   display: flex;

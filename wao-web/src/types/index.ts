@@ -23,7 +23,6 @@ export type ModuleId =
   | 'projects'
   | 'calendar'
   | 'knowledge'
-  | 'whiteboard'
   | 'files'
   | 'automation'
   | 'vault'

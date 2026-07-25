@@ -33,13 +33,33 @@ const STATUS: Record<string, Swatch> = {
   有风险: { bg: '#FBF3E4', color: '#A96A10' },
   已完成: { bg: '#E8F5EE', color: '#257A50' },
   待办: { bg: '#F0F1F4', color: '#5A5E6B' },
-  阻塞: { bg: '#FBEBEB', color: '#BC4141' },
+  'AI 进行中': { bg: '#F1ECFB', color: '#6B3FBF' },
+  待验证: { bg: '#FBF3E4', color: '#A96A10' },
 }
 
 /** 项目 / 任务状态胶囊配色。 */
 export function statusMeta(s: ProjectStatus | TaskStatus): Swatch {
   return STATUS[s] ?? { bg: '#F0F1F4', color: '#5A5E6B' }
 }
+
+/**
+ * 任务状态流转顺序：待办 → 进行中 → AI 进行中 → 待验证 → 已完成。
+ *
+ * <p>看板列、状态下拉、分布图都读这一份，别再各自写一遍字面量数组。
+ */
+export const TASK_STATUSES: TaskStatus[] = ['待办', '进行中', 'AI 进行中', '待验证', '已完成']
+
+/** 看板 / 分布图上的状态圆点色（比胶囊底色更实，用于小面积着色）。 */
+export const TASK_STATUS_DOTS: Record<TaskStatus, string> = {
+  待办: '#C9CDDA',
+  进行中: '#4358D6',
+  'AI 进行中': '#8A5CD6',
+  待验证: '#D9A13B',
+  已完成: '#5CB88A',
+}
+
+/** 未完成 = 除「已完成」外的所有状态（含待验证：还没验收就不算做完）。 */
+export const isOpenStatus = (s: TaskStatus) => s !== '已完成'
 
 const PRIORITY: Record<Priority, Swatch> = {
   P0: { bg: '#FBEBEB', color: '#BC4141' },

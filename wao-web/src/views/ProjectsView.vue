@@ -6,7 +6,7 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
-import { statusMeta } from '@/utils/domain'
+import { statusMeta, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import type { Project, ProjectStatus, TaskStatus } from '@/types'
 
 const data = useDataStore()
@@ -103,13 +103,12 @@ const taskGroups = computed(() => {
   return groups
 })
 
-const boardCols = computed(() => {
-  const dots: Record<string, string> = { 待办: '#C9CDDA', 进行中: '#4358D6', 阻塞: '#D9A13B', 已完成: '#5CB88A' }
-  return (['待办', '进行中', '阻塞', '已完成'] as const).map((st) => ({
-    label: st, dot: dots[st]!, collapsible: st === '已完成',
+const boardCols = computed(() =>
+  TASK_STATUSES.map((st) => ({
+    label: st, dot: TASK_STATUS_DOTS[st], collapsible: st === '已完成',
     items: myList.value.filter((t) => t.status === st).map(decoTask),
-  }))
-})
+  })),
+)
 
 const tasksEmpty = computed(() => taskGroups.value.length === 0)
 

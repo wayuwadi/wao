@@ -2,14 +2,13 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
-import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { useTabsStore } from '@/stores/tabs'
 import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
-import { fmtDate } from '@/utils/domain'
+import { fmtDate, isOpenStatus, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import { toast } from '@/composables/toast'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
 import type { TaskStatus } from '@/types'
@@ -17,7 +16,6 @@ import type { TaskStatus } from '@/types'
 const route = useRoute()
 const router = useRouter()
 const data = useDataStore()
-const session = useSessionStore()
 const ui = useUiStore()
 const tabs = useTabsStore()
 const { decoProj, decoTask } = useDeco()
@@ -28,11 +26,16 @@ const showTime = (t: string) => relativeTime(t, now.value)
 
 const pid = computed(() => String(route.params.id))
 const project = computed(() => data.projectById(pid.value))
-const projTab = computed(() => (route.query.tab as string) || '总览')
+// 「总览」标签页已下线：里程碑 / 趋势 / 阻塞项 / 成员权限都是没有落地的演示卡片，
+// 进项目直接看任务。老链接上的 ?tab=总览 也归到任务，不至于打开一片空白。
+const projTab = computed(() => {
+  const t = route.query.tab as string | undefined
+  return t && t !== '总览' ? t : '任务'
+})
 const pdTaskView = computed(() => (route.query.view as string) || 'list')
 
 function setTab(t: string) {
-  router.replace({ query: { ...route.query, tab: t === '总览' ? undefined : t } })
+  router.replace({ query: { ...route.query, tab: t === '任务' ? undefined : t } })
 }
 function setView(v: string) {
   router.replace({ query: { ...route.query, view: v === 'list' ? undefined : v } })
@@ -73,54 +76,10 @@ function onDropReorder(overId: string) {
   if (id) data.reorderTask(id, overId)
 }
 
-const BOARD_DOTS: Record<string, string> = { 待办: '#C9CDDA', 进行中: '#4358D6', 阻塞: '#D9A13B', 已完成: '#5CB88A' }
-
 const pd = computed(() => (project.value ? decoProj(project.value) : null))
 const ptasks = computed(() => (project.value ? data.tasksByProject(project.value.id) : []))
 const kb = computed(() => data.kbs.find((k) => k.project === pid.value))
 
-const healthColor = computed(() => {
-  const map: Record<string, string> = { 良好: '#2C8A5B', 需要关注: '#B9821F', 风险: '#BC4141' }
-  return map[project.value?.health ?? ''] ?? '#2C8A5B'
-})
-const remainDays = computed(() =>
-  project.value ? Math.max(0, Math.round((+new Date(project.value.due) - +new Date(data.today)) / 86400000)) : 0,
-)
-const spark = computed(() => {
-  const trend = project.value && project.value.trend.length > 1 ? project.value.trend : [0, 0]
-  return trend
-    .map((v, i) => `${(i * (240 / (trend.length - 1))).toFixed(1)},${(58 - v * 0.5).toFixed(1)}`)
-    .join(' ')
-})
-const dist = computed(() => {
-  const total = ptasks.value.length || 1
-  return (['待办', '进行中', '阻塞', '已完成'] as const)
-    .map((st) => ({ label: st, count: ptasks.value.filter((t) => t.status === st).length, color: BOARD_DOTS[st]! }))
-    .filter((d) => d.count)
-    .map((d) => ({ ...d, w: (d.count / total) * 100 + '%' }))
-})
-const milestones = computed(() =>
-  (project.value?.milestones ?? []).map((m) => ({
-    name: m.name, date: m.date, done: m.state === 2,
-    dotBg: m.state === 2 ? '#4358D6' : '#FFFFFF',
-    dotBorder: m.state === 0 ? '#D9DCE5' : '#4358D6',
-    nameColor: m.state === 1 ? '#1A1C23' : '#5A5E6B',
-    nameWeight: m.state === 1 ? 600 : 400,
-    chip: m.state === 1 ? '进行中' : '',
-  })),
-)
-const members = computed(() =>
-  (project.value?.members ?? []).map((mid) => {
-    const m = session.memberById(mid)
-    const isOwner = mid === project.value?.owner
-    return {
-      name: m.name, initial: m.initial, color: m.color,
-      role: isOwner ? '负责人' : '参与',
-      roleBg: isOwner ? '#E9EDFB' : '#F0F1F4',
-      roleColor: isOwner ? '#3A4CC2' : '#5A5E6B',
-    }
-  }),
-)
 const linkedDocs = computed(() =>
   (project.value?.docs ?? []).map((id) => {
     const d = data.docById(id)
@@ -137,17 +96,20 @@ const openTasks = computed(() => allTasks.value.filter((t) => t.status !== '已�
 const doneTasks = computed(() => allTasks.value.filter((t) => t.status === '已完成' && !isSettling(t.id)))
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
 const board = computed(() =>
-  (['待办', '进行中', '阻塞', '已完成'] as const).map((st) => ({
+  TASK_STATUSES.map((st) => ({
     label: st,
-    dot: BOARD_DOTS[st]!,
+    dot: TASK_STATUS_DOTS[st],
     collapsible: st === '已完成',
     items: ptasks.value.filter((t) => t.status === st).map(decoTask),
   })),
 )
 const pdTabs = computed(() => {
-  const counts: Record<string, number> = { 任务: ptasks.value.length, 文档: linkedDocs.value.length, 文件: project.value?.files.length ?? 0 }
-  return (['总览', '任务', '文档', '文件', '动态'] as const).map((t) => ({
+  // 任务角标只数未完成的：一个跑了半年的项目里「25」几乎全是已完成，看不出还剩多少事。
+  const openCount = ptasks.value.filter((t) => isOpenStatus(t.status)).length
+  const counts: Record<string, number> = { 任务: openCount, 文档: linkedDocs.value.length, 文件: project.value?.files.length ?? 0 }
+  return (['任务', '文档', '文件', '动态'] as const).map((t) => ({
     label: t, count: counts[t], showCount: ['任务', '文档', '文件'].includes(t), on: projTab.value === t,
+    title: t === '任务' ? `${openCount} 个未完成 / 共 ${ptasks.value.length} 个` : '',
   }))
 })
 
@@ -178,137 +140,25 @@ function comingSoon(msg: string) {
         <div class="phead-name-row">
           <div class="phead-name">{{ pd.name }}</div>
           <span class="phead-status" :style="{ background: pd.stBg, color: pd.stColor }">{{ pd.status }}</span>
-          <span class="phead-health" :style="{ color: healthColor }"><span class="hdot" :style="{ background: healthColor }"></span>健康度 · {{ pd.health }}</span>
         </div>
-        <div class="phead-sub">{{ pd.areaName }} · {{ fmtDate(pd.start) }} – {{ fmtDate(pd.due) }} · <i class="ri-lock-line"></i> {{ pd.visibility }}</div>
+        <div class="phead-sub">{{ pd.areaName }} · {{ fmtDate(pd.start) }} – {{ fmtDate(pd.due) }}</div>
       </div>
       <div class="spacer"></div>
       <div class="phead-avs">
         <span v-for="(mv, i) in pd.memberAvs" :key="i" class="phead-av" :style="{ background: mv.color }">{{ mv.initial }}</span>
       </div>
-      <button class="btn-ghost" @click="comingSoon('邀请链接已复制（演示）· 可设置查看 / 编辑权限')"><i class="ri-user-add-line"></i>邀请</button>
       <button class="btn-icon" title="项目设置" @click="settingsOpen = true"><i class="ri-settings-3-line"></i></button>
       <button class="btn-primary sm" @click="ui.openModal('task', pid)"><i class="ri-add-line"></i>新建任务</button>
     </div>
 
     <div class="ptabs">
-      <button v-for="tb in pdTabs" :key="tb.label" class="ptab" :class="{ on: tb.on }" @click="setTab(tb.label)">
+      <button v-for="tb in pdTabs" :key="tb.label" class="ptab" :class="{ on: tb.on }" :title="tb.title" @click="setTab(tb.label)">
         {{ tb.label }}<span v-if="tb.showCount" class="ptab-count wao-tabular">{{ tb.count }}</span>
       </button>
     </div>
 
-    <!-- 总览 -->
-    <div v-if="projTab === '总览'" class="ov">
-      <div class="ov-left">
-        <div class="card pad">
-          <div class="card-eyebrow">项目目标</div>
-          <div class="goal">{{ pd.goal }}</div>
-        </div>
-
-        <div v-if="milestones.length" class="card pad">
-          <div class="card-title mb8">里程碑</div>
-          <div class="ms-wrap">
-            <div class="ms-line"></div>
-            <div v-for="(ms, i) in milestones" :key="i" class="ms-row">
-              <div class="ms-dot" :style="{ background: ms.dotBg, borderColor: ms.dotBorder }">
-                <i v-if="ms.done" class="ri-check-line"></i>
-              </div>
-              <div class="ms-name" :style="{ color: ms.nameColor, fontWeight: ms.nameWeight }">{{ ms.name }}</div>
-              <span v-if="ms.chip" class="ms-chip">{{ ms.chip }}</span>
-              <div class="ms-date wao-tabular">{{ ms.date }}</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 「近期任务」已移除：只截前 6 条，既不是全部任务，又和「任务」标签页重复 -->
-
-        <div v-if="pd.blockers.length" class="blockers">
-          <div class="blockers-title"><i class="ri-alert-line"></i>阻塞项</div>
-          <div v-for="(bk, i) in pd.blockers" :key="i" class="bk-row">
-            <div class="bk-main">
-              <div class="bk-text">{{ bk.text }}</div>
-              <div class="bk-sub">等待{{ bk.who }} · 已 {{ bk.days }}</div>
-            </div>
-            <button class="bk-nudge" @click="comingSoon(`已提醒${bk.who}（演示）`)">催办</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="ov-right">
-        <div class="card pad">
-          <div class="ring-row">
-            <div class="ring" :style="{ background: `conic-gradient(#4358D6 ${Math.round(pd.progress * 3.6)}deg, #E9EBF1 0)` }">
-              <div class="ring-hole"><div class="ring-pct wao-tabular">{{ pd.pct }}<span>%</span></div></div>
-            </div>
-            <div class="ring-meta">
-              <div class="rm-row"><span>开始</span><span>{{ fmtDate(pd.start) }}</span></div>
-              <div class="rm-row"><span>验收</span><span>{{ fmtDate(pd.due) }}</span></div>
-              <div class="rm-row"><span>剩余</span><b>{{ remainDays }} 天</b></div>
-            </div>
-          </div>
-          <div class="sub-block">
-            <div class="sub-label">进度趋势 · 近 8 周</div>
-            <svg viewBox="0 0 240 62" class="spark">
-              <polyline :points="spark" fill="none" stroke="#4358D6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
-            </svg>
-          </div>
-          <div v-if="dist.length" class="sub-block">
-            <div class="sub-label">任务分布</div>
-            <div class="dist-bar">
-              <span v-for="(d, i) in dist" :key="i" :style="{ width: d.w, background: d.color }"></span>
-            </div>
-            <div class="dist-legend">
-              <span v-for="(d, i) in dist" :key="i" class="dl"><span class="dl-dot" :style="{ background: d.color }"></span>{{ d.label }} {{ d.count }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="card pad">
-          <div class="card-title">成员与可见范围</div>
-          <div v-for="(m, i) in members" :key="i" class="mem-row">
-            <span class="mem-av" :style="{ background: m.color }">{{ m.initial }}</span>
-            <span class="mem-name">{{ m.name }}</span>
-            <span class="mem-role" :style="{ background: m.roleBg, color: m.roleColor }">{{ m.role }}</span>
-          </div>
-          <div class="vis-row"><i class="ri-eye-line"></i>{{ pd.visibility }}</div>
-          <button class="invite-btn" @click="comingSoon('邀请链接已复制（演示）· 可设置查看 / 编辑权限')"><i class="ri-user-add-line"></i>邀请成员并设置权限</button>
-        </div>
-
-        <div v-if="linkedDocs.length" class="card pad-sm">
-          <div class="card-title mb2">关联知识</div>
-          <div v-for="d in linkedDocs" :key="d.id" class="side-row" @click="openDoc(d.id)">
-            <i class="ri-file-text-line"></i>
-            <span class="side-title">{{ d.title }}</span>
-            <span class="side-time">{{ d.updated }}</span>
-          </div>
-        </div>
-
-        <div v-if="pd.files.length" class="card pad-sm">
-          <div class="card-title mb2">文件</div>
-          <div v-for="(f, i) in pd.files" :key="i" class="side-row" @click="comingSoon('演示：文件预览与下载在正式版本提供')">
-            <i :class="f.icon"></i>
-            <span class="side-title">{{ f.name }}</span>
-            <span class="side-time">{{ f.size }}</span>
-          </div>
-        </div>
-
-        <div v-if="pd.activity.length" class="card pad">
-          <div class="card-title">最近动态</div>
-          <div class="feed">
-            <div v-for="(ac, i) in pd.activity" :key="i" class="feed-row">
-              <i :class="ac.icon" :style="{ color: ac.color }"></i>
-              <div class="feed-main">
-                <div class="feed-text">{{ ac.text }}</div>
-                <div class="feed-time" :title="absoluteTime(ac.time)">{{ showTime(ac.time) }}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- 任务 -->
-    <div v-else-if="projTab === '任务'">
+    <div v-if="projTab === '任务'">
       <div class="tab-toolbar">
         <div class="seg">
           <button v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
@@ -522,17 +372,6 @@ function comingSoon(msg: string) {
   border-radius: 999px;
   padding: 2px 9px;
 }
-.phead-health {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-}
-.hdot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
 .phead-sub {
   margin-top: 3px;
   font-size: 12.5px;
@@ -556,25 +395,6 @@ function comingSoon(msg: string) {
   justify-content: center;
   border: 2px solid var(--wao-bg-page);
   margin-left: -7px;
-}
-.btn-ghost {
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--wao-line-strong);
-  background: #fff;
-  border-radius: 8px;
-  font-size: 12.5px;
-  color: var(--wao-text-2);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.btn-ghost:hover {
-  background: #f4f5f8;
-}
-.btn-ghost i {
-  font-size: 14px;
 }
 .btn-primary {
   height: 33px;
@@ -655,118 +475,6 @@ function comingSoon(msg: string) {
   font-size: 11px;
   color: var(--wao-text-weak);
 }
-
-.card {
-  background: #fff;
-  border: 1px solid var(--wao-line);
-  border-radius: 12px;
-}
-.card.pad {
-  padding: 16px 18px;
-}
-.card.pad-sm {
-  padding: 14px 18px 8px;
-}
-.card-eyebrow {
-  font-size: 12px;
-  color: var(--wao-text-weak);
-  letter-spacing: 1px;
-}
-.card-title {
-  font-size: 14px;
-  font-weight: 600;
-}
-.card-title.mb8 {
-  margin-bottom: 8px;
-}
-.card-title.mb2 {
-  margin-bottom: 2px;
-}
-.count {
-  margin-left: 8px;
-  font-size: 11.5px;
-  background: #f0f1f4;
-  color: var(--wao-text-3);
-  border-radius: 999px;
-  padding: 1px 8px;
-}
-
-.ov {
-  margin-top: 16px;
-  display: grid;
-  grid-template-columns: 1.65fr 1fr;
-  gap: 14px;
-  align-items: start;
-}
-@media (max-width: 1150px) {
-  .ov {
-    grid-template-columns: 1fr;
-  }
-}
-.ov-left,
-.ov-right {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-}
-.goal {
-  margin-top: 6px;
-  font-size: 14px;
-  line-height: 1.8;
-  color: var(--wao-text);
-}
-
-/* 里程碑 */
-.ms-wrap {
-  position: relative;
-}
-.ms-line {
-  position: absolute;
-  left: 7px;
-  top: 14px;
-  bottom: 14px;
-  width: 2px;
-  background: #e9ebf1;
-}
-.ms-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 7px 0;
-  position: relative;
-}
-.ms-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid #4358d6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  z-index: 1;
-}
-.ms-dot i {
-  font-size: 10px;
-  color: #fff;
-}
-.ms-name {
-  flex: 1;
-  font-size: 13px;
-}
-.ms-chip {
-  font-size: 11px;
-  background: #e9edfb;
-  color: #3a4cc2;
-  border-radius: 5px;
-  padding: 1px 7px;
-}
-.ms-date {
-  font-size: 12px;
-  color: var(--wao-text-weak);
-}
-
 .check {
   width: 17px;
   height: 17px;
@@ -796,239 +504,6 @@ function comingSoon(msg: string) {
   font-size: 11px;
   border-radius: 5px;
   padding: 1px 6px;
-  flex-shrink: 0;
-}
-/* 阻塞 */
-.blockers {
-  background: #fffdf7;
-  border: 1px solid #f0e3c4;
-  border-radius: 12px;
-  padding: 14px 18px;
-}
-.blockers-title {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #8a5b10;
-}
-.bk-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 0;
-  border-bottom: 1px solid #f5eedc;
-}
-.bk-text {
-  font-size: 13px;
-  color: var(--wao-text);
-}
-.bk-sub {
-  margin-top: 2px;
-  font-size: 11.5px;
-  color: var(--wao-warning-strong);
-}
-.bk-main {
-  flex: 1;
-  min-width: 0;
-}
-.bk-nudge {
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid #eadfc2;
-  background: #fff;
-  border-radius: 7px;
-  font-size: 12px;
-  color: #8a5b10;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.bk-nudge:hover {
-  background: var(--wao-warning-bg);
-}
-
-/* 进度环 */
-.ring-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.ring {
-  width: 92px;
-  height: 92px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.ring-hole {
-  width: 70px;
-  height: 70px;
-  border-radius: 50%;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.ring-pct {
-  font-size: 20px;
-  font-weight: 700;
-}
-.ring-pct span {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--wao-text-weak);
-}
-.ring-meta {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12.5px;
-}
-.rm-row {
-  display: flex;
-  justify-content: space-between;
-}
-.rm-row span:first-child {
-  color: var(--wao-text-weak);
-}
-.rm-row span:last-child {
-  color: var(--wao-text-2);
-}
-.sub-block {
-  margin-top: 12px;
-  border-top: 1px solid var(--wao-divider-2);
-  padding-top: 12px;
-}
-.sub-label {
-  font-size: 12px;
-  color: var(--wao-text-weak);
-}
-.spark {
-  width: 100%;
-  height: 56px;
-  display: block;
-  margin-top: 4px;
-}
-.dist-bar {
-  margin-top: 8px;
-  display: flex;
-  height: 8px;
-  border-radius: 99px;
-  overflow: hidden;
-  background: var(--wao-divider);
-}
-.dist-legend {
-  margin-top: 8px;
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.dl {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11.5px;
-  color: var(--wao-text-3);
-}
-.dl-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-}
-
-/* 成员 */
-.mem-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 0;
-}
-.mem-av {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 11px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.mem-name {
-  flex: 1;
-  font-size: 13px;
-  color: var(--wao-text);
-}
-.mem-role {
-  font-size: 11px;
-  border-radius: 5px;
-  padding: 1.5px 7px;
-}
-.vis-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 0;
-  border-top: 1px solid var(--wao-divider-2);
-  font-size: 12.5px;
-  color: var(--wao-text-3);
-}
-.vis-row i {
-  font-size: 14px;
-  color: var(--wao-text-weak);
-}
-.invite-btn {
-  width: 100%;
-  height: 31px;
-  border: 1px dashed #d3d6df;
-  background: none;
-  border-radius: 8px;
-  font-size: 12.5px;
-  color: var(--wao-text-3);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.invite-btn:hover {
-  border-color: var(--wao-primary);
-  color: var(--wao-primary);
-}
-
-/* 侧栏行（关联知识/文件） */
-.side-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 6px;
-  margin: 0 -6px;
-  border-radius: 7px;
-  cursor: pointer;
-}
-.side-row:hover {
-  background: var(--wao-bg-hover);
-}
-.side-row > i {
-  font-size: 14px;
-  color: var(--wao-text-weak);
-  flex-shrink: 0;
-}
-.side-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  color: var(--wao-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.side-time {
-  font-size: 11.5px;
-  color: var(--wao-text-weak);
   flex-shrink: 0;
 }
 

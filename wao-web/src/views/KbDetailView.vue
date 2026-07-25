@@ -15,6 +15,7 @@ import { useDocPresence } from '@/composables/docPresence'
 import { toast } from '@/composables/toast'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { useNow } from '@/composables/now'
+import SaveHint from '@/components/ui/SaveHint.vue'
 import type { DocLink } from '@/types'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
@@ -254,9 +255,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             </span>
             <span v-if="peers.length" class="realtime"><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span>
 
-            <span class="saved">
-              <i :class="saving ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ saving ? '保存中' : '已保存' }}
-            </span>
+            <SaveHint :save-key="`doc:${docId}`" :pending="saving" />
             <button class="icon-act" :title="docWide ? '切换为窄视图' : '切换为宽视图'" @click="docWide = !docWide">
               <i class="ri-arrow-left-right-line"></i>
             </button>
@@ -693,24 +692,6 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   border-radius: 50%;
   background: var(--wao-success);
   animation: waoPulse 2s infinite;
-}
-.saved {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
-  color: var(--wao-success-strong);
-}
-.saved i {
-  font-size: 12px;
-}
-.spin {
-  animation: waoSpin 0.9s linear infinite;
-}
-@keyframes waoSpin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 .icon-act {
   width: 28px;

@@ -23,6 +23,8 @@ public class AutomationJobEntity {
     private String stepsJson;
     private LocalDateTime nextFireAt;
     private Integer ord;
+    /** 真实执行器名；为空表示没有接外部系统，运行记录由模拟执行产生。 */
+    private String handler;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -50,4 +52,6 @@ public class AutomationJobEntity {
     public void setNextFireAt(LocalDateTime nextFireAt) { this.nextFireAt = nextFireAt; }
     public Integer getOrd() { return ord; }
     public void setOrd(Integer ord) { this.ord = ord; }
+    public String getHandler() { return handler; }
+    public void setHandler(String handler) { this.handler = handler; }
 }

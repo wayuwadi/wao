@@ -21,7 +21,8 @@ class AutomationServiceTest {
 
     private final AutomationJobMapper jobMapper = mock(AutomationJobMapper.class);
     private final AutomationRunMapper runMapper = mock(AutomationRunMapper.class);
-    private final AutomationService service = new AutomationService(jobMapper, runMapper, new ObjectMapper());
+    private final AutomationService service =
+            new AutomationService(jobMapper, runMapper, new ObjectMapper(), List.of());
 
     private AutomationJobEntity job(String status) {
         AutomationJobEntity e = new AutomationJobEntity();
@@ -99,6 +100,50 @@ class AutomationServiceTest {
         AutomationJobDto dto = service.reauthJob("j1");
 
         assertThat(dto.status()).isEqualTo("正常");
+    }
+
+    @Test
+    void runJobWithHandlerRecordsHandlerResult() {
+        AutomationJobEntity e = job("正常");
+        e.setHandler("demo");
+        when(jobMapper.selectById("j1")).thenReturn(e);
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        AutomationService withHandler = new AutomationService(jobMapper, runMapper, new ObjectMapper(),
+                List.of(handler("demo", () -> "成功 · 共 3 条消息")));
+
+        AutomationJobDto dto = withHandler.runJob("j1");
+
+        assertThat(dto.last()).contains("成功 · 共 3 条消息");
+    }
+
+    @Test
+    void runJobWithFailingHandlerRecordsFailureInsteadOfThrowing() {
+        AutomationJobEntity e = job("正常");
+        e.setHandler("demo");
+        when(jobMapper.selectById("j1")).thenReturn(e);
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        AutomationService withHandler = new AutomationService(jobMapper, runMapper, new ObjectMapper(),
+                List.of(handler("demo", () -> {
+                    throw new IllegalStateException("请先选择要同步的群聊");
+                })));
+
+        AutomationJobDto dto = withHandler.runJob("j1");
+
+        assertThat(dto.last()).contains("失败 · 请先选择要同步的群聊");
+    }
+
+    private JobHandler handler(String name, java.util.function.Supplier<String> body) {
+        return new JobHandler() {
+            @Override
+            public String name() {
+                return name;
+            }
+
+            @Override
+            public String execute() {
+                return body.get();
+            }
+        };
     }
 
     @Test
