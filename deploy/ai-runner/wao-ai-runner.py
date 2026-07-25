@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 STATE_FILE = Path.home() / ".wao" / "ai-runner.json"
@@ -135,14 +135,107 @@ def find_executable(name: str, configured: str | None = None) -> str:
     return executable
 
 
-def invoke_codex(command: list[str], worktree: Path, prompt: str) -> tuple[int, str]:
-    """通过标准输入传递提示，避免 Windows cmd 转发脚本截断多行参数。"""
+def invoke_codex(command: list[str], worktree: Path, prompt: str,
+        on_event: Callable[[dict[str, Any]], None] | None = None) -> tuple[int, str]:
+    """通过标准输入传递提示，并逐行消费 Codex JSONL 事件。"""
     process = subprocess.Popen(
         command, cwd=str(worktree), text=True, encoding="utf-8", errors="replace",
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
-    output, _ = process.communicate(input=prompt)
-    return process.returncode, output
+    if process.stdin is None or process.stdout is None:
+        raise RuntimeError("无法建立 Codex 标准输入输出管道")
+    process.stdin.write(prompt)
+    process.stdin.close()
+    lines: list[str] = []
+    for line in process.stdout:
+        lines.append(line)
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if on_event:
+            on_event(event)
+    process.wait()
+    return process.returncode, "".join(lines)
+
+
+def _readable_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = [_readable_text(item) for item in value]
+        return "\n".join(part for part in parts if part)
+    if isinstance(value, dict):
+        for key in ("text", "summary", "content", "message"):
+            text = _readable_text(value.get(key))
+            if text:
+                return text
+    return ""
+
+
+def extract_progress(event: dict[str, Any]) -> tuple[str, str] | None:
+    """只提取用户可读结果；明确排除命令、文件、工具调用和网页检索事件。"""
+    event_type = str(event.get("type") or "")
+    if event_type == "turn.started":
+        return "phase", "Codex 已开始分析任务"
+    if event_type == "turn.failed":
+        return "result", "Codex 本轮执行失败，正在整理错误原因"
+    if not event_type.startswith("item."):
+        return None
+    item = event.get("item")
+    if not isinstance(item, dict):
+        return None
+    item_type = str(item.get("type") or "")
+    if item_type == "agent_message":
+        text = _readable_text(item.get("text") or item.get("content"))
+        if text.startswith("WAO_RUN_STATUS:"):
+            text = "\n".join(text.splitlines()[1:]).strip()
+        return ("message", text) if text else None
+    if item_type in {"plan", "plan_update"}:
+        text = _readable_text(item.get("text") or item.get("plan") or item.get("content"))
+        return ("plan", text) if text else None
+    if item_type == "reasoning":
+        # 仅使用 Codex 主动提供的公开摘要，不读取内部推理正文。
+        text = _readable_text(item.get("summary"))
+        return ("message", text) if text else None
+    return None
+
+
+class ProgressReporter:
+    """对进展去重和节流，网络失败不影响本机执行。"""
+
+    def __init__(self, api: WaoApi, run_id: str, interval: float = 2.0) -> None:
+        self.api = api
+        self.run_id = run_id
+        self.interval = interval
+        self.last_sent_at = 0.0
+        self.last_content = ""
+        self.pending: tuple[str, str] | None = None
+
+    def send(self, kind: str, content: str, force: bool = False) -> None:
+        content = " ".join(content.split())[:1000]
+        if not content or content == self.last_content:
+            return
+        now = time.monotonic()
+        if not force and now - self.last_sent_at < self.interval:
+            self.pending = (kind, content)
+            return
+        try:
+            self.api.post(f"/api/ai/runner/runs/{self.run_id}/progress", {"kind": kind, "content": content})
+            self.last_sent_at = now
+            self.last_content = content
+            self.pending = None
+        except Exception as exc:  # noqa: BLE001 - 进展上报不能中断 Codex
+            log(f"[{self.run_id}] 进展上报失败，继续执行：{exc}")
+
+    def event(self, event: dict[str, Any]) -> None:
+        progress = extract_progress(event)
+        if progress:
+            self.send(*progress)
+
+    def flush(self) -> None:
+        if self.pending:
+            self.send(*self.pending, force=True)
 
 
 def normalize_result(exit_code: int, result_text: str) -> tuple[int, str]:
@@ -170,8 +263,10 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str,
     session_id: str | None = None
     summary = ""
     stage = "准备 Git 工作区"
+    reporter = ProgressReporter(api, run_id)
     try:
         log(f"[{run_id}] 开始：{claim['taskTitle']}")
+        reporter.send("phase", "正在准备独立工作区", force=True)
         worktree = prepare_worktree(claim, root, git_command)
         result_file = worktree / ".wao-ai-result.txt"
         prompt = (
@@ -185,13 +280,15 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str,
             "尚未完成或需要补充信息时第一行写 `WAO_RUN_STATUS: BLOCKED`。状态行后再写中文结果摘要。"
         )
         stage = "启动 Codex"
+        reporter.send("phase", "工作区已准备完成，正在启动 Codex", force=True)
         command = [
             codex_command, "exec", "--json", "--color", "never", "--sandbox", sandbox,
             "-c", 'approval_policy="never"', "-C", str(worktree),
             "--output-last-message", str(result_file), "-",
         ]
         stage = "等待 Codex 完成"
-        exit_code, output = invoke_codex(command, worktree, prompt)
+        exit_code, output = invoke_codex(command, worktree, prompt, reporter.event)
+        reporter.flush()
         for line in output.splitlines():
             try:
                 event = json.loads(line)
@@ -200,6 +297,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str,
             session_id = event.get("thread_id") or event.get("session_id") or session_id
         result_text = result_file.read_text(encoding="utf-8", errors="replace") if result_file.exists() else output[-12000:]
         exit_code, result_text = normalize_result(exit_code, result_text)
+        reporter.send("result", "Codex 已执行完成，正在整理结果" if exit_code == 0
+                      else "Codex 执行未完成，正在整理失败原因", force=True)
         summary = f"工作目录：{worktree}\n\n{result_text}"[-30000:]
     except Exception as exc:  # noqa: BLE001 - 必须把节点错误回传给 WAO
         summary = (f"失败阶段：{stage}\n错误详情：{exc}\n"

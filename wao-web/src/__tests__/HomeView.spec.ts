@@ -16,11 +16,26 @@ vi.mock('@/api/ai', () => ({
       runnerName: '娃哥电脑',
       branchName: 'ai/wao-ar1',
       resultSummary: '失败阶段：准备 Git 工作区\n错误详情：仓库地址无法克隆',
+      latestProgress: 'Codex 执行未完成，请查看失败原因',
+      progressUpdatedAt: '2026-07-25T18:51:00',
+      progress: [
+        { id: 'ap1', kind: 'phase', content: '正在准备独立工作区', createdAt: '2026-07-25T18:50:10' },
+        { id: 'ap2', kind: 'result', content: 'Codex 执行未完成，请查看失败原因', createdAt: '2026-07-25T18:51:00' },
+      ],
       sessionId: null,
       exitCode: -1,
       createdAt: '2026-07-25T18:50:00',
       startedAt: '2026-07-25T18:50:10',
       finishedAt: '2026-07-25T18:51:00',
+    },
+    {
+      id: 'ar2', taskId: 't2', taskTitle: '实时任务', projectId: 'p1', projectName: 'WAO',
+      status: 'running', runnerId: 'rn1', runnerName: '娃哥电脑', branchName: 'ai/wao-ar2',
+      resultSummary: null, latestProgress: '已定位问题，正在实现实时反馈',
+      progressUpdatedAt: '2026-07-25T20:18:20',
+      progress: [{ id: 'ap3', kind: 'message', content: '已定位问题，正在实现实时反馈', createdAt: '2026-07-25T20:18:20' }],
+      sessionId: 'thread-1', exitCode: null, createdAt: '2026-07-25T20:18:00',
+      startedAt: '2026-07-25T20:18:05', finishedAt: null,
     },
   ]),
   fetchAiRunners: vi.fn<() => Promise<never[]>>().mockResolvedValue([]),
@@ -45,6 +60,24 @@ describe('HomeView AI 运行详情', () => {
     expect(wrapper.find('.run-detail').text()).toContain('失败原因')
     expect(wrapper.find('.run-detail').text()).toContain('仓库地址无法克隆')
     expect(wrapper.find('.run-detail').text()).toContain('-1')
+    wrapper.unmount()
+  })
+
+  it('运行卡片直接展示最新反馈，点击先打开实时记录而不是跳走', async () => {
+    vi.useFakeTimers()
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
+    })
+    const wrapper = mount(HomeView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    expect(wrapper.find('.run-card').text()).toContain('已定位问题，正在实现实时反馈')
+    await wrapper.find('.run-card').trigger('click')
+
+    expect(wrapper.find('.run-detail').text()).toContain('AI 执行记录')
+    expect(wrapper.find('.run-detail').text()).toContain('已定位问题，正在实现实时反馈')
+    expect(router.currentRoute.value.fullPath).toBe('/')
     wrapper.unmount()
   })
 })

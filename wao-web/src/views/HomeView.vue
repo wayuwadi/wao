@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { fetchAiRunners, fetchAiRuns } from '@/api/ai'
+import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import type { AiRun, AiRunStatus, AiRunner } from '@/types'
 
 const router = useRouter()
@@ -31,6 +32,7 @@ async function refresh() {
     const [nextRuns, nextRunners] = await Promise.all([fetchAiRuns(false), fetchAiRunners()])
     runs.value = nextRuns
     runners.value = nextRunners
+    if (selectedRun.value) selectedRun.value = nextRuns.find((run) => run.id === selectedRun.value?.id) ?? selectedRun.value
   } catch {
     // 首页轮询失败时保留上一帧，避免网络抖动让运行面板闪空。
   } finally {
@@ -61,6 +63,14 @@ function timeText(value: string | null) {
   return Number.isNaN(date.getTime())
     ? value
     : date.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+function progressAge(value: string | null) {
+  if (!value) return '等待反馈'
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000))
+  if (seconds < 10) return '刚刚更新'
+  if (seconds < 60) return `${seconds} 秒前更新`
+  return `${Math.floor(seconds / 60)} 分钟前更新`
 }
 
 onMounted(() => {
@@ -101,7 +111,7 @@ onBeforeUnmount(() => {
       <div class="section-head">
         <div>
           <h2>正在运行</h2>
-          <p>点击任意卡片可直接定位到对应任务。</p>
+          <p>点击卡片查看 AI 的实时反馈和执行档案。</p>
         </div>
         <span class="live"><i></i>每 5 秒刷新</span>
       </div>
@@ -112,7 +122,7 @@ onBeforeUnmount(() => {
         <span>打开项目任务，点击 “AI run run” 即可开始。</span>
       </div>
       <div v-else class="run-grid">
-        <button v-for="run in activeRuns" :key="run.id" class="run-card" @click="openRun(run)">
+        <button v-for="run in activeRuns" :key="run.id" class="run-card" @click="inspectRun(run)">
           <div class="run-top">
             <span class="status" :style="{ color: statusMeta[run.status].color, background: statusMeta[run.status].bg }">
               <i :class="[statusMeta[run.status].icon, { spin: run.status === 'running' }]"></i>
@@ -122,6 +132,10 @@ onBeforeUnmount(() => {
           </div>
           <h3>{{ run.taskTitle }}</h3>
           <div class="run-project"><i class="ri-stack-line"></i>{{ run.projectName }}</div>
+          <div class="live-progress">
+            <span class="live-pulse"></span>
+            <div><b>{{ run.latestProgress || '正在等待第一条 AI 反馈…' }}</b><small>{{ progressAge(run.progressUpdatedAt) }}</small></div>
+          </div>
           <div class="run-foot">
             <span><i class="ri-computer-line"></i>{{ run.runnerName || '等待自动分配' }}</span>
             <i class="ri-arrow-right-line"></i>
@@ -166,10 +180,14 @@ onBeforeUnmount(() => {
         <dl>
           <div><dt>执行电脑</dt><dd>{{ selectedRun.runnerName || '未分配电脑' }}</dd></div>
           <div><dt>退出码</dt><dd>{{ selectedRun.exitCode ?? '—' }}</dd></div>
-          <div><dt>结束时间</dt><dd>{{ timeText(selectedRun.finishedAt) || '—' }}</dd></div>
+          <div><dt>{{ selectedRun.finishedAt ? '结束时间' : '最近反馈' }}</dt><dd>{{ timeText(selectedRun.finishedAt || selectedRun.progressUpdatedAt) || '等待中' }}</dd></div>
         </dl>
-        <div class="result-title">{{ selectedRun.status === 'failed' ? '失败原因' : '运行结果' }}</div>
-        <pre>{{ selectedRun.resultSummary || '执行节点没有返回结果详情。' }}</pre>
+        <div class="result-title">AI 执行记录</div>
+        <AiRunProgressTimeline :run="selectedRun" />
+        <template v-if="selectedRun.resultSummary">
+          <div class="result-title result-gap">{{ selectedRun.status === 'failed' ? '失败原因' : '最终结果' }}</div>
+          <pre>{{ selectedRun.resultSummary }}</pre>
+        </template>
         <footer>
           <button class="secondary" @click="selectedRun = null">关闭</button>
           <button class="primary" @click="openRun(selectedRun)">打开对应任务</button>
@@ -269,6 +287,12 @@ onBeforeUnmount(() => {
 .run-card h3 { min-height: 40px; margin: 14px 0 5px; font-size: 14px; line-height: 1.45; }
 .run-project { color: var(--wao-text-weak); font-size: 11.5px; }
 .run-project i { margin-right: 5px; }
+.live-progress { margin-top: 13px; padding: 10px; border-radius: 9px; background: #f7f8fd; display: flex; gap: 9px; align-items: flex-start; }
+.live-progress > div { min-width: 0; }
+.live-progress b, .live-progress small { display: block; }
+.live-progress b { overflow: hidden; color: #41485c; font-size: 11px; font-weight: 550; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.live-progress small { margin-top: 3px; color: #969bac; font-size: 9.5px; }
+.live-pulse { width: 8px; height: 8px; margin-top: 4px; flex: 0 0 auto; border-radius: 50%; background: #36a86f; box-shadow: 0 0 0 4px #dff5e9; animation: livePulse 1.5s infinite; }
 .run-foot { margin-top: 15px; padding-top: 11px; border-top: 1px solid #f0f1f5; color: var(--wao-text-3); font-size: 11px; }
 .run-foot span { flex: 1; }
 .run-foot span i { margin-right: 5px; }
@@ -338,11 +362,13 @@ onBeforeUnmount(() => {
 .run-detail dt { color: var(--wao-text-weak); font-size: 10px; }
 .run-detail dd { margin: 4px 0 0; font-size: 11.5px; font-weight: 600; }
 .result-title { margin-bottom: 7px; font-size: 12px; font-weight: 650; }
+.result-title.result-gap { margin-top: 16px; }
 .run-detail pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border: 1px solid #ead3d3; border-radius: 10px; background: #fff8f8; color: #753030; font: 11.5px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 .run-detail footer { margin-top: 18px; display: flex; justify-content: flex-end; gap: 9px; }
 .run-detail footer button { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
 .run-detail footer .secondary { border: 1px solid var(--wao-line); background: #fff; }
 .run-detail footer .primary { border: 1px solid #4358d6; background: #4358d6; color: #fff; }
+@keyframes livePulse { 50% { opacity: .45; box-shadow: 0 0 0 7px #dff5e955; } }
 .spin { display: inline-block; animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {

@@ -14,6 +14,7 @@ import cn.wayuwa.wao.dto.CreateAiRunsRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
+import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.service.AiRunService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -76,6 +77,11 @@ public class AiRunController {
         return ApiResponse.ok(service.listRuns(active));
     }
 
+    @GetMapping("/tasks/{taskId}/runs")
+    public ApiResponse<List<AiRunDto>> taskRuns(@PathVariable String taskId) {
+        return ApiResponse.ok(service.listTaskRuns(taskId));
+    }
+
     @PostMapping("/runner/pair")
     public ApiResponse<PairedAiRunnerDto> pair(@Valid @RequestBody PairAiRunnerRequest request) {
         return ApiResponse.ok(service.pair(request));
@@ -96,5 +102,12 @@ public class AiRunController {
     public ApiResponse<AiRunDto> complete(@RequestHeader(RUNNER_TOKEN) String token,
             @PathVariable String runId, @RequestBody CompleteAiRunRequest request) {
         return ApiResponse.ok(service.complete(token, runId, request));
+    }
+
+    @PostMapping("/runner/runs/{runId}/progress")
+    public ApiResponse<Void> progress(@RequestHeader(RUNNER_TOKEN) String token,
+            @PathVariable String runId, @Valid @RequestBody ReportAiRunProgressRequest request) {
+        service.reportProgress(token, runId, request);
+        return ApiResponse.ok(null);
     }
 }

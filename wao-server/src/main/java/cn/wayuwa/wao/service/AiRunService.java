@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -16,12 +17,14 @@ import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.domain.AiProjectConfigEntity;
+import cn.wayuwa.wao.domain.AiRunProgressEntity;
 import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.domain.AiRunnerPairCodeEntity;
 import cn.wayuwa.wao.domain.AiTaskRunEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
+import cn.wayuwa.wao.dto.AiRunProgressDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
@@ -29,8 +32,10 @@ import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
+import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.mapper.AiProjectConfigMapper;
+import cn.wayuwa.wao.mapper.AiRunProgressMapper;
 import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
 import cn.wayuwa.wao.mapper.AiRunnerPairCodeMapper;
 import cn.wayuwa.wao.mapper.AiTaskRunMapper;
@@ -38,6 +43,7 @@ import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
@@ -53,21 +59,26 @@ public class AiRunService {
     private static final String PAIR_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final List<String> ACTIVE = List.of("queued", "claimed", "running");
     private static final int MAX_RESULT = 32_000;
+    private static final int MAX_PROGRESS = 1_000;
+    private static final int MAX_PROGRESS_PER_RUN = 50;
+    private static final Set<String> PROGRESS_KINDS = Set.of("phase", "message", "plan", "result");
 
     private final AiProjectConfigMapper configMapper;
     private final AiRunnerNodeMapper runnerMapper;
     private final AiRunnerPairCodeMapper pairMapper;
     private final AiTaskRunMapper runMapper;
+    private final AiRunProgressMapper progressMapper;
     private final TaskMapper taskMapper;
     private final ProjectMapper projectMapper;
 
     public AiRunService(AiProjectConfigMapper configMapper, AiRunnerNodeMapper runnerMapper,
-            AiRunnerPairCodeMapper pairMapper, AiTaskRunMapper runMapper, TaskMapper taskMapper,
-            ProjectMapper projectMapper) {
+            AiRunnerPairCodeMapper pairMapper, AiTaskRunMapper runMapper, AiRunProgressMapper progressMapper,
+            TaskMapper taskMapper, ProjectMapper projectMapper) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
         this.pairMapper = pairMapper;
         this.runMapper = runMapper;
+        this.progressMapper = progressMapper;
         this.taskMapper = taskMapper;
         this.projectMapper = projectMapper;
     }
@@ -180,6 +191,7 @@ public class AiRunService {
     }
 
     /** 把一个或多个任务加入队列；同一任务已有活动运行时不会重复入队。 */
+    @Transactional
     public synchronized List<AiRunDto> enqueue(List<String> taskIds, String requestedBy, String baseUrl) {
         List<AiTaskRunEntity> created = new ArrayList<>();
         for (String taskId : taskIds.stream().distinct().toList()) {
@@ -205,6 +217,7 @@ public class AiRunService {
             run.setBranchName("ai/wao-" + run.getId());
             run.setCreatedAt(LocalDateTime.now());
             runMapper.insert(run);
+            appendProgress(run, "phase", "任务已进入队列，正在等待执行电脑领取");
             setTaskStatus(taskId, "AI 进行中");
             created.add(run);
         }
@@ -220,6 +233,15 @@ public class AiRunService {
         return toRunDtos(runMapper.selectList(query));
     }
 
+    /** 返回指定任务的 AI 执行档案，供任务详情长期回看。 */
+    public List<AiRunDto> listTaskRuns(String taskId) {
+        if (taskMapper.selectById(taskId) == null) throw new NotFoundException("任务不存在：" + taskId);
+        return toRunDtos(runMapper.selectList(new LambdaQueryWrapper<AiTaskRunEntity>()
+                .eq(AiTaskRunEntity::getTaskId, taskId)
+                .orderByDesc(AiTaskRunEntity::getCreatedAt)
+                .last("LIMIT 30")));
+    }
+
     /** 节点心跳；同时刷新并发能力，便于用户调整本机 runner 参数后立即生效。 */
     public AiRunnerDto heartbeat(String token, Integer maxConcurrency) {
         AiRunnerNodeEntity runner = requireRunner(token);
@@ -230,6 +252,7 @@ public class AiRunService {
     }
 
     /** 节点领取下一条满足节点偏好和项目并发上限的任务。 */
+    @Transactional
     public synchronized AiRunnerClaimDto claim(String token) {
         recoverStaleRuns();
         AiRunnerNodeEntity runner = requireRunner(token);
@@ -257,7 +280,7 @@ public class AiRunService {
             run.setStatus("running");
             run.setClaimedAt(now);
             run.setStartedAt(now);
-            runMapper.updateById(run);
+            appendProgress(run, "phase", "执行电脑已领取任务，Codex 正在启动");
             setTaskStatus(run.getTaskId(), "AI 进行中");
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());
@@ -269,7 +292,27 @@ public class AiRunService {
         return null;
     }
 
+    /** 接收 Runner 筛选后的用户可读进展；命令、工具调用等类型不会被保存。 */
+    @Transactional
+    public synchronized void reportProgress(String token, String runId, ReportAiRunProgressRequest request) {
+        AiRunnerNodeEntity runner = requireRunner(token);
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        if (!runner.getId().equals(run.getRunnerId())) {
+            throw new UnauthorizedException("该运行不属于当前执行节点");
+        }
+        if (!ACTIVE.contains(run.getStatus())) throw new BadRequestException("该运行已经结束，不能继续回传进展");
+        String kind = trim(request.kind()).toLowerCase();
+        if (!PROGRESS_KINDS.contains(kind)) throw new BadRequestException("不支持的进展类型：" + kind);
+        String content = limit(request.content(), MAX_PROGRESS);
+        if (!StringUtils.hasText(content) || content.equals(run.getLatestProgress())) return;
+        appendProgress(run, kind, content);
+        runner.setLastSeenAt(LocalDateTime.now());
+        runnerMapper.updateById(runner);
+    }
+
     /** 节点回传退出码和摘要；成功进入待验证，失败回到进行中。 */
+    @Transactional
     public synchronized AiRunDto complete(String token, String runId, CompleteAiRunRequest request) {
         AiRunnerNodeEntity runner = requireRunner(token);
         AiTaskRunEntity run = runMapper.selectById(runId);
@@ -283,7 +326,8 @@ public class AiRunService {
         run.setResultSummary(limit(request.resultSummary(), MAX_RESULT));
         run.setSessionId(limit(request.sessionId(), 128));
         run.setFinishedAt(LocalDateTime.now());
-        runMapper.updateById(run);
+        String completion = exitCode == 0 ? "Codex 已完成执行，等待人工验收" : "Codex 执行未完成，请查看失败原因";
+        appendProgress(run, "result", completion);
         setTaskStatus(run.getTaskId(), exitCode == 0 ? "待验证" : "进行中");
         runner.setLastSeenAt(LocalDateTime.now());
         runnerMapper.updateById(runner);
@@ -303,7 +347,7 @@ public class AiRunService {
                 run.setClaimedAt(null);
                 run.setStartedAt(null);
                 run.setResultSummary("执行节点离线，已自动重新排队");
-                runMapper.updateById(run);
+                appendProgress(run, "phase", "执行电脑离线，任务已自动重新排队");
                 setTaskStatus(run.getTaskId(), "进行中");
             }
         }
@@ -311,6 +355,19 @@ public class AiRunService {
 
     private List<AiRunDto> toRunDtos(List<AiTaskRunEntity> runs) {
         if (runs.isEmpty()) return List.of();
+        List<String> runIds = runs.stream().map(AiTaskRunEntity::getId).toList();
+        Map<String, List<AiRunProgressDto>> progressByRun = progressMapper.selectList(
+                        new LambdaQueryWrapper<AiRunProgressEntity>()
+                                .in(AiRunProgressEntity::getRunId, runIds)
+                                .orderByAsc(AiRunProgressEntity::getCreatedAt))
+                .stream().collect(Collectors.groupingBy(AiRunProgressEntity::getRunId,
+                        Collectors.collectingAndThen(Collectors.toList(), items -> {
+                            int from = Math.max(0, items.size() - MAX_PROGRESS_PER_RUN);
+                            return items.subList(from, items.size()).stream()
+                                    .map(item -> new AiRunProgressDto(item.getId(), item.getKind(),
+                                            item.getContent(), text(item.getCreatedAt())))
+                                    .toList();
+                        })));
         Map<String, TaskEntity> tasks = taskMapper.selectBatchIds(runs.stream().map(AiTaskRunEntity::getTaskId)
                         .distinct().toList()).stream()
                 .collect(Collectors.toMap(TaskEntity::getId, Function.identity()));
@@ -330,9 +387,24 @@ public class AiRunService {
             return new AiRunDto(run.getId(), run.getTaskId(), task == null ? run.getTaskId() : task.getTitle(),
                     run.getProjectId(), project == null ? run.getProjectId() : project.getName(), run.getStatus(),
                     run.getRunnerId(), runner == null ? null : runner.getName(), run.getBranchName(),
-                    run.getResultSummary(), run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
+                    run.getResultSummary(), run.getLatestProgress(), text(run.getProgressUpdatedAt()),
+                    progressByRun.getOrDefault(run.getId(), List.of()), run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
                     text(run.getStartedAt()), text(run.getFinishedAt()));
         }).toList();
+    }
+
+    private void appendProgress(AiTaskRunEntity run, String kind, String content) {
+        LocalDateTime now = LocalDateTime.now();
+        AiRunProgressEntity progress = new AiRunProgressEntity();
+        progress.setId(id("ap"));
+        progress.setRunId(run.getId());
+        progress.setKind(kind);
+        progress.setContent(limit(content, MAX_PROGRESS));
+        progress.setCreatedAt(now);
+        progressMapper.insert(progress);
+        run.setLatestProgress(progress.getContent());
+        run.setProgressUpdatedAt(now);
+        runMapper.updateById(run);
     }
 
     private AiRunnerNodeEntity requireRunner(String token) {

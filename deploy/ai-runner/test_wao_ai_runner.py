@@ -16,14 +16,17 @@ class RunnerInvocationTest(unittest.TestCase):
     @patch.object(RUNNER.subprocess, "Popen")
     def test_prompt_is_sent_through_stdin(self, popen: Mock) -> None:
         process = popen.return_value
-        process.communicate.return_value = ("", None)
+        process.stdin = Mock()
+        process.stdout = iter([])
         process.returncode = 0
         prompt = "第一行\nhttps://wao.example/task.md\n最后一行"
 
         exit_code, _ = RUNNER.invoke_codex(["codex.cmd", "exec", "-"], Path("C:/work"), prompt)
 
         self.assertEqual(0, exit_code)
-        process.communicate.assert_called_once_with(input=prompt)
+        process.stdin.write.assert_called_once_with(prompt)
+        process.stdin.close.assert_called_once()
+        process.wait.assert_called_once()
         self.assertEqual(RUNNER.subprocess.PIPE, popen.call_args.kwargs["stdin"])
 
     def test_success_requires_explicit_completion_marker(self) -> None:
@@ -43,6 +46,30 @@ class RunnerInvocationTest(unittest.TestCase):
 
         self.assertEqual(0, code)
         self.assertEqual("已提交并部署", summary)
+
+    def test_extracts_agent_message_but_filters_command(self) -> None:
+        message = RUNNER.extract_progress({
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "已定位登录失败原因，正在修复回调校验"},
+        })
+        command = RUNNER.extract_progress({
+            "type": "item.completed",
+            "item": {"type": "command_execution", "command": "git status"},
+        })
+
+        self.assertEqual(("message", "已定位登录失败原因，正在修复回调校验"), message)
+        self.assertIsNone(command)
+
+    def test_reasoning_only_uses_public_summary(self) -> None:
+        without_summary = RUNNER.extract_progress({
+            "type": "item.completed", "item": {"type": "reasoning", "text": "内部推理"},
+        })
+        with_summary = RUNNER.extract_progress({
+            "type": "item.completed", "item": {"type": "reasoning", "summary": "已确认问题边界"},
+        })
+
+        self.assertIsNone(without_summary)
+        self.assertEqual(("message", "已确认问题边界"), with_summary)
 
 
 if __name__ == "__main__":

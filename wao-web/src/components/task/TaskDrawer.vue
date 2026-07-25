@@ -14,11 +14,12 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
-import { createAiRuns } from '@/api/ai'
+import { createAiRuns, fetchTaskAiRuns } from '@/api/ai'
+import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
-import type { Priority, TaskStatus } from '@/types'
+import type { AiRun, AiRunStatus, Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
 const data = useDataStore()
@@ -33,6 +34,9 @@ const menu = ref<'status' | 'pr' | 'owner' | 'prop' | 'share' | null>(null)
 const newSub = ref('')
 const commentText = ref('')
 const aiStarting = ref(false)
+const aiRuns = ref<AiRun[]>([])
+const aiRunsLoading = ref(false)
+let aiRunsTimer: ReturnType<typeof setInterval> | null = null
 /** 右侧栏当前展开的子任务标识；为 null 时显示任务属性栏。 */
 const openSubId = ref<string | null>(null)
 
@@ -47,6 +51,31 @@ watch(
     confirmingDelete.value = false
   },
 )
+
+async function refreshTaskAiRuns() {
+  const taskId = ui.openTaskId
+  if (!taskId) {
+    aiRuns.value = []
+    return
+  }
+  aiRunsLoading.value = true
+  try {
+    const next = await fetchTaskAiRuns(taskId)
+    if (ui.openTaskId === taskId) aiRuns.value = next
+  } catch {
+    // 保留上一帧，网络抖动不应让已展示的 AI 档案消失。
+  } finally {
+    if (ui.openTaskId === taskId) aiRunsLoading.value = false
+  }
+}
+
+watch(() => ui.openTaskId, () => void refreshTaskAiRuns(), { immediate: true })
+
+const aiRunLabel: Record<AiRunStatus, string> = {
+  queued: '等待领取', claimed: '准备中', running: '正在运行', succeeded: '等待验收',
+  failed: '执行失败', cancelled: '已取消',
+}
+const activeAiRun = computed(() => aiRuns.value.find((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 
 const stepsDone = computed(() => task.value?.steps.filter((s) => s.done).length ?? 0)
 const stepsTotal = computed(() => task.value?.steps.length ?? 0)
@@ -155,8 +184,16 @@ function onKey(e: KeyboardEvent) {
   else if (openSubId.value) openSubId.value = null
   else close()
 }
-onMounted(() => window.addEventListener('keydown', onKey))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+onMounted(() => {
+  window.addEventListener('keydown', onKey)
+  aiRunsTimer = setInterval(() => {
+    if (ui.openTaskId && activeAiRun.value) void refreshTaskAiRuns()
+  }, 5_000)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+  if (aiRunsTimer) clearInterval(aiRunsTimer)
+})
 function editTitle(e: Event) {
   if (task.value) data.patchTask(task.value.id, { title: (e.target as HTMLTextAreaElement).value })
   growTaskTitle()
@@ -582,6 +619,29 @@ function demo(msg: string) {
               </div>
             </div>
             <button class="text-btn" @click="demo('演示：关联选择器在下一轮迭代提供')"><i class="ri-links-line"></i>关联知识、任务或文件</button>
+          </div>
+
+          <div v-if="aiRunsLoading || aiRuns.length" class="ai-archive">
+            <div class="field-label ai-archive-title">
+              <span>AI 执行记录</span>
+              <em v-if="activeAiRun"><i></i>实时更新中</em>
+            </div>
+            <div v-if="aiRunsLoading && !aiRuns.length" class="ai-archive-loading"><i class="ri-loader-4-line"></i>正在读取 AI 记录…</div>
+            <details v-for="(run, index) in aiRuns" v-else :key="run.id" class="ai-run-entry" :open="index === 0">
+              <summary>
+                <span class="ai-run-state" :class="`state-${run.status}`">{{ aiRunLabel[run.status] }}</span>
+                <span class="ai-run-latest">{{ run.latestProgress || run.resultSummary || '暂无执行摘要' }}</span>
+                <time :title="absoluteTime(run.startedAt || run.createdAt)">{{ showTime(run.startedAt || run.createdAt) }}</time>
+                <i class="ri-arrow-down-s-line"></i>
+              </summary>
+              <div class="ai-run-body">
+                <AiRunProgressTimeline :run="run" />
+                <div v-if="run.resultSummary" class="ai-final-result">
+                  <b>{{ run.status === 'failed' ? '失败原因' : '最终结果' }}</b>
+                  <p>{{ run.resultSummary }}</p>
+                </div>
+              </div>
+            </details>
           </div>
 
           <div class="comments">
@@ -1506,6 +1566,28 @@ function demo(msg: string) {
 .text-btn.small {
   padding: 5px 0;
 }
+
+.ai-archive { margin-top: 18px; padding-top: 14px; border-top: 1px solid #f0f0f3; }
+.ai-archive-title { display: flex; align-items: center; }
+.ai-archive-title span { flex: 1; }
+.ai-archive-title em { color: #278159; font-size: 10.5px; font-style: normal; }
+.ai-archive-title em i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #35a86e; animation: aiLive 1.5s infinite; }
+.ai-archive-loading { padding: 12px; border-radius: 9px; background: #f7f8fb; color: var(--wao-text-weak); font-size: 12px; }
+.ai-run-entry { margin-top: 7px; overflow: hidden; border: 1px solid var(--wao-line); border-radius: 10px; background: #fff; }
+.ai-run-entry summary { min-height: 44px; padding: 8px 10px; cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+.ai-run-entry summary::-webkit-details-marker { display: none; }
+.ai-run-entry summary > i { color: var(--wao-text-weak); transition: transform .15s; }
+.ai-run-entry[open] summary > i { transform: rotate(180deg); }
+.ai-run-state { flex: 0 0 auto; padding: 3px 7px; border-radius: 5px; background: #eef1ff; color: #4056c5; font-size: 10px; }
+.ai-run-state.state-succeeded { background: #e8f7ef; color: #237a4b; }
+.ai-run-state.state-failed { background: #fff0f0; color: #b33a3a; }
+.ai-run-latest { flex: 1; min-width: 0; overflow: hidden; color: var(--wao-text-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.ai-run-entry summary time { flex: 0 0 auto; color: var(--wao-text-faint); font-size: 10px; }
+.ai-run-body { padding: 0 10px 10px; }
+.ai-final-result { margin-top: 10px; padding: 10px 12px; border-radius: 9px; background: #f7f8fb; }
+.ai-final-result b { font-size: 11px; }
+.ai-final-result p { max-height: 180px; margin: 5px 0 0; overflow: auto; color: var(--wao-text-3); font-size: 11px; line-height: 1.65; white-space: pre-wrap; }
+@keyframes aiLive { 50% { opacity: .35; transform: scale(.85); } }
 
 .comments {
   margin-top: 18px;

@@ -23,3 +23,6 @@ export const createAiRuns = (taskIds: string[]) =>
 
 export const fetchAiRuns = (active = false) =>
   data<AiRun[]>(http.get('/api/ai/runs', { params: { active } }))
+
+export const fetchTaskAiRuns = (taskId: string) =>
+  data<AiRun[]>(http.get(`/api/ai/tasks/${taskId}/runs`))
