@@ -29,8 +29,8 @@ git pull --ff-only origin main
 
 - 第一个正式版本上线前采用开发期快速交付：同步最新 `main`、完成本地验证后可直接提交并 push `main`，避免 PR CI 和 main CD 重复执行。
 - 大型、冲突风险较高或需要隔离试验的变更可创建功能分支：`feat/`、`fix/`、`docs/`、`refactor/`、`test/`、`chore/`。
-- 提交使用 Conventional Commits，例如 `feat(server): add user login API`。
-- 提交信息除标题行外，请补充一段正文说明「做了什么、为什么」（哪怕只有一两句话）。CI 的飞书通知会把完整提交信息转发到团队群的「本次改动」卡片，只有标题的提交在通知里等于没写。这条约定对所有贡献者生效，不论是否使用 Claude Code；使用 Claude Code 的可参考 `.claude/skills/commit-message/`。
+- 提交使用 Conventional Commits，保留 `type(scope):` 前缀，描述使用中文，例如 `feat(server): 增加用户登录接口`。
+- 正文使用中文并固定包含“改动：”“原因：”“验收：”三个字段；代码标识、API 路径、命令和专有名词可保留原文。CI 的飞书通知会把完整提交信息转发到团队群的「本次改动」卡片。这条约定对所有贡献者生效，不论使用哪种 AI；使用 Claude Code 的可参考 `.claude/skills/commit-message/`。
 - 同一个业务模块或部署文件同一时间只由一个开发者修改；提交前再次 `git pull --ff-only origin main`，若主线已前进则先整合并重新验证。
 
 ## 提交前验证

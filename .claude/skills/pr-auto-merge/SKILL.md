@@ -13,7 +13,7 @@ description: Deliver WAO changes during the temporary development phase. Prefer 
 
 1. 开始变更前执行 `git switch main`、`git pull --ff-only origin main`，确认工作区没有他人的未提交修改。
 2. 修改完成后执行与风险相称的本地测试。不要为了等待云端重复 CI 而停下。
-3. 使用 Conventional Commit，正文必须包含 `Changes:`、`Why:`、`Validation:`，且只陈述真实执行过的验证。
+3. 使用 Conventional Commit，标题描述和正文使用中文，正文必须包含“改动：”“原因：”“验收：”，且只陈述真实执行过的验证。
 4. 提交前再次获取 `origin/main`。主线未前进时直接 push `main`；主线已前进时先安全整合、重新跑相关验证再 push。
 5. `main` push 自动触发唯一一次 CD、线上健康检查和飞书通知。持续跟踪到 deploy 与 webhook 完成，并验证受影响的线上入口。
 
