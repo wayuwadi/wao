@@ -31,6 +31,8 @@ describe('飞书二维码', () => {
     expect(container.querySelector('.qr-loading')).toBeNull()
     expect(container.querySelectorAll('iframe')).toHaveLength(1)
     expect(container.querySelector('iframe')?.title).toBe('飞书扫码登录')
+    expect(container.querySelector('iframe')?.scrolling).toBe('no')
+    expect(window.QRLogin).toHaveBeenCalledWith(expect.objectContaining({ width: '300', height: '300' }))
 
     unmount()
     expect(container.querySelector('iframe')).toBeNull()

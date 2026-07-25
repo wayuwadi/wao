@@ -51,13 +51,23 @@ export async function mountFeishuQr(containerId: string) {
   const qr = window.QRLogin({
     id: containerId,
     goto: authorizationUrl,
-    width: '220',
-    height: '220',
-    style: 'border:0;display:block',
+    width: '300',
+    height: '300',
+    style: 'border:0;display:block;overflow:hidden',
   })
   const frame = container.querySelector('iframe')
   if (!frame) throw new Error('飞书二维码未能创建，请改用飞书授权登录。')
   frame.title = '飞书扫码登录'
+  frame.scrolling = 'no'
+  const fitFrame = () => {
+    if (container.clientWidth <= 0) return
+    const scale = Math.min(1, container.clientWidth / 300)
+    frame.style.transformOrigin = 'top left'
+    frame.style.transform = `scale(${scale})`
+  }
+  fitFrame()
+  const resizeObserver = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(fitFrame)
+  resizeObserver?.observe(container)
   const onMessage = (event: MessageEvent) => {
     if (!qr.matchOrigin(event.origin) || (qr.matchData && !qr.matchData(event.data))) return
     const temporaryCode = typeof event.data === 'string'
@@ -69,6 +79,7 @@ export async function mountFeishuQr(containerId: string) {
   window.addEventListener('message', onMessage)
   return () => {
     window.removeEventListener('message', onMessage)
+    resizeObserver?.disconnect()
     frame.remove()
   }
 }
