@@ -140,7 +140,7 @@ CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HO
 
 ## 飞书登录
 
-将飞书 App ID 与 App Secret 配置为同名 GitHub Actions Secrets。CD 会把它们下发到主节点和从节点私有的 `deploy/.env.feishu`，不要提交 Git 或写入 GitHub Actions 日志：
+将飞书 App ID 与 App Secret 配置为同名 GitHub Actions Secrets。CD 会把它们与主节点现有的 `WAO_VAULT_KEY` 合并下发到主节点和从节点私有的 `deploy/.env.secrets`，不要提交 Git 或写入 GitHub Actions 日志：
 
 ```dotenv
 FEISHU_LOGIN_ENABLED=true

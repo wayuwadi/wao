@@ -14,7 +14,7 @@
 
 GitHub Actions 只响应 `main` push 和手动触发。每次运行构建一次前端，然后并行发布 Linux 主节点、Windows 从节点与云前端；三端完成后执行线上健康检查和飞书登录入口检查，最后发送包含完整提交说明的飞书 webhook 通知。
 
-飞书 App ID 和 Secret 保存在 GitHub Actions Secrets。流水线生成仅对当前运行可见的临时环境文件，分别安全下发到主、从节点的 ignored `deploy/.env.feishu`，不进入源码包、Git 历史或日志。
+飞书 App ID 和 Secret 保存在 GitHub Actions Secrets。流水线还从主节点私有 `.env` 读取已有的 `WAO_VAULT_KEY`，确保从节点使用同一把密钥而不会破坏已有密钥库数据。它们合并成仅对当前运行可见的临时环境文件，分别安全下发到主、从节点的 ignored `deploy/.env.secrets`，不进入源码包、Git 历史或日志。
 
 ## 保留的安全边界
 

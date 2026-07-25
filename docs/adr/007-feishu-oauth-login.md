@@ -8,7 +8,7 @@
 
 WAO 使用飞书企业自建应用的 OAuth 授权码流。四个入口只改变授权入口和工作台配置，最终都回到统一的前端回调页并由后端交换授权码与读取用户资料。`state` 以 HMAC 签名并包含五分钟有效期，防止 CSRF 和参数篡改。
 
-不在浏览器、日志或 Git 中保存 `app_secret`、飞书 access token 或真实用户凭据。配置由环境变量注入；本地默认禁用，生产值由 GitHub Actions Secrets 下发到节点私有的 `deploy/.env.feishu`。
+不在浏览器、日志或 Git 中保存 `app_secret`、飞书 access token 或真实用户凭据。配置由环境变量注入；本地默认禁用，生产值由 GitHub Actions Secrets 下发到节点私有的 `deploy/.env.secrets`。
 
 飞书用户信息响应位于 `data` 字段。用户稳定标识优先使用 `user_id`；应用未获该权限时回退到同一应用内稳定的 `open_id`，再回退到 `union_id`，避免因非必需权限缺失导致登录失败。
 
