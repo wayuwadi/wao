@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SETTLE_MS } from '@/composables/completion'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
@@ -114,6 +115,75 @@ describe('TaskDrawer', () => {
     expect(menu.text()).toContain('本任务 + 全部子任务')
     expect(menu.text()).toContain('复制分享页链接')
     expect(menu.text()).toContain('复制 Markdown 地址')
+  })
+
+  it('已完成的子任务沉到底部并默认收起，点击才展开', async () => {
+    data.addSub(taskId, '未完成的')
+    const doneId = data.addSub(taskId, '已完成的')!
+    data.updateSub(taskId, doneId, { done: true })
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    // 默认只看得到未完成的那条，已完成的藏在折叠条后面
+    expect(w.findAll('.sub-row')).toHaveLength(1)
+    expect(w.find('.sub-row').text()).toContain('未完成的')
+
+    const toggle = w.find('.sub-done-toggle')
+    expect(toggle.exists()).toBe(true)
+    expect(toggle.text()).toContain('1')
+
+    await toggle.trigger('click')
+
+    const rows = w.findAll('.sub-row')
+    expect(rows).toHaveLength(2)
+    // 已完成的排在最底部
+    expect(rows[1]!.text()).toContain('已完成的')
+  })
+
+  it('没有已完成子任务时不显示折叠条', async () => {
+    data.addSub(taskId, '只有这一条')
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    expect(w.find('.sub-done-toggle').exists()).toBe(false)
+  })
+
+  it('刚勾完成的子任务先原地停留，不会立刻沉底消失', async () => {
+    vi.useFakeTimers()
+    try {
+      data.addSub(taskId, '马上要勾的')
+      ui.openTask(taskId)
+      const w = mountDrawer()
+      await w.vm.$nextTick()
+
+      await w.find('.sub-row .cbox').trigger('click')
+
+      // 仍在原位，只是淡出
+      expect(w.findAll('.sub-row')).toHaveLength(1)
+      expect(w.find('.sub-row').classes()).toContain('settling')
+
+      vi.advanceTimersByTime(SETTLE_MS)
+      await w.vm.$nextTick()
+
+      expect(w.findAll('.sub-row')).toHaveLength(0)
+      expect(w.find('.sub-done-toggle').exists()).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('子任务标题用可撑高的 textarea，长标题不会被截断', async () => {
+    data.addSub(taskId, '一个特别长的子任务标题'.repeat(6))
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+    await w.find('.sub-row').trigger('click')
+
+    const title = w.find('.sub-title-input')
+    expect(title.element.tagName).toBe('TEXTAREA')
+    expect((title.element as HTMLTextAreaElement).value).toBe('一个特别长的子任务标题'.repeat(6))
   })
 
   it('展开子任务时，分享范围收敛到该子任务', async () => {
