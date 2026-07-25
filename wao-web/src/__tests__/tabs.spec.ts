@@ -112,6 +112,24 @@ describe('tabs store', () => {
     expect(useTabsStore().tabs.map((t) => t.key)).toEqual(['home', 'proj:p2', 'proj:p1'])
   })
 
+  it('回收站下线后，老浏览器里存着的页签要被丢掉，不能留下点不开的死页签', () => {
+    localStorage.setItem(
+      'wao-tabs-v1',
+      JSON.stringify({
+        tabs: [
+          { key: 'home', label: '首页', icon: 'ri-home-5-line', path: '/', closable: false },
+          { key: 'trash', label: '回收站', icon: 'ri-delete-bin-6-line', path: '/trash', closable: true },
+        ],
+        activeKey: 'trash',
+      }),
+    )
+
+    const tabs = useTabsStore()
+
+    expect(tabs.tabs.map((t) => t.key)).toEqual(['home'])
+    expect(tabs.activeKey).toBe('home')
+  })
+
   it('非占位标签仍然可以更新（真名变了要跟着变）', () => {
     const tabs = useTabsStore()
     tabs.open({ ...proj('p3'), labelPlaceholder: true })
