@@ -47,6 +47,8 @@ npm run build
 
 API、页面或数据模型变化必须同步相应规格。CI 通过、CODEOWNERS Review 完成后再 Squash Merge。
 
+> **开发测试阶段临时策略**：距离正式上线尚早，管理员已授权 AI 代理在 CI（backend/frontend/containers）全部通过后直接 Squash Merge、无需等待人工 Review（仍然通过 PR，不是直接推送 `main`）。飞书通知也相应调整为只在合并到 `main` 后触发一次，不再对每次开发分支提交推送。临近正式上线前需要移除这条例外，恢复上面的人工 Review 要求，见 `AGENTS.md`「合并策略（开发测试阶段，临时）」。
+
 ## 敏感信息
 
 不得提交真实 `.env`、服务器密码、SSH 私钥、DNS Token、Webhook 或生产证书。部署环境使用节点私有 `deploy/.env` 和 GitHub Actions Secrets。
