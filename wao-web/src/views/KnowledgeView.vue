@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { copyText } from '@/utils/clipboard'
@@ -13,9 +13,13 @@ import type { KnowledgeBase, TrashEntry } from '@/types'
 const data = useDataStore()
 const ui = useUiStore()
 const router = useRouter()
+const route = useRoute()
 const now = useNow()
 
-onMounted(() => data.refreshTrash())
+onMounted(() => {
+  void data.refreshTrash()
+  if (route.name === 'trash') openTrash()
+})
 
 const editGroupId = ref<string | null>(null)
 const cfgKb = ref<KnowledgeBase | null>(null)
@@ -95,6 +99,10 @@ function daysLeft(entry: TrashEntry): string {
 function openTrash() {
   trashOpen.value = true
   void data.refreshTrash()
+}
+function closeTrash() {
+  trashOpen.value = false
+  if (route.name === 'trash') void router.push('/knowledge')
 }
 async function restore(entry: TrashEntry) {
   await data.restoreTrash(entry.type, entry.id)
@@ -251,13 +259,13 @@ async function createKb() {
 
     <!-- 回收站 -->
     <template v-if="trashOpen">
-      <div class="modal-mask" @click="trashOpen = false"></div>
+      <div class="modal-mask" @click="closeTrash"></div>
       <div class="modal">
         <div class="modal-head">
           <div class="modal-title">回收站</div>
           <span class="modal-hint">删除的内容保留 7 天，到期自动彻底删除</span>
           <div class="spacer"></div>
-          <button class="icon-btn" @click="trashOpen = false"><i class="ri-close-line"></i></button>
+          <button class="icon-btn" @click="closeTrash"><i class="ri-close-line"></i></button>
         </div>
         <div class="modal-body">
           <div v-if="!data.trash.length" class="trash-empty">回收站是空的。</div>
@@ -690,8 +698,9 @@ async function createKb() {
 .modal {
   position: fixed;
   top: 9vh;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin-inline: auto;
   width: min(540px, calc(100vw - 40px));
   max-height: 80vh;
   overflow-y: auto;

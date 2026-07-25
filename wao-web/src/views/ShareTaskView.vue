@@ -44,6 +44,12 @@ watch([taskId, subId, openOnly], load)
 
 const descHtml = computed(() => renderMarkdown(shared.value?.desc ?? ''))
 const mdUrl = computed(() => shareMarkdownUrl(taskId.value, subId.value, openOnly.value))
+const originalUrl = computed(() => {
+  const base = shared.value?.projectId ? `/projects/${shared.value.projectId}` : '/projects'
+  const query = new URLSearchParams({ task: taskId.value })
+  if (subId.value) query.set('sub', subId.value)
+  return `${base}?${query}`
+})
 
 async function copyMd() {
   toast(
@@ -63,6 +69,7 @@ async function copyMd() {
         <div class="brand">
           <span class="brand-dot"></span>WAO · {{ shared.kind === 'sub' ? '子任务分享' : '任务分享' }}
         </div>
+        <a class="locate" :href="originalUrl"><i class="ri-corner-up-left-line"></i>回到 WAO 中的原任务</a>
         <h1 class="title">{{ shared.title }}</h1>
 
         <div class="meta">
@@ -141,6 +148,20 @@ async function copyMd() {
   letter-spacing: 1px;
   color: var(--wao-text-weak);
 }
+.locate {
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid var(--wao-line-control, #d9dce6);
+  border-radius: 8px;
+  color: var(--wao-primary, #4358d6);
+  font-size: 12px;
+  text-decoration: none;
+  background: #fff;
+}
+.locate:hover { background: var(--wao-primary-soft, #eef1fc); }
 .brand-dot {
   width: 7px;
   height: 7px;

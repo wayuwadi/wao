@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -15,12 +15,32 @@ const ui = useUiStore()
 
 const DUE_MAP: Record<string, string> = { 今天: '2026-07-23', 明天: '2026-07-24', 周日: '2026-07-26', 下周一: '2026-07-27' }
 
-const title = ref('')
-const project = ref(ui.modalProject || 'p1')
-const owner = ref(session.currentUser.id)
-const pr = ref<Priority>('P2')
-const due = ref('今天')
-const desc = ref('')
+const DRAFT_KEY = 'wao-new-task-draft-v1'
+type Draft = { title: string; project: string; owner: string; pr: Priority; due: string; desc: string }
+function loadDraft(): Partial<Draft> {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch { return {} }
+}
+const draft = loadDraft()
+const title = ref(draft.title ?? '')
+const project = ref(draft.project ?? ui.modalProject ?? 'p1')
+const owner = ref(draft.owner ?? session.currentUser.id)
+const pr = ref<Priority>(draft.pr ?? 'P2')
+const due = ref(draft.due ?? '今天')
+const desc = ref(draft.desc ?? '')
+const draftState = ref<'saving' | 'saved'>('saved')
+let draftTimer: ReturnType<typeof setTimeout> | null = null
+
+watch([title, project, owner, pr, due, desc], () => {
+  draftState.value = 'saving'
+  localStorage.setItem(DRAFT_KEY, JSON.stringify({
+    title: title.value, project: project.value, owner: owner.value,
+    pr: pr.value, due: due.value, desc: desc.value,
+  } satisfies Draft))
+  if (draftTimer) clearTimeout(draftTimer)
+  draftTimer = setTimeout(() => (draftState.value = 'saved'), 180)
+}, { flush: 'sync' })
+
+onBeforeUnmount(() => { if (draftTimer) clearTimeout(draftTimer) })
 
 const openProjects = data.projects.filter((p) => p.status !== '已完成')
 
@@ -48,6 +68,7 @@ function create() {
     due: DUE_MAP[due.value] ?? data.today,
     desc: desc.value.trim(), images: [],
   })
+  localStorage.removeItem(DRAFT_KEY)
   ui.closeModal()
   toast(`任务「${name}」已创建`, 'ri-checkbox-circle-fill')
   ui.celebrate()
@@ -118,7 +139,7 @@ function create() {
     </div>
 
     <div class="foot">
-      <span class="foot-tip">创建成功会有 1.5 秒庆祝动画，Esc 可跳过</span>
+      <span class="draft-state"><i :class="draftState === 'saving' ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ draftState === 'saving' ? '正在保存草稿' : '草稿已保存' }}</span>
       <div class="spacer"></div>
       <button class="btn-ghost" @click="ui.closeModal()">取消</button>
       <button class="btn-primary" :disabled="!title.trim()" @click="create">创建任务</button>
@@ -346,9 +367,18 @@ function create() {
   align-items: center;
   gap: 10px;
 }
-.foot-tip {
+.draft-state {
   font-size: 11.5px;
-  color: var(--wao-text-faint);
+  color: var(--wao-success-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.spin {
+  animation: waoSpin 0.9s linear infinite;
+}
+@keyframes waoSpin {
+  to { transform: rotate(360deg); }
 }
 .btn-ghost {
   height: 34px;
@@ -378,4 +408,3 @@ function create() {
   background: var(--wao-primary-hover);
 }
 </style>
-

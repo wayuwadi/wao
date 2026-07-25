@@ -3,6 +3,9 @@ package cn.wayuwa.wao.controller;
 import java.util.List;
 
 import cn.wayuwa.wao.common.ApiResponse;
+import cn.wayuwa.wao.auth.CurrentMember;
+import cn.wayuwa.wao.dto.CommentDto;
+import cn.wayuwa.wao.dto.CreateCommentRequest;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
 import cn.wayuwa.wao.dto.PatchTaskRequest;
 import cn.wayuwa.wao.dto.TaskDto;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.HttpServletRequest;
 
 /** 任务接口。 */
 @RestController
@@ -23,9 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class TaskController {
 
     private final TaskService taskService;
+    private final CurrentMember currentMember;
 
-    public TaskController(TaskService taskService) {
+    public TaskController(TaskService taskService, CurrentMember currentMember) {
         this.taskService = taskService;
+        this.currentMember = currentMember;
     }
 
     @GetMapping
@@ -51,5 +57,11 @@ public class TaskController {
     @PutMapping("/{id}")
     public ApiResponse<TaskDto> replace(@PathVariable String id, @RequestBody TaskDto request) {
         return ApiResponse.ok(taskService.replace(id, request));
+    }
+
+    @PostMapping("/{id}/comments")
+    public ApiResponse<CommentDto> addComment(@PathVariable String id, @Valid @RequestBody CreateCommentRequest request,
+            HttpServletRequest http) {
+        return ApiResponse.ok(taskService.addComment(id, currentMember.idOr(http, "unknown"), request.text()));
     }
 }

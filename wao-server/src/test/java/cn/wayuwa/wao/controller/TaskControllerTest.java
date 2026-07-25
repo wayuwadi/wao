@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.util.List;
 
 import cn.wayuwa.wao.common.GlobalExceptionHandler;
+import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.service.TaskService;
@@ -28,6 +29,9 @@ class TaskControllerTest {
 
     @MockBean
     private TaskService taskService;
+
+    @MockBean
+    private CurrentMember currentMember;
 
     private TaskDto sample() {
         return new TaskDto("t1", "设计任务详情抽屉交互稿", "p1", "进行中", "P0", "wg",

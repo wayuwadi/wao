@@ -85,10 +85,17 @@ function onKeydown(e: KeyboardEvent) {
     else plusOpen.value = false
   }
 }
-onMounted(() => {
+function openLocatedTask() {
+  const id = typeof route.query.task === 'string' ? route.query.task : ''
+  if (id && data.taskById(id)) ui.openTask(id)
+}
+watch(() => route.query.task, openLocatedTask)
+
+onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   // 接入真实 /api（后端不可用时静默保留 fixtures）
-  data.hydrate()
+  await data.hydrate()
+  openLocatedTask()
 })
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>

@@ -7,7 +7,7 @@ import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 
 const data = useDataStore()
-const tab = ref<'files' | 'img'>('img')
+const tab = ref<'files' | 'img'>('files')
 
 /** 图床默认只铺三排（网格是 5 列，即 15 张），其余点开再看。 */
 const IMG_PAGE = 15
@@ -18,10 +18,13 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(0)
 
 // 打开页面时重新拉一次，让其他标签页 / 其他人上传的图也出现
-onMounted(() => data.refreshImages())
+onMounted(() => {
+  void data.refreshImages()
+  void data.refreshFiles()
+})
 
 /** 从图床页直接上传，来源标成「图床」以便和任务里粘贴的图区分。 */
-async function uploadFiles(files: FileList | File[]) {
+async function uploadImages(files: FileList | File[]) {
   const list = Array.from(files).filter((f) => f.type.startsWith('image/'))
   if (!list.length) {
     toast('请选择图片文件', 'ri-error-warning-line')
@@ -45,14 +48,34 @@ async function uploadFiles(files: FileList | File[]) {
   if (ok) toast(`已上传 ${ok} 张图片到图床`, 'ri-image-add-line')
 }
 
+async function uploadAttachments(files: FileList | File[]) {
+  const list = Array.from(files)
+  if (!list.length) return
+  uploading.value += list.length
+  let failed = 0
+  try {
+    for (const file of list) {
+      if (file.size > data.MAX_FILE_BYTES || !(await data.uploadFile(file))) failed++
+    }
+  } finally { uploading.value -= list.length }
+  if (list.length - failed) toast(`已上传 ${list.length - failed} 个文件`, 'ri-upload-cloud-2-line')
+  if (failed) toast(`${failed} 个文件上传失败或超过 50MB`, 'ri-error-warning-line')
+}
+
 function onPick(e: Event) {
   const files = (e.target as HTMLInputElement).files
-  if (files?.length) uploadFiles(files)
+  if (files?.length) {
+    if (tab.value === 'img') void uploadImages(files)
+    else void uploadAttachments(files)
+  }
   if (fileInput.value) fileInput.value.value = ''
 }
 function onDrop(e: DragEvent) {
   const files = e.dataTransfer?.files
-  if (files?.length) uploadFiles(files)
+  if (files?.length) {
+    if (tab.value === 'img') void uploadImages(files)
+    else void uploadAttachments(files)
+  }
 }
 
 /** 图床里的图是站内相对地址，复制出去必须补成绝对地址才能公网访问。 */
@@ -70,14 +93,19 @@ async function removeImage(id: string | undefined, name: string) {
   await data.deleteImage(id)
   toast(`已删除「${name}」`, 'ri-delete-bin-line')
 }
+async function removeFile(id: string | undefined, name: string) {
+  if (!id || !window.confirm(`删除文件“${name}”？`)) return
+  await data.deleteFile(id)
+  toast(`已删除「${name}」`, 'ri-delete-bin-line')
+}
 </script>
 
 <template>
   <div class="files">
     <DemoBanner
       icon="ri-hard-drive-2-line"
-      title="文件模块尚未接入"
-      text="图床已经是真实功能：系统各处上传 / 粘贴的图片都会归档到这里，可预览、复制公网链接、删除。文件（附件）的真实上传与下载将在后续迭代接入，示例数据已清空。"
+      title="文件与图床"
+      text="文件和图床均已接入真实后端持久化：可上传、复制公网直链、直接下载或删除。通用文件单个不超过 50MB，图片仍限制为 10MB。"
       storage-key="files"
     />
     <div class="ftop">
@@ -88,18 +116,18 @@ async function removeImage(id: string | undefined, name: string) {
         </button>
       </div>
       <div class="spacer"></div>
-      <button v-if="tab === 'img'" class="btn-primary" :disabled="uploading > 0" @click="fileInput?.click()">
-        <i class="ri-upload-2-line"></i>{{ uploading > 0 ? `上传中 ${uploading}…` : '上传图片' }}
+      <button class="btn-primary" :disabled="uploading > 0" @click="fileInput?.click()">
+        <i class="ri-upload-2-line"></i>{{ uploading > 0 ? `上传中 ${uploading}…` : (tab === 'img' ? '上传图片' : '上传文件') }}
       </button>
-      <button v-else class="btn-primary" @click="toast('演示：文件上传在正式版本提供', 'ri-upload-2-line')"><i class="ri-upload-2-line"></i>上传</button>
-      <input ref="fileInput" type="file" accept="image/*" multiple hidden @change="onPick" />
+      <input ref="fileInput" type="file" :accept="tab === 'img' ? 'image/*' : undefined" multiple hidden @change="onPick" />
     </div>
 
     <template v-if="tab === 'files'">
-      <div class="note">文件（附件）的真实上传与下载尚未接入，这里暂时是空的。图片请用「图床」标签页。</div>
+      <div class="note">支持拖拽或选择文件上传，单个文件不超过 50MB；复制的直链无需登录即可直接下载。</div>
+      <div class="file-drop" @dragover.prevent @drop.prevent="onDrop">
       <div v-if="!data.files.length" class="img-empty">
         <i class="ri-folder-line"></i>
-        <div>还没有文件——附件上传会在后续迭代接入</div>
+        <div>还没有文件——把文件拖到这里，或点右上角“上传文件”</div>
       </div>
       <div v-else class="file-list">
         <div v-for="(f, i) in data.files" :key="i" class="file-row">
@@ -109,9 +137,11 @@ async function removeImage(id: string | undefined, name: string) {
             <div class="file-sub">{{ f.by }} · {{ f.time }} · <span class="wao-mono">{{ f.link }}</span></div>
           </div>
           <span class="file-size">{{ f.size }}</span>
-          <button class="copy-btn" @click="copyText(f.link, '已复制直链（演示）')"><i class="ri-links-line"></i>复制直链</button>
-          <button class="dl-btn" title="下载" @click="toast('开始下载（演示）', 'ri-download-2-line')"><i class="ri-download-2-line"></i></button>
+          <button class="copy-btn" @click="copyText(absoluteUrl(f.link), '已复制公网直链')"><i class="ri-links-line"></i>复制直链</button>
+          <a class="dl-btn" title="直接下载" :href="absoluteUrl(f.link)"><i class="ri-download-2-line"></i></a>
+          <button class="dl-btn danger" title="删除" @click="removeFile(f.id, f.name)"><i class="ri-delete-bin-line"></i></button>
         </div>
+      </div>
       </div>
     </template>
 
@@ -226,6 +256,7 @@ async function removeImage(id: string | undefined, name: string) {
   border-radius: 12px;
   overflow: hidden;
 }
+.file-drop { min-height: 120px; border-radius: 12px; }
 .file-row {
   display: flex;
   align-items: center;
@@ -307,6 +338,7 @@ async function removeImage(id: string | undefined, name: string) {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  text-decoration: none;
 }
 .dl-btn:hover {
   background: #f4f5f8;
@@ -314,6 +346,7 @@ async function removeImage(id: string | undefined, name: string) {
 .dl-btn i {
   font-size: 13px;
 }
+.dl-btn.danger:hover { color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
 
 .img-grid {
   margin-top: 10px;

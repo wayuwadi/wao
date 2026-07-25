@@ -11,6 +11,9 @@ const groupId = ref('all')
 const selId = ref<string | null>(null)
 const newGroupOpen = ref(false)
 const newGroupName = ref('')
+const managingGroups = ref(false)
+const renamingGroupId = ref<string | null>(null)
+const draggedGroupId = ref<string | null>(null)
 
 interface FlatItem extends VaultItem {
   groupId: string
@@ -34,6 +37,30 @@ const groups = computed(() =>
 function pickGroup(id: string) {
   groupId.value = id
   selId.value = null
+}
+function commitGroupName(id: string, event: Event) {
+  const name = (event.target as HTMLInputElement).value.trim()
+  if (name) data.renameVaultGroup(id, name)
+  renamingGroupId.value = null
+}
+async function removeGroup(id: string) {
+  if (id === 'vg-default') return
+  const group = data.vault.find((g) => g.id === id)
+  if (!group || !window.confirm(`删除分组“${group.group}”及其中 ${group.items.length} 个条目？`)) return
+  await data.deleteVaultGroup(id)
+  if (groupId.value === id) groupId.value = 'all'
+}
+async function dropGroup(targetId: string) {
+  const sourceId = draggedGroupId.value
+  draggedGroupId.value = null
+  if (!sourceId || sourceId === targetId) return
+  const ids = data.vault.map((g) => g.id)
+  const sourceIndex = ids.indexOf(sourceId)
+  const targetIndex = ids.indexOf(targetId)
+  if (sourceIndex < 0 || targetIndex < 0) return
+  ids.splice(sourceIndex, 1)
+  ids.splice(targetIndex, 0, sourceId)
+  await data.reorderVaultGroups(ids)
 }
 async function createGroup() {
   if (!newGroupName.value.trim()) return
@@ -82,7 +109,7 @@ const formSecret = ref('')
 
 function openNewItem() {
   editingId.value = null
-  formGroupId.value = data.vault[0]?.id ?? ''
+  formGroupId.value = data.vault.find((g) => g.id === 'vg-default')?.id ?? data.vault[0]?.id ?? ''
   formName.value = ''
   formUser.value = ''
   formSite.value = ''
@@ -102,7 +129,7 @@ function openEditItem() {
   itemOpen.value = true
 }
 async function saveItem() {
-  if (!formName.value.trim() || !formGroupId.value) return
+  if (!formName.value.trim()) return
   if (editingId.value) {
     await data.updateVaultItem(editingId.value, {
       name: formName.value.trim(), user: formUser.value.trim(), site: formSite.value.trim(),
@@ -137,7 +164,9 @@ async function deleteItem() {
     />
     <div class="vtop">
       <div class="vtitle">密码库</div>
-      <span class="vtip">分组管理</span>
+      <button class="group-manage" :class="{ on: managingGroups }" @click="managingGroups = !managingGroups">
+        <i class="ri-settings-4-line"></i>{{ managingGroups ? '完成分组管理' : '分组管理' }}
+      </button>
       <div class="spacer"></div>
       <button class="btn-ghost" @click="openNewItem"><i class="ri-add-line"></i>添加条目</button>
     </div>
@@ -150,9 +179,32 @@ async function deleteItem() {
     <div class="cols">
       <div class="group-col">
         <div class="col-label">分组</div>
-        <button v-for="g in groups" :key="g.id" class="group-btn" :class="{ on: g.on }" @click="pickGroup(g.id)">
-          <span class="gb-label">{{ g.label }}</span><span class="gb-count wao-tabular">{{ g.count }}</span>
-        </button>
+        <template v-for="g in groups" :key="g.id">
+          <button v-if="g.id === 'all' || !managingGroups" class="group-btn" :class="{ on: g.on }" @click="pickGroup(g.id)">
+            <span class="gb-label">{{ g.label }}</span><span class="gb-count wao-tabular">{{ g.count }}</span>
+          </button>
+          <div
+            v-else
+            class="group-edit-row"
+            draggable="true"
+            @dragstart="draggedGroupId = g.id"
+            @dragover.prevent
+            @drop.prevent="dropGroup(g.id)"
+          >
+            <i class="ri-draggable drag"></i>
+            <input
+              v-if="renamingGroupId === g.id"
+              :value="g.label"
+              class="group-name-input"
+              autofocus
+              @keydown.enter="commitGroupName(g.id, $event)"
+              @blur="commitGroupName(g.id, $event)"
+            />
+            <span v-else class="gb-label">{{ g.label }}</span>
+            <button class="group-action" title="重命名" @click="renamingGroupId = g.id"><i class="ri-edit-line"></i></button>
+            <button class="group-action danger" :disabled="g.id === 'vg-default'" title="删除" @click="removeGroup(g.id)"><i class="ri-delete-bin-line"></i></button>
+          </div>
+        </template>
         <button class="group-add" @click="newGroupOpen = true"><i class="ri-add-line"></i>新建分组</button>
       </div>
 
@@ -214,7 +266,7 @@ async function deleteItem() {
           <button class="icon-btn" @click="itemOpen = false"><i class="ri-close-line"></i></button>
         </div>
         <div class="modal-body">
-          <label class="f-label">分组</label>
+          <label class="f-label">分组 <span class="optional">选填，默认放入“未分组”</span></label>
           <select v-model="formGroupId" class="f-input">
             <option v-for="g in data.vault" :key="g.id" :value="g.id">{{ g.group }}</option>
           </select>
@@ -231,7 +283,7 @@ async function deleteItem() {
         </div>
         <div class="modal-foot">
           <div class="spacer"></div>
-          <button class="btn-primary" :disabled="!formName.trim() || !formGroupId" @click="saveItem">保存</button>
+          <button class="btn-primary" :disabled="!formName.trim()" @click="saveItem">保存</button>
         </div>
       </div>
     </template>
@@ -276,9 +328,19 @@ async function deleteItem() {
   font-size: 20px;
   font-weight: 700;
 }
-.vtip {
+.group-manage {
+  border: 0;
+  background: transparent;
   font-size: 12px;
   color: var(--wao-text-weak);
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 5px 7px;
+}
+.group-manage:hover,
+.group-manage.on {
+  color: var(--wao-primary-text);
+  background: var(--wao-primary-soft);
 }
 .btn-ghost {
   height: 32px;
@@ -360,6 +422,22 @@ async function deleteItem() {
   color: var(--wao-primary-text);
   font-weight: 600;
 }
+.group-edit-row {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border-radius: 7px;
+}
+.group-edit-row:hover { background: #f0f1f4; }
+.drag { color: var(--wao-text-faint); cursor: grab; }
+.group-name-input { min-width: 0; flex: 1; border: 1px solid var(--wao-line-control); border-radius: 5px; padding: 3px 5px; }
+.group-action { width: 22px; height: 22px; border: 0; background: transparent; border-radius: 5px; cursor: pointer; color: var(--wao-text-weak); }
+.group-action:hover { background: #fff; color: var(--wao-text); }
+.group-action.danger:hover { color: var(--wao-danger-strong); }
+.group-action:disabled { opacity: .25; cursor: not-allowed; }
+.optional { color: var(--wao-text-faint); font-weight: 400; }
 .gb-label {
   flex: 1;
   text-align: left;
@@ -607,8 +685,9 @@ async function deleteItem() {
 .modal {
   position: fixed;
   top: 9vh;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin-inline: auto;
   width: min(440px, calc(100vw - 40px));
   max-height: 80vh;
   overflow-y: auto;

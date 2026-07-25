@@ -15,7 +15,7 @@ import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
-import { absoluteTime, nowIso, relativeTime } from '@/utils/time'
+import { absoluteTime, relativeTime } from '@/utils/time'
 import type { Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
@@ -82,6 +82,8 @@ const linkTasks = computed(() =>
 const linkedDocs = computed(() =>
   (task.value?.docs ?? []).map((id) => ({ id, title: data.docById(id)?.title ?? '' })),
 )
+const saveState = computed(() => (task.value ? data.taskSaveState(task.value.id) : 'idle'))
+const saveText = computed(() => ({ idle: '已保存', saving: '保存中', saved: '已保存', error: '保存失败，内容已保留在本机' })[saveState.value])
 
 const STATUS_OPTS: TaskStatus[] = ['待办', '进行中', '阻塞', '已完成']
 const PR_OPTS: { key: Priority; sub: string }[] = [
@@ -93,6 +95,7 @@ const PR_OPTS: { key: Priority; sub: string }[] = [
 const PROP_TYPES = ['文本', '数字', '单选', '链接']
 
 function close() {
+  if (task.value) data.flushTask(task.value.id)
   ui.closeTask()
 }
 /** Esc 逐层关闭：先关下拉菜单，再收子任务详情，最后关抽屉。 */
@@ -105,8 +108,17 @@ function onKey(e: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 function editTitle(e: Event) {
-  if (task.value) data.patchTask(task.value.id, { title: (e.target as HTMLInputElement).value })
+  if (task.value) data.patchTask(task.value.id, { title: (e.target as HTMLTextAreaElement).value })
+  growTaskTitle()
 }
+const taskTitleArea = ref<HTMLTextAreaElement | null>(null)
+function growTaskTitle() {
+  const el = taskTitleArea.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = el.scrollHeight + 'px'
+}
+watch([() => ui.openTaskId, () => task.value?.title], () => nextTick(growTaskTitle), { immediate: true })
 /** 任务描述（Markdown）。写回走 patchTask，编辑器只管文本。 */
 const desc = computed({
   get: () => task.value?.desc ?? '',
@@ -265,12 +277,12 @@ async function copyShare(kind: 'page' | 'md') {
     'ri-links-line',
   )
 }
-function sendComment() {
+async function sendComment() {
   const t = task.value
   const v = commentText.value.trim()
   if (t && v) {
-    data.patchTask(t.id, { comments: [...t.comments, { who: session.currentUser.id, time: nowIso(), text: v }] }, '你添加了评论')
-    commentText.value = ''
+    if (await data.addTaskComment(t.id, v)) commentText.value = ''
+    else toast('评论发送失败，请重试', 'ri-error-warning-line')
   }
 }
 function commentKey(e: KeyboardEvent) {
@@ -373,10 +385,15 @@ function demo(msg: string) {
       <div class="dbody">
         <!-- 主区 -->
         <div class="main">
-          <input class="title-input" :value="task.title" @input="editTitle" />
+          <textarea ref="taskTitleArea" class="title-input" rows="1" :value="task.title" @input="editTitle"></textarea>
 
           <div class="field">
-            <div class="field-label">描述</div>
+            <div class="field-headline">
+              <div class="field-label">描述</div>
+              <span class="save-state" :class="saveState">
+                <i :class="saveState === 'saving' ? 'ri-loader-4-line spin' : saveState === 'error' ? 'ri-error-warning-line' : 'ri-checkbox-circle-line'"></i>{{ saveText }}
+              </span>
+            </div>
             <MarkdownEditor
               v-model="desc"
               placeholder="补充背景、目标与边界…敲 ## 变标题、- 变列表，可直接粘贴截图"
@@ -532,7 +549,12 @@ function demo(msg: string) {
           </div>
 
           <div class="sub-field">
-            <div class="props-label sm">描述</div>
+            <div class="field-headline">
+              <div class="props-label sm">描述</div>
+              <span class="save-state" :class="saveState">
+                <i :class="saveState === 'saving' ? 'ri-loader-4-line spin' : saveState === 'error' ? 'ri-error-warning-line' : 'ri-checkbox-circle-line'"></i>{{ saveText }}
+              </span>
+            </div>
             <MarkdownEditor
               v-model="subDesc"
               placeholder="补充这个子任务的做法、验收标准…敲 ## 变标题、- 变列表，可直接粘贴截图"
@@ -773,6 +795,10 @@ function demo(msg: string) {
   background: none;
   padding: 2px 0;
   border-radius: 6px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.4;
+  font-family: inherit;
 }
 .title-input:focus {
   background: #f7f8fb;
@@ -780,6 +806,32 @@ function demo(msg: string) {
 }
 .field {
   margin-top: 16px;
+}
+.field-headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--wao-success-strong);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.save-state.error {
+  color: var(--wao-danger-strong);
+}
+.save-state i {
+  font-size: 12px;
+}
+.spin {
+  animation: waoTaskSpin 0.9s linear infinite;
+}
+@keyframes waoTaskSpin {
+  to { transform: rotate(360deg); }
 }
 .field-label {
   font-size: 12px;

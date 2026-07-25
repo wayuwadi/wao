@@ -1,5 +1,7 @@
 package cn.wayuwa.wao;
 
+import java.util.TimeZone;
+
 import cn.wayuwa.wao.auth.FeishuLoginProperties;
 import cn.wayuwa.wao.auth.AuthProperties;
 import cn.wayuwa.wao.auth.WechatLoginProperties;
@@ -12,6 +14,10 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableConfigurationProperties({FeishuLoginProperties.class, WechatLoginProperties.class, AuthProperties.class})
 @EnableScheduling
 public class WaoServerApplication {
+
+    static {
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
+    }
 
     public static void main(String[] args) {
         SpringApplication.run(WaoServerApplication.class, args);
