@@ -10,6 +10,7 @@ import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
+import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.CreateAiRunsRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
@@ -55,6 +56,11 @@ public class AiRunController {
         return ApiResponse.ok(service.saveConfig(projectId, request));
     }
 
+    @GetMapping("/workflows")
+    public ApiResponse<List<AiWorkflowDto>> workflows() {
+        return ApiResponse.ok(service.listWorkflows());
+    }
+
     @GetMapping("/runners")
     public ApiResponse<List<AiRunnerDto>> runners() {
         return ApiResponse.ok(service.listRunners());
@@ -69,7 +75,8 @@ public class AiRunController {
     public ApiResponse<List<AiRunDto>> enqueue(@Valid @RequestBody CreateAiRunsRequest request,
             HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
-        return ApiResponse.ok(service.enqueue(request.taskIds(), currentMember.idOr(http, "unknown"), baseUrl));
+        return ApiResponse.ok(service.enqueue(request.taskIds(), request.engine(), request.runnerId(),
+                currentMember.idOr(http, "unknown"), baseUrl));
     }
 
     @GetMapping("/runs")
@@ -89,8 +96,9 @@ public class AiRunController {
 
     @PostMapping("/runner/heartbeat")
     public ApiResponse<AiRunnerDto> heartbeat(@RequestHeader(RUNNER_TOKEN) String token,
-            @RequestParam(required = false) Integer maxConcurrency) {
-        return ApiResponse.ok(service.heartbeat(token, maxConcurrency));
+            @RequestParam(required = false) Integer maxConcurrency,
+            @RequestParam(required = false) String engines) {
+        return ApiResponse.ok(service.heartbeat(token, maxConcurrency, engines));
     }
 
     @PostMapping("/runner/claim")

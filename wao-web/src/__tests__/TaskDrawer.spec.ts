@@ -8,11 +8,26 @@ import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 
 vi.mock('@/api/ai', () => ({
-  createAiRuns: vi.fn().mockResolvedValue([]),
-  fetchTaskAiRuns: vi.fn().mockResolvedValue([
+  createAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
+  fetchAiRunners: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
+    {
+      id: 'rn1', name: '娃哥电脑', platform: 'Windows 11', engines: ['codex'],
+      maxConcurrency: 2, activeRuns: 0, online: true, lastSeenAt: '2026-07-25T20:30:00',
+    },
+    {
+      id: 'rn2', name: 'Linux 主节点', platform: 'Linux 7.0', engines: ['claude'],
+      maxConcurrency: 2, activeRuns: 0, online: true, lastSeenAt: '2026-07-25T20:30:00',
+    },
+  ]),
+  fetchAiProjectConfig: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
+    workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: null, maxParallelRuns: 2,
+  }),
+  fetchTaskAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
       id: 'ar1', taskId: 't1', taskTitle: 'AI 任务', projectId: 'p1', projectName: 'WAO',
-      status: 'running', runnerId: 'rn1', runnerName: '娃哥电脑', branchName: 'ai/wao-ar1',
+      engine: 'codex',
+      status: 'running', runnerId: 'rn1', runnerName: '娃哥电脑', requestedRunnerId: null, branchName: 'ai/wao-ar1',
       resultSummary: null, latestProgress: '正在分析任务验收标准', progressUpdatedAt: '2026-07-25T20:30:00',
       progress: [{ id: 'ap1', kind: 'message', content: '正在分析任务验收标准', createdAt: '2026-07-25T20:30:00' }],
       sessionId: 'thread-1', exitCode: null, createdAt: '2026-07-25T20:29:00',
@@ -257,6 +272,26 @@ describe('TaskDrawer', () => {
     await w.find('.share-wrap .icon-btn').trigger('click')
 
     expect(w.find('.share-filter').exists()).toBe(false)
+  })
+
+  it('点 AI run 先选电脑和 AI 工具，选定后才入队', async () => {
+    const { createAiRuns } = await import('@/api/ai')
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.find('.ai-run-btn').trigger('click')
+    await flushPromises()
+
+    expect(w.find('.launcher').text()).toContain('Claude Code')
+    expect(createAiRuns).not.toHaveBeenCalled()
+
+    await w.findAll('.engine-option')[1]!.trigger('click')
+    await w.find('.launcher footer .primary').trigger('click')
+    await flushPromises()
+
+    expect(createAiRuns).toHaveBeenCalledWith([taskId], { engine: 'claude', runnerId: null })
+    w.unmount()
   })
 
   it('展开子任务时，分享范围收敛到该子任务', async () => {

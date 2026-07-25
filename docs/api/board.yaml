@@ -204,11 +204,13 @@ paths:
       parameters: [ { name: projectId, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '404': { description: 项目不存在 } }
     put:
-      summary: 保存开关、仓库、分支、文件夹、首选电脑与项目并发数
+      summary: 保存开关、仓库、分支、文件夹、默认 AI 工具、首选电脑与项目并发数
       parameters: [ { name: projectId, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '400': { description: 配置不合法 } }
+  /ai/workflows:
+    get: { summary: 各项目的 AI 工作流配置与运行统计（控制台「AI 工作流」视图）, responses: { '200': { description: OK } } }
   /ai/runners:
-    get: { summary: 执行电脑列表、在线状态与槽位占用, responses: { '200': { description: OK } } }
+    get: { summary: 执行电脑列表、接入的 AI 工具、在线状态与槽位占用, responses: { '200': { description: OK } } }
   /ai/runners/pair-code:
     post: { summary: 生成十分钟有效的一次性电脑配对码, responses: { '200': { description: OK } } }
   /ai/runs:
@@ -217,17 +219,24 @@ paths:
       parameters: [ { name: active, in: query, required: false, schema: { type: boolean } } ]
       responses: { '200': { description: OK } }
     post:
-      summary: 批量把任务加入 AI 队列；活动任务自动去重
-      responses: { '200': { description: 返回实际创建的运行 }, '400': { description: 项目未启用或未配置仓库 } }
+      summary: 批量把任务加入 AI 队列；可选 engine（codex/claude）与 runnerId 指定执行电脑，活动任务自动去重
+      responses:
+        '200': { description: 返回实际创建的运行 }
+        '400': { description: 项目未启用、未配置仓库，或没有电脑接入所选 AI 工具 }
   /ai/runner/pair:
-    post: { summary: Runner 用一次性配对码换取只返回一次的本机令牌, responses: { '200': { description: OK }, '401': { description: 配对码无效 } } }
+    post: { summary: Runner 用一次性配对码换取只返回一次的本机令牌（含本机可用的 AI 工具）, responses: { '200': { description: OK }, '401': { description: 配对码无效 } } }
   /ai/runner/heartbeat:
-    post: { summary: Runner 心跳并更新本机并发数, responses: { '200': { description: OK }, '401': { description: 节点令牌无效 } } }
+    post:
+      summary: Runner 心跳并更新本机并发数与可用 AI 工具
+      parameters:
+        - { name: maxConcurrency, in: query, required: false, schema: { type: integer } }
+        - { name: engines, in: query, required: false, schema: { type: string }, description: 逗号分隔，如 codex,claude }
+      responses: { '200': { description: OK }, '401': { description: 节点令牌无效 } }
   /ai/runner/claim:
-    post: { summary: 按电脑与项目并发限制领取下一条任务, responses: { '200': { description: 无可领取任务时 data 为 null } } }
+    post: { summary: 按 AI 工具、指定电脑与并发限制领取下一条任务, responses: { '200': { description: 无可领取任务时 data 为 null } } }
   /ai/runner/runs/{runId}/complete:
     post:
-      summary: Runner 回传 Codex 退出码、摘要和会话 id
+      summary: Runner 回传 AI CLI 退出码、摘要和会话 id
       parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '401': { description: 运行不属于当前节点 } }
   # 自动化域（关系表；cronExpr 非空的任务由服务端调度器按计划自动执行）

@@ -22,7 +22,7 @@ class RunnerInvocationTest(unittest.TestCase):
         process.returncode = 0
         prompt = "第一行\nhttps://wao.example/task.md\n最后一行"
 
-        exit_code, _ = RUNNER.invoke_codex(["codex.cmd", "exec", "-"], Path("C:/work"), prompt)
+        exit_code, _ = RUNNER.invoke_cli(["codex.cmd", "exec", "-"], Path("C:/work"), prompt)
 
         self.assertEqual(0, exit_code)
         process.stdin.write.assert_called_once_with(prompt)
@@ -35,12 +35,14 @@ class RunnerInvocationTest(unittest.TestCase):
     def test_git_credential_is_only_injected_into_child_environment(self, run: Mock, _find: Mock) -> None:
         run.return_value = Mock(returncode=0, stdout="username=wao\npassword=secret-token\n")
 
-        environment, ready, cli = RUNNER.build_codex_environment("git.exe")
+        environment, ready, cli = RUNNER.build_cli_environment("git.exe")
 
         self.assertTrue(ready)
         self.assertEqual("secret-token", environment["GH_TOKEN"])
         self.assertEqual("C:/Program Files/GitHub CLI/gh.exe", cli)
-        self.assertTrue(environment["PATH"].startswith("C:\\Program Files\\GitHub CLI" + os.pathsep))
+        # 断言不写死分隔符：Linux 主节点也要能跑这套用例。
+        cli_dir = str(Path("C:/Program Files/GitHub CLI/gh.exe").parent)
+        self.assertTrue(environment["PATH"].startswith(cli_dir + os.pathsep))
         run.assert_called_once()
 
     def test_success_requires_explicit_completion_marker(self) -> None:
@@ -84,6 +86,73 @@ class RunnerInvocationTest(unittest.TestCase):
 
         self.assertIsNone(without_summary)
         self.assertEqual(("message", "已确认问题边界"), with_summary)
+
+
+class ClaudeEngineTest(unittest.TestCase):
+
+    def test_assistant_text_is_reported_but_thinking_is_not(self) -> None:
+        text = RUNNER.extract_progress({
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "已读取任务，开始实现接入方案"}]},
+        }, "claude")
+        thinking = RUNNER.extract_progress({
+            "type": "assistant",
+            "message": {"content": [{"type": "thinking", "thinking": "内部推理"}]},
+        }, "claude")
+
+        self.assertEqual(("message", "已读取任务，开始实现接入方案"), text)
+        self.assertIsNone(thinking)
+
+    def test_tool_use_only_exposes_todo_plan(self) -> None:
+        plan = RUNNER.extract_progress({
+            "type": "assistant",
+            "message": {"content": [{
+                "type": "tool_use", "name": "TodoWrite",
+                "input": {"todos": [
+                    {"content": "实现后端字段", "status": "completed"},
+                    {"content": "改前端控制台", "status": "in_progress"},
+                ]},
+            }]},
+        }, "claude")
+        bash = RUNNER.extract_progress({
+            "type": "assistant",
+            "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "git push"}}]},
+        }, "claude")
+
+        self.assertEqual("plan", plan[0])
+        self.assertIn("1. 实现后端字段（已完成）", plan[1])
+        self.assertIn("2. 改前端控制台（进行中）", plan[1])
+        self.assertIsNone(bash)
+
+    @patch.object(RUNNER, "invoke_cli")
+    def test_claude_run_reads_result_event_and_session(self, invoke: Mock) -> None:
+        invoke.return_value = (0, "\n".join([
+            '{"type":"system","subtype":"init","session_id":"sess-1"}',
+            '{"type":"result","subtype":"success","is_error":false,'
+            '"result":"WAO_RUN_STATUS: SUCCESS\\n已合并 PR","session_id":"sess-1"}',
+        ]))
+        reporter = Mock()
+
+        exit_code, result_text, session_id = RUNNER.run_claude(
+            "claude", Path("/work"), "提示", "danger-full-access", reporter)
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual("sess-1", session_id)
+        self.assertEqual((0, "已合并 PR"), RUNNER.normalize_result(exit_code, result_text, "claude"))
+        self.assertIn("--dangerously-skip-permissions", invoke.call_args.args[0])
+        self.assertIn("stream-json", invoke.call_args.args[0])
+
+    @patch.object(RUNNER, "invoke_cli")
+    def test_claude_error_result_is_a_failure_even_with_exit_code_zero(self, invoke: Mock) -> None:
+        invoke.return_value = (0, '{"type":"result","is_error":true,"result":"上下文超限"}')
+
+        exit_code, result_text, _ = RUNNER.run_claude(
+            "claude", Path("/work"), "提示", "workspace-write", Mock())
+
+        self.assertEqual(1, exit_code)
+        code, summary = RUNNER.normalize_result(exit_code, result_text, "claude")
+        self.assertEqual(1, code)
+        self.assertIn("Claude Code 退出码：1", summary)
 
 
 if __name__ == "__main__":

@@ -216,13 +216,15 @@ erDiagram
 | enabled | BOOLEAN | 是否允许该项目触发 AI Run |
 | repo_url / default_branch | VARCHAR | Git 仓库与基线分支 |
 | workspace_dir | VARCHAR(128) | 各 Runner 工作区根目录下的项目文件夹名 |
+| default_engine | VARCHAR(24) | 默认 AI 工具：codex / claude |
 | preferred_runner_id | VARCHAR(32) NULL | 固定执行电脑；空表示自动分配 |
 | max_parallel_runs | INT | 同一项目最大并发 |
 | updated_at | DATETIME | 最后更新时间 |
 
 ### ai_runner_node / ai_runner_pair_code
 
-`ai_runner_node` 保存电脑名、平台、并发槽位、令牌 SHA-256 哈希和最后心跳；不保存令牌明文。
+`ai_runner_node` 保存电脑名、平台、本机可用的 AI 工具（`engines`，逗号分隔，Runner 自述并在
+心跳刷新）、并发槽位、令牌 SHA-256 哈希和最后心跳；不保存令牌明文。
 `ai_runner_pair_code` 保存一次性配对码哈希、过期时间和使用时间，明文只在生成接口返回一次。
 
 ### ai_task_run
@@ -230,10 +232,12 @@ erDiagram
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id / task_id / project_id | VARCHAR(32) | 运行、任务和项目 id |
+| engine | VARCHAR(24) | 本次使用的 AI 工具：codex / claude |
 | status | VARCHAR(24) | queued / running / succeeded / failed / cancelled |
 | runner_id | VARCHAR(32) NULL | 实际领取的电脑 |
+| requested_runner_id | VARCHAR(32) NULL | 入队时点名的电脑；优先于项目的 preferred_runner_id |
 | prompt_url / branch_name | VARCHAR | Markdown 任务地址与隔离分支 |
-| result_summary / session_id / exit_code | TEXT / VARCHAR / INT | Codex 最终摘要、会话 id 与退出码 |
+| result_summary / session_id / exit_code | TEXT / VARCHAR / INT | AI CLI 最终摘要、会话 id 与退出码 |
 | latest_progress / progress_updated_at | VARCHAR(1000) / DATETIME | 首页快速读取的最近一条用户可读进展 |
 | created_at / claimed_at / started_at / finished_at | DATETIME | 完整运行时间线 |
 
@@ -296,4 +300,5 @@ erDiagram
 - `V17__system_setting_and_feishu_sync.sql`：系统级配置表、`automation_job.handler` 与内置的飞书群聊同步任务。
 - `V18__ai_task_runner.sql`：项目级 AI 配置、执行电脑、一次性配对码与任务运行队列。
 - `V19__ai_run_progress.sql`：AI 运行最新反馈与可归档的摘要时间线。
+- `V20__ai_run_engine.sql`：节点可用 AI 工具、项目默认 AI 工具、运行使用的工具与按次指定的电脑。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

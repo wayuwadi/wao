@@ -1,5 +1,5 @@
 import { http, type ApiResponse } from './http'
-import type { AiProjectConfig, AiRun, AiRunner } from '@/types'
+import type { AiEngine, AiProjectConfig, AiRun, AiRunner, AiWorkflow } from '@/types'
 
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
@@ -13,13 +13,23 @@ export const saveAiProjectConfig = (
   payload: Omit<AiProjectConfig, 'projectId'>,
 ) => data<AiProjectConfig>(http.put(`/api/ai/projects/${projectId}/config`, payload))
 
+export const fetchAiWorkflows = () => data<AiWorkflow[]>(http.get('/api/ai/workflows'))
+
 export const fetchAiRunners = () => data<AiRunner[]>(http.get('/api/ai/runners'))
 
 export const createAiPairCode = () =>
   data<{ code: string; expiresAt: string }>(http.post('/api/ai/runners/pair-code'))
 
-export const createAiRuns = (taskIds: string[]) =>
-  data<AiRun[]>(http.post('/api/ai/runs', { taskIds }))
+/** 入队；engine / runnerId 留空表示沿用项目默认工具并由任意在线电脑领取。 */
+export const createAiRuns = (
+  taskIds: string[],
+  options: { engine?: AiEngine | null; runnerId?: string | null } = {},
+) =>
+  data<AiRun[]>(http.post('/api/ai/runs', {
+    taskIds,
+    engine: options.engine ?? null,
+    runnerId: options.runnerId ?? null,
+  }))
 
 export const fetchAiRuns = (active = false) =>
   data<AiRun[]>(http.get('/api/ai/runs', { params: { active } }))

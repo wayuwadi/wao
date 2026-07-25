@@ -5,15 +5,17 @@ import java.time.LocalDateTime;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
-/** 一次由 Codex 执行 WAO 任务的运行记录。 */
+/** 一次由本地 AI CLI 执行 WAO 任务的运行记录。 */
 @TableName("ai_task_run")
 public class AiTaskRunEntity {
     @TableId
     private String id;
     private String taskId;
     private String projectId;
+    private String engine;
     private String status;
     private String runnerId;
+    private String requestedRunnerId;
     private String requestedBy;
     private String promptUrl;
     private String branchName;
@@ -33,10 +35,14 @@ public class AiTaskRunEntity {
     public void setTaskId(String taskId) { this.taskId = taskId; }
     public String getProjectId() { return projectId; }
     public void setProjectId(String projectId) { this.projectId = projectId; }
+    public String getEngine() { return engine; }
+    public void setEngine(String engine) { this.engine = engine; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public String getRunnerId() { return runnerId; }
     public void setRunnerId(String runnerId) { this.runnerId = runnerId; }
+    public String getRequestedRunnerId() { return requestedRunnerId; }
+    public void setRequestedRunnerId(String requestedRunnerId) { this.requestedRunnerId = requestedRunnerId; }
     public String getRequestedBy() { return requestedBy; }
     public void setRequestedBy(String requestedBy) { this.requestedBy = requestedBy; }
     public String getPromptUrl() { return promptUrl; }

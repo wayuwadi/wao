@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -29,6 +30,7 @@ import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
+import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
@@ -49,8 +51,8 @@ import org.springframework.util.StringUtils;
 /**
  * AI 任务执行中心。
  *
- * <p>WAO 只保存队列、节点心跳和运行结果；Codex 登录态、Git 凭据与实际工作目录始终留在
- * 用户电脑上的 runner 进程中。领取动作串行化，避免两台电脑拿到同一条任务。
+ * <p>WAO 只保存队列、节点心跳和运行结果；Codex / Claude Code 登录态、Git 凭据与实际工作目录
+ * 始终留在用户电脑上的 runner 进程中。领取动作串行化，避免两台电脑拿到同一条任务。
  */
 @Service
 public class AiRunService {
@@ -62,6 +64,10 @@ public class AiRunService {
     private static final int MAX_PROGRESS = 1_000;
     private static final int MAX_PROGRESS_PER_RUN = 50;
     private static final Set<String> PROGRESS_KINDS = Set.of("phase", "message", "plan", "result");
+    /** 目前支持的本地 AI 工具；顺序即页面默认展示顺序。 */
+    public static final List<String> ENGINES = List.of("codex", "claude");
+    private static final String DEFAULT_ENGINE = "codex";
+    private static final Map<String, String> ENGINE_LABELS = Map.of("codex", "Codex", "claude", "Claude Code");
 
     private final AiProjectConfigMapper configMapper;
     private final AiRunnerNodeMapper runnerMapper;
@@ -88,8 +94,37 @@ public class AiRunService {
         requireProject(projectId);
         AiProjectConfigEntity entity = configMapper.selectById(projectId);
         return entity == null
-                ? new AiProjectConfigDto(projectId, false, "", "main", defaultFolder(projectId), null, 2)
+                ? new AiProjectConfigDto(projectId, false, "", "main", defaultFolder(projectId), DEFAULT_ENGINE, null, 2)
                 : toConfigDto(entity);
+    }
+
+    /** AI 控制台的工作流总览：每个项目一行配置与运行统计，未配置过的项目也会出现。 */
+    public List<AiWorkflowDto> listWorkflows() {
+        Map<String, AiProjectConfigEntity> configs = configMapper.selectList(null).stream()
+                .collect(Collectors.toMap(AiProjectConfigEntity::getProjectId, Function.identity()));
+        Map<String, String> runnerNames = runnerMapper.selectList(null).stream()
+                .collect(Collectors.toMap(AiRunnerNodeEntity::getId, AiRunnerNodeEntity::getName));
+        // 总览只需要状态和时间，不读 result_summary 这类大字段。
+        Map<String, List<AiTaskRunEntity>> runsByProject = runMapper.selectList(
+                        new LambdaQueryWrapper<AiTaskRunEntity>().select(AiTaskRunEntity::getProjectId,
+                                AiTaskRunEntity::getStatus, AiTaskRunEntity::getCreatedAt))
+                .stream().collect(Collectors.groupingBy(AiTaskRunEntity::getProjectId));
+        return projectMapper.selectList(null).stream().map(project -> {
+            AiProjectConfigEntity config = configs.get(project.getId());
+            AiProjectConfigDto dto = config == null
+                    ? new AiProjectConfigDto(project.getId(), false, "", "main",
+                            safeFolder(project.getName(), project.getId()), DEFAULT_ENGINE, null, 2)
+                    : toConfigDto(config);
+            List<AiTaskRunEntity> runs = runsByProject.getOrDefault(project.getId(), List.of());
+            String lastRunAt = runs.stream().map(AiTaskRunEntity::getCreatedAt).filter(Objects::nonNull)
+                    .max(LocalDateTime::compareTo).map(LocalDateTime::toString).orElse(null);
+            return new AiWorkflowDto(project.getId(), project.getName(), dto,
+                    dto.preferredRunnerId() == null ? null : runnerNames.get(dto.preferredRunnerId()),
+                    (int) runs.stream().filter(run -> ACTIVE.contains(run.getStatus())).count(),
+                    (int) runs.stream().filter(run -> "succeeded".equals(run.getStatus())).count(),
+                    (int) runs.stream().filter(run -> "failed".equals(run.getStatus())).count(),
+                    lastRunAt);
+        }).sorted((left, right) -> Boolean.compare(right.config().enabled(), left.config().enabled())).toList();
     }
 
     /** 保存项目配置并校验仓库、分支、目录与并发参数。 */
@@ -116,9 +151,14 @@ public class AiRunService {
         if (maxParallel < 1 || maxParallel > 10) {
             throw new BadRequestException("项目并发数必须在 1 到 10 之间");
         }
+        String engine = requireEngine(blankOr(request.defaultEngine(), DEFAULT_ENGINE));
         String preferred = trim(request.preferredRunnerId());
-        if (StringUtils.hasText(preferred) && runnerMapper.selectById(preferred) == null) {
-            throw new BadRequestException("指定的执行电脑不存在");
+        if (StringUtils.hasText(preferred)) {
+            AiRunnerNodeEntity runner = runnerMapper.selectById(preferred);
+            if (runner == null) throw new BadRequestException("指定的执行电脑不存在");
+            if (!engines(runner).contains(engine)) {
+                throw new BadRequestException(runner.getName() + " 没有接入 " + label(engine) + "，请换一台电脑或改默认 AI 工具");
+            }
         }
         AiProjectConfigEntity entity = configMapper.selectById(projectId);
         if (entity == null) {
@@ -129,6 +169,7 @@ public class AiRunService {
         entity.setRepoUrl(repoUrl);
         entity.setDefaultBranch(branch);
         entity.setWorkspaceDir(folder);
+        entity.setDefaultEngine(engine);
         entity.setPreferredRunnerId(StringUtils.hasText(preferred) ? preferred : null);
         entity.setMaxParallelRuns(maxParallel);
         entity.setUpdatedAt(LocalDateTime.now());
@@ -164,6 +205,7 @@ public class AiRunService {
         runner.setId(id("rn"));
         runner.setName(request.name().trim());
         runner.setPlatform(blankOr(request.platform(), "unknown"));
+        runner.setEngines(joinEngines(request.engines()));
         runner.setMaxConcurrency(clamp(request.maxConcurrency(), 1, 8, 1));
         runner.setTokenHash(hash(token));
         runner.setCreatedAt(now);
@@ -183,16 +225,29 @@ public class AiRunService {
         LocalDateTime cutoff = LocalDateTime.now().minusMinutes(2);
         return runnerMapper.selectList(new LambdaQueryWrapper<AiRunnerNodeEntity>()
                         .orderByDesc(AiRunnerNodeEntity::getLastSeenAt))
-                .stream().map(r -> new AiRunnerDto(r.getId(), r.getName(), r.getPlatform(),
+                .stream().map(r -> new AiRunnerDto(r.getId(), r.getName(), r.getPlatform(), engines(r),
                         valueOr(r.getMaxConcurrency(), 1), activeByRunner.getOrDefault(r.getId(), 0L).intValue(),
                         r.getLastSeenAt() != null && r.getLastSeenAt().isAfter(cutoff),
                         r.getLastSeenAt() == null ? null : r.getLastSeenAt().toString()))
                 .toList();
     }
 
-    /** 把一个或多个任务加入队列；同一任务已有活动运行时不会重复入队。 */
+    /**
+     * 把一个或多个任务加入队列；同一任务已有活动运行时不会重复入队。
+     *
+     * @param engine   本次使用的 AI 工具；留空表示沿用各任务所属项目的默认工具
+     * @param runnerId 指定执行电脑；留空表示由任意在线且支持该工具的电脑领取
+     */
     @Transactional
-    public synchronized List<AiRunDto> enqueue(List<String> taskIds, String requestedBy, String baseUrl) {
+    public synchronized List<AiRunDto> enqueue(List<String> taskIds, String engine, String runnerId,
+            String requestedBy, String baseUrl) {
+        String requestedEngine = StringUtils.hasText(engine) && !"auto".equals(engine)
+                ? requireEngine(engine) : null;
+        AiRunnerNodeEntity target = null;
+        if (StringUtils.hasText(runnerId)) {
+            target = runnerMapper.selectById(runnerId.trim());
+            if (target == null) throw new BadRequestException("指定的执行电脑不存在");
+        }
         List<AiTaskRunEntity> created = new ArrayList<>();
         for (String taskId : taskIds.stream().distinct().toList()) {
             TaskEntity task = taskMapper.selectById(taskId);
@@ -204,6 +259,14 @@ public class AiRunService {
             if (!StringUtils.hasText(config.getRepoUrl())) {
                 throw new BadRequestException("项目尚未配置 Git 仓库地址");
             }
+            String runEngine = requestedEngine != null
+                    ? requestedEngine : requireEngine(blankOr(config.getDefaultEngine(), DEFAULT_ENGINE));
+            if (target != null && !engines(target).contains(runEngine)) {
+                throw new BadRequestException(target.getName() + " 没有接入 " + label(runEngine) + "，请换一台电脑或换一个 AI 工具");
+            }
+            if (target == null && !anyRunnerSupports(runEngine)) {
+                throw new BadRequestException("还没有电脑接入 " + label(runEngine) + "，请先在 AI 控制台配对一台");
+            }
             Long duplicate = runMapper.selectCount(new LambdaQueryWrapper<AiTaskRunEntity>()
                     .eq(AiTaskRunEntity::getTaskId, taskId).in(AiTaskRunEntity::getStatus, ACTIVE));
             if (duplicate != null && duplicate > 0) continue;
@@ -211,13 +274,16 @@ public class AiRunService {
             run.setId(id("ar"));
             run.setTaskId(taskId);
             run.setProjectId(task.getProjectId());
+            run.setEngine(runEngine);
             run.setStatus("queued");
+            run.setRequestedRunnerId(target == null ? null : target.getId());
             run.setRequestedBy(requestedBy);
             run.setPromptUrl(baseUrl + "/api/share/tasks/" + taskId + ".md");
             run.setBranchName("ai/wao-" + run.getId());
             run.setCreatedAt(LocalDateTime.now());
             runMapper.insert(run);
-            appendProgress(run, "phase", "任务已进入队列，正在等待执行电脑领取");
+            appendProgress(run, "phase", "任务已进入队列，等待"
+                    + (target == null ? "在线电脑" : target.getName()) + "上的 " + label(runEngine) + " 领取");
             setTaskStatus(taskId, "AI 进行中");
             created.add(run);
         }
@@ -242,11 +308,12 @@ public class AiRunService {
                 .last("LIMIT 30")));
     }
 
-    /** 节点心跳；同时刷新并发能力，便于用户调整本机 runner 参数后立即生效。 */
-    public AiRunnerDto heartbeat(String token, Integer maxConcurrency) {
+    /** 节点心跳；同时刷新并发能力和本机可用的 AI 工具，便于用户调整 runner 参数后立即生效。 */
+    public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines) {
         AiRunnerNodeEntity runner = requireRunner(token);
         runner.setLastSeenAt(LocalDateTime.now());
         if (maxConcurrency != null) runner.setMaxConcurrency(clamp(maxConcurrency, 1, 8, 1));
+        if (StringUtils.hasText(engines)) runner.setEngines(joinEngines(List.of(engines.split(","))));
         runnerMapper.updateById(runner);
         return listRunners().stream().filter(r -> r.id().equals(runner.getId())).findFirst().orElseThrow();
     }
@@ -265,11 +332,19 @@ public class AiRunService {
 
         List<AiTaskRunEntity> queued = runMapper.selectList(new LambdaQueryWrapper<AiTaskRunEntity>()
                 .eq(AiTaskRunEntity::getStatus, "queued").orderByAsc(AiTaskRunEntity::getCreatedAt).last("LIMIT 50"));
+        List<String> ownEngines = engines(runner);
         for (AiTaskRunEntity run : queued) {
             AiProjectConfigEntity config = configMapper.selectById(run.getProjectId());
             if (config == null || !Boolean.TRUE.equals(config.getEnabled())) continue;
-            if (StringUtils.hasText(config.getPreferredRunnerId())
-                    && !runner.getId().equals(config.getPreferredRunnerId())) continue;
+            String engine = blankOr(run.getEngine(), DEFAULT_ENGINE);
+            if (!ownEngines.contains(engine)) continue;
+            // 单次运行指定的电脑优先级最高；没有指定时才回落到项目的首选电脑。
+            if (StringUtils.hasText(run.getRequestedRunnerId())) {
+                if (!runner.getId().equals(run.getRequestedRunnerId())) continue;
+            } else if (StringUtils.hasText(config.getPreferredRunnerId())
+                    && !runner.getId().equals(config.getPreferredRunnerId())) {
+                continue;
+            }
             long projectActive = countRuns(new LambdaQueryWrapper<AiTaskRunEntity>()
                     .eq(AiTaskRunEntity::getProjectId, run.getProjectId())
                     .in(AiTaskRunEntity::getStatus, List.of("claimed", "running")));
@@ -280,12 +355,12 @@ public class AiRunService {
             run.setStatus("running");
             run.setClaimedAt(now);
             run.setStartedAt(now);
-            appendProgress(run, "phase", "执行电脑已领取任务，Codex 正在启动");
+            appendProgress(run, "phase", runner.getName() + " 已领取任务，" + label(engine) + " 正在启动");
             setTaskStatus(run.getTaskId(), "AI 进行中");
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());
             return new AiRunnerClaimDto(run.getId(), run.getTaskId(), task.getTitle(), run.getProjectId(),
-                    project == null ? run.getProjectId() : project.getName(), run.getPromptUrl(),
+                    project == null ? run.getProjectId() : project.getName(), engine, run.getPromptUrl(),
                     config.getRepoUrl(), blankOr(config.getDefaultBranch(), "main"),
                     blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName());
         }
@@ -326,7 +401,8 @@ public class AiRunService {
         run.setResultSummary(limit(request.resultSummary(), MAX_RESULT));
         run.setSessionId(limit(request.sessionId(), 128));
         run.setFinishedAt(LocalDateTime.now());
-        String completion = exitCode == 0 ? "Codex 已完成执行，等待人工验收" : "Codex 执行未完成，请查看失败原因";
+        String engine = label(blankOr(run.getEngine(), DEFAULT_ENGINE));
+        String completion = exitCode == 0 ? engine + " 已完成执行，等待人工验收" : engine + " 执行未完成，请查看失败原因";
         appendProgress(run, "result", completion);
         setTaskStatus(run.getTaskId(), exitCode == 0 ? "待验证" : "进行中");
         runner.setLastSeenAt(LocalDateTime.now());
@@ -385,8 +461,10 @@ public class AiRunService {
             AiRunnerNodeEntity runner = StringUtils.hasText(run.getRunnerId())
                     ? runners.get(run.getRunnerId()) : null;
             return new AiRunDto(run.getId(), run.getTaskId(), task == null ? run.getTaskId() : task.getTitle(),
-                    run.getProjectId(), project == null ? run.getProjectId() : project.getName(), run.getStatus(),
-                    run.getRunnerId(), runner == null ? null : runner.getName(), run.getBranchName(),
+                    run.getProjectId(), project == null ? run.getProjectId() : project.getName(),
+                    blankOr(run.getEngine(), DEFAULT_ENGINE), run.getStatus(),
+                    run.getRunnerId(), runner == null ? null : runner.getName(), run.getRequestedRunnerId(),
+                    run.getBranchName(),
                     run.getResultSummary(), run.getLatestProgress(), text(run.getProgressUpdatedAt()),
                     progressByRun.getOrDefault(run.getId(), List.of()), run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
                     text(run.getStartedAt()), text(run.getFinishedAt()));
@@ -437,7 +515,38 @@ public class AiRunService {
         return new AiProjectConfigDto(entity.getProjectId(), Boolean.TRUE.equals(entity.getEnabled()),
                 blankOr(entity.getRepoUrl(), ""), blankOr(entity.getDefaultBranch(), "main"),
                 blankOr(entity.getWorkspaceDir(), defaultFolder(entity.getProjectId())),
+                blankOr(entity.getDefaultEngine(), DEFAULT_ENGINE),
                 entity.getPreferredRunnerId(), valueOr(entity.getMaxParallelRuns(), 2));
+    }
+
+    /** 是否已经有电脑（无论在线与否）接入了这种 AI 工具。 */
+    private boolean anyRunnerSupports(String engine) {
+        return runnerMapper.selectList(null).stream().anyMatch(runner -> engines(runner).contains(engine));
+    }
+
+    private static String requireEngine(String engine) {
+        String value = trim(engine).toLowerCase();
+        if (!ENGINES.contains(value)) throw new BadRequestException("不支持的 AI 工具：" + engine);
+        return value;
+    }
+
+    private static List<String> engines(AiRunnerNodeEntity runner) {
+        List<String> declared = runner.getEngines() == null ? List.of() : List.of(runner.getEngines().split(","));
+        List<String> valid = declared.stream().map(String::trim).map(String::toLowerCase)
+                .filter(ENGINES::contains).distinct().toList();
+        // 老节点没有声明过 engines，按历史行为当作只会 Codex。
+        return valid.isEmpty() ? List.of(DEFAULT_ENGINE) : valid;
+    }
+
+    private static String joinEngines(List<String> engines) {
+        List<String> valid = engines == null ? List.of()
+                : engines.stream().filter(Objects::nonNull).map(String::trim).map(String::toLowerCase)
+                        .filter(ENGINES::contains).distinct().toList();
+        return String.join(",", valid.isEmpty() ? List.of(DEFAULT_ENGINE) : valid);
+    }
+
+    private static String label(String engine) {
+        return ENGINE_LABELS.getOrDefault(engine, engine);
     }
 
     private static String hash(String value) {

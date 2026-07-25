@@ -8,7 +8,8 @@ import {
   fetchAiRunners,
   saveAiProjectConfig,
 } from '@/api/ai'
-import type { AiRunner, Project } from '@/types'
+import { AI_ENGINES, engineLabel } from '@/composables/aiEngines'
+import type { AiEngine, AiRunner, Project } from '@/types'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ close: []; deleted: [] }>()
@@ -25,6 +26,7 @@ const aiEnabled = ref(false)
 const repoUrl = ref('')
 const defaultBranch = ref('main')
 const workspaceDir = ref('')
+const defaultEngine = ref<AiEngine>('codex')
 const preferredRunnerId = ref('')
 const maxParallelRuns = ref(2)
 const runners = ref<AiRunner[]>([])
@@ -53,6 +55,7 @@ async function save() {
       repoUrl: repoUrl.value.trim(),
       defaultBranch: defaultBranch.value.trim() || 'main',
       workspaceDir: workspaceDir.value.trim(),
+      defaultEngine: defaultEngine.value,
       preferredRunnerId: preferredRunnerId.value || null,
       maxParallelRuns: maxParallelRuns.value,
     })
@@ -79,6 +82,7 @@ async function loadAiConfig() {
     repoUrl.value = config.repoUrl
     defaultBranch.value = config.defaultBranch
     workspaceDir.value = config.workspaceDir
+    defaultEngine.value = config.defaultEngine
     preferredRunnerId.value = config.preferredRunnerId ?? ''
     maxParallelRuns.value = config.maxParallelRuns
     runners.value = nodes
@@ -144,7 +148,7 @@ onMounted(loadAiConfig)
       <div class="ai-head">
         <div>
           <div class="ai-title"><i class="ri-robot-2-line"></i>AI Run</div>
-          <div class="ai-sub">把任务派给在线电脑上的 Codex，自动开发、测试、提交和部署。</div>
+          <div class="ai-sub">把任务派给在线电脑上的 Codex 或 Claude Code，自动开发、测试、提交和部署。</div>
         </div>
         <label class="switch">
           <input v-model="aiEnabled" type="checkbox" :disabled="aiLoading" />
@@ -167,6 +171,12 @@ onMounted(loadAiConfig)
           <input v-model="workspaceDir" placeholder="wao" />
         </label>
         <label class="form-field">
+          <span>默认 AI 工具</span>
+          <select v-model="defaultEngine">
+            <option v-for="engine in AI_ENGINES" :key="engine.id" :value="engine.id">{{ engine.label }}</option>
+          </select>
+        </label>
+        <label class="form-field">
           <span>同项目最大并发</span>
           <input v-model.number="maxParallelRuns" type="number" min="1" max="10" />
         </label>
@@ -175,7 +185,7 @@ onMounted(loadAiConfig)
           <select v-model="preferredRunnerId">
             <option value="">自动分配在线电脑</option>
             <option v-for="runner in runners" :key="runner.id" :value="runner.id">
-              {{ runner.name }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
+              {{ runner.name }} · {{ runner.engines.map(engineLabel).join(' / ') }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
             </option>
           </select>
         </label>
@@ -184,7 +194,7 @@ onMounted(loadAiConfig)
       <div class="runner-box">
         <div>
           <b>接入一台新电脑</b>
-          <span>电脑只需配对一次，Codex 和 GitHub 凭据不会上传到 WAO。</span>
+          <span>电脑只需配对一次；Codex / Claude Code 与 GitHub 凭据不会上传到 WAO。更完整的电脑与工作流管理在首页 AI 控制台。</span>
         </div>
         <button class="pair-btn" @click="generatePairCode"><i class="ri-link"></i>生成电脑配对码</button>
       </div>
