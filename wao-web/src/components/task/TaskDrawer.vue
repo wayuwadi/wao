@@ -5,12 +5,13 @@ import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useDeco } from '@/composables/deco'
-import { statusMeta, priorityMeta } from '@/utils/domain'
+import { statusMeta, priorityMeta, TASK_STATUSES } from '@/utils/domain'
 import { fmtDate } from '@/utils/domain'
 import { toast } from '@/composables/toast'
 // 异步加载：编辑器带着 ProseMirror（gzip 约 110KB），只有真正打开任务详情时才需要，
 // 不该压在首屏包里。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
+import SaveHint from '@/components/ui/SaveHint.vue'
 import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { useSettle } from '@/composables/completion'
@@ -83,9 +84,10 @@ const linkedDocs = computed(() =>
   (task.value?.docs ?? []).map((id) => ({ id, title: data.docById(id)?.title ?? '' })),
 )
 const saveState = computed(() => (task.value ? data.taskSaveState(task.value.id) : 'idle'))
-const saveText = computed(() => ({ idle: '已保存', saving: '保存中', saved: '已保存', error: '保存失败，内容已保留在本机' })[saveState.value])
+/** 上一次写透成功的时刻，给「自动保存成功 14:32」用。 */
+const savedAt = computed(() => (task.value ? data.taskSavedAt(task.value.id) : null))
 
-const STATUS_OPTS: TaskStatus[] = ['待办', '进行中', '阻塞', '已完成']
+const STATUS_OPTS: TaskStatus[] = TASK_STATUSES
 const PR_OPTS: { key: Priority; sub: string }[] = [
   { key: 'P0', sub: '当天必须处理' },
   { key: 'P1', sub: '影响里程碑' },
@@ -390,9 +392,7 @@ function demo(msg: string) {
           <div class="field">
             <div class="field-headline">
               <div class="field-label">描述</div>
-              <span class="save-state" :class="saveState">
-                <i :class="saveState === 'saving' ? 'ri-loader-4-line spin' : saveState === 'error' ? 'ri-error-warning-line' : 'ri-checkbox-circle-line'"></i>{{ saveText }}
-              </span>
+              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error'" />
             </div>
             <MarkdownEditor
               v-model="desc"
@@ -551,9 +551,7 @@ function demo(msg: string) {
           <div class="sub-field">
             <div class="field-headline">
               <div class="props-label sm">描述</div>
-              <span class="save-state" :class="saveState">
-                <i :class="saveState === 'saving' ? 'ri-loader-4-line spin' : saveState === 'error' ? 'ri-error-warning-line' : 'ri-checkbox-circle-line'"></i>{{ saveText }}
-              </span>
+              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error'" />
             </div>
             <MarkdownEditor
               v-model="subDesc"
@@ -812,26 +810,6 @@ function demo(msg: string) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-}
-.save-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--wao-success-strong);
-  font-size: 11.5px;
-  white-space: nowrap;
-}
-.save-state.error {
-  color: var(--wao-danger-strong);
-}
-.save-state i {
-  font-size: 12px;
-}
-.spin {
-  animation: waoTaskSpin 0.9s linear infinite;
-}
-@keyframes waoTaskSpin {
-  to { transform: rotate(360deg); }
 }
 .field-label {
   font-size: 12px;

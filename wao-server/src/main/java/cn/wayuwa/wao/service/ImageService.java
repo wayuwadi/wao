@@ -65,18 +65,45 @@ public class ImageService {
             throw new BadRequestException("图片超过 10MB，请压缩后再上传");
         }
 
-        ImageBlobEntity e = new ImageBlobEntity();
-        e.setId("img" + System.currentTimeMillis() + (int) (Math.random() * 1000));
-        e.setName(safeName(file.getOriginalFilename()));
-        e.setContentType(type);
-        e.setByteSize(file.getSize());
-        e.setSource(source);
-        e.setCreatedAt(LocalDateTime.now());
+        byte[] content;
         try {
-            e.setContent(file.getBytes());
+            content = file.getBytes();
         } catch (IOException ex) {
             throw new BadRequestException("读取上传文件失败，请重试");
         }
+        return store(content, type, file.getOriginalFilename(), source);
+    }
+
+    /**
+     * 直接存一份图片字节到图床（供服务端自己抓来的图用，如飞书群聊里的截图）。
+     *
+     * @param content     图片字节
+     * @param contentType MIME 类型，识别不出时按 PNG 处理
+     * @param name        文件名
+     * @param source      来源描述，如 “飞书群聊 · 研发群”
+     * @return 落库后的图床条目
+     * @throws BadRequestException 内容为空或超过 {@value #MAX_BYTES} 字节时
+     */
+    public ImageItemDto store(byte[] content, String contentType, String name, String source) {
+        if (content == null || content.length == 0) {
+            throw new BadRequestException("图片内容为空");
+        }
+        if (content.length > MAX_BYTES) {
+            throw new BadRequestException("图片超过 10MB，已跳过");
+        }
+        String type = contentType == null ? "" : contentType.toLowerCase();
+        if (!ALLOWED_TYPES.contains(type)) {
+            type = "image/png";
+        }
+
+        ImageBlobEntity e = new ImageBlobEntity();
+        e.setId("img" + System.currentTimeMillis() + (int) (Math.random() * 1000));
+        e.setName(safeName(name));
+        e.setContentType(type);
+        e.setByteSize((long) content.length);
+        e.setSource(source);
+        e.setCreatedAt(LocalDateTime.now());
+        e.setContent(content);
         mapper.insert(e);
         return toDto(e);
     }

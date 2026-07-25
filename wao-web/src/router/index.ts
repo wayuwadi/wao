@@ -47,7 +47,6 @@ const router = createRouter({
         { path: 'knowledge', name: 'knowledge', component: () => import('@/views/KnowledgeView.vue'), meta: { module: 'knowledge', tabKind: 'module' } },
         { path: 'trash', name: 'trash', component: () => import('@/views/KnowledgeView.vue'), meta: { module: 'trash', tabKind: 'module' } },
         { path: 'kb/:id', name: 'kb', component: () => import('@/views/KbDetailView.vue'), meta: { module: 'knowledge', tabKind: 'kb' } },
-        { path: 'whiteboard', name: 'whiteboard', component: () => import('@/views/WhiteboardView.vue'), meta: { module: 'whiteboard', tabKind: 'module' } },
         { path: 'files', name: 'files', component: () => import('@/views/FilesView.vue'), meta: { module: 'files', tabKind: 'module' } },
         { path: 'automation', name: 'automation', component: () => import('@/views/AutomationView.vue'), meta: { module: 'automation', tabKind: 'module' } },
         { path: 'vault', name: 'vault', component: () => import('@/views/VaultView.vue'), meta: { module: 'vault', tabKind: 'module' } },

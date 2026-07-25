@@ -2,6 +2,7 @@ package cn.wayuwa.wao.common;
 
 import cn.wayuwa.wao.auth.FeishuLoginException;
 import cn.wayuwa.wao.auth.WechatLoginException;
+import cn.wayuwa.wao.feishu.FeishuApiException;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -77,6 +78,13 @@ public class GlobalExceptionHandler {
     public ApiResponse<Void> handleWechatLogin(WechatLoginException exception) {
         log.warn("Wechat login failed: {}", exception.getMessage());
         return ApiResponse.fail(50202, exception.getMessage());
+    }
+
+    @ExceptionHandler(FeishuApiException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public ApiResponse<Void> handleFeishuApi(FeishuApiException exception) {
+        log.warn("Feishu open API call failed: {}", exception.getMessage());
+        return ApiResponse.fail(50203, exception.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

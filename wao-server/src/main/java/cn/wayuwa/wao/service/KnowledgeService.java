@@ -409,6 +409,40 @@ public class KnowledgeService {
         return toDto(e, docMapper.selectList(aliveDocs()));
     }
 
+    /**
+     * 自动化写入一篇文档：同一知识库 / 文件夹下标题相同的文档直接覆盖正文，否则新建。
+     *
+     * <p>「按标题覆盖」是给每天一篇的沉淀任务用的 —— 同一天补跑一次只该更新那一篇，
+     * 不该在知识库里堆出一串同名文档。作者记为 {@code auto}，前端会显示成「自动化」。
+     *
+     * @param kbId     目标知识库 id
+     * @param folderId 目标文件夹 id
+     * @param title    文档标题（同时也是幂等键）
+     * @param blocks   正文块
+     * @return 新建或更新后的文档
+     */
+    @Transactional
+    public DocDto upsertAutoDoc(String kbId, String folderId, String title, List<DocBlockDto> blocks) {
+        requireKb(kbId);
+        KbFolderEntity folder = requireFolder(kbId, folderId);
+        DocEntity existing = docMapper.selectList(aliveDocs()
+                        .eq(DocEntity::getFolderId, folder.getId()).eq(DocEntity::getTitle, title))
+                .stream().findFirst().orElse(null);
+        if (existing == null) {
+            DocDto created = insertDoc(kbId, folder.getId(), title, "auto", blocks);
+            DocEntity e = requireDoc(created.id());
+            e.setAuto(true);
+            docMapper.updateById(e);
+            return toDto(e, docMapper.selectList(aliveDocs()));
+        }
+        existing.setBlocksJson(write(blocks));
+        existing.setAuto(true);
+        existing.setRev(rev(existing) + 1);
+        existing.setUpdatedAt(LocalDateTime.now());
+        docMapper.updateById(existing);
+        return toDto(existing, docMapper.selectList(aliveDocs()));
+    }
+
     /** 局部更新文档：标题 / 正文块 / 出链 / 所在文件夹。正文或标题变化时版本号 +1。 */
     public DocDto updateDoc(String id, PatchDocRequest req) {
         DocEntity e = requireDoc(id);

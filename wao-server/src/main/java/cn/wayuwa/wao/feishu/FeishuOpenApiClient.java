@@ -1,0 +1,232 @@
+package cn.wayuwa.wao.feishu;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+
+/**
+ * 飞书开放平台自建应用客户端：换 tenant_access_token、列群、列群成员、拉消息历史、下载消息里的图片。
+ *
+ * <p>凭据不来自配置文件，而是每次由调用方从 {@link cn.wayuwa.wao.service.SettingService} 取出后传进来 ——
+ * App ID / Secret 由用户在「自动化 → 飞书群聊同步」页面里填，加密存库，不进 Git 也不进环境变量。
+ *
+ * <p>token 按 appId 在进程内缓存到过期前 5 分钟，避免每条消息、每张图片都换一次令牌。
+ */
+@Component
+public class FeishuOpenApiClient {
+
+    /** 单次拉取的分页大小；飞书消息接口上限 50。 */
+    private static final int PAGE_SIZE = 50;
+    /** 一次同步最多翻多少页，防止异常数据把定时任务拖死。 */
+    private static final int MAX_PAGES = 40;
+
+    private final RestClient client;
+    private final Map<String, CachedToken> tokens = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public FeishuOpenApiClient(RestClient.Builder builder,
+                               @Value("${feishu.login.open-api-base-url:https://open.feishu.cn}") String baseUrl) {
+        this.client = builder.baseUrl(baseUrl).build();
+    }
+
+    /**
+     * 取 tenant_access_token（自建应用），命中缓存则直接返回。
+     *
+     * @param appId     应用 App ID
+     * @param appSecret 应用 App Secret
+     * @return 可用于 Authorization 头的令牌
+     * @throws FeishuApiException 凭据不对或接口不可达时
+     */
+    public String tenantAccessToken(String appId, String appSecret) {
+        CachedToken cached = tokens.get(appId);
+        if (cached != null && cached.expiresAt().isAfter(Instant.now())) {
+            return cached.token();
+        }
+        JsonNode res = post("/open-apis/auth/v3/tenant_access_token/internal",
+                Map.of("app_id", appId, "app_secret", appSecret), null);
+        String token = text(res, "tenant_access_token");
+        if (token.isBlank()) {
+            throw new FeishuApiException("换取飞书 tenant_access_token 失败：" + text(res, "msg"));
+        }
+        long expire = res.path("expire").asLong(7200);
+        tokens.put(appId, new CachedToken(token, Instant.now().plusSeconds(Math.max(60, expire)).minus(Duration.ofMinutes(5))));
+        return token;
+    }
+
+    /**
+     * 列出机器人所在的全部群。
+     *
+     * @param token tenant_access_token
+     * @return 群列表（chatId + 名称）
+     */
+    public List<FeishuChat> listChats(String token) {
+        List<FeishuChat> out = new ArrayList<>();
+        String pageToken = null;
+        for (int page = 0; page < MAX_PAGES; page++) {
+            String uri = "/open-apis/im/v1/chats?page_size=" + PAGE_SIZE
+                    + (pageToken == null ? "" : "&page_token=" + pageToken);
+            JsonNode data = get(uri, token);
+            for (JsonNode item : data.path("items")) {
+                out.add(new FeishuChat(text(item, "chat_id"), text(item, "name")));
+            }
+            pageToken = nextPageToken(data);
+            if (pageToken == null) {
+                break;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 列出某个群的成员（用于把发言人 ID 对上人名）。
+     *
+     * @param token  tenant_access_token
+     * @param chatId 群 id
+     * @return 成员列表（open_id + 飞书昵称）
+     */
+    public List<FeishuChatMember> listChatMembers(String token, String chatId) {
+        List<FeishuChatMember> out = new ArrayList<>();
+        String pageToken = null;
+        for (int page = 0; page < MAX_PAGES; page++) {
+            String uri = "/open-apis/im/v1/chats/" + chatId + "/members?member_id_type=open_id&page_size=100"
+                    + (pageToken == null ? "" : "&page_token=" + pageToken);
+            JsonNode data = get(uri, token);
+            for (JsonNode item : data.path("items")) {
+                out.add(new FeishuChatMember(text(item, "member_id"), text(item, "name")));
+            }
+            pageToken = nextPageToken(data);
+            if (pageToken == null) {
+                break;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 拉一个时间区间内的群聊消息历史（按时间正序）。
+     *
+     * @param token     tenant_access_token
+     * @param chatId    群 id
+     * @param startSecs 起始时间（秒级时间戳，含）
+     * @param endSecs   结束时间（秒级时间戳，含）
+     * @return 该区间内的消息，按发送时间升序
+     */
+    public List<FeishuMessage> listMessages(String token, String chatId, long startSecs, long endSecs) {
+        List<FeishuMessage> out = new ArrayList<>();
+        String pageToken = null;
+        for (int page = 0; page < MAX_PAGES; page++) {
+            String uri = "/open-apis/im/v1/messages?container_id_type=chat&container_id=" + chatId
+                    + "&start_time=" + startSecs + "&end_time=" + endSecs
+                    + "&sort_type=ByCreateTimeAsc&page_size=" + PAGE_SIZE
+                    + (pageToken == null ? "" : "&page_token=" + pageToken);
+            JsonNode data = get(uri, token);
+            for (JsonNode item : data.path("items")) {
+                out.add(new FeishuMessage(
+                        text(item, "message_id"),
+                        item.path("sender").path("id").asText(""),
+                        text(item, "msg_type"),
+                        item.path("body").path("content").asText(""),
+                        item.path("create_time").asLong(0),
+                        item.path("deleted").asBoolean(false)));
+            }
+            pageToken = nextPageToken(data);
+            if (pageToken == null) {
+                break;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 下载消息里的图片资源。
+     *
+     * @param token     tenant_access_token
+     * @param messageId 消息 id
+     * @param fileKey   图片 key（image_key）
+     * @return 图片字节；下载失败时返回 null（单张图失败不该让整次同步失败）
+     */
+    public byte[] downloadImage(String token, String messageId, String fileKey) {
+        try {
+            return client.get()
+                    .uri("/open-apis/im/v1/messages/{messageId}/resources/{fileKey}?type=image", messageId, fileKey)
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve()
+                    .body(byte[].class);
+        } catch (RestClientException ex) {
+            return null;
+        }
+    }
+
+    private JsonNode get(String uri, String token) {
+        try {
+            JsonNode res = client.get().uri(uri).header("Authorization", "Bearer " + token)
+                    .retrieve().body(JsonNode.class);
+            return requireOk(res);
+        } catch (RestClientException ex) {
+            throw new FeishuApiException("调用飞书接口失败：" + uri, ex);
+        }
+    }
+
+    private JsonNode post(String uri, Object body, String token) {
+        try {
+            RestClient.RequestBodySpec spec = client.post().uri(uri).contentType(MediaType.APPLICATION_JSON);
+            if (token != null) {
+                spec = spec.header("Authorization", "Bearer " + token);
+            }
+            JsonNode res = spec.body(body).retrieve().body(JsonNode.class);
+            return requireOk(res);
+        } catch (RestClientException ex) {
+            throw new FeishuApiException("调用飞书接口失败：" + uri, ex);
+        }
+    }
+
+    /** 飞书用 HTTP 200 + body.code 表达业务失败，非 0 一律当异常。 */
+    private JsonNode requireOk(JsonNode res) {
+        if (res == null) {
+            throw new FeishuApiException("飞书接口返回空响应");
+        }
+        int code = res.path("code").asInt(0);
+        if (code != 0) {
+            throw new FeishuApiException("飞书接口返回错误 " + code + "：" + text(res, "msg"));
+        }
+        return res.has("data") ? res.get("data") : res;
+    }
+
+    private static String nextPageToken(JsonNode data) {
+        return data.path("has_more").asBoolean(false) && !data.path("page_token").asText("").isBlank()
+                ? data.path("page_token").asText() : null;
+    }
+
+    private static String text(JsonNode node, String field) {
+        return node == null ? "" : node.path(field).asText("");
+    }
+
+    private record CachedToken(String token, Instant expiresAt) { }
+
+    /** 机器人所在的一个群。 */
+    public record FeishuChat(String chatId, String name) { }
+
+    /** 群成员：open_id + 飞书昵称。 */
+    public record FeishuChatMember(String openId, String name) { }
+
+    /**
+     * 一条群消息。
+     *
+     * @param messageId  消息 id
+     * @param senderId   发送者 open_id
+     * @param msgType    消息类型（text / image / post / …）
+     * @param content    原始 content JSON 字符串
+     * @param createTime 发送时间（毫秒时间戳）
+     * @param deleted    是否已撤回
+     */
+    public record FeishuMessage(String messageId, String senderId, String msgType, String content,
+                                long createTime, boolean deleted) { }
+}

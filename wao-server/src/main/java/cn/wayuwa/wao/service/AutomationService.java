@@ -19,6 +19,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 
@@ -32,17 +34,22 @@ import org.springframework.stereotype.Service;
 @Service
 public class AutomationService {
 
+    private static final Logger log = LoggerFactory.getLogger(AutomationService.class);
     private static final TypeReference<List<String>> STEPS_TYPE = new TypeReference<>() { };
     private static final DateTimeFormatter TIME_LABEL = DateTimeFormatter.ofPattern("今天 HH:mm");
 
     private final AutomationJobMapper jobMapper;
     private final AutomationRunMapper runMapper;
     private final ObjectMapper json;
+    /** 已登记的真实执行器，按 {@link JobHandler#name()} 索引。 */
+    private final Map<String, JobHandler> handlers;
 
-    public AutomationService(AutomationJobMapper jobMapper, AutomationRunMapper runMapper, ObjectMapper json) {
+    public AutomationService(AutomationJobMapper jobMapper, AutomationRunMapper runMapper, ObjectMapper json,
+            List<JobHandler> handlers) {
         this.jobMapper = jobMapper;
         this.runMapper = runMapper;
         this.json = json;
+        this.handlers = handlers.stream().collect(Collectors.toMap(JobHandler::name, h -> h));
     }
 
     /** 列出全部自动化任务（含近期运行记录，最近一次在前）。 */
@@ -126,11 +133,19 @@ public class AutomationService {
         jobMapper.deleteById(id);
     }
 
-    /** 手动触发一次运行；「待修复」状态的任务会运行失败并提示需要先重新授权。 */
+    /**
+     * 手动触发一次运行；「待修复」状态的任务会运行失败并提示需要先重新授权。
+     *
+     * <p>登记了真实执行器（{@code handler}）的任务会真的去跑一遍，运行记录写的是执行器返回的结果；
+     * 没有执行器的仍是模拟运行。
+     */
     public AutomationJobDto runJob(String id) {
         AutomationJobEntity e = requireJob(id);
-        boolean broken = "待修复".equals(e.getStatus());
-        recordRun(e, broken ? "失败 · 需要先重新授权" : "成功 · 手动触发");
+        if ("待修复".equals(e.getStatus())) {
+            recordRun(e, "失败 · 需要先重新授权");
+        } else {
+            recordRun(e, execute(e, "成功 · 手动触发"));
+        }
         jobMapper.updateById(e);
         return getJob(id);
     }
@@ -167,9 +182,38 @@ public class AutomationService {
 
     /** 供 {@link JobSchedulerService} 调用：按 Cron 到期自动执行一次，并推进下一次触发时间。 */
     public void executeScheduled(AutomationJobEntity e) {
-        recordRun(e, "成功 · 自动执行");
+        recordRun(e, execute(e, "成功 · 自动执行"));
         e.setNextFireAt(computeNextFire(e.getCronExpr()));
         jobMapper.updateById(e);
+    }
+
+    /**
+     * 跑一次任务本体：有真实执行器就调它，否则按模拟执行返回默认文案。
+     *
+     * <p>执行器抛异常不往上传 —— 一次失败只该变成一条「失败 · 原因」的运行记录，
+     * 不该让手动触发接口 500，也不该中断调度器对其它任务的轮询。
+     *
+     * @param e            任务
+     * @param simulatedResult 没有执行器时写进运行记录的文案
+     * @return 运行结果文案
+     */
+    private String execute(AutomationJobEntity e, String simulatedResult) {
+        JobHandler handler = e.getHandler() == null ? null : handlers.get(e.getHandler());
+        if (handler == null) {
+            return simulatedResult;
+        }
+        try {
+            return handler.execute();
+        } catch (RuntimeException ex) {
+            log.warn("自动化任务 {} 执行失败：{}", e.getId(), ex.getMessage());
+            return "失败 · " + shortReason(ex);
+        }
+    }
+
+    /** 运行记录那一列只有 64 字符，失败原因取前一段就够定位。 */
+    private static String shortReason(RuntimeException ex) {
+        String message = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+        return message.length() <= 48 ? message : message.substring(0, 48) + "…";
     }
 
     /** 查询已到期且需要自动执行的任务（cronExpr 非空、未暂停、到期）。供调度器轮询使用。 */
@@ -228,7 +272,7 @@ public class AutomationService {
                 .toList();
         return new AutomationJobDto(e.getId(), e.getName(), e.getIcon(), e.getScheduleLabel(), e.getStatus(),
                 e.getLastRunLabel(), e.getDescription(), e.getSource(), e.getTarget(), readSteps(e.getStepsJson()),
-                runPairs);
+                runPairs, e.getHandler());
     }
 
     private List<String> readSteps(String value) {

@@ -150,7 +150,7 @@ const RAW_TASKS: Array<Partial<Task> & Pick<Task, 'id' | 'title' | 'project' | '
       { name: '验收权重', value: '15%' },
     ],
   },
-  { id: 't2', title: '评论区组件开发', project: 'p1', status: '阻塞', pr: 'P1', owner: 'wd', parts: ['wg'], due: '2026-07-29', waiting: '等待娃哥', desc: '依赖任务详情抽屉的评论 / 活动合并结论。' },
+  { id: 't2', title: '评论区组件开发', project: 'p1', status: '进行中', pr: 'P1', owner: 'wd', parts: ['wg'], due: '2026-07-29', waiting: '等待娃哥', desc: '依赖任务详情抽屉的评论 / 活动合并结论。' },
   { id: 't3', title: '首页 AI 聚焦文案走查', project: 'p1', status: '待办', pr: 'P2', owner: 'wg', parts: [], due: '2026-07-25' },
   { id: 't4', title: '知识库阅读排版规范', project: 'p1', status: '待办', pr: 'P2', owner: 'wd', parts: [], due: '2026-07-27' },
   { id: 't5', title: '扫描第 3 批老照片（1998–2004）', project: 'p2', status: '进行中', pr: 'P2', owner: 'wd', parts: [], due: '2026-07-23' },

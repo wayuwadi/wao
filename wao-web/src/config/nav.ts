@@ -14,7 +14,6 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
   calendar: { id: 'calendar', label: '日历', icon: 'ri-calendar-line', path: '/calendar' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
-  whiteboard: { id: 'whiteboard', label: '白板 / 画布', icon: 'ri-artboard-line', path: '/whiteboard' },
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
   automation: { id: 'automation', label: '自动化', icon: 'ri-flashlight-line', path: '/automation' },
   vault: { id: 'vault', label: '密码库', icon: 'ri-key-2-line', path: '/vault' },
@@ -26,7 +25,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
 export const NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
   { label: '规划', items: ['projects', 'calendar'] },
-  { label: '沉淀', items: ['knowledge', 'whiteboard', 'files'] },
+  { label: '沉淀', items: ['knowledge', 'files'] },
   { label: '系统', items: ['automation', 'vault', 'trash'] },
 ]
 

@@ -75,7 +75,7 @@ erDiagram
 | id | VARCHAR(32) PK | 任务 id |
 | title | VARCHAR(256) | 标题 |
 | project_id | VARCHAR(32) FK→project | 所属项目 |
-| status | VARCHAR(16) | 待办/进行中/阻塞/已完成 |
+| status | VARCHAR(16) | 待办/进行中/AI 进行中/待验证/已完成（「阻塞」已由 V16 迁到「进行中」，等待他人改由 waiting 表达） |
 | pr | CHAR(2) | P0–P3 |
 | owner_id | VARCHAR(32) FK→member | 负责人 |
 | start_date | VARCHAR(16) NULL | 开始 |
@@ -183,6 +183,7 @@ erDiagram
 | steps_json | JSON | 执行步骤（描述性文本数组，不是可执行代码） |
 | next_fire_at | DATETIME NULL | 下次计划触发时间，调度器轮询用 |
 | ord | INT | 展示顺序 |
+| handler | VARCHAR(64) NULL | 服务端真实执行器名（如 `feishu-chat-sync`）；为空表示模拟运行 |
 
 ### automation_run（运行记录）
 | 列 | 类型 | 说明 |
@@ -194,7 +195,16 @@ erDiagram
 | duration_ms | INT | 模拟耗时 |
 | ord | INT | 顺序（0 = 最近一次） |
 
-执行引擎：`steps_json` 是描述性文本而非可执行配置，本轮不接入飞书 / NAS / 邮箱等外部系统的真实调用；`JobSchedulerService` 每分钟轮询到期的 Cron 任务并调用 `AutomationService.executeScheduled` 记录一次模拟运行，这是「真实触发时机 + 模拟执行结果」，不是完整工作流引擎。
+执行引擎：`JobSchedulerService` 每分钟轮询到期的 Cron 任务并调用 `AutomationService.executeScheduled`。`handler` 非空的任务交给对应的 `JobHandler` 真的执行（目前只有 `feishu-chat-sync`，见 ADR-019），运行记录写执行器返回的结果；`handler` 为空的任务仍是「真实触发时机 + 模拟执行结果」——`steps_json` 只是描述性文本，NAS / 邮箱等外部系统尚未接入。
+
+### system_setting（系统级配置，V17）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| cfg_key | VARCHAR(64) PK | 配置键，如 `feishu.webhook.url`、`feishu.chat-sync.app-secret` |
+| cfg_value | TEXT | 配置值；敏感键加密存储，密文带 `enc:` 前缀 |
+| updated_at | DATETIME | 最后修改时间 |
+
+全局唯一一份的键值配置。敏感值（webhook 地址、App Secret）复用 `VaultCryptoService` 的 AES-256-GCM 加密后落库，接口只回脱敏形态（`SettingService.mask`），明文只在服务端调飞书接口时解出来用；因此真实凭据既不进 Git 也不必写进环境变量。
 
 ## 密钥库域
 

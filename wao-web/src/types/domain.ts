@@ -95,7 +95,13 @@ export interface CustomProp {
   value: string
 }
 
-export type TaskStatus = '待办' | '进行中' | '阻塞' | '已完成'
+/**
+ * 任务状态。「AI 进行中」标记交给 AI 跑的任务，「待验证」是做完但还没验收的任务。
+ *
+ * <p>老的「阻塞」已下线（V16 迁移到「进行中」）：等待他人由 {@link Task#waiting} 表达，
+ * 不必再占一个状态位。
+ */
+export type TaskStatus = '待办' | '进行中' | 'AI 进行中' | '待验证' | '已完成'
 export type Priority = 'P0' | 'P1' | 'P2' | 'P3'
 
 export interface Task {
@@ -230,6 +236,8 @@ export interface AutomationJob {
   target: string
   steps: string[]
   runs: JobRun[]
+  /** 服务端真实执行器名（如 feishu-chat-sync）；为空表示这条任务只是描述性的模拟运行。 */
+  handler?: string | null
 }
 
 export interface FileItem {

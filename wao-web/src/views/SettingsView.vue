@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watchEffect } from 'vue'
+import { computed, reactive, ref, watch, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { copyText } from '@/utils/clipboard'
@@ -7,12 +7,14 @@ import { toast } from '@/composables/toast'
 import { updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth'
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
+import { fetchWebhookConfig, saveWebhookConfig, testWebhook, type FeishuWebhookConfig } from '@/api/system'
 
 const session = useSessionStore()
 const router = useRouter()
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members'], ['日历账户 · CalDAV', 'caldav']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['通知 · 飞书 Webhook', 'webhook']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
 ] as const
 
@@ -88,6 +90,54 @@ function revoke(i: number) {
   tokens.value = tokens.value.filter((_, j) => j !== i)
   toast(`已吊销「${t?.name}」，使用该令牌的调用将立即失效`, 'ri-close-circle-line')
 }
+// ---- 系统 · 飞书通知 Webhook ----
+// 全局只有一个：所有需要「说一声」的地方都发到这一个群机器人。地址加密存服务端，
+// 界面上只回脱敏形态，留空保存即表示不改地址。
+const webhook = ref<FeishuWebhookConfig | null>(null)
+const webhookInput = ref('')
+const webhookBusy = ref(false)
+
+async function loadWebhook() {
+  try {
+    webhook.value = await fetchWebhookConfig()
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '读取通知配置失败')
+  }
+}
+async function saveWebhook() {
+  webhookBusy.value = true
+  try {
+    webhook.value = await saveWebhookConfig({
+      url: webhookInput.value.trim() || undefined,
+      enabled: webhook.value?.enabled ?? false,
+    })
+    webhookInput.value = ''
+    toast('飞书通知配置已保存', 'ri-check-line')
+  } catch (error) { toast(error instanceof Error ? error.message : '保存失败') }
+  finally { webhookBusy.value = false }
+}
+async function toggleWebhook() {
+  if (!webhook.value) return
+  const next = !webhook.value.enabled
+  webhookBusy.value = true
+  try {
+    webhook.value = await saveWebhookConfig({ enabled: next })
+    toast(next ? '已启用飞书通知' : '已停用飞书通知', 'ri-notification-3-line')
+  } catch (error) { toast(error instanceof Error ? error.message : '保存失败') }
+  finally { webhookBusy.value = false }
+}
+async function sendTestWebhook() {
+  webhookBusy.value = true
+  try {
+    await testWebhook()
+    toast('测试消息已发出，去群里看看', 'ri-send-plane-2-line')
+  } catch (error) { toast(error instanceof Error ? error.message : '发送失败') }
+  finally { webhookBusy.value = false }
+}
+watch(tab, (t) => {
+  if (t === 'webhook' && !webhook.value) loadWebhook()
+}, { immediate: true })
+
 function toggleCal(c: { on: boolean }) {
   c.on = !c.on
   toast('演示：订阅开关在正式版本生效', 'ri-calendar-line')
@@ -205,6 +255,29 @@ function demo(msg: string, icon?: string) {
                 <button class="toggle" :class="{ on: c.on }" title="启用 / 停用" @click="toggleCal(c)"><span class="knob"></span></button>
               </div>
             </div>
+          </div>
+        </template>
+
+        <!-- 系统 · 飞书通知 Webhook -->
+        <template v-else-if="tab === 'webhook'">
+          <div class="s-h1">通知 · 飞书 Webhook</div>
+          <div class="card">
+            <div class="card-row wrap">
+              <div class="card-title">群机器人地址</div>
+              <span v-if="webhook?.urlSet" class="connected"><span class="c-dot"></span>已配置</span>
+              <div class="spacer"></div>
+              <button class="toggle" :class="{ on: webhook?.enabled }" :disabled="!webhook?.urlSet || webhookBusy" title="启用 / 停用通知" @click="toggleWebhook"><span class="knob"></span></button>
+            </div>
+            <div class="kv-list">
+              <div class="kv"><span class="kv-k w76">当前地址</span><span class="kv-v wao-mono">{{ webhook?.urlMask || '尚未配置' }}</span></div>
+              <div class="kv"><span class="kv-k w76">状态</span><span class="kv-v">{{ webhook?.enabled ? '已启用 · 系统通知会发到这个群' : '未启用' }}</span></div>
+            </div>
+            <form class="credential-form webhook-form" @submit.prevent="saveWebhook">
+              <input v-model.trim="webhookInput" type="url" placeholder="粘贴飞书群机器人 Webhook 地址（留空即不修改）" />
+              <button class="btn-primary" :disabled="webhookBusy">保存</button>
+              <button type="button" class="btn-ghost" :disabled="webhookBusy || !webhook?.urlSet" @click="sendTestWebhook">发送测试消息</button>
+            </form>
+            <div class="hint">全局只用这一个 webhook：在飞书群里添加「自定义机器人」拿到地址，粘进来即可。地址加密保存在服务端，页面上只显示脱敏形态，不会随接口回传明文。</div>
           </div>
         </template>
 
@@ -572,6 +645,9 @@ function demo(msg: string, icon?: string) {
 .bind-actions { display: flex; gap: 10px; margin-top: 12px; }
 .credential-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-top: 12px; }
 .profile-form { grid-template-columns: 1fr 120px auto; margin: 14px 0; }
+.webhook-form { grid-template-columns: 1fr auto auto; }
+.toggle:disabled { opacity: .55; cursor: not-allowed; }
+.btn-ghost:disabled { opacity: .55; cursor: not-allowed; }
 .credential-form input { min-width: 0; height: 34px; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 0 10px; outline: none; }
 .credential-form input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .12); }
 .btn-primary:disabled { opacity: .55; cursor: not-allowed; }

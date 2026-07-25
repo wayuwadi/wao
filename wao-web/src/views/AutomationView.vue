@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
+import ChatSyncConfigModal from '@/components/overlays/ChatSyncConfigModal.vue'
 import type { AutomationJob } from '@/types'
 
 const data = useDataStore()
@@ -16,6 +17,10 @@ const newSource = ref('')
 const newTarget = ref('')
 const newSteps = ref('')
 const newCron = ref('')
+
+/** 有配置页的执行器：任务列表与详情上多一个「配置」入口。 */
+const CONFIGURABLE = 'feishu-chat-sync'
+const configOpen = ref(false)
 
 const isFail = (result: string) => result.includes('失败')
 const durOf = (i: number, j: number) => `${((i * 7 + j * 13) % 46) + 9} 秒`
@@ -33,7 +38,10 @@ const jobs = computed(() =>
       .map((r) => ({ bg: isFail(r[1]) ? '#D65454' : '#2C8A5B', title: `${r[0]} · ${r[1]}` }))
       .concat([{ bg: '#E3E4EA', title: '更早的运行' }, { bg: '#E3E4EA', title: '更早的运行' }])
       .slice(0, 5)
-    return { job: a, index: i, stBg: st.bg, stColor: st.color, needFix: a.status === '待修复', dots }
+    return {
+      job: a, index: i, stBg: st.bg, stColor: st.color, needFix: a.status === '待修复',
+      configurable: a.handler === CONFIGURABLE, dots,
+    }
   }),
 )
 
@@ -112,7 +120,7 @@ async function createAuto() {
     <DemoBanner
       icon="ri-flashlight-line"
       title="自动化"
-      text="自动化任务已接入真实后端：新建 / 编辑 / 删除、手动触发、暂停与恢复均会保存并产生真实的运行记录。填写 Cron 表达式的任务会由服务端按计划自动执行；执行步骤仍是描述性文本，尚未接入飞书 / NAS / 邮箱等外部系统的真实调用。"
+      text="自动化任务已接入真实后端：新建 / 编辑 / 删除、手动触发、暂停与恢复均会保存并产生真实的运行记录，填写 Cron 表达式的任务由服务端按计划自动执行。「飞书群聊消息同步知识库」是真跑的：填完配置后每天 23:59 拉群聊记录写进知识库。其余任务的执行步骤仍是描述性文本，尚未接入 NAS / 邮箱等外部系统。"
       storage-key="automation"
     />
     <!-- 列表 -->
@@ -141,6 +149,7 @@ async function createAuto() {
           <div class="cell muted ellip">{{ jb.job.last }}</div>
           <div class="dots"><span v-for="(d, i) in jb.dots" :key="i" class="dot" :title="d.title" :style="{ background: d.bg }"></span></div>
           <div class="ops">
+            <button v-if="jb.configurable" class="op" title="配置" @click="configOpen = true"><i class="ri-settings-3-line"></i></button>
             <button v-if="jb.needFix" class="op fix" title="重新授权" @click="onFix(jb.job.id)"><i class="ri-tools-line"></i></button>
             <button v-if="jb.job.status === '已暂停'" class="op" title="恢复" @click="onResume(jb.job.id)"><i class="ri-play-circle-line"></i></button>
             <button v-else class="op" title="暂停" @click="onPause(jb.job.id)"><i class="ri-pause-circle-line"></i></button>
@@ -160,7 +169,7 @@ async function createAuto() {
           <div><span class="mini" :style="{ background: rn.bg, color: rn.color }">{{ rn.result }}</span></div>
         </div>
       </div>
-      <div class="foot-note">「飞书群聊 → 知识库沉淀」的结果可在知识库「群聊沉淀」查看。</div>
+      <div class="foot-note">「飞书群聊消息同步知识库」点右侧 <i class="ri-settings-3-line"></i> 配置应用凭据与目标群，同步结果按天存在所选知识库里。</div>
     </template>
 
     <!-- Job 详情 -->
@@ -176,6 +185,7 @@ async function createAuto() {
           <div class="jh-desc">{{ sel.desc }}</div>
         </div>
         <div class="spacer"></div>
+        <button v-if="sel.handler === CONFIGURABLE" class="btn-ghost" @click="configOpen = true"><i class="ri-settings-3-line"></i>配置</button>
         <button v-if="sel.status === '待修复'" class="btn-danger" @click="onFix(sel.id)">重新授权</button>
         <button class="btn-primary sm" @click="onRun(sel.id)"><i class="ri-play-line"></i>手动运行</button>
         <button v-if="sel.status === '已暂停'" class="btn-ghost" @click="onResume(sel.id)"><i class="ri-play-circle-line"></i>恢复</button>
@@ -214,6 +224,8 @@ async function createAuto() {
         </div>
       </div>
     </template>
+
+    <ChatSyncConfigModal v-if="configOpen" @close="configOpen = false" />
 
     <!-- 新建自动化弹层 -->
     <template v-if="newOpen">
