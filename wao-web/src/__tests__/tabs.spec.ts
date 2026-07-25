@@ -60,4 +60,31 @@ describe('tabs store', () => {
     tabs.closeOthers('proj:p2')
     expect(tabs.tabs.map((t) => t.key)).toEqual(['home', 'proj:p2'])
   })
+
+  it('回填过真名后，占位标签不再覆盖它——项目内切换标签页时标题会闪成编号', () => {
+    const tabs = useTabsStore()
+    // 首次进入：只有 id 拼出来的占位标签
+    tabs.open({ ...proj('p3'), labelPlaceholder: true })
+    expect(tabs.tabs.find((t) => t.key === 'proj:p3')?.label).toBe('项目 p3')
+
+    // 详情视图加载出实体后回填真名
+    tabs.setLabel('proj:p3', '滇西北家庭旅行')
+
+    // 项目内切换 tab / view 会再次推导页签，此时不能被占位标签打回去
+    tabs.open({ ...proj('p3'), labelPlaceholder: true, path: '/projects/p3?tab=任务' })
+
+    const t = tabs.tabs.find((x) => x.key === 'proj:p3')
+    expect(t?.label).toBe('滇西北家庭旅行')
+    expect(t?.path).toBe('/projects/p3?tab=任务')
+  })
+
+  it('非占位标签仍然可以更新（真名变了要跟着变）', () => {
+    const tabs = useTabsStore()
+    tabs.open({ ...proj('p3'), labelPlaceholder: true })
+    tabs.setLabel('proj:p3', '旧名字')
+
+    tabs.open({ ...proj('p3'), label: '新名字' })
+
+    expect(tabs.tabs.find((t) => t.key === 'proj:p3')?.label).toBe('新名字')
+  })
 })

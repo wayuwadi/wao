@@ -40,12 +40,22 @@ export const useTabsStore = defineStore('tabs', () => {
     localStorage.setItem(TABS_KEY, JSON.stringify({ tabs: tabs.value, activeKey: activeKey.value }))
   }
 
-  /** 打开（或复用）一个页签并激活它。 */
+  /**
+   * 打开（或复用）一个页签并激活它。
+   *
+   * <p>占位标签（「项目 p3」这种由 id 拼出来的）不得覆盖已经回填好的真名：
+   * 每次路由变化都会重新推导页签，而项目内切换 tab / view 时详情视图的回填
+   * watcher 不会重跑（项目名没变），标题就会一直卡在编号上，直到刷新才恢复。
+   */
   function open(tab: Tab) {
     const existing = tabs.value.find((t) => t.key === tab.key)
     if (existing) {
       existing.path = tab.path
-      if (tab.label) existing.label = tab.label
+      const keepResolved = tab.labelPlaceholder && !existing.labelPlaceholder
+      if (tab.label && !keepResolved) {
+        existing.label = tab.label
+        existing.labelPlaceholder = tab.labelPlaceholder
+      }
     } else {
       tabs.value.push(tab)
     }
@@ -60,11 +70,12 @@ export const useTabsStore = defineStore('tabs', () => {
     }
   }
 
-  /** 详情视图加载实体后回填页签标签。 */
+  /** 详情视图加载实体后回填页签标签；回填后即不再是占位。 */
   function setLabel(key: string, label: string) {
     const t = tabs.value.find((t) => t.key === key)
     if (t && label) {
       t.label = label
+      t.labelPlaceholder = false
       persist()
     }
   }

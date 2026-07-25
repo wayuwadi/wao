@@ -109,11 +109,6 @@ const milestones = computed(() =>
     chip: m.state === 1 ? '进行中' : '',
   })),
 )
-// 总览的「近期任务」同样给 3 秒缓冲，勾完不会立刻从眼皮底下消失
-const recentTasks = computed(() =>
-  ptasks.value.filter((t) => t.status !== '已完成' || isSettling(t.id)).slice(0, 6).map(decoTask),
-)
-const openCount = computed(() => ptasks.value.filter((t) => t.status !== '已完成').length)
 const members = computed(() =>
   (project.value?.members ?? []).map((mid) => {
     const m = session.memberById(mid)
@@ -225,21 +220,7 @@ function comingSoon(msg: string) {
           </div>
         </div>
 
-        <div class="card recent">
-          <div class="recent-head">
-            <div class="card-title">近期任务</div>
-            <span class="count wao-tabular">{{ openCount }} 项未完成</span>
-          </div>
-          <div v-for="t in recentTasks" :key="t.id" class="rt-row" @click="openTask(t.id)">
-            <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
-            <span class="rt-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
-            <span v-if="t.waitBadge" class="wait-badge">{{ t.waitBadge }}</span>
-            <span class="mini" :style="{ background: t.stBg, color: t.stColor }">{{ t.status }}</span>
-            <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
-            <span class="rt-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
-          </div>
-          <button class="rt-add" @click="ui.openModal('task', pid)"><i class="ri-add-line"></i>新建任务</button>
-        </div>
+        <!-- 「近期任务」已移除：只截前 6 条，既不是全部任务，又和「任务」标签页重复 -->
 
         <div v-if="pd.blockers.length" class="blockers">
           <div class="blockers-title"><i class="ri-alert-line"></i>阻塞项</div>
@@ -786,26 +767,6 @@ function comingSoon(msg: string) {
   color: var(--wao-text-weak);
 }
 
-/* 近期任务 */
-.recent {
-  padding: 14px 12px 8px;
-}
-.recent-head {
-  display: flex;
-  align-items: center;
-  padding: 0 6px 8px;
-}
-.rt-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 6px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.rt-row:hover {
-  background: var(--wao-bg-hover);
-}
 .check {
   width: 17px;
   height: 17px;
@@ -823,20 +784,6 @@ function comingSoon(msg: string) {
   font-size: 12px;
   color: #fff;
 }
-.rt-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rt-due {
-  font-size: 12px;
-  width: 58px;
-  text-align: right;
-  flex-shrink: 0;
-}
 .wait-badge {
   font-size: 11px;
   background: var(--wao-warning-bg);
@@ -851,27 +798,6 @@ function comingSoon(msg: string) {
   padding: 1px 6px;
   flex-shrink: 0;
 }
-.rt-add {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: none;
-  background: none;
-  border-radius: 8px;
-  padding: 8px 6px;
-  font-size: 12.5px;
-  color: var(--wao-text-weak);
-  cursor: pointer;
-}
-.rt-add:hover {
-  background: var(--wao-bg-hover);
-  color: var(--wao-primary);
-}
-.rt-add i {
-  font-size: 14px;
-}
-
 /* 阻塞 */
 .blockers {
   background: #fffdf7;
