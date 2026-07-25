@@ -472,11 +472,12 @@ export const useDataStore = defineStore('data', () => {
     if (t) apiPutTask(id, t).catch(() => {})
   }
 
-  /** 完成 / 重新打开一个任务（列表勾选用）。 */
+  /** 完成 / 重新打开一个任务（列表勾选用）；两个方向都写进活动时间线。 */
   function toggleComplete(id: string) {
     const t = taskById(id)
     if (!t) return
-    patchTask(id, { status: t.status === '已完成' ? '待办' : '已完成' })
+    const done = t.status !== '已完成'
+    patchTask(id, { status: done ? '已完成' : '待办' }, done ? '你完成了任务' : '你重新打开了任务')
   }
 
   /** 将任务移动到同项目内目标任务之前（列表拖拽排序，前端顺序态）。 */
@@ -490,14 +491,20 @@ export const useDataStore = defineStore('data', () => {
     arr.splice(to < 0 ? arr.length : to, 0, moved!)
   }
 
-  /** 勾选步骤 / 子任务。 */
+  /** 勾选步骤 / 子任务；记一条带名字的活动，事后能看出动的是哪一条。 */
   function toggleStep(id: string, idx: number, kind: 'steps' | 'subs') {
     const t = taskById(id)
     const item = t?.[kind][idx]
-    if (item) {
-      item.done = !item.done
-      persistTask(id)
-    }
+    if (!t || !item) return
+    item.done = !item.done
+    const what = kind === 'subs' ? '子任务' : '步骤'
+    logActivity(t, `${item.done ? '你完成了' : '你重新打开了'}${what}「${item.text}」`)
+    persistTask(id)
+  }
+
+  /** 往任务活动时间线最前面写一条。 */
+  function logActivity(t: Task, text: string, icon = 'ri-edit-line') {
+    t.activity.unshift({ icon, color: '#9A9DA9', text, time: '刚刚' })
   }
 
   // ---- 子任务（内嵌在任务的 subs 里，不是独立任务实体） ----
@@ -527,7 +534,7 @@ export const useDataStore = defineStore('data', () => {
     if (!t || !title) return null
     const id = uid('s')
     t.subs.push({ id, text: title, done: false, desc: '', images: [] })
-    t.activity.unshift({ icon: 'ri-edit-line', color: '#9A9DA9', text: '你添加了子任务', time: '刚刚' })
+    logActivity(t, `你添加了子任务「${title}」`)
     persistTask(taskId)
     return id
   }
@@ -535,14 +542,22 @@ export const useDataStore = defineStore('data', () => {
   /**
    * 更新子任务的标题 / 描述 / 完成态 / 图片。
    *
+   * <p>只有完成态变化会写进活动时间线。改名、描述、图片都是逐次按键触发的，
+   * 记下来会把时间线刷成一行一个字，反而看不出重点。
+   *
    * @param taskId 所属任务 id
    * @param subId  子任务标识
    * @param patch  要合并的字段
    */
   function updateSub(taskId: string, subId: string, patch: Partial<TaskStep>) {
+    const t = taskById(taskId)
     const sub = subById(taskId, subId)
-    if (!sub) return
+    if (!t || !sub) return
+    const wasDone = sub.done
     Object.assign(sub, patch)
+    if (patch.done !== undefined && patch.done !== wasDone) {
+      logActivity(t, `${patch.done ? '你完成了' : '你重新打开了'}子任务「${sub.text}」`)
+    }
     persistTask(taskId)
   }
 
@@ -552,7 +567,8 @@ export const useDataStore = defineStore('data', () => {
     if (!t) return
     const idx = t.subs.findIndex((s, i) => subKey(taskId, s, i) === subId)
     if (idx < 0) return
-    t.subs.splice(idx, 1)
+    const [removed] = t.subs.splice(idx, 1)
+    logActivity(t, `你删除了子任务「${removed!.text}」`, 'ri-delete-bin-line')
     persistTask(taskId)
   }
 

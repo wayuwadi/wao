@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { SETTLE_MS, useCompletionSettle } from '@/composables/completion'
 import { useDataStore } from '@/stores/data'
+import { useUiStore } from '@/stores/ui'
 
 /** 组合式函数带 onBeforeUnmount，必须在组件里用。 */
 function useInComponent() {
@@ -58,6 +59,26 @@ describe('useCompletionSettle', () => {
 
     expect(data.taskById(taskId)!.status).toBe('待办')
     expect(api.isSettling(taskId)).toBe(false)
+  })
+
+  it('完成任务时触发庆祝动画——和创建任务一样', () => {
+    const ui = useUiStore()
+    const { api } = useInComponent()
+
+    api.toggle(taskId)
+
+    expect(ui.celebrating).toBeTruthy()
+  })
+
+  it('取消完成不触发庆祝', () => {
+    const ui = useUiStore()
+    const { api } = useInComponent()
+    api.toggle(taskId)
+    ui.stopCelebrate()
+
+    api.toggle(taskId)
+
+    expect(ui.celebrating).toBeNull()
   })
 
   it('组件卸载后定时器不再回调，避免操作已销毁的状态', () => {

@@ -1,5 +1,7 @@
 import { onBeforeUnmount, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
+import { useUiStore } from '@/stores/ui'
+import { toast } from '@/composables/toast'
 
 /** 勾完成后条目留在原处的时间：给操作一个反应的余地，别刚点完就消失。 */
 export const SETTLE_MS = 3000
@@ -58,13 +60,23 @@ export function useSettle(ms = SETTLE_MS) {
  */
 export function useCompletionSettle() {
   const data = useDataStore()
+  const ui = useUiStore()
   const { begin, cancel, isSettling } = useSettle()
 
   function toggle(id: string) {
-    const wasDone = data.taskById(id)?.status === '已完成'
+    const t = data.taskById(id)
+    if (!t) return
+    const wasDone = t.status === '已完成'
+    const title = t.title
     data.toggleComplete(id)
-    if (wasDone) cancel(id)
-    else begin(id)
+    if (wasDone) {
+      cancel(id)
+      return
+    }
+    begin(id)
+    toast(`已完成「${title}」`, 'ri-checkbox-circle-fill')
+    // 完成一个任务和创建一个任务同样值得庆祝
+    ui.celebrate()
   }
 
   return { toggle, isSettling }
