@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 本文件继承 `AGENTS.md` 中的全部规范（技术栈基线、代码规范、目录结构、禁止事项），此处只补充命令、架构大图与 Claude 特定约定，不重复 `AGENTS.md`。
 
+## 需求怎么来
+
+需求和 bug 以 WAO 自身的任务分享链接（`https://wao.wayuwa.cn/api/share/tasks/<id>.md?openOnly=true`）下发。抓取时必须要求逐字返回原文（小模型默认会摘要，摘要会丢掉子任务的具体措辞）；多个链接先分类分析再逐个实现；一个链接对应一个 PR。完整约定见 `AGENTS.md`「需求来源：WAO 分享链接」。
+
 ## 工作前必读
 
 - 修改代码前阅读 `docs/architecture.md` 和相关 Spec/ADR（`docs/specs/`、`docs/adr/`）。方案原稿 `docs/WAO系统技术架构方案.md` 与实现冲突时，以已采纳 ADR 和 `docs/architecture.md` 为准。
