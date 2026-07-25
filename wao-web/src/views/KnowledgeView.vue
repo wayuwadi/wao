@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { copyText } from '@/utils/clipboard'
@@ -13,12 +13,10 @@ import type { KnowledgeBase, TrashEntry } from '@/types'
 const data = useDataStore()
 const ui = useUiStore()
 const router = useRouter()
-const route = useRoute()
 const now = useNow()
 
 onMounted(() => {
   void data.refreshTrash()
-  if (route.name === 'trash') openTrash()
 })
 
 const editGroupId = ref<string | null>(null)
@@ -102,7 +100,6 @@ function openTrash() {
 }
 function closeTrash() {
   trashOpen.value = false
-  if (route.name === 'trash') void router.push('/knowledge')
 }
 async function restore(entry: TrashEntry) {
   await data.restoreTrash(entry.type, entry.id)

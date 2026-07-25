@@ -12,7 +12,7 @@ import { moduleTab } from '@/config/nav'
 const TABS_KEY = 'wao-tabs-v1'
 
 /** 已下线的模块页签：老浏览器里存着的记录要在加载时丢掉，否则会留下一个点不开的死页签。 */
-const RETIRED_TAB_KEYS = new Set(['whiteboard'])
+const RETIRED_TAB_KEYS = new Set(['whiteboard', 'trash'])
 
 interface Persisted {
   tabs: Tab[]
