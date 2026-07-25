@@ -140,6 +140,7 @@ jobs:
           REF_NAME: ${{ github.head_ref || github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
           COMMIT_MSG: ${{ github.event.head_commit.message || github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
           COMMIT_URL: ${{ github.event.pull_request.html_url || format('{0}/{1}/commit/{2}', github.server_url, github.repository, github.sha) }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -169,9 +170,16 @@ jobs:
           }
 
           short_sha="$(printf '%s' "$COMMIT_SHA" | cut -c1-8)"
-          # 只取提交信息首行作为“本次改动”的标题；空则占位。
-          change_summary="$(printf '%s' "$COMMIT_MSG" | sed -n '1p')"
+          # “本次改动”取完整提交信息（标题 + 正文）；PR 触发时额外附上 PR 描述。
+          # 空则占位；过长做截断，避免卡片内容超出飞书限制。
+          change_summary="$COMMIT_MSG"
+          if [ -n "${PR_BODY:-}" ]; then
+            change_summary="$(printf '%s\n\n%s' "$change_summary" "$PR_BODY")"
+          fi
           [ -n "$change_summary" ] || change_summary="（无提交信息）"
+          if [ "${#change_summary}" -gt 1200 ]; then
+            change_summary="$(printf '%s' "$change_summary" | cut -c1-1200)…"
+          fi
 
           # 飞书交互式卡片（msg_type=interactive）：头部按成败着色，正文突出“本次改动”，并列出各阶段状态。
           payload="$(jq -n \

@@ -31,6 +31,7 @@ git switch -c feat/<scope>-<description>
 - 禁止直接推送 `main`；所有日常变更通过 Pull Request 合并。
 - 分支：`feat/`、`fix/`、`docs/`、`refactor/`、`test/`、`chore/`。
 - 提交使用 Conventional Commits，例如 `feat(server): add user login API`。
+- 提交信息除标题行外，请补充一段正文说明「做了什么、为什么」（哪怕只有一两句话）。CI 的飞书通知会把完整提交信息转发到团队群的「本次改动」卡片，只有标题的提交在通知里等于没写。这条约定对所有贡献者生效，不论是否使用 Claude Code；使用 Claude Code 的可参考 `.claude/skills/commit-message/`。
 - 同一个业务模块或部署文件同一时间只由一个分支修改。
 
 ## 提交前验证
