@@ -73,6 +73,26 @@ describe('TaskDrawer', () => {
     expect(await waitFor(w, '.md-body')).toBe(true)
   })
 
+  it('评论发送中会锁定提交，避免重复新增评论', async () => {
+    let resolveComment!: (value: boolean) => void
+    const addComment = vi.spyOn(data, 'addTaskComment').mockImplementation(() =>
+      new Promise<boolean>((resolve) => { resolveComment = resolve }),
+    )
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.find('.comment-input input').setValue('只发送一次')
+    await w.find('.comment-input .send').trigger('click')
+    await w.find('.comment-input .send').trigger('click')
+
+    expect(addComment).toHaveBeenCalledTimes(1)
+    expect(w.find('.comment-input .send').text()).toContain('发送中')
+    resolveComment(true)
+    await flushPromises()
+    expect(w.find('.comment-input input').attributes('disabled')).toBeUndefined()
+  })
+
   it('在任务内保存并展示 AI 执行过程', async () => {
     ui.openTask(taskId)
     const w = mountDrawer()

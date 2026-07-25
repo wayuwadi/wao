@@ -154,6 +154,7 @@ async function createAuto() {
             <button v-if="jb.job.status === '已暂停'" class="op" title="恢复" @click="onResume(jb.job.id)"><i class="ri-play-circle-line"></i></button>
             <button v-else class="op" title="暂停" @click="onPause(jb.job.id)"><i class="ri-pause-circle-line"></i></button>
             <button class="op" title="手动运行" @click="onRun(jb.job.id)"><i class="ri-play-line"></i></button>
+            <button class="op danger" title="删除自动化任务" @click="onDelete(jb.job.id)"><i class="ri-delete-bin-line"></i></button>
           </div>
         </div>
       </div>

@@ -2,7 +2,6 @@ import { http, type ApiResponse } from './http'
 import type {
   Area,
   AutomationJob,
-  CalendarEvent,
   Comment,
   Doc,
   DocBlock,
@@ -88,7 +87,6 @@ export const apiDownloadTicket = (id: string, challengeId: string, answer: strin
   post<{ ticket: string }>(`/api/files/${id}/ticket`, { challengeId, answer })
 export const fetchImages = () => get<ImageItem[]>('/api/images')
 export const fetchVault = () => get<VaultGroup[]>('/api/vault')
-export const fetchEvents = () => get<CalendarEvent[]>('/api/calendar/events')
 export const fetchSchedule = () => get<ScheduleItem[]>('/api/schedule')
 export const fetchSuggestions = () => get<Suggestion[]>('/api/suggestions')
 export const fetchGoals = () => get<GoalDto[]>('/api/goals')

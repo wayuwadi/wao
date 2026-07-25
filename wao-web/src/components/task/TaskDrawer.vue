@@ -33,6 +33,7 @@ const tv = computed(() => (task.value ? decoTask(task.value) : null))
 const menu = ref<'status' | 'pr' | 'owner' | 'prop' | 'share' | null>(null)
 const newSub = ref('')
 const commentText = ref('')
+const sendingComment = ref(false)
 const aiStarting = ref(false)
 const aiRuns = ref<AiRun[]>([])
 const aiRunsLoading = ref(false)
@@ -383,11 +384,16 @@ async function runWithAi() {
   }
 }
 async function sendComment() {
+  if (sendingComment.value) return
   const t = task.value
   const v = commentText.value.trim()
-  if (t && v) {
+  if (!t || !v) return
+  sendingComment.value = true
+  try {
     if (await data.addTaskComment(t.id, v)) commentText.value = ''
     else toast('评论发送失败，请重试', 'ri-error-warning-line')
+  } finally {
+    sendingComment.value = false
   }
 }
 function commentKey(e: KeyboardEvent) {
@@ -672,8 +678,8 @@ function demo(msg: string) {
             <div class="comment-input">
               <span class="c-av" :style="{ background: session.currentUser.color }">{{ session.currentUser.initial }}</span>
               <div class="ci-wrap">
-                <input v-model="commentText" placeholder="写评论，回车发送；@ 成员会收到通知（演示）" @keydown="commentKey" />
-                <button class="send" :disabled="!commentText.trim()" @click="sendComment"><i class="ri-send-plane-2-line"></i>发送</button>
+                <input v-model="commentText" :disabled="sendingComment" placeholder="写评论，回车发送；@ 成员会收到通知（演示）" @keydown="commentKey" />
+                <button class="send" :disabled="!commentText.trim() || sendingComment" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ sendingComment ? '发送中' : '发送' }}</button>
               </div>
             </div>
           </div>

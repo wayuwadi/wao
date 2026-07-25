@@ -226,7 +226,7 @@ function comingSoon(msg: string) {
             title="选择后批量交给 AI"
             @click.stop="toggleSelection(t.id)"
           >
-            <i class="ri-check-line"></i>
+            <i class="ri-robot-2-line"></i>
           </button>
           <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
           <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
@@ -290,7 +290,7 @@ function comingSoon(msg: string) {
                 title="选择后批量交给 AI"
                 @click.stop="toggleSelection(t.id)"
               >
-                <i class="ri-check-line"></i>
+                <i class="ri-robot-2-line"></i>
               </button>
               <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
               <div class="bc-foot">
@@ -546,13 +546,13 @@ function comingSoon(msg: string) {
   flex-shrink: 0;
 }
 .select-dot {
-  width: 17px;
-  height: 17px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border: 1px solid #cbd0df;
-  border-radius: 5px;
-  background: #fff;
-  color: transparent;
+  border: 0;
+  border-radius: 50%;
+  background: #f0f1f4;
+  color: #6b6e79;
   cursor: pointer;
   flex: 0 0 auto;
   display: inline-flex;
@@ -564,11 +564,10 @@ function comingSoon(msg: string) {
 }
 .select-dot.on {
   color: #fff;
-  border-color: var(--wao-primary);
   background: var(--wao-primary);
 }
 .select-dot i {
-  font-size: 12px;
+  font-size: 14px;
 }
 .board-select {
   position: absolute;
