@@ -152,6 +152,21 @@ FEISHU_FRONTEND_URL=https://wao.wayuwa.cn
 
 在飞书开发者后台的安全设置中添加同一个重定向 URL。网页应用的工作台在线网页主页配置为 `https://wao.wayuwa.cn/api/auth/feishu/workbench`；PC 端“跳转至浏览器打开新页面”配置为 `https://wao.wayuwa.cn/api/auth/feishu/browser`。修改后在各节点执行正常发布脚本重建 `wao-server` 容器。
 
+## 密钥库加密密钥
+
+`WAO_VAULT_KEY` 是密钥库密码字段的 AES-256-GCM 加密密钥（base64 编码的 32 字节），主、从两个节点必须使用**同一个值**（`docs/adr/009-vault-server-side-encryption.md`）。缺失时 `wao-server` 会拒绝启动（`VaultCryptoService` 主动校验密钥长度），CD 会自动回滚到上一个能启动的镜像，不会造成线上不可用，但会一直部署失败直到补上这个变量：
+
+```bash
+# 生成一次，写进两个节点共享的同一份 deploy/.env（不要提交 Git）
+openssl rand -base64 32
+```
+
+```dotenv
+WAO_VAULT_KEY=<上面生成的值>
+```
+
+写入后在各节点重新执行发布脚本重建 `wao-server` 容器；新装机场景下 `deploy/scripts/new-deployment-env.ps1` 已经会自动生成这个值，不需要手动补。
+
 - `MASTER_HOST=linux2.wayuwa.cn`，`SLAVE_HOST=windows1.wayuwa.cn`，云节点使用固定公网地址；
 - Actions 从 GitHub 托管 Runner 直接 SSH 到三个公网目标，不使用跳板机；
 - Actions 在 Runner 上使用官方软件源执行容器构建检查，但 CD 只下发约百 KB 的源码发布包；两台家庭节点使用已预热的 Maven/Temurin 基础镜像和阿里云 Maven/Alpine 镜像本地分层构建，避免跨境传输百 MB 镜像制品；
