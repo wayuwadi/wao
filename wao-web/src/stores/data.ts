@@ -2,11 +2,33 @@ import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import * as F from '@/data/fixtures'
 import {
+  apiCreateDoc,
+  apiCreateFolder,
+  apiCreateJob,
+  apiCreateKb,
+  apiCreateKbGroup,
   apiCreateProject,
   apiCreateTask,
+  apiCreateVaultGroup,
+  apiCreateVaultItem,
+  apiDeleteJob,
+  apiDeleteKb,
   apiDeleteProject,
+  apiDeleteVaultGroup,
+  apiDeleteVaultItem,
+  apiPatchDoc,
+  apiPatchJob,
+  apiPatchKb,
   apiPatchProject,
+  apiPatchVaultItem,
+  apiPauseJob,
   apiPutTask,
+  apiReauthJob,
+  apiRenameKbGroup,
+  apiRenameVaultGroup,
+  apiResumeJob,
+  apiRevealVaultItem,
+  apiRunJob,
   fetchAreas,
   fetchDocs,
   fetchEvents,
@@ -14,15 +36,20 @@ import {
   fetchGoals,
   fetchImages,
   fetchJobs,
+  fetchKbGroups,
   fetchKbs,
   fetchProjects,
   fetchSchedule,
   fetchSuggestions,
   fetchTasks,
   fetchVault,
+  type CreateJobPayload,
+  type CreateKbPayload,
+  type PatchJobPayload,
+  type PatchKbPayload,
 } from '@/api/board'
 import { blocksToText, textToBlocks } from '@/utils/doc'
-import type { Doc, DocBlock, KnowledgeBase, Project, Task } from '@/types'
+import type { AutomationJob, Doc, DocBlock, KnowledgeBase, Project, Task, VaultGroup, VaultItem } from '@/types'
 
 /** 文档编辑覆盖（标题 / 正文 Markdown）。 */
 interface DocEdit {
@@ -86,16 +113,17 @@ export const useDataStore = defineStore('data', () => {
         return null
       }
     }
-    const [a, p, t, kb, dc, jb, fl, im, va, ev, sc, sg, gl] = await Promise.all([
+    const [a, p, t, kb, kg, dc, jb, fl, im, va, ev, sc, sg, gl] = await Promise.all([
       settle(fetchAreas()), settle(fetchProjects()), settle(fetchTasks()), settle(fetchKbs()),
-      settle(fetchDocs()), settle(fetchJobs()), settle(fetchFiles()), settle(fetchImages()),
-      settle(fetchVault()), settle(fetchEvents()), settle(fetchSchedule()),
+      settle(fetchKbGroups()), settle(fetchDocs()), settle(fetchJobs()), settle(fetchFiles()),
+      settle(fetchImages()), settle(fetchVault()), settle(fetchEvents()), settle(fetchSchedule()),
       settle(fetchSuggestions()), settle(fetchGoals()),
     ])
     if (a?.length) areas.value = a
     if (p?.length) projects.value = p
     if (t?.length) tasks.value = t
     if (kb?.length) kbs.value = kb
+    if (kg?.length) myGroups.value = kg
     if (dc?.length) dc.forEach((d) => (docs[d.id] = d))
     if (jb?.length) autos.value = jb
     if (fl?.length) files.value = fl
@@ -171,10 +199,18 @@ export const useDataStore = defineStore('data', () => {
       return {}
     }
   }
-  /** 合并一次文档编辑（title / text）并持久化。 */
+  /** 待写透的文档 patch 计时器（按文档 id 去抖，避免每次按键都请求后端）。 */
+  const docPersistTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+  /** 合并一次文档编辑（title / text）并持久化；apiLive 时去抖写透后端。 */
   function setDocEdit(id: string, patch: DocEdit) {
     docEdits.value = { ...docEdits.value, [id]: { ...docEdits.value[id], ...patch } }
     localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
+    if (!apiLive.value) return
+    clearTimeout(docPersistTimers[id])
+    docPersistTimers[id] = setTimeout(() => {
+      const resolved = docOf(id)
+      apiPatchDoc(id, { title: resolved.title, blocks: resolved.blocks }).catch(() => {})
+    }, 600)
   }
   /** 解析文档：叠加编辑覆盖，返回标题 / Markdown / 块。 */
   function docOf(id: string): ResolvedDoc {
@@ -185,26 +221,60 @@ export const useDataStore = defineStore('data', () => {
     const blocks = o?.text != null ? textToBlocks(o.text) : d.blocks
     return { base: d, title, text, blocks }
   }
-  /** 新建自建分组，返回 id。 */
-  function addGroup(): string {
+  /** 新建自建分组，返回 id；apiLive 时经后端创建。 */
+  async function addGroup(): Promise<string> {
+    if (apiLive.value) {
+      try {
+        const g = await apiCreateKbGroup('新建分组')
+        myGroups.value.push(g)
+        return g.id
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
     const id = 'g' + Date.now()
     myGroups.value.push({ id, name: '新建分组' })
     return id
   }
-  /** 给知识库新增一个文件夹，返回文件夹 id。 */
-  function addFolder(kbId: string): string | null {
+  /** 重命名自建分组；apiLive 时写透后端。 */
+  function renameGroup(id: string, name: string) {
+    const g = myGroups.value.find((x) => x.id === id)
+    if (g) g.name = name
+    if (apiLive.value) apiRenameKbGroup(id, name).catch(() => {})
+  }
+  /** 给知识库新增一个文件夹，返回文件夹 id；apiLive 时经后端创建。 */
+  async function addFolder(kbId: string): Promise<string | null> {
     const kb = kbById(kbId)
     if (!kb) return null
+    if (apiLive.value) {
+      try {
+        const f = await apiCreateFolder(kbId, '新建文件夹')
+        kb.folders.push(f)
+        return f.id
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
     const id = 'f' + Date.now()
     kb.folders.push({ id, name: '新建文件夹', docs: [] })
     return id
   }
 
-  /** 在知识库某文件夹新建空文档，返回新 id。 */
-  function addDoc(kbId: string, folderId: string): string | null {
+  /** 在知识库某文件夹新建空文档，返回新 id；apiLive 时经后端创建（新文档即关联到该知识库 / 文件夹）。 */
+  async function addDoc(kbId: string, folderId: string): Promise<string | null> {
     const kb = kbById(kbId)
     const folder = kb?.folders.find((f) => f.id === folderId)
     if (!kb || !folder) return null
+    if (apiLive.value) {
+      try {
+        const d = await apiCreateDoc({ kbId, folderId, title: '未命名文档', author: 'wg' })
+        docs[d.id] = d
+        folder.docs.push(d.id)
+        return d.id
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
     const id = 'd' + Date.now()
     docs[id] = {
       id, title: '未命名文档', author: 'wg', created: '刚刚', updated: '刚刚',
@@ -213,6 +283,49 @@ export const useDataStore = defineStore('data', () => {
     }
     folder.docs.push(id)
     return id
+  }
+
+  /** 新建知识库；apiLive 时经后端创建。 */
+  async function addKb(payload: CreateKbPayload): Promise<KnowledgeBase | null> {
+    if (apiLive.value) {
+      try {
+        const kb = await apiCreateKb(payload)
+        kbs.value.unshift(kb)
+        return kb
+      } catch {
+        return null
+      }
+    }
+    const kb: KnowledgeBase = {
+      id: 'kb' + Date.now(), name: payload.name, icon: payload.icon || 'ri-book-2-line',
+      color: payload.color || '#4358D6', project: payload.project ?? null,
+      desc: payload.desc || '', folders: [{ id: 'f' + Date.now(), name: '文档', docs: [] }],
+      group: payload.group, perm: payload.perm,
+    }
+    kbs.value.unshift(kb)
+    return kb
+  }
+
+  /** 更新知识库（名称 / 简介 / 图标 / 颜色 / 分组 / 权限）；apiLive 时写透后端。 */
+  function updateKb(id: string, patch: PatchKbPayload) {
+    const kb = kbById(id)
+    if (!kb) return
+    Object.assign(kb, patch)
+    if (apiLive.value) apiPatchKb(id, patch).catch(() => {})
+  }
+
+  /** 删除知识库（连同其文件夹与文档）；apiLive 时写透后端。 */
+  async function deleteKb(id: string) {
+    const kb = kbById(id)
+    kbs.value = kbs.value.filter((k) => k.id !== id)
+    kb?.folders.forEach((f) => f.docs.forEach((docId) => delete docs[docId]))
+    if (apiLive.value) {
+      try {
+        await apiDeleteKb(id)
+      } catch {
+        /* 后端删除失败时不回滚 */
+      }
+    }
   }
 
   // ---- task 变更 ----
@@ -355,12 +468,210 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
+  // ---- 自动化 ----
+  const jobById = (id: string) => autos.value.find((j) => j.id === id)
+
+  /** 新建自动化任务；apiLive 时经后端创建，否则本地乐观创建。 */
+  async function createJob(payload: CreateJobPayload): Promise<AutomationJob> {
+    if (apiLive.value) {
+      try {
+        const job = await apiCreateJob(payload)
+        autos.value.unshift(job)
+        return job
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
+    const job: AutomationJob = {
+      id: 'j' + Date.now(), name: payload.name, icon: payload.icon || 'ri-flashlight-line',
+      schedule: payload.schedule || (payload.cronExpr ?? '仅手动触发'), status: '正常', last: '尚未运行',
+      desc: payload.desc || '', source: payload.source || '', target: payload.target || '',
+      steps: payload.steps || [], runs: [],
+    }
+    autos.value.unshift(job)
+    return job
+  }
+
+  /** 更新自动化任务；apiLive 时写透后端。 */
+  async function updateJob(id: string, payload: PatchJobPayload) {
+    const j = jobById(id)
+    if (!j) return
+    Object.assign(j, payload)
+    if (apiLive.value) {
+      try {
+        const updated = await apiPatchJob(id, payload)
+        Object.assign(j, updated)
+      } catch {
+        /* 保留本地乐观更新 */
+      }
+    }
+  }
+
+  /** 删除自动化任务；apiLive 时写透后端。 */
+  async function deleteJob(id: string) {
+    autos.value = autos.value.filter((j) => j.id !== id)
+    if (apiLive.value) {
+      try {
+        await apiDeleteJob(id)
+      } catch {
+        /* 后端删除失败时不回滚 */
+      }
+    }
+  }
+
+  /** 手动触发一次运行。 */
+  async function runJob(id: string) {
+    const j = jobById(id)
+    if (!j) return
+    if (apiLive.value) {
+      try {
+        Object.assign(j, await apiRunJob(id))
+        return
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
+    const result = j.status === '待修复' ? '失败 · 需要先重新授权' : '成功 · 手动触发'
+    j.runs.unshift(['刚刚', result])
+    j.last = '刚刚 · ' + result
+  }
+
+  /** 暂停自动化任务。 */
+  async function pauseJob(id: string) {
+    const j = jobById(id)
+    if (!j) return
+    j.status = '已暂停'
+    if (apiLive.value) apiPauseJob(id).catch(() => {})
+  }
+
+  /** 恢复已暂停的自动化任务。 */
+  async function resumeJob(id: string) {
+    const j = jobById(id)
+    if (!j) return
+    j.status = '正常'
+    if (apiLive.value) apiResumeJob(id).catch(() => {})
+  }
+
+  /** 重新授权「待修复」的自动化任务。 */
+  async function reauthJob(id: string) {
+    const j = jobById(id)
+    if (!j) return
+    j.status = '正常'
+    if (apiLive.value) apiReauthJob(id).catch(() => {})
+  }
+
+  // ---- 密钥库 ----
+  const vaultItemById = (id: string) => vault.value.flatMap((g) => g.items).find((i) => i.id === id)
+
+  /** 新建密钥库分组；apiLive 时经后端创建。 */
+  async function addVaultGroup(name: string): Promise<VaultGroup> {
+    if (apiLive.value) {
+      try {
+        const g = await apiCreateVaultGroup(name)
+        vault.value.push(g)
+        return g
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
+    const g: VaultGroup = { id: 'vg' + Date.now(), group: name, items: [] }
+    vault.value.push(g)
+    return g
+  }
+
+  /** 重命名密钥库分组。 */
+  function renameVaultGroup(id: string, name: string) {
+    const g = vault.value.find((x) => x.id === id)
+    if (g) g.group = name
+    if (apiLive.value) apiRenameVaultGroup(id, name).catch(() => {})
+  }
+
+  /** 删除密钥库分组。 */
+  async function deleteVaultGroup(id: string) {
+    vault.value = vault.value.filter((g) => g.id !== id)
+    if (apiLive.value) {
+      try {
+        await apiDeleteVaultGroup(id)
+      } catch {
+        /* 后端删除失败时不回滚 */
+      }
+    }
+  }
+
+  /** 新建密钥库条目；apiLive 时经后端创建，密码在传输与落库前均按需加密（服务端处理）。 */
+  async function addVaultItem(payload: {
+    groupId: string; name: string; icon?: string; user?: string; site?: string; note?: string; secret?: string
+  }): Promise<VaultItem | null> {
+    const g = vault.value.find((x) => x.id === payload.groupId)
+    if (!g) return null
+    if (apiLive.value) {
+      try {
+        const item = await apiCreateVaultItem(payload)
+        g.items.push(item)
+        return item
+      } catch {
+        return null
+      }
+    }
+    const item: VaultItem = {
+      id: 'vi' + Date.now(), name: payload.name, icon: payload.icon || 'ri-key-2-line',
+      user: payload.user || '', site: payload.site || '', note: payload.note || '',
+      updated: '刚刚', hasSecret: !!payload.secret,
+    }
+    g.items.push(item)
+    return item
+  }
+
+  /** 更新密钥库条目。 */
+  async function updateVaultItem(id: string, payload: {
+    name?: string; icon?: string; user?: string; site?: string; note?: string; secret?: string; groupId?: string
+  }) {
+    const item = vaultItemById(id)
+    if (!item) return
+    Object.assign(item, payload, { updated: '刚刚', hasSecret: payload.secret ? true : item.hasSecret })
+    if (apiLive.value) {
+      try {
+        const updated = await apiPatchVaultItem(id, payload)
+        Object.assign(item, updated)
+      } catch {
+        /* 保留本地乐观更新 */
+      }
+    }
+  }
+
+  /** 删除密钥库条目。 */
+  async function deleteVaultItem(id: string) {
+    for (const g of vault.value) g.items = g.items.filter((i) => i.id !== id)
+    if (apiLive.value) {
+      try {
+        await apiDeleteVaultItem(id)
+      } catch {
+        /* 后端删除失败时不回滚 */
+      }
+    }
+  }
+
+  /** 解密并返回一次密码明文（仅 apiLive 时可用；离线演示态没有真实密码可查看）。 */
+  async function revealVaultItem(id: string): Promise<string | null> {
+    if (!apiLive.value) return null
+    try {
+      const res = await apiRevealVaultItem(id)
+      return res.secret
+    } catch {
+      return null
+    }
+  }
+
   return {
     today, areas, projects, tasks, kbs, docs, autos, files, imgs, vault,
     calEvents, schedule, suggestions, goals, myGroups, apiLive, hydrate,
     areaById, projectById, taskById, tasksByProject, kbById, docById, areaColor,
-    docEdits, setDocEdit, docOf, addDoc, addGroup, addFolder,
+    docEdits, setDocEdit, docOf, addDoc, addGroup, renameGroup, addFolder,
+    addKb, updateKb, deleteKb,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     updateProject, deleteProject, ensureProjectKb, syncFromServer,
+    jobById, createJob, updateJob, deleteJob, runJob, pauseJob, resumeJob, reauthJob,
+    vaultItemById, addVaultGroup, renameVaultGroup, deleteVaultGroup,
+    addVaultItem, updateVaultItem, deleteVaultItem, revealVaultItem,
   }
 })

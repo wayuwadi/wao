@@ -96,19 +96,19 @@ function openDoc(id: string) {
   if (k && k.id !== kbId.value) router.push({ path: `/kb/${k.id}`, query: { doc: id } })
   else selectDoc(id)
 }
-function addDocTo(folderId: string) {
-  const id = data.addDoc(kbId.value, folderId)
+async function addDocTo(folderId: string) {
+  const id = await data.addDoc(kbId.value, folderId)
   if (id) {
     folderOpen[folderId] = true
     docId.value = id
     knEditing.value = true
-    toast('已创建文档，可直接编辑（实时保存）', 'ri-file-add-line')
+    toast('已创建文档并关联到本知识库，可直接编辑', 'ri-file-add-line')
     nextTick(() => bodyEl.value?.focus())
   }
 }
-function addFolder() {
-  data.addFolder(kbId.value)
-  toast('已创建文件夹（演示，仅本次会话保留）', 'ri-folder-add-line')
+async function addFolder() {
+  await data.addFolder(kbId.value)
+  toast('已创建文件夹', 'ri-folder-add-line')
 }
 function editTitle(e: Event) {
   if (docId.value) data.setDocEdit(docId.value, { title: (e.target as HTMLInputElement).value })
@@ -203,7 +203,7 @@ function gotoProject() {
             <input class="doc-title" :value="doc.title" placeholder="未命名文档" @input="editTitle" />
 
             <template v-if="knEditing">
-              <div class="edit-hint">正在编辑 · 每次输入实时保存并同步给协作者（演示保存在本机）· 「## 」标题 · 「- 」列表 · 「&gt; 」引用</div>
+              <div class="edit-hint">正在编辑 · 输入内容自动保存 · 「## 」标题 · 「- 」列表 · 「&gt; 」引用</div>
               <textarea ref="bodyEl" class="doc-body" :value="doc.text" rows="18" placeholder="开始写作…" @input="editBody"></textarea>
             </template>
 

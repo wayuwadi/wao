@@ -26,3 +26,7 @@ management:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+
+wao:
+  vault:
+    encryption-key: ZKp9ywcbuZOrQCrxx2kd+0N9VJfnzRNSQQZXMP/vXVw=

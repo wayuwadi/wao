@@ -147,6 +147,7 @@ services:
       DB_NAME: ${DB_NAME:-wao}
       DB_USER: ${DB_USER:-wao_app}
       DB_PASS: ${DB_PASS}
+      WAO_VAULT_KEY: ${WAO_VAULT_KEY}
       REDIS_PASS: ${REDIS_PASS}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
       REDIS_SENTINEL_NODES: ${REDIS_SENTINEL_NODES}

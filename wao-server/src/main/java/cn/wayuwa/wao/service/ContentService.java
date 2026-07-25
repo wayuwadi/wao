@@ -2,7 +2,6 @@ package cn.wayuwa.wao.service;
 
 import java.util.List;
 
-import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.mapper.ContentMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,36 +19,6 @@ public class ContentService {
         this.json = json;
     }
 
-    /** 知识库列表。 */
-    public List<JsonNode> kbs() {
-        return parseAll(mapper.kbs());
-    }
-
-    /** 文档列表。 */
-    public List<JsonNode> docs() {
-        return parseAll(mapper.docs());
-    }
-
-    /**
-     * 单篇文档。
-     *
-     * @param id 文档 id
-     * @return 文档 JSON
-     * @throws NotFoundException 文档不存在时
-     */
-    public JsonNode doc(String id) {
-        String payload = mapper.doc(id);
-        if (payload == null) {
-            throw new NotFoundException("文档不存在：" + id);
-        }
-        return parse(payload);
-    }
-
-    /** 自动化 Job 列表。 */
-    public List<JsonNode> jobs() {
-        return parseAll(mapper.jobs());
-    }
-
     /** 文件列表。 */
     public List<JsonNode> files() {
         return parseAll(mapper.files());
@@ -58,11 +27,6 @@ public class ContentService {
     /** 图床列表。 */
     public List<JsonNode> images() {
         return parseAll(mapper.images());
-    }
-
-    /** 密码库分组列表。 */
-    public List<JsonNode> vault() {
-        return parseAll(mapper.vault());
     }
 
     /** 日历事件列表。 */

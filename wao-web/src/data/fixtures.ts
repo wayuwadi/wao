@@ -212,10 +212,10 @@ export const DOCS: Record<string, Doc> = {
 }
 
 export const AUTOS: AutomationJob[] = [
-  { name: '飞书群聊 → 知识库沉淀', icon: 'ri-chat-3-line', schedule: '每日 06:00', status: '正常', last: '今天 06:12 · 归档 12 条讨论', desc: '把「娃屋日常」群的讨论按话题聚类，沉淀为可检索的长期知识。', source: '飞书群「娃屋日常」', target: '知识库 · 群聊沉淀', steps: ['拉取近 24 小时群消息', '按话题聚类并生成摘要', '写入「群聊沉淀」并建立与项目 / 任务的关联'], runs: [['今天 06:12', '成功 · 归档 12 条'], ['昨天 06:09', '成功 · 归档 8 条'], ['7月21日 06:10', '成功 · 归档 15 条']] },
-  { name: '手机相册 → 家庭 NAS 备份', icon: 'ri-image-line', schedule: '每日 02:00', status: '正常', last: '今天 02:03 · 备份 214 张', desc: '两台手机的新增照片自动归档到 NAS，并写入图床索引。', source: '娃哥 / 娃弟 手机相册', target: '家庭 NAS · /photos', steps: ['扫描两台手机新增照片', '按人物 / 年份归档到 NAS', '生成缩略图并更新图床索引'], runs: [['今天 02:03', '成功 · 214 张'], ['昨天 02:02', '成功 · 96 张'], ['7月21日 02:04', '成功 · 180 张']] },
-  { name: '账单邮件 → 财务归档', icon: 'ri-mail-line', schedule: '每周一 09:00', status: '待修复', last: '7月20日 失败 · 邮箱授权过期', desc: '抓取账单邮件，解析金额与账期，自动归档到财务领域。', source: '邮箱 bill@wayuwa.example', target: '文件 · 财务归档', steps: ['抓取账单类新邮件', '解析金额、账期与商户', '归档并更新台账'], runs: [['7月20日 09:00', '失败 · 授权过期'], ['7月13日 09:01', '成功 · 6 封'], ['7月6日 09:00', '成功 · 4 封']] },
-  { name: '证件到期扫描提醒', icon: 'ri-alarm-line', schedule: '每月 1 日', status: '正常', last: '7月1日 · 无即将到期证件', desc: '扫描证件台账，到期前 60 天在首页与飞书提醒责任人。', source: '知识库 · 证件与合同台账', target: '首页提醒 + 飞书通知', steps: ['读取台账有效期字段', '筛选 60 天内到期条目', '生成提醒并 @ 责任人'], runs: [['7月1日 08:00', '成功 · 无到期项'], ['6月1日 08:00', '成功 · 提醒 1 项'], ['5月1日 08:00', '成功 · 无到期项']] },
+  { id: 'j1', name: '飞书群聊 → 知识库沉淀', icon: 'ri-chat-3-line', schedule: '每日 06:00', status: '正常', last: '今天 06:12 · 归档 12 条讨论', desc: '把「娃屋日常」群的讨论按话题聚类，沉淀为可检索的长期知识。', source: '飞书群「娃屋日常」', target: '知识库 · 群聊沉淀', steps: ['拉取近 24 小时群消息', '按话题聚类并生成摘要', '写入「群聊沉淀」并建立与项目 / 任务的关联'], runs: [['今天 06:12', '成功 · 归档 12 条'], ['昨天 06:09', '成功 · 归档 8 条'], ['7月21日 06:10', '成功 · 归档 15 条']] },
+  { id: 'j2', name: '手机相册 → 家庭 NAS 备份', icon: 'ri-image-line', schedule: '每日 02:00', status: '正常', last: '今天 02:03 · 备份 214 张', desc: '两台手机的新增照片自动归档到 NAS，并写入图床索引。', source: '娃哥 / 娃弟 手机相册', target: '家庭 NAS · /photos', steps: ['扫描两台手机新增照片', '按人物 / 年份归档到 NAS', '生成缩略图并更新图床索引'], runs: [['今天 02:03', '成功 · 214 张'], ['昨天 02:02', '成功 · 96 张'], ['7月21日 02:04', '成功 · 180 张']] },
+  { id: 'j3', name: '账单邮件 → 财务归档', icon: 'ri-mail-line', schedule: '每周一 09:00', status: '待修复', last: '7月20日 失败 · 邮箱授权过期', desc: '抓取账单邮件，解析金额与账期，自动归档到财务领域。', source: '邮箱 bill@wayuwa.example', target: '文件 · 财务归档', steps: ['抓取账单类新邮件', '解析金额、账期与商户', '归档并更新台账'], runs: [['7月20日 09:00', '失败 · 授权过期'], ['7月13日 09:01', '成功 · 6 封'], ['7月6日 09:00', '成功 · 4 封']] },
+  { id: 'j4', name: '证件到期扫描提醒', icon: 'ri-alarm-line', schedule: '每月 1 日', status: '正常', last: '7月1日 · 无即将到期证件', desc: '扫描证件台账，到期前 60 天在首页与飞书提醒责任人。', source: '知识库 · 证件与合同台账', target: '首页提醒 + 飞书通知', steps: ['读取台账有效期字段', '筛选 60 天内到期条目', '生成提醒并 @ 责任人'], runs: [['7月1日 08:00', '成功 · 无到期项'], ['6月1日 08:00', '成功 · 提醒 1 项'], ['5月1日 08:00', '成功 · 无到期项']] },
 ]
 
 export const FILES: FileItem[] = [
@@ -236,16 +236,16 @@ export const IMGS: ImageItem[] = [
 ]
 
 export const VAULT: VaultGroup[] = [
-  { group: '家庭网络', items: [
-    { name: '家庭 Wi-Fi', icon: 'ri-wifi-line', user: 'wayuwa-home', site: '192.168.1.1', note: '路由器管理密码单独存放；访客网络每季度更换。', updated: '6月12日' },
-    { name: 'NAS 管理后台', icon: 'ri-hard-drive-2-line', user: 'admin@nas.local', site: 'nas.local:5001', note: '开启了两步验证，恢复代码在保险柜。', updated: '5月30日' },
+  { id: 'vg1', group: '家庭网络', items: [
+    { id: 'vi1', name: '家庭 Wi-Fi', icon: 'ri-wifi-line', user: 'wayuwa-home', site: '192.168.1.1', note: '路由器管理密码单独存放；访客网络每季度更换。', updated: '6月12日', hasSecret: false },
+    { id: 'vi2', name: 'NAS 管理后台', icon: 'ri-hard-drive-2-line', user: 'admin@nas.local', site: 'nas.local:5001', note: '开启了两步验证，恢复代码在保险柜。', updated: '5月30日', hasSecret: false },
   ] },
-  { group: '生活缴费', items: [
-    { name: '水电煤缴费账户', icon: 'ri-flashlight-line', user: '138****0000', site: '95598.example', note: '', updated: '4月18日' },
+  { id: 'vg2', group: '生活缴费', items: [
+    { id: 'vi3', name: '水电煤缴费账户', icon: 'ri-flashlight-line', user: '138****0000', site: '95598.example', note: '', updated: '4月18日', hasSecret: false },
   ] },
-  { group: '订阅服务', items: [
-    { name: '流媒体家庭组', icon: 'ri-movie-2-line', user: 'family@wayuwa.example', site: 'tv.example.com', note: '家庭组 4 人位，娃弟管理续费。', updated: '7月2日' },
-    { name: '云相册会员', icon: 'ri-image-line', user: 'wd@wayuwa.example', site: 'photos.example.com', note: '', updated: '6月20日' },
+  { id: 'vg3', group: '订阅服务', items: [
+    { id: 'vi4', name: '流媒体家庭组', icon: 'ri-movie-2-line', user: 'family@wayuwa.example', site: 'tv.example.com', note: '家庭组 4 人位，娃弟管理续费。', updated: '7月2日', hasSecret: false },
+    { id: 'vi5', name: '云相册会员', icon: 'ri-image-line', user: 'wd@wayuwa.example', site: 'photos.example.com', note: '', updated: '6月20日', hasSecret: false },
   ] },
 ]
 
