@@ -43,11 +43,11 @@ export function tabFromRoute(route: RouteLocationNormalized): Tab | null {
   const kind = route.meta.tabKind as string | undefined
   if (kind === 'project') {
     const id = String(route.params.id)
-    return { key: `proj:${id}`, label: `项目 ${id}`, icon: 'ri-stack-line', path: route.path, closable: true }
+    return { key: `proj:${id}`, label: `项目 ${id}`, labelPlaceholder: true, icon: 'ri-stack-line', path: route.path, closable: true }
   }
   if (kind === 'kb') {
     const id = String(route.params.id)
-    return { key: `kb:${id}`, label: `知识库 ${id}`, icon: 'ri-book-2-line', path: route.path, closable: true }
+    return { key: `kb:${id}`, label: `知识库 ${id}`, labelPlaceholder: true, icon: 'ri-book-2-line', path: route.path, closable: true }
   }
   const mod = route.meta.module as ModuleId | undefined
   if (mod) return moduleTab(mod)
