@@ -3,7 +3,8 @@ param(
     [string]$TargetPath = 'D:\deploy\wao',
     [string]$PrivateEnvPath = 'D:\deploy\wao-secrets.env',
     [string]$ImageArchivePath,
-    [string]$Distribution = 'Ubuntu'
+    [string]$Distribution = 'Ubuntu',
+    [string]$LockPath = 'D:\deploy\wao-deploy.lock'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,6 +19,25 @@ if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
 if ($target -eq $targetRoot) {
     throw 'TargetPath must not be a drive root.'
 }
+
+# GitHub 取消旧流水线时，远端 PowerShell 进程可能仍在收尾。跨进程独占锁确保两次发布不会
+# 同时解压到同一目录或重建同一组容器；每次流水线的独立压缩包则避免上传阶段互相覆盖。
+$lockStream = $null
+$lockDeadline = [DateTime]::UtcNow.AddMinutes(10)
+while ($null -eq $lockStream -and [DateTime]::UtcNow -lt $lockDeadline) {
+    try {
+        $lockStream = [IO.File]::Open($LockPath, [IO.FileMode]::OpenOrCreate,
+            [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    }
+    catch [IO.IOException] {
+        Start-Sleep -Seconds 5
+    }
+}
+if ($null -eq $lockStream) {
+    throw 'Another Windows deployment is still running after waiting 10 minutes.'
+}
+
+try {
 
 New-Item -ItemType Directory -Path $target -Force | Out-Null
 switch ([IO.Path]::GetExtension($archive).ToLowerInvariant()) {
@@ -54,3 +74,10 @@ if ($ImageArchivePath -and (Test-Path -LiteralPath $ImageArchivePath -PathType L
 }
 
 & $deployScript -Distribution $Distribution -SkipImageBuild:$imageLoaded
+if ($LASTEXITCODE -ne 0) { throw 'Windows deployment script failed.' }
+
+Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
+}
+finally {
+    $lockStream.Dispose()
+}

@@ -112,10 +112,14 @@ jobs:
           }
 
           deploy_slave() {
-            retry_slave_ssh scp -o ConnectTimeout=15 wao-release.zip "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-release.zip" || return
-            retry_slave_ssh scp -o ConnectTimeout=15 wao-secrets.env "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-secrets.env" || return
-            retry_slave_ssh scp -o ConnectTimeout=15 deploy/scripts/install-release-windows.ps1 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/install-release-windows.ps1" || return
-            retry_slave_ssh ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
+            release_suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            remote_release="wao-release-${release_suffix}.zip"
+            remote_secrets="wao-secrets-${release_suffix}.env"
+            remote_installer="install-release-windows-${release_suffix}.ps1"
+            retry_slave_ssh scp -o ConnectTimeout=15 wao-release.zip "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_release" || return
+            retry_slave_ssh scp -o ConnectTimeout=15 wao-secrets.env "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_secrets" || return
+            retry_slave_ssh scp -o ConnectTimeout=15 deploy/scripts/install-release-windows.ps1 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_installer" || return
+            retry_slave_ssh ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets"
           }
 
           deploy_cloud() {
