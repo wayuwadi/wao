@@ -21,6 +21,17 @@ python .\deploy\ai-runner\wao-ai-runner.py `
 配对成功后，节点令牌只写入本机 `~/.wao/ai-runner.json`，不会进入项目或 Git。
 以后启动时不需要再次输入配对码。
 
+Runner 会把启动信息、Git/Codex 命令路径和任务失败阶段写入
+`~/.wao/ai-runner.log`。页面“最近完成”中的失败记录会直接显示错误摘要，点击记录可查看
+完整失败原因、退出码和工作目录。日志达到 2 MiB 后自动轮换，不记录配对码和节点令牌。
+
+如果任务计划程序的环境找不到 Git 或 Codex，可显式传入完整路径：
+
+```powershell
+--git-command "C:\Program Files\Git\cmd\git.exe" `
+--codex-command "C:\Program Files\nodejs\codex.cmd"
+```
+
 ## 并发与隔离
 
 - 每次运行使用 `<root>/.wao-runs/<run-id>` 独立 Git worktree 和独立

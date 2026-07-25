@@ -20,12 +20,20 @@ from typing import Any
 
 
 STATE_FILE = Path.home() / ".wao" / "ai-runner.json"
+LOG_FILE = Path.home() / ".wao" / "ai-runner.log"
 PRINT_LOCK = threading.Lock()
+MAX_LOG_BYTES = 2 * 1024 * 1024
 
 
 def log(message: str) -> None:
     with PRINT_LOCK:
-        print(time.strftime("%Y-%m-%d %H:%M:%S"), message, flush=True)
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}"
+        print(line, flush=True)
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if LOG_FILE.exists() and LOG_FILE.stat().st_size >= MAX_LOG_BYTES:
+            LOG_FILE.replace(LOG_FILE.with_suffix(".log.1"))
+        with LOG_FILE.open("a", encoding="utf-8") as output:
+            output.write(line + "\n")
 
 
 class WaoApi:
@@ -91,45 +99,53 @@ def run(command: list[str], cwd: Path | None = None, check: bool = True) -> subp
     return result
 
 
-def prepare_worktree(claim: dict[str, Any], root: Path) -> Path:
+def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str) -> Path:
     project_dir = root / claim["workspaceDir"]
     if not (project_dir / ".git").exists():
         project_dir.parent.mkdir(parents=True, exist_ok=True)
         log(f"[{claim['runId']}] 首次克隆 {claim['repoUrl']}")
-        run(["git", "clone", claim["repoUrl"], str(project_dir)])
-    run(["git", "fetch", "--prune", "origin"], cwd=project_dir)
-    run(["git", "worktree", "prune"], cwd=project_dir)
+        run([git_command, "clone", claim["repoUrl"], str(project_dir)])
+    run([git_command, "fetch", "--prune", "origin"], cwd=project_dir)
+    run([git_command, "worktree", "prune"], cwd=project_dir)
     worktree = root / ".wao-runs" / claim["runId"]
     worktree.parent.mkdir(parents=True, exist_ok=True)
     if worktree.exists():
-        run(["git", "worktree", "remove", "--force", str(worktree)], cwd=project_dir, check=False)
+        run([git_command, "worktree", "remove", "--force", str(worktree)], cwd=project_dir, check=False)
         if worktree.exists():
             shutil.rmtree(worktree)
-    run(["git", "branch", "-D", claim["branchName"]], cwd=project_dir, check=False)
+    run([git_command, "branch", "-D", claim["branchName"]], cwd=project_dir, check=False)
     run(
-        ["git", "worktree", "add", "-b", claim["branchName"], str(worktree),
+        [git_command, "worktree", "add", "-b", claim["branchName"], str(worktree),
          f"origin/{claim['defaultBranch']}"],
         cwd=project_dir,
     )
     return worktree
 
 
-def find_codex() -> str:
-    executable = shutil.which("codex") or shutil.which("codex.cmd")
+def find_executable(name: str, configured: str | None = None) -> str:
+    if configured:
+        executable = shutil.which(configured)
+        if not executable and Path(configured).is_file():
+            executable = str(Path(configured).resolve())
+    else:
+        executable = shutil.which(name)
     if not executable:
-        raise RuntimeError("找不到 Codex CLI；请先安装并执行 codex login")
+        hint = "；可通过命令行参数或环境变量指定完整路径" if configured is None else ""
+        raise RuntimeError(f"找不到 {name}{hint}")
     return executable
 
 
-def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str) -> None:
+def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str,
+        git_command: str, codex_command: str) -> None:
     run_id = claim["runId"]
     worktree: Path | None = None
     exit_code = -1
     session_id: str | None = None
     summary = ""
+    stage = "准备 Git 工作区"
     try:
         log(f"[{run_id}] 开始：{claim['taskTitle']}")
-        worktree = prepare_worktree(claim, root)
+        worktree = prepare_worktree(claim, root, git_command)
         result_file = worktree / ".wao-ai-result.txt"
         prompt = (
             "这是 WAO 自动派发的开发任务。请先读取下面的公开 Markdown 地址，然后在当前独立 "
@@ -139,8 +155,9 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str) 
             "测试后，直接写详细中文提交，创建 PR、合并 main、等待部署并验证线上结果与飞书通知。"
             "不要停下来等待人工确认。若外部权限确实阻塞，请在最终结果中准确说明。"
         )
+        stage = "启动 Codex"
         command = [
-            find_codex(), "exec", "--json", "--color", "never", "--sandbox", sandbox,
+            codex_command, "exec", "--json", "--color", "never", "--sandbox", sandbox,
             "-c", 'approval_policy="never"', "-C", str(worktree),
             "--output-last-message", str(result_file), prompt,
         ]
@@ -148,6 +165,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str) 
             command, cwd=str(worktree), text=True, encoding="utf-8", errors="replace",
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         )
+        stage = "等待 Codex 完成"
         output, _ = process.communicate()
         exit_code = process.returncode
         for line in output.splitlines():
@@ -156,11 +174,14 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str) 
             except json.JSONDecodeError:
                 continue
             session_id = event.get("thread_id") or event.get("session_id") or session_id
-        summary = result_file.read_text(encoding="utf-8", errors="replace") if result_file.exists() else output[-12000:]
-        summary = f"工作目录：{worktree}\n\n{summary}"[-30000:]
+        result_text = result_file.read_text(encoding="utf-8", errors="replace") if result_file.exists() else output[-12000:]
+        if exit_code != 0:
+            result_text = f"Codex 退出码：{exit_code}\n{result_text or 'Codex 未返回文字输出'}"
+        summary = f"工作目录：{worktree}\n\n{result_text}"[-30000:]
     except Exception as exc:  # noqa: BLE001 - 必须把节点错误回传给 WAO
-        summary = f"执行节点失败：{exc}\n工作目录：{worktree or '尚未创建'}"
-        log(f"[{run_id}] 失败：{exc}")
+        summary = (f"失败阶段：{stage}\n错误详情：{exc}\n"
+                   f"工作目录：{worktree or '尚未创建'}\n本机日志：{LOG_FILE}")[-30000:]
+        log(f"[{run_id}] {stage}失败：{exc}")
     finally:
         try:
             api.post(
@@ -178,6 +199,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--name", default=os.getenv("COMPUTERNAME") or platform.node() or "Codex 电脑")
     parser.add_argument("--root", default=os.getenv("WAO_WORKSPACE_ROOT", str(Path.home() / "CodeSpace")))
     parser.add_argument("--pair-code", default=os.getenv("WAO_PAIR_CODE"))
+    parser.add_argument("--git-command", default=os.getenv("WAO_GIT_COMMAND"))
+    parser.add_argument("--codex-command", default=os.getenv("WAO_CODEX_COMMAND"))
     parser.add_argument("--max-concurrency", type=int, default=int(os.getenv("WAO_RUNNER_CONCURRENCY", "2")))
     parser.add_argument(
         "--sandbox",
@@ -197,7 +220,10 @@ def main() -> int:
     api = WaoApi(args.server, state["token"])
     root = Path(args.root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
-    log(f"WAO AI Runner 已启动：工作区 {root}，并发 {args.max_concurrency}")
+    git_command = find_executable("git", args.git_command)
+    codex_command = find_executable("codex", args.codex_command)
+    log(f"WAO AI Runner 已启动：工作区 {root}，并发 {args.max_concurrency}，日志 {LOG_FILE}")
+    log(f"运行环境：Git={git_command}，Codex={codex_command}")
     futures: set[Future[None]] = set()
     with ThreadPoolExecutor(max_workers=args.max_concurrency, thread_name_prefix="wao-ai") as executor:
         while True:
@@ -208,7 +234,8 @@ def main() -> int:
                     claim = api.post("/api/ai/runner/claim")
                     if not claim:
                         break
-                    futures.add(executor.submit(execute_claim, api, claim, root, args.sandbox))
+                    futures.add(executor.submit(
+                        execute_claim, api, claim, root, args.sandbox, git_command, codex_command))
             except Exception as exc:  # noqa: BLE001
                 log(f"连接 WAO 失败，10 秒后重试：{exc}")
             time.sleep(10)

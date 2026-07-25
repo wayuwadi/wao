@@ -8,6 +8,7 @@ const router = useRouter()
 const runs = ref<AiRun[]>([])
 const runners = ref<AiRunner[]>([])
 const loading = ref(true)
+const selectedRun = ref<AiRun | null>(null)
 let timer: ReturnType<typeof setInterval> | null = null
 
 const activeRuns = computed(() => runs.value.filter((run) => ['queued', 'claimed', 'running'].includes(run.status)))
@@ -39,6 +40,19 @@ async function refresh() {
 
 function openRun(run: AiRun) {
   router.push({ path: `/projects/${run.projectId}`, query: { task: run.taskId } })
+}
+
+function inspectRun(run: AiRun) {
+  selectedRun.value = run
+}
+
+function resultPreview(run: AiRun) {
+  if (!run.resultSummary) return run.status === 'failed' ? '执行节点没有返回错误详情' : ''
+  const meaningfulLine = run.resultSummary
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line && !line.startsWith('工作目录：') && !line.startsWith('本机日志：'))
+  return meaningfulLine || run.resultSummary.trim()
 }
 
 function timeText(value: string | null) {
@@ -121,17 +135,47 @@ onBeforeUnmount(() => {
         <div><h2>最近完成</h2><p>完成后任务会自动进入“待验证”。</p></div>
       </div>
       <div class="recent-list">
-        <button v-for="run in recentRuns" :key="run.id" @click="openRun(run)">
+        <button v-for="run in recentRuns" :key="run.id" @click="inspectRun(run)">
           <span class="recent-icon" :style="{ color: statusMeta[run.status].color, background: statusMeta[run.status].bg }">
             <i :class="statusMeta[run.status].icon"></i>
           </span>
-          <span class="recent-main"><b>{{ run.taskTitle }}</b><em>{{ run.projectName }} · {{ run.runnerName || '未分配电脑' }}</em></span>
+          <span class="recent-main">
+            <b>{{ run.taskTitle }}</b>
+            <em>{{ run.projectName }} · {{ run.runnerName || '未分配电脑' }}</em>
+            <small v-if="run.status === 'failed'">{{ resultPreview(run) }}</small>
+          </span>
           <span class="recent-status">{{ statusMeta[run.status].label }}</span>
           <span class="run-time">{{ timeText(run.finishedAt) }}</span>
           <i class="ri-arrow-right-s-line"></i>
         </button>
       </div>
     </section>
+
+    <div v-if="selectedRun" class="run-detail-mask" @click.self="selectedRun = null">
+      <section class="run-detail" role="dialog" aria-modal="true" aria-labelledby="run-detail-title">
+        <header>
+          <span class="recent-icon" :style="{ color: statusMeta[selectedRun.status].color, background: statusMeta[selectedRun.status].bg }">
+            <i :class="statusMeta[selectedRun.status].icon"></i>
+          </span>
+          <div>
+            <h2 id="run-detail-title">{{ statusMeta[selectedRun.status].label }}</h2>
+            <p>{{ selectedRun.taskTitle }}</p>
+          </div>
+          <button class="detail-close" aria-label="关闭运行详情" @click="selectedRun = null"><i class="ri-close-line"></i></button>
+        </header>
+        <dl>
+          <div><dt>执行电脑</dt><dd>{{ selectedRun.runnerName || '未分配电脑' }}</dd></div>
+          <div><dt>退出码</dt><dd>{{ selectedRun.exitCode ?? '—' }}</dd></div>
+          <div><dt>结束时间</dt><dd>{{ timeText(selectedRun.finishedAt) || '—' }}</dd></div>
+        </dl>
+        <div class="result-title">{{ selectedRun.status === 'failed' ? '失败原因' : '运行结果' }}</div>
+        <pre>{{ selectedRun.resultSummary || '执行节点没有返回结果详情。' }}</pre>
+        <footer>
+          <button class="secondary" @click="selectedRun = null">关闭</button>
+          <button class="primary" @click="openRun(selectedRun)">打开对应任务</button>
+        </footer>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -264,12 +308,47 @@ onBeforeUnmount(() => {
 .recent-main b, .recent-main em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-main b { font-size: 12.5px; }
 .recent-main em { margin-top: 2px; color: var(--wao-text-weak); font-size: 10.5px; font-style: normal; }
+.recent-main small { display: block; margin-top: 4px; overflow: hidden; color: #b33a3a; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
 .recent-status { color: var(--wao-text-3); font-size: 11px; }
+.run-detail-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  padding: 24px;
+  background: rgba(20, 25, 45, .34);
+  display: grid;
+  place-items: center;
+}
+.run-detail {
+  width: min(680px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: auto;
+  padding: 22px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(26, 31, 61, .22);
+}
+.run-detail header { display: flex; align-items: center; gap: 12px; }
+.run-detail header > div { flex: 1; min-width: 0; }
+.run-detail h2 { margin: 0; font-size: 17px; }
+.run-detail header p { margin: 3px 0 0; overflow: hidden; color: var(--wao-text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.detail-close { width: 32px; height: 32px; border: 0; border-radius: 8px; background: #f4f5f8; cursor: pointer; }
+.run-detail dl { margin: 18px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.run-detail dl > div { padding: 10px 12px; border-radius: 9px; background: #f6f7fa; }
+.run-detail dt { color: var(--wao-text-weak); font-size: 10px; }
+.run-detail dd { margin: 4px 0 0; font-size: 11.5px; font-weight: 600; }
+.result-title { margin-bottom: 7px; font-size: 12px; font-weight: 650; }
+.run-detail pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border: 1px solid #ead3d3; border-radius: 10px; background: #fff8f8; color: #753030; font: 11.5px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.run-detail footer { margin-top: 18px; display: flex; justify-content: flex-end; gap: 9px; }
+.run-detail footer button { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+.run-detail footer .secondary { border: 1px solid var(--wao-line); background: #fff; }
+.run-detail footer .primary { border: 1px solid #4358d6; background: #4358d6; color: #fff; }
 .spin { display: inline-block; animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
   .home { padding: 16px; }
   .hero { padding: 22px; flex-direction: column; align-items: stretch; }
   .capacity { width: auto; }
+  .run-detail dl { grid-template-columns: 1fr; }
 }
 </style>
