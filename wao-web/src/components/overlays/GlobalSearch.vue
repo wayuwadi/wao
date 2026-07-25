@@ -117,8 +117,11 @@ const HINTS = ['任务详情', '体检', '照片 扫描', '滇西北']
 .panel {
   position: fixed;
   top: 11vh;
-  left: 50%;
-  transform: translateX(-50%);
+  /* 用 margin 居中而不是 transform：waoPop 动画也动 transform，
+     两者叠在一起时居中位移会被覆盖，卡片先偏右出现再跳回中间。 */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
   width: min(620px, calc(100vw - 40px));
   background: #fff;
   border-radius: 14px;

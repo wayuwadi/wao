@@ -14,6 +14,8 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { useSettle } from '@/composables/completion'
+import { useNow } from '@/composables/now'
+import { absoluteTime, nowIso, relativeTime } from '@/utils/time'
 import type { Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
@@ -45,11 +47,24 @@ const stepsDone = computed(() => task.value?.steps.filter((s) => s.done).length 
 const stepsTotal = computed(() => task.value?.steps.length ?? 0)
 const stepPct = computed(() => (stepsTotal.value ? Math.round((stepsDone.value / stepsTotal.value) * 100) : 0))
 
+// 时间文案要随时间推移自己变新，否则抽屉一直开着就永远停在「刚刚」
+const now = useNow()
+const showTime = (t: string) => relativeTime(t, now.value)
+
 const comments = computed(() =>
   (task.value?.comments ?? []).map((c) => {
     const m = session.memberById(c.who)
-    return { name: m.name, initial: m.initial, color: m.color, time: c.time, text: c.text }
+    return {
+      name: m.name, initial: m.initial, color: m.color,
+      time: showTime(c.time), fullTime: absoluteTime(c.time), text: c.text,
+    }
   }),
+)
+/** 活动时间线，时间统一转成相对描述。 */
+const activities = computed(() =>
+  (task.value?.activity ?? []).map((a) => ({
+    ...a, time: showTime(a.time), fullTime: absoluteTime(a.time),
+  })),
 )
 const parts = computed(() =>
   (task.value?.parts ?? []).map((id) => {
@@ -254,7 +269,7 @@ function sendComment() {
   const t = task.value
   const v = commentText.value.trim()
   if (t && v) {
-    data.patchTask(t.id, { comments: [...t.comments, { who: session.currentUser.id, time: '刚刚', text: v }] }, '你添加了评论')
+    data.patchTask(t.id, { comments: [...t.comments, { who: session.currentUser.id, time: nowIso(), text: v }] }, '你添加了评论')
     commentText.value = ''
   }
 }
@@ -395,7 +410,14 @@ function demo(msg: string) {
           </div>
 
           <div class="field">
-            <div class="field-label">子任务</div>
+            <!-- 输入框放在标题行上：子任务多的时候不必拉到最底下才能加一条 -->
+            <div class="sub-head">
+              <div class="field-label nomb">子任务</div>
+              <div class="sub-add">
+                <i class="ri-add-line"></i>
+                <input v-model="newSub" placeholder="添加子任务，回车确认" @keydown.enter="addSub" />
+              </div>
+            </div>
             <div>
               <div
                 v-for="r in openSubRows"
@@ -435,11 +457,6 @@ function demo(msg: string) {
                 </div>
               </div>
             </template>
-
-            <div class="sub-add">
-              <i class="ri-add-line"></i>
-              <input v-model="newSub" placeholder="添加子任务，回车确认" @keydown.enter="addSub" />
-            </div>
           </div>
 
           <div v-if="task.files.length" class="field">
@@ -480,7 +497,7 @@ function demo(msg: string) {
               <div v-for="(cm, i) in comments" :key="i" class="comment">
                 <span class="c-av" :style="{ background: cm.color }">{{ cm.initial }}</span>
                 <div class="c-main">
-                  <div class="c-head"><b>{{ cm.name }}</b><span class="c-time">{{ cm.time }}</span></div>
+                  <div class="c-head"><b>{{ cm.name }}</b><span class="c-time" :title="cm.fullTime">{{ cm.time }}</span></div>
                   <div class="c-text">{{ cm.text }}</div>
                 </div>
               </div>
@@ -625,11 +642,11 @@ function demo(msg: string) {
             <div class="props-label sm">活动</div>
             <div class="act-wrap">
               <div class="act-line"></div>
-              <div v-for="(av, i) in task.activity" :key="i" class="act-row">
+              <div v-for="(av, i) in activities" :key="i" class="act-row">
                 <span class="act-dot"></span>
                 <div class="act-main">
                   <div class="act-text">{{ av.text }}</div>
-                  <div class="act-time">{{ av.time }}</div>
+                  <div class="act-time" :title="av.fullTime">{{ av.time }}</div>
                 </div>
               </div>
             </div>
@@ -1068,11 +1085,25 @@ function demo(msg: string) {
   color: #bc4141;
 }
 
-.sub-add {
+.sub-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 5px 0 0;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.sub-add {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 3px 8px;
+}
+.sub-add:focus-within {
+  border-color: var(--wao-line-control);
+  background: #fff;
 }
 .sub-add i {
   font-size: 14px;

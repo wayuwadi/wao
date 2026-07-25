@@ -7,6 +7,8 @@ import { useUiStore } from '@/stores/ui'
 import { useTabsStore } from '@/stores/tabs'
 import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
+import { useNow } from '@/composables/now'
+import { absoluteTime, relativeTime } from '@/utils/time'
 import { fmtDate } from '@/utils/domain'
 import { toast } from '@/composables/toast'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
@@ -19,6 +21,10 @@ const session = useSessionStore()
 const ui = useUiStore()
 const tabs = useTabsStore()
 const { decoProj, decoTask } = useDeco()
+
+// 动态时间随时间推移自己变新
+const now = useNow()
+const showTime = (t: string) => relativeTime(t, now.value)
 
 const pid = computed(() => String(route.params.id))
 const project = computed(() => data.projectById(pid.value))
@@ -312,7 +318,7 @@ function comingSoon(msg: string) {
               <i :class="ac.icon" :style="{ color: ac.color }"></i>
               <div class="feed-main">
                 <div class="feed-text">{{ ac.text }}</div>
-                <div class="feed-time">{{ ac.time }}</div>
+                <div class="feed-time" :title="absoluteTime(ac.time)">{{ showTime(ac.time) }}</div>
               </div>
             </div>
           </div>
@@ -448,7 +454,7 @@ function comingSoon(msg: string) {
         <i :class="ac.icon" :style="{ color: ac.color }"></i>
         <div class="feed-main">
           <div class="feed-text lg">{{ ac.text }}</div>
-          <div class="feed-time">{{ ac.time }}</div>
+          <div class="feed-time" :title="absoluteTime(ac.time)">{{ showTime(ac.time) }}</div>
         </div>
       </div>
     </div>
