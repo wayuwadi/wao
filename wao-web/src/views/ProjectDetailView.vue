@@ -223,10 +223,10 @@ function comingSoon(msg: string) {
           <button
             class="select-dot"
             :class="{ on: selectedTaskIds.includes(t.id) }"
-            title="选择后批量交给 AI"
+            title="加入批量 AI Run"
             @click.stop="toggleSelection(t.id)"
           >
-            <i class="ri-check-line"></i>
+            <i class="ri-robot-2-line"></i>
           </button>
           <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
           <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
@@ -287,10 +287,10 @@ function comingSoon(msg: string) {
               <button
                 class="select-dot board-select"
                 :class="{ on: selectedTaskIds.includes(t.id) }"
-                title="选择后批量交给 AI"
+                title="加入批量 AI Run"
                 @click.stop="toggleSelection(t.id)"
               >
-                <i class="ri-check-line"></i>
+                <i class="ri-robot-2-line"></i>
               </button>
               <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
               <div class="bc-foot">
@@ -546,13 +546,13 @@ function comingSoon(msg: string) {
   flex-shrink: 0;
 }
 .select-dot {
-  width: 17px;
-  height: 17px;
+  width: 20px;
+  height: 20px;
   padding: 0;
-  border: 1px solid #cbd0df;
-  border-radius: 5px;
-  background: #fff;
-  color: transparent;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wao-text-faint);
   cursor: pointer;
   flex: 0 0 auto;
   display: inline-flex;
@@ -560,11 +560,11 @@ function comingSoon(msg: string) {
   justify-content: center;
 }
 .select-dot:hover {
-  border-color: var(--wao-primary);
+  background: #eef1ff;
+  color: var(--wao-primary);
 }
 .select-dot.on {
   color: #fff;
-  border-color: var(--wao-primary);
   background: var(--wao-primary);
 }
 .select-dot i {

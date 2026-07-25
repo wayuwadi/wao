@@ -12,7 +12,6 @@ export interface ModuleMeta {
 export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
-  calendar: { id: 'calendar', label: '日历', icon: 'ri-calendar-line', path: '/calendar' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
   automation: { id: 'automation', label: '自动化', icon: 'ri-flashlight-line', path: '/automation' },
@@ -24,7 +23,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
 /** 左侧导航分组（空 label = 不显示分组标题的首页组）。 */
 export const NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
-  { label: '规划', items: ['projects', 'calendar'] },
+  { label: '规划', items: ['projects'] },
   { label: '沉淀', items: ['knowledge', 'files'] },
   { label: '系统', items: ['automation', 'vault', 'trash'] },
 ]

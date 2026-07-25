@@ -32,6 +32,7 @@ const tv = computed(() => (task.value ? decoTask(task.value) : null))
 const menu = ref<'status' | 'pr' | 'owner' | 'prop' | 'share' | null>(null)
 const newSub = ref('')
 const commentText = ref('')
+const commentSending = ref(false)
 const aiStarting = ref(false)
 /** 右侧栏当前展开的子任务标识；为 null 时显示任务属性栏。 */
 const openSubId = ref<string | null>(null)
@@ -348,9 +349,17 @@ async function runWithAi() {
 async function sendComment() {
   const t = task.value
   const v = commentText.value.trim()
-  if (t && v) {
-    if (await data.addTaskComment(t.id, v)) commentText.value = ''
-    else toast('评论发送失败，请重试', 'ri-error-warning-line')
+  if (!t || !v || commentSending.value) return
+  commentSending.value = true
+  // 先清空输入并锁定发送，避免点击与回车等重复事件并发追加同一条评论。
+  commentText.value = ''
+  try {
+    if (!await data.addTaskComment(t.id, v)) {
+      commentText.value = v
+      toast('评论发送失败，请重试', 'ri-error-warning-line')
+    }
+  } finally {
+    commentSending.value = false
   }
 }
 function commentKey(e: KeyboardEvent) {
@@ -612,8 +621,8 @@ function demo(msg: string) {
             <div class="comment-input">
               <span class="c-av" :style="{ background: session.currentUser.color }">{{ session.currentUser.initial }}</span>
               <div class="ci-wrap">
-                <input v-model="commentText" placeholder="写评论，回车发送；@ 成员会收到通知（演示）" @keydown="commentKey" />
-                <button class="send" :disabled="!commentText.trim()" @click="sendComment"><i class="ri-send-plane-2-line"></i>发送</button>
+                <input v-model="commentText" :disabled="commentSending" placeholder="写评论，回车发送；@ 成员会收到通知（演示）" @keydown="commentKey" />
+                <button class="send" :disabled="!commentText.trim() || commentSending" @click="sendComment"><i class="ri-send-plane-2-line"></i>发送</button>
               </div>
             </div>
           </div>

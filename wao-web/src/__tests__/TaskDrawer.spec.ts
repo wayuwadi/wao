@@ -59,6 +59,22 @@ describe('TaskDrawer', () => {
     expect(await waitFor(w, '.md-body')).toBe(true)
   })
 
+  it('评论发送期间重复点击只会追加一条评论', async () => {
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+    const before = data.taskById(taskId)!.comments.length
+
+    await w.find('.comment-input input').setValue('只发送一次')
+    const send = w.find('.comment-input .send')
+    void send.trigger('click')
+    void send.trigger('click')
+    await flushPromises()
+
+    expect(data.taskById(taskId)!.comments).toHaveLength(before + 1)
+    expect(w.find('.comment-input input').element).toHaveProperty('disabled', false)
+  })
+
   it('默认展示任务属性栏，点击子任务后切成子任务详情', async () => {
     const subId = data.addSub(taskId, '扫描身份证')!
     ui.openTask(taskId)
