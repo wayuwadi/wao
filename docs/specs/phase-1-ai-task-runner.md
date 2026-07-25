@@ -32,6 +32,9 @@
   `.cmd` 转发脚本时被截断；Codex 仅退出码为 0 仍不足以判成功，还必须返回明确完成标记。
 - Runner 使用 `codex exec --json` 的 JSONL 事件流，只保存 agent message、公开的 reasoning summary、
   plan update 与阶段/结果；command execution、file change、MCP tool call、web search 不进入 WAO。
+- Runner 从本机 Git credential helper 读取现有 GitHub HTTPS 凭据，仅通过子进程 `GH_TOKEN`
+  提供给 Codex，并自动补齐 Windows GitHub CLI 路径；不持久化或记录令牌。Codex 应优先使用
+  `gh` 完成 PR、合并和部署跟踪，连接器不可用不能直接判定任务阻塞。
 
 ## 安全边界
 
