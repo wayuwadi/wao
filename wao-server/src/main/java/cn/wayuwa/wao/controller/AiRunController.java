@@ -1,0 +1,100 @@
+package cn.wayuwa.wao.controller;
+
+import java.util.List;
+
+import cn.wayuwa.wao.auth.CurrentMember;
+import cn.wayuwa.wao.common.ApiResponse;
+import cn.wayuwa.wao.dto.AiPairCodeDto;
+import cn.wayuwa.wao.dto.AiProjectConfigDto;
+import cn.wayuwa.wao.dto.AiRunDto;
+import cn.wayuwa.wao.dto.AiRunnerClaimDto;
+import cn.wayuwa.wao.dto.AiRunnerDto;
+import cn.wayuwa.wao.dto.CompleteAiRunRequest;
+import cn.wayuwa.wao.dto.CreateAiRunsRequest;
+import cn.wayuwa.wao.dto.PairedAiRunnerDto;
+import cn.wayuwa.wao.dto.PairAiRunnerRequest;
+import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
+import cn.wayuwa.wao.service.AiRunService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+
+/** AI Run 页面配置、队列和本地执行节点协议。 */
+@RestController
+@RequestMapping("/api/ai")
+public class AiRunController {
+
+    private static final String RUNNER_TOKEN = "X-WAO-Runner-Token";
+
+    private final AiRunService service;
+    private final CurrentMember currentMember;
+
+    public AiRunController(AiRunService service, CurrentMember currentMember) {
+        this.service = service;
+        this.currentMember = currentMember;
+    }
+
+    @GetMapping("/projects/{projectId}/config")
+    public ApiResponse<AiProjectConfigDto> config(@PathVariable String projectId) {
+        return ApiResponse.ok(service.getConfig(projectId));
+    }
+
+    @PutMapping("/projects/{projectId}/config")
+    public ApiResponse<AiProjectConfigDto> saveConfig(@PathVariable String projectId,
+            @RequestBody SaveAiProjectConfigRequest request) {
+        return ApiResponse.ok(service.saveConfig(projectId, request));
+    }
+
+    @GetMapping("/runners")
+    public ApiResponse<List<AiRunnerDto>> runners() {
+        return ApiResponse.ok(service.listRunners());
+    }
+
+    @PostMapping("/runners/pair-code")
+    public ApiResponse<AiPairCodeDto> pairCode() {
+        return ApiResponse.ok(service.createPairCode());
+    }
+
+    @PostMapping("/runs")
+    public ApiResponse<List<AiRunDto>> enqueue(@Valid @RequestBody CreateAiRunsRequest request,
+            HttpServletRequest http) {
+        String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
+        return ApiResponse.ok(service.enqueue(request.taskIds(), currentMember.idOr(http, "unknown"), baseUrl));
+    }
+
+    @GetMapping("/runs")
+    public ApiResponse<List<AiRunDto>> runs(@RequestParam(defaultValue = "false") boolean active) {
+        return ApiResponse.ok(service.listRuns(active));
+    }
+
+    @PostMapping("/runner/pair")
+    public ApiResponse<PairedAiRunnerDto> pair(@Valid @RequestBody PairAiRunnerRequest request) {
+        return ApiResponse.ok(service.pair(request));
+    }
+
+    @PostMapping("/runner/heartbeat")
+    public ApiResponse<AiRunnerDto> heartbeat(@RequestHeader(RUNNER_TOKEN) String token,
+            @RequestParam(required = false) Integer maxConcurrency) {
+        return ApiResponse.ok(service.heartbeat(token, maxConcurrency));
+    }
+
+    @PostMapping("/runner/claim")
+    public ApiResponse<AiRunnerClaimDto> claim(@RequestHeader(RUNNER_TOKEN) String token) {
+        return ApiResponse.ok(service.claim(token));
+    }
+
+    @PostMapping("/runner/runs/{runId}/complete")
+    public ApiResponse<AiRunDto> complete(@RequestHeader(RUNNER_TOKEN) String token,
+            @PathVariable String runId, @RequestBody CompleteAiRunRequest request) {
+        return ApiResponse.ok(service.complete(token, runId, request));
+    }
+}

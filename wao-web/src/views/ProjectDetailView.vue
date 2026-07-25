@@ -10,6 +10,7 @@ import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { fmtDate, isOpenStatus, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import { toast } from '@/composables/toast'
+import { createAiRuns } from '@/api/ai'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
 import type { TaskStatus } from '@/types'
 
@@ -51,6 +52,8 @@ watch(
 )
 
 const settingsOpen = ref(false)
+const selectedTaskIds = ref<string[]>([])
+const aiBatchStarting = ref(false)
 function onProjectDeleted() {
   settingsOpen.value = false
   const next = tabs.close(`proj:${pid.value}`)
@@ -116,6 +119,30 @@ const pdTabs = computed(() => {
 function openTask(id: string) {
   ui.openTask(id)
 }
+function toggleSelection(id: string) {
+  selectedTaskIds.value = selectedTaskIds.value.includes(id)
+    ? selectedTaskIds.value.filter((item) => item !== id)
+    : [...selectedTaskIds.value, id]
+}
+function selectAllOpen() {
+  selectedTaskIds.value = selectedTaskIds.value.length === openTasks.value.length
+    ? []
+    : openTasks.value.map((task) => task.id)
+}
+async function runSelectedWithAi() {
+  if (!selectedTaskIds.value.length || aiBatchStarting.value) return
+  aiBatchStarting.value = true
+  try {
+    const created = await createAiRuns(selectedTaskIds.value)
+    created.forEach((run) => data.patchTask(run.taskId, { status: 'AI 进行中' }, '你已将任务交给 AI Run'))
+    selectedTaskIds.value = []
+    toast(`已将 ${created.length} 个任务加入 AI Run，可在首页查看`, 'ri-robot-2-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '批量 AI Run 启动失败', 'ri-error-warning-line')
+  } finally {
+    aiBatchStarting.value = false
+  }
+}
 function openDoc(id: string) {
   const k = data.kbs.find((kk) => kk.folders.some((f) => f.docs.includes(id)))
   if (k) router.push({ path: `/kb/${k.id}`, query: { doc: id } })
@@ -165,6 +192,20 @@ function comingSoon(msg: string) {
             <i :class="v[1]"></i>{{ v[0] }}
           </button>
         </div>
+        <div class="spacer"></div>
+        <button v-if="pdTaskView === 'list' && openTasks.length" class="select-all" @click="selectAllOpen">
+          <i :class="selectedTaskIds.length === openTasks.length ? 'ri-checkbox-fill' : 'ri-checkbox-blank-line'"></i>
+          {{ selectedTaskIds.length === openTasks.length ? '取消全选' : '选择任务' }}
+        </button>
+        <button
+          v-if="selectedTaskIds.length"
+          class="batch-ai"
+          :disabled="aiBatchStarting"
+          @click="runSelectedWithAi"
+        >
+          <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-robot-2-line'"></i>
+          AI run run · {{ selectedTaskIds.length }}
+        </button>
       </div>
       <div v-if="pdTaskView === 'list'" class="task-list-card">
         <div
@@ -179,6 +220,14 @@ function comingSoon(msg: string) {
           @drop="onDropReorder(t.id)"
         >
           <i class="drag-grip ri-draggable" title="拖拽排序"></i>
+          <button
+            class="select-dot"
+            :class="{ on: selectedTaskIds.includes(t.id) }"
+            title="选择后批量交给 AI"
+            @click.stop="toggleSelection(t.id)"
+          >
+            <i class="ri-check-line"></i>
+          </button>
           <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
           <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
           <span v-if="t.waitBadge" class="wait-badge">{{ t.waitBadge }}</span>
@@ -235,6 +284,14 @@ function comingSoon(msg: string) {
               @click="openTask(t.id)"
               @dragstart="onDragStart(t.id)"
             >
+              <button
+                class="select-dot board-select"
+                :class="{ on: selectedTaskIds.includes(t.id) }"
+                title="选择后批量交给 AI"
+                @click.stop="toggleSelection(t.id)"
+              >
+                <i class="ri-check-line"></i>
+              </button>
               <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
               <div class="bc-foot">
                 <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
@@ -488,6 +545,36 @@ function comingSoon(msg: string) {
   padding: 0;
   flex-shrink: 0;
 }
+.select-dot {
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 1px solid #cbd0df;
+  border-radius: 5px;
+  background: #fff;
+  color: transparent;
+  cursor: pointer;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.select-dot:hover {
+  border-color: var(--wao-primary);
+}
+.select-dot.on {
+  color: #fff;
+  border-color: var(--wao-primary);
+  background: var(--wao-primary);
+}
+.select-dot i {
+  font-size: 12px;
+}
+.board-select {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
 .check i {
   font-size: 12px;
   color: #fff;
@@ -545,6 +632,38 @@ function comingSoon(msg: string) {
   margin-top: 14px;
   display: flex;
   align-items: center;
+}
+.select-all,
+.batch-ai {
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.select-all {
+  border: 1px solid var(--wao-line-control);
+  background: #fff;
+  color: var(--wao-text-3);
+}
+.batch-ai {
+  border: 1px solid #bec8f5;
+  background: linear-gradient(135deg, #eef1ff, #fff);
+  color: var(--wao-primary-text);
+  font-weight: 650;
+}
+.batch-ai:disabled {
+  opacity: 0.6;
+}
+.spin {
+  display: inline-block;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 .tab-toolbar.gap {
   gap: 10px;
@@ -820,6 +939,7 @@ function comingSoon(msg: string) {
   gap: 8px;
 }
 .board-card {
+  position: relative;
   background: #fff;
   border: 1px solid var(--wao-line);
   border-radius: 10px;

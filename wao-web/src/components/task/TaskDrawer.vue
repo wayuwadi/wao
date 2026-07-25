@@ -14,6 +14,7 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
+import { createAiRuns } from '@/api/ai'
 import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
@@ -31,6 +32,7 @@ const tv = computed(() => (task.value ? decoTask(task.value) : null))
 const menu = ref<'status' | 'pr' | 'owner' | 'prop' | 'share' | null>(null)
 const newSub = ref('')
 const commentText = ref('')
+const aiStarting = ref(false)
 /** 右侧栏当前展开的子任务标识；为 null 时显示任务属性栏。 */
 const openSubId = ref<string | null>(null)
 
@@ -325,6 +327,24 @@ async function copyShare(kind: 'page' | 'md') {
     'ri-links-line',
   )
 }
+async function runWithAi() {
+  const t = task.value
+  if (!t || aiStarting.value || t.status === 'AI 进行中') return
+  aiStarting.value = true
+  try {
+    const created = await createAiRuns([t.id])
+    if (created.length) {
+      data.patchTask(t.id, { status: 'AI 进行中' }, '你已将任务交给 AI Run')
+      toast('已加入 AI Run 队列，可在首页查看运行状态', 'ri-robot-2-line')
+    } else {
+      toast('这个任务已经在 AI Run 队列中', 'ri-information-line')
+    }
+  } catch (error) {
+    toast(error instanceof Error ? error.message : 'AI Run 启动失败', 'ri-error-warning-line')
+  } finally {
+    aiStarting.value = false
+  }
+}
 async function sendComment() {
   const t = task.value
   const v = commentText.value.trim()
@@ -403,6 +423,16 @@ function demo(msg: string) {
         <span class="crumb">任务详情</span>
         <span v-if="task.waiting" class="wait-badge">{{ task.waiting }}</span>
         <div class="spacer"></div>
+        <button
+          class="ai-run-btn"
+          :class="{ running: task.status === 'AI 进行中' }"
+          :disabled="aiStarting || task.status === 'AI 进行中'"
+          title="交给 Codex 自动完成"
+          @click="runWithAi"
+        >
+          <i :class="aiStarting ? 'ri-loader-4-line spin' : task.status === 'AI 进行中' ? 'ri-loader-2-line spin' : 'ri-robot-2-line'"></i>
+          {{ task.status === 'AI 进行中' ? 'AI 运行中' : 'AI run run' }}
+        </button>
         <div class="share-wrap">
           <button class="icon-btn" title="复制分享链接" @click="menu = menu === 'share' ? null : 'share'"><i class="ri-links-line"></i></button>
           <div v-if="menu === 'share'" class="menu-mask" @click="menu = null"></div>
@@ -1005,6 +1035,39 @@ function demo(msg: string) {
 /* 分享菜单 */
 .share-wrap {
   position: relative;
+}
+.ai-run-btn {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid #c9d1f5;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #eef1ff, #fff);
+  color: var(--wao-primary-text);
+  font-size: 11.5px;
+  font-weight: 650;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-run-btn:hover:not(:disabled) {
+  border-color: var(--wao-primary);
+  box-shadow: 0 3px 10px rgba(67, 88, 214, 0.14);
+}
+.ai-run-btn.running {
+  color: #8a5b0d;
+  border-color: #efd69a;
+  background: #fffaf0;
+}
+.ai-run-btn:disabled {
+  cursor: default;
+}
+.spin {
+  display: inline-block;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 .share-menu {
   position: absolute;
