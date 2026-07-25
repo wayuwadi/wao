@@ -114,12 +114,12 @@ paths:
   /kbs/{id}:
     get: { summary: 知识库详情, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     patch: { summary: 局部更新知识库（项目 / 自动化知识库的名称与简介不可改）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
-    delete: { summary: 删除知识库（级联删除文件夹与文档）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除知识库（移入回收站，其下文件夹与文档一并带走；小记知识库不可删）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '400': { description: 小记知识库不可删除 }, '404': { description: 不存在 } } }
   /kbs/{id}/folders:
     post: { summary: 在知识库下新建文件夹, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 知识库不存在 } } }
   /kbs/{id}/folders/{folderId}:
     patch: { summary: 重命名文件夹, parameters: [ { name: id, in: path, required: true, schema: { type: string } }, { name: folderId, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
-    delete: { summary: 删除文件夹（级联删除文档）, parameters: [ { name: id, in: path, required: true, schema: { type: string } }, { name: folderId, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除文件夹（移入回收站，其下文档一并带走）, parameters: [ { name: id, in: path, required: true, schema: { type: string } }, { name: folderId, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   /docs:
     get: { summary: 文档列表（含正文块与动态计算的反向链接）, responses: { '200': { description: OK } } }
     post:
@@ -132,7 +132,40 @@ paths:
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '404': { description: 不存在 } }
     patch: { summary: 局部更新文档（标题 / 正文块 / 出链 / 所在文件夹）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
-    delete: { summary: 删除文档, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除文档（移入回收站，7 天内可恢复）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /docs/notes:
+    post:
+      summary: 新建小记（不指定知识库，一律落到小记知识库；作者取当前会话成员）
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateNoteRequest' } } } }
+      responses: { '200': { description: OK } }
+  # 文档协同在场（见 docs/adr/017-doc-realtime-collaboration-presence.md）
+  /docs/{id}/presence:
+    post:
+      summary: 在场心跳：上报光标行，取回同刻的协作者；客户端 rev 落后时附带最新文档
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DocPresenceRequest' } } } }
+      responses: { '200': { description: OK }, '404': { description: 文档不存在 } }
+    delete:
+      summary: 离开文档（销掉自己的在场记录；不调用也会在在场窗口过期后自动消失）
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+  # 回收站（见 docs/adr/018-knowledge-trash-retention.md）
+  /trash:
+    get: { summary: 回收站列表（随父级一起被删的条目不单独列出）, responses: { '200': { description: OK } } }
+  /trash/{type}/{id}/restore:
+    post:
+      summary: 恢复条目（父级也在回收站时一并恢复）
+      parameters:
+        - { name: type, in: path, required: true, schema: { type: string, enum: [kb, folder, doc] } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: OK }, '400': { description: 类型不合法 }, '404': { description: 不在回收站里 } }
+  /trash/{type}/{id}:
+    delete:
+      summary: 立刻彻底删除，不等 7 天
+      parameters:
+        - { name: type, in: path, required: true, schema: { type: string, enum: [kb, folder, doc] } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: OK }, '400': { description: 类型不合法 } }
   # 自动化域（关系表；cronExpr 非空的任务由服务端调度器按计划自动执行）
   /jobs:
     get: { summary: 自动化任务列表（含近 3 次运行记录）, responses: { '200': { description: OK } } }
@@ -405,12 +438,24 @@ components:
     CreateDocRequest:
       type: object
       required: [kbId, folderId]
-      description: kbId + folderId 建立文档与知识库的关联；title/author 缺省为「未命名文档」/ wg
+      description: kbId + folderId 建立文档与知识库的关联；作者不在请求体里，由服务端按当前会话署名
       properties:
         kbId: { type: string }
         folderId: { type: string }
         title: { type: string }
-        author: { type: string }
+    CreateNoteRequest:
+      type: object
+      description: 小记正文；title 留空时由正文首行推导
+      properties:
+        title: { type: string }
+        blocks: { type: array, items: { type: object } }
+    DocPresenceRequest:
+      type: object
+      description: 一次在场心跳
+      properties:
+        line: { type: integer, description: 光标所在的顶层块序号，-1 表示只在查看 }
+        editing: { type: boolean, description: 上一个心跳周期内是否有输入 }
+        rev: { type: integer, description: 客户端手上的正文版本号 }
     MemberListResponse:
       allOf:
         - $ref: '#/components/schemas/ApiResponse'

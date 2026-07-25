@@ -1,12 +1,23 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+/**
+ * 知识库详情：左边是文件夹 / 文档树，右边是文档本身。
+ *
+ * 文档不再有「查看 / 编辑」两态 —— 打开就能写，跟任务描述一个手感（ADR-015）。
+ * 输入停顿即自动保存，右上角显示保存状态与此刻同在这篇文档里的人（ADR-017）。
+ */
+import { computed, defineAsyncComponent, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { useTabsStore } from '@/stores/tabs'
+import { useDocPresence } from '@/composables/docPresence'
 import { toast } from '@/composables/toast'
-import type { DocBlock, DocLink } from '@/types'
+import { absoluteTime, relativeTime } from '@/utils/time'
+import { useNow } from '@/composables/now'
+import type { DocLink } from '@/types'
+// 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
+const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -23,19 +34,20 @@ const firstDocId = () => {
   return null
 }
 const docId = ref<string | null>((route.query.doc as string) || firstDocId())
-const knEditing = ref(false)
 const docWide = ref(false)
 const folderOpen = reactive<Record<string, boolean>>({})
 const scrollEl = ref<HTMLElement | null>(null)
-const bodyEl = ref<HTMLTextAreaElement | null>(null)
+const titleEl = ref<HTMLInputElement | null>(null)
+/** 正在重命名的文件夹 id。 */
+const renamingFolder = ref<string | null>(null)
+const { peers, setCaretLine, markTyping } = useDocPresence(docId)
+/** 相对时间文案要自己走起来，否则「刚刚」会一直停在打开那一刻。 */
+const now = useNow()
 
 watch(
   () => route.query.doc,
   (v) => {
-    if (v) {
-      docId.value = String(v)
-      knEditing.value = false
-    }
+    if (v) docId.value = String(v)
   },
 )
 onMounted(() => {
@@ -47,11 +59,20 @@ const base = computed(() => doc.value?.base ?? null)
 const author = computed(() => {
   const a = base.value?.author ?? ''
   if (a === 'auto') return { name: '自动化', initial: '自', color: '#B9821F' }
-  return session.memberById(a || 'wg')
+  return session.memberById(a)
 })
-const peer = computed(() => session.memberById(session.currentUser.id === 'wg' ? 'wd' : 'wg'))
-const hasEdit = computed(() => (docId.value ? data.docEdits[docId.value]?.text != null : false))
-const updatedLabel = computed(() => (hasEdit.value ? '刚刚' : (base.value?.updated ?? '—')))
+/** 正文：改一个字就走去抖写透，不需要「完成」按钮。 */
+const body = computed({
+  get: () => doc.value?.text ?? '',
+  set: (v: string) => {
+    if (!docId.value) return
+    data.setDocEdit(docId.value, { text: v })
+    markTyping()
+  },
+})
+const saving = computed(() => (docId.value ? data.docPending(docId.value) : false))
+const createdLabel = computed(() => (base.value?.created ? relativeTime(base.value.created, now.value) : '—'))
+const updatedLabel = computed(() => (base.value?.updated ? relativeTime(base.value.updated, now.value) : '—'))
 
 const TYPE_ICON: Record<string, string> = { project: 'ri-stack-line', task: 'ri-checkbox-circle-line', doc: 'ri-file-text-line' }
 function linkName(l: DocLink) {
@@ -71,15 +92,8 @@ const backlinks = computed(() =>
   (base.value?.backlinks ?? []).map((b) => ({ icon: TYPE_ICON[b.type]!, label: linkName(b), snippet: b.snippet, link: b })),
 )
 
-/** 渲染块，给标题分配锚点 id。 */
-const renderBlocks = computed(() => {
-  let hi = 0
-  return (doc.value?.blocks ?? []).map((b: DocBlock) => {
-    const hid = b.h ? `doc-h-${hi++}` : ''
-    return { ...b, hid }
-  })
-})
-const toc = computed(() => renderBlocks.value.filter((b) => b.h).map((b) => ({ text: b.h!, hid: b.hid })))
+/** 目录：正文里的二级标题。 */
+const toc = computed(() => (doc.value?.blocks ?? []).map((b, i) => ({ text: b.h, i })).filter((t) => t.text))
 
 function isOpen(fid: string) {
   return folderOpen[fid] !== false
@@ -89,7 +103,6 @@ function toggleFolder(fid: string) {
 }
 function selectDoc(id: string) {
   docId.value = id
-  knEditing.value = false
 }
 function openDoc(id: string) {
   const k = data.kbs.find((kk) => kk.folders.some((f) => f.docs.includes(id)))
@@ -101,32 +114,56 @@ async function addDocTo(folderId: string) {
   if (id) {
     folderOpen[folderId] = true
     docId.value = id
-    knEditing.value = true
-    toast('已创建文档并关联到本知识库，可直接编辑', 'ri-file-add-line')
-    nextTick(() => bodyEl.value?.focus())
+    toast('已创建文档并关联到本知识库', 'ri-file-add-line')
+    // 新文档标题是空的，光标直接落在标题上，敲进去就是自己的标题
+    nextTick(() => titleEl.value?.focus())
   }
 }
 async function addFolder() {
-  await data.addFolder(kbId.value)
+  const id = await data.addFolder(kbId.value)
+  if (id) renamingFolder.value = id
   toast('已创建文件夹', 'ri-folder-add-line')
 }
 function editTitle(e: Event) {
   if (docId.value) data.setDocEdit(docId.value, { title: (e.target as HTMLInputElement).value })
 }
-function editBody(e: Event) {
-  if (docId.value) data.setDocEdit(docId.value, { text: (e.target as HTMLTextAreaElement).value })
+function commitFolderName(folderId: string, e: Event) {
+  const name = (e.target as HTMLInputElement).value.trim()
+  data.renameFolder(kbId.value, folderId, name || '新建文件夹')
+  renamingFolder.value = null
 }
-function enterEdit() {
-  knEditing.value = true
-  nextTick(() => bodyEl.value?.focus())
+async function removeFolder(folderId: string) {
+  const folder = kb.value?.folders.find((f) => f.id === folderId)
+  if (!folder) return
+  const gone = folder.docs.includes(docId.value ?? '')
+  await data.deleteFolder(kbId.value, folderId)
+  if (gone) docId.value = firstDocId()
+  toast(`已把「${folder.name}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
 }
-function tocGo(hid: string) {
-  const el = scrollEl.value?.querySelector(`#${hid}`) as HTMLElement | null
+async function removeDoc(id: string) {
+  const title = data.docOf(id).title || '未命名文档'
+  await data.deleteDoc(id)
+  if (docId.value === id) docId.value = firstDocId()
+  toast(`已把「${title}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
+}
+function tocGo(index: number) {
+  const el = scrollEl.value?.querySelectorAll('.doc-body h2')[index] as HTMLElement | undefined
   const c = scrollEl.value
   if (el && c) c.scrollTop = Math.max(0, el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 24)
 }
 function gotoProject() {
   if (kb.value?.project) router.push(`/projects/${kb.value.project}`)
+}
+/** 粘贴 / 拖入的图片存进图床，再把地址回插到光标处。 */
+async function onUploadImage(file: File, done: (url: string | null, name: string) => void) {
+  if (file.size > data.MAX_IMAGE_BYTES) {
+    toast('图片超过 10MB，已跳过', 'ri-error-warning-line')
+    done(null, '')
+    return
+  }
+  const ref = await data.uploadImage(file, `文档 · ${doc.value?.title || '未命名文档'}`)
+  if (!ref) toast('图片上传失败，请重试', 'ri-error-warning-line')
+  done(ref?.url ?? null, ref?.name ?? file.name)
 }
 </script>
 
@@ -150,25 +187,37 @@ function gotoProject() {
       <div class="tree">
         <div v-for="f in kb.folders" :key="f.id">
           <div class="folder-row">
-            <button class="folder-btn" @click="toggleFolder(f.id)">
-              <i :class="isOpen(f.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'" class="chev"></i>
-              <i class="ri-folder-3-line folder-icon"></i>
-              <span class="folder-name">{{ f.name }}</span>
-              <span class="folder-count wao-tabular">{{ f.docs.length }}</span>
-            </button>
-            <button class="folder-add" title="在此文件夹新建文档" @click="addDocTo(f.id)"><i class="ri-add-line"></i></button>
+            <input
+              v-if="renamingFolder === f.id"
+              class="folder-input"
+              :value="f.name"
+              autofocus
+              @keydown.enter="commitFolderName(f.id, $event)"
+              @blur="commitFolderName(f.id, $event)"
+            />
+            <template v-else>
+              <button class="folder-btn" @click="toggleFolder(f.id)">
+                <i :class="isOpen(f.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'" class="chev"></i>
+                <i class="ri-folder-3-line folder-icon"></i>
+                <span class="folder-name">{{ f.name }}</span>
+                <span class="folder-count wao-tabular">{{ f.docs.length }}</span>
+              </button>
+              <button class="row-act" title="重命名文件夹" @click="renamingFolder = f.id"><i class="ri-edit-line"></i></button>
+              <button class="row-act danger" title="删除文件夹（进回收站）" @click="removeFolder(f.id)"><i class="ri-delete-bin-line"></i></button>
+              <button class="row-act" title="在此文件夹新建文档" @click="addDocTo(f.id)"><i class="ri-add-line"></i></button>
+            </template>
           </div>
           <div v-if="isOpen(f.id)" class="doc-tree">
-            <button
-              v-for="dId in f.docs"
-              :key="dId"
-              class="doc-node"
-              :class="{ on: docId === dId }"
-              @click="selectDoc(dId)"
-            >
-              <i :class="data.docById(dId)?.auto ? 'ri-flashlight-line' : 'ri-file-text-line'" class="doc-node-icon"></i>
-              <span class="doc-node-title">{{ data.docOf(dId).title || '未命名文档' }}</span>
-            </button>
+            <div v-for="dId in f.docs" :key="dId" class="doc-row">
+              <button class="doc-node" :class="{ on: docId === dId }" @click="selectDoc(dId)">
+                <i :class="data.docById(dId)?.auto ? 'ri-flashlight-line' : 'ri-file-text-line'" class="doc-node-icon"></i>
+                <span class="doc-node-title">{{ data.docOf(dId).title || '未命名文档' }}</span>
+              </button>
+              <button class="row-act danger" title="删除文档（进回收站）" @click="removeDoc(dId)">
+                <i class="ri-delete-bin-line"></i>
+              </button>
+            </div>
+            <div v-if="!f.docs.length" class="folder-empty">还没有文档 —— 点右侧 + 新建</div>
           </div>
         </div>
       </div>
@@ -186,72 +235,83 @@ function gotoProject() {
           <div v-if="doc" class="doc-bar">
             <span class="ellip">{{ kb.name }}</span>
             <i class="ri-arrow-right-s-line b-sep"></i>
-            <span class="ellip">{{ doc.title }}</span>
+            <span class="ellip">{{ doc.title || '未命名文档' }}</span>
             <span v-if="base?.auto" class="tag-auto">自动沉淀</span>
             <div class="spacer"></div>
+
+            <!-- 协同：只有此刻真的打开着这篇文档的人才会出现 -->
             <span class="collab">
-              <span class="c-av" :title="`${session.currentUser.name}（我）`" :style="{ background: session.currentUser.color }">{{ session.currentUser.initial }}</span>
-              <span class="c-av peer" :title="`${peer.name} 正在查看`" :style="{ background: peer.color }">{{ peer.initial }}</span>
+              <span class="c-av" :title="`${session.currentUser.name}（我）`" :style="{ background: session.currentUser.color }">
+                {{ session.currentUser.initial }}
+              </span>
+              <span
+                v-for="p in peers"
+                :key="p.id"
+                class="c-av peer"
+                :title="`${p.name} 正在${p.editing ? '编辑' : '查看'}`"
+                :style="{ background: p.color }"
+              >{{ p.initial }}</span>
             </span>
-            <span class="realtime"><span class="rt-dot"></span>实时协同</span>
-            <span v-if="hasEdit" class="saved"><i class="ri-checkbox-circle-line"></i>已保存</span>
-            <button class="width-toggle" :title="docWide ? '切换为窄视图' : '切换为宽视图'" @click="docWide = !docWide"><i class="ri-arrow-left-right-line"></i></button>
-            <button v-if="knEditing" class="done-btn" @click="knEditing = false"><i class="ri-check-line"></i>完成</button>
+            <span v-if="peers.length" class="realtime"><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span>
+
+            <span class="saved">
+              <i :class="saving ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ saving ? '保存中' : '已保存' }}
+            </span>
+            <button class="icon-act" :title="docWide ? '切换为窄视图' : '切换为宽视图'" @click="docWide = !docWide">
+              <i class="ri-arrow-left-right-line"></i>
+            </button>
+            <button class="icon-act danger" title="删除这篇文档（进回收站）" @click="removeDoc(docId!)">
+              <i class="ri-delete-bin-line"></i>
+            </button>
           </div>
 
           <template v-if="doc">
-            <input class="doc-title" :value="doc.title" placeholder="未命名文档" @input="editTitle" />
+            <input ref="titleEl" class="doc-title" :value="doc.title" placeholder="未命名文档" @input="editTitle" />
 
-            <template v-if="knEditing">
-              <div class="edit-hint">正在编辑 · 输入内容自动保存 · 「## 」标题 · 「- 」列表 · 「&gt; 」引用</div>
-              <textarea ref="bodyEl" class="doc-body" :value="doc.text" rows="18" placeholder="开始写作…" @input="editBody"></textarea>
-            </template>
+            <div class="doc-meta">
+              <span class="m-av" :style="{ background: author.color }">{{ author.initial }}</span>
+              <span class="m-name">{{ author.name }}</span>
+              <span :title="absoluteTime(base?.created ?? '')">创建于 {{ createdLabel }}</span>
+              <span>·</span>
+              <span :title="absoluteTime(base?.updated ?? '')">更新于 {{ updatedLabel }}</span>
+            </div>
+            <div v-if="docLinks.length" class="doc-links">
+              <span class="dl-label">关联</span>
+              <button v-for="(l, i) in docLinks" :key="i" class="dl-chip" @click="goLink(l.link)">
+                <i :class="l.icon"></i><span class="ellip">{{ l.label }}</span>
+              </button>
+            </div>
+            <div class="doc-hr"></div>
 
-            <template v-else>
-              <div class="doc-meta">
-                <span class="m-av" :style="{ background: author.color }">{{ author.initial }}</span>
-                <span class="m-name">{{ author.name }}</span>
-                <span>创建于 {{ base?.created ?? '—' }}</span><span>·</span><span>更新于 {{ updatedLabel }}</span>
-              </div>
-              <div v-if="docLinks.length" class="doc-links">
-                <span class="dl-label">关联</span>
-                <button v-for="(l, i) in docLinks" :key="i" class="dl-chip" @click="goLink(l.link)">
-                  <i :class="l.icon"></i><span class="ellip">{{ l.label }}</span>
-                </button>
-              </div>
-              <div class="doc-hr"></div>
-              <div class="doc-render" title="点击开始编辑" @click="enterEdit">
-                <div v-if="renderBlocks.length === 0" class="doc-empty">这篇文档还是空的——点击此处开始写作。</div>
-                <template v-for="(b, i) in renderBlocks" :key="i">
-                  <div v-if="b.call" class="blk-call"><i class="ri-information-line"></i><span>{{ b.call }}</span></div>
-                  <h2 v-else-if="b.h" :id="b.hid" class="blk-h">{{ b.h }}</h2>
-                  <p v-else-if="b.p" class="blk-p">{{ b.p }}</p>
-                  <div v-else-if="b.ul" class="blk-ul">
-                    <div v-for="(li, j) in b.ul" :key="j" class="blk-li"><span class="li-dot"></span><span>{{ li }}</span></div>
-                  </div>
-                  <div v-else-if="b.q" class="blk-q"><div class="q-text">{{ b.q[0] }}</div><div class="q-by">—— {{ b.q[1] }}</div></div>
-                </template>
-              </div>
-              <div v-if="backlinks.length" class="backlinks">
-                <div class="bl-title"><i class="ri-arrow-go-back-line"></i>反向链接</div>
-                <div v-for="(bl, i) in backlinks" :key="i" class="bl-row" @click="goLink(bl.link)">
-                  <i :class="bl.icon" class="bl-icon"></i>
-                  <div class="bl-main">
-                    <div class="bl-label">{{ bl.label }}</div>
-                    <div class="bl-snippet">{{ bl.snippet }}</div>
-                  </div>
-                  <i class="ri-arrow-right-s-line bl-chev"></i>
+            <MarkdownEditor
+              v-model="body"
+              class="doc-body"
+              placeholder="开始写作…敲 ## 变标题、- 变列表，可直接粘贴截图"
+              :min-height="360"
+              :peers="peers"
+              @caret-line="setCaretLine"
+              @upload-image="onUploadImage"
+            />
+
+            <div v-if="backlinks.length" class="backlinks">
+              <div class="bl-title"><i class="ri-arrow-go-back-line"></i>反向链接</div>
+              <div v-for="(bl, i) in backlinks" :key="i" class="bl-row" @click="goLink(bl.link)">
+                <i :class="bl.icon" class="bl-icon"></i>
+                <div class="bl-main">
+                  <div class="bl-label">{{ bl.label }}</div>
+                  <div class="bl-snippet">{{ bl.snippet }}</div>
                 </div>
+                <i class="ri-arrow-right-s-line bl-chev"></i>
               </div>
-            </template>
+            </div>
           </template>
           <div v-else class="doc-empty pad">这个知识库还没有文档——在左侧文件夹点 + 新建。</div>
         </div>
 
-        <div v-if="toc.length > 1 && !knEditing" class="toc">
+        <div v-if="toc.length > 1" class="toc">
           <div class="toc-label">目录</div>
           <div class="toc-list">
-            <button v-for="(t, i) in toc" :key="i" class="toc-item" @click="tocGo(t.hid)">{{ t.text }}</button>
+            <button v-for="(t, i) in toc" :key="i" class="toc-item" @click="tocGo(i)">{{ t.text }}</button>
           </div>
         </div>
       </div>
@@ -408,6 +468,19 @@ function gotoProject() {
 .folder-btn:hover {
   background: #f0f1f4;
 }
+.folder-input {
+  flex: 1;
+  min-width: 0;
+  height: 27px;
+  border: 1px solid var(--wao-primary);
+  border-radius: 7px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wao-text);
+  outline: none;
+  background: #fff;
+}
 .chev {
   font-size: 14px;
   color: var(--wao-text-weak);
@@ -432,25 +505,36 @@ function gotoProject() {
   font-size: 11px;
   color: var(--wao-text-faint);
 }
-.folder-add {
-  width: 24px;
-  height: 24px;
+/* 行内操作按钮：平时淡出，鼠标进到这一行才明显起来 */
+.row-act {
+  width: 22px;
+  height: 22px;
   border: none;
   background: none;
   border-radius: 6px;
   cursor: pointer;
-  color: var(--wao-text-weak);
+  color: var(--wao-text-faint-2);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s;
 }
-.folder-add:hover {
+.folder-row:hover .row-act,
+.doc-row:hover .row-act {
+  opacity: 1;
+}
+.row-act:hover {
   background: #e9eaef;
   color: var(--wao-primary);
 }
-.folder-add i {
-  font-size: 14px;
+.row-act.danger:hover {
+  background: var(--wao-danger-bg);
+  color: #bc4141;
+}
+.row-act i {
+  font-size: 13px;
 }
 .doc-tree {
   display: flex;
@@ -458,8 +542,13 @@ function gotoProject() {
   gap: 1px;
   padding: 1px 0 2px;
 }
+.doc-row {
+  display: flex;
+  align-items: center;
+}
 .doc-node {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -495,6 +584,11 @@ function gotoProject() {
 .doc-node.on .doc-node-title {
   color: var(--wao-primary-text);
   font-weight: 600;
+}
+.folder-empty {
+  padding: 4px 6px 4px 28px;
+  font-size: 11.5px;
+  color: var(--wao-text-faint-2);
 }
 .sync-bar {
   border-top: 1px solid var(--wao-line);
@@ -610,7 +704,15 @@ function gotoProject() {
 .saved i {
   font-size: 12px;
 }
-.width-toggle {
+.spin {
+  animation: waoSpin 0.9s linear infinite;
+}
+@keyframes waoSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.icon-act {
   width: 28px;
   height: 28px;
   border: 1px solid var(--wao-line-control);
@@ -622,30 +724,15 @@ function gotoProject() {
   align-items: center;
   justify-content: center;
 }
-.width-toggle:hover {
+.icon-act:hover {
   background: #f4f5f8;
 }
-.width-toggle i {
-  font-size: 13px;
+.icon-act.danger:hover {
+  background: var(--wao-danger-bg);
+  border-color: #f0c9c9;
+  color: #bc4141;
 }
-.done-btn {
-  height: 28px;
-  padding: 0 12px;
-  background: var(--wao-primary);
-  color: #fff;
-  border: none;
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.done-btn:hover {
-  background: var(--wao-primary-hover);
-}
-.done-btn i {
+.icon-act i {
   font-size: 13px;
 }
 .doc-title {
@@ -664,27 +751,8 @@ function gotoProject() {
   background: #f7f8fb;
   box-shadow: 0 0 0 3px #f7f8fb;
 }
-.edit-hint {
-  margin-top: 8px;
-  font-size: 11.5px;
-  color: var(--wao-text-faint);
-}
-.doc-body {
-  margin-top: 10px;
-  width: 100%;
-  border: 1px solid var(--wao-line);
-  border-radius: 10px;
-  padding: 14px 16px;
-  font-size: 14px;
-  line-height: 1.9;
-  color: #33363f;
-  outline: none;
-  resize: vertical;
-  background: #fff;
-}
-.doc-body:focus {
-  border-color: var(--wao-primary);
-  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.1);
+.doc-title::placeholder {
+  color: var(--wao-text-faint-2);
 }
 .doc-meta {
   margin-top: 12px;
@@ -745,8 +813,22 @@ function gotoProject() {
   margin-top: 20px;
   border-top: 1px solid var(--wao-divider);
 }
-.doc-render {
-  cursor: text;
+/* 正文按文档的字号排版，比任务描述宽松一档 */
+.doc-body {
+  margin-top: 12px;
+}
+.doc-body :deep(.tiptap) {
+  font-size: 14.5px;
+  line-height: 1.95;
+  color: #33363f;
+  padding: 4px 0;
+}
+.doc-body :deep(h2) {
+  font-size: 18px;
+  margin: 26px 0 6px;
+}
+.doc-body :deep(h3) {
+  font-size: 16px;
 }
 .doc-empty {
   margin-top: 26px;
@@ -755,72 +837,6 @@ function gotoProject() {
 }
 .doc-empty.pad {
   padding: 40px 0;
-}
-.blk-call {
-  margin: 20px 0 0;
-  background: var(--wao-primary-tint);
-  border: 1px solid #e3e9fb;
-  border-radius: 10px;
-  padding: 12px 16px;
-  font-size: 13px;
-  color: var(--wao-text-2);
-  line-height: 1.8;
-  display: flex;
-  gap: 10px;
-}
-.blk-call i {
-  color: var(--wao-primary);
-  font-size: 15px;
-  flex-shrink: 0;
-  margin-top: 3px;
-}
-.blk-h {
-  margin: 30px 0 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--wao-text);
-}
-.blk-p {
-  margin: 12px 0 0;
-  font-size: 14.5px;
-  line-height: 1.95;
-  color: #33363f;
-}
-.blk-ul {
-  margin: 10px 0 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.blk-li {
-  display: flex;
-  gap: 10px;
-  font-size: 14px;
-  line-height: 1.85;
-  color: #33363f;
-}
-.li-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #9da8d8;
-  flex-shrink: 0;
-  margin-top: 11px;
-}
-.blk-q {
-  margin: 16px 0 0;
-  border-left: 3px solid #c7d0f1;
-  padding: 4px 0 4px 16px;
-}
-.q-text {
-  font-size: 14.5px;
-  line-height: 1.85;
-  color: #4a4e5b;
-}
-.q-by {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--wao-text-weak);
 }
 .backlinks {
   margin-top: 36px;

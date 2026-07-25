@@ -5,7 +5,7 @@ import { defineStore } from 'pinia'
 export const useUiStore = defineStore('ui', () => {
   const openTaskId = ref<string | null>(null)
 
-  const modal = ref<'task' | 'project' | null>(null)
+  const modal = ref<'task' | 'project' | 'note' | null>(null)
   const modalProject = ref<string>('') // 新建任务时预选的项目
 
   const searchOpen = ref(false)
@@ -23,7 +23,7 @@ export const useUiStore = defineStore('ui', () => {
     openTaskId.value = null
   }
 
-  function openModal(kind: 'task' | 'project', presetProject = '') {
+  function openModal(kind: 'task' | 'project' | 'note', presetProject = '') {
     modal.value = kind
     modalProject.value = presetProject
   }

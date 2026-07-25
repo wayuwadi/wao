@@ -1,9 +1,11 @@
 package cn.wayuwa.wao.domain;
 
+import java.time.LocalDateTime;
+
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
-/** 知识库表实体。 */
+/** 知识库表实体。{@code deletedAt} 非空表示已在回收站（软删除，见 ADR-018）。 */
 @TableName("kb")
 public class KbEntity {
 
@@ -18,6 +20,9 @@ public class KbEntity {
     private String groupId;
     private String perm;
     private Integer ord;
+    private Boolean notes;
+    private LocalDateTime deletedAt;
+    private String deletedBy;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -39,4 +44,10 @@ public class KbEntity {
     public void setPerm(String perm) { this.perm = perm; }
     public Integer getOrd() { return ord; }
     public void setOrd(Integer ord) { this.ord = ord; }
+    public Boolean getNotes() { return notes; }
+    public void setNotes(Boolean notes) { this.notes = notes; }
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+    public String getDeletedBy() { return deletedBy; }
+    public void setDeletedBy(String deletedBy) { this.deletedBy = deletedBy; }
 }

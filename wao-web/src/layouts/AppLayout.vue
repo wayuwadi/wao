@@ -7,6 +7,7 @@ import TabBar from '@/components/tabs/TabBar.vue'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
 import NewProjectModal from '@/components/overlays/NewProjectModal.vue'
+import QuickNoteModal from '@/components/overlays/QuickNoteModal.vue'
 import GlobalSearch from '@/components/overlays/GlobalSearch.vue'
 import Celebration from '@/components/overlays/CelebrationOverlay.vue'
 import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
@@ -58,6 +59,11 @@ function newTask() {
 function newProject() {
   plusOpen.value = false
   ui.openModal('project')
+}
+/** 小记：不用先选知识库，打开就是一个空白输入框，存进小记知识库。 */
+function newNote() {
+  plusOpen.value = false
+  ui.openModal('note')
 }
 function bell() {
   toast('通知中心建设中')
@@ -116,6 +122,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               <button class="plus-item" @click="newProject">
                 <i class="ri-stack-line"></i>新建项目
               </button>
+              <div class="plus-sep"></div>
+              <button class="plus-item" @click="newNote">
+                <i class="ri-sticky-note-line"></i>新建小记
+              </button>
             </div>
           </template>
         </div>
@@ -139,6 +149,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <TaskDrawer />
     <NewTaskModal v-if="ui.modal === 'task'" />
     <NewProjectModal v-if="ui.modal === 'project'" />
+    <QuickNoteModal v-if="ui.modal === 'note'" />
     <GlobalSearch v-if="ui.searchOpen" />
     <ShortcutsHelp v-if="ui.helpOpen" />
     <Celebration v-if="ui.celebrating" />
@@ -251,6 +262,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   padding: 5px;
   width: 168px;
   animation: waoPop 0.14s ease;
+}
+.plus-sep {
+  height: 1px;
+  background: var(--wao-divider);
+  margin: 4px 6px;
 }
 .plus-item {
   width: 100%;

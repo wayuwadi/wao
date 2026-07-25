@@ -151,12 +151,41 @@ export interface Doc {
   id: string
   title: string
   author: string
+  /** 创建时间。后端写入的是 ISO 时间戳，升级前的老文档是「7月12日」这类现成文案。 */
   created: string
+  /** 更新时间，口径同 created。 */
   updated: string
   auto?: boolean
   links: DocLink[]
   blocks: DocBlock[]
   backlinks: Backlink[]
+  /** 归属知识库 / 文件夹（后端返回，本地乐观创建时也会补上）。 */
+  kbId?: string
+  folderId?: string
+  /** 正文版本号：协同端据此判断服务端有没有更新的内容。 */
+  rev?: number
+}
+
+/** 正打开某篇文档的协作者（协同在场，见 ADR-017）。 */
+export interface DocPeer {
+  id: string
+  name: string
+  initial: string
+  color: string
+  /** 光标所在的顶层块序号；-1 表示只在查看。 */
+  line: number
+  editing: boolean
+}
+
+/** 回收站条目：删除的知识库 / 文件夹 / 文档，保留 7 天。 */
+export interface TrashEntry {
+  type: 'kb' | 'folder' | 'doc'
+  id: string
+  name: string
+  parent: string
+  deletedAt: string
+  deletedBy: string | null
+  expiresAt: string
 }
 
 export interface Folder {
@@ -178,6 +207,8 @@ export interface KnowledgeBase {
   group?: string
   /** 权限：'仅自己' | '成员可编辑'。 */
   perm?: string
+  /** 是否为小记知识库：全局「新建小记」的默认落点，不可删除。 */
+  notes?: boolean
 }
 
 export interface KbGroup {

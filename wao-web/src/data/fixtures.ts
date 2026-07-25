@@ -172,6 +172,7 @@ export const TASKS: Task[] = RAW_TASKS.map((t) => ({
 })) as Task[]
 
 export const KBS: KnowledgeBase[] = [
+  { id: 'kb-notes', name: '小记', icon: 'ri-sticky-note-line', color: '#7A5CC6', project: null, notes: true, group: 'g1', perm: '仅自己', desc: '随手记下的想法与片段，不用先想清楚该放进哪个知识库。', folders: [{ id: 'kb-notes-f', name: '小记', docs: [] }] },
   { id: 'k1', name: 'WAO 产品', icon: 'ri-stack-line', color: '#4358D6', project: 'p1', desc: '产品定义、交互规范与评审结论', folders: [{ id: 'f1', name: '产品设计', docs: ['d1', 'd2'] }, { id: 'f2', name: '调研与结论', docs: ['d3', 'd4'] }] },
   { id: 'k2', name: '家庭事务', icon: 'ri-archive-line', color: '#B9821F', project: 'p2', desc: '归档规范、台账与流程说明', folders: [{ id: 'f3', name: '归档规范', docs: ['d5', 'd6'] }] },
   { id: 'k3', name: '个人成长', icon: 'ri-seedling-line', color: '#2C8A5B', project: null, desc: '健康、阅读与长期笔记', folders: [{ id: 'f4', name: '健康', docs: ['d7'] }, { id: 'f5', name: '学习笔记', docs: ['d8'] }] },

@@ -4,7 +4,12 @@ import { nextTick } from 'vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 
 /** Tiptap 需要真实 DOM 与一帧时间来完成挂载。 */
-async function mountEditor(props: { modelValue: string; readonly?: boolean; placeholder?: string }) {
+async function mountEditor(props: {
+  modelValue: string
+  readonly?: boolean
+  placeholder?: string
+  peers?: { id: string; name: string; initial: string; color: string; line: number; editing: boolean }[]
+}) {
   const w = mount(MarkdownEditor, { props, attachTo: document.body })
   await nextTick()
   await new Promise((r) => setTimeout(r, 0))
@@ -132,6 +137,43 @@ describe('MarkdownEditor（所见即所得）', () => {
     await nextTick()
 
     expect(w.find('.md-body img').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('传入协作者时，在他所在的那一行左侧挂上头像', async () => {
+    const w = await mountEditor({
+      modelValue: '第一行\n\n第二行\n\n第三行',
+      peers: [{ id: 'm2', name: '娃弟', initial: '弟', color: '#B9821F', line: 1, editing: true }],
+    })
+    await nextTick()
+
+    const av = w.find('.peer-av')
+    expect(av.exists()).toBe(true)
+    expect(av.text()).toBe('弟')
+    expect(av.attributes('title')).toContain('正在编辑这一行')
+    // 正在输入的还会给那一行压一道颜色条
+    expect(w.find('.peer-line').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('没有协作者时不占位、不画轨道——普通编辑场景一点不受影响', async () => {
+    const w = await mountEditor({ modelValue: '正文' })
+
+    expect(w.find('.peer-track').exists()).toBe(false)
+    expect(w.find('.md').classes()).not.toContain('collab')
+    w.unmount()
+  })
+
+  it('光标移动会报出自己所在的行号，供上报协同在场', async () => {
+    const w = await mountEditor({ modelValue: '第一行\n\n第二行' })
+
+    // 挂载后把光标放到文末，应当报出最后一个顶层块的序号
+    const editor = (w.vm as unknown as { editor: { commands: { focus: (p: string) => void } } }).editor
+    editor?.commands.focus('end')
+    await nextTick()
+
+    const lines = w.emitted('caret-line') as [number][] | undefined
+    expect(lines?.[lines.length - 1]?.[0]).toBe(1)
     w.unmount()
   })
 

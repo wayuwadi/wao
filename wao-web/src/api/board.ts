@@ -6,6 +6,7 @@ import type {
   Doc,
   DocBlock,
   DocLink,
+  DocPeer,
   FileItem,
   Folder,
   ImageItem,
@@ -19,6 +20,7 @@ import type {
   SharedTask,
   Suggestion,
   Task,
+  TrashEntry,
   VaultGroup,
   VaultItem,
 } from '@/types'
@@ -200,10 +202,13 @@ export interface CreateDocPayload {
   kbId: string
   folderId: string
   title?: string
-  author?: string
 }
-/** 新建文档：kbId + folderId 必填，创建即完成与知识库的关联。 */
+/** 新建文档：kbId + folderId 必填，创建即完成与知识库的关联。作者由服务端按会话推导。 */
 export const apiCreateDoc = (payload: CreateDocPayload) => post<Doc>('/api/docs', payload)
+
+/** 新建小记：不选知识库，服务端一律落到小记知识库。 */
+export const apiCreateNote = (payload: { title?: string; blocks: DocBlock[] }) =>
+  post<Doc>('/api/docs/notes', payload)
 
 export interface PatchDocPayload {
   title?: string
@@ -212,7 +217,35 @@ export interface PatchDocPayload {
   folderId?: string
 }
 export const apiPatchDoc = (id: string, payload: PatchDocPayload) => patch<Doc>(`/api/docs/${id}`, payload)
+/** 删除文档 —— 后端移入回收站，7 天内可恢复。 */
 export const apiDeleteDoc = (id: string) => del(`/api/docs/${id}`)
+
+// ---------------- 文档协同在场（见 ADR-017） ----------------
+
+export interface DocPresencePayload {
+  /** 光标所在的顶层块序号；-1 表示只在查看。 */
+  line: number
+  editing: boolean
+  /** 本地手上的正文版本号；服务端更新时会把最新文档带回来。 */
+  rev: number
+}
+export interface DocPresenceResult {
+  peers: DocPeer[]
+  rev: number
+  /** 仅当本地版本落后时返回；否则为 null。 */
+  doc: Doc | null
+}
+/** 一次在场心跳：上报光标位置，取回同刻的协作者与（落后时的）最新正文。 */
+export const apiDocPresence = (id: string, payload: DocPresencePayload) =>
+  post<DocPresenceResult>(`/api/docs/${id}/presence`, payload)
+/** 主动离开文档，让协作者那边的头像立刻消失。 */
+export const apiLeaveDoc = (id: string) => del(`/api/docs/${id}/presence`)
+
+// ---------------- 回收站 ----------------
+
+export const fetchTrash = () => get<TrashEntry[]>('/api/trash')
+export const apiRestoreTrash = (type: string, id: string) => post<void>(`/api/trash/${type}/${id}/restore`)
+export const apiPurgeTrash = (type: string, id: string) => del(`/api/trash/${type}/${id}`)
 
 // ---------------- 自动化 ----------------
 

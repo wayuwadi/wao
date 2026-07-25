@@ -10,14 +10,27 @@
  *
  * 刻意不提供格式工具条：所有格式都能用 Markdown 快捷输入敲出来，一排按钮只是
  * 噪音，去掉后描述区更干净。
+ *
+ * 传入 `peers` 时会在左侧落一条协作者轨道：每个人的头像贴在他光标所在的那一行，
+ * 正在输入的还会给那一行加一道颜色条（见 ADR-017）。不传就是普通编辑器，行为不变。
  */
-import { onBeforeUnmount, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Markdown } from '@tiptap/markdown'
+
+/** 协作者标记：把某个人钉在他光标所在的那一行（顶层块序号）。 */
+export interface EditorPeer {
+  id: string
+  name: string
+  initial: string
+  color: string
+  line: number
+  editing: boolean
+}
 
 const props = withDefaults(
   defineProps<{
@@ -27,13 +40,17 @@ const props = withDefaults(
     minHeight?: number
     /** 只读展示，不可编辑。 */
     readonly?: boolean
+    /** 此刻也在这篇文档里的人；空数组即不显示协作轨道。 */
+    peers?: EditorPeer[]
   }>(),
-  { placeholder: '写点什么…支持 Markdown 快捷输入', minHeight: 84, readonly: false },
+  { placeholder: '写点什么…支持 Markdown 快捷输入', minHeight: 84, readonly: false, peers: () => [] },
 )
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   /** 需要把图片存起来并换回可引用地址；返回 null 表示上传失败。 */
   'upload-image': [file: File, done: (url: string | null, name: string) => void]
+  /** 自己的光标落在第几个顶层块上（-1 = 没有落点），供上报协同在场。 */
+  'caret-line': [line: number]
 }>()
 
 const editor = useEditor({
@@ -56,7 +73,68 @@ const editor = useEditor({
     handlePaste: (_view, event) => consumeImages(event.clipboardData),
     handleDrop: (_view, event) => consumeImages((event as DragEvent).dataTransfer),
   },
-  onUpdate: ({ editor: e }) => emit('update:modelValue', e.getMarkdown()),
+  onUpdate: ({ editor: e }) => {
+    emit('update:modelValue', e.getMarkdown())
+    scheduleMeasure()
+  },
+  onSelectionUpdate: ({ editor: e }) => emit('caret-line', caretLine(e)),
+})
+
+// ---- 协作者行标记 ----
+
+const shell = ref<HTMLElement | null>(null)
+/** 协作者头像在编辑区里的纵向位置（顶层块序号 → px）。 */
+const lineTops = ref<Record<number, number>>({})
+
+/** 光标所在的顶层块序号；取不到时给 -1（只在查看）。 */
+function caretLine(e: { state: { selection: { from: number }; doc: { resolve: (pos: number) => { index: (depth: number) => number } } } }): number {
+  try {
+    return e.state.doc.resolve(e.state.selection.from).index(0)
+  } catch {
+    return -1
+  }
+}
+
+/**
+ * 量一遍每个协作者所在行在编辑区里的 y 坐标。
+ *
+ * <p>只量协作者真正落在的那几行 —— 文档几百行时挨个量 DOM 会明显掉帧，而同时在线的人
+ * 通常只有个位数。
+ */
+function measure() {
+  const view = editor.value?.view
+  const doc = editor.value?.state.doc
+  if (!view || !doc) return
+  const wanted = [...new Set(props.peers.map((p) => p.line))].filter((l) => l >= 0 && l < doc.childCount)
+  const next: Record<number, number> = {}
+  for (const line of wanted) {
+    let pos = 0
+    for (let i = 0; i < line; i++) pos += doc.child(i).nodeSize
+    const dom = view.nodeDOM(pos)
+    if (dom instanceof HTMLElement) next[line] = dom.offsetTop
+  }
+  lineTops.value = next
+}
+function scheduleMeasure() {
+  nextTick(measure)
+}
+
+/** 有位置可画的协作者标记（同一行上多个人依次错开，像飞书那样叠着放）。 */
+const peerMarks = computed(() => {
+  const perLine: Record<number, number> = {}
+  return props.peers
+    .filter((p) => lineTops.value[p.line] != null)
+    .map((p) => {
+      const seen = perLine[p.line] ?? 0
+      perLine[p.line] = seen + 1
+      return { ...p, top: lineTops.value[p.line]!, offset: seen * 14 }
+    })
+})
+
+watch(() => props.peers, scheduleMeasure, { deep: true })
+onMounted(() => {
+  scheduleMeasure()
+  window.addEventListener('resize', scheduleMeasure)
 })
 
 /**
@@ -92,12 +170,26 @@ watch(
   (ro) => editor.value?.setEditable(!ro),
 )
 
-onBeforeUnmount(() => editor.value?.destroy())
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', scheduleMeasure)
+  editor.value?.destroy()
+})
 
 </script>
 
 <template>
-  <div class="md" :class="{ ro: readonly }">
+  <div ref="shell" class="md" :class="{ ro: readonly, collab: peers.length > 0 }">
+    <div v-if="peerMarks.length" class="peer-track" aria-hidden="true">
+      <template v-for="m in peerMarks" :key="m.id">
+        <span v-if="m.editing" class="peer-line" :style="{ top: m.top + 'px', background: m.color }"></span>
+        <span
+          class="peer-av"
+          :class="{ typing: m.editing }"
+          :style="{ top: m.top + 'px', left: m.offset + 'px', background: m.color }"
+          :title="`${m.name} ${m.editing ? '正在编辑这一行' : '在这一行'}`"
+        >{{ m.initial }}</span>
+      </template>
+    </div>
     <EditorContent :editor="editor" class="md-body" :style="{ minHeight: minHeight + 'px' }" />
   </div>
 </template>
@@ -106,6 +198,45 @@ onBeforeUnmount(() => editor.value?.destroy())
 .md {
   width: 100%;
   position: relative;
+}
+/* 协作轨道占住左侧一条窄边，正文相应右移，头像不会压到字上 */
+.md.collab {
+  padding-left: 26px;
+}
+.peer-track {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 26px;
+  pointer-events: none;
+}
+.peer-av {
+  position: absolute;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #fff;
+  transition: top 0.14s ease;
+  pointer-events: auto;
+}
+.peer-av.typing {
+  animation: waoPulse 1.6s infinite;
+}
+/* 正在被别人输入的那一行，左侧压一道他的颜色 */
+.peer-line {
+  position: absolute;
+  left: 22px;
+  width: 2px;
+  height: 1.7em;
+  border-radius: 2px;
+  opacity: 0.55;
+  transition: top 0.14s ease;
 }
 .md-body {
   border: 1px solid transparent;

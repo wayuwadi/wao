@@ -2,7 +2,12 @@ package cn.wayuwa.wao.dto;
 
 import java.util.List;
 
-/** 文档对外表示，字段与前端 {@code Doc} 一致。 */
+/**
+ * 文档对外表示，字段与前端 {@code Doc} 一致。
+ *
+ * <p>{@code created / updated} 优先是 ISO-8601 时间戳，由前端转成「几分钟前」这类相对
+ * 描述；只有升级前写入、没有真实时间戳的老文档才会是「7月12日」这种现成文案。
+ */
 public record DocDto(
         String id,
         String title,
@@ -12,5 +17,8 @@ public record DocDto(
         Boolean auto,
         List<DocLinkDto> links,
         List<DocBlockDto> blocks,
-        List<BacklinkDto> backlinks) {
+        List<BacklinkDto> backlinks,
+        String kbId,
+        String folderId,
+        Integer rev) {
 }

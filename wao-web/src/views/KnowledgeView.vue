@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
+import { relativeTime } from '@/utils/time'
+import { useNow } from '@/composables/now'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
-import type { KnowledgeBase } from '@/types'
+import type { KnowledgeBase, TrashEntry } from '@/types'
 
 const data = useDataStore()
 const ui = useUiStore()
 const router = useRouter()
+const now = useNow()
+
+onMounted(() => data.refreshTrash())
 
 const editGroupId = ref<string | null>(null)
 const cfgKb = ref<KnowledgeBase | null>(null)
@@ -72,8 +77,34 @@ async function cfgDelete() {
   const id = cfgKb.value.id
   cfgKb.value = null
   await data.deleteKb(id)
-  toast('已删除知识库', 'ri-delete-bin-line')
+  toast('已放进回收站，7 天内可恢复', 'ri-delete-bin-line')
 }
+// ---- 回收站 ----
+
+const trashOpen = ref(false)
+const TRASH_ICON: Record<string, string> = { kb: 'ri-book-2-line', folder: 'ri-folder-3-line', doc: 'ri-file-text-line' }
+
+/** 还剩几天被彻底删除；已过期（等下一轮清理）显示「即将清理」。 */
+function daysLeft(entry: TrashEntry): string {
+  const ms = new Date(entry.expiresAt).getTime() - now.value.getTime()
+  if (Number.isNaN(ms)) return ''
+  if (ms <= 0) return '即将清理'
+  const days = Math.ceil(ms / 86_400_000)
+  return `${days} 天后清理`
+}
+function openTrash() {
+  trashOpen.value = true
+  void data.refreshTrash()
+}
+async function restore(entry: TrashEntry) {
+  await data.restoreTrash(entry.type, entry.id)
+  toast(`已恢复「${entry.name}」`, 'ri-arrow-go-back-line')
+}
+async function purge(entry: TrashEntry) {
+  await data.purgeTrash(entry.type, entry.id)
+  toast(`已彻底删除「${entry.name}」`, 'ri-delete-bin-7-line')
+}
+
 function openNewKb() {
   newKbName.value = ''
   newKbDesc.value = ''
@@ -92,7 +123,7 @@ async function createKb() {
     <DemoBanner
       icon="ri-book-2-line"
       title="知识库"
-      text="知识库、分组、文件夹与文档已接入真实后端：新建 / 重命名 / 删除均会保存。新建项目会自动生成一个默认知识库，新建文档需选择归属的知识库与文件夹（即建立关联）。实时多人协同编辑与语义搜索仍是演示态，将在后续迭代交付。"
+      text="知识库、分组、文件夹与文档已接入真实后端：新建 / 重命名 / 删除均会保存，删除先进回收站、7 天后自动清理。文档打开即可编辑、停手即存，右上角会显示此刻同在这篇文档里的人。AI 语义搜索仍是演示态，将在后续迭代交付。"
       storage-key="knowledge"
     />
     <div class="ktop">
@@ -100,6 +131,9 @@ async function createKb() {
       <span class="ktip">按知识库组织文档；项目可关联自己的知识库</span>
       <div class="spacer"></div>
       <button class="ai-btn" @click="ui.openSearch(true)"><i class="ri-magic-line"></i>AI 语义搜索</button>
+      <button class="btn-ghost" @click="openTrash">
+        <i class="ri-delete-bin-line"></i>回收站<span v-if="data.trash.length" class="trash-badge">{{ data.trash.length }}</span>
+      </button>
       <button class="btn-ghost" @click="newGroup"><i class="ri-folder-add-line"></i>新建分组</button>
       <button class="btn-primary" @click="openNewKb"><i class="ri-add-line"></i>新建知识库</button>
     </div>
@@ -206,9 +240,36 @@ async function createKb() {
         </div>
         <div class="modal-foot">
           <button class="btn-ghost" @click="cfgShare"><i class="ri-links-line"></i>复制邀请链接</button>
-          <button v-if="!cfgKb.project && !cfgKb.auto" class="btn-danger" @click="cfgDelete"><i class="ri-delete-bin-line"></i>删除</button>
+          <button v-if="!cfgKb.project && !cfgKb.auto && !cfgKb.notes" class="btn-danger" @click="cfgDelete">
+            <i class="ri-delete-bin-line"></i>删除
+          </button>
           <div class="spacer"></div>
           <button class="btn-primary" @click="cfgDone">完成</button>
+        </div>
+      </div>
+    </template>
+
+    <!-- 回收站 -->
+    <template v-if="trashOpen">
+      <div class="modal-mask" @click="trashOpen = false"></div>
+      <div class="modal">
+        <div class="modal-head">
+          <div class="modal-title">回收站</div>
+          <span class="modal-hint">删除的内容保留 7 天，到期自动彻底删除</span>
+          <div class="spacer"></div>
+          <button class="icon-btn" @click="trashOpen = false"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="modal-body">
+          <div v-if="!data.trash.length" class="trash-empty">回收站是空的。</div>
+          <div v-for="t in data.trash" :key="t.type + t.id" class="trash-row">
+            <i :class="TRASH_ICON[t.type]" class="trash-icon"></i>
+            <div class="trash-main">
+              <div class="trash-name">{{ t.name }}</div>
+              <div class="trash-sub">{{ t.parent }} · {{ relativeTime(t.deletedAt, now) }}删除 · {{ daysLeft(t) }}</div>
+            </div>
+            <button class="mini-ghost" @click="restore(t)"><i class="ri-arrow-go-back-line"></i>恢复</button>
+            <button class="mini-danger" title="立刻彻底删除" @click="purge(t)"><i class="ri-delete-bin-7-line"></i></button>
+          </div>
         </div>
       </div>
     </template>
@@ -525,6 +586,97 @@ async function createKb() {
   text-align: center;
   color: var(--wao-text-faint);
   font-size: 12.5px;
+}
+
+.trash-badge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--wao-danger-bg);
+  color: #bc4141;
+  font-size: 10.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.trash-empty {
+  padding: 28px 0;
+  text-align: center;
+  color: var(--wao-text-faint);
+  font-size: 12.5px;
+}
+.trash-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  margin: 0 -8px;
+  border-radius: 9px;
+}
+.trash-row:hover {
+  background: var(--wao-bg-hover-2);
+}
+.trash-icon {
+  font-size: 15px;
+  color: var(--wao-text-weak);
+  flex-shrink: 0;
+}
+.trash-main {
+  flex: 1;
+  min-width: 0;
+}
+.trash-name {
+  font-size: 13px;
+  color: var(--wao-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trash-sub {
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--wao-text-weak);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-ghost {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--wao-line-control);
+  background: #fff;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--wao-text-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.mini-ghost:hover {
+  border-color: var(--wao-primary);
+  color: var(--wao-primary-text);
+}
+.mini-danger {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--wao-line-control);
+  background: #fff;
+  border-radius: 7px;
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mini-danger:hover {
+  border-color: #f0c9c9;
+  background: var(--wao-danger-bg);
+  color: #bc4141;
+}
+.modal-hint {
+  font-size: 11.5px;
+  color: var(--wao-text-faint);
 }
 
 /* 设置弹层 */
