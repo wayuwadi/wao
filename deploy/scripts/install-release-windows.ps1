@@ -1,6 +1,7 @@
 param(
     [string]$ArchivePath = 'D:\deploy\wao-release.zip',
     [string]$TargetPath = 'D:\deploy\wao',
+    [string]$PrivateEnvPath = 'D:\deploy\wao-secrets.env',
     [string]$ImageArchivePath,
     [string]$Distribution = 'Ubuntu'
 )
@@ -35,6 +36,12 @@ switch ([IO.Path]::GetExtension($archive).ToLowerInvariant()) {
 $deployScript = Join-Path $target 'deploy\scripts\deploy-windows.ps1'
 if (-not (Test-Path -LiteralPath $deployScript -PathType Leaf)) {
     throw "Deployment script was not found after extraction: $deployScript"
+}
+
+if (Test-Path -LiteralPath $PrivateEnvPath -PathType Leaf) {
+    $privateEnv = Join-Path $target 'deploy\.env.secrets'
+    Copy-Item -LiteralPath $PrivateEnvPath -Destination $privateEnv -Force
+    Remove-Item -LiteralPath $PrivateEnvPath -Force
 }
 
 $imageLoaded = $false

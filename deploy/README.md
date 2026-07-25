@@ -156,11 +156,11 @@ https://wao.wayuwa.cn/api/hello
 
 ## GitHub Actions
 
-CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。
+CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。开发期 CD 会构建一次前端并行发布三台节点，决策见 [ADR-011](../docs/adr/011-development-fast-delivery.md)。
 
 ## 飞书登录
 
-将飞书 App ID 与 App Secret 仅写入主节点和从节点的私有 `deploy/.env`，不要提交 Git 或写入 GitHub Actions 日志：
+将飞书 App ID 与 App Secret 配置为同名 GitHub Actions Secrets。CD 会把它们与主节点现有的 `WAO_VAULT_KEY` 合并下发到主节点和从节点私有的 `deploy/.env.secrets`，不要提交 Git 或写入 GitHub Actions 日志：
 
 ```dotenv
 FEISHU_LOGIN_ENABLED=true
@@ -170,7 +170,7 @@ FEISHU_REDIRECT_URI=https://wao.wayuwa.cn/api/auth/feishu/callback
 FEISHU_FRONTEND_URL=https://wao.wayuwa.cn
 ```
 
-在飞书开发者后台的安全设置中添加同一个重定向 URL。网页应用的工作台在线网页主页配置为 `https://wao.wayuwa.cn/api/auth/feishu/workbench`；PC 端“跳转至浏览器打开新页面”配置为 `https://wao.wayuwa.cn/api/auth/feishu/browser`。修改后在各节点执行正常发布脚本重建 `wao-server` 容器。
+在飞书开发者后台的安全设置中添加同一个重定向 URL。网页应用的工作台在线网页主页配置为 `https://wao.wayuwa.cn/api/auth/feishu/workbench`；PC 端“跳转至浏览器打开新页面”配置为 `https://wao.wayuwa.cn/api/auth/feishu/browser`。修改 Secret 后手动运行一次 `WAO Fast CD`，或随下一次 `main` push 自动下发并重建 `wao-server` 容器。
 
 ## 密钥库加密密钥
 

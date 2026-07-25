@@ -1,10 +1,7 @@
-name: WAO CI/CD
+name: WAO Fast CD
 
 on:
   workflow_dispatch:
-  # PR 负责特性分支的验证；push 只在 main 触发（合并即部署）。
-  # 这样「push 特性分支 → 开 PR → 合并 main」不再重复跑三次，只在 PR 与 main 各跑一次。
-  pull_request:
   push:
     branches: [main]
 
@@ -12,57 +9,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: wao-${{ github.ref }}
+  group: wao-main-deploy
   cancel-in-progress: true
 
 jobs:
-  backend:
-    name: Backend tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: maven
-      - run: mvn -B test
-
-  frontend:
-    name: Frontend checks
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: wao-web
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: wao-web/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run test:unit -- --run
-      - run: npm run build
-
-  containers:
-    name: Container build
-    runs-on: ubuntu-latest
-    needs: [backend, frontend]
-    steps:
-      - uses: actions/checkout@v6
-      - name: Build application images
-        run: |
-          docker build -f deploy/Dockerfile --target server-runtime -t wao-server:latest .
-          docker build -f deploy/Dockerfile --target gateway-runtime -t wao-gateway:latest .
-
   deploy:
-    name: Deploy main
+    name: Build once and deploy in parallel
     runs-on: ubuntu-latest
-    needs: [backend, frontend, containers]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
-    environment: production
+    if: vars.DEPLOY_ENABLED == 'true'
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -79,6 +33,20 @@ jobs:
         run: |
           git archive --format=tar.gz -o wao-release.tgz HEAD
           git archive --format=zip -o wao-release.zip HEAD
+      - name: Prepare private Feishu configuration
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+        run: |
+          test -n "$FEISHU_APP_ID"
+          test -n "$FEISHU_APP_SECRET"
+          umask 077
+          printf '%s\n' \
+            'FEISHU_LOGIN_ENABLED=true' \
+            "FEISHU_APP_ID=$FEISHU_APP_ID" \
+            "FEISHU_APP_SECRET=$FEISHU_APP_SECRET" \
+            'FEISHU_REDIRECT_URI=https://wao.wayuwa.cn/api/auth/feishu/callback' \
+            'FEISHU_FRONTEND_URL=https://wao.wayuwa.cn' > wao-secrets.env
       - name: Configure SSH
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
@@ -89,48 +57,74 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
-      - name: Deploy master node
+      - name: Reuse the existing shared vault key
         env:
-          HOST: ${{ secrets.MASTER_HOST }}
-          USER: ${{ secrets.MASTER_USER }}
+          MASTER_HOST: ${{ secrets.MASTER_HOST }}
+          MASTER_USER: ${{ secrets.MASTER_USER }}
         run: |
-          scp wao-release.tgz "$USER@$HOST:/tmp/wao-release.tgz"
-          ssh "$USER@$HOST" 'desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master'
-      - name: Deploy slave node
+          umask 077
+          ssh "$MASTER_USER@$MASTER_HOST" 'desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; grep -m1 "^WAO_VAULT_KEY=." "$desktop_dir/deploy/wao/deploy/.env"' > wao-vault.env
+          test "$(grep -c '^WAO_VAULT_KEY=.' wao-vault.env)" -eq 1
+          cat wao-vault.env >> wao-secrets.env
+          rm -f wao-vault.env
+      - name: Deploy three nodes in parallel
         env:
-          HOST: ${{ secrets.SLAVE_HOST }}
-          USER: ${{ secrets.SLAVE_USER }}
+          MASTER_HOST: ${{ secrets.MASTER_HOST }}
+          MASTER_USER: ${{ secrets.MASTER_USER }}
+          SLAVE_HOST: ${{ secrets.SLAVE_HOST }}
+          SLAVE_USER: ${{ secrets.SLAVE_USER }}
+          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
+          CLOUD_USER: ${{ secrets.CLOUD_USER }}
         shell: bash
         run: |
-          scp wao-release.zip "$USER@$HOST:D:/deploy/wao-release.zip"
-          scp deploy/scripts/install-release-windows.ps1 "$USER@$HOST:D:/deploy/install-release-windows.ps1"
-          ssh "$USER@$HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
-      - name: Deploy cloud frontend
-        env:
-          HOST: ${{ secrets.CLOUD_HOST }}
-          USER: ${{ secrets.CLOUD_USER }}
+          set -u
+
+          deploy_master() {
+            scp wao-release.tgz wao-secrets.env "$MASTER_USER@$MASTER_HOST:/tmp/"
+            ssh "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; rm -f /tmp/wao-secrets.env; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master'
+          }
+
+          deploy_slave() {
+            scp wao-release.zip "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-release.zip"
+            scp wao-secrets.env "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-secrets.env"
+            scp deploy/scripts/install-release-windows.ps1 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/install-release-windows.ps1"
+            ssh "$SLAVE_USER@$SLAVE_HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
+          }
+
+          deploy_cloud() {
+            ssh "$CLOUD_USER@$CLOUD_HOST" 'mkdir -p /tmp/wao-dist'
+            scp -r wao-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-dist/"
+            ssh "$CLOUD_USER@$CLOUD_HOST" 'install -d /var/www/wao/dist && find /var/www/wao/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && cp -a /tmp/wao-dist/. /var/www/wao/dist/ && nginx -t && systemctl reload nginx'
+          }
+
+          deploy_master >master.log 2>&1 & master_pid=$!
+          deploy_slave >slave.log 2>&1 & slave_pid=$!
+          deploy_cloud >cloud.log 2>&1 & cloud_pid=$!
+
+          status=0
+          wait "$master_pid" || status=1
+          wait "$slave_pid" || status=1
+          wait "$cloud_pid" || status=1
+          printf '\n===== master =====\n'; cat master.log
+          printf '\n===== slave =====\n'; cat slave.log
+          printf '\n===== cloud =====\n'; cat cloud.log
+          exit "$status"
+      - name: Verify production and Feishu entry point
         run: |
-          ssh "$USER@$HOST" 'mkdir -p /tmp/wao-dist'
-          scp -r wao-web/dist/. "$USER@$HOST:/tmp/wao-dist/"
-          ssh "$USER@$HOST" 'install -d /var/www/wao/dist && find /var/www/wao/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && cp -a /tmp/wao-dist/. /var/www/wao/dist/ && nginx -t && systemctl reload nginx'
-      - name: Verify production
-        run: |
-          response="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors https://wao.wayuwa.cn/api/hello)"
-          printf '%s' "$response" | grep -q '"code":0'
-          printf '%s' "$response" | grep -q '"service":"wao-server"'
+          hello="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors https://wao.wayuwa.cn/api/hello)"
+          printf '%s' "$hello" | grep -q '"code":0'
+          printf '%s' "$hello" | grep -q '"service":"wao-server"'
+          feishu="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors 'https://wao.wayuwa.cn/api/auth/feishu/authorize?scene=authorization')"
+          printf '%s' "$feishu" | grep -q '"code":0'
+          printf '%s' "$feishu" | grep -q 'https://open.feishu.cn/open-apis/authen/v1/authorize'
 
   notify:
-    name: Feishu notification
+    name: Feishu deployment notification
     runs-on: ubuntu-latest
-    # 只在合入 main（push）或手动触发时通知；PR/开发分支每次提交都会跑 CI，
-    # 但那属于开发中的噪音，不需要每次都推送到团队群。
-    if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    needs: [backend, frontend, containers, deploy]
+    if: always()
+    needs: [deploy]
     env:
       FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-      BACKEND_RESULT: ${{ needs.backend.result }}
-      FRONTEND_RESULT: ${{ needs.frontend.result }}
-      CONTAINERS_RESULT: ${{ needs.containers.result }}
       DEPLOY_RESULT: ${{ needs.deploy.result }}
     steps:
       - name: Notify Feishu
@@ -139,53 +133,25 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           ACTOR: ${{ github.actor }}
           EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.head_ref || github.ref_name }}
+          REF_NAME: ${{ github.ref_name }}
           COMMIT_SHA: ${{ github.sha }}
-          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          COMMIT_URL: ${{ github.event.pull_request.html_url || format('{0}/{1}/commit/{2}', github.server_url, github.repository, github.sha) }}
+          COMMIT_MSG: ${{ github.event.head_commit.message || '手动部署当前 main' }}
+          COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          ci_result="success"
-          for result in "$BACKEND_RESULT" "$FRONTEND_RESULT" "$CONTAINERS_RESULT"; do
-            if [ "$result" != "success" ]; then
-              ci_result="failure"
-            fi
-          done
-
-          overall="✅ 成功"
-          header_color="green"
-          if [ "$ci_result" != "success" ] || { [ "$DEPLOY_RESULT" != "success" ] && [ "$DEPLOY_RESULT" != "skipped" ]; }; then
-            overall="❌ 失败"
-            header_color="red"
+          overall='✅ 成功'
+          header_color='green'
+          if [ "$DEPLOY_RESULT" != 'success' ]; then
+            overall='❌ 失败'
+            header_color='red'
           fi
-
-          # 把 job 结果映射成带图标的可读状态。
-          status_label() {
-            case "$1" in
-              success) printf '✅ 成功' ;;
-              failure) printf '❌ 失败' ;;
-              cancelled) printf '🚫 取消' ;;
-              skipped) printf '⏭️ 跳过' ;;
-              *) printf '❔ %s' "$1" ;;
-            esac
-          }
-
           short_sha="$(printf '%s' "$COMMIT_SHA" | cut -c1-8)"
-          # “本次改动”取完整提交信息（标题 + 正文）；PR 触发时额外附上 PR 描述。
-          # 空则占位；过长做截断，避免卡片内容超出飞书限制。
-          change_summary="$COMMIT_MSG"
-          if [ -n "${PR_BODY:-}" ]; then
-            change_summary="$(printf '%s\n\n%s' "$change_summary" "$PR_BODY")"
+          change_summary="${COMMIT_MSG:-（无提交信息）}"
+          if [ "${#change_summary}" -gt 1800 ]; then
+            change_summary="$(printf '%s' "$change_summary" | cut -c1-1800)…"
           fi
-          [ -n "$change_summary" ] || change_summary="（无提交信息）"
-          if [ "${#change_summary}" -gt 1200 ]; then
-            change_summary="$(printf '%s' "$change_summary" | cut -c1-1200)…"
-          fi
-
-          # 飞书交互式卡片（msg_type=interactive）：头部按成败着色，正文突出“本次改动”，并列出各阶段状态。
           payload="$(jq -n \
-            --arg title "WAO CI/CD ${overall}" \
+            --arg title "WAO 部署 ${overall}" \
             --arg template "$header_color" \
             --arg repo "$REPOSITORY" \
             --arg branch "$REF_NAME" \
@@ -193,19 +159,13 @@ jobs:
             --arg sha "$short_sha" \
             --arg sha_url "$COMMIT_URL" \
             --arg change "$change_summary" \
-            --arg backend "$(status_label "$BACKEND_RESULT")" \
-            --arg frontend "$(status_label "$FRONTEND_RESULT")" \
-            --arg containers "$(status_label "$CONTAINERS_RESULT")" \
-            --arg deploy "$(status_label "$DEPLOY_RESULT")" \
+            --arg deploy "$DEPLOY_RESULT" \
             --arg run_url "$RUN_URL" \
             '{
               msg_type: "interactive",
               card: {
                 config: { wide_screen_mode: true },
-                header: {
-                  template: $template,
-                  title: { tag: "plain_text", content: $title }
-                },
+                header: { template: $template, title: { tag: "plain_text", content: $title } },
                 elements: [
                   { tag: "div", fields: [
                     { is_short: true, text: { tag: "lark_md", content: ("**仓库**\n" + $repo) } },
@@ -216,17 +176,9 @@ jobs:
                   { tag: "hr" },
                   { tag: "div", text: { tag: "lark_md", content: ("**本次改动**\n" + $change) } },
                   { tag: "hr" },
-                  { tag: "div", fields: [
-                    { is_short: true, text: { tag: "lark_md", content: ("**后端**\n" + $backend) } },
-                    { is_short: true, text: { tag: "lark_md", content: ("**前端**\n" + $frontend) } },
-                    { is_short: true, text: { tag: "lark_md", content: ("**容器**\n" + $containers) } },
-                    { is_short: true, text: { tag: "lark_md", content: ("**部署**\n" + $deploy) } }
-                  ] },
+                  { tag: "div", text: { tag: "lark_md", content: ("**部署结果**\n" + $deploy) } },
                   { tag: "action", actions: [
-                    { tag: "button",
-                      text: { tag: "plain_text", content: "查看运行详情" },
-                      url: $run_url,
-                      type: "primary" }
+                    { tag: "button", text: { tag: "plain_text", content: "查看运行详情" }, url: $run_url, type: "primary" }
                   ] }
                 ]
               }

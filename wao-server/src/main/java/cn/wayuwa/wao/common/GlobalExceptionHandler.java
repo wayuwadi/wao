@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.common;
 
+import cn.wayuwa.wao.auth.FeishuLoginException;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -35,6 +36,19 @@ public class GlobalExceptionHandler {
                 .map(FieldError::getDefaultMessage)
                 .orElse("请求参数不合法");
         return ApiResponse.fail(40001, message);
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleBadRequest(IllegalArgumentException exception) {
+        return ApiResponse.fail(40000, exception.getMessage());
+    }
+
+    @ExceptionHandler(FeishuLoginException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public ApiResponse<Void> handleFeishuLogin(FeishuLoginException exception) {
+        log.warn("Feishu login failed: {}", exception.getMessage());
+        return ApiResponse.fail(50201, exception.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

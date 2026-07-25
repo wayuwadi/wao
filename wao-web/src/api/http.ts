@@ -15,10 +15,19 @@ export const http = axios.create({
   },
 })
 
-http.interceptors.response.use((response) => {
-  const envelope = response.data as ApiResponse<unknown>
-  if (typeof envelope?.code === 'number' && envelope.code !== 0) {
-    return Promise.reject(new Error(envelope.message || '请求失败'))
-  }
-  return response
-})
+http.interceptors.response.use(
+  (response) => {
+    const envelope = response.data as ApiResponse<unknown>
+    if (typeof envelope?.code === 'number' && envelope.code !== 0) {
+      return Promise.reject(new Error(envelope.message || '请求失败'))
+    }
+    return response
+  },
+  (error: unknown) => {
+    if (axios.isAxiosError<ApiResponse<unknown>>(error)) {
+      const message = error.response?.data?.message
+      if (message) return Promise.reject(new Error(message))
+    }
+    return Promise.reject(error)
+  },
+)

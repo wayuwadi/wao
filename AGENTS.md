@@ -22,21 +22,20 @@ WAO 是一个前后端分离的 Web 系统，采用 Spec-Driven Development。�
 - Service 公共方法必须有 JavaDoc，核心逻辑必须有单元测试
 - Vue 组件使用 `<script setup lang="ts">`，组件命名使用 PascalCase
 - API 调用统一放在 `wao-web/src/api/`，组件内不直接发起 HTTP 请求
-- 提交信息遵循 Conventional Commits：标题行 + 空行 + 正文，正文说明改了什么、为什么。CI（`.github/workflows/ci-cd.yml` 的 `notify` job）会把完整提交信息转发到团队飞书通知卡片，只写标题的提交在卡片里就是一句空话
-- 完成与变更相称的验证后，AI 应直接在当前功能分支创建详细提交；提交正文必须说明改动、原因和验收结果。不得推送 `main`，不得提交任何私有环境文件或凭据。
+- 提交信息遵循 Conventional Commits，但除 `type(scope):` 前缀、代码标识、路径和命令外必须使用中文。正文固定包含“改动：”“原因：”“验收：”。CI（`.github/workflows/ci-cd.yml` 的 `notify` job）会把完整提交信息转发到团队飞书通知卡片
+- 完成与变更相称的本地验证后，AI 应直接创建详细提交；提交正文必须说明改动、原因和验收结果。开发测试阶段允许直接推送 `main` 以触发唯一一次部署；不得提交任何私有环境文件或凭据。
 
-## 合并策略（开发测试阶段，临时）
+## 快速交付策略（开发测试阶段，临时）
 
-当前处于开发测试阶段，距离正式上线尚早，人工逐个 Review PR 的收益低于其时间成本，管理员（@wayuwadi）已授权按以下流程自动合并：
+当前目标是快速获得真实环境反馈。在第一个正式版本上线前，默认流程如下（决策依据见 `docs/adr/011-development-fast-delivery.md`）：
 
-1. 功能分支验证通过并提交后，push 分支、基于它创建 PR（不直接推送 `main`——仍然走 PR，只是不必等待人工 Review）。
-2. 等待 CI（`backend` / `frontend` / `containers`）全部通过；任何一项失败就停下来修复，禁止强行合并。
-3. CI 全绿后用 Squash Merge 合并到 `main` 并删除源分支，对齐 `CONTRIBUTING.md` 里的合并方式。
-4. 不需要额外手动发通知——`main` 分支的 push 事件会自动触发飞书通知（见下一条），完整合并信息已经在里面。
+1. 变更前先执行 `git switch main` 和 `git pull --ff-only origin main`，多人并行时避免基于旧代码工作。
+2. 完成与改动相称的本地测试后，AI 直接在 `main` 创建详细提交并 push；无需功能分支、PR、云端重复 CI 或人工 Review。
+3. `main` 的 push 只触发一次 CD：构建一次前端，并行部署主节点、从节点和云前端，线上健康检查通过后发送一次飞书通知。
+4. 大型重构、同一文件多人并行或需要隔离试验时仍可使用功能分支，但 PR 是协作工具而不是强制门禁；合并前以本地验证为准。
+5. 本策略只放宽流程门禁，不放宽凭据和数据安全：真实 Secret 不得进入 Git；破坏性生产数据操作仍需明确授权；已执行的 migration 仍不可修改。
 
-`.github/workflows/ci-cd.yml` 的 `notify` job 只在 `push`（含合并到 `main`）或 `workflow_dispatch` 事件触发，PR/开发分支的每次提交不再发飞书通知，避免开发期间刷屏。
-
-**这条策略是阶段性的**：临近正式上线时必须恢复 `CONTRIBUTING.md` 中「CODEOWNERS Review 完成后再 Squash Merge」的人工评审要求，并删除本节或更新为上线后的流程。
+第一个正式版本发布前必须撤销本节的临时授权，恢复受保护分支、PR CI、CODEOWNERS Review 和发布审批。
 
 ## 目录结构
 
@@ -54,6 +53,6 @@ WAO 是一个前后端分离的 Web 系统，采用 Spec-Driven Development。�
 ## 禁止事项
 
 - 不在代码、文档或 Git 历史中写入密码、Token、私钥和真实部署凭据
-- 不直接推送 `main`
+- 正式版本上线后不直接推送 `main`；开发测试阶段按“快速交付策略”执行
 - 不覆盖已有规格；需求变化通过新规格或 ADR 记录
 - 不修改已执行的 Flyway migration，数据库变更必须新增 migration

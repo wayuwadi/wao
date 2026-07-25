@@ -1,27 +1,27 @@
 ---
 name: detailed-commit-notification
-description: Draft detailed Conventional Commit messages and ensure GitHub Actions Feishu notifications include the change summary, rationale, and validation steps. Use before committing, pushing, preparing a pull request, or modifying WAO CI notification workflows.
+description: 编写详细的中文 Conventional Commit，并确保 GitHub Actions 飞书通知包含改动、原因和验收结果。提交、推送、准备 PR 或修改 WAO CI 通知流程前使用。
 ---
 
-# Detailed Commit Notification
+# 中文详细提交与飞书通知
 
-Use a Conventional Commit subject followed by a body with exactly these labelled sections:
+提交标题保留 Conventional Commit 的 `type(scope):` 前缀，冒号后的描述和正文全部使用中文。正文固定使用以下三个中文字段：
 
 ```text
-feat(scope): concise outcome
+feat(scope): 用中文简要说明结果
 
-Changes:
-- <observable change>
+改动：
+- <可观察到的改动>
 
-Why:
-- <business or technical reason>
+原因：
+- <业务或技术原因>
 
-Validation:
-- <command or manual acceptance step and result>
+验收：
+- <执行的命令或人工验收步骤及结果>
 ```
 
-Write concrete facts. Name affected API paths, screens, migrations, configuration, or deployment behavior. Do not put secrets, webhook URLs, credentials, or speculative claims in the message.
+除代码标识、API 路径、命令和无法翻译的专有名词外，不写英文叙述。写具体事实，点明受影响的接口、页面、migration、配置或部署行为。提交信息中不得出现 Secret、Webhook 地址、凭据或推测性结论。
 
-Before a push, inspect the staged diff and run relevant checks. If a check was not run, state `Not run: <reason>` under Validation; never imply that it passed.
+推送前检查暂存区并执行相关验证。未执行的检查必须在“验收”中写明 `未执行：<原因>`，不得暗示其已通过。
 
-Keep the first line at 72 characters or fewer. Preserve the body because the WAO CI workflow reads both subject and body and posts them to Feishu. For merge commits or pushes containing multiple commits, summarize the head commit and provide the commit/run URL so recipients can inspect the complete range.
+标题不超过 72 个字符。必须保留正文，因为 WAO CI 会把标题和正文一起发送到飞书。合并提交或一次推送包含多个提交时，概括最新提交并附提交或运行链接，方便查看完整范围。
