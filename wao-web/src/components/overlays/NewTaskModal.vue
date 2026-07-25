@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { defineAsyncComponent, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { priorityMeta } from '@/utils/domain'
 import { toast } from '@/composables/toast'
-import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
-import type { ImageRef, Priority } from '@/types'
+// 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
+const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
+import type { Priority } from '@/types'
 
 const data = useDataStore()
 const session = useSessionStore()
@@ -20,34 +21,22 @@ const owner = ref(session.currentUser.id)
 const pr = ref<Priority>('P2')
 const due = ref('今天')
 const desc = ref('')
-const images = ref<ImageRef[]>([])
-const fileInput = ref<HTMLInputElement | null>(null)
 
 const openProjects = data.projects.filter((p) => p.status !== '已完成')
 
-/** 图片上传到图床；失败时 uploadImage 内部会回落成 data URL。 */
-async function readImage(file: File) {
-  if (!file.type.startsWith('image/')) return
+/**
+ * 编辑器里粘贴 / 插入的图片：存进图床，再把地址回传给编辑器内联到光标处，
+ * 不再堆成底部的附件缩略图。
+ */
+async function onUploadImage(file: File, done: (url: string | null, name: string) => void) {
   if (file.size > data.MAX_IMAGE_BYTES) {
     toast('图片超过 10MB，已跳过', 'ri-error-warning-line')
+    done(null, '')
     return
   }
   const ref = await data.uploadImage(file, '新建任务')
-  if (ref) images.value.push(ref)
-  else toast('图片上传失败，请重试', 'ri-error-warning-line')
-}
-
-function onPickFiles(e: Event) {
-  const files = (e.target as HTMLInputElement).files
-  if (files) Array.from(files).forEach(readImage)
-  if (fileInput.value) fileInput.value.value = ''
-}
-function onDrop(e: DragEvent) {
-  const files = e.dataTransfer?.files
-  if (files?.length) Array.from(files).forEach(readImage)
-}
-function removeImage(i: number) {
-  images.value.splice(i, 1)
+  if (!ref) toast('图片上传失败，请重试', 'ri-error-warning-line')
+  done(ref?.url ?? null, ref?.name ?? file.name)
 }
 
 function create() {
@@ -57,7 +46,7 @@ function create() {
   void data.addTask({
     title: name, project: project.value, pr: pr.value, owner: owner.value,
     due: DUE_MAP[due.value] ?? data.today,
-    desc: desc.value.trim(), images: images.value.slice(),
+    desc: desc.value.trim(), images: [],
   })
   ui.closeModal()
   toast(`任务「${name}」已创建`, 'ri-checkbox-circle-fill')
@@ -118,28 +107,15 @@ function create() {
       <button v-for="d in ['今天', '明天', '周日', '下周一']" :key="d" class="pill sq" :class="{ on: due === d }" @click="due = d">{{ d }}</button>
     </div>
 
-    <div class="label">描述 / 附图 <span class="label-hint">支持 Markdown，可粘贴或拖拽截图</span></div>
-    <div class="desc-wrap" @dragover.prevent @drop.prevent="onDrop">
+    <div class="label">描述 <span class="label-hint">敲 ## 变标题、- 变列表；粘贴或拖入的截图会插在光标处</span></div>
+    <div class="desc-wrap">
       <MarkdownEditor
         v-model="desc"
-        always-edit
-        placeholder="补充背景、目标与边界…支持 Markdown，可直接 Ctrl/Cmd+V 粘贴截图"
-        :min-height="84"
-        @paste-image="readImage"
+        placeholder="补充背景、目标与边界…可直接 Ctrl/Cmd+V 粘贴截图"
+        :min-height="110"
+        @upload-image="onUploadImage"
       />
     </div>
-
-    <div v-if="images.length" class="img-grid">
-      <div v-for="(im, i) in images" :key="i" class="img-cell">
-        <img :src="im.url" :alt="im.name" />
-        <button class="img-del" title="移除" @click="removeImage(i)"><i class="ri-close-line"></i></button>
-      </div>
-    </div>
-
-    <button class="add-img" @click="fileInput?.click()">
-      <i class="ri-image-add-line"></i>添加图片
-    </button>
-    <input ref="fileInput" type="file" accept="image/*" multiple hidden @change="onPickFiles" />
 
     <div class="foot">
       <span class="foot-tip">创建成功会有 1.5 秒庆祝动画，Esc 可跳过</span>
