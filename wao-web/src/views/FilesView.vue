@@ -1,20 +1,77 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
+import { absoluteUrl } from '@/utils/share'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 
 const data = useDataStore()
-const tab = ref<'files' | 'img'>('files')
+const tab = ref<'files' | 'img'>('img')
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploading = ref(0)
+
+// 打开页面时重新拉一次，让其他标签页 / 其他人上传的图也出现
+onMounted(() => data.refreshImages())
+
+/** 从图床页直接上传，来源标成「图床」以便和任务里粘贴的图区分。 */
+async function uploadFiles(files: FileList | File[]) {
+  const list = Array.from(files).filter((f) => f.type.startsWith('image/'))
+  if (!list.length) {
+    toast('请选择图片文件', 'ri-error-warning-line')
+    return
+  }
+  uploading.value += list.length
+  let failed = 0
+  try {
+    for (const f of list) {
+      if (f.size > data.MAX_IMAGE_BYTES) {
+        toast(`「${f.name}」超过 10MB，已跳过`, 'ri-error-warning-line')
+        failed++
+        continue
+      }
+      if (!(await data.uploadImage(f, '图床'))) failed++
+    }
+  } finally {
+    uploading.value -= list.length
+  }
+  const ok = list.length - failed
+  if (ok) toast(`已上传 ${ok} 张图片到图床`, 'ri-image-add-line')
+}
+
+function onPick(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  if (files?.length) uploadFiles(files)
+  if (fileInput.value) fileInput.value.value = ''
+}
+function onDrop(e: DragEvent) {
+  const files = e.dataTransfer?.files
+  if (files?.length) uploadFiles(files)
+}
+
+/** 图床里的图是站内相对地址，复制出去必须补成绝对地址才能公网访问。 */
+function copyImageLink(url: string) {
+  copyText(absoluteUrl(url), '已复制公网链接')
+}
+function openImage(url: string) {
+  window.open(absoluteUrl(url), '_blank')
+}
+async function removeImage(id: string | undefined, name: string) {
+  if (!id) {
+    toast('内置示例图不可删除', 'ri-information-line')
+    return
+  }
+  await data.deleteImage(id)
+  toast(`已删除「${name}」`, 'ri-delete-bin-line')
+}
 </script>
 
 <template>
   <div class="files">
     <DemoBanner
       icon="ri-hard-drive-2-line"
-      title="文件与图床 · 功能演示"
-      text="当前展示的是示例文件与图片。真实的上传、预览、下载与外链图床（含 CDN 加速与访问控制）将在后续迭代接入对象存储后开放。"
+      title="文件模块仍是演示"
+      text="图床已经是真实功能：系统各处上传 / 粘贴的图片都会归档到这里，可预览、复制公网链接、删除。文件（附件）标签页仍为示例数据，真实上传与下载将在后续迭代接入。"
       storage-key="files"
     />
     <div class="ftop">
@@ -25,7 +82,11 @@ const tab = ref<'files' | 'img'>('files')
         </button>
       </div>
       <div class="spacer"></div>
-      <button class="btn-primary" @click="toast('演示：拖拽上传在正式版本提供', 'ri-upload-2-line')"><i class="ri-upload-2-line"></i>上传</button>
+      <button v-if="tab === 'img'" class="btn-primary" :disabled="uploading > 0" @click="fileInput?.click()">
+        <i class="ri-upload-2-line"></i>{{ uploading > 0 ? `上传中 ${uploading}…` : '上传图片' }}
+      </button>
+      <button v-else class="btn-primary" @click="toast('演示：文件上传在正式版本提供', 'ri-upload-2-line')"><i class="ri-upload-2-line"></i>上传</button>
+      <input ref="fileInput" type="file" accept="image/*" multiple hidden @change="onPick" />
     </div>
 
     <template v-if="tab === 'files'">
@@ -45,18 +106,28 @@ const tab = ref<'files' | 'img'>('files')
     </template>
 
     <template v-else>
-      <div class="note">系统各处上传的图片统一归档到图床，并提供公网访问链接（演示环境为示意图与虚构链接）。</div>
-      <div class="img-grid">
-        <div v-for="(im, i) in data.imgs" :key="i" class="img-card">
-          <div class="img-thumb" :style="{ background: `repeating-linear-gradient(45deg, ${im.c1} 0 10px, ${im.c2} 10px 20px)` }">
-            <span class="img-chip wao-mono">{{ im.name }}</span>
-          </div>
-          <div class="img-info">
-            <div class="img-name">{{ im.name }}</div>
-            <div class="img-meta">{{ im.size }} · {{ im.time }} · 来自 {{ im.from }}</div>
-            <button class="img-copy" @click="copyText(im.url, '已复制公网链接（演示）')"><i class="ri-links-line"></i>复制公网链接</button>
+      <div class="note">任务描述、子任务、新建任务里粘贴或上传的图片都统一归档到这里，并提供公网访问链接。</div>
+      <div class="img-drop" @dragover.prevent @drop.prevent="onDrop">
+        <div class="img-grid">
+          <div v-for="(im, i) in data.imgs" :key="im.id ?? i" class="img-card">
+            <div class="img-thumb" :style="{ background: `repeating-linear-gradient(45deg, ${im.c1} 0 10px, ${im.c2} 10px 20px)` }">
+              <img :src="im.url" :alt="im.name" loading="lazy" @click="openImage(im.url)" />
+              <button v-if="im.id" class="img-del" title="从图床删除" @click.stop="removeImage(im.id, im.name)">
+                <i class="ri-delete-bin-line"></i>
+              </button>
+            </div>
+            <div class="img-info">
+              <div class="img-name" :title="im.name">{{ im.name }}</div>
+              <div class="img-meta">{{ im.size }} · {{ im.time }} · 来自 {{ im.from }}</div>
+              <button class="img-copy" @click="copyImageLink(im.url)"><i class="ri-links-line"></i>复制公网链接</button>
+            </div>
           </div>
         </div>
+        <div v-if="!data.imgs.length" class="img-empty">
+          <i class="ri-image-add-line"></i>
+          <div>图床还是空的——把图片拖到这里，或点右上角「上传图片」</div>
+        </div>
+        <div v-else class="drop-tip">也可以把图片直接拖到这一片区域上传</div>
       </div>
     </template>
   </div>
@@ -241,22 +312,70 @@ const tab = ref<'files' | 'img'>('files')
   display: flex;
   flex-direction: column;
 }
+/* 底色是加载中 / 破图时的兜底，真图盖在上面 */
 .img-thumb {
+  position: relative;
   height: 110px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.img-chip {
-  font-size: 10.5px;
-  color: #7a7d89;
-  background: rgba(255, 255, 255, 0.85);
-  border-radius: 5px;
-  padding: 2px 8px;
-  max-width: 88%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.img-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  cursor: zoom-in;
+}
+.img-del {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 7px;
+  background: rgba(23, 25, 35, 0.55);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.img-card:hover .img-del {
+  opacity: 1;
+}
+.img-del:hover {
+  background: #bc4141;
+}
+.img-del i {
+  font-size: 13px;
+}
+.img-drop {
+  border-radius: 12px;
+}
+.img-empty {
+  margin-top: 10px;
+  border: 1px dashed var(--wao-line-strong);
+  border-radius: 12px;
+  padding: 44px 20px;
+  text-align: center;
+  color: var(--wao-text-weak);
+  font-size: 13px;
+}
+.img-empty i {
+  display: block;
+  font-size: 26px;
+  margin-bottom: 8px;
+  color: var(--wao-text-faint-2);
+}
+.drop-tip {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--wao-text-faint);
 }
 .img-info {
   padding: 10px 12px;
