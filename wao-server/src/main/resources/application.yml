@@ -1,6 +1,14 @@
 server:
   port: ${SERVER_PORT:8080}
   forward-headers-strategy: framework
+  servlet:
+    session:
+      timeout: 7d
+      cookie:
+        name: WAO_SESSION
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE:false}
+        same-site: lax
 
 spring:
   application:
@@ -27,6 +35,10 @@ spring:
     enabled: ${FLYWAY_ENABLED:true}
     locations: classpath:db/migration
     baseline-on-migrate: true
+  session:
+    store-type: jdbc
+    jdbc:
+      initialize-schema: never
   cloud:
     nacos:
       discovery:
@@ -46,6 +58,9 @@ wao:
     # 分享 Markdown 里图片的绝对地址前缀。留空则按当前请求推导（依赖 Nginx 透传
     # X-Forwarded-Proto / Host）；代理层不透传时在此写死，如 https://wao.wayuwa.cn
     base-url: ${WAO_SHARE_BASE_URL:}
+  auth:
+    protection-enabled: ${AUTH_PROTECTION_ENABLED:true}
+    registration-enabled: ${AUTH_REGISTRATION_ENABLED:true}
   vault:
     # base64 编码的 32 字节 AES-256 密钥；生产环境必须通过环境变量 WAO_VAULT_KEY 覆盖，
     # 下面的默认值只用于本地 / dev 演示环境，不是真实密钥。
@@ -75,3 +90,13 @@ feishu:
     redirect-uri: ${FEISHU_REDIRECT_URI:http://localhost:8080/api/auth/feishu/callback}
     frontend-url: ${FEISHU_FRONTEND_URL:http://localhost:5173}
     open-api-base-url: ${FEISHU_OPEN_API_BASE_URL:https://open.feishu.cn}
+
+wechat:
+  login:
+    enabled: ${WECHAT_LOGIN_ENABLED:false}
+    app-id: ${WECHAT_APP_ID:}
+    app-secret: ${WECHAT_APP_SECRET:}
+    redirect-uri: ${WECHAT_REDIRECT_URI:https://wao.wayuwa.cn/api/auth/wechat/callback}
+    frontend-url: ${WECHAT_FRONTEND_URL:https://wao.wayuwa.cn}
+    open-api-base-url: ${WECHAT_OPEN_API_BASE_URL:https://api.weixin.qq.com}
+    authorize-base-url: ${WECHAT_AUTHORIZE_BASE_URL:https://open.weixin.qq.com}

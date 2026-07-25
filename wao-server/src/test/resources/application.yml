@@ -9,6 +9,8 @@ spring:
     password: ""
   flyway:
     enabled: false
+  session:
+    store-type: none
   cloud:
     nacos:
       discovery:
@@ -28,5 +30,8 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  auth:
+    protection-enabled: false
+    registration-enabled: true
   vault:
     encryption-key: ZKp9ywcbuZOrQCrxx2kd+0N9VJfnzRNSQQZXMP/vXVw=

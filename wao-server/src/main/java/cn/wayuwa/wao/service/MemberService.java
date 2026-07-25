@@ -43,7 +43,7 @@ public class MemberService {
     public OrgDto org() {
         OrgEntity e = orgMapper.selectList(null).stream().findFirst()
                 .orElseThrow(() -> new NotFoundException("组织不存在"));
-        return new OrgDto(e.getId(), e.getName(), e.getMemberCount() == null ? 0 : e.getMemberCount());
+        return new OrgDto(e.getId(), e.getName(), Math.toIntExact(memberMapper.selectCount(null)));
     }
 
     private MemberDto toDto(MemberEntity e) {

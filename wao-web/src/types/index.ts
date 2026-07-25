@@ -1,7 +1,7 @@
 /** WAO 核心域类型（会话 / 导航 / 页签）；业务实体见 ./domain。 */
 export * from './domain'
 
-/** 组织成员（原型 M={wg,wd}）。Phase 1 起来自 /api。 */
+/** 组织成员；登录后始终来自后端 /api/members。 */
 export interface Member {
   id: string
   name: string

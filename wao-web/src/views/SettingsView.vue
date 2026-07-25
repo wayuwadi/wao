@@ -1,19 +1,39 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
+import { updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth'
+import { startFeishuLogin } from '@/api/feishu'
+import { startWechatLogin } from '@/api/wechat'
 
 const session = useSessionStore()
 const router = useRouter()
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members'], ['日历账户 · CalDAV', 'caldav']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
 ] as const
 
 const tab = ref('members')
+const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
+const profileForm = reactive({ name: '', initial: '' })
+const accountBusy = ref(false)
+const identities = computed(() => session.account?.identities ?? [])
+const providerNames: Record<string, string> = { email: '邮箱密码', feishu: '飞书', wechat: '微信' }
+const hasIdentity = (provider: string) => identities.value.some((identity) => identity.provider === provider)
+const emailIdentity = computed(() => identities.value.find((identity) => identity.provider === 'email'))
+const joinedAt = computed(() => {
+  if (!session.account?.createdAt) return '—'
+  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' }).format(new Date(session.account.createdAt))
+})
+
+watchEffect(() => {
+  if (!profileForm.name) profileForm.name = session.currentUser.name
+  if (!profileForm.initial) profileForm.initial = session.currentUser.initial
+  if (!accountForm.email && emailIdentity.value?.email) accountForm.email = emailIdentity.value.email
+})
 
 const orgMembers = computed(() =>
   session.members.map((m) => ({
@@ -72,9 +92,42 @@ function toggleCal(c: { on: boolean }) {
   c.on = !c.on
   toast('演示：订阅开关在正式版本生效', 'ri-calendar-line')
 }
-function logout() {
-  session.logout()
-  router.push('/login')
+async function logout() {
+  await session.logout()
+  await router.push('/login')
+}
+async function saveEmailCredential() {
+  accountBusy.value = true
+  try {
+    session.accept(await updateEmailCredential(accountForm.email, accountForm.currentPassword, accountForm.newPassword))
+    accountForm.currentPassword = ''
+    accountForm.newPassword = ''
+    toast('邮箱与密码已更新', 'ri-shield-check-line')
+  } catch (error) { toast(error instanceof Error ? error.message : '更新失败') }
+  finally { accountBusy.value = false }
+}
+async function saveProfile() {
+  accountBusy.value = true
+  try {
+    session.accept(await updateProfile(profileForm.name, profileForm.initial))
+    await session.refreshDirectory()
+    toast('成员资料已保存到服务器', 'ri-user-smile-line')
+  } catch (error) { toast(error instanceof Error ? error.message : '资料保存失败') }
+  finally { accountBusy.value = false }
+}
+async function unlink(provider: string) {
+  accountBusy.value = true
+  try { session.accept(await unlinkIdentity(provider)); toast(`已解绑${providerNames[provider] ?? provider}`) }
+  catch (error) { toast(error instanceof Error ? error.message : '解绑失败') }
+  finally { accountBusy.value = false }
+}
+async function bindWechat() {
+  try { await startWechatLogin('link') }
+  catch (error) { toast(error instanceof Error ? error.message : '微信登录暂不可用') }
+}
+async function bindFeishu() {
+  try { await startFeishuLogin('link') }
+  catch (error) { toast(error instanceof Error ? error.message : '飞书登录暂不可用') }
 }
 function demo(msg: string, icon?: string) {
   toast(msg, icon)
@@ -108,8 +161,8 @@ function demo(msg: string, icon?: string) {
           <div class="card org">
             <div class="org-badge">W</div>
             <div class="org-main">
-              <div class="org-name">娃屋 Wayuwa</div>
-              <div class="org-sub">组织 ID：wao-family · 2 名成员 · 可扩展至更多成员</div>
+              <div class="org-name">{{ session.org.name }}</div>
+              <div class="org-sub">组织 ID：{{ session.org.id }} · {{ session.org.memberCount }} 名真实成员</div>
             </div>
             <span class="org-tag">当前组织</span>
           </div>
@@ -117,7 +170,7 @@ function demo(msg: string, icon?: string) {
             <div class="card-row">
               <div class="card-title">成员</div>
               <div class="spacer"></div>
-              <button class="btn-primary sm" @click="demo('邀请链接已复制（演示）· 可设置查看 / 编辑权限', 'ri-user-add-line')"><i class="ri-user-add-line"></i>邀请成员</button>
+              <button class="btn-primary sm" disabled title="邀请流程将在后续成员管理需求中实现"><i class="ri-user-add-line"></i>邀请成员（待实现）</button>
             </div>
             <div v-for="(m, i) in orgMembers" :key="i" class="mem-row">
               <span class="mem-av" :style="{ background: m.color }">{{ m.initial }}</span>
@@ -163,15 +216,50 @@ function demo(msg: string, icon?: string) {
               <div class="p-av" :style="{ background: session.currentUser.color }">{{ session.currentUser.initial }}</div>
               <div class="p-main">
                 <div class="p-name">{{ session.currentUser.name }}</div>
-                <div class="p-sub">{{ session.currentUser.role }} · 娃屋 Wayuwa</div>
+                <div class="p-sub">{{ session.currentUser.role }} · {{ session.org.name }}</div>
               </div>
-              <button class="btn-ghost" @click="demo('演示：资料编辑在正式版本提供', 'ri-user-smile-line')">修改头像与昵称</button>
             </div>
+            <form class="credential-form profile-form" @submit.prevent="saveProfile">
+              <input v-model.trim="profileForm.name" maxlength="64" required placeholder="成员名称" />
+              <input v-model.trim="profileForm.initial" maxlength="4" required placeholder="头像文字" />
+              <button class="btn-primary" :disabled="accountBusy">保存资料</button>
+            </form>
             <div class="kv-list bordered">
-              <div class="kv"><span class="kv-k w76">飞书绑定</span><span class="kv-v ok"><i class="ri-checkbox-circle-fill"></i>已绑定 · 扫码登录可用</span></div>
-              <div class="kv"><span class="kv-k w76">邮箱</span><span class="kv-v">wg@wayuwa.example<span class="dim">（预留登录方式）</span></span></div>
-              <div class="kv"><span class="kv-k w76">加入时间</span><span class="kv-v">2026 年 6 月 20 日</span></div>
+              <div class="kv"><span class="kv-k w76">飞书绑定</span><span class="kv-v" :class="{ ok: hasIdentity('feishu') }"><i :class="hasIdentity('feishu') ? 'ri-checkbox-circle-fill' : 'ri-close-circle-line'"></i>{{ hasIdentity('feishu') ? '已绑定 · 扫码登录可用' : '尚未绑定' }}</span></div>
+              <div class="kv"><span class="kv-k w76">邮箱</span><span class="kv-v">{{ emailIdentity?.email || '尚未设置' }}</span></div>
+              <div class="kv"><span class="kv-k w76">加入时间</span><span class="kv-v">{{ joinedAt }}</span></div>
             </div>
+          </div>
+        </template>
+
+        <!-- 账号与登录 -->
+        <template v-else-if="tab === 'account'">
+          <div class="s-h1">账号与登录</div>
+          <div class="card">
+            <div class="card-title">已绑定的登录方式</div>
+            <div v-for="identity in identities" :key="identity.provider" class="mem-row">
+              <span class="identity-icon"><i :class="identity.provider === 'feishu' ? 'ri-feishu-line' : identity.provider === 'wechat' ? 'ri-wechat-fill' : 'ri-mail-line'"></i></span>
+              <span class="mem-name">{{ providerNames[identity.provider] ?? identity.provider }}<span class="dim">{{ identity.email || identity.displayName }}</span></span>
+              <button class="revoke" :disabled="identities.length === 1 || accountBusy" @click="unlink(identity.provider)">解绑</button>
+            </div>
+            <div class="hint">至少保留一种登录方式。新绑定的飞书、微信或邮箱都会进入当前的 {{ session.currentUser.name }} 账号。</div>
+          </div>
+          <div class="card">
+            <div class="card-title">绑定第三方账号</div>
+            <div class="bind-actions">
+              <button v-if="!hasIdentity('feishu')" class="btn-ghost" @click="bindFeishu"><i class="ri-feishu-line"></i>绑定飞书</button>
+              <button v-if="!hasIdentity('wechat')" class="btn-ghost" @click="bindWechat"><i class="ri-wechat-fill"></i>绑定微信</button>
+              <span v-if="hasIdentity('feishu') && hasIdentity('wechat')" class="hint">飞书和微信均已绑定，无需重复操作。</span>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">设置邮箱与密码</div>
+            <form class="credential-form" @submit.prevent="saveEmailCredential">
+              <input v-model.trim="accountForm.email" type="email" autocomplete="email" required placeholder="登录邮箱" />
+              <input v-model="accountForm.currentPassword" type="password" autocomplete="current-password" placeholder="当前密码（首次设置可留空）" />
+              <input v-model="accountForm.newPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="新密码（至少 8 位）" />
+              <button class="btn-primary" :disabled="accountBusy">保存</button>
+            </form>
           </div>
         </template>
 
@@ -480,6 +568,13 @@ function demo(msg: string, icon?: string) {
   border-radius: 5px;
   padding: 2px 8px;
 }
+.identity-icon { width: 30px; height: 30px; display: grid; place-content: center; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-primary); font-size: 17px; }
+.bind-actions { display: flex; gap: 10px; margin-top: 12px; }
+.credential-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-top: 12px; }
+.profile-form { grid-template-columns: 1fr 120px auto; margin: 14px 0; }
+.credential-form input { min-width: 0; height: 34px; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 0 10px; outline: none; }
+.credential-form input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .12); }
+.btn-primary:disabled { opacity: .55; cursor: not-allowed; }
 .hint {
   margin-top: 10px;
   font-size: 12px;

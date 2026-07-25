@@ -168,9 +168,19 @@ FEISHU_APP_ID=<飞书 App ID>
 FEISHU_APP_SECRET=<飞书 App Secret>
 FEISHU_REDIRECT_URI=https://wao.wayuwa.cn/api/auth/feishu/callback
 FEISHU_FRONTEND_URL=https://wao.wayuwa.cn
+AUTH_PROTECTION_ENABLED=true
+SESSION_COOKIE_SECURE=true
 ```
 
 在飞书开发者后台的安全设置中添加同一个重定向 URL。网页应用的工作台在线网页主页配置为 `https://wao.wayuwa.cn/api/auth/feishu/workbench`；PC 端“跳转至浏览器打开新页面”配置为 `https://wao.wayuwa.cn/api/auth/feishu/browser`。修改 Secret 后手动运行一次 `WAO Fast CD`，或随下一次 `main` push 自动下发并重建 `wao-server` 容器。
+
+微信扫码登录需在微信开放平台创建“网站应用”，将授权回调域配置为 `wao.wayuwa.cn`，并新增 GitHub Secrets `WECHAT_APP_ID`、`WECHAT_APP_SECRET`。CD 会自动启用并下发以下配置：
+
+```dotenv
+WECHAT_LOGIN_ENABLED=true
+WECHAT_REDIRECT_URI=https://wao.wayuwa.cn/api/auth/wechat/callback
+WECHAT_FRONTEND_URL=https://wao.wayuwa.cn
+```
 
 ## 密钥库加密密钥
 
