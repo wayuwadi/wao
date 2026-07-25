@@ -170,7 +170,7 @@ jobs:
 
           short_sha="$(printf '%s' "$COMMIT_SHA" | cut -c1-8)"
           # 只取提交信息首行作为“本次改动”的标题；空则占位。
-          change_summary="$(printf '%s' "$COMMIT_MSG" | sed -n '1p')"
+          change_summary="$COMMIT_MSG"
           [ -n "$change_summary" ] || change_summary="（无提交信息）"
 
           # 飞书交互式卡片（msg_type=interactive）：头部按成败着色，正文突出“本次改动”，并列出各阶段状态。
