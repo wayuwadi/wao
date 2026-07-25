@@ -39,11 +39,25 @@ run_docker() {
   fi
 }
 
-compose() {
+run_compose() {
   if [ -n "${compose_profile:-}" ]; then
-    run_docker compose --profile "${compose_profile}" --env-file "${env_file}" -f "${compose_file}" "$@"
+    run_docker compose --profile "${compose_profile}" "$@"
   else
-    run_docker compose --env-file "${env_file}" -f "${compose_file}" "$@"
+    run_docker compose "$@"
+  fi
+}
+
+compose() {
+  legacy_env_file="${deploy_dir}/.env.feishu"
+  secrets_env_file="${deploy_dir}/.env.secrets"
+  if [ -f "${legacy_env_file}" ] && [ -f "${secrets_env_file}" ]; then
+    run_compose --env-file "${env_file}" --env-file "${legacy_env_file}" --env-file "${secrets_env_file}" -f "${compose_file}" "$@"
+  elif [ -f "${secrets_env_file}" ]; then
+    run_compose --env-file "${env_file}" --env-file "${secrets_env_file}" -f "${compose_file}" "$@"
+  elif [ -f "${legacy_env_file}" ]; then
+    run_compose --env-file "${env_file}" --env-file "${legacy_env_file}" -f "${compose_file}" "$@"
+  else
+    run_compose --env-file "${env_file}" -f "${compose_file}" "$@"
   fi
 }
 

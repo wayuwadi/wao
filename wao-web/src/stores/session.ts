@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Member } from '@/types'
-import { MEMBERS, ORG } from '@/data/fixtures'
+import { fetchMembers, fetchOrg } from '@/api/board'
 import {
   claimMember,
   getSession,
@@ -18,8 +18,8 @@ export const useSessionStore = defineStore('session', () => {
   const initialized = ref(false)
   let initializePromise: Promise<void> | null = null
 
-  const members = ref<Member[]>(MEMBERS)
-  const org = ref(ORG)
+  const members = ref<Member[]>([])
+  const org = ref({ id: '', name: '', memberCount: 0 })
   const authed = computed(() => account.value !== null)
   const userId = computed(() => account.value?.member.id ?? '')
   const currentUser = computed<Member>(() => account.value?.member ?? {
@@ -38,8 +38,17 @@ export const useSessionStore = defineStore('session', () => {
     if (!members.value.some((member) => member.id === session.member.id)) members.value.push(session.member)
   }
 
-  function acceptResolution(resolution: AuthResolution) {
-    if (resolution.session) accept(resolution.session)
+  async function refreshDirectory() {
+    const [memberResult, orgResult] = await Promise.allSettled([fetchMembers(), fetchOrg()])
+    if (memberResult.status === 'fulfilled') members.value = memberResult.value
+    if (orgResult.status === 'fulfilled') org.value = orgResult.value
+    if (account.value && !members.value.some((member) => member.id === account.value?.member.id)) {
+      members.value.push(account.value.member)
+    }
+  }
+
+  async function acceptResolution(resolution: AuthResolution) {
+    if (resolution.session) { accept(resolution.session); await refreshDirectory() }
     else if (resolution.claimRequired) pendingClaim.value = resolution
   }
 
@@ -47,7 +56,7 @@ export const useSessionStore = defineStore('session', () => {
     if (initialized.value) return
     if (!initializePromise) {
       initializePromise = getSession()
-        .then(accept)
+        .then(async (value) => { accept(value); await refreshDirectory() })
         .catch(() => { account.value = null })
         .finally(() => { initialized.value = true })
     }
@@ -56,14 +65,17 @@ export const useSessionStore = defineStore('session', () => {
 
   async function emailLogin(email: string, password: string) {
     accept(await loginWithEmail(email, password))
+    await refreshDirectory()
   }
 
   async function emailRegister(name: string, email: string, password: string) {
     accept(await registerWithEmail(name, email, password))
+    await refreshDirectory()
   }
 
   async function claim(memberId: string) {
     accept(await claimMember(memberId))
+    await refreshDirectory()
   }
 
   async function logout() {
@@ -76,6 +88,6 @@ export const useSessionStore = defineStore('session', () => {
 
   return {
     account, pendingClaim, initialized, authed, userId, members, org, currentUser,
-    memberById, accept, acceptResolution, initialize, emailLogin, emailRegister, claim, logout,
+    memberById, accept, acceptResolution, initialize, refreshDirectory, emailLogin, emailRegister, claim, logout,
   }
 })

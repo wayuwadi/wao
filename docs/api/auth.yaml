@@ -54,6 +54,12 @@ paths:
         "200": { description: 已更新 }
         "401": { description: 未登录或当前密码错误 }
         "409": { description: 邮箱已属于其他账号 }
+  /api/account/profile:
+    put:
+      summary: 修改当前账号对应的持久化成员名称和头像文字
+      responses:
+        "200": { description: 返回更新后的统一账号会话 }
+        "401": { description: 未登录 }
   /api/auth/claim:
     post:
       summary: 将本次已验证第三方身份认领到一个尚未绑定的既有成员

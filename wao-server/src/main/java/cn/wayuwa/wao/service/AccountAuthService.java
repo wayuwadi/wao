@@ -59,7 +59,19 @@ public class AccountAuthService {
         List<AccountIdentityDto> identities = identityMapper.findByAccountId(accountId).stream()
                 .map(i -> new AccountIdentityDto(i.getProvider(), i.getEmail(), i.getDisplayName()))
                 .toList();
-        return new AuthSessionDto(account.getId(), toMember(member), identities);
+        return new AuthSessionDto(account.getId(), toMember(member), identities, account.getCreatedAt());
+    }
+
+    /** 修改当前账号对应的真实成员资料，并返回刷新后的会话。 */
+    @Transactional
+    public AuthSessionDto updateProfile(String accountId, String name, String initial) {
+        AccountEntity account = requireActiveAccount(accountId);
+        MemberEntity member = memberMapper.selectById(account.getMemberId());
+        if (member == null) throw new NotFoundException("账号关联的成员不存在");
+        member.setName(name.trim());
+        member.setInitial(initial.trim());
+        memberMapper.updateById(member);
+        return session(accountId);
     }
 
     /** 开发期创建邮箱账号并直接返回登录会话。 */
