@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
@@ -8,7 +8,9 @@ import { useDeco } from '@/composables/deco'
 import { statusMeta, priorityMeta } from '@/utils/domain'
 import { fmtDate } from '@/utils/domain'
 import { toast } from '@/composables/toast'
-import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+// 异步加载：编辑器带着 ProseMirror（gzip 约 110KB），只有真正打开任务详情时才需要，
+// 不该压在首屏包里。
+const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import type { Priority, TaskStatus } from '@/types'
@@ -97,21 +99,25 @@ const desc = computed({
   },
 })
 
-/** 上传一张图片到图床并挂到任务上；超限或失败给出提示。 */
-async function addImageFile(file: File) {
-  const t = task.value
-  if (!t) return
+/**
+ * 编辑器里粘贴 / 插入图片：存进图床，再把地址回传给编辑器内联到光标处。
+ *
+ * <p>图片不再进 `task.images` 附件区——它属于描述正文的一部分，位置由用户
+ * 敲下 Ctrl+V 的地方决定。
+ */
+async function uploadInline(file: File, done: (url: string | null, name: string) => void, source: string) {
   if (file.size > data.MAX_IMAGE_BYTES) {
     toast('图片超过 10MB，已跳过', 'ri-error-warning-line')
+    done(null, '')
     return
   }
-  const ref = await data.uploadImage(file, `任务 · ${t.title}`)
-  if (!ref) {
-    toast('图片上传失败，请重试', 'ri-error-warning-line')
-    return
-  }
-  data.patchTask(t.id, { images: [...(t.images ?? []), ref] }, '你添加了图片')
+  const ref = await data.uploadImage(file, source)
+  if (!ref) toast('图片上传失败，请重试', 'ri-error-warning-line')
+  done(ref?.url ?? null, ref?.name ?? file.name)
 }
+const onTaskImage = (file: File, done: (url: string | null, name: string) => void) =>
+  uploadInline(file, done, `任务 · ${task.value?.title ?? ''}`)
+
 function removeImage(idx: number) {
   const t = task.value
   if (!t?.images) return
@@ -169,26 +175,9 @@ function toggleSubDone() {
   const s = openSub.value
   if (t && s && openSubId.value) data.updateSub(t.id, openSubId.value, { done: !s.done })
 }
-async function addSubImageFile(file: File) {
-  const t = task.value
-  if (!t || !openSubId.value) return
-  if (file.size > data.MAX_IMAGE_BYTES) {
-    toast('图片超过 10MB，已跳过', 'ri-error-warning-line')
-    return
-  }
-  const ref = await data.uploadImage(file, `子任务 · ${openSub.value?.text ?? ''}`)
-  if (!ref) {
-    toast('图片上传失败，请重试', 'ri-error-warning-line')
-    return
-  }
-  data.addSubImage(t.id, openSubId.value, ref)
-}
-const subFileInput = ref<HTMLInputElement | null>(null)
-function onPickSubImages(e: Event) {
-  const files = (e.target as HTMLInputElement).files
-  if (files) Array.from(files).forEach(addSubImageFile)
-  if (subFileInput.value) subFileInput.value.value = ''
-}
+const onSubImage = (file: File, done: (url: string | null, name: string) => void) =>
+  uploadInline(file, done, `子任务 · ${openSub.value?.text ?? ''}`)
+
 function removeSubImage(idx: number) {
   const t = task.value
   if (t && openSubId.value) data.removeSubImage(t.id, openSubId.value, idx)
@@ -321,9 +310,9 @@ function demo(msg: string) {
             <div class="field-label">描述</div>
             <MarkdownEditor
               v-model="desc"
-              placeholder="补充背景、目标与边界…支持 Markdown，可粘贴截图"
+              placeholder="补充背景、目标与边界…敲 ## 变标题、- 变列表，可直接粘贴截图"
               :min-height="84"
-              @paste-image="addImageFile"
+              @upload-image="onTaskImage"
             />
           </div>
 
@@ -441,22 +430,21 @@ function demo(msg: string) {
             <div class="props-label sm">描述</div>
             <MarkdownEditor
               v-model="subDesc"
-              placeholder="补充这个子任务的做法、验收标准…支持 Markdown，可粘贴截图"
+              placeholder="补充这个子任务的做法、验收标准…敲 ## 变标题、- 变列表，可直接粘贴截图"
               :min-height="120"
-              @paste-image="addSubImageFile"
+              @upload-image="onSubImage"
             />
           </div>
 
-          <div class="sub-field">
+          <!-- 历史数据里挂在子任务上的图片；新粘贴的图现在直接进描述正文 -->
+          <div v-if="openSub.images?.length" class="sub-field">
             <div class="props-label sm">图片</div>
-            <div v-if="openSub.images?.length" class="img-grid sub-img-grid">
+            <div class="img-grid sub-img-grid">
               <div v-for="(im, i) in openSub.images" :key="i" class="img-cell">
                 <img :src="im.url" :alt="im.name" @click="viewImage(im.url)" />
                 <button class="img-del" title="移除" @click="removeSubImage(i)"><i class="ri-close-line"></i></button>
               </div>
             </div>
-            <button class="text-btn small" @click="subFileInput?.click()"><i class="ri-image-add-line"></i>添加图片</button>
-            <input ref="subFileInput" type="file" accept="image/*" multiple hidden @change="onPickSubImages" />
           </div>
 
           <div class="prop-section">

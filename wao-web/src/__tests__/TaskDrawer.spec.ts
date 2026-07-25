@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
@@ -9,7 +9,22 @@ import { useUiStore } from '@/stores/ui'
 const router = createRouter({ history: createWebHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div/>' } }] })
 
 function mountDrawer() {
-  return mount(TaskDrawer, { global: { plugins: [router] } })
+  return mount(TaskDrawer, { global: { plugins: [router] }, attachTo: document.body })
+}
+
+/**
+ * 等异步组件（描述编辑器）解析完成。
+ *
+ * 动态 import 的解析要跨若干个微 / 宏任务，固定睡一个时长要么慢要么偶发失败，
+ * 所以这里轮询到出现为止，超时才判失败。
+ */
+async function waitFor(w: ReturnType<typeof mountDrawer>, selector: string, tries = 50) {
+  for (let i = 0; i < tries; i++) {
+    await flushPromises()
+    if (w.find(selector).exists()) return true
+    await new Promise((r) => setTimeout(r, 2))
+  }
+  return false
 }
 
 describe('TaskDrawer', () => {
@@ -37,8 +52,10 @@ describe('TaskDrawer', () => {
 
     expect(w.find('.drawer').exists()).toBe(true)
     expect(w.find('.title-input').attributes('value')).toBe(data.taskById(taskId)!.title)
-    // 描述不再是固定 rows 的 textarea，而是 Markdown 编辑器
-    expect(w.find('.md').exists()).toBe(true)
+
+    // 编辑器是异步组件（ProseMirror 不进首屏包），要等它解析完才出现在 DOM 里
+    expect(w.find('textarea.desc').exists()).toBe(false)
+    expect(await waitFor(w, '.md-body')).toBe(true)
   })
 
   it('默认展示任务属性栏，点击子任务后切成子任务详情', async () => {
