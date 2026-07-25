@@ -1,9 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
 import { toast } from '@/composables/toast'
 import { startFeishuLogin } from '@/api/feishu'
-
-const qrCanvas = ref<HTMLCanvasElement | null>(null)
 
 const feats = [
   { icon: 'ri-node-tree', text: '目标、项目、任务与知识双向关联' },
@@ -16,47 +13,6 @@ const alts = [
   { icon: 'ri-wechat-fill', color: '#2C8A5B', label: '微信' },
 ]
 
-/** 伪二维码：确定性随机点阵 + 三个定位角，纯 canvas 生成（无真实登录信息）。 */
-function drawQR(seed: number) {
-  const el = qrCanvas.value
-  if (!el) return
-  const n = 25
-  el.width = 384
-  el.height = 384
-  const s = 384 / n
-  const ctx = el.getContext('2d')
-  if (!ctx) return
-  let state = seed
-  const rnd = () => {
-    state = (state * 1103515245 + 12345) % 2147483648
-    return state / 2147483648
-  }
-  ctx.fillStyle = '#FFFFFF'
-  ctx.fillRect(0, 0, 384, 384)
-  ctx.fillStyle = '#23262F'
-  const fin = (x: number, y: number) =>
-    (x < 8 && y < 8) || (x >= n - 8 && y < 8) || (x < 8 && y >= n - 8)
-  for (let y = 0; y < n; y++)
-    for (let x = 0; x < n; x++) {
-      if (fin(x, y)) continue
-      if (rnd() > 0.55) ctx.fillRect(x * s + 0.5, y * s + 0.5, s - 1, s - 1)
-    }
-  const box = (cx: number, cy: number) => {
-    ctx.fillRect(cx * s, cy * s, 7 * s, s)
-    ctx.fillRect(cx * s, (cy + 6) * s, 7 * s, s)
-    ctx.fillRect(cx * s, cy * s, s, 7 * s)
-    ctx.fillRect((cx + 6) * s, cy * s, s, 7 * s)
-    ctx.fillRect((cx + 2) * s, (cy + 2) * s, 3 * s, 3 * s)
-  }
-  box(0, 0)
-  box(n - 7, 0)
-  box(0, n - 7)
-}
-
-function refreshQR() {
-  drawQR(Math.floor(Math.random() * 2 ** 31))
-}
-
 function loginGo() {
   void startFeishuLogin('qr')
 }
@@ -67,7 +23,6 @@ function altLogin(label: string) {
   toast(`已预留「${label}」登录入口，本次演示未接入`)
 }
 
-onMounted(() => drawQR(20260723))
 </script>
 
 <template>
@@ -95,14 +50,12 @@ onMounted(() => drawQR(20260723))
       <div class="card">
         <div class="card-title">登录「娃屋」</div>
         <div class="card-sub">初始成员 2 人 · 随时可邀请更多成员加入</div>
-        <div class="qr-wrap"><canvas ref="qrCanvas" class="qr"></canvas></div>
-        <div class="qr-status">
-          <span class="dot"></span>二维码有效
-          <button class="link" @click="refreshQR">刷新</button>
+        <div class="qr-wrap">
+          <i class="ri-qr-scan-2-line qr-icon"></i>
         </div>
-        <div class="qr-hint">打开 <b>飞书 App</b> 扫一扫，安全登录</div>
+        <div class="qr-hint">点击后进入飞书官方页面扫码，WAO 不接触你的飞书密码</div>
         <button class="primary" @click="loginGo">
-          <i class="ri-qr-scan-2-line"></i>模拟扫码成功，进入系统
+          <i class="ri-qr-scan-2-line"></i>使用飞书扫码登录
         </button>
         <button class="sso" @click="authorizationLogin">使用飞书授权登录</button>
         <div class="divider"><span></span>其他登录方式（预留）<span></span></div>
@@ -112,7 +65,7 @@ onMounted(() => drawQR(20260723))
           </button>
         </div>
         <button class="sso" disabled>企业 SSO 接入（规划中）</button>
-        <div class="card-foot">本页仅为交互演示，不发起真实认证请求</div>
+        <div class="card-foot">登录请求由飞书官方认证服务处理</div>
       </div>
     </section>
   </div>
@@ -237,35 +190,18 @@ onMounted(() => drawQR(20260723))
   border: 1px solid var(--wao-line);
   border-radius: 14px;
 }
-.qr {
-  display: block;
+.qr-icon {
+  display: grid;
+  place-items: center;
   width: 192px;
   height: 192px;
-}
-.qr-status {
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--wao-text-3);
-}
-.qr-status .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--wao-success);
-}
-.link {
-  border: none;
-  background: none;
+  border-radius: 8px;
+  background: var(--wao-bg-sub-2);
   color: var(--wao-primary);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 2px 4px;
+  font-size: 88px;
 }
 .qr-hint {
-  margin-top: 2px;
+  margin-top: 10px;
   font-size: 13px;
   color: var(--wao-text-3);
 }

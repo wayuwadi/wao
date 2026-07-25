@@ -1,6 +1,7 @@
 param(
     [string]$ArchivePath = 'D:\deploy\wao-release.zip',
     [string]$TargetPath = 'D:\deploy\wao',
+    [string]$FeishuEnvPath = 'D:\deploy\wao-feishu.env',
     [string]$ImageArchivePath,
     [string]$Distribution = 'Ubuntu'
 )
@@ -35,6 +36,12 @@ switch ([IO.Path]::GetExtension($archive).ToLowerInvariant()) {
 $deployScript = Join-Path $target 'deploy\scripts\deploy-windows.ps1'
 if (-not (Test-Path -LiteralPath $deployScript -PathType Leaf)) {
     throw "Deployment script was not found after extraction: $deployScript"
+}
+
+if (Test-Path -LiteralPath $FeishuEnvPath -PathType Leaf) {
+    $privateEnv = Join-Path $target 'deploy\.env.feishu'
+    Copy-Item -LiteralPath $FeishuEnvPath -Destination $privateEnv -Force
+    Remove-Item -LiteralPath $FeishuEnvPath -Force
 }
 
 $imageLoaded = $false

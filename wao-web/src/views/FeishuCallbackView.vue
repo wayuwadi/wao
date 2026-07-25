@@ -16,12 +16,20 @@ onMounted(async () => {
     const profile = await exchangeFeishuCode(code, state)
     session.login(profile.userId)
     await router.replace('/')
-  } catch {
-    message.value = '飞书登录未完成，请返回后重试。'
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : '飞书登录未完成，请返回后重试。'
   }
 })
 </script>
 
-<template><main class="callback">{{ message }}</main></template>
+<template>
+  <main class="callback">
+    <p>{{ message }}</p>
+    <RouterLink v-if="message !== '正在完成飞书登录…'" to="/login">返回登录页</RouterLink>
+  </main>
+</template>
 
-<style scoped>.callback { min-height: 100vh; display: grid; place-items: center; color: #5a5e6b; }</style>
+<style scoped>
+.callback { min-height: 100vh; display: grid; place-content: center; gap: 12px; text-align: center; color: #5a5e6b; }
+a { color: var(--wao-primary); }
+</style>
