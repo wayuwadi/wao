@@ -101,18 +101,67 @@ paths:
         content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } }
       responses:
         '200': { description: OK }
-  # 内容 / 参考域（只读，payload 直通 JSON，字段与前端类型一致）
-  /kbs: { get: { summary: 知识库列表, responses: { '200': { description: OK } } } }
-  /docs: { get: { summary: 文档列表, responses: { '200': { description: OK } } } }
+  # 知识库域（关系表，见 docs/database/schema.md「知识库域」）
+  /kb-groups:
+    get: { summary: 自建知识库分组列表, responses: { '200': { description: OK } } }
+    post: { summary: 新建分组, responses: { '200': { description: OK } } }
+  /kb-groups/{id}:
+    patch: { summary: 重命名分组, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除分组（下属知识库回落为默认分组）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /kbs:
+    get: { summary: 知识库列表, responses: { '200': { description: OK } } }
+    post: { summary: 新建知识库（自带默认文件夹「文档」）, responses: { '200': { description: OK }, '400': { description: 参数不合法 } } }
+  /kbs/{id}:
+    get: { summary: 知识库详情, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    patch: { summary: 局部更新知识库（项目 / 自动化知识库的名称与简介不可改）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除知识库（级联删除文件夹与文档）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /kbs/{id}/folders:
+    post: { summary: 在知识库下新建文件夹, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 知识库不存在 } } }
+  /kbs/{id}/folders/{folderId}:
+    patch: { summary: 重命名文件夹, parameters: [ { name: id, in: path, required: true, schema: { type: string } }, { name: folderId, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除文件夹（级联删除文档）, parameters: [ { name: id, in: path, required: true, schema: { type: string } }, { name: folderId, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /docs:
+    get: { summary: 文档列表（含正文块与动态计算的反向链接）, responses: { '200': { description: OK } } }
+    post:
+      summary: 新建文档（必须指定 kbId + folderId，创建即完成与知识库的关联）
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateDocRequest' } } } }
+      responses: { '200': { description: OK }, '404': { description: 知识库或文件夹不存在 } }
   /docs/{id}:
     get:
       summary: 文档详情
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '404': { description: 不存在 } }
-  /jobs: { get: { summary: 自动化 Job 列表, responses: { '200': { description: OK } } } }
+    patch: { summary: 局部更新文档（标题 / 正文块 / 出链 / 所在文件夹）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除文档, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  # 自动化域（关系表；cronExpr 非空的任务由服务端调度器按计划自动执行）
+  /jobs:
+    get: { summary: 自动化任务列表（含近 3 次运行记录）, responses: { '200': { description: OK } } }
+    post: { summary: 新建自动化任务, responses: { '200': { description: OK }, '400': { description: cronExpr 不是合法 Cron 表达式 } } }
+  /jobs/{id}:
+    get: { summary: 任务详情, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    patch: { summary: 局部更新任务, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除任务（级联删除运行记录）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /jobs/{id}/run: { post: { summary: 手动触发一次运行, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
+  /jobs/{id}/pause: { post: { summary: 暂停（停止按计划自动执行）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
+  /jobs/{id}/resume: { post: { summary: 恢复已暂停的任务, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
+  /jobs/{id}/reauth: { post: { summary: 重新授权（「待修复」恢复为「正常」）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /files: { get: { summary: 文件列表, responses: { '200': { description: OK } } } }
   /images: { get: { summary: 图床列表, responses: { '200': { description: OK } } } }
-  /vault: { get: { summary: 密码库分组列表, responses: { '200': { description: OK } } } }
+  # 密钥库域（关系表；密码以 AES-256-GCM 服务端加密存储，见 docs/adr/009-vault-server-side-encryption.md）
+  /vault:
+    get: { summary: 密钥库分组及条目列表（不含密码明文，仅 hasSecret 标记）, responses: { '200': { description: OK } } }
+  /vault/groups:
+    post: { summary: 新建分组, responses: { '200': { description: OK } } }
+  /vault/groups/{id}:
+    patch: { summary: 重命名分组, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除分组（级联删除条目）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /vault/items:
+    post: { summary: 新建条目（secret 明文只在本次请求传输，落库前加密）, responses: { '200': { description: OK }, '404': { description: 分组不存在 } } }
+  /vault/items/{id}:
+    patch: { summary: 局部更新条目, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除条目, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /vault/items/{id}/reveal:
+    post: { summary: 解密并返回一次密码明文（未设置密码时 secret 为 null）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   /calendar/events: { get: { summary: 日历事件列表, responses: { '200': { description: OK } } } }
   /schedule: { get: { summary: 今日日程列表, responses: { '200': { description: OK } } } }
   /suggestions: { get: { summary: AI 建议列表, responses: { '200': { description: OK } } } }
@@ -165,7 +214,7 @@ components:
         due: { type: string }
         images:
           type: array
-          description: 内嵌图片（data: 或远程链接）
+          description: "内嵌图片（data: 或远程链接）"
           items:
             type: object
             properties:
@@ -212,6 +261,15 @@ components:
         pr: { type: string }
         owner: { type: string }
         desc: { type: string }
+    CreateDocRequest:
+      type: object
+      required: [kbId, folderId]
+      description: kbId + folderId 建立文档与知识库的关联；title/author 缺省为「未命名文档」/ wg
+      properties:
+        kbId: { type: string }
+        folderId: { type: string }
+        title: { type: string }
+        author: { type: string }
     MemberListResponse:
       allOf:
         - $ref: '#/components/schemas/ApiResponse'

@@ -179,10 +179,11 @@ export interface KbGroup {
 export type JobRun = [time: string, result: string]
 
 export interface AutomationJob {
+  id: string
   name: string
   icon: string
   schedule: string
-  status: '正常' | '待修复'
+  status: '正常' | '待修复' | '已暂停'
   last: string
   desc: string
   source: string
@@ -211,15 +212,19 @@ export interface ImageItem {
 }
 
 export interface VaultItem {
+  id: string
   name: string
   icon: string
   user: string
   site: string
   note: string
   updated: string
+  /** 是否已设置密码；密码明文从不随列表返回，需调用 reveal 接口按需查看。 */
+  hasSecret: boolean
 }
 
 export interface VaultGroup {
+  id: string
   group: string
   items: VaultItem[]
 }

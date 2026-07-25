@@ -7,15 +7,23 @@ import type { AutomationJob } from '@/types'
 
 const data = useDataStore()
 const tab = ref<'jobs' | 'runs'>('jobs')
-const selName = ref<string | null>(null)
+const selId = ref<string | null>(null)
+const newOpen = ref(false)
+const newName = ref('')
+const newSchedule = ref('')
+const newDesc = ref('')
+const newSource = ref('')
+const newTarget = ref('')
+const newSteps = ref('')
+const newCron = ref('')
 
 const isFail = (result: string) => result.includes('失败')
 const durOf = (i: number, j: number) => `${((i * 7 + j * 13) % 46) + 9} 秒`
 
 function stMeta(a: AutomationJob) {
-  return a.status === '正常'
-    ? { bg: '#E8F5EE', color: '#257A50' }
-    : { bg: '#FBEBEB', color: '#BC4141' }
+  if (a.status === '正常') return { bg: '#E8F5EE', color: '#257A50' }
+  if (a.status === '已暂停') return { bg: '#F0F1F4', color: '#6B6E79' }
+  return { bg: '#FBEBEB', color: '#BC4141' }
 }
 
 const jobs = computed(() =>
@@ -30,19 +38,19 @@ const jobs = computed(() =>
 )
 
 const allRuns = computed(() => {
-  const rows: { time: string; job: string; icon: string; result: string; dur: string; color: string; bg: string; name: string }[] = []
+  const rows: { time: string; job: string; icon: string; result: string; dur: string; color: string; bg: string; id: string }[] = []
   data.autos.forEach((a, i) =>
     a.runs.forEach((r, j) =>
       rows.push({
         time: r[0], job: a.name, icon: a.icon, result: r[1], dur: durOf(i, j),
-        color: isFail(r[1]) ? '#BC4141' : '#257A50', bg: isFail(r[1]) ? '#FBEBEB' : '#E8F5EE', name: a.name,
+        color: isFail(r[1]) ? '#BC4141' : '#257A50', bg: isFail(r[1]) ? '#FBEBEB' : '#E8F5EE', id: a.id,
       }),
     ),
   )
   return rows
 })
 
-const sel = computed(() => data.autos.find((a) => a.name === selName.value) ?? null)
+const sel = computed(() => data.autos.find((a) => a.id === selId.value) ?? null)
 const selMeta = computed(() => (sel.value ? stMeta(sel.value) : { bg: '', color: '' }))
 const selIndex = computed(() => (sel.value ? data.autos.indexOf(sel.value) : 0))
 const aoRuns = computed(() =>
@@ -52,17 +60,50 @@ const aoRuns = computed(() =>
   })),
 )
 
-function run(name: string) {
-  toast(`已手动触发「${name}」（演示）`, 'ri-play-line')
+async function onRun(id: string) {
+  await data.runJob(id)
+  toast('已手动触发', 'ri-play-line')
 }
-function fix() {
-  toast('演示：重新授权流程在正式版本提供', 'ri-tools-line')
+async function onFix(id: string) {
+  await data.reauthJob(id)
+  toast('已重新授权', 'ri-tools-line')
 }
-function pauseJob() {
-  toast('已暂停，将不再按计划运行（演示）', 'ri-pause-circle-line')
+async function onPause(id: string) {
+  await data.pauseJob(id)
+  toast('已暂停，将不再按计划运行', 'ri-pause-circle-line')
 }
-function newAuto() {
-  toast('演示：自动化编辑器在下一轮迭代提供')
+async function onResume(id: string) {
+  await data.resumeJob(id)
+  toast('已恢复', 'ri-play-circle-line')
+}
+async function onDelete(id: string) {
+  selId.value = null
+  await data.deleteJob(id)
+  toast('已删除自动化任务', 'ri-delete-bin-line')
+}
+function openNewAuto() {
+  newName.value = ''
+  newSchedule.value = ''
+  newDesc.value = ''
+  newSource.value = ''
+  newTarget.value = ''
+  newSteps.value = ''
+  newCron.value = ''
+  newOpen.value = true
+}
+async function createAuto() {
+  if (!newName.value.trim()) return
+  const job = await data.createJob({
+    name: newName.value.trim(),
+    schedule: newSchedule.value.trim() || undefined,
+    desc: newDesc.value.trim() || undefined,
+    source: newSource.value.trim() || undefined,
+    target: newTarget.value.trim() || undefined,
+    steps: newSteps.value.split('\n').map((s) => s.trim()).filter(Boolean),
+    cronExpr: newCron.value.trim() || undefined,
+  })
+  newOpen.value = false
+  selId.value = job.id
 }
 </script>
 
@@ -70,8 +111,8 @@ function newAuto() {
   <div class="auto">
     <DemoBanner
       icon="ri-flashlight-line"
-      title="自动化 · 功能演示"
-      text="当前为示例自动化任务与运行记录，用于演示定时同步、归档与提醒的形态。可视化编排、触发器与真实执行引擎将在后续迭代交付。"
+      title="自动化"
+      text="自动化任务已接入真实后端：新建 / 编辑 / 删除、手动触发、暂停与恢复均会保存并产生真实的运行记录。填写 Cron 表达式的任务会由服务端按计划自动执行；执行步骤仍是描述性文本，尚未接入飞书 / NAS / 邮箱等外部系统的真实调用。"
       storage-key="automation"
     />
     <!-- 列表 -->
@@ -80,7 +121,7 @@ function newAuto() {
         <div class="atitle">自动化 / 定时任务</div>
         <span class="atip">让记录自己发生</span>
         <div class="spacer"></div>
-        <button class="btn-primary" @click="newAuto"><i class="ri-add-line"></i>新建自动化</button>
+        <button class="btn-primary" @click="openNewAuto"><i class="ri-add-line"></i>新建自动化</button>
       </div>
       <div class="tabs">
         <button v-for="t in ([['任务列表', 'jobs'], ['运行记录', 'runs']] as const)" :key="t[1]" class="tab" :class="{ on: tab === t[1] }" @click="tab = t[1]">{{ t[0] }}</button>
@@ -90,8 +131,8 @@ function newAuto() {
         <div class="grid-jobs th">
           <div>名称</div><div>计划</div><div>状态</div><div>上次运行</div><div>近 5 次</div><div class="right">操作</div>
         </div>
-        <div v-for="jb in jobs" :key="jb.job.name" class="grid-jobs row">
-          <button class="job-name" @click="selName = jb.job.name">
+        <div v-for="jb in jobs" :key="jb.job.id" class="grid-jobs row">
+          <button class="job-name" @click="selId = jb.job.id">
             <div class="job-icon"><i :class="jb.job.icon"></i></div>
             <span class="job-link">{{ jb.job.name }}</span>
           </button>
@@ -100,8 +141,10 @@ function newAuto() {
           <div class="cell muted ellip">{{ jb.job.last }}</div>
           <div class="dots"><span v-for="(d, i) in jb.dots" :key="i" class="dot" :title="d.title" :style="{ background: d.bg }"></span></div>
           <div class="ops">
-            <button v-if="jb.needFix" class="op fix" title="重新授权" @click="fix"><i class="ri-tools-line"></i></button>
-            <button class="op" title="手动运行" @click="run(jb.job.name)"><i class="ri-play-line"></i></button>
+            <button v-if="jb.needFix" class="op fix" title="重新授权" @click="onFix(jb.job.id)"><i class="ri-tools-line"></i></button>
+            <button v-if="jb.job.status === '已暂停'" class="op" title="恢复" @click="onResume(jb.job.id)"><i class="ri-play-circle-line"></i></button>
+            <button v-else class="op" title="暂停" @click="onPause(jb.job.id)"><i class="ri-pause-circle-line"></i></button>
+            <button class="op" title="手动运行" @click="onRun(jb.job.id)"><i class="ri-play-line"></i></button>
           </div>
         </div>
       </div>
@@ -110,19 +153,19 @@ function newAuto() {
         <div class="grid-runs th">
           <div>开始时间</div><div>任务</div><div>时长</div><div>结果</div>
         </div>
-        <div v-for="(rn, i) in allRuns" :key="i" class="grid-runs row link" @click="selName = rn.name">
+        <div v-for="(rn, i) in allRuns" :key="i" class="grid-runs row link" @click="selId = rn.id">
           <div class="cell muted wao-tabular">{{ rn.time }}</div>
           <div class="run-job"><i :class="rn.icon"></i><span class="ellip">{{ rn.job }}</span></div>
           <div class="cell muted wao-tabular">{{ rn.dur }}</div>
           <div><span class="mini" :style="{ background: rn.bg, color: rn.color }">{{ rn.result }}</span></div>
         </div>
       </div>
-      <div class="foot-note">演示环境不会真实执行任务；「飞书群聊 → 知识库沉淀」的结果可在知识库「群聊沉淀」查看。</div>
+      <div class="foot-note">「飞书群聊 → 知识库沉淀」的结果可在知识库「群聊沉淀」查看。</div>
     </template>
 
     <!-- Job 详情 -->
     <template v-else>
-      <button class="back" @click="selName = null"><i class="ri-arrow-left-line"></i>全部自动化</button>
+      <button class="back" @click="selId = null"><i class="ri-arrow-left-line"></i>全部自动化</button>
       <div class="job-head">
         <div class="jh-icon"><i :class="sel.icon"></i></div>
         <div class="jh-main">
@@ -133,9 +176,11 @@ function newAuto() {
           <div class="jh-desc">{{ sel.desc }}</div>
         </div>
         <div class="spacer"></div>
-        <button v-if="sel.status === '待修复'" class="btn-danger" @click="fix">重新授权</button>
-        <button class="btn-primary sm" @click="run(sel.name)"><i class="ri-play-line"></i>手动运行</button>
-        <button class="btn-ghost" @click="pauseJob"><i class="ri-pause-circle-line"></i>暂停</button>
+        <button v-if="sel.status === '待修复'" class="btn-danger" @click="onFix(sel.id)">重新授权</button>
+        <button class="btn-primary sm" @click="onRun(sel.id)"><i class="ri-play-line"></i>手动运行</button>
+        <button v-if="sel.status === '已暂停'" class="btn-ghost" @click="onResume(sel.id)"><i class="ri-play-circle-line"></i>恢复</button>
+        <button v-else class="btn-ghost" @click="onPause(sel.id)"><i class="ri-pause-circle-line"></i>暂停</button>
+        <button class="btn-ghost danger" @click="onDelete(sel.id)"><i class="ri-delete-bin-line"></i>删除</button>
       </div>
 
       <div class="job-cols">
@@ -166,7 +211,38 @@ function newAuto() {
               </div>
             </div>
           </div>
-          <div class="dc-note">配置项在本轮为只读演示；编辑器与更多触发方式在后续迭代提供。</div>
+        </div>
+      </div>
+    </template>
+
+    <!-- 新建自动化弹层 -->
+    <template v-if="newOpen">
+      <div class="modal-mask" @click="newOpen = false"></div>
+      <div class="modal">
+        <div class="modal-head">
+          <div class="modal-title">新建自动化</div>
+          <div class="spacer"></div>
+          <button class="icon-btn" @click="newOpen = false"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="modal-body">
+          <label class="f-label">名称</label>
+          <input v-model="newName" class="f-input" placeholder="给自动化任务起个名字" />
+          <label class="f-label">计划（展示文案，如「每日 06:00」）</label>
+          <input v-model="newSchedule" class="f-input" placeholder="选填" />
+          <label class="f-label">Cron 表达式（选填，留空则仅手动触发）</label>
+          <input v-model="newCron" class="f-input" placeholder="例如 0 0 6 * * *" />
+          <label class="f-label">描述</label>
+          <textarea v-model="newDesc" class="f-textarea" rows="2" placeholder="选填"></textarea>
+          <label class="f-label">数据源</label>
+          <input v-model="newSource" class="f-input" placeholder="选填" />
+          <label class="f-label">输出到</label>
+          <input v-model="newTarget" class="f-input" placeholder="选填" />
+          <label class="f-label">执行步骤（每行一步）</label>
+          <textarea v-model="newSteps" class="f-textarea" rows="3" placeholder="选填"></textarea>
+        </div>
+        <div class="modal-foot">
+          <div class="spacer"></div>
+          <button class="btn-primary" :disabled="!newName.trim()" @click="createAuto">创建</button>
         </div>
       </div>
     </template>
@@ -601,9 +677,98 @@ function newAuto() {
 .step-t {
   line-height: 1.7;
 }
-.dc-note {
-  margin-top: 12px;
-  font-size: 11.5px;
-  color: var(--wao-text-faint);
+.btn-ghost.danger {
+  color: #bc4141;
+  border-color: #f0c9c9;
+}
+.btn-ghost.danger:hover {
+  background: var(--wao-danger-bg);
+}
+.btn-primary:disabled {
+  background: var(--wao-line-strong);
+  cursor: not-allowed;
+}
+
+/* 新建自动化弹层 */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(23, 25, 35, 0.32);
+  z-index: 100;
+  animation: waoFade 0.15s ease;
+}
+.modal {
+  position: fixed;
+  top: 9vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(540px, calc(100vw - 40px));
+  max-height: 80vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 14px;
+  z-index: 101;
+  box-shadow: var(--wao-shadow-modal);
+  animation: waoPop 0.16s ease;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--wao-divider);
+}
+.modal-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--wao-text-3);
+}
+.icon-btn:hover {
+  background: var(--wao-bg-hover-2);
+}
+.modal-body {
+  padding: 16px 20px;
+}
+.f-label {
+  display: block;
+  font-size: 12px;
+  color: var(--wao-text-weak);
+  margin: 12px 0 6px;
+}
+.f-label:first-child {
+  margin-top: 0;
+}
+.f-input,
+.f-textarea {
+  width: 100%;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--wao-text);
+  outline: none;
+  background: #fff;
+}
+.f-input:focus,
+.f-textarea:focus {
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
+}
+.f-textarea {
+  resize: vertical;
+}
+.modal-foot {
+  display: flex;
+  align-items: center;
+  padding: 14px 20px;
+  border-top: 1px solid var(--wao-divider);
 }
 </style>

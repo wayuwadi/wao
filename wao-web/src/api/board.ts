@@ -4,9 +4,13 @@ import type {
   AutomationJob,
   CalendarEvent,
   Doc,
+  DocBlock,
+  DocLink,
   FileItem,
+  Folder,
   ImageItem,
   ImageRef,
+  KbGroup,
   KnowledgeBase,
   Member,
   Org,
@@ -15,6 +19,7 @@ import type {
   Suggestion,
   Task,
   VaultGroup,
+  VaultItem,
 } from '@/types'
 
 /** 目标胶囊（首页右上）。 */
@@ -34,6 +39,17 @@ async function get<T>(url: string): Promise<T> {
   const res = await http.get<ApiResponse<T>>(url)
   return res.data.data
 }
+async function post<T>(url: string, body?: unknown): Promise<T> {
+  const res = await http.post<ApiResponse<T>>(url, body)
+  return res.data.data
+}
+async function patch<T>(url: string, body?: unknown): Promise<T> {
+  const res = await http.patch<ApiResponse<T>>(url, body)
+  return res.data.data
+}
+async function del(url: string): Promise<void> {
+  await http.delete<ApiResponse<void>>(url)
+}
 
 export const fetchMembers = () => get<Member[]>('/api/members')
 export const fetchOrg = () => get<Org>('/api/org')
@@ -41,8 +57,9 @@ export const fetchAreas = () => get<Area[]>('/api/areas')
 export const fetchProjects = () => get<Project[]>('/api/projects')
 export const fetchTasks = () => get<Task[]>('/api/tasks')
 
-// 内容 / 参考域（只读）
+// 内容 / 参考域
 export const fetchKbs = () => get<KnowledgeBase[]>('/api/kbs')
+export const fetchKbGroups = () => get<KbGroup[]>('/api/kb-groups')
 export const fetchDocs = () => get<Doc[]>('/api/docs')
 export const fetchJobs = () => get<AutomationJob[]>('/api/jobs')
 export const fetchFiles = () => get<FileItem[]>('/api/files')
@@ -112,3 +129,105 @@ export async function apiPatchProject(id: string, payload: PatchProjectPayload):
 export async function apiDeleteProject(id: string): Promise<void> {
   await http.delete<ApiResponse<void>>(`/api/projects/${id}`)
 }
+
+// ---------------- 知识库分组 ----------------
+
+export const apiCreateKbGroup = (name: string) => post<KbGroup>('/api/kb-groups', { name })
+export const apiRenameKbGroup = (id: string, name: string) => patch<KbGroup>(`/api/kb-groups/${id}`, { name })
+export const apiDeleteKbGroup = (id: string) => del(`/api/kb-groups/${id}`)
+
+// ---------------- 知识库 / 文件夹 ----------------
+
+export interface CreateKbPayload {
+  name: string
+  desc?: string
+  icon?: string
+  color?: string
+  project?: string | null
+  group?: string
+  perm?: string
+}
+export const apiCreateKb = (payload: CreateKbPayload) => post<KnowledgeBase>('/api/kbs', payload)
+
+export interface PatchKbPayload {
+  name?: string
+  desc?: string
+  icon?: string
+  color?: string
+  group?: string
+  perm?: string
+}
+export const apiPatchKb = (id: string, payload: PatchKbPayload) => patch<KnowledgeBase>(`/api/kbs/${id}`, payload)
+export const apiDeleteKb = (id: string) => del(`/api/kbs/${id}`)
+
+export const apiCreateFolder = (kbId: string, name: string) =>
+  post<Folder>(`/api/kbs/${kbId}/folders`, { name })
+export const apiRenameFolder = (kbId: string, folderId: string, name: string) =>
+  patch<Folder>(`/api/kbs/${kbId}/folders/${folderId}`, { name })
+export const apiDeleteFolder = (kbId: string, folderId: string) => del(`/api/kbs/${kbId}/folders/${folderId}`)
+
+// ---------------- 文档 ----------------
+
+export interface CreateDocPayload {
+  kbId: string
+  folderId: string
+  title?: string
+  author?: string
+}
+/** 新建文档：kbId + folderId 必填，创建即完成与知识库的关联。 */
+export const apiCreateDoc = (payload: CreateDocPayload) => post<Doc>('/api/docs', payload)
+
+export interface PatchDocPayload {
+  title?: string
+  blocks?: DocBlock[]
+  links?: DocLink[]
+  folderId?: string
+}
+export const apiPatchDoc = (id: string, payload: PatchDocPayload) => patch<Doc>(`/api/docs/${id}`, payload)
+export const apiDeleteDoc = (id: string) => del(`/api/docs/${id}`)
+
+// ---------------- 自动化 ----------------
+
+export interface CreateJobPayload {
+  name: string
+  icon?: string
+  schedule?: string
+  desc?: string
+  source?: string
+  target?: string
+  steps?: string[]
+  cronExpr?: string
+}
+export const apiCreateJob = (payload: CreateJobPayload) => post<AutomationJob>('/api/jobs', payload)
+
+export type PatchJobPayload = Partial<CreateJobPayload>
+export const apiPatchJob = (id: string, payload: PatchJobPayload) => patch<AutomationJob>(`/api/jobs/${id}`, payload)
+export const apiDeleteJob = (id: string) => del(`/api/jobs/${id}`)
+export const apiRunJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/run`)
+export const apiPauseJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/pause`)
+export const apiResumeJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/resume`)
+export const apiReauthJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/reauth`)
+
+// ---------------- 密钥库 ----------------
+
+export const apiCreateVaultGroup = (name: string) => post<VaultGroup>('/api/vault/groups', { name })
+export const apiRenameVaultGroup = (id: string, name: string) => patch<VaultGroup>(`/api/vault/groups/${id}`, { name })
+export const apiDeleteVaultGroup = (id: string) => del(`/api/vault/groups/${id}`)
+
+export interface CreateVaultItemPayload {
+  groupId: string
+  name: string
+  icon?: string
+  user?: string
+  site?: string
+  note?: string
+  secret?: string
+}
+export const apiCreateVaultItem = (payload: CreateVaultItemPayload) => post<VaultItem>('/api/vault/items', payload)
+
+export type PatchVaultItemPayload = Partial<Omit<CreateVaultItemPayload, 'groupId'>> & { groupId?: string }
+export const apiPatchVaultItem = (id: string, payload: PatchVaultItemPayload) =>
+  patch<VaultItem>(`/api/vault/items/${id}`, payload)
+export const apiDeleteVaultItem = (id: string) => del(`/api/vault/items/${id}`)
+/** 按需解密并返回一次密码明文；未设置密码的条目返回 null。 */
+export const apiRevealVaultItem = (id: string) => post<{ secret: string | null }>(`/api/vault/items/${id}/reveal`)

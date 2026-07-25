@@ -14,6 +14,9 @@ const router = useRouter()
 
 const editGroupId = ref<string | null>(null)
 const cfgKb = ref<KnowledgeBase | null>(null)
+const newKbOpen = ref(false)
+const newKbName = ref('')
+const newKbDesc = ref('')
 
 function docCount(k: KnowledgeBase) {
   return k.folders.reduce((n, f) => n + f.docs.length, 0)
@@ -39,11 +42,15 @@ function projName(k: KnowledgeBase) {
 function openKb(id: string) {
   router.push(`/kb/${id}`)
 }
-function newGroup() {
-  editGroupId.value = data.addGroup()
+async function newGroup() {
+  editGroupId.value = await data.addGroup()
 }
-function renameGroup(g: { id: string; name: string }, e: Event) {
+function onGroupInput(g: { id: string; name: string }, e: Event) {
   g.name = (e.target as HTMLInputElement).value
+}
+function commitGroupRename(g: { id: string; name: string }) {
+  editGroupId.value = null
+  data.renameGroup(g.id, g.name || '新建分组')
 }
 function openCfg(k: KnowledgeBase) {
   if (!k.perm) k.perm = '仅自己'
@@ -53,11 +60,30 @@ function cfgShare() {
   if (cfgKb.value) copyText(`https://wao.wayuwa.example/kb/${cfgKb.value.id}`, '邀请链接已复制（演示）')
 }
 function cfgDone() {
+  if (cfgKb.value) {
+    const k = cfgKb.value
+    data.updateKb(k.id, { name: k.name, desc: k.desc, icon: k.icon, color: k.color, group: k.group, perm: k.perm })
+  }
   cfgKb.value = null
-  toast('知识库设置已保存（演示）', 'ri-checkbox-circle-line')
+  toast('知识库设置已保存', 'ri-checkbox-circle-line')
 }
-function comingSoon(msg: string) {
-  toast(msg)
+async function cfgDelete() {
+  if (!cfgKb.value) return
+  const id = cfgKb.value.id
+  cfgKb.value = null
+  await data.deleteKb(id)
+  toast('已删除知识库', 'ri-delete-bin-line')
+}
+function openNewKb() {
+  newKbName.value = ''
+  newKbDesc.value = ''
+  newKbOpen.value = true
+}
+async function createKb() {
+  if (!newKbName.value.trim()) return
+  const kb = await data.addKb({ name: newKbName.value.trim(), desc: newKbDesc.value.trim() })
+  newKbOpen.value = false
+  if (kb) openKb(kb.id)
 }
 </script>
 
@@ -65,8 +91,8 @@ function comingSoon(msg: string) {
   <div class="know">
     <DemoBanner
       icon="ri-book-2-line"
-      title="知识库 · 功能演示"
-      text="当前为交互演示：可浏览示例知识库、文档与双链。新建项目会自动生成一个默认知识库；完整的多人协作编辑、语义搜索与自动归档将在后续迭代交付。"
+      title="知识库"
+      text="知识库、分组、文件夹与文档已接入真实后端：新建 / 重命名 / 删除均会保存。新建项目会自动生成一个默认知识库，新建文档需选择归属的知识库与文件夹（即建立关联）。实时多人协同编辑与语义搜索仍是演示态，将在后续迭代交付。"
       storage-key="knowledge"
     />
     <div class="ktop">
@@ -75,7 +101,7 @@ function comingSoon(msg: string) {
       <div class="spacer"></div>
       <button class="ai-btn" @click="ui.openSearch(true)"><i class="ri-magic-line"></i>AI 语义搜索</button>
       <button class="btn-ghost" @click="newGroup"><i class="ri-folder-add-line"></i>新建分组</button>
-      <button class="btn-primary" @click="comingSoon('演示：新建知识库在下一轮迭代提供')"><i class="ri-add-line"></i>新建知识库</button>
+      <button class="btn-primary" @click="openNewKb"><i class="ri-add-line"></i>新建知识库</button>
     </div>
 
     <div v-for="g in groups" :key="g.id" class="kgroup">
@@ -84,10 +110,10 @@ function comingSoon(msg: string) {
           <input
             class="group-input"
             :value="g.label"
-            @input="renameGroup(data.myGroups.find((x) => x.id === g.id)!, $event)"
-            @keydown.enter="editGroupId = null"
+            @input="onGroupInput(data.myGroups.find((x) => x.id === g.id)!, $event)"
+            @keydown.enter="commitGroupRename(data.myGroups.find((x) => x.id === g.id)!)"
           />
-          <button class="mini-primary" @click="editGroupId = null">确定</button>
+          <button class="mini-primary" @click="commitGroupRename(data.myGroups.find((x) => x.id === g.id)!)">确定</button>
         </template>
         <template v-else>
           <div class="kgroup-label">{{ g.label }}</div>
@@ -180,8 +206,31 @@ function comingSoon(msg: string) {
         </div>
         <div class="modal-foot">
           <button class="btn-ghost" @click="cfgShare"><i class="ri-links-line"></i>复制邀请链接</button>
+          <button v-if="!cfgKb.project && !cfgKb.auto" class="btn-danger" @click="cfgDelete"><i class="ri-delete-bin-line"></i>删除</button>
           <div class="spacer"></div>
           <button class="btn-primary" @click="cfgDone">完成</button>
+        </div>
+      </div>
+    </template>
+
+    <!-- 新建知识库弹层 -->
+    <template v-if="newKbOpen">
+      <div class="modal-mask" @click="newKbOpen = false"></div>
+      <div class="modal">
+        <div class="modal-head">
+          <div class="modal-title">新建知识库</div>
+          <div class="spacer"></div>
+          <button class="icon-btn" @click="newKbOpen = false"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="modal-body">
+          <label class="f-label">名称</label>
+          <input v-model="newKbName" class="f-input" placeholder="给知识库起个名字" @keydown.enter="createKb" />
+          <label class="f-label">简介</label>
+          <textarea v-model="newKbDesc" class="f-textarea" rows="2" placeholder="选填"></textarea>
+        </div>
+        <div class="modal-foot">
+          <div class="spacer"></div>
+          <button class="btn-primary" :disabled="!newKbName.trim()" @click="createKb">创建</button>
         </div>
       </div>
     </template>
@@ -250,6 +299,26 @@ function comingSoon(msg: string) {
 .btn-ghost i {
   font-size: 14px;
 }
+.btn-danger {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #f0c9c9;
+  background: #fff;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #bc4141;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+.btn-danger:hover {
+  background: var(--wao-danger-bg);
+}
+.btn-danger i {
+  font-size: 14px;
+}
 .btn-primary {
   height: 32px;
   padding: 0 13px;
@@ -266,6 +335,10 @@ function comingSoon(msg: string) {
 }
 .btn-primary:hover {
   background: var(--wao-primary-hover);
+}
+.btn-primary:disabled {
+  background: var(--wao-line-strong);
+  cursor: not-allowed;
 }
 .btn-primary i {
   font-size: 14px;
