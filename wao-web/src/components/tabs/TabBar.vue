@@ -40,6 +40,34 @@ function selectTab(tab: Tab) {
   router.push(tab.path)
 }
 
+// ---- 拖拽排序 ----
+// 页签顺序是用户自己的动线，堆到第七八个时想把常看的挪到前面，只能靠拖。
+// 首页钉在最左，不参与拖动（见 tabs.move）。
+const dragKey = ref<string | null>(null)
+const overKey = ref<string | null>(null)
+
+function onDragStart(tab: Tab, e: DragEvent) {
+  if (tab.key === 'home') {
+    e.preventDefault()
+    return
+  }
+  dragKey.value = tab.key
+  e.dataTransfer?.setData('text/plain', tab.key)
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
+function onDragOver(tab: Tab) {
+  if (dragKey.value && tab.key !== dragKey.value) overKey.value = tab.key
+}
+function onDrop(tab: Tab) {
+  if (dragKey.value) tabs.move(dragKey.value, tab.key)
+  dragKey.value = null
+  overKey.value = null
+}
+function onDragEnd() {
+  dragKey.value = null
+  overKey.value = null
+}
+
 function closeTab(tab: Tab) {
   const next = tabs.close(tab.key)
   if (next) router.push(next.path)
@@ -80,10 +108,15 @@ function mCloseAll() {
       v-for="tab in tabs.tabs"
       :key="tab.key"
       class="tab"
-      :class="{ active: tab.key === tabs.activeKey }"
-      title="右键：关闭当前 / 左边 / 右边 / 全部"
+      :class="{ active: tab.key === tabs.activeKey, dragging: dragKey === tab.key, over: overKey === tab.key }"
+      :draggable="tab.key !== 'home'"
+      title="拖动可调整顺序；右键：关闭当前 / 左边 / 右边 / 全部"
       @click="selectTab(tab)"
       @contextmenu.prevent="openMenu($event, tab)"
+      @dragstart="onDragStart(tab, $event)"
+      @dragover.prevent="onDragOver(tab)"
+      @drop.prevent="onDrop(tab)"
+      @dragend="onDragEnd"
     >
       <i :class="tab.icon"></i>
       <span class="tab-label">{{ tab.label }}</span>
@@ -167,6 +200,13 @@ function mCloseAll() {
 }
 .tab:hover {
   background: #e6e7ec;
+}
+/* 拖拽中的页签变淡，落点页签左侧压一道主色，指明会插到哪儿 */
+.tab.dragging {
+  opacity: 0.45;
+}
+.tab.over {
+  box-shadow: inset 2px 0 0 var(--wao-primary);
 }
 .tab i {
   font-size: 14px;

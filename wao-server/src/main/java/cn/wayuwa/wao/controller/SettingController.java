@@ -39,10 +39,11 @@ public class SettingController {
         return ApiResponse.ok(webhookConfig());
     }
 
-    /** 用当前配置发一条测试消息，验证地址确实通。 */
+    /** 用当前配置发一张测试卡片，验证地址确实通。 */
     @PostMapping("/feishu-webhook/test")
     public ApiResponse<Void> testWebhook() {
-        notifier.send(settings.get(SettingService.FEISHU_WEBHOOK_URL), "WAO 测试通知：webhook 配置成功。");
+        notifier.send(notifier.resolvedUrl(), FeishuWebhookNotifier.Card.simple(
+                "WAO 测试通知", "green", "webhook 配置成功，之后的系统通知都会以卡片形式发到这个群。"));
         return ApiResponse.ok(null);
     }
 

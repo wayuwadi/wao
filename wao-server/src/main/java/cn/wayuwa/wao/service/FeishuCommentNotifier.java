@@ -1,5 +1,7 @@
 package cn.wayuwa.wao.service;
 
+import java.util.List;
+
 import cn.wayuwa.wao.dto.CommentDto;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
@@ -20,12 +22,18 @@ public class FeishuCommentNotifier {
         this.notifier = notifier;
     }
 
-    /** 发送一条包含项目、任务、评论人、评论内容和原任务链接的文本通知。 */
+    /** 发送一张含项目、任务、评论人、评论内容与跳转按钮的卡片通知。 */
     public void notifyComment(TaskDto task, CommentDto comment, String memberName, String projectName) {
-        notifier.notifyText("【WAO 任务新评论】\n项目：" + blank(projectName, task.project())
-                + "\n任务：" + task.title() + "\n评论人：" + blank(memberName, comment.who())
-                + "\n评论：" + comment.text() + "\n查看：https://wao.wayuwa.cn/projects/" + task.project()
-                + "?task=" + task.id());
+        notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "任务新评论",
+                "blue",
+                List.of(
+                        List.of("项目", blank(projectName, task.project())),
+                        List.of("任务", task.title()),
+                        List.of("评论人", blank(memberName, comment.who()))),
+                comment.text(),
+                "打开任务",
+                "https://wao.wayuwa.cn/projects/" + task.project() + "?task=" + task.id()));
     }
 
     private static String blank(String value, String fallback) {

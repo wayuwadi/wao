@@ -5,6 +5,7 @@ import java.util.List;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 
+import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.Activity;
@@ -158,20 +159,111 @@ public class TaskService {
     public CommentDto addComment(String id, String memberId, String text) {
         TaskEntity entity = require(id);
         TaskDetail detail = parse(entity.getDetailJson());
-        CommentDto comment = new CommentDto(memberId, OffsetDateTime.now(ZoneId.of("Asia/Shanghai")).toString(), text.trim());
+        CommentDto comment = new CommentDto("c" + System.currentTimeMillis(), memberId,
+                OffsetDateTime.now(ZoneId.of("Asia/Shanghai")).toString(), text.trim());
         List<CommentDto> comments = new ArrayList<>(nn(detail.comments()));
         comments.add(comment);
-        List<Activity> activity = new ArrayList<>(nn(detail.activity()));
-        activity.add(0, edit("添加了评论"));
-        entity.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(), detail.docs(),
-                detail.linkTasks(), comments, detail.custom(), activity, detail.images())));
-        taskMapper.updateById(entity);
+        saveComments(entity, detail, comments, "添加了评论");
         TaskDto task = toDto(entity);
         String memberName = members.list().stream().filter(m -> m.id().equals(memberId)).map(m -> m.name()).findFirst().orElse(memberId);
         String projectName;
         try { projectName = projects.get(task.project()).name(); } catch (NotFoundException ex) { projectName = task.project(); }
         commentNotifier.notifyComment(task, comment, memberName, projectName);
         return comment;
+    }
+
+    /**
+     * 改一条评论的正文。只有评论人本人能改 —— 别人的话不该被替换掉。
+     *
+     * @param id        任务 id
+     * @param commentId 评论 id（老数据没有 id 时传下标，如 {@code 2}）
+     * @param memberId  当前成员 id
+     * @param text      新正文
+     * @return 更新后的评论
+     * @throws NotFoundException   任务或评论不存在时
+     * @throws BadRequestException 改的不是自己的评论、或正文为空时
+     */
+    public CommentDto updateComment(String id, String commentId, String memberId, String text) {
+        if (!StringUtils.hasText(text)) {
+            throw new BadRequestException("评论内容不能为空");
+        }
+        TaskEntity entity = require(id);
+        TaskDetail detail = parse(entity.getDetailJson());
+        List<CommentDto> comments = new ArrayList<>(nn(detail.comments()));
+        int index = indexOfComment(comments, commentId);
+        CommentDto old = comments.get(index);
+        requireAuthor(old, memberId);
+        CommentDto updated = new CommentDto(blankOr(old.id(), commentId), old.who(), old.time(), text.trim());
+        comments.set(index, updated);
+        saveComments(entity, detail, comments, "修改了评论");
+        return updated;
+    }
+
+    /**
+     * 删一条评论。同样只有评论人本人能删。
+     *
+     * @param id        任务 id
+     * @param commentId 评论 id（老数据没有 id 时传下标）
+     * @param memberId  当前成员 id
+     * @throws NotFoundException   任务或评论不存在时
+     * @throws BadRequestException 删的不是自己的评论时
+     */
+    public void deleteComment(String id, String commentId, String memberId) {
+        TaskEntity entity = require(id);
+        TaskDetail detail = parse(entity.getDetailJson());
+        List<CommentDto> comments = new ArrayList<>(nn(detail.comments()));
+        int index = indexOfComment(comments, commentId);
+        requireAuthor(comments.get(index), memberId);
+        comments.remove(index);
+        saveComments(entity, detail, comments, "删除了评论");
+    }
+
+    /**
+     * 删除一个任务。
+     *
+     * @param id 任务 id
+     * @throws NotFoundException 任务不存在时
+     */
+    public void delete(String id) {
+        require(id);
+        taskMapper.deleteById(id);
+    }
+
+    /** 评论定位：优先按 id，老评论（没有 id）回落到下标。 */
+    private int indexOfComment(List<CommentDto> comments, String commentId) {
+        for (int i = 0; i < comments.size(); i++) {
+            if (commentId != null && commentId.equals(comments.get(i).id())) {
+                return i;
+            }
+        }
+        try {
+            int index = Integer.parseInt(commentId == null ? "" : commentId.trim());
+            if (index >= 0 && index < comments.size() && comments.get(index).id() == null) {
+                return index;
+            }
+        } catch (NumberFormatException ignored) {
+            // 不是下标就按找不到处理
+        }
+        throw new NotFoundException("评论不存在：" + commentId);
+    }
+
+    private static void requireAuthor(CommentDto comment, String memberId) {
+        if (comment.who() != null && !comment.who().equals(memberId)) {
+            throw new BadRequestException("只能修改或删除自己的评论");
+        }
+    }
+
+    /** 写回评论列表并记一条活动。 */
+    private void saveComments(TaskEntity entity, TaskDetail detail, List<CommentDto> comments, String activityText) {
+        List<Activity> activity = new ArrayList<>(nn(detail.activity()));
+        activity.add(0, edit(activityText));
+        entity.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(), detail.docs(),
+                detail.linkTasks(), comments, detail.custom(), activity, detail.images())));
+        taskMapper.updateById(entity);
+    }
+
+    private static String blankOr(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private TaskEntity require(String id) {

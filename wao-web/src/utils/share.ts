@@ -17,6 +17,16 @@ export function shareUrl(taskId: string, subId?: string | null, openOnly = false
 }
 
 /**
+ * 文件下载页地址 `/f/<id>` —— 对外分享的就是这一个。
+ *
+ * <p>不再直接给 `/api/files/<id>/download`：那是个谁都能无限次拉的直链，
+ * 一个脚本就能把带宽刷满。下载页要人点一下、过一道校验才换得到一次下载。
+ */
+export function fileShareUrl(fileId: string): string {
+  return absoluteUrl(`/f/${encodeURIComponent(fileId)}`)
+}
+
+/**
  * Markdown 直读地址 —— 复制给 AI 时用这个：一次 GET 就是任务全文，
  * 不需要 AI 有执行前端 JS 的能力。
  *

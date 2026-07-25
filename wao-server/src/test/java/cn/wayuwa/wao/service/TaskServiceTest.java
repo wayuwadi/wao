@@ -10,6 +10,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 
+import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
@@ -84,6 +85,86 @@ class TaskServiceTest {
     void getThrowsWhenMissing() {
         when(mapper.selectById("nope")).thenReturn(null);
         assertThatThrownBy(() -> service.get("nope")).isInstanceOf(NotFoundException.class);
+    }
+
+    /** 一条已有评论的任务，detail 里带 id。 */
+    private TaskEntity withComment() {
+        TaskEntity e = todo();
+        e.setDetailJson("{\"comments\":[{\"id\":\"c1\",\"who\":\"wg\",\"time\":\"2026-07-25T10:00:00+08:00\","
+                + "\"text\":\"原始内容\"}],\"activity\":[]}");
+        return e;
+    }
+
+    @Test
+    void updateCommentRewritesTextAndKeepsAuthorAndTime() {
+        TaskEntity e = withComment();
+        when(mapper.selectById("t1")).thenReturn(e);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+
+        var updated = service.updateComment("t1", "c1", "wg", "  改过的内容  ");
+
+        assertThat(updated.text()).isEqualTo("改过的内容");
+        assertThat(updated.id()).isEqualTo("c1");
+        assertThat(updated.who()).isEqualTo("wg");
+        assertThat(updated.time()).isEqualTo("2026-07-25T10:00:00+08:00");
+        assertThat(service.get("t1").activity().get(0).text()).contains("修改了评论");
+    }
+
+    @Test
+    void deleteCommentRemovesIt() {
+        TaskEntity e = withComment();
+        when(mapper.selectById("t1")).thenReturn(e);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+
+        service.deleteComment("t1", "c1", "wg");
+
+        assertThat(service.get("t1").comments()).isEmpty();
+    }
+
+    @Test
+    void cannotTouchSomeoneElsesComment() {
+        when(mapper.selectById("t1")).thenReturn(withComment());
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+
+        assertThatThrownBy(() -> service.updateComment("t1", "c1", "wd", "偷改"))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("自己的评论");
+        assertThatThrownBy(() -> service.deleteComment("t1", "c1", "wd"))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void legacyCommentWithoutIdIsAddressedByIndex() {
+        TaskEntity e = todo();
+        e.setDetailJson("{\"comments\":[{\"who\":\"wg\",\"time\":\"昨天 21:40\",\"text\":\"老评论\"}],\"activity\":[]}");
+        when(mapper.selectById("t1")).thenReturn(e);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+
+        var updated = service.updateComment("t1", "0", "wg", "补充说明");
+
+        assertThat(updated.text()).isEqualTo("补充说明");
+    }
+
+    @Test
+    void updateCommentRejectsBlankText() {
+        when(mapper.selectById("t1")).thenReturn(withComment());
+
+        assertThatThrownBy(() -> service.updateComment("t1", "c1", "wg", "   "))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void deleteRemovesTheTask() {
+        when(mapper.selectById("t1")).thenReturn(todo());
+
+        service.delete("t1");
+
+        verify(mapper).deleteById("t1");
+    }
+
+    @Test
+    void deleteThrowsWhenMissing() {
+        when(mapper.selectById("nope")).thenReturn(null);
+        assertThatThrownBy(() -> service.delete("nope")).isInstanceOf(NotFoundException.class);
     }
 
     @Test

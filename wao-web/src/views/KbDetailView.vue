@@ -142,6 +142,22 @@ async function removeFolder(folderId: string) {
   if (gone) docId.value = firstDocId()
   toast(`已把「${folder.name}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
 }
+/**
+ * 删掉整个知识库并回到列表。
+ *
+ * <p>入口放在这里是因为：新建知识库后会直接进详情页，此前想删只能退回列表、
+ * 在卡片上找齿轮 —— 找不到就等于删不掉。删除同样是软删除，7 天内可恢复。
+ */
+async function removeKb() {
+  const target = kb.value
+  if (!target) return
+  const name = target.name
+  await data.deleteKb(target.id)
+  const next = tabs.close(`kb:${kbId.value}`)
+  await router.push(next?.path ?? '/knowledge')
+  toast(`已把「${name}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
+}
+
 async function removeDoc(id: string) {
   const title = data.docOf(id).title || '未命名文档'
   await data.deleteDoc(id)
@@ -179,6 +195,14 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
         <div class="side-kb">
           <div class="side-icon" :style="{ background: kb.color }"><i :class="kb.icon"></i></div>
           <div class="side-name">{{ kb.name }}</div>
+          <button
+            v-if="!kb.notes"
+            class="kb-del"
+            :title="kb.project ? '删除知识库（项目的关联知识库）' : '删除知识库'"
+            @click="removeKb"
+          >
+            <i class="ri-delete-bin-line"></i>
+          </button>
         </div>
         <button v-if="kb.project" class="proj-chip" @click="gotoProject">
           <i class="ri-stack-line"></i><span class="ellip">关联项目 · {{ data.projectById(kb.project)?.name }}</span>
@@ -387,6 +411,20 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   justify-content: center;
   flex-shrink: 0;
   font-size: 13px;
+}
+.kb-del {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  color: var(--wao-text-faint);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.kb-del:hover {
+  background: var(--wao-bg-hover-2);
+  color: var(--wao-danger-strong);
 }
 .side-name {
   flex: 1;

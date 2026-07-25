@@ -41,6 +41,8 @@ watch(
     newSub.value = ''
     commentText.value = ''
     openSubId.value = null
+    editingComment.value = null
+    confirmingDelete.value = false
   },
 )
 
@@ -53,14 +55,58 @@ const now = useNow()
 const showTime = (t: string) => relativeTime(t, now.value)
 
 const comments = computed(() =>
-  (task.value?.comments ?? []).map((c) => {
+  (task.value?.comments ?? []).map((c, index) => {
     const m = session.memberById(c.who)
     return {
-      name: m.name, initial: m.initial, color: m.color,
+      index, name: m.name, initial: m.initial, color: m.color,
       time: showTime(c.time), fullTime: absoluteTime(c.time), text: c.text,
+      // 只有自己的评论能改能删，服务端同样会拦
+      mine: c.who === session.currentUser.id,
     }
   }),
 )
+
+// ---- 评论的修改 / 删除 ----
+/** 正在编辑的评论下标；null 表示没有在编辑。 */
+const editingComment = ref<number | null>(null)
+const editingText = ref('')
+
+function startEditComment(index: number, text: string) {
+  editingComment.value = index
+  editingText.value = text
+}
+function cancelEditComment() {
+  editingComment.value = null
+  editingText.value = ''
+}
+async function saveComment() {
+  const t = task.value
+  const index = editingComment.value
+  if (!t || index === null) return
+  const ok = await data.updateTaskComment(t.id, index, editingText.value)
+  cancelEditComment()
+  toast(ok ? '评论已更新' : '评论修改失败，请重试', ok ? 'ri-check-line' : 'ri-error-warning-line')
+}
+async function removeComment(index: number) {
+  const t = task.value
+  if (!t) return
+  if (editingComment.value === index) cancelEditComment()
+  const ok = await data.deleteTaskComment(t.id, index)
+  toast(ok ? '评论已删除' : '评论删除失败，请重试', ok ? 'ri-delete-bin-line' : 'ri-error-warning-line')
+}
+
+// ---- 删除任务 ----
+/** 二次确认状态：删任务不可撤销，点一次先变成「确认删除」。 */
+const confirmingDelete = ref(false)
+async function removeTask() {
+  const t = task.value
+  if (!t) return
+  const title = t.title
+  confirmingDelete.value = false
+  ui.closeTask()
+  const ok = await data.deleteTask(t.id)
+  toast(ok ? `已删除任务「${title}」` : '任务删除失败，请重试', ok ? 'ri-delete-bin-line' : 'ri-error-warning-line')
+}
 /** 活动时间线，时间统一转成相对描述。 */
 const activities = computed(() =>
   (task.value?.activity ?? []).map((a) => ({
@@ -514,8 +560,22 @@ function demo(msg: string) {
               <div v-for="(cm, i) in comments" :key="i" class="comment">
                 <span class="c-av" :style="{ background: cm.color }">{{ cm.initial }}</span>
                 <div class="c-main">
-                  <div class="c-head"><b>{{ cm.name }}</b><span class="c-time" :title="cm.fullTime">{{ cm.time }}</span></div>
-                  <div class="c-text">{{ cm.text }}</div>
+                  <div class="c-head">
+                    <b>{{ cm.name }}</b><span class="c-time" :title="cm.fullTime">{{ cm.time }}</span>
+                    <span class="spacer"></span>
+                    <template v-if="cm.mine && editingComment !== cm.index">
+                      <button class="c-op" title="修改评论" @click="startEditComment(cm.index, cm.text)"><i class="ri-edit-line"></i></button>
+                      <button class="c-op danger" title="删除评论" @click="removeComment(cm.index)"><i class="ri-delete-bin-line"></i></button>
+                    </template>
+                  </div>
+                  <div v-if="editingComment === cm.index" class="c-edit">
+                    <textarea v-model="editingText" class="c-edit-input" rows="2" @keydown.esc="cancelEditComment"></textarea>
+                    <div class="c-edit-ops">
+                      <button class="text-btn small" @click="cancelEditComment">取消</button>
+                      <button class="text-btn small primary" :disabled="!editingText.trim()" @click="saveComment">保存</button>
+                    </div>
+                  </div>
+                  <div v-else class="c-text">{{ cm.text }}</div>
                 </div>
               </div>
             </div>
@@ -671,6 +731,25 @@ function demo(msg: string) {
               </div>
             </div>
           </div>
+
+          <!-- 删除任务：明摆在属性栏底部，不藏在右键菜单里 -->
+          <div class="danger-zone">
+            <template v-if="!confirmingDelete">
+              <div class="dz-text">
+                <div class="dz-title">删除任务</div>
+                <div class="dz-sub">连同子任务、评论与活动一起删除，不可恢复。</div>
+              </div>
+              <button class="btn-danger" @click="confirmingDelete = true"><i class="ri-delete-bin-line"></i>删除</button>
+            </template>
+            <template v-else>
+              <div class="dz-text">
+                <div class="dz-title">确认删除「{{ task.title }}」？</div>
+                <div class="dz-sub">此操作不可撤销。</div>
+              </div>
+              <button class="text-btn small" @click="confirmingDelete = false">取消</button>
+              <button class="btn-danger" @click="removeTask"><i class="ri-delete-bin-line"></i>确认删除</button>
+            </template>
+          </div>
         </div>
       </div>
     </aside>
@@ -678,6 +757,109 @@ function demo(msg: string) {
 </template>
 
 <style scoped>
+/* 评论操作 / 编辑态 */
+.c-op {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  color: var(--wao-text-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.comment:hover .c-op {
+  opacity: 1;
+}
+.c-op:hover {
+  background: var(--wao-bg-hover-2);
+  color: var(--wao-text-2);
+}
+.c-op.danger:hover {
+  color: var(--wao-danger-strong);
+}
+.c-op i {
+  font-size: 13px;
+}
+.c-edit {
+  margin-top: 4px;
+}
+.c-edit-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+}
+.c-edit-input:focus {
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
+}
+.c-edit-ops {
+  margin-top: 4px;
+  display: flex;
+  gap: 6px;
+}
+.text-btn.primary {
+  color: var(--wao-primary-text);
+}
+.text-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 删除任务 */
+.danger-zone {
+  margin-top: 14px;
+  border: 1px solid #f0d9d9;
+  background: #fdf7f7;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dz-text {
+  flex: 1;
+  min-width: 0;
+}
+.dz-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--wao-danger-strong);
+}
+.dz-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--wao-text-weak);
+}
+.btn-danger {
+  height: 30px;
+  padding: 0 11px;
+  border: none;
+  background: var(--wao-danger);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+.btn-danger:hover {
+  filter: brightness(0.95);
+}
+.btn-danger i {
+  font-size: 13px;
+}
+
 .mask {
   position: fixed;
   inset: 0;

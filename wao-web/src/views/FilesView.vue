@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
-import { absoluteUrl } from '@/utils/share'
+import { absoluteUrl, fileShareUrl } from '@/utils/share'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 
@@ -105,7 +105,7 @@ async function removeFile(id: string | undefined, name: string) {
     <DemoBanner
       icon="ri-hard-drive-2-line"
       title="文件与图床"
-      text="文件和图床均已接入真实后端持久化：可上传、复制公网直链、直接下载或删除。通用文件单个不超过 50MB，图片仍限制为 10MB。"
+      text="文件和图床均已接入真实后端持久化：可上传、复制分享链接、直接下载或删除。分享出去的文件链接是一个下载页，对方要点一次并通过校验才能下载一次，避免链接被脚本反复拉取；站内自己下载不受影响。通用文件单个不超过 50MB，图片仍限制为 10MB。"
       storage-key="files"
     />
     <div class="ftop">
@@ -123,7 +123,7 @@ async function removeFile(id: string | undefined, name: string) {
     </div>
 
     <template v-if="tab === 'files'">
-      <div class="note">支持拖拽或选择文件上传，单个文件不超过 50MB；复制的直链无需登录即可直接下载。</div>
+      <div class="note">支持拖拽或选择文件上传，单个文件不超过 50MB；分享出去的链接是下载页，对方需要点一次并过一道校验才能下载，避免链接被脚本反复拉取。</div>
       <div class="file-drop" @dragover.prevent @drop.prevent="onDrop">
       <div v-if="!data.files.length" class="img-empty">
         <i class="ri-folder-line"></i>
@@ -134,10 +134,10 @@ async function removeFile(id: string | undefined, name: string) {
           <div class="file-icon"><i :class="f.icon"></i></div>
           <div class="file-main">
             <div class="file-name">{{ f.name }}</div>
-            <div class="file-sub">{{ f.by }} · {{ f.time }} · <span class="wao-mono">{{ f.link }}</span></div>
+            <div class="file-sub">{{ f.by }} · {{ f.time }} · <span class="wao-mono">{{ f.id ? fileShareUrl(f.id) : f.link }}</span></div>
           </div>
           <span class="file-size">{{ f.size }}</span>
-          <button class="copy-btn" @click="copyText(absoluteUrl(f.link), '已复制公网直链')"><i class="ri-links-line"></i>复制直链</button>
+          <button class="copy-btn" title="复制分享链接（对方需人工点击并通过校验）" @click="copyText(f.id ? fileShareUrl(f.id) : absoluteUrl(f.link), '已复制分享链接')"><i class="ri-links-line"></i>复制链接</button>
           <a class="dl-btn" title="直接下载" :href="absoluteUrl(f.link)"><i class="ri-download-2-line"></i></a>
           <button class="dl-btn danger" title="删除" @click="removeFile(f.id, f.name)"><i class="ri-delete-bin-line"></i></button>
         </div>

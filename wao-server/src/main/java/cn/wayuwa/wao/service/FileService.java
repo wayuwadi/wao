@@ -48,6 +48,18 @@ public class FileService {
         return entity;
     }
 
+    /**
+     * 只读元数据（文件名 / 大小 / 时间），供公开的下载确认页展示，不把二进制正文拖进内存。
+     *
+     * @param id 文件 id
+     * @return 文件元数据
+     * @throws NotFoundException 文件不存在时
+     */
+    public FileItemDto meta(String id) {
+        return list().stream().filter(f -> f.id().equals(id)).findFirst()
+                .orElseThrow(() -> new NotFoundException("文件不存在：" + id));
+    }
+
     /** 删除一个文件。 */
     public void delete(String id) { if (mapper.deleteById(id) == 0) throw new NotFoundException("文件不存在：" + id); }
 

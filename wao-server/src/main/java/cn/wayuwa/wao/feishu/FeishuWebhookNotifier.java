@@ -1,5 +1,7 @@
 package cn.wayuwa.wao.feishu;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import cn.wayuwa.wao.service.SettingService;
@@ -56,17 +58,17 @@ public class FeishuWebhookNotifier {
     }
 
     /**
-     * 按当前配置发一条文本通知；没配置或未启用时直接跳过。
+     * 按当前配置发一张卡片通知；没配置或未启用时直接跳过。
      *
-     * @param text 通知正文
+     * @param card 卡片内容
      * @return 是否真的发出去了
      */
-    public boolean notifyText(String text) {
+    public boolean notifyCard(Card card) {
         if (!enabled()) {
             return false;
         }
         try {
-            send(resolvedUrl(), text);
+            send(resolvedUrl(), card);
             return true;
         } catch (RuntimeException ex) {
             // 通知失败不该影响触发它的业务动作，记一条日志就够了
@@ -76,20 +78,20 @@ public class FeishuWebhookNotifier {
     }
 
     /**
-     * 往指定 webhook 发一条文本消息（「发送测试消息」按钮直接用它，不受启用开关影响）。
+     * 往指定 webhook 发一张卡片（「发送测试消息」按钮直接用它，不受启用开关影响）。
      *
      * @param url  webhook 地址
-     * @param text 通知正文
+     * @param card 卡片内容
      * @throws FeishuApiException 地址为空、网络不通或飞书返回错误码时
      */
-    public void send(String url, String text) {
+    public void send(String url, Card card) {
         if (url == null || url.isBlank()) {
             throw new FeishuApiException("请先填写飞书 webhook 地址");
         }
         JsonNode res;
         try {
             res = client.post().uri(url).contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("msg_type", "text", "content", Map.of("text", text)))
+                    .body(Map.of("msg_type", "interactive", "card", card.toPayload()))
                     .retrieve().body(JsonNode.class);
         } catch (RestClientException ex) {
             throw new FeishuApiException("无法连接飞书 webhook，请检查地址是否正确", ex);
@@ -97,6 +99,64 @@ public class FeishuWebhookNotifier {
         int code = res == null ? -1 : res.path("code").asInt(res.path("StatusCode").asInt(0));
         if (code != 0) {
             throw new FeishuApiException("飞书 webhook 返回错误：" + (res == null ? "空响应" : res.path("msg").asText("")));
+        }
+    }
+
+    /**
+     * 一张飞书消息卡片。
+     *
+     * <p>纯文本通知在群里就是一坨灰字，标题、正文、链接全糊在一起。卡片有标题栏配色、
+     * 字段分行和跳转按钮，一眼能看出是什么事、要不要点进去。
+     *
+     * @param title  卡片标题
+     * @param theme  标题栏配色（{@code blue} / {@code green} / {@code orange} / {@code red} / {@code grey}）
+     * @param fields 正文字段，按 [名称, 值] 逐行展示；值支持 Markdown
+     * @param body   补充正文（Markdown），可为空
+     * @param linkText 底部按钮文案，为空则不加按钮
+     * @param linkUrl  底部按钮跳转地址
+     */
+    public record Card(String title, String theme, List<List<String>> fields, String body,
+                       String linkText, String linkUrl) {
+
+        /** 只有标题和正文的简单卡片。 */
+        public static Card simple(String title, String theme, String body) {
+            return new Card(title, theme, List.of(), body, null, null);
+        }
+
+        /** 组装成飞书 interactive 卡片的 JSON 结构。 */
+        Map<String, Object> toPayload() {
+            List<Map<String, Object>> elements = new ArrayList<>();
+            for (List<String> field : fields) {
+                if (field.size() >= 2 && field.get(1) != null && !field.get(1).isBlank()) {
+                    elements.add(markdown("**" + field.get(0) + "**：" + field.get(1)));
+                }
+            }
+            if (body != null && !body.isBlank()) {
+                if (!elements.isEmpty()) {
+                    elements.add(Map.of("tag", "hr"));
+                }
+                elements.add(markdown(body));
+            }
+            if (linkText != null && !linkText.isBlank() && linkUrl != null && !linkUrl.isBlank()) {
+                elements.add(Map.of("tag", "action", "actions", List.of(Map.of(
+                        "tag", "button",
+                        "text", Map.of("tag", "plain_text", "content", linkText),
+                        "type", "primary",
+                        "url", linkUrl))));
+            }
+            if (elements.isEmpty()) {
+                elements.add(markdown(" "));
+            }
+            return Map.of(
+                    "config", Map.of("wide_screen_mode", true),
+                    "header", Map.of(
+                            "template", theme == null || theme.isBlank() ? "blue" : theme,
+                            "title", Map.of("tag", "plain_text", "content", title)),
+                    "elements", elements);
+        }
+
+        private static Map<String, Object> markdown(String content) {
+            return Map.of("tag", "div", "text", Map.of("tag", "lark_md", "content", content));
         }
     }
 }

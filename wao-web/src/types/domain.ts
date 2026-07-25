@@ -80,6 +80,8 @@ export interface TaskStep {
 }
 
 export interface Comment {
+  /** 评论稳定 id（`c` + 时间戳）。历史评论没有，改 / 删时按数组下标兜底。 */
+  id?: string
   who: string
   time: string
   text: string
