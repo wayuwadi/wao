@@ -2,11 +2,14 @@ package cn.wayuwa.wao.service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.Activity;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
+import cn.wayuwa.wao.dto.CommentDto;
 import cn.wayuwa.wao.dto.PatchTaskRequest;
 import cn.wayuwa.wao.dto.TaskDetail;
 import cn.wayuwa.wao.dto.TaskDto;
@@ -24,10 +27,17 @@ public class TaskService {
 
     private final TaskMapper taskMapper;
     private final ObjectMapper json;
+    private final FeishuCommentNotifier commentNotifier;
+    private final MemberService members;
+    private final ProjectService projects;
 
-    public TaskService(TaskMapper taskMapper, ObjectMapper json) {
+    public TaskService(TaskMapper taskMapper, ObjectMapper json, FeishuCommentNotifier commentNotifier,
+            MemberService members, ProjectService projects) {
         this.taskMapper = taskMapper;
         this.json = json;
+        this.commentNotifier = commentNotifier;
+        this.members = members;
+        this.projects = projects;
     }
 
     /**
@@ -142,6 +152,26 @@ public class TaskService {
             taskMapper.updateById(e);
         }
         return toDto(e);
+    }
+
+    /** 原子追加一条评论并同步飞书群，避免全文自动保存请求相互覆盖评论。 */
+    public CommentDto addComment(String id, String memberId, String text) {
+        TaskEntity entity = require(id);
+        TaskDetail detail = parse(entity.getDetailJson());
+        CommentDto comment = new CommentDto(memberId, OffsetDateTime.now(ZoneId.of("Asia/Shanghai")).toString(), text.trim());
+        List<CommentDto> comments = new ArrayList<>(nn(detail.comments()));
+        comments.add(comment);
+        List<Activity> activity = new ArrayList<>(nn(detail.activity()));
+        activity.add(0, edit("添加了评论"));
+        entity.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(), detail.docs(),
+                detail.linkTasks(), comments, detail.custom(), activity, detail.images())));
+        taskMapper.updateById(entity);
+        TaskDto task = toDto(entity);
+        String memberName = members.list().stream().filter(m -> m.id().equals(memberId)).map(m -> m.name()).findFirst().orElse(memberId);
+        String projectName;
+        try { projectName = projects.get(task.project()).name(); } catch (NotFoundException ex) { projectName = task.project(); }
+        commentNotifier.notifyComment(task, comment, memberName, projectName);
+        return comment;
     }
 
     private TaskEntity require(String id) {

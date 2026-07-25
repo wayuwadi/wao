@@ -2,33 +2,38 @@
 /**
  * 自动保存回执 —— 挂在每个自动保存的编辑区右上角。
  *
- * <p>任务描述、子任务描述、知识库文档都是「敲完就存」，没有保存按钮。没有回执时
- * 用户无从判断东西到底进没进服务器，所以统一显示「自动保存成功 14:32」，正在写透
- * 时显示「保存中…」，写透失败时显示红色的「未保存」并保留上一次成功的时间。
+ * <p>任务描述、子任务描述、知识库文档都是「敲完就存」，没有保存按钮。只说「已保存」
+ * 还不够：用户看不出那是这一秒存的还是十分钟前存的，所以成功时带上时刻
+ * （「自动保存成功 14:32」），正在写透时显示「保存中…」，失败时明确说没存上并保留
+ * 上一次成功的时间。
+ *
+ * <p>状态由调用方喂进来：任务走 data store 的 taskSaveState / taskSavedAt，
+ * 文档走 saveState(`doc:<id>`)，这里只管怎么显示。
  */
 import { computed } from 'vue'
-import { useDataStore } from '@/stores/data'
 import { absoluteTime, clockTime } from '@/utils/time'
 
 const props = defineProps<{
-  /** 保存状态登记簿的 key，如 `task:t17`、`doc:d3`。 */
-  saveKey: string
-  /** 有本地改动还没写透（去抖窗口内）；有它时即使请求还没发出也显示「保存中…」。 */
-  pending?: boolean
+  /** 正在写透（含去抖等待窗口）。 */
+  saving?: boolean
+  /** 上一次写透成功的时刻（ISO）；从没成功过就传 null。 */
+  savedAt?: string | null
+  /** 上一次写透失败了。 */
+  failed?: boolean
 }>()
 
-const data = useDataStore()
-const state = computed(() => data.saveState(props.saveKey))
-const saving = computed(() => state.value.saving || props.pending === true)
-const savedAt = computed(() => state.value.savedAt)
+const okTime = computed(() => (props.savedAt ? clockTime(props.savedAt) : ''))
 </script>
 
 <template>
   <span v-if="saving" class="hint">
     <i class="ri-loader-4-line spin"></i>保存中…
   </span>
-  <span v-else-if="savedAt" class="hint ok" :title="absoluteTime(savedAt)">
-    <i class="ri-checkbox-circle-line"></i>自动保存成功 {{ clockTime(savedAt) }}
+  <span v-else-if="failed" class="hint bad" :title="savedAt ? `上次保存成功于 ${absoluteTime(savedAt)}` : ''">
+    <i class="ri-error-warning-line"></i>未保存，内容已留在本机
+  </span>
+  <span v-else-if="okTime" class="hint ok" :title="absoluteTime(savedAt ?? '')">
+    <i class="ri-checkbox-circle-line"></i>自动保存成功 {{ okTime }}
   </span>
 </template>
 
@@ -43,6 +48,9 @@ const savedAt = computed(() => state.value.savedAt)
 }
 .hint.ok {
   color: var(--wao-success-strong);
+}
+.hint.bad {
+  color: var(--wao-danger-strong);
 }
 .hint i {
   font-size: 12.5px;

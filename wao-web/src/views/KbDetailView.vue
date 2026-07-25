@@ -35,7 +35,6 @@ const firstDocId = () => {
   return null
 }
 const docId = ref<string | null>((route.query.doc as string) || firstDocId())
-const docWide = ref(false)
 const folderOpen = reactive<Record<string, boolean>>({})
 const scrollEl = ref<HTMLElement | null>(null)
 const titleEl = ref<HTMLInputElement | null>(null)
@@ -72,6 +71,8 @@ const body = computed({
   },
 })
 const saving = computed(() => (docId.value ? data.docPending(docId.value) : false))
+/** 上一次写透成功的时刻，给「自动保存成功 14:32」用。 */
+const docSavedAt = computed(() => (docId.value ? data.saveState(`doc:${docId.value}`).savedAt : null))
 const createdLabel = computed(() => (base.value?.created ? relativeTime(base.value.created, now.value) : '—'))
 const updatedLabel = computed(() => (base.value?.updated ? relativeTime(base.value.updated, now.value) : '—'))
 
@@ -232,7 +233,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
     <!-- 文档区 -->
     <div ref="scrollEl" class="doc-scroll">
       <div class="doc-wrap">
-        <div class="doc-col" :style="{ maxWidth: docWide ? '1080px' : '760px' }">
+        <div class="doc-col">
           <div v-if="doc" class="doc-bar">
             <span class="ellip">{{ kb.name }}</span>
             <i class="ri-arrow-right-s-line b-sep"></i>
@@ -255,10 +256,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             </span>
             <span v-if="peers.length" class="realtime"><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span>
 
-            <SaveHint :save-key="`doc:${docId}`" :pending="saving" />
-            <button class="icon-act" :title="docWide ? '切换为窄视图' : '切换为宽视图'" @click="docWide = !docWide">
-              <i class="ri-arrow-left-right-line"></i>
-            </button>
+            <SaveHint :saving="saving" :saved-at="docSavedAt" />
             <button class="icon-act danger" title="删除这篇文档（进回收站）" @click="removeDoc(docId!)">
               <i class="ri-delete-bin-line"></i>
             </button>
@@ -285,6 +283,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             <MarkdownEditor
               v-model="body"
               class="doc-body"
+              bare
               placeholder="开始写作…敲 ## 变标题、- 变列表，可直接粘贴截图"
               :min-height="360"
               :peers="peers"
@@ -639,6 +638,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 .doc-col {
   flex: 1;
   min-width: min(420px, 100%);
+  max-width: 1080px;
 }
 .doc-bar {
   display: flex;

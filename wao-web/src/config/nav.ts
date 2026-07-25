@@ -17,6 +17,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
   automation: { id: 'automation', label: '自动化', icon: 'ri-flashlight-line', path: '/automation' },
   vault: { id: 'vault', label: '密码库', icon: 'ri-key-2-line', path: '/vault' },
+  trash: { id: 'trash', label: '回收站', icon: 'ri-delete-bin-6-line', path: '/trash' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
 
@@ -25,7 +26,7 @@ export const NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
   { label: '规划', items: ['projects', 'calendar'] },
   { label: '沉淀', items: ['knowledge', 'files'] },
-  { label: '系统', items: ['automation', 'vault'] },
+  { label: '系统', items: ['automation', 'vault', 'trash'] },
 ]
 
 /** 由模块 id 生成页签。首页固定不可关闭。 */

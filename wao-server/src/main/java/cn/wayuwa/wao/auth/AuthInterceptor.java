@@ -29,6 +29,7 @@ public class AuthInterceptor implements HandlerInterceptor {
     private boolean isPublic(HttpServletRequest request) {
         String path = request.getRequestURI();
         if (path.equals("/api/hello") || path.startsWith("/api/auth/") || path.startsWith("/api/share/")) return true;
-        return "GET".equals(request.getMethod()) && path.matches("/api/images/[^/]+/content");
+        return "GET".equals(request.getMethod())
+                && (path.matches("/api/images/[^/]+/raw") || path.matches("/api/files/[^/]+/download"));
     }
 }

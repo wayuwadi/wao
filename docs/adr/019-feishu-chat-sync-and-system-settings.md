@@ -18,6 +18,7 @@
 ## 决策
 
 - **新增 `system_setting` 表**（V17）存全局唯一一份的键值配置。敏感键（`feishu.webhook.url`、`feishu.chat-sync.app-secret`）复用密钥库那把 AES-256-GCM 密钥（`VaultCryptoService`）加密后落库，密文带 `enc:` 前缀。读接口只回 `SettingService.mask` 的脱敏形态，明文只在服务端调飞书时解出来用。**前端永远读不到明文**，凭据也不落 Git、不落环境变量，用户自己在界面上填。
+- **`FEISHU_COMMENT_WEBHOOK_URL` 降级为兜底**：任务评论通知（`FeishuCommentNotifier`）不再自己读环境变量，改为共用这一个全局 webhook；界面上没配过时仍回落到该环境变量，线上通知不会因为这次改动断档。
 - **保存表单时 null 表示「不修改」**：密码框留空即保留原值，用户不必每次改个群名都重新粘一遍 App Secret。
 - **自动化任务加 `handler` 列**：非空时由对应的 `JobHandler` 实现真的执行，运行记录写执行器返回的文案；为空时仍是模拟运行。执行器抛异常不往上传，只落一条「失败 · 原因」的运行记录 —— 一个任务炸了不该中断调度器对其它任务的轮询，也不该让手动触发接口 500。
 - **群聊同步的落地口径**：

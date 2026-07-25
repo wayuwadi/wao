@@ -6,6 +6,7 @@ import cn.wayuwa.wao.service.SettingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -24,16 +25,34 @@ public class FeishuWebhookNotifier {
 
     private final SettingService settings;
     private final RestClient client;
+    /** 老的部署级 webhook（{@code FEISHU_COMMENT_WEBHOOK_URL}）：界面上还没配时继续用它，线上通知不断档。 */
+    private final String legacyUrl;
 
-    public FeishuWebhookNotifier(SettingService settings, RestClient.Builder builder) {
+    public FeishuWebhookNotifier(SettingService settings, RestClient.Builder builder,
+            @Value("${feishu.comment-webhook-url:}") String legacyUrl) {
         this.settings = settings;
         this.client = builder.build();
+        this.legacyUrl = legacyUrl;
     }
 
-    /** 通知是否已配置且启用。 */
+    /** 实际要用的地址：界面上配过就用界面的，否则回落到部署环境变量。 */
+    public String resolvedUrl() {
+        String configured = settings.get(SettingService.FEISHU_WEBHOOK_URL);
+        return configured != null && !configured.isBlank() ? configured : legacyUrl;
+    }
+
+    /**
+     * 通知是否可用。
+     *
+     * <p>界面上配过地址时以启用开关为准；只有环境变量兜底时视为启用 —— 那是老部署的既有行为，
+     * 不该因为这次多了个开关就悄悄停掉。
+     */
     public boolean enabled() {
-        String url = settings.get(SettingService.FEISHU_WEBHOOK_URL);
-        return url != null && !url.isBlank() && settings.getBoolean(SettingService.FEISHU_WEBHOOK_ENABLED);
+        String configured = settings.get(SettingService.FEISHU_WEBHOOK_URL);
+        if (configured != null && !configured.isBlank()) {
+            return settings.getBoolean(SettingService.FEISHU_WEBHOOK_ENABLED);
+        }
+        return legacyUrl != null && !legacyUrl.isBlank();
     }
 
     /**
@@ -47,7 +66,7 @@ public class FeishuWebhookNotifier {
             return false;
         }
         try {
-            send(settings.get(SettingService.FEISHU_WEBHOOK_URL), text);
+            send(resolvedUrl(), text);
             return true;
         } catch (RuntimeException ex) {
             // 通知失败不该影响触发它的业务动作，记一条日志就够了

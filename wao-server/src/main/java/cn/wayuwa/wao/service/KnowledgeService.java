@@ -719,7 +719,8 @@ public class KnowledgeService {
     }
 
     private static String iso(LocalDateTime at) {
-        return at == null ? null : at.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        return at == null ? null : at.atZone(java.time.ZoneId.of("Asia/Shanghai"))
+                .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
     }
 
     private static LocalDateTime expiry(LocalDateTime deletedAt) {

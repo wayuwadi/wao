@@ -45,7 +45,7 @@ public class ShareService {
             subs = subs.stream().filter(s -> !s.done()).toList();
         }
         return new SharedTaskDto("task", t.id(), null, t.title(), t.status(), t.pr(), t.due(),
-                projectName(t.project()), nz(t.desc()), nn(t.images()), subs);
+                t.project(), projectName(t.project()), nz(t.desc()), nn(t.images()), subs);
     }
 
     /**
@@ -64,7 +64,7 @@ public class ShareService {
             if (subKey(taskId, s, i).equals(subId)) {
                 return new SharedTaskDto("sub", t.id(), subId, s.text(),
                         s.done() ? "已完成" : "未完成", null, null,
-                        projectName(t.project()), nz(s.desc()), nn(s.images()), List.of());
+                        t.project(), projectName(t.project()), nz(s.desc()), nn(s.images()), List.of());
             }
         }
         throw new NotFoundException("子任务不存在：" + subId);

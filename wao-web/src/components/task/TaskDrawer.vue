@@ -16,7 +16,7 @@ import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
-import { absoluteTime, nowIso, relativeTime } from '@/utils/time'
+import { absoluteTime, relativeTime } from '@/utils/time'
 import type { Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
@@ -83,6 +83,9 @@ const linkTasks = computed(() =>
 const linkedDocs = computed(() =>
   (task.value?.docs ?? []).map((id) => ({ id, title: data.docById(id)?.title ?? '' })),
 )
+const saveState = computed(() => (task.value ? data.taskSaveState(task.value.id) : 'idle'))
+/** 上一次写透成功的时刻，给「自动保存成功 14:32」用。 */
+const savedAt = computed(() => (task.value ? data.taskSavedAt(task.value.id) : null))
 
 const STATUS_OPTS: TaskStatus[] = TASK_STATUSES
 const PR_OPTS: { key: Priority; sub: string }[] = [
@@ -94,6 +97,7 @@ const PR_OPTS: { key: Priority; sub: string }[] = [
 const PROP_TYPES = ['文本', '数字', '单选', '链接']
 
 function close() {
+  if (task.value) data.flushTask(task.value.id)
   ui.closeTask()
 }
 /** Esc 逐层关闭：先关下拉菜单，再收子任务详情，最后关抽屉。 */
@@ -106,8 +110,17 @@ function onKey(e: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 function editTitle(e: Event) {
-  if (task.value) data.patchTask(task.value.id, { title: (e.target as HTMLInputElement).value })
+  if (task.value) data.patchTask(task.value.id, { title: (e.target as HTMLTextAreaElement).value })
+  growTaskTitle()
 }
+const taskTitleArea = ref<HTMLTextAreaElement | null>(null)
+function growTaskTitle() {
+  const el = taskTitleArea.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = el.scrollHeight + 'px'
+}
+watch([() => ui.openTaskId, () => task.value?.title], () => nextTick(growTaskTitle), { immediate: true })
 /** 任务描述（Markdown）。写回走 patchTask，编辑器只管文本。 */
 const desc = computed({
   get: () => task.value?.desc ?? '',
@@ -266,12 +279,12 @@ async function copyShare(kind: 'page' | 'md') {
     'ri-links-line',
   )
 }
-function sendComment() {
+async function sendComment() {
   const t = task.value
   const v = commentText.value.trim()
   if (t && v) {
-    data.patchTask(t.id, { comments: [...t.comments, { who: session.currentUser.id, time: nowIso(), text: v }] }, '你添加了评论')
-    commentText.value = ''
+    if (await data.addTaskComment(t.id, v)) commentText.value = ''
+    else toast('评论发送失败，请重试', 'ri-error-warning-line')
   }
 }
 function commentKey(e: KeyboardEvent) {
@@ -374,13 +387,12 @@ function demo(msg: string) {
       <div class="dbody">
         <!-- 主区 -->
         <div class="main">
-          <input class="title-input" :value="task.title" @input="editTitle" />
+          <textarea ref="taskTitleArea" class="title-input" rows="1" :value="task.title" @input="editTitle"></textarea>
 
           <div class="field">
-            <div class="label-row">
-              <div class="field-label nomb">描述</div>
-              <div class="spacer"></div>
-              <SaveHint :save-key="`task:${task.id}`" />
+            <div class="field-headline">
+              <div class="field-label">描述</div>
+              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error'" />
             </div>
             <MarkdownEditor
               v-model="desc"
@@ -537,10 +549,9 @@ function demo(msg: string) {
           </div>
 
           <div class="sub-field">
-            <div class="label-row">
-              <div class="props-label sm nomb">描述</div>
-              <div class="spacer"></div>
-              <SaveHint :save-key="`task:${task.id}`" />
+            <div class="field-headline">
+              <div class="props-label sm">描述</div>
+              <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error'" />
             </div>
             <MarkdownEditor
               v-model="subDesc"
@@ -782,6 +793,10 @@ function demo(msg: string) {
   background: none;
   padding: 2px 0;
   border-radius: 6px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.4;
+  font-family: inherit;
 }
 .title-input:focus {
   background: #f7f8fb;
@@ -789,6 +804,12 @@ function demo(msg: string) {
 }
 .field {
   margin-top: 16px;
+}
+.field-headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 .field-label {
   font-size: 12px;
@@ -798,13 +819,6 @@ function demo(msg: string) {
 }
 .field-label.nomb {
   margin-bottom: 0;
-}
-/* 标题一行：左边字段名，右边自动保存回执 */
-.label-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
 }
 /* 分享菜单 */
 .share-wrap {
@@ -1363,9 +1377,6 @@ function demo(msg: string) {
 }
 .props-label.sm {
   margin-bottom: 2px;
-}
-.props-label.nomb {
-  margin-bottom: 0;
 }
 .prop-row {
   display: flex;
