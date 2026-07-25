@@ -68,5 +68,11 @@ server {
         proxy_connect_timeout 5s;
         proxy_read_timeout 30s;
         proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
+
+        # 图床上传要放行大请求体（默认 1m 会让 10MB 的截图直接 413），
+        # 上传本身也比普通接口慢，读写超时单独放宽。
+        client_max_body_size 12m;
+        proxy_request_buffering off;
+        proxy_send_timeout 120s;
     }
 }

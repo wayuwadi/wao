@@ -12,6 +12,11 @@ spring:
     username: ${DB_USER:wao_app}
     password: ${DB_PASS:dev-password}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  servlet:
+    multipart:
+      # 图床单张上限 10MB（与 ImageService.MAX_BYTES、Nginx client_max_body_size 对齐）
+      max-file-size: 10MB
+      max-request-size: 12MB
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}

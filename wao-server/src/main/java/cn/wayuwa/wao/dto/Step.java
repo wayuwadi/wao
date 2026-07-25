@@ -1,5 +1,20 @@
 package cn.wayuwa.wao.dto;
 
-/** 任务步骤 / 子任务条目。 */
-public record Step(String text, boolean done) {
+import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+/**
+ * 任务步骤 / 子任务条目。
+ *
+ * <p>子任务不是独立任务实体，始终内嵌在所属任务里，但可以有自己的描述与图片。
+ *
+ * @param text   标题
+ * @param done   是否完成
+ * @param id     稳定标识（历史数据可能为 null，此时由调用方按下标兜底）
+ * @param desc   描述（Markdown）
+ * @param images 内嵌图片
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
+public record Step(String text, boolean done, String id, String desc, List<ImageRef> images) {
 }

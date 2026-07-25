@@ -6,6 +6,7 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { useTabsStore } from '@/stores/tabs'
 import { useDeco } from '@/composables/deco'
+import { useCompletionSettle } from '@/composables/completion'
 import { fmtDate } from '@/utils/domain'
 import { toast } from '@/composables/toast'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
@@ -102,7 +103,10 @@ const milestones = computed(() =>
     chip: m.state === 1 ? '进行中' : '',
   })),
 )
-const recentTasks = computed(() => ptasks.value.filter((t) => t.status !== '已完成').slice(0, 6).map(decoTask))
+// 总览的「近期任务」同样给 3 秒缓冲，勾完不会立刻从眼皮底下消失
+const recentTasks = computed(() =>
+  ptasks.value.filter((t) => t.status !== '已完成' || isSettling(t.id)).slice(0, 6).map(decoTask),
+)
 const openCount = computed(() => ptasks.value.filter((t) => t.status !== '已完成').length)
 const members = computed(() =>
   (project.value?.members ?? []).map((mid) => {
@@ -122,10 +126,21 @@ const linkedDocs = computed(() =>
     return { id, title: d?.title ?? '', updated: d?.updated ?? '' }
   }),
 )
+// ---- 已完成任务的收起 / 缓冲 ----
+// 默认收起已完成，点击展开；刚勾完成的任务先原地停留 3 秒再归档，给操作一个反应时间。
+const showDone = ref(false)
+const { toggle: toggleTask, isSettling } = useCompletionSettle()
+
 const allTasks = computed(() => ptasks.value.map(decoTask))
+const openTasks = computed(() => allTasks.value.filter((t) => t.status !== '已完成' || isSettling(t.id)))
+const doneTasks = computed(() => allTasks.value.filter((t) => t.status === '已完成' && !isSettling(t.id)))
+// 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
 const board = computed(() =>
   (['待办', '进行中', '阻塞', '已完成'] as const).map((st) => ({
-    label: st, dot: BOARD_DOTS[st]!, items: ptasks.value.filter((t) => t.status === st).map(decoTask),
+    label: st,
+    dot: BOARD_DOTS[st]!,
+    collapsible: st === '已完成',
+    items: ptasks.value.filter((t) => t.status === st).map(decoTask),
   })),
 )
 const pdTabs = computed(() => {
@@ -137,9 +152,6 @@ const pdTabs = computed(() => {
 
 function openTask(id: string) {
   ui.openTask(id)
-}
-function toggleTask(id: string) {
-  data.toggleComplete(id)
 }
 function openDoc(id: string) {
   const k = data.kbs.find((kk) => kk.folders.some((f) => f.docs.includes(id)))
@@ -319,10 +331,10 @@ function comingSoon(msg: string) {
       </div>
       <div v-if="pdTaskView === 'list'" class="task-list-card">
         <div
-          v-for="t in allTasks"
+          v-for="t in openTasks"
           :key="t.id"
           class="trow"
-          :class="{ dragging: dragId === t.id }"
+          :class="{ dragging: dragId === t.id, settling: isSettling(t.id) }"
           draggable="true"
           @click="openTask(t.id)"
           @dragstart="onDragStart(t.id)"
@@ -338,7 +350,27 @@ function comingSoon(msg: string) {
           <span class="owner-av" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
           <span class="trow-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
         </div>
+
+        <!-- 已完成默认收起 -->
+        <button v-if="doneTasks.length" class="done-toggle" @click="showDone = !showDone">
+          <i :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
+          已完成<span class="done-count wao-tabular">{{ doneTasks.length }}</span>
+          <span class="done-hint">{{ showDone ? '点击收起' : '点击展开' }}</span>
+        </button>
+        <template v-if="showDone">
+          <div v-for="t in doneTasks" :key="t.id" class="trow done" @click="openTask(t.id)">
+            <i class="drag-grip ri-draggable placeholder"></i>
+            <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
+            <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
+            <span class="mini" :style="{ background: t.stBg, color: t.stColor }">{{ t.status }}</span>
+            <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
+            <span class="owner-av" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
+            <span class="trow-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
+          </div>
+        </template>
+
         <div v-if="allTasks.length === 0" class="empty-inline">还没有任务——点右上角「新建任务」开始拆解</div>
+        <div v-else-if="!openTasks.length && !showDone" class="empty-inline">未完成的任务都清空了 🎉</div>
       </div>
       <div v-else class="board">
         <div
@@ -349,12 +381,14 @@ function comingSoon(msg: string) {
           @dragover.prevent
           @drop="onDropStatus(col.label)"
         >
-          <div class="board-col-head">
+          <div class="board-col-head" :class="{ clickable: col.collapsible }" @click="col.collapsible && (showDone = !showDone)">
             <span class="board-dot" :style="{ background: col.dot }"></span>
             <span class="board-col-label">{{ col.label }}</span>
             <span class="board-col-count wao-tabular">{{ col.items.length }}</span>
+            <i v-if="col.collapsible" class="board-col-chev" :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
           </div>
-          <div class="board-cards">
+          <div v-if="col.collapsible && !showDone" class="board-collapsed">已收起 {{ col.items.length }} 项 · 点标题展开</div>
+          <div v-else class="board-cards">
             <div
               v-for="t in col.items"
               :key="t.id"
@@ -1160,6 +1194,49 @@ function comingSoon(msg: string) {
 .trow.dragging {
   opacity: 0.5;
 }
+/* 刚勾完成、还在 3 秒缓冲里的任务：淡出但不移位，给操作一个反应时间 */
+.trow.settling {
+  opacity: 0.55;
+  transition: opacity 0.4s ease;
+}
+.trow.done {
+  cursor: pointer;
+}
+.done-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: none;
+  border-top: 1px solid var(--wao-divider);
+  margin-top: 6px;
+  padding: 10px;
+  font-size: 12.5px;
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  text-align: left;
+}
+.done-toggle:hover {
+  color: var(--wao-text-2);
+}
+.done-toggle > i {
+  font-size: 15px;
+}
+.done-count {
+  background: var(--wao-divider);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11.5px;
+}
+.done-hint {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--wao-text-faint);
+}
+.drag-grip.placeholder {
+  visibility: hidden;
+}
 .drag-grip {
   font-size: 15px;
   color: var(--wao-text-faint-2);
@@ -1309,6 +1386,26 @@ function comingSoon(msg: string) {
 .board-col-count {
   font-size: 11.5px;
   color: var(--wao-text-weak);
+}
+.board-col-head.clickable {
+  cursor: pointer;
+  border-radius: 7px;
+}
+.board-col-head.clickable:hover {
+  background: var(--wao-bg-hover);
+}
+.board-col-chev {
+  margin-left: auto;
+  font-size: 15px;
+  color: var(--wao-text-faint-2);
+}
+.board-collapsed {
+  border: 1px dashed var(--wao-line-strong);
+  border-radius: 10px;
+  padding: 14px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--wao-text-faint);
 }
 .board-cards {
   display: flex;

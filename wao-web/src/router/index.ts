@@ -17,6 +17,13 @@ const router = createRouter({
       component: () => import('@/views/FeishuCallbackView.vue'),
       meta: { public: true },
     },
+    // 任务分享页：公开只读，免登录。/s/t/:id 含子任务；/s/t/:id/:subId 只含该子任务。
+    {
+      path: '/s/t/:id/:subId?',
+      name: 'share-task',
+      component: () => import('@/views/ShareTaskView.vue'),
+      meta: { public: true },
+    },
     {
       path: '/',
       component: AppLayout,
