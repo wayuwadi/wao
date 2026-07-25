@@ -51,6 +51,7 @@ import {
   type PatchKbPayload,
 } from '@/api/board'
 import { blocksToText, textToBlocks } from '@/utils/doc'
+import { nowIso } from '@/utils/time'
 import { useUiStore } from '@/stores/ui'
 import type {
   AutomationJob, Doc, DocBlock, ImageRef, KnowledgeBase, Project, Task, TaskStep, VaultGroup, VaultItem,
@@ -350,7 +351,7 @@ export const useDataStore = defineStore('data', () => {
     const t = taskById(id)
     if (!t) return
     Object.assign(t, fields)
-    if (activityText) t.activity.unshift({ icon: 'ri-edit-line', color: '#9A9DA9', text: activityText, time: '刚刚' })
+    if (activityText) t.activity.unshift({ icon: 'ri-edit-line', color: '#9A9DA9', text: activityText, time: nowIso() })
     persistTask(id)
   }
 
@@ -376,7 +377,7 @@ export const useDataStore = defineStore('data', () => {
     const local: Task = {
       id: uid('t'), status: '待办', parts: [], desc, steps: [], subs: [], files: [],
       docs: [], linkTasks: [], comments: [], custom: [], images,
-      activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '你创建了任务', time: '刚刚' }],
+      activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '你创建了任务', time: nowIso() }],
       ...core,
     }
     tasks.value.unshift(local)
@@ -415,7 +416,7 @@ export const useDataStore = defineStore('data', () => {
         visibility: payload.visAll ? '组织内 2 人 · 可查看' : '仅自己可见',
         updated: '刚刚', goal: payload.goal || '尚未填写目标——打开项目后可补充。',
         milestones: [], msDates: [], trend: [0, 0], blockers: [], docs: [], files: [],
-        activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '你创建了项目', time: '刚刚' }],
+        activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '你创建了项目', time: nowIso() }],
       }
       projects.value.unshift(created)
     }
@@ -504,7 +505,7 @@ export const useDataStore = defineStore('data', () => {
 
   /** 往任务活动时间线最前面写一条。 */
   function logActivity(t: Task, text: string, icon = 'ri-edit-line') {
-    t.activity.unshift({ icon, color: '#9A9DA9', text, time: '刚刚' })
+    t.activity.unshift({ icon, color: '#9A9DA9', text, time: nowIso() })
   }
 
   // ---- 子任务（内嵌在任务的 subs 里，不是独立任务实体） ----
@@ -524,6 +525,9 @@ export const useDataStore = defineStore('data', () => {
   /**
    * 新增一个子任务。
    *
+   * <p>新增的排在最前面（时间倒序）：输入框就在列表上方，刚敲完的那条应该
+   * 出现在眼皮底下，而不是被推到一长串旧条目的末尾。
+   *
    * @param taskId 所属任务 id
    * @param text   子任务标题
    * @return 新子任务的标识，标题为空时返回 null
@@ -533,7 +537,7 @@ export const useDataStore = defineStore('data', () => {
     const title = text.trim()
     if (!t || !title) return null
     const id = uid('s')
-    t.subs.push({ id, text: title, done: false, desc: '', images: [] })
+    t.subs.unshift({ id, text: title, done: false, desc: '', images: [] })
     logActivity(t, `你添加了子任务「${title}」`)
     persistTask(taskId)
     return id

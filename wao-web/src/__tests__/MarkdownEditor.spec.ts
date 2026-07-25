@@ -64,20 +64,20 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
-  it('只读模式下不可编辑，也不显示工具条', async () => {
+  it('只读模式下不可编辑', async () => {
     const w = await mountEditor({ modelValue: '内容', readonly: true })
 
     expect(w.find('.md-body').html()).toContain('contenteditable="false"')
-    expect(w.find('.md-tools').exists()).toBe(false)
     w.unmount()
   })
 
-  it('工具条按钮反映光标处的格式状态', async () => {
+  it('不带格式工具条——格式一律靠 Markdown 快捷输入敲出来', async () => {
     const w = await mountEditor({ modelValue: '## 标题' })
 
-    // 工具条常驻 DOM，靠 .show 控制可见性；标题按钮应处于激活态
-    expect(w.find('.md-tools').exists()).toBe(true)
-    expect(w.find('.md-tool[title="标题"]').exists()).toBe(true)
+    expect(w.find('.md-tools').exists()).toBe(false)
+    expect(w.findAll('button')).toHaveLength(0)
+    // 但格式本身照常渲染
+    expect(w.find('.md-body').html()).toContain('<h2>标题</h2>')
     w.unmount()
   })
 

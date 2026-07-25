@@ -7,9 +7,12 @@
  * 选区都由它处理；对外仍然以 Markdown 收发，落库格式不变（见 ADR-015）。
  *
  * 粘贴 / 拖入图片会上传到图床，并**内联插入到光标处**，不再堆到底部的附件区。
+ *
+ * 刻意不提供格式工具条：所有格式都能用 Markdown 快捷输入敲出来，一排按钮只是
+ * 噪音，去掉后描述区更干净。
  */
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { Editor, EditorContent, useEditor } from '@tiptap/vue-3'
+import { onBeforeUnmount, watch } from 'vue'
+import { EditorContent, useEditor } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
@@ -91,49 +94,10 @@ watch(
 
 onBeforeUnmount(() => editor.value?.destroy())
 
-/** 工具条按钮：既是快捷入口，也是「当前光标处是什么格式」的状态指示。 */
-const TOOLS = [
-  { key: 'h2', icon: 'ri-h-2', title: '标题', run: (e: Editor) => e.chain().focus().toggleHeading({ level: 2 }).run(), on: (e: Editor) => e.isActive('heading', { level: 2 }) },
-  { key: 'bold', icon: 'ri-bold', title: '粗体', run: (e: Editor) => e.chain().focus().toggleBold().run(), on: (e: Editor) => e.isActive('bold') },
-  { key: 'italic', icon: 'ri-italic', title: '斜体', run: (e: Editor) => e.chain().focus().toggleItalic().run(), on: (e: Editor) => e.isActive('italic') },
-  { key: 'strike', icon: 'ri-strikethrough', title: '删除线', run: (e: Editor) => e.chain().focus().toggleStrike().run(), on: (e: Editor) => e.isActive('strike') },
-  { key: 'code', icon: 'ri-code-line', title: '行内代码', run: (e: Editor) => e.chain().focus().toggleCode().run(), on: (e: Editor) => e.isActive('code') },
-  { key: 'ul', icon: 'ri-list-unordered', title: '无序列表', run: (e: Editor) => e.chain().focus().toggleBulletList().run(), on: (e: Editor) => e.isActive('bulletList') },
-  { key: 'ol', icon: 'ri-list-ordered', title: '有序列表', run: (e: Editor) => e.chain().focus().toggleOrderedList().run(), on: (e: Editor) => e.isActive('orderedList') },
-  { key: 'todo', icon: 'ri-checkbox-line', title: '待办项', run: (e: Editor) => e.chain().focus().toggleTaskList().run(), on: (e: Editor) => e.isActive('taskList') },
-  { key: 'quote', icon: 'ri-double-quotes-l', title: '引用', run: (e: Editor) => e.chain().focus().toggleBlockquote().run(), on: (e: Editor) => e.isActive('blockquote') },
-  { key: 'codeBlock', icon: 'ri-terminal-box-line', title: '代码块', run: (e: Editor) => e.chain().focus().toggleCodeBlock().run(), on: (e: Editor) => e.isActive('codeBlock') },
-] as const
-
-const imgInput = ref<HTMLInputElement | null>(null)
-function onPickImages(ev: Event) {
-  const files = (ev.target as HTMLInputElement).files
-  if (files) Array.from(files).forEach(insertImage)
-  if (imgInput.value) imgInput.value.value = ''
-}
-
-/** 工具条只在编辑器聚焦或悬停时出现，静态阅读时不干扰。 */
-const hovering = ref(false)
-const showTools = computed(() => !props.readonly && (hovering.value || editor.value?.isFocused))
 </script>
 
 <template>
-  <div class="md" :class="{ ro: readonly }" @mouseenter="hovering = true" @mouseleave="hovering = false">
-    <div v-if="!readonly" class="md-tools" :class="{ show: showTools }">
-      <button
-        v-for="t in TOOLS"
-        :key="t.key"
-        class="md-tool"
-        :class="{ on: editor && t.on(editor) }"
-        :title="t.title"
-        @mousedown.prevent="editor && t.run(editor)"
-      >
-        <i :class="t.icon"></i>
-      </button>
-      <span class="md-sep"></span>
-      <button class="md-tool" title="插入图片" @mousedown.prevent="imgInput?.click()"><i class="ri-image-add-line"></i></button>
-      <input ref="imgInput" type="file" accept="image/*" multiple hidden @change="onPickImages" />
-    </div>
+  <div class="md" :class="{ ro: readonly }">
     <EditorContent :editor="editor" class="md-body" :style="{ minHeight: minHeight + 'px' }" />
   </div>
 </template>
@@ -142,52 +106,6 @@ const showTools = computed(() => !props.readonly && (hovering.value || editor.va
 .md {
   width: 100%;
   position: relative;
-}
-.md-tools {
-  display: flex;
-  align-items: center;
-  gap: 1px;
-  padding: 3px 4px;
-  margin-bottom: 2px;
-  border: 1px solid var(--wao-divider);
-  border-radius: 8px;
-  background: var(--wao-bg-sub-2);
-  opacity: 0;
-  transition: opacity 0.12s;
-  pointer-events: none;
-}
-.md-tools.show {
-  opacity: 1;
-  pointer-events: auto;
-}
-.md-tool {
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: none;
-  border-radius: 5px;
-  cursor: pointer;
-  color: var(--wao-text-3);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.md-tool:hover {
-  background: var(--wao-bg-hover-2);
-  color: var(--wao-primary);
-}
-.md-tool.on {
-  background: var(--wao-primary-soft);
-  color: var(--wao-primary-text);
-}
-.md-tool i {
-  font-size: 14px;
-}
-.md-sep {
-  width: 1px;
-  height: 15px;
-  background: var(--wao-line);
-  margin: 0 4px;
 }
 .md-body {
   border: 1px solid transparent;

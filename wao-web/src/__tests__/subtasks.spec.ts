@@ -65,6 +65,13 @@ describe('data store · 子任务', () => {
     expect(data.subById(taskId, key)?.text).toBe('老子任务')
   })
 
+  it('新增的子任务排在最前面——输入框就在列表上方，刚敲完的要看得见', () => {
+    data.addSub(taskId, '先加的')
+    data.addSub(taskId, '后加的')
+
+    expect(data.taskById(taskId)!.subs.map((s) => s.text)).toEqual(['后加的', '先加的'])
+  })
+
   it('删除中间项后，后面的 id 仍然指向同一条子任务', () => {
     const a = data.addSub(taskId, 'A')!
     const b = data.addSub(taskId, 'B')!
