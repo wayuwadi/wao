@@ -9,7 +9,8 @@ import { statusMeta, priorityMeta } from '@/utils/domain'
 import { fmtDate } from '@/utils/domain'
 import { toast } from '@/composables/toast'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
-import { copyText, shareMarkdownUrl, shareUrl } from '@/utils/share'
+import { shareMarkdownUrl, shareUrl } from '@/utils/share'
+import { copyToClipboard } from '@/utils/clipboard'
 import type { Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
@@ -212,7 +213,7 @@ async function copyShare(kind: 'page' | 'md') {
   const suffix = sub ? '（只含该子任务）' : '（含全部子任务）'
   menu.value = null
   toast(
-    (await copyText(url))
+    (await copyToClipboard(url))
       ? `${what}${kind === 'md' ? ' Markdown 地址' : '链接'}已复制${suffix}`
       : '复制失败，请检查浏览器剪贴板权限',
     'ri-links-line',

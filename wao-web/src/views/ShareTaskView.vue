@@ -9,7 +9,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiShareSub, apiShareTask } from '@/api/board'
 import { renderMarkdown } from '@/utils/markdown'
-import { copyText, shareMarkdownUrl } from '@/utils/share'
+import { shareMarkdownUrl } from '@/utils/share'
+import { copyToClipboard } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import type { SharedTask } from '@/types'
 
@@ -43,7 +44,7 @@ const mdUrl = computed(() => shareMarkdownUrl(taskId.value, subId.value))
 
 async function copyMd() {
   toast(
-    (await copyText(mdUrl.value)) ? 'Markdown 地址已复制，可直接发给 AI' : '复制失败，请手动选中复制',
+    (await copyToClipboard(mdUrl.value)) ? 'Markdown 地址已复制，可直接发给 AI' : '复制失败，请手动选中复制',
     'ri-file-copy-line',
   )
 }

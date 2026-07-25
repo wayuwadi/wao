@@ -22,6 +22,7 @@ import {
   apiPatchProject,
   apiPatchVaultItem,
   apiPauseJob,
+  apiDeleteImage,
   apiPutTask,
   apiReauthJob,
   apiUploadImage,
@@ -603,7 +604,52 @@ export const useDataStore = defineStore('data', () => {
       reader.onerror = () => resolve(null)
       reader.readAsDataURL(file)
     })
-    return url ? { name: file.name || '粘贴的图片', url } : null
+    if (!url) return null
+    const name = file.name || '粘贴的图片'
+    // 回落的图也要进图床列表——「所有上传的图都能在文件与图床里看到」不该因为
+    // 后端临时不可用就出现缺口，只是这一张不会持久化。
+    imgs.value.unshift({
+      name, url, size: humanSize(file.size), time: '刚刚',
+      from: source || '本地上传（未持久化）', c1: '#E8ECFA', c2: '#DDE3F6',
+    })
+    return { name, url }
+  }
+
+  /** 重新拉取图床列表（图床页打开时刷新，让其他标签页 / 其他人上传的图也出现）。 */
+  async function refreshImages() {
+    if (!apiLive.value) return
+    try {
+      const list = await fetchImages()
+      if (Array.isArray(list)) imgs.value = list
+    } catch {
+      /* 拉取失败时保留现有列表 */
+    }
+  }
+
+  /**
+   * 从图床删除一张图片。
+   *
+   * <p>不做引用检查：删掉后仍然引用它的任务描述会显示成破图，这是图床的常规行为
+   * （见 ADR-012 的后续说明）。内置演示数据没有 id，不可删。
+   *
+   * @param id 图片 id
+   */
+  async function deleteImage(id: string) {
+    imgs.value = imgs.value.filter((i) => i.id !== id)
+    if (apiLive.value) {
+      try {
+        await apiDeleteImage(id)
+      } catch {
+        /* 后端删除失败时不回滚，避免残留幽灵条目困扰 UI */
+      }
+    }
+  }
+
+  /** 人类可读文件大小，与后端 ImageService.humanSize 口径一致。 */
+  function humanSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`
   }
 
   // ---- 自动化 ----
@@ -808,7 +854,7 @@ export const useDataStore = defineStore('data', () => {
     addKb, updateKb, deleteKb,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     subById, subKey, addSub, updateSub, removeSub, addSubImage, removeSubImage,
-    uploadImage, MAX_IMAGE_BYTES,
+    uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     updateProject, deleteProject, ensureProjectKb, syncFromServer,
     jobById, createJob, updateJob, deleteJob, runJob, pauseJob, resumeJob, reauthJob,
     vaultItemById, addVaultGroup, renameVaultGroup, deleteVaultGroup,
