@@ -49,7 +49,7 @@ describe('data store · 图床', () => {
     expect(data.imgs[0]!.size).toBe('2 KB')
   })
 
-  it('删除按 id 生效，内置演示数据没有 id 因而不受影响', async () => {
+  it('删除按 id 生效', async () => {
     const seeded = data.imgs.length
     await data.uploadImage(png())
     data.imgs[0]!.id = 'img1'
@@ -58,6 +58,11 @@ describe('data store · 图床', () => {
 
     expect(data.imgs).toHaveLength(seeded)
     expect(data.imgs.every((i) => i.id !== 'img1')).toBe(true)
+  })
+
+  it('图床与文件的演示数据已清空——列表初始为空，只剩用户自己上传的', () => {
+    expect(data.imgs).toHaveLength(0)
+    expect(data.files).toHaveLength(0)
   })
 })
 
