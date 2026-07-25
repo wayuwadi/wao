@@ -16,6 +16,7 @@ const password = ref('')
 const busy = ref(false)
 const error = ref('')
 const qrError = ref('')
+const providerError = ref('')
 let unmountQr: (() => void) | undefined
 
 async function submitEmail() {
@@ -35,6 +36,12 @@ async function loadQr() {
   await nextTick()
   try { unmountQr = await mountFeishuQr('feishu-qr') }
   catch { qrError.value = '飞书二维码暂时加载失败，请使用下方“飞书授权登录”。' }
+}
+
+async function loginWithWechat() {
+  providerError.value = ''
+  try { await startWechatLogin() }
+  catch (reason) { providerError.value = reason instanceof Error ? reason.message : '微信登录暂不可用。' }
 }
 
 onMounted(loadQr)
@@ -75,7 +82,8 @@ onBeforeUnmount(() => unmountQr?.())
         </button>
 
         <div class="divider"><span></span>其他方式<span></span></div>
-        <button class="wechat" type="button" @click="startWechatLogin()"><i class="ri-wechat-fill"></i>微信扫码登录</button>
+        <button class="wechat" type="button" @click="loginWithWechat"><i class="ri-wechat-fill"></i>微信扫码登录</button>
+        <div v-if="providerError" class="error">{{ providerError }}</div>
         <p class="foot">首次使用第三方登录时，系统会让你确认已有成员；确认后永久绑定同一 WAO 账号。</p>
       </section>
     </main>

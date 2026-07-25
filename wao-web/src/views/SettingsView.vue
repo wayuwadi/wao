@@ -99,6 +99,10 @@ async function unlink(provider: string) {
   catch (error) { toast(error instanceof Error ? error.message : '解绑失败') }
   finally { accountBusy.value = false }
 }
+async function bindWechat() {
+  try { await startWechatLogin('link') }
+  catch (error) { toast(error instanceof Error ? error.message : '微信登录暂不可用') }
+}
 function demo(msg: string, icon?: string) {
   toast(msg, icon)
 }
@@ -214,7 +218,7 @@ function demo(msg: string, icon?: string) {
             <div class="card-title">绑定第三方账号</div>
             <div class="bind-actions">
               <button class="btn-ghost" @click="startFeishuLogin('link')"><i class="ri-feishu-line"></i>绑定飞书</button>
-              <button class="btn-ghost" @click="startWechatLogin('link')"><i class="ri-wechat-fill"></i>绑定微信</button>
+              <button class="btn-ghost" @click="bindWechat"><i class="ri-wechat-fill"></i>绑定微信</button>
             </div>
           </div>
           <div class="card">
