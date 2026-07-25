@@ -11,9 +11,11 @@ vi.mock('@/api/ai', () => ({
       taskTitle: '修复自动任务',
       projectId: 'p1',
       projectName: 'WAO',
+      engine: 'codex',
       status: 'failed',
       runnerId: 'rn1',
       runnerName: '娃哥电脑',
+      requestedRunnerId: null,
       branchName: 'ai/wao-ar1',
       resultSummary: '失败阶段：准备 Git 工作区\n错误详情：仓库地址无法克隆',
       latestProgress: null,
@@ -27,27 +29,60 @@ vi.mock('@/api/ai', () => ({
     },
     {
       id: 'ar2', taskId: 't2', taskTitle: '实时任务', projectId: 'p1', projectName: 'WAO',
-      status: 'running', runnerId: 'rn1', runnerName: '娃哥电脑', branchName: 'ai/wao-ar2',
+      engine: 'claude',
+      status: 'running', runnerId: 'rn2', runnerName: 'Linux 主节点', requestedRunnerId: 'rn2',
+      branchName: 'ai/wao-ar2',
       resultSummary: null, latestProgress: '已定位问题，正在实现实时反馈',
       progressUpdatedAt: '2026-07-25T20:18:20',
       progress: [{ id: 'ap3', kind: 'message', content: '已定位问题，正在实现实时反馈', createdAt: '2026-07-25T20:18:20' }],
-      sessionId: 'thread-1', exitCode: null, createdAt: '2026-07-25T20:18:00',
+      sessionId: 'sess-1', exitCode: null, createdAt: '2026-07-25T20:18:00',
       startedAt: '2026-07-25T20:18:05', finishedAt: null,
     },
   ]),
-  fetchAiRunners: vi.fn<() => Promise<never[]>>().mockResolvedValue([]),
+  fetchAiRunners: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
+    {
+      id: 'rn1', name: '娃哥电脑', platform: 'Windows 11', engines: ['codex'],
+      maxConcurrency: 2, activeRuns: 0, online: false, lastSeenAt: '2026-07-25T18:00:00',
+    },
+    {
+      id: 'rn2', name: 'Linux 主节点', platform: 'Linux 7.0', engines: ['claude'],
+      maxConcurrency: 2, activeRuns: 1, online: true, lastSeenAt: '2026-07-25T20:18:20',
+    },
+  ]),
+  fetchAiWorkflows: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
+    {
+      projectId: 'p1',
+      projectName: 'Wa All in One',
+      config: {
+        projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
+        workspaceDir: 'wao', defaultEngine: 'claude', preferredRunnerId: 'rn2', maxParallelRuns: 3,
+      },
+      preferredRunnerName: 'Linux 主节点',
+      activeRuns: 1,
+      succeededRuns: 4,
+      failedRuns: 1,
+      lastRunAt: '2026-07-25T20:18:00',
+    },
+  ]),
+  createAiPairCode: vi.fn<() => Promise<{ code: string; expiresAt: string }>>()
+    .mockResolvedValue({ code: 'ABCD2345KMNP', expiresAt: '2026-07-25T20:30:00' }),
+  saveAiProjectConfig: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
 }))
 
-describe('HomeView AI 运行详情', () => {
+function mountHome() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
+  })
+  return { router, wrapper: mount(HomeView, { global: { plugins: [router] } }) }
+}
+
+describe('HomeView AI 控制台', () => {
   afterEach(() => vi.useRealTimers())
 
   it('在失败记录中展示摘要，点击后展示完整原因和退出码', async () => {
     vi.useFakeTimers()
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
-    })
-    const wrapper = mount(HomeView, { global: { plugins: [router] } })
+    const { wrapper } = mountHome()
     await flushPromises()
 
     expect(wrapper.find('.recent-main small').text()).toBe('失败阶段：准备 Git 工作区')
@@ -61,21 +96,54 @@ describe('HomeView AI 运行详情', () => {
     wrapper.unmount()
   })
 
-  it('运行卡片直接展示最新反馈，点击先打开实时记录而不是跳走', async () => {
+  it('运行卡片展示最新反馈和使用的 AI 工具，点击先打开实时记录而不是跳走', async () => {
     vi.useFakeTimers()
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
-    })
-    const wrapper = mount(HomeView, { global: { plugins: [router] } })
+    const { router, wrapper } = mountHome()
     await flushPromises()
 
     expect(wrapper.find('.run-card').text()).toContain('已定位问题，正在实现实时反馈')
+    expect(wrapper.find('.run-card').text()).toContain('Claude Code')
     await wrapper.find('.run-card').trigger('click')
 
     expect(wrapper.find('.run-detail').text()).toContain('AI 执行记录')
-    expect(wrapper.find('.run-detail').text()).toContain('已定位问题，正在实现实时反馈')
+    expect(wrapper.find('.run-detail').text()).toContain('Claude Code')
     expect(router.currentRoute.value.fullPath).toBe('/')
+    wrapper.unmount()
+  })
+
+  it('电脑视图按机器展示接入的 AI 工具、槽位和正在跑的任务', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.findAll('.console-tabs button')[1]!.trigger('click')
+
+    const cards = wrapper.findAll('.runner-card')
+    expect(cards).toHaveLength(2)
+    expect(cards[0]!.text()).toContain('Codex')
+    expect(cards[0]!.classes()).toContain('offline')
+    expect(cards[1]!.text()).toContain('Claude Code')
+    expect(cards[1]!.text()).toContain('槽位 1 / 2')
+    expect(cards[1]!.find('.runner-tasks button').text()).toBe('实时任务')
+    wrapper.unmount()
+  })
+
+  it('工作流视图展示项目配置，点击后可以就地编辑默认 AI 工具', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.findAll('.console-tabs button')[2]!.trigger('click')
+    await flushPromises()
+
+    const card = wrapper.find('.workflow-card')
+    expect(card.text()).toContain('Wa All in One')
+    expect(card.text()).toContain('Claude Code')
+    expect(card.text()).toContain('Linux 主节点')
+
+    await card.find('.link-btn').trigger('click')
+    const engineSelect = card.findAll('.flow-form select')[0]!
+    expect((engineSelect.element as HTMLSelectElement).value).toBe('claude')
     wrapper.unmount()
   })
 })

@@ -16,10 +16,12 @@ import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { createAiRuns, fetchTaskAiRuns } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
+import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
+import { engineIcon, engineLabel } from '@/composables/aiEngines'
 import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
-import type { AiRun, AiRunStatus, Priority, TaskStatus } from '@/types'
+import type { AiEngine, AiRun, AiRunStatus, Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
 const data = useDataStore()
@@ -35,6 +37,7 @@ const newSub = ref('')
 const commentText = ref('')
 const sendingComment = ref(false)
 const aiStarting = ref(false)
+const aiLauncherOpen = ref(false)
 const aiRuns = ref<AiRun[]>([])
 const aiRunsLoading = ref(false)
 let aiRunsTimer: ReturnType<typeof setInterval> | null = null
@@ -48,6 +51,7 @@ watch(
     newSub.value = ''
     commentText.value = ''
     openSubId.value = null
+    aiLauncherOpen.value = false
     editingComment.value = null
     confirmingDelete.value = false
   },
@@ -365,15 +369,17 @@ async function copyShare(kind: 'page' | 'md') {
     'ri-links-line',
   )
 }
-async function runWithAi() {
+async function runWithAi(engine: AiEngine, runnerId: string | null) {
   const t = task.value
   if (!t || aiStarting.value || t.status === 'AI 进行中') return
   aiStarting.value = true
   try {
-    const created = await createAiRuns([t.id])
+    const created = await createAiRuns([t.id], { engine, runnerId })
     if (created.length) {
-      data.patchTask(t.id, { status: 'AI 进行中' }, '你已将任务交给 AI Run')
-      toast('已加入 AI Run 队列，可在首页查看运行状态', 'ri-robot-2-line')
+      data.patchTask(t.id, { status: 'AI 进行中' }, `你已把任务交给 ${engineLabel(engine)}`)
+      toast(`已交给 ${engineLabel(engine)}，可在首页 AI 控制台查看运行状态`, 'ri-robot-2-line')
+      aiLauncherOpen.value = false
+      void refreshTaskAiRuns()
     } else {
       toast('这个任务已经在 AI Run 队列中', 'ri-information-line')
     }
@@ -466,16 +472,26 @@ function demo(msg: string) {
         <span class="crumb">任务详情</span>
         <span v-if="task.waiting" class="wait-badge">{{ task.waiting }}</span>
         <div class="spacer"></div>
-        <button
-          class="ai-run-btn"
-          :class="{ running: task.status === 'AI 进行中' }"
-          :disabled="aiStarting || task.status === 'AI 进行中'"
-          title="交给 Codex 自动完成"
-          @click="runWithAi"
-        >
-          <i :class="aiStarting ? 'ri-loader-4-line spin' : task.status === 'AI 进行中' ? 'ri-loader-2-line spin' : 'ri-robot-2-line'"></i>
-          {{ task.status === 'AI 进行中' ? 'AI 运行中' : 'AI run run' }}
-        </button>
+        <div class="ai-run-wrap">
+          <button
+            class="ai-run-btn"
+            :class="{ running: task.status === 'AI 进行中' }"
+            :disabled="aiStarting || task.status === 'AI 进行中'"
+            title="选择电脑和 AI 工具后自动执行"
+            @click="aiLauncherOpen = !aiLauncherOpen"
+          >
+            <i :class="aiStarting ? 'ri-loader-4-line spin' : task.status === 'AI 进行中' ? 'ri-loader-2-line spin' : 'ri-robot-2-line'"></i>
+            {{ task.status === 'AI 进行中' ? 'AI 运行中' : 'AI run' }}
+            <i v-if="task.status !== 'AI 进行中'" class="ri-arrow-down-s-line caret"></i>
+          </button>
+          <AiRunLauncher
+            v-if="aiLauncherOpen && task.status !== 'AI 进行中'"
+            :project-id="task.project"
+            :starting="aiStarting"
+            @close="aiLauncherOpen = false"
+            @start="runWithAi"
+          />
+        </div>
         <div class="share-wrap">
           <button class="icon-btn" title="复制分享链接" @click="menu = menu === 'share' ? null : 'share'"><i class="ri-links-line"></i></button>
           <div v-if="menu === 'share'" class="menu-mask" @click="menu = null"></div>
@@ -636,6 +652,7 @@ function demo(msg: string) {
             <details v-for="(run, index) in aiRuns" v-else :key="run.id" class="ai-run-entry" :open="index === 0">
               <summary>
                 <span class="ai-run-state" :class="`state-${run.status}`">{{ aiRunLabel[run.status] }}</span>
+                <span class="ai-run-engine" :title="`执行工具：${engineLabel(run.engine)}`"><i :class="engineIcon(run.engine)"></i></span>
                 <span class="ai-run-latest">{{ run.latestProgress || run.resultSummary || '暂无执行摘要' }}</span>
                 <time :title="absoluteTime(run.startedAt || run.createdAt)">{{ showTime(run.startedAt || run.createdAt) }}</time>
                 <i class="ri-arrow-down-s-line"></i>
@@ -1101,6 +1118,18 @@ function demo(msg: string) {
 /* 分享菜单 */
 .share-wrap {
   position: relative;
+}
+.ai-run-wrap {
+  position: relative;
+}
+.ai-run-btn .caret {
+  margin-left: -2px;
+  opacity: .6;
+}
+.ai-run-engine {
+  flex: 0 0 auto;
+  color: var(--wao-text-3);
+  font-size: 12px;
 }
 .ai-run-btn {
   height: 30px;

@@ -6,6 +6,7 @@ public record SaveAiProjectConfigRequest(
         String repoUrl,
         String defaultBranch,
         String workspaceDir,
+        String defaultEngine,
         String preferredRunnerId,
         Integer maxParallelRuns) {
 }

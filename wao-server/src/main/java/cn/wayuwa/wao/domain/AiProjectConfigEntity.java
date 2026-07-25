@@ -14,6 +14,7 @@ public class AiProjectConfigEntity {
     private String repoUrl;
     private String defaultBranch;
     private String workspaceDir;
+    private String defaultEngine;
     private String preferredRunnerId;
     private Integer maxParallelRuns;
     private LocalDateTime updatedAt;
@@ -28,6 +29,8 @@ public class AiProjectConfigEntity {
     public void setDefaultBranch(String defaultBranch) { this.defaultBranch = defaultBranch; }
     public String getWorkspaceDir() { return workspaceDir; }
     public void setWorkspaceDir(String workspaceDir) { this.workspaceDir = workspaceDir; }
+    public String getDefaultEngine() { return defaultEngine; }
+    public void setDefaultEngine(String defaultEngine) { this.defaultEngine = defaultEngine; }
     public String getPreferredRunnerId() { return preferredRunnerId; }
     public void setPreferredRunnerId(String preferredRunnerId) { this.preferredRunnerId = preferredRunnerId; }
     public Integer getMaxParallelRuns() { return maxParallelRuns; }

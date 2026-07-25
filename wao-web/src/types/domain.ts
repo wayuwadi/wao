@@ -280,6 +280,9 @@ export interface SharedTask {
   subs: TaskStep[]
 }
 
+/** 可以托管任务的本地 AI 工具。 */
+export type AiEngine = 'codex' | 'claude'
+
 /** 项目级 AI Run 配置。 */
 export interface AiProjectConfig {
   projectId: string
@@ -287,19 +290,33 @@ export interface AiProjectConfig {
   repoUrl: string
   defaultBranch: string
   workspaceDir: string
+  defaultEngine: AiEngine
   preferredRunnerId: string | null
   maxParallelRuns: number
 }
 
-/** 一台已和 WAO 配对的 Codex 执行电脑。 */
+/** 一台已和 WAO 配对的执行电脑，可能同时装了 Codex 和 Claude Code。 */
 export interface AiRunner {
   id: string
   name: string
   platform: string
+  engines: AiEngine[]
   maxConcurrency: number
   activeRuns: number
   online: boolean
   lastSeenAt: string | null
+}
+
+/** AI 控制台「工作流」视图里的一个项目。 */
+export interface AiWorkflow {
+  projectId: string
+  projectName: string
+  config: AiProjectConfig
+  preferredRunnerName: string | null
+  activeRuns: number
+  succeededRuns: number
+  failedRuns: number
+  lastRunAt: string | null
 }
 
 export type AiRunStatus = 'queued' | 'claimed' | 'running' | 'succeeded' | 'failed' | 'cancelled'
@@ -311,16 +328,18 @@ export interface AiRunProgress {
   createdAt: string
 }
 
-/** 一次从 WAO 派发到 Codex 的任务运行。 */
+/** 一次从 WAO 派发到本地 AI CLI 的任务运行。 */
 export interface AiRun {
   id: string
   taskId: string
   taskTitle: string
   projectId: string
   projectName: string
+  engine: AiEngine
   status: AiRunStatus
   runnerId: string | null
   runnerName: string | null
+  requestedRunnerId: string | null
   branchName: string | null
   resultSummary: string | null
   latestProgress: string | null

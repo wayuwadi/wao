@@ -7,6 +7,7 @@ public record AiProjectConfigDto(
         String repoUrl,
         String defaultBranch,
         String workspaceDir,
+        String defaultEngine,
         String preferredRunnerId,
         int maxParallelRuns) {
 }
