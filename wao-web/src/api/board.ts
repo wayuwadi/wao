@@ -16,6 +16,7 @@ import type {
   Org,
   Project,
   ScheduleItem,
+  SharedTask,
   Suggestion,
   Task,
   VaultGroup,
@@ -101,6 +102,32 @@ export async function apiPutTask(id: string, task: Task): Promise<Task> {
   const res = await http.put<ApiResponse<Task>>(`/api/tasks/${id}`, task)
   return res.data.data
 }
+
+// ---------------- 图床 ----------------
+
+/**
+ * 上传一张图片到图床，返回可直接用于 img 的条目。
+ *
+ * @param file   图片文件（后端限制 10MB，仅接受常见图片类型）
+ * @param source 来源描述，如「任务 · 整理证件盒」，会显示在图床列表里
+ */
+export async function apiUploadImage(file: File, source?: string): Promise<ImageItem> {
+  const form = new FormData()
+  form.append('file', file)
+  if (source) form.append('source', source)
+  const res = await http.post<ApiResponse<ImageItem>>('/api/images', form, {
+    // 上传比普通接口慢，用更宽的超时，避免大图在弱网下被 10s 直接掐断
+    timeout: 60_000,
+  })
+  return res.data.data
+}
+export const apiDeleteImage = (id: string) => del(`/api/images/${id}`)
+
+// ---------------- 任务分享（公开只读） ----------------
+
+export const apiShareTask = (id: string) => get<SharedTask>(`/api/share/tasks/${id}`)
+export const apiShareSub = (id: string, subId: string) =>
+  get<SharedTask>(`/api/share/tasks/${id}/subs/${encodeURIComponent(subId)}`)
 
 export interface CreateProjectPayload {
   name: string

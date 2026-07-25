@@ -68,6 +68,15 @@ export interface Project {
 export interface TaskStep {
   text: string
   done: boolean
+  /**
+   * 子任务稳定 id（`s` + 时间戳）。历史数据没有这个字段，读取时按数组下标兜底，
+   * 新建的子任务一律带 id —— 分享链接与详情面板都靠它定位，不能用会漂移的下标。
+   */
+  id?: string
+  /** 子任务描述（Markdown）。 */
+  desc?: string
+  /** 子任务内嵌图片。 */
+  images?: ImageRef[]
 }
 
 export interface Comment {
@@ -202,6 +211,8 @@ export interface FileItem {
 }
 
 export interface ImageItem {
+  /** 上传到图床的图片才有 id；内置演示数据没有。 */
+  id?: string
   name: string
   size: string
   time: string
@@ -209,6 +220,21 @@ export interface ImageItem {
   url: string
   c1: string
   c2: string
+}
+
+/** 公开分享的任务 / 子任务视图（不含负责人、评论、活动等内部信息）。 */
+export interface SharedTask {
+  kind: 'task' | 'sub'
+  id: string
+  subId: string | null
+  title: string
+  status: string
+  pr: string | null
+  due: string | null
+  project: string
+  desc: string
+  images: ImageRef[]
+  subs: TaskStep[]
 }
 
 export interface VaultItem {

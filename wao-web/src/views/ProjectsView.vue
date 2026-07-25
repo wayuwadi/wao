@@ -5,6 +5,7 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { useDeco } from '@/composables/deco'
+import { useCompletionSettle } from '@/composables/completion'
 import { statusMeta } from '@/utils/domain'
 import type { Project, ProjectStatus, TaskStatus } from '@/types'
 
@@ -82,26 +83,31 @@ const myList = computed(() => {
   return list
 })
 
+// 已完成默认收起，点分组标题展开；勾完成后先原地停留 3 秒再归到「已完成」里。
+const showDone = ref(false)
+const { toggle: toggleTask, isSettling } = useCompletionSettle()
+
 const taskGroups = computed(() => {
   const list = myList.value
-  const open = list.filter((t) => t.status !== '已完成')
-  const done = list.filter((t) => t.status === '已完成')
+  const open = list.filter((t) => t.status !== '已完成' || isSettling(t.id))
+  const done = list.filter((t) => t.status === '已完成' && !isSettling(t.id))
   const buckets: [string, (due: string) => boolean][] = [
     ['今天', (due) => !!due && due <= data.today],
     ['本周', (due) => !!due && due > data.today && due <= '2026-07-26'],
     ['稍后', (due) => !due || due > '2026-07-26'],
   ]
-  const groups = buckets
+  const groups: { label: string; items: ReturnType<typeof decoTask>[]; collapsible?: boolean }[] = buckets
     .map(([label, fn]) => ({ label, items: open.filter((t) => fn(t.due)).map(decoTask) }))
     .filter((g) => g.items.length)
-  if (done.length) groups.push({ label: '已完成', items: done.map(decoTask) })
+  if (done.length) groups.push({ label: '已完成', items: done.map(decoTask), collapsible: true })
   return groups
 })
 
 const boardCols = computed(() => {
   const dots: Record<string, string> = { 待办: '#C9CDDA', 进行中: '#4358D6', 阻塞: '#D9A13B', 已完成: '#5CB88A' }
   return (['待办', '进行中', '阻塞', '已完成'] as const).map((st) => ({
-    label: st, dot: dots[st]!, items: myList.value.filter((t) => t.status === st).map(decoTask),
+    label: st, dot: dots[st]!, collapsible: st === '已完成',
+    items: myList.value.filter((t) => t.status === st).map(decoTask),
   }))
 })
 
@@ -113,9 +119,6 @@ function openProject(id: string) {
 }
 function openTask(id: string) {
   ui.openTask(id)
-}
-function toggleTask(id: string) {
-  data.toggleComplete(id)
 }
 
 // 看板拖拽改状态
@@ -282,12 +285,15 @@ function onDropStatus(status: TaskStatus) {
 
       <template v-if="taskView === 'list'">
         <div v-for="tg in taskGroups" :key="tg.label" class="tgroup">
-          <div class="tgroup-head">
+          <div class="tgroup-head" :class="{ clickable: tg.collapsible }" @click="tg.collapsible && (showDone = !showDone)">
+            <i v-if="tg.collapsible" class="tgroup-chev" :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
             <span class="tgroup-label">{{ tg.label }}</span>
             <span class="tgroup-count wao-tabular">{{ tg.items.length }}</span>
+            <span v-if="tg.collapsible" class="tgroup-hint">{{ showDone ? '点击收起' : '点击展开' }}</span>
           </div>
-          <div class="tlist">
-            <div v-for="t in tg.items" :key="t.id" class="trow" @click="openTask(t.id)">
+          <div v-if="tg.collapsible && !showDone" class="tgroup-collapsed">已收起 {{ tg.items.length }} 项</div>
+          <div v-else class="tlist">
+            <div v-for="t in tg.items" :key="t.id" class="trow" :class="{ settling: isSettling(t.id) }" @click="openTask(t.id)">
               <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" title="完成 / 重新打开" @click.stop="toggleTask(t.id)">
                 <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
               </button>
@@ -312,12 +318,14 @@ function onDropStatus(status: TaskStatus) {
           @dragover.prevent
           @drop="onDropStatus(col.label as TaskStatus)"
         >
-          <div class="board-col-head">
+          <div class="board-col-head" :class="{ clickable: col.collapsible }" @click="col.collapsible && (showDone = !showDone)">
             <span class="board-dot" :style="{ background: col.dot }"></span>
             <span class="board-col-label">{{ col.label }}</span>
             <span class="board-col-count wao-tabular">{{ col.items.length }}</span>
+            <i v-if="col.collapsible" class="board-col-chev" :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
           </div>
-          <div class="board-cards">
+          <div v-if="col.collapsible && !showDone" class="board-collapsed">已收起 {{ col.items.length }} 项 · 点标题展开</div>
+          <div v-else class="board-cards">
             <div
               v-for="t in col.items"
               :key="t.id"
@@ -748,6 +756,33 @@ function onDropStatus(status: TaskStatus) {
   font-size: 11.5px;
   color: var(--wao-text-weak);
 }
+.tgroup-head.clickable {
+  cursor: pointer;
+  border-radius: 7px;
+  padding: 4px 6px 8px;
+  margin: 0 -6px;
+}
+.tgroup-head.clickable:hover .tgroup-label {
+  color: var(--wao-text);
+}
+.tgroup-chev {
+  font-size: 15px;
+  color: var(--wao-text-faint-2);
+}
+.tgroup-hint {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--wao-text-faint);
+}
+.tgroup-collapsed {
+  background: #fff;
+  border: 1px dashed var(--wao-line-strong);
+  border-radius: 12px;
+  padding: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--wao-text-faint);
+}
 .tlist {
   background: #fff;
   border: 1px solid var(--wao-line);
@@ -764,6 +799,11 @@ function onDropStatus(status: TaskStatus) {
 }
 .trow:hover {
   background: var(--wao-bg-hover);
+}
+/* 勾完成后的 3 秒缓冲：淡出但不移位 */
+.trow.settling {
+  opacity: 0.55;
+  transition: opacity 0.4s ease;
 }
 .check {
   width: 17px;
@@ -882,6 +922,26 @@ function onDropStatus(status: TaskStatus) {
 .board-col-count {
   font-size: 11.5px;
   color: var(--wao-text-weak);
+}
+.board-col-head.clickable {
+  cursor: pointer;
+  border-radius: 7px;
+}
+.board-col-head.clickable:hover {
+  background: var(--wao-bg-hover);
+}
+.board-col-chev {
+  margin-left: auto;
+  font-size: 15px;
+  color: var(--wao-text-faint-2);
+}
+.board-collapsed {
+  border: 1px dashed var(--wao-line-strong);
+  border-radius: 10px;
+  padding: 14px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--wao-text-faint);
 }
 .board-cards {
   display: flex;

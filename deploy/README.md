@@ -134,6 +134,26 @@ https://wao.wayuwa.cn/api/hello
 
 当前只有主、从两个 Sentinel。它们可提供监控和客户端发现，但任一整机离线后无法形成可靠多数派，因此不承诺整机故障下的 Redis 自动切换。后续如需自动故障转移，应增加独立的第三仲裁节点。
 
+## 图床
+
+用户上传的图片（任务 / 子任务描述里的截图）存在主节点 MySQL 的 `image_blob` 表，不落容器本地目录——主从两个节点的 `wao-server` 都连主节点的 MySQL，所以落库天然满足「图床在主节点上」，容器重建与节点故障转移都不丢图，也不需要额外的 volume 或 Nginx 定向路由。理由见 `docs/adr/012-markdown-rendering-and-image-store.md`。
+
+单张上限 **10MB**，这个数字在三处必须保持一致，改一处就要同步另外两处：
+
+| 位置 | 配置 |
+| --- | --- |
+| 应用 | `ImageService.MAX_BYTES` / `spring.servlet.multipart.max-file-size` |
+| 网关 | `spring.codec.max-in-memory-size: 16MB` |
+| 云 Nginx | `location /api/` 的 `client_max_body_size 12m`（留 2MB 给 multipart 边界） |
+
+云节点更新 Nginx 配置后记得 `nginx -t && systemctl reload nginx`，否则上传大图会返回 413。
+
+图片正文进了 MySQL，`backup-mysql.ps1` 的备份体积会随图片增长，留意 `deploy\backups` 的磁盘占用。
+
+## 任务分享链接
+
+任务分享页 `/s/t/<taskId>` 与 Markdown 直读地址 `/api/share/tasks/<taskId>.md` 都是**公开免登录**的：拿到链接就能读到该任务的标题、描述、图片与子任务（负责人、评论、活动不外泄）。当前任务 id 是可枚举的时间戳，因此这套分享**不适合在有外部成员的正式环境启用**，收敛方案（不可猜的 share token）记在 `docs/adr/013-public-task-share-links.md`。
+
 ## GitHub Actions
 
 CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。

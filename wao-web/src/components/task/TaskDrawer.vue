@@ -8,6 +8,8 @@ import { useDeco } from '@/composables/deco'
 import { statusMeta, priorityMeta } from '@/utils/domain'
 import { fmtDate } from '@/utils/domain'
 import { toast } from '@/composables/toast'
+import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+import { copyText, shareMarkdownUrl, shareUrl } from '@/utils/share'
 import type { Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
@@ -19,9 +21,11 @@ const { decoTask } = useDeco()
 const task = computed(() => (ui.openTaskId ? data.taskById(ui.openTaskId) : undefined))
 const tv = computed(() => (task.value ? decoTask(task.value) : null))
 
-const menu = ref<'status' | 'pr' | 'owner' | 'prop' | null>(null)
+const menu = ref<'status' | 'pr' | 'owner' | 'prop' | 'share' | null>(null)
 const newSub = ref('')
 const commentText = ref('')
+/** 右侧栏当前展开的子任务标识；为 null 时显示任务属性栏。 */
+const openSubId = ref<string | null>(null)
 
 watch(
   () => ui.openTaskId,
@@ -29,6 +33,7 @@ watch(
     menu.value = null
     newSub.value = ''
     commentText.value = ''
+    openSubId.value = null
   },
 )
 
@@ -71,10 +76,11 @@ const PROP_TYPES = ['文本', '数字', '单选', '链接']
 function close() {
   ui.closeTask()
 }
-/** Esc 逐层关闭：先关下拉菜单，再关抽屉。 */
+/** Esc 逐层关闭：先关下拉菜单，再收子任务详情，最后关抽屉。 */
 function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape' || !task.value) return
   if (menu.value) menu.value = null
+  else if (openSubId.value) openSubId.value = null
   else close()
 }
 onMounted(() => window.addEventListener('keydown', onKey))
@@ -82,35 +88,28 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 function editTitle(e: Event) {
   if (task.value) data.patchTask(task.value.id, { title: (e.target as HTMLInputElement).value })
 }
-function editDesc(e: Event) {
-  if (task.value) data.patchTask(task.value.id, { desc: (e.target as HTMLTextAreaElement).value })
-}
-const MAX_IMG_BYTES = 3 * 1024 * 1024
-function addImageFile(file: File) {
+/** 任务描述（Markdown）。写回走 patchTask，编辑器只管文本。 */
+const desc = computed({
+  get: () => task.value?.desc ?? '',
+  set: (v: string) => {
+    if (task.value) data.patchTask(task.value.id, { desc: v })
+  },
+})
+
+/** 上传一张图片到图床并挂到任务上；超限或失败给出提示。 */
+async function addImageFile(file: File) {
   const t = task.value
-  if (!t || !file.type.startsWith('image/')) return
-  if (file.size > MAX_IMG_BYTES) {
-    toast('图片超过 3MB，已跳过', 'ri-error-warning-line')
+  if (!t) return
+  if (file.size > data.MAX_IMAGE_BYTES) {
+    toast('图片超过 10MB，已跳过', 'ri-error-warning-line')
     return
   }
-  const reader = new FileReader()
-  reader.onload = () => {
-    data.patchTask(t.id, { images: [...(t.images ?? []), { name: file.name || '粘贴的图片', url: String(reader.result) }] }, '你添加了图片')
+  const ref = await data.uploadImage(file, `任务 · ${t.title}`)
+  if (!ref) {
+    toast('图片上传失败，请重试', 'ri-error-warning-line')
+    return
   }
-  reader.readAsDataURL(file)
-}
-function onDescPaste(e: ClipboardEvent) {
-  const items = e.clipboardData?.items
-  if (!items) return
-  for (const it of items) {
-    if (it.kind === 'file') {
-      const f = it.getAsFile()
-      if (f) {
-        addImageFile(f)
-        e.preventDefault()
-      }
-    }
-  }
+  data.patchTask(t.id, { images: [...(t.images ?? []), ref] }, '你添加了图片')
 }
 function removeImage(idx: number) {
   const t = task.value
@@ -125,11 +124,99 @@ function toggleStep(idx: number, kind: 'steps' | 'subs') {
 }
 function addSub() {
   const t = task.value
-  const v = newSub.value.trim()
-  if (t && v) {
-    data.patchTask(t.id, { subs: [...t.subs, { text: v, done: false }] }, '你添加了子任务')
+  if (!t) return
+  const id = data.addSub(t.id, newSub.value)
+  if (id) {
     newSub.value = ''
+    // 新建即展开，方便顺手补描述
+    openSubId.value = id
   }
+}
+
+// ---- 子任务详情（右侧栏切换成子任务视图） ----
+
+const subKeyOf = (idx: number) => (task.value ? data.subKey(task.value.id, task.value.subs[idx]!, idx) : '')
+const openSub = computed(() =>
+  task.value && openSubId.value ? data.subById(task.value.id, openSubId.value) : undefined,
+)
+const openSubIndex = computed(() =>
+  task.value && openSubId.value
+    ? task.value.subs.findIndex((s, i) => data.subKey(task.value!.id, s, i) === openSubId.value)
+    : -1,
+)
+
+function showSub(idx: number) {
+  const key = subKeyOf(idx)
+  openSubId.value = openSubId.value === key ? null : key
+  menu.value = null
+}
+function editSubTitle(e: Event) {
+  const t = task.value
+  const v = (e.target as HTMLInputElement).value
+  if (t && openSubId.value) data.updateSub(t.id, openSubId.value, { text: v })
+}
+/** 子任务描述（Markdown）。 */
+const subDesc = computed({
+  get: () => openSub.value?.desc ?? '',
+  set: (v: string) => {
+    const t = task.value
+    if (t && openSubId.value) data.updateSub(t.id, openSubId.value, { desc: v })
+  },
+})
+function toggleSubDone() {
+  const t = task.value
+  const s = openSub.value
+  if (t && s && openSubId.value) data.updateSub(t.id, openSubId.value, { done: !s.done })
+}
+async function addSubImageFile(file: File) {
+  const t = task.value
+  if (!t || !openSubId.value) return
+  if (file.size > data.MAX_IMAGE_BYTES) {
+    toast('图片超过 10MB，已跳过', 'ri-error-warning-line')
+    return
+  }
+  const ref = await data.uploadImage(file, `子任务 · ${openSub.value?.text ?? ''}`)
+  if (!ref) {
+    toast('图片上传失败，请重试', 'ri-error-warning-line')
+    return
+  }
+  data.addSubImage(t.id, openSubId.value, ref)
+}
+const subFileInput = ref<HTMLInputElement | null>(null)
+function onPickSubImages(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  if (files) Array.from(files).forEach(addSubImageFile)
+  if (subFileInput.value) subFileInput.value.value = ''
+}
+function removeSubImage(idx: number) {
+  const t = task.value
+  if (t && openSubId.value) data.removeSubImage(t.id, openSubId.value, idx)
+}
+function deleteSub() {
+  const t = task.value
+  if (!t || !openSubId.value) return
+  data.removeSub(t.id, openSubId.value)
+  openSubId.value = null
+  toast('子任务已删除', 'ri-delete-bin-line')
+}
+
+// ---- 分享链接 ----
+
+/** 复制当前上下文（任务或已展开的子任务）的分享链接。 */
+async function copyShare(kind: 'page' | 'md') {
+  const t = task.value
+  if (!t) return
+  const sub = openSubId.value
+  const url = kind === 'md' ? shareMarkdownUrl(t.id, sub) : shareUrl(t.id, sub)
+  const what = sub ? '子任务' : '任务'
+  const suffix = sub ? '（只含该子任务）' : '（含全部子任务）'
+  menu.value = null
+  toast(
+    (await copyText(url))
+      ? `${what}${kind === 'md' ? ' Markdown 地址' : '链接'}已复制${suffix}`
+      : '复制失败，请检查浏览器剪贴板权限',
+    'ri-links-line',
+  )
 }
 function sendComment() {
   const t = task.value
@@ -204,7 +291,23 @@ function demo(msg: string) {
         <span class="crumb">任务详情</span>
         <span v-if="task.waiting" class="wait-badge">{{ task.waiting }}</span>
         <div class="spacer"></div>
-        <button class="icon-btn" title="复制链接" @click="demo('已复制任务链接（演示）')"><i class="ri-links-line"></i></button>
+        <div class="share-wrap">
+          <button class="icon-btn" title="复制分享链接" @click="menu = menu === 'share' ? null : 'share'"><i class="ri-links-line"></i></button>
+          <div v-if="menu === 'share'" class="menu-mask" @click="menu = null"></div>
+          <div v-if="menu === 'share'" class="share-menu">
+            <div class="share-scope">
+              {{ openSubId ? '分享范围：当前子任务' : '分享范围：本任务 + 全部子任务' }}
+            </div>
+            <button class="share-item" @click="copyShare('page')">
+              <i class="ri-external-link-line"></i>
+              <span class="share-main"><b>复制分享页链接</b><em>公开只读页面，给人看</em></span>
+            </button>
+            <button class="share-item" @click="copyShare('md')">
+              <i class="ri-robot-2-line"></i>
+              <span class="share-main"><b>复制 Markdown 地址</b><em>一次 GET 即全文，给 AI 用</em></span>
+            </button>
+          </div>
+        </div>
         <button class="icon-btn" title="关闭（Esc）" @click="close"><i class="ri-close-line"></i></button>
       </div>
 
@@ -215,7 +318,12 @@ function demo(msg: string) {
 
           <div class="field">
             <div class="field-label">描述</div>
-            <textarea class="desc" :value="task.desc" rows="3" placeholder="补充背景、目标与边界…（可粘贴截图）" @input="editDesc" @paste="onDescPaste"></textarea>
+            <MarkdownEditor
+              v-model="desc"
+              placeholder="补充背景、目标与边界…支持 Markdown，可粘贴截图"
+              :min-height="84"
+              @paste-image="addImageFile"
+            />
           </div>
 
           <div v-if="task.images && task.images.length" class="field">
@@ -245,9 +353,18 @@ function demo(msg: string) {
           <div class="field">
             <div class="field-label">子任务</div>
             <div>
-              <div v-for="(sb, i) in task.subs" :key="i" class="check-row" @click="toggleStep(i, 'subs')">
-                <span class="cbox circle" :class="{ done: sb.done }"><i class="ri-check-line"></i></span>
+              <div
+                v-for="(sb, i) in task.subs"
+                :key="sb.id ?? i"
+                class="check-row sub-row"
+                :class="{ active: openSubId === subKeyOf(i) }"
+                @click="showSub(i)"
+              >
+                <span class="cbox circle" :class="{ done: sb.done }" @click.stop="toggleStep(i, 'subs')"><i class="ri-check-line"></i></span>
                 <span class="check-text" :class="{ done: sb.done }">{{ sb.text }}</span>
+                <i v-if="sb.desc || sb.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
+                <span class="spacer"></span>
+                <i class="ri-arrow-right-s-line sub-chev"></i>
               </div>
             </div>
             <div class="sub-add">
@@ -309,9 +426,47 @@ function demo(msg: string) {
           </div>
         </div>
 
+        <!-- 子任务详情：展开子任务时顶掉属性栏 -->
+        <div v-if="openSub" class="props">
+          <button class="sub-back" @click="openSubId = null"><i class="ri-arrow-left-line"></i>返回任务属性</button>
+          <div class="props-label">子任务 {{ openSubIndex + 1 }} / {{ task.subs.length }}</div>
+
+          <div class="sub-title-row">
+            <button class="cbox circle big" :class="{ done: openSub.done }" title="标记完成" @click="toggleSubDone"><i class="ri-check-line"></i></button>
+            <input class="sub-title-input" :class="{ done: openSub.done }" :value="openSub.text" placeholder="子任务名称" @input="editSubTitle" />
+          </div>
+
+          <div class="sub-field">
+            <div class="props-label sm">描述</div>
+            <MarkdownEditor
+              v-model="subDesc"
+              placeholder="补充这个子任务的做法、验收标准…支持 Markdown，可粘贴截图"
+              :min-height="120"
+              @paste-image="addSubImageFile"
+            />
+          </div>
+
+          <div class="sub-field">
+            <div class="props-label sm">图片</div>
+            <div v-if="openSub.images?.length" class="img-grid sub-img-grid">
+              <div v-for="(im, i) in openSub.images" :key="i" class="img-cell">
+                <img :src="im.url" :alt="im.name" @click="viewImage(im.url)" />
+                <button class="img-del" title="移除" @click="removeSubImage(i)"><i class="ri-close-line"></i></button>
+              </div>
+            </div>
+            <button class="text-btn small" @click="subFileInput?.click()"><i class="ri-image-add-line"></i>添加图片</button>
+            <input ref="subFileInput" type="file" accept="image/*" multiple hidden @change="onPickSubImages" />
+          </div>
+
+          <div class="prop-section">
+            <button class="text-btn small" @click="copyShare('page')"><i class="ri-links-line"></i>复制该子任务分享链接</button>
+            <button class="text-btn small danger" @click="deleteSub"><i class="ri-delete-bin-line"></i>删除子任务</button>
+          </div>
+        </div>
+
         <!-- 属性栏 -->
-        <div class="props">
-          <div v-if="menu" class="menu-mask" @click="menu = null"></div>
+        <div v-else class="props">
+          <div v-if="menu && menu !== 'share'" class="menu-mask" @click="menu = null"></div>
           <div class="props-label">属性</div>
 
           <div class="prop-row">
@@ -541,22 +696,64 @@ function demo(msg: string) {
 .field-label.nomb {
   margin-bottom: 0;
 }
-.desc {
-  width: 100%;
-  border: 1px solid transparent;
-  outline: none;
-  font-size: 13.5px;
-  line-height: 1.8;
-  color: var(--wao-text-2);
-  background: none;
-  resize: vertical;
-  border-radius: 8px;
-  padding: 6px 8px;
-  margin: 0 -8px;
+/* 分享菜单 */
+.share-wrap {
+  position: relative;
 }
-.desc:focus {
-  border-color: var(--wao-line-control);
+.share-menu {
+  position: absolute;
+  right: 0;
+  top: 34px;
+  z-index: 89;
+  width: 236px;
   background: #fff;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  box-shadow: var(--wao-shadow-pop-2);
+  padding: 5px;
+  animation: waoPop 0.14s ease;
+}
+.share-scope {
+  font-size: 11px;
+  color: var(--wao-text-weak);
+  padding: 5px 8px 6px;
+  border-bottom: 1px solid var(--wao-divider);
+  margin-bottom: 3px;
+}
+.share-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  padding: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.share-item:hover {
+  background: var(--wao-bg-hover-2);
+}
+.share-item > i {
+  font-size: 15px;
+  color: var(--wao-text-3);
+  margin-top: 1px;
+}
+.share-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.share-main b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--wao-text);
+}
+.share-main em {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--wao-text-weak);
 }
 
 .steps-head {
@@ -631,6 +828,93 @@ function demo(msg: string) {
   color: var(--wao-text-weak);
   text-decoration: line-through;
 }
+.sub-row .cbox {
+  cursor: pointer;
+}
+.sub-row.active {
+  background: var(--wao-primary-tint);
+}
+.sub-flag {
+  font-size: 12px;
+  color: var(--wao-text-faint-2);
+}
+.sub-chev {
+  font-size: 15px;
+  color: var(--wao-text-faint-2);
+  opacity: 0;
+}
+.sub-row:hover .sub-chev,
+.sub-row.active .sub-chev {
+  opacity: 1;
+}
+
+/* 子任务详情栏 */
+.sub-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  color: var(--wao-text-3);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 3px 6px;
+  margin: 0 0 8px -6px;
+  border-radius: 6px;
+}
+.sub-back:hover {
+  background: var(--wao-bg-hover-2);
+  color: var(--wao-primary-text);
+}
+.sub-back i {
+  font-size: 13px;
+}
+.sub-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0 4px;
+}
+.cbox.big {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  cursor: pointer;
+  margin-top: 4px;
+}
+.sub-title-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  outline: none;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--wao-text);
+  background: none;
+  border-radius: 7px;
+  padding: 3px 6px;
+  margin-left: -6px;
+}
+.sub-title-input:focus {
+  border-color: var(--wao-line-control);
+  background: #fff;
+}
+.sub-title-input.done {
+  color: var(--wao-text-weak);
+  text-decoration: line-through;
+}
+.sub-field {
+  margin-top: 14px;
+}
+.sub-img-grid {
+  margin-bottom: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+}
+.text-btn.danger:hover {
+  color: #bc4141;
+}
+
 .sub-add {
   display: flex;
   align-items: center;

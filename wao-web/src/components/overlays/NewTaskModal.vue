@@ -5,6 +5,7 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { priorityMeta } from '@/utils/domain'
 import { toast } from '@/composables/toast'
+import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import type { ImageRef, Priority } from '@/types'
 
 const data = useDataStore()
@@ -24,40 +25,22 @@ const fileInput = ref<HTMLInputElement | null>(null)
 
 const openProjects = data.projects.filter((p) => p.status !== '已完成')
 
-/** 单张图片上限 3MB，避免 data URL 撑爆请求体。 */
-const MAX_BYTES = 3 * 1024 * 1024
-
-function readImage(file: File) {
+/** 图片上传到图床；失败时 uploadImage 内部会回落成 data URL。 */
+async function readImage(file: File) {
   if (!file.type.startsWith('image/')) return
-  if (file.size > MAX_BYTES) {
-    toast('图片超过 3MB，已跳过', 'ri-error-warning-line')
+  if (file.size > data.MAX_IMAGE_BYTES) {
+    toast('图片超过 10MB，已跳过', 'ri-error-warning-line')
     return
   }
-  const reader = new FileReader()
-  reader.onload = () => {
-    images.value.push({ name: file.name || '粘贴的图片', url: String(reader.result) })
-  }
-  reader.readAsDataURL(file)
+  const ref = await data.uploadImage(file, '新建任务')
+  if (ref) images.value.push(ref)
+  else toast('图片上传失败，请重试', 'ri-error-warning-line')
 }
 
 function onPickFiles(e: Event) {
   const files = (e.target as HTMLInputElement).files
   if (files) Array.from(files).forEach(readImage)
   if (fileInput.value) fileInput.value.value = ''
-}
-/** 支持在描述区直接粘贴截图。 */
-function onPaste(e: ClipboardEvent) {
-  const items = e.clipboardData?.items
-  if (!items) return
-  for (const it of items) {
-    if (it.kind === 'file') {
-      const f = it.getAsFile()
-      if (f) {
-        readImage(f)
-        e.preventDefault()
-      }
-    }
-  }
 }
 function onDrop(e: DragEvent) {
   const files = e.dataTransfer?.files
@@ -67,15 +50,17 @@ function removeImage(i: number) {
   images.value.splice(i, 1)
 }
 
-async function create() {
-  if (!title.value.trim()) return
-  const t = await data.addTask({
-    title: title.value.trim(), project: project.value, pr: pr.value, owner: owner.value,
+function create() {
+  const name = title.value.trim()
+  if (!name) return
+  // addTask 立即返回本地记录、后台落库，所以这里不 await —— 弹窗即点即关。
+  void data.addTask({
+    title: name, project: project.value, pr: pr.value, owner: owner.value,
     due: DUE_MAP[due.value] ?? data.today,
     desc: desc.value.trim(), images: images.value.slice(),
   })
   ui.closeModal()
-  toast(`任务「${t.title}」已创建`, 'ri-checkbox-circle-fill')
+  toast(`任务「${name}」已创建`, 'ri-checkbox-circle-fill')
   ui.celebrate()
 }
 </script>
@@ -133,16 +118,16 @@ async function create() {
       <button v-for="d in ['今天', '明天', '周日', '下周一']" :key="d" class="pill sq" :class="{ on: due === d }" @click="due = d">{{ d }}</button>
     </div>
 
-    <div class="label">描述 / 附图 <span class="label-hint">可粘贴或拖拽截图</span></div>
-    <textarea
-      v-model="desc"
-      class="desc"
-      rows="3"
-      placeholder="补充背景、目标与边界…（可直接 Ctrl/Cmd+V 粘贴截图）"
-      @paste="onPaste"
-      @dragover.prevent
-      @drop.prevent="onDrop"
-    ></textarea>
+    <div class="label">描述 / 附图 <span class="label-hint">支持 Markdown，可粘贴或拖拽截图</span></div>
+    <div class="desc-wrap" @dragover.prevent @drop.prevent="onDrop">
+      <MarkdownEditor
+        v-model="desc"
+        always-edit
+        placeholder="补充背景、目标与边界…支持 Markdown，可直接 Ctrl/Cmd+V 粘贴截图"
+        :min-height="84"
+        @paste-image="readImage"
+      />
+    </div>
 
     <div v-if="images.length" class="img-grid">
       <div v-for="(im, i) in images" :key="i" class="img-cell">
@@ -242,22 +227,8 @@ async function create() {
   margin-left: 6px;
   color: var(--wao-text-faint);
 }
-.desc {
+.desc-wrap {
   margin-top: 6px;
-  width: 100%;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 9px;
-  padding: 8px 12px;
-  font-size: 13px;
-  line-height: 1.7;
-  background: #fff;
-  color: var(--wao-text);
-  outline: none;
-  resize: vertical;
-}
-.desc:focus {
-  border-color: var(--wao-primary);
-  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
 }
 .img-grid {
   margin-top: 8px;

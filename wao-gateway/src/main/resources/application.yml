@@ -12,6 +12,9 @@ spring:
     name: wao-gateway
   profiles:
     default: dev
+  codec:
+    # 图床上传（最大 10MB）经网关转发时不能被默认 256KB 的缓冲上限截断
+    max-in-memory-size: 16MB
   cloud:
     nacos:
       discovery:

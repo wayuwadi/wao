@@ -22,6 +22,12 @@ public class GlobalExceptionHandler {
         return ApiResponse.fail(40400, exception.getMessage());
     }
 
+    @ExceptionHandler(BadRequestException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleBadRequest(BadRequestException exception) {
+        return ApiResponse.fail(40000, exception.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleValidation(MethodArgumentNotValidException exception) {

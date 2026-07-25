@@ -146,7 +146,96 @@ paths:
   /jobs/{id}/resume: { post: { summary: 恢复已暂停的任务, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/reauth: { post: { summary: 重新授权（「待修复」恢复为「正常」）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /files: { get: { summary: 文件列表, responses: { '200': { description: OK } } } }
-  /images: { get: { summary: 图床列表, responses: { '200': { description: OK } } } }
+  # 图床（见 docs/adr/012-markdown-rendering-and-image-store.md）
+  /images:
+    get:
+      summary: 图床列表（上传的图在前，随后是内置演示数据）
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties: { data: { type: array, items: { $ref: '#/components/schemas/ImageItem' } } }
+    post:
+      summary: 上传图片（单张 ≤ 10MB，仅 PNG/JPEG/GIF/WebP/SVG/BMP）
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                source: { type: string, description: 来源描述，如「任务 · 整理证件盒」 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties: { data: { $ref: '#/components/schemas/ImageItem' } }
+        '400': { description: 文件为空、类型不支持或超过大小上限 }
+  /images/{id}/raw:
+    get:
+      summary: 直出图片正文（内容按 id 寻址且不可变，长期缓存）
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: 图片字节流, content: { image/*: { schema: { type: string, format: binary } } } }
+        '404': { description: 不存在 }
+  /images/{id}:
+    delete:
+      summary: 删除上传的图片
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+  # 任务分享（公开只读，免登录；见 docs/adr/013-public-task-share-links.md）
+  /share/tasks/{id}:
+    get:
+      summary: 任务的公开分享视图（含全部子任务，不含负责人/评论/活动）
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties: { data: { $ref: '#/components/schemas/SharedTask' } }
+        '404': { description: 任务不存在 }
+  /share/tasks/{id}/subs/{subId}:
+    get:
+      summary: 单个子任务的公开分享视图（只含它自身的详情与描述）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: subId, in: path, required: true, schema: { type: string }, description: 子任务 id；历史数据用 `<taskId>#<下标>` }
+      responses:
+        '200': { description: OK }
+        '404': { description: 任务或子任务不存在 }
+  /share/tasks/{id}.md:
+    get:
+      summary: 任务全文的 Markdown 直读地址（供 AI 一次 GET 取全部上下文）
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: OK, content: { text/markdown: { schema: { type: string } } } }
+        '404': { description: 任务不存在 }
+  /share/tasks/{id}/subs/{subId}.md:
+    get:
+      summary: 子任务的 Markdown 直读地址
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: subId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK, content: { text/markdown: { schema: { type: string } } } }
+        '404': { description: 任务或子任务不存在 }
   # 密钥库域（关系表；密码以 AES-256-GCM 服务端加密存储，见 docs/adr/009-vault-server-side-encryption.md）
   /vault:
     get: { summary: 密钥库分组及条目列表（不含密码明文，仅 hasSecret 标记）, responses: { '200': { description: OK } } }
@@ -212,14 +301,66 @@ components:
         pr: { type: string, enum: [P0, P1, P2, P3] }
         owner: { type: string }
         due: { type: string }
+        desc: { type: string, description: 描述，Markdown 文本 }
+        subs:
+          type: array
+          description: 子任务（内嵌，不是独立任务实体）
+          items: { $ref: '#/components/schemas/Step' }
+        steps:
+          type: array
+          items: { $ref: '#/components/schemas/Step' }
         images:
           type: array
-          description: "内嵌图片（data: 或远程链接）"
-          items:
-            type: object
-            properties:
-              name: { type: string }
-              url: { type: string }
+          description: "内嵌图片（/api/images/{id}/raw、data: 或远程链接）"
+          items: { $ref: '#/components/schemas/ImageRef' }
+    Step:
+      type: object
+      description: 步骤 / 子任务条目；子任务可以有自己的描述与图片
+      properties:
+        text: { type: string }
+        done: { type: boolean }
+        id: { type: string, description: 稳定标识；历史数据可能缺失，此时按下标兜底 }
+        desc: { type: string, description: 子任务描述，Markdown 文本 }
+        images:
+          type: array
+          items: { $ref: '#/components/schemas/ImageRef' }
+    ImageRef:
+      type: object
+      properties:
+        name: { type: string }
+        url: { type: string }
+    ImageItem:
+      type: object
+      description: 图床条目
+      properties:
+        id: { type: string, description: 上传的图片才有；内置演示数据为 null }
+        name: { type: string }
+        size: { type: string, description: 人类可读大小，如 640 KB }
+        time: { type: string }
+        from: { type: string, description: 来源描述 }
+        url: { type: string, description: "上传的图为 /api/images/{id}/raw" }
+        c1: { type: string }
+        c2: { type: string }
+    SharedTask:
+      type: object
+      description: 公开分享视图；刻意不含负责人、参与人、评论与活动时间线
+      properties:
+        kind: { type: string, enum: [task, sub] }
+        id: { type: string }
+        subId: { type: string, nullable: true }
+        title: { type: string }
+        status: { type: string }
+        pr: { type: string, nullable: true }
+        due: { type: string, nullable: true }
+        project: { type: string }
+        desc: { type: string }
+        images:
+          type: array
+          items: { $ref: '#/components/schemas/ImageRef' }
+        subs:
+          type: array
+          description: kind 为 sub 时为空
+          items: { $ref: '#/components/schemas/Step' }
     CreateProjectRequest:
       type: object
       required: [name]
@@ -245,14 +386,10 @@ components:
         pr: { type: string }
         owner: { type: string }
         due: { type: string, description: ISO 日期 }
-        desc: { type: string }
+        desc: { type: string, description: 描述，Markdown 文本 }
         images:
           type: array
-          items:
-            type: object
-            properties:
-              name: { type: string }
-              url: { type: string }
+          items: { $ref: '#/components/schemas/ImageRef' }
     PatchTaskRequest:
       type: object
       properties:

@@ -10,9 +10,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 内容 / 参考域只读接口（文件、图床、日历、日程、建议、目标）。
- * 知识库 / 文档见 {@link KbController} / {@link DocController}；自动化见 {@link AutomationController}；
- * 密钥库见 {@link VaultController}。
+ * 内容 / 参考域只读接口（文件、日历、日程、建议、目标）。
+ * 图床见 {@link ImageController}（含上传，不再是只读）；知识库 / 文档见 {@link KbController} /
+ * {@link DocController}；自动化见 {@link AutomationController}；密钥库见 {@link VaultController}。
  */
 @RestController
 @RequestMapping("/api")
@@ -27,11 +27,6 @@ public class ContentController {
     @GetMapping("/files")
     public ApiResponse<List<JsonNode>> files() {
         return ApiResponse.ok(content.files());
-    }
-
-    @GetMapping("/images")
-    public ApiResponse<List<JsonNode>> images() {
-        return ApiResponse.ok(content.images());
     }
 
     @GetMapping("/calendar/events")
