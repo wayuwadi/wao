@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -28,6 +29,19 @@ class RunnerInvocationTest(unittest.TestCase):
         process.stdin.close.assert_called_once()
         process.wait.assert_called_once()
         self.assertEqual(RUNNER.subprocess.PIPE, popen.call_args.kwargs["stdin"])
+
+    @patch.object(RUNNER, "find_github_cli", return_value="C:/Program Files/GitHub CLI/gh.exe")
+    @patch.object(RUNNER.subprocess, "run")
+    def test_git_credential_is_only_injected_into_child_environment(self, run: Mock, _find: Mock) -> None:
+        run.return_value = Mock(returncode=0, stdout="username=wao\npassword=secret-token\n")
+
+        environment, ready, cli = RUNNER.build_codex_environment("git.exe")
+
+        self.assertTrue(ready)
+        self.assertEqual("secret-token", environment["GH_TOKEN"])
+        self.assertEqual("C:/Program Files/GitHub CLI/gh.exe", cli)
+        self.assertTrue(environment["PATH"].startswith("C:\\Program Files\\GitHub CLI" + os.pathsep))
+        run.assert_called_once()
 
     def test_success_requires_explicit_completion_marker(self) -> None:
         code, summary = RUNNER.normalize_result(0, "请把任务链接发来")

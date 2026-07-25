@@ -29,6 +29,10 @@ Runner 还会校验 Codex 最终答复中的完成状态，不再把反问、等
 运行期间，Runner 会消费 `codex exec --json` 的流式事件，把 AI 消息、计划和阶段结果实时回传
 到首页卡片与任务详情。命令、文件修改、工具调用和网页检索不会上传；内部推理正文也不会保存，
 只有 Codex 主动提供的公开推理摘要可以进入时间线。
+启动时 Runner 会通过 `git credential fill` 读取本机已有的 GitHub HTTPS 凭据，并仅在内存中以
+`GH_TOKEN` 传给 Codex 子进程，同时自动补齐 Windows 的 GitHub CLI 安装目录。凭据不会写入
+Runner 状态、日志或 Git；因此只需让这台电脑的 Git 凭据管理器能正常 `git push`，自动任务
+就可以继续创建 PR、合并和跟踪部署，不依赖 Codex 内置 GitHub 连接器。
 
 如果任务计划程序的环境找不到 Git 或 Codex，可显式传入完整路径：
 

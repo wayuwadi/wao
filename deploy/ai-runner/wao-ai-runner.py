@@ -135,12 +135,50 @@ def find_executable(name: str, configured: str | None = None) -> str:
     return executable
 
 
+def find_github_cli() -> str | None:
+    """查找 GitHub CLI；Windows 计划任务通常拿不到系统安装目录中的 PATH。"""
+    executable = shutil.which("gh")
+    if executable:
+        return executable
+    candidates = []
+    for root_name in ("ProgramFiles", "LOCALAPPDATA"):
+        root = os.getenv(root_name)
+        if root:
+            candidates.append(Path(root) / "GitHub CLI" / "gh.exe")
+    return next((str(path) for path in candidates if path.is_file()), None)
+
+
+def build_codex_environment(git_command: str) -> tuple[dict[str, str], bool, str | None]:
+    """把本机 Git 凭据临时交给 Codex 子进程，不写配置文件或日志。"""
+    environment = os.environ.copy()
+    github_cli = find_github_cli()
+    if github_cli:
+        cli_dir = str(Path(github_cli).parent)
+        environment["PATH"] = cli_dir + os.pathsep + environment.get("PATH", "")
+    credential = subprocess.run(
+        [git_command, "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
+        text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, check=False,
+    )
+    fields: dict[str, str] = {}
+    if credential.returncode == 0:
+        for line in credential.stdout.splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                fields[key] = value
+    token = fields.get("password", "").strip()
+    if token:
+        environment["GH_TOKEN"] = token
+    return environment, bool(token), github_cli
+
+
 def invoke_codex(command: list[str], worktree: Path, prompt: str,
-        on_event: Callable[[dict[str, Any]], None] | None = None) -> tuple[int, str]:
+        on_event: Callable[[dict[str, Any]], None] | None = None,
+        environment: dict[str, str] | None = None) -> tuple[int, str]:
     """通过标准输入传递提示，并逐行消费 Codex JSONL 事件。"""
     process = subprocess.Popen(
         command, cwd=str(worktree), text=True, encoding="utf-8", errors="replace",
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment,
     )
     if process.stdin is None or process.stdout is None:
         raise RuntimeError("无法建立 Codex 标准输入输出管道")
@@ -256,7 +294,7 @@ def normalize_result(exit_code: int, result_text: str) -> tuple[int, str]:
 
 
 def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str,
-        git_command: str, codex_command: str) -> None:
+        git_command: str, codex_command: str, codex_environment: dict[str, str]) -> None:
     run_id = claim["runId"]
     worktree: Path | None = None
     exit_code = -1
@@ -275,6 +313,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str,
             f"{claim['promptUrl']}\n\n"
             "必须遵守仓库 AGENTS.md 与相关规格；先确认当前分支基于最新 main。完成与风险相称的"
             "测试后，直接写详细中文提交，创建 PR、合并 main、等待部署并验证线上结果与飞书通知。"
+            "Runner 已把本机 Git 凭据通过 GH_TOKEN 临时交给当前进程，并把 GitHub CLI 加入 PATH；"
+            "GitHub 操作优先使用 gh，不要因为 Codex 的 GitHub 连接器不可用而停止。"
             "不要停下来等待人工确认。若外部权限确实阻塞，请在最终结果中准确说明。\n\n"
             "最终答复必须以状态行开头：全部完成并验收通过时第一行写 `WAO_RUN_STATUS: SUCCESS`；"
             "尚未完成或需要补充信息时第一行写 `WAO_RUN_STATUS: BLOCKED`。状态行后再写中文结果摘要。"
@@ -287,7 +327,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str,
             "--output-last-message", str(result_file), "-",
         ]
         stage = "等待 Codex 完成"
-        exit_code, output = invoke_codex(command, worktree, prompt, reporter.event)
+        exit_code, output = invoke_codex(command, worktree, prompt, reporter.event, codex_environment)
         reporter.flush()
         for line in output.splitlines():
             try:
@@ -344,8 +384,11 @@ def main() -> int:
     root.mkdir(parents=True, exist_ok=True)
     git_command = find_executable("git", args.git_command)
     codex_command = find_executable("codex", args.codex_command)
+    codex_environment, github_token_ready, github_cli = build_codex_environment(git_command)
     log(f"WAO AI Runner 已启动：工作区 {root}，并发 {args.max_concurrency}，日志 {LOG_FILE}")
     log(f"运行环境：Git={git_command}，Codex={codex_command}")
+    log(f"GitHub 自动授权：凭据={'可用' if github_token_ready else '不可用'}，"
+        f"GitHub CLI={github_cli or '未找到'}")
     futures: set[Future[None]] = set()
     with ThreadPoolExecutor(max_workers=args.max_concurrency, thread_name_prefix="wao-ai") as executor:
         while True:
@@ -357,7 +400,8 @@ def main() -> int:
                     if not claim:
                         break
                     futures.add(executor.submit(
-                        execute_claim, api, claim, root, args.sandbox, git_command, codex_command))
+                        execute_claim, api, claim, root, args.sandbox, git_command, codex_command,
+                        codex_environment))
             except Exception as exc:  # noqa: BLE001
                 log(f"连接 WAO 失败，10 秒后重试：{exc}")
             time.sleep(10)
