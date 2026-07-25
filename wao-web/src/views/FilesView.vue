@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { absoluteUrl } from '@/utils/share'
@@ -8,6 +8,12 @@ import DemoBanner from '@/components/ui/DemoBanner.vue'
 
 const data = useDataStore()
 const tab = ref<'files' | 'img'>('img')
+
+/** 图床默认只铺三排（网格是 5 列，即 15 张），其余点开再看。 */
+const IMG_PAGE = 15
+const showAllImages = ref(false)
+const visibleImages = computed(() => (showAllImages.value ? data.imgs : data.imgs.slice(0, IMG_PAGE)))
+const hiddenCount = computed(() => (showAllImages.value ? 0 : Math.max(0, data.imgs.length - IMG_PAGE)))
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploading = ref(0)
 
@@ -70,8 +76,8 @@ async function removeImage(id: string | undefined, name: string) {
   <div class="files">
     <DemoBanner
       icon="ri-hard-drive-2-line"
-      title="文件模块仍是演示"
-      text="图床已经是真实功能：系统各处上传 / 粘贴的图片都会归档到这里，可预览、复制公网链接、删除。文件（附件）标签页仍为示例数据，真实上传与下载将在后续迭代接入。"
+      title="文件模块尚未接入"
+      text="图床已经是真实功能：系统各处上传 / 粘贴的图片都会归档到这里，可预览、复制公网链接、删除。文件（附件）的真实上传与下载将在后续迭代接入，示例数据已清空。"
       storage-key="files"
     />
     <div class="ftop">
@@ -90,8 +96,12 @@ async function removeImage(id: string | undefined, name: string) {
     </div>
 
     <template v-if="tab === 'files'">
-      <div class="note">上传的文件自动生成公开直链，可直接分享下载（演示链接为示意，不可真实访问）。</div>
-      <div class="file-list">
+      <div class="note">文件（附件）的真实上传与下载尚未接入，这里暂时是空的。图片请用「图床」标签页。</div>
+      <div v-if="!data.files.length" class="img-empty">
+        <i class="ri-folder-line"></i>
+        <div>还没有文件——附件上传会在后续迭代接入</div>
+      </div>
+      <div v-else class="file-list">
         <div v-for="(f, i) in data.files" :key="i" class="file-row">
           <div class="file-icon"><i :class="f.icon"></i></div>
           <div class="file-main">
@@ -109,7 +119,7 @@ async function removeImage(id: string | undefined, name: string) {
       <div class="note">任务描述、子任务、新建任务里粘贴或上传的图片都统一归档到这里，并提供公网访问链接。</div>
       <div class="img-drop" @dragover.prevent @drop.prevent="onDrop">
         <div class="img-grid">
-          <div v-for="(im, i) in data.imgs" :key="im.id ?? i" class="img-card">
+          <div v-for="(im, i) in visibleImages" :key="im.id ?? i" class="img-card">
             <div class="img-thumb" :style="{ background: `repeating-linear-gradient(45deg, ${im.c1} 0 10px, ${im.c2} 10px 20px)` }">
               <img :src="im.url" :alt="im.name" loading="lazy" @click="openImage(im.url)" />
               <button v-if="im.id" class="img-del" title="从图床删除" @click.stop="removeImage(im.id, im.name)">
@@ -123,6 +133,13 @@ async function removeImage(id: string | undefined, name: string) {
             </div>
           </div>
         </div>
+        <button v-if="hiddenCount" class="img-more" @click="showAllImages = true">
+          <i class="ri-arrow-down-s-line"></i>展开其余 {{ hiddenCount }} 张
+        </button>
+        <button v-else-if="showAllImages && data.imgs.length > IMG_PAGE" class="img-more" @click="showAllImages = false">
+          <i class="ri-arrow-up-s-line"></i>收起，只看最近 {{ IMG_PAGE }} 张
+        </button>
+
         <div v-if="!data.imgs.length" class="img-empty">
           <i class="ri-image-add-line"></i>
           <div>图床还是空的——把图片拖到这里，或点右上角「上传图片」</div>
@@ -301,8 +318,36 @@ async function removeImage(id: string | undefined, name: string) {
 .img-grid {
   margin-top: 10px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  /* 固定 5 列：配合 IMG_PAGE=15，默认正好铺满三排 */
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
+}
+@media (max-width: 1100px) {
+  .img-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+.img-more {
+  margin-top: 12px;
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--wao-line-strong);
+  background: #fff;
+  border-radius: 9px;
+  font-size: 12.5px;
+  color: var(--wao-text-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.img-more:hover {
+  border-color: var(--wao-primary);
+  color: var(--wao-primary);
+}
+.img-more i {
+  font-size: 15px;
 }
 .img-card {
   background: #fff;

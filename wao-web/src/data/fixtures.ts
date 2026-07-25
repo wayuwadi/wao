@@ -218,22 +218,11 @@ export const AUTOS: AutomationJob[] = [
   { id: 'j4', name: '证件到期扫描提醒', icon: 'ri-alarm-line', schedule: '每月 1 日', status: '正常', last: '7月1日 · 无即将到期证件', desc: '扫描证件台账，到期前 60 天在首页与飞书提醒责任人。', source: '知识库 · 证件与合同台账', target: '首页提醒 + 飞书通知', steps: ['读取台账有效期字段', '筛选 60 天内到期条目', '生成提醒并 @ 责任人'], runs: [['7月1日 08:00', '成功 · 无到期项'], ['6月1日 08:00', '成功 · 提醒 1 项'], ['5月1日 08:00', '成功 · 无到期项']] },
 ]
 
-export const FILES: FileItem[] = [
-  { name: 'WAO-视觉规范-0718.pdf', size: '8.1 MB', icon: 'ri-file-text-line', time: '7月18日', by: '娃哥', link: 'https://f.wayuwa.example/dl/9f2k1/WAO-视觉规范-0718.pdf' },
-  { name: '任务详情-线框-v3.fig', size: '2.4 MB', icon: 'ri-pen-nib-line', time: '7月16日', by: '娃哥', link: 'https://f.wayuwa.example/dl/x83nd/任务详情-线框-v3.fig' },
-  { name: '2026-证件扫描-批次03.zip', size: '1.2 GB', icon: 'ri-file-zip-line', time: '今天 11:20', by: '娃弟', link: 'https://f.wayuwa.example/dl/72jd8/证件扫描-批次03.zip' },
-  { name: '体检报告-娃哥-2026.pdf', size: '3.2 MB', icon: 'ri-file-text-line', time: '6月28日', by: '娃哥', link: 'https://f.wayuwa.example/dl/lm2s9/体检报告-2026.pdf' },
-  { name: '滇西北行程预算表.xlsx', size: '96 KB', icon: 'ri-table-line', time: '7月10日', by: '娃弟', link: 'https://f.wayuwa.example/dl/qp1aa/滇西北行程预算表.xlsx' },
-]
+// 文件与图床的演示数据已移除（V13 migration 同步清空了库里的种子数据）：
+// 图床是真实功能，上传的图存在 image_blob 里；虚构的示例条目只会干扰。
+export const FILES: FileItem[] = []
 
-export const IMGS: ImageItem[] = [
-  { name: '滇西北路线-手绘草图.png', size: '2.8 MB', time: '7月12日', from: '项目 · 滇西北家庭旅行', url: 'https://i.wayuwa.example/8f3a2c.png', c1: '#E8ECFA', c2: '#DDE3F6' },
-  { name: '任务详情-截图-0722.png', size: '640 KB', time: '昨天', from: '任务 · 任务详情抽屉', url: 'https://i.wayuwa.example/2b9d1e.png', c1: '#EAF4EE', c2: '#DEEEE5' },
-  { name: '老照片-1999-全家福.jpg', size: '1.9 MB', time: '7月19日', from: '项目 · 家庭资料归档', url: 'https://i.wayuwa.example/5c2f77.jpg', c1: '#F7EFE2', c2: '#F0E5D0' },
-  { name: '白板-年度规划-导出.png', size: '1.1 MB', time: '7月5日', from: '白板 · 年度规划', url: 'https://i.wayuwa.example/91ac3b.png', c1: '#F3ECF8', c2: '#EAE0F2' },
-  { name: '评审会-白板拍照.jpg', size: '2.2 MB', time: '7月18日', from: '知识库 · WAO 产品', url: 'https://i.wayuwa.example/c7d940.jpg', c1: '#FDEEEE', c2: '#F6E2E2' },
-  { name: '跑步路线-截图.png', size: '380 KB', time: '7月15日', from: '项目 · 健康重启计划', url: 'https://i.wayuwa.example/44e0b2.png', c1: '#E9F1F7', c2: '#DCE9F2' },
-]
+export const IMGS: ImageItem[] = []
 
 export const VAULT: VaultGroup[] = [
   { id: 'vg1', group: '家庭网络', items: [
