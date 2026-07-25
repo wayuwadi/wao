@@ -198,8 +198,10 @@ paths:
   # 任务分享（公开只读，免登录；见 docs/adr/013-public-task-share-links.md）
   /share/tasks/{id}:
     get:
-      summary: 任务的公开分享视图（含全部子任务，不含负责人/评论/活动）
-      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      summary: 任务的公开分享视图（含子任务，不含负责人/评论/活动）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: openOnly, in: query, required: false, schema: { type: boolean, default: false }, description: 只带上未完成的子任务 }
       responses:
         '200':
           description: OK
@@ -222,8 +224,10 @@ paths:
         '404': { description: 任务或子任务不存在 }
   /share/tasks/{id}.md:
     get:
-      summary: 任务全文的 Markdown 直读地址（供 AI 一次 GET 取全部上下文）
-      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      summary: 任务全文的 Markdown 直读地址（供 AI 一次 GET 取全部上下文；图片为绝对地址）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: openOnly, in: query, required: false, schema: { type: boolean, default: false }, description: 只带上未完成的子任务 }
       responses:
         '200': { description: OK, content: { text/markdown: { schema: { type: string } } } }
         '404': { description: 任务不存在 }

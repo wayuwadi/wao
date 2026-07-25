@@ -18,6 +18,8 @@ class ShareServiceTest {
 
     private final TaskService tasks = mock(TaskService.class);
     private final ProjectService projects = mock(ProjectService.class);
+    private static final String BASE = "https://wao.example";
+
     private final ShareService service = new ShareService(tasks, projects);
 
     private TaskDto task() {
@@ -35,7 +37,7 @@ class ShareServiceTest {
         when(tasks.get("t1")).thenReturn(task());
         when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在：p1"));
 
-        SharedTaskDto shared = service.shareTask("t1");
+        SharedTaskDto shared = service.shareTask("t1", false);
 
         assertThat(shared.kind()).isEqualTo("task");
         assertThat(shared.title()).isEqualTo("整理证件盒");
@@ -83,12 +85,70 @@ class ShareServiceTest {
         when(tasks.get("t1")).thenReturn(task());
         when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在：p1"));
 
-        String md = service.toMarkdown(service.shareTask("t1"));
+        String md = service.toMarkdown(service.shareTask("t1", false), BASE);
 
         assertThat(md).startsWith("# 整理证件盒");
         assertThat(md).contains("- 状态：进行中").contains("- 优先级：P1").contains("- 截止：2026-07-30");
         assertThat(md).contains("先按人分堆，再按年份排。");
         assertThat(md).contains("- [x] 扫描身份证").contains("- [ ] 归档到 NAS");
+        // 图片必须是绝对地址：Markdown 被复制到别处后相对路径解析不出来，图就丢了
+        assertThat(md).contains("![盒子.png](https://wao.example/api/images/img1/raw)");
+        assertThat(md).doesNotContain("](/api/images");
+    }
+
+    @Test
+    void openOnlyDropsFinishedSubtasks() {
+        when(tasks.get("t1")).thenReturn(task());
+        when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在：p1"));
+
+        SharedTaskDto shared = service.shareTask("t1", true);
+
+        assertThat(shared.subs()).hasSize(1);
+        assertThat(shared.subs().get(0).text()).isEqualTo("归档到 NAS");
+
+        String md = service.toMarkdown(shared, BASE);
+        assertThat(md).contains("- [ ] 归档到 NAS");
+        assertThat(md).doesNotContain("扫描身份证");
+    }
+
+    @Test
+    void descriptionInlineImagesAreAlsoAbsolutized() {
+        TaskDto withInline = new TaskDto("t3", "带内联图的任务", "", "待办", "P2", "wg",
+                List.of(), null, "", null,
+                "先看这张 ![图](/api/images/img7/raw)，再看[说明](/docs/a)。",
+                List.of(), List.of(new Step("子项", false, "s1", "子图 ![s](/api/images/img8/raw)", List.of())),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        when(tasks.get("t3")).thenReturn(withInline);
+
+        String md = service.toMarkdown(service.shareTask("t3", false), BASE);
+
+        assertThat(md).contains("![图](https://wao.example/api/images/img7/raw)");
+        assertThat(md).contains("[说明](https://wao.example/docs/a)");
+        assertThat(md).contains("![s](https://wao.example/api/images/img8/raw)");
+    }
+
+    @Test
+    void externalAndDataUrlsAreLeftAlone() {
+        TaskDto external = new TaskDto("t4", "外链图", "", "待办", "P2", "wg",
+                List.of(), null, "", null,
+                "![远程](https://cdn.example/a.png) 与 ![内嵌](data:image/png;base64,AAAA)",
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        when(tasks.get("t4")).thenReturn(external);
+
+        String md = service.toMarkdown(service.shareTask("t4", false), BASE);
+
+        assertThat(md).contains("![远程](https://cdn.example/a.png)");
+        assertThat(md).contains("![内嵌](data:image/png;base64,AAAA)");
+        assertThat(md).doesNotContain("wao.example/https");
+    }
+
+    @Test
+    void blankBaseUrlLeavesMarkdownUntouched() {
+        when(tasks.get("t1")).thenReturn(task());
+        when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在：p1"));
+
+        String md = service.toMarkdown(service.shareTask("t1", false), "");
+
         assertThat(md).contains("![盒子.png](/api/images/img1/raw)");
     }
 
@@ -99,7 +159,7 @@ class ShareServiceTest {
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
         when(tasks.get("t2")).thenReturn(bare);
 
-        String md = service.toMarkdown(service.shareTask("t2"));
+        String md = service.toMarkdown(service.shareTask("t2", false), BASE);
 
         assertThat(md).contains("（暂无描述）");
         assertThat(md).doesNotContain("## 子任务");

@@ -125,7 +125,8 @@ export const apiDeleteImage = (id: string) => del(`/api/images/${id}`)
 
 // ---------------- 任务分享（公开只读） ----------------
 
-export const apiShareTask = (id: string) => get<SharedTask>(`/api/share/tasks/${id}`)
+export const apiShareTask = (id: string, openOnly = false) =>
+  get<SharedTask>(`/api/share/tasks/${id}${openOnly ? '?openOnly=true' : ''}`)
 export const apiShareSub = (id: string, subId: string) =>
   get<SharedTask>(`/api/share/tasks/${id}/subs/${encodeURIComponent(subId)}`)
 

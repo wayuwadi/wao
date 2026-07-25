@@ -229,14 +229,19 @@ function deleteSub() {
 
 // ---- 分享链接 ----
 
+/** 分享时是否过滤掉已完成的子任务（只对主任务链接有意义）。 */
+const shareOpenOnly = ref(false)
+const shareDoneCount = computed(() => (task.value?.subs ?? []).filter((s) => s.done).length)
+
 /** 复制当前上下文（任务或已展开的子任务）的分享链接。 */
 async function copyShare(kind: 'page' | 'md') {
   const t = task.value
   if (!t) return
   const sub = openSubId.value
-  const url = kind === 'md' ? shareMarkdownUrl(t.id, sub) : shareUrl(t.id, sub)
+  const only = !sub && shareOpenOnly.value
+  const url = kind === 'md' ? shareMarkdownUrl(t.id, sub, only) : shareUrl(t.id, sub, only)
   const what = sub ? '子任务' : '任务'
-  const suffix = sub ? '（只含该子任务）' : '（含全部子任务）'
+  const suffix = sub ? '（只含该子任务）' : only ? '（只含未完成的子任务）' : '（含全部子任务）'
   menu.value = null
   toast(
     (await copyToClipboard(url))
@@ -323,8 +328,15 @@ function demo(msg: string) {
           <div v-if="menu === 'share'" class="menu-mask" @click="menu = null"></div>
           <div v-if="menu === 'share'" class="share-menu">
             <div class="share-scope">
-              {{ openSubId ? '分享范围：当前子任务' : '分享范围：本任务 + 全部子任务' }}
+              {{ openSubId ? '分享范围：当前子任务' : shareOpenOnly ? '分享范围：本任务 + 未完成的子任务' : '分享范围：本任务 + 全部子任务' }}
             </div>
+            <label v-if="!openSubId && shareDoneCount" class="share-filter">
+              <input v-model="shareOpenOnly" type="checkbox" />
+              <span class="share-filter-main">
+                <b>只分享未完成的子任务</b>
+                <em>过滤掉已完成的 {{ shareDoneCount }} 条，便于持续迭代时直接丢给 AI</em>
+              </span>
+            </label>
             <button class="share-item" @click="copyShare('page')">
               <i class="ri-external-link-line"></i>
               <span class="share-main"><b>复制分享页链接</b><em>公开只读页面，给人看</em></span>
@@ -779,6 +791,39 @@ function demo(msg: string) {
   padding: 5px 8px 6px;
   border-bottom: 1px solid var(--wao-divider);
   margin-bottom: 3px;
+}
+.share-filter {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  margin-bottom: 3px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.share-filter:hover {
+  background: var(--wao-bg-hover-2);
+}
+.share-filter input {
+  margin-top: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.share-filter-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.share-filter-main b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--wao-text);
+}
+.share-filter-main em {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--wao-text-weak);
+  line-height: 1.5;
 }
 .share-item {
   width: 100%;

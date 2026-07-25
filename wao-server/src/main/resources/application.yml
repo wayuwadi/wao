@@ -42,6 +42,10 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  share:
+    # 分享 Markdown 里图片的绝对地址前缀。留空则按当前请求推导（依赖 Nginx 透传
+    # X-Forwarded-Proto / Host）；代理层不透传时在此写死，如 https://wao.wayuwa.cn
+    base-url: ${WAO_SHARE_BASE_URL:}
   vault:
     # base64 编码的 32 字节 AES-256 密钥；生产环境必须通过环境变量 WAO_VAULT_KEY 覆盖，
     # 下面的默认值只用于本地 / dev 演示环境，不是真实密钥。
