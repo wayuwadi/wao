@@ -46,7 +46,6 @@ import {
   apiRunJob,
   fetchAreas,
   fetchDocs,
-  fetchEvents,
   fetchFiles,
   fetchGoals,
   fetchImages,
@@ -122,7 +121,6 @@ export const useDataStore = defineStore('data', () => {
   const files = ref(clone(F.FILES))
   const imgs = ref(clone(F.IMGS))
   const vault = ref(clone(F.VAULT))
-  const calEvents = ref(clone(F.CALDAV))
   const schedule = ref(clone(F.SCHED))
   const suggestions = ref(clone(F.SUGG))
   const goals = ref(clone(F.GOALS))
@@ -149,10 +147,10 @@ export const useDataStore = defineStore('data', () => {
         return null
       }
     }
-    const [a, p, t, kb, kg, dc, jb, fl, im, va, ev, sc, sg, gl] = await Promise.all([
+    const [a, p, t, kb, kg, dc, jb, fl, im, va, sc, sg, gl] = await Promise.all([
       settle(fetchAreas()), settle(fetchProjects()), settle(fetchTasks()), settle(fetchKbs()),
       settle(fetchKbGroups()), settle(fetchDocs()), settle(fetchJobs()), settle(fetchFiles()),
-      settle(fetchImages()), settle(fetchVault()), settle(fetchEvents()), settle(fetchSchedule()),
+      settle(fetchImages()), settle(fetchVault()), settle(fetchSchedule()),
       settle(fetchSuggestions()), settle(fetchGoals()),
     ])
     if (a?.length) areas.value = a
@@ -172,7 +170,6 @@ export const useDataStore = defineStore('data', () => {
     if (fl?.length) files.value = fl
     if (im?.length) imgs.value = im
     if (va?.length) vault.value = va
-    if (ev?.length) calEvents.value = ev
     if (sc?.length) schedule.value = sc
     if (sg?.length) suggestions.value = sg
     if (gl?.length) goals.value = gl
@@ -1322,7 +1319,7 @@ export const useDataStore = defineStore('data', () => {
 
   return {
     today, areas, projects, tasks, kbs, docs, autos, files, imgs, vault,
-    calEvents, schedule, suggestions, goals, myGroups, apiLive, hydrate,
+    schedule, suggestions, goals, myGroups, apiLive, hydrate,
     areaById, projectById, taskById, tasksByProject, kbById, docById, areaColor,
     docEdits, setDocEdit, docOf, docPending, saveState, markSaving, markSaved,
     applyRemoteDoc, addDoc, addNote, notesKb,

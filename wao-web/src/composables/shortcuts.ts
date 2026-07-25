@@ -7,7 +7,6 @@ import { useTabsStore } from '@/stores/tabs'
 const GO_ROUTES: Record<string, string> = {
   h: '/',
   p: '/projects',
-  c: '/calendar',
   k: '/knowledge',
   f: '/files',
   a: '/automation',
@@ -39,7 +38,6 @@ export const SHORTCUT_GROUPS: { title: string; items: [keys: string, desc: strin
     items: [
       ['G H', '首页'],
       ['G P', '项目'],
-      ['G C', '日历'],
       ['G K', '知识库'],
       ['G F', '文件与图床'],
       ['G A', '自动化'],

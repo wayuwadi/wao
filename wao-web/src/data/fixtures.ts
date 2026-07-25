@@ -5,7 +5,6 @@
 import type {
   Area,
   AutomationJob,
-  CalendarEvent,
   Doc,
   FileItem,
   ImageItem,
@@ -237,14 +236,6 @@ export const VAULT: VaultGroup[] = [
     { id: 'vi4', name: '流媒体家庭组', icon: 'ri-movie-2-line', user: 'family@wayuwa.example', site: 'tv.example.com', note: '家庭组 4 人位，娃弟管理续费。', updated: '7月2日', hasSecret: false },
     { id: 'vi5', name: '云相册会员', icon: 'ri-image-line', user: 'wd@wayuwa.example', site: 'photos.example.com', note: '', updated: '6月20日', hasSecret: false },
   ] },
-]
-
-export const CALDAV: CalendarEvent[] = [
-  { date: '2026-07-24', title: '原型评审（工作）', color: '#C05D8E' },
-  { date: '2026-07-25', title: '家庭聚餐 · 爸妈家', color: '#0E8C8C' },
-  { date: '2026-07-28', title: '物业费缴纳提醒', color: '#0E8C8C' },
-  { date: '2026-08-01', title: '爷爷生日', color: '#0E8C8C' },
-  { date: '2026-08-05', title: '牙科复诊（工作日历）', color: '#C05D8E' },
 ]
 
 export const SCHED: ScheduleItem[] = [

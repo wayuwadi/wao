@@ -351,12 +351,6 @@ export interface VaultGroup {
   items: VaultItem[]
 }
 
-export interface CalendarEvent {
-  date: string
-  title: string
-  color: string
-}
-
 export interface ScheduleItem {
   time: string
   title: string
