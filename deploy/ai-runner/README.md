@@ -89,6 +89,22 @@ Runner 状态、日志或 Git；因此只需让这台电脑的 Git 凭据管理�
 
 ## 自启动
 
-Windows 可用任务计划程序在登录时执行上述命令（去掉 `--pair-code`）；Linux 用 systemd
-user service 或 `nohup` 常驻。工作目录设置为 WAO 仓库根目录，并选择“无论用户是否登录都
-运行”前，先确认该系统账号已经完成对应 AI CLI 与 GitHub 登录。
+Windows 用任务计划程序在登录时执行上述命令（去掉 `--pair-code`），工作目录设置为 WAO 仓库
+根目录。
+
+Linux 用 systemd user service，仓库里有现成模板：
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/ai-runner/wao-ai-runner.service.example ~/.config/systemd/user/wao-ai-runner.service
+# 改掉里面的路径、节点名和 --engines
+systemctl --user daemon-reload
+systemctl --user enable --now wao-ai-runner
+```
+
+配对只需一次，service 里不带 `--pair-code`。更新脚本（`git pull`）后要
+`systemctl --user restart wao-ai-runner` 才会生效。
+
+选择“无论用户是否登录都运行”（Windows 的对应选项，或 Linux 的 `loginctl enable-linger`）
+之前，先确认该系统账号已经完成对应 AI CLI 与 GitHub 登录；Linux 上开了 linger 但没有图形
+会话时，`gh` 依赖的系统钥匙环可能是锁定的，GitHub 操作会失败。
