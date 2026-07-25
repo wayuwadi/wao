@@ -88,6 +88,27 @@ class RunnerInvocationTest(unittest.TestCase):
         self.assertEqual(("message", "已确认问题边界"), with_summary)
 
 
+class RepoUrlTest(unittest.TestCase):
+
+    HTTPS = "https://github.com/wayuwacn/wao.git"
+
+    def test_auto_keeps_https_when_machine_has_https_credential(self) -> None:
+        self.assertEqual(self.HTTPS, RUNNER.resolve_repo_url(self.HTTPS, "auto", True))
+
+    def test_auto_falls_back_to_ssh_when_machine_only_has_ssh_key(self) -> None:
+        self.assertEqual(
+            "git@github.com:wayuwacn/wao.git", RUNNER.resolve_repo_url(self.HTTPS, "auto", False))
+
+    def test_explicit_protocol_wins_over_detection(self) -> None:
+        self.assertEqual(
+            "git@github.com:wayuwacn/wao.git", RUNNER.resolve_repo_url(self.HTTPS, "ssh", True))
+        self.assertEqual(self.HTTPS, RUNNER.resolve_repo_url(self.HTTPS, "https", False))
+
+    def test_non_https_urls_are_left_alone(self) -> None:
+        for url in ("git@github.com:wayuwacn/wao.git", "ssh://git@github.com/wayuwacn/wao.git"):
+            self.assertEqual(url, RUNNER.resolve_repo_url(url, "ssh", False))
+
+
 class ClaudeEngineTest(unittest.TestCase):
 
     def test_assistant_text_is_reported_but_thinking_is_not(self) -> None:

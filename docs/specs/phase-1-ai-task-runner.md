@@ -42,6 +42,9 @@
 - Claude Code 侧使用 `claude -p --output-format stream-json --verbose`：只保存 assistant 文本、
   TodoWrite 计划与阶段/结果；thinking 正文和其余工具调用细节不上传。最终答复取 `result` 事件，
   `is_error` 为真时即使退出码为 0 也判失败。
+- 项目只配置一个 HTTPS 仓库地址；Runner 按本机认证方式解析实际克隆地址（`--git-protocol auto`
+  时没有 HTTPS 凭据就改用 SSH），已克隆的仓库同步纠正 `origin`，同一份配置在 HTTPS 与 SSH
+  两种机器上都能拉起工作区。
 - Runner 从本机 Git credential helper 读取现有 GitHub HTTPS 凭据，仅通过子进程 `GH_TOKEN`
   提供给 AI CLI，并自动补齐 Windows GitHub CLI 路径；不持久化或记录令牌。AI 应优先使用
   `gh` 完成 PR、合并和部署跟踪，连接器不可用不能直接判定任务阻塞。
