@@ -1,13 +1,15 @@
 package cn.wayuwa.wao;
 
 import cn.wayuwa.wao.auth.FeishuLoginProperties;
+import cn.wayuwa.wao.auth.AuthProperties;
+import cn.wayuwa.wao.auth.WechatLoginProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@EnableConfigurationProperties(FeishuLoginProperties.class)
+@EnableConfigurationProperties({FeishuLoginProperties.class, WechatLoginProperties.class, AuthProperties.class})
 @EnableScheduling
 public class WaoServerApplication {
 

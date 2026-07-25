@@ -10,6 +10,7 @@ export interface ApiResponse<T> {
 export const http = axios.create({
   baseURL: '/',
   timeout: 10_000,
+  withCredentials: true,
   headers: {
     Accept: 'application/json',
   },

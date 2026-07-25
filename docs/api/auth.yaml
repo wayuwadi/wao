@@ -1,0 +1,73 @@
+openapi: 3.0.3
+info:
+  title: WAO Account Authentication API
+  version: 0.1.0
+paths:
+  /api/auth/session:
+    get:
+      summary: 获取当前服务端会话
+      responses:
+        "200": { description: 已登录 }
+        "401": { description: 未登录 }
+  /api/auth/email/register:
+    post:
+      summary: 以邮箱、密码和昵称注册并登录
+      responses:
+        "200": { description: 注册成功 }
+        "409": { description: 邮箱已绑定 }
+  /api/auth/email/login:
+    post:
+      summary: 邮箱密码登录
+      responses:
+        "200": { description: 登录成功 }
+        "401": { description: 凭据错误或账号不可用 }
+  /api/auth/logout:
+    post:
+      summary: 注销当前会话
+      responses:
+        "200": { description: 已注销 }
+  /api/auth/feishu/authorize:
+    get:
+      summary: 获取飞书扫码、授权或绑定场景的签名授权地址
+      responses:
+        "200": { description: 返回 authorizationUrl }
+  /api/auth/feishu/exchange:
+    post:
+      summary: 交换飞书授权码并登录、绑定或进入成员认领
+      responses:
+        "200": { description: 返回统一账号或待认领结果 }
+  /api/auth/wechat/authorize:
+    get:
+      summary: 获取微信开放平台网站应用扫码授权地址
+      responses:
+        "200": { description: 返回 authorizationUrl }
+        "502": { description: 微信网站应用尚未配置 }
+  /api/auth/wechat/exchange:
+    post:
+      summary: 交换微信授权码并登录、绑定或进入成员认领
+      responses:
+        "200": { description: 返回统一账号或待认领结果 }
+  /api/account/email:
+    put:
+      summary: 为当前账号绑定邮箱并设置或修改密码
+      responses:
+        "200": { description: 已更新 }
+        "401": { description: 未登录或当前密码错误 }
+        "409": { description: 邮箱已属于其他账号 }
+  /api/auth/claim:
+    post:
+      summary: 将本次已验证第三方身份认领到一个尚未绑定的既有成员
+      responses:
+        "200": { description: 认领并登录成功 }
+        "409": { description: 成员已经被认领 }
+  /api/account/identities/{provider}:
+    delete:
+      summary: 解绑当前账号的一种登录身份，且至少保留一种
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema: { type: string, enum: [email, feishu, wechat] }
+      responses:
+        "200": { description: 解绑成功 }
+        "400": { description: 解绑后将没有可用登录方式 }

@@ -22,4 +22,4 @@
 
 应用为企业自建应用，配置网页应用、重定向 URL 和用户身份相关权限。`FEISHU_APP_SECRET` 只保存于节点私有 `deploy/.env` 或 GitHub Secret；默认 `FEISHU_LOGIN_ENABLED=false`。将 `https://wao.wayuwa.cn/api/auth/feishu/callback` 加入飞书安全设置的重定向 URL 白名单；工作台主页分别配置 `/api/auth/feishu/workbench` 与（PC 浏览器模式）`/api/auth/feishu/browser`。
 
-飞书回调使用 OAuth 授权码模式；二维码入口通过飞书登录页进入同一回调链路。WAO 只把飞书稳定用户标识作为外部身份，后续用户/权限模型必须以该标识建立本地映射，不能把飞书 access token 作为 WAO 登录态。
+飞书回调使用 OAuth 授权码模式。登录页扫码使用飞书官方二维码 SDK；该 SDK 要求旧版 `passport.feishu.cn` 预授权地址，因此二维码、工作台和浏览器免登场景使用旧版预授权码/`authen/v1/access_token` 交换链路，普通授权和账号绑定使用新版 OAuth v2 交换链路，最终都进入同一个回调和 WAO 账号解析流程。WAO 只把飞书稳定用户标识作为外部身份，不能把飞书 access token 作为 WAO 登录态。

@@ -17,6 +17,18 @@ const router = createRouter({
       component: () => import('@/views/FeishuCallbackView.vue'),
       meta: { public: true },
     },
+    {
+      path: '/auth/wechat/callback',
+      name: 'wechat-callback',
+      component: () => import('@/views/WechatCallbackView.vue'),
+      meta: { public: true },
+    },
+    {
+      path: '/auth/claim',
+      name: 'auth-claim',
+      component: () => import('@/views/AccountClaimView.vue'),
+      meta: { public: true },
+    },
     // 任务分享页：公开只读，免登录。/s/t/:id 含子任务；/s/t/:id/:subId 只含该子任务。
     {
       path: '/s/t/:id/:subId?',
@@ -45,8 +57,9 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const session = useSessionStore()
+  await session.initialize()
   if (!to.meta.public && !session.authed) {
     return { name: 'login', query: to.fullPath !== '/' ? { redirect: to.fullPath } : undefined }
   }

@@ -26,9 +26,40 @@ class FeishuLoginServiceTest {
         String authorizationUrl = service.authorizationUrl("workbench");
         String state = URLDecoder.decode(URI.create(authorizationUrl).getQuery().replaceFirst(".*state=", ""), StandardCharsets.UTF_8);
 
-        assertThat(authorizationUrl).contains("app_id=cli_test");
+        assertThat(authorizationUrl).contains("passport.feishu.cn/suite/passport/oauth/authorize")
+                .contains("client_id=cli_test");
         assertThat(service.callbackUri("auth-code", state).toString())
                 .isEqualTo("https://wao.example/auth/feishu/callback?code=auth-code&state=" + state);
+    }
+
+    @Test
+    void exchangesQrCodeThroughLegacyFlowRequiredByQrSdk() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        FeishuLoginService loginService = new FeishuLoginService(
+                new FeishuLoginProperties(true, "cli_test", "test-secret",
+                        "https://wao.example/api/auth/feishu/callback", "https://wao.example",
+                        "https://open.feishu.cn"), builder);
+        String authorizationUrl = loginService.authorizationUrl("qr");
+        String state = URLDecoder.decode(
+                URI.create(authorizationUrl).getQuery().replaceFirst(".*state=", ""), StandardCharsets.UTF_8);
+
+        server.expect(requestTo("https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"code\":0,\"app_access_token\":\"a-token\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v1/access_token"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer a-token"))
+                .andRespond(withSuccess("{\"code\":0,\"data\":{\"access_token\":\"u-token\"}}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://open.feishu.cn/open-apis/authen/v1/user_info"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("Authorization", "Bearer u-token"))
+                .andRespond(withSuccess("""
+                        {"code":0,"data":{"open_id":"ou_qr","name":"QR Tester"}}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(loginService.exchange("qr-code", state).userId()).isEqualTo("ou_qr");
+        server.verify();
     }
 
     @Test

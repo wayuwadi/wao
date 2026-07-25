@@ -4,16 +4,23 @@ import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
+import { updateEmailCredential, unlinkIdentity } from '@/api/auth'
+import { startFeishuLogin } from '@/api/feishu'
+import { startWechatLogin } from '@/api/wechat'
 
 const session = useSessionStore()
 const router = useRouter()
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members'], ['日历账户 · CalDAV', 'caldav']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
 ] as const
 
 const tab = ref('members')
+const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
+const accountBusy = ref(false)
+const identities = computed(() => session.account?.identities ?? [])
+const providerNames: Record<string, string> = { email: '邮箱密码', feishu: '飞书', wechat: '微信' }
 
 const orgMembers = computed(() =>
   session.members.map((m) => ({
@@ -72,9 +79,25 @@ function toggleCal(c: { on: boolean }) {
   c.on = !c.on
   toast('演示：订阅开关在正式版本生效', 'ri-calendar-line')
 }
-function logout() {
-  session.logout()
-  router.push('/login')
+async function logout() {
+  await session.logout()
+  await router.push('/login')
+}
+async function saveEmailCredential() {
+  accountBusy.value = true
+  try {
+    session.accept(await updateEmailCredential(accountForm.email, accountForm.currentPassword, accountForm.newPassword))
+    accountForm.currentPassword = ''
+    accountForm.newPassword = ''
+    toast('邮箱与密码已更新', 'ri-shield-check-line')
+  } catch (error) { toast(error instanceof Error ? error.message : '更新失败') }
+  finally { accountBusy.value = false }
+}
+async function unlink(provider: string) {
+  accountBusy.value = true
+  try { session.accept(await unlinkIdentity(provider)); toast(`已解绑${providerNames[provider] ?? provider}`) }
+  catch (error) { toast(error instanceof Error ? error.message : '解绑失败') }
+  finally { accountBusy.value = false }
 }
 function demo(msg: string, icon?: string) {
   toast(msg, icon)
@@ -172,6 +195,36 @@ function demo(msg: string, icon?: string) {
               <div class="kv"><span class="kv-k w76">邮箱</span><span class="kv-v">wg@wayuwa.example<span class="dim">（预留登录方式）</span></span></div>
               <div class="kv"><span class="kv-k w76">加入时间</span><span class="kv-v">2026 年 6 月 20 日</span></div>
             </div>
+          </div>
+        </template>
+
+        <!-- 账号与登录 -->
+        <template v-else-if="tab === 'account'">
+          <div class="s-h1">账号与登录</div>
+          <div class="card">
+            <div class="card-title">已绑定的登录方式</div>
+            <div v-for="identity in identities" :key="identity.provider" class="mem-row">
+              <span class="identity-icon"><i :class="identity.provider === 'feishu' ? 'ri-feishu-line' : identity.provider === 'wechat' ? 'ri-wechat-fill' : 'ri-mail-line'"></i></span>
+              <span class="mem-name">{{ providerNames[identity.provider] ?? identity.provider }}<span class="dim">{{ identity.email || identity.displayName }}</span></span>
+              <button class="revoke" :disabled="identities.length === 1 || accountBusy" @click="unlink(identity.provider)">解绑</button>
+            </div>
+            <div class="hint">至少保留一种登录方式。新绑定的飞书、微信或邮箱都会进入当前的 {{ session.currentUser.name }} 账号。</div>
+          </div>
+          <div class="card">
+            <div class="card-title">绑定第三方账号</div>
+            <div class="bind-actions">
+              <button class="btn-ghost" @click="startFeishuLogin('link')"><i class="ri-feishu-line"></i>绑定飞书</button>
+              <button class="btn-ghost" @click="startWechatLogin('link')"><i class="ri-wechat-fill"></i>绑定微信</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-title">设置邮箱与密码</div>
+            <form class="credential-form" @submit.prevent="saveEmailCredential">
+              <input v-model.trim="accountForm.email" type="email" autocomplete="email" required placeholder="登录邮箱" />
+              <input v-model="accountForm.currentPassword" type="password" autocomplete="current-password" placeholder="当前密码（首次设置可留空）" />
+              <input v-model="accountForm.newPassword" type="password" autocomplete="new-password" minlength="8" required placeholder="新密码（至少 8 位）" />
+              <button class="btn-primary" :disabled="accountBusy">保存</button>
+            </form>
           </div>
         </template>
 
@@ -480,6 +533,11 @@ function demo(msg: string, icon?: string) {
   border-radius: 5px;
   padding: 2px 8px;
 }
+.identity-icon { width: 30px; height: 30px; display: grid; place-content: center; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-primary); font-size: 17px; }
+.bind-actions { display: flex; gap: 10px; margin-top: 12px; }
+.credential-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-top: 12px; }
+.credential-form input { min-width: 0; height: 34px; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 0 10px; outline: none; }
+.credential-form input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .12); }
 .hint {
   margin-top: 10px;
   font-size: 12px;
