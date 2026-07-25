@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
@@ -13,6 +13,7 @@ import { toast } from '@/composables/toast'
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
+import { useSettle } from '@/composables/completion'
 import type { Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
@@ -143,6 +144,28 @@ function addSub() {
 // ---- 子任务详情（右侧栏切换成子任务视图） ----
 
 const subKeyOf = (idx: number) => (task.value ? data.subKey(task.value.id, task.value.subs[idx]!, idx) : '')
+
+// 已完成的子任务沉到底部并默认收起；刚勾完成的先原地停留 3 秒再沉下去。
+const showDoneSubs = ref(false)
+const { begin: beginSettle, cancel: cancelSettle, isSettling } = useSettle()
+
+/** 带上原始下标的子任务视图 —— 过滤后仍要能定位回 task.subs 里的那一条。 */
+const subRows = computed(() =>
+  (task.value?.subs ?? []).map((sub, idx) => ({ sub, idx, key: subKeyOf(idx) })),
+)
+const openSubRows = computed(() => subRows.value.filter((r) => !r.sub.done || isSettling(r.key)))
+const doneSubRows = computed(() => subRows.value.filter((r) => r.sub.done && !isSettling(r.key)))
+
+/** 勾选子任务：完成时进入缓冲，取消完成时立即撤销缓冲。 */
+function toggleSub(idx: number) {
+  const t = task.value
+  if (!t) return
+  const key = subKeyOf(idx)
+  const wasDone = t.subs[idx]?.done === true
+  data.toggleStep(t.id, idx, 'subs')
+  if (wasDone) cancelSettle(key)
+  else beginSettle(key)
+}
 const openSub = computed(() =>
   task.value && openSubId.value ? data.subById(task.value.id, openSubId.value) : undefined,
 )
@@ -157,11 +180,25 @@ function showSub(idx: number) {
   openSubId.value = openSubId.value === key ? null : key
   menu.value = null
 }
+/**
+ * 子任务标题用自动撑高的 textarea：标题写长了要能整段看到，
+ * 原来的单行 input 会把后半截截掉。
+ */
+const subTitleArea = ref<HTMLTextAreaElement | null>(null)
+function growSubTitle() {
+  const el = subTitleArea.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = el.scrollHeight + 'px'
+}
 function editSubTitle(e: Event) {
   const t = task.value
-  const v = (e.target as HTMLInputElement).value
+  const v = (e.target as HTMLTextAreaElement).value
   if (t && openSubId.value) data.updateSub(t.id, openSubId.value, { text: v })
+  growSubTitle()
 }
+// 换一个子任务 / 标题被别处改动时，重新按内容量一次高度
+watch([openSubId, () => openSub.value?.text], () => nextTick(growSubTitle))
 /** 子任务描述（Markdown）。 */
 const subDesc = computed({
   get: () => openSub.value?.desc ?? '',
@@ -344,19 +381,44 @@ function demo(msg: string) {
             <div class="field-label">子任务</div>
             <div>
               <div
-                v-for="(sb, i) in task.subs"
-                :key="sb.id ?? i"
+                v-for="r in openSubRows"
+                :key="r.key"
                 class="check-row sub-row"
-                :class="{ active: openSubId === subKeyOf(i) }"
-                @click="showSub(i)"
+                :class="{ active: openSubId === r.key, settling: isSettling(r.key) }"
+                @click="showSub(r.idx)"
               >
-                <span class="cbox circle" :class="{ done: sb.done }" @click.stop="toggleStep(i, 'subs')"><i class="ri-check-line"></i></span>
-                <span class="check-text" :class="{ done: sb.done }">{{ sb.text }}</span>
-                <i v-if="sb.desc || sb.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
+                <span class="cbox circle" :class="{ done: r.sub.done }" @click.stop="toggleSub(r.idx)"><i class="ri-check-line"></i></span>
+                <span class="check-text" :class="{ done: r.sub.done }">{{ r.sub.text }}</span>
+                <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
                 <span class="spacer"></span>
                 <i class="ri-arrow-right-s-line sub-chev"></i>
               </div>
             </div>
+
+            <!-- 已完成的沉到底部，默认收起 -->
+            <template v-if="doneSubRows.length">
+              <button class="sub-done-toggle" @click="showDoneSubs = !showDoneSubs">
+                <i :class="showDoneSubs ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
+                已完成<span class="sub-done-count wao-tabular">{{ doneSubRows.length }}</span>
+                <span class="sub-done-hint">{{ showDoneSubs ? '点击收起' : '点击展开' }}</span>
+              </button>
+              <div v-if="showDoneSubs">
+                <div
+                  v-for="r in doneSubRows"
+                  :key="r.key"
+                  class="check-row sub-row"
+                  :class="{ active: openSubId === r.key }"
+                  @click="showSub(r.idx)"
+                >
+                  <span class="cbox circle done" @click.stop="toggleSub(r.idx)"><i class="ri-check-line"></i></span>
+                  <span class="check-text done">{{ r.sub.text }}</span>
+                  <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
+                  <span class="spacer"></span>
+                  <i class="ri-arrow-right-s-line sub-chev"></i>
+                </div>
+              </div>
+            </template>
+
             <div class="sub-add">
               <i class="ri-add-line"></i>
               <input v-model="newSub" placeholder="添加子任务，回车确认" @keydown.enter="addSub" />
@@ -423,7 +485,16 @@ function demo(msg: string) {
 
           <div class="sub-title-row">
             <button class="cbox circle big" :class="{ done: openSub.done }" title="标记完成" @click="toggleSubDone"><i class="ri-check-line"></i></button>
-            <input class="sub-title-input" :class="{ done: openSub.done }" :value="openSub.text" placeholder="子任务名称" @input="editSubTitle" />
+            <textarea
+              ref="subTitleArea"
+              class="sub-title-input"
+              :class="{ done: openSub.done }"
+              rows="1"
+              :value="openSub.text"
+              placeholder="子任务名称"
+              @input="editSubTitle"
+              @keydown.enter.prevent
+            ></textarea>
           </div>
 
           <div class="sub-field">
@@ -836,6 +907,44 @@ function demo(msg: string) {
 .sub-row.active .sub-chev {
   opacity: 1;
 }
+/* 刚勾完成、还在 3 秒缓冲里：淡出但不移位 */
+.sub-row.settling {
+  opacity: 0.55;
+  transition: opacity 0.4s ease;
+}
+.sub-done-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 7px 8px;
+  margin: 2px -8px 0;
+  border-radius: 7px;
+  font-size: 12px;
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  text-align: left;
+}
+.sub-done-toggle:hover {
+  background: var(--wao-bg-hover);
+  color: var(--wao-text-2);
+}
+.sub-done-toggle > i {
+  font-size: 15px;
+}
+.sub-done-count {
+  background: var(--wao-divider);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+}
+.sub-done-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--wao-text-faint);
+}
 
 /* 子任务详情栏 */
 .sub-back {
@@ -884,6 +993,11 @@ function demo(msg: string) {
   border-radius: 7px;
   padding: 3px 6px;
   margin-left: -6px;
+  /* 长标题要整段展开，不能截断也不能出现内部滚动条 */
+  font-family: inherit;
+  resize: none;
+  overflow: hidden;
+  word-break: break-word;
 }
 .sub-title-input:focus {
   border-color: var(--wao-line-control);
