@@ -6,6 +6,7 @@ import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.dto.AuthSessionDto;
 import cn.wayuwa.wao.dto.ClaimAccountRequest;
+import cn.wayuwa.wao.dto.UpdateProfileRequest;
 import cn.wayuwa.wao.dto.EmailCredentialRequest;
 import cn.wayuwa.wao.dto.EmailLoginRequest;
 import cn.wayuwa.wao.dto.EmailRegisterRequest;
@@ -75,6 +76,12 @@ public class AccountAuthController {
                                                    HttpServletRequest request) {
         return ApiResponse.ok(auth.updateEmailCredential(requireAccount(request), body.email(),
                 body.currentPassword(), body.newPassword()));
+    }
+
+    @PutMapping("/account/profile")
+    public ApiResponse<AuthSessionDto> updateProfile(@Valid @RequestBody UpdateProfileRequest body,
+                                                     HttpServletRequest request) {
+        return ApiResponse.ok(auth.updateProfile(requireAccount(request), body.name(), body.initial()));
     }
 
     @DeleteMapping("/account/identities/{provider}")

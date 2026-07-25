@@ -81,6 +81,21 @@ class AccountAuthServiceTest {
         assertThat(captor.getValue().getLockedUntil()).isNotNull();
     }
 
+    @Test
+    void profileUpdatePersistsTheRealMemberRecord() {
+        AccountEntity account = account("acc-wg", "wg");
+        MemberEntity member = member("wg", "娃哥");
+        when(accounts.selectById("acc-wg")).thenReturn(account);
+        when(members.selectById("wg")).thenReturn(member);
+        when(identities.findByAccountId("acc-wg")).thenReturn(List.of());
+
+        var result = service.updateProfile("acc-wg", "真实姓名", "真");
+
+        verify(members).updateById(member);
+        assertThat(result.member().name()).isEqualTo("真实姓名");
+        assertThat(result.member().initial()).isEqualTo("真");
+    }
+
     private static AccountEntity account(String id, String memberId) {
         AccountEntity account = new AccountEntity();
         account.setId(id);

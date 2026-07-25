@@ -18,6 +18,7 @@ export interface AuthSession {
   accountId: string
   member: SessionMember
   identities: AccountIdentity[]
+  createdAt: string
 }
 
 export interface AuthResolution {
@@ -54,6 +55,11 @@ export async function claimMember(memberId: string) {
 
 export async function updateEmailCredential(email: string, currentPassword: string, newPassword: string) {
   const response = await http.put<ApiResponse<AuthSession>>('/api/account/email', { email, currentPassword, newPassword })
+  return response.data.data
+}
+
+export async function updateProfile(name: string, initial: string) {
+  const response = await http.put<ApiResponse<AuthSession>>('/api/account/profile', { name, initial })
   return response.data.data
 }
 

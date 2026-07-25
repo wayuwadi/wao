@@ -14,7 +14,7 @@ onMounted(async () => {
   const state = String(route.query.state || '')
   try {
     const resolution = await exchangeFeishuCode(code, state)
-    session.acceptResolution(resolution)
+    await session.acceptResolution(resolution)
     await router.replace(resolution.claimRequired ? '/auth/claim' : '/')
   } catch (error) {
     message.value = error instanceof Error ? error.message : '飞书登录未完成，请返回后重试。'

@@ -126,9 +126,11 @@ jobs:
           hello="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors https://wao.wayuwa.cn/api/hello)"
           printf '%s' "$hello" | grep -q '"code":0'
           printf '%s' "$hello" | grep -q '"service":"wao-server"'
-          feishu="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors 'https://wao.wayuwa.cn/api/auth/feishu/authorize?scene=authorization')"
-          printf '%s' "$feishu" | grep -q '"code":0'
-          printf '%s' "$feishu" | grep -q 'https://open.feishu.cn/open-apis/authen/v1/authorize'
+          for probe in 1 2 3 4 5 6 7 8; do
+            feishu="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors "https://wao.wayuwa.cn/api/auth/feishu/authorize?scene=authorization&probe=$probe")"
+            printf '%s' "$feishu" | grep -q '"code":0'
+            printf '%s' "$feishu" | grep -q 'https://open.feishu.cn/open-apis/authen/v1/authorize'
+          done
 
   notify:
     name: Feishu deployment notification

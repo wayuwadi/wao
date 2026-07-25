@@ -12,7 +12,7 @@ const session = useSessionStore()
 onMounted(async () => {
   try {
     const resolution = await exchangeWechatCode(String(route.query.code || ''), String(route.query.state || ''))
-    session.acceptResolution(resolution)
+    await session.acceptResolution(resolution)
     await router.replace(resolution.claimRequired ? '/auth/claim' : '/')
   } catch (error) {
     message.value = error instanceof Error ? error.message : '微信登录未完成，请返回后重试。'
