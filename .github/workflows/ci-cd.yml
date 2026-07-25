@@ -98,11 +98,24 @@ jobs:
             ssh "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; rm -f /tmp/wao-secrets.env; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master'
           }
 
+          retry_slave_ssh() {
+            attempt=1
+            while ! "$@"; do
+              if [ "$attempt" -ge 4 ]; then
+                printf 'Windows 从节点 SSH 连续 %s 次失败，停止重试\n' "$attempt"
+                return 1
+              fi
+              printf 'Windows 从节点 SSH 第 %s 次失败，10 秒后重试\n' "$attempt"
+              attempt=$((attempt + 1))
+              sleep 10
+            done
+          }
+
           deploy_slave() {
-            scp wao-release.zip "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-release.zip"
-            scp wao-secrets.env "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-secrets.env"
-            scp deploy/scripts/install-release-windows.ps1 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/install-release-windows.ps1"
-            ssh "$SLAVE_USER@$SLAVE_HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
+            retry_slave_ssh scp -o ConnectTimeout=15 wao-release.zip "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-release.zip" || return
+            retry_slave_ssh scp -o ConnectTimeout=15 wao-secrets.env "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-secrets.env" || return
+            retry_slave_ssh scp -o ConnectTimeout=15 deploy/scripts/install-release-windows.ps1 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/install-release-windows.ps1" || return
+            retry_slave_ssh ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-release-windows.ps1'
           }
 
           deploy_cloud() {
