@@ -135,6 +135,33 @@ def find_executable(name: str, configured: str | None = None) -> str:
     return executable
 
 
+def invoke_codex(command: list[str], worktree: Path, prompt: str) -> tuple[int, str]:
+    """通过标准输入传递提示，避免 Windows cmd 转发脚本截断多行参数。"""
+    process = subprocess.Popen(
+        command, cwd=str(worktree), text=True, encoding="utf-8", errors="replace",
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    )
+    output, _ = process.communicate(input=prompt)
+    return process.returncode, output
+
+
+def normalize_result(exit_code: int, result_text: str) -> tuple[int, str]:
+    """同时校验 Codex 退出码和业务完成标记，避免把反问或阻塞误报为成功。"""
+    if exit_code != 0:
+        return exit_code, f"Codex 退出码：{exit_code}\n{result_text or 'Codex 未返回文字输出'}"
+    lines = result_text.strip().splitlines()
+    marker = lines[0].strip() if lines else ""
+    detail = "\n".join(lines[1:]).strip()
+    if marker == "WAO_RUN_STATUS: SUCCESS":
+        return 0, detail or "Codex 已完成任务，但没有返回结果摘要。"
+    if marker == "WAO_RUN_STATUS: BLOCKED":
+        return 2, f"Codex 未完成任务：{detail or '未说明阻塞原因'}"
+    return 3, (
+        "Codex 进程已结束，但没有确认任务完成，已按失败处理。\n"
+        f"原始答复：\n{result_text or 'Codex 未返回文字输出'}"
+    )
+
+
 def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str,
         git_command: str, codex_command: str) -> None:
     run_id = claim["runId"]
@@ -153,21 +180,18 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str,
             f"{claim['promptUrl']}\n\n"
             "必须遵守仓库 AGENTS.md 与相关规格；先确认当前分支基于最新 main。完成与风险相称的"
             "测试后，直接写详细中文提交，创建 PR、合并 main、等待部署并验证线上结果与飞书通知。"
-            "不要停下来等待人工确认。若外部权限确实阻塞，请在最终结果中准确说明。"
+            "不要停下来等待人工确认。若外部权限确实阻塞，请在最终结果中准确说明。\n\n"
+            "最终答复必须以状态行开头：全部完成并验收通过时第一行写 `WAO_RUN_STATUS: SUCCESS`；"
+            "尚未完成或需要补充信息时第一行写 `WAO_RUN_STATUS: BLOCKED`。状态行后再写中文结果摘要。"
         )
         stage = "启动 Codex"
         command = [
             codex_command, "exec", "--json", "--color", "never", "--sandbox", sandbox,
             "-c", 'approval_policy="never"', "-C", str(worktree),
-            "--output-last-message", str(result_file), prompt,
+            "--output-last-message", str(result_file), "-",
         ]
-        process = subprocess.Popen(
-            command, cwd=str(worktree), text=True, encoding="utf-8", errors="replace",
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        )
         stage = "等待 Codex 完成"
-        output, _ = process.communicate()
-        exit_code = process.returncode
+        exit_code, output = invoke_codex(command, worktree, prompt)
         for line in output.splitlines():
             try:
                 event = json.loads(line)
@@ -175,8 +199,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str,
                 continue
             session_id = event.get("thread_id") or event.get("session_id") or session_id
         result_text = result_file.read_text(encoding="utf-8", errors="replace") if result_file.exists() else output[-12000:]
-        if exit_code != 0:
-            result_text = f"Codex 退出码：{exit_code}\n{result_text or 'Codex 未返回文字输出'}"
+        exit_code, result_text = normalize_result(exit_code, result_text)
         summary = f"工作目录：{worktree}\n\n{result_text}"[-30000:]
     except Exception as exc:  # noqa: BLE001 - 必须把节点错误回传给 WAO
         summary = (f"失败阶段：{stage}\n错误详情：{exc}\n"
