@@ -1,0 +1,104 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useDataStore } from '@/stores/data'
+
+/**
+ * 知识库模块：小记、文档创建署名与回收站式删除。
+ *
+ * 这里跑的是离线兜底路径（apiLive = false），断言的是本地状态迁移；
+ * 落库口径由后端 KnowledgeServiceTest 覆盖，两边保持同一套规则。
+ */
+describe('data store · 知识库', () => {
+  let data: ReturnType<typeof useDataStore>
+
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+    data = useDataStore()
+  })
+
+  it('默认就有一个小记知识库，不用先建库才能记东西', () => {
+    const kb = data.notesKb()
+    expect(kb.notes).toBe(true)
+    expect(kb.folders.length).toBeGreaterThan(0)
+    // 反复取到的是同一个，不会每次新建一个
+    expect(data.notesKb().id).toBe(kb.id)
+  })
+
+  it('小记落进小记知识库，标题由正文首行推导', async () => {
+    const id = await data.addNote('周四要交社保材料\n\n记得带身份证')
+
+    expect(id).not.toBeNull()
+    const doc = data.docById(id!)!
+    expect(doc.title).toBe('周四要交社保材料')
+    expect(data.notesKb().folders[0]!.docs).toContain(id)
+  })
+
+  it('小记正文为空时不创建', async () => {
+    expect(await data.addNote('   ')).toBeNull()
+  })
+
+  it('新建文档署当前登录成员的名，不再一律算在娃哥头上', async () => {
+    const kb = data.kbs.find((k) => k.folders.length)!
+    const id = await data.addDoc(kb.id, kb.folders[0]!.id)
+
+    const doc = data.docById(id!)!
+    // 未登录的演示态回落到 wg；登录后取会话成员（见 currentAuthor）
+    expect(doc.author).toBe('wg')
+    // 标题留空由 placeholder 顶着，不再塞「未命名文档」让用户先删四个字
+    expect(doc.title).toBe('')
+  })
+
+  it('新建文档带真实时间戳，而不是「刚刚」这种写死的文案', async () => {
+    const kb = data.kbs.find((k) => k.folders.length)!
+    const id = await data.addDoc(kb.id, kb.folders[0]!.id)
+
+    expect(data.docById(id!)!.created).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+    expect(data.docById(id!)!.updated).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+  })
+
+  it('删除文档：从文件夹、文档表和本地编辑覆盖里一起摘掉', async () => {
+    const kb = data.kbs.find((k) => k.folders.length)!
+    const folder = kb.folders[0]!
+    const id = (await data.addDoc(kb.id, folder.id))!
+    data.setDocEdit(id, { text: '一些内容' })
+    expect(data.docEdits[id]).toBeTruthy()
+
+    await data.deleteDoc(id)
+
+    expect(folder.docs).not.toContain(id)
+    expect(data.docById(id)).toBeUndefined()
+    expect(data.docEdits[id]).toBeUndefined()
+  })
+
+  it('删除文件夹会带走它下面的文档', async () => {
+    const kb = data.kbs.find((k) => k.folders.length)!
+    const folderId = (await data.addFolder(kb.id))!
+    const docId = (await data.addDoc(kb.id, folderId))!
+
+    await data.deleteFolder(kb.id, folderId)
+
+    expect(kb.folders.find((f) => f.id === folderId)).toBeUndefined()
+    expect(data.docById(docId)).toBeUndefined()
+  })
+
+  it('小记知识库不允许删除——它是「新建小记」的落点', async () => {
+    const notes = data.notesKb()
+
+    await data.deleteKb(notes.id)
+
+    expect(data.kbById(notes.id)).toBeTruthy()
+  })
+
+  it('协同拉回的服务端版本不会盖掉本地还没写透的编辑', () => {
+    const doc = {
+      id: 'd-collab', title: '协同', author: 'wg', created: '', updated: '',
+      links: [], blocks: [{ p: '别人写的' }], backlinks: [], rev: 9,
+    }
+    data.docs['d-collab'] = { ...doc, blocks: [{ p: '原始' }], rev: 8 }
+
+    // 没有本地未写透编辑时接受服务端版本
+    expect(data.applyRemoteDoc(doc)).toBe(true)
+    expect(data.docById('d-collab')!.rev).toBe(9)
+  })
+})

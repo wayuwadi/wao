@@ -1,9 +1,19 @@
 package cn.wayuwa.wao.domain;
 
+import java.time.LocalDateTime;
+
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
-/** 文档表实体。正文块（blocks）与出链（links）为 JSON 列，反向链接不落库、按需动态计算。 */
+/**
+ * 文档表实体。正文块（blocks）与出链（links）为 JSON 列，反向链接不落库、按需动态计算。
+ *
+ * <p>{@code createdAt / updatedAt} 是真实时间戳；老数据只有 {@code createdLabel / updatedLabel}
+ * 这类现成文案，两者都留着，对外优先取时间戳、缺失时回落文案。
+ *
+ * <p>{@code rev} 每次正文更新自增，协同端据此判断「服务端有没有更新的版本」，
+ * 避免每次心跳都把整篇正文拖回来。
+ */
 @TableName("doc")
 public class DocEntity {
 
@@ -19,6 +29,12 @@ public class DocEntity {
     private String blocksJson;
     private String linksJson;
     private Integer ord;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private Integer rev;
+    private LocalDateTime deletedAt;
+    private String deletedBy;
+    private Boolean cascadeDel;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -42,4 +58,16 @@ public class DocEntity {
     public void setLinksJson(String linksJson) { this.linksJson = linksJson; }
     public Integer getOrd() { return ord; }
     public void setOrd(Integer ord) { this.ord = ord; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+    public Integer getRev() { return rev; }
+    public void setRev(Integer rev) { this.rev = rev; }
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+    public String getDeletedBy() { return deletedBy; }
+    public void setDeletedBy(String deletedBy) { this.deletedBy = deletedBy; }
+    public Boolean getCascadeDel() { return cascadeDel; }
+    public void setCascadeDel(Boolean cascadeDel) { this.cascadeDel = cascadeDel; }
 }

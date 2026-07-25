@@ -98,7 +98,10 @@ erDiagram
     PROJECT ||--o| KB : "auto-creates"
     KB ||--o{ KB_FOLDER : has
     KB_FOLDER ||--o{ DOC : contains
+    DOC ||--o{ DOC_PRESENCE : "who is reading"
 ```
+
+知识库 / 文件夹 / 文档一律**软删除**：`deleted_at` 非空即在回收站，保留 7 天后由调度器物理删除（见 ADR-018）。所有读路径都要带「未删除」条件。
 
 ### kb_group（自建知识库分组）
 | 列 | 类型 | 说明 |
@@ -120,6 +123,8 @@ erDiagram
 | group_id | VARCHAR(32) FK→kb_group NULL | 所属自建分组（NULL 时前端按默认分组展示） |
 | perm | VARCHAR(16) | 仅自己 / 成员可编辑 |
 | ord | INT | 展示顺序 |
+| notes | TINYINT(1) | 是否小记知识库（全局「新建小记」的落点，不可删除） |
+| deleted_at / deleted_by | DATETIME / VARCHAR(32) NULL | 回收站：删除时间与删除人 |
 
 ### kb_folder（文件夹）
 | 列 | 类型 | 说明 |
@@ -128,6 +133,8 @@ erDiagram
 | kb_id | VARCHAR(32) FK→kb | 所属知识库 |
 | name | VARCHAR(128) | 文件夹名 |
 | ord | INT | 展示顺序 |
+| deleted_at | DATETIME NULL | 回收站：删除时间 |
+| cascade_del | TINYINT(1) | 1 = 随知识库一起被删，恢复知识库时一并恢复，回收站不单独展示 |
 
 ### doc（文档）
 | 列 | 类型 | 说明 |
@@ -138,10 +145,25 @@ erDiagram
 | title | VARCHAR(256) | 标题 |
 | author_id | VARCHAR(32) | 作者（成员 id 或 auto） |
 | auto | TINYINT(1) | 是否自动化沉淀 |
-| created_label / updated_label | VARCHAR(32) | 展示用时间文案 |
+| created_label / updated_label | VARCHAR(32) | 升级前的展示用时间文案，仅老数据还在用 |
+| created_at / updated_at | DATETIME NULL | 真实时间戳，对外优先取它，缺失才回落上面的文案 |
+| rev | INT | 正文版本号，每次内容更新 +1，供协同端判断服务端有没有更新的版本 |
 | blocks_json | JSON | 正文块数组（call/h/p/ul/q 互斥） |
 | links_json | JSON | 出链数组 `[{type, id}]`，指向 project/task/doc |
 | ord | INT | 展示顺序 |
+| deleted_at / deleted_by | DATETIME / VARCHAR(32) NULL | 回收站：删除时间与删除人 |
+| cascade_del | TINYINT(1) | 1 = 随父级一起被删，恢复父级时一并恢复 |
+
+### doc_presence（文档协同在场）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(96) PK | 合成主键 `<doc_id>:<member_id>`，一个人对一篇文档只有一条 |
+| doc_id / member_id | VARCHAR(32) | 谁在看哪篇 |
+| line | INT | 光标所在的顶层块序号，-1 表示只在查看 |
+| editing | TINYINT(1) | 最近一次心跳前是否在输入 |
+| seen_at | DATETIME | 最后一次心跳；超过在场窗口（20 秒）即视为离开 |
+
+在场表跨节点共享（对齐 `spring-session-jdbc` 的思路），因此落在不同节点上的两个人也能互相看见；心跳机制与并发编辑的取舍见 ADR-017。
 
 反向链接（backlinks）不落库：`KnowledgeService` 对某文档取全部文档的 `links_json` 动态反查，当前只覆盖「文档 → 文档」的反链；项目 / 任务指向文档的反链留待这两个域也支持文档关联时再补充。
 
@@ -204,4 +226,6 @@ erDiagram
 - `V9__vault_schema.sql` / `V10__vault_seed.sql`：密钥库域关系表（替换 V3 的 `vault_group` payload 表）。
 - `V11__image_store.sql`：图片二进制存储。
 - `V12__account_auth.sql`：统一账号、身份、密码凭据与共享会话。
+- `V13__drop_content_demo_seed.sql`：清空「文件与图床」的演示数据。
+- `V14__knowledge_enhance.sql`：小记知识库、文档真实时间戳与版本号、三张表的回收站列、`doc_presence` 在场表。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

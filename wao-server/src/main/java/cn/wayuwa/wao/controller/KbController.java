@@ -2,6 +2,7 @@ package cn.wayuwa.wao.controller;
 
 import java.util.List;
 
+import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.CreateFolderRequest;
 import cn.wayuwa.wao.dto.CreateKbRequest;
@@ -10,6 +11,7 @@ import cn.wayuwa.wao.dto.KbDto;
 import cn.wayuwa.wao.dto.PatchFolderRequest;
 import cn.wayuwa.wao.dto.PatchKbRequest;
 import cn.wayuwa.wao.service.KnowledgeService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,9 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class KbController {
 
     private final KnowledgeService knowledge;
+    private final CurrentMember currentMember;
 
-    public KbController(KnowledgeService knowledge) {
+    public KbController(KnowledgeService knowledge, CurrentMember currentMember) {
         this.knowledge = knowledge;
+        this.currentMember = currentMember;
     }
 
     @GetMapping
@@ -51,9 +55,10 @@ public class KbController {
         return ApiResponse.ok(knowledge.updateKb(id, request));
     }
 
+    /** 删除知识库 —— 移入回收站，7 天内可连同其下文档一起恢复。 */
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(@PathVariable String id) {
-        knowledge.deleteKb(id);
+    public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest http) {
+        knowledge.deleteKb(id, currentMember.id(http));
         return ApiResponse.ok(null);
     }
 
@@ -68,9 +73,11 @@ public class KbController {
         return ApiResponse.ok(knowledge.renameFolder(id, folderId, request));
     }
 
+    /** 删除文件夹 —— 移入回收站，其下文档一并带走。 */
     @DeleteMapping("/{id}/folders/{folderId}")
-    public ApiResponse<Void> deleteFolder(@PathVariable String id, @PathVariable String folderId) {
-        knowledge.deleteFolder(id, folderId);
+    public ApiResponse<Void> deleteFolder(@PathVariable String id, @PathVariable String folderId,
+            HttpServletRequest http) {
+        knowledge.deleteFolder(id, folderId, currentMember.id(http));
         return ApiResponse.ok(null);
     }
 }

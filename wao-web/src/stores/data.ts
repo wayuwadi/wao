@@ -7,10 +7,13 @@ import {
   apiCreateJob,
   apiCreateKb,
   apiCreateKbGroup,
+  apiCreateNote,
   apiCreateProject,
   apiCreateTask,
   apiCreateVaultGroup,
   apiCreateVaultItem,
+  apiDeleteDoc,
+  apiDeleteFolder,
   apiDeleteJob,
   apiDeleteKb,
   apiDeleteProject,
@@ -26,8 +29,11 @@ import {
   apiPutTask,
   apiReauthJob,
   apiUploadImage,
+  apiPurgeTrash,
+  apiRenameFolder,
   apiRenameKbGroup,
   apiRenameVaultGroup,
+  apiRestoreTrash,
   apiResumeJob,
   apiRevealVaultItem,
   apiRunJob,
@@ -44,6 +50,7 @@ import {
   fetchSchedule,
   fetchSuggestions,
   fetchTasks,
+  fetchTrash,
   fetchVault,
   type CreateJobPayload,
   type CreateKbPayload,
@@ -53,8 +60,9 @@ import {
 import { blocksToText, textToBlocks } from '@/utils/doc'
 import { nowIso } from '@/utils/time'
 import { useUiStore } from '@/stores/ui'
+import { useSessionStore } from '@/stores/session'
 import type {
-  AutomationJob, Doc, DocBlock, ImageRef, KnowledgeBase, Project, Task, TaskStep, VaultGroup, VaultItem,
+  AutomationJob, Doc, DocBlock, ImageRef, KnowledgeBase, Project, Task, TaskStep, TrashEntry, VaultGroup, VaultItem,
 } from '@/types'
 
 /** 文档编辑覆盖（标题 / 正文 Markdown）。 */
@@ -218,16 +226,52 @@ export const useDataStore = defineStore('data', () => {
   }
   /** 待写透的文档 patch 计时器（按文档 id 去抖，避免每次按键都请求后端）。 */
   const docPersistTimers: Record<string, ReturnType<typeof setTimeout>> = {}
-  /** 合并一次文档编辑（title / text）并持久化；apiLive 时去抖写透后端。 */
+  /** 有未写透编辑的文档 id —— 协同拉取时不能用服务端版本盖掉这些文档。 */
+  const docDirty = reactive<Record<string, boolean>>({})
+  /**
+   * 合并一次文档编辑（title / text）并持久化；apiLive 时去抖写透后端。
+   *
+   * <p>去抖 600ms 是「实时保存」与「别把每次按键都送上网」之间的折中：连续输入时
+   * 只在停顿处发一次请求，停手不到一秒内容就已经在服务端了。
+   */
   function setDocEdit(id: string, patch: DocEdit) {
     docEdits.value = { ...docEdits.value, [id]: { ...docEdits.value[id], ...patch } }
     localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
     if (!apiLive.value) return
+    docDirty[id] = true
     clearTimeout(docPersistTimers[id])
     docPersistTimers[id] = setTimeout(() => {
       const resolved = docOf(id)
-      apiPatchDoc(id, { title: resolved.title, blocks: resolved.blocks }).catch(() => {})
+      // 落库后只更新 base（版本号要跟上，否则下一次心跳会把自己的内容当成过期的拉回来），
+      // 本地覆盖**不清**：清了 docOf 就会改从 blocks 反推正文，编辑器会当成外部改动
+      // 重新灌一遍内容，光标当场跳回开头。覆盖由 applyRemoteDoc 在真的收到别人的
+      // 版本时才清。
+      apiPatchDoc(id, { title: resolved.title, blocks: resolved.blocks })
+        .then((saved) => (docs[id] = saved))
+        .catch(() => {})
+        .finally(() => (docDirty[id] = false))
     }, 600)
+  }
+  /** 是否有还没写透后端的本地编辑。 */
+  const docPending = (id: string) => docDirty[id] === true
+  /**
+   * 用服务端版本替换本地文档（协同心跳发现别人改过时）。
+   *
+   * <p>本地正在输入（还有未写透的编辑）时直接跳过 —— 宁可晚一个心跳周期合上，
+   * 也不能把用户刚敲的半句话吞掉。
+   */
+  function applyRemoteDoc(doc: Doc): boolean {
+    if (docPending(doc.id)) return false
+    const override = docEdits.value[doc.id]
+    docs[doc.id] = doc
+    // 内容其实一样（多半是自己刚存的那一版转了一圈回来）就别动覆盖，
+    // 否则编辑器会因为文本换了个写法而重灌一次内容，光标白跳。
+    if (override && override.text != null && override.text !== blocksToText(doc.blocks)) {
+      const { [doc.id]: _dropped, ...rest } = docEdits.value
+      docEdits.value = rest
+      localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
+    }
+    return true
   }
   /** 解析文档：叠加编辑覆盖，返回标题 / Markdown / 块。 */
   function docOf(id: string): ResolvedDoc {
@@ -277,14 +321,19 @@ export const useDataStore = defineStore('data', () => {
     return id
   }
 
-  /** 在知识库某文件夹新建空文档，返回新 id；apiLive 时经后端创建（新文档即关联到该知识库 / 文件夹）。 */
+  /**
+   * 在知识库某文件夹新建空文档，返回新 id；apiLive 时经后端创建（新文档即关联到该知识库 / 文件夹）。
+   *
+   * <p>标题留空而不是塞「未命名文档」：新建后光标就落在标题上，占位文案由 placeholder 提供，
+   * 用户一敲就是自己的标题，不用先把四个字删掉。作者由服务端按会话署名，离线兜底才用当前登录成员。
+   */
   async function addDoc(kbId: string, folderId: string): Promise<string | null> {
     const kb = kbById(kbId)
     const folder = kb?.folders.find((f) => f.id === folderId)
     if (!kb || !folder) return null
     if (apiLive.value) {
       try {
-        const d = await apiCreateDoc({ kbId, folderId, title: '未命名文档', author: 'wg' })
+        const d = await apiCreateDoc({ kbId, folderId, title: '' })
         docs[d.id] = d
         folder.docs.push(d.id)
         return d.id
@@ -292,14 +341,72 @@ export const useDataStore = defineStore('data', () => {
         /* 后端异常时回落本地 */
       }
     }
-    const id = 'd' + Date.now()
+    const id = uid('d')
     docs[id] = {
-      id, title: '未命名文档', author: 'wg', created: '刚刚', updated: '刚刚',
+      id, title: '', author: currentAuthor(), created: nowIso(), updated: nowIso(),
       links: kb.project ? [{ type: 'project', id: kb.project }] : [],
-      blocks: [], backlinks: [],
+      blocks: [], backlinks: [], kbId, folderId, rev: 1,
     }
     folder.docs.push(id)
     return id
+  }
+
+  /** 当前登录成员 id；未登录（演示态）时回落到 wg。 */
+  function currentAuthor(): string {
+    return useSessionStore().currentUser.id || 'wg'
+  }
+
+  /** 小记知识库：全局「新建小记」的默认落点，没有就地建一个（离线演示态）。 */
+  function notesKb(): KnowledgeBase {
+    const existing = kbs.value.find((k) => k.notes)
+    if (existing) return existing
+    const kb: KnowledgeBase = {
+      id: 'kb-notes', name: '小记', icon: 'ri-sticky-note-line', color: '#7A5CC6', project: null,
+      desc: '随手记下的想法与片段，不用先想清楚该放进哪个知识库。', notes: true,
+      folders: [{ id: 'kb-notes-f', name: '小记', docs: [] }], group: 'g1', perm: '仅自己',
+    }
+    kbs.value.unshift(kb)
+    return kb
+  }
+
+  /**
+   * 新建一条小记：不用先选知识库，直接落进小记知识库。
+   *
+   * @param text  小记正文（Markdown）
+   * @param title 标题，留空时由正文首行推导
+   * @return 新建的文档 id；正文与标题都为空时返回 null
+   */
+  async function addNote(text: string, title = ''): Promise<string | null> {
+    const blocks = textToBlocks(text)
+    if (!blocks.length && !title.trim()) return null
+    if (apiLive.value) {
+      try {
+        const d = await apiCreateNote({ title: title.trim(), blocks })
+        docs[d.id] = d
+        const kb = kbs.value.find((k) => k.id === d.kbId) ?? notesKb()
+        const folder = kb.folders.find((f) => f.id === d.folderId) ?? kb.folders[0]
+        folder?.docs.push(d.id)
+        return d.id
+      } catch {
+        /* 后端异常时回落本地 */
+      }
+    }
+    const kb = notesKb()
+    const id = uid('d')
+    docs[id] = {
+      id, title: title.trim() || noteTitleOf(text), author: currentAuthor(),
+      created: nowIso(), updated: nowIso(), links: [], blocks, backlinks: [],
+      kbId: kb.id, folderId: kb.folders[0]!.id, rev: 1,
+    }
+    kb.folders[0]!.docs.push(id)
+    return id
+  }
+
+  /** 小记没填标题时，用正文首行当标题（与后端 titleFrom 口径一致）。 */
+  function noteTitleOf(text: string): string {
+    const line = text.split('\n').map((l) => l.replace(/^[#>\-!\s]+/, '').trim()).find(Boolean)
+    if (!line) return '未命名小记'
+    return line.length > 30 ? line.slice(0, 30) + '…' : line
   }
 
   /** 新建知识库；apiLive 时经后端创建。 */
@@ -331,9 +438,15 @@ export const useDataStore = defineStore('data', () => {
     if (apiLive.value) apiPatchKb(id, patch).catch(() => {})
   }
 
-  /** 删除知识库（连同其文件夹与文档）；apiLive 时写透后端。 */
+  /**
+   * 删除知识库（连同其文件夹与文档）；apiLive 时写透后端。
+   *
+   * <p>后端是软删除 —— 东西进回收站，7 天内可以整库恢复（见 ADR-018），
+   * 所以这里从列表里拿掉即可，不需要给用户「确认永久删除」的心理负担。
+   */
   async function deleteKb(id: string) {
     const kb = kbById(id)
+    if (kb?.notes) return
     kbs.value = kbs.value.filter((k) => k.id !== id)
     kb?.folders.forEach((f) => f.docs.forEach((docId) => delete docs[docId]))
     if (apiLive.value) {
@@ -342,6 +455,90 @@ export const useDataStore = defineStore('data', () => {
       } catch {
         /* 后端删除失败时不回滚 */
       }
+    }
+    void refreshTrash()
+  }
+
+  /** 重命名文件夹；apiLive 时写透后端。 */
+  function renameFolder(kbId: string, folderId: string, name: string) {
+    const folder = kbById(kbId)?.folders.find((f) => f.id === folderId)
+    if (!folder) return
+    folder.name = name
+    if (apiLive.value) apiRenameFolder(kbId, folderId, name).catch(() => {})
+  }
+
+  /** 删除文件夹（连同其下文档）—— 后端移入回收站。 */
+  async function deleteFolder(kbId: string, folderId: string) {
+    const kb = kbById(kbId)
+    const folder = kb?.folders.find((f) => f.id === folderId)
+    if (!kb || !folder) return
+    folder.docs.forEach((docId) => delete docs[docId])
+    kb.folders = kb.folders.filter((f) => f.id !== folderId)
+    if (apiLive.value) {
+      try {
+        await apiDeleteFolder(kbId, folderId)
+      } catch {
+        /* 后端删除失败时不回滚 */
+      }
+    }
+    void refreshTrash()
+  }
+
+  /** 删除文档 —— 后端移入回收站，7 天内可恢复。 */
+  async function deleteDoc(id: string) {
+    kbs.value.forEach((k) => k.folders.forEach((f) => (f.docs = f.docs.filter((d) => d !== id))))
+    delete docs[id]
+    const { [id]: _dropped, ...rest } = docEdits.value
+    docEdits.value = rest
+    localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
+    if (apiLive.value) {
+      try {
+        await apiDeleteDoc(id)
+      } catch {
+        /* 后端删除失败时不回滚 */
+      }
+    }
+    void refreshTrash()
+  }
+
+  // ---- 回收站 ----
+
+  /** 回收站条目（知识库 / 文件夹 / 文档），保留 7 天后由后端自动清理。 */
+  const trash = ref<TrashEntry[]>([])
+
+  /** 重新拉取回收站列表。 */
+  async function refreshTrash() {
+    if (!apiLive.value) return
+    try {
+      trash.value = await fetchTrash()
+    } catch {
+      /* 拉取失败时保留现有列表 */
+    }
+  }
+
+  /** 从回收站恢复一个条目，随后重新拉取知识库与文档（父级可能一起被恢复）。 */
+  async function restoreTrash(type: string, id: string) {
+    if (!apiLive.value) return
+    await apiRestoreTrash(type, id)
+    await Promise.all([refreshKnowledge(), refreshTrash()])
+  }
+
+  /** 立刻彻底删除一个回收站条目，不等 7 天。 */
+  async function purgeTrash(type: string, id: string) {
+    if (!apiLive.value) return
+    await apiPurgeTrash(type, id)
+    await refreshTrash()
+  }
+
+  /** 重新拉取知识库与文档（恢复、别处新建之后用）。 */
+  async function refreshKnowledge() {
+    if (!apiLive.value) return
+    try {
+      const [kb, dc] = await Promise.all([fetchKbs(), fetchDocs()])
+      if (Array.isArray(kb)) kbs.value = kb
+      if (Array.isArray(dc)) dc.forEach((d) => (docs[d.id] = d))
+    } catch {
+      /* 拉取失败时保留现有数据 */
     }
   }
 
@@ -870,8 +1067,9 @@ export const useDataStore = defineStore('data', () => {
     today, areas, projects, tasks, kbs, docs, autos, files, imgs, vault,
     calEvents, schedule, suggestions, goals, myGroups, apiLive, hydrate,
     areaById, projectById, taskById, tasksByProject, kbById, docById, areaColor,
-    docEdits, setDocEdit, docOf, addDoc, addGroup, renameGroup, addFolder,
-    addKb, updateKb, deleteKb,
+    docEdits, setDocEdit, docOf, docPending, applyRemoteDoc, addDoc, addNote, notesKb,
+    addGroup, renameGroup, addFolder, renameFolder, deleteFolder, deleteDoc,
+    addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     subById, subKey, addSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,

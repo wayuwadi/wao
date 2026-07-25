@@ -13,5 +13,7 @@ public record KbDto(
         String desc,
         List<FolderDto> folders,
         String group,
-        String perm) {
+        String perm,
+        /** 是否为小记知识库：全局「新建小记」的默认落点，不可删除。 */
+        Boolean notes) {
 }
