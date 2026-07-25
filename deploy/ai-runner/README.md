@@ -40,6 +40,11 @@ python3 deploy/ai-runner/wao-ai-runner.py \
 `--engines` 留空表示自动探测（装了哪种就报哪种）；显式指定时找不到对应命令会直接启动失败，
 避免电脑上报了自己其实跑不了的能力。需要固定模型时加 `--claude-model opus`。
 
+项目里只填一个 HTTPS 仓库地址，但每台电脑的 Git 认证方式可以不同：`--git-protocol` 默认
+`auto`，本机有 HTTPS 凭据就用 HTTPS，没有（例如只配了 SSH key 的 Linux 主节点）就自动把
+地址换成 `git@github.com:组织/仓库.git`。想固定行为可以显式传 `--git-protocol ssh` 或
+`https`。切换协议后已经克隆过的仓库会自动更新 `origin`，不需要手工删目录。
+
 配对成功后，节点令牌只写入本机 `~/.wao/ai-runner.json`，不会进入项目或 Git。
 以后启动时不需要再次输入配对码。
 

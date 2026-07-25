@@ -107,12 +107,34 @@ def run(command: list[str], cwd: Path | None = None, check: bool = True) -> subp
     return result
 
 
-def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str) -> Path:
+def resolve_repo_url(repo_url: str, protocol: str, https_ready: bool) -> str:
+    """按本机的 Git 认证方式选择克隆地址。
+
+    项目配置里只填一个 HTTPS 地址，但每台电脑的认证方式可能不同：Windows 用凭据管理器里的
+    HTTPS 凭据，Linux 主节点用 SSH key。auto 表示本机没有可用的 HTTPS 凭据时自动改用 SSH，
+    这样同一个项目配置在两种机器上都能克隆。
+    """
+    if not repo_url.startswith("https://"):
+        return repo_url
+    if protocol == "https" or (protocol == "auto" and https_ready):
+        return repo_url
+    host, _, path = repo_url[len("https://"):].partition("/")
+    if not path:
+        return repo_url
+    return f"git@{host.rpartition('@')[2]}:{path}"
+
+
+def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_url: str) -> Path:
     project_dir = root / claim["workspaceDir"]
     if not (project_dir / ".git").exists():
         project_dir.parent.mkdir(parents=True, exist_ok=True)
-        log(f"[{claim['runId']}] 首次克隆 {claim['repoUrl']}")
-        run([git_command, "clone", claim["repoUrl"], str(project_dir)])
+        log(f"[{claim['runId']}] 首次克隆 {repo_url}")
+        if project_dir.exists():
+            # 上一次克隆失败可能留下半个目录，git clone 会因为目录非空直接报错。
+            shutil.rmtree(project_dir)
+        run([git_command, "clone", repo_url, str(project_dir)])
+    # 本机认证方式变了（比如从 HTTPS 换成 SSH）时，把已有仓库的 origin 一并纠正。
+    run([git_command, "remote", "set-url", "origin", repo_url], cwd=project_dir, check=False)
     run([git_command, "fetch", "--prune", "origin"], cwd=project_dir)
     run([git_command, "worktree", "prune"], cwd=project_dir)
     worktree = root / ".wao-runs" / claim["runId"]
@@ -426,7 +448,8 @@ def iter_events(output: str):
 
 def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, git_command: str,
         engine_commands: dict[str, str], cli_environment: dict[str, str] | None = None,
-        claude_model: str | None = None) -> None:
+        claude_model: str | None = None, git_protocol: str = "auto",
+        https_ready: bool = False) -> None:
     run_id = claim["runId"]
     engine = str(claim.get("engine") or "codex")
     name = ENGINE_LABELS.get(engine, engine)
@@ -442,7 +465,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         if not executable:
             raise RuntimeError(f"本机没有可用的 {name} 命令，请检查 --engines 与 CLI 安装情况")
         reporter.send("phase", "正在准备独立工作区", force=True)
-        worktree = prepare_worktree(claim, root, git_command)
+        worktree = prepare_worktree(
+            claim, root, git_command, resolve_repo_url(claim["repoUrl"], git_protocol, https_ready))
         stage = f"启动 {name}"
         reporter.send("phase", f"工作区已准备完成，正在启动 {name}", force=True)
         stage = f"等待 {name} 完成"
@@ -483,6 +507,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--claude-command", default=os.getenv("WAO_CLAUDE_COMMAND"))
     parser.add_argument("--claude-model", default=os.getenv("WAO_CLAUDE_MODEL"),
                         help="传给 Claude Code 的模型别名；留空使用本机默认模型")
+    parser.add_argument(
+        "--git-protocol",
+        choices=["auto", "https", "ssh"],
+        default=os.getenv("WAO_GIT_PROTOCOL", "auto"),
+        help="克隆项目仓库使用的协议；auto 表示本机没有 HTTPS 凭据时自动改用 SSH",
+    )
     parser.add_argument("--engines", default=os.getenv("WAO_RUNNER_ENGINES"),
                         help="本机可用的 AI 工具，逗号分隔（codex,claude）；留空按已安装的 CLI 自动探测")
     parser.add_argument("--max-concurrency", type=int, default=int(os.getenv("WAO_RUNNER_CONCURRENCY", "2")))
@@ -531,7 +561,9 @@ def main() -> int:
     log("运行环境：Git=" + git_command
         + "".join(f"，{ENGINE_LABELS[name]}={path}" for name, path in engine_commands.items()))
     log(f"GitHub 自动授权：凭据={'可用' if github_token_ready else '不可用'}，"
-        f"GitHub CLI={github_cli or '未找到'}")
+        f"GitHub CLI={github_cli or '未找到'}，"
+        f"克隆协议={args.git_protocol}"
+        f"{'（无 HTTPS 凭据，改用 SSH）' if args.git_protocol == 'auto' and not github_token_ready else ''}")
     futures: set[Future[None]] = set()
     with ThreadPoolExecutor(max_workers=args.max_concurrency, thread_name_prefix="wao-ai") as executor:
         while True:
@@ -545,7 +577,8 @@ def main() -> int:
                         break
                     futures.add(executor.submit(
                         execute_claim, api, claim, root, args.sandbox, git_command,
-                        engine_commands, cli_environment, args.claude_model))
+                        engine_commands, cli_environment, args.claude_model,
+                        args.git_protocol, github_token_ready))
             except Exception as exc:  # noqa: BLE001
                 log(f"连接 WAO 失败，10 秒后重试：{exc}")
             time.sleep(10)
