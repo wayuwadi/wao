@@ -267,9 +267,14 @@ function commentKey(e: KeyboardEvent) {
 function setStatus(s: TaskStatus) {
   const t = task.value
   if (!t) return
+  const justFinished = s === '已完成' && t.status !== '已完成'
   data.patchTask(t.id, { status: s }, `你将状态改为「${s}」`)
   menu.value = null
-  if (s === '已完成') toast(`已完成「${t.title}」`, 'ri-checkbox-circle-fill')
+  if (justFinished) {
+    toast(`已完成「${t.title}」`, 'ri-checkbox-circle-fill')
+    // 完成和创建一样值得庆祝一下
+    ui.celebrate()
+  }
 }
 function setPriority(p: Priority) {
   const t = task.value
