@@ -122,7 +122,9 @@ jobs:
   notify:
     name: Feishu notification
     runs-on: ubuntu-latest
-    if: always()
+    # 只在合入 main（push）或手动触发时通知；PR/开发分支每次提交都会跑 CI，
+    # 但那属于开发中的噪音，不需要每次都推送到团队群。
+    if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     needs: [backend, frontend, containers, deploy]
     env:
       FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
