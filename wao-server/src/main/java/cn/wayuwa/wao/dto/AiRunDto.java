@@ -1,5 +1,7 @@
 package cn.wayuwa.wao.dto;
 
+import java.util.List;
+
 /** WAO 页面展示的一次 AI 运行。 */
 public record AiRunDto(
         String id,
@@ -12,6 +14,9 @@ public record AiRunDto(
         String runnerName,
         String branchName,
         String resultSummary,
+        String latestProgress,
+        String progressUpdatedAt,
+        List<AiRunProgressDto> progress,
         String sessionId,
         Integer exitCode,
         String createdAt,

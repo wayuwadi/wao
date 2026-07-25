@@ -7,6 +7,20 @@ import TaskDrawer from '@/components/task/TaskDrawer.vue'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 
+vi.mock('@/api/ai', () => ({
+  createAiRuns: vi.fn().mockResolvedValue([]),
+  fetchTaskAiRuns: vi.fn().mockResolvedValue([
+    {
+      id: 'ar1', taskId: 't1', taskTitle: 'AI 任务', projectId: 'p1', projectName: 'WAO',
+      status: 'running', runnerId: 'rn1', runnerName: '娃哥电脑', branchName: 'ai/wao-ar1',
+      resultSummary: null, latestProgress: '正在分析任务验收标准', progressUpdatedAt: '2026-07-25T20:30:00',
+      progress: [{ id: 'ap1', kind: 'message', content: '正在分析任务验收标准', createdAt: '2026-07-25T20:30:00' }],
+      sessionId: 'thread-1', exitCode: null, createdAt: '2026-07-25T20:29:00',
+      startedAt: '2026-07-25T20:29:10', finishedAt: null,
+    },
+  ]),
+}))
+
 const router = createRouter({ history: createWebHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div/>' } }] })
 
 function mountDrawer() {
@@ -57,6 +71,16 @@ describe('TaskDrawer', () => {
     // 编辑器是异步组件（ProseMirror 不进首屏包），要等它解析完才出现在 DOM 里
     expect(w.find('textarea.desc').exists()).toBe(false)
     expect(await waitFor(w, '.md-body')).toBe(true)
+  })
+
+  it('在任务内保存并展示 AI 执行过程', async () => {
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    expect(w.find('.ai-archive').text()).toContain('实时更新中')
+    expect(w.find('.ai-archive').text()).toContain('正在分析任务验收标准')
+    w.unmount()
   })
 
   it('默认展示任务属性栏，点击子任务后切成子任务详情', async () => {

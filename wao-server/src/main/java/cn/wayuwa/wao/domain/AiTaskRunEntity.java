@@ -18,6 +18,8 @@ public class AiTaskRunEntity {
     private String promptUrl;
     private String branchName;
     private String resultSummary;
+    private String latestProgress;
+    private LocalDateTime progressUpdatedAt;
     private String sessionId;
     private Integer exitCode;
     private LocalDateTime createdAt;
@@ -43,6 +45,10 @@ public class AiTaskRunEntity {
     public void setBranchName(String branchName) { this.branchName = branchName; }
     public String getResultSummary() { return resultSummary; }
     public void setResultSummary(String resultSummary) { this.resultSummary = resultSummary; }
+    public String getLatestProgress() { return latestProgress; }
+    public void setLatestProgress(String latestProgress) { this.latestProgress = latestProgress; }
+    public LocalDateTime getProgressUpdatedAt() { return progressUpdatedAt; }
+    public void setProgressUpdatedAt(LocalDateTime progressUpdatedAt) { this.progressUpdatedAt = progressUpdatedAt; }
     public String getSessionId() { return sessionId; }
     public void setSessionId(String sessionId) { this.sessionId = sessionId; }
     public Integer getExitCode() { return exitCode; }

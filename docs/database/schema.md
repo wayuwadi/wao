@@ -233,8 +233,18 @@ erDiagram
 | status | VARCHAR(24) | queued / running / succeeded / failed / cancelled |
 | runner_id | VARCHAR(32) NULL | 实际领取的电脑 |
 | prompt_url / branch_name | VARCHAR | Markdown 任务地址与隔离分支 |
-| result_summary / session_id / exit_code | TEXT / VARCHAR / INT | Codex 摘要、会话 id 与退出码 |
+| result_summary / session_id / exit_code | TEXT / VARCHAR / INT | Codex 最终摘要、会话 id 与退出码 |
+| latest_progress / progress_updated_at | VARCHAR(1000) / DATETIME | 首页快速读取的最近一条用户可读进展 |
 | created_at / claimed_at / started_at / finished_at | DATETIME | 完整运行时间线 |
+
+### ai_run_progress
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id / run_id | VARCHAR(32) | 进展与所属运行 id |
+| kind | VARCHAR(24) | phase / message / plan / result |
+| content | VARCHAR(1000) | 过滤命令和工具调用后的用户可读摘要 |
+| created_at | DATETIME | 上报时间，用于实时展示与任务档案排序 |
 
 ## 密钥库域
 
@@ -285,4 +295,5 @@ erDiagram
 - `V16__task_status_retire_blocked.sql`：任务状态改版，存量「阻塞」迁到「进行中」。
 - `V17__system_setting_and_feishu_sync.sql`：系统级配置表、`automation_job.handler` 与内置的飞书群聊同步任务。
 - `V18__ai_task_runner.sql`：项目级 AI 配置、执行电脑、一次性配对码与任务运行队列。
+- `V19__ai_run_progress.sql`：AI 运行最新反馈与可归档的摘要时间线。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

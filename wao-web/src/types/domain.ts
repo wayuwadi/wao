@@ -304,6 +304,13 @@ export interface AiRunner {
 
 export type AiRunStatus = 'queued' | 'claimed' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
+export interface AiRunProgress {
+  id: string
+  kind: 'phase' | 'message' | 'plan' | 'result'
+  content: string
+  createdAt: string
+}
+
 /** 一次从 WAO 派发到 Codex 的任务运行。 */
 export interface AiRun {
   id: string
@@ -316,6 +323,9 @@ export interface AiRun {
   runnerName: string | null
   branchName: string | null
   resultSummary: string | null
+  latestProgress: string | null
+  progressUpdatedAt: string | null
+  progress: AiRunProgress[]
   sessionId: string | null
   exitCode: number | null
   createdAt: string

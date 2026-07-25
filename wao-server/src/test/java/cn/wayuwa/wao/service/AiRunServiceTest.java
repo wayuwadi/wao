@@ -13,6 +13,7 @@ import java.util.List;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.AiProjectConfigEntity;
+import cn.wayuwa.wao.domain.AiRunProgressEntity;
 import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.domain.AiRunnerPairCodeEntity;
 import cn.wayuwa.wao.domain.AiTaskRunEntity;
@@ -22,13 +23,16 @@ import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
+import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.mapper.AiProjectConfigMapper;
+import cn.wayuwa.wao.mapper.AiRunProgressMapper;
 import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
 import cn.wayuwa.wao.mapper.AiRunnerPairCodeMapper;
 import cn.wayuwa.wao.mapper.AiTaskRunMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentCaptor;
 
 class AiRunServiceTest {
@@ -37,10 +41,16 @@ class AiRunServiceTest {
     private final AiRunnerNodeMapper runnerMapper = mock(AiRunnerNodeMapper.class);
     private final AiRunnerPairCodeMapper pairMapper = mock(AiRunnerPairCodeMapper.class);
     private final AiTaskRunMapper runMapper = mock(AiTaskRunMapper.class);
+    private final AiRunProgressMapper progressMapper = mock(AiRunProgressMapper.class);
     private final TaskMapper taskMapper = mock(TaskMapper.class);
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final AiRunService service = new AiRunService(
-            configMapper, runnerMapper, pairMapper, runMapper, taskMapper, projectMapper);
+            configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper);
+
+    @BeforeEach
+    void emptyProgressByDefault() {
+        when(progressMapper.selectList(any())).thenReturn(List.of());
+    }
 
     @Test
     void enabledProjectRequiresRepository() {
@@ -129,6 +139,27 @@ class AiRunServiceTest {
         assertThat(queued.getStatus()).isEqualTo("running");
         assertThat(queued.getRunnerId()).isEqualTo("rn1");
         verify(runMapper).updateById(eq(queued));
+    }
+
+    @Test
+    void runnerProgressIsArchivedAndUpdatesLatestSummary() {
+        AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
+        runner.setId("rn1");
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId("ar1");
+        run.setRunnerId("rn1");
+        run.setStatus("running");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runMapper.selectById("ar1")).thenReturn(run);
+
+        service.reportProgress("local-token", "ar1",
+                new ReportAiRunProgressRequest("message", "已定位失败原因，正在修复"));
+
+        ArgumentCaptor<AiRunProgressEntity> progress = ArgumentCaptor.forClass(AiRunProgressEntity.class);
+        verify(progressMapper).insert(progress.capture());
+        assertThat(progress.getValue().getContent()).isEqualTo("已定位失败原因，正在修复");
+        assertThat(run.getLatestProgress()).isEqualTo("已定位失败原因，正在修复");
+        assertThat(run.getProgressUpdatedAt()).isNotNull();
     }
 
     private static ProjectEntity project(String id, String name) {
