@@ -57,3 +57,12 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+feishu:
+  login:
+    enabled: ${FEISHU_LOGIN_ENABLED:false}
+    app-id: ${FEISHU_APP_ID:}
+    app-secret: ${FEISHU_APP_SECRET:}
+    redirect-uri: ${FEISHU_REDIRECT_URI:http://localhost:8080/api/auth/feishu/callback}
+    frontend-url: ${FEISHU_FRONTEND_URL:http://localhost:5173}
+    open-api-base-url: ${FEISHU_OPEN_API_BASE_URL:https://open.feishu.cn}

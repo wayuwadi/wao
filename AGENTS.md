@@ -23,6 +23,7 @@ WAO 是一个前后端分离的 Web 系统，采用 Spec-Driven Development。�
 - Vue 组件使用 `<script setup lang="ts">`，组件命名使用 PascalCase
 - API 调用统一放在 `wao-web/src/api/`，组件内不直接发起 HTTP 请求
 - 提交信息遵循 Conventional Commits：标题行 + 空行 + 正文，正文说明改了什么、为什么。CI（`.github/workflows/ci-cd.yml` 的 `notify` job）会把完整提交信息转发到团队飞书通知卡片，只写标题的提交在卡片里就是一句空话
+- 完成与变更相称的验证后，AI 应直接在当前功能分支创建详细提交；提交正文必须说明改动、原因和验收结果。不得推送 `main`，不得提交任何私有环境文件或凭据。
 
 ## 目录结构
 

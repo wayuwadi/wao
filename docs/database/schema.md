@@ -189,7 +189,7 @@ erDiagram
 | updated_label | VARCHAR(32) | 展示用更新时间文案 |
 | ord | INT | 展示顺序 |
 
-密码加密方案见 `docs/adr/007-vault-server-side-encryption.md`：密钥来自环境变量 `WAO_VAULT_KEY`（base64 32 字节），列表 / 详情接口从不返回明文，只在 `POST /api/vault/items/{id}/reveal` 按需解密一次。这是服务端静态加密，不是零知识端到端加密。
+密码加密方案见 `docs/adr/009-vault-server-side-encryption.md`：密钥来自环境变量 `WAO_VAULT_KEY`（base64 32 字节），列表 / 详情接口从不返回明文，只在 `POST /api/vault/items/{id}/reveal` 按需解密一次。这是服务端静态加密，不是零知识端到端加密。
 
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。

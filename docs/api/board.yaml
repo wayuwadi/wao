@@ -147,7 +147,7 @@ paths:
   /jobs/{id}/reauth: { post: { summary: 重新授权（「待修复」恢复为「正常」）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /files: { get: { summary: 文件列表, responses: { '200': { description: OK } } } }
   /images: { get: { summary: 图床列表, responses: { '200': { description: OK } } } }
-  # 密钥库域（关系表；密码以 AES-256-GCM 服务端加密存储，见 docs/adr/007-vault-server-side-encryption.md）
+  # 密钥库域（关系表；密码以 AES-256-GCM 服务端加密存储，见 docs/adr/009-vault-server-side-encryption.md）
   /vault:
     get: { summary: 密钥库分组及条目列表（不含密码明文，仅 hasSecret 标记）, responses: { '200': { description: OK } } }
   /vault/groups:

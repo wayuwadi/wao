@@ -12,6 +12,12 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: '/auth/feishu/callback',
+      name: 'feishu-callback',
+      component: () => import('@/views/FeishuCallbackView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/',
       component: AppLayout,
       children: [
