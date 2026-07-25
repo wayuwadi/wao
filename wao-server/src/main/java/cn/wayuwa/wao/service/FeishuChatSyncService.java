@@ -22,6 +22,7 @@ import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuChat;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuChatMember;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
+import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,14 +56,16 @@ public class FeishuChatSyncService implements JobHandler {
     private final FeishuOpenApiClient feishu;
     private final KnowledgeService knowledge;
     private final ImageService images;
+    private final FeishuWebhookNotifier notifier;
     private final ObjectMapper json;
 
     public FeishuChatSyncService(SettingService settings, FeishuOpenApiClient feishu, KnowledgeService knowledge,
-            ImageService images, ObjectMapper json) {
+            ImageService images, FeishuWebhookNotifier notifier, ObjectMapper json) {
         this.settings = settings;
         this.feishu = feishu;
         this.knowledge = knowledge;
         this.images = images;
+        this.notifier = notifier;
         this.json = json;
     }
 
@@ -165,6 +168,16 @@ public class FeishuChatSyncService implements JobHandler {
         String title = "飞书群聊 · " + target.format(DAY);
         DocDto doc = knowledge.upsertAutoDoc(kbId, folderId, title, blocks);
         log.info("飞书群聊同步完成：{} 条消息写入文档 {}", messages.size(), doc.id());
+        notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "群聊记录已沉淀",
+                "green",
+                List.of(
+                        List.of("日期", target.format(DAY) + " 00:00–23:59"),
+                        List.of("群聊", settings.get(SettingService.CHAT_SYNC_CHAT_NAME, "群聊")),
+                        List.of("消息", messages.size() + " 条")),
+                null,
+                "打开文档",
+                "https://wao.wayuwa.cn/kb/" + kbId + "?doc=" + doc.id()));
         return "成功 · " + target.format(DAY) + " 共 " + messages.size() + " 条消息";
     }
 

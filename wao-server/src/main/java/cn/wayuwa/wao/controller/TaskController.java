@@ -11,6 +11,7 @@ import cn.wayuwa.wao.dto.PatchTaskRequest;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.service.TaskService;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -59,9 +60,30 @@ public class TaskController {
         return ApiResponse.ok(taskService.replace(id, request));
     }
 
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(@PathVariable String id) {
+        taskService.delete(id);
+        return ApiResponse.ok(null);
+    }
+
     @PostMapping("/{id}/comments")
     public ApiResponse<CommentDto> addComment(@PathVariable String id, @Valid @RequestBody CreateCommentRequest request,
             HttpServletRequest http) {
         return ApiResponse.ok(taskService.addComment(id, currentMember.idOr(http, "unknown"), request.text()));
+    }
+
+    /** 改自己的评论；改别人的会被拒。 */
+    @PatchMapping("/{id}/comments/{commentId}")
+    public ApiResponse<CommentDto> updateComment(@PathVariable String id, @PathVariable String commentId,
+            @Valid @RequestBody CreateCommentRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(taskService.updateComment(id, commentId, currentMember.idOr(http, "unknown"), request.text()));
+    }
+
+    /** 删自己的评论；删别人的会被拒。 */
+    @DeleteMapping("/{id}/comments/{commentId}")
+    public ApiResponse<Void> deleteComment(@PathVariable String id, @PathVariable String commentId,
+            HttpServletRequest http) {
+        taskService.deleteComment(id, commentId, currentMember.idOr(http, "unknown"));
+        return ApiResponse.ok(null);
     }
 }

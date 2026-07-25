@@ -78,6 +78,14 @@ export async function apiUploadFile(file: File): Promise<FileItem> {
   return res.data.data
 }
 export const apiDeleteFile = (id: string) => del(`/api/files/${id}`)
+/** 公开：下载确认页要展示的文件信息。 */
+export const fetchFileMeta = (id: string) => get<FileItem>(`/api/files/${id}/meta`)
+/** 公开：取一道人机校验题。 */
+export const apiDownloadChallenge = (id: string) =>
+  post<{ challengeId: string; question: string }>(`/api/files/${id}/challenge`)
+/** 公开：用答案换一张一次性下载票据。 */
+export const apiDownloadTicket = (id: string, challengeId: string, answer: string) =>
+  post<{ ticket: string }>(`/api/files/${id}/ticket`, { challengeId, answer })
 export const fetchImages = () => get<ImageItem[]>('/api/images')
 export const fetchVault = () => get<VaultGroup[]>('/api/vault')
 export const fetchEvents = () => get<CalendarEvent[]>('/api/calendar/events')
@@ -277,6 +285,11 @@ export const apiCreateJob = (payload: CreateJobPayload) => post<AutomationJob>('
 export type PatchJobPayload = Partial<CreateJobPayload>
 export const apiPatchJob = (id: string, payload: PatchJobPayload) => patch<AutomationJob>(`/api/jobs/${id}`, payload)
 export const apiDeleteJob = (id: string) => del(`/api/jobs/${id}`)
+export const apiDeleteTask = (id: string) => del(`/api/tasks/${id}`)
+export const apiUpdateTaskComment = (taskId: string, commentId: string, text: string) =>
+  patch<Comment>(`/api/tasks/${taskId}/comments/${encodeURIComponent(commentId)}`, { text })
+export const apiDeleteTaskComment = (taskId: string, commentId: string) =>
+  del(`/api/tasks/${taskId}/comments/${encodeURIComponent(commentId)}`)
 export const apiRunJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/run`)
 export const apiPauseJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/pause`)
 export const apiResumeJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/resume`)

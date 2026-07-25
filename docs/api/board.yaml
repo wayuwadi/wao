@@ -102,14 +102,37 @@ paths:
       responses:
         '200': { description: OK }
   # 知识库域（关系表，见 docs/database/schema.md「知识库域」）
+    delete:
+      summary: 删除任务（连同其子任务、评论与活动）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: 不存在 }
   /tasks/{id}/comments:
     post:
-      summary: 原子追加评论；持久化成功后同步到全局配置的飞书群机器人
+      summary: 原子追加评论；持久化成功后以卡片形式通知全局配置的飞书群机器人
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       requestBody:
         required: true
         content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string } } } } }
       responses: { '200': { description: 返回新评论 }, '400': { description: 评论为空 }, '404': { description: 任务不存在 } }
+  /tasks/{id}/comments/{commentId}:
+    patch:
+      summary: 修改自己的评论（commentId 为评论 id；老评论没有 id 时传数组下标）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: commentId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string } } } } }
+      responses: { '200': { description: 返回更新后的评论 }, '400': { description: 正文为空或改的不是自己的评论 }, '404': { description: 任务或评论不存在 } }
+    delete:
+      summary: 删除自己的评论
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: commentId, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: OK }, '400': { description: 删的不是自己的评论 }, '404': { description: 任务或评论不存在 } }
   /kb-groups:
     get: { summary: 自建知识库分组列表, responses: { '200': { description: OK } } }
     post: { summary: 新建分组, responses: { '200': { description: OK } } }
@@ -234,8 +257,28 @@ paths:
       summary: 上传通用文件（单个不超过 50MB）
       requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } } } } }
       responses: { '200': { description: 返回带直链的文件项 }, '400': { description: 空文件或超过限制 } }
+  /files/{id}/meta:
+    get: { summary: 公开：下载确认页要展示的文件信息（不含正文）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /files/{id}/challenge:
+    post: { summary: 公开：取一道人机校验题（见 ADR-020）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: 返回 challengeId 与题面 }, '404': { description: 不存在 } } }
+  /files/{id}/ticket:
+    post:
+      summary: 公开：用答案换一张一次性下载票据（120 秒内有效、用完即废）
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { challengeId: { type: string }, answer: { type: string } } } } }
+      responses: { '200': { description: 返回 ticket }, '400': { description: 答案错误或验证已过期 }, '404': { description: 不存在 } }
   /files/{id}/download:
-    get: { summary: 公开直链下载文件, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: 文件字节流 }, '404': { description: 不存在 } } }
+    get:
+      summary: 下载文件正文；需带一次性票据，或本人已登录
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: ticket, in: query, required: false, schema: { type: string }, description: '由 /files/{id}/ticket 换取，只能用一次' }
+      responses:
+        '200': { description: 文件字节流 }
+        '401': { description: 没有票据也没有登录会话（code=40100） }
+        '404': { description: 不存在 }
   /files/{id}:
     delete: { summary: 删除文件, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   # 图床（见 docs/adr/012-markdown-rendering-and-image-store.md）

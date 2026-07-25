@@ -78,6 +78,27 @@ export const useTabsStore = defineStore('tabs', () => {
     }
   }
 
+  /**
+   * 把一个页签拖到另一个页签的位置上。
+   *
+   * <p>首页固定钉在最左：它既不能被拖走，别的页签也不能插到它前面 —— 那是唯一
+   * 不可关闭的锚点，位置乱了反而不好找。
+   *
+   * @param fromKey 被拖动的页签
+   * @param toKey   落点页签
+   */
+  function move(fromKey: string, toKey: string) {
+    if (fromKey === toKey || fromKey === 'home') return
+    const from = tabs.value.findIndex((t) => t.key === fromKey)
+    let to = tabs.value.findIndex((t) => t.key === toKey)
+    if (from < 0 || to < 0) return
+    if (toKey === 'home') to = 1
+    const [moved] = tabs.value.splice(from, 1)
+    if (!moved) return
+    tabs.value.splice(to, 0, moved)
+    persist()
+  }
+
   /** 详情视图加载实体后回填页签标签；回填后即不再是占位。 */
   function setLabel(key: string, label: string) {
     const t = tabs.value.find((t) => t.key === key)
@@ -155,6 +176,7 @@ export const useTabsStore = defineStore('tabs', () => {
     activeKey,
     open,
     activate,
+    move,
     setLabel,
     activeTab,
     close,

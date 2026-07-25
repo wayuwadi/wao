@@ -20,6 +20,7 @@ import cn.wayuwa.wao.dto.DocBlockDto;
 import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
+import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -34,8 +35,9 @@ class FeishuChatSyncServiceTest {
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
     private final KnowledgeService knowledge = mock(KnowledgeService.class);
     private final ImageService images = mock(ImageService.class);
+    private final FeishuWebhookNotifier notifier = mock(FeishuWebhookNotifier.class);
     private final FeishuChatSyncService service =
-            new FeishuChatSyncService(settings, feishu, knowledge, images, new ObjectMapper());
+            new FeishuChatSyncService(settings, feishu, knowledge, images, notifier, new ObjectMapper());
 
     private void configured() {
         when(settings.get(SettingService.CHAT_SYNC_APP_ID)).thenReturn("cli_demo");

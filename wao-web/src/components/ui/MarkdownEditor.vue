@@ -80,6 +80,7 @@ const editor = useEditor({
     scheduleMeasure()
   },
   onSelectionUpdate: ({ editor: e }) => emit('caret-line', caretLine(e)),
+  onBlur: () => flushExternal(),
 })
 
 // ---- 协作者行标记 ----
@@ -159,14 +160,33 @@ function insertImage(file: File) {
   })
 }
 
-// 外部改了值（切换任务、撤销等）才回灌；等于自己刚发出的内容时不动，否则光标会跳。
-watch(
-  () => props.modelValue,
-  (next) => {
-    const e = editor.value
-    if (e && next !== e.getMarkdown()) e.commands.setContent(next, { contentType: 'markdown' })
-  },
-)
+/**
+ * 外部值回灌 —— 只在编辑器没有焦点时做。
+ *
+ * <p>等于自己刚发出的内容时不动，否则光标会跳。**正在输入时也一律不灌**：语音听写会持续
+ * 往同一个位置追加文本，中途被 setContent 换掉整篇内容，听写引擎会把这一段从头再念一遍，
+ * 结果就是内容重复。错过的外部更新记在 {@link pendingExternal}，等失焦再补上。
+ */
+let pendingExternal: string | null = null
+function applyExternal(next: string) {
+  const e = editor.value
+  if (!e || next === e.getMarkdown()) return
+  if (e.isFocused) {
+    pendingExternal = next
+    return
+  }
+  pendingExternal = null
+  e.commands.setContent(next, { contentType: 'markdown' })
+}
+/** 失焦时把输入期间错过的外部更新补灌回来。 */
+function flushExternal() {
+  const next = pendingExternal
+  pendingExternal = null
+  if (next != null && editor.value && next !== editor.value.getMarkdown()) {
+    editor.value.commands.setContent(next, { contentType: 'markdown' })
+  }
+}
+watch(() => props.modelValue, applyExternal)
 watch(
   () => props.readonly,
   (ro) => editor.value?.setEditable(!ro),

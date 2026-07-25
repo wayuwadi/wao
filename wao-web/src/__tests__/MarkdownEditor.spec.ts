@@ -97,6 +97,38 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('正在输入时不回灌外部值——语音听写被 setContent 打断会把整段重念一遍', async () => {
+    const w = await mountEditor({ modelValue: '我正在口述的第一句话' })
+    const editable = w.find('.md-body [contenteditable]').element as HTMLElement
+    editable.focus()
+    await nextTick()
+
+    // 后台同步把一份较旧的正文推了过来
+    await w.setProps({ modelValue: '旧的服务端版本' })
+    await nextTick()
+
+    // 编辑器里还是用户自己那一句，光标不被打断
+    expect(w.find('.md-body').text()).toContain('我正在口述的第一句话')
+    expect(w.find('.md-body').text()).not.toContain('旧的服务端版本')
+    w.unmount()
+  })
+
+  it('失焦后把输入期间错过的外部更新补灌回来', async () => {
+    const w = await mountEditor({ modelValue: '本地内容' })
+    const editable = w.find('.md-body [contenteditable]').element as HTMLElement
+    editable.focus()
+    await nextTick()
+    await w.setProps({ modelValue: '别人改成了这样' })
+    await nextTick()
+
+    editable.blur()
+    await nextTick()
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(w.find('.md-body').text()).toContain('别人改成了这样')
+    w.unmount()
+  })
+
   it('粘贴图片时抛 upload-image，并把返回的地址插进正文', async () => {
     const w = await mountEditor({ modelValue: '' })
     const file = new File([new Uint8Array(4)], 'a.png', { type: 'image/png' })

@@ -3,6 +3,9 @@ import { defineStore } from 'pinia'
 import * as F from '@/data/fixtures'
 import {
   apiAddTaskComment,
+  apiDeleteTask,
+  apiDeleteTaskComment,
+  apiUpdateTaskComment,
   apiCreateDoc,
   apiCreateFolder,
   apiCreateJob,
@@ -66,7 +69,7 @@ import { nowIso } from '@/utils/time'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import type {
-  AutomationJob, Doc, DocBlock, ImageRef, KnowledgeBase, Project, Task, TaskStep, TrashEntry, VaultGroup, VaultItem,
+  AutomationJob, Comment, Doc, DocBlock, ImageRef, KnowledgeBase, Project, Task, TaskStep, TrashEntry, VaultGroup, VaultItem,
 } from '@/types'
 
 /** 文档编辑覆盖（标题 / 正文 Markdown）。 */
@@ -616,8 +619,25 @@ export const useDataStore = defineStore('data', () => {
     localStorage.setItem(TASK_DRAFT_KEY, JSON.stringify(rest))
   }
 
+  /** 刚被本地改过的任务 id → 时刻。 */
+  const taskTouchedAt: Record<string, number> = {}
+  /**
+   * 本地编辑后的保护窗口。
+   *
+   * <p>草稿写透成功就会被清掉，但一次轮询可能是在写透**之前**发出的：它带回来的是旧正文，
+   * 落地时却盖在更新的本地内容上，编辑器随即整篇重灌 —— 用语音听写时这一下会把正在念的
+   * 段落打断并重念一遍。所以最后一次改动之后再护 20 秒，够任何一次在途请求跑完。
+   */
+  const EDIT_GUARD_MS = 20_000
+
   function taskProtectedIds() {
-    return new Set([...Object.keys(taskDrafts.value), ...Object.keys(taskPersisting).filter((id) => taskPersisting[id])])
+    const now = Date.now()
+    const recent = Object.keys(taskTouchedAt).filter((id) => now - (taskTouchedAt[id] ?? 0) < EDIT_GUARD_MS)
+    return new Set([
+      ...Object.keys(taskDrafts.value),
+      ...Object.keys(taskPersisting).filter((id) => taskPersisting[id]),
+      ...recent,
+    ])
   }
 
   /** 当前任务自动保存状态，供富文本旁明确展示。 */
@@ -674,16 +694,86 @@ export const useDataStore = defineStore('data', () => {
     try {
       const comment = apiLive.value
         ? await apiAddTaskComment(id, text)
-        : { who: currentAuthor(), time: nowIso(), text }
+        : { id: 'c' + Date.now(), who: currentAuthor(), time: nowIso(), text }
       task.comments.push(comment)
       return true
     } catch { return false }
+  }
+
+  /** 评论定位键：优先用服务端给的 id，老评论（没有 id）回落到下标，与后端口径一致。 */
+  const commentKey = (comment: Comment, index: number) => comment.id ?? String(index)
+
+  /**
+   * 改一条评论的正文。只能改自己的 —— 服务端也会再拦一次。
+   *
+   * @return 是否改成功
+   */
+  async function updateTaskComment(id: string, index: number, text: string): Promise<boolean> {
+    const task = taskById(id)
+    const comment = task?.comments[index]
+    if (!task || !comment) return false
+    const body = text.trim()
+    if (!body) return false
+    const previous = comment.text
+    comment.text = body
+    if (!apiLive.value) return true
+    try {
+      await apiUpdateTaskComment(id, commentKey(comment, index), body)
+      return true
+    } catch {
+      comment.text = previous
+      return false
+    }
+  }
+
+  /**
+   * 删一条评论。只能删自己的。
+   *
+   * @return 是否删成功
+   */
+  async function deleteTaskComment(id: string, index: number): Promise<boolean> {
+    const task = taskById(id)
+    const comment = task?.comments[index]
+    if (!task || !comment) return false
+    const key = commentKey(comment, index)
+    task.comments.splice(index, 1)
+    if (!apiLive.value) return true
+    try {
+      await apiDeleteTaskComment(id, key)
+      return true
+    } catch {
+      task.comments.splice(index, 0, comment)
+      return false
+    }
+  }
+
+  /**
+   * 删除一个任务。本地先拿掉，写透失败再放回去 —— 误删一条任务比多等一秒难受得多，
+   * 所以先给反馈；真失败了列表会自己恢复。
+   *
+   * @return 是否删成功
+   */
+  async function deleteTask(id: string): Promise<boolean> {
+    const index = tasks.value.findIndex((t) => t.id === id)
+    if (index < 0) return false
+    const [removed] = tasks.value.splice(index, 1)
+    delete taskTouchedAt[id]
+    clearTaskDraft(id)
+    if (!apiLive.value) return true
+    try {
+      await apiDeleteTask(id)
+      return true
+    } catch {
+      if (removed) tasks.value.splice(index, 0, removed)
+      return false
+    }
   }
 
   /** 合并字段到任务，可选写入一条活动时间线（对齐原型 patchTask）。 */
   function patchTask(id: string, fields: Partial<Task>, activityText?: string) {
     const t = taskById(id)
     if (!t) return
+    taskTouchedAt[id] = Date.now()
     Object.assign(t, fields)
     if (activityText) t.activity.unshift({ icon: 'ri-edit-line', color: '#9A9DA9', text: activityText, time: nowIso() })
     persistTask(id)
@@ -1239,7 +1329,7 @@ export const useDataStore = defineStore('data', () => {
     addGroup, renameGroup, addFolder, renameFolder, deleteFolder, deleteDoc,
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
-    taskSaveState, taskSavedAt, flushTask, addTaskComment,
+    taskSaveState, taskSavedAt, flushTask, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     subById, subKey, addSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES,

@@ -78,6 +78,40 @@ describe('tabs store', () => {
     expect(t?.path).toBe('/projects/p3?tab=任务')
   })
 
+  it('拖拽可以改页签顺序', () => {
+    const tabs = useTabsStore()
+    tabs.open(proj('p1'))
+    tabs.open(proj('p2'))
+    tabs.open(proj('p3'))
+
+    // 把最后一个拖到第一个业务页签的位置
+    tabs.move('proj:p3', 'proj:p1')
+
+    expect(tabs.tabs.map((t) => t.key)).toEqual(['home', 'proj:p3', 'proj:p1', 'proj:p2'])
+  })
+
+  it('首页钉在最左：既拖不走，别的页签也插不到它前面', () => {
+    const tabs = useTabsStore()
+    tabs.open(proj('p1'))
+    tabs.open(proj('p2'))
+
+    tabs.move('home', 'proj:p2')
+    expect(tabs.tabs.map((t) => t.key)).toEqual(['home', 'proj:p1', 'proj:p2'])
+
+    tabs.move('proj:p2', 'home')
+    expect(tabs.tabs.map((t) => t.key)).toEqual(['home', 'proj:p2', 'proj:p1'])
+  })
+
+  it('顺序持久化，刷新后还在', () => {
+    const tabs = useTabsStore()
+    tabs.open(proj('p1'))
+    tabs.open(proj('p2'))
+    tabs.move('proj:p2', 'proj:p1')
+
+    setActivePinia(createPinia())
+    expect(useTabsStore().tabs.map((t) => t.key)).toEqual(['home', 'proj:p2', 'proj:p1'])
+  })
+
   it('非占位标签仍然可以更新（真名变了要跟着变）', () => {
     const tabs = useTabsStore()
     tabs.open({ ...proj('p3'), labelPlaceholder: true })

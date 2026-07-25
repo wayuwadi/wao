@@ -29,6 +29,13 @@ const router = createRouter({
       component: () => import('@/views/AccountClaimView.vue'),
       meta: { public: true },
     },
+    // 文件下载页：公开免登录，但要人点一次并过一道人机校验才换得到一次下载。
+    {
+      path: '/f/:id',
+      name: 'file-download',
+      component: () => import('@/views/FileDownloadView.vue'),
+      meta: { public: true },
+    },
     // 任务分享页：公开只读，免登录。/s/t/:id 含子任务；/s/t/:id/:subId 只含该子任务。
     {
       path: '/s/t/:id/:subId?',
