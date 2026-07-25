@@ -1,0 +1,44 @@
+# WAO AI Runner 的 systemd user service 模板（Linux 节点自启动用）。
+#
+# 安装：
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/ai-runner/wao-ai-runner.service.example ~/.config/systemd/user/wao-ai-runner.service
+#   # 按本机情况改下面的路径、节点名和 --engines，然后：
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now wao-ai-runner
+#
+# 首次配对仍然要先手工跑一次带 --pair-code 的命令（见 README）；令牌写进
+# ~/.wao/ai-runner.json 之后，这个 service 不需要也不应该带配对码。
+#
+# 常用命令：
+#   systemctl --user status wao-ai-runner      # 看状态
+#   journalctl --user -u wao-ai-runner -f      # 看日志（详细日志同时写 ~/.wao/ai-runner.log）
+#   systemctl --user restart wao-ai-runner     # git pull 更新脚本后重启生效
+#
+# 注意：user service 默认跟随登录会话；要让它在没人登录时也常驻，需要管理员执行一次
+#   sudo loginctl enable-linger <用户名>
+# 但开了 linger 之后没有图形会话，gh 依赖的系统钥匙环可能处于锁定状态，GitHub 操作会失败。
+# 桌面机器建议保持默认（登录后自动拉起）。
+
+[Unit]
+Description=WAO AI Runner
+Documentation=https://github.com/wayuwacn/wao/blob/main/deploy/ai-runner/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/用户名/path/to/wao
+ExecStart=/usr/bin/python3 /home/用户名/path/to/wao/deploy/ai-runner/wao-ai-runner.py \
+  --server https://wao.wayuwa.cn \
+  --name "Linux 主节点" \
+  --root /home/用户名/CodeSpace \
+  --engines claude \
+  --git-protocol auto \
+  --max-concurrency 2 \
+  --claude-command /home/用户名/.local/bin/claude
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
