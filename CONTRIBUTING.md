@@ -27,8 +27,9 @@ git pull --ff-only origin main
 
 ## 分支和提交
 
-- 第一个正式版本上线前采用开发期快速交付：同步最新 `main`、完成本地验证后可直接提交并 push `main`，避免 PR CI 和 main CD 重复执行。
-- 大型、冲突风险较高或需要隔离试验的变更可创建功能分支：`feat/`、`fix/`、`docs/`、`refactor/`、`test/`、`chore/`。
+- 第一个正式版本上线前采用开发期快速交付，交付单元是 **一个需求或一个 BUG 一个 PR**：同步最新 `main` → 切功能分支 → 本地验证 → push → 建 PR → Squash Merge 并删除源分支。多条需求不合并进同一个 PR，一条需求也不拆成多个 PR。
+- 分支前缀：`feat/`、`fix/`、`docs/`、`refactor/`、`test/`、`chore/`。
+- PR 不承担重复 CI 门禁：CI/CD 只在 `main` 的 push 上跑，PR 页面没有 checks 是预期行为；合并前以本地验证全绿为准。
 - 提交使用 Conventional Commits，保留 `type(scope):` 前缀，描述使用中文，例如 `feat(server): 增加用户登录接口`。
 - 正文使用中文并固定包含“改动：”“原因：”“验收：”三个字段；代码标识、API 路径、命令和专有名词可保留原文。CI 的飞书通知会把完整提交信息转发到团队群的「本次改动」卡片。这条约定对所有贡献者生效，不论使用哪种 AI；使用 Claude Code 的可参考 `.claude/skills/commit-message/`。
 - 同一个业务模块或部署文件同一时间只由一个开发者修改；提交前再次 `git pull --ff-only origin main`，若主线已前进则先整合并重新验证。
@@ -44,7 +45,9 @@ npm run test:unit -- --run
 npm run build
 ```
 
-API、页面或数据模型变化必须同步相应规格。本地验证是开发期主门禁；`main` push 后只执行一次部署与线上验收，不再重复运行一套 PR CI。详细策略和正式版前的恢复清单见 `AGENTS.md` 与 `docs/adr/011-development-fast-delivery.md`。
+API、页面或数据模型变化必须同步相应规格。本地验证是开发期主门禁；`main` push 后只执行一次部署与线上验收，不再重复运行一套 PR CI。详细策略和正式版前的恢复清单见 `AGENTS.md`、`docs/adr/011-development-fast-delivery.md` 与 `docs/adr/014-one-pr-per-change.md`。
+
+push 前除了文本冲突，还要核对 git 不会报的**语义冲突**：两边各自新建了同编号的 ADR 或同版本号的 Flyway migration 时，文件名不同所以合并静默通过，但语义上撞车，必须重新编号并同步所有引用。
 
 ## 敏感信息
 
