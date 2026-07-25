@@ -9,12 +9,18 @@ function timeText(value: string) {
     ? value
     : date.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
+
+function emptyText(run: AiRun) {
+  if (run.latestProgress) return run.latestProgress
+  if (['queued', 'claimed', 'running'].includes(run.status)) return '正在等待第一条 AI 反馈…'
+  return run.status === 'failed' ? '本次 AI 执行失败，详细原因见下方' : '本次 AI 执行已经结束，最终结果见下方'
+}
 </script>
 
 <template>
   <div class="ai-progress" :class="{ active: ['queued', 'claimed', 'running'].includes(run.status) }">
     <div v-if="!run.progress.length" class="progress-empty">
-      <i class="ri-loader-4-line"></i>{{ run.latestProgress || '正在等待第一条 AI 反馈…' }}
+      <i :class="['queued', 'claimed', 'running'].includes(run.status) ? 'ri-loader-4-line' : 'ri-history-line'"></i>{{ emptyText(run) }}
     </div>
     <ol v-else>
       <li v-for="item in run.progress" :key="item.id" :class="`kind-${item.kind}`">

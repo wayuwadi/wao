@@ -16,12 +16,9 @@ vi.mock('@/api/ai', () => ({
       runnerName: '娃哥电脑',
       branchName: 'ai/wao-ar1',
       resultSummary: '失败阶段：准备 Git 工作区\n错误详情：仓库地址无法克隆',
-      latestProgress: 'Codex 执行未完成，请查看失败原因',
-      progressUpdatedAt: '2026-07-25T18:51:00',
-      progress: [
-        { id: 'ap1', kind: 'phase', content: '正在准备独立工作区', createdAt: '2026-07-25T18:50:10' },
-        { id: 'ap2', kind: 'result', content: 'Codex 执行未完成，请查看失败原因', createdAt: '2026-07-25T18:51:00' },
-      ],
+      latestProgress: null,
+      progressUpdatedAt: null,
+      progress: [],
       sessionId: null,
       exitCode: -1,
       createdAt: '2026-07-25T18:50:00',
@@ -60,6 +57,7 @@ describe('HomeView AI 运行详情', () => {
     expect(wrapper.find('.run-detail').text()).toContain('失败原因')
     expect(wrapper.find('.run-detail').text()).toContain('仓库地址无法克隆')
     expect(wrapper.find('.run-detail').text()).toContain('-1')
+    expect(wrapper.find('.run-detail').text()).not.toContain('等待第一条 AI 反馈')
     wrapper.unmount()
   })
 
