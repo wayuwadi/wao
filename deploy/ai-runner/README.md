@@ -105,6 +105,12 @@ systemctl --user enable --now wao-ai-runner
 配对只需一次，service 里不带 `--pair-code`。更新脚本（`git pull`）后要
 `systemctl --user restart wao-ai-runner` 才会生效。
 
+**停 Runner 一定要用 `systemctl --user stop`**（Windows 上停任务计划程序对应的任务），
+不要直接 `pkill -f wao-ai-runner.py`：那只杀掉 Python 父进程，正在跑的 `codex` / `claude`
+子进程会继续把任务做完，却再也没法回传结果——WAO 里会留下一条永远停在「运行中」的记录，
+只能等节点离线三分钟被自动重新排队，代价是同一个任务被重跑一次。systemd 停的是整个
+cgroup，子进程会一起结束。
+
 选择“无论用户是否登录都运行”（Windows 的对应选项，或 Linux 的 `loginctl enable-linger`）
 之前，先确认该系统账号已经完成对应 AI CLI 与 GitHub 登录；Linux 上开了 linger 但没有图形
 会话时，`gh` 依赖的系统钥匙环可能是锁定的，GitHub 操作会失败。
