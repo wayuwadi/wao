@@ -12,6 +12,5 @@ public record SaveChatSyncConfigRequest(
         String chatId,
         String chatName,
         String kbId,
-        String folderId,
         List<FeishuSenderDto> senders) {
 }

@@ -246,6 +246,32 @@ public class KnowledgeService {
         return new FolderDto(e.getId(), e.getName(), List.of());
     }
 
+    /**
+     * 取得自动归档所需的文件夹；不存在时在指定知识库中创建一个。
+     *
+     * @param kbId 知识库 id
+     * @param name 文件夹名称
+     * @return 已存在或刚创建的文件夹
+     */
+    @Transactional
+    public KbFolderEntity ensureAutoFolder(String kbId, String name) {
+        requireKb(kbId);
+        KbFolderEntity existing = folderMapper.selectOne(aliveFolders()
+                .eq(KbFolderEntity::getKbId, kbId).eq(KbFolderEntity::getName, name));
+        if (existing != null) {
+            return existing;
+        }
+        Long count = folderMapper.selectCount(aliveFolders().eq(KbFolderEntity::getKbId, kbId));
+        KbFolderEntity folder = new KbFolderEntity();
+        folder.setId("f" + System.currentTimeMillis());
+        folder.setKbId(kbId);
+        folder.setName(name);
+        folder.setOrd(nextOrd(count));
+        folder.setCascadeDel(false);
+        folderMapper.insert(folder);
+        return folder;
+    }
+
     /** 重命名文件夹。 */
     public FolderDto renameFolder(String kbId, String folderId, PatchFolderRequest req) {
         KbFolderEntity e = requireFolder(kbId, folderId);

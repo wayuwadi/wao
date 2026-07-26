@@ -6,7 +6,7 @@
  * 把群成员的飞书 ID 对上人名（娃哥 / 娃弟 / 机器人通知）。配置存服务端（密钥加密），
  * 之后每天 23:59 由自动化按计划跑；这里也能「立即同步今天」先验证一遍。
  */
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import {
@@ -32,12 +32,11 @@ const appSecret = ref('')
 const chatId = ref('')
 const chatName = ref('')
 const kbId = ref('')
-const folderId = ref('')
+const runDay = ref('')
 const senders = ref<FeishuSender[]>([])
 const chats = ref<FeishuChat[]>([])
 const chatsLoaded = ref(false)
 
-const folders = computed(() => data.kbById(kbId.value)?.folders ?? [])
 
 onMounted(async () => {
   try {
@@ -47,7 +46,6 @@ onMounted(async () => {
     chatId.value = c.chatId
     chatName.value = c.chatName
     kbId.value = c.kbId
-    folderId.value = c.folderId
     senders.value = c.senders.map((s) => ({ ...s }))
   } catch (error) {
     toast(error instanceof Error ? error.message : '读取配置失败')
@@ -105,7 +103,6 @@ async function persist() {
     chatId: chatId.value,
     chatName: chatName.value,
     kbId: kbId.value,
-    folderId: folderId.value,
     senders: senders.value.filter((s) => s.id.trim()),
   })
   cfg.value = saved
@@ -126,7 +123,7 @@ async function runNow() {
   busy.value = true
   try {
     await persist()
-    const result = await runChatSync()
+    const result = await runChatSync(runDay.value || undefined)
     await data.refreshKnowledge()
     toast(result, 'ri-check-line')
   } catch (error) { toast(error instanceof Error ? error.message : '同步失败') }
@@ -186,12 +183,8 @@ async function runNow() {
             <option value="">选择知识库</option>
             <option v-for="k in data.kbs" :key="k.id" :value="k.id">{{ k.name }}</option>
           </select>
-          <select v-model="folderId" class="input" :disabled="!kbId">
-            <option value="">选择文件夹</option>
-            <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
-          </select>
         </div>
-        <div class="tip">一天一篇，标题是「飞书群聊 · 日期」；同一天重复同步会覆盖同一篇，不会堆重复文档。</div>
+        <div class="tip">按同步日期自动归档到「YYYY 年 M 月」文件夹；一天一篇，同一天重复同步会覆盖同一篇，不会堆重复文档。</div>
       </div>
 
       <div class="section">
@@ -210,7 +203,8 @@ async function runNow() {
       </div>
 
       <div class="foot">
-        <button class="btn-ghost" :disabled="busy" @click="runNow"><i class="ri-play-line"></i>立即同步今天</button>
+        <label class="run-day"><span>运行日期</span><input v-model="runDay" class="input" type="date" /></label>
+        <button class="btn-ghost" :disabled="busy" @click="runNow"><i class="ri-play-line"></i>{{ runDay ? '同步指定日期' : '立即同步今天' }}</button>
         <div class="spacer"></div>
         <button class="btn-ghost" @click="emit('close')">取消</button>
         <button class="btn-primary" :disabled="busy" @click="save">保存配置</button>
@@ -422,6 +416,8 @@ async function runNow() {
   align-items: center;
   gap: 10px;
 }
+.run-day { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--wao-text-weak); }
+.run-day .input { width: 138px; height: 34px; }
 .btn-ghost {
   height: 34px;
   padding: 0 14px;
