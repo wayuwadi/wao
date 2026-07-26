@@ -1,5 +1,9 @@
 import importlib.util
 import os
+import shutil
+import subprocess
+import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -174,6 +178,107 @@ class ClaudeEngineTest(unittest.TestCase):
         code, summary = RUNNER.normalize_result(exit_code, result_text, "claude")
         self.assertEqual(1, code)
         self.assertIn("Claude Code 退出码：1", summary)
+
+
+GIT = shutil.which("git")
+
+
+@unittest.skipUnless(GIT, "本机没有 git，跳过工作区隔离用例")
+class WorkspaceIsolationTest(unittest.TestCase):
+    """用真实 Git 仓库验证工作区隔离；这里的回归就是「main 被另一个 worktree 占用」。"""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="wao-runner-test-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.origin = self.root / "origin.git"
+        seed = self.root / "seed"
+        self._git("init", "--initial-branch=main", str(seed), cwd=self.root)
+        (seed / "README.md").write_text("seed", encoding="utf-8")
+        self._git("add", ".", cwd=seed)
+        self._git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-m", "seed", cwd=seed)
+        self._git("clone", "--bare", str(seed), str(self.origin), cwd=self.root)
+        self.workspace = self.root / "workspace"
+        self.workspace.mkdir()
+        self.claim = {
+            "runId": "ar-current", "workspaceDir": "wao", "branchName": "ai/wao-ar-current",
+            "defaultBranch": "main", "promptUrl": "https://wao.example/api/share/tasks/t1.md",
+        }
+
+    def _git(self, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run([GIT, *args], cwd=str(cwd), text=True, check=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    def _prepare(self) -> Path:
+        return RUNNER.prepare_worktree(self.claim, self.workspace, GIT, str(self.origin))
+
+    def test_default_branch_stays_free_so_worktree_can_check_it_out(self) -> None:
+        worktree = self._prepare()
+
+        # 这一步在修复前会失败：fatal: 'main' is already checked out at '<主克隆>'
+        self._git("switch", "main", cwd=worktree)
+
+        self.assertEqual("main", self._git("branch", "--show-current", cwd=worktree).stdout.strip())
+
+    def test_primary_clone_holds_no_branch_and_no_working_copy(self) -> None:
+        self._prepare()
+        primary = self.workspace / "wao"
+
+        head = subprocess.run([GIT, "symbolic-ref", "--quiet", "HEAD"], cwd=str(primary),
+                              text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+        self.assertNotEqual(0, head.returncode, "主克隆必须是游离 HEAD")
+        self.assertFalse((primary / "README.md").exists(), "主克隆不需要工作副本")
+
+    def test_existing_clone_on_default_branch_is_repaired_in_place(self) -> None:
+        primary = self.workspace / "wao"
+        # 模拟旧版本 Runner 留下的、检出在 main 上的完整克隆。
+        self._git("clone", str(self.origin), str(primary), cwd=self.workspace)
+        self.assertEqual("main", self._git("branch", "--show-current", cwd=primary).stdout.strip())
+
+        worktree = self._prepare()
+
+        self.assertEqual("", self._git("branch", "--show-current", cwd=primary).stdout.strip())
+        self._git("switch", "main", cwd=worktree)
+
+    def test_stale_worktrees_are_recycled_but_recent_and_current_are_kept(self) -> None:
+        self._prepare()
+        runs_root = self.workspace / ".wao-runs"
+        primary = self.workspace / "wao"
+        for run_id in ("ar-old", "ar-fresh"):
+            self._git("worktree", "add", "-b", f"ai/wao-{run_id}", str(runs_root / run_id),
+                      "origin/main", cwd=primary)
+        aged = time.time() - (RUNNER.RUN_WORKTREE_TTL_DAYS + 1) * 86400
+        os.utime(runs_root / "ar-old", (aged, aged))
+        os.utime(runs_root / "ar-current", (aged, aged))
+
+        RUNNER.prune_stale_worktrees(runs_root, GIT, {"ar-current"})
+
+        self.assertFalse((runs_root / "ar-old").exists(), "超期工作区应被回收")
+        self.assertTrue((runs_root / "ar-fresh").exists(), "保留期内的工作区不能删")
+        self.assertTrue((runs_root / "ar-current").exists(), "本次运行的工作区不能删")
+
+    def test_owning_repo_is_resolved_from_worktree_pointer(self) -> None:
+        worktree = self._prepare()
+
+        self.assertEqual((self.workspace / "wao").resolve(),
+                         RUNNER.owning_repo(worktree).resolve())
+
+
+class PromptTest(unittest.TestCase):
+
+    PROMPT = RUNNER.build_prompt({
+        "promptUrl": "https://wao.example/api/share/tasks/t1.md",
+        "branchName": "ai/wao-ar1", "defaultBranch": "main",
+    })
+
+    def test_prompt_tells_ai_the_branch_is_already_based_on_latest_main(self) -> None:
+        self.assertIn("ai/wao-ar1", self.PROMPT)
+        self.assertIn("origin/main", self.PROMPT)
+        self.assertIn("https://wao.example/api/share/tasks/t1.md", self.PROMPT)
+
+    def test_prompt_forbids_checking_out_the_default_branch(self) -> None:
+        self.assertIn("不要 checkout / switch 到 `main`", self.PROMPT)
+        self.assertIn("不要新建其它 worktree", self.PROMPT)
 
 
 if __name__ == "__main__":

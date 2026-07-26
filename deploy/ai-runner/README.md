@@ -81,6 +81,12 @@ Runner 状态、日志或 Git；因此只需让这台电脑的 Git 凭据管理�
 
 - 每次运行使用 `<root>/.wao-runs/<run-id>` 独立 Git worktree 和独立的 CLI 会话，不占用
   日常打开的 Codex / Claude Code 对话。
+- `<root>/<工程文件夹>` 的主克隆只当对象仓库用：新克隆带 `--no-checkout`，并且每次准备
+  工作区时都会切成游离 HEAD。这样默认分支（`main`）永远不被占用，AI 在 worktree 里执行
+  `git switch main` 不会再撞上 `fatal: 'main' is already checked out at ...`（见 ADR-023）。
+  旧版本留下的主克隆会在下一次运行时自动纠正，不需要删目录重来。
+- 运行结束后 worktree 会保留 7 天供人工复查，超期在下一次准备工作区时自动回收，避免
+  `.wao-runs/` 无限堆积完整源码副本。要长期留存某次运行现场，请在到期前自行复制出去。
 - 本机 `--max-concurrency` 控制这台电脑最多同时跑几个任务；项目设置中的并发数
   控制同一仓库最多同时跑几个任务，两层限制取更严格者。
 - 任务可以在「AI run」时点名某台电脑，也可以在项目里固定一台，或让任意在线且装了该工具的
