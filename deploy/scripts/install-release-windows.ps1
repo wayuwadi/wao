@@ -40,6 +40,15 @@ if ($null -eq $lockStream) {
 try {
 
 New-Item -ItemType Directory -Path $target -Force | Out-Null
+
+# 解压前先清掉上一版源码：Expand-Archive 只覆盖同名文件，删除 / 改名过的文件会留在节点上，
+# 混进 Docker 构建上下文（V18 撞号那次就是被留下的旧 migration 打挂的）。
+# deploy\ 整个保留：节点私有的 .env / .env.secrets / certs / data 都在里面，
+# 其中被 git 跟踪的文件随即被这次解压整份覆盖。
+Get-ChildItem -LiteralPath $target -Force |
+    Where-Object { $_.Name -ne 'deploy' } |
+    Remove-Item -Recurse -Force
+
 switch ([IO.Path]::GetExtension($archive).ToLowerInvariant()) {
     '.zip' {
         Expand-Archive -LiteralPath $archive -DestinationPath $target -Force
