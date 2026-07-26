@@ -290,6 +290,64 @@ public class AiRunService {
         return toRunDtos(created);
     }
 
+    /**
+     * 基于一次失败运行重新排队，让 AI 拿着上次的报错接着修。
+     *
+     * <p>部署失败、CI 挂掉这类问题，绝大多数不需要从零重来一遍：把失败摘要原样交回给 AI，
+     * 它可以直接定位到出错的地方。重跑是一条新的运行记录（新分支、新执行档案），
+     * 通过 {@code retryOfRunId} 指回原来那次，页面上能串成一条修复链。
+     *
+     * @param runId       要重跑的失败运行 id
+     * @param requestedBy 触发重跑的成员 id
+     * @param baseUrl     当前站点地址，用于拼任务分享链接
+     * @return 新建的运行记录
+     * @throws BadRequestException 该运行还没结束、或已经在重跑中时
+     */
+    @Transactional
+    public synchronized AiRunDto rerun(String runId, String requestedBy, String baseUrl) {
+        AiTaskRunEntity source = runMapper.selectById(runId);
+        if (source == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        if (ACTIVE.contains(source.getStatus())) {
+            throw new BadRequestException("这次运行还没结束，等它跑完再决定要不要重跑");
+        }
+        Long active = runMapper.selectCount(new LambdaQueryWrapper<AiTaskRunEntity>()
+                .eq(AiTaskRunEntity::getTaskId, source.getTaskId()).in(AiTaskRunEntity::getStatus, ACTIVE));
+        if (active != null && active > 0) {
+            throw new BadRequestException("这个任务已经有一次运行在进行中，不用重复重跑");
+        }
+        AiProjectConfigEntity config = configMapper.selectById(source.getProjectId());
+        if (config == null || !Boolean.TRUE.equals(config.getEnabled())) {
+            throw new BadRequestException("项目尚未开启 AI Run，请先在项目设置中配置");
+        }
+        String engine = requireEngine(blankOr(source.getEngine(), DEFAULT_ENGINE));
+        if (!anyRunnerSupports(engine)) {
+            throw new BadRequestException("还没有电脑接入 " + label(engine) + "，请先在 AI 控制台配对一台");
+        }
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId(id("ar"));
+        run.setTaskId(source.getTaskId());
+        run.setProjectId(source.getProjectId());
+        run.setEngine(engine);
+        run.setStatus("queued");
+        run.setRequestedRunnerId(source.getRequestedRunnerId());
+        run.setRequestedBy(requestedBy);
+        run.setPromptUrl(blankOr(source.getPromptUrl(), baseUrl + "/api/share/tasks/" + source.getTaskId() + ".md"));
+        run.setBranchName("ai/wao-" + run.getId());
+        run.setRetryOfRunId(source.getId());
+        run.setCreatedAt(LocalDateTime.now());
+        runMapper.insert(run);
+        appendProgress(run, "phase", "已带着上一次的报错重新排队，等待 " + label(engine) + " 接着修");
+        setTaskStatus(run.getTaskId(), "AI 进行中");
+        return toRunDtos(List.of(run)).get(0);
+    }
+
+    /** 重跑时要交给 AI 的上一次失败摘要；不是重跑或找不到原运行时返回 null。 */
+    private String previousFailure(AiTaskRunEntity run) {
+        if (!StringUtils.hasText(run.getRetryOfRunId())) return null;
+        AiTaskRunEntity source = runMapper.selectById(run.getRetryOfRunId());
+        return source == null ? null : source.getResultSummary();
+    }
+
     /** 最近运行；activeOnly 为 true 时只返回排队和运行中的记录。 */
     public List<AiRunDto> listRuns(boolean activeOnly) {
         recoverStaleRuns();
@@ -362,7 +420,8 @@ public class AiRunService {
             return new AiRunnerClaimDto(run.getId(), run.getTaskId(), task.getTitle(), run.getProjectId(),
                     project == null ? run.getProjectId() : project.getName(), engine, run.getPromptUrl(),
                     config.getRepoUrl(), blankOr(config.getDefaultBranch(), "main"),
-                    blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName());
+                    blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName(),
+                    previousFailure(run));
         }
         return null;
     }
@@ -464,7 +523,7 @@ public class AiRunService {
                     run.getProjectId(), project == null ? run.getProjectId() : project.getName(),
                     blankOr(run.getEngine(), DEFAULT_ENGINE), run.getStatus(),
                     run.getRunnerId(), runner == null ? null : runner.getName(), run.getRequestedRunnerId(),
-                    run.getBranchName(),
+                    run.getBranchName(), run.getRetryOfRunId(),
                     run.getResultSummary(), run.getLatestProgress(), text(run.getProgressUpdatedAt()),
                     progressByRun.getOrDefault(run.getId(), List.of()), run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
                     text(run.getStartedAt()), text(run.getFinishedAt()));

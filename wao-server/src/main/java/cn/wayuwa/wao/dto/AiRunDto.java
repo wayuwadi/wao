@@ -15,6 +15,8 @@ public record AiRunDto(
         String runnerName,
         String requestedRunnerId,
         String branchName,
+        /** 本次是在修哪一次失败的运行；不是重跑时为 null。 */
+        String retryOfRunId,
         String resultSummary,
         String latestProgress,
         String progressUpdatedAt,

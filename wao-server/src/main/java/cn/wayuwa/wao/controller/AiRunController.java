@@ -84,6 +84,13 @@ public class AiRunController {
         return ApiResponse.ok(service.listRuns(active));
     }
 
+    /** 基于一次失败运行重新排队，AI 会拿到上次的报错继续修。 */
+    @PostMapping("/runs/{runId}/rerun")
+    public ApiResponse<AiRunDto> rerun(@PathVariable String runId, HttpServletRequest http) {
+        String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
+        return ApiResponse.ok(service.rerun(runId, currentMember.idOr(http, "unknown"), baseUrl));
+    }
+
     @GetMapping("/tasks/{taskId}/runs")
     public ApiResponse<List<AiRunDto>> taskRuns(@PathVariable String taskId) {
         return ApiResponse.ok(service.listTaskRuns(taskId));

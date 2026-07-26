@@ -6,6 +6,12 @@ import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import type { VaultItem } from '@/types'
 
+/**
+ * 默认分组按名字认，不按 id：分组归属到人之后，每个成员各有一个自己的「未分组」，
+ * id 不再是固定的 vg-default（见 ADR-024）。
+ */
+const DEFAULT_GROUP_NAME = '未分组'
+
 const data = useDataStore()
 const groupId = ref('all')
 const selId = ref<string | null>(null)
@@ -31,7 +37,12 @@ const groups = computed(() =>
     ...g,
     count: g.id === 'all' ? items.value.length : items.value.filter((i) => i.groupId === g.id).length,
     on: groupId.value === g.id,
+    fixed: g.label === DEFAULT_GROUP_NAME,
   })),
+)
+/** 新建条目时的默认落点：自己的「未分组」，没有就用第一个分组。 */
+const defaultGroupId = computed(
+  () => data.vault.find((g) => g.group === DEFAULT_GROUP_NAME)?.id ?? data.vault[0]?.id ?? '',
 )
 
 function pickGroup(id: string) {
@@ -44,9 +55,9 @@ function commitGroupName(id: string, event: Event) {
   renamingGroupId.value = null
 }
 async function removeGroup(id: string) {
-  if (id === 'vg-default') return
   const group = data.vault.find((g) => g.id === id)
-  if (!group || !window.confirm(`删除分组“${group.group}”及其中 ${group.items.length} 个条目？`)) return
+  if (!group || group.group === DEFAULT_GROUP_NAME) return
+  if (!window.confirm(`删除分组“${group.group}”及其中 ${group.items.length} 个条目？`)) return
   await data.deleteVaultGroup(id)
   if (groupId.value === id) groupId.value = 'all'
 }
@@ -109,7 +120,7 @@ const formSecret = ref('')
 
 function openNewItem() {
   editingId.value = null
-  formGroupId.value = data.vault.find((g) => g.id === 'vg-default')?.id ?? data.vault[0]?.id ?? ''
+  formGroupId.value = defaultGroupId.value
   formName.value = ''
   formUser.value = ''
   formSite.value = ''
@@ -202,7 +213,7 @@ async function deleteItem() {
             />
             <span v-else class="gb-label">{{ g.label }}</span>
             <button class="group-action" title="重命名" @click="renamingGroupId = g.id"><i class="ri-edit-line"></i></button>
-            <button class="group-action danger" :disabled="g.id === 'vg-default'" title="删除" @click="removeGroup(g.id)"><i class="ri-delete-bin-line"></i></button>
+            <button class="group-action danger" :disabled="g.fixed" title="删除" @click="removeGroup(g.id)"><i class="ri-delete-bin-line"></i></button>
           </div>
         </template>
         <button class="group-add" @click="newGroupOpen = true"><i class="ri-add-line"></i>新建分组</button>

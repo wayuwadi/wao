@@ -238,6 +238,83 @@ class AiRunServiceTest {
         assertThat(run.getProgressUpdatedAt()).isNotNull();
     }
 
+    // ---------------- 基于报错重跑 ----------------
+
+    @Test
+    void rerunQueuesANewRunPointingBackAtTheFailedOne() {
+        AiTaskRunEntity failed = new AiTaskRunEntity();
+        failed.setId("ar1");
+        failed.setTaskId("t1");
+        failed.setProjectId("p1");
+        failed.setEngine("codex");
+        failed.setStatus("failed");
+        failed.setPromptUrl("https://wao.example/api/share/tasks/t1.md");
+        failed.setResultSummary("部署失败：容器健康检查未通过");
+        when(runMapper.selectById("ar1")).thenReturn(failed);
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(null)).thenReturn(List.of(runner("rn1", "娃哥电脑", "codex")));
+        when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "完成自动化"));
+        when(projectMapper.selectById("p1")).thenReturn(project("p1", "WAO"));
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "完成自动化")));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        var dto = service.rerun("ar1", "wg", "https://wao.example");
+
+        ArgumentCaptor<AiTaskRunEntity> created = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(created.capture());
+        assertThat(created.getValue().getRetryOfRunId()).isEqualTo("ar1");
+        assertThat(created.getValue().getTaskId()).isEqualTo("t1");
+        assertThat(created.getValue().getStatus()).isEqualTo("queued");
+        assertThat(created.getValue().getBranchName()).isNotEqualTo("ai/wao-ar1");
+        assertThat(dto.retryOfRunId()).isEqualTo("ar1");
+    }
+
+    @Test
+    void rerunRefusesWhileTheRunIsStillGoing() {
+        AiTaskRunEntity running = new AiTaskRunEntity();
+        running.setId("ar1");
+        running.setTaskId("t1");
+        running.setProjectId("p1");
+        running.setStatus("running");
+        when(runMapper.selectById("ar1")).thenReturn(running);
+
+        assertThatThrownBy(() -> service.rerun("ar1", "wg", "https://wao.example"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("还没结束");
+        verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
+    }
+
+    @Test
+    void claimHandsThePreviousFailureToTheRunner() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setMaxConcurrency(2);
+        runner.setLastSeenAt(LocalDateTime.now());
+        AiTaskRunEntity retry = new AiTaskRunEntity();
+        retry.setId("ar2");
+        retry.setTaskId("t1");
+        retry.setProjectId("p1");
+        retry.setStatus("queued");
+        retry.setEngine("codex");
+        retry.setPromptUrl("https://wao.example/api/share/tasks/t1.md");
+        retry.setBranchName("ai/wao-ar2");
+        retry.setRetryOfRunId("ar1");
+        AiTaskRunEntity failed = new AiTaskRunEntity();
+        failed.setId("ar1");
+        failed.setResultSummary("部署失败：容器健康检查未通过");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runMapper.selectList(any())).thenReturn(List.of(), List.of(retry));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(runMapper.selectById("ar1")).thenReturn(failed);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "完成自动化"));
+        when(projectMapper.selectById("p1")).thenReturn(project("p1", "WAO"));
+
+        AiRunnerClaimDto claim = service.claim("local-token");
+
+        assertThat(claim.previousFailure()).isEqualTo("部署失败：容器健康检查未通过");
+    }
+
     private static AiRunnerNodeEntity runner(String id, String name, String... engines) {
         AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
         runner.setId(id);

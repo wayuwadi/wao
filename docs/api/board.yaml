@@ -135,7 +135,7 @@ paths:
       responses: { '200': { description: OK }, '400': { description: 删的不是自己的评论 }, '404': { description: 任务或评论不存在 } }
   /kb-groups:
     get: { summary: 自建知识库分组列表, responses: { '200': { description: OK } } }
-    post: { summary: 新建分组, responses: { '200': { description: OK } } }
+    post: { summary: 新建分组（归属当前登录成员）, responses: { '200': { description: OK } } }
   /kb-groups/{id}:
     patch: { summary: 重命名分组, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     delete: { summary: 删除分组（下属知识库回落为默认分组）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
@@ -166,7 +166,7 @@ paths:
     delete: { summary: 删除文档（移入回收站，7 天内可恢复）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   /docs/notes:
     post:
-      summary: 新建小记（不指定知识库，一律落到小记知识库；作者取当前会话成员）
+      summary: 新建小记（不指定知识库，落到小记知识库中以创建人命名的文件夹；作者取当前会话成员）
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateNoteRequest' } } } }
       responses: { '200': { description: OK } }
   # 文档协同在场（见 docs/adr/017-doc-realtime-collaboration-presence.md）
@@ -223,6 +223,14 @@ paths:
       responses:
         '200': { description: 返回实际创建的运行 }
         '400': { description: 项目未启用、未配置仓库，或没有电脑接入所选 AI 工具 }
+  /ai/runs/{runId}/rerun:
+    post:
+      summary: 基于一次失败运行重新排队；新运行会带上上次的报错交给 AI 继续修
+      parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: 返回新建的运行（retryOfRunId 指向被修复的那一次） }
+        '400': { description: 该运行还没结束、任务已有运行在进行中，或项目未启用 AI Run }
+        '404': { description: 运行不存在 }
   /ai/runner/pair:
     post: { summary: Runner 用一次性配对码换取只返回一次的本机令牌（含本机可用的 AI 工具）, responses: { '200': { description: OK }, '401': { description: 配对码无效 } } }
   /ai/runner/heartbeat:
@@ -233,7 +241,7 @@ paths:
         - { name: engines, in: query, required: false, schema: { type: string }, description: 逗号分隔，如 codex,claude }
       responses: { '200': { description: OK }, '401': { description: 节点令牌无效 } }
   /ai/runner/claim:
-    post: { summary: 按 AI 工具、指定电脑与并发限制领取下一条任务, responses: { '200': { description: 无可领取任务时 data 为 null } } }
+    post: { summary: 按 AI 工具、指定电脑与并发限制领取下一条任务（重跑的任务会带上 previousFailure）, responses: { '200': { description: 无可领取任务时 data 为 null } } }
   /ai/runner/runs/{runId}/complete:
     post:
       summary: Runner 回传 AI CLI 退出码、摘要和会话 id
@@ -418,17 +426,19 @@ paths:
         '200': { description: OK, content: { text/markdown: { schema: { type: string } } } }
         '404': { description: 任务或子任务不存在 }
   # 密钥库域（关系表；密码以 AES-256-GCM 服务端加密存储，见 docs/adr/009-vault-server-side-encryption.md）
+  # 归属到人：所有 /vault/* 接口只在当前登录成员自己的分组范围内生效，别人的分组一律按 404 处理
+  # （见 docs/adr/024-vault-per-member-ownership.md）。
   /vault:
-    get: { summary: 密钥库分组及条目列表（不含密码明文，仅 hasSecret 标记）, responses: { '200': { description: OK } } }
+    get: { summary: 当前成员自己的密钥库分组及条目列表（不含密码明文，仅 hasSecret 标记）, responses: { '200': { description: OK } } }
   /vault/groups:
-    post: { summary: 新建分组, responses: { '200': { description: OK } } }
+    post: { summary: 新建分组（归属当前登录成员）, responses: { '200': { description: OK } } }
   /vault/groups/{id}:
     patch: { summary: 重命名分组, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
-    delete: { summary: 删除分组（级联删除条目）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    delete: { summary: 删除分组（级联删除条目；「未分组」不可删）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '400': { description: 默认分组不能删除 }, '404': { description: 不存在或不属于当前成员 } } }
   /vault/groups/order:
     put: { summary: 保存拖拽后的分组顺序, responses: { '200': { description: OK } } }
   /vault/items:
-    post: { summary: 新建条目（groupId 可空，默认进入“未分组”；secret 落库前加密）, responses: { '200': { description: OK }, '404': { description: 分组不存在 } } }
+    post: { summary: 新建条目（groupId 可空，默认进入自己的“未分组”；secret 落库前加密）, responses: { '200': { description: OK }, '404': { description: 分组不存在或不属于当前成员 } } }
   /vault/items/{id}:
     patch: { summary: 局部更新条目, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     delete: { summary: 删除条目, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }

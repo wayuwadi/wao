@@ -33,7 +33,7 @@ WAO 是一个前后端分离的 Web 系统，采用 Spec-Driven Development。�
 2. **一个需求或一个 BUG 一个 PR。** 完成与改动相称的本地测试后，AI 在功能分支上创建详细提交，push 分支、建 PR、合并 `main`，全程不必逐次征求用户同意。多条需求不合并进同一个 PR，一条需求也不拆成多个 PR。
 3. PR **不承担重复 CI 门禁**：CI 只在 `main` 的 push 上跑，PR 上没有 checks 是预期行为，不是失败。合并前以本地验证为准——本地测试全绿且 `mergeable` 为 `MERGEABLE` 即可 Squash Merge 并删除源分支。
 4. `main` 的 push 只触发一次 CD：构建一次前端，并行部署主节点、从节点和云前端，线上健康检查通过后发送一次飞书通知。
-5. push 前必须核对与 `main` 的冲突，**包括 git 不会报的语义冲突**：两边各自新建了同编号的 ADR 或同版本号的 Flyway migration，文件名不同所以 git 静默通过，但语义上撞车，必须重新编号。
+5. push 前必须核对与 `main` 的冲突，**包括 git 不会报的语义冲突**：两边各自新建了同编号的 ADR 或同版本号的 Flyway migration，文件名不同所以 git 静默通过，但语义上撞车，必须重新编号。migration 撞号会让 Flyway 启动失败、整次部署回滚，`FlywayMigrationsTest` 会在 `mvn test` 里拦下这种情况——但 ADR 撞号仍然只能靠人核对。
 6. 本策略只放宽流程门禁，不放宽凭据和数据安全：真实 Secret 不得进入 Git；破坏性生产数据操作仍需明确授权；已执行的 migration 仍不可修改。
 
 第一个正式版本发布前必须撤销本节的临时授权，恢复受保护分支、PR CI、CODEOWNERS Review 和发布审批。

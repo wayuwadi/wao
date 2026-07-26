@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
-import { useUiStore } from '@/stores/ui'
+import { useUiStore, type TaskView } from '@/stores/ui'
 import { useTabsStore } from '@/stores/tabs'
 import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
@@ -33,13 +33,18 @@ const projTab = computed(() => {
   const t = route.query.tab as string | undefined
   return t && t !== '总览' ? t : '任务'
 })
-const pdTaskView = computed(() => (route.query.view as string) || 'list')
+// URL 上写了 view 就听 URL 的（分享出去的链接要能指定视图）；没写时用记住的偏好。
+const pdTaskView = computed<TaskView>(() => {
+  const q = route.query.view
+  return q === 'list' || q === 'board' ? q : ui.taskView
+})
 
 function setTab(t: string) {
   router.replace({ query: { ...route.query, tab: t === '任务' ? undefined : t } })
 }
-function setView(v: string) {
-  router.replace({ query: { ...route.query, view: v === 'list' ? undefined : v } })
+function setView(v: TaskView) {
+  ui.setTaskView(v)
+  router.replace({ query: { ...route.query, view: v } })
 }
 
 // 项目名解析 / 变更后回填页签标签（修复刷新后页签仍显示「项目 <id>」占位）。
@@ -103,6 +108,8 @@ const board = computed(() =>
     label: st,
     dot: TASK_STATUS_DOTS[st],
     collapsible: st === '已完成',
+    // 新任务一律落在「待办」，所以加号只出现在这一列——省掉一次把鼠标甩到右上角的来回。
+    addable: st === '待办',
     items: ptasks.value.filter((t) => t.status === st).map(decoTask),
   })),
 )
@@ -271,6 +278,15 @@ function comingSoon(msg: string) {
             <span class="board-dot" :style="{ background: col.dot }"></span>
             <span class="board-col-label">{{ col.label }}</span>
             <span class="board-col-count wao-tabular">{{ col.items.length }}</span>
+            <button
+              v-if="col.addable"
+              class="board-col-add"
+              title="在这里新建任务"
+              aria-label="新建任务"
+              @click.stop="ui.openModal('task', pid)"
+            >
+              <i class="ri-add-line"></i>
+            </button>
             <i v-if="col.collapsible" class="board-col-chev" :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
           </div>
           <div v-if="col.collapsible && !showDone" class="board-collapsed">已收起 {{ col.items.length }} 项 · 点标题展开</div>
@@ -911,6 +927,26 @@ function comingSoon(msg: string) {
 .board-col-count {
   font-size: 11.5px;
   color: var(--wao-text-weak);
+}
+.board-col-add {
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--wao-text-3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.board-col-add:hover {
+  background: var(--wao-primary);
+  color: #fff;
+}
+.board-col-add i {
+  font-size: 15px;
 }
 .board-col-head.clickable {
   cursor: pointer;

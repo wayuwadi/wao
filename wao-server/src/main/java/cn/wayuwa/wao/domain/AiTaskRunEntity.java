@@ -19,6 +19,8 @@ public class AiTaskRunEntity {
     private String requestedBy;
     private String promptUrl;
     private String branchName;
+    /** 本次重跑要修复的那一次失败运行 id；不是重跑时为 null。 */
+    private String retryOfRunId;
     private String resultSummary;
     private String latestProgress;
     private LocalDateTime progressUpdatedAt;
@@ -49,6 +51,8 @@ public class AiTaskRunEntity {
     public void setPromptUrl(String promptUrl) { this.promptUrl = promptUrl; }
     public String getBranchName() { return branchName; }
     public void setBranchName(String branchName) { this.branchName = branchName; }
+    public String getRetryOfRunId() { return retryOfRunId; }
+    public void setRetryOfRunId(String retryOfRunId) { this.retryOfRunId = retryOfRunId; }
     public String getResultSummary() { return resultSummary; }
     public void setResultSummary(String resultSummary) { this.resultSummary = resultSummary; }
     public String getLatestProgress() { return latestProgress; }

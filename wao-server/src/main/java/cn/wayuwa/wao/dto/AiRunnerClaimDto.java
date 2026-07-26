@@ -12,5 +12,11 @@ public record AiRunnerClaimDto(
         String repoUrl,
         String defaultBranch,
         String workspaceDir,
-        String branchName) {
+        String branchName,
+        /**
+         * 上一次失败运行的报错摘要；本次是重跑时才有值。
+         *
+         * <p>Runner 会把它拼进给 AI 的提示词，让 AI 接着报错继续修，而不是从零重做一遍。
+         */
+        String previousFailure) {
 }

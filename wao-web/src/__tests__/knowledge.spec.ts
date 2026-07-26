@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
 
 /**
  * 知识库模块：小记、文档创建署名与回收站式删除。
@@ -31,7 +32,39 @@ describe('data store · 知识库', () => {
     expect(id).not.toBeNull()
     const doc = data.docById(id!)!
     expect(doc.title).toBe('周四要交社保材料')
+    // 作者查不到成员记录时回落到默认「小记」文件夹
     expect(data.notesKb().folders[0]!.docs).toContain(id)
+  })
+
+  it('小记按创建人分文件夹：娃弟记的进「娃弟」', async () => {
+    const session = useSessionStore()
+    session.accept({
+      member: { id: 'wd', name: '娃弟', initial: '弟', color: '#2C8A5B', role: '成员' },
+    } as never)
+
+    const id = await data.addNote('周末去搬显示器')
+
+    const kb = data.notesKb()
+    const mine = kb.folders.find((f) => f.name === '娃弟')!
+    expect(mine).toBeDefined()
+    expect(mine.docs).toContain(id)
+    expect(data.docById(id!)!.folderId).toBe(mine.id)
+    // 没混进公用的「小记」文件夹
+    expect(kb.folders.find((f) => f.id === 'kb-notes-f')!.docs).not.toContain(id)
+  })
+
+  it('同一个人的第二条小记复用同一个文件夹，不会越记越多文件夹', async () => {
+    const session = useSessionStore()
+    session.accept({
+      member: { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' },
+    } as never)
+
+    await data.addNote('第一条')
+    await data.addNote('第二条')
+
+    const mine = data.notesKb().folders.filter((f) => f.name === '娃哥')
+    expect(mine).toHaveLength(1)
+    expect(mine[0]!.docs).toHaveLength(2)
   })
 
   it('小记正文为空时不创建', async () => {

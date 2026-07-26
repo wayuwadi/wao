@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import { toast } from '@/composables/toast'
 import SideNav from '@/components/nav/SideNav.vue'
@@ -27,8 +27,6 @@ const data = useDataStore()
 
 useShortcuts()
 
-const plusOpen = ref(false)
-
 const crumbA = computed(() => {
   const mod = MODULES[route.meta.module as ModuleId]
   return mod?.label ?? '首页'
@@ -49,20 +47,11 @@ watch(
   { immediate: true },
 )
 
-function togglePlus() {
-  plusOpen.value = !plusOpen.value
-}
 function newTask() {
-  plusOpen.value = false
   ui.openModal('task')
-}
-function newProject() {
-  plusOpen.value = false
-  ui.openModal('project')
 }
 /** 小记：不用先选知识库，打开就是一个空白输入框，存进小记知识库。 */
 function newNote() {
-  plusOpen.value = false
   ui.openModal('note')
 }
 function bell() {
@@ -77,12 +66,11 @@ function onKeydown(e: KeyboardEvent) {
     e.preventDefault()
     ui.openSearch()
   } else if (e.key === 'Escape') {
-    // 逐层关闭：庆祝 → 帮助 → 搜索 → 弹窗 → 新建下拉
+    // 逐层关闭：庆祝 → 帮助 → 搜索 → 弹窗
     if (ui.celebrating) ui.stopCelebrate()
     else if (ui.helpOpen) ui.closeHelp()
     else if (ui.searchOpen) ui.closeSearch()
     else if (ui.modal) ui.closeModal()
-    else plusOpen.value = false
   }
 }
 function openLocatedTask() {
@@ -116,26 +104,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </template>
         <div class="spacer"></div>
 
-        <div class="plus-wrap">
-          <button class="plus" @click="togglePlus">
-            <i class="ri-add-line"></i>新建<i class="ri-arrow-down-s-line chev"></i>
-          </button>
-          <template v-if="plusOpen">
-            <div class="plus-mask" @click="togglePlus"></div>
-            <div class="plus-menu">
-              <button class="plus-item" @click="newTask">
-                <i class="ri-checkbox-circle-line"></i>新建任务
-              </button>
-              <button class="plus-item" @click="newProject">
-                <i class="ri-stack-line"></i>新建项目
-              </button>
-              <div class="plus-sep"></div>
-              <button class="plus-item" @click="newNote">
-                <i class="ri-sticky-note-line"></i>新建小记
-              </button>
-            </div>
-          </template>
-        </div>
+        <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
+        <button class="plus" @click="newTask">
+          <i class="ri-checkbox-circle-line"></i>新建任务
+        </button>
+        <button class="plus ghost" @click="newNote">
+          <i class="ri-sticky-note-line"></i>新建小记
+        </button>
 
         <button class="bell" title="快捷键（?）" @click="ui.toggleHelp()">
           <i class="ri-keyboard-line"></i>
@@ -225,9 +200,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   flex: 1;
 }
 
-.plus-wrap {
-  position: relative;
-}
 .plus {
   height: 32px;
   padding: 0 12px;
@@ -248,52 +220,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .plus i {
   font-size: 15px;
 }
-.plus .chev {
-  font-size: 13px;
-  opacity: 0.8;
-}
-.plus-mask {
-  position: fixed;
-  inset: 0;
-  z-index: 69;
-}
-.plus-menu {
-  position: absolute;
-  right: 0;
-  top: 38px;
-  z-index: 70;
+.plus.ghost {
   background: #fff;
-  border: 1px solid var(--wao-line);
-  border-radius: 10px;
-  box-shadow: var(--wao-shadow-pop);
-  padding: 5px;
-  width: 168px;
-  animation: waoPop 0.14s ease;
+  border: 1px solid var(--wao-line-strong);
+  color: var(--wao-text-2);
 }
-.plus-sep {
-  height: 1px;
-  background: var(--wao-divider);
-  margin: 4px 6px;
-}
-.plus-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: none;
-  background: none;
-  border-radius: 7px;
-  padding: 8px 9px;
-  font-size: 13px;
-  color: var(--wao-text);
-  cursor: pointer;
-}
-.plus-item i {
-  font-size: 15px;
-  color: var(--wao-text-3);
-}
-.plus-item:hover {
+.plus.ghost:hover {
   background: var(--wao-bg-hover-2);
+}
+.plus.ghost i {
+  color: #7a5cc6;
 }
 
 .bell {

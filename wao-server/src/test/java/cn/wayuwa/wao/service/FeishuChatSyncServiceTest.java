@@ -3,6 +3,7 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -104,7 +105,7 @@ class FeishuChatSyncServiceTest {
         when(feishu.listMessages(anyString(), anyString(), anyLong(), anyLong())).thenReturn(List.of(
                 new FeishuMessage("om_img", "ou_ge", "image", "{\"image_key\":\"img_key\"}", millis, false)));
         when(feishu.downloadImage("t-token", "om_img", "img_key")).thenReturn(new byte[]{1, 2, 3});
-        when(images.store(any(), anyString(), anyString(), anyString()))
+        when(images.store(any(), anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(new ImageItemDto("img9", "img_key.png", "3 B", "", "飞书群聊", "/api/images/img9/raw", "", ""));
 
         service.syncDay(DAY);
@@ -113,6 +114,21 @@ class FeishuChatSyncServiceTest {
         verify(knowledge).upsertAutoDoc(anyString(), anyString(), anyString(), blocks.capture());
         assertThat(blocks.getValue().stream().map(DocBlockDto::p).filter(java.util.Objects::nonNull).toList())
                 .anyMatch(p -> p.contains("![群聊图片](/api/images/img9/raw)"));
+    }
+
+    @Test
+    void chatImagesAreStoredWithDeduplicationSoRerunsDoNotPileUpCopies() {
+        configured();
+        long millis = DAY.atTime(LocalTime.of(10, 0)).atZone(ZONE).toInstant().toEpochMilli();
+        when(feishu.listMessages(anyString(), anyString(), anyLong(), anyLong())).thenReturn(List.of(
+                new FeishuMessage("om_img", "ou_ge", "image", "{\"image_key\":\"img_key\"}", millis, false)));
+        when(feishu.downloadImage("t-token", "om_img", "img_key")).thenReturn(new byte[]{1, 2, 3});
+        when(images.store(any(), anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new ImageItemDto("img9", "img_key.png", "3 B", "", "飞书群聊", "/api/images/img9/raw", "", ""));
+
+        service.syncDay(DAY);
+
+        verify(images).store(any(), anyString(), anyString(), anyString(), eq(true));
     }
 
     @Test

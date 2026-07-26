@@ -237,6 +237,7 @@ erDiagram
 | runner_id | VARCHAR(32) NULL | 实际领取的电脑 |
 | requested_runner_id | VARCHAR(32) NULL | 入队时点名的电脑；优先于项目的 preferred_runner_id |
 | prompt_url / branch_name | VARCHAR | Markdown 任务地址与隔离分支 |
+| retry_of_run_id | VARCHAR(32) NULL | 本次重跑要修复的那一次失败运行；领取时把它的摘要交给 AI（见 ADR-025） |
 | result_summary / session_id / exit_code | TEXT / VARCHAR / INT | AI CLI 最终摘要、会话 id 与退出码 |
 | latest_progress / progress_updated_at | VARCHAR(1000) / DATETIME | 首页快速读取的最近一条用户可读进展 |
 | created_at / claimed_at / started_at / finished_at | DATETIME | 完整运行时间线 |
@@ -256,8 +257,11 @@ erDiagram
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | VARCHAR(32) PK | 分组 id |
-| name | VARCHAR(64) | 分组名 |
+| name | VARCHAR(64) | 分组名；名为「未分组」的是该成员的默认分组，不可删除 |
 | ord | INT | 展示顺序 |
+| owner_member_id | VARCHAR(32) | 归属成员；`/api/vault/*` 只在自己的分组内生效（见 ADR-024） |
+
+条目的归属跟随所在分组，不单独记列：一个条目要么在自己的分组里，要么就不该被看见。
 
 ### vault_item（条目）
 | 列 | 类型 | 说明 |
@@ -302,4 +306,7 @@ erDiagram
 - `V19__ai_run_progress.sql`：AI 运行最新反馈与可归档的摘要时间线。
 - `V20__ai_run_engine.sql`：节点可用 AI 工具、项目默认 AI 工具、运行使用的工具与按次指定的电脑。
 - `V21__chat_sync_icon.sql`：将飞书群聊同步任务修正为前端稳定支持的聊天图标。
+- `V22__image_content_hash.sql`：图床按内容摘要去重，避免同一天聊天记录重复同步堆出重复副本。
+- `V23__vault_group_owner.sql`：密码库分组归属到人；存量分组统一归到管理员 `wg`（见 ADR-024）。
+- `V24__ai_run_retry.sql`：AI 运行记录指回被修复的那一次失败运行（见 ADR-025）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

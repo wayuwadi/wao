@@ -14,6 +14,7 @@ import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.domain.KbEntity;
 import cn.wayuwa.wao.domain.KbFolderEntity;
 import cn.wayuwa.wao.domain.KbGroupEntity;
+import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.dto.BacklinkDto;
 import cn.wayuwa.wao.dto.CreateDocRequest;
 import cn.wayuwa.wao.dto.CreateFolderRequest;
@@ -35,6 +36,7 @@ import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.KbFolderMapper;
 import cn.wayuwa.wao.mapper.KbGroupMapper;
 import cn.wayuwa.wao.mapper.KbMapper;
+import cn.wayuwa.wao.mapper.MemberMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -69,14 +71,16 @@ public class KnowledgeService {
     private final KbMapper kbMapper;
     private final KbFolderMapper folderMapper;
     private final DocMapper docMapper;
+    private final MemberMapper memberMapper;
     private final ObjectMapper json;
 
     public KnowledgeService(KbGroupMapper groupMapper, KbMapper kbMapper, KbFolderMapper folderMapper,
-            DocMapper docMapper, ObjectMapper json) {
+            DocMapper docMapper, MemberMapper memberMapper, ObjectMapper json) {
         this.groupMapper = groupMapper;
         this.kbMapper = kbMapper;
         this.folderMapper = folderMapper;
         this.docMapper = docMapper;
+        this.memberMapper = memberMapper;
         this.json = json;
     }
 
@@ -347,7 +351,11 @@ public class KnowledgeService {
     }
 
     /**
-     * 新建一条小记：不需要选知识库，一律落到小记知识库的默认文件夹。
+     * 新建一条小记：不需要选知识库，一律落到小记知识库中「按创建人命名」的文件夹。
+     *
+     * <p>过去所有人的小记都堆在同一个「小记」文件夹里，谁记的看不出来。现在按作者分文件夹
+     * （娃哥的进「娃哥」、娃弟的进「娃弟」），文件夹没有就地建一个；作者查不到成员记录时
+     * 仍然回落到默认的「小记」文件夹，保证入口不会因为账号异常而失败。
      *
      * <p>小记知识库若被误删或库里还没有（老库升级），这里会补建一个，保证入口永远可用。
      *
@@ -358,9 +366,42 @@ public class KnowledgeService {
     @Transactional
     public DocDto createNote(CreateNoteRequest req, String author) {
         KbEntity kb = notesKb();
-        KbFolderEntity folder = notesFolder(kb.getId());
+        KbFolderEntity folder = authorFolder(kb.getId(), author);
         List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
         return insertDoc(kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(blocks)), author, blocks);
+    }
+
+    /**
+     * 小记知识库里属于某个作者的文件夹（以成员名命名），不存在就新建。
+     *
+     * <p>用成员名而不是 member id 命名，是因为这个文件夹名要直接展示给用户看。
+     */
+    private KbFolderEntity authorFolder(String kbId, String author) {
+        MemberEntity member = author == null || author.isBlank() ? null : memberMapper.selectById(author);
+        if (member == null || member.getName() == null || member.getName().isBlank()) {
+            return notesFolder(kbId);
+        }
+        String name = member.getName().trim();
+        KbFolderEntity existing = folderMapper.selectList(aliveFolders()
+                .eq(KbFolderEntity::getKbId, kbId).eq(KbFolderEntity::getName, name))
+                .stream().findFirst().orElse(null);
+        if (existing != null) {
+            return existing;
+        }
+        KbFolderEntity folder = new KbFolderEntity();
+        folder.setId("kb-notes-" + member.getId());
+        folder.setKbId(kbId);
+        folder.setName(name);
+        folder.setOrd(nextOrd(folderMapper.selectCount(aliveFolders().eq(KbFolderEntity::getKbId, kbId))));
+        folder.setCascadeDel(false);
+        folder.setDeletedAt(null);
+        // 同名文件夹被删进回收站过，id 会撞上，这时候复用那条记录并恢复出来。
+        if (folderMapper.selectById(folder.getId()) == null) {
+            folderMapper.insert(folder);
+        } else {
+            folderMapper.updateById(folder);
+        }
+        return folder;
     }
 
     /** 返回小记知识库（不存在或已被删则重建）。 */
@@ -391,12 +432,19 @@ public class KnowledgeService {
         return kb;
     }
 
+    /**
+     * 小记知识库的兜底文件夹（作者不明时用）。
+     *
+     * <p>必须按固定 id 定位，不能取「第一个文件夹」：库里现在还有按成员名建的文件夹，
+     * 取第一个会把匿名小记塞进某个人的文件夹里。
+     */
     private KbFolderEntity notesFolder(String kbId) {
-        KbFolderEntity folder = folderMapper.selectList(aliveFolders().eq(KbFolderEntity::getKbId, kbId)
-                .orderByAsc(KbFolderEntity::getOrd)).stream().findFirst().orElse(null);
-        if (folder != null) {
-            return folder;
+        KbFolderEntity alive = folderMapper.selectList(aliveFolders().eq(KbFolderEntity::getKbId, kbId)
+                .eq(KbFolderEntity::getId, NOTES_FOLDER_ID)).stream().findFirst().orElse(null);
+        if (alive != null) {
+            return alive;
         }
+        KbFolderEntity folder;
         KbFolderEntity existing = folderMapper.selectById(NOTES_FOLDER_ID);
         folder = existing != null ? existing : new KbFolderEntity();
         folder.setId(NOTES_FOLDER_ID);
