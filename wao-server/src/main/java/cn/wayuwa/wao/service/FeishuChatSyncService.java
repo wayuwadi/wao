@@ -180,6 +180,37 @@ public class FeishuChatSyncService implements JobHandler {
         return "成功 · " + target.format(DAY) + " 共 " + messages.size() + " 条消息";
     }
 
+    /**
+     * 按天补录一段连续日期的群聊历史。
+     *
+     * <p>每一天沿用 {@link #syncDay(LocalDate)} 的覆盖规则，因此同一天不会产生重复文档；
+     * 任意一天失败会立即停止，避免把失败伪装成完整补录。
+     *
+     * @param start 起始日期（含）
+     * @param end 结束日期（含）
+     * @return 便于界面展示的汇总结果
+     */
+    public String syncDays(LocalDate start, LocalDate end) {
+        if (start == null || end == null || start.isAfter(end)) {
+            throw new BadRequestException("起始日期不能晚于结束日期");
+        }
+        long days = java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1;
+        if (days > 366) {
+            throw new BadRequestException("一次最多同步 366 天，请缩小历史范围后重试");
+        }
+        int messages = 0;
+        for (LocalDate day = start; !day.isAfter(end); day = day.plusDays(1)) {
+            String result = syncDay(day);
+            int marker = result.indexOf(" 共 ");
+            int suffix = result.indexOf(" 条消息");
+            if (marker >= 0 && suffix > marker) {
+                messages += Integer.parseInt(result.substring(marker + 3, suffix));
+            }
+        }
+        return "成功 · 已同步 " + start.format(DAY) + " 至 " + end.format(DAY)
+                + "，共 " + days + " 天、" + messages + " 条消息";
+    }
+
     /** 正文：一条消息一段，图片单独成段，按小时分节。 */
     private List<DocBlockDto> render(String token, LocalDate day, List<FeishuMessage> messages,
             Map<String, String> names) {

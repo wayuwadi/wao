@@ -51,12 +51,21 @@ public class FeishuChatSyncController {
     }
 
     /**
-     * 手动同步某一天（默认今天），用于配置完先验证一次，不必等到 23:59。
+     * 手动同步一天或一段连续日期；批量时仍按天写入并覆盖各自当天的文档。
      *
      * @param day 形如 2026-07-25，留空即今天
+     * @param startDay 批量同步起始日期，需与 endDay 同时提供
+     * @param endDay 批量同步结束日期，需与 startDay 同时提供
      */
     @PostMapping("/run")
-    public ApiResponse<String> run(@RequestParam(required = false) String day) {
+    public ApiResponse<String> run(@RequestParam(required = false) String day,
+            @RequestParam(required = false) String startDay, @RequestParam(required = false) String endDay) {
+        if (startDay != null || endDay != null) {
+            if (startDay == null || startDay.isBlank() || endDay == null || endDay.isBlank()) {
+                throw new IllegalArgumentException("批量同步请同时填写起始和结束日期");
+            }
+            return ApiResponse.ok(service.syncDays(LocalDate.parse(startDay), LocalDate.parse(endDay)));
+        }
         return ApiResponse.ok(service.syncDay(day == null || day.isBlank() ? null : LocalDate.parse(day)));
     }
 }

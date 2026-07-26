@@ -297,9 +297,11 @@ paths:
       responses: { '200': { description: OK }, '400': { description: 尚未选择群聊 } }
   /feishu/chat-sync/run:
     post:
-      summary: 手动同步某一天（默认今天），返回结果摘要
+      summary: 手动同步某一天（默认今天）或一段连续日期，批量时逐日覆盖各自当天的归档
       parameters:
         - { name: day, in: query, required: false, schema: { type: string, format: date } }
+        - { name: startDay, in: query, required: false, schema: { type: string, format: date }, description: 批量同步起始日期，须与 endDay 同时提供 }
+        - { name: endDay, in: query, required: false, schema: { type: string, format: date }, description: 批量同步结束日期，须与 startDay 同时提供；一次最多 366 天 }
       responses: { '200': { description: OK }, '400': { description: 配置不完整 }, '502': { description: 调用飞书失败（code=50203） } }
   /files:
     get: { summary: 文件元数据列表（不读取二进制正文）, responses: { '200': { description: OK } } }

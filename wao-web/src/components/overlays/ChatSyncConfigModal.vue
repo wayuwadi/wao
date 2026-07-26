@@ -4,7 +4,7 @@
  *
  * 填自建应用的 App ID / Secret → 选机器人所在的群 → 选沉淀到哪个知识库文件夹 →
  * 把群成员的飞书 ID 对上人名（娃哥 / 娃弟 / 机器人通知）。配置存服务端（密钥加密），
- * 之后每天 23:59 由自动化按计划跑；这里也能「立即同步今天」先验证一遍。
+ * 之后每天 23:59 由自动化按计划跑；这里也能补录今天或一段历史日期。
  */
 import { onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
@@ -33,6 +33,8 @@ const chatId = ref('')
 const chatName = ref('')
 const kbId = ref('')
 const runDay = ref('')
+const historyStartDay = ref('')
+const historyEndDay = ref('')
 const senders = ref<FeishuSender[]>([])
 const chats = ref<FeishuChat[]>([])
 const chatsLoaded = ref(false)
@@ -123,7 +125,38 @@ async function runNow() {
   busy.value = true
   try {
     await persist()
-    const result = await runChatSync(runDay.value || undefined)
+    const result = await runChatSync(runDay.value ? { day: runDay.value } : undefined)
+    await data.refreshKnowledge()
+    toast(result, 'ri-check-line')
+  } catch (error) { toast(error instanceof Error ? error.message : '同步失败') }
+  finally { busy.value = false }
+}
+
+/** 近几小时仍按整天补录，防止局部消息覆盖当天完整归档。 */
+async function runRecentHours() {
+  const today = new Date().toISOString().slice(0, 10)
+  runDay.value = today
+  await runNow()
+}
+
+async function runThisMonthHistory() {
+  const now = new Date()
+  const end = new Date(now)
+  end.setDate(end.getDate() - 1)
+  historyStartDay.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+  historyEndDay.value = end.toISOString().slice(0, 10)
+  await runHistory()
+}
+
+async function runHistory() {
+  if (!historyStartDay.value || !historyEndDay.value) {
+    toast('请选择完整的历史起止日期')
+    return
+  }
+  busy.value = true
+  try {
+    await persist()
+    const result = await runChatSync({ startDay: historyStartDay.value, endDay: historyEndDay.value })
     await data.refreshKnowledge()
     toast(result, 'ri-check-line')
   } catch (error) { toast(error instanceof Error ? error.message : '同步失败') }
@@ -208,6 +241,17 @@ async function runNow() {
         <div class="spacer"></div>
         <button class="btn-ghost" @click="emit('close')">取消</button>
         <button class="btn-primary" :disabled="busy" @click="save">保存配置</button>
+      </div>
+      <div class="history-run">
+        <div class="label">补录历史</div>
+        <div class="history-controls">
+          <button class="mini-btn" :disabled="busy" @click="runRecentHours"><i class="ri-time-line"></i>同步近几小时</button>
+          <button class="mini-btn" :disabled="busy" @click="runThisMonthHistory"><i class="ri-calendar-line"></i>同步本月历史</button>
+          <label class="run-day"><span>从</span><input v-model="historyStartDay" class="input" type="date" /></label>
+          <label class="run-day"><span>至</span><input v-model="historyEndDay" class="input" type="date" /></label>
+          <button class="mini-btn" :disabled="busy" @click="runHistory"><i class="ri-history-line"></i>同步全部历史</button>
+        </div>
+        <div class="tip">历史同步会逐日覆盖已有归档；“近几小时”会重刷当天完整记录，“全部历史”以这里填写的起止日期为准，一次最多 366 天。</div>
       </div>
     </template>
   </div>
@@ -416,6 +460,9 @@ async function runNow() {
   align-items: center;
   gap: 10px;
 }
+.history-run { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--wao-divider); }
+.history-controls { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.history-controls .run-day .input { width: 132px; }
 .run-day { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--wao-text-weak); }
 .run-day .input { width: 138px; height: 34px; }
 .btn-ghost {

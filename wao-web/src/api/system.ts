@@ -69,6 +69,6 @@ export const saveChatSyncConfig = (payload: {
 export const fetchFeishuChats = () => get<FeishuChat[]>('/api/feishu/chat-sync/chats')
 export const fetchFeishuChatMembers = (chatId: string) =>
   get<FeishuSender[]>('/api/feishu/chat-sync/members', { chatId })
-/** 手动同步一天（默认今天），返回结果摘要。 */
-export const runChatSync = (day?: string) =>
-  post<string>('/api/feishu/chat-sync/run', day ? { day } : undefined)
+/** 手动同步一天（默认今天）或一段连续日期，返回结果摘要。 */
+export const runChatSync = (range?: { day?: string; startDay?: string; endDay?: string }) =>
+  post<string>('/api/feishu/chat-sync/run', range)
