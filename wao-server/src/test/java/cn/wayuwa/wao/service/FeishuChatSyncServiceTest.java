@@ -99,6 +99,26 @@ class FeishuChatSyncServiceTest {
     }
 
     @Test
+    void syncDaysWritesEveryRequestedDayAndReturnsAggregate() {
+        configured();
+        when(feishu.listMessages(anyString(), anyString(), anyLong(), anyLong())).thenReturn(List.of());
+
+        String result = service.syncDays(LocalDate.of(2026, 7, 4), LocalDate.of(2026, 7, 6));
+
+        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-04"), any());
+        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-05"), any());
+        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-06"), any());
+        assertThat(result).contains("2026-07-04 至 2026-07-06", "共 3 天、0 条消息");
+    }
+
+    @Test
+    void syncDaysRejectsAnInvertedRange() {
+        assertThatThrownBy(() -> service.syncDays(DAY, DAY.minusDays(1)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("起始日期不能晚于结束日期");
+    }
+
+    @Test
     void chatImagesAreRehostedOnLocalImageStore() {
         configured();
         long millis = DAY.atTime(LocalTime.of(10, 0)).atZone(ZONE).toInstant().toEpochMilli();
