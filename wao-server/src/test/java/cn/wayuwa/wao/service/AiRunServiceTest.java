@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
@@ -283,6 +284,27 @@ class AiRunServiceTest {
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("还没结束");
         verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
+    }
+
+    @Test
+    void continueRunQueuesOriginalSessionOnItsOriginalRunner() {
+        AiTaskRunEntity failed = new AiTaskRunEntity();
+        failed.setId("ar1");
+        failed.setTaskId("t1");
+        failed.setProjectId("p1");
+        failed.setStatus("failed");
+        failed.setRunnerId("rn1");
+        failed.setSessionId("thread-1");
+        when(runMapper.selectById("ar1")).thenReturn(failed);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "修复自动化")));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        var dto = service.continueRun("ar1", "请按测试报错继续修复", "wg");
+
+        assertThat(dto.status()).isEqualTo("queued");
+        assertThat(failed.getRequestedRunnerId()).isEqualTo("rn1");
+        assertThat(failed.getPendingInput()).isEqualTo("请按测试报错继续修复");
+        verify(runMapper, times(2)).updateById(failed);
     }
 
     @Test

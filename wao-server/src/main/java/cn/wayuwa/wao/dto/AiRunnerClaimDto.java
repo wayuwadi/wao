@@ -18,5 +18,7 @@ public record AiRunnerClaimDto(
          *
          * <p>Runner 会把它拼进给 AI 的提示词，让 AI 接着报错继续修，而不是从零重做一遍。
          */
-        String previousFailure) {
+        String previousFailure,
+        String sessionId,
+        String continuationInput) {
 }

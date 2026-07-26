@@ -341,6 +341,27 @@ public class AiRunService {
         return toRunDtos(List.of(run)).get(0);
     }
 
+    /** 将补充固定派回保存原 worktree 和 CLI 会话的执行电脑恢复执行。 */
+    @Transactional
+    public synchronized AiRunDto continueRun(String runId, String input, String requestedBy) {
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        if (ACTIVE.contains(run.getStatus())) throw new BadRequestException("AI 正在运行，暂时不能重复输入");
+        if (!"failed".equals(run.getStatus()) || !StringUtils.hasText(run.getSessionId()) || !StringUtils.hasText(run.getRunnerId())) {
+            throw new BadRequestException("这次运行无法恢复会话，请使用基于报错重跑");
+        }
+        run.setPendingInput(limit(input, 4000));
+        run.setRequestedBy(requestedBy);
+        run.setRequestedRunnerId(run.getRunnerId());
+        run.setStatus("queued");
+        run.setExitCode(null);
+        run.setFinishedAt(null);
+        appendProgress(run, "message", "用户补充：" + run.getPendingInput());
+        appendProgress(run, "phase", "已收到补充，等待原执行电脑恢复 AI 会话");
+        setTaskStatus(run.getTaskId(), "AI 进行中");
+        return toRunDtos(List.of(run)).get(0);
+    }
+
     /** 重跑时要交给 AI 的上一次失败摘要；不是重跑或找不到原运行时返回 null。 */
     private String previousFailure(AiTaskRunEntity run) {
         if (!StringUtils.hasText(run.getRetryOfRunId())) return null;
@@ -413,6 +434,8 @@ public class AiRunService {
             run.setStatus("running");
             run.setClaimedAt(now);
             run.setStartedAt(now);
+            String continuationInput = run.getPendingInput();
+            run.setPendingInput(null);
             appendProgress(run, "phase", runner.getName() + " 已领取任务，" + label(engine) + " 正在启动");
             setTaskStatus(run.getTaskId(), "AI 进行中");
             TaskEntity task = taskMapper.selectById(run.getTaskId());
@@ -421,7 +444,7 @@ public class AiRunService {
                     project == null ? run.getProjectId() : project.getName(), engine, run.getPromptUrl(),
                     config.getRepoUrl(), blankOr(config.getDefaultBranch(), "main"),
                     blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName(),
-                    previousFailure(run));
+                    previousFailure(run), run.getSessionId(), continuationInput);
         }
         return null;
     }
@@ -458,7 +481,7 @@ public class AiRunService {
         run.setExitCode(exitCode);
         run.setStatus(exitCode == 0 ? "succeeded" : "failed");
         run.setResultSummary(limit(request.resultSummary(), MAX_RESULT));
-        run.setSessionId(limit(request.sessionId(), 128));
+        if (StringUtils.hasText(request.sessionId())) run.setSessionId(limit(request.sessionId(), 128));
         run.setFinishedAt(LocalDateTime.now());
         String engine = label(blankOr(run.getEngine(), DEFAULT_ENGINE));
         String completion = exitCode == 0 ? engine + " 已完成执行，等待人工验收" : engine + " 执行未完成，请查看失败原因";

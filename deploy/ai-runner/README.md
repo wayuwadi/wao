@@ -54,6 +54,8 @@ Runner 会把启动信息、Git 与各 AI CLI 的命令路径和任务失败阶�
 任务提示通过标准输入交给 CLI，避免 Windows 的 `.cmd` 转发脚本截断包含链接的多行提示；
 Runner 还会校验最终答复中的完成状态（`WAO_RUN_STATUS: SUCCESS` / `BLOCKED`），不再把反问、
 等待补充信息误判为成功。
+当 AI 以 BLOCKED 结束且保留会话 id 时，任务详情可直接补充信息；Runner 会把同一条运行固定派回
+原电脑，在原 worktree 中恢复同一个 Codex 或 Claude Code 会话，而不是创建新会话。
 启动时 Runner 会通过 `git credential fill` 读取本机已有的 GitHub HTTPS 凭据，并仅在内存中以
 `GH_TOKEN` 传给 AI CLI 子进程，同时自动补齐 Windows 的 GitHub CLI 安装目录。凭据不会写入
 Runner 状态、日志或 Git；因此只需让这台电脑的 Git 凭据管理器能正常 `git push`，自动任务
