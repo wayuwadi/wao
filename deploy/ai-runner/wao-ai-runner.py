@@ -23,6 +23,8 @@ STATE_FILE = Path.home() / ".wao" / "ai-runner.json"
 LOG_FILE = Path.home() / ".wao" / "ai-runner.log"
 PRINT_LOCK = threading.Lock()
 MAX_LOG_BYTES = 2 * 1024 * 1024
+# 运行结束后保留 worktree 供人工复查，超过这个天数才回收，避免磁盘被历史任务占满。
+RUN_WORKTREE_TTL_DAYS = 7
 ENGINE_LABELS = {"codex": "Codex", "claude": "Claude Code"}
 # 沙箱强度到各 CLI 参数的映射，保证两种工具在同一档位下权限一致。
 CLAUDE_PERMISSION = {
@@ -124,6 +126,72 @@ def resolve_repo_url(repo_url: str, protocol: str, https_ready: bool) -> str:
     return f"git@{host.rpartition('@')[2]}:{path}"
 
 
+def detach_primary_clone(project_dir: Path, git_command: str) -> None:
+    """把主克隆切成游离 HEAD，让默认分支永远不被任何 worktree 占用。
+
+    主克隆只当对象仓库用，任务全在 `.wao-runs/<run-id>` 的独立 worktree 里跑。如果主克隆
+    一直检出 `main`，AI 在 worktree 里执行 `git switch main` 校对基线时就会撞上
+    `fatal: 'main' is already checked out at ...`，白白浪费轮次甚至放弃任务。
+
+    这里用 `update-ref --no-deref` 而不是 `checkout --detach`：后者会顺带把工作副本铺出来，
+    既抵消了 `--no-checkout`，也可能覆盖旧克隆里的本地改动。前者只重写 HEAD 引用，索引和
+    工作区一个字节都不碰。
+    """
+    head = run([git_command, "symbolic-ref", "--quiet", "HEAD"], cwd=project_dir, check=False)
+    if head.returncode != 0:
+        return
+    branch = head.stdout.strip().rpartition("/")[2]
+    commit = run([git_command, "rev-parse", "HEAD"], cwd=project_dir, check=False)
+    if commit.returncode != 0:
+        return  # 还没有任何提交，HEAD 未出生，Git 不会认为分支被占用。
+    result = run([git_command, "update-ref", "--no-deref", "HEAD", commit.stdout.strip()],
+                 cwd=project_dir, check=False)
+    if result.returncode == 0:
+        log(f"主克隆 {project_dir} 已切到游离 HEAD，分支 {branch} 现在可以被任务 worktree 使用")
+    else:
+        log(f"主克隆 {project_dir} 无法切到游离 HEAD，AI 可能会遇到分支被占用：{result.stdout[-300:]}")
+
+
+def owning_repo(worktree: Path) -> Path | None:
+    """从 worktree 的 .git 指针反查它属于哪个主克隆；`.wao-runs` 下混放着多个项目的工作区。"""
+    pointer = worktree / ".git"
+    if not pointer.is_file():
+        return None
+    text = pointer.read_text(encoding="utf-8", errors="replace").strip()
+    if not text.startswith("gitdir:"):
+        return None
+    git_dir = Path(text[len("gitdir:"):].strip())
+    # gitdir 形如 <repo>/.git/worktrees/<name>，向上两级即主克隆的 .git 目录。
+    return git_dir.parent.parent.parent if git_dir.parent.parent.name == ".git" else None
+
+
+def drop_worktree(worktree: Path, git_command: str, fallback_repo: Path | None = None) -> None:
+    repo = owning_repo(worktree) or fallback_repo
+    if repo and repo.exists():
+        run([git_command, "worktree", "remove", "--force", str(worktree)], cwd=repo, check=False)
+    if worktree.exists():
+        shutil.rmtree(worktree, ignore_errors=True)
+    if repo and repo.exists():
+        run([git_command, "worktree", "prune"], cwd=repo, check=False)
+
+
+def prune_stale_worktrees(runs_root: Path, git_command: str, keep: set[str]) -> None:
+    """回收超过保留期的历史运行工作区；失败不影响本次任务。"""
+    if not runs_root.is_dir():
+        return
+    deadline = time.time() - RUN_WORKTREE_TTL_DAYS * 86400
+    for entry in runs_root.iterdir():
+        if not entry.is_dir() or entry.name in keep:
+            continue
+        try:
+            if entry.stat().st_mtime >= deadline:
+                continue
+            drop_worktree(entry, git_command)
+            log(f"已回收 {RUN_WORKTREE_TTL_DAYS} 天前的历史工作区 {entry}")
+        except OSError as exc:
+            log(f"回收历史工作区 {entry} 失败，忽略：{exc}")
+
+
 def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_url: str) -> Path:
     project_dir = root / claim["workspaceDir"]
     if not (project_dir / ".git").exists():
@@ -132,17 +200,19 @@ def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_u
         if project_dir.exists():
             # 上一次克隆失败可能留下半个目录，git clone 会因为目录非空直接报错。
             shutil.rmtree(project_dir)
-        run([git_command, "clone", repo_url, str(project_dir)])
+        # 主克隆不需要工作副本，只提供对象库和 worktree 元数据。
+        run([git_command, "clone", "--no-checkout", repo_url, str(project_dir)])
     # 本机认证方式变了（比如从 HTTPS 换成 SSH）时，把已有仓库的 origin 一并纠正。
     run([git_command, "remote", "set-url", "origin", repo_url], cwd=project_dir, check=False)
     run([git_command, "fetch", "--prune", "origin"], cwd=project_dir)
     run([git_command, "worktree", "prune"], cwd=project_dir)
-    worktree = root / ".wao-runs" / claim["runId"]
-    worktree.parent.mkdir(parents=True, exist_ok=True)
+    detach_primary_clone(project_dir, git_command)
+    runs_root = root / ".wao-runs"
+    runs_root.mkdir(parents=True, exist_ok=True)
+    prune_stale_worktrees(runs_root, git_command, {claim["runId"]})
+    worktree = runs_root / claim["runId"]
     if worktree.exists():
-        run([git_command, "worktree", "remove", "--force", str(worktree)], cwd=project_dir, check=False)
-        if worktree.exists():
-            shutil.rmtree(worktree)
+        drop_worktree(worktree, git_command, project_dir)
     run([git_command, "branch", "-D", claim["branchName"]], cwd=project_dir, check=False)
     run(
         [git_command, "worktree", "add", "-b", claim["branchName"], str(worktree),
@@ -376,11 +446,17 @@ def normalize_result(exit_code: int, result_text: str, engine: str = "codex") ->
 
 
 def build_prompt(claim: dict[str, Any]) -> str:
+    base = claim["defaultBranch"]
     prompt = (
         "这是 WAO 自动派发的开发任务。请先读取下面的公开 Markdown 地址，然后在当前独立 "
         "Git worktree 中完整实现需求：\n"
         f"{claim['promptUrl']}\n\n"
-        "必须遵守仓库 AGENTS.md 与相关规格；先确认当前分支基于最新 main。完成与风险相称的"
+        f"工作区已经准备好：当前目录是专属 Git worktree，分支 `{claim['branchName']}` 刚从最新的 "
+        f"`origin/{base}` 创建，不需要再对基线做任何准备。主克隆目录是共享的游离 HEAD 仓库，"
+        f"**任何目录下都不要 checkout / switch 到 `{base}`，也不要新建其它 worktree**；"
+        f"需要对比基线时用 `git fetch origin {base}` 之后读 `origin/{base}`（例如 "
+        f"`git diff origin/{base}...HEAD`）。请始终留在 `{claim['branchName']}` 上提交。\n\n"
+        "必须遵守仓库 AGENTS.md 与相关规格。完成与风险相称的"
         "测试后，直接写详细中文提交，创建 PR、合并 main。"
         "Runner 已把本机 Git 凭据通过 GH_TOKEN 临时交给当前进程，并把 GitHub CLI 加入 PATH；"
         "GitHub 操作优先使用 gh，不要因为 AI 工具内置的 GitHub 连接器不可用而停止。"
