@@ -11,7 +11,7 @@ import java.util.List;
  * @param chatId       目标群 id
  * @param chatName     目标群名称（展示用）
  * @param kbId         沉淀到哪个知识库
- * @param folderId     沉淀到哪个文件夹
+ * <p>归档文件夹由服务端按同步日期自动创建为「YYYY 年 M 月」，因此配置里只需要选择知识库。
  * @param senders      发言人 ID → 人名映射
  */
 public record FeishuChatSyncConfigDto(
@@ -21,6 +21,5 @@ public record FeishuChatSyncConfigDto(
         String chatId,
         String chatName,
         String kbId,
-        String folderId,
         List<FeishuSenderDto> senders) {
 }

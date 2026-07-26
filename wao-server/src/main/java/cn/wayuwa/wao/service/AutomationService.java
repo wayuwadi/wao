@@ -16,6 +16,7 @@ import cn.wayuwa.wao.dto.PatchJobRequest;
 import cn.wayuwa.wao.mapper.AutomationJobMapper;
 import cn.wayuwa.wao.mapper.AutomationRunMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -182,8 +183,16 @@ public class AutomationService {
 
     /** 供 {@link JobSchedulerService} 调用：按 Cron 到期自动执行一次，并推进下一次触发时间。 */
     public void executeScheduled(AutomationJobEntity e) {
+        LocalDateTime nextFireAt = computeNextFire(e.getCronExpr());
+        int claimed = jobMapper.update(null, new LambdaUpdateWrapper<AutomationJobEntity>()
+                .eq(AutomationJobEntity::getId, e.getId())
+                .eq(AutomationJobEntity::getNextFireAt, e.getNextFireAt())
+                .set(AutomationJobEntity::getNextFireAt, nextFireAt));
+        if (claimed == 0) {
+            return;
+        }
+        e.setNextFireAt(nextFireAt);
         recordRun(e, execute(e, "成功 · 自动执行"));
-        e.setNextFireAt(computeNextFire(e.getCronExpr()));
         jobMapper.updateById(e);
     }
 

@@ -90,7 +90,6 @@ public class FeishuChatSyncService implements JobHandler {
                 settings.get(SettingService.CHAT_SYNC_CHAT_ID, ""),
                 settings.get(SettingService.CHAT_SYNC_CHAT_NAME, ""),
                 settings.get(SettingService.CHAT_SYNC_KB_ID, ""),
-                settings.get(SettingService.CHAT_SYNC_FOLDER_ID, ""),
                 senders());
     }
 
@@ -106,7 +105,6 @@ public class FeishuChatSyncService implements JobHandler {
         settings.put(SettingService.CHAT_SYNC_CHAT_ID, trimmed(req.chatId()));
         settings.put(SettingService.CHAT_SYNC_CHAT_NAME, trimmed(req.chatName()));
         settings.put(SettingService.CHAT_SYNC_KB_ID, trimmed(req.kbId()));
-        settings.put(SettingService.CHAT_SYNC_FOLDER_ID, trimmed(req.folderId()));
         if (req.senders() != null) {
             settings.put(SettingService.CHAT_SYNC_SENDERS, write(req.senders()));
         }
@@ -154,7 +152,8 @@ public class FeishuChatSyncService implements JobHandler {
         LocalDate target = day == null ? LocalDate.now(ZONE) : day;
         String chatId = required(SettingService.CHAT_SYNC_CHAT_ID, "请先选择要同步的群聊");
         String kbId = required(SettingService.CHAT_SYNC_KB_ID, "请先选择沉淀到哪个知识库");
-        String folderId = required(SettingService.CHAT_SYNC_FOLDER_ID, "请先选择沉淀到哪个文件夹");
+        String monthFolder = target.getYear() + " 年 " + target.getMonthValue() + " 月";
+        String folderId = knowledge.ensureAutoFolder(kbId, monthFolder).getId();
 
         // 当天 00:00:00 到 23:59:59，与「截止到今天早上零点到今天晚上 23:59」一致
         long start = target.atStartOfDay(ZONE).toEpochSecond();
@@ -221,6 +220,7 @@ public class FeishuChatSyncService implements JobHandler {
             case "text" -> content.path("text").asText("");
             case "image" -> "";
             case "post" -> postText(content);
+            case "interactive" -> interactiveText(content);
             case "file" -> "[文件] " + content.path("file_name").asText("");
             case "audio" -> "[语音]";
             case "media" -> "[视频] " + content.path("file_name").asText("");
@@ -252,6 +252,28 @@ public class FeishuChatSyncService implements JobHandler {
             sb.append(' ');
         }
         return sb.toString().trim();
+    }
+
+    /** 将机器人 interactive 卡片提取为可读文本，避免知识库里只留下「[interactive]」。 */
+    private String interactiveText(JsonNode content) {
+        List<String> parts = new ArrayList<>();
+        String title = content.path("header").path("title").path("content").asText("");
+        if (!title.isBlank()) {
+            parts.add(title);
+        }
+        for (JsonNode element : content.path("elements")) {
+            String text = element.path("text").path("content").asText("");
+            if (!text.isBlank()) {
+                parts.add(text.replaceAll("[*_`]+", "").replace("\n", " "));
+            }
+            for (JsonNode field : element.path("fields")) {
+                String fieldText = field.path("text").path("content").asText("");
+                if (!fieldText.isBlank()) {
+                    parts.add(fieldText.replaceAll("[*_`]+", "").replace("\n", " "));
+                }
+            }
+        }
+        return parts.isEmpty() ? "[机器人卡片]" : String.join(" · ", parts);
     }
 
     /** 消息里的图片：下载后转存图床，返回本地地址；下载或转存失败就跳过这一张。 */

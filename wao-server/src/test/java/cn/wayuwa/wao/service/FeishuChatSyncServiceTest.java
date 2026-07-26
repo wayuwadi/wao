@@ -19,6 +19,7 @@ import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.dto.DocBlockDto;
 import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.ImageItemDto;
+import cn.wayuwa.wao.domain.KbFolderEntity;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
@@ -44,14 +45,16 @@ class FeishuChatSyncServiceTest {
         when(settings.get(SettingService.CHAT_SYNC_APP_SECRET)).thenReturn("secret");
         when(settings.get(SettingService.CHAT_SYNC_CHAT_ID)).thenReturn("oc_chat");
         when(settings.get(SettingService.CHAT_SYNC_KB_ID)).thenReturn("kb1");
-        when(settings.get(SettingService.CHAT_SYNC_FOLDER_ID)).thenReturn("f1");
+        KbFolderEntity folder = new KbFolderEntity();
+        folder.setId("f202607");
+        when(knowledge.ensureAutoFolder("kb1", "2026 年 7 月")).thenReturn(folder);
         when(settings.get(SettingService.CHAT_SYNC_SENDERS))
                 .thenReturn("[{\"id\":\"ou_ge\",\"name\":\"娃哥\"},{\"id\":\"ou_di\",\"name\":\"娃弟\"}]");
         when(settings.get(eq(SettingService.CHAT_SYNC_CHAT_NAME), anyString())).thenReturn("研发群");
         when(feishu.tenantAccessToken("cli_demo", "secret")).thenReturn("t-token");
         when(knowledge.upsertAutoDoc(anyString(), anyString(), anyString(), any()))
                 .thenReturn(new DocDto("d1", "飞书群聊 · 2026-07-25", "auto", null, null, false,
-                        List.of(), List.of(), List.of(), "kb1", "f1", 1));
+                        List.of(), List.of(), List.of(), "kb1", "f202607", 1));
     }
 
     private FeishuMessage text(String sender, int hour, int minute, String body) {
@@ -71,7 +74,7 @@ class FeishuChatSyncServiceTest {
         String result = service.syncDay(DAY);
 
         ArgumentCaptor<List<DocBlockDto>> blocks = ArgumentCaptor.captor();
-        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f1"), eq("飞书群聊 · 2026-07-25"), blocks.capture());
+        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-25"), blocks.capture());
         String rendered = blocks.getValue().stream()
                 .map(b -> String.valueOf(b.call()) + b.h() + b.p()).reduce("", String::concat);
         assertThat(rendered).contains("09:15 娃哥", "09:20 娃弟", "早上好");
@@ -121,6 +124,24 @@ class FeishuChatSyncServiceTest {
         when(feishu.downloadImage(anyString(), anyString(), anyString())).thenReturn(null);
 
         assertThat(service.syncDay(DAY)).startsWith("成功");
+    }
+
+    @Test
+    void interactiveBotCardIsRenderedAsReadableText() {
+        configured();
+        long millis = DAY.atTime(LocalTime.of(11, 0)).atZone(ZONE).toInstant().toEpochMilli();
+        when(feishu.listMessages(anyString(), anyString(), anyLong(), anyLong())).thenReturn(List.of(
+                new FeishuMessage("om_card", "ou_robot", "interactive",
+                        "{\"header\":{\"title\":{\"content\":\"部署成功\"}},\"elements\":[{\"tag\":\"div\",\"text\":{\"content\":\"**改动**\\n已完成同步\"}}]}",
+                        millis, false)));
+
+        service.syncDay(DAY);
+
+        ArgumentCaptor<List<DocBlockDto>> blocks = ArgumentCaptor.captor();
+        verify(knowledge).upsertAutoDoc(anyString(), anyString(), anyString(), blocks.capture());
+        String rendered = blocks.getValue().stream().map(DocBlockDto::p)
+                .filter(java.util.Objects::nonNull).reduce("", String::concat);
+        assertThat(rendered).contains("部署成功", "改动 已完成同步").doesNotContain("[interactive]");
     }
 
     @Test

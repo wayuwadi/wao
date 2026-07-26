@@ -623,7 +623,6 @@ components:
         chatId: { type: string }
         chatName: { type: string }
         kbId: { type: string, description: 沉淀到哪个知识库 }
-        folderId: { type: string, description: 沉淀到哪个文件夹 }
         senders: { type: array, items: { $ref: '#/components/schemas/FeishuSender' } }
     MemberListResponse:
       allOf:

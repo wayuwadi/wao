@@ -47,7 +47,6 @@ export interface ChatSyncConfig {
   chatId: string
   chatName: string
   kbId: string
-  folderId: string
   senders: FeishuSender[]
 }
 
@@ -65,7 +64,6 @@ export const saveChatSyncConfig = (payload: {
   chatId?: string
   chatName?: string
   kbId?: string
-  folderId?: string
   senders?: FeishuSender[]
 }) => put<ChatSyncConfig>('/api/feishu/chat-sync/config', payload)
 export const fetchFeishuChats = () => get<FeishuChat[]>('/api/feishu/chat-sync/chats')
