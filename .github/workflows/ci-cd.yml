@@ -127,7 +127,8 @@ jobs:
             retry_slave_ssh scp -o ConnectTimeout=15 wao-release.zip "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_release" || return
             retry_slave_ssh scp -o ConnectTimeout=15 wao-secrets.env "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_secrets" || return
             retry_slave_ssh scp -o ConnectTimeout=15 deploy/scripts/install-release-windows.ps1 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_installer" || return
-            retry_slave_ssh ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets"
+            retry_slave_ssh ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" 'exit 0' || return
+            ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets"
           }
 
           deploy_cloud() {

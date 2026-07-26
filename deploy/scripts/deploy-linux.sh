@@ -61,6 +61,26 @@ compose() {
   fi
 }
 
+print_deployment_diagnostics() {
+  echo 'Deployment health check failed; collecting the failed containers before rollback.' >&2
+  compose ps -a >&2 || true
+  for service in wao-server wao-gateway; do
+    container_id="$(compose ps -aq "${service}" 2>/dev/null || true)"
+    if [ -z "${container_id}" ]; then
+      echo "No container was created for ${service}." >&2
+      continue
+    fi
+    echo "===== ${service} container state =====" >&2
+    run_docker inspect --format \
+      'status={{.State.Status}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} error={{.State.Error}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+      "${container_id}" >&2 || true
+    run_docker inspect --format '{{if .State.Health}}{{range .State.Health.Log}}{{.End}} exit={{.ExitCode}} {{printf "%s" .Output}}{{println}}{{end}}{{end}}' \
+      "${container_id}" >&2 || true
+    echo "===== ${service} recent logs =====" >&2
+    compose logs --no-color --timestamps --tail 200 "${service}" >&2 || true
+  done
+}
+
 if [ "${role}" = "master" ]; then
   case "${MANAGE_MASTER_INFRA:-true}" in
     true) compose_profile=managed-infra ;;
@@ -122,6 +142,7 @@ case "${SKIP_IMAGE_BUILD:-false}" in
 esac
 
 if ! compose up -d --wait; then
+  print_deployment_diagnostics
   if run_docker image inspect wao-server:rollback wao-gateway:rollback >/dev/null 2>&1; then
     echo 'Deployment failed; restoring the previously running application images.' >&2
     WAO_IMAGE_TAG=rollback compose up -d --no-build --no-deps --wait wao-server wao-gateway
