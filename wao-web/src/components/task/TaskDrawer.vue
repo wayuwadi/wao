@@ -14,7 +14,7 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
-import { createAiRuns, fetchTaskAiRuns } from '@/api/ai'
+import { continueAiRun, createAiRuns, fetchTaskAiRuns } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 import { engineIcon, engineLabel } from '@/composables/aiEngines'
@@ -40,6 +40,8 @@ const aiStarting = ref(false)
 const aiLauncherOpen = ref(false)
 const aiRuns = ref<AiRun[]>([])
 const aiRunsLoading = ref(false)
+const aiContinuation = ref<Record<string, string>>({})
+const continuingRunId = ref<string | null>(null)
 let aiRunsTimer: ReturnType<typeof setInterval> | null = null
 /** 右侧栏当前展开的子任务标识；为 null 时显示任务属性栏。 */
 const openSubId = ref<string | null>(null)
@@ -81,6 +83,22 @@ const aiRunLabel: Record<AiRunStatus, string> = {
   failed: '执行失败', cancelled: '已取消',
 }
 const activeAiRun = computed(() => aiRuns.value.find((run) => ['queued', 'claimed', 'running'].includes(run.status)))
+
+async function continueRun(runId: string) {
+  const input = aiContinuation.value[runId]?.trim()
+  if (!input) return toast('请先输入要补充给 AI 的信息', 'ri-information-line')
+  continuingRunId.value = runId
+  try {
+    await continueAiRun(runId, input)
+    aiContinuation.value[runId] = ''
+    toast('补充已发送，AI 将在原会话中继续执行', 'ri-robot-2-line')
+    await refreshTaskAiRuns()
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '发送补充失败，请重试', 'ri-error-warning-line')
+  } finally {
+    continuingRunId.value = null
+  }
+}
 
 const stepsDone = computed(() => task.value?.steps.filter((s) => s.done).length ?? 0)
 const stepsTotal = computed(() => task.value?.steps.length ?? 0)
@@ -662,6 +680,12 @@ function demo(msg: string) {
                 <div v-if="run.resultSummary" class="ai-final-result">
                   <b>{{ run.status === 'failed' ? '失败原因' : '最终结果' }}</b>
                   <p>{{ run.resultSummary }}</p>
+                </div>
+                <div v-if="run.status === 'failed' && run.sessionId && run.runnerId" class="ai-continue">
+                  <textarea v-model="aiContinuation[run.id]" rows="2" placeholder="补充信息后，让 AI 在原会话中继续执行"></textarea>
+                  <button :disabled="continuingRunId === run.id" @click="continueRun(run.id)">
+                    {{ continuingRunId === run.id ? '发送中…' : '继续对话' }}
+                  </button>
                 </div>
               </div>
             </details>

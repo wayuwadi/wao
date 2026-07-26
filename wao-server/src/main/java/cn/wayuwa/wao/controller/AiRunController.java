@@ -10,6 +10,7 @@ import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
+import cn.wayuwa.wao.dto.ContinueAiRunRequest;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.CreateAiRunsRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
@@ -89,6 +90,12 @@ public class AiRunController {
     public ApiResponse<AiRunDto> rerun(@PathVariable String runId, HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         return ApiResponse.ok(service.rerun(runId, currentMember.idOr(http, "unknown"), baseUrl));
+    }
+
+    @PostMapping("/runs/{runId}/continue")
+    public ApiResponse<AiRunDto> continueRun(@PathVariable String runId,
+            @Valid @RequestBody ContinueAiRunRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(service.continueRun(runId, request.input(), currentMember.idOr(http, "unknown")));
     }
 
     @GetMapping("/tasks/{taskId}/runs")

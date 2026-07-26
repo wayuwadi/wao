@@ -239,6 +239,7 @@ erDiagram
 | prompt_url / branch_name | VARCHAR | Markdown 任务地址与隔离分支 |
 | retry_of_run_id | VARCHAR(32) NULL | 本次重跑要修复的那一次失败运行；领取时把它的摘要交给 AI（见 ADR-025） |
 | result_summary / session_id / exit_code | TEXT / VARCHAR / INT | AI CLI 最终摘要、会话 id 与退出码 |
+| pending_input | TEXT | 等待原 AI 会话消费的用户补充输入；仅由原执行电脑恢复 |
 | latest_progress / progress_updated_at | VARCHAR(1000) / DATETIME | 首页快速读取的最近一条用户可读进展 |
 | created_at / claimed_at / started_at / finished_at | DATETIME | 完整运行时间线 |
 

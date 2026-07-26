@@ -25,6 +25,7 @@ public class AiTaskRunEntity {
     private String latestProgress;
     private LocalDateTime progressUpdatedAt;
     private String sessionId;
+    private String pendingInput;
     private Integer exitCode;
     private LocalDateTime createdAt;
     private LocalDateTime claimedAt;
@@ -61,6 +62,8 @@ public class AiTaskRunEntity {
     public void setProgressUpdatedAt(LocalDateTime progressUpdatedAt) { this.progressUpdatedAt = progressUpdatedAt; }
     public String getSessionId() { return sessionId; }
     public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+    public String getPendingInput() { return pendingInput; }
+    public void setPendingInput(String pendingInput) { this.pendingInput = pendingInput; }
     public Integer getExitCode() { return exitCode; }
     public void setExitCode(Integer exitCode) { this.exitCode = exitCode; }
     public LocalDateTime getCreatedAt() { return createdAt; }

@@ -230,6 +230,15 @@ paths:
       responses:
         '200': { description: 返回新建的运行（retryOfRunId 指向被修复的那一次） }
         '400': { description: 该运行还没结束、任务已有运行在进行中，或项目未启用 AI Run }
+  /ai/runs/{runId}/continue:
+    post:
+      summary: 向已阻塞且保留会话 id 的 AI Run 补充信息；固定派回原执行电脑恢复同一会话
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [input], properties: { input: { type: string, maxLength: 4000 } } } } }
+      responses:
+        '200': { description: 原运行重新进入队列 }
+        '400': { description: 运行仍在执行或无法恢复原会话 }
         '404': { description: 运行不存在 }
   /ai/runner/pair:
     post: { summary: Runner 用一次性配对码换取只返回一次的本机令牌（含本机可用的 AI 工具）, responses: { '200': { description: OK }, '401': { description: 配对码无效 } } }

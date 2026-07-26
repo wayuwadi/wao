@@ -409,11 +409,12 @@ def build_prompt(claim: dict[str, Any]) -> str:
 
 def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter",
-        environment: dict[str, str] | None = None) -> tuple[int, str, str | None]:
+        environment: dict[str, str] | None = None,
+        session_id: str | None = None) -> tuple[int, str, str | None]:
     """跑一次 `codex exec --json`，返回退出码、最终答复和会话 id。"""
     result_file = worktree / ".wao-ai-result.txt"
     command = [
-        executable, "exec", "--json", "--color", "never", "--sandbox", sandbox,
+        executable, "exec", *( ["resume", session_id] if session_id else []), "--json", "--color", "never", "--sandbox", sandbox,
         "-c", 'approval_policy="never"', "-C", str(worktree),
         "--output-last-message", str(result_file), "-",
     ]
@@ -429,7 +430,8 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
 
 def run_claude(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter", environment: dict[str, str] | None = None,
-        model: str | None = None, repo_dir: Path | None = None) -> tuple[int, str, str | None]:
+        model: str | None = None, repo_dir: Path | None = None,
+        session_id: str | None = None) -> tuple[int, str, str | None]:
     """跑一次 `claude -p --output-format stream-json`，返回退出码、最终答复和会话 id。"""
     command = [
         executable, "-p", "--output-format", "stream-json", "--verbose",
@@ -441,6 +443,8 @@ def run_claude(executable: str, worktree: Path, prompt: str, sandbox: str,
         command += ["--add-dir", str(repo_dir)]
     if model:
         command += ["--model", model]
+    if session_id:
+        command += ["--resume", session_id]
     exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, environment)
     reporter.flush()
     session_id, result_text = None, ""
@@ -482,18 +486,28 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         if not executable:
             raise RuntimeError(f"本机没有可用的 {name} 命令，请检查 --engines 与 CLI 安装情况")
         reporter.send("phase", "正在准备独立工作区", force=True)
-        worktree = prepare_worktree(
-            claim, root, git_command, resolve_repo_url(claim["repoUrl"], git_protocol, https_ready))
+        continuation = _readable_text(claim.get("continuationInput")).strip()
+        session_id = _readable_text(claim.get("sessionId")).strip() or None
+        if continuation and session_id:
+            worktree = root / ".wao-runs" / run_id
+            if not worktree.exists():
+                raise RuntimeError("原 AI 工作区不存在，无法安全恢复会话；请使用基于报错重跑")
+            reporter.send("phase", "正在恢复原 AI 会话", force=True)
+            prompt = "用户补充了以下信息，请在当前任务和已有工作区基础上继续执行：\n\n" + continuation
+        else:
+            worktree = prepare_worktree(
+                claim, root, git_command, resolve_repo_url(claim["repoUrl"], git_protocol, https_ready))
+            prompt = build_prompt(claim)
         stage = f"启动 {name}"
         reporter.send("phase", f"工作区已准备完成，正在启动 {name}", force=True)
         stage = f"等待 {name} 完成"
         if engine == "claude":
             exit_code, result_text, session_id = run_claude(
-                executable, worktree, build_prompt(claim), sandbox, reporter, cli_environment,
-                claude_model, root / claim["workspaceDir"])
+                executable, worktree, prompt, sandbox, reporter, cli_environment,
+                claude_model, root / claim["workspaceDir"], session_id)
         else:
             exit_code, result_text, session_id = run_codex(
-                executable, worktree, build_prompt(claim), sandbox, reporter, cli_environment)
+                executable, worktree, prompt, sandbox, reporter, cli_environment, session_id)
         exit_code, result_text = normalize_result(exit_code, result_text, engine)
         reporter.send("result", f"{name} 已执行完成，正在整理结果" if exit_code == 0
                       else f"{name} 执行未完成，正在整理失败原因", force=True)
