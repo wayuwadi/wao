@@ -301,4 +301,5 @@ erDiagram
 - `V18__ai_task_runner.sql`：项目级 AI 配置、执行电脑、一次性配对码与任务运行队列。
 - `V19__ai_run_progress.sql`：AI 运行最新反馈与可归档的摘要时间线。
 - `V20__ai_run_engine.sql`：节点可用 AI 工具、项目默认 AI 工具、运行使用的工具与按次指定的电脑。
+- `V21__chat_sync_icon.sql`：将飞书群聊同步任务修正为前端稳定支持的聊天图标。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

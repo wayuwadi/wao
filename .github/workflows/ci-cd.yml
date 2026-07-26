@@ -24,6 +24,14 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: wao-web/package-lock.json
+      - name: Validate Flyway migration versions
+        run: |
+          duplicates="$(find wao-server/src/main/resources/db/migration -maxdepth 1 -type f -name 'V*__*.sql' -printf '%f\n' \
+            | sed -E 's/^V([^_]*)__.*$/\1/' | sort | uniq -d)"
+          if [ -n "$duplicates" ]; then
+            printf 'Flyway migration 版本重复：%s\n' "$duplicates"
+            exit 1
+          fi
       - name: Build frontend release
         working-directory: wao-web
         run: |
