@@ -69,6 +69,12 @@ Runner 状态、日志或 Git；因此只需让这台电脑的 Git 凭据管理�
 两种工具的命令执行、文件修改、工具调用和网页检索都不会上传，Claude 的 thinking 正文同样
 不进入 WAO。
 
+任务结束时 Runner 还会从 CLI 的结束事件里读出本次用量，随结果一并回传（见 ADR-026）：
+Claude Code 取 `result` 事件的 `usage`、`total_cost_usd` 和按模型分组的 `modelUsage`；
+Codex 累加 `turn.completed` 的 `usage`，它不回传花费，所以只有 token 没有金额。
+用量解析失败只会让这次「没记上账」，不会影响任务本身的成败——本机日志里能看到每次的
+模型、token 和折算额度。
+
 如果任务计划程序的环境找不到 Git 或 AI CLI，可显式传入完整路径：
 
 ```powershell

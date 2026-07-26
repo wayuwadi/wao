@@ -253,8 +253,16 @@ paths:
     post: { summary: 按 AI 工具、指定电脑与并发限制领取下一条任务（重跑的任务会带上 previousFailure）, responses: { '200': { description: 无可领取任务时 data 为 null } } }
   /ai/runner/runs/{runId}/complete:
     post:
-      summary: Runner 回传 AI CLI 退出码、摘要和会话 id
+      summary: Runner 回传 AI CLI 退出码、摘要、会话 id 与本次用量
+      description: |
+        用量字段（model / models / inputTokens / outputTokens / cachedInputTokens /
+        totalTokens / costUsd）由 Runner 从 CLI 的结束事件里解析，见 ADR-026。
+        Codex 不回传花费，costUsd 为 null；解析失败时全部为 0，服务端不会覆盖已记录的账单。
+        续跑在同一条运行记录上累加。
       parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CompleteAiRunRequest' } } }
       responses: { '200': { description: OK }, '401': { description: 运行不属于当前节点 } }
   # 自动化域（关系表；cronExpr 非空的任务由服务端调度器按计划自动执行）
   /jobs:
@@ -623,6 +631,32 @@ components:
         line: { type: integer, description: 光标所在的顶层块序号，-1 表示只在查看 }
         editing: { type: boolean, description: 上一个心跳周期内是否有输入 }
         rev: { type: integer, description: 客户端手上的正文版本号 }
+    CompleteAiRunRequest:
+      type: object
+      description: Runner 回传的执行结果与本次用量（见 ADR-026）
+      properties:
+        exitCode: { type: integer, description: 0 为成功；非 0 时运行标记为 failed }
+        resultSummary: { type: string, description: AI 的最终答复摘要 }
+        sessionId: { type: string, description: CLI 会话 id，供后续原会话续跑 }
+        model: { type: string, nullable: true, description: 本次输出 token 最多的模型 }
+        models: { type: string, nullable: true, description: 本次用到的全部模型，逗号分隔 }
+        inputTokens: { type: integer, format: int64, description: 非缓存输入 token }
+        outputTokens: { type: integer, format: int64 }
+        cachedInputTokens: { type: integer, format: int64, description: 缓存读取与缓存写入之和 }
+        totalTokens: { type: integer, format: int64, description: 三类 token 合计 }
+        costUsd: { type: number, nullable: true, description: 折算额度（美元）；Codex 不回传时为 null }
+    AiRunUsage:
+      type: object
+      description: 运行详情里返回的用量账单
+      properties:
+        model: { type: string, nullable: true }
+        models: { type: string, nullable: true }
+        inputTokens: { type: integer, format: int64 }
+        outputTokens: { type: integer, format: int64 }
+        cachedInputTokens: { type: integer, format: int64 }
+        totalTokens: { type: integer, format: int64 }
+        costUsd: { type: number, nullable: true }
+        recorded: { type: boolean, description: false 表示这次没记上账，不是「用了 0」 }
     SaveWebhookRequest:
       type: object
       description: url 省略表示不修改地址；明文只在服务端使用，加密后落 system_setting

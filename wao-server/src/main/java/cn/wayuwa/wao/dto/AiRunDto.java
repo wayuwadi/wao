@@ -21,6 +21,8 @@ public record AiRunDto(
         String latestProgress,
         String progressUpdatedAt,
         List<AiRunProgressDto> progress,
+        /** 本次用掉的模型、token 与折算额度。 */
+        AiRunUsageDto usage,
         String sessionId,
         Integer exitCode,
         String createdAt,

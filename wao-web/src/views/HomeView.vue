@@ -11,6 +11,7 @@ import {
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
+import { formatCost, formatTokens, shortModel, usageSummary } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
 import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiWorkflow } from '@/types'
 
@@ -297,7 +298,10 @@ onBeforeUnmount(() => {
             </span>
             <span class="recent-main">
               <b>{{ run.taskTitle }}</b>
-              <em>{{ run.projectName }} · {{ engineLabel(run.engine) }} · {{ run.runnerName || '未分配电脑' }}</em>
+              <em>
+                {{ run.projectName }} · {{ engineLabel(run.engine) }} · {{ run.runnerName || '未分配电脑' }}
+                <span v-if="usageSummary(run.usage)" class="recent-usage">· {{ usageSummary(run.usage) }}</span>
+              </em>
               <small v-if="run.status === 'failed'">{{ resultPreview(run) }}</small>
             </span>
             <span class="recent-status">{{ statusMeta[run.status].label }}</span>
@@ -475,7 +479,18 @@ onBeforeUnmount(() => {
           <div><dt>退出码</dt><dd>{{ selectedRun.exitCode ?? '—' }}</dd></div>
           <div><dt>{{ selectedRun.finishedAt ? '结束时间' : '最近反馈' }}</dt><dd>{{ timeText(selectedRun.finishedAt || selectedRun.progressUpdatedAt) || '等待中' }}</dd></div>
         </dl>
-        <div class="result-title">AI 执行记录</div>
+        <div class="result-title">本次消耗</div>
+        <div v-if="selectedRun.usage?.recorded" class="usage-grid">
+          <div><dt>模型</dt><dd :title="selectedRun.usage.models || ''">{{ shortModel(selectedRun.usage.model) || '未回传' }}</dd></div>
+          <div><dt>合计 token</dt><dd>{{ formatTokens(selectedRun.usage.totalTokens) }}</dd></div>
+          <div><dt>输入 / 输出</dt><dd>{{ formatTokens(selectedRun.usage.inputTokens) }} / {{ formatTokens(selectedRun.usage.outputTokens) }}</dd></div>
+          <div><dt>缓存命中</dt><dd>{{ formatTokens(selectedRun.usage.cachedInputTokens) }}</dd></div>
+          <div><dt>折算额度</dt><dd>{{ formatCost(selectedRun.usage.costUsd) || '该工具未回传' }}</dd></div>
+        </div>
+        <p v-else class="usage-empty">
+          {{ ['queued', 'claimed', 'running'].includes(selectedRun.status) ? '运行结束后会记下本次消耗。' : '这次运行没有记上账（执行节点未回传用量）。' }}
+        </p>
+        <div class="result-title result-gap">AI 执行记录</div>
         <AiRunProgressTimeline :run="selectedRun" />
         <template v-if="selectedRun.resultSummary">
           <div class="result-title result-gap">{{ selectedRun.status === 'failed' ? '失败原因' : '最终结果' }}</div>
@@ -753,6 +768,12 @@ onBeforeUnmount(() => {
 .run-detail dd { margin: 4px 0 0; font-size: 11.5px; font-weight: 600; }
 .result-title { margin-bottom: 7px; font-size: 12px; font-weight: 650; }
 .result-title.result-gap { margin-top: 16px; }
+.usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+.usage-grid > div { min-width: 0; padding: 9px 11px; border: 1px solid #e6e9f4; border-radius: 9px; background: #fafbff; }
+.usage-grid dt { color: var(--wao-text-weak); font-size: 10px; }
+.usage-grid dd { margin: 4px 0 0; overflow: hidden; font-size: 11.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.usage-empty { margin: 0; padding: 11px; border: 1px dashed #dfe2ec; border-radius: 9px; color: var(--wao-text-weak); font-size: 11.5px; }
+.recent-usage { color: var(--wao-text-3); }
 .run-detail pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border: 1px solid #ead3d3; border-radius: 10px; background: #fff8f8; color: #753030; font: 11.5px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 .run-detail footer { margin-top: 18px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
 .run-detail footer .retry-note { margin-right: auto; color: var(--wao-text-weak); font-size: 11px; }

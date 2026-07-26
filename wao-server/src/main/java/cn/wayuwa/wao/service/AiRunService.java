@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.service;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -26,6 +27,7 @@ import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
 import cn.wayuwa.wao.dto.AiRunProgressDto;
+import cn.wayuwa.wao.dto.AiRunUsageDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
@@ -482,6 +484,7 @@ public class AiRunService {
         run.setStatus(exitCode == 0 ? "succeeded" : "failed");
         run.setResultSummary(limit(request.resultSummary(), MAX_RESULT));
         if (StringUtils.hasText(request.sessionId())) run.setSessionId(limit(request.sessionId(), 128));
+        applyUsage(run, request);
         run.setFinishedAt(LocalDateTime.now());
         String engine = label(blankOr(run.getEngine(), DEFAULT_ENGINE));
         String completion = exitCode == 0 ? engine + " 已完成执行，等待人工验收" : engine + " 执行未完成，请查看失败原因";
@@ -490,6 +493,51 @@ public class AiRunService {
         runner.setLastSeenAt(LocalDateTime.now());
         runnerMapper.updateById(runner);
         return toRunDtos(List.of(run)).get(0);
+    }
+
+    /**
+     * 记下这次运行的模型与用量。
+     *
+     * <p>Runner 解析不出用量时会回传全 0，这种情况不覆盖已有数据——续跑会对同一条运行再回传
+     * 一次，不能让一次统计失败把先前记好的账抹掉。
+     */
+    private void applyUsage(AiTaskRunEntity run, CompleteAiRunRequest request) {
+        long input = positive(request.inputTokens());
+        long output = positive(request.outputTokens());
+        long cached = positive(request.cachedInputTokens());
+        long total = request.totalTokens() == null ? input + output + cached
+                : positive(request.totalTokens());
+        boolean hasCost = request.costUsd() != null && request.costUsd().signum() > 0;
+        if (total == 0 && !hasCost && !StringUtils.hasText(request.model())) return;
+        // 续跑会在原有账单上累加，页面看到的是这条运行到目前为止的总消耗。
+        run.setInputTokens(valueOr(run.getInputTokens(), 0L) + input);
+        run.setOutputTokens(valueOr(run.getOutputTokens(), 0L) + output);
+        run.setCachedInputTokens(valueOr(run.getCachedInputTokens(), 0L) + cached);
+        run.setTotalTokens(valueOr(run.getTotalTokens(), 0L) + total);
+        if (hasCost) {
+            run.setCostUsd(valueOr(run.getCostUsd(), BigDecimal.ZERO).add(request.costUsd()));
+        }
+        if (StringUtils.hasText(request.model())) run.setModel(limit(request.model().trim(), 120));
+        run.setModels(limit(mergeModels(run.getModels(), request.models()), 500));
+    }
+
+    /** 把续跑用到的模型并进已记录的列表，保持去重和稳定顺序。 */
+    private static String mergeModels(String recorded, String reported) {
+        Set<String> names = new java.util.TreeSet<>();
+        for (String source : List.of(blankOr(recorded, ""), blankOr(reported, ""))) {
+            for (String name : source.split(",")) {
+                if (StringUtils.hasText(name)) names.add(name.trim());
+            }
+        }
+        return names.isEmpty() ? null : String.join(",", names);
+    }
+
+    private static AiRunUsageDto toUsageDto(AiTaskRunEntity run) {
+        long total = valueOr(run.getTotalTokens(), 0L);
+        boolean recorded = total > 0 || run.getCostUsd() != null || StringUtils.hasText(run.getModel());
+        return new AiRunUsageDto(run.getModel(), run.getModels(),
+                valueOr(run.getInputTokens(), 0L), valueOr(run.getOutputTokens(), 0L),
+                valueOr(run.getCachedInputTokens(), 0L), total, run.getCostUsd(), recorded);
     }
 
     private void recoverStaleRuns() {
@@ -548,7 +596,8 @@ public class AiRunService {
                     run.getRunnerId(), runner == null ? null : runner.getName(), run.getRequestedRunnerId(),
                     run.getBranchName(), run.getRetryOfRunId(),
                     run.getResultSummary(), run.getLatestProgress(), text(run.getProgressUpdatedAt()),
-                    progressByRun.getOrDefault(run.getId(), List.of()), run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
+                    progressByRun.getOrDefault(run.getId(), List.of()), toUsageDto(run),
+                    run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
                     text(run.getStartedAt()), text(run.getFinishedAt()));
         }).toList();
     }
@@ -662,6 +711,19 @@ public class AiRunService {
 
     private static int valueOr(Integer value, int fallback) {
         return value == null ? fallback : value;
+    }
+
+    private static long valueOr(Long value, long fallback) {
+        return value == null ? fallback : value;
+    }
+
+    private static BigDecimal valueOr(BigDecimal value, BigDecimal fallback) {
+        return value == null ? fallback : value;
+    }
+
+    /** 负数一律按 0 处理：节点回传的用量只能让账单变大，不能倒扣。 */
+    private static long positive(Long value) {
+        return value == null || value < 0 ? 0 : value;
     }
 
     private static int clamp(Integer value, int min, int max, int fallback) {

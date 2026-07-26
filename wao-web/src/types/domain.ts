@@ -329,6 +329,18 @@ export interface AiRunProgress {
 }
 
 /** 一次从 WAO 派发到本地 AI CLI 的任务运行。 */
+/** 一次 AI 运行的用量账单；`recorded` 为 false 表示这次没记上账，不是「用了 0」。 */
+export interface AiRunUsage {
+  model: string | null
+  models: string | null
+  inputTokens: number
+  outputTokens: number
+  cachedInputTokens: number
+  totalTokens: number
+  costUsd: number | null
+  recorded: boolean
+}
+
 export interface AiRun {
   id: string
   taskId: string
@@ -347,6 +359,8 @@ export interface AiRun {
   latestProgress: string | null
   progressUpdatedAt: string | null
   progress: AiRunProgress[]
+  /** 本次用掉的模型、token 与折算额度。 */
+  usage: AiRunUsage
   sessionId: string | null
   exitCode: number | null
   createdAt: string

@@ -17,6 +17,7 @@ import { copyToClipboard } from '@/utils/clipboard'
 import { continueAiRun, createAiRuns, fetchTaskAiRuns } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
+import { usageSummary } from '@/composables/aiUsage'
 import { engineIcon, engineLabel } from '@/composables/aiEngines'
 import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
@@ -676,6 +677,9 @@ function demo(msg: string) {
                 <i class="ri-arrow-down-s-line"></i>
               </summary>
               <div class="ai-run-body">
+                <div v-if="usageSummary(run.usage)" class="ai-run-usage" :title="run.usage.models || ''">
+                  <i class="ri-copper-coin-line"></i>{{ usageSummary(run.usage) }}
+                </div>
                 <AiRunProgressTimeline :run="run" />
                 <div v-if="run.resultSummary" class="ai-final-result">
                   <b>{{ run.status === 'failed' ? '失败原因' : '最终结果' }}</b>
@@ -1643,6 +1647,8 @@ function demo(msg: string) {
 .ai-run-latest { flex: 1; min-width: 0; overflow: hidden; color: var(--wao-text-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-run-entry summary time { flex: 0 0 auto; color: var(--wao-text-faint); font-size: 10px; }
 .ai-run-body { padding: 0 10px 10px; }
+.ai-run-usage { margin-bottom: 8px; padding: 6px 9px; border-radius: 7px; background: #f7f8fd; color: var(--wao-text-3); font-size: 10.5px; }
+.ai-run-usage i { margin-right: 5px; color: #a8862f; }
 .ai-final-result { margin-top: 10px; padding: 10px 12px; border-radius: 9px; background: #f7f8fb; }
 .ai-final-result b { font-size: 11px; }
 .ai-final-result p { max-height: 180px; margin: 5px 0 0; overflow: auto; color: var(--wao-text-3); font-size: 11px; line-height: 1.65; white-space: pre-wrap; }
