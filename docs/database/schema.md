@@ -192,6 +192,7 @@ erDiagram
 | job_id | VARCHAR(32) FK→automation_job | 所属任务 |
 | run_time_label | VARCHAR(64) | 展示用开始时间文案 |
 | result | VARCHAR(64) | 结果文案（含「成功」/「失败」关键字供前端着色） |
+| executor_id | VARCHAR(32) NULL | 手动触发的成员；定时任务为空，界面显示「定时任务」 |
 | duration_ms | INT | 模拟耗时 |
 | ord | INT | 顺序（0 = 最近一次） |
 

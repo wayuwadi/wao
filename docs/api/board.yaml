@@ -272,7 +272,7 @@ paths:
     get: { summary: 任务详情, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     patch: { summary: 局部更新任务, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     delete: { summary: 删除任务（级联删除运行记录）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
-  /jobs/{id}/run: { post: { summary: 手动触发一次运行, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
+  /jobs/{id}/run: { post: { summary: 手动触发一次运行并记录当前会话成员为执行人, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/pause: { post: { summary: 暂停（停止按计划自动执行）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/resume: { post: { summary: 恢复已暂停的任务, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/reauth: { post: { summary: 重新授权（「待修复」恢复为「正常」）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }

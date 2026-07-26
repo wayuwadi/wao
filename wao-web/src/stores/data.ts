@@ -1203,7 +1203,7 @@ export const useDataStore = defineStore('data', () => {
       }
     }
     const result = j.status === '待修复' ? '失败 · 需要先重新授权' : '成功 · 手动触发'
-    j.runs.unshift(['刚刚', result])
+    j.runs.unshift({ time: '刚刚', executor: '你', result })
     j.last = '刚刚 · ' + result
   }
 

@@ -24,6 +24,7 @@ CREATE TABLE automation_run (
     job_id        VARCHAR(32)  NOT NULL,
     run_time_label VARCHAR(64),
     result        VARCHAR(64),
+    executor_id   VARCHAR(32),
     duration_ms   INT,
     ord           INT          NOT NULL DEFAULT 0,
     PRIMARY KEY (id),

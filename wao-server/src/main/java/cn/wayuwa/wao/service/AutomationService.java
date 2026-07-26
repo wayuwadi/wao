@@ -11,6 +11,7 @@ import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.AutomationJobEntity;
 import cn.wayuwa.wao.domain.AutomationRunEntity;
 import cn.wayuwa.wao.dto.AutomationJobDto;
+import cn.wayuwa.wao.dto.AutomationRunDto;
 import cn.wayuwa.wao.dto.CreateJobRequest;
 import cn.wayuwa.wao.dto.PatchJobRequest;
 import cn.wayuwa.wao.mapper.AutomationJobMapper;
@@ -44,13 +45,15 @@ public class AutomationService {
     private final ObjectMapper json;
     /** 已登记的真实执行器，按 {@link JobHandler#name()} 索引。 */
     private final Map<String, JobHandler> handlers;
+    private final MemberService members;
 
     public AutomationService(AutomationJobMapper jobMapper, AutomationRunMapper runMapper, ObjectMapper json,
-            List<JobHandler> handlers) {
+            List<JobHandler> handlers, MemberService members) {
         this.jobMapper = jobMapper;
         this.runMapper = runMapper;
         this.json = json;
         this.handlers = handlers.stream().collect(Collectors.toMap(JobHandler::name, h -> h));
+        this.members = members;
     }
 
     /** 列出全部自动化任务（含近期运行记录，最近一次在前）。 */
@@ -140,12 +143,12 @@ public class AutomationService {
      * <p>登记了真实执行器（{@code handler}）的任务会真的去跑一遍，运行记录写的是执行器返回的结果；
      * 没有执行器的仍是模拟运行。
      */
-    public AutomationJobDto runJob(String id) {
+    public AutomationJobDto runJob(String id, String executorId) {
         AutomationJobEntity e = requireJob(id);
         if ("待修复".equals(e.getStatus())) {
-            recordRun(e, "失败 · 需要先重新授权");
+            recordRun(e, "失败 · 需要先重新授权", executorId);
         } else {
-            recordRun(e, execute(e, "成功 · 手动触发"));
+            recordRun(e, execute(e, "成功 · 手动触发"), executorId);
         }
         jobMapper.updateById(e);
         return getJob(id);
@@ -192,7 +195,7 @@ public class AutomationService {
             return;
         }
         e.setNextFireAt(nextFireAt);
-        recordRun(e, execute(e, "成功 · 自动执行"));
+        recordRun(e, execute(e, "成功 · 自动执行"), null);
         jobMapper.updateById(e);
     }
 
@@ -233,12 +236,13 @@ public class AutomationService {
                 .le(AutomationJobEntity::getNextFireAt, now));
     }
 
-    private void recordRun(AutomationJobEntity e, String result) {
+    private void recordRun(AutomationJobEntity e, String result, String executorId) {
         AutomationRunEntity run = new AutomationRunEntity();
         run.setId("r" + System.currentTimeMillis());
         run.setJobId(e.getId());
         run.setRunTimeLabel(LocalDateTime.now().format(TIME_LABEL));
         run.setResult(result);
+        run.setExecutorId(executorId);
         int stepCount = readSteps(e.getStepsJson()).size();
         run.setDurationMs(800 + stepCount * 1200);
         run.setOrd(0);
@@ -276,12 +280,18 @@ public class AutomationService {
     }
 
     private AutomationJobDto toDto(AutomationJobEntity e, List<AutomationRunEntity> runs) {
-        List<List<String>> runPairs = runs.stream()
-                .map(r -> List.of(r.getRunTimeLabel(), r.getResult()))
+        List<AutomationRunDto> runPairs = runs.stream()
+                .map(r -> new AutomationRunDto(r.getRunTimeLabel(), executorName(r.getExecutorId()), r.getResult()))
                 .toList();
         return new AutomationJobDto(e.getId(), e.getName(), e.getIcon(), e.getScheduleLabel(), e.getStatus(),
                 e.getLastRunLabel(), e.getDescription(), e.getSource(), e.getTarget(), readSteps(e.getStepsJson()),
                 runPairs, e.getHandler());
+    }
+
+    private String executorName(String executorId) {
+        if (executorId == null || executorId.isBlank()) return "定时任务";
+        return members.list().stream().filter(member -> executorId.equals(member.id()))
+                .map(member -> member.name()).findFirst().orElse(executorId);
     }
 
     private List<String> readSteps(String value) {
