@@ -486,8 +486,8 @@ def build_prompt(claim: dict[str, Any]) -> str:
 def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter",
         environment: dict[str, str] | None = None,
-        session_id: str | None = None) -> tuple[int, str, str | None]:
-    """跑一次 `codex exec --json`，返回退出码、最终答复和会话 id。"""
+        session_id: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
+    """跑一次 `codex exec --json`，返回退出码、最终答复、会话 id 和用量。"""
     result_file = worktree / ".wao-ai-result.txt"
     command = [
         executable, "exec", *( ["resume", session_id] if session_id else []), "--json", "--color", "never", "--sandbox", sandbox,
@@ -501,14 +501,14 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         session_id = event.get("thread_id") or event.get("session_id") or session_id
     result_text = (result_file.read_text(encoding="utf-8", errors="replace")
                    if result_file.exists() else output[-12000:])
-    return exit_code, result_text, session_id
+    return exit_code, result_text, session_id, collect_usage(output, "codex")
 
 
 def run_claude(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter", environment: dict[str, str] | None = None,
         model: str | None = None, repo_dir: Path | None = None,
-        session_id: str | None = None) -> tuple[int, str, str | None]:
-    """跑一次 `claude -p --output-format stream-json`，返回退出码、最终答复和会话 id。"""
+        session_id: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
+    """跑一次 `claude -p --output-format stream-json`，返回退出码、最终答复、会话 id 和用量。"""
     command = [
         executable, "-p", "--output-format", "stream-json", "--verbose",
         "--add-dir", str(worktree),
@@ -530,7 +530,7 @@ def run_claude(executable: str, worktree: Path, prompt: str, sandbox: str,
             result_text = _readable_text(event.get("result")) or result_text
             if event.get("is_error") and exit_code == 0:
                 exit_code = 1
-    return exit_code, result_text or output[-12000:], session_id
+    return exit_code, result_text or output[-12000:], session_id, collect_usage(output, "claude")
 
 
 def iter_events(output: str):
@@ -543,6 +543,93 @@ def iter_events(output: str):
             yield event
 
 
+def _count(value: Any) -> int:
+    """只接受真正的整数计数；布尔和字符串一律当 0，避免把脏字段算进用量。"""
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _amount(value: Any) -> float:
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
+
+
+def _blank_usage() -> dict[str, Any]:
+    return {"model": None, "models": None, "inputTokens": 0, "outputTokens": 0,
+            "cachedInputTokens": 0, "totalTokens": 0, "costUsd": None}
+
+
+def _finish_usage(usage: dict[str, Any], by_model: dict[str, int], cost: float,
+        counted_cost: bool) -> dict[str, Any]:
+    """按输出 token 挑出主模型，并把合计与花费补齐。"""
+    if by_model:
+        usage["model"] = max(by_model, key=lambda name: by_model[name])
+        # 一次运行可能中途换模型（自动选模型时尤其常见），全部记下来便于事后核账。
+        usage["models"] = ",".join(sorted(by_model))
+    usage["totalTokens"] = usage["inputTokens"] + usage["outputTokens"] + usage["cachedInputTokens"]
+    usage["costUsd"] = round(cost, 6) if counted_cost else None
+    return usage
+
+
+def collect_claude_usage(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """读取 Claude Code `result` 事件里的 usage / total_cost_usd / modelUsage。"""
+    usage, by_model, cost, counted_cost = _blank_usage(), {}, 0.0, False
+    fallback_model = None
+    for event in events:
+        if event.get("type") == "system" and event.get("subtype") == "init":
+            fallback_model = event.get("model") or fallback_model
+        if event.get("type") != "result":
+            continue
+        block = event.get("usage")
+        if isinstance(block, dict):
+            usage["inputTokens"] += _count(block.get("input_tokens"))
+            usage["outputTokens"] += _count(block.get("output_tokens"))
+            usage["cachedInputTokens"] += (_count(block.get("cache_read_input_tokens"))
+                                           + _count(block.get("cache_creation_input_tokens")))
+        if "total_cost_usd" in event:
+            cost += _amount(event.get("total_cost_usd"))
+            counted_cost = True
+        per_model = event.get("modelUsage")
+        if isinstance(per_model, dict):
+            for name, detail in per_model.items():
+                if isinstance(detail, dict):
+                    by_model[str(name)] = by_model.get(str(name), 0) + _count(detail.get("outputTokens"))
+    if not by_model and fallback_model:
+        by_model[str(fallback_model)] = 0
+    return _finish_usage(usage, by_model, cost, counted_cost)
+
+
+def collect_codex_usage(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """累加 Codex `turn.completed` 事件里的 usage；Codex 不回传花费，只记 token。"""
+    usage, by_model = _blank_usage(), {}
+    for event in events:
+        model = event.get("model")
+        if isinstance(model, str) and model:
+            by_model.setdefault(model, 0)
+        block = event.get("usage")
+        if not isinstance(block, dict):
+            continue
+        output_tokens = _count(block.get("output_tokens"))
+        usage["inputTokens"] += _count(block.get("input_tokens"))
+        usage["outputTokens"] += output_tokens
+        usage["cachedInputTokens"] += _count(block.get("cached_input_tokens"))
+        if isinstance(model, str) and model:
+            by_model[model] += output_tokens
+    return _finish_usage(usage, by_model, 0.0, False)
+
+
+def collect_usage(output: str, engine: str) -> dict[str, Any]:
+    """汇总一次运行的 token 用量、花费和实际使用的模型。
+
+    解析失败不能影响任务结果回传，因此任何异常都回落成空用量：宁可少一条账，也不能
+    让一次已经跑完的任务因为统计问题变成失败。
+    """
+    try:
+        events = list(iter_events(output))
+        return collect_claude_usage(events) if engine == "claude" else collect_codex_usage(events)
+    except Exception as exc:  # noqa: BLE001 - 统计失败不影响任务结果
+        log(f"用量统计失败，本次不记账：{exc}")
+        return _blank_usage()
+
+
 def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, git_command: str,
         engine_commands: dict[str, str], cli_environment: dict[str, str] | None = None,
         claude_model: str | None = None, git_protocol: str = "auto",
@@ -553,6 +640,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
     worktree: Path | None = None
     exit_code = -1
     session_id: str | None = None
+    usage = _blank_usage()
     summary = ""
     stage = "准备 Git 工作区"
     reporter = ProgressReporter(api, run_id, engine)
@@ -578,12 +666,16 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         reporter.send("phase", f"工作区已准备完成，正在启动 {name}", force=True)
         stage = f"等待 {name} 完成"
         if engine == "claude":
-            exit_code, result_text, session_id = run_claude(
+            exit_code, result_text, session_id, usage = run_claude(
                 executable, worktree, prompt, sandbox, reporter, cli_environment,
                 claude_model, root / claim["workspaceDir"], session_id)
         else:
-            exit_code, result_text, session_id = run_codex(
+            exit_code, result_text, session_id, usage = run_codex(
                 executable, worktree, prompt, sandbox, reporter, cli_environment, session_id)
+        cost_text = "未回传" if usage["costUsd"] is None else "$%.4f" % usage["costUsd"]
+        log(f"[{run_id}] 用量：模型 {usage['model'] or '未知'}，"
+            f"token {usage['totalTokens']}（输入 {usage['inputTokens']} / 输出 "
+            f"{usage['outputTokens']} / 缓存 {usage['cachedInputTokens']}），折算额度 {cost_text}")
         exit_code, result_text = normalize_result(exit_code, result_text, engine)
         reporter.send("result", f"{name} 已执行完成，正在整理结果" if exit_code == 0
                       else f"{name} 执行未完成，正在整理失败原因", force=True)
@@ -596,7 +688,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         try:
             api.post(
                 f"/api/ai/runner/runs/{run_id}/complete",
-                {"exitCode": exit_code, "resultSummary": summary, "sessionId": session_id},
+                {"exitCode": exit_code, "resultSummary": summary, "sessionId": session_id, **usage},
             )
             log(f"[{run_id}] 已回传，退出码 {exit_code}")
         except Exception as exc:  # noqa: BLE001

@@ -158,7 +158,7 @@ class ClaudeEngineTest(unittest.TestCase):
         ]))
         reporter = Mock()
 
-        exit_code, result_text, session_id = RUNNER.run_claude(
+        exit_code, result_text, session_id, usage = RUNNER.run_claude(
             "claude", Path("/work"), "提示", "danger-full-access", reporter)
 
         self.assertEqual(0, exit_code)
@@ -171,13 +171,82 @@ class ClaudeEngineTest(unittest.TestCase):
     def test_claude_error_result_is_a_failure_even_with_exit_code_zero(self, invoke: Mock) -> None:
         invoke.return_value = (0, '{"type":"result","is_error":true,"result":"上下文超限"}')
 
-        exit_code, result_text, _ = RUNNER.run_claude(
+        exit_code, result_text, _, _ = RUNNER.run_claude(
             "claude", Path("/work"), "提示", "workspace-write", Mock())
 
         self.assertEqual(1, exit_code)
         code, summary = RUNNER.normalize_result(exit_code, result_text, "claude")
         self.assertEqual(1, code)
         self.assertIn("Claude Code 退出码：1", summary)
+
+
+class UsageAccountingTest(unittest.TestCase):
+    """用量统计；Claude 的样例取自真实 `claude -p --output-format stream-json` 输出。"""
+
+    CLAUDE_OUTPUT = "\n".join([
+        '{"type":"system","subtype":"init","session_id":"s1","model":"claude-opus-5"}',
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"收到"}]}}',
+        '{"type":"result","subtype":"success","is_error":false,"session_id":"s1",'
+        '"total_cost_usd":0.08705349999999999,'
+        '"usage":{"input_tokens":2,"cache_creation_input_tokens":8142,'
+        '"cache_read_input_tokens":11047,"output_tokens":4},'
+        '"modelUsage":{"claude-opus-5":{"inputTokens":2,"outputTokens":4,'
+        '"cacheReadInputTokens":11047,"cacheCreationInputTokens":8142,"costUSD":0.087}},'
+        '"result":"WAO_RUN_STATUS: SUCCESS\\n已合并"}',
+    ])
+
+    def test_claude_usage_is_read_from_the_result_event(self) -> None:
+        usage = RUNNER.collect_usage(self.CLAUDE_OUTPUT, "claude")
+
+        self.assertEqual("claude-opus-5", usage["model"])
+        self.assertEqual(2, usage["inputTokens"])
+        self.assertEqual(4, usage["outputTokens"])
+        self.assertEqual(8142 + 11047, usage["cachedInputTokens"])
+        self.assertEqual(2 + 4 + 8142 + 11047, usage["totalTokens"])
+        self.assertAlmostEqual(0.087053, usage["costUsd"], places=6)
+
+    def test_claude_multi_model_run_keeps_every_model_and_picks_the_busiest(self) -> None:
+        output = ('{"type":"result","total_cost_usd":0.5,'
+                  '"usage":{"input_tokens":10,"output_tokens":20},'
+                  '"modelUsage":{"claude-haiku-4-5-20251001":{"outputTokens":5},'
+                  '"claude-opus-5":{"outputTokens":15}}}')
+
+        usage = RUNNER.collect_usage(output, "claude")
+
+        self.assertEqual("claude-opus-5", usage["model"])
+        self.assertEqual("claude-haiku-4-5-20251001,claude-opus-5", usage["models"])
+
+    def test_codex_usage_accumulates_turns_and_reports_no_cost(self) -> None:
+        output = "\n".join([
+            '{"type":"thread.started","thread_id":"t1","model":"gpt-5-codex"}',
+            '{"type":"turn.completed","usage":{"input_tokens":100,'
+            '"cached_input_tokens":900,"output_tokens":50}}',
+            '{"type":"turn.completed","usage":{"input_tokens":10,'
+            '"cached_input_tokens":5,"output_tokens":7}}',
+        ])
+
+        usage = RUNNER.collect_usage(output, "codex")
+
+        self.assertEqual(110, usage["inputTokens"])
+        self.assertEqual(57, usage["outputTokens"])
+        self.assertEqual(905, usage["cachedInputTokens"])
+        self.assertEqual(1072, usage["totalTokens"])
+        self.assertIsNone(usage["costUsd"], "Codex 不回传花费，不能编一个 0 出来")
+
+    def test_unparseable_output_falls_back_to_empty_usage(self) -> None:
+        usage = RUNNER.collect_usage("这不是 JSON\n{坏掉的行", "claude")
+
+        self.assertEqual(0, usage["totalTokens"])
+        self.assertIsNone(usage["model"])
+        self.assertIsNone(usage["costUsd"])
+
+    def test_dirty_token_fields_are_ignored_instead_of_crashing(self) -> None:
+        output = ('{"type":"result","usage":{"input_tokens":"很多",'
+                  '"output_tokens":true,"cache_read_input_tokens":null}}')
+
+        usage = RUNNER.collect_usage(output, "claude")
+
+        self.assertEqual(0, usage["totalTokens"])
 
 
 GIT = shutil.which("git")

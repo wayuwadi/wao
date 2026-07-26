@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.domain;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -26,6 +27,16 @@ public class AiTaskRunEntity {
     private LocalDateTime progressUpdatedAt;
     private String sessionId;
     private String pendingInput;
+    /** 本次运行输出 token 最多的模型；CLI 没回传时为 null。 */
+    private String model;
+    /** 本次运行用到的全部模型，逗号分隔；自动选模型时可能不止一个。 */
+    private String models;
+    private Long inputTokens;
+    private Long outputTokens;
+    private Long cachedInputTokens;
+    private Long totalTokens;
+    /** 折算额度（美元）；Codex 不回传花费，这里会是 null。 */
+    private BigDecimal costUsd;
     private Integer exitCode;
     private LocalDateTime createdAt;
     private LocalDateTime claimedAt;
@@ -64,6 +75,20 @@ public class AiTaskRunEntity {
     public void setSessionId(String sessionId) { this.sessionId = sessionId; }
     public String getPendingInput() { return pendingInput; }
     public void setPendingInput(String pendingInput) { this.pendingInput = pendingInput; }
+    public String getModel() { return model; }
+    public void setModel(String model) { this.model = model; }
+    public String getModels() { return models; }
+    public void setModels(String models) { this.models = models; }
+    public Long getInputTokens() { return inputTokens; }
+    public void setInputTokens(Long inputTokens) { this.inputTokens = inputTokens; }
+    public Long getOutputTokens() { return outputTokens; }
+    public void setOutputTokens(Long outputTokens) { this.outputTokens = outputTokens; }
+    public Long getCachedInputTokens() { return cachedInputTokens; }
+    public void setCachedInputTokens(Long cachedInputTokens) { this.cachedInputTokens = cachedInputTokens; }
+    public Long getTotalTokens() { return totalTokens; }
+    public void setTotalTokens(Long totalTokens) { this.totalTokens = totalTokens; }
+    public BigDecimal getCostUsd() { return costUsd; }
+    public void setCostUsd(BigDecimal costUsd) { this.costUsd = costUsd; }
     public Integer getExitCode() { return exitCode; }
     public void setExitCode(Integer exitCode) { this.exitCode = exitCode; }
     public LocalDateTime getCreatedAt() { return createdAt; }

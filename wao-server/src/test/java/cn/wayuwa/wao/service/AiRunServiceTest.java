@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -21,7 +22,9 @@ import cn.wayuwa.wao.domain.AiRunnerPairCodeEntity;
 import cn.wayuwa.wao.domain.AiTaskRunEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
+import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
+import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
@@ -344,6 +347,89 @@ class AiRunServiceTest {
         runner.setEngines(String.join(",", engines));
         runner.setMaxConcurrency(1);
         return runner;
+    }
+
+    @Test
+    void completeRecordsModelTokensAndCost() {
+        AiTaskRunEntity run = runningRun();
+
+        AiRunDto result = service.complete("local-token", "ar1", new CompleteAiRunRequest(
+                0, "WAO_RUN_STATUS: SUCCESS", "sess-1", "claude-opus-5", "claude-opus-5",
+                2L, 4L, 19_189L, 19_195L, new BigDecimal("0.087053")));
+
+        assertThat(run.getModel()).isEqualTo("claude-opus-5");
+        assertThat(run.getTotalTokens()).isEqualTo(19_195L);
+        assertThat(run.getCostUsd()).isEqualByComparingTo("0.087053");
+        assertThat(result.usage().recorded()).isTrue();
+        assertThat(result.usage().model()).isEqualTo("claude-opus-5");
+    }
+
+    @Test
+    void continuationAccumulatesOntoTheSameRunBill() {
+        AiTaskRunEntity run = runningRun();
+        run.setInputTokens(10L);
+        run.setOutputTokens(20L);
+        run.setCachedInputTokens(30L);
+        run.setTotalTokens(60L);
+        run.setCostUsd(new BigDecimal("0.10"));
+        run.setModel("claude-haiku-4-5-20251001");
+        run.setModels("claude-haiku-4-5-20251001");
+
+        service.complete("local-token", "ar1", new CompleteAiRunRequest(
+                0, "done", "sess-1", "claude-opus-5", "claude-opus-5",
+                1L, 2L, 3L, 6L, new BigDecimal("0.05")));
+
+        assertThat(run.getTotalTokens()).isEqualTo(66L);
+        assertThat(run.getCostUsd()).isEqualByComparingTo("0.15");
+        assertThat(run.getModels()).isEqualTo("claude-haiku-4-5-20251001,claude-opus-5");
+    }
+
+    @Test
+    void emptyUsageDoesNotWipeAnAlreadyRecordedBill() {
+        AiTaskRunEntity run = runningRun();
+        run.setTotalTokens(19_195L);
+        run.setCostUsd(new BigDecimal("0.087053"));
+        run.setModel("claude-opus-5");
+
+        // Runner 解析不出用量时回传全 0，这次不能把先前记好的账抹掉。
+        service.complete("local-token", "ar1",
+                new CompleteAiRunRequest(0, "done", "sess-1", null, null, 0L, 0L, 0L, 0L, null));
+
+        assertThat(run.getTotalTokens()).isEqualTo(19_195L);
+        assertThat(run.getCostUsd()).isEqualByComparingTo("0.087053");
+        assertThat(run.getModel()).isEqualTo("claude-opus-5");
+    }
+
+    @Test
+    void runWithoutUsageIsMarkedAsNotRecordedRatherThanZero() {
+        runningRun();
+
+        AiRunDto result = service.complete("local-token", "ar1",
+                new CompleteAiRunRequest(0, "done", "sess-1", null, null, null, null, null, null, null));
+
+        assertThat(result.usage().recorded()).isFalse();
+        assertThat(result.usage().totalTokens()).isZero();
+    }
+
+    /** 一条已被 rn1 领取、正在运行的记录，complete 的前置条件。 */
+    private AiTaskRunEntity runningRun() {
+        AiRunnerNodeEntity runner = runner("rn1", "Linux主节点", "claude");
+        runner.setLastSeenAt(LocalDateTime.now());
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId("ar1");
+        run.setTaskId("t1");
+        run.setProjectId("p1");
+        run.setEngine("claude");
+        run.setStatus("running");
+        run.setRunnerId("rn1");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runMapper.selectById("ar1")).thenReturn(run);
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "记录用量"));
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "记录用量")));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+        when(runnerMapper.selectBatchIds(any())).thenReturn(List.of(runner));
+        return run;
     }
 
     private static ProjectEntity project(String id, String name) {
