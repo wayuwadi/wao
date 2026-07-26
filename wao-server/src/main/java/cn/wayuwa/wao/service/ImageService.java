@@ -1,9 +1,12 @@
 package cn.wayuwa.wao.service;
 
 import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 
@@ -85,6 +88,21 @@ public class ImageService {
      * @throws BadRequestException 内容为空或超过 {@value #MAX_BYTES} 字节时
      */
     public ImageItemDto store(byte[] content, String contentType, String name, String source) {
+        return store(content, contentType, name, source, false);
+    }
+
+    /**
+     * 存一份图片字节到图床，可选按内容去重。
+     *
+     * @param content     图片字节
+     * @param contentType MIME 类型，识别不出时按 PNG 处理
+     * @param name        文件名
+     * @param source      来源描述，如 “飞书群聊 · 研发群”
+     * @param deduplicate 为 true 时，正文完全相同的图片直接复用已有记录，不再存一份
+     * @return 落库后（或已存在）的图床条目
+     * @throws BadRequestException 内容为空或超过 {@value #MAX_BYTES} 字节时
+     */
+    public ImageItemDto store(byte[] content, String contentType, String name, String source, boolean deduplicate) {
         if (content == null || content.length == 0) {
             throw new BadRequestException("图片内容为空");
         }
@@ -95,6 +113,14 @@ public class ImageService {
         if (!ALLOWED_TYPES.contains(type)) {
             type = "image/png";
         }
+        String hash = sha256(content);
+        if (deduplicate) {
+            // 摘要之外还比字节数，给 SHA-256 再上一道保险。
+            ImageBlobEntity same = mapper.findByContentHash(hash, content.length);
+            if (same != null) {
+                return toDto(same);
+            }
+        }
 
         ImageBlobEntity e = new ImageBlobEntity();
         e.setId("img" + System.currentTimeMillis() + (int) (Math.random() * 1000));
@@ -102,10 +128,19 @@ public class ImageService {
         e.setContentType(type);
         e.setByteSize((long) content.length);
         e.setSource(source);
+        e.setContentHash(hash);
         e.setCreatedAt(LocalDateTime.now());
         e.setContent(content);
         mapper.insert(e);
         return toDto(e);
+    }
+
+    private static String sha256(byte[] content) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 不可用", ex);
+        }
     }
 
     /**

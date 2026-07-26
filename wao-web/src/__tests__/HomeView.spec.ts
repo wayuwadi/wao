@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
+import { rerunAiRun } from '@/api/ai'
 
 vi.mock('@/api/ai', () => ({
   fetchAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
@@ -67,6 +68,8 @@ vi.mock('@/api/ai', () => ({
   createAiPairCode: vi.fn<() => Promise<{ code: string; expiresAt: string }>>()
     .mockResolvedValue({ code: 'ABCD2345KMNP', expiresAt: '2026-07-25T20:30:00' }),
   saveAiProjectConfig: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
+  rerunAiRun: vi.fn<() => Promise<Record<string, unknown>>>()
+    .mockResolvedValue({ id: 'ar3', taskId: 't1', taskTitle: '修复自动任务', retryOfRunId: 'ar1' }),
 }))
 
 function mountHome() {
@@ -93,6 +96,29 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.run-detail').text()).toContain('仓库地址无法克隆')
     expect(wrapper.find('.run-detail').text()).toContain('-1')
     expect(wrapper.find('.run-detail').text()).not.toContain('等待第一条 AI 反馈')
+    wrapper.unmount()
+  })
+
+  it('失败的运行可以带着报错重跑，成功的运行不给这个按钮', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    // 失败记录：详情里有「基于报错重跑」
+    await wrapper.find('.recent-list button').trigger('click')
+    const retry = wrapper.find('.run-detail footer .retry')
+    expect(retry.exists()).toBe(true)
+    expect(retry.text()).toContain('基于报错重跑')
+
+    await retry.trigger('click')
+    await flushPromises()
+    expect(rerunAiRun).toHaveBeenCalledWith('ar1')
+    // 重跑后收起详情，回到列表看新排队的运行
+    expect(wrapper.find('.run-detail').exists()).toBe(false)
+
+    // 进行中的运行不该出现这个按钮
+    await wrapper.find('.run-card').trigger('click')
+    expect(wrapper.find('.run-detail footer .retry').exists()).toBe(false)
     wrapper.unmount()
   })
 

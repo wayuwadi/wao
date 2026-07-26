@@ -1,0 +1,35 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useUiStore } from '@/stores/ui'
+
+/**
+ * 任务视图偏好：项目页的列表 / 看板切换要被记住。
+ *
+ * 用户日常看的是看板，但每次打开都从列表开始，等于每次都要多点一次。
+ */
+describe('ui store · 任务视图记忆', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  it('没有任何记录时默认用看板，而不是列表', () => {
+    expect(useUiStore().taskView).toBe('board')
+  })
+
+  it('切换后写进本地存储，下次进来还是这个视图', () => {
+    useUiStore().setTaskView('list')
+    expect(localStorage.getItem('wao-task-view-v1')).toBe('list')
+
+    // 模拟重开页面：重新建一个 store 实例
+    setActivePinia(createPinia())
+    expect(useUiStore().taskView).toBe('list')
+  })
+
+  it('本地存的是垃圾值时回落到看板，不至于把页面卡在空视图', () => {
+    localStorage.setItem('wao-task-view-v1', 'gantt')
+    setActivePinia(createPinia())
+
+    expect(useUiStore().taskView).toBe('board')
+  })
+})

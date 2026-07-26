@@ -341,6 +341,8 @@ export interface AiRun {
   runnerName: string | null
   requestedRunnerId: string | null
   branchName: string | null
+  /** 本次是在修哪一次失败的运行；不是重跑时为 null。 */
+  retryOfRunId: string | null
   resultSummary: string | null
   latestProgress: string | null
   progressUpdatedAt: string | null

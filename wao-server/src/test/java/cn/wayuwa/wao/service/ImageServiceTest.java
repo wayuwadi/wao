@@ -3,7 +3,11 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,6 +20,7 @@ import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.mapper.ImageBlobMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockMultipartFile;
 
 class ImageServiceTest {
@@ -95,5 +100,45 @@ class ImageServiceTest {
         when(mapper.selectById("nope")).thenReturn(null);
 
         assertThatThrownBy(() -> service.raw("nope")).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void storeWithDeduplicationReusesTheExistingCopyOfTheSameBytes() {
+        ImageBlobEntity existing = new ImageBlobEntity();
+        existing.setId("img-old");
+        existing.setName("img_key.png");
+        existing.setContentType("image/png");
+        existing.setByteSize(3L);
+        existing.setSource("飞书群聊 · 研发群");
+        when(mapper.findByContentHash(anyString(), eq(3L))).thenReturn(existing);
+
+        ImageItemDto dto = service.store(new byte[]{1, 2, 3}, "image/png", "img_key.png", "飞书群聊 · 研发群", true);
+
+        assertThat(dto.id()).isEqualTo("img-old");
+        assertThat(dto.url()).isEqualTo("/api/images/img-old/raw");
+        verify(mapper, never()).insert(any(ImageBlobEntity.class));
+    }
+
+    @Test
+    void storeWithDeduplicationStillInsertsWhenNothingMatches() {
+        when(mapper.findByContentHash(anyString(), anyLong())).thenReturn(null);
+
+        ImageItemDto dto = service.store(new byte[]{9, 9}, "image/png", "新图.png", "飞书群聊 · 研发群", true);
+
+        ArgumentCaptor<ImageBlobEntity> saved = ArgumentCaptor.forClass(ImageBlobEntity.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getContentHash()).hasSize(64);
+        assertThat(dto.name()).isEqualTo("新图.png");
+    }
+
+    @Test
+    void uploadKeepsEveryCopySoDeletingOneNeverBreaksAnother() {
+        MockMultipartFile file = new MockMultipartFile("file", "截图.png", "image/png", new byte[]{1, 2, 3});
+
+        service.upload(file, "任务 · 整理证件盒");
+
+        // 用户主动上传不走去重：两处各自引用自己的那份，删掉一份不该让另一处变成死链。
+        verify(mapper).insert(any(ImageBlobEntity.class));
+        verify(mapper, never()).findByContentHash(anyString(), anyLong());
     }
 }

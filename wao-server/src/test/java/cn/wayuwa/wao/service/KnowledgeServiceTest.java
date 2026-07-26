@@ -17,6 +17,7 @@ import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.domain.KbEntity;
 import cn.wayuwa.wao.domain.KbFolderEntity;
+import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.dto.CreateDocRequest;
 import cn.wayuwa.wao.dto.CreateKbRequest;
 import cn.wayuwa.wao.dto.CreateNoteRequest;
@@ -30,6 +31,7 @@ import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.KbFolderMapper;
 import cn.wayuwa.wao.mapper.KbGroupMapper;
 import cn.wayuwa.wao.mapper.KbMapper;
+import cn.wayuwa.wao.mapper.MemberMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -39,8 +41,17 @@ class KnowledgeServiceTest {
     private final KbMapper kbMapper = mock(KbMapper.class);
     private final KbFolderMapper folderMapper = mock(KbFolderMapper.class);
     private final DocMapper docMapper = mock(DocMapper.class);
+    private final MemberMapper memberMapper = mock(MemberMapper.class);
     private final KnowledgeService service =
-            new KnowledgeService(groupMapper, kbMapper, folderMapper, docMapper, new ObjectMapper());
+            new KnowledgeService(groupMapper, kbMapper, folderMapper, docMapper, memberMapper, new ObjectMapper());
+
+    private MemberEntity member(String id, String name) {
+        MemberEntity m = new MemberEntity();
+        m.setId(id);
+        m.setName(name);
+        when(memberMapper.selectById(id)).thenReturn(m);
+        return m;
+    }
 
     private KbEntity kb(String id) {
         KbEntity kb = new KbEntity();
@@ -338,6 +349,59 @@ class KnowledgeServiceTest {
         assertThat(dto.folderId()).isEqualTo("kb-notes-f");
         assertThat(dto.title()).isEqualTo("记一下：周四要交社保材料");
         assertThat(dto.author()).isEqualTo("m1");
+    }
+
+    @Test
+    void createNoteReusesTheFolderNamedAfterTheAuthor() {
+        KbEntity notes = kb("kb-notes");
+        notes.setNotes(true);
+        member("wd", "娃弟");
+        KbFolderEntity mine = folder("kb-notes-wd", "kb-notes");
+        mine.setName("娃弟");
+        when(kbMapper.selectList(any())).thenReturn(List.of(notes));
+        when(folderMapper.selectList(any())).thenReturn(List.of(mine));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+
+        DocDto dto = service.createNote(new CreateNoteRequest("随手一记", List.of()), "wd");
+
+        assertThat(dto.folderId()).isEqualTo("kb-notes-wd");
+        verify(folderMapper, never()).insert(any(KbFolderEntity.class));
+    }
+
+    @Test
+    void createNoteCreatesTheAuthorFolderOnFirstNote() {
+        KbEntity notes = kb("kb-notes");
+        notes.setNotes(true);
+        member("wg", "娃哥");
+        when(kbMapper.selectList(any())).thenReturn(List.of(notes));
+        when(folderMapper.selectList(any())).thenReturn(List.of());
+        when(folderMapper.selectById("kb-notes-wg")).thenReturn(null);
+        when(folderMapper.selectCount(any())).thenReturn(1L);
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+
+        DocDto dto = service.createNote(new CreateNoteRequest("随手一记", List.of()), "wg");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(KbFolderEntity.class);
+        verify(folderMapper).insert(captor.capture());
+        assertThat(captor.getValue().getName()).isEqualTo("娃哥");
+        assertThat(dto.folderId()).isEqualTo("kb-notes-wg");
+    }
+
+    @Test
+    void createNoteFallsBackToTheSharedFolderWhenTheAuthorIsUnknown() {
+        KbEntity notes = kb("kb-notes");
+        notes.setNotes(true);
+        KbFolderEntity shared = folder("kb-notes-f", "kb-notes");
+        when(kbMapper.selectList(any())).thenReturn(List.of(notes));
+        when(folderMapper.selectList(any())).thenReturn(List.of(shared));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+
+        DocDto dto = service.createNote(new CreateNoteRequest("随手一记", List.of()), null);
+
+        assertThat(dto.folderId()).isEqualTo("kb-notes-f");
     }
 
     @Test

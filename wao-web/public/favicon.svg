@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="WAO">
+  <defs>
+    <linearGradient id="wao" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#202B69"/>
+      <stop offset="1" stop-color="#4358D6"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#wao)"/>
+  <path d="M7 10 L11.5 22 L16 14.5 L20.5 22 L25 10"
+        fill="none" stroke="#FFFFFF" stroke-width="3.2"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

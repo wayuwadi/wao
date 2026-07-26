@@ -403,6 +403,29 @@ export const useDataStore = defineStore('data', () => {
     return useSessionStore().currentUser.id || 'wg'
   }
 
+  /**
+   * 小记知识库里属于当前登录成员的文件夹，没有就地建一个。
+   *
+   * 与后端 KnowledgeService.authorFolder 同一口径：文件夹按成员名命名
+   * （娃哥的进「娃哥」、娃弟的进「娃弟」），这样谁记的一眼可见。
+   */
+  function noteFolderOf(kb: KnowledgeBase, folderId?: string): KnowledgeBase['folders'][number] {
+    if (folderId) {
+      const known = kb.folders.find((f) => f.id === folderId)
+      if (known) return known
+    }
+    const author = currentAuthor()
+    const member = useSessionStore().memberById(author)
+    // memberById 查不到时会拿 id 顶名字，这种情况按「作者不明」处理，落回默认文件夹。
+    const name = member.name && member.name !== author ? member.name : ''
+    if (!name) return kb.folders.find((f) => f.id === 'kb-notes-f') ?? kb.folders[0]!
+    const existing = kb.folders.find((f) => f.name === name)
+    if (existing) return existing
+    const folder = { id: folderId ?? `kb-notes-${author}`, name, docs: [] as string[] }
+    kb.folders.push(folder)
+    return folder
+  }
+
   /** 小记知识库：全局「新建小记」的默认落点，没有就地建一个（离线演示态）。 */
   function notesKb(): KnowledgeBase {
     const existing = kbs.value.find((k) => k.notes)
@@ -431,21 +454,21 @@ export const useDataStore = defineStore('data', () => {
         const d = await apiCreateNote({ title: title.trim(), blocks })
         docs[d.id] = d
         const kb = kbs.value.find((k) => k.id === d.kbId) ?? notesKb()
-        const folder = kb.folders.find((f) => f.id === d.folderId) ?? kb.folders[0]
-        folder?.docs.push(d.id)
+        noteFolderOf(kb, d.folderId).docs.push(d.id)
         return d.id
       } catch {
         /* 后端异常时回落本地 */
       }
     }
     const kb = notesKb()
+    const folder = noteFolderOf(kb)
     const id = uid('d')
     docs[id] = {
       id, title: title.trim() || noteTitleOf(text), author: currentAuthor(),
       created: nowIso(), updated: nowIso(), links: [], blocks, backlinks: [],
-      kbId: kb.id, folderId: kb.folders[0]!.id, rev: 1,
+      kbId: kb.id, folderId: folder.id, rev: 1,
     }
-    kb.folders[0]!.docs.push(id)
+    folder.docs.push(id)
     return id
   }
 

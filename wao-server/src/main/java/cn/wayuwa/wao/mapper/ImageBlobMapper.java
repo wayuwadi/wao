@@ -5,6 +5,7 @@ import java.util.List;
 import cn.wayuwa.wao.domain.ImageBlobEntity;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 /** 图床 Mapper。 */
@@ -12,7 +13,19 @@ import org.apache.ibatis.annotations.Select;
 public interface ImageBlobMapper extends BaseMapper<ImageBlobEntity> {
 
     /** 列出元数据，不含 {@code content}——图床列表不该把每张图的正文都读进内存。 */
-    @Select("SELECT id, name, content_type, byte_size, source, created_at "
+    @Select("SELECT id, name, content_type, byte_size, source, content_hash, created_at "
             + "FROM image_blob ORDER BY created_at DESC")
     List<ImageBlobEntity> listMeta();
+
+    /**
+     * 按内容摘要找一张已经存过的图，同样不读 {@code content}。
+     *
+     * @param hash     图片正文的 SHA-256 十六进制摘要
+     * @param byteSize 字节数，和摘要一起比对
+     * @return 最早存下的那一份；没有则为 null
+     */
+    @Select("SELECT id, name, content_type, byte_size, source, content_hash, created_at "
+            + "FROM image_blob WHERE content_hash = #{hash} AND byte_size = #{byteSize} "
+            + "ORDER BY created_at LIMIT 1")
+    ImageBlobEntity findByContentHash(@Param("hash") String hash, @Param("byteSize") long byteSize);
 }

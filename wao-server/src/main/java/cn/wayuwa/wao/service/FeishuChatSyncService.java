@@ -305,8 +305,9 @@ public class FeishuChatSyncService implements JobHandler {
                 continue;
             }
             try {
+                // 补录 / 重跑同一天时会再抓一遍同样的图，按内容去重，不在图床里堆重复副本。
                 ImageItemDto stored = images.store(bytes, "image/png", key + ".png",
-                        "飞书群聊 · " + settings.get(SettingService.CHAT_SYNC_CHAT_NAME, "群聊"));
+                        "飞书群聊 · " + settings.get(SettingService.CHAT_SYNC_CHAT_NAME, "群聊"), true);
                 urls.add(stored.url());
             } catch (RuntimeException ex) {
                 log.warn("飞书群聊图片转存图床失败，已跳过：{}", ex.getMessage());

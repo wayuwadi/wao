@@ -6,6 +6,7 @@ import {
   fetchAiRunners,
   fetchAiRuns,
   fetchAiWorkflows,
+  rerunAiRun,
   saveAiProjectConfig,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
@@ -27,6 +28,7 @@ const pairCode = ref('')
 const pairExpiresAt = ref('')
 const editingProjectId = ref<string | null>(null)
 const saving = ref(false)
+const rerunning = ref(false)
 const form = reactive({
   enabled: false,
   repoUrl: '',
@@ -157,6 +159,22 @@ function openRun(run: AiRun) {
 
 function inspectRun(run: AiRun) {
   selectedRun.value = run
+}
+
+/** 失败的运行可以带着报错重跑一次：AI 接着这个错往下修，不用从头再来。 */
+async function rerun(run: AiRun) {
+  if (rerunning.value) return
+  rerunning.value = true
+  try {
+    const next = await rerunAiRun(run.id)
+    selectedRun.value = null
+    await refresh()
+    toast(`已带着上次的报错重新排队：${next.taskTitle}`, 'ri-refresh-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '重跑失败', 'ri-error-warning-line')
+  } finally {
+    rerunning.value = false
+  }
 }
 
 function resultPreview(run: AiRun) {
@@ -464,7 +482,18 @@ onBeforeUnmount(() => {
           <pre>{{ selectedRun.resultSummary }}</pre>
         </template>
         <footer>
+          <span v-if="selectedRun.retryOfRunId" class="retry-note">
+            <i class="ri-corner-down-right-line"></i>本次是基于上一次报错的重跑
+          </span>
           <button class="secondary" @click="selectedRun = null">关闭</button>
+          <button
+            v-if="selectedRun.status === 'failed'"
+            class="secondary retry"
+            :disabled="rerunning"
+            @click="rerun(selectedRun)"
+          >
+            <i :class="rerunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>基于报错重跑
+          </button>
           <button class="primary" @click="openRun(selectedRun)">打开对应任务</button>
         </footer>
       </section>
@@ -725,8 +754,12 @@ onBeforeUnmount(() => {
 .result-title { margin-bottom: 7px; font-size: 12px; font-weight: 650; }
 .result-title.result-gap { margin-top: 16px; }
 .run-detail pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border: 1px solid #ead3d3; border-radius: 10px; background: #fff8f8; color: #753030; font: 11.5px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
-.run-detail footer { margin-top: 18px; display: flex; justify-content: flex-end; gap: 9px; }
+.run-detail footer { margin-top: 18px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.run-detail footer .retry-note { margin-right: auto; color: var(--wao-text-weak); font-size: 11px; }
+.run-detail footer .retry-note i { margin-right: 4px; }
 .run-detail footer button { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+.run-detail footer .retry { display: inline-flex; align-items: center; gap: 6px; color: #b33a3a; border-color: #ead3d3; }
+.run-detail footer .retry:disabled { opacity: .6; cursor: not-allowed; }
 .run-detail footer .secondary { border: 1px solid var(--wao-line); background: #fff; }
 .run-detail footer .primary { border: 1px solid #4358d6; background: #4358d6; color: #fff; }
 @keyframes livePulse { 50% { opacity: .45; box-shadow: 0 0 0 7px #dff5e955; } }

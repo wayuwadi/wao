@@ -53,5 +53,6 @@ flowchart LR
 - 根据 ADR-005，当前接受 SSH、Gateway、MySQL、Redis、Nacos、Sentinel 与 DDNS-Go 按路由器/安全组规则公网可达，不使用覆盖网络。
 - 用户入口只开放 `https://wao.wayuwa.cn`；Gateway 回源使用 TLS，SSH 使用专用部署密钥与固定主机密钥校验。
 - Redis 副本和两个 Sentinel 宣告公网可解析主机名，避免跨主机发现到容器内网地址。双 Sentinel 不承诺整机故障下的自动切换；可靠自动故障转移需要新增独立第三仲裁节点。
+- 密码库按成员归属：`/api/vault/*` 一律只在当前登录成员自己的分组范围内工作，别人的分组按不存在处理（ADR-024）。
 - Gateway 使用同机 `wao-server:8080`，避免服务发现结果依赖家庭路由器的 8080 回环；云 Nginx 的上游健康检查验证 `/api/hello` 全链路，而不只验证 Gateway 进程。
 - 正式生产前必须重新评估端口白名单、数据库链路加密、SSH 防爆破和私网/VPN。

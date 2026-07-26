@@ -31,6 +31,9 @@ export const createAiRuns = (
     runnerId: options.runnerId ?? null,
   }))
 
+/** 基于一次失败运行重跑：AI 会拿到上次的报错接着修，不用从零重来。 */
+export const rerunAiRun = (runId: string) => data<AiRun>(http.post(`/api/ai/runs/${runId}/rerun`))
+
 export const fetchAiRuns = (active = false) =>
   data<AiRun[]>(http.get('/api/ai/runs', { params: { active } }))
 

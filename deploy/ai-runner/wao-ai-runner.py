@@ -376,18 +376,35 @@ def normalize_result(exit_code: int, result_text: str, engine: str = "codex") ->
 
 
 def build_prompt(claim: dict[str, Any]) -> str:
-    return (
+    prompt = (
         "这是 WAO 自动派发的开发任务。请先读取下面的公开 Markdown 地址，然后在当前独立 "
         "Git worktree 中完整实现需求：\n"
         f"{claim['promptUrl']}\n\n"
         "必须遵守仓库 AGENTS.md 与相关规格；先确认当前分支基于最新 main。完成与风险相称的"
-        "测试后，直接写详细中文提交，创建 PR、合并 main、等待部署并验证线上结果与飞书通知。"
+        "测试后，直接写详细中文提交，创建 PR、合并 main。"
         "Runner 已把本机 Git 凭据通过 GH_TOKEN 临时交给当前进程，并把 GitHub CLI 加入 PATH；"
         "GitHub 操作优先使用 gh，不要因为 AI 工具内置的 GitHub 连接器不可用而停止。"
         "不要停下来等待人工确认。若外部权限确实阻塞，请在最终结果中准确说明。\n\n"
+        "合并只是做完了一半：合并后必须用 gh（如 `gh run watch` / `gh run view --log-failed`）"
+        "盯住 main 上的这次部署，直到它跑完为止，再验证线上结果与飞书通知。"
+        "部署失败时先读报错、修好、重新走一次提交与合并，直到部署成功；"
+        "只有部署确实成功并且线上验证通过，才可以回复 SUCCESS —— "
+        "部署还没结束、或者最后一次部署是失败的，一律回复 BLOCKED 并把完整报错写进摘要，"
+        "由用户在 WAO 里点「基于报错重跑」让下一次运行接着修。\n\n"
         "最终答复必须以状态行开头：全部完成并验收通过时第一行写 `WAO_RUN_STATUS: SUCCESS`；"
         "尚未完成或需要补充信息时第一行写 `WAO_RUN_STATUS: BLOCKED`。状态行后再写中文结果摘要。"
     )
+    previous = _readable_text(claim.get("previousFailure")).strip()
+    if previous:
+        prompt += (
+            "\n\n这是一次「基于报错重跑」：同一个任务上一次没有跑通，报错如下。"
+            "请先判断上一次改到哪一步（相关提交可能已经合进 main），从这个报错继续往下修，"
+            "不要把已经做完的部分推倒重来。\n"
+            "----- 上一次的失败详情 -----\n"
+            f"{previous[-8000:]}\n"
+            "----- 失败详情结束 -----"
+        )
+    return prompt
 
 
 def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
