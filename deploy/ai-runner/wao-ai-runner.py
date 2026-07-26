@@ -437,6 +437,8 @@ def normalize_result(exit_code: int, result_text: str, engine: str = "codex") ->
     detail = "\n".join(lines[1:]).strip()
     if marker == "WAO_RUN_STATUS: SUCCESS":
         return 0, detail or f"{name} 已完成任务，但没有返回结果摘要。"
+    if marker == "WAO_RUN_STATUS: SKIPPED":
+        return 0, detail or f"{name} 已确认该功能缺少真实实现条件，按需求不予实现。"
     if marker == "WAO_RUN_STATUS: BLOCKED":
         return 2, f"{name} 未完成任务：{detail or '未说明阻塞原因'}"
     return 3, (
@@ -467,8 +469,13 @@ def build_prompt(claim: dict[str, Any]) -> str:
         "只有部署确实成功并且线上验证通过，才可以回复 SUCCESS —— "
         "部署还没结束、或者最后一次部署是失败的，一律回复 BLOCKED 并把完整报错写进摘要，"
         "由用户在 WAO 里点「基于报错重跑」让下一次运行接着修。\n\n"
+        "如果某项功能没有真实数据源、官方接口或可靠实现条件，继续实现只会产生伪造数据或演示逻辑，"
+        "不要伪造，也不要把它留成占位功能：直接不实现或删除该功能，并在结果摘要中说明跳过原因。"
+        "只要其余有效改动已经完成、部署和验收，这种主动放弃不可真实实现的非必要功能不算失败。\n\n"
         "最终答复必须以状态行开头：全部完成并验收通过时第一行写 `WAO_RUN_STATUS: SUCCESS`；"
-        "尚未完成或需要补充信息时第一行写 `WAO_RUN_STATUS: BLOCKED`。状态行后再写中文结果摘要。"
+        "因缺少真实实现条件而取消功能、且其余工作已完成时第一行写 `WAO_RUN_STATUS: SKIPPED`；"
+        "只有阻塞导致用户需要的有效结果没有交付，或确实需要用户补充必要信息时，第一行才写 "
+        "`WAO_RUN_STATUS: BLOCKED`。状态行后再写中文结果摘要。"
     )
     previous = _readable_text(claim.get("previousFailure")).strip()
     if previous:

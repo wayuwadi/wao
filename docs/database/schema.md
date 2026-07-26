@@ -316,4 +316,6 @@ erDiagram
 - `V24__ai_run_retry.sql`：AI 运行记录指回被修复的那一次失败运行（见 ADR-025）。
 - `V25__ai_run_continuation.sql`：保存待原 AI 会话消费的用户补充输入。
 - `V26__ai_run_usage.sql`：记录每次运行的模型、token 用量与折算额度（见 ADR-026）。
+- `V27__automation_run_executor.sql`：记录自动化任务每次手动运行的执行成员，定时任务保持为空。
+- `V28__reclassify_unsupported_ai_runs.sql`：把已经合并上线、仅因拒绝伪造非必要功能而误判失败的 AI Run 修正为成功，并将对应任务送回待验证。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

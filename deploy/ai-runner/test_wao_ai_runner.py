@@ -67,6 +67,26 @@ class RunnerInvocationTest(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertEqual("已提交并部署", summary)
 
+    def test_skipped_unsupported_feature_is_not_reported_as_failure(self) -> None:
+        code, summary = RUNNER.normalize_result(
+            0,
+            "WAO_RUN_STATUS: SKIPPED\n已完成并上线有效改动；额度功能缺少真实接口，按需求不予实现。",
+        )
+
+        self.assertEqual(0, code)
+        self.assertIn("按需求不予实现", summary)
+
+    def test_prompt_distinguishes_unsupported_feature_from_real_blocker(self) -> None:
+        prompt = RUNNER.build_prompt({
+            "defaultBranch": "main",
+            "promptUrl": "https://wao.example/task.md",
+            "branchName": "fix/example",
+        })
+
+        self.assertIn("WAO_RUN_STATUS: SKIPPED", prompt)
+        self.assertIn("不要伪造", prompt)
+        self.assertIn("不算失败", prompt)
+
     def test_extracts_agent_message_but_filters_command(self) -> None:
         message = RUNNER.extract_progress({
             "type": "item.completed",

@@ -39,6 +39,7 @@
   AI CLI 命令，任务计划程序环境异常时可通过完整命令路径修复。
 - Windows Runner 必须通过标准输入传递完整多行提示，保证任务 Markdown 地址不会经过
   `.cmd` 转发脚本时被截断；Codex 仅退出码为 0 仍不足以判成功，还必须返回明确完成标记。
+- AI 判断某项非必要功能缺少真实数据源或可靠接口时，不得以 mock/演示数据伪造实现；取消该功能并完成其余交付后返回 `WAO_RUN_STATUS: SKIPPED`，运行按成功进入待验证，不显示失败或“基于报错重跑”。
 - Runner 使用 `codex exec --json` 的 JSONL 事件流，只保存 agent message、公开的 reasoning summary、
   plan update 与阶段/结果；command execution、file change、MCP tool call、web search 不进入 WAO。
 - Claude Code 侧使用 `claude -p --output-format stream-json --verbose`：只保存 assistant 文本、
