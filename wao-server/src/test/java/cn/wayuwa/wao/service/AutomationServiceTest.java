@@ -22,7 +22,7 @@ class AutomationServiceTest {
     private final AutomationJobMapper jobMapper = mock(AutomationJobMapper.class);
     private final AutomationRunMapper runMapper = mock(AutomationRunMapper.class);
     private final AutomationService service =
-            new AutomationService(jobMapper, runMapper, new ObjectMapper(), List.of());
+            new AutomationService(jobMapper, runMapper, new ObjectMapper(), List.of(), mock(MemberService.class));
 
     private AutomationJobEntity job(String status) {
         AutomationJobEntity e = new AutomationJobEntity();
@@ -60,7 +60,7 @@ class AutomationServiceTest {
         when(jobMapper.selectById("j1")).thenReturn(e);
         when(runMapper.selectList(any())).thenReturn(List.of());
 
-        AutomationJobDto dto = service.runJob("j1");
+        AutomationJobDto dto = service.runJob("j1", "wg");
 
         assertThat(dto.status()).isEqualTo("待修复");
         assertThat(dto.last()).contains("失败");
@@ -72,7 +72,7 @@ class AutomationServiceTest {
         when(jobMapper.selectById("j1")).thenReturn(e);
         when(runMapper.selectList(any())).thenReturn(List.of());
 
-        AutomationJobDto dto = service.runJob("j1");
+        AutomationJobDto dto = service.runJob("j1", "wg");
 
         assertThat(dto.status()).isEqualTo("正常");
         assertThat(dto.last()).contains("成功");
@@ -109,9 +109,9 @@ class AutomationServiceTest {
         when(jobMapper.selectById("j1")).thenReturn(e);
         when(runMapper.selectList(any())).thenReturn(List.of());
         AutomationService withHandler = new AutomationService(jobMapper, runMapper, new ObjectMapper(),
-                List.of(handler("demo", () -> "成功 · 共 3 条消息")));
+                List.of(handler("demo", () -> "成功 · 共 3 条消息")), mock(MemberService.class));
 
-        AutomationJobDto dto = withHandler.runJob("j1");
+        AutomationJobDto dto = withHandler.runJob("j1", "wg");
 
         assertThat(dto.last()).contains("成功 · 共 3 条消息");
     }
@@ -125,9 +125,9 @@ class AutomationServiceTest {
         AutomationService withHandler = new AutomationService(jobMapper, runMapper, new ObjectMapper(),
                 List.of(handler("demo", () -> {
                     throw new IllegalStateException("请先选择要同步的群聊");
-                })));
+                })), mock(MemberService.class));
 
-        AutomationJobDto dto = withHandler.runJob("j1");
+        AutomationJobDto dto = withHandler.runJob("j1", "wg");
 
         assertThat(dto.last()).contains("失败 · 请先选择要同步的群聊");
     }

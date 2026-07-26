@@ -7,6 +7,8 @@ import cn.wayuwa.wao.dto.AutomationJobDto;
 import cn.wayuwa.wao.dto.CreateJobRequest;
 import cn.wayuwa.wao.dto.PatchJobRequest;
 import cn.wayuwa.wao.service.AutomationService;
+import cn.wayuwa.wao.auth.CurrentMember;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AutomationController {
 
     private final AutomationService automationService;
+    private final CurrentMember currentMember;
 
-    public AutomationController(AutomationService automationService) {
+    public AutomationController(AutomationService automationService, CurrentMember currentMember) {
         this.automationService = automationService;
+        this.currentMember = currentMember;
     }
 
     @GetMapping
@@ -55,8 +59,8 @@ public class AutomationController {
     }
 
     @PostMapping("/{id}/run")
-    public ApiResponse<AutomationJobDto> run(@PathVariable String id) {
-        return ApiResponse.ok(automationService.runJob(id));
+    public ApiResponse<AutomationJobDto> run(@PathVariable String id, HttpServletRequest http) {
+        return ApiResponse.ok(automationService.runJob(id, currentMember.idOr(http, "wg")));
     }
 
     @PostMapping("/{id}/pause")

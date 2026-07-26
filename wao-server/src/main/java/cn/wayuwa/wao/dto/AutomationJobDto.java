@@ -19,6 +19,6 @@ public record AutomationJobDto(
         String source,
         String target,
         List<String> steps,
-        List<List<String>> runs,
+        List<AutomationRunDto> runs,
         String handler) {
 }

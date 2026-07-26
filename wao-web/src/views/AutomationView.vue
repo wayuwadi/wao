@@ -35,7 +35,7 @@ const jobs = computed(() =>
   data.autos.map((a, i) => {
     const st = stMeta(a)
     const dots = a.runs
-      .map((r) => ({ bg: isFail(r[1]) ? '#D65454' : '#2C8A5B', title: `${r[0]} · ${r[1]}` }))
+      .map((r) => ({ bg: isFail(r.result) ? '#D65454' : '#2C8A5B', title: `${r.time} · ${r.executor} · ${r.result}` }))
       .concat([{ bg: '#E3E4EA', title: '更早的运行' }, { bg: '#E3E4EA', title: '更早的运行' }])
       .slice(0, 5)
     return {
@@ -46,12 +46,12 @@ const jobs = computed(() =>
 )
 
 const allRuns = computed(() => {
-  const rows: { time: string; job: string; icon: string; result: string; dur: string; color: string; bg: string; id: string }[] = []
+  const rows: { time: string; executor: string; job: string; icon: string; result: string; dur: string; color: string; bg: string; id: string }[] = []
   data.autos.forEach((a, i) =>
     a.runs.forEach((r, j) =>
       rows.push({
-        time: r[0], job: a.name, icon: a.icon, result: r[1], dur: durOf(i, j),
-        color: isFail(r[1]) ? '#BC4141' : '#257A50', bg: isFail(r[1]) ? '#FBEBEB' : '#E8F5EE', id: a.id,
+        time: r.time, executor: r.executor, job: a.name, icon: a.icon, result: r.result, dur: durOf(i, j),
+        color: isFail(r.result) ? '#BC4141' : '#257A50', bg: isFail(r.result) ? '#FBEBEB' : '#E8F5EE', id: a.id,
       }),
     ),
   )
@@ -63,8 +63,8 @@ const selMeta = computed(() => (sel.value ? stMeta(sel.value) : { bg: '', color:
 const selIndex = computed(() => (sel.value ? data.autos.indexOf(sel.value) : 0))
 const aoRuns = computed(() =>
   (sel.value?.runs ?? []).map((r, j) => ({
-    time: r[0], result: r[1], dur: durOf(selIndex.value, j),
-    color: isFail(r[1]) ? '#BC4141' : '#257A50', bg: isFail(r[1]) ? '#FBEBEB' : '#E8F5EE',
+    time: r.time, executor: r.executor, result: r.result, dur: durOf(selIndex.value, j),
+    color: isFail(r.result) ? '#BC4141' : '#257A50', bg: isFail(r.result) ? '#FBEBEB' : '#E8F5EE',
   })),
 )
 
@@ -198,10 +198,11 @@ async function createAuto() {
         <div class="table-card flush">
           <div class="jc-head">运行记录</div>
           <div class="grid-aoruns th sub">
-            <div>开始时间</div><div>时长</div><div>结果</div>
+            <div>开始时间</div><div>执行人</div><div>时长</div><div>结果</div>
           </div>
           <div v-for="(r, i) in aoRuns" :key="i" class="grid-aoruns row">
             <div class="cell muted wao-tabular">{{ r.time }}</div>
+            <div class="cell muted">{{ r.executor }}</div>
             <div class="cell muted wao-tabular">{{ r.dur }}</div>
             <div><span class="mini" :style="{ background: r.bg, color: r.color }">{{ r.result }}</span></div>
           </div>
@@ -607,7 +608,7 @@ async function createAuto() {
 }
 .grid-aoruns {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 90px minmax(150px, 1.4fr);
+  grid-template-columns: minmax(120px, 1fr) 80px 70px minmax(150px, 1.4fr);
   gap: 10px;
   padding: 10px 16px;
   align-items: center;

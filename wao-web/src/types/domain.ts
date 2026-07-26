@@ -224,7 +224,11 @@ export interface KbGroup {
   name: string
 }
 
-export type JobRun = [time: string, result: string]
+export interface JobRun {
+  time: string
+  executor: string
+  result: string
+}
 
 export interface AutomationJob {
   id: string

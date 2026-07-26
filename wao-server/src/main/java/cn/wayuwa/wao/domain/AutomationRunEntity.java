@@ -12,6 +12,7 @@ public class AutomationRunEntity {
     private String jobId;
     private String runTimeLabel;
     private String result;
+    private String executorId;
     private Integer durationMs;
     private Integer ord;
 
@@ -23,6 +24,8 @@ public class AutomationRunEntity {
     public void setRunTimeLabel(String runTimeLabel) { this.runTimeLabel = runTimeLabel; }
     public String getResult() { return result; }
     public void setResult(String result) { this.result = result; }
+    public String getExecutorId() { return executorId; }
+    public void setExecutorId(String executorId) { this.executorId = executorId; }
     public Integer getDurationMs() { return durationMs; }
     public void setDurationMs(Integer durationMs) { this.durationMs = durationMs; }
     public Integer getOrd() { return ord; }
