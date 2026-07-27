@@ -13,6 +13,8 @@ function timeText(value: string) {
 function emptyText(run: AiRun) {
   if (run.latestProgress) return run.latestProgress
   if (['queued', 'claimed', 'running'].includes(run.status)) return '正在等待第一条 AI 反馈…'
+  // 退出码 3：AI 结束了会话但没报告任务状态，不能笼统说成「执行失败」。
+  if (run.status === 'failed' && run.exitCode === 3) return 'AI 结束了会话但未报告任务状态，请根据下方原始答复确认结果'
   return run.status === 'failed' ? '本次 AI 执行失败，详细原因见下方' : '本次 AI 执行已经结束，最终结果见下方'
 }
 </script>

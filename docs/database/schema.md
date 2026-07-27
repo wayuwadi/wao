@@ -228,6 +228,8 @@ erDiagram
 心跳刷新）、并发槽位、令牌 SHA-256 哈希和最后心跳；不保存令牌明文。
 - `max_concurrency`：Runner 本地自报的最大并发线程数。
 - `admin_max_concurrency`：管理员在后台配置的线程数，存在时优先于 `max_concurrency` 生效。
+- `script_hash`：Runner 心跳自报的脚本 SHA-256，用于判断是否落后于服务端打包的最新版。
+- `update_requested_at`：后台一键下发脚本更新的时间；节点自更新后上报最新哈希时自动清除。
 `ai_runner_pair_code` 保存一次性配对码哈希、过期时间和使用时间，明文只在生成接口返回一次。
 
 ### ai_task_run

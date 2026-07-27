@@ -54,11 +54,12 @@ public class FeishuTaskNotifier {
      * @param engineLabel 执行工具名（Codex / Claude Code）
      * @param scope       本次跑的范围描述（整个任务或某条子任务）
      * @param succeeded   是否成功
+     * @param statusUnreported AI 结束了会话但没报告任务状态，成败需要人判断；这时不能笼统说「失败」
      * @param summary     结果摘要，会截断后放进卡片正文
      * @return 是否真的发出去了
      */
     public boolean notifyRunFinished(String taskId, String projectId, String taskTitle, String projectName,
-            String engineLabel, String scope, boolean succeeded, String summary) {
+            String engineLabel, String scope, boolean succeeded, boolean statusUnreported, String summary) {
         List<List<String>> fields = new ArrayList<>();
         fields.add(List.of("项目", blank(projectName, projectId)));
         fields.add(List.of("任务", blank(taskTitle, taskId)));
@@ -66,13 +67,22 @@ public class FeishuTaskNotifier {
         if (StringUtils.hasText(scope)) {
             fields.add(List.of("范围", scope));
         }
+        if (succeeded) {
+            return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                    "AI 已跑完，等你验收", "green", fields,
+                    excerpt(summary, "AI 已完成执行，任务已转入「待验证」。"),
+                    "去验收任务", taskUrl(projectId, taskId)));
+        }
+        if (statusUnreported) {
+            return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                    "AI 已结束，但没说清成没成", "orange", fields,
+                    excerpt(summary, "AI 结束了会话但没报告任务状态，请根据它的原始答复确认结果。"),
+                    "去确认结果", taskUrl(projectId, taskId)));
+        }
         return notifier.notifyCard(new FeishuWebhookNotifier.Card(
-                succeeded ? "AI 已跑完，等你验收" : "AI 执行未完成",
-                succeeded ? "green" : "red",
-                fields,
-                excerpt(summary, succeeded ? "AI 已完成执行，任务已转入「待验证」。" : "请打开任务查看失败原因。"),
-                succeeded ? "去验收任务" : "查看失败原因",
-                taskUrl(projectId, taskId)));
+                "AI 执行未完成", "red", fields,
+                excerpt(summary, "请打开任务查看失败原因。"),
+                "查看失败原因", taskUrl(projectId, taskId)));
     }
 
     /**

@@ -6,6 +6,7 @@ import {
   fetchAiRunners,
   fetchAiRuns,
   fetchAiWorkflows,
+  requestRunnerScriptUpdate,
   rerunAiRun,
   saveAiProjectConfig,
   updateRunnerMaxConcurrency,
@@ -36,6 +37,7 @@ const rerunning = ref(false)
 const editingRunnerId = ref<string | null>(null)
 const editingRunnerValue = ref(2)
 const editingRunnerSaving = ref(false)
+const updatingRunners = ref(false)
 const editingWakeRunnerId = ref<string | null>(null)
 const wakeSaving = ref(false)
 const wakingRunnerId = ref<string | null>(null)
@@ -79,6 +81,23 @@ const statusMeta: Record<AiRunStatus, { label: string; icon: string; color: stri
   succeeded: { label: '等待验收', icon: 'ri-checkbox-circle-line', color: '#237a4b', bg: '#eaf8f0' },
   failed: { label: '运行失败', icon: 'ri-error-warning-line', color: '#b33a3a', bg: '#fff0f0' },
   cancelled: { label: '已取消', icon: 'ri-stop-circle-line', color: '#747989', bg: '#f1f2f5' },
+}
+
+// 退出码 3 是 Runner 的约定：AI 结束了会话但没报告任务状态，成败需要人判断，
+// 不能直接挂一个「运行失败」让人分不清到底成没成。
+const UNCONFIRMED_META = { label: '结果待确认', icon: 'ri-question-line', color: '#8a5b0d', bg: '#fff7df' }
+
+function statusUnreported(run: AiRun) {
+  return run.status === 'failed' && run.exitCode === 3
+}
+
+function metaFor(run: AiRun) {
+  return statusUnreported(run) ? UNCONFIRMED_META : statusMeta[run.status]
+}
+
+function resultTitle(run: AiRun) {
+  if (statusUnreported(run)) return '结果待确认（AI 未报告任务状态）'
+  return run.status === 'failed' ? '失败原因' : '最终结果'
 }
 
 async function refresh() {
@@ -144,6 +163,26 @@ async function saveRunnerConcurrency(runner: AiRunner) {
 
 function cancelEditingRunner() {
   editingRunnerId.value = null
+}
+
+/** 一键把最新 Runner 脚本下发给所有执行电脑；各电脑空闲后自动更新重启。 */
+async function pushRunnerUpdate() {
+  updatingRunners.value = true
+  try {
+    const next = await requestRunnerScriptUpdate()
+    runners.value = next
+    const pending = next.filter((runner) => runner.updateRequested).length
+    toast(
+      pending
+        ? `已通知 ${pending} 台电脑更新，空闲后自动重启生效`
+        : '所有执行电脑的 Runner 脚本已是最新版',
+      'ri-download-cloud-2-line',
+    )
+  } catch (error) {
+    toast(error instanceof Error ? error.message : 'Runner 更新下发失败', 'ri-error-warning-line')
+  } finally {
+    updatingRunners.value = false
+  }
 }
 
 function startEditingWake(runner: AiRunner) {
@@ -383,8 +422,8 @@ onBeforeUnmount(() => {
         </div>
         <div class="recent-list">
           <button v-for="run in recentRuns" :key="run.id" @click="inspectRun(run)">
-            <span class="recent-icon" :style="{ color: statusMeta[run.status].color, background: statusMeta[run.status].bg }">
-              <i :class="statusMeta[run.status].icon"></i>
+            <span class="recent-icon" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">
+              <i :class="metaFor(run).icon"></i>
             </span>
             <span class="recent-main">
               <b>{{ run.taskTitle }}</b>
@@ -394,7 +433,7 @@ onBeforeUnmount(() => {
               </em>
               <small v-if="run.status === 'failed'">{{ resultPreview(run) }}</small>
             </span>
-            <span class="recent-status">{{ statusMeta[run.status].label }}</span>
+            <span class="recent-status">{{ metaFor(run).label }}</span>
             <span class="run-time">{{ timeText(run.finishedAt) }}</span>
             <i class="ri-arrow-right-s-line"></i>
           </button>
@@ -409,6 +448,9 @@ onBeforeUnmount(() => {
             <h2>执行电脑</h2>
             <p>每台电脑自己声明装了哪些 AI 工具；登录态和源码都留在本机。</p>
           </div>
+          <button class="pair-btn ghost" :disabled="updatingRunners" @click="pushRunnerUpdate">
+            <i :class="updatingRunners ? 'ri-loader-4-line spin' : 'ri-download-cloud-2-line'"></i>更新 Runner 脚本
+          </button>
           <button class="pair-btn" @click="generatePairCode"><i class="ri-link"></i>生成配对码</button>
         </div>
         <div v-if="pairCode" class="pair-code">
@@ -487,6 +529,15 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="runner.configuredMaxConcurrency != null" class="runner-config-hint">
               <i class="ri-settings-3-line"></i>后台已配置为 {{ runner.configuredMaxConcurrency }} 线程
+            </div>
+            <div v-if="runner.updateRequested" class="runner-script-hint pending">
+              <i class="ri-download-cloud-2-line"></i>
+              {{ runner.scriptUpToDate == null
+                ? '已下发更新；旧版 Runner 不支持自动更新，需手动替换一次'
+                : '更新已下发，等该电脑空闲后自动重启生效' }}
+            </div>
+            <div v-else-if="runner.scriptUpToDate === false" class="runner-script-hint stale">
+              <i class="ri-refresh-line"></i>Runner 脚本落后于服务端版本，可点上方「更新 Runner 脚本」
             </div>
             <div v-if="!runner.online" class="wake-panel">
               <div v-if="editingWakeRunnerId === runner.id" class="wake-form">
@@ -616,11 +667,11 @@ onBeforeUnmount(() => {
     <div v-if="selectedRun" class="run-detail-mask" @click.self="selectedRun = null">
       <section class="run-detail" role="dialog" aria-modal="true" aria-labelledby="run-detail-title">
         <header>
-          <span class="recent-icon" :style="{ color: statusMeta[selectedRun.status].color, background: statusMeta[selectedRun.status].bg }">
-            <i :class="statusMeta[selectedRun.status].icon"></i>
+          <span class="recent-icon" :style="{ color: metaFor(selectedRun).color, background: metaFor(selectedRun).bg }">
+            <i :class="metaFor(selectedRun).icon"></i>
           </span>
           <div>
-            <h2 id="run-detail-title">{{ statusMeta[selectedRun.status].label }}</h2>
+            <h2 id="run-detail-title">{{ metaFor(selectedRun).label }}</h2>
             <p>{{ selectedRun.taskTitle }}</p>
           </div>
           <button class="detail-close" aria-label="关闭运行详情" @click="selectedRun = null"><i class="ri-close-line"></i></button>
@@ -647,7 +698,7 @@ onBeforeUnmount(() => {
         <div class="result-title result-gap">AI 执行记录</div>
         <AiRunProgressTimeline :run="selectedRun" />
         <template v-if="selectedRun.resultSummary">
-          <div class="result-title result-gap">{{ selectedRun.status === 'failed' ? '失败原因' : '最终结果' }}</div>
+          <div class="result-title result-gap">{{ resultTitle(selectedRun) }}</div>
           <pre>{{ selectedRun.resultSummary }}</pre>
         </template>
         <footer>
@@ -764,7 +815,7 @@ onBeforeUnmount(() => {
 .online-dot { width: 7px; height: 7px; border-radius: 50%; background: #31a56a; box-shadow: 0 0 0 3px #dff5e9; }
 .offline .online-dot { background: #9ca1ad; box-shadow: none; }
 .run-section, .recent-section { margin-top: 22px; }
-.section-head { display: flex; align-items: flex-end; margin-bottom: 12px; }
+.section-head { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; }
 .section-head > div { flex: 1; }
 .section-head h2 { margin: 0; font-size: 17px; }
 .section-head p { margin: 4px 0 0; color: var(--wao-text-weak); font-size: 11.5px; }
@@ -863,6 +914,15 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
 }
+.runner-script-hint {
+  margin-top: 7px;
+  font-size: 10.5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.runner-script-hint.pending { color: #8a5b0d; }
+.runner-script-hint.stale { color: #b33a3a; }
 .wake-panel { margin-top: 11px; padding-top: 11px; border-top: 1px solid #eceef4; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .wake-panel button { padding: 6px 9px; border: 1px solid #cbd3f7; border-radius: 7px; background: #f1f4ff; color: #3650b4; cursor: pointer; font-size: 11px; }
 .wake-panel button:disabled { opacity: .6; cursor: wait; }

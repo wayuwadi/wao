@@ -321,6 +321,10 @@ export interface AiRunner {
   wakePort: number
   wakeConfigured: boolean
   lastWakeRequestedAt: string | null
+  /** Runner 脚本是否与服务端打包的最新版一致；旧版 Runner 未上报哈希时为 null。 */
+  scriptUpToDate?: boolean | null
+  /** 后台已下发脚本更新、该电脑还没完成自更新重启。 */
+  updateRequested?: boolean
 }
 
 /** AI 控制台「工作流」视图里的一个项目。 */

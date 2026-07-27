@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -21,6 +22,8 @@ from typing import Any, Callable
 
 STATE_FILE = Path.home() / ".wao" / "ai-runner.json"
 LOG_FILE = Path.home() / ".wao" / "ai-runner.log"
+# 本脚本自身的路径；后台一键更新时从服务端拉取新版本原地替换并重启。
+SCRIPT_PATH = Path(__file__).resolve()
 PRINT_LOCK = threading.Lock()
 MAX_LOG_BYTES = 2 * 1024 * 1024
 # 运行结束后保留 worktree 供人工复查，超过这个天数才回收，避免磁盘被历史任务占满。
@@ -69,7 +72,15 @@ class WaoApi:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.token:
             headers["X-WAO-Runner-Token"] = self.token
-        request = urllib.request.Request(self.server + path, data=data, headers=headers, method="POST")
+        return self._send(urllib.request.Request(self.server + path, data=data, headers=headers, method="POST"))
+
+    def get(self, path: str) -> Any:
+        headers = {"Accept": "application/json"}
+        if self.token:
+            headers["X-WAO-Runner-Token"] = self.token
+        return self._send(urllib.request.Request(self.server + path, headers=headers, method="GET"))
+
+    def _send(self, request: urllib.request.Request) -> Any:
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 envelope = json.loads(response.read().decode("utf-8"))
@@ -469,8 +480,12 @@ def normalize_result(exit_code: int, result_text: str, engine: str = "codex") ->
         return 0, detail or f"{name} 已确认该功能缺少真实实现条件，按需求不予实现。"
     if marker == "WAO_RUN_STATUS: BLOCKED":
         return 2, f"{name} 未完成任务：{detail or '未说明阻塞原因'}"
+    # 退出码 3 专指「CLI 正常结束但没有报告任务状态」；服务端依赖这个约定给出准确提示。
     return 3, (
-        f"{name} 进程已结束，但没有确认任务完成，已按失败处理。\n"
+        f"{name} 已结束会话，但最终答复没有按约定报告任务状态（SUCCESS / SKIPPED / BLOCKED），"
+        "系统无法确认任务是否真的完成，先按未完成处理。\n"
+        "请根据下面的原始答复判断实际进展：如果工作其实已经完成或只差收尾，"
+        "可以在下方补充信息让 AI 在原会话中继续，并要求它最后明确汇报任务状态。\n"
         f"原始答复：\n{result_text or f'{name} 未返回文字输出'}"
     )
 
@@ -504,6 +519,8 @@ def build_prompt(claim: dict[str, Any]) -> str:
         "因缺少真实实现条件而取消功能、且其余工作已完成时第一行写 `WAO_RUN_STATUS: SKIPPED`；"
         "只有阻塞导致用户需要的有效结果没有交付，或确实需要用户补充必要信息时，第一行才写 "
         "`WAO_RUN_STATUS: BLOCKED`。状态行后再写中文结果摘要。"
+        "注意：你一旦停止回复，本次会话就立即结束，不存在「稍后再汇报」；"
+        "等待部署这类长任务必须持续轮询直到有结论，然后在同一次答复里给出状态行。"
     )
     previous = _readable_text(claim.get("previousFailure")).strip()
     if previous:
@@ -540,6 +557,8 @@ def build_continuation_prompt(claim: dict[str, Any], continuation: str) -> str:
         "最终答复仍以状态行开头：完成并验收通过写 `WAO_RUN_STATUS: SUCCESS`；"
         "因缺少真实实现条件而取消功能、其余已完成写 `WAO_RUN_STATUS: SKIPPED`；"
         "确实阻塞才写 `WAO_RUN_STATUS: BLOCKED`。"
+        "你一旦停止回复会话就立即结束，不存在「稍后再汇报」；"
+        "等待部署这类长任务要持续轮询到有结论，再在同一次答复里给出状态行。"
     )
 
 
@@ -768,8 +787,13 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             f"token {usage['totalTokens']}（输入 {usage['inputTokens']} / 输出 "
             f"{usage['outputTokens']} / 缓存 {usage['cachedInputTokens']}），折算额度 {cost_text}")
         exit_code, result_text = normalize_result(exit_code, result_text, engine)
-        reporter.send("result", f"{name} 已执行完成，正在整理结果" if exit_code == 0
-                      else f"{name} 执行未完成，正在整理失败原因", force=True)
+        if exit_code == 0:
+            closing = f"{name} 已执行完成，正在整理结果"
+        elif exit_code == 3:
+            closing = f"{name} 已结束会话但未报告任务状态，需要人工确认结果"
+        else:
+            closing = f"{name} 执行未完成，正在整理失败原因"
+        reporter.send("result", closing, force=True)
         summary = f"执行工具：{name}\n工作目录：{worktree}\n\n{result_text}"[-30000:]
     except Exception as exc:  # noqa: BLE001 - 必须把节点错误回传给 WAO
         summary = (f"失败阶段：{stage}\n错误详情：{exc}\n执行工具：{name}\n"
@@ -784,6 +808,43 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             log(f"[{run_id}] 已回传，退出码 {exit_code}")
         except Exception as exc:  # noqa: BLE001
             log(f"[{run_id}] 回传失败，下次心跳会让任务重新排队：{exc}")
+
+
+def script_hash(path: Path) -> str:
+    """计算脚本文件字节的 SHA-256，与服务端对打包资源的口径一致。"""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def apply_script_update(api: WaoApi, script_path: Path) -> None:
+    """从服务端拉取最新脚本，哈希校验通过后原地替换自身并重启进程。
+
+    校验失败时抛异常、不动本地文件，主循环会在下次心跳重试；
+    成功时直接重启，不会返回。
+    """
+    data = api.get("/api/ai/runner/script") or {}
+    content = data.get("content") or ""
+    expected = data.get("hash") or ""
+    body = content.encode("utf-8")
+    if not content or hashlib.sha256(body).hexdigest() != expected:
+        raise RuntimeError("下载的 Runner 脚本哈希校验失败，本次不更新")
+    # 先写临时文件再原子替换，避免写到一半断电把脚本写坏。
+    temp = script_path.with_name(script_path.name + ".new")
+    temp.write_bytes(body)
+    temp.replace(script_path)
+    log(f"Runner 脚本已更新到 {expected[:12]}，正在重启进程")
+    restart_self(script_path)
+
+
+def restart_self(script_path: Path) -> None:
+    """用同样的启动参数重启自身；配对令牌存在 STATE_FILE 里，重启后自动恢复身份。"""
+    arguments = [sys.executable, str(script_path)] + sys.argv[1:]
+    if os.name == "nt":
+        # Windows 的 execv 不会给参数加引号，带空格的 --name 会被拆散；
+        # 改为拉起新进程后退出，新进程独立于当前控制台存活。
+        subprocess.Popen(arguments, close_fds=True,
+                         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        os._exit(0)
+    os.execv(sys.executable, arguments)
 
 
 def parse_args() -> argparse.Namespace:
@@ -860,16 +921,24 @@ def main() -> int:
         while True:
             futures = {future for future in futures if not future.done()}
             try:
-                api.post(f"/api/ai/runner/heartbeat?maxConcurrency={args.max_concurrency}"
-                         f"&engines={','.join(engines)}")
-                while len(futures) < args.max_concurrency:
-                    claim = api.post("/api/ai/runner/claim")
-                    if not claim:
-                        break
-                    futures.add(executor.submit(
-                        execute_claim, api, claim, root, args.sandbox, git_command,
-                        engine_commands, cli_environment, args.claude_model,
-                        args.git_protocol, github_token_ready))
+                status = api.post(
+                    f"/api/ai/runner/heartbeat?maxConcurrency={args.max_concurrency}"
+                    f"&engines={','.join(engines)}&scriptHash={script_hash(SCRIPT_PATH)}")
+                if isinstance(status, dict) and status.get("updateRequested"):
+                    # 后台下发了脚本更新：不再领新任务，等在跑的任务收尾后原地升级重启。
+                    if futures:
+                        log("已收到 Runner 脚本更新指令，等正在执行的任务结束后自动更新重启")
+                    else:
+                        apply_script_update(api, SCRIPT_PATH)
+                else:
+                    while len(futures) < args.max_concurrency:
+                        claim = api.post("/api/ai/runner/claim")
+                        if not claim:
+                            break
+                        futures.add(executor.submit(
+                            execute_claim, api, claim, root, args.sandbox, git_command,
+                            engine_commands, cli_environment, args.claude_model,
+                            args.git_protocol, github_token_ready))
             except Exception as exc:  # noqa: BLE001
                 log(f"连接 WAO 失败，10 秒后重试：{exc}")
             time.sleep(10)
