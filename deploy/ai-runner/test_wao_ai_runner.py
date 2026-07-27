@@ -256,6 +256,26 @@ class QoderEngineTest(unittest.TestCase):
         self.assertEqual(0, usage["totalTokens"], "Qoder 没回传按次用量时只记模型不记 token")
         self.assertIsNone(usage["costUsd"], "Credits 计费拿不到按次金额，不能编一个 0 出来")
 
+    @patch.object(RUNNER, "invoke_cli")
+    def test_qoder_read_only_falls_back_to_default_mode(self, invoke: Mock) -> None:
+        """qodercli 1.1.5 没有 plan 档，read-only 必须映射成 default 而不是直接报参数错。"""
+        invoke.return_value = (0, '{"type":"result","is_error":false,"result":"ok"}')
+
+        RUNNER.run_qoder("qodercli", Path("/work"), "提示", "read-only", Mock())
+
+        command = invoke.call_args.args[0]
+        self.assertIn("default", command)
+        self.assertNotIn("plan", command)
+
+    @patch.object(RUNNER.shutil, "which")
+    def test_qoder_cn_command_name_is_probed_as_fallback(self, which: Mock) -> None:
+        """国内版命令名是 qoderclicn，自动探测必须把它也认出来。"""
+        which.side_effect = lambda name: r"C:\qoder\qoderclicn.exe" if name == "qoderclicn" else None
+
+        self.assertEqual(r"C:\qoder\qoderclicn.exe", RUNNER.find_engine_executable("qoder"))
+        with self.assertRaises(RuntimeError):
+            RUNNER.find_engine_executable("codex")
+
 
 class UsageAccountingTest(unittest.TestCase):
     """用量统计；Claude 的样例取自真实 `claude -p --output-format stream-json` 输出。"""
