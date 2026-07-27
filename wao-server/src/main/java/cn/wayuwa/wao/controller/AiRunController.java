@@ -18,7 +18,10 @@ import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.dto.UpdateRunnerConcurrencyRequest;
+import cn.wayuwa.wao.dto.UpdateRunnerWakeConfigRequest;
+import cn.wayuwa.wao.dto.WakeRunnerResultDto;
 import cn.wayuwa.wao.service.AiRunService;
+import cn.wayuwa.wao.service.AiRunnerWakeService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,10 +43,12 @@ public class AiRunController {
     private static final String RUNNER_TOKEN = "X-WAO-Runner-Token";
 
     private final AiRunService service;
+    private final AiRunnerWakeService wakeService;
     private final CurrentMember currentMember;
 
-    public AiRunController(AiRunService service, CurrentMember currentMember) {
+    public AiRunController(AiRunService service, AiRunnerWakeService wakeService, CurrentMember currentMember) {
         this.service = service;
+        this.wakeService = wakeService;
         this.currentMember = currentMember;
     }
 
@@ -77,6 +82,19 @@ public class AiRunController {
     public ApiResponse<AiRunnerDto> updateRunnerMaxConcurrency(@PathVariable String runnerId,
             @Valid @RequestBody UpdateRunnerConcurrencyRequest request) {
         return ApiResponse.ok(service.updateRunnerMaxConcurrency(runnerId, request.maxConcurrency()));
+    }
+
+    @PutMapping("/runners/{runnerId}/wake-config")
+    public ApiResponse<AiRunnerDto> updateRunnerWakeConfig(@PathVariable String runnerId,
+            @Valid @RequestBody UpdateRunnerWakeConfigRequest request) {
+        wakeService.updateConfig(runnerId, request);
+        return ApiResponse.ok(service.listRunners().stream()
+                .filter(runner -> runner.id().equals(runnerId)).findFirst().orElseThrow());
+    }
+
+    @PostMapping("/runners/{runnerId}/wake")
+    public ApiResponse<WakeRunnerResultDto> wakeRunner(@PathVariable String runnerId) {
+        return ApiResponse.ok(wakeService.wake(runnerId));
     }
 
     @PostMapping("/runs")

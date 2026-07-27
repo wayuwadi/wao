@@ -20,6 +20,16 @@ export const fetchAiRunners = () => data<AiRunner[]>(http.get('/api/ai/runners')
 export const updateRunnerMaxConcurrency = (runnerId: string, maxConcurrency: number) =>
   data<AiRunner>(http.put(`/api/ai/runners/${runnerId}/max-concurrency`, { maxConcurrency }))
 
+export const updateRunnerWakeConfig = (
+  runnerId: string,
+  payload: { mac: string; host: string; port: number },
+) => data<AiRunner>(http.put(`/api/ai/runners/${runnerId}/wake-config`, payload))
+
+export const wakeAiRunner = (runnerId: string) =>
+  data<{ runnerId: string; requestedAt: string; message: string }>(
+    http.post(`/api/ai/runners/${runnerId}/wake`),
+  )
+
 export const createAiPairCode = () =>
   data<{ code: string; expiresAt: string }>(http.post('/api/ai/runners/pair-code'))
 
