@@ -302,6 +302,21 @@ paths:
     post:
       summary: 用当前配置发一条测试通知
       responses: { '200': { description: OK }, '502': { description: webhook 不可达或返回错误（code=50203） }, '400': { description: 尚未配置地址（code=40000） } }
+  /settings/site-info:
+    get:
+      summary: 读取网站名称、简介与 ICP 备案信息
+      responses: { '200': { description: OK } }
+    put:
+      summary: 保存网站公开信息，所有页面页脚随下次读取生效
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SiteInfo' } } }
+      responses: { '200': { description: OK }, '400': { description: 字段为空、超长或备案查询链接不合法 } }
+  /public/site-info:
+    get:
+      summary: 免登录读取网站公开信息，供登录页、分享页与页脚展示
+      security: []
+      responses: { '200': { description: OK } }
   # 飞书群聊同步知识库
   /feishu/chat-sync/config:
     get:
@@ -726,6 +741,14 @@ components:
       properties:
         url: { type: string, description: 飞书群机器人 webhook 地址 }
         enabled: { type: boolean }
+    SiteInfo:
+      type: object
+      required: [siteName, description, icpNumber, icpUrl]
+      properties:
+        siteName: { type: string, maxLength: 64, example: WAO Life OS }
+        description: { type: string, maxLength: 160, example: 个人事务与 AI 协作系统 }
+        icpNumber: { type: string, maxLength: 64, example: 豫ICP备2024105476号-1 }
+        icpUrl: { type: string, format: uri, maxLength: 255, example: 'https://beian.miit.gov.cn' }
     FeishuSender:
       type: object
       description: 发言人映射，把飞书 open_id 对上 WAO 里显示的人名

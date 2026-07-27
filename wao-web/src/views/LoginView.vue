@@ -5,6 +5,7 @@ import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import { useSessionStore } from '@/stores/session'
 import { mountFeishuQr } from '@/utils/feishuQr'
+import SiteFooter from '@/components/SiteFooter.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -105,6 +106,7 @@ onBeforeUnmount(() => unmountQr?.())
         <div v-if="providerError" class="error">{{ providerError }}</div>
         <p class="foot">首次使用第三方登录时只需确认一次成员身份，之后会自动进入同一账号。</p>
       </section>
+      <SiteFooter class="login-footer" />
     </main>
   </div>
 </template>
@@ -114,10 +116,11 @@ onBeforeUnmount(() => unmountQr?.())
 .brand { width: 42%; min-width: 340px; padding: 44px 48px; display: flex; flex-direction: column; justify-content: space-between; background: #20263b; color: #fff; }
 .brand-top { display: flex; align-items: center; gap: 10px; }.brand-mark { width: 32px; height: 32px; display: grid; place-content: center; border-radius: 9px; background: var(--wao-primary); font-weight: 700; }.brand-name { font-weight: 600; }.brand-name span { margin-left: 8px; color: #8e96b3; font-size: 12px; font-weight: 400; }
 h1 { max-width: 540px; margin: 0; font-size: 31px; line-height: 1.45; } .brand p { color: #a7aec7; font-size: 13.5px; line-height: 1.9; }.brand ul { padding: 0; list-style: none; color: #c9cedf; font-size: 13px; line-height: 2.6; }.brand li { display: flex; align-items: center; gap: 10px; }.brand li i { color: #9da8d8; font-size: 16px; }.brand-foot { color: #6e7590; font-size: 12px; }
-.panel { flex: 1; display: flex; padding: 32px; overflow-y: auto; background: radial-gradient(circle at 50% 20%, #fff 0, #f4f6fb 72%); }.card { width: 368px; margin: auto; padding: 32px; border: 1px solid rgba(220,223,232,.9); border-radius: 20px; background: rgba(255,255,255,.96); box-shadow: 0 18px 52px rgba(32, 38, 59, .10); }.card h2 { margin: 0; text-align: center; font-size: 24px; letter-spacing: -.5px; }.subtitle { margin: 8px 0 20px; text-align: center; color: var(--wao-text-weak); font-size: 13px; }
+.panel { position: relative; flex: 1; display: flex; padding: 32px 32px 68px; overflow-y: auto; background: radial-gradient(circle at 50% 20%, #fff 0, #f4f6fb 72%); }.card { width: 368px; margin: auto; padding: 32px; border: 1px solid rgba(220,223,232,.9); border-radius: 20px; background: rgba(255,255,255,.96); box-shadow: 0 18px 52px rgba(32, 38, 59, .10); }.card h2 { margin: 0; text-align: center; font-size: 24px; letter-spacing: -.5px; }.subtitle { margin: 8px 0 20px; text-align: center; color: var(--wao-text-weak); font-size: 13px; }
+.login-footer { position: absolute; right: 0; bottom: 0; left: 0; }
 .qr { width: 100%; max-width: 302px; aspect-ratio: 1; margin: auto; overflow: hidden; border: 1px solid var(--wao-line); border-radius: 14px; }.qr-loading { height: 100%; display: grid; place-content: center; gap: 8px; text-align: center; color: var(--wao-text-weak); font-size: 12px; }.qr-loading i { font-size: 30px; color: var(--wao-primary); }.qr-error,.error { margin-top: 8px; color: var(--wao-danger-strong); font-size: 12px; text-align: center; }
 .qr-fallback { width: 100%; max-width: 302px; height: 160px; margin: auto; display: grid; place-content: center; gap: 8px; text-align: center; border: 1px dashed var(--wao-line-strong); border-radius: 14px; color: var(--wao-text-weak); font-size: 12px; }.qr-fallback i { color: var(--wao-primary); font-size: 30px; }
 button,input { width: 100%; height: 42px; border-radius: 10px; font-size: 13px; } input { box-sizing: border-box; margin-top: 10px; padding: 0 13px; border: 1px solid var(--wao-line-control); outline: none; } input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67,88,214,.12); } button { cursor: pointer; }.primary { margin-top: 12px; border: none; background: var(--wao-primary); color: #fff; font-weight: 600; }.primary:disabled { opacity: .6; }.switch { height: 32px; border: none; background: none; color: var(--wao-primary); }.authorization-cta { margin-top: 12px; padding: 0 13px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(51,112,255,.28); background: #f3f6ff; color: #2855c7; font-weight: 600; }.authorization-cta:hover { border-color: #3370ff; background: #eaf0ff; box-shadow: 0 4px 12px rgba(51,112,255,.12); }.authorization-cta span { flex: 1; }.authorization-cta .ri-feishu-line { color: #3370ff; font-size: 16px; }.authorization-cta .ri-arrow-right-s-line { font-size: 17px; }.email-form { padding-top: 4px; }
 .other-methods { margin-top: 20px; padding-top: 16px; border-top: 1px solid #eceef3; display: flex; align-items: center; justify-content: center; gap: 8px; }.other-methods span { margin-right: 4px; color: var(--wao-text-faint); font-size: 11px; }.other-methods button { width: auto; height: 30px; padding: 0 10px; border: 1px solid #e3e5ec; border-radius: 8px; background: #fafbfc; color: var(--wao-text-weak); font-size: 12px; }.other-methods i { margin-right: 4px; }.other-methods .ri-feishu-line { color: #3370ff; }.other-methods .ri-wechat-fill { color: #2c8a5b; }.foot { margin: 14px 0 0; color: var(--wao-text-faint); font-size: 11px; line-height: 1.6; text-align: center; }
-@media (max-width: 760px) { .brand { display: none; }.panel { padding: 16px; }.card { width: min(368px, calc(100vw - 32px)); box-sizing: border-box; padding: 22px; } }
+@media (max-width: 760px) { .brand { display: none; }.panel { padding: 16px 16px 68px; }.card { width: min(368px, calc(100vw - 32px)); box-sizing: border-box; padding: 22px; } }
 </style>

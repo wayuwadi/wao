@@ -7,7 +7,10 @@ import { toast } from '@/composables/toast'
 import { updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth'
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
-import { fetchWebhookConfig, saveWebhookConfig, testWebhook, type FeishuWebhookConfig } from '@/api/system'
+import {
+  fetchSiteInfo, fetchWebhookConfig, saveSiteInfo, saveWebhookConfig, testWebhook,
+  type FeishuWebhookConfig, type SiteInfo,
+} from '@/api/system'
 import { useDataStore } from '@/stores/data'
 
 const session = useSessionStore()
@@ -16,7 +19,7 @@ const router = useRouter()
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members'], ['日历账户 · CalDAV', 'caldav']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['通知 · 飞书 Webhook', 'webhook']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['通知 · 飞书 Webhook', 'webhook']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
 ] as const
 
@@ -98,6 +101,26 @@ function revoke(i: number) {
 const webhook = ref<FeishuWebhookConfig | null>(null)
 const webhookInput = ref('')
 const webhookBusy = ref(false)
+const site = reactive<SiteInfo>({ siteName: '', description: '', icpNumber: '', icpUrl: '' })
+const siteLoaded = ref(false)
+const siteBusy = ref(false)
+
+async function loadSiteInfo() {
+  try {
+    Object.assign(site, await fetchSiteInfo())
+    siteLoaded.value = true
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '读取网站信息失败')
+  }
+}
+async function saveSiteInformation() {
+  siteBusy.value = true
+  try {
+    Object.assign(site, await saveSiteInfo({ ...site }))
+    toast('网站信息与备案信息已保存', 'ri-check-line')
+  } catch (error) { toast(error instanceof Error ? error.message : '保存失败') }
+  finally { siteBusy.value = false }
+}
 
 async function loadWebhook() {
   try {
@@ -168,6 +191,7 @@ async function toggleProjectNotify(id: string) {
 }
 
 watch(tab, (t) => {
+  if (t === 'site' && !siteLoaded.value) loadSiteInfo()
   if (t === 'webhook' && !webhook.value) loadWebhook()
 }, { immediate: true })
 
@@ -288,6 +312,31 @@ function demo(msg: string, icon?: string) {
                 <button class="toggle" :class="{ on: c.on }" title="启用 / 停用" @click="toggleCal(c)"><span class="knob"></span></button>
               </div>
             </div>
+          </div>
+        </template>
+
+        <!-- 系统 · 网站信息与备案 -->
+        <template v-else-if="tab === 'site'">
+          <div class="s-h1">网站信息 · 备案</div>
+          <div class="card">
+            <div class="card-row wrap">
+              <div class="card-title">公开展示信息</div>
+              <span v-if="siteLoaded" class="connected"><span class="c-dot"></span>已读取线上配置</span>
+            </div>
+            <form class="site-form" @submit.prevent="saveSiteInformation">
+              <label><span>网站名称</span><input v-model.trim="site.siteName" maxlength="64" required placeholder="例如 WAO Life OS" /></label>
+              <label><span>网站简介</span><input v-model.trim="site.description" maxlength="160" placeholder="一句话介绍网站用途" /></label>
+              <label><span>ICP备案号</span><input v-model.trim="site.icpNumber" maxlength="64" required placeholder="例如 豫ICP备XXXXXXXX号-X" /></label>
+              <label><span>备案查询链接</span><input v-model.trim="site.icpUrl" type="url" maxlength="255" required placeholder="https://beian.miit.gov.cn" /></label>
+              <div class="site-actions"><button class="btn-primary" :disabled="siteBusy">{{ siteBusy ? '保存中…' : '保存并更新页脚' }}</button></div>
+            </form>
+            <div class="filing-preview">
+              <span class="preview-label">页脚预览</span>
+              <span>© {{ new Date().getFullYear() }} {{ site.siteName || '网站名称' }}</span>
+              <span v-if="site.description">· {{ site.description }}</span>
+              <a v-if="site.icpNumber" :href="site.icpUrl || undefined" target="_blank" rel="noopener noreferrer">· {{ site.icpNumber }}</a>
+            </div>
+            <div class="hint">保存后，备案号会自动展示在登录页、公开任务分享页和登录后的系统页脚；无需修改代码或重新发布前端。</div>
           </div>
         </template>
 
@@ -707,6 +756,14 @@ function demo(msg: string, icon?: string) {
 .btn-ghost:disabled { opacity: .55; cursor: not-allowed; }
 .credential-form input { min-width: 0; height: 34px; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 0 10px; outline: none; }
 .credential-form input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .12); }
+.site-form { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 13px 16px; }
+.site-form label { display: grid; gap: 6px; color: var(--wao-text-3); font-size: 12px; }
+.site-form input { height: 36px; box-sizing: border-box; padding: 0 11px; border: 1px solid var(--wao-line-control); border-radius: 8px; outline: none; color: var(--wao-text); }
+.site-form input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .12); }
+.site-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+.filing-preview { margin-top: 14px; padding: 12px 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; border: 1px dashed var(--wao-line-strong); border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 11.5px; }
+.filing-preview a { color: var(--wao-primary); text-decoration: none; }
+.preview-label { width: 100%; margin-bottom: 2px; color: var(--wao-text-faint); text-align: center; font-size: 10.5px; }
 .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
 .hint {
   margin-top: 10px;
@@ -1110,6 +1167,7 @@ function demo(msg: string, icon?: string) {
   .scontent { padding: 16px 12px 28px; }
   .card { padding: 14px; }
   .credential-form, .profile-form, .webhook-form { grid-template-columns: 1fr; }
+  .site-form { grid-template-columns: 1fr; }
   .bind-actions, .token-input, .fresh-row { align-items: stretch; flex-direction: column; }
   .btn-primary, .btn-ghost { justify-content: center; }
   .grid-tokens { grid-template-columns: minmax(130px, 1fr) 70px; }

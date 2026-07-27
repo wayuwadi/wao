@@ -3,8 +3,12 @@ package cn.wayuwa.wao.controller;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.FeishuWebhookConfigDto;
 import cn.wayuwa.wao.dto.SaveWebhookRequest;
+import cn.wayuwa.wao.dto.SaveSiteInfoRequest;
+import cn.wayuwa.wao.dto.SiteInfoDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.service.SettingService;
+import jakarta.validation.Valid;
+import java.net.URI;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -30,6 +34,21 @@ public class SettingController {
         return ApiResponse.ok(webhookConfig());
     }
 
+    @GetMapping("/site-info")
+    public ApiResponse<SiteInfoDto> siteInfo() {
+        return ApiResponse.ok(siteInfo(settings));
+    }
+
+    @PutMapping("/site-info")
+    public ApiResponse<SiteInfoDto> saveSiteInfo(@Valid @RequestBody SaveSiteInfoRequest request) {
+        validatePublicUrl(request.icpUrl());
+        settings.put(SettingService.SITE_NAME, request.siteName().trim());
+        settings.put(SettingService.SITE_DESCRIPTION, trim(request.description()));
+        settings.put(SettingService.SITE_ICP_NUMBER, request.icpNumber().trim());
+        settings.put(SettingService.SITE_ICP_URL, request.icpUrl().trim());
+        return ApiResponse.ok(siteInfo(settings));
+    }
+
     @PutMapping("/feishu-webhook")
     public ApiResponse<FeishuWebhookConfigDto> saveWebhook(@RequestBody SaveWebhookRequest request) {
         settings.put(SettingService.FEISHU_WEBHOOK_URL, request.url() == null ? null : request.url().trim());
@@ -51,5 +70,30 @@ public class SettingController {
         String url = settings.get(SettingService.FEISHU_WEBHOOK_URL);
         return new FeishuWebhookConfigDto(SettingService.mask(url), url != null && !url.isBlank(),
                 settings.getBoolean(SettingService.FEISHU_WEBHOOK_ENABLED));
+    }
+
+    public static SiteInfoDto siteInfo(SettingService settings) {
+        return new SiteInfoDto(
+                settings.get(SettingService.SITE_NAME, "WAO Life OS"),
+                settings.get(SettingService.SITE_DESCRIPTION, "个人事务与 AI 协作系统"),
+                settings.get(SettingService.SITE_ICP_NUMBER, "豫ICP备2024105476号-1"),
+                settings.get(SettingService.SITE_ICP_URL, "https://beian.miit.gov.cn"));
+    }
+
+    private static String trim(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private static void validatePublicUrl(String value) {
+        URI uri;
+        try {
+            uri = URI.create(value.trim());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("备案查询链接格式不正确");
+        }
+        if (!("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))
+                || uri.getHost() == null) {
+            throw new IllegalArgumentException("备案查询链接必须是有效的 HTTP 或 HTTPS 地址");
+        }
     }
 }

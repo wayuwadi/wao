@@ -13,6 +13,7 @@ import { shareMarkdownUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import type { SharedTask } from '@/types'
+import SiteFooter from '@/components/SiteFooter.vue'
 
 const route = useRoute()
 const taskId = computed(() => String(route.params.id))
@@ -113,6 +114,7 @@ async function copyMd() {
         </div>
       </template>
     </div>
+    <SiteFooter />
   </div>
 </template>
 
