@@ -14,6 +14,7 @@ public class TaskEntity {
     private String status;
     private String pr;
     private String ownerId;
+    private String createdBy;
     private String startDate;
     private String dueDate;
     private String waiting;
@@ -32,6 +33,8 @@ public class TaskEntity {
     public void setPr(String pr) { this.pr = pr; }
     public String getOwnerId() { return ownerId; }
     public void setOwnerId(String ownerId) { this.ownerId = ownerId; }
+    public String getCreatedBy() { return createdBy; }
+    public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
     public String getStartDate() { return startDate; }
     public void setStartDate(String startDate) { this.startDate = startDate; }
     public String getDueDate() { return dueDate; }

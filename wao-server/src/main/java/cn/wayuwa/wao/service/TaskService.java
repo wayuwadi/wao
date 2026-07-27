@@ -74,6 +74,17 @@ public class TaskService {
      * @return 创建后的任务
      */
     public TaskDto create(CreateTaskRequest req) {
+        return create(req, null);
+    }
+
+    /**
+     * 新建任务并记录由服务端会话推导出的创建人。
+     *
+     * @param req 新建请求
+     * @param createdBy 当前创建人的成员 id；历史兼容调用可为空
+     * @return 创建后的任务
+     */
+    public TaskDto create(CreateTaskRequest req, String createdBy) {
         TaskEntity e = new TaskEntity();
         e.setId("t" + System.currentTimeMillis());
         e.setTitle(req.title().trim());
@@ -81,6 +92,7 @@ public class TaskService {
         e.setStatus("待办");
         e.setPr(StringUtils.hasText(req.pr()) ? req.pr() : "P2");
         e.setOwnerId(StringUtils.hasText(req.owner()) ? req.owner() : "wg");
+        e.setCreatedBy(createdBy);
         e.setDueDate(StringUtils.hasText(req.due()) ? req.due() : TODAY);
         e.setDescription(req.desc() == null ? "" : req.desc());
         TaskDetail detail = new TaskDetail(
@@ -151,6 +163,7 @@ public class TaskService {
         e.setStatus(dto.status());
         e.setPr(dto.pr());
         e.setOwnerId(dto.owner());
+        e.setCreatedBy(previous == null ? dto.createdBy() : previous.getCreatedBy());
         e.setStartDate(dto.start());
         e.setDueDate(dto.due());
         e.setWaiting(dto.waiting());
@@ -218,6 +231,7 @@ public class TaskService {
         e.setStatus("待办");
         e.setPr("P2");
         e.setOwnerId(ownerId);
+        e.setCreatedBy(ownerId);
         e.setDueDate(TODAY);
         e.setDescription(desc == null ? "" : desc);
         TaskDetail detail = new TaskDetail(
@@ -356,7 +370,7 @@ public class TaskService {
                 nn(d.parts()), e.getStartDate(), e.getDueDate(), e.getWaiting(),
                 e.getDescription() == null ? "" : e.getDescription(),
                 nn(d.steps()), nn(d.subs()), nn(d.files()), nn(d.docs()),
-                nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()));
+                nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()), e.getCreatedBy());
     }
 
     private static Activity edit(String text) {
