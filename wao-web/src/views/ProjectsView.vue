@@ -7,7 +7,7 @@ import { useUiStore } from '@/stores/ui'
 import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
 import { statusMeta, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
-import type { Project, ProjectStatus, TaskStatus } from '@/types'
+import type { Project, ProjectStatus, Task, TaskStatus } from '@/types'
 
 const data = useDataStore()
 const session = useSessionStore()
@@ -87,14 +87,26 @@ const myList = computed(() => {
 const showDone = ref(false)
 const { toggle: toggleTask, isSettling } = useCompletionSettle()
 
+/** 本周日（含）为界：今天之后、本周日之前算「本周」，再往后是「稍后」。 */
+const weekEnd = computed(() => {
+  const d = new Date(`${data.today}T00:00:00`)
+  d.setDate(d.getDate() + (7 - (d.getDay() || 7)))
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+})
+
+/** 已完成任务倒序：最新完成的排最前；老数据没有完成时间时按 id（含创建时间戳）倒序兜底。 */
+const doneDesc = (a: Task, b: Task) =>
+  (b.completedAt ?? '').localeCompare(a.completedAt ?? '') || b.id.localeCompare(a.id)
+
 const taskGroups = computed(() => {
   const list = myList.value
   const open = list.filter((t) => t.status !== '已完成' || isSettling(t.id))
-  const done = list.filter((t) => t.status === '已完成' && !isSettling(t.id))
+  const done = list.filter((t) => t.status === '已完成' && !isSettling(t.id)).sort(doneDesc)
   const buckets: [string, (due: string) => boolean][] = [
     ['今天', (due) => !!due && due <= data.today],
-    ['本周', (due) => !!due && due > data.today && due <= '2026-07-26'],
-    ['稍后', (due) => !due || due > '2026-07-26'],
+    ['本周', (due) => !!due && due > data.today && due <= weekEnd.value],
+    ['稍后', (due) => !due || due > weekEnd.value],
   ]
   const groups: { label: string; items: ReturnType<typeof decoTask>[]; collapsible?: boolean }[] = buckets
     .map(([label, fn]) => ({ label, items: open.filter((t) => fn(t.due)).map(decoTask) }))
@@ -104,10 +116,11 @@ const taskGroups = computed(() => {
 })
 
 const boardCols = computed(() =>
-  TASK_STATUSES.map((st) => ({
-    label: st, dot: TASK_STATUS_DOTS[st], collapsible: st === '已完成',
-    items: myList.value.filter((t) => t.status === st).map(decoTask),
-  })),
+  TASK_STATUSES.map((st) => {
+    const items = myList.value.filter((t) => t.status === st)
+    if (st === '已完成') items.sort(doneDesc)
+    return { label: st, dot: TASK_STATUS_DOTS[st], collapsible: st === '已完成', items: items.map(decoTask) }
+  }),
 )
 
 const tasksEmpty = computed(() => taskGroups.value.length === 0)
@@ -891,8 +904,10 @@ function onDropStatus(status: TaskStatus) {
   padding-bottom: 8px;
 }
 .board-col {
-  width: 262px;
-  flex-shrink: 0;
+  /* 六个状态列平分宽度，宽屏一屏放下；窄到放不下（min-width 兜底）再横向滚动 */
+  flex: 1 1 0;
+  min-width: 172px;
+  max-width: 262px;
   background: #f1f2f5;
   border-radius: 12px;
   padding: 10px;

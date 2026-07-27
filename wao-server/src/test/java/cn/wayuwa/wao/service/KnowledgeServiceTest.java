@@ -42,8 +42,9 @@ class KnowledgeServiceTest {
     private final KbFolderMapper folderMapper = mock(KbFolderMapper.class);
     private final DocMapper docMapper = mock(DocMapper.class);
     private final MemberMapper memberMapper = mock(MemberMapper.class);
-    private final KnowledgeService service =
-            new KnowledgeService(groupMapper, kbMapper, folderMapper, docMapper, memberMapper, new ObjectMapper());
+    private final FeishuTaskNotifier taskNotifier = mock(FeishuTaskNotifier.class);
+    private final KnowledgeService service = new KnowledgeService(groupMapper, kbMapper, folderMapper, docMapper,
+            memberMapper, new ObjectMapper(), taskNotifier);
 
     private MemberEntity member(String id, String name) {
         MemberEntity m = new MemberEntity();

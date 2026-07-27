@@ -1,5 +1,7 @@
 package cn.wayuwa.wao.service;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 import cn.wayuwa.wao.common.NotFoundException;
@@ -18,14 +20,19 @@ import org.springframework.stereotype.Service;
 @Service
 public class ProjectService {
 
-    private static final String TODAY = "2026-07-23";
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ProjectService.class);
 
     private final ProjectMapper projectMapper;
     private final ObjectMapper json;
+    private final FeishuTaskNotifier taskNotifier;
+    private final MemberService members;
 
-    public ProjectService(ProjectMapper projectMapper, ObjectMapper json) {
+    public ProjectService(ProjectMapper projectMapper, ObjectMapper json,
+            FeishuTaskNotifier taskNotifier, MemberService members) {
         this.projectMapper = projectMapper;
         this.json = json;
+        this.taskNotifier = taskNotifier;
+        this.members = members;
     }
 
     /**
@@ -69,8 +76,9 @@ public class ProjectService {
         e.setProgress(0);
         String owner = ownerId == null || ownerId.isBlank() ? "wg" : ownerId;
         e.setOwnerId(owner);
-        e.setStartDate(TODAY);
-        e.setDueDate("2026-09-30");
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
+        e.setStartDate(today.toString());
+        e.setDueDate(today.plusMonths(2).toString());
         e.setVisibility(req.visAll() ? "组织内 2 人 · 可查看" : "仅自己可见");
         e.setUpdatedLabel("刚刚");
         e.setGoal(req.goal() == null || req.goal().isBlank()
@@ -82,7 +90,19 @@ public class ProjectService {
                 "ri-stack-line");
         e.setDetailJson(write(detail));
         projectMapper.insert(e);
+        announceCreated(e, owner);
         return toDto(e);
+    }
+
+    /** 新建项目后同步到飞书群；通知失败只记日志，不影响创建结果。 */
+    private void announceCreated(ProjectEntity entity, String ownerId) {
+        try {
+            String ownerName = members.list().stream().filter(m -> m.id().equals(ownerId))
+                    .map(m -> m.name()).findFirst().orElse(ownerId);
+            taskNotifier.notifyProjectCreated(entity.getId(), entity.getName(), ownerName, entity.getGoal());
+        } catch (RuntimeException ex) {
+            LOG.warn("新建项目的飞书通知发送失败：{}", ex.getMessage());
+        }
     }
 
     /**

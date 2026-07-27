@@ -321,6 +321,7 @@ public class AiRunService {
                     + "已进入队列，等待" + (target == null ? "在线电脑" : target.getName())
                     + "上的 " + label(runEngine) + " 领取");
             setTaskStatus(taskId, "AI 进行中");
+            notifyQueued(run);
             created.add(run);
         }
         return toRunDtos(created);
@@ -431,6 +432,7 @@ public class AiRunService {
         runMapper.insert(run);
         appendProgress(run, "phase", "已带着上一次的报错重新排队，等待 " + label(engine) + " 接着修");
         setTaskStatus(run.getTaskId(), "AI 进行中");
+        notifyQueued(run);
         return toRunDtos(List.of(run)).get(0);
     }
 
@@ -467,6 +469,7 @@ public class AiRunService {
         appendProgress(run, "message", (optimizing ? "用户要求继续优化：" : "用户补充：") + run.getPendingInput());
         appendProgress(run, "phase", "已收到" + (optimizing ? "优化要求" : "补充") + "，等待原执行电脑恢复 AI 会话");
         setTaskStatus(run.getTaskId(), "AI 进行中");
+        notifyQueued(run);
         return toRunDtos(List.of(run)).get(0);
     }
 
@@ -548,6 +551,7 @@ public class AiRunService {
             setTaskStatus(run.getTaskId(), "AI 进行中");
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());
+            notifyStarted(run, task, project, runner.getName());
             return new AiRunnerClaimDto(run.getId(), run.getTaskId(), task.getTitle(), run.getProjectId(),
                     project == null ? run.getProjectId() : project.getName(), engine, run.getPromptUrl(),
                     config.getRepoUrl(), blankOr(config.getDefaultBranch(), "main"),
@@ -622,6 +626,38 @@ public class AiRunService {
                     engineLabel, scope, succeeded, run.getResultSummary());
         } catch (RuntimeException ex) {
             LOG.warn("AI 运行完成通知发送失败：{}", ex.getMessage());
+        }
+    }
+
+    /** 派工（进入 / 回到执行队列）后的飞书通知；失败只记日志，不影响派工结果。 */
+    private void notifyQueued(AiTaskRunEntity run) {
+        try {
+            TaskEntity task = taskMapper.selectById(run.getTaskId());
+            ProjectEntity project = projectMapper.selectById(run.getProjectId());
+            String scope = StringUtils.hasText(run.getSubId())
+                    ? "子任务 · " + blankOr(subTitle(run.getTaskId(), run.getSubId()), run.getSubId())
+                    : "整个任务";
+            AiRunnerNodeEntity target = StringUtils.hasText(run.getRequestedRunnerId())
+                    ? runnerMapper.selectById(run.getRequestedRunnerId()) : null;
+            notifier.notifyRunQueued(run.getTaskId(), run.getProjectId(),
+                    task == null ? run.getTaskId() : task.getTitle(),
+                    project == null ? run.getProjectId() : project.getName(),
+                    label(blankOr(run.getEngine(), DEFAULT_ENGINE)), scope,
+                    target == null ? null : target.getName());
+        } catch (RuntimeException ex) {
+            LOG.warn("AI 派工通知发送失败：{}", ex.getMessage());
+        }
+    }
+
+    /** 执行电脑领取任务（AI 开始执行）后的飞书通知；失败只记日志，不影响领取结果。 */
+    private void notifyStarted(AiTaskRunEntity run, TaskEntity task, ProjectEntity project, String runnerName) {
+        try {
+            notifier.notifyRunStarted(run.getTaskId(), run.getProjectId(),
+                    task == null ? run.getTaskId() : task.getTitle(),
+                    project == null ? run.getProjectId() : project.getName(),
+                    label(blankOr(run.getEngine(), DEFAULT_ENGINE)), runnerName);
+        } catch (RuntimeException ex) {
+            LOG.warn("AI 开始执行通知发送失败：{}", ex.getMessage());
         }
     }
 
@@ -766,6 +802,8 @@ public class AiRunService {
         TaskEntity task = taskMapper.selectById(taskId);
         if (task == null) return;
         task.setStatus(status);
+        // 已完成的任务被重新派给 AI 时，旧的完成时间不再成立
+        if (!TaskService.DONE.equals(status)) task.setCompletedAt(null);
         taskMapper.updateById(task);
     }
 

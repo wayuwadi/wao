@@ -1,5 +1,7 @@
 package cn.wayuwa.wao.domain;
 
+import java.time.LocalDateTime;
+
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -20,6 +22,7 @@ public class TaskEntity {
     private String waiting;
     private String description;
     private String detailJson;
+    private LocalDateTime completedAt;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -45,4 +48,6 @@ public class TaskEntity {
     public void setDescription(String description) { this.description = description; }
     public String getDetailJson() { return detailJson; }
     public void setDetailJson(String detailJson) { this.detailJson = detailJson; }
+    public LocalDateTime getCompletedAt() { return completedAt; }
+    public void setCompletedAt(LocalDateTime completedAt) { this.completedAt = completedAt; }
 }

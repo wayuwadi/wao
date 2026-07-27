@@ -114,7 +114,11 @@ const allTasks = computed(() => ptasks.value
   .filter((task) => !creatorFilter.value || task.createdBy === creatorFilter.value)
   .map(decoTask))
 const openTasks = computed(() => allTasks.value.filter((t) => t.status !== '已完成' || isSettling(t.id)))
-const doneTasks = computed(() => allTasks.value.filter((t) => t.status === '已完成' && !isSettling(t.id)))
+/** 已完成倒序：最新完成的排最前；老数据没有完成时间时按 id（含创建时间戳）倒序兜底。 */
+const doneDesc = (a: { completedAt?: string | null; id: string }, b: { completedAt?: string | null; id: string }) =>
+  (b.completedAt ?? '').localeCompare(a.completedAt ?? '') || b.id.localeCompare(a.id)
+const doneTasks = computed(() =>
+  allTasks.value.filter((t) => t.status === '已完成' && !isSettling(t.id)).sort(doneDesc))
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
 const board = computed(() =>
   TASK_STATUSES.map((st) => ({
@@ -123,7 +127,9 @@ const board = computed(() =>
     collapsible: st === '已完成',
     // 新任务一律落在「待办」，所以加号只出现在这一列——省掉一次把鼠标甩到右上角的来回。
     addable: st === '待办',
-    items: allTasks.value.filter((t) => t.status === st),
+    items: st === '已完成'
+      ? allTasks.value.filter((t) => t.status === st).sort(doneDesc)
+      : allTasks.value.filter((t) => t.status === st),
   })),
 )
 const pdTabs = computed(() => {
@@ -971,8 +977,10 @@ function comingSoon(msg: string) {
   padding-bottom: 8px;
 }
 .board-col {
-  width: 262px;
-  flex-shrink: 0;
+  /* 六个状态列平分宽度，宽屏一屏放下；窄到放不下（min-width 兜底）再横向滚动 */
+  flex: 1 1 0;
+  min-width: 172px;
+  max-width: 262px;
   background: #f1f2f5;
   border-radius: 12px;
   padding: 10px;

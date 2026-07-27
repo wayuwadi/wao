@@ -121,6 +121,180 @@ public class FeishuTaskNotifier {
     }
 
     /**
+     * 新建任务后在群里说一声，谁建的、落在哪个项目一目了然。
+     *
+     * @param taskId      任务 id
+     * @param projectId   项目 id
+     * @param taskTitle   任务标题
+     * @param projectName 项目名称
+     * @param creatorName 创建人名字；推导不出来时可为空
+     * @param desc        任务描述，截断后作为卡片正文
+     * @return 是否真的发出去了
+     */
+    public boolean notifyTaskCreated(String taskId, String projectId, String taskTitle, String projectName,
+            String creatorName, String desc) {
+        List<List<String>> fields = new ArrayList<>();
+        fields.add(List.of("项目", blank(projectName, projectId)));
+        fields.add(List.of("任务", blank(taskTitle, taskId)));
+        if (StringUtils.hasText(creatorName)) {
+            fields.add(List.of("创建人", creatorName));
+        }
+        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "新建了任务", "blue", fields,
+                excerpt(desc, "还没有描述，点开看详情。"),
+                "查看任务", taskUrl(projectId, taskId)));
+    }
+
+    /**
+     * 任务状态变化后在群里说一声（进入「收集中」有单独的创意收集卡片，调用方自行跳过）。
+     *
+     * @param taskId       任务 id
+     * @param projectId    项目 id
+     * @param taskTitle    任务标题
+     * @param projectName  项目名称
+     * @param fromStatus   原状态；新建时可为空
+     * @param toStatus     新状态
+     * @param operatorName 操作人名字；推导不出来时可为空
+     * @return 是否真的发出去了
+     */
+    public boolean notifyStatusChanged(String taskId, String projectId, String taskTitle, String projectName,
+            String fromStatus, String toStatus, String operatorName) {
+        List<List<String>> fields = new ArrayList<>();
+        fields.add(List.of("项目", blank(projectName, projectId)));
+        fields.add(List.of("任务", blank(taskTitle, taskId)));
+        if (StringUtils.hasText(operatorName)) {
+            fields.add(List.of("操作人", operatorName));
+        }
+        String body = StringUtils.hasText(fromStatus)
+                ? "状态由「" + fromStatus + "」变为「" + toStatus + "」。"
+                : "状态更新为「" + toStatus + "」。";
+        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "已完成".equals(toStatus) ? "任务已完成" : "任务状态更新",
+                "已完成".equals(toStatus) ? "green" : "blue",
+                fields, body, "查看任务", taskUrl(projectId, taskId)));
+    }
+
+    /**
+     * 任务下新增了子任务后在群里说一声，多条一次合并成一张卡片。
+     *
+     * @param taskId      任务 id
+     * @param projectId   项目 id
+     * @param taskTitle   任务标题
+     * @param projectName 项目名称
+     * @param subTitles   本次新增的子任务标题列表
+     * @return 是否真的发出去了
+     */
+    public boolean notifySubtasksAdded(String taskId, String projectId, String taskTitle, String projectName,
+            List<String> subTitles) {
+        if (subTitles == null || subTitles.isEmpty()) {
+            return false;
+        }
+        StringBuilder body = new StringBuilder();
+        for (String title : subTitles) {
+            body.append("- ").append(title).append('\n');
+        }
+        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "新增了 " + subTitles.size() + " 条子任务", "blue",
+                List.of(
+                        List.of("项目", blank(projectName, projectId)),
+                        List.of("任务", blank(taskTitle, taskId))),
+                excerpt(body.toString().trim(), "点开看详情。"),
+                "查看任务", taskUrl(projectId, taskId)));
+    }
+
+    /**
+     * 新建项目后在群里说一声。
+     *
+     * @param projectId   项目 id
+     * @param projectName 项目名称
+     * @param ownerName   负责人名字；推导不出来时可为空
+     * @param goal        项目目标，截断后作为卡片正文
+     * @return 是否真的发出去了
+     */
+    public boolean notifyProjectCreated(String projectId, String projectName, String ownerName, String goal) {
+        List<List<String>> fields = new ArrayList<>();
+        fields.add(List.of("项目", blank(projectName, projectId)));
+        if (StringUtils.hasText(ownerName)) {
+            fields.add(List.of("负责人", ownerName));
+        }
+        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "新建了项目", "blue", fields,
+                excerpt(goal, "还没有填写目标，点开补充。"),
+                "查看项目", SITE + "/projects/" + projectId));
+    }
+
+    /**
+     * 新建小记后在群里说一声。
+     *
+     * @param kbId       小记所在知识库 id
+     * @param docId      小记文档 id
+     * @param title      小记标题
+     * @param authorName 作者名字；推导不出来时可为空
+     * @return 是否真的发出去了
+     */
+    public boolean notifyNoteCreated(String kbId, String docId, String title, String authorName) {
+        List<List<String>> fields = new ArrayList<>();
+        fields.add(List.of("小记", blank(title, docId)));
+        if (StringUtils.hasText(authorName)) {
+            fields.add(List.of("作者", authorName));
+        }
+        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "新建了小记", "grey", fields,
+                "一条新的小记已经写好，点开看看。",
+                "查看小记", SITE + "/kb/" + kbId + "?doc=" + docId));
+    }
+
+    /**
+     * 任务派给 AI（进入队列）后在群里说一声。
+     *
+     * @param taskId      任务 id
+     * @param projectId   项目 id
+     * @param taskTitle   任务标题
+     * @param projectName 项目名称
+     * @param engineLabel 执行工具名（Codex / Claude Code / Qoder）
+     * @param scope       本次跑的范围描述（整个任务或某条子任务）
+     * @param runnerName  指定的执行电脑名；未指定时可为空
+     * @return 是否真的发出去了
+     */
+    public boolean notifyRunQueued(String taskId, String projectId, String taskTitle, String projectName,
+            String engineLabel, String scope, String runnerName) {
+        List<List<String>> fields = new ArrayList<>();
+        fields.add(List.of("项目", blank(projectName, projectId)));
+        fields.add(List.of("任务", blank(taskTitle, taskId)));
+        fields.add(List.of("执行工具", blank(engineLabel, "AI")));
+        if (StringUtils.hasText(scope)) {
+            fields.add(List.of("范围", scope));
+        }
+        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "任务已派给 AI", "blue", fields,
+                "已进入执行队列，等待" + (StringUtils.hasText(runnerName) ? runnerName : "在线电脑") + "领取。",
+                "查看任务", taskUrl(projectId, taskId)));
+    }
+
+    /**
+     * AI 开始执行（执行电脑领取任务）后在群里说一声。
+     *
+     * @param taskId      任务 id
+     * @param projectId   项目 id
+     * @param taskTitle   任务标题
+     * @param projectName 项目名称
+     * @param engineLabel 执行工具名
+     * @param runnerName  领取任务的执行电脑名
+     * @return 是否真的发出去了
+     */
+    public boolean notifyRunStarted(String taskId, String projectId, String taskTitle, String projectName,
+            String engineLabel, String runnerName) {
+        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "AI 开始执行", "grey",
+                List.of(
+                        List.of("项目", blank(projectName, projectId)),
+                        List.of("任务", blank(taskTitle, taskId)),
+                        List.of("执行工具", blank(engineLabel, "AI"))),
+                blank(runnerName, "执行电脑") + " 已领取任务，" + blank(engineLabel, "AI") + " 正在启动。",
+                "查看任务", taskUrl(projectId, taskId)));
+    }
+
+    /**
      * 查一个成员绑定的飞书 open_id。
      *
      * @param memberId 成员 id

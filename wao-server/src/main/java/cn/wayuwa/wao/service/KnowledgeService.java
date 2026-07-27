@@ -73,15 +73,19 @@ public class KnowledgeService {
     private final DocMapper docMapper;
     private final MemberMapper memberMapper;
     private final ObjectMapper json;
+    private final FeishuTaskNotifier taskNotifier;
+
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(KnowledgeService.class);
 
     public KnowledgeService(KbGroupMapper groupMapper, KbMapper kbMapper, KbFolderMapper folderMapper,
-            DocMapper docMapper, MemberMapper memberMapper, ObjectMapper json) {
+            DocMapper docMapper, MemberMapper memberMapper, ObjectMapper json, FeishuTaskNotifier taskNotifier) {
         this.groupMapper = groupMapper;
         this.kbMapper = kbMapper;
         this.folderMapper = folderMapper;
         this.docMapper = docMapper;
         this.memberMapper = memberMapper;
         this.json = json;
+        this.taskNotifier = taskNotifier;
     }
 
     // ---------------- 分组 ----------------
@@ -368,7 +372,20 @@ public class KnowledgeService {
         KbEntity kb = notesKb();
         KbFolderEntity folder = authorFolder(kb.getId(), author);
         List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
-        return insertDoc(kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(blocks)), author, blocks);
+        DocDto doc = insertDoc(kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(blocks)), author, blocks);
+        announceNote(kb.getId(), doc, author);
+        return doc;
+    }
+
+    /** 新建小记后同步到飞书群；通知失败只记日志，不影响创建结果。 */
+    private void announceNote(String kbId, DocDto doc, String author) {
+        try {
+            MemberEntity member = author == null || author.isBlank() ? null : memberMapper.selectById(author);
+            taskNotifier.notifyNoteCreated(kbId, doc.id(), doc.title(),
+                    member == null ? author : member.getName());
+        } catch (RuntimeException ex) {
+            LOG.warn("新建小记的飞书通知发送失败：{}", ex.getMessage());
+        }
     }
 
     /**

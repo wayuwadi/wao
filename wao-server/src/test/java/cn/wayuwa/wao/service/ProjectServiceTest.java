@@ -17,7 +17,8 @@ import org.junit.jupiter.api.Test;
 class ProjectServiceTest {
 
     private final ProjectMapper mapper = mock(ProjectMapper.class);
-    private final ProjectService service = new ProjectService(mapper, new ObjectMapper());
+    private final ProjectService service = new ProjectService(mapper, new ObjectMapper(),
+            mock(FeishuTaskNotifier.class), mock(MemberService.class));
 
     @Test
     void assemblesDtoFromColumnsAndDetailJson() {
