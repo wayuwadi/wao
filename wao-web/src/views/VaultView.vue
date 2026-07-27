@@ -771,4 +771,13 @@ async function deleteItem() {
   padding: 14px 20px;
   border-top: 1px solid var(--wao-divider);
 }
+
+@media (max-width: 760px) {
+  .vault { padding: 16px 12px 28px; }
+  .vault-main { grid-template-columns: 1fr; }
+  .toolbar { gap: 7px; flex-wrap: wrap; }
+  .toolbar .search { flex: 1 1 100%; }
+  .toolbar .search input { width: 100%; height: 38px; }
+  .modal { top: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+}
 </style>

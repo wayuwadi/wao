@@ -1009,4 +1009,12 @@ function comingSoon(msg: string) {
   border-radius: 12px;
   padding: 14px 18px;
 }
+
+@media (max-width: 760px) {
+  .detail { padding: 16px 12px 28px; }
+  .project-head, .project-actions, .overview-head { flex-wrap: wrap; }
+  .project-actions { width: 100%; }
+  .project-actions button { flex: 1; justify-content: center; }
+  .overview-grid { grid-template-columns: 1fr; }
+}
 </style>

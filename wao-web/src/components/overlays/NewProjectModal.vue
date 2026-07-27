@@ -268,4 +268,10 @@ async function create() {
 .btn-primary:hover:not(:disabled) {
   background: var(--wao-primary-hover);
 }
+
+@media (max-width: 760px) {
+  .modal { top: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  .modal-head, .modal-body, .modal-foot { padding-left: 14px; padding-right: 14px; }
+  .two-col { grid-template-columns: 1fr; }
+}
 </style>

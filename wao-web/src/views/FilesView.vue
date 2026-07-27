@@ -493,4 +493,15 @@ async function removeFile(id: string | undefined, name: string) {
 .img-copy i {
   font-size: 12px;
 }
+
+@media (max-width: 760px) {
+  .files { padding: 16px 12px 28px; }
+  .toolbar { gap: 7px; }
+  .toolbar .search { flex: 1 1 100%; }
+  .toolbar .search input { width: 100%; height: 38px; }
+  .img-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .file-row { align-items: flex-start; flex-wrap: wrap; }
+  .file-main { min-width: calc(100% - 48px); }
+  .file-size { margin-left: 42px; }
+}
 </style>

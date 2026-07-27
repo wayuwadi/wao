@@ -982,4 +982,17 @@ function onDropStatus(status: TaskStatus) {
 .bc-due {
   font-size: 11.5px;
 }
+
+@media (max-width: 760px) {
+  .projects { padding: 16px 12px 28px; }
+  .toolbar { gap: 7px; }
+  .search { flex: 1 1 100%; }
+  .search input { width: 100%; height: 38px; }
+  .tool-btn, .btn-primary { min-height: 36px; }
+  .card-grid { grid-template-columns: 1fr; }
+  .trow { align-items: flex-start; flex-wrap: wrap; }
+  .trow-title { flex-basis: calc(100% - 30px); white-space: normal; }
+  .trow-proj { max-width: calc(100% - 80px); margin-left: 27px; }
+  .trow-due { margin-left: auto; }
+}
 </style>
