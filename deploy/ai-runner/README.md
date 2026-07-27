@@ -11,7 +11,7 @@ AI Runner 安装在娃哥、娃弟的 Windows 电脑和 Linux 主节点上。WAO
 1. 确认本机已有 Python 3.10+、Git，以及至少一种已登录的 AI CLI：
    - Codex CLI，执行过 `codex login`；
    - Claude Code CLI，执行过 `claude` 并完成登录；
-   - Qoder CLI（`qodercli`），执行过 `qodercli` 并在 TUI 里 `/login` 完成登录。
+   - Qoder CLI（国际版命令名 `qodercli`，国内版 `qoderclicn`），执行过一次并在 TUI 里 `/login` 完成登录。
 2. 打开 WAO 首页 AI 控制台 →「AI 工作流」，填写仓库地址、默认 AI 工具并开启开关。
 3. 切到「执行电脑」点击“生成配对码”，十分钟内在对应电脑运行。
 
@@ -40,7 +40,8 @@ python3 deploy/ai-runner/wao-ai-runner.py \
 
 `--engines` 留空表示自动探测（装了哪种就报哪种，可选 codex、claude、qoder）；显式指定时
 找不到对应命令会直接启动失败，避免电脑上报了自己其实跑不了的能力。需要固定模型时加
-`--claude-model opus`。Qoder 的引擎 id 是 `qoder`，命令名是 `qodercli`，自动探测按命令名找。
+`--claude-model opus`。Qoder 的引擎 id 是 `qoder`，命令名国际版叫 `qodercli`、国内版叫
+`qoderclicn`，自动探测按顺序两个名字都认。
 
 项目里只填一个 HTTPS 仓库地址，但每台电脑的 Git 认证方式可以不同：`--git-protocol` 默认
 `auto`，本机有 HTTPS 凭据就用 HTTPS，没有（例如只配了 SSH key 的 Linux 主节点）就自动把
@@ -75,7 +76,7 @@ Runner 状态、日志或 Git；因此只需让这台电脑的 Git 凭据管理�
 任务结束时 Runner 还会从 CLI 的结束事件里读出本次用量，随结果一并回传（见 ADR-026）：
 Claude Code 取 `result` 事件的 `usage`、`total_cost_usd` 和按模型分组的 `modelUsage`；
 Codex 累加 `turn.completed` 的 `usage`，它不回传花费，所以只有 token 没有金额；
-Qoder 按 Credits 配额计费，结束事件没有按次用量字段时只记模型不记账（见 ADR-028）。
+Qoder 的 `result` 事件字段与 Claude 同构，用量直接按 Claude 口径入账（见 ADR-028）。
 用量解析失败只会让这次「没记上账」，不会影响任务本身的成败——本机日志里能看到每次的
 模型、token 和折算额度。
 
@@ -85,7 +86,7 @@ Qoder 按 Credits 配额计费，结束事件没有按次用量字段时只记�
 --git-command "C:\Program Files\Git\cmd\git.exe" `
 --codex-command "C:\Program Files\nodejs\codex.cmd" `
 --claude-command "C:\Program Files\nodejs\claude.cmd" `
---qoder-command "C:\Users\用户名\.qoder-cli\bin\qodercli.exe"
+--qoder-command "C:\Users\用户名\.qoder-cn\bin\qoderclicn\qoderclicn.exe"
 ```
 
 ## 并发与隔离
