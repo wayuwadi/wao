@@ -39,6 +39,8 @@ const commentText = ref('')
 const sendingComment = ref(false)
 const aiStarting = ref(false)
 const aiLauncherOpen = ref(false)
+/** 执行方式选择器当前是为哪条子任务打开的；null 表示整个任务。 */
+const aiLauncherSubId = ref<string | null>(null)
 const aiRuns = ref<AiRun[]>([])
 const aiRunsLoading = ref(false)
 const aiContinuation = ref<Record<string, string>>({})
@@ -55,6 +57,7 @@ watch(
     commentText.value = ''
     openSubId.value = null
     aiLauncherOpen.value = false
+    aiLauncherSubId.value = null
     editingComment.value = null
     confirmingDelete.value = false
   },
@@ -84,15 +87,21 @@ const aiRunLabel: Record<AiRunStatus, string> = {
   failed: '执行失败', cancelled: '已取消',
 }
 const activeAiRun = computed(() => aiRuns.value.find((run) => ['queued', 'claimed', 'running'].includes(run.status)))
+/** 已经单独派过 AI 工的子任务：行上标一下，分享给 AI 时它们也会被自动摘掉。 */
+const dispatchedSubIds = computed(
+  () => new Set(aiRuns.value.map((run) => run.subId).filter((id): id is string => !!id)),
+)
 
 async function continueRun(runId: string) {
   const input = aiContinuation.value[runId]?.trim()
   if (!input) return toast('请先输入要补充给 AI 的信息', 'ri-information-line')
+  const optimizing = aiRuns.value.find((run) => run.id === runId)?.status === 'succeeded'
   continuingRunId.value = runId
   try {
     await continueAiRun(runId, input)
     aiContinuation.value[runId] = ''
-    toast('补充已发送，AI 将在原会话中继续执行', 'ri-robot-2-line')
+    toast(optimizing ? '已发送，AI 将带着这次的记忆继续优化' : '补充已发送，AI 将在原会话中继续执行',
+      'ri-robot-2-line')
     await refreshTaskAiRuns()
   } catch (error) {
     toast(error instanceof Error ? error.message : '发送补充失败，请重试', 'ri-error-warning-line')
@@ -390,17 +399,22 @@ async function copyShare(kind: 'page' | 'md') {
 }
 async function runWithAi(engine: AiEngine, runnerId: string | null) {
   const t = task.value
-  if (!t || aiStarting.value || t.status === 'AI 进行中') return
+  if (!t || aiStarting.value) return
+  // 子任务派工是独立的一条运行，任务整体正在跑也不该拦着
+  const subId = aiLauncherSubId.value
+  if (!subId && t.status === 'AI 进行中') return
   aiStarting.value = true
   try {
-    const created = await createAiRuns([t.id], { engine, runnerId })
+    const created = await createAiRuns([t.id], { subId, engine, runnerId })
     if (created.length) {
-      data.patchTask(t.id, { status: 'AI 进行中' }, `你已把任务交给 ${engineLabel(engine)}`)
-      toast(`已交给 ${engineLabel(engine)}，可在首页 AI 控制台查看运行状态`, 'ri-robot-2-line')
+      const what = subId ? `子任务「${created[0]!.subTitle ?? ''}」` : '任务'
+      data.patchTask(t.id, { status: 'AI 进行中' }, `你已把${what}交给 ${engineLabel(engine)}`)
+      toast(`已把${what}交给 ${engineLabel(engine)}，可在首页 AI 控制台查看运行状态`, 'ri-robot-2-line')
       aiLauncherOpen.value = false
+      aiLauncherSubId.value = null
       void refreshTaskAiRuns()
     } else {
-      toast('这个任务已经在 AI Run 队列中', 'ri-information-line')
+      toast(subId ? '这条子任务已经在 AI Run 队列中' : '这个任务已经在 AI Run 队列中', 'ri-information-line')
     }
   } catch (error) {
     toast(error instanceof Error ? error.message : 'AI Run 启动失败', 'ri-error-warning-line')
@@ -408,6 +422,20 @@ async function runWithAi(engine: AiEngine, runnerId: string | null) {
     aiStarting.value = false
   }
 }
+
+/** 给某条子任务单独派工：打开同一个执行方式选择器，只是这次带上 subId。 */
+function runSubWithAi(key: string) {
+  aiLauncherSubId.value = key
+  aiLauncherOpen.value = true
+}
+
+/** 选择器上要写清楚这次到底跑什么，否则从子任务点开会以为要跑整个任务。 */
+const aiLauncherScope = computed(() => {
+  const key = aiLauncherSubId.value
+  if (!key) return '整个任务'
+  const row = subRows.value.find((r) => r.key === key)
+  return `子任务「${row?.sub.text ?? ''}」`
+})
 async function sendComment() {
   if (sendingComment.value) return
   const t = task.value
@@ -504,10 +532,11 @@ function demo(msg: string) {
             <i v-if="task.status !== 'AI 进行中'" class="ri-arrow-down-s-line caret"></i>
           </button>
           <AiRunLauncher
-            v-if="aiLauncherOpen && task.status !== 'AI 进行中'"
+            v-if="aiLauncherOpen && (aiLauncherSubId || task.status !== 'AI 进行中')"
             :project-id="task.project"
             :starting="aiStarting"
-            @close="aiLauncherOpen = false"
+            :scope="aiLauncherScope"
+            @close="aiLauncherOpen = false; aiLauncherSubId = null"
             @start="runWithAi"
           />
         </div>
@@ -516,13 +545,13 @@ function demo(msg: string) {
           <div v-if="menu === 'share'" class="menu-mask" @click="menu = null"></div>
           <div v-if="menu === 'share'" class="share-menu">
             <div class="share-scope">
-              {{ openSubId ? '分享范围：当前子任务' : shareOpenOnly ? '分享范围：本任务 + 未完成的子任务' : '分享范围：本任务 + 全部子任务' }}
+              {{ openSubId ? '分享范围：当前子任务' : shareOpenOnly ? '分享范围：本任务 + 还没人做的子任务' : '分享范围：本任务 + 全部子任务' }}
             </div>
-            <label v-if="!openSubId && shareDoneCount" class="share-filter">
+            <label v-if="!openSubId && (shareDoneCount || dispatchedSubIds.size)" class="share-filter">
               <input v-model="shareOpenOnly" type="checkbox" />
               <span class="share-filter-main">
-                <b>只分享未完成的子任务</b>
-                <em>过滤掉已完成的 {{ shareDoneCount }} 条，便于持续迭代时直接丢给 AI</em>
+                <b>只分享还没人做的子任务</b>
+                <em>过滤掉已完成的 {{ shareDoneCount }} 条{{ dispatchedSubIds.size ? `和已单独派给 AI 的 ${dispatchedSubIds.size} 条` : '' }}，避免重复派工</em>
               </span>
             </label>
             <button class="share-item" @click="copyShare('page')">
@@ -601,6 +630,17 @@ function demo(msg: string) {
                 <span class="check-text" :class="{ done: r.sub.done }">{{ r.sub.text }}</span>
                 <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
                 <span class="spacer"></span>
+                <span v-if="dispatchedSubIds.has(r.key)" class="sub-dispatched" title="已单独派给 AI，主任务再派工时不会重复纳入">
+                  <i class="ri-robot-2-line"></i>已派工
+                </span>
+                <button
+                  v-else
+                  class="sub-ai"
+                  title="只把这一条子任务交给 AI 跑"
+                  @click.stop="runSubWithAi(r.key)"
+                >
+                  <i class="ri-robot-2-line"></i>AI run
+                </button>
                 <i class="ri-arrow-right-s-line sub-chev"></i>
               </div>
             </div>
@@ -672,6 +712,9 @@ function demo(msg: string) {
               <summary>
                 <span class="ai-run-state" :class="`state-${run.status}`">{{ aiRunLabel[run.status] }}</span>
                 <span class="ai-run-engine" :title="`执行工具：${engineLabel(run.engine)}`"><i :class="engineIcon(run.engine)"></i></span>
+                <span v-if="run.subId" class="ai-run-scope" :title="`只跑子任务：${run.subTitle ?? run.subId}`">
+                  子任务 · {{ run.subTitle ?? run.subId }}
+                </span>
                 <span class="ai-run-latest">{{ run.latestProgress || run.resultSummary || '暂无执行摘要' }}</span>
                 <time :title="absoluteTime(run.startedAt || run.createdAt)">{{ showTime(run.startedAt || run.createdAt) }}</time>
                 <i class="ri-arrow-down-s-line"></i>
@@ -685,10 +728,19 @@ function demo(msg: string) {
                   <b>{{ run.status === 'failed' ? '失败原因' : '最终结果' }}</b>
                   <p>{{ run.resultSummary }}</p>
                 </div>
-                <div v-if="run.status === 'failed' && run.sessionId && run.runnerId" class="ai-continue">
-                  <textarea v-model="aiContinuation[run.id]" rows="2" placeholder="补充信息后，让 AI 在原会话中继续执行"></textarea>
+                <div
+                  v-if="['failed', 'succeeded'].includes(run.status) && run.sessionId && run.runnerId"
+                  class="ai-continue"
+                >
+                  <textarea
+                    v-model="aiContinuation[run.id]"
+                    rows="2"
+                    :placeholder="run.status === 'succeeded'
+                      ? '跑完了但不符合预期？写下要优化的地方，AI 带着这次的记忆接着改'
+                      : '补充信息后，让 AI 在原会话中继续执行'"
+                  ></textarea>
                   <button :disabled="continuingRunId === run.id" @click="continueRun(run.id)">
-                    {{ continuingRunId === run.id ? '发送中…' : '继续对话' }}
+                    {{ continuingRunId === run.id ? '发送中…' : run.status === 'succeeded' ? '继续优化' : '继续对话' }}
                   </button>
                 </div>
               </div>
@@ -1368,6 +1420,31 @@ function demo(msg: string) {
   color: var(--wao-text-faint-2);
   opacity: 0;
 }
+/* 单条子任务派工：常态隐形，鼠标移到这一行才出现，不给静态列表添噪音 */
+.sub-ai {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--wao-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--wao-text-3);
+  font-size: 10.5px;
+  cursor: pointer;
+  opacity: 0;
+}
+.sub-ai i { margin-right: 3px; }
+.sub-row:hover .sub-ai,
+.sub-row.active .sub-ai { opacity: 1; }
+.sub-ai:hover { border-color: #b7c0ea; color: #4358d6; }
+.sub-dispatched {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #f1ecfb;
+  color: #6b3fbf;
+  font-size: 10.5px;
+}
+.sub-dispatched i { margin-right: 3px; }
 .sub-row:hover .sub-chev,
 .sub-row.active .sub-chev {
   opacity: 1;
@@ -1644,6 +1721,7 @@ function demo(msg: string) {
 .ai-run-state { flex: 0 0 auto; padding: 3px 7px; border-radius: 5px; background: #eef1ff; color: #4056c5; font-size: 10px; }
 .ai-run-state.state-succeeded { background: #e8f7ef; color: #237a4b; }
 .ai-run-state.state-failed { background: #fff0f0; color: #b33a3a; }
+.ai-run-scope { flex: 0 0 auto; max-width: 130px; overflow: hidden; padding: 3px 7px; border-radius: 5px; background: #f1ecfb; color: #6b3fbf; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-run-latest { flex: 1; min-width: 0; overflow: hidden; color: var(--wao-text-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-run-entry summary time { flex: 0 0 auto; color: var(--wao-text-faint); font-size: 10px; }
 .ai-run-body { padding: 0 10px 10px; }

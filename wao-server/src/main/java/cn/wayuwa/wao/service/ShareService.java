@@ -23,18 +23,20 @@ public class ShareService {
 
     private final TaskService tasks;
     private final ProjectService projects;
+    private final AiRunService aiRuns;
 
-    public ShareService(TaskService tasks, ProjectService projects) {
+    public ShareService(TaskService tasks, ProjectService projects, AiRunService aiRuns) {
         this.tasks = tasks;
         this.projects = projects;
+        this.aiRuns = aiRuns;
     }
 
     /**
      * 取一个任务的公开分享视图。
      *
      * @param taskId   任务 id
-     * @param openOnly 为 true 时只带上未完成的子任务 —— 持续迭代的任务分享出去时，
-     *                 已经做完的条目属于噪音，过滤掉才好直接丢给 AI 继续做
+     * @param openOnly 为 true 时只带上「还没人做」的子任务 —— 已经做完的条目属于噪音，
+     *                 已经单独派给 AI 的条目则已经有人在做，两种都不该再丢给下一个 AI 重做一遍
      * @return 分享视图
      * @throws NotFoundException 任务不存在时
      */
@@ -42,7 +44,11 @@ public class ShareService {
         TaskDto t = tasks.get(taskId);
         List<Step> subs = nn(t.subs());
         if (openOnly) {
-            subs = subs.stream().filter(s -> !s.done()).toList();
+            java.util.Set<String> dispatched = aiRuns.dispatchedSubIds(taskId);
+            List<Step> all = subs;
+            subs = java.util.stream.IntStream.range(0, all.size())
+                    .filter(i -> !all.get(i).done() && !dispatched.contains(subKey(taskId, all.get(i), i)))
+                    .mapToObj(all::get).toList();
         }
         return new SharedTaskDto("task", t.id(), null, t.title(), t.status(), t.pr(), t.due(),
                 t.project(), projectName(t.project()), nz(t.desc()), nn(t.images()), subs);

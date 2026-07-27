@@ -49,8 +49,11 @@ class AiRunServiceTest {
     private final AiRunProgressMapper progressMapper = mock(AiRunProgressMapper.class);
     private final TaskMapper taskMapper = mock(TaskMapper.class);
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
+    private final TaskService tasks = mock(TaskService.class);
+    private final FeishuTaskNotifier notifier = mock(FeishuTaskNotifier.class);
     private final AiRunService service = new AiRunService(
-            configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper);
+            configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
+            tasks, notifier);
 
     @BeforeEach
     void emptyProgressByDefault() {
@@ -107,7 +110,7 @@ class AiRunServiceTest {
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
-        var result = service.enqueue(List.of("t1"), null, null, "wg", "https://wao.example");
+        var result = service.enqueue(List.of("t1"), null, null, null, "wg", "https://wao.example");
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).taskTitle()).isEqualTo("修复登录");
@@ -115,7 +118,10 @@ class AiRunServiceTest {
         assertThat(task.getStatus()).isEqualTo("AI 进行中");
         ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
         verify(runMapper).insert(run.capture());
-        assertThat(run.getValue().getPromptUrl()).isEqualTo("https://wao.example/api/share/tasks/t1.md");
+        // 主任务派工一律只带未完成、且没被单独派过工的子任务，避免同一条被两台电脑各做一遍
+        assertThat(run.getValue().getPromptUrl())
+                .isEqualTo("https://wao.example/api/share/tasks/t1.md?openOnly=true");
+        assertThat(run.getValue().getSubId()).isNull();
     }
 
     @Test
@@ -128,7 +134,7 @@ class AiRunServiceTest {
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
-        var result = service.enqueue(List.of("t1"), "claude", "rn2", "wg", "https://wao.example");
+        var result = service.enqueue(List.of("t1"), null, "claude", "rn2", "wg", "https://wao.example");
 
         assertThat(result.get(0).engine()).isEqualTo("claude");
         assertThat(result.get(0).requestedRunnerId()).isEqualTo("rn2");
@@ -144,7 +150,7 @@ class AiRunServiceTest {
         when(configMapper.selectById("p1")).thenReturn(config("p1"));
         when(runnerMapper.selectById("rn1")).thenReturn(runner("rn1", "娃哥电脑", "codex"));
 
-        assertThatThrownBy(() -> service.enqueue(List.of("t1"), "claude", "rn1", "wg", "https://wao.example"))
+        assertThatThrownBy(() -> service.enqueue(List.of("t1"), null, "claude", "rn1", "wg", "https://wao.example"))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Claude Code");
         verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
@@ -409,6 +415,94 @@ class AiRunServiceTest {
 
         assertThat(result.usage().recorded()).isFalse();
         assertThat(result.usage().totalTokens()).isZero();
+    }
+
+    // ---------------- 子任务级派工 ----------------
+
+    @Test
+    void enqueueCanTargetASingleSubtask() {
+        TaskEntity task = task("t1", "p1", "AI run 任务优化");
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "娃哥电脑", "codex")));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+        when(tasks.get("t1")).thenReturn(taskDto("s1", "子任务也能单独跑"));
+
+        var result = service.enqueue(List.of("t1"), "s1", null, null, "wg", "https://wao.example");
+
+        assertThat(result).hasSize(1);
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getSubId()).isEqualTo("s1");
+        assertThat(run.getValue().getPromptUrl())
+                .isEqualTo("https://wao.example/api/share/tasks/t1/subs/s1.md");
+    }
+
+    @Test
+    void enqueueRejectsAnUnknownSubtask() {
+        when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "AI run 任务优化"));
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "娃哥电脑", "codex")));
+        when(tasks.get("t1")).thenReturn(taskDto("s1", "子任务也能单独跑"));
+
+        assertThatThrownBy(() -> service.enqueue(List.of("t1"), "s9", null, null, "wg", "https://wao.example"))
+                .isInstanceOf(cn.wayuwa.wao.common.NotFoundException.class);
+        verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
+    }
+
+    @Test
+    void dispatchedSubIdsListsSubtasksThatAlreadyHaveARun() {
+        AiTaskRunEntity subRun = new AiTaskRunEntity();
+        subRun.setId("ar1");
+        subRun.setTaskId("t1");
+        subRun.setSubId("s1");
+        when(runMapper.selectList(any())).thenReturn(List.of(subRun));
+
+        assertThat(service.dispatchedSubIds("t1")).containsExactly("s1");
+    }
+
+    // ---------------- 跑完之后继续优化 ----------------
+
+    @Test
+    void continueRunAlsoWorksOnASucceededRunSoItCanBeIterated() {
+        AiTaskRunEntity succeeded = new AiTaskRunEntity();
+        succeeded.setId("ar1");
+        succeeded.setTaskId("t1");
+        succeeded.setProjectId("p1");
+        succeeded.setStatus("succeeded");
+        succeeded.setRunnerId("rn1");
+        succeeded.setSessionId("thread-1");
+        when(runMapper.selectById("ar1")).thenReturn(succeeded);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "移动端体验")));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        var dto = service.continueRun("ar1", "移动端弹窗还是会跳动，继续优化", "wg");
+
+        assertThat(dto.status()).isEqualTo("queued");
+        assertThat(succeeded.getPendingInput()).isEqualTo("移动端弹窗还是会跳动，继续优化");
+        assertThat(succeeded.getRequestedRunnerId()).isEqualTo("rn1");
+    }
+
+    @Test
+    void completedRunAsksTheGroupToVerifyIt() {
+        runningRun();
+
+        service.complete("local-token", "ar1",
+                new CompleteAiRunRequest(0, "WAO_RUN_STATUS: SUCCESS", "sess-1", null, null,
+                        null, null, null, null, null));
+
+        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"), any(),
+                eq("Claude Code"), eq("整个任务"), eq(true), any());
+    }
+
+    /** 只带一条子任务的任务视图，供子任务派工用。 */
+    private static cn.wayuwa.wao.dto.TaskDto taskDto(String subId, String subTitle) {
+        return new cn.wayuwa.wao.dto.TaskDto("t1", "AI run 任务优化", "p1", "进行中", "P2", "wg",
+                List.of(), null, null, null, "", List.of(),
+                List.of(new cn.wayuwa.wao.dto.Step(subTitle, false, subId, "", List.of())),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     /** 一条已被 rn1 领取、正在运行的记录，complete 的前置条件。 */

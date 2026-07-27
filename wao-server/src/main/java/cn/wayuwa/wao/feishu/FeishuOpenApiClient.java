@@ -165,6 +165,31 @@ public class FeishuOpenApiClient {
         }
     }
 
+    /**
+     * 往一个群发一张交互卡片。
+     *
+     * <p>群聊快速收集要把「收下了」这句话回在事件发生的那个群里，而不是全局 webhook 指向的
+     * 那个群 —— 用户是在哪儿说的想法，回执就该出现在哪儿。
+     *
+     * @param token   tenant_access_token
+     * @param chatId  目标群 id
+     * @param card    要发送的卡片
+     * @throws FeishuApiException 接口不可达或返回错误码时
+     */
+    public void sendCard(String token, String chatId, FeishuWebhookNotifier.Card card) {
+        post("/open-apis/im/v1/messages?receive_id_type=chat_id",
+                Map.of("receive_id", chatId, "msg_type", "interactive", "content", writeJson(card.toPayload())),
+                token);
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(value);
+        } catch (Exception ex) {
+            throw new FeishuApiException("卡片内容序列化失败", ex);
+        }
+    }
+
     private JsonNode get(String uri, String token) {
         try {
             JsonNode res = client.get().uri(uri).header("Authorization", "Bearer " + token)

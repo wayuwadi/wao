@@ -4,7 +4,7 @@ import { fetchAiProjectConfig, fetchAiRunners } from '@/api/ai'
 import { AI_ENGINES, engineColor } from '@/composables/aiEngines'
 import type { AiEngine, AiRunner } from '@/types'
 
-const props = defineProps<{ projectId: string; starting?: boolean }>()
+const props = defineProps<{ projectId: string; starting?: boolean; scope?: string }>()
 const emit = defineEmits<{ close: []; start: [engine: AiEngine, runnerId: string | null] }>()
 
 const loading = ref(true)
@@ -62,6 +62,8 @@ onMounted(async () => {
       <button class="close" aria-label="关闭" @click="emit('close')"><i class="ri-close-line"></i></button>
     </header>
 
+    <p v-if="scope" class="scope"><i class="ri-focus-3-line"></i>本次范围：{{ scope }}</p>
+
     <div v-if="loading" class="loading"><i class="ri-loader-4-line spin"></i>正在读取可用的电脑…</div>
     <template v-else>
       <div class="label">AI 工具</div>
@@ -118,6 +120,8 @@ onMounted(async () => {
 .launcher header { display: flex; align-items: center; }
 .launcher header b { flex: 1; font-size: 13px; }
 .close { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #f4f5f8; cursor: pointer; }
+.scope { margin: 9px 0 0; padding: 6px 8px; border-radius: 7px; background: #f4f6ff; color: var(--wao-text-2); font-size: 11px; line-height: 1.5; }
+.scope i { margin-right: 4px; }
 .loading { padding: 18px 0; color: var(--wao-text-weak); font-size: 12px; display: flex; align-items: center; gap: 7px; justify-content: center; }
 .label { margin: 13px 0 7px; color: var(--wao-text-weak); font-size: 10.5px; font-weight: 650; letter-spacing: .5px; }
 .engine-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import cn.wayuwa.wao.common.BadRequestException;
@@ -27,8 +28,9 @@ class TaskServiceTest {
     private final FeishuCommentNotifier notifier = mock(FeishuCommentNotifier.class);
     private final MemberService members = mock(MemberService.class);
     private final ProjectService projects = mock(ProjectService.class);
+    private final FeishuTaskNotifier taskNotifier = mock(FeishuTaskNotifier.class);
     private final TaskService service = new TaskService(mapper, new ObjectMapper(),
-            notifier, members, projects);
+            notifier, taskNotifier, members, projects);
 
     private TaskEntity todo() {
         TaskEntity e = new TaskEntity();
@@ -49,7 +51,7 @@ class TaskServiceTest {
         when(mapper.selectById("t1")).thenReturn(todo());
         when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
 
-        TaskDto dto = service.patch("t1", new PatchTaskRequest(null, "已完成", null, null, null));
+        TaskDto dto = service.patch("t1", new PatchTaskRequest(null, "已完成", null, null, null), "wg");
 
         assertThat(dto.status()).isEqualTo("已完成");
         assertThat(dto.steps()).hasSize(1);
@@ -62,10 +64,38 @@ class TaskServiceTest {
         when(mapper.selectById("t1")).thenReturn(todo());
         when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
 
-        TaskDto dto = service.patch("t1", new PatchTaskRequest(null, "待办", null, null, null));
+        TaskDto dto = service.patch("t1", new PatchTaskRequest(null, "待办", null, null, null), "wg");
 
         assertThat(dto.status()).isEqualTo("待办");
         assertThat(dto.activity()).isEmpty();
+    }
+
+    @Test
+    void movingIntoCollectingSharesTheTaskToTheGroupOnce() {
+        TaskEntity entity = todo();
+        when(mapper.selectById("t1")).thenReturn(entity);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+        when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在：p1"));
+        when(taskNotifier.feishuOpenId("wg")).thenReturn("ou_wg");
+
+        service.patch("t1", new PatchTaskRequest(null, "收集中", null, null, null), "wg");
+        // 已经在收集中时再保存别的字段，不该再打扰群里一次
+        service.patch("t1", new PatchTaskRequest("改个标题", "收集中", null, null, null), "wg");
+
+        verify(taskNotifier, times(1)).notifyCollecting("t1", "p1", "设计任务详情抽屉交互稿",
+                "p1", "desc", "ou_wg");
+    }
+
+    @Test
+    void chatCollectedTaskCarriesTheSourceTag() {
+        when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
+
+        TaskDto dto = service.createFromChat("p1", "语音里冒出来的想法", "语音里冒出来的想法，完整一段。",
+                "wd", "群聊快速收集");
+
+        assertThat(dto.status()).isEqualTo("待办");
+        assertThat(dto.owner()).isEqualTo("wd");
+        assertThat(dto.custom()).extracting(cn.wayuwa.wao.dto.CustomProp::value).containsExactly("群聊快速收集");
     }
 
     @Test

@@ -76,8 +76,8 @@ public class AiRunController {
     public ApiResponse<List<AiRunDto>> enqueue(@Valid @RequestBody CreateAiRunsRequest request,
             HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
-        return ApiResponse.ok(service.enqueue(request.taskIds(), request.engine(), request.runnerId(),
-                currentMember.idOr(http, "unknown"), baseUrl));
+        return ApiResponse.ok(service.enqueue(request.taskIds(), request.subId(), request.engine(),
+                request.runnerId(), currentMember.idOr(http, "unknown"), baseUrl));
     }
 
     @GetMapping("/runs")

@@ -20,7 +20,9 @@ class ShareServiceTest {
     private final ProjectService projects = mock(ProjectService.class);
     private static final String BASE = "https://wao.example";
 
-    private final ShareService service = new ShareService(tasks, projects);
+    private final AiRunService aiRuns = mock(AiRunService.class);
+
+    private final ShareService service = new ShareService(tasks, projects, aiRuns);
 
     private TaskDto task() {
         return new TaskDto("t1", "整理证件盒", "p1", "进行中", "P1", "wg",
@@ -109,6 +111,19 @@ class ShareServiceTest {
         String md = service.toMarkdown(shared, BASE);
         assertThat(md).contains("- [ ] 归档到 NAS");
         assertThat(md).doesNotContain("扫描身份证");
+    }
+
+    @Test
+    void openOnlyAlsoDropsSubtasksThatAlreadyHaveTheirOwnAiRun() {
+        when(tasks.get("t1")).thenReturn(task());
+        when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在：p1"));
+        // 「归档到 NAS」已经单独派给 AI 了，再分享给下一个 AI 就是重复算力
+        when(aiRuns.dispatchedSubIds("t1")).thenReturn(java.util.Set.of("s2"));
+
+        SharedTaskDto shared = service.shareTask("t1", true);
+
+        assertThat(shared.subs()).isEmpty();
+        assertThat(service.shareTask("t1", false).subs()).hasSize(2);
     }
 
     @Test
