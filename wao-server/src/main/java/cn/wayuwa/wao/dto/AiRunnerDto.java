@@ -9,7 +9,13 @@ public record AiRunnerDto(
         String platform,
         List<String> engines,
         int maxConcurrency,
+        Integer configuredMaxConcurrency,
         int activeRuns,
         boolean online,
-        String lastSeenAt) {
+        String lastSeenAt,
+        String wakeMac,
+        String wakeHost,
+        int wakePort,
+        boolean wakeConfigured,
+        String lastWakeRequestedAt) {
 }

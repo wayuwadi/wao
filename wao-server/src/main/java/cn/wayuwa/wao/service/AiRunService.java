@@ -237,9 +237,13 @@ public class AiRunService {
         return runnerMapper.selectList(new LambdaQueryWrapper<AiRunnerNodeEntity>()
                         .orderByDesc(AiRunnerNodeEntity::getLastSeenAt))
                 .stream().map(r -> new AiRunnerDto(r.getId(), r.getName(), r.getPlatform(), engines(r),
-                        effectiveMaxConcurrency(r), activeByRunner.getOrDefault(r.getId(), 0L).intValue(),
+                        effectiveMaxConcurrency(r), r.getAdminMaxConcurrency(),
+                        activeByRunner.getOrDefault(r.getId(), 0L).intValue(),
                         r.getLastSeenAt() != null && r.getLastSeenAt().isAfter(cutoff),
-                        r.getLastSeenAt() == null ? null : r.getLastSeenAt().toString()))
+                        r.getLastSeenAt() == null ? null : r.getLastSeenAt().toString(),
+                        r.getWakeMac(), r.getWakeHost(), r.getWakePort() == null ? 9 : r.getWakePort(),
+                        StringUtils.hasText(r.getWakeMac()) && StringUtils.hasText(r.getWakeHost()),
+                        r.getLastWakeRequestedAt() == null ? null : r.getLastWakeRequestedAt().toString()))
                 .toList();
     }
 

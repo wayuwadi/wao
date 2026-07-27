@@ -9,6 +9,8 @@ import {
   rerunAiRun,
   saveAiProjectConfig,
   updateRunnerMaxConcurrency,
+  updateRunnerWakeConfig,
+  wakeAiRunner,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
@@ -34,6 +36,10 @@ const rerunning = ref(false)
 const editingRunnerId = ref<string | null>(null)
 const editingRunnerValue = ref(2)
 const editingRunnerSaving = ref(false)
+const editingWakeRunnerId = ref<string | null>(null)
+const wakeSaving = ref(false)
+const wakingRunnerId = ref<string | null>(null)
+const wakeForm = reactive({ mac: '', host: '', port: 9 })
 const form = reactive({
   enabled: false,
   repoUrl: '',
@@ -138,6 +144,46 @@ async function saveRunnerConcurrency(runner: AiRunner) {
 
 function cancelEditingRunner() {
   editingRunnerId.value = null
+}
+
+function startEditingWake(runner: AiRunner) {
+  editingWakeRunnerId.value = runner.id
+  Object.assign(wakeForm, { mac: runner.wakeMac ?? '', host: runner.wakeHost ?? '', port: runner.wakePort || 9 })
+}
+
+async function saveWakeConfig(runner: AiRunner) {
+  wakeSaving.value = true
+  try {
+    const updated = await updateRunnerWakeConfig(runner.id, {
+      mac: wakeForm.mac.trim(), host: wakeForm.host.trim(), port: wakeForm.port,
+    })
+    const index = runners.value.findIndex((item) => item.id === runner.id)
+    if (index >= 0) runners.value[index] = updated
+    editingWakeRunnerId.value = null
+    toast('远程唤醒配置已保存', 'ri-check-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '远程唤醒配置保存失败', 'ri-error-warning-line')
+  } finally {
+    wakeSaving.value = false
+  }
+}
+
+async function wakeRunner(runner: AiRunner) {
+  if (!runner.wakeConfigured) {
+    startEditingWake(runner)
+    toast('请先填写网卡 MAC 和路由器可达的唤醒地址', 'ri-information-line')
+    return
+  }
+  wakingRunnerId.value = runner.id
+  try {
+    const result = await wakeAiRunner(runner.id)
+    toast(result.message, 'ri-send-plane-line')
+    await refresh()
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '唤醒包发送失败', 'ri-error-warning-line')
+  } finally {
+    wakingRunnerId.value = null
+  }
 }
 
 function startEditing(workflow: AiWorkflow) {
@@ -441,6 +487,28 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="runner.configuredMaxConcurrency != null" class="runner-config-hint">
               <i class="ri-settings-3-line"></i>后台已配置为 {{ runner.configuredMaxConcurrency }} 线程
+            </div>
+            <div v-if="!runner.online" class="wake-panel">
+              <div v-if="editingWakeRunnerId === runner.id" class="wake-form">
+                <input v-model="wakeForm.mac" placeholder="MAC，例如 AA:BB:CC:DD:EE:FF" />
+                <input v-model="wakeForm.host" placeholder="公网 IP、域名或广播地址" />
+                <input v-model.number="wakeForm.port" type="number" min="1" max="65535" placeholder="端口" />
+                <button :disabled="wakeSaving" @click="saveWakeConfig(runner)">
+                  <i :class="wakeSaving ? 'ri-loader-4-line spin' : 'ri-save-line'"></i>保存
+                </button>
+                <button class="secondary" :disabled="wakeSaving" @click="editingWakeRunnerId = null">取消</button>
+                <small>电脑需开启 BIOS/网卡 Wake-on-LAN；跨公网还需路由器把 UDP 端口转发到局域网。</small>
+              </div>
+              <template v-else>
+                <button class="wake-btn" :disabled="wakingRunnerId === runner.id" @click="wakeRunner(runner)">
+                  <i :class="wakingRunnerId === runner.id ? 'ri-loader-4-line spin' : 'ri-shut-down-line'"></i>
+                  {{ wakingRunnerId === runner.id ? '正在发送唤醒包' : '远程唤醒电脑' }}
+                </button>
+                <button class="wake-config-btn" @click="startEditingWake(runner)">
+                  {{ runner.wakeConfigured ? '修改配置' : '配置唤醒' }}
+                </button>
+                <small v-if="runner.lastWakeRequestedAt">上次请求 {{ timeText(runner.lastWakeRequestedAt) }}，是否上线以心跳为准</small>
+              </template>
             </div>
             <ul v-if="runsOnRunner(runner.id).length" class="runner-tasks">
               <li v-for="run in runsOnRunner(runner.id)" :key="run.id">
@@ -795,6 +863,16 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 4px;
 }
+.wake-panel { margin-top: 11px; padding-top: 11px; border-top: 1px solid #eceef4; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.wake-panel button { padding: 6px 9px; border: 1px solid #cbd3f7; border-radius: 7px; background: #f1f4ff; color: #3650b4; cursor: pointer; font-size: 11px; }
+.wake-panel button:disabled { opacity: .6; cursor: wait; }
+.wake-panel .wake-btn { border-color: #4358d6; background: #4358d6; color: #fff; font-weight: 650; }
+.wake-panel .wake-config-btn, .wake-panel button.secondary { background: #fff; color: var(--wao-text-3); }
+.wake-panel small { flex-basis: 100%; color: var(--wao-text-weak); font-size: 10px; line-height: 1.5; }
+.wake-form { width: 100%; display: grid; grid-template-columns: 1.35fr 1.35fr 70px auto auto; gap: 6px; }
+.wake-form input { min-width: 0; padding: 6px 8px; border: 1px solid var(--wao-line); border-radius: 7px; font-size: 10.5px; }
+.wake-form small { grid-column: 1 / -1; }
+@media (max-width: 720px) { .wake-form { grid-template-columns: 1fr 80px; } .wake-form input:first-child, .wake-form input:nth-child(2), .wake-form small { grid-column: 1 / -1; } }
 .pair-btn {
   padding: 8px 13px;
   border: 1px solid #4358d6;
