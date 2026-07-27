@@ -291,6 +291,16 @@ export interface SharedTask {
   subs: TaskStep[]
 }
 
+/** 公开分享的文档 / 小记视图（只有标题、正文与更新时间）。 */
+export interface SharedDoc {
+  id: string
+  title: string
+  note: boolean
+  kbId: string
+  updated: string | null
+  md: string
+}
+
 /** 可以托管任务的本地 AI 工具。 */
 export type AiEngine = 'codex' | 'claude' | 'qoder'
 

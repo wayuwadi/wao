@@ -3,11 +3,16 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+import java.util.Map;
+
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.ProjectEntity;
+import cn.wayuwa.wao.dto.Activity;
 import cn.wayuwa.wao.dto.CreateProjectRequest;
 import cn.wayuwa.wao.dto.PatchProjectRequest;
 import cn.wayuwa.wao.dto.ProjectDto;
@@ -18,8 +23,9 @@ import org.junit.jupiter.api.Test;
 class ProjectServiceTest {
 
     private final ProjectMapper mapper = mock(ProjectMapper.class);
+    private final ProjectActivityService activities = mock(ProjectActivityService.class);
     private final ProjectService service = new ProjectService(mapper, new ObjectMapper(),
-            mock(FeishuTaskNotifier.class), mock(MemberService.class));
+            mock(FeishuTaskNotifier.class), mock(MemberService.class), activities);
 
     @Test
     void assemblesDtoFromColumnsAndDetailJson() {
@@ -75,16 +81,17 @@ class ProjectServiceTest {
         ProjectEntity e = new ProjectEntity();
         e.setId("p2");
         e.setName("家庭资料归档");
+        e.setOwnerId("wg");
         e.setNotifyEnabled(true);
         when(mapper.selectById("p2")).thenReturn(e);
         when(mapper.updateById(any(ProjectEntity.class))).thenReturn(1);
 
-        assertThat(service.update("p2", new PatchProjectRequest(null, null, null, null, false)).notifyEnabled())
+        assertThat(service.update("p2", new PatchProjectRequest(null, null, null, null, false), "wg").notifyEnabled())
                 .isFalse();
-        assertThat(service.update("p2", new PatchProjectRequest(null, null, null, null, true)).notifyEnabled())
+        assertThat(service.update("p2", new PatchProjectRequest(null, null, null, null, true), "wg").notifyEnabled())
                 .isTrue();
         // 不带这个字段的更新（改名、换图标）不该顺手把开关重置掉
-        assertThat(service.update("p2", new PatchProjectRequest("改个名字", null, null, null, null)).notifyEnabled())
+        assertThat(service.update("p2", new PatchProjectRequest("改个名字", null, null, null, null), "wg").notifyEnabled())
                 .isTrue();
     }
 
@@ -96,5 +103,65 @@ class ProjectServiceTest {
         when(mapper.selectById("p3")).thenReturn(e);
 
         assertThat(service.get("p3").notifyEnabled()).isTrue();
+    }
+
+    // ---------------- 可见性隔离 ----------------
+
+    private static ProjectEntity project(String id, String owner, String membersJson) {
+        ProjectEntity e = new ProjectEntity();
+        e.setId(id);
+        e.setName("项目 " + id);
+        e.setOwnerId(owner);
+        e.setDetailJson(membersJson == null ? null : "{\"members\":" + membersJson + "}");
+        return e;
+    }
+
+    @Test
+    void listOnlyShowsProjectsTheMemberOwnsOrJoined() {
+        ProjectEntity shared = project("pa", "wg", "[\"wg\",\"wd\"]");
+        ProjectEntity wgOnly = project("pb", "wg", "[\"wg\"]");
+        ProjectEntity wdOnly = project("pc", "wd", "[\"wd\"]");
+        when(mapper.selectList(null)).thenReturn(List.of(shared, wgOnly, wdOnly));
+        when(activities.forProjects(anyCollection())).thenReturn(Map.of());
+
+        assertThat(service.list("wd").stream().map(ProjectDto::id)).containsExactly("pa", "pc");
+        assertThat(service.list("wg").stream().map(ProjectDto::id)).containsExactly("pa", "pb");
+    }
+
+    @Test
+    void personalProjectOfSomeoneElseIsInvisibleEvenById() {
+        when(mapper.selectById("pc")).thenReturn(project("pc", "wd", "[\"wd\"]"));
+
+        assertThatThrownBy(() -> service.get("pc", "wg")).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.update("pc", new PatchProjectRequest("改名", null, null, null, null), "wg"))
+                .isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.delete("pc", "wg")).isInstanceOf(NotFoundException.class);
+        assertThat(service.get("pc", "wd").id()).isEqualTo("pc");
+    }
+
+    // ---------------- 动态时间线 ----------------
+
+    @Test
+    void dtoPrefersLiveActivityOverStoredSnapshot() {
+        ProjectEntity e = project("p9", "wg", "[\"wg\"]");
+        e.setDetailJson("{\"members\":[\"wg\"],\"activity\":[{\"icon\":\"ri-add-line\",\"color\":\"#9A9DA9\","
+                + "\"text\":\"你创建了项目\",\"time\":\"刚刚\"}]}");
+        when(mapper.selectById("p9")).thenReturn(e);
+        when(activities.forProject(e)).thenReturn(
+                List.of(new Activity("ri-add-line", "#9A9DA9", "娃哥 创建了项目", "2026-07-01T08:00:00+08:00")));
+
+        assertThat(service.get("p9").activity()).hasSize(1);
+        assertThat(service.get("p9").activity().get(0).text()).isEqualTo("娃哥 创建了项目");
+    }
+
+    @Test
+    void dtoFallsBackToStoredActivityWhenNothingCanBeComputed() {
+        ProjectEntity e = project("p9", "wg", "[\"wg\"]");
+        e.setDetailJson("{\"members\":[\"wg\"],\"activity\":[{\"icon\":\"ri-add-line\",\"color\":\"#9A9DA9\","
+                + "\"text\":\"你创建了项目\",\"time\":\"刚刚\"}]}");
+        when(mapper.selectById("p9")).thenReturn(e);
+        when(activities.forProject(e)).thenReturn(List.of());
+
+        assertThat(service.get("p9").activity().get(0).text()).isEqualTo("你创建了项目");
     }
 }

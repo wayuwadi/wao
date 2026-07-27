@@ -26,37 +26,54 @@ public class ProjectService {
     private final ObjectMapper json;
     private final FeishuTaskNotifier taskNotifier;
     private final MemberService members;
+    private final ProjectActivityService activities;
 
     public ProjectService(ProjectMapper projectMapper, ObjectMapper json,
-            FeishuTaskNotifier taskNotifier, MemberService members) {
+            FeishuTaskNotifier taskNotifier, MemberService members, ProjectActivityService activities) {
         this.projectMapper = projectMapper;
         this.json = json;
         this.taskNotifier = taskNotifier;
         this.members = members;
+        this.activities = activities;
     }
 
     /**
-     * 列出全部项目。
+     * 列出对给定成员可见的项目：自己负责的，或成员列表里包含自己的。
      *
-     * @return 项目列表
+     * <p>此前不做过滤，娃哥能看到娃弟的个人项目（反之亦然）。个人项目在创建时
+     * members 只有负责人自己，据此隔离。
+     *
+     * @param memberId 当前登录成员 id；为空时不过滤（内部调用兼容）
+     * @return 可见项目列表
      */
-    public List<ProjectDto> list() {
-        return projectMapper.selectList(null).stream().map(this::toDto).toList();
+    public List<ProjectDto> list(String memberId) {
+        List<ProjectEntity> visible = projectMapper.selectList(null).stream()
+                .filter(e -> visibleTo(e, memberId)).toList();
+        var acts = activities.forProjects(visible);
+        return visible.stream().map(e -> toDto(e, acts.get(e.getId()))).toList();
     }
 
     /**
-     * 按 id 获取单个项目。
+     * 按 id 获取单个项目（内部调用，不做可见性校验）。
      *
      * @param id 项目 id
      * @return 项目
      * @throws NotFoundException 项目不存在时
      */
     public ProjectDto get(String id) {
-        ProjectEntity e = projectMapper.selectById(id);
-        if (e == null) {
-            throw new NotFoundException("项目不存在：" + id);
-        }
-        return toDto(e);
+        return toDto(require(id));
+    }
+
+    /**
+     * 按 id 获取单个项目，并校验对给定成员可见。
+     *
+     * @param id       项目 id
+     * @param memberId 当前登录成员 id
+     * @return 项目
+     * @throws NotFoundException 项目不存在或对该成员不可见时（不泄露存在性）
+     */
+    public ProjectDto get(String id, String memberId) {
+        return toDto(requireVisible(id, memberId));
     }
 
     /**
@@ -110,16 +127,14 @@ public class ProjectService {
     /**
      * 局部更新项目（名称 / 领域 / 目标 / 图标 / 通知开关）。空字段不改。
      *
-     * @param id  项目 id
-     * @param req 局部更新请求
+     * @param id       项目 id
+     * @param req      局部更新请求
+     * @param memberId 当前登录成员 id，用于可见性校验
      * @return 更新后的项目
-     * @throws NotFoundException 项目不存在时
+     * @throws NotFoundException 项目不存在或对该成员不可见时
      */
-    public ProjectDto update(String id, PatchProjectRequest req) {
-        ProjectEntity e = projectMapper.selectById(id);
-        if (e == null) {
-            throw new NotFoundException("项目不存在：" + id);
-        }
+    public ProjectDto update(String id, PatchProjectRequest req, String memberId) {
+        ProjectEntity e = requireVisible(id, memberId);
         if (req.name() != null && !req.name().isBlank()) {
             e.setName(req.name().trim());
         }
@@ -145,25 +160,58 @@ public class ProjectService {
     /**
      * 删除项目。
      *
-     * @param id 项目 id
-     * @throws NotFoundException 项目不存在时
+     * @param id       项目 id
+     * @param memberId 当前登录成员 id，用于可见性校验
+     * @throws NotFoundException 项目不存在或对该成员不可见时
      */
-    public void delete(String id) {
-        if (projectMapper.selectById(id) == null) {
-            throw new NotFoundException("项目不存在：" + id);
-        }
+    public void delete(String id, String memberId) {
+        requireVisible(id, memberId);
         projectMapper.deleteById(id);
     }
 
+    private ProjectEntity require(String id) {
+        ProjectEntity e = projectMapper.selectById(id);
+        if (e == null) {
+            throw new NotFoundException("项目不存在：" + id);
+        }
+        return e;
+    }
+
+    /** 不可见与不存在同样报 404，避免向未授权成员泄露项目存在性。 */
+    private ProjectEntity requireVisible(String id, String memberId) {
+        ProjectEntity e = require(id);
+        if (!visibleTo(e, memberId)) {
+            throw new NotFoundException("项目不存在：" + id);
+        }
+        return e;
+    }
+
+    private boolean visibleTo(ProjectEntity e, String memberId) {
+        if (memberId == null || memberId.isBlank()) {
+            return true;
+        }
+        if (memberId.equals(e.getOwnerId())) {
+            return true;
+        }
+        return nn(parse(e.getDetailJson()).members()).contains(memberId);
+    }
+
     private ProjectDto toDto(ProjectEntity e) {
+        return toDto(e, activities.forProject(e));
+    }
+
+    private ProjectDto toDto(ProjectEntity e, List<Activity> liveActivity) {
         ProjectDetail d = parse(e.getDetailJson());
+        // 现算的动态优先；一条真实事件都凑不出来时（如种子数据 id 无时间戳）回落存量文案
+        List<Activity> activity = liveActivity == null || liveActivity.isEmpty()
+                ? nn(d.activity()) : liveActivity;
         return new ProjectDto(
                 e.getId(), e.getName(), e.getArea(), e.getStatus(), e.getHealth(),
                 e.getProgress() == null ? 0 : e.getProgress(), e.getOwnerId(),
                 nn(d.members()), e.getStartDate(), e.getDueDate(), e.getVisibility(),
                 e.getUpdatedLabel(), e.getGoal(),
                 nn(d.milestones()), nn(d.msDates()), nn(d.trend()), nn(d.blockers()),
-                nn(d.docs()), nn(d.files()), nn(d.activity()),
+                nn(d.docs()), nn(d.files()), activity,
                 d.icon() == null || d.icon().isBlank() ? "ri-stack-line" : d.icon(),
                 !Boolean.FALSE.equals(e.getNotifyEnabled()));
     }

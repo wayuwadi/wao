@@ -33,13 +33,13 @@ public class ProjectController {
     }
 
     @GetMapping
-    public ApiResponse<List<ProjectDto>> list() {
-        return ApiResponse.ok(projectService.list());
+    public ApiResponse<List<ProjectDto>> list(HttpServletRequest http) {
+        return ApiResponse.ok(projectService.list(currentMember.idOr(http, "wg")));
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<ProjectDto> get(@PathVariable String id) {
-        return ApiResponse.ok(projectService.get(id));
+    public ApiResponse<ProjectDto> get(@PathVariable String id, HttpServletRequest http) {
+        return ApiResponse.ok(projectService.get(id, currentMember.idOr(http, "wg")));
     }
 
     @PostMapping
@@ -48,13 +48,14 @@ public class ProjectController {
     }
 
     @PatchMapping("/{id}")
-    public ApiResponse<ProjectDto> patch(@PathVariable String id, @RequestBody PatchProjectRequest request) {
-        return ApiResponse.ok(projectService.update(id, request));
+    public ApiResponse<ProjectDto> patch(@PathVariable String id, @RequestBody PatchProjectRequest request,
+            HttpServletRequest http) {
+        return ApiResponse.ok(projectService.update(id, request, currentMember.idOr(http, "wg")));
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(@PathVariable String id) {
-        projectService.delete(id);
+    public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest http) {
+        projectService.delete(id, currentMember.idOr(http, "wg"));
         return ApiResponse.ok(null);
     }
 }

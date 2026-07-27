@@ -43,6 +43,13 @@ const router = createRouter({
       component: () => import('@/views/ShareTaskView.vue'),
       meta: { public: true },
     },
+    // 文档 / 小记分享页：公开只读，免登录。
+    {
+      path: '/s/d/:id',
+      name: 'share-doc',
+      component: () => import('@/views/ShareDocView.vue'),
+      meta: { public: true },
+    },
     {
       path: '/',
       component: AppLayout,

@@ -8,7 +8,10 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 
 import cn.wayuwa.wao.common.NotFoundException;
+import cn.wayuwa.wao.dto.DocBlockDto;
+import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.ImageRef;
+import cn.wayuwa.wao.dto.SharedDocDto;
 import cn.wayuwa.wao.dto.SharedTaskDto;
 import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.dto.TaskDto;
@@ -21,8 +24,9 @@ class ShareServiceTest {
     private static final String BASE = "https://wao.example";
 
     private final AiRunService aiRuns = mock(AiRunService.class);
+    private final KnowledgeService knowledge = mock(KnowledgeService.class);
 
-    private final ShareService service = new ShareService(tasks, projects, aiRuns);
+    private final ShareService service = new ShareService(tasks, projects, aiRuns, knowledge);
 
     private TaskDto task() {
         return new TaskDto("t1", "整理证件盒", "p1", "进行中", "P1", "wg",
@@ -179,5 +183,65 @@ class ShareServiceTest {
         assertThat(md).contains("（暂无描述）");
         assertThat(md).doesNotContain("## 子任务");
         assertThat(md).doesNotContain("## 图片");
+    }
+
+    private DocDto doc(String kbId) {
+        return new DocDto("d1", "装修避坑清单", "wg", "2026-07-01T10:00:00+08:00", "2026-07-20T09:30:00+08:00",
+                false, List.of(),
+                List.of(new DocBlockDto(null, "水电阶段", null, null, null),
+                        new DocBlockDto(null, null, "先看这张 ![图](/api/images/img9/raw)。", null, null),
+                        new DocBlockDto("留好每面墙的走线照片", null, null, null, null),
+                        new DocBlockDto(null, null, null, List.of("插座要带开关", "网线走六类"), null),
+                        new DocBlockDto(null, null, null, null, List.of("宁多勿少", "包工头"))),
+                List.of(), kbId, "f1", 3);
+    }
+
+    @Test
+    void shareDocConvertsBlocksToStandardMarkdown() {
+        when(knowledge.getDoc("d1")).thenReturn(doc("kb1"));
+
+        SharedDocDto shared = service.shareDoc("d1");
+
+        assertThat(shared.title()).isEqualTo("装修避坑清单");
+        assertThat(shared.note()).isFalse();
+        assertThat(shared.kbId()).isEqualTo("kb1");
+        assertThat(shared.md()).contains("## 水电阶段");
+        assertThat(shared.md()).contains("- 插座要带开关\n- 网线走六类");
+        // 提示块 / 引用块用标准 blockquote，任何 Markdown 渲染器都认识
+        assertThat(shared.md()).contains("> 💡 留好每面墙的走线照片");
+        assertThat(shared.md()).contains("> 宁多勿少 —— 包工头");
+        // JSON 视图给同域分享页用，图片保持相对路径即可
+        assertThat(shared.md()).contains("](/api/images/img9/raw)");
+    }
+
+    @Test
+    void docInNotesKbIsMarkedAsNote() {
+        when(knowledge.getDoc("d2")).thenReturn(doc(KnowledgeService.NOTES_KB_ID));
+
+        assertThat(service.shareDoc("d2").note()).isTrue();
+    }
+
+    @Test
+    void docMarkdownEndpointAbsolutizesInlineImages() {
+        when(knowledge.getDoc("d1")).thenReturn(doc("kb1"));
+
+        String md = service.toMarkdown(service.shareDoc("d1"), BASE);
+
+        assertThat(md).startsWith("# 装修避坑清单");
+        assertThat(md).contains("- 更新于：2026-07-20T09:30:00+08:00");
+        assertThat(md).contains("![图](https://wao.example/api/images/img9/raw)");
+        assertThat(md).doesNotContain("](/api/images");
+    }
+
+    @Test
+    void emptyDocRendersPlaceholderAndFallbackTitle() {
+        DocDto empty = new DocDto("d3", "", "wg", null, null, false,
+                List.of(), List.of(), List.of(), KnowledgeService.NOTES_KB_ID, "f1", 1);
+        when(knowledge.getDoc("d3")).thenReturn(empty);
+
+        String md = service.toMarkdown(service.shareDoc("d3"), BASE);
+
+        assertThat(md).startsWith("# 未命名小记");
+        assertThat(md).contains("（暂无内容）");
     }
 }

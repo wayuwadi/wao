@@ -5,6 +5,7 @@ import { defineStore } from 'pinia'
 export type TaskView = 'list' | 'board'
 
 const TASK_VIEW_KEY = 'wao-task-view-v1'
+const CREATOR_FILTER_KEY = 'wao-proj-creator-filter-v1'
 
 /**
  * 读取上一次用过的任务视图。
@@ -20,6 +21,21 @@ function loadTaskView(): TaskView {
     /* ignore */
   }
   return 'board'
+}
+
+/** 读取各项目记住的「创建人筛选」，坏数据当没存过。 */
+function loadCreatorFilters(): Record<string, string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CREATOR_FILTER_KEY) || '{}')
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const out: Record<string, string> = {}
+      for (const [k, v] of Object.entries(raw)) if (typeof v === 'string' && v) out[k] = v
+      return out
+    }
+  } catch {
+    /* ignore */
+  }
+  return {}
 }
 
 /** 全局 UI 覆盖层：任务抽屉、新建弹窗、全局搜索、庆祝动画等跨屏状态。 */
@@ -83,6 +99,22 @@ export const useUiStore = defineStore('ui', () => {
     }
   }
 
+  /** 各项目任务列表的「创建人筛选」，跨会话记忆（BUG：此前刷新即丢）。 */
+  const creatorFilters = ref<Record<string, string>>(loadCreatorFilters())
+
+  function creatorFilterOf(projectId: string): string {
+    return creatorFilters.value[projectId] ?? ''
+  }
+  function setCreatorFilter(projectId: string, creatorId: string) {
+    if (creatorId) creatorFilters.value[projectId] = creatorId
+    else delete creatorFilters.value[projectId]
+    try {
+      localStorage.setItem(CREATOR_FILTER_KEY, JSON.stringify(creatorFilters.value))
+    } catch {
+      /* 写不进本地存储时筛选仍在本次会话内生效 */
+    }
+  }
+
   function toggleHelp() {
     helpOpen.value = !helpOpen.value
   }
@@ -93,6 +125,6 @@ export const useUiStore = defineStore('ui', () => {
   return {
     openTaskId, modal, modalProject, searchOpen, searchAI, celebrating, helpOpen, taskView,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
-    setTaskView, toggleHelp, closeHelp,
+    setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, toggleHelp, closeHelp,
   }
 })
