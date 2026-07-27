@@ -17,6 +17,7 @@ import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
+import cn.wayuwa.wao.dto.UpdateRunnerConcurrencyRequest;
 import cn.wayuwa.wao.service.AiRunService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -70,6 +71,12 @@ public class AiRunController {
     @PostMapping("/runners/pair-code")
     public ApiResponse<AiPairCodeDto> pairCode() {
         return ApiResponse.ok(service.createPairCode());
+    }
+
+    @PutMapping("/runners/{runnerId}/max-concurrency")
+    public ApiResponse<AiRunnerDto> updateRunnerMaxConcurrency(@PathVariable String runnerId,
+            @Valid @RequestBody UpdateRunnerConcurrencyRequest request) {
+        return ApiResponse.ok(service.updateRunnerMaxConcurrency(runnerId, request.maxConcurrency()));
     }
 
     @PostMapping("/runs")

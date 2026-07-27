@@ -228,6 +228,81 @@ class AiRunServiceTest {
     }
 
     @Test
+    void adminMaxConcurrencyOverridesRunnerValueInList() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setMaxConcurrency(2);
+        runner.setAdminMaxConcurrency(4);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+
+        var result = service.listRunners();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).maxConcurrency()).isEqualTo(4);
+    }
+
+    @Test
+    void listRunnersFallsBackToRunnerValueWhenAdminNotSet() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setMaxConcurrency(3);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+
+        var result = service.listRunners();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).maxConcurrency()).isEqualTo(3);
+    }
+
+    @Test
+    void heartbeatDoesNotOverrideAdminMaxConcurrency() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setMaxConcurrency(2);
+        runner.setAdminMaxConcurrency(5);
+        runner.setTokenHash("hashed-token");
+        runner.setLastSeenAt(LocalDateTime.now().minusMinutes(1));
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+
+        service.heartbeat("local-token", 3, null);
+
+        assertThat(runner.getAdminMaxConcurrency()).isEqualTo(5);
+        assertThat(runner.getMaxConcurrency()).isEqualTo(3);
+    }
+
+    @Test
+    void claimUsesAdminMaxConcurrencyAsSlotLimit() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setMaxConcurrency(2);
+        runner.setAdminMaxConcurrency(1);
+        runner.setLastSeenAt(LocalDateTime.now());
+        AiTaskRunEntity existing = new AiTaskRunEntity();
+        existing.setId("ar0");
+        existing.setStatus("running");
+        existing.setRunnerId("rn1");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runMapper.selectList(any())).thenReturn(List.of(existing), List.of());
+        when(runMapper.selectCount(any())).thenReturn(1L);
+
+        assertThat(service.claim("local-token")).isNull();
+    }
+
+    @Test
+    void updateRunnerMaxConcurrencyStoresAdminValue() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setMaxConcurrency(2);
+        when(runnerMapper.selectById("rn1")).thenReturn(runner);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+
+        var result = service.updateRunnerMaxConcurrency("rn1", 6);
+
+        assertThat(runner.getAdminMaxConcurrency()).isEqualTo(6);
+        assertThat(result.maxConcurrency()).isEqualTo(6);
+    }
+
+    @Test
     void runnerProgressIsArchivedAndUpdatesLatestSummary() {
         AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
         runner.setId("rn1");

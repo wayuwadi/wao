@@ -309,6 +309,8 @@ export interface AiRunner {
   platform: string
   engines: AiEngine[]
   maxConcurrency: number
+  /** 管理员在后台单独配置的线程数；存在时优先于 Runner 本地自报值。 */
+  configuredMaxConcurrency?: number | null
   activeRuns: number
   online: boolean
   lastSeenAt: string | null

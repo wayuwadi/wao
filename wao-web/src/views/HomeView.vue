@@ -8,6 +8,7 @@ import {
   fetchAiWorkflows,
   rerunAiRun,
   saveAiProjectConfig,
+  updateRunnerMaxConcurrency,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
@@ -30,6 +31,9 @@ const pairExpiresAt = ref('')
 const editingProjectId = ref<string | null>(null)
 const saving = ref(false)
 const rerunning = ref(false)
+const editingRunnerId = ref<string | null>(null)
+const editingRunnerValue = ref(2)
+const editingRunnerSaving = ref(false)
 const form = reactive({
   enabled: false,
   repoUrl: '',
@@ -106,6 +110,34 @@ function runsOnRunner(runnerId: string) {
 
 function runnersFor(engine: AiEngine | null) {
   return runners.value.filter((runner) => !engine || runner.engines.includes(engine))
+}
+
+function startEditingRunner(runner: AiRunner) {
+  editingRunnerId.value = runner.id
+  editingRunnerValue.value = runner.maxConcurrency
+  editingRunnerSaving.value = false
+}
+
+async function saveRunnerConcurrency(runner: AiRunner) {
+  if (editingRunnerValue.value < 1 || editingRunnerValue.value > 8) {
+    toast('并发数必须在 1 到 8 之间', 'ri-error-warning-line')
+    return
+  }
+  editingRunnerSaving.value = true
+  try {
+    const updated = await updateRunnerMaxConcurrency(runner.id, editingRunnerValue.value)
+    const index = runners.value.findIndex((r) => r.id === runner.id)
+    if (index >= 0) runners.value[index] = { ...updated, configuredMaxConcurrency: updated.maxConcurrency }
+    editingRunnerId.value = null
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '保存失败', 'ri-error-warning-line')
+  } finally {
+    editingRunnerSaving.value = false
+  }
+}
+
+function cancelEditingRunner() {
+  editingRunnerId.value = null
 }
 
 function startEditing(workflow: AiWorkflow) {
@@ -364,11 +396,51 @@ onBeforeUnmount(() => {
               </span>
             </div>
             <div class="slot-line">
-              <span>槽位 {{ runner.activeRuns }} / {{ runner.maxConcurrency }}</span>
+              <template v-if="editingRunnerId === runner.id">
+                <span class="concurrency-edit">
+                  并发
+                  <input
+                    v-model.number="editingRunnerValue"
+                    type="number"
+                    min="1"
+                    max="8"
+                    :disabled="editingRunnerSaving"
+                    @keyup.enter="saveRunnerConcurrency(runner)"
+                    @keyup.esc="cancelEditingRunner"
+                  />
+                  <button
+                    class="icon-btn"
+                    :disabled="editingRunnerSaving"
+                    aria-label="保存"
+                    @click="saveRunnerConcurrency(runner)"
+                  >
+                    <i :class="editingRunnerSaving ? 'ri-loader-4-line spin' : 'ri-check-line'"></i>
+                  </button>
+                  <button
+                    class="icon-btn secondary"
+                    :disabled="editingRunnerSaving"
+                    aria-label="取消"
+                    @click="cancelEditingRunner"
+                  >
+                    <i class="ri-close-line"></i>
+                  </button>
+                </span>
+              </template>
+              <template v-else>
+                <span>
+                  槽位 {{ runner.activeRuns }} / {{ runner.maxConcurrency }}
+                  <button class="icon-btn secondary" aria-label="修改并发数" @click="startEditingRunner(runner)">
+                    <i class="ri-edit-line"></i>
+                  </button>
+                </span>
+              </template>
               <span class="run-time">{{ runner.lastSeenAt ? `心跳 ${timeText(runner.lastSeenAt)}` : '从未上报' }}</span>
             </div>
             <div class="slot-bar">
               <i :style="{ width: `${Math.min(100, runner.activeRuns / Math.max(1, runner.maxConcurrency) * 100)}%` }"></i>
+            </div>
+            <div v-if="runner.configuredMaxConcurrency != null" class="runner-config-hint">
+              <i class="ri-settings-3-line"></i>后台已配置为 {{ runner.configuredMaxConcurrency }} 线程
             </div>
             <ul v-if="runsOnRunner(runner.id).length" class="runner-tasks">
               <li v-for="run in runsOnRunner(runner.id)" :key="run.id">
@@ -691,6 +763,38 @@ onBeforeUnmount(() => {
 .runner-tasks button { flex: 1; padding: 0; border: 0; overflow: hidden; background: none; color: var(--wao-text-2); cursor: pointer; font-size: 11.5px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .runner-tasks button:hover { color: #4358d6; text-decoration: underline; }
 .runner-idle { margin-top: 12px; padding-top: 11px; border-top: 1px solid #f0f1f5; color: var(--wao-text-weak); font-size: 11px; }
+.concurrency-edit { display: inline-flex; align-items: center; gap: 5px; }
+.concurrency-edit input {
+  width: 42px;
+  padding: 3px 6px;
+  border: 1px solid var(--wao-line);
+  border-radius: 6px;
+  text-align: center;
+  font-size: 11px;
+}
+.icon-btn {
+  padding: 3px 5px;
+  border: 1px solid #4358d6;
+  border-radius: 6px;
+  background: #4358d6;
+  color: #fff;
+  cursor: pointer;
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-btn:disabled { opacity: .6; cursor: not-allowed; }
+.icon-btn.secondary { border-color: var(--wao-line); background: #fff; color: var(--wao-text-2); }
+.icon-btn.secondary:hover { border-color: #bec7ef; color: #4358d6; }
+.runner-config-hint {
+  margin-top: 7px;
+  color: #237a4b;
+  font-size: 10.5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .pair-btn {
   padding: 8px 13px;
   border: 1px solid #4358d6;
