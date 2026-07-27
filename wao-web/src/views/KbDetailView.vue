@@ -961,4 +961,11 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   color: var(--wao-primary-text);
   border-left-color: var(--wao-primary);
 }
+
+@media (max-width: 760px) {
+  .kb-detail { padding: 16px 12px 28px; }
+  .doc-head { align-items: flex-start; flex-wrap: wrap; }
+  .doc-actions { width: 100%; flex-wrap: wrap; }
+  .doc-actions button { flex: 1; justify-content: center; }
+}
 </style>

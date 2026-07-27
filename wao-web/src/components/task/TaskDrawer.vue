@@ -2020,4 +2020,14 @@ function demo(msg: string) {
   font-size: 11px;
   color: var(--wao-text-faint);
 }
+
+@media (max-width: 760px) {
+  .drawer { width: 100%; max-width: none; height: 100dvh; }
+  .drawer-head { padding: 12px 14px; }
+  .drawer-body { padding: 0 14px 20px; }
+  .drawer-foot { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+  .two-col { grid-template-columns: 1fr; }
+  .task-title { font-size: 19px; }
+  .props { grid-template-columns: 1fr; }
+}
 </style>

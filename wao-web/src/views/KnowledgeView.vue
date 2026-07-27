@@ -841,4 +841,14 @@ async function createKb() {
   padding: 14px 20px;
   border-top: 1px solid var(--wao-divider);
 }
+
+@media (max-width: 760px) {
+  .knowledge { padding: 16px 12px 28px; }
+  .toolbar { gap: 7px; }
+  .toolbar .search { flex: 1 1 100%; }
+  .toolbar .search input { width: 100%; height: 38px; }
+  .kb-grid { grid-template-columns: 1fr; }
+  .kgroup-head { flex-wrap: wrap; }
+  .modal { top: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+}
 </style>

@@ -324,4 +324,58 @@ function orgClick() {
   color: var(--wao-text-weak);
   font-size: 15px;
 }
+
+@media (max-width: 760px) {
+  .side,
+  .side.collapsed {
+    position: fixed;
+    z-index: 70;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: calc(64px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    border-top: 1px solid var(--wao-line);
+    border-right: 0;
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow: 0 -4px 18px rgba(16, 18, 28, 0.08);
+    overflow: visible;
+  }
+  .brand-row,
+  .search-row,
+  .group-label,
+  .group-gap,
+  .user-row { display: none; }
+  .menu {
+    display: flex;
+    align-items: stretch;
+    gap: 1px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 6px;
+    scrollbar-width: none;
+  }
+  .menu::-webkit-scrollbar { display: none; }
+  .items { display: flex; flex-direction: row; padding: 0; gap: 1px; }
+  .item,
+  .item.center {
+    width: 58px;
+    min-width: 58px;
+    height: 54px;
+    padding: 4px 2px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    border-radius: 9px;
+  }
+  .item-label {
+    display: block;
+    max-width: 54px;
+    flex: initial;
+    text-align: center;
+    font-size: 10px;
+    line-height: 14px;
+  }
+  .item i { font-size: 18px; }
+}
 </style>

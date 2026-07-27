@@ -1025,4 +1025,20 @@ function demo(msg: string, icon?: string) {
   font-size: 11.5px;
   color: var(--wao-text-faint);
 }
+
+@media (max-width: 760px) {
+  .settings { display: block; height: auto; min-height: 100%; }
+  .snav { width: 100%; height: auto; padding: 8px; border-right: 0; border-bottom: 1px solid var(--wao-line); overflow-x: auto; overflow-y: hidden; }
+  .snav-title, .snav-group, .snav-foot { display: none; }
+  .snav-items { flex-direction: row; width: max-content; }
+  .snav-item { height: 34px; padding: 0 10px; white-space: nowrap; }
+  .spane { overflow: visible; }
+  .scontent { padding: 16px 12px 28px; }
+  .card { padding: 14px; }
+  .credential-form, .profile-form, .webhook-form { grid-template-columns: 1fr; }
+  .bind-actions, .token-input, .fresh-row { align-items: stretch; flex-direction: column; }
+  .btn-primary, .btn-ghost { justify-content: center; }
+  .grid-tokens { grid-template-columns: minmax(130px, 1fr) 70px; }
+  .grid-tokens > :nth-child(2), .grid-tokens > :nth-child(3), .grid-tokens > :nth-child(4) { display: none; }
+}
 </style>

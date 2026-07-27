@@ -266,4 +266,45 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   overflow-y: auto;
   min-height: 0;
 }
+
+@media (max-width: 760px) {
+  .shell {
+    display: block;
+    height: 100dvh;
+    overflow: hidden;
+  }
+  .main {
+    height: 100%;
+    padding-bottom: 64px;
+  }
+  .header {
+    height: 48px;
+    gap: 4px;
+    padding: 0 8px;
+  }
+  .fold,
+  .crumb-sep,
+  .crumb-b,
+  .plus.ghost,
+  .bell-dot {
+    display: none;
+  }
+  .crumb-a {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+    color: var(--wao-text);
+  }
+  .plus {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+    border-radius: 9px;
+    font-size: 0;
+  }
+  .plus i { font-size: 18px; }
+  .bell { width: 36px; height: 36px; }
+  .content { overscroll-behavior: contain; }
+}
 </style>
