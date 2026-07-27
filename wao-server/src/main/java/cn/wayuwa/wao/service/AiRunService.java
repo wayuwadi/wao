@@ -237,10 +237,19 @@ public class AiRunService {
         return runnerMapper.selectList(new LambdaQueryWrapper<AiRunnerNodeEntity>()
                         .orderByDesc(AiRunnerNodeEntity::getLastSeenAt))
                 .stream().map(r -> new AiRunnerDto(r.getId(), r.getName(), r.getPlatform(), engines(r),
-                        valueOr(r.getMaxConcurrency(), 1), activeByRunner.getOrDefault(r.getId(), 0L).intValue(),
+                        effectiveMaxConcurrency(r), activeByRunner.getOrDefault(r.getId(), 0L).intValue(),
                         r.getLastSeenAt() != null && r.getLastSeenAt().isAfter(cutoff),
                         r.getLastSeenAt() == null ? null : r.getLastSeenAt().toString()))
                 .toList();
+    }
+
+    /** 管理员在后台修改某台执行电脑的最大并发线程数。 */
+    public AiRunnerDto updateRunnerMaxConcurrency(String runnerId, int maxConcurrency) {
+        AiRunnerNodeEntity runner = runnerMapper.selectById(runnerId);
+        if (runner == null) throw new NotFoundException("执行电脑不存在：" + runnerId);
+        runner.setAdminMaxConcurrency(clamp(maxConcurrency, 1, 8, 1));
+        runnerMapper.updateById(runner);
+        return listRunners().stream().filter(r -> r.id().equals(runnerId)).findFirst().orElseThrow();
     }
 
     /**
@@ -501,7 +510,7 @@ public class AiRunService {
         long ownActive = countRuns(new LambdaQueryWrapper<AiTaskRunEntity>()
                 .eq(AiTaskRunEntity::getRunnerId, runner.getId())
                 .in(AiTaskRunEntity::getStatus, List.of("claimed", "running")));
-        if (ownActive >= valueOr(runner.getMaxConcurrency(), 1)) return null;
+        if (ownActive >= effectiveMaxConcurrency(runner)) return null;
 
         List<AiTaskRunEntity> queued = runMapper.selectList(new LambdaQueryWrapper<AiTaskRunEntity>()
                 .eq(AiTaskRunEntity::getStatus, "queued").orderByAsc(AiTaskRunEntity::getCreatedAt).last("LIMIT 50"));
@@ -829,6 +838,11 @@ public class AiRunService {
 
     private static int valueOr(Integer value, int fallback) {
         return value == null ? fallback : value;
+    }
+
+    /** 计算节点实际生效的最大并发数：管理员配置优先，否则使用 Runner 自报值。 */
+    private static int effectiveMaxConcurrency(AiRunnerNodeEntity runner) {
+        return valueOr(runner.getAdminMaxConcurrency(), valueOr(runner.getMaxConcurrency(), 1));
     }
 
     private static long valueOr(Long value, long fallback) {

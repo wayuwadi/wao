@@ -14,6 +14,7 @@ public class AiRunnerNodeEntity {
     private String platform;
     private String engines;
     private Integer maxConcurrency;
+    private Integer adminMaxConcurrency;
     private String tokenHash;
     private LocalDateTime lastSeenAt;
     private LocalDateTime createdAt;
@@ -28,6 +29,8 @@ public class AiRunnerNodeEntity {
     public void setEngines(String engines) { this.engines = engines; }
     public Integer getMaxConcurrency() { return maxConcurrency; }
     public void setMaxConcurrency(Integer maxConcurrency) { this.maxConcurrency = maxConcurrency; }
+    public Integer getAdminMaxConcurrency() { return adminMaxConcurrency; }
+    public void setAdminMaxConcurrency(Integer adminMaxConcurrency) { this.adminMaxConcurrency = adminMaxConcurrency; }
     public String getTokenHash() { return tokenHash; }
     public void setTokenHash(String tokenHash) { this.tokenHash = tokenHash; }
     public LocalDateTime getLastSeenAt() { return lastSeenAt; }

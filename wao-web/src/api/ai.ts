@@ -17,6 +17,9 @@ export const fetchAiWorkflows = () => data<AiWorkflow[]>(http.get('/api/ai/workf
 
 export const fetchAiRunners = () => data<AiRunner[]>(http.get('/api/ai/runners'))
 
+export const updateRunnerMaxConcurrency = (runnerId: string, maxConcurrency: number) =>
+  data<AiRunner>(http.put(`/api/ai/runners/${runnerId}/max-concurrency`, { maxConcurrency }))
+
 export const createAiPairCode = () =>
   data<{ code: string; expiresAt: string }>(http.post('/api/ai/runners/pair-code'))
 

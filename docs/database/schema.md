@@ -226,6 +226,8 @@ erDiagram
 
 `ai_runner_node` 保存电脑名、平台、本机可用的 AI 工具（`engines`，逗号分隔，Runner 自述并在
 心跳刷新）、并发槽位、令牌 SHA-256 哈希和最后心跳；不保存令牌明文。
+- `max_concurrency`：Runner 本地自报的最大并发线程数。
+- `admin_max_concurrency`：管理员在后台配置的线程数，存在时优先于 `max_concurrency` 生效。
 `ai_runner_pair_code` 保存一次性配对码哈希、过期时间和使用时间，明文只在生成接口返回一次。
 
 ### ai_task_run
