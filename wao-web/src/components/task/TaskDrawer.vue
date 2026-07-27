@@ -2022,12 +2022,88 @@ function demo(msg: string) {
 }
 
 @media (max-width: 760px) {
-  .drawer { width: 100%; max-width: none; height: 100dvh; }
-  .drawer-head { padding: 12px 14px; }
-  .drawer-body { padding: 0 14px 20px; }
-  .drawer-foot { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
-  .two-col { grid-template-columns: 1fr; }
-  .task-title { font-size: 19px; }
-  .props { grid-template-columns: 1fr; }
+  /* 当前抽屉的主体是 .dbody / .main / .props，不要沿用旧版的 drawer-body 类名。
+     手机上改为一个连续的纵向滚动区，避免主内容和属性栏同时被压成窄列。 */
+  .drawer {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+  }
+  .dhead {
+    height: 52px;
+    gap: 4px;
+    padding: 0 8px;
+  }
+  .proj-link {
+    max-width: min(42vw, 180px);
+    padding-inline: 5px;
+  }
+  .sep,
+  .crumb,
+  .wait-badge {
+    display: none;
+  }
+  .ai-run-btn {
+    width: 30px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+  .ai-run-btn > i:first-child {
+    font-size: 16px;
+  }
+  .ai-run-btn .caret {
+    display: none;
+  }
+  .share-menu {
+    width: min(236px, calc(100vw - 16px));
+  }
+  .dbody {
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .main {
+    overflow: visible;
+    padding: 18px 16px 24px;
+  }
+  .title-input {
+    font-size: 20px;
+  }
+  .props {
+    width: auto;
+    overflow: visible;
+    border-top: 1px solid var(--wao-divider);
+    border-left: none;
+    padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+  }
+  .sub-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .sub-add {
+    width: 100%;
+    box-sizing: border-box;
+    background: #f7f8fb;
+  }
+  .check-row {
+    min-height: 32px;
+  }
+  .sub-chev {
+    opacity: 1;
+  }
+  .comment-input {
+    align-items: flex-start;
+  }
+  .ci-wrap {
+    flex-wrap: wrap;
+  }
+  .ci-wrap input {
+    min-width: 0;
+  }
+  .send {
+    margin-left: auto;
+  }
 }
 </style>
