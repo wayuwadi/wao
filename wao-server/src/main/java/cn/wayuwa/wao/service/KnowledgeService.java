@@ -61,7 +61,7 @@ public class KnowledgeService {
     public static final int TRASH_DAYS = 7;
 
     /** 小记知识库固定 id（migration 里种下，各节点判等用）。 */
-    private static final String NOTES_KB_ID = "kb-notes";
+    public static final String NOTES_KB_ID = "kb-notes";
     private static final String NOTES_FOLDER_ID = "kb-notes-f";
 
     private static final TypeReference<List<DocBlockDto>> BLOCKS_TYPE = new TypeReference<>() { };

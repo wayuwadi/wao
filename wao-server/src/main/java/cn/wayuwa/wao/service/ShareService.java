@@ -5,14 +5,17 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import cn.wayuwa.wao.common.NotFoundException;
+import cn.wayuwa.wao.dto.DocBlockDto;
+import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.ImageRef;
+import cn.wayuwa.wao.dto.SharedDocDto;
 import cn.wayuwa.wao.dto.SharedTaskDto;
 import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.dto.TaskDto;
 import org.springframework.stereotype.Service;
 
 /**
- * 任务分享服务：把任务 / 子任务转成可公开访问的只读视图与 Markdown 文本。
+ * 任务 / 文档分享服务：把任务、子任务、文档、小记转成可公开访问的只读视图与 Markdown 文本。
  *
  * <p>分享内容只保留标题、状态、描述、图片与子任务，负责人、参与人、评论、活动时间线
  * 一律不外泄。主任务链接带上全部子任务，子任务链接只有它自己 —— 对齐「复制给 AI 让它
@@ -24,11 +27,14 @@ public class ShareService {
     private final TaskService tasks;
     private final ProjectService projects;
     private final AiRunService aiRuns;
+    private final KnowledgeService knowledge;
 
-    public ShareService(TaskService tasks, ProjectService projects, AiRunService aiRuns) {
+    public ShareService(TaskService tasks, ProjectService projects, AiRunService aiRuns,
+            KnowledgeService knowledge) {
         this.tasks = tasks;
         this.projects = projects;
         this.aiRuns = aiRuns;
+        this.knowledge = knowledge;
     }
 
     /**
@@ -74,6 +80,64 @@ public class ShareService {
             }
         }
         throw new NotFoundException("子任务不存在：" + subId);
+    }
+
+    /**
+     * 取一篇文档（或小记）的公开分享视图。
+     *
+     * @param docId 文档 id
+     * @return 分享视图；正文已转成标准 Markdown（提示块、引用块用 blockquote 表达）
+     * @throws NotFoundException 文档不存在或已在回收站时
+     */
+    public SharedDocDto shareDoc(String docId) {
+        DocDto d = knowledge.getDoc(docId);
+        boolean note = KnowledgeService.NOTES_KB_ID.equals(d.kbId());
+        return new SharedDocDto(d.id(), nz(d.title()), note, d.kbId(), d.updated(), docMarkdown(nn(d.blocks())));
+    }
+
+    /**
+     * 把文档分享视图渲染成 Markdown 全文（含标题与更新时间），给 {@code .md} 端点用。
+     *
+     * @param shared  分享视图
+     * @param baseUrl 公网访问的根地址
+     * @return Markdown 文本
+     */
+    public String toMarkdown(SharedDocDto shared, String baseUrl) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# ").append(shared.title().isBlank()
+                ? (shared.note() ? "未命名小记" : "未命名文档") : shared.title()).append("\n\n");
+        if (shared.updated() != null && !shared.updated().isBlank()) {
+            sb.append("- 更新于：").append(shared.updated()).append("\n\n");
+        }
+        sb.append(shared.md().isBlank() ? "（暂无内容）" : absolutizeMarkdown(shared.md(), baseUrl)).append('\n');
+        return sb.toString();
+    }
+
+    /**
+     * 文档块 → 标准 Markdown。规则与前端 {@code blocksToText} 对齐，但提示块（call）
+     * 不用编辑器私有的 {@code !>} 语法，而用任何 Markdown 渲染器都认识的 blockquote。
+     */
+    private static String docMarkdown(List<DocBlockDto> blocks) {
+        return blocks.stream().map(b -> {
+            if (b.h() != null) {
+                return "## " + b.h();
+            }
+            if (b.p() != null) {
+                return b.p();
+            }
+            if (b.call() != null) {
+                return "> 💡 " + b.call();
+            }
+            if (b.q() != null && !b.q().isEmpty()) {
+                String who = b.q().size() > 1 && b.q().get(1) != null && !b.q().get(1).isBlank()
+                        ? " —— " + b.q().get(1) : "";
+                return "> " + b.q().get(0) + who;
+            }
+            if (b.ul() != null) {
+                return b.ul().stream().map(x -> "- " + x).collect(java.util.stream.Collectors.joining("\n"));
+            }
+            return "";
+        }).filter(s -> !s.isBlank()).collect(java.util.stream.Collectors.joining("\n\n"));
     }
 
     /**

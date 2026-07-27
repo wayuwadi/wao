@@ -13,6 +13,8 @@ import { useUiStore } from '@/stores/ui'
 import { useTabsStore } from '@/stores/tabs'
 import { useDocPresence } from '@/composables/docPresence'
 import { toast } from '@/composables/toast'
+import { copyToClipboard } from '@/utils/clipboard'
+import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { useNow } from '@/composables/now'
 import SaveHint from '@/components/ui/SaveHint.vue'
@@ -169,6 +171,22 @@ function tocGo(index: number) {
   const c = scrollEl.value
   if (el && c) c.scrollTop = Math.max(0, el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 24)
 }
+
+/** 分享菜单开关（文档与小记共用同一个入口）。 */
+const shareMenu = ref(false)
+async function copyDocShare(kind: 'page' | 'md') {
+  if (!docId.value) return
+  const url = kind === 'md' ? docShareMarkdownUrl(docId.value) : docShareUrl(docId.value)
+  shareMenu.value = false
+  toast(
+    (await copyToClipboard(url))
+      ? kind === 'md'
+        ? 'Markdown 地址已复制，可直接发给 AI'
+        : '分享页链接已复制，对方无需登录即可查看'
+      : '复制失败，请手动选中复制',
+    'ri-links-line',
+  )
+}
 function gotoProject() {
   if (kb.value?.project) router.push(`/projects/${kb.value.project}`)
 }
@@ -281,6 +299,21 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             <span v-if="peers.length" class="realtime"><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span>
 
             <SaveHint :saving="saving" :saved-at="docSavedAt" />
+            <div class="share-wrap">
+              <button class="icon-act" title="复制分享链接" @click="shareMenu = !shareMenu"><i class="ri-links-line"></i></button>
+              <div v-if="shareMenu" class="menu-mask" @click="shareMenu = false"></div>
+              <div v-if="shareMenu" class="share-menu">
+                <div class="share-scope">分享整篇{{ kb.notes ? '小记' : '文档' }} · 公开只读，免登录</div>
+                <button class="share-item" @click="copyDocShare('page')">
+                  <i class="ri-external-link-line"></i>
+                  <span class="share-main"><b>复制分享页链接</b><em>公开只读页面，给人看</em></span>
+                </button>
+                <button class="share-item" @click="copyDocShare('md')">
+                  <i class="ri-robot-2-line"></i>
+                  <span class="share-main"><b>复制 Markdown 地址</b><em>一次 GET 即全文，给 AI 用</em></span>
+                </button>
+              </div>
+            </div>
             <button class="icon-act danger" title="删除这篇文档（进回收站）" @click="removeDoc(docId!)">
               <i class="ri-delete-bin-line"></i>
             </button>
@@ -750,6 +783,70 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   background: var(--wao-danger-bg);
   border-color: #f0c9c9;
   color: #bc4141;
+}
+/* 分享菜单（样式与 TaskDrawer 的分享菜单保持一致手感） */
+.share-wrap {
+  position: relative;
+}
+.menu-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 88;
+}
+.share-menu {
+  position: absolute;
+  right: 0;
+  top: 34px;
+  z-index: 89;
+  width: 236px;
+  background: #fff;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  box-shadow: var(--wao-shadow-pop-2);
+  padding: 5px;
+  animation: waoPop 0.14s ease;
+}
+.share-scope {
+  font-size: 11px;
+  color: var(--wao-text-weak);
+  padding: 5px 8px 6px;
+  border-bottom: 1px solid var(--wao-divider);
+  margin-bottom: 3px;
+}
+.share-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  padding: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.share-item:hover {
+  background: var(--wao-bg-hover-2);
+}
+.share-item > i {
+  font-size: 15px;
+  color: var(--wao-text-3);
+  margin-top: 1px;
+}
+.share-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.share-main b {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--wao-text);
+}
+.share-main em {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--wao-text-weak);
 }
 .icon-act i {
   font-size: 13px;

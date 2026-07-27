@@ -36,3 +36,13 @@ export function shareMarkdownUrl(taskId: string, subId?: string | null, openOnly
   if (subId) return absoluteUrl(`/api/share/tasks/${taskId}/subs/${encodeURIComponent(subId)}.md`)
   return absoluteUrl(`/api/share/tasks/${taskId}.md${openOnly ? '?openOnly=true' : ''}`)
 }
+
+/** 文档 / 小记分享页地址 `/s/d/<id>`（免登录只读）。 */
+export function docShareUrl(docId: string): string {
+  return absoluteUrl(`/s/d/${encodeURIComponent(docId)}`)
+}
+
+/** 文档 / 小记的 Markdown 直读地址 —— 复制给 AI 时用这个。 */
+export function docShareMarkdownUrl(docId: string): string {
+  return absoluteUrl(`/api/share/docs/${encodeURIComponent(docId)}.md`)
+}

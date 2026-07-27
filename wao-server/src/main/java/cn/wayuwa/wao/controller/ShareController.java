@@ -3,6 +3,7 @@ package cn.wayuwa.wao.controller;
 import java.nio.charset.StandardCharsets;
 
 import cn.wayuwa.wao.common.ApiResponse;
+import cn.wayuwa.wao.dto.SharedDocDto;
 import cn.wayuwa.wao.dto.SharedTaskDto;
 import cn.wayuwa.wao.service.ShareService;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,6 +60,16 @@ public class ShareController {
     @GetMapping("/tasks/{id}/subs/{subId}.md")
     public ResponseEntity<byte[]> subMarkdown(@PathVariable String id, @PathVariable String subId) {
         return markdown(share.toMarkdown(share.shareSub(id, subId), baseUrl()));
+    }
+
+    @GetMapping("/docs/{id}")
+    public ApiResponse<SharedDocDto> doc(@PathVariable String id) {
+        return ApiResponse.ok(share.shareDoc(id));
+    }
+
+    @GetMapping("/docs/{id}.md")
+    public ResponseEntity<byte[]> docMarkdown(@PathVariable String id) {
+        return markdown(share.toMarkdown(share.shareDoc(id), baseUrl()));
     }
 
     /**

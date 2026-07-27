@@ -62,7 +62,11 @@ const settingsOpen = ref(false)
 const selectedTaskIds = ref<string[]>([])
 const aiBatchStarting = ref(false)
 const creatorFilterOpen = ref(false)
-const creatorFilter = ref<string | null>(null)
+/** 创建人筛选：按项目记在本地存储里，下次进来还是上次选的（此前刷新即丢）。 */
+const creatorFilter = computed<string | null>({
+  get: () => ui.creatorFilterOf(pid.value) || null,
+  set: (v) => ui.setCreatorFilter(pid.value, v ?? ''),
+})
 function onProjectDeleted() {
   settingsOpen.value = false
   const next = tabs.close(`proj:${pid.value}`)
@@ -107,11 +111,15 @@ const creatorOptions = computed(() => {
   const ids = [...new Set(ptasks.value.map((task) => task.createdBy).filter((id): id is string => Boolean(id)))]
   return ids.map((id) => ({ id, name: session.members.find((member) => member.id === id)?.name ?? id }))
 })
+/** 记住的创建人已经不在当前任务列表里（任务删光了）时视为未筛选，避免整页空白。 */
+const effectiveCreator = computed(() =>
+  creatorFilter.value && creatorOptions.value.some((c) => c.id === creatorFilter.value) ? creatorFilter.value : null,
+)
 const activeCreatorName = computed(() =>
-  creatorFilter.value ? creatorOptions.value.find((creator) => creator.id === creatorFilter.value)?.name ?? creatorFilter.value : '创建人',
+  effectiveCreator.value ? creatorOptions.value.find((creator) => creator.id === effectiveCreator.value)?.name ?? effectiveCreator.value : '创建人',
 )
 const allTasks = computed(() => ptasks.value
-  .filter((task) => !creatorFilter.value || task.createdBy === creatorFilter.value)
+  .filter((task) => !effectiveCreator.value || task.createdBy === effectiveCreator.value)
   .map(decoTask))
 const openTasks = computed(() => allTasks.value.filter((t) => t.status !== '已完成' || isSettling(t.id)))
 /** 已完成倒序：最新完成的排最前；老数据没有完成时间时按 id（含创建时间戳）倒序兜底。 */
@@ -400,6 +408,7 @@ function comingSoon(msg: string) {
           <div class="feed-time" :title="absoluteTime(ac.time)">{{ showTime(ac.time) }}</div>
         </div>
       </div>
+      <div v-if="!pd.activity.length" class="feed-empty">还没有动态——创建任务、完成任务、沉淀文档都会记录在这里。</div>
     </div>
 
     <ProjectSettingsModal
@@ -1098,6 +1107,12 @@ function comingSoon(msg: string) {
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 14px 18px;
+}
+.feed-empty {
+  padding: 28px 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--wao-text-weak);
 }
 
 @media (max-width: 760px) {
