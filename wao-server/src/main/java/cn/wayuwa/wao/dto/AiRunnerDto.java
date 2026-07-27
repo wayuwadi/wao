@@ -9,9 +9,15 @@ public record AiRunnerDto(
         String platform,
         List<String> engines,
         int maxConcurrency,
+        Integer configuredMaxConcurrency,
         int activeRuns,
         boolean online,
         String lastSeenAt,
+        String wakeMac,
+        String wakeHost,
+        int wakePort,
+        boolean wakeConfigured,
+        String lastWakeRequestedAt,
         /** Runner 脚本是否与服务端打包的最新版一致；旧版 Runner 未上报哈希时为 null。 */
         Boolean scriptUpToDate,
         /** 后台已下发脚本更新、该电脑还没完成自更新重启。 */

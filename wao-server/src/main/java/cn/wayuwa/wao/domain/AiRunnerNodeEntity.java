@@ -15,6 +15,10 @@ public class AiRunnerNodeEntity {
     private String engines;
     private Integer maxConcurrency;
     private Integer adminMaxConcurrency;
+    private String wakeMac;
+    private String wakeHost;
+    private Integer wakePort;
+    private LocalDateTime lastWakeRequestedAt;
     private String tokenHash;
     /** Runner 心跳自报的脚本 SHA-256，用于判断是否落后于服务端打包的最新版。 */
     private String scriptHash;
@@ -35,6 +39,14 @@ public class AiRunnerNodeEntity {
     public void setMaxConcurrency(Integer maxConcurrency) { this.maxConcurrency = maxConcurrency; }
     public Integer getAdminMaxConcurrency() { return adminMaxConcurrency; }
     public void setAdminMaxConcurrency(Integer adminMaxConcurrency) { this.adminMaxConcurrency = adminMaxConcurrency; }
+    public String getWakeMac() { return wakeMac; }
+    public void setWakeMac(String wakeMac) { this.wakeMac = wakeMac; }
+    public String getWakeHost() { return wakeHost; }
+    public void setWakeHost(String wakeHost) { this.wakeHost = wakeHost; }
+    public Integer getWakePort() { return wakePort; }
+    public void setWakePort(Integer wakePort) { this.wakePort = wakePort; }
+    public LocalDateTime getLastWakeRequestedAt() { return lastWakeRequestedAt; }
+    public void setLastWakeRequestedAt(LocalDateTime lastWakeRequestedAt) { this.lastWakeRequestedAt = lastWakeRequestedAt; }
     public String getTokenHash() { return tokenHash; }
     public void setTokenHash(String tokenHash) { this.tokenHash = tokenHash; }
     public String getScriptHash() { return scriptHash; }

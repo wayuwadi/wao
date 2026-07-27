@@ -448,7 +448,7 @@ class AiRunServiceTest {
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "修复自动化")));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
-        var dto = service.continueRun("ar1", "请按测试报错继续修复", "wg");
+        var dto = service.continueRun("ar1", "请按测试报错继续修复", "wg", "https://wao.example");
 
         assertThat(dto.status()).isEqualTo("queued");
         assertThat(failed.getRequestedRunnerId()).isEqualTo("rn1");
@@ -618,11 +618,30 @@ class AiRunServiceTest {
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "移动端体验")));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
-        var dto = service.continueRun("ar1", "移动端弹窗还是会跳动，继续优化", "wg");
+        var dto = service.continueRun("ar1", "移动端弹窗还是会跳动，继续优化", "wg", "https://wao.example");
 
         assertThat(dto.status()).isEqualTo("queued");
         assertThat(succeeded.getPendingInput()).isEqualTo("移动端弹窗还是会跳动，继续优化");
         assertThat(succeeded.getRequestedRunnerId()).isEqualTo("rn1");
+    }
+
+    @Test
+    void continueRunAbsolutizesPastedInSiteImagesSoTheAiCanFetchThem() {
+        AiTaskRunEntity succeeded = new AiTaskRunEntity();
+        succeeded.setId("ar1");
+        succeeded.setTaskId("t1");
+        succeeded.setProjectId("p1");
+        succeeded.setStatus("succeeded");
+        succeeded.setRunnerId("rn1");
+        succeeded.setSessionId("thread-1");
+        when(runMapper.selectById("ar1")).thenReturn(succeeded);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "移动端体验")));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        service.continueRun("ar1", "按截图改：![问题截图](/api/images/img1/raw)", "wg", "https://wao.example");
+
+        assertThat(succeeded.getPendingInput())
+                .isEqualTo("按截图改：![问题截图](https://wao.example/api/images/img1/raw)");
     }
 
     @Test

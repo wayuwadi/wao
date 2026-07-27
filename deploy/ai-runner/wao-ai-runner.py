@@ -29,8 +29,9 @@ MAX_LOG_BYTES = 2 * 1024 * 1024
 # 运行结束后保留 worktree 供人工复查，超过这个天数才回收，避免磁盘被历史任务占满。
 RUN_WORKTREE_TTL_DAYS = 7
 ENGINE_LABELS = {"codex": "Codex", "claude": "Claude Code", "qoder": "Qoder"}
-# 引擎 id 到本机可执行文件名的映射；Qoder 的命令名叫 qodercli，与引擎 id 不同。
-ENGINE_COMMANDS = {"codex": "codex", "claude": "claude", "qoder": "qodercli"}
+# 引擎 id 到本机候选命令名的映射，按顺序探测第一个存在的。Qoder 的命令名与引擎 id
+# 不同，且国际版叫 qodercli、国内版叫 qoderclicn，两个名字都要认。
+ENGINE_COMMANDS = {"codex": ("codex",), "claude": ("claude",), "qoder": ("qodercli", "qoderclicn")}
 # Qoder 的 stream-json 事件与 Claude Code 同构（system/init、assistant、result），
 # 进展过滤、结果解析和用量统计直接复用 Claude 的口径。
 CLAUDE_STYLE_ENGINES = {"claude", "qoder"}
@@ -41,7 +42,10 @@ CLAUDE_PERMISSION = {
     "danger-full-access": ["--dangerously-skip-permissions"],
 }
 QODER_PERMISSION = {
-    "read-only": ["--permission-mode", "plan"],
+    # qodercli 1.1.5 的 --permission-mode 没有 plan 档（可选 default/accept_edits/
+    # bypass_permissions/dont_ask/auto）；read-only 用 default：非交互模式下无人批准，
+    # 写操作一律被拒，效果等同只读。
+    "read-only": ["--permission-mode", "default"],
     "workspace-write": ["--permission-mode", "accept_edits"],
     "danger-full-access": ["--dangerously-skip-permissions"],
 }
@@ -241,6 +245,18 @@ def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_u
         cwd=project_dir,
     )
     return worktree
+
+
+def find_engine_executable(engine: str, configured: str | None = None) -> str:
+    """按引擎的候选命令名逐个探测；显式指定路径时不再探测。"""
+    names = ENGINE_COMMANDS[engine]
+    if configured:
+        return find_executable(names[0], configured)
+    for name in names:
+        executable = shutil.which(name)
+        if executable:
+            return executable
+    raise RuntimeError(f"找不到 {' / '.join(names)}；可通过命令行参数或环境变量指定完整路径")
 
 
 def find_executable(name: str, configured: str | None = None) -> str:
@@ -871,12 +887,12 @@ def resolve_engines(args: argparse.Namespace) -> dict[str, str]:
     commands: dict[str, str] = {}
     for name in wanted or list(ENGINE_LABELS):
         try:
-            commands[name] = find_executable(ENGINE_COMMANDS[name], configured[name])
+            commands[name] = find_engine_executable(name, configured[name])
         except RuntimeError:
             if wanted:
                 raise
     if not commands:
-        raise RuntimeError("本机没有找到 codex、claude 或 qodercli 命令，请先安装并登录至少一种 AI CLI")
+        raise RuntimeError("本机没有找到 codex、claude 或 qodercli/qoderclicn 命令，请先安装并登录至少一种 AI CLI")
     return commands
 
 

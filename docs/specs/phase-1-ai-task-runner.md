@@ -66,6 +66,8 @@
 
 ## 安全边界
 
+- Windows Runner 通过 `install-windows-task.ps1` 安装开机、登录和 5 分钟守护触发器；离线电脑可在后台配置 Wake-on-LAN 后发送真实唤醒包。页面只在心跳恢复后显示在线，不把 UDP 包发送成功伪装成电脑启动成功（见 ADR-029）。
+
 - 配对码和节点令牌不写日志、不进 Git；节点令牌只保存于 `~/.wao/ai-runner.json`。
 - WAO 不接收 Codex、Claude Code、OpenAI、Anthropic 或 GitHub 凭据。
 - Runner 协议仅开放配对、心跳、领取、进展、完成五类接口；业务配置、任务档案与运行列表仍要求

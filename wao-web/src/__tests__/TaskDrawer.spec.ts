@@ -392,6 +392,49 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
+  it('执行记录里的用量展示 输入 / 输出 / 缓存 / 合计 明细，而不只有汇总', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({
+        id: 'ar9', taskId, status: 'succeeded', engine: 'claude',
+        usage: {
+          model: 'claude-opus-5-20260501', models: 'claude-opus-5-20260501',
+          inputTokens: 2, outputTokens: 4, cachedInputTokens: 19_189,
+          totalTokens: 19_195, costUsd: 0.087, recorded: true,
+        },
+      }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    const usage = w.find('.ai-run-usage')
+    expect(usage.exists()).toBe(true)
+    expect(usage.text()).toContain('输入 2')
+    expect(usage.text()).toContain('输出 4')
+    expect(usage.text()).toContain('缓存 19K')
+    expect(usage.text()).toContain('合计 19K')
+    expect(usage.text()).toContain('$0.09')
+    w.unmount()
+  })
+
+  it('继续优化的输入框是 Markdown 编辑器，可以像描述一样粘贴图片', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({
+        id: 'ar10', taskId, status: 'succeeded', engine: 'claude',
+        runnerId: 'rn1', sessionId: 'thread-10',
+      }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    expect(w.find('.ai-continue textarea').exists()).toBe(false)
+    expect(await waitFor(w, '.ai-continue-input .md-body')).toBe(true)
+    w.unmount()
+  })
+
   it('展开子任务时，分享范围收敛到该子任务', async () => {
     data.addSub(taskId, '扫描身份证')
     ui.openTask(taskId)

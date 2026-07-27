@@ -243,9 +243,13 @@ public class AiRunService {
                         .orderByAsc(AiRunnerNodeEntity::getCreatedAt)
                         .orderByAsc(AiRunnerNodeEntity::getId))
                 .stream().map(r -> new AiRunnerDto(r.getId(), r.getName(), r.getPlatform(), engines(r),
-                        effectiveMaxConcurrency(r), activeByRunner.getOrDefault(r.getId(), 0L).intValue(),
+                        effectiveMaxConcurrency(r), r.getAdminMaxConcurrency(),
+                        activeByRunner.getOrDefault(r.getId(), 0L).intValue(),
                         r.getLastSeenAt() != null && r.getLastSeenAt().isAfter(cutoff),
                         r.getLastSeenAt() == null ? null : r.getLastSeenAt().toString(),
+                        r.getWakeMac(), r.getWakeHost(), r.getWakePort() == null ? 9 : r.getWakePort(),
+                        StringUtils.hasText(r.getWakeMac()) && StringUtils.hasText(r.getWakeHost()),
+                        r.getLastWakeRequestedAt() == null ? null : r.getLastWakeRequestedAt().toString(),
                         scriptUpToDate(r), r.getUpdateRequestedAt() != null))
                 .toList();
     }
@@ -474,11 +478,12 @@ public class AiRunService {
      * @param runId       要继续的运行 id
      * @param input       用户补充的提示词 / 优化建议
      * @param requestedBy 触发续跑的成员 id
+     * @param baseUrl     当前站点地址，用于把输入里粘贴的站内截图补成绝对地址
      * @return 更新后的运行记录
      * @throws BadRequestException 运行还在进行中，或这次运行没有可恢复的会话时
      */
     @Transactional
-    public synchronized AiRunDto continueRun(String runId, String input, String requestedBy) {
+    public synchronized AiRunDto continueRun(String runId, String input, String requestedBy, String baseUrl) {
         AiTaskRunEntity run = runMapper.selectById(runId);
         if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
         if (ACTIVE.contains(run.getStatus())) throw new BadRequestException("AI 正在运行，暂时不能重复输入");
@@ -487,7 +492,7 @@ public class AiRunService {
             throw new BadRequestException("这次运行无法恢复会话，请使用基于报错重跑");
         }
         boolean optimizing = "succeeded".equals(run.getStatus());
-        run.setPendingInput(limit(input, 4000));
+        run.setPendingInput(limit(ShareService.absolutizeMarkdown(input, baseUrl), 4000));
         run.setRequestedBy(requestedBy);
         run.setRequestedRunnerId(run.getRunnerId());
         run.setStatus("queued");
