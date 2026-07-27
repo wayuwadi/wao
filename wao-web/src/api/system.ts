@@ -33,6 +33,18 @@ export const saveWebhookConfig = (payload: { url?: string; enabled?: boolean }) 
   put<FeishuWebhookConfig>('/api/settings/feishu-webhook', payload)
 export const testWebhook = () => post<void>('/api/settings/feishu-webhook/test')
 
+/** 网站名称、简介与公开备案信息。 */
+export interface SiteInfo {
+  siteName: string
+  description: string
+  icpNumber: string
+  icpUrl: string
+}
+
+export const fetchPublicSiteInfo = () => get<SiteInfo>('/api/public/site-info')
+export const fetchSiteInfo = () => get<SiteInfo>('/api/settings/site-info')
+export const saveSiteInfo = (payload: SiteInfo) => put<SiteInfo>('/api/settings/site-info', payload)
+
 /** 群聊发言人映射：飞书 open_id ↔ 显示名。 */
 export interface FeishuSender {
   id: string

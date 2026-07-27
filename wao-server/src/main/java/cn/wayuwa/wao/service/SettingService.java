@@ -22,6 +22,11 @@ public class SettingService {
     /** 飞书通知 webhook（全局一个，见需求「全局使用一个就可以了」）。 */
     public static final String FEISHU_WEBHOOK_URL = "feishu.webhook.url";
     public static final String FEISHU_WEBHOOK_ENABLED = "feishu.webhook.enabled";
+    /** 公开展示的网站信息与 ICP 备案信息。 */
+    public static final String SITE_NAME = "site.name";
+    public static final String SITE_DESCRIPTION = "site.description";
+    public static final String SITE_ICP_NUMBER = "site.icp-number";
+    public static final String SITE_ICP_URL = "site.icp-url";
     /** 飞书群聊同步：自建应用凭据、目标群与落点知识库。 */
     public static final String CHAT_SYNC_APP_ID = "feishu.chat-sync.app-id";
     public static final String CHAT_SYNC_APP_SECRET = "feishu.chat-sync.app-secret";

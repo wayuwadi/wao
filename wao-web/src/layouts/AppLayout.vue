@@ -10,6 +10,7 @@ import NewProjectModal from '@/components/overlays/NewProjectModal.vue'
 import QuickNoteModal from '@/components/overlays/QuickNoteModal.vue'
 import GlobalSearch from '@/components/overlays/GlobalSearch.vue'
 import Celebration from '@/components/overlays/CelebrationOverlay.vue'
+import SiteFooter from '@/components/SiteFooter.vue'
 import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
 import { MODULES, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
@@ -125,6 +126,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
       <div class="content">
         <RouterView />
+        <SiteFooter />
       </div>
     </main>
 
