@@ -314,6 +314,11 @@ export interface AiRunner {
   activeRuns: number
   online: boolean
   lastSeenAt: string | null
+  wakeMac: string | null
+  wakeHost: string | null
+  wakePort: number
+  wakeConfigured: boolean
+  lastWakeRequestedAt: string | null
 }
 
 /** AI 控制台「工作流」视图里的一个项目。 */
