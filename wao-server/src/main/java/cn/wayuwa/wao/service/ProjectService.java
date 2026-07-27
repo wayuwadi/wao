@@ -53,12 +53,13 @@ public class ProjectService {
     }
 
     /**
-     * 新建项目（默认负责人 wg、规划中、进度 0）。
+     * 新建项目，并将负责人设为当前登录成员。
      *
      * @param req 新建请求
+     * @param ownerId 当前登录成员 id；本地未启用认证时使用兼容默认值
      * @return 创建后的项目
      */
-    public ProjectDto create(CreateProjectRequest req) {
+    public ProjectDto create(CreateProjectRequest req, String ownerId) {
         ProjectEntity e = new ProjectEntity();
         e.setId("p" + System.currentTimeMillis());
         e.setName(req.name().trim());
@@ -66,7 +67,8 @@ public class ProjectService {
         e.setStatus("规划中");
         e.setHealth("良好");
         e.setProgress(0);
-        e.setOwnerId("wg");
+        String owner = ownerId == null || ownerId.isBlank() ? "wg" : ownerId;
+        e.setOwnerId(owner);
         e.setStartDate(TODAY);
         e.setDueDate("2026-09-30");
         e.setVisibility(req.visAll() ? "组织内 2 人 · 可查看" : "仅自己可见");
@@ -74,7 +76,7 @@ public class ProjectService {
         e.setGoal(req.goal() == null || req.goal().isBlank()
                 ? "尚未填写目标——打开项目后可补充。" : req.goal().trim());
         ProjectDetail detail = new ProjectDetail(
-                req.visAll() ? List.of("wg", "wd") : List.of("wg"),
+                req.visAll() ? List.of("wg", "wd") : List.of(owner),
                 List.of(), List.of(), List.of(0, 0), List.of(), List.of(), List.of(),
                 List.of(new Activity("ri-add-line", "#9A9DA9", "你创建了项目", "刚刚")),
                 "ri-stack-line");

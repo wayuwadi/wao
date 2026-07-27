@@ -3,6 +3,7 @@ package cn.wayuwa.wao.controller;
 import java.util.List;
 
 import cn.wayuwa.wao.common.ApiResponse;
+import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.dto.CreateProjectRequest;
 import cn.wayuwa.wao.dto.PatchProjectRequest;
 import cn.wayuwa.wao.dto.ProjectDto;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.HttpServletRequest;
 
 /** 项目接口。 */
 @RestController
@@ -23,9 +25,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProjectController {
 
     private final ProjectService projectService;
+    private final CurrentMember currentMember;
 
-    public ProjectController(ProjectService projectService) {
+    public ProjectController(ProjectService projectService, CurrentMember currentMember) {
         this.projectService = projectService;
+        this.currentMember = currentMember;
     }
 
     @GetMapping
@@ -39,8 +43,8 @@ public class ProjectController {
     }
 
     @PostMapping
-    public ApiResponse<ProjectDto> create(@Valid @RequestBody CreateProjectRequest request) {
-        return ApiResponse.ok(projectService.create(request));
+    public ApiResponse<ProjectDto> create(@Valid @RequestBody CreateProjectRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(projectService.create(request, currentMember.idOr(http, "wg")));
     }
 
     @PatchMapping("/{id}")

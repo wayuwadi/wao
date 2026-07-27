@@ -732,6 +732,10 @@ function demo(msg: string) {
                   v-if="['failed', 'succeeded'].includes(run.status) && run.sessionId && run.runnerId"
                   class="ai-continue"
                 >
+                  <div class="ai-continue-head">
+                    <span class="ai-continue-icon"><i class="ri-chat-1-line"></i></span>
+                    <div><b>{{ run.status === 'succeeded' ? '继续优化这次结果' : '在原会话中补充信息' }}</b><small>将固定回到 {{ run.runnerName || '原执行电脑' }}，保留本次上下文</small></div>
+                  </div>
                   <textarea
                     v-model="aiContinuation[run.id]"
                     rows="2"
@@ -739,8 +743,8 @@ function demo(msg: string) {
                       ? '跑完了但不符合预期？写下要优化的地方，AI 带着这次的记忆接着改'
                       : '补充信息后，让 AI 在原会话中继续执行'"
                   ></textarea>
-                  <button :disabled="continuingRunId === run.id" @click="continueRun(run.id)">
-                    {{ continuingRunId === run.id ? '发送中…' : run.status === 'succeeded' ? '继续优化' : '继续对话' }}
+                  <button :disabled="continuingRunId === run.id || !aiContinuation[run.id]?.trim()" @click="continueRun(run.id)">
+                    <i :class="continuingRunId === run.id ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ continuingRunId === run.id ? '发送中…' : run.status === 'succeeded' ? '继续优化' : '继续对话' }}
                   </button>
                 </div>
               </div>
@@ -1730,6 +1734,17 @@ function demo(msg: string) {
 .ai-final-result { margin-top: 10px; padding: 10px 12px; border-radius: 9px; background: #f7f8fb; }
 .ai-final-result b { font-size: 11px; }
 .ai-final-result p { max-height: 180px; margin: 5px 0 0; overflow: auto; color: var(--wao-text-3); font-size: 11px; line-height: 1.65; white-space: pre-wrap; }
+.ai-continue { margin-top: 10px; padding: 11px; border: 1px solid #dce2fa; border-radius: 10px; background: linear-gradient(135deg, #f7f8ff, #fff); }
+.ai-continue-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ai-continue-icon { width: 25px; height: 25px; border-radius: 8px; background: #e8ecff; color: #4358d6; display: grid; place-items: center; }
+.ai-continue-head b, .ai-continue-head small { display: block; }
+.ai-continue-head b { color: var(--wao-text); font-size: 11.5px; }
+.ai-continue-head small { margin-top: 2px; color: var(--wao-text-weak); font-size: 10px; }
+.ai-continue textarea { box-sizing: border-box; width: 100%; min-height: 56px; padding: 8px 9px; border: 1px solid #d7ddef; border-radius: 8px; outline: none; background: #fff; color: var(--wao-text); font: inherit; font-size: 11.5px; line-height: 1.55; resize: vertical; }
+.ai-continue textarea:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .1); }
+.ai-continue button { float: right; margin-top: 8px; padding: 6px 10px; border: 0; border-radius: 7px; background: var(--wao-primary); color: #fff; cursor: pointer; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
+.ai-continue button:disabled { cursor: not-allowed; opacity: .55; }
+.ai-continue::after { content: ''; display: block; clear: both; }
 @keyframes aiLive { 50% { opacity: .35; transform: scale(.85); } }
 
 .comments {
