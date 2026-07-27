@@ -17,11 +17,13 @@ import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
+import cn.wayuwa.wao.dto.RunnerScriptDto;
 import cn.wayuwa.wao.dto.UpdateRunnerConcurrencyRequest;
 import cn.wayuwa.wao.dto.UpdateRunnerWakeConfigRequest;
 import cn.wayuwa.wao.dto.WakeRunnerResultDto;
 import cn.wayuwa.wao.service.AiRunService;
 import cn.wayuwa.wao.service.AiRunnerWakeService;
+import cn.wayuwa.wao.service.AiRunnerLifecycleService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,11 +46,14 @@ public class AiRunController {
 
     private final AiRunService service;
     private final AiRunnerWakeService wakeService;
+    private final AiRunnerLifecycleService lifecycleService;
     private final CurrentMember currentMember;
 
-    public AiRunController(AiRunService service, AiRunnerWakeService wakeService, CurrentMember currentMember) {
+    public AiRunController(AiRunService service, AiRunnerWakeService wakeService,
+            AiRunnerLifecycleService lifecycleService, CurrentMember currentMember) {
         this.service = service;
         this.wakeService = wakeService;
+        this.lifecycleService = lifecycleService;
         this.currentMember = currentMember;
     }
 
@@ -76,6 +81,12 @@ public class AiRunController {
     @PostMapping("/runners/pair-code")
     public ApiResponse<AiPairCodeDto> pairCode() {
         return ApiResponse.ok(service.createPairCode());
+    }
+
+    /** 一键把服务端打包的最新 Runner 脚本下发给所有执行电脑。 */
+    @PostMapping("/runners/update-script")
+    public ApiResponse<List<AiRunnerDto>> updateRunnerScript() {
+        return ApiResponse.ok(service.requestScriptUpdate());
     }
 
     @PutMapping("/runners/{runnerId}/max-concurrency")
@@ -138,8 +149,20 @@ public class AiRunController {
     @PostMapping("/runner/heartbeat")
     public ApiResponse<AiRunnerDto> heartbeat(@RequestHeader(RUNNER_TOKEN) String token,
             @RequestParam(required = false) Integer maxConcurrency,
-            @RequestParam(required = false) String engines) {
-        return ApiResponse.ok(service.heartbeat(token, maxConcurrency, engines));
+            @RequestParam(required = false) String engines,
+            @RequestParam(required = false) String scriptHash,
+            @RequestParam(required = false) String wakeMac,
+            HttpServletRequest http) {
+        AiRunnerDto runner = service.heartbeat(token, maxConcurrency, engines, scriptHash,
+                wakeMac, clientAddress(http));
+        lifecycleService.markOnline(runner.id());
+        return ApiResponse.ok(runner);
+    }
+
+    /** 执行电脑收到更新指令后拉取最新脚本。 */
+    @GetMapping("/runner/script")
+    public ApiResponse<RunnerScriptDto> runnerScript(@RequestHeader(RUNNER_TOKEN) String token) {
+        return ApiResponse.ok(service.fetchRunnerScript(token));
     }
 
     @PostMapping("/runner/claim")
@@ -158,5 +181,12 @@ public class AiRunController {
             @PathVariable String runId, @Valid @RequestBody ReportAiRunProgressRequest request) {
         service.reportProgress(token, runId, request);
         return ApiResponse.ok(null);
+    }
+
+    private String clientAddress(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        return forwarded == null || forwarded.isBlank()
+                ? request.getRemoteAddr()
+                : forwarded.split(",", 2)[0].trim();
     }
 }

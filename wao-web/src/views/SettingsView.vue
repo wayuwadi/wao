@@ -8,8 +8,10 @@ import { updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import { fetchWebhookConfig, saveWebhookConfig, testWebhook, type FeishuWebhookConfig } from '@/api/system'
+import { useDataStore } from '@/stores/data'
 
 const session = useSessionStore()
+const data = useDataStore()
 const router = useRouter()
 
 const NAV = [
@@ -134,6 +136,37 @@ async function sendTestWebhook() {
   } catch (error) { toast(error instanceof Error ? error.message : '发送失败') }
   finally { webhookBusy.value = false }
 }
+// ---- 系统 · 按项目通知 ----
+// 群机器人原本对所有项目一视同仁地播报，可多数项目的新建、状态变化并不需要有人立刻知道；
+// 通知一多整块就被无视，真正等验收的那条也跟着被划过去。开关落在项目上，
+// 粒度正好等于「我关心哪个项目」，总开关仍然一票否决。
+const notifyBusy = ref<string | null>(null)
+const notifyProjects = computed(() =>
+  data.projects.map((p) => ({
+    id: p.id,
+    name: p.name,
+    color: data.areaColor(p.area),
+    on: p.notifyEnabled !== false,
+  })),
+)
+const notifyOnCount = computed(() => notifyProjects.value.filter((p) => p.on).length)
+
+async function toggleProjectNotify(id: string) {
+  const project = data.projectById(id)
+  if (!project || notifyBusy.value) return
+  const next = project.notifyEnabled === false
+  notifyBusy.value = id
+  const saved = await data.updateProject(id, { notifyEnabled: next })
+  notifyBusy.value = null
+  if (!saved) {
+    // 没落库就把开关拨回去，别让界面显示一个服务端并不知道的状态
+    project.notifyEnabled = !next
+    toast('保存失败，请重试', 'ri-error-warning-line')
+    return
+  }
+  toast(next ? `「${project.name}」的动静会发到飞书群` : `已静音「${project.name}」`, 'ri-notification-3-line')
+}
+
 watch(tab, (t) => {
   if (t === 'webhook' && !webhook.value) loadWebhook()
 }, { immediate: true })
@@ -278,6 +311,30 @@ function demo(msg: string, icon?: string) {
               <button type="button" class="btn-ghost" :disabled="webhookBusy || !webhook?.urlSet" @click="sendTestWebhook">发送测试消息</button>
             </form>
             <div class="hint">全局只用这一个 webhook：在飞书群里添加「自定义机器人」拿到地址，粘进来即可。地址加密保存在服务端，页面上只显示脱敏形态，不会随接口回传明文。</div>
+          </div>
+
+          <div class="card">
+            <div class="card-row wrap">
+              <div class="card-title">按项目通知</div>
+              <div class="spacer"></div>
+              <span class="pn-count">{{ notifyOnCount }} / {{ notifyProjects.length }} 个项目会发通知</span>
+            </div>
+            <div class="sub-block">
+              <div v-for="p in notifyProjects" :key="p.id" class="cal-row">
+                <span class="cal-dot" :style="{ background: p.color }"></span>
+                <span class="cal-name pn-name">{{ p.name }}</span>
+                <span class="pn-state" :class="{ off: !p.on }">{{ p.on ? '通知中' : '已静音' }}</span>
+                <button
+                  class="toggle"
+                  :class="{ on: p.on }"
+                  :disabled="notifyBusy === p.id"
+                  :title="p.on ? '静音这个项目' : '开启这个项目的通知'"
+                  @click="toggleProjectNotify(p.id)"
+                ><span class="knob"></span></button>
+              </div>
+              <div v-if="!notifyProjects.length" class="hint">还没有项目。</div>
+            </div>
+            <div class="hint">静音的项目不再往群里发新建任务、状态变化、新增子任务、评论与 AI 执行的卡片，页面内的记录一条不少。上面的总开关关掉时所有项目都不发。</div>
           </div>
         </template>
 
@@ -755,6 +812,23 @@ function demo(msg: string, icon?: string) {
   flex: 1;
   font-size: 13px;
   color: var(--wao-text);
+}
+.pn-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pn-count {
+  font-size: 11.5px;
+  color: var(--wao-text-weak);
+}
+.pn-state {
+  font-size: 11.5px;
+  color: var(--wao-success-strong);
+}
+.pn-state.off {
+  color: var(--wao-text-faint);
 }
 .toggle {
   width: 34px;

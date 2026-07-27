@@ -10,6 +10,8 @@ RUN mvn -B -pl wao-server,wao-gateway -am dependency:go-offline -DskipTests
 
 COPY wao-server/src wao-server/src
 COPY wao-gateway/src wao-gateway/src
+# Runner 脚本会被打包进 wao-server，后台一键分发更新到各执行电脑。
+COPY deploy/ai-runner/wao-ai-runner.py deploy/ai-runner/wao-ai-runner.py
 RUN mvn -B -pl wao-server,wao-gateway -am package -DskipTests
 
 FROM eclipse-temurin:17-jre-alpine AS runtime

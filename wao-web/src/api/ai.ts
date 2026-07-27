@@ -20,11 +20,8 @@ export const fetchAiRunners = () => data<AiRunner[]>(http.get('/api/ai/runners')
 export const updateRunnerMaxConcurrency = (runnerId: string, maxConcurrency: number) =>
   data<AiRunner>(http.put(`/api/ai/runners/${runnerId}/max-concurrency`, { maxConcurrency }))
 
-export const updateRunnerWakeConfig = (
-  runnerId: string,
-  payload: { mac: string; host: string; port: number },
-) => data<AiRunner>(http.put(`/api/ai/runners/${runnerId}/wake-config`, payload))
-
+/** 一键把服务端打包的最新 Runner 脚本下发给所有执行电脑。 */
+export const requestRunnerScriptUpdate = () => data<AiRunner[]>(http.post('/api/ai/runners/update-script'))
 export const wakeAiRunner = (runnerId: string) =>
   data<{ runnerId: string; requestedAt: string; message: string }>(
     http.post(`/api/ai/runners/${runnerId}/wake`),

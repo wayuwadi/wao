@@ -19,7 +19,12 @@ public class AiRunnerNodeEntity {
     private String wakeHost;
     private Integer wakePort;
     private LocalDateTime lastWakeRequestedAt;
+    private Boolean onlineState;
     private String tokenHash;
+    /** Runner 心跳自报的脚本 SHA-256，用于判断是否落后于服务端打包的最新版。 */
+    private String scriptHash;
+    /** 后台一键下发脚本更新的时间；节点上报最新哈希后自动清除。 */
+    private LocalDateTime updateRequestedAt;
     private LocalDateTime lastSeenAt;
     private LocalDateTime createdAt;
 
@@ -43,8 +48,14 @@ public class AiRunnerNodeEntity {
     public void setWakePort(Integer wakePort) { this.wakePort = wakePort; }
     public LocalDateTime getLastWakeRequestedAt() { return lastWakeRequestedAt; }
     public void setLastWakeRequestedAt(LocalDateTime lastWakeRequestedAt) { this.lastWakeRequestedAt = lastWakeRequestedAt; }
+    public Boolean getOnlineState() { return onlineState; }
+    public void setOnlineState(Boolean onlineState) { this.onlineState = onlineState; }
     public String getTokenHash() { return tokenHash; }
     public void setTokenHash(String tokenHash) { this.tokenHash = tokenHash; }
+    public String getScriptHash() { return scriptHash; }
+    public void setScriptHash(String scriptHash) { this.scriptHash = scriptHash; }
+    public LocalDateTime getUpdateRequestedAt() { return updateRequestedAt; }
+    public void setUpdateRequestedAt(LocalDateTime updateRequestedAt) { this.updateRequestedAt = updateRequestedAt; }
     public LocalDateTime getLastSeenAt() { return lastSeenAt; }
     public void setLastSeenAt(LocalDateTime lastSeenAt) { this.lastSeenAt = lastSeenAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }

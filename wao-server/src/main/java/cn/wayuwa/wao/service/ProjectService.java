@@ -83,6 +83,8 @@ public class ProjectService {
         e.setUpdatedLabel("刚刚");
         e.setGoal(req.goal() == null || req.goal().isBlank()
                 ? "尚未填写目标——打开项目后可补充。" : req.goal().trim());
+        // 新项目默认开着通知：刚建完的项目正是最需要知道进展的时候，嫌吵可以随时在设置里关掉。
+        e.setNotifyEnabled(true);
         ProjectDetail detail = new ProjectDetail(
                 req.visAll() ? List.of("wg", "wd") : List.of(owner),
                 List.of(), List.of(), List.of(0, 0), List.of(), List.of(), List.of(),
@@ -106,7 +108,7 @@ public class ProjectService {
     }
 
     /**
-     * 局部更新项目（名称 / 领域 / 目标 / 图标）。空字段不改。
+     * 局部更新项目（名称 / 领域 / 目标 / 图标 / 通知开关）。空字段不改。
      *
      * @param id  项目 id
      * @param req 局部更新请求
@@ -126,6 +128,9 @@ public class ProjectService {
         }
         if (req.goal() != null) {
             e.setGoal(req.goal().isBlank() ? "尚未填写目标——打开项目后可补充。" : req.goal().trim());
+        }
+        if (req.notifyEnabled() != null) {
+            e.setNotifyEnabled(req.notifyEnabled());
         }
         if (req.icon() != null && !req.icon().isBlank()) {
             ProjectDetail d = parse(e.getDetailJson());
@@ -159,7 +164,8 @@ public class ProjectService {
                 e.getUpdatedLabel(), e.getGoal(),
                 nn(d.milestones()), nn(d.msDates()), nn(d.trend()), nn(d.blockers()),
                 nn(d.docs()), nn(d.files()), nn(d.activity()),
-                d.icon() == null || d.icon().isBlank() ? "ri-stack-line" : d.icon());
+                d.icon() == null || d.icon().isBlank() ? "ri-stack-line" : d.icon(),
+                !Boolean.FALSE.equals(e.getNotifyEnabled()));
     }
 
     private ProjectDetail parse(String detailJson) {

@@ -48,6 +48,8 @@ python3 deploy/ai-runner/wao-ai-runner.py \
 地址换成 `git@github.com:组织/仓库.git`。想固定行为可以显式传 `--git-protocol ssh` 或
 `https`。切换协议后已经克隆过的仓库会自动更新 `origin`，不需要手工删目录。
 
+新建的空 Git 仓库也可以直接派发任务。Runner 会为它创建一个孤儿任务分支和独立 worktree，不再尝试检出不存在的 `origin/main`；AI 在其中完成的首个提交就是该仓库的初始内容。
+
 配对成功后，节点令牌只写入本机 `~/.wao/ai-runner.json`，不会进入项目或 Git。
 
 ### Windows 开机自启动与守护
@@ -62,9 +64,9 @@ python3 deploy/ai-runner/wao-ai-runner.py \
   -MaxConcurrency 2
 ```
 
-脚本会创建 `WAO AI Runner` 计划任务，包含开机、当前用户登录和每 5 分钟守护三个触发器，并在异常退出后自动重启。任务使用当前交互用户运行，因为 Codex、Git 和 GitHub 的登录凭据保存在用户配置中；因此无人登录时不能保证 AI CLI 可用。
+脚本会创建 `WAO AI Runner` 计划任务，包含开机、当前用户登录和每 1 分钟守护三个触发器，并在异常退出后自动重启。任务使用当前交互用户运行，因为 Codex、Git 和 GitHub 的登录凭据保存在用户配置中；因此无人登录时不能保证 AI CLI 可用。
 
-后台“远程唤醒电脑”使用 Wake-on-LAN。目标电脑必须在 BIOS 和有线网卡中开启 Magic Packet；跨公网时还要在路由器中把配置的 UDP 端口转发到目标局域网广播地址。WAO 发送唤醒包后仍以 Runner 心跳恢复作为成功标准。
+后台“远程唤醒电脑”使用 Wake-on-LAN。Runner 首次在线时会自动上报网卡地址，服务端自动记录来源地址，页面不要求用户填写 MAC、IP 或端口。目标电脑仍须由硬件支持 Magic Packet；跨公网是否可达取决于路由器和运营商网络。WAO 发送唤醒包后仍以 Runner 心跳恢复作为成功标准。
 以后启动时不需要再次输入配对码。
 
 Runner 会把启动信息、Git 与各 AI CLI 的命令路径和任务失败阶段写入 `~/.wao/ai-runner.log`。
@@ -140,6 +142,17 @@ systemctl --user enable --now wao-ai-runner
 
 配对只需一次，service 里不带 `--pair-code`。更新脚本（`git pull`）后要
 `systemctl --user restart wao-ai-runner` 才会生效。
+
+## 一键更新
+
+日常升级不需要逐台手动拷贝：`wao-ai-runner.py` 会在服务端构建时被打包进 wao-server，
+在 AI 控制台「执行电脑」页点「更新 Runner 脚本」，各在线节点会在心跳里收到指令：
+先停止领新任务，等正在执行的任务收尾后拉取新脚本、校验 SHA-256、原地替换自身并用
+同样的启动参数重启（配对令牌在 `~/.wao/ai-runner.json`，重启后身份不变）。卡片上会
+显示每台电脑的更新进度；节点重启后上报新哈希，提示自动消失。
+
+注意：这套机制要求节点已经跑在支持自更新的版本上；更旧的 Runner 收不到指令，
+需要最后一次手动替换脚本并重启，之后就能用一键更新。
 
 **停 Runner 一定要用 `systemctl --user stop`**（Windows 上停任务计划程序对应的任务），
 不要直接 `pkill -f wao-ai-runner.py`：那只杀掉 Python 父进程，正在跑的 `codex` / `claude`

@@ -63,10 +63,14 @@
 - Runner 从本机 Git credential helper 读取现有 GitHub HTTPS 凭据，仅通过子进程 `GH_TOKEN`
   提供给 AI CLI，并自动补齐 Windows GitHub CLI 路径；不持久化或记录令牌。AI 应优先使用
   `gh` 完成 PR、合并和部署跟踪，连接器不可用不能直接判定任务阻塞。
+- 新建且尚无任何提交的 Git 仓库同样可以派发任务：Runner 创建不基于 `origin/<默认分支>` 的
+  孤儿任务分支和独立 worktree，AI 的首个提交即为该仓库的首版内容；不得因远端默认分支不存在
+  而报“无效引用”。
 
 ## 安全边界
 
-- Windows Runner 通过 `install-windows-task.ps1` 安装开机、登录和 5 分钟守护触发器；离线电脑可在后台配置 Wake-on-LAN 后发送真实唤醒包。页面只在心跳恢复后显示在线，不把 UDP 包发送成功伪装成电脑启动成功（见 ADR-029）。
+- Windows Runner 通过 `install-windows-task.ps1` 安装开机、登录和 1 分钟守护触发器；Runner 首次在线时自动准备 Wake-on-LAN 信息，离线卡片只需点击一次即可发送真实唤醒包。页面只在心跳恢复后显示在线，不把 UDP 包发送成功伪装成电脑启动成功（见 ADR-029）。
+- Runner 心跳超过 2 分钟时飞书发送一次离线通知，后续心跳恢复时发送一次上线通知；同一状态不得重复通知。
 
 - 配对码和节点令牌不写日志、不进 Git；节点令牌只保存于 `~/.wao/ai-runner.json`。
 - WAO 不接收 Codex、Claude Code、OpenAI、Anthropic 或 GitHub 凭据。

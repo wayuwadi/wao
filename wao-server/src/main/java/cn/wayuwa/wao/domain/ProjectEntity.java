@@ -21,6 +21,8 @@ public class ProjectEntity {
     private String updatedLabel;
     private String goal;
     private String detailJson;
+    /** 这个项目的动静要不要发到飞书群；老数据为空时按开处理。 */
+    private Boolean notifyEnabled;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -48,4 +50,6 @@ public class ProjectEntity {
     public void setGoal(String goal) { this.goal = goal; }
     public String getDetailJson() { return detailJson; }
     public void setDetailJson(String detailJson) { this.detailJson = detailJson; }
+    public Boolean getNotifyEnabled() { return notifyEnabled; }
+    public void setNotifyEnabled(Boolean notifyEnabled) { this.notifyEnabled = notifyEnabled; }
 }

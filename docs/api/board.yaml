@@ -45,7 +45,7 @@ paths:
         '200': { description: OK }
         '404': { description: 不存在（code=40400） }
     patch:
-      summary: 局部更新项目（名称 / 领域 / 目标 / 图标，空字段不改）
+      summary: 局部更新项目（名称 / 领域 / 目标 / 图标 / 通知开关，空字段不改）
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -538,6 +538,7 @@ components:
         visibility: { type: string }
         updated: { type: string }
         goal: { type: string }
+        notifyEnabled: { type: boolean, description: 这个项目的动静是否发飞书群；关掉后新建任务 / 状态变化 / 子任务 / 评论 / AI 执行都不发 }
     Task:
       type: object
       description: 字段与前端 Task 一致（含 steps/subs/comments/activity 等嵌套）
@@ -549,6 +550,7 @@ components:
         pr: { type: string, enum: [P0, P1, P2, P3] }
         owner: { type: string }
         createdBy: { type: string, nullable: true, description: 创建人成员 ID；历史任务缺少可靠来源时为 null }
+        start: { type: string, description: 开始日期 yyyy-MM-dd；未排期时为空 }
         due: { type: string }
         desc: { type: string, description: 描述，Markdown 文本 }
         subs:
@@ -626,6 +628,7 @@ components:
         area: { type: string }
         goal: { type: string }
         icon: { type: string }
+        notifyEnabled: { type: boolean, description: 通知开关；null 表示不改 }
     CreateTaskRequest:
       type: object
       required: [title, project]
@@ -647,6 +650,8 @@ components:
         pr: { type: string }
         owner: { type: string }
         desc: { type: string }
+        start: { type: string, description: "开始日期 yyyy-MM-dd；null 表示不改，空串表示清空" }
+        due: { type: string, description: "截止日期 yyyy-MM-dd；null 表示不改，空串表示清空" }
     CreateDocRequest:
       type: object
       required: [kbId, folderId]

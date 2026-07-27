@@ -218,6 +218,28 @@ describe('TaskDrawer', () => {
     expect(rows[1]!.text()).toContain('已完成的')
   })
 
+  it('属性栏里能改开始与截止日期，也能清空', async () => {
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    const inputs = w.findAll('.props .date-input')
+    expect(inputs).toHaveLength(2)
+
+    await inputs[0]!.setValue('2026-07-20')
+    await inputs[1]!.setValue('2026-08-01')
+
+    const t = data.taskById(taskId)!
+    expect(t.start).toBe('2026-07-20')
+    expect(t.due).toBe('2026-08-01')
+    expect(t.activity[0]!.text).toContain('截止日期')
+
+    await w.findAll('.props .date-input')[0]!.setValue('')
+
+    expect(data.taskById(taskId)!.start).toBe('')
+    expect(data.taskById(taskId)!.activity[0]!.text).toContain('你清空了开始日期')
+  })
+
   it('没有已完成子任务时不显示折叠条', async () => {
     data.addSub(taskId, '只有这一条')
     ui.openTask(taskId)
@@ -360,6 +382,35 @@ describe('TaskDrawer', () => {
     await flushPromises()
 
     expect(w.find('.ai-continue button').text()).toContain('继续优化')
+    w.unmount()
+  })
+
+  it('AI 未报告任务状态（退出码 3）时显示「结果待确认」而不是「执行失败」', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({
+        id: 'ar10', taskId, status: 'failed', exitCode: 3, engine: 'qoder',
+        runnerId: 'rn1', sessionId: 'thread-10',
+        resultSummary: 'Qoder 已结束会话，但最终答复没有按约定报告任务状态',
+      }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    expect(w.find('.ai-run-state').text()).toBe('结果待确认')
+    expect(w.find('.ai-run-state').classes()).toContain('state-unconfirmed')
+    expect(w.find('.ai-final-result b').text()).toContain('结果待确认（AI 未报告任务状态）')
+    // 真正的失败（其它退出码）仍然明确说失败，两种情况不能混。
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({ id: 'ar11', taskId, status: 'failed', exitCode: 1, resultSummary: '构建失败' }),
+    ])
+    ui.closeTask()
+    await flushPromises()
+    ui.openTask(taskId)
+    await flushPromises()
+    expect(w.find('.ai-run-state').text()).toBe('执行失败')
+    expect(w.find('.ai-final-result b').text()).toBe('失败原因')
     w.unmount()
   })
 

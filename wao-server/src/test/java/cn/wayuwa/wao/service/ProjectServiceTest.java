@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.dto.CreateProjectRequest;
+import cn.wayuwa.wao.dto.PatchProjectRequest;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -66,5 +67,34 @@ class ProjectServiceTest {
         assertThat(dto.members()).containsExactly("wg", "wd");
         assertThat(dto.owner()).isEqualTo("wd");
         assertThat(dto.activity()).isNotEmpty();
+        assertThat(dto.notifyEnabled()).isTrue();
+    }
+
+    @Test
+    void notificationSwitchCanBeTurnedOffAndBackOn() {
+        ProjectEntity e = new ProjectEntity();
+        e.setId("p2");
+        e.setName("家庭资料归档");
+        e.setNotifyEnabled(true);
+        when(mapper.selectById("p2")).thenReturn(e);
+        when(mapper.updateById(any(ProjectEntity.class))).thenReturn(1);
+
+        assertThat(service.update("p2", new PatchProjectRequest(null, null, null, null, false)).notifyEnabled())
+                .isFalse();
+        assertThat(service.update("p2", new PatchProjectRequest(null, null, null, null, true)).notifyEnabled())
+                .isTrue();
+        // 不带这个字段的更新（改名、换图标）不该顺手把开关重置掉
+        assertThat(service.update("p2", new PatchProjectRequest("改个名字", null, null, null, null)).notifyEnabled())
+                .isTrue();
+    }
+
+    @Test
+    void legacyProjectsWithoutTheColumnCountAsNotifying() {
+        ProjectEntity e = new ProjectEntity();
+        e.setId("p3");
+        e.setName("健康重启计划");
+        when(mapper.selectById("p3")).thenReturn(e);
+
+        assertThat(service.get("p3").notifyEnabled()).isTrue();
     }
 }

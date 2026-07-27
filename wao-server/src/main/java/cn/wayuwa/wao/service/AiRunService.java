@@ -37,6 +37,7 @@ import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
+import cn.wayuwa.wao.dto.RunnerScriptDto;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.mapper.AiProjectConfigMapper;
@@ -85,10 +86,12 @@ public class AiRunService {
     private final ProjectMapper projectMapper;
     private final TaskService tasks;
     private final FeishuTaskNotifier notifier;
+    private final RunnerScriptService scripts;
 
     public AiRunService(AiProjectConfigMapper configMapper, AiRunnerNodeMapper runnerMapper,
             AiRunnerPairCodeMapper pairMapper, AiTaskRunMapper runMapper, AiRunProgressMapper progressMapper,
-            TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier) {
+            TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier,
+            RunnerScriptService scripts) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
         this.pairMapper = pairMapper;
@@ -98,6 +101,7 @@ public class AiRunService {
         this.projectMapper = projectMapper;
         this.tasks = tasks;
         this.notifier = notifier;
+        this.scripts = scripts;
     }
 
     /** 读取项目配置；尚未保存过时返回安全的关闭状态。 */
@@ -221,6 +225,7 @@ public class AiRunService {
         runner.setTokenHash(hash(token));
         runner.setCreatedAt(now);
         runner.setLastSeenAt(now);
+        runner.setOnlineState(true);
         runnerMapper.insert(runner);
         pair.setUsedAt(now);
         pairMapper.updateById(pair);
@@ -234,8 +239,10 @@ public class AiRunService {
                         .isNotNull(AiTaskRunEntity::getRunnerId))
                 .stream().collect(Collectors.groupingBy(AiTaskRunEntity::getRunnerId, Collectors.counting()));
         LocalDateTime cutoff = LocalDateTime.now().minusMinutes(2);
+        // 按配对先后排序（id 兜底），避免各节点心跳交替刷新 lastSeenAt 导致卡片顺序来回跳。
         return runnerMapper.selectList(new LambdaQueryWrapper<AiRunnerNodeEntity>()
-                        .orderByDesc(AiRunnerNodeEntity::getLastSeenAt))
+                        .orderByAsc(AiRunnerNodeEntity::getCreatedAt)
+                        .orderByAsc(AiRunnerNodeEntity::getId))
                 .stream().map(r -> new AiRunnerDto(r.getId(), r.getName(), r.getPlatform(), engines(r),
                         effectiveMaxConcurrency(r), r.getAdminMaxConcurrency(),
                         activeByRunner.getOrDefault(r.getId(), 0L).intValue(),
@@ -243,8 +250,36 @@ public class AiRunService {
                         r.getLastSeenAt() == null ? null : r.getLastSeenAt().toString(),
                         r.getWakeMac(), r.getWakeHost(), r.getWakePort() == null ? 9 : r.getWakePort(),
                         StringUtils.hasText(r.getWakeMac()) && StringUtils.hasText(r.getWakeHost()),
-                        r.getLastWakeRequestedAt() == null ? null : r.getLastWakeRequestedAt().toString()))
+                        r.getLastWakeRequestedAt() == null ? null : r.getLastWakeRequestedAt().toString(),
+                        scriptUpToDate(r), r.getUpdateRequestedAt() != null))
                 .toList();
+    }
+
+    /** 脚本是否最新；节点没上报过哈希或服务端没打包脚本时无法判断，返回 null。 */
+    private Boolean scriptUpToDate(AiRunnerNodeEntity runner) {
+        if (!scripts.available() || !StringUtils.hasText(runner.getScriptHash())) return null;
+        return scripts.hash().equals(runner.getScriptHash());
+    }
+
+    /** 一键把最新 Runner 脚本下发给所有执行电脑；已是最新的机器自动跳过。 */
+    public List<AiRunnerDto> requestScriptUpdate() {
+        if (!scripts.available()) {
+            throw new BadRequestException("服务端构建里没有打包 Runner 脚本，无法下发更新");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (AiRunnerNodeEntity runner : runnerMapper.selectList(null)) {
+            if (scripts.hash().equals(runner.getScriptHash())) continue;
+            runner.setUpdateRequestedAt(now);
+            runnerMapper.updateById(runner);
+        }
+        return listRunners();
+    }
+
+    /** 执行电脑收到更新指令后来拉取最新脚本。 */
+    public RunnerScriptDto fetchRunnerScript(String token) {
+        requireRunner(token);
+        if (!scripts.available()) throw new NotFoundException("服务端构建里没有打包 Runner 脚本");
+        return new RunnerScriptDto(scripts.hash(), scripts.content());
     }
 
     /** 管理员在后台修改某台执行电脑的最大并发线程数。 */
@@ -499,11 +534,28 @@ public class AiRunService {
     }
 
     /** 节点心跳；同时刷新并发能力和本机可用的 AI 工具，便于用户调整 runner 参数后立即生效。 */
-    public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines) {
+    public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines, String scriptHash,
+            String wakeMac, String wakeHost) {
         AiRunnerNodeEntity runner = requireRunner(token);
         runner.setLastSeenAt(LocalDateTime.now());
         if (maxConcurrency != null) runner.setMaxConcurrency(clamp(maxConcurrency, 1, 8, 1));
         if (StringUtils.hasText(engines)) runner.setEngines(joinEngines(List.of(engines.split(","))));
+        if (StringUtils.hasText(scriptHash)) {
+            runner.setScriptHash(scriptHash.trim());
+            // 节点已经跑在最新脚本上，更新指令自动完成。
+            if (scripts.available() && scripts.hash().equals(runner.getScriptHash())) {
+                runner.setUpdateRequestedAt(null);
+            }
+        }
+        if (StringUtils.hasText(wakeMac)) {
+            try {
+                runner.setWakeMac(AiRunnerWakeService.normalizeMac(wakeMac));
+            } catch (BadRequestException ignored) {
+                // 硬件探测失败不能影响正常心跳；Runner 下次上报有效地址时会自动修复。
+            }
+        }
+        if (StringUtils.hasText(wakeHost)) runner.setWakeHost(wakeHost);
+        if (runner.getWakePort() == null) runner.setWakePort(9);
         runnerMapper.updateById(runner);
         return listRunners().stream().filter(r -> r.id().equals(runner.getId())).findFirst().orElseThrow();
     }
@@ -597,12 +649,16 @@ public class AiRunService {
         applyUsage(run, request);
         run.setFinishedAt(LocalDateTime.now());
         String engine = label(blankOr(run.getEngine(), DEFAULT_ENGINE));
-        String completion = exitCode == 0 ? engine + " 已完成执行，等待人工验收" : engine + " 执行未完成，请查看失败原因";
+        // 退出码 3 是 Runner 的约定：CLI 正常结束但没有报告任务状态，结果需要人判断，
+        // 不能笼统地说成「执行失败」让人分不清到底成没成。
+        String completion = exitCode == 0 ? engine + " 已完成执行，等待人工验收"
+                : exitCode == 3 ? engine + " 已结束会话但未报告任务状态，请根据原始答复确认结果"
+                : engine + " 执行未完成，请查看失败原因";
         appendProgress(run, "result", completion);
         setTaskStatus(run.getTaskId(), exitCode == 0 ? "待验证" : "进行中");
         runner.setLastSeenAt(LocalDateTime.now());
         runnerMapper.updateById(runner);
-        notifyFinished(run, engine, exitCode == 0);
+        notifyFinished(run, engine, exitCode);
         return toRunDtos(List.of(run)).get(0);
     }
 
@@ -613,7 +669,7 @@ public class AiRunService {
      * 群里那张带跳转按钮的卡片才是真正把人叫过来的东西。通知失败只记日志 ——
      * 结果已经落库，不能因为发不出通知就把这次运行判成失败。
      */
-    private void notifyFinished(AiTaskRunEntity run, String engineLabel, boolean succeeded) {
+    private void notifyFinished(AiTaskRunEntity run, String engineLabel, int exitCode) {
         try {
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());
@@ -623,7 +679,7 @@ public class AiRunService {
             notifier.notifyRunFinished(run.getTaskId(), run.getProjectId(),
                     task == null ? run.getTaskId() : task.getTitle(),
                     project == null ? run.getProjectId() : project.getName(),
-                    engineLabel, scope, succeeded, run.getResultSummary());
+                    engineLabel, scope, exitCode == 0, exitCode == 3, run.getResultSummary());
         } catch (RuntimeException ex) {
             LOG.warn("AI 运行完成通知发送失败：{}", ex.getMessage());
         }

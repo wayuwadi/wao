@@ -86,6 +86,18 @@ const aiRunLabel: Record<AiRunStatus, string> = {
   queued: '等待领取', claimed: '准备中', running: '正在运行', succeeded: '等待验收',
   failed: '执行失败', cancelled: '已取消',
 }
+// 退出码 3 是 Runner 的约定：AI 结束了会话但没报告任务状态，成败需要人判断，
+// 不能直接挂一个「执行失败」让人分不清到底成没成。
+function aiRunStatusUnreported(run: AiRun) {
+  return run.status === 'failed' && run.exitCode === 3
+}
+function aiRunStateLabel(run: AiRun) {
+  return aiRunStatusUnreported(run) ? '结果待确认' : aiRunLabel[run.status]
+}
+function aiRunResultTitle(run: AiRun) {
+  if (aiRunStatusUnreported(run)) return '结果待确认（AI 未报告任务状态）'
+  return run.status === 'failed' ? '失败原因' : '最终结果'
+}
 const activeAiRun = computed(() => aiRuns.value.find((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 /** 已经单独派过 AI 工的子任务：行上标一下，分享给 AI 时它们也会被自动摘掉。 */
 const dispatchedSubIds = computed(
@@ -482,6 +494,28 @@ function setOwner(id: string) {
   data.patchTask(t.id, { owner: id }, `你将负责人改为 ${m.name}`)
   menu.value = null
 }
+/**
+ * 改开始 / 截止日期。
+ *
+ * <p>这两个字段以前只是属性栏里的一行只读文字：截止日期只能在新建弹窗里从「今天 / 明天 /
+ * 周日 / 下周一」里挑一次，之后就再也改不动，排期一变只能重建任务。改成日期输入框后，
+ * 清空（选空值）也是合法操作，表示这条暂时不排期。
+ */
+const dueHint = computed(() => {
+  // 日期框只显示绝对日期，紧迫感（逾期 / 今天 / 明天）由这行小字补上，不改也不遮输入框
+  const t = task.value
+  if (!t?.due || !tv.value) return ''
+  return tv.value.dueStr === fmtDate(t.due) ? '' : tv.value.dueStr
+})
+function setDate(field: 'start' | 'due', event: Event) {
+  const t = task.value
+  if (!t) return
+  const value = (event.target as HTMLInputElement).value
+  const label = field === 'start' ? '开始日期' : '截止日期'
+  if ((t[field] ?? '') === value) return
+  const activity = value ? `你将${label}改为 ${fmtDate(value)}` : `你清空了${label}`
+  data.patchTask(t.id, field === 'start' ? { start: value } : { due: value }, activity)
+}
 function addCustom(type: string) {
   const t = task.value
   if (!t) return
@@ -712,7 +746,7 @@ function demo(msg: string) {
             <div v-if="aiRunsLoading && !aiRuns.length" class="ai-archive-loading"><i class="ri-loader-4-line"></i>正在读取 AI 记录…</div>
             <details v-for="(run, index) in aiRuns" v-else :key="run.id" class="ai-run-entry" :open="index === 0">
               <summary>
-                <span class="ai-run-state" :class="`state-${run.status}`">{{ aiRunLabel[run.status] }}</span>
+                <span class="ai-run-state" :class="aiRunStatusUnreported(run) ? 'state-unconfirmed' : `state-${run.status}`">{{ aiRunStateLabel(run) }}</span>
                 <span class="ai-run-engine" :title="`执行工具：${engineLabel(run.engine)}`"><i :class="engineIcon(run.engine)"></i></span>
                 <span v-if="run.subId" class="ai-run-scope" :title="`只跑子任务：${run.subTitle ?? run.subId}`">
                   子任务 · {{ run.subTitle ?? run.subId }}
@@ -733,7 +767,7 @@ function demo(msg: string) {
                 </div>
                 <AiRunProgressTimeline :run="run" />
                 <div v-if="run.resultSummary" class="ai-final-result">
-                  <b>{{ run.status === 'failed' ? '失败原因' : '最终结果' }}</b>
+                  <b>{{ aiRunResultTitle(run) }}</b>
                   <p>{{ run.resultSummary }}</p>
                 </div>
                 <div
@@ -900,11 +934,27 @@ function demo(msg: string) {
 
           <div class="prop-row">
             <span class="prop-key">开始</span>
-            <span class="prop-val">{{ task.start ? fmtDate(task.start) : '—' }}</span>
+            <input
+              class="date-input"
+              type="date"
+              :value="task.start || ''"
+              :max="task.due || undefined"
+              title="开始日期，留空表示未排期"
+              @change="setDate('start', $event)"
+            />
           </div>
           <div class="prop-row">
             <span class="prop-key">截止</span>
-            <span class="prop-val due" :style="{ color: tv.dueColor }"><i class="ri-calendar-line"></i>{{ tv.dueStr }}</span>
+            <input
+              class="date-input due"
+              type="date"
+              :value="task.due || ''"
+              :min="task.start || undefined"
+              :style="{ color: tv.dueColor }"
+              title="截止日期，留空表示未排期"
+              @change="setDate('due', $event)"
+            />
+            <span v-if="dueHint" class="due-hint" :style="{ color: tv.dueColor }">{{ dueHint }}</span>
           </div>
           <div class="prop-row">
             <span class="prop-key">所属项目</span>
@@ -1737,6 +1787,7 @@ function demo(msg: string) {
 .ai-run-state { flex: 0 0 auto; padding: 3px 7px; border-radius: 5px; background: #eef1ff; color: #4056c5; font-size: 10px; }
 .ai-run-state.state-succeeded { background: #e8f7ef; color: #237a4b; }
 .ai-run-state.state-failed { background: #fff0f0; color: #b33a3a; }
+.ai-run-state.state-unconfirmed { background: #fff7df; color: #8a5b0d; }
 .ai-run-scope { flex: 0 0 auto; max-width: 130px; overflow: hidden; padding: 3px 7px; border-radius: 5px; background: #f1ecfb; color: #6b3fbf; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-run-latest { flex: 1; min-width: 0; overflow: hidden; color: var(--wao-text-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-run-entry summary time { flex: 0 0 auto; color: var(--wao-text-faint); font-size: 10px; }
@@ -1905,6 +1956,39 @@ function demo(msg: string) {
 }
 .prop-val.due i {
   color: inherit;
+}
+/* 日期看着仍像一行属性文字，鼠标移上去才显出可点的边框——属性栏不该被输入框撑成表单 */
+.date-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--wao-text-2);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  cursor: pointer;
+}
+.due-hint {
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+.date-input:hover {
+  border-color: var(--wao-line-control);
+}
+.date-input:focus {
+  outline: none;
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 3px rgba(67, 88, 214, .12);
+}
+.date-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: .5;
+}
+.date-input:hover::-webkit-calendar-picker-indicator {
+  opacity: 1;
 }
 .pill {
   display: inline-flex;

@@ -51,7 +51,7 @@ class TaskServiceTest {
         when(mapper.selectById("t1")).thenReturn(todo());
         when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
 
-        TaskDto dto = service.patch("t1", new PatchTaskRequest(null, "已完成", null, null, null), "wg");
+        TaskDto dto = service.patch("t1", new PatchTaskRequest(null, "已完成", null, null, null, null, null), "wg");
 
         assertThat(dto.status()).isEqualTo("已完成");
         assertThat(dto.steps()).hasSize(1);
@@ -64,7 +64,7 @@ class TaskServiceTest {
         when(mapper.selectById("t1")).thenReturn(todo());
         when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
 
-        TaskDto dto = service.patch("t1", new PatchTaskRequest(null, "待办", null, null, null), "wg");
+        TaskDto dto = service.patch("t1", new PatchTaskRequest(null, "待办", null, null, null, null, null), "wg");
 
         assertThat(dto.status()).isEqualTo("待办");
         assertThat(dto.activity()).isEmpty();
@@ -78,12 +78,46 @@ class TaskServiceTest {
         when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在：p1"));
         when(taskNotifier.feishuOpenId("wg")).thenReturn("ou_wg");
 
-        service.patch("t1", new PatchTaskRequest(null, "收集中", null, null, null), "wg");
+        service.patch("t1", new PatchTaskRequest(null, "收集中", null, null, null, null, null), "wg");
         // 已经在收集中时再保存别的字段，不该再打扰群里一次
-        service.patch("t1", new PatchTaskRequest("改个标题", "收集中", null, null, null), "wg");
+        service.patch("t1", new PatchTaskRequest("改个标题", "收集中", null, null, null, null, null), "wg");
 
         verify(taskNotifier, times(1)).notifyCollecting("t1", "p1", "设计任务详情抽屉交互稿",
                 "p1", "desc", "ou_wg");
+    }
+
+    @Test
+    void patchUpdatesStartAndDueDates() {
+        TaskEntity entity = todo();
+        when(mapper.selectById("t1")).thenReturn(entity);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+
+        TaskDto dto = service.patch("t1",
+                new PatchTaskRequest(null, null, null, null, null, "2026-07-20", "2026-08-01"), "wg");
+
+        assertThat(dto.start()).isEqualTo("2026-07-20");
+        assertThat(dto.due()).isEqualTo("2026-08-01");
+        assertThat(dto.activity()).extracting(cn.wayuwa.wao.dto.Activity::text)
+                .contains("你将开始日期改为 2026-07-20", "你将截止日期改为 2026-08-01");
+    }
+
+    @Test
+    void patchClearsDatesWithEmptyStringButIgnoresNull() {
+        TaskEntity entity = todo();
+        entity.setStartDate("2026-07-20");
+        when(mapper.selectById("t1")).thenReturn(entity);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+
+        // null 是「这次不动日期」，空串才是「清空」——否则日期就成了只能改不能删的字段
+        TaskDto untouched = service.patch("t1", new PatchTaskRequest(null, null, null, null, null, null, null), "wg");
+        assertThat(untouched.start()).isEqualTo("2026-07-20");
+        assertThat(untouched.due()).isEqualTo("2026-07-24");
+
+        TaskDto cleared = service.patch("t1", new PatchTaskRequest(null, null, null, null, null, "", null), "wg");
+
+        assertThat(cleared.start()).isEmpty();
+        assertThat(cleared.due()).isEqualTo("2026-07-24");
+        assertThat(cleared.activity()).extracting(cn.wayuwa.wao.dto.Activity::text).contains("你清空了开始日期");
     }
 
     @Test

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
-import { rerunAiRun } from '@/api/ai'
+import { requestRunnerScriptUpdate, rerunAiRun } from '@/api/ai'
 
 vi.mock('@/api/ai', () => ({
   fetchAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
@@ -68,6 +68,18 @@ vi.mock('@/api/ai', () => ({
   createAiPairCode: vi.fn<() => Promise<{ code: string; expiresAt: string }>>()
     .mockResolvedValue({ code: 'ABCD2345KMNP', expiresAt: '2026-07-25T20:30:00' }),
   saveAiProjectConfig: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
+  requestRunnerScriptUpdate: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
+    {
+      id: 'rn1', name: '娃哥电脑', platform: 'Windows 11', engines: ['codex'],
+      maxConcurrency: 2, activeRuns: 0, online: false, lastSeenAt: '2026-07-25T18:00:00',
+      scriptUpToDate: false, updateRequested: true,
+    },
+    {
+      id: 'rn2', name: 'Linux 主节点', platform: 'Linux 7.0', engines: ['claude'],
+      maxConcurrency: 2, activeRuns: 1, online: true, lastSeenAt: '2026-07-25T20:18:20',
+      scriptUpToDate: true, updateRequested: false,
+    },
+  ]),
   rerunAiRun: vi.fn<() => Promise<Record<string, unknown>>>()
     .mockResolvedValue({ id: 'ar3', taskId: 't1', taskTitle: '修复自动任务', retryOfRunId: 'ar1' }),
 }))
@@ -151,6 +163,22 @@ describe('HomeView AI 控制台', () => {
     expect(cards[1]!.text()).toContain('Claude Code')
     expect(cards[1]!.text()).toContain('槽位 1 / 2')
     expect(cards[1]!.find('.runner-tasks button').text()).toBe('实时任务')
+    wrapper.unmount()
+  })
+
+  it('电脑视图可以一键下发 Runner 脚本更新，卡片展示更新进度', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.findAll('.console-tabs button')[1]!.trigger('click')
+    await wrapper.find('.section-head .pair-btn.ghost').trigger('click')
+    await flushPromises()
+
+    expect(requestRunnerScriptUpdate).toHaveBeenCalledTimes(1)
+    const cards = wrapper.findAll('.runner-card')
+    expect(cards[0]!.text()).toContain('更新已下发，等该电脑空闲后自动重启生效')
+    expect(cards[1]!.text()).not.toContain('更新已下发')
     wrapper.unmount()
   })
 

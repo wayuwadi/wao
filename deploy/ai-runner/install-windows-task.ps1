@@ -15,7 +15,19 @@ if (-not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) {
     throw "Runner script not found: $runnerPath"
 }
 if (-not $PythonPath) {
-    $PythonPath = (Get-Command python -ErrorAction Stop).Source
+    $PythonPath = (Get-Command python.exe -All -ErrorAction SilentlyContinue |
+        Where-Object { $_.Source -notlike '*\WindowsApps\python.exe' -and (Test-Path -LiteralPath $_.Source) } |
+        Select-Object -First 1 -ExpandProperty Source)
+}
+if (-not $PythonPath) {
+    $runtimeRoot = Join-Path $env:USERPROFILE '.cache\codex-runtimes'
+    if (Test-Path -LiteralPath $runtimeRoot) {
+        $PythonPath = Get-ChildItem -LiteralPath $runtimeRoot -Filter python.exe -Recurse -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+    }
+}
+if (-not $PythonPath) {
+    throw 'No usable Python interpreter found. Install Python or pass -PythonPath once.'
 }
 $resolvedPython = (Resolve-Path -LiteralPath $PythonPath).Path
 $resolvedRunner = (Resolve-Path -LiteralPath $runnerPath).Path
@@ -35,16 +47,16 @@ $action = New-ScheduledTaskAction -Execute $resolvedPython -Argument ($arguments
 $triggers = @(
     (New-ScheduledTaskTrigger -AtStartup),
     (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
-    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(5) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650))
+    (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration (New-TimeSpan -Days 3650))
 )
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
     -RestartCount 6 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
 
 # The runner needs the current user's Codex/Git/GitHub credentials, so it uses an interactive principal.
-# AtLogOn and the five-minute watchdog compensate when AtStartup fires before that profile is available.
+# AtLogOn and the one-minute watchdog compensate when AtStartup fires before that profile is available.
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 $task = New-ScheduledTask -Action $action -Trigger $triggers -Settings $settings -Principal $principal `
-    -Description 'WAO AI Runner: start at boot/logon, restart after failures, and check every five minutes.'
+    -Description 'WAO AI Runner: start at boot/logon, restart after failures, and check every minute.'
 
 Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force | Out-Null
 Start-ScheduledTask -TaskName $TaskName
