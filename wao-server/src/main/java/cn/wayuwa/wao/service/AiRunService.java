@@ -225,6 +225,7 @@ public class AiRunService {
         runner.setTokenHash(hash(token));
         runner.setCreatedAt(now);
         runner.setLastSeenAt(now);
+        runner.setOnlineState(true);
         runnerMapper.insert(runner);
         pair.setUsedAt(now);
         pairMapper.updateById(pair);
@@ -533,7 +534,8 @@ public class AiRunService {
     }
 
     /** 节点心跳；同时刷新并发能力和本机可用的 AI 工具，便于用户调整 runner 参数后立即生效。 */
-    public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines, String scriptHash) {
+    public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines, String scriptHash,
+            String wakeMac, String wakeHost) {
         AiRunnerNodeEntity runner = requireRunner(token);
         runner.setLastSeenAt(LocalDateTime.now());
         if (maxConcurrency != null) runner.setMaxConcurrency(clamp(maxConcurrency, 1, 8, 1));
@@ -545,6 +547,15 @@ public class AiRunService {
                 runner.setUpdateRequestedAt(null);
             }
         }
+        if (StringUtils.hasText(wakeMac)) {
+            try {
+                runner.setWakeMac(AiRunnerWakeService.normalizeMac(wakeMac));
+            } catch (BadRequestException ignored) {
+                // 硬件探测失败不能影响正常心跳；Runner 下次上报有效地址时会自动修复。
+            }
+        }
+        if (StringUtils.hasText(wakeHost)) runner.setWakeHost(wakeHost);
+        if (runner.getWakePort() == null) runner.setWakePort(9);
         runnerMapper.updateById(runner);
         return listRunners().stream().filter(r -> r.id().equals(runner.getId())).findFirst().orElseThrow();
     }
