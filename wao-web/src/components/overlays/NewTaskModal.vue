@@ -30,8 +30,11 @@ function loadDraft(): Partial<Draft> {
   try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch { return {} }
 }
 const draft = loadDraft()
+const openProjects = data.projects.filter((p) => p.status !== '已完成')
 const title = ref(draft.title ?? '')
-const project = ref(draft.project ?? ui.modalProject ?? 'p1')
+// modalProject 未预选时是空串（不是 null），必须用 || 兜底到第一个进行中的项目，
+// 否则从顶栏全局入口建出的任务 project 为空，在所有项目列表里都看不见。
+const project = ref(draft.project || ui.modalProject || openProjects[0]?.id || '')
 const owner = ref(draft.owner ?? session.currentUser.id)
 const pr = ref<Priority>(draft.pr ?? 'P2')
 const due = ref(draft.due ?? '今天')
@@ -51,8 +54,6 @@ watch([title, project, owner, pr, due, desc], () => {
 
 onBeforeUnmount(() => { if (draftTimer) clearTimeout(draftTimer) })
 
-const openProjects = data.projects.filter((p) => p.status !== '已完成')
-
 /**
  * 编辑器里粘贴 / 插入的图片：存进图床，再把地址回传给编辑器内联到光标处，
  * 不再堆成底部的附件缩略图。
@@ -71,6 +72,10 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 function create() {
   const name = title.value.trim()
   if (!name) return
+  if (!project.value) {
+    toast('请先选择所属项目', 'ri-error-warning-line')
+    return
+  }
   // addTask 立即返回本地记录、后台落库，所以这里不 await —— 弹窗即点即关。
   void data.addTask({
     title: name, project: project.value, pr: pr.value, owner: owner.value,
