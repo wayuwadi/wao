@@ -161,6 +161,30 @@ class TaskServiceTest {
         assertThatThrownBy(() -> service.get("nope")).isInstanceOf(NotFoundException.class);
     }
 
+    @Test
+    void listHidesTasksFromProjectsTheMemberCannotAccess() {
+        TaskEntity visible = todo();
+        TaskEntity hidden = todo();
+        hidden.setId("t2");
+        hidden.setProjectId("private-project");
+        when(mapper.selectList(null)).thenReturn(List.of(visible, hidden));
+        when(projects.get("p1", "wg")).thenReturn(null);
+        when(projects.get("private-project", "wg"))
+                .thenThrow(new NotFoundException("项目不存在：private-project"));
+
+        assertThat(service.list("wg")).extracting(TaskDto::id).containsExactly("t1");
+    }
+
+    @Test
+    void getDoesNotRevealTaskFromAnInvisibleProject() {
+        when(mapper.selectById("t1")).thenReturn(todo());
+        when(projects.get("p1", "wd")).thenThrow(new NotFoundException("项目不存在：p1"));
+
+        assertThatThrownBy(() -> service.get("t1", "wd"))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("任务不存在");
+    }
+
     /** 一条已有评论的任务，detail 里带 id。 */
     private TaskEntity withComment() {
         TaskEntity e = todo();
@@ -230,7 +254,8 @@ class TaskServiceTest {
     void deleteRemovesTheTask() {
         when(mapper.selectById("t1")).thenReturn(todo());
 
-        service.delete("t1");
+        when(projects.get("p1", "wg")).thenReturn(null);
+        service.delete("t1", "wg");
 
         verify(mapper).deleteById("t1");
     }
@@ -238,7 +263,7 @@ class TaskServiceTest {
     @Test
     void deleteThrowsWhenMissing() {
         when(mapper.selectById("nope")).thenReturn(null);
-        assertThatThrownBy(() -> service.delete("nope")).isInstanceOf(NotFoundException.class);
+        assertThatThrownBy(() -> service.delete("nope", "wg")).isInstanceOf(NotFoundException.class);
     }
 
     @Test

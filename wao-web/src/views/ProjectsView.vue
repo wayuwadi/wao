@@ -76,7 +76,8 @@ const taskView = ref<'list' | 'board'>('list')
 
 const myList = computed(() => {
   const me = session.currentUser.id
-  let list = data.tasks
+  // “我的任务”只收纳我负责或参与的任务；项目协作可见不等于该任务属于我。
+  let list = data.tasks.filter((t) => t.owner === me || t.parts.includes(me))
   if (taskFilter.value === '我负责') list = list.filter((t) => t.owner === me)
   if (taskFilter.value === '我参与') list = list.filter((t) => t.parts.includes(me))
   if (taskFilter.value === '等待他人') list = list.filter((t) => t.waiting)

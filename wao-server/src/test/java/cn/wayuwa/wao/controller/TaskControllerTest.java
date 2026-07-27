@@ -41,7 +41,8 @@ class TaskControllerTest {
 
     @Test
     void listReturnsEnvelope() throws Exception {
-        when(taskService.list()).thenReturn(List.of(sample()));
+        when(currentMember.idOr(org.mockito.ArgumentMatchers.any(), eq("wg"))).thenReturn("wg");
+        when(taskService.list("wg")).thenReturn(List.of(sample()));
 
         mockMvc.perform(get("/api/tasks"))
                 .andExpect(status().isOk())
@@ -52,7 +53,8 @@ class TaskControllerTest {
 
     @Test
     void missingTaskMapsTo404() throws Exception {
-        when(taskService.get(eq("nope"))).thenThrow(new NotFoundException("任务不存在：nope"));
+        when(currentMember.idOr(org.mockito.ArgumentMatchers.any(), eq("wg"))).thenReturn("wg");
+        when(taskService.get(eq("nope"), eq("wg"))).thenThrow(new NotFoundException("任务不存在：nope"));
 
         mockMvc.perform(get("/api/tasks/nope"))
                 .andExpect(status().isNotFound())
