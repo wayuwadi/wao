@@ -51,13 +51,15 @@ public class TaskController {
     }
 
     @PatchMapping("/{id}")
-    public ApiResponse<TaskDto> patch(@PathVariable String id, @RequestBody PatchTaskRequest request) {
-        return ApiResponse.ok(taskService.patch(id, request));
+    public ApiResponse<TaskDto> patch(@PathVariable String id, @RequestBody PatchTaskRequest request,
+            HttpServletRequest http) {
+        return ApiResponse.ok(taskService.patch(id, request, currentMember.id(http)));
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<TaskDto> replace(@PathVariable String id, @RequestBody TaskDto request) {
-        return ApiResponse.ok(taskService.replace(id, request));
+    public ApiResponse<TaskDto> replace(@PathVariable String id, @RequestBody TaskDto request,
+            HttpServletRequest http) {
+        return ApiResponse.ok(taskService.replace(id, request, currentMember.id(http)));
     }
 
     @DeleteMapping("/{id}")

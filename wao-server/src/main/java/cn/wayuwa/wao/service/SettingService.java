@@ -31,9 +31,20 @@ public class SettingService {
     public static final String CHAT_SYNC_FOLDER_ID = "feishu.chat-sync.folder-id";
     /** 发言人映射：JSON 数组 [{"id":"ou_x","name":"娃哥"}]。 */
     public static final String CHAT_SYNC_SENDERS = "feishu.chat-sync.senders";
+    /** 群聊快速收集：@机器人 直接建任务的总开关。 */
+    public static final String QUICK_COLLECT_ENABLED = "feishu.quick-collect.enabled";
+    /** 快速收集出来的任务默认落到哪个项目。 */
+    public static final String QUICK_COLLECT_PROJECT_ID = "feishu.quick-collect.project-id";
+    /** 事件订阅的 Verification Token（可选，配了就校验）。 */
+    public static final String QUICK_COLLECT_VERIFY_TOKEN = "feishu.quick-collect.verification-token";
+    /** 事件订阅的 Encrypt Key（可选，配了就解密事件体）。 */
+    public static final String QUICK_COLLECT_ENCRYPT_KEY = "feishu.quick-collect.encrypt-key";
+    /** 任务进入「收集中」时要 @ 的协作成员 open_id，逗号分隔；留空即只发通知不 @ 人。 */
+    public static final String QUICK_COLLECT_MENTIONS = "feishu.quick-collect.mention-open-ids";
 
     /** 这些键的值加密存储、对外脱敏。 */
-    private static final Set<String> SECRET_KEYS = Set.of(FEISHU_WEBHOOK_URL, CHAT_SYNC_APP_SECRET);
+    private static final Set<String> SECRET_KEYS = Set.of(FEISHU_WEBHOOK_URL, CHAT_SYNC_APP_SECRET,
+            QUICK_COLLECT_VERIFY_TOKEN, QUICK_COLLECT_ENCRYPT_KEY);
     private static final String ENC_PREFIX = "enc:";
 
     private final SystemSettingMapper mapper;

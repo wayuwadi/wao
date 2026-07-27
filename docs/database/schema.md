@@ -75,7 +75,7 @@ erDiagram
 | id | VARCHAR(32) PK | 任务 id |
 | title | VARCHAR(256) | 标题 |
 | project_id | VARCHAR(32) FK→project | 所属项目 |
-| status | VARCHAR(16) | 待办/进行中/AI 进行中/待验证/已完成（「阻塞」已由 V16 迁到「进行中」，等待他人改由 waiting 表达） |
+| status | VARCHAR(16) | 待办/收集中/进行中/AI 进行中/待验证/已完成（「阻塞」已由 V16 迁到「进行中」，等待他人改由 waiting 表达；进入「收集中」会自动分享到飞书群，见 ADR-027） |
 | pr | CHAR(2) | P0–P3 |
 | owner_id | VARCHAR(32) FK→member | 负责人 |
 | start_date | VARCHAR(16) NULL | 开始 |
@@ -233,6 +233,7 @@ erDiagram
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id / task_id / project_id | VARCHAR(32) | 运行、任务和项目 id |
+| sub_id | VARCHAR(64) NULL | 本次只跑这一条子任务；整条任务的运行为空。分享清单会把已派工的子任务摘掉（见 ADR-027） |
 | engine | VARCHAR(24) | 本次使用的 AI 工具：codex / claude |
 | status | VARCHAR(24) | queued / running / succeeded / failed / cancelled |
 | runner_id | VARCHAR(32) NULL | 实际领取的电脑 |
@@ -318,4 +319,5 @@ erDiagram
 - `V26__ai_run_usage.sql`：记录每次运行的模型、token 用量与折算额度（见 ADR-026）。
 - `V27__automation_run_executor.sql`：记录自动化任务每次手动运行的执行成员，定时任务保持为空。
 - `V28__reclassify_unsupported_ai_runs.sql`：把已经合并上线、仅因拒绝伪造非必要功能而误判失败的 AI Run 修正为成功，并将对应任务送回待验证。
+- `V29__feishu_quick_collect_and_sub_runs.sql`：AI 运行记录可指向单条子任务（见 ADR-027）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

@@ -11,6 +11,7 @@ import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.Activity;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
 import cn.wayuwa.wao.dto.CommentDto;
+import cn.wayuwa.wao.dto.CustomProp;
 import cn.wayuwa.wao.dto.PatchTaskRequest;
 import cn.wayuwa.wao.dto.TaskDetail;
 import cn.wayuwa.wao.dto.TaskDto;
@@ -24,19 +25,24 @@ import org.springframework.util.StringUtils;
 @Service
 public class TaskService {
 
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(TaskService.class);
     private static final String TODAY = "2026-07-23";
+    /** 想让同伴一起补充创意的状态：任务一进这个状态就自动分享到飞书群。 */
+    public static final String COLLECTING = "收集中";
 
     private final TaskMapper taskMapper;
     private final ObjectMapper json;
     private final FeishuCommentNotifier commentNotifier;
+    private final FeishuTaskNotifier taskNotifier;
     private final MemberService members;
     private final ProjectService projects;
 
     public TaskService(TaskMapper taskMapper, ObjectMapper json, FeishuCommentNotifier commentNotifier,
-            MemberService members, ProjectService projects) {
+            FeishuTaskNotifier taskNotifier, MemberService members, ProjectService projects) {
         this.taskMapper = taskMapper;
         this.json = json;
         this.commentNotifier = commentNotifier;
+        this.taskNotifier = taskNotifier;
         this.members = members;
         this.projects = projects;
     }
@@ -89,13 +95,15 @@ public class TaskService {
     /**
      * 局部更新任务；被修改的字段会写入活动时间线。
      *
-     * @param id  任务 id
-     * @param req 局部更新请求（空字段不改）
+     * @param id       任务 id
+     * @param req      局部更新请求（空字段不改）
+     * @param memberId 当前操作人成员 id，用于「收集中」通知里排掉自己
      * @return 更新后的任务
      * @throws NotFoundException 任务不存在时
      */
-    public TaskDto patch(String id, PatchTaskRequest req) {
+    public TaskDto patch(String id, PatchTaskRequest req, String memberId) {
         TaskEntity e = require(id);
+        String previousStatus = e.getStatus();
         TaskDetail d = parse(e.getDetailJson());
         List<Activity> activity = new ArrayList<>(nn(d.activity()));
 
@@ -122,17 +130,20 @@ public class TaskService {
                 d.linkTasks(), d.comments(), d.custom(), activity, d.images());
         e.setDetailJson(write(updated));
         taskMapper.updateById(e);
+        announceCollecting(e, previousStatus, memberId);
         return toDto(e);
     }
 
     /**
      * 全量替换 / 新增任务（前端本地变更后的写透）。
      *
-     * @param id  任务 id
-     * @param dto 完整任务
+     * @param id       任务 id
+     * @param dto      完整任务
+     * @param memberId 当前操作人成员 id，用于「收集中」通知里排掉自己
      * @return 保存后的任务
      */
-    public TaskDto replace(String id, TaskDto dto) {
+    public TaskDto replace(String id, TaskDto dto, String memberId) {
+        TaskEntity previous = taskMapper.selectById(id);
         TaskEntity e = new TaskEntity();
         e.setId(id);
         e.setTitle(dto.title());
@@ -147,11 +158,75 @@ public class TaskService {
         TaskDetail detail = new TaskDetail(dto.parts(), dto.steps(), dto.subs(), dto.files(),
                 dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images());
         e.setDetailJson(write(detail));
-        if (taskMapper.selectById(id) == null) {
+        if (previous == null) {
             taskMapper.insert(e);
         } else {
             taskMapper.updateById(e);
         }
+        announceCollecting(e, previous == null ? null : previous.getStatus(), memberId);
+        return toDto(e);
+    }
+
+    /**
+     * 任务刚进入「收集中」时，自动把它分享到飞书群请同伴一起补充。
+     *
+     * <p>这一步原本是手工的：改完状态、复制链接、发群里、@人。手工步骤越多，越容易在
+     * 想法最热的那一刻被打断，所以直接由状态变化触发。只在「进入」这个状态时发一次，
+     * 之后再保存任何字段都不会重复打扰群里。
+     *
+     * @param entity         保存后的任务
+     * @param previousStatus 保存前的状态；新建任务时为 null
+     * @param memberId       当前操作人成员 id
+     */
+    private void announceCollecting(TaskEntity entity, String previousStatus, String memberId) {
+        if (!COLLECTING.equals(entity.getStatus()) || COLLECTING.equals(previousStatus)) {
+            return;
+        }
+        try {
+            String projectName;
+            try {
+                projectName = projects.get(entity.getProjectId()).name();
+            } catch (NotFoundException ex) {
+                projectName = entity.getProjectId();
+            }
+            taskNotifier.notifyCollecting(entity.getId(), entity.getProjectId(), entity.getTitle(),
+                    projectName, entity.getDescription(), taskNotifier.feishuOpenId(memberId));
+        } catch (RuntimeException ex) {
+            // 通知失败不该让状态改不动：状态已经落库，群里没收到最多是少一次提醒
+            LOG.warn("任务进入收集中的飞书通知发送失败：{}", ex.getMessage());
+        }
+    }
+
+    /**
+     * 群聊快速收集：把飞书群里的一句话直接变成任务。
+     *
+     * <p>标题取第一行、描述留全文，并打上「群聊快速收集」标签 —— 事后一眼能认出这条是
+     * 随口冒出来的想法，而不是正式排期的需求。
+     *
+     * @param projectId 落点项目 id
+     * @param title     任务标题
+     * @param desc      任务描述（原始消息全文）
+     * @param ownerId   负责人成员 id；识别不出发言人时由调用方给默认值
+     * @param source    标签值，例如「群聊快速收集」
+     * @return 创建出来的任务
+     */
+    public TaskDto createFromChat(String projectId, String title, String desc, String ownerId, String source) {
+        TaskEntity e = new TaskEntity();
+        e.setId("t" + System.currentTimeMillis());
+        e.setTitle(title);
+        e.setProjectId(projectId);
+        e.setStatus("待办");
+        e.setPr("P2");
+        e.setOwnerId(ownerId);
+        e.setDueDate(TODAY);
+        e.setDescription(desc == null ? "" : desc);
+        TaskDetail detail = new TaskDetail(
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(new CustomProp("来源", source)),
+                List.of(new Activity("ri-chat-quote-line", "#9A9DA9", "由飞书群聊快速收集创建", "刚刚")),
+                List.of());
+        e.setDetailJson(write(detail));
+        taskMapper.insert(e);
         return toDto(e);
     }
 

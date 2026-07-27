@@ -72,3 +72,25 @@ export const fetchFeishuChatMembers = (chatId: string) =>
 /** 手动同步一天（默认今天）或一段连续日期，返回结果摘要。 */
 export const runChatSync = (range?: { day?: string; startDay?: string; endDay?: string }) =>
   post<string>('/api/feishu/chat-sync/run', range)
+
+/** 群聊快速收集：@机器人 直接建任务，以及「收集中」自动分享时要 @ 的人。 */
+export interface QuickCollectConfig {
+  enabled: boolean
+  projectId: string
+  verificationToken: string
+  hasVerificationToken: boolean
+  encryptKey: string
+  hasEncryptKey: boolean
+  mentionOpenIds: string[]
+}
+
+export const fetchQuickCollectConfig = () =>
+  get<QuickCollectConfig>('/api/feishu/quick-collect/config')
+/** verificationToken / encryptKey 传 undefined 表示保留已存的那一份。 */
+export const saveQuickCollectConfig = (payload: {
+  enabled?: boolean
+  projectId?: string
+  verificationToken?: string
+  encryptKey?: string
+  mentionOpenIds?: string[]
+}) => put<QuickCollectConfig>('/api/feishu/quick-collect/config', payload)

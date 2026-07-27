@@ -33,6 +33,7 @@ const STATUS: Record<string, Swatch> = {
   有风险: { bg: '#FBF3E4', color: '#A96A10' },
   已完成: { bg: '#E8F5EE', color: '#257A50' },
   待办: { bg: '#F0F1F4', color: '#5A5E6B' },
+  收集中: { bg: '#FAECF4', color: '#A63C7C' },
   'AI 进行中': { bg: '#F1ECFB', color: '#6B3FBF' },
   待验证: { bg: '#FBF3E4', color: '#A96A10' },
 }
@@ -43,15 +44,19 @@ export function statusMeta(s: ProjectStatus | TaskStatus): Swatch {
 }
 
 /**
- * 任务状态流转顺序：待办 → 进行中 → AI 进行中 → 待验证 → 已完成。
+ * 任务状态流转顺序：待办 → 收集中 → 进行中 → AI 进行中 → 待验证 → 已完成。
+ *
+ * <p>「收集中」是「先把想法丢出来、请同伴一起补」的阶段：任务一进这个状态，服务端就把它
+ * 分享到飞书群并 @ 上协作成员，省掉手动复制链接发群这一串动作。
  *
  * <p>看板列、状态下拉、分布图都读这一份，别再各自写一遍字面量数组。
  */
-export const TASK_STATUSES: TaskStatus[] = ['待办', '进行中', 'AI 进行中', '待验证', '已完成']
+export const TASK_STATUSES: TaskStatus[] = ['待办', '收集中', '进行中', 'AI 进行中', '待验证', '已完成']
 
 /** 看板 / 分布图上的状态圆点色（比胶囊底色更实，用于小面积着色）。 */
 export const TASK_STATUS_DOTS: Record<TaskStatus, string> = {
   待办: '#C9CDDA',
+  收集中: '#D172A8',
   进行中: '#4358D6',
   'AI 进行中': '#8A5CD6',
   待验证: '#D9A13B',

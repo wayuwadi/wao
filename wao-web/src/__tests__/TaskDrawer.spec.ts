@@ -6,6 +6,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
+import type { AiRun } from '@/types'
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
@@ -35,6 +36,23 @@ vi.mock('@/api/ai', () => ({
     },
   ]),
 }))
+
+/** 一条最小可用的 AI 运行记录；只写这条用例关心的字段，其余用默认值补齐。 */
+function aiRun(overrides: Partial<AiRun> & Pick<AiRun, 'id' | 'taskId'>): AiRun {
+  return {
+    taskTitle: 'AI 任务', subId: null, subTitle: null, projectId: 'p1', projectName: 'WAO',
+    engine: 'codex', status: 'running', runnerId: null, runnerName: null, requestedRunnerId: null,
+    branchName: null, retryOfRunId: null, resultSummary: null, latestProgress: null,
+    progressUpdatedAt: null, progress: [],
+    usage: {
+      model: null, models: null, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0,
+      totalTokens: 0, costUsd: null, recorded: false,
+    },
+    sessionId: null, exitCode: null, createdAt: '2026-07-27T09:00:00',
+    startedAt: null, finishedAt: null,
+    ...overrides,
+  }
+}
 
 const router = createRouter({ history: createWebHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div/>' } }] })
 
@@ -256,12 +274,12 @@ describe('TaskDrawer', () => {
 
     const filter = w.find('.share-filter')
     expect(filter.exists()).toBe(true)
-    expect(filter.text()).toContain('只分享未完成的子任务')
+    expect(filter.text()).toContain('只分享还没人做的子任务')
     expect(w.find('.share-scope').text()).toContain('全部子任务')
 
     await filter.find('input').setValue(true)
 
-    expect(w.find('.share-scope').text()).toContain('未完成的子任务')
+    expect(w.find('.share-scope').text()).toContain('还没人做的子任务')
   })
 
   it('没有已完成子任务时不显示这个开关——没有可过滤的东西', async () => {
@@ -290,7 +308,58 @@ describe('TaskDrawer', () => {
     await w.find('.launcher footer .primary').trigger('click')
     await flushPromises()
 
-    expect(createAiRuns).toHaveBeenCalledWith([taskId], { engine: 'claude', runnerId: null })
+    expect(createAiRuns).toHaveBeenCalledWith([taskId], { subId: null, engine: 'claude', runnerId: null })
+    w.unmount()
+  })
+
+  it('子任务可以单独派给 AI，选择器上写明本次只跑这一条', async () => {
+    const { createAiRuns } = await import('@/api/ai')
+    vi.mocked(createAiRuns).mockClear()
+    const subId = data.addSub(taskId, '子任务也能单独跑')!
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.find('.sub-row .sub-ai').trigger('click')
+    await flushPromises()
+
+    expect(w.find('.launcher .scope').text()).toContain('子任务也能单独跑')
+
+    await w.find('.launcher footer .primary').trigger('click')
+    await flushPromises()
+
+    expect(createAiRuns).toHaveBeenCalledWith([taskId], { subId, engine: 'codex', runnerId: null })
+    w.unmount()
+  })
+
+  it('已经派过工的子任务只显示标记，不再给第二个派工入口', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    const subId = data.addSub(taskId, '已经在跑的子任务')!
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({ id: 'ar9', taskId, subId, subTitle: '已经在跑的子任务', status: 'running' }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    expect(w.find('.sub-row .sub-dispatched').exists()).toBe(true)
+    expect(w.find('.sub-row .sub-ai').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('跑成功的运行也能继续给提示词，按钮写「继续优化」', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({
+        id: 'ar8', taskId, status: 'succeeded', engine: 'claude',
+        runnerId: 'rn1', sessionId: 'thread-8', resultSummary: '移动端已优化',
+      }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    expect(w.find('.ai-continue button').text()).toContain('继续优化')
     w.unmount()
   })
 

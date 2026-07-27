@@ -98,12 +98,13 @@ export interface CustomProp {
 }
 
 /**
- * 任务状态。「AI 进行中」标记交给 AI 跑的任务，「待验证」是做完但还没验收的任务。
+ * 任务状态。「收集中」表示正在向同伴征集想法（进入这个状态会自动分享到飞书群），
+ * 「AI 进行中」标记交给 AI 跑的任务，「待验证」是做完但还没验收的任务。
  *
  * <p>老的「阻塞」已下线（V16 迁移到「进行中」）：等待他人由 {@link Task#waiting} 表达，
  * 不必再占一个状态位。
  */
-export type TaskStatus = '待办' | '进行中' | 'AI 进行中' | '待验证' | '已完成'
+export type TaskStatus = '待办' | '收集中' | '进行中' | 'AI 进行中' | '待验证' | '已完成'
 export type Priority = 'P0' | 'P1' | 'P2' | 'P3'
 
 export interface Task {
@@ -349,6 +350,10 @@ export interface AiRun {
   id: string
   taskId: string
   taskTitle: string
+  /** 本次只跑这一条子任务；整个任务的运行为 null。 */
+  subId: string | null
+  /** 子任务标题，用于在执行记录里标明跑的是哪一条。 */
+  subTitle: string | null
   projectId: string
   projectName: string
   engine: AiEngine

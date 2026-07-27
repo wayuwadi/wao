@@ -219,10 +219,18 @@ paths:
       parameters: [ { name: active, in: query, required: false, schema: { type: boolean } } ]
       responses: { '200': { description: OK } }
     post:
-      summary: 批量把任务加入 AI 队列；可选 engine（codex/claude）与 runnerId 指定执行电脑，活动任务自动去重
+      summary: 批量把任务加入 AI 队列；可选 subId 只跑一条子任务、engine（codex/claude）与 runnerId 指定执行电脑，活动运行自动去重
+      description: |
+        subId 非空时只跑主任务下的这一条子任务（此时 taskIds 只能有一个任务），
+        提示词地址指向 /share/tasks/{id}/subs/{subId}.md；主任务派工的提示词地址一律带
+        openOnly=true，已完成和已经单独派过工的子任务不会再进入本次范围。
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateAiRunsRequest' } } }
       responses:
         '200': { description: 返回实际创建的运行 }
-        '400': { description: 项目未启用、未配置仓库，或没有电脑接入所选 AI 工具 }
+        '400': { description: 项目未启用、未配置仓库、没有电脑接入所选 AI 工具，或按子任务派工时选了多个任务 }
+        '404': { description: 任务或子任务不存在 }
   /ai/runs/{runId}/rerun:
     post:
       summary: 基于一次失败运行重新排队；新运行会带上上次的报错交给 AI 继续修
@@ -232,7 +240,10 @@ paths:
         '400': { description: 该运行还没结束、任务已有运行在进行中，或项目未启用 AI Run }
   /ai/runs/{runId}/continue:
     post:
-      summary: 向已阻塞且保留会话 id 的 AI Run 补充信息；固定派回原执行电脑恢复同一会话
+      summary: 向已结束且保留会话 id 的 AI Run 追加提示词；固定派回原执行电脑恢复同一会话
+      description: |
+        失败的运行用它补充信息接着修；成功但不符合预期的运行用它继续优化 ——
+        两种都在原会话和原 worktree 上继续，不从零重来（见 ADR-027）。
       requestBody:
         required: true
         content: { application/json: { schema: { type: object, required: [input], properties: { input: { type: string, maxLength: 4000 } } } } }
@@ -320,6 +331,31 @@ paths:
         - { name: startDay, in: query, required: false, schema: { type: string, format: date }, description: 批量同步起始日期，须与 endDay 同时提供 }
         - { name: endDay, in: query, required: false, schema: { type: string, format: date }, description: 批量同步结束日期，须与 startDay 同时提供；一次最多 366 天 }
       responses: { '200': { description: OK }, '400': { description: 配置不完整 }, '502': { description: 调用飞书失败（code=50203） } }
+  # 群聊快速收集：@机器人 直接建任务（见 docs/adr/027-feishu-quick-collect-and-subtask-runs.md）
+  /feishu/quick-collect/config:
+    get:
+      summary: 快速收集配置（Verification Token / Encrypt Key 只回脱敏形态）
+      responses: { '200': { description: OK } }
+    put:
+      summary: 保存快速收集配置（密文字段省略表示保留原值）
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SaveQuickCollectConfigRequest' } } }
+      responses: { '200': { description: OK } }
+  /feishu/events:
+    post:
+      summary: 公开：飞书事件订阅回调（URL 校验与群消息都走这里）
+      description: |
+        免登录接口，请求真实性由 Verification Token / Encrypt Key 保证。
+        不返回 ApiResponse 包装：url_verification 时按飞书协议回 { challenge }，其余回空对象。
+        群里 @机器人 的文本 / 富文本消息会被建成任务并打上「群聊快速收集」标签；
+        语音条不做转写，回一句提示让发送者改用飞书的语音转文字。
+      requestBody:
+        required: false
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        '200': { description: OK }
+        '400': { description: Verification Token 不匹配或事件解密失败 }
   /files:
     get: { summary: 文件元数据列表（不读取二进制正文）, responses: { '200': { description: OK } } }
     post:
@@ -657,6 +693,27 @@ components:
         totalTokens: { type: integer, format: int64 }
         costUsd: { type: number, nullable: true }
         recorded: { type: boolean, description: false 表示这次没记上账，不是「用了 0」 }
+    CreateAiRunsRequest:
+      type: object
+      required: [taskIds]
+      description: subId 非空时只跑这一条子任务，此时 taskIds 只能有一个任务
+      properties:
+        taskIds: { type: array, items: { type: string }, minItems: 1 }
+        subId: { type: string, nullable: true, description: 子任务标识；历史数据没有 id 时形如 <taskId>#<下标> }
+        engine: { type: string, nullable: true, enum: [codex, claude, auto], description: 留空沿用项目默认工具 }
+        runnerId: { type: string, nullable: true, description: 留空表示由任意在线且支持该工具的电脑领取 }
+    SaveQuickCollectConfigRequest:
+      type: object
+      description: 字段为 null 表示不修改；密文字段留空即保留已存的那一份
+      properties:
+        enabled: { type: boolean, description: 是否接收群里 @机器人 建任务 }
+        projectId: { type: string, description: 落点项目；留空时自动找「Wa All in One」 }
+        verificationToken: { type: string, description: 飞书事件订阅的 Verification Token }
+        encryptKey: { type: string, description: 飞书事件订阅的 Encrypt Key }
+        mentionOpenIds:
+          type: array
+          items: { type: string }
+          description: 任务进入「收集中」时要 @ 的成员 open_id；操作人自己永远会被排除
     SaveWebhookRequest:
       type: object
       description: url 省略表示不修改地址；明文只在服务端使用，加密后落 system_setting

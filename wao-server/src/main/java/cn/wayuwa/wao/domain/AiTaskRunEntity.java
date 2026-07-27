@@ -12,6 +12,8 @@ public class AiTaskRunEntity {
     @TableId
     private String id;
     private String taskId;
+    /** 本次运行针对的子任务标识；整个主任务的运行为 null。 */
+    private String subId;
     private String projectId;
     private String engine;
     private String status;
@@ -47,6 +49,8 @@ public class AiTaskRunEntity {
     public void setId(String id) { this.id = id; }
     public String getTaskId() { return taskId; }
     public void setTaskId(String taskId) { this.taskId = taskId; }
+    public String getSubId() { return subId; }
+    public void setSubId(String subId) { this.subId = subId; }
     public String getProjectId() { return projectId; }
     public void setProjectId(String projectId) { this.projectId = projectId; }
     public String getEngine() { return engine; }

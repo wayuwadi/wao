@@ -20,13 +20,18 @@ export const fetchAiRunners = () => data<AiRunner[]>(http.get('/api/ai/runners')
 export const createAiPairCode = () =>
   data<{ code: string; expiresAt: string }>(http.post('/api/ai/runners/pair-code'))
 
-/** 入队；engine / runnerId 留空表示沿用项目默认工具并由任意在线电脑领取。 */
+/**
+ * 入队；engine / runnerId 留空表示沿用项目默认工具并由任意在线电脑领取。
+ *
+ * <p>传 subId 表示只跑这一条子任务，此时 taskIds 只能有一个任务。
+ */
 export const createAiRuns = (
   taskIds: string[],
-  options: { engine?: AiEngine | null; runnerId?: string | null } = {},
+  options: { subId?: string | null; engine?: AiEngine | null; runnerId?: string | null } = {},
 ) =>
   data<AiRun[]>(http.post('/api/ai/runs', {
     taskIds,
+    subId: options.subId ?? null,
     engine: options.engine ?? null,
     runnerId: options.runnerId ?? null,
   }))

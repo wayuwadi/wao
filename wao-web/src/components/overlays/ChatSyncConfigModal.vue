@@ -9,15 +9,19 @@
 import { onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
+import { copyToClipboard } from '@/utils/clipboard'
 import {
   fetchChatSyncConfig,
   fetchFeishuChatMembers,
   fetchFeishuChats,
+  fetchQuickCollectConfig,
   runChatSync,
   saveChatSyncConfig,
+  saveQuickCollectConfig,
   type ChatSyncConfig,
   type FeishuChat,
   type FeishuSender,
+  type QuickCollectConfig,
 } from '@/api/system'
 
 const emit = defineEmits<{ close: [] }>()
@@ -39,16 +43,43 @@ const senders = ref<FeishuSender[]>([])
 const chats = ref<FeishuChat[]>([])
 const chatsLoaded = ref(false)
 
+// ---- 群聊快速收集（@机器人 直接建任务 + 「收集中」自动分享回群） ----
+const quick = ref<QuickCollectConfig | null>(null)
+const quickEnabled = ref(false)
+const quickProjectId = ref('')
+const verifyToken = ref('')
+const encryptKey = ref('')
+const mentionIds = ref<string[]>([])
+
+/** 事件订阅地址：填到飞书开放平台「事件订阅」里，机器人收到的消息才会送到 WAO。 */
+const eventUrl = `${window.location.origin}/api/feishu/events`
+
+function toggleMention(id: string) {
+  mentionIds.value = mentionIds.value.includes(id)
+    ? mentionIds.value.filter((x) => x !== id)
+    : [...mentionIds.value, id]
+}
+
+async function copyEventUrl() {
+  toast(
+    (await copyToClipboard(eventUrl)) ? '事件订阅地址已复制' : '复制失败，请手动选中地址',
+    'ri-links-line',
+  )
+}
 
 onMounted(async () => {
   try {
-    const c = await fetchChatSyncConfig()
+    const [c, q] = await Promise.all([fetchChatSyncConfig(), fetchQuickCollectConfig()])
     cfg.value = c
     appId.value = c.appId
     chatId.value = c.chatId
     chatName.value = c.chatName
     kbId.value = c.kbId
     senders.value = c.senders.map((s) => ({ ...s }))
+    quick.value = q
+    quickEnabled.value = q.enabled
+    quickProjectId.value = q.projectId
+    mentionIds.value = [...q.mentionOpenIds]
   } catch (error) {
     toast(error instanceof Error ? error.message : '读取配置失败')
   } finally {
@@ -97,8 +128,22 @@ function removeSender(i: number) {
   senders.value = senders.value.filter((_, j) => j !== i)
 }
 
+/** 快速收集单独存一份：密文字段留空表示保留已存的那一份。 */
+async function persistQuick() {
+  quick.value = await saveQuickCollectConfig({
+    enabled: quickEnabled.value,
+    projectId: quickProjectId.value,
+    verificationToken: verifyToken.value.trim() || undefined,
+    encryptKey: encryptKey.value.trim() || undefined,
+    mentionOpenIds: mentionIds.value,
+  })
+  verifyToken.value = ''
+  encryptKey.value = ''
+}
+
 /** 把当前表单存到服务端；App Secret 留空表示保留已存的那把。 */
 async function persist() {
+  await persistQuick()
   const saved = await saveChatSyncConfig({
     appId: appId.value.trim(),
     appSecret: appSecret.value.trim() || undefined,
@@ -233,6 +278,56 @@ async function runHistory() {
           <button class="row-del" title="移除" @click="removeSender(i)"><i class="ri-close-line"></i></button>
         </div>
         <div v-if="!senders.length" class="empty">还没有映射 —— 点「读取群成员」把 ID 和人对上</div>
+      </div>
+
+      <div class="section">
+        <div class="label-row">
+          <div class="label">群聊快速收集</div>
+          <div class="spacer"></div>
+          <label class="switch">
+            <input v-model="quickEnabled" type="checkbox" />
+            <span>在群里 @机器人 就建任务</span>
+          </label>
+        </div>
+        <div class="tip">
+          想法冒出来的时候在群里 @ 一下机器人，消息第一行成为任务标题、全文成为描述，并打上「群聊快速收集」标签。
+          手机上直接用飞书的语音输入说完就发即可；发语音条我认不出来，会回一句提示让你转文字。
+        </div>
+        <div class="event-url">
+          <span class="mono ellip">{{ eventUrl }}</span>
+          <button class="mini-btn" @click="copyEventUrl"><i class="ri-file-copy-line"></i>复制事件订阅地址</button>
+        </div>
+        <div class="two">
+          <select v-model="quickProjectId" class="input">
+            <option value="">默认落到「Wa All in One」</option>
+            <option v-for="p in data.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </div>
+        <div class="two">
+          <input
+            v-model="verifyToken"
+            class="input"
+            type="password"
+            autocomplete="new-password"
+            :placeholder="quick?.hasVerificationToken ? `Verification Token（已配置 ${quick.verificationToken}，留空不改）` : 'Verification Token（可选）'"
+          />
+          <input
+            v-model="encryptKey"
+            class="input"
+            type="password"
+            autocomplete="new-password"
+            :placeholder="quick?.hasEncryptKey ? `Encrypt Key（已配置 ${quick.encryptKey}，留空不改）` : 'Encrypt Key（可选）'"
+          />
+        </div>
+        <div class="label sub-label">任务进入「收集中」时 @ 这些人</div>
+        <div class="mention-list">
+          <label v-for="s in senders.filter((x) => x.id)" :key="s.id" class="mention">
+            <input type="checkbox" :checked="mentionIds.includes(s.id)" @change="toggleMention(s.id)" />
+            <span>{{ s.name || s.id }}</span>
+          </label>
+          <div v-if="!senders.filter((x) => x.id).length" class="empty">先在上面读取群成员，这里才能勾人</div>
+        </div>
+        <div class="tip">操作人自己永远不会被 @；一个人都不勾就只发通知不 @ 人。</div>
       </div>
 
       <div class="foot">
@@ -460,6 +555,20 @@ async function runHistory() {
   align-items: center;
   gap: 10px;
 }
+.switch { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--wao-text-2); cursor: pointer; }
+.sub-label { margin-top: 12px; }
+.event-url {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  background: var(--wao-bg-sub);
+}
+.event-url .mono { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--wao-text-2); }
+.mention-list { margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.mention { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wao-text-2); cursor: pointer; }
 .history-run { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--wao-divider); }
 .history-controls { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .history-controls .run-day .input { width: 132px; }

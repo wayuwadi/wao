@@ -490,6 +490,31 @@ def build_prompt(claim: dict[str, Any]) -> str:
     return prompt
 
 
+def build_continuation_prompt(claim: dict[str, Any], continuation: str) -> str:
+    """
+    续跑的提示词。
+
+    上一次可能失败（补充信息接着修），也可能成功但不符合预期（基于这一版继续优化）。
+    两种情况都不该从零重来：会话和 worktree 都还在，AI 记得自己改过什么。但成功那次
+    已经提交合并过了，所以必须重申一遍「改完还要提交、合并、盯部署」，否则 AI 很容易
+    以为只要在本地改好就算完成。
+    """
+    base = claim["defaultBranch"]
+    return (
+        "用户对这次运行给出了新的输入，请在当前任务、已有工作区和你自己的记忆基础上继续，"
+        "不要把已经做对的部分推倒重来：\n\n"
+        f"{continuation}\n\n"
+        f"仍然留在分支 `{claim['branchName']}` 上工作；需要对比基线时用 "
+        f"`git fetch origin {base}` 之后读 `origin/{base}`。"
+        "如果上一次的改动已经合并进 main，这次就在它的基础上继续改。\n\n"
+        "改完同样要跑与风险相称的测试、写详细中文提交、创建 PR 并合并 main，"
+        "然后用 gh 盯住这次部署直到成功，再验证线上结果。\n\n"
+        "最终答复仍以状态行开头：完成并验收通过写 `WAO_RUN_STATUS: SUCCESS`；"
+        "因缺少真实实现条件而取消功能、其余已完成写 `WAO_RUN_STATUS: SKIPPED`；"
+        "确实阻塞才写 `WAO_RUN_STATUS: BLOCKED`。"
+    )
+
+
 def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter",
         environment: dict[str, str] | None = None,
@@ -664,7 +689,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             if not worktree.exists():
                 raise RuntimeError("原 AI 工作区不存在，无法安全恢复会话；请使用基于报错重跑")
             reporter.send("phase", "正在恢复原 AI 会话", force=True)
-            prompt = "用户补充了以下信息，请在当前任务和已有工作区基础上继续执行：\n\n" + continuation
+            prompt = build_continuation_prompt(claim, continuation)
         else:
             worktree = prepare_worktree(
                 claim, root, git_command, resolve_repo_url(claim["repoUrl"], git_protocol, https_ready))
