@@ -363,6 +363,35 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
+  it('AI 未报告任务状态（退出码 3）时显示「结果待确认」而不是「执行失败」', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({
+        id: 'ar10', taskId, status: 'failed', exitCode: 3, engine: 'qoder',
+        runnerId: 'rn1', sessionId: 'thread-10',
+        resultSummary: 'Qoder 已结束会话，但最终答复没有按约定报告任务状态',
+      }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    expect(w.find('.ai-run-state').text()).toBe('结果待确认')
+    expect(w.find('.ai-run-state').classes()).toContain('state-unconfirmed')
+    expect(w.find('.ai-final-result b').text()).toContain('结果待确认（AI 未报告任务状态）')
+    // 真正的失败（其它退出码）仍然明确说失败，两种情况不能混。
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({ id: 'ar11', taskId, status: 'failed', exitCode: 1, resultSummary: '构建失败' }),
+    ])
+    ui.closeTask()
+    await flushPromises()
+    ui.openTask(taskId)
+    await flushPromises()
+    expect(w.find('.ai-run-state').text()).toBe('执行失败')
+    expect(w.find('.ai-final-result b').text()).toBe('失败原因')
+    w.unmount()
+  })
+
   it('展开子任务时，分享范围收敛到该子任务', async () => {
     data.addSub(taskId, '扫描身份证')
     ui.openTask(taskId)

@@ -24,6 +24,7 @@ import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
+import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
@@ -51,9 +52,10 @@ class AiRunServiceTest {
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final TaskService tasks = mock(TaskService.class);
     private final FeishuTaskNotifier notifier = mock(FeishuTaskNotifier.class);
+    private final RunnerScriptService scripts = mock(RunnerScriptService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
-            tasks, notifier);
+            tasks, notifier, scripts);
 
     @BeforeEach
     void emptyProgressByDefault() {
@@ -265,10 +267,73 @@ class AiRunServiceTest {
         when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
         when(runMapper.selectList(any())).thenReturn(List.of());
 
-        service.heartbeat("local-token", 3, null);
+        service.heartbeat("local-token", 3, null, null);
 
         assertThat(runner.getAdminMaxConcurrency()).isEqualTo(5);
         assertThat(runner.getMaxConcurrency()).isEqualTo(3);
+    }
+
+    @Test
+    void heartbeatStoresScriptHashAndClearsUpdateFlagWhenAlreadyLatest() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setTokenHash("hashed-token");
+        runner.setUpdateRequestedAt(LocalDateTime.now().minusMinutes(5));
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(scripts.available()).thenReturn(true);
+        when(scripts.hash()).thenReturn("latest-hash");
+
+        service.heartbeat("local-token", null, null, "latest-hash");
+
+        assertThat(runner.getScriptHash()).isEqualTo("latest-hash");
+        assertThat(runner.getUpdateRequestedAt()).isNull();
+    }
+
+    @Test
+    void heartbeatKeepsUpdateFlagWhileRunnerStillReportsOldScript() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setTokenHash("hashed-token");
+        runner.setUpdateRequestedAt(LocalDateTime.now().minusMinutes(5));
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(scripts.available()).thenReturn(true);
+        when(scripts.hash()).thenReturn("latest-hash");
+
+        AiRunnerDto dto = service.heartbeat("local-token", null, null, "old-hash");
+
+        assertThat(runner.getUpdateRequestedAt()).isNotNull();
+        assertThat(dto.updateRequested()).isTrue();
+        assertThat(dto.scriptUpToDate()).isFalse();
+    }
+
+    @Test
+    void requestScriptUpdateFlagsOnlyOutdatedRunners() {
+        AiRunnerNodeEntity stale = runner("rn1", "娃哥电脑", "codex");
+        stale.setScriptHash("old-hash");
+        AiRunnerNodeEntity fresh = runner("rn2", "Linux 主节点", "claude");
+        fresh.setScriptHash("latest-hash");
+        when(runnerMapper.selectList(any())).thenReturn(List.of(stale, fresh));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(scripts.available()).thenReturn(true);
+        when(scripts.hash()).thenReturn("latest-hash");
+
+        service.requestScriptUpdate();
+
+        assertThat(stale.getUpdateRequestedAt()).isNotNull();
+        assertThat(fresh.getUpdateRequestedAt()).isNull();
+        verify(runnerMapper, times(1)).updateById(stale);
+        verify(runnerMapper, never()).updateById(fresh);
+    }
+
+    @Test
+    void requestScriptUpdateFailsWhenScriptIsNotBundled() {
+        when(scripts.available()).thenReturn(false);
+
+        assertThatThrownBy(service::requestScriptUpdate)
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("没有打包 Runner 脚本");
     }
 
     @Test
@@ -569,7 +634,22 @@ class AiRunServiceTest {
                         null, null, null, null, null));
 
         verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"), any(),
-                eq("Claude Code"), eq("整个任务"), eq(true), any());
+                eq("Claude Code"), eq("整个任务"), eq(true), eq(false), any());
+    }
+
+    @Test
+    void unreportedStatusIsAnnouncedAsUnconfirmedInsteadOfFailure() {
+        AiTaskRunEntity run = runningRun();
+
+        // 退出码 3 是 Runner 的约定：AI 结束了会话但没报告任务状态，提示不能笼统说成失败。
+        service.complete("local-token", "ar1",
+                new CompleteAiRunRequest(3, "Qoder 已结束会话，但最终答复没有按约定报告任务状态", "sess-1",
+                        null, null, null, null, null, null, null));
+
+        assertThat(run.getStatus()).isEqualTo("failed");
+        assertThat(run.getLatestProgress()).contains("未报告任务状态").doesNotContain("失败原因");
+        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"), any(),
+                eq("Claude Code"), eq("整个任务"), eq(false), eq(true), any());
     }
 
     /** 只带一条子任务的任务视图，供子任务派工用。 */

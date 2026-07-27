@@ -17,6 +17,7 @@ import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
+import cn.wayuwa.wao.dto.RunnerScriptDto;
 import cn.wayuwa.wao.dto.UpdateRunnerConcurrencyRequest;
 import cn.wayuwa.wao.service.AiRunService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -73,6 +74,12 @@ public class AiRunController {
         return ApiResponse.ok(service.createPairCode());
     }
 
+    /** 一键把服务端打包的最新 Runner 脚本下发给所有执行电脑。 */
+    @PostMapping("/runners/update-script")
+    public ApiResponse<List<AiRunnerDto>> updateRunnerScript() {
+        return ApiResponse.ok(service.requestScriptUpdate());
+    }
+
     @PutMapping("/runners/{runnerId}/max-concurrency")
     public ApiResponse<AiRunnerDto> updateRunnerMaxConcurrency(@PathVariable String runnerId,
             @Valid @RequestBody UpdateRunnerConcurrencyRequest request) {
@@ -118,8 +125,15 @@ public class AiRunController {
     @PostMapping("/runner/heartbeat")
     public ApiResponse<AiRunnerDto> heartbeat(@RequestHeader(RUNNER_TOKEN) String token,
             @RequestParam(required = false) Integer maxConcurrency,
-            @RequestParam(required = false) String engines) {
-        return ApiResponse.ok(service.heartbeat(token, maxConcurrency, engines));
+            @RequestParam(required = false) String engines,
+            @RequestParam(required = false) String scriptHash) {
+        return ApiResponse.ok(service.heartbeat(token, maxConcurrency, engines, scriptHash));
+    }
+
+    /** 执行电脑收到更新指令后拉取最新脚本。 */
+    @GetMapping("/runner/script")
+    public ApiResponse<RunnerScriptDto> runnerScript(@RequestHeader(RUNNER_TOKEN) String token) {
+        return ApiResponse.ok(service.fetchRunnerScript(token));
     }
 
     @PostMapping("/runner/claim")

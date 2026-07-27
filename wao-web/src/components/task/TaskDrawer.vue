@@ -86,6 +86,18 @@ const aiRunLabel: Record<AiRunStatus, string> = {
   queued: '等待领取', claimed: '准备中', running: '正在运行', succeeded: '等待验收',
   failed: '执行失败', cancelled: '已取消',
 }
+// 退出码 3 是 Runner 的约定：AI 结束了会话但没报告任务状态，成败需要人判断，
+// 不能直接挂一个「执行失败」让人分不清到底成没成。
+function aiRunStatusUnreported(run: AiRun) {
+  return run.status === 'failed' && run.exitCode === 3
+}
+function aiRunStateLabel(run: AiRun) {
+  return aiRunStatusUnreported(run) ? '结果待确认' : aiRunLabel[run.status]
+}
+function aiRunResultTitle(run: AiRun) {
+  if (aiRunStatusUnreported(run)) return '结果待确认（AI 未报告任务状态）'
+  return run.status === 'failed' ? '失败原因' : '最终结果'
+}
 const activeAiRun = computed(() => aiRuns.value.find((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 /** 已经单独派过 AI 工的子任务：行上标一下，分享给 AI 时它们也会被自动摘掉。 */
 const dispatchedSubIds = computed(
@@ -710,7 +722,7 @@ function demo(msg: string) {
             <div v-if="aiRunsLoading && !aiRuns.length" class="ai-archive-loading"><i class="ri-loader-4-line"></i>正在读取 AI 记录…</div>
             <details v-for="(run, index) in aiRuns" v-else :key="run.id" class="ai-run-entry" :open="index === 0">
               <summary>
-                <span class="ai-run-state" :class="`state-${run.status}`">{{ aiRunLabel[run.status] }}</span>
+                <span class="ai-run-state" :class="aiRunStatusUnreported(run) ? 'state-unconfirmed' : `state-${run.status}`">{{ aiRunStateLabel(run) }}</span>
                 <span class="ai-run-engine" :title="`执行工具：${engineLabel(run.engine)}`"><i :class="engineIcon(run.engine)"></i></span>
                 <span v-if="run.subId" class="ai-run-scope" :title="`只跑子任务：${run.subTitle ?? run.subId}`">
                   子任务 · {{ run.subTitle ?? run.subId }}
@@ -725,7 +737,7 @@ function demo(msg: string) {
                 </div>
                 <AiRunProgressTimeline :run="run" />
                 <div v-if="run.resultSummary" class="ai-final-result">
-                  <b>{{ run.status === 'failed' ? '失败原因' : '最终结果' }}</b>
+                  <b>{{ aiRunResultTitle(run) }}</b>
                   <p>{{ run.resultSummary }}</p>
                 </div>
                 <div
@@ -1725,6 +1737,7 @@ function demo(msg: string) {
 .ai-run-state { flex: 0 0 auto; padding: 3px 7px; border-radius: 5px; background: #eef1ff; color: #4056c5; font-size: 10px; }
 .ai-run-state.state-succeeded { background: #e8f7ef; color: #237a4b; }
 .ai-run-state.state-failed { background: #fff0f0; color: #b33a3a; }
+.ai-run-state.state-unconfirmed { background: #fff7df; color: #8a5b0d; }
 .ai-run-scope { flex: 0 0 auto; max-width: 130px; overflow: hidden; padding: 3px 7px; border-radius: 5px; background: #f1ecfb; color: #6b3fbf; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-run-latest { flex: 1; min-width: 0; overflow: hidden; color: var(--wao-text-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-run-entry summary time { flex: 0 0 auto; color: var(--wao-text-faint); font-size: 10px; }

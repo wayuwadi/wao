@@ -53,7 +53,11 @@ class RunnerInvocationTest(unittest.TestCase):
         code, summary = RUNNER.normalize_result(0, "请把任务链接发来")
 
         self.assertEqual(3, code)
-        self.assertIn("没有确认任务完成", summary)
+        self.assertIn("没有按约定报告任务状态", summary)
+        # 提示必须说清楚这是「结果待确认」而不是笼统的失败，并告诉用户下一步怎么办。
+        self.assertIn("无法确认任务是否真的完成", summary)
+        self.assertIn("让 AI 在原会话中继续", summary)
+        self.assertIn("请把任务链接发来", summary)
 
     def test_blocked_marker_is_reported_as_failure(self) -> None:
         code, summary = RUNNER.normalize_result(0, "WAO_RUN_STATUS: BLOCKED\n缺少部署权限")
@@ -425,6 +429,65 @@ class PromptTest(unittest.TestCase):
     def test_prompt_forbids_checking_out_the_default_branch(self) -> None:
         self.assertIn("不要 checkout / switch 到 `main`", self.PROMPT)
         self.assertIn("不要新建其它 worktree", self.PROMPT)
+
+    def test_prompt_warns_that_stopping_the_reply_ends_the_session(self) -> None:
+        # 本次翻车现场：AI 说「盯着部署稍后汇报」就结束了回复，会话直接结束。
+        self.assertIn("不存在「稍后再汇报」", self.PROMPT)
+        self.assertIn("不存在「稍后再汇报」", RUNNER.build_continuation_prompt(
+            {"branchName": "ai/wao-ar1", "defaultBranch": "main"}, "继续盯部署"))
+
+
+class ScriptUpdateTest(unittest.TestCase):
+    """后台一键分发 Runner 脚本更新：拉取、校验、原地替换、重启。"""
+
+    def setUp(self) -> None:
+        self.workspace = Path(tempfile.mkdtemp(prefix="wao-update-"))
+        self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
+        self.script = self.workspace / "wao-ai-runner.py"
+        self.script.write_text("print('old')\n", encoding="utf-8")
+
+    @staticmethod
+    def _payload(content: str) -> dict[str, str]:
+        import hashlib
+
+        return {"content": content, "hash": hashlib.sha256(content.encode("utf-8")).hexdigest()}
+
+    def test_verified_script_replaces_itself_and_restarts(self) -> None:
+        api = Mock()
+        api.get.return_value = self._payload("print('new')\n")
+
+        with patch.object(RUNNER, "restart_self") as restart:
+            RUNNER.apply_script_update(api, self.script)
+
+        self.assertEqual("print('new')\n", self.script.read_text(encoding="utf-8"))
+        restart.assert_called_once_with(self.script)
+        api.get.assert_called_once_with("/api/ai/runner/script")
+
+    def test_hash_mismatch_keeps_local_script_untouched(self) -> None:
+        api = Mock()
+        api.get.return_value = {"content": "print('evil')\n", "hash": "deadbeef"}
+
+        with patch.object(RUNNER, "restart_self") as restart:
+            with self.assertRaises(RuntimeError):
+                RUNNER.apply_script_update(api, self.script)
+
+        self.assertEqual("print('old')\n", self.script.read_text(encoding="utf-8"))
+        restart.assert_not_called()
+
+    def test_empty_payload_keeps_local_script_untouched(self) -> None:
+        api = Mock()
+        api.get.return_value = None
+
+        with patch.object(RUNNER, "restart_self") as restart:
+            with self.assertRaises(RuntimeError):
+                RUNNER.apply_script_update(api, self.script)
+
+        self.assertEqual("print('old')\n", self.script.read_text(encoding="utf-8"))
+        restart.assert_not_called()
+
+    def test_script_hash_matches_server_side_sha256(self) -> None:
+        payload = self._payload(self.script.read_text(encoding="utf-8"))
+        self.assertEqual(payload["hash"], RUNNER.script_hash(self.script))
 
 
 if __name__ == "__main__":
