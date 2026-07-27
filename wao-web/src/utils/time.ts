@@ -4,6 +4,9 @@
 /** 统一用带 +08:00 偏移的上海时间写入业务数据，避免不同部署节点显示相差八小时。 */
 export const nowIso = () => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().replace('Z', '+08:00')
 
+/** 上海时区的今天（YYYY-MM-DD），用于默认截止日期等业务日期。 */
+export const todayIso = () => nowIso().slice(0, 10)
+
 const pad = (n: number) => String(n).padStart(2, '0')
 const hhmm = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`
 const sameDay = (a: Date, b: Date) =>

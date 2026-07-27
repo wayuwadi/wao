@@ -64,7 +64,7 @@ import {
   type PatchKbPayload,
 } from '@/api/board'
 import { blocksToText, textToBlocks } from '@/utils/doc'
-import { nowIso } from '@/utils/time'
+import { nowIso, todayIso } from '@/utils/time'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import type {
@@ -111,7 +111,7 @@ let idSeq = 0
 const uid = (prefix: string) => `${prefix}${Date.now()}${(idSeq++).toString(36)}`
 
 export const useDataStore = defineStore('data', () => {
-  const today = F.TODAY
+  const today = todayIso()
   const areas = ref(clone(F.AREAS))
   const projects = ref(clone(F.PROJECTS))
   const tasks = ref(clone(F.TASKS))
@@ -794,6 +794,10 @@ export const useDataStore = defineStore('data', () => {
     const t = taskById(id)
     if (!t) return
     taskTouchedAt[id] = Date.now()
+    // 完成时间跟着状态走：进入「已完成」记当下，离开则清空（服务端会重新校准）
+    if (fields.status !== undefined && fields.status !== t.status && fields.completedAt === undefined) {
+      fields = { ...fields, completedAt: fields.status === '已完成' ? nowIso() : null }
+    }
     Object.assign(t, fields)
     if (activityText) t.activity.unshift({ icon: 'ri-edit-line', color: '#9A9DA9', text: activityText, time: nowIso() })
     persistTask(id)

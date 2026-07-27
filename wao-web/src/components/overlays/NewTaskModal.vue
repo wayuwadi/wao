@@ -13,7 +13,16 @@ const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
 
-const DUE_MAP: Record<string, string> = { 今天: '2026-07-23', 明天: '2026-07-24', 周日: '2026-07-26', 下周一: '2026-07-27' }
+/** 快捷截止选项按真实「今天」推算：今天 / 明天 / 本周日 / 下周一。 */
+function dueDate(label: string): string {
+  const d = new Date(`${data.today}T00:00:00`)
+  const dow = d.getDay() || 7
+  if (label === '明天') d.setDate(d.getDate() + 1)
+  else if (label === '周日') d.setDate(d.getDate() + (7 - dow))
+  else if (label === '下周一') d.setDate(d.getDate() + (8 - dow))
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 
 const DRAFT_KEY = 'wao-new-task-draft-v1'
 type Draft = { title: string; project: string; owner: string; pr: Priority; due: string; desc: string }
@@ -65,7 +74,7 @@ function create() {
   // addTask 立即返回本地记录、后台落库，所以这里不 await —— 弹窗即点即关。
   void data.addTask({
     title: name, project: project.value, pr: pr.value, owner: owner.value,
-    due: DUE_MAP[due.value] ?? data.today,
+    due: dueDate(due.value),
     desc: desc.value.trim(), images: [],
   })
   localStorage.removeItem(DRAFT_KEY)
