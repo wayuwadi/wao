@@ -17,13 +17,23 @@ import org.springframework.stereotype.Service;
 public class FeishuCommentNotifier {
 
     private final FeishuWebhookNotifier notifier;
+    private final ProjectNotifyGate notifyGate;
 
-    public FeishuCommentNotifier(FeishuWebhookNotifier notifier) {
+    public FeishuCommentNotifier(FeishuWebhookNotifier notifier, ProjectNotifyGate notifyGate) {
         this.notifier = notifier;
+        this.notifyGate = notifyGate;
     }
 
-    /** 发送一张含项目、任务、评论人、评论内容与跳转按钮的卡片通知。 */
+    /**
+     * 发送一张含项目、任务、评论人、评论内容与跳转按钮的卡片通知。
+     *
+     * <p>所属项目关掉通知时直接跳过：评论和状态变化一样属于「项目的动静」，
+     * 不该因为走的是另一个通知器就绕过开关。
+     */
     public void notifyComment(TaskDto task, CommentDto comment, String memberName, String projectName) {
+        if (!notifyGate.enabled(task.project())) {
+            return;
+        }
         notifier.notifyCard(new FeishuWebhookNotifier.Card(
                 "任务新评论",
                 "blue",

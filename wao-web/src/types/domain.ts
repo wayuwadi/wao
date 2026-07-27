@@ -63,6 +63,8 @@ export interface Project {
   docs: string[]
   files: FileRef[]
   activity: Activity[]
+  /** 这个项目的动静要不要发飞书群；老数据没有这个字段时按开处理。 */
+  notifyEnabled?: boolean
 }
 
 export interface TaskStep {

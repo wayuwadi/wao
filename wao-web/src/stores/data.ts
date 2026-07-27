@@ -886,17 +886,21 @@ export const useDataStore = defineStore('data', () => {
     return kb
   }
 
-  /** 更新项目字段（名称 / 领域 / 目标 / 图标）；apiLive 时写透后端。 */
-  async function updateProject(id: string, patch: { name?: string; area?: string; goal?: string; icon?: string }) {
+  /** 更新项目字段（名称 / 领域 / 目标 / 图标 / 通知开关）；apiLive 时写透后端。 */
+  async function updateProject(
+    id: string,
+    patch: { name?: string; area?: string; goal?: string; icon?: string; notifyEnabled?: boolean },
+  ): Promise<boolean> {
     const p = projectById(id)
-    if (!p) return
+    if (!p) return false
     Object.assign(p, patch)
-    if (apiLive.value) {
-      try {
-        await apiPatchProject(id, patch)
-      } catch {
-        /* 保留本地乐观更新 */
-      }
+    if (!apiLive.value) return true
+    try {
+      await apiPatchProject(id, patch)
+      return true
+    } catch {
+      /* 保留本地乐观更新，但要让调用方知道没落库，好提示重试 */
+      return false
     }
   }
 

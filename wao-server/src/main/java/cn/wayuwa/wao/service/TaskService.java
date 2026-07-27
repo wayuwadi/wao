@@ -145,6 +145,19 @@ public class TaskService {
             e.setOwnerId(req.owner());
             activity.add(0, edit("你更换了负责人"));
         }
+        // 日期用「非 null 即修改」而不是「非空即修改」：空串是「清空日期」这个明确意图，
+        // 按空字段跳过的话，日期就成了只能改不能删的字段。清空写空串而不是 null，
+        // 因为 MyBatis-Plus 的 updateById 默认跳过 null 字段，写 null 等于没改。
+        String start = date(req.start());
+        if (start != null && !start.equals(nz(e.getStartDate()))) {
+            e.setStartDate(start);
+            activity.add(0, edit(start.isEmpty() ? "你清空了开始日期" : "你将开始日期改为 " + start));
+        }
+        String due = date(req.due());
+        if (due != null && !due.equals(nz(e.getDueDate()))) {
+            e.setDueDate(due);
+            activity.add(0, edit(due.isEmpty() ? "你清空了截止日期" : "你将截止日期改为 " + due));
+        }
 
         TaskDetail updated = new TaskDetail(d.parts(), d.steps(), d.subs(), d.files(), d.docs(),
                 d.linkTasks(), d.comments(), d.custom(), activity, d.images());
@@ -482,5 +495,15 @@ public class TaskService {
 
     private static <T> List<T> nn(List<T> list) {
         return list == null ? List.of() : list;
+    }
+
+    /** 请求里的日期：null 表示不改，其余去掉空白（空串即清空）。 */
+    private static String date(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    /** 库里的日期：null 与空串在这里是同一件事（都表示没设置）。 */
+    private static String nz(String value) {
+        return value == null ? "" : value;
     }
 }

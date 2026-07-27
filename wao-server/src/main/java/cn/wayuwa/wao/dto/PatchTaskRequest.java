@@ -6,5 +6,9 @@ public record PatchTaskRequest(
         String status,
         String pr,
         String owner,
-        String desc) {
+        String desc,
+        /** 开始日期（{@code yyyy-MM-dd}）；传空串表示清空。 */
+        String start,
+        /** 截止日期（{@code yyyy-MM-dd}）；传空串表示清空。 */
+        String due) {
 }

@@ -24,5 +24,6 @@ public record ProjectDto(
         List<String> docs,
         List<FileRef> files,
         List<Activity> activity,
-        String icon) {
+        String icon,
+        boolean notifyEnabled) {
 }
