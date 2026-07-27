@@ -102,7 +102,9 @@ public class AiRunController {
     @PostMapping("/runs/{runId}/continue")
     public ApiResponse<AiRunDto> continueRun(@PathVariable String runId,
             @Valid @RequestBody ContinueAiRunRequest request, HttpServletRequest http) {
-        return ApiResponse.ok(service.continueRun(runId, request.input(), currentMember.idOr(http, "unknown")));
+        String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
+        return ApiResponse.ok(service.continueRun(runId, request.input(), currentMember.idOr(http, "unknown"),
+                baseUrl));
     }
 
     @GetMapping("/tasks/{taskId}/runs")

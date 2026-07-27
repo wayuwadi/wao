@@ -144,8 +144,17 @@ public class ShareService {
     /** 匹配 Markdown 里指向站内绝对路径的图片 / 链接目标，如 {@code ](/api/images/x/raw)}。 */
     private static final Pattern SITE_RELATIVE = Pattern.compile("(!?\\[[^\\]]*\\]\\()(/[^)\\s]*)");
 
-    /** 把描述正文里内联的站内图片地址补成绝对地址（编辑器插入的图就在这里）。 */
-    private static String absolutizeMarkdown(String markdown, String baseUrl) {
+    /**
+     * 把 Markdown 正文里内联的站内图片 / 链接地址补成绝对地址（编辑器插入的图就在这里）。
+     *
+     * <p>除分享 Markdown 外，AI 续跑的补充输入也走这里 —— 文本会被直接交给执行电脑上的
+     * AI 会话，相对路径在那边解析不出来，粘贴的截图就丢了。
+     *
+     * @param markdown Markdown 文本
+     * @param baseUrl  公网访问的根地址，如 {@code https://wao.wayuwa.cn}；为空时原样返回
+     * @return 站内相对地址已补全的 Markdown 文本
+     */
+    public static String absolutizeMarkdown(String markdown, String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
             return markdown;
         }

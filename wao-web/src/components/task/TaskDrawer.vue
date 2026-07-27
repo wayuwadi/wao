@@ -17,7 +17,7 @@ import { copyToClipboard } from '@/utils/clipboard'
 import { continueAiRun, createAiRuns, fetchTaskAiRuns } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
-import { usageSummary } from '@/composables/aiUsage'
+import { formatCost, formatTokens, shortModel } from '@/composables/aiUsage'
 import { engineIcon, engineLabel } from '@/composables/aiEngines'
 import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
@@ -265,6 +265,8 @@ async function uploadInline(file: File, done: (url: string | null, name: string)
 }
 const onTaskImage = (file: File, done: (url: string | null, name: string) => void) =>
   uploadInline(file, done, `任务 · ${task.value?.title ?? ''}`)
+const onContinueImage = (file: File, done: (url: string | null, name: string) => void) =>
+  uploadInline(file, done, `AI 继续优化 · ${task.value?.title ?? ''}`)
 
 function removeImage(idx: number) {
   const t = task.value
@@ -720,8 +722,14 @@ function demo(msg: string) {
                 <i class="ri-arrow-down-s-line"></i>
               </summary>
               <div class="ai-run-body">
-                <div v-if="usageSummary(run.usage)" class="ai-run-usage" :title="run.usage.models || ''">
-                  <i class="ri-copper-coin-line"></i>{{ usageSummary(run.usage) }}
+                <div v-if="run.usage?.recorded" class="ai-run-usage" :title="run.usage.models || ''">
+                  <i class="ri-copper-coin-line"></i>
+                  <span v-if="shortModel(run.usage.model)" class="usage-model">{{ shortModel(run.usage.model) }}</span>
+                  <span class="usage-part">输入 <b>{{ formatTokens(run.usage.inputTokens) }}</b></span>
+                  <span class="usage-part">输出 <b>{{ formatTokens(run.usage.outputTokens) }}</b></span>
+                  <span class="usage-part">缓存 <b>{{ formatTokens(run.usage.cachedInputTokens) }}</b></span>
+                  <span class="usage-part">合计 <b>{{ formatTokens(run.usage.totalTokens) }}</b></span>
+                  <span v-if="formatCost(run.usage.costUsd)" class="usage-part">{{ formatCost(run.usage.costUsd) }}</span>
                 </div>
                 <AiRunProgressTimeline :run="run" />
                 <div v-if="run.resultSummary" class="ai-final-result">
@@ -736,13 +744,17 @@ function demo(msg: string) {
                     <span class="ai-continue-icon"><i class="ri-chat-1-line"></i></span>
                     <div><b>{{ run.status === 'succeeded' ? '继续优化这次结果' : '在原会话中补充信息' }}</b><small>将固定回到 {{ run.runnerName || '原执行电脑' }}，保留本次上下文</small></div>
                   </div>
-                  <textarea
-                    v-model="aiContinuation[run.id]"
-                    rows="2"
-                    :placeholder="run.status === 'succeeded'
-                      ? '跑完了但不符合预期？写下要优化的地方，AI 带着这次的记忆接着改'
-                      : '补充信息后，让 AI 在原会话中继续执行'"
-                  ></textarea>
+                  <div class="ai-continue-input">
+                    <MarkdownEditor
+                      :model-value="aiContinuation[run.id] ?? ''"
+                      :min-height="56"
+                      :placeholder="run.status === 'succeeded'
+                        ? '跑完了但不符合预期？写下要优化的地方，AI 带着这次的记忆接着改；截图可直接粘贴'
+                        : '补充信息后，让 AI 在原会话中继续执行；截图可直接粘贴'"
+                      @update:model-value="(v: string) => (aiContinuation[run.id] = v)"
+                      @upload-image="onContinueImage"
+                    />
+                  </div>
                   <button :disabled="continuingRunId === run.id || !aiContinuation[run.id]?.trim()" @click="continueRun(run.id)">
                     <i :class="continuingRunId === run.id ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ continuingRunId === run.id ? '发送中…' : run.status === 'succeeded' ? '继续优化' : '继续对话' }}
                   </button>
@@ -1729,8 +1741,10 @@ function demo(msg: string) {
 .ai-run-latest { flex: 1; min-width: 0; overflow: hidden; color: var(--wao-text-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-run-entry summary time { flex: 0 0 auto; color: var(--wao-text-faint); font-size: 10px; }
 .ai-run-body { padding: 0 10px 10px; }
-.ai-run-usage { margin-bottom: 8px; padding: 6px 9px; border-radius: 7px; background: #f7f8fd; color: var(--wao-text-3); font-size: 10.5px; }
-.ai-run-usage i { margin-right: 5px; color: #a8862f; }
+.ai-run-usage { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 8px; padding: 6px 9px; border-radius: 7px; background: #f7f8fd; color: var(--wao-text-3); font-size: 10.5px; }
+.ai-run-usage i { margin-right: -3px; color: #a8862f; }
+.ai-run-usage .usage-model { color: var(--wao-text-2); font-weight: 600; }
+.ai-run-usage .usage-part b { font-weight: 600; color: var(--wao-text-2); }
 .ai-final-result { margin-top: 10px; padding: 10px 12px; border-radius: 9px; background: #f7f8fb; }
 .ai-final-result b { font-size: 11px; }
 .ai-final-result p { max-height: 180px; margin: 5px 0 0; overflow: auto; color: var(--wao-text-3); font-size: 11px; line-height: 1.65; white-space: pre-wrap; }
@@ -1740,8 +1754,10 @@ function demo(msg: string) {
 .ai-continue-head b, .ai-continue-head small { display: block; }
 .ai-continue-head b { color: var(--wao-text); font-size: 11.5px; }
 .ai-continue-head small { margin-top: 2px; color: var(--wao-text-weak); font-size: 10px; }
-.ai-continue textarea { box-sizing: border-box; width: 100%; min-height: 56px; padding: 8px 9px; border: 1px solid #d7ddef; border-radius: 8px; outline: none; background: #fff; color: var(--wao-text); font: inherit; font-size: 11.5px; line-height: 1.55; resize: vertical; }
-.ai-continue textarea:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .1); }
+.ai-continue-input { box-sizing: border-box; width: 100%; border: 1px solid #d7ddef; border-radius: 8px; background: #fff; }
+.ai-continue-input:focus-within { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .1); }
+.ai-continue-input :deep(.md .md-body), .ai-continue-input :deep(.md:not(.ro) .md-body:hover), .ai-continue-input :deep(.md:not(.ro) .md-body:focus-within) { border-color: transparent; }
+.ai-continue-input :deep(.md .tiptap) { padding: 8px 9px; font-size: 11.5px; line-height: 1.55; }
 .ai-continue button { float: right; margin-top: 8px; padding: 6px 10px; border: 0; border-radius: 7px; background: var(--wao-primary); color: #fff; cursor: pointer; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
 .ai-continue button:disabled { cursor: not-allowed; opacity: .55; }
 .ai-continue::after { content: ''; display: block; clear: both; }
