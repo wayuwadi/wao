@@ -286,7 +286,7 @@ export interface SharedTask {
 }
 
 /** 可以托管任务的本地 AI 工具。 */
-export type AiEngine = 'codex' | 'claude'
+export type AiEngine = 'codex' | 'claude' | 'qoder'
 
 /** 项目级 AI Run 配置。 */
 export interface AiProjectConfig {

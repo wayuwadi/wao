@@ -4,6 +4,7 @@ import type { AiEngine } from '@/types'
 export const AI_ENGINES: Array<{ id: AiEngine; label: string; icon: string; color: string; hint: string }> = [
   { id: 'codex', label: 'Codex', icon: 'ri-openai-fill', color: '#3650b4', hint: 'OpenAI Codex CLI，装在娃哥 / 娃弟的 Windows 电脑上' },
   { id: 'claude', label: 'Claude Code', icon: 'ri-claude-fill', color: '#b4622f', hint: 'Anthropic Claude Code CLI，装在 Linux 主节点上' },
+  { id: 'qoder', label: 'Qoder', icon: 'ri-terminal-box-fill', color: '#3d8f5f', hint: 'Qoder CLI（qodercli），装了并登录过的电脑都可接入' },
 ]
 
 export function engineLabel(engine: string | null | undefined) {

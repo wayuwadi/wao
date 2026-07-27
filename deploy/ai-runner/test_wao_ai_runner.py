@@ -200,6 +200,63 @@ class ClaudeEngineTest(unittest.TestCase):
         self.assertIn("Claude Code 退出码：1", summary)
 
 
+class QoderEngineTest(unittest.TestCase):
+    """Qoder 的 stream-json 与 Claude Code 同构，重点验命令行参数和标签口径。"""
+
+    def test_progress_uses_qoder_label(self) -> None:
+        init = RUNNER.extract_progress({"type": "system", "subtype": "init"}, "qoder")
+        text = RUNNER.extract_progress({
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "已定位问题"}]},
+        }, "qoder")
+
+        self.assertEqual(("phase", "Qoder 会话已建立，正在分析任务"), init)
+        self.assertEqual(("message", "已定位问题"), text)
+
+    @patch.object(RUNNER, "invoke_cli")
+    def test_qoder_run_reads_result_event_and_session(self, invoke: Mock) -> None:
+        invoke.return_value = (0, "\n".join([
+            '{"type":"system","subtype":"init","session_id":"qs-1"}',
+            '{"type":"result","subtype":"success","is_error":false,'
+            '"result":"WAO_RUN_STATUS: SUCCESS\\n已合并 PR","session_id":"qs-1"}',
+        ]))
+        reporter = Mock()
+
+        exit_code, result_text, session_id, usage = RUNNER.run_qoder(
+            "qodercli", Path("/work"), "提示", "danger-full-access", reporter)
+
+        self.assertEqual(0, exit_code)
+        self.assertEqual("qs-1", session_id)
+        self.assertEqual((0, "已合并 PR"), RUNNER.normalize_result(exit_code, result_text, "qoder"))
+        self.assertIn("-p", invoke.call_args.args[0])
+        self.assertIn("stream-json", invoke.call_args.args[0])
+        self.assertIn("--dangerously-skip-permissions", invoke.call_args.args[0])
+
+    @patch.object(RUNNER, "invoke_cli")
+    def test_qoder_restricted_sandbox_and_resume_arguments(self, invoke: Mock) -> None:
+        invoke.return_value = (0, '{"type":"result","is_error":false,"result":"ok"}')
+
+        RUNNER.run_qoder("qodercli", Path("/work"), "提示", "workspace-write", Mock(),
+                         repo_dir=Path("/repo"), session_id="qs-9")
+
+        command = invoke.call_args.args[0]
+        self.assertIn("accept_edits", command)
+        self.assertIn("--add-dir", command)
+        self.assertIn("qs-9", command[command.index("-r") + 1])
+
+    def test_qoder_result_without_usage_still_keeps_the_model(self) -> None:
+        output = "\n".join([
+            '{"type":"system","subtype":"init","session_id":"qs-1","model":"qoder-pro"}',
+            '{"type":"result","subtype":"success","is_error":false,"result":"完成"}',
+        ])
+
+        usage = RUNNER.collect_usage(output, "qoder")
+
+        self.assertEqual("qoder-pro", usage["model"])
+        self.assertEqual(0, usage["totalTokens"], "Qoder 没回传按次用量时只记模型不记 token")
+        self.assertIsNone(usage["costUsd"], "Credits 计费拿不到按次金额，不能编一个 0 出来")
+
+
 class UsageAccountingTest(unittest.TestCase):
     """用量统计；Claude 的样例取自真实 `claude -p --output-format stream-json` 输出。"""
 

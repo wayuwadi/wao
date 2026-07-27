@@ -1,16 +1,17 @@
 # WAO AI Runner
 
 AI Runner 安装在娃哥、娃弟的 Windows 电脑和 Linux 主节点上。WAO 只负责排队和展示运行
-状态；Codex / Claude Code 账号、GitHub 登录态和源码始终保留在本机。
+状态；Codex / Claude Code / Qoder 账号、GitHub 登录态和源码始终保留在本机。
 
-一台电脑可以同时装两种 AI CLI，Runner 启动时会自动探测本机装了哪些，并把结果作为「本机
+一台电脑可以同时装多种 AI CLI，Runner 启动时会自动探测本机装了哪些，并把结果作为「本机
 能力」上报；WAO 只会把对应工具的任务派给它。
 
 ## 首次接入
 
 1. 确认本机已有 Python 3.10+、Git，以及至少一种已登录的 AI CLI：
    - Codex CLI，执行过 `codex login`；
-   - Claude Code CLI，执行过 `claude` 并完成登录。
+   - Claude Code CLI，执行过 `claude` 并完成登录；
+   - Qoder CLI（`qodercli`），执行过 `qodercli` 并在 TUI 里 `/login` 完成登录。
 2. 打开 WAO 首页 AI 控制台 →「AI 工作流」，填写仓库地址、默认 AI 工具并开启开关。
 3. 切到「执行电脑」点击“生成配对码”，十分钟内在对应电脑运行。
 
@@ -37,8 +38,9 @@ python3 deploy/ai-runner/wao-ai-runner.py \
   --max-concurrency 2
 ```
 
-`--engines` 留空表示自动探测（装了哪种就报哪种）；显式指定时找不到对应命令会直接启动失败，
-避免电脑上报了自己其实跑不了的能力。需要固定模型时加 `--claude-model opus`。
+`--engines` 留空表示自动探测（装了哪种就报哪种，可选 codex、claude、qoder）；显式指定时
+找不到对应命令会直接启动失败，避免电脑上报了自己其实跑不了的能力。需要固定模型时加
+`--claude-model opus`。Qoder 的引擎 id 是 `qoder`，命令名是 `qodercli`，自动探测按命令名找。
 
 项目里只填一个 HTTPS 仓库地址，但每台电脑的 Git 认证方式可以不同：`--git-protocol` 默认
 `auto`，本机有 HTTPS 凭据就用 HTTPS，没有（例如只配了 SSH key 的 Linux 主节点）就自动把
@@ -65,13 +67,15 @@ Runner 状态、日志或 Git；因此只需让这台电脑的 Git 凭据管理�
 
 - Codex：`codex exec --json` 的 agent message、公开推理摘要、plan update 与阶段/结果。
 - Claude Code：`claude -p --output-format stream-json` 的 assistant 文本与 TodoWrite 计划。
+- Qoder：`qodercli -p --output-format stream-json`，事件与 Claude Code 同构，口径相同。
 
-两种工具的命令执行、文件修改、工具调用和网页检索都不会上传，Claude 的 thinking 正文同样
-不进入 WAO。
+几种工具的命令执行、文件修改、工具调用和网页检索都不会上传，Claude 与 Qoder 的 thinking
+正文同样不进入 WAO。
 
 任务结束时 Runner 还会从 CLI 的结束事件里读出本次用量，随结果一并回传（见 ADR-026）：
 Claude Code 取 `result` 事件的 `usage`、`total_cost_usd` 和按模型分组的 `modelUsage`；
-Codex 累加 `turn.completed` 的 `usage`，它不回传花费，所以只有 token 没有金额。
+Codex 累加 `turn.completed` 的 `usage`，它不回传花费，所以只有 token 没有金额；
+Qoder 按 Credits 配额计费，结束事件没有按次用量字段时只记模型不记账（见 ADR-028）。
 用量解析失败只会让这次「没记上账」，不会影响任务本身的成败——本机日志里能看到每次的
 模型、token 和折算额度。
 
@@ -80,7 +84,8 @@ Codex 累加 `turn.completed` 的 `usage`，它不回传花费，所以只有 to
 ```powershell
 --git-command "C:\Program Files\Git\cmd\git.exe" `
 --codex-command "C:\Program Files\nodejs\codex.cmd" `
---claude-command "C:\Program Files\nodejs\claude.cmd"
+--claude-command "C:\Program Files\nodejs\claude.cmd" `
+--qoder-command "C:\Users\用户名\.qoder-cli\bin\qodercli.exe"
 ```
 
 ## 并发与隔离
@@ -97,7 +102,7 @@ Codex 累加 `turn.completed` 的 `usage`，它不回传花费，所以只有 to
   控制同一仓库最多同时跑几个任务，两层限制取更严格者。
 - 任务可以在「AI run」时点名某台电脑，也可以在项目里固定一台，或让任意在线且装了该工具的
   节点自动领取。点名的电脑离线时，任务会一直排队等它上线。
-- 开发阶段默认 `danger-full-access`（Claude Code 对应 `--dangerously-skip-permissions`），
+- 开发阶段默认 `danger-full-access`（Claude Code 与 Qoder 对应 `--dangerously-skip-permissions`），
   便于 AI 完成 GitHub、部署和线上验收。建议让 Runner 运行在专用系统账号或隔离电脑；
   正式版本前应切换为受限权限配置。
 

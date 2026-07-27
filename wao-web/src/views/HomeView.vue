@@ -338,7 +338,7 @@ onBeforeUnmount(() => {
             <b>{{ pairCode }}</b>
             <small>十分钟内有效 · 到期 {{ pairExpiresAt.replace('T', ' ') }}</small>
           </div>
-          <code>python wao-ai-runner.py --server https://wao.wayuwa.cn --pair-code {{ pairCode }} --name 电脑名 --engines codex,claude</code>
+          <code>python wao-ai-runner.py --server https://wao.wayuwa.cn --pair-code {{ pairCode }} --name 电脑名 --engines codex,claude,qoder</code>
         </div>
         <div v-if="!runners.length && !loading" class="empty ready">
           <i class="ri-computer-line"></i>

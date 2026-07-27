@@ -54,6 +54,9 @@
 - Claude Code 侧使用 `claude -p --output-format stream-json --verbose`：只保存 assistant 文本、
   TodoWrite 计划与阶段/结果；thinking 正文和其余工具调用细节不上传。最终答复取 `result` 事件，
   `is_error` 为真时即使退出码为 0 也判失败。
+- Qoder 侧使用 `qodercli -p --output-format stream-json`：事件与 Claude Code 同构，进展过滤、
+  最终答复与会话恢复（`-r <session-id>`）复用 Claude 口径；Qoder 按 Credits 计费，结束事件
+  没有按次用量字段时只记模型不记账（见 ADR-028）。
 - 项目只配置一个 HTTPS 仓库地址；Runner 按本机认证方式解析实际克隆地址（`--git-protocol auto`
   时没有 HTTPS 凭据就改用 SSH），已克隆的仓库同步纠正 `origin`，同一份配置在 HTTPS 与 SSH
   两种机器上都能拉起工作区。
