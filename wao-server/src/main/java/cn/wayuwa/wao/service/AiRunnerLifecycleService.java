@@ -1,0 +1,72 @@
+package cn.wayuwa.wao.service;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
+import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
+import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import org.springframework.stereotype.Service;
+
+/** 追踪 Runner 在线状态边沿，并且只在上线/离线发生变化时通知一次。 */
+@Service
+public class AiRunnerLifecycleService {
+
+    static final int OFFLINE_AFTER_MINUTES = 2;
+    private static final String SITE = "https://wao.wayuwa.cn/";
+    private final AiRunnerNodeMapper runnerMapper;
+    private final FeishuWebhookNotifier notifier;
+
+    public AiRunnerLifecycleService(AiRunnerNodeMapper runnerMapper, FeishuWebhookNotifier notifier) {
+        this.runnerMapper = runnerMapper;
+        this.notifier = notifier;
+    }
+
+    /** 心跳恢复时原子地把离线状态切为在线，并发送一次恢复通知。 */
+    public void markOnline(String runnerId) {
+        AiRunnerNodeEntity runner = runnerMapper.selectById(runnerId);
+        if (runner == null || !Boolean.FALSE.equals(runner.getOnlineState())) return;
+        int changed = runnerMapper.update(null, new UpdateWrapper<AiRunnerNodeEntity>()
+                .eq("id", runnerId)
+                .eq("online_state", false)
+                .set("online_state", true));
+        if (changed == 1) notify(runner, true, LocalDateTime.now());
+    }
+
+    /** 扫描超过两分钟没有心跳的在线节点，原子切换并发送一次离线通知。 */
+    public int detectOffline(LocalDateTime now) {
+        LocalDateTime cutoff = now.minusMinutes(OFFLINE_AFTER_MINUTES);
+        List<AiRunnerNodeEntity> stale = runnerMapper.selectList(new QueryWrapper<AiRunnerNodeEntity>()
+                .eq("online_state", true)
+                .lt("last_seen_at", cutoff));
+        int changed = 0;
+        for (AiRunnerNodeEntity runner : stale) {
+            int updated = runnerMapper.update(null, new UpdateWrapper<AiRunnerNodeEntity>()
+                    .eq("id", runner.getId())
+                    .eq("online_state", true)
+                    .lt("last_seen_at", cutoff)
+                    .set("online_state", false));
+            if (updated == 1) {
+                changed++;
+                notify(runner, false, now);
+            }
+        }
+        return changed;
+    }
+
+    private void notify(AiRunnerNodeEntity runner, boolean online, LocalDateTime at) {
+        String engines = runner.getEngines() == null || runner.getEngines().isBlank()
+                ? "未上报" : runner.getEngines().replace(",", "、");
+        notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                online ? "AI 执行电脑已上线" : "AI 执行电脑已离线",
+                online ? "green" : "red",
+                List.of(
+                        List.of("电脑", runner.getName()),
+                        List.of("AI 工具", engines),
+                        List.of(online ? "上线时间" : "判定时间", at.toString().replace('T', ' '))),
+                online ? "心跳已经恢复，可以继续领取 AI 任务。" : "超过 2 分钟没有收到心跳，系统会继续等待计划任务或远程唤醒恢复。",
+                "查看执行电脑", SITE));
+    }
+}

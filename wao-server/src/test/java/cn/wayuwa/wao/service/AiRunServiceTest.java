@@ -267,10 +267,13 @@ class AiRunServiceTest {
         when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
         when(runMapper.selectList(any())).thenReturn(List.of());
 
-        service.heartbeat("local-token", 3, null, null);
+        service.heartbeat("local-token", 3, null, null, "30-56-0f-09-61-11", "203.0.113.8");
 
         assertThat(runner.getAdminMaxConcurrency()).isEqualTo(5);
         assertThat(runner.getMaxConcurrency()).isEqualTo(3);
+        assertThat(runner.getWakeMac()).isEqualTo("30:56:0F:09:61:11");
+        assertThat(runner.getWakeHost()).isEqualTo("203.0.113.8");
+        assertThat(runner.getWakePort()).isEqualTo(9);
     }
 
     @Test
@@ -284,7 +287,7 @@ class AiRunServiceTest {
         when(scripts.available()).thenReturn(true);
         when(scripts.hash()).thenReturn("latest-hash");
 
-        service.heartbeat("local-token", null, null, "latest-hash");
+        service.heartbeat("local-token", null, null, "latest-hash", null, null);
 
         assertThat(runner.getScriptHash()).isEqualTo("latest-hash");
         assertThat(runner.getUpdateRequestedAt()).isNull();
@@ -301,7 +304,7 @@ class AiRunServiceTest {
         when(scripts.available()).thenReturn(true);
         when(scripts.hash()).thenReturn("latest-hash");
 
-        AiRunnerDto dto = service.heartbeat("local-token", null, null, "old-hash");
+        AiRunnerDto dto = service.heartbeat("local-token", null, null, "old-hash", null, null);
 
         assertThat(runner.getUpdateRequestedAt()).isNotNull();
         assertThat(dto.updateRequested()).isTrue();

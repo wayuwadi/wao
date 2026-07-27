@@ -64,9 +64,9 @@ python3 deploy/ai-runner/wao-ai-runner.py \
   -MaxConcurrency 2
 ```
 
-脚本会创建 `WAO AI Runner` 计划任务，包含开机、当前用户登录和每 5 分钟守护三个触发器，并在异常退出后自动重启。任务使用当前交互用户运行，因为 Codex、Git 和 GitHub 的登录凭据保存在用户配置中；因此无人登录时不能保证 AI CLI 可用。
+脚本会创建 `WAO AI Runner` 计划任务，包含开机、当前用户登录和每 1 分钟守护三个触发器，并在异常退出后自动重启。任务使用当前交互用户运行，因为 Codex、Git 和 GitHub 的登录凭据保存在用户配置中；因此无人登录时不能保证 AI CLI 可用。
 
-后台“远程唤醒电脑”使用 Wake-on-LAN。目标电脑必须在 BIOS 和有线网卡中开启 Magic Packet；跨公网时还要在路由器中把配置的 UDP 端口转发到目标局域网广播地址。WAO 发送唤醒包后仍以 Runner 心跳恢复作为成功标准。
+后台“远程唤醒电脑”使用 Wake-on-LAN。Runner 首次在线时会自动上报网卡地址，服务端自动记录来源地址，页面不要求用户填写 MAC、IP 或端口。目标电脑仍须由硬件支持 Magic Packet；跨公网是否可达取决于路由器和运营商网络。WAO 发送唤醒包后仍以 Runner 心跳恢复作为成功标准。
 以后启动时不需要再次输入配对码。
 
 Runner 会把启动信息、Git 与各 AI CLI 的命令路径和任务失败阶段写入 `~/.wao/ai-runner.log`。

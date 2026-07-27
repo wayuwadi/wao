@@ -23,6 +23,7 @@ import cn.wayuwa.wao.dto.UpdateRunnerWakeConfigRequest;
 import cn.wayuwa.wao.dto.WakeRunnerResultDto;
 import cn.wayuwa.wao.service.AiRunService;
 import cn.wayuwa.wao.service.AiRunnerWakeService;
+import cn.wayuwa.wao.service.AiRunnerLifecycleService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,11 +46,14 @@ public class AiRunController {
 
     private final AiRunService service;
     private final AiRunnerWakeService wakeService;
+    private final AiRunnerLifecycleService lifecycleService;
     private final CurrentMember currentMember;
 
-    public AiRunController(AiRunService service, AiRunnerWakeService wakeService, CurrentMember currentMember) {
+    public AiRunController(AiRunService service, AiRunnerWakeService wakeService,
+            AiRunnerLifecycleService lifecycleService, CurrentMember currentMember) {
         this.service = service;
         this.wakeService = wakeService;
+        this.lifecycleService = lifecycleService;
         this.currentMember = currentMember;
     }
 
@@ -146,8 +150,13 @@ public class AiRunController {
     public ApiResponse<AiRunnerDto> heartbeat(@RequestHeader(RUNNER_TOKEN) String token,
             @RequestParam(required = false) Integer maxConcurrency,
             @RequestParam(required = false) String engines,
-            @RequestParam(required = false) String scriptHash) {
-        return ApiResponse.ok(service.heartbeat(token, maxConcurrency, engines, scriptHash));
+            @RequestParam(required = false) String scriptHash,
+            @RequestParam(required = false) String wakeMac,
+            HttpServletRequest http) {
+        AiRunnerDto runner = service.heartbeat(token, maxConcurrency, engines, scriptHash,
+                wakeMac, clientAddress(http));
+        lifecycleService.markOnline(runner.id());
+        return ApiResponse.ok(runner);
     }
 
     /** 执行电脑收到更新指令后拉取最新脚本。 */
@@ -172,5 +181,12 @@ public class AiRunController {
             @PathVariable String runId, @Valid @RequestBody ReportAiRunProgressRequest request) {
         service.reportProgress(token, runId, request);
         return ApiResponse.ok(null);
+    }
+
+    private String clientAddress(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        return forwarded == null || forwarded.isBlank()
+                ? request.getRemoteAddr()
+                : forwarded.split(",", 2)[0].trim();
     }
 }

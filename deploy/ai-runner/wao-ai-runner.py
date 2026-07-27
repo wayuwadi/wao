@@ -14,7 +14,9 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
@@ -103,6 +105,15 @@ def save_state(state: dict[str, str]) -> None:
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
     if os.name != "nt":
         STATE_FILE.chmod(0o600)
+
+
+def detect_wake_mac() -> str:
+    """Return the physical MAC selected by the OS; ignore uuid.getnode() random fallbacks."""
+    node = uuid.getnode()
+    first_octet = (node >> 40) & 0xFF
+    if first_octet & 0x01:
+        return ""
+    return ":".join(f"{(node >> shift) & 0xFF:02X}" for shift in range(40, -1, -8))
 
 
 def pair(api: WaoApi, args: argparse.Namespace, engines: list[str]) -> dict[str, str]:
@@ -926,6 +937,7 @@ def main() -> int:
     git_command = find_executable("git", args.git_command)
     engine_commands = resolve_engines(args)
     engines = list(engine_commands)
+    wake_mac = detect_wake_mac()
     state = load_state()
     if state.get("server") != args.server.rstrip("/") or not state.get("token"):
         state = pair(WaoApi(args.server), args, engines)
@@ -945,9 +957,13 @@ def main() -> int:
         while True:
             futures = {future for future in futures if not future.done()}
             try:
-                status = api.post(
-                    f"/api/ai/runner/heartbeat?maxConcurrency={args.max_concurrency}"
-                    f"&engines={','.join(engines)}&scriptHash={script_hash(SCRIPT_PATH)}")
+                heartbeat_query = urllib.parse.urlencode({
+                    "maxConcurrency": args.max_concurrency,
+                    "engines": ",".join(engines),
+                    "scriptHash": script_hash(SCRIPT_PATH),
+                    "wakeMac": wake_mac,
+                })
+                status = api.post(f"/api/ai/runner/heartbeat?{heartbeat_query}")
                 if isinstance(status, dict) and status.get("updateRequested"):
                     # 后台下发了脚本更新：不再领新任务，等在跑的任务收尾后原地升级重启。
                     if futures:

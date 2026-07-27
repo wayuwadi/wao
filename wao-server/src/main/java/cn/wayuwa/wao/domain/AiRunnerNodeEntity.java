@@ -19,6 +19,7 @@ public class AiRunnerNodeEntity {
     private String wakeHost;
     private Integer wakePort;
     private LocalDateTime lastWakeRequestedAt;
+    private Boolean onlineState;
     private String tokenHash;
     /** Runner 心跳自报的脚本 SHA-256，用于判断是否落后于服务端打包的最新版。 */
     private String scriptHash;
@@ -47,6 +48,8 @@ public class AiRunnerNodeEntity {
     public void setWakePort(Integer wakePort) { this.wakePort = wakePort; }
     public LocalDateTime getLastWakeRequestedAt() { return lastWakeRequestedAt; }
     public void setLastWakeRequestedAt(LocalDateTime lastWakeRequestedAt) { this.lastWakeRequestedAt = lastWakeRequestedAt; }
+    public Boolean getOnlineState() { return onlineState; }
+    public void setOnlineState(Boolean onlineState) { this.onlineState = onlineState; }
     public String getTokenHash() { return tokenHash; }
     public void setTokenHash(String tokenHash) { this.tokenHash = tokenHash; }
     public String getScriptHash() { return scriptHash; }
