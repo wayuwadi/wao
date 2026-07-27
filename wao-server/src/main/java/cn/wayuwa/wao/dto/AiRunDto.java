@@ -18,6 +18,8 @@ public record AiRunDto(
         String runnerId,
         String runnerName,
         String requestedRunnerId,
+        /** 发起本次运行的 WAO 成员 id。 */
+        String requestedBy,
         String branchName,
         /** 本次是在修哪一次失败的运行；不是重跑时为 null。 */
         String retryOfRunId,

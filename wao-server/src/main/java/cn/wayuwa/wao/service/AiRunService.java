@@ -710,7 +710,7 @@ public class AiRunService {
                     StringUtils.hasText(run.getSubId()) ? subTitle(run.getTaskId(), run.getSubId()) : null,
                     run.getProjectId(), project == null ? run.getProjectId() : project.getName(),
                     blankOr(run.getEngine(), DEFAULT_ENGINE), run.getStatus(),
-                    run.getRunnerId(), runner == null ? null : runner.getName(), run.getRequestedRunnerId(),
+                    run.getRunnerId(), runner == null ? null : runner.getName(), run.getRequestedRunnerId(), run.getRequestedBy(),
                     run.getBranchName(), run.getRetryOfRunId(),
                     run.getResultSummary(), run.getLatestProgress(), text(run.getProgressUpdatedAt()),
                     progressByRun.getOrDefault(run.getId(), List.of()), toUsageDto(run),

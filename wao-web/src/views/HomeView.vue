@@ -195,6 +195,15 @@ function timeText(value: string | null) {
     : date.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
+function durationText(startedAt: string | null, finishedAt: string | null) {
+  if (!startedAt) return '尚未开始'
+  const end = finishedAt ? new Date(finishedAt).getTime() : Date.now()
+  const seconds = Math.max(0, Math.floor((end - new Date(startedAt).getTime()) / 1000))
+  if (seconds < 60) return `${seconds} 秒`
+  const minutes = Math.floor(seconds / 60)
+  return minutes < 60 ? `${minutes} 分钟` : `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟`
+}
+
 function progressAge(value: string | null) {
   if (!value) return '等待反馈'
   const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000))
@@ -226,10 +235,13 @@ onBeforeUnmount(() => {
           </span>
         </div>
       </div>
-      <div class="capacity">
-        <div class="capacity-num">{{ usedSlots }}<span>/ {{ totalSlots }}</span></div>
-        <div>执行槽位占用</div>
-        <div class="capacity-bar"><i :style="{ width: totalSlots ? `${Math.min(100, usedSlots / totalSlots * 100)}%` : '0%' }"></i></div>
+      <div class="capacity" :style="{ '--capacity': `${totalSlots ? Math.min(100, usedSlots / totalSlots * 100) : 0}%` }">
+        <div class="capacity-orbit" aria-hidden="true"><i></i><b></b><em></em></div>
+        <div class="capacity-copy">
+          <div class="capacity-num">{{ usedSlots }}<span>/ {{ totalSlots }}</span></div>
+          <div>执行槽位占用</div>
+          <div class="capacity-bar"><i></i></div>
+        </div>
       </div>
     </section>
 
@@ -476,6 +488,8 @@ onBeforeUnmount(() => {
         <dl>
           <div><dt>AI 工具</dt><dd>{{ engineLabel(selectedRun.engine) }}</dd></div>
           <div><dt>执行电脑</dt><dd>{{ selectedRun.runnerName || '未分配电脑' }}</dd></div>
+          <div><dt>触发人</dt><dd>{{ selectedRun.requestedBy || '系统未记录' }}</dd></div>
+          <div><dt>执行时长</dt><dd>{{ durationText(selectedRun.startedAt, selectedRun.finishedAt) }}</dd></div>
           <div><dt>退出码</dt><dd>{{ selectedRun.exitCode ?? '—' }}</dd></div>
           <div><dt>{{ selectedRun.finishedAt ? '结束时间' : '最近反馈' }}</dt><dd>{{ timeText(selectedRun.finishedAt || selectedRun.progressUpdatedAt) || '等待中' }}</dd></div>
         </dl>
@@ -553,6 +567,7 @@ onBeforeUnmount(() => {
 .engine-status span.dim { opacity: .55; }
 .engine-status b { font-weight: 600; opacity: .8; }
 .capacity {
+  position: relative;
   width: 185px;
   padding: 18px;
   border: 1px solid #ffffff2b;
@@ -560,11 +575,25 @@ onBeforeUnmount(() => {
   background: #ffffff12;
   font-size: 11px;
   color: #ffffffa8;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
 }
+.capacity-orbit { position: relative; width: 48px; height: 48px; flex: 0 0 auto; border: 2px solid #ffffff32; border-radius: 50%; }
+.capacity-orbit::before, .capacity-orbit::after { content: ''; position: absolute; border: 1px solid #ffffff4a; border-radius: 50%; animation: orbit 4s linear infinite; }
+.capacity-orbit::before { inset: 7px -8px; transform: rotate(58deg); }
+.capacity-orbit::after { inset: -8px 7px; animation-duration: 6s; animation-direction: reverse; }
+.capacity-orbit i { position: absolute; inset: 8px; border-radius: 50%; background: conic-gradient(#fff var(--capacity), #ffffff22 0); mask: radial-gradient(transparent 58%, #000 60%); }
+.capacity-orbit b { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: #fff; transform: translate(-50%, -50%); box-shadow: 0 0 12px #fff; animation: corePulse 1.8s ease-in-out infinite; }
+.capacity-orbit em { position: absolute; right: -3px; top: 6px; width: 5px; height: 5px; border-radius: 50%; background: #aef5d0; box-shadow: 0 0 9px #aef5d0; }
+.capacity-copy { min-width: 0; flex: 1; }
 .capacity-num { color: #fff; font-size: 30px; font-weight: 750; }
 .capacity-num span { font-size: 14px; opacity: .6; }
 .capacity-bar { height: 5px; margin-top: 11px; overflow: hidden; border-radius: 9px; background: #ffffff24; }
-.capacity-bar i { display: block; height: 100%; border-radius: inherit; background: #fff; transition: width .3s; }
+.capacity-bar i { display: block; height: 100%; width: var(--capacity); border-radius: inherit; background: #fff; transition: width .3s; }
+@keyframes orbit { to { transform: rotate(418deg); } }
+@keyframes corePulse { 50% { transform: translate(-50%, -50%) scale(.68); opacity: .55; } }
 .console-tabs {
   margin-top: 18px;
   padding: 5px;

@@ -361,6 +361,8 @@ export interface AiRun {
   runnerId: string | null
   runnerName: string | null
   requestedRunnerId: string | null
+  /** 旧运行记录尚未回填触发人，因此兼容缺失字段。 */
+  requestedBy?: string | null
   branchName: string | null
   /** 本次是在修哪一次失败的运行；不是重跑时为 null。 */
   retryOfRunId: string | null

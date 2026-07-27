@@ -57,12 +57,13 @@ class ProjectServiceTest {
     void createProducesPlanningProject() {
         when(mapper.insert(any(ProjectEntity.class))).thenReturn(1);
 
-        ProjectDto dto = service.create(new CreateProjectRequest("阳台花园改造", "family", "把阳台变花园", true));
+        ProjectDto dto = service.create(new CreateProjectRequest("阳台花园改造", "family", "把阳台变花园", true), "wd");
 
         assertThat(dto.id()).startsWith("p");
         assertThat(dto.status()).isEqualTo("规划中");
         assertThat(dto.progress()).isZero();
         assertThat(dto.members()).containsExactly("wg", "wd");
+        assertThat(dto.owner()).isEqualTo("wd");
         assertThat(dto.activity()).isNotEmpty();
     }
 }
