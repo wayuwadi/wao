@@ -63,6 +63,9 @@
 - Runner 从本机 Git credential helper 读取现有 GitHub HTTPS 凭据，仅通过子进程 `GH_TOKEN`
   提供给 AI CLI，并自动补齐 Windows GitHub CLI 路径；不持久化或记录令牌。AI 应优先使用
   `gh` 完成 PR、合并和部署跟踪，连接器不可用不能直接判定任务阻塞。
+- 新建且尚无任何提交的 Git 仓库同样可以派发任务：Runner 创建不基于 `origin/<默认分支>` 的
+  孤儿任务分支和独立 worktree，AI 的首个提交即为该仓库的首版内容；不得因远端默认分支不存在
+  而报“无效引用”。
 
 ## 安全边界
 

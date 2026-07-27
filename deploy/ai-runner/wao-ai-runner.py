@@ -217,6 +217,21 @@ def prune_stale_worktrees(runs_root: Path, git_command: str, keep: set[str]) -> 
             log(f"回收历史工作区 {entry} 失败，忽略：{exc}")
 
 
+def has_remote_default_branch(project_dir: Path, git_command: str, default_branch: str) -> bool:
+    """判断远端默认分支是否已有可检出的提交。
+
+    新建的 Git 仓库可以还没有任何提交；这时 ``origin/main`` 只是一个不存在的引用，不能作为
+    ``git worktree add`` 的起点。
+    """
+    result = run(
+        [git_command, "rev-parse", "--verify", "--quiet",
+         f"refs/remotes/origin/{default_branch}^{{commit}}"],
+        cwd=project_dir,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_url: str) -> Path:
     project_dir = root / claim["workspaceDir"]
     if not (project_dir / ".git").exists():
@@ -239,11 +254,20 @@ def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_u
     if worktree.exists():
         drop_worktree(worktree, git_command, project_dir)
     run([git_command, "branch", "-D", claim["branchName"]], cwd=project_dir, check=False)
-    run(
-        [git_command, "worktree", "add", "-b", claim["branchName"], str(worktree),
-         f"origin/{claim['defaultBranch']}"],
-        cwd=project_dir,
-    )
+    if has_remote_default_branch(project_dir, git_command, claim["defaultBranch"]):
+        run(
+            [git_command, "worktree", "add", "-b", claim["branchName"], str(worktree),
+             f"origin/{claim['defaultBranch']}"],
+            cwd=project_dir,
+        )
+    else:
+        # 空仓库没有 origin/<defaultBranch> 可供检出。直接创建孤儿分支，让 AI 在这个独立
+        # worktree 写入该仓库的第一版内容；首个提交会自然成为远端默认分支的候选 PR。
+        log(f"[{claim['runId']}] 远端 {claim['defaultBranch']} 尚无提交，创建首个任务工作区")
+        run(
+            [git_command, "worktree", "add", "--orphan", "-b", claim["branchName"], str(worktree)],
+            cwd=project_dir,
+        )
     return worktree
 
 

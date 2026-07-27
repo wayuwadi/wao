@@ -48,6 +48,8 @@ python3 deploy/ai-runner/wao-ai-runner.py \
 地址换成 `git@github.com:组织/仓库.git`。想固定行为可以显式传 `--git-protocol ssh` 或
 `https`。切换协议后已经克隆过的仓库会自动更新 `origin`，不需要手工删目录。
 
+新建的空 Git 仓库也可以直接派发任务。Runner 会为它创建一个孤儿任务分支和独立 worktree，不再尝试检出不存在的 `origin/main`；AI 在其中完成的首个提交就是该仓库的初始内容。
+
 配对成功后，节点令牌只写入本机 `~/.wao/ai-runner.json`，不会进入项目或 Git。
 
 ### Windows 开机自启动与守护
