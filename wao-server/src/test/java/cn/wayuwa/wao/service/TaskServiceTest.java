@@ -112,6 +112,16 @@ class TaskServiceTest {
     }
 
     @Test
+    void createRecordsCreatorSeparatelyFromOwner() {
+        when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
+
+        TaskDto dto = service.create(new CreateTaskRequest("整理证件盒", "p2", "P1", "wd", "2026-07-30", null, null), "wg");
+
+        assertThat(dto.owner()).isEqualTo("wd");
+        assertThat(dto.createdBy()).isEqualTo("wg");
+    }
+
+    @Test
     void getThrowsWhenMissing() {
         when(mapper.selectById("nope")).thenReturn(null);
         assertThatThrownBy(() -> service.get("nope")).isInstanceOf(NotFoundException.class);

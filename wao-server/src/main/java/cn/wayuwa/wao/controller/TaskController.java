@@ -46,8 +46,8 @@ public class TaskController {
     }
 
     @PostMapping
-    public ApiResponse<TaskDto> create(@Valid @RequestBody CreateTaskRequest request) {
-        return ApiResponse.ok(taskService.create(request));
+    public ApiResponse<TaskDto> create(@Valid @RequestBody CreateTaskRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(taskService.create(request, currentMember.id(http)));
     }
 
     @PatchMapping("/{id}")

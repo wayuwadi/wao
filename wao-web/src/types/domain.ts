@@ -114,6 +114,8 @@ export interface Task {
   status: TaskStatus
   pr: Priority
   owner: string
+  /** 创建人由服务端根据当前会话写入；历史任务没有可靠来源时为空。 */
+  createdBy?: string | null
   parts: string[]
   start?: string
   due: string

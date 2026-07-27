@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
 import { useUiStore, type TaskView } from '@/stores/ui'
 import { useTabsStore } from '@/stores/tabs'
 import { useDeco } from '@/composables/deco'
@@ -17,6 +18,7 @@ import type { TaskStatus } from '@/types'
 const route = useRoute()
 const router = useRouter()
 const data = useDataStore()
+const session = useSessionStore()
 const ui = useUiStore()
 const tabs = useTabsStore()
 const { decoProj, decoTask } = useDeco()
@@ -59,6 +61,8 @@ watch(
 const settingsOpen = ref(false)
 const selectedTaskIds = ref<string[]>([])
 const aiBatchStarting = ref(false)
+const creatorFilterOpen = ref(false)
+const creatorFilter = ref<string | null>(null)
 function onProjectDeleted() {
   settingsOpen.value = false
   const next = tabs.close(`proj:${pid.value}`)
@@ -99,7 +103,16 @@ const linkedDocs = computed(() =>
 const showDone = ref(false)
 const { toggle: toggleTask, isSettling } = useCompletionSettle()
 
-const allTasks = computed(() => ptasks.value.map(decoTask))
+const creatorOptions = computed(() => {
+  const ids = [...new Set(ptasks.value.map((task) => task.createdBy).filter((id): id is string => Boolean(id)))]
+  return ids.map((id) => ({ id, name: session.members.find((member) => member.id === id)?.name ?? id }))
+})
+const activeCreatorName = computed(() =>
+  creatorFilter.value ? creatorOptions.value.find((creator) => creator.id === creatorFilter.value)?.name ?? creatorFilter.value : '创建人',
+)
+const allTasks = computed(() => ptasks.value
+  .filter((task) => !creatorFilter.value || task.createdBy === creatorFilter.value)
+  .map(decoTask))
 const openTasks = computed(() => allTasks.value.filter((t) => t.status !== '已完成' || isSettling(t.id)))
 const doneTasks = computed(() => allTasks.value.filter((t) => t.status === '已完成' && !isSettling(t.id)))
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
@@ -110,7 +123,7 @@ const board = computed(() =>
     collapsible: st === '已完成',
     // 新任务一律落在「待办」，所以加号只出现在这一列——省掉一次把鼠标甩到右上角的来回。
     addable: st === '待办',
-    items: ptasks.value.filter((t) => t.status === st).map(decoTask),
+    items: allTasks.value.filter((t) => t.status === st),
   })),
 )
 const pdTabs = computed(() => {
@@ -198,6 +211,26 @@ function comingSoon(msg: string) {
           <button v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
             <i :class="v[1]"></i>{{ v[0] }}
           </button>
+        </div>
+        <div class="creator-filter">
+          <button
+            class="creator-filter-btn"
+            :class="{ on: creatorFilter }"
+            :disabled="!creatorOptions.length"
+            :title="creatorOptions.length ? '按创建人筛选任务' : '历史任务没有可靠的创建人记录'"
+            @click="creatorFilterOpen = !creatorFilterOpen"
+          >
+            <i class="ri-user-search-line"></i>{{ activeCreatorName }}<i class="ri-arrow-down-s-line"></i>
+          </button>
+          <div v-if="creatorFilterOpen" class="creator-filter-menu">
+            <button :class="{ on: !creatorFilter }" @click="creatorFilter = null; creatorFilterOpen = false">全部创建人</button>
+            <button
+              v-for="creator in creatorOptions"
+              :key="creator.id"
+              :class="{ on: creatorFilter === creator.id }"
+              @click="creatorFilter = creator.id; creatorFilterOpen = false"
+            >{{ creator.name }}</button>
+          </div>
         </div>
         <div class="spacer"></div>
         <button v-if="pdTaskView === 'list' && openTasks.length" class="select-all" @click="selectAllOpen">
@@ -712,6 +745,55 @@ function comingSoon(msg: string) {
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(16, 18, 28, 0.1);
 }
+.creator-filter {
+  position: relative;
+  margin-left: 8px;
+}
+.creator-filter-btn {
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--wao-text-3);
+  font-size: 12.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.creator-filter-btn:hover:not(:disabled),
+.creator-filter-btn.on {
+  border-color: #c7d0f1;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+}
+.creator-filter-btn:disabled { cursor: not-allowed; opacity: 0.55; }
+.creator-filter-menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 5px);
+  left: 0;
+  min-width: 132px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--wao-line);
+  border-radius: 9px;
+  box-shadow: var(--wao-shadow-modal);
+}
+.creator-filter-menu button {
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--wao-text-2);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.creator-filter-menu button:hover,
+.creator-filter-menu button.on { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
 .task-list-card,
 .doc-list-card,
 .file-list-card {
