@@ -25,11 +25,21 @@ PRINT_LOCK = threading.Lock()
 MAX_LOG_BYTES = 2 * 1024 * 1024
 # 运行结束后保留 worktree 供人工复查，超过这个天数才回收，避免磁盘被历史任务占满。
 RUN_WORKTREE_TTL_DAYS = 7
-ENGINE_LABELS = {"codex": "Codex", "claude": "Claude Code"}
+ENGINE_LABELS = {"codex": "Codex", "claude": "Claude Code", "qoder": "Qoder"}
+# 引擎 id 到本机可执行文件名的映射；Qoder 的命令名叫 qodercli，与引擎 id 不同。
+ENGINE_COMMANDS = {"codex": "codex", "claude": "claude", "qoder": "qodercli"}
+# Qoder 的 stream-json 事件与 Claude Code 同构（system/init、assistant、result），
+# 进展过滤、结果解析和用量统计直接复用 Claude 的口径。
+CLAUDE_STYLE_ENGINES = {"claude", "qoder"}
 # 沙箱强度到各 CLI 参数的映射，保证两种工具在同一档位下权限一致。
 CLAUDE_PERMISSION = {
     "read-only": ["--permission-mode", "plan"],
     "workspace-write": ["--permission-mode", "acceptEdits"],
+    "danger-full-access": ["--dangerously-skip-permissions"],
+}
+QODER_PERMISSION = {
+    "read-only": ["--permission-mode", "plan"],
+    "workspace-write": ["--permission-mode", "accept_edits"],
     "danger-full-access": ["--dangerously-skip-permissions"],
 }
 
@@ -312,8 +322,10 @@ def _readable_text(value: Any) -> str:
 
 
 def extract_progress(event: dict[str, Any], engine: str = "codex") -> tuple[str, str] | None:
-    """按 AI 工具选择事件解析方式；两种工具都只回传用户可读内容。"""
-    return extract_claude_progress(event) if engine == "claude" else extract_codex_progress(event)
+    """按 AI 工具选择事件解析方式；所有工具都只回传用户可读内容。"""
+    if engine in CLAUDE_STYLE_ENGINES:
+        return extract_claude_progress(event, ENGINE_LABELS[engine])
+    return extract_codex_progress(event)
 
 
 def _claude_plan_text(todos: Any) -> str:
@@ -330,14 +342,14 @@ def _claude_plan_text(todos: Any) -> str:
     return "\n".join(lines)
 
 
-def extract_claude_progress(event: dict[str, Any]) -> tuple[str, str] | None:
-    """解析 Claude Code 的 stream-json 事件；thinking 正文与工具调用细节不外传。"""
+def extract_claude_progress(event: dict[str, Any], name: str = "Claude Code") -> tuple[str, str] | None:
+    """解析 Claude Code 同构的 stream-json 事件；thinking 正文与工具调用细节不外传。"""
     event_type = str(event.get("type") or "")
     if event_type == "system" and event.get("subtype") == "init":
-        return "phase", "Claude Code 会话已建立，正在分析任务"
+        return "phase", f"{name} 会话已建立，正在分析任务"
     if event_type == "result":
         if event.get("is_error"):
-            return "result", "Claude Code 本轮执行失败，正在整理错误原因"
+            return "result", f"{name} 本轮执行失败，正在整理错误原因"
         return None
     if event_type != "assistant":
         return None
@@ -555,6 +567,32 @@ def run_claude(executable: str, worktree: Path, prompt: str, sandbox: str,
         command += ["--resume", session_id]
     exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, environment)
     reporter.flush()
+    return _claude_style_outcome(exit_code, output, "claude")
+
+
+def run_qoder(executable: str, worktree: Path, prompt: str, sandbox: str,
+        reporter: "ProgressReporter", environment: dict[str, str] | None = None,
+        repo_dir: Path | None = None,
+        session_id: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
+    """跑一次 `qodercli -p --output-format stream-json`，返回退出码、最终答复、会话 id 和用量。"""
+    command = [
+        executable, "-p", "--output-format", "stream-json",
+        *QODER_PERMISSION.get(sandbox, QODER_PERMISSION["workspace-write"]),
+    ]
+    # qodercli 只信任启动目录；worktree 的 .git 指向主仓库目录，必须用 --add-dir 一并信任，
+    # 否则受限档位下 git 操作会退回询问。
+    if repo_dir:
+        command += ["--add-dir", str(repo_dir)]
+    if session_id:
+        command += ["-r", session_id]
+    exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, environment)
+    reporter.flush()
+    return _claude_style_outcome(exit_code, output, "qoder")
+
+
+def _claude_style_outcome(exit_code: int, output: str,
+        engine: str) -> tuple[int, str, str | None, dict[str, Any]]:
+    """从 Claude 同构的 stream-json 输出里取最终答复、会话 id 和用量。"""
     session_id, result_text = None, ""
     for event in iter_events(output):
         session_id = event.get("session_id") or session_id
@@ -562,7 +600,7 @@ def run_claude(executable: str, worktree: Path, prompt: str, sandbox: str,
             result_text = _readable_text(event.get("result")) or result_text
             if event.get("is_error") and exit_code == 0:
                 exit_code = 1
-    return exit_code, result_text or output[-12000:], session_id, collect_usage(output, "claude")
+    return exit_code, result_text or output[-12000:], session_id, collect_usage(output, engine)
 
 
 def iter_events(output: str):
@@ -652,11 +690,12 @@ def collect_usage(output: str, engine: str) -> dict[str, Any]:
     """汇总一次运行的 token 用量、花费和实际使用的模型。
 
     解析失败不能影响任务结果回传，因此任何异常都回落成空用量：宁可少一条账，也不能
-    让一次已经跑完的任务因为统计问题变成失败。
+    让一次已经跑完的任务因为统计问题变成失败。Qoder 按 Credits 配额计费，result
+    事件里没有按次用量字段时同样回落成空账。
     """
     try:
         events = list(iter_events(output))
-        return collect_claude_usage(events) if engine == "claude" else collect_codex_usage(events)
+        return collect_claude_usage(events) if engine in CLAUDE_STYLE_ENGINES else collect_codex_usage(events)
     except Exception as exc:  # noqa: BLE001 - 统计失败不影响任务结果
         log(f"用量统计失败，本次不记账：{exc}")
         return _blank_usage()
@@ -701,6 +740,10 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             exit_code, result_text, session_id, usage = run_claude(
                 executable, worktree, prompt, sandbox, reporter, cli_environment,
                 claude_model, root / claim["workspaceDir"], session_id)
+        elif engine == "qoder":
+            exit_code, result_text, session_id, usage = run_qoder(
+                executable, worktree, prompt, sandbox, reporter, cli_environment,
+                root / claim["workspaceDir"], session_id)
         else:
             exit_code, result_text, session_id, usage = run_codex(
                 executable, worktree, prompt, sandbox, reporter, cli_environment, session_id)
@@ -736,6 +779,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--git-command", default=os.getenv("WAO_GIT_COMMAND"))
     parser.add_argument("--codex-command", default=os.getenv("WAO_CODEX_COMMAND"))
     parser.add_argument("--claude-command", default=os.getenv("WAO_CLAUDE_COMMAND"))
+    parser.add_argument("--qoder-command", default=os.getenv("WAO_QODER_COMMAND"))
     parser.add_argument("--claude-model", default=os.getenv("WAO_CLAUDE_MODEL"),
                         help="传给 Claude Code 的模型别名；留空使用本机默认模型")
     parser.add_argument(
@@ -745,7 +789,7 @@ def parse_args() -> argparse.Namespace:
         help="克隆项目仓库使用的协议；auto 表示本机没有 HTTPS 凭据时自动改用 SSH",
     )
     parser.add_argument("--engines", default=os.getenv("WAO_RUNNER_ENGINES"),
-                        help="本机可用的 AI 工具，逗号分隔（codex,claude）；留空按已安装的 CLI 自动探测")
+                        help="本机可用的 AI 工具，逗号分隔（codex,claude,qoder）；留空按已安装的 CLI 自动探测")
     parser.add_argument("--max-concurrency", type=int, default=int(os.getenv("WAO_RUNNER_CONCURRENCY", "2")))
     parser.add_argument(
         "--sandbox",
@@ -758,7 +802,7 @@ def parse_args() -> argparse.Namespace:
 
 def resolve_engines(args: argparse.Namespace) -> dict[str, str]:
     """解析本机可用的 AI 工具；显式指定时找不到命令直接报错，自动探测时静默跳过。"""
-    configured = {"codex": args.codex_command, "claude": args.claude_command}
+    configured = {"codex": args.codex_command, "claude": args.claude_command, "qoder": args.qoder_command}
     wanted = [name.strip().lower() for name in (args.engines or "").split(",") if name.strip()]
     for name in wanted:
         if name not in ENGINE_LABELS:
@@ -766,12 +810,12 @@ def resolve_engines(args: argparse.Namespace) -> dict[str, str]:
     commands: dict[str, str] = {}
     for name in wanted or list(ENGINE_LABELS):
         try:
-            commands[name] = find_executable(name, configured[name])
+            commands[name] = find_executable(ENGINE_COMMANDS[name], configured[name])
         except RuntimeError:
             if wanted:
                 raise
     if not commands:
-        raise RuntimeError("本机没有找到 codex 或 claude 命令，请先安装并登录至少一种 AI CLI")
+        raise RuntimeError("本机没有找到 codex、claude 或 qodercli 命令，请先安装并登录至少一种 AI CLI")
     return commands
 
 

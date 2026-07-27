@@ -71,9 +71,10 @@ public class AiRunService {
     private static final int MAX_PROGRESS_PER_RUN = 50;
     private static final Set<String> PROGRESS_KINDS = Set.of("phase", "message", "plan", "result");
     /** 目前支持的本地 AI 工具；顺序即页面默认展示顺序。 */
-    public static final List<String> ENGINES = List.of("codex", "claude");
+    public static final List<String> ENGINES = List.of("codex", "claude", "qoder");
     private static final String DEFAULT_ENGINE = "codex";
-    private static final Map<String, String> ENGINE_LABELS = Map.of("codex", "Codex", "claude", "Claude Code");
+    private static final Map<String, String> ENGINE_LABELS = Map.of("codex", "Codex", "claude", "Claude Code",
+            "qoder", "Qoder");
 
     private final AiProjectConfigMapper configMapper;
     private final AiRunnerNodeMapper runnerMapper;
