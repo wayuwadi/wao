@@ -410,6 +410,18 @@ class WorkspaceIsolationTest(unittest.TestCase):
         self.assertEqual("", self._git("branch", "--show-current", cwd=primary).stdout.strip())
         self._git("switch", "main", cwd=worktree)
 
+    def test_empty_remote_creates_an_unborn_task_worktree(self) -> None:
+        empty_origin = self.root / "empty-origin.git"
+        self._git("init", "--bare", str(empty_origin), cwd=self.root)
+
+        worktree = RUNNER.prepare_worktree(self.claim, self.workspace, GIT, str(empty_origin))
+
+        head = self._git("symbolic-ref", "--quiet", "HEAD", cwd=worktree)
+        self.assertEqual("refs/heads/ai/wao-ar-current", head.stdout.strip())
+        self.assertFalse((worktree / ".git").is_dir(), "任务目录仍应是独立 worktree")
+        (worktree / "README.md").write_text("first project", encoding="utf-8")
+        self.assertIn("README.md", self._git("status", "--short", cwd=worktree).stdout)
+
     def test_stale_worktrees_are_recycled_but_recent_and_current_are_kept(self) -> None:
         self._prepare()
         runs_root = self.workspace / ".wao-runs"
@@ -464,7 +476,9 @@ class ScriptUpdateTest(unittest.TestCase):
         self.workspace = Path(tempfile.mkdtemp(prefix="wao-update-"))
         self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
         self.script = self.workspace / "wao-ai-runner.py"
-        self.script.write_text("print('old')\n", encoding="utf-8")
+        # 服务端按 UTF-8 原始字节计算哈希，Runner 更新时也用 write_bytes 落盘；显式写入
+        # LF，避免 Windows 文本模式换行转换让用例偏离真实更新产物。
+        self.script.write_bytes(b"print('old')\n")
 
     @staticmethod
     def _payload(content: str) -> dict[str, str]:
