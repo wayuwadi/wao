@@ -36,13 +36,13 @@ public class TaskController {
     }
 
     @GetMapping
-    public ApiResponse<List<TaskDto>> list() {
-        return ApiResponse.ok(taskService.list());
+    public ApiResponse<List<TaskDto>> list(HttpServletRequest http) {
+        return ApiResponse.ok(taskService.list(currentMember.idOr(http, "wg")));
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<TaskDto> get(@PathVariable String id) {
-        return ApiResponse.ok(taskService.get(id));
+    public ApiResponse<TaskDto> get(@PathVariable String id, HttpServletRequest http) {
+        return ApiResponse.ok(taskService.get(id, currentMember.idOr(http, "wg")));
     }
 
     @PostMapping
@@ -63,8 +63,8 @@ public class TaskController {
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(@PathVariable String id) {
-        taskService.delete(id);
+    public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest http) {
+        taskService.delete(id, currentMember.idOr(http, "wg"));
         return ApiResponse.ok(null);
     }
 

@@ -54,12 +54,16 @@ public class TaskService {
     }
 
     /**
-     * 列出全部任务（跨项目）。
+     * 列出当前成员有权进入的项目中的任务（跨项目）。
      *
-     * @return 任务列表
+     * @param memberId 当前登录成员 id
+     * @return 可见任务列表
      */
-    public List<TaskDto> list() {
-        return taskMapper.selectList(null).stream().map(this::toDto).toList();
+    public List<TaskDto> list(String memberId) {
+        return taskMapper.selectList(null).stream()
+                .filter(task -> visibleTo(task, memberId))
+                .map(this::toDto)
+                .toList();
     }
 
     /**
@@ -71,6 +75,18 @@ public class TaskService {
      */
     public TaskDto get(String id) {
         return toDto(require(id));
+    }
+
+    /**
+     * 按 id 获取当前成员有权进入的项目中的任务。
+     *
+     * @param id 任务 id
+     * @param memberId 当前登录成员 id
+     * @return 任务
+     * @throws NotFoundException 任务不存在或所属项目对当前成员不可见时
+     */
+    public TaskDto get(String id, String memberId) {
+        return toDto(requireVisible(id, memberId));
     }
 
     /**
@@ -91,6 +107,7 @@ public class TaskService {
      * @return 创建后的任务
      */
     public TaskDto create(CreateTaskRequest req, String createdBy) {
+        requireProjectVisible(req.project(), createdBy);
         TaskEntity e = new TaskEntity();
         e.setId("t" + System.currentTimeMillis());
         e.setTitle(req.title().trim());
@@ -121,7 +138,7 @@ public class TaskService {
      * @throws NotFoundException 任务不存在时
      */
     public TaskDto patch(String id, PatchTaskRequest req, String memberId) {
-        TaskEntity e = require(id);
+        TaskEntity e = requireVisible(id, memberId);
         String previousStatus = e.getStatus();
         TaskDetail d = parse(e.getDetailJson());
         List<Activity> activity = new ArrayList<>(nn(d.activity()));
@@ -178,6 +195,11 @@ public class TaskService {
      */
     public TaskDto replace(String id, TaskDto dto, String memberId) {
         TaskEntity previous = taskMapper.selectById(id);
+        if (previous != null) {
+            requireVisible(id, memberId);
+        } else {
+            requireProjectVisible(dto.project(), memberId);
+        }
         String previousStatus = previous == null ? null : previous.getStatus();
         TaskEntity e = new TaskEntity();
         e.setId(id);
@@ -342,7 +364,7 @@ public class TaskService {
 
     /** 原子追加一条评论并同步飞书群，避免全文自动保存请求相互覆盖评论。 */
     public CommentDto addComment(String id, String memberId, String text) {
-        TaskEntity entity = require(id);
+        TaskEntity entity = requireVisible(id, memberId);
         TaskDetail detail = parse(entity.getDetailJson());
         CommentDto comment = new CommentDto("c" + System.currentTimeMillis(), memberId,
                 OffsetDateTime.now(ZoneId.of("Asia/Shanghai")).toString(), text.trim());
@@ -372,7 +394,7 @@ public class TaskService {
         if (!StringUtils.hasText(text)) {
             throw new BadRequestException("评论内容不能为空");
         }
-        TaskEntity entity = require(id);
+        TaskEntity entity = requireVisible(id, memberId);
         TaskDetail detail = parse(entity.getDetailJson());
         List<CommentDto> comments = new ArrayList<>(nn(detail.comments()));
         int index = indexOfComment(comments, commentId);
@@ -394,7 +416,7 @@ public class TaskService {
      * @throws BadRequestException 删的不是自己的评论时
      */
     public void deleteComment(String id, String commentId, String memberId) {
-        TaskEntity entity = require(id);
+        TaskEntity entity = requireVisible(id, memberId);
         TaskDetail detail = parse(entity.getDetailJson());
         List<CommentDto> comments = new ArrayList<>(nn(detail.comments()));
         int index = indexOfComment(comments, commentId);
@@ -407,10 +429,11 @@ public class TaskService {
      * 删除一个任务。
      *
      * @param id 任务 id
-     * @throws NotFoundException 任务不存在时
+     * @param memberId 当前登录成员 id
+     * @throws NotFoundException 任务不存在或所属项目对当前成员不可见时
      */
-    public void delete(String id) {
-        require(id);
+    public void delete(String id, String memberId) {
+        requireVisible(id, memberId);
         taskMapper.deleteById(id);
     }
 
@@ -457,6 +480,33 @@ public class TaskService {
             throw new NotFoundException("任务不存在：" + id);
         }
         return e;
+    }
+
+    /** 未授权与任务不存在都返回 404，避免泄露任务及其所属项目的存在。 */
+    private TaskEntity requireVisible(String id, String memberId) {
+        TaskEntity entity = require(id);
+        if (!visibleTo(entity, memberId)) {
+            throw new NotFoundException("任务不存在：" + id);
+        }
+        return entity;
+    }
+
+    private boolean visibleTo(TaskEntity entity, String memberId) {
+        if (!StringUtils.hasText(memberId)) {
+            return true;
+        }
+        try {
+            projects.get(entity.getProjectId(), memberId);
+            return true;
+        } catch (NotFoundException ex) {
+            return false;
+        }
+    }
+
+    private void requireProjectVisible(String projectId, String memberId) {
+        if (StringUtils.hasText(memberId)) {
+            projects.get(projectId, memberId);
+        }
     }
 
     private TaskDto toDto(TaskEntity e) {
