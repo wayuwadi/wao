@@ -167,8 +167,9 @@ export interface PatchProjectPayload {
   area?: string
   goal?: string
   icon?: string
+  notifyEnabled?: boolean
 }
-/** 局部更新项目（名称 / 领域 / 目标 / 图标）。 */
+/** 局部更新项目（名称 / 领域 / 目标 / 图标 / 通知开关）。 */
 export async function apiPatchProject(id: string, payload: PatchProjectPayload): Promise<Project> {
   const res = await http.patch<ApiResponse<Project>>(`/api/projects/${id}`, payload)
   return res.data.data

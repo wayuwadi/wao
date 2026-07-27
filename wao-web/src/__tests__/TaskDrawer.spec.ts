@@ -218,6 +218,28 @@ describe('TaskDrawer', () => {
     expect(rows[1]!.text()).toContain('已完成的')
   })
 
+  it('属性栏里能改开始与截止日期，也能清空', async () => {
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    const inputs = w.findAll('.props .date-input')
+    expect(inputs).toHaveLength(2)
+
+    await inputs[0]!.setValue('2026-07-20')
+    await inputs[1]!.setValue('2026-08-01')
+
+    const t = data.taskById(taskId)!
+    expect(t.start).toBe('2026-07-20')
+    expect(t.due).toBe('2026-08-01')
+    expect(t.activity[0]!.text).toContain('截止日期')
+
+    await w.findAll('.props .date-input')[0]!.setValue('')
+
+    expect(data.taskById(taskId)!.start).toBe('')
+    expect(data.taskById(taskId)!.activity[0]!.text).toContain('你清空了开始日期')
+  })
+
   it('没有已完成子任务时不显示折叠条', async () => {
     data.addSub(taskId, '只有这一条')
     ui.openTask(taskId)

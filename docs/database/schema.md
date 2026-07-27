@@ -67,6 +67,7 @@ erDiagram
 | visibility | VARCHAR(64) | 可见范围文案 |
 | updated_label | VARCHAR(32) | “26 分钟前”等展示文案 |
 | goal | VARCHAR(512) | 一句话目标 |
+| notify_enabled | TINYINT(1) NOT NULL DEFAULT 1 | 这个项目的动静是否发飞书群（V36）；关掉后新建任务、状态变化、新增子任务、评论与 AI 执行的卡片都不发，全局 webhook 开关仍然一票否决 |
 | detail_json | JSON | members[], milestones[], msDates[], trend[], blockers[], docs[], files[], activity[] |
 
 ### task（任务）
@@ -78,8 +79,8 @@ erDiagram
 | status | VARCHAR(16) | 待办/收集中/进行中/AI 进行中/待验证/已完成（「阻塞」已由 V16 迁到「进行中」，等待他人改由 waiting 表达；进入「收集中」会自动分享到飞书群，见 ADR-027） |
 | pr | CHAR(2) | P0–P3 |
 | owner_id | VARCHAR(32) FK→member | 负责人 |
-| start_date | VARCHAR(16) NULL | 开始 |
-| due_date | VARCHAR(16) | 截止 |
+| start_date | VARCHAR(16) NULL | 开始；可在任务属性栏直接改，空串表示未排期 |
+| due_date | VARCHAR(16) | 截止；同上 |
 | waiting | VARCHAR(64) NULL | 等待他人标记 |
 | description | TEXT | 描述 |
 | detail_json | JSON | parts[], steps[], subs[], files[], docs[], linkTasks[], comments[], custom[], activity[] |

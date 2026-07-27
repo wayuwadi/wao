@@ -494,6 +494,28 @@ function setOwner(id: string) {
   data.patchTask(t.id, { owner: id }, `你将负责人改为 ${m.name}`)
   menu.value = null
 }
+/**
+ * 改开始 / 截止日期。
+ *
+ * <p>这两个字段以前只是属性栏里的一行只读文字：截止日期只能在新建弹窗里从「今天 / 明天 /
+ * 周日 / 下周一」里挑一次，之后就再也改不动，排期一变只能重建任务。改成日期输入框后，
+ * 清空（选空值）也是合法操作，表示这条暂时不排期。
+ */
+const dueHint = computed(() => {
+  // 日期框只显示绝对日期，紧迫感（逾期 / 今天 / 明天）由这行小字补上，不改也不遮输入框
+  const t = task.value
+  if (!t?.due || !tv.value) return ''
+  return tv.value.dueStr === fmtDate(t.due) ? '' : tv.value.dueStr
+})
+function setDate(field: 'start' | 'due', event: Event) {
+  const t = task.value
+  if (!t) return
+  const value = (event.target as HTMLInputElement).value
+  const label = field === 'start' ? '开始日期' : '截止日期'
+  if ((t[field] ?? '') === value) return
+  const activity = value ? `你将${label}改为 ${fmtDate(value)}` : `你清空了${label}`
+  data.patchTask(t.id, field === 'start' ? { start: value } : { due: value }, activity)
+}
 function addCustom(type: string) {
   const t = task.value
   if (!t) return
@@ -912,11 +934,27 @@ function demo(msg: string) {
 
           <div class="prop-row">
             <span class="prop-key">开始</span>
-            <span class="prop-val">{{ task.start ? fmtDate(task.start) : '—' }}</span>
+            <input
+              class="date-input"
+              type="date"
+              :value="task.start || ''"
+              :max="task.due || undefined"
+              title="开始日期，留空表示未排期"
+              @change="setDate('start', $event)"
+            />
           </div>
           <div class="prop-row">
             <span class="prop-key">截止</span>
-            <span class="prop-val due" :style="{ color: tv.dueColor }"><i class="ri-calendar-line"></i>{{ tv.dueStr }}</span>
+            <input
+              class="date-input due"
+              type="date"
+              :value="task.due || ''"
+              :min="task.start || undefined"
+              :style="{ color: tv.dueColor }"
+              title="截止日期，留空表示未排期"
+              @change="setDate('due', $event)"
+            />
+            <span v-if="dueHint" class="due-hint" :style="{ color: tv.dueColor }">{{ dueHint }}</span>
           </div>
           <div class="prop-row">
             <span class="prop-key">所属项目</span>
@@ -1918,6 +1956,39 @@ function demo(msg: string) {
 }
 .prop-val.due i {
   color: inherit;
+}
+/* 日期看着仍像一行属性文字，鼠标移上去才显出可点的边框——属性栏不该被输入框撑成表单 */
+.date-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--wao-text-2);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  cursor: pointer;
+}
+.due-hint {
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+.date-input:hover {
+  border-color: var(--wao-line-control);
+}
+.date-input:focus {
+  outline: none;
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 3px rgba(67, 88, 214, .12);
+}
+.date-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: .5;
+}
+.date-input:hover::-webkit-calendar-picker-indicator {
+  opacity: 1;
 }
 .pill {
   display: inline-flex;
