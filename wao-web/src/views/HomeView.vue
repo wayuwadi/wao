@@ -317,10 +317,6 @@ onBeforeUnmount(() => {
         <div class="eyebrow">AI CONTROL CENTER</div>
         <!-- 核心理念摆在首屏第一行：这套系统的用法就是「你敢想，AI 就敢做」 -->
         <h1 class="slogan">娃有多大胆，AI 有多大产</h1>
-        <p class="slogan-sub">
-          想法有多大，产出就有多大。你只管把要做的事提出来——拆解、执行、交付交给 AI：
-          多台电脑并行开工，跑完直接等你验收。
-        </p>
         <div class="hero-now"><i class="ri-pulse-line"></i>现在有 <b>{{ activeRuns.length }}</b> 个任务在跑</div>
         <p>同一个项目可以交给不同电脑上的不同 AI 工具，每个任务使用独立会话和 Git worktree。</p>
         <div class="engine-status">
@@ -709,7 +705,6 @@ onBeforeUnmount(() => {
 .hero h1 { margin: 8px 0 6px; font-size: 28px; }
 .hero h1.slogan { font-size: 32px; font-weight: 800; letter-spacing: 1px; line-height: 1.25; }
 .hero p { margin: 0; font-size: 13px; opacity: .72; }
-.hero p.slogan-sub { margin: 0 0 10px; font-size: 13.5px; opacity: .88; line-height: 1.7; max-width: 46em; }
 .hero-now {
   display: inline-flex;
   align-items: center;
@@ -1034,7 +1029,6 @@ onBeforeUnmount(() => {
   .home { padding: 16px; }
   .hero { padding: 22px; flex-direction: column; align-items: stretch; }
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
-  .hero p.slogan-sub { font-size: 12.5px; }
   .capacity { width: auto; }
   .console-tabs { overflow-x: auto; }
   .flow-meta { grid-template-columns: 1fr; }

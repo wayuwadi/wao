@@ -95,6 +95,16 @@ function mountHome() {
 describe('HomeView AI 控制台', () => {
   afterEach(() => vi.useRealTimers())
 
+  it('首屏不再展示已要求删除的 AI 说明段落', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    expect(wrapper.find('.hero').text()).not.toContain('想法有多大，产出就有多大')
+    expect(wrapper.find('.hero').text()).not.toContain('多台电脑并行开工')
+    wrapper.unmount()
+  })
+
   it('在失败记录中展示摘要，点击后展示完整原因和退出码', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
