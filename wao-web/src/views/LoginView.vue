@@ -2,7 +2,6 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { startFeishuLogin } from '@/api/feishu'
-import { startWechatLogin } from '@/api/wechat'
 import { useSessionStore } from '@/stores/session'
 import { mountFeishuQr } from '@/utils/feishuQr'
 import SiteFooter from '@/components/SiteFooter.vue'
@@ -18,7 +17,6 @@ const password = ref('')
 const busy = ref(false)
 const error = ref('')
 const qrError = ref('')
-const providerError = ref('')
 let unmountQr: (() => void) | undefined
 
 async function submitEmail() {
@@ -45,15 +43,8 @@ async function loadQr() {
 async function switchMethod(next: 'feishu' | 'email') {
   method.value = next
   error.value = ''
-  providerError.value = ''
   if (next === 'feishu') await loadQr()
   else { unmountQr?.(); unmountQr = undefined }
-}
-
-async function loginWithWechat() {
-  providerError.value = ''
-  try { await startWechatLogin() }
-  catch (reason) { providerError.value = reason instanceof Error ? reason.message : '微信登录暂不可用。' }
 }
 
 onMounted(loadQr)
@@ -102,9 +93,7 @@ onBeforeUnmount(() => unmountQr?.())
           <span>其他登录方式</span>
           <button v-if="method !== 'feishu'" type="button" @click="switchMethod('feishu')"><i class="ri-feishu-line"></i>飞书</button>
           <button v-if="method !== 'email'" type="button" @click="switchMethod('email')"><i class="ri-mail-line"></i>邮箱</button>
-          <button type="button" @click="loginWithWechat"><i class="ri-wechat-fill"></i>微信</button>
         </div>
-        <div v-if="providerError" class="error">{{ providerError }}</div>
         <p class="foot">首次使用第三方登录时只需确认一次成员身份，之后会自动进入同一账号。</p>
       </section>
       <SiteFooter class="login-footer" />
@@ -122,6 +111,6 @@ h1 { max-width: 540px; margin: 0; font-size: 31px; line-height: 1.45; } .brand p
 .qr { width: 100%; max-width: 302px; aspect-ratio: 1; margin: auto; overflow: hidden; border: 1px solid var(--wao-line); border-radius: 14px; }.qr-loading { height: 100%; display: grid; place-content: center; gap: 8px; text-align: center; color: var(--wao-text-weak); font-size: 12px; }.qr-loading i { font-size: 30px; color: var(--wao-primary); }.qr-error,.error { margin-top: 8px; color: var(--wao-danger-strong); font-size: 12px; text-align: center; }
 .qr-fallback { width: 100%; max-width: 302px; height: 160px; margin: auto; display: grid; place-content: center; gap: 8px; text-align: center; border: 1px dashed var(--wao-line-strong); border-radius: 14px; color: var(--wao-text-weak); font-size: 12px; }.qr-fallback i { color: var(--wao-primary); font-size: 30px; }
 button,input { width: 100%; height: 42px; border-radius: 10px; font-size: 13px; } input { box-sizing: border-box; margin-top: 10px; padding: 0 13px; border: 1px solid var(--wao-line-control); outline: none; } input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67,88,214,.12); } button { cursor: pointer; }.primary { margin-top: 12px; border: none; background: var(--wao-primary); color: #fff; font-weight: 600; }.primary:disabled { opacity: .6; }.switch { height: 32px; border: none; background: none; color: var(--wao-primary); }.authorization-cta { margin-top: 12px; padding: 0 13px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(51,112,255,.28); background: #f3f6ff; color: #2855c7; font-weight: 600; }.authorization-cta:hover { border-color: #3370ff; background: #eaf0ff; box-shadow: 0 4px 12px rgba(51,112,255,.12); }.authorization-cta span { flex: 1; }.authorization-cta .ri-feishu-line { color: #3370ff; font-size: 16px; }.authorization-cta .ri-arrow-right-s-line { font-size: 17px; }.email-form { padding-top: 4px; }
-.other-methods { margin-top: 20px; padding-top: 16px; border-top: 1px solid #eceef3; display: flex; align-items: center; justify-content: center; gap: 8px; }.other-methods span { margin-right: 4px; color: var(--wao-text-faint); font-size: 11px; }.other-methods button { width: auto; height: 30px; padding: 0 10px; border: 1px solid #e3e5ec; border-radius: 8px; background: #fafbfc; color: var(--wao-text-weak); font-size: 12px; }.other-methods i { margin-right: 4px; }.other-methods .ri-feishu-line { color: #3370ff; }.other-methods .ri-wechat-fill { color: #2c8a5b; }.foot { margin: 14px 0 0; color: var(--wao-text-faint); font-size: 11px; line-height: 1.6; text-align: center; }
+.other-methods { margin-top: 20px; padding-top: 16px; border-top: 1px solid #eceef3; display: flex; align-items: center; justify-content: center; gap: 8px; }.other-methods span { margin-right: 4px; color: var(--wao-text-faint); font-size: 11px; }.other-methods button { width: auto; height: 30px; padding: 0 10px; border: 1px solid #e3e5ec; border-radius: 8px; background: #fafbfc; color: var(--wao-text-weak); font-size: 12px; }.other-methods i { margin-right: 4px; }.other-methods .ri-feishu-line { color: #3370ff; }.foot { margin: 14px 0 0; color: var(--wao-text-faint); font-size: 11px; line-height: 1.6; text-align: center; }
 @media (max-width: 760px) { .brand { display: none; }.panel { padding: 16px 16px 68px; }.card { width: min(368px, calc(100vw - 32px)); box-sizing: border-box; padding: 22px; } }
 </style>
