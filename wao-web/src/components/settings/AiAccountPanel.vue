@@ -3,7 +3,8 @@ import { computed, reactive, ref, watch } from 'vue'
 import { toast } from '@/composables/toast'
 import {
   fetchAiAccounts, createAiAccount, updateAiAccount, deleteAiAccount, syncAiAccount,
-  type AiAccount, type AiAccountForm,
+  startAiAccountLogin, completeAiAccountLogin,
+  type AiAccount, type AiAccountForm, type AiAccountLoginStart,
 } from '@/api/aiAccount'
 
 const providerLabels: Record<AiAccount['provider'], string> = {
@@ -37,6 +38,74 @@ const form = reactive<AiAccountForm>({
 
 const hasForm = computed(() => showForm.value || editingId.value !== null)
 const isEditing = computed(() => editingId.value !== null)
+
+/** 进行中的一次 OAuth 登录；null 表示没有在登录。 */
+const login = ref<AiAccountLoginStart | null>(null)
+const loginCode = ref('')
+const loginStarting = ref(false)
+const loginFinishing = ref(false)
+
+const windowLabels: Record<string, string> = {
+  session: '五小时会话额度',
+  five_hour: '五小时会话额度',
+  weekly_all: '七天额度',
+  seven_day: '七天额度',
+  weekly_opus: '七天 Opus 额度',
+  seven_day_opus: '七天 Opus 额度',
+}
+
+function windowLabel(name: string | null) {
+  if (!name) return '额度'
+  return windowLabels[name] ?? name
+}
+
+/** 用量条的颜色：越接近用满越警示。 */
+function quotaTone(percent: number) {
+  if (percent >= 90) return 'danger'
+  if (percent >= 70) return 'warn'
+  return 'ok'
+}
+
+function formatTime(value: string | null) {
+  return value ? new Date(value).toLocaleString('zh-CN') : ''
+}
+
+async function beginLogin() {
+  loginStarting.value = true
+  try {
+    login.value = await startAiAccountLogin('claude')
+    loginCode.value = ''
+    window.open(login.value.authorizeUrl, '_blank', 'noopener')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '发起登录失败')
+  } finally {
+    loginStarting.value = false
+  }
+}
+
+function cancelLogin() {
+  login.value = null
+  loginCode.value = ''
+}
+
+async function finishLogin() {
+  const code = loginCode.value.trim()
+  if (!code) {
+    toast('请先粘贴授权码')
+    return
+  }
+  loginFinishing.value = true
+  try {
+    const account = await completeAiAccountLogin(login.value!.state, code)
+    toast(`已登录 ${account.email || account.label}`, 'ri-check-line')
+    cancelLogin()
+    await load()
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '登录失败')
+  } finally {
+    loginFinishing.value = false
+  }
+}
 
 async function load() {
   busy.value = true
@@ -156,9 +225,34 @@ watch(() => true, load, { immediate: true })
     <div class="card-row wrap">
       <div class="card-title">已集中管理的账号</div>
       <div class="spacer"></div>
-      <button class="btn-primary sm" :disabled="busy || hasForm" @click="openAdd">
-        <i class="ri-add-line"></i>添加账号
+      <button class="btn-primary sm" :disabled="loginStarting || login !== null" @click="beginLogin">
+        <i :class="loginStarting ? 'ri-loader-4-line spin' : 'ri-shield-user-line'"></i>
+        使用 Claude 账号登录
       </button>
+      <button class="btn-ghost sm" :disabled="busy || hasForm" @click="openAdd">
+        <i class="ri-add-line"></i>粘贴凭据
+      </button>
+    </div>
+
+    <div v-if="login" class="login-box">
+      <div class="login-title"><i class="ri-external-link-line"></i>正在登录 Claude 账号</div>
+      <p class="login-hint">{{ login.hint }}</p>
+      <p class="login-hint">
+        没有自动打开授权页？
+        <a :href="login.authorizeUrl" target="_blank" rel="noopener">点这里手动打开</a>
+      </p>
+      <div class="login-actions">
+        <input
+          v-model.trim="loginCode"
+          class="login-code"
+          placeholder="把授权码整段粘贴到这里"
+          @keyup.enter="finishLogin"
+        />
+        <button class="btn-primary sm" :disabled="loginFinishing" @click="finishLogin">
+          {{ loginFinishing ? '登录中…' : '完成登录' }}
+        </button>
+        <button class="btn-ghost sm" :disabled="loginFinishing" @click="cancelLogin">取消</button>
+      </div>
     </div>
 
     <div v-if="!loaded && busy" class="hint">加载中…</div>
@@ -170,16 +264,39 @@ watch(() => true, load, { immediate: true })
             <span class="account-provider">{{ providerLabels[a.provider] }}</span>
             <span class="account-label">{{ a.label }}</span>
             <span class="account-email" :title="a.email ?? ''">{{ a.email || '未记录邮箱' }}</span>
+            <span v-if="a.plan" class="account-plan">{{ a.plan }}</span>
+            <span v-if="a.authMethod === 'oauth'" class="account-plan oauth" title="通过 OAuth 登录取得">
+              已登录
+            </span>
           </div>
+
+          <!-- 额度：查到才画进度条；查不到显示原因，不能把「没查到」画成 0%。 -->
+          <div v-if="a.quotaPercent !== null" class="quota">
+            <div class="quota-head">
+              <span>{{ windowLabel(a.quotaWindow) }}</span>
+              <strong :class="quotaTone(a.quotaPercent)">{{ a.quotaPercent }}%</strong>
+              <span v-if="a.quotaResetsAt" class="account-time">
+                {{ formatTime(a.quotaResetsAt) }} 重置
+              </span>
+            </div>
+            <div class="quota-bar">
+              <span
+                class="quota-fill"
+                :class="quotaTone(a.quotaPercent)"
+                :style="{ width: Math.min(100, Math.max(0, a.quotaPercent)) + '%' }"
+              ></span>
+            </div>
+          </div>
+
           <div class="account-meta">
             <span class="account-status" :class="a.quotaStatus?.toLowerCase()">
               {{ statusLabels[a.quotaStatus ?? 'UNKNOWN'] || a.quotaStatus }}
             </span>
-            <span v-if="a.quotaMessage" class="account-message" :title="a.quotaMessage">
+            <span v-if="a.quotaPercent === null && a.quotaMessage" class="account-message" :title="a.quotaMessage">
               {{ a.quotaMessage }}
             </span>
             <span v-if="a.lastSyncedAt" class="account-time">
-              上次同步 {{ new Date(a.lastSyncedAt).toLocaleString('zh-CN') }}
+              上次同步 {{ formatTime(a.lastSyncedAt) }}
             </span>
           </div>
         </div>
@@ -333,6 +450,91 @@ watch(() => true, load, { immediate: true })
 }
 .account-time {
   color: var(--wao-text-faint);
+}
+.account-plan {
+  font-size: 11.5px;
+  border-radius: 5px;
+  padding: 2px 7px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-2);
+}
+.account-plan.oauth {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+.quota {
+  margin-top: 8px;
+  max-width: 420px;
+}
+.quota-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--wao-text-3);
+}
+.quota-head strong.ok { color: #2e7d32; }
+.quota-head strong.warn { color: #ef6c00; }
+.quota-head strong.danger { color: #c62828; }
+.quota-bar {
+  margin-top: 4px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--wao-bg-sub);
+  overflow: hidden;
+}
+.quota-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.quota-fill.ok { background: #4caf50; }
+.quota-fill.warn { background: #fb8c00; }
+.quota-fill.danger { background: #e53935; }
+.login-box {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--wao-primary);
+  border-radius: 10px;
+  background: var(--wao-primary-soft);
+}
+.login-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wao-primary-text);
+}
+.login-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--wao-text-3);
+}
+.login-actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.login-code {
+  flex: 1;
+  min-width: 220px;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 11px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  outline: none;
+  font-size: 13px;
+  background: #fff;
+  color: var(--wao-text);
+}
+.login-code:focus {
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
 }
 .account-ops {
   display: flex;

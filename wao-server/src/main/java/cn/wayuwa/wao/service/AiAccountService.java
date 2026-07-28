@@ -2,36 +2,40 @@ package cn.wayuwa.wao.service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.common.VaultCryptoService;
 import cn.wayuwa.wao.domain.AiAccountEntity;
+import cn.wayuwa.wao.domain.AiOauthSessionEntity;
 import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.dto.AiAccountCredentialsDto;
 import cn.wayuwa.wao.dto.AiAccountDto;
 import cn.wayuwa.wao.dto.AiAccountFormRequest;
+import cn.wayuwa.wao.dto.AiAccountLoginStartDto;
 import cn.wayuwa.wao.dto.AiAccountSyncResultDto;
+import cn.wayuwa.wao.dto.CompleteAiAccountLoginRequest;
+import cn.wayuwa.wao.dto.StartAiAccountLoginRequest;
 import cn.wayuwa.wao.mapper.AiAccountMapper;
+import cn.wayuwa.wao.mapper.AiOauthSessionMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
 
 /**
  * 集中管理 AI 工具账号。
@@ -48,24 +52,31 @@ public class AiAccountService {
     private static final List<String> VALID_PROVIDERS = List.of("codex", "claude", "qoder");
     private static final Map<String, String> PROVIDER_LABELS = Map.of("codex", "Codex / ChatGPT",
             "claude", "Claude Code", "qoder", "Qoder");
+    /** Anthropic 限额窗口的中文说明；未收录的窗口直接显示原名。 */
+    private static final Map<String, String> WINDOW_LABELS = Map.of(
+            "session", "五小时会话额度", "five_hour", "五小时会话额度",
+            "weekly_all", "七天额度", "seven_day", "七天额度",
+            "weekly_opus", "七天 Opus 额度", "seven_day_opus", "七天 Opus 额度");
+
+    /** access token 剩余不到这个时长就提前续期，避免刚下发给 Runner 就过期。 */
+    private static final long REFRESH_MARGIN_SECONDS = 300;
 
     private final AiAccountMapper mapper;
     private final VaultCryptoService crypto;
     private final AiRunService aiRunService;
-    private final RestClient restClient;
     private final ObjectMapper objectMapper;
-    private final String claudeUsageUrl;
+    private final AnthropicOAuthClient anthropic;
+    private final AiOauthSessionMapper sessionMapper;
 
     public AiAccountService(AiAccountMapper mapper, VaultCryptoService crypto,
-            AiRunService aiRunService, RestClient.Builder restClientBuilder,
-            ObjectMapper objectMapper,
-            @Value("${wao.ai.claude.usage-url:}") String claudeUsageUrl) {
+            AiRunService aiRunService, ObjectMapper objectMapper,
+            AnthropicOAuthClient anthropic, AiOauthSessionMapper sessionMapper) {
         this.mapper = mapper;
         this.crypto = crypto;
         this.aiRunService = aiRunService;
-        this.restClient = restClientBuilder.build();
         this.objectMapper = objectMapper;
-        this.claudeUsageUrl = claudeUsageUrl;
+        this.anthropic = anthropic;
+        this.sessionMapper = sessionMapper;
     }
 
     public List<AiAccountDto> list() {
@@ -90,10 +101,105 @@ public class AiAccountService {
         entity.setCredentialJson(encrypt(request.credentials().trim()));
         entity.setEnabled(request.enabled() == null || request.enabled());
         entity.setQuotaStatus("UNKNOWN");
+        entity.setAuthMethod("manual");
+        entity.setTokenExpiresAt(expiryOf(readTree(request.credentials().trim())));
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
         mapper.insert(entity);
         return toDto(entity);
+    }
+
+    /**
+     * 发起一次 OAuth 登录，返回让用户在浏览器里打开的授权地址。
+     *
+     * <p>用的是授权码 + PKCE：授权完成后 Anthropic 把码显示在回调页上，用户复制回 WAO 换取令牌。
+     * 之所以不用「本地回环端口」那套，是因为浏览器在用户自己的电脑上，而 WAO 跑在 Linux 主节点，
+     * 回环地址根本连不通；复制授权码这一步换来的是登录可以在任何一台机器的浏览器里完成。
+     *
+     * @param request  要登录哪个 provider，以及可选的账号显示名
+     * @param memberId 发起登录的成员，仅用于审计
+     */
+    @Transactional
+    public AiAccountLoginStartDto startLogin(StartAiAccountLoginRequest request, String memberId) {
+        String provider = request.provider().trim().toLowerCase();
+        if (!"claude".equals(provider)) {
+            throw new BadRequestException(label(provider) + " 暂不支持一键登录，请先用「粘贴凭据」方式添加");
+        }
+        purgeExpiredSessions();
+        String state = anthropic.newState();
+        String verifier = anthropic.newCodeVerifier();
+        LocalDateTime now = LocalDateTime.now();
+        AiOauthSessionEntity session = new AiOauthSessionEntity();
+        session.setState(state);
+        session.setProvider(provider);
+        session.setCodeVerifier(verifier);
+        session.setLabel(trimToNull(request.label()));
+        session.setCreatedBy(memberId);
+        session.setCreatedAt(now);
+        session.setExpiresAt(now.plusMinutes(10));
+        sessionMapper.insert(session);
+        return new AiAccountLoginStartDto(state, anthropic.authorizeUrl(state, verifier),
+                session.getExpiresAt().toString(),
+                "在新窗口完成授权后，页面会显示一段授权码，把它整段复制回来即可。授权码十分钟内有效。");
+    }
+
+    /**
+     * 用回填的授权码换取令牌并落库成一个可用账号。
+     *
+     * <p>换到令牌后立刻拉一次账号资料和额度，用户点完登录就能看到是哪个邮箱、什么套餐、还剩多少。
+     */
+    @Transactional
+    public AiAccountDto completeLogin(CompleteAiAccountLoginRequest request) {
+        AiOauthSessionEntity session = sessionMapper.selectById(request.state().trim());
+        if (session == null || session.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new BadRequestException("这次登录已过期，请重新点击登录");
+        }
+        AnthropicOAuthClient.TokenSet tokens =
+                anthropic.exchangeCode(request.code(), session.getCodeVerifier(), session.getState());
+        sessionMapper.deleteById(session.getState());
+
+        LocalDateTime expiresAt = tokens.expiresInSeconds() > 0
+                ? LocalDateTime.now().plusSeconds(tokens.expiresInSeconds()) : null;
+        AiAccountEntity entity = new AiAccountEntity();
+        entity.setId(id("aa"));
+        entity.setProvider("claude");
+        entity.setEnabled(true);
+        entity.setAuthMethod("oauth");
+        entity.setQuotaStatus("UNKNOWN");
+        entity.setCreatedAt(LocalDateTime.now());
+        entity.setUpdatedAt(LocalDateTime.now());
+        entity.setTokenExpiresAt(expiresAt);
+        entity.setCredentialJson(encrypt(claudeCredentialJson(tokens, expiresAt, null)));
+
+        // 资料和额度失败不能让登录本身失败——令牌已经拿到了，账号必须存下来。
+        try {
+            JsonNode profile = anthropic.profile(tokens.accessToken());
+            entity.setEmail(trimToNull(profile.at("/account/email").asText(null)));
+            entity.setPlan(planOf(profile));
+            entity.setCredentialJson(encrypt(claudeCredentialJson(tokens, expiresAt, entity.getPlan())));
+        } catch (RuntimeException ex) {
+            entity.setQuotaMessage("登录成功，但读取账号资料失败：" + ex.getMessage());
+        }
+        entity.setLabel(StringUtils.hasText(session.getLabel()) ? session.getLabel()
+                : (StringUtils.hasText(entity.getEmail()) ? entity.getEmail() : "Claude 账号"));
+        mapper.insert(entity);
+
+        try {
+            applyClaudeUsage(entity, tokens.accessToken());
+            mapper.updateById(entity);
+        } catch (RuntimeException ex) {
+            // 额度拉不到不影响账号可用，下次手动同步即可。
+            entity.setQuotaStatus("FAILED");
+            entity.setQuotaMessage(limit("额度查询失败：" + ex.getMessage(), 500));
+            mapper.updateById(entity);
+        }
+        return toDto(entity);
+    }
+
+    /** 清掉过期的登录会话，避免 state 表无限增长。 */
+    private void purgeExpiredSessions() {
+        sessionMapper.delete(new LambdaQueryWrapper<AiOauthSessionEntity>()
+                .lt(AiOauthSessionEntity::getExpiresAt, LocalDateTime.now()));
     }
 
     @Transactional
@@ -106,6 +212,9 @@ public class AiAccountService {
         if (StringUtils.hasText(request.credentials())) {
             validateJson(request.credentials());
             entity.setCredentialJson(encrypt(request.credentials().trim()));
+            // 换了凭据就等于重新手工登录了一次，过期时间和来源都要跟着改。
+            entity.setAuthMethod("manual");
+            entity.setTokenExpiresAt(expiryOf(readTree(request.credentials().trim())));
         }
         if (request.enabled() != null) {
             entity.setEnabled(request.enabled());
@@ -124,22 +233,113 @@ public class AiAccountService {
     @Transactional
     public AiAccountSyncResultDto sync(String id) {
         AiAccountEntity entity = require(id);
-        String credentials = decrypt(entity.getCredentialJson());
-        SyncOutcome outcome;
-        switch (entity.getProvider()) {
-            case "claude" -> outcome = syncClaude(credentials);
-            case "codex" -> outcome = syncCodex(credentials);
-            case "qoder" -> outcome = syncQoder(credentials);
-            default -> throw new BadRequestException("不支持的 provider：" + entity.getProvider());
+        if ("claude".equals(entity.getProvider())) {
+            try {
+                applyClaudeUsage(entity, accessTokenFor(entity));
+            } catch (RuntimeException ex) {
+                applyOutcome(entity, failedOutcome(ex.getMessage()));
+            }
+        } else {
+            String credentials = decrypt(entity.getCredentialJson());
+            SyncOutcome outcome = switch (entity.getProvider()) {
+                case "codex" -> syncCodex(credentials);
+                case "qoder" -> syncQoder(credentials);
+                default -> throw new BadRequestException("不支持的 provider：" + entity.getProvider());
+            };
+            applyOutcome(entity, outcome);
         }
-        entity.setQuotaStatus(outcome.status);
-        entity.setQuotaMessage(limit(outcome.message, 500));
-        entity.setQuotaRawJson(outcome.rawJson);
         entity.setLastSyncedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(entity);
-        return new AiAccountSyncResultDto(entity.getId(), entity.getProvider(), outcome.status,
-                outcome.message, outcome.rawJson, entity.getLastSyncedAt().toString());
+        return new AiAccountSyncResultDto(entity.getId(), entity.getProvider(), entity.getQuotaStatus(),
+                entity.getQuotaMessage(), entity.getQuotaRawJson(), entity.getLastSyncedAt().toString());
+    }
+
+    private void applyOutcome(AiAccountEntity entity, SyncOutcome outcome) {
+        entity.setQuotaStatus(outcome.status);
+        entity.setQuotaMessage(limit(outcome.message, 500));
+        entity.setQuotaRawJson(outcome.rawJson);
+    }
+
+    /**
+     * 拉取 Claude 的账号资料与用量额度并写进实体。
+     *
+     * <p>Anthropic 的 {@code /api/oauth/usage} 会返回若干个限额窗口（五小时会话窗口、七天窗口等），
+     * 页面上只展示「最紧张的那一条」——用户真正关心的是还能不能接着跑，而不是六个百分比。
+     * 原始响应整份留在 {@code quotaRawJson} 里，需要细看时可以展开。
+     */
+    private void applyClaudeUsage(AiAccountEntity entity, String accessToken) {
+        JsonNode profile = anthropic.profile(accessToken);
+        String email = trimToNull(profile.at("/account/email").asText(null));
+        if (StringUtils.hasText(email)) entity.setEmail(email);
+        entity.setPlan(planOf(profile));
+
+        JsonNode usage = anthropic.usage(accessToken);
+        entity.setQuotaRawJson(usage == null ? null : usage.toString());
+
+        Window tightest = tightestWindow(usage);
+        if (tightest == null) {
+            entity.setQuotaStatus("NO_API");
+            entity.setQuotaMessage("Anthropic 未返回可解析的限额窗口");
+            entity.setQuotaPercent(null);
+            entity.setQuotaWindow(null);
+            entity.setQuotaResetsAt(null);
+            return;
+        }
+        entity.setQuotaStatus("SYNCED");
+        entity.setQuotaWindow(tightest.name);
+        entity.setQuotaPercent(tightest.percent);
+        entity.setQuotaResetsAt(tightest.resetsAt);
+        entity.setQuotaMessage(limit(describe(tightest, usage), 500));
+    }
+
+    /** 在所有限额窗口里挑已用百分比最高的一条。 */
+    private Window tightestWindow(JsonNode usage) {
+        if (usage == null) return null;
+        Window best = null;
+        JsonNode limits = usage.path("limits");
+        if (limits.isArray()) {
+            for (JsonNode limit : limits) {
+                Integer percent = intOrNull(limit.path("percent"));
+                if (percent == null) continue;
+                Window window = new Window(blankOr(limit.path("kind").asText(null), "limit"),
+                        percent, parseInstant(limit.path("resets_at").asText(null)));
+                if (best == null || window.percent > best.percent) best = window;
+            }
+        }
+        if (best != null) return best;
+        // 老响应里没有 limits 数组时，退回到两个具名窗口。
+        for (String name : List.of("five_hour", "seven_day")) {
+            JsonNode node = usage.path(name);
+            Integer percent = intOrNull(node.path("utilization"));
+            if (percent == null) continue;
+            Window window = new Window(name, percent, parseInstant(node.path("resets_at").asText(null)));
+            if (best == null || window.percent > best.percent) best = window;
+        }
+        return best;
+    }
+
+    private String describe(Window window, JsonNode usage) {
+        StringBuilder text = new StringBuilder(WINDOW_LABELS.getOrDefault(window.name, window.name))
+                .append("已用 ").append(window.percent).append('%');
+        if (window.resetsAt != null) text.append("，").append(window.resetsAt).append(" 重置");
+        JsonNode extra = usage == null ? null : usage.path("extra_usage");
+        if (extra != null && extra.isObject() && extra.path("is_enabled").asBoolean(false)) {
+            JsonNode used = extra.path("used_credits");
+            if (used.isNumber()) text.append("；额外用量已消耗 ").append(used.asDouble()).append(" 额度");
+        }
+        return text.toString();
+    }
+
+    private static String planOf(JsonNode profile) {
+        if (profile == null) return null;
+        if (profile.at("/account/has_claude_max").asBoolean(false)) return "max";
+        if (profile.at("/account/has_claude_pro").asBoolean(false)) return "pro";
+        String type = profile.at("/organization/organization_type").asText(null);
+        return StringUtils.hasText(type) ? type : null;
+    }
+
+    private record Window(String name, int percent, LocalDateTime resetsAt) {
     }
 
     /**
@@ -152,33 +352,104 @@ public class AiAccountService {
         if (runner == null) {
             throw new UnauthorizedException("执行节点令牌无效");
         }
-        return mapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AiAccountEntity>()
+        return mapper.selectList(new LambdaQueryWrapper<AiAccountEntity>()
                 .eq(AiAccountEntity::getEnabled, true)).stream()
-                .map(entity -> new AiAccountCredentialsDto(entity.getProvider(), decrypt(entity.getCredentialJson())))
+                .map(entity -> new AiAccountCredentialsDto(entity.getProvider(), freshCredential(entity)))
                 .toList();
     }
 
-    private SyncOutcome syncClaude(String credentials) {
-        JsonNode root = readTree(credentials);
-        String email = extractEmail(root);
-        if (!StringUtils.hasText(claudeUsageUrl)) {
-            return noApiOutcome(email, "未配置 Claude 额度查询地址（wao.ai.claude.usage-url）");
+    /**
+     * 下发给 Runner 前先确保令牌没过期。
+     *
+     * <p>续期失败（凭据是手工粘贴的、字段对不上、refresh token 已作废）时原样下发已存的凭据：
+     * 这一步是「尽量把新鲜的给出去」，不是准入校验。一个账号续不了期，不该连累同一批的其他账号，
+     * 也不该让 Runner 拿不到任何凭据——真过期了，任务失败时的报错比这里静默拦截更容易排查。
+     */
+    private String freshCredential(AiAccountEntity entity) {
+        if ("claude".equals(entity.getProvider())) {
+            try {
+                accessTokenFor(entity);
+            } catch (RuntimeException ignored) {
+                // 保持沉默：下面照常返回已存的凭据。
+            }
         }
-        String token = findToken(root, "accessToken", "access_token", "id_token", "api_key");
+        return decrypt(entity.getCredentialJson());
+    }
+
+    /**
+     * 取出这个账号当前可用的 access token，必要时先续期。
+     *
+     * <p>续期后新的令牌会立刻加密回写，所以下一次下发给 Runner 的凭据一定是新鲜的——
+     * 否则 Runner 会拿着一个刚过期的令牌去跑任务，失败原因还很难看出来。
+     */
+    private String accessTokenFor(AiAccountEntity entity) {
+        JsonNode root = readTree(decrypt(entity.getCredentialJson()));
+        String token = findToken(root, "accessToken", "access_token", "api_key");
         if (!StringUtils.hasText(token)) {
-            return failedOutcome("凭据中找不到 accessToken / access_token / id_token / api_key");
+            throw new BadRequestException("凭据中找不到 accessToken，请重新登录这个账号");
         }
+        LocalDateTime expiry = entity.getTokenExpiresAt() == null ? expiryOf(root) : entity.getTokenExpiresAt();
+        boolean expiring = expiry != null && expiry.isBefore(LocalDateTime.now().plusSeconds(REFRESH_MARGIN_SECONDS));
+        if (!expiring) return token;
+
+        String refreshToken = findToken(root, "refreshToken", "refresh_token");
+        if (!StringUtils.hasText(refreshToken)) {
+            throw new BadRequestException("凭据已过期且没有 refresh token，请重新登录这个账号");
+        }
+        AnthropicOAuthClient.TokenSet tokens = anthropic.refresh(refreshToken);
+        LocalDateTime newExpiry = tokens.expiresInSeconds() > 0
+                ? LocalDateTime.now().plusSeconds(tokens.expiresInSeconds()) : null;
+        // Anthropic 不一定每次都换新的 refresh token，没换就继续用旧的。
+        AnthropicOAuthClient.TokenSet merged = new AnthropicOAuthClient.TokenSet(tokens.accessToken(),
+                StringUtils.hasText(tokens.refreshToken()) ? tokens.refreshToken() : refreshToken,
+                tokens.expiresInSeconds(), tokens.scope());
+        entity.setCredentialJson(encrypt(claudeCredentialJson(merged, newExpiry, entity.getPlan())));
+        entity.setTokenExpiresAt(newExpiry);
+        entity.setUpdatedAt(LocalDateTime.now());
+        mapper.updateById(entity);
+        return merged.accessToken();
+    }
+
+    /**
+     * 拼出 Claude Code 本机凭据文件的格式。
+     *
+     * <p>字段名必须和 {@code ~/.claude/.credentials.json} 完全一致：Runner 会把这份 JSON 原样
+     * 写到该路径，CLI 直接读它来认证。格式对不上，任务跑起来才会报未登录。
+     */
+    private String claudeCredentialJson(AnthropicOAuthClient.TokenSet tokens, LocalDateTime expiresAt, String plan) {
+        ObjectNode root = objectMapper.createObjectNode();
+        ObjectNode oauth = root.putObject("claudeAiOauth");
+        oauth.put("accessToken", tokens.accessToken());
+        if (StringUtils.hasText(tokens.refreshToken())) oauth.put("refreshToken", tokens.refreshToken());
+        if (expiresAt != null) {
+            oauth.put("expiresAt", expiresAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+        }
+        ArrayNode scopes = oauth.putArray("scopes");
+        for (String scope : blankOr(tokens.scope(), "").split("\\s+")) {
+            if (StringUtils.hasText(scope)) scopes.add(scope);
+        }
+        if (StringUtils.hasText(plan)) oauth.put("subscriptionType", plan);
+        return root.toString();
+    }
+
+    /** 从凭据 JSON 里读出 access token 的过期时间（毫秒时间戳）。 */
+    private static LocalDateTime expiryOf(JsonNode root) {
+        JsonNode node = root == null ? null : root.at("/claudeAiOauth/expiresAt");
+        if (node == null || !node.isNumber()) return null;
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(node.asLong()), ZoneId.systemDefault());
+    }
+
+    private static LocalDateTime parseInstant(String text) {
+        if (!StringUtils.hasText(text)) return null;
         try {
-            String body = restClient.get()
-                    .uri(claudeUsageUrl)
-                    .header("Authorization", "Bearer " + token)
-                    .header("Accept", "application/json")
-                    .retrieve()
-                    .body(String.class);
-            return new SyncOutcome("SYNCED", "已同步 Claude 额度快照", body);
-        } catch (RestClientException ex) {
-            return failedOutcome("Claude 额度接口调用失败：" + ex.getMessage());
+            return OffsetDateTime.parse(text).atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime();
+        } catch (RuntimeException ex) {
+            return null;
         }
+    }
+
+    private static Integer intOrNull(JsonNode node) {
+        return node != null && node.isNumber() ? (int) Math.round(node.asDouble()) : null;
     }
 
     private SyncOutcome syncCodex(String credentials) {
@@ -322,11 +593,17 @@ public class AiAccountService {
                 entity.getLabel(),
                 entity.getEmail(),
                 Boolean.TRUE.equals(entity.getEnabled()),
+                blankOr(entity.getAuthMethod(), "manual"),
+                entity.getPlan(),
                 entity.getQuotaStatus(),
                 entity.getQuotaMessage(),
+                entity.getQuotaWindow(),
+                entity.getQuotaPercent(),
+                text(entity.getQuotaResetsAt()),
                 entity.getQuotaRawJson(),
-                entity.getLastSyncedAt() == null ? null : entity.getLastSyncedAt().toString(),
-                entity.getCreatedAt() == null ? null : entity.getCreatedAt().toString());
+                text(entity.getTokenExpiresAt()),
+                text(entity.getLastSyncedAt()),
+                text(entity.getCreatedAt()));
     }
 
     private String encrypt(String plaintext) {
@@ -362,6 +639,18 @@ public class AiAccountService {
             return value;
         }
         return value.substring(0, max);
+    }
+
+    private static String blankOr(String value, String fallback) {
+        return StringUtils.hasText(value) ? value : fallback;
+    }
+
+    private static String label(String provider) {
+        return PROVIDER_LABELS.getOrDefault(provider, provider);
+    }
+
+    private static String text(LocalDateTime value) {
+        return value == null ? null : value.toString();
     }
 
     private record SyncOutcome(String status, String message, String rawJson) {

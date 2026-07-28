@@ -22,6 +22,12 @@ public class AiAccountEntity {
     private LocalDateTime lastSyncedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String authMethod;
+    private String plan;
+    private LocalDateTime tokenExpiresAt;
+    private String quotaWindow;
+    private Integer quotaPercent;
+    private LocalDateTime quotaResetsAt;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -58,4 +64,22 @@ public class AiAccountEntity {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public String getAuthMethod() { return authMethod; }
+    public void setAuthMethod(String authMethod) { this.authMethod = authMethod; }
+
+    public String getPlan() { return plan; }
+    public void setPlan(String plan) { this.plan = plan; }
+
+    public LocalDateTime getTokenExpiresAt() { return tokenExpiresAt; }
+    public void setTokenExpiresAt(LocalDateTime tokenExpiresAt) { this.tokenExpiresAt = tokenExpiresAt; }
+
+    public String getQuotaWindow() { return quotaWindow; }
+    public void setQuotaWindow(String quotaWindow) { this.quotaWindow = quotaWindow; }
+
+    public Integer getQuotaPercent() { return quotaPercent; }
+    public void setQuotaPercent(Integer quotaPercent) { this.quotaPercent = quotaPercent; }
+
+    public LocalDateTime getQuotaResetsAt() { return quotaResetsAt; }
+    public void setQuotaResetsAt(LocalDateTime quotaResetsAt) { this.quotaResetsAt = quotaResetsAt; }
 }

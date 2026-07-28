@@ -277,11 +277,31 @@ erDiagram
 | quota_raw_json | TEXT NULL | 供应商返回的原始额度快照 |
 | last_synced_at | DATETIME NULL | 上次手动同步时间 |
 | created_at / updated_at | DATETIME | 创建与更新时间 |
+| auth_method | VARCHAR(16)（V39） | 凭据来源：`oauth` 登录 / `manual` 粘贴 |
+| plan | VARCHAR(64) NULL（V39） | 订阅套餐，如 pro / max |
+| token_expires_at | DATETIME NULL（V39） | access token 过期时间，到期前自动续期 |
+| quota_window | VARCHAR(32) NULL（V39） | 最紧张的限额窗口，如 session / weekly_all |
+| quota_percent | INT NULL（V39） | 该窗口已用百分比；**NULL 表示没查到，不等于 0** |
+| quota_resets_at | DATETIME NULL（V39） | 该窗口的重置时间 |
 
 集中管理 AI 工具账号，解决多台 Runner 重复登录和额度查看不统一的问题。
 凭据加密存储，前端接口不回传明文；Runner 凭据同步为 opt-in，凭据明文只通过 `/api/ai/runner/accounts`
-在 HTTPS 下返回给已配对节点。额度查询只使用真实接口，没有可靠接口时标记为 `NO_API`，不伪造余额。
-详见 ADR-030。
+在 HTTPS 下返回给已配对节点，下发前会先把快过期的 access token 续期。
+额度查询只使用真实接口：Claude 走 Anthropic 的 `/api/oauth/usage`，Codex / Qoder 没有可靠接口时
+标记为 `NO_API`，不伪造余额。详见 ADR-030 与 ADR-031。
+
+### ai_account_oauth_session（V39）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| state | VARCHAR(64) PK | OAuth state，回填授权码时据此找回会话 |
+| provider | VARCHAR(24) | 目前只有 claude |
+| code_verifier | VARCHAR(128) | PKCE code_verifier，**只留服务端，不下发前端** |
+| label | VARCHAR(128) NULL | 登录完成后要给账号起的名字 |
+| created_by | VARCHAR(32) NULL | 发起登录的成员 id |
+| created_at / expires_at | DATETIME | 创建时间与十分钟有效期 |
+
+一次进行中的 OAuth 登录。换到令牌或过期后立即删除，发起新登录时顺带清理过期行。详见 ADR-031。
 
 ## 密钥库域
 
