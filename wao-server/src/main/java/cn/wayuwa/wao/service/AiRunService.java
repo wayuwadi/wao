@@ -641,6 +641,8 @@ public class AiRunService {
         if (!runner.getId().equals(run.getRunnerId())) {
             throw new UnauthorizedException("该运行不属于当前执行节点");
         }
+        // 用户已暂停时，Runner 可能正好在回传退出结果；保留暂停结论，不让迟到回传覆盖它。
+        if ("cancelled".equals(run.getStatus())) return toRunDtos(List.of(run)).get(0);
         int exitCode = request.exitCode() == null ? -1 : request.exitCode();
         run.setExitCode(exitCode);
         run.setStatus(exitCode == 0 ? "succeeded" : "failed");
@@ -660,6 +662,34 @@ public class AiRunService {
         runnerMapper.updateById(runner);
         notifyFinished(run, engine, exitCode);
         return toRunDtos(List.of(run)).get(0);
+    }
+
+    /** 用户暂停一条等待中或正在执行的 AI 运行。 */
+    @Transactional
+    public synchronized AiRunDto pause(String runId) {
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        if (!ACTIVE.contains(run.getStatus())) {
+            throw new BadRequestException("该 AI 运行已经结束，不能暂停");
+        }
+        run.setStatus("cancelled");
+        run.setResultSummary("用户已暂停此 AI 任务");
+        run.setFinishedAt(LocalDateTime.now());
+        runMapper.updateById(run);
+        appendProgress(run, "result", "用户已暂停 AI 任务，执行节点将停止本地执行");
+        setTaskStatus(run.getTaskId(), "进行中");
+        return toRunDtos(List.of(run)).get(0);
+    }
+
+    /** Runner 轮询自身已领取运行的取消状态。 */
+    public boolean cancelled(String token, String runId) {
+        AiRunnerNodeEntity runner = requireRunner(token);
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        if (!runner.getId().equals(run.getRunnerId())) {
+            throw new UnauthorizedException("该运行不属于当前执行节点");
+        }
+        return "cancelled".equals(run.getStatus());
     }
 
     /**

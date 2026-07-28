@@ -14,7 +14,7 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { shareMarkdownUrl, shareUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
-import { continueAiRun, createAiRuns, fetchTaskAiRuns } from '@/api/ai'
+import { continueAiRun, createAiRuns, fetchTaskAiRuns, pauseAiRun } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 import { formatCost, formatTokens, shortModel } from '@/composables/aiUsage'
@@ -49,6 +49,7 @@ const aiRuns = ref<AiRun[]>([])
 const aiRunsLoading = ref(false)
 const aiContinuation = ref<Record<string, string>>({})
 const continuingRunId = ref<string | null>(null)
+const pausingRunId = ref<string | null>(null)
 let aiRunsTimer: ReturnType<typeof setInterval> | null = null
 /** 右侧栏当前展开的子任务标识；为 null 时显示任务属性栏。 */
 const openSubId = ref<string | null>(null)
@@ -123,6 +124,20 @@ async function continueRun(runId: string) {
     toast(error instanceof Error ? error.message : '发送补充失败，请重试', 'ri-error-warning-line')
   } finally {
     continuingRunId.value = null
+  }
+}
+
+async function pauseRun(runId: string) {
+  if (pausingRunId.value) return
+  pausingRunId.value = runId
+  try {
+    await pauseAiRun(runId)
+    toast('已暂停 AI 任务，执行电脑将停止当前执行', 'ri-pause-circle-line')
+    await refreshTaskAiRuns()
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '暂停失败，请重试', 'ri-error-warning-line')
+  } finally {
+    pausingRunId.value = null
   }
 }
 
@@ -600,6 +615,17 @@ function demo(msg: string) {
             @start="runWithAi"
           />
         </div>
+        <button
+          v-if="activeAiRun"
+          class="pause-ai-btn"
+          type="button"
+          :disabled="pausingRunId === activeAiRun.id"
+          title="暂停当前 AI 任务"
+          @click="pauseRun(activeAiRun.id)"
+        >
+          <i :class="pausingRunId === activeAiRun.id ? 'ri-loader-4-line spin' : 'ri-pause-circle-line'"></i>
+          {{ pausingRunId === activeAiRun.id ? '暂停中' : '暂停 AI' }}
+        </button>
         <div class="share-wrap">
           <button class="icon-btn" title="复制分享链接" @click="menu = menu === 'share' ? null : 'share'"><i class="ri-links-line"></i></button>
           <div v-if="menu === 'share'" class="menu-mask" @click="menu = null"></div>
@@ -1353,6 +1379,21 @@ function demo(msg: string) {
 .ai-run-btn:disabled {
   cursor: default;
 }
+.pause-ai-btn {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #efc9c9;
+  border-radius: 8px;
+  background: #fff7f7;
+  color: #b64141;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.pause-ai-btn:hover:not(:disabled) { background: #ffeded; border-color: #df9999; }
+.pause-ai-btn:disabled { cursor: default; opacity: .7; }
 .spin {
   display: inline-block;
   animation: spin 0.9s linear infinite;
@@ -2378,6 +2419,8 @@ function demo(msg: string) {
   .ai-run-btn .caret {
     display: none;
   }
+  .pause-ai-btn { width: 30px; padding: 0; justify-content: center; font-size: 0; }
+  .pause-ai-btn i { font-size: 16px; }
   .share-menu {
     width: min(236px, calc(100vw - 16px));
   }

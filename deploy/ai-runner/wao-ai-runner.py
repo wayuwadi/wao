@@ -8,7 +8,9 @@ import hashlib
 import json
 import os
 import platform
+import queue
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -346,18 +348,44 @@ def build_cli_environment(git_command: str) -> tuple[dict[str, str], bool, str |
 
 def invoke_cli(command: list[str], worktree: Path, prompt: str,
         on_event: Callable[[dict[str, Any]], None] | None = None,
-        environment: dict[str, str] | None = None) -> tuple[int, str]:
+        environment: dict[str, str] | None = None,
+        should_stop: Callable[[], bool] | None = None) -> tuple[int, str]:
     """通过标准输入传递提示，并逐行消费 AI CLI 的 JSONL 事件。"""
     process = subprocess.Popen(
         command, cwd=str(worktree), text=True, encoding="utf-8", errors="replace",
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment,
+        start_new_session=os.name != "nt",
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0,
     )
     if process.stdin is None or process.stdout is None:
         raise RuntimeError("无法建立 AI CLI 的标准输入输出管道")
     process.stdin.write(prompt)
     process.stdin.close()
     lines: list[str] = []
-    for line in process.stdout:
+    output: queue.Queue[str | None] = queue.Queue()
+
+    def read_output() -> None:
+        for line in process.stdout:
+            output.put(line)
+        output.put(None)
+
+    threading.Thread(target=read_output, daemon=True).start()
+    stopping = False
+    while True:
+        try:
+            line = output.get(timeout=1)
+        except queue.Empty:
+            if should_stop and should_stop() and not stopping:
+                log("收到暂停请求，正在终止本地 AI CLI")
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    os.killpg(process.pid, signal.SIGTERM)
+                stopping = True
+            continue
+        if line is None:
+            break
         lines.append(line)
         try:
             event = json.loads(line)
@@ -600,7 +628,8 @@ def build_continuation_prompt(claim: dict[str, Any], continuation: str) -> str:
 def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter",
         environment: dict[str, str] | None = None,
-        session_id: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
+        session_id: str | None = None,
+        should_stop: Callable[[], bool] | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
     """跑一次 `codex exec --json`，返回退出码、最终答复、会话 id 和用量。"""
     result_file = worktree / ".wao-ai-result.txt"
     command = [
@@ -608,7 +637,7 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         "-c", 'approval_policy="never"', "-C", str(worktree),
         "--output-last-message", str(result_file), "-",
     ]
-    exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, environment)
+    exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, environment, should_stop)
     reporter.flush()
     session_id = None
     for event in iter_events(output):
@@ -621,7 +650,8 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
 def run_claude(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter", environment: dict[str, str] | None = None,
         model: str | None = None, repo_dir: Path | None = None,
-        session_id: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
+        session_id: str | None = None,
+        should_stop: Callable[[], bool] | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
     """跑一次 `claude -p --output-format stream-json`，返回退出码、最终答复、会话 id 和用量。"""
     command = [
         executable, "-p", "--output-format", "stream-json", "--verbose",
@@ -635,7 +665,7 @@ def run_claude(executable: str, worktree: Path, prompt: str, sandbox: str,
         command += ["--model", model]
     if session_id:
         command += ["--resume", session_id]
-    exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, environment)
+    exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, environment, should_stop)
     reporter.flush()
     return _claude_style_outcome(exit_code, output, "claude")
 
@@ -643,7 +673,8 @@ def run_claude(executable: str, worktree: Path, prompt: str, sandbox: str,
 def run_qoder(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter", environment: dict[str, str] | None = None,
         repo_dir: Path | None = None,
-        session_id: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
+        session_id: str | None = None,
+        should_stop: Callable[[], bool] | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
     """跑一次 `qodercli -p --output-format stream-json`，返回退出码、最终答复、会话 id 和用量。"""
     command = [
         executable, "-p", "--output-format", "stream-json",
@@ -655,7 +686,7 @@ def run_qoder(executable: str, worktree: Path, prompt: str, sandbox: str,
         command += ["--add-dir", str(repo_dir)]
     if session_id:
         command += ["-r", session_id]
-    exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, environment)
+    exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, environment, should_stop)
     reporter.flush()
     return _claude_style_outcome(exit_code, output, "qoder")
 
@@ -785,6 +816,19 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
     summary = ""
     stage = "准备 Git 工作区"
     reporter = ProgressReporter(api, run_id, engine)
+    last_cancel_check = 0.0
+
+    def cancellation_requested() -> bool:
+        nonlocal last_cancel_check
+        now = time.monotonic()
+        if now - last_cancel_check < 3:
+            return False
+        last_cancel_check = now
+        try:
+            return bool((api.get(f"/api/ai/runner/runs/{run_id}/control") or {}).get("cancelled"))
+        except Exception as exc:  # noqa: BLE001 - 短暂网络错误不应中断正常执行
+            log(f"[{run_id}] 暂停状态检查失败：{exc}")
+            return False
     try:
         log(f"[{run_id}] 开始（{name}）：{claim['taskTitle']}")
         executable = engine_commands.get(engine)
@@ -809,14 +853,14 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         if engine == "claude":
             exit_code, result_text, session_id, usage = run_claude(
                 executable, worktree, prompt, sandbox, reporter, cli_environment,
-                claude_model, root / claim["workspaceDir"], session_id)
+                claude_model, root / claim["workspaceDir"], session_id, cancellation_requested)
         elif engine == "qoder":
             exit_code, result_text, session_id, usage = run_qoder(
                 executable, worktree, prompt, sandbox, reporter, cli_environment,
-                root / claim["workspaceDir"], session_id)
+                root / claim["workspaceDir"], session_id, cancellation_requested)
         else:
             exit_code, result_text, session_id, usage = run_codex(
-                executable, worktree, prompt, sandbox, reporter, cli_environment, session_id)
+                executable, worktree, prompt, sandbox, reporter, cli_environment, session_id, cancellation_requested)
         cost_text = "未回传" if usage["costUsd"] is None else "$%.4f" % usage["costUsd"]
         log(f"[{run_id}] 用量：模型 {usage['model'] or '未知'}，"
             f"token {usage['totalTokens']}（输入 {usage['inputTokens']} / 输出 "
