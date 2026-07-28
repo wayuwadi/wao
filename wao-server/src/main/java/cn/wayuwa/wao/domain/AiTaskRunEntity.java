@@ -16,6 +16,7 @@ public class AiTaskRunEntity {
     private String subId;
     private String projectId;
     private String engine;
+    private String aiAccountId;
     private String status;
     private String runnerId;
     private String requestedRunnerId;
@@ -55,6 +56,8 @@ public class AiTaskRunEntity {
     public void setProjectId(String projectId) { this.projectId = projectId; }
     public String getEngine() { return engine; }
     public void setEngine(String engine) { this.engine = engine; }
+    public String getAiAccountId() { return aiAccountId; }
+    public void setAiAccountId(String aiAccountId) { this.aiAccountId = aiAccountId; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public String getRunnerId() { return runnerId; }

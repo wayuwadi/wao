@@ -28,6 +28,9 @@ public class AiAccountEntity {
     private String quotaWindow;
     private Integer quotaPercent;
     private LocalDateTime quotaResetsAt;
+    private String baseUrl;
+    private String model;
+    private String apiProtocol;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -82,4 +85,13 @@ public class AiAccountEntity {
 
     public LocalDateTime getQuotaResetsAt() { return quotaResetsAt; }
     public void setQuotaResetsAt(LocalDateTime quotaResetsAt) { this.quotaResetsAt = quotaResetsAt; }
+
+    public String getBaseUrl() { return baseUrl; }
+    public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+
+    public String getModel() { return model; }
+    public void setModel(String model) { this.model = model; }
+
+    public String getApiProtocol() { return apiProtocol; }
+    public void setApiProtocol(String apiProtocol) { this.apiProtocol = apiProtocol; }
 }

@@ -23,8 +23,8 @@ export interface AiAccount {
   label: string
   email: string | null
   enabled: boolean
-  /** oauth = 一键登录拿到的凭据，manual = 手工粘贴的 JSON */
-  authMethod: 'oauth' | 'manual'
+  /** oauth = 一键登录，manual = 手工 JSON，api_key = 自定义 Responses API */
+  authMethod: 'oauth' | 'manual' | 'api_key'
   plan: string | null
   quotaStatus: 'UNKNOWN' | 'NO_API' | 'SYNCED' | 'FAILED' | null
   quotaMessage: string | null
@@ -37,6 +37,9 @@ export interface AiAccount {
   tokenExpiresAt: string | null
   lastSyncedAt: string | null
   createdAt: string | null
+  baseUrl?: string | null
+  model?: string | null
+  apiProtocol?: 'responses' | null
 }
 
 export interface AiAccountLoginStart {
@@ -52,6 +55,10 @@ export interface AiAccountForm {
   email?: string
   credentials?: string
   enabled?: boolean
+  baseUrl?: string
+  model?: string
+  apiProtocol?: 'responses'
+  apiKey?: string
 }
 
 export interface AiAccountSyncResult {
@@ -73,7 +80,7 @@ export const syncAiAccount = (id: string) =>
   post<AiAccountSyncResult>(`/api/settings/ai-accounts/${id}/sync`)
 
 /** 发起 OAuth 登录，拿到要在浏览器里打开的授权地址。 */
-export const startAiAccountLogin = (provider: 'claude', label?: string) =>
+export const startAiAccountLogin = (provider: 'claude' | 'codex', label?: string) =>
   post<AiAccountLoginStart>('/api/settings/ai-accounts/login/start', { provider, label })
 
 /** 回填授权码完成登录，直接拿到建好的账号。 */

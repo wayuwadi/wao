@@ -14,17 +14,16 @@ import java.util.Map;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
-import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.common.VaultCryptoService;
 import cn.wayuwa.wao.domain.AiAccountEntity;
 import cn.wayuwa.wao.domain.AiOauthSessionEntity;
-import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.dto.AiAccountCredentialsDto;
 import cn.wayuwa.wao.dto.AiAccountDto;
 import cn.wayuwa.wao.dto.AiAccountFormRequest;
 import cn.wayuwa.wao.dto.AiAccountLoginStartDto;
 import cn.wayuwa.wao.dto.AiAccountSyncResultDto;
 import cn.wayuwa.wao.dto.CompleteAiAccountLoginRequest;
+import cn.wayuwa.wao.dto.AiRunAccountDto;
 import cn.wayuwa.wao.dto.StartAiAccountLoginRequest;
 import cn.wayuwa.wao.mapper.AiAccountMapper;
 import cn.wayuwa.wao.mapper.AiOauthSessionMapper;
@@ -63,19 +62,21 @@ public class AiAccountService {
 
     private final AiAccountMapper mapper;
     private final VaultCryptoService crypto;
-    private final AiRunService aiRunService;
     private final ObjectMapper objectMapper;
     private final AnthropicOAuthClient anthropic;
+    private final OpenAiCodexOAuthClient codex;
+    private final AiCustomApiClient customApi;
     private final AiOauthSessionMapper sessionMapper;
 
-    public AiAccountService(AiAccountMapper mapper, VaultCryptoService crypto,
-            AiRunService aiRunService, ObjectMapper objectMapper,
-            AnthropicOAuthClient anthropic, AiOauthSessionMapper sessionMapper) {
+    public AiAccountService(AiAccountMapper mapper, VaultCryptoService crypto, ObjectMapper objectMapper,
+            AnthropicOAuthClient anthropic, OpenAiCodexOAuthClient codex,
+            AiCustomApiClient customApi, AiOauthSessionMapper sessionMapper) {
         this.mapper = mapper;
         this.crypto = crypto;
-        this.aiRunService = aiRunService;
         this.objectMapper = objectMapper;
         this.anthropic = anthropic;
+        this.codex = codex;
+        this.customApi = customApi;
         this.sessionMapper = sessionMapper;
     }
 
@@ -89,20 +90,26 @@ public class AiAccountService {
     @Transactional
     public AiAccountDto create(AiAccountFormRequest request) {
         validateProvider(request.provider());
-        if (!StringUtils.hasText(request.credentials())) {
-            throw new BadRequestException("凭据不能为空");
+        boolean custom = StringUtils.hasText(request.baseUrl());
+        if (custom && !"codex".equals(request.provider().trim().toLowerCase())) {
+            throw new BadRequestException("自定义 Responses API 目前只用于 Codex");
         }
-        validateJson(request.credentials());
+        if (custom && !StringUtils.hasText(request.apiKey())) throw new BadRequestException("API Key 不能为空");
+        if (!custom && !StringUtils.hasText(request.credentials())) throw new BadRequestException("凭据不能为空");
+        if (!custom) validateJson(request.credentials());
         AiAccountEntity entity = new AiAccountEntity();
         entity.setId(id("aa"));
         entity.setProvider(request.provider().trim().toLowerCase());
         entity.setLabel(request.label().trim());
         entity.setEmail(trimToNull(request.email()));
-        entity.setCredentialJson(encrypt(request.credentials().trim()));
+        entity.setCredentialJson(encrypt(custom ? apiKeyJson(request.apiKey()) : request.credentials().trim()));
         entity.setEnabled(request.enabled() == null || request.enabled());
         entity.setQuotaStatus("UNKNOWN");
-        entity.setAuthMethod("manual");
-        entity.setTokenExpiresAt(expiryOf(readTree(request.credentials().trim())));
+        entity.setAuthMethod(custom ? "api_key" : "manual");
+        entity.setBaseUrl(custom ? customApi.normalizeBaseUrl(request.baseUrl()) : null);
+        entity.setModel(custom ? requireModel(request.model()) : null);
+        entity.setApiProtocol(custom ? "responses" : null);
+        entity.setTokenExpiresAt(custom ? null : expiryOf(readTree(request.credentials().trim())));
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
         mapper.insert(entity);
@@ -122,12 +129,13 @@ public class AiAccountService {
     @Transactional
     public AiAccountLoginStartDto startLogin(StartAiAccountLoginRequest request, String memberId) {
         String provider = request.provider().trim().toLowerCase();
-        if (!"claude".equals(provider)) {
-            throw new BadRequestException(label(provider) + " 暂不支持一键登录，请先用「粘贴凭据」方式添加");
+        validateProvider(provider);
+        if (!"claude".equals(provider) && !"codex".equals(provider)) {
+            throw new BadRequestException(label(provider) + " 暂不支持一键登录，请使用手工凭据方式添加");
         }
         purgeExpiredSessions();
-        String state = anthropic.newState();
-        String verifier = anthropic.newCodeVerifier();
+        String state = "codex".equals(provider) ? codex.newState() : anthropic.newState();
+        String verifier = "codex".equals(provider) ? codex.newCodeVerifier() : anthropic.newCodeVerifier();
         LocalDateTime now = LocalDateTime.now();
         AiOauthSessionEntity session = new AiOauthSessionEntity();
         session.setState(state);
@@ -138,9 +146,12 @@ public class AiAccountService {
         session.setCreatedAt(now);
         session.setExpiresAt(now.plusMinutes(10));
         sessionMapper.insert(session);
-        return new AiAccountLoginStartDto(state, anthropic.authorizeUrl(state, verifier),
-                session.getExpiresAt().toString(),
-                "在新窗口完成授权后，页面会显示一段授权码，把它整段复制回来即可。授权码十分钟内有效。");
+        boolean codexLogin = "codex".equals(provider);
+        return new AiAccountLoginStartDto(state,
+                codexLogin ? codex.authorizeUrl(state, verifier) : anthropic.authorizeUrl(state, verifier),
+                session.getExpiresAt().toString(), codexLogin
+                        ? "完成授权后浏览器可能显示 localhost 无法连接，这是正常的。复制地址栏里的完整地址回来即可。"
+                        : "在新窗口完成授权后，页面会显示一段授权码，把它整段复制回来即可。授权码十分钟内有效。");
     }
 
     /**
@@ -154,6 +165,7 @@ public class AiAccountService {
         if (session == null || session.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new BadRequestException("这次登录已过期，请重新点击登录");
         }
+        if ("codex".equals(session.getProvider())) return completeCodexLogin(session, request.code());
         AnthropicOAuthClient.TokenSet tokens =
                 anthropic.exchangeCode(request.code(), session.getCodeVerifier(), session.getState());
         sessionMapper.deleteById(session.getState());
@@ -196,6 +208,40 @@ public class AiAccountService {
         return toDto(entity);
     }
 
+    private AiAccountDto completeCodexLogin(AiOauthSessionEntity session, String rawCode) {
+        OpenAiCodexOAuthClient.TokenSet tokens =
+                codex.exchangeCode(rawCode, session.getCodeVerifier(), session.getState());
+        sessionMapper.deleteById(session.getState());
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime expiresAt = tokens.expiresInSeconds() > 0
+                ? now.plusSeconds(tokens.expiresInSeconds()) : null;
+        JsonNode claims = decodeJwtPayload(tokens.idToken());
+        JsonNode profile = claims == null ? null : claims.get("https://api.openai.com/profile");
+        JsonNode auth = claims == null ? null : claims.get("https://api.openai.com/auth");
+        String email = claims == null ? null : trimToNull(claims.path("email").asText(null));
+        if (!StringUtils.hasText(email) && profile != null) email = trimToNull(profile.path("email").asText(null));
+        String plan = auth == null ? null : trimToNull(auth.path("chatgpt_plan_type").asText(null));
+        String accountId = auth == null ? null : trimToNull(auth.path("chatgpt_account_id").asText(null));
+
+        AiAccountEntity entity = new AiAccountEntity();
+        entity.setId(id("aa"));
+        entity.setProvider("codex");
+        entity.setLabel(StringUtils.hasText(session.getLabel()) ? session.getLabel()
+                : (StringUtils.hasText(email) ? email : "Codex 账号"));
+        entity.setEmail(email);
+        entity.setEnabled(true);
+        entity.setAuthMethod("oauth");
+        entity.setPlan(plan);
+        entity.setQuotaStatus("NO_API");
+        entity.setQuotaMessage("Codex 登录成功；官方暂未提供稳定的程序化额度接口");
+        entity.setTokenExpiresAt(expiresAt);
+        entity.setCredentialJson(encrypt(codexCredentialJson(tokens, accountId, now)));
+        entity.setCreatedAt(now);
+        entity.setUpdatedAt(now);
+        mapper.insert(entity);
+        return toDto(entity);
+    }
+
     /** 清掉过期的登录会话，避免 state 表无限增长。 */
     private void purgeExpiredSessions() {
         sessionMapper.delete(new LambdaQueryWrapper<AiOauthSessionEntity>()
@@ -206,10 +252,25 @@ public class AiAccountService {
     public AiAccountDto update(String id, AiAccountFormRequest request) {
         validateProvider(request.provider());
         AiAccountEntity entity = require(id);
+        boolean custom = StringUtils.hasText(request.baseUrl()) || "api_key".equals(entity.getAuthMethod());
+        if (custom && !"codex".equals(request.provider().trim().toLowerCase())) {
+            throw new BadRequestException("自定义 Responses API 目前只用于 Codex");
+        }
         entity.setProvider(request.provider().trim().toLowerCase());
         entity.setLabel(request.label().trim());
         entity.setEmail(trimToNull(request.email()));
-        if (StringUtils.hasText(request.credentials())) {
+        if (custom) {
+            entity.setBaseUrl(customApi.normalizeBaseUrl(blankOr(request.baseUrl(), entity.getBaseUrl())));
+            entity.setModel(requireModel(blankOr(request.model(), entity.getModel())));
+            entity.setApiProtocol("responses");
+            if (StringUtils.hasText(request.apiKey())) {
+                entity.setCredentialJson(encrypt(apiKeyJson(request.apiKey())));
+            } else if (!"api_key".equals(entity.getAuthMethod())) {
+                throw new BadRequestException("API Key 不能为空");
+            }
+            entity.setAuthMethod("api_key");
+            entity.setTokenExpiresAt(null);
+        } else if (StringUtils.hasText(request.credentials())) {
             validateJson(request.credentials());
             entity.setCredentialJson(encrypt(request.credentials().trim()));
             // 换了凭据就等于重新手工登录了一次，过期时间和来源都要跟着改。
@@ -233,7 +294,17 @@ public class AiAccountService {
     @Transactional
     public AiAccountSyncResultDto sync(String id) {
         AiAccountEntity entity = require(id);
-        if ("claude".equals(entity.getProvider())) {
+        if ("api_key".equals(entity.getAuthMethod())) {
+            try {
+                List<String> models = customApi.models(entity.getBaseUrl(), apiKeyOf(entity));
+                entity.setQuotaStatus("SYNCED");
+                entity.setQuotaMessage(models.isEmpty() ? "连接正常，但 /models 没有返回模型"
+                        : "连接正常，可用 " + models.size() + " 个模型");
+                entity.setQuotaRawJson(objectMapper.valueToTree(models).toString());
+            } catch (RuntimeException ex) {
+                applyOutcome(entity, failedOutcome(ex.getMessage()));
+            }
+        } else if ("claude".equals(entity.getProvider())) {
             try {
                 applyClaudeUsage(entity, accessTokenFor(entity));
             } catch (RuntimeException ex) {
@@ -342,20 +413,30 @@ public class AiAccountService {
     private record Window(String name, int percent, LocalDateTime resetsAt) {
     }
 
-    /**
-     * Runner 专用：返回所有启用账号的明文凭据 JSON。
-     *
-     * <p>调用方必须持有有效的 Runner 令牌；响应通过 HTTPS 传输，Runner 写入本机 CLI 凭据文件。
-     */
-    public List<AiAccountCredentialsDto> enabledCredentials(String runnerToken) {
-        AiRunnerNodeEntity runner = aiRunService.authenticateRunner(runnerToken);
-        if (runner == null) {
-            throw new UnauthorizedException("执行节点令牌无效");
-        }
+    /** Runner 专用：返回启用中的官方/手工 CLI 凭据；自定义 API 不写全局 auth 文件。 */
+    public List<AiAccountCredentialsDto> enabledCredentials() {
         return mapper.selectList(new LambdaQueryWrapper<AiAccountEntity>()
-                .eq(AiAccountEntity::getEnabled, true)).stream()
+                .eq(AiAccountEntity::getEnabled, true)
+                .ne(AiAccountEntity::getAuthMethod, "api_key")).stream()
                 .map(entity -> new AiAccountCredentialsDto(entity.getProvider(), freshCredential(entity)))
                 .toList();
+    }
+
+    /** 解析一次运行选中的账号；凭据只交给已经领取该运行的 Runner。 */
+    public AiRunAccountDto runAccount(String accountId, String engine) {
+        if (!StringUtils.hasText(accountId)) return null;
+        AiAccountEntity entity = require(accountId);
+        if (!Boolean.TRUE.equals(entity.getEnabled())) throw new BadRequestException("选择的 AI 账号已停用");
+        if (!entity.getProvider().equals(engine)) {
+            throw new BadRequestException("选择的账号不属于 " + label(engine));
+        }
+        if ("api_key".equals(entity.getAuthMethod())) {
+            return new AiRunAccountDto(entity.getId(), entity.getProvider(), entity.getLabel(),
+                    entity.getAuthMethod(), null, apiKeyOf(entity), entity.getBaseUrl(), entity.getModel(),
+                    blankOr(entity.getApiProtocol(), "responses"));
+        }
+        return new AiRunAccountDto(entity.getId(), entity.getProvider(), entity.getLabel(),
+                entity.getAuthMethod(), freshCredential(entity), null, null, null, null);
     }
 
     /**
@@ -372,8 +453,20 @@ public class AiAccountService {
             } catch (RuntimeException ignored) {
                 // 保持沉默：下面照常返回已存的凭据。
             }
+        } else if ("codex".equals(entity.getProvider()) && "oauth".equals(entity.getAuthMethod())) {
+            try {
+                refreshCodexIfNeeded(entity);
+            } catch (RuntimeException ignored) {
+                // 和 Claude 一样：续期失败时仍下发旧凭据，让实际运行给出明确错误。
+            }
         }
         return decrypt(entity.getCredentialJson());
+    }
+
+    private String apiKeyOf(AiAccountEntity entity) {
+        String value = readTree(decrypt(entity.getCredentialJson())).path("apiKey").asText(null);
+        if (!StringUtils.hasText(value)) throw new BadRequestException("自定义 API 没有可用的 API Key");
+        return value;
     }
 
     /**
@@ -430,6 +523,55 @@ public class AiAccountService {
         }
         if (StringUtils.hasText(plan)) oauth.put("subscriptionType", plan);
         return root.toString();
+    }
+
+    /** 生成 Codex CLI 当前识别的 {@code $CODEX_HOME/auth.json}。 */
+    private String codexCredentialJson(OpenAiCodexOAuthClient.TokenSet tokens,
+            String accountId, LocalDateTime refreshedAt) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.put("auth_mode", "chatgpt");
+        root.putNull("OPENAI_API_KEY");
+        ObjectNode tokenNode = root.putObject("tokens");
+        tokenNode.put("id_token", tokens.idToken());
+        tokenNode.put("access_token", tokens.accessToken());
+        if (StringUtils.hasText(tokens.refreshToken())) tokenNode.put("refresh_token", tokens.refreshToken());
+        if (StringUtils.hasText(accountId)) tokenNode.put("account_id", accountId);
+        root.put("last_refresh", refreshedAt.atZone(ZoneId.systemDefault()).toInstant().toString());
+        return root.toString();
+    }
+
+    private void refreshCodexIfNeeded(AiAccountEntity entity) {
+        LocalDateTime expiry = entity.getTokenExpiresAt();
+        if (expiry == null || !expiry.isBefore(LocalDateTime.now().plusSeconds(REFRESH_MARGIN_SECONDS))) return;
+        JsonNode root = readTree(decrypt(entity.getCredentialJson()));
+        String refreshToken = root.at("/tokens/refresh_token").asText(null);
+        if (!StringUtils.hasText(refreshToken)) {
+            throw new BadRequestException("Codex 凭据已过期且没有 refresh token，请重新登录");
+        }
+        OpenAiCodexOAuthClient.TokenSet refreshed = codex.refresh(refreshToken);
+        String mergedRefresh = StringUtils.hasText(refreshed.refreshToken())
+                ? refreshed.refreshToken() : refreshToken;
+        OpenAiCodexOAuthClient.TokenSet merged = new OpenAiCodexOAuthClient.TokenSet(
+                refreshed.idToken(), refreshed.accessToken(), mergedRefresh, refreshed.expiresInSeconds());
+        JsonNode claims = decodeJwtPayload(refreshed.idToken());
+        JsonNode auth = claims == null ? null : claims.get("https://api.openai.com/auth");
+        String accountId = auth == null ? root.at("/tokens/account_id").asText(null)
+                : blankOr(auth.path("chatgpt_account_id").asText(null), root.at("/tokens/account_id").asText(null));
+        LocalDateTime now = LocalDateTime.now();
+        entity.setCredentialJson(encrypt(codexCredentialJson(merged, accountId, now)));
+        entity.setTokenExpiresAt(refreshed.expiresInSeconds() > 0
+                ? now.plusSeconds(refreshed.expiresInSeconds()) : null);
+        entity.setUpdatedAt(now);
+        mapper.updateById(entity);
+    }
+
+    private String apiKeyJson(String apiKey) {
+        return objectMapper.createObjectNode().put("apiKey", apiKey.trim()).toString();
+    }
+
+    private static String requireModel(String model) {
+        if (!StringUtils.hasText(model)) throw new BadRequestException("请填写自定义 API 默认模型");
+        return model.trim();
     }
 
     /** 从凭据 JSON 里读出 access token 的过期时间（毫秒时间戳）。 */
@@ -603,7 +745,10 @@ public class AiAccountService {
                 entity.getQuotaRawJson(),
                 text(entity.getTokenExpiresAt()),
                 text(entity.getLastSyncedAt()),
-                text(entity.getCreatedAt()));
+                text(entity.getCreatedAt()),
+                entity.getBaseUrl(),
+                entity.getModel(),
+                entity.getApiProtocol());
     }
 
     private String encrypt(String plaintext) {

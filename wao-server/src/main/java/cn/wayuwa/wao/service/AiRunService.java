@@ -87,11 +87,12 @@ public class AiRunService {
     private final TaskService tasks;
     private final FeishuTaskNotifier notifier;
     private final RunnerScriptService scripts;
+    private final AiAccountService accounts;
 
     public AiRunService(AiProjectConfigMapper configMapper, AiRunnerNodeMapper runnerMapper,
             AiRunnerPairCodeMapper pairMapper, AiTaskRunMapper runMapper, AiRunProgressMapper progressMapper,
             TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier,
-            RunnerScriptService scripts) {
+            RunnerScriptService scripts, AiAccountService accounts) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
         this.pairMapper = pairMapper;
@@ -102,6 +103,7 @@ public class AiRunService {
         this.tasks = tasks;
         this.notifier = notifier;
         this.scripts = scripts;
+        this.accounts = accounts;
     }
 
     /** 读取项目配置；尚未保存过时返回安全的关闭状态。 */
@@ -297,10 +299,11 @@ public class AiRunService {
      * @param subId    只跑主任务下的某一条子任务时传它的标识；留空表示跑整个任务
      * @param engine   本次使用的 AI 工具；留空表示沿用各任务所属项目的默认工具
      * @param runnerId 指定执行电脑；留空表示由任意在线且支持该工具的电脑领取
+     * @param accountId 指定本次运行的集中账号；留空表示使用 Runner 本地登录态
      */
     @Transactional
     public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
-            String requestedBy, String baseUrl) {
+            String accountId, String requestedBy, String baseUrl) {
         String requestedEngine = StringUtils.hasText(engine) && !"auto".equals(engine)
                 ? requireEngine(engine) : null;
         String sub = trim(subId);
@@ -325,6 +328,7 @@ public class AiRunService {
             }
             String runEngine = requestedEngine != null
                     ? requestedEngine : requireEngine(blankOr(config.getDefaultEngine(), DEFAULT_ENGINE));
+            if (StringUtils.hasText(accountId)) accounts.runAccount(accountId.trim(), runEngine);
             if (target != null && !engines(target).contains(runEngine)) {
                 throw new BadRequestException(target.getName() + " 没有接入 " + label(runEngine) + "，请换一台电脑或换一个 AI 工具");
             }
@@ -345,6 +349,7 @@ public class AiRunService {
             run.setSubId(StringUtils.hasText(sub) ? sub : null);
             run.setProjectId(task.getProjectId());
             run.setEngine(runEngine);
+            run.setAiAccountId(StringUtils.hasText(accountId) ? accountId.trim() : null);
             run.setStatus("queued");
             run.setRequestedRunnerId(target == null ? null : target.getId());
             run.setRequestedBy(requestedBy);
@@ -456,6 +461,7 @@ public class AiRunService {
         run.setSubId(source.getSubId());
         run.setProjectId(source.getProjectId());
         run.setEngine(engine);
+        run.setAiAccountId(source.getAiAccountId());
         run.setStatus("queued");
         run.setRequestedRunnerId(source.getRequestedRunnerId());
         run.setRequestedBy(requestedBy);
@@ -608,7 +614,8 @@ public class AiRunService {
                     project == null ? run.getProjectId() : project.getName(), engine, run.getPromptUrl(),
                     config.getRepoUrl(), blankOr(config.getDefaultBranch(), "main"),
                     blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName(),
-                    previousFailure(run), run.getSessionId(), continuationInput);
+                    previousFailure(run), run.getSessionId(), continuationInput,
+                    accounts.runAccount(run.getAiAccountId(), engine));
         }
         return null;
     }

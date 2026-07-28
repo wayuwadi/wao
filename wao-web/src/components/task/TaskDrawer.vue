@@ -437,7 +437,7 @@ async function copyShare(kind: 'page' | 'md') {
     'ri-links-line',
   )
 }
-async function runWithAi(engine: AiEngine, runnerId: string | null) {
+async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: string | null) {
   const t = task.value
   if (!t || aiStarting.value) return
   // 子任务派工是独立的一条运行，任务整体正在跑也不该拦着
@@ -445,7 +445,7 @@ async function runWithAi(engine: AiEngine, runnerId: string | null) {
   if (!subId && t.status === 'AI 进行中') return
   aiStarting.value = true
   try {
-    const created = await createAiRuns([t.id], { subId, engine, runnerId })
+    const created = await createAiRuns([t.id], { subId, engine, runnerId, accountId })
     if (created.length) {
       const what = subId ? `子任务「${created[0]!.subTitle ?? ''}」` : '任务'
       data.patchTask(t.id, { status: 'AI 进行中' }, `已把${what}交给 ${engineLabel(engine)}`)

@@ -240,6 +240,7 @@ erDiagram
 | id / task_id / project_id | VARCHAR(32) | 运行、任务和项目 id |
 | sub_id | VARCHAR(64) NULL | 本次只跑这一条子任务；整条任务的运行为空。分享清单会把已派工的子任务摘掉（见 ADR-027） |
 | engine | VARCHAR(24) | 本次使用的 AI 工具：codex / claude |
+| ai_account_id | VARCHAR(32) NULL（V40） | 本次固定使用的集中账号；为空时使用 Runner 本地登录态（见 ADR-032） |
 | status | VARCHAR(24) | queued / running / succeeded / failed / cancelled |
 | runner_id | VARCHAR(32) NULL | 实际领取的电脑 |
 | requested_runner_id | VARCHAR(32) NULL | 入队时点名的电脑；优先于项目的 preferred_runner_id |
@@ -277,16 +278,21 @@ erDiagram
 | quota_raw_json | TEXT NULL | 供应商返回的原始额度快照 |
 | last_synced_at | DATETIME NULL | 上次手动同步时间 |
 | created_at / updated_at | DATETIME | 创建与更新时间 |
-| auth_method | VARCHAR(16)（V39） | 凭据来源：`oauth` 登录 / `manual` 粘贴 |
+| auth_method | VARCHAR(16)（V39/V40） | 凭据来源：`oauth` 登录 / `manual` 粘贴 / `api_key` 自定义 API |
 | plan | VARCHAR(64) NULL（V39） | 订阅套餐，如 pro / max |
 | token_expires_at | DATETIME NULL（V39） | access token 过期时间，到期前自动续期 |
 | quota_window | VARCHAR(32) NULL（V39） | 最紧张的限额窗口，如 session / weekly_all |
 | quota_percent | INT NULL（V39） | 该窗口已用百分比；**NULL 表示没查到，不等于 0** |
 | quota_resets_at | DATETIME NULL（V39） | 该窗口的重置时间 |
+| base_url | VARCHAR(512) NULL（V40） | 自定义 Responses API 根地址，服务端规范化为 `/v1` 结尾 |
+| model | VARCHAR(128) NULL（V40） | 自定义 API 的默认 Codex 模型 |
+| api_protocol | VARCHAR(24) NULL（V40） | 自定义 API 协议，目前固定为 `responses` |
 
 集中管理 AI 工具账号，解决多台 Runner 重复登录和额度查看不统一的问题。
-凭据加密存储，前端接口不回传明文；Runner 凭据同步为 opt-in，凭据明文只通过 `/api/ai/runner/accounts`
-在 HTTPS 下返回给已配对节点，下发前会先把快过期的 access token 续期。
+凭据加密存储，前端接口不回传明文；未绑定到运行的官方/手工凭据仍可通过 opt-in 的
+`/api/ai/runner/accounts` 同步给已配对节点。V40 起，用户可以在启动运行时选择账号，只有实际领取
+该运行的 Runner 才会在 claim 响应中拿到对应明文；自定义 API Key 不进入全局凭据同步。
+OAuth 下发前会先把快过期的 access token 续期。
 额度查询只使用真实接口：Claude 走 Anthropic 的 `/api/oauth/usage`，Codex / Qoder 没有可靠接口时
 标记为 `NO_API`，不伪造余额。详见 ADR-030 与 ADR-031。
 
@@ -295,7 +301,7 @@ erDiagram
 | 列 | 类型 | 说明 |
 |---|---|---|
 | state | VARCHAR(64) PK | OAuth state，回填授权码时据此找回会话 |
-| provider | VARCHAR(24) | 目前只有 claude |
+| provider | VARCHAR(24) | claude / codex |
 | code_verifier | VARCHAR(128) | PKCE code_verifier，**只留服务端，不下发前端** |
 | label | VARCHAR(128) NULL | 登录完成后要给账号起的名字 |
 | created_by | VARCHAR(32) NULL | 发起登录的成员 id |
@@ -366,4 +372,15 @@ erDiagram
 - `V27__automation_run_executor.sql`：记录自动化任务每次手动运行的执行成员，定时任务保持为空。
 - `V28__reclassify_unsupported_ai_runs.sql`：把已经合并上线、仅因拒绝伪造非必要功能而误判失败的 AI Run 修正为成功，并将对应任务送回待验证。
 - `V29__feishu_quick_collect_and_sub_runs.sql`：AI 运行记录可指向单条子任务（见 ADR-027）。
+- `V30__task_creator.sql`：记录任务创建人。
+- `V31__runner_admin_concurrency.sql`：管理员可覆盖 Runner 自报并发数。
+- `V32__runner_wake_on_lan.sql`：保存 Runner 唤醒信息。
+- `V33__task_completed_at_and_webhook_switch.sql`：任务完成时间与 webhook 开关。
+- `V34__runner_script_update.sql`：Runner 脚本版本和更新请求。
+- `V35__runner_online_state.sql`：Runner 在线状态通知时间线。
+- `V36__project_notify_switch.sql`：项目级通知开关。
+- `V37__site_filing_settings.sql`：站点备案设置。
+- `V38__ai_account.sql`：集中 AI 账号及加密凭据。
+- `V39__ai_account_oauth.sql`：AI 账号 OAuth 会话、令牌续期和额度窗口。
+- `V40__codex_oauth_custom_api.sql`：Codex OAuth、自定义 Responses API 配置与单次运行账号路由（见 ADR-032）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

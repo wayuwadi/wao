@@ -53,9 +53,10 @@ class AiRunServiceTest {
     private final TaskService tasks = mock(TaskService.class);
     private final FeishuTaskNotifier notifier = mock(FeishuTaskNotifier.class);
     private final RunnerScriptService scripts = mock(RunnerScriptService.class);
+    private final AiAccountService accounts = mock(AiAccountService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
-            tasks, notifier, scripts);
+            tasks, notifier, scripts, accounts);
 
     @BeforeEach
     void emptyProgressByDefault() {
@@ -112,7 +113,7 @@ class AiRunServiceTest {
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
-        var result = service.enqueue(List.of("t1"), null, null, null, "wg", "https://wao.example");
+        var result = service.enqueue(List.of("t1"), null, null, null, null, "wg", "https://wao.example");
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).taskTitle()).isEqualTo("修复登录");
@@ -136,7 +137,7 @@ class AiRunServiceTest {
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
-        var result = service.enqueue(List.of("t1"), null, "claude", "rn2", "wg", "https://wao.example");
+        var result = service.enqueue(List.of("t1"), null, "claude", "rn2", null, "wg", "https://wao.example");
 
         assertThat(result.get(0).engine()).isEqualTo("claude");
         assertThat(result.get(0).requestedRunnerId()).isEqualTo("rn2");
@@ -147,12 +148,30 @@ class AiRunServiceTest {
     }
 
     @Test
+    void enqueuePinsSelectedAccountToTheRun() {
+        TaskEntity task = task("t1", "p1", "使用指定 Codex 账号");
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "Runner", "codex")));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        service.enqueue(List.of("t1"), null, "codex", null, "aa-1", "wg", "https://wao.example");
+
+        verify(accounts).runAccount("aa-1", "codex");
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getAiAccountId()).isEqualTo("aa-1");
+    }
+
+    @Test
     void enqueueRejectsComputerThatDoesNotHaveTheRequestedAiTool() {
         when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "接入 Claude"));
         when(configMapper.selectById("p1")).thenReturn(config("p1"));
         when(runnerMapper.selectById("rn1")).thenReturn(runner("rn1", "娃哥电脑", "codex"));
 
-        assertThatThrownBy(() -> service.enqueue(List.of("t1"), null, "claude", "rn1", "wg", "https://wao.example"))
+        assertThatThrownBy(() -> service.enqueue(List.of("t1"), null, "claude", "rn1", null, "wg", "https://wao.example"))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Claude Code");
         verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
@@ -593,7 +612,7 @@ class AiRunServiceTest {
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
         when(tasks.get("t1")).thenReturn(taskDto("s1", "子任务也能单独跑"));
 
-        var result = service.enqueue(List.of("t1"), "s1", null, null, "wg", "https://wao.example");
+        var result = service.enqueue(List.of("t1"), "s1", null, null, null, "wg", "https://wao.example");
 
         assertThat(result).hasSize(1);
         ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
@@ -610,7 +629,7 @@ class AiRunServiceTest {
         when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "娃哥电脑", "codex")));
         when(tasks.get("t1")).thenReturn(taskDto("s1", "子任务也能单独跑"));
 
-        assertThatThrownBy(() -> service.enqueue(List.of("t1"), "s9", null, null, "wg", "https://wao.example"))
+        assertThatThrownBy(() -> service.enqueue(List.of("t1"), "s9", null, null, null, "wg", "https://wao.example"))
                 .isInstanceOf(cn.wayuwa.wao.common.NotFoundException.class);
         verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
     }

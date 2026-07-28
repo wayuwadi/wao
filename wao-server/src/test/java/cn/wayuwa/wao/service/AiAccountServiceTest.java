@@ -9,17 +9,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
-import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.common.VaultCryptoService;
 import cn.wayuwa.wao.domain.AiAccountEntity;
 import cn.wayuwa.wao.domain.AiOauthSessionEntity;
-import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.dto.AiAccountCredentialsDto;
 import cn.wayuwa.wao.dto.AiAccountFormRequest;
 import cn.wayuwa.wao.dto.AiAccountSyncResultDto;
@@ -38,12 +38,13 @@ class AiAccountServiceTest {
 
     private final AiAccountMapper mapper = mock(AiAccountMapper.class);
     private final VaultCryptoService crypto = new VaultCryptoService(TEST_KEY);
-    private final AiRunService aiRunService = mock(AiRunService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final AnthropicOAuthClient anthropic = mock(AnthropicOAuthClient.class);
+    private final OpenAiCodexOAuthClient codex = mock(OpenAiCodexOAuthClient.class);
+    private final AiCustomApiClient customApi = mock(AiCustomApiClient.class);
     private final AiOauthSessionMapper sessionMapper = mock(AiOauthSessionMapper.class);
-    private final AiAccountService service = new AiAccountService(mapper, crypto, aiRunService,
-            objectMapper, anthropic, sessionMapper);
+    private final AiAccountService service = new AiAccountService(mapper, crypto, objectMapper,
+            anthropic, codex, customApi, sessionMapper);
 
     private Map<String, AiAccountEntity> backedByMemory() {
         Map<String, AiAccountEntity> rows = new HashMap<>();
@@ -119,23 +120,12 @@ class AiAccountServiceTest {
     }
 
     @Test
-    void enabledCredentialsValidatesRunnerToken() {
-        when(aiRunService.authenticateRunner("bad")).thenThrow(new UnauthorizedException("invalid"));
-
-        assertThatThrownBy(() -> service.enabledCredentials("bad"))
-                .isInstanceOf(UnauthorizedException.class);
-    }
-
-    @Test
     void enabledCredentialsReturnsPlaintextOnlyForEnabledAccounts() {
         backedByMemory();
-        AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
-        runner.setId("rn-1");
-        when(aiRunService.authenticateRunner("token")).thenReturn(runner);
         service.create(new AiAccountFormRequest("claude", "A", null, "{\"t\":\"a\"}", true));
         service.create(new AiAccountFormRequest("codex", "B", null, "{\"t\":\"b\"}", false));
 
-        List<AiAccountCredentialsDto> result = service.enabledCredentials("token");
+        List<AiAccountCredentialsDto> result = service.enabledCredentials();
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).provider()).isEqualTo("claude");
@@ -163,10 +153,7 @@ class AiAccountServiceTest {
 
     /** 通过 Runner 下发接口读回明文凭据——这正是凭据最终要走的那条路。 */
     private String storedCredential() {
-        AiRunnerNodeEntity reader = new AiRunnerNodeEntity();
-        reader.setId("rn-read");
-        when(aiRunService.authenticateRunner("read-token")).thenReturn(reader);
-        return service.enabledCredentials("read-token").get(0).credentials();
+        return service.enabledCredentials().get(0).credentials();
     }
 
     private JsonNode json(String text) {
@@ -182,8 +169,120 @@ class AiAccountServiceTest {
 
     @Test
     void startLoginRejectsProvidersWithoutOauthSupport() {
-        assertThatThrownBy(() -> service.startLogin(new StartAiAccountLoginRequest("codex", null), "m1"))
+        assertThatThrownBy(() -> service.startLogin(new StartAiAccountLoginRequest("qoder", null), "m1"))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void startLoginSupportsCodexPkceFlow() {
+        when(codex.newState()).thenReturn("state-1");
+        when(codex.newCodeVerifier()).thenReturn("verifier-1");
+        when(codex.authorizeUrl("state-1", "verifier-1")).thenReturn("https://auth.openai.com/oauth/authorize?state=state-1");
+
+        var result = service.startLogin(new StartAiAccountLoginRequest("codex", "工作账号"), "m1");
+
+        assertThat(result.state()).isEqualTo("state-1");
+        assertThat(result.authorizeUrl()).contains("auth.openai.com");
+        assertThat(result.hint()).contains("完整地址");
+        verify(sessionMapper).insert(any(AiOauthSessionEntity.class));
+    }
+
+    @Test
+    void completeCodexLoginStoresOfficialAuthJson() {
+        backedByMemory();
+        AiOauthSessionEntity session = new AiOauthSessionEntity();
+        session.setState("st-codex");
+        session.setProvider("codex");
+        session.setCodeVerifier("verifier");
+        session.setLabel("Codex 工作账号");
+        session.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+        when(sessionMapper.selectById("st-codex")).thenReturn(session);
+        String idToken = jwt("""
+                {"email":"codex@example.com","https://api.openai.com/auth":{"chatgpt_plan_type":"plus","chatgpt_account_id":"acct-1"}}
+                """);
+        when(codex.exchangeCode("http://localhost:1455/auth/callback?code=abc&state=st-codex",
+                "verifier", "st-codex"))
+                .thenReturn(new OpenAiCodexOAuthClient.TokenSet(idToken, "access-1", "refresh-1", 3600));
+
+        var dto = service.completeLogin(new CompleteAiAccountLoginRequest("st-codex",
+                "http://localhost:1455/auth/callback?code=abc&state=st-codex"));
+
+        assertThat(dto.provider()).isEqualTo("codex");
+        assertThat(dto.authMethod()).isEqualTo("oauth");
+        assertThat(dto.email()).isEqualTo("codex@example.com");
+        assertThat(dto.plan()).isEqualTo("plus");
+        assertThat(storedCredential()).contains("\"auth_mode\":\"chatgpt\"")
+                .contains("\"access_token\":\"access-1\"")
+                .contains("\"refresh_token\":\"refresh-1\"")
+                .contains("\"account_id\":\"acct-1\"");
+        verify(sessionMapper).deleteById("st-codex");
+    }
+
+    @Test
+    void customApiKeyIsEncryptedAndOnlyReturnedForSelectedRun() {
+        backedByMemory();
+        when(customApi.normalizeBaseUrl("https://proxy.example/v1")).thenReturn("https://proxy.example/v1");
+        var created = service.create(new AiAccountFormRequest("codex", "CLI Proxy", null, null, true,
+                "https://proxy.example/v1", "gpt-5.4", "responses", "sk-secret"));
+
+        AiAccountEntity stored = mapper.selectById(created.id());
+        assertThat(stored.getAuthMethod()).isEqualTo("api_key");
+        assertThat(stored.getCredentialJson()).startsWith("enc:").doesNotContain("sk-secret");
+        var account = service.runAccount(created.id(), "codex");
+        assertThat(account.apiKey()).isEqualTo("sk-secret");
+        assertThat(account.baseUrl()).isEqualTo("https://proxy.example/v1");
+        assertThat(account.model()).isEqualTo("gpt-5.4");
+        assertThat(account.credentials()).isNull();
+    }
+
+    @Test
+    void customApiSyncUsesStoredKeyAndReportsAvailableModels() {
+        backedByMemory();
+        when(customApi.normalizeBaseUrl("https://proxy.example")).thenReturn("https://proxy.example/v1");
+        when(customApi.models("https://proxy.example/v1", "sk-secret"))
+                .thenReturn(List.of("gpt-5.3-codex", "gpt-5.4"));
+        var created = service.create(new AiAccountFormRequest("codex", "CLI Proxy", null, null, true,
+                "https://proxy.example", "gpt-5.4", "responses", "sk-secret"));
+
+        AiAccountSyncResultDto result = service.sync(created.id());
+
+        assertThat(result.status()).isEqualTo("SYNCED");
+        assertThat(result.message()).contains("2 个模型");
+        assertThat(result.rawJson()).contains("gpt-5.4");
+    }
+
+    @Test
+    void expiringCodexOauthCredentialIsRefreshedBeforeClaim() {
+        Map<String, AiAccountEntity> rows = backedByMemory();
+        AiOauthSessionEntity session = new AiOauthSessionEntity();
+        session.setState("st-refresh");
+        session.setProvider("codex");
+        session.setCodeVerifier("verifier");
+        session.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+        when(sessionMapper.selectById("st-refresh")).thenReturn(session);
+        String oldIdToken = jwt("""
+                {"email":"codex@example.com","https://api.openai.com/auth":{"chatgpt_account_id":"acct-1"}}
+                """);
+        when(codex.exchangeCode("code", "verifier", "st-refresh"))
+                .thenReturn(new OpenAiCodexOAuthClient.TokenSet(oldIdToken, "old-access", "refresh-1", 3600));
+        var created = service.completeLogin(new CompleteAiAccountLoginRequest("st-refresh", "code"));
+        rows.get(created.id()).setTokenExpiresAt(LocalDateTime.now().minusSeconds(1));
+        String newIdToken = jwt("""
+                {"email":"codex@example.com","https://api.openai.com/auth":{"chatgpt_account_id":"acct-1"}}
+                """);
+        when(codex.refresh("refresh-1"))
+                .thenReturn(new OpenAiCodexOAuthClient.TokenSet(newIdToken, "new-access", null, 7200));
+
+        var account = service.runAccount(created.id(), "codex");
+
+        assertThat(account.credentials()).contains("\"access_token\":\"new-access\"")
+                .contains("\"refresh_token\":\"refresh-1\"");
+        verify(codex).refresh("refresh-1");
+    }
+
+    private static String jwt(String payload) {
+        return "header." + Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(payload.trim().getBytes(StandardCharsets.UTF_8)) + ".signature";
     }
 
     @Test
@@ -265,16 +364,13 @@ class AiAccountServiceTest {
     @Test
     void runnerStillGetsCredentialWhenRefreshFails() {
         backedByMemory();
-        AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
-        runner.setId("rn-1");
-        when(aiRunService.authenticateRunner("token")).thenReturn(runner);
         long past = System.currentTimeMillis() - 1000;
         service.create(new AiAccountFormRequest("claude", "C", null,
                 "{\"claudeAiOauth\":{\"accessToken\":\"stale\",\"refreshToken\":\"rt\",\"expiresAt\":" + past + "}}",
                 true));
         when(anthropic.refresh("rt")).thenThrow(new BadRequestException("refresh token 已作废"));
 
-        List<AiAccountCredentialsDto> result = service.enabledCredentials("token");
+        List<AiAccountCredentialsDto> result = service.enabledCredentials();
 
         // 一个账号续不了期，不该让 Runner 一份凭据都拿不到。
         assertThat(result).hasSize(1);
