@@ -86,6 +86,7 @@ const editor = useEditor({
 // ---- 协作者行标记 ----
 
 const shell = ref<HTMLElement | null>(null)
+const imagePicker = ref<HTMLInputElement | null>(null)
 /** 协作者头像在编辑区里的纵向位置（顶层块序号 → px）。 */
 const lineTops = ref<Record<number, number>>({})
 
@@ -160,6 +161,20 @@ function insertImage(file: File) {
   })
 }
 
+/** 打开系统图片选择器；不设置 capture，以便手机优先提供图册/文件选择。 */
+function chooseImage() {
+  imagePicker.value?.click()
+}
+
+/** 选择后的图片复用粘贴、拖入时的真实图床上传与内联插入链路。 */
+function onImagePicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // 清空值，允许连续选择同一张图片。
+  input.value = ''
+  if (file?.type.startsWith('image/')) insertImage(file)
+}
+
 /**
  * 外部值回灌 —— 只在编辑器没有焦点时做。
  *
@@ -201,6 +216,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="shell" class="md" :class="{ ro: readonly, collab: peers.length > 0, bare }">
+    <input ref="imagePicker" class="image-picker" type="file" accept="image/*" tabindex="-1" aria-hidden="true" @change="onImagePicked" />
     <div v-if="peerMarks.length" class="peer-track" aria-hidden="true">
       <template v-for="m in peerMarks" :key="m.id">
         <span v-if="m.editing" class="peer-line" :style="{ top: m.top + 'px', background: m.color }"></span>
@@ -212,7 +228,12 @@ onBeforeUnmount(() => {
         >{{ m.initial }}</span>
       </template>
     </div>
-    <EditorContent :editor="editor" class="md-body" :style="{ minHeight: minHeight + 'px' }" />
+    <div class="md-editor-wrap">
+      <EditorContent :editor="editor" class="md-body" :style="{ minHeight: minHeight + 'px' }" />
+      <button v-if="!readonly" type="button" class="image-upload" title="从图册选择图片" aria-label="从图册选择图片" @mousedown.prevent @click="chooseImage">
+        <i class="ri-image-add-line"></i><span>图片</span>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -221,6 +242,8 @@ onBeforeUnmount(() => {
   width: 100%;
   position: relative;
 }
+.image-picker { display: none; }
+.md-editor-wrap { position: relative; }
 /* 协作轨道占住左侧一条窄边，正文相应右移，头像不会压到字上 */
 .md.collab {
   padding-left: 26px;
@@ -265,6 +288,26 @@ onBeforeUnmount(() => {
   border-radius: 9px;
   transition: border-color 0.12s;
 }
+.image-upload {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  z-index: 1;
+  height: 26px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--wao-divider);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--wao-text-weak);
+  font-size: 11px;
+  cursor: pointer;
+}
+.image-upload:hover { border-color: var(--wao-primary); color: var(--wao-primary); }
+.image-upload i { font-size: 13px; }
+.md.bare .image-upload { right: 0; }
 .md:not(.ro) .md-body:hover {
   border-color: var(--wao-divider);
 }
