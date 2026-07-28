@@ -18,14 +18,32 @@ const CREATOR_FILTER_KEY = 'wao-proj-creator-filter-v1'
  * 没有记录（首次打开、清过本地存储）时用看板：日常真正在看的是看板，
  * 每次都从列表开始只会让人多点一次。
  */
-function loadTaskView(): TaskView {
+function asTaskView(value: unknown): TaskView | null {
+  return value === 'list' || value === 'board' || value === 'group' ? value : null
+}
+
+/**
+ * 任务视图必须按项目记忆。旧版本把一个字符串写在同一个 key 下，导致在项目 A 切到
+ * 分组后，项目 B 也被迫切到分组；读取时兼容该旧值，首次为任一项目选择视图后再写成映射。
+ */
+function loadTaskViews(): Record<string, TaskView> {
   try {
     const raw = localStorage.getItem(TASK_VIEW_KEY)
-    if (raw === 'list' || raw === 'board' || raw === 'group') return raw
+    const legacy = asTaskView(raw)
+    if (legacy) return { __legacy__: legacy }
+    const parsed: unknown = JSON.parse(raw || '{}')
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const views: Record<string, TaskView> = {}
+      for (const [projectId, view] of Object.entries(parsed)) {
+        const valid = asTaskView(view)
+        if (valid) views[projectId] = valid
+      }
+      return views
+    }
   } catch {
     /* ignore */
   }
-  return 'board'
+  return {}
 }
 
 /** 读取各项目记住的「创建人筛选」，坏数据当没存过。 */
@@ -47,8 +65,8 @@ function loadCreatorFilters(): Record<string, string> {
 export const useUiStore = defineStore('ui', () => {
   const openTaskId = ref<string | null>(null)
 
-  /** 任务视图偏好，跨页面、跨会话记忆。 */
-  const taskView = ref<TaskView>(loadTaskView())
+  /** 任务视图偏好，按项目、跨会话记忆。 */
+  const taskViews = ref<Record<string, TaskView>>(loadTaskViews())
 
   const modal = ref<'task' | 'project' | 'note' | null>(null)
   const modalProject = ref<string>('') // 新建任务时预选的项目
@@ -94,11 +112,17 @@ export const useUiStore = defineStore('ui', () => {
     celebrating.value = null
   }
 
-  /** 记住这次选的视图，下次打开项目直接用它。 */
-  function setTaskView(view: TaskView) {
-    taskView.value = view
+  /** 某项目上次使用的视图；旧全局值只作为一次性的兼容回落。 */
+  function taskViewOf(projectId: string): TaskView {
+    return taskViews.value[projectId] ?? taskViews.value.__legacy__ ?? 'board'
+  }
+
+  /** 记住某项目这次选的视图，不影响其他项目。 */
+  function setTaskView(projectId: string, view: TaskView) {
+    const { __legacy__: _legacy, ...current } = taskViews.value
+    taskViews.value = { ...current, [projectId]: view }
     try {
-      localStorage.setItem(TASK_VIEW_KEY, view)
+      localStorage.setItem(TASK_VIEW_KEY, JSON.stringify(taskViews.value))
     } catch {
       /* 隐私模式下写不了本地存储也不该影响切换 */
     }
@@ -128,8 +152,8 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
-    openTaskId, modal, modalProject, searchOpen, searchAI, celebrating, helpOpen, taskView,
+    openTaskId, modal, modalProject, searchOpen, searchAI, celebrating, helpOpen, taskViews,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
-    setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, toggleHelp, closeHelp,
+    taskViewOf, setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, toggleHelp, closeHelp,
   }
 })
