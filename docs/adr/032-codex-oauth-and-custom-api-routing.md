@@ -24,6 +24,10 @@ Codex 改走自定义端点。
 - **严格生成 Codex 官方凭据格式。** 下发给 Codex CLI 的 JSON 包含 `auth_mode: chatgpt`、
   `OPENAI_API_KEY: null`、`tokens.id_token/access_token/refresh_token/account_id` 与
   `last_refresh`。服务端从 ID token 解析邮箱、套餐和账号 id，并在 access token 临近过期时续期。
+- **Codex 额度采用同源登录态尽力查询。** 服务端用已保存的 access token 和 `ChatGPT-Account-Id`
+  请求 `https://chatgpt.com/backend-api/wham/usage`，读取套餐、主次限额窗口和重置时间。该接口属于
+  ChatGPT/Codex 登录态但不是稳定公开契约，因此地址可通过配置替换；查询失败只把本次同步标为失败并允许
+  重试，不删除账号、不回传令牌，也不把未知额度显示成 0%。
 - **自定义 API 作为 Codex 账号的一种认证方式。** `auth_method=api_key` 时保存 `base_url`、
   `model`、`api_protocol=responses`；API Key 仍写入既有 `credential_json` 并用 AES-256-GCM 加密，
   列表接口不返回明文。连接测试调用规范化后的 `<base_url>/models`，只报告状态和模型数量。
@@ -44,6 +48,7 @@ Codex 改走自定义端点。
 ## 后果
 
 - Claude Code 与 Codex 都可从 WAO 发起 OAuth；Codex 首次授权需要复制一次浏览器回调地址。
+- Codex OAuth 登录完成或点击“刷新额度”后会尽力读取 ChatGPT 主次限额窗口；接口不可用时账号仍可运行。
 - CLIProxyAPI 或其他 Responses 兼容端点可以像账号一样保存、测试，并在单次 Codex 运行中选择。
 - 账号不再靠覆盖全局文件来决定一次任务的身份，历史运行也能追溯当时选中的账号 id。
 - 自定义端点是否完整兼容 Codex 所需的 Responses 工具调用仍由连接后的真实运行验证；`/models`

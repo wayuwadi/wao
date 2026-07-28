@@ -3,11 +3,14 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.http.HttpMethod.POST;
+import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import cn.wayuwa.wao.common.BadRequestException;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -58,10 +61,31 @@ class OpenAiCodexOAuthClientTest {
                 .hasMessageContaining("state");
     }
 
+    @Test
+    void usageSendsOauthTokenAndChatGptAccountId() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://chatgpt.test/backend-api/wham/usage"))
+                .andExpect(method(GET))
+                .andExpect(header("Authorization", "Bearer access-1"))
+                .andExpect(header("ChatGPT-Account-Id", "acct-1"))
+                .andExpect(header("User-Agent", "WAO"))
+                .andRespond(withSuccess("""
+                        {"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":63}}}
+                        """, MediaType.APPLICATION_JSON));
+
+        JsonNode usage = client(builder).usage("access-1", "acct-1");
+
+        assertThat(usage.path("plan_type").asText()).isEqualTo("plus");
+        assertThat(usage.at("/rate_limit/primary_window/used_percent").asInt()).isEqualTo(63);
+        server.verify();
+    }
+
     private static OpenAiCodexOAuthClient client(RestClient.Builder builder) {
         return new OpenAiCodexOAuthClient(builder, "client-1",
                 "https://auth.openai.test/oauth/authorize",
                 "https://auth.openai.test/oauth/token",
-                "http://localhost:1455/auth/callback");
+                "http://localhost:1455/auth/callback",
+                "https://chatgpt.test/backend-api/wham/usage");
     }
 }

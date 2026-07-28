@@ -33,17 +33,20 @@ public class OpenAiCodexOAuthClient {
     private final String authorizeUrl;
     private final String tokenUrl;
     private final String redirectUri;
+    private final String usageUrl;
 
     public OpenAiCodexOAuthClient(RestClient.Builder builder,
             @Value("${wao.ai.codex.client-id:app_EMoamEEZ73f0CkXaXp7hrann}") String clientId,
             @Value("${wao.ai.codex.authorize-url:https://auth.openai.com/oauth/authorize}") String authorizeUrl,
             @Value("${wao.ai.codex.token-url:https://auth.openai.com/oauth/token}") String tokenUrl,
-            @Value("${wao.ai.codex.redirect-uri:http://localhost:1455/auth/callback}") String redirectUri) {
+            @Value("${wao.ai.codex.redirect-uri:http://localhost:1455/auth/callback}") String redirectUri,
+            @Value("${wao.ai.codex.usage-url:https://chatgpt.com/backend-api/wham/usage}") String usageUrl) {
         this.restClient = builder.build();
         this.clientId = clientId;
         this.authorizeUrl = authorizeUrl;
         this.tokenUrl = tokenUrl;
         this.redirectUri = redirectUri;
+        this.usageUrl = usageUrl;
     }
 
     /** 生成满足 PKCE 长度要求的随机 code_verifier。 */
@@ -105,6 +108,27 @@ public class OpenAiCodexOAuthClient {
         body.add("refresh_token", refreshToken);
         body.add("scope", "openid profile email");
         return postToken(body, "Codex 刷新令牌已失效，请重新登录这个账号");
+    }
+
+    /**
+     * 查询 ChatGPT/Codex 登录态的套餐、主次限额窗口与重置时间。
+     *
+     * <p>该接口与 Codex CLI 登录态同属 {@code chatgpt.com}，但并非稳定公开契约；调用失败时上层
+     * 必须保留账号并展示可重试错误，不能把失败解释成 0% 用量。
+     */
+    public JsonNode usage(String accessToken, String accountId) {
+        try {
+            RestClient.RequestHeadersSpec<?> request = restClient.get().uri(usageUrl)
+                    .header("Authorization", "Bearer " + accessToken)
+                    .header("User-Agent", "WAO")
+                    .accept(MediaType.APPLICATION_JSON);
+            if (StringUtils.hasText(accountId)) {
+                request = request.header("ChatGPT-Account-Id", accountId);
+            }
+            return request.retrieve().body(JsonNode.class);
+        } catch (RestClientException ex) {
+            throw new BadRequestException("Codex 额度查询失败，请稍后重试或重新登录（" + ex.getMessage() + "）");
+        }
     }
 
     private TokenSet postToken(MultiValueMap<String, String> body, String failureHint) {
