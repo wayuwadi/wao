@@ -14,5 +14,13 @@ public record AiAccountFormRequest(
         @NotBlank @Size(max = 128) String label,
         @Size(max = 255) String email,
         @Size(max = 4000) String credentials,
-        Boolean enabled) {
+        Boolean enabled,
+        @Size(max = 512) String baseUrl,
+        @Size(max = 128) String model,
+        @Pattern(regexp = "responses") String apiProtocol,
+        @Size(max = 4000) String apiKey) {
+
+    public AiAccountFormRequest(String provider, String label, String email, String credentials, Boolean enabled) {
+        this(provider, label, email, credentials, enabled, null, null, null, null);
+    }
 }

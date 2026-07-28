@@ -225,6 +225,7 @@ def prune_stale_worktrees(runs_root: Path, git_command: str, keep: set[str]) -> 
             if entry.stat().st_mtime >= deadline:
                 continue
             drop_worktree(entry, git_command)
+            shutil.rmtree(runs_root.parent / ".wao-codex-homes" / entry.name, ignore_errors=True)
             log(f"已回收 {RUN_WORKTREE_TTL_DAYS} 天前的历史工作区 {entry}")
         except OSError as exc:
             log(f"回收历史工作区 {entry} 失败，忽略：{exc}")
@@ -625,11 +626,55 @@ def build_continuation_prompt(claim: dict[str, Any], continuation: str) -> str:
     )
 
 
+def prepare_codex_home(codex_home: Path, account: dict[str, Any]) -> dict[str, str]:
+    """为一次运行准备隔离的 Codex 登录/供应商配置，避免并发任务覆盖全局账号。"""
+    # 这里只返回本账号需要覆盖的变量。调用方可能已经注入 GH_TOKEN、gh 所在 PATH 等
+    # 运行级环境；若复制整个进程环境再 update，会把这些更精确的值悄悄覆盖掉。
+    environment: dict[str, str] = {}
+    codex_home.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        codex_home.chmod(0o700)
+    auth_method = str(account.get("authMethod") or "")
+    if auth_method == "api_key":
+        api_key = str(account.get("apiKey") or "").strip()
+        base_url = str(account.get("baseUrl") or "").strip().rstrip("/")
+        model = str(account.get("model") or "").strip()
+        if not api_key or not base_url or not model:
+            raise RuntimeError("自定义 API 缺少 API Key、Base URL 或模型")
+        environment["WAO_CODEX_API_KEY"] = api_key
+        config = (
+            f"model = {json.dumps(model, ensure_ascii=False)}\n"
+            'model_provider = "wao_custom"\n\n'
+            '[model_providers.wao_custom]\n'
+            f"name = {json.dumps(str(account.get('label') or 'WAO 自定义 API'), ensure_ascii=False)}\n"
+            f"base_url = {json.dumps(base_url, ensure_ascii=False)}\n"
+            'env_key = "WAO_CODEX_API_KEY"\n'
+            'wire_api = "responses"\n'
+        )
+        config_path = codex_home / "config.toml"
+        config_path.write_text(config, encoding="utf-8")
+        if os.name != "nt":
+            config_path.chmod(0o600)
+    else:
+        credentials = str(account.get("credentials") or "").strip()
+        if not credentials:
+            raise RuntimeError("选择的 Codex 账号没有可用凭据")
+        auth = json.loads(credentials)
+        auth_path = codex_home / "auth.json"
+        auth_path.write_text(json.dumps(auth, ensure_ascii=False), encoding="utf-8")
+        if os.name != "nt":
+            auth_path.chmod(0o600)
+    environment["CODEX_HOME"] = str(codex_home)
+    return environment
+
+
 def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter",
         environment: dict[str, str] | None = None,
         session_id: str | None = None,
-        should_stop: Callable[[], bool] | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
+        should_stop: Callable[[], bool] | None = None,
+        account: dict[str, Any] | None = None,
+        codex_home: Path | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
     """跑一次 `codex exec --json`，返回退出码、最终答复、会话 id 和用量。"""
     result_file = worktree / ".wao-ai-result.txt"
     command = [
@@ -637,7 +682,12 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         "-c", 'approval_policy="never"', "-C", str(worktree),
         "--output-last-message", str(result_file), "-",
     ]
-    exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, environment, should_stop)
+    run_environment = dict(environment or os.environ)
+    if account:
+        if codex_home is None:
+            raise RuntimeError("选择集中账号时缺少隔离的 CODEX_HOME")
+        run_environment.update(prepare_codex_home(codex_home, account))
+    exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, run_environment, should_stop)
     reporter.flush()
     session_id = None
     for event in iter_events(output):
@@ -860,7 +910,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
                 root / claim["workspaceDir"], session_id, cancellation_requested)
         else:
             exit_code, result_text, session_id, usage = run_codex(
-                executable, worktree, prompt, sandbox, reporter, cli_environment, session_id, cancellation_requested)
+                executable, worktree, prompt, sandbox, reporter, cli_environment, session_id,
+                cancellation_requested, claim.get("account"), root / ".wao-codex-homes" / run_id)
         cost_text = "未回传" if usage["costUsd"] is None else "$%.4f" % usage["costUsd"]
         log(f"[{run_id}] 用量：模型 {usage['model'] or '未知'}，"
             f"token {usage['totalTokens']}（输入 {usage['inputTokens']} / 输出 "

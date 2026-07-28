@@ -1,19 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { fetchAiProjectConfig, fetchAiRunners } from '@/api/ai'
+import { fetchAiAccounts, type AiAccount } from '@/api/aiAccount'
 import { AI_ENGINES, engineColor } from '@/composables/aiEngines'
 import type { AiEngine, AiRunner } from '@/types'
 
 const props = defineProps<{ projectId: string; starting?: boolean; scope?: string }>()
-const emit = defineEmits<{ close: []; start: [engine: AiEngine, runnerId: string | null] }>()
+const emit = defineEmits<{ close: []; start: [engine: AiEngine, runnerId: string | null, accountId: string | null] }>()
 
 const loading = ref(true)
 const runners = ref<AiRunner[]>([])
+const accounts = ref<AiAccount[]>([])
 const engine = ref<AiEngine>('codex')
 const runnerId = ref('')
+const accountId = ref('')
 
 /** 装了这种 AI 工具的电脑；离线的也列出来，选中后任务会排队等它上线。 */
 const candidates = computed(() => runners.value.filter((runner) => runner.engines.includes(engine.value)))
+const eligibleAccounts = computed(() => accounts.value.filter(
+  (account) => account.enabled && account.provider === engine.value,
+))
 const availability = computed(() =>
   AI_ENGINES.map((item) => ({
     ...item,
@@ -31,12 +37,16 @@ const hint = computed(() => {
 function pickEngine(next: AiEngine) {
   engine.value = next
   if (!candidates.value.some((runner) => runner.id === runnerId.value)) runnerId.value = ''
+  if (!eligibleAccounts.value.some((account) => account.id === accountId.value)) accountId.value = ''
 }
 
 onMounted(async () => {
   try {
-    const [nodes, config] = await Promise.all([fetchAiRunners(), fetchAiProjectConfig(props.projectId)])
+    const [nodes, config, managedAccounts] = await Promise.all([
+      fetchAiRunners(), fetchAiProjectConfig(props.projectId), fetchAiAccounts(),
+    ])
     runners.value = nodes
+    accounts.value = managedAccounts
     // 项目默认工具一台电脑都没装时，直接落到已经接入的那种，省得用户先撞一次 400。
     const supported = AI_ENGINES.map((item) => item.id)
       .filter((id) => nodes.some((runner) => runner.engines.includes(id)))
@@ -82,6 +92,17 @@ onMounted(async () => {
         </button>
       </div>
 
+      <div class="label">运行账号</div>
+      <select v-model="accountId" class="runner-select">
+        <option value="">使用执行电脑本地登录态</option>
+        <option v-for="account in eligibleAccounts" :key="account.id" :value="account.id">
+          {{ account.label }}{{ account.authMethod === 'api_key' ? ` · ${account.model || '自定义 API'}` : account.email ? ` · ${account.email}` : '' }}
+        </option>
+      </select>
+      <p v-if="!eligibleAccounts.length" class="hint">
+        <i class="ri-information-line"></i>没有启用中的集中账号，将使用执行电脑已有登录态
+      </p>
+
       <div class="label">执行电脑</div>
       <select v-model="runnerId" class="runner-select">
         <option value="">自动分配（任意在线电脑）</option>
@@ -93,7 +114,7 @@ onMounted(async () => {
 
       <footer>
         <button class="secondary" @click="emit('close')">取消</button>
-        <button class="primary" :disabled="starting" @click="emit('start', engine, runnerId || null)">
+        <button class="primary" :disabled="starting" @click="emit('start', engine, runnerId || null, accountId || null)">
           <i :class="starting ? 'ri-loader-4-line spin' : 'ri-play-circle-line'"></i>
           {{ starting ? '正在入队…' : '开始运行' }}
         </button>

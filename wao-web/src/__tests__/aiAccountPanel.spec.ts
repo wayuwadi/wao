@@ -4,16 +4,20 @@ import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import type { AiAccount } from '@/api/aiAccount'
 
 const fetchAiAccounts = vi.fn<() => Promise<AiAccount[]>>()
-const startAiAccountLogin = vi.fn<() => Promise<unknown>>()
+const createAiAccount = vi.fn<(payload: unknown) => Promise<unknown>>()
+const updateAiAccount = vi.fn<(id: string, payload: unknown) => Promise<unknown>>()
+const deleteAiAccount = vi.fn<(id: string) => Promise<unknown>>()
+const syncAiAccount = vi.fn<(id: string) => Promise<unknown>>()
+const startAiAccountLogin = vi.fn<(provider: 'claude' | 'codex') => Promise<unknown>>()
 const completeAiAccountLogin = vi.fn<(state: string, code: string) => Promise<unknown>>()
 
 vi.mock('@/api/aiAccount', () => ({
   fetchAiAccounts: () => fetchAiAccounts(),
-  createAiAccount: vi.fn(),
-  updateAiAccount: vi.fn(),
-  deleteAiAccount: vi.fn(),
-  syncAiAccount: vi.fn(),
-  startAiAccountLogin: () => startAiAccountLogin(),
+  createAiAccount: (payload: unknown) => createAiAccount(payload),
+  updateAiAccount: (id: string, payload: unknown) => updateAiAccount(id, payload),
+  deleteAiAccount: (id: string) => deleteAiAccount(id),
+  syncAiAccount: (id: string) => syncAiAccount(id),
+  startAiAccountLogin: (provider: 'claude' | 'codex') => startAiAccountLogin(provider),
   completeAiAccountLogin: (state: string, code: string) => completeAiAccountLogin(state, code),
 }))
 
@@ -89,7 +93,7 @@ describe('AiAccountPanel', () => {
 
     expect(window.open).toHaveBeenCalledWith(
       'https://claude.com/cai/oauth/authorize?x=1', '_blank', 'noopener')
-    expect(wrapper.find('.login-code').exists()).toBe(true)
+    expect(wrapper.find('.login-actions input').exists()).toBe(true)
     expect(wrapper.text()).toContain('完成授权后复制授权码')
   })
 
@@ -107,5 +111,37 @@ describe('AiAccountPanel', () => {
     await flushPromises()
 
     expect(completeAiAccountLogin).not.toHaveBeenCalled()
+  })
+
+  it('Codex 登录提示用户回填完整 localhost 回调地址', async () => {
+    fetchAiAccounts.mockResolvedValue([])
+    startAiAccountLogin.mockResolvedValue({
+      state: 'st-codex',
+      authorizeUrl: 'https://auth.openai.com/oauth/authorize?state=st-codex',
+      expiresAt: '2026-07-28T13:40:00',
+      hint: '复制地址栏里的完整地址回来即可',
+    })
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('使用 Codex 账号登录'))!.trigger('click')
+    await flushPromises()
+
+    expect(startAiAccountLogin).toHaveBeenCalledWith('codex')
+    expect(wrapper.find('.login-actions input').attributes('placeholder')).toContain('完整 localhost 回调地址')
+    expect(wrapper.text()).toContain('复制地址栏里的完整地址')
+  })
+
+  it('自定义 API 表单提供 Base URL、Responses 模型和 API Key', async () => {
+    fetchAiAccounts.mockResolvedValue([])
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('添加自定义 API'))!.trigger('click')
+
+    expect(wrapper.find('input[placeholder="https://proxy.example.com/v1"]').exists()).toBe(true)
+    expect(wrapper.find('input[placeholder="gpt-5.4"]').exists()).toBe(true)
+    expect(wrapper.find('input[type="password"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('OpenAI Responses')
   })
 })

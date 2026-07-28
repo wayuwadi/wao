@@ -37,13 +37,14 @@ export const createAiPairCode = () =>
  */
 export const createAiRuns = (
   taskIds: string[],
-  options: { subId?: string | null; engine?: AiEngine | null; runnerId?: string | null } = {},
+  options: { subId?: string | null; engine?: AiEngine | null; runnerId?: string | null; accountId?: string | null } = {},
 ) =>
   data<AiRun[]>(http.post('/api/ai/runs', {
     taskIds,
     subId: options.subId ?? null,
     engine: options.engine ?? null,
     runnerId: options.runnerId ?? null,
+    accountId: options.accountId ?? null,
   }))
 
 /** 基于一次失败运行重跑：AI 会拿到上次的报错接着修，不用从零重来。 */

@@ -1,7 +1,8 @@
 # WAO AI Runner
 
-AI Runner 安装在娃哥、娃弟的 Windows 电脑和 Linux 主节点上。WAO 只负责排队和展示运行
-状态；Codex / Claude Code / Qoder 账号、GitHub 登录态和源码始终保留在本机。
+AI Runner 安装在娃哥、娃弟的 Windows 电脑和 Linux 主节点上。WAO 负责排队、展示运行状态，
+并可按单次运行下发用户主动集中管理的 Codex / Claude Code 凭据或自定义 Responses API；
+未选择集中账号时仍使用本机登录态。GitHub 登录态和源码始终保留在 Runner 本机。
 
 一台电脑可以同时装多种 AI CLI，Runner 启动时会自动探测本机装了哪些，并把结果作为「本机
 能力」上报；WAO 只会把对应工具的任务派给它。
@@ -117,6 +118,10 @@ Qoder 的 `result` 事件字段与 Claude 同构，用量直接按 Claude 口径
   旧版本留下的主克隆会在下一次运行时自动纠正，不需要删目录重来。
 - 运行结束后 worktree 会保留 7 天供人工复查，超期在下一次准备工作区时自动回收，避免
   `.wao-runs/` 无限堆积完整源码副本。要长期留存某次运行现场，请在到期前自行复制出去。
+- 选择集中 Codex 账号时，Runner 会使用 `<root>/.wao-codex-homes/<run-id>` 作为独立
+  `CODEX_HOME`。OAuth 凭据写入该目录的 `auth.json`；自定义 API 只把环境变量名写进
+  `config.toml`，API Key 仅存在于子进程环境。该目录与对应 worktree 同保留七天并同步回收，
+  以支持原 Codex 会话续跑。
 - 本机 `--max-concurrency` 控制这台电脑最多同时跑几个任务；项目设置中的并发数
   控制同一仓库最多同时跑几个任务，两层限制取更严格者。
 - 任务可以在「AI run」时点名某台电脑，也可以在项目里固定一台，或让任意在线且装了该工具的

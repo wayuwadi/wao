@@ -22,5 +22,17 @@ public record AiAccountDto(
         String quotaRawJson,
         String tokenExpiresAt,
         String lastSyncedAt,
-        String createdAt) {
+        String createdAt,
+        String baseUrl,
+        String model,
+        String apiProtocol) {
+
+    public AiAccountDto(String id, String provider, String label, String email, boolean enabled,
+            String authMethod, String plan, String quotaStatus, String quotaMessage, String quotaWindow,
+            Integer quotaPercent, String quotaResetsAt, String quotaRawJson, String tokenExpiresAt,
+            String lastSyncedAt, String createdAt) {
+        this(id, provider, label, email, enabled, authMethod, plan, quotaStatus, quotaMessage,
+                quotaWindow, quotaPercent, quotaResetsAt, quotaRawJson, tokenExpiresAt,
+                lastSyncedAt, createdAt, null, null, null);
+    }
 }

@@ -119,7 +119,7 @@ public class AiRunController {
             HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         return ApiResponse.ok(service.enqueue(request.taskIds(), request.subId(), request.engine(),
-                request.runnerId(), currentMember.idOr(http, "unknown"), baseUrl));
+                request.runnerId(), request.accountId(), currentMember.idOr(http, "unknown"), baseUrl));
     }
 
     @GetMapping("/runs")
@@ -180,7 +180,8 @@ public class AiRunController {
     /** 执行电脑拉取启用中的 AI 账号明文凭据，用于写入本机 CLI 配置文件。 */
     @GetMapping("/runner/accounts")
     public ApiResponse<List<AiAccountCredentialsDto>> runnerAccounts(@RequestHeader(RUNNER_TOKEN) String token) {
-        return ApiResponse.ok(aiAccountService.enabledCredentials(token));
+        service.authenticateRunner(token);
+        return ApiResponse.ok(aiAccountService.enabledCredentials());
     }
 
     @PostMapping("/runner/claim")

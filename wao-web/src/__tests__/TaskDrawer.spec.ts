@@ -38,6 +38,10 @@ vi.mock('@/api/ai', () => ({
   ]),
 }))
 
+vi.mock('@/api/aiAccount', () => ({
+  fetchAiAccounts: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
+}))
+
 /** 一条最小可用的 AI 运行记录；只写这条用例关心的字段，其余用默认值补齐。 */
 function aiRun(overrides: Partial<AiRun> & Pick<AiRun, 'id' | 'taskId'>): AiRun {
   return {
@@ -343,7 +347,9 @@ describe('TaskDrawer', () => {
     await w.find('.launcher footer .primary').trigger('click')
     await flushPromises()
 
-    expect(createAiRuns).toHaveBeenCalledWith([taskId], { subId: null, engine: 'claude', runnerId: null })
+    expect(createAiRuns).toHaveBeenCalledWith([taskId], {
+      subId: null, engine: 'claude', runnerId: null, accountId: null,
+    })
     w.unmount()
   })
 
@@ -363,7 +369,9 @@ describe('TaskDrawer', () => {
     await w.find('.launcher footer .primary').trigger('click')
     await flushPromises()
 
-    expect(createAiRuns).toHaveBeenCalledWith([taskId], { subId, engine: 'codex', runnerId: null })
+    expect(createAiRuns).toHaveBeenCalledWith([taskId], {
+      subId, engine: 'codex', runnerId: null, accountId: null,
+    })
     w.unmount()
   })
 

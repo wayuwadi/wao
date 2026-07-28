@@ -40,9 +40,11 @@ class RunnerInvocationTest(unittest.TestCase):
     def test_git_credential_is_only_injected_into_child_environment(self, run: Mock, _find: Mock) -> None:
         run.return_value = Mock(returncode=0, stdout="username=wao\npassword=secret-token\n")
 
-        environment, ready, cli = RUNNER.build_cli_environment("git.exe")
+        with patch.dict(os.environ, {"WAO_TEST_MARKER": "preserved"}):
+            environment, ready, cli = RUNNER.build_cli_environment("git.exe")
 
         self.assertTrue(ready)
+        self.assertEqual("preserved", environment["WAO_TEST_MARKER"])
         self.assertEqual("secret-token", environment["GH_TOKEN"])
         self.assertEqual("C:/Program Files/GitHub CLI/gh.exe", cli)
         # 断言不写死分隔符：Linux 主节点也要能跑这套用例。
@@ -282,6 +284,69 @@ class QoderEngineTest(unittest.TestCase):
             RUNNER.find_engine_executable("codex")
 
 
+class CodexAccountIsolationTest(unittest.TestCase):
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="wao-codex-home-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def test_oauth_account_writes_official_auth_json_into_run_home(self) -> None:
+        account = {
+            "authMethod": "oauth",
+            "credentials": '{"auth_mode":"chatgpt","tokens":{"access_token":"access-1"}}',
+        }
+
+        overrides = RUNNER.prepare_codex_home(self.root / "ar-1", account)
+
+        auth = (self.root / "ar-1" / "auth.json").read_text(encoding="utf-8")
+        self.assertIn('"auth_mode": "chatgpt"', auth)
+        self.assertIn('"access_token": "access-1"', auth)
+        self.assertEqual(str(self.root / "ar-1"), overrides["CODEX_HOME"])
+        self.assertNotIn("PATH", overrides)
+
+    def test_custom_api_uses_environment_key_without_writing_secret(self) -> None:
+        account = {
+            "authMethod": "api_key", "label": "CLI Proxy", "apiKey": "sk-secret",
+            "baseUrl": "https://proxy.example/v1", "model": "gpt-5.4",
+        }
+
+        overrides = RUNNER.prepare_codex_home(self.root / "ar-2", account)
+
+        config = (self.root / "ar-2" / "config.toml").read_text(encoding="utf-8")
+        self.assertIn('model = "gpt-5.4"', config)
+        self.assertIn('base_url = "https://proxy.example/v1"', config)
+        self.assertIn('wire_api = "responses"', config)
+        self.assertIn('env_key = "WAO_CODEX_API_KEY"', config)
+        self.assertNotIn("sk-secret", config)
+        self.assertEqual("sk-secret", overrides["WAO_CODEX_API_KEY"])
+
+    @patch.object(RUNNER, "invoke_cli", return_value=(0, '{"thread_id":"thread-1"}'))
+    def test_selected_account_preserves_existing_run_environment(self, invoke: Mock) -> None:
+        reporter = Mock()
+        environment = {"PATH": "runner-path", "GH_TOKEN": "gh-secret"}
+        account = {
+            "authMethod": "api_key", "label": "CLI Proxy", "apiKey": "sk-secret",
+            "baseUrl": "https://proxy.example/v1", "model": "gpt-5.4",
+        }
+
+        RUNNER.run_codex("codex", self.root, "prompt", "workspace-write", reporter,
+                         environment, account=account, codex_home=self.root / "home")
+
+        child_environment = invoke.call_args.args[4]
+        self.assertEqual("runner-path", child_environment["PATH"])
+        self.assertEqual("gh-secret", child_environment["GH_TOKEN"])
+        self.assertEqual("sk-secret", child_environment["WAO_CODEX_API_KEY"])
+
+    @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
+    def test_no_selected_account_keeps_runner_local_login_environment(self, invoke: Mock) -> None:
+        reporter = Mock()
+        environment = {"CODEX_HOME": "C:/runner/.codex", "PATH": "runner-path"}
+
+        RUNNER.run_codex("codex", self.root, "prompt", "workspace-write", reporter, environment)
+
+        self.assertEqual(environment, invoke.call_args.args[4])
+
+
 class UsageAccountingTest(unittest.TestCase):
     """用量统计；Claude 的样例取自真实 `claude -p --output-format stream-json` 输出。"""
 
@@ -433,12 +498,18 @@ class WorkspaceIsolationTest(unittest.TestCase):
         aged = time.time() - (RUNNER.RUN_WORKTREE_TTL_DAYS + 1) * 86400
         os.utime(runs_root / "ar-old", (aged, aged))
         os.utime(runs_root / "ar-current", (aged, aged))
+        codex_homes = self.workspace / ".wao-codex-homes"
+        for run_id in ("ar-old", "ar-fresh", "ar-current"):
+            (codex_homes / run_id).mkdir(parents=True)
 
         RUNNER.prune_stale_worktrees(runs_root, GIT, {"ar-current"})
 
         self.assertFalse((runs_root / "ar-old").exists(), "超期工作区应被回收")
         self.assertTrue((runs_root / "ar-fresh").exists(), "保留期内的工作区不能删")
         self.assertTrue((runs_root / "ar-current").exists(), "本次运行的工作区不能删")
+        self.assertFalse((codex_homes / "ar-old").exists(), "超期运行的隔离账号目录也应回收")
+        self.assertTrue((codex_homes / "ar-fresh").exists())
+        self.assertTrue((codex_homes / "ar-current").exists())
 
     def test_owning_repo_is_resolved_from_worktree_pointer(self) -> None:
         worktree = self._prepare()
