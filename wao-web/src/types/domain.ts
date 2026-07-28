@@ -22,8 +22,15 @@ export interface Blocker {
 export interface Activity {
   icon: string
   color: string
+  /**
+   * 事件描述。带 `by` 时不含主语（如「创建了任务」），由 `utils/activity` 按看的人补上
+   * 「你」或对方名字；历史数据是写死的「你创建了任务」，此时 `by` 为空，原样展示。
+   */
   text: string
+  /** 发生时刻（ISO 8601）。历史数据可能是「刚刚」这类现成文案。 */
   time: string
+  /** 操作人成员 id；系统事件与历史数据没有。 */
+  by?: string | null
 }
 
 export interface FileRef {
@@ -33,6 +40,20 @@ export interface FileRef {
 }
 
 export type ProjectStatus = '进行中' | '有风险' | '规划中' | '已完成'
+
+/**
+ * 项目内的任务分组（分组视图）。
+ *
+ * <p>一个项目常常同时压着好几个 domain 的事，看板按状态切分帮不上忙 —— 分组按人自己的
+ * 说法切（「证件」「装修」「上线前」），组内只关心做没做完。
+ */
+export interface TaskGroup {
+  id: string
+  name: string
+}
+
+/** 一个项目最多能建的任务分组数，与后端 ProjectService.MAX_TASK_GROUPS 一致。 */
+export const MAX_TASK_GROUPS = 6
 
 /** 任务 / 项目内嵌图片（url 为 data: 或远程链接）。 */
 export interface ImageRef {
@@ -65,6 +86,8 @@ export interface Project {
   activity: Activity[]
   /** 这个项目的动静要不要发飞书群；老数据没有这个字段时按开处理。 */
   notifyEnabled?: boolean
+  /** 自定义任务分组（分组视图），最多 {@link MAX_TASK_GROUPS} 个；没建过时为空。 */
+  taskGroups?: TaskGroup[]
 }
 
 export interface TaskStep {
@@ -120,6 +143,8 @@ export interface Task {
   createdBy?: string | null
   /** 完成时间由服务端在状态进入「已完成」时写入，重新打开时清空。 */
   completedAt?: string | null
+  /** 所属任务分组 id（项目分组视图）；未归组时为空，视为落在第一个分组。 */
+  groupId?: string | null
   parts: string[]
   start?: string
   due: string

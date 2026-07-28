@@ -164,4 +164,44 @@ class ProjectServiceTest {
 
         assertThat(service.get("p9").activity().get(0).text()).isEqualTo("你创建了项目");
     }
+
+    // ---------------- 任务分组 ----------------
+
+    @Test
+    void taskGroupsAreTrimmedDeduplicatedAndCappedAtSix() {
+        ProjectEntity e = project("p1", "wg", "[\"wg\"]");
+        when(mapper.selectById("p1")).thenReturn(e);
+
+        List<cn.wayuwa.wao.dto.TaskGroupDto> requested = List.of(
+                new cn.wayuwa.wao.dto.TaskGroupDto("g1", "  证件  "),
+                new cn.wayuwa.wao.dto.TaskGroupDto("g1", "重复 id 会被丢掉"),
+                new cn.wayuwa.wao.dto.TaskGroupDto("g2", "   "),
+                new cn.wayuwa.wao.dto.TaskGroupDto("g3", "装修"),
+                new cn.wayuwa.wao.dto.TaskGroupDto("g4", "上线前"),
+                new cn.wayuwa.wao.dto.TaskGroupDto("g5", "备份"),
+                new cn.wayuwa.wao.dto.TaskGroupDto("g6", "杂事"),
+                new cn.wayuwa.wao.dto.TaskGroupDto("g7", "第六个之后的"),
+                new cn.wayuwa.wao.dto.TaskGroupDto("g8", "更多"));
+
+        ProjectDto dto = service.update("p1",
+                new PatchProjectRequest(null, null, null, null, null, requested), "wg");
+
+        assertThat(dto.taskGroups()).hasSize(ProjectService.MAX_TASK_GROUPS);
+        assertThat(dto.taskGroups().get(0).name()).isEqualTo("证件");
+        assertThat(dto.taskGroups()).extracting(cn.wayuwa.wao.dto.TaskGroupDto::id)
+                .containsExactly("g1", "g3", "g4", "g5", "g6", "g7");
+    }
+
+    @Test
+    void patchingOtherFieldsKeepsExistingTaskGroups() {
+        ProjectEntity e = project("p1", "wg", "[\"wg\"]");
+        e.setDetailJson("{\"members\":[\"wg\"],\"icon\":\"ri-stack-line\","
+                + "\"taskGroups\":[{\"id\":\"g1\",\"name\":\"证件\"}]}");
+        when(mapper.selectById("p1")).thenReturn(e);
+
+        ProjectDto dto = service.update("p1", new PatchProjectRequest(null, null, null, "ri-home-line", null), "wg");
+
+        assertThat(dto.icon()).isEqualTo("ri-home-line");
+        assertThat(dto.taskGroups()).extracting(cn.wayuwa.wao.dto.TaskGroupDto::name).containsExactly("证件");
+    }
 }

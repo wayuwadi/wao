@@ -67,9 +67,14 @@ import { blocksToText, textToBlocks } from '@/utils/doc'
 import { nowIso, todayIso } from '@/utils/time'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
+import { MAX_TASK_GROUPS } from '@/types'
 import type {
-  AutomationJob, Comment, Doc, DocBlock, ImageRef, KnowledgeBase, Project, Task, TaskStep, TrashEntry, VaultGroup, VaultItem,
+  AutomationJob, Comment, Doc, DocBlock, ImageRef, KnowledgeBase, Project, Task, TaskGroup, TaskStep, TrashEntry,
+  VaultGroup, VaultItem,
 } from '@/types'
+
+/** 兜底分组的 id：项目还没建过分组时，所有任务都算落在它里面。 */
+export const DEFAULT_TASK_GROUP = 'tg-default'
 
 /** 文档编辑覆盖（标题 / 正文 Markdown）。 */
 interface DocEdit {
@@ -799,13 +804,13 @@ export const useDataStore = defineStore('data', () => {
       fields = { ...fields, completedAt: fields.status === '已完成' ? nowIso() : null }
     }
     Object.assign(t, fields)
-    if (activityText) t.activity.unshift({ icon: 'ri-edit-line', color: '#9A9DA9', text: activityText, time: nowIso() })
+    if (activityText) logActivity(t, activityText)
     persistTask(id)
   }
 
-  /** 新建任务负载：核心字段 + 可选描述 / 内嵌图片。 */
+  /** 新建任务负载：核心字段 + 可选描述 / 内嵌图片 / 落点分组。 */
   type NewTaskPayload = Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'> &
-    Pick<Task, 'desc' | 'images'>
+    Pick<Task, 'desc' | 'images' | 'groupId'>
 
   /** 本地已创建、服务端 id 尚未回来的任务 id —— 后台同步不得把它们当成「已删除」清掉。 */
   const pendingTaskIds = new Set<string>()
@@ -825,7 +830,7 @@ export const useDataStore = defineStore('data', () => {
     const local: Task = {
       id: uid('t'), status: '待办', parts: [], desc, steps: [], subs: [], files: [],
       docs: [], linkTasks: [], comments: [], custom: [], images,
-      activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '你创建了任务', time: nowIso() }],
+      activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '创建了任务', time: nowIso(), by: currentAuthor() }],
       ...core,
     }
     tasks.value.unshift(local)
@@ -864,7 +869,7 @@ export const useDataStore = defineStore('data', () => {
         visibility: payload.visAll ? '组织内 2 人 · 可查看' : '仅自己可见',
         updated: '刚刚', goal: payload.goal || '尚未填写目标——打开项目后可补充。',
         milestones: [], msDates: [], trend: [0, 0], blockers: [], docs: [], files: [],
-        activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '你创建了项目', time: nowIso() }],
+        activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '创建了项目', time: nowIso(), by: currentAuthor() }],
       }
       projects.value.unshift(created)
     }
@@ -904,6 +909,54 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
+  /**
+   * 项目的任务分组列表；一个都没建过时给一个「未分组」兜底。
+   *
+   * <p>兜底分组不落库，只是让分组视图一进来就有地方放任务；用户改了名字或加了第二个分组，
+   * 才会连同它一起写透（{@link setTaskGroups}）。
+   *
+   * @param projectId 项目 id
+   * @return 至少含一个分组的列表
+   */
+  function taskGroupsOf(projectId: string): TaskGroup[] {
+    const stored = projectById(projectId)?.taskGroups
+    return stored?.length ? stored : [{ id: DEFAULT_TASK_GROUP, name: '未分组' }]
+  }
+
+  /**
+   * 整表替换某个项目的任务分组（新建 / 改名 / 删除都走这里）。
+   *
+   * @param projectId 项目 id
+   * @param groups    完整分组列表，超过上限的部分由服务端截断
+   * @return 是否写透成功；离线演示态直接返回 true
+   */
+  async function setTaskGroups(projectId: string, groups: TaskGroup[]): Promise<boolean> {
+    const p = projectById(projectId)
+    if (!p) return false
+    const next = groups.slice(0, MAX_TASK_GROUPS)
+    p.taskGroups = next
+    if (!apiLive.value) return true
+    try {
+      await apiPatchProject(projectId, { taskGroups: next })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 把任务挪进某个分组（分组视图里拖拽 / 在任务详情里选）。
+   *
+   * @param taskId  任务 id
+   * @param groupId 目标分组 id
+   */
+  function moveTaskToGroup(taskId: string, groupId: string) {
+    const t = taskById(taskId)
+    if (!t || (t.groupId ?? DEFAULT_TASK_GROUP) === groupId) return
+    const name = t.project ? taskGroupsOf(t.project).find((g) => g.id === groupId)?.name : ''
+    patchTask(taskId, { groupId }, name ? `把任务移到分组「${name}」` : undefined)
+  }
+
   /** 删除项目（连同其任务与关联知识库）；apiLive 时写透后端。 */
   async function deleteProject(id: string) {
     projects.value = projects.value.filter((p) => p.id !== id)
@@ -934,7 +987,7 @@ export const useDataStore = defineStore('data', () => {
     const t = taskById(id)
     if (!t) return
     const done = t.status !== '已完成'
-    patchTask(id, { status: done ? '已完成' : '待办' }, done ? '你完成了任务' : '你重新打开了任务')
+    patchTask(id, { status: done ? '已完成' : '待办' }, done ? '完成了任务' : '重新打开了任务')
   }
 
   /** 将任务移动到同项目内目标任务之前（列表拖拽排序，前端顺序态）。 */
@@ -955,13 +1008,18 @@ export const useDataStore = defineStore('data', () => {
     if (!t || !item) return
     item.done = !item.done
     const what = kind === 'subs' ? '子任务' : '步骤'
-    logActivity(t, `${item.done ? '你完成了' : '你重新打开了'}${what}「${item.text}」`)
+    logActivity(t, `${item.done ? '完成了' : '重新打开了'}${what}「${item.text}」`)
     persistTask(id)
   }
 
-  /** 往任务活动时间线最前面写一条。 */
+  /**
+   * 往任务活动时间线最前面写一条。
+   *
+   * <p>正文不带主语（「完成了子任务「X」」），操作人记在 `by` 里 —— 主语由展示时按
+   * 「看的人是谁」现算，否则别人打开这条任务，看到的也是「你完成了」。
+   */
   function logActivity(t: Task, text: string, icon = 'ri-edit-line') {
-    t.activity.unshift({ icon, color: '#9A9DA9', text, time: nowIso() })
+    t.activity.unshift({ icon, color: '#9A9DA9', text, time: nowIso(), by: currentAuthor() })
   }
 
   // ---- 子任务（内嵌在任务的 subs 里，不是独立任务实体） ----
@@ -994,7 +1052,7 @@ export const useDataStore = defineStore('data', () => {
     if (!t || !title) return null
     const id = uid('s')
     t.subs.unshift({ id, text: title, done: false, desc: '', images: [] })
-    logActivity(t, `你添加了子任务「${title}」`)
+    logActivity(t, `添加了子任务「${title}」`)
     persistTask(taskId)
     return id
   }
@@ -1016,7 +1074,7 @@ export const useDataStore = defineStore('data', () => {
     const wasDone = sub.done
     Object.assign(sub, patch)
     if (patch.done !== undefined && patch.done !== wasDone) {
-      logActivity(t, `${patch.done ? '你完成了' : '你重新打开了'}子任务「${sub.text}」`)
+      logActivity(t, `${patch.done ? '完成了' : '重新打开了'}子任务「${sub.text}」`)
     }
     persistTask(taskId)
   }
@@ -1028,7 +1086,7 @@ export const useDataStore = defineStore('data', () => {
     const idx = t.subs.findIndex((s, i) => subKey(taskId, s, i) === subId)
     if (idx < 0) return
     const [removed] = t.subs.splice(idx, 1)
-    logActivity(t, `你删除了子任务「${removed!.text}」`, 'ri-delete-bin-line')
+    logActivity(t, `删除了子任务「${removed!.text}」`, 'ri-delete-bin-line')
     persistTask(taskId)
   }
 
@@ -1362,6 +1420,7 @@ export const useDataStore = defineStore('data', () => {
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES,
     updateProject, deleteProject, ensureProjectKb, syncFromServer,
+    taskGroupsOf, setTaskGroups, moveTaskToGroup,
     jobById, createJob, updateJob, deleteJob, runJob, pauseJob, resumeJob, reauthJob,
     vaultItemById, addVaultGroup, renameVaultGroup, deleteVaultGroup, reorderVaultGroups,
     addVaultItem, updateVaultItem, deleteVaultItem, revealVaultItem,

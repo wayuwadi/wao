@@ -204,30 +204,53 @@ public class FeishuTaskNotifier {
     /**
      * 任务下新增了子任务后在群里说一声，多条一次合并成一张卡片。
      *
-     * @param taskId      任务 id
-     * @param projectId   项目 id
-     * @param taskTitle   任务标题
-     * @param projectName 项目名称
-     * @param subTitles   本次新增的子任务标题列表
+     * <p>卡片必须回答两个问题：**谁**加的、加在**谁的**任务下。原来两个都答不上来 ——
+     * 标题只写「新增了 N 条子任务」，看的人只知道自己那条任务多了点东西，不知道是同伴动的手；
+     * 而且没 @ 到具体的人，等于放在群里自生自灭。现在标题带上操作人，字段里标出任务创建人，
+     * 正文开头 @ 该知道这件事的人。
+     *
+     * @param taskId         任务 id
+     * @param projectId      项目 id
+     * @param taskTitle      任务标题
+     * @param projectName    项目名称
+     * @param subTitles      本次新增的子任务标题列表
+     * @param operatorName   添加子任务的人；推导不出来时可为空
+     * @param creatorName    主任务创建人；历史任务没有记录时可为空
+     * @param mentionOpenIds 要 @ 的飞书 open_id（已排掉操作人自己），可为空
      * @return 是否真的发出去了
      */
     public boolean notifySubtasksAdded(String taskId, String projectId, String taskTitle, String projectName,
-            List<String> subTitles) {
+            List<String> subTitles, String operatorName, String creatorName, List<String> mentionOpenIds) {
         if (muted(projectId)) {
             return false;
         }
         if (subTitles == null || subTitles.isEmpty()) {
             return false;
         }
+        List<List<String>> fields = new ArrayList<>();
+        fields.add(List.of("项目", blank(projectName, projectId)));
+        fields.add(List.of("任务", blank(taskTitle, taskId)));
+        if (StringUtils.hasText(operatorName)) {
+            fields.add(List.of("添加人", operatorName));
+        }
+        if (StringUtils.hasText(creatorName) && !creatorName.equals(operatorName)) {
+            fields.add(List.of("任务创建人", creatorName));
+        }
         StringBuilder body = new StringBuilder();
+        if (mentionOpenIds != null && !mentionOpenIds.isEmpty()) {
+            for (String openId : mentionOpenIds) {
+                if (StringUtils.hasText(openId)) {
+                    body.append("<at id=").append(openId).append("></at> ");
+                }
+            }
+            body.append(blank(operatorName, "有人")).append("给这条任务加了子任务，进来看看。\n\n");
+        }
         for (String title : subTitles) {
             body.append("- ").append(title).append('\n');
         }
         return notifier.notifyCard(new FeishuWebhookNotifier.Card(
-                "新增了 " + subTitles.size() + " 条子任务", "blue",
-                List.of(
-                        List.of("项目", blank(projectName, projectId)),
-                        List.of("任务", blank(taskTitle, taskId))),
+                blank(operatorName, "有人") + "新增了 " + subTitles.size() + " 条子任务", "blue",
+                fields,
                 excerpt(body.toString().trim(), "点开看详情。"),
                 "查看任务", taskUrl(projectId, taskId)));
     }

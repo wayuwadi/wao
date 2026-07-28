@@ -120,8 +120,8 @@ public class TaskService {
         e.setDescription(req.desc() == null ? "" : req.desc());
         TaskDetail detail = new TaskDetail(
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                List.of(new Activity("ri-add-line", "#9A9DA9", "你创建了任务", "刚刚")),
-                nn(req.images()));
+                List.of(new Activity("ri-add-line", "#9A9DA9", "创建了任务", now(), createdBy)),
+                nn(req.images()), StringUtils.hasText(req.groupId()) ? req.groupId() : null);
         e.setDetailJson(write(detail));
         taskMapper.insert(e);
         announceCreated(e, createdBy);
@@ -152,15 +152,15 @@ public class TaskService {
         if (StringUtils.hasText(req.status()) && !req.status().equals(e.getStatus())) {
             e.setStatus(req.status());
             e.setCompletedAt(DONE.equals(req.status()) ? LocalDateTime.now(ZoneId.of("Asia/Shanghai")) : null);
-            activity.add(0, edit("你将状态改为「" + req.status() + "」"));
+            activity.add(0, edit("将状态改为「" + req.status() + "」", memberId));
         }
         if (StringUtils.hasText(req.pr()) && !req.pr().equals(e.getPr())) {
             e.setPr(req.pr());
-            activity.add(0, edit("你将优先级改为 " + req.pr()));
+            activity.add(0, edit("将优先级改为 " + req.pr(), memberId));
         }
         if (StringUtils.hasText(req.owner()) && !req.owner().equals(e.getOwnerId())) {
             e.setOwnerId(req.owner());
-            activity.add(0, edit("你更换了负责人"));
+            activity.add(0, edit("更换了负责人", memberId));
         }
         // 日期用「非 null 即修改」而不是「非空即修改」：空串是「清空日期」这个明确意图，
         // 按空字段跳过的话，日期就成了只能改不能删的字段。清空写空串而不是 null，
@@ -168,16 +168,16 @@ public class TaskService {
         String start = date(req.start());
         if (start != null && !start.equals(nz(e.getStartDate()))) {
             e.setStartDate(start);
-            activity.add(0, edit(start.isEmpty() ? "你清空了开始日期" : "你将开始日期改为 " + start));
+            activity.add(0, edit(start.isEmpty() ? "清空了开始日期" : "将开始日期改为 " + start, memberId));
         }
         String due = date(req.due());
         if (due != null && !due.equals(nz(e.getDueDate()))) {
             e.setDueDate(due);
-            activity.add(0, edit(due.isEmpty() ? "你清空了截止日期" : "你将截止日期改为 " + due));
+            activity.add(0, edit(due.isEmpty() ? "清空了截止日期" : "将截止日期改为 " + due, memberId));
         }
 
         TaskDetail updated = new TaskDetail(d.parts(), d.steps(), d.subs(), d.files(), d.docs(),
-                d.linkTasks(), d.comments(), d.custom(), activity, d.images());
+                d.linkTasks(), d.comments(), d.custom(), activity, d.images(), d.groupId());
         e.setDetailJson(write(updated));
         taskMapper.updateById(e);
         announceCollecting(e, previousStatus, memberId);
@@ -221,14 +221,15 @@ public class TaskService {
             e.setCompletedAt(null);
         }
         TaskDetail detail = new TaskDetail(dto.parts(), dto.steps(), dto.subs(), dto.files(),
-                dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images());
+                dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images(),
+                dto.groupId());
         e.setDetailJson(write(detail));
         if (previous == null) {
             taskMapper.insert(e);
             announceCreated(e, memberId);
         } else {
             taskMapper.updateById(e);
-            announceNewSubs(e, previous, dto.subs());
+            announceNewSubs(e, previous, dto.subs(), memberId);
         }
         announceCollecting(e, previousStatus, memberId);
         announceStatusChanged(e, previousStatus, memberId);
@@ -286,8 +287,20 @@ public class TaskService {
         }
     }
 
-    /** 写透保存里比对新旧子任务 id，新增的合并成一张卡片同步到飞书群。 */
-    private void announceNewSubs(TaskEntity entity, TaskEntity previous, List<Step> subs) {
+    /**
+     * 写透保存里比对新旧子任务 id，新增的合并成一张卡片同步到飞书群。
+     *
+     * <p>卡片要说清是**谁**加的、加到**谁的**任务下：娃哥往娃弟建的任务里塞子任务时，群里
+     * 原来只看得到「某任务新增了子任务」，既不知道是娃哥动的手，任务的创建人和负责人也
+     * 没被 @ 到，等于没通知。现在带上操作人，并单独 @ 该知道这件事的人（创建人 + 负责人，
+     * 减去操作人自己）。
+     *
+     * @param entity   保存后的任务
+     * @param previous 保存前的任务，用于比对哪些子任务是新的
+     * @param subs     本次写透的完整子任务列表
+     * @param memberId 当前操作人成员 id
+     */
+    private void announceNewSubs(TaskEntity entity, TaskEntity previous, List<Step> subs, String memberId) {
         Set<String> known = nn(parse(previous.getDetailJson()).subs()).stream()
                 .map(Step::id).filter(StringUtils::hasText).collect(Collectors.toSet());
         List<String> added = nn(subs).stream()
@@ -298,10 +311,32 @@ public class TaskService {
         }
         try {
             taskNotifier.notifySubtasksAdded(entity.getId(), entity.getProjectId(), entity.getTitle(),
-                    projectName(entity.getProjectId()), added);
+                    projectName(entity.getProjectId()), added, memberName(memberId),
+                    memberName(entity.getCreatedBy()), stakeholderOpenIds(entity, memberId));
         } catch (RuntimeException ex) {
             LOG.warn("新增子任务的飞书通知发送失败：{}", ex.getMessage());
         }
+    }
+
+    /**
+     * 该为这条任务收到点名通知的人：任务创建人与负责人，去掉操作人自己。
+     *
+     * @param entity   任务
+     * @param memberId 当前操作人成员 id
+     * @return 飞书 open_id 列表；没人绑过飞书时为空
+     */
+    private List<String> stakeholderOpenIds(TaskEntity entity, String memberId) {
+        List<String> out = new ArrayList<>();
+        for (String candidate : List.of(nz(entity.getCreatedBy()), nz(entity.getOwnerId()))) {
+            if (!StringUtils.hasText(candidate) || candidate.equals(memberId)) {
+                continue;
+            }
+            String openId = taskNotifier.feishuOpenId(candidate);
+            if (StringUtils.hasText(openId) && !out.contains(openId)) {
+                out.add(openId);
+            }
+        }
+        return out;
     }
 
     /** 项目名称；项目不存在时回落到 id，别让通知因此失败。 */
@@ -354,8 +389,8 @@ public class TaskService {
         TaskDetail detail = new TaskDetail(
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                 List.of(new CustomProp("来源", source)),
-                List.of(new Activity("ri-chat-quote-line", "#9A9DA9", "由飞书群聊快速收集创建", "刚刚")),
-                List.of());
+                List.of(new Activity("ri-chat-quote-line", "#9A9DA9", "由飞书群聊快速收集创建", now())),
+                List.of(), null);
         e.setDetailJson(write(detail));
         taskMapper.insert(e);
         announceCreated(e, ownerId);
@@ -370,7 +405,7 @@ public class TaskService {
                 OffsetDateTime.now(ZoneId.of("Asia/Shanghai")).toString(), text.trim());
         List<CommentDto> comments = new ArrayList<>(nn(detail.comments()));
         comments.add(comment);
-        saveComments(entity, detail, comments, "添加了评论");
+        saveComments(entity, detail, comments, "添加了评论", memberId);
         TaskDto task = toDto(entity);
         String memberName = members.list().stream().filter(m -> m.id().equals(memberId)).map(m -> m.name()).findFirst().orElse(memberId);
         String projectName;
@@ -402,7 +437,7 @@ public class TaskService {
         requireAuthor(old, memberId);
         CommentDto updated = new CommentDto(blankOr(old.id(), commentId), old.who(), old.time(), text.trim());
         comments.set(index, updated);
-        saveComments(entity, detail, comments, "修改了评论");
+        saveComments(entity, detail, comments, "修改了评论", memberId);
         return updated;
     }
 
@@ -422,7 +457,7 @@ public class TaskService {
         int index = indexOfComment(comments, commentId);
         requireAuthor(comments.get(index), memberId);
         comments.remove(index);
-        saveComments(entity, detail, comments, "删除了评论");
+        saveComments(entity, detail, comments, "删除了评论", memberId);
     }
 
     /**
@@ -462,11 +497,12 @@ public class TaskService {
     }
 
     /** 写回评论列表并记一条活动。 */
-    private void saveComments(TaskEntity entity, TaskDetail detail, List<CommentDto> comments, String activityText) {
+    private void saveComments(TaskEntity entity, TaskDetail detail, List<CommentDto> comments,
+            String activityText, String memberId) {
         List<Activity> activity = new ArrayList<>(nn(detail.activity()));
-        activity.add(0, edit(activityText));
+        activity.add(0, edit(activityText, memberId));
         entity.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(), detail.docs(),
-                detail.linkTasks(), comments, detail.custom(), activity, detail.images())));
+                detail.linkTasks(), comments, detail.custom(), activity, detail.images(), detail.groupId())));
         taskMapper.updateById(entity);
     }
 
@@ -517,21 +553,37 @@ public class TaskService {
                 e.getDescription() == null ? "" : e.getDescription(),
                 nn(d.steps()), nn(d.subs()), nn(d.files()), nn(d.docs()),
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
-                e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString());
+                e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
+                d.groupId());
     }
 
-    private static Activity edit(String text) {
-        return new Activity("ri-edit-line", "#9A9DA9", text, "刚刚");
+    /**
+     * 一条编辑类活动。
+     *
+     * <p>正文不带主语、时间写真实时刻：以前统一写「你……」和「刚刚」，结果别人打开这条任务
+     * 看到的也是「你改的」，而且不管过多久都显示「刚刚」。
+     *
+     * @param text     不含主语的事件描述
+     * @param memberId 操作人成员 id
+     */
+    private static Activity edit(String text, String memberId) {
+        return new Activity("ri-edit-line", "#9A9DA9", text, now(),
+                StringUtils.hasText(memberId) ? memberId : null);
+    }
+
+    /** 当下时刻（上海时区，ISO 8601 带偏移），活动时间线按它排序与展示。 */
+    private static String now() {
+        return OffsetDateTime.now(ZoneId.of("Asia/Shanghai")).toString();
     }
 
     private TaskDetail parse(String detailJson) {
         if (detailJson == null || detailJson.isBlank()) {
-            return new TaskDetail(null, null, null, null, null, null, null, null, null, null);
+            return new TaskDetail(null, null, null, null, null, null, null, null, null, null, null);
         }
         try {
             return json.readValue(detailJson, TaskDetail.class);
         } catch (JsonProcessingException ex) {
-            return new TaskDetail(null, null, null, null, null, null, null, null, null, null);
+            return new TaskDetail(null, null, null, null, null, null, null, null, null, null, null);
         }
     }
 

@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import SiteFooter from '@/components/SiteFooter.vue'
 
 vi.mock('@/api/system', () => ({
-  fetchPublicSiteInfo: vi.fn().mockResolvedValue({
+  fetchPublicSiteInfo: vi.fn<() => Promise<Record<string, string>>>().mockResolvedValue({
     siteName: 'WAO Life OS',
     description: '个人事务与 AI 协作系统',
     icpNumber: '豫ICP备2024105476号-1',

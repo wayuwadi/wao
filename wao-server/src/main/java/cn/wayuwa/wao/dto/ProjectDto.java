@@ -25,5 +25,7 @@ public record ProjectDto(
         List<FileRef> files,
         List<Activity> activity,
         String icon,
-        boolean notifyEnabled) {
+        boolean notifyEnabled,
+        /** 自定义任务分组（分组视图），最多 6 个；没建过分组时为空数组。 */
+        List<TaskGroupDto> taskGroups) {
 }

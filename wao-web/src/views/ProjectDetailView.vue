@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -13,6 +13,7 @@ import { fmtDate, isOpenStatus, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/
 import { toast } from '@/composables/toast'
 import { createAiRuns } from '@/api/ai'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
+import { MAX_TASK_GROUPS } from '@/types'
 import type { TaskStatus } from '@/types'
 
 const route = useRoute()
@@ -38,7 +39,7 @@ const projTab = computed(() => {
 // URL 上写了 view 就听 URL 的（分享出去的链接要能指定视图）；没写时用记住的偏好。
 const pdTaskView = computed<TaskView>(() => {
   const q = route.query.view
-  return q === 'list' || q === 'board' ? q : ui.taskView
+  return q === 'list' || q === 'board' || q === 'group' ? q : ui.taskView
 })
 
 function setTab(t: string) {
@@ -84,7 +85,7 @@ function onDropStatus(status: TaskStatus) {
   dragId.value = null
   if (!id) return
   const t = data.taskById(id)
-  if (t && t.status !== status) data.patchTask(id, { status }, `你将状态改为「${status}」`)
+  if (t && t.status !== status) data.patchTask(id, { status }, `将状态改为「${status}」`)
 }
 function onDropReorder(overId: string) {
   const id = dragId.value
@@ -168,7 +169,7 @@ async function runSelectedWithAi() {
   aiBatchStarting.value = true
   try {
     const created = await createAiRuns(selectedTaskIds.value)
-    created.forEach((run) => data.patchTask(run.taskId, { status: 'AI 进行中' }, '你已将任务交给 AI Run'))
+    created.forEach((run) => data.patchTask(run.taskId, { status: 'AI 进行中' }, '已将任务交给 AI Run'))
     selectedTaskIds.value = []
     toast(`已将 ${created.length} 个任务加入 AI Run，可在首页查看`, 'ri-robot-2-line')
   } catch (error) {
@@ -187,6 +188,101 @@ function openKb() {
 }
 function comingSoon(msg: string) {
   toast(msg)
+}
+
+// ---- 分组视图 ----
+// 一个项目里同时压着好几个 domain 的事：按状态切的看板帮不上忙，得按「这是哪一摊事」分。
+// 分组里只关心做没做完，所以行上不再堆状态 / 优先级 / 负责人这些标签。
+
+/** 分组列表；项目还没建过分组时是一个「未分组」兜底（不落库，改名或加组才写透）。 */
+const groups = computed(() => data.taskGroupsOf(pid.value))
+const canAddGroup = computed(() => groups.value.length < MAX_TASK_GROUPS)
+/** 分组视图里正在改名的分组 id。 */
+const renamingGroup = ref<string | null>(null)
+const renameText = ref('')
+/** 分组视图里正在快速新建任务的分组 id，以及输入框内容。 */
+const quickAddGroup = ref<string | null>(null)
+const quickAddText = ref('')
+// v-for 里的模板 ref 是数组（一次只会渲染一个输入框，取第一个即可）
+const quickAddInput = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+const renameInput = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
+const firstOf = (r: HTMLInputElement | HTMLInputElement[] | null) => (Array.isArray(r) ? r[0] : r)
+/** 每个分组的已完成是否展开（分组之间互不影响）。 */
+const openedDoneGroups = ref<string[]>([])
+
+/** 任务归属分组：没归过组、或归到已删除的分组，都算落在第一个分组里。 */
+function groupIdOf(task: { groupId?: string | null }): string {
+  const id = task.groupId
+  return id && groups.value.some((g) => g.id === id) ? id : groups.value[0]!.id
+}
+
+/** 分组视图的数据：每个分组一段，未完成在前、已完成收起在后。 */
+const groupSections = computed(() =>
+  groups.value.map((g) => {
+    const mine = allTasks.value.filter((t) => groupIdOf(t) === g.id)
+    return {
+      ...g,
+      open: mine.filter((t) => t.status !== '已完成'),
+      done: mine.filter((t) => t.status === '已完成').sort(doneDesc),
+      total: mine.length,
+    }
+  }),
+)
+
+async function persistGroups(next: { id: string; name: string }[], failHint: string) {
+  if (!(await data.setTaskGroups(pid.value, next))) toast(failHint, 'ri-error-warning-line')
+}
+async function addGroup() {
+  if (!canAddGroup.value) return toast(`最多 ${MAX_TASK_GROUPS} 个分组`, 'ri-information-line')
+  const created = { id: `tg${Date.now()}`, name: `分组 ${groups.value.length + 1}` }
+  await persistGroups([...groups.value, created], '分组创建失败，请重试')
+  startRename(created.id, created.name)
+}
+function startRename(id: string, name: string) {
+  renamingGroup.value = id
+  renameText.value = name
+  nextTick(() => firstOf(renameInput.value)?.select())
+}
+async function commitRename() {
+  const id = renamingGroup.value
+  const name = renameText.value.trim()
+  renamingGroup.value = null
+  if (!id || !name) return
+  await persistGroups(groups.value.map((g) => (g.id === id ? { ...g, name } : g)), '分组改名失败，请重试')
+}
+/** 删掉一个分组：里面的任务不删，落回第一个分组。最后一个分组不给删，否则没地方放任务。 */
+async function removeGroup(id: string) {
+  if (groups.value.length <= 1) return toast('至少保留一个分组', 'ri-information-line')
+  const rest = groups.value.filter((g) => g.id !== id)
+  ptasks.value.filter((t) => t.groupId === id).forEach((t) => data.patchTask(t.id, { groupId: rest[0]!.id }))
+  await persistGroups(rest, '分组删除失败，请重试')
+  toast('分组已删除，里面的任务已归到第一个分组', 'ri-inbox-unarchive-line')
+}
+function toggleGroupDone(id: string) {
+  openedDoneGroups.value = openedDoneGroups.value.includes(id)
+    ? openedDoneGroups.value.filter((x) => x !== id)
+    : [...openedDoneGroups.value, id]
+}
+/** 分组头上的「+」：就地展开一行输入框，回车即建，手机上不用再进弹窗。 */
+function startQuickAdd(groupId: string) {
+  quickAddGroup.value = groupId
+  quickAddText.value = ''
+  nextTick(() => firstOf(quickAddInput.value)?.focus())
+}
+function submitQuickAdd(groupId: string) {
+  const title = quickAddText.value.trim()
+  if (!title) return
+  void data.addTask({
+    title, project: pid.value, pr: 'P2', owner: session.currentUser.id,
+    due: data.today, desc: '', images: [], groupId,
+  })
+  quickAddText.value = ''
+  toast(`任务「${title}」已创建`, 'ri-checkbox-circle-fill')
+}
+function onDropGroup(groupId: string) {
+  const id = dragId.value
+  dragId.value = null
+  if (id) data.moveTaskToGroup(id, groupId)
 }
 </script>
 
@@ -222,7 +318,7 @@ function comingSoon(msg: string) {
     <div v-if="projTab === '任务'">
       <div class="tab-toolbar">
         <div class="seg">
-          <button v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
+          <button v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
             <i :class="v[1]"></i>{{ v[0] }}
           </button>
         </div>
@@ -312,6 +408,100 @@ function comingSoon(msg: string) {
         <div v-if="allTasks.length === 0" class="empty-inline">还没有任务——点右上角「新建任务」开始拆解</div>
         <div v-else-if="!openTasks.length && !showDone" class="empty-inline">未完成的任务都清空了 🎉</div>
       </div>
+
+      <!-- 分组：按自己定义的 domain 分堆，组内只看做没做完 -->
+      <div v-else-if="pdTaskView === 'group'" class="groups">
+        <div
+          v-for="g in groupSections"
+          :key="g.id"
+          class="group-card"
+          :class="{ 'drop-hint': dragId }"
+          @dragover.prevent
+          @drop="onDropGroup(g.id)"
+        >
+          <div class="group-head">
+            <input
+              v-if="renamingGroup === g.id"
+              ref="renameInput"
+              v-model="renameText"
+              class="group-name-input"
+              maxlength="20"
+              placeholder="分组名称"
+              @keydown.enter="commitRename"
+              @keydown.esc="renamingGroup = null"
+              @blur="commitRename"
+            />
+            <button v-else class="group-name" title="点击改名" @click="startRename(g.id, g.name)">
+              {{ g.name }}<i class="ri-pencil-line"></i>
+            </button>
+            <span class="group-count wao-tabular" :title="`${g.open.length} 个未完成 / 共 ${g.total} 个`">
+              {{ g.open.length }} / {{ g.total }}
+            </span>
+            <span class="spacer"></span>
+            <button class="group-op" title="在这个分组里新建任务" aria-label="新建任务" @click="startQuickAdd(g.id)">
+              <i class="ri-add-line"></i>
+            </button>
+            <button
+              v-if="groups.length > 1"
+              class="group-op danger"
+              title="删除分组（里面的任务会归到第一个分组）"
+              @click="removeGroup(g.id)"
+            >
+              <i class="ri-delete-bin-line"></i>
+            </button>
+          </div>
+
+          <div v-if="quickAddGroup === g.id" class="group-add-row">
+            <i class="ri-add-line"></i>
+            <input
+              ref="quickAddInput"
+              v-model="quickAddText"
+              placeholder="任务标题，回车创建，连着敲可以一次录好几条"
+              @keydown.enter="submitQuickAdd(g.id)"
+              @keydown.esc="quickAddGroup = null"
+            />
+            <button class="group-add-done" @click="quickAddGroup = null">完成</button>
+          </div>
+
+          <div
+            v-for="t in g.open"
+            :key="t.id"
+            class="grow"
+            :class="{ dragging: dragId === t.id }"
+            draggable="true"
+            @click="openTask(t.id)"
+            @dragstart="onDragStart(t.id)"
+          >
+            <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)">
+              <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
+            </button>
+            <span class="grow-title">{{ t.title }}</span>
+            <i class="ri-arrow-right-s-line grow-chev"></i>
+          </div>
+
+          <button v-if="g.done.length" class="group-done-toggle" @click="toggleGroupDone(g.id)">
+            <i :class="openedDoneGroups.includes(g.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
+            已完成<span class="done-count wao-tabular">{{ g.done.length }}</span>
+          </button>
+          <template v-if="openedDoneGroups.includes(g.id)">
+            <div v-for="t in g.done" :key="t.id" class="grow done" @click="openTask(t.id)">
+              <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)">
+                <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
+              </button>
+              <span class="grow-title">{{ t.title }}</span>
+              <i class="ri-arrow-right-s-line grow-chev"></i>
+            </div>
+          </template>
+
+          <div v-if="!g.total" class="group-empty">点右上角的「+」往这里加第一条任务</div>
+        </div>
+
+        <button v-if="canAddGroup" class="group-add" @click="addGroup">
+          <i class="ri-add-line"></i>新建分组<em>还能建 {{ MAX_TASK_GROUPS - groups.length }} 个</em>
+        </button>
+        <div v-else class="group-full">已经有 {{ MAX_TASK_GROUPS }} 个分组了——再多就一屏扫不完了</div>
+      </div>
+
       <div v-else class="board">
         <div
           v-for="col in board"
@@ -976,6 +1166,219 @@ function comingSoon(msg: string) {
   color: var(--wao-text-weak);
 }
 
+/* 分组视图：纵向堆叠的卡片，宽屏两列、手机一列都成立 */
+.groups {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.group-card {
+  background: #fff;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  padding: 8px 10px 10px;
+  transition: box-shadow 0.12s, border-color 0.12s;
+}
+.group-card.drop-hint {
+  border-color: #c7d0f1;
+  box-shadow: inset 0 0 0 1px #c7d0f1;
+}
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px 8px;
+  border-bottom: 1px solid var(--wao-divider);
+}
+.group-name {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  margin-left: -4px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--wao-text);
+  cursor: text;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-name i {
+  font-size: 12px;
+  color: var(--wao-text-faint-2);
+  opacity: 0;
+}
+.group-name:hover {
+  background: var(--wao-bg-hover);
+}
+.group-name:hover i {
+  opacity: 1;
+}
+.group-name-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--wao-primary);
+  border-radius: 7px;
+  padding: 0 8px;
+  font-size: 13.5px;
+  font-weight: 650;
+  outline: none;
+}
+.group-count {
+  font-size: 11.5px;
+  color: var(--wao-text-weak);
+}
+.group-op {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--wao-text-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.group-op i {
+  font-size: 16px;
+}
+.group-op:hover {
+  background: var(--wao-primary);
+  color: #fff;
+}
+.group-op.danger:hover {
+  background: var(--wao-danger);
+}
+.group-add-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 0 8px;
+  height: 38px;
+  border: 1px solid var(--wao-primary);
+  border-radius: 9px;
+  background: var(--wao-primary-soft);
+}
+.group-add-row > i {
+  font-size: 15px;
+  color: var(--wao-primary);
+}
+.group-add-row input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  font-size: 13px;
+  outline: none;
+  color: var(--wao-text);
+}
+.group-add-done {
+  border: none;
+  background: none;
+  color: var(--wao-primary-text);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.grow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  min-height: 38px;
+}
+.grow:hover {
+  background: var(--wao-bg-hover);
+}
+.grow.dragging {
+  opacity: 0.5;
+}
+.grow-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--wao-text);
+  word-break: break-word;
+}
+.grow.done .grow-title {
+  color: var(--wao-text-faint);
+  text-decoration: line-through;
+}
+.grow-chev {
+  font-size: 15px;
+  color: var(--wao-text-faint-2);
+  flex-shrink: 0;
+}
+.group-done-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: none;
+  border-top: 1px solid var(--wao-divider);
+  margin-top: 6px;
+  padding: 9px 8px;
+  font-size: 12px;
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  text-align: left;
+}
+.group-done-toggle > i {
+  font-size: 15px;
+}
+.group-empty {
+  padding: 18px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--wao-text-weak);
+}
+.group-add {
+  height: 44px;
+  border: 1px dashed var(--wao-line-strong);
+  border-radius: 12px;
+  background: none;
+  color: var(--wao-text-3);
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.group-add:hover {
+  border-color: var(--wao-primary);
+  color: var(--wao-primary-text);
+  background: var(--wao-primary-tint);
+}
+.group-add em {
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--wao-text-faint);
+}
+.group-full {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  font-size: 11.5px;
+  color: var(--wao-text-faint);
+}
+
 /* board 复用 */
 .board {
   margin-top: 10px;
@@ -1117,6 +1520,13 @@ function comingSoon(msg: string) {
 
 @media (max-width: 760px) {
   .detail { padding: 16px 12px 28px; }
+  /* 手机上一列到底，行高与「+」都放大到拇指点得准 */
+  .groups { grid-template-columns: 1fr; }
+  .grow { min-height: 44px; }
+  .group-op { width: 34px; height: 34px; }
+  .group-add-row { height: 42px; }
+  .tab-toolbar { flex-wrap: wrap; gap: 8px; }
+  .creator-filter { margin-left: 0; }
   .project-head, .project-actions, .overview-head { flex-wrap: wrap; }
   .project-actions { width: 100%; }
   .project-actions button { flex: 1; justify-content: center; }

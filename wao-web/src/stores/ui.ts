@@ -1,8 +1,13 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
-/** 项目任务区的两种展示形态。 */
-export type TaskView = 'list' | 'board'
+/**
+ * 项目任务区的三种展示形态。
+ *
+ * <p>`group` 是按用户自定义分组看：一个项目里同时压着好几个 domain 的事时，
+ * 状态看板帮不上忙，得按「这是哪一摊事」来分。
+ */
+export type TaskView = 'list' | 'board' | 'group'
 
 const TASK_VIEW_KEY = 'wao-task-view-v1'
 const CREATOR_FILTER_KEY = 'wao-proj-creator-filter-v1'
@@ -16,7 +21,7 @@ const CREATOR_FILTER_KEY = 'wao-proj-creator-filter-v1'
 function loadTaskView(): TaskView {
   try {
     const raw = localStorage.getItem(TASK_VIEW_KEY)
-    if (raw === 'list' || raw === 'board') return raw
+    if (raw === 'list' || raw === 'board' || raw === 'group') return raw
   } catch {
     /* ignore */
   }

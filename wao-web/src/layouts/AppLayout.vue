@@ -130,6 +130,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       </div>
     </main>
 
+    <!--
+      手机上的常驻新建入口：顶栏那个图标在屏幕最上沿，单手够不着；
+      录任务是移动端最高频的动作，按钮就该落在拇指自然停的位置。
+    -->
+    <button class="fab" aria-label="新建任务" title="新建任务" @click="newTask">
+      <i class="ri-add-line"></i>
+    </button>
+
     <TaskDrawer />
     <NewTaskModal v-if="ui.modal === 'task'" />
     <NewProjectModal v-if="ui.modal === 'project'" />
@@ -269,7 +277,35 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   min-height: 0;
 }
 
+/* 悬浮新建按钮只在手机上出现；桌面顶栏已经有「新建任务」了 */
+.fab {
+  display: none;
+}
+
 @media (max-width: 760px) {
+  .fab {
+    position: fixed;
+    right: 16px;
+    bottom: calc(78px + env(safe-area-inset-bottom));
+    z-index: 71;
+    width: 52px;
+    height: 52px;
+    border: none;
+    border-radius: 50%;
+    background: var(--wao-primary);
+    color: #fff;
+    box-shadow: 0 6px 18px rgba(43, 59, 141, 0.34);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .fab i {
+    font-size: 26px;
+  }
+  .fab:active {
+    transform: scale(0.94);
+  }
   .shell {
     display: block;
     height: 100dvh;
