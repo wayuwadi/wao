@@ -262,6 +262,27 @@ erDiagram
 | content | VARCHAR(1000) | 过滤命令和工具调用后的用户可读摘要 |
 | created_at | DATETIME | 上报时间，用于实时展示与任务档案排序 |
 
+### ai_account（V38）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 账号 id |
+| provider | VARCHAR(24) | AI 工具：codex / claude / qoder |
+| label | VARCHAR(128) | 展示名称 |
+| email | VARCHAR(255) NULL | 账号邮箱或标识 |
+| credential_json | TEXT | AES-256-GCM 加密后的凭据 JSON；密文带 `enc:` 前缀 |
+| enabled | TINYINT(1) | 是否启用；只有启用的账号才会下发给 Runner |
+| quota_status | VARCHAR(24) NULL | 额度同步状态：UNKNOWN / NO_API / SYNCED / FAILED |
+| quota_message | VARCHAR(500) NULL | 额度/状态的人可读摘要 |
+| quota_raw_json | TEXT NULL | 供应商返回的原始额度快照 |
+| last_synced_at | DATETIME NULL | 上次手动同步时间 |
+| created_at / updated_at | DATETIME | 创建与更新时间 |
+
+集中管理 AI 工具账号，解决多台 Runner 重复登录和额度查看不统一的问题。
+凭据加密存储，前端接口不回传明文；Runner 凭据同步为 opt-in，凭据明文只通过 `/api/ai/runner/accounts`
+在 HTTPS 下返回给已配对节点。额度查询只使用真实接口，没有可靠接口时标记为 `NO_API`，不伪造余额。
+详见 ADR-030。
+
 ## 密钥库域
 
 ### vault_group（分组）

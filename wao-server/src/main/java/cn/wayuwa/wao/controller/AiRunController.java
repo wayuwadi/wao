@@ -4,6 +4,7 @@ import java.util.List;
 
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
+import cn.wayuwa.wao.dto.AiAccountCredentialsDto;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
@@ -21,6 +22,7 @@ import cn.wayuwa.wao.dto.RunnerScriptDto;
 import cn.wayuwa.wao.dto.UpdateRunnerConcurrencyRequest;
 import cn.wayuwa.wao.dto.UpdateRunnerWakeConfigRequest;
 import cn.wayuwa.wao.dto.WakeRunnerResultDto;
+import cn.wayuwa.wao.service.AiAccountService;
 import cn.wayuwa.wao.service.AiRunService;
 import cn.wayuwa.wao.service.AiRunnerWakeService;
 import cn.wayuwa.wao.service.AiRunnerLifecycleService;
@@ -45,13 +47,16 @@ public class AiRunController {
     private static final String RUNNER_TOKEN = "X-WAO-Runner-Token";
 
     private final AiRunService service;
+    private final AiAccountService aiAccountService;
     private final AiRunnerWakeService wakeService;
     private final AiRunnerLifecycleService lifecycleService;
     private final CurrentMember currentMember;
 
-    public AiRunController(AiRunService service, AiRunnerWakeService wakeService,
-            AiRunnerLifecycleService lifecycleService, CurrentMember currentMember) {
+    public AiRunController(AiRunService service, AiAccountService aiAccountService,
+            AiRunnerWakeService wakeService, AiRunnerLifecycleService lifecycleService,
+            CurrentMember currentMember) {
         this.service = service;
+        this.aiAccountService = aiAccountService;
         this.wakeService = wakeService;
         this.lifecycleService = lifecycleService;
         this.currentMember = currentMember;
@@ -163,6 +168,12 @@ public class AiRunController {
     @GetMapping("/runner/script")
     public ApiResponse<RunnerScriptDto> runnerScript(@RequestHeader(RUNNER_TOKEN) String token) {
         return ApiResponse.ok(service.fetchRunnerScript(token));
+    }
+
+    /** 执行电脑拉取启用中的 AI 账号明文凭据，用于写入本机 CLI 配置文件。 */
+    @GetMapping("/runner/accounts")
+    public ApiResponse<List<AiAccountCredentialsDto>> runnerAccounts(@RequestHeader(RUNNER_TOKEN) String token) {
+        return ApiResponse.ok(aiAccountService.enabledCredentials(token));
     }
 
     @PostMapping("/runner/claim")

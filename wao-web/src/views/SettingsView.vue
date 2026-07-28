@@ -12,6 +12,7 @@ import {
   type FeishuWebhookConfig, type SiteInfo,
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
+import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 
 const session = useSessionStore()
 const data = useDataStore()
@@ -19,7 +20,7 @@ const router = useRouter()
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members'], ['日历账户 · CalDAV', 'caldav']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['通知 · 飞书 Webhook', 'webhook']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['通知 · 飞书 Webhook', 'webhook'], ['AI 账号', 'ai-accounts']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
 ] as const
 
@@ -385,6 +386,11 @@ function demo(msg: string, icon?: string) {
             </div>
             <div class="hint">静音的项目不再往群里发新建任务、状态变化、新增子任务、评论与 AI 执行的卡片，页面内的记录一条不少。上面的总开关关掉时所有项目都不发。</div>
           </div>
+        </template>
+
+        <!-- 系统 · AI 账号 -->
+        <template v-else-if="tab === 'ai-accounts'">
+          <AiAccountPanel />
         </template>
 
         <!-- 个人资料 -->
