@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -30,11 +30,23 @@ function loadDraft(): Partial<Draft> {
   try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch { return {} }
 }
 const draft = loadDraft()
-const openProjects = data.projects.filter((p) => p.status !== '已完成')
+/**
+ * 项目数据会在应用启动后由真实接口替换 fixtures，不能在弹窗创建时截取一份静态数组。
+ * 否则首页入口被快速点击时，会继续显示并提交已经被替换掉的演示项目。
+ */
+const openProjects = computed(() => data.projects.filter((p) => p.status !== '已完成'))
 const title = ref(draft.title ?? '')
 // modalProject 未预选时是空串（不是 null），必须用 || 兜底到第一个进行中的项目，
 // 否则从顶栏全局入口建出的任务 project 为空，在所有项目列表里都看不见。
-const project = ref(draft.project || ui.modalProject || openProjects[0]?.id || '')
+const project = ref(draft.project || ui.modalProject || openProjects.value[0]?.id || '')
+
+/**
+ * 真实项目列表到达后，只有当前预选项目不在列表中时才回退到首个可用项目。
+ * 这样既能清理 fixtures / 过期草稿留下的伪 id，也不会覆盖用户已经选中的真实项目。
+ */
+watch(openProjects, (projects) => {
+  if (!projects.some((item) => item.id === project.value)) project.value = projects[0]?.id || ''
+}, { immediate: true })
 const owner = ref(draft.owner ?? session.currentUser.id)
 const pr = ref<Priority>(draft.pr ?? 'P2')
 const due = ref(draft.due ?? '今天')

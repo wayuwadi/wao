@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AppLayout from '@/layouts/AppLayout.vue'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
+import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 
@@ -68,6 +69,31 @@ describe('右上角新建入口', () => {
     ui.closeModal()
     await wrapper.findAll('.header .plus')[1]!.trigger('click')
     expect(ui.modal).toBe('note')
+    wrapper.unmount()
+  })
+})
+
+describe('新建任务的所属项目', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    setActivePinia(createPinia())
+  })
+
+  it('真实项目列表替换启动 fixtures 后，首页入口会改选真实项目', async () => {
+    const data = useDataStore()
+    const fixtureProject = data.projects[0]!
+    const realProject = { ...fixtureProject, id: 'real-project', name: '真实项目' }
+    const wrapper = mount(NewTaskModal, {
+      global: { stubs: { MarkdownEditor: true } },
+    })
+
+    expect(wrapper.find('.pill.on').text()).toContain(fixtureProject.name)
+
+    data.projects = [realProject]
+    await flushPromises()
+
+    expect(wrapper.find('.pill.on').text()).toContain('真实项目')
+    expect(wrapper.findAll('.pill').map((pill) => pill.text())).not.toContain(fixtureProject.name)
     wrapper.unmount()
   })
 })
