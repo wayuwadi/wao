@@ -5,6 +5,7 @@ import java.util.List;
 
 import cn.wayuwa.wao.domain.AccountEntity;
 import cn.wayuwa.wao.domain.AccountIdentityEntity;
+import cn.wayuwa.wao.feishu.FeishuAppLinks;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
@@ -26,27 +27,26 @@ import org.springframework.util.StringUtils;
 @Service
 public class FeishuTaskNotifier {
 
-    /** 线上站点地址；卡片按钮要跳的是公网地址，不是容器内部地址。 */
-    private static final String SITE = "https://wao.wayuwa.cn";
-
     private final FeishuWebhookNotifier notifier;
+    private final FeishuAppLinks links;
     private final SettingService settings;
     private final AccountMapper accounts;
     private final AccountIdentityMapper identities;
     private final ProjectNotifyGate notifyGate;
 
-    public FeishuTaskNotifier(FeishuWebhookNotifier notifier, SettingService settings,
+    public FeishuTaskNotifier(FeishuWebhookNotifier notifier, FeishuAppLinks links, SettingService settings,
             AccountMapper accounts, AccountIdentityMapper identities, ProjectNotifyGate notifyGate) {
         this.notifier = notifier;
+        this.links = links;
         this.settings = settings;
         this.accounts = accounts;
         this.identities = identities;
         this.notifyGate = notifyGate;
     }
 
-    /** 任务详情页地址（卡片按钮和分享给同伴的链接都用它）。 */
-    public static String taskUrl(String projectId, String taskId) {
-        return SITE + "/projects/" + projectId + "?task=" + taskId;
+    /** 任务详情页地址：配置了飞书应用时是 AppLink（飞书内直接打开），否则是普通网页地址。 */
+    public String taskUrl(String projectId, String taskId) {
+        return links.taskUrl(projectId, taskId);
     }
 
     /**
@@ -276,7 +276,7 @@ public class FeishuTaskNotifier {
         return notifier.notifyCard(new FeishuWebhookNotifier.Card(
                 "新建了项目", "blue", fields,
                 excerpt(goal, "还没有填写目标，点开补充。"),
-                "查看项目", SITE + "/projects/" + projectId));
+                "查看项目", links.open("/projects/" + projectId)));
     }
 
     /**
@@ -297,7 +297,7 @@ public class FeishuTaskNotifier {
         return notifier.notifyCard(new FeishuWebhookNotifier.Card(
                 "新建了小记", "grey", fields,
                 "一条新的小记已经写好，点开看看。",
-                "查看小记", SITE + "/kb/" + kbId + "?doc=" + docId));
+                "查看小记", links.open("/kb/" + kbId + "?doc=" + docId)));
     }
 
     /**

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { startFeishuLogin } from '@/api/feishu'
 import { useSessionStore } from '@/stores/session'
 import { mountFeishuQr } from '@/utils/feishuQr'
+import { feishuInAppLogin, isInFeishu } from '@/utils/feishuInApp'
 import SiteFooter from '@/components/SiteFooter.vue'
 
 const route = useRoute()
@@ -17,6 +18,9 @@ const password = ref('')
 const busy = ref(false)
 const error = ref('')
 const qrError = ref('')
+const inAppError = ref('')
+// 飞书容器内免登：卡片按钮经 AppLink 打开时自动换会话，不用再扫码
+const inAppTrying = ref(isInFeishu())
 let unmountQr: (() => void) | undefined
 
 async function submitEmail() {
@@ -47,7 +51,28 @@ async function switchMethod(next: 'feishu' | 'email') {
   else { unmountQr?.(); unmountQr = undefined }
 }
 
-onMounted(loadQr)
+async function tryInAppLogin() {
+  try {
+    const resolution = await feishuInAppLogin()
+    if (resolution) {
+      await session.acceptResolution(resolution)
+      await router.replace(resolution.claimRequired ? '/auth/claim' : String(route.query.redirect || '/'))
+      return true
+    }
+  } catch (reason) {
+    inAppError.value = reason instanceof Error ? reason.message : '飞书免登未完成，请改用其他方式登录。'
+  }
+  return false
+}
+
+onMounted(async () => {
+  if (inAppTrying.value) {
+    const done = await tryInAppLogin()
+    inAppTrying.value = false
+    if (done) return
+  }
+  await loadQr()
+})
 onBeforeUnmount(() => unmountQr?.())
 </script>
 
@@ -68,11 +93,18 @@ onBeforeUnmount(() => unmountQr?.())
       <section class="card">
         <h2>登录 WAO</h2>
         <template v-if="method === 'feishu'">
-          <p class="subtitle">使用飞书扫码，快速进入你的 WAO</p>
-          <div v-if="!qrError" id="feishu-qr" class="qr"><div class="qr-loading"><i class="ri-loader-4-line"></i>正在加载飞书二维码…</div></div>
-          <div v-else class="qr-fallback"><i class="ri-qr-code-line"></i><span>二维码暂不可用</span></div>
-          <div v-if="qrError" class="qr-error">{{ qrError }}</div>
-          <button class="authorization-cta" type="button" @click="startFeishuLogin('authorization')"><i class="ri-feishu-line"></i><span>{{ qrError ? '改用飞书授权登录' : '二维码不方便？使用飞书授权登录' }}</span><i class="ri-arrow-right-s-line"></i></button>
+          <template v-if="inAppTrying">
+            <p class="subtitle">检测到飞书环境，正在免登…</p>
+            <div class="in-app-loading"><i class="ri-loader-4-line"></i>正在通过飞书身份自动登录</div>
+          </template>
+          <template v-else>
+            <p class="subtitle">使用飞书扫码，快速进入你的 WAO</p>
+            <div v-if="!qrError" id="feishu-qr" class="qr"><div class="qr-loading"><i class="ri-loader-4-line"></i>正在加载飞书二维码…</div></div>
+            <div v-else class="qr-fallback"><i class="ri-qr-code-line"></i><span>二维码暂不可用</span></div>
+            <div v-if="qrError" class="qr-error">{{ qrError }}</div>
+            <div v-if="inAppError" class="qr-error">{{ inAppError }}</div>
+            <button class="authorization-cta" type="button" @click="startFeishuLogin('authorization')"><i class="ri-feishu-line"></i><span>{{ qrError ? '改用飞书授权登录' : '二维码不方便？使用飞书授权登录' }}</span><i class="ri-arrow-right-s-line"></i></button>
+          </template>
         </template>
 
         <template v-else>
@@ -110,6 +142,7 @@ h1 { max-width: 540px; margin: 0; font-size: 31px; line-height: 1.45; } .brand p
 .login-footer { position: absolute; right: 0; bottom: 0; left: 0; }
 .qr { width: 100%; max-width: 302px; aspect-ratio: 1; margin: auto; overflow: hidden; border: 1px solid var(--wao-line); border-radius: 14px; }.qr-loading { height: 100%; display: grid; place-content: center; gap: 8px; text-align: center; color: var(--wao-text-weak); font-size: 12px; }.qr-loading i { font-size: 30px; color: var(--wao-primary); }.qr-error,.error { margin-top: 8px; color: var(--wao-danger-strong); font-size: 12px; text-align: center; }
 .qr-fallback { width: 100%; max-width: 302px; height: 160px; margin: auto; display: grid; place-content: center; gap: 8px; text-align: center; border: 1px dashed var(--wao-line-strong); border-radius: 14px; color: var(--wao-text-weak); font-size: 12px; }.qr-fallback i { color: var(--wao-primary); font-size: 30px; }
+.in-app-loading { min-height: 160px; display: grid; place-content: center; gap: 10px; text-align: center; color: var(--wao-text-weak); font-size: 13px; }.in-app-loading i { font-size: 30px; color: var(--wao-primary); animation: in-app-spin 1s linear infinite; }@keyframes in-app-spin { to { transform: rotate(360deg); } }
 button,input { width: 100%; height: 42px; border-radius: 10px; font-size: 13px; } input { box-sizing: border-box; margin-top: 10px; padding: 0 13px; border: 1px solid var(--wao-line-control); outline: none; } input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67,88,214,.12); } button { cursor: pointer; }.primary { margin-top: 12px; border: none; background: var(--wao-primary); color: #fff; font-weight: 600; }.primary:disabled { opacity: .6; }.switch { height: 32px; border: none; background: none; color: var(--wao-primary); }.authorization-cta { margin-top: 12px; padding: 0 13px; display: flex; align-items: center; gap: 8px; border: 1px solid rgba(51,112,255,.28); background: #f3f6ff; color: #2855c7; font-weight: 600; }.authorization-cta:hover { border-color: #3370ff; background: #eaf0ff; box-shadow: 0 4px 12px rgba(51,112,255,.12); }.authorization-cta span { flex: 1; }.authorization-cta .ri-feishu-line { color: #3370ff; font-size: 16px; }.authorization-cta .ri-arrow-right-s-line { font-size: 17px; }.email-form { padding-top: 4px; }
 .other-methods { margin-top: 20px; padding-top: 16px; border-top: 1px solid #eceef3; display: flex; align-items: center; justify-content: center; gap: 8px; }.other-methods span { margin-right: 4px; color: var(--wao-text-faint); font-size: 11px; }.other-methods button { width: auto; height: 30px; padding: 0 10px; border: 1px solid #e3e5ec; border-radius: 8px; background: #fafbfc; color: var(--wao-text-weak); font-size: 12px; }.other-methods i { margin-right: 4px; }.other-methods .ri-feishu-line { color: #3370ff; }.foot { margin: 14px 0 0; color: var(--wao-text-faint); font-size: 11px; line-height: 1.6; text-align: center; }
 @media (max-width: 760px) { .brand { display: none; }.panel { padding: 16px 16px 68px; }.card { width: min(368px, calc(100vw - 32px)); box-sizing: border-box; padding: 22px; } }
