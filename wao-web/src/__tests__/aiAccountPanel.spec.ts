@@ -64,6 +64,50 @@ describe('AiAccountPanel', () => {
     expect(fill.attributes('style')).toContain('92%')
   })
 
+  it('点击查看额度后展开套餐、凭据有效期和全部额度窗口', async () => {
+    fetchAiAccounts.mockResolvedValue([account({
+      tokenExpiresAt: '2026-07-30T11:58:47',
+      quotaRawJson: JSON.stringify({
+        limits: [
+          { kind: 'five_hour', percent: 35, resets_at: '2026-07-29T04:27:30+08:00' },
+          { kind: 'weekly_all', percent: 63, resets_at: '2026-08-04T13:46:00+08:00' },
+        ],
+      }),
+    })])
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('查看额度'))!.trigger('click')
+
+    const details = wrapper.find('.quota-details')
+    expect(details.exists()).toBe(true)
+    expect(details.text()).toContain('OAuth 登录')
+    expect(details.text()).toContain('套餐')
+    expect(details.text()).toContain('Pro')
+    expect(details.text()).toContain('凭据有效期')
+    expect(details.text()).toContain('五小时会话额度')
+    expect(details.text()).toContain('已用 35%')
+    expect(details.text()).toContain('七天额度')
+    expect(details.text()).toContain('已用 63%')
+    expect(wrapper.text()).toContain('收起详情')
+  })
+
+  it('刷新额度调用真实同步接口并重新读取账号', async () => {
+    fetchAiAccounts.mockResolvedValue([account()])
+    syncAiAccount.mockResolvedValue({
+      id: 'aa-1', provider: 'claude', status: 'SYNCED', message: '已刷新',
+      rawJson: null, syncedAt: '2026-07-28T13:00:00',
+    })
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('刷新额度'))!.trigger('click')
+    await flushPromises()
+
+    expect(syncAiAccount).toHaveBeenCalledWith('aa-1')
+    expect(fetchAiAccounts).toHaveBeenCalledTimes(2)
+  })
+
   it('额度查不到时显示原因而不是 0%', async () => {
     fetchAiAccounts.mockResolvedValue([
       account({ quotaPercent: null, quotaStatus: 'NO_API', quotaMessage: 'Qoder 暂无公开的额度查询 API' }),
@@ -75,6 +119,9 @@ describe('AiAccountPanel', () => {
     expect(wrapper.find('.quota-fill').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('0%')
     expect(wrapper.text()).toContain('Qoder 暂无公开的额度查询 API')
+
+    await wrapper.findAll('button').find((button) => button.text().includes('查看额度'))!.trigger('click')
+    expect(wrapper.find('.quota-details').text()).toContain('Qoder 暂无公开的额度查询 API')
   })
 
   it('点登录后打开授权页并显示回填授权码的输入框', async () => {

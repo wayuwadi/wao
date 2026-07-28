@@ -11,6 +11,7 @@ type OAuthProvider = 'claude' | 'codex'
 type FormMode = 'credentials' | 'custom'
 type ProviderFilter = 'all' | AiAccount['provider'] | 'custom'
 type StatusFilter = 'all' | 'enabled' | 'disabled' | 'problem'
+type QuotaWindowDetail = { key: string; label: string; percent: number; resetsAt: string | null }
 
 const providerLabels: Record<AiAccount['provider'], string> = {
   codex: 'Codex', claude: 'Claude Code', qoder: 'Qoder',
@@ -41,6 +42,7 @@ const formMode = ref<FormMode>('credentials')
 const query = ref('')
 const providerFilter = ref<ProviderFilter>('all')
 const statusFilter = ref<StatusFilter>('all')
+const expandedAccountIds = ref<Set<string>>(new Set())
 
 const form = reactive<AiAccountForm>({
   provider: 'claude', label: '', email: '', credentials: '', enabled: true,
@@ -82,6 +84,65 @@ function windowLabel(name: string | null) { return name ? windowLabels[name] ?? 
 function quotaTone(percent: number) { return percent >= 90 ? 'danger' : percent >= 70 ? 'warn' : 'ok' }
 function formatTime(value: string | null) { return value ? new Date(value).toLocaleString('zh-CN') : '' }
 function loginName(provider: OAuthProvider | null) { return provider === 'codex' ? 'Codex' : 'Claude' }
+function planLabel(plan: string | null) {
+  if (!plan) return '未获取'
+  return ({ pro: 'Pro', max: 'Max', plus: 'Plus', team: 'Team' } as Record<string, string>)[plan.toLowerCase()] ?? plan
+}
+function authMethodLabel(method: AiAccount['authMethod']) {
+  return method === 'oauth' ? 'OAuth 登录' : method === 'api_key' ? 'API Key' : '凭据文件'
+}
+function detailsTitle(account: AiAccount) { return account.authMethod === 'api_key' ? '连接详情' : '额度详情' }
+function viewActionLabel(account: AiAccount) {
+  if (expandedAccountIds.value.has(account.id)) return '收起详情'
+  return account.authMethod === 'api_key' ? '查看状态' : '查看额度'
+}
+function toggleDetails(id: string) {
+  const next = new Set(expandedAccountIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedAccountIds.value = next
+}
+function recordOf(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+function quotaWindows(account: AiAccount): QuotaWindowDetail[] {
+  if (!account.quotaRawJson) return account.quotaPercent === null ? [] : [{
+    key: account.quotaWindow ?? 'quota', label: windowLabel(account.quotaWindow),
+    percent: account.quotaPercent, resetsAt: account.quotaResetsAt,
+  }]
+  try {
+    const root = recordOf(JSON.parse(account.quotaRawJson) as unknown)
+    if (!root) return []
+    const limits = Array.isArray(root.limits) ? root.limits : []
+    const parsed = limits.flatMap((value, index) => {
+      const limit = recordOf(value)
+      const percent = typeof limit?.percent === 'number' ? Math.round(limit.percent) : null
+      if (percent === null) return []
+      const key = typeof limit?.kind === 'string' ? limit.kind : `limit-${index + 1}`
+      return [{
+        key, label: windowLabel(key), percent,
+        resetsAt: typeof limit?.resets_at === 'string' ? limit.resets_at : null,
+      }]
+    })
+    if (parsed.length) return parsed
+    return ['five_hour', 'seven_day'].flatMap((key) => {
+      const window = recordOf(root[key])
+      const percent = typeof window?.utilization === 'number' ? Math.round(window.utilization) : null
+      if (percent === null) return []
+      return [{
+        key, label: windowLabel(key), percent,
+        resetsAt: typeof window?.resets_at === 'string' ? window.resets_at : null,
+      }]
+    })
+  } catch {
+    return account.quotaPercent === null ? [] : [{
+      key: account.quotaWindow ?? 'quota', label: windowLabel(account.quotaWindow),
+      percent: account.quotaPercent, resetsAt: account.quotaResetsAt,
+    }]
+  }
+}
 
 async function beginLogin(provider: OAuthProvider) {
   loginStarting.value = provider
@@ -209,14 +270,14 @@ async function remove(id: string) {
   } finally { deletingId.value = null }
 }
 
-async function sync(id: string) {
-  syncingId.value = id
+async function sync(account: AiAccount) {
+  syncingId.value = account.id
   try {
-    await syncAiAccount(id)
-    toast('状态已刷新', 'ri-check-line')
+    await syncAiAccount(account.id)
+    toast(account.authMethod === 'api_key' ? '连接状态已刷新' : '额度已刷新', 'ri-check-line')
     await load()
   } catch (error) {
-    toast(error instanceof Error ? error.message : '检测失败')
+    toast(error instanceof Error ? error.message : account.authMethod === 'api_key' ? '连接检测失败' : '额度刷新失败')
   } finally { syncingId.value = null }
 }
 
@@ -249,7 +310,7 @@ watch(() => true, load, { immediate: true })
         <p>集中管理 OAuth 登录、CLI 凭据和 CLIProxyAPI 自定义端点，运行任务时再选择要用的账号。</p>
       </div>
       <button class="refresh-btn" :disabled="busy" @click="load">
-        <i :class="busy ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ busy ? '刷新中' : '刷新' }}
+        <i :class="busy ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ busy ? '读取中' : '刷新列表' }}
       </button>
     </header>
 
@@ -324,35 +385,83 @@ watch(() => true, load, { immediate: true })
       </div>
       <div v-else-if="filteredAccounts.length === 0" class="empty-state"><i class="ri-search-eye-line"></i><b>没有符合筛选条件的账号</b></div>
       <div v-else class="account-grid">
-        <article v-for="account in filteredAccounts" :key="account.id" class="account-card" :class="{ disabled: !account.enabled, failed: account.quotaStatus === 'FAILED' }">
+        <article
+          v-for="account in filteredAccounts"
+          :key="account.id"
+          class="account-card"
+          :class="{
+            disabled: !account.enabled,
+            failed: account.quotaStatus === 'FAILED',
+            expanded: expandedAccountIds.has(account.id),
+          }"
+        >
           <div class="account-top">
             <div class="account-icon" :class="account.provider"><i :class="providerIcons[account.provider]"></i></div>
             <div class="account-title">
               <div class="tags"><span>{{ providerLabels[account.provider] }}</span><em>{{ account.authMethod === 'api_key' ? '自定义 API' : account.authMethod === 'oauth' ? 'OAuth' : '凭据文件' }}</em></div>
               <b :title="account.label">{{ account.label }}</b>
-              <small :title="account.email || account.baseUrl || ''">{{ account.email || account.baseUrl || '未记录账号标识' }}</small>
             </div>
             <span class="state-pill" :class="{ on: account.enabled, bad: account.quotaStatus === 'FAILED' }">{{ account.quotaStatus === 'FAILED' ? '异常' : account.enabled ? '启用' : '停用' }}</span>
+          </div>
+
+          <div class="account-facts">
+            <span><i class="ri-user-line"></i>{{ account.email || account.baseUrl || '未记录账号标识' }}</span>
+            <span v-if="account.authMethod !== 'api_key'"><i class="ri-vip-crown-2-line"></i>套餐 {{ planLabel(account.plan) }}</span>
+            <span><i class="ri-time-line"></i>{{ account.lastSyncedAt ? `${formatTime(account.lastSyncedAt)} 刷新` : '尚未刷新' }}</span>
           </div>
 
           <div v-if="account.authMethod === 'api_key'" class="endpoint-info">
             <div><span>模型</span><b>{{ account.model || '未配置' }}</b></div>
             <div><span>协议</span><b>OpenAI Responses</b></div>
           </div>
-          <div v-else-if="account.quotaPercent !== null" class="quota">
-            <div class="quota-head"><span>{{ windowLabel(account.quotaWindow) }}</span><strong :class="quotaTone(account.quotaPercent)">{{ account.quotaPercent }}%</strong></div>
-            <div class="quota-bar"><span class="quota-fill" :class="quotaTone(account.quotaPercent)" :style="{ width: Math.min(100, Math.max(0, account.quotaPercent)) + '%' }"></span></div>
-            <small v-if="account.quotaResetsAt">{{ formatTime(account.quotaResetsAt) }} 重置</small>
+          <div v-else class="quota-overview">
+            <div class="health-label">
+              <span>额度状态</span>
+              <em :class="account.quotaStatus?.toLowerCase()">{{ statusLabels[account.quotaStatus ?? 'UNKNOWN'] }}</em>
+            </div>
+            <div v-if="account.quotaPercent !== null" class="quota">
+              <div class="quota-head"><span>{{ windowLabel(account.quotaWindow) }}</span><strong :class="quotaTone(account.quotaPercent)">已用 {{ account.quotaPercent }}%</strong></div>
+              <div class="quota-bar"><span class="quota-fill" :class="quotaTone(account.quotaPercent)" :style="{ width: Math.min(100, Math.max(0, account.quotaPercent)) + '%' }"></span></div>
+              <small v-if="account.quotaResetsAt">{{ formatTime(account.quotaResetsAt) }} 重置</small>
+            </div>
+            <div v-else class="health-line" :class="account.quotaStatus?.toLowerCase()">
+              <i :class="account.quotaStatus === 'FAILED' ? 'ri-error-warning-line' : account.quotaStatus === 'SYNCED' ? 'ri-checkbox-circle-line' : 'ri-information-line'"></i>
+              <span>{{ account.quotaMessage || statusLabels[account.quotaStatus ?? 'UNKNOWN'] }}</span>
+            </div>
           </div>
-          <div v-else class="health-line" :class="account.quotaStatus?.toLowerCase()">
-            <i :class="account.quotaStatus === 'FAILED' ? 'ri-error-warning-line' : account.quotaStatus === 'SYNCED' ? 'ri-checkbox-circle-line' : 'ri-information-line'"></i>
-            <span>{{ account.quotaMessage || statusLabels[account.quotaStatus ?? 'UNKNOWN'] }}</span>
-          </div>
+
+          <section v-if="expandedAccountIds.has(account.id)" class="quota-details">
+            <div class="quota-details-head">
+              <div><i :class="account.authMethod === 'api_key' ? 'ri-pulse-line' : 'ri-pie-chart-line'"></i><b>{{ detailsTitle(account) }}</b></div>
+              <small>{{ account.lastSyncedAt ? `更新于 ${formatTime(account.lastSyncedAt)}` : '等待首次刷新' }}</small>
+            </div>
+            <div class="details-grid">
+              <div><span>认证方式</span><b>{{ authMethodLabel(account.authMethod) }}</b></div>
+              <div v-if="account.authMethod !== 'api_key'"><span>套餐</span><b>{{ planLabel(account.plan) }}</b></div>
+              <div v-if="account.tokenExpiresAt"><span>凭据有效期</span><b>{{ formatTime(account.tokenExpiresAt) }}</b></div>
+              <div v-if="account.authMethod === 'api_key'"><span>默认模型</span><b>{{ account.model || '未配置' }}</b></div>
+            </div>
+            <template v-if="quotaWindows(account).length">
+              <div v-for="window in quotaWindows(account)" :key="window.key" class="quota-window">
+                <div><span>{{ window.label }}</span><strong :class="quotaTone(window.percent)">已用 {{ window.percent }}%</strong></div>
+                <div class="quota-bar"><span class="quota-fill" :class="quotaTone(window.percent)" :style="{ width: Math.min(100, Math.max(0, window.percent)) + '%' }"></span></div>
+                <small>{{ window.resetsAt ? `${formatTime(window.resetsAt)} 重置` : '未返回重置时间' }}</small>
+              </div>
+            </template>
+            <div v-else class="quota-empty">
+              <i :class="account.quotaStatus === 'FAILED' ? 'ri-error-warning-line' : 'ri-information-line'"></i>
+              <span>{{ account.quotaMessage || (account.authMethod === 'api_key' ? '刷新后可查看连接检测结果' : '供应商未返回可展示的额度') }}</span>
+            </div>
+          </section>
 
           <div class="account-foot">
             <div class="card-buttons">
-              <button :disabled="syncingId === account.id" @click="sync(account.id)" :title="account.authMethod === 'api_key' ? '测试连接' : '同步状态'">
+              <button class="text-action" :aria-expanded="expandedAccountIds.has(account.id)" @click="toggleDetails(account.id)">
+                <i :class="expandedAccountIds.has(account.id) ? 'ri-eye-off-line' : 'ri-eye-line'"></i>{{ viewActionLabel(account) }}
+              </button>
+              <button class="text-action refresh-quota" :disabled="syncingId === account.id" @click="sync(account)">
                 <i :class="syncingId === account.id ? 'ri-loader-4-line spin' : account.authMethod === 'api_key' ? 'ri-pulse-line' : 'ri-refresh-line'"></i>
+                {{ syncingId === account.id ? '刷新中…' : account.authMethod === 'api_key' ? '测试连接' : '刷新额度' }}
               </button>
               <button title="编辑" @click="openEdit(account)"><i class="ri-settings-3-line"></i></button>
               <button class="delete" title="删除" :disabled="deletingId === account.id" @click="pendingDelete = account"><i :class="deletingId === account.id ? 'ri-loader-4-line spin' : 'ri-delete-bin-6-line'"></i></button>
@@ -452,9 +561,10 @@ input:focus, select:focus, textarea:focus { border-color: #7e8ce0; box-shadow: 0
 .summary-row i { margin-right: 4px; }
 .summary-row .problem { color: #c65449; }
 .summary-row .secure { margin-left: auto; }
-.account-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; margin-top: 15px; }
-.account-card { display: flex; flex-direction: column; min-height: 210px; padding: 14px; border: 1px solid #e1e4ec; border-radius: 13px; background: #fff; transition: .18s ease; }
+.account-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: start; gap: 13px; margin-top: 15px; }
+.account-card { display: flex; flex-direction: column; min-height: 268px; padding: 16px; border: 1px solid #dfe2ec; border-radius: 13px; background: #fff; transition: .18s ease; }
 .account-card:hover { border-color: #c6cceb; box-shadow: 0 10px 24px rgba(43,52,99,.08); transform: translateY(-1px); }
+.account-card.expanded { border-color: #bfc7eb; box-shadow: 0 12px 28px rgba(43,52,99,.09); }
 .account-card.disabled { opacity: .68; background: #fafafa; }
 .account-card.failed { border-color: #efc9c4; }
 .account-top { display: flex; align-items: flex-start; gap: 10px; }
@@ -465,30 +575,57 @@ input:focus, select:focus, textarea:focus { border-color: #7e8ce0; box-shadow: 0
 .tags { display: flex; gap: 5px; margin-bottom: 4px; }
 .tags span, .tags em { padding: 2px 6px; border-radius: 7px; background: #eef0ff; color: #5666ce; font-size: 8px; font-style: normal; font-weight: 700; }
 .tags em { background: #f2f3f6; color: var(--wao-text-weak); }
-.account-title b, .account-title small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.account-title b { font-size: 12px; }
-.account-title small { margin-top: 3px; color: var(--wao-text-weak); font-size: 9.5px; }
+.account-title b { display: block; overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .state-pill { padding: 3px 7px; border-radius: 9px; background: #eff0f3; color: #7c7f89; font-size: 8px; font-weight: 700; }
 .state-pill.on { background: #dff8ec; color: #20885d; }
 .state-pill.bad { background: #fde8e5; color: #bd4c40; }
-.endpoint-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
+.account-facts { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 13px; color: var(--wao-text-weak); font-size: 9px; line-height: 1.45; }
+.account-facts span { display: inline-flex; align-items: center; min-width: 0; }
+.account-facts span:first-child { flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-facts i { margin-right: 4px; color: #9aa1b6; }
+.endpoint-info { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
 .endpoint-info div { padding: 8px 9px; border-radius: 9px; background: #f7f8fb; }
 .endpoint-info span, .endpoint-info b { display: block; }
 .endpoint-info span { color: var(--wao-text-weak); font-size: 8px; }
 .endpoint-info b { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; color: var(--wao-text-2); font-size: 10px; white-space: nowrap; }
-.quota { margin-top: 18px; }
+.quota-overview { margin-top: 15px; }
+.health-label { display: flex; align-items: center; margin-bottom: 8px; color: var(--wao-text-weak); font-size: 9px; }
+.health-label > span { flex: 1; }
+.health-label em { padding: 2px 6px; border-radius: 7px; background: #f0f1f4; color: #737783; font-size: 8px; font-style: normal; font-weight: 700; }
+.health-label em.synced { background: #e4f8ee; color: #25865f; }
+.health-label em.failed { background: #fde9e6; color: #bd4e43; }
+.health-label em.no_api { background: #fff3dc; color: #9c6d20; }
+.quota { margin-top: 0; padding: 10px 11px; border-radius: 10px; background: #f8f9fb; }
 .quota-head { display: flex; align-items: center; font-size: 10px; }
 .quota-head span { flex: 1; color: var(--wao-text-weak); }
 .quota-head strong.ok { color: #258b61; }.quota-head strong.warn { color: #c28323; }.quota-head strong.danger { color: #c54d43; }
 .quota-bar { height: 6px; margin-top: 7px; overflow: hidden; border-radius: 3px; background: #eef0f3; }
 .quota-fill { display: block; height: 100%; border-radius: inherit; }.quota-fill.ok { background: #38b77d; }.quota-fill.warn { background: #e2a139; }.quota-fill.danger { background: #d85e53; }
 .quota small { display: block; margin-top: 6px; color: var(--wao-text-weak); font-size: 8px; }
-.health-line { display: flex; align-items: flex-start; gap: 6px; margin-top: 18px; min-height: 38px; padding: 8px 9px; border-radius: 9px; background: #f7f8fb; color: var(--wao-text-weak); font-size: 9px; line-height: 1.45; }
+.health-line { display: flex; align-items: flex-start; gap: 6px; min-height: 38px; padding: 9px 10px; border-radius: 9px; background: #f7f8fb; color: var(--wao-text-weak); font-size: 9px; line-height: 1.45; }
 .health-line.failed { background: #fff0ed; color: #b85046; }
 .health-line.synced { background: #edf9f3; color: #277d5b; }
+.quota-details { margin-top: 13px; padding: 12px; border: 1px solid #e1e5f1; border-radius: 11px; background: #fafbfe; animation: details-in .16s ease-out; }
+.quota-details-head { display: flex; align-items: center; gap: 10px; }
+.quota-details-head > div { display: flex; align-items: center; gap: 6px; flex: 1; color: var(--wao-text-2); font-size: 10px; }
+.quota-details-head > div i { color: #5264d8; }
+.quota-details-head small { color: var(--wao-text-weak); font-size: 8px; }
+.details-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; margin-top: 10px; }
+.details-grid > div { padding: 8px 9px; border-radius: 8px; background: #fff; }
+.details-grid span, .details-grid b { display: block; }
+.details-grid span { color: var(--wao-text-weak); font-size: 8px; }
+.details-grid b { margin-top: 3px; overflow: hidden; color: var(--wao-text-2); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+.quota-window { margin-top: 9px; padding: 9px 10px; border: 1px solid #eceef4; border-radius: 9px; background: #fff; }
+.quota-window > div:first-child { display: flex; align-items: center; font-size: 9px; }
+.quota-window > div:first-child span { flex: 1; color: var(--wao-text-2); font-weight: 650; }
+.quota-window strong { font-size: 9px; }.quota-window strong.ok { color: #258b61; }.quota-window strong.warn { color: #c28323; }.quota-window strong.danger { color: #c54d43; }
+.quota-window small { display: block; margin-top: 5px; color: var(--wao-text-weak); font-size: 8px; }
+.quota-empty { display: flex; align-items: flex-start; gap: 6px; margin-top: 10px; padding: 9px; border-radius: 9px; background: #fff; color: var(--wao-text-weak); font-size: 9px; line-height: 1.5; }
 .account-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 12px; border-top: 1px solid #eef0f3; }
-.card-buttons { display: flex; gap: 5px; }
+.card-buttons { display: flex; flex-wrap: wrap; gap: 5px; }
 .card-buttons button, .close { display: grid; place-items: center; width: 29px; height: 29px; border: 1px solid var(--wao-line); border-radius: 8px; background: #f8f8f8; color: var(--wao-text-2); cursor: pointer; }
+.card-buttons .text-action { display: inline-flex; width: auto; padding: 0 8px; gap: 5px; font-size: 9px; font-weight: 650; }
+.card-buttons .text-action.refresh-quota { border-color: #cbd2f1; background: #f4f6ff; color: #4c5fcf; }
 .card-buttons .delete { border-color: #f1d1cd; background: #fff1ef; color: #c65046; }
 .switch-label { display: flex; align-items: center; gap: 6px; color: var(--wao-text-weak); font-size: 9px; }
 .toggle { position: relative; width: 34px; height: 19px; padding: 0; border: 0; border-radius: 10px; background: #d9dce2; cursor: pointer; }
@@ -507,6 +644,7 @@ input:focus, select:focus, textarea:focus { border-color: #7e8ce0; box-shadow: 0
 .account-form .enable-row { flex-direction: row; align-items: center; }
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 5px; }
 .spin { display: inline-block; animation: spin .9s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes details-in { from { opacity: 0; transform: translateY(-3px); } }
 @media (max-width: 920px) { .oauth-grid, .account-grid { grid-template-columns: 1fr; }.filters { grid-template-columns: 1fr; }.filter-tabs { overflow-x: auto; }.summary-row .secure { margin-left: 0; }.summary-row { flex-wrap: wrap; } }
-@media (max-width: 620px) { .page-head { flex-direction: column; }.refresh-btn { align-self: stretch; }.oauth-card { grid-template-columns: 38px 1fr; }.oauth-card > button { grid-column: 1 / -1; }.manager-head { align-items: stretch; flex-direction: column; }.manager-actions { display: grid; grid-template-columns: 1fr 1fr; }.login-actions { flex-wrap: wrap; }.login-actions input { flex-basis: 100%; }.account-form { grid-template-columns: 1fr; }.account-form .wide, .form-actions { grid-column: 1; } }
+@media (max-width: 620px) { .page-head { flex-direction: column; }.refresh-btn { align-self: stretch; }.oauth-card { grid-template-columns: 38px 1fr; }.oauth-card > button { grid-column: 1 / -1; }.manager-head { align-items: stretch; flex-direction: column; }.manager-actions { display: grid; grid-template-columns: 1fr 1fr; }.login-actions { flex-wrap: wrap; }.login-actions input { flex-basis: 100%; }.account-form { grid-template-columns: 1fr; }.account-form .wide, .form-actions { grid-column: 1; }.account-foot { align-items: flex-end; }.switch-label { flex-direction: column; }.details-grid { grid-template-columns: 1fr; } }
 </style>
