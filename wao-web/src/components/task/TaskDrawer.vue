@@ -1809,8 +1809,8 @@ function demo(msg: string) {
 .ai-continue-input:focus-within { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .1); }
 .ai-continue-input :deep(.md .md-body), .ai-continue-input :deep(.md:not(.ro) .md-body:hover), .ai-continue-input :deep(.md:not(.ro) .md-body:focus-within) { border-color: transparent; }
 .ai-continue-input :deep(.md .tiptap) { padding: 8px 9px; font-size: 11.5px; line-height: 1.55; }
-.ai-continue button { float: right; margin-top: 8px; padding: 6px 10px; border: 0; border-radius: 7px; background: var(--wao-primary); color: #fff; cursor: pointer; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
-.ai-continue button:disabled { cursor: not-allowed; opacity: .55; }
+.ai-continue > button { float: right; margin-top: 8px; padding: 6px 10px; border: 0; border-radius: 7px; background: var(--wao-primary); color: #fff; cursor: pointer; font-size: 11px; display: inline-flex; align-items: center; gap: 5px; }
+.ai-continue > button:disabled { cursor: not-allowed; opacity: .55; }
 .ai-continue::after { content: ''; display: block; clear: both; }
 @keyframes aiLive { 50% { opacity: .35; transform: scale(.85); } }
 

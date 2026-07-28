@@ -76,11 +76,12 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
-  it('不带格式工具条——格式一律靠 Markdown 快捷输入敲出来', async () => {
+  it('不带格式工具条，但提供图片选择入口以支持手机图册上传', async () => {
     const w = await mountEditor({ modelValue: '## 标题' })
 
     expect(w.find('.md-tools').exists()).toBe(false)
-    expect(w.findAll('button')).toHaveLength(0)
+    expect(w.findAll('button')).toHaveLength(1)
+    expect(w.find('.image-upload').attributes('aria-label')).toBe('从图册选择图片')
     // 但格式本身照常渲染
     expect(w.find('.md-body').html()).toContain('<h2>标题</h2>')
     w.unmount()
@@ -145,6 +146,24 @@ describe('MarkdownEditor（所见即所得）', () => {
     done('/api/images/img9/raw', 'a.png')
     await nextTick()
     expect(w.find('.md-body img').attributes('src')).toBe('/api/images/img9/raw')
+    w.unmount()
+  })
+
+  it('从图片选择器选中图片时，走与粘贴相同的上传和内联插入链路', async () => {
+    const w = await mountEditor({ modelValue: '' })
+    const file = new File([new Uint8Array(4)], 'mobile.png', { type: 'image/png' })
+    const picker = w.find('input[type="file"]').element as HTMLInputElement
+    Object.defineProperty(picker, 'files', { value: [file], configurable: true })
+
+    await w.find('input[type="file"]').trigger('change')
+
+    const emitted = w.emitted('upload-image')
+    expect(emitted).toBeTruthy()
+    expect((emitted![0]![0] as File).name).toBe('mobile.png')
+    const done = emitted![0]![1] as (url: string | null, name: string) => void
+    done('/api/images/mobile/raw', 'mobile.png')
+    await nextTick()
+    expect(w.find('.md-body img').attributes('src')).toBe('/api/images/mobile/raw')
     w.unmount()
   })
 

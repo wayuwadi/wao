@@ -381,7 +381,7 @@ describe('TaskDrawer', () => {
     const w = mountDrawer()
     await flushPromises()
 
-    expect(w.find('.ai-continue button').text()).toContain('继续优化')
+    expect(w.find('.ai-continue > button').text()).toContain('继续优化')
     w.unmount()
   })
 
