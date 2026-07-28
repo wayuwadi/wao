@@ -1,6 +1,7 @@
 import importlib.util
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -467,6 +468,90 @@ class PromptTest(unittest.TestCase):
         self.assertIn("不存在「稍后再汇报」", self.PROMPT)
         self.assertIn("不存在「稍后再汇报」", RUNNER.build_continuation_prompt(
             {"branchName": "ai/wao-ar1", "defaultBranch": "main"}, "继续盯部署"))
+
+
+class ScriptUpdateTest(unittest.TestCase):
+    """后台一键分发 Runner 脚本更新：拉取、校验、原地替换、重启。"""
+
+    def setUp(self) -> None:
+        self.workspace = Path(tempfile.mkdtemp(prefix="wao-update-"))
+        self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
+        self.script = self.workspace / "wao-ai-runner.py"
+        # 服务端按 UTF-8 原始字节计算哈希，Runner 更新时也用 write_bytes 落盘；显式写入
+        # LF，避免 Windows 文本模式换行转换让用例偏离真实更新产物。
+        self.script.write_bytes(b"print('old')\n")
+
+    @staticmethod
+    def _payload(content: str) -> dict[str, str]:
+        import hashlib
+
+        return {"content": content, "hash": hashlib.sha256(content.encode("utf-8")).hexdigest()}
+
+    def test_verified_script_replaces_itself_and_restarts(self) -> None:
+        api = Mock()
+        api.get.return_value = self._payload("print('new')\n")
+
+        with patch.object(RUNNER, "restart_self") as restart:
+            RUNNER.apply_script_update(api, self.script)
+
+        self.assertEqual("print('new')\n", self.script.read_text(encoding="utf-8"))
+        restart.assert_called_once_with(self.script)
+        api.get.assert_called_once_with("/api/ai/runner/script")
+
+
+class SyncCredentialsTest(unittest.TestCase):
+    """AI 账号凭据同步：把服务端下发的明文凭据写入本机 CLI 配置文件。"""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="wao-cred-sync-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def test_writes_known_provider_credentials_to_expected_paths(self) -> None:
+        api = Mock()
+        api.get.return_value = [
+            {"provider": "claude", "credentials": '{"accessToken":"claude-token"}'},
+            {"provider": "codex", "credentials": '{"apiKey":"codex-key"}'},
+        ]
+
+        results = RUNNER.sync_ai_credentials(api, self.root)
+
+        claude_file = self.root / ".claude" / ".credentials.json"
+        codex_file = self.root / ".codex" / "auth.json"
+        self.assertTrue(claude_file.exists())
+        self.assertTrue(codex_file.exists())
+        self.assertIn("claude-token", claude_file.read_text(encoding="utf-8"))
+        self.assertIn("codex-key", codex_file.read_text(encoding="utf-8"))
+        self.assertTrue(results.get("claude"))
+        self.assertTrue(results.get("codex"))
+        if os.name != "nt":
+            self.assertEqual(0o600, stat.S_IMODE(claude_file.stat().st_mode))
+
+    def test_skips_unknown_providers_unless_overridden_by_env(self) -> None:
+        api = Mock()
+        api.get.return_value = [{"provider": "qoder", "credentials": '{"token":"q"}'}]
+
+        results = RUNNER.sync_ai_credentials(api, self.root)
+
+        self.assertFalse(results.get("qoder"))
+        self.assertFalse(any(self.root.rglob("*qoder*")))
+
+    def test_env_override_allows_unknown_provider_path(self) -> None:
+        api = Mock()
+        api.get.return_value = [{"provider": "qoder", "credentials": '{"token":"q"}'}]
+        override = self.root / "qoder-auth.json"
+        with patch.dict(os.environ, {"WAO_AI_CREDENTIALS_PATH_QODER": str(override)}):
+            results = RUNNER.sync_ai_credentials(api, self.root)
+
+        self.assertTrue(results.get("qoder"))
+        self.assertEqual('{"token":"q"}', override.read_text(encoding="utf-8"))
+
+    def test_api_failure_does_not_crash(self) -> None:
+        api = Mock()
+        api.get.side_effect = RuntimeError("connection refused")
+
+        results = RUNNER.sync_ai_credentials(api, self.root)
+
+        self.assertEqual({}, results)
 
 
 class ScriptUpdateTest(unittest.TestCase):

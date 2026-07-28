@@ -926,6 +926,59 @@ def restart_self(script_path: Path) -> None:
     os.execv(sys.executable, arguments)
 
 
+def _ai_credentials_path(provider: str, config_root: Path) -> Path | None:
+    """返回本机 CLI 凭据文件路径；未知供应商可通过环境变量覆盖。"""
+    known = {
+        "claude": config_root / ".claude" / ".credentials.json",
+        "codex": config_root / ".codex" / "auth.json",
+    }
+    path = known.get(provider)
+    if path:
+        return path
+    env = os.getenv(f"WAO_AI_CREDENTIALS_PATH_{provider.upper()}")
+    return Path(env) if env else None
+
+
+def sync_ai_credentials(api: WaoApi, config_root: Path) -> dict[str, bool]:
+    """从服务端拉取启用的 AI 账号凭据并写入本机 CLI 配置文件。
+
+    只有明确开启凭据同步的 Runner 才会执行；写入前会检查文件路径是否已知，
+    避免把凭据写到错误位置。非 Unix 系统跳过权限设置。
+    """
+    results: dict[str, bool] = {}
+    try:
+        accounts = api.get("/api/ai/runner/accounts") or []
+    except Exception as exc:  # noqa: BLE001 - 凭据同步失败不能中断主循环
+        log(f"AI 账号凭据拉取失败，跳过同步：{exc}")
+        return results
+    if not isinstance(accounts, list):
+        log("AI 账号凭据接口返回格式异常，跳过同步")
+        return results
+    for item in accounts:
+        if not isinstance(item, dict):
+            continue
+        provider = str(item.get("provider") or "").lower()
+        credentials = item.get("credentials")
+        if not provider or not isinstance(credentials, str) or not credentials.strip():
+            continue
+        path = _ai_credentials_path(provider, config_root)
+        if not path:
+            log(f"AI 账号同步：未知 {provider} 的本地凭据路径，跳过（可设 WAO_AI_CREDENTIALS_PATH_{provider.upper()}）")
+            results[provider] = False
+            continue
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(credentials, encoding="utf-8")
+            if os.name != "nt":
+                path.chmod(0o600)
+            log(f"AI 账号同步：已更新 {provider} 凭据 {path}")
+            results[provider] = True
+        except OSError as exc:
+            log(f"AI 账号同步：写入 {provider} 凭据失败：{exc}")
+            results[provider] = False
+    return results
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="WAO AI Runner")
     parser.add_argument("--server", default=os.getenv("WAO_SERVER_URL", "https://wao.wayuwa.cn"))
@@ -952,6 +1005,12 @@ def parse_args() -> argparse.Namespace:
         choices=["read-only", "workspace-write", "danger-full-access"],
         default=os.getenv("WAO_CODEX_SANDBOX", "danger-full-access"),
         help="开发阶段默认完整权限；建议在专用系统账号或隔离电脑运行",
+    )
+    parser.add_argument(
+        "--sync-ai-credentials",
+        action="store_true",
+        default=os.getenv("WAO_SYNC_AI_CREDENTIALS", "").lower() in ("1", "true", "yes"),
+        help="从 WAO 服务端拉取启用的 AI 账号凭据并写入本机 CLI 配置文件",
     )
     return parser.parse_args()
 
@@ -996,7 +1055,12 @@ def main() -> int:
         f"GitHub CLI={github_cli or '未找到'}，"
         f"克隆协议={args.git_protocol}"
         f"{'（无 HTTPS 凭据，改用 SSH）' if args.git_protocol == 'auto' and not github_token_ready else ''}")
+    if args.sync_ai_credentials:
+        log("AI 账号凭据同步已启用")
+        sync_ai_credentials(api, Path.home())
     futures: set[Future[None]] = set()
+    last_credentials_sync = time.monotonic()
+    CREDENTIALS_SYNC_INTERVAL_SECONDS = 300
     with ThreadPoolExecutor(max_workers=args.max_concurrency, thread_name_prefix="wao-ai") as executor:
         while True:
             futures = {future for future in futures if not future.done()}
@@ -1015,6 +1079,9 @@ def main() -> int:
                     else:
                         apply_script_update(api, SCRIPT_PATH)
                 else:
+                    if args.sync_ai_credentials and time.monotonic() - last_credentials_sync >= CREDENTIALS_SYNC_INTERVAL_SECONDS:
+                        sync_ai_credentials(api, Path.home())
+                        last_credentials_sync = time.monotonic()
                     while len(futures) < args.max_concurrency:
                         claim = api.post("/api/ai/runner/claim")
                         if not claim:

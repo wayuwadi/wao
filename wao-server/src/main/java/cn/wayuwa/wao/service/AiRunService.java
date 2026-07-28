@@ -870,6 +870,15 @@ public class AiRunService {
         runMapper.updateById(run);
     }
 
+    /**
+     * 供其他服务复用的 Runner 令牌校验。
+     *
+     * @return 对应的执行节点实体；令牌无效时抛出 {@link UnauthorizedException}
+     */
+    public AiRunnerNodeEntity authenticateRunner(String token) {
+        return requireRunner(token);
+    }
+
     private AiRunnerNodeEntity requireRunner(String token) {
         if (!StringUtils.hasText(token)) throw new UnauthorizedException("缺少执行节点令牌");
         AiRunnerNodeEntity runner = runnerMapper.selectOne(new LambdaQueryWrapper<AiRunnerNodeEntity>()
