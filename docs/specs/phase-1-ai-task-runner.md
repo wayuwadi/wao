@@ -35,6 +35,9 @@
 - 每次运行的分支、worktree 和 AI CLI 会话独立。
 - 选择集中账号时，账号必须启用且 provider 与 AI 工具一致；账号 id 固化到运行，重跑与续跑沿用。
   Runner 只在领取该运行时拿到对应明文，并用 `<root>/.wao-codex-homes/<run-id>` 隔离 Codex 配置。
+- 选择集中账号而未显式指定执行电脑时，默认固定到支持对应 CLI 的 Linux 主节点；Linux 尚未接入该
+  工具时前后端都给出明确提示，不得自动落到 Windows 个人电脑。选择“使用执行电脑本地登录态”时
+  继续沿用项目首选电脑或自动分配，用户也始终可以明确改选其他执行电脑。
 - 自定义 API 以 OpenAI Responses 协议配置 Codex provider；API Key 只通过子进程环境变量注入，
   不写入 `config.toml`、日志或全局认证文件。隔离目录与 worktree 同保留七天后回收。
 - 节点离线超过三分钟后任务重新排队；成功/失败均有结果摘要和结束时间。

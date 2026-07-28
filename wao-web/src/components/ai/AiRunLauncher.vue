@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { fetchAiProjectConfig, fetchAiRunners } from '@/api/ai'
 import { fetchAiAccounts, type AiAccount } from '@/api/aiAccount'
 import { AI_ENGINES, engineColor } from '@/composables/aiEngines'
@@ -14,12 +14,24 @@ const accounts = ref<AiAccount[]>([])
 const engine = ref<AiEngine>('codex')
 const runnerId = ref('')
 const accountId = ref('')
+const preferredRunnerId = ref('')
 
 /** 装了这种 AI 工具的电脑；离线的也列出来，选中后任务会排队等它上线。 */
 const candidates = computed(() => runners.value.filter((runner) => runner.engines.includes(engine.value)))
 const eligibleAccounts = computed(() => accounts.value.filter(
   (account) => account.enabled && account.provider === engine.value,
 ))
+const linuxCandidate = computed(() => {
+  const linux = candidates.value.filter((runner) =>
+    runner.platform.toLowerCase().includes('linux') || runner.name.toLowerCase().includes('linux'))
+  return linux.find((runner) => runner.online && runner.name.includes('主节点'))
+    ?? linux.find((runner) => runner.online)
+    ?? linux.find((runner) => runner.name.includes('主节点'))
+    ?? linux[0]
+})
+const centralAccountSelected = computed(() => accountId.value !== '')
+const centralRunnerMissing = computed(() =>
+  centralAccountSelected.value && !linuxCandidate.value && !runnerId.value)
 const availability = computed(() =>
   AI_ENGINES.map((item) => ({
     ...item,
@@ -30,6 +42,10 @@ const availability = computed(() =>
 const hint = computed(() => {
   const picked = candidates.value.find((runner) => runner.id === runnerId.value)
   if (picked) return picked.online ? `将由 ${picked.name} 领取` : `${picked.name} 当前离线，任务会排队等它上线`
+  if (centralAccountSelected.value && !linuxCandidate.value) {
+    return `Linux 主节点尚未接入 ${AI_ENGINES.find((item) => item.id === engine.value)?.label ?? engine.value}，请先安装并重启 Runner，或明确改选其他电脑`
+  }
+  if (centralAccountSelected.value) return '集中账号默认由 Linux 主节点领取'
   const online = candidates.value.filter((runner) => runner.online).length
   return online ? `将由 ${online} 台在线电脑中最先空闲的一台领取` : '当前没有在线电脑，任务会先排队'
 })
@@ -39,6 +55,16 @@ function pickEngine(next: AiEngine) {
   if (!candidates.value.some((runner) => runner.id === runnerId.value)) runnerId.value = ''
   if (!eligibleAccounts.value.some((account) => account.id === accountId.value)) accountId.value = ''
 }
+
+watch(accountId, (next) => {
+  if (next) {
+    runnerId.value = linuxCandidate.value?.id ?? ''
+    return
+  }
+  runnerId.value = candidates.value.some((runner) => runner.id === preferredRunnerId.value)
+    ? preferredRunnerId.value
+    : ''
+})
 
 onMounted(async () => {
   try {
@@ -53,8 +79,9 @@ onMounted(async () => {
     engine.value = supported.includes(config.defaultEngine) || !supported.length
       ? config.defaultEngine
       : supported[0]!
-    runnerId.value = candidates.value.some((runner) => runner.id === config.preferredRunnerId)
-      ? config.preferredRunnerId ?? ''
+    preferredRunnerId.value = config.preferredRunnerId ?? ''
+    runnerId.value = candidates.value.some((runner) => runner.id === preferredRunnerId.value)
+      ? preferredRunnerId.value
       : ''
   } catch {
     // 读取失败时保留默认选择，用户仍然可以直接开跑。
@@ -105,16 +132,16 @@ onMounted(async () => {
 
       <div class="label">执行电脑</div>
       <select v-model="runnerId" class="runner-select">
-        <option value="">自动分配（任意在线电脑）</option>
+        <option value="">{{ centralAccountSelected ? '默认使用 Linux 主节点' : '自动分配（任意在线电脑）' }}</option>
         <option v-for="runner in candidates" :key="runner.id" :value="runner.id">
           {{ runner.name }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
         </option>
       </select>
-      <p class="hint"><i class="ri-information-line"></i>{{ hint }}</p>
+      <p class="hint" :class="{ danger: centralRunnerMissing }"><i :class="centralRunnerMissing ? 'ri-error-warning-line' : 'ri-information-line'"></i>{{ hint }}</p>
 
       <footer>
         <button class="secondary" @click="emit('close')">取消</button>
-        <button class="primary" :disabled="starting" @click="emit('start', engine, runnerId || null, accountId || null)">
+        <button class="primary" :disabled="starting || centralRunnerMissing" @click="emit('start', engine, runnerId || null, accountId || null)">
           <i :class="starting ? 'ri-loader-4-line spin' : 'ri-play-circle-line'"></i>
           {{ starting ? '正在入队…' : '开始运行' }}
         </button>
@@ -172,6 +199,7 @@ onMounted(async () => {
 }
 .hint { margin: 9px 0 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.5; }
 .hint i { margin-right: 4px; }
+.hint.danger { color: #c04f47; }
 .launcher footer { margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px; }
 .launcher footer button { padding: 7px 13px; border-radius: 8px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
 .launcher footer .secondary { border: 1px solid var(--wao-line); background: #fff; }

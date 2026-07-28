@@ -29,7 +29,8 @@ Codex 改走自定义端点。
   列表接口不返回明文。连接测试调用规范化后的 `<base_url>/models`，只报告状态和模型数量。
 - **账号选择固化到一次运行。** `ai_task_run.ai_account_id` 保存用户启动任务时选择的账号。
   账号必须启用且 provider 与 engine 一致；重跑和续跑沿用原账号。未选择时继续使用 Runner 本地登录态，
-  兼容现有节点。
+  兼容现有节点。选择集中账号且未手动指定电脑时，默认固定到支持对应 CLI 的 Linux 主节点；
+  Linux 尚未上报该工具时明确阻止启动，不静默落到使用个人本地环境的 Windows 电脑。用户仍可显式改选其他电脑。
 - **敏感配置只随领取结果发给本次 Runner。** 已配对 Runner 领取任务后，服务端才解密该运行选中的
   凭据。Runner 为这次 Codex 子进程创建临时 `CODEX_HOME`：OAuth 写 `auth.json`；自定义 API 写
   `config.toml` 并通过专用环境变量注入 API Key。该目录与运行 worktree 一起保留七天，以便原

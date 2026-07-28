@@ -9,7 +9,8 @@ AI Runner 安装在娃哥、娃弟的 Windows 电脑和 Linux 主节点上。WAO
 
 ## 首次接入
 
-1. 确认本机已有 Python 3.10+、Git，以及至少一种已登录的 AI CLI：
+1. 确认本机已有 Python 3.10+、Git，以及至少一种 AI CLI。使用执行电脑本地登录态时需提前登录；
+   选择 WAO 集中账号时 CLI 本身仍必须安装，但不要求本机另做登录：
    - Codex CLI，执行过 `codex login`；
    - Claude Code CLI，执行过 `claude` 并完成登录；
    - Qoder CLI（国际版命令名 `qodercli`，国内版 `qoderclicn`），执行过一次并在 TUI 里 `/login` 完成登录。
@@ -43,6 +44,11 @@ python3 deploy/ai-runner/wao-ai-runner.py \
 找不到对应命令会直接启动失败，避免电脑上报了自己其实跑不了的能力。需要固定模型时加
 `--claude-model opus`。Qoder 的引擎 id 是 `qoder`，命令名国际版叫 `qodercli`、国内版叫
 `qoderclicn`，自动探测按顺序两个名字都认。
+
+选择 WAO 集中账号且没有手动指定执行电脑时，任务默认固定到支持对应 CLI 的 Linux 主节点。
+因此要在 Linux 主节点运行 Codex，先确认 `command -v codex` 能找到命令，再重启 Runner 让它重新
+上报能力：`systemctl --user restart wao-ai-runner`。页面中的 Codex 在线电脑数包含 Linux 后，集中账号
+才会自动选中该节点；未安装时页面会明确提示，不会静默改派 Windows 个人电脑。
 
 项目里只填一个 HTTPS 仓库地址，但每台电脑的 Git 认证方式可以不同：`--git-protocol` 默认
 `auto`，本机有 HTTPS 凭据就用 HTTPS，没有（例如只配了 SSH key 的 Linux 主节点）就自动把

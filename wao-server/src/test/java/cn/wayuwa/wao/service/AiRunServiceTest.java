@@ -150,9 +150,12 @@ class AiRunServiceTest {
     @Test
     void enqueuePinsSelectedAccountToTheRun() {
         TaskEntity task = task("t1", "p1", "使用指定 Codex 账号");
+        AiRunnerNodeEntity windows = runner("rn-win", "娃哥Windows电脑", "codex");
+        AiRunnerNodeEntity linux = runner("rn-linux", "Linux 主节点", "codex");
+        linux.setLastSeenAt(LocalDateTime.now());
         when(taskMapper.selectById("t1")).thenReturn(task);
         when(configMapper.selectById("p1")).thenReturn(config("p1"));
-        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "Runner", "codex")));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(windows, linux));
         when(runMapper.selectCount(any())).thenReturn(0L);
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
@@ -163,6 +166,21 @@ class AiRunServiceTest {
         ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
         verify(runMapper).insert(run.capture());
         assertThat(run.getValue().getAiAccountId()).isEqualTo("aa-1");
+        assertThat(run.getValue().getRequestedRunnerId()).isEqualTo("rn-linux");
+    }
+
+    @Test
+    void enqueueWithCentralAccountRequiresLinuxRunnerUnlessComputerIsExplicit() {
+        TaskEntity task = task("t1", "p1", "使用集中账号");
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn-win", "娃哥Windows电脑", "codex")));
+
+        assertThatThrownBy(() -> service.enqueue(List.of("t1"), null, "codex", null,
+                "aa-1", "wg", "https://wao.example"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Linux 主节点尚未接入 Codex");
+        verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
     }
 
     @Test
@@ -532,6 +550,7 @@ class AiRunServiceTest {
         AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
         runner.setId(id);
         runner.setName(name);
+        runner.setPlatform(name.contains("Linux") ? "Linux" : "Windows");
         runner.setEngines(String.join(",", engines));
         runner.setMaxConcurrency(1);
         return runner;
