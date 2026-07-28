@@ -21,6 +21,7 @@ import type {
   SharedTask,
   Suggestion,
   Task,
+  TaskGroup,
   TrashEntry,
   VaultGroup,
   VaultItem,
@@ -100,6 +101,8 @@ export interface CreateTaskPayload {
   due: string
   desc?: string
   images?: ImageRef[]
+  /** 落进哪个任务分组（分组视图里的「+」带上它）。 */
+  groupId?: string | null
 }
 export async function apiCreateTask(payload: CreateTaskPayload): Promise<Task> {
   const res = await http.post<ApiResponse<Task>>('/api/tasks', payload)
@@ -171,8 +174,10 @@ export interface PatchProjectPayload {
   goal?: string
   icon?: string
   notifyEnabled?: boolean
+  /** 任务分组的完整列表（整表替换）；不传表示不改。 */
+  taskGroups?: TaskGroup[]
 }
-/** 局部更新项目（名称 / 领域 / 目标 / 图标 / 通知开关）。 */
+/** 局部更新项目（名称 / 领域 / 目标 / 图标 / 通知开关 / 任务分组）。 */
 export async function apiPatchProject(id: string, payload: PatchProjectPayload): Promise<Project> {
   const res = await http.patch<ApiResponse<Project>>(`/api/projects/${id}`, payload)
   return res.data.data

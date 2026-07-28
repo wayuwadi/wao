@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
+import { defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -55,6 +55,17 @@ watch([title, project, owner, pr, due, desc], () => {
 onBeforeUnmount(() => { if (draftTimer) clearTimeout(draftTimer) })
 
 /**
+ * 打开就把光标放进标题框。
+ *
+ * <p>手机上这一下最值钱：录任务的第一件事一定是敲标题，少一次点击就少一次「点歪了点到别处」，
+ * 键盘也跟着直接弹出来。已经有草稿标题时不抢焦点，免得手一抖把恢复出来的内容顶掉。
+ */
+const titleInput = ref<HTMLInputElement | null>(null)
+onMounted(() => {
+  if (!title.value) nextTick(() => titleInput.value?.focus())
+})
+
+/**
  * 编辑器里粘贴 / 插入的图片：存进图床，再把地址回传给编辑器内联到光标处，
  * 不再堆成底部的附件缩略图。
  */
@@ -97,7 +108,14 @@ function create() {
       <div class="spacer"></div>
       <button class="close" @click="ui.closeModal()"><i class="ri-close-line"></i></button>
     </div>
-    <input v-model="title" class="title-input" placeholder="任务标题，例如「整理证件盒 · 第 4 批」" @keydown.enter="create" />
+    <input
+      ref="titleInput"
+      v-model="title"
+      class="title-input"
+      enterkeyhint="done"
+      placeholder="任务标题，例如「整理证件盒 · 第 4 批」"
+      @keydown.enter="create"
+    />
 
     <div class="label">所属项目</div>
     <div class="pills">
@@ -422,11 +440,54 @@ function create() {
   background: var(--wao-primary-hover);
 }
 
+/* 手机：改成从底部升起的整页表单。
+   居中弹窗在手机上会被键盘顶得只剩一条缝，标题框还常常被推到屏幕外；
+   贴底之后，输入框始终在键盘正上方，创建按钮固定在拇指够得到的地方。 */
 @media (max-width: 760px) {
-  .modal { top: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
-  .modal-head, .modal-body, .modal-foot { padding-left: 14px; padding-right: 14px; }
+  .modal {
+    top: auto;
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    max-height: 92dvh;
+    border-radius: 16px 16px 0 0;
+    padding: 14px 14px calc(10px + env(safe-area-inset-bottom));
+    animation: waoSheet 0.18s ease;
+  }
+  .head {
+    position: sticky;
+    top: -14px;
+    z-index: 2;
+    background: #fff;
+    padding: 4px 0 6px;
+  }
+  /* 16px 是 iOS Safari 不自动放大页面的下限，比美观重要 */
+  .title-input {
+    height: 46px;
+    font-size: 16px;
+  }
+  .pill,
+  .seg {
+    height: 34px;
+  }
   .two-col { grid-template-columns: 1fr; gap: 10px; }
-  .foot { flex-wrap: wrap; }
+  .foot {
+    position: sticky;
+    bottom: calc(-10px - env(safe-area-inset-bottom));
+    z-index: 2;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+    padding: 10px 0 calc(6px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-top: 1px solid var(--wao-divider);
+  }
   .foot .spacer { display: none; }
+  .draft-state { width: 100%; }
+  .btn-ghost,
+  .btn-primary { flex: 1; height: 44px; font-size: 14px; }
+}
+@keyframes waoSheet {
+  from { transform: translateY(24px); opacity: 0.6; }
 }
 </style>

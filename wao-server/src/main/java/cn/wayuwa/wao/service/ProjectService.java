@@ -1,8 +1,12 @@
 package cn.wayuwa.wao.service;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.ProjectEntity;
@@ -11,6 +15,7 @@ import cn.wayuwa.wao.dto.CreateProjectRequest;
 import cn.wayuwa.wao.dto.PatchProjectRequest;
 import cn.wayuwa.wao.dto.ProjectDetail;
 import cn.wayuwa.wao.dto.ProjectDto;
+import cn.wayuwa.wao.dto.TaskGroupDto;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +26,10 @@ import org.springframework.stereotype.Service;
 public class ProjectService {
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ProjectService.class);
+    /** 一个项目最多能建的任务分组数。 */
+    public static final int MAX_TASK_GROUPS = 6;
+    /** 分组名长度上限，防止一行名字把分组头撑破。 */
+    private static final int MAX_GROUP_NAME = 20;
 
     private final ProjectMapper projectMapper;
     private final ObjectMapper json;
@@ -105,8 +114,10 @@ public class ProjectService {
         ProjectDetail detail = new ProjectDetail(
                 req.visAll() ? List.of("wg", "wd") : List.of(owner),
                 List.of(), List.of(), List.of(0, 0), List.of(), List.of(), List.of(),
-                List.of(new Activity("ri-add-line", "#9A9DA9", "你创建了项目", "刚刚")),
-                "ri-stack-line");
+                // 主语与时刻都别写死：谁看都是「你创建了项目 / 刚刚」正是前端反馈的那个 bug
+                List.of(new Activity("ri-add-line", "#9A9DA9", "创建了项目",
+                        OffsetDateTime.now(ZoneId.of("Asia/Shanghai")).toString(), owner)),
+                "ri-stack-line", List.of());
         e.setDetailJson(write(detail));
         projectMapper.insert(e);
         announceCreated(e, owner);
@@ -147,10 +158,13 @@ public class ProjectService {
         if (req.notifyEnabled() != null) {
             e.setNotifyEnabled(req.notifyEnabled());
         }
-        if (req.icon() != null && !req.icon().isBlank()) {
+        if ((req.icon() != null && !req.icon().isBlank()) || req.taskGroups() != null) {
             ProjectDetail d = parse(e.getDetailJson());
+            String icon = req.icon() != null && !req.icon().isBlank() ? req.icon() : d.icon();
+            List<TaskGroupDto> groups = req.taskGroups() == null
+                    ? d.taskGroups() : normalizeGroups(req.taskGroups());
             e.setDetailJson(write(new ProjectDetail(d.members(), d.milestones(), d.msDates(), d.trend(),
-                    d.blockers(), d.docs(), d.files(), d.activity(), req.icon())));
+                    d.blockers(), d.docs(), d.files(), d.activity(), icon, groups)));
         }
         e.setUpdatedLabel("刚刚");
         projectMapper.updateById(e);
@@ -167,6 +181,35 @@ public class ProjectService {
     public void delete(String id, String memberId) {
         requireVisible(id, memberId);
         projectMapper.deleteById(id);
+    }
+
+    /**
+     * 规整前端送来的任务分组：去掉空名、补齐 id、按 id 去重，并砍到上限 {@value #MAX_TASK_GROUPS} 个。
+     *
+     * <p>上限是需求定的（「最多也只要 6 个分组吧」），在服务端也拦一道：分组视图一屏能扫完
+     * 才有意义，靠前端约束挡不住直接打接口的调用。
+     *
+     * @param groups 前端送来的完整分组列表
+     * @return 规整后的分组列表
+     */
+    private static List<TaskGroupDto> normalizeGroups(List<TaskGroupDto> groups) {
+        List<TaskGroupDto> out = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (TaskGroupDto g : groups) {
+            if (g == null || g.name() == null || g.name().isBlank()) {
+                continue;
+            }
+            String id = g.id() == null || g.id().isBlank() ? "tg" + System.nanoTime() : g.id().trim();
+            if (!seen.add(id)) {
+                continue;
+            }
+            String name = g.name().trim();
+            out.add(new TaskGroupDto(id, name.length() > MAX_GROUP_NAME ? name.substring(0, MAX_GROUP_NAME) : name));
+            if (out.size() >= MAX_TASK_GROUPS) {
+                break;
+            }
+        }
+        return out;
     }
 
     private ProjectEntity require(String id) {
@@ -213,7 +256,7 @@ public class ProjectService {
                 nn(d.milestones()), nn(d.msDates()), nn(d.trend()), nn(d.blockers()),
                 nn(d.docs()), nn(d.files()), activity,
                 d.icon() == null || d.icon().isBlank() ? "ri-stack-line" : d.icon(),
-                !Boolean.FALSE.equals(e.getNotifyEnabled()));
+                !Boolean.FALSE.equals(e.getNotifyEnabled()), nn(d.taskGroups()));
     }
 
     private ProjectDetail parse(String detailJson) {

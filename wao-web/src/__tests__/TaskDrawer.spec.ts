@@ -237,7 +237,7 @@ describe('TaskDrawer', () => {
     await w.findAll('.props .date-input')[0]!.setValue('')
 
     expect(data.taskById(taskId)!.start).toBe('')
-    expect(data.taskById(taskId)!.activity[0]!.text).toContain('你清空了开始日期')
+    expect(data.taskById(taskId)!.activity[0]!.text).toContain('清空了开始日期')
   })
 
   it('没有已完成子任务时不显示折叠条', async () => {
@@ -467,5 +467,54 @@ describe('TaskDrawer', () => {
     await w.find('.share-wrap .icon-btn').trigger('click')
 
     expect(w.find('.share-menu').text()).toContain('当前子任务')
+  })
+
+  /**
+   * 手机上点子任务要新开一整页。
+   *
+   * 原来子任务详情排在正文下面，手机窗口小，点开还得往下滑一段才找得到，
+   * 滑到了也认不出看的是哪一条。
+   */
+  it('手机上点子任务盖成一整页，顶栏写清是第几条并能返回', async () => {
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: true, media: query, onchange: null,
+      addEventListener: () => {}, removeEventListener: () => {},
+      addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia
+    try {
+      data.addSub(taskId, '归档到 NAS')
+      data.addSub(taskId, '扫描身份证')
+      ui.openTask(taskId)
+      const w = mountDrawer()
+      await w.vm.$nextTick()
+
+      await w.findAll('.sub-row')[0]!.trigger('click')
+
+      const page = w.find('.props.sub-page')
+      expect(page.exists()).toBe(true)
+      expect(page.find('.sub-page-title b').text()).toBe('子任务 1 / 2')
+      // 桌面版的「返回任务属性」在手机上换成顶栏返回键，不占正文空间
+      expect(w.find('.sub-back').exists()).toBe(false)
+
+      await page.find('.sub-page-back').trigger('click')
+      expect(w.find('.props.sub-page').exists()).toBe(false)
+      w.unmount()
+    } finally {
+      window.matchMedia = original
+    }
+  })
+
+  it('属性栏能改任务分组——手机上拖不动，只能从这里挪', async () => {
+    ui.openTask(taskId)
+    await data.setTaskGroups(data.tasks[0]!.project, [{ id: 'g1', name: '证件' }, { id: 'g2', name: '装修' }])
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    const groupRow = w.findAll('.prop-row').find((r) => r.text().startsWith('分组'))!
+    await groupRow.find('.owner-btn').trigger('click')
+    await groupRow.findAll('.pmenu-item')[1]!.trigger('click')
+
+    expect(data.taskById(taskId)!.groupId).toBe('g2')
   })
 })

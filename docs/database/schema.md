@@ -68,7 +68,7 @@ erDiagram
 | updated_label | VARCHAR(32) | “26 分钟前”等展示文案 |
 | goal | VARCHAR(512) | 一句话目标 |
 | notify_enabled | TINYINT(1) NOT NULL DEFAULT 1 | 这个项目的动静是否发飞书群（V36）；关掉后新建任务、状态变化、新增子任务、评论与 AI 执行的卡片都不发，全局 webhook 开关仍然一票否决 |
-| detail_json | JSON | members[], milestones[], msDates[], trend[], blockers[], docs[], files[], activity[] |
+| detail_json | JSON | members[], milestones[], msDates[], trend[], blockers[], docs[], files[], activity[], icon, taskGroups[]（任务分组，最多 6 个） |
 
 ### task（任务）
 | 列 | 类型 | 说明 |
@@ -83,7 +83,7 @@ erDiagram
 | due_date | VARCHAR(16) | 截止；同上 |
 | waiting | VARCHAR(64) NULL | 等待他人标记 |
 | description | TEXT | 描述 |
-| detail_json | JSON | parts[], steps[], subs[], files[], docs[], linkTasks[], comments[], custom[], activity[] |
+| detail_json | JSON | parts[], steps[], subs[], files[], docs[], linkTasks[], comments[], custom[], activity[]（条目含 by=操作人成员 id）, images[], groupId（所属任务分组） |
 
 ## 内容 / 参考域（文档表，只读）
 

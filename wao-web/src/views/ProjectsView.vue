@@ -144,7 +144,7 @@ function onDropStatus(status: TaskStatus) {
   dragId.value = null
   if (!id) return
   const t = data.taskById(id)
-  if (t && t.status !== status) data.patchTask(id, { status }, `你将状态改为「${status}」`)
+  if (t && t.status !== status) data.patchTask(id, { status }, `将状态改为「${status}」`)
 }
 </script>
 

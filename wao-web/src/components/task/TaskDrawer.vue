@@ -22,6 +22,8 @@ import { engineIcon, engineLabel } from '@/composables/aiEngines'
 import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
+import { activitySentence } from '@/utils/activity'
+import { useIsMobile } from '@/composables/viewport'
 import type { AiEngine, AiRun, AiRunStatus, Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
@@ -30,10 +32,12 @@ const session = useSessionStore()
 const router = useRouter()
 const { decoTask } = useDeco()
 
+const isMobile = useIsMobile()
+
 const task = computed(() => (ui.openTaskId ? data.taskById(ui.openTaskId) : undefined))
 const tv = computed(() => (task.value ? decoTask(task.value) : null))
 
-const menu = ref<'status' | 'pr' | 'owner' | 'prop' | 'share' | null>(null)
+const menu = ref<'status' | 'pr' | 'owner' | 'prop' | 'share' | 'group' | null>(null)
 const newSub = ref('')
 const commentText = ref('')
 const sendingComment = ref(false)
@@ -183,10 +187,17 @@ async function removeTask() {
   const ok = await data.deleteTask(t.id)
   toast(ok ? `已删除任务「${title}」` : '任务删除失败，请重试', ok ? 'ri-delete-bin-line' : 'ri-error-warning-line')
 }
-/** 活动时间线，时间统一转成相对描述。 */
+/**
+ * 活动时间线：时间转成相对描述，主语按「看的人是谁」现算。
+ *
+ * <p>正文里不再写死「你」——娃哥打开娃弟建的任务时，那条记录说的是娃弟干的事。
+ */
 const activities = computed(() =>
   (task.value?.activity ?? []).map((a) => ({
-    ...a, time: showTime(a.time), fullTime: absoluteTime(a.time),
+    ...a,
+    text: activitySentence(a, session.currentUser.id, (id) => session.memberById(id).name),
+    time: showTime(a.time),
+    fullTime: absoluteTime(a.time),
   })),
 )
 const parts = computed(() =>
@@ -422,7 +433,7 @@ async function runWithAi(engine: AiEngine, runnerId: string | null) {
     const created = await createAiRuns([t.id], { subId, engine, runnerId })
     if (created.length) {
       const what = subId ? `子任务「${created[0]!.subTitle ?? ''}」` : '任务'
-      data.patchTask(t.id, { status: 'AI 进行中' }, `你已把${what}交给 ${engineLabel(engine)}`)
+      data.patchTask(t.id, { status: 'AI 进行中' }, `已把${what}交给 ${engineLabel(engine)}`)
       toast(`已把${what}交给 ${engineLabel(engine)}，可在首页 AI 控制台查看运行状态`, 'ri-robot-2-line')
       aiLauncherOpen.value = false
       aiLauncherSubId.value = null
@@ -473,7 +484,7 @@ function setStatus(s: TaskStatus) {
   const t = task.value
   if (!t) return
   const justFinished = s === '已完成' && t.status !== '已完成'
-  data.patchTask(t.id, { status: s }, `你将状态改为「${s}」`)
+  data.patchTask(t.id, { status: s }, `将状态改为「${s}」`)
   menu.value = null
   if (justFinished) {
     toast(`已完成「${t.title}」`, 'ri-checkbox-circle-fill')
@@ -484,14 +495,27 @@ function setStatus(s: TaskStatus) {
 function setPriority(p: Priority) {
   const t = task.value
   if (!t) return
-  data.patchTask(t.id, { pr: p }, `你将优先级改为 ${p}`)
+  data.patchTask(t.id, { pr: p }, `将优先级改为 ${p}`)
   menu.value = null
 }
 function setOwner(id: string) {
   const t = task.value
   if (!t) return
   const m = session.memberById(id)
-  data.patchTask(t.id, { owner: id }, `你将负责人改为 ${m.name}`)
+  data.patchTask(t.id, { owner: id }, `将负责人改为 ${m.name}`)
+  menu.value = null
+}
+
+// ---- 任务分组 ----
+// 手机上没法拖拽，分组只能在这里改；桌面上从属性栏改也比拖回列表快。
+const taskGroups = computed(() => (task.value ? data.taskGroupsOf(task.value.project) : []))
+const currentGroup = computed(() => {
+  const id = task.value?.groupId
+  return taskGroups.value.find((g) => g.id === id) ?? taskGroups.value[0]
+})
+function setGroup(id: string) {
+  const t = task.value
+  if (t) data.moveTaskToGroup(t.id, id)
   menu.value = null
 }
 /**
@@ -513,13 +537,13 @@ function setDate(field: 'start' | 'due', event: Event) {
   const value = (event.target as HTMLInputElement).value
   const label = field === 'start' ? '开始日期' : '截止日期'
   if ((t[field] ?? '') === value) return
-  const activity = value ? `你将${label}改为 ${fmtDate(value)}` : `你清空了${label}`
+  const activity = value ? `将${label}改为 ${fmtDate(value)}` : `清空了${label}`
   data.patchTask(t.id, field === 'start' ? { start: value } : { due: value }, activity)
 }
 function addCustom(type: string) {
   const t = task.value
   if (!t) return
-  data.patchTask(t.id, { custom: [...t.custom, { name: `未命名属性（${type}）`, value: '—' }] }, '你添加了自定义属性')
+  data.patchTask(t.id, { custom: [...t.custom, { name: `未命名属性（${type}）`, value: '—' }] }, '添加了自定义属性')
   menu.value = null
 }
 function gotoProject() {
@@ -832,10 +856,24 @@ function demo(msg: string) {
           </div>
         </div>
 
-        <!-- 子任务详情：展开子任务时顶掉属性栏 -->
-        <div v-if="openSub" class="props">
-          <button class="sub-back" @click="openSubId = null"><i class="ri-arrow-left-line"></i>返回任务属性</button>
-          <div class="props-label">子任务 {{ openSubIndex + 1 }} / {{ task.subs.length }}</div>
+        <!--
+          子任务详情：桌面上展开子任务时顶掉属性栏；手机上盖成一整页。
+          手机窗口小，原来排在正文下面，点开还得往下滑一段才找得到，滑到了也不知道
+          看的是哪一条 —— 现在直接盖满一屏，顶上写清楚是第几条，返回退回任务。
+        -->
+        <div v-if="openSub" class="props" :class="{ 'sub-page': isMobile }">
+          <div v-if="isMobile" class="sub-page-head">
+            <button class="sub-page-back" @click="openSubId = null"><i class="ri-arrow-left-line"></i></button>
+            <div class="sub-page-title">
+              <b>子任务 {{ openSubIndex + 1 }} / {{ task.subs.length }}</b>
+              <em class="ellip">{{ task.title }}</em>
+            </div>
+            <button class="sub-page-done" :class="{ on: openSub.done }" @click="toggleSubDone">
+              <i class="ri-check-line"></i>{{ openSub.done ? '已完成' : '标记完成' }}
+            </button>
+          </div>
+          <button v-if="!isMobile" class="sub-back" @click="openSubId = null"><i class="ri-arrow-left-line"></i>返回任务属性</button>
+          <div v-if="!isMobile" class="props-label">子任务 {{ openSubIndex + 1 }} / {{ task.subs.length }}</div>
 
           <div class="sub-title-row">
             <button class="cbox circle big" :class="{ done: openSub.done }" title="标记完成" @click="toggleSubDone"><i class="ri-check-line"></i></button>
@@ -959,6 +997,18 @@ function demo(msg: string) {
           <div class="prop-row">
             <span class="prop-key">所属项目</span>
             <button class="proj-btn" @click="gotoProject"><span class="pdot" :style="{ background: tv.projColor }"></span><span class="ellip">{{ tv.projName }}</span></button>
+          </div>
+          <div class="prop-row">
+            <span class="prop-key">分组</span>
+            <button class="owner-btn" title="分组视图里这条任务归在哪一堆" @click="menu = menu === 'group' ? null : 'group'">
+              <i class="ri-folder-2-line group-ico"></i>{{ currentGroup?.name ?? '未分组' }}<i class="ri-arrow-down-s-line"></i>
+            </button>
+            <div v-if="menu === 'group'" class="pmenu w150">
+              <button v-for="g in taskGroups" :key="g.id" class="pmenu-item" @click="setGroup(g.id)">
+                <span class="pmenu-name">{{ g.name }}</span>
+                <i v-if="currentGroup?.id === g.id" class="ri-check-line chk"></i>
+              </button>
+            </div>
           </div>
           <div class="prop-row">
             <span class="prop-key">可见范围</span>
@@ -2212,6 +2262,86 @@ function demo(msg: string) {
 .act-time {
   font-size: 11px;
   color: var(--wao-text-faint);
+}
+
+/* 手机上的子任务详情：盖住整个抽屉的一页，自带顶栏 */
+.props.sub-page {
+  position: fixed;
+  inset: 0;
+  z-index: 82;
+  width: auto;
+  background: #fff;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+  animation: waoSubPage 0.16s ease;
+}
+@keyframes waoSubPage {
+  from { transform: translateX(14px); opacity: 0.4; }
+}
+.sub-page-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 -16px;
+  padding: 0 8px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border-bottom: 1px solid var(--wao-line);
+}
+.sub-page-back {
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: none;
+  border-radius: 9px;
+  color: var(--wao-text-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sub-page-back i {
+  font-size: 20px;
+}
+.sub-page-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.sub-page-title b {
+  font-size: 13px;
+}
+.sub-page-title em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--wao-text-weak);
+}
+.sub-page-done {
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--wao-line-control);
+  background: #fff;
+  border-radius: 999px;
+  font-size: 12.5px;
+  color: var(--wao-text-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.sub-page-done.on {
+  background: var(--wao-success-bg, #eaf8f0);
+  border-color: #bfe6cf;
+  color: var(--wao-success-strong);
 }
 
 @media (max-width: 760px) {
