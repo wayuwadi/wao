@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -51,7 +52,7 @@ public class AiAccountService {
     private static final List<String> VALID_PROVIDERS = List.of("codex", "claude", "qoder");
     private static final Map<String, String> PROVIDER_LABELS = Map.of("codex", "Codex / ChatGPT",
             "claude", "Claude Code", "qoder", "Qoder");
-    /** Anthropic 限额窗口的中文说明；未收录的窗口直接显示原名。 */
+    /** AI 供应商限额窗口的中文说明；未收录的窗口直接显示原名。 */
     private static final Map<String, String> WINDOW_LABELS = Map.of(
             "session", "五小时会话额度", "five_hour", "五小时会话额度",
             "weekly_all", "七天额度", "seven_day", "七天额度",
@@ -232,13 +233,22 @@ public class AiAccountService {
         entity.setEnabled(true);
         entity.setAuthMethod("oauth");
         entity.setPlan(plan);
-        entity.setQuotaStatus("NO_API");
-        entity.setQuotaMessage("Codex 登录成功；官方暂未提供稳定的程序化额度接口");
+        entity.setQuotaStatus("UNKNOWN");
+        entity.setQuotaMessage("Codex 登录成功，正在读取额度");
         entity.setTokenExpiresAt(expiresAt);
         entity.setCredentialJson(encrypt(codexCredentialJson(tokens, accountId, now)));
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
         mapper.insert(entity);
+        try {
+            applyCodexUsage(entity);
+        } catch (RuntimeException ex) {
+            entity.setQuotaStatus("FAILED");
+            entity.setQuotaMessage(limit("额度查询失败：" + ex.getMessage(), 500));
+        }
+        entity.setLastSyncedAt(now);
+        entity.setUpdatedAt(now);
+        mapper.updateById(entity);
         return toDto(entity);
     }
 
@@ -310,10 +320,17 @@ public class AiAccountService {
             } catch (RuntimeException ex) {
                 applyOutcome(entity, failedOutcome(ex.getMessage()));
             }
+        } else if ("codex".equals(entity.getProvider())) {
+            try {
+                applyCodexUsage(entity);
+            } catch (RuntimeException ex) {
+                // 刷新失败只标记本次尝试，保留上一次真实快照，避免网络抖动把可用额度信息抹掉。
+                entity.setQuotaStatus("FAILED");
+                entity.setQuotaMessage(limit(ex.getMessage(), 500));
+            }
         } else {
             String credentials = decrypt(entity.getCredentialJson());
             SyncOutcome outcome = switch (entity.getProvider()) {
-                case "codex" -> syncCodex(credentials);
                 case "qoder" -> syncQoder(credentials);
                 default -> throw new BadRequestException("不支持的 provider：" + entity.getProvider());
             };
@@ -400,6 +417,65 @@ public class AiAccountService {
             if (used.isNumber()) text.append("；额外用量已消耗 ").append(used.asDouble()).append(" 额度");
         }
         return text.toString();
+    }
+
+    /** 使用 Codex OAuth 登录态读取 ChatGPT 返回的主次额度窗口。 */
+    private void applyCodexUsage(AiAccountEntity entity) {
+        refreshCodexIfNeeded(entity);
+        JsonNode credentials = readTree(decrypt(entity.getCredentialJson()));
+        String accessToken = trimToNull(credentials.at("/tokens/access_token").asText(null));
+        String accountId = trimToNull(credentials.at("/tokens/account_id").asText(null));
+        if (!StringUtils.hasText(accessToken)) {
+            throw new BadRequestException("Codex 凭据缺少 access token，请重新登录");
+        }
+
+        JsonNode usage = codex.usage(accessToken, accountId);
+        entity.setQuotaRawJson(usage == null ? null : usage.toString());
+        String plan = usage == null ? null : trimToNull(usage.path("plan_type").asText(null));
+        if (StringUtils.hasText(plan)) entity.setPlan(plan);
+
+        Window tightest = codexWindows(usage).stream()
+                .max(Comparator.comparingInt(Window::percent)).orElse(null);
+        if (tightest == null) {
+            entity.setQuotaStatus("NO_API");
+            entity.setQuotaMessage("Codex 额度服务未返回可解析的限额窗口");
+            entity.setQuotaWindow(null);
+            entity.setQuotaPercent(null);
+            entity.setQuotaResetsAt(null);
+            return;
+        }
+        entity.setQuotaStatus("SYNCED");
+        entity.setQuotaWindow(tightest.name);
+        entity.setQuotaPercent(tightest.percent);
+        entity.setQuotaResetsAt(tightest.resetsAt);
+        entity.setQuotaMessage(limit(WINDOW_LABELS.getOrDefault(tightest.name, tightest.name)
+                + "已用 " + tightest.percent + "%"
+                + (tightest.resetsAt == null ? "" : "，" + tightest.resetsAt + " 重置"), 500));
+    }
+
+    private List<Window> codexWindows(JsonNode usage) {
+        List<Window> windows = new ArrayList<>();
+        if (usage == null) return windows;
+        collectCodexRateLimit(windows, usage.path("rate_limit"));
+        JsonNode additional = usage.path("additional_rate_limits");
+        if (additional.isArray()) {
+            for (JsonNode item : additional) collectCodexRateLimit(windows, item.path("rate_limit"));
+        }
+        return windows;
+    }
+
+    private void collectCodexRateLimit(List<Window> windows, JsonNode rateLimit) {
+        addCodexWindow(windows, rateLimit.path("primary_window"), "five_hour");
+        addCodexWindow(windows, rateLimit.path("secondary_window"), "weekly_all");
+    }
+
+    private void addCodexWindow(List<Window> windows, JsonNode node, String fallbackName) {
+        Integer percent = intOrNull(node.path("used_percent"));
+        if (percent == null) return;
+        long seconds = node.path("limit_window_seconds").asLong(0);
+        String name = seconds == 0 ? fallbackName
+                : Math.abs(seconds - 18_000) <= Math.abs(seconds - 604_800) ? "five_hour" : "weekly_all";
+        windows.add(new Window(name, percent, parseReset(node.path("reset_at"))));
     }
 
     private static String planOf(JsonNode profile) {
@@ -594,12 +670,14 @@ public class AiAccountService {
         return node != null && node.isNumber() ? (int) Math.round(node.asDouble()) : null;
     }
 
-    private SyncOutcome syncCodex(String credentials) {
-        JsonNode root = readTree(credentials);
-        String email = extractEmail(root);
-        // Codex / ChatGPT 没有稳定、官方、面向 Codex CLI 登录态的余额查询接口；
-        // OpenAI dashboard billing 接口已废弃且需要 API key，不在这里伪造余额数字。
-        return noApiOutcome(email, "Codex / ChatGPT 暂无可靠的程序化余额接口，仅记录账号标识");
+    private static LocalDateTime parseReset(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) return null;
+        if (node.isNumber()) {
+            long value = node.asLong();
+            Instant instant = value > 10_000_000_000L ? Instant.ofEpochMilli(value) : Instant.ofEpochSecond(value);
+            return LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+        }
+        return parseInstant(node.asText(null));
     }
 
     private SyncOutcome syncQoder(String credentials) {

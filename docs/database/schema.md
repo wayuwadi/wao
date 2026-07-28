@@ -293,8 +293,9 @@ erDiagram
 `/api/ai/runner/accounts` 同步给已配对节点。V40 起，用户可以在启动运行时选择账号，只有实际领取
 该运行的 Runner 才会在 claim 响应中拿到对应明文；自定义 API Key 不进入全局凭据同步。
 OAuth 下发前会先把快过期的 access token 续期。
-额度查询只使用真实接口：Claude 走 Anthropic 的 `/api/oauth/usage`，Codex / Qoder 没有可靠接口时
-标记为 `NO_API`，不伪造余额。详见 ADR-030 与 ADR-031。
+额度查询只使用真实返回：Claude 走 Anthropic 的 `/api/oauth/usage`；Codex OAuth 使用同一登录态
+尽力读取 ChatGPT 的 `backend-api/wham/usage`，失败时标记 `FAILED` 并允许重试；Qoder 没有可靠接口时
+标记为 `NO_API`。任何未知额度都不伪造成 0%。详见 ADR-030 至 ADR-032。
 
 ### ai_account_oauth_session（V39）
 

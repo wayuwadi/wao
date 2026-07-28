@@ -98,15 +98,17 @@ class AiAccountServiceTest {
     }
 
     @Test
-    void syncCodexReturnsNoApiWithoutFabricatingBalance() {
+    void syncCodexReturnsNoApiWhenUsageHasNoWindowWithoutFabricatingBalance() {
         backedByMemory();
         var created = service.create(new AiAccountFormRequest("codex", "Codex", "a@b.com",
-                "{\"id_token\":\"eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6ImFAYi5jb20ifQ.fake\"}", true));
+                "{\"tokens\":{\"access_token\":\"access-empty\",\"account_id\":\"acct-empty\"}}", true));
+        when(codex.usage("access-empty", "acct-empty")).thenReturn(json("{}"));
 
         AiAccountSyncResultDto result = service.sync(created.id());
 
         assertThat(result.status()).isEqualTo("NO_API");
-        assertThat(result.message()).contains("a@b.com");
+        assertThat(result.message()).contains("未返回可解析的限额窗口");
+        assertThat(mapper.selectById(created.id()).getQuotaPercent()).isNull();
     }
 
     @Test
@@ -203,6 +205,12 @@ class AiAccountServiceTest {
         when(codex.exchangeCode("http://localhost:1455/auth/callback?code=abc&state=st-codex",
                 "verifier", "st-codex"))
                 .thenReturn(new OpenAiCodexOAuthClient.TokenSet(idToken, "access-1", "refresh-1", 3600));
+        when(codex.usage("access-1", "acct-1")).thenReturn(json("""
+                {"plan_type":"plus","rate_limit":{
+                  "primary_window":{"used_percent":35,"limit_window_seconds":18000,"reset_at":1785241650},
+                  "secondary_window":{"used_percent":63,"limit_window_seconds":604800,"reset_at":1785822360}
+                }}
+                """));
 
         var dto = service.completeLogin(new CompleteAiAccountLoginRequest("st-codex",
                 "http://localhost:1455/auth/callback?code=abc&state=st-codex"));
@@ -211,11 +219,62 @@ class AiAccountServiceTest {
         assertThat(dto.authMethod()).isEqualTo("oauth");
         assertThat(dto.email()).isEqualTo("codex@example.com");
         assertThat(dto.plan()).isEqualTo("plus");
+        assertThat(dto.quotaStatus()).isEqualTo("SYNCED");
+        assertThat(dto.quotaWindow()).isEqualTo("weekly_all");
+        assertThat(dto.quotaPercent()).isEqualTo(63);
         assertThat(storedCredential()).contains("\"auth_mode\":\"chatgpt\"")
                 .contains("\"access_token\":\"access-1\"")
                 .contains("\"refresh_token\":\"refresh-1\"")
                 .contains("\"account_id\":\"acct-1\"");
         verify(sessionMapper).deleteById("st-codex");
+    }
+
+    @Test
+    void codexSyncReadsRealRateLimitWindows() {
+        backedByMemory();
+        var created = service.create(new AiAccountFormRequest("codex", "Codex", "codex@example.com", """
+                {"auth_mode":"chatgpt","tokens":{"access_token":"access-9","account_id":"acct-9"}}
+                """, true));
+        when(codex.usage("access-9", "acct-9")).thenReturn(json("""
+                {"plan_type":"plus","rate_limit":{
+                  "primary_window":{"used_percent":22,"limit_window_seconds":18000,"reset_at":1785241650},
+                  "secondary_window":{"used_percent":71,"limit_window_seconds":604800,"reset_at":1785822360}
+                }}
+                """));
+
+        AiAccountSyncResultDto result = service.sync(created.id());
+
+        AiAccountEntity stored = mapper.selectById(created.id());
+        assertThat(result.status()).isEqualTo("SYNCED");
+        assertThat(result.message()).contains("七天额度已用 71%");
+        assertThat(stored.getPlan()).isEqualTo("plus");
+        assertThat(stored.getQuotaWindow()).isEqualTo("weekly_all");
+        assertThat(stored.getQuotaPercent()).isEqualTo(71);
+        assertThat(stored.getQuotaResetsAt()).isNotNull();
+        assertThat(result.rawJson()).contains("primary_window").doesNotContain("access-9");
+    }
+
+    @Test
+    void codexSyncFailureKeepsLastRealQuotaSnapshot() {
+        backedByMemory();
+        var created = service.create(new AiAccountFormRequest("codex", "Codex", null,
+                "{\"tokens\":{\"access_token\":\"access-stale\",\"account_id\":\"acct-stale\"}}", true));
+        when(codex.usage("access-stale", "acct-stale"))
+                .thenReturn(json("""
+                        {"rate_limit":{"primary_window":{
+                          "used_percent":48,"limit_window_seconds":18000,"reset_at":1785241650
+                        }}}
+                        """))
+                .thenThrow(new BadRequestException("额度服务暂时不可用"));
+        service.sync(created.id());
+
+        AiAccountSyncResultDto failed = service.sync(created.id());
+
+        AiAccountEntity stored = mapper.selectById(created.id());
+        assertThat(failed.status()).isEqualTo("FAILED");
+        assertThat(failed.message()).contains("暂时不可用");
+        assertThat(stored.getQuotaPercent()).isEqualTo(48);
+        assertThat(stored.getQuotaRawJson()).contains("primary_window");
     }
 
     @Test

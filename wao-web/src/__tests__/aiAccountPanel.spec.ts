@@ -108,6 +108,31 @@ describe('AiAccountPanel', () => {
     expect(fetchAiAccounts).toHaveBeenCalledTimes(2)
   })
 
+  it('查看额度能解析 Codex 主次限额窗口和秒级重置时间', async () => {
+    fetchAiAccounts.mockResolvedValue([account({
+      provider: 'codex', label: '公共 Codex', plan: 'plus', quotaWindow: 'weekly_all', quotaPercent: 63,
+      quotaRawJson: JSON.stringify({
+        plan_type: 'plus',
+        rate_limit: {
+          primary_window: { used_percent: 35, limit_window_seconds: 18_000, reset_at: 1_785_241_650 },
+          secondary_window: { used_percent: 63, limit_window_seconds: 604_800, reset_at: 1_785_822_360 },
+        },
+      }),
+    })])
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('查看额度'))!.trigger('click')
+
+    const details = wrapper.find('.quota-details')
+    expect(details.text()).toContain('Plus')
+    expect(details.text()).toContain('五小时会话额度')
+    expect(details.text()).toContain('已用 35%')
+    expect(details.text()).toContain('七天额度')
+    expect(details.text()).toContain('已用 63%')
+    expect(details.text()).not.toContain('1970')
+  })
+
   it('额度查不到时显示原因而不是 0%', async () => {
     fetchAiAccounts.mockResolvedValue([
       account({ quotaPercent: null, quotaStatus: 'NO_API', quotaMessage: 'Qoder 暂无公开的额度查询 API' }),

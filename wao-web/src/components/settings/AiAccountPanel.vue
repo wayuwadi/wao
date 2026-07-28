@@ -107,6 +107,12 @@ function recordOf(value: unknown): Record<string, unknown> | null {
     ? value as Record<string, unknown>
     : null
 }
+function rawResetTime(value: unknown): string | null {
+  if (typeof value === 'string') return value
+  if (typeof value !== 'number') return null
+  const milliseconds = value > 10_000_000_000 ? value : value * 1000
+  return new Date(milliseconds).toISOString()
+}
 function quotaWindows(account: AiAccount): QuotaWindowDetail[] {
   if (!account.quotaRawJson) return account.quotaPercent === null ? [] : [{
     key: account.quotaWindow ?? 'quota', label: windowLabel(account.quotaWindow),
@@ -127,7 +133,7 @@ function quotaWindows(account: AiAccount): QuotaWindowDetail[] {
       }]
     })
     if (parsed.length) return parsed
-    return ['five_hour', 'seven_day'].flatMap((key) => {
+    const legacy = ['five_hour', 'seven_day'].flatMap((key) => {
       const window = recordOf(root[key])
       const percent = typeof window?.utilization === 'number' ? Math.round(window.utilization) : null
       if (percent === null) return []
@@ -136,6 +142,24 @@ function quotaWindows(account: AiAccount): QuotaWindowDetail[] {
         resetsAt: typeof window?.resets_at === 'string' ? window.resets_at : null,
       }]
     })
+    if (legacy.length) return legacy
+    const rateLimits = [recordOf(root.rate_limit), ...(
+      Array.isArray(root.additional_rate_limits) ? root.additional_rate_limits : []
+    ).map((item) => recordOf(recordOf(item)?.rate_limit))].filter((item) => item !== null)
+    return rateLimits.flatMap((rateLimit, rateIndex) =>
+      ['primary_window', 'secondary_window'].flatMap((field, windowIndex) => {
+        const window = recordOf(rateLimit[field])
+        const percent = typeof window?.used_percent === 'number' ? Math.round(window.used_percent) : null
+        if (percent === null) return []
+        const seconds = typeof window?.limit_window_seconds === 'number' ? window.limit_window_seconds : 0
+        const kind = seconds === 0
+          ? (windowIndex === 0 ? 'five_hour' : 'weekly_all')
+          : Math.abs(seconds - 18_000) <= Math.abs(seconds - 604_800) ? 'five_hour' : 'weekly_all'
+        return [{
+          key: `${kind}-${rateIndex}-${windowIndex}`, label: windowLabel(kind), percent,
+          resetsAt: rawResetTime(window?.reset_at),
+        }]
+      }))
   } catch {
     return account.quotaPercent === null ? [] : [{
       key: account.quotaWindow ?? 'quota', label: windowLabel(account.quotaWindow),
