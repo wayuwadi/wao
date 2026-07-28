@@ -1,6 +1,7 @@
 package cn.wayuwa.wao.controller;
 
 import java.util.List;
+import java.util.Map;
 
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
@@ -136,6 +137,12 @@ public class AiRunController {
                 baseUrl));
     }
 
+    /** 暂停尚未结束的 AI 运行；执行节点会在下一次取消检查时停止本地 CLI。 */
+    @PostMapping("/runs/{runId}/pause")
+    public ApiResponse<AiRunDto> pause(@PathVariable String runId) {
+        return ApiResponse.ok(service.pause(runId));
+    }
+
     @GetMapping("/tasks/{taskId}/runs")
     public ApiResponse<List<AiRunDto>> taskRuns(@PathVariable String taskId) {
         return ApiResponse.ok(service.listTaskRuns(taskId));
@@ -174,6 +181,13 @@ public class AiRunController {
     public ApiResponse<AiRunDto> complete(@RequestHeader(RUNNER_TOKEN) String token,
             @PathVariable String runId, @RequestBody CompleteAiRunRequest request) {
         return ApiResponse.ok(service.complete(token, runId, request));
+    }
+
+    /** Runner 在执行期间轮询取消状态，以便可靠终止本地 AI CLI 子进程。 */
+    @GetMapping("/runner/runs/{runId}/control")
+    public ApiResponse<Map<String, Boolean>> control(@RequestHeader(RUNNER_TOKEN) String token,
+            @PathVariable String runId) {
+        return ApiResponse.ok(Map.of("cancelled", service.cancelled(token, runId)));
     }
 
     @PostMapping("/runner/runs/{runId}/progress")

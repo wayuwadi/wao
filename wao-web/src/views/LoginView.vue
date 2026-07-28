@@ -65,7 +65,8 @@ onBeforeUnmount(() => unmountQr?.())
     <aside class="brand">
       <div class="brand-top"><div class="brand-mark">W</div><div class="brand-name">WAO<span>Wayuwa All in One</span></div></div>
       <div>
-        <h1>把人生的目标、项目与知识，放进同一个系统</h1>
+        <h1>想法有多大，产出就有多大。</h1>
+        <p class="brand-slogan">你只管把要做的事提出来——拆解、执行、交付交给 AI：多台电脑并行开工，跑完直接等你验收。</p>
         <p>一个 WAO 账号可以同时绑定飞书、微信和邮箱。无论从哪个入口登录，都会回到同一个成员身份，不再出现娃哥、娃弟会话串用。</p>
         <ul><li><i class="ri-shield-user-line"></i>服务端安全会话，不再依赖浏览器本地身份</li><li><i class="ri-link-m"></i>多种登录方式绑定同一账号</li><li><i class="ri-node-tree"></i>目标、项目、任务与知识双向关联</li></ul>
       </div>
@@ -115,7 +116,7 @@ onBeforeUnmount(() => unmountQr?.())
 .login { position: fixed; inset: 0; display: flex; background: #fff; }
 .brand { width: 42%; min-width: 340px; padding: 44px 48px; display: flex; flex-direction: column; justify-content: space-between; background: #20263b; color: #fff; }
 .brand-top { display: flex; align-items: center; gap: 10px; }.brand-mark { width: 32px; height: 32px; display: grid; place-content: center; border-radius: 9px; background: var(--wao-primary); font-weight: 700; }.brand-name { font-weight: 600; }.brand-name span { margin-left: 8px; color: #8e96b3; font-size: 12px; font-weight: 400; }
-h1 { max-width: 540px; margin: 0; font-size: 31px; line-height: 1.45; } .brand p { color: #a7aec7; font-size: 13.5px; line-height: 1.9; }.brand ul { padding: 0; list-style: none; color: #c9cedf; font-size: 13px; line-height: 2.6; }.brand li { display: flex; align-items: center; gap: 10px; }.brand li i { color: #9da8d8; font-size: 16px; }.brand-foot { color: #6e7590; font-size: 12px; }
+h1 { max-width: 540px; margin: 0; font-size: 31px; line-height: 1.45; } .brand p { color: #a7aec7; font-size: 13.5px; line-height: 1.9; }.brand-slogan { max-width: 520px; margin-bottom: 20px; }.brand ul { padding: 0; list-style: none; color: #c9cedf; font-size: 13px; line-height: 2.6; }.brand li { display: flex; align-items: center; gap: 10px; }.brand li i { color: #9da8d8; font-size: 16px; }.brand-foot { color: #6e7590; font-size: 12px; }
 .panel { position: relative; flex: 1; display: flex; padding: 32px 32px 68px; overflow-y: auto; background: radial-gradient(circle at 50% 20%, #fff 0, #f4f6fb 72%); }.card { width: 368px; margin: auto; padding: 32px; border: 1px solid rgba(220,223,232,.9); border-radius: 20px; background: rgba(255,255,255,.96); box-shadow: 0 18px 52px rgba(32, 38, 59, .10); }.card h2 { margin: 0; text-align: center; font-size: 24px; letter-spacing: -.5px; }.subtitle { margin: 8px 0 20px; text-align: center; color: var(--wao-text-weak); font-size: 13px; }
 .login-footer { position: absolute; right: 0; bottom: 0; left: 0; }
 .qr { width: 100%; max-width: 302px; aspect-ratio: 1; margin: auto; overflow: hidden; border: 1px solid var(--wao-line); border-radius: 14px; }.qr-loading { height: 100%; display: grid; place-content: center; gap: 8px; text-align: center; color: var(--wao-text-weak); font-size: 12px; }.qr-loading i { font-size: 30px; color: var(--wao-primary); }.qr-error,.error { margin-top: 8px; color: var(--wao-danger-strong); font-size: 12px; text-align: center; }

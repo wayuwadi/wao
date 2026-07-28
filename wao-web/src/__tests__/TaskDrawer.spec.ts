@@ -10,6 +10,7 @@ import type { AiRun } from '@/types'
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
+  pauseAiRun: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
   fetchAiRunners: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
       id: 'rn1', name: '娃哥电脑', platform: 'Windows 11', engines: ['codex'],
@@ -133,6 +134,18 @@ describe('TaskDrawer', () => {
 
     expect(w.find('.ai-archive').text()).toContain('实时更新中')
     expect(w.find('.ai-archive').text()).toContain('正在分析任务验收标准')
+    w.unmount()
+  })
+
+  it('运行中提供暂停入口，并请求暂停当前运行', async () => {
+    const { pauseAiRun } = await import('@/api/ai')
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    await w.find('.pause-ai-btn').trigger('click')
+
+    expect(pauseAiRun).toHaveBeenCalledWith('ar1')
     w.unmount()
   })
 

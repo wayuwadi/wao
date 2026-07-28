@@ -189,6 +189,26 @@ class AiRunServiceTest {
     }
 
     @Test
+    void pauseCancelsActiveRunAndReturnsTaskToInProgress() {
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId("ar1");
+        run.setTaskId("t1");
+        run.setProjectId("p1");
+        run.setStatus("running");
+        when(runMapper.selectById("ar1")).thenReturn(run);
+        when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "暂停任务"));
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "暂停任务")));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        AiRunDto result = service.pause("ar1");
+
+        assertThat(result.status()).isEqualTo("cancelled");
+        assertThat(run.getFinishedAt()).isNotNull();
+        verify(runMapper, times(2)).updateById(run);
+        verify(taskMapper, times(1)).updateById(any(TaskEntity.class));
+    }
+
+    @Test
     void runnerOnlyClaimsRunsForAiToolsItHasInstalled() {
         AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
         runner.setMaxConcurrency(2);

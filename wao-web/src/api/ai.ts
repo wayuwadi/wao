@@ -52,6 +52,9 @@ export const rerunAiRun = (runId: string) => data<AiRun>(http.post(`/api/ai/runs
 export const continueAiRun = (runId: string, input: string) =>
   data<AiRun>(http.post(`/api/ai/runs/${runId}/continue`, { input }))
 
+/** 暂停等待中或正在执行的 AI 运行。 */
+export const pauseAiRun = (runId: string) => data<AiRun>(http.post(`/api/ai/runs/${runId}/pause`))
+
 export const fetchAiRuns = (active = false) =>
   data<AiRun[]>(http.get('/api/ai/runs', { params: { active } }))
 
