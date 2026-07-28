@@ -39,14 +39,14 @@ const projTab = computed(() => {
 // URL 上写了 view 就听 URL 的（分享出去的链接要能指定视图）；没写时用记住的偏好。
 const pdTaskView = computed<TaskView>(() => {
   const q = route.query.view
-  return q === 'list' || q === 'board' || q === 'group' ? q : ui.taskView
+  return q === 'list' || q === 'board' || q === 'group' ? q : ui.taskViewOf(pid.value)
 })
 
 function setTab(t: string) {
   router.replace({ query: { ...route.query, tab: t === '任务' ? undefined : t } })
 }
 function setView(v: TaskView) {
-  ui.setTaskView(v)
+  ui.setTaskView(pid.value, v)
   router.replace({ query: { ...route.query, view: v } })
 }
 
@@ -279,10 +279,13 @@ function submitQuickAdd(groupId: string) {
   quickAddText.value = ''
   toast(`任务「${title}」已创建`, 'ri-checkbox-circle-fill')
 }
-function onDropGroup(groupId: string) {
+function onDropGroup(groupId: string, overId?: string) {
   const id = dragId.value
   dragId.value = null
-  if (id) data.moveTaskToGroup(id, groupId)
+  if (!id) return
+  data.moveTaskToGroup(id, groupId)
+  // 同组内落到某条任务上就是排序；空白处只改变分组，保持该组已有顺序。
+  if (overId && overId !== id) data.reorderTask(id, overId)
 }
 </script>
 
@@ -471,6 +474,8 @@ function onDropGroup(groupId: string) {
             draggable="true"
             @click="openTask(t.id)"
             @dragstart="onDragStart(t.id)"
+            @dragover.prevent.stop
+            @drop.stop="onDropGroup(g.id, t.id)"
           >
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)">
               <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>

@@ -55,6 +55,8 @@ const emit = defineEmits<{
   'caret-line': [line: number]
 }>()
 
+const previewImage = ref<{ src: string; alt: string } | null>(null)
+
 const editor = useEditor({
   content: props.modelValue,
   contentType: 'markdown',
@@ -74,6 +76,14 @@ const editor = useEditor({
   editorProps: {
     handlePaste: (_view, event) => consumeImages(event.clipboardData),
     handleDrop: (_view, event) => consumeImages((event as DragEvent).dataTransfer),
+    handleClick: (_view, _pos, event) => {
+      const target = event.target
+      if (target instanceof HTMLImageElement) {
+        previewImage.value = { src: target.currentSrc || target.src, alt: target.alt }
+        return true
+      }
+      return false
+    },
   },
   onUpdate: ({ editor: e }) => {
     emit('update:modelValue', e.getMarkdown())
@@ -234,6 +244,10 @@ onBeforeUnmount(() => {
         <i class="ri-image-add-line"></i><span>图片</span>
       </button>
     </div>
+    <div v-if="previewImage" class="image-lightbox" role="dialog" aria-modal="true" :aria-label="previewImage.alt || '图片预览'" @click.self="previewImage = null">
+      <button type="button" class="image-lightbox-close" aria-label="关闭图片预览" @click="previewImage = null"><i class="ri-close-line"></i></button>
+      <img :src="previewImage.src" :alt="previewImage.alt" />
+    </div>
   </div>
 </template>
 
@@ -243,6 +257,38 @@ onBeforeUnmount(() => {
   position: relative;
 }
 .image-picker { display: none; }
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgba(15, 18, 28, 0.82);
+  cursor: zoom-out;
+}
+.image-lightbox img {
+  max-width: min(96vw, 1600px);
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.38);
+  cursor: default;
+}
+.image-lightbox-close {
+  position: fixed;
+  top: 16px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+}
+.image-lightbox-close:hover { background: rgba(255, 255, 255, 0.28); }
 .md-editor-wrap { position: relative; }
 /* 协作轨道占住左侧一条窄边，正文相应右移，头像不会压到字上 */
 .md.collab {

@@ -845,7 +845,11 @@ export const useDataStore = defineStore('data', () => {
         const ui = useUiStore()
         if (ui.openTaskId === local.id) ui.openTask(saved.id)
       })
-      .catch(() => apiPutTask(local.id, local).catch(() => {}))
+      .catch(() => {
+        // POST 失败时保留用户刚录入的任务，并把它纳入与编辑任务相同的可恢复草稿机制。
+        // 这样轮询不会把它误删；随后用幂等 PUT 自动补写一次，仍失败才由保存状态明确提示。
+        persistTask(local.id)
+      })
       .finally(() => pendingTaskIds.delete(local.id))
     return local
   }

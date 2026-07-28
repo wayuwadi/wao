@@ -111,4 +111,18 @@ describe('项目分组视图', () => {
     expect(data.taskById(task.id)!.groupId).toBe('g1')
     wrapper.unmount()
   })
+
+  it('reorders tasks when one group row is dropped onto another', async () => {
+    const wrapper = await mountGroupView()
+    const before = data.tasksByProject('p1').filter((task) => task.status !== '已完成')
+    expect(before.length).toBeGreaterThanOrEqual(2)
+
+    const rows = wrapper.findAll('.grow')
+    await rows[1]!.trigger('dragstart')
+    await rows[0]!.trigger('drop')
+
+    const after = data.tasksByProject('p1').filter((task) => task.status !== '已完成')
+    expect(after[0]!.id).toBe(before[1]!.id)
+    wrapper.unmount()
+  })
 })

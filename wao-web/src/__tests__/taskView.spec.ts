@@ -14,22 +14,31 @@ describe('ui store · 任务视图记忆', () => {
   })
 
   it('没有任何记录时默认用看板，而不是列表', () => {
-    expect(useUiStore().taskView).toBe('board')
+    expect(useUiStore().taskViewOf('p1')).toBe('board')
   })
 
   it('切换后写进本地存储，下次进来还是这个视图', () => {
-    useUiStore().setTaskView('list')
-    expect(localStorage.getItem('wao-task-view-v1')).toBe('list')
+    useUiStore().setTaskView('p1', 'list')
+    expect(localStorage.getItem('wao-task-view-v1')).toBe('{"p1":"list"}')
 
     // 模拟重开页面：重新建一个 store 实例
     setActivePinia(createPinia())
-    expect(useUiStore().taskView).toBe('list')
+    expect(useUiStore().taskViewOf('p1')).toBe('list')
   })
 
   it('本地存的是垃圾值时回落到看板，不至于把页面卡在空视图', () => {
     localStorage.setItem('wao-task-view-v1', 'gantt')
     setActivePinia(createPinia())
 
-    expect(useUiStore().taskView).toBe('board')
+    expect(useUiStore().taskViewOf('p1')).toBe('board')
+  })
+
+  it('各项目分别记住自己的视图，不会彼此带着切换', () => {
+    const ui = useUiStore()
+    ui.setTaskView('p1', 'group')
+    ui.setTaskView('p2', 'list')
+
+    expect(ui.taskViewOf('p1')).toBe('group')
+    expect(ui.taskViewOf('p2')).toBe('list')
   })
 })
