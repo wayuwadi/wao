@@ -4,9 +4,9 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia } from 'pinia'
 import LoginView from '@/views/LoginView.vue'
 
-vi.mock('@/utils/feishuQr', () => ({ mountFeishuQr: vi.fn().mockResolvedValue(() => {}) }))
+vi.mock('@/utils/feishuQr', () => ({ mountFeishuQr: vi.fn<() => Promise<() => void>>().mockResolvedValue(() => {}) }))
 vi.mock('@/api/system', () => ({
-  fetchPublicSiteInfo: vi.fn().mockResolvedValue({
+  fetchPublicSiteInfo: vi.fn<() => Promise<Record<string, string>>>().mockResolvedValue({
     siteName: 'WAO', description: '', icpNumber: '豫ICP备2024105476号-1',
     icpUrl: 'https://beian.miit.gov.cn',
   }),

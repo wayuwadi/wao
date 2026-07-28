@@ -20,8 +20,10 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.auth.FeishuLoginProperties;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.dto.TaskDto;
+import cn.wayuwa.wao.feishu.FeishuAppLinks;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
@@ -39,8 +41,10 @@ class FeishuQuickCollectServiceTest {
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final AccountMapper accounts = mock(AccountMapper.class);
     private final AccountIdentityMapper identities = mock(AccountIdentityMapper.class);
+    private final FeishuAppLinks links = new FeishuAppLinks(
+            new FeishuLoginProperties(false, "", "", "", "", "https://open.feishu.cn"));
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
-            settings, feishu, notifier, tasks, projects, accounts, identities, new ObjectMapper());
+            settings, feishu, notifier, links, tasks, projects, accounts, identities, new ObjectMapper());
 
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);

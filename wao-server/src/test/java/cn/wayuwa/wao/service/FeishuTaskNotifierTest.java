@@ -9,6 +9,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import cn.wayuwa.wao.auth.FeishuLoginProperties;
+import cn.wayuwa.wao.feishu.FeishuAppLinks;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
@@ -20,7 +22,9 @@ class FeishuTaskNotifierTest {
     private final FeishuWebhookNotifier webhook = mock(FeishuWebhookNotifier.class);
     private final SettingService settings = mock(SettingService.class);
     private final ProjectNotifyGate gate = mock(ProjectNotifyGate.class);
-    private final FeishuTaskNotifier notifier = new FeishuTaskNotifier(webhook, settings,
+    private final FeishuAppLinks links = new FeishuAppLinks(
+            new FeishuLoginProperties(false, "", "", "", "", "https://open.feishu.cn"));
+    private final FeishuTaskNotifier notifier = new FeishuTaskNotifier(webhook, links, settings,
             mock(AccountMapper.class), mock(AccountIdentityMapper.class), gate);
 
     @Test

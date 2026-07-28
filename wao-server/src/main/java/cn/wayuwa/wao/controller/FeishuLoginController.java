@@ -46,6 +46,20 @@ public class FeishuLoginController {
     @PostMapping("/exchange")
     public ApiResponse<AuthResolutionDto> exchange(@RequestBody ExchangeRequest body, HttpServletRequest request) {
         FeishuLoginService.FeishuProfile profile = service.exchange(body.code(), body.state());
+        return resolve(profile, request);
+    }
+    /** 容器内免登前置信息：前端先问一下能不能免登、JSSDK 要用的 App ID 是什么。 */
+    @GetMapping("/in-app-config")
+    public ApiResponse<Map<String, Object>> inAppConfig() {
+        boolean enabled = service.configured();
+        return ApiResponse.ok(Map.of("enabled", enabled, "appId", enabled ? service.appId() : ""));
+    }
+    /** 容器内免登：JSSDK requestAuthCode 拿到的临时码直接换 WAO 会话。 */
+    @PostMapping("/in-app-exchange")
+    public ApiResponse<AuthResolutionDto> inAppExchange(@RequestBody InAppExchangeRequest body, HttpServletRequest request) {
+        return resolve(service.exchangeInApp(body.code()), request);
+    }
+    private ApiResponse<AuthResolutionDto> resolve(FeishuLoginService.FeishuProfile profile, HttpServletRequest request) {
         AccountAuthService.ExternalResolution resolution = accountAuth.resolveExternal(
                 new ExternalIdentityProfile("feishu", profile.userId(), profile.email(), profile.name(), profile.avatarUrl()),
                 sessions.currentAccountId(request), "link".equals(profile.scene()));
@@ -57,4 +71,5 @@ public class FeishuLoginController {
         return ResponseEntity.status(302).location(URI.create(service.authorizationUrl(scene))).build();
     }
     public record ExchangeRequest(String code, String state) { }
+    public record InAppExchangeRequest(String code) { }
 }

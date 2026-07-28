@@ -22,6 +22,7 @@ import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.dto.FeishuQuickCollectConfigDto;
 import cn.wayuwa.wao.dto.SaveQuickCollectConfigRequest;
 import cn.wayuwa.wao.dto.TaskDto;
+import cn.wayuwa.wao.feishu.FeishuAppLinks;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
@@ -62,6 +63,7 @@ public class FeishuQuickCollectService {
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
     private final FeishuWebhookNotifier notifier;
+    private final FeishuAppLinks links;
     private final TaskService tasks;
     private final ProjectMapper projects;
     private final AccountMapper accounts;
@@ -76,11 +78,12 @@ public class FeishuQuickCollectService {
             }));
 
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
-            FeishuWebhookNotifier notifier, TaskService tasks, ProjectMapper projects,
+            FeishuWebhookNotifier notifier, FeishuAppLinks links, TaskService tasks, ProjectMapper projects,
             AccountMapper accounts, AccountIdentityMapper identities, ObjectMapper json) {
         this.settings = settings;
         this.feishu = feishu;
         this.notifier = notifier;
+        this.links = links;
         this.tasks = tasks;
         this.projects = projects;
         this.accounts = accounts;
@@ -190,7 +193,7 @@ public class FeishuQuickCollectService {
                         List.of("标签", SOURCE_TAG)),
                 "点开就能补充细节；想让大家一起补，把状态改成「" + TaskService.COLLECTING + "」会自动分享回群里。",
                 "打开任务",
-                FeishuTaskNotifier.taskUrl(project.getId(), task.id())));
+                links.taskUrl(project.getId(), task.id())));
     }
 
     /** 把消息内容读成一行可用的文字，并去掉 @ 机器人留下的占位符。 */

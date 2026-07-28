@@ -56,24 +56,7 @@ public class FeishuLoginService {
         try {
             TokenResponse tokenResponse = Set.of("qr", "workbench", "browser").contains(statePayload.scene())
                     ? exchangeLegacyCode(code) : exchangeOAuthCode(code);
-            String accessToken = tokenResponse == null ? null : tokenResponse.resolvedAccessToken();
-            if (!StringUtils.hasText(accessToken)) {
-                String reason = tokenResponse == null ? "empty response" : tokenResponse.failureReason();
-                log.warn("Feishu token exchange failed: {}", reason);
-                throw new FeishuLoginException("飞书授权码交换失败，请重新登录");
-            }
-
-            UserInfoResponse userResponse = client.get().uri("/open-apis/authen/v1/user_info")
-                    .header("Authorization", "Bearer " + accessToken).retrieve().body(UserInfoResponse.class);
-            User user = userResponse == null ? null : userResponse.data();
-            String externalUserId = user == null ? null : user.stableId();
-            if (!StringUtils.hasText(externalUserId)) {
-                String reason = userResponse == null ? "empty response" : userResponse.msg();
-                log.warn("Feishu user lookup failed: code={}, reason={}",
-                        userResponse == null ? null : userResponse.code(), reason);
-                throw new FeishuLoginException("未能读取飞书用户身份，请确认应用已发布且用户在可用范围内");
-            }
-            return new FeishuProfile(externalUserId, user.name(), user.avatarUrl(), user.email(), statePayload.scene());
+            return profileFrom(tokenResponse, statePayload.scene());
         } catch (RestClientResponseException exception) {
             log.warn("Feishu API request failed with HTTP {}", exception.getStatusCode());
             throw new FeishuLoginException("飞书认证服务暂时不可用，请稍后重试", exception);
@@ -81,6 +64,58 @@ public class FeishuLoginService {
             log.warn("Feishu API request failed: {}", exception.getClass().getSimpleName());
             throw new FeishuLoginException("无法连接飞书认证服务，请稍后重试", exception);
         }
+    }
+
+    /**
+     * 飞书容器内免登：JSSDK {@code tt.requestAuthCode} 拿到的临时码换用户身份。
+     *
+     * <p>这条链路没有浏览器重定向，也就没有 OAuth state 可验；临时码本身一次性且只能由
+     * 本应用凭据兑换，真实性由飞书保证。
+     */
+    public FeishuProfile exchangeInApp(String code) {
+        requireEnabled();
+        if (!StringUtils.hasText(code)) throw new IllegalArgumentException("Missing Feishu authorization code");
+        try {
+            return profileFrom(exchangeLegacyCode(code), "in_app");
+        } catch (RestClientResponseException exception) {
+            log.warn("Feishu API request failed with HTTP {}", exception.getStatusCode());
+            throw new FeishuLoginException("飞书认证服务暂时不可用，请稍后重试", exception);
+        } catch (RestClientException exception) {
+            log.warn("Feishu API request failed: {}", exception.getClass().getSimpleName());
+            throw new FeishuLoginException("无法连接飞书认证服务，请稍后重试", exception);
+        }
+    }
+
+    /** 应用是否配置齐全（前端据此决定要不要尝试容器内免登）。 */
+    public boolean configured() {
+        return properties.enabled() && StringUtils.hasText(properties.appId()) && StringUtils.hasText(properties.appSecret());
+    }
+
+    /** App ID 是公开信息，前端 JSSDK {@code requestAuthCode} 需要它。 */
+    public String appId() {
+        return properties.appId();
+    }
+
+    /** 用换到的 access_token 拉用户基本资料，各条登录链路共用。 */
+    private FeishuProfile profileFrom(TokenResponse tokenResponse, String scene) {
+        String accessToken = tokenResponse == null ? null : tokenResponse.resolvedAccessToken();
+        if (!StringUtils.hasText(accessToken)) {
+            String reason = tokenResponse == null ? "empty response" : tokenResponse.failureReason();
+            log.warn("Feishu token exchange failed: {}", reason);
+            throw new FeishuLoginException("飞书授权码交换失败，请重新登录");
+        }
+
+        UserInfoResponse userResponse = client.get().uri("/open-apis/authen/v1/user_info")
+                .header("Authorization", "Bearer " + accessToken).retrieve().body(UserInfoResponse.class);
+        User user = userResponse == null ? null : userResponse.data();
+        String externalUserId = user == null ? null : user.stableId();
+        if (!StringUtils.hasText(externalUserId)) {
+            String reason = userResponse == null ? "empty response" : userResponse.msg();
+            log.warn("Feishu user lookup failed: code={}, reason={}",
+                    userResponse == null ? null : userResponse.code(), reason);
+            throw new FeishuLoginException("未能读取飞书用户身份，请确认应用已发布且用户在可用范围内");
+        }
+        return new FeishuProfile(externalUserId, user.name(), user.avatarUrl(), user.email(), scene);
     }
 
     private TokenResponse exchangeOAuthCode(String code) {
