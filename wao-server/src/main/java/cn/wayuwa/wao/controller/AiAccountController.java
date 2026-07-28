@@ -2,11 +2,16 @@ package cn.wayuwa.wao.controller;
 
 import java.util.List;
 
+import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.AiAccountDto;
 import cn.wayuwa.wao.dto.AiAccountFormRequest;
+import cn.wayuwa.wao.dto.AiAccountLoginStartDto;
 import cn.wayuwa.wao.dto.AiAccountSyncResultDto;
+import cn.wayuwa.wao.dto.CompleteAiAccountLoginRequest;
+import cn.wayuwa.wao.dto.StartAiAccountLoginRequest;
 import cn.wayuwa.wao.service.AiAccountService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,9 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AiAccountController {
 
     private final AiAccountService service;
+    private final CurrentMember currentMember;
 
-    public AiAccountController(AiAccountService service) {
+    public AiAccountController(AiAccountService service, CurrentMember currentMember) {
         this.service = service;
+        this.currentMember = currentMember;
     }
 
     @GetMapping
@@ -53,5 +60,18 @@ public class AiAccountController {
     @PostMapping("/{id}/sync")
     public ApiResponse<AiAccountSyncResultDto> sync(@PathVariable String id) {
         return ApiResponse.ok(service.sync(id));
+    }
+
+    /** 发起 OAuth 登录，返回让用户在浏览器里打开的授权地址。 */
+    @PostMapping("/login/start")
+    public ApiResponse<AiAccountLoginStartDto> startLogin(@Valid @RequestBody StartAiAccountLoginRequest request,
+            HttpServletRequest http) {
+        return ApiResponse.ok(service.startLogin(request, currentMember.idOr(http, "unknown")));
+    }
+
+    /** 回填授权码完成登录，直接返回建好的账号。 */
+    @PostMapping("/login/complete")
+    public ApiResponse<AiAccountDto> completeLogin(@Valid @RequestBody CompleteAiAccountLoginRequest request) {
+        return ApiResponse.ok(service.completeLogin(request));
     }
 }

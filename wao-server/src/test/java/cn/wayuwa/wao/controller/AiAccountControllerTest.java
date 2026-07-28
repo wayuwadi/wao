@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 
+import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.dto.AiAccountDto;
 import cn.wayuwa.wao.dto.AiAccountFormRequest;
 import cn.wayuwa.wao.dto.AiAccountSyncResultDto;
@@ -16,12 +17,18 @@ import org.junit.jupiter.api.Test;
 class AiAccountControllerTest {
 
     private final AiAccountService service = mock(AiAccountService.class);
-    private final AiAccountController controller = new AiAccountController(service);
+    private final CurrentMember currentMember = mock(CurrentMember.class);
+    private final AiAccountController controller = new AiAccountController(service, currentMember);
+
+    /** 账号 DTO 字段多，测试只关心 id/provider/label，其余给默认值。 */
+    private static AiAccountDto account(String id) {
+        return new AiAccountDto(id, "claude", "A", null, true, "manual", null,
+                "UNKNOWN", null, null, null, null, null, null, null, null);
+    }
 
     @Test
     void listReturnsServiceResult() {
-        List<AiAccountDto> expected = List.of(new AiAccountDto("aa-1", "claude", "A", null,
-                true, "UNKNOWN", null, null, null, null));
+        List<AiAccountDto> expected = List.of(account("aa-1"));
         when(service.list()).thenReturn(expected);
 
         assertThat(controller.list().data()).isEqualTo(expected);
@@ -30,8 +37,7 @@ class AiAccountControllerTest {
     @Test
     void createDelegatesToService() {
         AiAccountFormRequest request = new AiAccountFormRequest("claude", "A", null, "{}", true);
-        AiAccountDto expected = new AiAccountDto("aa-1", "claude", "A", null, true,
-                "UNKNOWN", null, null, null, null);
+        AiAccountDto expected = account("aa-1");
         when(service.create(request)).thenReturn(expected);
 
         assertThat(controller.create(request).data()).isEqualTo(expected);
@@ -40,8 +46,7 @@ class AiAccountControllerTest {
     @Test
     void updateDelegatesToService() {
         AiAccountFormRequest request = new AiAccountFormRequest("claude", "A", null, "{}", true);
-        AiAccountDto expected = new AiAccountDto("aa-1", "claude", "A", null, true,
-                "UNKNOWN", null, null, null, null);
+        AiAccountDto expected = account("aa-1");
         when(service.update("aa-1", request)).thenReturn(expected);
 
         assertThat(controller.update("aa-1", request).data()).isEqualTo(expected);
