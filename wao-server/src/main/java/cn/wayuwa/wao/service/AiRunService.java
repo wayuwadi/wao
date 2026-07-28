@@ -329,10 +329,18 @@ public class AiRunService {
             String runEngine = requestedEngine != null
                     ? requestedEngine : requireEngine(blankOr(config.getDefaultEngine(), DEFAULT_ENGINE));
             if (StringUtils.hasText(accountId)) accounts.runAccount(accountId.trim(), runEngine);
-            if (target != null && !engines(target).contains(runEngine)) {
-                throw new BadRequestException(target.getName() + " 没有接入 " + label(runEngine) + "，请换一台电脑或换一个 AI 工具");
+            AiRunnerNodeEntity runTarget = target;
+            if (runTarget == null && StringUtils.hasText(accountId)) {
+                runTarget = preferredLinuxRunner(runEngine);
+                if (runTarget == null) {
+                    throw new BadRequestException("Linux 主节点尚未接入 " + label(runEngine)
+                            + "，请先安装对应 CLI 并重启 Runner，或明确指定其他执行电脑");
+                }
             }
-            if (target == null && !anyRunnerSupports(runEngine)) {
+            if (runTarget != null && !engines(runTarget).contains(runEngine)) {
+                throw new BadRequestException(runTarget.getName() + " 没有接入 " + label(runEngine) + "，请换一台电脑或换一个 AI 工具");
+            }
+            if (runTarget == null && !anyRunnerSupports(runEngine)) {
                 throw new BadRequestException("还没有电脑接入 " + label(runEngine) + "，请先在 AI 控制台配对一台");
             }
             String subTitle = StringUtils.hasText(sub) ? requireSubTitle(taskId, sub) : null;
@@ -351,20 +359,47 @@ public class AiRunService {
             run.setEngine(runEngine);
             run.setAiAccountId(StringUtils.hasText(accountId) ? accountId.trim() : null);
             run.setStatus("queued");
-            run.setRequestedRunnerId(target == null ? null : target.getId());
+            run.setRequestedRunnerId(runTarget == null ? null : runTarget.getId());
             run.setRequestedBy(requestedBy);
             run.setPromptUrl(promptUrl(baseUrl, taskId, sub));
             run.setBranchName("ai/wao-" + run.getId());
             run.setCreatedAt(LocalDateTime.now());
             runMapper.insert(run);
             appendProgress(run, "phase", (subTitle == null ? "任务" : "子任务「" + subTitle + "」")
-                    + "已进入队列，等待" + (target == null ? "在线电脑" : target.getName())
+                    + "已进入队列，等待" + (runTarget == null ? "在线电脑" : runTarget.getName())
                     + "上的 " + label(runEngine) + " 领取");
             setTaskStatus(taskId, "AI 进行中");
             notifyQueued(run);
             created.add(run);
         }
         return toRunDtos(created);
+    }
+
+    /** 集中账号默认固定到支持对应 CLI 的 Linux 主节点；在线节点优先，离线时保留排队语义。 */
+    private AiRunnerNodeEntity preferredLinuxRunner(String engine) {
+        List<AiRunnerNodeEntity> linux = runnerMapper.selectList(new LambdaQueryWrapper<AiRunnerNodeEntity>()).stream()
+                .filter(runner -> isLinuxRunner(runner) && engines(runner).contains(engine))
+                .toList();
+        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(2);
+        return linux.stream().filter(runner -> runner.getLastSeenAt() != null
+                        && runner.getLastSeenAt().isAfter(cutoff) && isMainRunner(runner))
+                .findFirst()
+                .or(() -> linux.stream().filter(runner -> runner.getLastSeenAt() != null
+                        && runner.getLastSeenAt().isAfter(cutoff)).findFirst())
+                .or(() -> linux.stream().filter(AiRunService::isMainRunner).findFirst())
+                .orElse(linux.isEmpty() ? null : linux.get(0));
+    }
+
+    private static boolean isLinuxRunner(AiRunnerNodeEntity runner) {
+        return lower(runner.getPlatform()).contains("linux") || lower(runner.getName()).contains("linux");
+    }
+
+    private static boolean isMainRunner(AiRunnerNodeEntity runner) {
+        return StringUtils.hasText(runner.getName()) && runner.getName().contains("主节点");
+    }
+
+    private static String lower(String value) {
+        return value == null ? "" : value.toLowerCase(java.util.Locale.ROOT);
     }
 
     /**
