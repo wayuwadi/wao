@@ -5,7 +5,7 @@ import type { AiAccount } from '@/api/aiAccount'
 
 const fetchAiAccounts = vi.fn<() => Promise<AiAccount[]>>()
 const startAiAccountLogin = vi.fn<() => Promise<unknown>>()
-const completeAiAccountLogin = vi.fn<() => Promise<unknown>>()
+const completeAiAccountLogin = vi.fn<(state: string, code: string) => Promise<unknown>>()
 
 vi.mock('@/api/aiAccount', () => ({
   fetchAiAccounts: () => fetchAiAccounts(),
