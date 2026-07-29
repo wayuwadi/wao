@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import HomeView from '@/views/HomeView.vue'
-import { requestRunnerScriptUpdate, rerunAiRun } from '@/api/ai'
+import type { AiRunner } from '@/types'
+import { fetchAiRunners, removeAiRunner, requestRunnerScriptUpdate, rerunAiRun } from '@/api/ai'
 
 vi.mock('@/api/ai', () => ({
   fetchAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
@@ -80,9 +81,32 @@ vi.mock('@/api/ai', () => ({
       scriptUpToDate: true, updateRequested: false,
     },
   ]),
+  removeAiRunner: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
+    {
+      id: 'rn2', name: 'Linux 主节点', platform: 'Linux 7.0', engines: ['claude'],
+      maxConcurrency: 2, activeRuns: 1, online: true, lastSeenAt: '2026-07-25T20:18:20',
+    },
+  ]),
   rerunAiRun: vi.fn<() => Promise<Record<string, unknown>>>()
     .mockResolvedValue({ id: 'ar3', taskId: 't1', taskTitle: '修复自动任务', retryOfRunId: 'ar1' }),
 }))
+
+/** 解除接入用例里要按台改列表，这里补齐 AiRunner 的全部字段。 */
+function runner(patch: Partial<AiRunner>): AiRunner {
+  return {
+    id: 'rn1', name: '娃哥电脑', platform: 'Windows 11', engines: ['codex'],
+    maxConcurrency: 2, configuredMaxConcurrency: null, activeRuns: 0, online: false,
+    lastSeenAt: '2026-07-25T18:00:00', wakeMac: '', wakeHost: '', wakePort: 9,
+    wakeConfigured: false, lastWakeRequestedAt: null, scriptUpToDate: null, updateRequested: false,
+    ...patch,
+  }
+}
+
+const windowsRunner = () => runner({})
+const linuxRunner = () => runner({
+  id: 'rn2', name: 'Linux 主节点', platform: 'Linux 7.0', engines: ['claude'],
+  activeRuns: 1, online: true, lastSeenAt: '2026-07-25T20:18:20',
+})
 
 function mountHome() {
   const router = createRouter({
@@ -189,6 +213,45 @@ describe('HomeView AI 控制台', () => {
     const cards = wrapper.findAll('.runner-card')
     expect(cards[0]!.text()).toContain('更新已下发，等该电脑空闲后自动重启生效')
     expect(cards[1]!.text()).not.toContain('更新已下发')
+    wrapper.unmount()
+  })
+
+  it('空闲的电脑可以确认后解除接入，卡片随即消失', async () => {
+    vi.useFakeTimers()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.findAll('.console-tabs button')[1]!.trigger('click')
+    // 解除后再拉列表时，这台电脑已经不在了
+    vi.mocked(fetchAiRunners).mockResolvedValue([linuxRunner()])
+    await wrapper.findAll('.runner-card')[0]!.find('header .icon-btn.danger').trigger('click')
+    await flushPromises()
+
+    expect(confirm).toHaveBeenCalled()
+    expect(removeAiRunner).toHaveBeenCalledWith('rn1')
+    const cards = wrapper.findAll('.runner-card')
+    expect(cards).toHaveLength(1)
+    expect(cards[0]!.text()).toContain('Linux 主节点')
+    confirm.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('还有任务在跑的电脑不能解除接入，也不会弹确认框', async () => {
+    vi.useFakeTimers()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.mocked(fetchAiRunners).mockResolvedValue([windowsRunner(), linuxRunner()])
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.findAll('.console-tabs button')[1]!.trigger('click')
+    await wrapper.findAll('.runner-card')[1]!.find('header .icon-btn.danger').trigger('click')
+    await flushPromises()
+
+    expect(confirm).not.toHaveBeenCalled()
+    expect(removeAiRunner).not.toHaveBeenCalledWith('rn2')
+    expect(wrapper.findAll('.runner-card')).toHaveLength(2)
+    confirm.mockRestore()
     wrapper.unmount()
   })
 

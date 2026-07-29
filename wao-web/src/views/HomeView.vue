@@ -6,6 +6,7 @@ import {
   fetchAiRunners,
   fetchAiRuns,
   fetchAiWorkflows,
+  removeAiRunner,
   requestRunnerScriptUpdate,
   rerunAiRun,
   saveAiProjectConfig,
@@ -38,6 +39,7 @@ const editingRunnerValue = ref(2)
 const editingRunnerSaving = ref(false)
 const updatingRunners = ref(false)
 const wakingRunnerId = ref<string | null>(null)
+const removingRunnerId = ref<string | null>(null)
 const form = reactive({
   enabled: false,
   repoUrl: '',
@@ -194,6 +196,35 @@ async function wakeRunner(runner: AiRunner) {
     toast(error instanceof Error ? error.message : '唤醒包发送失败', 'ri-error-warning-line')
   } finally {
     wakingRunnerId.value = null
+  }
+}
+
+/** 解除一台电脑的接入：删掉节点记录并作废它的令牌，那台电脑上的 Runner 会自行退出。 */
+async function removeRunner(runner: AiRunner) {
+  const busy = runner.activeRuns
+    ? `这台电脑上还有 ${runner.activeRuns} 条运行，解除前需要先取消或等它跑完。`
+    : ''
+  if (busy) {
+    toast(busy, 'ri-information-line')
+    return
+  }
+  if (
+    !window.confirm(
+      `解除「${runner.name}」的接入？\n它的节点令牌会立刻作废，那台电脑上的 Runner 会自动退出；` +
+        `历史运行记录保留，需要再次接入得重新生成配对码。`,
+    )
+  ) {
+    return
+  }
+  removingRunnerId.value = runner.id
+  try {
+    runners.value = await removeAiRunner(runner.id)
+    toast(`已解除「${runner.name}」的接入`, 'ri-computer-line')
+    await refresh()
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '解除接入失败', 'ri-error-warning-line')
+  } finally {
+    removingRunnerId.value = null
   }
 }
 
@@ -445,6 +476,15 @@ onBeforeUnmount(() => {
               <span class="online-dot"></span>
               <b>{{ runner.name }}</b>
               <span class="runner-state">{{ runner.online ? '在线' : '离线' }}</span>
+              <button
+                class="icon-btn danger"
+                :disabled="removingRunnerId === runner.id"
+                :title="runner.activeRuns ? '这台电脑还有任务在跑，暂时不能解除' : '解除这台电脑的接入'"
+                aria-label="解除接入"
+                @click="removeRunner(runner)"
+              >
+                <i :class="removingRunnerId === runner.id ? 'ri-loader-4-line spin' : 'ri-delete-bin-line'"></i>
+              </button>
             </header>
             <div class="runner-platform"><i class="ri-hard-drive-2-line"></i>{{ runner.platform || '未知平台' }}</div>
             <div class="engine-tags">
@@ -879,6 +919,8 @@ onBeforeUnmount(() => {
 .icon-btn:disabled { opacity: .6; cursor: not-allowed; }
 .icon-btn.secondary { border-color: var(--wao-line); background: #fff; color: var(--wao-text-2); }
 .icon-btn.secondary:hover { border-color: #bec7ef; color: #4358d6; }
+.icon-btn.danger { border-color: var(--wao-line); background: #fff; color: var(--wao-text-weak); }
+.icon-btn.danger:hover { border-color: #f0b6b6; background: #fff5f5; color: #b33a3a; }
 .runner-config-hint {
   margin-top: 7px;
   color: #237a4b;

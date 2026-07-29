@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -505,6 +506,7 @@ class AiRunServiceTest {
         failed.setRunnerId("rn1");
         failed.setSessionId("thread-1");
         when(runMapper.selectById("ar1")).thenReturn(failed);
+        when(runnerMapper.selectById("rn1")).thenReturn(runner("rn1", "娃哥电脑", "codex"));
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "修复自动化")));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
@@ -544,6 +546,76 @@ class AiRunServiceTest {
         AiRunnerClaimDto claim = service.claim("local-token");
 
         assertThat(claim.previousFailure()).isEqualTo("部署失败：容器健康检查未通过");
+    }
+
+    // ---------------- 解除电脑接入 ----------------
+
+    @Test
+    void removingARunnerDeletesItAndReleasesEverythingPinnedToIt() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥Windows电脑", "codex", "claude");
+        when(runnerMapper.selectById("rn1")).thenReturn(runner);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(runMapper.selectCount(any())).thenReturn(0L);
+
+        AiRunnerDto removed = service.removeRunner("rn1");
+
+        assertThat(removed.name()).isEqualTo("娃哥Windows电脑");
+        assertThat(removed.engines()).containsExactly("codex", "claude");
+        verify(runnerMapper).deleteById("rn1");
+        // 排队中点名这台电脑的运行、以及把它设成首选电脑的项目配置都要放开，否则永远没人领
+        verify(runMapper).update(isNull(), any());
+        verify(configMapper).update(isNull(), any());
+    }
+
+    @Test
+    void removingARunnerIsRefusedWhileItStillRunsTasks() {
+        when(runnerMapper.selectById("rn1")).thenReturn(runner("rn1", "娃哥Windows电脑", "codex"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "娃哥Windows电脑", "codex")));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(runMapper.selectCount(any())).thenReturn(2L);
+
+        assertThatThrownBy(() -> service.removeRunner("rn1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("还有 2 条 AI 任务在执行");
+        verify(runnerMapper, never()).deleteById("rn1");
+    }
+
+    @Test
+    void continuingASessionOnARemovedComputerIsRefusedInsteadOfQueuedForever() {
+        AiTaskRunEntity succeeded = new AiTaskRunEntity();
+        succeeded.setId("ar1");
+        succeeded.setTaskId("t1");
+        succeeded.setProjectId("p1");
+        succeeded.setStatus("succeeded");
+        succeeded.setRunnerId("rn1");
+        succeeded.setSessionId("thread-1");
+        when(runMapper.selectById("ar1")).thenReturn(succeeded);
+        when(runnerMapper.selectById("rn1")).thenReturn(null);
+
+        assertThatThrownBy(() -> service.continueRun("ar1", "再优化一版", "wg", "https://wao.example"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("已解除接入");
+        assertThat(succeeded.getStatus()).isEqualTo("succeeded");
+    }
+
+    @Test
+    void historyKeepsSayingWhichComputerRanItEvenAfterItWasRemoved() {
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId("ar1");
+        run.setTaskId("t1");
+        run.setProjectId("p1");
+        run.setStatus("succeeded");
+        run.setRunnerId("rn-gone");
+        // 第一次 selectList 是自动回收扫描，第二次才是列表查询
+        when(runMapper.selectList(any())).thenReturn(List.of(), List.of(run));
+        when(runnerMapper.selectBatchIds(any())).thenReturn(List.of());
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "记录用量")));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        var runs = service.listRuns(false);
+
+        assertThat(runs.get(0).runnerName()).isEqualTo("已解除接入的电脑");
     }
 
     private static AiRunnerNodeEntity runner(String id, String name, String... engines) {
@@ -676,6 +748,7 @@ class AiRunServiceTest {
         succeeded.setRunnerId("rn1");
         succeeded.setSessionId("thread-1");
         when(runMapper.selectById("ar1")).thenReturn(succeeded);
+        when(runnerMapper.selectById("rn1")).thenReturn(runner("rn1", "娃哥电脑", "codex"));
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "移动端体验")));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
@@ -696,6 +769,7 @@ class AiRunServiceTest {
         succeeded.setRunnerId("rn1");
         succeeded.setSessionId("thread-1");
         when(runMapper.selectById("ar1")).thenReturn(succeeded);
+        when(runnerMapper.selectById("rn1")).thenReturn(runner("rn1", "娃哥电脑", "codex"));
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "移动端体验")));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 

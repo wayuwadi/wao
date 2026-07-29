@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import os
 import shutil
 import stat
@@ -6,6 +7,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -678,6 +680,43 @@ class ScriptUpdateTest(unittest.TestCase):
     def test_script_hash_matches_server_side_sha256(self) -> None:
         payload = self._payload(self.script.read_text(encoding="utf-8"))
         self.assertEqual(payload["hash"], RUNNER.script_hash(self.script))
+
+
+class PairingRevokedTest(unittest.TestCase):
+    """WAO 后台解除接入后，本机要认出来并彻底忘掉令牌。"""
+
+    def test_unauthorized_answer_on_a_paired_runner_is_a_revocation(self) -> None:
+        api = RUNNER.WaoApi("https://wao.example", "local-token")
+        error = urllib.error.HTTPError(
+            "https://wao.example/api/ai/runner/heartbeat", 401, "Unauthorized", {},
+            io.BytesIO('{"code":40100,"message":"执行节点令牌无效"}'.encode("utf-8")))
+
+        with patch.object(RUNNER.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(RUNNER.PairingRevokedError):
+                api.post("/api/ai/runner/heartbeat")
+
+    def test_other_http_errors_stay_retryable(self) -> None:
+        api = RUNNER.WaoApi("https://wao.example", "local-token")
+        error = urllib.error.HTTPError(
+            "https://wao.example/api/ai/runner/heartbeat", 502, "Bad Gateway", {}, io.BytesIO(b"nginx"))
+
+        with patch.object(RUNNER.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(RuntimeError) as raised:
+                api.post("/api/ai/runner/heartbeat")
+
+        self.assertNotIsInstance(raised.exception, RUNNER.PairingRevokedError)
+
+    def test_forget_pairing_removes_the_local_token(self) -> None:
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory, True)
+        state = directory / "ai-runner.json"
+        state.write_text('{"token":"local-token"}', encoding="utf-8")
+
+        with patch.object(RUNNER, "STATE_FILE", state):
+            RUNNER.forget_pairing()
+            RUNNER.forget_pairing()  # 已经删过一次也不该报错
+
+        self.assertFalse(state.exists())
 
 
 if __name__ == "__main__":
