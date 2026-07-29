@@ -41,4 +41,16 @@ describe('AI Run 状态投影', () => {
     data.applyAiRunStatuses([run('cancelled')])
     expect(data.taskById('t1')!.status).toBe('进行中')
   })
+
+  it('不覆盖人工验收后的已完成状态', () => {
+    const data = useDataStore()
+    const task = data.taskById('t1')!
+    task.status = '已完成'
+    task.completedAt = '2026-07-29T10:00:00'
+
+    data.applyAiRunStatuses([run('succeeded')])
+
+    expect(task.status).toBe('已完成')
+    expect(task.completedAt).toBe('2026-07-29T10:00:00')
+  })
 })

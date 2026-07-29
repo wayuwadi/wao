@@ -8,6 +8,7 @@ import cn.wayuwa.wao.dto.CreateAccountRequest;
 import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.dto.OrgDto;
 import cn.wayuwa.wao.dto.ResetMemberPasswordRequest;
+import cn.wayuwa.wao.dto.UpdateMemberRoleRequest;
 import cn.wayuwa.wao.service.AccountAuthService;
 import cn.wayuwa.wao.service.MemberService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -62,6 +63,14 @@ public class MemberController {
             @Valid @RequestBody ResetMemberPasswordRequest body, HttpServletRequest http) {
         accountAuthService.adminResetPassword(currentMember.idOr(http, FALLBACK_OWNER), memberId, body.password());
         return ApiResponse.ok(null);
+    }
+
+    /** 超级管理员授予或收回普通管理员权限。 */
+    @PatchMapping("/members/{memberId}/role")
+    public ApiResponse<MemberDto> updateRole(@org.springframework.web.bind.annotation.PathVariable String memberId,
+            @Valid @RequestBody UpdateMemberRoleRequest body, HttpServletRequest http) {
+        return ApiResponse.ok(accountAuthService.updateMemberRole(currentMember.idOr(http, FALLBACK_OWNER), memberId,
+                body.role()));
     }
 
     /** 管理员删除成员账号及其所有登录凭据。 */

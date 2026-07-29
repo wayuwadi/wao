@@ -83,3 +83,9 @@ export async function apiResetMemberPassword(memberId: string, password: string)
 export async function apiDeleteMemberAccount(memberId: string) {
   await http.delete<ApiResponse<void>>(`/api/members/${encodeURIComponent(memberId)}/account`)
 }
+
+/** 超级管理员设置普通成员的管理员权限。 */
+export async function apiUpdateMemberRole(memberId: string, role: '管理员' | '成员') {
+  const response = await http.patch<ApiResponse<SessionMember>>(`/api/members/${encodeURIComponent(memberId)}/role`, { role })
+  return response.data.data
+}

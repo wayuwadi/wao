@@ -14,6 +14,7 @@ const report = ref<NotificationFeedbackReport | null>(null)
 async function loadReport() { report.value = await fetchNotificationFeedbackReport(reportPeriod.value) }
 watch(reportPeriod, loadReport)
 const selId = ref<string | null>(null)
+// 保留既有弹层状态以兼容历史深链；界面不再暴露泛化“新建自动化”入口。
 const newOpen = ref(false)
 const newName = ref('')
 const newSchedule = ref('')
@@ -95,24 +96,11 @@ async function onDelete(id: string) {
   await data.deleteJob(id)
   toast('已删除自动化任务', 'ri-delete-bin-line')
 }
-function openNewAuto() {
-  newName.value = ''
-  newSchedule.value = ''
-  newDesc.value = ''
-  newSource.value = ''
-  newTarget.value = ''
-  newSteps.value = ''
-  newCron.value = ''
-  newNotification.value = false
-  newOpen.value = true
-}
 async function createAuto() {
   if (!newName.value.trim()) return
   const job = await data.createJob({
-    name: newName.value.trim(),
-    schedule: newSchedule.value.trim() || undefined,
-    desc: newDesc.value.trim() || undefined,
-    source: newSource.value.trim() || undefined,
+    name: newName.value.trim(), schedule: newSchedule.value.trim() || undefined,
+    desc: newDesc.value.trim() || undefined, source: newSource.value.trim() || undefined,
     target: newTarget.value.trim() || undefined,
     steps: newSteps.value.split('\n').map((s) => s.trim()).filter(Boolean),
     cronExpr: newCron.value.trim() || undefined,
@@ -137,7 +125,6 @@ async function createAuto() {
         <div class="atitle">自动化 / 定时任务</div>
         <span class="atip">让记录自己发生</span>
         <div class="spacer"></div>
-        <button class="btn-primary" @click="openNewAuto"><i class="ri-add-line"></i>新建自动化</button>
       </div>
       <div class="tabs">
         <button v-for="t in ([['任务列表', 'jobs'], ['运行记录', 'runs']] as const)" :key="t[1]" class="tab" :class="{ on: tab === t[1] }" @click="tab = t[1]">{{ t[0] }}</button>

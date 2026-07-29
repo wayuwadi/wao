@@ -259,6 +259,8 @@ export const useDataStore = defineStore('data', () => {
       const latest = active ?? [...taskRuns].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
       const task = taskById(taskId)
       if (!task || !latest) continue
+      // 人工已经验收完成时，运行记录轮询不能把任务重新覆盖为“待验证”。
+      if (task.status === '已完成') continue
       const status = ['queued', 'claimed', 'running'].includes(latest.status)
         ? 'AI 进行中'
         : latest.status === 'succeeded' ? '待验证' : '进行中'

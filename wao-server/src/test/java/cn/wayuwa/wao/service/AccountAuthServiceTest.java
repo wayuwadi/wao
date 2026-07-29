@@ -96,6 +96,23 @@ class AccountAuthServiceTest {
         assertThat(result.member().initial()).isEqualTo("真");
     }
 
+    @Test
+    void superAdminCanGrantAdminRoleButAdminCannot() {
+        MemberEntity superAdmin = member("wg", "娃哥");
+        superAdmin.setRole("超级管理员");
+        MemberEntity target = member("m1", "成员");
+        target.setRole("成员");
+        when(members.selectById("wg")).thenReturn(superAdmin);
+        when(members.selectById("m1")).thenReturn(target);
+
+        var result = service.updateMemberRole("wg", "m1", "管理员");
+
+        verify(members).updateById(target);
+        assertThat(result.role()).isEqualTo("管理员");
+        assertThatThrownBy(() -> service.updateMemberRole("m1", "m1", "成员"))
+                .isInstanceOf(UnauthorizedException.class);
+    }
+
     private static AccountEntity account(String id, String memberId) {
         AccountEntity account = new AccountEntity();
         account.setId(id);
