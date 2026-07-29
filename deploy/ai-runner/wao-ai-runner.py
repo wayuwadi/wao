@@ -116,6 +116,26 @@ def forget_pairing() -> None:
     STATE_FILE.unlink(missing_ok=True)
 
 
+def disable_windows_task(task_name: str | None) -> bool:
+    """解除接入后禁用 Windows 守护任务，避免它把退出码 78 反复拉起。"""
+    if os.name != "nt" or not task_name or not task_name.strip():
+        return False
+    try:
+        result = subprocess.run(
+            ["schtasks.exe", "/Change", "/TN", task_name, "/Disable"],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        log(f"WAO 已解除本机接入，但未能自动禁用 Windows 计划任务“{task_name}”：{exc}")
+        return False
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "未知错误").strip().replace("\n", " ")
+        log(f"WAO 已解除本机接入，但未能自动禁用 Windows 计划任务“{task_name}”：{detail[:300]}")
+        return False
+    log(f"WAO 已解除本机接入，已禁用 Windows 计划任务“{task_name}”，不会再自动重试")
+    return True
+
+
 def save_state(state: dict[str, str]) -> None:
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1054,6 +1074,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--codex-command", default=os.getenv("WAO_CODEX_COMMAND"))
     parser.add_argument("--claude-command", default=os.getenv("WAO_CLAUDE_COMMAND"))
     parser.add_argument("--qoder-command", default=os.getenv("WAO_QODER_COMMAND"))
+    parser.add_argument("--windows-task-name", default=os.getenv("WAO_WINDOWS_TASK_NAME"),
+                        help="Windows 守护计划任务名称；解除接入后会自动禁用该任务")
     parser.add_argument("--claude-model", default=os.getenv("WAO_CLAUDE_MODEL"),
                         help="传给 Claude Code 的模型别名；留空使用本机默认模型")
     parser.add_argument(
@@ -1161,6 +1183,7 @@ def main() -> int:
                 log(f"WAO 已解除本机的接入（{exc}）；已删除本地令牌 {STATE_FILE}，Runner 退出。"
                     "如需重新接入，请在 AI 控制台生成新的配对码后带 --pair-code 启动一次")
                 forget_pairing()
+                disable_windows_task(args.windows_task_name)
                 return EXIT_PAIRING_REVOKED
             except Exception as exc:  # noqa: BLE001
                 log(f"连接 WAO 失败，10 秒后重试：{exc}")

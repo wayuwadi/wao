@@ -39,7 +39,8 @@ $arguments = @(
     '--server', ('"{0}"' -f $Server),
     '--name', ('"{0}"' -f $Name),
     '--root', ('"{0}"' -f $resolvedRoot),
-    '--max-concurrency', $MaxConcurrency
+    '--max-concurrency', $MaxConcurrency,
+    '--windows-task-name', ('"{0}"' -f $TaskName)
 )
 if ($Engines) { $arguments += @('--engines', ('"{0}"' -f $Engines)) }
 

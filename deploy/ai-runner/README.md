@@ -181,10 +181,12 @@ cgroup，子进程会一起结束。
 WAO 会删掉节点记录并作废它的令牌。那台电脑还有任务在跑时不允许解除，先取消或等它跑完。
 
 被解除的电脑不需要人去关：Runner 下一次心跳（最多 10 秒）会收到 401，删掉本机的
-`~/.wao/ai-runner.json` 并以退出码 78 退出，日志里写清原因。systemd 单元里的
-`RestartPreventExitStatus=78` 保证不会再被拉起——旧版单元文件没有这行，会每 10 秒重启并因
-未配对而失败，照 [`wao-ai-runner.service.example`](wao-ai-runner.service.example) 补上这行，
-或者直接 `systemctl --user disable --now wao-ai-runner`（Windows 上禁用对应的计划任务）。
+`~/.wao/ai-runner.json` 并以退出码 78 退出，日志里写清原因。通过
+`install-windows-task.ps1` 安装的 Windows Runner 会同时禁用自己的计划任务，避免任务计划程序
+把非零退出码反复拉起后因未配对持续重试。Linux 的 systemd 单元仍由
+`RestartPreventExitStatus=78` 阻止重启；旧版单元文件没有这行时，请照
+[`wao-ai-runner.service.example`](wao-ai-runner.service.example) 补上，或直接
+`systemctl --user disable --now wao-ai-runner`。
 
 要重新接入，在控制台生成新的配对码，再带 `--pair-code` 启动一次即可；历史运行记录不受影响，
 它们在页面上显示为「已解除接入的电脑」。
