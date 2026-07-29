@@ -45,6 +45,8 @@ HTTP 200。探针会先验证代理容器的 host-network VPN 直连，再验证
 输出 tinyproxy 末尾日志。若连接被拒绝，先检查
 `docker compose -f deploy/docker-compose-master.yml ps codex-egress-proxy` 及其日志；若返回 403，先确认 Linux
 主机自身已走 VPN，再核对代理是否仍使用 `network_mode: host`，不要给 Windows 从节点或阿里云节点增加回退路由。
+CD 流水线也会跑同一个探针，但只作为告警：失败时 run 摘要出现 warning 注解，部署本身照常算成功（见 ADR-034）。
+所以 Codex 登录报区域错误时，先去 Actions 里翻最近一次部署的这条 warning，而不是等流水线变红。
 
 ## 云服务器
 
