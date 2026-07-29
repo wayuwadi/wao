@@ -64,7 +64,11 @@ compose() {
 print_deployment_diagnostics() {
   echo 'Deployment health check failed; collecting the failed containers before rollback.' >&2
   compose ps -a >&2 || true
-  for service in wao-server wao-gateway; do
+  diagnostic_services="wao-server wao-gateway"
+  if [ "${role}" = "master" ]; then
+    diagnostic_services="codex-egress-proxy ${diagnostic_services}"
+  fi
+  for service in ${diagnostic_services}; do
     container_id="$(compose ps -aq "${service}" 2>/dev/null || true)"
     if [ -z "${container_id}" ]; then
       echo "No container was created for ${service}." >&2
@@ -131,17 +135,34 @@ for service in wao-server wao-gateway; do
 done
 case "${SKIP_IMAGE_BUILD:-false}" in
   true)
-    run_docker image inspect \
-      "wao-server:${WAO_IMAGE_TAG:-latest}" \
-      "wao-gateway:${WAO_IMAGE_TAG:-latest}" >/dev/null
+    required_images="wao-server:${WAO_IMAGE_TAG:-latest} wao-gateway:${WAO_IMAGE_TAG:-latest}"
+    if [ "${role}" = "master" ]; then
+      required_images="wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest} ${required_images}"
+    fi
+    # Deliberately split the trusted, internally constructed image list.
+    # shellcheck disable=SC2086
+    run_docker image inspect ${required_images} >/dev/null
     ;;
   false)
-    compose build wao-server wao-gateway
+    if [ "${role}" = "master" ]; then
+      compose build codex-egress-proxy wao-server wao-gateway
+    else
+      compose build wao-server wao-gateway
+    fi
     ;;
   *) echo 'SKIP_IMAGE_BUILD must be true or false.' >&2; exit 2 ;;
 esac
 
-if ! compose up -d --wait; then
+start_services() {
+  if [ "${role}" = "master" ]; then
+    # The proxy tag is reused between releases. Force recreation so Docker does
+    # not keep a healthy container that still points at the previous image ID.
+    compose up -d --force-recreate --wait codex-egress-proxy || return 1
+  fi
+  compose up -d --wait
+}
+
+if ! start_services; then
   print_deployment_diagnostics
   if run_docker image inspect wao-server:rollback wao-gateway:rollback >/dev/null 2>&1; then
     echo 'Deployment failed; restoring the previously running application images.' >&2

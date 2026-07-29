@@ -23,6 +23,10 @@ test -n "${proxy_id}" || {
   echo 'Linux 主节点没有运行 codex-egress-proxy 容器。' >&2
   exit 1
 }
+if ! run_docker exec "${proxy_id}" curl --version >/dev/null 2>&1; then
+  echo 'Codex 出站代理仍在运行不含 curl 的旧镜像，请重新构建并强制重建该容器。' >&2
+  exit 1
+fi
 
 probe_openai() {
   container_id="$1"
