@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
-import { updateEmailCredential, updateProfile, unlinkIdentity, apiCreateAccount } from '@/api/auth'
+import { updateEmailCredential, updateProfile, unlinkIdentity, apiCreateAccount, apiDeleteMemberAccount, apiResetMemberPassword } from '@/api/auth'
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import {
@@ -49,6 +49,7 @@ watchEffect(() => {
 
 const orgMembers = computed(() =>
   session.members.map((m) => ({
+    id: m.id,
     name: m.name, initial: m.initial, color: m.color, role: m.role,
     roleBg: m.role === '管理员' ? '#E9EDFB' : '#F0F1F4',
     roleColor: m.role === '管理员' ? '#3A4CC2' : '#5A5E6B',
@@ -62,6 +63,9 @@ const isAdmin = computed(() => session.currentUser.role === '管理员')
 const showCreateAccount = ref(false)
 const createForm = reactive({ name: '', email: '', password: '' })
 const createBusy = ref(false)
+const managingMemberId = ref<string | null>(null)
+const resetPassword = ref('')
+const memberBusy = ref(false)
 
 async function createAccount() {
   if (!createForm.name.trim() || !createForm.email.trim() || createForm.password.length < 8) {
@@ -80,6 +84,31 @@ async function createAccount() {
   } finally {
     createBusy.value = false
   }
+}
+
+async function resetMemberPassword(memberId: string) {
+  if (resetPassword.value.length < 8) return toast('新密码至少 8 位', 'ri-error-warning-line')
+  memberBusy.value = true
+  try {
+    await apiResetMemberPassword(memberId, resetPassword.value)
+    resetPassword.value = ''
+    managingMemberId.value = null
+    toast('密码已重置，请将新密码安全告知成员', 'ri-key-2-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '重置密码失败')
+  } finally { memberBusy.value = false }
+}
+async function deleteMemberAccount(memberId: string, name: string) {
+  if (!window.confirm(`确认删除「${name}」的账号吗？此操作不可恢复。`)) return
+  memberBusy.value = true
+  try {
+    await apiDeleteMemberAccount(memberId)
+    await session.refreshDirectory()
+    managingMemberId.value = null
+    toast(`已删除「${name}」的账号`, 'ri-delete-bin-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '删除账号失败')
+  } finally { memberBusy.value = false }
 }
 
 const prefRows = [
@@ -313,6 +342,12 @@ function demo(msg: string, icon?: string) {
               <span class="mem-av" :style="{ background: m.color }">{{ m.initial }}</span>
               <span class="mem-name">{{ m.name }}<span class="me-tag">{{ m.meTag }}</span></span>
               <span class="mem-role" :style="{ background: m.roleBg, color: m.roleColor }">{{ m.role }}</span>
+              <button v-if="isAdmin && !m.meTag" class="btn-ghost member-actions" @click="managingMemberId = managingMemberId === m.id ? null : m.id">管理</button>
+              <div v-if="managingMemberId === m.id" class="member-manage">
+                <input v-model="resetPassword" type="password" minlength="8" placeholder="输入至少 8 位的新密码" />
+                <button class="btn-primary sm" :disabled="memberBusy" @click="resetMemberPassword(m.id)">重置密码</button>
+                <button class="btn-danger sm" :disabled="memberBusy" @click="deleteMemberAccount(m.id, m.name)">删除账号</button>
+              </div>
             </div>
             <div class="hint">管理员可直接为成员开账号：填写姓名、邮箱和初始密码，创建后把凭据交给对方即可登录；对方可在「账号与登录」中随时改密码。WAO 不区分「个人版 / 团队版」：内容归属由负责人、参与人与可见范围表达。</div>
           </div>
@@ -731,6 +766,9 @@ function demo(msg: string, icon?: string) {
   padding: 10px 0;
   border-bottom: 1px solid var(--wao-divider-2);
 }
+.member-actions { margin-left: 8px; }
+.member-manage { display: flex; width: 100%; gap: 8px; padding: 8px 0 2px 42px; }
+.member-manage input { min-width: 0; flex: 1; }
 .mem-av {
   width: 30px;
   height: 30px;

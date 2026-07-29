@@ -13,6 +13,19 @@ paths:
       summary: 成员列表
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/MemberListResponse' } } } }
+  /members/{memberId}/password:
+    patch:
+      summary: 管理员重置成员本地登录密码
+      parameters: [{ name: memberId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ResetMemberPasswordRequest' } } }
+      responses: { '200': { description: OK }, '400': { description: 密码不合法 }, '401': { description: 非管理员 } }
+  /members/{memberId}/account:
+    delete:
+      summary: 管理员删除成员账号与登录凭据
+      parameters: [{ name: memberId, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK }, '400': { description: 删除自己或最后管理员 }, '401': { description: 非管理员 } }
   /org:
     get:
       summary: 组织信息
@@ -548,6 +561,11 @@ components:
         initial: { type: string }
         color: { type: string }
         role: { type: string }
+    ResetMemberPasswordRequest:
+      type: object
+      required: [password]
+      properties:
+        password: { type: string, minLength: 8, maxLength: 128 }
     Project:
       type: object
       description: 字段与前端 Project 一致（含 milestones/trend/blockers/activity 等嵌套）

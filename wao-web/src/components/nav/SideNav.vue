@@ -80,6 +80,10 @@ function openFavorite(f: Favorite) {
   else if (f.type === 'task') router.push(`/projects/${f.parentId ?? ''}?task=${f.targetId}`)
   else router.push(`/kb/${f.parentId ?? ''}?doc=${f.targetId}`)
 }
+function removeFavorite(f: Favorite, event: MouseEvent) {
+  event.stopPropagation()
+  favorites.toggle(f.type, f.targetId, f.label, f.parentId)
+}
 </script>
 
 <template>
@@ -153,6 +157,7 @@ function openFavorite(f: Favorite) {
             >
               <i :class="FAV_ICONS[f.type]"></i>
               <span class="item-label">{{ f.label }}</span>
+              <span class="fav-remove" title="取消收藏" @click="removeFavorite(f, $event)"><i class="ri-star-fill"></i></span>
             </button>
           </div>
         </template>
@@ -339,6 +344,9 @@ function openFavorite(f: Favorite) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.fav-remove { display: inline-flex; padding: 4px; color: #d6a11d; border-radius: 5px; }
+.fav-remove:hover { background: #fff2cc; }
+.fav-remove i { color: inherit; font-size: 14px; }
 .item:hover {
   background: #e9eaef;
 }

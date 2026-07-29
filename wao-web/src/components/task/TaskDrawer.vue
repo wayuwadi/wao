@@ -43,6 +43,7 @@ const tv = computed(() => (task.value ? decoTask(task.value) : null))
 const menu = ref<'status' | 'pr' | 'owner' | 'prop' | 'share' | 'group' | null>(null)
 const newSub = ref('')
 const commentText = ref('')
+const mentionOpen = ref(false)
 const sendingComment = ref(false)
 const aiStarting = ref(false)
 const aiLauncherOpen = ref(false)
@@ -178,6 +179,16 @@ const comments = computed(() =>
     }
   }),
 )
+const mentionQuery = computed(() => {
+  const match = commentText.value.match(/(?:^|\s)@([^\s@]*)$/)
+  return match ? (match[1] ?? '').toLowerCase() : null
+})
+const mentionCandidates = computed(() => mentionQuery.value === null ? [] : session.members
+  .filter((m) => m.name.toLowerCase().includes(mentionQuery.value!)))
+function insertMention(name: string) {
+  commentText.value = commentText.value.replace(/(^|\s)@[^\s@]*$/, `$1@${name} `)
+  mentionOpen.value = false
+}
 
 // ---- 评论的修改 / 删除 ----
 /** 正在编辑的评论下标；null 表示没有在编辑。 */
@@ -599,6 +610,20 @@ function addCustom(type: string) {
   data.patchTask(t.id, { custom: [...t.custom, { name: `未命名属性（${type}）`, value: '—' }] }, '添加了自定义属性')
   menu.value = null
 }
+function updateCustom(index: number, field: 'name' | 'value', event: Event) {
+  const t = task.value
+  if (!t) return
+  const value = (event.target as HTMLInputElement).value.trim()
+  const current = t.custom[index]
+  if (!current || !value || value === current[field]) return
+  const custom = t.custom.map((item, i) => i === index ? { ...item, [field]: value } : item)
+  data.patchTask(t.id, { custom }, '修改了自定义属性')
+}
+function removeCustom(index: number) {
+  const t = task.value
+  if (!t) return
+  data.patchTask(t.id, { custom: t.custom.filter((_, i) => i !== index) }, '删除了自定义属性')
+}
 function gotoProject() {
   const pid = task.value?.project
   close()
@@ -987,7 +1012,12 @@ function demo(msg: string) {
             <div class="comment-input">
               <span class="c-av" :style="{ background: session.currentUser.color }">{{ session.currentUser.initial }}</span>
               <div class="ci-wrap">
-                <input v-model="commentText" :disabled="sendingComment" placeholder="写评论，回车发送；@成员名 对方会收到飞书通知" @keydown="commentKey" />
+                <input v-model="commentText" :disabled="sendingComment" placeholder="写评论，回车发送；@成员名 对方会收到飞书通知" @focus="mentionOpen = true" @input="mentionOpen = true" @keydown="commentKey" />
+                <div v-if="mentionOpen && mentionCandidates.length" class="mention-menu">
+                  <button v-for="member in mentionCandidates" :key="member.id" type="button" @mousedown.prevent="insertMention(member.name)">
+                    <span :style="{ background: member.color }">{{ member.initial }}</span>{{ member.name }}
+                  </button>
+                </div>
                 <button class="send" :disabled="!commentText.trim() || sendingComment" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ sendingComment ? '发送中' : '发送' }}</button>
               </div>
             </div>
@@ -1156,8 +1186,9 @@ function demo(msg: string) {
           <div class="prop-section">
             <div class="props-label sm">自定义属性</div>
             <div v-for="(cp, i) in task.custom" :key="i" class="custom-row">
-              <span class="custom-name ellip">{{ cp.name }}</span>
-              <span class="custom-val ellip">{{ cp.value }}</span>
+              <input class="custom-name" :value="cp.name" aria-label="属性名称" @change="updateCustom(i, 'name', $event)" />
+              <input class="custom-val" :value="cp.value" aria-label="属性值" @change="updateCustom(i, 'value', $event)" />
+              <button class="custom-delete" title="删除属性" @click="removeCustom(i)"><i class="ri-delete-bin-line"></i></button>
             </div>
             <button class="text-btn small" @click="menu = menu === 'prop' ? null : 'prop'"><i class="ri-add-line"></i>添加属性</button>
             <div v-if="menu === 'prop'" class="pmenu w130 up">
@@ -2096,6 +2127,7 @@ function demo(msg: string) {
   flex: 1;
   display: flex;
   gap: 8px;
+  position: relative;
 }
 .ci-wrap input {
   flex: 1;
@@ -2131,6 +2163,10 @@ function demo(msg: string) {
 .send i {
   font-size: 13px;
 }
+.mention-menu { position: absolute; z-index: 8; left: 0; right: 62px; bottom: 38px; background: #fff; border: 1px solid var(--wao-line-control); border-radius: 8px; box-shadow: 0 8px 20px rgba(16,18,28,.14); padding: 4px; }
+.mention-menu button { width: 100%; border: 0; background: transparent; text-align: left; padding: 6px; display:flex; align-items:center; gap: 7px; border-radius: 6px; cursor:pointer; }
+.mention-menu button:hover { background: var(--wao-primary-soft); }
+.mention-menu span { width: 20px; height:20px; border-radius:50%; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:10px; }
 
 /* 属性栏 */
 .props {
@@ -2396,7 +2432,14 @@ function demo(msg: string) {
   min-width: 0;
   font-size: 12.5px;
   color: var(--wao-text-2);
+  border: 0;
+  background: transparent;
+  padding: 3px;
 }
+.custom-name { border: 0; background: transparent; padding: 3px; min-width: 0; }
+.custom-name:focus, .custom-val:focus { outline: 1px solid var(--wao-primary); border-radius: 4px; background: #fff; }
+.custom-delete { border: 0; background: transparent; color: var(--wao-text-faint); cursor: pointer; padding: 3px; }
+.custom-delete:hover { color: #cf3b3b; }
 
 .act-wrap {
   position: relative;
