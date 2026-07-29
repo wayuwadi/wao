@@ -354,6 +354,42 @@ OAuth 下发前会先把快过期的 access token 续期。
 
 下载不落库：对外分享的是前端下载页 `/f/{id}`，答对一道人机校验题才换得到一张一次性票据（进程内存，120 秒有效、用完即废），下载接口只认票据或本人登录会话（见 ADR-020）。
 
+## CalDAV 日历域
+
+### caldav_account（账户）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 账户 id（`cda` 前缀） |
+| member_id | VARCHAR(32) | 归属成员；`/api/caldav/*` 只在自己的账户内生效 |
+| name | VARCHAR(128) | 展示名，缺省时取服务器主机名 |
+| server_url / username | VARCHAR | CalDAV 服务器地址与登录名 |
+| password_ciphertext | VARBINARY(1024) | AES-256-GCM 密文（复用 `WAO_VAULT_KEY`，同 vault_item） |
+| password_nonce | VARBINARY(32) | 本次加密的随机 nonce |
+| status | VARCHAR(16) | `ok` / `error`，最近一次同步的结果 |
+| last_sync_at / sync_error | DATETIME / VARCHAR(512) | 上次成功同步时间与最近的错误摘要 |
+
+### caldav_calendar（订阅的日历）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 日历 id（`cdc` 前缀） |
+| account_id | VARCHAR(32) FK→caldav_account | 所属账户 |
+| href | VARCHAR(512) | 服务器上的 collection 路径，同步时定位用 |
+| name / color | VARCHAR | 展示名与颜色（服务器没给颜色时轮转内置色板） |
+| enabled | TINYINT(1) | 停用后事件不再出现在日历页，也不再参与同步 |
+| ord | INT | 展示顺序 |
+
+### caldav_event（事件只读副本）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(40) PK | 事件 id（`cde` 前缀，重复事件每次展开一行） |
+| calendar_id | VARCHAR(32) FK→caldav_calendar | 所属日历 |
+| uid | VARCHAR(255) | iCalendar UID |
+| summary / location | VARCHAR | 标题与地点 |
+| start_at / end_at | DATETIME | 开始 / 结束时间（上海时区本地时间） |
+| all_day | TINYINT(1) | 全天事件 |
+
+事件是服务端从 CalDAV 服务器单向拉取的只读副本：每 15 分钟定时同步一次，窗口为过去 90 天到未来 400 天，重复规则（RRULE）在服务端展开后落库；每次同步按日历整体重建（先删后插），因此跨节点重复执行也是幂等的。接口契约见 `docs/api/caldav.yaml`。
+
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
 - `V3__content_schema.sql` 内容域建表 + `V4__content_seed.sql` 种子。
@@ -391,4 +427,5 @@ OAuth 下发前会先把快过期的 access token 续期。
 - `V39__ai_account_oauth.sql`：AI 账号 OAuth 会话、令牌续期和额度窗口。
 - `V40__codex_oauth_custom_api.sql`：Codex OAuth、自定义 Responses API 配置与单次运行账号路由（见 ADR-032）。
 - `V41__codex_device_login.sql`：Codex 设备码会话和服务端轮询状态（见 ADR-033）。
+- `V42__caldav_accounts.sql`：CalDAV 账户、订阅日历与事件只读副本。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

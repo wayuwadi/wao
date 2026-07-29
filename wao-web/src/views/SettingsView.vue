@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch, watchEffect } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
@@ -11,20 +11,28 @@ import {
   fetchSiteInfo, fetchWebhookConfig, saveSiteInfo, saveWebhookConfig, testWebhook,
   type FeishuWebhookConfig, type SiteInfo,
 } from '@/api/system'
+import {
+  apiAddCaldavAccount, apiDeleteCaldavAccount, apiSyncCaldavAccount, apiToggleCaldavCalendar,
+  fetchCaldavAccounts, type CaldavAccount, type CaldavCalendar,
+} from '@/api/caldav'
 import { useDataStore } from '@/stores/data'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 
 const session = useSessionStore()
 const data = useDataStore()
+const route = useRoute()
 const router = useRouter()
 
 const NAV = [
-  { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members'], ['日历账户 · CalDAV', 'caldav']] },
+  { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
   { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['通知 · 飞书 Webhook', 'webhook'], ['AI 账号', 'ai-accounts']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['日历账户 · CalDAV', 'caldav'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
 ] as const
 
-const tab = ref('members')
+const TAB_IDS = NAV.flatMap((g) => g.items.map((it) => it[1])) as readonly string[]
+// 支持从日历页等入口带 ?tab=caldav 直达对应设置项。
+const initialTab = typeof route.query.tab === 'string' && TAB_IDS.includes(route.query.tab) ? route.query.tab : 'members'
+const tab = ref(initialTab)
 const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
 const profileForm = reactive({ name: '', initial: '' })
 const accountBusy = ref(false)
@@ -52,11 +60,90 @@ const orgMembers = computed(() =>
   })),
 )
 
-const caldavCals = reactive([
-  { name: '家庭日历', dot: '#0E8C8C', on: true },
-  { name: '工作日历', dot: '#C05D8E', on: true },
-  { name: '节假日订阅', dot: '#B9821F', on: false },
-])
+// ---- 个人 · CalDAV 日历账户 ----
+// null = 还没加载过；加载失败落成 []，界面上有重试入口。
+const caldavAccounts = ref<CaldavAccount[] | null>(null)
+const caldavLoading = ref(false)
+const caldavBusy = ref<string | null>(null)
+const showCaldavForm = ref(false)
+const caldavForm = reactive({ name: '', serverUrl: '', username: '', password: '' })
+
+async function loadCaldavAccounts() {
+  caldavLoading.value = true
+  try {
+    caldavAccounts.value = await fetchCaldavAccounts()
+  } catch (error) {
+    caldavAccounts.value = caldavAccounts.value ?? []
+    toast(error instanceof Error ? error.message : '读取 CalDAV 账户失败')
+  } finally {
+    caldavLoading.value = false
+  }
+}
+
+async function addCaldavAccount() {
+  if (!caldavForm.serverUrl.trim() || !caldavForm.username.trim() || !caldavForm.password) {
+    toast('请填写服务器地址、账号和密码')
+    return
+  }
+  caldavBusy.value = 'add'
+  try {
+    const account = await apiAddCaldavAccount({
+      name: caldavForm.name.trim() || undefined,
+      serverUrl: caldavForm.serverUrl.trim(),
+      username: caldavForm.username.trim(),
+      password: caldavForm.password,
+    })
+    caldavAccounts.value = [...(caldavAccounts.value ?? []), account]
+    Object.assign(caldavForm, { name: '', serverUrl: '', username: '', password: '' })
+    showCaldavForm.value = false
+    toast(`已连接，发现 ${account.calendars.length} 个日历并完成首次同步`, 'ri-calendar-check-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '连接失败，请检查地址与凭据')
+  } finally {
+    caldavBusy.value = null
+  }
+}
+
+async function removeCaldavAccount(account: CaldavAccount) {
+  if (!window.confirm(`删除「${account.name}」？其订阅日历与事件副本会一并移除，不影响服务器上的数据。`)) return
+  caldavBusy.value = account.id
+  try {
+    await apiDeleteCaldavAccount(account.id)
+    caldavAccounts.value = (caldavAccounts.value ?? []).filter((a) => a.id !== account.id)
+    toast(`已删除「${account.name}」`, 'ri-delete-bin-6-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '删除失败')
+  } finally {
+    caldavBusy.value = null
+  }
+}
+
+async function syncCaldavAccount(account: CaldavAccount) {
+  caldavBusy.value = account.id
+  try {
+    const fresh = await apiSyncCaldavAccount(account.id)
+    caldavAccounts.value = (caldavAccounts.value ?? []).map((a) => (a.id === fresh.id ? fresh : a))
+    toast(fresh.status === 'ok' ? '同步完成，日历页已是最新' : `同步失败：${fresh.syncError ?? '未知原因'}`,
+      fresh.status === 'ok' ? 'ri-refresh-line' : 'ri-error-warning-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '同步失败')
+  } finally {
+    caldavBusy.value = null
+  }
+}
+
+async function toggleCaldavCalendar(cal: CaldavCalendar) {
+  caldavBusy.value = cal.id
+  try {
+    const fresh = await apiToggleCaldavCalendar(cal.id, !cal.enabled)
+    cal.enabled = fresh.enabled
+    toast(fresh.enabled ? `已订阅「${cal.name}」` : `已停用「${cal.name}」`, 'ri-calendar-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '操作失败')
+  } finally {
+    caldavBusy.value = null
+  }
+}
 
 const prefRows = [
   { name: '语言', desc: '界面显示语言', value: '简体中文' },
@@ -194,12 +281,9 @@ async function toggleProjectNotify(id: string) {
 watch(tab, (t) => {
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
   if (t === 'webhook' && !webhook.value) loadWebhook()
+  if (t === 'caldav' && caldavAccounts.value === null) loadCaldavAccounts()
 }, { immediate: true })
 
-function toggleCal(c: { on: boolean }) {
-  c.on = !c.on
-  toast('演示：订阅开关在正式版本生效', 'ri-calendar-line')
-}
 async function logout() {
   await session.logout()
   await router.push('/login')
@@ -292,28 +376,68 @@ function demo(msg: string, icon?: string) {
         <!-- CalDAV -->
         <template v-else-if="tab === 'caldav'">
           <div class="s-h1">日历账户 · CalDAV</div>
-          <div class="card">
-            <div class="card-row wrap">
-              <div class="card-title">主账户</div>
-              <span class="connected"><span class="c-dot"></span>已连接</span>
-              <div class="spacer"></div>
-              <button class="btn-ghost sm" @click="demo('正在同步 CalDAV…已是最新（演示）', 'ri-refresh-line')"><i class="ri-refresh-line"></i>立即同步</button>
-              <button class="btn-ghost sm" @click="demo('演示：添加 CalDAV 账户在正式版本提供')"><i class="ri-add-line"></i>添加账户</button>
+
+          <div v-if="caldavLoading && caldavAccounts === null" class="card">
+            <div class="hint">正在读取 CalDAV 账户…</div>
+          </div>
+
+          <template v-else>
+            <div v-if="(caldavAccounts ?? []).length === 0" class="card">
+              <div class="card-title">还没有连接日历账户</div>
+              <div class="hint">连接 iCloud、飞书、Nextcloud 等支持 CalDAV 的日历后，事件会与系统日历合并显示，每 15 分钟自动同步一次。</div>
             </div>
-            <div class="kv-list">
-              <div class="kv"><span class="kv-k">服务器</span><span class="kv-v wao-mono">https://dav.wayuwa.example/caldav</span></div>
-              <div class="kv"><span class="kv-k">账号</span><span class="kv-v">wg@wayuwa.example</span></div>
-              <div class="kv"><span class="kv-k">同步</span><span class="kv-v">每 15 分钟 · 上次同步 今天 12:10</span></div>
-            </div>
-            <div class="sub-block">
-              <div class="sub-label">订阅的日历（与系统日历合并显示）</div>
-              <div v-for="(c, i) in caldavCals" :key="i" class="cal-row">
-                <span class="cal-dot" :style="{ background: c.dot }"></span>
-                <span class="cal-name">{{ c.name }}</span>
-                <button class="toggle" :class="{ on: c.on }" title="启用 / 停用" @click="toggleCal(c)"><span class="knob"></span></button>
+
+            <div v-for="account in caldavAccounts ?? []" :key="account.id" class="card">
+              <div class="card-row wrap">
+                <div class="card-title">{{ account.name }}</div>
+                <span class="connected" :class="{ err: account.status !== 'ok' }">
+                  <span class="c-dot"></span>{{ account.status === 'ok' ? '已连接' : '同步异常' }}
+                </span>
+                <div class="spacer"></div>
+                <button class="btn-ghost sm" :disabled="caldavBusy === account.id" @click="syncCaldavAccount(account)">
+                  <i class="ri-refresh-line"></i>{{ caldavBusy === account.id ? '同步中…' : '立即同步' }}
+                </button>
+                <button class="btn-ghost sm danger" :disabled="caldavBusy === account.id" @click="removeCaldavAccount(account)">
+                  <i class="ri-delete-bin-line"></i>删除
+                </button>
+              </div>
+              <div class="kv-list">
+                <div class="kv"><span class="kv-k">服务器</span><span class="kv-v wao-mono">{{ account.serverUrl }}</span></div>
+                <div class="kv"><span class="kv-k">账号</span><span class="kv-v">{{ account.username }}</span></div>
+                <div class="kv"><span class="kv-k">同步</span><span class="kv-v">每 15 分钟 · {{ account.lastSyncAt ? `上次同步 ${account.lastSyncAt}` : '尚未同步' }}</span></div>
+                <div v-if="account.syncError" class="kv"><span class="kv-k">错误</span><span class="kv-v err-text">{{ account.syncError }}</span></div>
+              </div>
+              <div class="sub-block">
+                <div class="sub-label">订阅的日历（与系统日历合并显示）</div>
+                <div v-if="account.calendars.length === 0" class="hint">这个账户下没有发现日历</div>
+                <div v-for="c in account.calendars" :key="c.id" class="cal-row">
+                  <span class="cal-dot" :style="{ background: c.color }"></span>
+                  <span class="cal-name">{{ c.name }}</span>
+                  <button class="toggle" :class="{ on: c.enabled }" :disabled="caldavBusy === c.id" title="启用 / 停用" @click="toggleCaldavCalendar(c)"><span class="knob"></span></button>
+                </div>
               </div>
             </div>
-          </div>
+
+            <div class="card">
+              <div class="card-row">
+                <div class="card-title">添加账户</div>
+                <div class="spacer"></div>
+                <button v-if="!showCaldavForm" class="btn-primary sm" @click="showCaldavForm = true"><i class="ri-add-line"></i>连接 CalDAV</button>
+              </div>
+              <form v-if="showCaldavForm" class="site-form" @submit.prevent="addCaldavAccount">
+                <label><span>显示名称</span><input v-model.trim="caldavForm.name" maxlength="64" placeholder="例如 家庭日历（可留空）" /></label>
+                <label><span>服务器地址</span><input v-model.trim="caldavForm.serverUrl" required placeholder="https://caldav.example.com" /></label>
+                <label><span>账号</span><input v-model.trim="caldavForm.username" required placeholder="登录邮箱或用户名" /></label>
+                <label><span>密码</span><input v-model="caldavForm.password" type="password" required placeholder="账户密码或应用专用密码" /></label>
+                <div class="hint">密码加密存储，仅用于向你的日历服务器同步；iCloud 等需使用「应用专用密码」。</div>
+                <div class="site-actions">
+                  <button class="btn-primary" :disabled="caldavBusy === 'add'">{{ caldavBusy === 'add' ? '连接中…' : '连接并同步' }}</button>
+                  <button type="button" class="btn-ghost" :disabled="caldavBusy === 'add'" @click="showCaldavForm = false">取消</button>
+                </div>
+              </form>
+              <div v-else class="hint">支持 iCloud、飞书、Nextcloud、Fastmail 等标准 CalDAV 服务。</div>
+            </div>
+          </template>
         </template>
 
         <!-- 系统 · 网站信息与备案 -->
@@ -790,6 +914,11 @@ function demo(msg: string, icon?: string) {
   border-radius: 50%;
   background: var(--wao-success);
 }
+.connected.err { color: var(--wao-danger); }
+.connected.err .c-dot { background: var(--wao-danger); }
+.err-text { color: var(--wao-danger); }
+.btn-ghost.danger { color: var(--wao-danger); }
+.btn-ghost.danger:hover { border-color: var(--wao-danger); }
 .kv-list {
   margin-top: 10px;
   display: flex;
