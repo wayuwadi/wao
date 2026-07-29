@@ -29,6 +29,7 @@ import cn.wayuwa.wao.service.AiRunnerWakeService;
 import cn.wayuwa.wao.service.AiRunnerLifecycleService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -107,6 +108,13 @@ public class AiRunController {
         wakeService.updateConfig(runnerId, request);
         return ApiResponse.ok(service.listRunners().stream()
                 .filter(runner -> runner.id().equals(runnerId)).findFirst().orElseThrow());
+    }
+
+    /** 解除一台执行电脑的接入；返回解除后剩下的电脑列表。 */
+    @DeleteMapping("/runners/{runnerId}")
+    public ApiResponse<List<AiRunnerDto>> removeRunner(@PathVariable String runnerId) {
+        lifecycleService.notifyRemoved(service.removeRunner(runnerId));
+        return ApiResponse.ok(service.listRunners());
     }
 
     @PostMapping("/runners/{runnerId}/wake")

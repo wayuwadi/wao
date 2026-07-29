@@ -213,6 +213,17 @@ paths:
     get: { summary: 执行电脑列表、接入的 AI 工具、在线状态与槽位占用, responses: { '200': { description: OK } } }
   /ai/runners/pair-code:
     post: { summary: 生成十分钟有效的一次性电脑配对码, responses: { '200': { description: OK } } }
+  /ai/runners/{runnerId}:
+    delete:
+      summary: 解除一台执行电脑的接入；节点令牌立即作废，返回剩下的电脑列表
+      description: |
+        这台电脑还有 claimed/running 的运行时返回 400，先取消或等它跑完再解除。解除会把排队中
+        点名它的运行改回自动分配，并清空把它设为首选电脑的项目配置；历史运行记录保留。
+      parameters: [ { name: runnerId, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: 返回解除后剩下的执行电脑 }
+        '400': { description: 这台电脑还有 AI 任务在执行 }
+        '404': { description: 执行电脑不存在 }
   /ai/runs:
     get:
       summary: 最近 100 条 AI 运行

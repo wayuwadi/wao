@@ -32,6 +32,9 @@ PRINT_LOCK = threading.Lock()
 MAX_LOG_BYTES = 2 * 1024 * 1024
 # 运行结束后保留 worktree 供人工复查，超过这个天数才回收，避免磁盘被历史任务占满。
 RUN_WORKTREE_TTL_DAYS = 7
+# 被 WAO 解除接入后的退出码（EX_CONFIG）：不是崩溃，重启也没用，systemd 用
+# RestartPreventExitStatus=78 认这个码，避免每十秒重启一次刷屏。
+EXIT_PAIRING_REVOKED = 78
 ENGINE_LABELS = {"codex": "Codex", "claude": "Claude Code", "qoder": "Qoder"}
 # 引擎 id 到本机候选命令名的映射，按顺序探测第一个存在的。Qoder 的命令名与引擎 id
 # 不同，且国际版叫 qodercli、国内版叫 qoderclicn，两个名字都要认。
@@ -66,6 +69,10 @@ def log(message: str) -> None:
             output.write(line + "\n")
 
 
+class PairingRevokedError(RuntimeError):
+    """本机的节点令牌已经不被 WAO 认可：多半是后台解除了这台电脑的接入。"""
+
+
 class WaoApi:
     def __init__(self, server: str, token: str | None = None) -> None:
         self.server = server.rstrip("/")
@@ -90,6 +97,8 @@ class WaoApi:
                 envelope = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 401 and self.token:
+                raise PairingRevokedError(f"WAO 不再认可本机令牌: {detail[:300]}") from exc
             raise RuntimeError(f"WAO 返回 HTTP {exc.code}: {detail[:300]}") from exc
         if envelope.get("code") != 0:
             raise RuntimeError(envelope.get("message") or "WAO 请求失败")
@@ -100,6 +109,11 @@ def load_state() -> dict[str, str]:
     if not STATE_FILE.exists():
         return {}
     return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+
+
+def forget_pairing() -> None:
+    """删掉本机保存的节点令牌，让这台电脑彻底回到未接入状态。"""
+    STATE_FILE.unlink(missing_ok=True)
 
 
 def save_state(state: dict[str, str]) -> None:
@@ -1141,6 +1155,13 @@ def main() -> int:
                             execute_claim, api, claim, root, args.sandbox, git_command,
                             engine_commands, cli_environment, args.claude_model,
                             args.git_protocol, github_token_ready))
+            except PairingRevokedError as exc:
+                # WAO 后台解除了这台电脑的接入：令牌已经作废，重试没有意义，
+                # 清掉本地令牌后退出，需要重新接入时用新的配对码启动即可。
+                log(f"WAO 已解除本机的接入（{exc}）；已删除本地令牌 {STATE_FILE}，Runner 退出。"
+                    "如需重新接入，请在 AI 控制台生成新的配对码后带 --pair-code 启动一次")
+                forget_pairing()
+                return EXIT_PAIRING_REVOKED
             except Exception as exc:  # noqa: BLE001
                 log(f"连接 WAO 失败，10 秒后重试：{exc}")
             time.sleep(10)

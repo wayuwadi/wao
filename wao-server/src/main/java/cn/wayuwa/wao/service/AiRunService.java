@@ -48,6 +48,7 @@ import cn.wayuwa.wao.mapper.AiTaskRunMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -294,6 +295,44 @@ public class AiRunService {
     }
 
     /**
+     * 解除一台执行电脑的接入：删除节点记录，同时作废它保存在本机的令牌。
+     *
+     * <p>还有任务在这台电脑上跑时拒绝解除——直接删记录会让这些运行永远收不到回执，
+     * 只能等超时回收，用户看到的是任务莫名卡住。排队中点名这台电脑的运行会改回自动
+     * 分配，项目里把它设成首选电脑的配置也一并清空，否则这些运行永远等不到人领。
+     *
+     * @param runnerId 执行电脑 id
+     * @return 被解除的那台电脑解除前的展示信息，供调用方发通知
+     * @throws NotFoundException   电脑不存在（例如两个页面同时点了解除）
+     * @throws BadRequestException 这台电脑还有 AI 任务在执行
+     */
+    @Transactional
+    public synchronized AiRunnerDto removeRunner(String runnerId) {
+        AiRunnerNodeEntity runner = runnerMapper.selectById(runnerId);
+        if (runner == null) throw new NotFoundException("执行电脑不存在：" + runnerId);
+        AiRunnerDto removed = listRunners().stream()
+                .filter(r -> r.id().equals(runnerId)).findFirst().orElseThrow();
+        long active = countRuns(new LambdaQueryWrapper<AiTaskRunEntity>()
+                .eq(AiTaskRunEntity::getRunnerId, runnerId)
+                .in(AiTaskRunEntity::getStatus, List.of("claimed", "running")));
+        if (active > 0) {
+            throw new BadRequestException(runner.getName() + " 上还有 " + active
+                    + " 条 AI 任务在执行，请先取消这些运行或等它跑完，再解除接入");
+        }
+        int released = runMapper.update(null, new UpdateWrapper<AiTaskRunEntity>()
+                .eq("requested_runner_id", runnerId)
+                .eq("status", "queued")
+                .set("requested_runner_id", null));
+        int unpinned = configMapper.update(null, new UpdateWrapper<AiProjectConfigEntity>()
+                .eq("preferred_runner_id", runnerId)
+                .set("preferred_runner_id", null));
+        runnerMapper.deleteById(runnerId);
+        LOG.info("Removed AI runner {} ({}); released {} queued runs and {} project preferences",
+                runnerId, runner.getName(), released, unpinned);
+        return removed;
+    }
+
+    /**
      * 把一个或多个任务加入队列；同一任务（或同一条子任务）已有活动运行时不会重复入队。
      *
      * @param subId    只跑主任务下的某一条子任务时传它的标识；留空表示跑整个任务
@@ -534,6 +573,10 @@ public class AiRunService {
         if (!FINISHED.contains(run.getStatus()) || !StringUtils.hasText(run.getSessionId())
                 || !StringUtils.hasText(run.getRunnerId())) {
             throw new BadRequestException("这次运行无法恢复会话，请使用基于报错重跑");
+        }
+        // 会话和 worktree 都在原来那台电脑上；它已经被解除接入，这次续跑没人能领。
+        if (runnerMapper.selectById(run.getRunnerId()) == null) {
+            throw new BadRequestException("原来那台执行电脑已解除接入，会话无法恢复，请使用基于报错重跑");
         }
         boolean optimizing = "succeeded".equals(run.getStatus());
         run.setPendingInput(limit(ShareService.absolutizeMarkdown(input, baseUrl), 4000));
@@ -889,13 +932,19 @@ public class AiRunService {
                     StringUtils.hasText(run.getSubId()) ? subTitle(run.getTaskId(), run.getSubId()) : null,
                     run.getProjectId(), project == null ? run.getProjectId() : project.getName(),
                     blankOr(run.getEngine(), DEFAULT_ENGINE), run.getStatus(),
-                    run.getRunnerId(), runner == null ? null : runner.getName(), run.getRequestedRunnerId(), run.getRequestedBy(),
+                    run.getRunnerId(), runnerName(run, runner), run.getRequestedRunnerId(), run.getRequestedBy(),
                     run.getBranchName(), run.getRetryOfRunId(),
                     run.getResultSummary(), run.getLatestProgress(), text(run.getProgressUpdatedAt()),
                     progressByRun.getOrDefault(run.getId(), List.of()), toUsageDto(run),
                     run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
                     text(run.getStartedAt()), text(run.getFinishedAt()));
         }).toList();
+    }
+
+    /** 历史运行的执行电脑名；电脑已被解除接入时说清楚，别显示成「未分配电脑」。 */
+    private static String runnerName(AiTaskRunEntity run, AiRunnerNodeEntity runner) {
+        if (runner != null) return runner.getName();
+        return StringUtils.hasText(run.getRunnerId()) ? "已解除接入的电脑" : null;
     }
 
     private void appendProgress(AiTaskRunEntity run, String kind, String content) {

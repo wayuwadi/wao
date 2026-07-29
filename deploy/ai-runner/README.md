@@ -174,3 +174,17 @@ cgroup，子进程会一起结束。
 选择“无论用户是否登录都运行”（Windows 的对应选项，或 Linux 的 `loginctl enable-linger`）
 之前，先确认该系统账号已经完成对应 AI CLI 与 GitHub 登录；Linux 上开了 linger 但没有图形
 会话时，`gh` 依赖的系统钥匙环可能是锁定的，GitHub 操作会失败。
+
+## 解除接入
+
+不再让某台电脑接任务时，在 AI 控制台「执行电脑」页点这张卡片右上角的删除按钮，确认后
+WAO 会删掉节点记录并作废它的令牌。那台电脑还有任务在跑时不允许解除，先取消或等它跑完。
+
+被解除的电脑不需要人去关：Runner 下一次心跳（最多 10 秒）会收到 401，删掉本机的
+`~/.wao/ai-runner.json` 并以退出码 78 退出，日志里写清原因。systemd 单元里的
+`RestartPreventExitStatus=78` 保证不会再被拉起——旧版单元文件没有这行，会每 10 秒重启并因
+未配对而失败，照 [`wao-ai-runner.service.example`](wao-ai-runner.service.example) 补上这行，
+或者直接 `systemctl --user disable --now wao-ai-runner`（Windows 上禁用对应的计划任务）。
+
+要重新接入，在控制台生成新的配对码，再带 `--pair-code` 启动一次即可；历史运行记录不受影响，
+它们在页面上显示为「已解除接入的电脑」。

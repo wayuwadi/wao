@@ -20,6 +20,10 @@ export const fetchAiRunners = () => data<AiRunner[]>(http.get('/api/ai/runners')
 export const updateRunnerMaxConcurrency = (runnerId: string, maxConcurrency: number) =>
   data<AiRunner>(http.put(`/api/ai/runners/${runnerId}/max-concurrency`, { maxConcurrency }))
 
+/** 解除一台执行电脑的接入；返回解除后剩下的电脑列表。 */
+export const removeAiRunner = (runnerId: string) =>
+  data<AiRunner[]>(http.delete(`/api/ai/runners/${runnerId}`))
+
 /** 一键把服务端打包的最新 Runner 脚本下发给所有执行电脑。 */
 export const requestRunnerScriptUpdate = () => data<AiRunner[]>(http.post('/api/ai/runners/update-script'))
 export const wakeAiRunner = (runnerId: string) =>
