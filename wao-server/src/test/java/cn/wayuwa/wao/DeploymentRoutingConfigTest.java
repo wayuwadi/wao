@@ -37,6 +37,8 @@ class DeploymentRoutingConfigTest {
                 .contains("nginx -t")
                 .contains("probe-codex-egress.sh");
         assertThat(probe)
+                .contains("elif sudo -n docker info")
+                .contains("sudo -n docker \"$@\"")
                 .contains("label=com.docker.compose.service=wao-server")
                 .contains("https://auth.openai.com/api/accounts/deviceauth/usercode")
                 .contains("if [ \"${status}\" != '200' ]");
