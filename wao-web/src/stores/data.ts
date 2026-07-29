@@ -69,8 +69,8 @@ import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import { MAX_TASK_GROUPS } from '@/types'
 import type {
-  AutomationJob, Comment, Doc, DocBlock, ImageRef, KnowledgeBase, Project, Task, TaskGroup, TaskStep, TrashEntry,
-  VaultGroup, VaultItem,
+  AiRun, AutomationJob, Comment, Doc, DocBlock, ImageRef, KnowledgeBase, Project, Task, TaskGroup, TaskStep,
+  TrashEntry, VaultGroup, VaultItem,
 } from '@/types'
 
 /** 兜底分组的 id：项目还没建过分组时，所有任务都算落在它里面。 */
@@ -158,9 +158,10 @@ export const useDataStore = defineStore('data', () => {
       settle(fetchImages()), settle(fetchVault()), settle(fetchSchedule()),
       settle(fetchSuggestions()), settle(fetchGoals()),
     ])
-    if (a?.length) areas.value = a
-    if (p?.length) projects.value = p
-    if (t?.length) {
+    // `[]` 是后端明确返回的真实空状态，不能继续露出 fixtures；只有请求失败（null）才保留兜底。
+    if (a !== null) areas.value = a
+    if (p !== null) projects.value = p
+    if (t !== null) {
       tasks.value = t
       // 只叠加仍未收到服务端确认的本地草稿，避免刷新把刚输入的长文本吞掉。
       for (const [id, draft] of Object.entries(taskDrafts.value)) {
@@ -168,16 +169,19 @@ export const useDataStore = defineStore('data', () => {
         if (current) Object.assign(current, clone(draft))
       }
     }
-    if (kb?.length) kbs.value = kb
-    if (kg?.length) myGroups.value = kg
-    if (dc?.length) dc.forEach((d) => (docs[d.id] = d))
-    if (jb?.length) autos.value = jb
-    if (fl?.length) files.value = fl
-    if (im?.length) imgs.value = im
-    if (va?.length) vault.value = va
-    if (sc?.length) schedule.value = sc
-    if (sg?.length) suggestions.value = sg
-    if (gl?.length) goals.value = gl
+    if (kb !== null) kbs.value = kb
+    if (kg !== null) myGroups.value = kg
+    if (dc !== null) {
+      Object.keys(docs).forEach((id) => delete docs[id])
+      dc.forEach((d) => (docs[d.id] = d))
+    }
+    if (jb !== null) autos.value = jb
+    if (fl !== null) files.value = fl
+    if (im !== null) imgs.value = im
+    if (va !== null) vault.value = va
+    if (sc !== null) schedule.value = sc
+    if (sg !== null) suggestions.value = sg
+    if (gl !== null) goals.value = gl
     // 核心读路径任一可达即认为后端在线；写路径（POST/PUT）随之启用。
     apiLive.value = a !== null && p !== null && t !== null
     // 每个项目都应有一个默认知识库（后端就绪前为前端内存态），刷新后由此保持。
@@ -230,6 +234,29 @@ export const useDataStore = defineStore('data', () => {
     syncTimer = setInterval(syncFromServer, 15_000)
     window.addEventListener('focus', syncFromServer)
     document.addEventListener('visibilitychange', syncFromServer)
+  }
+
+  /**
+   * 把 AI Run 的服务端状态投影到任务列表，不触发任务自动保存。
+   *
+   * <p>运行状态由 Runner / 服务端控制；如果这里复用 {@link patchTask}，会把整份浏览器旧快照 PUT
+   * 回去，反而可能覆盖刚完成的状态。仅改本地状态即可，下一次任务轮询会再以服务端记录校准。
+   * 同一任务有多个运行时，活动运行优先；都结束后以最新创建的一次为准。
+   */
+  function applyAiRunStatuses(runs: AiRun[]) {
+    const byTask = new Map<string, AiRun[]>()
+    for (const run of runs) byTask.set(run.taskId, [...(byTask.get(run.taskId) ?? []), run])
+    for (const [taskId, taskRuns] of byTask) {
+      const active = taskRuns.find((run) => ['queued', 'claimed', 'running'].includes(run.status))
+      const latest = active ?? [...taskRuns].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+      const task = taskById(taskId)
+      if (!task || !latest) continue
+      const status = ['queued', 'claimed', 'running'].includes(latest.status)
+        ? 'AI 进行中'
+        : latest.status === 'succeeded' ? '待验证' : '进行中'
+      task.status = status
+      task.completedAt = null
+    }
   }
 
   // ---- getters ----
@@ -1423,7 +1450,7 @@ export const useDataStore = defineStore('data', () => {
     subById, subKey, addSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES,
-    updateProject, deleteProject, ensureProjectKb, syncFromServer,
+    updateProject, deleteProject, ensureProjectKb, syncFromServer, applyAiRunStatuses,
     taskGroupsOf, setTaskGroups, moveTaskToGroup,
     jobById, createJob, updateJob, deleteJob, runJob, pauseJob, resumeJob, reauthJob,
     vaultItemById, addVaultGroup, renameVaultGroup, deleteVaultGroup, reorderVaultGroups,

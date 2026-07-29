@@ -37,4 +37,7 @@ onMounted(async () => {
 .site-footer a { color: inherit; text-decoration: none; }
 .site-footer a:hover { color: var(--wao-primary, #4358d6); text-decoration: underline; }
 .separator { color: var(--wao-line-strong, #d8dbe5); }
+@media (max-width: 760px) {
+  .site-footer { padding: 20px 12px 92px; font-size: 10px; }
+}
 </style>

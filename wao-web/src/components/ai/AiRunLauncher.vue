@@ -99,7 +99,7 @@ onMounted(async () => {
       <button class="close" aria-label="关闭" @click="emit('close')"><i class="ri-close-line"></i></button>
     </header>
 
-    <p v-if="scope" class="scope"><i class="ri-focus-3-line"></i>本次范围：{{ scope }}</p>
+    <p v-if="scope" class="scope" :title="`本次范围：${scope}`"><i class="ri-focus-3-line"></i>本次范围：{{ scope }}</p>
 
     <div v-if="loading" class="loading"><i class="ri-loader-4-line spin"></i>正在读取可用的电脑…</div>
     <template v-else>
@@ -158,6 +158,8 @@ onMounted(async () => {
   right: 0;
   z-index: 41;
   width: 300px;
+  max-height: calc(100dvh - 88px);
+  overflow-y: auto;
   padding: 14px;
   border: 1px solid var(--wao-line);
   border-radius: 12px;
@@ -168,7 +170,11 @@ onMounted(async () => {
 .launcher header { display: flex; align-items: center; }
 .launcher header b { flex: 1; font-size: 13px; }
 .close { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #f4f5f8; cursor: pointer; }
-.scope { margin: 9px 0 0; padding: 6px 8px; border-radius: 7px; background: #f4f6ff; color: var(--wao-text-2); font-size: 11px; line-height: 1.5; }
+.scope {
+  margin: 9px 0 0; padding: 6px 8px; overflow: hidden; border-radius: 7px; background: #f4f6ff;
+  color: var(--wao-text-2); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
 .scope i { margin-right: 4px; }
 .loading { padding: 18px 0; color: var(--wao-text-weak); font-size: 12px; display: flex; align-items: center; gap: 7px; justify-content: center; }
 .label { margin: 13px 0 7px; color: var(--wao-text-weak); font-size: 10.5px; font-weight: 650; letter-spacing: .5px; }
@@ -207,4 +213,15 @@ onMounted(async () => {
 .launcher footer .primary:disabled { opacity: .65; cursor: not-allowed; }
 .spin { display: inline-block; animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 760px) {
+  .launcher-mask { z-index: 142; background: rgba(18, 22, 39, .24); }
+  .launcher {
+    position: fixed; top: auto; right: 0; bottom: 0; left: 0; z-index: 143; box-sizing: border-box;
+    width: 100%; max-height: 88dvh; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 18px 18px 0 0;
+  }
+  .scope { -webkit-line-clamp: 2; }
+  .launcher footer { position: sticky; bottom: calc(-16px - env(safe-area-inset-bottom)); margin: 14px -16px calc(-16px - env(safe-area-inset-bottom)); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid var(--wao-divider); }
+  .launcher footer button { min-height: 42px; }
+}
 </style>

@@ -323,6 +323,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   .fold,
   .crumb-sep,
   .crumb-b,
+  .plus,
   .plus.ghost,
   .bell-dot {
     display: none;
@@ -334,14 +335,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     font-weight: 600;
     color: var(--wao-text);
   }
-  .plus {
-    width: 34px;
-    padding: 0;
-    justify-content: center;
-    border-radius: 9px;
-    font-size: 0;
-  }
-  .plus i { font-size: 18px; }
   .bell { width: 36px; height: 36px; }
   .content { overscroll-behavior: contain; }
 }

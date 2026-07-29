@@ -111,6 +111,39 @@ describe('TaskDrawer', () => {
     expect(await waitFor(w, '.md-body')).toBe(true)
   })
 
+  it('关联选择器使用真实知识、任务和文件，并支持再次点击解除', async () => {
+    const current = data.taskById(taskId)!
+    const doc = Object.values(data.docs).find((item) => !current.docs.includes(item.id))!
+    const linkedTask = data.tasks.find((item) => item.id !== taskId && !current.linkTasks.some((link) => link.id === item.id))!
+    data.files.unshift({
+      id: 'file-real-1', name: '真实验收记录.pdf', size: '12 KB', icon: 'ri-file-pdf-2-line',
+      time: '刚刚', by: '娃哥', link: '/api/files/file-real-1/raw',
+    })
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.findAll('.text-btn').find((button) => button.text().includes('关联知识、任务或文件'))!.trigger('click')
+    expect(w.find('.relation-picker').exists()).toBe(true)
+
+    const clickCandidate = async (text: string) => {
+      const row = w.findAll('.relation-row').find((item) => item.text().includes(text))!
+      await row.trigger('click')
+      await w.vm.$nextTick()
+    }
+    await clickCandidate(doc.title)
+    await clickCandidate(linkedTask.title)
+    await clickCandidate('真实验收记录.pdf')
+
+    expect(current.docs).toContain(doc.id)
+    expect(current.linkTasks.map((item) => item.id)).toContain(linkedTask.id)
+    expect(current.files.map((item) => item.id)).toContain('file-real-1')
+
+    await clickCandidate('真实验收记录.pdf')
+    expect(current.files.map((item) => item.id)).not.toContain('file-real-1')
+    w.unmount()
+  })
+
   it('评论发送中会锁定提交，避免重复新增评论', async () => {
     let resolveComment!: (value: boolean) => void
     const addComment = vi.spyOn(data, 'addTaskComment').mockImplementation(() =>
@@ -332,7 +365,9 @@ describe('TaskDrawer', () => {
   })
 
   it('点 AI run 先选电脑和 AI 工具，选定后才入队', async () => {
-    const { createAiRuns } = await import('@/api/ai')
+    const { createAiRuns, fetchTaskAiRuns } = await import('@/api/ai')
+    // 没有活动运行时才能再次派整条任务；默认 mock 的 ar1 是正在跑的档案。
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([])
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
