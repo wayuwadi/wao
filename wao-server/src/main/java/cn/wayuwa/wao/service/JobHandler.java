@@ -1,5 +1,7 @@
 package cn.wayuwa.wao.service;
 
+import cn.wayuwa.wao.domain.AutomationJobEntity;
+
 /**
  * 自动化任务的真实执行器。
  *
@@ -18,4 +20,12 @@ public interface JobHandler {
      * @throws RuntimeException 执行失败时，异常消息会被记进运行记录
      */
     String execute();
+
+    /**
+     * 执行某一条任务。无须任务上下文的旧执行器继续复用 {@link #execute()}；需要读取通知正文等
+     * 任务配置的执行器可覆盖本方法。
+     */
+    default String execute(AutomationJobEntity job) {
+        return execute();
+    }
 }

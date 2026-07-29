@@ -69,6 +69,7 @@ public class FeishuQuickCollectService {
     private final AccountMapper accounts;
     private final AccountIdentityMapper identities;
     private final ObjectMapper json;
+    private final NotificationFeedbackService feedback;
     private final Set<String> seenEvents = Collections.synchronizedSet(
             Collections.newSetFromMap(new LinkedHashMap<>() {
                 @Override
@@ -79,7 +80,7 @@ public class FeishuQuickCollectService {
 
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
             FeishuWebhookNotifier notifier, FeishuAppLinks links, TaskService tasks, ProjectMapper projects,
-            AccountMapper accounts, AccountIdentityMapper identities, ObjectMapper json) {
+            AccountMapper accounts, AccountIdentityMapper identities, ObjectMapper json, NotificationFeedbackService feedback) {
         this.settings = settings;
         this.feishu = feishu;
         this.notifier = notifier;
@@ -89,6 +90,7 @@ public class FeishuQuickCollectService {
         this.accounts = accounts;
         this.identities = identities;
         this.json = json;
+        this.feedback = feedback;
     }
 
     /** 当前配置（Token / Encrypt Key 只回脱敏形态）。 */
@@ -138,6 +140,10 @@ public class FeishuQuickCollectService {
             return Map.of("challenge", body.path("challenge").asText(""));
         }
         requireToken(body.path("header").path("token").asText(body.path("token").asText("")));
+        if ("card.action.trigger".equals(body.path("header").path("event_type").asText(""))) {
+            feedback.collect(body.path("event"));
+            return Map.of();
+        }
         if (!settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)) {
             return Map.of();
         }

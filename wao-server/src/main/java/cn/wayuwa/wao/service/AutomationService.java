@@ -91,6 +91,7 @@ public class AutomationService {
         e.setTarget(req.target());
         e.setStepsJson(write(req.steps() == null ? List.of() : req.steps()));
         e.setNextFireAt(computeNextFire(req.cronExpr()));
+        e.setHandler(req.handler());
         e.setOrd(nextOrd(jobMapper.selectCount(null)));
         jobMapper.insert(e);
         return toDto(e, List.of());
@@ -126,6 +127,7 @@ public class AutomationService {
             e.setCronExpr(cron);
             e.setNextFireAt(computeNextFire(cron));
         }
+        if (req.handler() != null) e.setHandler(req.handler().isBlank() ? null : req.handler());
         jobMapper.updateById(e);
         return getJob(id);
     }
@@ -215,7 +217,7 @@ public class AutomationService {
             return simulatedResult;
         }
         try {
-            return handler.execute();
+            return handler.execute(e);
         } catch (RuntimeException ex) {
             log.warn("自动化任务 {} 执行失败：{}", e.getId(), ex.getMessage());
             return "失败 · " + shortReason(ex);
