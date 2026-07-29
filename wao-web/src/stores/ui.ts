@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
+import { usePreferenceStore } from '@/stores/preferences'
 
 /**
  * 项目任务区的三种展示形态。
@@ -106,7 +107,8 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   /** 触发全屏庆祝（mode 由偏好决定，'关闭' 时不触发）。 */
-  function celebrate(mode: string = '细腻纸屑') {
+  function celebrate(mode?: string) {
+    mode ??= usePreferenceStore().celebration
     if (mode === '关闭') return
     celebrating.value = mode
   }

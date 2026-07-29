@@ -98,6 +98,7 @@ describe('项目分组视图', () => {
 
   it('删掉分组不会连带删任务——里面的任务落回第一个分组', async () => {
     const wrapper = await mountGroupView()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     await data.setTaskGroups('p1', [{ id: 'g1', name: '证件' }, { id: 'g2', name: '装修' }])
     await flushPromises()
     const task = data.tasksByProject('p1')[0]!
@@ -109,6 +110,7 @@ describe('项目分组视图', () => {
 
     expect(data.taskGroupsOf('p1')).toHaveLength(1)
     expect(data.taskById(task.id)!.groupId).toBe('g1')
+    confirm.mockRestore()
     wrapper.unmount()
   })
 

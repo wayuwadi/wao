@@ -13,9 +13,11 @@ import {
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
+import { usePreferenceStore } from '@/stores/preferences'
 
 const session = useSessionStore()
 const data = useDataStore()
+const preferences = usePreferenceStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -122,12 +124,18 @@ async function deleteMemberAccount(memberId: string, name: string) {
   } finally { memberBusy.value = false }
 }
 
-const prefRows = [
-  { name: '语言', desc: '界面显示语言', value: '简体中文' },
-  { name: '主题', desc: '明亮 / 深色（深色规划中）', value: '明亮' },
-  { name: '每周起始日', desc: '影响日历与「本周」分组', value: '周一' },
-  { name: '庆祝动画', desc: '创建任务 / 项目、完成任务时的全屏反馈', value: '细腻纸屑' },
-]
+const prefBusy = ref(false)
+async function savePreference(kind: 'theme' | 'weekStart' | 'celebration', event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  prefBusy.value = true
+  try {
+    if (kind === 'theme') await preferences.setTheme(value as '明亮' | '深色')
+    if (kind === 'weekStart') await preferences.setWeekStart(value as '周一' | '周日')
+    if (kind === 'celebration') await preferences.setCelebration(value as '细腻纸屑' | '关闭')
+    toast('偏好已保存并立即生效', 'ri-checkbox-circle-line')
+  } catch (error) { toast(error instanceof Error ? error.message : '偏好保存失败，请重试') }
+  finally { prefBusy.value = false }
+}
 
 // 开发者 · API
 interface Token {
@@ -501,13 +509,10 @@ function demo(msg: string, icon?: string) {
         <template v-else-if="tab === 'prefs'">
           <div class="s-h1">偏好</div>
           <div class="card thin">
-            <div v-for="(p, i) in prefRows" :key="i" class="pref-row">
-              <div class="pref-main">
-                <div class="pref-name">{{ p.name }}</div>
-                <div class="pref-desc">{{ p.desc }}</div>
-              </div>
-              <button class="value-btn" @click="demo('演示：偏好切换在正式版本生效', 'ri-settings-3-line')">{{ p.value }}<i class="ri-arrow-down-s-line"></i></button>
-            </div>
+            <div class="pref-row"><div class="pref-main"><div class="pref-name">语言</div><div class="pref-desc">界面当前实际支持简体中文</div></div><span class="value-static">简体中文</span></div>
+            <div class="pref-row"><div class="pref-main"><div class="pref-name">主题</div><div class="pref-desc">立即切换并在下次登录时保留</div></div><select class="value-btn" :value="preferences.theme" :disabled="prefBusy" @change="savePreference('theme', $event)"><option>明亮</option><option>深色</option></select></div>
+            <div class="pref-row"><div class="pref-main"><div class="pref-name">每周起始日</div><div class="pref-desc">影响日历月视图与周视图</div></div><select class="value-btn" :value="preferences.weekStart" :disabled="prefBusy" @change="savePreference('weekStart', $event)"><option>周一</option><option>周日</option></select></div>
+            <div class="pref-row"><div class="pref-main"><div class="pref-name">庆祝动画</div><div class="pref-desc">创建任务、项目和完成任务时的全屏反馈</div></div><select class="value-btn" :value="preferences.celebration" :disabled="prefBusy" @change="savePreference('celebration', $event)"><option>细腻纸屑</option><option>关闭</option></select></div>
           </div>
         </template>
 

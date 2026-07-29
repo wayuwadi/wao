@@ -17,6 +17,7 @@ import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
+import { usePreferenceStore } from '@/stores/preferences'
 import { useShortcuts } from '@/composables/shortcuts'
 import type { ModuleId } from '@/types'
 
@@ -25,6 +26,7 @@ const nav = useNavStore()
 const tabs = useTabsStore()
 const ui = useUiStore()
 const data = useDataStore()
+const preferences = usePreferenceStore()
 
 useShortcuts()
 
@@ -82,6 +84,7 @@ watch(() => route.query.task, openLocatedTask)
 
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
+  void preferences.load()
   // 接入真实 /api（后端不可用时静默保留 fixtures）
   await data.hydrate()
   openLocatedTask()
