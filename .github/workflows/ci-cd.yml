@@ -175,9 +175,6 @@ jobs:
           printf '\n===== cloud =====\n'; cat cloud.log
           exit "$status"
       - name: Verify production and Feishu entry point
-        env:
-          MASTER_HOST: ${{ secrets.MASTER_HOST }}
-          MASTER_USER: ${{ secrets.MASTER_USER }}
         run: |
           hello="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors https://wao.wayuwa.cn/api/hello)"
           printf '%s' "$hello" | grep -q '"code":0'
@@ -185,12 +182,23 @@ jobs:
           ai_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/ai/runs \
             | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
           test "$ai_route" = 'linux-vpn-master'
-          ssh "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; sh "$desktop_dir/deploy/wao/deploy/scripts/probe-codex-egress.sh"'
           for probe in 1 2 3 4 5 6 7 8; do
             feishu="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors "https://wao.wayuwa.cn/api/auth/feishu/authorize?scene=authorization&probe=$probe")"
             printf '%s' "$feishu" | grep -q '"code":0'
             printf '%s' "$feishu" | grep -q 'https://open.feishu.cn/open-apis/authen/v1/authorize'
           done
+      # Codex 出口只影响 AI 账号登录 / 令牌刷新，属于主节点网络环境问题，不代表这次发布的产物有问题。
+      # 探针失败降级为告警：流水线继续，主节点 VPN 掉了仍然能在 run 摘要里看到。
+      - name: Probe Codex egress on Linux master (non-blocking)
+        continue-on-error: true
+        env:
+          MASTER_HOST: ${{ secrets.MASTER_HOST }}
+          MASTER_USER: ${{ secrets.MASTER_USER }}
+        run: |
+          if ! ssh "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; sh "$desktop_dir/deploy/wao/deploy/scripts/probe-codex-egress.sh"'; then
+            echo '::warning title=Codex 出站探针失败::Linux 主节点 wao-server 容器无法直连 OpenAI，Codex 登录与令牌刷新会失败，请检查主节点 VPN 出口是否被容器继承。本次部署未因此中断。'
+            exit 1
+          fi
 
   notify:
     name: Feishu deployment notification
