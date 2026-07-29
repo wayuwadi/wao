@@ -53,6 +53,8 @@ const attachmentUploading = ref(false)
 const aiLauncherSubId = ref<string | null>(null)
 const aiRuns = ref<AiRun[]>([])
 const aiRunsLoading = ref(false)
+/** 首次打开可显示加载态；后续轮询不得反复推挤评论区。 */
+const aiRunsLoaded = ref(false)
 const aiContinuation = ref<Record<string, string>>({})
 const continuingRunId = ref<string | null>(null)
 const pausingRunId = ref<string | null>(null)
@@ -72,6 +74,8 @@ watch(
     relationOpen.value = false
     editingComment.value = null
     confirmingDelete.value = false
+    aiRuns.value = []
+    aiRunsLoaded.value = false
   },
 )
 
@@ -91,7 +95,11 @@ async function refreshTaskAiRuns() {
   } catch {
     // 保留上一帧，网络抖动不应让已展示的 AI 档案消失。
   } finally {
-    if (ui.openTaskId === taskId) aiRunsLoading.value = false
+    if (ui.openTaskId === taskId) {
+      aiRunsLoading.value = false
+      // 请求失败同样结束首次加载态；下一轮会重试，但页面布局保持稳定。
+      aiRunsLoaded.value = true
+    }
   }
 }
 
@@ -892,7 +900,7 @@ function demo(msg: string) {
             <button class="text-btn" @click="relationOpen = true"><i class="ri-links-line"></i>关联知识、任务或文件</button>
           </div>
 
-          <div v-if="aiRunsLoading || aiRuns.length" class="ai-archive">
+          <div v-if="aiRuns.length || (aiRunsLoading && !aiRunsLoaded)" class="ai-archive">
             <div class="field-label ai-archive-title">
               <span>AI 执行记录</span>
               <em v-if="activeAiRun"><i></i>实时更新中</em>
