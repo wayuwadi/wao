@@ -18,14 +18,21 @@ test -n "${server_id}" || {
   exit 1
 }
 
+proxy_url="$(run_docker exec "${server_id}" sh -c 'printf "%s" "$WAO_AI_CODEX_PROXY_URL"')"
+test -n "${proxy_url}" || {
+  echo 'Linux 主节点 wao-server 没有配置 Codex 出站代理。' >&2
+  exit 1
+}
+
 status="$(run_docker exec "${server_id}" curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+  --proxy "${proxy_url}" \
   --request POST https://auth.openai.com/api/accounts/deviceauth/usercode \
   --header 'Content-Type: application/json' \
   --data '{"client_id":"app_EMoamEEZ73f0CkXaXp7hrann"}')"
 
 if [ "${status}" != '200' ]; then
-  printf 'Linux 主节点 wao-server 的 Codex 出站探针失败：HTTP %s\n' "${status}" >&2
+  printf 'Linux 主节点 wao-server 经内部代理执行 Codex 出站探针失败：HTTP %s\n' "${status}" >&2
   exit 1
 fi
 
-echo 'Linux 主节点 wao-server 的 Codex VPN 出站探针通过。'
+echo 'Linux 主节点 wao-server 经内部代理执行的 Codex VPN 出站探针通过。'

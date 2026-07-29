@@ -42,7 +42,9 @@
   不得跳转用户电脑的 `localhost:1455`，也不得要求用户复制失败页地址、授权码或令牌回填。
 - Codex 设备码、令牌刷新和额度查询等服务端请求固定由配置 VPN 的 Linux 主节点发出；云端只做代理，
   不要求阿里云 VM 配置 VPN。AI 账号与 AI Runner API 不得回退到无可用出口的 Windows 从节点，部署时
-  必须从 Linux 的 `wao-server` 容器真实探测 OpenAI 设备码端点并取得 HTTP 200。
+  必须从 Linux 的 `wao-server` 容器经主机网络内部代理真实探测 OpenAI 设备码端点并取得 HTTP 200。
+  该代理只能供主机回环与 Docker 私网使用，且只注入 Codex OAuth 客户端，不能改变其他供应商和自定义 API
+  的出站路径。
 - Codex OAuth 额度使用同一 ChatGPT 登录态读取 `backend-api/wham/usage` 的主次窗口；该非稳定公开契约
   调用失败时保留账号与上一次快照，页面显示失败原因并允许重试，凭据不得写入响应或日志。
 - 选择集中账号而未显式指定执行电脑时，默认固定到支持对应 CLI 的 Linux 主节点；Linux 尚未接入该

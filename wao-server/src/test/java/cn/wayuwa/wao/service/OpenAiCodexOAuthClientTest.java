@@ -127,12 +127,35 @@ class OpenAiCodexOAuthClientTest {
         server.verify();
     }
 
+    @Test
+    void acceptsInternalHttpProxyUrl() {
+        OpenAiCodexOAuthClient client = client(RestClient.builder(),
+                "http://host.docker.internal:18888");
+
+        assertThat(client).isNotNull();
+    }
+
+    @Test
+    void rejectsProxyUrlWithUnsupportedProtocolOrCredentials() {
+        assertThatThrownBy(() -> client(RestClient.builder(), "socks5://127.0.0.1:18888"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("http URL");
+        assertThatThrownBy(() -> client(RestClient.builder(), "http://user:pass@127.0.0.1:18888"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("http URL");
+    }
+
     private static OpenAiCodexOAuthClient client(RestClient.Builder builder) {
+        return client(builder, "");
+    }
+
+    private static OpenAiCodexOAuthClient client(RestClient.Builder builder, String proxyUrl) {
         return new OpenAiCodexOAuthClient(builder, "client-1",
                 "https://auth.openai.test/oauth/authorize",
                 "https://auth.openai.test/oauth/token",
                 "http://localhost:1455/auth/callback",
                 "https://chatgpt.test/backend-api/wham/usage",
-                "https://auth.openai.test");
+                "https://auth.openai.test",
+                proxyUrl);
     }
 }

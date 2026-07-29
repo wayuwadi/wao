@@ -1,3 +1,12 @@
+FROM alpine:3.20 AS codex-egress-proxy
+ARG ALPINE_MIRROR_HOST=dl-cdn.alpinelinux.org
+RUN sed -i "s/dl-cdn.alpinelinux.org/${ALPINE_MIRROR_HOST}/g" /etc/apk/repositories \
+    && apk add --no-cache tinyproxy \
+    && install -d -o tinyproxy -g tinyproxy /run/tinyproxy
+COPY deploy/tinyproxy/codex-egress.conf /etc/tinyproxy/tinyproxy.conf
+USER tinyproxy
+ENTRYPOINT ["tinyproxy", "-d", "-c", "/etc/tinyproxy/tinyproxy.conf"]
+
 FROM maven:3.9.9-eclipse-temurin-17 AS build
 ARG MAVEN_MIRROR_URL=https://repo.maven.apache.org/maven2
 ENV MAVEN_MIRROR_URL=${MAVEN_MIRROR_URL}
