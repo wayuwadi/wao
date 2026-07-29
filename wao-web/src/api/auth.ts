@@ -67,3 +67,9 @@ export async function unlinkIdentity(provider: string) {
   const response = await http.delete<ApiResponse<AuthSession>>(`/api/account/identities/${provider}`)
   return response.data.data
 }
+
+/** 管理员为新成员开账号：创建成员 + 绑定邮箱密码登录。 */
+export async function apiCreateAccount(name: string, email: string, password: string) {
+  const response = await http.post<ApiResponse<SessionMember>>('/api/members/accounts', { name, email, password })
+  return response.data.data
+}

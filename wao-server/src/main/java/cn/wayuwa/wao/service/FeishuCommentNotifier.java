@@ -29,11 +29,23 @@ public class FeishuCommentNotifier {
      *
      * <p>所属项目关掉通知时直接跳过：评论和状态变化一样属于「项目的动静」，
      * 不该因为走的是另一个通知器就绕过开关。
+     *
+     * @param mentionOpenIds 评论里 @ 到的成员的飞书 open_id（已排掉评论人自己），可为空；
+     *                       有值时在卡片正文最前面真实 @ 出来
      */
-    public void notifyComment(TaskDto task, CommentDto comment, String memberName, String projectName) {
+    public void notifyComment(TaskDto task, CommentDto comment, String memberName, String projectName,
+            List<String> mentionOpenIds) {
         if (!notifyGate.enabled(task.project())) {
             return;
         }
+        StringBuilder body = new StringBuilder();
+        if (mentionOpenIds != null && !mentionOpenIds.isEmpty()) {
+            for (String openId : mentionOpenIds) {
+                body.append("<at id=").append(openId).append("></at> ");
+            }
+            body.append('\n');
+        }
+        body.append(comment.text());
         notifier.notifyCard(new FeishuWebhookNotifier.Card(
                 "任务新评论",
                 "blue",
@@ -41,7 +53,7 @@ public class FeishuCommentNotifier {
                         List.of("项目", blank(projectName, task.project())),
                         List.of("任务", task.title()),
                         List.of("评论人", blank(memberName, comment.who()))),
-                comment.text(),
+                body.toString(),
                 "打开任务",
                 "https://wao.wayuwa.cn/projects/" + task.project() + "?task=" + task.id()));
     }

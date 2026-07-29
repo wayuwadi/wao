@@ -410,8 +410,21 @@ public class TaskService {
         String memberName = members.list().stream().filter(m -> m.id().equals(memberId)).map(m -> m.name()).findFirst().orElse(memberId);
         String projectName;
         try { projectName = projects.get(task.project()).name(); } catch (NotFoundException ex) { projectName = task.project(); }
-        commentNotifier.notifyComment(task, comment, memberName, projectName);
+        commentNotifier.notifyComment(task, comment, memberName, projectName, mentionOpenIds(comment.text(), memberId));
         return comment;
+    }
+
+    /** 解析评论正文里 @ 到的成员，换成飞书 open_id；@自己不通知，没绑飞书的解析不出来就跳过。 */
+    private List<String> mentionOpenIds(String text, String operatorMemberId) {
+        if (!StringUtils.hasText(text) || !text.contains("@")) {
+            return List.of();
+        }
+        return members.list().stream()
+                .filter(m -> !m.id().equals(operatorMemberId) && text.contains("@" + m.name()))
+                .map(m -> taskNotifier.feishuOpenId(m.id()))
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
     }
 
     /**

@@ -13,6 +13,7 @@ import { fmtDate, isOpenStatus, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/
 import { toast } from '@/composables/toast'
 import { createAiRuns } from '@/api/ai'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
+import { useFavoritesStore } from '@/stores/favorites'
 import { MAX_TASK_GROUPS } from '@/types'
 import type { TaskStatus } from '@/types'
 
@@ -22,6 +23,7 @@ const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
 const tabs = useTabsStore()
+const favorites = useFavoritesStore()
 const { decoProj, decoTask } = useDeco()
 
 // 动态时间随时间推移自己变新
@@ -307,6 +309,14 @@ function onDropGroup(groupId: string, overId?: string) {
       <div class="phead-avs">
         <span v-for="(mv, i) in pd.memberAvs" :key="i" class="phead-av" :style="{ background: mv.color }">{{ mv.initial }}</span>
       </div>
+      <button
+        class="btn-icon"
+        :class="{ faved: favorites.isFav('project', pid) }"
+        :title="favorites.isFav('project', pid) ? '取消收藏' : '收藏到左侧菜单'"
+        @click="favorites.toggle('project', pid, pd.name)"
+      >
+        <i :class="favorites.isFav('project', pid) ? 'ri-star-fill' : 'ri-star-line'"></i>
+      </button>
       <button class="btn-icon" title="项目设置" @click="settingsOpen = true"><i class="ri-settings-3-line"></i></button>
       <button class="btn-primary sm" @click="ui.openModal('task', pid)"><i class="ri-add-line"></i>新建任务</button>
     </div>
@@ -760,6 +770,12 @@ function onDropGroup(groupId: string, overId?: string) {
 }
 .btn-icon i {
   font-size: 15px;
+}
+.btn-icon.faved,
+.btn-icon.faved:hover {
+  color: #b9821f;
+  border-color: #e5d3a8;
+  background: #fdf6e7;
 }
 
 .ptabs {

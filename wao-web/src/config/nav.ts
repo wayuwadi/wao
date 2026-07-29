@@ -13,21 +13,23 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
   calendar: { id: 'calendar', label: '日历', icon: 'ri-calendar-2-line', path: '/calendar' },
-  todo: { id: 'todo', label: 'TODO', icon: 'ri-checkbox-multiple-line', path: '/todo' },
+  todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
   automation: { id: 'automation', label: '自动化', icon: 'ri-flashlight-line', path: '/automation' },
-  vault: { id: 'vault', label: '密码库', icon: 'ri-key-2-line', path: '/vault' },
+  vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
+
+/** 「个人」组的默认顺序；成员拖拽后的自定义顺序存服务端偏好，见 stores/nav.ts。 */
+export const PERSONAL_ITEMS: ModuleId[] = ['todo', 'calendar', 'knowledge', 'vault']
 
 /** 左侧导航分组（空 label = 不显示分组标题的首页组）。个人相关功能统一收进「个人」组。 */
 export const NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
-  { label: '规划', items: ['projects'] },
-  { label: '个人', items: ['calendar', 'todo', 'knowledge'] },
-  { label: '沉淀', items: ['files'] },
-  { label: '系统', items: ['automation', 'vault'] },
+  { label: '公共', items: ['projects', 'files'] },
+  { label: '个人', items: PERSONAL_ITEMS },
+  { label: '工具', items: ['automation'] },
 ]
 
 /** 由模块 id 生成页签。首页固定不可关闭。 */

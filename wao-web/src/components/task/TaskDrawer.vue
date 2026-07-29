@@ -25,11 +25,13 @@ import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { activitySentence } from '@/utils/activity'
 import { useIsMobile } from '@/composables/viewport'
+import { useFavoritesStore } from '@/stores/favorites'
 import type { AiEngine, AiRun, AiRunStatus, Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
 const data = useDataStore()
 const session = useSessionStore()
+const favorites = useFavoritesStore()
 const router = useRouter()
 const { decoTask } = useDeco()
 
@@ -707,6 +709,14 @@ function demo(msg: string) {
           <i :class="pausingRunId === activeAiRun.id ? 'ri-loader-4-line spin' : 'ri-pause-circle-line'"></i>
           {{ pausingRunId === activeAiRun.id ? '暂停中' : '暂停 AI' }}
         </button>
+        <button
+          class="icon-btn"
+          :class="{ faved: favorites.isFav('task', task.id) }"
+          :title="favorites.isFav('task', task.id) ? '取消收藏' : '收藏到左侧菜单'"
+          @click="favorites.toggle('task', task.id, task.title, task.project)"
+        >
+          <i :class="favorites.isFav('task', task.id) ? 'ri-star-fill' : 'ri-star-line'"></i>
+        </button>
         <div class="share-wrap">
           <button class="icon-btn" title="复制分享链接" @click="menu = menu === 'share' ? null : 'share'"><i class="ri-links-line"></i></button>
           <div v-if="menu === 'share'" class="menu-mask" @click="menu = null"></div>
@@ -969,7 +979,7 @@ function demo(msg: string) {
             <div class="comment-input">
               <span class="c-av" :style="{ background: session.currentUser.color }">{{ session.currentUser.initial }}</span>
               <div class="ci-wrap">
-                <input v-model="commentText" :disabled="sendingComment" placeholder="写评论，回车发送；@ 成员会收到通知（演示）" @keydown="commentKey" />
+                <input v-model="commentText" :disabled="sendingComment" placeholder="写评论，回车发送；@成员名 对方会收到飞书通知" @keydown="commentKey" />
                 <button class="send" :disabled="!commentText.trim() || sendingComment" @click="sendComment"><i :class="sendingComment ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ sendingComment ? '发送中' : '发送' }}</button>
               </div>
             </div>
@@ -1392,6 +1402,10 @@ function demo(msg: string) {
 }
 .icon-btn i {
   font-size: 15px;
+}
+.icon-btn.faved,
+.icon-btn.faved:hover {
+  color: #b9821f;
 }
 
 .dbody {

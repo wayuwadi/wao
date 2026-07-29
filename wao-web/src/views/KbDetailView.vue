@@ -18,6 +18,7 @@ import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { useNow } from '@/composables/now'
 import SaveHint from '@/components/ui/SaveHint.vue'
+import { useFavoritesStore } from '@/stores/favorites'
 import type { DocLink } from '@/types'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
@@ -28,6 +29,7 @@ const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
 const tabs = useTabsStore()
+const favorites = useFavoritesStore()
 
 const kbId = computed(() => String(route.params.id))
 const kb = computed(() => data.kbById(kbId.value))
@@ -299,6 +301,15 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             <span v-if="peers.length" class="realtime"><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span>
 
             <SaveHint :saving="saving" :saved-at="docSavedAt" />
+            <button
+              v-if="docId"
+              class="icon-act"
+              :class="{ faved: favorites.isFav('doc', docId) }"
+              :title="favorites.isFav('doc', docId) ? '取消收藏' : '收藏到左侧菜单'"
+              @click="favorites.toggle('doc', docId, doc?.title || '未命名文档', kbId)"
+            >
+              <i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>
+            </button>
             <div class="share-wrap">
               <button class="icon-act" title="复制分享链接" @click="shareMenu = !shareMenu"><i class="ri-links-line"></i></button>
               <div v-if="shareMenu" class="menu-mask" @click="shareMenu = false"></div>
@@ -783,6 +794,12 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   background: var(--wao-danger-bg);
   border-color: #f0c9c9;
   color: #bc4141;
+}
+.icon-act.faved,
+.icon-act.faved:hover {
+  color: #b9821f;
+  border-color: #e5d3a8;
+  background: #fdf6e7;
 }
 /* 分享菜单（样式与 TaskDrawer 的分享菜单保持一致手感） */
 .share-wrap {

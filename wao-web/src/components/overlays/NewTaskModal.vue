@@ -13,8 +13,9 @@ const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
 
-/** 快捷截止选项按真实「今天」推算：今天 / 明天 / 本周日 / 下周一。 */
+/** 快捷截止选项按真实「今天」推算：今天 / 明天 / 本周日 / 下周一；ISO 日期（日历双击带入）原样返回。 */
 function dueDate(label: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(label)) return label
   const d = new Date(`${data.today}T00:00:00`)
   const dow = d.getDay() || 7
   if (label === '明天') d.setDate(d.getDate() + 1)
@@ -49,7 +50,11 @@ watch(openProjects, (projects) => {
 }, { immediate: true })
 const owner = ref(draft.owner ?? session.currentUser.id)
 const pr = ref<Priority>(draft.pr ?? 'P2')
-const due = ref(draft.due ?? '今天')
+// 日历双击某天进来时，截止日直接锁定那一天，优先于草稿里存的快捷选项。
+// 草稿里的 ISO 日期（上次从日历带入的）没有对应 pill，回落到「今天」。
+const QUICK_DUES = ['今天', '明天', '周日', '下周一']
+const due = ref(ui.modalDue || (QUICK_DUES.includes(draft.due ?? '') ? draft.due! : '今天'))
+const dueOptions = computed(() => (ui.modalDue ? [ui.modalDue, ...QUICK_DUES] : QUICK_DUES))
 const desc = ref(draft.desc ?? '')
 const draftState = ref<'saving' | 'saved'>('saved')
 let draftTimer: ReturnType<typeof setTimeout> | null = null
@@ -169,7 +174,7 @@ function create() {
 
     <div class="label">截止</div>
     <div class="pills">
-      <button v-for="d in ['今天', '明天', '周日', '下周一']" :key="d" class="pill sq" :class="{ on: due === d }" @click="due = d">{{ d }}</button>
+      <button v-for="d in dueOptions" :key="d" class="pill sq" :class="{ on: due === d }" @click="due = d">{{ d }}</button>
     </div>
 
     <div class="label">描述 <span class="label-hint">敲 ## 变标题、- 变列表；粘贴或拖入的截图会插在光标处</span></div>
