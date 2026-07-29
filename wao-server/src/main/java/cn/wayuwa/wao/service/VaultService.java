@@ -17,6 +17,7 @@ import cn.wayuwa.wao.dto.VaultItemDto;
 import cn.wayuwa.wao.mapper.VaultGroupMapper;
 import cn.wayuwa.wao.mapper.VaultItemMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,7 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class VaultService {
 
-    /** 每个成员的默认分组名；同名分组视为该成员的默认分组，不允许删除。 */
+    /** 每个成员默认分组的初始名字；建出来之后可以随便改名，身份由 is_default 标记维持。 */
     public static final String DEFAULT_GROUP_NAME = "未分组";
 
     private final VaultGroupMapper groupMapper;
@@ -64,7 +65,8 @@ public class VaultService {
                 .stream().collect(Collectors.groupingBy(VaultItemEntity::getGroupId));
         return groups.stream()
                 .map(g -> new VaultGroupDto(g.getId(), g.getName(),
-                        itemsByGroup.getOrDefault(g.getId(), List.of()).stream().map(this::toDto).toList()))
+                        itemsByGroup.getOrDefault(g.getId(), List.of()).stream().map(this::toDto).toList(),
+                        isDefault(g)))
                 .toList();
     }
 
@@ -80,9 +82,10 @@ public class VaultService {
         e.setId("vg" + System.currentTimeMillis());
         e.setName(req.name().trim());
         e.setOwnerMemberId(ownerId);
+        e.setIsDefault(false);
         e.setOrd(nextOrd(groupMapper.selectCount(ownedGroups(ownerId))));
         groupMapper.insert(e);
-        return new VaultGroupDto(e.getId(), e.getName(), List.of());
+        return new VaultGroupDto(e.getId(), e.getName(), List.of(), false);
     }
 
     /**
@@ -121,7 +124,7 @@ public class VaultService {
         List<VaultItemDto> items = itemMapper.selectList(new LambdaQueryWrapper<VaultItemEntity>()
                         .eq(VaultItemEntity::getGroupId, id).orderByAsc(VaultItemEntity::getOrd))
                 .stream().map(this::toDto).toList();
-        return new VaultGroupDto(e.getId(), e.getName(), items);
+        return new VaultGroupDto(e.getId(), e.getName(), items, isDefault(e));
     }
 
     /**
@@ -133,7 +136,7 @@ public class VaultService {
     @Transactional
     public void deleteGroup(String id, String ownerId) {
         VaultGroupEntity group = requireGroup(id, ownerId);
-        if (DEFAULT_GROUP_NAME.equals(group.getName())) {
+        if (isDefault(group)) {
             throw new IllegalArgumentException("默认分组不能删除");
         }
         itemMapper.delete(new LambdaQueryWrapper<VaultItemEntity>().eq(VaultItemEntity::getGroupId, id));
@@ -279,19 +282,50 @@ public class VaultService {
         return new LambdaQueryWrapper<VaultGroupEntity>().eq(VaultGroupEntity::getOwnerMemberId, ownerId);
     }
 
-    /** 当前成员的「未分组」，没有就地建一个——每个人都得有个不用起名就能丢东西的地方。 */
+    private static boolean isDefault(VaultGroupEntity group) {
+        return Boolean.TRUE.equals(group.getIsDefault());
+    }
+
+    /**
+     * 当前成员的默认分组，没有就地建一个——每个人都得有个不用起名就能丢东西的地方。
+     *
+     * <p>按 {@code is_default} 标记找，不按名字找：名字是用户的，改完名它还是同一个默认分组。
+     * 旧实现按名字找、按固定 id 插，成员一改名就每次都拿同一个主键重复插入，读列表直接 409（见 ADR-036）。
+     */
     private VaultGroupEntity ensureDefaultGroup(String ownerId) {
-        VaultGroupEntity existing = groupMapper.selectList(ownedGroups(ownerId)
-                        .eq(VaultGroupEntity::getName, DEFAULT_GROUP_NAME).orderByAsc(VaultGroupEntity::getOrd))
-                .stream().findFirst().orElse(null);
+        VaultGroupEntity existing = findDefaultGroup(ownerId);
         if (existing != null) return existing;
         VaultGroupEntity group = new VaultGroupEntity();
-        group.setId("vg-default-" + ownerId);
+        group.setId(freeDefaultGroupId(ownerId));
         group.setName(DEFAULT_GROUP_NAME);
         group.setOwnerMemberId(ownerId);
+        group.setIsDefault(true);
         group.setOrd(0);
-        groupMapper.insert(group);
+        try {
+            groupMapper.insert(group);
+        } catch (DuplicateKeyException e) {
+            // 同一成员的两个请求撞在一起：另一个已经建好了，直接用它，不要把读列表拖成 409。
+            VaultGroupEntity winner = findDefaultGroup(ownerId);
+            if (winner == null) throw e;
+            return winner;
+        }
         return group;
+    }
+
+    private VaultGroupEntity findDefaultGroup(String ownerId) {
+        return groupMapper.selectList(ownedGroups(ownerId)
+                        .eq(VaultGroupEntity::getIsDefault, true).orderByAsc(VaultGroupEntity::getOrd))
+                .stream().findFirst().orElse(null);
+    }
+
+    /**
+     * 默认分组的 id 仍优先取可读的 {@code vg-default-<memberId>}；被占用或超出 32 字符时退回时间戳 id。
+     * 主键是否好看不重要，重要的是插入不能撞。
+     */
+    private String freeDefaultGroupId(String ownerId) {
+        String readable = "vg-default-" + ownerId;
+        if (readable.length() <= 32 && groupMapper.selectById(readable) == null) return readable;
+        return "vg" + System.currentTimeMillis();
     }
 
     private static String blankOr(String value, String fallback) {

@@ -149,10 +149,80 @@ class VaultServiceTest {
     @Test
     void deleteGroupRefusesTheOwnersDefaultGroup() {
         VaultGroupEntity group = groupOwnedBy("vg-default-wg", OWNER);
-        group.setName(VaultService.DEFAULT_GROUP_NAME);
+        group.setIsDefault(true);
 
         assertThatThrownBy(() -> service.deleteGroup("vg-default-wg", OWNER))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(groupMapper, never()).deleteById(anyString());
+    }
+
+    /** 改过名的默认分组依然是默认分组：靠 is_default 标记，不靠名字。 */
+    @Test
+    void deleteGroupRefusesTheDefaultGroupEvenAfterRename() {
+        VaultGroupEntity group = groupOwnedBy("vg-default-wg", OWNER);
+        group.setIsDefault(true);
+        group.setName("我的常用");
+
+        assertThatThrownBy(() -> service.deleteGroup("vg-default-wg", OWNER))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(groupMapper, never()).deleteById(anyString());
+    }
+
+    /** 名叫「未分组」但不带标记的普通分组可以删——名字是用户的，不再有特殊含义。 */
+    @Test
+    void deleteGroupAllowsAnOrdinaryGroupNamedLikeTheDefaultOne() {
+        VaultGroupEntity group = groupOwnedBy("vg9", OWNER);
+        group.setName(VaultService.DEFAULT_GROUP_NAME);
+        group.setIsDefault(false);
+
+        service.deleteGroup("vg9", OWNER);
+
+        verify(groupMapper).deleteById("vg9");
+    }
+
+    /**
+     * 回归：默认分组被成员改名后，列表接口不能再去重复插入同一个主键。
+     *
+     * <p>旧实现按「名字 == 未分组」找默认分组，改名后每次 GET /api/vault 都会拿
+     * {@code vg-default-<memberId>} 重复插入 → DuplicateKeyException → 409，
+     * 整个密码库读不出来（见 ADR-036）。
+     */
+    @Test
+    void listGroupsReusesTheRenamedDefaultGroupInsteadOfInsertingAgain() {
+        VaultGroupEntity renamedDefault = new VaultGroupEntity();
+        renamedDefault.setId("vg-default-wg");
+        renamedDefault.setName("Amer");
+        renamedDefault.setOwnerMemberId(OWNER);
+        renamedDefault.setIsDefault(true);
+        renamedDefault.setOrd(0);
+        when(groupMapper.selectList(any())).thenReturn(java.util.List.of(renamedDefault));
+        when(itemMapper.selectList(any())).thenReturn(java.util.List.of());
+
+        var groups = service.listGroups(OWNER);
+
+        verify(groupMapper, never()).insert(any(VaultGroupEntity.class));
+        assertThat(groups).singleElement()
+                .satisfies(g -> {
+                    assertThat(g.id()).isEqualTo("vg-default-wg");
+                    assertThat(g.group()).isEqualTo("Amer");
+                    assertThat(g.isDefault()).isTrue();
+                });
+    }
+
+    /** 一个默认分组都没有时（新成员）才建，且带上标记。 */
+    @Test
+    void listGroupsCreatesTheDefaultGroupForANewMember() {
+        when(groupMapper.selectList(any())).thenReturn(java.util.List.of());
+        when(itemMapper.selectList(any())).thenReturn(java.util.List.of());
+
+        service.listGroups("m-new");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(VaultGroupEntity.class);
+        verify(groupMapper).insert(captor.capture());
+        VaultGroupEntity created = captor.getValue();
+        assertThat(created.getId()).isEqualTo("vg-default-m-new");
+        assertThat(created.getName()).isEqualTo(VaultService.DEFAULT_GROUP_NAME);
+        assertThat(created.getOwnerMemberId()).isEqualTo("m-new");
+        assertThat(created.getIsDefault()).isTrue();
     }
 }
