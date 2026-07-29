@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import cn.wayuwa.wao.dto.SaveSiteInfoRequest;
+import cn.wayuwa.wao.dto.SaveMediaAgentMenuConfigRequest;
 import cn.wayuwa.wao.dto.SiteInfoDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.service.SettingService;
@@ -52,5 +53,48 @@ class SettingControllerTest {
         assertThatThrownBy(() -> controller.saveSiteInfo(request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("HTTP");
+    }
+
+    @Test
+    void mediaAgentMenuUsesPublicDefaultsBeforeFirstSave() {
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_LABEL, "自媒体 Agent")).thenReturn("自媒体 Agent");
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_GROUP, "PUBLIC")).thenReturn("PUBLIC");
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_ORDER, "20")).thenReturn("20");
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true")).thenReturn("true");
+
+        var result = controller.mediaAgentMenu().data();
+
+        assertThat(result.label()).isEqualTo("自媒体 Agent");
+        assertThat(result.group()).isEqualTo("PUBLIC");
+        assertThat(result.order()).isEqualTo(20);
+        assertThat(result.visible()).isTrue();
+    }
+
+    @Test
+    void saveMediaAgentMenuTrimsAndPersistsAllFields() {
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_LABEL, "自媒体 Agent")).thenReturn("内容助手");
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_GROUP, "PUBLIC")).thenReturn("TOOLS");
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_ORDER, "20")).thenReturn("5");
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true")).thenReturn("false");
+
+        controller.saveMediaAgentMenu(new SaveMediaAgentMenuConfigRequest(" 内容助手 ", "TOOLS", 5, false));
+
+        verify(settings).put(SettingService.MEDIA_AGENT_MENU_LABEL, "内容助手");
+        verify(settings).put(SettingService.MEDIA_AGENT_MENU_GROUP, "TOOLS");
+        verify(settings).put(SettingService.MEDIA_AGENT_MENU_ORDER, "5");
+        verify(settings).put(SettingService.MEDIA_AGENT_MENU_VISIBLE, "false");
+    }
+
+    @Test
+    void mediaAgentMenuFallsBackWhenStoredGroupOrOrderIsInvalid() {
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_LABEL, "自媒体 Agent")).thenReturn("内容助手");
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_GROUP, "PUBLIC")).thenReturn("UNKNOWN");
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_ORDER, "20")).thenReturn("bad");
+        when(settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true")).thenReturn("true");
+
+        var result = controller.mediaAgentMenu().data();
+
+        assertThat(result.group()).isEqualTo("PUBLIC");
+        assertThat(result.order()).isEqualTo(20);
     }
 }

@@ -1,7 +1,14 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { PERSONAL_ITEMS } from '@/config/nav'
+import {
+  DEFAULT_MEDIA_AGENT_MENU,
+  MODULES,
+  PERSONAL_ITEMS,
+  resolveNavGroups,
+  type MediaAgentMenuConfig,
+} from '@/config/nav'
 import { fetchPreference, savePreference } from '@/api/favorites'
+import { fetchMediaAgentMenu } from '@/api/system'
 import type { ModuleId } from '@/types'
 
 /** 导航 store：侧栏整栏折叠态 + 各分组折叠态 + 「个人」组自定义顺序。 */
@@ -38,6 +45,11 @@ export const useNavStore = defineStore('nav', () => {
   const foldedGroups = ref<Record<string, boolean>>(persisted.foldedGroups)
   /** 「个人」组顺序：本地缓存先渲染，登录后再用服务端偏好覆盖。 */
   const personalOrder = ref<ModuleId[]>(normalizeOrder(persisted.personalOrder))
+  /** Agent 菜单为全局配置；接口失败时保留代码内默认值，不能让入口凭空消失。 */
+  const mediaAgentMenu = ref<MediaAgentMenuConfig>({ ...DEFAULT_MEDIA_AGENT_MENU })
+  const mediaAgentMenuState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
+  const mediaAgentMenuError = ref('')
+  const groups = computed(() => resolveNavGroups(personalOrder.value, mediaAgentMenu.value))
 
   function persist() {
     localStorage.setItem(
@@ -88,8 +100,38 @@ export const useNavStore = defineStore('nav', () => {
     })
   }
 
+  /** 从服务端读取 Agent 全局菜单配置；失败时回退默认菜单并允许显式重试。 */
+  async function loadMediaAgentMenu(force = false) {
+    if (mediaAgentMenuState.value === 'loading') return
+    if (!force && mediaAgentMenuState.value === 'loaded') return
+    mediaAgentMenuState.value = 'loading'
+    mediaAgentMenuError.value = ''
+    try {
+      mediaAgentMenu.value = await fetchMediaAgentMenu()
+      mediaAgentMenuState.value = 'loaded'
+    } catch (error) {
+      mediaAgentMenuState.value = 'error'
+      mediaAgentMenuError.value = error instanceof Error ? error.message : '菜单配置读取失败'
+    }
+  }
+
+  /** 设置页保存成功后立即刷新导航，不等页面重载。 */
+  function applyMediaAgentMenu(config: MediaAgentMenuConfig) {
+    mediaAgentMenu.value = { ...config }
+    mediaAgentMenuState.value = 'loaded'
+    mediaAgentMenuError.value = ''
+  }
+
+  function moduleMeta(id: ModuleId) {
+    return id === 'mediaAgent'
+      ? { ...MODULES.mediaAgent, label: mediaAgentMenu.value.label }
+      : MODULES[id]
+  }
+
   return {
-    collapsed, foldedGroups, personalOrder,
+    collapsed, foldedGroups, personalOrder, groups,
+    mediaAgentMenu, mediaAgentMenuState, mediaAgentMenuError,
     toggleCollapse, toggleGroup, isFolded, loadPersonalOrder, setPersonalOrder,
+    loadMediaAgentMenu, applyMediaAgentMenu, moduleMeta,
   }
 })

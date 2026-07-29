@@ -1,7 +1,8 @@
 import { http, type ApiResponse } from './http'
+import type { MediaAgentMenuConfig } from '@/config/nav'
 
 /**
- * 系统级配置接口：飞书通知 webhook 与飞书群聊同步。
+ * 系统级配置接口：网站信息、一级导航、飞书通知与飞书群聊同步。
  *
  * 契约见 docs/api/board.yaml。密钥类字段只回脱敏形态（`urlMask` / `appSecretMask`），
  * 明文永远不出服务端；表单里留空即表示「不修改」。
@@ -44,6 +45,12 @@ export interface SiteInfo {
 export const fetchPublicSiteInfo = () => get<SiteInfo>('/api/public/site-info')
 export const fetchSiteInfo = () => get<SiteInfo>('/api/settings/site-info')
 export const saveSiteInfo = (payload: SiteInfo) => put<SiteInfo>('/api/settings/site-info', payload)
+
+/** WAO 壳内自媒体 Agent 的全局菜单展示配置。 */
+export const fetchMediaAgentMenu = () =>
+  get<MediaAgentMenuConfig>('/api/settings/navigation/media-agent')
+export const saveMediaAgentMenu = (payload: MediaAgentMenuConfig) =>
+  put<MediaAgentMenuConfig>('/api/settings/navigation/media-agent', payload)
 
 /** 群聊发言人映射：飞书 open_id ↔ 显示名。 */
 export interface FeishuSender {
