@@ -14,7 +14,9 @@ import java.util.Map;
 import cn.wayuwa.wao.common.BadRequestException;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -34,19 +36,22 @@ public class OpenAiCodexOAuthClient {
     private final String tokenUrl;
     private final String redirectUri;
     private final String usageUrl;
+    private final String issuer;
 
     public OpenAiCodexOAuthClient(RestClient.Builder builder,
             @Value("${wao.ai.codex.client-id:app_EMoamEEZ73f0CkXaXp7hrann}") String clientId,
             @Value("${wao.ai.codex.authorize-url:https://auth.openai.com/oauth/authorize}") String authorizeUrl,
             @Value("${wao.ai.codex.token-url:https://auth.openai.com/oauth/token}") String tokenUrl,
             @Value("${wao.ai.codex.redirect-uri:http://localhost:1455/auth/callback}") String redirectUri,
-            @Value("${wao.ai.codex.usage-url:https://chatgpt.com/backend-api/wham/usage}") String usageUrl) {
+            @Value("${wao.ai.codex.usage-url:https://chatgpt.com/backend-api/wham/usage}") String usageUrl,
+            @Value("${wao.ai.codex.issuer:https://auth.openai.com}") String issuer) {
         this.restClient = builder.build();
         this.clientId = clientId;
         this.authorizeUrl = authorizeUrl;
         this.tokenUrl = tokenUrl;
         this.redirectUri = redirectUri;
         this.usageUrl = usageUrl;
+        this.issuer = issuer.replaceAll("/+$", "");
     }
 
     /** 生成满足 PKCE 长度要求的随机 code_verifier。 */
@@ -83,6 +88,77 @@ public class OpenAiCodexOAuthClient {
             query.append(key).append('=').append(URLEncoder.encode(value, StandardCharsets.UTF_8));
         });
         return authorizeUrl + "?" + query;
+    }
+
+    /**
+     * 按 Codex 官方 {@code --device-auth} 协议申请一次性短码。
+     *
+     * <p>设备码流程适用于 WAO 这类远程/无头服务：用户只在 OpenAI 页面确认短码，服务端随后
+     * 轮询授权结果，不需要浏览器回调 {@code localhost:1455}。
+     */
+    public DeviceCode requestDeviceCode() {
+        JsonNode json;
+        try {
+            json = restClient.post().uri(issuer + "/api/accounts/deviceauth/usercode")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(Map.of("client_id", clientId))
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientException ex) {
+            throw new BadRequestException("Codex 设备码登录暂不可用，请稍后重试（" + ex.getMessage() + "）");
+        }
+        String deviceAuthId = json == null ? null : json.path("device_auth_id").asText(null);
+        String userCode = json == null ? null : json.path("user_code").asText(null);
+        if (!StringUtils.hasText(userCode) && json != null) userCode = json.path("usercode").asText(null);
+        long interval = parseInterval(json == null ? null : json.get("interval"));
+        if (!StringUtils.hasText(deviceAuthId) || !StringUtils.hasText(userCode)) {
+            throw new BadRequestException("Codex 设备码服务返回的数据不完整，请稍后重试");
+        }
+        return new DeviceCode(issuer + "/codex/device", userCode, deviceAuthId, Math.max(1, interval));
+    }
+
+    /** 查询一次设备码是否已在 OpenAI 页面完成授权；403/404 表示仍在等待用户确认。 */
+    public DevicePollResult pollDeviceCode(String deviceAuthId, String userCode) {
+        try {
+            ResponseEntity<JsonNode> response = restClient.post()
+                    .uri(issuer + "/api/accounts/deviceauth/token")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(Map.of("device_auth_id", deviceAuthId, "user_code", userCode))
+                    .retrieve()
+                    .onStatus(status -> status.value() == HttpStatus.FORBIDDEN.value()
+                                    || status.value() == HttpStatus.NOT_FOUND.value(),
+                            (request, pendingResponse) -> { })
+                    .toEntity(JsonNode.class);
+            if (response.getStatusCode().value() == HttpStatus.FORBIDDEN.value()
+                    || response.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
+                return DevicePollResult.waiting();
+            }
+            JsonNode json = response.getBody();
+            String code = json == null ? null : json.path("authorization_code").asText(null);
+            String verifier = json == null ? null : json.path("code_verifier").asText(null);
+            if (!StringUtils.hasText(code) || !StringUtils.hasText(verifier)) {
+                throw new BadRequestException("Codex 设备授权结果不完整，请重新登录");
+            }
+            return DevicePollResult.authorized(code, verifier);
+        } catch (BadRequestException ex) {
+            throw ex;
+        } catch (RestClientException ex) {
+            throw new BadRequestException("查询 Codex 登录状态失败，请稍后重试（" + ex.getMessage() + "）");
+        }
+    }
+
+    /** 用设备码流程返回的授权码与 verifier 换取 Codex CLI 令牌。 */
+    public TokenSet exchangeDeviceCode(DevicePollResult result) {
+        if (!result.authorized()) throw new BadRequestException("Codex 设备授权尚未完成");
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("grant_type", "authorization_code");
+        body.add("client_id", clientId);
+        body.add("code", result.authorizationCode());
+        body.add("redirect_uri", issuer + "/deviceauth/callback");
+        body.add("code_verifier", result.codeVerifier());
+        return postToken(body, "Codex 设备授权码无效或已过期，请重新登录");
     }
 
     /** 接受纯授权码或浏览器地址栏里的完整 localhost 回调地址。 */
@@ -181,7 +257,27 @@ public class OpenAiCodexOAuthClient {
         }
     }
 
+    private static long parseInterval(JsonNode value) {
+        if (value == null || value.isNull()) return 5;
+        if (value.canConvertToLong()) return value.asLong(5);
+        try {
+            return Long.parseLong(value.asText().trim());
+        } catch (NumberFormatException ex) {
+            return 5;
+        }
+    }
+
     private record Callback(String code, String state) { }
+
+    public record DeviceCode(String verificationUrl, String userCode, String deviceAuthId,
+            long intervalSeconds) { }
+
+    public record DevicePollResult(boolean authorized, String authorizationCode, String codeVerifier) {
+        public static DevicePollResult waiting() { return new DevicePollResult(false, null, null); }
+        public static DevicePollResult authorized(String code, String verifier) {
+            return new DevicePollResult(true, code, verifier);
+        }
+    }
 
     public record TokenSet(String idToken, String accessToken, String refreshToken, long expiresInSeconds) { }
 }

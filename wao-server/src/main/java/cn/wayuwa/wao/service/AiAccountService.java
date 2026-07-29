@@ -22,6 +22,7 @@ import cn.wayuwa.wao.dto.AiAccountCredentialsDto;
 import cn.wayuwa.wao.dto.AiAccountDto;
 import cn.wayuwa.wao.dto.AiAccountFormRequest;
 import cn.wayuwa.wao.dto.AiAccountLoginStartDto;
+import cn.wayuwa.wao.dto.AiAccountLoginStatusDto;
 import cn.wayuwa.wao.dto.AiAccountSyncResultDto;
 import cn.wayuwa.wao.dto.CompleteAiAccountLoginRequest;
 import cn.wayuwa.wao.dto.AiRunAccountDto;
@@ -120,9 +121,8 @@ public class AiAccountService {
     /**
      * 发起一次 OAuth 登录，返回让用户在浏览器里打开的授权地址。
      *
-     * <p>用的是授权码 + PKCE：授权完成后 Anthropic 把码显示在回调页上，用户复制回 WAO 换取令牌。
-     * 之所以不用「本地回环端口」那套，是因为浏览器在用户自己的电脑上，而 WAO 跑在 Linux 主节点，
-     * 回环地址根本连不通；复制授权码这一步换来的是登录可以在任何一台机器的浏览器里完成。
+     * <p>Codex 使用官方设备码协议，服务端自动轮询授权结果；Claude 使用授权码 + PKCE，由用户把
+     * 回调页显示的授权码复制回 WAO。两种流程都不依赖用户电脑监听本地回环端口。
      *
      * @param request  要登录哪个 provider，以及可选的账号显示名
      * @param memberId 发起登录的成员，仅用于审计
@@ -135,24 +135,34 @@ public class AiAccountService {
             throw new BadRequestException(label(provider) + " 暂不支持一键登录，请使用手工凭据方式添加");
         }
         purgeExpiredSessions();
-        String state = "codex".equals(provider) ? codex.newState() : anthropic.newState();
-        String verifier = "codex".equals(provider) ? codex.newCodeVerifier() : anthropic.newCodeVerifier();
+        boolean codexLogin = "codex".equals(provider);
+        String state = codexLogin ? codex.newState() : anthropic.newState();
+        String verifier = codexLogin ? null : anthropic.newCodeVerifier();
+        OpenAiCodexOAuthClient.DeviceCode deviceCode = codexLogin ? codex.requestDeviceCode() : null;
         LocalDateTime now = LocalDateTime.now();
         AiOauthSessionEntity session = new AiOauthSessionEntity();
         session.setState(state);
         session.setProvider(provider);
         session.setCodeVerifier(verifier);
+        session.setFlow(codexLogin ? "device_code" : "authorization_code");
+        if (deviceCode != null) {
+            session.setDeviceAuthId(deviceCode.deviceAuthId());
+            session.setUserCode(deviceCode.userCode());
+            session.setPollIntervalSeconds((int) Math.min(deviceCode.intervalSeconds(), 60));
+        }
         session.setLabel(trimToNull(request.label()));
         session.setCreatedBy(memberId);
         session.setCreatedAt(now);
-        session.setExpiresAt(now.plusMinutes(10));
+        session.setExpiresAt(now.plusMinutes(codexLogin ? 15 : 10));
         sessionMapper.insert(session);
-        boolean codexLogin = "codex".equals(provider);
         return new AiAccountLoginStartDto(state,
-                codexLogin ? codex.authorizeUrl(state, verifier) : anthropic.authorizeUrl(state, verifier),
+                codexLogin ? deviceCode.verificationUrl() : anthropic.authorizeUrl(state, verifier),
                 session.getExpiresAt().toString(), codexLogin
-                        ? "完成授权后浏览器可能显示 localhost 无法连接，这是正常的。复制地址栏里的完整地址回来即可。"
-                        : "在新窗口完成授权后，页面会显示一段授权码，把它整段复制回来即可。授权码十分钟内有效。");
+                        ? "在 OpenAI 官方页面登录并确认下方一次性短码，完成后 WAO 会自动保存账号。"
+                        : "在新窗口完成授权后，页面会显示一段授权码，把它整段复制回来即可。授权码十分钟内有效。",
+                codexLogin ? "device_code" : "authorization_code",
+                codexLogin ? deviceCode.userCode() : null,
+                codexLogin ? session.getPollIntervalSeconds() : 0);
     }
 
     /**
@@ -166,7 +176,13 @@ public class AiAccountService {
         if (session == null || session.getExpiresAt().isBefore(LocalDateTime.now())) {
             throw new BadRequestException("这次登录已过期，请重新点击登录");
         }
-        if ("codex".equals(session.getProvider())) return completeCodexLogin(session, request.code());
+        if ("codex".equals(session.getProvider())) {
+            if ("device_code".equals(session.getFlow())) {
+                throw new BadRequestException("这次 Codex 登录会自动完成，无需回填地址");
+            }
+            return completeCodexLogin(session, codex.exchangeCode(
+                    request.code(), session.getCodeVerifier(), session.getState()));
+        }
         AnthropicOAuthClient.TokenSet tokens =
                 anthropic.exchangeCode(request.code(), session.getCodeVerifier(), session.getState());
         sessionMapper.deleteById(session.getState());
@@ -209,9 +225,41 @@ public class AiAccountService {
         return toDto(entity);
     }
 
-    private AiAccountDto completeCodexLogin(AiOauthSessionEntity session, String rawCode) {
-        OpenAiCodexOAuthClient.TokenSet tokens =
-                codex.exchangeCode(rawCode, session.getCodeVerifier(), session.getState());
+    /**
+     * 查询 Codex 设备码登录状态；授权完成时换取令牌并直接创建账号。
+     *
+     * <p>服务端遵守 OpenAI 返回的最小轮询间隔，页面即使重复请求也不会向上游高频轮询。
+     */
+    @Transactional
+    public AiAccountLoginStatusDto loginStatus(String rawState) {
+        String state = rawState == null ? "" : rawState.trim();
+        AiOauthSessionEntity session = sessionMapper.selectById(state);
+        LocalDateTime now = LocalDateTime.now();
+        if (session == null || session.getExpiresAt().isBefore(now)) {
+            throw new BadRequestException("这次登录已过期，请重新点击登录");
+        }
+        if (!"codex".equals(session.getProvider()) || !"device_code".equals(session.getFlow())) {
+            throw new BadRequestException("这个登录会话不支持自动查询");
+        }
+        int interval = Math.max(1, session.getPollIntervalSeconds() == null
+                ? 5 : session.getPollIntervalSeconds());
+        if (session.getLastPolledAt() != null
+                && session.getLastPolledAt().plusSeconds(interval).isAfter(now)) {
+            return new AiAccountLoginStatusDto("pending", "等待在 OpenAI 页面完成授权", null);
+        }
+        session.setLastPolledAt(now);
+        sessionMapper.updateById(session);
+        OpenAiCodexOAuthClient.DevicePollResult result =
+                codex.pollDeviceCode(session.getDeviceAuthId(), session.getUserCode());
+        if (!result.authorized()) {
+            return new AiAccountLoginStatusDto("pending", "等待在 OpenAI 页面完成授权", null);
+        }
+        AiAccountDto account = completeCodexLogin(session, codex.exchangeDeviceCode(result));
+        return new AiAccountLoginStatusDto("completed", "Codex 登录成功", account);
+    }
+
+    private AiAccountDto completeCodexLogin(AiOauthSessionEntity session,
+            OpenAiCodexOAuthClient.TokenSet tokens) {
         sessionMapper.deleteById(session.getState());
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime expiresAt = tokens.expiresInSeconds() > 0
