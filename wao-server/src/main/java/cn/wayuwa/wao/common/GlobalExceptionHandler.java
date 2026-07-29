@@ -56,8 +56,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ApiResponse<Void> handleDataConflict(DataIntegrityViolationException exception) {
-        log.warn("Concurrent account identity update conflicted: {}", exception.getClass().getSimpleName());
-        return ApiResponse.fail(40901, "账号或登录身份刚刚被其他请求占用，请刷新后重试");
+        // 只记类名时，任何唯一键冲突在日志里都长得一模一样，排查只能去翻库；带上根因就能直接看出撞的是哪张表哪个键。
+        log.warn("Data integrity conflict: {}", exception.getMostSpecificCause().getMessage(), exception);
+        return ApiResponse.fail(40901, "数据刚刚被其他请求占用，请刷新后重试");
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

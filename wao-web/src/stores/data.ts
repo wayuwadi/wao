@@ -136,6 +136,8 @@ export const useDataStore = defineStore('data', () => {
 
   /** 是否已成功接入真实后端（否则用 fixtures 兜底）。 */
   const apiLive = ref(false)
+  /** 密码库读取失败：页面据此显示错误与重试，而不是继续摆着演示凭据。 */
+  const vaultError = ref(false)
 
   /**
    * 从 /api 拉取各域数据替换 fixtures；后端不可用时静默保留 fixtures，应用仍可运行。
@@ -184,6 +186,12 @@ export const useDataStore = defineStore('data', () => {
     if (gl !== null) goals.value = gl
     // 核心读路径任一可达即认为后端在线；写路径（POST/PUT）随之启用。
     apiLive.value = a !== null && p !== null && t !== null
+    // 后端在线却读不出密码库时不能退回 fixtures：页面上摆着一堆假凭据，比空着报错更糟，
+    // 而且会把「接口挂了」伪装成「我的密码没了」（这正是 409 那次的现象）。
+    if (apiLive.value && va === null) {
+      vault.value = []
+      vaultError.value = true
+    }
     // 每个项目都应有一个默认知识库（后端就绪前为前端内存态），刷新后由此保持。
     projects.value.forEach((proj) => ensureProjectKb(proj))
     if (apiLive.value) {
@@ -1331,6 +1339,23 @@ export const useDataStore = defineStore('data', () => {
   // ---- 密钥库 ----
   const vaultItemById = (id: string) => vault.value.flatMap((g) => g.items).find((i) => i.id === id)
 
+  /**
+   * 重新拉取密码库（失败横幅的「重试」）。
+   *
+   * @returns 是否拉到了真实数据
+   */
+  async function reloadVault(): Promise<boolean> {
+    try {
+      vault.value = await fetchVault()
+      vaultError.value = false
+      return true
+    } catch {
+      vault.value = []
+      vaultError.value = true
+      return false
+    }
+  }
+
   /** 新建密钥库分组；apiLive 时经后端创建。 */
   async function addVaultGroup(name: string): Promise<VaultGroup> {
     if (apiLive.value) {
@@ -1454,6 +1479,6 @@ export const useDataStore = defineStore('data', () => {
     taskGroupsOf, setTaskGroups, moveTaskToGroup,
     jobById, createJob, updateJob, deleteJob, runJob, pauseJob, resumeJob, reauthJob,
     vaultItemById, addVaultGroup, renameVaultGroup, deleteVaultGroup, reorderVaultGroups,
-    addVaultItem, updateVaultItem, deleteVaultItem, revealVaultItem,
+    addVaultItem, updateVaultItem, deleteVaultItem, revealVaultItem, vaultError, reloadVault,
   }
 })

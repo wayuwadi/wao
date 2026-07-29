@@ -6,12 +6,6 @@ import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import type { VaultItem } from '@/types'
 
-/**
- * 默认分组按名字认，不按 id：分组归属到人之后，每个成员各有一个自己的「未分组」，
- * id 不再是固定的 vg-default（见 ADR-024）。
- */
-const DEFAULT_GROUP_NAME = '未分组'
-
 const data = useDataStore()
 const groupId = ref('all')
 const selId = ref<string | null>(null)
@@ -32,18 +26,36 @@ const items = computed<FlatItem[]>(() =>
 const filtered = computed(() => (groupId.value === 'all' ? items.value : items.value.filter((i) => i.groupId === groupId.value)))
 const sel = computed(() => filtered.value.find((i) => i.id === selId.value) ?? filtered.value[0] ?? null)
 
+/**
+ * 默认分组按后端给的 isDefault 认，不按名字认：名字是用户的，改完名它还是同一个默认分组（见 ADR-036）。
+ */
 const groups = computed(() =>
-  [{ id: 'all', label: '全部' }, ...data.vault.map((g) => ({ id: g.id, label: g.group }))].map((g) => ({
+  [
+    { id: 'all', label: '全部', isDefault: false },
+    ...data.vault.map((g) => ({ id: g.id, label: g.group, isDefault: !!g.isDefault })),
+  ].map((g) => ({
     ...g,
     count: g.id === 'all' ? items.value.length : items.value.filter((i) => i.groupId === g.id).length,
     on: groupId.value === g.id,
-    fixed: g.label === DEFAULT_GROUP_NAME,
+    fixed: g.isDefault,
   })),
 )
-/** 新建条目时的默认落点：自己的「未分组」，没有就用第一个分组。 */
+/** 新建条目时的默认落点：自己的默认分组，没有就用第一个分组。 */
 const defaultGroupId = computed(
-  () => data.vault.find((g) => g.group === DEFAULT_GROUP_NAME)?.id ?? data.vault[0]?.id ?? '',
+  () => data.vault.find((g) => g.isDefault)?.id ?? data.vault[0]?.id ?? '',
 )
+/** 默认落点的现名，用于新建条目弹窗的提示文案——默认分组改过名时提示也要跟着改。 */
+const defaultGroupName = computed(
+  () => data.vault.find((g) => g.id === defaultGroupId.value)?.group ?? '未分组',
+)
+
+const retrying = ref(false)
+async function retryLoad() {
+  retrying.value = true
+  const ok = await data.reloadVault()
+  retrying.value = false
+  toast(ok ? '密码库已恢复' : '还是读不出来，稍后再试')
+}
 
 function pickGroup(id: string) {
   groupId.value = id
@@ -56,7 +68,7 @@ function commitGroupName(id: string, event: Event) {
 }
 async function removeGroup(id: string) {
   const group = data.vault.find((g) => g.id === id)
-  if (!group || group.group === DEFAULT_GROUP_NAME) return
+  if (!group || group.isDefault) return
   if (!window.confirm(`删除分组“${group.group}”及其中 ${group.items.length} 个条目？`)) return
   await data.deleteVaultGroup(id)
   if (groupId.value === id) groupId.value = 'all'
@@ -187,6 +199,12 @@ async function deleteItem() {
       <span>密码以 AES-256-GCM 加密存储在服务端；拥有数据库与加密密钥的一方仍可解密，尚不是零知识端到端加密，请评估后再存放高敏感凭据。</span>
     </div>
 
+    <div v-if="data.vaultError" class="banner error">
+      <i class="ri-error-warning-line"></i>
+      <span>密码库读取失败，这里暂时是空的——你的条目仍在服务端，没有丢失。</span>
+      <button class="retry" :disabled="retrying" @click="retryLoad">{{ retrying ? '重试中…' : '重试' }}</button>
+    </div>
+
     <div class="cols">
       <div class="group-col">
         <div class="col-label">分组</div>
@@ -277,7 +295,7 @@ async function deleteItem() {
           <button class="icon-btn" @click="itemOpen = false"><i class="ri-close-line"></i></button>
         </div>
         <div class="modal-body">
-          <label class="f-label">分组 <span class="optional">选填，默认放入“未分组”</span></label>
+          <label class="f-label">分组 <span class="optional">选填，默认放入“{{ defaultGroupName }}”</span></label>
           <select v-model="formGroupId" class="f-input">
             <option v-for="g in data.vault" :key="g.id" :value="g.id">{{ g.group }}</option>
           </select>
@@ -388,6 +406,27 @@ async function deleteItem() {
   font-size: 15px;
   flex-shrink: 0;
   margin-top: 2px;
+}
+.banner.error {
+  background: #fff6f6;
+  border-color: #f3d2d2;
+  color: #a4302e;
+  align-items: center;
+}
+.banner.error .retry {
+  margin-left: auto;
+  flex-shrink: 0;
+  border: 1px solid #e6b7b6;
+  background: #fff;
+  color: #a4302e;
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.banner.error .retry:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .cols {

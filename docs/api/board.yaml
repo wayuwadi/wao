@@ -509,17 +509,19 @@ paths:
   # 密钥库域（关系表；密码以 AES-256-GCM 服务端加密存储，见 docs/adr/009-vault-server-side-encryption.md）
   # 归属到人：所有 /vault/* 接口只在当前登录成员自己的分组范围内生效，别人的分组一律按 404 处理
   # （见 docs/adr/024-vault-per-member-ownership.md）。
+  # 默认分组由分组上的 isDefault 标出，与名字无关：改名后它还是默认分组
+  # （见 docs/adr/036-vault-default-group-identity.md）。
   /vault:
-    get: { summary: 当前成员自己的密钥库分组及条目列表（不含密码明文，仅 hasSecret 标记）, responses: { '200': { description: OK } } }
+    get: { summary: 当前成员自己的密钥库分组及条目列表（分组带 isDefault；不含密码明文，仅 hasSecret 标记）, responses: { '200': { description: OK } } }
   /vault/groups:
     post: { summary: 新建分组（归属当前登录成员）, responses: { '200': { description: OK } } }
   /vault/groups/{id}:
     patch: { summary: 重命名分组, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
-    delete: { summary: 删除分组（级联删除条目；「未分组」不可删）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '400': { description: 默认分组不能删除 }, '404': { description: 不存在或不属于当前成员 } } }
+    delete: { summary: 删除分组（级联删除条目；isDefault 的分组不可删，改过名也一样）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '400': { description: 默认分组不能删除 }, '404': { description: 不存在或不属于当前成员 } } }
   /vault/groups/order:
     put: { summary: 保存拖拽后的分组顺序, responses: { '200': { description: OK } } }
   /vault/items:
-    post: { summary: 新建条目（groupId 可空，默认进入自己的“未分组”；secret 落库前加密）, responses: { '200': { description: OK }, '404': { description: 分组不存在或不属于当前成员 } } }
+    post: { summary: 新建条目（groupId 可空，默认进入自己的默认分组；secret 落库前加密）, responses: { '200': { description: OK }, '404': { description: 分组不存在或不属于当前成员 } } }
   /vault/items/{id}:
     patch: { summary: 局部更新条目, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     delete: { summary: 删除条目, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }

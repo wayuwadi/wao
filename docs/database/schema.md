@@ -324,9 +324,10 @@ OAuth 下发前会先把快过期的 access token 续期。
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | VARCHAR(32) PK | 分组 id |
-| name | VARCHAR(64) | 分组名；名为「未分组」的是该成员的默认分组，不可删除 |
+| name | VARCHAR(64) | 分组名；可随便改，改名不影响是不是默认分组 |
 | ord | INT | 展示顺序 |
 | owner_member_id | VARCHAR(32) | 归属成员；`/api/vault/*` 只在自己的分组内生效（见 ADR-024） |
+| is_default | TINYINT(1) | 该成员的默认分组：不可删除、新建条目的默认落点（见 ADR-036） |
 
 条目的归属跟随所在分组，不单独记列：一个条目要么在自己的分组里，要么就不该被看见。
 
@@ -430,4 +431,7 @@ OAuth 下发前会先把快过期的 access token 续期。
 - `V40__codex_oauth_custom_api.sql`：Codex OAuth、自定义 Responses API 配置与单次运行账号路由（见 ADR-032）。
 - `V41__codex_device_login.sql`：Codex 设备码会话和服务端轮询状态（见 ADR-033）。
 - `V42__caldav_accounts.sql`：CalDAV 账户、订阅日历与事件只读副本。
+- `V43__feishu_notification_feedback.sql`：飞书定时通知的回执与反馈（见 ADR-035）。
+- `V44__member_favorite_preference.sql`：成员收藏与个人偏好。
+- `V45__vault_group_is_default.sql`：密码库默认分组改为按 `is_default` 标记识别，存量按 id 还原（见 ADR-036）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

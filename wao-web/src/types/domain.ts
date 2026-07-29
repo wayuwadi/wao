@@ -449,6 +449,8 @@ export interface VaultGroup {
   id: string
   group: string
   items: VaultItem[]
+  /** 该成员的默认分组：不可删除、新建条目的默认落点。改名后依然成立（见 ADR-036）。 */
+  isDefault?: boolean
 }
 
 export interface ScheduleItem {
