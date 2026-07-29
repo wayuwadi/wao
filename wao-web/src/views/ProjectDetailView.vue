@@ -255,6 +255,8 @@ async function commitRename() {
 /** 删掉一个分组：里面的任务不删，落回第一个分组。最后一个分组不给删，否则没地方放任务。 */
 async function removeGroup(id: string) {
   if (groups.value.length <= 1) return toast('至少保留一个分组', 'ri-information-line')
+  const group = groups.value.find((item) => item.id === id)
+  if (!group || !window.confirm(`删除分组“${group.name}”？其中任务会归入第一个分组。`)) return
   const rest = groups.value.filter((g) => g.id !== id)
   ptasks.value.filter((t) => t.groupId === id).forEach((t) => data.patchTask(t.id, { groupId: rest[0]!.id }))
   await persistGroups(rest, '分组删除失败，请重试')

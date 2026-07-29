@@ -6,6 +6,7 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { fetchCaldavAccounts, fetchCaldavEvents, type CaldavAccount, type CaldavEvent } from '@/api/caldav'
 import { toast } from '@/composables/toast'
+import { usePreferenceStore } from '@/stores/preferences'
 // 配置面板打开才需要，不进日历页首屏包。
 const CaldavPanel = defineAsyncComponent(() => import('@/components/calendar/CaldavPanel.vue'))
 
@@ -22,13 +23,16 @@ interface CalEvt {
 const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
+const preferences = usePreferenceStore()
 const router = useRouter()
 
 const now = new Date(`${data.today}T00:00:00`)
 const calY = ref(now.getFullYear())
 const calM = ref(now.getMonth())
+const calD = ref(now.getDate())
+const viewMode = ref<'year' | 'month' | 'week'>('month')
 
-const DOWS = ['一', '二', '三', '四', '五', '六', '日']
+const DOWS = computed(() => preferences.weekStart === '周日' ? ['日', '一', '二', '三', '四', '五', '六'] : ['一', '二', '三', '四', '五', '六', '日'])
 
 // ---------- CalDAV：账户状态 + 当月事件 ----------
 const accounts = ref<CaldavAccount[]>([])
@@ -53,7 +57,7 @@ async function loadCaldav() {
 /** 拉取覆盖当前月视图（含前后补位周）的订阅事件。 */
 async function loadEvents() {
   const first = new Date(calY.value, calM.value, 1)
-  const off = (first.getDay() + 6) % 7
+  const off = preferences.weekStart === '周日' ? first.getDay() : (first.getDay() + 6) % 7
   const from = new Date(calY.value, calM.value, 1 - off)
   const to = new Date(calY.value, calM.value + 1, 7)
   try {
@@ -115,7 +119,7 @@ const month = computed(() => {
   const y = calY.value
   const m = calM.value
   const first = new Date(y, m, 1)
-  const off = (first.getDay() + 6) % 7
+  const off = preferences.weekStart === '周日' ? first.getDay() : (first.getDay() + 6) % 7
   const dim = new Date(y, m + 1, 0).getDate()
   const prevDim = new Date(y, m, 0).getDate()
   const byDate: Record<string, CalEvt[]> = {}
@@ -170,6 +174,12 @@ function toggleExpand(dayIso: string) {
 }
 
 function shift(d: number) {
+  if (viewMode.value === 'year') { calY.value += d; return }
+  if (viewMode.value === 'week') {
+    const date = new Date(calY.value, calM.value, calD.value + d * 7)
+    calY.value = date.getFullYear(); calM.value = date.getMonth(); calD.value = date.getDate()
+    return
+  }
   let m = calM.value + d
   let y = calY.value
   if (m < 0) {
@@ -187,7 +197,24 @@ function goToday() {
   const d = new Date(`${data.today}T00:00:00`)
   calY.value = d.getFullYear()
   calM.value = d.getMonth()
+  calD.value = d.getDate()
 }
+
+const weekDays = computed(() => {
+  const pivot = new Date(calY.value, calM.value, calD.value)
+  const offset = preferences.weekStart === '周日' ? pivot.getDay() : (pivot.getDay() + 6) % 7
+  const start = new Date(pivot); start.setDate(pivot.getDate() - offset)
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(start); date.setDate(start.getDate() + i)
+    const day = iso(date)
+    return { iso: day, label: `${date.getMonth() + 1}月${date.getDate()}日`, isToday: day === data.today, items: events.value.filter((event) => event.date === day) }
+  })
+})
+const yearMonths = computed(() => Array.from({ length: 12 }, (_, index) => {
+  const prefix = `${calY.value}-${String(index + 1).padStart(2, '0')}`
+  return { index, title: `${index + 1} 月`, count: events.value.filter((event) => event.date.startsWith(prefix)).length }
+}))
+function selectMonth() { viewMode.value = 'month' }
 
 // ---------- CalDAV 配置浮层：账户是个人维度，就近在日历页里配置 ----------
 const showCaldavConfig = ref(false)
@@ -246,6 +273,9 @@ function onDropDay(dayIso: string) {
         <span class="cd-dot" :style="{ background: caldavState.dot }"></span>{{ caldavState.label }}<i class="ri-settings-3-line"></i>
       </button>
       <div class="spacer"></div>
+      <div class="view-switch"><button :class="{ on: viewMode === 'year' }" @click="viewMode = 'year'">年</button><button :class="{ on: viewMode === 'month' }" @click="viewMode = 'month'">月</button><button :class="{ on: viewMode === 'week' }" @click="viewMode = 'week'">周</button></div>
+      <select v-model.number="calY" class="jump-select" title="快速切换年份"><option v-for="y in Array.from({ length: 21 }, (_, i) => now.getFullYear() - 10 + i)" :key="y" :value="y">{{ y }} 年</option></select>
+      <select v-if="viewMode !== 'year'" v-model.number="calM" class="jump-select" title="快速切换月份"><option v-for="m in 12" :key="m" :value="m - 1">{{ m }} 月</option></select>
       <button class="nav-btn" @click="shift(-1)"><i class="ri-arrow-left-s-line"></i></button>
       <button class="today-btn" @click="goToday">今天</button>
       <button class="nav-btn" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
@@ -254,10 +284,10 @@ function onDropDay(dayIso: string) {
     <div class="cal-body">
       <div class="cal-card">
         <div class="cal-head">
-          <div class="month-title">{{ month.title }}</div>
+          <div class="month-title">{{ viewMode === 'year' ? `${calY} 年` : viewMode === 'week' ? `${weekDays[0]?.label} - ${weekDays[6]?.label}` : month.title }}</div>
           <span class="cal-hint">任务截止、项目里程碑与订阅日历在同一张日历上</span>
         </div>
-        <div class="dows">
+        <template v-if="viewMode === 'month'"><div class="dows">
           <div v-for="d in DOWS" :key="d" class="dow">{{ d }}</div>
         </div>
         <div v-for="(wk, wi) in month.weeks" :key="wi" class="week">
@@ -293,7 +323,11 @@ function onDropDay(dayIso: string) {
               <button v-else-if="expandedDay === dy.iso && dy.items.length > 3" class="day-more" @click="toggleExpand(dy.iso)">收起</button>
             </div>
           </div>
-        </div>
+        </div></template>
+        <template v-else-if="viewMode === 'week'">
+          <div class="week-view"><div v-for="(day, index) in weekDays" :key="day.iso" class="week-day"><div class="week-date" :class="{ today: day.isToday }">{{ DOWS[index] }} {{ day.label }}</div><button v-for="(ev, eventIndex) in day.items" :key="eventIndex" class="event week-event" @click="ev.go?.()"><span class="ev-dot" :style="{ background: ev.color }"></span><span v-if="ev.time" class="ev-time">{{ ev.time }}</span>{{ ev.title }}</button><button v-if="!day.items.length" class="week-empty" @dblclick="quickCreate(day.iso)">双击新建任务</button></div></div>
+        </template>
+        <template v-else><div class="year-view"><button v-for="item in yearMonths" :key="item.index" class="year-month" @click="calM = item.index; selectMonth()"><b>{{ item.title }}</b><span>{{ item.count ? `${item.count} 项日程` : '暂无日程' }}</span></button></div></template>
       </div>
 
       <!-- 未排期任务 -->
@@ -351,6 +385,15 @@ function onDropDay(dayIso: string) {
   margin: 0 auto;
   animation: waoFadeUp 0.25s ease;
 }
+.view-switch { display: inline-flex; padding: 2px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); }
+.view-switch button { border: 0; border-radius: 5px; padding: 4px 9px; background: transparent; color: var(--wao-text-3); cursor: pointer; font-size: 12px; }
+.view-switch button.on { background: var(--wao-primary); color: #fff; }
+.jump-select { height: 30px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); padding: 0 5px; }
+.week-view { display: grid; grid-template-columns: repeat(7, minmax(135px, 1fr)); min-height: 420px; overflow-x: auto; }
+.week-day { padding: 10px; border-right: 1px solid var(--wao-divider); min-width: 135px; }
+.week-date { font-size: 12px; color: var(--wao-text-3); font-weight: 600; margin-bottom: 10px; }.week-date.today { color: var(--wao-primary); }
+.week-event { width: 100%; margin: 4px 0; text-align: left; }.week-empty { border: 0; background: transparent; color: var(--wao-text-faint); font-size: 12px; cursor: pointer; }
+.year-view { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 14px; }.year-month { min-height: 100px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); color: var(--wao-text); text-align: left; padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }.year-month span { color: var(--wao-text-weak); font-size: 12px; }.year-month:hover { border-color: var(--wao-primary); }
 .spacer {
   flex: 1;
 }

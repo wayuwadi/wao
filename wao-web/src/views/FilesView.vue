@@ -90,6 +90,7 @@ async function removeImage(id: string | undefined, name: string) {
     toast('内置示例图不可删除', 'ri-information-line')
     return
   }
+  if (!window.confirm(`删除图片“${name}”？此操作不可恢复。`)) return
   await data.deleteImage(id)
   toast(`已删除「${name}」`, 'ri-delete-bin-line')
 }

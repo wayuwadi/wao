@@ -170,6 +170,7 @@ async function saveItem() {
 }
 async function deleteItem() {
   if (!sel.value) return
+  if (!window.confirm(`删除条目“${sel.value.name}”？此操作不可恢复。`)) return
   const id = sel.value.id
   selId.value = null
   await data.deleteVaultItem(id)

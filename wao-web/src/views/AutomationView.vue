@@ -1,31 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import ChatSyncConfigModal from '@/components/overlays/ChatSyncConfigModal.vue'
 import type { AutomationJob } from '@/types'
-import { fetchNotificationFeedbackReport, type NotificationFeedbackReport } from '@/api/board'
 
 const data = useDataStore()
-const tab = ref<'jobs' | 'runs' | 'report'>('jobs')
-const reportPeriod = ref<'day' | 'week' | 'month' | 'all'>('day')
-const report = ref<NotificationFeedbackReport | null>(null)
-const reportLoading = ref(false)
-const reportError = ref('')
-async function loadReport() {
-  tab.value = 'report'
-  reportLoading.value = true
-  reportError.value = ''
-  try {
-    report.value = await fetchNotificationFeedbackReport(reportPeriod.value)
-  } catch (error) {
-    reportError.value = error instanceof Error ? error.message : '反馈报表加载失败，请稍后重试。'
-  } finally {
-    reportLoading.value = false
-  }
-}
-watch(reportPeriod, () => void loadReport())
+const tab = ref<'jobs' | 'runs'>('jobs')
 const selId = ref<string | null>(null)
 // 保留既有弹层状态以兼容历史深链；界面不再暴露泛化“新建自动化”入口。
 const newOpen = ref(false)
@@ -104,11 +86,6 @@ async function onResume(id: string) {
   await data.resumeJob(id)
   toast('已恢复', 'ri-play-circle-line')
 }
-async function onDelete(id: string) {
-  selId.value = null
-  await data.deleteJob(id)
-  toast('已删除自动化任务', 'ri-delete-bin-line')
-}
 async function createAuto() {
   if (!newName.value.trim()) return
   const job = await data.createJob({
@@ -129,7 +106,7 @@ async function createAuto() {
     <DemoBanner
       icon="ri-flashlight-line"
       title="自动化"
-      text="自动化任务已接入真实后端：新建 / 编辑 / 删除、手动触发、暂停与恢复均会保存并产生真实的运行记录，填写 Cron 表达式的任务由服务端按计划自动执行。「飞书群聊消息同步知识库」是真跑的：填完配置后每天 23:59 拉群聊记录写进知识库。其余任务的执行步骤仍是描述性文本，尚未接入 NAS / 邮箱等外部系统。"
+      text="自动化任务已接入真实后端：手动触发、暂停与恢复均会保存并产生真实的运行记录，填写 Cron 表达式的任务由服务端按计划自动执行。自动化属于系统功能，不提供删除入口；不再需要时请暂停。"
       storage-key="automation"
     />
     <!-- 列表 -->
@@ -141,21 +118,8 @@ async function createAuto() {
       </div>
       <div class="tabs">
         <button v-for="t in ([['任务列表', 'jobs'], ['运行记录', 'runs']] as const)" :key="t[1]" class="tab" :class="{ on: tab === t[1] }" @click="tab = t[1]">{{ t[0] }}</button>
-        <button class="tab" :class="{ on: tab === 'report' }" @click="loadReport">反馈报表</button>
       </div>
-
-      <div v-if="tab === 'report'" class="table-card report-card">
-        <div class="report-head"><b>飞书提醒反馈</b><select v-model="reportPeriod" class="report-select"><option value="day">日统计</option><option value="week">周统计</option><option value="month">月统计</option><option value="all">总统计</option></select></div>
-        <div v-if="reportLoading" class="empty"><i class="ri-loader-4-line spin"></i>正在读取反馈报表…</div>
-        <div v-else-if="reportError" class="empty report-error"><span>{{ reportError }}</span><button class="btn-ghost" @click="loadReport">重新加载</button></div>
-        <template v-else-if="report">
-          <div class="report-totals"><span>做到了 {{ report.doneCount }}</span><span>没做到 {{ report.missedCount }}</span><span>已反馈 {{ report.totalCount }}</span></div>
-          <div v-for="(r, i) in report.rows" :key="i" class="report-row"><span>{{ r.notificationAt }}</span><span>{{ r.event }}</span><span>{{ r.operator }}</span><span>{{ r.action }}</span></div>
-          <div v-if="!report.rows.length" class="empty">此范围暂无点击反馈；未点击的通知按空处理，不会计入统计。</div>
-        </template>
-      </div>
-
-      <div v-else-if="tab === 'jobs'" class="table-card">
+      <div v-if="tab === 'jobs'" class="table-card">
         <div class="grid-jobs th">
           <div>名称</div><div>计划</div><div>状态</div><div>上次运行</div><div>近 5 次</div><div class="right">操作</div>
         </div>
@@ -174,7 +138,6 @@ async function createAuto() {
             <button v-if="jb.job.status === '已暂停'" class="op" title="恢复" @click="onResume(jb.job.id)"><i class="ri-play-circle-line"></i></button>
             <button v-else class="op" title="暂停" @click="onPause(jb.job.id)"><i class="ri-pause-circle-line"></i></button>
             <button class="op" title="手动运行" @click="onRun(jb.job.id)"><i class="ri-play-line"></i></button>
-            <button class="op danger" title="删除自动化任务" @click="onDelete(jb.job.id)"><i class="ri-delete-bin-line"></i></button>
           </div>
         </div>
       </div>
@@ -211,7 +174,6 @@ async function createAuto() {
         <button class="btn-primary sm" @click="onRun(sel.id)"><i class="ri-play-line"></i>手动运行</button>
         <button v-if="sel.status === '已暂停'" class="btn-ghost" @click="onResume(sel.id)"><i class="ri-play-circle-line"></i>恢复</button>
         <button v-else class="btn-ghost" @click="onPause(sel.id)"><i class="ri-pause-circle-line"></i>暂停</button>
-        <button class="btn-ghost danger" @click="onDelete(sel.id)"><i class="ri-delete-bin-line"></i>删除</button>
       </div>
 
       <div class="job-cols">
@@ -378,8 +340,6 @@ async function createAuto() {
   gap: 2px;
   border-bottom: 1px solid var(--wao-line);
 }
-.report-head,.report-totals,.report-row{display:flex;gap:18px;align-items:center;padding:11px 16px}.report-head{justify-content:space-between}.report-totals{background:var(--wao-bg-sub);font-size:13px}.report-row{border-top:1px solid var(--wao-divider-2);font-size:12px}.report-row span{flex:1}.report-select{border:1px solid var(--wao-line-control);border-radius:6px;padding:4px}.report-card{overflow:hidden}
-.report-error { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--wao-danger-strong); }
 .tab {
   height: 34px;
   padding: 0 13px;
