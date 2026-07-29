@@ -27,9 +27,9 @@ export const PERSONAL_ITEMS: ModuleId[] = ['todo', 'calendar', 'knowledge', 'vau
 /** 左侧导航分组（空 label = 不显示分组标题的首页组）。个人相关功能统一收进「个人」组。 */
 export const NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
-  { label: '公共', items: ['projects', 'files'] },
+  { label: '公共', items: ['projects'] },
   { label: '个人', items: PERSONAL_ITEMS },
-  { label: '工具', items: ['automation'] },
+  { label: '工具', items: ['automation', 'files'] },
 ]
 
 /** 由模块 id 生成页签。首页固定不可关闭。 */

@@ -73,3 +73,13 @@ export async function apiCreateAccount(name: string, email: string, password: st
   const response = await http.post<ApiResponse<SessionMember>>('/api/members/accounts', { name, email, password })
   return response.data.data
 }
+
+/** 管理员重置成员密码。 */
+export async function apiResetMemberPassword(memberId: string, password: string) {
+  await http.patch<ApiResponse<void>>(`/api/members/${encodeURIComponent(memberId)}/password`, { password })
+}
+
+/** 管理员删除成员账号。 */
+export async function apiDeleteMemberAccount(memberId: string) {
+  await http.delete<ApiResponse<void>>(`/api/members/${encodeURIComponent(memberId)}/account`)
+}

@@ -219,6 +219,44 @@ public class AccountAuthService {
         return toMember(member);
     }
 
+    /** 管理员重置成员的本地登录密码，并解除该账号的临时锁定。 */
+    @Transactional
+    public void adminResetPassword(String operatorMemberId, String memberId, String password) {
+        requireAdmin(operatorMemberId);
+        AccountEntity account = accountMapper.findByMemberId(memberId);
+        if (account == null || !"ACTIVE".equals(account.getStatus())) throw new NotFoundException("成员账号不存在");
+        savePassword(account.getId(), password);
+    }
+
+    /** 管理员删除成员账号、身份绑定与成员目录记录；禁止删除自己和最后一名管理员。 */
+    @Transactional
+    public void adminDeleteAccount(String operatorMemberId, String memberId) {
+        MemberEntity operator = requireAdmin(operatorMemberId);
+        if (operatorMemberId.equals(memberId)) throw new BadRequestException("不能删除当前登录的管理员账号");
+        MemberEntity member = memberMapper.selectById(memberId);
+        if (member == null) throw new NotFoundException("成员不存在");
+        if ("管理员".equals(member.getRole()) && memberMapper.selectList(null).stream()
+                .filter(item -> "管理员".equals(item.getRole())).count() <= 1) {
+            throw new BadRequestException("至少保留一名管理员");
+        }
+        AccountEntity account = accountMapper.findByMemberId(memberId);
+        if (account != null) {
+            identityMapper.delete(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AccountIdentityEntity>()
+                    .eq(AccountIdentityEntity::getAccountId, account.getId()));
+            credentialMapper.deleteById(account.getId());
+            accountMapper.deleteById(account.getId());
+        }
+        memberMapper.deleteById(memberId);
+    }
+
+    private MemberEntity requireAdmin(String operatorMemberId) {
+        MemberEntity operator = operatorMemberId == null ? null : memberMapper.selectById(operatorMemberId);
+        if (operator == null || !"管理员".equals(operator.getRole())) {
+            throw new UnauthorizedException("只有管理员可以管理账号");
+        }
+        return operator;
+    }
+
     /** 解除一种登录身份；至少保留另一种可用登录方式。 */
     @Transactional
     public AuthSessionDto unlink(String accountId, String provider) {
