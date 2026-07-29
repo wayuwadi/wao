@@ -39,7 +39,7 @@ Windows 发布包使用 ZIP 而不是 tar.gz，确保中文技术方案文件名
 
 ## 云服务器
 
-当前状态：已完成。`wao.wayuwa.cn` 已签发并自动续期 HTTPS 证书，静态前端已上线，Nginx 已配置 Linux/Windows 双 Gateway 上游；云机保持前端-only，不运行 Docker。
+当前状态：已完成。`wao.wayuwa.cn` 已签发并自动续期 HTTPS 证书，静态前端已上线，Nginx 已配置 Linux/Windows 双 Gateway 上游；云机保持前端-only，不运行 Docker。普通 API 在双上游间分流，AI 账号与 AI Runner API 按 ADR-034 固定走具备 VPN 出口的 Linux 主节点；阿里云 VM 本身不需要 VPN。
 
 1. 把专用部署公钥加入 root 的 `authorized_keys`，将代码放在 `/opt/wao`；云机不复制包含数据库凭据的 `deploy/.env`。
 2. 将 `wao.wayuwa.cn` 的 A 记录指向 `8.136.152.131`，安全组放行 22、80、443。
