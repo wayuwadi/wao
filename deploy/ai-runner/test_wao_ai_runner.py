@@ -718,6 +718,27 @@ class PairingRevokedTest(unittest.TestCase):
 
         self.assertFalse(state.exists())
 
+    @patch.object(RUNNER.subprocess, "run")
+    def test_windows_scheduled_task_is_disabled_after_revocation(self, run: Mock) -> None:
+        run.return_value = Mock(returncode=0, stdout="", stderr="")
+
+        with patch.object(RUNNER.os, "name", "nt"):
+            disabled = RUNNER.disable_windows_task("WAO AI Runner")
+
+        self.assertTrue(disabled)
+        run.assert_called_once_with(
+            ["schtasks.exe", "/Change", "/TN", "WAO AI Runner", "/Disable"],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+
+    @patch.object(RUNNER.subprocess, "run")
+    def test_non_windows_runner_does_not_try_to_disable_a_task(self, run: Mock) -> None:
+        with patch.object(RUNNER.os, "name", "posix"):
+            disabled = RUNNER.disable_windows_task("WAO AI Runner")
+
+        self.assertFalse(disabled)
+        run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
