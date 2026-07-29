@@ -26,6 +26,7 @@ export type ModuleId =
   | 'knowledge'
   | 'files'
   | 'automation'
+  | 'mediaAgent'
   | 'vault'
   | 'settings'
 

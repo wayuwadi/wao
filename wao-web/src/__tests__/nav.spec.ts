@@ -22,4 +22,13 @@ describe('侧边栏导航配置', () => {
     // 软删除与 7 天保留期（ADR-018）没有下线，只是不再占一个一级菜单。
     expect(router.getRoutes().some((r) => r.name === 'knowledge')).toBe(true)
   })
+
+  it('自媒体 Agent 作为独立应用入口出现在工具组并拥有受保护路由', () => {
+    const tools = NAV_GROUPS.find((group) => group.label === '工具')
+    expect(tools?.items).toContain('mediaAgent')
+    expect(MODULES.mediaAgent.path).toBe('/media-agent')
+    const route = router.getRoutes().find((item) => item.name === 'media-agent')
+    expect(route?.meta.module).toBe('mediaAgent')
+    expect(route?.meta.public).not.toBe(true)
+  })
 })

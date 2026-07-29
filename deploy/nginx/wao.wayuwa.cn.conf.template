@@ -59,6 +59,28 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
+    location = /agent {
+        return 301 /agent/;
+    }
+
+    # Agent 前端由独立仓库发布到单独静态目录，WAO 发布不会覆盖它。
+    location /agent/ {
+        alias /var/www/wao-agent/dist/;
+        try_files $uri $uri/ /agent/index.html;
+    }
+
+    location /agent/assets/ {
+        alias /var/www/wao-agent/dist/assets/;
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location = /agent/index.html {
+        alias /var/www/wao-agent/dist/index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }
