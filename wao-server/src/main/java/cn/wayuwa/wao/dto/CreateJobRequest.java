@@ -16,5 +16,6 @@ public record CreateJobRequest(
         String source,
         String target,
         List<String> steps,
-        String cronExpr) {
+        String cronExpr,
+        String handler) {
 }

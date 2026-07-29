@@ -41,10 +41,11 @@ class FeishuQuickCollectServiceTest {
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final AccountMapper accounts = mock(AccountMapper.class);
     private final AccountIdentityMapper identities = mock(AccountIdentityMapper.class);
+    private final NotificationFeedbackService feedback = mock(NotificationFeedbackService.class);
     private final FeishuAppLinks links = new FeishuAppLinks(
             new FeishuLoginProperties(false, "", "", "", "", "https://open.feishu.cn"));
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
-            settings, feishu, notifier, links, tasks, projects, accounts, identities, new ObjectMapper());
+            settings, feishu, notifier, links, tasks, projects, accounts, identities, new ObjectMapper(), feedback);
 
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);

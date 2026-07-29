@@ -170,6 +170,8 @@ erDiagram
 
 ## 自动化域
 
+`feishu_notification` 记录每次由自动化实际发出的飞书通知；`feishu_notification_feedback` 记录卡片按钮的真实回调（通知、事件、点击人和正/负反馈）。未点击不产生反馈行，因此报表不会伪造「没做到」。
+
 ### automation_job（任务）
 | 列 | 类型 | 说明 |
 |---|---|---|

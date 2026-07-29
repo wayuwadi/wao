@@ -38,7 +38,7 @@ class AutomationServiceTest {
         when(jobMapper.selectCount(null)).thenReturn(0L);
 
         AutomationJobDto dto = service.createJob(
-                new CreateJobRequest("新任务", null, null, "描述", "来源", "目标", List.of("步骤一"), null));
+                new CreateJobRequest("新任务", null, null, "描述", "来源", "目标", List.of("步骤一"), null, null));
 
         assertThat(dto.id()).startsWith("j");
         assertThat(dto.status()).isEqualTo("正常");
@@ -50,7 +50,7 @@ class AutomationServiceTest {
         when(jobMapper.selectCount(null)).thenReturn(0L);
 
         assertThatThrownBy(() -> service.createJob(
-                new CreateJobRequest("新任务", null, null, null, null, null, List.of(), "not-a-cron")))
+                new CreateJobRequest("新任务", null, null, null, null, null, List.of(), "not-a-cron", null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

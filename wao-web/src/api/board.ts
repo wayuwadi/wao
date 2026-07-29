@@ -286,6 +286,8 @@ export interface CreateJobPayload {
   target?: string
   steps?: string[]
   cronExpr?: string
+  /** 真实飞书通知任务；由服务端使用已配置的自建应用发到所选群。 */
+  handler?: string
 }
 export const apiCreateJob = (payload: CreateJobPayload) => post<AutomationJob>('/api/jobs', payload)
 
@@ -298,6 +300,8 @@ export const apiUpdateTaskComment = (taskId: string, commentId: string, text: st
 export const apiDeleteTaskComment = (taskId: string, commentId: string) =>
   del(`/api/tasks/${taskId}/comments/${encodeURIComponent(commentId)}`)
 export const apiRunJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/run`)
+export interface NotificationFeedbackReport { period: string; doneCount: number; missedCount: number; totalCount: number; rows: { notificationAt: string; event: string; operator: string; action: string }[] }
+export const fetchNotificationFeedbackReport = (period: 'day' | 'week' | 'month' | 'all') => get<NotificationFeedbackReport>(`/api/jobs/feedback-report?period=${period}`)
 export const apiPauseJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/pause`)
 export const apiResumeJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/resume`)
 export const apiReauthJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/reauth`)

@@ -11,5 +11,6 @@ public record PatchJobRequest(
         String source,
         String target,
         List<String> steps,
-        String cronExpr) {
+        String cronExpr,
+        String handler) {
 }

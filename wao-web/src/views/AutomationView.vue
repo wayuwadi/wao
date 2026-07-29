@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import ChatSyncConfigModal from '@/components/overlays/ChatSyncConfigModal.vue'
 import type { AutomationJob } from '@/types'
+import { fetchNotificationFeedbackReport, type NotificationFeedbackReport } from '@/api/board'
 
 const data = useDataStore()
 const tab = ref<'jobs' | 'runs'>('jobs')
+const reportPeriod = ref<'day' | 'week' | 'month' | 'all'>('day')
+const report = ref<NotificationFeedbackReport | null>(null)
+async function loadReport() { report.value = await fetchNotificationFeedbackReport(reportPeriod.value) }
+watch(reportPeriod, loadReport)
 const selId = ref<string | null>(null)
 const newOpen = ref(false)
 const newName = ref('')
@@ -17,6 +22,7 @@ const newSource = ref('')
 const newTarget = ref('')
 const newSteps = ref('')
 const newCron = ref('')
+const newNotification = ref(false)
 
 /** 有配置页的执行器：任务列表与详情上多一个「配置」入口。 */
 const CONFIGURABLE = 'feishu-chat-sync'
@@ -97,6 +103,7 @@ function openNewAuto() {
   newTarget.value = ''
   newSteps.value = ''
   newCron.value = ''
+  newNotification.value = false
   newOpen.value = true
 }
 async function createAuto() {
@@ -109,6 +116,7 @@ async function createAuto() {
     target: newTarget.value.trim() || undefined,
     steps: newSteps.value.split('\n').map((s) => s.trim()).filter(Boolean),
     cronExpr: newCron.value.trim() || undefined,
+    handler: newNotification.value ? 'feishu-notification' : undefined,
   })
   newOpen.value = false
   selId.value = job.id
@@ -133,9 +141,17 @@ async function createAuto() {
       </div>
       <div class="tabs">
         <button v-for="t in ([['任务列表', 'jobs'], ['运行记录', 'runs']] as const)" :key="t[1]" class="tab" :class="{ on: tab === t[1] }" @click="tab = t[1]">{{ t[0] }}</button>
+        <button class="tab" @click="loadReport">反馈报表</button>
       </div>
 
-      <div v-if="tab === 'jobs'" class="table-card">
+      <div v-if="report" class="table-card report-card">
+        <div class="report-head"><b>飞书提醒反馈</b><select v-model="reportPeriod" class="report-select"><option value="day">日统计</option><option value="week">周统计</option><option value="month">月统计</option><option value="all">总统计</option></select></div>
+        <div class="report-totals"><span>做到了 {{ report.doneCount }}</span><span>没做到 {{ report.missedCount }}</span><span>已反馈 {{ report.totalCount }}</span></div>
+        <div v-for="(r, i) in report.rows" :key="i" class="report-row"><span>{{ r.notificationAt }}</span><span>{{ r.event }}</span><span>{{ r.operator }}</span><span>{{ r.action }}</span></div>
+        <div v-if="!report.rows.length" class="empty">此范围暂无点击反馈；未点击的通知按空处理，不会计入统计。</div>
+      </div>
+
+      <div v-else-if="tab === 'jobs'" class="table-card">
         <div class="grid-jobs th">
           <div>名称</div><div>计划</div><div>状态</div><div>上次运行</div><div>近 5 次</div><div class="right">操作</div>
         </div>
@@ -246,7 +262,8 @@ async function createAuto() {
           <label class="f-label">Cron 表达式（选填，留空则仅手动触发）</label>
           <input v-model="newCron" class="f-input" placeholder="例如 0 0 6 * * *" />
           <label class="f-label">描述</label>
-          <textarea v-model="newDesc" class="f-textarea" rows="2" placeholder="选填"></textarea>
+          <textarea v-model="newDesc" class="f-textarea" rows="2" :placeholder="newNotification ? '通知正文（将原样发到飞书群）' : '选填'"></textarea>
+          <label class="switch"><input v-model="newNotification" type="checkbox" /><span>这是飞书群提醒 / 公告（发送“做到了”和“没做到”反馈按钮）</span></label>
           <label class="f-label">数据源</label>
           <input v-model="newSource" class="f-input" placeholder="选填" />
           <label class="f-label">输出到</label>
@@ -357,6 +374,7 @@ async function createAuto() {
   gap: 2px;
   border-bottom: 1px solid var(--wao-line);
 }
+.report-head,.report-totals,.report-row{display:flex;gap:18px;align-items:center;padding:11px 16px}.report-head{justify-content:space-between}.report-totals{background:var(--wao-bg-sub);font-size:13px}.report-row{border-top:1px solid var(--wao-divider-2);font-size:12px}.report-row span{flex:1}.report-select{border:1px solid var(--wao-line-control);border-radius:6px;padding:4px}.report-card{overflow:hidden}
 .tab {
   height: 34px;
   padding: 0 13px;
