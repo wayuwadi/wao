@@ -182,6 +182,20 @@ public class FeishuOpenApiClient {
                 token);
     }
 
+    /** 发送可回传「做到了 / 没做到」的通知卡片；回调值只含业务通知 id，不含任何凭据。 */
+    public void sendFeedbackCard(String token, String chatId, String title, String body, String notificationId) {
+        Map<String, Object> button = Map.of("tag", "button", "text", Map.of("tag", "plain_text", "content", "做到了"),
+                "type", "primary", "value", Map.of("kind", "automation-feedback", "notificationId", notificationId, "action", "done"));
+        Map<String, Object> missed = Map.of("tag", "button", "text", Map.of("tag", "plain_text", "content", "没做到"),
+                "type", "danger", "value", Map.of("kind", "automation-feedback", "notificationId", notificationId, "action", "missed"));
+        Map<String, Object> card = Map.of("config", Map.of("wide_screen_mode", true),
+                "header", Map.of("template", "blue", "title", Map.of("tag", "plain_text", "content", title)),
+                "elements", List.of(Map.of("tag", "div", "text", Map.of("tag", "lark_md", "content", body)),
+                        Map.of("tag", "action", "actions", List.of(button, missed))));
+        post("/open-apis/im/v1/messages?receive_id_type=chat_id",
+                Map.of("receive_id", chatId, "msg_type", "interactive", "content", writeJson(card)), token);
+    }
+
     private String writeJson(Object value) {
         try {
             return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(value);

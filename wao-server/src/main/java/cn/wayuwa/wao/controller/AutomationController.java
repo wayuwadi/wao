@@ -7,6 +7,9 @@ import cn.wayuwa.wao.dto.AutomationJobDto;
 import cn.wayuwa.wao.dto.CreateJobRequest;
 import cn.wayuwa.wao.dto.PatchJobRequest;
 import cn.wayuwa.wao.service.AutomationService;
+import cn.wayuwa.wao.service.NotificationFeedbackService;
+import cn.wayuwa.wao.dto.NotificationFeedbackReportDto;
+import org.springframework.web.bind.annotation.RequestParam;
 import cn.wayuwa.wao.auth.CurrentMember;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -26,15 +29,22 @@ public class AutomationController {
 
     private final AutomationService automationService;
     private final CurrentMember currentMember;
+    private final NotificationFeedbackService feedback;
 
-    public AutomationController(AutomationService automationService, CurrentMember currentMember) {
+    public AutomationController(AutomationService automationService, CurrentMember currentMember, NotificationFeedbackService feedback) {
         this.automationService = automationService;
         this.currentMember = currentMember;
+        this.feedback = feedback;
     }
 
     @GetMapping
     public ApiResponse<List<AutomationJobDto>> list() {
         return ApiResponse.ok(automationService.listJobs());
+    }
+
+    @GetMapping("/feedback-report")
+    public ApiResponse<NotificationFeedbackReportDto> feedbackReport(@RequestParam(defaultValue = "day") String period) {
+        return ApiResponse.ok(feedback.report(period));
     }
 
     @GetMapping("/{id}")
