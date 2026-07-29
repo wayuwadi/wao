@@ -8,10 +8,12 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -62,6 +64,50 @@ class OpenAiCodexOAuthClientTest {
     }
 
     @Test
+    void deviceCodeFlowUsesOfficialEndpointsAndDeviceCallback() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://auth.openai.test/api/accounts/deviceauth/usercode"))
+                .andExpect(method(POST))
+                .andRespond(withSuccess("""
+                        {"device_auth_id":"device-1","user_code":"ABCD-EFGH","interval":"5"}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://auth.openai.test/api/accounts/deviceauth/token"))
+                .andExpect(method(POST))
+                .andRespond(withSuccess("""
+                        {"authorization_code":"code-1","code_challenge":"challenge-1","code_verifier":"verifier-1"}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://auth.openai.test/oauth/token"))
+                .andExpect(method(POST))
+                .andRespond(withSuccess("""
+                        {"id_token":"id-1","access_token":"access-1","refresh_token":"refresh-1","expires_in":3600}
+                        """, MediaType.APPLICATION_JSON));
+
+        OpenAiCodexOAuthClient client = client(builder);
+        var device = client.requestDeviceCode();
+        var poll = client.pollDeviceCode(device.deviceAuthId(), device.userCode());
+        var tokens = client.exchangeDeviceCode(poll);
+
+        assertThat(device.verificationUrl()).isEqualTo("https://auth.openai.test/codex/device");
+        assertThat(device.userCode()).isEqualTo("ABCD-EFGH");
+        assertThat(device.intervalSeconds()).isEqualTo(5);
+        assertThat(poll.authorized()).isTrue();
+        assertThat(tokens.accessToken()).isEqualTo("access-1");
+        server.verify();
+    }
+
+    @Test
+    void deviceCodePollTreatsForbiddenAsPending() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://auth.openai.test/api/accounts/deviceauth/token"))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        assertThat(client(builder).pollDeviceCode("device-1", "ABCD-EFGH").authorized()).isFalse();
+        server.verify();
+    }
+
+    @Test
     void usageSendsOauthTokenAndChatGptAccountId() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -86,6 +132,7 @@ class OpenAiCodexOAuthClientTest {
                 "https://auth.openai.test/oauth/authorize",
                 "https://auth.openai.test/oauth/token",
                 "http://localhost:1455/auth/callback",
-                "https://chatgpt.test/backend-api/wham/usage");
+                "https://chatgpt.test/backend-api/wham/usage",
+                "https://auth.openai.test");
     }
 }

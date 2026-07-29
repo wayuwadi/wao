@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { toast } from '@/composables/toast'
 import {
   fetchAiAccounts, createAiAccount, updateAiAccount, deleteAiAccount, syncAiAccount,
-  startAiAccountLogin, completeAiAccountLogin,
+  startAiAccountLogin, completeAiAccountLogin, fetchAiAccountLoginStatus,
   type AiAccount, type AiAccountForm, type AiAccountLoginStart,
 } from '@/api/aiAccount'
 
@@ -73,6 +73,9 @@ const loginProvider = ref<OAuthProvider | null>(null)
 const loginCode = ref('')
 const loginStarting = ref<OAuthProvider | null>(null)
 const loginFinishing = ref(false)
+const loginPolling = ref(false)
+const loginStatusMessage = ref('')
+let loginPollTimer: ReturnType<typeof setTimeout> | null = null
 
 const windowLabels: Record<string, string> = {
   session: '五小时会话额度', five_hour: '五小时会话额度',
@@ -174,7 +177,11 @@ async function beginLogin(provider: OAuthProvider) {
     login.value = await startAiAccountLogin(provider)
     loginProvider.value = provider
     loginCode.value = ''
+    loginStatusMessage.value = login.value.flow === 'device_code'
+      ? '等待你在 OpenAI 页面完成登录与确认…'
+      : ''
     window.open(login.value.authorizeUrl, '_blank', 'noopener')
+    scheduleLoginPoll()
   } catch (error) {
     toast(error instanceof Error ? error.message : '发起登录失败')
   } finally {
@@ -183,14 +190,63 @@ async function beginLogin(provider: OAuthProvider) {
 }
 
 function cancelLogin() {
+  clearLoginPoll()
   login.value = null
   loginProvider.value = null
   loginCode.value = ''
+  loginStatusMessage.value = ''
+}
+
+function clearLoginPoll() {
+  if (loginPollTimer !== null) clearTimeout(loginPollTimer)
+  loginPollTimer = null
+}
+
+function scheduleLoginPoll() {
+  clearLoginPoll()
+  if (login.value?.flow !== 'device_code') return
+  const delay = Math.max(1, login.value.pollIntervalSeconds || 5) * 1000
+  loginPollTimer = setTimeout(() => void pollCodexLogin(), delay)
+}
+
+async function pollCodexLogin() {
+  const current = login.value
+  if (!current || current.flow !== 'device_code' || loginPolling.value) return
+  clearLoginPoll()
+  loginPolling.value = true
+  try {
+    const result = await fetchAiAccountLoginStatus(current.state)
+    if (login.value?.state !== current.state) return
+    loginStatusMessage.value = result.message
+    if (result.status === 'completed' && result.account) {
+      toast(`已登录 ${result.account.email || result.account.label}`, 'ri-check-line')
+      cancelLogin()
+      await load()
+      return
+    }
+  } catch (error) {
+    if (login.value?.state !== current.state) return
+    loginStatusMessage.value = error instanceof Error ? error.message : '暂时无法查询登录状态，正在重试…'
+  } finally {
+    loginPolling.value = false
+  }
+  scheduleLoginPoll()
+}
+
+async function copyDeviceCode() {
+  const code = login.value?.userCode
+  if (!code) return
+  try {
+    await navigator.clipboard.writeText(code)
+    toast('一次性短码已复制', 'ri-check-line')
+  } catch {
+    toast(`请复制短码：${code}`)
+  }
 }
 
 async function finishLogin() {
   const code = loginCode.value.trim()
-  if (!code) return toast(loginProvider.value === 'codex' ? '请粘贴完整回调地址' : '请粘贴授权码')
+  if (!code) return toast('请粘贴授权码')
   loginFinishing.value = true
   try {
     const account = await completeAiAccountLogin(login.value!.state, code)
@@ -203,6 +259,8 @@ async function finishLogin() {
     loginFinishing.value = false
   }
 }
+
+onBeforeUnmount(clearLoginPoll)
 
 async function load() {
   busy.value = true
@@ -369,10 +427,28 @@ watch(() => true, load, { immediate: true })
         <b>正在登录 {{ loginName(loginProvider) }} 账号</b>
         <p>{{ login.hint }}</p>
         <a :href="login.authorizeUrl" target="_blank" rel="noopener">没有打开授权页？重新打开</a>
-        <div class="login-actions">
-          <input v-model.trim="loginCode" :placeholder="loginProvider === 'codex' ? '粘贴完整 localhost 回调地址' : '粘贴授权码'" @keyup.enter="finishLogin" />
+        <div v-if="login.flow === 'device_code'" class="device-login">
+          <div class="device-code">
+            <div><small>OpenAI 一次性短码</small><strong>{{ login.userCode }}</strong></div>
+            <button class="ghost" @click="copyDeviceCode"><i class="ri-file-copy-line"></i>复制短码</button>
+          </div>
+          <div class="device-status">
+            <i :class="loginPolling ? 'ri-loader-4-line spin' : 'ri-time-line'"></i>
+            <span>{{ loginStatusMessage }}</span>
+          </div>
+          <small class="security-hint">只在你刚刚打开的 OpenAI 官方页面输入此短码；15 分钟后自动失效。</small>
+        </div>
+        <div v-if="login.flow === 'authorization_code'" class="login-actions">
+          <input v-model.trim="loginCode" placeholder="粘贴授权码" @keyup.enter="finishLogin" />
           <button class="primary" :disabled="loginFinishing" @click="finishLogin">{{ loginFinishing ? '登录中…' : '完成登录' }}</button>
           <button class="ghost" :disabled="loginFinishing" @click="cancelLogin">取消</button>
+        </div>
+        <div v-else class="login-actions">
+          <button class="primary" :disabled="loginPolling" @click="pollCodexLogin">
+            <i :class="loginPolling ? 'ri-loader-4-line spin' : 'ri-check-double-line'"></i>
+            {{ loginPolling ? '检查中…' : '我已完成，立即检查' }}
+          </button>
+          <button class="ghost" :disabled="loginPolling" @click="cancelLogin">取消</button>
         </div>
       </div>
     </div>
@@ -562,6 +638,14 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .login-content b { font-size: 13px; }
 .login-content p { margin: 4px 0; color: var(--wao-text-weak); font-size: 11px; }
 .login-content a { color: #485dd3; font-size: 11px; }
+.device-login { display: grid; gap: 8px; margin-top: 11px; }
+.device-code { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid #d8def8; border-radius: 11px; background: #fff; }
+.device-code > div { flex: 1; min-width: 0; }
+.device-code small, .device-code strong { display: block; }
+.device-code small { color: var(--wao-text-weak); font-size: 9px; }
+.device-code strong { margin-top: 3px; color: #3346bd; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 20px; letter-spacing: 2px; }
+.device-status { display: flex; align-items: center; gap: 6px; color: #5968bf; font-size: 10px; }
+.security-hint { color: var(--wao-text-weak); font-size: 8.5px; line-height: 1.5; }
 .login-actions { display: flex; gap: 8px; margin-top: 10px; }
 .login-actions input { flex: 1; min-width: 0; }
 input, select, textarea { border: 1px solid var(--wao-line); border-radius: 9px; background: #fff; color: var(--wao-text-1); outline: none; font: inherit; }
