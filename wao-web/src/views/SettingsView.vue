@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
-import { updateEmailCredential, updateProfile, unlinkIdentity, apiCreateAccount, apiDeleteMemberAccount, apiResetMemberPassword } from '@/api/auth'
+import { updateEmailCredential, updateProfile, unlinkIdentity, apiCreateAccount, apiDeleteMemberAccount, apiResetMemberPassword, apiUpdateMemberRole } from '@/api/auth'
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import {
@@ -51,15 +51,16 @@ const orgMembers = computed(() =>
   session.members.map((m) => ({
     id: m.id,
     name: m.name, initial: m.initial, color: m.color, role: m.role,
-    roleBg: m.role === '管理员' ? '#E9EDFB' : '#F0F1F4',
-    roleColor: m.role === '管理员' ? '#3A4CC2' : '#5A5E6B',
+    roleBg: m.role === '超级管理员' ? '#FFF1D8' : m.role === '管理员' ? '#E9EDFB' : '#F0F1F4',
+    roleColor: m.role === '超级管理员' ? '#9A5D00' : m.role === '管理员' ? '#3A4CC2' : '#5A5E6B',
     meTag: m.id === session.currentUser.id ? '（我）' : '',
   })),
 )
 
 // ---- 组织管理 · 管理员开账号 ----
 // 邀请链接是原型时代的演示件，真实场景是管理员直接为家人 / 成员开好账号再把凭据交给对方。
-const isAdmin = computed(() => session.currentUser.role === '管理员')
+const isAdmin = computed(() => ['管理员', '超级管理员'].includes(session.currentUser.role))
+const isSuperAdmin = computed(() => session.currentUser.role === '超级管理员')
 const showCreateAccount = ref(false)
 const createForm = reactive({ name: '', email: '', password: '' })
 const createBusy = ref(false)
@@ -96,6 +97,16 @@ async function resetMemberPassword(memberId: string) {
     toast('密码已重置，请将新密码安全告知成员', 'ri-key-2-line')
   } catch (error) {
     toast(error instanceof Error ? error.message : '重置密码失败')
+  } finally { memberBusy.value = false }
+}
+async function updateMemberRole(memberId: string, role: '管理员' | '成员') {
+  memberBusy.value = true
+  try {
+    await apiUpdateMemberRole(memberId, role)
+    await session.refreshDirectory()
+    toast(role === '管理员' ? '已授予管理员权限' : '已收回管理员权限', 'ri-shield-user-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '权限更新失败')
   } finally { memberBusy.value = false }
 }
 async function deleteMemberAccount(memberId: string, name: string) {
@@ -344,6 +355,7 @@ function demo(msg: string, icon?: string) {
               <span class="mem-role" :style="{ background: m.roleBg, color: m.roleColor }">{{ m.role }}</span>
               <button v-if="isAdmin && !m.meTag" class="btn-ghost member-actions" @click="managingMemberId = managingMemberId === m.id ? null : m.id">管理</button>
               <div v-if="managingMemberId === m.id" class="member-manage">
+                <button v-if="isSuperAdmin" class="btn-ghost sm" :disabled="memberBusy" @click="updateMemberRole(m.id, m.role === '管理员' ? '成员' : '管理员')">{{ m.role === '管理员' ? '收回管理员' : '设为管理员' }}</button>
                 <input v-model="resetPassword" type="password" minlength="8" placeholder="输入至少 8 位的新密码" />
                 <button class="btn-primary sm" :disabled="memberBusy" @click="resetMemberPassword(m.id)">重置密码</button>
                 <button class="btn-danger sm" :disabled="memberBusy" @click="deleteMemberAccount(m.id, m.name)">删除账号</button>

@@ -204,10 +204,7 @@ public class AccountAuthService {
      */
     @Transactional
     public MemberDto adminCreateAccount(String operatorMemberId, String name, String email, String password) {
-        MemberEntity operator = operatorMemberId == null ? null : memberMapper.selectById(operatorMemberId);
-        if (operator == null || !"管理员".equals(operator.getRole())) {
-            throw new UnauthorizedException("只有管理员可以开账号");
-        }
+        requireAdmin(operatorMemberId);
         String normalized = normalizeEmail(email);
         if (identityMapper.findByProviderSubject("email", normalized) != null) {
             throw new ConflictException("该邮箱已经绑定到其他账号");
@@ -226,6 +223,23 @@ public class AccountAuthService {
         AccountEntity account = accountMapper.findByMemberId(memberId);
         if (account == null || !"ACTIVE".equals(account.getStatus())) throw new NotFoundException("成员账号不存在");
         savePassword(account.getId(), password);
+    }
+
+    /** 超级管理员调整普通成员与管理员角色，超级管理员身份不可由此接口变更。 */
+    @Transactional
+    public MemberDto updateMemberRole(String operatorMemberId, String memberId, String role) {
+        requireSuperAdmin(operatorMemberId);
+        if (!"管理员".equals(role) && !"成员".equals(role)) {
+            throw new BadRequestException("角色只能是管理员或成员");
+        }
+        MemberEntity member = memberMapper.selectById(memberId);
+        if (member == null) throw new NotFoundException("成员不存在");
+        if ("超级管理员".equals(member.getRole())) {
+            throw new BadRequestException("超级管理员权限不能在此处修改");
+        }
+        member.setRole(role);
+        memberMapper.updateById(member);
+        return toMember(member);
     }
 
     /** 管理员删除成员账号、身份绑定与成员目录记录；禁止删除自己和最后一名管理员。 */
@@ -251,8 +265,16 @@ public class AccountAuthService {
 
     private MemberEntity requireAdmin(String operatorMemberId) {
         MemberEntity operator = operatorMemberId == null ? null : memberMapper.selectById(operatorMemberId);
-        if (operator == null || !"管理员".equals(operator.getRole())) {
+        if (operator == null || (!"管理员".equals(operator.getRole()) && !"超级管理员".equals(operator.getRole()))) {
             throw new UnauthorizedException("只有管理员可以管理账号");
+        }
+        return operator;
+    }
+
+    private MemberEntity requireSuperAdmin(String operatorMemberId) {
+        MemberEntity operator = operatorMemberId == null ? null : memberMapper.selectById(operatorMemberId);
+        if (operator == null || !"超级管理员".equals(operator.getRole())) {
+            throw new UnauthorizedException("只有超级管理员可以调整管理员权限");
         }
         return operator;
     }
