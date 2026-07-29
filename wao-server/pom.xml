@@ -70,6 +70,12 @@
             <artifactId>logstash-logback-encoder</artifactId>
             <version>${logstash-logback.version}</version>
         </dependency>
+        <!-- iCalendar 解析与 RRULE 展开，CalDAV 同步用；轻量单 jar，不引入重量级传递依赖 -->
+        <dependency>
+            <groupId>net.sf.biweekly</groupId>
+            <artifactId>biweekly</artifactId>
+            <version>0.6.8</version>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

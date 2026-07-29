@@ -1,0 +1,634 @@
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
+import { useUiStore } from '@/stores/ui'
+import { fetchCaldavAccounts, fetchCaldavEvents, type CaldavAccount, type CaldavEvent } from '@/api/caldav'
+import { toast } from '@/composables/toast'
+
+/** 日历格子里的一条事件（任务截止 / 里程碑 / CalDAV）。 */
+interface CalEvt {
+  date: string
+  title: string
+  color: string
+  time?: string
+  taskId?: string
+  go?: () => void
+}
+
+const data = useDataStore()
+const session = useSessionStore()
+const ui = useUiStore()
+const router = useRouter()
+
+const now = new Date(`${data.today}T00:00:00`)
+const calY = ref(now.getFullYear())
+const calM = ref(now.getMonth())
+
+const DOWS = ['一', '二', '三', '四', '五', '六', '日']
+
+// ---------- CalDAV：账户状态 + 当月事件 ----------
+const accounts = ref<CaldavAccount[]>([])
+const caldavEvents = ref<CaldavEvent[]>([])
+
+const caldavState = computed(() => {
+  if (!accounts.value.length) return { label: '接入 CalDAV 日历', dot: '#9A9DA9' }
+  const bad = accounts.value.some((a) => a.status === 'error')
+  return bad
+    ? { label: 'CalDAV 同步异常', dot: '#D9634C' }
+    : { label: 'CalDAV 已连接', dot: '#2C8A5B' }
+})
+
+async function loadCaldav() {
+  try {
+    accounts.value = await fetchCaldavAccounts()
+  } catch {
+    accounts.value = []
+  }
+}
+
+/** 拉取覆盖当前月视图（含前后补位周）的订阅事件。 */
+async function loadEvents() {
+  const first = new Date(calY.value, calM.value, 1)
+  const off = (first.getDay() + 6) % 7
+  const from = new Date(calY.value, calM.value, 1 - off)
+  const to = new Date(calY.value, calM.value + 1, 7)
+  try {
+    caldavEvents.value = await fetchCaldavEvents(iso(from), iso(to))
+  } catch {
+    caldavEvents.value = []
+  }
+}
+
+function iso(d: Date) {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+onMounted(() => {
+  loadCaldav()
+  loadEvents()
+})
+watch([calY, calM], loadEvents)
+
+// ---------- 图例：固定两类 + 每个启用的订阅日历 ----------
+const legend = computed(() => {
+  const items = [
+    { label: '任务截止', color: '#4358D6' },
+    { label: '里程碑', color: '#B9821F' },
+  ]
+  for (const a of accounts.value) {
+    for (const c of a.calendars) {
+      if (c.enabled) items.push({ label: c.name, color: c.color })
+    }
+  }
+  return items
+})
+
+// ---------- 事件合并 ----------
+const events = computed<CalEvt[]>(() => {
+  const evs: CalEvt[] = []
+  data.tasks
+    .filter((t) => t.status !== '已完成' && t.due)
+    .forEach((t) => evs.push({ date: t.due, title: t.title, color: '#4358D6', taskId: t.id, go: () => ui.openTask(t.id) }))
+  data.projects.forEach((p) => {
+    p.msDates.forEach((d, i) => {
+      const name = p.milestones[i]?.name
+      if (d && name) evs.push({ date: d, title: `里程碑 · ${name}`, color: '#B9821F', go: () => router.push(`/projects/${p.id}`) })
+    })
+  })
+  caldavEvents.value.forEach((e) => {
+    evs.push({
+      date: e.start.slice(0, 10),
+      title: e.summary || '（无标题）',
+      color: e.color,
+      time: e.allDay ? '' : e.start.slice(11, 16),
+    })
+  })
+  return evs
+})
+
+const month = computed(() => {
+  const y = calY.value
+  const m = calM.value
+  const first = new Date(y, m, 1)
+  const off = (first.getDay() + 6) % 7
+  const dim = new Date(y, m + 1, 0).getDate()
+  const prevDim = new Date(y, m, 0).getDate()
+  const byDate: Record<string, CalEvt[]> = {}
+  events.value.forEach((e) => (byDate[e.date] = byDate[e.date] || []).push(e))
+  for (const k of Object.keys(byDate)) {
+    byDate[k]!.sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''))
+  }
+  const total = Math.ceil((off + dim) / 7) * 7
+  const cells: {
+    iso: string; label: string; isToday: boolean; items: CalEvt[]; more: string
+    numBg: string; numColor: string; bg: string
+  }[] = []
+  for (let i = 0; i < total; i++) {
+    const dnum = i - off + 1
+    const d = new Date(y, m, dnum)
+    const dayIso = iso(d)
+    let label: number
+    let inM: boolean
+    if (dnum < 1) {
+      label = prevDim + dnum
+      inM = false
+    } else if (dnum > dim) {
+      label = dnum - dim
+      inM = false
+    } else {
+      label = dnum
+      inM = true
+    }
+    const all = byDate[dayIso] || []
+    const isToday = dayIso === data.today
+    const expanded = expandedDay.value === dayIso
+    cells.push({
+      iso: dayIso,
+      label: String(label),
+      isToday,
+      items: expanded ? all : all.slice(0, 3),
+      more: !expanded && all.length > 3 ? `还有 ${all.length - 3} 项` : '',
+      numBg: isToday ? '#4358D6' : 'transparent',
+      numColor: isToday ? '#FFFFFF' : inM ? '#3E414D' : '#C4C7D2',
+      bg: inM ? '#FFFFFF' : '#FBFBFC',
+    })
+  }
+  const weeks: (typeof cells)[] = []
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7))
+  return { title: `${y} 年 ${m + 1} 月`, weeks }
+})
+
+/** 点「还有 N 项」原位展开当天全部事件，再点一次收起。 */
+const expandedDay = ref<string | null>(null)
+function toggleExpand(dayIso: string) {
+  expandedDay.value = expandedDay.value === dayIso ? null : dayIso
+}
+
+function shift(d: number) {
+  let m = calM.value + d
+  let y = calY.value
+  if (m < 0) {
+    m = 11
+    y--
+  }
+  if (m > 11) {
+    m = 0
+    y++
+  }
+  calM.value = m
+  calY.value = y
+}
+function goToday() {
+  const d = new Date(`${data.today}T00:00:00`)
+  calY.value = d.getFullYear()
+  calM.value = d.getMonth()
+}
+
+// ---------- 未排期任务：拖上日历即设截止日期 ----------
+const showBacklog = ref(true)
+const backlog = computed(() => {
+  const me = session.currentUser.id
+  return data.tasks
+    .filter((t) => t.status !== '已完成' && !t.due && (t.owner === me || t.parts.includes(me)))
+    .map((t) => ({ id: t.id, title: t.title, pr: t.pr, projName: data.projectById(t.project)?.name ?? '未关联' }))
+})
+
+const dragTaskId = ref<string | null>(null)
+const dragOverDay = ref<string | null>(null)
+
+function onDragStart(taskId: string, ev: DragEvent) {
+  dragTaskId.value = taskId
+  ev.dataTransfer?.setData('text/plain', taskId)
+  if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'
+}
+function onDragEnd() {
+  dragTaskId.value = null
+  dragOverDay.value = null
+}
+function onDropDay(dayIso: string) {
+  const id = dragTaskId.value
+  dragTaskId.value = null
+  dragOverDay.value = null
+  if (!id) return
+  const t = data.taskById(id)
+  if (!t || t.due === dayIso) return
+  const hadDue = !!t.due
+  data.patchTask(id, { due: dayIso }, `通过日历${hadDue ? '拖拽调整' : '拖拽排期'}，截止日期设为 ${dayIso}`)
+  toast(`「${t.title}」已排到 ${dayIso}`, 'ri-calendar-check-line')
+}
+</script>
+
+<template>
+  <div class="cal">
+    <div class="cal-top">
+      <div class="cal-title">日历</div>
+      <div class="legend">
+        <span v-for="l in legend" :key="l.label" class="leg"><span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}</span>
+      </div>
+      <button class="caldav" title="在设置中配置 CalDAV 账户" @click="router.push('/settings?tab=caldav')">
+        <span class="cd-dot" :style="{ background: caldavState.dot }"></span>{{ caldavState.label }}<i class="ri-settings-3-line"></i>
+      </button>
+      <div class="spacer"></div>
+      <button class="nav-btn" @click="shift(-1)"><i class="ri-arrow-left-s-line"></i></button>
+      <button class="today-btn" @click="goToday">今天</button>
+      <button class="nav-btn" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
+    </div>
+
+    <div class="cal-body">
+      <div class="cal-card">
+        <div class="cal-head">
+          <div class="month-title">{{ month.title }}</div>
+          <span class="cal-hint">任务截止、项目里程碑与订阅日历在同一张日历上</span>
+        </div>
+        <div class="dows">
+          <div v-for="d in DOWS" :key="d" class="dow">{{ d }}</div>
+        </div>
+        <div v-for="(wk, wi) in month.weeks" :key="wi" class="week">
+          <div
+            v-for="dy in wk"
+            :key="dy.iso"
+            class="day"
+            :class="{ 'drop-target': dragTaskId, 'drop-over': dragOverDay === dy.iso }"
+            :style="{ background: dy.bg }"
+            @dragover.prevent="dragOverDay = dy.iso"
+            @dragleave="dragOverDay === dy.iso && (dragOverDay = null)"
+            @drop.prevent="onDropDay(dy.iso)"
+          >
+            <div class="day-num" :style="{ background: dy.numBg, color: dy.numColor }">{{ dy.label }}</div>
+            <div class="day-events">
+              <button
+                v-for="(ev, ei) in dy.items"
+                :key="ei"
+                class="event"
+                :title="ev.time ? `${ev.time} ${ev.title}` : ev.title"
+                :draggable="!!ev.taskId"
+                @click="ev.go?.()"
+                @dragstart="ev.taskId && onDragStart(ev.taskId, $event)"
+                @dragend="onDragEnd"
+              >
+                <span class="ev-dot" :style="{ background: ev.color }"></span>
+                <span v-if="ev.time" class="ev-time wao-tabular">{{ ev.time }}</span>
+                <span class="ev-title">{{ ev.title }}</span>
+              </button>
+              <button v-if="dy.more" class="day-more" @click="toggleExpand(dy.iso)">{{ dy.more }}</button>
+              <button v-else-if="expandedDay === dy.iso && dy.items.length > 3" class="day-more" @click="toggleExpand(dy.iso)">收起</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 未排期任务 -->
+      <aside class="backlog" :class="{ folded: !showBacklog }">
+        <button class="bl-head" @click="showBacklog = !showBacklog">
+          <i class="ri-inbox-line"></i>
+          <span class="bl-title">未排期任务</span>
+          <span class="bl-count wao-tabular">{{ backlog.length }}</span>
+          <i class="bl-chev" :class="showBacklog ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'"></i>
+        </button>
+        <template v-if="showBacklog">
+          <div class="bl-hint">拖到左边的日期格子上，即可给任务排定截止日期</div>
+          <div v-if="!backlog.length" class="bl-empty">我的任务都已排期</div>
+          <div
+            v-for="t in backlog"
+            :key="t.id"
+            class="bl-item"
+            :class="{ dragging: dragTaskId === t.id }"
+            draggable="true"
+            @dragstart="onDragStart(t.id, $event)"
+            @dragend="onDragEnd"
+            @click="ui.openTask(t.id)"
+          >
+            <i class="ri-draggable bl-grip"></i>
+            <div class="bl-body">
+              <div class="bl-name">{{ t.title }}</div>
+              <div class="bl-sub">{{ t.projName }} · {{ t.pr }}</div>
+            </div>
+          </div>
+        </template>
+      </aside>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.cal {
+  padding: 16px 24px 40px;
+  max-width: var(--wao-content-max);
+  margin: 0 auto;
+  animation: waoFadeUp 0.25s ease;
+}
+.spacer {
+  flex: 1;
+}
+.cal-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cal-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+.legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.leg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--wao-text-3);
+}
+.leg-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+.caldav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--wao-line-control);
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.caldav:hover {
+  border-color: #c9cdda;
+  background: var(--wao-bg-sub);
+}
+.cd-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.caldav i {
+  font-size: 12px;
+  color: var(--wao-text-weak);
+}
+.nav-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--wao-line-control);
+  background: #fff;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--wao-text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-btn:hover {
+  background: #f4f5f8;
+}
+.nav-btn i {
+  font-size: 15px;
+}
+.today-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--wao-line-control);
+  background: #fff;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--wao-text-2);
+  font-size: 12px;
+}
+.today-btn:hover {
+  background: #f4f5f8;
+}
+
+.cal-body {
+  display: flex;
+  gap: 14px;
+  margin-top: 14px;
+  align-items: flex-start;
+}
+.cal-card {
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.cal-head {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+}
+.month-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.cal-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--wao-text-weak);
+}
+.dows {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-top: 1px solid var(--wao-divider);
+  background: var(--wao-bg-sub);
+}
+.dow {
+  padding: 6px 8px;
+  font-size: 11.5px;
+  color: var(--wao-text-weak);
+  text-align: center;
+}
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-top: 1px solid var(--wao-divider);
+}
+.day {
+  min-height: 104px;
+  padding: 6px;
+  border-right: 1px solid var(--wao-divider-2);
+  overflow: hidden;
+}
+.day.drop-target {
+  outline: 1px dashed #c9cdda;
+  outline-offset: -3px;
+}
+.day.drop-over {
+  outline: 2px dashed #4358d6;
+  background: #f2f4fd !important;
+}
+.day-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+.day-events {
+  margin-top: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.event {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: var(--wao-bg-hover);
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--wao-text-2);
+  cursor: pointer;
+  width: 100%;
+  overflow: hidden;
+}
+.event:hover {
+  background: #edeff5;
+}
+.event[draggable='true'] {
+  cursor: grab;
+}
+.ev-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.ev-time {
+  color: var(--wao-text-weak);
+  flex-shrink: 0;
+}
+.ev-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.day-more {
+  font-size: 10.5px;
+  color: var(--wao-text-weak);
+  padding: 0 6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+.day-more:hover {
+  color: var(--wao-text-2);
+}
+
+.backlog {
+  width: 240px;
+  flex-shrink: 0;
+  background: #fff;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  padding: 10px;
+  position: sticky;
+  top: 16px;
+}
+.bl-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 13px;
+  color: var(--wao-text-1);
+}
+.bl-head i {
+  font-size: 15px;
+  color: var(--wao-text-3);
+}
+.bl-title {
+  font-weight: 600;
+}
+.bl-count {
+  font-size: 11.5px;
+  background: var(--wao-divider);
+  border-radius: 999px;
+  padding: 0 7px;
+  color: var(--wao-text-3);
+}
+.bl-chev {
+  margin-left: auto;
+}
+.bl-hint {
+  font-size: 11.5px;
+  color: var(--wao-text-weak);
+  padding: 6px 4px 8px;
+  line-height: 1.5;
+}
+.bl-empty {
+  font-size: 12px;
+  color: var(--wao-text-weak);
+  padding: 12px 4px;
+  text-align: center;
+}
+.bl-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--wao-line);
+  border-radius: 9px;
+  padding: 7px 8px;
+  margin-top: 6px;
+  cursor: grab;
+  background: #fff;
+}
+.bl-item:hover {
+  border-color: #c9cdda;
+  background: var(--wao-bg-sub);
+}
+.bl-item.dragging {
+  opacity: 0.45;
+}
+.bl-grip {
+  color: var(--wao-text-weak);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.bl-body {
+  min-width: 0;
+}
+.bl-name {
+  font-size: 12.5px;
+  color: var(--wao-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bl-sub {
+  font-size: 11px;
+  color: var(--wao-text-weak);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .cal-body {
+    flex-direction: column-reverse;
+  }
+  .backlog {
+    width: 100%;
+    position: static;
+  }
+}
+</style>

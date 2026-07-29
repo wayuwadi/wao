@@ -1,0 +1,124 @@
+openapi: 3.0.3
+info:
+  title: WAO CalDAV 日历 API
+  version: 0.1.0
+  description: >
+    CalDAV 账户接入与事件读取。账户、日历、事件均按当前登录成员隔离；
+    凭据只在添加时上送一次，接口从不回传。事件是服务端定时（每 15 分钟）
+    或手动同步下来的只读副本，重复规则已在服务端展开。
+servers:
+  - url: /api
+paths:
+  /caldav/accounts:
+    get:
+      summary: 当前成员的 CalDAV 账户列表（含订阅的日历）
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AccountListResponse' } } } }
+    post:
+      summary: 添加账户（真实连接服务器做日历发现并首次同步，弱网可能十几秒）
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateAccountRequest' } } }
+      responses:
+        '200': { description: OK，返回新账户 }
+        '400': { description: 参数不合法或连接 / 认证失败（code=40001） }
+  /caldav/accounts/{id}:
+    delete:
+      summary: 删除账户（连同日历与事件副本一起删除，不可恢复）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: 不存在或不属于当前成员（code=40400） }
+  /caldav/accounts/{id}/sync:
+    post:
+      summary: 立即同步该账户（按日历整体重建事件副本）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK，返回同步后的账户（status/lastSyncAt/syncError 已更新） }
+        '404': { description: 不存在或不属于当前成员（code=40400） }
+  /caldav/calendars/{id}:
+    patch:
+      summary: 启用 / 停用一个订阅日历
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { enabled: { type: boolean } } } } }
+      responses:
+        '200': { description: OK，返回更新后的日历 }
+        '404': { description: 不存在或不属于当前成员（code=40400） }
+  /caldav/events:
+    get:
+      summary: 时间窗内的事件（仅启用日历；窗口最长 370 天）
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, example: '2026-07-01' } }
+        - { name: to, in: query, required: true, schema: { type: string, example: '2026-07-31' } }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/EventListResponse' } } } }
+        '400': { description: 日期格式错误、to 早于 from 或窗口超限（code=40001） }
+components:
+  schemas:
+    ApiResponse:
+      type: object
+      properties:
+        code: { type: integer, example: 0 }
+        message: { type: string, example: ok }
+        data: {}
+    CreateAccountRequest:
+      type: object
+      required: [serverUrl, username, password]
+      properties:
+        name: { type: string, description: 展示名，留空取服务器主机名 }
+        serverUrl: { type: string, example: 'https://caldav.example.com' }
+        username: { type: string }
+        password: { type: string, description: 仅此一次上送，AES-256-GCM 加密存储 }
+    Account:
+      type: object
+      properties:
+        id: { type: string, example: cda1a2b3 }
+        name: { type: string }
+        serverUrl: { type: string }
+        username: { type: string }
+        status: { type: string, enum: [ok, error] }
+        lastSyncAt: { type: string, nullable: true, example: '2026-07-29 10:15' }
+        syncError: { type: string, nullable: true }
+        calendars:
+          type: array
+          items: { $ref: '#/components/schemas/Calendar' }
+    Calendar:
+      type: object
+      properties:
+        id: { type: string, example: cdc1a2b3 }
+        name: { type: string }
+        color: { type: string, example: '#0E8C8C' }
+        enabled: { type: boolean }
+    Event:
+      type: object
+      properties:
+        id: { type: string, example: cde1a2b3-4 }
+        calendarId: { type: string }
+        calendarName: { type: string }
+        color: { type: string }
+        summary: { type: string }
+        location: { type: string, nullable: true }
+        start: { type: string, description: 'yyyy-MM-dd HH:mm（全天事件为 yyyy-MM-dd）' }
+        end: { type: string, nullable: true }
+        allDay: { type: boolean }
+    AccountListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Account' }
+    EventListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties:
+            data:
+              type: array
+              items: { $ref: '#/components/schemas/Event' }
