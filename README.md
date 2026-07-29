@@ -92,6 +92,8 @@ wao/
 
 - [原版技术方案](docs/WAO系统技术架构方案.md)：用户提供的原始方案，原样归档，作为项目愿景和实施范围来源。
 - [当前架构基线](docs/architecture.md)：结合兼容性与实机环境验证后的落地架构。
+- [自媒体 Agent 技术架构](docs/architecture/media-automation-agent.md)：独立应用、SSO、异步执行、数据与部署边界。
+- [自媒体 Agent 执行清单](docs/runbooks/media-agent-implementation.md)：从独立仓库到真实平台发布的分阶段步骤。
 - [Phase 0 规格](docs/specs/phase-0.md)：当前纵向切片的验收标准。
 - [Hello API 契约](docs/api/hello.yaml)：OpenAPI 3.0 定义。
 - [Hello 页面规格](docs/pages/hello.md)：页面行为与状态说明。
