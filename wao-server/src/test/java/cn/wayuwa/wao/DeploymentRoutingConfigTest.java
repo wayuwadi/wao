@@ -42,6 +42,10 @@ class DeploymentRoutingConfigTest {
                 .contains("label=com.docker.compose.service=wao-server")
                 .contains("WAO_AI_CODEX_PROXY_URL")
                 .contains("--proxy \"${proxy_url}\"")
+                .contains("label=com.docker.compose.service=codex-egress-proxy")
+                .contains("direct_status")
+                .contains("run_docker logs --tail 50")
+                .contains("--connect-timeout 10 --max-time 30")
                 .contains("https://auth.openai.com/api/accounts/deviceauth/usercode")
                 .contains("if [ \"${status}\" != '200' ]");
     }
@@ -60,13 +64,13 @@ class DeploymentRoutingConfigTest {
                 .contains("127.0.0.1\", \"18888\"")
                 .doesNotContain("ports:");
         assertThat(serverService)
-                .contains("WAO_AI_CODEX_PROXY_URL: http://host.docker.internal:18888")
+                .contains("WAO_AI_CODEX_PROXY_URL: http://${MASTER_BIND_IP:-host.docker.internal}:18888")
                 .contains("codex-egress-proxy:")
                 .contains("condition: service_healthy")
                 .contains("host.docker.internal:host-gateway");
         assertThat(dockerfile)
                 .contains("AS codex-egress-proxy")
-                .contains("apk add --no-cache tinyproxy")
+                .contains("apk add --no-cache curl tinyproxy")
                 .contains("USER tinyproxy");
         assertThat(tinyproxy)
                 .contains("Allow 127.0.0.1")

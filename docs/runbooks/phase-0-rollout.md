@@ -38,11 +38,13 @@ Windows 发布包使用 ZIP 而不是 tar.gz，确保中文技术方案文件名
 6. 确认现有 DDNS-Go 持续更新 `linux2.wayuwa.cn`，完成路由器端口映射并验证跨节点连通。
 
 Codex 出站由 `codex-egress-proxy` 以 host 网络复用主机 VPN。该服务不配置 `ports`，tinyproxy ACL 只允许
-`127.0.0.1` 和 Docker `172.16.0.0/12` 来源；主机防火墙与路由器也不得放行 18888。部署后执行
+`127.0.0.1` 和 Docker `172.16.0.0/12` 来源；主机防火墙与路由器也不得放行 18888。`wao-server` 优先用
+`.env` 中的 `MASTER_BIND_IP` 连接代理，避免自定义 bridge 到默认 Docker 网关的隔离问题。部署后执行
 `sh deploy/scripts/probe-codex-egress.sh`，必须由 `wao-server` 经 `WAO_AI_CODEX_PROXY_URL` 请求设备码端点并取得
-HTTP 200。若连接被拒绝，先检查 `docker compose -f deploy/docker-compose-master.yml ps codex-egress-proxy`
-及其日志；若返回 403，先确认 Linux 主机自身已走 VPN，再核对代理是否仍使用 `network_mode: host`，不要给
-Windows 从节点或阿里云节点增加回退路由。
+HTTP 200。探针会先验证代理容器的 host-network VPN 直连，再验证 `wao-server` 到代理的完整链路，并在失败时
+输出 tinyproxy 末尾日志。若连接被拒绝，先检查
+`docker compose -f deploy/docker-compose-master.yml ps codex-egress-proxy` 及其日志；若返回 403，先确认 Linux
+主机自身已走 VPN，再核对代理是否仍使用 `network_mode: host`，不要给 Windows 从节点或阿里云节点增加回退路由。
 
 ## 云服务器
 

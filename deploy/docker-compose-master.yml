@@ -219,7 +219,7 @@ services:
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
       WECHAT_REDIRECT_URI: ${WECHAT_REDIRECT_URI:-https://wao.wayuwa.cn/api/auth/wechat/callback}
       WECHAT_FRONTEND_URL: ${WECHAT_FRONTEND_URL:-https://wao.wayuwa.cn}
-      WAO_AI_CODEX_PROXY_URL: http://host.docker.internal:18888
+      WAO_AI_CODEX_PROXY_URL: http://${MASTER_BIND_IP:-host.docker.internal}:18888
     depends_on:
       redis-master:
         condition: service_healthy
