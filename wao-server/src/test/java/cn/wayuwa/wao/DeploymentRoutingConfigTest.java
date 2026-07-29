@@ -53,6 +53,7 @@ class DeploymentRoutingConfigTest {
     @Test
     void masterUsesHostNetworkProxyRestrictedToDockerSources() throws IOException {
         String compose = readFromRepository("deploy/docker-compose-master.yml");
+        String deployScript = readFromRepository("deploy/scripts/deploy-linux.sh");
         String proxyService = section(compose, "  codex-egress-proxy:", "\n  wao-server:");
         String serverService = section(compose, "  wao-server:", "\n  wao-gateway:");
         String dockerfile = readFromRepository("deploy/Dockerfile");
@@ -72,6 +73,10 @@ class DeploymentRoutingConfigTest {
                 .contains("AS codex-egress-proxy")
                 .contains("apk add --no-cache curl tinyproxy")
                 .contains("USER tinyproxy");
+        assertThat(deployScript)
+                .contains("compose build codex-egress-proxy wao-server wao-gateway")
+                .contains("compose up -d --force-recreate --wait codex-egress-proxy")
+                .contains("diagnostic_services=\"codex-egress-proxy ${diagnostic_services}\"");
         assertThat(tinyproxy)
                 .contains("Allow 127.0.0.1")
                 .contains("Allow 172.16.0.0/12")
