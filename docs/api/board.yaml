@@ -336,6 +336,19 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/SiteInfo' } } }
       responses: { '200': { description: OK }, '400': { description: 字段为空、超长或备案查询链接不合法 } }
+  /settings/navigation/media-agent:
+    get:
+      summary: 读取自媒体 Agent 的全局一级菜单配置
+      responses:
+        '200':
+          description: 未保存时返回公共分组、排序值 20、显示中的默认配置
+          content: { application/json: { schema: { $ref: '#/components/schemas/MediaAgentMenuConfig' } } }
+    put:
+      summary: 保存菜单名称、所属分组、排序值与可见性，所有成员下次读取即生效
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MediaAgentMenuConfig' } } }
+      responses: { '200': { description: OK }, '400': { description: 名称、分组或排序值不合法 } }
   /public/site-info:
     get:
       summary: 免登录读取网站公开信息，供登录页、分享页与页脚展示
@@ -833,6 +846,14 @@ components:
         description: { type: string, maxLength: 160, example: 个人事务与 AI 协作系统 }
         icpNumber: { type: string, maxLength: 64, example: 豫ICP备2024105476号-1 }
         icpUrl: { type: string, format: uri, maxLength: 255, example: 'https://beian.miit.gov.cn' }
+    MediaAgentMenuConfig:
+      type: object
+      required: [label, group, order, visible]
+      properties:
+        label: { type: string, minLength: 1, maxLength: 24, example: 自媒体 Agent }
+        group: { type: string, enum: [PUBLIC, PERSONAL, TOOLS], description: 公共、个人或工具分组 }
+        order: { type: integer, minimum: 0, maximum: 999, description: 同组内数值越小越靠前 }
+        visible: { type: boolean, description: 是否显示在一级导航；隐藏不影响直接 URL 访问 }
     FeishuSender:
       type: object
       description: 发言人映射，把飞书 open_id 对上 WAO 里显示的人名

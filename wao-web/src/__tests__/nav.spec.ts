@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { MODULES, NAV_GROUPS } from '@/config/nav'
+import {
+  DEFAULT_MEDIA_AGENT_MENU,
+  MODULES,
+  NAV_GROUPS,
+  PERSONAL_ITEMS,
+  resolveNavGroups,
+} from '@/config/nav'
 import router from '@/router'
 
 describe('侧边栏导航配置', () => {
@@ -23,12 +29,41 @@ describe('侧边栏导航配置', () => {
     expect(router.getRoutes().some((r) => r.name === 'knowledge')).toBe(true)
   })
 
-  it('自媒体 Agent 作为独立应用入口出现在工具组并拥有受保护路由', () => {
-    const tools = NAV_GROUPS.find((group) => group.label === '工具')
-    expect(tools?.items).toContain('mediaAgent')
+  it('自媒体 Agent 默认出现在公共组并拥有受保护路由', () => {
+    const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
+    expect(publicGroup?.items).toEqual(['projects', 'mediaAgent'])
     expect(MODULES.mediaAgent.path).toBe('/media-agent')
     const route = router.getRoutes().find((item) => item.name === 'media-agent')
     expect(route?.meta.module).toBe('mediaAgent')
     expect(route?.meta.public).not.toBe(true)
+  })
+
+  it('按全局配置移动、排序或隐藏 Agent 菜单，不改变个人模块顺序', () => {
+    const tools = resolveNavGroups(PERSONAL_ITEMS, {
+      ...DEFAULT_MEDIA_AGENT_MENU,
+      group: 'TOOLS',
+      order: 0,
+      label: '内容助手',
+    })
+    expect(tools.find((group) => group.label === '工具')?.items).toEqual(['mediaAgent', 'automation', 'files'])
+
+    const personalOrder = [...PERSONAL_ITEMS].reverse()
+    const personal = resolveNavGroups(personalOrder, {
+      ...DEFAULT_MEDIA_AGENT_MENU,
+      group: 'PERSONAL',
+      order: 15,
+    })
+    expect(personal.find((group) => group.label === '个人')?.items).toEqual([
+      personalOrder[0],
+      'mediaAgent',
+      ...personalOrder.slice(1),
+    ])
+
+    const hidden = resolveNavGroups(personalOrder, {
+      ...DEFAULT_MEDIA_AGENT_MENU,
+      visible: false,
+    })
+    expect(hidden.flatMap((group) => group.items)).not.toContain('mediaAgent')
+    expect(hidden.find((group) => group.label === '个人')?.items).toEqual(personalOrder)
   })
 })

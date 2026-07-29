@@ -2,6 +2,8 @@ package cn.wayuwa.wao.controller;
 
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.FeishuWebhookConfigDto;
+import cn.wayuwa.wao.dto.MediaAgentMenuConfigDto;
+import cn.wayuwa.wao.dto.SaveMediaAgentMenuConfigRequest;
 import cn.wayuwa.wao.dto.SaveWebhookRequest;
 import cn.wayuwa.wao.dto.SaveSiteInfoRequest;
 import cn.wayuwa.wao.dto.SiteInfoDto;
@@ -16,10 +18,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 系统配置接口：目前是全局唯一一个的飞书通知 webhook。 */
+/** 系统配置接口：网站信息、一级导航与全局飞书通知。 */
 @RestController
 @RequestMapping("/api/settings")
 public class SettingController {
+
+    private static final String DEFAULT_MEDIA_AGENT_LABEL = "自媒体 Agent";
+    private static final String DEFAULT_MEDIA_AGENT_GROUP = "PUBLIC";
+    private static final int DEFAULT_MEDIA_AGENT_ORDER = 20;
 
     private final SettingService settings;
     private final FeishuWebhookNotifier notifier;
@@ -49,6 +55,21 @@ public class SettingController {
         return ApiResponse.ok(siteInfo(settings));
     }
 
+    @GetMapping("/navigation/media-agent")
+    public ApiResponse<MediaAgentMenuConfigDto> mediaAgentMenu() {
+        return ApiResponse.ok(mediaAgentMenuConfig());
+    }
+
+    @PutMapping("/navigation/media-agent")
+    public ApiResponse<MediaAgentMenuConfigDto> saveMediaAgentMenu(
+            @Valid @RequestBody SaveMediaAgentMenuConfigRequest request) {
+        settings.put(SettingService.MEDIA_AGENT_MENU_LABEL, request.label().trim());
+        settings.put(SettingService.MEDIA_AGENT_MENU_GROUP, request.group());
+        settings.put(SettingService.MEDIA_AGENT_MENU_ORDER, String.valueOf(request.order()));
+        settings.put(SettingService.MEDIA_AGENT_MENU_VISIBLE, String.valueOf(request.visible()));
+        return ApiResponse.ok(mediaAgentMenuConfig());
+    }
+
     @PutMapping("/feishu-webhook")
     public ApiResponse<FeishuWebhookConfigDto> saveWebhook(@RequestBody SaveWebhookRequest request) {
         settings.put(SettingService.FEISHU_WEBHOOK_URL, request.url() == null ? null : request.url().trim());
@@ -70,6 +91,31 @@ public class SettingController {
         String url = settings.get(SettingService.FEISHU_WEBHOOK_URL);
         return new FeishuWebhookConfigDto(SettingService.mask(url), url != null && !url.isBlank(),
                 settings.getBoolean(SettingService.FEISHU_WEBHOOK_ENABLED));
+    }
+
+    private MediaAgentMenuConfigDto mediaAgentMenuConfig() {
+        String group = settings.get(SettingService.MEDIA_AGENT_MENU_GROUP, DEFAULT_MEDIA_AGENT_GROUP);
+        if (!("PUBLIC".equals(group) || "PERSONAL".equals(group) || "TOOLS".equals(group))) {
+            group = DEFAULT_MEDIA_AGENT_GROUP;
+        }
+        int order = parseMenuOrder(settings.get(
+                SettingService.MEDIA_AGENT_MENU_ORDER, String.valueOf(DEFAULT_MEDIA_AGENT_ORDER)));
+        boolean visible = !"false".equalsIgnoreCase(
+                settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true"));
+        return new MediaAgentMenuConfigDto(
+                settings.get(SettingService.MEDIA_AGENT_MENU_LABEL, DEFAULT_MEDIA_AGENT_LABEL),
+                group,
+                order,
+                visible);
+    }
+
+    private static int parseMenuOrder(String value) {
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed >= 0 && parsed <= 999 ? parsed : DEFAULT_MEDIA_AGENT_ORDER;
+        } catch (NumberFormatException ignored) {
+            return DEFAULT_MEDIA_AGENT_ORDER;
+        }
     }
 
     public static SiteInfoDto siteInfo(SettingService settings) {

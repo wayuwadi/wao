@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/composables/toast'
-import { NAV_GROUPS, MODULES } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useSessionStore } from '@/stores/session'
 import { useFavoritesStore } from '@/stores/favorites'
@@ -19,18 +18,16 @@ const router = useRouter()
 
 const activeModule = computed(() => route.meta.module as ModuleId | undefined)
 
-// 「个人」分组的条目顺序由用户拖拽决定，其余分组按静态配置渲染。
-const groups = computed(() =>
-  NAV_GROUPS.map((g) => (g.label === '个人' ? { label: g.label, items: nav.personalOrder } : g)),
-)
+const groups = computed(() => nav.groups)
 
 onMounted(() => {
   nav.loadPersonalOrder()
+  nav.loadMediaAgentMenu()
   favorites.load()
 })
 
 function go(id: ModuleId) {
-  router.push(MODULES[id].path)
+  router.push(nav.moduleMeta(id).path)
 }
 function goSettings() {
   router.push('/settings')
@@ -128,16 +125,16 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
               dragging: dragId === id,
               'drag-over': dragOverId === id,
             }"
-            :title="MODULES[id].label"
-            :draggable="g.label === '个人' && !nav.collapsed"
+            :title="nav.moduleMeta(id).label"
+            :draggable="g.label === '个人' && id !== 'mediaAgent' && !nav.collapsed"
             @click="go(id)"
-            @dragstart="g.label === '个人' && onDragStart(id, $event)"
-            @dragover.prevent="g.label === '个人' && onDragOver(id)"
-            @drop.prevent="g.label === '个人' && onDrop(id)"
+            @dragstart="g.label === '个人' && id !== 'mediaAgent' && onDragStart(id, $event)"
+            @dragover.prevent="g.label === '个人' && id !== 'mediaAgent' && onDragOver(id)"
+            @drop.prevent="g.label === '个人' && id !== 'mediaAgent' && onDrop(id)"
             @dragend="onDragEnd"
           >
-            <i :class="MODULES[id].icon"></i>
-            <span v-if="!nav.collapsed" class="item-label">{{ MODULES[id].label }}</span>
+            <i :class="nav.moduleMeta(id).icon"></i>
+            <span v-if="!nav.collapsed" class="item-label">{{ nav.moduleMeta(id).label }}</span>
           </button>
         </div>
 

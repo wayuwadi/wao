@@ -9,6 +9,23 @@ export interface ModuleMeta {
   path: string
 }
 
+export type MenuGroupCode = 'PUBLIC' | 'PERSONAL' | 'TOOLS'
+
+/** 可由系统设置覆盖的自媒体 Agent 一级菜单展示项。 */
+export interface MediaAgentMenuConfig {
+  label: string
+  group: MenuGroupCode
+  order: number
+  visible: boolean
+}
+
+export const DEFAULT_MEDIA_AGENT_MENU: MediaAgentMenuConfig = {
+  label: '自媒体 Agent',
+  group: 'PUBLIC',
+  order: 20,
+  visible: true,
+}
+
 export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
@@ -25,13 +42,47 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
 /** 「个人」组的默认顺序；成员拖拽后的自定义顺序存服务端偏好，见 stores/nav.ts。 */
 export const PERSONAL_ITEMS: ModuleId[] = ['todo', 'calendar', 'knowledge', 'vault']
 
-/** 左侧导航分组（空 label = 不显示分组标题的首页组）。个人相关功能统一收进「个人」组。 */
-export const NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
+const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
   { label: '公共', items: ['projects'] },
   { label: '个人', items: PERSONAL_ITEMS },
-  { label: '工具', items: ['mediaAgent', 'automation', 'files'] },
+  { label: '工具', items: ['automation', 'files'] },
 ]
+
+const GROUP_LABELS: Record<MenuGroupCode, string> = {
+  PUBLIC: '公共',
+  PERSONAL: '个人',
+  TOOLS: '工具',
+}
+
+/**
+ * 合成当前用户真正看到的导航：个人模块沿用成员自己的拖拽顺序，Agent 菜单使用全局配置。
+ * 排序值越小越靠前；相同值保持内置菜单在前，避免旧配置升级后发生无意义跳动。
+ */
+export function resolveNavGroups(
+  personalOrder: ModuleId[],
+  mediaAgent: MediaAgentMenuConfig,
+): { label: string; items: ModuleId[] }[] {
+  const groups = BASE_NAV_GROUPS.map((group) => ({
+    label: group.label,
+    items: group.label === '个人' ? [...personalOrder] : [...group.items],
+  }))
+  if (!mediaAgent.visible) return groups
+
+  const target = groups.find((group) => group.label === GROUP_LABELS[mediaAgent.group])
+  if (!target) return groups
+  const existingOrders = new Map(target.items.map((id, index) => [id, (index + 1) * 10]))
+  target.items.push('mediaAgent')
+  target.items.sort((left, right) => {
+    const leftOrder = left === 'mediaAgent' ? mediaAgent.order : (existingOrders.get(left) ?? 999)
+    const rightOrder = right === 'mediaAgent' ? mediaAgent.order : (existingOrders.get(right) ?? 999)
+    return leftOrder - rightOrder
+  })
+  return groups
+}
+
+/** 左侧导航默认分组；首次加载配置前也保证 Agent 位于「公共」。 */
+export const NAV_GROUPS = resolveNavGroups(PERSONAL_ITEMS, DEFAULT_MEDIA_AGENT_MENU)
 
 /** 由模块 id 生成页签。首页固定不可关闭。 */
 export function moduleTab(id: ModuleId): Tab {

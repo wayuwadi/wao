@@ -27,6 +27,11 @@ public class SettingService {
     public static final String SITE_DESCRIPTION = "site.description";
     public static final String SITE_ICP_NUMBER = "site.icp-number";
     public static final String SITE_ICP_URL = "site.icp-url";
+    /** WAO 壳内的自媒体 Agent 菜单；独立应用本身不依赖这些展示配置。 */
+    public static final String MEDIA_AGENT_MENU_LABEL = "navigation.media-agent.label";
+    public static final String MEDIA_AGENT_MENU_GROUP = "navigation.media-agent.group";
+    public static final String MEDIA_AGENT_MENU_ORDER = "navigation.media-agent.order";
+    public static final String MEDIA_AGENT_MENU_VISIBLE = "navigation.media-agent.visible";
     /** 飞书群聊同步：自建应用凭据、目标群与落点知识库。 */
     public static final String CHAT_SYNC_APP_ID = "feishu.chat-sync.app-id";
     public static final String CHAT_SYNC_APP_SECRET = "feishu.chat-sync.app-secret";

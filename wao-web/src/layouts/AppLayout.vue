@@ -12,7 +12,7 @@ import GlobalSearch from '@/components/overlays/GlobalSearch.vue'
 import Celebration from '@/components/overlays/CelebrationOverlay.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
 import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
-import { MODULES, tabFromRoute } from '@/config/nav'
+import { tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
@@ -31,7 +31,7 @@ const preferences = usePreferenceStore()
 useShortcuts()
 
 const crumbA = computed(() => {
-  const mod = MODULES[route.meta.module as ModuleId]
+  const mod = nav.moduleMeta(route.meta.module as ModuleId)
   return mod?.label ?? '首页'
 })
 const crumbB = computed(() => {
@@ -45,8 +45,17 @@ watch(
   () => route.fullPath,
   () => {
     const tab = tabFromRoute(route)
-    if (tab) tabs.open(tab)
+    if (tab) {
+      if (tab.key === 'mediaAgent') tab.label = nav.mediaAgentMenu.label
+      tabs.open(tab)
+    }
   },
+  { immediate: true },
+)
+
+watch(
+  () => nav.mediaAgentMenu.label,
+  (label) => tabs.setLabel('mediaAgent', label),
   { immediate: true },
 )
 

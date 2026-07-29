@@ -8,22 +8,25 @@ import { updateEmailCredential, updateProfile, unlinkIdentity, apiCreateAccount,
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import {
-  fetchSiteInfo, fetchWebhookConfig, saveSiteInfo, saveWebhookConfig, testWebhook,
-  type FeishuWebhookConfig, type SiteInfo,
+  fetchMediaAgentMenu, fetchSiteInfo, fetchWebhookConfig, saveMediaAgentMenu, saveSiteInfo,
+  saveWebhookConfig, testWebhook, type FeishuWebhookConfig, type SiteInfo,
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import { usePreferenceStore } from '@/stores/preferences'
+import { useNavStore } from '@/stores/nav'
+import { DEFAULT_MEDIA_AGENT_MENU, type MediaAgentMenuConfig } from '@/config/nav'
 
 const session = useSessionStore()
 const data = useDataStore()
 const preferences = usePreferenceStore()
+const nav = useNavStore()
 const route = useRoute()
 const router = useRouter()
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['通知 · 飞书 Webhook', 'webhook'], ['AI 账号', 'ai-accounts']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['菜单配置', 'navigation'], ['通知 · 飞书 Webhook', 'webhook'], ['AI 账号', 'ai-accounts']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
 ] as const
 
@@ -177,6 +180,59 @@ const webhookBusy = ref(false)
 const site = reactive<SiteInfo>({ siteName: '', description: '', icpNumber: '', icpUrl: '' })
 const siteLoaded = ref(false)
 const siteBusy = ref(false)
+const mediaAgentMenuForm = reactive<MediaAgentMenuConfig>({ ...DEFAULT_MEDIA_AGENT_MENU })
+const mediaAgentMenuSaved = ref<MediaAgentMenuConfig>({ ...DEFAULT_MEDIA_AGENT_MENU })
+const mediaAgentMenuLoaded = ref(false)
+const mediaAgentMenuLoading = ref(false)
+const mediaAgentMenuSaving = ref(false)
+const mediaAgentMenuError = ref('')
+const mediaAgentMenuDirty = computed(() =>
+  JSON.stringify(mediaAgentMenuForm) !== JSON.stringify(mediaAgentMenuSaved.value),
+)
+
+async function loadMediaAgentMenuSettings() {
+  if (mediaAgentMenuLoading.value) return
+  mediaAgentMenuLoading.value = true
+  mediaAgentMenuError.value = ''
+  try {
+    const config = await fetchMediaAgentMenu()
+    Object.assign(mediaAgentMenuForm, config)
+    mediaAgentMenuSaved.value = { ...config }
+    mediaAgentMenuLoaded.value = true
+    nav.applyMediaAgentMenu(config)
+  } catch (error) {
+    mediaAgentMenuError.value = error instanceof Error ? error.message : '读取菜单配置失败'
+  } finally {
+    mediaAgentMenuLoading.value = false
+  }
+}
+
+async function saveMediaAgentMenuSettings() {
+  const label = mediaAgentMenuForm.label.trim()
+  if (!label) {
+    toast('菜单名称不能为空', 'ri-error-warning-line')
+    return
+  }
+  mediaAgentMenuSaving.value = true
+  mediaAgentMenuError.value = ''
+  try {
+    const saved = await saveMediaAgentMenu({
+      ...mediaAgentMenuForm,
+      label,
+      order: Number(mediaAgentMenuForm.order),
+    })
+    Object.assign(mediaAgentMenuForm, saved)
+    mediaAgentMenuSaved.value = { ...saved }
+    mediaAgentMenuLoaded.value = true
+    nav.applyMediaAgentMenu(saved)
+    toast('菜单配置已保存并立即生效', 'ri-check-line')
+  } catch (error) {
+    mediaAgentMenuError.value = error instanceof Error ? error.message : '保存菜单配置失败'
+    toast(mediaAgentMenuError.value, 'ri-error-warning-line')
+  } finally {
+    mediaAgentMenuSaving.value = false
+  }
+}
 
 async function loadSiteInfo() {
   try {
@@ -265,6 +321,7 @@ async function toggleProjectNotify(id: string) {
 
 watch(tab, (t) => {
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
+  if (t === 'navigation' && !mediaAgentMenuLoaded.value) loadMediaAgentMenuSettings()
   if (t === 'webhook' && !webhook.value) loadWebhook()
 }, { immediate: true })
 
@@ -304,9 +361,6 @@ async function bindWechat() {
 async function bindFeishu() {
   try { await startFeishuLogin('link') }
   catch (error) { toast(error instanceof Error ? error.message : '飞书登录暂不可用') }
-}
-function demo(msg: string, icon?: string) {
-  toast(msg, icon)
 }
 </script>
 
@@ -395,6 +449,65 @@ function demo(msg: string, icon?: string) {
               <a v-if="site.icpNumber" :href="site.icpUrl || undefined" target="_blank" rel="noopener noreferrer">· {{ site.icpNumber }}</a>
             </div>
             <div class="hint">保存后，备案号会自动展示在登录页、公开任务分享页和登录后的系统页脚；无需修改代码或重新发布前端。</div>
+          </div>
+        </template>
+
+        <!-- 系统 · 一级菜单配置 -->
+        <template v-else-if="tab === 'navigation'">
+          <div class="s-h1">菜单配置</div>
+          <div class="card">
+            <div class="card-row wrap">
+              <div class="card-title">自媒体 Agent</div>
+              <span v-if="mediaAgentMenuLoaded && !mediaAgentMenuError" class="connected"><span class="c-dot"></span>已读取线上配置</span>
+              <span v-else-if="mediaAgentMenuError" class="connected err"><span class="c-dot"></span>{{ mediaAgentMenuError }}</span>
+            </div>
+
+            <div v-if="mediaAgentMenuLoading" class="menu-loading">正在读取菜单配置…</div>
+            <form v-else class="site-form menu-form" @submit.prevent="saveMediaAgentMenuSettings">
+              <label>
+                <span>菜单名称</span>
+                <input v-model="mediaAgentMenuForm.label" maxlength="24" required placeholder="例如 自媒体 Agent" />
+              </label>
+              <label>
+                <span>所属分组</span>
+                <select v-model="mediaAgentMenuForm.group">
+                  <option value="PUBLIC">公共</option>
+                  <option value="PERSONAL">个人</option>
+                  <option value="TOOLS">工具</option>
+                </select>
+              </label>
+              <label>
+                <span>排序值</span>
+                <input v-model.number="mediaAgentMenuForm.order" type="number" min="0" max="999" required />
+                <small>数值越小越靠前；公共模块“项目”的排序值为 10。</small>
+              </label>
+              <label>
+                <span>菜单可见性</span>
+                <button
+                  type="button"
+                  class="visibility-choice"
+                  :class="{ on: mediaAgentMenuForm.visible }"
+                  :aria-pressed="mediaAgentMenuForm.visible"
+                  @click="mediaAgentMenuForm.visible = !mediaAgentMenuForm.visible"
+                >
+                  <span class="choice-icon"><i :class="mediaAgentMenuForm.visible ? 'ri-eye-line' : 'ri-eye-off-line'"></i></span>
+                  <span>{{ mediaAgentMenuForm.visible ? '显示在一级导航中' : '从一级导航中隐藏' }}</span>
+                </button>
+              </label>
+              <div class="menu-preview">
+                <span class="preview-label">导航预览</span>
+                <span class="menu-preview-group">{{ { PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' }[mediaAgentMenuForm.group] }}</span>
+                <span v-if="mediaAgentMenuForm.visible" class="menu-preview-item"><i class="ri-sparkling-2-line"></i>{{ mediaAgentMenuForm.label || '未命名菜单' }}</span>
+                <span v-else class="menu-preview-hidden">菜单已隐藏，直接访问地址仍然可用</span>
+              </div>
+              <div class="site-actions">
+                <button v-if="mediaAgentMenuError && !mediaAgentMenuLoaded" type="button" class="btn-ghost" :disabled="mediaAgentMenuLoading" @click="loadMediaAgentMenuSettings">重新读取</button>
+                <button class="btn-primary" :disabled="mediaAgentMenuSaving || !mediaAgentMenuDirty || !mediaAgentMenuForm.label.trim()">
+                  {{ mediaAgentMenuSaving ? '保存中…' : mediaAgentMenuDirty ? '保存并立即生效' : '已保存' }}
+                </button>
+              </div>
+            </form>
+            <div class="hint">这是一份全局配置，所有 WAO 成员看到相同的菜单名称和位置。修改只写入服务端配置，保存后立即生效，不需要重新构建或发布 WAO；隐藏菜单不会停用 Agent 服务。</div>
           </div>
         </template>
 
@@ -823,7 +936,19 @@ function demo(msg: string, icon?: string) {
 .site-form label { display: grid; gap: 6px; color: var(--wao-text-3); font-size: 12px; }
 .site-form input { height: 36px; box-sizing: border-box; padding: 0 11px; border: 1px solid var(--wao-line-control); border-radius: 8px; outline: none; color: var(--wao-text); }
 .site-form input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .12); }
+.site-form select { height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; outline: none; background: #fff; color: var(--wao-text); }
+.site-form select:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .12); }
+.site-form small { color: var(--wao-text-faint); line-height: 1.5; }
 .site-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; }
+.menu-loading { margin-top: 16px; padding: 28px 12px; border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); text-align: center; font-size: 12.5px; }
+.visibility-choice { height: 36px; padding: 0 11px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: #fff; color: var(--wao-text-3); cursor: pointer; text-align: left; }
+.visibility-choice.on { border-color: rgba(67, 88, 214, .35); background: rgba(67, 88, 214, .05); color: var(--wao-primary); }
+.choice-icon { width: 20px; display: inline-grid; place-items: center; }
+.menu-preview { grid-column: 1 / -1; padding: 13px 14px; display: grid; grid-template-columns: 72px 1fr; gap: 8px 12px; border: 1px dashed var(--wao-line-strong); border-radius: 9px; background: var(--wao-bg-sub); font-size: 12px; }
+.menu-preview .preview-label { width: auto; margin: 0; text-align: left; }
+.menu-preview-group { color: var(--wao-text-faint); font-weight: 600; }
+.menu-preview-item { grid-column: 2; display: inline-flex; align-items: center; gap: 7px; color: var(--wao-text); font-weight: 500; }
+.menu-preview-hidden { grid-column: 2; color: var(--wao-text-faint); }
 .filing-preview { margin-top: 14px; padding: 12px 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; border: 1px dashed var(--wao-line-strong); border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 11.5px; }
 .filing-preview a { color: var(--wao-primary); text-decoration: none; }
 .preview-label { width: 100%; margin-bottom: 2px; color: var(--wao-text-faint); text-align: center; font-size: 10.5px; }
