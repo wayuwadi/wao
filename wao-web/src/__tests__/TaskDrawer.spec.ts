@@ -174,6 +174,27 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
+  it('空的 AI 记录轮询不会反复插入加载区而推挤评论', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    const fetchRuns = vi.mocked(fetchTaskAiRuns)
+    // 首次打开和下一次五秒轮询都没有记录；其后的测试仍使用默认 mock 返回值。
+    fetchRuns.mockResolvedValueOnce([]).mockResolvedValueOnce([])
+    vi.useFakeTimers()
+    try {
+      ui.openTask(taskId)
+      const w = mountDrawer()
+      await flushPromises()
+      expect(w.find('.ai-archive').exists()).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(5_000)
+      await flushPromises()
+      expect(w.find('.ai-archive').exists()).toBe(false)
+      w.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('运行中提供暂停入口，并请求暂停当前运行', async () => {
     const { pauseAiRun } = await import('@/api/ai')
     ui.openTask(taskId)
