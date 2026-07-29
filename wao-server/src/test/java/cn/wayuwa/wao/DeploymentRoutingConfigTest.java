@@ -12,6 +12,27 @@ import org.junit.jupiter.api.Test;
 class DeploymentRoutingConfigTest {
 
     @Test
+    void agentUsesIndependentStaticDirectoryAndDedicatedGatewayRoute() throws IOException {
+        String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
+        String gateway = readFromRepository("wao-gateway/src/main/resources/application.yml");
+        String localGateway = readFromRepository("wao-gateway/src/main/resources/application-local.yml");
+        String masterCompose = readFromRepository("deploy/docker-compose-master.yml");
+        String slaveCompose = readFromRepository("deploy/docker-compose-slave.yml");
+
+        assertThat(nginx)
+                .contains("location /agent/")
+                .contains("alias /var/www/wao-agent/dist/")
+                .contains("location /api/");
+        assertThat(gateway.indexOf("id: wao-agent-api")).isLessThan(gateway.indexOf("id: wao-server-api"));
+        assertThat(gateway)
+                .contains("Path=/api/agent/**")
+                .contains("WAO_AGENT_SERVER_URI:http://wao-agent-server:8081");
+        assertThat(localGateway).contains("WAO_AGENT_SERVER_URI:http://127.0.0.1:8081");
+        assertThat(masterCompose).contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081");
+        assertThat(slaveCompose).contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081");
+    }
+
+    @Test
     void aiApiRoutesOnlyToLinuxMasterGateway() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String aiUpstream = section(nginx, "upstream wao_ai_gateway {", "\n}");
