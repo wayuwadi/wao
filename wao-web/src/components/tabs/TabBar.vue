@@ -299,4 +299,8 @@ function mCloseAll() {
   background: #f0f0f3;
   margin: 4px 6px;
 }
+@media (max-width: 760px) {
+  /* 手机由底部模块导航承担切换；桌面多页签条只会重复信息并挤掉项目正文。 */
+  .tabbar-shell { display: none; }
+}
 </style>

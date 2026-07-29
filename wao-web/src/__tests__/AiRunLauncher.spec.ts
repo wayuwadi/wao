@@ -33,6 +33,15 @@ vi.mock('@/api/aiAccount', () => ({
 }))
 
 describe('AiRunLauncher', () => {
+  it('超长子任务范围不挤掉开始按钮，并保留完整标题提示', async () => {
+    const scope = `子任务「${'移动端关联与执行状态'.repeat(40)}」`
+    const wrapper = mount(AiRunLauncher, { props: { projectId: 'p1', scope } })
+    await flushPromises()
+
+    expect(wrapper.find('.scope').attributes('title')).toBe(`本次范围：${scope}`)
+    expect(wrapper.find('footer .primary').exists()).toBe(true)
+  })
+
   it('选择集中账号后默认改用 Linux 主节点', async () => {
     const wrapper = mount(AiRunLauncher, { props: { projectId: 'p1' } })
     await flushPromises()

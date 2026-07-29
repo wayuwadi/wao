@@ -17,6 +17,7 @@ import { copyToClipboard } from '@/utils/clipboard'
 import { continueAiRun, createAiRuns, fetchTaskAiRuns, pauseAiRun } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
+import TaskRelationPicker from '@/components/task/TaskRelationPicker.vue'
 import { formatCost, formatTokens, shortModel } from '@/composables/aiUsage'
 import { engineIcon, engineLabel } from '@/composables/aiEngines'
 import { useSettle } from '@/composables/completion'
@@ -43,6 +44,9 @@ const commentText = ref('')
 const sendingComment = ref(false)
 const aiStarting = ref(false)
 const aiLauncherOpen = ref(false)
+const relationOpen = ref(false)
+const attachmentInput = ref<HTMLInputElement | null>(null)
+const attachmentUploading = ref(false)
 /** 执行方式选择器当前是为哪条子任务打开的；null 表示整个任务。 */
 const aiLauncherSubId = ref<string | null>(null)
 const aiRuns = ref<AiRun[]>([])
@@ -63,6 +67,7 @@ watch(
     openSubId.value = null
     aiLauncherOpen.value = false
     aiLauncherSubId.value = null
+    relationOpen.value = false
     editingComment.value = null
     confirmingDelete.value = false
   },
@@ -77,7 +82,10 @@ async function refreshTaskAiRuns() {
   aiRunsLoading.value = true
   try {
     const next = await fetchTaskAiRuns(taskId)
-    if (ui.openTaskId === taskId) aiRuns.value = next
+    if (ui.openTaskId === taskId) {
+      aiRuns.value = next
+      data.applyAiRunStatuses(next)
+    }
   } catch {
     // 保留上一帧，网络抖动不应让已展示的 AI 档案消失。
   } finally {
@@ -231,6 +239,24 @@ const linkTasks = computed(() =>
 const linkedDocs = computed(() =>
   (task.value?.docs ?? []).map((id) => ({ id, title: data.docById(id)?.title ?? '' })),
 )
+const relationDocs = computed(() => Object.values(data.docs).map((doc) => {
+  const kb = data.kbs.find((item) => item.id === doc.kbId || item.folders.some((folder) => folder.docs.includes(doc.id)))
+  return { id: doc.id, title: doc.title, kbName: kb?.name ?? '知识文档' }
+}))
+const relationTasks = computed(() => data.tasks
+  .filter((item) => item.id !== task.value?.id)
+  .map((item) => ({
+    id: item.id,
+    title: item.title,
+    projectName: data.projectById(item.project)?.name ?? '未关联项目',
+  })))
+// 没有稳定 id 的历史展示附件并不存在可下载正文，不能把它伪装成可关联文件。
+const relationFiles = computed(() => data.files
+  .filter((file) => typeof file.id === 'string' && file.id.length > 0)
+  .map((file) => ({ id: file.id!, name: file.name, size: file.size, icon: file.icon })))
+const selectedFileIds = computed(() => (task.value?.files ?? [])
+  .map((file) => file.id)
+  .filter((id): id is string => !!id))
 const saveState = computed(() => (task.value ? data.taskSaveState(task.value.id) : 'idle'))
 /** 上一次写透成功的时刻，给「自动保存成功 14:32」用。 */
 const savedAt = computed(() => (task.value ? data.taskSavedAt(task.value.id) : null))
@@ -251,14 +277,16 @@ function close() {
 /** Esc 逐层关闭：先关下拉菜单，再收子任务详情，最后关抽屉。 */
 function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape' || !task.value) return
-  if (menu.value) menu.value = null
+  if (relationOpen.value) relationOpen.value = false
+  else if (menu.value) menu.value = null
   else if (openSubId.value) openSubId.value = null
   else close()
 }
 onMounted(() => {
   window.addEventListener('keydown', onKey)
   aiRunsTimer = setInterval(() => {
-    if (ui.openTaskId && activeAiRun.value) void refreshTaskAiRuns()
+    // 抽屉打开期间始终轮询：运行可能从另一个页面 / 另一台电脑发起，不能因为首帧没有活动运行就停掉。
+    if (ui.openTaskId) void refreshTaskAiRuns()
   }, 5_000)
 })
 onBeforeUnmount(() => {
@@ -575,6 +603,59 @@ function openDoc(id: string) {
 function openLinkTask(id: string) {
   ui.openTask(id)
 }
+function openLinkedFile(id: string | null | undefined) {
+  if (!id) return
+  close()
+  router.push(`/f/${encodeURIComponent(id)}`)
+}
+function toggleRelation(type: 'doc' | 'task' | 'file', id: string) {
+  const t = task.value
+  if (!t) return
+  if (type === 'doc') {
+    const selected = t.docs.includes(id)
+    const title = data.docById(id)?.title || '未命名文档'
+    data.patchTask(t.id, { docs: selected ? t.docs.filter((item) => item !== id) : [...t.docs, id] },
+      `${selected ? '取消关联' : '关联了'}知识文档「${title}」`)
+    return
+  }
+  if (type === 'task') {
+    const selected = t.linkTasks.some((item) => item.id === id)
+    const title = data.taskById(id)?.title ?? id
+    data.patchTask(t.id, {
+      linkTasks: selected ? t.linkTasks.filter((item) => item.id !== id) : [...t.linkTasks, { id, rel: '相关任务' }],
+    }, `${selected ? '取消关联' : '关联了'}任务「${title}」`)
+    return
+  }
+  const file = data.files.find((item) => item.id === id)
+  if (!file) return
+  const selected = t.files.some((item) => item.id === id)
+  data.patchTask(t.id, {
+    files: selected
+      ? t.files.filter((item) => item.id !== id)
+      : [...t.files, { id, name: file.name, size: file.size, icon: file.icon }],
+  }, `${selected ? '取消关联' : '关联了'}文件「${file.name}」`)
+}
+async function uploadAttachment(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  const t = task.value
+  if (!file || !t || attachmentUploading.value) return
+  if (file.size > data.MAX_FILE_BYTES) return toast('文件超过 50MB，无法上传', 'ri-error-warning-line')
+  attachmentUploading.value = true
+  try {
+    const uploaded = await data.uploadFile(file)
+    if (!uploaded?.id) return toast('文件上传失败，请重试', 'ri-error-warning-line')
+    if (!t.files.some((item) => item.id === uploaded.id)) {
+      data.patchTask(t.id, {
+        files: [...t.files, { id: uploaded.id, name: uploaded.name, size: uploaded.size, icon: uploaded.icon }],
+      }, `上传并关联了文件「${uploaded.name}」`)
+    }
+    toast('文件已上传并关联到任务', 'ri-check-line')
+  } finally {
+    attachmentUploading.value = false
+  }
+}
 function demo(msg: string) {
   toast(msg)
 }
@@ -759,14 +840,27 @@ function demo(msg: string) {
           <div v-if="task.files.length" class="field">
             <div class="field-label">附件</div>
             <div class="attach-list">
-              <div v-for="(f, i) in task.files" :key="i" class="attach" @click="demo('演示：下载在正式版本提供')">
+              <button
+                v-for="(f, i) in task.files"
+                :key="f.id ?? i"
+                type="button"
+                class="attach"
+                :class="{ legacy: !f.id }"
+                :disabled="!f.id"
+                :title="f.id ? '打开真实文件下载页' : '历史附件没有可下载的文件正文'"
+                @click="openLinkedFile(f.id)"
+              >
                 <i :class="f.icon"></i>
                 <span class="attach-name ellip">{{ f.name }}</span>
-                <span class="attach-size">{{ f.size }}</span>
-                <i class="ri-download-2-line dl"></i>
-              </div>
+                <span class="attach-size">{{ f.id ? f.size : `${f.size} · 仅历史记录` }}</span>
+                <i :class="f.id ? 'ri-arrow-right-s-line dl' : 'ri-information-line dl'"></i>
+              </button>
             </div>
-            <button class="text-btn" @click="demo('演示：附件上传在正式版本提供')"><i class="ri-upload-2-line"></i>上传附件</button>
+            <button class="text-btn" :disabled="attachmentUploading" @click="attachmentInput?.click()">
+              <i :class="attachmentUploading ? 'ri-loader-4-line spin' : 'ri-upload-2-line'"></i>
+              {{ attachmentUploading ? '上传中…' : '上传并关联附件' }}
+            </button>
+            <input ref="attachmentInput" type="file" hidden @change="uploadAttachment" />
           </div>
 
           <div class="field">
@@ -785,7 +879,7 @@ function demo(msg: string) {
                 <span class="mini" :style="{ background: lk.stBg, color: lk.stColor }">{{ lk.status }}</span>
               </div>
             </div>
-            <button class="text-btn" @click="demo('演示：关联选择器在下一轮迭代提供')"><i class="ri-links-line"></i>关联知识、任务或文件</button>
+            <button class="text-btn" @click="relationOpen = true"><i class="ri-links-line"></i>关联知识、任务或文件</button>
           </div>
 
           <div v-if="aiRunsLoading || aiRuns.length" class="ai-archive">
@@ -1088,6 +1182,17 @@ function demo(msg: string) {
         </div>
       </div>
     </aside>
+    <TaskRelationPicker
+      v-if="relationOpen"
+      :docs="relationDocs"
+      :tasks="relationTasks"
+      :files="relationFiles"
+      :selected-doc-ids="task.docs"
+      :selected-task-ids="task.linkTasks.map((item) => item.id)"
+      :selected-file-ids="selectedFileIds"
+      @toggle="toggleRelation"
+      @close="relationOpen = false"
+    />
   </template>
 </template>
 
@@ -1795,12 +1900,17 @@ function demo(msg: string) {
   gap: 6px;
 }
 .attach {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 9px;
   border: 1px solid var(--wao-divider);
   border-radius: 9px;
   padding: 8px 11px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 .attach:hover {
@@ -1811,6 +1921,8 @@ function demo(msg: string) {
   border-color: #c7d0f1;
   background: var(--wao-primary-tint);
 }
+.attach.legacy { cursor: default; opacity: .72; }
+.attach.legacy:hover { border-color: var(--wao-divider); background: #fff; }
 .attach > i {
   font-size: 15px;
   color: var(--wao-text-3);

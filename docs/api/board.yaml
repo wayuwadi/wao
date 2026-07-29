@@ -583,6 +583,18 @@ components:
         steps:
           type: array
           items: { $ref: '#/components/schemas/Step' }
+        files:
+          type: array
+          description: 关联文件；真实文件带 file_blob 的稳定 id，历史展示附件可能没有 id
+          items: { $ref: '#/components/schemas/FileRef' }
+        docs:
+          type: array
+          description: 关联知识文档 id
+          items: { type: string }
+        linkTasks:
+          type: array
+          description: 关联任务
+          items: { $ref: '#/components/schemas/TaskLink' }
         images:
           type: array
           description: "内嵌图片（/api/images/{id}/raw、data: 或远程链接）"
@@ -618,6 +630,18 @@ components:
       properties:
         name: { type: string }
         url: { type: string }
+    FileRef:
+      type: object
+      properties:
+        id: { type: string, nullable: true, description: 真实文件库 id；历史展示附件可能为空 }
+        name: { type: string }
+        size: { type: string }
+        icon: { type: string }
+    TaskLink:
+      type: object
+      properties:
+        id: { type: string, description: 关联任务 id }
+        rel: { type: string, description: 关系说明 }
     ImageItem:
       type: object
       description: 图床条目

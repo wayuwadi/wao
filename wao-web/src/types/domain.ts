@@ -34,6 +34,8 @@ export interface Activity {
 }
 
 export interface FileRef {
+  /** 真实文件库中的稳定 id；升级前的历史展示附件可能为空。 */
+  id?: string | null
   name: string
   size: string
   icon: string

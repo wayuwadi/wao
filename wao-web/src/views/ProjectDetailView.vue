@@ -1524,17 +1524,70 @@ function onDropGroup(groupId: string, overId?: string) {
 }
 
 @media (max-width: 760px) {
-  .detail { padding: 16px 12px 28px; }
-  /* 手机上一列到底，行高与「+」都放大到拇指点得准 */
-  .groups { grid-template-columns: 1fr; }
-  .grow { min-height: 44px; }
-  .group-op { width: 34px; height: 34px; }
-  .group-add-row { height: 42px; }
-  .tab-toolbar { flex-wrap: wrap; gap: 8px; }
-  .creator-filter { margin-left: 0; }
-  .project-head, .project-actions, .overview-head { flex-wrap: wrap; }
-  .project-actions { width: 100%; }
-  .project-actions button { flex: 1; justify-content: center; }
-  .overview-grid { grid-template-columns: 1fr; }
+  .detail { width: 100%; box-sizing: border-box; overflow-x: hidden; padding: 10px 12px 28px; }
+  .back { min-height: 36px; margin-left: -4px; padding: 5px 4px; font-size: 12px; }
+
+  /* 项目头压成一行主信息 + 一行日期，避免桌面布局在窄屏上散成四五行。 */
+  .phead {
+    margin-top: 2px; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto auto;
+    align-items: center; gap: 7px;
+  }
+  .phead-icon { grid-column: 1; width: 36px; height: 36px; border-radius: 10px; font-size: 17px; }
+  .phead-name-wrap { grid-column: 2; }
+  .phead-name-row { flex-wrap: nowrap; gap: 6px; }
+  .phead-name { min-width: 0; overflow: hidden; font-size: 17px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+  .phead-status { flex-shrink: 0; padding: 2px 7px; font-size: 10.5px; }
+  .phead-sub { margin-top: 2px; overflow: hidden; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .phead > .spacer { display: none; }
+  .phead-avs { grid-column: 3; margin: 0; padding-left: 5px; }
+  .phead-av { width: 24px; height: 24px; border-color: var(--wao-bg-page); }
+  .phead .btn-icon { grid-column: 4; width: 38px; height: 38px; }
+  .phead > .btn-primary { display: none; }
+
+  .ptabs { margin: 13px -12px 0; padding: 0 8px; overflow-x: auto; scrollbar-width: none; }
+  .ptabs::-webkit-scrollbar { display: none; }
+  .ptab { min-width: max-content; height: 42px; padding: 0 12px; }
+
+  .tab-toolbar { margin-top: 10px; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .tab-toolbar > .seg { order: 1; width: 100%; }
+  .seg-btn { flex: 1; justify-content: center; height: 36px; }
+  .creator-filter { order: 2; margin-left: 0; }
+  .creator-filter-btn, .select-all, .batch-ai { min-height: 40px; }
+  .tab-toolbar > .spacer { order: 3; }
+  .select-all { order: 4; }
+  .batch-ai { order: 5; }
+  .creator-filter-menu { min-width: 160px; }
+
+  .task-list-card, .doc-list-card, .file-list-card { margin-top: 8px; padding: 4px; border-radius: 11px; }
+  .trow { min-height: 58px; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 10px 8px; }
+  .drag-grip { display: none; }
+  .trow .select-dot { order: 1; width: 30px; height: 30px; }
+  .trow .check { order: 2; width: 22px; height: 22px; }
+  .trow-title { order: 3; flex: 1 1 calc(100% - 68px); min-width: calc(100% - 68px); white-space: normal; overflow: visible; line-height: 1.45; text-overflow: clip; }
+  .trow.done .trow-title { flex-basis: calc(100% - 32px); min-width: calc(100% - 32px); }
+  .trow .wait-badge { order: 4; margin-left: 60px; }
+  .trow .mini { order: 5; }
+  .trow .owner-av { order: 6; }
+  .trow-due { order: 7; width: auto; margin-left: auto; }
+  .done-toggle { min-height: 44px; }
+
+  /* 看板改成纵向状态分区：手机不再露半张下一列，也不用横拖。 */
+  .board { display: grid; grid-template-columns: 1fr; gap: 10px; overflow: visible; padding-bottom: 0; }
+  .board-col { width: auto; min-width: 0; max-width: none; padding: 9px; }
+  .board-col-head { min-height: 34px; padding-bottom: 7px; }
+  .board-col-add { width: 32px; height: 32px; }
+  .board-card { min-height: 62px; padding: 11px 12px; cursor: pointer; }
+  .bc-title { padding-right: 28px; font-size: 13.5px; overflow-wrap: anywhere; }
+
+  /* 分组 / 内容也只走单列，触控按钮统一放大。 */
+  .groups { grid-template-columns: minmax(0, 1fr); }
+  .group-card { min-width: 0; }
+  .grow { min-height: 46px; }
+  .group-op { width: 36px; height: 36px; }
+  .group-add-row { min-height: 44px; height: auto; }
+  .doc-row { min-height: 48px; padding: 9px 7px; }
+  .doc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .doc-time { flex-shrink: 0; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tab-toolbar.gap .kb-chip { max-width: 100%; min-height: 38px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 </style>

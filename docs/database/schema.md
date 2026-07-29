@@ -83,7 +83,7 @@ erDiagram
 | due_date | VARCHAR(16) | 截止；同上 |
 | waiting | VARCHAR(64) NULL | 等待他人标记 |
 | description | TEXT | 描述 |
-| detail_json | JSON | parts[], steps[], subs[], files[], docs[], linkTasks[], comments[], custom[], activity[]（条目含 by=操作人成员 id）, images[], groupId（所属任务分组） |
+| detail_json | JSON | parts[], steps[], subs[], files[]（真实文件引用含 `file_blob.id`，历史展示附件可为空）, docs[], linkTasks[], comments[], custom[], activity[]（条目含 by=操作人成员 id）, images[], groupId（所属任务分组） |
 
 ## 内容 / 参考域（文档表，只读）
 
