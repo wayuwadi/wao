@@ -40,8 +40,39 @@ class DeploymentRoutingConfigTest {
                 .contains("elif sudo -n docker info")
                 .contains("sudo -n docker \"$@\"")
                 .contains("label=com.docker.compose.service=wao-server")
+                .contains("WAO_AI_CODEX_PROXY_URL")
+                .contains("--proxy \"${proxy_url}\"")
                 .contains("https://auth.openai.com/api/accounts/deviceauth/usercode")
                 .contains("if [ \"${status}\" != '200' ]");
+    }
+
+    @Test
+    void masterUsesHostNetworkProxyRestrictedToDockerSources() throws IOException {
+        String compose = readFromRepository("deploy/docker-compose-master.yml");
+        String proxyService = section(compose, "  codex-egress-proxy:", "\n  wao-server:");
+        String serverService = section(compose, "  wao-server:", "\n  wao-gateway:");
+        String dockerfile = readFromRepository("deploy/Dockerfile");
+        String tinyproxy = readFromRepository("deploy/tinyproxy/codex-egress.conf");
+
+        assertThat(proxyService)
+                .contains("target: codex-egress-proxy")
+                .contains("network_mode: host")
+                .contains("127.0.0.1\", \"18888\"")
+                .doesNotContain("ports:");
+        assertThat(serverService)
+                .contains("WAO_AI_CODEX_PROXY_URL: http://host.docker.internal:18888")
+                .contains("codex-egress-proxy:")
+                .contains("condition: service_healthy")
+                .contains("host.docker.internal:host-gateway");
+        assertThat(dockerfile)
+                .contains("AS codex-egress-proxy")
+                .contains("apk add --no-cache tinyproxy")
+                .contains("USER tinyproxy");
+        assertThat(tinyproxy)
+                .contains("Allow 127.0.0.1")
+                .contains("Allow 172.16.0.0/12")
+                .contains("ConnectPort 443")
+                .doesNotContain("Allow 0.0.0.0/0");
     }
 
     private static String readFromRepository(String relative) throws IOException {

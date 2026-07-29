@@ -1,5 +1,7 @@
 package cn.wayuwa.wao.service;
 
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -17,6 +19,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -44,7 +47,13 @@ public class OpenAiCodexOAuthClient {
             @Value("${wao.ai.codex.token-url:https://auth.openai.com/oauth/token}") String tokenUrl,
             @Value("${wao.ai.codex.redirect-uri:http://localhost:1455/auth/callback}") String redirectUri,
             @Value("${wao.ai.codex.usage-url:https://chatgpt.com/backend-api/wham/usage}") String usageUrl,
-            @Value("${wao.ai.codex.issuer:https://auth.openai.com}") String issuer) {
+            @Value("${wao.ai.codex.issuer:https://auth.openai.com}") String issuer,
+            @Value("${wao.ai.codex.proxy-url:}") String proxyUrl) {
+        if (StringUtils.hasText(proxyUrl)) {
+            SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+            requestFactory.setProxy(parseProxy(proxyUrl));
+            builder.requestFactory(requestFactory);
+        }
         this.restClient = builder.build();
         this.clientId = clientId;
         this.authorizeUrl = authorizeUrl;
@@ -265,6 +274,28 @@ public class OpenAiCodexOAuthClient {
         } catch (NumberFormatException ex) {
             return 5;
         }
+    }
+
+    private static Proxy parseProxy(String rawProxyUrl) {
+        URI proxyUri;
+        try {
+            proxyUri = URI.create(rawProxyUrl.trim());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("wao.ai.codex.proxy-url 不是合法 URL", ex);
+        }
+        String path = proxyUri.getPath();
+        if (!"http".equalsIgnoreCase(proxyUri.getScheme())
+                || !StringUtils.hasText(proxyUri.getHost())
+                || proxyUri.getPort() < 1 || proxyUri.getPort() > 65535
+                || proxyUri.getUserInfo() != null
+                || (StringUtils.hasText(path) && !"/".equals(path))
+                || proxyUri.getQuery() != null
+                || proxyUri.getFragment() != null) {
+            throw new IllegalArgumentException(
+                    "wao.ai.codex.proxy-url 必须是带显式端口、且不含凭据和路径的 http URL");
+        }
+        return new Proxy(Proxy.Type.HTTP,
+                InetSocketAddress.createUnresolved(proxyUri.getHost(), proxyUri.getPort()));
     }
 
     private record Callback(String code, String state) { }

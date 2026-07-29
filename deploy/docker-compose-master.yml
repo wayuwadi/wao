@@ -154,6 +154,28 @@ services:
     logging: *default-logging
     networks: [wao]
 
+  codex-egress-proxy:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: codex-egress-proxy
+      args:
+        ALPINE_MIRROR_HOST: ${ALPINE_MIRROR_HOST:-mirrors.aliyun.com}
+    image: wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    network_mode: host
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "18888"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 64M
+    logging: *default-logging
+
   wao-server:
     build:
       context: ..
@@ -197,8 +219,11 @@ services:
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
       WECHAT_REDIRECT_URI: ${WECHAT_REDIRECT_URI:-https://wao.wayuwa.cn/api/auth/wechat/callback}
       WECHAT_FRONTEND_URL: ${WECHAT_FRONTEND_URL:-https://wao.wayuwa.cn}
+      WAO_AI_CODEX_PROXY_URL: http://host.docker.internal:18888
     depends_on:
       redis-master:
+        condition: service_healthy
+      codex-egress-proxy:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
