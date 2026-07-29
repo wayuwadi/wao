@@ -176,17 +176,72 @@ class AiAccountServiceTest {
     }
 
     @Test
-    void startLoginSupportsCodexPkceFlow() {
+    void startLoginUsesCodexDeviceCodeFlow() {
         when(codex.newState()).thenReturn("state-1");
-        when(codex.newCodeVerifier()).thenReturn("verifier-1");
-        when(codex.authorizeUrl("state-1", "verifier-1")).thenReturn("https://auth.openai.com/oauth/authorize?state=state-1");
+        when(codex.requestDeviceCode()).thenReturn(new OpenAiCodexOAuthClient.DeviceCode(
+                "https://auth.openai.com/codex/device", "ABCD-EFGH", "device-1", 5));
 
         var result = service.startLogin(new StartAiAccountLoginRequest("codex", "工作账号"), "m1");
 
         assertThat(result.state()).isEqualTo("state-1");
-        assertThat(result.authorizeUrl()).contains("auth.openai.com");
-        assertThat(result.hint()).contains("完整地址");
+        assertThat(result.authorizeUrl()).isEqualTo("https://auth.openai.com/codex/device");
+        assertThat(result.flow()).isEqualTo("device_code");
+        assertThat(result.userCode()).isEqualTo("ABCD-EFGH");
+        assertThat(result.hint()).doesNotContain("localhost").contains("自动保存");
         verify(sessionMapper).insert(any(AiOauthSessionEntity.class));
+    }
+
+    @Test
+    void codexDeviceLoginCompletesWithoutLocalhostCallback() {
+        backedByMemory();
+        AiOauthSessionEntity session = new AiOauthSessionEntity();
+        session.setState("st-device");
+        session.setProvider("codex");
+        session.setFlow("device_code");
+        session.setDeviceAuthId("device-1");
+        session.setUserCode("ABCD-EFGH");
+        session.setPollIntervalSeconds(5);
+        session.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+        when(sessionMapper.selectById("st-device")).thenReturn(session);
+        var poll = OpenAiCodexOAuthClient.DevicePollResult.authorized("code-1", "verifier-1");
+        when(codex.pollDeviceCode("device-1", "ABCD-EFGH")).thenReturn(poll);
+        String idToken = jwt("""
+                {"email":"codex@example.com","https://api.openai.com/auth":{"chatgpt_plan_type":"plus","chatgpt_account_id":"acct-1"}}
+                """);
+        when(codex.exchangeDeviceCode(poll))
+                .thenReturn(new OpenAiCodexOAuthClient.TokenSet(idToken, "access-1", "refresh-1", 3600));
+        when(codex.usage("access-1", "acct-1")).thenReturn(json("""
+                {"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":35}}}
+                """));
+
+        var result = service.loginStatus("st-device");
+
+        assertThat(result.status()).isEqualTo("completed");
+        assertThat(result.account().email()).isEqualTo("codex@example.com");
+        assertThat(storedCredential()).contains("\"access_token\":\"access-1\"");
+        verify(sessionMapper).deleteById("st-device");
+    }
+
+    @Test
+    void codexDeviceLoginReturnsPendingWhileUserHasNotAuthorized() {
+        AiOauthSessionEntity session = new AiOauthSessionEntity();
+        session.setState("st-pending");
+        session.setProvider("codex");
+        session.setFlow("device_code");
+        session.setDeviceAuthId("device-1");
+        session.setUserCode("ABCD-EFGH");
+        session.setPollIntervalSeconds(5);
+        session.setExpiresAt(LocalDateTime.now().plusMinutes(5));
+        when(sessionMapper.selectById("st-pending")).thenReturn(session);
+        when(codex.pollDeviceCode("device-1", "ABCD-EFGH"))
+                .thenReturn(OpenAiCodexOAuthClient.DevicePollResult.waiting());
+
+        var result = service.loginStatus("st-pending");
+
+        assertThat(result.status()).isEqualTo("pending");
+        assertThat(result.account()).isNull();
+        verify(sessionMapper).updateById(session);
+        verify(mapper, never()).insert(any(AiAccountEntity.class));
     }
 
     @Test

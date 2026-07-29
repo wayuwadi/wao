@@ -47,6 +47,15 @@ export interface AiAccountLoginStart {
   authorizeUrl: string
   expiresAt: string
   hint: string
+  flow: 'authorization_code' | 'device_code'
+  userCode: string | null
+  pollIntervalSeconds: number
+}
+
+export interface AiAccountLoginStatus {
+  status: 'pending' | 'completed'
+  message: string
+  account: AiAccount | null
 }
 
 export interface AiAccountForm {
@@ -86,3 +95,7 @@ export const startAiAccountLogin = (provider: 'claude' | 'codex', label?: string
 /** 回填授权码完成登录，直接拿到建好的账号。 */
 export const completeAiAccountLogin = (state: string, code: string) =>
   post<AiAccount>('/api/settings/ai-accounts/login/complete', { state, code })
+
+/** 查询 Codex 设备码是否已授权；完成时服务端会直接创建账号。 */
+export const fetchAiAccountLoginStatus = (state: string) =>
+  get<AiAccountLoginStatus>(`/api/settings/ai-accounts/login/${encodeURIComponent(state)}/status`)

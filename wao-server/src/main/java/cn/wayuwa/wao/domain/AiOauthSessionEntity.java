@@ -18,6 +18,11 @@ public class AiOauthSessionEntity {
     private String state;
     private String provider;
     private String codeVerifier;
+    private String flow;
+    private String deviceAuthId;
+    private String userCode;
+    private Integer pollIntervalSeconds;
+    private LocalDateTime lastPolledAt;
     private String label;
     private String createdBy;
     private LocalDateTime createdAt;
@@ -31,6 +36,21 @@ public class AiOauthSessionEntity {
 
     public String getCodeVerifier() { return codeVerifier; }
     public void setCodeVerifier(String codeVerifier) { this.codeVerifier = codeVerifier; }
+
+    public String getFlow() { return flow; }
+    public void setFlow(String flow) { this.flow = flow; }
+
+    public String getDeviceAuthId() { return deviceAuthId; }
+    public void setDeviceAuthId(String deviceAuthId) { this.deviceAuthId = deviceAuthId; }
+
+    public String getUserCode() { return userCode; }
+    public void setUserCode(String userCode) { this.userCode = userCode; }
+
+    public Integer getPollIntervalSeconds() { return pollIntervalSeconds; }
+    public void setPollIntervalSeconds(Integer pollIntervalSeconds) { this.pollIntervalSeconds = pollIntervalSeconds; }
+
+    public LocalDateTime getLastPolledAt() { return lastPolledAt; }
+    public void setLastPolledAt(LocalDateTime lastPolledAt) { this.lastPolledAt = lastPolledAt; }
 
     public String getLabel() { return label; }
     public void setLabel(String label) { this.label = label; }

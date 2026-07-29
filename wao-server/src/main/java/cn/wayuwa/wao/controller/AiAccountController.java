@@ -7,6 +7,7 @@ import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.AiAccountDto;
 import cn.wayuwa.wao.dto.AiAccountFormRequest;
 import cn.wayuwa.wao.dto.AiAccountLoginStartDto;
+import cn.wayuwa.wao.dto.AiAccountLoginStatusDto;
 import cn.wayuwa.wao.dto.AiAccountSyncResultDto;
 import cn.wayuwa.wao.dto.CompleteAiAccountLoginRequest;
 import cn.wayuwa.wao.dto.StartAiAccountLoginRequest;
@@ -73,5 +74,11 @@ public class AiAccountController {
     @PostMapping("/login/complete")
     public ApiResponse<AiAccountDto> completeLogin(@Valid @RequestBody CompleteAiAccountLoginRequest request) {
         return ApiResponse.ok(service.completeLogin(request));
+    }
+
+    /** 查询 Codex 设备码授权状态；授权完成时直接返回新建账号。 */
+    @GetMapping("/login/{state}/status")
+    public ApiResponse<AiAccountLoginStatusDto> loginStatus(@PathVariable String state) {
+        return ApiResponse.ok(service.loginStatus(state));
     }
 }

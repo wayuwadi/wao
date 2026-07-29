@@ -301,14 +301,20 @@ OAuth 下发前会先把快过期的 access token 续期。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
-| state | VARCHAR(64) PK | OAuth state，回填授权码时据此找回会话 |
+| state | VARCHAR(64) PK | 登录会话随机标识，回填授权码或查询设备码状态时据此找回会话 |
 | provider | VARCHAR(24) | claude / codex |
-| code_verifier | VARCHAR(128) | PKCE code_verifier，**只留服务端，不下发前端** |
+| code_verifier | VARCHAR(128) NULL | 授权码模式的 PKCE code_verifier，**只留服务端，不下发前端** |
+| flow | VARCHAR(24)（V41） | authorization_code / device_code |
+| device_auth_id | VARCHAR(128) NULL（V41） | Codex 设备码会话 id，仅服务端使用 |
+| user_code | VARCHAR(32) NULL（V41） | 用户在 OpenAI 官方页面确认的一次性短码 |
+| poll_interval_seconds | INT NULL（V41） | OpenAI 返回的最小轮询间隔 |
+| last_polled_at | DATETIME NULL（V41） | 最近一次向 OpenAI 查询授权结果的时间，用于限制轮询频率 |
 | label | VARCHAR(128) NULL | 登录完成后要给账号起的名字 |
 | created_by | VARCHAR(32) NULL | 发起登录的成员 id |
 | created_at / expires_at | DATETIME | 创建时间与十分钟有效期 |
 
-一次进行中的 OAuth 登录。换到令牌或过期后立即删除，发起新登录时顺带清理过期行。详见 ADR-031。
+一次进行中的 OAuth 登录。Claude 授权码会话十分钟有效，Codex 设备码会话十五分钟有效；换到令牌或
+过期后立即删除，发起新登录时顺带清理过期行。详见 ADR-031、ADR-033。
 
 ## 密钥库域
 
@@ -420,5 +426,6 @@ OAuth 下发前会先把快过期的 access token 续期。
 - `V38__ai_account.sql`：集中 AI 账号及加密凭据。
 - `V39__ai_account_oauth.sql`：AI 账号 OAuth 会话、令牌续期和额度窗口。
 - `V40__codex_oauth_custom_api.sql`：Codex OAuth、自定义 Responses API 配置与单次运行账号路由（见 ADR-032）。
+- `V41__codex_device_login.sql`：Codex 设备码会话和服务端轮询状态（见 ADR-033）。
 - `V42__caldav_accounts.sql`：CalDAV 账户、订阅日历与事件只读副本。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

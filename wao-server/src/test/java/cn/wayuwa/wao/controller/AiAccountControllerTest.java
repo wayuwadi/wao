@@ -10,6 +10,7 @@ import java.util.List;
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.dto.AiAccountDto;
 import cn.wayuwa.wao.dto.AiAccountFormRequest;
+import cn.wayuwa.wao.dto.AiAccountLoginStatusDto;
 import cn.wayuwa.wao.dto.AiAccountSyncResultDto;
 import cn.wayuwa.wao.service.AiAccountService;
 import org.junit.jupiter.api.Test;
@@ -65,5 +66,13 @@ class AiAccountControllerTest {
         when(service.sync("aa-1")).thenReturn(expected);
 
         assertThat(controller.sync("aa-1").data()).isEqualTo(expected);
+    }
+
+    @Test
+    void loginStatusDelegatesToDeviceLoginService() {
+        AiAccountLoginStatusDto expected = new AiAccountLoginStatusDto("pending", "等待授权", null);
+        when(service.loginStatus("state-1")).thenReturn(expected);
+
+        assertThat(controller.loginStatus("state-1").data()).isEqualTo(expected);
     }
 }
