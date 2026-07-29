@@ -22,12 +22,14 @@ Codex 令牌。因此需要覆盖 AI 账号管理与 AI Runner 的完整服务�
   OpenAI 区域策略拒绝的出口。响应增加 `X-WAO-API-Route: linux-vpn-master` 便于验收和排障。
 - 每次云前端部署同时渲染并原子更新 Nginx 配置；`nginx -t` 失败时恢复上一份配置，不留下半部署状态。
 - Linux 主节点运行一个使用 host 网络的 tinyproxy，仅允许回环地址与 Docker `172.16.0.0/12` 私网访问。
-  `wao-server` 保持 bridge 网络，只为 `OpenAiCodexOAuthClient` 配置
-  `http://host.docker.internal:18888`。代理因此共享主机 VPN/TUN 路由，但飞书、微信、Claude 和自定义 API
+  `wao-server` 保持 bridge 网络，只为 `OpenAiCodexOAuthClient` 配置主节点物理网卡地址
+  `http://${MASTER_BIND_IP}:18888`，未设置时才回退 `host.docker.internal`。物理地址避免自定义 bridge 跨到
+  Docker 默认 bridge 网关时被隔离；代理仍共享主机 VPN/TUN 路由，但飞书、微信、Claude 和自定义 API
   继续使用原有出站路径。代理不声明端口映射，公网及其他局域网来源由 ACL 拒绝。
-- 主节点部署后，流水线从 Linux 的 `wao-server` 容器读取同一代理配置，并经代理向 Codex 设备码端点发起
-  无凭据探针。只有 HTTP 200 才算部署成功；403 代表主机 VPN 出口仍未被代理链路采用，必须修复主节点
-  网络而不是把失败流量放回从节点。
+- 主节点部署后，流水线先从 host-network 代理容器直连 OpenAI，确认主机 VPN 返回 HTTP 200，再从 Linux 的
+  `wao-server` 容器读取同一代理配置并经代理发起无凭据探针。两段都只有 HTTP 200 才算部署成功；失败时
+  输出不含凭据的 tinyproxy 末尾日志。403 代表主机 VPN 出口仍未被代理链路采用，必须修复主节点网络而不是
+  把失败流量放回从节点。
 
 ## 后果
 

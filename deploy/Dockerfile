@@ -1,7 +1,7 @@
 FROM alpine:3.20 AS codex-egress-proxy
 ARG ALPINE_MIRROR_HOST=dl-cdn.alpinelinux.org
 RUN sed -i "s/dl-cdn.alpinelinux.org/${ALPINE_MIRROR_HOST}/g" /etc/apk/repositories \
-    && apk add --no-cache tinyproxy \
+    && apk add --no-cache curl tinyproxy \
     && install -d -o tinyproxy -g tinyproxy /run/tinyproxy
 COPY deploy/tinyproxy/codex-egress.conf /etc/tinyproxy/tinyproxy.conf
 USER tinyproxy
