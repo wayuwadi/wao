@@ -191,6 +191,34 @@ public class AccountAuthService {
         return session(accountId);
     }
 
+    /**
+     * 管理员为新成员开账号：新建成员 + 账号，绑定邮箱身份并设置初始密码。
+     *
+     * @param operatorMemberId 操作人的成员 id，必须是管理员
+     * @param name             新成员姓名
+     * @param email            登录邮箱
+     * @param password         初始密码（8–128 字符）
+     * @return 新成员资料
+     * @throws UnauthorizedException 操作人不是管理员时
+     * @throws ConflictException     邮箱已被绑定时
+     */
+    @Transactional
+    public MemberDto adminCreateAccount(String operatorMemberId, String name, String email, String password) {
+        MemberEntity operator = operatorMemberId == null ? null : memberMapper.selectById(operatorMemberId);
+        if (operator == null || !"管理员".equals(operator.getRole())) {
+            throw new UnauthorizedException("只有管理员可以开账号");
+        }
+        String normalized = normalizeEmail(email);
+        if (identityMapper.findByProviderSubject("email", normalized) != null) {
+            throw new ConflictException("该邮箱已经绑定到其他账号");
+        }
+        AccountEntity account = createAccountAndMember(name.trim());
+        bindIdentity(account.getId(), new ExternalIdentityProfile("email", normalized, normalized, name.trim(), null));
+        savePassword(account.getId(), password);
+        MemberEntity member = memberMapper.selectById(account.getMemberId());
+        return toMember(member);
+    }
+
     /** 解除一种登录身份；至少保留另一种可用登录方式。 */
     @Transactional
     public AuthSessionDto unlink(String accountId, String provider) {

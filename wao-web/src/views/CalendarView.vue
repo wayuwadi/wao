@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { fetchCaldavAccounts, fetchCaldavEvents, type CaldavAccount, type CaldavEvent } from '@/api/caldav'
 import { toast } from '@/composables/toast'
+// 配置面板打开才需要，不进日历页首屏包。
+const CaldavPanel = defineAsyncComponent(() => import('@/components/calendar/CaldavPanel.vue'))
 
 /** 日历格子里的一条事件（任务截止 / 里程碑 / CalDAV）。 */
 interface CalEvt {
@@ -187,6 +189,18 @@ function goToday() {
   calM.value = d.getMonth()
 }
 
+// ---------- CalDAV 配置浮层：账户是个人维度，就近在日历页里配置 ----------
+const showCaldavConfig = ref(false)
+function onCaldavChanged() {
+  loadCaldav()
+  loadEvents()
+}
+
+/** 双击某天直接建任务，弹窗里的截止日就是这一天。 */
+function quickCreate(dayIso: string) {
+  ui.openModal('task', '', dayIso)
+}
+
 // ---------- 未排期任务：拖上日历即设截止日期 ----------
 const showBacklog = ref(true)
 const backlog = computed(() => {
@@ -228,7 +242,7 @@ function onDropDay(dayIso: string) {
       <div class="legend">
         <span v-for="l in legend" :key="l.label" class="leg"><span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}</span>
       </div>
-      <button class="caldav" title="在设置中配置 CalDAV 账户" @click="router.push('/settings?tab=caldav')">
+      <button class="caldav" title="配置 CalDAV 日历账户" @click="showCaldavConfig = true">
         <span class="cd-dot" :style="{ background: caldavState.dot }"></span>{{ caldavState.label }}<i class="ri-settings-3-line"></i>
       </button>
       <div class="spacer"></div>
@@ -253,12 +267,14 @@ function onDropDay(dayIso: string) {
             class="day"
             :class="{ 'drop-target': dragTaskId, 'drop-over': dragOverDay === dy.iso }"
             :style="{ background: dy.bg }"
+            title="双击这一天，直接新建以它为截止日的任务"
+            @dblclick.self="quickCreate(dy.iso)"
             @dragover.prevent="dragOverDay = dy.iso"
             @dragleave="dragOverDay === dy.iso && (dragOverDay = null)"
             @drop.prevent="onDropDay(dy.iso)"
           >
-            <div class="day-num" :style="{ background: dy.numBg, color: dy.numColor }">{{ dy.label }}</div>
-            <div class="day-events">
+            <div class="day-num" :style="{ background: dy.numBg, color: dy.numColor }" @dblclick="quickCreate(dy.iso)">{{ dy.label }}</div>
+            <div class="day-events" @dblclick.self="quickCreate(dy.iso)">
               <button
                 v-for="(ev, ei) in dy.items"
                 :key="ei"
@@ -310,6 +326,21 @@ function onDropDay(dayIso: string) {
         </template>
       </aside>
     </div>
+
+    <!-- CalDAV 配置浮层 -->
+    <template v-if="showCaldavConfig">
+      <div class="cd-mask" @click="showCaldavConfig = false"></div>
+      <div class="cd-modal">
+        <div class="cd-head">
+          <div class="cd-title">日历账户 · CalDAV</div>
+          <div class="spacer"></div>
+          <button class="cd-close" @click="showCaldavConfig = false"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="cd-body">
+          <CaldavPanel @changed="onCaldavChanged" />
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -630,5 +661,62 @@ function onDropDay(dayIso: string) {
     width: 100%;
     position: static;
   }
+}
+
+.cd-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(23, 25, 35, 0.32);
+  z-index: 100;
+  animation: waoFade 0.15s ease;
+}
+.cd-modal {
+  position: fixed;
+  top: 9vh;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: min(620px, calc(100vw - 40px));
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--wao-bg-page);
+  border-radius: 14px;
+  z-index: 101;
+  box-shadow: var(--wao-shadow-modal);
+  animation: waoPop 0.16s ease;
+  overflow: hidden;
+}
+.cd-head {
+  display: flex;
+  align-items: center;
+  padding: 16px 20px 10px;
+  flex-shrink: 0;
+}
+.cd-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+.cd-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--wao-text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cd-close:hover {
+  background: var(--wao-bg-hover-2);
+}
+.cd-close i {
+  font-size: 16px;
+}
+.cd-body {
+  padding: 0 20px 20px;
+  overflow-y: auto;
 }
 </style>

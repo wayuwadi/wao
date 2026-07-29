@@ -70,6 +70,7 @@ export const useUiStore = defineStore('ui', () => {
 
   const modal = ref<'task' | 'project' | 'note' | null>(null)
   const modalProject = ref<string>('') // 新建任务时预选的项目
+  const modalDue = ref<string>('') // 新建任务时预设的截止日期（ISO，日历双击带入）
 
   const searchOpen = ref(false)
   const searchAI = ref(false)
@@ -86,9 +87,10 @@ export const useUiStore = defineStore('ui', () => {
     openTaskId.value = null
   }
 
-  function openModal(kind: 'task' | 'project' | 'note', presetProject = '') {
+  function openModal(kind: 'task' | 'project' | 'note', presetProject = '', presetDue = '') {
     modal.value = kind
     modalProject.value = presetProject
+    modalDue.value = presetDue
   }
   function closeModal() {
     modal.value = null
@@ -152,7 +154,7 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
-    openTaskId, modal, modalProject, searchOpen, searchAI, celebrating, helpOpen, taskViews,
+    openTaskId, modal, modalProject, modalDue, searchOpen, searchAI, celebrating, helpOpen, taskViews,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
     taskViewOf, setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, toggleHelp, closeHelp,
   }

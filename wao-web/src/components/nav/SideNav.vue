@@ -1,20 +1,33 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/composables/toast'
 import { NAV_GROUPS, MODULES } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useSessionStore } from '@/stores/session'
+import { useFavoritesStore } from '@/stores/favorites'
+import type { Favorite } from '@/api/favorites'
 import type { ModuleId } from '@/types'
 
 const emit = defineEmits<{ (e: 'open-search'): void }>()
 
 const nav = useNavStore()
 const session = useSessionStore()
+const favorites = useFavoritesStore()
 const route = useRoute()
 const router = useRouter()
 
 const activeModule = computed(() => route.meta.module as ModuleId | undefined)
+
+// 「个人」分组的条目顺序由用户拖拽决定，其余分组按静态配置渲染。
+const groups = computed(() =>
+  NAV_GROUPS.map((g) => (g.label === '个人' ? { label: g.label, items: nav.personalOrder } : g)),
+)
+
+onMounted(() => {
+  nav.loadPersonalOrder()
+  favorites.load()
+})
 
 function go(id: ModuleId) {
   router.push(MODULES[id].path)
@@ -24,6 +37,48 @@ function goSettings() {
 }
 function orgClick() {
   toast('组织切换将在设置 · 组织管理中提供')
+}
+
+// ---- 个人分组拖拽排序 ----
+const dragId = ref<ModuleId | null>(null)
+const dragOverId = ref<ModuleId | null>(null)
+
+function onDragStart(id: ModuleId, ev: DragEvent) {
+  dragId.value = id
+  ev.dataTransfer?.setData('text/plain', id)
+  if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'
+}
+function onDragOver(id: ModuleId) {
+  if (dragId.value && dragId.value !== id) dragOverId.value = id
+}
+function onDrop(targetId: ModuleId) {
+  const from = dragId.value
+  dragId.value = null
+  dragOverId.value = null
+  if (!from || from === targetId) return
+  const order = [...nav.personalOrder]
+  const fi = order.indexOf(from)
+  const ti = order.indexOf(targetId)
+  if (fi < 0 || ti < 0) return
+  order.splice(fi, 1)
+  order.splice(ti, 0, from)
+  nav.setPersonalOrder(order)
+}
+function onDragEnd() {
+  dragId.value = null
+  dragOverId.value = null
+}
+
+// ---- 收藏分组 ----
+const FAV_ICONS: Record<Favorite['type'], string> = {
+  project: 'ri-stack-line',
+  task: 'ri-checkbox-circle-line',
+  doc: 'ri-file-text-line',
+}
+function openFavorite(f: Favorite) {
+  if (f.type === 'project') router.push(`/projects/${f.targetId}`)
+  else if (f.type === 'task') router.push(`/projects/${f.parentId ?? ''}?task=${f.targetId}`)
+  else router.push(`/kb/${f.parentId ?? ''}?doc=${f.targetId}`)
 }
 </script>
 
@@ -46,7 +101,7 @@ function orgClick() {
     </div>
 
     <nav class="menu">
-      <template v-for="g in NAV_GROUPS" :key="g.label || 'root'">
+      <template v-for="g in groups" :key="g.label || 'root'">
         <button
           v-if="g.label && !nav.collapsed"
           class="group-label"
@@ -63,14 +118,44 @@ function orgClick() {
             v-for="id in g.items"
             :key="id"
             class="item"
-            :class="{ active: activeModule === id, center: nav.collapsed }"
+            :class="{
+              active: activeModule === id,
+              center: nav.collapsed,
+              dragging: dragId === id,
+              'drag-over': dragOverId === id,
+            }"
             :title="MODULES[id].label"
+            :draggable="g.label === '个人' && !nav.collapsed"
             @click="go(id)"
+            @dragstart="g.label === '个人' && onDragStart(id, $event)"
+            @dragover.prevent="g.label === '个人' && onDragOver(id)"
+            @drop.prevent="g.label === '个人' && onDrop(id)"
+            @dragend="onDragEnd"
           >
             <i :class="MODULES[id].icon"></i>
             <span v-if="!nav.collapsed" class="item-label">{{ MODULES[id].label }}</span>
           </button>
         </div>
+
+        <!-- 收藏分组紧跟首页之后：有收藏才出现，手机底栏不展示 -->
+        <template v-if="!g.label && favorites.items.length && !nav.collapsed">
+          <button class="group-label fav-group" title="折叠 / 展开分组" @click="nav.toggleGroup('收藏')">
+            收藏
+            <i :class="nav.isFolded('收藏') ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>
+          </button>
+          <div v-if="!nav.isFolded('收藏')" class="items">
+            <button
+              v-for="f in favorites.items"
+              :key="f.type + f.targetId"
+              class="item fav-item"
+              :title="f.label"
+              @click="openFavorite(f)"
+            >
+              <i :class="FAV_ICONS[f.type]"></i>
+              <span class="item-label">{{ f.label }}</span>
+            </button>
+          </div>
+        </template>
       </template>
     </nav>
 
@@ -270,6 +355,16 @@ function orgClick() {
 .item.active .item-label {
   font-weight: 600;
 }
+.item.dragging {
+  opacity: 0.45;
+}
+.item.drag-over {
+  outline: 2px dashed var(--wao-primary);
+  outline-offset: -2px;
+}
+.item[draggable='true'] {
+  cursor: grab;
+}
 
 .user-row {
   border-top: 1px solid var(--wao-line);
@@ -345,6 +440,7 @@ function orgClick() {
   .search-row,
   .group-label,
   .group-gap,
+  .fav-item,
   .user-row { display: none; }
   .menu {
     display: flex;

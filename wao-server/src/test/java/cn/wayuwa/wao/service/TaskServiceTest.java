@@ -277,7 +277,7 @@ class TaskServiceTest {
 
         assertThat(comment.text()).isEqualTo("已验收");
         assertThat(comment.time()).endsWith("+08:00");
-        verify(notifier).notifyComment(any(TaskDto.class), eq(comment), eq("娃哥"), eq("p1"));
+        verify(notifier).notifyComment(any(TaskDto.class), eq(comment), eq("娃哥"), eq("p1"), eq(List.of()));
     }
 
     /**

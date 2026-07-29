@@ -125,7 +125,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       <TabBar />
 
       <div class="content">
-        <RouterView />
+        <!-- 页面主体撑满剩余高度，备案页脚被压在滚动区最底端：内容不够一屏时也贴住底部，不会跟着内容往上浮 -->
+        <div class="page-body"><RouterView /></div>
         <SiteFooter />
       </div>
     </main>
@@ -275,6 +276,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.page-body {
+  flex: 1 0 auto;
 }
 
 /* 悬浮新建按钮只在手机上出现；桌面顶栏已经有「新建任务」了 */
