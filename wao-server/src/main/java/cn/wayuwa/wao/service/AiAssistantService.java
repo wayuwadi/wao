@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
@@ -71,22 +72,20 @@ public class AiAssistantService {
         }
         try {
             ObjectNode body = buildRequestBody(request, true);
-            restClient.post()
+            ResponseEntity<String> response = restClient.post()
                     .uri(URI.create(baseUrl + "/chat/completions"))
                     .header("Authorization", "Bearer " + apiKey)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body.toString())
                     .accept(MediaType.TEXT_EVENT_STREAM)
                     .retrieve()
-                    .toEntity(String.class)
-                    .ifPresent(resp -> {
-                        String raw = resp.getBody();
-                        if (raw == null) {
-                            sendFallback(emitter);
-                            return;
-                        }
-                        parseSseChunks(raw, emitter);
-                    });
+                    .toEntity(String.class);
+            String raw = response.getBody();
+            if (raw == null) {
+                sendFallback(emitter);
+            } else {
+                parseSseChunks(raw, emitter);
+            }
         } catch (Exception ex) {
             sendError(emitter, "调用 AI 接口失败：" + ex.getMessage());
         } finally {
