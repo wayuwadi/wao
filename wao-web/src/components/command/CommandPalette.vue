@@ -5,6 +5,7 @@ import { useUiStore } from '@/stores/ui'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 import { toast } from '@/composables/toast'
 import { createAiPairCode, fetchAiRunners, wakeAiRunner } from '@/api/ai'
+import { ALL_QUICK_LINKS } from '@/config/quickLinks'
 
 interface Command {
   id: string
@@ -105,6 +106,19 @@ const commands = computed<Command[]>(() => {
     { id: 'theme-light', title: '切换到明亮主题', subtitle: '固定使用浅色模式', icon: 'ri-sun-line', keywords: ['light', 'mingliang', 'qianse', 'zhuti'], action: () => setTheme('light') },
     { id: 'theme-dark', title: '切换到深色主题', subtitle: '固定使用深色模式', icon: 'ri-moon-line', keywords: ['dark', 'shense', 'yeshen', 'zhuti'], action: () => setTheme('dark') },
     { id: 'theme-system', title: '主题跟随系统', subtitle: '根据系统外观自动切换', icon: 'ri-computer-line', keywords: ['system', 'xitong', 'zhuti'], action: () => setTheme('system') },
+
+    // 快捷链接（GitHub、PR、Issues、Actions…）
+    ...ALL_QUICK_LINKS.map((link) => ({
+      id: `link-${link.id}`,
+      title: link.label,
+      subtitle: link.subtitle,
+      icon: link.icon,
+      keywords: link.keywords,
+      action: () => {
+        window.open(link.url, '_blank', 'noopener')
+        close()
+      },
+    })),
   ]
   return list
 })

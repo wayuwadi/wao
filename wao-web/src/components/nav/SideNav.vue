@@ -8,6 +8,7 @@ import { useFavoritesStore } from '@/stores/favorites'
 import type { Favorite } from '@/api/favorites'
 import type { ModuleId } from '@/types'
 import { PERSONAL_ITEMS, externalAppItemId, type NavItemId } from '@/config/nav'
+import QuickLinks from '@/components/nav/QuickLinks.vue'
 
 const emit = defineEmits<{ (e: 'open-search'): void }>()
 
@@ -171,6 +172,11 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
         </template>
       </template>
     </nav>
+
+    <!-- 快捷链接行：GitHub、PR、Issues 等外部服务一键跳转 -->
+    <div class="quick-row" v-if="!nav.collapsed">
+      <QuickLinks />
+    </div>
 
     <div class="user-row">
       <button
@@ -382,6 +388,13 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   cursor: grab;
 }
 
+.quick-row {
+  padding: 4px 10px;
+  border-top: 1px solid var(--wao-line);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .user-row {
   border-top: 1px solid var(--wao-line);
   padding: 10px;
@@ -457,7 +470,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   .group-label,
   .group-gap,
   .fav-item,
-  .user-row { display: none; }
+  .user-row,
+  .quick-row { display: none; }
   .menu {
     display: flex;
     align-items: stretch;
