@@ -26,6 +26,7 @@ export type ModuleId =
   | 'knowledge'
   | 'files'
   | 'automation'
+  | 'games'
   | 'vault'
   | 'settings'
 
