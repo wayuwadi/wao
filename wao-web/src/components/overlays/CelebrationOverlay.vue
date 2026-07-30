@@ -97,11 +97,12 @@ onMounted(run)
   z-index: 201;
   font-size: 12px;
   color: var(--wao-text-weak);
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 999px;
   padding: 4px 12px;
   animation: waoFade 0.3s ease;
   pointer-events: none;
+  box-shadow: var(--wao-shadow-pop);
 }
 </style>

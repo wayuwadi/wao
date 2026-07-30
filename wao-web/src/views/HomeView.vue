@@ -17,11 +17,13 @@ import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
 import { formatCost, formatTokens, shortModel, usageSummary } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
+import { useUiStore } from '@/stores/ui'
 import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiWorkflow } from '@/types'
 
 type ConsoleView = 'runs' | 'runners' | 'workflows'
 
 const router = useRouter()
+const ui = useUiStore()
 const runs = ref<AiRun[]>([])
 const runners = ref<AiRunner[]>([])
 const workflows = ref<AiWorkflow[]>([])
@@ -100,10 +102,16 @@ function resultTitle(run: AiRun) {
 
 async function refresh() {
   try {
+    const prevSucceededIds = new Set(runs.value.filter((run) => run.status === 'succeeded').map((run) => run.id))
     const [nextRuns, nextRunners] = await Promise.all([fetchAiRuns(false), fetchAiRunners()])
     runs.value = nextRuns
     runners.value = nextRunners
     if (selectedRun.value) selectedRun.value = nextRuns.find((run) => run.id === selectedRun.value?.id) ?? selectedRun.value
+    // 首次加载时不庆祝；检测到本次轮询有运行刚变成 succeeded 时触发庆祝。
+    if (!loading.value) {
+      const newlySucceeded = nextRuns.filter((run) => run.status === 'succeeded' && !prevSucceededIds.has(run.id))
+      if (newlySucceeded.length) ui.celebrate()
+    }
   } catch {
     // 首页轮询失败时保留上一帧，避免网络抖动让运行面板闪空。
   } finally {
