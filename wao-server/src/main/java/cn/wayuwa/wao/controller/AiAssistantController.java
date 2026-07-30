@@ -34,8 +34,11 @@ public class AiAssistantController {
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@Valid @RequestBody AssistantChatRequest request) {
         SseEmitter emitter = new SseEmitter(60_000L);
-        // 异步调用，避免占用 Tomcat 线程。
-        Thread.startVirtualThread(() -> service.chatStream(request, emitter));
+        // 项目生产基线仍是 Java 17，使用普通守护线程释放 Tomcat 请求线程。
+        // 待整体升级 Java 21 后再通过 ADR 统一切换虚拟线程，不能在单个功能里偷跑运行时基线。
+        Thread worker = new Thread(() -> service.chatStream(request, emitter), "wao-assistant-stream");
+        worker.setDaemon(true);
+        worker.start();
         return emitter;
     }
 
