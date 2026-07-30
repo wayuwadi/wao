@@ -847,7 +847,7 @@ export const useDataStore = defineStore('data', () => {
 
   /** 新建任务负载：核心字段 + 可选描述 / 内嵌图片 / 落点分组。 */
   type NewTaskPayload = Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'> &
-    Pick<Task, 'desc' | 'images' | 'groupId'>
+    Pick<Task, 'desc' | 'images' | 'groupId' | 'startAt' | 'endAt'>
 
   /** 本地已创建、服务端 id 尚未回来的任务 id —— 后台同步不得把它们当成「已删除」清掉。 */
   const pendingTaskIds = new Set<string>()
@@ -1096,6 +1096,21 @@ export const useDataStore = defineStore('data', () => {
     logActivity(t, `添加了子任务「${title}」`)
     persistTask(taskId)
     return id
+  }
+
+  /** 把一条子任务移动到另一条之前；稳定 id 保证分享链接不会因排序失效。 */
+  function reorderSub(taskId: string, dragSubId: string, overSubId: string) {
+    if (dragSubId === overSubId) return
+    const t = taskById(taskId)
+    if (!t) return
+    const from = t.subs.findIndex((sub, index) => subKey(taskId, sub, index) === dragSubId)
+    const over = t.subs.findIndex((sub, index) => subKey(taskId, sub, index) === overSubId)
+    if (from < 0 || over < 0) return
+    const [moved] = t.subs.splice(from, 1)
+    const target = from < over ? over - 1 : over
+    t.subs.splice(target, 0, moved!)
+    logActivity(t, `调整了子任务「${moved!.text}」的顺序`)
+    persistTask(taskId)
   }
 
   /**
@@ -1474,7 +1489,7 @@ export const useDataStore = defineStore('data', () => {
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     taskSaveState, taskSavedAt, flushTask, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
-    subById, subKey, addSub, updateSub, removeSub, addSubImage, removeSubImage,
+    subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES,
     updateProject, deleteProject, ensureProjectKb, syncFromServer, applyAiRunStatuses,

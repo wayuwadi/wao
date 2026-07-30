@@ -10,6 +10,7 @@ export interface ModuleMeta {
 }
 
 export type MenuGroupCode = 'PUBLIC' | 'PERSONAL' | 'TOOLS'
+export type BuiltinMenuGroupCode = 'ROOT' | MenuGroupCode
 export type ExternalAppItemId = `external:${string}`
 export type NavItemId = ModuleId | ExternalAppItemId
 
@@ -28,6 +29,20 @@ export interface ExternalAppConfig {
 export interface ExternalAppRegistry {
   version: number
   apps: ExternalAppConfig[]
+}
+
+export interface BuiltinMenuConfig {
+  id: Exclude<ModuleId, 'settings'>
+  label: string
+  icon: string
+  group: BuiltinMenuGroupCode
+  order: number
+  visible: boolean
+}
+
+export interface BuiltinMenuRegistry {
+  version: number
+  menus: BuiltinMenuConfig[]
 }
 
 export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [{
@@ -52,6 +67,16 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
+export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
+  { id: 'home', label: '首页', icon: 'ri-home-5-line', group: 'ROOT', order: 10, visible: true },
+  { id: 'projects', label: '项目', icon: 'ri-stack-line', group: 'PUBLIC', order: 10, visible: true },
+  { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', group: 'PERSONAL', order: 10, visible: true },
+  { id: 'calendar', label: '日历', icon: 'ri-calendar-2-line', group: 'PERSONAL', order: 20, visible: true },
+  { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', group: 'PERSONAL', order: 30, visible: true },
+  { id: 'vault', label: '密码本', icon: 'ri-key-2-line', group: 'PERSONAL', order: 40, visible: true },
+  { id: 'automation', label: '自动化', icon: 'ri-flashlight-line', group: 'TOOLS', order: 10, visible: true },
+  { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', group: 'TOOLS', order: 20, visible: true },
+]
 
 /** 「个人」组的默认顺序；成员拖拽后的自定义顺序存服务端偏好，见 stores/nav.ts。 */
 export const PERSONAL_ITEMS: ModuleId[] = ['todo', 'calendar', 'knowledge', 'vault']
@@ -76,14 +101,26 @@ const GROUP_LABELS: Record<MenuGroupCode, string> = {
 export function resolveNavGroups(
   personalOrder: ModuleId[],
   externalApps: ExternalAppConfig[],
+  builtinMenus?: BuiltinMenuConfig[],
 ): { label: string; items: NavItemId[] }[] {
-  const groups = BASE_NAV_GROUPS.map((group) => ({
-    label: group.label,
-    items: (group.label === '个人' ? [...personalOrder] : [...group.items]) as NavItemId[],
-  }))
+  const groups = builtinMenus
+    ? ['', '公共', '个人', '工具'].map((label) => ({
+        label,
+        items: builtinMenus
+          .filter((menu) => menu.visible && ({ ROOT: '', PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' })[menu.group] === label)
+          .sort((a, b) => a.order - b.order)
+          .map((menu) => menu.id) as NavItemId[],
+      }))
+    : BASE_NAV_GROUPS.map((group) => ({
+        label: group.label,
+        items: (group.label === '个人' ? [...personalOrder] : [...group.items]) as NavItemId[],
+      }))
 
   for (const target of groups) {
-    const existingOrders = new Map(target.items.map((id, index) => [id, (index + 1) * 10]))
+    const existingOrders = new Map(target.items.map((id, index) => [
+      id,
+      builtinMenus?.find((menu) => menu.id === id)?.order ?? (index + 1) * 10,
+    ]))
     const configured = externalApps.filter(
       (app) => app.visible && GROUP_LABELS[app.group] === target.label,
     )

@@ -150,6 +150,10 @@ export interface Task {
   parts: string[]
   start?: string
   due: string
+  /** 日历时间段开始（本地 ISO 日期时间，yyyy-MM-ddTHH:mm）；为空表示仅按截止日展示。 */
+  startAt?: string | null
+  /** 日历时间段结束（本地 ISO 日期时间）；仅在 startAt 有值时使用。 */
+  endAt?: string | null
   waiting?: string
   desc: string
   steps: TaskStep[]

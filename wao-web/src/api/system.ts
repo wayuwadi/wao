@@ -1,5 +1,10 @@
 import { http, type ApiResponse } from './http'
-import type { ExternalAppConfig, ExternalAppRegistry } from '@/config/nav'
+import type {
+  BuiltinMenuConfig,
+  BuiltinMenuRegistry,
+  ExternalAppConfig,
+  ExternalAppRegistry,
+} from '@/config/nav'
 
 /**
  * 系统级配置接口：网站信息、一级导航、飞书通知与飞书群聊同步。
@@ -51,6 +56,10 @@ export const fetchExternalAppRegistry = () =>
   get<ExternalAppRegistry>('/api/settings/navigation/external-apps')
 export const saveExternalAppRegistry = (apps: ExternalAppConfig[]) =>
   put<ExternalAppRegistry>('/api/settings/navigation/external-apps', { apps })
+export const fetchBuiltinMenuRegistry = () =>
+  get<BuiltinMenuRegistry>('/api/settings/navigation/builtin-menus')
+export const saveBuiltinMenuRegistry = (menus: BuiltinMenuConfig[]) =>
+  put<BuiltinMenuRegistry>('/api/settings/navigation/builtin-menus', { menus })
 
 /** 群聊发言人映射：飞书 open_id ↔ 显示名。 */
 export interface FeishuSender {

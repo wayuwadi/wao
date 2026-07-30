@@ -146,6 +146,23 @@ class TaskServiceTest {
     }
 
     @Test
+    void createPersistsValidCalendarRangeAndRejectsBackwardsRange() {
+        when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
+
+        TaskDto dto = service.create(new CreateTaskRequest(
+                "上午体检", "p2", "P1", "wg", "2026-08-01", null, null, null,
+                "2026-08-01T10:00", "2026-08-01T11:30"));
+
+        assertThat(dto.startAt()).isEqualTo("2026-08-01T10:00");
+        assertThat(dto.endAt()).isEqualTo("2026-08-01T11:30");
+        assertThatThrownBy(() -> service.create(new CreateTaskRequest(
+                "错误时段", "p2", "P1", "wg", "2026-08-01", null, null, null,
+                "2026-08-01T11:00", "2026-08-01T10:00")))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("结束时间晚于开始时间");
+    }
+
+    @Test
     void createRecordsCreatorSeparatelyFromOwner() {
         when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
 

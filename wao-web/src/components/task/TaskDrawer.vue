@@ -391,6 +391,28 @@ const subRows = computed(() =>
 )
 const openSubRows = computed(() => subRows.value.filter((r) => !r.sub.done || isSettling(r.key)))
 const doneSubRows = computed(() => subRows.value.filter((r) => r.sub.done && !isSettling(r.key)))
+const draggingSubId = ref<string | null>(null)
+const dragOverSubId = ref<string | null>(null)
+
+function startSubDrag(subId: string, event: DragEvent) {
+  draggingSubId.value = subId
+  event.dataTransfer?.setData('text/plain', subId)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+function overSub(subId: string) {
+  if (draggingSubId.value && draggingSubId.value !== subId) dragOverSubId.value = subId
+}
+function dropSub(overId: string) {
+  const t = task.value
+  const from = draggingSubId.value
+  draggingSubId.value = null
+  dragOverSubId.value = null
+  if (t && from) data.reorderSub(t.id, from, overId)
+}
+function endSubDrag() {
+  draggingSubId.value = null
+  dragOverSubId.value = null
+}
 
 /** 勾选子任务：完成时进入缓冲，取消完成时立即撤销缓冲。 */
 function toggleSub(idx: number) {
@@ -603,6 +625,39 @@ function setDate(field: 'start' | 'due', event: Event) {
   if ((t[field] ?? '') === value) return
   const activity = value ? `将${label}改为 ${fmtDate(value)}` : `清空了${label}`
   data.patchTask(t.id, field === 'start' ? { start: value } : { due: value }, activity)
+}
+function setDateTime(field: 'startAt' | 'endAt', event: Event) {
+  const t = task.value
+  if (!t) return
+  const value = (event.target as HTMLInputElement).value
+  if (!value) {
+    data.patchTask(t.id, { startAt: null, endAt: null }, '清空了任务时间段')
+    return
+  }
+  if (field === 'endAt' && !t.startAt) {
+    toast('请先填写时间段开始时间', 'ri-error-warning-line')
+    ;(event.target as HTMLInputElement).value = ''
+    return
+  }
+  const other = field === 'startAt' ? t.endAt : t.startAt
+  if (value && other && (field === 'startAt' ? value >= other : value <= other)) {
+    toast('结束时间必须晚于开始时间', 'ri-error-warning-line')
+    ;(event.target as HTMLInputElement).value = t[field] ?? ''
+    return
+  }
+  const label = field === 'startAt' ? '时间段开始' : '时间段结束'
+  const automaticEnd = field === 'startAt' && !t.endAt ? addHour(value) : t.endAt
+  data.patchTask(t.id, {
+    [field]: value || null,
+    ...(field === 'startAt' ? { endAt: automaticEnd } : {}),
+    ...(field === 'startAt' && value ? { due: value.slice(0, 10) } : {}),
+  }, value ? `将${label}改为 ${value.replace('T', ' ')}` : `清空了${label}`)
+}
+function addHour(value: string) {
+  const date = new Date(value)
+  date.setHours(date.getHours() + 1)
+  const p = (number: number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}T${p(date.getHours())}:${p(date.getMinutes())}`
 }
 function addCustom(type: string) {
   const t = task.value
@@ -833,9 +888,20 @@ function demo(msg: string) {
                 v-for="r in openSubRows"
                 :key="r.key"
                 class="check-row sub-row"
-                :class="{ active: openSubId === r.key, settling: isSettling(r.key) }"
+                :class="{
+                  active: openSubId === r.key,
+                  settling: isSettling(r.key),
+                  dragging: draggingSubId === r.key,
+                  'drag-over': dragOverSubId === r.key,
+                }"
+                draggable="true"
                 @click="showSub(r.idx)"
+                @dragstart="startSubDrag(r.key, $event)"
+                @dragover.prevent="overSub(r.key)"
+                @drop.prevent="dropSub(r.key)"
+                @dragend="endSubDrag"
               >
+                <i class="ri-draggable sub-grip" title="拖拽调整顺序"></i>
                 <span class="cbox circle" :class="{ done: r.sub.done }" @click.stop="toggleSub(r.idx)"><i class="ri-check-line"></i></span>
                 <span class="check-text" :class="{ done: r.sub.done }">{{ r.sub.text }}</span>
                 <i v-if="r.sub.desc || r.sub.images?.length" class="ri-file-text-line sub-flag" title="有描述 / 图片"></i>
@@ -1161,6 +1227,14 @@ function demo(msg: string) {
               @change="setDate('due', $event)"
             />
             <span v-if="dueHint" class="due-hint" :style="{ color: tv.dueColor }">{{ dueHint }}</span>
+          </div>
+          <div class="prop-row">
+            <span class="prop-key">时段开始</span>
+            <input class="datetime-input" type="datetime-local" :value="task.startAt || ''" @change="setDateTime('startAt', $event)" />
+          </div>
+          <div class="prop-row">
+            <span class="prop-key">时段结束</span>
+            <input class="datetime-input" type="datetime-local" :value="task.endAt || ''" :min="task.startAt || undefined" @change="setDateTime('endAt', $event)" />
           </div>
           <div class="prop-row">
             <span class="prop-key">所属项目</span>
@@ -1723,6 +1797,14 @@ function demo(msg: string) {
 .sub-row .cbox {
   cursor: pointer;
 }
+.sub-row[draggable='true'] { cursor: grab; }
+.sub-row.dragging { opacity: .45; }
+.sub-row.drag-over { box-shadow: inset 0 2px var(--wao-primary); }
+.sub-grip {
+  color: var(--wao-text-faint);
+  font-size: 14px;
+  flex: 0 0 auto;
+}
 .sub-row.active {
   background: var(--wao-primary-tint);
 }
@@ -2219,7 +2301,8 @@ function demo(msg: string) {
   color: inherit;
 }
 /* 日期看着仍像一行属性文字，鼠标移上去才显出可点的边框——属性栏不该被输入框撑成表单 */
-.date-input {
+.date-input,
+.datetime-input {
   flex: 1;
   min-width: 0;
   font: inherit;
@@ -2236,19 +2319,23 @@ function demo(msg: string) {
   font-size: 11.5px;
   flex-shrink: 0;
 }
-.date-input:hover {
+.date-input:hover,
+.datetime-input:hover {
   border-color: var(--wao-line-control);
 }
-.date-input:focus {
+.date-input:focus,
+.datetime-input:focus {
   outline: none;
   border-color: var(--wao-primary);
   box-shadow: 0 0 0 3px rgba(67, 88, 214, .12);
 }
-.date-input::-webkit-calendar-picker-indicator {
+.date-input::-webkit-calendar-picker-indicator,
+.datetime-input::-webkit-calendar-picker-indicator {
   cursor: pointer;
   opacity: .5;
 }
-.date-input:hover::-webkit-calendar-picker-indicator {
+.date-input:hover::-webkit-calendar-picker-indicator,
+.datetime-input:hover::-webkit-calendar-picker-indicator {
   opacity: 1;
 }
 .pill {

@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   DEFAULT_EXTERNAL_APPS,
+  DEFAULT_BUILTIN_MENUS,
   MODULES,
   PERSONAL_ITEMS,
   externalAppIdFromItem,
@@ -9,10 +10,11 @@ import {
   externalAppPath,
   resolveNavGroups,
   type ExternalAppConfig,
+  type BuiltinMenuConfig,
   type NavItemId,
 } from '@/config/nav'
 import { fetchPreference, savePreference } from '@/api/favorites'
-import { fetchExternalAppRegistry } from '@/api/system'
+import { fetchBuiltinMenuRegistry, fetchExternalAppRegistry } from '@/api/system'
 import type { ModuleId } from '@/types'
 
 /** 导航 store：侧栏整栏折叠态 + 各分组折叠态 + 「个人」组自定义顺序。 */
@@ -51,9 +53,10 @@ export const useNavStore = defineStore('nav', () => {
   const personalOrder = ref<ModuleId[]>(normalizeOrder(persisted.personalOrder))
   /** 外部应用注册表为全局配置；接口失败时保留 Agent 默认项，不能让现有入口凭空消失。 */
   const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map((app) => ({ ...app })))
+  const builtinMenus = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map((menu) => ({ ...menu })))
   const externalAppsState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
   const externalAppsError = ref('')
-  const groups = computed(() => resolveNavGroups(personalOrder.value, externalApps.value))
+  const groups = computed(() => resolveNavGroups(personalOrder.value, externalApps.value, builtinMenus.value))
 
   function persist() {
     localStorage.setItem(
@@ -118,6 +121,16 @@ export const useNavStore = defineStore('nav', () => {
       externalAppsError.value = error instanceof Error ? error.message : '外部应用注册表读取失败'
     }
   }
+  async function loadBuiltinMenus() {
+    try {
+      builtinMenus.value = (await fetchBuiltinMenuRegistry()).menus.map((menu) => ({ ...menu }))
+    } catch {
+      /* 坏配置或短暂离线时保留代码默认导航，不能让菜单消失。 */
+    }
+  }
+  function applyBuiltinMenus(menus: BuiltinMenuConfig[]) {
+    builtinMenus.value = menus.map((menu) => ({ ...menu }))
+  }
 
   /** 设置页保存成功后立即刷新导航，不等页面重载。 */
   function applyExternalApps(apps: ExternalAppConfig[]) {
@@ -141,13 +154,16 @@ export const useNavStore = defineStore('nav', () => {
         path: externalAppPath(app.id),
       } : undefined
     }
-    return id ? MODULES[id as ModuleId] : undefined
+    if (!id) return undefined
+    const module = MODULES[id as ModuleId]
+    const configured = builtinMenus.value.find((menu) => menu.id === id)
+    return configured ? { ...module, label: configured.label, icon: configured.icon } : module
   }
 
   return {
     collapsed, foldedGroups, personalOrder, groups,
-    externalApps, externalAppsState, externalAppsError,
+    externalApps, builtinMenus, externalAppsState, externalAppsError,
     toggleCollapse, toggleGroup, isFolded, loadPersonalOrder, setPersonalOrder,
-    loadExternalApps, applyExternalApps, externalAppById, itemMeta,
+    loadExternalApps, loadBuiltinMenus, applyExternalApps, applyBuiltinMenus, externalAppById, itemMeta,
   }
 })

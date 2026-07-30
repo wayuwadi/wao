@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
+import { usePreferenceStore } from '@/stores/preferences'
 import { priorityMeta } from '@/utils/domain'
 import { toast } from '@/composables/toast'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
@@ -12,6 +13,7 @@ import type { Priority } from '@/types'
 const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
+const preferences = usePreferenceStore()
 
 /** 快捷截止选项按真实「今天」推算：今天 / 明天 / 本周日 / 下周一；ISO 日期（日历双击带入）原样返回。 */
 function dueDate(label: string): string {
@@ -26,7 +28,10 @@ function dueDate(label: string): string {
 }
 
 const DRAFT_KEY = 'wao-new-task-draft-v1'
-type Draft = { title: string; project: string; owner: string; pr: Priority; due: string; desc: string }
+type Draft = {
+  title: string; project: string; owner: string; pr: Priority; due: string; desc: string
+  scheduleMode: 'deadline' | 'range'; startAt: string; endAt: string
+}
 function loadDraft(): Partial<Draft> {
   try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch { return {} }
 }
@@ -39,15 +44,26 @@ const openProjects = computed(() => data.projects.filter((p) => p.status !== '�
 const title = ref(draft.title ?? '')
 // modalProject 未预选时是空串（不是 null），必须用 || 兜底到第一个进行中的项目，
 // 否则从顶栏全局入口建出的任务 project 为空，在所有项目列表里都看不见。
-const project = ref(draft.project || ui.modalProject || openProjects.value[0]?.id || '')
+const project = ref(
+  draft.project || ui.modalProject || preferences.defaultProject || openProjects.value[0]?.id || '',
+)
 
 /**
  * 真实项目列表到达后，只有当前预选项目不在列表中时才回退到首个可用项目。
  * 这样既能清理 fixtures / 过期草稿留下的伪 id，也不会覆盖用户已经选中的真实项目。
  */
 watch(openProjects, (projects) => {
-  if (!projects.some((item) => item.id === project.value)) project.value = projects[0]?.id || ''
+  if (!projects.some((item) => item.id === project.value)) {
+    project.value = projects.some((item) => item.id === preferences.defaultProject)
+      ? preferences.defaultProject
+      : projects[0]?.id || ''
+  }
 }, { immediate: true })
+watch(() => preferences.defaultProject, (value) => {
+  if (!draft.project && !ui.modalProject && value && openProjects.value.some((item) => item.id === value)) {
+    project.value = value
+  }
+})
 const owner = ref(draft.owner ?? session.currentUser.id)
 const pr = ref<Priority>(draft.pr ?? 'P2')
 // 日历双击某天进来时，截止日直接锁定那一天，优先于草稿里存的快捷选项。
@@ -55,15 +71,21 @@ const pr = ref<Priority>(draft.pr ?? 'P2')
 const QUICK_DUES = ['今天', '明天', '周日', '下周一']
 const due = ref(ui.modalDue || (QUICK_DUES.includes(draft.due ?? '') ? draft.due! : '今天'))
 const dueOptions = computed(() => (ui.modalDue ? [ui.modalDue, ...QUICK_DUES] : QUICK_DUES))
+const scheduleMode = ref<'deadline' | 'range'>(
+  ui.modalStartAt ? 'range' : draft.scheduleMode === 'range' ? 'range' : 'deadline',
+)
+const startAt = ref(ui.modalStartAt || draft.startAt || `${dueDate(due.value)}T09:00`)
+const endAt = ref(ui.modalEndAt || draft.endAt || `${dueDate(due.value)}T10:00`)
 const desc = ref(draft.desc ?? '')
 const draftState = ref<'saving' | 'saved'>('saved')
 let draftTimer: ReturnType<typeof setTimeout> | null = null
 
-watch([title, project, owner, pr, due, desc], () => {
+watch([title, project, owner, pr, due, desc, scheduleMode, startAt, endAt], () => {
   draftState.value = 'saving'
   localStorage.setItem(DRAFT_KEY, JSON.stringify({
     title: title.value, project: project.value, owner: owner.value,
     pr: pr.value, due: due.value, desc: desc.value,
+    scheduleMode: scheduleMode.value, startAt: startAt.value, endAt: endAt.value,
   } satisfies Draft))
   if (draftTimer) clearTimeout(draftTimer)
   draftTimer = setTimeout(() => (draftState.value = 'saved'), 180)
@@ -104,16 +126,32 @@ function create() {
     toast('请先选择所属项目', 'ri-error-warning-line')
     return
   }
+  if (scheduleMode.value === 'range' && (!startAt.value || !endAt.value || endAt.value <= startAt.value)) {
+    toast('结束时间必须晚于开始时间', 'ri-error-warning-line')
+    return
+  }
   // addTask 立即返回本地记录、后台落库，所以这里不 await —— 弹窗即点即关。
   void data.addTask({
     title: name, project: project.value, pr: pr.value, owner: owner.value,
-    due: dueDate(due.value),
+    due: scheduleMode.value === 'range' ? startAt.value.slice(0, 10) : dueDate(due.value),
+    startAt: scheduleMode.value === 'range' ? startAt.value : null,
+    endAt: scheduleMode.value === 'range' ? endAt.value : null,
     desc: desc.value.trim(), images: [],
   })
   localStorage.removeItem(DRAFT_KEY)
   ui.closeModal()
   toast(`任务「${name}」已创建`, 'ri-checkbox-circle-fill')
   ui.celebrate()
+}
+
+async function makeDefaultProject() {
+  if (!project.value || project.value === preferences.defaultProject) return
+  try {
+    await preferences.setDefaultProject(project.value)
+    toast('以后新建任务会默认选择这个项目', 'ri-pushpin-line')
+  } catch {
+    toast('默认项目保存失败，请重试', 'ri-error-warning-line')
+  }
 }
 </script>
 
@@ -145,6 +183,15 @@ function create() {
       >
         <span class="dot" :style="{ background: data.areaColor(p.area) }"></span>{{ p.name }}
       </button>
+      <button
+        v-if="project"
+        class="pill default-project"
+        :class="{ on: preferences.defaultProject === project }"
+        type="button"
+        @click="makeDefaultProject"
+      >
+        <i class="ri-pushpin-line"></i>{{ preferences.defaultProject === project ? '默认项目' : '设为默认' }}
+      </button>
     </div>
 
     <div class="two-col">
@@ -172,9 +219,17 @@ function create() {
       </div>
     </div>
 
-    <div class="label">截止</div>
-    <div class="pills">
+    <div class="label">时间安排</div>
+    <div class="schedule-switch">
+      <button :class="{ on: scheduleMode === 'deadline' }" @click="scheduleMode = 'deadline'">截止日期</button>
+      <button :class="{ on: scheduleMode === 'range' }" @click="scheduleMode = 'range'">时间段</button>
+    </div>
+    <div v-if="scheduleMode === 'deadline'" class="pills">
       <button v-for="d in dueOptions" :key="d" class="pill sq" :class="{ on: due === d }" @click="due = d">{{ d }}</button>
+    </div>
+    <div v-else class="range-fields">
+      <label><span>开始</span><input v-model="startAt" type="datetime-local" /></label>
+      <label><span>结束</span><input v-model="endAt" type="datetime-local" /></label>
     </div>
 
     <div class="label">描述 <span class="label-hint">敲 ## 变标题、- 变列表；粘贴或拖入的截图会插在光标处</span></div>
@@ -344,6 +399,33 @@ function create() {
   gap: 7px;
   flex-wrap: wrap;
 }
+.schedule-switch {
+  display: inline-flex;
+  margin-top: 6px;
+  padding: 2px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+}
+.schedule-switch button {
+  height: 27px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wao-text-3);
+  cursor: pointer;
+}
+.schedule-switch button.on { background: var(--wao-primary); color: #fff; }
+.range-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.range-fields label { display: grid; gap: 4px; font-size: 11.5px; color: var(--wao-text-weak); }
+.range-fields input {
+  height: 36px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  padding: 0 8px;
+  color: var(--wao-text);
+  background: #fff;
+}
 .pill {
   height: 28px;
   padding: 0 11px;
@@ -488,6 +570,7 @@ function create() {
     height: 34px;
   }
   .two-col { grid-template-columns: 1fr; gap: 10px; }
+  .range-fields { grid-template-columns: 1fr; }
   .foot {
     position: sticky;
     bottom: calc(-10px - env(safe-area-inset-bottom));

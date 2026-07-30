@@ -28,6 +28,7 @@ const groups = computed(() => nav.groups)
 onMounted(() => {
   nav.loadPersonalOrder()
   nav.loadExternalApps()
+  nav.loadBuiltinMenus()
   favorites.load()
 })
 

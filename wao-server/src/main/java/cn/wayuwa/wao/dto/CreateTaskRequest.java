@@ -14,11 +14,15 @@ public record CreateTaskRequest(
         String desc,
         List<ImageRef> images,
         /** 落进哪个任务分组（分组视图里的「+」带上它）；不分组时为空。 */
-        String groupId) {
+        String groupId,
+        /** 日历时间段开始（{@code yyyy-MM-ddTHH:mm}），普通截止任务为空。 */
+        String startAt,
+        /** 日历时间段结束（{@code yyyy-MM-ddTHH:mm}）。 */
+        String endAt) {
 
     /** 兼容尚未引入任务分组的既有调用。 */
     public CreateTaskRequest(String title, String project, String pr, String owner, String due,
             String desc, List<ImageRef> images) {
-        this(title, project, pr, owner, due, desc, images, null);
+        this(title, project, pr, owner, due, desc, images, null, null, null);
     }
 }
