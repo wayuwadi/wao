@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { Tab } from '@/types'
-import { moduleTab } from '@/config/nav'
+import { externalAppItemId, externalAppPath, moduleTab } from '@/config/nav'
 
 /**
  * 页签 store：多页签栏的可视化路由栈。
@@ -24,8 +24,16 @@ function load(): Persisted {
     const raw = localStorage.getItem(TABS_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as Persisted
-      const tabs = (parsed.tabs ?? []).filter((t) => !RETIRED_TAB_KEYS.has(t.key))
-      const activeKey = RETIRED_TAB_KEYS.has(parsed.activeKey) ? 'home' : parsed.activeKey
+      const tabs = (parsed.tabs ?? [])
+        .filter((t) => !RETIRED_TAB_KEYS.has(t.key))
+        .map((tab) => tab.key === 'mediaAgent' ? {
+          ...tab,
+          key: externalAppItemId('media-agent'),
+          path: externalAppPath('media-agent'),
+        } : tab)
+      const activeKey = RETIRED_TAB_KEYS.has(parsed.activeKey)
+        ? 'home'
+        : parsed.activeKey === 'mediaAgent' ? externalAppItemId('media-agent') : parsed.activeKey
       return { tabs, activeKey }
     }
   } catch {
@@ -109,6 +117,17 @@ export const useTabsStore = defineStore('tabs', () => {
     }
   }
 
+  /** 外部应用注册表变化后同步已经打开的页签名称与图标。 */
+  function setMeta(key: string, patch: Pick<Tab, 'label' | 'icon'>) {
+    const tab = tabs.value.find((item) => item.key === key)
+    if (tab) {
+      tab.label = patch.label
+      tab.icon = patch.icon
+      tab.labelPlaceholder = false
+      persist()
+    }
+  }
+
   function activeTab(): Tab | undefined {
     return tabs.value.find((t) => t.key === activeKey.value)
   }
@@ -178,6 +197,7 @@ export const useTabsStore = defineStore('tabs', () => {
     activate,
     move,
     setLabel,
+    setMeta,
     activeTab,
     close,
     closeOthers,

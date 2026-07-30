@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch, watchEffect } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
@@ -8,14 +8,14 @@ import { updateEmailCredential, updateProfile, unlinkIdentity, apiCreateAccount,
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import {
-  fetchMediaAgentMenu, fetchSiteInfo, fetchWebhookConfig, saveMediaAgentMenu, saveSiteInfo,
-  saveWebhookConfig, testWebhook, type FeishuWebhookConfig, type SiteInfo,
+  fetchExternalAppRegistry, fetchSiteInfo, fetchWebhookConfig, saveExternalAppRegistry,
+  saveSiteInfo, saveWebhookConfig, testWebhook, type FeishuWebhookConfig, type SiteInfo,
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useNavStore } from '@/stores/nav'
-import { DEFAULT_MEDIA_AGENT_MENU, type MediaAgentMenuConfig } from '@/config/nav'
+import { DEFAULT_EXTERNAL_APPS, externalAppPath, type ExternalAppConfig } from '@/config/nav'
 
 const session = useSessionStore()
 const data = useDataStore()
@@ -180,58 +180,149 @@ const webhookBusy = ref(false)
 const site = reactive<SiteInfo>({ siteName: '', description: '', icpNumber: '', icpUrl: '' })
 const siteLoaded = ref(false)
 const siteBusy = ref(false)
-const mediaAgentMenuForm = reactive<MediaAgentMenuConfig>({ ...DEFAULT_MEDIA_AGENT_MENU })
-const mediaAgentMenuSaved = ref<MediaAgentMenuConfig>({ ...DEFAULT_MEDIA_AGENT_MENU })
-const mediaAgentMenuLoaded = ref(false)
-const mediaAgentMenuLoading = ref(false)
-const mediaAgentMenuSaving = ref(false)
-const mediaAgentMenuError = ref('')
-const mediaAgentMenuDirty = computed(() =>
-  JSON.stringify(mediaAgentMenuForm) !== JSON.stringify(mediaAgentMenuSaved.value),
-)
+const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map((app) => ({ ...app })))
+const externalAppsLoaded = ref(false)
+const externalAppsLoading = ref(false)
+const externalAppsSaving = ref(false)
+const externalAppsError = ref('')
+const externalEditorMode = ref<'none' | 'edit' | 'new'>('none')
+const editingExternalAppId = ref('')
 
-async function loadMediaAgentMenuSettings() {
-  if (mediaAgentMenuLoading.value) return
-  mediaAgentMenuLoading.value = true
-  mediaAgentMenuError.value = ''
-  try {
-    const config = await fetchMediaAgentMenu()
-    Object.assign(mediaAgentMenuForm, config)
-    mediaAgentMenuSaved.value = { ...config }
-    mediaAgentMenuLoaded.value = true
-    nav.applyMediaAgentMenu(config)
-  } catch (error) {
-    mediaAgentMenuError.value = error instanceof Error ? error.message : '读取菜单配置失败'
-  } finally {
-    mediaAgentMenuLoading.value = false
+function emptyExternalApp(): ExternalAppConfig {
+  return {
+    id: '', label: '', icon: 'ri-apps-2-line', group: 'PUBLIC', order: 20,
+    visible: true, appUrl: '/', healthUrl: '',
   }
 }
 
-async function saveMediaAgentMenuSettings() {
-  const label = mediaAgentMenuForm.label.trim()
-  if (!label) {
-    toast('菜单名称不能为空', 'ri-error-warning-line')
+const externalAppForm = reactive<ExternalAppConfig>(emptyExternalApp())
+const selectedExternalApp = computed(() =>
+  externalApps.value.find((app) => app.id === editingExternalAppId.value),
+)
+const externalAppDirty = computed(() => {
+  if (externalEditorMode.value === 'none') return false
+  const baseline = externalEditorMode.value === 'edit' ? selectedExternalApp.value : emptyExternalApp()
+  return JSON.stringify(externalAppForm) !== JSON.stringify(baseline)
+})
+
+function assignExternalApp(app: ExternalAppConfig) {
+  Object.assign(externalAppForm, { ...app })
+}
+
+function confirmDiscardExternalDraft() {
+  return !externalAppDirty.value || window.confirm('当前外部应用配置尚未保存，确认放弃这些修改吗？')
+}
+
+function editExternalApp(id: string, skipConfirm = false) {
+  if (!skipConfirm && !confirmDiscardExternalDraft()) return
+  const app = externalApps.value.find((item) => item.id === id)
+  if (!app) return
+  editingExternalAppId.value = id
+  externalEditorMode.value = 'edit'
+  assignExternalApp(app)
+}
+
+function startAddExternalApp() {
+  if (!confirmDiscardExternalDraft()) return
+  editingExternalAppId.value = ''
+  externalEditorMode.value = 'new'
+  assignExternalApp(emptyExternalApp())
+}
+
+function cancelExternalAppEdit() {
+  if (!confirmDiscardExternalDraft()) return
+  if (externalEditorMode.value === 'edit' && selectedExternalApp.value) {
+    assignExternalApp(selectedExternalApp.value)
     return
   }
-  mediaAgentMenuSaving.value = true
-  mediaAgentMenuError.value = ''
+  const first = externalApps.value[0]
+  if (first) editExternalApp(first.id, true)
+  else externalEditorMode.value = 'none'
+}
+
+async function loadExternalAppSettings() {
+  if (externalAppsLoading.value) return
+  externalAppsLoading.value = true
+  externalAppsError.value = ''
   try {
-    const saved = await saveMediaAgentMenu({
-      ...mediaAgentMenuForm,
-      label,
-      order: Number(mediaAgentMenuForm.order),
-    })
-    Object.assign(mediaAgentMenuForm, saved)
-    mediaAgentMenuSaved.value = { ...saved }
-    mediaAgentMenuLoaded.value = true
-    nav.applyMediaAgentMenu(saved)
-    toast('菜单配置已保存并立即生效', 'ri-check-line')
+    const registry = await fetchExternalAppRegistry()
+    externalApps.value = registry.apps.map((app) => ({ ...app }))
+    externalAppsLoaded.value = true
+    nav.applyExternalApps(registry.apps)
+    const preferred = externalApps.value.find((app) => app.id === editingExternalAppId.value)
+      ?? externalApps.value[0]
+    if (preferred) editExternalApp(preferred.id, true)
+    else externalEditorMode.value = 'none'
   } catch (error) {
-    mediaAgentMenuError.value = error instanceof Error ? error.message : '保存菜单配置失败'
-    toast(mediaAgentMenuError.value, 'ri-error-warning-line')
+    externalAppsError.value = error instanceof Error ? error.message : '读取外部应用注册表失败'
   } finally {
-    mediaAgentMenuSaving.value = false
+    externalAppsLoading.value = false
   }
+}
+
+function canonicalExternalAppForm(): ExternalAppConfig | null {
+  const app = {
+    ...externalAppForm,
+    id: externalAppForm.id.trim(),
+    label: externalAppForm.label.trim(),
+    icon: externalAppForm.icon.trim(),
+    appUrl: externalAppForm.appUrl.trim(),
+    healthUrl: externalAppForm.healthUrl.trim(),
+    order: Number(externalAppForm.order),
+  }
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(app.id)) {
+    toast('应用标识只能使用小写字母、数字和中划线', 'ri-error-warning-line')
+    return null
+  }
+  if (!app.label || !app.icon || !app.appUrl) {
+    toast('请填写菜单名称、图标和应用入口', 'ri-error-warning-line')
+    return null
+  }
+  const duplicate = externalApps.value.some(
+    (item) => item.id === app.id && item.id !== editingExternalAppId.value,
+  )
+  if (duplicate) {
+    toast('应用标识不能重复', 'ri-error-warning-line')
+    return null
+  }
+  return app
+}
+
+async function persistExternalApps(next: ExternalAppConfig[], selectedId: string, successMessage: string) {
+  externalAppsSaving.value = true
+  externalAppsError.value = ''
+  try {
+    const registry = await saveExternalAppRegistry(next)
+    externalApps.value = registry.apps.map((app) => ({ ...app }))
+    externalAppsLoaded.value = true
+    nav.applyExternalApps(registry.apps)
+    const selected = externalApps.value.find((app) => app.id === selectedId) ?? externalApps.value[0]
+    if (selected) editExternalApp(selected.id, true)
+    else externalEditorMode.value = 'none'
+    toast(successMessage, 'ri-check-line')
+  } catch (error) {
+    externalAppsError.value = error instanceof Error ? error.message : '保存外部应用注册表失败'
+    toast(externalAppsError.value, 'ri-error-warning-line')
+  } finally {
+    externalAppsSaving.value = false
+  }
+}
+
+async function saveExternalAppSettings() {
+  const app = canonicalExternalAppForm()
+  if (!app) return
+  const next = externalApps.value.map((item) => ({ ...item }))
+  const index = next.findIndex((item) => item.id === editingExternalAppId.value)
+  if (externalEditorMode.value === 'edit' && index >= 0) next[index] = app
+  else next.push(app)
+  await persistExternalApps(next, app.id, '外部应用注册表已保存并立即生效')
+}
+
+async function deleteExternalApp(app: ExternalAppConfig) {
+  if (!confirmDiscardExternalDraft()) return
+  if (!window.confirm(`确认删除「${app.label}」的菜单注册吗？应用服务和数据不会被删除。`)) return
+  const next = externalApps.value.filter((item) => item.id !== app.id)
+  await persistExternalApps(next, next[0]?.id ?? '', `已删除「${app.label}」的菜单注册`)
 }
 
 async function loadSiteInfo() {
@@ -321,9 +412,15 @@ async function toggleProjectNotify(id: string) {
 
 watch(tab, (t) => {
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
-  if (t === 'navigation' && !mediaAgentMenuLoaded.value) loadMediaAgentMenuSettings()
+  if (t === 'navigation' && !externalAppsLoaded.value) loadExternalAppSettings()
   if (t === 'webhook' && !webhook.value) loadWebhook()
 }, { immediate: true })
+
+function chooseSettingsTab(next: string) {
+  tab.value = next
+}
+
+onBeforeRouteLeave(() => confirmDiscardExternalDraft())
 
 async function logout() {
   await session.logout()
@@ -372,7 +469,7 @@ async function bindFeishu() {
       <div v-for="g in NAV" :key="g.label">
         <div class="snav-group"><i :class="g.icon"></i>{{ g.label }}</div>
         <div class="snav-items">
-          <button v-for="it in g.items" :key="it[1]" class="snav-item" :class="{ on: tab === it[1] }" @click="tab = it[1]">
+          <button v-for="it in g.items" :key="it[1]" class="snav-item" :class="{ on: tab === it[1] }" @click="chooseSettingsTab(it[1])">
             {{ it[0] }}
           </button>
         </div>
@@ -452,62 +549,112 @@ async function bindFeishu() {
           </div>
         </template>
 
-        <!-- 系统 · 一级菜单配置 -->
+        <!-- 系统 · 外部应用菜单注册表 -->
         <template v-else-if="tab === 'navigation'">
-          <div class="s-h1">菜单配置</div>
+          <div class="s-h1">外部应用</div>
           <div class="card">
             <div class="card-row wrap">
-              <div class="card-title">自媒体 Agent</div>
-              <span v-if="mediaAgentMenuLoaded && !mediaAgentMenuError" class="connected"><span class="c-dot"></span>已读取线上配置</span>
-              <span v-else-if="mediaAgentMenuError" class="connected err"><span class="c-dot"></span>{{ mediaAgentMenuError }}</span>
+              <div class="card-title">菜单注册表</div>
+              <span v-if="externalAppsLoaded && !externalAppsError" class="connected"><span class="c-dot"></span>{{ externalApps.length }} 个应用</span>
+              <span v-else-if="externalAppsError" class="connected err"><span class="c-dot"></span>{{ externalAppsError }}</span>
+              <div class="spacer"></div>
+              <button type="button" class="btn-primary sm" :disabled="externalAppsLoading || externalAppsSaving" @click="startAddExternalApp"><i class="ri-add-line"></i>注册应用</button>
             </div>
 
-            <div v-if="mediaAgentMenuLoading" class="menu-loading">正在读取菜单配置…</div>
-            <form v-else class="site-form menu-form" @submit.prevent="saveMediaAgentMenuSettings">
-              <label>
-                <span>菜单名称</span>
-                <input v-model="mediaAgentMenuForm.label" maxlength="24" required placeholder="例如 自媒体 Agent" />
-              </label>
-              <label>
-                <span>所属分组</span>
-                <select v-model="mediaAgentMenuForm.group">
-                  <option value="PUBLIC">公共</option>
-                  <option value="PERSONAL">个人</option>
-                  <option value="TOOLS">工具</option>
-                </select>
-              </label>
-              <label>
-                <span>排序值</span>
-                <input v-model.number="mediaAgentMenuForm.order" type="number" min="0" max="999" required />
-                <small>数值越小越靠前；公共模块“项目”的排序值为 10。</small>
-              </label>
-              <label>
-                <span>菜单可见性</span>
-                <button
-                  type="button"
-                  class="visibility-choice"
-                  :class="{ on: mediaAgentMenuForm.visible }"
-                  :aria-pressed="mediaAgentMenuForm.visible"
-                  @click="mediaAgentMenuForm.visible = !mediaAgentMenuForm.visible"
-                >
-                  <span class="choice-icon"><i :class="mediaAgentMenuForm.visible ? 'ri-eye-line' : 'ri-eye-off-line'"></i></span>
-                  <span>{{ mediaAgentMenuForm.visible ? '显示在一级导航中' : '从一级导航中隐藏' }}</span>
-                </button>
-              </label>
-              <div class="menu-preview">
-                <span class="preview-label">导航预览</span>
-                <span class="menu-preview-group">{{ { PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' }[mediaAgentMenuForm.group] }}</span>
-                <span v-if="mediaAgentMenuForm.visible" class="menu-preview-item"><i class="ri-sparkling-2-line"></i>{{ mediaAgentMenuForm.label || '未命名菜单' }}</span>
-                <span v-else class="menu-preview-hidden">菜单已隐藏，直接访问地址仍然可用</span>
+            <div v-if="externalAppsLoading" class="menu-loading">正在读取外部应用注册表…</div>
+            <div v-else-if="externalAppsError && !externalAppsLoaded" class="registry-load-error">
+              <span>注册表暂时无法读取，现有菜单不会被覆盖。</span>
+              <button type="button" class="btn-ghost" @click="loadExternalAppSettings">重新读取</button>
+            </div>
+            <div v-else class="registry-layout">
+              <div class="registry-list">
+                <div v-for="app in externalApps" :key="app.id" class="registry-row" :class="{ active: externalEditorMode === 'edit' && editingExternalAppId === app.id }">
+                  <button type="button" class="registry-select" @click="editExternalApp(app.id)">
+                    <span class="registry-icon"><i :class="app.icon"></i></span>
+                    <span class="registry-meta">
+                      <strong>{{ app.label }}</strong>
+                      <small>{{ app.id }} · {{ { PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' }[app.group] }} · 排序 {{ app.order }}</small>
+                    </span>
+                    <span class="registry-state" :class="{ off: !app.visible }">{{ app.visible ? '显示中' : '已隐藏' }}</span>
+                  </button>
+                  <button type="button" class="registry-delete" :disabled="externalAppsSaving" :title="`删除 ${app.label}`" @click="deleteExternalApp(app)"><i class="ri-delete-bin-line"></i></button>
+                </div>
+                <div v-if="!externalApps.length" class="registry-empty">
+                  <i class="ri-apps-2-add-line"></i>
+                  <strong>还没有外部应用</strong>
+                  <span>注册后会自动生成菜单、页签和嵌入页面。</span>
+                </div>
               </div>
-              <div class="site-actions">
-                <button v-if="mediaAgentMenuError && !mediaAgentMenuLoaded" type="button" class="btn-ghost" :disabled="mediaAgentMenuLoading" @click="loadMediaAgentMenuSettings">重新读取</button>
-                <button class="btn-primary" :disabled="mediaAgentMenuSaving || !mediaAgentMenuDirty || !mediaAgentMenuForm.label.trim()">
-                  {{ mediaAgentMenuSaving ? '保存中…' : mediaAgentMenuDirty ? '保存并立即生效' : '已保存' }}
-                </button>
-              </div>
-            </form>
-            <div class="hint">这是一份全局配置，所有 WAO 成员看到相同的菜单名称和位置。修改只写入服务端配置，保存后立即生效，不需要重新构建或发布 WAO；隐藏菜单不会停用 Agent 服务。</div>
+
+              <form v-if="externalEditorMode !== 'none'" class="site-form menu-form registry-editor" @submit.prevent="saveExternalAppSettings">
+                <div class="editor-title">{{ externalEditorMode === 'new' ? '注册新应用' : `编辑「${selectedExternalApp?.label ?? externalAppForm.label}」` }}</div>
+                <label>
+                  <span>应用标识</span>
+                  <input v-model="externalAppForm.id" maxlength="40" required :disabled="externalEditorMode === 'edit'" placeholder="例如 data-studio" />
+                  <small>保存后生成 {{ externalAppForm.id ? externalAppPath(externalAppForm.id) : '/apps/{应用标识}' }}，标识不可修改。</small>
+                </label>
+                <label>
+                  <span>菜单名称</span>
+                  <input v-model="externalAppForm.label" maxlength="24" required placeholder="例如 数据工作台" />
+                </label>
+                <label>
+                  <span>菜单图标</span>
+                  <input v-model="externalAppForm.icon" list="external-app-icons" maxlength="64" required placeholder="ri-apps-2-line" />
+                  <datalist id="external-app-icons">
+                    <option value="ri-apps-2-line"></option>
+                    <option value="ri-sparkling-2-line"></option>
+                    <option value="ri-robot-2-line"></option>
+                    <option value="ri-dashboard-3-line"></option>
+                    <option value="ri-global-line"></option>
+                    <option value="ri-code-box-line"></option>
+                  </datalist>
+                </label>
+                <label>
+                  <span>所属分组</span>
+                  <select v-model="externalAppForm.group">
+                    <option value="PUBLIC">公共</option>
+                    <option value="PERSONAL">个人</option>
+                    <option value="TOOLS">工具</option>
+                  </select>
+                </label>
+                <label>
+                  <span>排序值</span>
+                  <input v-model.number="externalAppForm.order" type="number" min="0" max="999" required />
+                  <small>数值越小越靠前；每个内置菜单依次占用 10、20、30…</small>
+                </label>
+                <label>
+                  <span>菜单可见性</span>
+                  <button type="button" class="visibility-choice" :class="{ on: externalAppForm.visible }" :aria-pressed="externalAppForm.visible" @click="externalAppForm.visible = !externalAppForm.visible">
+                    <span class="choice-icon"><i :class="externalAppForm.visible ? 'ri-eye-line' : 'ri-eye-off-line'"></i></span>
+                    <span>{{ externalAppForm.visible ? '显示在一级导航中' : '从一级导航中隐藏' }}</span>
+                  </button>
+                </label>
+                <label class="wide-field">
+                  <span>应用入口</span>
+                  <input v-model="externalAppForm.appUrl" maxlength="255" required placeholder="/my-app/ 或 https://app.example.com/" />
+                  <small>同域路径会沿用 WAO Session；跨域 HTTPS 地址是否可嵌入取决于目标应用的 Cookie 和 CSP。</small>
+                </label>
+                <label class="wide-field">
+                  <span>健康检查地址（可选）</span>
+                  <input v-model="externalAppForm.healthUrl" maxlength="255" placeholder="/api/my-app/health" />
+                  <small>配置后会先探测服务再加载页面；留空则直接加载应用入口。</small>
+                </label>
+                <div class="menu-preview">
+                  <span class="preview-label">导航预览</span>
+                  <span class="menu-preview-group">{{ { PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' }[externalAppForm.group] }}</span>
+                  <span v-if="externalAppForm.visible" class="menu-preview-item"><i :class="externalAppForm.icon || 'ri-apps-2-line'"></i>{{ externalAppForm.label || '未命名应用' }}</span>
+                  <span v-else class="menu-preview-hidden">菜单已隐藏，注册路由仍然可直接访问</span>
+                </div>
+                <div class="site-actions">
+                  <button type="button" class="btn-ghost" :disabled="externalAppsSaving" @click="cancelExternalAppEdit">取消</button>
+                  <button class="btn-primary" :disabled="externalAppsSaving || !externalAppDirty">
+                    {{ externalAppsSaving ? '保存中…' : externalAppDirty ? '保存并立即生效' : '已保存' }}
+                  </button>
+                </div>
+              </form>
+              <div v-else class="registry-no-selection">选择一个应用编辑，或注册新应用。</div>
+            </div>
+            <div class="hint">注册表全局生效：新增、改名、换组、调序、隐藏或删除菜单都只写服务端配置，不需要重新构建 WAO。删除注册只移除菜单和通用页面配置，不会删除独立应用的服务或数据。</div>
           </div>
         </template>
 
@@ -941,6 +1088,27 @@ async function bindFeishu() {
 .site-form small { color: var(--wao-text-faint); line-height: 1.5; }
 .site-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; }
 .menu-loading { margin-top: 16px; padding: 28px 12px; border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); text-align: center; font-size: 12.5px; }
+.registry-load-error { margin-top: 16px; padding: 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 12.5px; }
+.registry-layout { margin-top: 16px; display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.registry-list { display: flex; flex-direction: column; gap: 7px; }
+.registry-row { display: flex; min-width: 0; border: 1px solid var(--wao-line); border-radius: 9px; background: #fff; overflow: hidden; }
+.registry-row.active { border-color: rgba(67, 88, 214, .45); box-shadow: 0 0 0 3px rgba(67, 88, 214, .08); }
+.registry-select { flex: 1; min-width: 0; padding: 10px; display: flex; align-items: center; gap: 9px; border: 0; background: transparent; cursor: pointer; text-align: left; }
+.registry-select:hover, .registry-delete:hover { background: var(--wao-bg-hover-2); }
+.registry-icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 8px; background: rgba(67, 88, 214, .08); color: var(--wao-primary); font-size: 17px; }
+.registry-meta { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.registry-meta strong { overflow: hidden; color: var(--wao-text); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.registry-meta small { overflow: hidden; color: var(--wao-text-faint); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.registry-state { flex: none; color: var(--wao-success-strong); font-size: 10.5px; }
+.registry-state.off { color: var(--wao-text-faint); }
+.registry-delete { width: 34px; flex: none; border: 0; border-left: 1px solid var(--wao-line); background: transparent; color: var(--wao-text-faint); cursor: pointer; }
+.registry-delete:hover { color: var(--wao-danger); }
+.registry-empty, .registry-no-selection { min-height: 150px; padding: 20px; display: grid; place-items: center; align-content: center; gap: 7px; border: 1px dashed var(--wao-line-strong); border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-faint); text-align: center; font-size: 11.5px; }
+.registry-empty i { font-size: 28px; }
+.registry-empty strong { color: var(--wao-text-3); font-size: 12.5px; }
+.registry-editor { margin-top: 0; padding: 15px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-sub); }
+.editor-title { grid-column: 1 / -1; padding-bottom: 10px; border-bottom: 1px solid var(--wao-line); color: var(--wao-text); font-size: 13px; font-weight: 600; }
+.wide-field { grid-column: 1 / -1; }
 .visibility-choice { height: 36px; padding: 0 11px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: #fff; color: var(--wao-text-3); cursor: pointer; text-align: left; }
 .visibility-choice.on { border-color: rgba(67, 88, 214, .35); background: rgba(67, 88, 214, .05); color: var(--wao-primary); }
 .choice-icon { width: 20px; display: inline-grid; place-items: center; }
@@ -1361,6 +1529,8 @@ async function bindFeishu() {
   .card { padding: 14px; }
   .credential-form, .profile-form, .webhook-form { grid-template-columns: 1fr; }
   .site-form { grid-template-columns: 1fr; }
+  .registry-layout { grid-template-columns: 1fr; }
+  .editor-title, .wide-field { grid-column: 1; }
   .bind-actions, .token-input, .fresh-row { align-items: stretch; flex-direction: column; }
   .btn-primary, .btn-ghost { justify-content: center; }
   .grid-tokens { grid-template-columns: minmax(130px, 1fr) 70px; }

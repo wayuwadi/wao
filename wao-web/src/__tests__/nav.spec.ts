@@ -1,69 +1,61 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_MEDIA_AGENT_MENU,
+  DEFAULT_EXTERNAL_APPS,
   MODULES,
   NAV_GROUPS,
   PERSONAL_ITEMS,
+  externalAppItemId,
   resolveNavGroups,
 } from '@/config/nav'
 import router from '@/router'
+import type { ModuleId } from '@/types'
 
 describe('侧边栏导航配置', () => {
-  it('每个分组里的模块都能在 MODULES 里查到（侧边栏渲染直接吃这份配置）', () => {
-    for (const g of NAV_GROUPS) {
-      for (const id of g.items) {
-        expect(MODULES[id], `分组「${g.label || '首页'}」里的 ${id} 缺少模块元数据`).toBeTruthy()
-      }
-    }
+  it('内置菜单都有模块元数据，外部应用使用命名空间标识', () => {
+    const ids = NAV_GROUPS.flatMap((group) => group.items)
+    const externalIds = ids.filter((id) => id.startsWith('external:'))
+    const missingModules = ids
+      .filter((id) => !id.startsWith('external:'))
+      .filter((id) => !MODULES[id as ModuleId])
+
+    expect(externalIds).toEqual(externalIds.filter((id) => /^external:[a-z0-9-]+$/.test(id)))
+    expect(missingModules).toEqual([])
   })
 
-  it('回收站已下线：侧边栏不再有这个菜单，路由也一并撤掉', () => {
-    const ids = NAV_GROUPS.flatMap((g) => g.items)
-    expect(ids).not.toContain('trash')
-    expect(Object.keys(MODULES)).not.toContain('trash')
-    expect(router.getRoutes().some((r) => r.name === 'trash')).toBe(false)
-  })
-
-  it('回收站入口仍留在知识库页内，不随菜单一起消失', () => {
-    // 软删除与 7 天保留期（ADR-018）没有下线，只是不再占一个一级菜单。
-    expect(router.getRoutes().some((r) => r.name === 'knowledge')).toBe(true)
-  })
-
-  it('自媒体 Agent 默认出现在公共组并拥有受保护路由', () => {
+  it('自媒体 Agent 默认出现在公共组，并保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
-    expect(publicGroup?.items).toEqual(['projects', 'mediaAgent'])
-    expect(MODULES.mediaAgent.path).toBe('/media-agent')
-    const route = router.getRoutes().find((item) => item.name === 'media-agent')
-    expect(route?.meta.module).toBe('mediaAgent')
-    expect(route?.meta.public).not.toBe(true)
+    expect(publicGroup?.items).toEqual(['projects', externalAppItemId('media-agent')])
+    expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe('/apps/media-agent')
+    const route = router.getRoutes().find((item) => item.name === 'external-app')
+    expect(route?.path).toBe('/apps/:appId')
+    expect(route?.meta.tabKind).toBe('external')
   })
 
-  it('按全局配置移动、排序或隐藏 Agent 菜单，不改变个人模块顺序', () => {
-    const tools = resolveNavGroups(PERSONAL_ITEMS, {
-      ...DEFAULT_MEDIA_AGENT_MENU,
-      group: 'TOOLS',
-      order: 0,
-      label: '内容助手',
-    })
-    expect(tools.find((group) => group.label === '工具')?.items).toEqual(['mediaAgent', 'automation', 'files'])
-
+  it('多个外部应用可分组排序和隐藏，且不破坏个人拖拽顺序', () => {
     const personalOrder = [...PERSONAL_ITEMS].reverse()
-    const personal = resolveNavGroups(personalOrder, {
-      ...DEFAULT_MEDIA_AGENT_MENU,
-      group: 'PERSONAL',
-      order: 15,
-    })
-    expect(personal.find((group) => group.label === '个人')?.items).toEqual([
-      personalOrder[0],
-      'mediaAgent',
-      ...personalOrder.slice(1),
+    const groups = resolveNavGroups(personalOrder, [
+      { ...DEFAULT_EXTERNAL_APPS[0]!, group: 'PERSONAL', order: 15 },
+      {
+        id: 'data-studio', label: '数据工作台', icon: 'ri-dashboard-3-line',
+        group: 'TOOLS', order: 0, visible: true, appUrl: '/studio/', healthUrl: '',
+      },
+      {
+        id: 'hidden-app', label: '隐藏应用', icon: 'ri-apps-2-line',
+        group: 'PUBLIC', order: 0, visible: false, appUrl: '/hidden/', healthUrl: '',
+      },
     ])
 
-    const hidden = resolveNavGroups(personalOrder, {
-      ...DEFAULT_MEDIA_AGENT_MENU,
-      visible: false,
-    })
-    expect(hidden.flatMap((group) => group.items)).not.toContain('mediaAgent')
-    expect(hidden.find((group) => group.label === '个人')?.items).toEqual(personalOrder)
+    expect(groups.find((group) => group.label === '个人')?.items).toEqual([
+      personalOrder[0], externalAppItemId('media-agent'), ...personalOrder.slice(1),
+    ])
+    expect(groups.find((group) => group.label === '工具')?.items[0]).toBe(externalAppItemId('data-studio'))
+    expect(groups.flatMap((group) => group.items)).not.toContain(externalAppItemId('hidden-app'))
+  })
+
+  it('回收站仍只保留知识库内入口', () => {
+    const ids = NAV_GROUPS.flatMap((group) => group.items)
+    expect(ids).not.toContain('trash')
+    expect(router.getRoutes().some((route) => route.name === 'trash')).toBe(false)
+    expect(router.getRoutes().some((route) => route.name === 'knowledge')).toBe(true)
   })
 })

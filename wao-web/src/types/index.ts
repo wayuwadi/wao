@@ -26,12 +26,11 @@ export type ModuleId =
   | 'knowledge'
   | 'files'
   | 'automation'
-  | 'mediaAgent'
   | 'vault'
   | 'settings'
 
 /** 页签种类：模块页 / 项目详情 / 知识库详情。 */
-export type TabKind = 'module' | 'project' | 'kb'
+export type TabKind = 'module' | 'project' | 'kb' | 'external'
 
 /** 一个多页签栏中的页签。key 规则：模块=模块名；项目=`proj:<id>`；知识库=`kb:<id>`。 */
 export interface Tab {

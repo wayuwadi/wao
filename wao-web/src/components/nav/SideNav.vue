@@ -7,6 +7,7 @@ import { useSessionStore } from '@/stores/session'
 import { useFavoritesStore } from '@/stores/favorites'
 import type { Favorite } from '@/api/favorites'
 import type { ModuleId } from '@/types'
+import { PERSONAL_ITEMS, externalAppItemId, type NavItemId } from '@/config/nav'
 
 const emit = defineEmits<{ (e: 'open-search'): void }>()
 
@@ -16,18 +17,23 @@ const favorites = useFavoritesStore()
 const route = useRoute()
 const router = useRouter()
 
-const activeModule = computed(() => route.meta.module as ModuleId | undefined)
+const activeItem = computed<NavItemId | undefined>(() =>
+  route.meta.tabKind === 'external'
+    ? externalAppItemId(String(route.params.appId))
+    : route.meta.module as ModuleId | undefined,
+)
 
 const groups = computed(() => nav.groups)
 
 onMounted(() => {
   nav.loadPersonalOrder()
-  nav.loadMediaAgentMenu()
+  nav.loadExternalApps()
   favorites.load()
 })
 
-function go(id: ModuleId) {
-  router.push(nav.moduleMeta(id).path)
+function go(id: NavItemId) {
+  const meta = nav.itemMeta(id)
+  if (meta) router.push(meta.path)
 }
 function goSettings() {
   router.push('/settings')
@@ -64,6 +70,10 @@ function onDrop(targetId: ModuleId) {
 function onDragEnd() {
   dragId.value = null
   dragOverId.value = null
+}
+
+function isPersonalModule(id: NavItemId): id is ModuleId {
+  return !id.startsWith('external:') && PERSONAL_ITEMS.includes(id as ModuleId)
 }
 
 // ---- 收藏分组 ----
@@ -120,21 +130,21 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             :key="id"
             class="item"
             :class="{
-              active: activeModule === id,
+              active: activeItem === id,
               center: nav.collapsed,
               dragging: dragId === id,
               'drag-over': dragOverId === id,
             }"
-            :title="nav.moduleMeta(id).label"
-            :draggable="g.label === '个人' && id !== 'mediaAgent' && !nav.collapsed"
+            :title="nav.itemMeta(id)?.label"
+            :draggable="g.label === '个人' && isPersonalModule(id) && !nav.collapsed"
             @click="go(id)"
-            @dragstart="g.label === '个人' && id !== 'mediaAgent' && onDragStart(id, $event)"
-            @dragover.prevent="g.label === '个人' && id !== 'mediaAgent' && onDragOver(id)"
-            @drop.prevent="g.label === '个人' && id !== 'mediaAgent' && onDrop(id)"
+            @dragstart="g.label === '个人' && isPersonalModule(id) && onDragStart(id, $event)"
+            @dragover.prevent="g.label === '个人' && isPersonalModule(id) && onDragOver(id)"
+            @drop.prevent="g.label === '个人' && isPersonalModule(id) && onDrop(id)"
             @dragend="onDragEnd"
           >
-            <i :class="nav.moduleMeta(id).icon"></i>
-            <span v-if="!nav.collapsed" class="item-label">{{ nav.moduleMeta(id).label }}</span>
+            <i :class="nav.itemMeta(id)?.icon"></i>
+            <span v-if="!nav.collapsed" class="item-label">{{ nav.itemMeta(id)?.label }}</span>
           </button>
         </div>
 
