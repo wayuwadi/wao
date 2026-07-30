@@ -48,6 +48,7 @@
   --wao-danger: #d65454;
   --wao-danger-strong: #bc4141;
   --wao-danger-bg: #fbebeb;
+  --wao-danger-line: #f0c9c9;
 
   /* 人生领域色 */
   --wao-area-career: #4358d6;
@@ -95,10 +96,80 @@
   --wao-content-max: 1340px;
 }
 
+/* 深色模式 —— 与明亮模式保持相同的语义层级，仅反转亮度关系 */
 :root[data-theme='dark'] {
-  --wao-bg-page: #17181d; --wao-bg-side: #1d1f26; --wao-bg-card: #252831; --wao-bg-sub: #20232b; --wao-bg-sub-2: #1c1e25; --wao-bg-tab: #2a2d36; --wao-bg-hover: #30333d; --wao-bg-hover-2: #353944;
-  --wao-text: #f1f2f5; --wao-text-2: #d7d9e0; --wao-text-3: #b5b9c5; --wao-text-weak: #858b9a; --wao-text-faint: #727887; --wao-text-faint-2: #606674;
-  --wao-line: #393d48; --wao-line-control: #454a56; --wao-line-strong: #515665; --wao-divider: #343842; --wao-divider-2: #2d3039;
+  /* 品牌主色：略微提亮，保证在深色背景上的可读性 */
+  --wao-primary: #5b6fe8;
+  --wao-primary-hover: #7687f0;
+  --wao-primary-text: #7687f0;
+  --wao-primary-soft: #252b4d;
+  --wao-primary-soft-2: #1e2442;
+  --wao-primary-tint: #131624;
+  --wao-primary-line: #333a63;
+
+  /* 背景层级：由深到浅 */
+  --wao-bg-page: #0f1115;
+  --wao-bg-side: #13151c;
+  --wao-bg-card: #1a1c24;
+  --wao-bg-sub: #161820;
+  --wao-bg-sub-2: #1d1f28;
+  --wao-bg-tab: #21242e;
+  --wao-bg-hover: #252830;
+  --wao-bg-hover-2: #2a2d38;
+
+  /* 文字层级：由高到低 */
+  --wao-text: #f0f1f5;
+  --wao-text-2: #c4c7d2;
+  --wao-text-3: #8b8f9a;
+  --wao-text-weak: #6b6f7d;
+  --wao-text-faint: #5a5e6b;
+  --wao-text-faint-2: #4a4e59;
+
+  /* 边框 / 分隔线 */
+  --wao-line: #2d303b;
+  --wao-line-control: #363945;
+  --wao-line-strong: #3e424f;
+  --wao-divider: #23262e;
+  --wao-divider-2: #1d1f26;
+
+  /* 语义色：降低饱和度、压暗背景，避免刺眼 */
+  --wao-success: #4caf7c;
+  --wao-success-strong: #6ac295;
+  --wao-success-bg: #143425;
+  --wao-success-line: #24563b;
+  --wao-warning: #e0ac52;
+  --wao-warning-strong: #ecc476;
+  --wao-warning-bg: #33270e;
+  --wao-danger: #e86e6e;
+  --wao-danger-strong: #f28a8a;
+  --wao-danger-bg: #381515;
+  --wao-danger-line: #5a2525;
+
+  /* 人生领域色保持色相，适度提亮 */
+  --wao-area-career: #5b6fe8;
+  --wao-area-health: #4caf7c;
+  --wao-area-family: #d4a34d;
+  --wao-area-finance: #9678e0;
+  --wao-area-growth: #d47aa3;
+  --wao-caldav-home: #2ea8a8;
+  --wao-caldav-work: #d47aa3;
+
+  /* 优先级色 */
+  --wao-p0: #e86e6e;
+  --wao-p0-bg: #381515;
+  --wao-p1: #e0ac52;
+  --wao-p1-bg: #33270e;
+  --wao-p2: #5b6fe8;
+  --wao-p2-bg: #1e2442;
+  --wao-p3: #8b8f9a;
+  --wao-p3-bg: #2a2d38;
+
+  /* 阴影：使用浅色半透明，降低不透明度 */
+  --wao-shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.24);
+  --wao-shadow-card-hover-2: 0 3px 12px rgba(0, 0, 0, 0.28);
+  --wao-shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.36);
+  --wao-shadow-pop-2: 0 10px 30px rgba(0, 0, 0, 0.42);
+  --wao-shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.52);
 }
 
 /* 全局动画 —— 与原型 keyframes 命名一致 */
