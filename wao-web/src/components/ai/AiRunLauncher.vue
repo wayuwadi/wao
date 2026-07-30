@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchAiProjectConfig, fetchAiRunners } from '@/api/ai'
 import { fetchAiAccounts, type AiAccount } from '@/api/aiAccount'
 import { AI_ENGINES, engineColor } from '@/composables/aiEngines'
@@ -15,6 +15,7 @@ const engine = ref<AiEngine>('codex')
 const runnerId = ref('')
 const accountId = ref('')
 const preferredRunnerId = ref('')
+let runnerRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 /** 装了这种 AI 工具的电脑；离线的也列出来，选中后任务会排队等它上线。 */
 const candidates = computed(() => runners.value.filter((runner) => runner.engines.includes(engine.value)))
@@ -66,6 +67,14 @@ watch(accountId, (next) => {
     : ''
 })
 
+async function refreshRunners() {
+  try {
+    runners.value = await fetchAiRunners()
+  } catch {
+    // 保留上一次成功状态；短暂网络失败不能把在线电脑闪成离线。
+  }
+}
+
 onMounted(async () => {
   try {
     const [nodes, config, managedAccounts] = await Promise.all([
@@ -87,7 +96,12 @@ onMounted(async () => {
     // 读取失败时保留默认选择，用户仍然可以直接开跑。
   } finally {
     loading.value = false
+    runnerRefreshTimer = setInterval(refreshRunners, 5_000)
   }
+})
+
+onBeforeUnmount(() => {
+  if (runnerRefreshTimer) clearInterval(runnerRefreshTimer)
 })
 </script>
 

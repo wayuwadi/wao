@@ -932,10 +932,10 @@ export const useDataStore = defineStore('data', () => {
     return kb
   }
 
-  /** 更新项目字段（名称 / 领域 / 目标 / 图标 / 通知开关）；apiLive 时写透后端。 */
+  /** 更新项目字段（名称 / 领域 / 状态 / 目标 / 图标 / 通知开关）；apiLive 时写透后端。 */
   async function updateProject(
     id: string,
-    patch: { name?: string; area?: string; goal?: string; icon?: string; notifyEnabled?: boolean },
+    patch: { name?: string; area?: string; status?: Project['status']; goal?: string; icon?: string; notifyEnabled?: boolean },
   ): Promise<boolean> {
     const p = projectById(id)
     if (!p) return false

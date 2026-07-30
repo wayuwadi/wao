@@ -7,6 +7,7 @@ import { useUiStore } from '@/stores/ui'
 import { fetchCaldavAccounts, fetchCaldavEvents, type CaldavAccount, type CaldavEvent } from '@/api/caldav'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
+import type { Task } from '@/types'
 // 配置面板打开才需要，不进日历页首屏包。
 const CaldavPanel = defineAsyncComponent(() => import('@/components/calendar/CaldavPanel.vue'))
 
@@ -298,12 +299,30 @@ function quickCreate(dayIso: string) {
   ui.openModal('task', '', dayIso)
 }
 
-// ---------- 全部未完成任务：按优先级、具体时间排序；拖上日历可调整日期 ----------
+// ---------- 待安排任务：只收未排期与已逾期；按优先级、具体时间排序 ----------
 const showBacklog = ref(true)
+const backlogFilter = ref<'attention' | 'unplanned' | 'overdue'>('attention')
+const unfinishedForMember = computed(() =>
+  data.tasks.filter((t) => t.status !== '已完成' && t.owner === calendarMemberId.value))
+function isUnplanned(task: Task) {
+  return !task.due && !task.startAt
+}
+function isOverdue(task: Task) {
+  return !!task.due && task.due < data.today
+}
+const backlogCounts = computed(() => ({
+  attention: unfinishedForMember.value.filter((t) => isUnplanned(t) || isOverdue(t)).length,
+  unplanned: unfinishedForMember.value.filter(isUnplanned).length,
+  overdue: unfinishedForMember.value.filter(isOverdue).length,
+}))
 const backlog = computed(() => {
   const priority = { P0: 0, P1: 1, P2: 2, P3: 3 }
-  return data.tasks
-    .filter((t) => t.status !== '已完成' && t.owner === calendarMemberId.value)
+  return unfinishedForMember.value
+    .filter((t) => backlogFilter.value === 'unplanned'
+      ? isUnplanned(t)
+      : backlogFilter.value === 'overdue'
+        ? isOverdue(t)
+        : isUnplanned(t) || isOverdue(t))
     .map((t) => ({
       id: t.id, title: t.title, pr: t.pr,
       when: t.startAt || t.due || '',
@@ -460,17 +479,27 @@ function onDropDay(dayIso: string) {
         <template v-else><div class="year-view"><button v-for="item in yearMonths" :key="item.index" class="year-month" @click="calM = item.index; selectMonth()"><b>{{ item.title }}</b><span>{{ item.count ? `${item.count} 项日程` : '暂无日程' }}</span></button></div></template>
       </div>
 
-      <!-- 全部未完成任务 -->
+      <!-- 未排期与已逾期任务 -->
       <aside class="backlog" :class="{ folded: !showBacklog }">
-        <button class="bl-head" @click="showBacklog = !showBacklog">
-          <i class="ri-inbox-line"></i>
-          <span class="bl-title">未完成任务</span>
-          <span class="bl-count wao-tabular">{{ backlog.length }}</span>
-          <i class="bl-chev" :class="showBacklog ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'"></i>
-        </button>
+        <div class="bl-head">
+          <button class="bl-toggle" aria-label="展开或收起待安排任务" @click="showBacklog = !showBacklog">
+            <i class="ri-inbox-line"></i>
+            <span class="bl-title">待安排任务</span>
+            <span class="bl-count wao-tabular">{{ backlog.length }}</span>
+            <i class="bl-chev" :class="showBacklog ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'"></i>
+          </button>
+        </div>
         <template v-if="showBacklog">
-          <div class="bl-hint">按 P0–P3 和具体时间排序；拖到日期格可新增或调整排期</div>
-          <div v-if="!backlog.length" class="bl-empty">当前成员没有未完成任务</div>
+          <label class="bl-filter">
+            <span>筛选</span>
+            <select v-model="backlogFilter">
+              <option value="attention">未排期 + 已逾期（{{ backlogCounts.attention }}）</option>
+              <option value="unplanned">仅未分配时间（{{ backlogCounts.unplanned }}）</option>
+              <option value="overdue">仅逾期未完成（{{ backlogCounts.overdue }}）</option>
+            </select>
+          </label>
+          <div class="bl-hint">按 P0–P3 排序；未排期任务可拖到日期格完成排期</div>
+          <div v-if="!backlog.length" class="bl-empty">当前筛选下没有待安排任务</div>
           <div
             v-for="t in backlog"
             :key="t.id"
@@ -864,6 +893,11 @@ function onDropDay(dayIso: string) {
 .bl-head {
   display: flex;
   align-items: center;
+  width: 100%;
+}
+.bl-toggle {
+  display: flex;
+  align-items: center;
   gap: 7px;
   width: 100%;
   border: none;
@@ -873,9 +907,28 @@ function onDropDay(dayIso: string) {
   font-size: 13px;
   color: var(--wao-text-1);
 }
-.bl-head i {
+.bl-toggle i {
   font-size: 15px;
   color: var(--wao-text-3);
+}
+.bl-filter {
+  margin: 7px 4px 2px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--wao-text-weak);
+  font-size: 10.5px;
+}
+.bl-filter select {
+  min-width: 0;
+  flex: 1;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--wao-text-2);
+  font-size: 10.5px;
 }
 .bl-title {
   font-weight: 600;

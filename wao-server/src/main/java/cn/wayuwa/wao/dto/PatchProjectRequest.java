@@ -6,6 +6,7 @@ import java.util.List;
 public record PatchProjectRequest(
         String name,
         String area,
+        String status,
         String goal,
         String icon,
         /** 这个项目的动静要不要发飞书群；null 表示不改。 */
@@ -15,6 +16,12 @@ public record PatchProjectRequest(
 
     /** 兼容尚未引入任务分组的既有调用。 */
     public PatchProjectRequest(String name, String area, String goal, String icon, Boolean notifyEnabled) {
-        this(name, area, goal, icon, notifyEnabled, null);
+        this(name, area, null, goal, icon, notifyEnabled, null);
+    }
+
+    /** 兼容尚未引入项目状态维护的任务分组调用。 */
+    public PatchProjectRequest(String name, String area, String goal, String icon, Boolean notifyEnabled,
+                               List<TaskGroupDto> taskGroups) {
+        this(name, area, null, goal, icon, notifyEnabled, taskGroups);
     }
 }

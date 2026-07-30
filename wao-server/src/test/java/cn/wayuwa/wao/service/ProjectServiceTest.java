@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 
 import cn.wayuwa.wao.common.NotFoundException;
+import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.dto.Activity;
 import cn.wayuwa.wao.dto.CreateProjectRequest;
@@ -93,6 +94,22 @@ class ProjectServiceTest {
         // 不带这个字段的更新（改名、换图标）不该顺手把开关重置掉
         assertThat(service.update("p2", new PatchProjectRequest("改个名字", null, null, null, null), "wg").notifyEnabled())
                 .isTrue();
+    }
+
+    @Test
+    void projectStatusCanBeMaintainedAndRejectsUnknownValues() {
+        ProjectEntity e = project("p-status", "wg", "[\"wg\"]");
+        e.setStatus("规划中");
+        when(mapper.selectById("p-status")).thenReturn(e);
+
+        ProjectDto updated = service.update("p-status",
+                new PatchProjectRequest(null, null, "进行中", null, null, null, null), "wg");
+
+        assertThat(updated.status()).isEqualTo("进行中");
+        assertThatThrownBy(() -> service.update("p-status",
+                new PatchProjectRequest(null, null, "随便写", null, null, null, null), "wg"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("不支持的项目状态");
     }
 
     @Test
