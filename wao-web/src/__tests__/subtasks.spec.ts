@@ -81,6 +81,18 @@ describe('data store · 子任务', () => {
     expect(data.subById(taskId, a)?.text).toBe('A')
     expect(data.subById(taskId, c)?.text).toBe('C')
   })
+
+  it('拖拽排序只移动位置，稳定 id 与内容保持不变', () => {
+    const a = data.addSub(taskId, 'A')!
+    const b = data.addSub(taskId, 'B')!
+    data.addSub(taskId, 'C')
+
+    data.reorderSub(taskId, a, b)
+
+    expect(data.taskById(taskId)!.subs.map((sub) => sub.text)).toEqual(['C', 'A', 'B'])
+    expect(data.subById(taskId, a)?.text).toBe('A')
+    expect(data.taskById(taskId)!.activity[0]!.text).toContain('调整了子任务')
+  })
 })
 
 describe('data store · 新建任务', () => {
@@ -95,7 +107,7 @@ describe('data store · 新建任务', () => {
 
     const t = await data.addTask({
       title: '立刻出现的任务', project: 'p1', pr: 'P2', owner: 'wg', due: '2026-08-01',
-      desc: '', images: [],
+      desc: '', images: [], startAt: null, endAt: null,
     })
 
     expect(t.title).toBe('立刻出现的任务')

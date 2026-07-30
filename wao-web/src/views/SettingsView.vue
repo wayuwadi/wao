@@ -8,14 +8,21 @@ import { updateEmailCredential, updateProfile, unlinkIdentity, apiCreateAccount,
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import {
-  fetchExternalAppRegistry, fetchSiteInfo, fetchWebhookConfig, saveExternalAppRegistry,
+  fetchBuiltinMenuRegistry, fetchExternalAppRegistry, fetchSiteInfo, fetchWebhookConfig,
+  saveBuiltinMenuRegistry, saveExternalAppRegistry,
   saveSiteInfo, saveWebhookConfig, testWebhook, type FeishuWebhookConfig, type SiteInfo,
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useNavStore } from '@/stores/nav'
-import { DEFAULT_EXTERNAL_APPS, externalAppPath, type ExternalAppConfig } from '@/config/nav'
+import {
+  DEFAULT_EXTERNAL_APPS,
+  DEFAULT_BUILTIN_MENUS,
+  externalAppPath,
+  type BuiltinMenuConfig,
+  type ExternalAppConfig,
+} from '@/config/nav'
 
 const session = useSessionStore()
 const data = useDataStore()
@@ -185,6 +192,9 @@ const externalAppsLoaded = ref(false)
 const externalAppsLoading = ref(false)
 const externalAppsSaving = ref(false)
 const externalAppsError = ref('')
+const builtinMenus = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map((menu) => ({ ...menu })))
+const builtinMenusLoaded = ref(false)
+const builtinMenusSaving = ref(false)
 const externalEditorMode = ref<'none' | 'edit' | 'new'>('none')
 const editingExternalAppId = ref('')
 
@@ -257,6 +267,30 @@ async function loadExternalAppSettings() {
     externalAppsError.value = error instanceof Error ? error.message : '读取外部应用注册表失败'
   } finally {
     externalAppsLoading.value = false
+  }
+}
+
+async function loadBuiltinMenuSettings() {
+  try {
+    builtinMenus.value = (await fetchBuiltinMenuRegistry()).menus.map((menu) => ({ ...menu }))
+    builtinMenusLoaded.value = true
+    nav.applyBuiltinMenus(builtinMenus.value)
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '读取内置菜单注册表失败', 'ri-error-warning-line')
+  }
+}
+
+async function saveBuiltinMenuSettings() {
+  builtinMenusSaving.value = true
+  try {
+    const registry = await saveBuiltinMenuRegistry(builtinMenus.value)
+    builtinMenus.value = registry.menus.map((menu) => ({ ...menu }))
+    nav.applyBuiltinMenus(registry.menus)
+    toast('内置菜单注册表已保存并立即生效', 'ri-check-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '保存内置菜单注册表失败', 'ri-error-warning-line')
+  } finally {
+    builtinMenusSaving.value = false
   }
 }
 
@@ -412,7 +446,10 @@ async function toggleProjectNotify(id: string) {
 
 watch(tab, (t) => {
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
-  if (t === 'navigation' && !externalAppsLoaded.value) loadExternalAppSettings()
+  if (t === 'navigation') {
+    if (!externalAppsLoaded.value) loadExternalAppSettings()
+    if (!builtinMenusLoaded.value) loadBuiltinMenuSettings()
+  }
   if (t === 'webhook' && !webhook.value) loadWebhook()
 }, { immediate: true })
 
@@ -551,7 +588,43 @@ async function bindFeishu() {
 
         <!-- 系统 · 外部应用菜单注册表 -->
         <template v-else-if="tab === 'navigation'">
-          <div class="s-h1">外部应用</div>
+          <div class="s-h1">一级菜单</div>
+          <div class="card">
+            <div class="card-row wrap">
+              <div class="card-title">内置菜单注册表</div>
+              <span class="connected"><span class="c-dot"></span>{{ builtinMenus.length }} 个内置菜单</span>
+              <div class="spacer"></div>
+              <button class="btn-primary" :disabled="builtinMenusSaving" @click="saveBuiltinMenuSettings">
+                {{ builtinMenusSaving ? '保存中…' : '保存并立即生效' }}
+              </button>
+            </div>
+            <div class="builtin-menu-list">
+              <div v-for="menuItem in builtinMenus" :key="menuItem.id" class="builtin-menu-row">
+                <code>{{ menuItem.id }}</code>
+                <input v-model.trim="menuItem.label" maxlength="24" aria-label="菜单名称" />
+                <input v-model.trim="menuItem.icon" maxlength="64" aria-label="菜单图标" />
+                <input v-model="menuItem.group" list="builtin-menu-groups" aria-label="所属分组" />
+                <input v-model.number="menuItem.order" inputmode="numeric" aria-label="排序值" />
+                <button
+                  type="button"
+                  class="visibility-choice compact"
+                  :class="{ on: menuItem.visible }"
+                  @click="menuItem.visible = !menuItem.visible"
+                >
+                  <i :class="menuItem.visible ? 'ri-eye-line' : 'ri-eye-off-line'"></i>
+                  {{ menuItem.visible ? '显示' : '隐藏' }}
+                </button>
+              </div>
+              <datalist id="builtin-menu-groups">
+                <option value="ROOT">顶层</option>
+                <option value="PUBLIC">公共</option>
+                <option value="PERSONAL">个人</option>
+                <option value="TOOLS">工具</option>
+              </datalist>
+            </div>
+            <div class="hint">稳定标识和路由仍由代码保护；名称、图标、分组、排序和显隐与外部应用一样统一在注册表维护。隐藏菜单不会禁用直达地址。</div>
+          </div>
+
           <div class="card">
             <div class="card-row wrap">
               <div class="card-title">菜单注册表</div>
@@ -829,6 +902,28 @@ async function bindFeishu() {
 </template>
 
 <style scoped>
+.builtin-menu-list { display: grid; gap: 7px; margin-top: 14px; }
+.builtin-menu-row {
+  display: grid;
+  grid-template-columns: 92px 1fr 1.25fr 100px 72px 82px;
+  gap: 8px;
+  align-items: center;
+}
+.builtin-menu-row code { color: var(--wao-text-weak); font-size: 11.5px; }
+.builtin-menu-row input,
+.builtin-menu-row select {
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 7px;
+  padding: 0 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+}
+.visibility-choice.compact { min-height: 34px; padding: 0 8px; justify-content: center; }
+@media (max-width: 900px) {
+  .builtin-menu-row { grid-template-columns: 72px 1fr 1fr; }
+}
 .settings {
   display: flex;
   height: 100%;

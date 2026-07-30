@@ -118,10 +118,14 @@ public class TaskService {
         e.setCreatedBy(createdBy);
         e.setDueDate(StringUtils.hasText(req.due()) ? req.due() : today());
         e.setDescription(req.desc() == null ? "" : req.desc());
+        String startAt = dateTime(req.startAt());
+        String endAt = dateTime(req.endAt());
+        validateRange(startAt, endAt);
         TaskDetail detail = new TaskDetail(
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                 List.of(new Activity("ri-add-line", "#9A9DA9", "创建了任务", now(), createdBy)),
-                nn(req.images()), StringUtils.hasText(req.groupId()) ? req.groupId() : null);
+                nn(req.images()), StringUtils.hasText(req.groupId()) ? req.groupId() : null,
+                startAt, endAt);
         e.setDetailJson(write(detail));
         taskMapper.insert(e);
         announceCreated(e, createdBy);
@@ -177,7 +181,8 @@ public class TaskService {
         }
 
         TaskDetail updated = new TaskDetail(d.parts(), d.steps(), d.subs(), d.files(), d.docs(),
-                d.linkTasks(), d.comments(), d.custom(), activity, d.images(), d.groupId());
+                d.linkTasks(), d.comments(), d.custom(), activity, d.images(), d.groupId(),
+                d.startAt(), d.endAt());
         e.setDetailJson(write(updated));
         taskMapper.updateById(e);
         announceCollecting(e, previousStatus, memberId);
@@ -220,9 +225,12 @@ public class TaskService {
         } else {
             e.setCompletedAt(null);
         }
+        String startAt = dateTime(dto.startAt());
+        String endAt = dateTime(dto.endAt());
+        validateRange(startAt, endAt);
         TaskDetail detail = new TaskDetail(dto.parts(), dto.steps(), dto.subs(), dto.files(),
                 dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images(),
-                dto.groupId());
+                dto.groupId(), startAt, endAt);
         e.setDetailJson(write(detail));
         if (previous == null) {
             taskMapper.insert(e);
@@ -515,7 +523,8 @@ public class TaskService {
         List<Activity> activity = new ArrayList<>(nn(detail.activity()));
         activity.add(0, edit(activityText, memberId));
         entity.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(), detail.docs(),
-                detail.linkTasks(), comments, detail.custom(), activity, detail.images(), detail.groupId())));
+                detail.linkTasks(), comments, detail.custom(), activity, detail.images(), detail.groupId(),
+                detail.startAt(), detail.endAt())));
         taskMapper.updateById(entity);
     }
 
@@ -567,7 +576,7 @@ public class TaskService {
                 nn(d.steps()), nn(d.subs()), nn(d.files()), nn(d.docs()),
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
                 e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
-                d.groupId());
+                d.groupId(), d.startAt(), d.endAt());
     }
 
     /**
@@ -615,6 +624,28 @@ public class TaskService {
     /** 请求里的日期：null 表示不改，其余去掉空白（空串即清空）。 */
     private static String date(String value) {
         return value == null ? null : value.trim();
+    }
+
+    /** 本地 ISO 日期时间；空值表示普通截止任务，非法值直接拒绝而不是把坏日程写进详情 JSON。 */
+    private static String dateTime(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String trimmed = value.trim();
+        try {
+            LocalDateTime.parse(trimmed);
+            return trimmed;
+        } catch (RuntimeException exception) {
+            throw new BadRequestException("任务时间必须是 yyyy-MM-ddTHH:mm 格式");
+        }
+    }
+
+    /** 时间段要么同时为空，要么结束严格晚于开始。 */
+    private static void validateRange(String startAt, String endAt) {
+        if (startAt == null && endAt == null) return;
+        if (startAt == null || endAt == null || !LocalDateTime.parse(endAt).isAfter(LocalDateTime.parse(startAt))) {
+            throw new BadRequestException("任务时间段必须同时填写，且结束时间晚于开始时间");
+        }
     }
 
     /** 库里的日期：null 与空串在这里是同一件事（都表示没设置）。 */

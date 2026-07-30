@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_EXTERNAL_APPS,
+  DEFAULT_BUILTIN_MENUS,
   MODULES,
   NAV_GROUPS,
   PERSONAL_ITEMS,
@@ -57,5 +58,19 @@ describe('侧边栏导航配置', () => {
     expect(ids).not.toContain('trash')
     expect(router.getRoutes().some((route) => route.name === 'trash')).toBe(false)
     expect(router.getRoutes().some((route) => route.name === 'knowledge')).toBe(true)
+  })
+
+  it('内置菜单注册表可改名、换组、调序和隐藏', () => {
+    const menus = DEFAULT_BUILTIN_MENUS.map((menu) => ({ ...menu }))
+    const calendar = menus.find((menu) => menu.id === 'calendar')!
+    calendar.label = '家庭日历'
+    calendar.group = 'PUBLIC'
+    calendar.order = 1
+    menus.find((menu) => menu.id === 'vault')!.visible = false
+
+    const groups = resolveNavGroups(PERSONAL_ITEMS, [], menus)
+
+    expect(groups.find((group) => group.label === '公共')?.items[0]).toBe('calendar')
+    expect(groups.flatMap((group) => group.items)).not.toContain('vault')
   })
 })

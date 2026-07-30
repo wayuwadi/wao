@@ -99,6 +99,8 @@ export interface CreateTaskPayload {
   pr: string
   owner: string
   due: string
+  startAt?: string | null
+  endAt?: string | null
   desc?: string
   images?: ImageRef[]
   /** 落进哪个任务分组（分组视图里的「+」带上它）。 */
@@ -115,6 +117,8 @@ export interface PatchTaskPayload {
   pr?: string
   owner?: string
   desc?: string
+  startAt?: string | null
+  endAt?: string | null
 }
 export async function apiPatchTask(id: string, payload: PatchTaskPayload): Promise<Task> {
   const res = await http.patch<ApiResponse<Task>>(`/api/tasks/${id}`, payload)

@@ -9,11 +9,16 @@ import cn.wayuwa.wao.dto.SaveMediaAgentMenuConfigRequest;
 import cn.wayuwa.wao.dto.SaveWebhookRequest;
 import cn.wayuwa.wao.dto.SaveSiteInfoRequest;
 import cn.wayuwa.wao.dto.SiteInfoDto;
+import cn.wayuwa.wao.dto.BuiltinMenuRegistryDto;
+import cn.wayuwa.wao.dto.SaveBuiltinMenuRegistryRequest;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.service.ExternalAppRegistryService;
 import cn.wayuwa.wao.service.SettingService;
+import cn.wayuwa.wao.service.BuiltinMenuRegistryService;
 import jakarta.validation.Valid;
 import java.net.URI;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -28,13 +33,23 @@ public class SettingController {
 
     private final SettingService settings;
     private final ExternalAppRegistryService externalApps;
+    private final BuiltinMenuRegistryService builtinMenus;
     private final FeishuWebhookNotifier notifier;
 
+    @Autowired
     public SettingController(SettingService settings, ExternalAppRegistryService externalApps,
+            BuiltinMenuRegistryService builtinMenus,
             FeishuWebhookNotifier notifier) {
         this.settings = settings;
         this.externalApps = externalApps;
+        this.builtinMenus = builtinMenus;
         this.notifier = notifier;
+    }
+
+    /** 兼容不关心内置菜单注册表的既有单元测试与嵌入调用。 */
+    public SettingController(SettingService settings, ExternalAppRegistryService externalApps,
+            FeishuWebhookNotifier notifier) {
+        this(settings, externalApps, new BuiltinMenuRegistryService(settings, new ObjectMapper()), notifier);
     }
 
     @GetMapping("/feishu-webhook")
@@ -77,6 +92,17 @@ public class SettingController {
     public ApiResponse<ExternalAppRegistryDto> saveExternalAppRegistry(
             @Valid @RequestBody SaveExternalAppRegistryRequest request) {
         return ApiResponse.ok(externalApps.saveRegistry(request));
+    }
+
+    @GetMapping("/navigation/builtin-menus")
+    public ApiResponse<BuiltinMenuRegistryDto> builtinMenuRegistry() {
+        return ApiResponse.ok(builtinMenus.getRegistry());
+    }
+
+    @PutMapping("/navigation/builtin-menus")
+    public ApiResponse<BuiltinMenuRegistryDto> saveBuiltinMenuRegistry(
+            @Valid @RequestBody SaveBuiltinMenuRegistryRequest request) {
+        return ApiResponse.ok(builtinMenus.saveRegistry(request));
     }
 
     @PutMapping("/feishu-webhook")
