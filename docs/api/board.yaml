@@ -338,17 +338,32 @@ paths:
       responses: { '200': { description: OK }, '400': { description: 字段为空、超长或备案查询链接不合法 } }
   /settings/navigation/media-agent:
     get:
-      summary: 读取自媒体 Agent 的全局一级菜单配置
+      summary: 兼容旧前端：读取自媒体 Agent 的全局一级菜单配置
+      deprecated: true
       responses:
         '200':
           description: 未保存时返回公共分组、排序值 20、显示中的默认配置
           content: { application/json: { schema: { $ref: '#/components/schemas/MediaAgentMenuConfig' } } }
     put:
-      summary: 保存菜单名称、所属分组、排序值与可见性，所有成员下次读取即生效
+      summary: 兼容旧前端：保存 Agent 菜单字段并写入通用注册表
+      deprecated: true
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/MediaAgentMenuConfig' } } }
       responses: { '200': { description: OK }, '400': { description: 名称、分组或排序值不合法 } }
+  /settings/navigation/external-apps:
+    get:
+      summary: 读取版本化外部应用菜单注册表；首次读取自动兼容已有 Agent 配置
+      responses:
+        '200':
+          description: 当前完整注册表
+          content: { application/json: { schema: { $ref: '#/components/schemas/ExternalAppRegistry' } } }
+    put:
+      summary: 整体保存外部应用注册表，新增、编辑、删除、排序和显隐立即全局生效
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SaveExternalAppRegistryRequest' } } }
+      responses: { '200': { description: OK }, '400': { description: 标识重复、字段格式或入口地址不安全 } }
   /public/site-info:
     get:
       summary: 免登录读取网站公开信息，供登录页、分享页与页脚展示
@@ -854,6 +869,29 @@ components:
         group: { type: string, enum: [PUBLIC, PERSONAL, TOOLS], description: 公共、个人或工具分组 }
         order: { type: integer, minimum: 0, maximum: 999, description: 同组内数值越小越靠前 }
         visible: { type: boolean, description: 是否显示在一级导航；隐藏不影响直接 URL 访问 }
+    ExternalAppConfig:
+      type: object
+      required: [id, label, icon, group, order, visible, appUrl, healthUrl]
+      properties:
+        id: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 40, example: media-agent }
+        label: { type: string, minLength: 1, maxLength: 24, example: 自媒体 Agent }
+        icon: { type: string, maxLength: 64, example: ri-sparkling-2-line }
+        group: { type: string, enum: [PUBLIC, PERSONAL, TOOLS] }
+        order: { type: integer, minimum: 0, maximum: 999 }
+        visible: { type: boolean }
+        appUrl: { type: string, maxLength: 255, example: /agent/, description: 站内绝对路径或 HTTPS 地址 }
+        healthUrl: { type: string, maxLength: 255, example: /api/agent/health, description: 可留空；站内绝对路径或 HTTPS 地址 }
+    ExternalAppRegistry:
+      type: object
+      required: [version, apps]
+      properties:
+        version: { type: integer, minimum: 1, example: 1 }
+        apps: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/ExternalAppConfig' } }
+    SaveExternalAppRegistryRequest:
+      type: object
+      required: [apps]
+      properties:
+        apps: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/ExternalAppConfig' } }
     FeishuSender:
       type: object
       description: 发言人映射，把飞书 open_id 对上 WAO 里显示的人名

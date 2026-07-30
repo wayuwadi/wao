@@ -12,7 +12,7 @@ import GlobalSearch from '@/components/overlays/GlobalSearch.vue'
 import Celebration from '@/components/overlays/CelebrationOverlay.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
 import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
-import { tabFromRoute } from '@/config/nav'
+import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
@@ -31,7 +31,10 @@ const preferences = usePreferenceStore()
 useShortcuts()
 
 const crumbA = computed(() => {
-  const mod = nav.moduleMeta(route.meta.module as ModuleId)
+  if (route.meta.tabKind === 'external') {
+    return nav.externalAppById(String(route.params.appId))?.label ?? '外部应用'
+  }
+  const mod = nav.itemMeta(route.meta.module as ModuleId)
   return mod?.label ?? '首页'
 })
 const crumbB = computed(() => {
@@ -46,7 +49,14 @@ watch(
   () => {
     const tab = tabFromRoute(route)
     if (tab) {
-      if (tab.key === 'mediaAgent') tab.label = nav.mediaAgentMenu.label
+      if (route.meta.tabKind === 'external') {
+        const app = nav.externalAppById(String(route.params.appId))
+        if (app) {
+          tab.label = app.label
+          tab.icon = app.icon
+          tab.labelPlaceholder = false
+        }
+      }
       tabs.open(tab)
     }
   },
@@ -54,8 +64,12 @@ watch(
 )
 
 watch(
-  () => nav.mediaAgentMenu.label,
-  (label) => tabs.setLabel('mediaAgent', label),
+  () => nav.externalApps.map((app) => `${app.id}|${app.label}|${app.icon}`).join('\n'),
+  () => {
+    for (const app of nav.externalApps) {
+      tabs.setMeta(externalAppItemId(app.id), { label: app.label, icon: app.icon })
+    }
+  },
   { immediate: true },
 )
 

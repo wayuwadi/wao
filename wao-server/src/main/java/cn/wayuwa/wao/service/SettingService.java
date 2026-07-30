@@ -32,6 +32,8 @@ public class SettingService {
     public static final String MEDIA_AGENT_MENU_GROUP = "navigation.media-agent.group";
     public static final String MEDIA_AGENT_MENU_ORDER = "navigation.media-agent.order";
     public static final String MEDIA_AGENT_MENU_VISIBLE = "navigation.media-agent.visible";
+    /** 通用外部应用菜单注册表（版本化 JSON）；为空时从上面的 Agent 旧键兼容读取。 */
+    public static final String EXTERNAL_APP_REGISTRY = "navigation.external-apps";
     /** 飞书群聊同步：自建应用凭据、目标群与落点知识库。 */
     public static final String CHAT_SYNC_APP_ID = "feishu.chat-sync.app-id";
     public static final String CHAT_SYNC_APP_SECRET = "feishu.chat-sync.app-secret";

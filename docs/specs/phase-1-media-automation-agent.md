@@ -8,7 +8,7 @@
 
 ## 首版用户路径
 
-1. 已登录用户点击 WAO 左侧“公共”分组中的“自媒体 Agent”，进入 `/media-agent`。
+1. 已登录用户点击 WAO 左侧“公共”分组中的“自媒体 Agent”，进入注册表生成的 `/apps/media-agent`；旧 `/media-agent` 自动重定向。
 2. WAO 先探测 `/api/agent/health`，成功后加载同域 `/agent/` iframe；失败时显示错误、重试和新窗口入口。
 3. 浏览器自动携带当前 `WAO_SESSION`。Agent Server 从共享 Session 读取 `wao.accountId`，无需第二次登录。
 4. 首次进入时为有效 WAO 账号创建默认 Agent 工作区。
@@ -24,7 +24,7 @@
 - 同域 `/agent/` 静态部署和 `/api/agent/**` 网关路由。
 - 复用 WAO `WAO_SESSION`、`wao.accountId`、`account/member`。
 - WAO 菜单、顶部页签、iframe 加载/错误/重试/新窗口状态。
-- 系统设置中的 Agent 菜单配置：全局修改名称、所属分组、排序值和可见性，保存后立即生效。
+- 系统设置中的外部应用注册表：新增、编辑、删除应用，并全局修改名称、图标、所属分组、排序值、可见性、页面入口和健康检查地址，保存后立即生效。
 - 持久化 Demo 工作台、草稿乐观锁、运行状态机和人工审核。
 - Linux 主节点、Windows/WSL2 从节点、云前端节点的 Agent 独立发布与回滚。
 
@@ -50,6 +50,7 @@
 - 未登录或 WAO Session 失效时，Agent 业务 API 返回 401，并引导重新登录 WAO。
 - 草稿保存后刷新仍存在，旧版本覆盖被拒绝；运行在后端持久化推进并可人工批准。
 - Agent 不可用时 WAO 其他模块可用，Agent 页显示失败与重试，不出现空白页。
-- 首次未配置时菜单默认位于“公共”分组；改名、调序、换组或隐藏只写系统配置，不要求重新发布 WAO。
+- 首次未配置注册表时自动继承已有 Agent 菜单配置并放在“公共”分组；改名、调序、换组或隐藏只写系统配置，不要求重新发布 WAO。
+- 新增第二个外部应用后，无需增加 WAO 路由或 Vue 页面即可显示菜单、打开独立页签并加载配置入口。
 - Agent 仓库单独推送可更新两台 Agent Server 和云端 Agent Web，WAO workflow 不运行。
 - WAO workflow 不覆盖 `/var/www/wao-agent/dist`，Agent workflow 不更新 WAO 静态目录或容器。

@@ -1,5 +1,5 @@
 import { http, type ApiResponse } from './http'
-import type { MediaAgentMenuConfig } from '@/config/nav'
+import type { ExternalAppConfig, ExternalAppRegistry } from '@/config/nav'
 
 /**
  * 系统级配置接口：网站信息、一级导航、飞书通知与飞书群聊同步。
@@ -46,11 +46,11 @@ export const fetchPublicSiteInfo = () => get<SiteInfo>('/api/public/site-info')
 export const fetchSiteInfo = () => get<SiteInfo>('/api/settings/site-info')
 export const saveSiteInfo = (payload: SiteInfo) => put<SiteInfo>('/api/settings/site-info', payload)
 
-/** WAO 壳内自媒体 Agent 的全局菜单展示配置。 */
-export const fetchMediaAgentMenu = () =>
-  get<MediaAgentMenuConfig>('/api/settings/navigation/media-agent')
-export const saveMediaAgentMenu = (payload: MediaAgentMenuConfig) =>
-  put<MediaAgentMenuConfig>('/api/settings/navigation/media-agent', payload)
+/** WAO 壳内所有外部应用的全局菜单与嵌入入口注册表。 */
+export const fetchExternalAppRegistry = () =>
+  get<ExternalAppRegistry>('/api/settings/navigation/external-apps')
+export const saveExternalAppRegistry = (apps: ExternalAppConfig[]) =>
+  put<ExternalAppRegistry>('/api/settings/navigation/external-apps', { apps })
 
 /** 群聊发言人映射：飞书 open_id ↔ 显示名。 */
 export interface FeishuSender {

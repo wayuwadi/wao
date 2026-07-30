@@ -6,17 +6,22 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import cn.wayuwa.wao.dto.ExternalAppRegistryDto;
+import cn.wayuwa.wao.dto.MediaAgentMenuConfigDto;
 import cn.wayuwa.wao.dto.SaveSiteInfoRequest;
-import cn.wayuwa.wao.dto.SaveMediaAgentMenuConfigRequest;
 import cn.wayuwa.wao.dto.SiteInfoDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
+import cn.wayuwa.wao.service.ExternalAppRegistryService;
 import cn.wayuwa.wao.service.SettingService;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class SettingControllerTest {
 
     private final SettingService settings = mock(SettingService.class);
-    private final SettingController controller = new SettingController(settings, mock(FeishuWebhookNotifier.class));
+    private final ExternalAppRegistryService externalApps = mock(ExternalAppRegistryService.class);
+    private final SettingController controller = new SettingController(
+            settings, externalApps, mock(FeishuWebhookNotifier.class));
 
     @Test
     void siteInfoUsesPublicDefaultsBeforeFirstSave() {
@@ -56,45 +61,22 @@ class SettingControllerTest {
     }
 
     @Test
-    void mediaAgentMenuUsesPublicDefaultsBeforeFirstSave() {
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_LABEL, "自媒体 Agent")).thenReturn("自媒体 Agent");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_GROUP, "PUBLIC")).thenReturn("PUBLIC");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_ORDER, "20")).thenReturn("20");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true")).thenReturn("true");
+    void mediaAgentCompatibilityEndpointDelegatesToRegistry() {
+        var expected = new MediaAgentMenuConfigDto("内容助手", "TOOLS", 5, false);
+        when(externalApps.getLegacyMediaAgentMenu()).thenReturn(expected);
 
         var result = controller.mediaAgentMenu().data();
 
-        assertThat(result.label()).isEqualTo("自媒体 Agent");
-        assertThat(result.group()).isEqualTo("PUBLIC");
-        assertThat(result.order()).isEqualTo(20);
-        assertThat(result.visible()).isTrue();
+        assertThat(result).isEqualTo(expected);
     }
 
     @Test
-    void saveMediaAgentMenuTrimsAndPersistsAllFields() {
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_LABEL, "自媒体 Agent")).thenReturn("内容助手");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_GROUP, "PUBLIC")).thenReturn("TOOLS");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_ORDER, "20")).thenReturn("5");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true")).thenReturn("false");
+    void externalAppRegistryEndpointDelegatesToRegistryService() {
+        var expected = new ExternalAppRegistryDto(1, List.of());
+        when(externalApps.getRegistry()).thenReturn(expected);
 
-        controller.saveMediaAgentMenu(new SaveMediaAgentMenuConfigRequest(" 内容助手 ", "TOOLS", 5, false));
+        var result = controller.externalAppRegistry().data();
 
-        verify(settings).put(SettingService.MEDIA_AGENT_MENU_LABEL, "内容助手");
-        verify(settings).put(SettingService.MEDIA_AGENT_MENU_GROUP, "TOOLS");
-        verify(settings).put(SettingService.MEDIA_AGENT_MENU_ORDER, "5");
-        verify(settings).put(SettingService.MEDIA_AGENT_MENU_VISIBLE, "false");
-    }
-
-    @Test
-    void mediaAgentMenuFallsBackWhenStoredGroupOrOrderIsInvalid() {
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_LABEL, "自媒体 Agent")).thenReturn("内容助手");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_GROUP, "PUBLIC")).thenReturn("UNKNOWN");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_ORDER, "20")).thenReturn("bad");
-        when(settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true")).thenReturn("true");
-
-        var result = controller.mediaAgentMenu().data();
-
-        assertThat(result.group()).isEqualTo("PUBLIC");
-        assertThat(result.order()).isEqualTo(20);
+        assertThat(result).isEqualTo(expected);
     }
 }

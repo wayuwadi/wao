@@ -3,28 +3,43 @@ import type { RouteLocationNormalized } from 'vue-router'
 
 /** 模块元数据 —— 图标 / 标签 / 路由，源自原型 vGlobal() 的 pages/icons/groups。 */
 export interface ModuleMeta {
-  id: ModuleId
+  id: NavItemId
   label: string
   icon: string
   path: string
 }
 
 export type MenuGroupCode = 'PUBLIC' | 'PERSONAL' | 'TOOLS'
+export type ExternalAppItemId = `external:${string}`
+export type NavItemId = ModuleId | ExternalAppItemId
 
-/** 可由系统设置覆盖的自媒体 Agent 一级菜单展示项。 */
-export interface MediaAgentMenuConfig {
+/** 可由系统设置注册的外部应用；菜单和通用嵌入页都由这份配置驱动。 */
+export interface ExternalAppConfig {
+  id: string
   label: string
+  icon: string
   group: MenuGroupCode
   order: number
   visible: boolean
+  appUrl: string
+  healthUrl: string
 }
 
-export const DEFAULT_MEDIA_AGENT_MENU: MediaAgentMenuConfig = {
+export interface ExternalAppRegistry {
+  version: number
+  apps: ExternalAppConfig[]
+}
+
+export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [{
+  id: 'media-agent',
   label: '自媒体 Agent',
+  icon: 'ri-sparkling-2-line',
   group: 'PUBLIC',
   order: 20,
   visible: true,
-}
+  appUrl: '/agent/',
+  healthUrl: '/api/agent/health',
+}]
 
 export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
@@ -34,7 +49,6 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
   automation: { id: 'automation', label: '自动化', icon: 'ri-flashlight-line', path: '/automation' },
-  mediaAgent: { id: 'mediaAgent', label: '自媒体 Agent', icon: 'ri-sparkling-2-line', path: '/media-agent' },
   vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
@@ -56,33 +70,47 @@ const GROUP_LABELS: Record<MenuGroupCode, string> = {
 }
 
 /**
- * 合成当前用户真正看到的导航：个人模块沿用成员自己的拖拽顺序，Agent 菜单使用全局配置。
+ * 合成当前用户真正看到的导航：个人模块沿用成员自己的拖拽顺序，外部应用使用全局注册表。
  * 排序值越小越靠前；相同值保持内置菜单在前，避免旧配置升级后发生无意义跳动。
  */
 export function resolveNavGroups(
   personalOrder: ModuleId[],
-  mediaAgent: MediaAgentMenuConfig,
-): { label: string; items: ModuleId[] }[] {
+  externalApps: ExternalAppConfig[],
+): { label: string; items: NavItemId[] }[] {
   const groups = BASE_NAV_GROUPS.map((group) => ({
     label: group.label,
-    items: group.label === '个人' ? [...personalOrder] : [...group.items],
+    items: (group.label === '个人' ? [...personalOrder] : [...group.items]) as NavItemId[],
   }))
-  if (!mediaAgent.visible) return groups
 
-  const target = groups.find((group) => group.label === GROUP_LABELS[mediaAgent.group])
-  if (!target) return groups
-  const existingOrders = new Map(target.items.map((id, index) => [id, (index + 1) * 10]))
-  target.items.push('mediaAgent')
-  target.items.sort((left, right) => {
-    const leftOrder = left === 'mediaAgent' ? mediaAgent.order : (existingOrders.get(left) ?? 999)
-    const rightOrder = right === 'mediaAgent' ? mediaAgent.order : (existingOrders.get(right) ?? 999)
-    return leftOrder - rightOrder
-  })
+  for (const target of groups) {
+    const existingOrders = new Map(target.items.map((id, index) => [id, (index + 1) * 10]))
+    const configured = externalApps.filter(
+      (app) => app.visible && GROUP_LABELS[app.group] === target.label,
+    )
+    target.items.push(...configured.map((app) => externalAppItemId(app.id)))
+    const appOrders = new Map(configured.map((app) => [externalAppItemId(app.id), app.order]))
+    target.items.sort((left, right) =>
+      (appOrders.get(left as ExternalAppItemId) ?? existingOrders.get(left) ?? 999)
+      - (appOrders.get(right as ExternalAppItemId) ?? existingOrders.get(right) ?? 999),
+    )
+  }
   return groups
 }
 
-/** 左侧导航默认分组；首次加载配置前也保证 Agent 位于「公共」。 */
-export const NAV_GROUPS = resolveNavGroups(PERSONAL_ITEMS, DEFAULT_MEDIA_AGENT_MENU)
+export function externalAppItemId(id: string): ExternalAppItemId {
+  return `external:${id}`
+}
+
+export function externalAppIdFromItem(id: NavItemId | undefined): string | null {
+  return id?.startsWith('external:') ? id.slice('external:'.length) : null
+}
+
+export function externalAppPath(id: string): string {
+  return `/apps/${id}`
+}
+
+/** 左侧导航默认分组；首次加载注册表前也保证 Agent 位于「公共」。 */
+export const NAV_GROUPS = resolveNavGroups(PERSONAL_ITEMS, DEFAULT_EXTERNAL_APPS)
 
 /** 由模块 id 生成页签。首页固定不可关闭。 */
 export function moduleTab(id: ModuleId): Tab {
@@ -103,6 +131,17 @@ export function tabFromRoute(route: RouteLocationNormalized): Tab | null {
   if (kind === 'kb') {
     const id = String(route.params.id)
     return { key: `kb:${id}`, label: `知识库 ${id}`, labelPlaceholder: true, icon: 'ri-book-2-line', path: route.path, closable: true }
+  }
+  if (kind === 'external') {
+    const id = String(route.params.appId)
+    return {
+      key: externalAppItemId(id),
+      label: '外部应用',
+      labelPlaceholder: true,
+      icon: 'ri-apps-2-line',
+      path: route.path,
+      closable: true,
+    }
   }
   const mod = route.meta.module as ModuleId | undefined
   if (mod) return moduleTab(mod)

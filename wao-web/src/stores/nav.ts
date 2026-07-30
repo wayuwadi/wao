@@ -1,14 +1,18 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
-  DEFAULT_MEDIA_AGENT_MENU,
+  DEFAULT_EXTERNAL_APPS,
   MODULES,
   PERSONAL_ITEMS,
+  externalAppIdFromItem,
+  externalAppItemId,
+  externalAppPath,
   resolveNavGroups,
-  type MediaAgentMenuConfig,
+  type ExternalAppConfig,
+  type NavItemId,
 } from '@/config/nav'
 import { fetchPreference, savePreference } from '@/api/favorites'
-import { fetchMediaAgentMenu } from '@/api/system'
+import { fetchExternalAppRegistry } from '@/api/system'
 import type { ModuleId } from '@/types'
 
 /** 导航 store：侧栏整栏折叠态 + 各分组折叠态 + 「个人」组自定义顺序。 */
@@ -45,11 +49,11 @@ export const useNavStore = defineStore('nav', () => {
   const foldedGroups = ref<Record<string, boolean>>(persisted.foldedGroups)
   /** 「个人」组顺序：本地缓存先渲染，登录后再用服务端偏好覆盖。 */
   const personalOrder = ref<ModuleId[]>(normalizeOrder(persisted.personalOrder))
-  /** Agent 菜单为全局配置；接口失败时保留代码内默认值，不能让入口凭空消失。 */
-  const mediaAgentMenu = ref<MediaAgentMenuConfig>({ ...DEFAULT_MEDIA_AGENT_MENU })
-  const mediaAgentMenuState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
-  const mediaAgentMenuError = ref('')
-  const groups = computed(() => resolveNavGroups(personalOrder.value, mediaAgentMenu.value))
+  /** 外部应用注册表为全局配置；接口失败时保留 Agent 默认项，不能让现有入口凭空消失。 */
+  const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map((app) => ({ ...app })))
+  const externalAppsState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
+  const externalAppsError = ref('')
+  const groups = computed(() => resolveNavGroups(personalOrder.value, externalApps.value))
 
   function persist() {
     localStorage.setItem(
@@ -100,38 +104,50 @@ export const useNavStore = defineStore('nav', () => {
     })
   }
 
-  /** 从服务端读取 Agent 全局菜单配置；失败时回退默认菜单并允许显式重试。 */
-  async function loadMediaAgentMenu(force = false) {
-    if (mediaAgentMenuState.value === 'loading') return
-    if (!force && mediaAgentMenuState.value === 'loaded') return
-    mediaAgentMenuState.value = 'loading'
-    mediaAgentMenuError.value = ''
+  /** 从服务端读取外部应用注册表；失败时回退默认 Agent 并允许显式重试。 */
+  async function loadExternalApps(force = false) {
+    if (externalAppsState.value === 'loading') return
+    if (!force && externalAppsState.value === 'loaded') return
+    externalAppsState.value = 'loading'
+    externalAppsError.value = ''
     try {
-      mediaAgentMenu.value = await fetchMediaAgentMenu()
-      mediaAgentMenuState.value = 'loaded'
+      externalApps.value = (await fetchExternalAppRegistry()).apps.map((app) => ({ ...app }))
+      externalAppsState.value = 'loaded'
     } catch (error) {
-      mediaAgentMenuState.value = 'error'
-      mediaAgentMenuError.value = error instanceof Error ? error.message : '菜单配置读取失败'
+      externalAppsState.value = 'error'
+      externalAppsError.value = error instanceof Error ? error.message : '外部应用注册表读取失败'
     }
   }
 
   /** 设置页保存成功后立即刷新导航，不等页面重载。 */
-  function applyMediaAgentMenu(config: MediaAgentMenuConfig) {
-    mediaAgentMenu.value = { ...config }
-    mediaAgentMenuState.value = 'loaded'
-    mediaAgentMenuError.value = ''
+  function applyExternalApps(apps: ExternalAppConfig[]) {
+    externalApps.value = apps.map((app) => ({ ...app }))
+    externalAppsState.value = 'loaded'
+    externalAppsError.value = ''
   }
 
-  function moduleMeta(id: ModuleId) {
-    return id === 'mediaAgent'
-      ? { ...MODULES.mediaAgent, label: mediaAgentMenu.value.label }
-      : MODULES[id]
+  function externalAppById(id: string) {
+    return externalApps.value.find((app) => app.id === id)
+  }
+
+  function itemMeta(id: NavItemId | undefined) {
+    const externalId = externalAppIdFromItem(id)
+    if (externalId) {
+      const app = externalAppById(externalId)
+      return app ? {
+        id: externalAppItemId(app.id),
+        label: app.label,
+        icon: app.icon,
+        path: externalAppPath(app.id),
+      } : undefined
+    }
+    return id ? MODULES[id as ModuleId] : undefined
   }
 
   return {
     collapsed, foldedGroups, personalOrder, groups,
-    mediaAgentMenu, mediaAgentMenuState, mediaAgentMenuError,
+    externalApps, externalAppsState, externalAppsError,
     toggleCollapse, toggleGroup, isFolded, loadPersonalOrder, setPersonalOrder,
-    loadMediaAgentMenu, applyMediaAgentMenu, moduleMeta,
+    loadExternalApps, applyExternalApps, externalAppById, itemMeta,
   }
 })
