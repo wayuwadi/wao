@@ -1,46 +1,32 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch, watchEffect } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
-import { updateEmailCredential, updateProfile, unlinkIdentity, apiCreateAccount, apiDeleteMemberAccount, apiResetMemberPassword, apiUpdateMemberRole } from '@/api/auth'
+import { updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth'
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import {
-  fetchBuiltinMenuRegistry, fetchExternalAppRegistry, fetchSiteInfo, fetchWebhookConfig,
-  saveBuiltinMenuRegistry, saveExternalAppRegistry,
-  saveSiteInfo, saveWebhookConfig, testWebhook, type FeishuWebhookConfig, type SiteInfo,
+  fetchSiteInfo, fetchWebhookConfig, saveSiteInfo, saveWebhookConfig, testWebhook,
+  type FeishuWebhookConfig, type SiteInfo,
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
-import { usePreferenceStore } from '@/stores/preferences'
-import { useNavStore } from '@/stores/nav'
-import {
-  DEFAULT_EXTERNAL_APPS,
-  DEFAULT_BUILTIN_MENUS,
-  externalAppPath,
-  type BuiltinMenuConfig,
-  type ExternalAppConfig,
-} from '@/config/nav'
+import { useTheme, type ThemeMode } from '@/composables/theme'
 
 const session = useSessionStore()
+const theme = useTheme()
 const data = useDataStore()
-const preferences = usePreferenceStore()
-const nav = useNavStore()
-const route = useRoute()
 const router = useRouter()
 
 const NAV = [
-  { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['菜单配置', 'navigation'], ['通知 · 飞书 Webhook', 'webhook'], ['AI 账号', 'ai-accounts']] },
+  { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members'], ['日历账户 · CalDAV', 'caldav']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['通知 · 飞书 Webhook', 'webhook'], ['AI 账号', 'ai-accounts']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
 ] as const
 
-const TAB_IDS = NAV.flatMap((g) => g.items.map((it) => it[1])) as readonly string[]
-// 支持从其他页面带 ?tab=xxx 直达对应设置项；无效值回落到成员页。
-const initialTab = typeof route.query.tab === 'string' && TAB_IDS.includes(route.query.tab) ? route.query.tab : 'members'
-const tab = ref(initialTab)
+const tab = ref('members')
 const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
 const profileForm = reactive({ name: '', initial: '' })
 const accountBusy = ref(false)
@@ -61,90 +47,36 @@ watchEffect(() => {
 
 const orgMembers = computed(() =>
   session.members.map((m) => ({
-    id: m.id,
     name: m.name, initial: m.initial, color: m.color, role: m.role,
-    roleBg: m.role === '超级管理员' ? '#FFF1D8' : m.role === '管理员' ? '#E9EDFB' : '#F0F1F4',
-    roleColor: m.role === '超级管理员' ? '#9A5D00' : m.role === '管理员' ? '#3A4CC2' : '#5A5E6B',
+    roleBg: m.role === '管理员' ? '#E9EDFB' : '#F0F1F4',
+    roleColor: m.role === '管理员' ? '#3A4CC2' : '#5A5E6B',
     meTag: m.id === session.currentUser.id ? '（我）' : '',
   })),
 )
 
-// ---- 组织管理 · 管理员开账号 ----
-// 邀请链接是原型时代的演示件，真实场景是管理员直接为家人 / 成员开好账号再把凭据交给对方。
-const isAdmin = computed(() => ['管理员', '超级管理员'].includes(session.currentUser.role))
-const isSuperAdmin = computed(() => session.currentUser.role === '超级管理员')
-const showCreateAccount = ref(false)
-const createForm = reactive({ name: '', email: '', password: '' })
-const createBusy = ref(false)
-const managingMemberId = ref<string | null>(null)
-const resetPassword = ref('')
-const memberBusy = ref(false)
+const caldavCals = reactive([
+  { name: '家庭日历', dot: '#0E8C8C', on: true },
+  { name: '工作日历', dot: '#C05D8E', on: true },
+  { name: '节假日订阅', dot: '#B9821F', on: false },
+])
 
-async function createAccount() {
-  if (!createForm.name.trim() || !createForm.email.trim() || createForm.password.length < 8) {
-    toast('请填写姓名、邮箱，密码至少 8 位', 'ri-error-warning-line')
-    return
-  }
-  createBusy.value = true
-  try {
-    const member = await apiCreateAccount(createForm.name.trim(), createForm.email.trim(), createForm.password)
-    await session.refreshDirectory()
-    Object.assign(createForm, { name: '', email: '', password: '' })
-    showCreateAccount.value = false
-    toast(`已为「${member.name}」开好账号，把邮箱和密码交给 TA 即可登录`, 'ri-user-add-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '开账号失败')
-  } finally {
-    createBusy.value = false
-  }
+const THEME_LABELS: Record<ThemeMode, string> = {
+  light: '明亮',
+  dark: '深色',
+  system: '跟随系统',
 }
 
-async function resetMemberPassword(memberId: string) {
-  if (resetPassword.value.length < 8) return toast('新密码至少 8 位', 'ri-error-warning-line')
-  memberBusy.value = true
-  try {
-    await apiResetMemberPassword(memberId, resetPassword.value)
-    resetPassword.value = ''
-    managingMemberId.value = null
-    toast('密码已重置，请将新密码安全告知成员', 'ri-key-2-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '重置密码失败')
-  } finally { memberBusy.value = false }
-}
-async function updateMemberRole(memberId: string, role: '管理员' | '成员') {
-  memberBusy.value = true
-  try {
-    await apiUpdateMemberRole(memberId, role)
-    await session.refreshDirectory()
-    toast(role === '管理员' ? '已授予管理员权限' : '已收回管理员权限', 'ri-shield-user-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '权限更新失败')
-  } finally { memberBusy.value = false }
-}
-async function deleteMemberAccount(memberId: string, name: string) {
-  if (!window.confirm(`确认删除「${name}」的账号吗？此操作不可恢复。`)) return
-  memberBusy.value = true
-  try {
-    await apiDeleteMemberAccount(memberId)
-    await session.refreshDirectory()
-    managingMemberId.value = null
-    toast(`已删除「${name}」的账号`, 'ri-delete-bin-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '删除账号失败')
-  } finally { memberBusy.value = false }
-}
+const prefRows = [
+  { name: '语言', desc: '界面显示语言', value: '简体中文' },
+  { name: '每周起始日', desc: '影响日历与「本周」分组', value: '周一' },
+  { name: '庆祝动画', desc: '创建任务 / 项目、完成任务时的全屏反馈', value: '细腻纸屑' },
+]
 
-const prefBusy = ref(false)
-async function savePreference(kind: 'theme' | 'weekStart' | 'celebration', event: Event) {
-  const value = (event.target as HTMLSelectElement).value
-  prefBusy.value = true
-  try {
-    if (kind === 'theme') await preferences.setTheme(value as '明亮' | '深色')
-    if (kind === 'weekStart') await preferences.setWeekStart(value as '周一' | '周日')
-    if (kind === 'celebration') await preferences.setCelebration(value as '细腻纸屑' | '关闭')
-    toast('偏好已保存并立即生效', 'ri-checkbox-circle-line')
-  } catch (error) { toast(error instanceof Error ? error.message : '偏好保存失败，请重试') }
-  finally { prefBusy.value = false }
+function cycleTheme() {
+  const order: ThemeMode[] = ['light', 'dark', 'system']
+  const idx = order.indexOf(theme.mode.value)
+  const next = order[(idx + 1) % order.length]
+  theme.setTheme(next ?? 'system')
 }
 
 // 开发者 · API
@@ -187,177 +119,6 @@ const webhookBusy = ref(false)
 const site = reactive<SiteInfo>({ siteName: '', description: '', icpNumber: '', icpUrl: '' })
 const siteLoaded = ref(false)
 const siteBusy = ref(false)
-const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map((app) => ({ ...app })))
-const externalAppsLoaded = ref(false)
-const externalAppsLoading = ref(false)
-const externalAppsSaving = ref(false)
-const externalAppsError = ref('')
-const builtinMenus = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map((menu) => ({ ...menu })))
-const builtinMenusLoaded = ref(false)
-const builtinMenusSaving = ref(false)
-const externalEditorMode = ref<'none' | 'edit' | 'new'>('none')
-const editingExternalAppId = ref('')
-
-function emptyExternalApp(): ExternalAppConfig {
-  return {
-    id: '', label: '', icon: 'ri-apps-2-line', group: 'PUBLIC', order: 20,
-    visible: true, appUrl: '/', healthUrl: '',
-  }
-}
-
-const externalAppForm = reactive<ExternalAppConfig>(emptyExternalApp())
-const selectedExternalApp = computed(() =>
-  externalApps.value.find((app) => app.id === editingExternalAppId.value),
-)
-const externalAppDirty = computed(() => {
-  if (externalEditorMode.value === 'none') return false
-  const baseline = externalEditorMode.value === 'edit' ? selectedExternalApp.value : emptyExternalApp()
-  return JSON.stringify(externalAppForm) !== JSON.stringify(baseline)
-})
-
-function assignExternalApp(app: ExternalAppConfig) {
-  Object.assign(externalAppForm, { ...app })
-}
-
-function confirmDiscardExternalDraft() {
-  return !externalAppDirty.value || window.confirm('当前外部应用配置尚未保存，确认放弃这些修改吗？')
-}
-
-function editExternalApp(id: string, skipConfirm = false) {
-  if (!skipConfirm && !confirmDiscardExternalDraft()) return
-  const app = externalApps.value.find((item) => item.id === id)
-  if (!app) return
-  editingExternalAppId.value = id
-  externalEditorMode.value = 'edit'
-  assignExternalApp(app)
-}
-
-function startAddExternalApp() {
-  if (!confirmDiscardExternalDraft()) return
-  editingExternalAppId.value = ''
-  externalEditorMode.value = 'new'
-  assignExternalApp(emptyExternalApp())
-}
-
-function cancelExternalAppEdit() {
-  if (!confirmDiscardExternalDraft()) return
-  if (externalEditorMode.value === 'edit' && selectedExternalApp.value) {
-    assignExternalApp(selectedExternalApp.value)
-    return
-  }
-  const first = externalApps.value[0]
-  if (first) editExternalApp(first.id, true)
-  else externalEditorMode.value = 'none'
-}
-
-async function loadExternalAppSettings() {
-  if (externalAppsLoading.value) return
-  externalAppsLoading.value = true
-  externalAppsError.value = ''
-  try {
-    const registry = await fetchExternalAppRegistry()
-    externalApps.value = registry.apps.map((app) => ({ ...app }))
-    externalAppsLoaded.value = true
-    nav.applyExternalApps(registry.apps)
-    const preferred = externalApps.value.find((app) => app.id === editingExternalAppId.value)
-      ?? externalApps.value[0]
-    if (preferred) editExternalApp(preferred.id, true)
-    else externalEditorMode.value = 'none'
-  } catch (error) {
-    externalAppsError.value = error instanceof Error ? error.message : '读取外部应用注册表失败'
-  } finally {
-    externalAppsLoading.value = false
-  }
-}
-
-async function loadBuiltinMenuSettings() {
-  try {
-    builtinMenus.value = (await fetchBuiltinMenuRegistry()).menus.map((menu) => ({ ...menu }))
-    builtinMenusLoaded.value = true
-    nav.applyBuiltinMenus(builtinMenus.value)
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '读取内置菜单注册表失败', 'ri-error-warning-line')
-  }
-}
-
-async function saveBuiltinMenuSettings() {
-  builtinMenusSaving.value = true
-  try {
-    const registry = await saveBuiltinMenuRegistry(builtinMenus.value)
-    builtinMenus.value = registry.menus.map((menu) => ({ ...menu }))
-    nav.applyBuiltinMenus(registry.menus)
-    toast('内置菜单注册表已保存并立即生效', 'ri-check-line')
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '保存内置菜单注册表失败', 'ri-error-warning-line')
-  } finally {
-    builtinMenusSaving.value = false
-  }
-}
-
-function canonicalExternalAppForm(): ExternalAppConfig | null {
-  const app = {
-    ...externalAppForm,
-    id: externalAppForm.id.trim(),
-    label: externalAppForm.label.trim(),
-    icon: externalAppForm.icon.trim(),
-    appUrl: externalAppForm.appUrl.trim(),
-    healthUrl: externalAppForm.healthUrl.trim(),
-    order: Number(externalAppForm.order),
-  }
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(app.id)) {
-    toast('应用标识只能使用小写字母、数字和中划线', 'ri-error-warning-line')
-    return null
-  }
-  if (!app.label || !app.icon || !app.appUrl) {
-    toast('请填写菜单名称、图标和应用入口', 'ri-error-warning-line')
-    return null
-  }
-  const duplicate = externalApps.value.some(
-    (item) => item.id === app.id && item.id !== editingExternalAppId.value,
-  )
-  if (duplicate) {
-    toast('应用标识不能重复', 'ri-error-warning-line')
-    return null
-  }
-  return app
-}
-
-async function persistExternalApps(next: ExternalAppConfig[], selectedId: string, successMessage: string) {
-  externalAppsSaving.value = true
-  externalAppsError.value = ''
-  try {
-    const registry = await saveExternalAppRegistry(next)
-    externalApps.value = registry.apps.map((app) => ({ ...app }))
-    externalAppsLoaded.value = true
-    nav.applyExternalApps(registry.apps)
-    const selected = externalApps.value.find((app) => app.id === selectedId) ?? externalApps.value[0]
-    if (selected) editExternalApp(selected.id, true)
-    else externalEditorMode.value = 'none'
-    toast(successMessage, 'ri-check-line')
-  } catch (error) {
-    externalAppsError.value = error instanceof Error ? error.message : '保存外部应用注册表失败'
-    toast(externalAppsError.value, 'ri-error-warning-line')
-  } finally {
-    externalAppsSaving.value = false
-  }
-}
-
-async function saveExternalAppSettings() {
-  const app = canonicalExternalAppForm()
-  if (!app) return
-  const next = externalApps.value.map((item) => ({ ...item }))
-  const index = next.findIndex((item) => item.id === editingExternalAppId.value)
-  if (externalEditorMode.value === 'edit' && index >= 0) next[index] = app
-  else next.push(app)
-  await persistExternalApps(next, app.id, '外部应用注册表已保存并立即生效')
-}
-
-async function deleteExternalApp(app: ExternalAppConfig) {
-  if (!confirmDiscardExternalDraft()) return
-  if (!window.confirm(`确认删除「${app.label}」的菜单注册吗？应用服务和数据不会被删除。`)) return
-  const next = externalApps.value.filter((item) => item.id !== app.id)
-  await persistExternalApps(next, next[0]?.id ?? '', `已删除「${app.label}」的菜单注册`)
-}
 
 async function loadSiteInfo() {
   try {
@@ -446,19 +207,13 @@ async function toggleProjectNotify(id: string) {
 
 watch(tab, (t) => {
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
-  if (t === 'navigation') {
-    if (!externalAppsLoaded.value) loadExternalAppSettings()
-    if (!builtinMenusLoaded.value) loadBuiltinMenuSettings()
-  }
   if (t === 'webhook' && !webhook.value) loadWebhook()
 }, { immediate: true })
 
-function chooseSettingsTab(next: string) {
-  tab.value = next
+function toggleCal(c: { on: boolean }) {
+  c.on = !c.on
+  toast('演示：订阅开关在正式版本生效', 'ri-calendar-line')
 }
-
-onBeforeRouteLeave(() => confirmDiscardExternalDraft())
-
 async function logout() {
   await session.logout()
   await router.push('/login')
@@ -496,6 +251,9 @@ async function bindFeishu() {
   try { await startFeishuLogin('link') }
   catch (error) { toast(error instanceof Error ? error.message : '飞书登录暂不可用') }
 }
+function demo(msg: string, icon?: string) {
+  toast(msg, icon)
+}
 </script>
 
 <template>
@@ -506,7 +264,7 @@ async function bindFeishu() {
       <div v-for="g in NAV" :key="g.label">
         <div class="snav-group"><i :class="g.icon"></i>{{ g.label }}</div>
         <div class="snav-items">
-          <button v-for="it in g.items" :key="it[1]" class="snav-item" :class="{ on: tab === it[1] }" @click="chooseSettingsTab(it[1])">
+          <button v-for="it in g.items" :key="it[1]" class="snav-item" :class="{ on: tab === it[1] }" @click="tab = it[1]">
             {{ it[0] }}
           </button>
         </div>
@@ -534,30 +292,41 @@ async function bindFeishu() {
             <div class="card-row">
               <div class="card-title">成员</div>
               <div class="spacer"></div>
-              <button v-if="isAdmin && !showCreateAccount" class="btn-primary sm" @click="showCreateAccount = true"><i class="ri-user-add-line"></i>添加账号</button>
+              <button class="btn-primary sm" disabled title="邀请流程将在后续成员管理需求中实现"><i class="ri-user-add-line"></i>邀请成员（待实现）</button>
             </div>
-            <form v-if="showCreateAccount" class="site-form" @submit.prevent="createAccount">
-              <label><span>姓名</span><input v-model.trim="createForm.name" maxlength="64" required placeholder="成员显示名，例如 娃妹" /></label>
-              <label><span>登录邮箱</span><input v-model.trim="createForm.email" type="email" required placeholder="name@example.com" /></label>
-              <label><span>初始密码</span><input v-model="createForm.password" type="password" minlength="8" required placeholder="至少 8 位，交给对方后可自行修改" /></label>
-              <div class="site-actions">
-                <button class="btn-primary" :disabled="createBusy">{{ createBusy ? '创建中…' : '创建账号' }}</button>
-                <button type="button" class="btn-ghost" :disabled="createBusy" @click="showCreateAccount = false">取消</button>
-              </div>
-            </form>
             <div v-for="(m, i) in orgMembers" :key="i" class="mem-row">
               <span class="mem-av" :style="{ background: m.color }">{{ m.initial }}</span>
               <span class="mem-name">{{ m.name }}<span class="me-tag">{{ m.meTag }}</span></span>
               <span class="mem-role" :style="{ background: m.roleBg, color: m.roleColor }">{{ m.role }}</span>
-              <button v-if="isAdmin && !m.meTag" class="btn-ghost member-actions" @click="managingMemberId = managingMemberId === m.id ? null : m.id">管理</button>
-              <div v-if="managingMemberId === m.id" class="member-manage">
-                <button v-if="isSuperAdmin" class="btn-ghost sm" :disabled="memberBusy" @click="updateMemberRole(m.id, m.role === '管理员' ? '成员' : '管理员')">{{ m.role === '管理员' ? '收回管理员' : '设为管理员' }}</button>
-                <input v-model="resetPassword" type="password" minlength="8" placeholder="输入至少 8 位的新密码" />
-                <button class="btn-primary sm" :disabled="memberBusy" @click="resetMemberPassword(m.id)">重置密码</button>
-                <button class="btn-danger sm" :disabled="memberBusy" @click="deleteMemberAccount(m.id, m.name)">删除账号</button>
+            </div>
+            <div class="hint">WAO 不区分「个人版 / 团队版」：内容归属由负责人、参与人与可见范围表达。新建项目默认仅创建者可见，可邀请成员并设置查看或编辑权限。</div>
+          </div>
+        </template>
+
+        <!-- CalDAV -->
+        <template v-else-if="tab === 'caldav'">
+          <div class="s-h1">日历账户 · CalDAV</div>
+          <div class="card">
+            <div class="card-row wrap">
+              <div class="card-title">主账户</div>
+              <span class="connected"><span class="c-dot"></span>已连接</span>
+              <div class="spacer"></div>
+              <button class="btn-ghost sm" @click="demo('正在同步 CalDAV…已是最新（演示）', 'ri-refresh-line')"><i class="ri-refresh-line"></i>立即同步</button>
+              <button class="btn-ghost sm" @click="demo('演示：添加 CalDAV 账户在正式版本提供')"><i class="ri-add-line"></i>添加账户</button>
+            </div>
+            <div class="kv-list">
+              <div class="kv"><span class="kv-k">服务器</span><span class="kv-v wao-mono">https://dav.wayuwa.example/caldav</span></div>
+              <div class="kv"><span class="kv-k">账号</span><span class="kv-v">wg@wayuwa.example</span></div>
+              <div class="kv"><span class="kv-k">同步</span><span class="kv-v">每 15 分钟 · 上次同步 今天 12:10</span></div>
+            </div>
+            <div class="sub-block">
+              <div class="sub-label">订阅的日历（与系统日历合并显示）</div>
+              <div v-for="(c, i) in caldavCals" :key="i" class="cal-row">
+                <span class="cal-dot" :style="{ background: c.dot }"></span>
+                <span class="cal-name">{{ c.name }}</span>
+                <button class="toggle" :class="{ on: c.on }" title="启用 / 停用" @click="toggleCal(c)"><span class="knob"></span></button>
               </div>
             </div>
-            <div class="hint">管理员可直接为成员开账号：填写姓名、邮箱和初始密码，创建后把凭据交给对方即可登录；对方可在「账号与登录」中随时改密码。WAO 不区分「个人版 / 团队版」：内容归属由负责人、参与人与可见范围表达。</div>
           </div>
         </template>
 
@@ -583,151 +352,6 @@ async function bindFeishu() {
               <a v-if="site.icpNumber" :href="site.icpUrl || undefined" target="_blank" rel="noopener noreferrer">· {{ site.icpNumber }}</a>
             </div>
             <div class="hint">保存后，备案号会自动展示在登录页、公开任务分享页和登录后的系统页脚；无需修改代码或重新发布前端。</div>
-          </div>
-        </template>
-
-        <!-- 系统 · 外部应用菜单注册表 -->
-        <template v-else-if="tab === 'navigation'">
-          <div class="s-h1">一级菜单</div>
-          <div class="card">
-            <div class="card-row wrap">
-              <div class="card-title">内置菜单注册表</div>
-              <span class="connected"><span class="c-dot"></span>{{ builtinMenus.length }} 个内置菜单</span>
-              <div class="spacer"></div>
-              <button class="btn-primary" :disabled="builtinMenusSaving" @click="saveBuiltinMenuSettings">
-                {{ builtinMenusSaving ? '保存中…' : '保存并立即生效' }}
-              </button>
-            </div>
-            <div class="builtin-menu-list">
-              <div v-for="menuItem in builtinMenus" :key="menuItem.id" class="builtin-menu-row">
-                <code>{{ menuItem.id }}</code>
-                <input v-model.trim="menuItem.label" maxlength="24" aria-label="菜单名称" />
-                <input v-model.trim="menuItem.icon" maxlength="64" aria-label="菜单图标" />
-                <input v-model="menuItem.group" list="builtin-menu-groups" aria-label="所属分组" />
-                <input v-model.number="menuItem.order" inputmode="numeric" aria-label="排序值" />
-                <button
-                  type="button"
-                  class="visibility-choice compact"
-                  :class="{ on: menuItem.visible }"
-                  @click="menuItem.visible = !menuItem.visible"
-                >
-                  <i :class="menuItem.visible ? 'ri-eye-line' : 'ri-eye-off-line'"></i>
-                  {{ menuItem.visible ? '显示' : '隐藏' }}
-                </button>
-              </div>
-              <datalist id="builtin-menu-groups">
-                <option value="ROOT">顶层</option>
-                <option value="PUBLIC">公共</option>
-                <option value="PERSONAL">个人</option>
-                <option value="TOOLS">工具</option>
-              </datalist>
-            </div>
-            <div class="hint">稳定标识和路由仍由代码保护；名称、图标、分组、排序和显隐与外部应用一样统一在注册表维护。隐藏菜单不会禁用直达地址。</div>
-          </div>
-
-          <div class="card">
-            <div class="card-row wrap">
-              <div class="card-title">菜单注册表</div>
-              <span v-if="externalAppsLoaded && !externalAppsError" class="connected"><span class="c-dot"></span>{{ externalApps.length }} 个应用</span>
-              <span v-else-if="externalAppsError" class="connected err"><span class="c-dot"></span>{{ externalAppsError }}</span>
-              <div class="spacer"></div>
-              <button type="button" class="btn-primary sm" :disabled="externalAppsLoading || externalAppsSaving" @click="startAddExternalApp"><i class="ri-add-line"></i>注册应用</button>
-            </div>
-
-            <div v-if="externalAppsLoading" class="menu-loading">正在读取外部应用注册表…</div>
-            <div v-else-if="externalAppsError && !externalAppsLoaded" class="registry-load-error">
-              <span>注册表暂时无法读取，现有菜单不会被覆盖。</span>
-              <button type="button" class="btn-ghost" @click="loadExternalAppSettings">重新读取</button>
-            </div>
-            <div v-else class="registry-layout">
-              <div class="registry-list">
-                <div v-for="app in externalApps" :key="app.id" class="registry-row" :class="{ active: externalEditorMode === 'edit' && editingExternalAppId === app.id }">
-                  <button type="button" class="registry-select" @click="editExternalApp(app.id)">
-                    <span class="registry-icon"><i :class="app.icon"></i></span>
-                    <span class="registry-meta">
-                      <strong>{{ app.label }}</strong>
-                      <small>{{ app.id }} · {{ { PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' }[app.group] }} · 排序 {{ app.order }}</small>
-                    </span>
-                    <span class="registry-state" :class="{ off: !app.visible }">{{ app.visible ? '显示中' : '已隐藏' }}</span>
-                  </button>
-                  <button type="button" class="registry-delete" :disabled="externalAppsSaving" :title="`删除 ${app.label}`" @click="deleteExternalApp(app)"><i class="ri-delete-bin-line"></i></button>
-                </div>
-                <div v-if="!externalApps.length" class="registry-empty">
-                  <i class="ri-apps-2-add-line"></i>
-                  <strong>还没有外部应用</strong>
-                  <span>注册后会自动生成菜单、页签和嵌入页面。</span>
-                </div>
-              </div>
-
-              <form v-if="externalEditorMode !== 'none'" class="site-form menu-form registry-editor" @submit.prevent="saveExternalAppSettings">
-                <div class="editor-title">{{ externalEditorMode === 'new' ? '注册新应用' : `编辑「${selectedExternalApp?.label ?? externalAppForm.label}」` }}</div>
-                <label>
-                  <span>应用标识</span>
-                  <input v-model="externalAppForm.id" maxlength="40" required :disabled="externalEditorMode === 'edit'" placeholder="例如 data-studio" />
-                  <small>保存后生成 {{ externalAppForm.id ? externalAppPath(externalAppForm.id) : '/apps/{应用标识}' }}，标识不可修改。</small>
-                </label>
-                <label>
-                  <span>菜单名称</span>
-                  <input v-model="externalAppForm.label" maxlength="24" required placeholder="例如 数据工作台" />
-                </label>
-                <label>
-                  <span>菜单图标</span>
-                  <input v-model="externalAppForm.icon" list="external-app-icons" maxlength="64" required placeholder="ri-apps-2-line" />
-                  <datalist id="external-app-icons">
-                    <option value="ri-apps-2-line"></option>
-                    <option value="ri-sparkling-2-line"></option>
-                    <option value="ri-robot-2-line"></option>
-                    <option value="ri-dashboard-3-line"></option>
-                    <option value="ri-global-line"></option>
-                    <option value="ri-code-box-line"></option>
-                  </datalist>
-                </label>
-                <label>
-                  <span>所属分组</span>
-                  <select v-model="externalAppForm.group">
-                    <option value="PUBLIC">公共</option>
-                    <option value="PERSONAL">个人</option>
-                    <option value="TOOLS">工具</option>
-                  </select>
-                </label>
-                <label>
-                  <span>排序值</span>
-                  <input v-model.number="externalAppForm.order" type="number" min="0" max="999" required />
-                  <small>数值越小越靠前；每个内置菜单依次占用 10、20、30…</small>
-                </label>
-                <label>
-                  <span>菜单可见性</span>
-                  <button type="button" class="visibility-choice" :class="{ on: externalAppForm.visible }" :aria-pressed="externalAppForm.visible" @click="externalAppForm.visible = !externalAppForm.visible">
-                    <span class="choice-icon"><i :class="externalAppForm.visible ? 'ri-eye-line' : 'ri-eye-off-line'"></i></span>
-                    <span>{{ externalAppForm.visible ? '显示在一级导航中' : '从一级导航中隐藏' }}</span>
-                  </button>
-                </label>
-                <label class="wide-field">
-                  <span>应用入口</span>
-                  <input v-model="externalAppForm.appUrl" maxlength="255" required placeholder="/my-app/ 或 https://app.example.com/" />
-                  <small>同域路径会沿用 WAO Session；跨域 HTTPS 地址是否可嵌入取决于目标应用的 Cookie 和 CSP。</small>
-                </label>
-                <label class="wide-field">
-                  <span>健康检查地址（可选）</span>
-                  <input v-model="externalAppForm.healthUrl" maxlength="255" placeholder="/api/my-app/health" />
-                  <small>配置后会先探测服务再加载页面；留空则直接加载应用入口。</small>
-                </label>
-                <div class="menu-preview">
-                  <span class="preview-label">导航预览</span>
-                  <span class="menu-preview-group">{{ { PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' }[externalAppForm.group] }}</span>
-                  <span v-if="externalAppForm.visible" class="menu-preview-item"><i :class="externalAppForm.icon || 'ri-apps-2-line'"></i>{{ externalAppForm.label || '未命名应用' }}</span>
-                  <span v-else class="menu-preview-hidden">菜单已隐藏，注册路由仍然可直接访问</span>
-                </div>
-                <div class="site-actions">
-                  <button type="button" class="btn-ghost" :disabled="externalAppsSaving" @click="cancelExternalAppEdit">取消</button>
-                  <button class="btn-primary" :disabled="externalAppsSaving || !externalAppDirty">
-                    {{ externalAppsSaving ? '保存中…' : externalAppDirty ? '保存并立即生效' : '已保存' }}
-                  </button>
-                </div>
-              </form>
-              <div v-else class="registry-no-selection">选择一个应用编辑，或注册新应用。</div>
-            </div>
-            <div class="hint">注册表全局生效：新增、改名、换组、调序、隐藏或删除菜单都只写服务端配置，不需要重新构建 WAO。删除注册只移除菜单和通用页面配置，不会删除独立应用的服务或数据。</div>
           </div>
         </template>
 
@@ -842,10 +466,20 @@ async function bindFeishu() {
         <template v-else-if="tab === 'prefs'">
           <div class="s-h1">偏好</div>
           <div class="card thin">
-            <div class="pref-row"><div class="pref-main"><div class="pref-name">语言</div><div class="pref-desc">界面当前实际支持简体中文</div></div><span class="value-static">简体中文</span></div>
-            <div class="pref-row"><div class="pref-main"><div class="pref-name">主题</div><div class="pref-desc">立即切换并在下次登录时保留</div></div><select class="value-btn" :value="preferences.theme" :disabled="prefBusy" @change="savePreference('theme', $event)"><option>明亮</option><option>深色</option></select></div>
-            <div class="pref-row"><div class="pref-main"><div class="pref-name">每周起始日</div><div class="pref-desc">影响日历月视图与周视图</div></div><select class="value-btn" :value="preferences.weekStart" :disabled="prefBusy" @change="savePreference('weekStart', $event)"><option>周一</option><option>周日</option></select></div>
-            <div class="pref-row"><div class="pref-main"><div class="pref-name">庆祝动画</div><div class="pref-desc">创建任务、项目和完成任务时的全屏反馈</div></div><select class="value-btn" :value="preferences.celebration" :disabled="prefBusy" @change="savePreference('celebration', $event)"><option>细腻纸屑</option><option>关闭</option></select></div>
+            <div class="pref-row">
+              <div class="pref-main">
+                <div class="pref-name">主题</div>
+                <div class="pref-desc">明亮 / 深色 / 跟随系统</div>
+              </div>
+              <button class="value-btn" @click="cycleTheme">{{ THEME_LABELS[theme.mode.value] }}<i class="ri-arrow-down-s-line"></i></button>
+            </div>
+            <div v-for="(p, i) in prefRows" :key="i" class="pref-row">
+              <div class="pref-main">
+                <div class="pref-name">{{ p.name }}</div>
+                <div class="pref-desc">{{ p.desc }}</div>
+              </div>
+              <button class="value-btn" @click="demo('演示：偏好切换在正式版本生效', 'ri-settings-3-line')">{{ p.value }}<i class="ri-arrow-down-s-line"></i></button>
+            </div>
           </div>
         </template>
 
@@ -902,28 +536,6 @@ async function bindFeishu() {
 </template>
 
 <style scoped>
-.builtin-menu-list { display: grid; gap: 7px; margin-top: 14px; }
-.builtin-menu-row {
-  display: grid;
-  grid-template-columns: 92px 1fr 1.25fr 100px 72px 82px;
-  gap: 8px;
-  align-items: center;
-}
-.builtin-menu-row code { color: var(--wao-text-weak); font-size: 11.5px; }
-.builtin-menu-row input,
-.builtin-menu-row select {
-  min-width: 0;
-  height: 34px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 7px;
-  padding: 0 8px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-}
-.visibility-choice.compact { min-height: 34px; padding: 0 8px; justify-content: center; }
-@media (max-width: 900px) {
-  .builtin-menu-row { grid-template-columns: 72px 1fr 1fr; }
-}
 .settings {
   display: flex;
   height: 100%;
@@ -977,7 +589,7 @@ async function bindFeishu() {
   text-align: left;
 }
 .snav-item:hover {
-  background: #f0f1f4;
+  background: var(--wao-bg-hover-2);
 }
 .snav-item.on {
   background: var(--wao-primary-soft);
@@ -1026,7 +638,7 @@ async function bindFeishu() {
 }
 .card {
   margin-top: 14px;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 14px 18px;
@@ -1066,8 +678,8 @@ async function bindFeishu() {
 }
 .org-tag {
   font-size: 11.5px;
-  background: #e9edfb;
-  color: #3a4cc2;
+  background: var(--wao-primary-soft-2);
+  color: var(--wao-primary-text);
   border-radius: 999px;
   padding: 3px 11px;
 }
@@ -1111,7 +723,7 @@ async function bindFeishu() {
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   font-size: 12.5px;
   color: var(--wao-text-2);
@@ -1121,7 +733,7 @@ async function bindFeishu() {
   gap: 5px;
 }
 .btn-ghost:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-ghost.sm {
   height: 29px;
@@ -1138,9 +750,6 @@ async function bindFeishu() {
   padding: 10px 0;
   border-bottom: 1px solid var(--wao-divider-2);
 }
-.member-actions { margin-left: 8px; }
-.member-manage { display: flex; width: 100%; gap: 8px; padding: 8px 0 2px 42px; }
-.member-manage input { min-width: 0; flex: 1; }
 .mem-av {
   width: 30px;
   height: 30px;
@@ -1172,46 +781,13 @@ async function bindFeishu() {
 .webhook-form { grid-template-columns: 1fr auto auto; }
 .toggle:disabled { opacity: .55; cursor: not-allowed; }
 .btn-ghost:disabled { opacity: .55; cursor: not-allowed; }
-.credential-form input { min-width: 0; height: 34px; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 0 10px; outline: none; }
-.credential-form input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .12); }
+.credential-form input { min-width: 0; height: 34px; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 0 10px; outline: none; background: var(--wao-bg-card); color: var(--wao-text); }
+.credential-form input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px var(--wao-primary-soft); }
 .site-form { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 13px 16px; }
 .site-form label { display: grid; gap: 6px; color: var(--wao-text-3); font-size: 12px; }
-.site-form input { height: 36px; box-sizing: border-box; padding: 0 11px; border: 1px solid var(--wao-line-control); border-radius: 8px; outline: none; color: var(--wao-text); }
-.site-form input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .12); }
-.site-form select { height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; outline: none; background: #fff; color: var(--wao-text); }
-.site-form select:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67, 88, 214, .12); }
-.site-form small { color: var(--wao-text-faint); line-height: 1.5; }
-.site-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; }
-.menu-loading { margin-top: 16px; padding: 28px 12px; border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); text-align: center; font-size: 12.5px; }
-.registry-load-error { margin-top: 16px; padding: 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 12.5px; }
-.registry-layout { margin-top: 16px; display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: 16px; align-items: start; }
-.registry-list { display: flex; flex-direction: column; gap: 7px; }
-.registry-row { display: flex; min-width: 0; border: 1px solid var(--wao-line); border-radius: 9px; background: #fff; overflow: hidden; }
-.registry-row.active { border-color: rgba(67, 88, 214, .45); box-shadow: 0 0 0 3px rgba(67, 88, 214, .08); }
-.registry-select { flex: 1; min-width: 0; padding: 10px; display: flex; align-items: center; gap: 9px; border: 0; background: transparent; cursor: pointer; text-align: left; }
-.registry-select:hover, .registry-delete:hover { background: var(--wao-bg-hover-2); }
-.registry-icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 8px; background: rgba(67, 88, 214, .08); color: var(--wao-primary); font-size: 17px; }
-.registry-meta { flex: 1; min-width: 0; display: grid; gap: 3px; }
-.registry-meta strong { overflow: hidden; color: var(--wao-text); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
-.registry-meta small { overflow: hidden; color: var(--wao-text-faint); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
-.registry-state { flex: none; color: var(--wao-success-strong); font-size: 10.5px; }
-.registry-state.off { color: var(--wao-text-faint); }
-.registry-delete { width: 34px; flex: none; border: 0; border-left: 1px solid var(--wao-line); background: transparent; color: var(--wao-text-faint); cursor: pointer; }
-.registry-delete:hover { color: var(--wao-danger); }
-.registry-empty, .registry-no-selection { min-height: 150px; padding: 20px; display: grid; place-items: center; align-content: center; gap: 7px; border: 1px dashed var(--wao-line-strong); border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-faint); text-align: center; font-size: 11.5px; }
-.registry-empty i { font-size: 28px; }
-.registry-empty strong { color: var(--wao-text-3); font-size: 12.5px; }
-.registry-editor { margin-top: 0; padding: 15px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-sub); }
-.editor-title { grid-column: 1 / -1; padding-bottom: 10px; border-bottom: 1px solid var(--wao-line); color: var(--wao-text); font-size: 13px; font-weight: 600; }
-.wide-field { grid-column: 1 / -1; }
-.visibility-choice { height: 36px; padding: 0 11px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: #fff; color: var(--wao-text-3); cursor: pointer; text-align: left; }
-.visibility-choice.on { border-color: rgba(67, 88, 214, .35); background: rgba(67, 88, 214, .05); color: var(--wao-primary); }
-.choice-icon { width: 20px; display: inline-grid; place-items: center; }
-.menu-preview { grid-column: 1 / -1; padding: 13px 14px; display: grid; grid-template-columns: 72px 1fr; gap: 8px 12px; border: 1px dashed var(--wao-line-strong); border-radius: 9px; background: var(--wao-bg-sub); font-size: 12px; }
-.menu-preview .preview-label { width: auto; margin: 0; text-align: left; }
-.menu-preview-group { color: var(--wao-text-faint); font-weight: 600; }
-.menu-preview-item { grid-column: 2; display: inline-flex; align-items: center; gap: 7px; color: var(--wao-text); font-weight: 500; }
-.menu-preview-hidden { grid-column: 2; color: var(--wao-text-faint); }
+.site-form input { height: 36px; box-sizing: border-box; padding: 0 11px; border: 1px solid var(--wao-line-control); border-radius: 8px; outline: none; background: var(--wao-bg-card); color: var(--wao-text); }
+.site-form input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px var(--wao-primary-soft); }
+.site-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
 .filing-preview { margin-top: 14px; padding: 12px 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; border: 1px dashed var(--wao-line-strong); border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 11.5px; }
 .filing-preview a { color: var(--wao-primary); text-decoration: none; }
 .preview-label { width: 100%; margin-bottom: 2px; color: var(--wao-text-faint); text-align: center; font-size: 10.5px; }
@@ -1235,11 +811,6 @@ async function bindFeishu() {
   border-radius: 50%;
   background: var(--wao-success);
 }
-.connected.err { color: var(--wao-danger); }
-.connected.err .c-dot { background: var(--wao-danger); }
-.err-text { color: var(--wao-danger); }
-.btn-ghost.danger { color: var(--wao-danger); }
-.btn-ghost.danger:hover { border-color: var(--wao-danger); }
 .kv-list {
   margin-top: 10px;
   display: flex;
@@ -1292,14 +863,14 @@ async function bindFeishu() {
   height: 26px;
   padding: 0 10px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   font-size: 11.5px;
   color: var(--wao-text-2);
   cursor: pointer;
 }
 .mini-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .sub-block {
   margin-top: 12px;
@@ -1348,7 +919,7 @@ async function bindFeishu() {
   height: 18px;
   border: none;
   border-radius: 999px;
-  background: #d9dce5;
+  background: var(--wao-line-strong);
   cursor: pointer;
   position: relative;
   padding: 0;
@@ -1363,7 +934,7 @@ async function bindFeishu() {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--wao-bg-card);
   transition: left 0.15s ease;
 }
 .toggle.on .knob {
@@ -1426,7 +997,7 @@ async function bindFeishu() {
   height: 29px;
   padding: 0 12px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   font-size: 12px;
   color: var(--wao-text-2);
@@ -1436,7 +1007,7 @@ async function bindFeishu() {
   gap: 5px;
 }
 .value-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .value-btn i {
   font-size: 13px;
@@ -1460,17 +1031,17 @@ async function bindFeishu() {
   border-radius: 8px;
   padding: 0 12px;
   font-size: 13px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
 }
 .token-input input:focus {
   border-color: var(--wao-primary);
-  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
+  box-shadow: 0 0 0 3px var(--wao-primary-soft);
 }
 .fresh {
   margin-top: 12px;
-  background: #f4fbf7;
+  background: var(--wao-success-bg);
   border: 1px solid var(--wao-success-line);
   border-radius: 10px;
   padding: 12px 14px;
@@ -1496,8 +1067,8 @@ async function bindFeishu() {
   flex: 1;
   font-size: 12.5px;
   color: var(--wao-text);
-  background: #fff;
-  border: 1px solid #dceee4;
+  background: var(--wao-bg-card);
+  border: 1px solid var(--wao-success-line);
   border-radius: 7px;
   padding: 7px 11px;
   white-space: nowrap;
@@ -1507,7 +1078,7 @@ async function bindFeishu() {
   height: 32px;
   padding: 0 12px;
   border: 1px solid var(--wao-success-line);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   font-size: 12px;
   color: var(--wao-success-strong);
@@ -1591,8 +1162,8 @@ async function bindFeishu() {
 .revoke {
   height: 26px;
   padding: 0 10px;
-  border: 1px solid #f0c9c9;
-  background: #fff;
+  border: 1px solid var(--wao-danger-line);
+  background: var(--wao-bg-card);
   border-radius: 7px;
   font-size: 11.5px;
   color: var(--wao-danger-strong);
@@ -1624,8 +1195,6 @@ async function bindFeishu() {
   .card { padding: 14px; }
   .credential-form, .profile-form, .webhook-form { grid-template-columns: 1fr; }
   .site-form { grid-template-columns: 1fr; }
-  .registry-layout { grid-template-columns: 1fr; }
-  .editor-title, .wide-field { grid-column: 1; }
   .bind-actions, .token-input, .fresh-row { align-items: stretch; flex-direction: column; }
   .btn-primary, .btn-ghost { justify-content: center; }
   .grid-tokens { grid-template-columns: minmax(130px, 1fr) 70px; }
