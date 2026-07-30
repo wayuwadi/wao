@@ -63,6 +63,7 @@ const router = createRouter({
         { path: 'kb/:id', name: 'kb', component: () => import('@/views/KbDetailView.vue'), meta: { module: 'knowledge', tabKind: 'kb' } },
         { path: 'files', name: 'files', component: () => import('@/views/FilesView.vue'), meta: { module: 'files', tabKind: 'module' } },
         { path: 'automation', name: 'automation', component: () => import('@/views/AutomationView.vue'), meta: { module: 'automation', tabKind: 'module' } },
+        { path: 'dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { tabKind: 'dashboard' } },
         { path: 'media-agent', redirect: '/apps/media-agent' },
         { path: 'apps/:appId', name: 'external-app', component: () => import('@/views/ExternalAppView.vue'), meta: { tabKind: 'external' } },
         { path: 'vault', name: 'vault', component: () => import('@/views/VaultView.vue'), meta: { module: 'vault', tabKind: 'module' } },
