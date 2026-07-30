@@ -24,7 +24,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     setActivePinia(createPinia())
   })
 
-  it('默认只看当前人，清单含全部未完成任务并可框选时间段', async () => {
+  it('默认只看当前人，待安排清单只含未排期与已逾期任务并可集中筛选', async () => {
     const data = useDataStore()
     const session = useSessionStore()
     const ui = useUiStore()
@@ -43,6 +43,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     data.tasks = [
       task({ title: '我的已排期 P2', owner: session.currentUser.id, pr: 'P2', due: data.today }),
       task({ title: '我的未排期 P0', owner: session.currentUser.id, pr: 'P0', due: '' }),
+      task({ title: '我的逾期 P1', owner: session.currentUser.id, pr: 'P1', due: '2026-07-01' }),
       task({ title: '他人的任务', owner: other.id, pr: 'P0', due: data.today }),
     ]
 
@@ -52,8 +53,13 @@ describe('日历成员隔离、清单与时间轴', () => {
     const backlog = wrapper.findAll('.bl-item')
     expect(backlog).toHaveLength(2)
     expect(backlog[0]!.text()).toContain('我的未排期 P0')
+    expect(backlog[1]!.text()).toContain('我的逾期 P1')
     expect(wrapper.text()).toContain('我的已排期 P2')
     expect(wrapper.text()).not.toContain('他人的任务')
+
+    await wrapper.find('.bl-filter select').setValue('overdue')
+    expect(wrapper.findAll('.bl-item')).toHaveLength(1)
+    expect(wrapper.find('.bl-item').text()).toContain('我的逾期 P1')
 
     await wrapper.find('.view-switch button:last-child').trigger('click')
     const slots = wrapper.findAll('.time-day .time-slot')

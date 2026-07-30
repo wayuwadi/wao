@@ -58,7 +58,7 @@ paths:
         '200': { description: OK }
         '404': { description: 不存在（code=40400） }
     patch:
-      summary: 局部更新项目（名称 / 领域 / 目标 / 图标 / 通知开关 / 任务分组，空字段不改）
+      summary: 局部更新项目（名称 / 领域 / 状态 / 目标 / 图标 / 通知开关 / 任务分组，空字段不改）
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -762,6 +762,7 @@ components:
       properties:
         name: { type: string }
         area: { type: string }
+        status: { type: string, enum: [进行中, 有风险, 规划中, 已完成] }
         goal: { type: string }
         icon: { type: string }
         notifyEnabled: { type: boolean, description: 通知开关；null 表示不改 }

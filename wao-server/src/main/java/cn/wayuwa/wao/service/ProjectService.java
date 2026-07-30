@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.dto.Activity;
@@ -26,6 +27,7 @@ import org.springframework.stereotype.Service;
 public class ProjectService {
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ProjectService.class);
+    private static final Set<String> PROJECT_STATUSES = Set.of("规划中", "进行中", "有风险", "已完成");
     /** 一个项目最多能建的任务分组数。 */
     public static final int MAX_TASK_GROUPS = 6;
     /** 分组名长度上限，防止一行名字把分组头撑破。 */
@@ -136,7 +138,7 @@ public class ProjectService {
     }
 
     /**
-     * 局部更新项目（名称 / 领域 / 目标 / 图标 / 通知开关）。空字段不改。
+     * 局部更新项目（名称 / 领域 / 状态 / 目标 / 图标 / 通知开关）。空字段不改。
      *
      * @param id       项目 id
      * @param req      局部更新请求
@@ -151,6 +153,12 @@ public class ProjectService {
         }
         if (req.area() != null && !req.area().isBlank()) {
             e.setArea(req.area());
+        }
+        if (req.status() != null) {
+            if (!PROJECT_STATUSES.contains(req.status())) {
+                throw new BadRequestException("不支持的项目状态：" + req.status());
+            }
+            e.setStatus(req.status());
         }
         if (req.goal() != null) {
             e.setGoal(req.goal().isBlank() ? "尚未填写目标——打开项目后可补充。" : req.goal().trim());

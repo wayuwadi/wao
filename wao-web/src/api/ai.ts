@@ -15,7 +15,13 @@ export const saveAiProjectConfig = (
 
 export const fetchAiWorkflows = () => data<AiWorkflow[]>(http.get('/api/ai/workflows'))
 
-export const fetchAiRunners = () => data<AiRunner[]>(http.get('/api/ai/runners'))
+/**
+ * 执行电脑在线状态是实时数据，不能复用浏览器或中间代理里的旧 GET 响应。
+ */
+export const fetchAiRunners = () => data<AiRunner[]>(http.get('/api/ai/runners', {
+  params: { _: Date.now() },
+  headers: { 'Cache-Control': 'no-cache' },
+}))
 
 export const updateRunnerMaxConcurrency = (runnerId: string, maxConcurrency: number) =>
   data<AiRunner>(http.put(`/api/ai/runners/${runnerId}/max-concurrency`, { maxConcurrency }))

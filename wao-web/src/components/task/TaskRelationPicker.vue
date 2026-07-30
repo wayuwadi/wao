@@ -129,8 +129,14 @@ header p { margin: 4px 0 0; color: var(--wao-text-weak); font-size: 11.5px; }
 .search > i { color: var(--wao-text-weak); }
 .search input { flex: 1; min-width: 0; border: 0; outline: 0; font-size: 13px; color: var(--wao-text); }
 .search button { width: 26px; height: 26px; border: 0; background: none; color: var(--wao-text-faint); cursor: pointer; }
-nav { display: flex; gap: 5px; padding: 0 18px 12px; border-bottom: 1px solid var(--wao-divider); overflow-x: auto; }
-nav button { height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--wao-text-3); cursor: pointer; white-space: nowrap; }
+nav {
+  min-height: 42px; flex: 0 0 auto; display: flex; gap: 5px; padding: 0 18px 12px;
+  border-bottom: 1px solid var(--wao-divider); overflow-x: auto; scrollbar-width: thin;
+}
+nav button {
+  height: 30px; flex: 0 0 auto; padding: 0 10px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--wao-text-3); cursor: pointer; white-space: nowrap;
+}
 nav button.on { background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: 600; }
 nav span { margin-left: 5px; color: var(--wao-text-faint); font-size: 10px; }
 .relation-list { min-height: 220px; overflow-y: auto; padding: 8px; }

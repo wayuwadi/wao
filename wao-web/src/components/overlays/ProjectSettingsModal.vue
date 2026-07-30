@@ -18,6 +18,7 @@ const data = useDataStore()
 
 const name = ref(props.project.name)
 const area = ref(props.project.area)
+const status = ref(props.project.status)
 const goal = ref(props.project.goal === '尚未填写目标——打开项目后可补充。' ? '' : props.project.goal)
 const icon = ref(props.project.icon || 'ri-stack-line')
 const confirming = ref(false)
@@ -44,12 +45,14 @@ const ICONS = [
 async function save() {
   if (!name.value.trim()) return
   try {
-    await data.updateProject(props.project.id, {
+    const projectSaved = await data.updateProject(props.project.id, {
       name: name.value.trim(),
       area: area.value,
+      status: status.value,
       goal: goal.value.trim(),
       icon: icon.value,
     })
+    if (!projectSaved) throw new Error('项目设置保存失败，请重试')
     await saveAiProjectConfig(props.project.id, {
       enabled: aiEnabled.value,
       repoUrl: repoUrl.value.trim(),
@@ -140,6 +143,14 @@ onMounted(loadAiConfig)
         <span class="dot" :style="{ background: a.color }"></span>{{ a.name }}
       </button>
     </div>
+
+    <div class="label">项目状态</div>
+    <select v-model="status" class="status-select" aria-label="项目状态">
+      <option value="规划中">规划中</option>
+      <option value="进行中">进行中</option>
+      <option value="有风险">有风险</option>
+      <option value="已完成">已完成</option>
+    </select>
 
     <div class="label">项目描述 / 目标</div>
     <textarea v-model="goal" class="goal" rows="3" placeholder="这个项目做成了，会是什么样？"></textarea>
@@ -379,6 +390,22 @@ onMounted(loadAiConfig)
   color: var(--wao-text);
   outline: none;
   resize: none;
+}
+.status-select {
+  margin-top: 6px;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--wao-text);
+  font-size: 13px;
+  outline: none;
+}
+.status-select:focus {
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
 }
 .goal:focus {
   border-color: var(--wao-primary);
