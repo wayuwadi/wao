@@ -91,6 +91,7 @@ const commands = computed<Command[]>(() => {
     { id: 'nav-automation', title: '自动化', subtitle: '自动化任务与脚本', icon: 'ri-magic-line', keywords: ['automation', 'zidonghua'], action: () => navigate('/automation') },
     { id: 'nav-vault', title: 'Vault', subtitle: '密码与敏感信息', icon: 'ri-shield-keyhole-line', keywords: ['vault', 'mima', 'minan'], action: () => navigate('/vault') },
     { id: 'nav-settings', title: '设置', subtitle: '组织、通知与个人偏好', icon: 'ri-settings-3-line', keywords: ['settings', 'shezhi', 'peizhi'], action: () => navigate('/settings') },
+    { id: 'nav-dashboard', title: '数据仪表盘', subtitle: 'AI 运行与任务完成统计', icon: 'ri-line-chart-line', keywords: ['dashboard', 'yibiaopan', 'tongji', 'shuju', 'tubiao'], action: () => navigate('/dashboard') },
 
     // 动作
     { id: 'action-project', title: '新建项目', subtitle: '创建一个新的项目', icon: 'ri-add-circle-line', keywords: ['new project', 'xinjian xiangmu', 'chuangjian'], action: () => { ui.openModal('project'); close() } },

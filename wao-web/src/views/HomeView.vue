@@ -356,6 +356,9 @@ onBeforeUnmount(() => {
             <b>{{ engine.online ? `${engine.online} 台在线` : engine.total ? '全部离线' : '未接入' }}</b>
           </span>
         </div>
+        <button class="hero-link" @click="router.push('/dashboard')">
+          <i class="ri-line-chart-line"></i>查看数据仪表盘
+        </button>
       </div>
       <div class="capacity" :style="{ '--capacity': `${totalSlots ? Math.min(100, usedSlots / totalSlots * 100) : 0}%` }">
         <div class="capacity-orbit" aria-hidden="true"><i></i><b></b><em></em></div>
@@ -772,6 +775,21 @@ onBeforeUnmount(() => {
 }
 .engine-status span.dim { opacity: .55; }
 .engine-status b { font-weight: 600; opacity: .8; }
+.hero-link {
+  margin-top: 12px;
+  padding: 6px 12px;
+  border: 1px solid #ffffff55;
+  border-radius: 999px;
+  background: #ffffff1f;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hero-link:hover { background: #ffffff33; }
+.hero-link i { font-size: 14px; }
 .capacity {
   position: relative;
   width: 170px;
