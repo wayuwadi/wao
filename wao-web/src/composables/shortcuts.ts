@@ -20,6 +20,7 @@ export const SHORTCUT_GROUPS: { title: string; items: [keys: string, desc: strin
     title: '全局',
     items: [
       ['⌘/Ctrl K', '打开搜索'],
+      ['⌘/Ctrl J', '打开 AI 助手'],
       ['/', '打开搜索'],
       ['N', '新建任务'],
       ['Shift N', '新建项目'],

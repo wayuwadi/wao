@@ -1,0 +1,205 @@
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { GITHUB_REPOS, DEVOPS_LINKS, type QuickLink } from '@/config/quickLinks'
+
+const open = ref(false)
+const panelRef = ref<HTMLElement | null>(null)
+const triggerRef = ref<HTMLButtonElement | null>(null)
+
+function toggle() {
+  open.value = !open.value
+}
+
+function visit(link: QuickLink) {
+  window.open(link.url, '_blank', 'noopener')
+  open.value = false
+}
+
+/** 点击面板外部或触发按钮外部时关闭。 */
+function onDocClick(e: MouseEvent) {
+  const target = e.target as Node
+  if (panelRef.value?.contains(target) || triggerRef.value?.contains(target)) return
+  open.value = false
+}
+
+onMounted(() => document.addEventListener('mousedown', onDocClick))
+onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
+</script>
+
+<template>
+  <div class="quick-links-wrap">
+    <button
+      ref="triggerRef"
+      class="ql-trigger"
+      title="快捷链接（GitHub、PR、Issues…）"
+      @click="toggle"
+    >
+      <i class="ri-links-line"></i>
+    </button>
+
+    <Transition name="ql-pop">
+      <div v-if="open" ref="panelRef" class="ql-panel">
+        <div class="ql-head">
+          <i class="ri-links-line"></i>
+          <span>快捷链接</span>
+        </div>
+
+        <div class="ql-section-label">GitHub 仓库</div>
+        <button v-for="link in GITHUB_REPOS" :key="link.id" class="ql-item" @click="visit(link)">
+          <i :class="link.icon"></i>
+          <span class="ql-text">
+            <span class="ql-label">{{ link.label }}</span>
+            <span class="ql-sub">{{ link.subtitle }}</span>
+          </span>
+          <i class="ri-external-link-line ql-ext"></i>
+        </button>
+
+        <div class="ql-divider"></div>
+
+        <div class="ql-section-label">开发运维</div>
+        <button v-for="link in DEVOPS_LINKS" :key="link.id" class="ql-item" @click="visit(link)">
+          <i :class="link.icon"></i>
+          <span class="ql-text">
+            <span class="ql-label">{{ link.label }}</span>
+            <span class="ql-sub">{{ link.subtitle }}</span>
+          </span>
+          <i class="ri-external-link-line ql-ext"></i>
+        </button>
+      </div>
+    </Transition>
+  </div>
+</template>
+
+<style scoped>
+.quick-links-wrap {
+  position: relative;
+}
+.ql-trigger {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--wao-text-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ql-trigger:hover {
+  background: var(--wao-bg-hover-2);
+  color: var(--wao-text-2);
+}
+.ql-trigger i {
+  font-size: 16px;
+}
+
+.ql-panel {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  z-index: 200;
+  width: 260px;
+  padding: 8px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+  box-shadow: 0 8px 30px rgba(20, 25, 45, 0.12);
+}
+
+.ql-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wao-text-2);
+}
+.ql-head i {
+  font-size: 14px;
+}
+
+.ql-section-label {
+  padding: 6px 8px 2px;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--wao-text-weak);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ql-divider {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--wao-line);
+}
+
+.ql-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wao-text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.ql-item:hover {
+  background: var(--wao-bg-hover);
+}
+.ql-item > i:first-child {
+  width: 18px;
+  text-align: center;
+  font-size: 15px;
+  color: var(--wao-text-3);
+  flex-shrink: 0;
+}
+.ql-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.ql-label {
+  font-weight: 500;
+}
+.ql-sub {
+  font-size: 10.5px;
+  color: var(--wao-text-weak);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ql-ext {
+  font-size: 12px;
+  color: var(--wao-text-faint);
+  flex-shrink: 0;
+}
+.ql-item:hover .ql-ext {
+  color: var(--wao-text-3);
+}
+
+/* 过渡动画 */
+.ql-pop-enter-active,
+.ql-pop-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.ql-pop-enter-from,
+.ql-pop-leave-to {
+  opacity: 0;
+  transform: translateX(-4px) scale(0.97);
+}
+
+/* 侧栏折叠时隐藏面板 */
+@media (max-width: 760px) {
+  .quick-links-wrap {
+    display: none;
+  }
+}
+</style>

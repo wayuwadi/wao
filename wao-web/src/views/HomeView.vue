@@ -17,6 +17,7 @@ import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
 import { formatCost, formatTokens, shortModel, usageSummary } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
+import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
 import { useUiStore } from '@/stores/ui'
 import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiWorkflow } from '@/types'
 
@@ -284,6 +285,11 @@ async function generatePairCode() {
 
 function openRun(run: AiRun) {
   router.push({ path: `/projects/${run.projectId}`, query: { task: run.taskId } })
+}
+
+/** 根据 run 找到对应的工作流配置，用于拼接 GitHub 链接。 */
+function findWorkflowForRun(run: AiRun) {
+  return workflows.value.find((w) => w.projectId === run.projectId)
 }
 
 function inspectRun(run: AiRun) {
@@ -615,7 +621,25 @@ onBeforeUnmount(() => {
               </button>
             </header>
             <dl class="flow-meta">
-              <div><dt>仓库</dt><dd>{{ workflow.config.repoUrl || '未填写' }}</dd></div>
+              <div>
+                <dt>仓库</dt>
+                <dd v-if="workflow.config.repoUrl">
+                  <a
+                    v-if="githubBrowseUrl(workflow.config.repoUrl)"
+                    :href="githubBrowseUrl(workflow.config.repoUrl)"
+                    target="_blank"
+                    rel="noopener"
+                    class="repo-link"
+                    :title="workflow.config.repoUrl"
+                    @click.stop
+                  >
+                    <i class="ri-git-repository-line"></i>{{ workflow.config.repoUrl.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '') }}
+                    <i class="ri-external-link-line"></i>
+                  </a>
+                  <span v-else :title="workflow.config.repoUrl">{{ workflow.config.repoUrl }}</span>
+                </dd>
+                <dd v-else>未填写</dd>
+              </div>
               <div><dt>基线分支</dt><dd>{{ workflow.config.defaultBranch }}</dd></div>
               <div><dt>固定电脑</dt><dd>{{ workflow.preferredRunnerName || '自动分配' }}</dd></div>
               <div><dt>项目并发</dt><dd>{{ workflow.config.maxParallelRuns }}</dd></div>
@@ -625,6 +649,32 @@ onBeforeUnmount(() => {
               <span><i class="ri-checkbox-circle-line"></i>成功 {{ workflow.succeededRuns }}</span>
               <span><i class="ri-error-warning-line"></i>失败 {{ workflow.failedRuns }}</span>
               <span class="run-time">{{ workflow.lastRunAt ? `最近运行 ${timeText(workflow.lastRunAt)}` : '还没有跑过' }}</span>
+              <template v-if="githubBrowseUrl(workflow.config.repoUrl)">
+                <a
+                  class="flow-gh-link"
+                  :href="githubSubPage(workflow.config.repoUrl, 'pulls')"
+                  target="_blank"
+                  rel="noopener"
+                  title="Pull Requests"
+                  @click.stop
+                ><i class="ri-git-pull-request-line"></i>PR</a>
+                <a
+                  class="flow-gh-link"
+                  :href="githubSubPage(workflow.config.repoUrl, 'issues')"
+                  target="_blank"
+                  rel="noopener"
+                  title="Issues"
+                  @click.stop
+                ><i class="ri-error-warning-line"></i>Issues</a>
+                <a
+                  class="flow-gh-link"
+                  :href="githubSubPage(workflow.config.repoUrl, 'actions')"
+                  target="_blank"
+                  rel="noopener"
+                  title="Actions"
+                  @click.stop
+                ><i class="ri-flashlight-line"></i>Actions</a>
+              </template>
             </div>
 
             <div v-if="editingProjectId === workflow.projectId" class="flow-form">
@@ -716,6 +766,19 @@ onBeforeUnmount(() => {
           <span v-if="selectedRun.retryOfRunId" class="retry-note">
             <i class="ri-corner-down-right-line"></i>本次是基于上一次报错的重跑
           </span>
+          <a
+            v-if="selectedRun.branchName"
+            class="secondary gh-branch-link"
+            :href="findWorkflowForRun(selectedRun)?.config?.repoUrl
+              ? githubSubPage(findWorkflowForRun(selectedRun)!.config.repoUrl, `tree/${selectedRun.branchName}`)
+              : '#'"
+            :class="{ disabled: !findWorkflowForRun(selectedRun)?.config?.repoUrl }"
+            target="_blank"
+            rel="noopener"
+            :title="selectedRun.branchName"
+          >
+            <i class="ri-git-branch-line"></i>{{ selectedRun.branchName }}
+          </a>
           <button class="secondary" @click="selectedRun = null">关闭</button>
           <button
             v-if="selectedRun.status === 'failed'"
@@ -1011,6 +1074,35 @@ onBeforeUnmount(() => {
 .flow-meta dd { margin: 4px 0 0; overflow: hidden; font-size: 11.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .flow-stats { margin-top: 11px; display: flex; align-items: center; gap: 14px; color: var(--wao-text-3); font-size: 11px; }
 .flow-stats i { margin-right: 4px; }
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #4358d6;
+  text-decoration: none;
+  font-weight: 600;
+}
+.repo-link:hover { text-decoration: underline; }
+.repo-link i { font-size: 12px; }
+.repo-link .ri-external-link-line { font-size: 10px; opacity: .6; }
+.flow-gh-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border: 1px solid var(--wao-line);
+  border-radius: 6px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  text-decoration: none;
+  font-size: 10px;
+}
+.flow-gh-link:hover {
+  border-color: #bec7ef;
+  color: #4358d6;
+  background: #f5f7ff;
+}
+.flow-gh-link i { font-size: 11px; }
 .flow-form { margin-top: 14px; padding-top: 14px; border-top: 1px solid #f0f1f5; display: grid; grid-template-columns: repeat(2, 1fr); gap: 11px; }
 .switch-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .form-field { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--wao-text-weak); }
@@ -1096,6 +1188,16 @@ onBeforeUnmount(() => {
 .run-detail footer button { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
 .run-detail footer .retry { display: inline-flex; align-items: center; gap: 6px; color: #b33a3a; border-color: #ead3d3; }
 .run-detail footer .retry:disabled { opacity: .6; cursor: not-allowed; }
+.gh-branch-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #4358d6;
+  border-color: #dfe4f6;
+}
+.gh-branch-link:hover { border-color: #bec7ef; background: #f5f7ff; }
+.gh-branch-link.disabled { opacity: .5; pointer-events: none; }
+.gh-branch-link i { font-size: 13px; }
 .run-detail footer .secondary { border: 1px solid var(--wao-line); background: #fff; }
 .run-detail footer .primary { border: 1px solid #4358d6; background: #4358d6; color: #fff; }
 @keyframes livePulse { 50% { opacity: .45; box-shadow: 0 0 0 7px #dff5e955; } }
