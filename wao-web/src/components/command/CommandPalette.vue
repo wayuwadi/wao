@@ -99,6 +99,7 @@ const commands = computed<Command[]>(() => {
     { id: 'action-note', title: '快速小记', subtitle: '打开快速笔记弹窗', icon: 'ri-sticky-note-line', keywords: ['note', 'xiaoji', 'biji'], action: () => { ui.openModal('note'); close() } },
     { id: 'action-pair', title: '生成 Runner 配对码', subtitle: '为新的执行电脑生成配对码', icon: 'ri-key-2-line', keywords: ['pair', 'peidui', 'runner'], action: pairCode },
     { id: 'action-wake', title: '唤醒执行电脑', subtitle: '向所有 Runner 发送唤醒请求', icon: 'ri-computer-line', keywords: ['wake', 'huanxing', 'runner'], action: wakeRunner },
+    { id: 'action-assistant', title: '打开 AI 助手', subtitle: '智能对话与快捷创建', icon: 'ri-robot-2-line', keywords: ['assistant', 'zhushou', 'duihua', 'chat'], action: () => { ui.openAssistant?.(); close() } },
 
     // 主题
     { id: 'theme-light', title: '切换到明亮主题', subtitle: '固定使用浅色模式', icon: 'ri-sun-line', keywords: ['light', 'mingliang', 'qianse', 'zhuti'], action: () => setTheme('light') },

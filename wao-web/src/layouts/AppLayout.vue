@@ -91,9 +91,13 @@ function onKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     ui.openSearch()
+  } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
+    e.preventDefault()
+    ui.toggleAssistant()
   } else if (e.key === 'Escape') {
-    // 逐层关闭：庆祝 → 帮助 → 搜索 → 弹窗
-    if (ui.celebrating) ui.stopCelebrate()
+    // 逐层关闭：助手 → 庆祝 → 帮助 → 搜索 → 弹窗
+    if (ui.assistantOpen) ui.closeAssistant()
+    else if (ui.celebrating) ui.stopCelebrate()
     else if (ui.helpOpen) ui.closeHelp()
     else if (ui.searchOpen) ui.closeSearch()
     else if (ui.modal) ui.closeModal()

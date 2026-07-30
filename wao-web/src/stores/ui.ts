@@ -83,6 +83,9 @@ export const useUiStore = defineStore('ui', () => {
   /** 快捷键帮助浮层。 */
   const helpOpen = ref(false)
 
+  /** AI 助手侧边栏。 */
+  const assistantOpen = ref(false)
+
   function openTask(id: string) {
     openTaskId.value = id
   }
@@ -165,10 +168,21 @@ export const useUiStore = defineStore('ui', () => {
     helpOpen.value = false
   }
 
+  function openAssistant() {
+    assistantOpen.value = true
+  }
+  function closeAssistant() {
+    assistantOpen.value = false
+  }
+  function toggleAssistant() {
+    assistantOpen.value = !assistantOpen.value
+  }
+
   return {
     openTaskId, modal, modalProject, modalDue, modalStartAt, modalEndAt,
-    searchOpen, searchAI, celebrating, helpOpen, taskViews,
+    searchOpen, searchAI, celebrating, helpOpen, assistantOpen, taskViews,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
     taskViewOf, setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, toggleHelp, closeHelp,
+    openAssistant, closeAssistant, toggleAssistant,
   }
 })
