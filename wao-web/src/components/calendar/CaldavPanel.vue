@@ -172,7 +172,7 @@ async function toggleCalendar(cal: CaldavCalendar) {
 }
 .card {
   margin-top: 14px;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 14px 18px;
@@ -224,7 +224,7 @@ async function toggleCalendar(cal: CaldavCalendar) {
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   font-size: 12.5px;
   color: var(--wao-text-2);
@@ -234,7 +234,7 @@ async function toggleCalendar(cal: CaldavCalendar) {
   gap: 5px;
 }
 .btn-ghost:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-ghost.sm {
   height: 29px;

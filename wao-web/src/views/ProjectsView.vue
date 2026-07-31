@@ -254,7 +254,7 @@ function openProject(id: string) {
   border-radius: 8px;
   padding: 0 10px 0 32px;
   font-size: 13px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
 }
@@ -269,7 +269,7 @@ function openProject(id: string) {
   height: 32px;
   padding: 0 10px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   font-size: 12.5px;
   color: var(--wao-text-2);
@@ -279,7 +279,7 @@ function openProject(id: string) {
   gap: 6px;
 }
 .tool-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .tool-btn i {
   font-size: 14px;
@@ -293,7 +293,7 @@ function openProject(id: string) {
   right: 0;
   top: 36px;
   z-index: 70;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 10px;
   box-shadow: var(--wao-shadow-pop);
@@ -336,7 +336,7 @@ function openProject(id: string) {
   height: 28px;
   padding: 0 12px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 999px;
   font-size: 12.5px;
@@ -383,7 +383,7 @@ function openProject(id: string) {
   margin-top: 12px;
 }
 .proj-card {
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 15px 16px 13px;
@@ -506,7 +506,7 @@ function openProject(id: string) {
   margin-top: 14px;
   padding: 44px;
   text-align: center;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   color: var(--wao-text-weak);

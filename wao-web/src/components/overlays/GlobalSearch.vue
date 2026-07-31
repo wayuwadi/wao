@@ -123,7 +123,7 @@ const HINTS = ['任务详情', '体检', '照片 扫描', '滇西北']
   right: 0;
   margin-inline: auto;
   width: min(620px, calc(100vw - 40px));
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 111;
   box-shadow: 0 24px 64px rgba(16, 18, 28, 0.26);
@@ -193,7 +193,7 @@ const HINTS = ['任务详情', '体检', '照片 扫描', '滇西北']
   text-align: left;
 }
 .result:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .result > i {
   font-size: 15px;
@@ -247,7 +247,7 @@ const HINTS = ['任务详情', '体检', '照片 扫描', '滇西北']
   height: 24px;
   padding: 0 9px;
   border: 1px solid var(--wao-line);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 999px;
   font-size: 11.5px;
   color: var(--wao-text-3);

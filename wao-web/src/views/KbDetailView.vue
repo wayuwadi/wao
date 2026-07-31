@@ -486,7 +486,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   align-items: center;
   gap: 5px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 999px;
   padding: 2.5px 10px;
   font-size: 11.5px;
@@ -546,7 +546,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   min-width: 0;
 }
 .folder-btn:hover {
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
 }
 .folder-input {
   flex: 1;
@@ -559,7 +559,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   font-weight: 600;
   color: var(--wao-text);
   outline: none;
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .chev {
   font-size: 14px;
@@ -606,7 +606,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   opacity: 1;
 }
 .row-act:hover {
-  background: #e9eaef;
+  background: var(--wao-bg-hover-2);
   color: var(--wao-primary);
 }
 .row-act.danger:hover {
@@ -639,7 +639,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   background: transparent;
 }
 .doc-node:hover {
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
 }
 .doc-node.on {
   background: var(--wao-primary-soft);
@@ -673,7 +673,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 .sync-bar {
   border-top: 1px solid var(--wao-line);
   padding: 10px 12px;
-  background: #f7f8fa;
+  background: var(--wao-bg-sub);
 }
 .sync-title {
   display: flex;
@@ -709,7 +709,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .doc-wrap {
   display: flex;
@@ -779,7 +779,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   width: 28px;
   height: 28px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   cursor: pointer;
   color: var(--wao-text-3);
@@ -788,7 +788,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   justify-content: center;
 }
 .icon-act:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .icon-act.danger:hover {
   background: var(--wao-danger-bg);
@@ -799,7 +799,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 .icon-act.faved:hover {
   color: #b9821f;
   border-color: #e5d3a8;
-  background: #fdf6e7;
+  background: var(--wao-warning-bg);
 }
 /* 分享菜单（样式与 TaskDrawer 的分享菜单保持一致手感） */
 .share-wrap {
@@ -816,7 +816,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   top: 34px;
   z-index: 89;
   width: 236px;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 10px;
   box-shadow: var(--wao-shadow-pop-2);
@@ -881,8 +881,8 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   border-radius: 6px;
 }
 .doc-title:focus {
-  background: #f7f8fb;
-  box-shadow: 0 0 0 3px #f7f8fb;
+  background: var(--wao-bg-sub);
+  box-shadow: 0 0 0 3px var(--wao-bg-sub);
 }
 .doc-title::placeholder {
   color: var(--wao-text-faint-2);

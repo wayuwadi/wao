@@ -1,10 +1,17 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { GITHUB_REPOS, DEVOPS_LINKS, type QuickLink } from '@/config/quickLinks'
+import { useRouter } from 'vue-router'
+import { useQuickLinks } from '@/composables/quickLinks'
+import type { QuickLink } from '@/config/quickLinks'
+
+const router = useRouter()
+const { links, load } = useQuickLinks()
 
 const open = ref(false)
 const panelRef = ref<HTMLElement | null>(null)
 const triggerRef = ref<HTMLButtonElement | null>(null)
+
+onMounted(() => load())
 
 function toggle() {
   open.value = !open.value
@@ -13,6 +20,11 @@ function toggle() {
 function visit(link: QuickLink) {
   window.open(link.url, '_blank', 'noopener')
   open.value = false
+}
+
+function goManage() {
+  open.value = false
+  router.push('/settings?tab=quick-links')
 }
 
 /** 点击面板外部或触发按钮外部时关闭。 */
@@ -42,29 +54,23 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
         <div class="ql-head">
           <i class="ri-links-line"></i>
           <span>快捷链接</span>
+          <button class="ql-manage" title="管理快捷链接" @click="goManage">
+            <i class="ri-settings-3-line"></i>
+          </button>
         </div>
 
-        <div class="ql-section-label">GitHub 仓库</div>
-        <button v-for="link in GITHUB_REPOS" :key="link.id" class="ql-item" @click="visit(link)">
+        <button v-for="link in links" :key="link.id" class="ql-item" @click="visit(link)">
           <i :class="link.icon"></i>
           <span class="ql-text">
             <span class="ql-label">{{ link.label }}</span>
-            <span class="ql-sub">{{ link.subtitle }}</span>
+            <span v-if="link.subtitle" class="ql-sub">{{ link.subtitle }}</span>
           </span>
           <i class="ri-external-link-line ql-ext"></i>
         </button>
 
-        <div class="ql-divider"></div>
-
-        <div class="ql-section-label">开发运维</div>
-        <button v-for="link in DEVOPS_LINKS" :key="link.id" class="ql-item" @click="visit(link)">
-          <i :class="link.icon"></i>
-          <span class="ql-text">
-            <span class="ql-label">{{ link.label }}</span>
-            <span class="ql-sub">{{ link.subtitle }}</span>
-          </span>
-          <i class="ri-external-link-line ql-ext"></i>
-        </button>
+        <div v-if="links.length === 0" class="ql-empty">
+          暂无快捷链接，<a class="ql-empty-link" @click="goManage">前往添加</a>
+        </div>
       </div>
     </Transition>
   </div>
@@ -119,20 +125,37 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
 .ql-head i {
   font-size: 14px;
 }
-
-.ql-section-label {
-  padding: 6px 8px 2px;
-  font-size: 10px;
-  font-weight: 650;
-  color: var(--wao-text-weak);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.ql-head span {
+  flex: 1;
+}
+.ql-manage {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--wao-text-faint);
+  padding: 2px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+}
+.ql-manage:hover {
+  color: var(--wao-text-2);
+  background: var(--wao-bg-hover);
+}
+.ql-manage i {
+  font-size: 13px;
 }
 
-.ql-divider {
-  height: 1px;
-  margin: 4px 8px;
-  background: var(--wao-line);
+.ql-empty {
+  padding: 16px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--wao-text-weak);
+}
+.ql-empty-link {
+  color: var(--wao-primary);
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .ql-item {

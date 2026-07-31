@@ -34,16 +34,16 @@ function emptyText(run: AiRun) {
 </template>
 
 <style scoped>
-.ai-progress { max-height: 330px; overflow: auto; padding: 13px 14px; border: 1px solid #e4e7f2; border-radius: 11px; background: #f8f9fd; }
+.ai-progress { max-height: 330px; overflow: auto; padding: 13px 14px; border: 1px solid var(--wao-line); border-radius: 11px; background: var(--wao-bg-sub); }
 .ai-progress ol { margin: 0; padding: 0; list-style: none; }
 .ai-progress li { position: relative; min-height: 42px; padding: 0 0 14px 30px; display: flex; }
-.ai-progress li:not(:last-child)::after { content: ''; position: absolute; left: 10px; top: 22px; bottom: 0; width: 1px; background: #d9deef; }
-.progress-dot { position: absolute; left: 0; top: 0; width: 21px; height: 21px; border-radius: 50%; background: #e9edff; color: #4358d6; display: grid; place-items: center; font-size: 10px; }
+.ai-progress li:not(:last-child)::after { content: ''; position: absolute; left: 10px; top: 22px; bottom: 0; width: 1px; background: var(--wao-line); }
+.progress-dot { position: absolute; left: 0; top: 0; width: 21px; height: 21px; border-radius: 50%; background: var(--wao-primary-soft); color: var(--wao-primary); display: grid; place-items: center; font-size: 10px; }
 .active li:last-child .progress-dot, .active .progress-empty i { animation: pulse 1.5s infinite; }
-.kind-result .progress-dot { background: #e5f7ed; color: #238052; }
-.ai-progress p { margin: 0; color: #303545; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
-.ai-progress time { display: block; margin-top: 3px; color: #9a9ead; font-size: 10px; }
-.progress-empty { color: #747b90; font-size: 12px; display: flex; align-items: center; gap: 8px; }
-.progress-empty i { color: #4358d6; }
+.kind-result .progress-dot { background: var(--wao-success-bg); color: var(--wao-success); }
+.ai-progress p { margin: 0; color: var(--wao-text-2); font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+.ai-progress time { display: block; margin-top: 3px; color: var(--wao-text-weak); font-size: 10px; }
+.progress-empty { color: var(--wao-text-3); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.progress-empty i { color: var(--wao-primary); }
 @keyframes pulse { 50% { opacity: .35; transform: scale(.88); } }
 </style>

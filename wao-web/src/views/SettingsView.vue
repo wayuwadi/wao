@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch, watchEffect } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
@@ -14,19 +14,23 @@ import {
 import { useDataStore } from '@/stores/data'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
+import { useQuickLinks } from '@/composables/quickLinks'
+import type { QuickLink } from '@/config/quickLinks'
 
 const session = useSessionStore()
 const theme = useTheme()
+const quickLinks = useQuickLinks()
 const data = useDataStore()
 const router = useRouter()
+const route = useRoute()
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members'], ['日历账户 · CalDAV', 'caldav']] },
   { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['通知 · 飞书 Webhook', 'webhook'], ['AI 账号', 'ai-accounts']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['开发者 · API', 'api']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['快捷链接', 'quick-links'], ['开发者 · API', 'api']] },
 ] as const
 
-const tab = ref('members')
+const tab = ref<string>((route.query.tab as string) || 'members')
 const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
 const profileForm = reactive({ name: '', initial: '' })
 const accountBusy = ref(false)
@@ -77,6 +81,69 @@ function cycleTheme() {
   const idx = order.indexOf(theme.mode.value)
   const next = order[(idx + 1) % order.length]
   theme.setTheme(next ?? 'system')
+}
+
+// ---- 快捷链接管理 ----
+const qlEditing = ref<QuickLink[]>([])
+const qlBusy = ref(false)
+
+function syncQlEditing() {
+  qlEditing.value = quickLinks.links.value.map((l) => ({ ...l }))
+}
+
+watch(() => quickLinks.loaded.value, (loaded) => {
+  if (loaded && qlEditing.value.length === 0) syncQlEditing()
+})
+
+watch(() => quickLinks.links.value, () => {
+  if (quickLinks.loaded.value) syncQlEditing()
+})
+
+function addQlLink() {
+  qlEditing.value.push({
+    id: `custom-${Date.now()}`,
+    label: '',
+    subtitle: '',
+    icon: 'ri-link',
+    url: '',
+    keywords: [],
+  })
+}
+
+function removeQlLink(index: number) {
+  qlEditing.value.splice(index, 1)
+}
+
+function moveQlLink(index: number, dir: -1 | 1) {
+  const target = index + dir
+  if (target < 0 || target >= qlEditing.value.length) return
+  const arr = qlEditing.value
+  const a = arr[index]
+  const b = arr[target]
+  if (a && b) {
+    arr[index] = b
+    arr[target] = a
+  }
+}
+
+async function saveQlLinks() {
+  const valid = qlEditing.value.filter((l) => l.label.trim() && l.url.trim())
+  qlBusy.value = true
+  try {
+    await quickLinks.save(valid)
+    syncQlEditing()
+    toast('快捷链接已保存', 'ri-check-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '保存失败')
+  } finally {
+    qlBusy.value = false
+  }
+}
+
+function resetQlLinks() {
+  quickLinks.resetToDefaults()
+  syncQlEditing()
+  toast('已恢复默认链接，记得点保存', 'ri-history-line')
 }
 
 // 开发者 · API
@@ -208,6 +275,7 @@ async function toggleProjectNotify(id: string) {
 watch(tab, (t) => {
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
   if (t === 'webhook' && !webhook.value) loadWebhook()
+  if (t === 'quick-links') quickLinks.load()
 }, { immediate: true })
 
 function toggleCal(c: { on: boolean }) {
@@ -479,6 +547,33 @@ function demo(msg: string, icon?: string) {
                 <div class="pref-desc">{{ p.desc }}</div>
               </div>
               <button class="value-btn" @click="demo('演示：偏好切换在正式版本生效', 'ri-settings-3-line')">{{ p.value }}<i class="ri-arrow-down-s-line"></i></button>
+            </div>
+          </div>
+        </template>
+
+        <!-- 快捷链接 -->
+        <template v-else-if="tab === 'quick-links'">
+          <div class="s-h1">快捷链接</div>
+          <div class="card thin">
+            <div class="ql-desc">侧边栏左下角的快捷入口，点击直接跳转外部地址。可自由增删和调整顺序，保存后生效。</div>
+            <div v-for="(link, i) in qlEditing" :key="link.id" class="ql-edit-row">
+              <div class="ql-edit-move">
+                <button class="ql-move-btn" :disabled="i === 0" title="上移" @click="moveQlLink(i, -1)"><i class="ri-arrow-up-s-line"></i></button>
+                <button class="ql-move-btn" :disabled="i === qlEditing.length - 1" title="下移" @click="moveQlLink(i, 1)"><i class="ri-arrow-down-s-line"></i></button>
+              </div>
+              <i :class="link.icon || 'ri-link'" class="ql-edit-icon"></i>
+              <div class="ql-edit-fields">
+                <input v-model.trim="link.label" class="ql-input" placeholder="名称（如 GitHub 仓库）" />
+                <input v-model.trim="link.url" class="ql-input" placeholder="https://…" />
+                <input v-model.trim="link.subtitle" class="ql-input ql-input-sub" placeholder="描述（可选）" />
+                <input v-model.trim="link.icon" class="ql-input ql-input-icon" placeholder="图标类名（如 ri-github-fill）" />
+              </div>
+              <button class="ql-remove" title="删除" @click="removeQlLink(i)"><i class="ri-delete-bin-line"></i></button>
+            </div>
+            <div class="ql-edit-actions">
+              <button class="btn-ghost" @click="addQlLink"><i class="ri-add-line"></i>添加链接</button>
+              <button class="btn-ghost" @click="resetQlLinks"><i class="ri-history-line"></i>恢复默认</button>
+              <button class="btn-primary" :disabled="qlBusy" @click="saveQlLinks">{{ qlBusy ? '保存中…' : '保存' }}</button>
             </div>
           </div>
         </template>
@@ -1199,5 +1294,97 @@ function demo(msg: string, icon?: string) {
   .btn-primary, .btn-ghost { justify-content: center; }
   .grid-tokens { grid-template-columns: minmax(130px, 1fr) 70px; }
   .grid-tokens > :nth-child(2), .grid-tokens > :nth-child(3), .grid-tokens > :nth-child(4) { display: none; }
+}
+
+/* 快捷链接管理 */
+.ql-desc {
+  font-size: 12.5px;
+  color: var(--wao-text-3);
+  padding: 8px 0 4px;
+}
+.ql-edit-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--wao-divider);
+}
+.ql-edit-move {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding-top: 4px;
+}
+.ql-move-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--wao-text-faint);
+  padding: 1px;
+  border-radius: 4px;
+  display: flex;
+}
+.ql-move-btn:hover:not(:disabled) {
+  color: var(--wao-text-2);
+  background: var(--wao-bg-hover);
+}
+.ql-move-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.ql-move-btn i {
+  font-size: 15px;
+}
+.ql-edit-icon {
+  font-size: 18px;
+  color: var(--wao-text-3);
+  padding-top: 6px;
+  flex-shrink: 0;
+}
+.ql-edit-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.ql-input {
+  height: 30px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 7px;
+  padding: 0 9px;
+  font-size: 12.5px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  outline: none;
+}
+.ql-input:focus {
+  border-color: var(--wao-primary);
+}
+.ql-input-sub, .ql-input-icon {
+  font-size: 11.5px;
+  color: var(--wao-text-3);
+}
+.ql-remove {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--wao-text-faint);
+  padding: 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.ql-remove:hover {
+  color: var(--wao-danger);
+  background: var(--wao-danger-bg);
+}
+.ql-remove i {
+  font-size: 15px;
+}
+.ql-edit-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0 6px;
+  flex-wrap: wrap;
 }
 </style>

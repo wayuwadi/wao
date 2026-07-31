@@ -88,7 +88,7 @@ async function create() {
   width: min(560px, calc(100vw - 40px));
   max-height: 80vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 101;
   box-shadow: var(--wao-shadow-modal);
@@ -137,7 +137,7 @@ async function create() {
   border-radius: 9px;
   padding: 0 12px;
   font-size: 14px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
 }
@@ -160,7 +160,7 @@ async function create() {
   height: 28px;
   padding: 0 11px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 999px;
   font-size: 12px;
@@ -187,7 +187,7 @@ async function create() {
   padding: 8px 12px;
   font-size: 13px;
   line-height: 1.7;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
   resize: none;
@@ -204,7 +204,7 @@ async function create() {
 }
 .vis {
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 10px;
   padding: 11px 12px;
   cursor: pointer;
@@ -245,14 +245,14 @@ async function create() {
   height: 34px;
   padding: 0 14px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-2);
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
 }
 .btn-ghost:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-primary {
   height: 34px;

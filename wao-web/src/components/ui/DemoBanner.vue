@@ -44,12 +44,12 @@ function dismiss() {
   margin-bottom: 16px;
 }
 .banner.demo {
-  background: linear-gradient(180deg, #f5f3ff, #f3f4fe);
-  border: 1px solid #e2e0f7;
+  background: linear-gradient(180deg, var(--wao-primary-tint), var(--wao-bg-sub));
+  border: 1px solid var(--wao-primary-line);
 }
 .banner.info {
-  background: #f4f8ff;
-  border: 1px solid #dbe7f7;
+  background: var(--wao-primary-tint);
+  border: 1px solid var(--wao-line);
 }
 .b-icon {
   font-size: 18px;

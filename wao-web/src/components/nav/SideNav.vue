@@ -247,7 +247,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   min-width: 0;
 }
 .org:hover {
-  background: #e9eaef;
+  background: var(--wao-bg-hover-2);
 }
 .org-name {
   font-size: 13.5px;
@@ -270,7 +270,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   align-items: center;
   gap: 8px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   padding: 0 10px;
   cursor: pointer;
@@ -278,7 +278,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   font-size: 12.5px;
 }
 .search:hover {
-  border-color: #c9cdda;
+  border-color: var(--wao-line-strong);
 }
 .search-text {
   flex: 1;
@@ -348,7 +348,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 }
 .item i {
   font-size: 16px;
-  color: #8a8d99;
+  color: var(--wao-text-weak);
   flex-shrink: 0;
 }
 .item-label {
@@ -358,11 +358,11 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.fav-remove { display: inline-flex; padding: 4px; color: #d6a11d; border-radius: 5px; }
-.fav-remove:hover { background: #fff2cc; }
+.fav-remove { display: inline-flex; padding: 4px; color: var(--wao-warning-strong); border-radius: 5px; }
+.fav-remove:hover { background: var(--wao-warning-bg); }
 .fav-remove i { color: inherit; font-size: 14px; }
 .item:hover {
-  background: #e9eaef;
+  background: var(--wao-bg-hover-2);
 }
 .item.active {
   background: var(--wao-primary-soft);
@@ -415,7 +415,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   justify-content: center;
 }
 .user:hover {
-  background: #e9eaef;
+  background: var(--wao-bg-hover-2);
 }
 .avatar {
   width: 26px;
@@ -461,7 +461,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     padding-bottom: env(safe-area-inset-bottom);
     border-top: 1px solid var(--wao-line);
     border-right: 0;
-    background: rgba(255, 255, 255, 0.97);
+    background: color-mix(in srgb, var(--wao-bg-card) 97%, transparent);
     box-shadow: 0 -4px 18px rgba(16, 18, 28, 0.08);
     overflow: visible;
   }
