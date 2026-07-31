@@ -305,7 +305,7 @@ async function createAuto() {
   height: 31px;
   padding: 0 13px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   font-size: 12.5px;
   color: var(--wao-text-2);
@@ -315,7 +315,7 @@ async function createAuto() {
   gap: 5px;
 }
 .btn-ghost:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-ghost i {
   font-size: 13px;
@@ -359,7 +359,7 @@ async function createAuto() {
 
 .table-card {
   margin-top: 14px;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   overflow-x: auto;
@@ -404,7 +404,7 @@ async function createAuto() {
   cursor: pointer;
 }
 .grid-runs.link:hover {
-  background: #fafafc;
+  background: var(--wao-bg-sub-2);
 }
 .right {
   text-align: right;
@@ -424,7 +424,7 @@ async function createAuto() {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -475,7 +475,7 @@ async function createAuto() {
   width: 26px;
   height: 26px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   cursor: pointer;
   color: var(--wao-text-3);
@@ -484,7 +484,7 @@ async function createAuto() {
   justify-content: center;
 }
 .op:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .op i {
   font-size: 13px;
@@ -548,7 +548,7 @@ async function createAuto() {
   width: 40px;
   height: 40px;
   border-radius: 11px;
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -608,7 +608,7 @@ async function createAuto() {
   border-bottom: 1px solid var(--wao-divider-2);
 }
 .detail-card {
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 15px 18px;
@@ -662,7 +662,7 @@ async function createAuto() {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #f0f2fb;
+  background: var(--wao-primary-tint);
   color: var(--wao-primary);
   font-size: 11px;
   display: inline-flex;
@@ -702,7 +702,7 @@ async function createAuto() {
   width: min(540px, calc(100vw - 40px));
   max-height: 80vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 101;
   box-shadow: var(--wao-shadow-modal);
@@ -752,7 +752,7 @@ async function createAuto() {
   font-size: 13px;
   color: var(--wao-text);
   outline: none;
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .f-input:focus,
 .f-textarea:focus {

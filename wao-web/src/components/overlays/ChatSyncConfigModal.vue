@@ -369,7 +369,7 @@ async function runHistory() {
   width: min(620px, calc(100vw - 40px));
   max-height: 86vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 101;
   box-shadow: var(--wao-shadow-modal);
@@ -440,7 +440,7 @@ async function runHistory() {
   border-radius: 9px;
   padding: 0 10px;
   font-size: 13px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
 }
@@ -465,7 +465,7 @@ async function runHistory() {
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   font-size: 12px;
   color: var(--wao-text-2);
@@ -578,7 +578,7 @@ async function runHistory() {
   height: 34px;
   padding: 0 14px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-2);
   border-radius: 8px;
   font-size: 13px;
@@ -588,7 +588,7 @@ async function runHistory() {
   gap: 6px;
 }
 .btn-ghost:hover:not(:disabled) {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-ghost:disabled {
   opacity: 0.55;

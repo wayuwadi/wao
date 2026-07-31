@@ -392,7 +392,7 @@ async function deleteItem() {
   height: 32px;
   padding: 0 13px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   font-size: 12.5px;
   color: var(--wao-text-2);
@@ -402,14 +402,14 @@ async function deleteItem() {
   gap: 6px;
 }
 .btn-ghost:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-ghost i {
   font-size: 14px;
 }
 .banner {
   margin-top: 12px;
-  background: #fffdf7;
+  background: var(--wao-warning-bg);
   border: 1px solid #f0e3c4;
   border-radius: 12px;
   padding: 11px 16px;
@@ -425,7 +425,7 @@ async function deleteItem() {
   margin-top: 2px;
 }
 .banner.error {
-  background: #fff6f6;
+  background: var(--wao-danger-bg);
   border-color: #f3d2d2;
   color: #a4302e;
   align-items: center;
@@ -434,7 +434,7 @@ async function deleteItem() {
   margin-left: auto;
   flex-shrink: 0;
   border: 1px solid #e6b7b6;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: #a4302e;
   border-radius: 8px;
   padding: 4px 12px;
@@ -449,7 +449,7 @@ async function deleteItem() {
 .cols {
   margin-top: 12px;
   display: flex;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   overflow: hidden;
@@ -482,7 +482,7 @@ async function deleteItem() {
   font-size: 12.5px;
 }
 .group-btn:hover {
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
 }
 .group-btn.on {
   background: var(--wao-primary-soft);
@@ -497,11 +497,11 @@ async function deleteItem() {
   padding: 3px 4px;
   border-radius: 7px;
 }
-.group-edit-row:hover { background: #f0f1f4; }
+.group-edit-row:hover { background: var(--wao-bg-tab); }
 .drag { color: var(--wao-text-faint); cursor: grab; }
 .group-name-input { min-width: 0; flex: 1; border: 1px solid var(--wao-line-control); border-radius: 5px; padding: 3px 5px; }
 .group-action { width: 22px; height: 22px; border: 0; background: transparent; border-radius: 5px; cursor: pointer; color: var(--wao-text-weak); }
-.group-action:hover { background: #fff; color: var(--wao-text); }
+.group-action:hover { background: var(--wao-bg-card); color: var(--wao-text); }
 .group-action.danger:hover { color: var(--wao-danger-strong); }
 .group-action:disabled { opacity: .25; cursor: not-allowed; }
 .optional { color: var(--wao-text-faint); font-weight: 400; }
@@ -553,7 +553,7 @@ async function deleteItem() {
   text-align: left;
 }
 .item-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .item-btn.on {
   background: var(--wao-primary-soft);
@@ -562,7 +562,7 @@ async function deleteItem() {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -607,7 +607,7 @@ async function deleteItem() {
   width: 42px;
   height: 42px;
   border-radius: 11px;
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -672,20 +672,20 @@ async function deleteItem() {
   height: 26px;
   padding: 0 10px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   font-size: 11.5px;
   color: var(--wao-text-2);
   cursor: pointer;
 }
 .f-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .f-icon {
   width: 26px;
   height: 26px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   cursor: pointer;
   color: var(--wao-text-weak);
@@ -694,7 +694,7 @@ async function deleteItem() {
   justify-content: center;
 }
 .f-icon:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .f-icon i {
   font-size: 13px;
@@ -758,7 +758,7 @@ async function deleteItem() {
   width: min(440px, calc(100vw - 40px));
   max-height: 80vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 101;
   box-shadow: var(--wao-shadow-modal);
@@ -811,7 +811,7 @@ async function deleteItem() {
   font-size: 13px;
   color: var(--wao-text);
   outline: none;
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .f-input:focus,
 .f-textarea:focus {
@@ -840,7 +840,7 @@ async function deleteItem() {
   position: fixed;
   inset: 0;
   z-index: 82;
-  background: #fff;
+  background: var(--wao-bg-card);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 16px calc(24px + env(safe-area-inset-bottom));
@@ -862,7 +862,7 @@ async function deleteItem() {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-bottom: 1px solid var(--wao-line);
 }
 .dp-back {

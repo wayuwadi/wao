@@ -122,7 +122,7 @@ async function download() {
 }
 .card {
   width: min(420px, 100%);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   box-shadow: var(--wao-shadow-modal, 0 12px 40px rgba(23, 25, 35, 0.12));
   padding: 22px;
@@ -227,7 +227,7 @@ async function download() {
   width: 38px;
   height: 38px;
   border: 1px solid var(--wao-line-control, #d9dce5);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 9px;
   cursor: pointer;
   color: var(--wao-text-3);

@@ -758,7 +758,7 @@ function onDropGroup(groupId: string, overId?: string) {
   width: 32px;
   height: 32px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   color: var(--wao-text-3);
   cursor: pointer;
@@ -767,7 +767,7 @@ function onDropGroup(groupId: string, overId?: string) {
   justify-content: center;
 }
 .btn-icon:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
   color: var(--wao-text-2);
 }
 .btn-icon i {
@@ -777,7 +777,7 @@ function onDropGroup(groupId: string, overId?: string) {
 .btn-icon.faved:hover {
   color: #b9821f;
   border-color: #e5d3a8;
-  background: #fdf6e7;
+  background: var(--wao-warning-bg);
 }
 
 .ptabs {
@@ -814,7 +814,7 @@ function onDropGroup(groupId: string, overId?: string) {
   height: 17px;
   border-radius: 5px;
   border: 1.5px solid #c9cdda;
-  background: #fff;
+  background: var(--wao-bg-card);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -828,7 +828,7 @@ function onDropGroup(groupId: string, overId?: string) {
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
   color: #6b6e79;
   cursor: pointer;
   flex: 0 0 auto;
@@ -922,12 +922,12 @@ function onDropGroup(groupId: string, overId?: string) {
 }
 .select-all {
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-3);
 }
 .batch-ai {
   border: 1px solid #bec8f5;
-  background: linear-gradient(135deg, #eef1ff, #fff);
+  background: linear-gradient(135deg, var(--wao-primary-tint), var(--wao-bg-card));
   color: var(--wao-primary-text);
   font-weight: 650;
 }
@@ -968,7 +968,7 @@ function onDropGroup(groupId: string, overId?: string) {
   font-size: 13px;
 }
 .seg-btn.on {
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(16, 18, 28, 0.1);
@@ -982,7 +982,7 @@ function onDropGroup(groupId: string, overId?: string) {
   padding: 0 9px;
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-3);
   font-size: 12.5px;
   cursor: pointer;
@@ -1004,7 +1004,7 @@ function onDropGroup(groupId: string, overId?: string) {
   left: 0;
   min-width: 132px;
   padding: 4px;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 9px;
   box-shadow: var(--wao-shadow-modal);
@@ -1026,7 +1026,7 @@ function onDropGroup(groupId: string, overId?: string) {
 .doc-list-card,
 .file-list-card {
   margin-top: 10px;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 6px 8px;
@@ -1170,7 +1170,7 @@ function onDropGroup(groupId: string, overId?: string) {
   align-items: center;
   gap: 6px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 999px;
   padding: 4px 12px;
   font-size: 12px;
@@ -1198,7 +1198,7 @@ function onDropGroup(groupId: string, overId?: string) {
   align-items: start;
 }
 .group-card {
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 8px 10px 10px;
@@ -1416,7 +1416,7 @@ function onDropGroup(groupId: string, overId?: string) {
   flex: 1 1 0;
   min-width: 172px;
   max-width: 262px;
-  background: #f1f2f5;
+  background: var(--wao-bg-hover-2);
   border-radius: 12px;
   padding: 10px;
   transition: background 0.12s, box-shadow 0.12s;
@@ -1500,7 +1500,7 @@ function onDropGroup(groupId: string, overId?: string) {
 }
 .board-card {
   position: relative;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 10px;
   padding: 11px 12px;
@@ -1529,7 +1529,7 @@ function onDropGroup(groupId: string, overId?: string) {
 
 .feed-card {
   margin-top: 16px;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 14px 18px;

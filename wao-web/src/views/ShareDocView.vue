@@ -88,7 +88,7 @@ async function copyMd() {
 .share-card {
   max-width: 760px;
   margin: 0 auto;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-divider);
   border-radius: 14px;
   padding: 28px 32px 24px;
@@ -122,7 +122,7 @@ async function copyMd() {
   color: var(--wao-primary, #4358d6);
   font-size: 12px;
   text-decoration: none;
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .locate:hover { background: var(--wao-primary-soft, #eef1fc); }
 .brand-dot {
@@ -182,7 +182,7 @@ async function copyMd() {
   height: 32px;
   padding: 0 13px;
   border: 1px solid var(--wao-line-strong, #d9dce5);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   font-size: 12.5px;
   color: var(--wao-text-2);

@@ -3,9 +3,9 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useTheme, type ThemeMode } from '@/composables/theme'
+import { useQuickLinks } from '@/composables/quickLinks'
 import { toast } from '@/composables/toast'
 import { createAiPairCode, fetchAiRunners, wakeAiRunner } from '@/api/ai'
-import { ALL_QUICK_LINKS } from '@/config/quickLinks'
 
 interface Command {
   id: string
@@ -27,6 +27,7 @@ const emit = defineEmits<{
 const router = useRouter()
 const ui = useUiStore()
 const theme = useTheme()
+const quickLinks = useQuickLinks()
 
 const query = ref('')
 const selectedIndex = ref(0)
@@ -108,7 +109,7 @@ const commands = computed<Command[]>(() => {
     { id: 'theme-system', title: '主题跟随系统', subtitle: '根据系统外观自动切换', icon: 'ri-computer-line', keywords: ['system', 'xitong', 'zhuti'], action: () => setTheme('system') },
 
     // 快捷链接（GitHub、PR、Issues、Actions…）
-    ...ALL_QUICK_LINKS.map((link) => ({
+    ...quickLinks.links.value.map((link) => ({
       id: `link-${link.id}`,
       title: link.label,
       subtitle: link.subtitle,
@@ -140,6 +141,7 @@ watch(() => props.modelValue, async (open) => {
   if (open) {
     query.value = ''
     selectedIndex.value = 0
+    quickLinks.load()
     await nextTick()
     listRef.value?.querySelector('input')?.focus()
   }

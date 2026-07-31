@@ -113,18 +113,18 @@ onMounted(() => nav.loadExternalApps())
 </template>
 
 <style scoped>
-.external-host { min-height: 560px; height: calc(100vh - var(--wao-header-h) - 42px); display: flex; flex-direction: column; background: #f5f6fa; }
-.external-toolbar { height: 42px; padding: 0 14px; flex: none; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--wao-line); background: #fff; color: var(--wao-text-weak); font-size: 12px; }
+.external-host { min-height: 560px; height: calc(100vh - var(--wao-header-h) - 42px); display: flex; flex-direction: column; background: var(--wao-bg-page); }
+.external-toolbar { height: 42px; padding: 0 14px; flex: none; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--wao-line); background: var(--wao-bg-card); color: var(--wao-text-weak); font-size: 12px; }
 .external-toolbar > div { display: flex; align-items: center; gap: 7px; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #d59a2e; box-shadow: 0 0 0 3px #fff3dc; }
 .status-dot.ready { background: #38a169; box-shadow: 0 0 0 3px #e3f7eb; }
 .status-dot.error, .status-dot.missing { background: #d84b4b; box-shadow: 0 0 0 3px #fde8e8; }
 .actions { display: flex; gap: 5px; }
-.actions button, .actions a { height: 28px; padding: 0 9px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--wao-line); border-radius: 7px; background: #fff; color: var(--wao-text-2); text-decoration: none; cursor: pointer; }
+.actions button, .actions a { height: 28px; padding: 0 9px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); text-decoration: none; cursor: pointer; }
 .actions button:hover, .actions a:hover { background: var(--wao-bg-hover-2); }
 .external-frame-wrap { position: relative; flex: 1; min-height: 0; }
-.external-frame { width: 100%; height: 100%; display: block; border: 0; background: #f5f6fa; }
-.state-card { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 9px; background: #f7f8fb; text-align: center; color: var(--wao-text-weak); }
+.external-frame { width: 100%; height: 100%; display: block; border: 0; background: var(--wao-bg-page); }
+.state-card { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 9px; background: var(--wao-bg-sub); text-align: center; color: var(--wao-text-weak); }
 .state-card.overlay { z-index: 1; }
 .state-card > i { font-size: 42px; color: #8b7fe5; }
 .state-card strong { color: var(--wao-text); font-size: 15px; }

@@ -219,7 +219,7 @@ async function removeFile(id: string | undefined, name: string) {
   cursor: pointer;
 }
 .seg-btn.on {
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(16, 18, 28, 0.1);
@@ -252,7 +252,7 @@ async function removeFile(id: string | undefined, name: string) {
 
 .file-list {
   margin-top: 10px;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   overflow: hidden;
@@ -272,7 +272,7 @@ async function removeFile(id: string | undefined, name: string) {
   width: 34px;
   height: 34px;
   border-radius: 9px;
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -311,7 +311,7 @@ async function removeFile(id: string | undefined, name: string) {
   height: 27px;
   padding: 0 11px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   font-size: 12px;
   color: var(--wao-text-2);
@@ -322,7 +322,7 @@ async function removeFile(id: string | undefined, name: string) {
   gap: 5px;
 }
 .copy-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .copy-btn i {
   font-size: 13px;
@@ -331,7 +331,7 @@ async function removeFile(id: string | undefined, name: string) {
   width: 27px;
   height: 27px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   cursor: pointer;
   color: var(--wao-text-3);
@@ -342,7 +342,7 @@ async function removeFile(id: string | undefined, name: string) {
   text-decoration: none;
 }
 .dl-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .dl-btn i {
   font-size: 13px;
@@ -366,7 +366,7 @@ async function removeFile(id: string | undefined, name: string) {
   width: 100%;
   height: 34px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 9px;
   font-size: 12.5px;
   color: var(--wao-text-2);
@@ -384,7 +384,7 @@ async function removeFile(id: string | undefined, name: string) {
   font-size: 15px;
 }
 .img-card {
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   overflow: hidden;
@@ -478,7 +478,7 @@ async function removeFile(id: string | undefined, name: string) {
   margin-top: 3px;
   height: 26px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   font-size: 11.5px;
   color: var(--wao-text-2);
@@ -489,7 +489,7 @@ async function removeFile(id: string | undefined, name: string) {
   gap: 5px;
 }
 .img-copy:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .img-copy i {
   font-size: 12px;

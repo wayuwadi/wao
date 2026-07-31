@@ -270,7 +270,7 @@ async function makeDefaultProject() {
   width: min(540px, calc(100vw - 40px));
   max-height: 76vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 101;
   box-shadow: var(--wao-shadow-modal);
@@ -314,7 +314,7 @@ async function makeDefaultProject() {
   border-radius: 9px;
   padding: 0 12px;
   font-size: 14px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
 }
@@ -424,13 +424,13 @@ async function makeDefaultProject() {
   border-radius: 8px;
   padding: 0 8px;
   color: var(--wao-text);
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .pill {
   height: 28px;
   padding: 0 11px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 999px;
   font-size: 12px;
@@ -464,7 +464,7 @@ async function makeDefaultProject() {
   height: 30px;
   padding: 0 10px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 8px;
   font-size: 12.5px;
@@ -515,14 +515,14 @@ async function makeDefaultProject() {
   height: 34px;
   padding: 0 14px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-2);
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
 }
 .btn-ghost:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-primary {
   height: 34px;
@@ -557,7 +557,7 @@ async function makeDefaultProject() {
     position: sticky;
     top: -14px;
     z-index: 2;
-    background: #fff;
+    background: var(--wao-bg-card);
     padding: 4px 0 6px;
   }
   /* 16px 是 iOS Safari 不自动放大页面的下限，比美观重要 */
@@ -579,7 +579,7 @@ async function makeDefaultProject() {
     gap: 8px;
     margin-top: 16px;
     padding: 10px 0 calc(6px + env(safe-area-inset-bottom));
-    background: #fff;
+    background: var(--wao-bg-card);
     border-top: 1px solid var(--wao-divider);
   }
   .foot .spacer { display: none; }

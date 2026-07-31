@@ -595,7 +595,7 @@ function onDropDay(dayIso: string) {
   position: relative;
   height: 1440px;
   border-left: 1px solid var(--wao-divider);
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .time-slot {
   position: absolute;
@@ -687,7 +687,7 @@ function onDropDay(dayIso: string) {
   align-items: center;
   gap: 6px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 999px;
   padding: 4px 12px;
   font-size: 12px;
@@ -716,7 +716,7 @@ function onDropDay(dayIso: string) {
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   color: var(--wao-text-3);
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .member-calendar select {
   max-width: 150px;
@@ -730,7 +730,7 @@ function onDropDay(dayIso: string) {
   width: 28px;
   height: 28px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   cursor: pointer;
   color: var(--wao-text-3);
@@ -739,7 +739,7 @@ function onDropDay(dayIso: string) {
   justify-content: center;
 }
 .nav-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .nav-btn i {
   font-size: 15px;
@@ -748,14 +748,14 @@ function onDropDay(dayIso: string) {
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   cursor: pointer;
   color: var(--wao-text-2);
   font-size: 12px;
 }
 .today-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 
 .cal-body {
@@ -767,7 +767,7 @@ function onDropDay(dayIso: string) {
 .cal-card {
   flex: 1;
   min-width: 0;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   overflow: hidden;
@@ -815,7 +815,7 @@ function onDropDay(dayIso: string) {
 }
 .day.drop-over {
   outline: 2px dashed #4358d6;
-  background: #f2f4fd !important;
+  background: var(--wao-primary-tint);
 }
 .day-num {
   width: 22px;
@@ -883,7 +883,7 @@ function onDropDay(dayIso: string) {
 .backlog {
   width: 240px;
   flex-shrink: 0;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 10px;
@@ -926,7 +926,7 @@ function onDropDay(dayIso: string) {
   padding: 0 6px;
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-2);
   font-size: 10.5px;
 }
@@ -964,7 +964,7 @@ function onDropDay(dayIso: string) {
   padding: 7px 8px;
   margin-top: 6px;
   cursor: grab;
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .bl-item:hover {
   border-color: #c9cdda;
