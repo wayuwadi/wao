@@ -3,10 +3,12 @@ import { computed, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
+import { useIsMobile } from '@/composables/viewport'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import type { VaultItem } from '@/types'
 
 const data = useDataStore()
+const isMobile = useIsMobile()
 const groupId = ref('all')
 const selId = ref<string | null>(null)
 const newGroupOpen = ref(false)
@@ -25,6 +27,15 @@ const items = computed<FlatItem[]>(() =>
 )
 const filtered = computed(() => (groupId.value === 'all' ? items.value : items.value.filter((i) => i.groupId === groupId.value)))
 const sel = computed(() => filtered.value.find((i) => i.id === selId.value) ?? filtered.value[0] ?? null)
+
+/**
+ * 手机上详情是一页盖屏的抽屉，只有显式点过条目才打开。
+ *
+ * <p>桌面三栏并排，详情默认落在第一条上；手机屏幕放不下三栏，详情栏被前两栏挤出可视区，
+ * 「查看」「复制」两个按钮就等于不存在了。所以手机改成「列表 → 点条目进详情页 → 返回」，
+ * 并且不沿用桌面「默认选中第一条」的行为，免得一进密码库就盖着一个没人点开的详情页。
+ */
+const detailOpen = computed(() => !isMobile.value || (selId.value != null && sel.value != null))
 
 /**
  * 默认分组按后端给的 isDefault 认，不按名字认：名字是用户的，改完名它还是同一个默认分组（见 ADR-036）。
@@ -207,7 +218,7 @@ async function deleteItem() {
     </div>
 
     <div class="cols">
-      <div class="group-col">
+      <div class="group-col" :class="{ managing: managingGroups }">
         <div class="col-label">分组</div>
         <template v-for="g in groups" :key="g.id">
           <button v-if="g.id === 'all' || !managingGroups" class="group-btn" :class="{ on: g.on }" @click="pickGroup(g.id)">
@@ -245,11 +256,16 @@ async function deleteItem() {
             <div class="item-name">{{ it.name }}</div>
             <div class="item-user">{{ it.user }}</div>
           </div>
+          <i class="ri-arrow-right-s-line item-go"></i>
         </button>
         <div v-if="filtered.length === 0" class="empty">这个分组还没有条目</div>
       </div>
 
-      <div class="detail-col">
+      <div v-if="detailOpen" class="detail-col" :class="{ 'detail-page': isMobile }">
+        <div v-if="isMobile" class="dp-head">
+          <button class="dp-back" title="返回列表" @click="selId = null"><i class="ri-arrow-left-line"></i></button>
+          <div class="dp-title">{{ sel?.name ?? '条目详情' }}</div>
+        </div>
         <template v-if="sel">
           <div class="d-head">
             <div class="d-icon"><i :class="sel.icon"></i></div>
@@ -812,12 +828,117 @@ async function deleteItem() {
   border-top: 1px solid var(--wao-divider);
 }
 
+.item-go {
+  display: none;
+  flex-shrink: 0;
+  font-size: 18px;
+  color: var(--wao-text-faint);
+}
+
+/* 手机上的条目详情：盖住整屏的一页，自带返回顶栏 */
+.detail-page {
+  position: fixed;
+  inset: 0;
+  z-index: 82;
+  background: #fff;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+  animation: waoVaultPage 0.16s ease;
+}
+@keyframes waoVaultPage {
+  from {
+    transform: translateX(14px);
+    opacity: 0.4;
+  }
+}
+.dp-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 -16px 4px;
+  padding: 0 8px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border-bottom: 1px solid var(--wao-line);
+}
+.dp-back {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--wao-text-2);
+  flex-shrink: 0;
+}
+.dp-back i {
+  font-size: 20px;
+}
+.dp-title {
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (max-width: 760px) {
   .vault { padding: 16px 12px 28px; }
-  .vault-main { grid-template-columns: 1fr; }
-  .toolbar { gap: 7px; flex-wrap: wrap; }
-  .toolbar .search { flex: 1 1 100%; }
-  .toolbar .search input { width: 100%; height: 38px; }
   .modal { top: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+
+  /* 三栏并排在手机上放不下：分组变成横向胶囊，条目占满整宽，详情走盖屏页 */
+  .cols { flex-direction: column; min-height: 0; }
+  .group-col {
+    width: auto;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--wao-divider);
+  }
+  .group-col:not(.managing) {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .group-col:not(.managing)::-webkit-scrollbar { display: none; }
+  .group-col:not(.managing) .col-label { display: none; }
+  .group-col:not(.managing) .group-btn,
+  .group-col:not(.managing) .group-add {
+    width: auto;
+    flex: 0 0 auto;
+    min-height: 34px;
+    margin-top: 0;
+    white-space: nowrap;
+  }
+  .group-edit-row { min-height: 40px; }
+  .group-action { width: 34px; height: 34px; }
+
+  .item-col { width: auto; border-right: 0; padding: 6px 6px 10px; }
+  .item-btn { min-height: 56px; }
+  .item-go { display: block; }
+
+  /* 名字已经写在顶栏上，滚动时也一直看得见，正文里不再重复一遍 */
+  .d-head { padding-top: 8px; }
+  .detail-page .d-name { display: none; }
+  .detail-page .d-sub { margin-top: 0; }
+
+  /* 键名单独一行，值可以换行，「查看」「复制」保持 40px 触控高度 */
+  .field-row { flex-wrap: wrap; row-gap: 8px; padding: 12px 14px; }
+  .f-key { width: 100%; }
+  .f-val,
+  .f-pass,
+  .f-site {
+    flex: 1 1 55%;
+    min-width: 0;
+    word-break: break-all;
+  }
+  .f-btn { height: 40px; padding: 0 16px; font-size: 12.5px; }
+  .f-icon { width: 40px; height: 40px; }
+  .f-icon i { font-size: 16px; }
 }
 </style>
