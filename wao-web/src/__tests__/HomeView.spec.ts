@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { createPinia } from 'pinia'
 import HomeView from '@/views/HomeView.vue'
 import type { AiRunner } from '@/types'
-import { fetchAiRunners, removeAiRunner, requestRunnerScriptUpdate, rerunAiRun } from '@/api/ai'
+import { fetchAiRunnerLog, fetchAiRunners, removeAiRunner, requestRunnerScriptUpdate, rerunAiRun } from '@/api/ai'
 
 vi.mock('@/api/ai', () => ({
   fetchAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
@@ -51,6 +52,10 @@ vi.mock('@/api/ai', () => ({
       maxConcurrency: 2, activeRuns: 1, online: true, lastSeenAt: '2026-07-25T20:18:20',
     },
   ]),
+  fetchAiRunnerLog: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    runnerId: 'rn1', runnerName: '娃哥电脑',
+    content: '2026-07-31 13:30:00 WAO AI Runner 已启动', updatedAt: '2026-07-31T13:30:00',
+  }),
   fetchAiWorkflows: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
       projectId: 'p1',
@@ -113,7 +118,7 @@ function mountHome() {
     history: createMemoryHistory(),
     routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
   })
-  return { router, wrapper: mount(HomeView, { global: { plugins: [router] } }) }
+  return { router, wrapper: mount(HomeView, { global: { plugins: [createPinia(), router] } }) }
 }
 
 describe('HomeView AI 控制台', () => {
@@ -197,6 +202,31 @@ describe('HomeView AI 控制台', () => {
     expect(cards[1]!.text()).toContain('Claude Code')
     expect(cards[1]!.text()).toContain('槽位 1 / 2')
     expect(cards[1]!.find('.runner-tasks button').text()).toBe('实时任务')
+    wrapper.unmount()
+  })
+
+  it('执行电脑卡片按需读取日志，失败后可以重试并展示安全快照', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchAiRunnerLog)
+      .mockRejectedValueOnce(new Error('网络暂时不可用'))
+      .mockResolvedValueOnce({
+        runnerId: 'rn1', runnerName: '娃哥电脑',
+        content: '2026-07-31 13:30:00 WAO AI Runner 已启动', updatedAt: '2026-07-31T13:30:00',
+      })
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.findAll('.console-tabs button')[1]!.trigger('click')
+    await wrapper.findAll('.runner-card')[0]!.find('.runner-log-btn').trigger('click')
+    await flushPromises()
+
+    expect(fetchAiRunnerLog).toHaveBeenCalledWith('rn1')
+    expect(wrapper.find('.runner-log-state.error').text()).toContain('网络暂时不可用')
+
+    await wrapper.find('.runner-log-state.error button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.runner-log-content').text()).toContain('WAO AI Runner 已启动')
+    expect(wrapper.find('.runner-log-meta').text()).toContain('更新于')
     wrapper.unmount()
   })
 

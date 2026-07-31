@@ -1,5 +1,5 @@
 import { http, type ApiResponse } from './http'
-import type { AiEngine, AiProjectConfig, AiRun, AiRunner, AiWorkflow } from '@/types'
+import type { AiEngine, AiProjectConfig, AiRun, AiRunner, AiRunnerLog, AiWorkflow } from '@/types'
 
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
@@ -22,6 +22,13 @@ export const fetchAiRunners = () => data<AiRunner[]>(http.get('/api/ai/runners',
   params: { _: Date.now() },
   headers: { 'Cache-Control': 'no-cache' },
 }))
+
+/** 按需读取一台执行电脑最近上报的安全日志快照。 */
+export const fetchAiRunnerLog = (runnerId: string) =>
+  data<AiRunnerLog>(http.get(`/api/ai/runners/${runnerId}/log`, {
+    params: { _: Date.now() },
+    headers: { 'Cache-Control': 'no-cache' },
+  }))
 
 export const updateRunnerMaxConcurrency = (runnerId: string, maxConcurrency: number) =>
   data<AiRunner>(http.put(`/api/ai/runners/${runnerId}/max-concurrency`, { maxConcurrency }))

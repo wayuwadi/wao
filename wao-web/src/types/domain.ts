@@ -370,6 +370,14 @@ export interface AiRunner {
   updateRequested?: boolean
 }
 
+/** 执行电脑最近一次心跳上报的已脱敏日志快照。 */
+export interface AiRunnerLog {
+  runnerId: string
+  runnerName: string
+  content: string
+  updatedAt: string | null
+}
+
 /** AI 控制台「工作流」视图里的一个项目。 */
 export interface AiWorkflow {
   projectId: string

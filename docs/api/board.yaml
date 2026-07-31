@@ -224,6 +224,13 @@ paths:
     get: { summary: 各项目的 AI 工作流配置与运行统计（控制台「AI 工作流」视图）, responses: { '200': { description: OK } } }
   /ai/runners:
     get: { summary: 执行电脑列表、接入的 AI 工具、在线状态与槽位占用, responses: { '200': { description: OK } } }
+  /ai/runners/{runnerId}/log:
+    get:
+      summary: 按需读取一台执行电脑最近上报的已脱敏日志尾部
+      parameters: [ { name: runnerId, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: 返回 runnerId、runnerName、content 与 updatedAt；尚未上报时 content 为空 }
+        '404': { description: 执行电脑不存在 }
   /ai/runners/pair-code:
     post: { summary: 生成十分钟有效的一次性电脑配对码, responses: { '200': { description: OK } } }
   /ai/runners/{runnerId}:
@@ -279,7 +286,15 @@ paths:
     post: { summary: Runner 用一次性配对码换取只返回一次的本机令牌（含本机可用的 AI 工具）, responses: { '200': { description: OK }, '401': { description: 配对码无效 } } }
   /ai/runner/heartbeat:
     post:
-      summary: Runner 心跳并更新本机并发数与可用 AI 工具
+      summary: Runner 心跳并更新本机并发数、可用 AI 工具与受限日志尾部
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                logTail: { type: string, maxLength: 30000, description: 已脱敏的最近 200 行诊断日志 }
       parameters:
         - { name: maxConcurrency, in: query, required: false, schema: { type: integer } }
         - { name: engines, in: query, required: false, schema: { type: string }, description: 逗号分隔，如 codex,claude }

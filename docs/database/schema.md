@@ -233,6 +233,8 @@ erDiagram
 - `admin_max_concurrency`：管理员在后台配置的线程数，存在时优先于 `max_concurrency` 生效。
 - `script_hash`：Runner 心跳自报的脚本 SHA-256，用于判断是否落后于服务端打包的最新版。
 - `update_requested_at`：后台一键下发脚本更新的时间；节点自更新后上报最新哈希时自动清除。
+- `log_tail` / `log_updated_at`（V48）：Runner 心跳上报的已脱敏日志尾部（最多 30,000 字符）及快照时间；
+  完整日志仍只保留在执行电脑本机。
 `ai_runner_pair_code` 保存一次性配对码哈希、过期时间和使用时间，明文只在生成接口返回一次。
 
 ### ai_task_run
@@ -460,4 +462,5 @@ OAuth 下发前会先把快过期的 access token 续期。
 - `V45__vault_group_is_default.sql`：密码库默认分组改为按 `is_default` 标记识别，存量按 id 还原（见 ADR-036）。
 - `V46__super_admin_roles.sql`：把初始维护者角色升级为超级管理员，作为组织级配置权限根。
 - `V47__game_hall_persistence.sql`：新增通用游戏活动存档与历史战绩表（见 ADR-040）。
+- `V48__runner_log_snapshot.sql`：保存 Runner 最近一段安全诊断日志，供控制台按需查看。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
