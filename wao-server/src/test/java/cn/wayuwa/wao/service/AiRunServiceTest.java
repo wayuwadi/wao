@@ -349,6 +349,8 @@ class AiRunServiceTest {
 
         assertThat(runner.getScriptHash()).isEqualTo("latest-hash");
         assertThat(runner.getUpdateRequestedAt()).isNull();
+        verify(runnerMapper).update(eq(runner), any());
+        verify(runnerMapper, never()).updateById(runner);
     }
 
     @Test
@@ -367,6 +369,8 @@ class AiRunServiceTest {
         assertThat(runner.getUpdateRequestedAt()).isNotNull();
         assertThat(dto.updateRequested()).isTrue();
         assertThat(dto.scriptUpToDate()).isFalse();
+        verify(runnerMapper).updateById(runner);
+        verify(runnerMapper, never()).update(any(), any());
     }
 
     @Test

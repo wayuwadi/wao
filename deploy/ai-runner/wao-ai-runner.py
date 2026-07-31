@@ -991,6 +991,9 @@ def apply_script_update(api: WaoApi, script_path: Path) -> None:
     body = content.encode("utf-8")
     if not content or hashlib.sha256(body).hexdigest() != expected:
         raise RuntimeError("下载的 Runner 脚本哈希校验失败，本次不更新")
+    if script_path.exists() and script_hash(script_path) == expected:
+        log(f"Runner 脚本已是最新版本 {expected[:12]}，跳过重复重启")
+        return
     # 先写临时文件再原子替换，避免写到一半断电把脚本写坏。
     temp = script_path.with_name(script_path.name + ".new")
     temp.write_bytes(body)

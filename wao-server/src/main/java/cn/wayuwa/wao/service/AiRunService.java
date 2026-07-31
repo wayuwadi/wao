@@ -621,6 +621,7 @@ public class AiRunService {
     public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines, String scriptHash,
             String wakeMac, String wakeHost) {
         AiRunnerNodeEntity runner = requireRunner(token);
+        boolean clearUpdateRequest = false;
         runner.setLastSeenAt(LocalDateTime.now());
         if (maxConcurrency != null) runner.setMaxConcurrency(clamp(maxConcurrency, 1, 8, 1));
         if (StringUtils.hasText(engines)) runner.setEngines(joinEngines(List.of(engines.split(","))));
@@ -629,6 +630,7 @@ public class AiRunService {
             // 节点已经跑在最新脚本上，更新指令自动完成。
             if (scripts.available() && scripts.hash().equals(runner.getScriptHash())) {
                 runner.setUpdateRequestedAt(null);
+                clearUpdateRequest = true;
             }
         }
         if (StringUtils.hasText(wakeMac)) {
@@ -640,7 +642,14 @@ public class AiRunService {
         }
         if (StringUtils.hasText(wakeHost)) runner.setWakeHost(wakeHost);
         if (runner.getWakePort() == null) runner.setWakePort(9);
-        runnerMapper.updateById(runner);
+        if (clearUpdateRequest) {
+            // MyBatis-Plus 的 updateById 默认跳过 null；显式 SET NULL，否则节点会永远收到更新指令并重启。
+            runnerMapper.update(runner, new UpdateWrapper<AiRunnerNodeEntity>()
+                    .eq("id", runner.getId())
+                    .set("update_requested_at", null));
+        } else {
+            runnerMapper.updateById(runner);
+        }
         return listRunners().stream().filter(r -> r.id().equals(runner.getId())).findFirst().orElseThrow();
     }
 

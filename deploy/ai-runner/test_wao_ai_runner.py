@@ -543,35 +543,6 @@ class PromptTest(unittest.TestCase):
             {"branchName": "ai/wao-ar1", "defaultBranch": "main"}, "继续盯部署"))
 
 
-class ScriptUpdateTest(unittest.TestCase):
-    """后台一键分发 Runner 脚本更新：拉取、校验、原地替换、重启。"""
-
-    def setUp(self) -> None:
-        self.workspace = Path(tempfile.mkdtemp(prefix="wao-update-"))
-        self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
-        self.script = self.workspace / "wao-ai-runner.py"
-        # 服务端按 UTF-8 原始字节计算哈希，Runner 更新时也用 write_bytes 落盘；显式写入
-        # LF，避免 Windows 文本模式换行转换让用例偏离真实更新产物。
-        self.script.write_bytes(b"print('old')\n")
-
-    @staticmethod
-    def _payload(content: str) -> dict[str, str]:
-        import hashlib
-
-        return {"content": content, "hash": hashlib.sha256(content.encode("utf-8")).hexdigest()}
-
-    def test_verified_script_replaces_itself_and_restarts(self) -> None:
-        api = Mock()
-        api.get.return_value = self._payload("print('new')\n")
-
-        with patch.object(RUNNER, "restart_self") as restart:
-            RUNNER.apply_script_update(api, self.script)
-
-        self.assertEqual("print('new')\n", self.script.read_text(encoding="utf-8"))
-        restart.assert_called_once_with(self.script)
-        api.get.assert_called_once_with("/api/ai/runner/script")
-
-
 class SyncCredentialsTest(unittest.TestCase):
     """AI 账号凭据同步：把服务端下发的明文凭据写入本机 CLI 配置文件。"""
 
@@ -654,6 +625,16 @@ class ScriptUpdateTest(unittest.TestCase):
         self.assertEqual("print('new')\n", self.script.read_text(encoding="utf-8"))
         restart.assert_called_once_with(self.script)
         api.get.assert_called_once_with("/api/ai/runner/script")
+
+    def test_current_script_skips_replacement_and_restart(self) -> None:
+        api = Mock()
+        api.get.return_value = self._payload("print('old')\n")
+
+        with patch.object(RUNNER, "restart_self") as restart:
+            RUNNER.apply_script_update(api, self.script)
+
+        self.assertEqual(b"print('old')\n", self.script.read_bytes())
+        restart.assert_not_called()
 
     def test_hash_mismatch_keeps_local_script_untouched(self) -> None:
         api = Mock()
