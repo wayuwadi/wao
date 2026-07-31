@@ -663,6 +663,38 @@ class ScriptUpdateTest(unittest.TestCase):
         self.assertEqual(payload["hash"], RUNNER.script_hash(self.script))
 
 
+class RemoteLogTest(unittest.TestCase):
+    """后台日志上报只取有限尾部，并在离开电脑前再次脱敏。"""
+
+    def setUp(self) -> None:
+        self.workspace = Path(tempfile.mkdtemp(prefix="wao-log-"))
+        self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
+        self.log_file = self.workspace / "ai-runner.log"
+
+    def test_pythonw_without_stdout_still_writes_file_log(self) -> None:
+        with patch.object(RUNNER, "LOG_FILE", self.log_file), patch.object(RUNNER.sys, "stdout", None):
+            RUNNER.log("后台启动成功")
+
+        self.assertIn("后台启动成功", self.log_file.read_text(encoding="utf-8"))
+
+    def test_remote_tail_limits_lines_and_redacts_common_credentials(self) -> None:
+        lines = [f"line-{index}" for index in range(205)]
+        lines += [
+            "Authorization: Bearer abc.def.ghi",
+            "api_key=sk-abcdefghijklmnopqrstuvwxyz123456",
+            "token=ghp_abcdefghijklmnopqrstuvwxyz123456",
+        ]
+        self.log_file.write_text("\n".join(lines), encoding="utf-8")
+
+        content = RUNNER.remote_log_tail(self.log_file)
+
+        self.assertNotIn("line-0", content)
+        self.assertNotIn("abc.def.ghi", content)
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz123456", content)
+        self.assertIn("[已脱敏]", content)
+        self.assertLessEqual(len(content), RUNNER.REMOTE_LOG_CHARS)
+
+
 class PairingRevokedTest(unittest.TestCase):
     """WAO 后台解除接入后，本机要认出来并彻底忘掉令牌。"""
 

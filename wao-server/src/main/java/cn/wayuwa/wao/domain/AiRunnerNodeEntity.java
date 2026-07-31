@@ -4,6 +4,8 @@ import java.time.LocalDateTime;
 
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 
 /** 一台安装了 WAO 执行节点和至少一种 AI CLI（Codex / Claude Code）的电脑。 */
 @TableName("ai_runner_node")
@@ -25,6 +27,11 @@ public class AiRunnerNodeEntity {
     private String scriptHash;
     /** 后台一键下发脚本更新的时间；节点上报最新哈希后自动清除。 */
     private LocalDateTime updateRequestedAt;
+    /** Runner 最近一次心跳上报的已脱敏日志尾部，不包含完整历史日志。 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private String logTail;
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private LocalDateTime logUpdatedAt;
     private LocalDateTime lastSeenAt;
     private LocalDateTime createdAt;
 
@@ -56,6 +63,10 @@ public class AiRunnerNodeEntity {
     public void setScriptHash(String scriptHash) { this.scriptHash = scriptHash; }
     public LocalDateTime getUpdateRequestedAt() { return updateRequestedAt; }
     public void setUpdateRequestedAt(LocalDateTime updateRequestedAt) { this.updateRequestedAt = updateRequestedAt; }
+    public String getLogTail() { return logTail; }
+    public void setLogTail(String logTail) { this.logTail = logTail; }
+    public LocalDateTime getLogUpdatedAt() { return logUpdatedAt; }
+    public void setLogUpdatedAt(LocalDateTime logUpdatedAt) { this.logUpdatedAt = logUpdatedAt; }
     public LocalDateTime getLastSeenAt() { return lastSeenAt; }
     public void setLastSeenAt(LocalDateTime lastSeenAt) { this.lastSeenAt = lastSeenAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }

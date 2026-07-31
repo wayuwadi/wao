@@ -9,6 +9,7 @@ import json
 import os
 import platform
 import queue
+import re
 import shutil
 import signal
 import subprocess
@@ -30,6 +31,8 @@ LOG_FILE = Path.home() / ".wao" / "ai-runner.log"
 SCRIPT_PATH = Path(__file__).resolve()
 PRINT_LOCK = threading.Lock()
 MAX_LOG_BYTES = 2 * 1024 * 1024
+REMOTE_LOG_LINES = 200
+REMOTE_LOG_CHARS = 30_000
 # 运行结束后保留 worktree 供人工复查，超过这个天数才回收，避免磁盘被历史任务占满。
 RUN_WORKTREE_TTL_DAYS = 7
 # 被 WAO 解除接入后的退出码（EX_CONFIG）：不是崩溃，重启也没用，systemd 用
@@ -61,12 +64,39 @@ QODER_PERMISSION = {
 def log(message: str) -> None:
     with PRINT_LOCK:
         line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}"
-        print(line, flush=True)
+        # pythonw.exe 没有控制台，也没有 stdout；后台计划任务仍要正常写文件日志。
+        if sys.stdout is not None:
+            try:
+                print(line, flush=True)
+            except OSError:
+                pass
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         if LOG_FILE.exists() and LOG_FILE.stat().st_size >= MAX_LOG_BYTES:
             LOG_FILE.replace(LOG_FILE.with_suffix(".log.1"))
         with LOG_FILE.open("a", encoding="utf-8") as output:
             output.write(line + "\n")
+
+
+def remote_log_tail(path: Path | None = None) -> str:
+    """读取最近诊断并做二次脱敏；只上传有限尾部，不上传完整本机日志。"""
+    source = path or LOG_FILE
+    if not source.exists():
+        return ""
+    lines = source.read_text(encoding="utf-8", errors="replace").splitlines()[-REMOTE_LOG_LINES:]
+    content = "\n".join(lines)[-REMOTE_LOG_CHARS:]
+    # 防御外部命令异常把常见凭据格式带进日志；节点令牌本身从不参与日志拼接。
+    content = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [已脱敏]", content)
+    content = re.sub(
+        r"(?i)\b(api[_-]?key|token|secret|password|authorization|cookie)(\s*[=:]\s*)[^\s,;]+",
+        r"\1\2[已脱敏]",
+        content,
+    )
+    content = re.sub(
+        r"\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,})\b",
+        "[已脱敏]",
+        content,
+    )
+    return content
 
 
 class PairingRevokedError(RuntimeError):
@@ -1150,6 +1180,7 @@ def main() -> int:
         sync_ai_credentials(api, Path.home())
     futures: set[Future[None]] = set()
     last_credentials_sync = time.monotonic()
+    last_reported_log_hash: str | None = None
     CREDENTIALS_SYNC_INTERVAL_SECONDS = 300
     with ThreadPoolExecutor(max_workers=args.max_concurrency, thread_name_prefix="wao-ai") as executor:
         while True:
@@ -1161,7 +1192,11 @@ def main() -> int:
                     "scriptHash": script_hash(SCRIPT_PATH),
                     "wakeMac": wake_mac,
                 })
-                status = api.post(f"/api/ai/runner/heartbeat?{heartbeat_query}")
+                log_tail = remote_log_tail()
+                log_hash = hashlib.sha256(log_tail.encode("utf-8")).hexdigest()
+                heartbeat_body = {"logTail": log_tail} if log_hash != last_reported_log_hash else {}
+                status = api.post(f"/api/ai/runner/heartbeat?{heartbeat_query}", heartbeat_body)
+                last_reported_log_hash = log_hash
                 if isinstance(status, dict) and status.get("updateRequested"):
                     # 后台下发了脚本更新：不再领新任务，等在跑的任务收尾后原地升级重启。
                     if futures:
