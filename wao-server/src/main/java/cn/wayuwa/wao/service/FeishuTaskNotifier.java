@@ -301,6 +301,41 @@ public class FeishuTaskNotifier {
     }
 
     /**
+     * 群聊 AI 洞察报告：把分析出的想法、聚类、方案用漫画卡片推到群里。
+     *
+     * <p>这是漫画风格卡片的主要入口之一：头大图、大字标题、醒目标签，
+     * 让用户在信息流里一眼看到「AI 从群里挖出了东西」，并点击跳转到洞察详情。
+     *
+     * @param projectId   项目 id
+     * @param projectName 项目名称
+     * @param ideaCount   识别出的想法数量
+     * @param clusterCount 聚类数量
+     * @param schemeCount 生成的方案数量
+     * @param topThemes   最热门的 2-3 个主题，用于高亮展示
+     * @return 是否真的发出去了
+     */
+    public boolean notifyInsightReport(String projectId, String projectName,
+            int ideaCount, int clusterCount, int schemeCount, List<String> topThemes) {
+        if (muted(projectId)) {
+            return false;
+        }
+        List<String> highlights = new ArrayList<>();
+        highlights.add("挖出 **" + ideaCount + "** 条想法，聚成 **" + clusterCount + "** 个主题");
+        highlights.add("自动生成 **" + schemeCount + "** 份产品方案");
+        if (topThemes != null && !topThemes.isEmpty()) {
+            highlights.add("热门主题：**" + String.join(" / ", topThemes) + "**");
+        }
+        String imageUrl = FeishuWebhookNotifier.ComicIllustrations.insight(FeishuAppLinks.SITE);
+        return notifier.notifyComicCard(new FeishuWebhookNotifier.ComicCard(
+                "AI 洞察报告", "blue", imageUrl, "AI 洞察报告",
+                projectName + " 的群聊里发现了新机会",
+                highlights,
+                List.of(List.of("项目", blank(projectName, projectId))),
+                "AI 已经自动整理好想法、聚类和方案，点进去就能审阅并转化成任务。",
+                "查看洞察详情", links.open("/projects/" + projectId + "?tab=insight")));
+    }
+
+    /**
      * 任务派给 AI（进入队列）后在群里说一声。
      *
      * @param taskId      任务 id

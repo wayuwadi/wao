@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 220" width="400" height="220">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="3" dy="4" stdDeviation="2" flood-color="#10121c" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect width="400" height="220" rx="16" fill="#f0fdf4"/>
+  <!-- 爆炸形对话框 -->
+  <g filter="url(#shadow)" transform="translate(180, 35)">
+    <path d="M0 0 L20 -12 L40 -4 L60 -16 L72 6 L96 10 L84 32 L96 52 L72 58 L60 78 L38 66 L16 78 L4 58 L-20 52 L-8 32 L-20 10 z" fill="#34d399" stroke="#10121c" stroke-width="3" transform="scale(1.4) translate(10,5)"/>
+    <text x="80" y="55" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="900" fill="#fff" stroke="#10121c" stroke-width="1">完成！</text>
+  </g>
+  <!-- 奖杯 -->
+  <g transform="translate(60, 120)">
+    <path d="M16 0 h48 v8 a24 24 0 0 1 -24 24 a24 24 0 0 1 -24 -24 z" fill="#fbbf24" stroke="#10121c" stroke-width="3"/>
+    <rect x="34" y="32" width="12" height="28" fill="#fbbf24" stroke="#10121c" stroke-width="3"/>
+    <rect x="24" y="58" width="32" height="8" rx="2" fill="#fbbf24" stroke="#10121c" stroke-width="3"/>
+    <path d="M16 4 h-8 a8 8 0 0 0 8 14 z" fill="#f59e0b" stroke="#10121c" stroke-width="2"/>
+    <path d="M64 4 h8 a8 8 0 0 1 -8 14 z" fill="#f59e0b" stroke="#10121c" stroke-width="2"/>
+  </g>
+  <!-- 对勾 -->
+  <g transform="translate(280, 130)">
+    <circle cx="36" cy="36" r="34" fill="#fff" stroke="#10121c" stroke-width="3"/>
+    <path d="M20 36 l11 11 l22 -28" fill="none" stroke="#22c55e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <!-- 彩带 -->
+  <g stroke="#ff6b6b" stroke-width="4" fill="none" stroke-linecap="round">
+    <path d="M40 80 q10 -10 20 0"/>
+    <path d="M340 60 q-10 -12 -20 0"/>
+  </g>
+  <g stroke="#4f7fff" stroke-width="4" fill="none" stroke-linecap="round">
+    <path d="M360 100 q-8 10 -16 0"/>
+    <path d="M30 50 q8 10 16 0"/>
+  </g>
+</svg>

@@ -50,12 +50,33 @@ class FeishuTaskNotifierTest {
         when(gate.enabled("p1")).thenReturn(true);
         when(settings.get(SettingService.QUICK_COLLECT_MENTIONS, "")).thenReturn("");
         when(webhook.notifyCard(any())).thenReturn(true);
+        when(webhook.notifyComicCard(any())).thenReturn(true);
 
         assertThat(notifier.notifyTaskCreated("t1", "p1", "标题", "Wa All in One", "娃哥", "描述")).isTrue();
         assertThat(notifier.notifyRunFinished("t1", "p1", "标题", "Wa All in One", "Codex", null, true, false, "跑完了"))
                 .isTrue();
+        assertThat(notifier.notifyInsightReport("p1", "Wa All in One", 7, 2, 1, List.of("家庭记账", "AI 助手")))
+                .isTrue();
 
         verify(webhook, org.mockito.Mockito.times(2)).notifyCard(any());
+        verify(webhook).notifyComicCard(any());
+    }
+
+    /** 群聊洞察报告使用漫画卡片，字段里带项目名，按钮落到项目洞察页。 */
+    @Test
+    void insightReportUsesComicCardWithProjectAndLink() {
+        when(gate.enabled("p1")).thenReturn(true);
+        when(webhook.notifyComicCard(any())).thenReturn(true);
+        ArgumentCaptor<FeishuWebhookNotifier.ComicCard> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.ComicCard.class);
+
+        notifier.notifyInsightReport("p1", "Wa All in One", 7, 2, 1, List.of("家庭记账", "AI 助手"));
+
+        verify(webhook).notifyComicCard(card.capture());
+        assertThat(card.getValue().title()).isEqualTo("AI 洞察报告");
+        assertThat(card.getValue().headline()).contains("Wa All in One");
+        assertThat(card.getValue().imageUrl()).contains("/comic/insight.svg");
+        assertThat(card.getValue().linkText()).isEqualTo("查看洞察详情");
+        assertThat(card.getValue().linkUrl()).contains("/projects/p1");
     }
 
     /** 娃哥往娃弟建的任务里加子任务：卡片得说清是娃哥加的，并且 @ 到娃弟。 */

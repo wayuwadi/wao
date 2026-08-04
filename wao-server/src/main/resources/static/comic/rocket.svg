@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 220" width="400" height="220">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="3" dy="4" stdDeviation="2" flood-color="#10121c" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect width="400" height="220" rx="16" fill="#eff6ff"/>
+  <!-- 火箭 -->
+  <g transform="translate(200, 110) rotate(-45)" filter="url(#shadow)">
+    <path d="M0 -50 c22 0 40 28 40 60 c0 32 -18 50 -40 50 c-22 0 -40 -18 -40 -50 c0 -32 18 -60 40 -60 z" fill="#4f7fff" stroke="#10121c" stroke-width="3"/>
+    <circle cx="0" cy="-10" r="12" fill="#fff" stroke="#10121c" stroke-width="3"/>
+    <circle cx="0" cy="-10" r="5" fill="#10121c"/>
+    <path d="M-40 10 c-16 8 -24 28 -24 48 h24 z" fill="#ff6b6b" stroke="#10121c" stroke-width="3"/>
+    <path d="M40 10 c16 8 24 28 24 48 h-24 z" fill="#ff6b6b" stroke="#10121c" stroke-width="3"/>
+    <path d="M-16 60 h32 v18 a6 6 0 0 1 -6 6 h-20 a6 6 0 0 1 -6 -6 z" fill="#f59e0b" stroke="#10121c" stroke-width="3"/>
+  </g>
+  <!-- 火焰 -->
+  <g transform="translate(200, 175)">
+    <path d="M-14 0 q14 28 28 0 q-6 16 -14 16 q-8 0 -14 -16 z" fill="#f59e0b" stroke="#10121c" stroke-width="2"/>
+    <path d="M-8 4 q8 16 16 0 q-4 10 -8 10 q-4 0 -8 -10 z" fill="#ffd64f"/>
+  </g>
+  <!-- 速度线 -->
+  <g stroke="#9bb3ff" stroke-width="3" stroke-linecap="round">
+    <line x1="80" y1="50" x2="130" y2="50"/>
+    <line x1="60" y1="80" x2="110" y2="80"/>
+    <line x1="90" y1="110" x2="140" y2="110"/>
+    <line x1="290" y1="60" x2="340" y2="60"/>
+    <line x1="310" y1="90" x2="360" y2="90"/>
+  </g>
+  <!-- 对话框 -->
+  <g transform="translate(40, 140)">
+    <rect x="0" y="0" width="110" height="48" rx="12" fill="#fff" stroke="#10121c" stroke-width="3"/>
+    <path d="M110 30 l14 10 v-10 z" fill="#fff" stroke="#10121c" stroke-width="3"/>
+    <text x="55" y="30" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" fill="#10121c">发射！</text>
+  </g>
+</svg>
