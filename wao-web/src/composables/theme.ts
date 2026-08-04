@@ -6,7 +6,7 @@ const THEME_KEY = 'wao-theme-mode-v1'
 
 function resolveEffective(mode: ThemeMode): 'light' | 'dark' {
   if (mode !== 'system') return mode
-  if (typeof window === 'undefined') return 'light'
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'light'
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
@@ -50,7 +50,7 @@ watch(
 )
 
 /** 监听系统主题变化，当 mode 为 system 时自动切换。 */
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
   const media = window.matchMedia('(prefers-color-scheme: dark)')
   media.addEventListener?.('change', () => {
     if (mode.value === 'system') {
