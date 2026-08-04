@@ -4,12 +4,24 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import SettingsView from '@/views/SettingsView.vue'
 import { useNavStore } from '@/stores/nav'
-import { fetchExternalAppRegistry, saveExternalAppRegistry } from '@/api/system'
-import { DEFAULT_EXTERNAL_APPS, externalAppItemId, type ExternalAppRegistry } from '@/config/nav'
+import {
+  fetchBuiltinMenuRegistry,
+  fetchExternalAppRegistry,
+  saveExternalAppRegistry,
+} from '@/api/system'
+import {
+  DEFAULT_BUILTIN_MENUS,
+  DEFAULT_EXTERNAL_APPS,
+  externalAppItemId,
+  type BuiltinMenuRegistry,
+  type ExternalAppRegistry,
+} from '@/config/nav'
 
 vi.mock('@/api/system', () => ({
   fetchExternalAppRegistry: vi.fn<() => Promise<ExternalAppRegistry>>(),
   saveExternalAppRegistry: vi.fn<(apps: ExternalAppRegistry['apps']) => Promise<ExternalAppRegistry>>(),
+  fetchBuiltinMenuRegistry: vi.fn<() => Promise<BuiltinMenuRegistry>>(),
+  saveBuiltinMenuRegistry: vi.fn<() => Promise<BuiltinMenuRegistry>>(),
   fetchWebhookConfig: vi.fn<() => Promise<unknown>>(),
   saveWebhookConfig: vi.fn<() => Promise<unknown>>(),
   testWebhook: vi.fn<() => Promise<void>>(),
@@ -38,6 +50,10 @@ describe('外部应用菜单注册表设置', () => {
     vi.mocked(fetchExternalAppRegistry).mockResolvedValue({
       version: 1,
       apps: DEFAULT_EXTERNAL_APPS,
+    })
+    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({
+      version: 1,
+      menus: DEFAULT_BUILTIN_MENUS,
     })
   })
 
