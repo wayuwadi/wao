@@ -143,13 +143,15 @@ const board = computed(() =>
       : allTasks.value.filter((t) => t.status === st),
   })),
 )
+const insightSrc = computed(() => `/insight/?project=${encodeURIComponent(pid.value)}`)
+
 const pdTabs = computed(() => {
   // 任务角标只数未完成的：一个跑了半年的项目里「25」几乎全是已完成，看不出还剩多少事。
   const openCount = ptasks.value.filter((t) => isOpenStatus(t.status)).length
   const counts: Record<string, number> = { 任务: openCount, 文档: linkedDocs.value.length, 文件: project.value?.files.length ?? 0 }
-  return (['任务', '文档', '文件', '动态'] as const).map((t) => ({
+  return (['任务', '文档', '文件', '动态', '洞察'] as const).map((t) => ({
     label: t, count: counts[t], showCount: ['任务', '文档', '文件'].includes(t), on: projTab.value === t,
-    title: t === '任务' ? `${openCount} 个未完成 / 共 ${ptasks.value.length} 个` : '',
+    title: t === '任务' ? `${openCount} 个未完成 / 共 ${ptasks.value.length} 个` : t === '洞察' ? '群聊洞察：AI 自动提炼想法、聚类、方案' : '',
   }))
 })
 
@@ -604,6 +606,11 @@ function onDropGroup(groupId: string, overId?: string) {
           <i class="ri-download-2-line chev"></i>
         </div>
       </div>
+    </div>
+
+    <!-- 洞察 -->
+    <div v-else-if="projTab === '洞察'" class="insight-frame">
+      <iframe :src="insightSrc" class="insight-iframe" :title="`${pd.name} 洞察`" />
     </div>
 
     <!-- 动态 -->
@@ -1527,6 +1534,21 @@ function onDropGroup(groupId: string, overId?: string) {
   font-size: 11.5px;
 }
 
+.insight-frame {
+  margin-top: 14px;
+  background: var(--wao-bg-card);
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  overflow: hidden;
+  height: calc(100vh - 240px);
+  min-height: 480px;
+}
+.insight-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
 .feed-card {
   margin-top: 16px;
   background: var(--wao-bg-card);
