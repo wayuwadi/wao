@@ -48,7 +48,7 @@ describe('外部应用菜单注册表设置', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     vi.mocked(fetchExternalAppRegistry).mockResolvedValue({
-      version: 1,
+      version: 2,
       apps: DEFAULT_EXTERNAL_APPS,
     })
     vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({
@@ -57,11 +57,12 @@ describe('外部应用菜单注册表设置', () => {
     })
   })
 
-  it('读取注册表并展示现有 Agent 记录', async () => {
+  it('读取注册表并展示默认独立应用', async () => {
     const wrapper = await mountRegistrySettings()
 
     expect(fetchExternalAppRegistry).toHaveBeenCalledOnce()
     expect(wrapper.find('.registry-list').text()).toContain('自媒体 Agent')
+    expect(wrapper.find('.registry-list').text()).toContain('娃的洞见')
     expect(wrapper.find('.registry-list').text()).toContain('media-agent')
     expect(wrapper.find('.registry-editor').text()).toContain('/apps/media-agent')
   })
@@ -72,7 +73,7 @@ describe('外部应用菜单注册表设置', () => {
       group: 'TOOLS' as const, order: 0, visible: true, appUrl: '/studio/', healthUrl: '',
     }
     vi.mocked(saveExternalAppRegistry).mockResolvedValue({
-      version: 1,
+      version: 2,
       apps: [...DEFAULT_EXTERNAL_APPS, dataStudio],
     })
     const wrapper = await mountRegistrySettings()

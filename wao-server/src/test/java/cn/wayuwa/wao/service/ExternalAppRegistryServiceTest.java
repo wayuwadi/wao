@@ -22,7 +22,7 @@ class ExternalAppRegistryServiceTest {
     private final ExternalAppRegistryService service = new ExternalAppRegistryService(settings, json);
 
     @Test
-    void firstReadMigratesExistingMediaAgentMenuWithoutWriting() {
+    void firstReadIncludesInsightAndMigratesExistingMediaAgentMenuWithoutWriting() {
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(null);
         when(settings.get(SettingService.MEDIA_AGENT_MENU_LABEL, "自媒体 Agent")).thenReturn("内容助手");
         when(settings.get(SettingService.MEDIA_AGENT_MENU_GROUP, "PUBLIC")).thenReturn("TOOLS");
@@ -31,8 +31,9 @@ class ExternalAppRegistryServiceTest {
 
         var registry = service.getRegistry();
 
-        assertThat(registry.version()).isEqualTo(1);
-        assertThat(registry.apps()).singleElement().satisfies(app -> {
+        assertThat(registry.version()).isEqualTo(2);
+        assertThat(registry.apps()).hasSize(2);
+        assertThat(registry.apps().get(0)).satisfies(app -> {
             assertThat(app.id()).isEqualTo("media-agent");
             assertThat(app.label()).isEqualTo("内容助手");
             assertThat(app.group()).isEqualTo("TOOLS");
@@ -41,6 +42,27 @@ class ExternalAppRegistryServiceTest {
             assertThat(app.appUrl()).isEqualTo("/agent/");
             assertThat(app.healthUrl()).isEqualTo("/api/agent/health");
         });
+        assertThat(registry.apps().get(1)).satisfies(app -> {
+            assertThat(app.id()).isEqualTo("wao-insight");
+            assertThat(app.label()).isEqualTo("娃的洞见");
+            assertThat(app.appUrl()).isEqualTo("/insight/");
+            assertThat(app.healthUrl()).isEmpty();
+        });
+    }
+
+    @Test
+    void upgradesVersionOneRegistryByAppendingInsightOnce() throws Exception {
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn("""
+                {"version":1,"apps":[{
+                  "id":"data-studio","label":"数据工作台","icon":"ri-apps-2-line",
+                  "group":"TOOLS","order":10,"visible":true,"appUrl":"/studio/","healthUrl":""
+                }]}
+                """);
+
+        var registry = service.getRegistry();
+
+        assertThat(registry.version()).isEqualTo(2);
+        assertThat(registry.apps()).extracting("id").containsExactly("data-studio", "wao-insight");
     }
 
     @Test

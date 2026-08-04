@@ -25,12 +25,13 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExternalAppRegistryService {
 
-    private static final int REGISTRY_VERSION = 1;
+    private static final int REGISTRY_VERSION = 2;
     private static final int MAX_APPS = 30;
     private static final String MEDIA_AGENT_ID = "media-agent";
     private static final String DEFAULT_MEDIA_AGENT_LABEL = "自媒体 Agent";
     private static final String DEFAULT_MEDIA_AGENT_GROUP = "PUBLIC";
     private static final int DEFAULT_MEDIA_AGENT_ORDER = 20;
+    private static final String WAO_INSIGHT_ID = "wao-insight";
     private static final Pattern APP_ID = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*");
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("PUBLIC", "PERSONAL", "TOOLS");
@@ -44,28 +45,31 @@ public class ExternalAppRegistryService {
     }
 
     /**
-     * 读取完整注册表；新键尚未保存或内容损坏时回落到旧 Agent 配置。
+     * 读取完整注册表；新键尚未保存或内容损坏时回落到旧 Agent 配置与当前默认应用。
      *
      * @return 可直接回给前端的注册表
      */
     public ExternalAppRegistryDto getRegistry() {
         String raw = settings.get(SettingService.EXTERNAL_APP_REGISTRY);
         if (raw == null || raw.isBlank()) {
-            return new ExternalAppRegistryDto(REGISTRY_VERSION, List.of(legacyMediaAgent()));
+            return new ExternalAppRegistryDto(REGISTRY_VERSION, defaultApplications());
         }
         try {
             ExternalAppRegistryDto stored = json.readValue(raw, ExternalAppRegistryDto.class);
             if (stored.apps() == null || stored.version() < 1) {
-                return new ExternalAppRegistryDto(REGISTRY_VERSION, List.of(legacyMediaAgent()));
+                return new ExternalAppRegistryDto(REGISTRY_VERSION, defaultApplications());
             }
-            List<SaveExternalAppConfigRequest> requests = stored.apps().stream()
+            List<SaveExternalAppConfigRequest> requests = new ArrayList<>(stored.apps().stream()
                     .map(app -> new SaveExternalAppConfigRequest(
                             app.id(), app.label(), app.icon(), app.group(), app.order(), app.visible(),
                             app.appUrl(), app.healthUrl()))
-                    .toList();
+                    .toList());
+            if (stored.version() < 2 && requests.stream().noneMatch(app -> WAO_INSIGHT_ID.equals(app.id()))) {
+                requests.add(asSaveRequest(defaultWaoInsight()));
+            }
             return new ExternalAppRegistryDto(REGISTRY_VERSION, canonicalize(requests));
         } catch (JsonProcessingException | IllegalArgumentException | NullPointerException exception) {
-            return new ExternalAppRegistryDto(REGISTRY_VERSION, List.of(legacyMediaAgent()));
+            return new ExternalAppRegistryDto(REGISTRY_VERSION, defaultApplications());
         }
     }
 
@@ -199,6 +203,28 @@ public class ExternalAppRegistryService {
                 !"false".equalsIgnoreCase(settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true")),
                 "/agent/",
                 "/api/agent/health");
+    }
+
+    private List<ExternalAppConfigDto> defaultApplications() {
+        return List.of(legacyMediaAgent(), defaultWaoInsight());
+    }
+
+    private static ExternalAppConfigDto defaultWaoInsight() {
+        return new ExternalAppConfigDto(
+                WAO_INSIGHT_ID,
+                "娃的洞见",
+                "ri-bubble-chart-line",
+                "PUBLIC",
+                25,
+                true,
+                "/insight/",
+                "");
+    }
+
+    private static SaveExternalAppConfigRequest asSaveRequest(ExternalAppConfigDto app) {
+        return new SaveExternalAppConfigRequest(
+                app.id(), app.label(), app.icon(), app.group(), app.order(), app.visible(),
+                app.appUrl(), app.healthUrl());
     }
 
     private static int parseOrder(String value) {
