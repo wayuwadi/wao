@@ -60,6 +60,13 @@ describe('侧边栏导航配置', () => {
     expect(router.getRoutes().some((route) => route.name === 'knowledge')).toBe(true)
   })
 
+  it('游戏厅默认位于工具组并使用原生模块路由', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '工具')?.items).toContain('games')
+    const route = router.getRoutes().find((item) => item.name === 'games')
+    expect(route?.path).toBe('/games')
+    expect(route?.meta.module).toBe('games')
+  })
+
   it('内置菜单注册表可改名、换组、调序和隐藏', () => {
     const menus = DEFAULT_BUILTIN_MENUS.map((menu) => ({ ...menu }))
     const calendar = menus.find((menu) => menu.id === 'calendar')!

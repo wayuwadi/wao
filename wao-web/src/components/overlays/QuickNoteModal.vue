@@ -91,7 +91,7 @@ async function save(open = false) {
   right: 0;
   margin-inline: auto;
   width: min(560px, calc(100vw - 40px));
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 101;
   box-shadow: var(--wao-shadow-modal);
@@ -160,14 +160,14 @@ async function save(open = false) {
   height: 32px;
   padding: 0 12px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   font-size: 12.5px;
   color: var(--wao-text-2);
   cursor: pointer;
 }
 .btn-ghost:hover:not(:disabled) {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-primary {
   height: 32px;

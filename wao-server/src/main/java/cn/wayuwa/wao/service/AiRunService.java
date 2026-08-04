@@ -32,6 +32,7 @@ import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
+import cn.wayuwa.wao.dto.AiRunnerLogDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
@@ -69,6 +70,7 @@ public class AiRunService {
     /** 已经有结论、因而可以在原会话上继续对话的状态。 */
     private static final List<String> FINISHED = List.of("succeeded", "failed");
     private static final int MAX_RESULT = 32_000;
+    private static final int MAX_RUNNER_LOG = 30_000;
     private static final int MAX_PROGRESS = 1_000;
     private static final int MAX_PROGRESS_PER_RUN = 50;
     private static final Set<String> PROGRESS_KINDS = Set.of("phase", "message", "plan", "result");
@@ -256,6 +258,14 @@ public class AiRunService {
                         r.getLastWakeRequestedAt() == null ? null : r.getLastWakeRequestedAt().toString(),
                         scriptUpToDate(r), r.getUpdateRequestedAt() != null))
                 .toList();
+    }
+
+    /** 返回一台执行电脑最近上报的已脱敏日志快照；尚未上报时内容为空。 */
+    public AiRunnerLogDto runnerLog(String runnerId) {
+        AiRunnerNodeEntity runner = runnerMapper.selectById(runnerId);
+        if (runner == null) throw new NotFoundException("执行电脑不存在");
+        return new AiRunnerLogDto(runner.getId(), runner.getName(), blankOr(runner.getLogTail(), ""),
+                runner.getLogUpdatedAt() == null ? null : runner.getLogUpdatedAt().toString());
     }
 
     /** 脚本是否最新；节点没上报过哈希或服务端没打包脚本时无法判断，返回 null。 */
@@ -619,9 +629,12 @@ public class AiRunService {
 
     /** 节点心跳；同时刷新并发能力和本机可用的 AI 工具，便于用户调整 runner 参数后立即生效。 */
     public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines, String scriptHash,
-            String wakeMac, String wakeHost) {
+            String wakeMac, String wakeHost, String logTail) {
         AiRunnerNodeEntity runner = requireRunner(token);
-        runner.setLastSeenAt(LocalDateTime.now());
+        boolean clearUpdateRequest = false;
+        boolean storeLog = false;
+        LocalDateTime now = LocalDateTime.now();
+        runner.setLastSeenAt(now);
         if (maxConcurrency != null) runner.setMaxConcurrency(clamp(maxConcurrency, 1, 8, 1));
         if (StringUtils.hasText(engines)) runner.setEngines(joinEngines(List.of(engines.split(","))));
         if (StringUtils.hasText(scriptHash)) {
@@ -629,6 +642,7 @@ public class AiRunService {
             // 节点已经跑在最新脚本上，更新指令自动完成。
             if (scripts.available() && scripts.hash().equals(runner.getScriptHash())) {
                 runner.setUpdateRequestedAt(null);
+                clearUpdateRequest = true;
             }
         }
         if (StringUtils.hasText(wakeMac)) {
@@ -639,8 +653,25 @@ public class AiRunService {
             }
         }
         if (StringUtils.hasText(wakeHost)) runner.setWakeHost(wakeHost);
+        if (StringUtils.hasText(logTail)) {
+            String normalized = logTail.strip();
+            runner.setLogTail(normalized.length() <= MAX_RUNNER_LOG
+                    ? normalized : normalized.substring(normalized.length() - MAX_RUNNER_LOG));
+            runner.setLogUpdatedAt(now);
+            storeLog = true;
+        }
         if (runner.getWakePort() == null) runner.setWakePort(9);
-        runnerMapper.updateById(runner);
+        if (clearUpdateRequest || storeLog) {
+            UpdateWrapper<AiRunnerNodeEntity> update = new UpdateWrapper<AiRunnerNodeEntity>()
+                    .eq("id", runner.getId());
+            // MyBatis-Plus 的 updateById 默认跳过 null；显式 SET NULL，否则节点会永远收到更新指令并重启。
+            if (clearUpdateRequest) update.set("update_requested_at", null);
+            // 大字段不参与普通心跳的 updateById；只有 Runner 真正上报日志时才显式更新。
+            if (storeLog) update.set("log_tail", runner.getLogTail()).set("log_updated_at", now);
+            runnerMapper.update(runner, update);
+        } else {
+            runnerMapper.updateById(runner);
+        }
         return listRunners().stream().filter(r -> r.id().equals(runner.getId())).findFirst().orElseThrow();
     }
 

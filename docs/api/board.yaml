@@ -224,6 +224,13 @@ paths:
     get: { summary: 各项目的 AI 工作流配置与运行统计（控制台「AI 工作流」视图）, responses: { '200': { description: OK } } }
   /ai/runners:
     get: { summary: 执行电脑列表、接入的 AI 工具、在线状态与槽位占用, responses: { '200': { description: OK } } }
+  /ai/runners/{runnerId}/log:
+    get:
+      summary: 按需读取一台执行电脑最近上报的已脱敏日志尾部
+      parameters: [ { name: runnerId, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: 返回 runnerId、runnerName、content 与 updatedAt；尚未上报时 content 为空 }
+        '404': { description: 执行电脑不存在 }
   /ai/runners/pair-code:
     post: { summary: 生成十分钟有效的一次性电脑配对码, responses: { '200': { description: OK } } }
   /ai/runners/{runnerId}:
@@ -279,7 +286,15 @@ paths:
     post: { summary: Runner 用一次性配对码换取只返回一次的本机令牌（含本机可用的 AI 工具）, responses: { '200': { description: OK }, '401': { description: 配对码无效 } } }
   /ai/runner/heartbeat:
     post:
-      summary: Runner 心跳并更新本机并发数与可用 AI 工具
+      summary: Runner 心跳并更新本机并发数、可用 AI 工具与受限日志尾部
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                logTail: { type: string, maxLength: 30000, description: 已脱敏的最近 200 行诊断日志 }
       parameters:
         - { name: maxConcurrency, in: query, required: false, schema: { type: integer } }
         - { name: engines, in: query, required: false, schema: { type: string }, description: 逗号分隔，如 codex,claude }
@@ -377,6 +392,34 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/BuiltinMenuRegistry' } } }
       responses: { '200': { description: OK }, '400': { description: 菜单数量、标识或字段不合法 } }
+  /games/number-merge:
+    get:
+      summary: 读取当前成员的数字熔炉活动存档、长期统计和最近八局；首次进入自动开局
+      responses:
+        '200':
+          description: 当前完整游戏快照
+          content: { application/json: { schema: { $ref: '#/components/schemas/NumberMergeGame' } } }
+  /games/number-merge/move:
+    post:
+      summary: 由服务端沿指定方向合并、计分、随机出牌并保存
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GameMoveRequest' } } }
+      responses: { '200': { description: 移动后的快照 }, '400': { description: 方向不合法 }, '409': { description: 存档已在另一页面更新 } }
+  /games/number-merge/undo:
+    post:
+      summary: 撤销最近一次有效移动
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GameRevisionRequest' } } }
+      responses: { '200': { description: 撤销后的快照 }, '409': { description: 存档已在另一页面更新 } }
+  /games/number-merge/restart:
+    post:
+      summary: 归档走过的当前棋盘并开始新一局
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GameRevisionRequest' } } }
+      responses: { '200': { description: 新一局快照 }, '409': { description: 存档已在另一页面更新 } }
   /public/site-info:
     get:
       summary: 免登录读取网站公开信息，供登录页、分享页与页脚展示
@@ -914,7 +957,7 @@ components:
       type: object
       required: [id, label, icon, group, order, visible]
       properties:
-        id: { type: string, enum: [home, projects, todo, calendar, knowledge, vault, automation, files] }
+        id: { type: string, enum: [home, projects, todo, calendar, knowledge, vault, automation, files, games] }
         label: { type: string, maxLength: 24 }
         icon: { type: string, description: Remix Icon 类名 }
         group: { type: string, enum: [ROOT, PUBLIC, PERSONAL, TOOLS] }
@@ -925,7 +968,53 @@ components:
       required: [version, menus]
       properties:
         version: { type: integer, minimum: 1 }
-        menus: { type: array, minItems: 8, maxItems: 8, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
+        menus: { type: array, minItems: 9, maxItems: 9, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
+    GameMoveRequest:
+      type: object
+      required: [direction, revision]
+      properties:
+        direction: { type: string, enum: [UP, DOWN, LEFT, RIGHT] }
+        revision: { type: integer, minimum: 0 }
+    GameRevisionRequest:
+      type: object
+      required: [revision]
+      properties:
+        revision: { type: integer, minimum: 0 }
+    GameRunRecord:
+      type: object
+      required: [id, score, highestTile, moves, outcome, startedAt, endedAt]
+      properties:
+        id: { type: string }
+        score: { type: integer, format: int64 }
+        highestTile: { type: integer }
+        moves: { type: integer }
+        outcome: { type: string, enum: [WON, GAME_OVER, RESTARTED] }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
+    NumberMergeStats:
+      type: object
+      required: [bestScore, highestTile, gamesPlayed, totalMoves, wins]
+      properties:
+        bestScore: { type: integer, format: int64 }
+        highestTile: { type: integer }
+        gamesPlayed: { type: integer, format: int64 }
+        totalMoves: { type: integer, format: int64 }
+        wins: { type: integer, format: int64 }
+    NumberMergeGame:
+      type: object
+      required: [board, score, moves, won, gameOver, canUndo, revision, startedAt, updatedAt, stats, recentRuns]
+      properties:
+        board: { type: array, minItems: 16, maxItems: 16, items: { type: integer, minimum: 0 } }
+        score: { type: integer, format: int64 }
+        moves: { type: integer, minimum: 0 }
+        won: { type: boolean }
+        gameOver: { type: boolean }
+        canUndo: { type: boolean }
+        revision: { type: integer, minimum: 0 }
+        startedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        stats: { $ref: '#/components/schemas/NumberMergeStats' }
+        recentRuns: { type: array, maxItems: 8, items: { $ref: '#/components/schemas/GameRunRecord' } }
     FeishuSender:
       type: object
       description: 发言人映射，把飞书 open_id 对上 WAO 里显示的人名

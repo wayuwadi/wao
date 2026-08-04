@@ -54,7 +54,7 @@ function keys(combo: string): string[] {
   width: min(600px, calc(100vw - 40px));
   max-height: 80vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 121;
   box-shadow: var(--wao-shadow-modal);
@@ -138,7 +138,7 @@ kbd {
   border: 1px solid var(--wao-line-strong);
   border-bottom-width: 2px;
   border-radius: 6px;
-  background: #fbfbfc;
+  background: var(--wao-bg-sub);
   color: var(--wao-text-2);
 }
 .foot {

@@ -18,6 +18,7 @@ import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
+import { useTheme } from '@/composables/theme'
 import { useShortcuts } from '@/composables/shortcuts'
 import type { ModuleId } from '@/types'
 
@@ -27,6 +28,7 @@ const tabs = useTabsStore()
 const ui = useUiStore()
 const data = useDataStore()
 const preferences = usePreferenceStore()
+const theme = useTheme()
 
 useShortcuts()
 
@@ -82,6 +84,17 @@ function newNote() {
 }
 function bell() {
   toast('通知中心建设中')
+}
+const themeIcon = computed(() => {
+  if (theme.mode.value === 'system') return 'ri-contrast-line'
+  return theme.effective.value === 'dark' ? 'ri-sun-line' : 'ri-moon-line'
+})
+const themeTitle = computed(() => {
+  const labels = { light: '当前：明亮，点击切换深色', dark: '当前：深色，点击切换跟随系统', system: '当前：跟随系统，点击切换明亮' }
+  return labels[theme.mode.value]
+})
+function toggleTheme() {
+  theme.toggleTheme()
 }
 function openSearch() {
   ui.openSearch()
@@ -143,6 +156,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <i class="ri-sticky-note-line"></i>新建小记
         </button>
 
+        <button class="bell" :title="themeTitle" @click="toggleTheme">
+          <i :class="themeIcon"></i>
+        </button>
         <button class="bell" title="快捷键（?）" @click="ui.toggleHelp()">
           <i class="ri-keyboard-line"></i>
         </button>
@@ -194,7 +210,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 .header {
   height: var(--wao-header-h);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-bottom: 1px solid var(--wao-line);
   display: flex;
   align-items: center;
@@ -262,7 +278,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   font-size: 15px;
 }
 .plus.ghost {
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line-strong);
   color: var(--wao-text-2);
 }
@@ -270,7 +286,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   background: var(--wao-bg-hover-2);
 }
 .plus.ghost i {
-  color: #7a5cc6;
+  color: var(--wao-area-finance);
 }
 
 .bell {

@@ -331,7 +331,7 @@ async function createKb() {
   height: 32px;
   padding: 0 12px;
   border: 1px solid #dcd3f2;
-  background: #fbfafe;
+  background: var(--wao-bg-sub);
   border-radius: 8px;
   font-size: 12.5px;
   color: #7a5cc6;
@@ -341,7 +341,7 @@ async function createKb() {
   gap: 6px;
 }
 .ai-btn:hover {
-  background: #f7f4fd;
+  background: var(--wao-primary-tint);
 }
 .ai-btn i {
   font-size: 14px;
@@ -350,7 +350,7 @@ async function createKb() {
   height: 32px;
   padding: 0 12px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   font-size: 12.5px;
   color: var(--wao-text-2);
@@ -360,7 +360,7 @@ async function createKb() {
   gap: 6px;
 }
 .btn-ghost:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-ghost i {
   font-size: 14px;
@@ -369,7 +369,7 @@ async function createKb() {
   height: 32px;
   padding: 0 12px;
   border: 1px solid #f0c9c9;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   font-size: 12.5px;
   color: #bc4141;
@@ -464,7 +464,7 @@ async function createKb() {
   color: var(--wao-text);
   outline: none;
   width: 170px;
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .mini-primary {
   height: 27px;
@@ -484,7 +484,7 @@ async function createKb() {
   gap: 12px;
 }
 .kb-card {
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-left: 4px solid #4358d6;
   border-radius: 10px;
@@ -650,7 +650,7 @@ async function createKb() {
   height: 26px;
   padding: 0 10px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   font-size: 12px;
   color: var(--wao-text-2);
@@ -668,7 +668,7 @@ async function createKb() {
   width: 26px;
   height: 26px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   color: var(--wao-text-weak);
   cursor: pointer;
@@ -701,7 +701,7 @@ async function createKb() {
   width: min(540px, calc(100vw - 40px));
   max-height: 80vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 101;
   box-shadow: var(--wao-shadow-modal);
@@ -761,7 +761,7 @@ async function createKb() {
   font-size: 13px;
   color: var(--wao-text);
   outline: none;
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .f-input:focus,
 .f-textarea:focus {
@@ -790,7 +790,7 @@ async function createKb() {
   height: 30px;
   padding: 0 12px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 8px;
   font-size: 12.5px;
@@ -811,7 +811,7 @@ async function createKb() {
   align-items: center;
   gap: 10px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 9px;
   padding: 10px 12px;
   cursor: pointer;

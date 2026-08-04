@@ -260,7 +260,7 @@ onMounted(loadAiConfig)
   width: min(560px, calc(100vw - 40px));
   max-height: 84vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 101;
   box-shadow: var(--wao-shadow-modal);
@@ -315,7 +315,7 @@ onMounted(loadAiConfig)
 .icon-cell {
   aspect-ratio: 1;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 9px;
   color: var(--wao-text-3);
   cursor: pointer;
@@ -341,7 +341,7 @@ onMounted(loadAiConfig)
   border-radius: 9px;
   padding: 0 12px;
   font-size: 14px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
 }
@@ -359,7 +359,7 @@ onMounted(loadAiConfig)
   height: 28px;
   padding: 0 11px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 999px;
   font-size: 12px;
@@ -386,7 +386,7 @@ onMounted(loadAiConfig)
   padding: 8px 12px;
   font-size: 13px;
   line-height: 1.7;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   outline: none;
   resize: none;
@@ -398,7 +398,7 @@ onMounted(loadAiConfig)
   padding: 0 12px;
   border: 1px solid var(--wao-line-control);
   border-radius: 9px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   font-size: 13px;
   outline: none;
@@ -519,7 +519,7 @@ onMounted(loadAiConfig)
   padding: 0 9px;
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   font-size: 12px;
   outline: none;
@@ -541,7 +541,7 @@ onMounted(loadAiConfig)
   padding: 0 11px;
   border: 1px solid #cbd2f3;
   border-radius: 8px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-primary-text);
   font-size: 12px;
   cursor: pointer;
@@ -551,7 +551,7 @@ onMounted(loadAiConfig)
   padding: 10px 12px;
   border: 1px dashed #aeb9ee;
   border-radius: 9px;
-  background: #f2f4ff;
+  background: var(--wao-primary-tint);
 }
 .pair-code span {
   display: block;
@@ -566,7 +566,7 @@ onMounted(loadAiConfig)
 .danger-zone {
   margin-top: 18px;
   border: 1px solid #f0d9d9;
-  background: #fdf7f7;
+  background: var(--wao-danger-bg);
   border-radius: 10px;
   padding: 12px 14px;
   display: flex;
@@ -617,7 +617,7 @@ onMounted(loadAiConfig)
   height: 34px;
   padding: 0 14px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-2);
   border-radius: 8px;
   font-size: 13px;
@@ -630,7 +630,7 @@ onMounted(loadAiConfig)
   flex-shrink: 0;
 }
 .btn-ghost:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-primary {
   height: 34px;

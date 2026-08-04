@@ -81,6 +81,9 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
+    # 独立应用各自维护静态路由片段；WAO 发布只保留入口，不覆盖片段内容。
+    include /etc/nginx/wao-external-apps.d/*.conf;
+
     location / {
         try_files $uri $uri/ /index.html;
     }

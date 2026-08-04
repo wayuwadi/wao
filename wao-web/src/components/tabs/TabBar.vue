@@ -213,7 +213,7 @@ function mCloseAll() {
   color: var(--wao-text-weak);
 }
 .tab.active {
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   font-weight: 500;
   border-bottom-color: var(--wao-primary);
@@ -254,7 +254,7 @@ function mCloseAll() {
 .menu {
   position: fixed;
   z-index: 131;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 10px;
   box-shadow: var(--wao-shadow-pop-2);
@@ -296,7 +296,7 @@ function mCloseAll() {
 }
 .menu-sep {
   height: 1px;
-  background: #f0f0f3;
+  background: var(--wao-bg-tab);
   margin: 4px 6px;
 }
 @media (max-width: 760px) {

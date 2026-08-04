@@ -148,6 +148,8 @@ https://wao.wayuwa.cn/api/hello
 
 云节点更新 Nginx 配置后记得 `nginx -t && systemctl reload nginx`，否则上传大图会返回 413。
 
+独立应用的同域静态路由放在 `/etc/nginx/wao-external-apps.d/*.conf`。WAO 发布只创建并加载该目录，不删除其中内容；每个独立应用的 CI/CD 负责安装自己的片段、执行 `nginx -t` 并重载 Nginx。这样主站发布不会覆盖 `/game/` 等独立入口。
+
 图片正文进了 MySQL，`backup-mysql.ps1` 的备份体积会随图片增长，留意 `deploy\backups` 的磁盘占用。
 
 ## 任务分享链接

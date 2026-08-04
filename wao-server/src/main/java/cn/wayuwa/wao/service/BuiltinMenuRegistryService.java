@@ -28,7 +28,8 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("knowledge", "知识库", "ri-book-2-line", "PERSONAL", 30, true),
             new BuiltinMenuConfigDto("vault", "密码本", "ri-key-2-line", "PERSONAL", 40, true),
             new BuiltinMenuConfigDto("automation", "自动化", "ri-flashlight-line", "TOOLS", 10, true),
-            new BuiltinMenuConfigDto("files", "文件与图床", "ri-hard-drive-2-line", "TOOLS", 20, true));
+            new BuiltinMenuConfigDto("files", "文件与图床", "ri-hard-drive-2-line", "TOOLS", 20, true),
+            new BuiltinMenuConfigDto("games", "游戏厅", "ri-gamepad-line", "TOOLS", 30, true));
     private static final Map<String, BuiltinMenuConfigDto> BY_ID = DEFAULTS.stream()
             .collect(java.util.stream.Collectors.toUnmodifiableMap(BuiltinMenuConfigDto::id, item -> item));
 
@@ -46,7 +47,7 @@ public class BuiltinMenuRegistryService {
         if (raw == null || raw.isBlank()) return defaults();
         try {
             BuiltinMenuRegistryDto stored = json.readValue(raw, BuiltinMenuRegistryDto.class);
-            return new BuiltinMenuRegistryDto(VERSION, canonicalize(stored.menus()));
+            return new BuiltinMenuRegistryDto(VERSION, canonicalize(stored.menus(), false));
         } catch (RuntimeException | JsonProcessingException exception) {
             return defaults();
         }
@@ -54,7 +55,7 @@ public class BuiltinMenuRegistryService {
 
     /** 校验并整体保存所有内置菜单；不能增加、删除或改稳定 id。 */
     public BuiltinMenuRegistryDto saveRegistry(SaveBuiltinMenuRegistryRequest request) {
-        BuiltinMenuRegistryDto registry = new BuiltinMenuRegistryDto(VERSION, canonicalize(request.menus()));
+        BuiltinMenuRegistryDto registry = new BuiltinMenuRegistryDto(VERSION, canonicalize(request.menus(), true));
         try {
             settings.put(SettingService.BUILTIN_MENU_REGISTRY, json.writeValueAsString(registry));
             return registry;
@@ -67,8 +68,8 @@ public class BuiltinMenuRegistryService {
         return new BuiltinMenuRegistryDto(VERSION, DEFAULTS);
     }
 
-    private List<BuiltinMenuConfigDto> canonicalize(List<BuiltinMenuConfigDto> menus) {
-        if (menus == null || menus.size() != DEFAULTS.size()) {
+    private List<BuiltinMenuConfigDto> canonicalize(List<BuiltinMenuConfigDto> menus, boolean requireAll) {
+        if (menus == null || menus.size() > DEFAULTS.size() || (requireAll && menus.size() != DEFAULTS.size())) {
             throw new IllegalArgumentException("内置菜单数量不正确");
         }
         Set<String> ids = new HashSet<>();
@@ -84,6 +85,12 @@ public class BuiltinMenuRegistryService {
             if (!GROUPS.contains(menu.group())) throw new IllegalArgumentException("菜单分组不正确");
             if (menu.order() < 0 || menu.order() > 999) throw new IllegalArgumentException("菜单排序值必须在 0 到 999 之间");
             result.add(new BuiltinMenuConfigDto(menu.id(), label, icon, menu.group(), menu.order(), menu.visible()));
+        }
+        // 新版本增加内置模块时，旧注册表缺少该 id 是正常升级路径：保留用户已有定制并补上新默认项。
+        if (!requireAll) {
+            for (BuiltinMenuConfigDto fallback : DEFAULTS) {
+                if (ids.add(fallback.id())) result.add(fallback);
+            }
         }
         return List.copyOf(result);
     }

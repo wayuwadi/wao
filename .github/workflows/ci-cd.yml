@@ -101,26 +101,28 @@ jobs:
         run: |
           set -u
 
+          retry_remote() {
+            target_label="$1"
+            shift
+            attempt=1
+            while ! "$@"; do
+              if [ "$attempt" -ge 4 ]; then
+                printf '%s SSH/SCP 连续 %s 次失败，停止重试\n' "$target_label" "$attempt"
+                return 1
+              fi
+              printf '%s SSH/SCP 第 %s 次失败，10 秒后重试\n' "$target_label" "$attempt"
+              attempt=$((attempt + 1))
+              sleep 10
+            done
+          }
+
           deploy_master() {
-            scp wao-release.tgz wao-secrets.env "$MASTER_USER@$MASTER_HOST:/tmp/"
+            retry_remote "Linux 主节点" scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env "$MASTER_USER@$MASTER_HOST:/tmp/" || return
             # 解压前先清掉上一版源码：tar 只覆盖同名文件，删除 / 改名过的文件会留在节点上，
             # 混进 Docker 构建上下文（V18 撞号那次就是被留下的旧 migration 打挂的）。
             # deploy/ 整个保留：节点私有的 .env / .env.secrets / certs / data 都在里面，
             # 其中被 git 跟踪的文件随即被这次解压整份覆盖。
-            ssh "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; find "$desktop_dir/deploy/wao" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; rm -f /tmp/wao-secrets.env; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master'
-          }
-
-          retry_slave_ssh() {
-            attempt=1
-            while ! "$@"; do
-              if [ "$attempt" -ge 4 ]; then
-                printf 'Windows 从节点 SSH 连续 %s 次失败，停止重试\n' "$attempt"
-                return 1
-              fi
-              printf 'Windows 从节点 SSH 第 %s 次失败，10 秒后重试\n' "$attempt"
-              attempt=$((attempt + 1))
-              sleep 10
-            done
+            retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; find "$desktop_dir/deploy/wao" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; rm -f /tmp/wao-secrets.env; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master'
           }
 
           deploy_slave() {
@@ -128,25 +130,27 @@ jobs:
             remote_release="wao-release-${release_suffix}.zip"
             remote_secrets="wao-secrets-${release_suffix}.env"
             remote_installer="install-release-windows-${release_suffix}.ps1"
-            retry_slave_ssh scp -o ConnectTimeout=15 wao-release.zip "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_release" || return
-            retry_slave_ssh scp -o ConnectTimeout=15 wao-secrets.env "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_secrets" || return
-            retry_slave_ssh scp -o ConnectTimeout=15 deploy/scripts/install-release-windows.ps1 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_installer" || return
-            retry_slave_ssh ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" 'exit 0' || return
-            ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets"
+            retry_remote "Windows 从节点" scp -o ConnectTimeout=15 wao-release.zip "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_release" || return
+            retry_remote "Windows 从节点" scp -o ConnectTimeout=15 wao-secrets.env "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_secrets" || return
+            retry_remote "Windows 从节点" scp -o ConnectTimeout=15 deploy/scripts/install-release-windows.ps1 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_installer" || return
+            retry_remote "Windows 从节点" ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" 'exit 0' || return
+            retry_remote "Windows 从节点" ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets"
           }
 
           deploy_cloud() {
             MASTER_PUBLIC_HOST="$MASTER_HOST" SLAVE_PUBLIC_HOST="$SLAVE_HOST" \
               envsubst '${MASTER_PUBLIC_HOST} ${SLAVE_PUBLIC_HOST}' \
               < deploy/nginx/wao.wayuwa.cn.conf.template > wao-nginx.conf
-            ssh "$CLOUD_USER@$CLOUD_HOST" 'mkdir -p /tmp/wao-dist'
-            scp -r wao-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-dist/"
-            scp wao-nginx.conf "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-nginx.conf"
-            ssh "$CLOUD_USER@$CLOUD_HOST" '
+            retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" 'mkdir -p /tmp/wao-dist' || return
+            retry_remote "云前端" scp -o ConnectTimeout=15 -r wao-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-dist/" || return
+            retry_remote "云前端" scp -o ConnectTimeout=15 wao-nginx.conf "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-nginx.conf" || return
+            retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" '
               set -eu
               final=/etc/nginx/conf.d/wao.wayuwa.cn.conf
               previous="$(mktemp)"
               cp "$final" "$previous"
+              # 独立应用把自己的路由片段放在这里，主站发布只确保目录存在。
+              install -d -m 0755 /etc/nginx/wao-external-apps.d
               install -m 0644 /tmp/wao-nginx.conf "$final"
               if ! nginx -t; then
                 cp "$previous" "$final"

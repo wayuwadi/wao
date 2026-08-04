@@ -11,6 +11,7 @@ import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
+import cn.wayuwa.wao.dto.AiRunnerLogDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.ContinueAiRunRequest;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
@@ -20,6 +21,7 @@ import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.dto.RunnerScriptDto;
+import cn.wayuwa.wao.dto.RunnerHeartbeatRequest;
 import cn.wayuwa.wao.dto.UpdateRunnerConcurrencyRequest;
 import cn.wayuwa.wao.dto.UpdateRunnerWakeConfigRequest;
 import cn.wayuwa.wao.dto.WakeRunnerResultDto;
@@ -83,6 +85,12 @@ public class AiRunController {
     @GetMapping("/runners")
     public ApiResponse<List<AiRunnerDto>> runners() {
         return ApiResponse.ok(service.listRunners());
+    }
+
+    /** 按需读取一台执行电脑最近上报的诊断日志，不把日志塞进列表轮询。 */
+    @GetMapping("/runners/{runnerId}/log")
+    public ApiResponse<AiRunnerLogDto> runnerLog(@PathVariable String runnerId) {
+        return ApiResponse.ok(service.runnerLog(runnerId));
     }
 
     @PostMapping("/runners/pair-code")
@@ -172,9 +180,10 @@ public class AiRunController {
             @RequestParam(required = false) String engines,
             @RequestParam(required = false) String scriptHash,
             @RequestParam(required = false) String wakeMac,
+            @RequestBody(required = false) RunnerHeartbeatRequest request,
             HttpServletRequest http) {
         AiRunnerDto runner = service.heartbeat(token, maxConcurrency, engines, scriptHash,
-                wakeMac, clientAddress(http));
+                wakeMac, clientAddress(http), request == null ? null : request.logTail());
         lifecycleService.markOnline(runner.id());
         return ApiResponse.ok(runner);
     }

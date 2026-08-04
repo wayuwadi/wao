@@ -3,10 +3,12 @@ import { computed, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
+import { useIsMobile } from '@/composables/viewport'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import type { VaultItem } from '@/types'
 
 const data = useDataStore()
+const isMobile = useIsMobile()
 const groupId = ref('all')
 const selId = ref<string | null>(null)
 const newGroupOpen = ref(false)
@@ -25,6 +27,15 @@ const items = computed<FlatItem[]>(() =>
 )
 const filtered = computed(() => (groupId.value === 'all' ? items.value : items.value.filter((i) => i.groupId === groupId.value)))
 const sel = computed(() => filtered.value.find((i) => i.id === selId.value) ?? filtered.value[0] ?? null)
+
+/**
+ * 手机上详情是一页盖屏的抽屉，只有显式点过条目才打开。
+ *
+ * <p>桌面三栏并排，详情默认落在第一条上；手机屏幕放不下三栏，详情栏被前两栏挤出可视区，
+ * 「查看」「复制」两个按钮就等于不存在了。所以手机改成「列表 → 点条目进详情页 → 返回」，
+ * 并且不沿用桌面「默认选中第一条」的行为，免得一进密码库就盖着一个没人点开的详情页。
+ */
+const detailOpen = computed(() => !isMobile.value || (selId.value != null && sel.value != null))
 
 /**
  * 默认分组按后端给的 isDefault 认，不按名字认：名字是用户的，改完名它还是同一个默认分组（见 ADR-036）。
@@ -207,7 +218,7 @@ async function deleteItem() {
     </div>
 
     <div class="cols">
-      <div class="group-col">
+      <div class="group-col" :class="{ managing: managingGroups }">
         <div class="col-label">分组</div>
         <template v-for="g in groups" :key="g.id">
           <button v-if="g.id === 'all' || !managingGroups" class="group-btn" :class="{ on: g.on }" @click="pickGroup(g.id)">
@@ -245,11 +256,16 @@ async function deleteItem() {
             <div class="item-name">{{ it.name }}</div>
             <div class="item-user">{{ it.user }}</div>
           </div>
+          <i class="ri-arrow-right-s-line item-go"></i>
         </button>
         <div v-if="filtered.length === 0" class="empty">这个分组还没有条目</div>
       </div>
 
-      <div class="detail-col">
+      <div v-if="detailOpen" class="detail-col" :class="{ 'detail-page': isMobile }">
+        <div v-if="isMobile" class="dp-head">
+          <button class="dp-back" title="返回列表" @click="selId = null"><i class="ri-arrow-left-line"></i></button>
+          <div class="dp-title">{{ sel?.name ?? '条目详情' }}</div>
+        </div>
         <template v-if="sel">
           <div class="d-head">
             <div class="d-icon"><i :class="sel.icon"></i></div>
@@ -376,7 +392,7 @@ async function deleteItem() {
   height: 32px;
   padding: 0 13px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 8px;
   font-size: 12.5px;
   color: var(--wao-text-2);
@@ -386,14 +402,14 @@ async function deleteItem() {
   gap: 6px;
 }
 .btn-ghost:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .btn-ghost i {
   font-size: 14px;
 }
 .banner {
   margin-top: 12px;
-  background: #fffdf7;
+  background: var(--wao-warning-bg);
   border: 1px solid #f0e3c4;
   border-radius: 12px;
   padding: 11px 16px;
@@ -409,7 +425,7 @@ async function deleteItem() {
   margin-top: 2px;
 }
 .banner.error {
-  background: #fff6f6;
+  background: var(--wao-danger-bg);
   border-color: #f3d2d2;
   color: #a4302e;
   align-items: center;
@@ -418,7 +434,7 @@ async function deleteItem() {
   margin-left: auto;
   flex-shrink: 0;
   border: 1px solid #e6b7b6;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: #a4302e;
   border-radius: 8px;
   padding: 4px 12px;
@@ -433,7 +449,7 @@ async function deleteItem() {
 .cols {
   margin-top: 12px;
   display: flex;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   overflow: hidden;
@@ -466,7 +482,7 @@ async function deleteItem() {
   font-size: 12.5px;
 }
 .group-btn:hover {
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
 }
 .group-btn.on {
   background: var(--wao-primary-soft);
@@ -481,11 +497,11 @@ async function deleteItem() {
   padding: 3px 4px;
   border-radius: 7px;
 }
-.group-edit-row:hover { background: #f0f1f4; }
+.group-edit-row:hover { background: var(--wao-bg-tab); }
 .drag { color: var(--wao-text-faint); cursor: grab; }
 .group-name-input { min-width: 0; flex: 1; border: 1px solid var(--wao-line-control); border-radius: 5px; padding: 3px 5px; }
 .group-action { width: 22px; height: 22px; border: 0; background: transparent; border-radius: 5px; cursor: pointer; color: var(--wao-text-weak); }
-.group-action:hover { background: #fff; color: var(--wao-text); }
+.group-action:hover { background: var(--wao-bg-card); color: var(--wao-text); }
 .group-action.danger:hover { color: var(--wao-danger-strong); }
 .group-action:disabled { opacity: .25; cursor: not-allowed; }
 .optional { color: var(--wao-text-faint); font-weight: 400; }
@@ -537,7 +553,7 @@ async function deleteItem() {
   text-align: left;
 }
 .item-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .item-btn.on {
   background: var(--wao-primary-soft);
@@ -546,7 +562,7 @@ async function deleteItem() {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -591,7 +607,7 @@ async function deleteItem() {
   width: 42px;
   height: 42px;
   border-radius: 11px;
-  background: #f0f1f4;
+  background: var(--wao-bg-tab);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -656,20 +672,20 @@ async function deleteItem() {
   height: 26px;
   padding: 0 10px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   font-size: 11.5px;
   color: var(--wao-text-2);
   cursor: pointer;
 }
 .f-btn:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .f-icon {
   width: 26px;
   height: 26px;
   border: 1px solid var(--wao-line-strong);
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 7px;
   cursor: pointer;
   color: var(--wao-text-weak);
@@ -678,7 +694,7 @@ async function deleteItem() {
   justify-content: center;
 }
 .f-icon:hover {
-  background: #f4f5f8;
+  background: var(--wao-bg-hover);
 }
 .f-icon i {
   font-size: 13px;
@@ -742,7 +758,7 @@ async function deleteItem() {
   width: min(440px, calc(100vw - 40px));
   max-height: 80vh;
   overflow-y: auto;
-  background: #fff;
+  background: var(--wao-bg-card);
   border-radius: 14px;
   z-index: 101;
   box-shadow: var(--wao-shadow-modal);
@@ -795,7 +811,7 @@ async function deleteItem() {
   font-size: 13px;
   color: var(--wao-text);
   outline: none;
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .f-input:focus,
 .f-textarea:focus {
@@ -812,12 +828,117 @@ async function deleteItem() {
   border-top: 1px solid var(--wao-divider);
 }
 
+.item-go {
+  display: none;
+  flex-shrink: 0;
+  font-size: 18px;
+  color: var(--wao-text-faint);
+}
+
+/* 手机上的条目详情：盖住整屏的一页，自带返回顶栏 */
+.detail-page {
+  position: fixed;
+  inset: 0;
+  z-index: 82;
+  background: var(--wao-bg-card);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+  animation: waoVaultPage 0.16s ease;
+}
+@keyframes waoVaultPage {
+  from {
+    transform: translateX(14px);
+    opacity: 0.4;
+  }
+}
+.dp-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 -16px 4px;
+  padding: 0 8px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--wao-bg-card);
+  border-bottom: 1px solid var(--wao-line);
+}
+.dp-back {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--wao-text-2);
+  flex-shrink: 0;
+}
+.dp-back i {
+  font-size: 20px;
+}
+.dp-title {
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 @media (max-width: 760px) {
   .vault { padding: 16px 12px 28px; }
-  .vault-main { grid-template-columns: 1fr; }
-  .toolbar { gap: 7px; flex-wrap: wrap; }
-  .toolbar .search { flex: 1 1 100%; }
-  .toolbar .search input { width: 100%; height: 38px; }
   .modal { top: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+
+  /* 三栏并排在手机上放不下：分组变成横向胶囊，条目占满整宽，详情走盖屏页 */
+  .cols { flex-direction: column; min-height: 0; }
+  .group-col {
+    width: auto;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--wao-divider);
+  }
+  .group-col:not(.managing) {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .group-col:not(.managing)::-webkit-scrollbar { display: none; }
+  .group-col:not(.managing) .col-label { display: none; }
+  .group-col:not(.managing) .group-btn,
+  .group-col:not(.managing) .group-add {
+    width: auto;
+    flex: 0 0 auto;
+    min-height: 34px;
+    margin-top: 0;
+    white-space: nowrap;
+  }
+  .group-edit-row { min-height: 40px; }
+  .group-action { width: 34px; height: 34px; }
+
+  .item-col { width: auto; border-right: 0; padding: 6px 6px 10px; }
+  .item-btn { min-height: 56px; }
+  .item-go { display: block; }
+
+  /* 名字已经写在顶栏上，滚动时也一直看得见，正文里不再重复一遍 */
+  .d-head { padding-top: 8px; }
+  .detail-page .d-name { display: none; }
+  .detail-page .d-sub { margin-top: 0; }
+
+  /* 键名单独一行，值可以换行，「查看」「复制」保持 40px 触控高度 */
+  .field-row { flex-wrap: wrap; row-gap: 8px; padding: 12px 14px; }
+  .f-key { width: 100%; }
+  .f-val,
+  .f-pass,
+  .f-site {
+    flex: 1 1 55%;
+    min-width: 0;
+    word-break: break-all;
+  }
+  .f-btn { height: 40px; padding: 0 16px; font-size: 12.5px; }
+  .f-icon { width: 40px; height: 40px; }
+  .f-icon i { font-size: 16px; }
 }
 </style>

@@ -177,15 +177,15 @@ onBeforeUnmount(() => {
   padding: 14px;
   border: 1px solid var(--wao-line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--wao-bg-card);
   box-shadow: 0 16px 40px rgba(26, 31, 61, .18);
   text-align: left;
 }
 .launcher header { display: flex; align-items: center; }
 .launcher header b { flex: 1; font-size: 13px; }
-.close { width: 26px; height: 26px; border: 0; border-radius: 7px; background: #f4f5f8; cursor: pointer; }
+.close { width: 26px; height: 26px; border: 0; border-radius: 7px; background: var(--wao-bg-hover); cursor: pointer; }
 .scope {
-  margin: 9px 0 0; padding: 6px 8px; overflow: hidden; border-radius: 7px; background: #f4f6ff;
+  margin: 9px 0 0; padding: 6px 8px; overflow: hidden; border-radius: 7px; background: var(--wao-primary-tint);
   color: var(--wao-text-2); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
 }
@@ -197,13 +197,13 @@ onBeforeUnmount(() => {
   padding: 10px 9px;
   border: 1px solid var(--wao-line);
   border-radius: 10px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-2);
   cursor: pointer;
   text-align: left;
 }
 .engine-option:hover { border-color: #bec7ef; }
-.engine-option.on { background: #f7f8ff; }
+.engine-option.on { background: var(--wao-bg-sub); }
 .engine-option i { font-size: 15px; }
 .engine-option b { display: block; margin-top: 4px; font-size: 12px; }
 .engine-option em { display: block; margin-top: 2px; color: var(--wao-text-weak); font-size: 10px; font-style: normal; }
@@ -213,7 +213,7 @@ onBeforeUnmount(() => {
   padding: 0 9px;
   border: 1px solid var(--wao-line);
   border-radius: 9px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-1);
   font-size: 12px;
 }
@@ -222,7 +222,7 @@ onBeforeUnmount(() => {
 .hint.danger { color: #c04f47; }
 .launcher footer { margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px; }
 .launcher footer button { padding: 7px 13px; border-radius: 8px; cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
-.launcher footer .secondary { border: 1px solid var(--wao-line); background: #fff; }
+.launcher footer .secondary { border: 1px solid var(--wao-line); background: var(--wao-bg-card); }
 .launcher footer .primary { border: 1px solid #4358d6; background: #4358d6; color: #fff; }
 .launcher footer .primary:disabled { opacity: .65; cursor: not-allowed; }
 .spin { display: inline-block; animation: spin .9s linear infinite; }
@@ -235,7 +235,7 @@ onBeforeUnmount(() => {
     border-radius: 18px 18px 0 0;
   }
   .scope { -webkit-line-clamp: 2; }
-  .launcher footer { position: sticky; bottom: calc(-16px - env(safe-area-inset-bottom)); margin: 14px -16px calc(-16px - env(safe-area-inset-bottom)); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: #fff; border-top: 1px solid var(--wao-divider); }
+  .launcher footer { position: sticky; bottom: calc(-16px - env(safe-area-inset-bottom)); margin: 14px -16px calc(-16px - env(safe-area-inset-bottom)); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: var(--wao-bg-card); border-top: 1px solid var(--wao-divider); }
   .launcher footer button { min-height: 42px; }
 }
 </style>

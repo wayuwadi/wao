@@ -12,6 +12,7 @@ deploy_dir="${project_root}/deploy"
 final_config='/etc/nginx/conf.d/wao.wayuwa.cn.conf'
 pending_config='/etc/nginx/conf.d/wao.pending.conf'
 bootstrap_config='/etc/nginx/conf.d/wao.bootstrap.conf'
+external_apps_dir='/etc/nginx/wao-external-apps.d'
 
 MASTER_PUBLIC_HOST="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}"
 SLAVE_PUBLIC_HOST="${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}"
@@ -24,6 +25,8 @@ gateway_ready() {
 }
 
 if gateway_ready "${MASTER_PUBLIC_HOST}" || gateway_ready "${SLAVE_PUBLIC_HOST}"; then
+  # 外部应用路由由独立仓库维护；目录必须先存在，Nginx 才能安全加载通用 include。
+  install -d -m 0755 "${external_apps_dir}"
   sh "${script_dir}/render-nginx-config.sh"
   previous_config=''
   if [ -f "${final_config}" ]; then

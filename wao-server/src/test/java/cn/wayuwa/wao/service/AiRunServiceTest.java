@@ -325,7 +325,7 @@ class AiRunServiceTest {
         when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
         when(runMapper.selectList(any())).thenReturn(List.of());
 
-        service.heartbeat("local-token", 3, null, null, "30-56-0f-09-61-11", "203.0.113.8");
+        service.heartbeat("local-token", 3, null, null, "30-56-0f-09-61-11", "203.0.113.8", null);
 
         assertThat(runner.getAdminMaxConcurrency()).isEqualTo(5);
         assertThat(runner.getMaxConcurrency()).isEqualTo(3);
@@ -345,10 +345,12 @@ class AiRunServiceTest {
         when(scripts.available()).thenReturn(true);
         when(scripts.hash()).thenReturn("latest-hash");
 
-        service.heartbeat("local-token", null, null, "latest-hash", null, null);
+        service.heartbeat("local-token", null, null, "latest-hash", null, null, null);
 
         assertThat(runner.getScriptHash()).isEqualTo("latest-hash");
         assertThat(runner.getUpdateRequestedAt()).isNull();
+        verify(runnerMapper).update(eq(runner), any());
+        verify(runnerMapper, never()).updateById(runner);
     }
 
     @Test
@@ -362,11 +364,44 @@ class AiRunServiceTest {
         when(scripts.available()).thenReturn(true);
         when(scripts.hash()).thenReturn("latest-hash");
 
-        AiRunnerDto dto = service.heartbeat("local-token", null, null, "old-hash", null, null);
+        AiRunnerDto dto = service.heartbeat("local-token", null, null, "old-hash", null, null, null);
 
         assertThat(runner.getUpdateRequestedAt()).isNotNull();
         assertThat(dto.updateRequested()).isTrue();
         assertThat(dto.scriptUpToDate()).isFalse();
+        verify(runnerMapper).updateById(runner);
+        verify(runnerMapper, never()).update(any(), any());
+    }
+
+    @Test
+    void heartbeatStoresOnlyTheBoundedRunnerLogTail() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setTokenHash("hashed-token");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        String oversized = "prefix-" + "x".repeat(30_000) + "-latest";
+
+        service.heartbeat("local-token", null, null, null, null, null, oversized);
+
+        assertThat(runner.getLogTail()).hasSize(30_000).endsWith("-latest");
+        assertThat(runner.getLogUpdatedAt()).isNotNull();
+        verify(runnerMapper).update(eq(runner), any());
+        verify(runnerMapper, never()).updateById(runner);
+    }
+
+    @Test
+    void runnerLogReturnsTheLastSnapshotWithoutExposingItInRunnerList() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setLogTail("2026-07-31 Runner 已启动");
+        runner.setLogUpdatedAt(LocalDateTime.of(2026, 7, 31, 13, 30));
+        when(runnerMapper.selectById("rn1")).thenReturn(runner);
+
+        var result = service.runnerLog("rn1");
+
+        assertThat(result.runnerName()).isEqualTo("娃哥电脑");
+        assertThat(result.content()).contains("Runner 已启动");
+        assertThat(result.updatedAt()).isEqualTo("2026-07-31T13:30");
     }
 
     @Test

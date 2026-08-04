@@ -242,7 +242,7 @@ function onDropStatus(status: TaskStatus) {
   font-size: 13px;
 }
 .seg-btn.on {
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text);
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(16, 18, 28, 0.1);
@@ -272,7 +272,7 @@ function onDropStatus(status: TaskStatus) {
   height: 28px;
   padding: 0 12px;
   border: 1px solid var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-3);
   border-radius: 999px;
   font-size: 12.5px;
@@ -292,7 +292,7 @@ function onDropStatus(status: TaskStatus) {
   margin-top: 14px;
   padding: 44px;
   text-align: center;
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   color: var(--wao-text-weak);
@@ -346,7 +346,7 @@ function onDropStatus(status: TaskStatus) {
   color: var(--wao-text-faint);
 }
 .tgroup-collapsed {
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px dashed var(--wao-line-strong);
   border-radius: 12px;
   padding: 14px;
@@ -355,7 +355,7 @@ function onDropStatus(status: TaskStatus) {
   color: var(--wao-text-faint);
 }
 .tlist {
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 5px 8px;
@@ -381,7 +381,7 @@ function onDropStatus(status: TaskStatus) {
   height: 17px;
   border-radius: 5px;
   border: 1.5px solid #c9cdda;
-  background: #fff;
+  background: var(--wao-bg-card);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -467,7 +467,7 @@ function onDropStatus(status: TaskStatus) {
   flex: 1 1 0;
   min-width: 172px;
   max-width: 262px;
-  background: #f1f2f5;
+  background: var(--wao-bg-hover-2);
   border-radius: 12px;
   padding: 10px;
   transition: background 0.12s, box-shadow 0.12s;
@@ -522,7 +522,7 @@ function onDropStatus(status: TaskStatus) {
   gap: 8px;
 }
 .board-card {
-  background: #fff;
+  background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 10px;
   padding: 11px 12px;

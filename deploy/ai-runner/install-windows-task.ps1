@@ -30,6 +30,12 @@ if (-not $PythonPath) {
     throw 'No usable Python interpreter found. Install Python or pass -PythonPath once.'
 }
 $resolvedPython = (Resolve-Path -LiteralPath $PythonPath).Path
+$pythonwPath = Join-Path (Split-Path $resolvedPython) 'pythonw.exe'
+$taskPython = if (Test-Path -LiteralPath $pythonwPath -PathType Leaf) {
+    (Resolve-Path -LiteralPath $pythonwPath).Path
+} else {
+    $resolvedPython
+}
 $resolvedRunner = (Resolve-Path -LiteralPath $runnerPath).Path
 $resolvedRoot = [System.IO.Path]::GetFullPath($Root)
 [System.IO.Directory]::CreateDirectory($resolvedRoot) | Out-Null
@@ -44,7 +50,7 @@ $arguments = @(
 )
 if ($Engines) { $arguments += @('--engines', ('"{0}"' -f $Engines)) }
 
-$action = New-ScheduledTaskAction -Execute $resolvedPython -Argument ($arguments -join ' ') -WorkingDirectory (Split-Path $resolvedRunner)
+$action = New-ScheduledTaskAction -Execute $taskPython -Argument ($arguments -join ' ') -WorkingDirectory (Split-Path $resolvedRunner)
 $triggers = @(
     (New-ScheduledTaskTrigger -AtStartup),
     (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME),
@@ -62,4 +68,5 @@ $task = New-ScheduledTask -Action $action -Trigger $triggers -Settings $settings
 Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force | Out-Null
 Start-ScheduledTask -TaskName $TaskName
 Write-Host "Scheduled task installed and started: $TaskName"
+Write-Host "Runtime: $taskPython"
 Write-Host "Principal: $($principal.UserId); workspace: $resolvedRoot; concurrency: $MaxConcurrency"

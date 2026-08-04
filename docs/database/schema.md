@@ -233,6 +233,8 @@ erDiagram
 - `admin_max_concurrency`：管理员在后台配置的线程数，存在时优先于 `max_concurrency` 生效。
 - `script_hash`：Runner 心跳自报的脚本 SHA-256，用于判断是否落后于服务端打包的最新版。
 - `update_requested_at`：后台一键下发脚本更新的时间；节点自更新后上报最新哈希时自动清除。
+- `log_tail` / `log_updated_at`（V48）：Runner 心跳上报的已脱敏日志尾部（最多 30,000 字符）及快照时间；
+  完整日志仍只保留在执行电脑本机。
 `ai_runner_pair_code` 保存一次性配对码哈希、过期时间和使用时间，明文只在生成接口返回一次。
 
 ### ai_task_run
@@ -393,6 +395,30 @@ OAuth 下发前会先把快过期的 access token 续期。
 
 事件是服务端从 CalDAV 服务器单向拉取的只读副本：每 15 分钟定时同步一次，窗口为过去 90 天到未来 400 天，重复规则（RRULE）在服务端展开后落库；每次同步按日历整体重建（先删后插），因此跨节点重复执行也是幂等的。接口契约见 `docs/api/caldav.yaml`。
 
+## 游戏厅域
+
+### game_save（活动存档）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(80) PK | `<memberId>:<gameKey>`，一个成员在一个游戏里只有一份活动存档 |
+| member_id / game_key | VARCHAR | WAO 成员与游戏稳定标识；首个游戏为 `number-merge` |
+| state_json | TEXT | 游戏规则自有状态；数字熔炉保存 16 格棋盘 |
+| score / move_count / won | BIGINT / INT / TINYINT | 当前分数、有效步数、是否曾达到 2048 |
+| revision | INT | 乐观锁版本，每次有效移动、撤销或重开递增 |
+| previous_state_json / previous_score / previous_move_count | TEXT / BIGINT / INT NULL | 最近一步的前态，撤销后清空 |
+| started_at / updated_at | DATETIME(3) | 本局开始时间与最近保存时间 |
+
+### game_run_record（历史战绩）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 对局记录 id |
+| member_id / game_key | VARCHAR | 按成员和游戏隔离、查询 |
+| score / highest_tile / move_count | BIGINT / INT / INT | 归档时的成绩摘要 |
+| outcome | VARCHAR(16) | `WON` / `GAME_OVER` / `RESTARTED` |
+| started_at / ended_at | DATETIME(3) | 本局时间范围 |
+
+数字熔炉的移动和随机出牌由服务端执行，前端只提交方向与当前 `revision`；契约与扩展原则见 ADR-040。
+
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
 - `V3__content_schema.sql` 内容域建表 + `V4__content_seed.sql` 种子。
@@ -434,4 +460,7 @@ OAuth 下发前会先把快过期的 access token 续期。
 - `V43__feishu_notification_feedback.sql`：飞书定时通知的回执与反馈（见 ADR-035）。
 - `V44__member_favorite_preference.sql`：成员收藏与个人偏好。
 - `V45__vault_group_is_default.sql`：密码库默认分组改为按 `is_default` 标记识别，存量按 id 还原（见 ADR-036）。
+- `V46__super_admin_roles.sql`：把初始维护者角色升级为超级管理员，作为组织级配置权限根。
+- `V47__game_hall_persistence.sql`：新增通用游戏活动存档与历史战绩表（见 ADR-040）。
+- `V48__runner_log_snapshot.sql`：保存 Runner 最近一段安全诊断日志，供控制台按需查看。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

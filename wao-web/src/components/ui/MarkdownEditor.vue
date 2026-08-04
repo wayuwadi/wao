@@ -359,7 +359,7 @@ onBeforeUnmount(() => {
 }
 .md:not(.ro) .md-body:focus-within {
   border-color: var(--wao-line-control);
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .md.bare .md-body,
 .md.bare:not(.ro) .md-body:hover,

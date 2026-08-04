@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   createAiPairCode,
+  fetchAiRunnerLog,
   fetchAiRunners,
   fetchAiRuns,
   fetchAiWorkflows,
@@ -19,7 +20,7 @@ import { formatCost, formatTokens, shortModel, usageSummary } from '@/composable
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
 import { useUiStore } from '@/stores/ui'
-import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiWorkflow } from '@/types'
+import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow } from '@/types'
 
 type ConsoleView = 'runs' | 'runners' | 'workflows'
 
@@ -31,6 +32,10 @@ const workflows = ref<AiWorkflow[]>([])
 const loading = ref(true)
 const workflowsLoading = ref(false)
 const selectedRun = ref<AiRun | null>(null)
+const logRunner = ref<AiRunner | null>(null)
+const runnerLog = ref<AiRunnerLog | null>(null)
+const runnerLogLoading = ref(false)
+const runnerLogError = ref('')
 const view = ref<ConsoleView>('runs')
 const pairCode = ref('')
 const pairExpiresAt = ref('')
@@ -205,6 +210,41 @@ async function wakeRunner(runner: AiRunner) {
     toast(error instanceof Error ? error.message : '唤醒包发送失败', 'ri-error-warning-line')
   } finally {
     wakingRunnerId.value = null
+  }
+}
+
+async function loadRunnerLog() {
+  if (!logRunner.value) return
+  runnerLogLoading.value = true
+  runnerLogError.value = ''
+  try {
+    runnerLog.value = await fetchAiRunnerLog(logRunner.value.id)
+  } catch (error) {
+    runnerLogError.value = error instanceof Error ? error.message : 'Runner 日志读取失败'
+  } finally {
+    runnerLogLoading.value = false
+  }
+}
+
+async function showRunnerLog(runner: AiRunner) {
+  logRunner.value = runner
+  runnerLog.value = null
+  await loadRunnerLog()
+}
+
+function closeRunnerLog() {
+  logRunner.value = null
+  runnerLog.value = null
+  runnerLogError.value = ''
+}
+
+async function copyRunnerLog() {
+  if (!runnerLog.value?.content) return
+  try {
+    await navigator.clipboard.writeText(runnerLog.value.content)
+    toast('Runner 日志已复制', 'ri-file-copy-line')
+  } catch {
+    toast('复制失败，请在日志中手动选择文本', 'ri-error-warning-line')
   }
 }
 
@@ -570,6 +610,9 @@ onBeforeUnmount(() => {
             <div v-else-if="runner.scriptUpToDate === false" class="runner-script-hint stale">
               <i class="ri-refresh-line"></i>Runner 脚本落后于服务端版本，可点上方「更新 Runner 脚本」
             </div>
+            <button class="runner-log-btn" @click="showRunnerLog(runner)">
+              <i class="ri-terminal-box-line"></i>查看 Runner 日志
+            </button>
             <div v-if="!runner.online" class="wake-panel">
                 <button class="wake-btn" :disabled="wakingRunnerId === runner.id || !runner.wakeConfigured" @click="wakeRunner(runner)">
                   <i :class="wakingRunnerId === runner.id ? 'ri-loader-4-line spin' : 'ri-shut-down-line'"></i>
@@ -792,6 +835,42 @@ onBeforeUnmount(() => {
         </footer>
       </section>
     </div>
+
+    <div v-if="logRunner" class="run-detail-mask" @click.self="closeRunnerLog">
+      <section class="run-detail runner-log-detail" role="dialog" aria-modal="true" aria-labelledby="runner-log-title">
+        <header>
+          <span class="recent-icon runner-log-icon"><i class="ri-terminal-box-line"></i></span>
+          <div>
+            <h2 id="runner-log-title">Runner 日志</h2>
+            <p>{{ logRunner.name }} · 最近 200 行安全诊断</p>
+          </div>
+          <button class="detail-close" aria-label="关闭 Runner 日志" @click="closeRunnerLog"><i class="ri-close-line"></i></button>
+        </header>
+        <div v-if="runnerLogLoading" class="runner-log-state">
+          <i class="ri-loader-4-line spin"></i>正在读取日志…
+        </div>
+        <div v-else-if="runnerLogError" class="runner-log-state error">
+          <i class="ri-error-warning-line"></i>
+          <span>{{ runnerLogError }}</span>
+          <button class="secondary" @click="loadRunnerLog">重试</button>
+        </div>
+        <div v-else-if="!runnerLog?.content" class="runner-log-state">
+          <i class="ri-file-list-3-line"></i>
+          <span>这台电脑还没有上报日志；新版 Runner 下次心跳后会自动出现。</span>
+        </div>
+        <template v-else>
+          <div class="runner-log-meta">
+            仅显示脱敏后的日志尾部 · 更新于 {{ timeText(runnerLog.updatedAt) || '时间未知' }}
+          </div>
+          <pre class="runner-log-content">{{ runnerLog.content }}</pre>
+        </template>
+        <footer>
+          <button v-if="runnerLog?.content" class="secondary" @click="copyRunnerLog"><i class="ri-file-copy-line"></i>复制</button>
+          <button class="secondary" :disabled="runnerLogLoading" @click="loadRunnerLog"><i class="ri-refresh-line"></i>刷新</button>
+          <button class="primary" @click="closeRunnerLog">关闭</button>
+        </footer>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -894,7 +973,7 @@ onBeforeUnmount(() => {
   padding: 5px;
   border: 1px solid var(--wao-line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--wao-bg-card);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -911,8 +990,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 7px;
 }
-.console-tabs button:hover { background: #f4f5fa; }
-.console-tabs button.on { background: #eef1ff; color: #3650b4; font-weight: 650; }
+.console-tabs button:hover { background: var(--wao-bg-hover); }
+.console-tabs button.on { background: #eef1ff; color: var(--wao-primary-text); font-weight: 650; }
 .console-tabs em { padding: 1px 6px; border-radius: 20px; background: #e3e7f6; color: #4358d6; font-size: 10px; font-style: normal; }
 .console-tabs .live { margin-left: auto; padding-right: 8px; }
 .section-title { margin-right: 4px; font-size: 12px; font-weight: 650; color: var(--wao-text-2); }
@@ -936,20 +1015,20 @@ onBeforeUnmount(() => {
   padding: 12px;
   border: 1px solid var(--wao-line);
   border-radius: 13px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: inherit;
   text-align: left;
   cursor: pointer;
   transition: .16s;
 }
-.run-card:hover { transform: translateY(-2px); border-color: #bec7ef; box-shadow: 0 8px 22px #27366c14; }
+.run-card:hover { transform: translateY(-2px); border-color: var(--wao-primary-line); box-shadow: 0 8px 22px #27366c14; }
 .run-top, .run-foot { display: flex; align-items: center; gap: 8px; }
 .status { padding: 4px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 650; }
 .run-time { margin-left: auto; color: var(--wao-text-weak); font-size: 10.5px; }
 .run-card h3 { min-height: 20px; margin: 9px 0 4px; font-size: 14px; line-height: 1.4; }
 .run-project { color: var(--wao-text-weak); font-size: 11.5px; }
 .run-project i { margin-right: 5px; }
-.live-progress { margin-top: 8px; padding: 8px; border-radius: 8px; background: #f7f8fd; display: flex; gap: 9px; align-items: flex-start; }
+.live-progress { margin-top: 8px; padding: 8px; border-radius: 8px; background: var(--wao-bg-sub); display: flex; gap: 9px; align-items: flex-start; }
 .live-progress > div { min-width: 0; }
 .live-progress b, .live-progress small { display: block; }
 .live-progress b { overflow: hidden; color: #41485c; font-size: 11px; font-weight: 550; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
@@ -975,8 +1054,8 @@ onBeforeUnmount(() => {
 .empty.ready > i { margin-bottom: 4px; color: #7d8ddd; font-size: 26px; }
 .empty.ready b { color: var(--wao-text-2); font-size: 13px; }
 .runner-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.runner-card { padding: 16px; border: 1px solid var(--wao-line); border-radius: 13px; background: #fff; }
-.runner-card.offline { background: #fbfbfc; opacity: .8; }
+.runner-card { padding: 16px; border: 1px solid var(--wao-line); border-radius: 13px; background: var(--wao-bg-card); }
+.runner-card.offline { background: var(--wao-bg-sub); opacity: .8; }
 .runner-card header { display: flex; align-items: center; gap: 8px; }
 .runner-card header b { font-size: 13.5px; }
 .runner-state { margin-left: auto; color: var(--wao-text-weak); font-size: 10.5px; }
@@ -985,7 +1064,7 @@ onBeforeUnmount(() => {
 .engine-tags { margin-top: 11px; display: flex; flex-wrap: wrap; gap: 6px; }
 .slot-line { margin-top: 13px; display: flex; align-items: center; color: var(--wao-text-3); font-size: 11px; }
 .slot-bar { height: 5px; margin-top: 6px; overflow: hidden; border-radius: 9px; background: #eef0f6; }
-.slot-bar i { display: block; height: 100%; border-radius: inherit; background: #4358d6; transition: width .3s; }
+.slot-bar i { display: block; height: 100%; border-radius: inherit; background: var(--wao-primary); transition: width .3s; }
 .runner-tasks { margin: 12px 0 0; padding: 11px 0 0; border-top: 1px solid #f0f1f5; list-style: none; }
 .runner-tasks li { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 11.5px; }
 .runner-tasks li:first-child { margin-top: 0; }
@@ -1003,9 +1082,9 @@ onBeforeUnmount(() => {
 }
 .icon-btn {
   padding: 3px 5px;
-  border: 1px solid #4358d6;
+  border: 1px solid var(--wao-primary);
   border-radius: 6px;
-  background: #4358d6;
+  background: var(--wao-primary);
   color: #fff;
   cursor: pointer;
   font-size: 11px;
@@ -1014,10 +1093,10 @@ onBeforeUnmount(() => {
   justify-content: center;
 }
 .icon-btn:disabled { opacity: .6; cursor: not-allowed; }
-.icon-btn.secondary { border-color: var(--wao-line); background: #fff; color: var(--wao-text-2); }
-.icon-btn.secondary:hover { border-color: #bec7ef; color: #4358d6; }
-.icon-btn.danger { border-color: var(--wao-line); background: #fff; color: var(--wao-text-weak); }
-.icon-btn.danger:hover { border-color: #f0b6b6; background: #fff5f5; color: #b33a3a; }
+.icon-btn.secondary { border-color: var(--wao-line); background: var(--wao-bg-card); color: var(--wao-text-2); }
+.icon-btn.secondary:hover { border-color: var(--wao-primary-line); color: #4358d6; }
+.icon-btn.danger { border-color: var(--wao-line); background: var(--wao-bg-card); color: var(--wao-text-weak); }
+.icon-btn.danger:hover { border-color: var(--wao-danger-line); background: var(--wao-danger-bg); color: var(--wao-danger-strong); }
 .runner-config-hint {
   margin-top: 7px;
   color: #237a4b;
@@ -1034,17 +1113,30 @@ onBeforeUnmount(() => {
   gap: 4px;
 }
 .runner-script-hint.pending { color: #8a5b0d; }
-.runner-script-hint.stale { color: #b33a3a; }
+.runner-script-hint.stale { color: var(--wao-danger-strong); }
+.runner-log-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+  background: var(--wao-bg-sub-2);
+  color: var(--wao-text-2);
+  cursor: pointer;
+  font-size: 11.5px;
+}
+.runner-log-btn:hover { border-color: var(--wao-primary-line); color: var(--wao-primary); }
+.runner-log-btn i { margin-right: 5px; }
 .wake-panel { margin-top: 11px; padding-top: 11px; border-top: 1px solid #eceef4; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
-.wake-panel button { padding: 6px 9px; border: 1px solid #cbd3f7; border-radius: 7px; background: #f1f4ff; color: #3650b4; cursor: pointer; font-size: 11px; }
+.wake-panel button { padding: 6px 9px; border: 1px solid var(--wao-primary-line); border-radius: 7px; background: var(--wao-primary-tint); color: var(--wao-primary-text); cursor: pointer; font-size: 11px; }
 .wake-panel button:disabled { opacity: .6; cursor: wait; }
-.wake-panel .wake-btn { border-color: #4358d6; background: #4358d6; color: #fff; font-weight: 650; }
+.wake-panel .wake-btn { border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; font-weight: 650; }
 .wake-panel small { flex-basis: 100%; color: var(--wao-text-weak); font-size: 10px; line-height: 1.5; }
 .pair-btn {
   padding: 8px 13px;
-  border: 1px solid #4358d6;
+  border: 1px solid var(--wao-primary);
   border-radius: 9px;
-  background: #4358d6;
+  background: var(--wao-primary);
   color: #fff;
   cursor: pointer;
   font-size: 12px;
@@ -1052,24 +1144,24 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
 }
-.pair-btn.ghost { border-color: var(--wao-line); background: #fff; color: var(--wao-text-2); }
-.pair-code { margin-bottom: 12px; padding: 13px 15px; border: 1px solid #dfe4f6; border-radius: 12px; background: #f7f8ff; }
+.pair-btn.ghost { border-color: var(--wao-line); background: var(--wao-bg-card); color: var(--wao-text-2); }
+.pair-code { margin-bottom: 12px; padding: 13px 15px; border: 1px solid var(--wao-line-control); border-radius: 12px; background: var(--wao-bg-sub); }
 .pair-code > div { display: flex; align-items: baseline; gap: 10px; }
 .pair-code b { font-size: 19px; font-weight: 700; letter-spacing: 3px; color: #2f3f9e; }
 .pair-code small { color: var(--wao-text-weak); font-size: 11px; }
 .pair-code code { display: block; margin-top: 9px; overflow-x: auto; padding: 9px 11px; border-radius: 8px; background: #eceffb; color: #47506e; font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre; }
 .workflow-list { display: grid; gap: 12px; }
-.workflow-card { padding: 16px 18px; border: 1px solid var(--wao-line); border-radius: 13px; background: #fff; }
-.workflow-card.off { background: #fbfbfc; }
+.workflow-card { padding: 16px 18px; border: 1px solid var(--wao-line); border-radius: 13px; background: var(--wao-bg-card); }
+.workflow-card.off { background: var(--wao-bg-sub); }
 .workflow-card header { display: flex; align-items: center; gap: 10px; }
 .workflow-card header b { font-size: 14px; }
 .workflow-card .spacer { flex: 1; }
-.flow-state { padding: 3px 8px; border-radius: 6px; background: #f1f2f5; color: var(--wao-text-weak); font-size: 10.5px; font-weight: 650; }
+.flow-state { padding: 3px 8px; border-radius: 6px; background: var(--wao-bg-hover-2); color: var(--wao-text-weak); font-size: 10.5px; font-weight: 650; }
 .flow-state.on { background: #eaf8f0; color: #237a4b; }
-.link-btn { padding: 5px 10px; border: 1px solid var(--wao-line); border-radius: 8px; background: #fff; color: var(--wao-text-2); cursor: pointer; font-size: 11.5px; }
-.link-btn:hover { border-color: #bec7ef; color: #4358d6; }
+.link-btn { padding: 5px 10px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; font-size: 11.5px; }
+.link-btn:hover { border-color: var(--wao-primary-line); color: #4358d6; }
 .flow-meta { margin: 14px 0 0; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; }
-.flow-meta > div { min-width: 0; padding: 9px 11px; border-radius: 9px; background: #f6f7fa; }
+.flow-meta > div { min-width: 0; padding: 9px 11px; border-radius: 9px; background: var(--wao-bg-hover); }
 .flow-meta dt { color: var(--wao-text-weak); font-size: 10px; }
 .flow-meta dd { margin: 4px 0 0; overflow: hidden; font-size: 11.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .flow-stats { margin-top: 11px; display: flex; align-items: center; gap: 14px; color: var(--wao-text-3); font-size: 11px; }
@@ -1098,9 +1190,9 @@ onBeforeUnmount(() => {
   font-size: 10px;
 }
 .flow-gh-link:hover {
-  border-color: #bec7ef;
+  border-color: var(--wao-primary-line);
   color: #4358d6;
-  background: #f5f7ff;
+  background: var(--wao-primary-tint);
 }
 .flow-gh-link i { font-size: 11px; }
 .flow-form { margin-top: 14px; padding-top: 14px; border-top: 1px solid #f0f1f5; display: grid; grid-template-columns: repeat(2, 1fr); gap: 11px; }
@@ -1112,24 +1204,24 @@ onBeforeUnmount(() => {
   padding: 0 10px;
   border: 1px solid var(--wao-line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--wao-bg-card);
   color: var(--wao-text-1);
   font-size: 12px;
 }
 .form-field input:focus, .form-field select:focus { border-color: #8f9ee6; outline: none; }
 .flow-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 9px; }
 .flow-actions button { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
-.flow-actions .secondary { border: 1px solid var(--wao-line); background: #fff; }
-.flow-actions .primary { border: 1px solid #4358d6; background: #4358d6; color: #fff; }
+.flow-actions .secondary { border: 1px solid var(--wao-line); background: var(--wao-bg-card); }
+.flow-actions .primary { border: 1px solid var(--wao-primary); background: var(--wao-primary); color: #fff; }
 .flow-actions .primary:disabled { opacity: .6; cursor: not-allowed; }
-.recent-list { overflow: hidden; border: 1px solid var(--wao-line); border-radius: 12px; background: #fff; }
+.recent-list { overflow: hidden; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); }
 .recent-list button {
   width: 100%;
   min-height: 58px;
   padding: 9px 14px;
   border: 0;
-  border-bottom: 1px solid #f0f1f4;
-  background: #fff;
+  border-bottom: 1px solid var(--wao-bg-tab);
+  background: var(--wao-bg-card);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -1138,13 +1230,13 @@ onBeforeUnmount(() => {
   gap: 11px;
 }
 .recent-list button:last-child { border-bottom: 0; }
-.recent-list button:hover { background: #fafbff; }
+.recent-list button:hover { background: var(--wao-bg-sub-2); }
 .recent-icon { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; }
 .recent-main { flex: 1; min-width: 0; }
 .recent-main b, .recent-main em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-main b { font-size: 12.5px; }
 .recent-main em { margin-top: 2px; color: var(--wao-text-weak); font-size: 10.5px; font-style: normal; }
-.recent-main small { display: block; margin-top: 4px; overflow: hidden; color: #b33a3a; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.recent-main small { display: block; margin-top: 4px; overflow: hidden; color: var(--wao-danger-strong); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
 .recent-status { color: var(--wao-text-3); font-size: 11px; }
 .run-detail-mask {
   position: fixed;
@@ -1161,45 +1253,72 @@ onBeforeUnmount(() => {
   overflow: auto;
   padding: 22px;
   border-radius: 16px;
-  background: #fff;
+  background: var(--wao-bg-card);
   box-shadow: 0 24px 70px rgba(26, 31, 61, .22);
 }
 .run-detail header { display: flex; align-items: center; gap: 12px; }
 .run-detail header > div { flex: 1; min-width: 0; }
 .run-detail h2 { margin: 0; font-size: 17px; }
 .run-detail header p { margin: 3px 0 0; overflow: hidden; color: var(--wao-text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.detail-close { width: 32px; height: 32px; border: 0; border-radius: 8px; background: #f4f5f8; cursor: pointer; }
+.detail-close { width: 32px; height: 32px; border: 0; border-radius: 8px; background: var(--wao-bg-hover); cursor: pointer; }
 .run-detail dl { margin: 18px 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.run-detail dl > div { padding: 10px 12px; border-radius: 9px; background: #f6f7fa; }
+.run-detail dl > div { padding: 10px 12px; border-radius: 9px; background: var(--wao-bg-hover); }
 .run-detail dt { color: var(--wao-text-weak); font-size: 10px; }
 .run-detail dd { margin: 4px 0 0; font-size: 11.5px; font-weight: 600; }
 .result-title { margin-bottom: 7px; font-size: 12px; font-weight: 650; }
 .result-title.result-gap { margin-top: 16px; }
 .usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
-.usage-grid > div { min-width: 0; padding: 9px 11px; border: 1px solid #e6e9f4; border-radius: 9px; background: #fafbff; }
+.usage-grid > div { min-width: 0; padding: 9px 11px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-sub-2); }
 .usage-grid dt { color: var(--wao-text-weak); font-size: 10px; }
 .usage-grid dd { margin: 4px 0 0; overflow: hidden; font-size: 11.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .usage-empty { margin: 0; padding: 11px; border: 1px dashed #dfe2ec; border-radius: 9px; color: var(--wao-text-weak); font-size: 11.5px; }
 .recent-usage { color: var(--wao-text-3); }
-.run-detail pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border: 1px solid #ead3d3; border-radius: 10px; background: #fff8f8; color: #753030; font: 11.5px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.run-detail pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border: 1px solid var(--wao-danger-line); border-radius: 10px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); font: 11.5px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
 .run-detail footer { margin-top: 18px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
 .run-detail footer .retry-note { margin-right: auto; color: var(--wao-text-weak); font-size: 11px; }
 .run-detail footer .retry-note i { margin-right: 4px; }
 .run-detail footer button { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
-.run-detail footer .retry { display: inline-flex; align-items: center; gap: 6px; color: #b33a3a; border-color: #ead3d3; }
+.run-detail footer .retry { display: inline-flex; align-items: center; gap: 6px; color: var(--wao-danger-strong); border-color: var(--wao-danger-line); }
 .run-detail footer .retry:disabled { opacity: .6; cursor: not-allowed; }
 .gh-branch-link {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   color: #4358d6;
-  border-color: #dfe4f6;
+  border-color: var(--wao-line-control);
 }
-.gh-branch-link:hover { border-color: #bec7ef; background: #f5f7ff; }
+.gh-branch-link:hover { border-color: var(--wao-primary-line); background: var(--wao-primary-tint); }
 .gh-branch-link.disabled { opacity: .5; pointer-events: none; }
 .gh-branch-link i { font-size: 13px; }
-.run-detail footer .secondary { border: 1px solid var(--wao-line); background: #fff; }
-.run-detail footer .primary { border: 1px solid #4358d6; background: #4358d6; color: #fff; }
+.run-detail footer .secondary { border: 1px solid var(--wao-line); background: var(--wao-bg-card); }
+.run-detail footer .primary { border: 1px solid var(--wao-primary); background: var(--wao-primary); color: #fff; }
+.runner-log-detail { width: min(860px, 100%); }
+.runner-log-icon { background: #edf0f8; color: #43506e; }
+.runner-log-state {
+  min-height: 220px;
+  margin-top: 18px;
+  border: 1px dashed var(--wao-line);
+  border-radius: 10px;
+  color: var(--wao-text-weak);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.runner-log-state.error { color: var(--wao-danger-strong); }
+.runner-log-state .secondary { margin-left: 6px; padding: 6px 10px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); cursor: pointer; }
+.runner-log-meta { margin: 16px 0 7px; color: var(--wao-text-weak); font-size: 10.5px; }
+.run-detail pre.runner-log-content {
+  height: min(440px, 55vh);
+  max-height: none;
+  overflow: auto;
+  border-color: #283044;
+  background: #151a25;
+  color: #d7deee;
+  white-space: pre;
+}
+.runner-log-detail footer button { display: inline-flex; align-items: center; gap: 5px; }
 @keyframes livePulse { 50% { opacity: .45; box-shadow: 0 0 0 7px #dff5e955; } }
 .spin { display: inline-block; animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

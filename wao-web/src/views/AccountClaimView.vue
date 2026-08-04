@@ -32,10 +32,10 @@ async function choose(memberId: string) {
 </template>
 
 <style scoped>
-.claim { min-height: 100vh; display: grid; place-content: center; background: #f5f6fa; padding: 24px; }
-.card { width: min(440px, 90vw); padding: 28px; border: 1px solid var(--wao-line); border-radius: 14px; background: #fff; box-shadow: var(--wao-shadow-pop); }
+.claim { min-height: 100vh; display: grid; place-content: center; background: var(--wao-bg-page); padding: 24px; }
+.card { width: min(440px, 90vw); padding: 28px; border: 1px solid var(--wao-line); border-radius: 14px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop); }
 h1 { margin: 0; font-size: 22px; } p { color: var(--wao-text-weak); line-height: 1.7; }
-button { width: 100%; display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 12px; border: 1px solid var(--wao-line); border-radius: 9px; background: #fff; cursor: pointer; }
+button { width: 100%; display: flex; align-items: center; gap: 10px; margin-top: 10px; padding: 12px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); cursor: pointer; }
 button:hover { border-color: var(--wao-primary); } button span { width: 30px; height: 30px; display: grid; place-content: center; border-radius: 50%; color: #fff; }
 .error { margin-top: 12px; color: var(--wao-danger-strong); } a { color: var(--wao-primary); }
 </style>
