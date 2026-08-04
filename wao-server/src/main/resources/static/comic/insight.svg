@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 220" width="400" height="220">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="3" dy="4" stdDeviation="2" flood-color="#10121c" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <!-- 背景 -->
+  <rect width="400" height="220" rx="16" fill="#f6f7fb"/>
+  <!-- 漫画对话框 -->
+  <g filter="url(#shadow)">
+    <path d="M40 30 h260 a16 16 0 0 1 16 16 v90 a16 16 0 0 1 -16 16 h-200 l-24 24 v-24 h-36 a16 16 0 0 1 -16 -16 v-90 a16 16 0 0 1 16 -16 z" fill="#fff" stroke="#10121c" stroke-width="3"/>
+    <text x="68" y="72" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="800" fill="#10121c">AI 洞察报告</text>
+    <text x="68" y="106" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="500" fill="#5b616f">从群聊里挖出了 7 条想法</text>
+  </g>
+  <!-- 机器人 -->
+  <g transform="translate(320, 110)">
+    <rect x="0" y="0" width="56" height="48" rx="12" fill="#4f7fff" stroke="#10121c" stroke-width="3"/>
+    <circle cx="18" cy="20" r="5" fill="#fff" stroke="#10121c" stroke-width="2"/>
+    <circle cx="38" cy="20" r="5" fill="#fff" stroke="#10121c" stroke-width="2"/>
+    <rect x="20" y="34" width="16" height="4" rx="2" fill="#fff"/>
+    <rect x="-8" y="14" width="12" height="8" rx="3" fill="#9bb3ff" stroke="#10121c" stroke-width="2"/>
+    <rect x="52" y="14" width="12" height="8" rx="3" fill="#9bb3ff" stroke="#10121c" stroke-width="2"/>
+  </g>
+  <!-- 灯泡 -->
+  <g transform="translate(60, 140)">
+    <circle cx="30" cy="28" r="24" fill="#ffd64f" stroke="#10121c" stroke-width="3"/>
+    <rect x="22" y="48" width="16" height="12" rx="4" fill="#e8ecf8" stroke="#10121c" stroke-width="3"/>
+    <line x1="30" y1="14" x2="30" y2="24" stroke="#10121c" stroke-width="3" stroke-linecap="round"/>
+    <line x1="18" y1="28" x2="24" y2="28" stroke="#10121c" stroke-width="3" stroke-linecap="round"/>
+    <line x1="36" y1="28" x2="42" y2="28" stroke="#10121c" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <!-- 聊天泡泡 -->
+  <g transform="translate(140, 150)">
+    <rect x="0" y="0" width="90" height="34" rx="10" fill="#e8ecf8" stroke="#10121c" stroke-width="2.5"/>
+    <circle cx="18" cy="17" r="4" fill="#9aa3b2"/>
+    <circle cx="36" cy="17" r="4" fill="#9aa3b2"/>
+    <circle cx="54" cy="17" r="4" fill="#9aa3b2"/>
+    <path d="M0 24 l-10 12 v-12 z" fill="#e8ecf8" stroke="#10121c" stroke-width="2.5"/>
+  </g>
+  <!-- 星星点缀 -->
+  <g fill="#ff6b6b">
+    <polygon points="260,150 264,160 274,160 266,167 269,177 260,171 251,177 254,167 246,160 256,160"/>
+    <polygon points="300,60 303,68 311,68 305,73 307,81 300,76 293,81 295,73 289,68 297,68"/>
+  </g>
+</svg>

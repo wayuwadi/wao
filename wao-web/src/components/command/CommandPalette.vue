@@ -6,6 +6,7 @@ import { useTheme, type ThemeMode } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { toast } from '@/composables/toast'
 import { createAiPairCode, fetchAiRunners, wakeAiRunner } from '@/api/ai'
+import { ALL_QUICK_LINKS } from '@/config/quickLinks'
 
 interface Command {
   id: string

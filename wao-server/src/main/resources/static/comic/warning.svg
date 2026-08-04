@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 220" width="400" height="220">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="3" dy="4" stdDeviation="2" flood-color="#10121c" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect width="400" height="220" rx="16" fill="#fffbeb"/>
+  <!-- 警示三角 -->
+  <g transform="translate(200, 45)" filter="url(#shadow)">
+    <path d="M0 0 L70 120 L-70 120 z" fill="#f59e0b" stroke="#10121c" stroke-width="3" transform="translate(0,10)"/>
+    <text x="0" y="90" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="48" font-weight="900" fill="#fff" stroke="#10121c" stroke-width="1.5">!</text>
+  </g>
+  <!-- 对话框 -->
+  <g transform="translate(40, 40)">
+    <rect x="0" y="0" width="110" height="54" rx="12" fill="#fff" stroke="#10121c" stroke-width="3"/>
+    <path d="M110 36 l16 10 v-10 z" fill="#fff" stroke="#10121c" stroke-width="3"/>
+    <text x="55" y="33" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" fill="#10121c">需要确认</text>
+  </g>
+  <!-- 对话框 2 -->
+  <g transform="translate(260, 150)">
+    <rect x="0" y="0" width="110" height="48" rx="12" fill="#fff" stroke="#10121c" stroke-width="3"/>
+    <path d="M0 30 l-14 10 v-10 z" fill="#fff" stroke="#10121c" stroke-width="3"/>
+    <text x="55" y="30" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" fill="#5b616f">再看一眼</text>
+  </g>
+  <!-- 闪电 -->
+  <g transform="translate(60, 140)">
+    <polygon points="24,0 44,0 32,24 52,24 16,60 24,32 4,32" fill="#ffd64f" stroke="#10121c" stroke-width="3"/>
+  </g>
+</svg>
