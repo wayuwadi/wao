@@ -54,7 +54,7 @@ class DeploymentRoutingConfigTest {
 
         assertThat(workflow)
                 .contains("envsubst '${MASTER_PUBLIC_HOST} ${SLAVE_PUBLIC_HOST}'")
-                .contains("scp wao-nginx.conf")
+                .contains("scp -o ConnectTimeout=15 wao-nginx.conf")
                 .contains("nginx -t")
                 .contains("probe-codex-egress.sh");
         assertThat(probe)
@@ -69,6 +69,21 @@ class DeploymentRoutingConfigTest {
                 .contains("--connect-timeout 10 --max-time 30")
                 .contains("https://auth.openai.com/api/accounts/deviceauth/usercode")
                 .contains("if [ \"${status}\" != '200' ]");
+    }
+
+    @Test
+    void mainSiteDeploymentPreservesIndependentApplicationRoutes() throws IOException {
+        String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
+        String activation = readFromRepository("deploy/scripts/activate-nginx-config.sh");
+        String workflow = readFromRepository(".github/workflows/ci-cd.yml");
+
+        assertThat(nginx).contains("include /etc/nginx/wao-external-apps.d/*.conf;");
+        assertThat(activation)
+                .contains("external_apps_dir='/etc/nginx/wao-external-apps.d'")
+                .contains("install -d -m 0755 \"${external_apps_dir}\"");
+        assertThat(workflow)
+                .contains("install -d -m 0755 /etc/nginx/wao-external-apps.d")
+                .doesNotContain("rm -rf /etc/nginx/wao-external-apps.d");
     }
 
     @Test
