@@ -16,6 +16,7 @@
 
 - `automation_job` 新增 `cron_expr`（标准 5 段 Cron，可为空）与 `next_fire_at`；新建任务时留空则只能手动触发，非空则进入真实调度。
 - `JobSchedulerService` 用 `@Scheduled(fixedDelay = 60_000)` 每分钟轮询 `next_fire_at <= now` 且未暂停的任务，调用 `AutomationService.executeScheduled` 记录一次运行并用 `CronExpression.next()` 推进下一次触发时间——**触发时机是真实的**。
+- 运行记录保存上海时区的真实 `run_at`，接口读取时才按当前日期显示“今天 / 昨天 / M月d日”；Cron 从原计划点推进，服务延迟或恢复补跑时不会把漏跑日期跳过去。
 - 执行内容是**模拟的**：`executeScheduled` 直接写入一条「成功 · 自动执行」的运行记录，不会真的去拉飞书消息或扫描 NAS；`steps_json` 仍是给人看的描述性文本，不是可执行配置。
 - 手动触发（`POST /api/jobs/{id}/run`）、暂停 / 恢复、重新授权均落库并产生真实状态变更与运行记录，不再是纯 UI 反馈。
 

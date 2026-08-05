@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -96,6 +97,17 @@ class FeishuChatSyncServiceTest {
         verify(feishu).listMessages(eq("t-token"), eq("oc_chat"), start.capture(), end.capture());
         assertThat(start.getValue()).isEqualTo(DAY.atStartOfDay(ZONE).toEpochSecond());
         assertThat(end.getValue()).isEqualTo(DAY.atTime(LocalTime.of(23, 59, 59)).atZone(ZONE).toEpochSecond());
+    }
+
+    @Test
+    void scheduledRunUsesTheCronPlanDateInsteadOfWallClockDate() {
+        configured();
+        when(feishu.listMessages(anyString(), anyString(), anyLong(), anyLong())).thenReturn(List.of());
+
+        service.execute(new cn.wayuwa.wao.domain.AutomationJobEntity(),
+                LocalDateTime.of(2026, 7, 25, 23, 59));
+
+        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-25"), any());
     }
 
     @Test

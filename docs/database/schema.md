@@ -193,13 +193,14 @@ erDiagram
 |---|---|---|
 | id | VARCHAR(32) PK | 运行 id |
 | job_id | VARCHAR(32) FK→automation_job | 所属任务 |
-| run_time_label | VARCHAR(64) | 展示用开始时间文案 |
+| run_time_label | VARCHAR(64) | 兼容旧数据的开始时间文案；新记录写绝对时间 |
+| run_at | DATETIME NULL | 上海时区的真实开始时间；接口按当前日期动态显示“今天 / 昨天 / M月d日” |
 | result | VARCHAR(64) | 结果文案（含「成功」/「失败」关键字供前端着色） |
 | executor_id | VARCHAR(32) NULL | 手动触发的成员；定时任务为空，界面显示「定时任务」 |
 | duration_ms | INT | 模拟耗时 |
 | ord | INT | 顺序（0 = 最近一次） |
 
-执行引擎：`JobSchedulerService` 每分钟轮询到期的 Cron 任务并调用 `AutomationService.executeScheduled`。`handler` 非空的任务交给对应的 `JobHandler` 真的执行（目前只有 `feishu-chat-sync`，见 ADR-019），运行记录写执行器返回的结果；`handler` 为空的任务仍是「真实触发时机 + 模拟执行结果」——`steps_json` 只是描述性文本，NAS / 邮箱等外部系统尚未接入。
+执行引擎：`JobSchedulerService` 每分钟轮询到期的 Cron 任务并调用 `AutomationService.executeScheduled`。下一次触发时间从原计划点推进，延迟或停机恢复后会逐次补跑而不跳过业务日期；执行器同时收到该次计划时间。`handler` 非空的任务交给对应的 `JobHandler` 真的执行（目前只有 `feishu-chat-sync`，见 ADR-019），运行记录写执行器返回的结果；`handler` 为空的任务仍是「真实触发时机 + 模拟执行结果」——`steps_json` 只是描述性文本，NAS / 邮箱等外部系统尚未接入。
 
 ### system_setting（系统级配置，V17）
 | 列 | 类型 | 说明 |
@@ -463,4 +464,5 @@ OAuth 下发前会先把快过期的 access token 续期。
 - `V46__super_admin_roles.sql`：把初始维护者角色升级为超级管理员，作为组织级配置权限根。
 - `V47__game_hall_persistence.sql`：新增通用游戏活动存档与历史战绩表（见 ADR-040）。
 - `V48__runner_log_snapshot.sql`：保存 Runner 最近一段安全诊断日志，供控制台按需查看。
+- `V49__automation_run_timestamp.sql`：保存自动化运行真实时间，并从飞书同步结果恢复可确认日期的历史记录。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

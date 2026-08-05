@@ -2,6 +2,7 @@ package cn.wayuwa.wao.service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -78,6 +79,12 @@ public class FeishuChatSyncService implements JobHandler {
     @Override
     public String execute() {
         return syncDay(null);
+    }
+
+    /** 定时执行严格同步本次 Cron 的计划日期；手动执行仍同步上海时区的今天。 */
+    @Override
+    public String execute(cn.wayuwa.wao.domain.AutomationJobEntity job, LocalDateTime scheduledFireAt) {
+        return syncDay(scheduledFireAt == null ? null : scheduledFireAt.toLocalDate());
     }
 
     /** 当前配置（App Secret 只回脱敏形态）。 */

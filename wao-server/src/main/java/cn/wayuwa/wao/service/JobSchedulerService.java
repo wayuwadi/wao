@@ -1,6 +1,7 @@
 package cn.wayuwa.wao.service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 public class JobSchedulerService {
 
     private static final Logger log = LoggerFactory.getLogger(JobSchedulerService.class);
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final AutomationService automationService;
 
@@ -21,7 +23,7 @@ public class JobSchedulerService {
 
     @Scheduled(fixedDelay = 60_000, initialDelay = 30_000)
     public void triggerDueJobs() {
-        automationService.dueJobs(LocalDateTime.now()).forEach(job -> {
+        automationService.dueJobs(LocalDateTime.now(ZONE)).forEach(job -> {
             try {
                 automationService.executeScheduled(job);
             } catch (Exception ex) {

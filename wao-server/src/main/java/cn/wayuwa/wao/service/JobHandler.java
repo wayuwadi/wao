@@ -1,5 +1,7 @@
 package cn.wayuwa.wao.service;
 
+import java.time.LocalDateTime;
+
 import cn.wayuwa.wao.domain.AutomationJobEntity;
 
 /**
@@ -27,5 +29,16 @@ public interface JobHandler {
      */
     default String execute(AutomationJobEntity job) {
         return execute();
+    }
+
+    /**
+     * 执行某一次计划触发。定时任务可用计划时间确定业务日期，避免延迟或补跑时错取执行当天。
+     *
+     * @param job             自动化任务
+     * @param scheduledFireAt 本次 Cron 计划触发时间；手动触发时为 null
+     * @return 写进运行记录的结果文案
+     */
+    default String execute(AutomationJobEntity job, LocalDateTime scheduledFireAt) {
+        return execute(job);
     }
 }

@@ -1,6 +1,7 @@
 package cn.wayuwa.wao.service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,7 +39,9 @@ public class AutomationService {
 
     private static final Logger log = LoggerFactory.getLogger(AutomationService.class);
     private static final TypeReference<List<String>> STEPS_TYPE = new TypeReference<>() { };
-    private static final DateTimeFormatter TIME_LABEL = DateTimeFormatter.ofPattern("今天 HH:mm");
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    private static final DateTimeFormatter STORED_TIME_LABEL = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter CLOCK_LABEL = DateTimeFormatter.ofPattern("HH:mm");
 
     private final AutomationJobMapper jobMapper;
     private final AutomationRunMapper runMapper;
@@ -150,7 +153,7 @@ public class AutomationService {
         if ("待修复".equals(e.getStatus())) {
             recordRun(e, "失败 · 需要先重新授权", executorId);
         } else {
-            recordRun(e, execute(e, "成功 · 手动触发"), executorId);
+            recordRun(e, execute(e, "成功 · 手动触发", null), executorId);
         }
         jobMapper.updateById(e);
         return getJob(id);
@@ -188,7 +191,8 @@ public class AutomationService {
 
     /** 供 {@link JobSchedulerService} 调用：按 Cron 到期自动执行一次，并推进下一次触发时间。 */
     public void executeScheduled(AutomationJobEntity e) {
-        LocalDateTime nextFireAt = computeNextFire(e.getCronExpr());
+        LocalDateTime scheduledFireAt = e.getNextFireAt();
+        LocalDateTime nextFireAt = computeNextFireAfter(e.getCronExpr(), scheduledFireAt);
         int claimed = jobMapper.update(null, new LambdaUpdateWrapper<AutomationJobEntity>()
                 .eq(AutomationJobEntity::getId, e.getId())
                 .eq(AutomationJobEntity::getNextFireAt, e.getNextFireAt())
@@ -197,7 +201,7 @@ public class AutomationService {
             return;
         }
         e.setNextFireAt(nextFireAt);
-        recordRun(e, execute(e, "成功 · 自动执行"), null);
+        recordRun(e, execute(e, "成功 · 自动执行", scheduledFireAt), null);
         jobMapper.updateById(e);
     }
 
@@ -211,13 +215,13 @@ public class AutomationService {
      * @param simulatedResult 没有执行器时写进运行记录的文案
      * @return 运行结果文案
      */
-    private String execute(AutomationJobEntity e, String simulatedResult) {
+    private String execute(AutomationJobEntity e, String simulatedResult, LocalDateTime scheduledFireAt) {
         JobHandler handler = e.getHandler() == null ? null : handlers.get(e.getHandler());
         if (handler == null) {
             return simulatedResult;
         }
         try {
-            return handler.execute(e);
+            return handler.execute(e, scheduledFireAt);
         } catch (RuntimeException ex) {
             log.warn("自动化任务 {} 执行失败：{}", e.getId(), ex.getMessage());
             return "失败 · " + shortReason(ex);
@@ -239,10 +243,12 @@ public class AutomationService {
     }
 
     private void recordRun(AutomationJobEntity e, String result, String executorId) {
+        LocalDateTime runAt = LocalDateTime.now(ZONE);
         AutomationRunEntity run = new AutomationRunEntity();
         run.setId("r" + System.currentTimeMillis());
         run.setJobId(e.getId());
-        run.setRunTimeLabel(LocalDateTime.now().format(TIME_LABEL));
+        run.setRunTimeLabel(runAt.format(STORED_TIME_LABEL));
+        run.setRunAt(runAt);
         run.setResult(result);
         run.setExecutorId(executorId);
         int stepCount = readSteps(e.getStepsJson()).size();
@@ -269,10 +275,15 @@ public class AutomationService {
     }
 
     private LocalDateTime computeNextFire(String cronExpr) {
+        return computeNextFireAfter(cronExpr, LocalDateTime.now(ZONE));
+    }
+
+    /** 从给定计划点推进而不是从实际执行时刻推进，服务恢复后才能逐日补齐漏跑日期。 */
+    private LocalDateTime computeNextFireAfter(String cronExpr, LocalDateTime after) {
         if (cronExpr == null || cronExpr.isBlank()) {
             return null;
         }
-        return CronExpression.parse(cronExpr).next(LocalDateTime.now());
+        return CronExpression.parse(cronExpr).next(after == null ? LocalDateTime.now(ZONE) : after);
     }
 
     private void validateCron(String cronExpr) {
@@ -283,11 +294,27 @@ public class AutomationService {
 
     private AutomationJobDto toDto(AutomationJobEntity e, List<AutomationRunEntity> runs) {
         List<AutomationRunDto> runPairs = runs.stream()
-                .map(r -> new AutomationRunDto(r.getRunTimeLabel(), executorName(r.getExecutorId()), r.getResult()))
+                .map(r -> new AutomationRunDto(displayTime(r), executorName(r.getExecutorId()), r.getResult()))
                 .toList();
+        String last = runs.isEmpty() ? e.getLastRunLabel()
+                : displayTime(runs.get(0)) + " · " + runs.get(0).getResult();
         return new AutomationJobDto(e.getId(), e.getName(), e.getIcon(), e.getScheduleLabel(), e.getStatus(),
-                e.getLastRunLabel(), e.getDescription(), e.getSource(), e.getTarget(), readSteps(e.getStepsJson()),
+                last, e.getDescription(), e.getSource(), e.getTarget(), readSteps(e.getStepsJson()),
                 runPairs, e.getHandler());
+    }
+
+    /** 用真实时间戳按当前上海日期生成相对文案；无法恢复时间戳的旧记录保留原文案。 */
+    private String displayTime(AutomationRunEntity run) {
+        LocalDateTime value = run.getRunAt();
+        if (value == null) return run.getRunTimeLabel();
+        LocalDateTime now = LocalDateTime.now(ZONE);
+        String clock = value.format(CLOCK_LABEL);
+        if (value.toLocalDate().equals(now.toLocalDate())) return "今天 " + clock;
+        if (value.toLocalDate().equals(now.toLocalDate().minusDays(1))) return "昨天 " + clock;
+        if (value.getYear() == now.getYear()) {
+            return value.getMonthValue() + "月" + value.getDayOfMonth() + "日 " + clock;
+        }
+        return value.getYear() + "年" + value.getMonthValue() + "月" + value.getDayOfMonth() + "日 " + clock;
     }
 
     private String executorName(String executorId) {

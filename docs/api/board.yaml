@@ -316,7 +316,7 @@ paths:
       responses: { '200': { description: OK }, '401': { description: 运行不属于当前节点 } }
   # 自动化域（关系表；cronExpr 非空的任务由服务端调度器按计划自动执行）
   /jobs:
-    get: { summary: 自动化任务列表（含近 3 次运行记录）, responses: { '200': { description: OK } } }
+    get: { summary: 自动化任务列表（运行时间按真实时间戳动态显示今天 / 昨天 / 绝对日期）, responses: { '200': { description: OK } } }
     post: { summary: 新建自动化任务, responses: { '200': { description: OK }, '400': { description: cronExpr 不是合法 Cron 表达式 } } }
   /jobs/{id}:
     get: { summary: 任务详情, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
