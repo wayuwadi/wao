@@ -1,5 +1,7 @@
 package cn.wayuwa.wao.domain;
 
+import java.time.LocalDateTime;
+
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -11,6 +13,7 @@ public class AutomationRunEntity {
     private String id;
     private String jobId;
     private String runTimeLabel;
+    private LocalDateTime runAt;
     private String result;
     private String executorId;
     private Integer durationMs;
@@ -22,6 +25,8 @@ public class AutomationRunEntity {
     public void setJobId(String jobId) { this.jobId = jobId; }
     public String getRunTimeLabel() { return runTimeLabel; }
     public void setRunTimeLabel(String runTimeLabel) { this.runTimeLabel = runTimeLabel; }
+    public LocalDateTime getRunAt() { return runAt; }
+    public void setRunAt(LocalDateTime runAt) { this.runAt = runAt; }
     public String getResult() { return result; }
     public void setResult(String result) { this.result = result; }
     public String getExecutorId() { return executorId; }

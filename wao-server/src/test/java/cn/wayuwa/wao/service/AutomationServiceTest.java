@@ -4,9 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.AutomationJobEntity;
@@ -14,8 +18,12 @@ import cn.wayuwa.wao.dto.AutomationJobDto;
 import cn.wayuwa.wao.dto.CreateJobRequest;
 import cn.wayuwa.wao.mapper.AutomationJobMapper;
 import cn.wayuwa.wao.mapper.AutomationRunMapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class AutomationServiceTest {
 
@@ -76,6 +84,58 @@ class AutomationServiceTest {
 
         assertThat(dto.status()).isEqualTo("正常");
         assertThat(dto.last()).contains("成功");
+
+        ArgumentCaptor<cn.wayuwa.wao.domain.AutomationRunEntity> saved = ArgumentCaptor.captor();
+        verify(runMapper).insert(saved.capture());
+        assertThat(saved.getValue().getRunAt()).isNotNull();
+        assertThat(saved.getValue().getRunTimeLabel()).matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}");
+    }
+
+    @Test
+    void historicalRunUsesItsActualDateInsteadOfPermanentTodayLabel() {
+        AutomationJobEntity e = job("正常");
+        var run = new cn.wayuwa.wao.domain.AutomationRunEntity();
+        LocalDateTime runAt = LocalDateTime.now(ZoneId.of("Asia/Shanghai")).minusDays(3).withSecond(0).withNano(0);
+        run.setRunAt(runAt);
+        run.setRunTimeLabel("今天 23:59");
+        run.setResult("成功");
+        when(jobMapper.selectById("j1")).thenReturn(e);
+        when(runMapper.selectList(any())).thenReturn(List.of(run));
+
+        AutomationJobDto dto = service.getJob("j1");
+
+        assertThat(dto.runs().get(0).time())
+                .isEqualTo(runAt.getMonthValue() + "月" + runAt.getDayOfMonth() + "日 "
+                        + String.format("%02d:%02d", runAt.getHour(), runAt.getMinute()));
+        assertThat(dto.last()).startsWith(dto.runs().get(0).time()).doesNotStartWith("今天");
+    }
+
+    @Test
+    void delayedScheduledRunKeepsItsPlannedDateAndAdvancesFromThatPlan() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""),
+                AutomationJobEntity.class);
+        AutomationJobEntity e = job("正常");
+        e.setCronExpr("0 59 23 * * *");
+        e.setNextFireAt(LocalDateTime.of(2026, 8, 4, 23, 59));
+        e.setHandler("planned");
+        when(jobMapper.update(any(), any())).thenReturn(1);
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        AtomicReference<LocalDateTime> received = new AtomicReference<>();
+        JobHandler planned = new JobHandler() {
+            @Override public String name() { return "planned"; }
+            @Override public String execute() { return "不应走无计划时间入口"; }
+            @Override public String execute(AutomationJobEntity job, LocalDateTime scheduledFireAt) {
+                received.set(scheduledFireAt);
+                return "成功";
+            }
+        };
+        AutomationService withHandler = new AutomationService(jobMapper, runMapper, new ObjectMapper(),
+                List.of(planned), mock(MemberService.class));
+
+        withHandler.executeScheduled(e);
+
+        assertThat(received.get()).isEqualTo(LocalDateTime.of(2026, 8, 4, 23, 59));
+        assertThat(e.getNextFireAt()).isEqualTo(LocalDateTime.of(2026, 8, 5, 23, 59));
     }
 
     @Test
