@@ -19,7 +19,9 @@ export function useDeco() {
       ...t,
       done,
       deco: done ? 'line-through' : 'none',
-      titleColor: done ? '#9A9DA9' : '#1A1C23',
+      // 标题同时用于项目列表、看板和「我的任务」；必须交给主题 token 决定颜色，
+      // 否则内联的浅色主题黑字会覆盖深色模式样式，导致卡片标题不可见。
+      titleColor: done ? 'var(--wao-text-weak)' : 'var(--wao-text)',
       checkBg: done ? '#4358D6' : '#FFFFFF',
       checkBorder: done ? '#4358D6' : '#C9CDDA',
       checkOp: done ? 1 : 0,
