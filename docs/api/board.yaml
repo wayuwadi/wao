@@ -523,6 +523,26 @@ paths:
         '404': { description: 不存在 }
   /files/{id}:
     delete: { summary: 删除文件, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  # 单文件 HTML 托管（见 docs/adr/042-hosted-html-pages.md）
+  /hosted-pages:
+    get: { summary: 托管页元数据列表（不读取 HTML 与 icon 正文）, responses: { '200': { description: OK } } }
+    post:
+      summary: 上传 UTF-8 单文件 HTML 并配置唯一链接后缀、标题和可选 icon
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [html, slug, title], properties: { html: { type: string, format: binary }, slug: { type: string }, title: { type: string }, icon: { type: string, format: binary } } } } } }
+      responses: { '200': { description: 已发布 }, '400': { description: 文件、后缀或标题无效 } }
+  /hosted-pages/{id}:
+    put:
+      summary: 修改托管页；HTML 与 icon 不上传时保留原内容
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: 已更新 }, '404': { description: 不存在 } }
+    delete: { summary: 删除托管页并立即使公开链接失效, responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /pages/{slug}:
+    get:
+      summary: 公开直出隔离运行的托管 HTML
+      security: []
+      responses: { '200': { description: UTF-8 HTML }, '404': { description: 不存在 } }
+  /pages/{slug}/icon:
+    get: { summary: 公开读取托管页 icon, security: [], responses: { '200': { description: 图片正文 }, '404': { description: 未配置 icon 或页面不存在 } } }
   # 图床（见 docs/adr/012-markdown-rendering-and-image-store.md）
   /images:
     get:

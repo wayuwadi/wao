@@ -5,9 +5,17 @@ import { copyText } from '@/utils/clipboard'
 import { absoluteUrl, fileShareUrl } from '@/utils/share'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
+import type { HostedPage } from '@/types'
 
 const data = useDataStore()
-const tab = ref<'files' | 'img'>('files')
+const tab = ref<'files' | 'img' | 'pages'>('files')
+const pageDialog = ref(false)
+const editingPage = ref<HostedPage | null>(null)
+const pageTitle = ref('')
+const pageSlug = ref('')
+const pageHtml = ref<File | null>(null)
+const pageIcon = ref<File | null>(null)
+const pageSaving = ref(false)
 
 /** 图床默认只铺三排（网格是 5 列，即 15 张），其余点开再看。 */
 const IMG_PAGE = 15
@@ -21,6 +29,7 @@ const uploading = ref(0)
 onMounted(() => {
   void data.refreshImages()
   void data.refreshFiles()
+  void data.refreshHostedPages()
 })
 
 /** 从图床页直接上传，来源标成「图床」以便和任务里粘贴的图区分。 */
@@ -46,6 +55,35 @@ async function uploadImages(files: FileList | File[]) {
   }
   const ok = list.length - failed
   if (ok) toast(`已上传 ${ok} 张图片到图床`, 'ri-image-add-line')
+}
+
+function openPageDialog(page?: HostedPage) {
+  editingPage.value = page ?? null
+  pageTitle.value = page?.title ?? ''
+  pageSlug.value = page?.slug ?? ''
+  pageHtml.value = null
+  pageIcon.value = null
+  pageDialog.value = true
+}
+async function savePage() {
+  if (!pageTitle.value.trim() || !pageSlug.value.trim() || (!editingPage.value && !pageHtml.value)) {
+    toast('请填写标题、链接后缀并选择 HTML 文件', 'ri-error-warning-line')
+    return
+  }
+  pageSaving.value = true
+  try {
+    const page = await data.saveHostedPage({ id: editingPage.value?.id, html: pageHtml.value ?? undefined,
+      icon: pageIcon.value ?? undefined, slug: pageSlug.value, title: pageTitle.value })
+    pageDialog.value = false
+    toast(`已发布「${page.title}」`, 'ri-global-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '发布失败，请重试', 'ri-error-warning-line')
+  } finally { pageSaving.value = false }
+}
+async function removePage(page: HostedPage) {
+  if (!window.confirm(`删除托管页面“${page.title}”？公开链接将立即失效。`)) return
+  await data.deleteHostedPage(page.id)
+  toast(`已删除「${page.title}」`, 'ri-delete-bin-line')
 }
 
 async function uploadAttachments(files: FileList | File[]) {
@@ -106,19 +144,19 @@ async function removeFile(id: string | undefined, name: string) {
     <DemoBanner
       icon="ri-hard-drive-2-line"
       title="文件与图床"
-      text="文件和图床均已接入真实后端持久化：可上传、复制分享链接、直接下载或删除。分享出去的文件链接是一个下载页，对方要点一次并通过校验才能下载一次，避免链接被脚本反复拉取；站内自己下载不受影响。通用文件单个不超过 50MB，图片仍限制为 10MB。"
+      text="文件、图床和网页托管均已接入真实后端持久化。网页托管可上传单文件 HTML，自定义公网链接后缀、标题和 icon；页面在隔离环境中运行，不会接触 WAO 登录态。"
       storage-key="files"
     />
     <div class="ftop">
       <div class="ftitle">文件与图床</div>
       <div class="seg">
-        <button v-for="t in (['files', 'img'] as const)" :key="t" class="seg-btn" :class="{ on: tab === t }" @click="tab = t">
-          {{ t === 'files' ? '文件' : '图床' }}
+        <button v-for="t in (['files', 'img', 'pages'] as const)" :key="t" class="seg-btn" :class="{ on: tab === t }" @click="tab = t">
+          {{ t === 'files' ? '文件' : t === 'img' ? '图床' : '网页托管' }}
         </button>
       </div>
       <div class="spacer"></div>
-      <button class="btn-primary" :disabled="uploading > 0" @click="fileInput?.click()">
-        <i class="ri-upload-2-line"></i>{{ uploading > 0 ? `上传中 ${uploading}…` : (tab === 'img' ? '上传图片' : '上传文件') }}
+      <button class="btn-primary" :disabled="uploading > 0" @click="tab === 'pages' ? openPageDialog() : fileInput?.click()">
+        <i class="ri-upload-2-line"></i>{{ uploading > 0 ? `上传中 ${uploading}…` : (tab === 'img' ? '上传图片' : tab === 'pages' ? '托管 HTML' : '上传文件') }}
       </button>
       <input ref="fileInput" type="file" :accept="tab === 'img' ? 'image/*' : undefined" multiple hidden @change="onPick" />
     </div>
@@ -146,7 +184,7 @@ async function removeFile(id: string | undefined, name: string) {
       </div>
     </template>
 
-    <template v-else>
+    <template v-else-if="tab === 'img'">
       <div class="note">任务描述、子任务、新建任务里粘贴或上传的图片都统一归档到这里，并提供公网访问链接。</div>
       <div class="img-drop" @dragover.prevent @drop.prevent="onDrop">
         <div class="img-grid">
@@ -178,6 +216,37 @@ async function removeFile(id: string | undefined, name: string) {
         <div v-else class="drop-tip">也可以把图片直接拖到这一片区域上传</div>
       </div>
     </template>
+
+    <template v-else>
+      <div class="note">上传单文件 HTML，自定义公网链接后缀、浏览器标题和 icon。页面脚本在隔离环境中运行，无法读取 WAO 登录态。</div>
+      <div v-if="!data.hostedPages.length" class="img-empty page-empty">
+        <i class="ri-global-line"></i><div>还没有托管网页——点右上角“托管 HTML”快速发布</div>
+      </div>
+      <div v-else class="file-list">
+        <div v-for="page in data.hostedPages" :key="page.id" class="file-row">
+          <div class="file-icon"><i class="ri-html5-line"></i></div>
+          <div class="file-main">
+            <div class="file-name">{{ page.title }}</div>
+            <div class="file-sub">{{ page.fileName }} · {{ page.updatedAt }} · <span class="wao-mono">{{ absoluteUrl(page.url) }}</span></div>
+          </div>
+          <button class="copy-btn" @click="copyText(absoluteUrl(page.url), '已复制公网链接')"><i class="ri-links-line"></i>复制链接</button>
+          <a class="dl-btn" title="打开页面" :href="absoluteUrl(page.url)" target="_blank"><i class="ri-external-link-line"></i></a>
+          <button class="dl-btn" title="修改" @click="openPageDialog(page)"><i class="ri-edit-line"></i></button>
+          <button class="dl-btn danger" title="删除" @click="removePage(page)"><i class="ri-delete-bin-line"></i></button>
+        </div>
+      </div>
+    </template>
+
+    <div v-if="pageDialog" class="dialog-mask" @click.self="pageDialog = false">
+      <form class="page-dialog" @submit.prevent="savePage">
+        <div class="dialog-title">{{ editingPage ? '修改托管网页' : '托管 HTML' }}</div>
+        <label>页面标题<input v-model="pageTitle" maxlength="200" placeholder="显示在浏览器标签页" /></label>
+        <label>链接后缀<div class="slug-input"><span>/api/pages/</span><input v-model="pageSlug" maxlength="80" placeholder="my-page" /></div></label>
+        <label>HTML 文件<input type="file" accept=".html,.htm,text/html" :required="!editingPage" @change="pageHtml = ($event.target as HTMLInputElement).files?.[0] ?? null" /><small v-if="editingPage">不选择则保留现有文件</small></label>
+        <label>icon 图片（可选）<input type="file" accept="image/*" @change="pageIcon = ($event.target as HTMLInputElement).files?.[0] ?? null" /><small>最大 1MB；不选择则{{ editingPage ? '保留现有 icon' : '使用浏览器默认 icon' }}</small></label>
+        <div class="dialog-actions"><button type="button" class="copy-btn" @click="pageDialog = false">取消</button><button class="btn-primary" :disabled="pageSaving">{{ pageSaving ? '发布中…' : '发布' }}</button></div>
+      </form>
+    </div>
   </div>
 </template>
 
@@ -249,6 +318,18 @@ async function removeFile(id: string | undefined, name: string) {
   font-size: 12px;
   color: var(--wao-text-weak);
 }
+.page-empty { margin-top: 16px; }
+.dialog-mask { position: fixed; inset: 0; z-index: 1000; background: rgba(15, 18, 30, .42); display: grid; place-items: center; padding: 16px; }
+.page-dialog { width: min(480px, 100%); background: var(--wao-bg-card); border-radius: 14px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.2); display: grid; gap: 14px; }
+.dialog-title { font-size: 18px; font-weight: 700; }
+.page-dialog label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
+.page-dialog input { min-width: 0; height: 36px; padding: 0 10px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg); color: var(--wao-text); }
+.page-dialog input[type=file] { height: auto; padding: 8px; }
+.page-dialog small { color: var(--wao-text-weak); font-weight: 400; }
+.slug-input { display: flex; align-items: center; border: 1px solid var(--wao-line); border-radius: 8px; overflow: hidden; background: var(--wao-bg); }
+.slug-input span { padding-left: 10px; color: var(--wao-text-weak); font: 12px monospace; }
+.slug-input input { flex: 1; border: 0; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 .file-list {
   margin-top: 10px;

@@ -41,6 +41,17 @@ export interface FileRef {
   icon: string
 }
 
+/** 上传到 WAO 并公开托管的单文件 HTML 页面。 */
+export interface HostedPage {
+  id: string
+  slug: string
+  title: string
+  fileName: string
+  hasIcon: boolean
+  updatedAt: string
+  url: string
+}
+
 export type ProjectStatus = '进行中' | '有风险' | '规划中' | '已完成'
 
 /**
