@@ -3,7 +3,9 @@ set -eu
 
 # 与本次实现和 OpenAI 官方 changelog 验证过的稳定版本保持一致；升级时通过独立 PR 调整。
 CODEX_VERSION="${WAO_CODEX_VERSION:-0.147.0}"
-INSTALLER_URL="https://github.com/openai/codex/releases/download/rust-v${CODEX_VERSION}/install.sh"
+# Linux 主节点的 GitHub 出口并不稳定；使用 OpenAI 官方发布域名获取安装器，
+# 再由 CODEX_RELEASE 固定实际安装版本，避免每次部署随 latest 漂移。
+INSTALLER_URL="https://releases.openai.com/codex/install.sh"
 CODEX_BIN="${HOME}/.local/bin/codex"
 tmp_installer="$(mktemp)"
 trap 'rm -f "${tmp_installer}"' EXIT INT TERM

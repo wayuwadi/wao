@@ -122,7 +122,9 @@ jobs:
             # 混进 Docker 构建上下文（V18 撞号那次就是被留下的旧 migration 打挂的）。
             # deploy/ 整个保留：节点私有的 .env / .env.secrets / certs / data 都在里面，
             # 其中被 git 跟踪的文件随即被这次解压整份覆盖。
-            retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; find "$desktop_dir/deploy/wao" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; rm -f /tmp/wao-secrets.env; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master'
+            # 远程部署失败时 retry_remote 会重跑整条命令；临时 secrets 必须等部署成功后再删，
+            # 否则第一次失败后的重试会因为源文件已被删除而永久失败。
+            retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; find "$desktop_dir/deploy/wao" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master; rm -f /tmp/wao-secrets.env'
           }
 
           deploy_slave() {

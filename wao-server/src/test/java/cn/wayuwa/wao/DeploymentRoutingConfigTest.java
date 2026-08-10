@@ -51,12 +51,20 @@ class DeploymentRoutingConfigTest {
     void deploymentPublishesNginxConfigAndProbesOpenAiInsideMasterContainer() throws IOException {
         String workflow = readFromRepository(".github/workflows/ci-cd.yml");
         String probe = readFromRepository("deploy/scripts/probe-codex-egress.sh");
+        String installer = readFromRepository("deploy/ai-runner/install-linux-codex.sh");
 
         assertThat(workflow)
                 .contains("envsubst '${MASTER_PUBLIC_HOST} ${SLAVE_PUBLIC_HOST}'")
                 .contains("scp -o ConnectTimeout=15 wao-nginx.conf")
                 .contains("nginx -t")
                 .contains("probe-codex-egress.sh");
+        assertThat(workflow)
+                .contains("sh \"$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh\" master; rm -f /tmp/wao-secrets.env")
+                .doesNotContain("rm -f /tmp/wao-secrets.env; sh \"$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh\" master");
+        assertThat(installer)
+                .contains("https://releases.openai.com/codex/install.sh")
+                .contains("CODEX_RELEASE=\"${CODEX_VERSION}\"")
+                .doesNotContain("github.com/openai/codex/releases");
         assertThat(probe)
                 .contains("elif sudo -n docker info")
                 .contains("sudo -n docker \"$@\"")
