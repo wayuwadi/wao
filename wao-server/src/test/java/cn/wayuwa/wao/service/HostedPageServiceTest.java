@@ -1,0 +1,50 @@
+package cn.wayuwa.wao.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import java.nio.charset.StandardCharsets;
+import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.domain.HostedPageEntity;
+import cn.wayuwa.wao.mapper.HostedPageMapper;
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
+
+class HostedPageServiceTest {
+    private final HostedPageMapper mapper = mock(HostedPageMapper.class);
+    private final HostedPageService service = new HostedPageService(mapper);
+
+    @Test void createPersistsUtf8HtmlAndNormalizesSlug() {
+        var html = new MockMultipartFile("html", "demo.html", "text/html", "<html><head></head><body>你好</body></html>".getBytes(StandardCharsets.UTF_8));
+        var item = service.create(html, " My-Demo ", "演示页", null, "wg");
+        assertThat(item.slug()).isEqualTo("my-demo");
+        assertThat(item.url()).isEqualTo("/api/pages/my-demo");
+        verify(mapper).insert(any(HostedPageEntity.class));
+    }
+
+    @Test void renderReplacesUploadedTitleAndIcon() {
+        HostedPageEntity entity = new HostedPageEntity();
+        entity.setSlug("demo"); entity.setTitle("新<title>"); entity.setIconContent(new byte[] { 1 });
+        entity.setHtmlContent("<html><head><title>旧标题</title><link rel=\"icon\" href=\"old.png\"></head></html>".getBytes(StandardCharsets.UTF_8));
+        String rendered = new String(service.render(entity), StandardCharsets.UTF_8);
+        assertThat(rendered).contains("<title>新&lt;title&gt;</title>", "/api/pages/demo/icon").doesNotContain("旧标题", "old.png");
+    }
+
+    @Test void rejectsInvalidSlugAndNonHtmlFile() {
+        var text = new MockMultipartFile("html", "demo.txt", "text/plain", "ok".getBytes());
+        assertThatThrownBy(() -> service.create(text, "bad/path", "标题", null, "wg")).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.create(text, "valid", "标题", null, "wg")).isInstanceOf(BadRequestException.class);
+    }
+
+    @Test void updateKeepsExistingHtmlAndIconWhenFilesAreOmitted() {
+        HostedPageEntity entity = new HostedPageEntity(); entity.setId("p1"); entity.setSlug("old"); entity.setTitle("旧");
+        entity.setFileName("old.html"); entity.setHtmlContent("<p>正文</p>".getBytes()); entity.setIconContent(new byte[] { 1 }); entity.setIconContentType("image/png");
+        when(mapper.selectById("p1")).thenReturn(entity);
+        var item = service.update("p1", null, "new", "新", null);
+        assertThat(item.slug()).isEqualTo("new"); assertThat(entity.getHtmlContent()).isNotEmpty(); assertThat(item.hasIcon()).isTrue();
+        verify(mapper).updateById(entity);
+    }
+}

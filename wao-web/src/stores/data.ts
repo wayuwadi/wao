@@ -19,6 +19,7 @@ import {
   apiDeleteDoc,
   apiDeleteFolder,
   apiDeleteFile,
+  apiDeleteHostedPage,
   apiDeleteJob,
   apiDeleteKb,
   apiDeleteProject,
@@ -35,6 +36,7 @@ import {
   apiReauthJob,
   apiUploadImage,
   apiUploadFile,
+  apiSaveHostedPage,
   apiPurgeTrash,
   apiRenameFolder,
   apiRenameKbGroup,
@@ -47,6 +49,7 @@ import {
   fetchAreas,
   fetchDocs,
   fetchFiles,
+  fetchHostedPages,
   fetchGoals,
   fetchImages,
   fetchJobs,
@@ -69,7 +72,7 @@ import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import { MAX_TASK_GROUPS } from '@/types'
 import type {
-  AiRun, AutomationJob, Comment, Doc, DocBlock, ImageRef, KnowledgeBase, Project, Task, TaskGroup, TaskStep,
+  AiRun, AutomationJob, Comment, Doc, DocBlock, HostedPage, ImageRef, KnowledgeBase, Project, Task, TaskGroup, TaskStep,
   TrashEntry, VaultGroup, VaultItem,
 } from '@/types'
 
@@ -124,6 +127,7 @@ export const useDataStore = defineStore('data', () => {
   const docs = reactive<Record<string, Doc>>(clone(F.DOCS))
   const autos = ref(clone(F.AUTOS))
   const files = ref(clone(F.FILES))
+  const hostedPages = ref<HostedPage[]>([])
   const imgs = ref(clone(F.IMGS))
   const vault = ref(clone(F.VAULT))
   const schedule = ref(clone(F.SCHED))
@@ -1223,6 +1227,19 @@ export const useDataStore = defineStore('data', () => {
     await apiDeleteFile(id)
     files.value = files.value.filter((file) => file.id !== id)
   }
+  async function refreshHostedPages() {
+    if (!apiLive.value) return
+    try { hostedPages.value = await fetchHostedPages() } catch { /* 保留当前列表 */ }
+  }
+  async function saveHostedPage(payload: { id?: string; html?: File; icon?: File; slug: string; title: string }) {
+    const item = await apiSaveHostedPage(payload)
+    hostedPages.value = [item, ...hostedPages.value.filter((page) => page.id !== item.id)]
+    return item
+  }
+  async function deleteHostedPage(id: string) {
+    await apiDeleteHostedPage(id)
+    hostedPages.value = hostedPages.value.filter((page) => page.id !== id)
+  }
 
   /** 重新拉取图床列表（图床页打开时刷新，让其他标签页 / 其他人上传的图也出现）。 */
   async function refreshImages() {
@@ -1491,7 +1508,7 @@ export const useDataStore = defineStore('data', () => {
     taskSaveState, taskSavedAt, flushTask, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
-    uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES,
+    uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES, hostedPages, refreshHostedPages, saveHostedPage, deleteHostedPage,
     updateProject, deleteProject, ensureProjectKb, syncFromServer, applyAiRunStatuses,
     taskGroupsOf, setTaskGroups, moveTaskToGroup,
     jobById, createJob, updateJob, deleteJob, runJob, pauseJob, resumeJob, reauthJob,

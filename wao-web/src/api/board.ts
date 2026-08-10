@@ -11,6 +11,7 @@ import type {
   Folder,
   ImageItem,
   ImageRef,
+  HostedPage,
   KbGroup,
   KnowledgeBase,
   Member,
@@ -79,6 +80,19 @@ export async function apiUploadFile(file: File): Promise<FileItem> {
   return res.data.data
 }
 export const apiDeleteFile = (id: string) => del(`/api/files/${id}`)
+export const fetchHostedPages = () => get<HostedPage[]>('/api/hosted-pages')
+export async function apiSaveHostedPage(payload: { id?: string; html?: File; icon?: File; slug: string; title: string }): Promise<HostedPage> {
+  const form = new FormData()
+  if (payload.html) form.append('html', payload.html)
+  if (payload.icon) form.append('icon', payload.icon)
+  form.append('slug', payload.slug)
+  form.append('title', payload.title)
+  const res = payload.id
+    ? await http.put<ApiResponse<HostedPage>>(`/api/hosted-pages/${payload.id}`, form, { timeout: 120_000 })
+    : await http.post<ApiResponse<HostedPage>>('/api/hosted-pages', form, { timeout: 120_000 })
+  return res.data.data
+}
+export const apiDeleteHostedPage = (id: string) => del(`/api/hosted-pages/${id}`)
 /** 公开：下载确认页要展示的文件信息。 */
 export const fetchFileMeta = (id: string) => get<FileItem>(`/api/files/${id}/meta`)
 /** 公开：取一道人机校验题。 */

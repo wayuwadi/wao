@@ -374,6 +374,19 @@ OAuth 下发前会先把快过期的 access token 续期。
 
 下载不落库：对外分享的是前端下载页 `/f/{id}`，答对一道人机校验题才换得到一张一次性票据（进程内存，120 秒有效、用完即废），下载接口只认票据或本人登录会话（见 ADR-020）。
 
+### hosted_page
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(64) PK | 托管页 id |
+| slug | VARCHAR(80) UNIQUE | 公网地址唯一后缀 |
+| title / file_name | VARCHAR | 服务端注入的标题与原 HTML 文件名 |
+| html_content | MEDIUMBLOB | UTF-8 单文件 HTML，最大 10MB |
+| icon_content / icon_content_type | MEDIUMBLOB / VARCHAR NULL | 可选 favicon 正文与 MIME 类型，最大 1MB |
+| created_by | VARCHAR(64) | 创建成员 |
+| created_at / updated_at | DATETIME(3) | 创建与最后更新时间 |
+
+公开出口 `/api/pages/{slug}` 返回注入标题与 favicon 的 HTML，并以不含 `allow-same-origin`、`allow-forms` 的 CSP sandbox 隔离 WAO 会话（见 ADR-042）。
+
 ## CalDAV 日历域
 
 ### caldav_account（账户）
@@ -480,4 +493,5 @@ OAuth 下发前会先把快过期的 access token 续期。
 - `V48__runner_log_snapshot.sql`：保存 Runner 最近一段安全诊断日志，供控制台按需查看。
 - `V49__automation_run_timestamp.sql`：保存自动化运行真实时间，并从飞书同步结果恢复可确认日期的历史记录。
 - `V50__ai_assistant_run.sql`：页面 AI 助手短期队列，由 Linux Codex Runner 只读执行（见 ADR-041）。
+- `V51__hosted_html_page.sql`：单文件 HTML 托管正文、唯一公开后缀与可选 icon（见 ADR-042）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

@@ -321,7 +321,7 @@ public class FeishuWebhookNotifier {
         }
 
         private static String asset(String siteUrl, String file) {
-            String base = siteUrl == null || siteUrl.isBlank() ? "" : siteUrl.stripTrailing();
+            String base = siteUrl == null || siteUrl.isBlank() ? "" : siteUrl.strip().replaceFirst("/+$", "");
             return base + "/comic/" + file;
         }
     }
