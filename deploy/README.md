@@ -86,6 +86,8 @@ Windows Server 不支持本项目所需的 Docker Desktop 运行方式，因此�
 
 CI/CD 向 Windows 发送 `D:\deploy\wao-release.zip`，由 PowerShell `Expand-Archive` 解压，以完整保留原版技术方案等中文文件名。MySQL 从库只复制 `wao.%`，不会同步 Linux 主机上已有的其他业务库。
 
+CD 开始 Windows 发布前会先做最多 8 秒的 SSH 在线探测。电脑关机或断网时本次直接跳过从节点，不阻塞 Linux 主节点和云前端发布，也不因此把整体发布判为失败。Windows 上线后会在下一次 `main` 发布时补齐；如果需要立即补发，可手动触发 `WAO Fast CD`。
+
 准备脚本在没有现有配置时将 WSL 限制为 4 核/8GB/2GB swap，并创建 `WAO WSL Keepalive` 开机计划任务。部署脚本会把公开端口从 Windows `0.0.0.0` 转发到 WSL 当前地址；每次发布都会刷新 WSL 动态 IP 对应的 `portproxy`。
 
 ## DDNS 与公网 IP 变化

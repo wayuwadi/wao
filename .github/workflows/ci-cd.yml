@@ -185,6 +185,14 @@ jobs:
           }
 
           deploy_slave() {
+            # Windows 会随用户电脑关机，发布前先做一次快速探测。离线不是发布失败：
+            # 本次跳过从节点，它上线后由下一次 main 发布自然补齐版本。
+            if ! timeout 8s ssh -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 \
+              "$SLAVE_USER@$SLAVE_HOST" 'exit 0'; then
+              echo '::notice title=Windows 从节点已跳过::节点当前离线，本次不等待也不部署；上线后随下一次 PR 合并发布。'
+              return 0
+            fi
+
             release_suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
             remote_release="wao-release-${release_suffix}.zip"
             remote_secrets="wao-secrets-${release_suffix}.env"
