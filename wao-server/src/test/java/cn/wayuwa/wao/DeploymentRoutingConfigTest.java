@@ -59,11 +59,19 @@ class DeploymentRoutingConfigTest {
                 .contains("nginx -t")
                 .contains("probe-codex-egress.sh");
         assertThat(workflow)
-                .contains("sh \"$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh\" master; rm -f /tmp/wao-secrets.env")
+                .contains("name: Prepare Linux Codex package")
+                .contains("codex-package-x86_64-unknown-linux-musl.tar.gz")
+                .contains("sha256sum -c codex-package-linux.sha256")
+                .contains("WAO_CODEX_PACKAGE=/tmp/codex-package-x86_64-unknown-linux-musl.tar.gz")
+                .contains("WAO_CODEX_CHECKSUMS=/tmp/codex-package_SHA256SUMS")
+                .contains("master; rm -f /tmp/wao-secrets.env /tmp/codex-package-x86_64-unknown-linux-musl.tar.gz")
                 .doesNotContain("rm -f /tmp/wao-secrets.env; sh \"$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh\" master");
         assertThat(installer)
                 .contains("https://releases.openai.com/codex/install.sh")
                 .contains("CODEX_RELEASE=\"${CODEX_VERSION}\"")
+                .contains("install_bundled_package")
+                .contains("sha256sum \"${package}\"")
+                .contains("tar -xzf \"${package}\"")
                 .doesNotContain("github.com/openai/codex/releases");
         assertThat(probe)
                 .contains("elif sudo -n docker info")
