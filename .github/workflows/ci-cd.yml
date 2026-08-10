@@ -126,10 +126,55 @@ jobs:
             done
           }
 
+          upload_master_resumable() {
+            local_file="$1"
+            remote_file="$2"
+            local_size="$(stat -c '%s' "$local_file")"
+            local_sha="$(sha256sum "$local_file" | awk '{ print $1 }')"
+            attempt=1
+            while [ "$attempt" -le 6 ]; do
+              remote_size="$(ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
+                "stat -c '%s' -- '$remote_file' 2>/dev/null || printf '0'" 2>/dev/null || true)"
+              case "$remote_size" in
+                ''|*[!0-9]*) remote_size=0 ;;
+              esac
+              if [ "$remote_size" -gt "$local_size" ]; then
+                retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
+                  "rm -f -- '$remote_file'" || return
+                remote_size=0
+              fi
+              if [ "$remote_size" -eq "$local_size" ]; then
+                remote_sha="$(ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
+                  "sha256sum -- '$remote_file' | awk '{ print \$1 }'" 2>/dev/null || true)"
+                if [ "$remote_sha" = "$local_sha" ]; then
+                  printf 'Linux 主节点 Codex 包续传完成：%s / %s bytes，SHA-256 通过\n' "$remote_size" "$local_size"
+                  return 0
+                fi
+                printf 'Linux 主节点 Codex 包大小完整但校验失败，从头重传\n'
+                retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
+                  "rm -f -- '$remote_file'" || return
+                remote_size=0
+              fi
+              printf 'Linux 主节点 Codex 包续传：%s / %s bytes（第 %s 次连接）\n' \
+                "$remote_size" "$local_size" "$attempt"
+              if tail -c "+$((remote_size + 1))" "$local_file" \
+                | timeout 600s ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
+                    "cat >> '$remote_file'"; then
+                continue # 下一轮按远端实际大小和 SHA-256 确认完成。
+              fi
+              printf 'Linux 主节点 Codex 包本次续传中断，将从远端已有字节继续\n'
+              attempt=$((attempt + 1))
+              sleep 10
+            done
+            printf 'Linux 主节点 Codex 包续传 6 次后仍未完成\n'
+            return 1
+          }
+
           deploy_master() {
-            retry_remote "Linux 主节点" scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env \
-              codex-package-x86_64-unknown-linux-musl.tar.gz codex-package_SHA256SUMS \
+            retry_remote "Linux 主节点" scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env codex-package_SHA256SUMS \
               "$MASTER_USER@$MASTER_HOST:/tmp/" || return
+            upload_master_resumable codex-package-x86_64-unknown-linux-musl.tar.gz \
+              /tmp/codex-package-x86_64-unknown-linux-musl.tar.gz || return
             # 解压前先清掉上一版源码：tar 只覆盖同名文件，删除 / 改名过的文件会留在节点上，
             # 混进 Docker 构建上下文（V18 撞号那次就是被留下的旧 migration 打挂的）。
             # deploy/ 整个保留：节点私有的 .env / .env.secrets / certs / data 都在里面，
