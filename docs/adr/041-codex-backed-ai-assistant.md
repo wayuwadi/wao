@@ -15,7 +15,8 @@ Codex OAuth / Responses API 账号形成两套凭据，且无法复用 Linux 主
 
 ## 决策
 
-- Linux 主节点使用 OpenAI 官方独立安装器安装固定版本 Codex CLI；发布时幂等升级并校验版本。
+- CD 在 GitHub Actions 构建机从 OpenAI 官方发布域名下载并校验固定版 Linux x86_64 Codex 独立包，
+  再通过 SSH 随发布下发；主节点本地幂等安装并校验版本，不依赖其受限的公网下载出口。
 - 已配对的 Linux Runner 额外上报 `codex` 能力，并开启集中 AI 账号同步。没有配对令牌时只安装 CLI，
   不伪造节点身份或自动生成长期令牌。
 - AI 助手请求写入短期 `ai_assistant_run` 队列；仅平台为 Linux 且上报 `codex` 的 Runner 可以领取。

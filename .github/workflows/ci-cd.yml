@@ -37,6 +37,16 @@ jobs:
         run: |
           npm ci
           npm run build
+      - name: Prepare Linux Codex package
+        env:
+          CODEX_VERSION: "0.147.0"
+        run: |
+          asset="codex-package-x86_64-unknown-linux-musl.tar.gz"
+          base="https://releases.openai.com/codex/releases/${CODEX_VERSION}"
+          curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 "$base/$asset" -o "$asset"
+          curl -fsSL --retry 3 --connect-timeout 15 --max-time 60 "$base/codex-package_SHA256SUMS" -o codex-package_SHA256SUMS
+          grep -E "^[0-9a-fA-F]{64}  ${asset}$" codex-package_SHA256SUMS > codex-package-linux.sha256
+          sha256sum -c codex-package-linux.sha256
       - name: Package release
         run: |
           git archive --format=tar.gz -o wao-release.tgz HEAD
@@ -117,14 +127,16 @@ jobs:
           }
 
           deploy_master() {
-            retry_remote "Linux 主节点" scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env "$MASTER_USER@$MASTER_HOST:/tmp/" || return
+            retry_remote "Linux 主节点" scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env \
+              codex-package-x86_64-unknown-linux-musl.tar.gz codex-package_SHA256SUMS \
+              "$MASTER_USER@$MASTER_HOST:/tmp/" || return
             # 解压前先清掉上一版源码：tar 只覆盖同名文件，删除 / 改名过的文件会留在节点上，
             # 混进 Docker 构建上下文（V18 撞号那次就是被留下的旧 migration 打挂的）。
             # deploy/ 整个保留：节点私有的 .env / .env.secrets / certs / data 都在里面，
             # 其中被 git 跟踪的文件随即被这次解压整份覆盖。
             # 远程部署失败时 retry_remote 会重跑整条命令；临时 secrets 必须等部署成功后再删，
             # 否则第一次失败后的重试会因为源文件已被删除而永久失败。
-            retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; find "$desktop_dir/deploy/wao" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master; rm -f /tmp/wao-secrets.env'
+            retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; find "$desktop_dir/deploy/wao" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; WAO_CODEX_PACKAGE=/tmp/codex-package-x86_64-unknown-linux-musl.tar.gz WAO_CODEX_CHECKSUMS=/tmp/codex-package_SHA256SUMS sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master; rm -f /tmp/wao-secrets.env /tmp/codex-package-x86_64-unknown-linux-musl.tar.gz /tmp/codex-package_SHA256SUMS'
           }
 
           deploy_slave() {
