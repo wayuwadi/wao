@@ -6,6 +6,7 @@ import java.util.Map;
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.AiAccountCredentialsDto;
+import cn.wayuwa.wao.dto.AiAssistantClaimDto;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
@@ -13,6 +14,7 @@ import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.AiRunnerLogDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
+import cn.wayuwa.wao.dto.CompleteAiAssistantRunRequest;
 import cn.wayuwa.wao.dto.ContinueAiRunRequest;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.CreateAiRunsRequest;
@@ -26,6 +28,7 @@ import cn.wayuwa.wao.dto.UpdateRunnerConcurrencyRequest;
 import cn.wayuwa.wao.dto.UpdateRunnerWakeConfigRequest;
 import cn.wayuwa.wao.dto.WakeRunnerResultDto;
 import cn.wayuwa.wao.service.AiAccountService;
+import cn.wayuwa.wao.service.AiAssistantService;
 import cn.wayuwa.wao.service.AiRunService;
 import cn.wayuwa.wao.service.AiRunnerWakeService;
 import cn.wayuwa.wao.service.AiRunnerLifecycleService;
@@ -52,15 +55,18 @@ public class AiRunController {
 
     private final AiRunService service;
     private final AiAccountService aiAccountService;
+    private final AiAssistantService assistantService;
     private final AiRunnerWakeService wakeService;
     private final AiRunnerLifecycleService lifecycleService;
     private final CurrentMember currentMember;
 
     public AiRunController(AiRunService service, AiAccountService aiAccountService,
+            AiAssistantService assistantService,
             AiRunnerWakeService wakeService, AiRunnerLifecycleService lifecycleService,
             CurrentMember currentMember) {
         this.service = service;
         this.aiAccountService = aiAccountService;
+        this.assistantService = assistantService;
         this.wakeService = wakeService;
         this.lifecycleService = lifecycleService;
         this.currentMember = currentMember;
@@ -204,6 +210,20 @@ public class AiRunController {
     @PostMapping("/runner/claim")
     public ApiResponse<AiRunnerClaimDto> claim(@RequestHeader(RUNNER_TOKEN) String token) {
         return ApiResponse.ok(service.claim(token));
+    }
+
+    /** 空闲的 Linux Codex 节点领取一条页面问答。 */
+    @PostMapping("/runner/assistant/claim")
+    public ApiResponse<AiAssistantClaimDto> claimAssistant(@RequestHeader(RUNNER_TOKEN) String token) {
+        return ApiResponse.ok(assistantService.claim(token));
+    }
+
+    /** Linux Codex 节点回传页面问答结果。 */
+    @PostMapping("/runner/assistant/{runId}/complete")
+    public ApiResponse<Void> completeAssistant(@RequestHeader(RUNNER_TOKEN) String token,
+            @PathVariable String runId, @Valid @RequestBody CompleteAiAssistantRunRequest request) {
+        assistantService.complete(token, runId, request);
+        return ApiResponse.ok(null);
     }
 
     @PostMapping("/runner/runs/{runId}/complete")

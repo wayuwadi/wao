@@ -41,7 +41,7 @@ class DeploymentRoutingConfigTest {
                 .contains("${MASTER_PUBLIC_HOST}:9000")
                 .doesNotContain("${SLAVE_PUBLIC_HOST}", "backup");
         assertThat(nginx)
-                .contains("location ~ ^/api/(settings/ai-accounts(?:/|$)|ai(?:/|$))")
+                .contains("location ~ ^/api/(settings/ai-accounts(?:/|$)|ai(?:/|$)|assistant(?:/|$))")
                 .contains("proxy_pass https://wao_ai_gateway;")
                 .contains("proxy_next_upstream off;")
                 .contains("X-WAO-API-Route linux-vpn-master always;");
@@ -110,6 +110,7 @@ class DeploymentRoutingConfigTest {
                 .contains("apk add --no-cache curl tinyproxy")
                 .contains("USER tinyproxy");
         assertThat(deployScript)
+                .contains("install-linux-codex.sh")
                 .contains("compose build codex-egress-proxy wao-server wao-gateway")
                 .contains("compose up -d --force-recreate --wait codex-egress-proxy")
                 .contains("diagnostic_services=\"codex-egress-proxy ${diagnostic_services}\"");

@@ -33,9 +33,11 @@ ExecStart=/usr/bin/python3 /home/用户名/path/to/wao/deploy/ai-runner/wao-ai-r
   --server https://wao.wayuwa.cn \
   --name "Linux 主节点" \
   --root /home/用户名/CodeSpace \
-  --engines claude \
+  --engines codex,claude \
   --git-protocol auto \
   --max-concurrency 2 \
+  --sync-ai-credentials \
+  --codex-command /home/用户名/.local/bin/codex \
   --claude-command /home/用户名/.local/bin/claude
 Restart=always
 RestartSec=10

@@ -563,6 +563,16 @@ public class AiAccountService {
                 entity.getAuthMethod(), freshCredential(entity), null, null, null, null);
     }
 
+    /** 页面问答默认使用第一个启用的 Codex 账号；没有集中账号时由 Runner 使用本机登录态。 */
+    public AiRunAccountDto defaultCodexRunAccount() {
+        AiAccountEntity entity = mapper.selectOne(new LambdaQueryWrapper<AiAccountEntity>()
+                .eq(AiAccountEntity::getProvider, "codex")
+                .eq(AiAccountEntity::getEnabled, true)
+                .orderByAsc(AiAccountEntity::getCreatedAt)
+                .last("LIMIT 1"));
+        return entity == null ? null : runAccount(entity.getId(), "codex");
+    }
+
     /**
      * 下发给 Runner 前先确保令牌没过期。
      *

@@ -89,7 +89,7 @@ server {
     }
 
     # AI 账号管理、运行入队和 Runner 领取都可能触发 Codex 令牌刷新或额度查询，统一固定到 Linux。
-    location ~ ^/api/(settings/ai-accounts(?:/|$)|ai(?:/|$)) {
+    location ~ ^/api/(settings/ai-accounts(?:/|$)|ai(?:/|$)|assistant(?:/|$)) {
         proxy_pass https://wao_ai_gateway;
         proxy_http_version 1.1;
         proxy_ssl_verify off;
@@ -99,7 +99,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_connect_timeout 5s;
-        proxy_read_timeout 120s;
+        proxy_read_timeout 210s;
         proxy_send_timeout 120s;
         proxy_next_upstream off;
         # 本 location 定义了诊断头后不会继承 server 级 add_header，因此安全头在这里显式保留。

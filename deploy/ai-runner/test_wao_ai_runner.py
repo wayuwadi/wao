@@ -9,6 +9,7 @@ import time
 import unittest
 import urllib.error
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 
@@ -596,6 +597,47 @@ class SyncCredentialsTest(unittest.TestCase):
         results = RUNNER.sync_ai_credentials(api, self.root)
 
         self.assertEqual({}, results)
+
+
+class LinuxCodexAssistantTest(unittest.TestCase):
+    """Linux 发布追加 Codex 能力，并保证页面问答不留下临时上下文。"""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="wao-assistant-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    @patch.object(RUNNER, "find_engine_executable")
+    def test_extra_codex_engine_keeps_explicit_claude_engine(self, find: Mock) -> None:
+        find.side_effect = lambda name, command: command or f"/usr/bin/{name}"
+        args = SimpleNamespace(
+            engines="claude",
+            extra_engines="codex",
+            codex_command="/home/wao/.local/bin/codex",
+            claude_command="/home/wao/.local/bin/claude",
+            qoder_command=None,
+        )
+
+        commands = RUNNER.resolve_engines(args)
+
+        self.assertEqual(["claude", "codex"], list(commands))
+        self.assertEqual("/home/wao/.local/bin/codex", commands["codex"])
+
+    @patch.object(RUNNER, "run_codex")
+    def test_assistant_uses_read_only_sandbox_and_removes_temporary_data(self, run_codex: Mock) -> None:
+        run_codex.return_value = (0, "只读答复", None, {})
+        api = Mock()
+        claim = {"runId": "ac-test", "prompt": "请总结", "account": {"id": "aa1"}}
+
+        RUNNER.execute_assistant_claim(api, claim, self.root, "codex", "git")
+
+        self.assertEqual("read-only", run_codex.call_args.args[3])
+        self.assertEqual(claim["account"], run_codex.call_args.kwargs["account"])
+        self.assertFalse((self.root / ".wao-assistant" / "ac-test").exists())
+        self.assertFalse((self.root / ".wao-assistant-codex-homes" / "ac-test").exists())
+        api.post.assert_called_once_with(
+            "/api/ai/runner/assistant/ac-test/complete",
+            {"exitCode": 0, "response": "只读答复", "error": ""},
+        )
 
 
 class ScriptUpdateTest(unittest.TestCase):
