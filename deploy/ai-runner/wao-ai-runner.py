@@ -594,6 +594,16 @@ class ProgressReporter:
             self.send(*self.pending, force=True)
 
 
+class NoopProgressReporter:
+    """页面问答只回传最终答复，不保存 Codex 的中间分析或工具事件。"""
+
+    def event(self, _event: dict[str, Any]) -> None:
+        return
+
+    def flush(self) -> None:
+        return
+
+
 def normalize_result(exit_code: int, result_text: str, engine: str = "codex") -> tuple[int, str]:
     """同时校验 CLI 退出码和业务完成标记，避免把反问或阻塞误报为成功。"""
     name = ENGINE_LABELS.get(engine, engine)
@@ -1004,6 +1014,43 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             log(f"[{run_id}] 回传失败，下次心跳会让任务重新排队：{exc}")
 
 
+def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, executable: str,
+        git_command: str, cli_environment: dict[str, str] | None = None) -> None:
+    """在临时空仓库和只读沙箱中执行页面问答，结束后不保留用户上下文。"""
+    run_id = claim["runId"]
+    worktree = root / ".wao-assistant" / run_id
+    codex_home = root / ".wao-assistant-codex-homes" / run_id
+    exit_code = -1
+    response = ""
+    error = ""
+    try:
+        worktree.mkdir(parents=True, exist_ok=True)
+        run([git_command, "init", "-q"], worktree)
+        log(f"[{run_id}] 开始页面只读问答")
+        exit_code, response, _, _ = run_codex(
+            executable, worktree, str(claim.get("prompt") or ""), "read-only",
+            NoopProgressReporter(), cli_environment, account=claim.get("account"), codex_home=codex_home)
+        response = response.strip()
+        if exit_code != 0:
+            error = f"Codex 退出码 {exit_code}：{response or '没有返回错误详情'}"
+        elif not response:
+            exit_code = 1
+            error = "Codex 没有返回文字答复"
+    except Exception as exc:  # noqa: BLE001 - 必须把节点错误回传给页面
+        error = str(exc)
+        log(f"[{run_id}] 页面问答失败：{exc}")
+    finally:
+        try:
+            api.post(
+                f"/api/ai/runner/assistant/{run_id}/complete",
+                {"exitCode": exit_code, "response": response[-30000:], "error": error[-2000:]},
+            )
+        except Exception as exc:  # noqa: BLE001
+            log(f"[{run_id}] 页面问答结果回传失败：{exc}")
+        shutil.rmtree(worktree, ignore_errors=True)
+        shutil.rmtree(codex_home, ignore_errors=True)
+
+
 def script_hash(path: Path) -> str:
     """计算脚本文件字节的 SHA-256，与服务端对打包资源的口径一致。"""
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -1119,6 +1166,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--engines", default=os.getenv("WAO_RUNNER_ENGINES"),
                         help="本机可用的 AI 工具，逗号分隔（codex,claude,qoder）；留空按已安装的 CLI 自动探测")
+    parser.add_argument("--extra-engines", default=os.getenv("WAO_RUNNER_EXTRA_ENGINES"),
+                        help="在 --engines 之外追加能力；供主节点部署在不改原 service 的情况下接入 Codex")
     parser.add_argument("--max-concurrency", type=int, default=int(os.getenv("WAO_RUNNER_CONCURRENCY", "2")))
     parser.add_argument(
         "--sandbox",
@@ -1139,6 +1188,8 @@ def resolve_engines(args: argparse.Namespace) -> dict[str, str]:
     """解析本机可用的 AI 工具；显式指定时找不到命令直接报错，自动探测时静默跳过。"""
     configured = {"codex": args.codex_command, "claude": args.claude_command, "qoder": args.qoder_command}
     wanted = [name.strip().lower() for name in (args.engines or "").split(",") if name.strip()]
+    wanted += [name.strip().lower() for name in (args.extra_engines or "").split(",") if name.strip()]
+    wanted = list(dict.fromkeys(wanted))
     for name in wanted:
         if name not in ENGINE_LABELS:
             raise RuntimeError(f"不支持的 AI 工具：{name}（可选 {'、'.join(ENGINE_LABELS)}）")
@@ -1209,6 +1260,13 @@ def main() -> int:
                         last_credentials_sync = time.monotonic()
                     while len(futures) < args.max_concurrency:
                         claim = api.post("/api/ai/runner/claim")
+                        if not claim and "codex" in engine_commands:
+                            assistant_claim = api.post("/api/ai/runner/assistant/claim")
+                            if assistant_claim:
+                                futures.add(executor.submit(
+                                    execute_assistant_claim, api, assistant_claim, root,
+                                    engine_commands["codex"], git_command, cli_environment))
+                                continue
                         if not claim:
                             break
                         futures.add(executor.submit(

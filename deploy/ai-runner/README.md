@@ -40,6 +40,10 @@ python3 deploy/ai-runner/wao-ai-runner.py \
   --max-concurrency 2
 ```
 
+Linux 主节点上的 Codex CLI 由发布脚本通过 OpenAI 官方独立安装器固定安装到
+`~/.local/bin/codex`。已有 Runner 会自动追加 `codex` 能力并开启集中账号同步；如果这台机器从未接入，
+仍需先在 AI 控制台生成一次性配对码并完成首次配对，部署不会绕过节点身份校验。
+
 `--engines` 留空表示自动探测（装了哪种就报哪种，可选 codex、claude、qoder）；显式指定时
 找不到对应命令会直接启动失败，避免电脑上报了自己其实跑不了的能力。需要固定模型时加
 `--claude-model opus`。Qoder 的引擎 id 是 `qoder`，命令名国际版叫 `qodercli`、国内版叫

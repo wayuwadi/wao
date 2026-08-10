@@ -2,7 +2,7 @@
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
-import { streamChat, type ChatMessage } from '@/api/assistant'
+import { fetchAssistantStatus, streamChat, type AssistantStatus, type ChatMessage } from '@/api/assistant'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -23,6 +23,8 @@ const open = ref(false)
 const messages = ref<Msg[]>([])
 const input = ref('')
 const sending = ref(false)
+const statusLoading = ref(false)
+const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查 Linux Codex 节点…' })
 const listRef = ref<HTMLElement | null>(null)
 
 const QUICK_COMMANDS = [
@@ -54,9 +56,20 @@ function scrollToBottom() {
   })
 }
 
-async function send(text?: string) {
+async function loadStatus() {
+  statusLoading.value = true
+  try {
+    assistantStatus.value = await fetchAssistantStatus()
+  } catch {
+    assistantStatus.value = { configured: false, message: '无法读取 AI 状态，请稍后重试' }
+  } finally {
+    statusLoading.value = false
+  }
+}
+
+async function send(text?: string, context?: string) {
   const msg = (text ?? input.value).trim()
-  if (!msg || sending.value) return
+  if (!msg || sending.value || !assistantStatus.value.configured) return
   sending.value = true
   messages.value.push({ role: 'user', content: msg })
   input.value = ''
@@ -69,11 +82,11 @@ async function send(text?: string) {
   try {
     const history: ChatMessage[] = messages.value
       .filter((m) => m.role !== 'assistant' || !m.streaming)
+      .slice(0, -1)
       .slice(-10)
       .map((m) => ({ role: m.role, content: m.content }))
-    const pageContext = QUICK_COMMANDS.find((c) => msg.includes(c.title))?.build().context
 
-    for await (const token of streamChat(msg, history, pageContext)) {
+    for await (const token of streamChat(msg, history, context)) {
       assistantMsg.content += token
       scrollToBottom()
     }
@@ -88,17 +101,22 @@ async function send(text?: string) {
 }
 
 function quick(cmd: typeof QUICK_COMMANDS[number]) {
-  send(cmd.build().message)
+  const request = cmd.build()
+  send(request.message, request.context)
 }
 
 function clearHistory() {
   messages.value = []
 }
 
-watch(() => props.modelValue, (v) => { open.value = v })
+watch(() => props.modelValue, (v) => {
+  open.value = v
+  if (v) loadStatus()
+})
 watch(open, (v) => { if (!v) emit('update:modelValue', false) })
 
 onMounted(() => {
+  loadStatus()
   if (messages.value.length === 0) {
     messages.value.push({
       role: 'assistant',
@@ -138,6 +156,11 @@ function renderMarkdown(text: string): string {
           </header>
 
           <div ref="listRef" class="assistant-list">
+            <div v-if="!assistantStatus.configured" class="assistant-status">
+              <i :class="statusLoading ? 'ri-loader-4-line spin' : 'ri-error-warning-line'"></i>
+              <span>{{ assistantStatus.message }}</span>
+              <button :disabled="statusLoading" @click="loadStatus">重试</button>
+            </div>
             <div
               v-for="(m, i) in messages"
               :key="i"
@@ -158,7 +181,7 @@ function renderMarkdown(text: string): string {
               v-for="cmd in QUICK_COMMANDS"
               :key="cmd.id"
               class="quick-btn"
-              :disabled="sending"
+              :disabled="sending || !assistantStatus.configured"
               @click="quick(cmd)"
             >
               <i :class="cmd.icon"></i>{{ cmd.title }}
@@ -170,10 +193,10 @@ function renderMarkdown(text: string): string {
               v-model="input"
               placeholder="输入问题… (Shift+Enter 换行，Enter 发送)"
               rows="2"
-              :disabled="sending"
+              :disabled="sending || !assistantStatus.configured"
               @keydown.enter.exact.prevent="send()"
             ></textarea>
-            <button class="send-btn" :disabled="!input.trim() || sending" @click="send()">
+            <button class="send-btn" :disabled="!input.trim() || sending || !assistantStatus.configured" @click="send()">
               <i :class="sending ? 'ri-loader-4-line spin' : 'ri-send-plane-2-fill'"></i>
             </button>
           </div>
@@ -258,6 +281,24 @@ function renderMarkdown(text: string): string {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.assistant-status {
+  border: 1px solid var(--wao-warning, #d89614);
+  background: color-mix(in srgb, var(--wao-warning, #d89614) 10%, transparent);
+  border-radius: 8px;
+  padding: 9px 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--wao-text-2);
+  font-size: 12px;
+}
+.assistant-status span { flex: 1; }
+.assistant-status button {
+  border: 0;
+  background: transparent;
+  color: var(--wao-primary);
+  cursor: pointer;
 }
 .msg {
   display: flex;

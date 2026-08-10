@@ -8,6 +8,20 @@ info:
 servers:
   - url: /api
 paths:
+  /assistant/status:
+    get:
+      summary: AI 助手是否有在线 Linux Codex Runner
+      responses:
+        '200': { description: 返回 configured 与可读状态说明 }
+  /assistant/chat/stream:
+    post:
+      summary: 把页面问答交给 Linux Codex Runner，并以 SSE 返回最终答复
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AssistantChatRequest' } } }
+      responses:
+        '200': { description: text/event-stream，事件为 token / done / error }
+        '400': { description: 节点离线、已有活动问答或参数不合法 }
   /members:
     get:
       summary: 成员列表
@@ -630,6 +644,21 @@ paths:
   /goals: { get: { summary: 目标胶囊列表, responses: { '200': { description: OK } } } }
 components:
   schemas:
+    AssistantChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 4000 }
+        history:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role: { type: string, enum: [user, assistant] }
+              content: { type: string, minLength: 1, maxLength: 4000 }
+        pageContext: { type: string, maxLength: 10000 }
     ApiResponse:
       type: object
       properties:
