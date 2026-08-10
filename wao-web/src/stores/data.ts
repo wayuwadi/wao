@@ -196,8 +196,6 @@ export const useDataStore = defineStore('data', () => {
       vault.value = []
       vaultError.value = true
     }
-    // 每个项目都应有一个默认知识库（后端就绪前为前端内存态），刷新后由此保持。
-    projects.value.forEach((proj) => ensureProjectKb(proj))
     if (apiLive.value) {
       startSync()
       Object.keys(taskDrafts.value).forEach(persistTask)
@@ -895,7 +893,7 @@ export const useDataStore = defineStore('data', () => {
     return local
   }
 
-  /** 新建项目；apiLive 时经后端创建，否则本地乐观创建。创建后自动生成一个默认知识库。 */
+  /** 新建项目；apiLive 时经后端创建，否则本地乐观创建。知识库由用户按需另行创建和关联。 */
   async function addProject(payload: { name: string; area: string; goal: string; visAll: boolean }): Promise<Project> {
     let created: Project | null = null
     if (apiLive.value) {
@@ -919,21 +917,7 @@ export const useDataStore = defineStore('data', () => {
       projects.value.unshift(created)
     }
     if (!created.icon) created.icon = 'ri-stack-line'
-    ensureProjectKb(created)
     return created
-  }
-
-  /** 为项目创建一个默认知识库（若尚无关联库）。知识库为前端内存态，随项目一起出现。 */
-  function ensureProjectKb(p: Project): KnowledgeBase {
-    const existing = kbs.value.find((k) => k.project === p.id)
-    if (existing) return existing
-    const kb: KnowledgeBase = {
-      id: 'kb' + Date.now(), name: `${p.name} · 知识库`, icon: 'ri-book-2-line',
-      color: areaColor(p.area), project: p.id, desc: '项目资料、会议纪要与参考都沉淀在这里。',
-      folders: [{ id: 'f' + Date.now(), name: '文档', docs: [] }],
-    }
-    kbs.value.unshift(kb)
-    return kb
   }
 
   /** 更新项目字段（名称 / 领域 / 状态 / 目标 / 图标 / 通知开关）；apiLive 时写透后端。 */
@@ -1509,7 +1493,7 @@ export const useDataStore = defineStore('data', () => {
     subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES, hostedPages, refreshHostedPages, saveHostedPage, deleteHostedPage,
-    updateProject, deleteProject, ensureProjectKb, syncFromServer, applyAiRunStatuses,
+    updateProject, deleteProject, syncFromServer, applyAiRunStatuses,
     taskGroupsOf, setTaskGroups, moveTaskToGroup,
     jobById, createJob, updateJob, deleteJob, runJob, pauseJob, resumeJob, reauthJob,
     vaultItemById, addVaultGroup, renameVaultGroup, deleteVaultGroup, reorderVaultGroups,
