@@ -6,7 +6,6 @@ import { useTheme, type ThemeMode } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { toast } from '@/composables/toast'
 import { createAiPairCode, fetchAiRunners, wakeAiRunner } from '@/api/ai'
-import { ALL_QUICK_LINKS } from '@/config/quickLinks'
 
 interface Command {
   id: string
@@ -78,12 +77,6 @@ async function wakeRunner() {
   }
 }
 
-const THEME_LABELS: Record<ThemeMode, string> = {
-  light: '明亮主题',
-  dark: '深色主题',
-  system: '跟随系统',
-}
-
 const commands = computed<Command[]>(() => {
   const list: Command[] = [
     // 页面导航
@@ -94,7 +87,7 @@ const commands = computed<Command[]>(() => {
     { id: 'nav-automation', title: '自动化', subtitle: '自动化任务与脚本', icon: 'ri-magic-line', keywords: ['automation', 'zidonghua'], action: () => navigate('/automation') },
     { id: 'nav-vault', title: 'Vault', subtitle: '密码与敏感信息', icon: 'ri-shield-keyhole-line', keywords: ['vault', 'mima', 'minan'], action: () => navigate('/vault') },
     { id: 'nav-settings', title: '设置', subtitle: '组织、通知与个人偏好', icon: 'ri-settings-3-line', keywords: ['settings', 'shezhi', 'peizhi'], action: () => navigate('/settings') },
-    { id: 'nav-dashboard', title: '数据仪表盘', subtitle: 'AI 运行与任务完成统计', icon: 'ri-line-chart-line', keywords: ['dashboard', 'yibiaopan', 'tongji', 'shuju', 'tubiao'], action: () => navigate('/dashboard') },
+    { id: 'nav-dashboard', title: '数据仪表盘', subtitle: 'AI 频次、Token 用量与任务统计', icon: 'ri-line-chart-line', keywords: ['dashboard', 'yibiaopan', 'tongji', 'shuju', 'tubiao', 'token'], action: () => navigate('/dashboard') },
 
     // 动作
     { id: 'action-project', title: '新建项目', subtitle: '创建一个新的项目', icon: 'ri-add-circle-line', keywords: ['new project', 'xinjian xiangmu', 'chuangjian'], action: () => { ui.openModal('project'); close() } },

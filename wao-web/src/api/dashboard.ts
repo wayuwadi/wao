@@ -15,6 +15,12 @@ export interface AiRunTrendItem {
   succeeded: number
   failed: number
   cancelled: number
+  /** CLI 真实回传了 Token 用量的运行数；其余运行不能解释为零消耗。 */
+  recordedRuns: number
+  inputTokens: number
+  outputTokens: number
+  cachedInputTokens: number
+  totalTokens: number
 }
 
 export interface TaskTrendItem {

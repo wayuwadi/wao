@@ -1,0 +1,86 @@
+openapi: 3.0.3
+info:
+  title: WAO 数据仪表盘 API
+  version: 0.1.0
+paths:
+  /api/dashboard/ai-runs:
+    get:
+      operationId: getAiRunTrend
+      summary: 按运行创建日期统计每日 AI 使用频次与真实 Token 用量
+      parameters:
+        - in: query
+          name: days
+          description: 查询最近多少个自然日；服务端限制为 1 至 365 天
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+      responses:
+        "200":
+          description: 包含无运行日期的连续日桶；未回传用量的运行只计入 total，不计入 recordedRuns
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiRunTrendEnvelope"
+components:
+  schemas:
+    AiRunTrendEnvelope:
+      type: object
+      required: [code, message, data, timestamp]
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: success
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiRunTrendItem"
+        timestamp:
+          type: integer
+          format: int64
+    AiRunTrendItem:
+      type: object
+      required:
+        - date
+        - total
+        - succeeded
+        - failed
+        - cancelled
+        - recordedRuns
+        - inputTokens
+        - outputTokens
+        - cachedInputTokens
+        - totalTokens
+      properties:
+        date:
+          type: string
+          format: date
+        total:
+          type: integer
+          description: 当天创建的全部 AI 运行数
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        cancelled:
+          type: integer
+        recordedRuns:
+          type: integer
+          description: CLI 真实回传了 Token 用量的运行数；只有模型或金额不算 Token 已记账
+        inputTokens:
+          type: integer
+          format: int64
+        outputTokens:
+          type: integer
+          format: int64
+        cachedInputTokens:
+          type: integer
+          format: int64
+          description: 缓存读取与缓存写入之和
+        totalTokens:
+          type: integer
+          format: int64
