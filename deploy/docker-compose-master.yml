@@ -241,6 +241,55 @@ services:
     logging: *default-logging
     networks: [wao]
 
+  wao-agent-server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: agent-runtime
+      args:
+        MAVEN_MIRROR_URL: ${MAVEN_MIRROR_URL:-https://maven.aliyun.com/repository/public}
+        ALPINE_MIRROR_HOST: ${ALPINE_MIRROR_HOST:-mirrors.aliyun.com}
+    image: wao-agent-server:${WAO_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "${MASTER_BIND_IP:-0.0.0.0}:8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8081
+      MYSQL_HOST: ${MYSQL_HOST:-mysql-master}
+      MYSQL_PORT: 3306
+      DB_NAME: ${DB_NAME:-wao}
+      DB_USER: ${DB_USER:-wao_app}
+      DB_PASS: ${DB_PASS}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      AGENT_NODE_ID: ${AGENT_NODE_ID:-master}
+      AGENT_MEDIA_DIR: /var/lib/wao-agent/media
+      AGENT_CREDENTIAL_KEY: ${AGENT_CREDENTIAL_KEY:-}
+      AGENT_AI_PROVIDER: ${AGENT_AI_PROVIDER:-deepseek}
+      AGENT_AI_BASE_URL: ${AGENT_AI_BASE_URL:-https://api.deepseek.com/v1}
+      AGENT_AI_API_KEY: ${AGENT_AI_API_KEY:-}
+      AGENT_AI_MODEL: ${AGENT_AI_MODEL:-deepseek-chat}
+      DOUYIN_CLIENT_KEY: ${DOUYIN_CLIENT_KEY:-}
+      DOUYIN_CLIENT_SECRET: ${DOUYIN_CLIENT_SECRET:-}
+      DOUYIN_REDIRECT_URI: ${DOUYIN_REDIRECT_URI:-https://wao.wayuwa.cn/api/agent/platforms/DOUYIN/callback}
+    volumes:
+      - wao-agent-media:/var/lib/wao-agent/media
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/api/agent/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+    logging: *default-logging
+    networks: [wao]
+
   wao-gateway:
     build:
       context: ..
@@ -270,6 +319,8 @@ services:
     depends_on:
       wao-server:
         condition: service_healthy
+      wao-agent-server:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -291,6 +342,8 @@ volumes:
   redis-master-data:
   nacos-data:
   ddns-go-data:
+  wao-agent-media:
+    name: wao-agent-master_wao-agent-media
 
 networks:
   wao:

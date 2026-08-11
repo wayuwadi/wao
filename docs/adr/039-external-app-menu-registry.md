@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳，扩展 ADR-038 中 WAO 只承载菜单、页签与同域 iframe 壳的决策。自媒体 Agent 仍采用 ADR-038 的共享 Session 和独立部署方式。
+已采纳。自媒体 Agent 的共享 Session 继续有效，源码与发布已按 [ADR-049](049-unified-product-monorepo-delivery.md) 合入 WAO；注册表保留为运行模块菜单与 iframe 壳配置，不再代表必须拆仓。
 
 ## 上下文
 

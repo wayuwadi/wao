@@ -1,0 +1,232 @@
+/**
+ * WAO Life OS 设计 token —— 源自 init-design/README.md「Design Tokens」。
+ * 所有界面像素级还原都以此文件的变量为准；组件内可直接用字面值对齐原型。
+ */
+:root {
+  /* 品牌主色 */
+  --wao-primary: #4358d6;
+  --wao-primary-hover: #3a4cc2;
+  --wao-primary-text: #3a4cc2;
+  --wao-primary-soft: #e7ebfa;
+  --wao-primary-soft-2: #e9edfb;
+  --wao-primary-tint: #f7f9fe;
+  --wao-primary-line: #d9dff6;
+
+  /* 背景层级 */
+  --wao-bg-page: #f6f7f9;
+  --wao-bg-side: #f3f4f7;
+  --wao-bg-card: #ffffff;
+  --wao-bg-sub: #fbfbfc;
+  --wao-bg-sub-2: #fafafb;
+  --wao-bg-tab: #eff0f4;
+  --wao-bg-hover: #f6f7fa;
+  --wao-bg-hover-2: #f2f3f6;
+
+  /* 文字层级 */
+  --wao-text: #1a1c23;
+  --wao-text-2: #3e414d;
+  --wao-text-3: #5a5e6b;
+  --wao-text-weak: #9a9da9;
+  --wao-text-faint: #b0b3be;
+  --wao-text-faint-2: #c4c7d2;
+
+  /* 边框 / 分隔线 */
+  --wao-line: #e8e9ed;
+  --wao-line-control: #e3e4ea;
+  --wao-line-strong: #dddfe6;
+  --wao-divider: #eeeff3;
+  --wao-divider-2: #f3f3f6;
+
+  /* 语义色 */
+  --wao-success: #2c8a5b;
+  --wao-success-strong: #257a50;
+  --wao-success-bg: #e8f5ee;
+  --wao-success-line: #cbe9d9;
+  --wao-warning: #d9a13b;
+  --wao-warning-strong: #a96a10;
+  --wao-warning-bg: #fbf3e4;
+  --wao-danger: #d65454;
+  --wao-danger-strong: #bc4141;
+  --wao-danger-bg: #fbebeb;
+  --wao-danger-line: #f0c9c9;
+
+  /* 人生领域色 */
+  --wao-area-career: #4358d6;
+  --wao-area-health: #2c8a5b;
+  --wao-area-family: #b9821f;
+  --wao-area-finance: #7a5cc6;
+  --wao-area-growth: #c05d8e;
+  --wao-caldav-home: #0e8c8c;
+  --wao-caldav-work: #c05d8e;
+
+  /* 优先级色（复用语义对） */
+  --wao-p0: #d65454;
+  --wao-p0-bg: #fbebeb;
+  --wao-p1: #a96a10;
+  --wao-p1-bg: #fbf3e4;
+  --wao-p2: #4358d6;
+  --wao-p2-bg: #eef1fc;
+  --wao-p3: #5a5e6b;
+  --wao-p3-bg: #f0f1f4;
+
+  /* 字体 */
+  --wao-font:
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Noto Sans SC', sans-serif;
+  --wao-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* 圆角 */
+  --wao-radius-card: 12px;
+  --wao-radius-control: 8px;
+  --wao-radius-pill: 999px;
+  --wao-radius-modal: 14px;
+
+  /* 阴影 */
+  --wao-shadow-card-hover: 0 2px 8px rgba(16, 18, 28, 0.06);
+  --wao-shadow-card-hover-2: 0 3px 12px rgba(16, 18, 28, 0.07);
+  --wao-shadow-pop: 0 10px 30px rgba(16, 18, 28, 0.12);
+  --wao-shadow-pop-2: 0 10px 30px rgba(16, 18, 28, 0.14);
+  --wao-shadow-modal: 0 24px 64px rgba(16, 18, 28, 0.24);
+
+  /* 尺寸常量 */
+  --wao-side-w: 236px;
+  --wao-side-w-collapsed: 62px;
+  --wao-header-h: 52px;
+  --wao-tabbar-h: 39px;
+  --wao-content-max: 1340px;
+}
+
+/* 深色模式 —— 与明亮模式保持相同的语义层级，仅反转亮度关系 */
+:root[data-theme='dark'] {
+  /* 品牌主色：略微提亮，保证在深色背景上的可读性 */
+  --wao-primary: #5b6fe8;
+  --wao-primary-hover: #7687f0;
+  --wao-primary-text: #7687f0;
+  --wao-primary-soft: #252b4d;
+  --wao-primary-soft-2: #1e2442;
+  --wao-primary-tint: #131624;
+  --wao-primary-line: #333a63;
+
+  /* 背景层级：由深到浅 */
+  --wao-bg-page: #0f1115;
+  --wao-bg-side: #13151c;
+  --wao-bg-card: #1a1c24;
+  --wao-bg-sub: #161820;
+  --wao-bg-sub-2: #1d1f28;
+  --wao-bg-tab: #21242e;
+  --wao-bg-hover: #252830;
+  --wao-bg-hover-2: #2a2d38;
+
+  /* 文字层级：由高到低 */
+  --wao-text: #f0f1f5;
+  --wao-text-2: #c4c7d2;
+  --wao-text-3: #8b8f9a;
+  --wao-text-weak: #6b6f7d;
+  --wao-text-faint: #5a5e6b;
+  --wao-text-faint-2: #4a4e59;
+
+  /* 边框 / 分隔线 */
+  --wao-line: #2d303b;
+  --wao-line-control: #363945;
+  --wao-line-strong: #3e424f;
+  --wao-divider: #23262e;
+  --wao-divider-2: #1d1f26;
+
+  /* 语义色：降低饱和度、压暗背景，避免刺眼 */
+  --wao-success: #4caf7c;
+  --wao-success-strong: #6ac295;
+  --wao-success-bg: #143425;
+  --wao-success-line: #24563b;
+  --wao-warning: #e0ac52;
+  --wao-warning-strong: #ecc476;
+  --wao-warning-bg: #33270e;
+  --wao-danger: #e86e6e;
+  --wao-danger-strong: #f28a8a;
+  --wao-danger-bg: #381515;
+  --wao-danger-line: #5a2525;
+
+  /* 人生领域色保持色相，适度提亮 */
+  --wao-area-career: #5b6fe8;
+  --wao-area-health: #4caf7c;
+  --wao-area-family: #d4a34d;
+  --wao-area-finance: #9678e0;
+  --wao-area-growth: #d47aa3;
+  --wao-caldav-home: #2ea8a8;
+  --wao-caldav-work: #d47aa3;
+
+  /* 优先级色 */
+  --wao-p0: #e86e6e;
+  --wao-p0-bg: #381515;
+  --wao-p1: #e0ac52;
+  --wao-p1-bg: #33270e;
+  --wao-p2: #5b6fe8;
+  --wao-p2-bg: #1e2442;
+  --wao-p3: #8b8f9a;
+  --wao-p3-bg: #2a2d38;
+
+  /* 阴影：使用浅色半透明，降低不透明度 */
+  --wao-shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.24);
+  --wao-shadow-card-hover-2: 0 3px 12px rgba(0, 0, 0, 0.28);
+  --wao-shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.36);
+  --wao-shadow-pop-2: 0 10px 30px rgba(0, 0, 0, 0.42);
+  --wao-shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.52);
+}
+
+/* 全局动画 —— 与原型 keyframes 命名一致 */
+@keyframes waoFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes waoFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes waoDrawer {
+  from {
+    transform: translateX(48px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes waoPop {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes waoToast {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes waoPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}

@@ -34,6 +34,17 @@ export interface NumberMergeGame {
   recentRuns: GameRunRecord[]
 }
 
+export interface MemoryMatchGame {
+  cards: Array<number | null>
+  matched: number[]
+  revealed: number[]
+  steps: number
+  bestSteps: number | null
+  finished: boolean
+  revision: number
+  updatedAt: string
+}
+
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
 }
@@ -49,3 +60,12 @@ export const undoNumberMergeGame = (revision: number) =>
 
 export const restartNumberMergeGame = (revision: number) =>
   data(http.post<ApiResponse<NumberMergeGame>>('/api/games/number-merge/restart', { revision }))
+
+export const fetchMemoryMatchGame = () =>
+  data(http.get<ApiResponse<MemoryMatchGame>>('/api/games/memory-match'))
+
+export const flipMemoryMatch = (index: number, revision: number) =>
+  data(http.post<ApiResponse<MemoryMatchGame>>('/api/games/memory-match/flip', { index, revision }))
+
+export const restartMemoryMatch = (revision: number) =>
+  data(http.post<ApiResponse<MemoryMatchGame>>('/api/games/memory-match/restart', { revision }))

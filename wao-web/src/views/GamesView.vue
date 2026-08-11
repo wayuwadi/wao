@@ -8,9 +8,11 @@ import {
   type MoveDirection,
   type NumberMergeGame,
 } from '@/api/games'
+import MemoryMatchGame from '@/components/games/MemoryMatchGame.vue'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
+const activeGame = ref<'number-merge' | 'memory-match'>('number-merge')
 const game = ref<NumberMergeGame | null>(null)
 const loading = ref(true)
 const busy = ref(false)
@@ -169,6 +171,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="game-page">
+    <nav class="game-picker" aria-label="选择游戏">
+      <button type="button" :class="{ active: activeGame === 'number-merge' }" @click="activeGame = 'number-merge'">
+        <i class="ri-add-box-line"></i><span><strong>数字熔炉</strong><small>云存档 · 2048</small></span>
+      </button>
+      <button type="button" :class="{ active: activeGame === 'memory-match' }" @click="activeGame = 'memory-match'">
+        <i class="ri-brain-line"></i><span><strong>记忆翻牌</strong><small>找出八对图标</small></span>
+      </button>
+    </nav>
+
+    <MemoryMatchGame v-if="activeGame === 'memory-match'" />
+    <template v-else>
     <header class="game-hero">
       <div>
         <div class="eyebrow"><i class="ri-gamepad-line"></i> 游戏厅 · 第 1 个挑战</div>
@@ -293,18 +306,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             <span>主动重开或棋盘结束后，成绩会留在这里。</span>
           </div>
 
-          <div class="next-game">
-            <span class="next-icon"><i class="ri-lock-2-line"></i></span>
-            <div><strong>下一台游戏机</strong><span>以后可以放每日猜词、数独或记忆挑战。</span></div>
+          <div class="next-game ready">
+            <span class="next-icon"><i class="ri-brain-line"></i></span>
+            <div><strong>记忆翻牌已经就位</strong><span>从上方切换，最佳步数也会保存到账号。</span></div>
           </div>
         </aside>
       </div>
+    </template>
     </template>
   </div>
 </template>
 
 <style scoped>
 .game-page { min-height: 100%; padding: 28px clamp(18px, 3vw, 42px) 44px; color: var(--wao-text); background: radial-gradient(circle at 8% 0%, rgba(91, 111, 232, .11), transparent 29%), var(--wao-bg-page); }
+.game-picker { max-width: 1180px; margin: 0 auto 18px; padding: 5px; display: flex; gap: 6px; border: 1px solid var(--wao-line); border-radius: 13px; background: var(--wao-bg-card); }.game-picker button { min-width: 170px; padding: 9px 12px; display: flex; align-items: center; gap: 9px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--wao-text-3); cursor: pointer; text-align: left; }.game-picker button>i { font-size: 20px; }.game-picker button>span { display: grid; gap: 2px; }.game-picker strong { font-size: 12px; }.game-picker small { color: var(--wao-text-weak); font-size: 9.5px; }.game-picker button.active { border-color: var(--wao-primary-line); background: var(--wao-primary-soft); color: var(--wao-primary-text); }
 .game-hero { max-width: 1180px; margin: 0 auto 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .eyebrow { margin-bottom: 7px; display: flex; align-items: center; gap: 7px; color: var(--wao-primary-text); font-size: 12px; font-weight: 650; letter-spacing: .03em; }
 .game-hero h1 { margin: 0; font-size: clamp(28px, 4vw, 42px); line-height: 1.12; letter-spacing: -.04em; }
@@ -343,8 +358,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .run-main { min-width: 0; flex: 1; display: grid; gap: 2px; }.run-main strong, .run-side strong { font-size: 12px; }.run-main span, .run-side span { color: var(--wao-text-weak); font-size: 9.5px; }.run-side { flex: none; display: grid; justify-items: end; gap: 2px; }
 .empty-records { min-height: 190px; padding: 22px; display: grid; place-items: center; align-content: center; gap: 7px; color: var(--wao-text-weak); text-align: center; }.empty-records i { font-size: 28px; color: var(--wao-success); }.empty-records strong { color: var(--wao-text-3); font-size: 12px; }.empty-records span { font-size: 10px; }
 .next-game { margin: 7px; padding: 12px; display: flex; align-items: center; gap: 9px; border: 1px dashed var(--wao-line-strong); border-radius: 10px; background: var(--wao-bg-sub); }.next-icon { width: 34px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--wao-bg-hover-2); color: var(--wao-text-faint); }.next-game > div { display: grid; gap: 2px; }.next-game strong { color: var(--wao-text-3); font-size: 11px; }.next-game span { color: var(--wao-text-weak); font-size: 9.5px; }
+.next-game.ready { border-style: solid; border-color: var(--wao-primary-line); background: var(--wao-primary-soft); }.next-game.ready .next-icon { color: var(--wao-primary-text); background: var(--wao-bg-card); }
 @keyframes spin { to { transform: rotate(360deg); } } @keyframes pulse { 50% { opacity: .3; transform: scale(.75); } } @keyframes tile-in { from { opacity: .55; transform: scale(.88); } to { opacity: 1; transform: scale(1); } }
 @media (max-width: 900px) { .game-layout { grid-template-columns: 1fr; }.record-card { max-width: none; }.stats-strip { grid-template-columns: repeat(3, 1fr); } }
-@media (max-width: 620px) { .game-page { padding: 18px 12px 34px; }.game-hero { display: grid; gap: 12px; }.sync-pill { justify-self: start; }.game-hero h1 { font-size: 30px; }.stats-strip { grid-template-columns: repeat(2, 1fr); }.stats-strip > div:first-child { grid-column: 1 / -1; }.play-card { padding: 11px; border-radius: 13px; }.play-toolbar { align-items: flex-start; }.toolbar-actions { flex-direction: column-reverse; }.toolbar-actions button { height: 31px; }.number-board { gap: 7px; padding: 8px; border-radius: 14px; }.number-tile { border-radius: 8px; }.how-to-play { padding: 0 3px; }.game-layout { gap: 12px; } }
+@media (max-width: 620px) { .game-page { padding: 18px 12px 34px; }.game-picker { overflow-x: auto; }.game-picker button { min-width: 154px; }.game-hero { display: grid; gap: 12px; }.sync-pill { justify-self: start; }.game-hero h1 { font-size: 30px; }.stats-strip { grid-template-columns: repeat(2, 1fr); }.stats-strip > div:first-child { grid-column: 1 / -1; }.play-card { padding: 11px; border-radius: 13px; }.play-toolbar { align-items: flex-start; }.toolbar-actions { flex-direction: column-reverse; }.toolbar-actions button { height: 31px; }.number-board { gap: 7px; padding: 8px; border-radius: 14px; }.number-tile { border-radius: 8px; }.how-to-play { padding: 0 3px; }.game-layout { gap: 12px; } }
 @media (prefers-reduced-motion: reduce) { .number-tile, .spinner, .sync-dot { animation: none !important; } }
 </style>

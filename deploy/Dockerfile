@@ -15,13 +15,15 @@ COPY deploy/maven-settings.xml /root/.m2/settings.xml
 COPY pom.xml ./
 COPY wao-server/pom.xml wao-server/pom.xml
 COPY wao-gateway/pom.xml wao-gateway/pom.xml
-RUN mvn -B -pl wao-server,wao-gateway -am dependency:go-offline -DskipTests
+COPY agent-server/pom.xml agent-server/pom.xml
+RUN mvn -B -pl wao-server,wao-gateway,agent-server -am dependency:go-offline -DskipTests
 
 COPY wao-server/src wao-server/src
 COPY wao-gateway/src wao-gateway/src
+COPY agent-server/src agent-server/src
 # Runner 脚本会被打包进 wao-server，后台一键分发更新到各执行电脑。
 COPY deploy/ai-runner/wao-ai-runner.py deploy/ai-runner/wao-ai-runner.py
-RUN mvn -B -pl wao-server,wao-gateway -am package -DskipTests
+RUN mvn -B -pl wao-server,wao-gateway,agent-server -am package -DskipTests
 
 FROM eclipse-temurin:17-jre-alpine AS runtime
 ARG ALPINE_MIRROR_HOST=dl-cdn.alpinelinux.org
@@ -40,3 +42,7 @@ EXPOSE 8080
 FROM runtime AS gateway-runtime
 COPY --from=build /workspace/wao-gateway/target/wao-gateway-*.jar app.jar
 EXPOSE 9000
+
+FROM runtime AS agent-runtime
+COPY --from=build /workspace/agent-server/target/agent-server-*.jar app.jar
+EXPOSE 8081

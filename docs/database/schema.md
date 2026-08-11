@@ -436,9 +436,9 @@ OAuth 下发前会先把快过期的 access token 续期。
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | VARCHAR(80) PK | `<memberId>:<gameKey>`，一个成员在一个游戏里只有一份活动存档 |
-| member_id / game_key | VARCHAR | WAO 成员与游戏稳定标识；首个游戏为 `number-merge` |
-| state_json | TEXT | 游戏规则自有状态；数字熔炉保存 16 格棋盘 |
-| score / move_count / won | BIGINT / INT / TINYINT | 当前分数、有效步数、是否曾达到 2048 |
+| member_id / game_key | VARCHAR | WAO 成员与游戏稳定标识；现有 `number-merge`、`memory-match` |
+| state_json | TEXT | 游戏规则自有状态；数字熔炉保存 16 格棋盘；记忆翻牌保存服务端牌序、已配对位置、首张位置、当前步数、最佳步数与完成状态 |
+| score / move_count / won | BIGINT / INT / TINYINT | 数字熔炉为当前分数/步数/达标；记忆翻牌复用为当前步数/当前步数/本局是否完成 |
 | revision | INT | 乐观锁版本，每次有效移动、撤销或重开递增 |
 | previous_state_json / previous_score / previous_move_count | TEXT / BIGINT / INT NULL | 最近一步的前态，撤销后清空 |
 | started_at / updated_at | DATETIME(3) | 本局开始时间与最近保存时间 |
@@ -452,7 +452,7 @@ OAuth 下发前会先把快过期的 access token 续期。
 | outcome | VARCHAR(16) | `WON` / `GAME_OVER` / `RESTARTED` |
 | started_at / ended_at | DATETIME(3) | 本局时间范围 |
 
-数字熔炉的移动和随机出牌由服务端执行，前端只提交方向与当前 `revision`；契约与扩展原则见 ADR-040。
+数字熔炉的移动和随机出牌由服务端执行，前端只提交方向与当前 `revision`；记忆翻牌的牌序、翻牌校验、配对和计步同样由服务端执行，前端只提交位置与 `revision`，且隐藏牌面不会提前下发。契约与扩展原则见 ADR-040、ADR-049。
 
 ## 天人一卦域
 

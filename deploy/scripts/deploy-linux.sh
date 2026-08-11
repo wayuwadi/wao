@@ -64,7 +64,7 @@ compose() {
 print_deployment_diagnostics() {
   echo 'Deployment health check failed; collecting the failed containers before rollback.' >&2
   compose ps -a >&2 || true
-  diagnostic_services="wao-server wao-gateway"
+  diagnostic_services="wao-server wao-agent-server wao-gateway"
   if [ "${role}" = "master" ]; then
     diagnostic_services="codex-egress-proxy ${diagnostic_services}"
   fi
@@ -126,7 +126,16 @@ export NODE_PUBLIC_IP
 
 compose config >/dev/null
 
-for service in wao-server wao-gateway; do
+legacy_agent_project="wao-agent-${role}"
+legacy_agent_id="$(run_docker ps -aq \
+  --filter "label=com.docker.compose.project=${legacy_agent_project}" \
+  --filter 'label=com.docker.compose.service=wao-agent-server' | head -n 1)"
+if [ -n "${legacy_agent_id}" ]; then
+  legacy_agent_image="$(run_docker inspect --format '{{.Image}}' "${legacy_agent_id}")"
+  run_docker tag "${legacy_agent_image}" wao-agent-server:rollback
+fi
+
+for service in wao-server wao-agent-server wao-gateway; do
   container_id="$(compose ps -q "${service}")"
   if [ -n "${container_id}" ]; then
     image_id="$(run_docker inspect --format '{{.Image}}' "${container_id}")"
@@ -135,7 +144,7 @@ for service in wao-server wao-gateway; do
 done
 case "${SKIP_IMAGE_BUILD:-false}" in
   true)
-    required_images="wao-server:${WAO_IMAGE_TAG:-latest} wao-gateway:${WAO_IMAGE_TAG:-latest}"
+    required_images="wao-server:${WAO_IMAGE_TAG:-latest} wao-agent-server:${WAO_IMAGE_TAG:-latest} wao-gateway:${WAO_IMAGE_TAG:-latest}"
     if [ "${role}" = "master" ]; then
       required_images="wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest} ${required_images}"
     fi
@@ -145,15 +154,20 @@ case "${SKIP_IMAGE_BUILD:-false}" in
     ;;
   false)
     if [ "${role}" = "master" ]; then
-      compose build codex-egress-proxy wao-server wao-gateway
+      compose build codex-egress-proxy wao-server wao-agent-server wao-gateway
     else
-      compose build wao-server wao-gateway
+      compose build wao-server wao-agent-server wao-gateway
     fi
     ;;
   *) echo 'SKIP_IMAGE_BUILD must be true or false.' >&2; exit 2 ;;
 esac
 
 start_services() {
+  # 首次统一发布时，精确接管旧 Compose 项目的 Agent 容器。镜像已在上面标记为 rollback，
+  # 媒体卷也通过显式 name 继续挂载，失败时仍可用统一 Compose 恢复。
+  if [ -n "${legacy_agent_id}" ]; then
+    run_docker rm -f "${legacy_agent_id}" >/dev/null || return 1
+  fi
   if [ "${role}" = "master" ]; then
     # The proxy tag is reused between releases. Force recreation so Docker does
     # not keep a healthy container that still points at the previous image ID.
@@ -164,9 +178,9 @@ start_services() {
 
 if ! start_services; then
   print_deployment_diagnostics
-  if run_docker image inspect wao-server:rollback wao-gateway:rollback >/dev/null 2>&1; then
+  if run_docker image inspect wao-server:rollback wao-agent-server:rollback wao-gateway:rollback >/dev/null 2>&1; then
     echo 'Deployment failed; restoring the previously running application images.' >&2
-    WAO_IMAGE_TAG=rollback compose up -d --no-build --no-deps --wait wao-server wao-gateway
+    WAO_IMAGE_TAG=rollback compose up -d --no-build --no-deps --wait wao-server wao-agent-server wao-gateway
   fi
   exit 1
 fi

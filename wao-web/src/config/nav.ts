@@ -54,15 +54,6 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [{
   visible: true,
   appUrl: '/agent/',
   healthUrl: '/api/agent/health',
-}, {
-  id: 'wao-insight',
-  label: '群聊洞察',
-  icon: 'ri-bubble-chart-line',
-  group: 'PUBLIC',
-  order: 25,
-  visible: true,
-  appUrl: '/insight/',
-  healthUrl: '/api/insight/health',
 }]
 
 export const MODULES: Record<ModuleId, ModuleMeta> = {
