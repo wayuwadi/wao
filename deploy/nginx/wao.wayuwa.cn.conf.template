@@ -64,7 +64,7 @@ server {
         return 301 /agent/;
     }
 
-    # Agent 前端由独立仓库发布到单独静态目录，WAO 发布不会覆盖它。
+    # Agent 与 WAO 同仓发布，但静态目录继续隔离，便于独立加载和故障隔离。
     location /agent/ {
         alias /var/www/wao-agent/dist/;
         try_files $uri $uri/ /agent/index.html;
@@ -82,7 +82,24 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
-    # 独立应用各自维护静态路由片段；WAO 发布只保留入口，不覆盖片段内容。
+    # 旧游戏入口收敛到 WAO 原生游戏厅；无真实接口的 Insight 明确退役。
+    location = /game {
+        return 308 /games;
+    }
+
+    location ^~ /game/ {
+        return 308 /games;
+    }
+
+    location = /insight {
+        return 410;
+    }
+
+    location ^~ /insight/ {
+        return 410;
+    }
+
+    # 真正独立的第三方应用仍可维护自己的静态路由片段。
     include /etc/nginx/wao-external-apps.d/*.conf;
 
     location / {

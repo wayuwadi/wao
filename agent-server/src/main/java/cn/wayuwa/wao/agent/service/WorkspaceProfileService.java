@@ -28,6 +28,7 @@ public class WorkspaceProfileService {
                 .eq(WorkspaceProfileEntity::getWorkspaceId, workspaceId).last("LIMIT 1"));
     }
 
+    /** 读取当前账号所属工作区的内容画像。 */
     public WorkspaceProfileDto get(String accountId) {
         return toDto(find(accounts.workspaceId(accountId)));
     }

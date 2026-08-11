@@ -31,6 +31,10 @@ PATH="${tmp_dir}:${PATH}" \
 
 grep -q 'server 203.0.113.10:9000' "${rendered}"
 grep -q 'server 198.51.100.20:9000' "${rendered}"
+grep -q 'location = /game {' "${rendered}"
+grep -q 'return 308 /games;' "${rendered}"
+grep -q 'location = /insight {' "${rendered}"
+grep -q 'return 410;' "${rendered}"
 unexpected_upstreams="$(awk '$1 == "server" && $2 ~ /:9000/ && $2 !~ /^(203\.0\.113\.10|198\.51\.100\.20):9000/ { print }' "${rendered}")"
 if [ -n "${unexpected_upstreams}" ]; then
   echo 'Rendered Nginx upstreams must contain IPv4 literals only.' >&2

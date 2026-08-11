@@ -21,11 +21,12 @@ import org.springframework.stereotype.Service;
  *
  * <p>注册表首次启用前，仍从旧的 {@code navigation.media-agent.*} 四个键读取，确保已经上线的
  * Agent 菜单配置无损过渡。保存注册表后以新键为准，旧接口则作为滚动发布兼容层继续可用。
+ * 已取消且没有真实后端的内部 Insight 会在读取和保存时过滤，避免旧配置恢复伪入口。
  */
 @Service
 public class ExternalAppRegistryService {
 
-    private static final int REGISTRY_VERSION = 1;
+    private static final int REGISTRY_VERSION = 2;
     private static final int MAX_APPS = 30;
     private static final String MEDIA_AGENT_ID = "media-agent";
     private static final String DEFAULT_MEDIA_AGENT_LABEL = "自媒体 Agent";
@@ -34,6 +35,7 @@ public class ExternalAppRegistryService {
     private static final Pattern APP_ID = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*");
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("PUBLIC", "PERSONAL", "TOOLS");
+    private static final Set<String> RETIRED_INTERNAL_APP_IDS = Set.of("wao-insight");
 
     private final SettingService settings;
     private final ObjectMapper json;
@@ -44,7 +46,7 @@ public class ExternalAppRegistryService {
     }
 
     /**
-     * 读取完整注册表；新键尚未保存或内容损坏时回落到旧 Agent 配置。
+     * 读取完整注册表；新键尚未保存或内容损坏时回落到旧 Agent 配置，并过滤已退役内部应用。
      *
      * @return 可直接回给前端的注册表
      */
@@ -63,7 +65,7 @@ public class ExternalAppRegistryService {
                             app.id(), app.label(), app.icon(), app.group(), app.order(), app.visible(),
                             app.appUrl(), app.healthUrl()))
                     .toList();
-            return new ExternalAppRegistryDto(REGISTRY_VERSION, canonicalize(requests));
+            return new ExternalAppRegistryDto(REGISTRY_VERSION, activeApps(canonicalize(requests)));
         } catch (JsonProcessingException | IllegalArgumentException | NullPointerException exception) {
             return new ExternalAppRegistryDto(REGISTRY_VERSION, List.of(legacyMediaAgent()));
         }
@@ -76,8 +78,14 @@ public class ExternalAppRegistryService {
      * @return 清洗后实际保存的注册表
      */
     public ExternalAppRegistryDto saveRegistry(SaveExternalAppRegistryRequest request) {
-        List<ExternalAppConfigDto> apps = canonicalize(request.apps());
+        List<ExternalAppConfigDto> apps = activeApps(canonicalize(request.apps()));
         return store(apps);
+    }
+
+    private static List<ExternalAppConfigDto> activeApps(List<ExternalAppConfigDto> apps) {
+        return apps.stream()
+                .filter(app -> !RETIRED_INTERNAL_APP_IDS.contains(app.id()))
+                .toList();
     }
 
     /**

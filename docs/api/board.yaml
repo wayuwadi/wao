@@ -409,13 +409,13 @@ paths:
       responses: { '200': { description: OK }, '400': { description: 名称、分组或排序值不合法 } }
   /settings/navigation/external-apps:
     get:
-      summary: 读取版本化外部应用菜单注册表；首次读取自动兼容已有 Agent 配置
+      summary: 读取版本化外部应用菜单注册表；兼容 Agent 配置并过滤已退役的 wao-insight
       responses:
         '200':
           description: 当前完整注册表
           content: { application/json: { schema: { $ref: '#/components/schemas/ExternalAppRegistry' } } }
     put:
-      summary: 整体保存外部应用注册表，新增、编辑、删除、排序和显隐立即全局生效
+      summary: 整体保存外部应用注册表；wao-insight 已退役且不会写入
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/SaveExternalAppRegistryRequest' } } }
@@ -1089,7 +1089,7 @@ components:
       type: object
       required: [version, apps]
       properties:
-        version: { type: integer, minimum: 1, example: 1 }
+        version: { type: integer, minimum: 1, example: 2 }
         apps: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/ExternalAppConfig' } }
     SaveExternalAppRegistryRequest:
       type: object

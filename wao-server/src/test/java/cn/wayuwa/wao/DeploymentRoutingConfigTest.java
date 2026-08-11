@@ -121,17 +121,24 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void mainSiteDeploymentPreservesIndependentApplicationRoutes() throws IOException {
+    void mainSiteDeploymentRetiresSplitAppsAndPreservesThirdPartyRoutes() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String activation = readFromRepository("deploy/scripts/activate-nginx-config.sh");
         String workflow = readFromRepository(".github/workflows/ci-cd.yml");
 
-        assertThat(nginx).contains("include /etc/nginx/wao-external-apps.d/*.conf;");
+        assertThat(nginx)
+                .contains("location = /game {")
+                .contains("return 308 /games;")
+                .contains("location = /insight {")
+                .contains("return 410;")
+                .contains("include /etc/nginx/wao-external-apps.d/*.conf;");
         assertThat(activation)
                 .contains("external_apps_dir='/etc/nginx/wao-external-apps.d'")
                 .contains("install -d -m 0755 \"${external_apps_dir}\"");
         assertThat(workflow)
                 .contains("install -d -m 0755 /etc/nginx/wao-external-apps.d")
+                .contains("rm -f /etc/nginx/wao-external-apps.d/wao-game.conf")
+                .contains("/etc/nginx/wao-external-apps.d/wao-insight.conf")
                 .doesNotContain("rm -rf /etc/nginx/wao-external-apps.d");
     }
 

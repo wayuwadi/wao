@@ -192,7 +192,12 @@ jobs:
             MASTER_GATEWAY_IPV4="$master_gateway_ipv4" SLAVE_GATEWAY_IPV4="$slave_gateway_ipv4" \
               envsubst '${MASTER_GATEWAY_IPV4} ${SLAVE_GATEWAY_IPV4}' \
               < deploy/nginx/wao.wayuwa.cn.conf.template > wao-nginx.conf
-            retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" 'mkdir -p /tmp/wao-dist /tmp/wao-agent-dist' || return
+            retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" '
+              set -eu
+              install -d /tmp/wao-dist /tmp/wao-agent-dist
+              find /tmp/wao-dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+              find /tmp/wao-agent-dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+            ' || return
             retry_remote "云前端" scp -o ConnectTimeout=15 -r wao-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-dist/" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 -r agent-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-agent-dist/" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 wao-nginx.conf "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-nginx.conf" || return
@@ -204,16 +209,31 @@ jobs:
               set -eu
               final=/etc/nginx/conf.d/wao.wayuwa.cn.conf
               previous="$(mktemp)"
+              retired_routes_backup="$(mktemp -d)"
               cp "$final" "$previous"
-              # 独立应用把自己的路由片段放在这里，主站发布只确保目录存在。
+              # 真正独立的第三方应用继续使用此目录；已经并入或取消的内部应用精确退役。
               install -d -m 0755 /etc/nginx/wao-external-apps.d
+              for route in wao-game.conf wao-insight.conf; do
+                if [ -f "/etc/nginx/wao-external-apps.d/$route" ]; then
+                  cp "/etc/nginx/wao-external-apps.d/$route" "$retired_routes_backup/$route"
+                fi
+              done
+              rm -f /etc/nginx/wao-external-apps.d/wao-game.conf /etc/nginx/wao-external-apps.d/wao-insight.conf
               install -m 0644 /tmp/wao-nginx.conf "$final"
               if ! nginx -t; then
                 cp "$previous" "$final"
+                for route in "$retired_routes_backup"/*; do
+                  [ -f "$route" ] || continue
+                  cp "$route" /etc/nginx/wao-external-apps.d/
+                done
+                rm -f "$retired_routes_backup/wao-game.conf" "$retired_routes_backup/wao-insight.conf"
+                rmdir "$retired_routes_backup"
                 rm -f "$previous" /tmp/wao-nginx.conf
                 nginx -t
                 exit 1
               fi
+              rm -f "$retired_routes_backup/wao-game.conf" "$retired_routes_backup/wao-insight.conf"
+              rmdir "$retired_routes_backup"
               rm -f "$previous" /tmp/wao-nginx.conf
               install -d -m 0755 /opt/wao/deploy/nginx /opt/wao/deploy/scripts
               install -m 0644 /tmp/wao.wayuwa.cn.conf.template /opt/wao/deploy/nginx/wao.wayuwa.cn.conf.template
@@ -233,6 +253,11 @@ jobs:
               find /var/www/wao-agent/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
               cp -a /tmp/wao-agent-dist/. /var/www/wao-agent/dist/
               systemctl reload nginx
+              for legacy_dist in /var/www/wao-game/dist /var/www/wao-insight/dist; do
+                if [ -d "$legacy_dist" ]; then
+                  find "$legacy_dist" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+                fi
+              done
             '
           }
 
@@ -264,6 +289,8 @@ jobs:
           printf '%s' "$agent_health" | grep -q '"status":"UP"'
           curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
             https://wao.wayuwa.cn/agent/ | grep -q 'id="app"'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/game/)" = '308'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/insight/)" = '410'
           ai_read_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/ai/workflows \
             | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
           test "$ai_read_route" = 'dual-gateway-read'
