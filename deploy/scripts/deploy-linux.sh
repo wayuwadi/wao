@@ -94,9 +94,6 @@ if [ "${role}" = "master" ]; then
       ;;
     *) echo 'MANAGE_MASTER_INFRA must be true or false.' >&2; exit 2 ;;
   esac
-  # 主节点既托管 Codex OAuth 出口，也承担页面问答和集中账号任务。官方独立安装器不依赖 Node.js，
-  # 每次发布幂等校验固定版本；已有 Runner 会通过 systemd drop-in 追加 codex 能力并重启。
-  sh "${project_root}/deploy/ai-runner/install-linux-codex.sh"
 fi
 
 if [ "${GATEWAY_SSL_ENABLED:-true}" = "true" ]; then

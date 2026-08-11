@@ -98,8 +98,8 @@
 - 新建且尚无任何提交的 Git 仓库同样可以派发任务：Runner 创建不基于 `origin/<默认分支>` 的
   孤儿任务分支和独立 worktree，AI 的首个提交即为该仓库的首版内容；不得因远端默认分支不存在
   而报“无效引用”。
-- CD 从 OpenAI 官方发布域名下载并校验固定版 Linux x86_64 Codex 独立包，通过 SSH 随发布下发后在
-  主节点幂等安装；已配对 Runner 自动追加 `codex` 能力并同步集中账号。页面问答只允许 Linux Codex
+- Linux 主节点的 Codex CLI 和 Runner 能力由管理员作为主机级依赖独立维护；CD 不下载、上传、安装、升级或重启
+  Codex CLI/Runner。已配对 Runner 需主动上报 `codex` 能力并同步集中账号。页面问答只允许 Linux Codex
   节点领取，在临时空仓库中用 `read-only` 沙箱执行，完成后清除问题正文和临时目录；每位成员同时
   只允许一条问答。
 
