@@ -20,6 +20,8 @@ resolve_ipv4() {
 
 MASTER_GATEWAY_IPV4="${MASTER_GATEWAY_IPV4:-$(resolve_ipv4 "${MASTER_PUBLIC_HOST}")}"
 SLAVE_GATEWAY_IPV4="${SLAVE_GATEWAY_IPV4:-$(resolve_ipv4 "${SLAVE_PUBLIC_HOST}")}"
+MASTER_GATEWAY_STATE="${MASTER_GATEWAY_STATE:-}"
+SLAVE_GATEWAY_STATE="${SLAVE_GATEWAY_STATE:-}"
 
 for value in "${MASTER_GATEWAY_IPV4}" "${SLAVE_GATEWAY_IPV4}"; do
   case "${value}" in
@@ -30,9 +32,16 @@ for value in "${MASTER_GATEWAY_IPV4}" "${SLAVE_GATEWAY_IPV4}"; do
   esac
 done
 
-export MASTER_GATEWAY_IPV4 SLAVE_GATEWAY_IPV4
+for state in "${MASTER_GATEWAY_STATE}" "${SLAVE_GATEWAY_STATE}"; do
+  case "${state}" in
+    ''|' down') ;;
+    *) echo 'Gateway state must be empty or " down".' >&2; exit 1 ;;
+  esac
+done
 
-envsubst '${MASTER_GATEWAY_IPV4} ${SLAVE_GATEWAY_IPV4}' \
+export MASTER_GATEWAY_IPV4 SLAVE_GATEWAY_IPV4 MASTER_GATEWAY_STATE SLAVE_GATEWAY_STATE
+
+envsubst '${MASTER_GATEWAY_IPV4} ${SLAVE_GATEWAY_IPV4} ${MASTER_GATEWAY_STATE} ${SLAVE_GATEWAY_STATE}' \
   <"${deploy_dir}/nginx/wao.wayuwa.cn.conf.template" \
   >"${output_path}"
 

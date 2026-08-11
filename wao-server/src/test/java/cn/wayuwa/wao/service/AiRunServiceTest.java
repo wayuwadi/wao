@@ -189,7 +189,8 @@ class AiRunServiceTest {
 
         service.enqueue(List.of("t1"), null, "codex", null, "aa-1", "wg", "https://wao.example");
 
-        verify(accounts).runAccount("aa-1", "codex");
+        verify(accounts).validateRunAccount("aa-1", "codex");
+        verify(accounts, never()).runAccount(any(), any());
         ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
         verify(runMapper).insert(run.capture());
         assertThat(run.getValue().getAiAccountId()).isEqualTo("aa-1");

@@ -546,14 +546,21 @@ public class AiAccountService {
                 .toList();
     }
 
+    /**
+     * 只校验一次运行选择的账号，不解密凭据也不触发令牌续期。
+     *
+     * <p>运行入队可以落到任一 WAO 节点；真正的凭据读取和供应商出站请求延后到 Runner 领取阶段，
+     * 由具备 VPN 出口的 Linux 主节点完成。
+     */
+    public void validateRunAccount(String accountId, String engine) {
+        if (!StringUtils.hasText(accountId)) return;
+        requireRunAccount(accountId, engine);
+    }
+
     /** 解析一次运行选中的账号；凭据只交给已经领取该运行的 Runner。 */
     public AiRunAccountDto runAccount(String accountId, String engine) {
         if (!StringUtils.hasText(accountId)) return null;
-        AiAccountEntity entity = require(accountId);
-        if (!Boolean.TRUE.equals(entity.getEnabled())) throw new BadRequestException("选择的 AI 账号已停用");
-        if (!entity.getProvider().equals(engine)) {
-            throw new BadRequestException("选择的账号不属于 " + label(engine));
-        }
+        AiAccountEntity entity = requireRunAccount(accountId, engine);
         if ("api_key".equals(entity.getAuthMethod())) {
             return new AiRunAccountDto(entity.getId(), entity.getProvider(), entity.getLabel(),
                     entity.getAuthMethod(), null, apiKeyOf(entity), entity.getBaseUrl(), entity.getModel(),
@@ -561,6 +568,15 @@ public class AiAccountService {
         }
         return new AiRunAccountDto(entity.getId(), entity.getProvider(), entity.getLabel(),
                 entity.getAuthMethod(), freshCredential(entity), null, null, null, null);
+    }
+
+    private AiAccountEntity requireRunAccount(String accountId, String engine) {
+        AiAccountEntity entity = require(accountId);
+        if (!Boolean.TRUE.equals(entity.getEnabled())) throw new BadRequestException("选择的 AI 账号已停用");
+        if (!entity.getProvider().equals(engine)) {
+            throw new BadRequestException("选择的账号不属于 " + label(engine));
+        }
+        return entity;
     }
 
     /** 页面问答默认使用第一个启用的 Codex 账号；没有集中账号时由 Runner 使用本机登录态。 */

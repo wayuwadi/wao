@@ -112,7 +112,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\wao\deploy\scr
 sudo sh deploy/scripts/provision-cloud-node.sh <证书通知邮箱>
 ```
 
-脚本只安装 Nginx 与 Certbot，签发 TLS 证书，安装健康检查与 Nginx DDNS 激活任务，并验证证书续期。云节点不安装 Docker、不运行数据库或 Sentinel；前端生产制品放在 `/var/www/wao/dist`。证书签发前的 HTTP 引导配置会提供静态前端；证书签发后，如果两个 Gateway 健康端点均未就绪，则使用 HTTPS 待后端模式并让 `/api/` 返回 503。定时任务每分钟解析两个 DDNS 域名的 IPv4，只有地址变化时才重载 Nginx；即使 DDNS 同时发布不可达的 AAAA，也不会把 IPv6 加入上游。检测到至少一个 Gateway 健康端点可用后，会自动切换到正式双 Gateway 配置。
+脚本只安装 Nginx 与 Certbot，签发 TLS 证书，安装健康检查与 Nginx DDNS 激活任务，并验证证书续期。云节点不安装 Docker、不运行数据库或 Sentinel；前端生产制品放在 `/var/www/wao/dist`。证书签发前的 HTTP 引导配置会提供静态前端；证书签发后，如果两个 Gateway 健康端点均未就绪，则使用 HTTPS 待后端模式并让 `/api/` 返回 503。定时任务每分钟解析两个 DDNS 域名的 IPv4，只有地址变化时才重载 Nginx；即使 DDNS 同时发布不可达的 AAAA，也不会把 IPv6 加入上游。检测到至少一个 Gateway 健康端点可用后，会自动切换到正式双 Gateway 配置。CD 会用 `set-nginx-upstream-state.sh` 在应用节点发布前临时摘流；摘流锁存在时 DDNS 定时任务不会覆盖临时状态。
 
 ## 数据、备份与验收
 
@@ -160,7 +160,7 @@ https://wao.wayuwa.cn/api/hello
 
 ## GitHub Actions
 
-CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。开发期 CD 会构建 WAO Web 与 Agent Web，再按从节点、云前端/Nginx、主节点的顺序滚动发布；Agent 模型和平台私有配置在首次统一发布时从旧节点私有目录迁移，不进入 Git。统一交付见 [ADR-049](../docs/adr/049-unified-product-monorepo-delivery.md)，滚动容灾见 [ADR-050](../docs/adr/050-rolling-api-deployment.md)。
+CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。开发期 CD 会构建 WAO Web 与 Agent Web，依次发布 Windows、云端与 Linux；健康节点重启前由云 Nginx 主动摘流，Windows 离线时自动跳过。Agent 模型和平台私有配置在首次统一发布时从旧节点私有目录迁移，不进入 Git。决策见 [ADR-049](../docs/adr/049-unified-product-monorepo-delivery.md)、[ADR-050](../docs/adr/050-rolling-api-deployment.md) 与 [ADR-051](../docs/adr/051-ai-write-routing-and-upstream-draining.md)。
 
 发布包用 `git archive HEAD` 打出，落到节点上时**先清空上一版源码再解压**：`tar -xzf` 和 `Expand-Archive -Force` 都只覆盖同名文件，不会删除这一版里已经删掉或改过名的文件，留在节点上的旧文件会跟着进 Docker 构建上下文。2026-07-26 连续四次部署回滚就是这么来的：`V18__chat_sync_monthly_archive.sql` 在仓库里已经改名成 V21，节点上的旧副本还在，Flyway 一启动就报「Found more than one migration with version 18」。清理范围是节点目录下除 `deploy/` 以外的全部内容——`deploy/` 里放着节点私有的 `.env`、`.env.secrets`、`certs/`、`data/`，其中被 git 跟踪的文件随即被这次解压整份覆盖。
 

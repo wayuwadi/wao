@@ -378,7 +378,7 @@ public class AiRunService {
             }
             String runEngine = requestedEngine != null
                     ? requestedEngine : requireEngine(blankOr(config.getDefaultEngine(), DEFAULT_ENGINE));
-            if (StringUtils.hasText(accountId)) accounts.runAccount(accountId.trim(), runEngine);
+            if (StringUtils.hasText(accountId)) accounts.validateRunAccount(accountId.trim(), runEngine);
             AiRunnerNodeEntity runTarget = target;
             if (runTarget == null && StringUtils.hasText(accountId)) {
                 runTarget = preferredLinuxRunner(runEngine);
