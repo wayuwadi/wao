@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
 
 export interface ApiResponse<T> {
   code: number
@@ -16,11 +16,29 @@ export const http = axios.create({
   },
 })
 
+interface RetriableRequestConfig extends InternalAxiosRequestConfig {
+  waoGatewayRetry?: number
+}
+
+const RETRIABLE_GATEWAY_STATUSES = new Set([502, 503, 504])
+const GATEWAY_RETRY_DELAYS = [500, 1_500, 3_500]
+
+function retryGatewayRequest(
+  config: RetriableRequestConfig | undefined,
+  status: number | undefined,
+) {
+  if (!config || !status || !RETRIABLE_GATEWAY_STATUSES.has(status)) return null
+  if (!['get', 'head'].includes(config.method?.toLowerCase() ?? '')) return null
+  const attempt = config.waoGatewayRetry ?? 0
+  if (attempt >= GATEWAY_RETRY_DELAYS.length) return null
+  config.waoGatewayRetry = attempt + 1
+  return new Promise((resolve) => window.setTimeout(resolve, GATEWAY_RETRY_DELAYS[attempt])).then(
+    () => http.request(config),
+  )
+}
+
 /** 解析 WAO 后端的 token/done/error SSE 事件，供长时 AI 接口复用。 */
-export async function* streamTextEvents(
-  url: string,
-  body: unknown,
-): AsyncGenerator<string> {
+export async function* streamTextEvents(url: string, body: unknown): AsyncGenerator<string> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -30,7 +48,7 @@ export async function* streamTextEvents(
   if (!res.ok || !res.body) {
     let message = `请求失败：${res.status}`
     try {
-      const error = await res.json() as Partial<ApiResponse<unknown>>
+      const error = (await res.json()) as Partial<ApiResponse<unknown>>
       if (error.message) message = error.message
     } catch {
       /* 非 JSON 错误保留状态码。 */
@@ -74,6 +92,11 @@ http.interceptors.response.use(
   },
   (error: unknown) => {
     if (axios.isAxiosError<ApiResponse<unknown>>(error)) {
+      const retry = retryGatewayRequest(
+        error.config as RetriableRequestConfig | undefined,
+        error.response?.status,
+      )
+      if (retry) return retry
       const message = error.response?.data?.message
       if (message) return Promise.reject(new Error(message))
     }
