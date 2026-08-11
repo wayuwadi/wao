@@ -18,6 +18,7 @@ import cn.wayuwa.wao.dto.CreateTaskRequest;
 import cn.wayuwa.wao.dto.PatchTaskRequest;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.dto.MemberDto;
+import cn.wayuwa.wao.dto.PdcaCycle;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -143,6 +144,49 @@ class TaskServiceTest {
         assertThat(dto.pr()).isEqualTo("P1");
         assertThat(dto.owner()).isEqualTo("wd");
         assertThat(dto.activity()).isNotEmpty();
+    }
+
+    @Test
+    void createAndPatchKeepPdcaHistoryInTaskDetail() {
+        when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
+        PdcaCycle cycle = new PdcaCycle("pc1", "一周跑三次", "", "", null,
+                "2026-08-11T09:00:00+08:00", null);
+
+        TaskDto created = service.create(new CreateTaskRequest(
+                "恢复跑步", "p2", "P1", "wg", "2026-08-18", null, null,
+                null, null, null, List.of(cycle)), "wg");
+
+        assertThat(created.pdcaCycles()).containsExactly(cycle);
+
+        TaskEntity stored = todo();
+        stored.setDetailJson("{\"activity\":[],\"pdcaCycles\":[{\"id\":\"pc1\","
+                + "\"plan\":\"一周跑三次\",\"check\":\"\",\"act\":\"\","
+                + "\"startedAt\":\"2026-08-11T09:00:00+08:00\"}]}");
+        when(mapper.selectById("t1")).thenReturn(stored);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+
+        TaskDto patched = service.patch("t1",
+                new PatchTaskRequest(null, "进行中", null, null, null, null, null), "wg");
+
+        assertThat(patched.pdcaCycles()).hasSize(1);
+        assertThat(patched.pdcaCycles().get(0).plan()).isEqualTo("一周跑三次");
+    }
+
+    @Test
+    void createRejectsInvalidOrIncompleteClosedPdcaCycle() {
+        PdcaCycle invalidOutcome = new PdcaCycle("pc1", "计划", "", "", "差不多",
+                "2026-08-11T09:00:00+08:00", null);
+        PdcaCycle incompleteReview = new PdcaCycle("pc2", "计划", "", "继续", "达成",
+                "2026-08-11T09:00:00+08:00", "2026-08-12T09:00:00+08:00");
+
+        assertThatThrownBy(() -> service.create(new CreateTaskRequest(
+                "无效结果", "p2", "P1", "wg", "2026-08-18", null, null,
+                null, null, null, List.of(invalidOutcome))))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("结果只能是");
+        assertThatThrownBy(() -> service.create(new CreateTaskRequest(
+                "不完整闭环", "p2", "P1", "wg", "2026-08-18", null, null,
+                null, null, null, List.of(incompleteReview))))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("必须包含");
     }
 
     @Test

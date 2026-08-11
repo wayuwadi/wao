@@ -57,7 +57,8 @@ public class ShareService {
                     .mapToObj(all::get).toList();
         }
         return new SharedTaskDto("task", t.id(), null, t.title(), t.status(), t.pr(), t.due(),
-                t.project(), projectName(t.project()), nz(t.desc()), nn(t.images()), subs);
+                t.project(), projectName(t.project()), nz(t.desc()), nn(t.images()), subs,
+                nn(t.pdcaCycles()));
     }
 
     /**
@@ -76,7 +77,7 @@ public class ShareService {
             if (subKey(taskId, s, i).equals(subId)) {
                 return new SharedTaskDto("sub", t.id(), subId, s.text(),
                         s.done() ? "已完成" : "未完成", null, null,
-                        t.project(), projectName(t.project()), nz(s.desc()), nn(s.images()), List.of());
+                        t.project(), projectName(t.project()), nz(s.desc()), nn(s.images()), List.of(), List.of());
             }
         }
         throw new NotFoundException("子任务不存在：" + subId);
@@ -172,6 +173,22 @@ public class ShareService {
                 .append("\n\n");
 
         appendImages(sb, shared.images(), baseUrl);
+
+        if (!shared.pdcaCycles().isEmpty()) {
+            sb.append("## PDCA 记录\n\n");
+            for (int i = 0; i < shared.pdcaCycles().size(); i++) {
+                var cycle = shared.pdcaCycles().get(i);
+                sb.append("### 第 ").append(i + 1).append(" 轮");
+                if (cycle.outcome() != null && !cycle.outcome().isBlank()) {
+                    sb.append(" · ").append(cycle.outcome());
+                }
+                sb.append("\n\n");
+                sb.append("- P（计划）：").append(nz(cycle.plan())).append('\n');
+                sb.append("- C（检查）：").append(nz(cycle.check())).append('\n');
+                sb.append("- A（改进）：").append(nz(cycle.act())).append('\n');
+                sb.append("- 当前进展：").append(cycle.reviewedAt() == null ? "本轮进行中" : "本轮已闭环").append("\n\n");
+            }
+        }
 
         if (!shared.subs().isEmpty()) {
             sb.append("## 子任务\n\n");

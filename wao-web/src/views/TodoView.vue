@@ -14,7 +14,7 @@ const ui = useUiStore()
 const { decoTask } = useDeco()
 
 const taskFilter = ref<'全部' | '我负责' | '我参与' | '等待他人'>('全部')
-const taskView = ref<'list' | 'board'>('list')
+const taskView = ref<'list' | 'board' | 'pdca'>('list')
 
 const myList = computed(() => {
   const me = session.currentUser.id
@@ -66,6 +66,42 @@ const boardCols = computed(() =>
   }),
 )
 
+type PdcaPhase = 'P' | 'D' | 'C' | 'A'
+const PDCA_META: Record<PdcaPhase, { title: string; subtitle: string; color: string }> = {
+  P: { title: '计划', subtitle: '明确结果与判定标准', color: '#4358D6' },
+  D: { title: '执行', subtitle: '推进步骤并记录事实', color: '#B9821F' },
+  C: { title: '检查', subtitle: '对照目标复盘偏差', color: '#7A5CC6' },
+  A: { title: '改进', subtitle: '沉淀经验或开启下一轮', color: '#2C8A5B' },
+}
+function pdcaPhaseOf(task: Task): PdcaPhase {
+  const cycles = task.pdcaCycles ?? []
+  const cycle = cycles[cycles.length - 1]
+  if (cycle?.reviewedAt) return 'A'
+  if (task.status === '待验证' || task.status === '已完成') return 'C'
+  if (task.status === '进行中' || task.status === 'AI 进行中') return 'D'
+  return 'P'
+}
+const pdcaCols = computed(() => (Object.keys(PDCA_META) as PdcaPhase[]).map((phase) => ({
+  phase,
+  ...PDCA_META[phase],
+  items: myList.value
+    .filter((task) => task.pdcaCycles?.length && pdcaPhaseOf(task) === phase)
+    .map((task) => {
+      const cycles = task.pdcaCycles!
+      const cycle = cycles[cycles.length - 1]!
+      const all = [...task.steps, ...task.subs]
+      return {
+        task,
+        cycle,
+        deco: decoTask(task),
+        progress: all.length ? `${all.filter((item) => item.done).length}/${all.length} 步` : '未拆分步骤',
+      }
+    }),
+})))
+const pdcaTaskCount = computed(() => pdcaCols.value.reduce((sum, col) => sum + col.items.length, 0))
+const pdcaReviewCount = computed(() => pdcaCols.value.find((col) => col.phase === 'C')?.items.length ?? 0)
+const pdcaClosedCount = computed(() => pdcaCols.value.find((col) => col.phase === 'A')?.items.length ?? 0)
+
 const tasksEmpty = computed(() => taskGroups.value.length === 0)
 
 function openTask(id: string) {
@@ -110,7 +146,7 @@ function onDropStatus(status: TaskStatus) {
       <div class="spacer"></div>
       <div class="seg">
         <button
-          v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board']] as const)"
+          v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['PDCA', 'ri-loop-right-line', 'pdca']] as const)"
           :key="v[2]"
           class="seg-btn icon"
           :class="{ on: taskView === v[2] }"
@@ -147,7 +183,7 @@ function onDropStatus(status: TaskStatus) {
       <div v-if="tasksEmpty" class="empty simple">这个筛选下没有任务</div>
     </template>
 
-    <div v-else class="board">
+    <div v-else-if="taskView === 'board'" class="board">
       <div
         v-for="col in boardCols"
         :key="col.label"
@@ -185,6 +221,43 @@ function onDropStatus(status: TaskStatus) {
         </div>
       </div>
     </div>
+
+    <section v-else class="pdca-view">
+      <div class="pdca-summary">
+        <div><b class="wao-tabular">{{ pdcaTaskCount }}</b><span>跟踪中的事情</span></div>
+        <div><b class="wao-tabular review">{{ pdcaReviewCount }}</b><span>等待复盘</span></div>
+        <div><b class="wao-tabular closed">{{ pdcaClosedCount }}</b><span>已形成闭环</span></div>
+        <p>只统计已启用 PDCA 的真实任务；打开任意任务可补计划、复盘或开启下一轮。</p>
+      </div>
+      <div v-if="pdcaTaskCount" class="pdca-board">
+        <div v-for="col in pdcaCols" :key="col.phase" class="pdca-col">
+          <div class="pdca-col-head">
+            <span class="pdca-letter" :style="{ background: col.color }">{{ col.phase }}</span>
+            <div><b>{{ col.title }}</b><small>{{ col.subtitle }}</small></div>
+            <em class="wao-tabular">{{ col.items.length }}</em>
+          </div>
+          <div class="pdca-cards">
+            <button v-for="item in col.items" :key="item.task.id" type="button" class="pdca-card" @click="openTask(item.task.id)">
+              <b>{{ item.task.title }}</b>
+              <p v-if="col.phase === 'A'">{{ item.cycle.act }}</p>
+              <p v-else>{{ item.cycle.plan || '还没有写本轮计划与判定标准' }}</p>
+              <div class="pdca-card-foot">
+                <span><i class="proj-dot" :style="{ background: item.deco.projColor }"></i>{{ item.deco.projName }}</span>
+                <span v-if="col.phase === 'A'" class="pdca-outcome">{{ item.cycle.outcome }}</span>
+                <span v-else>{{ item.progress }}</span>
+              </div>
+            </button>
+            <div v-if="!col.items.length" class="pdca-col-empty">暂无事项</div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="empty pdca-empty">
+        <i class="ri-loop-right-line"></i>
+        <b>还没有使用 PDCA 跟踪的事情</b>
+        <span>新建任务时打开“使用 PDCA 跟踪”，或在已有任务详情里启用。</span>
+        <button class="btn-primary" @click="ui.openModal('task')"><i class="ri-add-line"></i>新建任务</button>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -557,6 +630,93 @@ function onDropStatus(status: TaskStatus) {
   font-size: 11.5px;
 }
 
+/* PDCA 视图只投影真实启用记录，不把普通任务伪装成方法论数据。 */
+.pdca-view { margin-top: 14px; }
+.pdca-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+}
+.pdca-summary > div {
+  min-width: 96px;
+  padding-right: 12px;
+  border-right: 1px solid var(--wao-divider);
+  display: grid;
+}
+.pdca-summary b { color: var(--wao-primary-text); font-size: 20px; line-height: 1; }
+.pdca-summary b.review { color: #7A5CC6; }
+.pdca-summary b.closed { color: var(--wao-success-strong); }
+.pdca-summary span { margin-top: 4px; color: var(--wao-text-weak); font-size: 11.5px; }
+.pdca-summary p { margin: 0 0 0 auto; max-width: 390px; color: var(--wao-text-weak); font-size: 11.5px; line-height: 1.55; }
+.pdca-board {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+.pdca-col {
+  min-width: 190px;
+  padding: 10px;
+  border-radius: 12px;
+  background: var(--wao-bg-hover-2);
+}
+.pdca-col-head { display: flex; align-items: center; gap: 8px; padding: 1px 2px 9px; }
+.pdca-letter {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 750;
+  flex-shrink: 0;
+}
+.pdca-col-head > div { min-width: 0; display: grid; }
+.pdca-col-head b { color: var(--wao-text-2); font-size: 12.5px; }
+.pdca-col-head small { color: var(--wao-text-faint); font-size: 10.5px; white-space: nowrap; }
+.pdca-col-head > em { margin-left: auto; color: var(--wao-text-weak); font-size: 11px; font-style: normal; }
+.pdca-cards { display: grid; gap: 8px; }
+.pdca-card {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid var(--wao-line);
+  border-radius: 9px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  text-align: left;
+  cursor: pointer;
+}
+.pdca-card:hover { border-color: #c6cce3; box-shadow: 0 2px 8px rgba(16, 18, 28, .06); }
+.pdca-card > b { display: block; font-size: 12.5px; line-height: 1.45; }
+.pdca-card > p {
+  margin: 6px 0 0;
+  color: var(--wao-text-3);
+  font-size: 11.5px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+.pdca-card-foot { margin-top: 9px; display: flex; justify-content: space-between; gap: 6px; color: var(--wao-text-weak); font-size: 10.5px; }
+.pdca-card-foot span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.pdca-outcome { color: var(--wao-success-strong); font-weight: 600; }
+.pdca-col-empty { padding: 22px 6px; text-align: center; color: var(--wao-text-faint); font-size: 11.5px; }
+.pdca-empty { display: grid; justify-items: center; gap: 7px; }
+.pdca-empty > i { color: var(--wao-primary); font-size: 27px; }
+.pdca-empty > b { color: var(--wao-text-2); font-size: 13.5px; }
+.pdca-empty > span { color: var(--wao-text-weak); font-size: 12px; }
+.pdca-empty .btn-primary { margin-top: 5px; }
+
 @media (max-width: 760px) {
   .todo { padding: 16px 12px 28px; }
   .btn-primary { min-height: 36px; }
@@ -564,5 +724,10 @@ function onDropStatus(status: TaskStatus) {
   .trow-title { flex-basis: calc(100% - 30px); white-space: normal; }
   .trow-proj { max-width: calc(100% - 80px); margin-left: 27px; }
   .trow-due { margin-left: auto; }
+  .pdca-summary { align-items: stretch; flex-wrap: wrap; }
+  .pdca-summary > div { flex: 1; min-width: 78px; }
+  .pdca-summary p { width: 100%; max-width: none; margin: 0; }
+  .pdca-board { grid-template-columns: repeat(4, minmax(78vw, 1fr)); scroll-snap-type: x proximity; }
+  .pdca-col { scroll-snap-align: start; }
 }
 </style>

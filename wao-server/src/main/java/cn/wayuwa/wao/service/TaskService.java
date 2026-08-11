@@ -17,6 +17,7 @@ import cn.wayuwa.wao.dto.CreateTaskRequest;
 import cn.wayuwa.wao.dto.CommentDto;
 import cn.wayuwa.wao.dto.CustomProp;
 import cn.wayuwa.wao.dto.PatchTaskRequest;
+import cn.wayuwa.wao.dto.PdcaCycle;
 import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.dto.TaskDetail;
 import cn.wayuwa.wao.dto.TaskDto;
@@ -121,11 +122,12 @@ public class TaskService {
         String startAt = dateTime(req.startAt());
         String endAt = dateTime(req.endAt());
         validateRange(startAt, endAt);
+        List<PdcaCycle> pdcaCycles = validatePdca(req.pdcaCycles());
         TaskDetail detail = new TaskDetail(
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                 List.of(new Activity("ri-add-line", "#9A9DA9", "创建了任务", now(), createdBy)),
                 nn(req.images()), StringUtils.hasText(req.groupId()) ? req.groupId() : null,
-                startAt, endAt);
+                startAt, endAt, pdcaCycles);
         e.setDetailJson(write(detail));
         taskMapper.insert(e);
         announceCreated(e, createdBy);
@@ -182,7 +184,7 @@ public class TaskService {
 
         TaskDetail updated = new TaskDetail(d.parts(), d.steps(), d.subs(), d.files(), d.docs(),
                 d.linkTasks(), d.comments(), d.custom(), activity, d.images(), d.groupId(),
-                d.startAt(), d.endAt());
+                d.startAt(), d.endAt(), d.pdcaCycles());
         e.setDetailJson(write(updated));
         taskMapper.updateById(e);
         announceCollecting(e, previousStatus, memberId);
@@ -228,9 +230,10 @@ public class TaskService {
         String startAt = dateTime(dto.startAt());
         String endAt = dateTime(dto.endAt());
         validateRange(startAt, endAt);
+        List<PdcaCycle> pdcaCycles = validatePdca(dto.pdcaCycles());
         TaskDetail detail = new TaskDetail(dto.parts(), dto.steps(), dto.subs(), dto.files(),
                 dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images(),
-                dto.groupId(), startAt, endAt);
+                dto.groupId(), startAt, endAt, pdcaCycles);
         e.setDetailJson(write(detail));
         if (previous == null) {
             taskMapper.insert(e);
@@ -524,7 +527,7 @@ public class TaskService {
         activity.add(0, edit(activityText, memberId));
         entity.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(), detail.docs(),
                 detail.linkTasks(), comments, detail.custom(), activity, detail.images(), detail.groupId(),
-                detail.startAt(), detail.endAt())));
+                detail.startAt(), detail.endAt(), detail.pdcaCycles())));
         taskMapper.updateById(entity);
     }
 
@@ -576,7 +579,7 @@ public class TaskService {
                 nn(d.steps()), nn(d.subs()), nn(d.files()), nn(d.docs()),
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
                 e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
-                d.groupId(), d.startAt(), d.endAt());
+                d.groupId(), d.startAt(), d.endAt(), nn(d.pdcaCycles()));
     }
 
     /**
@@ -600,12 +603,14 @@ public class TaskService {
 
     private TaskDetail parse(String detailJson) {
         if (detailJson == null || detailJson.isBlank()) {
-            return new TaskDetail(null, null, null, null, null, null, null, null, null, null, null);
+            return new TaskDetail(null, null, null, null, null, null, null, null, null, null, null,
+                    null, null, null);
         }
         try {
             return json.readValue(detailJson, TaskDetail.class);
         } catch (JsonProcessingException ex) {
-            return new TaskDetail(null, null, null, null, null, null, null, null, null, null, null);
+            return new TaskDetail(null, null, null, null, null, null, null, null, null, null, null,
+                    null, null, null);
         }
     }
 
@@ -646,6 +651,29 @@ public class TaskService {
         if (startAt == null || endAt == null || !LocalDateTime.parse(endAt).isAfter(LocalDateTime.parse(startAt))) {
             throw new BadRequestException("任务时间段必须同时填写，且结束时间晚于开始时间");
         }
+    }
+
+    /**
+     * 校验客户端写透的 PDCA 轮次，避免产生“已闭环但没有计划 / 复盘 / 行动”的假记录。
+     * 未闭环轮次允许逐项自动保存，所以只校验结果枚举；闭环后才要求内容完整。
+     */
+    private static List<PdcaCycle> validatePdca(List<PdcaCycle> cycles) {
+        List<PdcaCycle> safe = nn(cycles);
+        Set<String> outcomes = Set.of("达成", "部分达成", "未达成");
+        for (PdcaCycle cycle : safe) {
+            if (cycle == null || !StringUtils.hasText(cycle.id()) || !StringUtils.hasText(cycle.startedAt())) {
+                throw new BadRequestException("PDCA 轮次缺少标识或开始时间");
+            }
+            if (StringUtils.hasText(cycle.outcome()) && !outcomes.contains(cycle.outcome())) {
+                throw new BadRequestException("PDCA 结果只能是达成、部分达成或未达成");
+            }
+            if (StringUtils.hasText(cycle.reviewedAt())
+                    && (!StringUtils.hasText(cycle.plan()) || !StringUtils.hasText(cycle.check())
+                    || !StringUtils.hasText(cycle.act()) || !StringUtils.hasText(cycle.outcome()))) {
+                throw new BadRequestException("已闭环的 PDCA 必须包含计划、结果、复盘和改进行动");
+            }
+        }
+        return safe;
     }
 
     /** 库里的日期：null 与空串在这里是同一件事（都表示没设置）。 */

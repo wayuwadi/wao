@@ -22,19 +22,30 @@ public record TaskDetail(
         /** 日历时间段开始（本地 ISO 日期时间）。 */
         String startAt,
         /** 日历时间段结束（本地 ISO 日期时间）。 */
-        String endAt) {
+        String endAt,
+        /** 按时间顺序保存的 PDCA 轮次；空列表表示这条任务未启用 PDCA。 */
+        List<PdcaCycle> pdcaCycles) {
+
+    /** 兼容尚未引入 PDCA 的既有调用。 */
+    public TaskDetail(List<String> parts, List<Step> steps, List<Step> subs, List<FileRef> files,
+            List<String> docs, List<TaskLink> linkTasks, List<CommentDto> comments,
+            List<CustomProp> custom, List<Activity> activity, List<ImageRef> images, String groupId,
+            String startAt, String endAt) {
+        this(parts, steps, subs, files, docs, linkTasks, comments, custom, activity, images, groupId,
+                startAt, endAt, null);
+    }
 
     /** 兼容尚未引入日历时间段的既有调用。 */
     public TaskDetail(List<String> parts, List<Step> steps, List<Step> subs, List<FileRef> files,
             List<String> docs, List<TaskLink> linkTasks, List<CommentDto> comments,
             List<CustomProp> custom, List<Activity> activity, List<ImageRef> images, String groupId) {
-        this(parts, steps, subs, files, docs, linkTasks, comments, custom, activity, images, groupId, null, null);
+        this(parts, steps, subs, files, docs, linkTasks, comments, custom, activity, images, groupId, null, null, null);
     }
 
     /** 兼容尚未引入任务分组的既有调用。 */
     public TaskDetail(List<String> parts, List<Step> steps, List<Step> subs, List<FileRef> files,
             List<String> docs, List<TaskLink> linkTasks, List<CommentDto> comments,
             List<CustomProp> custom, List<Activity> activity, List<ImageRef> images) {
-        this(parts, steps, subs, files, docs, linkTasks, comments, custom, activity, images, null, null, null);
+        this(parts, steps, subs, files, docs, linkTasks, comments, custom, activity, images, null, null, null, null);
     }
 }

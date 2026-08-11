@@ -96,6 +96,25 @@ describe('新建任务的所属项目', () => {
     expect(wrapper.findAll('.pill').map((pill) => pill.text())).not.toContain(fixtureProject.name)
     wrapper.unmount()
   })
+
+  it('新建时可写下首轮计划并创建真实 PDCA 轮次', async () => {
+    const data = useDataStore()
+    const before = data.tasks.length
+    const wrapper = mount(NewTaskModal, {
+      global: { stubs: { MarkdownEditor: true } },
+    })
+
+    await wrapper.find('.title-input').setValue('连续一周早睡')
+    await wrapper.find('.pdca-toggle').trigger('click')
+    await wrapper.find('.pdca-plan textarea').setValue('至少五天在 23:30 前入睡')
+    await wrapper.find('.foot .btn-primary').trigger('click')
+
+    expect(data.tasks).toHaveLength(before + 1)
+    expect(data.tasks[0]!.pdcaCycles).toHaveLength(1)
+    expect(data.tasks[0]!.pdcaCycles![0]!.plan).toBe('至少五天在 23:30 前入睡')
+    expect(data.tasks[0]!.pdcaCycles![0]!.reviewedAt).toBeNull()
+    wrapper.unmount()
+  })
 })
 
 describe('项目任务视图', () => {
