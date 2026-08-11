@@ -41,7 +41,8 @@ class DeploymentRoutingConfigTest {
                 .contains("${MASTER_PUBLIC_HOST}:9000")
                 .doesNotContain("${SLAVE_PUBLIC_HOST}", "backup");
         assertThat(nginx)
-                .contains("location ~ ^/api/(settings/ai-accounts(?:/|$)|ai(?:/|$)|assistant(?:/|$))")
+                .contains("location ~ ^/api/(settings/ai-accounts(?:/|$)|ai(?:/|$)|assistant(?:/|$)"
+                        + "|tianren/readings/today/interpret(?:/|$))")
                 .contains("proxy_pass https://wao_ai_gateway;")
                 .contains("proxy_next_upstream off;")
                 .contains("X-WAO-API-Route linux-vpn-master always;");

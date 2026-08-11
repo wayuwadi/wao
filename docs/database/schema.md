@@ -454,6 +454,21 @@ OAuth 下发前会先把快过期的 access token 续期。
 
 数字熔炉的移动和随机出牌由服务端执行，前端只提交方向与当前 `revision`；契约与扩展原则见 ADR-040。
 
+## 天人一卦域
+
+### tianren_daily_reading（成员每日卦象）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 每日卦象 id |
+| member_id / reading_date | VARCHAR(32) / DATE | 成员与上海时区日期，组合唯一，保证每天只有一卦 |
+| lines_json | VARCHAR(32) | 初爻到上爻的六个 6/7/8/9；服务端生成并在读取时校验 |
+| primary_number / relating_number | TINYINT / TINYINT NULL | 文王卦序的本卦号与可选之卦号 |
+| conversation_id | VARCHAR(32) FK NULL | 成员私有 AI 解读会话；会话删除后置空，不删除卦象 |
+| created_at / updated_at | DATETIME(6) | 起卦时间与会话关联更新时间 |
+
+浏览器不能提交爻值和卦号；服务端模拟三枚硬币、映射六十四卦并持久化。AI 只读取服务端拼装的可信卦象上下文，
+对话正文继续保存在 `ai_assistant_message`，边界见 ADR-047。
+
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
 - `V3__content_schema.sql` 内容域建表 + `V4__content_seed.sql` 种子。
@@ -503,4 +518,5 @@ OAuth 下发前会先把快过期的 access token 续期。
 - `V51__hosted_html_page.sql`：单文件 HTML 托管正文、唯一公开后缀与可选 icon（见 ADR-042）。
 - `V52__remove_default_project_knowledge.sql`：移除项目初始化时自动生成的示例知识。
 - `V53__assistant_conversation_history.sql`：成员级 AI 助手会话、消息及短期运行关联（见 ADR-045）。
+- `V54__tianren_daily_reading.sql`：成员每日唯一卦象及其私有 AI 会话关联（见 ADR-047）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

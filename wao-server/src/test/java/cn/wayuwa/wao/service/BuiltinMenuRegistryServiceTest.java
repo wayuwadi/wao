@@ -23,10 +23,10 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(9);
+        assertThat(service.getRegistry().menus()).hasSize(10);
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(9);
+        assertThat(service.getRegistry().menus()).hasSize(10);
     }
 
     @Test
@@ -60,7 +60,7 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void upgradesOldRegistryWithoutLosingExistingCustomization() throws Exception {
         var oldMenus = new ArrayList<>(service.getRegistry().menus());
-        oldMenus.removeIf(menu -> "games".equals(menu.id()));
+        oldMenus.removeIf(menu -> "tianren".equals(menu.id()));
         var automation = oldMenus.stream().filter(menu -> "automation".equals(menu.id())).findFirst().orElseThrow();
         oldMenus.set(oldMenus.indexOf(automation), new BuiltinMenuConfigDto(
                 automation.id(), "我的自动化", automation.icon(), automation.group(), automation.order(), false));
@@ -70,13 +70,16 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(9);
+        assertThat(upgraded.menus()).hasSize(10);
         assertThat(upgraded.menus()).filteredOn(menu -> "automation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("我的自动化");
                     assertThat(menu.visible()).isFalse();
                 });
-        assertThat(upgraded.menus()).filteredOn(menu -> "games".equals(menu.id()))
-                .singleElement().satisfies(menu -> assertThat(menu.group()).isEqualTo("TOOLS"));
+        assertThat(upgraded.menus()).filteredOn(menu -> "tianren".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.group()).isEqualTo("PERSONAL");
+                    assertThat(menu.label()).isEqualTo("天人一卦");
+                });
     }
 }
