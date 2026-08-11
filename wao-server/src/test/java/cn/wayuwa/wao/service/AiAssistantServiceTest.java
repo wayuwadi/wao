@@ -24,8 +24,10 @@ class AiAssistantServiceTest {
     private final AiRunnerNodeMapper runnerMapper = mock(AiRunnerNodeMapper.class);
     private final AiRunService aiRunService = mock(AiRunService.class);
     private final AiAccountService accountService = mock(AiAccountService.class);
+    private final AiAssistantConversationService conversationService = mock(AiAssistantConversationService.class);
+    private final AiAssistantKnowledgeService knowledgeService = mock(AiAssistantKnowledgeService.class);
     private final AiAssistantService service = new AiAssistantService(
-            mapper, runnerMapper, aiRunService, accountService);
+            mapper, runnerMapper, aiRunService, accountService, conversationService, knowledgeService);
 
     @Test
     void statusAcceptsAnyOnlineLocalCodexRunner() {
@@ -76,6 +78,7 @@ class AiAssistantServiceTest {
         assertThat(run.getResponseText()).isEqualTo("这是答复");
         assertThat(run.getFinishedAt()).isNotNull();
         verify(mapper).updateById(run);
+        verify(conversationService).appendAssistantReply(run, "这是答复");
     }
 
     private AiRunnerNodeEntity runner(String platform, String engines) {

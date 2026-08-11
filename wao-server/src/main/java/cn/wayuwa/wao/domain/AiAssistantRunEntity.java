@@ -12,6 +12,8 @@ public class AiAssistantRunEntity {
     @TableId
     private String id;
     private String memberId;
+    private String conversationId;
+    private String userMessageId;
     private String runnerId;
     private String status;
     private String promptText;
@@ -26,6 +28,10 @@ public class AiAssistantRunEntity {
     public void setId(String id) { this.id = id; }
     public String getMemberId() { return memberId; }
     public void setMemberId(String memberId) { this.memberId = memberId; }
+    public String getConversationId() { return conversationId; }
+    public void setConversationId(String conversationId) { this.conversationId = conversationId; }
+    public String getUserMessageId() { return userMessageId; }
+    public void setUserMessageId(String userMessageId) { this.userMessageId = userMessageId; }
     public String getRunnerId() { return runnerId; }
     public void setRunnerId(String runnerId) { this.runnerId = runnerId; }
     public String getStatus() { return status; }

@@ -10,6 +10,23 @@ export interface AssistantStatus {
   message: string
 }
 
+export interface AssistantConversation {
+  id: string
+  title: string
+  preview?: string
+  updatedAt: string
+}
+
+export interface AssistantHistoryMessage extends ChatMessage {
+  id: string
+  createdAt: string
+}
+
+export interface AssistantConversationDetail {
+  conversation: AssistantConversation
+  messages: AssistantHistoryMessage[]
+}
+
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
 }
@@ -19,6 +36,18 @@ export const fetchAssistantStatus = () =>
     params: { _: Date.now() },
     headers: { 'Cache-Control': 'no-cache' },
   }))
+
+export const fetchAssistantConversations = () =>
+  data<AssistantConversation[]>(http.get('/api/assistant/conversations'))
+
+export const createAssistantConversation = () =>
+  data<AssistantConversation>(http.post('/api/assistant/conversations'))
+
+export const fetchAssistantConversation = (conversationId: string) =>
+  data<AssistantConversationDetail>(http.get(`/api/assistant/conversations/${conversationId}`))
+
+export const deleteAssistantConversation = (conversationId: string) =>
+  http.delete(`/api/assistant/conversations/${conversationId}`)
 
 export const sendChat = async (
   message: string,
@@ -34,11 +63,12 @@ export async function* streamChat(
   message: string,
   history: ChatMessage[],
   pageContext?: string,
+  conversationId?: string,
 ): AsyncGenerator<string> {
   const res = await fetch('/api/assistant/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, history, pageContext }),
+    body: JSON.stringify({ message, history, pageContext, conversationId }),
     credentials: 'include',
   })
   if (!res.ok || !res.body) {

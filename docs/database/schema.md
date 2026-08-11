@@ -308,13 +308,20 @@ OAuth 下发前会先把快过期的 access token 续期。
 |---|---|---|
 | id | VARCHAR(32) PK | 一次页面问答 id |
 | member_id | VARCHAR(32) | 发起成员；同一成员只允许一个活动问答 |
-| runner_id | VARCHAR(32) NULL | 实际领取问答的 Linux Codex Runner |
+| conversation_id / user_message_id | VARCHAR(32) NULL（V53） | 关联持久化会话和触发本次运行的用户消息 |
+| runner_id | VARCHAR(32) NULL | 实际领取问答的本地 Codex Runner |
 | status | VARCHAR(16) | queued / running / succeeded / failed |
 | prompt_text | MEDIUMTEXT NULL | 拼好的页面上下文与对话；完成后立即清空 |
 | response_text / error_text | MEDIUMTEXT / TEXT NULL | 最终答复或可读错误 |
 | created_at / claimed_at / finished_at / updated_at | DATETIME(6) | 短期队列时间线 |
 
-页面历史仍只在浏览器当前会话中维护；这张表只负责把一次请求可靠交给 Linux Runner，见 ADR-041。
+这张表只负责把一次请求可靠交给 Runner；完成后仍清除拼装提示词。长期消息由 V53 的会话表保存，见 ADR-045。
+
+### ai_assistant_conversation / ai_assistant_message（V53）
+
+`ai_assistant_conversation` 按 `member_id` 隔离个人历史，保存标题、最后消息摘要和更新时间；
+`ai_assistant_message` 保存会话内的 `user` / `assistant` 正文并随会话级联删除。列表最多返回最近 50 个会话，
+单次详情最多返回最近 200 条消息；仍在回答中的会话不能删除。
 
 ### ai_account_oauth_session（V39）
 
@@ -492,6 +499,8 @@ OAuth 下发前会先把快过期的 access token 续期。
 - `V47__game_hall_persistence.sql`：新增通用游戏活动存档与历史战绩表（见 ADR-040）。
 - `V48__runner_log_snapshot.sql`：保存 Runner 最近一段安全诊断日志，供控制台按需查看。
 - `V49__automation_run_timestamp.sql`：保存自动化运行真实时间，并从飞书同步结果恢复可确认日期的历史记录。
-- `V50__ai_assistant_run.sql`：页面 AI 助手短期队列，由 Linux Codex Runner 只读执行（见 ADR-041）。
+- `V50__ai_assistant_run.sql`：页面 AI 助手短期队列，由本地 Codex Runner 只读执行（见 ADR-041、ADR-044）。
 - `V51__hosted_html_page.sql`：单文件 HTML 托管正文、唯一公开后缀与可选 icon（见 ADR-042）。
+- `V52__remove_default_project_knowledge.sql`：移除项目初始化时自动生成的示例知识。
+- `V53__assistant_conversation_history.sql`：成员级 AI 助手会话、消息及短期运行关联（见 ADR-045）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
