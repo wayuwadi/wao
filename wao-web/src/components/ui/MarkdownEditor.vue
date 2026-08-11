@@ -159,15 +159,31 @@ onMounted(() => {
 function consumeImages(dt: DataTransfer | null | undefined): boolean {
   const files = Array.from(dt?.files ?? []).filter((f) => f.type.startsWith('image/'))
   if (!files.length) return false
-  files.forEach(insertImage)
+  insertImages(files)
   return true
 }
 
-/** 上传一张图片并把它插到当前光标处。 */
-function insertImage(file: File) {
-  emit('upload-image', file, (url, name) => {
-    if (!url || !editor.value) return
-    editor.value.chain().focus().setImage({ src: url, alt: name }).run()
+type UploadedImage = { url: string; name: string }
+
+/**
+ * 同一批图片并行上传，但等整批完成后按剪贴板 / 选择器里的原顺序插入。
+ *
+ * <p>上传耗时不稳定，逐张回调就插入会让后完成的第一张跑到最后；批次之间再用一条
+ * Promise 队列串起来，连续粘贴两批图片时也不会互相穿插。
+ */
+let imageInsertionQueue = Promise.resolve()
+function insertImages(files: File[]) {
+  const uploaded = Promise.all(files.map((file) => new Promise<UploadedImage | null>((resolve) => {
+    emit('upload-image', file, (url, name) => resolve(url ? { url, name } : null))
+  })))
+  imageInsertionQueue = imageInsertionQueue.then(async () => {
+    const images = (await uploaded).filter((item): item is UploadedImage => item != null)
+    const currentEditor = editor.value
+    if (!images.length || !currentEditor) return
+    currentEditor.chain().focus().insertContent(images.map((image) => ({
+      type: 'image',
+      attrs: { src: image.url, alt: image.name },
+    }))).run()
   })
 }
 
@@ -179,10 +195,10 @@ function chooseImage() {
 /** 选择后的图片复用粘贴、拖入时的真实图床上传与内联插入链路。 */
 function onImagePicked(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+  const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith('image/'))
   // 清空值，允许连续选择同一张图片。
   input.value = ''
-  if (file?.type.startsWith('image/')) insertImage(file)
+  if (files.length) insertImages(files)
 }
 
 /**
@@ -226,7 +242,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="shell" class="md" :class="{ ro: readonly, collab: peers.length > 0, bare }">
-    <input ref="imagePicker" class="image-picker" type="file" accept="image/*" tabindex="-1" aria-hidden="true" @change="onImagePicked" />
+    <input ref="imagePicker" class="image-picker" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" @change="onImagePicked" />
     <div v-if="peerMarks.length" class="peer-track" aria-hidden="true">
       <template v-for="m in peerMarks" :key="m.id">
         <span v-if="m.editing" class="peer-line" :style="{ top: m.top + 'px', background: m.color }"></span>

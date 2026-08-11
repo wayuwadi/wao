@@ -3,6 +3,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia } from 'pinia'
 import HomeView from '@/views/HomeView.vue'
+import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+import { useDataStore } from '@/stores/data'
 import type { AiRunner } from '@/types'
 import {
   fetchAiRunnerLog,
@@ -132,7 +134,17 @@ function mountHome() {
     history: createMemoryHistory(),
     routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
   })
-  return { router, wrapper: mount(HomeView, { global: { plugins: [createPinia(), router] } }) }
+  const pinia = createPinia()
+  const data = useDataStore(pinia)
+  return { data, router, wrapper: mount(HomeView, { global: { plugins: [pinia, router] } }) }
+}
+
+function pasteInto(el: Element, files: File[]) {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', {
+    value: { files, items: [], types: [], getData: () => '' },
+  })
+  el.dispatchEvent(event)
 }
 
 describe('HomeView AI 控制台', () => {
@@ -153,15 +165,57 @@ describe('HomeView AI 控制台', () => {
     const { wrapper } = mountHome()
     await flushPromises()
 
-    const textarea = wrapper.find('.goal-compose textarea')
-    await textarea.setValue('把黄帝内经和易经结合 AI，做成每日一卦产品')
+    const editor = wrapper.findComponent(MarkdownEditor)
+    editor.vm.$emit('update:modelValue', '把黄帝内经和易经结合 AI，做成每日一卦产品')
+    await flushPromises()
     expect((wrapper.find('.goal-actions select').element as HTMLSelectElement).value).toBe('p1')
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
 
     expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', '把黄帝内经和易经结合 AI，做成每日一卦产品')
-    expect((textarea.element as HTMLTextAreaElement).value).toBe('')
+    expect(editor.props('modelValue')).toBe('')
     expect(wrapper.findAll('.run-card').some((card) => card.text().includes('把黄帝内经和易经结合 AI'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('自主目标可以一次粘贴多张图片，全部上传并内联后再派发', async () => {
+    vi.useFakeTimers()
+    const { data, wrapper } = mountHome()
+    await flushPromises()
+    let finishFirst!: (image: { url: string; name: string }) => void
+    let finishSecond!: (image: { url: string; name: string }) => void
+    const upload = vi.spyOn(data, 'uploadImage')
+      .mockReturnValueOnce(new Promise((resolve) => { finishFirst = resolve }))
+      .mockReturnValueOnce(new Promise((resolve) => { finishSecond = resolve }))
+    const files = [
+      new File([new Uint8Array(4)], 'first.png', { type: 'image/png' }),
+      new File([new Uint8Array(4)], 'second.png', { type: 'image/png' }),
+    ]
+
+    pasteInto(wrapper.find('.goal-compose [contenteditable]').element, files)
+    await flushPromises()
+    expect(upload).toHaveBeenCalledTimes(2)
+    expect(upload.mock.calls.map((call) => call[1])).toEqual(['自主目标', '自主目标'])
+    expect(wrapper.find('.goal-shortcut').text()).toContain('2 张图片上传中')
+    expect(wrapper.find('.goal-submit').attributes('disabled')).toBeDefined()
+
+    finishSecond({ url: '/api/images/second/raw', name: 'second.png' })
+    await flushPromises()
+    expect(wrapper.findAll('.goal-compose img')).toHaveLength(0)
+    finishFirst({ url: '/api/images/first/raw', name: 'first.png' })
+    await flushPromises()
+
+    expect(wrapper.findAll('.goal-compose img').map((img) => img.attributes('src'))).toEqual([
+      '/api/images/first/raw',
+      '/api/images/second/raw',
+    ])
+    expect(wrapper.find('.goal-shortcut').text()).not.toContain('上传中')
+    await wrapper.find('.goal-submit').trigger('click')
+    await flushPromises()
+    const launchCalls = vi.mocked(launchAutonomousGoal).mock.calls
+    const submittedGoal = launchCalls[launchCalls.length - 1]?.[1] ?? ''
+    expect(submittedGoal.indexOf('/api/images/first/raw')).toBeLessThan(submittedGoal.indexOf('/api/images/second/raw'))
+    upload.mockRestore()
     wrapper.unmount()
   })
 

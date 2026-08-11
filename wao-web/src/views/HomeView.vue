@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   createAiPairCode,
@@ -20,12 +20,17 @@ import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/
 import { formatCost, formatTokens, shortModel, usageSummary } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
+import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow } from '@/types'
 
 type ConsoleView = 'runs' | 'runners' | 'workflows'
 
+// 与任务描述等输入场景复用同一编辑器；保持异步加载，避免把 ProseMirror 合进首页主包。
+const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
+
 const router = useRouter()
+const data = useDataStore()
 const ui = useUiStore()
 const runs = ref<AiRun[]>([])
 const runners = ref<AiRunner[]>([])
@@ -35,6 +40,7 @@ const workflowsLoading = ref(false)
 const goal = ref('')
 const goalProjectId = ref('')
 const launchingGoal = ref(false)
+const goalImageUploads = ref(0)
 const selectedRun = ref<AiRun | null>(null)
 const logRunner = ref<AiRunner | null>(null)
 const runnerLog = ref<AiRunnerLog | null>(null)
@@ -69,6 +75,7 @@ const onlineRunners = computed(() => runners.value.filter((runner) => runner.onl
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
 const activeWorkflows = computed(() => workflows.value.filter((workflow) => workflow.config.enabled))
+const goalTooLong = computed(() => goal.value.length > 4_000)
 
 /** 每种 AI 工具当前有几台电脑在线，决定 hero 上的接入状态。 */
 const engineStatus = computed(() =>
@@ -161,6 +168,14 @@ async function launchGoal() {
     toast('请先圬「AI 工作流」中接入一个项目', 'ri-information-line')
     return
   }
+  if (goalImageUploads.value) {
+    toast('图片还在上传，请稍候再派发', 'ri-information-line')
+    return
+  }
+  if (normalizedGoal.length > 4_000) {
+    toast('目标最多 4000 个字，请精简后再派发', 'ri-information-line')
+    return
+  }
   launchingGoal.value = true
   try {
     const run = await launchAutonomousGoal(goalProjectId.value, normalizedGoal)
@@ -172,6 +187,26 @@ async function launchGoal() {
     toast(error instanceof Error ? error.message : '目标派发失败', 'ri-error-warning-line')
   } finally {
     launchingGoal.value = false
+  }
+}
+
+/** 自主目标里的图片走统一图床，编辑器拿到稳定地址后再内联进 Markdown。 */
+async function onGoalImage(file: File, done: (url: string | null, name: string) => void) {
+  if (file.size > data.MAX_IMAGE_BYTES) {
+    toast('图片超过 10MB，已跳过', 'ri-error-warning-line')
+    done(null, '')
+    return
+  }
+  goalImageUploads.value += 1
+  try {
+    const image = await data.uploadImage(file, '自主目标')
+    if (!image) toast('图片上传失败，请重试', 'ri-error-warning-line')
+    done(image?.url ?? null, image?.name ?? file.name)
+  } catch {
+    toast('图片上传失败，请重试', 'ri-error-warning-line')
+    done(null, '')
+  } finally {
+    goalImageUploads.value -= 1
   }
 }
 
@@ -470,14 +505,15 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="goal-compose">
-        <textarea
+        <MarkdownEditor
           v-model="goal"
-          maxlength="4000"
-          placeholder="例如：把《黄帝内经》和《易经》结合 AI，做成一个每天可以给自己算一卦的产品……"
-          :disabled="launchingGoal"
+          placeholder="例如：把《黄帝内经》和《易经》结合 AI，做成一个每天可以给自己算一卦的产品……可直接粘贴多张图片"
+          :min-height="78"
+          :readonly="launchingGoal"
           @keydown.ctrl.enter.prevent="launchGoal"
           @keydown.meta.enter.prevent="launchGoal"
-        ></textarea>
+          @upload-image="onGoalImage"
+        />
         <div class="goal-actions">
           <label>
             <span>放进哪条工作流</span>
@@ -488,11 +524,14 @@ onBeforeUnmount(() => {
               </option>
             </select>
           </label>
-          <span class="goal-shortcut">{{ goal.length }} / 4000 · Ctrl/Command + Enter</span>
+          <span class="goal-shortcut" :class="{ error: goalTooLong }">
+            <template v-if="goalImageUploads">{{ goalImageUploads }} 张图片上传中 · </template>
+            {{ goal.length }} / 4000 · Ctrl/Command + Enter
+          </span>
           <button
             v-if="activeWorkflows.length"
             class="goal-submit"
-            :disabled="launchingGoal || !goal.trim() || !goalProjectId"
+            :disabled="launchingGoal || goalImageUploads > 0 || goalTooLong || !goal.trim() || !goalProjectId"
             @click="launchGoal"
           >
             <i :class="launchingGoal ? 'ri-loader-4-line spin' : 'ri-rocket-2-line'"></i>
@@ -1066,12 +1105,15 @@ onBeforeUnmount(() => {
 .goal-heading p { margin: 0; color: var(--wao-text-weak); font-size: 11.5px; line-height: 1.6; }
 .goal-compose { overflow: hidden; border: 1px solid #d9deef; border-radius: 12px; background: #fff; transition: border-color .16s, box-shadow .16s; }
 .goal-compose:focus-within { border-color: #8f9ee6; box-shadow: 0 0 0 3px #e9ecff; }
-.goal-compose textarea { width: 100%; min-height: 78px; padding: 12px 13px 7px; resize: vertical; border: 0; outline: 0; background: transparent; color: var(--wao-text-1); font-family: inherit; font-size: 12.5px; line-height: 1.6; box-sizing: border-box; }
-.goal-compose textarea::placeholder { color: #a0a5b6; }
+.goal-compose :deep(.md-body) { border: 0 !important; border-radius: 0; }
+.goal-compose :deep(.md-body .tiptap) { min-height: 78px; padding: 12px 46px 7px 13px; color: var(--wao-text-1); font-size: 12.5px; line-height: 1.6; }
+.goal-compose :deep(.md-body p.is-editor-empty:first-child::before) { color: #a0a5b6; }
+.goal-compose :deep(.image-upload) { right: 10px; bottom: 8px; }
 .goal-actions { min-height: 44px; padding: 7px 8px 8px 12px; border-top: 1px solid #f0f1f5; display: flex; align-items: center; gap: 10px; }
 .goal-actions label { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--wao-text-weak); font-size: 10.5px; }
 .goal-actions select { max-width: 230px; height: 29px; padding: 0 26px 0 8px; border: 1px solid var(--wao-line); border-radius: 7px; background: #fff; color: var(--wao-text-2); font-size: 11px; }
 .goal-shortcut { margin-left: auto; color: #a0a5b6; font-size: 9.5px; white-space: nowrap; }
+.goal-shortcut.error { color: var(--wao-danger-strong); font-weight: 650; }
 .goal-submit { min-width: 112px; height: 32px; padding: 0 12px; border: 1px solid #4358d6; border-radius: 8px; background: #4358d6; color: #fff; cursor: pointer; font-size: 11.5px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .goal-submit.setup { min-width: 140px; }
 .goal-submit:disabled { opacity: .55; cursor: not-allowed; }

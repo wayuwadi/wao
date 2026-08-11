@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 
@@ -144,8 +144,37 @@ describe('MarkdownEditor（所见即所得）', () => {
     // 父组件回调传回地址后，图片应内联出现
     const done = emitted![0]![1] as (url: string | null, name: string) => void
     done('/api/images/img9/raw', 'a.png')
-    await nextTick()
+    await flushPromises()
     expect(w.find('.md-body img').attributes('src')).toBe('/api/images/img9/raw')
+    w.unmount()
+  })
+
+  it('一次粘贴多张图片时并行上传，并按剪贴板顺序插入', async () => {
+    const w = await mountEditor({ modelValue: '' })
+    const first = new File([new Uint8Array(4)], 'first.png', { type: 'image/png' })
+    const second = new File([new Uint8Array(4)], 'second.png', { type: 'image/png' })
+
+    pasteInto(w.find('.md-body [contenteditable]').element, [first, second])
+    await nextTick()
+
+    const emitted = w.emitted('upload-image')!
+    expect(emitted).toHaveLength(2)
+    expect((emitted[0]![0] as File).name).toBe('first.png')
+    expect((emitted[1]![0] as File).name).toBe('second.png')
+
+    // 故意让第二张先上传完；编辑器仍应等待整批并按粘贴顺序插入。
+    const finishFirst = emitted[0]![1] as (url: string | null, name: string) => void
+    const finishSecond = emitted[1]![1] as (url: string | null, name: string) => void
+    finishSecond('/api/images/second/raw', 'second.png')
+    await flushPromises()
+    expect(w.findAll('.md-body img')).toHaveLength(0)
+
+    finishFirst('/api/images/first/raw', 'first.png')
+    await flushPromises()
+    expect(w.findAll('.md-body img').map((img) => img.attributes('src'))).toEqual([
+      '/api/images/first/raw',
+      '/api/images/second/raw',
+    ])
     w.unmount()
   })
 
@@ -162,7 +191,7 @@ describe('MarkdownEditor（所见即所得）', () => {
     expect((emitted![0]![0] as File).name).toBe('mobile.png')
     const done = emitted![0]![1] as (url: string | null, name: string) => void
     done('/api/images/mobile/raw', 'mobile.png')
-    await nextTick()
+    await flushPromises()
     expect(w.find('.md-body img').attributes('src')).toBe('/api/images/mobile/raw')
     w.unmount()
   })
