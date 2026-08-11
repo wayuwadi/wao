@@ -26,7 +26,7 @@ describe('侧边栏导航配置', () => {
   it('自媒体 Agent 默认出现在公共组，并保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
     expect(publicGroup?.items).toEqual([
-      'projects', externalAppItemId('media-agent'), externalAppItemId('wao-insight'),
+      'projects', externalAppItemId('media-agent'),
     ])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe('/apps/media-agent')
     const route = router.getRoutes().find((item) => item.name === 'external-app')

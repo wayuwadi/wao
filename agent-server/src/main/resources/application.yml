@@ -1,0 +1,86 @@
+server:
+  port: ${SERVER_PORT:8081}
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      timeout: 8h
+      cookie:
+        name: WAO_SESSION
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE:false}
+        same-site: lax
+
+spring:
+  application:
+    name: wao-agent-server
+  profiles:
+    default: local
+  datasource:
+    url: jdbc:h2:file:./.local-data/wao-agent;MODE=MySQL;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  flyway:
+    enabled: false
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/local/schema.sql
+  session:
+    store-type: jdbc
+    jdbc:
+      initialize-schema: never
+  jackson:
+    time-zone: Asia/Shanghai
+  servlet:
+    multipart:
+      max-file-size: ${AGENT_MEDIA_MAX_SIZE:300MB}
+      max-request-size: ${AGENT_MEDIA_MAX_REQUEST:320MB}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+wao-agent:
+  shared-session:
+    # 仅供 local profile 直开 Demo；prod 配置会强制清空，只接受 WAO_SESSION。
+    local-account-id: ${LOCAL_WAO_ACCOUNT_ID:acc-demo}
+  # 素材写在本节点磁盘，发布任务必须回到同一节点执行，因此节点名要稳定。
+  node:
+    id: ${AGENT_NODE_ID:local}
+  media:
+    dir: ${AGENT_MEDIA_DIR:./.local-data/media}
+    max-bytes: ${AGENT_MEDIA_MAX_BYTES:314572800}
+  # 平台令牌加密密钥（Base64 的 32 字节）。prod 缺失会启动失败，本地回退到固定测试密钥。
+  credential-key: ${AGENT_CREDENTIAL_KEY:}
+  # 文案生成走 OpenAI 协议兼容接口，DeepSeek/通义/豆包换 base-url 和 model 即可。
+  ai:
+    provider: ${AGENT_AI_PROVIDER:deepseek}
+    base-url: ${AGENT_AI_BASE_URL:https://api.deepseek.com/v1}
+    api-key: ${AGENT_AI_API_KEY:}
+    model: ${AGENT_AI_MODEL:deepseek-chat}
+    timeout-ms: ${AGENT_AI_TIMEOUT_MS:60000}
+  platform:
+    douyin:
+      client-key: ${DOUYIN_CLIENT_KEY:}
+      client-secret: ${DOUYIN_CLIENT_SECRET:}
+      redirect-uri: ${DOUYIN_REDIRECT_URI:http://localhost:8081/api/agent/platforms/DOUYIN/callback}
+      scope: ${DOUYIN_SCOPE:user_info,video.create.bind}
+      api-base: ${DOUYIN_API_BASE:https://open.douyin.com}
+  publish:
+    generate-delay-ms: ${AGENT_GENERATE_DELAY_MS:2000}
+    publish-delay-ms: ${AGENT_PUBLISH_DELAY_MS:2000}
+  # 热榜本身变化没那么快，30 分钟一次足够，再密集只是徒增对方站点的请求。
+  hotspot:
+    initial-delay-ms: ${AGENT_HOTSPOT_INITIAL_DELAY_MS:20000}
+    refresh-delay-ms: ${AGENT_HOTSPOT_REFRESH_DELAY_MS:1800000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

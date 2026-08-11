@@ -461,6 +461,27 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/GameRevisionRequest' } } }
       responses: { '200': { description: 新一局快照 }, '409': { description: 存档已在另一页面更新 } }
+  /games/memory-match:
+    get:
+      summary: 读取当前成员的服务端权威记忆翻牌牌局；首次进入自动洗牌
+      responses:
+        '200':
+          description: 当前完整牌局快照
+          content: { application/json: { schema: { $ref: '#/components/schemas/MemoryMatchGame' } } }
+  /games/memory-match/flip:
+    post:
+      summary: 由服务端翻牌、判断配对、计步并保存当前牌局
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MemoryMatchFlipRequest' } } }
+      responses: { '200': { description: 翻牌后的权威快照 }, '400': { description: 位置或状态不合法 }, '409': { description: 牌局已在另一页面更新 } }
+  /games/memory-match/restart:
+    post:
+      summary: 保留最佳步数并开始新的服务端牌序
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/GameRevisionRequest' } } }
+      responses: { '200': { description: 新一局快照 }, '409': { description: 牌局已在另一页面更新 } }
   /public/site-info:
     get:
       summary: 免登录读取网站公开信息，供登录页、分享页与页脚展示
@@ -1102,6 +1123,29 @@ components:
       required: [revision]
       properties:
         revision: { type: integer, minimum: 0 }
+    MemoryMatchFlipRequest:
+      type: object
+      required: [index, revision]
+      properties:
+        index: { type: integer, minimum: 0, maximum: 15 }
+        revision: { type: integer, minimum: 0 }
+    MemoryMatchGame:
+      type: object
+      required: [cards, matched, revealed, steps, finished, revision, updatedAt]
+      properties:
+        cards:
+          type: array
+          minItems: 16
+          maxItems: 16
+          description: 未翻开位置为 null，避免向浏览器泄露隐藏牌面
+          items: { type: integer, nullable: true, minimum: 0, maximum: 7 }
+        matched: { type: array, items: { type: integer, minimum: 0, maximum: 15 } }
+        revealed: { type: array, items: { type: integer, minimum: 0, maximum: 15 } }
+        steps: { type: integer, minimum: 0 }
+        bestSteps: { type: integer, nullable: true, minimum: 8 }
+        finished: { type: boolean }
+        revision: { type: integer, minimum: 0 }
+        updatedAt: { type: string, format: date-time }
     GameRunRecord:
       type: object
       required: [id, score, highestTile, moves, outcome, startedAt, endedAt]

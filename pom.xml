@@ -20,6 +20,7 @@
     <modules>
         <module>wao-server</module>
         <module>wao-gateway</module>
+        <module>agent-server</module>
     </modules>
 
     <properties>

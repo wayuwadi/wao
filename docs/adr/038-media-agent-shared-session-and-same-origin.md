@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳，取代 ADR-037 中关于独立域名、一次性 SSO、独立用户库和 Python Worker 的决策；ADR-037 保留为历史记录。
+共享 Session 与同域路径部分继续有效；独立仓库和独立发布部分已被 [ADR-049](049-unified-product-monorepo-delivery.md) 取代。
 
 ## 上下文
 

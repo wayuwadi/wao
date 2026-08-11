@@ -1,4 +1,6 @@
-# Phase 1：自媒体自动化 Agent 独立应用接入
+# Phase 1：自媒体自动化 Agent（历史接入规格）
+
+> 本文记录首次独立接入的验收背景。当前仓库与发布边界已由 [多合一规格](phase-1-unified-product-delivery.md) 和 [ADR-049](../adr/049-unified-product-monorepo-delivery.md) 取代；共享 Session、真实平台能力与安全约束继续适用，独立仓库、独立流水线和 Demo 工作台不再是当前要求。
 
 决策见 [ADR-038](../adr/038-media-agent-shared-session-and-same-origin.md)，架构见 [技术架构](../architecture/media-automation-agent.md)。
 

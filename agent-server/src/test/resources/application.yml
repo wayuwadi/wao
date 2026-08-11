@@ -1,0 +1,37 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:waoagenttest;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  flyway:
+    enabled: false
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/local/schema.sql
+  session:
+    store-type: none
+
+wao-agent:
+  shared-session:
+    local-account-id: acc-demo
+  runner:
+    poll-delay-ms: 600000
+  # 测试里不让定时器自行推进，状态机由用例显式驱动。
+  publish:
+    generate-delay-ms: 600000
+    publish-delay-ms: 600000
+  # 测试绝不能真的去请求微博/知乎等站点，把定时采集推到不可能触发的时间。
+  hotspot:
+    initial-delay-ms: 86400000
+    refresh-delay-ms: 86400000
+  node:
+    id: test-node
+  media:
+    dir: ${java.io.tmpdir}/wao-agent-test-media
+  ai:
+    provider: test
+    base-url: http://localhost:0/v1
+    api-key: ""
+    model: test-model

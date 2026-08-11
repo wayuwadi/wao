@@ -4,18 +4,25 @@ import { createPinia, setActivePinia } from 'pinia'
 import GamesView from '@/views/GamesView.vue'
 import {
   fetchNumberMergeGame,
+  fetchMemoryMatchGame,
+  flipMemoryMatch,
   moveNumberMergeGame,
+  restartMemoryMatch,
   restartNumberMergeGame,
   undoNumberMergeGame,
+  type MemoryMatchGame,
   type MoveDirection,
   type NumberMergeGame,
 } from '@/api/games'
 
 vi.mock('@/api/games', () => ({
   fetchNumberMergeGame: vi.fn<() => Promise<NumberMergeGame>>(),
+  fetchMemoryMatchGame: vi.fn<() => Promise<MemoryMatchGame>>(),
+  flipMemoryMatch: vi.fn<(index: number, revision: number) => Promise<MemoryMatchGame>>(),
   moveNumberMergeGame: vi.fn<(direction: MoveDirection, revision: number) => Promise<NumberMergeGame>>(),
   restartNumberMergeGame: vi.fn<(revision: number) => Promise<NumberMergeGame>>(),
   undoNumberMergeGame: vi.fn<(revision: number) => Promise<NumberMergeGame>>(),
+  restartMemoryMatch: vi.fn<(revision: number) => Promise<MemoryMatchGame>>(),
 }))
 
 function snapshot(patch: Partial<NumberMergeGame> = {}): NumberMergeGame {
@@ -35,6 +42,15 @@ function snapshot(patch: Partial<NumberMergeGame> = {}): NumberMergeGame {
   }
 }
 
+function memorySnapshot(patch: Partial<MemoryMatchGame> = {}): MemoryMatchGame {
+  return {
+    cards: Array.from({ length: 16 }, () => null),
+    matched: [], revealed: [], steps: 0, bestSteps: 20, finished: false,
+    revision: 2, updatedAt: '2026-08-11T12:00:00',
+    ...patch,
+  }
+}
+
 function dispatchPointer(target: Element, type: string, clientX: number, clientY: number) {
   const event = new Event(type, { bubbles: true })
   Object.defineProperties(event, {
@@ -49,6 +65,7 @@ describe('游戏厅 · 数字熔炉', () => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
     vi.mocked(fetchNumberMergeGame).mockResolvedValue(snapshot())
+    vi.mocked(fetchMemoryMatchGame).mockResolvedValue(memorySnapshot())
   })
 
   it('恢复账号存档并展示长期统计', async () => {
@@ -134,6 +151,46 @@ describe('游戏厅 · 数字熔炉', () => {
 
     expect(undoNumberMergeGame).toHaveBeenCalledWith(6)
     expect(wrapper.text()).toContain('第 0 步')
+    wrapper.unmount()
+  })
+
+  it('从同一游戏厅切换到记忆翻牌并读取账号最佳成绩', async () => {
+    const wrapper = mount(GamesView)
+    await flushPromises()
+
+    await wrapper.findAll('.game-picker button')[1]!.trigger('click')
+    await flushPromises()
+
+    expect(fetchMemoryMatchGame).toHaveBeenCalledOnce()
+    expect(wrapper.text()).toContain('记忆翻牌')
+    expect(wrapper.text()).toContain('20 步')
+    expect(wrapper.findAll('.memory-card')).toHaveLength(16)
+    expect(flipMemoryMatch).not.toHaveBeenCalled()
+    expect(restartMemoryMatch).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('记忆翻牌只提交位置和版本并采用服务端计步结果', async () => {
+    vi.mocked(flipMemoryMatch)
+      .mockResolvedValueOnce(memorySnapshot({ cards: [0, ...Array.from({ length: 15 }, () => null)], revealed: [0], revision: 3 }))
+      .mockResolvedValueOnce(memorySnapshot({
+        cards: [0, null, 0, ...Array.from({ length: 13 }, () => null)],
+        matched: [0, 2], revealed: [0, 2], steps: 1, revision: 4,
+      }))
+    const wrapper = mount(GamesView)
+    await flushPromises()
+    await wrapper.findAll('.game-picker button')[1]!.trigger('click')
+    await flushPromises()
+
+    await wrapper.findAll('.memory-card')[0]!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.memory-card')[2]!.trigger('click')
+    await flushPromises()
+
+    expect(flipMemoryMatch).toHaveBeenNthCalledWith(1, 0, 2)
+    expect(flipMemoryMatch).toHaveBeenNthCalledWith(2, 2, 3)
+    expect(wrapper.text()).toContain('1 / 8')
+    expect(wrapper.text()).toContain('已同步到账号')
     wrapper.unmount()
   })
 })

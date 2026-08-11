@@ -23,7 +23,14 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: wao-web/package-lock.json
+          cache-dependency-path: |
+            wao-web/package-lock.json
+            agent-web/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
       - name: Validate Nginx DDNS rendering
         run: sh deploy/scripts/test-render-nginx-config.sh
       - name: Validate Flyway migration versions
@@ -34,11 +41,22 @@ jobs:
             printf 'Flyway migration 版本重复：%s\n' "$duplicates"
             exit 1
           fi
-      - name: Build frontend release
-        working-directory: wao-web
+          agent_duplicates="$(find agent-server/src/main/resources/db/migration -maxdepth 1 -type f -name 'V*__*.sql' -printf '%f\n' \
+            | sed -E 's/^V([^_]*)__.*$/\1/' | sort | uniq -d)"
+          if [ -n "$agent_duplicates" ]; then
+            printf 'Agent Flyway migration 版本重复：%s\n' "$agent_duplicates"
+            exit 1
+          fi
+      - name: Test backend reactor
+        run: mvn -B test
+      - name: Test and build frontend release
         run: |
-          npm ci
-          npm run build
+          npm --prefix wao-web ci
+          npm --prefix wao-web run test:unit -- --run
+          npm --prefix wao-web run build
+          npm --prefix agent-web ci
+          npm --prefix agent-web run test:unit -- --run
+          npm --prefix agent-web run build
       - name: Package release
         run: |
           git archive --format=tar.gz -o wao-release.tgz HEAD
@@ -91,6 +109,19 @@ jobs:
           test "$(grep -c '^WAO_VAULT_KEY=.' wao-vault.env)" -eq 1
           cat wao-vault.env >> wao-secrets.env
           rm -f wao-vault.env
+      - name: Reuse existing Agent platform configuration
+        env:
+          MASTER_HOST: ${{ secrets.MASTER_HOST }}
+          MASTER_USER: ${{ secrets.MASTER_USER }}
+        run: |
+          umask 077
+          ssh "$MASTER_USER@$MASTER_HOST" 'desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; legacy_env="$desktop_dir/deploy/wao-agent/deploy/.env"; unified_env="$desktop_dir/deploy/wao/deploy/.env.secrets"; if [ -f "$legacy_env" ]; then source_env="$legacy_env"; else source_env="$unified_env"; fi; if [ -f "$source_env" ]; then grep -E "^(AGENT_(CREDENTIAL_KEY|AI_PROVIDER|AI_BASE_URL|AI_API_KEY|AI_MODEL)|DOUYIN_(CLIENT_KEY|CLIENT_SECRET|REDIRECT_URI))=" "$source_env" || true; fi' > wao-agent.env
+          if [ -s wao-agent.env ]; then
+            cat wao-agent.env >> wao-secrets.env
+          else
+            echo '::notice title=Agent 私有配置未迁移::旧部署目录和当前统一部署中均没有 Agent 模型或平台配置；对应能力会如实显示为未接入。'
+          fi
+          rm -f wao-agent.env
       - name: Deploy three nodes in parallel
         env:
           MASTER_HOST: ${{ secrets.MASTER_HOST }}
@@ -161,8 +192,9 @@ jobs:
             MASTER_GATEWAY_IPV4="$master_gateway_ipv4" SLAVE_GATEWAY_IPV4="$slave_gateway_ipv4" \
               envsubst '${MASTER_GATEWAY_IPV4} ${SLAVE_GATEWAY_IPV4}' \
               < deploy/nginx/wao.wayuwa.cn.conf.template > wao-nginx.conf
-            retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" 'mkdir -p /tmp/wao-dist' || return
+            retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" 'mkdir -p /tmp/wao-dist /tmp/wao-agent-dist' || return
             retry_remote "云前端" scp -o ConnectTimeout=15 -r wao-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-dist/" || return
+            retry_remote "云前端" scp -o ConnectTimeout=15 -r agent-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-agent-dist/" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 wao-nginx.conf "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-nginx.conf" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 \
               deploy/nginx/wao.wayuwa.cn.conf.template \
@@ -197,6 +229,9 @@ jobs:
               install -d /var/www/wao/dist
               find /var/www/wao/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
               cp -a /tmp/wao-dist/. /var/www/wao/dist/
+              install -d /var/www/wao-agent/dist
+              find /var/www/wao-agent/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+              cp -a /tmp/wao-agent-dist/. /var/www/wao-agent/dist/
               systemctl reload nginx
             '
           }
@@ -218,6 +253,10 @@ jobs:
           hello="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors https://wao.wayuwa.cn/api/hello)"
           printf '%s' "$hello" | grep -q '"code":0'
           printf '%s' "$hello" | grep -q '"service":"wao-server"'
+          agent_health="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors https://wao.wayuwa.cn/api/agent/health)"
+          printf '%s' "$agent_health" | grep -q '"status":"UP"'
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            https://wao.wayuwa.cn/agent/ | grep -q 'id="app"'
           ai_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/ai/runs \
             | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
           test "$ai_route" = 'linux-vpn-master'

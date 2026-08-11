@@ -1,5 +1,7 @@
 # 自媒体自动化 Agent 执行清单
 
+> 独立仓库上线清单已结束。当前统一交付步骤见 [ADR-049](../adr/049-unified-product-monorepo-delivery.md)；以下内容仅用于追溯旧部署来源，不再作为执行指令。
+
 ## 已确定基线
 
 - [x] 仓库：`wayuwacn/wao-agent`。

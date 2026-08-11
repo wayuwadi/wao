@@ -1,0 +1,86 @@
+/* WAO 全局基线 —— 源自 init-design 原型 <style> 头部 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--wao-bg-page);
+}
+
+body {
+  font-family: var(--wao-font);
+  color: var(--wao-text);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+@media (max-width: 760px) {
+  html { -webkit-text-size-adjust: 100%; }
+  body { min-width: 320px; }
+  button, input, textarea, select { font-size: 16px; }
+}
+
+a {
+  color: var(--wao-primary);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--wao-primary-hover);
+  text-decoration: underline;
+}
+
+::selection {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+}
+
+input,
+textarea,
+button {
+  font-family: inherit;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--wao-text-faint);
+}
+
+button {
+  font: inherit;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 2px solid var(--wao-primary);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--wao-line-strong);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.wao-tabular {
+  font-variant-numeric: tabular-nums;
+}
+.wao-mono {
+  font-family: var(--wao-font-mono);
+}

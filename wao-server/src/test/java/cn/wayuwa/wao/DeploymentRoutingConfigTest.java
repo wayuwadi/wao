@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Test;
 class DeploymentRoutingConfigTest {
 
     @Test
-    void agentUsesIndependentStaticDirectoryAndDedicatedGatewayRoute() throws IOException {
+    void agentUsesBundledStaticDirectoryServiceAndDedicatedGatewayRoute() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String gateway = readFromRepository("wao-gateway/src/main/resources/application.yml");
         String localGateway = readFromRepository("wao-gateway/src/main/resources/application-local.yml");
@@ -29,8 +29,14 @@ class DeploymentRoutingConfigTest {
                 .contains("Path=/api/agent/**")
                 .contains("WAO_AGENT_SERVER_URI:http://wao-agent-server:8081");
         assertThat(localGateway).contains("WAO_AGENT_SERVER_URI:http://127.0.0.1:8081");
-        assertThat(masterCompose).contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081");
-        assertThat(slaveCompose).contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081");
+        assertThat(masterCompose)
+                .contains("wao-agent-server:")
+                .contains("target: agent-runtime")
+                .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081");
+        assertThat(slaveCompose)
+                .contains("wao-agent-server:")
+                .contains("target: agent-runtime")
+                .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081");
     }
 
     @Test
@@ -41,8 +47,8 @@ class DeploymentRoutingConfigTest {
         String aiRoutePattern = aiLocation.substring("location ~ ".length(), aiLocation.length() - " {".length());
 
         assertThat(aiUpstream)
-                .contains("${MASTER_PUBLIC_HOST}:9000")
-                .doesNotContain("${SLAVE_PUBLIC_HOST}", "backup");
+                .contains("${MASTER_GATEWAY_IPV4}:9000")
+                .doesNotContain("${SLAVE_GATEWAY_IPV4}", "backup");
         assertThat(Pattern.compile(aiRoutePattern)
                 .matcher("/api/tianren/readings/today/interpret/stream").find()).isTrue();
         assertThat(Pattern.compile(aiRoutePattern)
@@ -59,7 +65,7 @@ class DeploymentRoutingConfigTest {
         String probe = readFromRepository("deploy/scripts/probe-codex-egress.sh");
 
         assertThat(workflow)
-                .contains("envsubst '${MASTER_PUBLIC_HOST} ${SLAVE_PUBLIC_HOST}'")
+                .contains("envsubst '${MASTER_GATEWAY_IPV4} ${SLAVE_GATEWAY_IPV4}'")
                 .contains("scp -o ConnectTimeout=15 wao-nginx.conf")
                 .contains("nginx -t")
                 .contains("/api/tianren/readings/today/interpret/stream")
@@ -125,7 +131,7 @@ class DeploymentRoutingConfigTest {
                 .contains("apk add --no-cache curl tinyproxy")
                 .contains("USER tinyproxy");
         assertThat(deployScript)
-                .contains("compose build codex-egress-proxy wao-server wao-gateway")
+                .contains("compose build codex-egress-proxy wao-server wao-agent-server wao-gateway")
                 .contains("compose up -d --force-recreate --wait codex-egress-proxy")
                 .contains("diagnostic_services=\"codex-egress-proxy ${diagnostic_services}\"")
                 .doesNotContain("install-linux-codex.sh");
