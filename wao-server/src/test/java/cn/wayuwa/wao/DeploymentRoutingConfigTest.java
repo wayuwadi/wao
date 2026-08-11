@@ -137,6 +137,8 @@ class DeploymentRoutingConfigTest {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String activation = readFromRepository("deploy/scripts/activate-nginx-config.sh");
         String workflow = readFromRepository(".github/workflows/ci-cd.yml");
+        String routingBootstrap = section(workflow,
+                "prepare_cloud_routing() {", "\n\n          deploy_cloud() {");
 
         assertThat(nginx)
                 .contains("location = /game {")
@@ -152,6 +154,12 @@ class DeploymentRoutingConfigTest {
                 .contains("rm -f /etc/nginx/wao-external-apps.d/wao-game.conf")
                 .contains("/etc/nginx/wao-external-apps.d/wao-insight.conf")
                 .doesNotContain("rm -rf /etc/nginx/wao-external-apps.d");
+        assertThat(routingBootstrap)
+                .contains("retired_routes_backup=\"$(mktemp -d)\"")
+                .contains("mv \"/etc/nginx/wao-external-apps.d/$route\" \"$retired_routes_backup/$route\"")
+                .contains("if ! nginx -t; then")
+                .contains("mv \"$route\" /etc/nginx/wao-external-apps.d/")
+                .contains("rm -f \"$retired_routes_backup/wao-game.conf\"");
     }
 
     @Test
