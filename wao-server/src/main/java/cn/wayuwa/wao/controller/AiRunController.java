@@ -212,13 +212,13 @@ public class AiRunController {
         return ApiResponse.ok(service.claim(token));
     }
 
-    /** 空闲的 Linux Codex 节点领取一条页面问答。 */
+    /** 空闲的本地 Codex 节点领取一条页面问答。 */
     @PostMapping("/runner/assistant/claim")
     public ApiResponse<AiAssistantClaimDto> claimAssistant(@RequestHeader(RUNNER_TOKEN) String token) {
         return ApiResponse.ok(assistantService.claim(token));
     }
 
-    /** Linux Codex 节点回传页面问答结果。 */
+    /** 本地 Codex 节点回传页面问答结果。 */
     @PostMapping("/runner/assistant/{runId}/complete")
     public ApiResponse<Void> completeAssistant(@RequestHeader(RUNNER_TOKEN) String token,
             @PathVariable String runId, @Valid @RequestBody CompleteAiAssistantRunRequest request) {

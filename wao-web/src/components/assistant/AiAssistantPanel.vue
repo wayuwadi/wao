@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { fetchAssistantStatus, streamChat, type AssistantStatus, type ChatMessage } from '@/api/assistant'
@@ -24,8 +24,9 @@ const messages = ref<Msg[]>([])
 const input = ref('')
 const sending = ref(false)
 const statusLoading = ref(false)
-const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查 Linux Codex 节点…' })
+const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查本地 Codex…' })
 const listRef = ref<HTMLElement | null>(null)
+let statusRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 const QUICK_COMMANDS = [
   { id: 'summary', title: '总结当前页面', icon: 'ri-file-text-line',
@@ -57,6 +58,7 @@ function scrollToBottom() {
 }
 
 async function loadStatus() {
+  if (statusLoading.value) return
   statusLoading.value = true
   try {
     assistantStatus.value = await fetchAssistantStatus()
@@ -65,6 +67,18 @@ async function loadStatus() {
   } finally {
     statusLoading.value = false
   }
+}
+
+function stopStatusRefresh() {
+  if (statusRefreshTimer) clearInterval(statusRefreshTimer)
+  statusRefreshTimer = null
+}
+
+function startStatusRefresh() {
+  stopStatusRefresh()
+  statusRefreshTimer = setInterval(() => {
+    if (!assistantStatus.value.configured) void loadStatus()
+  }, 5_000)
 }
 
 async function send(text?: string, context?: string) {
@@ -111,12 +125,17 @@ function clearHistory() {
 
 watch(() => props.modelValue, (v) => {
   open.value = v
-  if (v) loadStatus()
+  if (v) {
+    void loadStatus()
+    startStatusRefresh()
+  } else {
+    stopStatusRefresh()
+  }
 })
 watch(open, (v) => { if (!v) emit('update:modelValue', false) })
 
 onMounted(() => {
-  loadStatus()
+  void loadStatus()
   if (messages.value.length === 0) {
     messages.value.push({
       role: 'assistant',
@@ -124,6 +143,8 @@ onMounted(() => {
     })
   }
 })
+
+onBeforeUnmount(stopStatusRefresh)
 
 function renderMarkdown(text: string): string {
   if (!text) return ''
