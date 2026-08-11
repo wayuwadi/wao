@@ -21,30 +21,37 @@ export MASTER_PUBLIC_HOST SLAVE_PUBLIC_HOST
 gateway_ready() {
   host="$1"
   getent ahostsv4 "${host}" >/dev/null 2>&1 &&
-    curl -kfsS --max-time 5 "https://${host}:9000/api/hello" | grep -q '"code":0'
+    curl -4 -kfsS --max-time 5 "https://${host}:9000/api/hello" | grep -q '"code":0'
 }
 
 if gateway_ready "${MASTER_PUBLIC_HOST}" || gateway_ready "${SLAVE_PUBLIC_HOST}"; then
   # 外部应用路由由独立仓库维护；目录必须先存在，Nginx 才能安全加载通用 include。
   install -d -m 0755 "${external_apps_dir}"
   sh "${script_dir}/render-nginx-config.sh"
+  reload_required=false
   previous_config=''
-  if [ -f "${final_config}" ]; then
-    previous_config="/tmp/wao-nginx-previous.$$"
-    cp "${final_config}" "${previous_config}"
-  fi
-  install -m 0644 "${deploy_dir}/nginx/wao.wayuwa.cn.conf" "${final_config}"
-  if ! nginx -t; then
-    if [ -n "${previous_config}" ]; then
-      mv "${previous_config}" "${final_config}"
-    else
-      rm -f "${final_config}"
+  if [ ! -f "${final_config}" ] || ! cmp -s "${deploy_dir}/nginx/wao.wayuwa.cn.conf" "${final_config}"; then
+    if [ -f "${final_config}" ]; then
+      previous_config="/tmp/wao-nginx-previous.$$"
+      cp "${final_config}" "${previous_config}"
     fi
-    echo 'The rendered Gateway configuration is invalid; keeping pending mode.' >&2
-    exit 1
+    install -m 0644 "${deploy_dir}/nginx/wao.wayuwa.cn.conf" "${final_config}"
+    if ! nginx -t; then
+      if [ -n "${previous_config}" ]; then
+        mv "${previous_config}" "${final_config}"
+      else
+        rm -f "${final_config}"
+      fi
+      echo 'The rendered Gateway configuration is invalid; keeping pending mode.' >&2
+      exit 1
+    fi
+    if [ -n "${previous_config}" ]; then
+      rm -f "${previous_config}"
+    fi
+    reload_required=true
   fi
-  if [ -n "${previous_config}" ]; then
-    rm -f "${previous_config}"
+  if [ -f "${pending_config}" ] || [ -f "${bootstrap_config}" ]; then
+    reload_required=true
   fi
   rm -f "${pending_config}" "${bootstrap_config}"
   mode='gateway upstreams'
@@ -58,5 +65,9 @@ else
 fi
 
 nginx -t
-systemctl reload nginx
-echo "WAO Nginx activated in ${mode} mode."
+if [ "${reload_required:-true}" = true ]; then
+  systemctl reload nginx
+  echo "WAO Nginx activated in ${mode} mode."
+else
+  echo 'WAO Nginx IPv4 upstreams are unchanged; reload skipped.'
+fi

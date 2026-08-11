@@ -1,14 +1,15 @@
 upstream wao_gateway {
     least_conn;
-    server ${MASTER_PUBLIC_HOST}:9000 max_fails=3 fail_timeout=10s;
-    server ${SLAVE_PUBLIC_HOST}:9000 max_fails=3 fail_timeout=10s;
+    # DDNS 同时发布 AAAA 时，云节点可能没有 IPv6 出站路由；渲染阶段只写入已验证的 IPv4。
+    server ${MASTER_GATEWAY_IPV4}:9000 max_fails=3 fail_timeout=10s;
+    server ${SLAVE_GATEWAY_IPV4}:9000 max_fails=3 fail_timeout=10s;
     keepalive 32;
 }
 
 # Codex/OpenAI 的设备码、令牌刷新和额度查询需要从已配置 VPN 的 Linux 主节点出站。
 # 这里不配置从节点 backup：主节点不可用时应明确失败，不能静默回退到受区域限制的出口。
 upstream wao_ai_gateway {
-    server ${MASTER_PUBLIC_HOST}:9000;
+    server ${MASTER_GATEWAY_IPV4}:9000;
     keepalive 16;
 }
 
