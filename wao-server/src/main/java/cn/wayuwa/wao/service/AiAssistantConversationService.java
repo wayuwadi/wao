@@ -104,8 +104,9 @@ public class AiAssistantConversationService {
         run.setConversationId(conversationId);
         run.setUserMessageId(message.getId());
 
-        runMapper.insert(run);
         messageMapper.insert(message);
+        // MySQL 会立即校验 user_message_id 外键，必须先落用户消息，再让运行记录引用它。
+        runMapper.insert(run);
         if (NEW_CHAT_TITLE.equals(conversation.getTitle())) conversation.setTitle(title(userContent));
         conversation.setLastMessagePreview(preview(userContent));
         conversation.setUpdatedAt(now);
