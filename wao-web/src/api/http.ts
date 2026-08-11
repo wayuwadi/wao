@@ -16,6 +16,54 @@ export const http = axios.create({
   },
 })
 
+/** 解析 WAO 后端的 token/done/error SSE 事件，供长时 AI 接口复用。 */
+export async function* streamTextEvents(
+  url: string,
+  body: unknown,
+): AsyncGenerator<string> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    credentials: 'include',
+  })
+  if (!res.ok || !res.body) {
+    let message = `请求失败：${res.status}`
+    try {
+      const error = await res.json() as Partial<ApiResponse<unknown>>
+      if (error.message) message = error.message
+    } catch {
+      /* 非 JSON 错误保留状态码。 */
+    }
+    throw new Error(message)
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    buffer = buffer.replace(/\r\n/g, '\n')
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop() || ''
+    for (const part of parts) {
+      const lines = part.split('\n')
+      let eventName = ''
+      const payloadLines: string[] = []
+      for (const line of lines) {
+        if (line.startsWith('event: ')) eventName = line.slice(7)
+        else if (line.startsWith('data:')) payloadLines.push(line.slice(5).trimStart())
+      }
+      const payload = payloadLines.join('\n')
+      if (eventName === 'token' && payload) yield payload
+      else if (eventName === 'done') return
+      else if (eventName === 'error') throw new Error(payload)
+    }
+  }
+}
+
 http.interceptors.response.use(
   (response) => {
     const envelope = response.data as ApiResponse<unknown>

@@ -1,0 +1,142 @@
+openapi: 3.0.3
+info:
+  title: WAO 天人一卦 API
+  version: 0.1.0
+paths:
+  /api/tianren/readings/today:
+    get:
+      operationId: getTodayTianrenReading
+      summary: 读取当前成员今日已经起出的卦
+      responses:
+        "200":
+          description: 未起卦时 data 为 null
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadingEnvelope"
+    post:
+      operationId: createTodayTianrenReading
+      summary: 服务端生成或返回当前成员今日唯一卦象
+      responses:
+        "200":
+          description: 调用成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadingEnvelope"
+  /api/tianren/readings:
+    get:
+      operationId: listTianrenReadings
+      summary: 返回当前成员最近的每日卦象
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+            default: 14
+      responses:
+        "200":
+          description: 调用成功
+  /api/tianren/readings/today/interpret/stream:
+    post:
+      operationId: interpretTodayTianrenReading
+      summary: 用成员私有的本地 Codex 会话解读今日卦象
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                focus:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: token / done / error SSE 事件
+          content:
+            text/event-stream:
+              schema:
+                type: string
+components:
+  schemas:
+    ReadingEnvelope:
+      type: object
+      required: [code, message, timestamp]
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: success
+        data:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/TianrenReading"
+        timestamp:
+          type: integer
+          format: int64
+    TianrenReading:
+      type: object
+      required: [id, date, lines, changingLines, primary, createdAt]
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date
+        lines:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items:
+            type: integer
+            enum: [6, 7, 8, 9]
+          description: 初爻到上爻
+        changingLines:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 6
+        primary:
+          $ref: "#/components/schemas/Hexagram"
+        relating:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Hexagram"
+        conversationId:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    Hexagram:
+      type: object
+      required: [number, name, symbol, upper, lower]
+      properties:
+        number:
+          type: integer
+          minimum: 1
+          maximum: 64
+        name:
+          type: string
+        symbol:
+          type: string
+        upper:
+          $ref: "#/components/schemas/Trigram"
+        lower:
+          $ref: "#/components/schemas/Trigram"
+    Trigram:
+      type: object
+      required: [name, nature, symbol]
+      properties:
+        name:
+          type: string
+        nature:
+          type: string
+        symbol:
+          type: string

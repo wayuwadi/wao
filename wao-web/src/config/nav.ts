@@ -74,6 +74,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
   automation: { id: 'automation', label: '自动化', icon: 'ri-flashlight-line', path: '/automation' },
   games: { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', path: '/games' },
+  tianren: { id: 'tianren', label: '天人一卦', icon: 'ri-compass-3-line', path: '/tianren' },
   vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
@@ -84,13 +85,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
   { id: 'calendar', label: '日历', icon: 'ri-calendar-2-line', group: 'PERSONAL', order: 20, visible: true },
   { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', group: 'PERSONAL', order: 30, visible: true },
   { id: 'vault', label: '密码本', icon: 'ri-key-2-line', group: 'PERSONAL', order: 40, visible: true },
+  { id: 'tianren', label: '天人一卦', icon: 'ri-compass-3-line', group: 'PERSONAL', order: 50, visible: true },
   { id: 'automation', label: '自动化', icon: 'ri-flashlight-line', group: 'TOOLS', order: 10, visible: true },
   { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', group: 'TOOLS', order: 20, visible: true },
   { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', group: 'TOOLS', order: 30, visible: true },
 ]
 
 /** 「个人」组的默认顺序；成员拖拽后的自定义顺序存服务端偏好，见 stores/nav.ts。 */
-export const PERSONAL_ITEMS: ModuleId[] = ['todo', 'calendar', 'knowledge', 'vault']
+export const PERSONAL_ITEMS: ModuleId[] = ['todo', 'calendar', 'knowledge', 'vault', 'tianren']
 
 const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },

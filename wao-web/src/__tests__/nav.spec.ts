@@ -25,7 +25,9 @@ describe('侧边栏导航配置', () => {
 
   it('自媒体 Agent 默认出现在公共组，并保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
-    expect(publicGroup?.items).toEqual(['projects', externalAppItemId('media-agent')])
+    expect(publicGroup?.items).toEqual([
+      'projects', externalAppItemId('media-agent'), externalAppItemId('wao-insight'),
+    ])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe('/apps/media-agent')
     const route = router.getRoutes().find((item) => item.name === 'external-app')
     expect(route?.path).toBe('/apps/:appId')
@@ -65,6 +67,13 @@ describe('侧边栏导航配置', () => {
     const route = router.getRoutes().find((item) => item.name === 'games')
     expect(route?.path).toBe('/games')
     expect(route?.meta.module).toBe('games')
+  })
+
+  it('天人一卦默认位于个人组并使用原生模块路由', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('tianren')
+    const route = router.getRoutes().find((item) => item.name === 'tianren')
+    expect(route?.path).toBe('/tianren')
+    expect(route?.meta.module).toBe('tianren')
   })
 
   it('内置菜单注册表可改名、换组、调序和隐藏', () => {
