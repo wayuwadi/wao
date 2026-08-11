@@ -393,6 +393,9 @@ OAuth 下发前会先把快过期的 access token 续期。
 | created_at / updated_at | DATETIME(3) | 创建与最后更新时间 |
 
 公开出口 `/api/pages/{slug}` 返回注入标题与 favicon 的 HTML，并以不含 `allow-same-origin`、`allow-forms` 的 CSP sandbox 隔离 WAO 会话（见 ADR-042）。
+AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report-<run-id>`，运行列表据此批量读取元数据并
+返回 `reportUrl`；用户删除页面后关联自然消失。同一次运行续跑只更新正文，人工修改过的标题与后缀保留
+（见 ADR-055）。
 
 ## CalDAV 日历域
 

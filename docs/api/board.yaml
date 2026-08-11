@@ -288,6 +288,7 @@ paths:
   /ai/runs:
     get:
       summary: 最近 100 条 AI 运行
+      description: 已产出持久化 HTML 报告的运行带 reportUrl；托管页被删除后该字段为空。
       parameters: [ { name: active, in: query, required: false, schema: { type: boolean } } ]
       responses: { '200': { description: OK } }
     post:
@@ -355,6 +356,25 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/CompleteAiRunRequest' } } }
       responses: { '200': { description: OK }, '401': { description: 运行不属于当前节点 } }
+  /ai/runner/runs/{runId}/report:
+    post:
+      summary: Runner 上传本次运行生成的持久化单文件 HTML 报告
+      description: |
+        仅当前领取该运行的节点可在运行结束前上传。相同 runId 再次上传会更新同一托管页，
+        响应返回的 url 同时出现在后续 AI Run DTO 的 reportUrl。
+      parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [html]
+              properties: { html: { type: string, format: binary, description: UTF-8 单文件 HTML，最大 10MB } }
+      responses:
+        '200': { description: 返回关联的 HostedPageDto }
+        '400': { description: 文件无效、运行已结束或公开后缀冲突 }
+        '401': { description: 运行不属于当前节点 }
   # 自动化域（关系表；cronExpr 非空的任务由服务端调度器按计划自动执行）
   /jobs:
     get: { summary: 自动化任务列表（运行时间按真实时间戳动态显示今天 / 昨天 / 绝对日期）, responses: { '200': { description: OK } } }

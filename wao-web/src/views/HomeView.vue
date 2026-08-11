@@ -925,6 +925,17 @@ onBeforeUnmount(() => {
           <div class="result-title result-gap">{{ resultTitle(selectedRun) }}</div>
           <pre>{{ selectedRun.resultSummary }}</pre>
         </template>
+        <a
+          v-if="selectedRun.reportUrl"
+          class="run-report-link"
+          :href="selectedRun.reportUrl"
+          target="_blank"
+          rel="noopener"
+        >
+          <span><i class="ri-file-chart-line"></i></span>
+          <div><b>查看持久化报告</b><small>完整报告已关联本次运行，可直接分享公开链接</small></div>
+          <i class="ri-arrow-right-up-line"></i>
+        </a>
         <footer>
           <span v-if="selectedRun.retryOfRunId" class="retry-note">
             <i class="ri-corner-down-right-line"></i>本次是基于上一次报错的重跑
@@ -1425,6 +1436,14 @@ onBeforeUnmount(() => {
 .usage-empty { margin: 0; padding: 11px; border: 1px dashed #dfe2ec; border-radius: 9px; color: var(--wao-text-weak); font-size: 11.5px; }
 .recent-usage { color: var(--wao-text-3); }
 .run-detail pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border: 1px solid var(--wao-danger-line); border-radius: 10px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); font: 11.5px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.run-report-link { margin-top: 12px; padding: 11px 13px; border: 1px solid #cfe8dc; border-radius: 10px; background: linear-gradient(135deg, #f0faf5, #fff); color: inherit; text-decoration: none; display: flex; align-items: center; gap: 10px; }
+.run-report-link:hover { border-color: #89c9aa; box-shadow: 0 5px 16px rgba(27, 126, 83, .08); }
+.run-report-link > span { width: 31px; height: 31px; flex: none; border-radius: 8px; background: #daf1e5; color: #16815c; display: grid; place-items: center; }
+.run-report-link > div { flex: 1; min-width: 0; }
+.run-report-link b, .run-report-link small { display: block; }
+.run-report-link b { font-size: 12px; }
+.run-report-link small { margin-top: 2px; color: var(--wao-text-weak); font-size: 10.5px; }
+.run-report-link > i { color: #16815c; }
 .run-detail footer { margin-top: 18px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
 .run-detail footer .retry-note { margin-right: auto; color: var(--wao-text-weak); font-size: 11px; }
 .run-detail footer .retry-note i { margin-right: 4px; }

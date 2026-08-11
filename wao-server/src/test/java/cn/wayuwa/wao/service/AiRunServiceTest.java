@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.AiProjectConfigEntity;
@@ -28,6 +29,7 @@ import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
+import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
@@ -42,6 +44,7 @@ import cn.wayuwa.wao.mapper.TaskMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentCaptor;
+import org.springframework.mock.web.MockMultipartFile;
 
 class AiRunServiceTest {
 
@@ -56,13 +59,30 @@ class AiRunServiceTest {
     private final FeishuTaskNotifier notifier = mock(FeishuTaskNotifier.class);
     private final RunnerScriptService scripts = mock(RunnerScriptService.class);
     private final AiAccountService accounts = mock(AiAccountService.class);
+    private final HostedPageService hostedPages = mock(HostedPageService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
-            tasks, notifier, scripts, accounts);
+            tasks, notifier, scripts, accounts, hostedPages);
 
     @BeforeEach
     void emptyProgressByDefault() {
         when(progressMapper.selectList(any())).thenReturn(List.of());
+        when(hostedPages.runReportUrls(any())).thenReturn(Map.of());
+    }
+
+    @Test
+    void runningNodeCanPublishPersistentReport() {
+        runningRun();
+        var html = new MockMultipartFile("html", "report.html", "text/html", "<html>报告</html>".getBytes());
+        when(hostedPages.saveRunReport(eq("ar1"), eq(html), eq("记录用量 · AI 报告"), isNull()))
+                .thenReturn(new HostedPageDto("run-report-ar1", "ai-run-ar1", "记录用量 · AI 报告",
+                        "report.html", false, "8月11日 19:00", "/api/pages/ai-run-ar1"));
+
+        var report = service.saveReport("local-token", "ar1", html);
+
+        assertThat(report.url()).isEqualTo("/api/pages/ai-run-ar1");
+        verify(hostedPages).saveRunReport("ar1", html, "记录用量 · AI 报告", null);
+        verify(progressMapper).insert(any(AiRunProgressEntity.class));
     }
 
     @Test

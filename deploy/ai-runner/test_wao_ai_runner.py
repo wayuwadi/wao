@@ -502,8 +502,10 @@ class WorkspaceIsolationTest(unittest.TestCase):
         os.utime(runs_root / "ar-old", (aged, aged))
         os.utime(runs_root / "ar-current", (aged, aged))
         codex_homes = self.workspace / ".wao-codex-homes"
+        report_dirs = self.workspace / RUNNER.RUN_REPORT_DIR
         for run_id in ("ar-old", "ar-fresh", "ar-current"):
             (codex_homes / run_id).mkdir(parents=True)
+            (report_dirs / run_id).mkdir(parents=True)
 
         RUNNER.prune_stale_worktrees(runs_root, GIT, {"ar-current"})
 
@@ -511,6 +513,7 @@ class WorkspaceIsolationTest(unittest.TestCase):
         self.assertTrue((runs_root / "ar-fresh").exists(), "保留期内的工作区不能删")
         self.assertTrue((runs_root / "ar-current").exists(), "本次运行的工作区不能删")
         self.assertFalse((codex_homes / "ar-old").exists(), "超期运行的隔离账号目录也应回收")
+        self.assertFalse((report_dirs / "ar-old").exists(), "超期运行的未上传报告目录也应回收")
         self.assertTrue((codex_homes / "ar-fresh").exists())
         self.assertTrue((codex_homes / "ar-current").exists())
 
@@ -542,6 +545,33 @@ class PromptTest(unittest.TestCase):
         self.assertIn("不存在「稍后再汇报」", self.PROMPT)
         self.assertIn("不存在「稍后再汇报」", RUNNER.build_continuation_prompt(
             {"branchName": "ai/wao-ar1", "defaultBranch": "main"}, "继续盯部署"))
+
+    def test_prompt_exposes_optional_report_path_outside_git(self) -> None:
+        path = Path("C:/wao/.wao-run-reports/ar1/report.html")
+
+        prompt = RUNNER.build_prompt({
+            "promptUrl": "https://wao.example/task.md",
+            "branchName": "ai/wao-ar1", "defaultBranch": "main",
+        }, path)
+
+        self.assertIn(str(path), prompt)
+        self.assertIn("不要把它加入 Git 提交", prompt)
+        self.assertIn("不要为了凑数生成占位报告", prompt)
+
+    def test_publish_report_validates_and_returns_absolute_url(self) -> None:
+        directory = Path(tempfile.mkdtemp(prefix="wao-report-"))
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        report = directory / "report.html"
+        report.write_text("<html><body>长期报告</body></html>", encoding="utf-8")
+        api = Mock()
+        api.post_file.return_value = {"url": "/api/pages/ai-run-ar1"}
+        api.absolute_url.return_value = "https://wao.example/api/pages/ai-run-ar1"
+
+        url = RUNNER.publish_run_report(api, "ar1", report)
+
+        self.assertEqual("https://wao.example/api/pages/ai-run-ar1", url)
+        api.post_file.assert_called_once_with(
+            "/api/ai/runner/runs/ar1/report", "html", report, "text/html; charset=UTF-8")
 
 
 class SyncCredentialsTest(unittest.TestCase):

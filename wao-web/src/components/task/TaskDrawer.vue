@@ -1183,6 +1183,17 @@ function demo(msg: string) {
                   <b>{{ aiRunResultTitle(run) }}</b>
                   <p>{{ run.resultSummary }}</p>
                 </div>
+                <a
+                  v-if="run.reportUrl"
+                  class="ai-run-report"
+                  :href="run.reportUrl"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  <span class="ai-run-report-icon"><i class="ri-file-chart-line"></i></span>
+                  <span><b>持久化报告</b><small>完整前因后果与验收证据，可长期查看和分享</small></span>
+                  <em>查看报告<i class="ri-arrow-right-up-line"></i></em>
+                </a>
                 <div
                   v-if="['failed', 'succeeded'].includes(run.status) && run.sessionId && run.runnerId"
                   class="ai-continue"
@@ -2444,6 +2455,15 @@ function demo(msg: string) {
 .ai-final-result { margin-top: 10px; padding: 10px 12px; border-radius: 9px; background: var(--wao-bg-sub); }
 .ai-final-result b { font-size: 11px; }
 .ai-final-result p { max-height: 180px; margin: 5px 0 0; overflow: auto; color: var(--wao-text-3); font-size: 11px; line-height: 1.65; white-space: pre-wrap; }
+.ai-run-report { margin-top: 10px; padding: 10px 12px; border: 1px solid #cfe8dc; border-radius: 10px; background: linear-gradient(135deg, #f0faf5, #fff); color: inherit; text-decoration: none; display: flex; align-items: center; gap: 9px; }
+.ai-run-report:hover { border-color: #89c9aa; box-shadow: 0 5px 16px rgba(27, 126, 83, .08); }
+.ai-run-report-icon { width: 29px; height: 29px; flex: none; border-radius: 8px; background: #daf1e5; color: #16815c; display: grid; place-items: center; }
+.ai-run-report > span:nth-child(2) { flex: 1; min-width: 0; }
+.ai-run-report b, .ai-run-report small { display: block; }
+.ai-run-report b { font-size: 11.5px; }
+.ai-run-report small { margin-top: 2px; color: var(--wao-text-weak); font-size: 10px; }
+.ai-run-report em { flex: none; color: #16815c; font-size: 10.5px; font-style: normal; font-weight: 600; }
+.ai-run-report em i { margin-left: 3px; }
 .ai-continue { margin-top: 10px; padding: 11px; border: 1px solid #dce2fa; border-radius: 10px; background: linear-gradient(135deg, #f7f8ff, #fff); }
 .ai-continue-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ai-continue-icon { width: 25px; height: 25px; border-radius: 8px; background: #e8ecff; color: #4358d6; display: grid; place-items: center; }

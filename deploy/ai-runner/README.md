@@ -116,6 +116,12 @@ Qoder 的 `result` 事件字段与 Claude 同构，用量直接按 Claude 口径
 用量解析失败只会让这次「没记上账」，不会影响任务本身的成败——本机日志里能看到每次的
 模型、token 和折算额度。
 
+任务包含值得长期查阅或分享的分析、调研、方案、决策依据或验收证据时，AI 可以把 UTF-8、10MB
+以内的自包含单文件 HTML 写到 Runner 提供的 `<root>/.wao-run-reports/<run-id>/report.html`。
+Runner 会自动上传到隔离托管并把公开地址关联到本次运行，成功后删除本机副本；普通小改动不会
+强制生成占位报告。上传失败会进入运行结果而不是静默丢失，残留目录与 worktree 一样七天后回收
+（见 ADR-055）。
+
 如果任务计划程序的环境找不到 Git 或 AI CLI，可显式传入完整路径：
 
 ```powershell
@@ -135,6 +141,8 @@ Qoder 的 `result` 事件字段与 Claude 同构，用量直接按 Claude 口径
   旧版本留下的主克隆会在下一次运行时自动纠正，不需要删目录重来。
 - 运行结束后 worktree 会保留 7 天供人工复查，超期在下一次准备工作区时自动回收，避免
   `.wao-runs/` 无限堆积完整源码副本。要长期留存某次运行现场，请在到期前自行复制出去。
+- 未成功上传的 `.wao-run-reports/<run-id>` 与对应 worktree 同期回收；上传成功的报告已进入服务端
+  持久化托管，本机副本会立即删除。
 - 选择集中 Codex 账号时，Runner 会使用 `<root>/.wao-codex-homes/<run-id>` 作为独立
   `CODEX_HOME`。OAuth 凭据写入该目录的 `auth.json`；自定义 API 只把环境变量名写进
   `config.toml`，API Key 仅存在于子进程环境。该目录与对应 worktree 同保留七天并同步回收，

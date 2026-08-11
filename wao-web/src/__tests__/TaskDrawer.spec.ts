@@ -47,7 +47,7 @@ function aiRun(overrides: Partial<AiRun> & Pick<AiRun, 'id' | 'taskId'>): AiRun 
   return {
     taskTitle: 'AI 任务', subId: null, subTitle: null, projectId: 'p1', projectName: 'WAO',
     engine: 'codex', status: 'running', runnerId: null, runnerName: null, requestedRunnerId: null,
-    branchName: null, retryOfRunId: null, resultSummary: null, latestProgress: null,
+    branchName: null, retryOfRunId: null, resultSummary: null, reportUrl: null, latestProgress: null,
     progressUpdatedAt: null, progress: [],
     usage: {
       model: null, models: null, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0,
@@ -551,6 +551,25 @@ describe('TaskDrawer', () => {
     expect(usage.text()).toContain('缓存 19K')
     expect(usage.text()).toContain('合计 19K')
     expect(usage.text()).toContain('$0.09')
+    w.unmount()
+  })
+
+  it('运行生成持久化报告后提供可分享的新窗口入口', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({
+        id: 'ar-report', taskId, status: 'succeeded', resultSummary: '分析已完成',
+        reportUrl: '/api/pages/ai-run-ar-report',
+      }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    const report = w.find('.ai-run-report')
+    expect(report.text()).toContain('持久化报告')
+    expect(report.attributes('href')).toBe('/api/pages/ai-run-ar-report')
+    expect(report.attributes('target')).toBe('_blank')
     w.unmount()
   })
 
