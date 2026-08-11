@@ -463,6 +463,8 @@ export interface AiRun {
   /** 本次是在修哪一次失败的运行；不是重跑时为 null。 */
   retryOfRunId: string | null
   resultSummary: string | null
+  /** AI 为本次运行额外产出的持久化单文件 HTML 报告。 */
+  reportUrl: string | null
   latestProgress: string | null
   progressUpdatedAt: string | null
   progress: AiRunProgress[]

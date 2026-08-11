@@ -30,6 +30,7 @@ vi.mock('@/api/ai', () => ({
       requestedRunnerId: null,
       branchName: 'ai/wao-ar1',
       resultSummary: '失败阶段：准备 Git 工作区\n错误详情：仓库地址无法克隆',
+      reportUrl: '/api/pages/ai-run-ar1',
       latestProgress: null,
       progressUpdatedAt: null,
       progress: [],
@@ -232,6 +233,7 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.run-detail').text()).toContain('仓库地址无法克隆')
     expect(wrapper.find('.run-detail').text()).toContain('-1')
     expect(wrapper.find('.run-detail').text()).not.toContain('等待第一条 AI 反馈')
+    expect(wrapper.find('.run-report-link').attributes('href')).toBe('/api/pages/ai-run-ar1')
     wrapper.unmount()
   })
 

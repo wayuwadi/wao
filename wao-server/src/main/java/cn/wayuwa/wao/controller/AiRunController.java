@@ -16,6 +16,7 @@ import cn.wayuwa.wao.dto.AiRunnerLogDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.CompleteAiAssistantRunRequest;
 import cn.wayuwa.wao.dto.ContinueAiRunRequest;
+import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.CreateAiRunsRequest;
 import cn.wayuwa.wao.dto.LaunchAutonomousGoalRequest;
@@ -35,6 +36,7 @@ import cn.wayuwa.wao.service.AiRunnerWakeService;
 import cn.wayuwa.wao.service.AiRunnerLifecycleService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,6 +48,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import org.springframework.web.multipart.MultipartFile;
 
 /** AI Run 页面配置、队列和本地执行节点协议。 */
 @RestController
@@ -239,6 +242,13 @@ public class AiRunController {
     public ApiResponse<AiRunDto> complete(@RequestHeader(RUNNER_TOKEN) String token,
             @PathVariable String runId, @RequestBody CompleteAiRunRequest request) {
         return ApiResponse.ok(service.complete(token, runId, request));
+    }
+
+    /** Runner 上传本次运行额外生成的单文件 HTML 报告。 */
+    @PostMapping(value = "/runner/runs/{runId}/report", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<HostedPageDto> report(@RequestHeader(RUNNER_TOKEN) String token,
+            @PathVariable String runId, @RequestParam MultipartFile html) {
+        return ApiResponse.ok(service.saveReport(token, runId, html));
     }
 
     /** Runner 在执行期间轮询取消状态，以便可靠终止本地 AI CLI 子进程。 */

@@ -24,6 +24,8 @@ public record AiRunDto(
         /** 本次是在修哪一次失败的运行；不是重跑时为 null。 */
         String retryOfRunId,
         String resultSummary,
+        /** AI 为本次运行产出的持久化单文件 HTML 报告；没有报告时为 null。 */
+        String reportUrl,
         String latestProgress,
         String progressUpdatedAt,
         List<AiRunProgressDto> progress,

@@ -35,6 +35,9 @@ REMOTE_LOG_LINES = 200
 REMOTE_LOG_CHARS = 30_000
 # 运行结束后保留 worktree 供人工复查，超过这个天数才回收，避免磁盘被历史任务占满。
 RUN_WORKTREE_TTL_DAYS = 7
+RUN_REPORT_DIR = ".wao-run-reports"
+RUN_REPORT_FILE = "report.html"
+MAX_RUN_REPORT_BYTES = 10 * 1024 * 1024
 # 被 WAO 解除接入后的退出码（EX_CONFIG）：不是崩溃，重启也没用，systemd 用
 # RestartPreventExitStatus=78 认这个码，避免每十秒重启一次刷屏。
 EXIT_PAIRING_REVOKED = 78
@@ -114,6 +117,28 @@ class WaoApi:
         if self.token:
             headers["X-WAO-Runner-Token"] = self.token
         return self._send(urllib.request.Request(self.server + path, data=data, headers=headers, method="POST"))
+
+    def post_file(self, path: str, field_name: str, file_path: Path, content_type: str) -> Any:
+        """用标准库上传一个 multipart 文件，避免 Runner 额外依赖 requests。"""
+        boundary = "----wao-runner-" + uuid.uuid4().hex
+        filename = file_path.name.replace('"', "")
+        content = file_path.read_bytes()
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
+        ).encode("utf-8") + content + f"\r\n--{boundary}--\r\n".encode("ascii")
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Accept": "application/json",
+        }
+        if self.token:
+            headers["X-WAO-Runner-Token"] = self.token
+        request = urllib.request.Request(self.server + path, data=body, headers=headers, method="POST")
+        return self._send(request)
+
+    def absolute_url(self, value: str) -> str:
+        return urllib.parse.urljoin(self.server + "/", value)
 
     def get(self, path: str) -> Any:
         headers = {"Accept": "application/json"}
@@ -290,6 +315,7 @@ def prune_stale_worktrees(runs_root: Path, git_command: str, keep: set[str]) -> 
                 continue
             drop_worktree(entry, git_command)
             shutil.rmtree(runs_root.parent / ".wao-codex-homes" / entry.name, ignore_errors=True)
+            shutil.rmtree(runs_root.parent / RUN_REPORT_DIR / entry.name, ignore_errors=True)
             log(f"已回收 {RUN_WORKTREE_TTL_DAYS} 天前的历史工作区 {entry}")
         except OSError as exc:
             log(f"回收历史工作区 {entry} 失败，忽略：{exc}")
@@ -628,7 +654,19 @@ def normalize_result(exit_code: int, result_text: str, engine: str = "codex") ->
     )
 
 
-def build_prompt(claim: dict[str, Any]) -> str:
+def _report_prompt(report_path: Path | None) -> str:
+    if report_path is None:
+        return ""
+    return (
+        "\n\n如果本次工作有值得长期查阅或分享的分析、调研、方案、决策依据或验收证据，"
+        "请额外生成一份自包含的 UTF-8 单文件 HTML 报告（资源内联或使用公网绝对地址，最大 10MB），"
+        f"写到 `{report_path}`。这是运行产物路径，不要把它加入 Git 提交。"
+        "Runner 会在会话结束后自动持久化并关联到 AI Run 结果。"
+        "普通小改动没有额外报告价值时不要为了凑数生成占位报告。"
+    )
+
+
+def build_prompt(claim: dict[str, Any], report_path: Path | None = None) -> str:
     base = claim["defaultBranch"]
     prompt = (
         "这是 WAO 自动派发的开发任务。请先读取下面的公开 Markdown 地址，然后在当前独立 "
@@ -670,10 +708,11 @@ def build_prompt(claim: dict[str, Any]) -> str:
             f"{previous[-8000:]}\n"
             "----- 失败详情结束 -----"
         )
-    return prompt
+    return prompt + _report_prompt(report_path)
 
 
-def build_continuation_prompt(claim: dict[str, Any], continuation: str) -> str:
+def build_continuation_prompt(
+        claim: dict[str, Any], continuation: str, report_path: Path | None = None) -> str:
     """
     续跑的提示词。
 
@@ -697,7 +736,28 @@ def build_continuation_prompt(claim: dict[str, Any], continuation: str) -> str:
         "确实阻塞才写 `WAO_RUN_STATUS: BLOCKED`。"
         "你一旦停止回复会话就立即结束，不存在「稍后再汇报」；"
         "等待部署这类长任务要持续轮询到有结论，再在同一次答复里给出状态行。"
-    )
+    ) + _report_prompt(report_path)
+
+
+def publish_run_report(api: WaoApi, run_id: str, report_path: Path) -> str | None:
+    """校验并上传可选报告；返回可直接分享的绝对地址。"""
+    if not report_path.is_file():
+        return None
+    size = report_path.stat().st_size
+    if size <= 0:
+        raise RuntimeError("AI 生成的持久化报告是空文件")
+    if size > MAX_RUN_REPORT_BYTES:
+        raise RuntimeError("AI 生成的持久化报告超过 10MB")
+    try:
+        report_path.read_text(encoding="utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise RuntimeError("AI 生成的持久化报告不是 UTF-8 编码") from exc
+    result = api.post_file(
+        f"/api/ai/runner/runs/{run_id}/report", "html", report_path, "text/html; charset=UTF-8")
+    url = _readable_text((result or {}).get("url")).strip()
+    if not url:
+        raise RuntimeError("WAO 已接收持久化报告，但没有返回公开地址")
+    return api.absolute_url(url)
 
 
 def prepare_codex_home(codex_home: Path, account: dict[str, Any]) -> dict[str, str]:
@@ -938,6 +998,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
     session_id: str | None = None
     usage = _blank_usage()
     summary = ""
+    report_path = root / RUN_REPORT_DIR / run_id / RUN_REPORT_FILE
     stage = "准备 Git 工作区"
     reporter = ProgressReporter(api, run_id, engine)
     last_cancel_check = 0.0
@@ -966,11 +1027,13 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             if not worktree.exists():
                 raise RuntimeError("原 AI 工作区不存在，无法安全恢复会话；请使用基于报错重跑")
             reporter.send("phase", "正在恢复原 AI 会话", force=True)
-            prompt = build_continuation_prompt(claim, continuation)
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            prompt = build_continuation_prompt(claim, continuation, report_path)
         else:
             worktree = prepare_worktree(
                 claim, root, git_command, resolve_repo_url(claim["repoUrl"], git_protocol, https_ready))
-            prompt = build_prompt(claim)
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            prompt = build_prompt(claim, report_path)
         stage = f"启动 {name}"
         reporter.send("phase", f"工作区已准备完成，正在启动 {name}", force=True)
         stage = f"等待 {name} 完成"
@@ -991,6 +1054,18 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             f"token {usage['totalTokens']}（输入 {usage['inputTokens']} / 输出 "
             f"{usage['outputTokens']} / 缓存 {usage['cachedInputTokens']}），折算额度 {cost_text}")
         exit_code, result_text = normalize_result(exit_code, result_text, engine)
+        try:
+            report_url = publish_run_report(api, run_id, report_path)
+            if report_url:
+                reporter.send("message", "持久化报告已发布，可在运行结果中随时查看和分享", force=True)
+                result_text = f"{result_text}\n\n持久化报告：{report_url}".strip()
+                shutil.rmtree(report_path.parent, ignore_errors=True)
+        except Exception as exc:  # noqa: BLE001 - 报告既然已生成，就不能静默丢失
+            report_error = f"持久化报告上传失败：{exc}"
+            log(f"[{run_id}] {report_error}")
+            result_text = f"{result_text}\n\n{report_error}".strip()
+            if exit_code == 0:
+                exit_code = 2
         if exit_code == 0:
             closing = f"{name} 已执行完成，正在整理结果"
         elif exit_code == 3:

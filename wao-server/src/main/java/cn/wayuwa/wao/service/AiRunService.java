@@ -36,6 +36,7 @@ import cn.wayuwa.wao.dto.AiRunnerLogDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
+import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
@@ -54,6 +55,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * AI 任务执行中心。
@@ -92,11 +94,12 @@ public class AiRunService {
     private final FeishuTaskNotifier notifier;
     private final RunnerScriptService scripts;
     private final AiAccountService accounts;
+    private final HostedPageService hostedPages;
 
     public AiRunService(AiProjectConfigMapper configMapper, AiRunnerNodeMapper runnerMapper,
             AiRunnerPairCodeMapper pairMapper, AiTaskRunMapper runMapper, AiRunProgressMapper progressMapper,
             TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier,
-            RunnerScriptService scripts, AiAccountService accounts) {
+            RunnerScriptService scripts, AiAccountService accounts, HostedPageService hostedPages) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
         this.pairMapper = pairMapper;
@@ -108,6 +111,7 @@ public class AiRunService {
         this.notifier = notifier;
         this.scripts = scripts;
         this.accounts = accounts;
+        this.hostedPages = hostedPages;
     }
 
     /** 读取项目配置；尚未保存过时返回安全的关闭状态。 */
@@ -823,6 +827,36 @@ public class AiRunService {
         return toRunDtos(List.of(run)).get(0);
     }
 
+    /**
+     * 接收当前执行节点生成的单文件 HTML 报告，并把稳定公开地址关联到本次运行。
+     *
+     * <p>只有仍由该节点执行中的运行可以上传，避免其他节点或迟到请求篡改历史报告。
+     */
+    @Transactional
+    public synchronized HostedPageDto saveReport(String token, String runId, MultipartFile html) {
+        AiRunnerNodeEntity runner = requireRunner(token);
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        if (!runner.getId().equals(run.getRunnerId())) {
+            throw new UnauthorizedException("该运行不属于当前执行节点");
+        }
+        if (!ACTIVE.contains(run.getStatus())) {
+            throw new BadRequestException("AI 运行已结束，不能再上传报告");
+        }
+        TaskEntity task = taskMapper.selectById(run.getTaskId());
+        String taskTitle = task == null ? run.getTaskId() : task.getTitle();
+        String scopeTitle = StringUtils.hasText(run.getSubId()) ? subTitle(run.getTaskId(), run.getSubId()) : null;
+        String title = StringUtils.hasText(scopeTitle)
+                ? taskTitle + " · " + scopeTitle + " · AI 报告"
+                : taskTitle + " · AI 报告";
+        title = limit(title, 200);
+        var report = hostedPages.saveRunReport(runId, html, title, run.getRequestedBy());
+        appendProgress(run, "message", "已生成持久化报告，可随时查看和分享");
+        runner.setLastSeenAt(LocalDateTime.now());
+        runnerMapper.updateById(runner);
+        return report;
+    }
+
     /** 用户暂停一条等待中或正在执行的 AI 运行。 */
     @Transactional
     public synchronized AiRunDto pause(String runId) {
@@ -996,6 +1030,7 @@ public class AiRunService {
         Map<String, AiRunnerNodeEntity> runners = runnerIds.isEmpty() ? Map.of()
                 : runnerMapper.selectBatchIds(runnerIds).stream()
                         .collect(Collectors.toMap(AiRunnerNodeEntity::getId, Function.identity()));
+        Map<String, String> reportUrls = hostedPages.runReportUrls(runIds);
         return runs.stream().map(run -> {
             TaskEntity task = tasks.get(run.getTaskId());
             ProjectEntity project = projects.get(run.getProjectId());
@@ -1008,7 +1043,8 @@ public class AiRunService {
                     blankOr(run.getEngine(), DEFAULT_ENGINE), run.getStatus(),
                     run.getRunnerId(), runnerName(run, runner), run.getRequestedRunnerId(), run.getRequestedBy(),
                     run.getBranchName(), run.getRetryOfRunId(),
-                    run.getResultSummary(), run.getLatestProgress(), text(run.getProgressUpdatedAt()),
+                    run.getResultSummary(), reportUrls.get(run.getId()), run.getLatestProgress(),
+                    text(run.getProgressUpdatedAt()),
                     progressByRun.getOrDefault(run.getId(), List.of()), toUsageDto(run),
                     run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
                     text(run.getStartedAt()), text(run.getFinishedAt()));

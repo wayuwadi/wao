@@ -8,7 +8,7 @@ function run(status: AiRun['status'], createdAt = '2026-07-29T09:00:00'): AiRun 
     id: `ar-${status}`, taskId: 't1', taskTitle: '任务', subId: null, subTitle: null,
     projectId: 'p1', projectName: 'WAO', engine: 'codex', status,
     runnerId: null, runnerName: null, requestedRunnerId: null, branchName: null, retryOfRunId: null,
-    resultSummary: null, latestProgress: null, progressUpdatedAt: null, progress: [],
+    resultSummary: null, reportUrl: null, latestProgress: null, progressUpdatedAt: null, progress: [],
     usage: {
       model: null, models: null, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0,
       totalTokens: 0, costUsd: null, recorded: false,

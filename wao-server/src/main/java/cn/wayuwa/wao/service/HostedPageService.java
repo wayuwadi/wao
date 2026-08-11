@@ -9,7 +9,9 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.regex.Pattern;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
@@ -25,6 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class HostedPageService {
     public static final long MAX_HTML_BYTES = 10L * 1024 * 1024;
     public static final long MAX_ICON_BYTES = 1024 * 1024;
+    private static final String RUN_REPORT_ID_PREFIX = "run-report-";
     private static final Pattern SLUG = Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?");
     private static final Pattern HEAD = Pattern.compile("(?i)<head(?:\\s[^>]*)?>");
     private static final Pattern TITLE = Pattern.compile("(?is)<title(?:\\s[^>]*)?>.*?</title\\s*>");
@@ -45,6 +48,43 @@ public class HostedPageService {
         fill(entity, html, slug, title, icon, true);
         try { mapper.insert(entity); } catch (DuplicateKeyException ex) { throw new BadRequestException("链接后缀已被使用，请换一个"); }
         return dto(entity);
+    }
+
+    /**
+     * 新建或更新一次 AI Run 的持久化报告。
+     *
+     * <p>页面 id 由运行 id 稳定推导，因此同一次运行继续优化时会更新同一个公开地址；如果用户在
+     * 文件页改过标题或后缀，后续只替换 HTML 正文，不覆盖这些人工配置。
+     */
+    public HostedPageDto saveRunReport(String runId, MultipartFile html, String title, String memberId) {
+        String pageId = runReportPageId(runId);
+        HostedPageEntity entity = mapper.selectById(pageId);
+        if (entity == null) {
+            entity = new HostedPageEntity();
+            entity.setId(pageId);
+            entity.setCreatedAt(LocalDateTime.now());
+            entity.setCreatedBy(memberId == null ? "AI Run" : memberId);
+            fill(entity, html, "ai-run-" + runId, title, null, true);
+            try {
+                mapper.insert(entity);
+            } catch (DuplicateKeyException ex) {
+                throw new BadRequestException("AI 报告公开地址已被占用，请删除冲突页面后重试");
+            }
+        } else {
+            fill(entity, html, entity.getSlug(), entity.getTitle(), null, true);
+            mapper.updateById(entity);
+        }
+        return dto(entity);
+    }
+
+    /** 批量返回 AI Run 与其仍然存在的公开报告地址；查询只取元数据，不加载 HTML 正文。 */
+    public Map<String, String> runReportUrls(List<String> runIds) {
+        if (runIds == null || runIds.isEmpty()) return Map.of();
+        List<String> pageIds = runIds.stream().map(HostedPageService::runReportPageId).toList();
+        return mapper.listMetaByIds(pageIds).stream().collect(Collectors.toMap(
+                page -> page.getId().substring(RUN_REPORT_ID_PREFIX.length()),
+                page -> dto(page).url(),
+                (first, ignored) -> first));
     }
 
     /** 更新标题、后缀、HTML 正文和可选图标；没有上传图标时保留原图标。 */
@@ -112,6 +152,13 @@ public class HostedPageService {
         String slug = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
         if (!SLUG.matcher(slug).matches()) throw new BadRequestException("链接后缀只能包含小写字母、数字和中划线，长度 1～80，首尾不能是中划线");
         return slug;
+    }
+    private static String runReportPageId(String runId) {
+        String clean = runId == null ? "" : runId.trim();
+        if (!SLUG.matcher(clean).matches() || RUN_REPORT_ID_PREFIX.length() + clean.length() > 64) {
+            throw new BadRequestException("AI 运行 id 无法生成报告地址");
+        }
+        return RUN_REPORT_ID_PREFIX + clean;
     }
     private static String decode(byte[] bytes) {
         try { return StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)

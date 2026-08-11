@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.HostedPageEntity;
 import cn.wayuwa.wao.mapper.HostedPageMapper;
@@ -46,5 +47,34 @@ class HostedPageServiceTest {
         var item = service.update("p1", null, "new", "新", null);
         assertThat(item.slug()).isEqualTo("new"); assertThat(entity.getHtmlContent()).isNotEmpty(); assertThat(item.hasIcon()).isTrue();
         verify(mapper).updateById(entity);
+    }
+
+    @Test void aiRunReportUsesStablePageAndPreservesManualMetadataOnUpdate() {
+        var html = new MockMultipartFile("html", "report.html", "text/html", "<p>第一版</p>".getBytes(StandardCharsets.UTF_8));
+        var created = service.saveRunReport("ar123", html, "任务 · AI 报告", "wg");
+        assertThat(created.id()).isEqualTo("run-report-ar123");
+        assertThat(created.url()).isEqualTo("/api/pages/ai-run-ar123");
+
+        HostedPageEntity existing = new HostedPageEntity();
+        existing.setId("run-report-ar123"); existing.setSlug("custom-report"); existing.setTitle("自定义标题");
+        existing.setFileName("report.html"); existing.setHtmlContent("<p>第一版</p>".getBytes(StandardCharsets.UTF_8));
+        when(mapper.selectById("run-report-ar123")).thenReturn(existing);
+        var next = new MockMultipartFile("html", "report.html", "text/html", "<p>第二版</p>".getBytes(StandardCharsets.UTF_8));
+
+        var updated = service.saveRunReport("ar123", next, "不应覆盖", "wg");
+
+        assertThat(updated.slug()).isEqualTo("custom-report");
+        assertThat(updated.title()).isEqualTo("自定义标题");
+        assertThat(new String(existing.getHtmlContent(), StandardCharsets.UTF_8)).contains("第二版");
+        verify(mapper).updateById(existing);
+    }
+
+    @Test void reportUrlsLoadOnlyExistingMetadata() {
+        HostedPageEntity report = new HostedPageEntity();
+        report.setId("run-report-ar123"); report.setSlug("custom-report"); report.setTitle("报告");
+        when(mapper.listMetaByIds(List.of("run-report-ar123", "run-report-missing"))).thenReturn(List.of(report));
+
+        assertThat(service.runReportUrls(List.of("ar123", "missing")))
+                .isEqualTo(java.util.Map.of("ar123", "/api/pages/custom-report"));
     }
 }
