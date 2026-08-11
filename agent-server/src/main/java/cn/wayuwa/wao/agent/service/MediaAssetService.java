@@ -83,6 +83,7 @@ public class MediaAssetService {
         return entity;
     }
 
+    /** 按标识读取素材；未传标识时返回 {@code null}。 */
     public MediaAssetEntity find(String mediaAssetId) {
         return mediaAssetId == null ? null : mediaMapper.selectById(mediaAssetId);
     }

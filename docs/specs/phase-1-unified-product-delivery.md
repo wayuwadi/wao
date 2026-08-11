@@ -20,6 +20,7 @@
 - 主、从 Compose 都托管 `wao-agent-server`，网关等待 WAO Server 与 Agent Server 健康后再完成发布。
 - Agent 媒体卷沿用旧 Compose 的显式卷名；首次切换先保留旧镜像作为回滚，再精确移除旧容器，避免 8081 冲突。共享 Session、`agent_` 业务表和独立 Flyway 历史必须兼容已有线上数据。
 - 旧 Agent 私有配置只通过节点私有文件迁移，日志、提交和发布包不得包含实际值。
+- 统一发布必须清理 `wao-game.conf`、`wao-insight.conf` 及其旧静态包；失败回滚 Nginx 时恢复原片段。旧 `/game/**` 跳转 `/games`，`/insight/**` 返回 410。
 - 发布失败时三个应用镜像一起回滚；线上验收必须同时检查 `/api/hello`、`/api/agent/health`、`/agent/` 和主站入口。
 
 ## 验收标准

@@ -7,6 +7,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import cn.wayuwa.wao.dto.ExternalAppConfigDto;
+import cn.wayuwa.wao.dto.ExternalAppRegistryDto;
 import cn.wayuwa.wao.dto.SaveExternalAppConfigRequest;
 import cn.wayuwa.wao.dto.SaveExternalAppRegistryRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,7 +33,7 @@ class ExternalAppRegistryServiceTest {
 
         var registry = service.getRegistry();
 
-        assertThat(registry.version()).isEqualTo(1);
+        assertThat(registry.version()).isEqualTo(2);
         assertThat(registry.apps()).singleElement().satisfies(app -> {
             assertThat(app.id()).isEqualTo("media-agent");
             assertThat(app.label()).isEqualTo("内容助手");
@@ -47,6 +49,7 @@ class ExternalAppRegistryServiceTest {
     void savesAndReadsMultipleApplications() {
         var request = new SaveExternalAppRegistryRequest(List.of(
                 app("media-agent", "自媒体 Agent", "/agent/", "/api/agent/health"),
+                app("wao-insight", "群聊洞察", "/insight/", "/api/insight/health"),
                 app("data-studio", "数据工作台", "https://studio.example.com/", "")));
 
         var saved = service.saveRegistry(request);
@@ -57,6 +60,21 @@ class ExternalAppRegistryServiceTest {
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(jsonCaptor.getValue());
         assertThat(service.getRegistry().apps()).extracting("id")
                 .containsExactly("media-agent", "data-studio");
+    }
+
+    @Test
+    void filtersRetiredInsightFromPersistedRegistry() throws Exception {
+        String stored = json.writeValueAsString(new ExternalAppRegistryDto(1, List.of(
+                new ExternalAppConfigDto(
+                        "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
+                        "/agent/", "/api/agent/health"),
+                new ExternalAppConfigDto(
+                        "wao-insight", "群聊洞察", "ri-bubble-chart-line", "PUBLIC", 25, true,
+                        "/insight/", "/api/insight/health"))));
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(stored);
+
+        assertThat(service.getRegistry().apps()).extracting("id")
+                .containsExactly("media-agent");
     }
 
     @Test

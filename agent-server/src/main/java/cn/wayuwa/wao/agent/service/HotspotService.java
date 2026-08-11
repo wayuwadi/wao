@@ -94,6 +94,7 @@ public class HotspotService {
         return picked;
     }
 
+    /** 按标识读取热点；未传标识时返回 {@code null}。 */
     public HotspotEntity find(String hotspotId) {
         return hotspotId == null ? null : hotspotMapper.selectById(hotspotId);
     }

@@ -18,6 +18,7 @@ WAO 曾按产品边界拆出 `wayuwacn/wao-agent`、`wayuwacn/wao-game` 和 `way
 - CD 从旧 Agent 节点私有配置中迁移 `AGENT_*` 与 `DOUYIN_*`，不把 Secret 写入 Git 或日志。首次部署精确接管旧 Compose 容器，并用原卷名挂载 Agent 媒体，避免 8081 端口冲突或切换时丢失数据。
 - 原 `wao-game` 的 2048 由现有服务端权威“数字熔炉”覆盖；记忆翻牌并入 WAO 原生游戏厅，服务端牌局与最佳步数写入成员的通用 `game_save`，不再维护 `/game/` 独立前端。
 - `wao-insight` 不导入。其数据和操作均依赖未实现的 `/api/insight/**`，演示数据不进入真实业务入口；默认导航不再兜底显示该应用。未来具备真实聊天分析数据源和持久化 API 后，以 WAO 原生模块重新立项。
+- 统一发布移除旧 Game、Insight 的 Nginx 路由片段和静态包；`/game/**` 永久重定向到 `/games`，`/insight/**` 返回 410，已保存的 Insight 菜单项也在服务端过滤。
 - Agent 原型中的定时假运行和 Demo 草稿工作台不导入产品入口，也不保留 `/api/agent/demo/**`；保留真实热点、账号定位、AI 成稿、素材、授权与发布链路。
 - 外部应用注册表继续服务真正需要 iframe 的运行模块或第三方站点，但不再作为拆仓依据。
 
