@@ -7,6 +7,7 @@ import {
   fetchAiRunners,
   fetchAiRuns,
   fetchAiWorkflows,
+  launchAutonomousGoal,
   removeAiRunner,
   requestRunnerScriptUpdate,
   rerunAiRun,
@@ -31,6 +32,9 @@ const runners = ref<AiRunner[]>([])
 const workflows = ref<AiWorkflow[]>([])
 const loading = ref(true)
 const workflowsLoading = ref(false)
+const goal = ref('')
+const goalProjectId = ref('')
+const launchingGoal = ref(false)
 const selectedRun = ref<AiRun | null>(null)
 const logRunner = ref<AiRunner | null>(null)
 const runnerLog = ref<AiRunnerLog | null>(null)
@@ -64,6 +68,7 @@ const recentRuns = computed(() => runs.value.filter((run) => !['queued', 'claime
 const onlineRunners = computed(() => runners.value.filter((runner) => runner.online))
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
+const activeWorkflows = computed(() => workflows.value.filter((workflow) => workflow.config.enabled))
 
 /** 每种 AI 工具当前有几台电脑在线，决定 hero 上的接入状态。 */
 const engineStatus = computed(() =>
@@ -139,6 +144,36 @@ async function refreshWorkflows() {
 watch(view, (next) => {
   if (next === 'workflows' && !workflows.value.length) void refreshWorkflows()
 })
+
+watch(activeWorkflows, (next) => {
+  if (!next.some((workflow) => workflow.projectId === goalProjectId.value)) {
+    goalProjectId.value = next[0]?.projectId ?? ''
+  }
+})
+
+async function launchGoal() {
+  const normalizedGoal = goal.value.trim()
+  if (!normalizedGoal) {
+    toast('请先写下你想让 AI 达成的目标', 'ri-information-line')
+    return
+  }
+  if (!goalProjectId.value) {
+    toast('请先圬「AI 工作流」中接入一个项目', 'ri-information-line')
+    return
+  }
+  launchingGoal.value = true
+  try {
+    const run = await launchAutonomousGoal(goalProjectId.value, normalizedGoal)
+    runs.value = [run, ...runs.value.filter((item) => item.id !== run.id)]
+    goal.value = ''
+    view.value = 'runs'
+    toast('目标已交给 AI，它会先盘点资源并自己拆解推进', 'ri-rocket-2-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '目标派发失败', 'ri-error-warning-line')
+  } finally {
+    launchingGoal.value = false
+  }
+}
 
 /** 某台电脑当前正在跑的任务，用于电脑卡片直接看到它在忙什么。 */
 function runsOnRunner(runnerId: string) {
@@ -388,6 +423,7 @@ function progressAge(value: string | null) {
 
 onMounted(() => {
   void refresh()
+  void refreshWorkflows()
   timer = setInterval(refresh, 5_000)
 })
 onBeforeUnmount(() => {
@@ -420,6 +456,51 @@ onBeforeUnmount(() => {
           <div class="capacity-num">{{ usedSlots }}<span>/ {{ totalSlots }}</span></div>
           <div>执行槽位占用</div>
           <div class="capacity-bar"><i></i></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="goal-launcher" aria-labelledby="goal-launcher-title">
+      <div class="goal-heading">
+        <span class="goal-icon"><i class="ri-sparkling-2-line"></i></span>
+        <div>
+          <div class="eyebrow dark">AUTONOMOUS GOAL</div>
+          <h2 id="goal-launcher-title">给我一个目标，剩下的交给 AI</h2>
+          <p>AI 会先盘点项目里的代码、文档和工具，自己拆解、执行和验证。</p>
+        </div>
+      </div>
+      <div class="goal-compose">
+        <textarea
+          v-model="goal"
+          maxlength="4000"
+          placeholder="例如：把《黄帝内经》和《易经》结合 AI，做成一个每天可以给自己算一卦的产品……"
+          :disabled="launchingGoal"
+          @keydown.ctrl.enter.prevent="launchGoal"
+          @keydown.meta.enter.prevent="launchGoal"
+        ></textarea>
+        <div class="goal-actions">
+          <label>
+            <span>放进哪条工作流</span>
+            <select v-model="goalProjectId" :disabled="workflowsLoading || launchingGoal || !activeWorkflows.length">
+              <option v-if="!activeWorkflows.length" value="">还没有已启用的工作流</option>
+              <option v-for="workflow in activeWorkflows" :key="workflow.projectId" :value="workflow.projectId">
+                {{ workflow.projectName }} · {{ engineLabel(workflow.config.defaultEngine) }}
+              </option>
+            </select>
+          </label>
+          <span class="goal-shortcut">{{ goal.length }} / 4000 · Ctrl/Command + Enter</span>
+          <button
+            v-if="activeWorkflows.length"
+            class="goal-submit"
+            :disabled="launchingGoal || !goal.trim() || !goalProjectId"
+            @click="launchGoal"
+          >
+            <i :class="launchingGoal ? 'ri-loader-4-line spin' : 'ri-rocket-2-line'"></i>
+            {{ launchingGoal ? '正在派发…' : '让 AI 开始' }}
+          </button>
+          <button v-else class="goal-submit setup" :disabled="workflowsLoading" @click="view = 'workflows'">
+            <i class="ri-settings-3-line"></i>{{ workflowsLoading ? '正在读取…' : '先接入工作流' }}
+          </button>
         </div>
       </div>
     </section>
@@ -966,6 +1047,34 @@ onBeforeUnmount(() => {
 .capacity-num span { font-size: 14px; opacity: .6; }
 .capacity-bar { height: 5px; margin-top: 11px; overflow: hidden; border-radius: 9px; background: #ffffff24; }
 .capacity-bar i { display: block; height: 100%; width: var(--capacity); border-radius: inherit; background: #fff; transition: width .3s; }
+.goal-launcher {
+  margin-top: 16px;
+  padding: 19px 20px;
+  border: 1px solid #dfe3f4;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #fff, #f7f8ff);
+  box-shadow: 0 8px 24px rgba(43, 59, 141, .07);
+  display: grid;
+  grid-template-columns: minmax(230px, .8fr) minmax(360px, 1.2fr);
+  gap: 22px;
+  align-items: center;
+}
+.goal-heading { min-width: 0; display: flex; align-items: flex-start; gap: 12px; }
+.goal-icon { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px; background: #eef1ff; color: #4358d6; display: grid; place-items: center; font-size: 19px; }
+.eyebrow.dark { color: #7d85a6; opacity: 1; }
+.goal-heading h2 { margin: 5px 0 5px; color: var(--wao-text-1); font-size: 17px; }
+.goal-heading p { margin: 0; color: var(--wao-text-weak); font-size: 11.5px; line-height: 1.6; }
+.goal-compose { overflow: hidden; border: 1px solid #d9deef; border-radius: 12px; background: #fff; transition: border-color .16s, box-shadow .16s; }
+.goal-compose:focus-within { border-color: #8f9ee6; box-shadow: 0 0 0 3px #e9ecff; }
+.goal-compose textarea { width: 100%; min-height: 78px; padding: 12px 13px 7px; resize: vertical; border: 0; outline: 0; background: transparent; color: var(--wao-text-1); font-family: inherit; font-size: 12.5px; line-height: 1.6; box-sizing: border-box; }
+.goal-compose textarea::placeholder { color: #a0a5b6; }
+.goal-actions { min-height: 44px; padding: 7px 8px 8px 12px; border-top: 1px solid #f0f1f5; display: flex; align-items: center; gap: 10px; }
+.goal-actions label { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--wao-text-weak); font-size: 10.5px; }
+.goal-actions select { max-width: 230px; height: 29px; padding: 0 26px 0 8px; border: 1px solid var(--wao-line); border-radius: 7px; background: #fff; color: var(--wao-text-2); font-size: 11px; }
+.goal-shortcut { margin-left: auto; color: #a0a5b6; font-size: 9.5px; white-space: nowrap; }
+.goal-submit { min-width: 112px; height: 32px; padding: 0 12px; border: 1px solid #4358d6; border-radius: 8px; background: #4358d6; color: #fff; cursor: pointer; font-size: 11.5px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.goal-submit.setup { min-width: 140px; }
+.goal-submit:disabled { opacity: .55; cursor: not-allowed; }
 @keyframes orbit { to { transform: rotate(418deg); } }
 @keyframes corePulse { 50% { transform: translate(-50%, -50%) scale(.68); opacity: .55; } }
 .console-tabs {
@@ -1327,6 +1436,12 @@ onBeforeUnmount(() => {
   .hero { padding: 22px; flex-direction: column; align-items: stretch; }
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
   .capacity { width: auto; }
+  .goal-launcher { grid-template-columns: 1fr; padding: 17px; gap: 14px; }
+  .goal-actions { flex-wrap: wrap; padding-left: 9px; }
+  .goal-actions label { width: 100%; }
+  .goal-actions select { flex: 1; max-width: none; }
+  .goal-shortcut { margin-left: 0; }
+  .goal-submit { margin-left: auto; }
   .console-tabs { overflow-x: auto; }
   .flow-meta { grid-template-columns: 1fr; }
   .flow-form { grid-template-columns: 1fr; }

@@ -64,6 +64,10 @@ export const createAiRuns = (
     accountId: options.accountId ?? null,
   }))
 
+/** 从一句目标创建任务，并立即交给项目默认 AI 工作流。 */
+export const launchAutonomousGoal = (projectId: string, goal: string) =>
+  data<AiRun>(http.post('/api/ai/goals', { projectId, goal }))
+
 /** 基于一次失败运行重跑：AI 会拿到上次的报错接着修，不用从零重来。 */
 export const rerunAiRun = (runId: string) => data<AiRun>(http.post(`/api/ai/runs/${runId}/rerun`))
 

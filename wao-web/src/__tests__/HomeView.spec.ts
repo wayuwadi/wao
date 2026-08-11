@@ -4,7 +4,14 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia } from 'pinia'
 import HomeView from '@/views/HomeView.vue'
 import type { AiRunner } from '@/types'
-import { fetchAiRunnerLog, fetchAiRunners, removeAiRunner, requestRunnerScriptUpdate, rerunAiRun } from '@/api/ai'
+import {
+  fetchAiRunnerLog,
+  fetchAiRunners,
+  launchAutonomousGoal,
+  removeAiRunner,
+  requestRunnerScriptUpdate,
+  rerunAiRun,
+} from '@/api/ai'
 
 vi.mock('@/api/ai', () => ({
   fetchAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
@@ -74,6 +81,13 @@ vi.mock('@/api/ai', () => ({
   createAiPairCode: vi.fn<() => Promise<{ code: string; expiresAt: string }>>()
     .mockResolvedValue({ code: 'ABCD2345KMNP', expiresAt: '2026-07-25T20:30:00' }),
   saveAiProjectConfig: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
+  launchAutonomousGoal: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    id: 'ar-goal', taskId: 't-goal', taskTitle: '把黄帝内经和易经结合 AI', projectId: 'p1',
+    projectName: 'Wa All in One', engine: 'claude', status: 'queued', runnerId: null,
+    runnerName: null, requestedRunnerId: 'rn2', branchName: 'ai/wao-ar-goal', resultSummary: null,
+    latestProgress: '目标已进入队列', progressUpdatedAt: '2026-07-25T20:19:00', progress: [],
+    sessionId: null, exitCode: null, createdAt: '2026-07-25T20:19:00', startedAt: null, finishedAt: null,
+  }),
   requestRunnerScriptUpdate: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
       id: 'rn1', name: '娃哥电脑', platform: 'Windows 11', engines: ['codex'],
@@ -131,6 +145,23 @@ describe('HomeView AI 控制台', () => {
 
     expect(wrapper.find('.hero').text()).not.toContain('想法有多大，产出就有多大')
     expect(wrapper.find('.hero').text()).not.toContain('多台电脑并行开工')
+    wrapper.unmount()
+  })
+
+  it('只输入一句目标就能创建任务并交给已启用的 AI 工作流', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    const textarea = wrapper.find('.goal-compose textarea')
+    await textarea.setValue('把黄帝内经和易经结合 AI，做成每日一卦产品')
+    expect((wrapper.find('.goal-actions select').element as HTMLSelectElement).value).toBe('p1')
+    await wrapper.find('.goal-submit').trigger('click')
+    await flushPromises()
+
+    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', '把黄帝内经和易经结合 AI，做成每日一卦产品')
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('')
+    expect(wrapper.findAll('.run-card').some((card) => card.text().includes('把黄帝内经和易经结合 AI'))).toBe(true)
     wrapper.unmount()
   })
 

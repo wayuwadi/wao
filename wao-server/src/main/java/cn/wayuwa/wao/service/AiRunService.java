@@ -35,6 +35,7 @@ import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.AiRunnerLogDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
+import cn.wayuwa.wao.dto.CreateTaskRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
@@ -422,6 +423,48 @@ public class AiRunService {
             created.add(run);
         }
         return toRunDtos(created);
+    }
+
+    /**
+     * 把用户只描述了结果的目标转成任务，并立即派给项目的默认 AI 工作流。
+     *
+     * <p>创建任务与入队在同一事务中；配置或执行节点不可用时不会留下一条无人处理的半成品任务。
+     * AI 收到的描述保留原始目标，另外附上自主执行约定，让它先盘点仓库和工具再自行拆解推进。
+     *
+     * @param projectId 承载目标的项目，必须已启用 AI Run
+     * @param goal 用户输入的原始目标
+     * @param requestedBy 发起人
+     * @param baseUrl 用于生成 Runner 可读的任务分享地址
+     * @return 新建并已入队的运行
+     */
+    @Transactional
+    public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl) {
+        String normalizedGoal = trim(goal);
+        if (!StringUtils.hasText(normalizedGoal)) throw new BadRequestException("请先写下想让 AI 完成的目标");
+        if (normalizedGoal.length() > 4_000) throw new BadRequestException("目标最多 4000 个字");
+
+        cn.wayuwa.wao.dto.TaskDto task = tasks.create(new CreateTaskRequest(
+                goalTitle(normalizedGoal), projectId, "P2", requestedBy, "",
+                autonomousGoalDescription(normalizedGoal), List.of(), null, null, null), requestedBy);
+        List<AiRunDto> runs = enqueue(List.of(task.id()), null, null, null, null, requestedBy, baseUrl);
+        if (runs.isEmpty()) throw new IllegalStateException("自主目标创建后未生成 AI 运行");
+        return runs.get(0);
+    }
+
+    private static String goalTitle(String goal) {
+        String firstLine = goal.lines().map(String::trim).filter(StringUtils::hasText).findFirst().orElse("新的自主目标");
+        firstLine = firstLine.replaceFirst("^#{1,6}\\s*", "").trim();
+        return firstLine.length() <= 80 ? firstLine : firstLine.substring(0, 79) + "…";
+    }
+
+    private static String autonomousGoalDescription(String goal) {
+        return "## 目标\n\n" + goal + "\n\n"
+                + "## 自主执行约定\n\n"
+                + "- 先理解想要达成的结果，主动盘点当前仓库、文档、工具与可用服务。\n"
+                + "- 自己拆解步骤、排定优先级并持续推进；能安全完成的事直接做完并验证。\n"
+                + "- 不伪造数据或能力；缺少非必要资源时先采用可行替代方案。\n"
+                + "- 只在缺少关键信息、需要新权限或即将执行不可逆操作时暂停并明确说明阻塞。\n"
+                + "- 最终汇报已完成的结果、验证证据、未完成项与下一步建议。";
     }
 
     /** 集中账号默认固定到支持对应 CLI 的 Linux 主节点；在线节点优先，离线时保留排队语义。 */

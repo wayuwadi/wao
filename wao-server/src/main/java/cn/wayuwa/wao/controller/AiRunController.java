@@ -18,6 +18,7 @@ import cn.wayuwa.wao.dto.CompleteAiAssistantRunRequest;
 import cn.wayuwa.wao.dto.ContinueAiRunRequest;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.CreateAiRunsRequest;
+import cn.wayuwa.wao.dto.LaunchAutonomousGoalRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
@@ -142,6 +143,14 @@ public class AiRunController {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         return ApiResponse.ok(service.enqueue(request.taskIds(), request.subId(), request.engine(),
                 request.runnerId(), request.accountId(), currentMember.idOr(http, "unknown"), baseUrl));
+    }
+
+    /** 把一句目标转成任务并立即交给项目默认 AI 工作流。 */
+    @PostMapping("/goals")
+    public ApiResponse<AiRunDto> launchGoal(@Valid @RequestBody LaunchAutonomousGoalRequest request,
+            HttpServletRequest http) {
+        String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
+        return ApiResponse.ok(service.launchGoal(request.projectId(), request.goal(), currentMember.id(http), baseUrl));
     }
 
     @GetMapping("/runs")
