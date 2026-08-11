@@ -1,17 +1,25 @@
 import { createPinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
-import { fetchAssistantConversation, fetchAssistantConversations, fetchAssistantStatus } from '@/api/assistant'
+import {
+  createAssistantConversation,
+  fetchAssistantConversation,
+  fetchAssistantConversations,
+  fetchAssistantSourceOptions,
+  fetchAssistantStatus,
+  streamChat,
+} from '@/api/assistant'
 
 vi.mock('@/api/assistant', () => ({
-  fetchAssistantStatus: vi.fn(),
-  fetchAssistantConversations: vi.fn(),
-  fetchAssistantConversation: vi.fn(),
-  createAssistantConversation: vi.fn(),
-  deleteAssistantConversation: vi.fn(),
-  streamChat: vi.fn(),
+  fetchAssistantStatus: vi.fn<(typeof import('@/api/assistant'))['fetchAssistantStatus']>(),
+  fetchAssistantConversations: vi.fn<(typeof import('@/api/assistant'))['fetchAssistantConversations']>(),
+  fetchAssistantConversation: vi.fn<(typeof import('@/api/assistant'))['fetchAssistantConversation']>(),
+  fetchAssistantSourceOptions: vi.fn<(typeof import('@/api/assistant'))['fetchAssistantSourceOptions']>(),
+  createAssistantConversation: vi.fn<(typeof import('@/api/assistant'))['createAssistantConversation']>(),
+  deleteAssistantConversation: vi.fn<(typeof import('@/api/assistant'))['deleteAssistantConversation']>(),
+  streamChat: vi.fn<(typeof import('@/api/assistant'))['streamChat']>(),
 }))
 
 async function router() {
@@ -25,6 +33,16 @@ async function router() {
 }
 
 describe('AiAssistantPanel', () => {
+  beforeEach(() => {
+    vi.mocked(fetchAssistantSourceOptions).mockResolvedValue({
+      chats: [{ id: 'oc_chat', name: 'WAO 项目群' }],
+      senders: ['娃哥', '娃弟'],
+      projects: [{ id: 'p1', name: 'WAO' }],
+      earliestChatDate: '2026-06-01',
+      latestChatDate: '2026-08-11',
+    })
+  })
+
   afterEach(() => {
     vi.useRealTimers()
     vi.clearAllMocks()
@@ -81,6 +99,51 @@ describe('AiAssistantPanel', () => {
     expect(document.body.textContent).toContain('项目复盘')
     expect(document.body.textContent).toContain('帮我复盘项目')
     expect(document.body.textContent).toContain('这是复盘建议')
+    wrapper.unmount()
+  })
+
+  it('发送时携带群聊、发言人和日期来源筛选', async () => {
+    vi.mocked(fetchAssistantStatus).mockResolvedValue({ configured: true, message: '已连接本地 Codex' })
+    vi.mocked(fetchAssistantConversations).mockResolvedValue([])
+    vi.mocked(createAssistantConversation).mockResolvedValue({
+      id: 'cv1', title: '新对话', updatedAt: '2026-08-11T10:00:00',
+    })
+    vi.mocked(streamChat).mockImplementation(async function* () { yield '找到了' })
+    const testRouter = await router()
+    const wrapper = mount(AiAssistantPanel, {
+      props: { modelValue: true },
+      global: { plugins: [createPinia(), testRouter] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    document.querySelector<HTMLButtonElement>('.source-summary')!.click()
+    await flushPromises()
+    const chips = Array.from(document.querySelectorAll<HTMLButtonElement>('.filter-chips button'))
+    chips.find((item) => item.textContent === 'WAO 项目群')!.click()
+    chips.find((item) => item.textContent === '娃哥')!.click()
+    const dates = Array.from(document.querySelectorAll<HTMLInputElement>('.date-filter input'))
+    dates[0]!.value = '2026-07-01'
+    dates[0]!.dispatchEvent(new Event('input', { bubbles: true }))
+    dates[1]!.value = '2026-07-31'
+    dates[1]!.dispatchEvent(new Event('input', { bubbles: true }))
+    const textarea = document.querySelector<HTMLTextAreaElement>('.assistant-input textarea')!
+    textarea.value = '之前预算怎么说的？'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('.send-btn')!.click()
+    await flushPromises()
+
+    expect(streamChat).toHaveBeenCalledWith(
+      '之前预算怎么说的？', [], undefined, 'cv1', expect.objectContaining({
+        assetTypes: ['chat', 'knowledge', 'project', 'task'],
+        chatIds: ['oc_chat'],
+        senders: ['娃哥'],
+        dateFrom: '2026-07-01',
+        dateTo: '2026-07-31',
+      }),
+    )
+    expect(document.body.textContent).toContain('找到了')
     wrapper.unmount()
   })
 })

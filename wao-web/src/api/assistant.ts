@@ -10,6 +10,30 @@ export interface AssistantStatus {
   message: string
 }
 
+export type AssistantAssetType = 'chat' | 'knowledge' | 'project' | 'task'
+
+export interface AssistantSourceFilter {
+  assetTypes: AssistantAssetType[]
+  chatIds?: string[]
+  senders?: string[]
+  dateFrom?: string
+  dateTo?: string
+  projectIds?: string[]
+}
+
+export interface AssistantSourceOption {
+  id: string
+  name: string
+}
+
+export interface AssistantSourceOptions {
+  chats: AssistantSourceOption[]
+  senders: string[]
+  projects: AssistantSourceOption[]
+  earliestChatDate?: string
+  latestChatDate?: string
+}
+
 export interface AssistantConversation {
   id: string
   title: string
@@ -37,6 +61,9 @@ export const fetchAssistantStatus = () =>
     headers: { 'Cache-Control': 'no-cache' },
   }))
 
+export const fetchAssistantSourceOptions = () =>
+  data<AssistantSourceOptions>(http.get('/api/assistant/source-options'))
+
 export const fetchAssistantConversations = () =>
   data<AssistantConversation[]>(http.get('/api/assistant/conversations'))
 
@@ -53,8 +80,9 @@ export const sendChat = async (
   message: string,
   history: ChatMessage[],
   pageContext?: string,
+  sourceFilter?: AssistantSourceFilter,
 ): Promise<string> => {
-  const res = await http.post('/api/assistant/chat', { message, history, pageContext })
+  const res = await http.post('/api/assistant/chat', { message, history, pageContext, sourceFilter })
   return res.data.data.content
 }
 
@@ -64,11 +92,12 @@ export async function* streamChat(
   history: ChatMessage[],
   pageContext?: string,
   conversationId?: string,
+  sourceFilter?: AssistantSourceFilter,
 ): AsyncGenerator<string> {
   const res = await fetch('/api/assistant/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, history, pageContext, conversationId }),
+    body: JSON.stringify({ message, history, pageContext, conversationId, sourceFilter }),
     credentials: 'include',
   })
   if (!res.ok || !res.body) {

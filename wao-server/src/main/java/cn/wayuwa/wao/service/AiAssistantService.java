@@ -36,17 +36,17 @@ public class AiAssistantService {
     private final AiRunService aiRunService;
     private final AiAccountService accountService;
     private final AiAssistantConversationService conversationService;
-    private final AiAssistantKnowledgeService knowledgeService;
+    private final AiAssistantAssetService assetService;
 
     public AiAssistantService(AiAssistantRunMapper mapper, AiRunnerNodeMapper runnerMapper,
             AiRunService aiRunService, AiAccountService accountService,
-            AiAssistantConversationService conversationService, AiAssistantKnowledgeService knowledgeService) {
+            AiAssistantConversationService conversationService, AiAssistantAssetService assetService) {
         this.mapper = mapper;
         this.runnerMapper = runnerMapper;
         this.aiRunService = aiRunService;
         this.accountService = accountService;
         this.conversationService = conversationService;
-        this.knowledgeService = knowledgeService;
+        this.assetService = assetService;
     }
 
     /** 返回真实可用状态；任一在线 Codex Runner 都可以提供本地对话。 */
@@ -157,7 +157,7 @@ public class AiAssistantService {
             history = request.history() == null ? List.of() : request.history();
         }
         run.setPromptText(buildPrompt(request, history,
-                knowledgeService.relevantChatRecords(request.message())));
+                assetService.relevantAssets(request.message(), request.sourceFilter())));
         run.setCreatedAt(now);
         run.setUpdatedAt(now);
         conversationService.enqueue(run, conversationId, memberId, request.message());

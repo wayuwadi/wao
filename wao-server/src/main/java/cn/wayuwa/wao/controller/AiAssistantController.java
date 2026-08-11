@@ -9,6 +9,8 @@ import cn.wayuwa.wao.dto.AssistantConversationDetailDto;
 import cn.wayuwa.wao.dto.AssistantConversationDto;
 import cn.wayuwa.wao.dto.AssistantReplyDto;
 import cn.wayuwa.wao.dto.AssistantStatusDto;
+import cn.wayuwa.wao.dto.AssistantSourceOptionsDto;
+import cn.wayuwa.wao.service.AiAssistantAssetService;
 import cn.wayuwa.wao.service.AiAssistantConversationService;
 import cn.wayuwa.wao.service.AiAssistantService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,12 +32,15 @@ public class AiAssistantController {
 
     private final AiAssistantService service;
     private final AiAssistantConversationService conversationService;
+    private final AiAssistantAssetService assetService;
     private final CurrentMember currentMember;
 
     public AiAssistantController(AiAssistantService service,
-            AiAssistantConversationService conversationService, CurrentMember currentMember) {
+            AiAssistantConversationService conversationService, AiAssistantAssetService assetService,
+            CurrentMember currentMember) {
         this.service = service;
         this.conversationService = conversationService;
+        this.assetService = assetService;
         this.currentMember = currentMember;
     }
 
@@ -43,6 +48,12 @@ public class AiAssistantController {
     @GetMapping("/status")
     public ApiResponse<AssistantStatusDto> status() {
         return ApiResponse.ok(service.status());
+    }
+
+    /** 返回助手可检索资产的群聊、发言人、日期和项目筛选选项。 */
+    @GetMapping("/source-options")
+    public ApiResponse<AssistantSourceOptionsDto> sourceOptions() {
+        return ApiResponse.ok(assetService.sourceOptions());
     }
 
     /** 返回当前成员的 AI 助手历史会话。 */

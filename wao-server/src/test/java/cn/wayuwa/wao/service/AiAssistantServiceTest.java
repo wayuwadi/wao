@@ -25,9 +25,9 @@ class AiAssistantServiceTest {
     private final AiRunService aiRunService = mock(AiRunService.class);
     private final AiAccountService accountService = mock(AiAccountService.class);
     private final AiAssistantConversationService conversationService = mock(AiAssistantConversationService.class);
-    private final AiAssistantKnowledgeService knowledgeService = mock(AiAssistantKnowledgeService.class);
+    private final AiAssistantAssetService assetService = mock(AiAssistantAssetService.class);
     private final AiAssistantService service = new AiAssistantService(
-            mapper, runnerMapper, aiRunService, accountService, conversationService, knowledgeService);
+            mapper, runnerMapper, aiRunService, accountService, conversationService, assetService);
 
     @Test
     void statusAcceptsAnyOnlineLocalCodexRunner() {

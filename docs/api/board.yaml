@@ -13,6 +13,11 @@ paths:
       summary: AI 助手是否有在线本地 Codex Runner
       responses:
         '200': { description: 返回 configured 与可读状态说明 }
+  /assistant/source-options:
+    get:
+      summary: AI 助手当前可用的群聊、发言人、项目和聊天日期范围
+      responses:
+        '200': { description: 选项全部来自真实配置与业务数据 }
   /assistant/conversations:
     get:
       summary: 当前成员最近更新的 AI 助手会话
@@ -702,6 +707,28 @@ components:
               content: { type: string, minLength: 1, maxLength: 4000 }
         pageContext: { type: string, maxLength: 10000 }
         conversationId: { type: string, maxLength: 32 }
+        sourceFilter: { $ref: '#/components/schemas/AssistantSourceFilter' }
+    AssistantSourceFilter:
+      type: object
+      properties:
+        assetTypes:
+          type: array
+          maxItems: 4
+          items: { type: string, enum: [chat, knowledge, project, task] }
+        chatIds:
+          type: array
+          maxItems: 20
+          items: { type: string, maxLength: 128 }
+        senders:
+          type: array
+          maxItems: 30
+          items: { type: string, maxLength: 80 }
+        dateFrom: { type: string, format: date }
+        dateTo: { type: string, format: date }
+        projectIds:
+          type: array
+          maxItems: 30
+          items: { type: string, maxLength: 32 }
     ApiResponse:
       type: object
       properties:
