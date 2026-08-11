@@ -194,6 +194,11 @@ jobs:
               install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
               install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
               install -m 0755 /tmp/set-nginx-upstream-state.sh /opt/wao/deploy/scripts/set-nginx-upstream-state.sh
+              # 新主配置已经接管 /game 与 /insight；首次摘流也会渲染它，必须先移除旧片段，
+              # 否则 nginx -t 会因 duplicate location 拒绝摘流，永远到不了 deploy_cloud 的清理步骤。
+              install -d -m 0755 /etc/nginx/wao-external-apps.d
+              rm -f /etc/nginx/wao-external-apps.d/wao-game.conf \
+                /etc/nginx/wao-external-apps.d/wao-insight.conf
             '
           }
 
