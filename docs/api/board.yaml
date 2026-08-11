@@ -10,12 +10,34 @@ servers:
 paths:
   /assistant/status:
     get:
-      summary: AI 助手是否有在线 Linux Codex Runner
+      summary: AI 助手是否有在线本地 Codex Runner
       responses:
         '200': { description: 返回 configured 与可读状态说明 }
+  /assistant/conversations:
+    get:
+      summary: 当前成员最近更新的 AI 助手会话
+      responses:
+        '200': { description: 最多 50 条会话摘要 }
+    post:
+      summary: 为当前成员新建空白 AI 助手会话
+      responses:
+        '200': { description: 新会话摘要 }
+  /assistant/conversations/{conversationId}:
+    parameters:
+      - { name: conversationId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: 当前成员的一条会话及最近消息
+      responses:
+        '200': { description: 会话摘要与最近 200 条消息 }
+        '404': { description: 会话不存在或不属于当前成员 }
+    delete:
+      summary: 删除当前成员的一条会话及消息
+      responses:
+        '200': { description: 已删除 }
+        '400': { description: 会话仍有问答执行中 }
   /assistant/chat/stream:
     post:
-      summary: 把页面问答交给 Linux Codex Runner，并以 SSE 返回最终答复
+      summary: 在成员会话中把页面问答交给本地 Codex Runner，并以 SSE 返回最终答复
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/AssistantChatRequest' } } }
@@ -679,6 +701,7 @@ components:
               role: { type: string, enum: [user, assistant] }
               content: { type: string, minLength: 1, maxLength: 4000 }
         pageContext: { type: string, maxLength: 10000 }
+        conversationId: { type: string, maxLength: 32 }
     ApiResponse:
       type: object
       properties:

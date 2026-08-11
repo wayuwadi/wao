@@ -14,9 +14,12 @@ describe('AI assistant SSE', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })))
 
     const chunks: string[] = []
-    for await (const chunk of streamChat('问题', [])) chunks.push(chunk)
+    for await (const chunk of streamChat('问题', [], undefined, 'cv1')) chunks.push(chunk)
 
     expect(chunks).toEqual(['第一行\n第二行'])
+    expect(fetch).toHaveBeenCalledWith('/api/assistant/chat/stream', expect.objectContaining({
+      body: JSON.stringify({ message: '问题', history: [], pageContext: undefined, conversationId: 'cv1' }),
+    }))
     vi.unstubAllGlobals()
   })
 })
