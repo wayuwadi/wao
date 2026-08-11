@@ -26,7 +26,7 @@ import cn.wayuwa.wao.mapper.TaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
 
-/** 仪表盘统计：AI 运行、任务完成、引擎占比。 */
+/** 仪表盘统计：AI 运行频次与用量、任务完成、引擎占比。 */
 @Service
 public class DashboardService {
 
@@ -71,7 +71,12 @@ public class DashboardService {
         return new DashboardSummaryDto(total, active, onlineRunners, completed, succeededWeek, failedWeek);
     }
 
-    /** 近 N 天 AI 运行趋势（按天分桶，total / succeeded / failed / cancelled）。 */
+    /**
+     * 近 N 天 AI 运行频次与 Token 用量（按运行创建日期分桶）。
+     *
+     * <p>Token 只累加 Runner 从 CLI 结束事件真实回传的字段；{@code recordedRuns} 单独保留记账覆盖数，
+     * 避免把没有回传用量的运行解释成零消耗。
+     */
     public List<AiRunTrendItem> aiRunTrend(int days) {
         int span = Math.max(1, Math.min(days, 365));
         LocalDate today = LocalDate.now(ZONE);
@@ -99,7 +104,13 @@ public class DashboardService {
             int succeeded = (int) list.stream().filter(r -> "succeeded".equals(r.getStatus())).count();
             int failed = (int) list.stream().filter(r -> "failed".equals(r.getStatus())).count();
             int cancelled = (int) list.stream().filter(r -> "cancelled".equals(r.getStatus())).count();
-            result.add(new AiRunTrendItem(entry.getKey().format(DATE_FMT), total, succeeded, failed, cancelled));
+            int recordedRuns = (int) list.stream().filter(DashboardService::usageRecorded).count();
+            long inputTokens = list.stream().mapToLong(r -> valueOrZero(r.getInputTokens())).sum();
+            long outputTokens = list.stream().mapToLong(r -> valueOrZero(r.getOutputTokens())).sum();
+            long cachedInputTokens = list.stream().mapToLong(r -> valueOrZero(r.getCachedInputTokens())).sum();
+            long totalTokens = list.stream().mapToLong(r -> valueOrZero(r.getTotalTokens())).sum();
+            result.add(new AiRunTrendItem(entry.getKey().format(DATE_FMT), total, succeeded, failed, cancelled,
+                    recordedRuns, inputTokens, outputTokens, cachedInputTokens, totalTokens));
         }
         return result;
     }
@@ -173,5 +184,13 @@ public class DashboardService {
             case "qoder" -> "Qoder";
             default -> engine;
         };
+    }
+
+    private static boolean usageRecorded(AiTaskRunEntity run) {
+        return valueOrZero(run.getTotalTokens()) > 0;
+    }
+
+    private static long valueOrZero(Long value) {
+        return value == null ? 0 : value;
     }
 }

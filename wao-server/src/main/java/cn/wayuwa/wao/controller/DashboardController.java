@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 仪表盘统计接口：AI 运行趋势、任务完成趋势、引擎占比、顶部指标卡片。 */
+/** 仪表盘统计接口：AI 运行频次与 Token 用量、任务完成趋势、引擎占比、顶部指标卡片。 */
 @RestController
 @RequestMapping("/api/dashboard")
 public class DashboardController {
