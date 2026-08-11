@@ -71,6 +71,18 @@ describe('右上角新建入口', () => {
     expect(ui.modal).toBe('note')
     wrapper.unmount()
   })
+
+  it('手机悬浮新建入口仍可直接打开任务表单', async () => {
+    const ui = useUiStore()
+    const wrapper = await mountLayout()
+
+    const fab = wrapper.find('.fab')
+    expect(fab.attributes('aria-label')).toBe('新建任务')
+    await fab.trigger('click')
+
+    expect(ui.modal).toBe('task')
+    wrapper.unmount()
+  })
 })
 
 describe('新建任务的所属项目', () => {
