@@ -3,6 +3,7 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,6 +20,7 @@ import cn.wayuwa.wao.mapper.AiAssistantMessageMapper;
 import cn.wayuwa.wao.mapper.AiAssistantRunMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 class AiAssistantConversationServiceTest {
 
@@ -38,8 +40,11 @@ class AiAssistantConversationServiceTest {
         service.enqueue(run, "cv1", "member-1", "帮我整理这周的工作计划");
 
         ArgumentCaptor<AiAssistantMessageEntity> message = ArgumentCaptor.forClass(AiAssistantMessageEntity.class);
-        verify(runMapper).insert(run);
         verify(messageMapper).insert(message.capture());
+        verify(runMapper).insert(run);
+        InOrder foreignKeyOrder = inOrder(messageMapper, runMapper);
+        foreignKeyOrder.verify(messageMapper).insert(any(AiAssistantMessageEntity.class));
+        foreignKeyOrder.verify(runMapper).insert(run);
         assertThat(message.getValue().getRole()).isEqualTo("user");
         assertThat(message.getValue().getContent()).isEqualTo("帮我整理这周的工作计划");
         assertThat(run.getConversationId()).isEqualTo("cv1");
