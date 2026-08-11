@@ -29,7 +29,7 @@ public class AiAssistantService {
 
     private static final List<String> ACTIVE = List.of("queued", "running");
     private static final int RESULT_LIMIT = 30_000;
-    private static final long WAIT_TIMEOUT_MILLIS = 180_000L;
+    private static final long WAIT_TIMEOUT_MILLIS = 300_000L;
 
     private final AiAssistantRunMapper mapper;
     private final AiRunnerNodeMapper runnerMapper;
@@ -177,7 +177,7 @@ public class AiAssistantService {
                 throw new BadRequestException("AI 助手等待已中断，请重试");
             }
         }
-        failIfActive(runId, "等待 Codex 超过三分钟，请检查本地 Runner 后重试");
+        failIfActive(runId, "等待 Codex 超过五分钟，请检查本地 Runner 后重试");
         return mapper.selectById(runId);
     }
 

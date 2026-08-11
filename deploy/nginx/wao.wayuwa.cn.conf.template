@@ -99,7 +99,8 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_connect_timeout 5s;
-        proxy_read_timeout 210s;
+        # 聊天记录检索会增加 Codex 上下文，和服务端五分钟等待窗口保持余量。
+        proxy_read_timeout 330s;
         proxy_send_timeout 120s;
         proxy_next_upstream off;
         # 本 location 定义了诊断头后不会继承 server 级 add_header，因此安全头在这里显式保留。

@@ -21,8 +21,8 @@ import org.springframework.util.StringUtils;
 public class AiAssistantKnowledgeService {
 
     private static final TypeReference<List<DocBlockDto>> BLOCKS_TYPE = new TypeReference<>() { };
-    private static final int SOURCE_LIMIT = 5;
-    private static final int TOTAL_CONTEXT_LIMIT = 12_000;
+    private static final int SOURCE_LIMIT = 3;
+    private static final int TOTAL_CONTEXT_LIMIT = 8_000;
 
     private final SettingService settings;
     private final DocMapper docMapper;
@@ -76,7 +76,7 @@ public class AiAssistantKnowledgeService {
         int index = 1;
         for (Source source : sources) {
             if (remaining <= 0) break;
-            String content = limit(source.content(), Math.min(remaining, 4_000));
+            String content = limit(source.content(), Math.min(remaining, 3_000));
             context.append("\n[source ").append(index++).append(" title=\"")
                     .append(source.doc().getTitle()).append("\" url=\"/kb/")
                     .append(kbId).append("?doc=").append(source.doc().getId()).append("\"]\n")

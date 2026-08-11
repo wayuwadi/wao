@@ -75,7 +75,7 @@ public class AiAssistantController {
     /** 流式对话：通过 SSE 把每个 token 实时推送给前端。 */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chatStream(@Valid @RequestBody AssistantChatRequest request, HttpServletRequest http) {
-        SseEmitter emitter = new SseEmitter(190_000L);
+        SseEmitter emitter = new SseEmitter(310_000L);
         String memberId = currentMember.idOr(http, "unknown");
         // 项目生产基线仍是 Java 17，使用普通守护线程释放 Tomcat 请求线程。
         // 待整体升级 Java 21 后再通过 ADR 统一切换虚拟线程，不能在单个功能里偷跑运行时基线。
