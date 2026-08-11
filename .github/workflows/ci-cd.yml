@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Build once and deploy in parallel
+    name: Build once and deploy with Gateway draining
     runs-on: ubuntu-latest
     if: vars.DEPLOY_ENABLED == 'true'
     steps:
@@ -122,7 +122,7 @@ jobs:
             echo '::notice title=Agent 私有配置未迁移::旧部署目录和当前统一部署中均没有 Agent 模型或平台配置；对应能力会如实显示为未接入。'
           fi
           rm -f wao-agent.env
-      - name: Deploy slave, cloud and master in rolling order
+      - name: Drain and deploy slave, cloud and master in rolling order
         env:
           MASTER_HOST: ${{ secrets.MASTER_HOST }}
           MASTER_USER: ${{ secrets.MASTER_USER }}
@@ -181,6 +181,22 @@ jobs:
             retry_remote "Windows 从节点" ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets"
           }
 
+          prepare_cloud_routing() {
+            retry_remote "云前端路由" scp -o ConnectTimeout=15 \
+              deploy/nginx/wao.wayuwa.cn.conf.template \
+              deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
+              deploy/scripts/set-nginx-upstream-state.sh \
+              "$CLOUD_USER@$CLOUD_HOST:/tmp/" || return
+            retry_remote "云前端路由" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" '
+              set -eu
+              install -d -m 0755 /opt/wao/deploy/nginx /opt/wao/deploy/scripts
+              install -m 0644 /tmp/wao.wayuwa.cn.conf.template /opt/wao/deploy/nginx/wao.wayuwa.cn.conf.template
+              install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
+              install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
+              install -m 0755 /tmp/set-nginx-upstream-state.sh /opt/wao/deploy/scripts/set-nginx-upstream-state.sh
+            '
+          }
+
           deploy_cloud() {
             resolve_ipv4() {
               getent ahostsv4 "$1" | awk '$2 == "STREAM" { print $1; exit }'
@@ -190,8 +206,7 @@ jobs:
             test -n "$master_gateway_ipv4"
             test -n "$slave_gateway_ipv4"
             MASTER_GATEWAY_IPV4="$master_gateway_ipv4" SLAVE_GATEWAY_IPV4="$slave_gateway_ipv4" \
-              envsubst '${MASTER_GATEWAY_IPV4} ${SLAVE_GATEWAY_IPV4}' \
-              < deploy/nginx/wao.wayuwa.cn.conf.template > wao-nginx.conf
+              WAO_NGINX_RENDER_OUTPUT=wao-nginx.conf sh deploy/scripts/render-nginx-config.sh
             retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" '
               set -eu
               install -d /tmp/wao-dist /tmp/wao-agent-dist
@@ -204,6 +219,7 @@ jobs:
             retry_remote "云前端" scp -o ConnectTimeout=15 \
               deploy/nginx/wao.wayuwa.cn.conf.template \
               deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
+              deploy/scripts/set-nginx-upstream-state.sh \
               "$CLOUD_USER@$CLOUD_HOST:/tmp/" || return
             retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" '
               set -eu
@@ -239,7 +255,9 @@ jobs:
               install -m 0644 /tmp/wao.wayuwa.cn.conf.template /opt/wao/deploy/nginx/wao.wayuwa.cn.conf.template
               install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
               install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
-              rm -f /tmp/wao.wayuwa.cn.conf.template /tmp/activate-nginx-config.sh /tmp/render-nginx-config.sh
+              install -m 0755 /tmp/set-nginx-upstream-state.sh /opt/wao/deploy/scripts/set-nginx-upstream-state.sh
+              rm -f /tmp/wao.wayuwa.cn.conf.template /tmp/activate-nginx-config.sh \
+                /tmp/render-nginx-config.sh /tmp/set-nginx-upstream-state.sh
               printf "%s\n" \
                 "SHELL=/bin/sh" \
                 "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
@@ -261,9 +279,46 @@ jobs:
             '
           }
 
-          # 从节点先升级并恢复健康，再让云 Nginx 启用新路由，最后重启主节点。
-          # 这样两个 Gateway 不会被同时摘空；任一前置阶段失败都不再触碰当前健康的主节点。
+          gateway_ready_from_cloud() {
+            gateway_host="$1"
+            ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" \
+              "curl -4 -kfsS --max-time 8 https://$gateway_host:9000/api/hello | grep -q '\"code\":0'"
+          }
+
+          set_upstream_state() {
+            node="$1"
+            state="$2"
+            retry_remote "云前端路由" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" \
+              "/opt/wao/deploy/scripts/set-nginx-upstream-state.sh $node $state"
+          }
+
+          restore_upstreams() {
+            set_upstream_state slave up >/dev/null 2>&1 || true
+            set_upstream_state master up >/dev/null 2>&1 || true
+          }
+
+          if ! prepare_cloud_routing >routing.log 2>&1; then
+            printf '\n===== cloud routing =====\n'; cat routing.log
+            exit 1
+          fi
+
+          trap restore_upstreams EXIT
+
+          if gateway_ready_from_cloud "$SLAVE_HOST"; then
+            if ! set_upstream_state slave down; then
+              printf '云端未能摘流 Windows 从节点，本次不冒险重启从节点。\n' >slave.log
+              printf '\n===== slave =====\n'; cat slave.log
+              exit 1
+            fi
+          else
+            echo '::notice title=Windows 从节点未摘流::节点发布前不健康，不在 Nginx 中额外标记 down。'
+          fi
           if ! deploy_slave >slave.log 2>&1; then
+            set_upstream_state slave up || true
+            printf '\n===== slave =====\n'; cat slave.log
+            exit 1
+          fi
+          if ! set_upstream_state slave up; then
             printf '\n===== slave =====\n'; cat slave.log
             exit 1
           fi
@@ -275,10 +330,27 @@ jobs:
           fi
           printf '\n===== cloud =====\n'; cat cloud.log
 
+          if gateway_ready_from_cloud "$SLAVE_HOST"; then
+            if ! set_upstream_state master down; then
+              echo '云端未能摘流 Linux 主节点，本次不冒险重启主节点。' >master.log
+              printf '\n===== master =====\n'; cat master.log
+              exit 1
+            fi
+          else
+            echo '::notice title=Linux 主节点未摘流::Windows 从节点当前不健康，保留主节点路由以避免主动制造全站中断。'
+          fi
           if ! deploy_master >master.log 2>&1; then
+            set_upstream_state master up || true
             printf '\n===== master =====\n'; cat master.log
             exit 1
           fi
+          if ! set_upstream_state master up; then
+            printf '\n===== master =====\n'; cat master.log
+            exit 1
+          fi
+
+          trap - EXIT
+          restore_upstreams
           printf '\n===== master =====\n'; cat master.log
       - name: Verify production and Feishu entry point
         run: |
@@ -293,10 +365,16 @@ jobs:
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/insight/)" = '410'
           ai_read_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/ai/workflows \
             | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
-          test "$ai_read_route" = 'dual-gateway-read'
+          test "$ai_read_route" = 'dual-gateway-ai'
+          goal_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/ai/goals \
+            | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
+          test "$goal_route" = 'dual-gateway-ai'
           ai_write_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/settings/ai-accounts \
             | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
           test "$ai_write_route" = 'linux-vpn-master'
+          credential_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/ai/runner/accounts \
+            | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
+          test "$credential_route" = 'linux-vpn-master'
           tianren_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/tianren/readings/today/interpret/stream \
             | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
           test "$tianren_route" = 'linux-vpn-master'

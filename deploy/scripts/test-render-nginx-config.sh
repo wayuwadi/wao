@@ -42,6 +42,24 @@ if [ -n "${unexpected_upstreams}" ]; then
   exit 1
 fi
 
+MASTER_GATEWAY_STATE=' down' \
+  SLAVE_GATEWAY_STATE='' \
+  MASTER_GATEWAY_IPV4='203.0.113.10' \
+  SLAVE_GATEWAY_IPV4='198.51.100.20' \
+  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/master-down.conf" \
+  sh "${script_dir}/render-nginx-config.sh"
+grep -q 'server 203.0.113.10:9000 down max_fails=3' "${tmp_dir}/master-down.conf"
+grep -q 'server 198.51.100.20:9000 max_fails=3' "${tmp_dir}/master-down.conf"
+
+if MASTER_GATEWAY_STATE='invalid' \
+  MASTER_GATEWAY_IPV4='203.0.113.10' \
+  SLAVE_GATEWAY_IPV4='198.51.100.20' \
+  WAO_NGINX_RENDER_OUTPUT="${tmp_dir}/invalid-state.conf" \
+  sh "${script_dir}/render-nginx-config.sh" >/dev/null 2>&1; then
+  echo 'Rendering must reject an invalid Gateway state.' >&2
+  exit 1
+fi
+
 if PATH="${tmp_dir}:${PATH}" \
   MASTER_PUBLIC_HOST='missing.test' \
   SLAVE_PUBLIC_HOST='slave.test' \

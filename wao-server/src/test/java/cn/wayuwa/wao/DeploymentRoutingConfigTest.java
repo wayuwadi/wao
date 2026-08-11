@@ -40,7 +40,7 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void aiApiRoutesOnlyToLinuxMasterGateway() throws IOException {
+    void onlyCredentialBearingAiApiRoutesToLinuxMasterGateway() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String aiUpstream = section(nginx, "upstream wao_ai_gateway {", "\n}");
         String aiLocation = section(nginx,
@@ -50,10 +50,17 @@ class DeploymentRoutingConfigTest {
         assertThat(aiUpstream)
                 .contains("${MASTER_GATEWAY_IPV4}:9000")
                 .doesNotContain("${SLAVE_GATEWAY_IPV4}", "backup");
-        assertThat(Pattern.compile(aiRoutePattern)
-                .matcher("/api/tianren/readings/today/interpret/stream").find()).isTrue();
-        assertThat(Pattern.compile(aiRoutePattern)
-                .matcher("/api/tianren/readings/today").find()).isFalse();
+        Pattern route = Pattern.compile(aiRoutePattern);
+        assertThat(route.matcher("/api/settings/ai-accounts/login/start").find()).isTrue();
+        assertThat(route.matcher("/api/ai/runner/accounts").find()).isTrue();
+        assertThat(route.matcher("/api/ai/runner/claim").find()).isTrue();
+        assertThat(route.matcher("/api/ai/runner/assistant/claim").find()).isTrue();
+        assertThat(route.matcher("/api/tianren/readings/today/interpret/stream").find()).isTrue();
+        assertThat(route.matcher("/api/ai/goals").find()).isFalse();
+        assertThat(route.matcher("/api/ai/runs").find()).isFalse();
+        assertThat(route.matcher("/api/ai/runner/heartbeat").find()).isFalse();
+        assertThat(route.matcher("/api/assistant/chat/stream").find()).isFalse();
+        assertThat(route.matcher("/api/tianren/readings/today").find()).isFalse();
         assertThat(nginx)
                 .contains("proxy_pass https://wao_ai_gateway;")
                 .contains("proxy_next_upstream off;")
@@ -61,22 +68,17 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void readOnlyAiConsoleQueriesUseBothGatewaysButWritesStayOnLinux() throws IOException {
+    void aiOrchestrationReadsAndWritesUseBothGateways() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
-        String readLocation = section(nginx,
+        String orchestrationLocation = section(nginx,
                 "location ~ ^/api/ai/(?:workflows", "\n    }");
-        String writeLocation = section(nginx, "location @wao_ai_write {", "\n    }");
 
-        assertThat(readLocation)
-                .contains("if ($request_method !~ ^(GET|HEAD)$) { return 418; }")
-                .contains("error_page 418 = @wao_ai_write;")
+        assertThat(orchestrationLocation)
+                .contains("|goals|")
                 .contains("proxy_pass https://wao_gateway;")
                 .contains("proxy_next_upstream error timeout http_500 http_502 http_503 http_504;")
-                .contains("X-WAO-API-Route dual-gateway-read always;");
-        assertThat(writeLocation)
-                .contains("proxy_pass https://wao_ai_gateway;")
-                .contains("proxy_next_upstream off;")
-                .contains("X-WAO-API-Route linux-vpn-master always;");
+                .contains("X-WAO-API-Route dual-gateway-ai always;")
+                .doesNotContain("request_method", "@wao_ai_write");
     }
 
     @Test
@@ -85,11 +87,21 @@ class DeploymentRoutingConfigTest {
         String probe = readFromRepository("deploy/scripts/probe-codex-egress.sh");
 
         assertThat(workflow)
-                .contains("envsubst '${MASTER_GATEWAY_IPV4} ${SLAVE_GATEWAY_IPV4}'")
+                .contains("WAO_NGINX_RENDER_OUTPUT=wao-nginx.conf sh deploy/scripts/render-nginx-config.sh")
                 .contains("scp -o ConnectTimeout=15 wao-nginx.conf")
                 .contains("nginx -t")
                 .contains("/api/tianren/readings/today/interpret/stream")
                 .contains("probe-codex-egress.sh");
+        assertThat(workflow)
+                .contains("set-nginx-upstream-state.sh")
+                .contains("set_upstream_state slave down")
+                .contains("set_upstream_state master down")
+                .contains("test \"$goal_route\" = 'dual-gateway-ai'")
+                .contains("/api/ai/runner/accounts");
+        assertThat(workflow.indexOf("prepare_cloud_routing >routing.log"))
+                .isLessThan(workflow.indexOf("deploy_slave >slave.log"));
+        assertThat(workflow.indexOf("deploy_slave >slave.log"))
+                .isLessThan(workflow.indexOf("deploy_cloud >cloud.log"));
         assertThat(workflow)
                 .contains("scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env")
                 .contains("deploy/scripts/deploy-linux.sh\" master; rm -f /tmp/wao-secrets.env")
@@ -104,7 +116,7 @@ class DeploymentRoutingConfigTest {
                 .isLessThan(workflow.indexOf("if ! deploy_master >master.log 2>&1; then"));
         assertThat(workflow)
                 .doesNotContain("deploy_master >master.log 2>&1 &")
-                .contains("test \"$ai_read_route\" = 'dual-gateway-read'")
+                .contains("test \"$ai_read_route\" = 'dual-gateway-ai'")
                 .contains("test \"$ai_write_route\" = 'linux-vpn-master'");
         assertThat(probe)
                 .contains("elif sudo -n docker info")
@@ -140,6 +152,25 @@ class DeploymentRoutingConfigTest {
                 .contains("rm -f /etc/nginx/wao-external-apps.d/wao-game.conf")
                 .contains("/etc/nginx/wao-external-apps.d/wao-insight.conf")
                 .doesNotContain("rm -rf /etc/nginx/wao-external-apps.d");
+    }
+
+    @Test
+    void automaticDdnsReloadDefersWhileGatewayIsDrained() throws IOException {
+        String activation = readFromRepository("deploy/scripts/activate-nginx-config.sh");
+        String stateScript = readFromRepository("deploy/scripts/set-nginx-upstream-state.sh");
+        String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
+
+        assertThat(activation)
+                .contains("deployment_drain_lock='/run/wao-nginx-upstreams/deployment.lock'")
+                .contains("automatic DDNS activation is deferred");
+        assertThat(stateScript)
+                .contains("MASTER_GATEWAY_STATE=' down'")
+                .contains("SLAVE_GATEWAY_STATE=' down'")
+                .contains("systemctl reload nginx")
+                .contains("rm -f \"${lock_file}\"");
+        assertThat(nginx)
+                .contains("${MASTER_GATEWAY_IPV4}:9000${MASTER_GATEWAY_STATE}")
+                .contains("${SLAVE_GATEWAY_IPV4}:9000${SLAVE_GATEWAY_STATE}");
     }
 
     @Test

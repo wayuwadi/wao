@@ -387,6 +387,9 @@ class AiAccountServiceTest {
         when(codex.refresh("refresh-1"))
                 .thenReturn(new OpenAiCodexOAuthClient.TokenSet(newIdToken, "new-access", null, 7200));
 
+        service.validateRunAccount(created.id(), "codex");
+        verify(codex, never()).refresh("refresh-1");
+
         var account = service.runAccount(created.id(), "codex");
 
         assertThat(account.credentials()).contains("\"access_token\":\"new-access\"")
