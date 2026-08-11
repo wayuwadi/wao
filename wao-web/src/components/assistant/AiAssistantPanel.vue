@@ -814,6 +814,10 @@ onBeforeUnmount(stopStatusRefresh)
   .welcome { padding-top: 65px; }
   .welcome-actions { grid-template-columns: 1fr; }
   .composer-foot > span { display: none; }
-  .assistant-fab { right: 14px; bottom: 76px; }
+  /* 与最右侧的新建任务按钮并排：两个都是高频入口，不增加二级菜单，也不能互相覆盖。 */
+  .assistant-fab {
+    right: 80px;
+    bottom: calc(80px + env(safe-area-inset-bottom));
+  }
 }
 </style>

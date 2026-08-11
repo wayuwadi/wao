@@ -127,6 +127,8 @@ const activeAiRun = computed(() => aiRuns.value.find((run) => ['queued', 'claime
 const dispatchedSubIds = computed(
   () => new Set(aiRuns.value.map((run) => run.subId).filter((id): id is string => !!id)),
 )
+/** 手机子任务详情里的派工状态与列表行共用同一份运行档案，避免出现两个可重复点击的入口。 */
+const openSubDispatched = computed(() => !!openSubId.value && dispatchedSubIds.value.has(openSubId.value))
 
 async function continueRun(runId: string) {
   const input = aiContinuation.value[runId]?.trim()
@@ -616,6 +618,10 @@ async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: s
 function runSubWithAi(key: string) {
   aiLauncherSubId.value = key
   aiLauncherOpen.value = true
+}
+
+function runOpenSubWithAi() {
+  if (openSubId.value) runSubWithAi(openSubId.value)
 }
 
 /** 选择器上要写清楚这次到底跑什么，否则从子任务点开会以为要跑整个任务。 */
@@ -1292,6 +1298,15 @@ function demo(msg: string) {
               @input="editSubTitle"
               @keydown.enter.prevent
             ></textarea>
+          </div>
+
+          <div v-if="isMobile && !openSub.done" class="sub-page-ai-slot">
+            <button v-if="openSubDispatched" class="sub-page-ai dispatched" type="button" disabled>
+              <i class="ri-robot-2-line"></i>已派给 AI
+            </button>
+            <button v-else class="sub-page-ai" type="button" @click="runOpenSubWithAi">
+              <i class="ri-robot-2-line"></i>交给 AI 跑
+            </button>
           </div>
 
           <div class="sub-field">
@@ -2974,6 +2989,33 @@ function demo(msg: string) {
   background: var(--wao-success-bg, #eaf8f0);
   border-color: #bfe6cf;
   color: var(--wao-success-strong);
+}
+.sub-page-ai-slot {
+  margin: 12px 0 16px 26px;
+}
+.sub-page-ai {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid color-mix(in srgb, var(--wao-primary) 38%, var(--wao-line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--wao-primary) 8%, var(--wao-bg-card));
+  color: var(--wao-primary-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.sub-page-ai:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.sub-page-ai.dispatched {
+  border-color: var(--wao-line);
+  background: var(--wao-bg-tab);
+  color: var(--wao-area-finance);
+  cursor: default;
 }
 
 @media (max-width: 760px) {

@@ -608,7 +608,7 @@ describe('TaskDrawer', () => {
    * 原来子任务详情排在正文下面，手机窗口小，点开还得往下滑一段才找得到，
    * 滑到了也认不出看的是哪一条。
    */
-  it('手机上点子任务盖成一整页，顶栏写清是第几条并能返回', async () => {
+  it('手机上点子任务盖成一整页，可直接把当前子任务交给 AI 并能返回', async () => {
     const original = window.matchMedia
     window.matchMedia = ((query: string) => ({
       matches: true, media: query, onchange: null,
@@ -629,6 +629,13 @@ describe('TaskDrawer', () => {
       expect(page.find('.sub-page-title b').text()).toBe('子任务 1 / 2')
       // 桌面版的「返回任务属性」在手机上换成顶栏返回键，不占正文空间
       expect(w.find('.sub-back').exists()).toBe(false)
+
+      const aiButton = page.find('.sub-page-ai')
+      expect(aiButton.text()).toContain('交给 AI 跑')
+      await aiButton.trigger('click')
+      await flushPromises()
+      expect(w.find('.launcher .scope').text()).toContain('扫描身份证')
+      await w.find('.launcher .close').trigger('click')
 
       await page.find('.sub-page-back').trigger('click')
       expect(w.find('.props.sub-page').exists()).toBe(false)
