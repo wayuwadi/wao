@@ -51,7 +51,6 @@ class DeploymentRoutingConfigTest {
     void deploymentPublishesNginxConfigAndProbesOpenAiInsideMasterContainer() throws IOException {
         String workflow = readFromRepository(".github/workflows/ci-cd.yml");
         String probe = readFromRepository("deploy/scripts/probe-codex-egress.sh");
-        String installer = readFromRepository("deploy/ai-runner/install-linux-codex.sh");
 
         assertThat(workflow)
                 .contains("envsubst '${MASTER_PUBLIC_HOST} ${SLAVE_PUBLIC_HOST}'")
@@ -59,26 +58,13 @@ class DeploymentRoutingConfigTest {
                 .contains("nginx -t")
                 .contains("probe-codex-egress.sh");
         assertThat(workflow)
-                .contains("name: Prepare Linux Codex package")
-                .contains("codex-package-x86_64-unknown-linux-musl.tar.gz")
-                .contains("sha256sum -c codex-package-linux.sha256")
-                .contains("upload_master_resumable()")
-                .contains("stat -c '%s' -- '$remote_file'")
-                .contains("tail -c \"+$((remote_size + 1))\"")
-                .contains("timeout 600s ssh")
-                .contains("cat >> '$remote_file'")
-                .contains("Codex 包续传完成")
-                .contains("WAO_CODEX_PACKAGE=/tmp/codex-package-x86_64-unknown-linux-musl.tar.gz")
-                .contains("WAO_CODEX_CHECKSUMS=/tmp/codex-package_SHA256SUMS")
-                .contains("master; rm -f /tmp/wao-secrets.env /tmp/codex-package-x86_64-unknown-linux-musl.tar.gz")
-                .doesNotContain("rm -f /tmp/wao-secrets.env; sh \"$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh\" master");
-        assertThat(installer)
-                .contains("https://releases.openai.com/codex/install.sh")
-                .contains("CODEX_RELEASE=\"${CODEX_VERSION}\"")
-                .contains("install_bundled_package")
-                .contains("sha256sum \"${package}\"")
-                .contains("tar -xzf \"${package}\"")
-                .doesNotContain("github.com/openai/codex/releases");
+                .contains("scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env")
+                .contains("deploy/scripts/deploy-linux.sh\" master; rm -f /tmp/wao-secrets.env")
+                .doesNotContain("Prepare Linux Codex package")
+                .doesNotContain("codex-package-x86_64-unknown-linux-musl.tar.gz")
+                .doesNotContain("upload_master_resumable")
+                .doesNotContain("WAO_CODEX_PACKAGE")
+                .doesNotContain("WAO_CODEX_CHECKSUMS");
         assertThat(probe)
                 .contains("elif sudo -n docker info")
                 .contains("sudo -n docker \"$@\"")
@@ -132,10 +118,10 @@ class DeploymentRoutingConfigTest {
                 .contains("apk add --no-cache curl tinyproxy")
                 .contains("USER tinyproxy");
         assertThat(deployScript)
-                .contains("install-linux-codex.sh")
                 .contains("compose build codex-egress-proxy wao-server wao-gateway")
                 .contains("compose up -d --force-recreate --wait codex-egress-proxy")
-                .contains("diagnostic_services=\"codex-egress-proxy ${diagnostic_services}\"");
+                .contains("diagnostic_services=\"codex-egress-proxy ${diagnostic_services}\"")
+                .doesNotContain("install-linux-codex.sh");
         assertThat(tinyproxy)
                 .contains("Allow 127.0.0.1")
                 .contains("Allow 172.16.0.0/12")

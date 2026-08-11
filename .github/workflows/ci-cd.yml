@@ -37,16 +37,6 @@ jobs:
         run: |
           npm ci
           npm run build
-      - name: Prepare Linux Codex package
-        env:
-          CODEX_VERSION: "0.147.0"
-        run: |
-          asset="codex-package-x86_64-unknown-linux-musl.tar.gz"
-          base="https://releases.openai.com/codex/releases/${CODEX_VERSION}"
-          curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 "$base/$asset" -o "$asset"
-          curl -fsSL --retry 3 --connect-timeout 15 --max-time 60 "$base/codex-package_SHA256SUMS" -o codex-package_SHA256SUMS
-          grep -E "^[0-9a-fA-F]{64}  ${asset}$" codex-package_SHA256SUMS > codex-package-linux.sha256
-          sha256sum -c codex-package-linux.sha256
       - name: Package release
         run: |
           git archive --format=tar.gz -o wao-release.tgz HEAD
@@ -126,62 +116,16 @@ jobs:
             done
           }
 
-          upload_master_resumable() {
-            local_file="$1"
-            remote_file="$2"
-            local_size="$(stat -c '%s' "$local_file")"
-            local_sha="$(sha256sum "$local_file" | awk '{ print $1 }')"
-            attempt=1
-            while [ "$attempt" -le 6 ]; do
-              remote_size="$(ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
-                "stat -c '%s' -- '$remote_file' 2>/dev/null || printf '0'" 2>/dev/null || true)"
-              case "$remote_size" in
-                ''|*[!0-9]*) remote_size=0 ;;
-              esac
-              if [ "$remote_size" -gt "$local_size" ]; then
-                retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
-                  "rm -f -- '$remote_file'" || return
-                remote_size=0
-              fi
-              if [ "$remote_size" -eq "$local_size" ]; then
-                remote_sha="$(ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
-                  "sha256sum -- '$remote_file' | awk '{ print \$1 }'" 2>/dev/null || true)"
-                if [ "$remote_sha" = "$local_sha" ]; then
-                  printf 'Linux 主节点 Codex 包续传完成：%s / %s bytes，SHA-256 通过\n' "$remote_size" "$local_size"
-                  return 0
-                fi
-                printf 'Linux 主节点 Codex 包大小完整但校验失败，从头重传\n'
-                retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
-                  "rm -f -- '$remote_file'" || return
-                remote_size=0
-              fi
-              printf 'Linux 主节点 Codex 包续传：%s / %s bytes（第 %s 次连接）\n' \
-                "$remote_size" "$local_size" "$attempt"
-              if tail -c "+$((remote_size + 1))" "$local_file" \
-                | timeout 600s ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
-                    "cat >> '$remote_file'"; then
-                continue # 下一轮按远端实际大小和 SHA-256 确认完成。
-              fi
-              printf 'Linux 主节点 Codex 包本次续传中断，将从远端已有字节继续\n'
-              attempt=$((attempt + 1))
-              sleep 10
-            done
-            printf 'Linux 主节点 Codex 包续传 6 次后仍未完成\n'
-            return 1
-          }
-
           deploy_master() {
-            retry_remote "Linux 主节点" scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env codex-package_SHA256SUMS \
+            retry_remote "Linux 主节点" scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env \
               "$MASTER_USER@$MASTER_HOST:/tmp/" || return
-            upload_master_resumable codex-package-x86_64-unknown-linux-musl.tar.gz \
-              /tmp/codex-package-x86_64-unknown-linux-musl.tar.gz || return
             # 解压前先清掉上一版源码：tar 只覆盖同名文件，删除 / 改名过的文件会留在节点上，
             # 混进 Docker 构建上下文（V18 撞号那次就是被留下的旧 migration 打挂的）。
             # deploy/ 整个保留：节点私有的 .env / .env.secrets / certs / data 都在里面，
             # 其中被 git 跟踪的文件随即被这次解压整份覆盖。
             # 远程部署失败时 retry_remote 会重跑整条命令；临时 secrets 必须等部署成功后再删，
             # 否则第一次失败后的重试会因为源文件已被删除而永久失败。
-            retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; find "$desktop_dir/deploy/wao" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; WAO_CODEX_PACKAGE=/tmp/codex-package-x86_64-unknown-linux-musl.tar.gz WAO_CODEX_CHECKSUMS=/tmp/codex-package_SHA256SUMS sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master; rm -f /tmp/wao-secrets.env /tmp/codex-package-x86_64-unknown-linux-musl.tar.gz /tmp/codex-package_SHA256SUMS'
+            retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; find "$desktop_dir/deploy/wao" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master; rm -f /tmp/wao-secrets.env'
           }
 
           deploy_slave() {
