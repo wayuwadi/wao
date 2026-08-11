@@ -160,7 +160,7 @@ https://wao.wayuwa.cn/api/hello
 
 ## GitHub Actions
 
-CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。开发期 CD 会构建 WAO Web 与 Agent Web，并行发布三台节点；Agent 模型和平台私有配置在首次统一发布时从旧节点私有目录迁移，不进入 Git。决策见 [ADR-011](../docs/adr/011-development-fast-delivery.md) 与 [ADR-049](../docs/adr/049-unified-product-monorepo-delivery.md)。
+CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。开发期 CD 会构建 WAO Web 与 Agent Web，再按从节点、云前端/Nginx、主节点的顺序滚动发布；Agent 模型和平台私有配置在首次统一发布时从旧节点私有目录迁移，不进入 Git。统一交付见 [ADR-049](../docs/adr/049-unified-product-monorepo-delivery.md)，滚动容灾见 [ADR-050](../docs/adr/050-rolling-api-deployment.md)。
 
 发布包用 `git archive HEAD` 打出，落到节点上时**先清空上一版源码再解压**：`tar -xzf` 和 `Expand-Archive -Force` 都只覆盖同名文件，不会删除这一版里已经删掉或改过名的文件，留在节点上的旧文件会跟着进 Docker 构建上下文。2026-07-26 连续四次部署回滚就是这么来的：`V18__chat_sync_monthly_archive.sql` 在仓库里已经改名成 V21，节点上的旧副本还在，Flyway 一启动就报「Found more than one migration with version 18」。清理范围是节点目录下除 `deploy/` 以外的全部内容——`deploy/` 里放着节点私有的 `.env`、`.env.secrets`、`certs/`、`data/`，其中被 git 跟踪的文件随即被这次解压整份覆盖。
 

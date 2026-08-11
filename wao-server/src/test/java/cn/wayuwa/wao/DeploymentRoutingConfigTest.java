@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
 
-/** 防止 Codex/OpenAI 出站流量重新被云端 Nginx 随机分配到无 VPN 的从节点。 */
+/** 防止部署与 Codex/OpenAI 专用路由回归成单点中断或无 VPN 出站。 */
 class DeploymentRoutingConfigTest {
 
     @Test
@@ -43,7 +43,8 @@ class DeploymentRoutingConfigTest {
     void aiApiRoutesOnlyToLinuxMasterGateway() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String aiUpstream = section(nginx, "upstream wao_ai_gateway {", "\n}");
-        String aiLocation = section(nginx, "location ~ ", " {");
+        String aiLocation = section(nginx,
+                "location ~ ^/api/(settings/ai-accounts", " {");
         String aiRoutePattern = aiLocation.substring("location ~ ".length(), aiLocation.length() - " {".length());
 
         assertThat(aiUpstream)
@@ -54,6 +55,25 @@ class DeploymentRoutingConfigTest {
         assertThat(Pattern.compile(aiRoutePattern)
                 .matcher("/api/tianren/readings/today").find()).isFalse();
         assertThat(nginx)
+                .contains("proxy_pass https://wao_ai_gateway;")
+                .contains("proxy_next_upstream off;")
+                .contains("X-WAO-API-Route linux-vpn-master always;");
+    }
+
+    @Test
+    void readOnlyAiConsoleQueriesUseBothGatewaysButWritesStayOnLinux() throws IOException {
+        String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
+        String readLocation = section(nginx,
+                "location ~ ^/api/ai/(?:workflows", "\n    }");
+        String writeLocation = section(nginx, "location @wao_ai_write {", "\n    }");
+
+        assertThat(readLocation)
+                .contains("if ($request_method !~ ^(GET|HEAD)$) { return 418; }")
+                .contains("error_page 418 = @wao_ai_write;")
+                .contains("proxy_pass https://wao_gateway;")
+                .contains("proxy_next_upstream error timeout http_500 http_502 http_503 http_504;")
+                .contains("X-WAO-API-Route dual-gateway-read always;");
+        assertThat(writeLocation)
                 .contains("proxy_pass https://wao_ai_gateway;")
                 .contains("proxy_next_upstream off;")
                 .contains("X-WAO-API-Route linux-vpn-master always;");
@@ -78,6 +98,14 @@ class DeploymentRoutingConfigTest {
                 .doesNotContain("upload_master_resumable")
                 .doesNotContain("WAO_CODEX_PACKAGE")
                 .doesNotContain("WAO_CODEX_CHECKSUMS");
+        assertThat(workflow.indexOf("if ! deploy_slave >slave.log 2>&1; then"))
+                .isLessThan(workflow.indexOf("if ! deploy_cloud >cloud.log 2>&1; then"));
+        assertThat(workflow.indexOf("if ! deploy_cloud >cloud.log 2>&1; then"))
+                .isLessThan(workflow.indexOf("if ! deploy_master >master.log 2>&1; then"));
+        assertThat(workflow)
+                .doesNotContain("deploy_master >master.log 2>&1 &")
+                .contains("test \"$ai_read_route\" = 'dual-gateway-read'")
+                .contains("test \"$ai_write_route\" = 'linux-vpn-master'");
         assertThat(probe)
                 .contains("elif sudo -n docker info")
                 .contains("sudo -n docker \"$@\"")

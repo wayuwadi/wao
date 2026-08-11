@@ -89,6 +89,50 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # AI 控制台的纯读查询不访问 OpenAI，使用双 Gateway 容灾。
+    # 同路径的写请求仍内部转到 Linux，避免入队时刷新 Codex 凭据走到无 VPN 的从节点。
+    location ~ ^/api/ai/(?:workflows|runners|runners/[^/]+/log|runs|tasks/[^/]+/runs|projects/[^/]+/config)$ {
+        error_page 418 = @wao_ai_write;
+        if ($request_method !~ ^(GET|HEAD)$) { return 418; }
+
+        proxy_pass https://wao_gateway;
+        proxy_http_version 1.1;
+        proxy_ssl_verify off;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 120s;
+        proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-WAO-API-Route dual-gateway-read always;
+    }
+
+    # 写入与令牌相关请求保持 Linux VPN 出口。
+    location @wao_ai_write {
+        proxy_pass https://wao_ai_gateway;
+        proxy_http_version 1.1;
+        proxy_ssl_verify off;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 330s;
+        proxy_send_timeout 120s;
+        proxy_next_upstream off;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-WAO-API-Route linux-vpn-master always;
+    }
+
     # AI 账号管理、运行入队和 Runner 领取都可能触发 Codex 令牌刷新或额度查询，统一固定到 Linux。
     location ~ ^/api/(settings/ai-accounts(?:/|$)|ai(?:/|$)|assistant(?:/|$)|tianren/readings/today/interpret(?:/|$)) {
         proxy_pass https://wao_ai_gateway;
