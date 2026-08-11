@@ -137,6 +137,8 @@ class DeploymentRoutingConfigTest {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String activation = readFromRepository("deploy/scripts/activate-nginx-config.sh");
         String workflow = readFromRepository(".github/workflows/ci-cd.yml");
+        String routingPreparation = section(workflow,
+                "prepare_cloud_routing() {", "\n          }\n\n          deploy_cloud() {");
 
         assertThat(nginx)
                 .contains("location = /game {")
@@ -152,6 +154,10 @@ class DeploymentRoutingConfigTest {
                 .contains("rm -f /etc/nginx/wao-external-apps.d/wao-game.conf")
                 .contains("/etc/nginx/wao-external-apps.d/wao-insight.conf")
                 .doesNotContain("rm -rf /etc/nginx/wao-external-apps.d");
+        assertThat(routingPreparation)
+                .as("首次摘流前必须先移除会与新主配置重复的旧内部应用路由")
+                .contains("rm -f /etc/nginx/wao-external-apps.d/wao-game.conf")
+                .contains("/etc/nginx/wao-external-apps.d/wao-insight.conf");
     }
 
     @Test
