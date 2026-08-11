@@ -50,7 +50,10 @@ CD 不再下载、上传、安装或重启 Codex CLI/Runner，避免业务发布
 `--claude-model opus`。Qoder 的引擎 id 是 `qoder`，命令名国际版叫 `qodercli`、国内版叫
 `qoderclicn`，自动探测按顺序两个名字都认。
 
-选择 WAO 集中账号且没有手动指定执行电脑时，任务默认固定到支持对应 CLI 的 Linux 主节点。
+右下角 AI 助手会由任一在线且上报 `codex` 能力的本地 Runner 领取，Windows 和 Linux 均可；面板打开时
+每 5 秒自动恢复一次短暂断开的状态，无需手动刷新整个页面。
+
+选择 WAO 集中账号且没有手动指定执行电脑时，开发任务仍默认固定到支持对应 CLI 的 Linux 主节点。
 因此要在 Linux 主节点运行 Codex，先确认 `command -v codex` 能找到命令，再重启 Runner 让它重新
 上报能力：`systemctl --user restart wao-ai-runner`。页面中的 Codex 在线电脑数包含 Linux 后，集中账号
 才会自动选中该节点；未安装时页面会明确提示，不会静默改派 Windows 个人电脑。

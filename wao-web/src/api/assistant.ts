@@ -15,7 +15,10 @@ async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
 }
 
 export const fetchAssistantStatus = () =>
-  data<AssistantStatus>(http.get('/api/assistant/status'))
+  data<AssistantStatus>(http.get('/api/assistant/status', {
+    params: { _: Date.now() },
+    headers: { 'Cache-Control': 'no-cache' },
+  }))
 
 export const sendChat = async (
   message: string,

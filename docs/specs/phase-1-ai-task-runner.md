@@ -99,8 +99,8 @@
   孤儿任务分支和独立 worktree，AI 的首个提交即为该仓库的首版内容；不得因远端默认分支不存在
   而报“无效引用”。
 - Linux 主节点的 Codex CLI 和 Runner 能力由管理员作为主机级依赖独立维护；CD 不下载、上传、安装、升级或重启
-  Codex CLI/Runner。已配对 Runner 需主动上报 `codex` 能力并同步集中账号。页面问答只允许 Linux Codex
-  节点领取，在临时空仓库中用 `read-only` 沙箱执行，完成后清除问题正文和临时目录；每位成员同时
+  Codex CLI/Runner。已配对 Runner 需主动上报 `codex` 能力并同步集中账号。页面问答允许任一在线的本地 Codex
+  Runner 领取，不限 Windows 或 Linux；在临时空仓库中用 `read-only` 沙箱执行，完成后清除问题正文和临时目录；每位成员同时
   只允许一条问答。
 
 ## 安全边界

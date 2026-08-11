@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-/** 页面 AI 助手队列：由 Linux 主节点上的 Codex CLI 以只读权限完成问答。 */
+/** 页面 AI 助手队列：由在线的本地 Codex Runner 以只读权限完成问答。 */
 @Service
 public class AiAssistantService {
 
@@ -44,12 +44,15 @@ public class AiAssistantService {
         this.accountService = accountService;
     }
 
-    /** 返回真实可用状态；只有在线 Linux Codex Runner 才算已接通。 */
+    /** 返回真实可用状态；任一在线 Codex Runner 都可以提供本地对话。 */
     public AssistantStatusDto status() {
-        boolean online = onlineLinuxCodexRunners().findAny().isPresent();
-        return online
-                ? new AssistantStatusDto(true, "Linux Codex 节点在线")
-                : new AssistantStatusDto(false, "Linux Codex 节点未在线，请检查 AI 控制台的执行电脑");
+        List<AiRunnerNodeEntity> online = onlineCodexRunners().toList();
+        if (online.isEmpty()) {
+            return new AssistantStatusDto(false, "未检测到在线的本地 Codex，请检查 AI 控制台的执行电脑");
+        }
+        String primary = text(online.get(0).getName(), "本地 Codex");
+        String suffix = online.size() > 1 ? "（另有 " + (online.size() - 1) + " 台可用）" : "";
+        return new AssistantStatusDto(true, "已连接 " + primary + suffix);
     }
 
     /** 兼容控制器和测试的简写判断。 */
@@ -57,7 +60,7 @@ public class AiAssistantService {
         return status().configured();
     }
 
-    /** 创建问答并在同一 SSE 连接中等待 Linux Runner 返回最终答复。 */
+    /** 创建问答并在同一 SSE 连接中等待本地 Runner 返回最终答复。 */
     public void chatStream(AssistantChatRequest request, String memberId, SseEmitter emitter) {
         try {
             AiAssistantRunEntity run = enqueue(request, memberId);
@@ -90,12 +93,12 @@ public class AiAssistantService {
         }
     }
 
-    /** Linux Runner 领取一条等待中的问答；其它平台或未上报 Codex 能力的节点不能领取。 */
+    /** 本地 Runner 领取一条等待中的问答；未上报 Codex 能力的节点不能领取。 */
     @Transactional
     public synchronized AiAssistantClaimDto claim(String token) {
         recoverStaleRuns();
         AiRunnerNodeEntity runner = aiRunService.authenticateRunner(token);
-        if (!isLinuxCodexRunner(runner)) return null;
+        if (!isCodexRunner(runner)) return null;
         AiAssistantRunEntity run = mapper.selectOne(new LambdaQueryWrapper<AiAssistantRunEntity>()
                 .eq(AiAssistantRunEntity::getStatus, "queued")
                 .orderByAsc(AiAssistantRunEntity::getCreatedAt)
@@ -159,7 +162,7 @@ public class AiAssistantService {
                 throw new BadRequestException("AI 助手等待已中断，请重试");
             }
         }
-        failIfActive(runId, "等待 Codex 超过三分钟，请检查 Linux Runner 后重试");
+        failIfActive(runId, "等待 Codex 超过三分钟，请检查本地 Runner 后重试");
         return mapper.selectById(runId);
     }
 
@@ -190,16 +193,15 @@ public class AiAssistantService {
         }
     }
 
-    private java.util.stream.Stream<AiRunnerNodeEntity> onlineLinuxCodexRunners() {
+    private java.util.stream.Stream<AiRunnerNodeEntity> onlineCodexRunners() {
         LocalDateTime cutoff = LocalDateTime.now().minusMinutes(2);
         return runnerMapper.selectList(new LambdaQueryWrapper<AiRunnerNodeEntity>()
-                .ge(AiRunnerNodeEntity::getLastSeenAt, cutoff)).stream().filter(this::isLinuxCodexRunner);
+                .ge(AiRunnerNodeEntity::getLastSeenAt, cutoff)).stream().filter(this::isCodexRunner);
     }
 
-    private boolean isLinuxCodexRunner(AiRunnerNodeEntity runner) {
-        String platform = text(runner.getPlatform(), "").toLowerCase();
+    private boolean isCodexRunner(AiRunnerNodeEntity runner) {
         String engines = "," + text(runner.getEngines(), "").toLowerCase().replace(" ", "") + ",";
-        return platform.startsWith("linux") && engines.contains(",codex,");
+        return engines.contains(",codex,");
     }
 
     private String buildPrompt(AssistantChatRequest request) {

@@ -28,25 +28,26 @@ class AiAssistantServiceTest {
             mapper, runnerMapper, aiRunService, accountService);
 
     @Test
-    void statusRequiresOnlineLinuxCodexRunner() {
+    void statusAcceptsAnyOnlineLocalCodexRunner() {
         AiRunnerNodeEntity windows = runner("Windows Server 2025", "codex");
         AiRunnerNodeEntity linuxWithoutCodex = runner("Linux 6.8", "claude");
         when(runnerMapper.selectList(any())).thenReturn(List.of(windows, linuxWithoutCodex));
 
-        assertThat(service.status().configured()).isFalse();
-
-        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("Linux 6.8", "codex,claude")));
         assertThat(service.status().configured()).isTrue();
+        assertThat(service.status().message()).contains("本地节点");
+
+        when(runnerMapper.selectList(any())).thenReturn(List.of(linuxWithoutCodex));
+        assertThat(service.status().configured()).isFalse();
     }
 
     @Test
-    void linuxRunnerClaimsAssistantWithCentralAccount() {
-        AiRunnerNodeEntity linux = runner("Linux 6.8", "codex,claude");
+    void localCodexRunnerClaimsAssistantWithCentralAccount() {
+        AiRunnerNodeEntity local = runner("Windows Server 2025", "codex,claude");
         AiAssistantRunEntity run = assistantRun("queued");
         AiRunAccountDto account = new AiRunAccountDto(
                 "aa1", "codex", "主账号", "oauth", "{}", null, null, null, null);
         when(mapper.selectList(any())).thenReturn(List.of());
-        when(aiRunService.authenticateRunner("token")).thenReturn(linux);
+        when(aiRunService.authenticateRunner("token")).thenReturn(local);
         when(mapper.selectOne(any())).thenReturn(run);
         when(accountService.defaultCodexRunAccount()).thenReturn(account);
 
@@ -80,6 +81,7 @@ class AiAssistantServiceTest {
     private AiRunnerNodeEntity runner(String platform, String engines) {
         AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
         runner.setId("rn1");
+        runner.setName("本地节点");
         runner.setPlatform(platform);
         runner.setEngines(engines);
         runner.setLastSeenAt(LocalDateTime.now());
