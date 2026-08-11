@@ -16,6 +16,7 @@ interface CalEvt {
   date: string
   title: string
   color: string
+  completed?: boolean
   time?: string
   endTime?: string
   taskId?: string
@@ -103,11 +104,12 @@ const legend = computed(() => {
 const events = computed<CalEvt[]>(() => {
   const evs: CalEvt[] = []
   data.tasks
-    .filter((t) => t.status !== '已完成' && t.owner === calendarMemberId.value && (t.due || t.startAt))
+    .filter((t) => t.owner === calendarMemberId.value && (t.due || t.startAt))
     .forEach((t) => evs.push({
       date: t.startAt?.slice(0, 10) || t.due,
       title: t.title,
       color: '#4358D6',
+      completed: t.status === '已完成',
       time: t.startAt?.slice(11, 16),
       endTime: t.endAt?.slice(11, 16),
       taskId: t.id,
@@ -420,6 +422,7 @@ function onDropDay(dayIso: string) {
                 v-for="(ev, ei) in dy.items"
                 :key="ei"
                 class="event"
+                :class="{ completed: ev.completed }"
                 :title="ev.time ? `${ev.time} ${ev.title}` : ev.title"
                 :draggable="!!ev.taskId"
                 @click="ev.go?.()"
@@ -463,6 +466,7 @@ function onDropDay(dayIso: string) {
                 v-for="(event, eventIndex) in day.items.filter((item) => item.time)"
                 :key="eventIndex"
                 class="timeline-event"
+                :class="{ completed: event.completed }"
                 :style="eventStyle(event)"
                 @mousedown.stop
                 @click="event.go?.()"
@@ -471,7 +475,7 @@ function onDropDay(dayIso: string) {
                 <span>{{ event.title }}</span>
               </button>
               <div v-if="day.items.some((item) => !item.time)" class="all-day-strip">
-                <button v-for="(event, eventIndex) in day.items.filter((item) => !item.time)" :key="eventIndex" @click="event.go?.()">{{ event.title }}</button>
+                <button v-for="(event, eventIndex) in day.items.filter((item) => !item.time)" :key="eventIndex" :class="{ completed: event.completed }" @click="event.go?.()">{{ event.title }}</button>
               </div>
             </div>
           </div>
@@ -633,6 +637,10 @@ function onDropDay(dayIso: string) {
 }
 .timeline-event b, .timeline-event span { display: block; font-size: 10.5px; line-height: 1.3; }
 .timeline-event span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timeline-event.completed span {
+  color: var(--wao-text-weak);
+  text-decoration: line-through;
+}
 .all-day-strip {
   position: sticky;
   top: 38px;
@@ -650,6 +658,10 @@ function onDropDay(dayIso: string) {
   padding: 2px 4px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.all-day-strip button.completed {
+  color: var(--wao-text-weak);
+  text-decoration: line-through;
 }
 .year-view { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 14px; }.year-month { min-height: 100px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); color: var(--wao-text); text-align: left; padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }.year-month span { color: var(--wao-text-weak); font-size: 12px; }.year-month:hover { border-color: var(--wao-primary); }
 .spacer {
@@ -866,6 +878,10 @@ function onDropDay(dayIso: string) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.event.completed .ev-title {
+  color: var(--wao-text-weak);
+  text-decoration: line-through;
 }
 .day-more {
   font-size: 10.5px;
