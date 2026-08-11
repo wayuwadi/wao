@@ -849,7 +849,8 @@ export const useDataStore = defineStore('data', () => {
 
   /** 新建任务负载：核心字段 + 可选描述 / 内嵌图片 / 落点分组。 */
   type NewTaskPayload = Pick<Task, 'title' | 'project' | 'pr' | 'owner' | 'due'> &
-    Pick<Task, 'desc' | 'images' | 'groupId' | 'startAt' | 'endAt'>
+    Pick<Task, 'desc' | 'images' | 'groupId' | 'startAt' | 'endAt'> &
+    Partial<Pick<Task, 'pdcaCycles'>>
 
   /** 本地已创建、服务端 id 尚未回来的任务 id —— 后台同步不得把它们当成「已删除」清掉。 */
   const pendingTaskIds = new Set<string>()
@@ -865,10 +866,11 @@ export const useDataStore = defineStore('data', () => {
    * @return 立即可用的任务对象（后端返回后其字段会被就地更新）
    */
   async function addTask(payload: NewTaskPayload): Promise<Task> {
-    const { desc = '', images = [], ...core } = payload
+    const { desc = '', images = [], pdcaCycles = [], ...core } = payload
     const local: Task = {
       id: uid('t'), status: '待办', parts: [], desc, steps: [], subs: [], files: [],
       docs: [], linkTasks: [], comments: [], custom: [], images,
+      pdcaCycles,
       activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '创建了任务', time: nowIso(), by: currentAuthor() }],
       ...core,
     }
@@ -876,7 +878,7 @@ export const useDataStore = defineStore('data', () => {
     if (!apiLive.value) return local
 
     pendingTaskIds.add(local.id)
-    apiCreateTask({ ...core, desc, images })
+    apiCreateTask({ ...core, desc, images, pdcaCycles })
       .then((saved) => {
         const i = tasks.value.findIndex((t) => t.id === local.id)
         if (i >= 0) tasks.value.splice(i, 1, saved)

@@ -17,6 +17,7 @@ import java.util.List;
  * @param desc    描述（Markdown）
  * @param images  内嵌图片
  * @param subs    子任务列表，kind 为 "sub" 时为空
+ * @param pdcaCycles PDCA 轮次；子任务分享时为空
  */
 public record SharedTaskDto(
         String kind,
@@ -30,5 +31,6 @@ public record SharedTaskDto(
         String project,
         String desc,
         List<ImageRef> images,
-        List<Step> subs) {
+        List<Step> subs,
+        List<PdcaCycle> pdcaCycles) {
 }

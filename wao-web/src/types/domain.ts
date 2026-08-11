@@ -135,6 +135,22 @@ export interface CustomProp {
   value: string
 }
 
+export type PdcaOutcome = '达成' | '部分达成' | '未达成'
+
+/** 一轮可回看的 PDCA：复盘完成后保留，下一轮不会覆盖上一轮经验。 */
+export interface PdcaCycle {
+  id: string
+  /** P：希望达成的结果与判断标准。 */
+  plan: string
+  /** C：实际结果、偏差和原因。 */
+  check: string
+  /** A：下一轮要保留、修正或尝试的行动。 */
+  act: string
+  outcome?: PdcaOutcome | null
+  startedAt: string
+  reviewedAt?: string | null
+}
+
 /**
  * 任务状态。「收集中」表示正在向同伴征集想法（进入这个状态会自动分享到飞书群），
  * 「AI 进行中」标记交给 AI 跑的任务，「待验证」是做完但还没验收的任务。
@@ -177,6 +193,8 @@ export interface Task {
   activity: Activity[]
   /** 内嵌图片（粘贴 / 上传的截图或参考图）。 */
   images?: ImageRef[]
+  /** 按时间顺序保存的 PDCA 轮次；空数组表示普通任务。 */
+  pdcaCycles?: PdcaCycle[]
 }
 
 /** 文档块：以下字段互斥，命中哪个就渲染哪种块。 */
@@ -331,6 +349,7 @@ export interface SharedTask {
   desc: string
   images: ImageRef[]
   subs: TaskStep[]
+  pdcaCycles: PdcaCycle[]
 }
 
 /** 公开分享的文档 / 小记视图（只有标题、正文与更新时间）。 */

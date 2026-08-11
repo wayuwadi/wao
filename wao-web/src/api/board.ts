@@ -22,6 +22,7 @@ import type {
   SharedTask,
   Suggestion,
   Task,
+  PdcaCycle,
   TaskGroup,
   TrashEntry,
   VaultGroup,
@@ -119,6 +120,8 @@ export interface CreateTaskPayload {
   images?: ImageRef[]
   /** 落进哪个任务分组（分组视图里的「+」带上它）。 */
   groupId?: string | null
+  /** 可选的首轮 PDCA；空数组表示普通任务。 */
+  pdcaCycles?: PdcaCycle[]
 }
 export async function apiCreateTask(payload: CreateTaskPayload): Promise<Task> {
   const res = await http.post<ApiResponse<Task>>('/api/tasks', payload)

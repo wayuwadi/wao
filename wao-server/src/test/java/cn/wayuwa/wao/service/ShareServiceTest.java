@@ -11,6 +11,7 @@ import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.dto.DocBlockDto;
 import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.ImageRef;
+import cn.wayuwa.wao.dto.PdcaCycle;
 import cn.wayuwa.wao.dto.SharedDocDto;
 import cn.wayuwa.wao.dto.SharedTaskDto;
 import cn.wayuwa.wao.dto.Step;
@@ -100,6 +101,25 @@ class ShareServiceTest {
         // 图片必须是绝对地址：Markdown 被复制到别处后相对路径解析不出来，图就丢了
         assertThat(md).contains("![盒子.png](https://wao.example/api/images/img1/raw)");
         assertThat(md).doesNotContain("](/api/images");
+    }
+
+    @Test
+    void markdownIncludesRealPdcaHistory() {
+        PdcaCycle cycle = new PdcaCycle("pc1", "连续七天早睡", "做到了六天，周五被临时工作打断",
+                "下一轮给临时工作预留半小时", "部分达成",
+                "2026-08-01T09:00:00+08:00", "2026-08-08T21:00:00+08:00");
+        TaskDto task = new TaskDto("t8", "调整作息", "", "已完成", "P1", "wg",
+                List.of(), null, "2026-08-08", null, "", List.of(), List.of(), List.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null, null,
+                null, null, null, List.of(cycle));
+        when(tasks.get("t8")).thenReturn(task);
+
+        String md = service.toMarkdown(service.shareTask("t8", false), BASE);
+
+        assertThat(md).contains("## PDCA 记录");
+        assertThat(md).contains("### 第 1 轮 · 部分达成");
+        assertThat(md).contains("P（计划）：连续七天早睡");
+        assertThat(md).contains("A（改进）：下一轮给临时工作预留半小时");
     }
 
     @Test

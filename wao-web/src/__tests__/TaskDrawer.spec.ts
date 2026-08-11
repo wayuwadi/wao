@@ -111,6 +111,43 @@ describe('TaskDrawer', () => {
     expect(await waitFor(w, '.md-body')).toBe(true)
   })
 
+  it('PDCA 从计划、复盘到下一轮形成可追溯闭环', async () => {
+    const current = data.taskById(taskId)!
+    current.pdcaCycles = []
+    current.status = '待验证'
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.find('.pdca-enable').trigger('click')
+    expect(current.pdcaCycles).toHaveLength(1)
+
+    const fields = w.findAll('.pdca-field textarea')
+    await fields[0]!.setValue('连续七天在 23:30 前睡觉')
+    await fields[1]!.setValue('完成六天，周五被临时工作打断')
+    await fields[2]!.setValue('下一轮给临时工作预留半小时')
+    await w.findAll('.pdca-outcomes button')[1]!.trigger('click')
+    // 默认 AI mock 会把任务投影成运行中；本用例在验收阶段完成复盘。
+    current.status = '待验证'
+    await w.vm.$nextTick()
+
+    const review = w.find('.pdca-actions button')
+    expect(review.attributes('disabled')).toBeUndefined()
+    await review.trigger('click')
+
+    expect(current.status).toBe('已完成')
+    expect(current.pdcaCycles![0]!.outcome).toBe('部分达成')
+    expect(current.pdcaCycles![0]!.reviewedAt).toBeTruthy()
+
+    await w.find('.pdca-actions button').trigger('click')
+
+    expect(current.status).toBe('待办')
+    expect(current.pdcaCycles).toHaveLength(2)
+    expect(current.pdcaCycles![1]!.plan).toBe('下一轮给临时工作预留半小时')
+    expect(w.find('.pdca-history').exists()).toBe(true)
+    w.unmount()
+  })
+
   it('关联选择器使用真实知识、任务和文件，并支持再次点击解除', async () => {
     const current = data.taskById(taskId)!
     const doc = Object.values(data.docs).find((item) => !current.docs.includes(item.id))!

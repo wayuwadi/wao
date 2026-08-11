@@ -18,11 +18,19 @@ public record CreateTaskRequest(
         /** 日历时间段开始（{@code yyyy-MM-ddTHH:mm}），普通截止任务为空。 */
         String startAt,
         /** 日历时间段结束（{@code yyyy-MM-ddTHH:mm}）。 */
-        String endAt) {
+        String endAt,
+        /** 可选的首轮 PDCA；为空列表表示创建普通任务。 */
+        List<PdcaCycle> pdcaCycles) {
+
+    /** 兼容尚未引入 PDCA 的既有调用。 */
+    public CreateTaskRequest(String title, String project, String pr, String owner, String due,
+            String desc, List<ImageRef> images, String groupId, String startAt, String endAt) {
+        this(title, project, pr, owner, due, desc, images, groupId, startAt, endAt, null);
+    }
 
     /** 兼容尚未引入任务分组的既有调用。 */
     public CreateTaskRequest(String title, String project, String pr, String owner, String due,
             String desc, List<ImageRef> images) {
-        this(title, project, pr, owner, due, desc, images, null, null, null);
+        this(title, project, pr, owner, due, desc, images, null, null, null, null);
     }
 }

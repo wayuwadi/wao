@@ -91,6 +91,18 @@ async function copyMd() {
           </div>
         </template>
 
+        <template v-if="shared.pdcaCycles.length">
+          <div class="section-label">PDCA 记录 · {{ shared.pdcaCycles.length }} 轮</div>
+          <div class="shared-pdca">
+            <article v-for="(cycle, index) in shared.pdcaCycles" :key="cycle.id">
+              <header><b>第 {{ index + 1 }} 轮</b><span>{{ cycle.reviewedAt ? cycle.outcome : '进行中' }}</span></header>
+              <p><em>P</em>{{ cycle.plan || '（尚未填写计划）' }}</p>
+              <p><em>C</em>{{ cycle.check || '（尚未复盘）' }}</p>
+              <p><em>A</em>{{ cycle.act || '（尚未形成改进行动）' }}</p>
+            </article>
+          </div>
+        </template>
+
         <template v-if="shared.subs.length">
           <div class="section-label">
             子任务 · {{ shared.subs.length }}
@@ -210,6 +222,13 @@ async function copyMd() {
   letter-spacing: 0;
   color: var(--wao-text-faint);
 }
+.shared-pdca { display: grid; gap: 9px; }
+.shared-pdca article { padding: 11px 12px; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-sub); }
+.shared-pdca header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.shared-pdca header b { font-size: 12.5px; }
+.shared-pdca header span { color: var(--wao-primary-text); font-size: 11px; }
+.shared-pdca p { margin: 7px 0 0; color: var(--wao-text-3); font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
+.shared-pdca p em { margin-right: 7px; color: var(--wao-primary-text); font-style: normal; font-weight: 700; }
 .imgs {
   display: flex;
   flex-direction: column;

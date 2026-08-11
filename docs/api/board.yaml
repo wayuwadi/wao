@@ -779,7 +779,7 @@ components:
         id: { type: string }
         title: { type: string }
         project: { type: string }
-        status: { type: string, enum: [待办, 进行中, AI 进行中, 待验证, 已完成] }
+        status: { type: string, enum: [待办, 收集中, 进行中, AI 进行中, 待验证, 已完成] }
         pr: { type: string, enum: [P0, P1, P2, P3] }
         owner: { type: string }
         createdBy: { type: string, nullable: true, description: 创建人成员 ID；历史任务缺少可靠来源时为 null }
@@ -815,6 +815,10 @@ components:
           type: array
           description: "内嵌图片（/api/images/{id}/raw、data: 或远程链接）"
           items: { $ref: '#/components/schemas/ImageRef' }
+        pdcaCycles:
+          type: array
+          description: 按时间顺序保存的 PDCA 轮次；空数组表示普通任务
+          items: { $ref: '#/components/schemas/PdcaCycle' }
     TaskGroup:
       type: object
       description: 项目内的任务分组（分组视图）；组内只关心做没做完
@@ -858,6 +862,17 @@ components:
       properties:
         id: { type: string, description: 关联任务 id }
         rel: { type: string, description: 关系说明 }
+    PdcaCycle:
+      type: object
+      description: 一轮任务 PDCA；reviewedAt 为空表示尚未闭环
+      properties:
+        id: { type: string, description: 稳定轮次标识 }
+        plan: { type: string, description: P：目标与判定标准 }
+        check: { type: string, description: C：实际结果、偏差与原因 }
+        act: { type: string, description: A：下一轮保留、修正或尝试的行动 }
+        outcome: { type: string, nullable: true, enum: [达成, 部分达成, 未达成] }
+        startedAt: { type: string, description: ISO 8601 开始时间 }
+        reviewedAt: { type: string, nullable: true, description: ISO 8601 闭环时间 }
     ImageItem:
       type: object
       description: 图床条目
@@ -890,6 +905,10 @@ components:
           type: array
           description: kind 为 sub 时为空
           items: { $ref: '#/components/schemas/Step' }
+        pdcaCycles:
+          type: array
+          description: 主任务的 PDCA 记录；kind 为 sub 时为空
+          items: { $ref: '#/components/schemas/PdcaCycle' }
     CreateProjectRequest:
       type: object
       required: [name]
@@ -929,6 +948,10 @@ components:
         images:
           type: array
           items: { $ref: '#/components/schemas/ImageRef' }
+        pdcaCycles:
+          type: array
+          description: 可选的首轮 PDCA；空数组表示创建普通任务
+          items: { $ref: '#/components/schemas/PdcaCycle' }
     PatchTaskRequest:
       type: object
       properties:
