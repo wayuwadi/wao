@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   createAssistantConversation,
   deleteAssistantConversation,
   fetchAssistantConversation,
   fetchAssistantConversations,
+  fetchAssistantSourceOptions,
   fetchAssistantStatus,
   streamChat,
   type AssistantConversation,
+  type AssistantAssetType,
+  type AssistantSourceFilter,
+  type AssistantSourceOptions,
   type AssistantStatus,
   type ChatMessage,
 } from '@/api/assistant'
@@ -37,6 +41,18 @@ const statusLoading = ref(false)
 const historyLoading = ref(false)
 const historyError = ref('')
 const sidebarOpen = ref(true)
+const sourcePanelOpen = ref(false)
+const sourceOptionsLoading = ref(false)
+const sourceOptionsError = ref('')
+const sourceOptions = ref<AssistantSourceOptions>({ chats: [], senders: [], projects: [] })
+const sourceFilter = reactive<{
+  assetTypes: AssistantAssetType[]
+  chatIds: string[]
+  senders: string[]
+  dateFrom: string
+  dateTo: string
+  projectIds: string[]
+}>({ assetTypes: ['chat', 'knowledge', 'project', 'task'], chatIds: [], senders: [], dateFrom: '', dateTo: '', projectIds: [] })
 const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查本地 Codex…' })
 const listRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -53,6 +69,13 @@ const QUICK_COMMANDS = [
     build: () => ({ message: '请结合当前页面，帮我分析错误并给出排查步骤。', context: capturePageContext() }) },
 ]
 
+const ASSET_TYPES: Array<{ id: AssistantAssetType; name: string; icon: string }> = [
+  { id: 'chat', name: '群聊', icon: 'ri-chat-3-line' },
+  { id: 'knowledge', name: '知识库', icon: 'ri-book-open-line' },
+  { id: 'project', name: '项目', icon: 'ri-stack-line' },
+  { id: 'task', name: 'Task', icon: 'ri-checkbox-circle-line' },
+]
+
 const filteredConversations = computed(() => {
   const keyword = historySearch.value.trim().toLowerCase()
   if (!keyword) return conversations.value
@@ -64,6 +87,27 @@ const filteredConversations = computed(() => {
 const activeConversation = computed(() =>
   conversations.value.find((item) => item.id === activeConversationId.value),
 )
+
+const chatEnabled = computed(() => sourceFilter.assetTypes.includes('chat'))
+const projectAssetsEnabled = computed(() =>
+  sourceFilter.assetTypes.includes('project') || sourceFilter.assetTypes.includes('task'),
+)
+const activeFilterCount = computed(() => {
+  let count = sourceFilter.assetTypes.length === ASSET_TYPES.length ? 0 : 1
+  count += sourceFilter.chatIds.length + sourceFilter.senders.length + sourceFilter.projectIds.length
+  if (sourceFilter.dateFrom || sourceFilter.dateTo) count += 1
+  return count
+})
+const sourceSummary = computed(() => {
+  if (!activeFilterCount.value) return '全部 WAO 资产'
+  const types = ASSET_TYPES.filter((item) => sourceFilter.assetTypes.includes(item.id)).map((item) => item.name)
+  const details: string[] = [types.join('、') || '未选资产']
+  if (sourceFilter.chatIds.length) details.push(`${sourceFilter.chatIds.length} 个群`)
+  if (sourceFilter.senders.length) details.push(`${sourceFilter.senders.length} 位发言人`)
+  if (sourceFilter.dateFrom || sourceFilter.dateTo) details.push('指定日期')
+  if (sourceFilter.projectIds.length) details.push(`${sourceFilter.projectIds.length} 个项目`)
+  return details.join(' · ')
+})
 
 function close() { emit('update:modelValue', false) }
 
@@ -94,6 +138,55 @@ async function loadStatus() {
     assistantStatus.value = { configured: false, message: '无法读取 AI 状态，请稍后重试' }
   } finally {
     statusLoading.value = false
+  }
+}
+
+async function loadSourceOptions() {
+  if (sourceOptionsLoading.value) return
+  sourceOptionsLoading.value = true
+  sourceOptionsError.value = ''
+  try {
+    sourceOptions.value = await fetchAssistantSourceOptions()
+  } catch {
+    sourceOptionsError.value = '来源筛选加载失败，请重试'
+  } finally {
+    sourceOptionsLoading.value = false
+  }
+}
+
+function toggleAssetType(type: AssistantAssetType) {
+  const index = sourceFilter.assetTypes.indexOf(type)
+  if (index >= 0) {
+    if (sourceFilter.assetTypes.length === 1) return
+    sourceFilter.assetTypes.splice(index, 1)
+  } else {
+    sourceFilter.assetTypes.push(type)
+  }
+}
+
+function toggleFilterValue(values: string[], value: string) {
+  const index = values.indexOf(value)
+  if (index >= 0) values.splice(index, 1)
+  else values.push(value)
+}
+
+function resetSourceFilter() {
+  sourceFilter.assetTypes.splice(0, sourceFilter.assetTypes.length, 'chat', 'knowledge', 'project', 'task')
+  sourceFilter.chatIds.splice(0)
+  sourceFilter.senders.splice(0)
+  sourceFilter.projectIds.splice(0)
+  sourceFilter.dateFrom = ''
+  sourceFilter.dateTo = ''
+}
+
+function currentSourceFilter(): AssistantSourceFilter {
+  return {
+    assetTypes: [...sourceFilter.assetTypes],
+    chatIds: sourceFilter.chatIds.length ? [...sourceFilter.chatIds] : undefined,
+    senders: sourceFilter.senders.length ? [...sourceFilter.senders] : undefined,
+    dateFrom: sourceFilter.dateFrom || undefined,
+    dateTo: sourceFilter.dateTo || undefined,
+    projectIds: sourceFilter.projectIds.length ? [...sourceFilter.projectIds] : undefined,
   }
 }
 
@@ -170,6 +263,7 @@ async function send(text?: string, context?: string) {
   const msg = (text ?? input.value).trim()
   if (!msg || sending.value || !assistantStatus.value.configured) return
   sending.value = true
+  sourcePanelOpen.value = false
   try {
     const conversationId = await ensureConversation()
     const history: ChatMessage[] = messages.value
@@ -183,7 +277,7 @@ async function send(text?: string, context?: string) {
     scrollToBottom()
 
     try {
-      for await (const token of streamChat(msg, history, context, conversationId)) {
+      for await (const token of streamChat(msg, history, context, conversationId, currentSourceFilter())) {
         assistantMsg.content += token
         scrollToBottom()
       }
@@ -240,6 +334,7 @@ watch(() => props.modelValue, (value) => {
     sidebarOpen.value = window.innerWidth > 760
     void loadStatus()
     void loadConversations(true)
+    void loadSourceOptions()
     startStatusRefresh()
     focusInput()
   } else {
@@ -250,6 +345,7 @@ watch(open, (value) => { if (!value) emit('update:modelValue', false) })
 
 onMounted(() => {
   void loadStatus()
+  void loadSourceOptions()
   if (props.modelValue) {
     open.value = true
     sidebarOpen.value = window.innerWidth > 760
@@ -347,7 +443,7 @@ onBeforeUnmount(stopStatusRefresh)
               <div v-else-if="messages.length === 0" class="welcome">
                 <span class="welcome-icon"><i class="ri-robot-2-line"></i></span>
                 <h2>有什么可以帮你？</h2>
-                <p>本地 Codex 会查找已同步的聊天记录，问答也会保存在你的个人历史中。</p>
+                <p>本地 Codex 会检索群聊、知识库、项目和 Task，问答也会保存在你的个人历史中。</p>
                 <div class="welcome-actions">
                   <button
                     v-for="cmd in QUICK_COMMANDS"
@@ -372,7 +468,77 @@ onBeforeUnmount(stopStatusRefresh)
             </div>
 
             <footer class="composer-wrap">
+              <div v-if="sourcePanelOpen" class="source-filter-panel">
+                <div class="source-filter-head">
+                  <div><b>检索 WAO 资产</b><small>筛选只影响下一次及后续提问</small></div>
+                  <button :disabled="!activeFilterCount" @click="resetSourceFilter">恢复全部</button>
+                </div>
+                <div v-if="sourceOptionsError" class="source-options-error">
+                  {{ sourceOptionsError }}<button @click="loadSourceOptions">重试</button>
+                </div>
+                <div v-else-if="sourceOptionsLoading" class="source-options-loading">
+                  <i class="ri-loader-4-line spin"></i>正在读取资产范围…
+                </div>
+                <template v-else>
+                  <section class="filter-section">
+                    <label>资产类型</label>
+                    <div class="filter-chips">
+                      <button
+                        v-for="type in ASSET_TYPES"
+                        :key="type.id"
+                        :class="{ selected: sourceFilter.assetTypes.includes(type.id) }"
+                        @click="toggleAssetType(type.id)"
+                      ><i :class="type.icon"></i>{{ type.name }}</button>
+                    </div>
+                  </section>
+                  <section v-if="chatEnabled" class="filter-section">
+                    <label>群聊</label>
+                    <div v-if="sourceOptions.chats.length" class="filter-chips scrollable">
+                      <button
+                        v-for="chat in sourceOptions.chats"
+                        :key="chat.id"
+                        :class="{ selected: sourceFilter.chatIds.includes(chat.id) }"
+                        @click="toggleFilterValue(sourceFilter.chatIds, chat.id)"
+                      >{{ chat.name }}</button>
+                    </div>
+                    <small v-else>还没有配置飞书群聊同步</small>
+                  </section>
+                  <section v-if="chatEnabled && sourceOptions.senders.length" class="filter-section">
+                    <label>发言人</label>
+                    <div class="filter-chips scrollable">
+                      <button
+                        v-for="sender in sourceOptions.senders"
+                        :key="sender"
+                        :class="{ selected: sourceFilter.senders.includes(sender) }"
+                        @click="toggleFilterValue(sourceFilter.senders, sender)"
+                      >{{ sender }}</button>
+                    </div>
+                  </section>
+                  <section v-if="chatEnabled" class="filter-section date-filter">
+                    <label>日期范围</label>
+                    <input v-model="sourceFilter.dateFrom" type="date" :min="sourceOptions.earliestChatDate" :max="sourceFilter.dateTo || sourceOptions.latestChatDate" />
+                    <span>至</span>
+                    <input v-model="sourceFilter.dateTo" type="date" :min="sourceFilter.dateFrom || sourceOptions.earliestChatDate" :max="sourceOptions.latestChatDate" />
+                  </section>
+                  <section v-if="projectAssetsEnabled && sourceOptions.projects.length" class="filter-section">
+                    <label>所属项目</label>
+                    <div class="filter-chips scrollable projects">
+                      <button
+                        v-for="project in sourceOptions.projects"
+                        :key="project.id"
+                        :class="{ selected: sourceFilter.projectIds.includes(project.id) }"
+                        @click="toggleFilterValue(sourceFilter.projectIds, project.id)"
+                      >{{ project.name }}</button>
+                    </div>
+                  </section>
+                </template>
+              </div>
               <div class="assistant-input" :class="{ disabled: !assistantStatus.configured }">
+                <button class="source-summary" :class="{ active: sourcePanelOpen || activeFilterCount }" @click="sourcePanelOpen = !sourcePanelOpen">
+                  <i class="ri-database-2-line"></i><span>{{ sourceSummary }}</span>
+                  <em v-if="activeFilterCount">{{ activeFilterCount }}</em>
+                  <i :class="sourcePanelOpen ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'"></i>
+                </button>
                 <textarea
                   ref="textareaRef"
                   v-model="input"
@@ -572,11 +738,39 @@ onBeforeUnmount(stopStatusRefresh)
 .md :deep(pre code) { padding: 0; background: transparent; }
 .md :deep(a) { color: var(--wao-primary); }
 
-.composer-wrap { padding: 10px 28px 20px; background: linear-gradient(to bottom, transparent, var(--wao-bg-card) 20%); }
+.composer-wrap { position: relative; padding: 10px 28px 20px; background: linear-gradient(to bottom, transparent, var(--wao-bg-card) 20%); }
 .assistant-input { width: min(780px, 100%); margin: 0 auto; padding: 10px 12px 9px; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); box-shadow: 0 6px 24px rgba(20, 28, 55, .08); }
 .assistant-input:focus-within { border-color: color-mix(in srgb, var(--wao-primary) 65%, var(--wao-line)); box-shadow: 0 8px 28px rgba(67, 88, 214, .12); }
 .assistant-input.disabled { opacity: .68; }
 .assistant-input textarea { width: 100%; min-height: 48px; max-height: 140px; resize: none; border: 0; outline: 0; background: transparent; color: var(--wao-text); font: 13px/1.55 inherit; }
+.source-summary { max-width: 100%; margin: -2px 0 5px; padding: 4px 7px; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text-weak); cursor: pointer; font-size: 10px; display: flex; align-items: center; gap: 5px; }
+.source-summary:hover, .source-summary.active { background: color-mix(in srgb, var(--wao-primary) 8%, transparent); color: var(--wao-primary); }
+.source-summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-summary em { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--wao-primary); color: #fff; font-style: normal; font-size: 9px; line-height: 16px; }
+.source-filter-panel { width: min(780px, 100%); max-height: min(430px, 48vh); margin: 0 auto 9px; padding: 14px; overflow-y: auto; border: 1px solid var(--wao-line); border-radius: 14px; background: var(--wao-bg-card); box-shadow: 0 14px 40px rgba(20, 28, 55, .15); }
+.source-filter-head { margin-bottom: 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.source-filter-head b, .source-filter-head small { display: block; }
+.source-filter-head b { color: var(--wao-text); font-size: 13px; }
+.source-filter-head small { margin-top: 2px; color: var(--wao-text-weak); font-size: 10px; }
+.source-filter-head button, .source-options-error button { border: 0; background: transparent; color: var(--wao-primary); cursor: pointer; font-size: 11px; }
+.source-filter-head button:disabled { opacity: .35; cursor: default; }
+.source-options-error, .source-options-loading { padding: 16px; color: var(--wao-text-weak); font-size: 11px; text-align: center; }
+.source-options-error { color: #c43d42; }
+.filter-section { margin-top: 10px; display: grid; grid-template-columns: 78px minmax(0, 1fr); align-items: start; gap: 8px; }
+.filter-section > label { padding-top: 6px; color: var(--wao-text-3); font-size: 11px; font-weight: 600; }
+.filter-section > small { padding-top: 6px; color: var(--wao-text-weak); font-size: 10px; }
+.filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.filter-chips.scrollable { max-height: 72px; overflow-y: auto; }
+.filter-chips.projects { max-height: 100px; }
+.filter-chips button { padding: 5px 9px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-3); cursor: pointer; font-size: 11px; }
+.filter-chips button:hover { border-color: color-mix(in srgb, var(--wao-primary) 50%, var(--wao-line)); color: var(--wao-primary); }
+.filter-chips button.selected { border-color: color-mix(in srgb, var(--wao-primary) 55%, var(--wao-line)); background: color-mix(in srgb, var(--wao-primary) 10%, transparent); color: var(--wao-primary); }
+.filter-chips button i { margin-right: 4px; }
+.date-filter { grid-template-columns: 78px minmax(120px, 1fr) auto minmax(120px, 1fr); align-items: center; }
+.date-filter > label { padding-top: 0; }
+.date-filter input { min-width: 0; padding: 6px 8px; border: 1px solid var(--wao-line); border-radius: 8px; outline: none; background: var(--wao-bg-card); color: var(--wao-text-2); font: 11px inherit; }
+.date-filter input:focus { border-color: var(--wao-primary); }
+.date-filter span { color: var(--wao-text-weak); font-size: 10px; }
 .composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .composer-foot > span { color: var(--wao-text-weak); font-size: 10px; }
 .composer-foot > span i { margin-right: 4px; color: #36a269; }
@@ -612,6 +806,11 @@ onBeforeUnmount(stopStatusRefresh)
   .chat-heading small { max-width: 220px; }
   .assistant-list { padding: 16px 16px 6px; }
   .composer-wrap { padding: 8px 12px 14px; }
+  .source-filter-panel { max-height: 52vh; padding: 12px; }
+  .filter-section { grid-template-columns: 1fr; gap: 4px; }
+  .filter-section > label { padding-top: 0; }
+  .date-filter { grid-template-columns: 1fr auto 1fr; }
+  .date-filter > label { grid-column: 1 / -1; }
   .welcome { padding-top: 65px; }
   .welcome-actions { grid-template-columns: 1fr; }
   .composer-foot > span { display: none; }
