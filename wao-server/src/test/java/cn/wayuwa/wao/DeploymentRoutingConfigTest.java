@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 
 import org.junit.jupiter.api.Test;
 
@@ -36,13 +37,17 @@ class DeploymentRoutingConfigTest {
     void aiApiRoutesOnlyToLinuxMasterGateway() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String aiUpstream = section(nginx, "upstream wao_ai_gateway {", "\n}");
+        String aiLocation = section(nginx, "location ~ ", " {");
+        String aiRoutePattern = aiLocation.substring("location ~ ".length(), aiLocation.length() - " {".length());
 
         assertThat(aiUpstream)
                 .contains("${MASTER_PUBLIC_HOST}:9000")
                 .doesNotContain("${SLAVE_PUBLIC_HOST}", "backup");
+        assertThat(Pattern.compile(aiRoutePattern)
+                .matcher("/api/tianren/readings/today/interpret/stream").find()).isTrue();
+        assertThat(Pattern.compile(aiRoutePattern)
+                .matcher("/api/tianren/readings/today").find()).isFalse();
         assertThat(nginx)
-                .contains("location ~ ^/api/(settings/ai-accounts(?:/|$)|ai(?:/|$)|assistant(?:/|$)"
-                        + "|tianren/readings/today/interpretation(?:/|$))")
                 .contains("proxy_pass https://wao_ai_gateway;")
                 .contains("proxy_next_upstream off;")
                 .contains("X-WAO-API-Route linux-vpn-master always;");
@@ -57,6 +62,7 @@ class DeploymentRoutingConfigTest {
                 .contains("envsubst '${MASTER_PUBLIC_HOST} ${SLAVE_PUBLIC_HOST}'")
                 .contains("scp -o ConnectTimeout=15 wao-nginx.conf")
                 .contains("nginx -t")
+                .contains("/api/tianren/readings/today/interpret/stream")
                 .contains("probe-codex-egress.sh");
         assertThat(workflow)
                 .contains("scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env")
