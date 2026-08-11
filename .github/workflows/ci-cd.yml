@@ -24,6 +24,8 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: wao-web/package-lock.json
+      - name: Validate Nginx DDNS rendering
+        run: sh deploy/scripts/test-render-nginx-config.sh
       - name: Validate Flyway migration versions
         run: |
           duplicates="$(find wao-server/src/main/resources/db/migration -maxdepth 1 -type f -name 'V*__*.sql' -printf '%f\n' \
@@ -149,12 +151,23 @@ jobs:
           }
 
           deploy_cloud() {
-            MASTER_PUBLIC_HOST="$MASTER_HOST" SLAVE_PUBLIC_HOST="$SLAVE_HOST" \
-              envsubst '${MASTER_PUBLIC_HOST} ${SLAVE_PUBLIC_HOST}' \
+            resolve_ipv4() {
+              getent ahostsv4 "$1" | awk '$2 == "STREAM" { print $1; exit }'
+            }
+            master_gateway_ipv4="$(resolve_ipv4 "$MASTER_HOST")"
+            slave_gateway_ipv4="$(resolve_ipv4 "$SLAVE_HOST")"
+            test -n "$master_gateway_ipv4"
+            test -n "$slave_gateway_ipv4"
+            MASTER_GATEWAY_IPV4="$master_gateway_ipv4" SLAVE_GATEWAY_IPV4="$slave_gateway_ipv4" \
+              envsubst '${MASTER_GATEWAY_IPV4} ${SLAVE_GATEWAY_IPV4}' \
               < deploy/nginx/wao.wayuwa.cn.conf.template > wao-nginx.conf
             retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" 'mkdir -p /tmp/wao-dist' || return
             retry_remote "云前端" scp -o ConnectTimeout=15 -r wao-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-dist/" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 wao-nginx.conf "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-nginx.conf" || return
+            retry_remote "云前端" scp -o ConnectTimeout=15 \
+              deploy/nginx/wao.wayuwa.cn.conf.template \
+              deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
+              "$CLOUD_USER@$CLOUD_HOST:/tmp/" || return
             retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" '
               set -eu
               final=/etc/nginx/conf.d/wao.wayuwa.cn.conf
@@ -170,6 +183,17 @@ jobs:
                 exit 1
               fi
               rm -f "$previous" /tmp/wao-nginx.conf
+              install -d -m 0755 /opt/wao/deploy/nginx /opt/wao/deploy/scripts
+              install -m 0644 /tmp/wao.wayuwa.cn.conf.template /opt/wao/deploy/nginx/wao.wayuwa.cn.conf.template
+              install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
+              install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
+              rm -f /tmp/wao.wayuwa.cn.conf.template /tmp/activate-nginx-config.sh /tmp/render-nginx-config.sh
+              printf "%s\n" \
+                "SHELL=/bin/sh" \
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+                "* * * * * root /opt/wao/deploy/scripts/activate-nginx-config.sh >/dev/null 2>&1" \
+                >/etc/cron.d/wao-nginx-ddns-reload
+              chmod 0644 /etc/cron.d/wao-nginx-ddns-reload
               install -d /var/www/wao/dist
               find /var/www/wao/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
               cp -a /tmp/wao-dist/. /var/www/wao/dist/

@@ -54,7 +54,7 @@ ddns_reload_cron='/etc/cron.d/wao-nginx-ddns-reload'
 printf '%s\n' \
   'SHELL=/bin/sh' \
   'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' \
-  "*/5 * * * * root ${script_dir}/activate-nginx-config.sh >/dev/null 2>&1" \
+  "* * * * * root ${script_dir}/activate-nginx-config.sh >/dev/null 2>&1" \
   >"${ddns_reload_cron}"
 chmod 0644 "${ddns_reload_cron}"
 
