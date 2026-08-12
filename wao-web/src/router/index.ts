@@ -115,6 +115,12 @@ const router = createRouter({
           meta: { module: 'games', tabKind: 'module' },
         },
         {
+          path: 'vocabulary',
+          name: 'vocabulary',
+          component: () => import('@/views/VocabularyView.vue'),
+          meta: { module: 'vocabulary', tabKind: 'module' },
+        },
+        {
           path: 'drawings',
           name: 'drawings',
           component: () => import('@/views/DrawingsView.vue'),

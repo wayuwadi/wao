@@ -99,6 +99,13 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.module).toBe('drawings')
   })
 
+  it('单词本默认位于个人组并使用原生模块路由', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('vocabulary')
+    const route = router.getRoutes().find((item) => item.name === 'vocabulary')
+    expect(route?.path).toBe('/vocabulary')
+    expect(route?.meta.module).toBe('vocabulary')
+  })
+
   it('内置菜单注册表可改名、换组、调序和隐藏', () => {
     const menus = DEFAULT_BUILTIN_MENUS.map((menu) => ({ ...menu }))
     const calendar = menus.find((menu) => menu.id === 'calendar')!

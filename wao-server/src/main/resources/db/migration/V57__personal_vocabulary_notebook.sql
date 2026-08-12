@@ -1,0 +1,21 @@
+CREATE TABLE vocabulary_entry (
+    id                   VARCHAR(32)  NOT NULL,
+    owner_member_id      VARCHAR(32)  NOT NULL,
+    term                 VARCHAR(128) NOT NULL,
+    normalized_term      VARCHAR(128) NOT NULL,
+    meaning_text         VARCHAR(1000) NOT NULL DEFAULT '',
+    context_text         VARCHAR(2000) NOT NULL DEFAULT '',
+    learning_state       VARCHAR(16)  NOT NULL DEFAULT 'LEARNING',
+    encounter_count      INT          NOT NULL DEFAULT 1,
+    review_count         INT          NOT NULL DEFAULT 0,
+    last_encountered_at  DATETIME(6)  NOT NULL,
+    last_reviewed_at     DATETIME(6)  NULL,
+    created_at           DATETIME(6)  NOT NULL,
+    updated_at           DATETIME(6)  NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_vocabulary_owner_term (owner_member_id, normalized_term),
+    KEY idx_vocabulary_owner_state_updated (owner_member_id, learning_state, updated_at),
+    CONSTRAINT chk_vocabulary_learning_state CHECK (learning_state IN ('LEARNING', 'MASTERED')),
+    CONSTRAINT chk_vocabulary_encounter_count CHECK (encounter_count > 0),
+    CONSTRAINT chk_vocabulary_review_count CHECK (review_count >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
