@@ -383,6 +383,15 @@ OAuth 下发前会先把快过期的 access token 续期。
 草图编辑器与 Vue 集成边界见 ADR-056；草稿恢复、冲突与交互规则见
 `docs/specs/phase-1-personal-drawings.md`。
 
+### drawing_file_version（草图有效版本）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| file_id / revision | VARCHAR(32) + INT PK | 关联草图及该场景生成时的单调版本号 |
+| scene_json | LONGTEXT | 可恢复的 Excalidraw 场景快照 |
+| created_at | DATETIME(6) | 真实内容变化并成功保存的时间 |
+
+每次场景真实变化后写入快照并只保留版本号最大的三份；删除草图时通过外键级联删除历史。
+
 ## 通用文件
 
 ### file_blob
@@ -538,4 +547,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V53__assistant_conversation_history.sql`：成员级 AI 助手会话、消息及短期运行关联（见 ADR-045）。
 - `V54__tianren_daily_reading.sql`：成员每日唯一卦象及其私有 AI 会话关联（见 ADR-047）。
 - `V55__personal_drawing_file.sql`：个人草图文件、Excalidraw 场景与乐观版本。
+- `V56__drawing_file_versions.sql`：草图有效版本快照与最近三版滚动留存。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

@@ -5,7 +5,9 @@ import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.CreateDrawingFileRequest;
 import cn.wayuwa.wao.dto.DrawingFileDto;
 import cn.wayuwa.wao.dto.DrawingFileSummaryDto;
+import cn.wayuwa.wao.dto.DrawingFileVersionDto;
 import cn.wayuwa.wao.dto.RenameDrawingFileRequest;
+import cn.wayuwa.wao.dto.RestoreDrawingFileVersionRequest;
 import cn.wayuwa.wao.dto.SaveDrawingFileRequest;
 import cn.wayuwa.wao.service.DrawingFileService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -55,6 +57,18 @@ public class DrawingFileController {
     public ApiResponse<DrawingFileDto> save(@PathVariable String id,
             @Valid @RequestBody SaveDrawingFileRequest request, HttpServletRequest http) {
         return ApiResponse.ok(drawings.save(id, request, member(http)));
+    }
+
+    @GetMapping("/{id}/versions")
+    public ApiResponse<List<DrawingFileVersionDto>> versions(
+            @PathVariable String id, HttpServletRequest http) {
+        return ApiResponse.ok(drawings.versions(id, member(http)));
+    }
+
+    @PostMapping("/{id}/versions/{revision}/restore")
+    public ApiResponse<DrawingFileDto> restore(@PathVariable String id, @PathVariable int revision,
+            @Valid @RequestBody RestoreDrawingFileVersionRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(drawings.restore(id, revision, request.revision(), member(http)));
     }
 
     @PatchMapping("/{id}")

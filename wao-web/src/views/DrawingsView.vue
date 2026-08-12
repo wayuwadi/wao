@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   createDrawing,
   deleteDrawing,
   fetchDrawing,
+  fetchDrawingVersions,
   fetchDrawings,
   renameDrawing,
+  restoreDrawingVersion,
   saveDrawing,
   type DrawingFile,
   type DrawingFileSummary,
+  type DrawingFileVersion,
 } from '@/api/drawings'
 import DrawingCanvas from '@/components/drawings/DrawingCanvas.vue'
 import { readDrawingDraft, removeDrawingDraft, writeDrawingDraft } from '@/utils/drawingDrafts'
@@ -28,6 +31,15 @@ const sidebarOpen = ref(true)
 const syncState = ref<SyncState>('loading')
 const error = ref('')
 const dirty = ref(false)
+const page = ref<HTMLElement | null>(null)
+const titleInput = ref<HTMLInputElement | null>(null)
+const editingTitle = ref(false)
+const titleDraft = ref('')
+const renaming = ref(false)
+const isFullscreen = ref(false)
+const versions = ref<DrawingFileVersion[]>([])
+const loadingVersions = ref(false)
+const restoringVersion = ref<number | null>(null)
 let loadToken = 0
 let canvasGeneration = 0
 let saveTimer: number | undefined
@@ -93,11 +105,13 @@ async function openFile(id: string) {
     if (token !== loadToken) return
 
     current.value = remote
+    titleDraft.value = remote.title
     sceneJson.value = draft?.sceneJson ?? remote.sceneJson
     revision.value = draft?.revision ?? remote.revision
     dirty.value = !!draft && draft.sceneJson !== remote.sceneJson
     canvasKey.value = `${id}:${++canvasGeneration}`
     updateSummary(remote)
+    void loadVersions(id)
 
     if (dirty.value && draft?.revision !== remote.revision) {
       syncState.value = 'conflict'
@@ -113,6 +127,19 @@ async function openFile(id: string) {
     syncState.value = 'error'
   } finally {
     if (token === loadToken) loadingFile.value = false
+  }
+}
+
+async function loadVersions(id = activeId.value) {
+  if (!id) return
+  loadingVersions.value = true
+  try {
+    const loaded = await fetchDrawingVersions(id)
+    if (activeId.value === id) versions.value = loaded
+  } catch (cause) {
+    if (activeId.value === id) error.value = message(cause, '草图版本读取失败')
+  } finally {
+    if (activeId.value === id) loadingVersions.value = false
   }
 }
 
@@ -176,6 +203,7 @@ async function saveNow() {
         dirty.value = false
         syncState.value = 'saved'
         await removeDrawingDraft(id).catch(() => undefined)
+        await loadVersions(id)
       } else {
         dirty.value = true
         syncState.value = 'dirty'
@@ -237,6 +265,89 @@ async function renameFile(file: DrawingFileSummary) {
   }
 }
 
+async function startTitleEdit() {
+  if (!current.value || renaming.value) return
+  titleDraft.value = current.value.title
+  editingTitle.value = true
+  await nextTick()
+  titleInput.value?.focus()
+  titleInput.value?.select()
+}
+
+function cancelTitleEdit() {
+  titleDraft.value = current.value?.title ?? ''
+  editingTitle.value = false
+}
+
+async function saveTitle() {
+  if (!current.value || renaming.value) return
+  const title = titleDraft.value.trim()
+  if (!title) {
+    error.value = '草图名称不能为空'
+    titleInput.value?.focus()
+    return
+  }
+  if (title === current.value.title) {
+    editingTitle.value = false
+    return
+  }
+  renaming.value = true
+  error.value = ''
+  try {
+    const renamed = await renameDrawing(current.value.id, title)
+    updateSummary(renamed)
+    if (current.value?.id === renamed.id) {
+      current.value = { ...current.value, title: renamed.title, updatedAt: renamed.updatedAt }
+      titleDraft.value = renamed.title
+      editingTitle.value = false
+    }
+  } catch (cause) {
+    error.value = message(cause, '草图重命名失败')
+    titleInput.value?.focus()
+  } finally {
+    renaming.value = false
+  }
+}
+
+async function restoreVersion(version: DrawingFileVersion) {
+  if (!current.value || version.revision === revision.value || restoringVersion.value !== null)
+    return
+  if (dirty.value) {
+    error.value = '请先保存当前修改，再恢复历史版本'
+    return
+  }
+  if (!window.confirm(`恢复版本 ${version.revision} 吗？当前内容会作为历史版本保留。`)) return
+  restoringVersion.value = version.revision
+  error.value = ''
+  try {
+    const restored = await restoreDrawingVersion(current.value.id, version.revision, revision.value)
+    current.value = restored
+    sceneJson.value = restored.sceneJson
+    revision.value = restored.revision
+    canvasKey.value = `${restored.id}:${++canvasGeneration}`
+    updateSummary(restored)
+    syncState.value = 'saved'
+    await loadVersions(restored.id)
+  } catch (cause) {
+    error.value = message(cause, '草图版本恢复失败')
+  } finally {
+    restoringVersion.value = null
+  }
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen()
+    else await page.value?.requestFullscreen()
+  } catch (cause) {
+    error.value = message(cause, '无法进入全屏模式')
+  }
+}
+
+function fullscreenChanged() {
+  isFullscreen.value = document.fullscreenElement === page.value
+}
+
 async function removeFile(file: DrawingFileSummary) {
   if (!window.confirm(`删除「${file.title}」吗？该操作无法撤销。`)) return
   try {
@@ -288,6 +399,7 @@ function beforeUnload(event: BeforeUnloadEvent) {
 
 onMounted(() => {
   window.addEventListener('beforeunload', beforeUnload)
+  document.addEventListener('fullscreenchange', fullscreenChanged)
   void loadList()
 })
 
@@ -295,11 +407,12 @@ onBeforeUnmount(() => {
   clearTimeout(saveTimer)
   clearTimeout(draftTimer)
   window.removeEventListener('beforeunload', beforeUnload)
+  document.removeEventListener('fullscreenchange', fullscreenChanged)
 })
 </script>
 
 <template>
-  <section class="drawings-page" :class="{ 'sidebar-open': sidebarOpen }">
+  <section ref="page" class="drawings-page" :class="{ 'sidebar-open': sidebarOpen }">
     <aside class="file-sidebar">
       <div class="sidebar-head">
         <div>
@@ -375,9 +488,51 @@ onBeforeUnmount(() => {
           <i class="ri-menu-line"></i>
         </button>
         <div class="title-block">
-          <strong>{{ current?.title ?? '个人草图' }}</strong>
-          <span v-if="current">版本 {{ revision }}</span>
+          <input
+            v-if="current && editingTitle"
+            ref="titleInput"
+            v-model="titleDraft"
+            maxlength="128"
+            aria-label="草图名称"
+            :disabled="renaming"
+            @blur="saveTitle"
+            @keydown.enter.prevent="saveTitle"
+            @keydown.esc.prevent="cancelTitleEdit"
+          />
+          <button
+            v-else-if="current"
+            type="button"
+            class="title-trigger"
+            title="点击修改草图名称"
+            @click="startTitleEdit"
+          >
+            <strong>{{ current.title }}</strong
+            ><i class="ri-pencil-line"></i>
+          </button>
+          <strong v-else>个人草图</strong>
+          <span v-if="current">{{ renaming ? '正在保存名称' : `版本 ${revision}` }}</span>
         </div>
+        <details v-if="current" class="version-menu">
+          <summary :title="loadingVersions ? '正在读取版本' : '查看最近三个版本'">
+            <i :class="loadingVersions ? 'ri-loader-4-line spin' : 'ri-history-line'"></i>
+            <span>版本</span>
+          </summary>
+          <div class="version-popover">
+            <strong>最近三个有效版本</strong>
+            <button
+              v-for="version in versions"
+              :key="version.revision"
+              type="button"
+              :disabled="version.revision === revision || restoringVersion !== null"
+              @click="restoreVersion(version)"
+            >
+              <span>版本 {{ version.revision }}</span>
+              <small>{{ new Date(version.createdAt).toLocaleString('zh-CN') }}</small>
+              <i v-if="restoringVersion === version.revision" class="ri-loader-4-line spin"></i>
+              <em v-else>{{ version.revision === revision ? '当前' : '恢复' }}</em>
+            </button>
+          </div>
+        </details>
         <div v-if="current" class="sync-pill" :class="syncState">
           <i
             :class="[syncMeta.icon, { spin: syncState === 'loading' || syncState === 'saving' }]"
@@ -391,6 +546,15 @@ onBeforeUnmount(() => {
           @click="saveNow"
         >
           <i class="ri-save-3-line"></i>立即保存
+        </button>
+        <button
+          v-if="current"
+          type="button"
+          class="icon-button fullscreen-button"
+          :title="isFullscreen ? '退出全屏' : '全屏演示'"
+          @click="toggleFullscreen"
+        >
+          <i :class="isFullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i>
         </button>
       </header>
 
@@ -640,11 +804,126 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 2px;
 }
-.title-block strong {
+.title-block > strong,
+.title-trigger strong {
   overflow: hidden;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.title-trigger {
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--wao-text);
+  cursor: text;
+}
+.title-trigger i {
+  flex: 0 0 auto;
+  color: var(--wao-text-weak);
+  font-size: 11px;
+  opacity: 0;
+}
+.title-trigger:hover i,
+.title-trigger:focus-visible i {
+  opacity: 1;
+}
+.title-block input {
+  box-sizing: border-box;
+  width: min(360px, 100%);
+  height: 27px;
+  padding: 0 7px;
+  border: 1px solid var(--wao-primary);
+  border-radius: 6px;
+  outline: 2px solid var(--wao-primary-soft);
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+}
+.version-menu {
+  position: relative;
+}
+.version-menu summary {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border-radius: 8px;
+  color: var(--wao-text-2);
+  font-size: 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.version-menu summary::-webkit-details-marker {
+  display: none;
+}
+.version-menu summary:hover,
+.version-menu[open] summary {
+  background: var(--wao-bg-hover-2);
+}
+.version-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 9px);
+  right: 0;
+  width: 230px;
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  background: var(--wao-bg-card);
+  box-shadow: var(--wao-shadow-pop-2);
+}
+.version-popover > strong {
+  padding: 2px 4px 6px;
+  font-size: 11px;
+}
+.version-popover button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wao-text);
+  text-align: left;
+  cursor: pointer;
+}
+.version-popover button:hover:not(:disabled) {
+  background: var(--wao-bg-hover-2);
+}
+.version-popover button:disabled {
+  cursor: default;
+}
+.version-popover button span {
+  font-size: 11px;
+  font-weight: 650;
+}
+.version-popover button small {
+  grid-column: 1;
+  color: var(--wao-text-weak);
+  font-size: 9px;
+}
+.version-popover button i,
+.version-popover button em {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  color: var(--wao-primary-text);
+  font-size: 9px;
+  font-style: normal;
 }
 .sync-pill {
   max-width: 270px;
@@ -687,6 +966,10 @@ onBeforeUnmount(() => {
 .save-button i {
   margin-right: 5px;
 }
+.fullscreen-button {
+  flex: 0 0 32px;
+  font-size: 16px;
+}
 .error-banner {
   min-height: 40px;
   display: flex;
@@ -713,6 +996,30 @@ onBeforeUnmount(() => {
   min-height: 0;
   flex: 1;
   overflow: hidden;
+}
+.drawings-page:fullscreen {
+  width: 100vw;
+  height: 100dvh;
+  min-height: 0;
+  background: #fff;
+}
+.drawings-page:fullscreen .file-sidebar {
+  display: none;
+}
+.drawings-page:fullscreen .drawing-toolbar {
+  position: absolute;
+  z-index: 25;
+  top: 10px;
+  right: 10px;
+  width: auto;
+  height: 40px;
+  padding: 0 4px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  box-shadow: var(--wao-shadow-pop-2);
+}
+.drawings-page:fullscreen .drawing-toolbar > :not(.fullscreen-button) {
+  display: none;
 }
 .canvas-loading,
 .canvas-empty {
@@ -787,6 +1094,14 @@ onBeforeUnmount(() => {
   }
   .sync-pill span {
     display: none;
+  }
+  .version-menu summary span {
+    display: none;
+  }
+  .version-menu summary {
+    width: 30px;
+    justify-content: center;
+    padding: 0;
   }
   .save-button {
     width: 32px;
