@@ -1,0 +1,61 @@
+openapi: 3.0.3
+info:
+  title: WAO 个人草图 API
+  version: 1.0.0
+paths:
+  /api/drawings:
+    get:
+      summary: 列出当前成员的草图文件元数据
+      responses:
+        '200': { description: OK }
+    post:
+      summary: 新建当前成员的空草图
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 128 }
+      responses:
+        '200': { description: OK }
+        '400': { description: 名称不合法 }
+  /api/drawings/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      summary: 读取当前成员的草图完整场景
+      responses:
+        '200': { description: OK }
+        '404': { description: 文件不存在或不属于当前成员 }
+    put:
+      summary: 按 revision 乐观锁保存 Excalidraw 场景
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sceneJson, revision]
+              properties:
+                sceneJson: { type: string, description: Excalidraw 开放 JSON 场景 }
+                revision: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: 保存后的新版本 }
+        '400': { description: 场景 JSON 不合法 }
+        '404': { description: 文件不存在或不属于当前成员 }
+        '409': { description: 客户端 revision 已过期，服务端不覆盖新版本 }
+    patch:
+      summary: 重命名当前成员的草图
+      responses:
+        '200': { description: OK }
+        '404': { description: 文件不存在或不属于当前成员 }
+    delete:
+      summary: 删除当前成员的草图
+      responses:
+        '200': { description: OK }
+        '404': { description: 文件不存在或不属于当前成员 }

@@ -45,16 +45,18 @@ export interface BuiltinMenuRegistry {
   menus: BuiltinMenuConfig[]
 }
 
-export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [{
-  id: 'media-agent',
-  label: '自媒体 Agent',
-  icon: 'ri-sparkling-2-line',
-  group: 'PUBLIC',
-  order: 20,
-  visible: true,
-  appUrl: '/agent/',
-  healthUrl: '/api/agent/health',
-}]
+export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
+  {
+    id: 'media-agent',
+    label: '自媒体 Agent',
+    icon: 'ri-sparkling-2-line',
+    group: 'PUBLIC',
+    order: 20,
+    visible: true,
+    appUrl: '/agent/',
+    healthUrl: '/api/agent/health',
+  },
+]
 
 export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
@@ -63,27 +65,111 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
   files: { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', path: '/files' },
-  automation: { id: 'automation', label: '自动化', icon: 'ri-flashlight-line', path: '/automation' },
+  automation: {
+    id: 'automation',
+    label: '自动化',
+    icon: 'ri-flashlight-line',
+    path: '/automation',
+  },
   games: { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', path: '/games' },
+  drawings: { id: 'drawings', label: '草图', icon: 'ri-draft-line', path: '/drawings' },
   tianren: { id: 'tianren', label: '天人一卦', icon: 'ri-compass-3-line', path: '/tianren' },
   vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
 export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
   { id: 'home', label: '首页', icon: 'ri-home-5-line', group: 'ROOT', order: 10, visible: true },
-  { id: 'projects', label: '项目', icon: 'ri-stack-line', group: 'PUBLIC', order: 10, visible: true },
-  { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', group: 'PERSONAL', order: 10, visible: true },
-  { id: 'calendar', label: '日历', icon: 'ri-calendar-2-line', group: 'PERSONAL', order: 20, visible: true },
-  { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', group: 'PERSONAL', order: 30, visible: true },
-  { id: 'vault', label: '密码本', icon: 'ri-key-2-line', group: 'PERSONAL', order: 40, visible: true },
-  { id: 'tianren', label: '天人一卦', icon: 'ri-compass-3-line', group: 'PERSONAL', order: 50, visible: true },
-  { id: 'automation', label: '自动化', icon: 'ri-flashlight-line', group: 'TOOLS', order: 10, visible: true },
-  { id: 'files', label: '文件与图床', icon: 'ri-hard-drive-2-line', group: 'TOOLS', order: 20, visible: true },
-  { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', group: 'TOOLS', order: 30, visible: true },
+  {
+    id: 'projects',
+    label: '项目',
+    icon: 'ri-stack-line',
+    group: 'PUBLIC',
+    order: 10,
+    visible: true,
+  },
+  {
+    id: 'todo',
+    label: '待办',
+    icon: 'ri-checkbox-multiple-line',
+    group: 'PERSONAL',
+    order: 10,
+    visible: true,
+  },
+  {
+    id: 'calendar',
+    label: '日历',
+    icon: 'ri-calendar-2-line',
+    group: 'PERSONAL',
+    order: 20,
+    visible: true,
+  },
+  {
+    id: 'knowledge',
+    label: '知识库',
+    icon: 'ri-book-2-line',
+    group: 'PERSONAL',
+    order: 30,
+    visible: true,
+  },
+  {
+    id: 'drawings',
+    label: '草图',
+    icon: 'ri-draft-line',
+    group: 'PERSONAL',
+    order: 40,
+    visible: true,
+  },
+  {
+    id: 'vault',
+    label: '密码本',
+    icon: 'ri-key-2-line',
+    group: 'PERSONAL',
+    order: 50,
+    visible: true,
+  },
+  {
+    id: 'tianren',
+    label: '天人一卦',
+    icon: 'ri-compass-3-line',
+    group: 'PERSONAL',
+    order: 60,
+    visible: true,
+  },
+  {
+    id: 'automation',
+    label: '自动化',
+    icon: 'ri-flashlight-line',
+    group: 'TOOLS',
+    order: 10,
+    visible: true,
+  },
+  {
+    id: 'files',
+    label: '文件与图床',
+    icon: 'ri-hard-drive-2-line',
+    group: 'TOOLS',
+    order: 20,
+    visible: true,
+  },
+  {
+    id: 'games',
+    label: '游戏厅',
+    icon: 'ri-gamepad-line',
+    group: 'TOOLS',
+    order: 30,
+    visible: true,
+  },
 ]
 
 /** 「个人」组的默认顺序；成员拖拽后的自定义顺序存服务端偏好，见 stores/nav.ts。 */
-export const PERSONAL_ITEMS: ModuleId[] = ['todo', 'calendar', 'knowledge', 'vault', 'tianren']
+export const PERSONAL_ITEMS: ModuleId[] = [
+  'todo',
+  'calendar',
+  'knowledge',
+  'drawings',
+  'vault',
+  'tianren',
+]
 
 const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
@@ -111,7 +197,11 @@ export function resolveNavGroups(
     ? ['', '公共', '个人', '工具'].map((label) => ({
         label,
         items: builtinMenus
-          .filter((menu) => menu.visible && ({ ROOT: '', PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' })[menu.group] === label)
+          .filter(
+            (menu) =>
+              menu.visible &&
+              { ROOT: '', PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' }[menu.group] === label,
+          )
           .sort((a, b) => a.order - b.order)
           .map((menu) => menu.id) as NavItemId[],
       }))
@@ -121,18 +211,21 @@ export function resolveNavGroups(
       }))
 
   for (const target of groups) {
-    const existingOrders = new Map(target.items.map((id, index) => [
-      id,
-      builtinMenus?.find((menu) => menu.id === id)?.order ?? (index + 1) * 10,
-    ]))
+    const existingOrders = new Map(
+      target.items.map((id, index) => [
+        id,
+        builtinMenus?.find((menu) => menu.id === id)?.order ?? (index + 1) * 10,
+      ]),
+    )
     const configured = externalApps.filter(
       (app) => app.visible && GROUP_LABELS[app.group] === target.label,
     )
     target.items.push(...configured.map((app) => externalAppItemId(app.id)))
     const appOrders = new Map(configured.map((app) => [externalAppItemId(app.id), app.order]))
-    target.items.sort((left, right) =>
-      (appOrders.get(left as ExternalAppItemId) ?? existingOrders.get(left) ?? 999)
-      - (appOrders.get(right as ExternalAppItemId) ?? existingOrders.get(right) ?? 999),
+    target.items.sort(
+      (left, right) =>
+        (appOrders.get(left as ExternalAppItemId) ?? existingOrders.get(left) ?? 999) -
+        (appOrders.get(right as ExternalAppItemId) ?? existingOrders.get(right) ?? 999),
     )
   }
   return groups
@@ -167,11 +260,25 @@ export function tabFromRoute(route: RouteLocationNormalized): Tab | null {
   const kind = route.meta.tabKind as string | undefined
   if (kind === 'project') {
     const id = String(route.params.id)
-    return { key: `proj:${id}`, label: `项目 ${id}`, labelPlaceholder: true, icon: 'ri-stack-line', path: route.path, closable: true }
+    return {
+      key: `proj:${id}`,
+      label: `项目 ${id}`,
+      labelPlaceholder: true,
+      icon: 'ri-stack-line',
+      path: route.path,
+      closable: true,
+    }
   }
   if (kind === 'kb') {
     const id = String(route.params.id)
-    return { key: `kb:${id}`, label: `知识库 ${id}`, labelPlaceholder: true, icon: 'ri-book-2-line', path: route.path, closable: true }
+    return {
+      key: `kb:${id}`,
+      label: `知识库 ${id}`,
+      labelPlaceholder: true,
+      icon: 'ri-book-2-line',
+      path: route.path,
+      closable: true,
+    }
   }
   if (kind === 'external') {
     const id = String(route.params.appId)
