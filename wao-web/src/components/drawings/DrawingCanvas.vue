@@ -25,9 +25,25 @@ const emit = defineEmits<{
 const host = ref<HTMLElement | null>(null)
 let root: Root | null = null
 let ready = false
-let initialChangeSeen = false
 let mountedKey = ''
 let lastScene = props.sceneJson
+
+function persistedContent(sceneJson: string) {
+  try {
+    const scene = JSON.parse(sceneJson) as {
+      elements?: unknown[]
+      appState?: { viewBackgroundColor?: string }
+      files?: Record<string, unknown>
+    }
+    return JSON.stringify({
+      elements: scene.elements ?? [],
+      viewBackgroundColor: scene.appState?.viewBackgroundColor ?? '#ffffff',
+      files: scene.files ?? {},
+    })
+  } catch {
+    return sceneJson
+  }
+}
 
 function initialData(): ExcalidrawInitialDataState {
   try {
@@ -42,17 +58,15 @@ function changed(
   appState: AppState,
   files: BinaryFiles,
 ) {
-  const sceneJson = serializeAsJSON(elements, appState, files, 'database')
-  if (!initialChangeSeen) {
-    initialChangeSeen = true
-    lastScene = sceneJson
-    return
-  }
+  const sceneJson = serializeAsJSON(elements, appState, files, 'local')
   if (!ready) {
     lastScene = sceneJson
     return
   }
-  if (sceneJson === lastScene) return
+  if (persistedContent(sceneJson) === persistedContent(lastScene)) {
+    lastScene = sceneJson
+    return
+  }
   lastScene = sceneJson
   emit('change', sceneJson)
 }
@@ -63,7 +77,6 @@ function render() {
   if (mountedKey !== props.sceneKey) {
     mountedKey = props.sceneKey
     ready = false
-    initialChangeSeen = false
     lastScene = props.sceneJson
   }
   root.render(

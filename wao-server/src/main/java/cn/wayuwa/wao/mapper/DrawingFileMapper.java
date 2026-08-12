@@ -1,11 +1,13 @@
 package cn.wayuwa.wao.mapper;
 
 import cn.wayuwa.wao.domain.DrawingFileEntity;
+import cn.wayuwa.wao.domain.DrawingFileVersionEntity;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
@@ -33,6 +35,50 @@ public interface DrawingFileMapper extends BaseMapper<DrawingFileEntity> {
     int saveScene(@Param("id") String id, @Param("ownerMemberId") String ownerMemberId,
             @Param("sceneJson") String sceneJson, @Param("expectedRevision") int expectedRevision,
             @Param("updatedAt") LocalDateTime updatedAt);
+
+    @Select("""
+            SELECT version.file_id, version.revision, version.created_at
+            FROM drawing_file_version version
+            INNER JOIN drawing_file file ON file.id = version.file_id
+            WHERE version.file_id = #{id} AND file.owner_member_id = #{ownerMemberId}
+            ORDER BY version.revision DESC
+            LIMIT 3
+            """)
+    List<DrawingFileVersionEntity> listVersions(
+            @Param("id") String id, @Param("ownerMemberId") String ownerMemberId);
+
+    @Select("""
+            SELECT version.*
+            FROM drawing_file_version version
+            INNER JOIN drawing_file file ON file.id = version.file_id
+            WHERE version.file_id = #{id} AND version.revision = #{revision}
+              AND file.owner_member_id = #{ownerMemberId}
+            LIMIT 1
+            """)
+    DrawingFileVersionEntity findVersion(@Param("id") String id, @Param("revision") int revision,
+            @Param("ownerMemberId") String ownerMemberId);
+
+    @Insert("""
+            INSERT INTO drawing_file_version (file_id, revision, scene_json, created_at)
+            VALUES (#{fileId}, #{revision}, #{sceneJson}, #{createdAt})
+            """)
+    int insertVersion(@Param("fileId") String fileId, @Param("revision") int revision,
+            @Param("sceneJson") String sceneJson, @Param("createdAt") LocalDateTime createdAt);
+
+    @Delete("""
+            DELETE FROM drawing_file_version
+            WHERE file_id = #{fileId}
+              AND revision NOT IN (
+                SELECT revision FROM (
+                  SELECT revision
+                  FROM drawing_file_version
+                  WHERE file_id = #{fileId}
+                  ORDER BY revision DESC
+                  LIMIT 3
+                ) recent_versions
+              )
+            """)
+    int pruneVersions(@Param("fileId") String fileId);
 
     @Update("""
             UPDATE drawing_file SET title = #{title}, updated_at = #{updatedAt}
