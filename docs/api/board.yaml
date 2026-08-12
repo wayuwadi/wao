@@ -8,6 +8,34 @@ info:
 servers:
   - url: /api
 paths:
+  /action-plans:
+    get:
+      summary: 按日期读取当前成员的行动计划和真实打卡投影
+      parameters: [{ name: date, in: query, required: false, schema: { type: string, format: date } }]
+      responses: { '200': { description: 当前成员私有计划列表 } }
+    post:
+      summary: 新建当前成员私有行动计划
+      responses: { '200': { description: 已创建计划 }, '400': { description: 日期、行动或提醒设置不合法 } }
+  /action-plans/{planId}:
+    put:
+      summary: 调整计划和当前行动版本，保留历史打卡
+      parameters: [{ name: planId, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: 已保存计划 }, '404': { description: 计划不存在或不属于当前成员 } }
+  /action-plans/{planId}/status:
+    patch:
+      summary: 完成或重新开始计划
+      parameters:
+        - { name: planId, in: path, required: true, schema: { type: string } }
+        - { name: completed, in: query, required: true, schema: { type: boolean } }
+      responses: { '200': { description: 状态已更新 } }
+  /action-plans/{planId}/items/{itemId}/checkins/{date}:
+    post:
+      summary: 切换某日一条已安排行动的真实打卡
+      responses: { '200': { description: 已返回更新后计划 }, '400': { description: 未来日期或当天未安排 } }
+  /action-plans/{planId}/notes/{date}:
+    put:
+      summary: 自动保存或清空某日事实复盘
+      responses: { '200': { description: 已返回更新后计划 } }
   /assistant/status:
     get:
       summary: AI 助手是否有在线本地 Codex Runner

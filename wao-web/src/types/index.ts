@@ -30,6 +30,7 @@ export type ModuleId =
   | 'drawings'
   | 'vocabulary'
   | 'tianren'
+  | 'action-plans'
   | 'vault'
   | 'settings'
 
