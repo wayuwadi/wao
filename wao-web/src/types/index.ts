@@ -27,6 +27,7 @@ export type ModuleId =
   | 'files'
   | 'automation'
   | 'games'
+  | 'drawings'
   | 'tianren'
   | 'vault'
   | 'settings'

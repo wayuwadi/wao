@@ -368,6 +368,21 @@ OAuth 下发前会先把快过期的 access token 续期。
 
 密码加密方案见 `docs/adr/009-vault-server-side-encryption.md`：密钥来自环境变量 `WAO_VAULT_KEY`（base64 32 字节），列表 / 详情接口从不返回明文，只在 `POST /api/vault/items/{id}/reveal` 按需解密一次。这是服务端静态加密，不是零知识端到端加密。
 
+## 个人草图域
+
+### drawing_file（草图文件）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 草图文件 id |
+| owner_member_id | VARCHAR(32) | 归属成员；`/api/drawings/*` 只在当前会话成员范围内生效 |
+| title | VARCHAR(128) | 草图文件名 |
+| scene_json | LONGTEXT | Excalidraw 开放 JSON 场景，包含元素、画布状态与已插入图片 |
+| revision | INT | 乐观锁版本；保存成功后递增，防止多页面静默覆盖 |
+| created_at / updated_at | DATETIME(6) | 创建与最后保存时间 |
+
+草图编辑器与 Vue 集成边界见 ADR-056；草稿恢复、冲突与交互规则见
+`docs/specs/phase-1-personal-drawings.md`。
+
 ## 通用文件
 
 ### file_blob
@@ -522,4 +537,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V52__remove_default_project_knowledge.sql`：移除项目初始化时自动生成的示例知识。
 - `V53__assistant_conversation_history.sql`：成员级 AI 助手会话、消息及短期运行关联（见 ADR-045）。
 - `V54__tianren_daily_reading.sql`：成员每日唯一卦象及其私有 AI 会话关联（见 ADR-047）。
+- `V55__personal_drawing_file.sql`：个人草图文件、Excalidraw 场景与乐观版本。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

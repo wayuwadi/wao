@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
@@ -26,8 +26,9 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("todo", "待办", "ri-checkbox-multiple-line", "PERSONAL", 10, true),
             new BuiltinMenuConfigDto("calendar", "日历", "ri-calendar-2-line", "PERSONAL", 20, true),
             new BuiltinMenuConfigDto("knowledge", "知识库", "ri-book-2-line", "PERSONAL", 30, true),
-            new BuiltinMenuConfigDto("vault", "密码本", "ri-key-2-line", "PERSONAL", 40, true),
-            new BuiltinMenuConfigDto("tianren", "天人一卦", "ri-compass-3-line", "PERSONAL", 50, true),
+            new BuiltinMenuConfigDto("drawings", "草图", "ri-draft-line", "PERSONAL", 40, true),
+            new BuiltinMenuConfigDto("vault", "密码本", "ri-key-2-line", "PERSONAL", 50, true),
+            new BuiltinMenuConfigDto("tianren", "天人一卦", "ri-compass-3-line", "PERSONAL", 60, true),
             new BuiltinMenuConfigDto("automation", "自动化", "ri-flashlight-line", "TOOLS", 10, true),
             new BuiltinMenuConfigDto("files", "文件与图床", "ri-hard-drive-2-line", "TOOLS", 20, true),
             new BuiltinMenuConfigDto("games", "游戏厅", "ri-gamepad-line", "TOOLS", 30, true));
