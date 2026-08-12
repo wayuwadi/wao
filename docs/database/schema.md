@@ -531,6 +531,18 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 提醒通过当前成员账号绑定的飞书 `open_id` 私聊发送，缺少真实身份或自建应用配置时明确失败，绝不回退成
 模拟成功或群 webhook。功能只规划和记录用户自行确认的行动，不从图片推导健康处方；边界见 ADR-057。
 
+## 个人英语训练域
+
+### english_learning_profile / english_learning_session
+
+| 表 | 关键字段 / 唯一约束 | 说明 |
+|---|---|---|
+| english_learning_profile | member_id 唯一、goal、daily_target_minutes、start_date | 当前成员的交流目标与可持续投入；所有接口从会话确定成员 |
+| english_learning_session | (member_id, study_date) 唯一、lesson_id、四项完成字段、practice_minutes、confidence、写作与复盘、completed_at | 一天唯一的真实训练过程；只有听说读写与信心齐全才写完成时间 |
+
+课程正文是代码内版本化的原创学习材料，不进入业务表；日记录保存当时的 `lesson_id`，历史课程不会因下一轮
+推进而漂移。录音只保留在当前浏览器内存生成的临时 URL，不上传数据库或文件库；边界见 ADR-058。
+
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
 - `V3__content_schema.sql` 内容域建表 + `V4__content_seed.sql` 种子。
@@ -585,4 +597,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V56__drawing_file_versions.sql`：草图有效版本快照与最近三版滚动留存。
 - `V57__personal_vocabulary_notebook.sql`：成员私有单词、个人释义、遇见与主动复习计数。
 - `V58__personal_action_plan.sql`：成员私有长期目标、周期行动版本、每日打卡、事实复盘与飞书私聊投递状态。
+- `V59__english_learning_practice.sql`：成员私有英语目标、每日听说读写训练、信心与迭代复盘。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

@@ -121,6 +121,12 @@ const router = createRouter({
           meta: { module: 'games', tabKind: 'module' },
         },
         {
+          path: 'english-learning',
+          name: 'english-learning',
+          component: () => import('@/views/EnglishLearningView.vue'),
+          meta: { module: 'english-learning', tabKind: 'module' },
+        },
+        {
           path: 'vocabulary',
           name: 'vocabulary',
           component: () => import('@/views/VocabularyView.vue'),

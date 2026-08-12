@@ -23,10 +23,10 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(13);
+        assertThat(service.getRegistry().menus()).hasSize(14);
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(13);
+        assertThat(service.getRegistry().menus()).hasSize(14);
     }
 
     @Test
@@ -70,7 +70,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(13);
+        assertThat(upgraded.menus()).hasSize(14);
         assertThat(upgraded.menus()).filteredOn(menu -> "automation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("我的自动化");
@@ -83,5 +83,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
         assertThat(upgraded.menus()).filteredOn(menu -> "vocabulary".equals(menu.id()))
                 .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("单词本"));
+        assertThat(upgraded.menus()).filteredOn(menu -> "english-learning".equals(menu.id()))
+                .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("英语训练"));
     }
 }

@@ -1,0 +1,54 @@
+openapi: 3.0.3
+info:
+  title: WAO Personal English Learning API
+  version: 0.1.0
+  description: 成员私有英语目标、每日听说读写事实记录与连续性统计；响应统一包裹 ApiResponse。
+servers:
+  - url: /api
+paths:
+  /english-learning:
+    get:
+      summary: 读取当前成员某日训练、累计统计和最近 14 条记录
+      parameters:
+        - { name: date, in: query, required: false, schema: { type: string, format: date } }
+      responses:
+        '200': { description: 成员英语训练首页；未设置目标时 profile 为 null }
+        '400': { description: 日期晚于上海时区今天 }
+  /english-learning/profile:
+    put:
+      summary: 新建或更新当前成员英语学习目标
+      responses:
+        '200': { description: 已保存设置 }
+        '400': { description: 目标、每日分钟或开始日期不合法 }
+  /english-learning/sessions/{date}:
+    put:
+      summary: 新建或更新当前成员某日唯一训练记录
+      parameters:
+        - { name: date, in: path, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: 已保存日记录 }
+        '400': { description: 未设置目标、未来日期，或完成门槛不满足 }
+components:
+  schemas:
+    SaveEnglishLearningProfileRequest:
+      type: object
+      required: [goal, dailyTargetMinutes, startDate]
+      properties:
+        goal: { type: string, maxLength: 500 }
+        dailyTargetMinutes: { type: integer, minimum: 10, maximum: 120 }
+        startDate: { type: string, format: date }
+    SaveEnglishLearningSessionRequest:
+      type: object
+      required: [lessonId, listeningDone, speakingDone, readingDone, writingDone, practiceMinutes, completed]
+      properties:
+        lessonId: { type: string, maxLength: 32 }
+        listeningDone: { type: boolean }
+        speakingDone: { type: boolean }
+        readingDone: { type: boolean }
+        writingDone: { type: boolean }
+        practiceMinutes: { type: integer, minimum: 0, maximum: 240 }
+        confidence: { type: integer, nullable: true, minimum: 1, maximum: 5 }
+        writingText: { type: string, maxLength: 4000 }
+        reflection: { type: string, maxLength: 2000 }
+        nextFocus: { type: string, maxLength: 500 }
+        completed: { type: boolean }
