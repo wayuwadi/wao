@@ -106,6 +106,13 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.module).toBe('vocabulary')
   })
 
+  it('英语训练默认位于个人组并使用原生模块路由', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('english-learning')
+    const route = router.getRoutes().find((item) => item.name === 'english-learning')
+    expect(route?.path).toBe('/english-learning')
+    expect(route?.meta.module).toBe('english-learning')
+  })
+
   it('内置菜单注册表可改名、换组、调序和隐藏', () => {
     const menus = DEFAULT_BUILTIN_MENUS.map((menu) => ({ ...menu }))
     const calendar = menus.find((menu) => menu.id === 'calendar')!

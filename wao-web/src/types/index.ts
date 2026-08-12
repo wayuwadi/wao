@@ -29,6 +29,7 @@ export type ModuleId =
   | 'games'
   | 'drawings'
   | 'vocabulary'
+  | 'english-learning'
   | 'tianren'
   | 'action-plans'
   | 'vault'
