@@ -71,7 +71,7 @@ export async function* streamTextEvents(url: string, body: unknown): AsyncGenera
       let eventName = ''
       const payloadLines: string[] = []
       for (const line of lines) {
-        if (line.startsWith('event: ')) eventName = line.slice(7)
+        if (line.startsWith('event:')) eventName = line.slice(6).trimStart()
         else if (line.startsWith('data:')) payloadLines.push(line.slice(5).trimStart())
       }
       const payload = payloadLines.join('\n')
