@@ -80,6 +80,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/vocabulary',
   },
   tianren: { id: 'tianren', label: '天人一卦', icon: 'ri-compass-3-line', path: '/tianren' },
+  'action-plans': { id: 'action-plans', label: '行动计划', icon: 'ri-footprint-line', path: '/action-plans' },
   vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
@@ -99,6 +100,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
     icon: 'ri-checkbox-multiple-line',
     group: 'PERSONAL',
     order: 10,
+    visible: true,
+  },
+  {
+    id: 'action-plans',
+    label: '行动计划',
+    icon: 'ri-footprint-line',
+    group: 'PERSONAL',
+    order: 15,
     visible: true,
   },
   {
@@ -178,6 +187,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
 /** 「个人」组的默认顺序；成员拖拽后的自定义顺序存服务端偏好，见 stores/nav.ts。 */
 export const PERSONAL_ITEMS: ModuleId[] = [
   'todo',
+  'action-plans',
   'calendar',
   'knowledge',
   'vocabulary',

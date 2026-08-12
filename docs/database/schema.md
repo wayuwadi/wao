@@ -1,4 +1,4 @@
-# WAO 数据模型 · 核心域（Phase 1）
+﻿# WAO 数据模型 · 核心域（Phase 1）
 
 来源：`init-design/WAO 架构图与ER图.dc.html` 与前端 `wao-web/src/types/domain.ts`。本轮落地 **组织 / 成员 / 领域 / 项目 / 任务** 五张核心表；知识库、文档、自动化、文件、图床、密码库、日历等域沿用相同模式在后续迭代补充（前端此前已实现，暂以 fixtures 兜底）。
 
@@ -511,6 +511,25 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 | created_at / updated_at | DATETIME(6) | 创建与最近活动时间 |
 
 重复收集由数据库唯一键和 `INSERT ... ON DUPLICATE KEY UPDATE` 原子累计，避免并发请求生成重复记录。
+## 个人行动计划域
+
+### action_plan / action_plan_item
+
+| 表 | 关键字段 | 说明 |
+|---|---|---|
+| action_plan | member_id、title、start_date / target_date、reminder_time / reminder_enabled、status | 成员私有长期目标；完成只改状态，不删除历史 |
+| action_plan_item | plan_id、title、weekdays_json、active_from / active_until、active、ord | 周期行动的版本；有历史后调整会截止旧版本并新增当前版本，历史日期仍可还原 |
+
+### action_checkin / action_day_note / action_reminder_delivery
+
+| 表 | 唯一约束 | 说明 |
+|---|---|---|
+| action_checkin | (item_id, checkin_date) | 用户实际点击产生的每日完成记录；未来日期不可打卡 |
+| action_day_note | (plan_id, note_date) | 当天事实复盘；空正文表示删除 |
+| action_reminder_delivery | (plan_id, reminder_date) | 飞书个人提醒成功/失败与最多六次重试；先抢占记录再投递，避免双节点重复发送 |
+
+提醒通过当前成员账号绑定的飞书 `open_id` 私聊发送，缺少真实身份或自建应用配置时明确失败，绝不回退成
+模拟成功或群 webhook。功能只规划和记录用户自行确认的行动，不从图片推导健康处方；边界见 ADR-057。
 
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
@@ -565,4 +584,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V55__personal_drawing_file.sql`：个人草图文件、Excalidraw 场景与乐观版本。
 - `V56__drawing_file_versions.sql`：草图有效版本快照与最近三版滚动留存。
 - `V57__personal_vocabulary_notebook.sql`：成员私有单词、个人释义、遇见与主动复习计数。
+- `V58__personal_action_plan.sql`：成员私有长期目标、周期行动版本、每日打卡、事实复盘与飞书私聊投递状态。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

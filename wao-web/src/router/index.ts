@@ -85,6 +85,12 @@ const router = createRouter({
           meta: { module: 'todo', tabKind: 'module' },
         },
         {
+          path: 'action-plans',
+          name: 'action-plans',
+          component: () => import('@/views/ActionPlansView.vue'),
+          meta: { module: 'action-plans', tabKind: 'module' },
+        },
+        {
           path: 'knowledge',
           name: 'knowledge',
           component: () => import('@/views/KnowledgeView.vue'),
