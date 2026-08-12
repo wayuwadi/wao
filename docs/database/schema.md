@@ -496,6 +496,22 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 浏览器不能提交爻值和卦号；服务端模拟三枚硬币、映射六十四卦并持久化。AI 只读取服务端拼装的可信卦象上下文，
 对话正文继续保存在 `ai_assistant_message`，边界见 ADR-047。
 
+## 个人单词本域
+
+### vocabulary_entry（成员私有单词记录）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 单词记录 id（`ve` 前缀） |
+| owner_member_id | VARCHAR(32) | 归属成员；所有 `/api/vocabulary/*` 读写按当前会话隔离 |
+| term / normalized_term | VARCHAR(128) | 原始展示文本 / 合并空白并转小写的去重键；与成员组成唯一索引 |
+| meaning_text / context_text | VARCHAR(1000/2000) | 用户自己的释义与遇见语境；系统不伪造词典数据 |
+| learning_state | VARCHAR(16) | `LEARNING` / `MASTERED` |
+| encounter_count / review_count | INT | 重复遇见次数 / 主动复习次数 |
+| last_encountered_at / last_reviewed_at | DATETIME(6) | 最近遇见与最近复习时间 |
+| created_at / updated_at | DATETIME(6) | 创建与最近活动时间 |
+
+重复收集由数据库唯一键和 `INSERT ... ON DUPLICATE KEY UPDATE` 原子累计，避免并发请求生成重复记录。
+
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
 - `V3__content_schema.sql` 内容域建表 + `V4__content_seed.sql` 种子。
@@ -548,4 +564,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V54__tianren_daily_reading.sql`：成员每日唯一卦象及其私有 AI 会话关联（见 ADR-047）。
 - `V55__personal_drawing_file.sql`：个人草图文件、Excalidraw 场景与乐观版本。
 - `V56__drawing_file_versions.sql`：草图有效版本快照与最近三版滚动留存。
+- `V57__personal_vocabulary_notebook.sql`：成员私有单词、个人释义、遇见与主动复习计数。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

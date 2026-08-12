@@ -1,0 +1,67 @@
+openapi: 3.0.3
+info:
+  title: WAO Personal Vocabulary API
+  version: 1.0.0
+paths:
+  /api/vocabulary:
+    get:
+      summary: 按最近活动时间列出当前成员的单词记录
+      responses:
+        '200': { description: 成功 }
+    post:
+      summary: 快速收集一个单词或短语，重复内容累计遇见次数
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [term]
+              properties:
+                term: { type: string, maxLength: 128 }
+      responses:
+        '200': { description: 成功，data.created 表示是否新建 }
+        '400': { description: 内容不含英文字母或超过长度限制 }
+  /api/vocabulary/{id}:
+    patch:
+      summary: 更新当前成员的个人释义、语境与掌握状态
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                meaning: { type: string, maxLength: 1000 }
+                context: { type: string, maxLength: 2000 }
+                state: { type: string, enum: [LEARNING, MASTERED] }
+      responses:
+        '200': { description: 成功 }
+        '404': { description: 当前成员的记录不存在 }
+    delete:
+      summary: 删除当前成员的一条记录
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: 成功 }
+        '404': { description: 当前成员的记录不存在 }
+  /api/vocabulary/{id}/reviews:
+    post:
+      summary: 完成一次主动复习并保存本次自评状态
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: { type: string, enum: [LEARNING, MASTERED] }
+      responses:
+        '200': { description: 成功 }
+        '404': { description: 当前成员的记录不存在 }
