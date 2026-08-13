@@ -3,17 +3,21 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, r
 import { useRouter } from 'vue-router'
 import {
   createAiPairCode,
+  fetchAiEvolution,
   fetchAiRunnerLog,
   fetchAiRunners,
   fetchAiRuns,
   fetchAiWorkflows,
   launchAutonomousGoal,
+  launchEvolutionSuggestion,
   removeAiRunner,
   requestRunnerScriptUpdate,
   rerunAiRun,
   saveAiProjectConfig,
   updateRunnerMaxConcurrency,
   wakeAiRunner,
+  type AiEvolutionOverview,
+  type AiEvolutionSuggestion,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
@@ -56,6 +60,10 @@ const editingRunnerId = ref<string | null>(null)
 const editingRunnerValue = ref(2)
 const editingRunnerSaving = ref(false)
 const updatingRunners = ref(false)
+const evolution = ref<AiEvolutionOverview | null>(null)
+const evolutionLoading = ref(true)
+const evolutionError = ref('')
+const launchingSuggestionId = ref<string | null>(null)
 const wakingRunnerId = ref<string | null>(null)
 const removingRunnerId = ref<string | null>(null)
 const form = reactive({
@@ -68,6 +76,7 @@ const form = reactive({
   maxParallelRuns: 2,
 })
 let timer: ReturnType<typeof setInterval> | null = null
+let evolutionTimer: ReturnType<typeof setInterval> | null = null
 
 const activeRuns = computed(() => runs.value.filter((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 const recentRuns = computed(() => runs.value.filter((run) => !['queued', 'claimed', 'running'].includes(run.status)).slice(0, 8))
@@ -75,6 +84,7 @@ const onlineRunners = computed(() => runners.value.filter((runner) => runner.onl
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
 const activeWorkflows = computed(() => workflows.value.filter((workflow) => workflow.config.enabled))
+const primaryWeeklyQuota = computed(() => evolution.value?.weeklyQuotas[0] ?? null)
 
 /** 每种 AI 工具当前有几台电脑在线，决定 hero 上的接入状态。 */
 const engineStatus = computed(() =>
@@ -145,6 +155,50 @@ async function refreshWorkflows() {
   } finally {
     workflowsLoading.value = false
   }
+}
+
+async function refreshEvolution() {
+  evolutionLoading.value = true
+  evolutionError.value = ''
+  try {
+    evolution.value = await fetchAiEvolution()
+  } catch (error) {
+    evolutionError.value = error instanceof Error ? error.message : '周额度与自主进化状态读取失败'
+  } finally {
+    evolutionLoading.value = false
+  }
+}
+
+async function launchSuggestion(suggestion: AiEvolutionSuggestion) {
+  if (!goalProjectId.value) {
+    toast('请先在 AI 工作流中接入一个项目', 'ri-information-line')
+    view.value = 'workflows'
+    return
+  }
+  launchingSuggestionId.value = suggestion.id
+  try {
+    const run = await launchEvolutionSuggestion(suggestion.id, goalProjectId.value)
+    runs.value = [run, ...runs.value.filter((item) => item.id !== run.id)]
+    view.value = 'runs'
+    toast(`已让 AI 开始：${suggestion.title}`, 'ri-rocket-2-line')
+    await refreshEvolution()
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '建议派发失败', 'ri-error-warning-line')
+  } finally {
+    launchingSuggestionId.value = null
+  }
+}
+
+function providerLabel(provider: string) {
+  return provider === 'codex' ? 'Codex' : provider === 'claude' ? 'Claude' : provider
+}
+
+function quotaClass(remaining: number) {
+  return remaining < 20 ? 'danger' : remaining < 50 ? 'warn' : 'good'
+}
+
+function resetText(value: string | null) {
+  return value ? `${timeText(value)} 刷新` : '刷新时间未知'
 }
 
 watch(view, (next) => {
@@ -454,10 +508,13 @@ function progressAge(value: string | null) {
 onMounted(() => {
   void refresh()
   void refreshWorkflows()
+  void refreshEvolution()
   timer = setInterval(refresh, 5_000)
+  evolutionTimer = setInterval(refreshEvolution, 60_000)
 })
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
+  if (evolutionTimer) clearInterval(evolutionTimer)
 })
 </script>
 
@@ -480,14 +537,68 @@ onBeforeUnmount(() => {
           <i class="ri-line-chart-line"></i>查看数据仪表盘
         </button>
       </div>
-      <div class="capacity" :style="{ '--capacity': `${totalSlots ? Math.min(100, usedSlots / totalSlots * 100) : 0}%` }">
-        <div class="capacity-orbit" aria-hidden="true"><i></i><b></b><em></em></div>
-        <div class="capacity-copy">
-          <div class="capacity-num">{{ usedSlots }}<span>/ {{ totalSlots }}</span></div>
-          <div>执行槽位占用</div>
-          <div class="capacity-bar"><i></i></div>
+      <div class="hero-metrics">
+        <div class="weekly-quota" :class="primaryWeeklyQuota ? quotaClass(primaryWeeklyQuota.remainingPercent) : 'unknown'">
+          <span><i class="ri-speed-up-line"></i>周剩余额度</span>
+          <template v-if="evolutionLoading && !evolution"><strong>···</strong><small>正在读取真实额度</small></template>
+          <template v-else-if="primaryWeeklyQuota">
+            <strong>{{ primaryWeeklyQuota.remainingPercent }}<em>%</em></strong>
+            <small>
+              {{ providerLabel(primaryWeeklyQuota.provider) }} · {{ resetText(primaryWeeklyQuota.resetsAt) }}
+              <template v-if="primaryWeeklyQuota.status !== 'SYNCED'"> · 上次真实快照，本次同步失败</template>
+            </small>
+          </template>
+          <template v-else><strong>--</strong><small>未获取真实周额度</small></template>
+        </div>
+        <div class="capacity" :style="{ '--capacity': `${totalSlots ? Math.min(100, usedSlots / totalSlots * 100) : 0}%` }">
+          <div class="capacity-orbit" aria-hidden="true"><i></i><b></b><em></em></div>
+          <div class="capacity-copy">
+            <div class="capacity-num">{{ usedSlots }}<span>/ {{ totalSlots }}</span></div>
+            <div>执行槽位占用</div>
+            <div class="capacity-bar"><i></i></div>
+          </div>
         </div>
       </div>
+    </section>
+
+    <section class="evolution-panel" aria-labelledby="evolution-title">
+      <header>
+        <span class="evolution-mark"><i class="ri-seedling-line"></i></span>
+        <div>
+          <div class="eyebrow dark">CONTINUOUS EVOLUTION</div>
+          <h2 id="evolution-title">让剩余额度持续完善 WAO</h2>
+          <p v-if="evolution">{{ evolution.autoMessage }}</p>
+          <p v-else-if="evolutionError" class="evolution-error">{{ evolutionError }}</p>
+          <p v-else>正在读取真实周额度和自动进化状态…</p>
+        </div>
+        <span v-if="evolution" class="auto-state" :class="evolution.autoStatus">
+          <i :class="evolution.autoStatus === 'ready' ? 'ri-checkbox-circle-line' : 'ri-time-line'"></i>
+          {{ evolution.autoStatus === 'ready' ? '可自动执行' : evolution.autoStatus === 'busy' ? 'AI 正忙' : '等待条件' }}
+        </span>
+        <button v-if="evolutionError" class="secondary" @click="refreshEvolution"><i class="ri-refresh-line"></i>重试</button>
+      </header>
+      <div v-if="evolutionLoading && !evolution" class="suggestion-loading">
+        <i class="ri-loader-4-line spin"></i>正在整理改进建议…
+      </div>
+      <div v-else-if="evolution" class="suggestion-grid">
+        <article v-for="suggestion in evolution.suggestions" :key="suggestion.id" class="suggestion-card">
+          <span><i :class="suggestion.icon"></i></span>
+          <div><h3>{{ suggestion.title }}</h3><p>{{ suggestion.description }}</p></div>
+          <button
+            :disabled="launchingSuggestionId !== null || !activeWorkflows.length"
+            @click="launchSuggestion(suggestion)"
+          >
+            <i :class="launchingSuggestionId === suggestion.id ? 'ri-loader-4-line spin' : 'ri-play-circle-line'"></i>
+            {{ launchingSuggestionId === suggestion.id ? '正在派发' : '直接执行' }}
+          </button>
+        </article>
+      </div>
+      <footer v-if="evolution?.weeklyQuotas.length">
+        <span v-for="quota in evolution.weeklyQuotas" :key="quota.accountId">
+          {{ quota.label }} · 周剩余 <b>{{ quota.remainingPercent }}%</b>{{ quota.status === 'SYNCED' ? '' : '（旧快照）' }}
+        </span>
+        <small>只使用供应商真实七天窗口；未知额度不会参与自动派发。</small>
+      </footer>
     </section>
 
     <section class="goal-launcher" aria-labelledby="goal-launcher-title">
@@ -1066,9 +1177,23 @@ onBeforeUnmount(() => {
 }
 .hero-link:hover { background: #ffffff33; }
 .hero-link i { font-size: 14px; }
+.hero-metrics { width: 188px; flex: 0 0 auto; display: grid; gap: 9px; }
+.weekly-quota {
+  min-height: 92px;
+  padding: 12px 14px;
+  border: 1px solid #ffffff2b;
+  border-radius: 14px;
+  background: #ffffff12;
+  display: grid;
+  align-content: center;
+}
+.weekly-quota > span { color: #ffffffb5; font-size: 10.5px; }.weekly-quota > span i { margin-right: 5px; }
+.weekly-quota strong { margin-top: 2px; color: #fff; font-size: 35px; line-height: 1; }.weekly-quota strong em { font-size: 17px; font-style: normal; }
+.weekly-quota small { margin-top: 6px; color: #ffffff9c; font-size: 9.5px; line-height: 1.35; }
+.weekly-quota.good strong { color: #c7ffdf; }.weekly-quota.warn strong { color: #ffe9a9; }.weekly-quota.danger strong { color: #ffd0d0; }
 .capacity {
   position: relative;
-  width: 170px;
+  width: auto;
   padding: 12px;
   border: 1px solid #ffffff2b;
   border-radius: 14px;
@@ -1092,6 +1217,29 @@ onBeforeUnmount(() => {
 .capacity-num span { font-size: 14px; opacity: .6; }
 .capacity-bar { height: 5px; margin-top: 11px; overflow: hidden; border-radius: 9px; background: #ffffff24; }
 .capacity-bar i { display: block; height: 100%; width: var(--capacity); border-radius: inherit; background: #fff; transition: width .3s; }
+.evolution-panel {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #3b8c69 24%, var(--wao-line));
+  border-radius: 15px;
+  background: linear-gradient(145deg, color-mix(in srgb, #e8f7ef 76%, var(--wao-bg-card)), var(--wao-bg-card));
+  box-shadow: 0 8px 24px rgba(38, 113, 81, .06);
+}
+.evolution-panel > header { padding: 16px 18px 12px; display: flex; align-items: flex-start; gap: 11px; }
+.evolution-mark { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px; background: #d9f1e4; color: #267c59; display: grid; place-items: center; font-size: 19px; }
+.evolution-panel header > div { flex: 1; min-width: 0; }.evolution-panel h2 { margin: 4px 0 4px; color: var(--wao-text-1); font-size: 17px; }
+.evolution-panel header p { margin: 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }.evolution-panel header p.evolution-error { color: var(--wao-danger-strong); }
+.auto-state { padding: 5px 9px; border-radius: 999px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 10.5px; white-space: nowrap; }
+.auto-state.ready { background: #d9f1e4; color: #267c59; }.auto-state i { margin-right: 4px; }
+.evolution-panel header > button { padding: 6px 9px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
+.suggestion-loading { min-height: 92px; padding: 22px; display: grid; place-content: center; gap: 7px; color: var(--wao-text-weak); font-size: 11px; }
+.suggestion-grid { padding: 0 12px 13px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.suggestion-card { min-width: 0; padding: 12px; border: 1px solid color-mix(in srgb, #3b8c69 14%, var(--wao-line)); border-radius: 11px; background: color-mix(in srgb, var(--wao-bg-card) 92%, transparent); display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 9px; }
+.suggestion-card > span { width: 32px; height: 32px; border-radius: 9px; background: #e3f3ea; color: #2a7658; display: grid; place-items: center; }
+.suggestion-card h3 { margin: 0; color: var(--wao-text-1); font-size: 12px; }.suggestion-card p { margin: 3px 0 0; color: var(--wao-text-weak); font-size: 10px; line-height: 1.45; }
+.suggestion-card button { height: 30px; padding: 0 9px; border: 1px solid #4a9274; border-radius: 8px; background: #fff; color: #2a7658; cursor: pointer; font-size: 10.5px; white-space: nowrap; }.suggestion-card button i { margin-right: 4px; }.suggestion-card button:disabled { opacity: .5; cursor: not-allowed; }
+.evolution-panel > footer { padding: 9px 18px; border-top: 1px solid color-mix(in srgb, #3b8c69 13%, var(--wao-line)); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--wao-text-weak); font-size: 9.5px; }
+.evolution-panel > footer span { padding: 3px 7px; border-radius: 999px; background: #dff2e7; color: #326c56; }.evolution-panel > footer small { margin-left: auto; }
 .goal-launcher {
   margin-top: 16px;
   padding: 19px 20px;
@@ -1490,7 +1638,9 @@ onBeforeUnmount(() => {
   .home { padding: 16px; }
   .hero { padding: 22px; flex-direction: column; align-items: stretch; }
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
+  .hero-metrics { width: auto; grid-template-columns: 1fr 1fr; }
   .capacity { width: auto; }
+  .evolution-panel > header { flex-wrap: wrap; }.auto-state { margin-left: 49px; }.suggestion-grid { grid-template-columns: 1fr; }.suggestion-card { grid-template-columns: 32px minmax(0, 1fr); }.suggestion-card button { grid-column: 2; justify-self: start; }.evolution-panel > footer small { width: 100%; margin-left: 0; }
   .goal-launcher { grid-template-columns: 1fr; padding: 17px; gap: 14px; }
   .goal-actions { flex-wrap: wrap; padding-left: 9px; }
   .goal-actions label { width: 100%; }

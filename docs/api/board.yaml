@@ -291,6 +291,22 @@ paths:
       responses: { '200': { description: OK }, '400': { description: 配置不合法 } }
   /ai/workflows:
     get: { summary: 各项目的 AI 工作流配置与运行统计（控制台「AI 工作流」视图）, responses: { '200': { description: OK } } }
+  /ai/evolution:
+    get:
+      summary: 首页真实周额度、自主进化状态与可执行改进建议
+      responses:
+        '200':
+          description: 周额度只返回供应商真实七天窗口；未知额度不会伪装成 0% 或 100%
+  /ai/evolution/suggestions/{suggestionId}/launch:
+    post:
+      summary: 把一条服务端改进建议交给指定的已启用 AI 工作流
+      parameters: [ { name: suggestionId, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [projectId], properties: { projectId: { type: string } } } } }
+      responses:
+        '200': { description: 返回新建并已入队的 AI Run }
+        '400': { description: 建议不存在、工作流未启用或执行条件不满足 }
   /ai/runners:
     get: { summary: 执行电脑列表、接入的 AI 工具、在线状态与槽位占用, responses: { '200': { description: OK } } }
   /ai/runners/{runnerId}/log:

@@ -443,13 +443,29 @@ public class AiRunService {
      */
     @Transactional
     public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl) {
+        return launchGoal(projectId, goal, requestedBy, baseUrl, null);
+    }
+
+    /**
+     * 使用指定集中账号创建自主目标；额度驱动的自动进化用它保证实际消耗的就是通过门槛的账号。
+     *
+     * @param projectId 承载目标的项目
+     * @param goal 用户或系统选择的目标
+     * @param requestedBy 发起人
+     * @param baseUrl 公网任务分享根地址
+     * @param aiAccountId 本次运行固定使用的集中账号；人工自由目标可为空
+     * @return 新建并已入队的运行
+     */
+    @Transactional
+    public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl,
+            String aiAccountId) {
         String normalizedGoal = trim(goal);
         if (!StringUtils.hasText(normalizedGoal)) throw new BadRequestException("请先写下想让 AI 完成的目标");
 
         cn.wayuwa.wao.dto.TaskDto task = tasks.create(new CreateTaskRequest(
                 goalTitle(normalizedGoal), projectId, "P2", requestedBy, "",
                 autonomousGoalDescription(normalizedGoal), List.of(), null, null, null), requestedBy);
-        List<AiRunDto> runs = enqueue(List.of(task.id()), null, null, null, null, requestedBy, baseUrl);
+        List<AiRunDto> runs = enqueue(List.of(task.id()), null, null, null, aiAccountId, requestedBy, baseUrl);
         if (runs.isEmpty()) throw new IllegalStateException("自主目标创建后未生成 AI 运行");
         return runs.get(0);
     }

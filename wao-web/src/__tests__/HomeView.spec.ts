@@ -8,8 +8,10 @@ import { useDataStore } from '@/stores/data'
 import type { AiRunner } from '@/types'
 import {
   fetchAiRunnerLog,
+  fetchAiEvolution,
   fetchAiRunners,
   launchAutonomousGoal,
+  launchEvolutionSuggestion,
   removeAiRunner,
   requestRunnerScriptUpdate,
   rerunAiRun,
@@ -81,6 +83,20 @@ vi.mock('@/api/ai', () => ({
       lastRunAt: '2026-07-25T20:18:00',
     },
   ]),
+  fetchAiEvolution: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    weeklyQuotas: [{
+      accountId: 'aa-codex', provider: 'codex', label: 'Codex 主账号', plan: 'plus',
+      usedPercent: 0, remainingPercent: 100, resetsAt: '2026-08-17T10:00:00',
+      lastSyncedAt: '2026-08-13T10:00:00', status: 'SYNCED', message: '七天额度已用 0%',
+    }],
+    suggestions: [{
+      id: 'ux-friction', title: '找出并消除一个高频使用阻力',
+      description: '完成一项真实体验优化', icon: 'ri-magic-line', goal: '体验走查',
+    }],
+    autoStatus: 'ready', autoMessage: '已满足 12 小时空闲与周剩余额度门槛。',
+    lastActivityAt: '2026-08-12T08:00:00', nextEligibleAt: '2026-08-12T20:00:00',
+    lastCheckedAt: '2026-08-13T10:00:00', lastRunId: null,
+  }),
   createAiPairCode: vi.fn<() => Promise<{ code: string; expiresAt: string }>>()
     .mockResolvedValue({ code: 'ABCD2345KMNP', expiresAt: '2026-07-25T20:30:00' }),
   saveAiProjectConfig: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
@@ -90,6 +106,13 @@ vi.mock('@/api/ai', () => ({
     runnerName: null, requestedRunnerId: 'rn2', branchName: 'ai/wao-ar-goal', resultSummary: null,
     latestProgress: '目标已进入队列', progressUpdatedAt: '2026-07-25T20:19:00', progress: [],
     sessionId: null, exitCode: null, createdAt: '2026-07-25T20:19:00', startedAt: null, finishedAt: null,
+  }),
+  launchEvolutionSuggestion: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    id: 'ar-evolve', taskId: 't-evolve', taskTitle: '找出并消除一个高频使用阻力', projectId: 'p1',
+    projectName: 'Wa All in One', engine: 'claude', status: 'queued', runnerId: null,
+    runnerName: null, requestedRunnerId: 'rn2', branchName: 'ai/wao-ar-evolve', resultSummary: null,
+    latestProgress: '目标已进入队列', progressUpdatedAt: '2026-08-13T10:01:00', progress: [],
+    sessionId: null, exitCode: null, createdAt: '2026-08-13T10:01:00', startedAt: null, finishedAt: null,
   }),
   requestRunnerScriptUpdate: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
@@ -158,6 +181,24 @@ describe('HomeView AI 控制台', () => {
 
     expect(wrapper.find('.hero').text()).not.toContain('想法有多大，产出就有多大')
     expect(wrapper.find('.hero').text()).not.toContain('多台电脑并行开工')
+    wrapper.unmount()
+  })
+
+  it('首页展示真实周剩余额度并可一键派发改进建议', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    expect(fetchAiEvolution).toHaveBeenCalled()
+    expect(wrapper.find('.weekly-quota').text()).toContain('周剩余额度')
+    expect(wrapper.find('.weekly-quota').text()).toContain('100%')
+    expect(wrapper.find('.evolution-panel').text()).toContain('已满足 12 小时空闲')
+    expect(wrapper.find('.suggestion-card').text()).toContain('找出并消除一个高频使用阻力')
+
+    await wrapper.find('.suggestion-card button').trigger('click')
+    await flushPromises()
+    expect(launchEvolutionSuggestion).toHaveBeenCalledWith('ux-friction', 'p1')
+    expect(wrapper.findAll('.run-card').some((card) => card.text().includes('高频使用阻力'))).toBe(true)
     wrapper.unmount()
   })
 
