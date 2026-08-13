@@ -158,9 +158,53 @@ onMounted(() => {
  */
 function consumeImages(dt: DataTransfer | null | undefined): boolean {
   const files = Array.from(dt?.files ?? []).filter((f) => f.type.startsWith('image/'))
-  if (!files.length) return false
-  insertImages(files)
+  if (files.length) {
+    insertImages(files)
+    return true
+  }
+
+  // 部分应用（尤其是文档和截图工具）复制图片时不放 File，只放一段
+  // <img src="data:image/...;base64,..."> HTML。如果放行给 ProseMirror，整串 Base64
+  // 会进入 Markdown，一张小图就可能占数万字。只在剪贴板内容是纯图片时
+  // 接管，避免复制图文混排内容时丢掉其中的文字。
+  const embedded = embeddedImageFiles(dt)
+  if (!embedded.length) return false
+  insertImages(embedded)
   return true
+}
+
+/** 把只含 Base64 图片的剪贴板 HTML 还原成 File，复用统一图床上传链路。 */
+function embeddedImageFiles(dt: DataTransfer | null | undefined): File[] {
+  const html = dt?.getData?.('text/html')?.trim() ?? ''
+  if (!html) return []
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const images = Array.from(doc.body.querySelectorAll('img[src^="data:image/"]'))
+  if (!images.length) return []
+
+  const textCheck = doc.body.cloneNode(true) as HTMLElement
+  textCheck.querySelectorAll('img').forEach((image) => image.remove())
+  if (textCheck.textContent?.trim()) return []
+
+  const files = images.map((image, index) =>
+    dataImageFile(image.getAttribute('src') ?? '', image.getAttribute('alt') ?? '', index),
+  )
+  return files.every((file): file is File => file != null) ? files : []
+}
+
+/** 仅接受 Base64 图片 data URL；解码失败时交回默认粘贴流程。 */
+function dataImageFile(src: string, alt: string, index: number): File | null {
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/i.exec(src)
+  if (!match) return null
+  try {
+    const binary = atob(match[2]!.replace(/\s/g, ''))
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
+    const mime = match[1]!.toLowerCase()
+    const subtype = mime.split('/')[1]!.replace(/^jpeg$/, 'jpg').replace(/[^a-z0-9]+/g, '') || 'png'
+    const baseName = alt.trim().replace(/[\\/:*?"<>|]/g, '-').slice(0, 80)
+    return new File([bytes], baseName || `clipboard-image-${index + 1}.${subtype}`, { type: mime })
+  } catch {
+    return null
+  }
 }
 
 type UploadedImage = { url: string; name: string }

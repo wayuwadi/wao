@@ -332,6 +332,22 @@ paths:
         '200': { description: 返回实际创建的运行 }
         '400': { description: 项目未启用、未配置仓库、没有电脑接入所选 AI 工具，或按子任务派工时选了多个任务 }
         '404': { description: 任务或子任务不存在 }
+  /ai/goals:
+    post:
+      summary: 把长 Markdown 目标创建为任务并立即交给项目默认 AI 工作流
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectId, goal]
+              properties:
+                projectId: { type: string }
+                goal: { type: string, minLength: 1, description: 不设 4000 字人为上限；图片应由编辑器上传图床后写入稳定 URL }
+      responses:
+        '200': { description: 返回已创建并入队的运行 }
+        '400': { description: 目标为空、项目未启用、未配置仓库或没有执行电脑 }
   /ai/runs/{runId}/rerun:
     post:
       summary: 基于一次失败运行重新排队；新运行会带上上次的报错交给 AI 继续修

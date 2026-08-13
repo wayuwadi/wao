@@ -30,6 +30,15 @@ function pasteInto(el: Element, files: File[]) {
   el.dispatchEvent(event)
 }
 
+/** 模拟某些文档应用只把 Base64 <img> 放进剪贴板的行为。 */
+function pasteHtmlInto(el: Element, html: string) {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', {
+    value: { files: [], items: [], types: ['text/html'], getData: (type: string) => type === 'text/html' ? html : '' },
+  })
+  el.dispatchEvent(event)
+}
+
 describe('MarkdownEditor（所见即所得）', () => {
   it('没有编辑 / 预览两态——挂载即是可编辑的富文本，标题直接渲染成 h2', async () => {
     const w = await mountEditor({ modelValue: '## 目标\n\n正文' })
@@ -146,6 +155,27 @@ describe('MarkdownEditor（所见即所得）', () => {
     done('/api/images/img9/raw', 'a.png')
     await flushPromises()
     expect(w.find('.md-body img').attributes('src')).toBe('/api/images/img9/raw')
+    w.unmount()
+  })
+
+  it('剪贴板只给 Base64 图片 HTML 时也转成 File 上传，不把长编码写入正文', async () => {
+    const w = await mountEditor({ modelValue: '' })
+    const source = 'data:image/png;base64,aGVsbG8='
+
+    pasteHtmlInto(w.find('.md-body [contenteditable]').element, `<div><img src="${source}" alt="剪贴板截图"></div>`)
+    await nextTick()
+
+    const emitted = w.emitted('upload-image')
+    expect(emitted).toHaveLength(1)
+    const file = emitted![0]![0] as File
+    expect(file.type).toBe('image/png')
+    expect(await file.text()).toBe('hello')
+    expect(w.emitted('update:modelValue')?.flat().join('') ?? '').not.toContain('data:image')
+
+    const done = emitted![0]![1] as (url: string | null, name: string) => void
+    done('/api/images/clipboard/raw', '剪贴板截图.png')
+    await flushPromises()
+    expect(w.find('.md-body img').attributes('src')).toBe('/api/images/clipboard/raw')
     w.unmount()
   })
 

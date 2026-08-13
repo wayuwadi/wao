@@ -75,7 +75,6 @@ const onlineRunners = computed(() => runners.value.filter((runner) => runner.onl
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
 const activeWorkflows = computed(() => workflows.value.filter((workflow) => workflow.config.enabled))
-const goalTooLong = computed(() => goal.value.length > 4_000)
 
 /** 每种 AI 工具当前有几台电脑在线，决定 hero 上的接入状态。 */
 const engineStatus = computed(() =>
@@ -170,10 +169,6 @@ async function launchGoal() {
   }
   if (goalImageUploads.value) {
     toast('图片还在上传，请稍候再派发', 'ri-information-line')
-    return
-  }
-  if (normalizedGoal.length > 4_000) {
-    toast('目标最多 4000 个字，请精简后再派发', 'ri-information-line')
     return
   }
   launchingGoal.value = true
@@ -524,14 +519,14 @@ onBeforeUnmount(() => {
               </option>
             </select>
           </label>
-          <span class="goal-shortcut" :class="{ error: goalTooLong }">
+          <span class="goal-shortcut">
             <template v-if="goalImageUploads">{{ goalImageUploads }} 张图片上传中 · </template>
-            {{ goal.length }} / 4000 · Ctrl/Command + Enter
+            {{ goal.length }} 字 · Ctrl/Command + Enter
           </span>
           <button
             v-if="activeWorkflows.length"
             class="goal-submit"
-            :disabled="launchingGoal || goalImageUploads > 0 || goalTooLong || !goal.trim() || !goalProjectId"
+            :disabled="launchingGoal || goalImageUploads > 0 || !goal.trim() || !goalProjectId"
             @click="launchGoal"
           >
             <i :class="launchingGoal ? 'ri-loader-4-line spin' : 'ri-rocket-2-line'"></i>
@@ -1124,7 +1119,6 @@ onBeforeUnmount(() => {
 .goal-actions label { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--wao-text-weak); font-size: 10.5px; }
 .goal-actions select { max-width: 230px; height: 29px; padding: 0 26px 0 8px; border: 1px solid var(--wao-line); border-radius: 7px; background: #fff; color: var(--wao-text-2); font-size: 11px; }
 .goal-shortcut { margin-left: auto; color: #a0a5b6; font-size: 9.5px; white-space: nowrap; }
-.goal-shortcut.error { color: var(--wao-danger-strong); font-weight: 650; }
 .goal-submit { min-width: 112px; height: 32px; padding: 0 12px; border: 1px solid #4358d6; border-radius: 8px; background: #4358d6; color: #fff; cursor: pointer; font-size: 11.5px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .goal-submit.setup { min-width: 140px; }
 .goal-submit:disabled { opacity: .55; cursor: not-allowed; }
