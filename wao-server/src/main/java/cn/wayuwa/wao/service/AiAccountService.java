@@ -24,6 +24,7 @@ import cn.wayuwa.wao.dto.AiAccountFormRequest;
 import cn.wayuwa.wao.dto.AiAccountLoginStartDto;
 import cn.wayuwa.wao.dto.AiAccountLoginStatusDto;
 import cn.wayuwa.wao.dto.AiAccountSyncResultDto;
+import cn.wayuwa.wao.dto.AiWeeklyQuotaDto;
 import cn.wayuwa.wao.dto.CompleteAiAccountLoginRequest;
 import cn.wayuwa.wao.dto.AiRunAccountDto;
 import cn.wayuwa.wao.dto.StartAiAccountLoginRequest;
@@ -87,6 +88,90 @@ public class AiAccountService {
                 .sorted(Comparator.comparing(AiAccountEntity::getCreatedAt).reversed())
                 .map(this::toDto)
                 .toList();
+    }
+
+    /**
+     * 返回已启用账号中可由真实供应商快照解析出的七天额度。
+     *
+     * <p>这里只读已保存快照，不主动访问供应商；首页可以高频读取，自动调度器则会先调用
+     * {@link #refreshQuotaSnapshots()}。没有周窗口的账号直接省略，调用方不能把未知额度当成满额。
+     */
+    public List<AiWeeklyQuotaDto> weeklyQuotas() {
+        return mapper.selectList(new LambdaQueryWrapper<AiAccountEntity>()
+                        .eq(AiAccountEntity::getEnabled, true))
+                .stream()
+                .filter(entity -> !"api_key".equals(entity.getAuthMethod()))
+                .map(this::weeklyQuota)
+                .filter(java.util.Objects::nonNull)
+                .sorted(Comparator.comparingInt(AiWeeklyQuotaDto::remainingPercent).reversed())
+                .toList();
+    }
+
+    /**
+     * 为自主调度刷新可查询真实额度的 OAuth 账号。
+     *
+     * <p>单个供应商失败会落到该账号状态里，不中断其它账号；手工凭据可能无法续期，因此只使用
+     * 明确由 OAuth 登录建立的 Codex / Claude 账号作为自动决策来源。
+     */
+    public void refreshQuotaSnapshots() {
+        mapper.selectList(new LambdaQueryWrapper<AiAccountEntity>()
+                        .eq(AiAccountEntity::getEnabled, true)
+                        .eq(AiAccountEntity::getAuthMethod, "oauth")
+                        .in(AiAccountEntity::getProvider, List.of("codex", "claude")))
+                .forEach(entity -> sync(entity.getId()));
+    }
+
+    private AiWeeklyQuotaDto weeklyQuota(AiAccountEntity entity) {
+        Window window = weeklyWindow(entity);
+        if (window == null) return null;
+        int used = Math.max(0, Math.min(100, window.percent));
+        return new AiWeeklyQuotaDto(entity.getId(), entity.getProvider(), entity.getLabel(), entity.getPlan(),
+                used, 100 - used, window.resetsAt == null ? null : window.resetsAt.toString(),
+                entity.getLastSyncedAt() == null ? null : entity.getLastSyncedAt().toString(),
+                entity.getQuotaStatus(), entity.getQuotaMessage());
+    }
+
+    private Window weeklyWindow(AiAccountEntity entity) {
+        JsonNode usage = null;
+        try {
+            if (StringUtils.hasText(entity.getQuotaRawJson())) usage = objectMapper.readTree(entity.getQuotaRawJson());
+        } catch (Exception ignore) {
+            // 损坏的历史快照就是未知额度，不能影响账号列表与首页。
+        }
+        if (usage != null && "codex".equals(entity.getProvider())) {
+            JsonNode secondary = usage.path("rate_limit").path("secondary_window");
+            Integer percent = intOrNull(secondary.path("used_percent"));
+            if (percent != null) return new Window("weekly_all", percent, parseReset(secondary.path("reset_at")));
+            return codexWindows(usage).stream().filter(window -> window.name.startsWith("weekly"))
+                    .max(Comparator.comparingInt(Window::percent)).orElse(null);
+        }
+        if (usage != null && "claude".equals(entity.getProvider())) {
+            List<Window> weekly = new ArrayList<>();
+            JsonNode limits = usage.path("limits");
+            if (limits.isArray()) {
+                for (JsonNode limit : limits) {
+                    String kind = blankOr(limit.path("kind").asText(null), "limit");
+                    if (!kind.contains("week") && !kind.contains("seven_day")) continue;
+                    Integer percent = intOrNull(limit.path("percent"));
+                    if (percent != null) weekly.add(new Window(kind, percent,
+                            parseInstant(limit.path("resets_at").asText(null))));
+                }
+            }
+            JsonNode sevenDay = usage.path("seven_day");
+            Integer legacyPercent = intOrNull(sevenDay.path("utilization"));
+            if (legacyPercent != null) weekly.add(new Window("seven_day", legacyPercent,
+                    parseInstant(sevenDay.path("resets_at").asText(null))));
+            return weekly.stream().filter(window -> "weekly_all".equals(window.name)
+                            || "seven_day".equals(window.name))
+                    .findFirst().orElseGet(() -> weekly.stream()
+                            .max(Comparator.comparingInt(Window::percent)).orElse(null));
+        }
+        if (StringUtils.hasText(entity.getQuotaWindow())
+                && (entity.getQuotaWindow().contains("week") || entity.getQuotaWindow().contains("seven_day"))
+                && entity.getQuotaPercent() != null) {
+            return new Window(entity.getQuotaWindow(), entity.getQuotaPercent(), entity.getQuotaResetsAt());
+        }
+        return null;
     }
 
     @Transactional

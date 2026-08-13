@@ -112,6 +112,26 @@ class AiAccountServiceTest {
     }
 
     @Test
+    void weeklyQuotaUsesRealSecondaryWindowAndReportsRemainingPercent() {
+        backedByMemory();
+        var created = service.create(new AiAccountFormRequest("codex", "Codex 主账号", "a@b.com",
+                "{\"tokens\":{\"access_token\":\"access-week\",\"account_id\":\"acct-week\"}}", true));
+        when(codex.usage("access-week", "acct-week")).thenReturn(json("""
+                {"rate_limit":{"primary_window":{"used_percent":12,"limit_window_seconds":18000},
+                "secondary_window":{"used_percent":37,"limit_window_seconds":604800,"reset_at":1787025600}}}
+                """));
+
+        service.sync(created.id());
+
+        var quotas = service.weeklyQuotas();
+        assertThat(quotas).hasSize(1);
+        assertThat(quotas.get(0).provider()).isEqualTo("codex");
+        assertThat(quotas.get(0).usedPercent()).isEqualTo(37);
+        assertThat(quotas.get(0).remainingPercent()).isEqualTo(63);
+        assertThat(quotas.get(0).resetsAt()).isNotBlank();
+    }
+
+    @Test
     void syncQoderReturnsNoApi() {
         backedByMemory();
         var created = service.create(new AiAccountFormRequest("qoder", "Qoder", null, "{}", true));

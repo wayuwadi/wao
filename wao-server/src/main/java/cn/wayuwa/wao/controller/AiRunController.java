@@ -18,6 +18,8 @@ import cn.wayuwa.wao.dto.CompleteAiAssistantRunRequest;
 import cn.wayuwa.wao.dto.ContinueAiRunRequest;
 import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
+import cn.wayuwa.wao.dto.AiEvolutionOverviewDto;
+import cn.wayuwa.wao.dto.LaunchEvolutionSuggestionRequest;
 import cn.wayuwa.wao.dto.CreateAiRunsRequest;
 import cn.wayuwa.wao.dto.LaunchAutonomousGoalRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
@@ -34,6 +36,7 @@ import cn.wayuwa.wao.service.AiAssistantService;
 import cn.wayuwa.wao.service.AiRunService;
 import cn.wayuwa.wao.service.AiRunnerWakeService;
 import cn.wayuwa.wao.service.AiRunnerLifecycleService;
+import cn.wayuwa.wao.service.AiEvolutionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -63,17 +66,19 @@ public class AiRunController {
     private final AiRunnerWakeService wakeService;
     private final AiRunnerLifecycleService lifecycleService;
     private final CurrentMember currentMember;
+    private final AiEvolutionService evolutionService;
 
     public AiRunController(AiRunService service, AiAccountService aiAccountService,
             AiAssistantService assistantService,
             AiRunnerWakeService wakeService, AiRunnerLifecycleService lifecycleService,
-            CurrentMember currentMember) {
+            CurrentMember currentMember, AiEvolutionService evolutionService) {
         this.service = service;
         this.aiAccountService = aiAccountService;
         this.assistantService = assistantService;
         this.wakeService = wakeService;
         this.lifecycleService = lifecycleService;
         this.currentMember = currentMember;
+        this.evolutionService = evolutionService;
     }
 
     @GetMapping("/projects/{projectId}/config")
@@ -154,6 +159,21 @@ public class AiRunController {
             HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         return ApiResponse.ok(service.launchGoal(request.projectId(), request.goal(), currentMember.id(http), baseUrl));
+    }
+
+    /** 首页额度驱动的自主进化状态与可直接执行的建议清单。 */
+    @GetMapping("/evolution")
+    public ApiResponse<AiEvolutionOverviewDto> evolution() {
+        return ApiResponse.ok(evolutionService.overview());
+    }
+
+    /** 一键把服务端维护的一条改进建议交给选中的 AI 工作流。 */
+    @PostMapping("/evolution/suggestions/{suggestionId}/launch")
+    public ApiResponse<AiRunDto> launchSuggestion(@PathVariable String suggestionId,
+            @Valid @RequestBody LaunchEvolutionSuggestionRequest request, HttpServletRequest http) {
+        String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
+        return ApiResponse.ok(evolutionService.launchSuggestion(suggestionId, request.projectId(),
+                currentMember.id(http), baseUrl));
     }
 
     @GetMapping("/runs")

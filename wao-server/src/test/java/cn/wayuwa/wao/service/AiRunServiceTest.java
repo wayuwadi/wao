@@ -180,6 +180,28 @@ class AiRunServiceTest {
     }
 
     @Test
+    void quotaDrivenGoalPinsTheAccountThatPassedTheThreshold() {
+        TaskEntity task = task("t1", "p1", "自动优化体验");
+        when(tasks.create(any(CreateTaskRequest.class), eq("system"))).thenReturn(taskDto(null, null));
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        AiRunnerNodeEntity linux = runner("rn-linux", "Linux 主节点", "codex");
+        linux.setLastSeenAt(LocalDateTime.now());
+        when(runnerMapper.selectList(any())).thenReturn(List.of(linux));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        service.launchGoal("p1", "自动优化一项真实体验", "system", "https://wao.example", "aa-quota");
+
+        verify(accounts).validateRunAccount("aa-quota", "codex");
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getAiAccountId()).isEqualTo("aa-quota");
+        assertThat(run.getValue().getRequestedRunnerId()).isEqualTo("rn-linux");
+    }
+
+    @Test
     void enqueueCanTargetOneComputerAndOneAiTool() {
         TaskEntity task = task("t1", "p1", "接入 Claude");
         when(taskMapper.selectById("t1")).thenReturn(task);

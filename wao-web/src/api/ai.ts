@@ -1,6 +1,38 @@
 import { http, type ApiResponse } from './http'
 import type { AiEngine, AiProjectConfig, AiRun, AiRunner, AiRunnerLog, AiWorkflow } from '@/types'
 
+export interface AiWeeklyQuota {
+  accountId: string
+  provider: 'codex' | 'claude'
+  label: string
+  plan: string | null
+  usedPercent: number
+  remainingPercent: number
+  resetsAt: string | null
+  lastSyncedAt: string | null
+  status: string
+  message: string | null
+}
+
+export interface AiEvolutionSuggestion {
+  id: string
+  title: string
+  description: string
+  icon: string
+  goal: string
+}
+
+export interface AiEvolutionOverview {
+  weeklyQuotas: AiWeeklyQuota[]
+  suggestions: AiEvolutionSuggestion[]
+  autoStatus: 'busy' | 'cooling_down' | 'quota_unavailable' | 'ready'
+  autoMessage: string
+  lastActivityAt: string | null
+  nextEligibleAt: string | null
+  lastCheckedAt: string | null
+  lastRunId: string | null
+}
+
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
 }
@@ -67,6 +99,16 @@ export const createAiRuns = (
 /** 从一句目标创建任务，并立即交给项目默认 AI 工作流。 */
 export const launchAutonomousGoal = (projectId: string, goal: string) =>
   data<AiRun>(http.post('/api/ai/goals', { projectId, goal }))
+
+/** 首页真实周额度、自主进化状态和服务端维护的改进建议。 */
+export const fetchAiEvolution = () => data<AiEvolutionOverview>(http.get('/api/ai/evolution', {
+  params: { _: Date.now() },
+  headers: { 'Cache-Control': 'no-cache' },
+}))
+
+/** 一键把一条建议交给选中的项目工作流。 */
+export const launchEvolutionSuggestion = (suggestionId: string, projectId: string) =>
+  data<AiRun>(http.post(`/api/ai/evolution/suggestions/${suggestionId}/launch`, { projectId }))
 
 /** 基于一次失败运行重跑：AI 会拿到上次的报错接着修，不用从零重来。 */
 export const rerunAiRun = (runId: string) => data<AiRun>(http.post(`/api/ai/runs/${runId}/rerun`))
