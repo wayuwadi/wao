@@ -38,6 +38,69 @@ class RunnerInvocationTest(unittest.TestCase):
         process.wait.assert_called_once()
         self.assertEqual(RUNNER.subprocess.PIPE, popen.call_args.kwargs["stdin"])
 
+    @patch.object(RUNNER.subprocess, "Popen")
+    def test_windows_ai_cli_runs_without_console_and_keeps_process_group(self, popen: Mock) -> None:
+        process = popen.return_value
+        process.stdin = Mock()
+        process.stdout = iter([])
+        process.returncode = 0
+
+        with patch.object(RUNNER.os, "name", "nt"):
+            RUNNER.invoke_cli(["codex.cmd", "exec", "-"], Path("C:/work"), "执行任务")
+
+        flags = popen.call_args.kwargs["creationflags"]
+        self.assertEqual(RUNNER.WINDOWS_CREATE_NO_WINDOW, flags & RUNNER.WINDOWS_CREATE_NO_WINDOW)
+        self.assertEqual(
+            RUNNER.WINDOWS_CREATE_NEW_PROCESS_GROUP,
+            flags & RUNNER.WINDOWS_CREATE_NEW_PROCESS_GROUP,
+        )
+
+    @patch.object(RUNNER.subprocess, "run")
+    def test_windows_commands_hide_console_but_keep_failure_output(self, run: Mock) -> None:
+        run.return_value = Mock(returncode=7, stdout="真实失败原因")
+
+        with patch.object(RUNNER.os, "name", "nt"):
+            with self.assertRaisesRegex(RuntimeError, "真实失败原因"):
+                RUNNER.run(["git.exe", "fetch"])
+
+        self.assertEqual(
+            RUNNER.WINDOWS_CREATE_NO_WINDOW,
+            run.call_args.kwargs["creationflags"] & RUNNER.WINDOWS_CREATE_NO_WINDOW,
+        )
+
+    @patch.object(RUNNER.subprocess, "run")
+    def test_windows_cancellation_kills_process_tree_without_console(self, run: Mock) -> None:
+        process = Mock(pid=4321)
+
+        with patch.object(RUNNER.os, "name", "nt"):
+            RUNNER.terminate_process_tree(process)
+
+        run.assert_called_once_with(
+            ["taskkill", "/PID", "4321", "/T", "/F"], check=False,
+            stdout=RUNNER.subprocess.DEVNULL, stderr=RUNNER.subprocess.DEVNULL,
+            creationflags=RUNNER.WINDOWS_CREATE_NO_WINDOW,
+        )
+
+    @patch.object(RUNNER.os, "_exit")
+    @patch.object(RUNNER.subprocess, "Popen")
+    def test_windows_self_update_restarts_without_console(self, popen: Mock, exit_process: Mock) -> None:
+        script = Path("C:/Program Files/WAO/wao-ai-runner.py")
+        exit_process.side_effect = SystemExit
+
+        with patch.object(RUNNER.os, "name", "nt"), \
+                patch.object(RUNNER.sys, "executable", "C:/Python/pythonw.exe"), \
+                patch.object(RUNNER.sys, "argv", ["wao-ai-runner.py", "--name", "我的电脑"]):
+            with self.assertRaises(SystemExit):
+                RUNNER.restart_self(script)
+
+        flags = popen.call_args.kwargs["creationflags"]
+        self.assertEqual(RUNNER.WINDOWS_CREATE_NO_WINDOW, flags & RUNNER.WINDOWS_CREATE_NO_WINDOW)
+        self.assertEqual(
+            RUNNER.WINDOWS_CREATE_NEW_PROCESS_GROUP,
+            flags & RUNNER.WINDOWS_CREATE_NEW_PROCESS_GROUP,
+        )
+        exit_process.assert_called_once_with(0)
+
     @patch.object(RUNNER, "find_github_cli", return_value="C:/Program Files/GitHub CLI/gh.exe")
     @patch.object(RUNNER.subprocess, "run")
     def test_git_credential_is_only_injected_into_child_environment(self, run: Mock, _find: Mock) -> None:
@@ -872,6 +935,7 @@ class PairingRevokedTest(unittest.TestCase):
         run.assert_called_once_with(
             ["schtasks.exe", "/Change", "/TN", "WAO AI Runner", "/Disable"],
             capture_output=True, text=True, timeout=15, check=False,
+            creationflags=RUNNER.WINDOWS_CREATE_NO_WINDOW,
         )
 
     @patch.object(RUNNER.subprocess, "run")
