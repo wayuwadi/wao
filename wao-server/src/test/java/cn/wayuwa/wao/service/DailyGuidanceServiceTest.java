@@ -18,8 +18,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import cn.wayuwa.wao.domain.ProjectEntity;
+import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AssistantStatusDto;
+import cn.wayuwa.wao.mapper.MemberMapper;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
@@ -30,12 +32,13 @@ import org.junit.jupiter.api.Test;
 class DailyGuidanceServiceTest {
 
     private final MemberPreferenceMapper preferenceMapper = mock(MemberPreferenceMapper.class);
+    private final MemberMapper memberMapper = mock(MemberMapper.class);
     private final TaskMapper taskMapper = mock(TaskMapper.class);
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final AiAssistantService assistant = mock(AiAssistantService.class);
     private final ObjectMapper json = new ObjectMapper().registerModule(new JavaTimeModule());
     private final DailyGuidanceService service = new DailyGuidanceService(
-            preferenceMapper, taskMapper, projectMapper, assistant, json);
+            preferenceMapper, memberMapper, taskMapper, projectMapper, assistant, json);
 
     @Test
     void returnsTodayCachedGuidanceWithoutCallingCodex() {
@@ -95,6 +98,49 @@ class DailyGuidanceServiceTest {
 
         verify(assistant, times(1)).dailyGuidanceAnswer(any(), eq("wg"), any());
         verify(preferenceMapper, times(1)).upsert(eq("wg"), eq(DailyGuidanceService.PREFERENCE_KEY), any());
+    }
+
+    @Test
+    void warmupPreparesOnlyMissingMembersAndContinuesAfterOneFailure() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        when(memberMapper.selectList(null)).thenReturn(List.of(member("cached"), member("failed"), member("ready")));
+        when(preferenceMapper.find("cached", DailyGuidanceService.PREFERENCE_KEY)).thenReturn(
+                "{\"date\":\"" + today + "\",\"content\":\"已有建议\","
+                        + "\"generatedAt\":\"2026-08-13T08:00:00\"}");
+        when(assistant.status()).thenReturn(new AssistantStatusDto(true, "已连接本地节点"));
+        when(taskMapper.selectList(any())).thenReturn(List.of());
+        when(assistant.dailyGuidanceAnswer(any(), eq("failed"), any()))
+                .thenThrow(new RuntimeException("本地 Codex 暂时繁忙"));
+        when(assistant.dailyGuidanceAnswer(any(), eq("ready"), any())).thenReturn("## 今日行动\n\n- 先做一件事");
+
+        var result = service.prepareMissingForAllMembers();
+
+        assertThat(result.members()).isEqualTo(3);
+        assertThat(result.cached()).isEqualTo(1);
+        assertThat(result.generated()).isEqualTo(1);
+        assertThat(result.failed()).isEqualTo(1);
+        assertThat(result.lastError()).contains("暂时繁忙");
+        verify(assistant, never()).dailyGuidanceAnswer(any(), eq("cached"), any());
+        verify(preferenceMapper).upsert(eq("ready"), eq(DailyGuidanceService.PREFERENCE_KEY), contains("今日行动"));
+    }
+
+    @Test
+    void warmupDefersAllMissingMembersWhileCodexIsOffline() {
+        when(memberMapper.selectList(null)).thenReturn(List.of(member("wg"), member("wd")));
+        when(assistant.status()).thenReturn(new AssistantStatusDto(false, "未检测到在线的本地 Codex"));
+
+        var result = service.prepareMissingForAllMembers();
+
+        assertThat(result.generated()).isZero();
+        assertThat(result.failed()).isEqualTo(2);
+        assertThat(result.lastError()).contains("未检测到在线");
+        verify(assistant, never()).dailyGuidanceAnswer(any(), any(), any());
+    }
+
+    private MemberEntity member(String id) {
+        MemberEntity member = new MemberEntity();
+        member.setId(id);
+        return member;
     }
 
     private TaskEntity task() {

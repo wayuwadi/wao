@@ -32,6 +32,7 @@ import {
   type DailyGuidance,
 } from '@/api/dailyGuidance'
 import { useDataStore } from '@/stores/data'
+import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow } from '@/types'
 import { renderMarkdown } from '@/utils/markdown'
@@ -43,6 +44,7 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 
 const router = useRouter()
 const data = useDataStore()
+const session = useSessionStore()
 const ui = useUiStore()
 const runs = ref<AiRun[]>([])
 const runners = ref<AiRunner[]>([])
@@ -77,10 +79,11 @@ const suggestionError = ref('')
 const wakingRunnerId = ref<string | null>(null)
 const removingRunnerId = ref<string | null>(null)
 const removingWorkflowId = ref<string | null>(null)
-const dailyGuidance = ref<DailyGuidance | null>(null)
-const dailyGuidanceLoading = ref(true)
+const dailyGuidance = ref<DailyGuidance | null>(readCachedDailyGuidance())
+const dailyGuidanceLoading = ref(!dailyGuidance.value)
 const dailyGuidanceRefreshing = ref(false)
 const dailyGuidanceError = ref('')
+const dailyGuidanceErrorSource = ref<'load' | 'refresh'>('load')
 const form = reactive({
   enabled: false,
   repoUrl: '',
@@ -207,12 +210,13 @@ async function refreshSuggestions(showSuccess = true) {
 }
 
 async function loadDailyGuidance() {
-  dailyGuidanceLoading.value = true
+  dailyGuidanceLoading.value = !dailyGuidance.value?.content
   dailyGuidanceError.value = ''
+  dailyGuidanceErrorSource.value = 'load'
   try {
     const current = await fetchDailyGuidance()
     dailyGuidance.value = current
-    if (current.status === 'missing') await refreshDailyGuidance(false)
+    rememberDailyGuidance(current)
   } catch (error) {
     dailyGuidanceError.value = error instanceof Error ? error.message : '今天的建议读取失败'
   } finally {
@@ -224,13 +228,50 @@ async function refreshDailyGuidance(refresh = true) {
   if (dailyGuidanceRefreshing.value) return
   dailyGuidanceRefreshing.value = true
   dailyGuidanceError.value = ''
+  dailyGuidanceErrorSource.value = 'refresh'
   try {
     dailyGuidance.value = await generateDailyGuidance(refresh)
+    rememberDailyGuidance(dailyGuidance.value)
   } catch (error) {
     dailyGuidanceError.value = error instanceof Error ? error.message : '今天的建议生成失败，请重试'
   } finally {
     dailyGuidanceRefreshing.value = false
     dailyGuidanceLoading.value = false
+  }
+}
+
+function guidanceBusinessDate() {
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date())
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${value.year}-${value.month}-${value.day}`
+}
+
+function dailyGuidanceCacheKey() {
+  return `wao-daily-guidance-v1:${session.currentUser.id || 'wg'}`
+}
+
+function readCachedDailyGuidance(): DailyGuidance | null {
+  try {
+    const raw = sessionStorage.getItem(dailyGuidanceCacheKey())
+    if (!raw) return null
+    const cached = JSON.parse(raw) as DailyGuidance
+    return cached.status === 'ready' && cached.date === guidanceBusinessDate() && cached.content ? cached : null
+  } catch {
+    return null
+  }
+}
+
+function rememberDailyGuidance(value: DailyGuidance | null) {
+  try {
+    if (value?.status === 'ready' && value.content && value.date === guidanceBusinessDate()) {
+      sessionStorage.setItem(dailyGuidanceCacheKey(), JSON.stringify(value))
+    } else {
+      sessionStorage.removeItem(dailyGuidanceCacheKey())
+    }
+  } catch {
+    // 隐私模式禁用会话存储时仍以服务端预生成结果为准。
   }
 }
 
@@ -656,7 +697,7 @@ onBeforeUnmount(() => {
         <div>
           <div class="eyebrow dark">FOR THIS MOMENT</div>
           <h2 id="daily-guidance-title">给此刻的你</h2>
-          <p>结合今天的真实任务，由本地 Codex 每天整理一次；换设备也能继续看。</p>
+          <p>结合今天的真实任务，由后台提前整理；打开首页即可查看，换设备也能继续看。</p>
         </div>
         <button
           v-if="dailyGuidance?.status === 'ready'"
@@ -670,15 +711,23 @@ onBeforeUnmount(() => {
       </header>
       <div v-if="dailyGuidanceLoading || (dailyGuidanceRefreshing && !dailyGuidance?.content)" class="guidance-state">
         <i class="ri-loader-4-line spin"></i>
-        <div><b>正在读懂你此刻的处境</b><span>本地 Codex 会从你的未完成任务中提炼今天真正有用的建议。</span></div>
+        <div><b>正在读取今天的建议</b><span>后台已提前整理，当前只需取回保存的结果。</span></div>
       </div>
       <div v-else-if="dailyGuidance?.status === 'ready' && dailyGuidance.content" class="guidance-content">
         <div class="md-body" v-html="renderMarkdown(dailyGuidance.content)"></div>
         <small v-if="dailyGuidance.generatedAt"><i class="ri-shield-check-line"></i>{{ timeText(dailyGuidance.generatedAt) }} 生成 · 仅使用你的 WAO 任务上下文</small>
         <div v-if="dailyGuidanceError" class="guidance-inline-error" role="alert">
-          <i class="ri-error-warning-line"></i><span>换一组失败：{{ dailyGuidanceError }}，原建议已保留。</span>
-          <button :disabled="dailyGuidanceRefreshing" @click="refreshDailyGuidance(true)">重试</button>
+          <i class="ri-error-warning-line"></i><span>{{ dailyGuidanceErrorSource === 'refresh' ? '换一组' : '读取' }}失败：{{ dailyGuidanceError }}，现有建议已保留。</span>
+          <button :disabled="dailyGuidanceRefreshing" @click="dailyGuidanceErrorSource === 'refresh' ? refreshDailyGuidance(true) : loadDailyGuidance()">重试</button>
         </div>
+      </div>
+      <div v-else-if="dailyGuidance?.status === 'missing'" class="guidance-state">
+        <i class="ri-time-line"></i>
+        <div>
+          <b>今天的建议正在后台准备</b>
+          <span>{{ dailyGuidance.message || '定时任务会在本地 Codex 可用后自动补齐，无需停留等待。' }}</span>
+        </div>
+        <button @click="loadDailyGuidance"><i class="ri-refresh-line"></i>重新读取</button>
       </div>
       <div v-else class="guidance-state error">
         <i class="ri-cloud-off-line"></i>
@@ -686,7 +735,7 @@ onBeforeUnmount(() => {
           <b>{{ dailyGuidanceError ? '这次没有生成成功' : '本地 Codex 暂未连接' }}</b>
           <span>{{ dailyGuidanceError || dailyGuidance?.message || '请检查 AI 控制台的执行电脑后重试。' }}</span>
         </div>
-        <button @click="dailyGuidance?.status === 'unavailable' ? loadDailyGuidance() : refreshDailyGuidance(false)">
+        <button @click="loadDailyGuidance">
           <i class="ri-refresh-line"></i>重试
         </button>
       </div>

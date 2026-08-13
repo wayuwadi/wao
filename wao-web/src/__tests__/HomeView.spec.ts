@@ -6,7 +6,7 @@ import HomeView from '@/views/HomeView.vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import { useDataStore } from '@/stores/data'
 import type { AiRunner } from '@/types'
-import { fetchDailyGuidance, generateDailyGuidance } from '@/api/dailyGuidance'
+import { fetchDailyGuidance, generateDailyGuidance, type DailyGuidance } from '@/api/dailyGuidance'
 import {
   fetchAiRunnerLog,
   fetchAiEvolution,
@@ -198,7 +198,10 @@ function pasteInto(el: Element, files: File[]) {
 }
 
 describe('HomeView AI 控制台', () => {
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => {
+    vi.useRealTimers()
+    sessionStorage.clear()
+  })
 
   it('首屏不再展示已要求删除的 AI 说明段落', async () => {
     vi.useFakeTimers()
@@ -227,19 +230,70 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
-  it('当天没有缓存时自动生成，失败后保留可重试状态', async () => {
+  it('当天没有缓存时只等待后台预热，不在首页实时生成', async () => {
     vi.useFakeTimers()
+    vi.mocked(generateDailyGuidance).mockClear()
     vi.mocked(fetchDailyGuidance).mockResolvedValueOnce({
       date: '2026-08-13', status: 'missing', content: null,
-      message: '今天的建议尚未生成', generatedAt: null,
+      message: '今天的建议尚未生成，后台会自动准备', generatedAt: null,
     })
-    vi.mocked(generateDailyGuidance).mockRejectedValueOnce(new Error('本地 Codex 暂时繁忙'))
     const { wrapper } = mountHome()
     await flushPromises()
 
-    expect(generateDailyGuidance).toHaveBeenCalledWith(false)
-    expect(wrapper.find('.guidance-state.error').text()).toContain('本地 Codex 暂时繁忙')
-    expect(wrapper.find('.guidance-state.error button').text()).toContain('重试')
+    expect(generateDailyGuidance).not.toHaveBeenCalled()
+    expect(wrapper.find('.guidance-state').text()).toContain('正在后台准备')
+    expect(wrapper.find('.guidance-state button').text()).toContain('重新读取')
+    wrapper.unmount()
+  })
+
+  it('刷新页面时先显示本次会话缓存并在后台校准服务端结果', async () => {
+    vi.useFakeTimers()
+    const parts = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date())
+    const date = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+    sessionStorage.setItem('wao-daily-guidance-v1:wg', JSON.stringify({
+      date: `${date.year}-${date.month}-${date.day}`, status: 'ready',
+      content: '## 已提前准备\n\n- 刷新后立即可见。', message: '已缓存', generatedAt: '2026-08-13T08:00:00',
+    }))
+    let resolveFetch!: (value: DailyGuidance) => void
+    vi.mocked(fetchDailyGuidance).mockReturnValueOnce(new Promise((resolve) => { resolveFetch = resolve }))
+
+    const { wrapper } = mountHome()
+
+    expect(wrapper.find('.guidance-content').text()).toContain('刷新后立即可见')
+    expect(wrapper.find('.daily-guidance').text()).not.toContain('正在读取今天的建议')
+
+    resolveFetch({
+      date: `${date.year}-${date.month}-${date.day}`, status: 'ready',
+      content: '## 服务端结果\n\n- 已完成后台校准。', message: '已生成', generatedAt: '2026-08-13T09:00:00',
+    })
+    await flushPromises()
+    expect(wrapper.find('.guidance-content').text()).toContain('已完成后台校准')
+    wrapper.unmount()
+  })
+
+  it('会话缓存后台读取失败时保留内容且重试只读取不生成', async () => {
+    vi.useFakeTimers()
+    vi.mocked(generateDailyGuidance).mockClear()
+    const parts = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date())
+    const date = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+    sessionStorage.setItem('wao-daily-guidance-v1:wg', JSON.stringify({
+      date: `${date.year}-${date.month}-${date.day}`, status: 'ready',
+      content: '## 已提前准备', message: '已缓存', generatedAt: '2026-08-13T08:00:00',
+    }))
+    vi.mocked(fetchDailyGuidance).mockRejectedValueOnce(new Error('网络暂时不可用'))
+
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    expect(wrapper.find('.guidance-content').text()).toContain('已提前准备')
+    expect(wrapper.find('.guidance-inline-error').text()).toContain('读取失败')
+    await wrapper.find('.guidance-inline-error button').trigger('click')
+    await flushPromises()
+    expect(generateDailyGuidance).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -252,7 +306,7 @@ describe('HomeView AI 控制台', () => {
     await wrapper.find('.guidance-refresh').trigger('click')
     await flushPromises()
     expect(wrapper.find('.guidance-content').text()).toContain('先理解团队')
-    expect(wrapper.find('.guidance-inline-error').text()).toContain('原建议已保留')
+    expect(wrapper.find('.guidance-inline-error').text()).toContain('现有建议已保留')
     expect(wrapper.find('.guidance-inline-error button').text()).toContain('重试')
     wrapper.unmount()
   })

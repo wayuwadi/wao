@@ -13,9 +13,11 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.DailyGuidanceDto;
+import cn.wayuwa.wao.mapper.MemberMapper;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
@@ -34,15 +36,17 @@ public class DailyGuidanceService {
     private static final int CONTENT_LIMIT = 3500;
 
     private final MemberPreferenceMapper preferenceMapper;
+    private final MemberMapper memberMapper;
     private final TaskMapper taskMapper;
     private final ProjectMapper projectMapper;
     private final AiAssistantService assistant;
     private final ObjectMapper json;
     private final Map<String, Object> memberLocks = new ConcurrentHashMap<>();
 
-    public DailyGuidanceService(MemberPreferenceMapper preferenceMapper, TaskMapper taskMapper,
-            ProjectMapper projectMapper, AiAssistantService assistant, ObjectMapper json) {
+    public DailyGuidanceService(MemberPreferenceMapper preferenceMapper, MemberMapper memberMapper,
+            TaskMapper taskMapper, ProjectMapper projectMapper, AiAssistantService assistant, ObjectMapper json) {
         this.preferenceMapper = preferenceMapper;
+        this.memberMapper = memberMapper;
         this.taskMapper = taskMapper;
         this.projectMapper = projectMapper;
         this.assistant = assistant;
@@ -59,7 +63,7 @@ public class DailyGuidanceService {
         var status = assistant.status();
         return new DailyGuidanceDto(today, status.configured() ? "missing" : "unavailable", null,
                 status.configured()
-                        ? "今天的建议尚未生成，正在等待本地 Codex 结合你的任务进行整理"
+                        ? "今天的建议正由后台定时任务准备，无需停留等待"
                         : status.message(),
                 null);
     }
@@ -69,6 +73,48 @@ public class DailyGuidanceService {
         synchronized (memberLocks.computeIfAbsent(memberId, ignored -> new Object())) {
             return generateForMember(memberId, refresh);
         }
+    }
+
+    /**
+     * 为全部真实成员补齐当天尚未生成的建议，供主节点后台预热任务调用。
+     *
+     * <p>已有缓存不会重新生成；单个成员失败会计入结果并继续处理其余成员。
+     *
+     * @return 本轮成员总数、已缓存数、成功生成数与失败数
+     */
+    public WarmupResult prepareMissingForAllMembers() {
+        List<String> memberIds = memberMapper.selectList(null).stream()
+                .map(MemberEntity::getId)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .toList();
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        int cached = 0;
+        List<String> missing = new ArrayList<>();
+        for (String memberId : memberIds) {
+            if (hasGuidance(memberId, today)) cached++;
+            else missing.add(memberId);
+        }
+        if (missing.isEmpty()) return new WarmupResult(memberIds.size(), cached, 0, 0, null);
+
+        var status = assistant.status();
+        if (!status.configured()) {
+            return new WarmupResult(memberIds.size(), cached, 0, missing.size(), status.message());
+        }
+
+        int generated = 0;
+        int failed = 0;
+        String lastError = null;
+        for (String memberId : missing) {
+            try {
+                generate(memberId, false);
+                generated++;
+            } catch (RuntimeException ex) {
+                failed++;
+                lastError = text(ex.getMessage(), ex.getClass().getSimpleName());
+            }
+        }
+        return new WarmupResult(memberIds.size(), cached, generated, failed, lastError);
     }
 
     private DailyGuidanceDto generateForMember(String memberId, boolean refresh) {
@@ -151,6 +197,11 @@ public class DailyGuidanceService {
         }
     }
 
+    private boolean hasGuidance(String memberId, LocalDate date) {
+        StoredGuidance value = stored(memberId);
+        return value != null && date.equals(value.date()) && StringUtils.hasText(value.content());
+    }
+
     private static DailyGuidanceDto ready(StoredGuidance stored) {
         return new DailyGuidanceDto(stored.date(), "ready", stored.content(),
                 "已结合今天的真实任务生成", stored.generatedAt());
@@ -173,6 +224,9 @@ public class DailyGuidanceService {
     private static String limit(String value, int max) {
         return value.length() <= max ? value : value.substring(0, max) + "…";
     }
+
+    /** 后台预热结果；错误正文只用于服务端日志，不返回前端。 */
+    public record WarmupResult(int members, int cached, int generated, int failed, String lastError) { }
 
     private record StoredGuidance(LocalDate date, String content, LocalDateTime generatedAt) { }
 }

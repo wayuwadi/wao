@@ -32,11 +32,13 @@ class DeploymentRoutingConfigTest {
         assertThat(masterCompose)
                 .contains("wao-agent-server:")
                 .contains("target: agent-runtime")
-                .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081");
+                .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081")
+                .contains("WAO_DAILY_GUIDANCE_WARMUP_ENABLED: \"true\"");
         assertThat(slaveCompose)
                 .contains("wao-agent-server:")
                 .contains("target: agent-runtime")
-                .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081");
+                .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081")
+                .doesNotContain("WAO_DAILY_GUIDANCE_WARMUP_ENABLED");
     }
 
     @Test
