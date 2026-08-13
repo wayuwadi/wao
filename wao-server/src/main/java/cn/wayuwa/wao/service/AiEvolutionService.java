@@ -80,7 +80,7 @@ public class AiEvolutionService {
         boolean active = hasActiveRun();
         LocalDateTime eligibleAt = lastActivity == null ? now : lastActivity.plusHours(IDLE_HOURS);
         boolean quotaReady = quotas.stream().anyMatch(quota -> "SYNCED".equals(quota.status())
-                && quota.remainingPercent() >= MIN_REMAINING_PERCENT);
+                && quota.remainingPercent() > MIN_REMAINING_PERCENT);
         AiEvolutionStateEntity state = stateMapper.selectById(STATE_ID);
 
         String status;
@@ -96,7 +96,7 @@ public class AiEvolutionService {
             boolean hasSyncedQuota = quotas.stream().anyMatch(quota -> "SYNCED".equals(quota.status()));
             message = quotas.isEmpty() ? "尚未获取到可解析的真实周额度，自动进化保持暂停。"
                     : !hasSyncedQuota ? "当前只有旧的周额度快照，本次同步未成功，自动进化保持暂停。"
-                    : "真实周剩余额度低于 50%，自动进化保持暂停。";
+                    : "真实周剩余额度未高于 50%，自动进化保持暂停。";
         } else if (publicBaseUrl == null) {
             status = "quota_unavailable";
             message = "未配置公网任务分享地址，自动进化保持暂停；手动建议仍可直接执行。";
@@ -151,10 +151,10 @@ public class AiEvolutionService {
             }
 
             List<AiWeeklyQuotaDto> quotas = syncedQuotas.stream()
-                    .filter(quota -> quota.remainingPercent() >= MIN_REMAINING_PERCENT)
+                    .filter(quota -> quota.remainingPercent() > MIN_REMAINING_PERCENT)
                     .toList();
             if (quotas.isEmpty()) {
-                outcome("没有周剩余额度不低于 50% 的真实账号", null, null);
+                outcome("没有周剩余额度高于 50% 的真实账号", null, null);
                 return;
             }
             if (publicBaseUrl == null) {
