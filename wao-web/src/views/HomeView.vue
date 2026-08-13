@@ -103,8 +103,11 @@ const onlineRunners = computed(() => runners.value.filter((runner) => runner.onl
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
 const activeWorkflows = computed(() => workflows.value.filter((workflow) => workflow.config.enabled))
+const visibleSessionQuotas = computed(() => evolution.value?.sessionQuotas.filter((quota) => quota.status === 'SYNCED') ?? [])
+const primarySessionQuota = computed(() => visibleSessionQuotas.value[0] ?? null)
 const visibleWeeklyQuotas = computed(() => evolution.value?.weeklyQuotas.filter((quota) => quota.status === 'SYNCED') ?? [])
 const primaryWeeklyQuota = computed(() => visibleWeeklyQuotas.value[0] ?? null)
+const showSessionQuota = computed(() => primarySessionQuota.value !== null)
 const showWeeklyQuota = computed(() => primaryWeeklyQuota.value !== null || (evolutionLoading.value && !evolution.value))
 
 /** 每种 AI 工具当前有几台电脑在线，决定 hero 上的接入状态。 */
@@ -669,8 +672,13 @@ onBeforeUnmount(() => {
           <i class="ri-line-chart-line"></i>查看数据仪表盘
         </button>
       </div>
-      <div class="hero-metrics" :class="{ single: !showWeeklyQuota }">
-        <div v-if="showWeeklyQuota" class="weekly-quota" :class="primaryWeeklyQuota ? quotaClass(primaryWeeklyQuota.remainingPercent) : 'unknown'">
+      <div class="hero-metrics" :class="{ single: !showSessionQuota && !showWeeklyQuota, 'with-two-quotas': showSessionQuota && showWeeklyQuota }">
+        <div v-if="primarySessionQuota" class="quota-card session-quota" :class="quotaClass(primarySessionQuota.remainingPercent)">
+          <span><i class="ri-timer-line"></i>Codex 本轮剩余额度</span>
+          <strong>{{ primarySessionQuota.remainingPercent }}<em>%</em></strong>
+          <small>5 小时周期 · {{ resetText(primarySessionQuota.resetsAt) }}</small>
+        </div>
+        <div v-if="showWeeklyQuota" class="quota-card weekly-quota" :class="primaryWeeklyQuota ? quotaClass(primaryWeeklyQuota.remainingPercent) : 'unknown'">
           <span><i class="ri-speed-up-line"></i>周剩余额度</span>
           <template v-if="evolutionLoading && !evolution"><strong>···</strong><small>正在读取真实额度</small></template>
           <template v-else-if="primaryWeeklyQuota">
@@ -1395,7 +1403,7 @@ onBeforeUnmount(() => {
 .hero-link:hover { background: #ffffff33; }
 .hero-link i { font-size: 14px; }
 .hero-metrics { width: 188px; flex: 0 0 auto; display: grid; gap: 9px; }
-.weekly-quota {
+.quota-card {
   min-height: 92px;
   padding: 12px 14px;
   border: 1px solid #ffffff2b;
@@ -1404,10 +1412,10 @@ onBeforeUnmount(() => {
   display: grid;
   align-content: center;
 }
-.weekly-quota > span { color: #ffffffb5; font-size: 10.5px; }.weekly-quota > span i { margin-right: 5px; }
-.weekly-quota strong { margin-top: 2px; color: #fff; font-size: 35px; line-height: 1; }.weekly-quota strong em { font-size: 17px; font-style: normal; }
-.weekly-quota small { margin-top: 6px; color: #ffffff9c; font-size: 9.5px; line-height: 1.35; }
-.weekly-quota.good strong { color: #c7ffdf; }.weekly-quota.warn strong { color: #ffe9a9; }.weekly-quota.danger strong { color: #ffd0d0; }
+.quota-card > span { color: #ffffffb5; font-size: 10.5px; }.quota-card > span i { margin-right: 5px; }
+.quota-card strong { margin-top: 2px; color: #fff; font-size: 35px; line-height: 1; }.quota-card strong em { font-size: 17px; font-style: normal; }
+.quota-card small { margin-top: 6px; color: #ffffff9c; font-size: 9.5px; line-height: 1.35; }
+.quota-card.good strong { color: #c7ffdf; }.quota-card.warn strong { color: #ffe9a9; }.quota-card.danger strong { color: #ffd0d0; }
 .capacity {
   position: relative;
   width: auto;
@@ -1903,6 +1911,7 @@ onBeforeUnmount(() => {
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
   .hero-metrics { width: auto; grid-template-columns: 1fr 1fr; }
   .hero-metrics.single { grid-template-columns: 1fr; }
+  .hero-metrics.with-two-quotas .capacity { grid-column: 1 / -1; }
   .capacity { width: auto; }
   .daily-guidance > header { flex-wrap: wrap; }
   .guidance-refresh { margin-left: 51px; }

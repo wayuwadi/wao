@@ -24,6 +24,7 @@ import cn.wayuwa.wao.dto.AiAccountFormRequest;
 import cn.wayuwa.wao.dto.AiAccountLoginStartDto;
 import cn.wayuwa.wao.dto.AiAccountLoginStatusDto;
 import cn.wayuwa.wao.dto.AiAccountSyncResultDto;
+import cn.wayuwa.wao.dto.AiSessionQuotaDto;
 import cn.wayuwa.wao.dto.AiWeeklyQuotaDto;
 import cn.wayuwa.wao.dto.CompleteAiAccountLoginRequest;
 import cn.wayuwa.wao.dto.AiRunAccountDto;
@@ -91,6 +92,24 @@ public class AiAccountService {
     }
 
     /**
+     * 返回已启用 Codex 账号中可由真实供应商快照解析出的五小时会话额度。
+     *
+     * <p>这里只读已保存快照，不主动访问供应商。主窗口缺失时省略账号，调用方不能用周窗口
+     * 或本地运行 Token 估算会话余额。
+     */
+    public List<AiSessionQuotaDto> sessionQuotas() {
+        return mapper.selectList(new LambdaQueryWrapper<AiAccountEntity>()
+                        .eq(AiAccountEntity::getEnabled, true)
+                        .eq(AiAccountEntity::getProvider, "codex"))
+                .stream()
+                .filter(entity -> !"api_key".equals(entity.getAuthMethod()))
+                .map(this::sessionQuota)
+                .filter(java.util.Objects::nonNull)
+                .sorted(Comparator.comparingInt(AiSessionQuotaDto::remainingPercent).reversed())
+                .toList();
+    }
+
+    /**
      * 返回已启用账号中可由真实供应商快照解析出的七天额度。
      *
      * <p>这里只读已保存快照，不主动访问供应商；首页可以高频读取，自动调度器则会先调用
@@ -129,6 +148,38 @@ public class AiAccountService {
                 used, 100 - used, window.resetsAt == null ? null : window.resetsAt.toString(),
                 entity.getLastSyncedAt() == null ? null : entity.getLastSyncedAt().toString(),
                 entity.getQuotaStatus(), entity.getQuotaMessage());
+    }
+
+    private AiSessionQuotaDto sessionQuota(AiAccountEntity entity) {
+        Window window = sessionWindow(entity);
+        if (window == null) return null;
+        int used = Math.max(0, Math.min(100, window.percent));
+        return new AiSessionQuotaDto(entity.getId(), entity.getProvider(), entity.getLabel(), entity.getPlan(),
+                used, 100 - used, window.resetsAt == null ? null : window.resetsAt.toString(),
+                entity.getLastSyncedAt() == null ? null : entity.getLastSyncedAt().toString(),
+                entity.getQuotaStatus(), entity.getQuotaMessage());
+    }
+
+    private Window sessionWindow(AiAccountEntity entity) {
+        JsonNode usage = null;
+        try {
+            if (StringUtils.hasText(entity.getQuotaRawJson())) usage = objectMapper.readTree(entity.getQuotaRawJson());
+        } catch (Exception ignore) {
+            // 损坏的历史快照就是未知额度，不能用其它数据估算。
+        }
+        if (usage != null && "codex".equals(entity.getProvider())) {
+            JsonNode primary = usage.path("rate_limit").path("primary_window");
+            Integer percent = intOrNull(primary.path("used_percent"));
+            if (percent != null) return new Window("five_hour", percent, parseReset(primary.path("reset_at")));
+            return codexWindows(usage).stream().filter(window -> "five_hour".equals(window.name))
+                    .max(Comparator.comparingInt(Window::percent)).orElse(null);
+        }
+        if (StringUtils.hasText(entity.getQuotaWindow())
+                && ("session".equals(entity.getQuotaWindow()) || "five_hour".equals(entity.getQuotaWindow()))
+                && entity.getQuotaPercent() != null) {
+            return new Window("five_hour", entity.getQuotaPercent(), entity.getQuotaResetsAt());
+        }
+        return null;
     }
 
     private Window weeklyWindow(AiAccountEntity entity) {
