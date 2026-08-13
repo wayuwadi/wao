@@ -6,6 +6,7 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { fetchCaldavAccounts, fetchCaldavEvents, type CaldavAccount, type CaldavEvent } from '@/api/caldav'
 import { fetchAlternateWorkWeek, saveAlternateWorkWeek } from '@/api/workSchedule'
+import { fetchHolidayEvents, type HolidayDayType, type HolidayEvent } from '@/api/holiday'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
 import type { Task } from '@/types'
@@ -27,6 +28,7 @@ interface CalEvt {
   time?: string
   endTime?: string
   taskId?: string
+  holidayDayType?: HolidayDayType
   go?: () => void
 }
 
@@ -132,9 +134,12 @@ async function submitWorkSchedule() {
   }
 }
 
-// ---------- CalDAV：账户状态 + 当月事件 ----------
+// ---------- 外部 CalDAV + 内置节假日 ----------
 const accounts = ref<CaldavAccount[]>([])
 const caldavEvents = ref<CaldavEvent[]>([])
+const holidayEvents = ref<HolidayEvent[]>([])
+const holidayState = ref<'loading' | 'ready' | 'error'>('loading')
+let holidayRequestSequence = 0
 
 const caldavState = computed(() => {
   if (!accounts.value.length) return { label: '接入 CalDAV 日历', dot: '#9A9DA9' }
@@ -152,17 +157,64 @@ async function loadCaldav() {
   }
 }
 
-/** 拉取覆盖当前月视图（含前后补位周）的订阅事件。 */
-async function loadEvents() {
+/** 当前视图真实可见的日期窗，年视图覆盖完整自然年。 */
+function visibleRange() {
+  if (viewMode.value === 'year') {
+    return { from: new Date(calY.value, 0, 1), to: new Date(calY.value, 11, 31) }
+  }
+  if (viewMode.value === 'day') {
+    const day = new Date(calY.value, calM.value, calD.value)
+    return { from: day, to: day }
+  }
+  if (viewMode.value === 'week') {
+    const pivot = new Date(calY.value, calM.value, calD.value)
+    const offset = preferences.weekStart === '周日' ? pivot.getDay() : (pivot.getDay() + 6) % 7
+    const from = new Date(pivot)
+    from.setDate(pivot.getDate() - offset)
+    const to = new Date(from)
+    to.setDate(from.getDate() + 6)
+    return { from, to }
+  }
   const first = new Date(calY.value, calM.value, 1)
-  const off = preferences.weekStart === '周日' ? first.getDay() : (first.getDay() + 6) % 7
-  const from = new Date(calY.value, calM.value, 1 - off)
-  const to = new Date(calY.value, calM.value + 1, 7)
+  const offset = preferences.weekStart === '周日' ? first.getDay() : (first.getDay() + 6) % 7
+  const days = new Date(calY.value, calM.value + 1, 0).getDate()
+  const cellCount = Math.ceil((offset + days) / 7) * 7
+  const from = new Date(calY.value, calM.value, 1 - offset)
+  const to = new Date(from)
+  to.setDate(from.getDate() + cellCount - 1)
+  return { from, to }
+}
+
+/** 拉取当前视图可见日期窗内的 CalDAV 订阅事件。 */
+async function loadEvents() {
+  const { from, to } = visibleRange()
   try {
     caldavEvents.value = await fetchCaldavEvents(iso(from), iso(to))
   } catch {
     caldavEvents.value = []
   }
+}
+
+/** 拉取内置节假日；序号避免快速翻页时旧响应覆盖新日期窗。 */
+async function loadHolidays() {
+  const requestSequence = ++holidayRequestSequence
+  const { from, to } = visibleRange()
+  holidayState.value = 'loading'
+  try {
+    const result = await fetchHolidayEvents(iso(from), iso(to))
+    if (requestSequence !== holidayRequestSequence) return
+    holidayEvents.value = result
+    holidayState.value = 'ready'
+  } catch {
+    if (requestSequence !== holidayRequestSequence) return
+    holidayEvents.value = []
+    holidayState.value = 'error'
+  }
+}
+
+function loadCalendarSources() {
+  loadEvents()
+  loadHolidays()
 }
 
 function iso(d: Date) {
@@ -172,17 +224,22 @@ function iso(d: Date) {
 
 onMounted(() => {
   loadCaldav()
-  loadEvents()
   loadWorkSchedule()
+  loadCalendarSources()
 })
-watch([calY, calM], loadEvents)
+watch([calY, calM, calD, viewMode, () => preferences.weekStart], loadCalendarSources)
 
 // ---------- 图例：固定两类 + 每个启用的订阅日历 ----------
 const legend = computed(() => {
   const items = [
     { label: '任务截止', color: '#4358D6' },
     { label: '里程碑', color: '#B9821F' },
+    { label: '中国节假日', color: '#D9634C' },
+    { label: '国际节日', color: '#8A5BD9' },
   ]
+  if (holidayEvents.value.some((event) => event.dayType === 'ADJUSTED_WORKDAY')) {
+    items.push({ label: '调休上班', color: '#79808F' })
+  }
   for (const a of accounts.value) {
     for (const c of a.calendars) {
       if (c.enabled) items.push({ label: c.name, color: c.color })
@@ -221,6 +278,16 @@ const events = computed<CalEvt[]>(() => {
       endTime: e.allDay ? '' : e.end?.slice(11, 16),
     })
   })
+  holidayEvents.value.forEach((holiday) => {
+    evs.push({
+      date: holiday.date,
+      title: holiday.name,
+      color: holiday.dayType === 'ADJUSTED_WORKDAY'
+        ? '#79808F'
+        : holiday.category === 'CHINA' ? '#D9634C' : '#8A5BD9',
+      holidayDayType: holiday.dayType,
+    })
+  })
   return evs
 })
 
@@ -234,11 +301,15 @@ const month = computed(() => {
   const byDate: Record<string, CalEvt[]> = {}
   events.value.forEach((e) => (byDate[e.date] = byDate[e.date] || []).push(e))
   for (const k of Object.keys(byDate)) {
-    byDate[k]!.sort((a, b) => (a.time ?? '').localeCompare(b.time ?? ''))
+    byDate[k]!.sort((a, b) => {
+      const holidayPriority = Number(!a.holidayDayType) - Number(!b.holidayDayType)
+      return holidayPriority || (a.time ?? '').localeCompare(b.time ?? '')
+    })
   }
   const total = Math.ceil((off + dim) / 7) * 7
   const cells: {
     iso: string; label: string; isToday: boolean; items: CalEvt[]; more: string
+    dayMark: '' | '休' | '班'
     numBg: string; numColor: string; bg: string
     workWeek: ReturnType<typeof workWeekForDate>
   }[] = []
@@ -267,6 +338,9 @@ const month = computed(() => {
       isToday,
       items: expanded ? all : all.slice(0, 3),
       more: !expanded && all.length > 3 ? `还有 ${all.length - 3} 项` : '',
+      dayMark: all.some((event) => event.holidayDayType === 'ADJUSTED_WORKDAY')
+        ? '班'
+        : all.some((event) => event.holidayDayType === 'DAY_OFF') ? '休' : '',
       numBg: isToday ? '#4358D6' : 'transparent',
       numColor: isToday ? '#FFFFFF' : inM ? '#3E414D' : '#C4C7D2',
       bg: inM ? '#FFFFFF' : '#FBFBFC',
@@ -474,6 +548,8 @@ function onDropDay(dayIso: string) {
       <div class="legend">
         <span v-for="l in legend" :key="l.label" class="leg"><span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}</span>
       </div>
+      <span v-if="holidayState === 'loading'" class="holiday-status"><i class="ri-loader-4-line spin"></i>节假日加载中</span>
+      <button v-else-if="holidayState === 'error'" class="holiday-status error" @click="loadHolidays"><i class="ri-refresh-line"></i>节假日加载失败 · 重试</button>
       <button class="caldav" title="配置 CalDAV 日历账户" @click="showCaldavConfig = true">
         <span class="cd-dot" :style="{ background: caldavState.dot }"></span>{{ caldavState.label }}<i class="ri-settings-3-line"></i>
       </button>
@@ -501,7 +577,7 @@ function onDropDay(dayIso: string) {
       <div class="cal-card">
         <div class="cal-head">
           <div class="month-title">{{ viewMode === 'year' ? `${calY} 年` : viewMode === 'week' ? `${weekDays[0]?.label} - ${weekDays[6]?.label}` : viewMode === 'day' ? dayView[0]?.label : month.title }}</div>
-          <span class="cal-hint">任务截止、项目里程碑与订阅日历在同一张日历上</span>
+          <span class="cal-hint">任务、里程碑、节假日与订阅日历合并显示</span>
         </div>
         <template v-if="viewMode === 'month'"><div class="dows">
           <div v-for="d in DOWS" :key="d" class="dow">{{ d }}</div>
@@ -519,7 +595,10 @@ function onDropDay(dayIso: string) {
             @dragleave="dragOverDay === dy.iso && (dragOverDay = null)"
             @drop.prevent="onDropDay(dy.iso)"
           >
-            <div class="day-num" :style="{ background: dy.numBg, color: dy.numColor }" @dblclick="quickCreate(dy.iso)">{{ dy.label }}</div>
+            <div class="day-heading">
+              <div class="day-num" :style="{ background: dy.numBg, color: dy.numColor }" @dblclick="quickCreate(dy.iso)">{{ dy.label }}</div>
+              <span v-if="dy.dayMark" class="day-mark" :class="dy.dayMark === '班' ? 'work' : 'rest'">{{ dy.dayMark }}</span>
+            </div>
             <div v-if="dy.workWeek" class="work-week-mark" :class="dy.workWeek.type">
               {{ dy.workWeek.label }} · {{ dy.workWeek.restLabel }}
             </div>
@@ -848,6 +927,19 @@ function onDropDay(dayIso: string) {
   height: 7px;
   border-radius: 2px;
 }
+.holiday-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--wao-text-weak);
+  font-size: 11px;
+}
+button.holiday-status { cursor: pointer; }
+.holiday-status.error { color: var(--wao-danger); }
+.holiday-status .spin { display: inline-block; animation: holiday-spin .9s linear infinite; }
+@keyframes holiday-spin { to { transform: rotate(360deg); } }
 .caldav, .work-schedule {
   display: inline-flex;
   align-items: center;
@@ -992,6 +1084,23 @@ function onDropDay(dayIso: string) {
   justify-content: center;
   font-size: 12px;
 }
+.day-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.day-mark {
+  min-width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+.day-mark.rest { color: #b73f31; background: #fff0ed; }
+.day-mark.work { color: #656b78; background: #eceef2; }
 .work-week-mark {
   width: fit-content;
   max-width: 100%;

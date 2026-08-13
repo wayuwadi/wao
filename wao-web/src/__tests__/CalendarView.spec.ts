@@ -7,7 +7,9 @@ import { fetchAlternateWorkWeek, saveAlternateWorkWeek } from '@/api/workSchedul
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
+import { fetchHolidayEvents } from '@/api/holiday'
 import type { Task } from '@/types'
+import type { AlternateWorkWeekSchedule } from '@/utils/workSchedule'
 
 vi.mock('@/api/caldav', () => ({
   fetchCaldavAccounts: vi.fn<() => Promise<never[]>>(async () => []),
@@ -15,8 +17,12 @@ vi.mock('@/api/caldav', () => ({
 }))
 
 vi.mock('@/api/workSchedule', () => ({
-  fetchAlternateWorkWeek: vi.fn(async (today: string) => ({ enabled: false, anchorWeek: today, anchorType: 'small' })),
-  saveAlternateWorkWeek: vi.fn(async (value) => value),
+  fetchAlternateWorkWeek: vi.fn<(today: string) => Promise<AlternateWorkWeekSchedule>>(async (today) => ({ enabled: false, anchorWeek: today, anchorType: 'small' })),
+  saveAlternateWorkWeek: vi.fn<(value: AlternateWorkWeekSchedule) => Promise<AlternateWorkWeekSchedule>>(async (value) => value),
+}))
+
+vi.mock('@/api/holiday', () => ({
+  fetchHolidayEvents: vi.fn<() => Promise<never[]>>(async () => []),
 }))
 
 const router = createRouter({
@@ -30,6 +36,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     setActivePinia(createPinia())
     vi.mocked(fetchAlternateWorkWeek).mockImplementation(async (today) => ({ enabled: false, anchorWeek: today, anchorType: 'small' }))
     vi.mocked(saveAlternateWorkWeek).mockImplementation(async (value) => value)
+    vi.mocked(fetchHolidayEvents).mockReset().mockResolvedValue([])
   })
 
   it('默认只看当前人，待安排清单只含未排期与已逾期任务并可集中筛选', async () => {
@@ -187,5 +194,53 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.find('.work-schedule-state.error').text()).toContain('网络暂不可用')
     expect(wrapper.find('.work-schedule-field input').element).toHaveProperty('value', data.today)
     expect(wrapper.find('.work-schedule-save').text()).toContain('重试保存')
+  })
+
+  it('合并展示中国与国际节日，并与大小周共同标记法定休息日和调休上班日', async () => {
+    const data = useDataStore()
+    const session = useSessionStore()
+    const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me]
+    vi.mocked(fetchAlternateWorkWeek).mockResolvedValue({
+      enabled: true,
+      anchorWeek: data.today,
+      anchorType: 'small',
+    })
+    vi.mocked(fetchHolidayEvents).mockResolvedValue([
+      { id: 'h1', date: data.today, name: '春节', category: 'CHINA', dayType: 'DAY_OFF' },
+      { id: 'h2', date: data.today, name: '母亲节', category: 'INTERNATIONAL', dayType: 'FESTIVAL' },
+      { id: 'h3', date: data.today, name: '春节调休上班', category: 'CHINA', dayType: 'ADJUSTED_WORKDAY' },
+    ])
+
+    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('中国节假日')
+    expect(wrapper.text()).toContain('国际节日')
+    expect(wrapper.text()).toContain('母亲节')
+    expect(wrapper.text()).toContain('春节调休上班')
+    expect(wrapper.find('.day-mark.work').text()).toBe('班')
+    expect(wrapper.findAll('.work-week-mark').length).toBeGreaterThan(0)
+  })
+
+  it('节假日加载失败时给出可用的重试入口', async () => {
+    const session = useSessionStore()
+    const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me]
+    vi.mocked(fetchHolidayEvents)
+      .mockRejectedValueOnce(new Error('网络失败'))
+      .mockResolvedValueOnce([])
+
+    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    await flushPromises()
+    const retry = wrapper.find('button.holiday-status.error')
+    expect(retry.text()).toContain('节假日加载失败')
+
+    await retry.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('button.holiday-status.error').exists()).toBe(false)
+    expect(fetchHolidayEvents).toHaveBeenCalledTimes(2)
   })
 })

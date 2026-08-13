@@ -1,0 +1,41 @@
+openapi: 3.0.3
+info:
+  title: WAO 内置日历 API
+  version: 0.1.0
+  description: 无需用户配置的中国节假日与常用国际节日只读日历。
+servers:
+  - url: /api
+paths:
+  /calendar/holidays:
+    get:
+      summary: 日期窗内的内置节假日事件
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HolidayEventListResponse' }
+        '400': { description: 日期格式错误、to 早于 from 或窗口超过 370 天（code=40001） }
+components:
+  schemas:
+    HolidayEvent:
+      type: object
+      required: [id, date, name, category, dayType]
+      properties:
+        id: { type: string }
+        date: { type: string, format: date }
+        name: { type: string, example: 母亲节 }
+        category: { type: string, enum: [CHINA, INTERNATIONAL] }
+        dayType: { type: string, enum: [FESTIVAL, DAY_OFF, ADJUSTED_WORKDAY] }
+    HolidayEventListResponse:
+      type: object
+      properties:
+        code: { type: integer, example: 0 }
+        message: { type: string, example: ok }
+        timestamp: { type: integer, format: int64 }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/HolidayEvent' }

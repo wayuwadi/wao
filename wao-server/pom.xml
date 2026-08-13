@@ -76,6 +76,12 @@
             <artifactId>biweekly</artifactId>
             <version>0.6.8</version>
         </dependency>
+        <!-- 中国农历节日与国务院法定放假 / 调休数据；无第三方传递依赖。 -->
+        <dependency>
+            <groupId>cn.6tail</groupId>
+            <artifactId>lunar</artifactId>
+            <version>1.7.7</version>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
