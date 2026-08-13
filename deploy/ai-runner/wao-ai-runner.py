@@ -41,6 +41,10 @@ MAX_RUN_REPORT_BYTES = 10 * 1024 * 1024
 # 服务端和后台配置允许的单机并发上限。线程池按这个能力上限创建，但线程会按需启动；
 # 实际领取数仍由心跳返回的 maxConcurrency 动态控制。
 MAX_RUNNER_CONCURRENCY = 8
+# Windows CreateProcess 标志在非 Windows Python 上通常不存在，保留官方数值便于跨平台单测，
+# 且只有 os.name == "nt" 时才会传入 subprocess。
+WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200
+WINDOWS_CREATE_NO_WINDOW = 0x08000000
 # 被 WAO 解除接入后的退出码（EX_CONFIG）：不是崩溃，重启也没用，systemd 用
 # RestartPreventExitStatus=78 认这个码，避免每十秒重启一次刷屏。
 EXIT_PAIRING_REVOKED = 78
@@ -65,6 +69,16 @@ QODER_PERMISSION = {
     "workspace-write": ["--permission-mode", "accept_edits"],
     "danger-full-access": ["--dangerously-skip-permissions"],
 }
+
+
+def windows_creation_flags(new_process_group: bool = False) -> int:
+    """让 Windows 控制台程序在后台运行；按需保留独立进程组供整棵树取消。"""
+    if os.name != "nt":
+        return 0
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", WINDOWS_CREATE_NO_WINDOW)
+    if new_process_group:
+        flags |= getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", WINDOWS_CREATE_NEW_PROCESS_GROUP)
+    return flags
 
 
 def log(message: str) -> None:
@@ -182,6 +196,7 @@ def disable_windows_task(task_name: str | None) -> bool:
         result = subprocess.run(
             ["schtasks.exe", "/Change", "/TN", task_name, "/Disable"],
             capture_output=True, text=True, timeout=15, check=False,
+            creationflags=windows_creation_flags(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         log(f"WAO 已解除本机接入，但未能自动禁用 Windows 计划任务“{task_name}”：{exc}")
@@ -233,6 +248,7 @@ def run(command: list[str], cwd: Path | None = None, check: bool = True) -> subp
     result = subprocess.run(
         command, cwd=str(cwd) if cwd else None, text=True, encoding="utf-8", errors="replace",
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        creationflags=windows_creation_flags(),
     )
     if check and result.returncode != 0:
         raise RuntimeError(f"命令失败（{result.returncode}）：{' '.join(command[:3])}\n{result.stdout[-2000:]}")
@@ -427,6 +443,7 @@ def build_cli_environment(git_command: str) -> tuple[dict[str, str], bool, str |
         [git_command, "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
         text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, check=False,
+        creationflags=windows_creation_flags(),
     )
     fields: dict[str, str] = {}
     if credential.returncode == 0:
@@ -449,7 +466,7 @@ def invoke_cli(command: list[str], worktree: Path, prompt: str,
         command, cwd=str(worktree), text=True, encoding="utf-8", errors="replace",
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment,
         start_new_session=os.name != "nt",
-        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0,
+        creationflags=windows_creation_flags(new_process_group=True),
     )
     if process.stdin is None or process.stdout is None:
         raise RuntimeError("无法建立 AI CLI 的标准输入输出管道")
@@ -471,11 +488,7 @@ def invoke_cli(command: list[str], worktree: Path, prompt: str,
         except queue.Empty:
             if should_stop and should_stop() and not stopping:
                 log("收到暂停请求，正在终止本地 AI CLI")
-                if os.name == "nt":
-                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False,
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                else:
-                    os.killpg(process.pid, signal.SIGTERM)
+                terminate_process_tree(process)
                 stopping = True
             continue
         if line is None:
@@ -489,6 +502,18 @@ def invoke_cli(command: list[str], worktree: Path, prompt: str,
             on_event(event)
     process.wait()
     return process.returncode, "".join(lines)
+
+
+def terminate_process_tree(process: subprocess.Popen[str]) -> None:
+    """终止 AI CLI 及其后代；Windows 的 taskkill 自身也不得弹出控制台。"""
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=windows_creation_flags(),
+        )
+    else:
+        os.killpg(process.pid, signal.SIGTERM)
 
 
 def _readable_text(value: Any) -> str:
@@ -1164,7 +1189,7 @@ def restart_self(script_path: Path) -> None:
         # Windows 的 execv 不会给参数加引号，带空格的 --name 会被拆散；
         # 改为拉起新进程后退出，新进程独立于当前控制台存活。
         subprocess.Popen(arguments, close_fds=True,
-                         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+                         creationflags=windows_creation_flags(new_process_group=True))
         os._exit(0)
     os.execv(sys.executable, arguments)
 
