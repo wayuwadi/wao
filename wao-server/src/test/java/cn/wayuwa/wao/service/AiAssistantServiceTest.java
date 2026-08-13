@@ -103,6 +103,27 @@ class AiAssistantServiceTest {
                 .enqueue(any(), any(), any(), any());
     }
 
+    @Test
+    void dailyGuidanceRunDoesNotCreatePrivateConversation() {
+        AiRunnerNodeEntity local = runner("Windows Server 2025", "codex");
+        when(runnerMapper.selectList(any())).thenReturn(List.of(local));
+        when(mapper.selectCount(any())).thenReturn(0L);
+        AiAssistantRunEntity finished = assistantRun("succeeded");
+        finished.setMemberId("internal-daily-guidance-wg");
+        finished.setResponseText("保持开放，先认识团队");
+        when(mapper.selectById(any())).thenReturn(finished);
+
+        assertThat(service.dailyGuidanceAnswer("生成建议", "wg", "真实任务上下文"))
+                .contains("先认识团队");
+
+        ArgumentCaptor<AiAssistantRunEntity> queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insert(queued.capture());
+        assertThat(queued.getValue().getMemberId()).isEqualTo("internal-daily-guidance-wg");
+        assertThat(queued.getValue().getPromptText()).contains("生成建议").contains("真实任务上下文");
+        verify(conversationService, org.mockito.Mockito.never()).create(any());
+        verify(conversationService, org.mockito.Mockito.never()).enqueue(any(), any(), any(), any());
+    }
+
     private AiRunnerNodeEntity runner(String platform, String engines) {
         AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
         runner.setId("rn1");

@@ -334,6 +334,9 @@ OAuth 下发前会先把快过期的 access token 续期。
 `ai_assistant_message` 保存会话内的 `user` / `assistant` 正文并随会话级联删除。列表最多返回最近 50 个会话，
 单次详情最多返回最近 200 条消息；仍在回答中的会话不能删除。
 
+首页“给此刻的你”复用 `member_preference` 的 `daily-guidance` 键保存当前成员当天的生成结果，不写入私人聊天
+历史，也不新增长期建议表；生成仍走 `ai_assistant_run` 短期队列，边界见 ADR-062。
+
 ### ai_account_oauth_session（V39）
 
 | 列 | 类型 | 说明 |

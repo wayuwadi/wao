@@ -6,6 +6,7 @@ import HomeView from '@/views/HomeView.vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import { useDataStore } from '@/stores/data'
 import type { AiRunner } from '@/types'
+import { fetchDailyGuidance, generateDailyGuidance } from '@/api/dailyGuidance'
 import {
   fetchAiRunnerLog,
   fetchAiEvolution,
@@ -19,6 +20,18 @@ import {
   requestRunnerScriptUpdate,
   rerunAiRun,
 } from '@/api/ai'
+
+vi.mock('@/api/dailyGuidance', () => ({
+  fetchDailyGuidance: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    date: '2026-08-13', status: 'ready',
+    content: '## 先理解团队\n\n- 先观察协作方式，再主动贡献。\n\n## 发挥优势\n\n- 用小成果建立信任。',
+    message: '已结合今天的真实任务生成', generatedAt: '2026-08-13T08:30:00',
+  }),
+  generateDailyGuidance: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    date: '2026-08-13', status: 'ready', content: '## 新建议\n\n- 主动认识一位同事。',
+    message: '已结合今天的真实任务生成', generatedAt: '2026-08-13T09:00:00',
+  }),
+}))
 
 vi.mock('@/api/ai', () => ({
   fetchAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
@@ -194,6 +207,53 @@ describe('HomeView AI 控制台', () => {
 
     expect(wrapper.find('.hero').text()).not.toContain('想法有多大，产出就有多大')
     expect(wrapper.find('.hero').text()).not.toContain('多台电脑并行开工')
+    wrapper.unmount()
+  })
+
+  it('打开首页会展示结合真实任务生成且可刷新的每日建议', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    expect(fetchDailyGuidance).toHaveBeenCalled()
+    expect(wrapper.find('.daily-guidance').text()).toContain('给此刻的你')
+    expect(wrapper.find('.guidance-content').text()).toContain('先理解团队')
+    expect(wrapper.find('.guidance-content').text()).toContain('发挥优势')
+
+    await wrapper.find('.guidance-refresh').trigger('click')
+    await flushPromises()
+    expect(generateDailyGuidance).toHaveBeenCalledWith(true)
+    expect(wrapper.find('.guidance-content').text()).toContain('主动认识一位同事')
+    wrapper.unmount()
+  })
+
+  it('当天没有缓存时自动生成，失败后保留可重试状态', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchDailyGuidance).mockResolvedValueOnce({
+      date: '2026-08-13', status: 'missing', content: null,
+      message: '今天的建议尚未生成', generatedAt: null,
+    })
+    vi.mocked(generateDailyGuidance).mockRejectedValueOnce(new Error('本地 Codex 暂时繁忙'))
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    expect(generateDailyGuidance).toHaveBeenCalledWith(false)
+    expect(wrapper.find('.guidance-state.error').text()).toContain('本地 Codex 暂时繁忙')
+    expect(wrapper.find('.guidance-state.error button').text()).toContain('重试')
+    wrapper.unmount()
+  })
+
+  it('换一组失败时保留原建议并提供原地重试', async () => {
+    vi.useFakeTimers()
+    vi.mocked(generateDailyGuidance).mockRejectedValueOnce(new Error('本地 Codex 暂时繁忙'))
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.guidance-refresh').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.guidance-content').text()).toContain('先理解团队')
+    expect(wrapper.find('.guidance-inline-error').text()).toContain('原建议已保留')
+    expect(wrapper.find('.guidance-inline-error button').text()).toContain('重试')
     wrapper.unmount()
   })
 

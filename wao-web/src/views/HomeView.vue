@@ -26,9 +26,15 @@ import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/
 import { formatCost, formatTokens, shortModel, usageSummary } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
+import {
+  fetchDailyGuidance,
+  generateDailyGuidance,
+  type DailyGuidance,
+} from '@/api/dailyGuidance'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow } from '@/types'
+import { renderMarkdown } from '@/utils/markdown'
 
 type ConsoleView = 'runs' | 'runners' | 'workflows'
 
@@ -71,6 +77,10 @@ const suggestionError = ref('')
 const wakingRunnerId = ref<string | null>(null)
 const removingRunnerId = ref<string | null>(null)
 const removingWorkflowId = ref<string | null>(null)
+const dailyGuidance = ref<DailyGuidance | null>(null)
+const dailyGuidanceLoading = ref(true)
+const dailyGuidanceRefreshing = ref(false)
+const dailyGuidanceError = ref('')
 const form = reactive({
   enabled: false,
   repoUrl: '',
@@ -193,6 +203,34 @@ async function refreshSuggestions(showSuccess = true) {
     suggestionError.value = error instanceof Error ? error.message : '真实资料挖掘失败，请重试'
   } finally {
     suggestionsRefreshing.value = false
+  }
+}
+
+async function loadDailyGuidance() {
+  dailyGuidanceLoading.value = true
+  dailyGuidanceError.value = ''
+  try {
+    const current = await fetchDailyGuidance()
+    dailyGuidance.value = current
+    if (current.status === 'missing') await refreshDailyGuidance(false)
+  } catch (error) {
+    dailyGuidanceError.value = error instanceof Error ? error.message : '今天的建议读取失败'
+  } finally {
+    dailyGuidanceLoading.value = false
+  }
+}
+
+async function refreshDailyGuidance(refresh = true) {
+  if (dailyGuidanceRefreshing.value) return
+  dailyGuidanceRefreshing.value = true
+  dailyGuidanceError.value = ''
+  try {
+    dailyGuidance.value = await generateDailyGuidance(refresh)
+  } catch (error) {
+    dailyGuidanceError.value = error instanceof Error ? error.message : '今天的建议生成失败，请重试'
+  } finally {
+    dailyGuidanceRefreshing.value = false
+    dailyGuidanceLoading.value = false
   }
 }
 
@@ -559,6 +597,7 @@ onMounted(() => {
   void refresh()
   void refreshWorkflows()
   void refreshEvolution()
+  void loadDailyGuidance()
   timer = setInterval(refresh, 5_000)
   evolutionTimer = setInterval(refreshEvolution, 60_000)
 })
@@ -608,6 +647,48 @@ onBeforeUnmount(() => {
             <div class="capacity-bar"><i></i></div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section class="daily-guidance" aria-labelledby="daily-guidance-title">
+      <header>
+        <span class="guidance-mark"><i class="ri-compass-3-line"></i></span>
+        <div>
+          <div class="eyebrow dark">FOR THIS MOMENT</div>
+          <h2 id="daily-guidance-title">给此刻的你</h2>
+          <p>结合今天的真实任务，由本地 Codex 每天整理一次；换设备也能继续看。</p>
+        </div>
+        <button
+          v-if="dailyGuidance?.status === 'ready'"
+          class="guidance-refresh"
+          :disabled="dailyGuidanceRefreshing"
+          @click="refreshDailyGuidance(true)"
+        >
+          <i :class="dailyGuidanceRefreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
+          {{ dailyGuidanceRefreshing ? '正在换一组…' : '换一组' }}
+        </button>
+      </header>
+      <div v-if="dailyGuidanceLoading || (dailyGuidanceRefreshing && !dailyGuidance?.content)" class="guidance-state">
+        <i class="ri-loader-4-line spin"></i>
+        <div><b>正在读懂你此刻的处境</b><span>本地 Codex 会从你的未完成任务中提炼今天真正有用的建议。</span></div>
+      </div>
+      <div v-else-if="dailyGuidance?.status === 'ready' && dailyGuidance.content" class="guidance-content">
+        <div class="md-body" v-html="renderMarkdown(dailyGuidance.content)"></div>
+        <small v-if="dailyGuidance.generatedAt"><i class="ri-shield-check-line"></i>{{ timeText(dailyGuidance.generatedAt) }} 生成 · 仅使用你的 WAO 任务上下文</small>
+        <div v-if="dailyGuidanceError" class="guidance-inline-error" role="alert">
+          <i class="ri-error-warning-line"></i><span>换一组失败：{{ dailyGuidanceError }}，原建议已保留。</span>
+          <button :disabled="dailyGuidanceRefreshing" @click="refreshDailyGuidance(true)">重试</button>
+        </div>
+      </div>
+      <div v-else class="guidance-state error">
+        <i class="ri-cloud-off-line"></i>
+        <div>
+          <b>{{ dailyGuidanceError ? '这次没有生成成功' : '本地 Codex 暂未连接' }}</b>
+          <span>{{ dailyGuidanceError || dailyGuidance?.message || '请检查 AI 控制台的执行电脑后重试。' }}</span>
+        </div>
+        <button @click="dailyGuidance?.status === 'unavailable' ? loadDailyGuidance() : refreshDailyGuidance(false)">
+          <i class="ri-refresh-line"></i>重试
+        </button>
       </div>
     </section>
 
@@ -1304,6 +1385,43 @@ onBeforeUnmount(() => {
 .capacity-num span { font-size: 14px; opacity: .6; }
 .capacity-bar { height: 5px; margin-top: 11px; overflow: hidden; border-radius: 9px; background: #ffffff24; }
 .capacity-bar i { display: block; height: 100%; width: var(--capacity); border-radius: inherit; background: #fff; transition: width .3s; }
+.daily-guidance {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #7f63d8 25%, var(--wao-line));
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 94% 0, rgba(167, 139, 250, .13), transparent 34%),
+    linear-gradient(145deg, color-mix(in srgb, #f6f1ff 72%, var(--wao-bg-card)), var(--wao-bg-card));
+  box-shadow: 0 8px 24px rgba(83, 63, 151, .07);
+}
+.daily-guidance > header { padding: 17px 19px 13px; display: flex; align-items: flex-start; gap: 11px; }
+.guidance-mark { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 12px; background: #ece4ff; color: #7253c4; display: grid; place-items: center; font-size: 20px; }
+.daily-guidance header > div { flex: 1; min-width: 0; }
+.daily-guidance h2 { margin: 4px 0; color: var(--wao-text-1); font-size: 18px; }
+.daily-guidance header p { margin: 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }
+.guidance-refresh, .guidance-state button { padding: 7px 11px; border: 1px solid #ac99df; border-radius: 8px; background: var(--wao-bg-card); color: #684bb4; cursor: pointer; font-size: 11px; white-space: nowrap; }
+.guidance-refresh:disabled { opacity: .58; cursor: wait; }
+.guidance-refresh i, .guidance-state button i { margin-right: 4px; }
+.guidance-state { min-height: 112px; padding: 18px 20px; border-top: 1px solid color-mix(in srgb, #7f63d8 12%, var(--wao-line)); color: #6c58a8; display: flex; align-items: center; justify-content: center; gap: 12px; }
+.guidance-state > i { font-size: 23px; }
+.guidance-state div { display: grid; gap: 4px; }
+.guidance-state b { color: var(--wao-text-2); font-size: 13px; }
+.guidance-state span { color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }
+.guidance-state.error { justify-content: flex-start; color: var(--wao-danger-strong); }
+.guidance-state.error div { flex: 1; }
+.guidance-content { padding: 5px 20px 16px 70px; }
+.guidance-content :deep(.md-body) { color: var(--wao-text-2); font-size: 12px; line-height: 1.72; }
+.guidance-content :deep(.md-body > :first-child) { margin-top: 0; }
+.guidance-content :deep(.md-body > :last-child) { margin-bottom: 0; }
+.guidance-content :deep(.md-body h2), .guidance-content :deep(.md-body h3) { margin: 13px 0 5px; color: #4f397f; font-size: 13px; }
+.guidance-content :deep(.md-body p), .guidance-content :deep(.md-body ul) { margin: 6px 0; }
+.guidance-content :deep(.md-body ul) { padding-left: 19px; }
+.guidance-content > small { margin-top: 14px; padding-top: 9px; border-top: 1px solid color-mix(in srgb, #7f63d8 11%, var(--wao-line)); color: var(--wao-text-weak); font-size: 9.5px; display: block; }
+.guidance-content > small i { margin-right: 5px; color: #7253c4; }
+.guidance-inline-error { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--wao-danger-line); border-radius: 8px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); display: flex; align-items: center; gap: 7px; font-size: 10.5px; }
+.guidance-inline-error span { flex: 1; }
+.guidance-inline-error button { border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 650; }
 .evolution-panel {
   margin-top: 16px;
   overflow: hidden;
@@ -1736,6 +1854,11 @@ onBeforeUnmount(() => {
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
   .hero-metrics { width: auto; grid-template-columns: 1fr 1fr; }
   .capacity { width: auto; }
+  .daily-guidance > header { flex-wrap: wrap; }
+  .guidance-refresh { margin-left: 51px; }
+  .guidance-content { padding-left: 19px; }
+  .guidance-state { align-items: flex-start; flex-wrap: wrap; }
+  .guidance-state button { margin-left: 35px; }
   .evolution-panel > header { flex-wrap: wrap; }.auto-state { margin-left: 49px; }.suggestion-grid { grid-template-columns: 1fr; }.suggestion-card { grid-template-columns: 32px minmax(0, 1fr); }.suggestion-card button { grid-column: 2; justify-self: start; }.evolution-panel > footer small { width: 100%; margin-left: 0; }
   .goal-launcher { grid-template-columns: 1fr; padding: 17px; gap: 14px; }
   .goal-actions { flex-wrap: wrap; padding-left: 9px; }

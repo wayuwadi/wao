@@ -77,6 +77,18 @@ paths:
       responses:
         '200': { description: text/event-stream，事件为 token / done / error }
         '400': { description: 节点离线、已有活动问答或参数不合法 }
+  /daily-guidance:
+    get:
+      summary: 读取当前成员今天已保存的情境建议或真实可用状态
+      responses:
+        '200': { description: 返回 ready / missing / unavailable 及建议正文或原因 }
+    post:
+      summary: 结合当前成员真实未完成任务生成今天的情境建议
+      parameters:
+        - { name: refresh, in: query, required: false, schema: { type: boolean, default: false } }
+      responses:
+        '200': { description: 返回并保存今天的真实 Codex 建议 }
+        '400': { description: 本地 Codex 离线、已有问答执行或没有返回有效内容 }
   /members:
     get:
       summary: 成员列表
