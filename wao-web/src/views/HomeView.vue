@@ -103,7 +103,9 @@ const onlineRunners = computed(() => runners.value.filter((runner) => runner.onl
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
 const activeWorkflows = computed(() => workflows.value.filter((workflow) => workflow.config.enabled))
-const primaryWeeklyQuota = computed(() => evolution.value?.weeklyQuotas[0] ?? null)
+const visibleWeeklyQuotas = computed(() => evolution.value?.weeklyQuotas.filter((quota) => quota.status === 'SYNCED') ?? [])
+const primaryWeeklyQuota = computed(() => visibleWeeklyQuotas.value[0] ?? null)
+const showWeeklyQuota = computed(() => primaryWeeklyQuota.value !== null || (evolutionLoading.value && !evolution.value))
 
 /** 每种 AI 工具当前有几台电脑在线，决定 hero 上的接入状态。 */
 const engineStatus = computed(() =>
@@ -667,18 +669,16 @@ onBeforeUnmount(() => {
           <i class="ri-line-chart-line"></i>查看数据仪表盘
         </button>
       </div>
-      <div class="hero-metrics">
-        <div class="weekly-quota" :class="primaryWeeklyQuota ? quotaClass(primaryWeeklyQuota.remainingPercent) : 'unknown'">
+      <div class="hero-metrics" :class="{ single: !showWeeklyQuota }">
+        <div v-if="showWeeklyQuota" class="weekly-quota" :class="primaryWeeklyQuota ? quotaClass(primaryWeeklyQuota.remainingPercent) : 'unknown'">
           <span><i class="ri-speed-up-line"></i>周剩余额度</span>
           <template v-if="evolutionLoading && !evolution"><strong>···</strong><small>正在读取真实额度</small></template>
           <template v-else-if="primaryWeeklyQuota">
             <strong>{{ primaryWeeklyQuota.remainingPercent }}<em>%</em></strong>
             <small>
               {{ providerLabel(primaryWeeklyQuota.provider) }} · {{ resetText(primaryWeeklyQuota.resetsAt) }}
-              <template v-if="primaryWeeklyQuota.status !== 'SYNCED'"> · 上次真实快照，本次同步失败</template>
             </small>
           </template>
-          <template v-else><strong>--</strong><small>未获取真实周额度</small></template>
         </div>
         <div class="capacity" :style="{ '--capacity': `${totalSlots ? Math.min(100, usedSlots / totalSlots * 100) : 0}%` }">
           <div class="capacity-orbit" aria-hidden="true"><i></i><b></b><em></em></div>
@@ -801,9 +801,9 @@ onBeforeUnmount(() => {
         <i class="ri-error-warning-line"></i><span>{{ suggestionError }}</span>
         <button :disabled="suggestionsRefreshing" @click="refreshSuggestions(false)">重试</button>
       </div>
-      <footer v-if="evolution?.weeklyQuotas.length">
-        <span v-for="quota in evolution.weeklyQuotas" :key="quota.accountId">
-          {{ quota.label }} · 周剩余 <b>{{ quota.remainingPercent }}%</b>{{ quota.status === 'SYNCED' ? '' : '（旧快照）' }}
+      <footer v-if="visibleWeeklyQuotas.length">
+        <span v-for="quota in visibleWeeklyQuotas" :key="quota.accountId">
+          {{ quota.label }} · 周剩余 <b>{{ quota.remainingPercent }}%</b>
         </span>
         <small>只使用供应商真实七天窗口；未知额度不会参与自动派发。</small>
       </footer>
@@ -1902,6 +1902,7 @@ onBeforeUnmount(() => {
   .hero { padding: 22px; flex-direction: column; align-items: stretch; }
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
   .hero-metrics { width: auto; grid-template-columns: 1fr 1fr; }
+  .hero-metrics.single { grid-template-columns: 1fr; }
   .capacity { width: auto; }
   .daily-guidance > header { flex-wrap: wrap; }
   .guidance-refresh { margin-left: 51px; }

@@ -317,7 +317,7 @@ paths:
       description: 从真实资产挖掘的候选不包含以纯测试、纯文档或纯技术优化为主要结果的任务；生成和派发均确保目标带有用户价值验收契约。
       responses:
         '200':
-          description: 周额度只返回供应商真实七天窗口；未知额度不会伪装成 0% 或 100%
+          description: 周额度只返回供应商真实七天窗口；未知额度不返回记录，首页不渲染额度占位卡片
   /ai/evolution/suggestions/refresh:
     post:
       summary: 从真实知识库与飞书同步归档挖掘并持久化五条新任务建议

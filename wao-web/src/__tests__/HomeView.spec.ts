@@ -19,6 +19,7 @@ import {
   removeAiWorkflow,
   requestRunnerScriptUpdate,
   rerunAiRun,
+  type AiEvolutionOverview,
 } from '@/api/ai'
 
 vi.mock('@/api/dailyGuidance', () => ({
@@ -328,6 +329,49 @@ describe('HomeView AI 控制台', () => {
     expect(launchEvolutionSuggestion).toHaveBeenCalledWith('ux-friction', 'p1')
     expect(wrapper.findAll('.run-card').some((card) => card.text().includes('高频使用阻力'))).toBe(true)
     wrapper.unmount()
+  })
+
+  it('真实周额度为空、同步失败或读取失败时不在首页展示额度', async () => {
+    vi.useFakeTimers()
+    const unavailableOverview: AiEvolutionOverview = {
+      weeklyQuotas: [],
+      suggestions: [{
+        id: 'ux-friction', title: '找出并消除一个高频使用阻力',
+        description: '完成一项真实体验优化', icon: 'ri-magic-line', goal: '体验走查',
+        sourceTitle: '真实体验记录', sourceUrl: '/kb/k1?doc=d1',
+      }],
+      autoStatus: 'quota_unavailable', autoMessage: '等待真实额度',
+      lastActivityAt: null, nextEligibleAt: null, lastCheckedAt: null, lastRunId: null,
+    }
+    vi.mocked(fetchAiEvolution).mockResolvedValueOnce(unavailableOverview)
+
+    const emptyResult = mountHome()
+    await flushPromises()
+    expect(emptyResult.wrapper.find('.weekly-quota').exists()).toBe(false)
+    expect(emptyResult.wrapper.find('.capacity').exists()).toBe(true)
+    expect(emptyResult.wrapper.find('.hero-metrics').classes()).toContain('single')
+    emptyResult.wrapper.unmount()
+
+    vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
+      ...unavailableOverview,
+      weeklyQuotas: [{
+        accountId: 'aa-codex', provider: 'codex', label: 'Codex 旧快照', plan: 'plus',
+        usedPercent: 35, remainingPercent: 65, resetsAt: '2026-08-17T10:00:00',
+        lastSyncedAt: '2026-08-13T10:00:00', status: 'FAILED', message: '额度接口暂时不可用',
+      }],
+    })
+    const staleResult = mountHome()
+    await flushPromises()
+    expect(staleResult.wrapper.find('.weekly-quota').exists()).toBe(false)
+    expect(staleResult.wrapper.find('.evolution-panel footer').exists()).toBe(false)
+    staleResult.wrapper.unmount()
+
+    vi.mocked(fetchAiEvolution).mockRejectedValueOnce(new Error('额度接口暂时不可用'))
+    const failedResult = mountHome()
+    await flushPromises()
+    expect(failedResult.wrapper.find('.weekly-quota').exists()).toBe(false)
+    expect(failedResult.wrapper.find('.capacity').exists()).toBe(true)
+    failedResult.wrapper.unmount()
   })
 
   it('可从真实资料刷新换一批并展示可追溯来源', async () => {
