@@ -12,6 +12,7 @@ import GlobalSearch from '@/components/overlays/GlobalSearch.vue'
 import Celebration from '@/components/overlays/CelebrationOverlay.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
 import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
+import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -173,7 +174,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       <div class="content">
         <!-- 页面主体撑满剩余高度，备案页脚被压在滚动区最底端：内容不够一屏时也贴住底部，不会跟着内容往上浮 -->
         <div class="page-body"><RouterView /></div>
-        <SiteFooter />
+        <SiteFooter reserve-mobile-actions />
       </div>
     </main>
 
@@ -192,6 +193,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <GlobalSearch v-if="ui.searchOpen" />
     <ShortcutsHelp v-if="ui.helpOpen" />
     <Celebration v-if="ui.celebrating" />
+    <!-- 助手依赖登录态和私有资产，只挂在受保护的应用壳内，避免遮挡登录页与公开分享页。 -->
+    <AiAssistantPanel v-model="ui.assistantOpen" />
   </div>
 </template>
 

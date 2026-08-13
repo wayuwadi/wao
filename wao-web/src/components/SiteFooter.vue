@@ -2,6 +2,11 @@
 import { onMounted, ref } from 'vue'
 import { fetchPublicSiteInfo, type SiteInfo } from '@/api/system'
 
+defineProps<{
+  /** 登录后应用的底部导航和悬浮操作会占据手机底部，需为它们额外留白。 */
+  reserveMobileActions?: boolean
+}>()
+
 const site = ref<SiteInfo | null>(null)
 
 onMounted(async () => {
@@ -11,7 +16,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <footer v-if="site" class="site-footer" aria-label="网站备案信息">
+  <footer
+    v-if="site"
+    class="site-footer"
+    :class="{ 'reserve-mobile-actions': reserveMobileActions }"
+    aria-label="网站备案信息"
+  >
     <span>© {{ new Date().getFullYear() }} {{ site.siteName }}</span>
     <span v-if="site.description" class="separator">·</span>
     <span v-if="site.description">{{ site.description }}</span>
@@ -38,6 +48,7 @@ onMounted(async () => {
 .site-footer a:hover { color: var(--wao-primary, #4358d6); text-decoration: underline; }
 .separator { color: var(--wao-line-strong, #d8dbe5); }
 @media (max-width: 760px) {
-  .site-footer { padding: 20px 12px 92px; font-size: 10px; }
+  .site-footer { padding: 20px 12px calc(20px + env(safe-area-inset-bottom)); font-size: 10px; }
+  .site-footer.reserve-mobile-actions { padding-bottom: calc(92px + env(safe-area-inset-bottom)); }
 }
 </style>

@@ -5,7 +5,7 @@ import { createPinia } from 'pinia'
 import App from '../App.vue'
 
 describe('App', () => {
-  it('renders the router outlet', () => {
+  it('只保留公开路由也可安全使用的全局宿主', () => {
     const wrapper = shallowMount(App, {
       global: {
         plugins: [createPinia()],
@@ -13,5 +13,7 @@ describe('App', () => {
       },
     })
     expect(wrapper.find('router-view-stub').exists()).toBe(true)
+    expect(wrapper.find('toast-host-stub').exists()).toBe(true)
+    expect(wrapper.find('ai-assistant-panel-stub').exists()).toBe(false)
   })
 })
