@@ -114,6 +114,58 @@ class AiEvolutionServiceTest {
     }
 
     @Test
+    void configuredScheduleLaunchesThreeSuggestionsInRotation() {
+        AiEvolutionStateEntity state = new AiEvolutionStateEntity();
+        state.setIntervalHours(2);
+        state.setBatchSize(3);
+        state.setLastSuggestionId("es1");
+        when(stateMapper.selectById("autonomous-evolution")).thenReturn(state);
+        when(stateMapper.update(isNull(), any())).thenReturn(1);
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(runMapper.latestActivityAt()).thenReturn(LocalDateTime.now().minusHours(3));
+        when(accounts.weeklyQuotas()).thenReturn(List.of(new AiWeeklyQuotaDto(
+                "aa1", "codex", "Codex", "plus", 20, 80, "2026-08-17T10:00:00",
+                LocalDateTime.now().toString(), "SYNCED", "七天额度已用 20%")));
+        AiProjectConfigDto config = new AiProjectConfigDto("p1", true,
+                "https://github.com/wayuwacn/wao.git", "main", "wao", "codex", null, 3);
+        when(runs.listWorkflows()).thenReturn(List.of(new AiWorkflowDto(
+                "p1", "Wa All in One", config, null, 0, 1, 0, null)));
+        when(suggestions.latest()).thenReturn(List.of(
+                suggestion("es1", "候选一"), suggestion("es2", "候选二"),
+                suggestion("es3", "候选三"), suggestion("es4", "候选四")));
+        AiRunDto launched = mock(AiRunDto.class);
+        when(launched.id()).thenReturn("ar-auto");
+        when(runs.launchGoal(eq("p1"), any(), eq("system"), eq("https://wao.example"), eq("aa1")))
+                .thenReturn(launched);
+
+        service.checkAndLaunch();
+
+        ArgumentCaptor<String> goals = ArgumentCaptor.forClass(String.class);
+        verify(runs, org.mockito.Mockito.times(3)).launchGoal(
+                eq("p1"), goals.capture(), eq("system"), eq("https://wao.example"), eq("aa1"));
+        assertThat(goals.getAllValues())
+                .anySatisfy(goal -> assertThat(goal).contains("候选二"))
+                .anySatisfy(goal -> assertThat(goal).contains("候选三"))
+                .anySatisfy(goal -> assertThat(goal).contains("候选四"))
+                .noneSatisfy(goal -> assertThat(goal).contains("候选一"));
+        AiEvolutionOverviewDto overview = service.overview();
+        assertThat(overview.intervalHours()).isEqualTo(2);
+        assertThat(overview.batchSize()).isEqualTo(3);
+        assertThat(overview.autoMessage()).contains("2 小时").contains("3 项");
+    }
+
+    @Test
+    void scheduleValidationRejectsUnsafeValuesAndPersistsValidValues() {
+        assertThatThrownBy(() -> service.saveSchedule(0, 1)).hasMessageContaining("1 到 168");
+        assertThatThrownBy(() -> service.saveSchedule(2, 6)).hasMessageContaining("1 到 5");
+        when(stateMapper.update(isNull(), any())).thenReturn(1);
+
+        service.saveSchedule(4, 5);
+
+        verify(stateMapper).update(isNull(), any());
+    }
+
+    @Test
     void refreshMinesExactlyFiveTraceableSuggestionsFromRealAssets() {
         TaskMiningSource source = new TaskMiningSource(
                 1, "chat", "飞书群聊 · 2026-08-12", "/kb/k1?doc=d1");
@@ -258,6 +310,7 @@ class AiEvolutionServiceTest {
 
         service.checkAndLaunch();
 
+        verify(stateMapper, org.mockito.Mockito.never()).selectById(any());
         verify(runMapper, org.mockito.Mockito.never()).selectCount(any());
         verify(accounts, org.mockito.Mockito.never()).refreshQuotaSnapshots();
         verify(runs, org.mockito.Mockito.never()).launchGoal(any(), any(), any(), any(), any());
@@ -265,6 +318,7 @@ class AiEvolutionServiceTest {
 
     private static AiEvolutionSuggestionDto suggestion(String id, String title) {
         return new AiEvolutionSuggestionDto(id, title, "从真实链路完成修复", "ri-magic-line",
-                "请检查真实用户链路并修复，不要制造演示数据", "飞书群聊 · 2026-08-12", "/kb/k1?doc=d1");
+                "请处理「" + title + "」，检查真实用户链路并修复，不要制造演示数据",
+                "飞书群聊 · 2026-08-12", "/kb/k1?doc=d1");
     }
 }

@@ -12,5 +12,7 @@ public record AiEvolutionOverviewDto(
         String lastActivityAt,
         String nextEligibleAt,
         String lastCheckedAt,
-        String lastRunId) {
+        String lastRunId,
+        int intervalHours,
+        int batchSize) {
 }

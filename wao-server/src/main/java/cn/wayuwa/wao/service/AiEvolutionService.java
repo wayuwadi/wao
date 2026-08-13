@@ -40,7 +40,11 @@ public class AiEvolutionService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final String STATE_ID = "autonomous-evolution";
     private static final int MIN_REMAINING_PERCENT = 50;
-    private static final int IDLE_HOURS = 12;
+    private static final int DEFAULT_INTERVAL_HOURS = 12;
+    private static final int DEFAULT_BATCH_SIZE = 1;
+    private static final int MIN_INTERVAL_HOURS = 1;
+    private static final int MAX_INTERVAL_HOURS = 168;
+    private static final int MAX_BATCH_SIZE = 5;
     private static final int CHECK_MINUTES = 15;
     private static final int SUGGESTION_COUNT = 5;
     private static final String USER_VALUE_CONTRACT = "用户价值验收：本次交付必须以用户可直接使用的新能力、"
@@ -84,11 +88,12 @@ public class AiEvolutionService {
         List<AiWeeklyQuotaDto> quotas = accounts.weeklyQuotas();
         LocalDateTime lastActivity = runMapper.latestActivityAt();
         boolean active = hasActiveRun();
-        LocalDateTime eligibleAt = lastActivity == null ? now : lastActivity.plusHours(IDLE_HOURS);
+        AiEvolutionStateEntity state = stateMapper.selectById(STATE_ID);
+        int intervalHours = intervalHours(state);
+        int batchSize = batchSize(state);
+        LocalDateTime eligibleAt = lastActivity == null ? now : lastActivity.plusHours(intervalHours);
         boolean quotaReady = quotas.stream().anyMatch(quota -> "SYNCED".equals(quota.status())
                 && quota.remainingPercent() > MIN_REMAINING_PERCENT);
-        AiEvolutionStateEntity state = stateMapper.selectById(STATE_ID);
-
         String status;
         String message;
         if (active) {
@@ -96,7 +101,7 @@ public class AiEvolutionService {
             message = "当前已有 AI 任务在运行，自动进化会等它们结束后重新计时。";
         } else if (lastActivity != null && eligibleAt.isAfter(now)) {
             status = "cooling_down";
-            message = "最近 12 小时内有 AI 任务，暂不自动派发。";
+            message = "最近 " + intervalHours + " 小时内有 AI 任务，暂不自动派发。";
         } else if (!quotaReady) {
             status = "quota_unavailable";
             boolean hasSyncedQuota = quotas.stream().anyMatch(quota -> "SYNCED".equals(quota.status()));
@@ -108,14 +113,42 @@ public class AiEvolutionService {
             message = "未配置公网任务分享地址，自动进化保持暂停；手动建议仍可直接执行。";
         } else {
             status = "ready";
-            message = "已满足 12 小时空闲与周剩余额度门槛，下次检查会自动选择一项改进。";
+            message = "已满足 " + intervalHours + " 小时空闲与周剩余额度门槛，下次检查会自动选择最多 "
+                    + batchSize + " 项改进。";
         }
         if (state != null && state.getLastOutcome() != null && !state.getLastOutcome().isBlank()) {
             message += " 最近检查：" + state.getLastOutcome();
         }
         return new AiEvolutionOverviewDto(sessionQuotas, quotas, suggestions.latest(), status, message,
                 text(lastActivity), text(eligibleAt), state == null ? null : text(state.getLastCheckedAt()),
-                state == null ? null : state.getLastRunId());
+                state == null ? null : state.getLastRunId(), intervalHours, batchSize);
+    }
+
+    /**
+     * 保存人工设置的自动执行间隔和单次任务数。
+     *
+     * <p>保存后把下次检查时间推进到当前时刻，使缩短后的频率无需再等待旧检查窗口。
+     *
+     * @param intervalHours 距离最近 AI 活动至少空闲多少小时，范围 1 到 168
+     * @param batchSize 单次最多派发多少项真实建议，范围 1 到 5
+     */
+    public void saveSchedule(int intervalHours, int batchSize) {
+        if (intervalHours < MIN_INTERVAL_HOURS || intervalHours > MAX_INTERVAL_HOURS) {
+            throw new BadRequestException("自动执行间隔必须在 1 到 168 小时之间");
+        }
+        if (batchSize < 1 || batchSize > MAX_BATCH_SIZE) {
+            throw new BadRequestException("单次任务数必须在 1 到 5 之间");
+        }
+        LocalDateTime now = LocalDateTime.now(ZONE);
+        int updated = stateMapper.update(null, new LambdaUpdateWrapper<AiEvolutionStateEntity>()
+                .eq(AiEvolutionStateEntity::getId, STATE_ID)
+                .set(AiEvolutionStateEntity::getIntervalHours, intervalHours)
+                .set(AiEvolutionStateEntity::getBatchSize, batchSize)
+                .set(AiEvolutionStateEntity::getNextCheckAt, now)
+                .set(AiEvolutionStateEntity::getLastOutcome,
+                        "已更新为每 " + intervalHours + " 小时最多派发 " + batchSize + " 个任务")
+                .set(AiEvolutionStateEntity::getUpdatedAt, now));
+        if (updated == 0) throw new IllegalStateException("自主进化调度状态不存在");
     }
 
     /** 从真实知识库和飞书同步归档挖掘并保存一批新的五条候选任务。 */
@@ -153,6 +186,9 @@ public class AiEvolutionService {
                 .set(AiEvolutionStateEntity::getLastCheckedAt, now)
                 .set(AiEvolutionStateEntity::getUpdatedAt, now));
         if (claimed == 0) return;
+        AiEvolutionStateEntity schedule = stateMapper.selectById(STATE_ID);
+        int intervalHours = intervalHours(schedule);
+        int batchSize = batchSize(schedule);
 
         try {
             accounts.refreshQuotaSnapshots();
@@ -166,8 +202,8 @@ public class AiEvolutionService {
                 return;
             }
             LocalDateTime lastActivity = runMapper.latestActivityAt();
-            if (lastActivity != null && lastActivity.plusHours(IDLE_HOURS).isAfter(now)) {
-                outcome("距离最近一次 AI 任务尚不足 12 小时", null, null);
+            if (lastActivity != null && lastActivity.plusHours(intervalHours).isAfter(now)) {
+                outcome("距离最近一次 AI 任务尚不足 " + intervalHours + " 小时", null, null);
                 return;
             }
 
@@ -188,18 +224,36 @@ public class AiEvolutionService {
                 outcome("尚未从真实知识库或飞书归档生成任务建议", null, null);
                 return;
             }
-            AiEvolutionStateEntity state = stateMapper.selectById(STATE_ID);
-            AiEvolutionSuggestionDto suggestion = nextSuggestion(
-                    availableSuggestions, state == null ? null : state.getLastSuggestionId());
             LaunchCandidate candidate = chooseWorkflow(quotas);
             if (candidate == null) {
-                outcome("没有与可用额度账号匹配的 WAO 工作流", null, suggestion.id());
+                outcome("没有与可用额度账号匹配的 WAO 工作流", null, null);
                 return;
             }
-            AiRunDto run = runs.launchGoal(candidate.workflow.projectId(),
-                    withUserValueContract(suggestion.goal()), "system",
-                    publicBaseUrl, candidate.quota.accountId());
-            outcome("已自动派发「" + suggestion.title() + "」", run.id(), suggestion.id());
+            List<AiEvolutionSuggestionDto> selected = nextSuggestions(availableSuggestions,
+                    schedule == null ? null : schedule.getLastSuggestionId(), batchSize);
+            String lastRunId = null;
+            String lastSuggestionId = null;
+            List<String> launchedTitles = new ArrayList<>();
+            String failedReason = null;
+            for (AiEvolutionSuggestionDto suggestion : selected) {
+                try {
+                    AiRunDto run = runs.launchGoal(candidate.workflow.projectId(),
+                            withUserValueContract(suggestion.goal()), "system",
+                            publicBaseUrl, candidate.quota.accountId());
+                    lastRunId = run.id();
+                    lastSuggestionId = suggestion.id();
+                    launchedTitles.add("「" + suggestion.title() + "」");
+                } catch (RuntimeException ex) {
+                    failedReason = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+                    break;
+                }
+            }
+            if (launchedTitles.isEmpty()) {
+                throw new BadRequestException("首个任务派发失败：" + shorten(failedReason == null ? "未知错误" : failedReason));
+            }
+            String message = "已自动派发 " + launchedTitles.size() + " 个任务：" + String.join("、", launchedTitles);
+            if (failedReason != null) message += "；后续任务派发失败：" + shorten(failedReason);
+            outcome(message, lastRunId, lastSuggestionId);
         } catch (RuntimeException ex) {
             String reason = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
             outcome("自动派发失败：" + shorten(reason), null, null);
@@ -297,13 +351,27 @@ public class AiEvolutionService {
         return count != null && count > 0;
     }
 
-    private static AiEvolutionSuggestionDto nextSuggestion(
-            List<AiEvolutionSuggestionDto> suggestions, String previousId) {
+    private static List<AiEvolutionSuggestionDto> nextSuggestions(
+            List<AiEvolutionSuggestionDto> suggestions, String previousId, int limit) {
         int previous = -1;
         for (int i = 0; i < suggestions.size(); i++) {
             if (suggestions.get(i).id().equals(previousId)) previous = i;
         }
-        return suggestions.get((previous + 1) % suggestions.size());
+        List<AiEvolutionSuggestionDto> selected = new ArrayList<>();
+        for (int i = 1; i <= Math.min(limit, suggestions.size()); i++) {
+            selected.add(suggestions.get((previous + i) % suggestions.size()));
+        }
+        return List.copyOf(selected);
+    }
+
+    private static int intervalHours(AiEvolutionStateEntity state) {
+        return state == null || state.getIntervalHours() == null
+                ? DEFAULT_INTERVAL_HOURS : state.getIntervalHours();
+    }
+
+    private static int batchSize(AiEvolutionStateEntity state) {
+        return state == null || state.getBatchSize() == null
+                ? DEFAULT_BATCH_SIZE : state.getBatchSize();
     }
 
     private static String suggestionPrompt(TaskMiningContext context,

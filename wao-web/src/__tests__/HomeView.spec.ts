@@ -19,6 +19,7 @@ import {
   removeAiWorkflow,
   requestRunnerScriptUpdate,
   rerunAiRun,
+  saveAiEvolutionSchedule,
   type AiEvolutionOverview,
 } from '@/api/ai'
 
@@ -120,6 +121,7 @@ vi.mock('@/api/ai', () => ({
     autoStatus: 'ready', autoMessage: '已满足 12 小时空闲与周剩余额度门槛。',
     lastActivityAt: '2026-08-12T08:00:00', nextEligibleAt: '2026-08-12T20:00:00',
     lastCheckedAt: '2026-08-13T10:00:00', lastRunId: null,
+    intervalHours: 12, batchSize: 1,
   }),
   createAiPairCode: vi.fn<() => Promise<{ code: string; expiresAt: string }>>()
     .mockResolvedValue({ code: 'ABCD2345KMNP', expiresAt: '2026-07-25T20:30:00' }),
@@ -145,6 +147,14 @@ vi.mock('@/api/ai', () => ({
       sourceTitle: '飞书群聊 · 2026-08-12', sourceUrl: '/kb/k1?doc=d1',
     },
   ]),
+  saveAiEvolutionSchedule: vi.fn<(intervalHours: number, batchSize: number) => Promise<Record<string, unknown>>>().mockImplementation(
+    async (intervalHours: number, batchSize: number) => ({
+      sessionQuotas: [], weeklyQuotas: [], suggestions: [], autoStatus: 'ready',
+      autoMessage: `已满足 ${intervalHours} 小时空闲与周剩余额度门槛，下次检查会自动选择最多 ${batchSize} 项改进。`,
+      lastActivityAt: null, nextEligibleAt: null, lastCheckedAt: null, lastRunId: null,
+      intervalHours, batchSize,
+    }),
+  ),
   requestRunnerScriptUpdate: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
       id: 'rn1', name: '娃哥电脑', platform: 'Windows 11', engines: ['codex'],
@@ -339,6 +349,57 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
+  it('可以保存自动检测间隔和单次任务数', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.schedule-toggle').trigger('click')
+    const interval = wrapper.find('.evolution-schedule input')
+    const batch = wrapper.find('.evolution-schedule select')
+    expect((interval.element as HTMLInputElement).value).toBe('12')
+    expect((batch.element as HTMLSelectElement).value).toBe('1')
+    await interval.setValue('4')
+    await batch.setValue('3')
+    await wrapper.find('.evolution-schedule').trigger('submit')
+    await flushPromises()
+
+    expect(saveAiEvolutionSchedule).toHaveBeenCalledWith(4, 3)
+    expect(wrapper.find('.schedule-feedback.saved').text()).toContain('已保存')
+    expect(wrapper.find('.evolution-panel').text()).toContain('4 小时')
+    expect(wrapper.find('.evolution-panel').text()).toContain('3 项')
+    wrapper.unmount()
+  })
+
+  it('频率保存失败时保留草稿并可原地重试', async () => {
+    vi.useFakeTimers()
+    vi.mocked(saveAiEvolutionSchedule)
+      .mockRejectedValueOnce(new Error('网络暂时不可用'))
+      .mockResolvedValueOnce({
+        sessionQuotas: [], weeklyQuotas: [], suggestions: [], autoStatus: 'ready',
+        autoMessage: '已满足 2 小时空闲与周剩余额度门槛，下次检查会自动选择最多 5 项改进。',
+        lastActivityAt: null, nextEligibleAt: null, lastCheckedAt: null, lastRunId: null,
+        intervalHours: 2, batchSize: 5,
+      })
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.schedule-toggle').trigger('click')
+    await wrapper.find('.evolution-schedule input').setValue('2')
+    await wrapper.find('.evolution-schedule select').setValue('5')
+    await wrapper.find('.evolution-schedule').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('.schedule-feedback.error').text()).toContain('草稿仍在')
+    expect((wrapper.find('.evolution-schedule input').element as HTMLInputElement).value).toBe('2')
+    expect((wrapper.find('.evolution-schedule select').element as HTMLSelectElement).value).toBe('5')
+
+    await wrapper.find('.evolution-schedule').trigger('submit')
+    await flushPromises()
+    expect(saveAiEvolutionSchedule).toHaveBeenLastCalledWith(2, 5)
+    expect(wrapper.find('.schedule-feedback.saved').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('真实周额度为空、同步失败或读取失败时不在首页展示额度', async () => {
     vi.useFakeTimers()
     const unavailableOverview: AiEvolutionOverview = {
@@ -351,6 +412,7 @@ describe('HomeView AI 控制台', () => {
       }],
       autoStatus: 'quota_unavailable', autoMessage: '等待真实额度',
       lastActivityAt: null, nextEligibleAt: null, lastCheckedAt: null, lastRunId: null,
+      intervalHours: 12, batchSize: 1,
     }
     vi.mocked(fetchAiEvolution).mockResolvedValueOnce(unavailableOverview)
 
@@ -410,7 +472,7 @@ describe('HomeView AI 控制台', () => {
     vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
       sessionQuotas: [], weeklyQuotas: [], suggestions: [], autoStatus: 'quota_unavailable',
       autoMessage: '等待真实额度', lastActivityAt: null, nextEligibleAt: null,
-      lastCheckedAt: null, lastRunId: null,
+      lastCheckedAt: null, lastRunId: null, intervalHours: 12, batchSize: 1,
     })
     const refreshCalls = vi.mocked(refreshEvolutionSuggestions).mock.calls.length
 

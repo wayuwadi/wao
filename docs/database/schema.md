@@ -272,6 +272,8 @@ erDiagram
 
 自主进化调度的全局单例状态。`next_check_at` 用条件更新在主从节点间原子抢占，避免重复派发；
 `last_checked_at`、`last_outcome`、`last_run_id` 和 `last_suggestion_id` 供首页解释最近一次调度结果。
+V66 新增 `interval_hours` 与 `batch_size`，保存全局人工配置的空闲等待小时数和单次最多派发任务数；
+默认 12 小时、1 个任务，升级后保持原有节奏。
 V63 新增 `last_low_quota_key`，保存已经成功发送飞书提醒的“账号 + 周额度重置时间”键集合（重置时间缺失时使用自然周）；
 额度进入新的重置周期后会生成新键，发送失败则不写入，下一轮检查继续重试。
 
@@ -617,4 +619,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V61__ai_autonomous_evolution.sql`：保存双节点共享的自主进化调度和最近派发状态。
 - `V63__ai_evolution_low_quota_reminder.sql`：按账号与额度重置周期去重飞书低额度提醒。
 - `V64__ai_evolution_mined_suggestions.sql`：保存从真实 WAO 资产挖掘且可追溯的自主进化任务建议批次。
+- `V66__ai_evolution_schedule.sql`：保存自主进化人工设置的空闲间隔与单次任务数。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
