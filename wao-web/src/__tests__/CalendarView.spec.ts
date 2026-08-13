@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import CalendarView from '@/views/CalendarView.vue'
+import { fetchAlternateWorkWeek, saveAlternateWorkWeek } from '@/api/workSchedule'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -11,6 +12,11 @@ import type { Task } from '@/types'
 vi.mock('@/api/caldav', () => ({
   fetchCaldavAccounts: vi.fn<() => Promise<never[]>>(async () => []),
   fetchCaldavEvents: vi.fn<() => Promise<never[]>>(async () => []),
+}))
+
+vi.mock('@/api/workSchedule', () => ({
+  fetchAlternateWorkWeek: vi.fn(async (today: string) => ({ enabled: false, anchorWeek: today, anchorType: 'small' })),
+  saveAlternateWorkWeek: vi.fn(async (value) => value),
 }))
 
 const router = createRouter({
@@ -22,6 +28,8 @@ describe('日历成员隔离、清单与时间轴', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    vi.mocked(fetchAlternateWorkWeek).mockImplementation(async (today) => ({ enabled: false, anchorWeek: today, anchorType: 'small' }))
+    vi.mocked(saveAlternateWorkWeek).mockImplementation(async (value) => value)
   })
 
   it('默认只看当前人，待安排清单只含未排期与已逾期任务并可集中筛选', async () => {
@@ -122,5 +130,62 @@ describe('日历成员隔离、清单与时间轴', () => {
     const allDayEvent = wrapper.find('.all-day-strip button.completed')
     expect(allDayEvent.exists()).toBe(true)
     expect(allDayEvent.text()).toContain('已完成的截止任务')
+  })
+
+  it('保存本周双休基准后，月视图可查询交替的大小周并持久化成员偏好', async () => {
+    const data = useDataStore()
+    const session = useSessionStore()
+    const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me]
+    vi.mocked(fetchAlternateWorkWeek).mockResolvedValue({
+      enabled: true,
+      anchorWeek: data.today,
+      anchorType: 'small',
+    })
+
+    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    expect(wrapper.find('.work-schedule').text()).toContain('本周 · 小周 · 双休')
+    const marks = wrapper.findAll('.work-week-mark').map((mark) => mark.text())
+    expect(marks).toContain('小周 · 双休')
+    expect(marks).toContain('大周 · 周日上班')
+
+    await wrapper.find('.work-schedule').trigger('click')
+    expect(wrapper.find('.work-schedule-modal').exists()).toBe(true)
+    await wrapper.find('.work-schedule-field input').setValue(data.today)
+    await wrapper.find('.work-schedule-field select').setValue('small')
+    await wrapper.find('.work-schedule-modal form').trigger('submit')
+    await flushPromises()
+
+    expect(saveAlternateWorkWeek).toHaveBeenCalledWith({
+      enabled: true,
+      anchorWeek: data.today,
+      anchorType: 'small',
+    })
+    expect(wrapper.find('.work-schedule-modal').exists()).toBe(false)
+  })
+
+  it('大小周保存失败时保留浮层与草稿，并提供原位重试', async () => {
+    const data = useDataStore()
+    const session = useSessionStore()
+    const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me]
+    vi.mocked(saveAlternateWorkWeek).mockRejectedValueOnce(new Error('网络暂不可用'))
+
+    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    await flushPromises()
+    await wrapper.find('.work-schedule').trigger('click')
+    await wrapper.find('.work-schedule-toggle input').setValue(true)
+    await wrapper.find('.work-schedule-field input').setValue(data.today)
+    await wrapper.find('.work-schedule-modal form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.find('.work-schedule-modal').exists()).toBe(true)
+    expect(wrapper.find('.work-schedule-state.error').text()).toContain('网络暂不可用')
+    expect(wrapper.find('.work-schedule-field input').element).toHaveProperty('value', data.today)
+    expect(wrapper.find('.work-schedule-save').text()).toContain('重试保存')
   })
 })
