@@ -2,12 +2,14 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import {
   createTodayTianrenReading,
+  createTianrenShareLink,
   fetchTianrenHistory,
   fetchTodayTianrenReading,
   streamTianrenInterpretation,
   type TianrenReading,
 } from '@/api/tianren'
 import { fetchAssistantConversation, fetchAssistantStatus } from '@/api/assistant'
+import { copyToClipboard } from '@/utils/clipboard'
 import { renderMarkdown } from '@/utils/markdown'
 
 type SyncState = 'loading' | 'casting' | 'saved' | 'error'
@@ -18,6 +20,10 @@ const loading = ref(true)
 const casting = ref(false)
 const pageError = ref('')
 const syncState = ref<SyncState>('loading')
+const sharing = ref(false)
+const shareFeedback = ref('')
+const shareUrl = ref('')
+const shareError = ref(false)
 
 const assistantLoading = ref(true)
 const assistantConfigured = ref(false)
@@ -143,6 +149,28 @@ async function castToday() {
   }
 }
 
+async function shareReading() {
+  if (!reading.value || sharing.value) return
+  sharing.value = true
+  shareFeedback.value = ''
+  shareUrl.value = ''
+  shareError.value = false
+  try {
+    const url = await createTianrenShareLink(reading.value.id)
+    if (await copyToClipboard(url)) {
+      shareFeedback.value = '公网结果链接已复制，任何拿到链接的人都能查看这份卦象。'
+    } else {
+      shareUrl.value = url
+      shareFeedback.value = '浏览器没有允许自动复制，请手动复制下面的链接。'
+    }
+  } catch (cause) {
+    shareError.value = true
+    shareFeedback.value = cause instanceof Error ? cause.message : '分享链接生成失败，请重试'
+  } finally {
+    sharing.value = false
+  }
+}
+
 async function interpretToday() {
   if (!canInterpret.value) return
   interpreting.value = true
@@ -232,7 +260,19 @@ onMounted(() => {
                   <h2>{{ reading.primary.symbol }} 第 {{ reading.primary.number }} 卦 · {{ reading.primary.name }}</h2>
                   <p>上{{ reading.primary.upper.name }}（{{ reading.primary.upper.nature }}）下{{ reading.primary.lower.name }}（{{ reading.primary.lower.nature }}）</p>
                 </div>
-                <span class="once-pill"><i class="ri-lock-line"></i> 今日唯一</span>
+                <div class="card-actions">
+                  <span class="once-pill"><i class="ri-lock-line"></i> 今日唯一</span>
+                  <button class="share-button" type="button" :disabled="sharing" @click="shareReading">
+                    <i :class="sharing ? 'ri-loader-4-line spin' : 'ri-share-forward-line'"></i>
+                    {{ sharing ? '正在生成链接' : '复制分享链接' }}
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="shareFeedback" class="share-feedback" :role="shareError ? 'alert' : 'status'" :class="{ manual: shareUrl, error: shareError }">
+                <i :class="shareError ? 'ri-error-warning-line' : shareUrl ? 'ri-information-line' : 'ri-checkbox-circle-line'"></i>
+                <span>{{ shareFeedback }}</span>
+                <input v-if="shareUrl" :value="shareUrl" readonly aria-label="天人一卦分享链接" @focus="($event.target as HTMLInputElement).select()" />
               </div>
 
               <div class="cast-layout">
@@ -382,7 +422,7 @@ onMounted(() => {
 .state-card { min-height: 420px; max-width: 1180px; margin: 0 auto; display: grid; place-items: center; align-content: center; gap: 10px; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); color: var(--wao-text-3); }.state-card strong { color: var(--wao-text); font-size: 15px; }.state-card small { color: var(--wao-text-weak); }.state-card > i { font-size: 38px; color: var(--wao-danger); }.state-card button,.cast-button { border: 0; border-radius: 10px; background: #3d756b; color: #fff; cursor: pointer; }.state-card button { margin-top: 8px; padding: 9px 15px; }.spinner { width: 28px; height: 28px; border: 3px solid color-mix(in srgb, #3d756b 20%, transparent); border-top-color: #3d756b; border-radius: 50%; animation: spin .8s linear infinite; }
 .inline-error { max-width: 1180px; margin: 0 auto 12px; padding: 10px 12px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--wao-danger-line); border-radius: 9px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); font-size: 12px; }.inline-error span { flex: 1; }.inline-error button { border: 0; background: transparent; color: inherit; font-weight: 650; cursor: pointer; }
 .empty-cast { min-height: 510px; padding: 44px 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }.empty-orbit { position: relative; width: 112px; height: 112px; margin-bottom: 20px; border: 1px solid color-mix(in srgb, #ae7d40 36%, var(--wao-line)); border-radius: 50%; display: flex; align-items: center; justify-content: space-around; color: #9a6d37; font-size: 31px; }.empty-orbit::before,.empty-orbit::after { content: ''; position: absolute; inset: 12px; border: 1px dashed color-mix(in srgb, #3d756b 34%, transparent); border-radius: 50%; transform: rotate(30deg); }.empty-orbit::after { inset: -7px; transform: rotate(-20deg); }.empty-orbit i { position: absolute; z-index: 1; color: #3d756b; font-size: 20px; }.today-label,.section-kicker { color: #8e6534; font-size: 11px; font-weight: 650; letter-spacing: .04em; }.empty-cast h2 { margin: 8px 0 7px; font-family: 'STKaiti', 'KaiTi', serif; font-size: 26px; }.empty-cast p { max-width: 500px; margin: 0; color: var(--wao-text-3); font-size: 12.5px; line-height: 1.75; }.empty-cast > small { margin-top: 12px; color: var(--wao-text-weak); font-size: 10px; }.cast-button { min-width: 180px; height: 42px; margin-top: 23px; font-weight: 650; }.cast-button i { margin-right: 7px; }.cast-button:disabled { opacity: .55; cursor: wait; }
-.cast-card { padding: clamp(17px, 2.5vw, 24px); }.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }.card-head h2 { margin: 5px 0 4px; font-family: 'STKaiti', 'KaiTi', serif; font-size: clamp(23px, 3vw, 31px); letter-spacing: .03em; }.card-head p { margin: 0; color: var(--wao-text-weak); font-size: 11px; }.once-pill { padding: 6px 9px; border-radius: 999px; background: color-mix(in srgb, #3d756b 10%, transparent); color: #3d756b; font-size: 10px; white-space: nowrap; }.once-pill i { margin-right: 4px; }.cast-layout { margin-top: 22px; display: grid; grid-template-columns: minmax(260px, .9fr) minmax(250px, 1fr); gap: clamp(18px, 3vw, 34px); align-items: center; }
+.cast-card { padding: clamp(17px, 2.5vw, 24px); }.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }.card-head h2 { margin: 5px 0 4px; font-family: 'STKaiti', 'KaiTi', serif; font-size: clamp(23px, 3vw, 31px); letter-spacing: .03em; }.card-head p { margin: 0; color: var(--wao-text-weak); font-size: 11px; }.card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }.once-pill { padding: 6px 9px; border-radius: 999px; background: color-mix(in srgb, #3d756b 10%, transparent); color: #3d756b; font-size: 10px; white-space: nowrap; }.once-pill i { margin-right: 4px; }.share-button { min-height: 30px; padding: 0 10px; border: 1px solid color-mix(in srgb, #3d756b 35%, var(--wao-line)); border-radius: 999px; background: var(--wao-bg-card); color: #3d756b; cursor: pointer; font-size: 10px; font-weight: 650; white-space: nowrap; }.share-button i { margin-right: 4px; }.share-button:hover { background: color-mix(in srgb, #3d756b 7%, var(--wao-bg-card)); }.share-feedback { margin-top: 13px; padding: 9px 11px; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 7px; border: 1px solid var(--wao-success-line); border-radius: 9px; background: var(--wao-success-bg); color: var(--wao-success-strong); font-size: 10.5px; }.share-feedback.manual { border-color: var(--wao-primary-line); background: var(--wao-primary-soft); color: var(--wao-primary-text); }.share-feedback.error { border-color: var(--wao-danger-line); background: var(--wao-danger-bg); color: var(--wao-danger-strong); }.share-feedback input { grid-column: 1 / -1; width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 11px; }.cast-layout { margin-top: 22px; display: grid; grid-template-columns: minmax(260px, .9fr) minmax(250px, 1fr); gap: clamp(18px, 3vw, 34px); align-items: center; }
 .line-stack { padding: 13px 15px; display: flex; flex-direction: column; gap: 10px; border-radius: 13px; background: color-mix(in srgb, #3d756b 5%, var(--wao-bg-sub)); }.yao-row { min-height: 25px; display: grid; grid-template-columns: 23px minmax(110px, 1fr) 66px 24px; align-items: center; gap: 9px; }.line-position { color: var(--wao-text-weak); font-size: 10px; text-align: center; }.yao-shape { height: 11px; display: flex; gap: 15%; }.yao-shape i { display: block; flex: 1; border-radius: 2px; background: #283f3b; }.yao-shape:not(.yin) i { width: 100%; }.yao-row.changing .yao-shape i { background: #b36b42; box-shadow: 0 0 0 3px color-mix(in srgb, #b36b42 10%, transparent); }.line-value { color: var(--wao-text-weak); font-size: 9.5px; }.change-mark { width: 21px; height: 21px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, #b36b42 12%, transparent); color: #a85d36; font-size: 9px; font-weight: 700; }
 .hexagram-flow { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }.hex-card { min-width: 0; padding: 17px 10px; border: 1px solid color-mix(in srgb, #3d756b 24%, var(--wao-line)); border-radius: 13px; display: grid; justify-items: center; gap: 3px; background: color-mix(in srgb, #3d756b 4%, var(--wao-bg-card)); text-align: center; }.hex-card.primary { border-color: color-mix(in srgb, #ae7d40 35%, var(--wao-line)); background: color-mix(in srgb, #ae7d40 5%, var(--wao-bg-card)); }.hex-card > span { color: var(--wao-text-weak); font-size: 9px; }.hex-card > strong { color: #3d756b; font-size: 47px; line-height: 1.05; }.hex-card.primary > strong { color: #8e6534; }.hex-card > b { font-family: 'STKaiti', 'KaiTi', serif; font-size: 18px; }.hex-card > small { color: var(--wao-text-weak); font-size: 9px; }.hex-card.muted { opacity: .58; }.flow-arrow { display: grid; justify-items: center; gap: 3px; color: #a65f38; }.flow-arrow i { font-size: 20px; }.flow-arrow span { font-size: 8.5px; white-space: nowrap; }.flow-arrow.still { color: var(--wao-text-weak); }
 .reflection-card { padding: clamp(17px, 2.5vw, 23px); }.reflection-head { display: grid; grid-template-columns: 42px auto 1fr; align-items: center; gap: 11px; }.season-icon { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: color-mix(in srgb, #3d756b 11%, transparent); color: #3d756b; font-size: 21px; }.reflection-head span,.reflection-head strong { display: block; }.reflection-head span { color: var(--wao-text-weak); font-size: 9.5px; }.reflection-head strong { margin-top: 2px; font-size: 14px; }.reflection-head p { margin: 0 0 0 8px; color: var(--wao-text-3); font-size: 11px; line-height: 1.6; }
@@ -394,6 +434,6 @@ onMounted(() => {
 .boundary-card { padding: 15px; display: flex; align-items: flex-start; gap: 10px; }.boundary-icon { width: 34px; height: 34px; flex: none; border-radius: 9px; display: grid; place-items: center; background: var(--wao-warning-bg); color: var(--wao-warning-strong); }.boundary-card strong { font-size: 11px; }.boundary-card p { margin: 5px 0 0; color: var(--wao-text-weak); font-size: 9.5px; line-height: 1.65; }.method-card { padding: 16px; }.method-card > span { color: var(--wao-text-weak); font-size: 9px; }.method-card > strong { margin-top: 2px; display: block; font-size: 12px; }.method-card ol { margin: 11px 0 0; padding-left: 18px; color: var(--wao-text-weak); font-size: 9.5px; line-height: 1.75; }
 .spin { animation: spin .9s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } } @keyframes pulse { 50% { opacity: .35; transform: scale(.7); } } @keyframes typing { 50% { opacity: .25; transform: translateY(-2px); } }
 @media (max-width: 940px) { .content-grid { grid-template-columns: 1fr; }.side-column { grid-template-columns: repeat(2, minmax(0, 1fr)); }.history-card { grid-row: span 2; }.cast-layout { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 650px) { .tianren-page { padding: 18px 12px 34px; }.hero { display: grid; gap: 12px; }.sync-pill { justify-self: start; }.hero h1 { font-size: 34px; }.content-grid { gap: 12px; }.main-column,.side-column { gap: 12px; }.side-column { grid-template-columns: 1fr; }.history-card { grid-row: auto; }.cast-card,.reflection-card,.answer-card { border-radius: 13px; }.card-head { display: grid; }.once-pill { justify-self: start; }.cast-layout { grid-template-columns: 1fr; }.hexagram-flow { gap: 8px; }.reflection-head { grid-template-columns: 42px 1fr; }.reflection-head p { grid-column: 1 / -1; margin: 0; }.yao-row { grid-template-columns: 20px minmax(100px, 1fr) 62px 21px; gap: 6px; }.answer-error { align-items: flex-start; flex-wrap: wrap; }.answer-error span { min-width: calc(100% - 25px); } }
+@media (max-width: 650px) { .tianren-page { padding: 18px 12px 34px; }.hero { display: grid; gap: 12px; }.sync-pill { justify-self: start; }.hero h1 { font-size: 34px; }.content-grid { gap: 12px; }.main-column,.side-column { gap: 12px; }.side-column { grid-template-columns: 1fr; }.history-card { grid-row: auto; }.cast-card,.reflection-card,.answer-card { border-radius: 13px; }.card-head { display: grid; }.card-actions { justify-content: flex-start; }.cast-layout { grid-template-columns: 1fr; }.hexagram-flow { gap: 8px; }.reflection-head { grid-template-columns: 42px 1fr; }.reflection-head p { grid-column: 1 / -1; margin: 0; }.yao-row { grid-template-columns: 20px minmax(100px, 1fr) 62px 21px; gap: 6px; }.answer-error { align-items: flex-start; flex-wrap: wrap; }.answer-error span { min-width: calc(100% - 25px); } }
 @media (prefers-reduced-motion: reduce) { .spinner,.spin,.sync-dot,.typing i { animation: none !important; } }
 </style>

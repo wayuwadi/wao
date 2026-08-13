@@ -4,6 +4,7 @@ import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.TianrenInterpretRequest;
 import cn.wayuwa.wao.dto.TianrenReadingDto;
+import cn.wayuwa.wao.dto.TianrenShareTokenDto;
 import cn.wayuwa.wao.service.AiAssistantService;
 import cn.wayuwa.wao.service.TianrenReadingService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,6 +13,7 @@ import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -53,6 +55,12 @@ public class TianrenController {
     public ApiResponse<List<TianrenReadingDto>> history(
             @RequestParam(defaultValue = "14") int limit, HttpServletRequest http) {
         return ApiResponse.ok(readings.history(member(http), limit));
+    }
+
+    /** 为当前成员拥有的卦象生成或返回同一个公开分享凭据。 */
+    @PostMapping("/{id}/share")
+    public ApiResponse<TianrenShareTokenDto> share(@PathVariable String id, HttpServletRequest http) {
+        return ApiResponse.ok(new TianrenShareTokenDto(readings.createShareToken(member(http), id)));
     }
 
     /** 用既有本地 Codex 队列解读服务端保存的今日卦象。 */

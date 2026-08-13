@@ -491,6 +491,7 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 | lines_json | VARCHAR(32) | 初爻到上爻的六个 6/7/8/9；服务端生成并在读取时校验 |
 | primary_number / relating_number | TINYINT / TINYINT NULL | 文王卦序的本卦号与可选之卦号 |
 | conversation_id | VARCHAR(32) FK NULL | 成员私有 AI 解读会话；会话删除后置空，不删除卦象 |
+| share_token | CHAR(32) UNIQUE NULL | 成员主动分享时生成的 128 位随机公网访问凭据；空值表示尚未公开 |
 | created_at / updated_at | DATETIME(6) | 起卦时间与会话关联更新时间 |
 
 浏览器不能提交爻值和卦号；服务端模拟三枚硬币、映射六十四卦并持久化。AI 只读取服务端拼装的可信卦象上下文，

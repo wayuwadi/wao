@@ -50,6 +50,13 @@ const router = createRouter({
       component: () => import('@/views/ShareDocView.vue'),
       meta: { public: true },
     },
+    // “天人一卦”结果分享页：凭不可猜测 token 公开只读，不含成员与私有 AI 对话。
+    {
+      path: '/s/tianren/:token',
+      name: 'share-tianren',
+      component: () => import('@/views/TianrenShareView.vue'),
+      meta: { public: true },
+    },
     {
       path: '/',
       component: AppLayout,

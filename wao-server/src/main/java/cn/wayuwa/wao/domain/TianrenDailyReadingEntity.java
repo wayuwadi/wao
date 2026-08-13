@@ -17,6 +17,7 @@ public class TianrenDailyReadingEntity {
     private Integer primaryNumber;
     private Integer relatingNumber;
     private String conversationId;
+    private String shareToken;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -34,6 +35,8 @@ public class TianrenDailyReadingEntity {
     public void setRelatingNumber(Integer relatingNumber) { this.relatingNumber = relatingNumber; }
     public String getConversationId() { return conversationId; }
     public void setConversationId(String conversationId) { this.conversationId = conversationId; }
+    public String getShareToken() { return shareToken; }
+    public void setShareToken(String shareToken) { this.shareToken = shareToken; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

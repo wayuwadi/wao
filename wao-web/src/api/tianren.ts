@@ -26,6 +26,8 @@ export interface TianrenReading {
   createdAt: string
 }
 
+export type SharedTianrenReading = Omit<TianrenReading, 'id' | 'conversationId'>
+
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
 }
@@ -38,6 +40,14 @@ export const createTodayTianrenReading = () =>
 
 export const fetchTianrenHistory = (limit = 14) =>
   data<TianrenReading[]>(http.get('/api/tianren/readings', { params: { limit } }))
+
+export async function createTianrenShareLink(readingId: string): Promise<string> {
+  const { token } = await data<{ token: string }>(http.post(`/api/tianren/readings/${readingId}/share`))
+  return `${window.location.origin}/s/tianren/${token}`
+}
+
+export const fetchSharedTianrenReading = (token: string) =>
+  data<SharedTianrenReading>(http.get(`/api/share/tianren/${encodeURIComponent(token)}`))
 
 export async function* streamTianrenInterpretation(focus: string): AsyncGenerator<string> {
   yield* streamTextEvents('/api/tianren/readings/today/interpret/stream', { focus })
