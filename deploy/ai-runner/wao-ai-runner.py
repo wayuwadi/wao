@@ -38,6 +38,9 @@ RUN_WORKTREE_TTL_DAYS = 7
 RUN_REPORT_DIR = ".wao-run-reports"
 RUN_REPORT_FILE = "report.html"
 MAX_RUN_REPORT_BYTES = 10 * 1024 * 1024
+# 服务端和后台配置允许的单机并发上限。线程池按这个能力上限创建，但线程会按需启动；
+# 实际领取数仍由心跳返回的 maxConcurrency 动态控制。
+MAX_RUNNER_CONCURRENCY = 8
 # 被 WAO 解除接入后的退出码（EX_CONFIG）：不是崩溃，重启也没用，systemd 用
 # RestartPreventExitStatus=78 认这个码，避免每十秒重启一次刷屏。
 EXIT_PAIRING_REVOKED = 78
@@ -1280,9 +1283,21 @@ def resolve_engines(args: argparse.Namespace) -> dict[str, str]:
     return commands
 
 
+def resolve_runtime_concurrency(status: Any, current: int) -> int:
+    """读取服务端心跳返回的实际并发数；旧服务端或异常响应沿用当前值。"""
+    if not isinstance(status, dict) or status.get("maxConcurrency") is None:
+        return current
+    try:
+        configured = int(status["maxConcurrency"])
+    except (TypeError, ValueError):
+        return current
+    return max(1, min(MAX_RUNNER_CONCURRENCY, configured))
+
+
 def main() -> int:
     args = parse_args()
-    args.max_concurrency = max(1, min(8, args.max_concurrency))
+    args.max_concurrency = max(1, min(MAX_RUNNER_CONCURRENCY, args.max_concurrency))
+    runtime_concurrency = args.max_concurrency
     git_command = find_executable("git", args.git_command)
     engine_commands = resolve_engines(args)
     engines = list(engine_commands)
@@ -1294,7 +1309,8 @@ def main() -> int:
     root = Path(args.root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     cli_environment, github_token_ready, github_cli = build_cli_environment(git_command)
-    log(f"WAO AI Runner 已启动：工作区 {root}，并发 {args.max_concurrency}，日志 {LOG_FILE}")
+    log(f"WAO AI Runner 已启动：工作区 {root}，启动并发 {args.max_concurrency}，"
+        f"后台配置将在心跳后动态生效，日志 {LOG_FILE}")
     log("运行环境：Git=" + git_command
         + "".join(f"，{ENGINE_LABELS[name]}={path}" for name, path in engine_commands.items()))
     log(f"GitHub 自动授权：凭据={'可用' if github_token_ready else '不可用'}，"
@@ -1308,7 +1324,7 @@ def main() -> int:
     last_credentials_sync = time.monotonic()
     last_reported_log_hash: str | None = None
     CREDENTIALS_SYNC_INTERVAL_SECONDS = 300
-    with ThreadPoolExecutor(max_workers=args.max_concurrency, thread_name_prefix="wao-ai") as executor:
+    with ThreadPoolExecutor(max_workers=MAX_RUNNER_CONCURRENCY, thread_name_prefix="wao-ai") as executor:
         while True:
             futures = {future for future in futures if not future.done()}
             try:
@@ -1323,6 +1339,10 @@ def main() -> int:
                 heartbeat_body = {"logTail": log_tail} if log_hash != last_reported_log_hash else {}
                 status = api.post(f"/api/ai/runner/heartbeat?{heartbeat_query}", heartbeat_body)
                 last_reported_log_hash = log_hash
+                next_concurrency = resolve_runtime_concurrency(status, runtime_concurrency)
+                if next_concurrency != runtime_concurrency:
+                    log(f"后台并发配置已生效：{runtime_concurrency} → {next_concurrency}")
+                    runtime_concurrency = next_concurrency
                 if isinstance(status, dict) and status.get("updateRequested"):
                     # 后台下发了脚本更新：不再领新任务，等在跑的任务收尾后原地升级重启。
                     if futures:
@@ -1333,7 +1353,7 @@ def main() -> int:
                     if args.sync_ai_credentials and time.monotonic() - last_credentials_sync >= CREDENTIALS_SYNC_INTERVAL_SECONDS:
                         sync_ai_credentials(api, Path.home())
                         last_credentials_sync = time.monotonic()
-                    while len(futures) < args.max_concurrency:
+                    while len(futures) < runtime_concurrency:
                         claim = api.post("/api/ai/runner/claim")
                         if not claim and "codex" in engine_commands:
                             assistant_claim = api.post("/api/ai/runner/assistant/claim")

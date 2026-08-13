@@ -717,7 +717,7 @@ public class AiRunService {
                 .last("LIMIT 30")));
     }
 
-    /** 节点心跳；同时刷新并发能力和本机可用的 AI 工具，便于用户调整 runner 参数后立即生效。 */
+    /** 节点心跳；刷新本机能力，并在响应中返回后台优先的实际并发数供 Runner 动态生效。 */
     public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines, String scriptHash,
             String wakeMac, String wakeHost, String logTail) {
         AiRunnerNodeEntity runner = requireRunner(token);
