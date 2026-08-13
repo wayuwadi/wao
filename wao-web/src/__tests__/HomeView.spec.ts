@@ -206,6 +206,7 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.weekly-quota').text()).toContain('周剩余额度')
     expect(wrapper.find('.weekly-quota').text()).toContain('100%')
     expect(wrapper.find('.evolution-panel').text()).toContain('已满足 12 小时空闲')
+    expect(wrapper.find('.evolution-policy').text()).toContain('建议挖掘和自动派发只选择用户可感知的功能与提效改进')
     expect(wrapper.find('.suggestion-card').text()).toContain('找出并消除一个高频使用阻力')
 
     await wrapper.find('.suggestion-card button').trigger('click')

@@ -42,6 +42,10 @@ public class AiEvolutionService {
     private static final int IDLE_HOURS = 12;
     private static final int CHECK_MINUTES = 15;
     private static final int SUGGESTION_COUNT = 5;
+    private static final String USER_VALUE_CONTRACT = "用户价值验收：本次交付必须以用户可直接使用的新能力、"
+            + "操作提效或体验改善为主要结果，并用真实用户链路说明改动前后的差异；"
+            + "测试、文档、重构和依赖升级只能作为支撑，不能单独作为交付。"
+            + "如果没有可靠数据源或无法在单个 PR 内产出可感知结果，不要伪造功能，按约定跳过并说明原因。";
 
     private final AiAccountService accounts;
     private final AiRunService runs;
@@ -130,7 +134,7 @@ public class AiEvolutionService {
     public AiRunDto launchSuggestion(String suggestionId, String projectId, String requestedBy, String requestBaseUrl) {
         AiEvolutionSuggestionDto suggestion = suggestions.find(suggestionId);
         if (suggestion == null) throw new BadRequestException("这条改进建议不存在或已下线");
-        return runs.launchGoal(projectId, suggestion.goal(), requestedBy, requestBaseUrl);
+        return runs.launchGoal(projectId, withUserValueContract(suggestion.goal()), requestedBy, requestBaseUrl);
     }
 
     /**
@@ -190,7 +194,8 @@ public class AiEvolutionService {
                 outcome("没有与可用额度账号匹配的 WAO 工作流", null, suggestion.id());
                 return;
             }
-            AiRunDto run = runs.launchGoal(candidate.workflow.projectId(), suggestion.goal(), "system",
+            AiRunDto run = runs.launchGoal(candidate.workflow.projectId(),
+                    withUserValueContract(suggestion.goal()), "system",
                     publicBaseUrl, candidate.quota.accountId());
             outcome("已自动派发「" + suggestion.title() + "」", run.id(), suggestion.id());
         } catch (RuntimeException ex) {
@@ -313,10 +318,11 @@ public class AiEvolutionService {
                 规则：
                 1. 每条必须由某一个 source 的明确内容支持，站在“给当前系统增加或完善真实功能”的需求/任务角度表达。
                 2. 不得把闲聊、已经完成的结果、纯愿望口号、通用代码巡检或资料中不存在的能力包装成任务。
-                3. 避开“现有未完成任务”和“上一批建议”；5 条之间标题与目标也不得重复。
-                4. 标题不超过 40 字；description 用不超过 120 字说清用户结果；goal 不超过 1200 字，写成可直接交给开发 AI 的完整中文目标，包含要解决的问题、可观察结果、真实性边界和验收重点。
-                5. sourceIndex 必须是下方真实存在的来源编号。证据不足 5 条时返回 error，不要凑数。
-                6. 只输出一个 JSON 对象，不要 Markdown 代码围栏或额外解释：
+                3. 优先选择用户可直接使用的新功能、能减少重复操作的提效能力或能恢复工作的体验改善；纯测试补齐、纯文档修订、纯重构、依赖升级和其它只有开发者能感知的技术优化不能作为候选。
+                4. 避开“现有未完成任务”和“上一批建议”；5 条之间标题与目标也不得重复。
+                5. 标题不超过 40 字；description 用不超过 120 字说清用户结果；goal 不超过 1200 字，写成可直接交给开发 AI 的完整中文目标，包含要解决的问题、可观察结果、真实性边界和验收重点。
+                6. sourceIndex 必须是下方真实存在的来源编号。证据不足 5 条功能或提效候选时返回 error，不要用纯技术优化凑数。
+                7. 只输出一个 JSON 对象，不要 Markdown 代码围栏或额外解释：
                 {"suggestions":[{"title":"...","description":"...","goal":"...","sourceIndex":1}]}
                 如果不足：{"error":"具体原因","suggestions":[]}
 
@@ -362,10 +368,10 @@ public class AiEvolutionService {
             if (previousTitles.contains(titleKey)) {
                 throw new BadRequestException("本地 Codex 重复了上一批任务，请再次刷新");
             }
-            String groundedGoal = title + "\n\n任务线索来自 WAO 真实资产「"
+            String groundedGoal = withUserValueContract(title + "\n\n任务线索来自 WAO 真实资产「"
                     + source.title() + "」（" + source.url() + "）。\n\n"
                     + goal + "\n\n开始实现前请先核对来源线索与当前代码、规格和已有任务；"
-                    + "若真实数据或官方接口不支持，不要制造演示数据或占位能力。";
+                    + "若真实数据或官方接口不支持，不要制造演示数据或占位能力。");
             generated.add(new AiEvolutionSuggestionDto(id("es"), title, description,
                     "chat".equals(source.type()) ? "ri-chat-3-line" : "ri-book-open-line",
                     groundedGoal, source.title(), source.url()));
@@ -400,6 +406,10 @@ public class AiEvolutionService {
 
     private static String id(String prefix) {
         return prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
+    }
+
+    private static String withUserValueContract(String goal) {
+        return goal.contains("用户价值验收：") ? goal : goal + "\n\n" + USER_VALUE_CONTRACT;
     }
 
     private static String shorten(String value) {
