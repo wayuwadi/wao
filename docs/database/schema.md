@@ -82,7 +82,7 @@ erDiagram
 | start_date | VARCHAR(16) NULL | 开始；可在任务属性栏直接改，空串表示未排期 |
 | due_date | VARCHAR(16) | 截止；同上 |
 | waiting | VARCHAR(64) NULL | 等待他人标记 |
-| description | TEXT | 描述 |
+| description | MEDIUMTEXT | 描述；V60 起支持不受 4000 字人为上限的长 Markdown，图片仍应存图床并只保留稳定 URL |
 | detail_json | JSON | parts[], steps[], subs[], files[]（真实文件引用含 `file_blob.id`，历史展示附件可为空）, docs[], linkTasks[], comments[], custom[], activity[]（条目含 by=操作人成员 id）, images[], groupId（所属任务分组）, startAt/endAt（可选日历时间段，格式 `yyyy-MM-ddTHH:mm`，endAt 必须晚于 startAt）, pdcaCycles[]（多轮计划、检查、改进行动与闭环时间，见 ADR-048） |
 
 ## 内容 / 参考域（文档表，只读）
@@ -598,4 +598,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V57__personal_vocabulary_notebook.sql`：成员私有单词、个人释义、遇见与主动复习计数。
 - `V58__personal_action_plan.sql`：成员私有长期目标、周期行动版本、每日打卡、事实复盘与飞书私聊投递状态。
 - `V59__english_learning_practice.sql`：成员私有英语目标、每日听说读写训练、信心与迭代复盘。
+- `V60__expand_task_description.sql`：任务描述升级为 `MEDIUMTEXT`，完整承载长 Markdown 自主目标。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

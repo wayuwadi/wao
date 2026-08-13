@@ -179,6 +179,26 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
+  it('长目标不再被 4000 字的人为上限拦住', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+    const longGoal = `完成这个长目标\n${'详细背景'.repeat(1_100)}`
+
+    const editor = wrapper.findComponent(MarkdownEditor)
+    editor.vm.$emit('update:modelValue', longGoal)
+    await flushPromises()
+
+    expect(longGoal.length).toBeGreaterThan(4_000)
+    expect(wrapper.find('.goal-shortcut').text()).toContain(`${longGoal.length} 字`)
+    expect(wrapper.find('.goal-shortcut').text()).not.toContain('/ 4000')
+    expect(wrapper.find('.goal-submit').attributes('disabled')).toBeUndefined()
+    await wrapper.find('.goal-submit').trigger('click')
+    await flushPromises()
+    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', longGoal)
+    wrapper.unmount()
+  })
+
   it('自主目标可以一次粘贴多张图片，全部上传并内联后再派发', async () => {
     vi.useFakeTimers()
     const { data, wrapper } = mountHome()

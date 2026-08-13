@@ -445,7 +445,6 @@ public class AiRunService {
     public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl) {
         String normalizedGoal = trim(goal);
         if (!StringUtils.hasText(normalizedGoal)) throw new BadRequestException("请先写下想让 AI 完成的目标");
-        if (normalizedGoal.length() > 4_000) throw new BadRequestException("目标最多 4000 个字");
 
         cn.wayuwa.wao.dto.TaskDto task = tasks.create(new CreateTaskRequest(
                 goalTitle(normalizedGoal), projectId, "P2", requestedBy, "",

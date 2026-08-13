@@ -160,9 +160,13 @@ class AiRunServiceTest {
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
-        AiRunDto result = service.launchGoal("p1", "## 把黄帝内经和易经结合 AI\n做成每日一卦产品", "wg", "https://wao.example");
+        String longContext = "详细背景".repeat(1_100);
+        String goal = "## 把黄帝内经和易经结合 AI\n做成每日一卦产品\n" + longContext;
+
+        AiRunDto result = service.launchGoal("p1", goal, "wg", "https://wao.example");
 
         assertThat(result.taskId()).isEqualTo("t1");
+        assertThat(goal.length()).isGreaterThan(4_000);
         ArgumentCaptor<CreateTaskRequest> request = ArgumentCaptor.forClass(CreateTaskRequest.class);
         verify(tasks).create(request.capture(), eq("wg"));
         assertThat(request.getValue().title()).isEqualTo("把黄帝内经和易经结合 AI");
@@ -170,7 +174,8 @@ class AiRunServiceTest {
                 .contains("做成每日一卦产品")
                 .contains("自主执行约定")
                 .contains("主动盘点")
-                .contains("自己拆解");
+                .contains("自己拆解")
+                .contains(longContext);
         verify(runMapper).insert(any(AiTaskRunEntity.class));
     }
 
