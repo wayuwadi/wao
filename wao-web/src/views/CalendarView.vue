@@ -1,13 +1,20 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { fetchCaldavAccounts, fetchCaldavEvents, type CaldavAccount, type CaldavEvent } from '@/api/caldav'
+import { fetchAlternateWorkWeek, saveAlternateWorkWeek } from '@/api/workSchedule'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
 import type { Task } from '@/types'
+import {
+  defaultAlternateWorkWeek,
+  parseAlternateWorkWeek,
+  workWeekForDate,
+  type AlternateWorkWeekSchedule,
+} from '@/utils/workSchedule'
 // 配置面板打开才需要，不进日历页首屏包。
 const CaldavPanel = defineAsyncComponent(() => import('@/components/calendar/CaldavPanel.vue'))
 
@@ -41,6 +48,89 @@ watch(() => session.currentUser.id, (memberId) => {
 }, { immediate: true })
 
 const DOWS = computed(() => preferences.weekStart === '周日' ? ['日', '一', '二', '三', '四', '五', '六'] : ['一', '二', '三', '四', '五', '六', '日'])
+
+// ---------- 大小周：成员级持久化配置 + 确定性日历标识 ----------
+const workSchedule = ref<AlternateWorkWeekSchedule>(defaultAlternateWorkWeek(data.today))
+const workScheduleLoading = ref(true)
+const workScheduleLoadError = ref('')
+const showWorkScheduleConfig = ref(false)
+const workScheduleSaving = ref(false)
+const workScheduleSaveError = ref('')
+const workScheduleDraft = reactive<AlternateWorkWeekSchedule>(defaultAlternateWorkWeek(data.today))
+const workScheduleDraftKey = computed(() => `wao-work-week-draft:${session.currentUser.id || 'anonymous'}`)
+
+const thisWeekInfo = computed(() => workWeekForDate(data.today, workSchedule.value))
+const workScheduleState = computed(() => {
+  if (workScheduleLoading.value) return { label: '我的大小周 · 读取中', dot: '#9A9DA9' }
+  if (workScheduleLoadError.value) return { label: '我的大小周 · 读取失败', dot: '#D9634C' }
+  if (!thisWeekInfo.value) return { label: '设置我的大小周', dot: '#9A9DA9' }
+  return {
+    label: `本周 · ${thisWeekInfo.value.label} · ${thisWeekInfo.value.restLabel}`,
+    dot: thisWeekInfo.value.type === 'big' ? '#D9634C' : '#2C8A5B',
+  }
+})
+
+async function loadWorkSchedule() {
+  workScheduleLoading.value = true
+  workScheduleLoadError.value = ''
+  try {
+    workSchedule.value = await fetchAlternateWorkWeek(data.today)
+    if (showWorkScheduleConfig.value && !localStorage.getItem(workScheduleDraftKey.value)) {
+      copyWorkSchedule(workScheduleDraft, workSchedule.value)
+    }
+  } catch (error) {
+    workScheduleLoadError.value = error instanceof Error ? error.message : '读取大小周配置失败'
+  } finally {
+    workScheduleLoading.value = false
+  }
+}
+
+function copyWorkSchedule(target: AlternateWorkWeekSchedule, source: AlternateWorkWeekSchedule) {
+  target.enabled = source.enabled
+  target.anchorWeek = source.anchorWeek
+  target.anchorType = source.anchorType
+}
+
+function openWorkScheduleConfig() {
+  workScheduleSaveError.value = ''
+  const savedDraft = localStorage.getItem(workScheduleDraftKey.value)
+  const restored = savedDraft ? parseAlternateWorkWeek(savedDraft) : null
+  copyWorkSchedule(workScheduleDraft, restored ?? workSchedule.value)
+  showWorkScheduleConfig.value = true
+}
+
+function closeWorkScheduleConfig() {
+  if (workScheduleSaving.value) return
+  localStorage.removeItem(workScheduleDraftKey.value)
+  showWorkScheduleConfig.value = false
+}
+
+watch(workScheduleDraft, (value) => {
+  if (showWorkScheduleConfig.value) localStorage.setItem(workScheduleDraftKey.value, JSON.stringify(value))
+}, { deep: true })
+
+async function retryLoadWorkSchedule() {
+  await loadWorkSchedule()
+  if (!workScheduleLoadError.value) copyWorkSchedule(workScheduleDraft, workSchedule.value)
+}
+
+async function submitWorkSchedule() {
+  workScheduleSaving.value = true
+  workScheduleSaveError.value = ''
+  try {
+    const saved = await saveAlternateWorkWeek({ ...workScheduleDraft })
+    workSchedule.value = saved
+    copyWorkSchedule(workScheduleDraft, saved)
+    localStorage.removeItem(workScheduleDraftKey.value)
+    showWorkScheduleConfig.value = false
+    const info = workWeekForDate(data.today, saved)
+    toast(info ? `大小周已保存：本周是${info.label}（${info.restLabel}）` : '大小周已关闭', 'ri-calendar-check-line')
+  } catch (error) {
+    workScheduleSaveError.value = error instanceof Error ? error.message : '保存大小周配置失败'
+  } finally {
+    workScheduleSaving.value = false
+  }
+}
 
 // ---------- CalDAV：账户状态 + 当月事件 ----------
 const accounts = ref<CaldavAccount[]>([])
@@ -83,6 +173,7 @@ function iso(d: Date) {
 onMounted(() => {
   loadCaldav()
   loadEvents()
+  loadWorkSchedule()
 })
 watch([calY, calM], loadEvents)
 
@@ -149,6 +240,7 @@ const month = computed(() => {
   const cells: {
     iso: string; label: string; isToday: boolean; items: CalEvt[]; more: string
     numBg: string; numColor: string; bg: string
+    workWeek: ReturnType<typeof workWeekForDate>
   }[] = []
   for (let i = 0; i < total; i++) {
     const dnum = i - off + 1
@@ -178,6 +270,7 @@ const month = computed(() => {
       numBg: isToday ? '#4358D6' : 'transparent',
       numColor: isToday ? '#FFFFFF' : inM ? '#3E414D' : '#C4C7D2',
       bg: inM ? '#FFFFFF' : '#FBFBFC',
+      workWeek: d.getDay() === 0 ? workWeekForDate(dayIso, workSchedule.value) : null,
     })
   }
   const weeks: (typeof cells)[] = []
@@ -230,7 +323,13 @@ const weekDays = computed(() => {
   return Array.from({ length: 7 }, (_, i) => {
     const date = new Date(start); date.setDate(start.getDate() + i)
     const day = iso(date)
-    return { iso: day, label: `${date.getMonth() + 1}月${date.getDate()}日`, isToday: day === data.today, items: events.value.filter((event) => event.date === day) }
+    return {
+      iso: day,
+      label: `${date.getMonth() + 1}月${date.getDate()}日`,
+      isToday: day === data.today,
+      items: events.value.filter((event) => event.date === day),
+      workWeek: date.getDay() === 0 ? workWeekForDate(day, workSchedule.value) : null,
+    }
   })
 })
 const dayView = computed(() => {
@@ -241,6 +340,7 @@ const dayView = computed(() => {
     label: `${date.getMonth() + 1}月${date.getDate()}日`,
     isToday: day === data.today,
     items: events.value.filter((event) => event.date === day),
+    workWeek: workWeekForDate(day, workSchedule.value),
   }]
 })
 const timelineDays = computed(() => viewMode.value === 'day' ? dayView.value : weekDays.value)
@@ -377,6 +477,9 @@ function onDropDay(dayIso: string) {
       <button class="caldav" title="配置 CalDAV 日历账户" @click="showCaldavConfig = true">
         <span class="cd-dot" :style="{ background: caldavState.dot }"></span>{{ caldavState.label }}<i class="ri-settings-3-line"></i>
       </button>
+      <button class="work-schedule" title="配置我的大小周" @click="openWorkScheduleConfig">
+        <span class="cd-dot" :style="{ background: workScheduleState.dot }"></span>{{ workScheduleState.label }}<i class="ri-settings-3-line"></i>
+      </button>
       <label class="member-calendar">
         <i class="ri-user-line"></i>
         <select v-model="calendarMemberId" title="选择要查看的成员日历">
@@ -417,6 +520,9 @@ function onDropDay(dayIso: string) {
             @drop.prevent="onDropDay(dy.iso)"
           >
             <div class="day-num" :style="{ background: dy.numBg, color: dy.numColor }" @dblclick="quickCreate(dy.iso)">{{ dy.label }}</div>
+            <div v-if="dy.workWeek" class="work-week-mark" :class="dy.workWeek.type">
+              {{ dy.workWeek.label }} · {{ dy.workWeek.restLabel }}
+            </div>
             <div class="day-events" @dblclick.self="quickCreate(dy.iso)">
               <button
                 v-for="(ev, ei) in dy.items"
@@ -443,6 +549,7 @@ function onDropDay(dayIso: string) {
             <div class="time-axis-head"></div>
             <div v-for="(day, index) in timelineDays" :key="`head-${day.iso}`" class="week-date" :class="{ today: day.isToday }">
               {{ viewMode === 'week' ? DOWS[index] : '' }} {{ day.label }}
+              <span v-if="day.workWeek" class="timeline-work-week" :class="day.workWeek.type">{{ day.workWeek.label }} · {{ day.workWeek.restLabel }}</span>
             </div>
             <div class="time-axis">
               <span v-for="hour in hours" :key="hour" :style="{ top: `${hour * 60}px` }">{{ String(hour).padStart(2, '0') }}:00</span>
@@ -538,6 +645,53 @@ function onDropDay(dayIso: string) {
         </div>
       </div>
     </template>
+
+    <!-- 大小周配置浮层 -->
+    <template v-if="showWorkScheduleConfig">
+      <div class="cd-mask" @click="closeWorkScheduleConfig"></div>
+      <div class="work-schedule-modal" role="dialog" aria-modal="true" aria-labelledby="work-schedule-title">
+        <div class="cd-head">
+          <div id="work-schedule-title" class="cd-title">我的大小周</div>
+          <div class="spacer"></div>
+          <button class="cd-close" aria-label="关闭大小周配置" :disabled="workScheduleSaving" @click="closeWorkScheduleConfig"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="work-schedule-body">
+          <div v-if="workScheduleLoading" class="work-schedule-state"><i class="ri-loader-4-line spinning"></i>正在读取已保存的大小周配置…</div>
+          <div v-else-if="workScheduleLoadError" class="work-schedule-state error">
+            <span>读取失败：{{ workScheduleLoadError }}</span>
+            <button type="button" @click="retryLoadWorkSchedule">重新读取</button>
+          </div>
+          <form v-else @submit.prevent="submitWorkSchedule">
+            <label class="work-schedule-toggle">
+              <span><b>启用大小周</b><small>大周周日上班，小周周六、周日双休</small></span>
+              <input v-model="workScheduleDraft.enabled" type="checkbox" />
+            </label>
+            <fieldset :disabled="!workScheduleDraft.enabled || workScheduleSaving">
+              <legend>选择一个已知周作为轮换参照</legend>
+              <label class="work-schedule-field">
+                <span>参照周内任意一天</span>
+                <input v-model="workScheduleDraft.anchorWeek" type="date" required />
+              </label>
+              <label class="work-schedule-field">
+                <span>这一周是</span>
+                <select v-model="workScheduleDraft.anchorType">
+                  <option value="small">小周（双休）</option>
+                  <option value="big">大周（周日上班）</option>
+                </select>
+              </label>
+            </fieldset>
+            <p class="work-schedule-help">保存后，日历会按自然周自动向前、向后交替标记；不会创建或修改任何日程。</p>
+            <div v-if="workScheduleSaveError" class="work-schedule-state error compact">保存失败：{{ workScheduleSaveError }}。草稿仍在，可直接重试。</div>
+            <div class="work-schedule-actions">
+              <button type="button" class="work-schedule-cancel" :disabled="workScheduleSaving" @click="closeWorkScheduleConfig">取消</button>
+              <button type="submit" class="work-schedule-save" :disabled="workScheduleSaving">
+                <i v-if="workScheduleSaving" class="ri-loader-4-line spinning"></i>{{ workScheduleSaving ? '保存中…' : workScheduleSaveError ? '重试保存' : '保存设置' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -568,7 +722,7 @@ function onDropDay(dayIso: string) {
   position: sticky;
   top: 0;
   z-index: 6;
-  height: 38px;
+  height: 48px;
   background: var(--wao-bg-sub);
   border-bottom: 1px solid var(--wao-divider);
 }
@@ -643,7 +797,7 @@ function onDropDay(dayIso: string) {
 }
 .all-day-strip {
   position: sticky;
-  top: 38px;
+  top: 48px;
   z-index: 4;
   display: grid;
   gap: 2px;
@@ -694,7 +848,7 @@ function onDropDay(dayIso: string) {
   height: 7px;
   border-radius: 2px;
 }
-.caldav {
+.caldav, .work-schedule {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -706,7 +860,7 @@ function onDropDay(dayIso: string) {
   color: var(--wao-text-2);
   cursor: pointer;
 }
-.caldav:hover {
+.caldav:hover, .work-schedule:hover {
   border-color: #c9cdda;
   background: var(--wao-bg-sub);
 }
@@ -715,7 +869,7 @@ function onDropDay(dayIso: string) {
   height: 6px;
   border-radius: 50%;
 }
-.caldav i {
+.caldav i, .work-schedule i {
   font-size: 12px;
   color: var(--wao-text-weak);
 }
@@ -837,6 +991,36 @@ function onDropDay(dayIso: string) {
   align-items: center;
   justify-content: center;
   font-size: 12px;
+}
+.work-week-mark {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 3px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #edf8f1;
+  color: #25734b;
+  font-size: 9.5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.work-week-mark.big, .timeline-work-week.big { background: #fff1ed; color: #ad4934; }
+.timeline-work-week {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 2px auto 0;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #edf8f1;
+  color: #25734b;
+  font-size: 9px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .day-events {
   margin-top: 3px;
@@ -1047,6 +1231,76 @@ function onDropDay(dayIso: string) {
   animation: waoPop 0.16s ease;
   overflow: hidden;
 }
+.work-schedule-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(480px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  z-index: 101;
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border-radius: 14px;
+  background: var(--wao-bg-page);
+  box-shadow: var(--wao-shadow-modal);
+  animation: waoFade 0.15s ease;
+}
+.work-schedule-body { padding: 4px 20px 20px; }
+.work-schedule-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  color: var(--wao-text-weak);
+  font-size: 13px;
+}
+.work-schedule-state.error { flex-wrap: wrap; color: #ad4934; }
+.work-schedule-state.error button {
+  border: 1px solid #e6b7ac;
+  border-radius: 7px;
+  padding: 5px 9px;
+  background: #fff7f5;
+  color: #ad4934;
+  cursor: pointer;
+}
+.work-schedule-state.compact { justify-content: flex-start; min-height: 0; margin-top: 12px; }
+.work-schedule-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  background: var(--wao-bg-card);
+}
+.work-schedule-toggle span, .work-schedule-toggle small { display: block; }
+.work-schedule-toggle b { font-size: 14px; }
+.work-schedule-toggle small { margin-top: 3px; color: var(--wao-text-weak); font-size: 11.5px; }
+.work-schedule-toggle input { width: 18px; height: 18px; accent-color: var(--wao-primary); }
+.work-schedule-body fieldset { margin: 16px 0 0; padding: 12px; border: 1px solid var(--wao-line); border-radius: 10px; }
+.work-schedule-body fieldset:disabled { opacity: .48; }
+.work-schedule-body legend { padding: 0 5px; color: var(--wao-text-3); font-size: 12px; }
+.work-schedule-field { display: grid; grid-template-columns: 135px 1fr; align-items: center; gap: 10px; margin-top: 10px; color: var(--wao-text-2); font-size: 12px; }
+.work-schedule-field:first-of-type { margin-top: 2px; }
+.work-schedule-field input, .work-schedule-field select {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-1);
+}
+.work-schedule-help { margin: 12px 2px 0; color: var(--wao-text-weak); font-size: 11.5px; line-height: 1.6; }
+.work-schedule-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.work-schedule-actions button { height: 34px; border-radius: 8px; padding: 0 14px; cursor: pointer; }
+.work-schedule-actions button:disabled { cursor: not-allowed; opacity: .6; }
+.work-schedule-cancel { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); }
+.work-schedule-save { border: 0; background: var(--wao-primary); color: #fff; }
+.spinning { display: inline-block; animation: waoSpin .8s linear infinite; }
+@keyframes waoSpin { to { transform: rotate(360deg); } }
 .cd-head {
   display: flex;
   align-items: center;
