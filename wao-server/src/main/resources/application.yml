@@ -56,6 +56,10 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  ai:
+    evolution:
+      # 额度同步必须从具备受控出口的 Linux 主节点发起；其它节点保持关闭。
+      scheduler-enabled: ${WAO_AI_EVOLUTION_SCHEDULER_ENABLED:false}
   share:
     # 分享 Markdown 里图片的绝对地址前缀。留空则按当前请求推导（依赖 Nginx 透传
     # X-Forwarded-Proto / Host）；代理层不透传时在此写死，如 https://wao.wayuwa.cn

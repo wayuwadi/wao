@@ -82,6 +82,22 @@ class AiEvolutionServiceTest {
     }
 
     @Test
+    void exactlyHalfQuotaKeepsAutomaticEvolutionPaused() {
+        when(stateMapper.update(isNull(), any())).thenReturn(1);
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(accounts.weeklyQuotas()).thenReturn(List.of(new AiWeeklyQuotaDto(
+                "aa1", "codex", "Codex", "plus", 50, 50, "2026-08-17T10:00:00",
+                LocalDateTime.now().toString(), "SYNCED", "七天额度已用 50%")));
+
+        service.checkAndLaunch();
+        AiEvolutionOverviewDto overview = service.overview();
+
+        verify(runs, org.mockito.Mockito.never()).launchGoal(any(), any(), any(), any(), any());
+        assertThat(overview.autoStatus()).isEqualTo("quota_unavailable");
+        assertThat(overview.autoMessage()).contains("未高于 50%");
+    }
+
+    @Test
     void recentAiActivityPreventsQuotaRefreshAndAutomaticLaunch() {
         when(stateMapper.update(isNull(), any())).thenReturn(1);
         when(runMapper.selectCount(any())).thenReturn(0L);
