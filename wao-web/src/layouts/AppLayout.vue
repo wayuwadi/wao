@@ -368,7 +368,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   }
   .main {
     height: 100%;
-    padding-bottom: 64px;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
   }
   .header {
     height: 48px;

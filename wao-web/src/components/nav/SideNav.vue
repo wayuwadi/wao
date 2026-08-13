@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/composables/toast'
+import { useIsMobile } from '@/composables/viewport'
 import { useNavStore } from '@/stores/nav'
 import { useSessionStore } from '@/stores/session'
 import { useFavoritesStore } from '@/stores/favorites'
@@ -17,6 +18,8 @@ const session = useSessionStore()
 const favorites = useFavoritesStore()
 const route = useRoute()
 const router = useRouter()
+const isMobile = useIsMobile()
+const menuRef = ref<HTMLElement | null>(null)
 
 const activeItem = computed<NavItemId | undefined>(() =>
   route.meta.tabKind === 'external'
@@ -25,6 +28,22 @@ const activeItem = computed<NavItemId | undefined>(() =>
 )
 
 const groups = computed(() => nav.groups)
+const groupFingerprint = computed(() => groups.value.flatMap((group) => group.items).join('|'))
+
+/**
+ * 底部导航可能比屏幕宽；从地址栏、收藏或页面内跳转到后半段模块时，把当前入口带回视口。
+ */
+function revealActiveMobileItem() {
+  if (!isMobile.value) return
+  void nextTick(() => {
+    menuRef.value?.querySelector<HTMLElement>('.item.active')?.scrollIntoView({
+      block: 'nearest',
+      inline: 'center',
+    })
+  })
+}
+
+watch([isMobile, activeItem, groupFingerprint], revealActiveMobileItem, { immediate: true })
 
 onMounted(() => {
   nav.loadPersonalOrder()
@@ -113,7 +132,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
       </button>
     </div>
 
-    <nav class="menu">
+    <nav ref="menuRef" class="menu" aria-label="模块导航">
       <template v-for="g in groups" :key="g.label || 'root'">
         <button
           v-if="g.label && !nav.collapsed"
@@ -126,7 +145,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
         </button>
         <div v-else-if="g.label && nav.collapsed" class="group-gap"></div>
 
-        <div v-if="!nav.isFolded(g.label) || nav.collapsed" class="items">
+        <!-- 手机没有分组展开按钮，必须始终展示全部可见模块，不能复用桌面的折叠状态。 -->
+        <div v-if="isMobile || !nav.isFolded(g.label) || nav.collapsed" class="items">
           <button
             v-for="id in g.items"
             :key="id"
