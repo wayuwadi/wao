@@ -2,8 +2,12 @@ package cn.wayuwa.wao.service;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.AiEvolutionStateEntity;
@@ -16,8 +20,12 @@ import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AiEvolutionStateMapper;
 import cn.wayuwa.wao.mapper.AiTaskRunMapper;
+import cn.wayuwa.wao.service.AiAssistantAssetService.TaskMiningContext;
+import cn.wayuwa.wao.service.AiAssistantAssetService.TaskMiningSource;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,41 +41,33 @@ public class AiEvolutionService {
     private static final int MIN_REMAINING_PERCENT = 50;
     private static final int IDLE_HOURS = 12;
     private static final int CHECK_MINUTES = 15;
-
-    private static final List<AiEvolutionSuggestionDto> SUGGESTIONS = List.of(
-            new AiEvolutionSuggestionDto("ux-friction", "找出并消除一个高频使用阻力",
-                    "从真实首页、任务或 AI Run 链路中选择一个可复现的体验问题，完成修复和验收。",
-                    "ri-magic-line",
-                    "请对 WAO 当前真实用户链路做一次小范围体验走查，选择一个高频、可复现且能在单个 PR 内完成的使用阻力。先阅读相关规格和现有测试，说明根因后直接修复；覆盖加载、成功、失败和窄屏等相关状态，完成与风险相称的自动化测试和真实链路验收。不要扩大到产品重构，不要制造演示数据。"),
-            new AiEvolutionSuggestionDto("test-gap", "补上一个最有价值的测试缺口",
-                    "检查近期核心链路和历史回归点，补齐一个能真实拦截问题的测试或修复。",
-                    "ri-test-tube-line",
-                    "请检查 WAO 近期变更、核心业务链路和现有测试，找出一个最可能导致真实回归但尚未被覆盖的测试缺口。若能复现缺陷则一并修复；补充能在 CI 中稳定运行的测试，执行相关测试并说明它具体拦住什么回归。不要为了覆盖率写无行为价值的断言，不要改动无关模块。"),
-            new AiEvolutionSuggestionDto("docs-drift", "消除一处规格与实现漂移",
-                    "核对规格、ADR、API 契约和代码，修正一处会误导后续开发的真实偏差。",
-                    "ri-file-search-line",
-                    "请核对 WAO 的规格、ADR、API 契约与当前实现，选择一处会实际误导使用或后续开发的漂移。以真实实现条件和产品目标为准，修正代码或文档并补充必要验证；接口、数据结构或部署行为有变化时同步契约。不要只做措辞美化，不要覆盖已有决策历史。"),
-            new AiEvolutionSuggestionDto("maintainability", "偿还一笔小而确定的技术债",
-                    "从重复逻辑、错误状态或可维护性问题中选一项，保持行为可验证。",
-                    "ri-tools-line",
-                    "请在 WAO 当前代码中选择一笔小而确定、能在单个 PR 内偿还的技术债，优先处理重复且容易不一致的逻辑、含糊的错误状态或已有 TODO 对应的真实风险。保持外部行为兼容，必要时先补回归测试再重构，并执行相关验证。不要做大规模改名或纯格式整理。")
-    );
+    private static final int SUGGESTION_COUNT = 5;
 
     private final AiAccountService accounts;
     private final AiRunService runs;
     private final AiTaskRunMapper runMapper;
     private final AiEvolutionStateMapper stateMapper;
     private final FeishuWebhookNotifier notifier;
+    private final AiEvolutionSuggestionRepository suggestions;
+    private final AiAssistantService assistant;
+    private final AiAssistantAssetService assets;
+    private final ObjectMapper json;
     private final String publicBaseUrl;
 
     public AiEvolutionService(AiAccountService accounts, AiRunService runs, AiTaskRunMapper runMapper,
             AiEvolutionStateMapper stateMapper, FeishuWebhookNotifier notifier,
+            AiEvolutionSuggestionRepository suggestions, AiAssistantService assistant,
+            AiAssistantAssetService assets, ObjectMapper json,
             @Value("${wao.share.base-url:}") String configuredBaseUrl) {
         this.accounts = accounts;
         this.runs = runs;
         this.runMapper = runMapper;
         this.stateMapper = stateMapper;
         this.notifier = notifier;
+        this.suggestions = suggestions;
+        this.assistant = assistant;
+        this.assets = assets;
+        this.json = json;
         this.publicBaseUrl = configuredBaseUrl == null || configuredBaseUrl.isBlank()
                 ? null : configuredBaseUrl.replaceFirst("/+$", "");
     }
@@ -107,14 +107,29 @@ public class AiEvolutionService {
         if (state != null && state.getLastOutcome() != null && !state.getLastOutcome().isBlank()) {
             message += " 最近检查：" + state.getLastOutcome();
         }
-        return new AiEvolutionOverviewDto(quotas, SUGGESTIONS, status, message,
+        return new AiEvolutionOverviewDto(quotas, suggestions.latest(), status, message,
                 text(lastActivity), text(eligibleAt), state == null ? null : text(state.getLastCheckedAt()),
                 state == null ? null : state.getLastRunId());
     }
 
+    /** 从真实知识库和飞书同步归档挖掘并保存一批新的五条候选任务。 */
+    public synchronized List<AiEvolutionSuggestionDto> refreshSuggestions() {
+        TaskMiningContext context = assets.taskMiningContext();
+        if (context.sources().isEmpty()) {
+            throw new BadRequestException("知识库和飞书同步归档中还没有可读取的真实资料，无法生成任务建议");
+        }
+        List<AiEvolutionSuggestionDto> previous = suggestions.latest();
+        String answer = assistant.runReadOnlyJob("evolution-suggestions",
+                suggestionPrompt(context, previous));
+        List<AiEvolutionSuggestionDto> generated = parseSuggestions(answer, context, previous);
+        suggestions.saveBatch(id("eb"), generated);
+        return generated;
+    }
+
     /** 用户点击一条建议后，使用选中的真实工作流创建任务并立即入队。 */
     public AiRunDto launchSuggestion(String suggestionId, String projectId, String requestedBy, String requestBaseUrl) {
-        AiEvolutionSuggestionDto suggestion = suggestion(suggestionId);
+        AiEvolutionSuggestionDto suggestion = suggestions.find(suggestionId);
+        if (suggestion == null) throw new BadRequestException("这条改进建议不存在或已下线");
         return runs.launchGoal(projectId, suggestion.goal(), requestedBy, requestBaseUrl);
     }
 
@@ -162,8 +177,14 @@ public class AiEvolutionService {
                 return;
             }
 
+            List<AiEvolutionSuggestionDto> availableSuggestions = suggestions.latest();
+            if (availableSuggestions.isEmpty()) {
+                outcome("尚未从真实知识库或飞书归档生成任务建议", null, null);
+                return;
+            }
             AiEvolutionStateEntity state = stateMapper.selectById(STATE_ID);
-            AiEvolutionSuggestionDto suggestion = nextSuggestion(state == null ? null : state.getLastSuggestionId());
+            AiEvolutionSuggestionDto suggestion = nextSuggestion(
+                    availableSuggestions, state == null ? null : state.getLastSuggestionId());
             LaunchCandidate candidate = chooseWorkflow(quotas);
             if (candidate == null) {
                 outcome("没有与可用额度账号匹配的 WAO 工作流", null, suggestion.id());
@@ -269,17 +290,116 @@ public class AiEvolutionService {
         return count != null && count > 0;
     }
 
-    private static AiEvolutionSuggestionDto suggestion(String id) {
-        return SUGGESTIONS.stream().filter(item -> item.id().equals(id)).findFirst()
-                .orElseThrow(() -> new BadRequestException("这条改进建议不存在或已下线"));
+    private static AiEvolutionSuggestionDto nextSuggestion(
+            List<AiEvolutionSuggestionDto> suggestions, String previousId) {
+        int previous = -1;
+        for (int i = 0; i < suggestions.size(); i++) {
+            if (suggestions.get(i).id().equals(previousId)) previous = i;
+        }
+        return suggestions.get((previous + 1) % suggestions.size());
     }
 
-    private static AiEvolutionSuggestionDto nextSuggestion(String previousId) {
-        int previous = -1;
-        for (int i = 0; i < SUGGESTIONS.size(); i++) {
-            if (SUGGESTIONS.get(i).id().equals(previousId)) previous = i;
+    private static String suggestionPrompt(TaskMiningContext context,
+            List<AiEvolutionSuggestionDto> previous) {
+        String existingTasks = context.openTaskTitles().isEmpty() ? "（无）"
+                : context.openTaskTitles().stream().limit(100)
+                        .map(title -> "- " + title).collect(java.util.stream.Collectors.joining("\n"));
+        String previousTitles = previous.isEmpty() ? "（无）"
+                : previous.stream().map(item -> "- " + item.title())
+                        .collect(java.util.stream.Collectors.joining("\n"));
+        return """
+                请从下面的 WAO 真实资料里挖掘恰好 5 条尚未进入执行的产品需求或开发任务候选。
+
+                规则：
+                1. 每条必须由某一个 source 的明确内容支持，站在“给当前系统增加或完善真实功能”的需求/任务角度表达。
+                2. 不得把闲聊、已经完成的结果、纯愿望口号、通用代码巡检或资料中不存在的能力包装成任务。
+                3. 避开“现有未完成任务”和“上一批建议”；5 条之间标题与目标也不得重复。
+                4. 标题不超过 40 字；description 用不超过 120 字说清用户结果；goal 不超过 1200 字，写成可直接交给开发 AI 的完整中文目标，包含要解决的问题、可观察结果、真实性边界和验收重点。
+                5. sourceIndex 必须是下方真实存在的来源编号。证据不足 5 条时返回 error，不要凑数。
+                6. 只输出一个 JSON 对象，不要 Markdown 代码围栏或额外解释：
+                {"suggestions":[{"title":"...","description":"...","goal":"...","sourceIndex":1}]}
+                如果不足：{"error":"具体原因","suggestions":[]}
+
+                现有未完成任务：
+                """ + existingTasks + """
+
+
+                上一批建议：
+                """ + previousTitles + "\n\n" + context.promptContext();
+    }
+
+    private List<AiEvolutionSuggestionDto> parseSuggestions(String response,
+            TaskMiningContext context, List<AiEvolutionSuggestionDto> previous) {
+        JsonNode root;
+        try {
+            String payload = jsonPayload(response);
+            root = json.readTree(payload);
+        } catch (Exception ex) {
+            throw new BadRequestException("本地 Codex 返回的任务建议格式无法解析，请重试换一批");
         }
-        return SUGGESTIONS.get((previous + 1) % SUGGESTIONS.size());
+        JsonNode items = root.path("suggestions");
+        if (!items.isArray() || items.size() != SUGGESTION_COUNT) {
+            String reason = clean(root.path("error").asText(""));
+            throw new BadRequestException(reason.isBlank()
+                    ? "真实资料中未能挖掘出 5 条可靠任务，请补充资料后重试"
+                    : "真实资料暂不足以生成 5 条任务：" + shorten(reason));
+        }
+
+        Set<String> previousTitles = previous.stream().map(item -> normalized(item.title()))
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> titles = new HashSet<>();
+        List<AiEvolutionSuggestionDto> generated = new ArrayList<>();
+        for (JsonNode item : items) {
+            String title = required(item, "title", 40);
+            String description = required(item, "description", 120);
+            String goal = required(item, "goal", 1_200);
+            int sourceIndex = item.path("sourceIndex").asInt(-1);
+            TaskMiningSource source = context.sources().stream()
+                    .filter(candidate -> candidate.index() == sourceIndex).findFirst()
+                    .orElseThrow(() -> new BadRequestException("任务建议引用了不存在的资料来源，请重试换一批"));
+            String titleKey = normalized(title);
+            if (!titles.add(titleKey)) throw new BadRequestException("本地 Codex 返回了重复任务，请重试换一批");
+            if (previousTitles.contains(titleKey)) {
+                throw new BadRequestException("本地 Codex 重复了上一批任务，请再次刷新");
+            }
+            String groundedGoal = title + "\n\n任务线索来自 WAO 真实资产「"
+                    + source.title() + "」（" + source.url() + "）。\n\n"
+                    + goal + "\n\n开始实现前请先核对来源线索与当前代码、规格和已有任务；"
+                    + "若真实数据或官方接口不支持，不要制造演示数据或占位能力。";
+            generated.add(new AiEvolutionSuggestionDto(id("es"), title, description,
+                    "chat".equals(source.type()) ? "ri-chat-3-line" : "ri-book-open-line",
+                    groundedGoal, source.title(), source.url()));
+        }
+        return List.copyOf(generated);
+    }
+
+    private static String required(JsonNode item, String field, int maxLength) {
+        String value = clean(item.path(field).asText(""));
+        if (value.isBlank()) throw new BadRequestException("任务建议缺少字段 " + field + "，请重试换一批");
+        if (value.length() > maxLength) {
+            throw new BadRequestException("任务建议字段 " + field + " 过长，请重试换一批");
+        }
+        return value;
+    }
+
+    private static String jsonPayload(String response) {
+        if (response == null) return "";
+        String value = response.trim();
+        int start = value.indexOf('{');
+        int end = value.lastIndexOf('}');
+        return start >= 0 && end >= start ? value.substring(start, end + 1) : value;
+    }
+
+    private static String clean(String value) {
+        return value == null ? "" : value.trim().replaceAll("\\s+", " ");
+    }
+
+    private static String normalized(String value) {
+        return clean(value).toLowerCase(Locale.ROOT).replaceAll("[\\p{P}\\p{S}\\s]+", "");
+    }
+
+    private static String id(String prefix) {
+        return prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
     }
 
     private static String shorten(String value) {
