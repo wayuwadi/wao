@@ -26,6 +26,7 @@ import cn.wayuwa.wao.dto.LaunchAutonomousGoalRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
+import cn.wayuwa.wao.dto.SaveAiEvolutionScheduleRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.dto.RunnerScriptDto;
 import cn.wayuwa.wao.dto.RunnerHeartbeatRequest;
@@ -172,6 +173,14 @@ public class AiRunController {
     /** 首页额度驱动的自主进化状态与可直接执行的建议清单。 */
     @GetMapping("/evolution")
     public ApiResponse<AiEvolutionOverviewDto> evolution() {
+        return ApiResponse.ok(evolutionService.overview());
+    }
+
+    /** 保存自主进化触发间隔与单次任务数，并让新配置立即进入调度检查。 */
+    @PutMapping("/evolution/schedule")
+    public ApiResponse<AiEvolutionOverviewDto> saveEvolutionSchedule(
+            @Valid @RequestBody SaveAiEvolutionScheduleRequest request) {
+        evolutionService.saveSchedule(request.intervalHours(), request.batchSize());
         return ApiResponse.ok(evolutionService.overview());
     }
 

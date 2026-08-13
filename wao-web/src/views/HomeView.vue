@@ -15,6 +15,7 @@ import {
   refreshEvolutionSuggestions,
   requestRunnerScriptUpdate,
   rerunAiRun,
+  saveAiEvolutionSchedule,
   saveAiProjectConfig,
   updateRunnerMaxConcurrency,
   wakeAiRunner,
@@ -76,6 +77,12 @@ const evolutionError = ref('')
 const launchingSuggestionId = ref<string | null>(null)
 const suggestionsRefreshing = ref(false)
 const suggestionError = ref('')
+const evolutionScheduleOpen = ref(false)
+const evolutionScheduleSaving = ref(false)
+const evolutionScheduleError = ref('')
+const evolutionScheduleSaved = ref(false)
+const evolutionScheduleInitialized = ref(false)
+const evolutionScheduleDraft = reactive({ intervalHours: 12, batchSize: 1 })
 const wakingRunnerId = ref<string | null>(null)
 const removingRunnerId = ref<string | null>(null)
 const removingWorkflowId = ref<string | null>(null)
@@ -109,6 +116,9 @@ const visibleWeeklyQuotas = computed(() => evolution.value?.weeklyQuotas.filter(
 const primaryWeeklyQuota = computed(() => visibleWeeklyQuotas.value[0] ?? null)
 const showSessionQuota = computed(() => primarySessionQuota.value !== null)
 const showWeeklyQuota = computed(() => primaryWeeklyQuota.value !== null || (evolutionLoading.value && !evolution.value))
+const evolutionScheduleDirty = computed(() => Boolean(evolution.value)
+  && (evolutionScheduleDraft.intervalHours !== evolution.value?.intervalHours
+    || evolutionScheduleDraft.batchSize !== evolution.value?.batchSize))
 
 /** 每种 AI 工具当前有几台电脑在线，决定 hero 上的接入状态。 */
 const engineStatus = computed(() =>
@@ -186,7 +196,9 @@ async function refreshEvolution() {
   evolutionError.value = ''
   let needsInitialSuggestions = false
   try {
+    const preserveScheduleDraft = evolutionScheduleInitialized.value && evolutionScheduleDirty.value
     evolution.value = await fetchAiEvolution()
+    if (!preserveScheduleDraft && !evolutionScheduleSaving.value) syncEvolutionScheduleDraft()
     needsInitialSuggestions = evolution.value.suggestions.length === 0 && !initialSuggestionRefreshStarted
   } catch (error) {
     evolutionError.value = error instanceof Error ? error.message : '周额度与自主进化状态读取失败'
@@ -196,6 +208,33 @@ async function refreshEvolution() {
   if (needsInitialSuggestions) {
     initialSuggestionRefreshStarted = true
     void refreshSuggestions(false)
+  }
+}
+
+function syncEvolutionScheduleDraft() {
+  if (!evolution.value) return
+  evolutionScheduleDraft.intervalHours = evolution.value.intervalHours
+  evolutionScheduleDraft.batchSize = evolution.value.batchSize
+  evolutionScheduleInitialized.value = true
+}
+
+async function saveEvolutionSchedule() {
+  if (evolutionScheduleSaving.value) return
+  evolutionScheduleSaving.value = true
+  evolutionScheduleError.value = ''
+  evolutionScheduleSaved.value = false
+  try {
+    evolution.value = await saveAiEvolutionSchedule(
+      evolutionScheduleDraft.intervalHours,
+      evolutionScheduleDraft.batchSize,
+    )
+    syncEvolutionScheduleDraft()
+    evolutionScheduleSaved.value = true
+    toast('自动执行频率已保存', 'ri-checkbox-circle-line')
+  } catch (error) {
+    evolutionScheduleError.value = error instanceof Error ? error.message : '自动执行频率保存失败'
+  } finally {
+    evolutionScheduleSaving.value = false
   }
 }
 
@@ -773,8 +812,61 @@ onBeforeUnmount(() => {
           <i :class="suggestionsRefreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
           {{ suggestionsRefreshing ? '正在挖掘' : evolution.suggestions.length ? '刷新换一批' : '挖掘 5 个任务' }}
         </button>
+        <button
+          v-if="evolution"
+          class="secondary schedule-toggle"
+          :aria-expanded="evolutionScheduleOpen"
+          aria-controls="evolution-schedule-form"
+          @click="evolutionScheduleOpen = !evolutionScheduleOpen"
+        >
+          <i class="ri-settings-3-line"></i>自动执行设置
+        </button>
         <button v-else-if="evolutionError" class="secondary" @click="refreshEvolution"><i class="ri-refresh-line"></i>重试</button>
       </header>
+      <form
+        v-if="evolution && evolutionScheduleOpen"
+        id="evolution-schedule-form"
+        class="evolution-schedule"
+        @submit.prevent="saveEvolutionSchedule"
+      >
+        <div>
+          <strong>自动检测与派发频率</strong>
+          <span>从最近一次 AI 任务结束后开始计时；达到条件时按设置数量从真实建议中轮换派发。</span>
+        </div>
+        <label>
+          <span>每隔</span>
+          <input
+            v-model.number="evolutionScheduleDraft.intervalHours"
+            type="number"
+            min="1"
+            max="168"
+            required
+            :disabled="evolutionScheduleSaving"
+            @input="evolutionScheduleSaved = false"
+          >
+          <span>小时检测</span>
+        </label>
+        <label>
+          <span>每次最多触发</span>
+          <select
+            v-model.number="evolutionScheduleDraft.batchSize"
+            :disabled="evolutionScheduleSaving"
+            @change="evolutionScheduleSaved = false"
+          >
+            <option v-for="count in 5" :key="count" :value="count">{{ count }} 个任务</option>
+          </select>
+        </label>
+        <div v-if="evolutionScheduleError" class="schedule-feedback error" role="alert">
+          保存失败：{{ evolutionScheduleError }}。草稿仍在，可直接重试。
+        </div>
+        <div v-else-if="evolutionScheduleSaved" class="schedule-feedback saved">
+          <i class="ri-checkbox-circle-line"></i>已保存
+        </div>
+        <button type="submit" :disabled="evolutionScheduleSaving || !evolutionScheduleDirty">
+          <i :class="evolutionScheduleSaving ? 'ri-loader-4-line spin' : 'ri-save-3-line'"></i>
+          {{ evolutionScheduleSaving ? '保存中…' : '保存设置' }}
+        </button>
+      </form>
       <div v-if="evolutionLoading && !evolution" class="suggestion-loading">
         <i class="ri-loader-4-line spin"></i>正在整理改进建议…
       </div>
@@ -1496,6 +1588,10 @@ onBeforeUnmount(() => {
 .auto-state.ready { background: #d9f1e4; color: #267c59; }.auto-state i { margin-right: 4px; }
 .evolution-panel header > button { padding: 6px 9px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
 .evolution-panel header > button:disabled { opacity: .55; cursor: wait; }
+.evolution-schedule { margin: 0 18px 14px; padding: 12px; border: 1px solid color-mix(in srgb, #3b8c69 20%, var(--wao-line)); border-radius: 10px; background: color-mix(in srgb, #e8f5ed 42%, var(--wao-bg-card)); display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
+.evolution-schedule > div:first-child { flex: 1 1 240px; align-self: center; }.evolution-schedule > div:first-child strong, .evolution-schedule > div:first-child span { display: block; }.evolution-schedule > div:first-child strong { color: var(--wao-text-1); font-size: 12px; }.evolution-schedule > div:first-child span { margin-top: 3px; color: var(--wao-text-weak); font-size: 10px; line-height: 1.5; }
+.evolution-schedule label { display: flex; align-items: center; gap: 6px; color: var(--wao-text-2); font-size: 11px; white-space: nowrap; }.evolution-schedule input, .evolution-schedule select { height: 32px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-1); padding: 0 8px; }.evolution-schedule input { width: 64px; }.evolution-schedule select { min-width: 94px; }
+.evolution-schedule > button { height: 32px; border: 0; border-radius: 7px; background: #317b5d; color: #fff; padding: 0 11px; cursor: pointer; }.evolution-schedule > button:disabled { opacity: .55; cursor: default; }.schedule-feedback { flex-basis: 100%; color: var(--wao-text-weak); font-size: 10px; }.schedule-feedback.error { color: var(--wao-danger-strong); }.schedule-feedback.saved { color: #267c59; }.schedule-feedback i { margin-right: 4px; }
 .suggestion-loading { min-height: 92px; padding: 22px; display: grid; place-content: center; gap: 7px; color: var(--wao-text-weak); font-size: 11px; }
 .suggestion-grid { padding: 0 12px 13px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .suggestion-card { min-width: 0; padding: 12px; border: 1px solid color-mix(in srgb, #3b8c69 14%, var(--wao-line)); border-radius: 11px; background: color-mix(in srgb, var(--wao-bg-card) 92%, transparent); display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 9px; }

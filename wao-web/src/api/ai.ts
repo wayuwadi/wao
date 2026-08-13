@@ -38,6 +38,8 @@ export interface AiEvolutionOverview {
   nextEligibleAt: string | null
   lastCheckedAt: string | null
   lastRunId: string | null
+  intervalHours: number
+  batchSize: number
 }
 
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
@@ -122,6 +124,10 @@ export const refreshEvolutionSuggestions = () =>
   data<AiEvolutionSuggestion[]>(http.post('/api/ai/evolution/suggestions/refresh', null, {
     timeout: 310_000,
   }))
+
+/** 保存自主进化的空闲间隔与单次自动派发数量。 */
+export const saveAiEvolutionSchedule = (intervalHours: number, batchSize: number) =>
+  data<AiEvolutionOverview>(http.put('/api/ai/evolution/schedule', { intervalHours, batchSize }))
 
 /** 一键把一条建议交给选中的项目工作流。 */
 export const launchEvolutionSuggestion = (suggestionId: string, projectId: string) =>

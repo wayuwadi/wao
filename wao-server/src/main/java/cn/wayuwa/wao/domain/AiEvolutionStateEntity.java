@@ -16,6 +16,8 @@ public class AiEvolutionStateEntity {
     private String lastRunId;
     private String lastSuggestionId;
     private String lastLowQuotaKey;
+    private Integer intervalHours;
+    private Integer batchSize;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -33,6 +35,10 @@ public class AiEvolutionStateEntity {
     public void setLastSuggestionId(String lastSuggestionId) { this.lastSuggestionId = lastSuggestionId; }
     public String getLastLowQuotaKey() { return lastLowQuotaKey; }
     public void setLastLowQuotaKey(String lastLowQuotaKey) { this.lastLowQuotaKey = lastLowQuotaKey; }
+    public Integer getIntervalHours() { return intervalHours; }
+    public void setIntervalHours(Integer intervalHours) { this.intervalHours = intervalHours; }
+    public Integer getBatchSize() { return batchSize; }
+    public void setBatchSize(Integer batchSize) { this.batchSize = batchSize; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

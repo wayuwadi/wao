@@ -317,7 +317,23 @@ paths:
       description: 从真实资产挖掘的候选不包含以纯测试、纯文档或纯技术优化为主要结果的任务；生成和派发均确保目标带有用户价值验收契约。
       responses:
         '200':
-          description: sessionQuotas 只返回 Codex 真实五小时主窗口，weeklyQuotas 只返回供应商真实七天窗口；未知额度不返回记录，首页不渲染对应额度卡片
+          description: sessionQuotas 只返回 Codex 真实五小时主窗口，weeklyQuotas 只返回供应商真实七天窗口，并返回 intervalHours 与 batchSize；未知额度不返回记录，首页不渲染对应额度卡片
+  /ai/evolution/schedule:
+    put:
+      summary: 保存自主进化空闲间隔与单次任务数并立即触发一次到期检查
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [intervalHours, batchSize]
+              properties:
+                intervalHours: { type: integer, minimum: 1, maximum: 168 }
+                batchSize: { type: integer, minimum: 1, maximum: 5 }
+      responses:
+        '200': { description: 返回保存后的自主进化总览 }
+        '400': { description: 间隔或单次任务数超出允许范围 }
   /ai/evolution/suggestions/refresh:
     post:
       summary: 从真实知识库与飞书同步归档挖掘并持久化五条新任务建议
