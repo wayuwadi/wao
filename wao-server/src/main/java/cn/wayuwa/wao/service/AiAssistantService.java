@@ -138,7 +138,7 @@ public class AiAssistantService {
         long active = mapper.selectCount(new LambdaQueryWrapper<AiAssistantRunEntity>()
                 .eq(AiAssistantRunEntity::getMemberId, memberId)
                 .in(AiAssistantRunEntity::getStatus, ACTIVE));
-        if (active > 0) throw new BadRequestException("已有一批任务建议正在挖掘，请等待完成");
+        if (active > 0) throw new BadRequestException("已有一项内部只读分析正在执行，请等待完成");
 
         LocalDateTime now = LocalDateTime.now();
         AiAssistantRunEntity run = new AiAssistantRunEntity();
@@ -159,7 +159,19 @@ public class AiAssistantService {
             return result.getResponseText();
         }
         throw new BadRequestException(StringUtils.hasText(result.getErrorText())
-                ? result.getErrorText() : "本地 Codex 没有返回有效的任务建议");
+                ? result.getErrorText() : "本地 Codex 没有返回有效分析结果");
+    }
+
+    /**
+     * 用只读 Runner 为首页生成一次情境建议；上下文由服务端从当前成员真实任务中构造，且不写入聊天历史。
+     *
+     * @param message 固定的建议生成要求
+     * @param memberId 当前成员
+     * @param taskContext 服务端按成员筛选后的任务上下文
+     * @return Codex 返回的建议正文
+     */
+    public String dailyGuidanceAnswer(String message, String memberId, String taskContext) {
+        return runReadOnlyJob("daily-guidance-" + memberId, message + "\n\n" + taskContext);
     }
 
     /** 本地 Runner 领取一条等待中的问答；未上报 Codex 能力的节点不能领取。 */
