@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TianrenView from '@/views/TianrenView.vue'
 import {
   createTodayTianrenReading,
+  createTianrenShareLink,
   fetchTianrenHistory,
   fetchTodayTianrenReading,
   streamTianrenInterpretation,
@@ -12,9 +13,14 @@ import { fetchAssistantConversation, fetchAssistantStatus } from '@/api/assistan
 
 vi.mock('@/api/tianren', () => ({
   createTodayTianrenReading: vi.fn<(typeof import('@/api/tianren'))['createTodayTianrenReading']>(),
+  createTianrenShareLink: vi.fn<(typeof import('@/api/tianren'))['createTianrenShareLink']>(),
   fetchTianrenHistory: vi.fn<(typeof import('@/api/tianren'))['fetchTianrenHistory']>(),
   fetchTodayTianrenReading: vi.fn<(typeof import('@/api/tianren'))['fetchTodayTianrenReading']>(),
   streamTianrenInterpretation: vi.fn<(typeof import('@/api/tianren'))['streamTianrenInterpretation']>(),
+}))
+
+vi.mock('@/utils/clipboard', () => ({
+  copyToClipboard: vi.fn().mockResolvedValue(true),
 }))
 
 vi.mock('@/api/assistant', () => ({
@@ -118,5 +124,54 @@ describe('TianrenView', () => {
     expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('最近总在赶进度')
     expect(localStorage.getItem(`wao-tianren-focus-v1:${reading.date}`)).toBe('最近总在赶进度')
     expect(wrapper.text()).toContain('保留关注点并重试')
+  })
+
+  it('起卦后生成公网结果页并复制链接', async () => {
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
+    vi.mocked(fetchTianrenHistory).mockResolvedValue([reading])
+    vi.mocked(createTianrenShareLink).mockResolvedValue('https://wao.example/s/tianren/token1')
+    const { copyToClipboard } = await import('@/utils/clipboard')
+    const wrapper = mount(TianrenView)
+    await flushPromises()
+
+    await wrapper.get('.share-button').trigger('click')
+    await flushPromises()
+
+    expect(createTianrenShareLink).toHaveBeenCalledWith('tr1')
+    expect(copyToClipboard).toHaveBeenCalledWith('https://wao.example/s/tianren/token1')
+    expect(wrapper.text()).toContain('公网结果链接已复制')
+  })
+
+  it('浏览器拒绝复制时展示可手动选取的完整链接', async () => {
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
+    vi.mocked(fetchTianrenHistory).mockResolvedValue([reading])
+    vi.mocked(createTianrenShareLink).mockResolvedValue('https://wao.example/s/tianren/token2')
+    const { copyToClipboard } = await import('@/utils/clipboard')
+    vi.mocked(copyToClipboard).mockResolvedValueOnce(false)
+    const wrapper = mount(TianrenView)
+    await flushPromises()
+
+    await wrapper.get('.share-button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get<HTMLInputElement>('.share-feedback input').element.value)
+      .toBe('https://wao.example/s/tianren/token2')
+    expect(wrapper.text()).toContain('请手动复制')
+  })
+
+  it('分享接口失败时保留当前卦象并提供错误反馈', async () => {
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
+    vi.mocked(fetchTianrenHistory).mockResolvedValue([reading])
+    vi.mocked(createTianrenShareLink).mockRejectedValue(new Error('分享服务暂不可用'))
+    const wrapper = mount(TianrenView)
+    await flushPromises()
+
+    await wrapper.get('.share-button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.share-feedback').attributes('role')).toBe('alert')
+    expect(wrapper.get('.share-feedback').classes()).toContain('error')
+    expect(wrapper.text()).toContain('分享服务暂不可用')
+    expect(wrapper.text()).toContain('第 11 卦 · 泰')
   })
 })

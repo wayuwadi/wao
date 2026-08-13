@@ -60,6 +60,43 @@ paths:
             text/event-stream:
               schema:
                 type: string
+  /api/tianren/readings/{id}/share:
+    post:
+      operationId: createTianrenReadingShare
+      summary: 为当前成员拥有的一份卦象生成或复用公开分享凭据
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 返回 32 位不可猜测分享凭据
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareTokenEnvelope"
+  /api/share/tianren/{token}:
+    get:
+      operationId: getSharedTianrenReading
+      summary: 免登录读取卦象公开投影，不返回成员或私有 AI 会话
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+            pattern: "^[0-9a-f]{32}$"
+      responses:
+        "200":
+          description: 分享结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedReadingEnvelope"
+        "404":
+          description: 分享凭据无效
 components:
   schemas:
     ReadingEnvelope:
@@ -76,6 +113,41 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/TianrenReading"
+        timestamp:
+          type: integer
+          format: int64
+    ShareTokenEnvelope:
+      type: object
+      required: [code, message, data, timestamp]
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: success
+        data:
+          type: object
+          required: [token]
+          properties:
+            token:
+              type: string
+              pattern: "^[0-9a-f]{32}$"
+        timestamp:
+          type: integer
+          format: int64
+    SharedReadingEnvelope:
+      type: object
+      required: [code, message, data, timestamp]
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: success
+        data:
+          $ref: "#/components/schemas/SharedTianrenReading"
         timestamp:
           type: integer
           format: int64
@@ -111,6 +183,36 @@ components:
         conversationId:
           type: string
           nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    SharedTianrenReading:
+      type: object
+      description: 不包含成员、内部存档 id、关注点或私有 AI 会话的公开投影
+      required: [date, lines, changingLines, primary, createdAt]
+      properties:
+        date:
+          type: string
+          format: date
+        lines:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items:
+            type: integer
+            enum: [6, 7, 8, 9]
+        changingLines:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 6
+        primary:
+          $ref: "#/components/schemas/Hexagram"
+        relating:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Hexagram"
         createdAt:
           type: string
           format: date-time

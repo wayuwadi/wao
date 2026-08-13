@@ -1,12 +1,15 @@
 package cn.wayuwa.wao.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import cn.wayuwa.wao.domain.TianrenDailyReadingEntity;
+import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.dto.AssistantConversationDto;
 import cn.wayuwa.wao.mapper.TianrenDailyReadingMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -48,6 +51,53 @@ class TianrenReadingServiceTest {
         assertThat(prepared.trustedContext())
                 .contains("自初爻到上爻", "第 11 卦「泰」", "无变爻");
         verify(mapper).updateById(row);
+    }
+
+    @Test
+    void createsStableShareTokenOnlyForOwnedReading() {
+        TianrenDailyReadingEntity row = row();
+        when(mapper.selectOne(any())).thenReturn(row);
+        when(mapper.update(isNull(), any())).thenReturn(1);
+
+        String token = service.createShareToken("wg", "tr1");
+
+        assertThat(token).matches("[0-9a-f]{32}");
+        verify(mapper).update(isNull(), any());
+
+        row.setShareToken(token);
+        assertThat(service.createShareToken("wg", "tr1")).isEqualTo(token);
+    }
+
+    @Test
+    void rejectsSharingAnotherMembersReading() {
+        when(mapper.selectOne(any())).thenReturn(null);
+
+        assertThatThrownBy(() -> service.createShareToken("wg", "tr-other"))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("卦象不存在");
+    }
+
+    @Test
+    void publicProjectionKeepsPrivateIdentityAndConversationOutOfItsType() {
+        TianrenDailyReadingEntity row = row();
+        row.setConversationId("cv-private");
+        row.setShareToken("0123456789abcdef0123456789abcdef");
+        when(mapper.selectOne(any())).thenReturn(row);
+
+        var shared = service.shared(row.getShareToken());
+
+        assertThat(shared.date()).isEqualTo(row.getReadingDate());
+        assertThat(shared.primary().name()).isEqualTo("泰");
+        assertThat(shared.getClass().getRecordComponents())
+                .extracting(component -> component.getName())
+                .doesNotContain("id", "memberId", "conversationId", "shareToken");
+    }
+
+    @Test
+    void rejectsMalformedPublicShareTokensBeforeQueryingStorage() {
+        assertThatThrownBy(() -> service.shared("tr1"))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("分享链接无效");
     }
 
     private TianrenDailyReadingEntity row() {

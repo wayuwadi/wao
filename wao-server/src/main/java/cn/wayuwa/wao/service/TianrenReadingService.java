@@ -1,17 +1,22 @@
 package cn.wayuwa.wao.service;
 
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.TianrenDailyReadingEntity;
 import cn.wayuwa.wao.dto.AssistantChatRequest;
+import cn.wayuwa.wao.dto.SharedTianrenReadingDto;
 import cn.wayuwa.wao.dto.TianrenReadingDto;
 import cn.wayuwa.wao.mapper.TianrenDailyReadingMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.security.SecureRandom;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
@@ -24,6 +29,7 @@ public class TianrenReadingService {
 
     private static final ZoneId WAO_ZONE = ZoneId.of("Asia/Shanghai");
     private static final TypeReference<List<Integer>> LINES_TYPE = new TypeReference<>() { };
+    private static final SecureRandom SHARE_RANDOM = new SecureRandom();
 
     private final TianrenDailyReadingMapper mapper;
     private final TianrenHexagramEngine engine;
@@ -101,6 +107,67 @@ public class TianrenReadingService {
     }
 
     /**
+     * 为当前成员拥有的一份卦象按需生成稳定的公开分享凭据。
+     *
+     * <p>条件更新保证并发点击只会落下一个 token；没有猜中凭据的人无法从公开接口枚举成员历史。
+     *
+     * @param memberId 当前登录成员
+     * @param readingId 要分享的卦象存档 id
+     * @return 可放进公开结果页路径的随机凭据
+     */
+    public String createShareToken(String memberId, String readingId) {
+        requireMember(memberId);
+        if (readingId == null || readingId.isBlank()) throw new BadRequestException("卦象标识不能为空");
+        TianrenDailyReadingEntity row = findOwned(memberId, readingId);
+        if (row == null) throw new NotFoundException("卦象不存在");
+        if (row.getShareToken() != null && !row.getShareToken().isBlank()) return row.getShareToken();
+
+        for (int attempt = 0; attempt < 3; attempt++) {
+            String token = randomShareToken();
+            try {
+                int updated = mapper.update(null, new UpdateWrapper<TianrenDailyReadingEntity>()
+                        .eq("id", readingId)
+                        .eq("member_id", memberId)
+                        .isNull("share_token")
+                        .set("share_token", token)
+                        .set("updated_at", LocalDateTime.now(WAO_ZONE)));
+                if (updated == 1) return token;
+            } catch (DuplicateKeyException ignored) {
+                // 极低概率的随机串冲突，直接换一个；不得覆盖别的卦象已经发出的链接。
+            }
+            TianrenDailyReadingEntity latest = findOwned(memberId, readingId);
+            if (latest != null && latest.getShareToken() != null && !latest.getShareToken().isBlank()) {
+                return latest.getShareToken();
+            }
+        }
+        throw new IllegalStateException("分享链接生成失败，请稍后重试");
+    }
+
+    private static String randomShareToken() {
+        byte[] bytes = new byte[16];
+        SHARE_RANDOM.nextBytes(bytes);
+        return HexFormat.of().formatHex(bytes);
+    }
+
+    /**
+     * 按不可猜测凭据读取公开卦象投影，不返回成员身份、存档 id 或私有 AI 会话。
+     *
+     * @param token 分享凭据
+     * @return 可公开展示的卦象
+     */
+    public SharedTianrenReadingDto shared(String token) {
+        if (token == null || !token.matches("[0-9a-f]{32}")) throw new NotFoundException("分享链接无效");
+        TianrenDailyReadingEntity row = mapper.selectOne(new LambdaQueryWrapper<TianrenDailyReadingEntity>()
+                .eq(TianrenDailyReadingEntity::getShareToken, token)
+                .last("LIMIT 1"));
+        if (row == null) throw new NotFoundException("分享链接无效");
+        TianrenReadingDto reading = view(row);
+        return new SharedTianrenReadingDto(
+                reading.date(), reading.lines(), reading.changingLines(), reading.primary(), reading.relating(),
+                reading.createdAt());
+    }
+
+    /**
      * 为今日卦象准备专用 AI 会话和可信卦象上下文；首次解读会创建成员私有会话。
      *
      * @param memberId 当前登录成员
@@ -132,6 +199,13 @@ public class TianrenReadingService {
         return mapper.selectOne(new LambdaQueryWrapper<TianrenDailyReadingEntity>()
                 .eq(TianrenDailyReadingEntity::getMemberId, memberId)
                 .eq(TianrenDailyReadingEntity::getReadingDate, date)
+                .last("LIMIT 1"));
+    }
+
+    private TianrenDailyReadingEntity findOwned(String memberId, String readingId) {
+        return mapper.selectOne(new LambdaQueryWrapper<TianrenDailyReadingEntity>()
+                .eq(TianrenDailyReadingEntity::getId, readingId)
+                .eq(TianrenDailyReadingEntity::getMemberId, memberId)
                 .last("LIMIT 1"));
     }
 
