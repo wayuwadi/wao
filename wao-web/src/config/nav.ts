@@ -86,7 +86,18 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/english-learning',
   },
   tianren: { id: 'tianren', label: '天人一卦', icon: 'ri-compass-3-line', path: '/tianren' },
-  'action-plans': { id: 'action-plans', label: '行动计划', icon: 'ri-footprint-line', path: '/action-plans' },
+  'action-plans': {
+    id: 'action-plans',
+    label: '行动计划',
+    icon: 'ri-footprint-line',
+    path: '/action-plans',
+  },
+  'weekly-report': {
+    id: 'weekly-report',
+    label: '周报生成',
+    icon: 'ri-file-list-3-line',
+    path: '/weekly-report',
+  },
   vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
@@ -122,6 +133,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
     icon: 'ri-calendar-2-line',
     group: 'PERSONAL',
     order: 20,
+    visible: true,
+  },
+  {
+    id: 'weekly-report',
+    label: '周报生成',
+    icon: 'ri-file-list-3-line',
+    group: 'PERSONAL',
+    order: 25,
     visible: true,
   },
   {
@@ -203,6 +222,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
   'todo',
   'action-plans',
   'calendar',
+  'weekly-report',
   'knowledge',
   'english-learning',
   'vocabulary',

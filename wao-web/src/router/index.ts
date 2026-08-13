@@ -98,6 +98,12 @@ const router = createRouter({
           meta: { module: 'action-plans', tabKind: 'module' },
         },
         {
+          path: 'weekly-report',
+          name: 'weekly-report',
+          component: () => import('@/views/WeeklyReportView.vue'),
+          meta: { module: 'weekly-report', tabKind: 'module' },
+        },
+        {
           path: 'knowledge',
           name: 'knowledge',
           component: () => import('@/views/KnowledgeView.vue'),

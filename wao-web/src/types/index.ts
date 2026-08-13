@@ -32,6 +32,7 @@ export type ModuleId =
   | 'english-learning'
   | 'tianren'
   | 'action-plans'
+  | 'weekly-report'
   | 'vault'
   | 'settings'
 
