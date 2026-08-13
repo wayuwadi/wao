@@ -108,6 +108,7 @@ const TASK_DRAFT_KEY = 'wao-task-drafts-v1'
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+export type TaskLoadState = 'loading' | 'loaded' | 'error'
 
 /**
  * 本地 id 生成器。
@@ -138,13 +139,16 @@ export const useDataStore = defineStore('data', () => {
   /** 用户自建知识库分组（个人库归入其中）。 */
   const myGroups = ref([{ id: 'g1', name: '我的知识库' }])
 
-  /** 是否已成功接入真实后端（否则用 fixtures 兜底）。 */
+  /** 核心领域、项目、任务接口是否均已成功接入真实后端。 */
   const apiLive = ref(false)
+  /** 任务必须以服务端结果为准；加载期间和失败后都不能把 fixtures 当成用户数据展示。 */
+  const taskLoadState = ref<TaskLoadState>('loading')
+  const taskLoadError = ref('')
   /** 密码库读取失败：页面据此显示错误与重试，而不是继续摆着演示凭据。 */
   const vaultError = ref(false)
 
   /**
-   * 从 /api 拉取各域数据替换 fixtures；后端不可用时静默保留 fixtures，应用仍可运行。
+   * 从 /api 拉取各域数据替换 fixtures；任务和密码库不允许用 fixtures 掩盖读取失败。
    *
    * <p>按域独立容错（{@code Promise.allSettled}）：单个域（如内容域表尚未建好而 500）失败时，
    * 其余域仍正常接管，且不会拖垮写路径。只要核心读路径（领域 / 项目 / 任务）可达即判定后端在线
@@ -158,8 +162,32 @@ export const useDataStore = defineStore('data', () => {
         return null
       }
     }
+    taskLoadState.value = 'loading'
+    taskLoadError.value = ''
+    // 启动 hydrate 后立即撤掉演示任务；即使接口超时或失败，也不能让它们冒充用户的待办。
+    tasks.value = []
+    // 任务请求单独处理结果，不等知识库、文件、密码库等无关域的最慢请求全部结束。
+    const taskRequest = fetchTasks()
+      .then((loadedTasks) => {
+        tasks.value = loadedTasks
+        // 只叠加仍未收到服务端确认的本地草稿，避免刷新把刚输入的长文本吞掉。
+        for (const [id, draft] of Object.entries(taskDrafts.value)) {
+          const current = tasks.value.find((task) => task.id === id)
+          if (current) Object.assign(current, clone(draft))
+        }
+        taskLoadState.value = 'loaded'
+        return loadedTasks
+      })
+      .catch((cause: unknown) => {
+        tasks.value = []
+        taskLoadState.value = 'error'
+        taskLoadError.value = cause instanceof Error && cause.message
+          ? cause.message
+          : '暂时无法读取任务，请稍后重试'
+        return null
+      })
     const [a, p, t, kb, kg, dc, jb, fl, im, va, sc, sg, gl] = await Promise.all([
-      settle(fetchAreas()), settle(fetchProjects()), settle(fetchTasks()), settle(fetchKbs()),
+      settle(fetchAreas()), settle(fetchProjects()), taskRequest, settle(fetchKbs()),
       settle(fetchKbGroups()), settle(fetchDocs()), settle(fetchJobs()), settle(fetchFiles()),
       settle(fetchImages()), settle(fetchVault()), settle(fetchSchedule()),
       settle(fetchSuggestions()), settle(fetchGoals()),
@@ -167,14 +195,6 @@ export const useDataStore = defineStore('data', () => {
     // `[]` 是后端明确返回的真实空状态，不能继续露出 fixtures；只有请求失败（null）才保留兜底。
     if (a !== null) areas.value = a
     if (p !== null) projects.value = p
-    if (t !== null) {
-      tasks.value = t
-      // 只叠加仍未收到服务端确认的本地草稿，避免刷新把刚输入的长文本吞掉。
-      for (const [id, draft] of Object.entries(taskDrafts.value)) {
-        const current = tasks.value.find((task) => task.id === id)
-        if (current) Object.assign(current, clone(draft))
-      }
-    }
     if (kb !== null) kbs.value = kb
     if (kg !== null) myGroups.value = kg
     if (dc !== null) {
@@ -1484,7 +1504,7 @@ export const useDataStore = defineStore('data', () => {
 
   return {
     today, areas, projects, tasks, kbs, docs, autos, files, imgs, vault,
-    schedule, suggestions, goals, myGroups, apiLive, hydrate,
+    schedule, suggestions, goals, myGroups, apiLive, taskLoadState, taskLoadError, hydrate,
     areaById, projectById, taskById, tasksByProject, kbById, docById, areaColor,
     docEdits, setDocEdit, docOf, docPending, saveState, markSaving, markSaved,
     applyRemoteDoc, addDoc, addNote, notesKb,

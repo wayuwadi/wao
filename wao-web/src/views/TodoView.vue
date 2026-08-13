@@ -157,7 +157,20 @@ function onDropStatus(status: TaskStatus) {
       </div>
     </div>
 
-    <template v-if="taskView === 'list'">
+    <div v-if="data.taskLoadState === 'loading'" class="task-state" role="status" aria-live="polite">
+      <i class="ri-loader-4-line spinning"></i>
+      <b>正在加载中</b>
+      <span>正在读取你的真实任务…</span>
+    </div>
+
+    <div v-else-if="data.taskLoadState === 'error'" class="task-state error" role="alert">
+      <i class="ri-wifi-off-line"></i>
+      <b>任务暂时没有加载出来</b>
+      <span>{{ data.taskLoadError }}</span>
+      <button class="btn-primary" @click="data.hydrate()"><i class="ri-refresh-line"></i>重新加载</button>
+    </div>
+
+    <template v-else-if="taskView === 'list'">
       <div v-for="tg in taskGroups" :key="tg.label" class="tgroup">
         <div class="tgroup-head" :class="{ clickable: tg.collapsible }" @click="tg.collapsible && (showDone = !showDone)">
           <i v-if="tg.collapsible" class="tgroup-chev" :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
@@ -381,6 +394,44 @@ function onDropStatus(status: TaskStatus) {
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
+}
+.task-state {
+  margin-top: 18px;
+  min-height: 180px;
+  padding: 36px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  background: var(--wao-bg-card);
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  color: var(--wao-text-weak);
+}
+.task-state > i {
+  font-size: 24px;
+  color: var(--wao-primary);
+}
+.task-state b {
+  color: var(--wao-text-2);
+  font-size: 14px;
+}
+.task-state span {
+  font-size: 12.5px;
+}
+.task-state.error > i {
+  color: var(--wao-danger);
+}
+.task-state .btn-primary {
+  margin-top: 6px;
+}
+.spinning {
+  animation: task-spin 0.8s linear infinite;
+}
+@keyframes task-spin {
+  to { transform: rotate(360deg); }
 }
 .tgroup {
   margin-top: 18px;

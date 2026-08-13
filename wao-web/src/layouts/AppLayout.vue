@@ -125,7 +125,7 @@ watch(() => route.query.task, openLocatedTask)
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   void preferences.load()
-  // 接入真实 /api（后端不可用时静默保留 fixtures）
+  // 接入真实 /api；任务域会独立暴露加载 / 失败状态，不用 fixtures 冒充用户数据。
   await data.hydrate()
   openLocatedTask()
 })
