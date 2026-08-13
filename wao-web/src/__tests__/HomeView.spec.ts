@@ -10,9 +10,11 @@ import {
   fetchAiRunnerLog,
   fetchAiEvolution,
   fetchAiRunners,
+  fetchAiWorkflows,
   launchAutonomousGoal,
   launchEvolutionSuggestion,
   removeAiRunner,
+  removeAiWorkflow,
   requestRunnerScriptUpdate,
   rerunAiRun,
 } from '@/api/ai'
@@ -76,6 +78,8 @@ vi.mock('@/api/ai', () => ({
         projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
         workspaceDir: 'wao', defaultEngine: 'claude', preferredRunnerId: 'rn2', maxParallelRuns: 3,
       },
+      configured: true,
+      projectDeleted: false,
       preferredRunnerName: 'Linux 主节点',
       activeRuns: 1,
       succeededRuns: 4,
@@ -132,6 +136,7 @@ vi.mock('@/api/ai', () => ({
       maxConcurrency: 2, activeRuns: 1, online: true, lastSeenAt: '2026-07-25T20:18:20',
     },
   ]),
+  removeAiWorkflow: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   rerunAiRun: vi.fn<() => Promise<Record<string, unknown>>>()
     .mockResolvedValue({ id: 'ar3', taskId: 't1', taskTitle: '修复自动任务', retryOfRunId: 'ar1' }),
 }))
@@ -449,6 +454,32 @@ describe('HomeView AI 控制台', () => {
     await card.find('.link-btn').trigger('click')
     const engineSelect = card.findAll('.flow-form select')[0]!
     expect((engineSelect.element as HTMLSelectElement).value).toBe('claude')
+    wrapper.unmount()
+  })
+
+  it('删除工作流需要二次确认，并在确认后调用真实删除接口', async () => {
+    vi.useFakeTimers()
+    vi.mocked(removeAiWorkflow).mockClear()
+    const confirm = vi.spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.findAll('.console-tabs button')[2]!.trigger('click')
+    await flushPromises()
+    const deleteButton = wrapper.find('.workflow-card .link-btn.danger')
+    await deleteButton.trigger('click')
+    expect(removeAiWorkflow).not.toHaveBeenCalled()
+
+    vi.mocked(fetchAiWorkflows).mockResolvedValueOnce([])
+    await deleteButton.trigger('click')
+    await flushPromises()
+
+    expect(confirm.mock.calls[1]?.[0]).toContain('历史运行记录保留')
+    expect(removeAiWorkflow).toHaveBeenCalledWith('p1')
+    expect(wrapper.find('.workflow-card').exists()).toBe(false)
+    confirm.mockRestore()
     wrapper.unmount()
   })
 })

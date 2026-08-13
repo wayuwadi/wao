@@ -291,6 +291,14 @@ paths:
       responses: { '200': { description: OK }, '400': { description: 配置不合法 } }
   /ai/workflows:
     get: { summary: 各项目的 AI 工作流配置与运行统计（控制台「AI 工作流」视图）, responses: { '200': { description: OK } } }
+  /ai/workflows/{projectId}:
+    delete:
+      summary: 删除 AI 工作流配置并保留历史运行记录
+      parameters: [ { name: projectId, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: 工作流配置已删除 }
+        '400': { description: 工作流还有排队或执行中的运行 }
+        '404': { description: 工作流不存在或已经删除 }
   /ai/evolution:
     get:
       summary: 首页真实周额度、自主进化状态与可执行改进建议

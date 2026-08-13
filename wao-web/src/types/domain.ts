@@ -413,6 +413,10 @@ export interface AiWorkflow {
   projectId: string
   projectName: string
   config: AiProjectConfig
+  /** 是否已保存过工作流配置；false 时只是项目的“未接入”入口。 */
+  configured?: boolean
+  /** 项目已删除但配置仍存留，需要用户清理的历史孤儿工作流。 */
+  projectDeleted?: boolean
   preferredRunnerName: string | null
   activeRuns: number
   succeededRuns: number

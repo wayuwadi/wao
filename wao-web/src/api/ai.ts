@@ -47,6 +47,10 @@ export const saveAiProjectConfig = (
 
 export const fetchAiWorkflows = () => data<AiWorkflow[]>(http.get('/api/ai/workflows'))
 
+/** 删除工作流配置；历史运行记录不受影响。 */
+export const removeAiWorkflow = (projectId: string) =>
+  data<void>(http.delete(`/api/ai/workflows/${projectId}`))
+
 /**
  * 执行电脑在线状态是实时数据，不能复用浏览器或中间代理里的旧 GET 响应。
  */

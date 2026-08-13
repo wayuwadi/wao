@@ -11,6 +11,7 @@ import {
   launchAutonomousGoal,
   launchEvolutionSuggestion,
   removeAiRunner,
+  removeAiWorkflow,
   requestRunnerScriptUpdate,
   rerunAiRun,
   saveAiProjectConfig,
@@ -66,6 +67,7 @@ const evolutionError = ref('')
 const launchingSuggestionId = ref<string | null>(null)
 const wakingRunnerId = ref<string | null>(null)
 const removingRunnerId = ref<string | null>(null)
+const removingWorkflowId = ref<string | null>(null)
 const form = reactive({
   enabled: false,
   repoUrl: '',
@@ -428,6 +430,29 @@ async function saveWorkflow(projectId: string) {
     toast(error instanceof Error ? error.message : 'AI 工作流保存失败', 'ri-error-warning-line')
   } finally {
     saving.value = false
+  }
+}
+
+/** 删除工作流配置前明确告知影响；项目和历史运行不会被删除。 */
+async function removeWorkflow(workflow: AiWorkflow) {
+  if (
+    !window.confirm(
+      `删除“${workflow.projectName}”的 AI 工作流？\n仓库、执行电脑和并发配置会被删除，历史运行记录保留；` +
+        (workflow.projectDeleted ? '该项目已删除，工作流删除后将从列表消失。' : '项目仍保留，以后可以重新接入。'),
+    )
+  ) {
+    return
+  }
+  removingWorkflowId.value = workflow.projectId
+  try {
+    await removeAiWorkflow(workflow.projectId)
+    if (editingProjectId.value === workflow.projectId) editingProjectId.value = null
+    await refreshWorkflows()
+    toast(`已删除“${workflow.projectName}”的 AI 工作流`, 'ri-delete-bin-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : 'AI 工作流删除失败', 'ri-error-warning-line')
+  } finally {
+    removingWorkflowId.value = null
   }
 }
 
@@ -878,6 +903,7 @@ onBeforeUnmount(() => {
                 {{ workflow.config.enabled ? '已开启' : '未接入' }}
               </span>
               <b>{{ workflow.projectName }}</b>
+              <span v-if="workflow.projectDeleted" class="flow-orphan">项目已删除</span>
               <span
                 class="engine-tag"
                 :style="{ color: engineColor(workflow.config.defaultEngine) }"
@@ -885,8 +911,16 @@ onBeforeUnmount(() => {
                 <i :class="engineIcon(workflow.config.defaultEngine)"></i>{{ engineLabel(workflow.config.defaultEngine) }}
               </span>
               <div class="spacer"></div>
-              <button class="link-btn" @click="editingProjectId === workflow.projectId ? editingProjectId = null : startEditing(workflow)">
+              <button v-if="!workflow.projectDeleted" class="link-btn" @click="editingProjectId === workflow.projectId ? editingProjectId = null : startEditing(workflow)">
                 {{ editingProjectId === workflow.projectId ? '收起' : workflow.config.enabled ? '编辑' : '接入' }}
+              </button>
+              <button
+                v-if="workflow.configured !== false"
+                class="link-btn danger"
+                :disabled="removingWorkflowId === workflow.projectId"
+                @click="removeWorkflow(workflow)"
+              >
+                {{ removingWorkflowId === workflow.projectId ? '删除中…' : '删除' }}
               </button>
             </header>
             <dl class="flow-meta">
@@ -1457,13 +1491,17 @@ onBeforeUnmount(() => {
 .workflow-list { display: grid; gap: 12px; }
 .workflow-card { padding: 16px 18px; border: 1px solid var(--wao-line); border-radius: 13px; background: var(--wao-bg-card); }
 .workflow-card.off { background: var(--wao-bg-sub); }
-.workflow-card header { display: flex; align-items: center; gap: 10px; }
+.workflow-card header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .workflow-card header b { font-size: 14px; }
 .workflow-card .spacer { flex: 1; }
 .flow-state { padding: 3px 8px; border-radius: 6px; background: var(--wao-bg-hover-2); color: var(--wao-text-weak); font-size: 10.5px; font-weight: 650; }
 .flow-state.on { background: #eaf8f0; color: #237a4b; }
+.flow-orphan { padding: 3px 8px; border-radius: 6px; background: #fff0f0; color: var(--wao-danger-strong); font-size: 10.5px; font-weight: 650; }
 .link-btn { padding: 5px 10px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; font-size: 11.5px; }
 .link-btn:hover { border-color: var(--wao-primary-line); color: #4358d6; }
+.link-btn.danger { color: var(--wao-danger-strong); }
+.link-btn.danger:hover { border-color: var(--wao-danger-strong); background: #fff5f5; color: var(--wao-danger-strong); }
+.link-btn:disabled { opacity: .6; cursor: wait; }
 .flow-meta { margin: 14px 0 0; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 10px; }
 .flow-meta > div { min-width: 0; padding: 9px 11px; border-radius: 9px; background: var(--wao-bg-hover); }
 .flow-meta dt { color: var(--wao-text-weak); font-size: 10px; }

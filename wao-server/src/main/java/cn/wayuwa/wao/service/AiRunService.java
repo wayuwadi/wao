@@ -51,6 +51,7 @@ import cn.wayuwa.wao.mapper.AiTaskRunMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -123,7 +124,12 @@ public class AiRunService {
                 : toConfigDto(entity);
     }
 
-    /** AI 控制台的工作流总览：每个项目一行配置与运行统计，未配置过的项目也会出现。 */
+    /**
+     * AI 控制台的工作流总览：每个项目一行配置与运行统计，未配置过的项目也会出现。
+     *
+     * <p>历史上项目删除不会级联清理 AI 配置。孤儿配置也必须返回，否则用户看不到、更无法主动清理；
+     * 这类条目标记为项目已删除，并排在正常项目之后。
+     */
     public List<AiWorkflowDto> listWorkflows() {
         Map<String, AiProjectConfigEntity> configs = configMapper.selectList(null).stream()
                 .collect(Collectors.toMap(AiProjectConfigEntity::getProjectId, Function.identity()));
@@ -131,25 +137,47 @@ public class AiRunService {
                 .collect(Collectors.toMap(AiRunnerNodeEntity::getId, AiRunnerNodeEntity::getName));
         // 总览只需要状态和时间，不读 result_summary 这类大字段。
         Map<String, List<AiTaskRunEntity>> runsByProject = runMapper.selectList(
-                        new LambdaQueryWrapper<AiTaskRunEntity>().select(AiTaskRunEntity::getProjectId,
-                                AiTaskRunEntity::getStatus, AiTaskRunEntity::getCreatedAt))
+                        new QueryWrapper<AiTaskRunEntity>().select("project_id", "status", "created_at"))
                 .stream().collect(Collectors.groupingBy(AiTaskRunEntity::getProjectId));
-        return projectMapper.selectList(null).stream().map(project -> {
+        List<ProjectEntity> projects = projectMapper.selectList(null);
+        Set<String> projectIds = projects.stream().map(ProjectEntity::getId).collect(Collectors.toSet());
+        List<AiWorkflowDto> workflows = new ArrayList<>();
+        projects.forEach(project -> {
             AiProjectConfigEntity config = configs.get(project.getId());
             AiProjectConfigDto dto = config == null
                     ? new AiProjectConfigDto(project.getId(), false, "", "main",
                             safeFolder(project.getName(), project.getId()), DEFAULT_ENGINE, null, 2)
                     : toConfigDto(config);
-            List<AiTaskRunEntity> runs = runsByProject.getOrDefault(project.getId(), List.of());
-            String lastRunAt = runs.stream().map(AiTaskRunEntity::getCreatedAt).filter(Objects::nonNull)
-                    .max(LocalDateTime::compareTo).map(LocalDateTime::toString).orElse(null);
-            return new AiWorkflowDto(project.getId(), project.getName(), dto,
-                    dto.preferredRunnerId() == null ? null : runnerNames.get(dto.preferredRunnerId()),
-                    (int) runs.stream().filter(run -> ACTIVE.contains(run.getStatus())).count(),
-                    (int) runs.stream().filter(run -> "succeeded".equals(run.getStatus())).count(),
-                    (int) runs.stream().filter(run -> "failed".equals(run.getStatus())).count(),
-                    lastRunAt);
-        }).sorted((left, right) -> Boolean.compare(right.config().enabled(), left.config().enabled())).toList();
+            workflows.add(toWorkflow(project.getId(), project.getName(), dto, config != null, false,
+                    runnerNames, runsByProject));
+        });
+        configs.values().stream()
+                .filter(config -> !projectIds.contains(config.getProjectId()))
+                .forEach(config -> workflows.add(toWorkflow(config.getProjectId(),
+                        "已删除项目 · " + config.getProjectId(), toConfigDto(config), true, true,
+                        runnerNames, runsByProject)));
+        workflows.sort((left, right) -> {
+            int enabled = Boolean.compare(right.config().enabled(), left.config().enabled());
+            if (enabled != 0) return enabled;
+            int deleted = Boolean.compare(left.projectDeleted(), right.projectDeleted());
+            return deleted != 0 ? deleted : left.projectName().compareToIgnoreCase(right.projectName());
+        });
+        return workflows;
+    }
+
+    /** 删除一条已保存的 AI 工作流配置；历史运行记录保留用于追溯。 */
+    @Transactional
+    public void deleteWorkflow(String projectId) {
+        if (configMapper.selectById(projectId) == null) {
+            throw new NotFoundException("AI 工作流不存在或已经删除");
+        }
+        Long count = runMapper.selectCount(new QueryWrapper<AiTaskRunEntity>()
+                .eq("project_id", projectId).in("status", ACTIVE));
+        long activeRuns = count == null ? 0 : count;
+        if (activeRuns > 0) {
+            throw new BadRequestException("这条工作流还有 " + activeRuns + " 个运行正在排队或执行，请先取消或等它跑完");
+        }
+        configMapper.deleteById(projectId);
     }
 
     /** 保存项目配置并校验仓库、分支、目录与并发参数。 */
@@ -1129,6 +1157,20 @@ public class AiRunService {
                 blankOr(entity.getWorkspaceDir(), defaultFolder(entity.getProjectId())),
                 blankOr(entity.getDefaultEngine(), DEFAULT_ENGINE),
                 entity.getPreferredRunnerId(), valueOr(entity.getMaxParallelRuns(), 2));
+    }
+
+    private AiWorkflowDto toWorkflow(String projectId, String projectName, AiProjectConfigDto config,
+            boolean configured, boolean projectDeleted, Map<String, String> runnerNames,
+            Map<String, List<AiTaskRunEntity>> runsByProject) {
+        List<AiTaskRunEntity> runs = runsByProject.getOrDefault(projectId, List.of());
+        String lastRunAt = runs.stream().map(AiTaskRunEntity::getCreatedAt).filter(Objects::nonNull)
+                .max(LocalDateTime::compareTo).map(LocalDateTime::toString).orElse(null);
+        return new AiWorkflowDto(projectId, projectName, config,
+                config.preferredRunnerId() == null ? null : runnerNames.get(config.preferredRunnerId()),
+                (int) runs.stream().filter(run -> ACTIVE.contains(run.getStatus())).count(),
+                (int) runs.stream().filter(run -> "succeeded".equals(run.getStatus())).count(),
+                (int) runs.stream().filter(run -> "failed".equals(run.getStatus())).count(),
+                lastRunAt, configured, projectDeleted);
     }
 
     /** 是否已经有电脑（无论在线与否）接入了这种 AI 工具。 */
