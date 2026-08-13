@@ -109,6 +109,47 @@ class AiRunServiceTest {
     }
 
     @Test
+    void workflowOverviewExposesOrphanedConfigurationForCleanup() {
+        AiProjectConfigEntity current = config("p1");
+        AiProjectConfigEntity orphan = config("p-deleted");
+        when(configMapper.selectList(null)).thenReturn(List.of(current, orphan));
+        when(runnerMapper.selectList(null)).thenReturn(List.of());
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(projectMapper.selectList(null)).thenReturn(List.of(project("p1", "WAO")));
+
+        var workflows = service.listWorkflows();
+
+        assertThat(workflows).hasSize(2);
+        assertThat(workflows).anySatisfy(workflow -> {
+            assertThat(workflow.projectId()).isEqualTo("p-deleted");
+            assertThat(workflow.projectName()).contains("已删除项目");
+            assertThat(workflow.configured()).isTrue();
+            assertThat(workflow.projectDeleted()).isTrue();
+        });
+    }
+
+    @Test
+    void deletesIdleWorkflowButKeepsHistoricalRunsOutsideConfiguration() {
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+
+        service.deleteWorkflow("p1");
+
+        verify(configMapper).deleteById("p1");
+    }
+
+    @Test
+    void refusesToDeleteWorkflowWithActiveRuns() {
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runMapper.selectCount(any())).thenReturn(2L);
+
+        assertThatThrownBy(() -> service.deleteWorkflow("p1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("2 个运行");
+        verify(configMapper, never()).deleteById("p1");
+    }
+
+    @Test
     void pairCodeCanOnlyBeExchangedForLocalToken() {
         AiRunnerPairCodeEntity code = new AiRunnerPairCodeEntity();
         code.setId("pc1");

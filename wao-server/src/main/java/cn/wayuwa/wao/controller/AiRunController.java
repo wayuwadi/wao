@@ -97,6 +97,13 @@ public class AiRunController {
         return ApiResponse.ok(service.listWorkflows());
     }
 
+    /** 删除工作流配置；历史运行记录保留，项目仍存在时可重新接入。 */
+    @DeleteMapping("/workflows/{projectId}")
+    public ApiResponse<Void> deleteWorkflow(@PathVariable String projectId) {
+        service.deleteWorkflow(projectId);
+        return ApiResponse.ok(null);
+    }
+
     @GetMapping("/runners")
     public ApiResponse<List<AiRunnerDto>> runners() {
         return ApiResponse.ok(service.listRunners());
