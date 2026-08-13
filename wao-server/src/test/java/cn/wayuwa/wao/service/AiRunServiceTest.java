@@ -440,10 +440,12 @@ class AiRunServiceTest {
         when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
         when(runMapper.selectList(any())).thenReturn(List.of());
 
-        service.heartbeat("local-token", 3, null, null, "30-56-0f-09-61-11", "203.0.113.8", null);
+        var result = service.heartbeat(
+                "local-token", 3, null, null, "30-56-0f-09-61-11", "203.0.113.8", null);
 
         assertThat(runner.getAdminMaxConcurrency()).isEqualTo(5);
         assertThat(runner.getMaxConcurrency()).isEqualTo(3);
+        assertThat(result.maxConcurrency()).isEqualTo(5);
         assertThat(runner.getWakeMac()).isEqualTo("30:56:0F:09:61:11");
         assertThat(runner.getWakeHost()).isEqualTo("203.0.113.8");
         assertThat(runner.getWakePort()).isEqualTo(9);

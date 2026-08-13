@@ -122,6 +122,64 @@ class RunnerInvocationTest(unittest.TestCase):
         self.assertEqual(("message", "已确认问题边界"), with_summary)
 
 
+class RunnerConcurrencyTest(unittest.TestCase):
+    """后台并发配置必须改变 Runner 的真实领取能力，而不只是页面上的槽位数字。"""
+
+    def test_heartbeat_expands_runtime_concurrency_from_two_to_five(self) -> None:
+        self.assertEqual(5, RUNNER.resolve_runtime_concurrency({"maxConcurrency": 5}, 2))
+
+    def test_invalid_heartbeat_keeps_current_concurrency(self) -> None:
+        self.assertEqual(4, RUNNER.resolve_runtime_concurrency({}, 4))
+        self.assertEqual(4, RUNNER.resolve_runtime_concurrency({"maxConcurrency": "unknown"}, 4))
+
+    def test_main_claims_five_tasks_after_server_override(self) -> None:
+        workspace = Path(tempfile.mkdtemp(prefix="wao-concurrency-"))
+        self.addCleanup(shutil.rmtree, workspace, ignore_errors=True)
+        args = SimpleNamespace(
+            server="https://wao.example", name="test-runner", root=str(workspace), pair_code=None,
+            git_command=None, max_concurrency=2, sandbox="danger-full-access", claude_model=None,
+            git_protocol="auto", sync_ai_credentials=False, windows_task_name=None,
+        )
+        api = Mock()
+        claims = [{"id": f"run-{index}"} for index in range(5)]
+
+        def post(path: str, body: object = None) -> object:
+            if path.startswith("/api/ai/runner/heartbeat"):
+                return {"maxConcurrency": 5, "updateRequested": False}
+            if path == "/api/ai/runner/claim":
+                return claims.pop(0) if claims else None
+            if path == "/api/ai/runner/assistant/claim":
+                return None
+            raise AssertionError(f"unexpected API path: {path}")
+
+        api.post.side_effect = post
+        executor = Mock()
+        executor.submit.side_effect = lambda *unused: Mock(done=Mock(return_value=False))
+        executor_context = Mock()
+        executor_context.__enter__ = Mock(return_value=executor)
+        executor_context.__exit__ = Mock(return_value=False)
+
+        with patch.object(RUNNER, "parse_args", return_value=args), \
+                patch.object(RUNNER, "find_executable", return_value="git"), \
+                patch.object(RUNNER, "resolve_engines", return_value={"codex": "codex"}), \
+                patch.object(RUNNER, "detect_wake_mac", return_value=""), \
+                patch.object(RUNNER, "load_state", return_value={
+                    "server": "https://wao.example", "token": "local-token"}), \
+                patch.object(RUNNER, "WaoApi", return_value=api), \
+                patch.object(RUNNER, "build_cli_environment", return_value=({}, True, "gh")), \
+                patch.object(RUNNER, "remote_log_tail", return_value=""), \
+                patch.object(RUNNER, "script_hash", return_value="script-hash"), \
+                patch.object(RUNNER, "ThreadPoolExecutor", return_value=executor_context) as pool, \
+                patch.object(RUNNER, "execute_claim"), \
+                patch.object(RUNNER, "log"), \
+                patch.object(RUNNER.time, "sleep", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                RUNNER.main()
+
+        self.assertEqual(RUNNER.MAX_RUNNER_CONCURRENCY, pool.call_args.kwargs["max_workers"])
+        self.assertEqual(5, executor.submit.call_count)
+
+
 class RepoUrlTest(unittest.TestCase):
 
     HTTPS = "https://github.com/wayuwacn/wao.git"
