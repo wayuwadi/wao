@@ -20,6 +20,8 @@ export interface AiEvolutionSuggestion {
   description: string
   icon: string
   goal: string
+  sourceTitle: string
+  sourceUrl: string
 }
 
 export interface AiEvolutionOverview {
@@ -104,11 +106,17 @@ export const createAiRuns = (
 export const launchAutonomousGoal = (projectId: string, goal: string) =>
   data<AiRun>(http.post('/api/ai/goals', { projectId, goal }))
 
-/** 首页真实周额度、自主进化状态和服务端维护的改进建议。 */
+/** 首页真实周额度、自主进化状态和最近一批真实资产建议。 */
 export const fetchAiEvolution = () => data<AiEvolutionOverview>(http.get('/api/ai/evolution', {
   params: { _: Date.now() },
   headers: { 'Cache-Control': 'no-cache' },
 }))
+
+/** 从真实知识库和飞书同步归档挖掘五条新建议。 */
+export const refreshEvolutionSuggestions = () =>
+  data<AiEvolutionSuggestion[]>(http.post('/api/ai/evolution/suggestions/refresh', null, {
+    timeout: 310_000,
+  }))
 
 /** 一键把一条建议交给选中的项目工作流。 */
 export const launchEvolutionSuggestion = (suggestionId: string, projectId: string) =>

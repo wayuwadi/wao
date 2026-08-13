@@ -19,6 +19,7 @@ import cn.wayuwa.wao.dto.ContinueAiRunRequest;
 import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.AiEvolutionOverviewDto;
+import cn.wayuwa.wao.dto.AiEvolutionSuggestionDto;
 import cn.wayuwa.wao.dto.LaunchEvolutionSuggestionRequest;
 import cn.wayuwa.wao.dto.CreateAiRunsRequest;
 import cn.wayuwa.wao.dto.LaunchAutonomousGoalRequest;
@@ -174,7 +175,13 @@ public class AiRunController {
         return ApiResponse.ok(evolutionService.overview());
     }
 
-    /** 一键把服务端维护的一条改进建议交给选中的 AI 工作流。 */
+    /** 从真实知识库与飞书同步归档重新挖掘五条候选任务。 */
+    @PostMapping("/evolution/suggestions/refresh")
+    public ApiResponse<List<AiEvolutionSuggestionDto>> refreshEvolutionSuggestions() {
+        return ApiResponse.ok(evolutionService.refreshSuggestions());
+    }
+
+    /** 一键把一条已持久化的真实资产建议交给选中的 AI 工作流。 */
     @PostMapping("/evolution/suggestions/{suggestionId}/launch")
     public ApiResponse<AiRunDto> launchSuggestion(@PathVariable String suggestionId,
             @Valid @RequestBody LaunchEvolutionSuggestionRequest request, HttpServletRequest http) {

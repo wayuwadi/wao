@@ -19,6 +19,7 @@ import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.KbMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
+import cn.wayuwa.wao.service.AiAssistantAssetService.TaskMiningContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -113,6 +114,34 @@ class AiAssistantAssetServiceTest {
         assertThat(options.senders()).containsExactly("娃哥", "娃弟");
         assertThat(options.earliestChatDate()).isEqualTo(LocalDate.of(2026, 6, 1));
         assertThat(options.latestChatDate()).isEqualTo(LocalDate.of(2026, 8, 10));
+    }
+
+    @Test
+    void taskMiningContextUsesOnlyRealChatAndKnowledgeSourcesAndOpenTaskTitles() {
+        when(settings.get(SettingService.CHAT_SYNC_KB_ID, "")).thenReturn("kb-chat");
+        KbEntity kb = new KbEntity();
+        kb.setId("kb1");
+        kb.setName("产品想法");
+        when(kbMapper.selectList(any())).thenReturn(List.of(kb));
+        DocEntity chat = doc("d-chat", "kb-chat", "飞书群聊 · 2026-08-12",
+                "[{\"p\":\"**10:10 娃哥**：任务等待时需要明确原因\"}]");
+        DocEntity knowledge = doc("d-kb", "kb1", "移动端待办想法",
+                "[{\"p\":\"希望手机上可以快速筛选今天的任务。\"}]");
+        when(docMapper.selectList(any())).thenReturn(List.of(chat), List.of(knowledge));
+        TaskEntity open = new TaskEntity();
+        open.setId("t-open");
+        open.setTitle("已有未完成任务");
+        when(taskMapper.selectList(any())).thenReturn(List.of(open));
+
+        TaskMiningContext context = service.taskMiningContext();
+
+        assertThat(context.sources()).hasSize(2)
+                .extracting(source -> source.type()).containsExactlyInAnyOrder("chat", "knowledge");
+        assertThat(context.promptContext()).contains("任务等待时需要明确原因")
+                .contains("手机上可以快速筛选今天的任务")
+                .contains("/kb/kb-chat?doc=d-chat")
+                .contains("/kb/kb1?doc=d-kb");
+        assertThat(context.openTaskTitles()).containsExactly("已有未完成任务");
     }
 
     private DocEntity doc(String id, String kbId, String title, String blocks) {

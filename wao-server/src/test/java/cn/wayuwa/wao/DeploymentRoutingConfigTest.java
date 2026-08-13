@@ -82,6 +82,19 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
+    void evolutionSuggestionRefreshKeepsFiveMinuteReadOnlyJobAliveWithoutWriteReplay() throws IOException {
+        String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
+        String refreshLocation = section(nginx,
+                "location = /api/ai/evolution/suggestions/refresh {", "\n    }");
+
+        assertThat(refreshLocation)
+                .contains("proxy_pass https://wao_gateway;")
+                .contains("proxy_read_timeout 330s;")
+                .contains("proxy_next_upstream off;")
+                .contains("X-WAO-API-Route dual-gateway-ai-long always;");
+    }
+
+    @Test
     void deploymentPublishesNginxConfigAndProbesOpenAiInsideMasterContainer() throws IOException {
         String workflow = readFromRepository(".github/workflows/ci-cd.yml");
         String probe = readFromRepository("deploy/scripts/probe-codex-egress.sh");

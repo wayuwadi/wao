@@ -17,6 +17,7 @@ import cn.wayuwa.wao.dto.CompleteAiAssistantRunRequest;
 import cn.wayuwa.wao.mapper.AiAssistantRunMapper;
 import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class AiAssistantServiceTest {
 
@@ -79,6 +80,27 @@ class AiAssistantServiceTest {
         assertThat(run.getFinishedAt()).isNotNull();
         verify(mapper).updateById(run);
         verify(conversationService).appendAssistantReply(run, "这是答复");
+    }
+
+    @Test
+    void internalReadOnlyJobUsesRunnerQueueWithoutCreatingConversationHistory() {
+        AiRunnerNodeEntity local = runner("Linux 6.8", "codex");
+        AiAssistantRunEntity completed = assistantRun("succeeded");
+        completed.setMemberId("internal-evolution-suggestion");
+        completed.setResponseText("{\"suggestions\":[]}");
+        when(runnerMapper.selectList(any())).thenReturn(List.of(local));
+        when(mapper.selectCount(any())).thenReturn(0L);
+        when(mapper.selectById(any())).thenReturn(completed);
+
+        String response = service.runReadOnlyJob("evolution-suggestions", "只返回 JSON");
+
+        assertThat(response).isEqualTo("{\"suggestions\":[]}");
+        ArgumentCaptor<AiAssistantRunEntity> queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insert(queued.capture());
+        assertThat(queued.getValue().getMemberId()).isEqualTo("internal-evolution-suggestion");
+        assertThat(queued.getValue().getPromptText()).contains("只读分析").contains("只返回 JSON");
+        verify(conversationService, org.mockito.Mockito.never())
+                .enqueue(any(), any(), any(), any());
     }
 
     private AiRunnerNodeEntity runner(String platform, String engines) {

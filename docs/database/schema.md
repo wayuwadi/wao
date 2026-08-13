@@ -268,12 +268,16 @@ erDiagram
 | content | VARCHAR(1000) | 过滤命令和工具调用后的用户可读摘要 |
 | created_at | DATETIME | 上报时间，用于实时展示与任务档案排序 |
 
-### ai_evolution_state（V61 / V63）
+### ai_evolution_state / ai_evolution_suggestion（V61 / V63 / V64）
 
 自主进化调度的全局单例状态。`next_check_at` 用条件更新在主从节点间原子抢占，避免重复派发；
 `last_checked_at`、`last_outcome`、`last_run_id` 和 `last_suggestion_id` 供首页解释最近一次调度结果。
 V63 新增 `last_low_quota_key`，保存已经成功发送飞书提醒的“账号 + 周额度重置时间”键集合（重置时间缺失时使用自然周）；
 额度进入新的重置周期后会生成新键，发送失败则不写入，下一轮检查继续重试。
+
+`ai_evolution_suggestion` 按 `batch_id + ord` 保存本地 Codex 从真实知识库/飞书归档挖掘出的任务批次；
+每条包含标题、说明、可直接派发的完整目标以及 `source_title / source_url`。一批五条在同一事务中写入，
+首页只读取最新完整批次；历史随机 id 保留，使刷新前已打开的页面仍能安全派发服务端原始目标。
 
 ### ai_account（V38）
 
@@ -609,4 +613,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V60__expand_task_description.sql`：任务描述升级为 `MEDIUMTEXT`，完整承载长 Markdown 自主目标。
 - `V61__ai_autonomous_evolution.sql`：保存双节点共享的自主进化调度和最近派发状态。
 - `V63__ai_evolution_low_quota_reminder.sql`：按账号与额度重置周期去重飞书低额度提醒。
+- `V64__ai_evolution_mined_suggestions.sql`：保存从真实 WAO 资产挖掘且可追溯的自主进化任务建议批次。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

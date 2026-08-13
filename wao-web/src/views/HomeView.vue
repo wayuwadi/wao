@@ -12,6 +12,7 @@ import {
   launchEvolutionSuggestion,
   removeAiRunner,
   removeAiWorkflow,
+  refreshEvolutionSuggestions,
   requestRunnerScriptUpdate,
   rerunAiRun,
   saveAiProjectConfig,
@@ -65,6 +66,8 @@ const evolution = ref<AiEvolutionOverview | null>(null)
 const evolutionLoading = ref(true)
 const evolutionError = ref('')
 const launchingSuggestionId = ref<string | null>(null)
+const suggestionsRefreshing = ref(false)
+const suggestionError = ref('')
 const wakingRunnerId = ref<string | null>(null)
 const removingRunnerId = ref<string | null>(null)
 const removingWorkflowId = ref<string | null>(null)
@@ -79,6 +82,7 @@ const form = reactive({
 })
 let timer: ReturnType<typeof setInterval> | null = null
 let evolutionTimer: ReturnType<typeof setInterval> | null = null
+let initialSuggestionRefreshStarted = false
 
 const activeRuns = computed(() => runs.value.filter((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 const recentRuns = computed(() => runs.value.filter((run) => !['queued', 'claimed', 'running'].includes(run.status)).slice(0, 8))
@@ -162,12 +166,33 @@ async function refreshWorkflows() {
 async function refreshEvolution() {
   evolutionLoading.value = true
   evolutionError.value = ''
+  let needsInitialSuggestions = false
   try {
     evolution.value = await fetchAiEvolution()
+    needsInitialSuggestions = evolution.value.suggestions.length === 0 && !initialSuggestionRefreshStarted
   } catch (error) {
     evolutionError.value = error instanceof Error ? error.message : '周额度与自主进化状态读取失败'
   } finally {
     evolutionLoading.value = false
+  }
+  if (needsInitialSuggestions) {
+    initialSuggestionRefreshStarted = true
+    void refreshSuggestions(false)
+  }
+}
+
+async function refreshSuggestions(showSuccess = true) {
+  if (!evolution.value || suggestionsRefreshing.value) return
+  suggestionsRefreshing.value = true
+  suggestionError.value = ''
+  try {
+    const next = await refreshEvolutionSuggestions()
+    evolution.value = { ...evolution.value, suggestions: next }
+    if (showSuccess) toast('已从真实资料换了一批任务建议', 'ri-refresh-line')
+  } catch (error) {
+    suggestionError.value = error instanceof Error ? error.message : '真实资料挖掘失败，请重试'
+  } finally {
+    suggestionsRefreshing.value = false
   }
 }
 
@@ -600,15 +625,33 @@ onBeforeUnmount(() => {
           <i :class="evolution.autoStatus === 'ready' ? 'ri-checkbox-circle-line' : 'ri-time-line'"></i>
           {{ evolution.autoStatus === 'ready' ? '可自动执行' : evolution.autoStatus === 'busy' ? 'AI 正忙' : '等待条件' }}
         </span>
-        <button v-if="evolutionError" class="secondary" @click="refreshEvolution"><i class="ri-refresh-line"></i>重试</button>
+        <button
+          v-if="evolution"
+          class="secondary suggestion-refresh"
+          :disabled="suggestionsRefreshing"
+          @click="refreshSuggestions()"
+        >
+          <i :class="suggestionsRefreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
+          {{ suggestionsRefreshing ? '正在挖掘' : evolution.suggestions.length ? '刷新换一批' : '挖掘 5 个任务' }}
+        </button>
+        <button v-else-if="evolutionError" class="secondary" @click="refreshEvolution"><i class="ri-refresh-line"></i>重试</button>
       </header>
       <div v-if="evolutionLoading && !evolution" class="suggestion-loading">
         <i class="ri-loader-4-line spin"></i>正在整理改进建议…
       </div>
-      <div v-else-if="evolution" class="suggestion-grid">
+      <div v-else-if="suggestionsRefreshing && !evolution?.suggestions.length" class="suggestion-loading">
+        <i class="ri-loader-4-line spin"></i>正在从知识库和飞书同步资料中挖掘 5 个任务，可能需要几分钟…
+      </div>
+      <div v-else-if="evolution?.suggestions.length" class="suggestion-grid">
         <article v-for="suggestion in evolution.suggestions" :key="suggestion.id" class="suggestion-card">
           <span><i :class="suggestion.icon"></i></span>
-          <div><h3>{{ suggestion.title }}</h3><p>{{ suggestion.description }}</p></div>
+          <div>
+            <h3>{{ suggestion.title }}</h3>
+            <p>{{ suggestion.description }}</p>
+            <a v-if="suggestion.sourceUrl" class="suggestion-source" :href="suggestion.sourceUrl">
+              <i class="ri-links-line"></i>{{ suggestion.sourceTitle }}
+            </a>
+          </div>
           <button
             :disabled="launchingSuggestionId !== null || !activeWorkflows.length"
             @click="launchSuggestion(suggestion)"
@@ -617,6 +660,15 @@ onBeforeUnmount(() => {
             {{ launchingSuggestionId === suggestion.id ? '正在派发' : '直接执行' }}
           </button>
         </article>
+      </div>
+      <div v-else-if="evolution" class="suggestion-empty">
+        <i class="ri-database-2-line"></i>
+        <strong>还没有真实资料建议</strong>
+        <span>系统会读取知识库和已同步的飞书归档，不会用固定模板或演示数据凑数。</span>
+      </div>
+      <div v-if="suggestionError" class="suggestion-error" role="alert">
+        <i class="ri-error-warning-line"></i><span>{{ suggestionError }}</span>
+        <button :disabled="suggestionsRefreshing" @click="refreshSuggestions(false)">重试</button>
       </div>
       <footer v-if="evolution?.weeklyQuotas.length">
         <span v-for="quota in evolution.weeklyQuotas" :key="quota.accountId">
@@ -1266,12 +1318,16 @@ onBeforeUnmount(() => {
 .auto-state { padding: 5px 9px; border-radius: 999px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 10.5px; white-space: nowrap; }
 .auto-state.ready { background: #d9f1e4; color: #267c59; }.auto-state i { margin-right: 4px; }
 .evolution-panel header > button { padding: 6px 9px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
+.evolution-panel header > button:disabled { opacity: .55; cursor: wait; }
 .suggestion-loading { min-height: 92px; padding: 22px; display: grid; place-content: center; gap: 7px; color: var(--wao-text-weak); font-size: 11px; }
 .suggestion-grid { padding: 0 12px 13px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .suggestion-card { min-width: 0; padding: 12px; border: 1px solid color-mix(in srgb, #3b8c69 14%, var(--wao-line)); border-radius: 11px; background: color-mix(in srgb, var(--wao-bg-card) 92%, transparent); display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 9px; }
 .suggestion-card > span { width: 32px; height: 32px; border-radius: 9px; background: #e3f3ea; color: #2a7658; display: grid; place-items: center; }
 .suggestion-card h3 { margin: 0; color: var(--wao-text-1); font-size: 12px; }.suggestion-card p { margin: 3px 0 0; color: var(--wao-text-weak); font-size: 10px; line-height: 1.45; }
+.suggestion-source { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; margin-top: 6px; color: var(--wao-primary); font-size: 9.5px; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .suggestion-card button { height: 30px; padding: 0 9px; border: 1px solid #4a9274; border-radius: 8px; background: #fff; color: #2a7658; cursor: pointer; font-size: 10.5px; white-space: nowrap; }.suggestion-card button i { margin-right: 4px; }.suggestion-card button:disabled { opacity: .5; cursor: not-allowed; }
+.suggestion-empty { min-height: 112px; padding: 20px; display: grid; place-items: center; align-content: center; gap: 5px; color: var(--wao-text-weak); text-align: center; font-size: 10.5px; }.suggestion-empty > i { font-size: 21px; color: #4a9274; }.suggestion-empty strong { color: var(--wao-text-2); font-size: 12px; }
+.suggestion-error { margin: 0 12px 12px; padding: 9px 10px; border: 1px solid var(--wao-danger-line); border-radius: 8px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); display: flex; align-items: center; gap: 7px; font-size: 10.5px; }.suggestion-error span { flex: 1; }.suggestion-error button { border: 0; background: transparent; color: inherit; cursor: pointer; }
 .evolution-panel > footer { padding: 9px 18px; border-top: 1px solid color-mix(in srgb, #3b8c69 13%, var(--wao-line)); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--wao-text-weak); font-size: 9.5px; }
 .evolution-panel > footer span { padding: 3px 7px; border-radius: 999px; background: #dff2e7; color: #326c56; }.evolution-panel > footer small { margin-left: auto; }
 .goal-launcher {

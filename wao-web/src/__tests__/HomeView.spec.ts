@@ -13,6 +13,7 @@ import {
   fetchAiWorkflows,
   launchAutonomousGoal,
   launchEvolutionSuggestion,
+  refreshEvolutionSuggestions,
   removeAiRunner,
   removeAiWorkflow,
   requestRunnerScriptUpdate,
@@ -118,6 +119,13 @@ vi.mock('@/api/ai', () => ({
     latestProgress: '目标已进入队列', progressUpdatedAt: '2026-08-13T10:01:00', progress: [],
     sessionId: null, exitCode: null, createdAt: '2026-08-13T10:01:00', startedAt: null, finishedAt: null,
   }),
+  refreshEvolutionSuggestions: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
+    {
+      id: 'mined-1', title: '给任务增加依赖阻塞提示', description: '从群聊线索完善任务等待体验',
+      icon: 'ri-chat-3-line', goal: '实现真实阻塞提示',
+      sourceTitle: '飞书群聊 · 2026-08-12', sourceUrl: '/kb/k1?doc=d1',
+    },
+  ]),
   requestRunnerScriptUpdate: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
       id: 'rn1', name: '娃哥电脑', platform: 'Windows 11', engines: ['codex'],
@@ -204,6 +212,38 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
     expect(launchEvolutionSuggestion).toHaveBeenCalledWith('ux-friction', 'p1')
     expect(wrapper.findAll('.run-card').some((card) => card.text().includes('高频使用阻力'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('可从真实资料刷新换一批并展示可追溯来源', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.suggestion-refresh').trigger('click')
+    await flushPromises()
+
+    expect(refreshEvolutionSuggestions).toHaveBeenCalled()
+    expect(wrapper.find('.suggestion-card').text()).toContain('给任务增加依赖阻塞提示')
+    expect(wrapper.find('.suggestion-source').text()).toContain('飞书群聊 · 2026-08-12')
+    expect(wrapper.find('.suggestion-source').attributes('href')).toBe('/kb/k1?doc=d1')
+    wrapper.unmount()
+  })
+
+  it('首次没有已保存批次时自动从真实资料生成', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
+      weeklyQuotas: [], suggestions: [], autoStatus: 'quota_unavailable',
+      autoMessage: '等待真实额度', lastActivityAt: null, nextEligibleAt: null,
+      lastCheckedAt: null, lastRunId: null,
+    })
+    const refreshCalls = vi.mocked(refreshEvolutionSuggestions).mock.calls.length
+
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    expect(refreshEvolutionSuggestions).toHaveBeenCalledTimes(refreshCalls + 1)
+    expect(wrapper.find('.suggestion-card').text()).toContain('给任务增加依赖阻塞提示')
     wrapper.unmount()
   })
 
