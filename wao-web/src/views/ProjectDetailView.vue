@@ -205,6 +205,8 @@ const renameText = ref('')
 /** 分组视图里正在快速新建任务的分组 id，以及输入框内容。 */
 const quickAddGroup = ref<string | null>(null)
 const quickAddText = ref('')
+const quickAddState = ref<'idle' | 'submitting' | 'error'>('idle')
+const quickAddPendingId = ref<string | null>(null)
 // v-for 里的模板 ref 是数组（一次只会渲染一个输入框，取第一个即可）
 const quickAddInput = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
 const renameInput = ref<HTMLInputElement | HTMLInputElement[] | null>(null)
@@ -271,16 +273,37 @@ function toggleGroupDone(id: string) {
 function startQuickAdd(groupId: string) {
   quickAddGroup.value = groupId
   quickAddText.value = ''
+  quickAddState.value = 'idle'
+  quickAddPendingId.value = null
   nextTick(() => firstOf(quickAddInput.value)?.focus())
 }
-function submitQuickAdd(groupId: string) {
+async function submitQuickAdd(groupId: string) {
+  if (quickAddState.value === 'submitting') return
   const title = quickAddText.value.trim()
   if (!title) return
-  void data.addTask({
-    title, project: pid.value, pr: 'P2', owner: session.currentUser.id,
-    due: data.today, desc: '', images: [], groupId,
-  })
+  const payload = {
+    title, project: pid.value, pr: 'P2' as const, owner: session.currentUser.id,
+    due: data.today, desc: '', images: [], groupId, startAt: null, endAt: null,
+  }
+  quickAddState.value = 'submitting'
+  let persisted = false
+  if (quickAddPendingId.value) {
+    data.patchTask(quickAddPendingId.value, payload)
+    await data.flushTask(quickAddPendingId.value)
+    persisted = data.taskSaveState(quickAddPendingId.value) === 'saved'
+  } else {
+    const result = await data.addTask(payload)
+    quickAddPendingId.value = result.persisted ? null : result.task.id
+    persisted = result.persisted
+  }
+  if (!persisted) {
+    quickAddState.value = 'error'
+    toast('任务没有保存到服务器，输入内容仍在', 'ri-error-warning-line')
+    return
+  }
   quickAddText.value = ''
+  quickAddState.value = 'idle'
+  quickAddPendingId.value = null
   toast(`任务「${title}」已创建`, 'ri-checkbox-circle-fill')
 }
 function onDropGroup(groupId: string, overId?: string) {
@@ -466,16 +489,22 @@ function onDropGroup(groupId: string, overId?: string) {
             </button>
           </div>
 
-          <div v-if="quickAddGroup === g.id" class="group-add-row">
-            <i class="ri-add-line"></i>
-            <input
-              ref="quickAddInput"
-              v-model="quickAddText"
-              placeholder="任务标题，回车创建，连着敲可以一次录好几条"
-              @keydown.enter="submitQuickAdd(g.id)"
-              @keydown.esc="quickAddGroup = null"
-            />
-            <button class="group-add-done" @click="quickAddGroup = null">完成</button>
+          <div v-if="quickAddGroup === g.id" class="group-add-wrap">
+            <div class="group-add-row" :class="{ error: quickAddState === 'error' }">
+              <i :class="quickAddState === 'submitting' ? 'ri-loader-4-line spinning' : 'ri-add-line'"></i>
+              <input
+                ref="quickAddInput"
+                v-model="quickAddText"
+                :disabled="quickAddState === 'submitting'"
+                placeholder="任务标题，回车创建，连着敲可以一次录好几条"
+                @keydown.enter.prevent="submitQuickAdd(g.id)"
+                @keydown.esc="quickAddGroup = null"
+              />
+              <button class="group-add-done" :disabled="quickAddState === 'submitting'" @click="quickAddState === 'error' ? submitQuickAdd(g.id) : (quickAddGroup = null)">
+                {{ quickAddState === 'submitting' ? '提交中' : quickAddState === 'error' ? '重试' : '完成' }}
+              </button>
+            </div>
+            <span v-if="quickAddState === 'error'" class="group-add-error" role="alert">未保存到服务器，输入仍保留</span>
           </div>
 
           <div
@@ -1282,17 +1311,18 @@ function onDropGroup(groupId: string, overId?: string) {
 .group-op.danger:hover {
   background: var(--wao-danger);
 }
+.group-add-wrap { margin-top: 8px; }
 .group-add-row {
   display: flex;
   align-items: center;
   gap: 7px;
-  margin-top: 8px;
   padding: 0 8px;
   height: 38px;
   border: 1px solid var(--wao-primary);
   border-radius: 9px;
   background: var(--wao-primary-soft);
 }
+.group-add-row.error { border-color: var(--wao-danger); background: var(--wao-danger-bg); }
 .group-add-row > i {
   font-size: 15px;
   color: var(--wao-primary);
@@ -1313,6 +1343,13 @@ function onDropGroup(groupId: string, overId?: string) {
   font-size: 12px;
   cursor: pointer;
   padding: 4px 6px;
+}
+.group-add-done:disabled { cursor: wait; opacity: .6; }
+.group-add-error {
+  display: block;
+  margin: 5px 8px 0;
+  color: var(--wao-danger);
+  font-size: 11.5px;
 }
 .grow {
   display: flex;

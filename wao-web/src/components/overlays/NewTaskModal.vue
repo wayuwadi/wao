@@ -82,6 +82,8 @@ const desc = ref(draft.desc ?? '')
 const usePdca = ref(draft.usePdca ?? false)
 const pdcaPlan = ref(draft.pdcaPlan ?? '')
 const draftState = ref<'saving' | 'saved'>('saved')
+const createState = ref<'idle' | 'submitting' | 'error'>('idle')
+const pendingTaskId = ref<string | null>(null)
 let draftTimer: ReturnType<typeof setTimeout> | null = null
 
 watch([title, project, owner, pr, due, desc, scheduleMode, startAt, endAt, usePdca, pdcaPlan], () => {
@@ -124,7 +126,8 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   done(ref?.url ?? null, ref?.name ?? file.name)
 }
 
-function create() {
+async function create() {
+  if (createState.value === 'submitting') return
   const name = title.value.trim()
   if (!name) return
   if (!project.value) {
@@ -139,8 +142,7 @@ function create() {
     toast('请先写下本轮希望达成的结果', 'ri-error-warning-line')
     return
   }
-  // addTask 立即返回本地记录、后台落库，所以这里不 await —— 弹窗即点即关。
-  void data.addTask({
+  const payload = {
     title: name, project: project.value, pr: pr.value, owner: owner.value,
     due: scheduleMode.value === 'range' ? startAt.value.slice(0, 10) : dueDate(due.value),
     startAt: scheduleMode.value === 'range' ? startAt.value : null,
@@ -151,7 +153,24 @@ function create() {
       plan: pdcaPlan.value.trim(), check: '', act: '', outcome: null,
       startedAt: nowIso(), reviewedAt: null,
     }] : [],
-  })
+  }
+  createState.value = 'submitting'
+  let persisted = false
+  if (pendingTaskId.value) {
+    // 首次写入失败后复用同一条本地任务，不重复插入；失败后改过的内容也一起补写。
+    data.patchTask(pendingTaskId.value, payload)
+    await data.flushTask(pendingTaskId.value)
+    persisted = data.taskSaveState(pendingTaskId.value) === 'saved'
+  } else {
+    const result = await data.addTask(payload)
+    pendingTaskId.value = result.persisted ? null : result.task.id
+    persisted = result.persisted
+  }
+  if (!persisted) {
+    createState.value = 'error'
+    toast('任务没有保存到服务器，请检查网络后重试', 'ri-error-warning-line')
+    return
+  }
   localStorage.removeItem(DRAFT_KEY)
   ui.closeModal()
   toast(`任务「${name}」已创建`, 'ri-checkbox-circle-fill')
@@ -167,15 +186,20 @@ async function makeDefaultProject() {
     toast('默认项目保存失败，请重试', 'ri-error-warning-line')
   }
 }
+
+/** 写入正在飞行时不允许误关弹窗；失败后仍可关闭，草稿和本地任务都会保留。 */
+function requestClose() {
+  if (createState.value !== 'submitting') ui.closeModal()
+}
 </script>
 
 <template>
-  <div class="mask" @click="ui.closeModal()"></div>
+  <div class="mask" @click="requestClose"></div>
   <div class="modal task">
     <div class="head">
       <div class="title">新建任务</div>
       <div class="spacer"></div>
-      <button class="close" @click="ui.closeModal()"><i class="ri-close-line"></i></button>
+      <button class="close" :disabled="createState === 'submitting'" @click="requestClose"><i class="ri-close-line"></i></button>
     </div>
     <input
       ref="titleInput"
@@ -183,7 +207,7 @@ async function makeDefaultProject() {
       class="title-input"
       enterkeyhint="done"
       placeholder="任务标题，例如「整理证件盒 · 第 4 批」"
-      @keydown.enter="create"
+      @keydown.enter.prevent="create"
     />
 
     <div class="label">所属项目</div>
@@ -271,10 +295,14 @@ async function makeDefaultProject() {
     </label>
 
     <div class="foot">
-      <span class="draft-state"><i :class="draftState === 'saving' ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ draftState === 'saving' ? '正在保存草稿' : '草稿已保存' }}</span>
+      <span v-if="createState === 'error'" class="create-error" role="alert"><i class="ri-error-warning-line"></i>未保存到服务器，内容和草稿仍在</span>
+      <span v-else class="draft-state"><i :class="draftState === 'saving' ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ draftState === 'saving' ? '正在保存草稿' : '草稿已保存' }}</span>
       <div class="spacer"></div>
-      <button class="btn-ghost" @click="ui.closeModal()">取消</button>
-      <button class="btn-primary" :disabled="!title.trim()" @click="create">创建任务</button>
+      <button class="btn-ghost" :disabled="createState === 'submitting'" @click="requestClose">取消</button>
+      <button class="btn-primary" :disabled="!title.trim() || createState === 'submitting'" @click="create">
+        <i v-if="createState === 'submitting'" class="ri-loader-4-line spin"></i>
+        {{ createState === 'submitting' ? '正在创建' : createState === 'error' ? '重试创建' : '创建任务' }}
+      </button>
     </div>
   </div>
 </template>
@@ -331,6 +359,7 @@ async function makeDefaultProject() {
 .close:hover {
   background: var(--wao-bg-hover-2);
 }
+.close:disabled { cursor: wait; opacity: .45; }
 .close i {
   font-size: 16px;
 }
@@ -533,6 +562,13 @@ async function makeDefaultProject() {
   align-items: center;
   gap: 5px;
 }
+.create-error {
+  color: var(--wao-danger);
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
 .spin {
   animation: waoSpin 0.9s linear infinite;
 }
@@ -562,7 +598,13 @@ async function makeDefaultProject() {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
+.btn-ghost:disabled,
+.btn-primary:disabled { cursor: not-allowed; opacity: .58; }
 .btn-primary:hover:not(:disabled) {
   background: var(--wao-primary-hover);
 }
@@ -684,7 +726,8 @@ async function makeDefaultProject() {
     border-top: 1px solid var(--wao-divider);
   }
   .foot .spacer { display: none; }
-  .draft-state { width: 100%; }
+  .draft-state,
+  .create-error { width: 100%; }
   .btn-ghost,
   .btn-primary { flex: 1; height: 44px; font-size: 14px; }
 }
