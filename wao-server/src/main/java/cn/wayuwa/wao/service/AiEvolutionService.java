@@ -13,6 +13,7 @@ import cn.wayuwa.wao.dto.AiEvolutionSuggestionDto;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiWeeklyQuotaDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
+import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AiEvolutionStateMapper;
 import cn.wayuwa.wao.mapper.AiTaskRunMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -56,14 +57,17 @@ public class AiEvolutionService {
     private final AiRunService runs;
     private final AiTaskRunMapper runMapper;
     private final AiEvolutionStateMapper stateMapper;
+    private final FeishuWebhookNotifier notifier;
     private final String publicBaseUrl;
 
     public AiEvolutionService(AiAccountService accounts, AiRunService runs, AiTaskRunMapper runMapper,
-            AiEvolutionStateMapper stateMapper, @Value("${wao.share.base-url:}") String configuredBaseUrl) {
+            AiEvolutionStateMapper stateMapper, FeishuWebhookNotifier notifier,
+            @Value("${wao.share.base-url:}") String configuredBaseUrl) {
         this.accounts = accounts;
         this.runs = runs;
         this.runMapper = runMapper;
         this.stateMapper = stateMapper;
+        this.notifier = notifier;
         this.publicBaseUrl = configuredBaseUrl == null || configuredBaseUrl.isBlank()
                 ? null : configuredBaseUrl.replaceFirst("/+$", "");
     }
@@ -130,6 +134,12 @@ public class AiEvolutionService {
         if (claimed == 0) return;
 
         try {
+            accounts.refreshQuotaSnapshots();
+            List<AiWeeklyQuotaDto> syncedQuotas = accounts.weeklyQuotas().stream()
+                    .filter(quota -> "SYNCED".equals(quota.status()))
+                    .toList();
+            notifyLowQuota(syncedQuotas);
+
             if (hasActiveRun()) {
                 outcome("已有 AI 任务在运行，本轮跳过", null, null);
                 return;
@@ -140,9 +150,7 @@ public class AiEvolutionService {
                 return;
             }
 
-            accounts.refreshQuotaSnapshots();
-            List<AiWeeklyQuotaDto> quotas = accounts.weeklyQuotas().stream()
-                    .filter(quota -> "SYNCED".equals(quota.status()))
+            List<AiWeeklyQuotaDto> quotas = syncedQuotas.stream()
                     .filter(quota -> quota.remainingPercent() >= MIN_REMAINING_PERCENT)
                     .toList();
             if (quotas.isEmpty()) {
@@ -169,6 +177,59 @@ public class AiEvolutionService {
             outcome("自动派发失败：" + shorten(reason), null, null);
             log.warn("自主进化检查失败：{}", reason);
         }
+    }
+
+    /** 每个账号的同一个额度重置周期只提醒一次，发送失败时保留下轮重试机会。 */
+    private void notifyLowQuota(List<AiWeeklyQuotaDto> syncedQuotas) {
+        List<AiWeeklyQuotaDto> lowQuotas = syncedQuotas.stream()
+                .filter(quota -> quota.remainingPercent() < MIN_REMAINING_PERCENT)
+                .toList();
+        if (lowQuotas.isEmpty()) return;
+        AiEvolutionStateEntity state = stateMapper.selectById(STATE_ID);
+        java.util.Set<String> remindedKeys = state == null || state.getLastLowQuotaKey() == null
+                ? java.util.Set.of()
+                : new java.util.HashSet<>(java.util.Arrays.asList(state.getLastLowQuotaKey().split("\\|")));
+        List<AiWeeklyQuotaDto> newLowQuotas = lowQuotas.stream()
+                .filter(quota -> !remindedKeys.contains(reminderKey(quota)))
+                .toList();
+        if (newLowQuotas.isEmpty()) return;
+
+        String body = newLowQuotas.stream()
+                .map(quota -> "- **" + quota.label() + "**：周剩余 " + quota.remainingPercent() + "%"
+                        + (quota.resetsAt() == null ? "" : "，重置时间 " + quota.resetsAt()))
+                .collect(java.util.stream.Collectors.joining("\n"));
+        FeishuWebhookNotifier.Card card = new FeishuWebhookNotifier.Card(
+                "AI 周额度低于 50%", "orange", List.of(),
+                body + "\n\n自主进化已对这些账号暂停，请按需调整使用节奏。",
+                publicBaseUrl == null ? null : "查看首页额度",
+                publicBaseUrl);
+        if (notifier.notifyCard(card)) {
+            java.util.Set<String> currentReminderKeys = new java.util.HashSet<>(remindedKeys);
+            syncedQuotas.forEach(quota -> {
+                currentReminderKeys.removeIf(key -> key.startsWith(quota.accountId() + "@"));
+                String key = reminderKey(quota);
+                if (remindedKeys.contains(key)
+                        || newLowQuotas.stream().anyMatch(newLow -> reminderKey(newLow).equals(key))) {
+                    currentReminderKeys.add(key);
+                }
+            });
+            String storedReminderKeys = currentReminderKeys.stream()
+                    .sorted()
+                    .collect(java.util.stream.Collectors.joining("|"));
+            stateMapper.update(null, new LambdaUpdateWrapper<AiEvolutionStateEntity>()
+                    .eq(AiEvolutionStateEntity::getId, STATE_ID)
+                    .set(AiEvolutionStateEntity::getLastLowQuotaKey, storedReminderKeys)
+                    .set(AiEvolutionStateEntity::getUpdatedAt, LocalDateTime.now(ZONE)));
+        }
+    }
+
+    private static String reminderKey(AiWeeklyQuotaDto quota) {
+        String window = quota.resetsAt();
+        if (window == null) {
+            window = "week:" + java.time.LocalDate.now(ZONE)
+                    .with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+        }
+        return quota.accountId() + "@" + window;
     }
 
     private LaunchCandidate chooseWorkflow(List<AiWeeklyQuotaDto> quotas) {

@@ -15,6 +15,7 @@ public class AiEvolutionStateEntity {
     private String lastOutcome;
     private String lastRunId;
     private String lastSuggestionId;
+    private String lastLowQuotaKey;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -30,6 +31,8 @@ public class AiEvolutionStateEntity {
     public void setLastRunId(String lastRunId) { this.lastRunId = lastRunId; }
     public String getLastSuggestionId() { return lastSuggestionId; }
     public void setLastSuggestionId(String lastSuggestionId) { this.lastSuggestionId = lastSuggestionId; }
+    public String getLastLowQuotaKey() { return lastLowQuotaKey; }
+    public void setLastLowQuotaKey(String lastLowQuotaKey) { this.lastLowQuotaKey = lastLowQuotaKey; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

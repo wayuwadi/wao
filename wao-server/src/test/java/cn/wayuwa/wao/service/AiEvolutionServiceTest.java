@@ -18,6 +18,7 @@ import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiWeeklyQuotaDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
+import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AiEvolutionStateMapper;
 import cn.wayuwa.wao.mapper.AiTaskRunMapper;
 import org.junit.jupiter.api.Test;
@@ -40,8 +41,9 @@ class AiEvolutionServiceTest {
     private final AiRunService runs = mock(AiRunService.class);
     private final AiTaskRunMapper runMapper = mock(AiTaskRunMapper.class);
     private final AiEvolutionStateMapper stateMapper = mock(AiEvolutionStateMapper.class);
+    private final FeishuWebhookNotifier notifier = mock(FeishuWebhookNotifier.class);
     private final AiEvolutionService service = new AiEvolutionService(
-            accounts, runs, runMapper, stateMapper, "https://wao.example");
+            accounts, runs, runMapper, stateMapper, notifier, "https://wao.example");
 
     @Test
     void overviewDoesNotTreatUnknownQuotaAsFullAllowance() {
@@ -87,8 +89,63 @@ class AiEvolutionServiceTest {
 
         service.checkAndLaunch();
 
-        verify(accounts, org.mockito.Mockito.never()).refreshQuotaSnapshots();
+        verify(accounts).refreshQuotaSnapshots();
         verify(runs, org.mockito.Mockito.never()).launchGoal(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void lowWeeklyQuotaSendsOneFeishuReminderPerResetWindowEvenDuringCooldown() {
+        when(stateMapper.update(isNull(), any())).thenReturn(1);
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(runMapper.latestActivityAt()).thenReturn(LocalDateTime.now().minusHours(2));
+        when(accounts.weeklyQuotas()).thenReturn(List.of(new AiWeeklyQuotaDto(
+                "aa1", "codex", "Codex", "plus", 58, 42, "2026-08-17T10:00:00",
+                LocalDateTime.now().toString(), "SYNCED", "七天额度已用 58%")));
+        when(notifier.notifyCard(any())).thenReturn(true);
+
+        service.checkAndLaunch();
+
+        ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        verify(notifier).notifyCard(card.capture());
+        assertThat(card.getValue().title()).contains("低于 50%");
+        assertThat(card.getValue().body()).contains("周剩余 42%").contains("2026-08-17T10:00:00");
+        verify(stateMapper, org.mockito.Mockito.times(3)).update(isNull(), any());
+        verify(runs, org.mockito.Mockito.never()).launchGoal(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void alreadyRemindedResetWindowDoesNotSendDuplicateLowQuotaCard() {
+        when(stateMapper.update(isNull(), any())).thenReturn(1);
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(accounts.weeklyQuotas()).thenReturn(List.of(new AiWeeklyQuotaDto(
+                "aa1", "codex", "Codex", "plus", 58, 42, "2026-08-17T10:00:00",
+                LocalDateTime.now().toString(), "SYNCED", "七天额度已用 58%")));
+        AiEvolutionStateEntity state = new AiEvolutionStateEntity();
+        state.setLastLowQuotaKey("aa1@2026-08-17T10:00:00");
+        when(stateMapper.selectById("autonomous-evolution")).thenReturn(state);
+
+        service.checkAndLaunch();
+
+        verify(notifier, org.mockito.Mockito.never()).notifyCard(any());
+        verify(runs, org.mockito.Mockito.never()).launchGoal(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void recoveredAccountDoesNotCauseAnotherAccountToRepeatItsReminder() {
+        when(stateMapper.update(isNull(), any())).thenReturn(1);
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(accounts.weeklyQuotas()).thenReturn(List.of(
+                new AiWeeklyQuotaDto("aa1", "codex", "Codex A", "plus", 30, 70,
+                        "2026-08-17T10:00:00", LocalDateTime.now().toString(), "SYNCED", null),
+                new AiWeeklyQuotaDto("aa2", "codex", "Codex B", "plus", 58, 42,
+                        "2026-08-17T10:00:00", LocalDateTime.now().toString(), "SYNCED", null)));
+        AiEvolutionStateEntity state = new AiEvolutionStateEntity();
+        state.setLastLowQuotaKey("aa1@2026-08-17T10:00:00|aa2@2026-08-17T10:00:00");
+        when(stateMapper.selectById("autonomous-evolution")).thenReturn(state);
+
+        service.checkAndLaunch();
+
+        verify(notifier, org.mockito.Mockito.never()).notifyCard(any());
     }
 
     @Test
