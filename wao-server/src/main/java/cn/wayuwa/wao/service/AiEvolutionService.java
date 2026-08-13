@@ -15,6 +15,7 @@ import cn.wayuwa.wao.domain.AiTaskRunEntity;
 import cn.wayuwa.wao.dto.AiEvolutionOverviewDto;
 import cn.wayuwa.wao.dto.AiEvolutionSuggestionDto;
 import cn.wayuwa.wao.dto.AiRunDto;
+import cn.wayuwa.wao.dto.AiSessionQuotaDto;
 import cn.wayuwa.wao.dto.AiWeeklyQuotaDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
@@ -76,9 +77,10 @@ public class AiEvolutionService {
                 ? null : configuredBaseUrl.replaceFirst("/+$", "");
     }
 
-    /** 首页读取真实周额度、推荐目标和最近一次自动检查结果。 */
+    /** 首页读取真实会话/周额度、推荐目标和最近一次自动检查结果。 */
     public AiEvolutionOverviewDto overview() {
         LocalDateTime now = LocalDateTime.now(ZONE);
+        List<AiSessionQuotaDto> sessionQuotas = accounts.sessionQuotas();
         List<AiWeeklyQuotaDto> quotas = accounts.weeklyQuotas();
         LocalDateTime lastActivity = runMapper.latestActivityAt();
         boolean active = hasActiveRun();
@@ -111,7 +113,7 @@ public class AiEvolutionService {
         if (state != null && state.getLastOutcome() != null && !state.getLastOutcome().isBlank()) {
             message += " 最近检查：" + state.getLastOutcome();
         }
-        return new AiEvolutionOverviewDto(quotas, suggestions.latest(), status, message,
+        return new AiEvolutionOverviewDto(sessionQuotas, quotas, suggestions.latest(), status, message,
                 text(lastActivity), text(eligibleAt), state == null ? null : text(state.getLastCheckedAt()),
                 state == null ? null : state.getLastRunId());
     }

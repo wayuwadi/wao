@@ -103,6 +103,11 @@ vi.mock('@/api/ai', () => ({
     },
   ]),
   fetchAiEvolution: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    sessionQuotas: [{
+      accountId: 'aa-codex', provider: 'codex', label: 'Codex 主账号', plan: 'plus',
+      usedPercent: 12, remainingPercent: 88, resetsAt: '2026-08-14T15:00:00',
+      lastSyncedAt: '2026-08-13T10:00:00', status: 'SYNCED', message: '五小时会话额度已用 12%',
+    }],
     weeklyQuotas: [{
       accountId: 'aa-codex', provider: 'codex', label: 'Codex 主账号', plan: 'plus',
       usedPercent: 0, remainingPercent: 100, resetsAt: '2026-08-17T10:00:00',
@@ -312,12 +317,15 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
-  it('首页展示真实周剩余额度并可一键派发改进建议', async () => {
+  it('首页展示真实 Codex 本轮和周剩余额度并可一键派发改进建议', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
 
     expect(fetchAiEvolution).toHaveBeenCalled()
+    expect(wrapper.find('.session-quota').text()).toContain('Codex 本轮剩余额度')
+    expect(wrapper.find('.session-quota').text()).toContain('88%')
+    expect(wrapper.find('.session-quota').text()).toContain('5 小时周期')
     expect(wrapper.find('.weekly-quota').text()).toContain('周剩余额度')
     expect(wrapper.find('.weekly-quota').text()).toContain('100%')
     expect(wrapper.find('.evolution-panel').text()).toContain('已满足 12 小时空闲')
@@ -334,6 +342,7 @@ describe('HomeView AI 控制台', () => {
   it('真实周额度为空、同步失败或读取失败时不在首页展示额度', async () => {
     vi.useFakeTimers()
     const unavailableOverview: AiEvolutionOverview = {
+      sessionQuotas: [],
       weeklyQuotas: [],
       suggestions: [{
         id: 'ux-friction', title: '找出并消除一个高频使用阻力',
@@ -348,12 +357,18 @@ describe('HomeView AI 控制台', () => {
     const emptyResult = mountHome()
     await flushPromises()
     expect(emptyResult.wrapper.find('.weekly-quota').exists()).toBe(false)
+    expect(emptyResult.wrapper.find('.session-quota').exists()).toBe(false)
     expect(emptyResult.wrapper.find('.capacity').exists()).toBe(true)
     expect(emptyResult.wrapper.find('.hero-metrics').classes()).toContain('single')
     emptyResult.wrapper.unmount()
 
     vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
       ...unavailableOverview,
+      sessionQuotas: [{
+        accountId: 'aa-codex', provider: 'codex', label: 'Codex 旧快照', plan: 'plus',
+        usedPercent: 45, remainingPercent: 55, resetsAt: '2026-08-14T15:00:00',
+        lastSyncedAt: '2026-08-13T10:00:00', status: 'FAILED', message: '额度接口暂时不可用',
+      }],
       weeklyQuotas: [{
         accountId: 'aa-codex', provider: 'codex', label: 'Codex 旧快照', plan: 'plus',
         usedPercent: 35, remainingPercent: 65, resetsAt: '2026-08-17T10:00:00',
@@ -363,6 +378,7 @@ describe('HomeView AI 控制台', () => {
     const staleResult = mountHome()
     await flushPromises()
     expect(staleResult.wrapper.find('.weekly-quota').exists()).toBe(false)
+    expect(staleResult.wrapper.find('.session-quota').exists()).toBe(false)
     expect(staleResult.wrapper.find('.evolution-panel footer').exists()).toBe(false)
     staleResult.wrapper.unmount()
 
@@ -392,7 +408,7 @@ describe('HomeView AI 控制台', () => {
   it('首次没有已保存批次时自动从真实资料生成', async () => {
     vi.useFakeTimers()
     vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
-      weeklyQuotas: [], suggestions: [], autoStatus: 'quota_unavailable',
+      sessionQuotas: [], weeklyQuotas: [], suggestions: [], autoStatus: 'quota_unavailable',
       autoMessage: '等待真实额度', lastActivityAt: null, nextEligibleAt: null,
       lastCheckedAt: null, lastRunId: null,
     })

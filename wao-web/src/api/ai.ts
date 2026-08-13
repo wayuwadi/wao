@@ -14,6 +14,10 @@ export interface AiWeeklyQuota {
   message: string | null
 }
 
+export interface AiSessionQuota extends AiWeeklyQuota {
+  provider: 'codex'
+}
+
 export interface AiEvolutionSuggestion {
   id: string
   title: string
@@ -25,6 +29,7 @@ export interface AiEvolutionSuggestion {
 }
 
 export interface AiEvolutionOverview {
+  sessionQuotas: AiSessionQuota[]
   weeklyQuotas: AiWeeklyQuota[]
   suggestions: AiEvolutionSuggestion[]
   autoStatus: 'busy' | 'cooling_down' | 'quota_unavailable' | 'ready'
@@ -106,7 +111,7 @@ export const createAiRuns = (
 export const launchAutonomousGoal = (projectId: string, goal: string) =>
   data<AiRun>(http.post('/api/ai/goals', { projectId, goal }))
 
-/** 首页真实周额度、自主进化状态和最近一批真实资产建议。 */
+/** 首页真实会话/周额度、自主进化状态和最近一批真实资产建议。 */
 export const fetchAiEvolution = () => data<AiEvolutionOverview>(http.get('/api/ai/evolution', {
   params: { _: Date.now() },
   headers: { 'Cache-Control': 'no-cache' },

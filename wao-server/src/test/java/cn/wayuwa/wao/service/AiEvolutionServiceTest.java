@@ -18,6 +18,7 @@ import cn.wayuwa.wao.dto.AiEvolutionOverviewDto;
 import cn.wayuwa.wao.dto.AiEvolutionSuggestionDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
+import cn.wayuwa.wao.dto.AiSessionQuotaDto;
 import cn.wayuwa.wao.dto.AiWeeklyQuotaDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
@@ -56,6 +57,7 @@ class AiEvolutionServiceTest {
 
     @Test
     void overviewDoesNotTreatUnknownQuotaAsFullAllowance() {
+        when(accounts.sessionQuotas()).thenReturn(List.of());
         when(accounts.weeklyQuotas()).thenReturn(List.of());
 
         AiEvolutionOverviewDto overview = service.overview();
@@ -64,6 +66,22 @@ class AiEvolutionServiceTest {
         assertThat(overview.autoStatus()).isEqualTo("quota_unavailable");
         assertThat(overview.autoMessage()).contains("尚未获取").contains("暂停");
         assertThat(overview.suggestions()).isEmpty();
+    }
+
+    @Test
+    void overviewIncludesRealCodexSessionQuotaWithoutChangingWeeklyGate() {
+        when(accounts.sessionQuotas()).thenReturn(List.of(new AiSessionQuotaDto(
+                "aa1", "codex", "Codex", "plus", 26, 74, "2026-08-14T15:00:00",
+                LocalDateTime.now().toString(), "SYNCED", "五小时会话额度已用 26%")));
+        when(accounts.weeklyQuotas()).thenReturn(List.of());
+
+        AiEvolutionOverviewDto overview = service.overview();
+
+        assertThat(overview.sessionQuotas()).singleElement().satisfies(quota -> {
+            assertThat(quota.provider()).isEqualTo("codex");
+            assertThat(quota.remainingPercent()).isEqualTo(74);
+        });
+        assertThat(overview.autoStatus()).isEqualTo("quota_unavailable");
     }
 
     @Test
