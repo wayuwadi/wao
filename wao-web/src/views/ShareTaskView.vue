@@ -5,7 +5,7 @@
  * 主任务链接展示描述 + 全部子任务；子任务链接只展示它自身的详情与描述。
  * 页面上给出 Markdown 直读地址，便于整条粘给 AI。
  */
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiShareSub, apiShareTask } from '@/api/board'
 import { renderMarkdown } from '@/utils/markdown'
@@ -25,23 +25,32 @@ const openOnly = computed(() => route.query.openOnly === 'true')
 const shared = ref<SharedTask | null>(null)
 const loading = ref(true)
 const error = ref('')
+let loadSequence = 0
 
 async function load() {
+  const sequence = ++loadSequence
+  const requestedTaskId = taskId.value
+  const requestedSubId = subId.value
+  const requestedOpenOnly = openOnly.value
   loading.value = true
   error.value = ''
   try {
-    shared.value = subId.value
-      ? await apiShareSub(taskId.value, subId.value)
-      : await apiShareTask(taskId.value, openOnly.value)
+    const result = requestedSubId
+      ? await apiShareSub(requestedTaskId, requestedSubId)
+      : await apiShareTask(requestedTaskId, requestedOpenOnly)
+    if (sequence !== loadSequence) return
+    shared.value = result
   } catch {
+    if (sequence !== loadSequence) return
     shared.value = null
-    error.value = '这个分享链接无效，或者对应的任务已被删除。'
+    error.value = '可能是网络暂时不可用，也可能对应的任务已被删除或取消分享。'
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) loading.value = false
   }
 }
 onMounted(load)
 watch([taskId, subId, openOnly], load)
+onBeforeUnmount(() => loadSequence++)
 
 const descHtml = computed(() => renderMarkdown(shared.value?.desc ?? ''))
 const mdUrl = computed(() => shareMarkdownUrl(taskId.value, subId.value, openOnly.value))
@@ -63,8 +72,19 @@ async function copyMd() {
 <template>
   <div class="share-page">
     <div class="share-card">
-      <div v-if="loading" class="state">正在加载…</div>
-      <div v-else-if="error" class="state err">{{ error }}</div>
+      <div v-if="loading" class="state" role="status" aria-live="polite">
+        <i class="ri-loader-4-line state-icon spinning" aria-hidden="true"></i>
+        <strong>正在读取任务</strong>
+        <span>很快就好，请稍候…</span>
+      </div>
+      <div v-else-if="error" class="state err" role="alert">
+        <i class="ri-link-unlink-m state-icon" aria-hidden="true"></i>
+        <strong>任务暂时没读出来</strong>
+        <span>{{ error }}</span>
+        <button type="button" class="retry-btn" @click="load">
+          <i class="ri-refresh-line" aria-hidden="true"></i>重新加载
+        </button>
+      </div>
 
       <template v-else-if="shared">
         <div class="brand">
@@ -146,13 +166,52 @@ async function copyMd() {
   box-shadow: 0 1px 3px rgba(16, 18, 28, 0.05);
 }
 .state {
-  padding: 40px 0;
+  min-height: 260px;
+  padding: 40px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
   text-align: center;
   color: var(--wao-text-weak);
   font-size: 13.5px;
 }
+.state strong {
+  color: var(--wao-text-2);
+  font-size: 15px;
+}
+.state-icon {
+  color: var(--wao-primary, #4358d6);
+  font-size: 30px;
+}
 .state.err {
-  color: #bc4141;
+  color: var(--wao-text-weak);
+}
+.state.err .state-icon {
+  color: var(--wao-danger-strong, #bc4141);
+}
+.retry-btn {
+  min-height: 40px;
+  margin-top: 7px;
+  padding: 0 16px;
+  border: 1px solid var(--wao-line-control, #d9dce6);
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-primary, #4358d6);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.retry-btn:hover {
+  border-color: var(--wao-primary, #4358d6);
+  background: var(--wao-primary-soft, #eef1fc);
+}
+.spinning {
+  animation: share-spin .9s linear infinite;
 }
 .brand {
   display: inline-flex;
@@ -188,6 +247,7 @@ async function copyMd() {
   font-weight: 700;
   line-height: 1.35;
   color: var(--wao-text, #1a1c23);
+  overflow-wrap: anywhere;
 }
 .meta {
   margin-top: 12px;
@@ -272,8 +332,10 @@ async function copyMd() {
   opacity: 1;
 }
 .sub-text {
+  min-width: 0;
   font-size: 14px;
   color: var(--wao-text-2);
+  overflow-wrap: anywhere;
 }
 .sub-text.done {
   color: var(--wao-text-weak);
@@ -319,9 +381,11 @@ async function copyMd() {
 
 /* 分享页正文排版 */
 .md-body {
+  min-width: 0;
   font-size: 14px;
   line-height: 1.85;
   color: var(--wao-text-2);
+  overflow-wrap: anywhere;
 }
 .md-body :deep(> *:first-child) {
   margin-top: 0;
@@ -397,5 +461,48 @@ async function copyMd() {
   border: 1px solid var(--wao-divider);
   padding: 6px 10px;
   text-align: left;
+}
+@keyframes share-spin {
+  to { transform: rotate(360deg); }
+}
+@media (max-width: 600px) {
+  .share-page {
+    padding: 12px 10px calc(28px + env(safe-area-inset-bottom));
+  }
+  .share-card {
+    padding: 20px 16px;
+    border-radius: 11px;
+  }
+  .brand {
+    display: flex;
+  }
+  .locate {
+    float: none;
+    width: fit-content;
+    max-width: 100%;
+    margin-top: 12px;
+  }
+  .title {
+    margin-top: 16px;
+    font-size: 21px;
+  }
+  .sub-head {
+    align-items: flex-start;
+  }
+  .sub-box {
+    margin-top: 2px;
+  }
+  .foot-tip {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .foot-btn {
+    width: 100%;
+    min-height: 40px;
+    justify-content: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinning { animation: none; }
 }
 </style>
