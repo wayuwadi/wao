@@ -88,7 +88,11 @@ class AiEvolutionServiceTest {
         verify(accounts).refreshQuotaSnapshots();
         ArgumentCaptor<String> goal = ArgumentCaptor.forClass(String.class);
         verify(runs).launchGoal(eq("p1"), goal.capture(), eq("system"), eq("https://wao.example"), eq("aa1"));
-        assertThat(goal.getValue()).contains("真实用户链路").contains("不要制造演示数据");
+        assertThat(goal.getValue())
+                .contains("真实用户链路")
+                .contains("不要制造演示数据")
+                .contains("用户价值验收")
+                .contains("测试、文档、重构和依赖升级只能作为支撑");
     }
 
     @Test
@@ -110,10 +114,21 @@ class AiEvolutionServiceTest {
 
         List<AiEvolutionSuggestionDto> refreshed = service.refreshSuggestions();
 
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(assistant).runReadOnlyJob(eq("evolution-suggestions"), prompt.capture());
+        assertThat(prompt.getValue())
+                .contains("用户可直接使用的新功能")
+                .contains("纯测试补齐、纯文档修订、纯重构、依赖升级")
+                .contains("不能作为候选");
+
         assertThat(refreshed).hasSize(5).allSatisfy(item -> {
             assertThat(item.sourceTitle()).isEqualTo("飞书群聊 · 2026-08-12");
             assertThat(item.sourceUrl()).isEqualTo("/kb/k1?doc=d1");
-            assertThat(item.goal()).contains("真实资产").contains("不要制造演示数据");
+            assertThat(item.goal())
+                    .contains("真实资产")
+                    .contains("不要制造演示数据")
+                    .contains("用户价值验收")
+                    .contains("不能单独作为交付");
         });
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<AiEvolutionSuggestionDto>> saved = ArgumentCaptor.forClass(List.class);

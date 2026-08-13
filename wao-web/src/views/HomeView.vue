@@ -617,6 +617,7 @@ onBeforeUnmount(() => {
         <div>
           <div class="eyebrow dark">CONTINUOUS EVOLUTION</div>
           <h2 id="evolution-title">让剩余额度持续完善 WAO</h2>
+          <div class="evolution-policy"><i class="ri-user-smile-line"></i>建议挖掘和自动派发只选择用户可感知的功能与提效改进</div>
           <p v-if="evolution">{{ evolution.autoMessage }}</p>
           <p v-else-if="evolutionError" class="evolution-error">{{ evolutionError }}</p>
           <p v-else>正在读取真实周额度和自动进化状态…</p>
@@ -1314,6 +1315,7 @@ onBeforeUnmount(() => {
 .evolution-panel > header { padding: 16px 18px 12px; display: flex; align-items: flex-start; gap: 11px; }
 .evolution-mark { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px; background: #d9f1e4; color: #267c59; display: grid; place-items: center; font-size: 19px; }
 .evolution-panel header > div { flex: 1; min-width: 0; }.evolution-panel h2 { margin: 4px 0 4px; color: var(--wao-text-1); font-size: 17px; }
+.evolution-policy { width: fit-content; margin: 0 0 5px; padding: 3px 7px; border-radius: 999px; background: #e3f3ea; color: #2a7658; font-size: 9.5px; line-height: 1.4; }.evolution-policy i { margin-right: 4px; }
 .evolution-panel header p { margin: 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }.evolution-panel header p.evolution-error { color: var(--wao-danger-strong); }
 .auto-state { padding: 5px 9px; border-radius: 999px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 10.5px; white-space: nowrap; }
 .auto-state.ready { background: #d9f1e4; color: #267c59; }.auto-state i { margin-right: 4px; }
