@@ -148,6 +148,26 @@ server {
         add_header X-WAO-API-Route dual-gateway-ai-long always;
     }
 
+    # 周报生成只写入短期只读分析队列，最长等待五分钟；POST 不允许超时后自动重放。
+    location = /api/weekly-report/generate {
+        proxy_pass https://wao_gateway;
+        proxy_http_version 1.1;
+        proxy_ssl_verify off;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 330s;
+        proxy_send_timeout 120s;
+        proxy_next_upstream off;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-WAO-API-Route dual-gateway-ai-long always;
+    }
+
     # AI 编排接口只访问共享数据库，读写都使用双 Gateway；入队只校验账号元数据，
     # 真正的凭据读取和令牌续期延后到下面固定走 Linux 的 Runner 领取接口。
     location ~ ^/api/ai/(?:workflows|goals|runners|runners/[^/]+/log|runs|tasks/[^/]+/runs|projects/[^/]+/config)$ {

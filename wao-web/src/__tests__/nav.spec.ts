@@ -113,6 +113,13 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.module).toBe('english-learning')
   })
 
+  it('周报生成默认位于个人组并使用原生模块路由', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('weekly-report')
+    const route = router.getRoutes().find((item) => item.name === 'weekly-report')
+    expect(route?.path).toBe('/weekly-report')
+    expect(route?.meta.module).toBe('weekly-report')
+  })
+
   it('内置菜单注册表可改名、换组、调序和隐藏', () => {
     const menus = DEFAULT_BUILTIN_MENUS.map((menu) => ({ ...menu }))
     const calendar = menus.find((menu) => menu.id === 'calendar')!
