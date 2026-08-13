@@ -20,6 +20,14 @@ describe('网站备案页脚', () => {
     expect(wrapper.text()).toContain('个人事务与 AI 协作系统')
     expect(wrapper.text()).toContain('豫ICP备2024105476号-1')
     expect(wrapper.get('a').attributes('href')).toBe('https://beian.miit.gov.cn')
+    expect(wrapper.get('footer').classes()).not.toContain('reserve-mobile-actions')
+  })
+
+  it('仅在登录后的应用布局显式要求时为手机底部操作预留空间', async () => {
+    const wrapper = mount(SiteFooter, { props: { reserveMobileActions: true } })
+    await flushPromises()
+
+    expect(wrapper.get('footer').classes()).toContain('reserve-mobile-actions')
   })
 
   it('配置接口失败时不阻塞页面，也不显示错误备案信息', async () => {
