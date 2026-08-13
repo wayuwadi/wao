@@ -13,7 +13,6 @@ import {
   apiCreateKbGroup,
   apiCreateNote,
   apiCreateProject,
-  apiCreateTask,
   apiCreateVaultGroup,
   apiCreateVaultItem,
   apiDeleteDoc,
@@ -255,7 +254,7 @@ export const useDataStore = defineStore('data', () => {
     }
     for (let i = local.length - 1; i >= 0; i--) {
       const id = local[i]!.id
-      // 刚本地乐观创建、POST 还没回来的记录不能按「服务端没有」删掉，否则新建的任务会闪没。
+      // 刚本地乐观创建、PUT 还没回来的记录不能按「服务端没有」删掉，否则新建的任务会闪没。
       if (!remoteIds.has(id) && !pendingTaskIds.has(id)) local.splice(i, 1)
     }
   }
@@ -872,20 +871,27 @@ export const useDataStore = defineStore('data', () => {
     Pick<Task, 'desc' | 'images' | 'groupId' | 'startAt' | 'endAt'> &
     Partial<Pick<Task, 'pdcaCycles'>>
 
-  /** 本地已创建、服务端 id 尚未回来的任务 id —— 后台同步不得把它们当成「已删除」清掉。 */
+  /** 新建任务的即时本地记录与最终落库结果。 */
+  interface NewTaskResult {
+    task: Task
+    persisted: boolean
+  }
+
+  /** 本地已创建、服务端尚未确认的任务 id —— 后台同步不得把它们当成「已删除」清掉。 */
   const pendingTaskIds = new Set<string>()
 
   /**
-   * 新建任务：先本地插入并立即返回，POST 在后台跑完再用服务端记录替换。
+   * 新建任务：先本地插入，随后等待服务端确认并返回明确的落库结果。
    *
-   * <p>之前是 {@code await} 完 POST 才返回，调用方要等一个完整往返（线上 2–3 秒）
-   * 弹窗才关闭，看起来像卡住。现在 UI 立刻响应，落库失败则回落成 PUT 重试一次，
-   * 仍失败就保留本地记录（下一次任意改动的写透会把它补进库）。
+   * <p>之前是 {@code await} 完服务端请求才插入本地记录，调用方要等一个完整往返（线上 2–3 秒）
+   * 弹窗才有反馈，看起来像卡住。现在任务会先在列表即时出现，调用方则可用 {@code persisted}
+   * 展示提交中 / 成功 / 失败并原地重试。创建使用服务端已支持新增的幂等 PUT：弱网下响应丢失时
+   * 重试同一个本地 id 不会生成重复任务；失败时保留本地记录和草稿。
    *
    * @param payload 新建任务负载
-   * @return 立即可用的任务对象（后端返回后其字段会被就地更新）
+   * @return 即时本地任务和最终是否落库
    */
-  async function addTask(payload: NewTaskPayload): Promise<Task> {
+  async function addTask(payload: NewTaskPayload): Promise<NewTaskResult> {
     const { desc = '', images = [], pdcaCycles = [], ...core } = payload
     const local: Task = {
       id: uid('t'), status: '待办', parts: [], desc, steps: [], subs: [], files: [],
@@ -895,24 +901,26 @@ export const useDataStore = defineStore('data', () => {
       ...core,
     }
     tasks.value.unshift(local)
-    if (!apiLive.value) return local
+    if (!apiLive.value) return { task: local, persisted: true }
 
     pendingTaskIds.add(local.id)
-    apiCreateTask({ ...core, desc, images, pdcaCycles })
-      .then((saved) => {
-        const i = tasks.value.findIndex((t) => t.id === local.id)
-        if (i >= 0) tasks.value.splice(i, 1, saved)
-        // 抽屉可能已经用本地 id 打开了，换成服务端 id 才能继续写透。
-        const ui = useUiStore()
-        if (ui.openTaskId === local.id) ui.openTask(saved.id)
-      })
-      .catch(() => {
-        // POST 失败时保留用户刚录入的任务，并把它纳入与编辑任务相同的可恢复草稿机制。
-        // 这样轮询不会把它误删；随后用幂等 PUT 自动补写一次，仍失败才由保存状态明确提示。
-        persistTask(local.id)
-      })
-      .finally(() => pendingTaskIds.delete(local.id))
-    return local
+    try {
+      const saved = await apiPutTask(local.id, local)
+      const i = tasks.value.findIndex((t) => t.id === local.id)
+      if (i >= 0) tasks.value.splice(i, 1, saved)
+      // 抽屉可能已经用本地 id 打开了，换成服务端 id 才能继续写透。
+      const ui = useUiStore()
+      if (ui.openTaskId === local.id) ui.openTask(saved.id)
+      return { task: saved, persisted: true }
+    } catch {
+      // 失败时保留用户刚录入的任务和本地草稿，并把结果交给入口展示；用户可原地重试同一个 id。
+      taskTouchedAt[local.id] = Date.now()
+      storeTaskDraft(local)
+      taskSaveStates[local.id] = 'error'
+      return { task: local, persisted: false }
+    } finally {
+      pendingTaskIds.delete(local.id)
+    }
   }
 
   /** 新建项目；apiLive 时经后端创建，否则本地乐观创建。知识库由用户按需另行创建和关联。 */

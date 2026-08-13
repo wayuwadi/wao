@@ -215,7 +215,9 @@ public class TaskService {
         e.setStatus(dto.status());
         e.setPr(dto.pr());
         e.setOwnerId(dto.owner());
-        e.setCreatedBy(previous == null ? dto.createdBy() : previous.getCreatedBy());
+        // 前端用本地生成的稳定 id 走 PUT upsert，首次写入的 DTO 还没有服务端创建人；
+        // 必须从当前会话补齐，否则创建人筛选和后续协作通知都会丢失身份。
+        e.setCreatedBy(previous == null ? blankOr(dto.createdBy(), memberId) : previous.getCreatedBy());
         e.setStartDate(dto.start());
         e.setDueDate(dto.due());
         e.setWaiting(dto.waiting());

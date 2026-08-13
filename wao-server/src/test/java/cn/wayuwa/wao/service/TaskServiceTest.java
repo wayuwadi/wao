@@ -371,6 +371,26 @@ class TaskServiceTest {
         assertThat(dto.activity().get(0).by()).isEqualTo("wg");
     }
 
+    /** 前端按同一个本地 id 重试 PUT：首次补齐创建人，第二次更新而不是再插入一条。 */
+    @Test
+    void putUpsertKeepsCreatorAndIsIdempotentByTaskId() {
+        TaskDto request = dtoWithoutCreator("local-task-1");
+        TaskEntity existing = todo();
+        existing.setId("local-task-1");
+        existing.setCreatedBy("wg");
+        when(mapper.selectById("local-task-1")).thenReturn(null, existing);
+        when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+
+        TaskDto created = service.replace("local-task-1", request, "wg");
+        TaskDto retried = service.replace("local-task-1", request, "wg");
+
+        assertThat(created.createdBy()).isEqualTo("wg");
+        assertThat(retried.createdBy()).isEqualTo("wg");
+        verify(mapper, times(1)).insert(any(TaskEntity.class));
+        verify(mapper, times(1)).updateById(any(TaskEntity.class));
+    }
+
     /** 娃哥往娃弟建的任务里加子任务：通知要带上娃哥，并 @ 到娃弟。 */
     @Test
     void newSubtasksNotifyTheCreatorAndOwnerButNotTheOperator() {
@@ -420,5 +440,11 @@ class TaskServiceTest {
         return new TaskDto("t1", "设计任务详情抽屉交互稿", "p1", "待办", "P0", "wg", List.of(), null,
                 "2026-07-24", null, "desc", List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
                 List.of(), List.of(), List.of(), "wg", null, groupId);
+    }
+
+    private TaskDto dtoWithoutCreator(String id) {
+        return new TaskDto(id, "弱网重试任务", "p1", "待办", "P2", "wg", List.of(), null,
+                "2026-08-13", null, "", List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(), List.of(), List.of(), null, null, null);
     }
 }

@@ -105,7 +105,7 @@ describe('data store · 新建任务', () => {
     const data = useDataStore()
     const before = data.tasks.length
 
-    const t = await data.addTask({
+    const { task: t } = await data.addTask({
       title: '立刻出现的任务', project: 'p1', pr: 'P2', owner: 'wg', due: '2026-08-01',
       desc: '', images: [], startAt: null, endAt: null,
     })
