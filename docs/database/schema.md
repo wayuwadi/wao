@@ -268,6 +268,13 @@ erDiagram
 | content | VARCHAR(1000) | 过滤命令和工具调用后的用户可读摘要 |
 | created_at | DATETIME | 上报时间，用于实时展示与任务档案排序 |
 
+### ai_evolution_state（V61 / V63）
+
+自主进化调度的全局单例状态。`next_check_at` 用条件更新在主从节点间原子抢占，避免重复派发；
+`last_checked_at`、`last_outcome`、`last_run_id` 和 `last_suggestion_id` 供首页解释最近一次调度结果。
+V63 新增 `last_low_quota_key`，保存已经成功发送飞书提醒的“账号 + 周额度重置时间”键集合（重置时间缺失时使用自然周）；
+额度进入新的重置周期后会生成新键，发送失败则不写入，下一轮检查继续重试。
+
 ### ai_account（V38）
 
 | 列 | 类型 | 说明 |
@@ -600,4 +607,6 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V58__personal_action_plan.sql`：成员私有长期目标、周期行动版本、每日打卡、事实复盘与飞书私聊投递状态。
 - `V59__english_learning_practice.sql`：成员私有英语目标、每日听说读写训练、信心与迭代复盘。
 - `V60__expand_task_description.sql`：任务描述升级为 `MEDIUMTEXT`，完整承载长 Markdown 自主目标。
+- `V61__ai_autonomous_evolution.sql`：保存双节点共享的自主进化调度和最近派发状态。
+- `V63__ai_evolution_low_quota_reminder.sql`：按账号与额度重置周期去重飞书低额度提醒。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
