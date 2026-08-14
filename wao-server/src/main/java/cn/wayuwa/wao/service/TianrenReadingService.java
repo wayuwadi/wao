@@ -150,7 +150,10 @@ public class TianrenReadingService {
     }
 
     /**
-     * 按不可猜测凭据读取公开卦象投影，不返回成员身份、存档 id 或私有 AI 会话。
+     * 按不可猜测凭据读取公开卦象与最新 AI 自照投影。
+     *
+     * <p>只读取卦象绑定且归属同一成员的最新 assistant 回复；不返回成员身份、存档 id、
+     * 用户关注点原文、会话 id 或完整会话。
      *
      * @param token 分享凭据
      * @return 可公开展示的卦象
@@ -162,9 +165,10 @@ public class TianrenReadingService {
                 .last("LIMIT 1"));
         if (row == null) throw new NotFoundException("分享链接无效");
         TianrenReadingDto reading = view(row);
+        String interpretation = conversations.latestAssistantReply(row.getConversationId(), row.getMemberId());
         return new SharedTianrenReadingDto(
                 reading.date(), reading.lines(), reading.changingLines(), reading.primary(), reading.relating(),
-                reading.createdAt());
+                interpretation, reading.createdAt());
     }
 
     /**

@@ -26,7 +26,10 @@ export interface TianrenReading {
   createdAt: string
 }
 
-export type SharedTianrenReading = Omit<TianrenReading, 'id' | 'conversationId'>
+export type SharedTianrenReading = Omit<TianrenReading, 'id' | 'conversationId'> & {
+  /** 卦象专属会话最新一条 AI 自照；不包含用户关注点或完整会话。 */
+  interpretation: string | null
+}
 
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data

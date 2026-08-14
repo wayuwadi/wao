@@ -80,7 +80,7 @@ paths:
   /api/share/tianren/{token}:
     get:
       operationId: getSharedTianrenReading
-      summary: 免登录读取卦象公开投影，不返回成员或私有 AI 会话
+      summary: 免登录读取卦象与最新 AI 自照的公开投影
       parameters:
         - in: path
           name: token
@@ -188,7 +188,7 @@ components:
           format: date-time
     SharedTianrenReading:
       type: object
-      description: 不包含成员、内部存档 id、关注点或私有 AI 会话的公开投影
+      description: 包含卦象所绑定会话的最新 assistant 回复；不包含成员、内部存档 id、关注点原文、用户消息或会话 id
       required: [date, lines, changingLines, primary, createdAt]
       properties:
         date:
@@ -213,6 +213,10 @@ components:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/Hexagram"
+        interpretation:
+          type: string
+          nullable: true
+          description: 当前最新一条 AI 自照 Markdown；尚无成功 AI 回复时为 null
         createdAt:
           type: string
           format: date-time

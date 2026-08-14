@@ -27,13 +27,14 @@ const shared: SharedTianrenReading = {
     upper: { name: '坤', nature: '地', symbol: '☷' },
     lower: { name: '巽', nature: '风', symbol: '☴' },
   },
+  interpretation: '## 四时自照\n\n把今天的任务收敛到一件小事。<script>alert(1)</script>',
   createdAt: '2026-08-13T10:00:00',
 }
 
 describe('TianrenShareView', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('免登录结果页展示同一卦象与隐私边界', async () => {
+  it('免登录结果页展示同一卦象、最新 AI 自照与隐私边界', async () => {
     vi.mocked(fetchSharedTianrenReading).mockResolvedValue(shared)
     const wrapper = mount(TianrenShareView)
     await flushPromises()
@@ -43,7 +44,20 @@ describe('TianrenShareView', () => {
     expect(wrapper.text()).toContain('泰')
     expect(wrapper.text()).toContain('升')
     expect(wrapper.findAll('.yao-row')).toHaveLength(6)
-    expect(wrapper.text()).toContain('不含其私有 AI 对话')
+    expect(wrapper.text()).toContain('天人一卦 · AI 自照')
+    expect(wrapper.text()).toContain('把今天的任务收敛到一件小事')
+    expect(wrapper.find('.markdown h2').text()).toBe('四时自照')
+    expect(wrapper.find('.markdown').html()).not.toContain('<script>')
+    expect(wrapper.text()).toContain('不单独公开关注点原文或完整会话')
+  })
+
+  it('尚无 AI 回复时不显示空的自照卡片', async () => {
+    vi.mocked(fetchSharedTianrenReading).mockResolvedValue({ ...shared, interpretation: null })
+    const wrapper = mount(TianrenShareView)
+    await flushPromises()
+
+    expect(wrapper.find('.interpretation-card').exists()).toBe(false)
+    expect(wrapper.text()).toContain('文化反思，不是医疗建议')
   })
 
   it('无效分享链接显示明确错误状态', async () => {

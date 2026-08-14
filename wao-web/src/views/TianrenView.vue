@@ -158,7 +158,7 @@ async function shareReading() {
   try {
     const url = await createTianrenShareLink(reading.value.id)
     if (await copyToClipboard(url)) {
-      shareFeedback.value = '公网结果链接已复制，任何拿到链接的人都能查看这份卦象。'
+      shareFeedback.value = '公网结果链接已复制，任何拿到链接的人都能查看这份卦象和当前最新 AI 自照。'
     } else {
       shareUrl.value = url
       shareFeedback.value = '浏览器没有允许自动复制，请手动复制下面的链接。'
@@ -344,7 +344,7 @@ onMounted(() => {
                 <i :class="interpreting ? 'ri-loader-4-line spin' : 'ri-sparkling-2-line'"></i>
                 {{ interpreting ? '本地 AI 正在结合卦象与四时生成反思' : interpretation ? '继续问今日卦象' : '请 AI 解读今日一卦' }}
               </button>
-              <small class="privacy-note"><i class="ri-shield-user-line"></i> 解读进入你的成员私有 AI 会话；不会作为诊断、处方或确定性预言。</small>
+              <small class="privacy-note"><i class="ri-shield-user-line"></i> 解读保存在你的成员私有 AI 会话；主动分享本卦后，同一公开链接会展示当前最新一条 AI 自照。</small>
             </section>
 
             <section v-if="interpreting || interpretation || interpretationError || conversationError" class="answer-card card">
