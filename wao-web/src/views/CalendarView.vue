@@ -6,7 +6,16 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { fetchCaldavAccounts, fetchCaldavEvents, type CaldavAccount, type CaldavEvent } from '@/api/caldav'
 import { fetchAlternateWorkWeek, saveAlternateWorkWeek } from '@/api/workSchedule'
-import { fetchHolidayEvents, type HolidayDayType, type HolidayEvent } from '@/api/holiday'
+import {
+  fetchHolidayEvents,
+  fetchHolidaySettings,
+  saveHolidayReminder,
+  saveHolidaySettings,
+  type HolidayDayType,
+  type HolidayEvent,
+  type HolidaySettings,
+  type HolidayYearSource,
+} from '@/api/holiday'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
 import type { Task } from '@/types'
@@ -29,6 +38,7 @@ interface CalEvt {
   endTime?: string
   taskId?: string
   holidayDayType?: HolidayDayType
+  holiday?: HolidayEvent
   go?: () => void
 }
 
@@ -138,6 +148,7 @@ async function submitWorkSchedule() {
 const accounts = ref<CaldavAccount[]>([])
 const caldavEvents = ref<CaldavEvent[]>([])
 const holidayEvents = ref<HolidayEvent[]>([])
+const holidayYears = ref<HolidayYearSource[]>([])
 const holidayState = ref<'loading' | 'ready' | 'error'>('loading')
 let holidayRequestSequence = 0
 
@@ -203,11 +214,13 @@ async function loadHolidays() {
   try {
     const result = await fetchHolidayEvents(iso(from), iso(to))
     if (requestSequence !== holidayRequestSequence) return
-    holidayEvents.value = result
+    holidayEvents.value = result.events
+    holidayYears.value = result.years
     holidayState.value = 'ready'
   } catch {
     if (requestSequence !== holidayRequestSequence) return
     holidayEvents.value = []
+    holidayYears.value = []
     holidayState.value = 'error'
   }
 }
@@ -225,6 +238,7 @@ function iso(d: Date) {
 onMounted(() => {
   loadCaldav()
   loadWorkSchedule()
+  loadHolidaySettings()
   loadCalendarSources()
 })
 watch([calY, calM, calD, viewMode, () => preferences.weekStart], loadCalendarSources)
@@ -235,8 +249,11 @@ const legend = computed(() => {
     { label: '任务截止', color: '#4358D6' },
     { label: '里程碑', color: '#B9821F' },
     { label: '中国节假日', color: '#D9634C' },
-    { label: '国际节日', color: '#8A5BD9' },
   ]
+  if ((holidaySettings.value?.selectedInternationalCategories.length ?? 0) > 0
+      || holidayEvents.value.some((event) => event.category === 'INTERNATIONAL')) {
+    items.push({ label: '国际节日', color: '#8A5BD9' })
+  }
   if (holidayEvents.value.some((event) => event.dayType === 'ADJUSTED_WORKDAY')) {
     items.push({ label: '调休上班', color: '#79808F' })
   }
@@ -286,6 +303,8 @@ const events = computed<CalEvt[]>(() => {
         ? '#79808F'
         : holiday.category === 'CHINA' ? '#D9634C' : '#8A5BD9',
       holidayDayType: holiday.dayType,
+      holiday,
+      go: () => openHolidayDetail(holiday),
     })
   })
   return evs
@@ -463,6 +482,134 @@ const yearMonths = computed(() => Array.from({ length: 12 }, (_, index) => {
 }))
 function selectMonth() { viewMode.value = 'month' }
 
+// ---------- 国际节日范围与节日详情提醒 ----------
+const holidaySettings = ref<HolidaySettings | null>(null)
+const holidaySettingsLoading = ref(false)
+const holidaySettingsLoadError = ref('')
+const showHolidaySettings = ref(false)
+const holidaySettingsSaving = ref(false)
+const holidaySettingsSaveError = ref('')
+const holidayCategoryDraft = ref<string[]>([])
+const holidaySettingsDraftKey = computed(() => `wao-holiday-settings-draft:${session.currentUser.id || 'anonymous'}`)
+const missingHolidayYears = computed(() => holidayYears.value.filter((year) => !year.officialScheduleAvailable))
+
+async function loadHolidaySettings() {
+  holidaySettingsLoading.value = true
+  holidaySettingsLoadError.value = ''
+  try {
+    holidaySettings.value = await fetchHolidaySettings()
+  } catch (error) {
+    holidaySettingsLoadError.value = error instanceof Error ? error.message : '读取节日设置失败'
+  } finally {
+    holidaySettingsLoading.value = false
+  }
+}
+
+function openHolidaySettings() {
+  holidaySettingsSaveError.value = ''
+  const stored = localStorage.getItem(holidaySettingsDraftKey.value)
+  try {
+    const parsed = stored ? JSON.parse(stored) : null
+    holidayCategoryDraft.value = Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : [...(holidaySettings.value?.selectedInternationalCategories ?? [])]
+  } catch {
+    holidayCategoryDraft.value = [...(holidaySettings.value?.selectedInternationalCategories ?? [])]
+  }
+  showHolidaySettings.value = true
+}
+
+function closeHolidaySettings() {
+  if (holidaySettingsSaving.value) return
+  localStorage.removeItem(holidaySettingsDraftKey.value)
+  showHolidaySettings.value = false
+}
+
+watch(holidayCategoryDraft, (value) => {
+  if (showHolidaySettings.value) localStorage.setItem(holidaySettingsDraftKey.value, JSON.stringify(value))
+}, { deep: true })
+
+async function submitHolidaySettings() {
+  holidaySettingsSaving.value = true
+  holidaySettingsSaveError.value = ''
+  try {
+    holidaySettings.value = await saveHolidaySettings(holidayCategoryDraft.value)
+    localStorage.removeItem(holidaySettingsDraftKey.value)
+    showHolidaySettings.value = false
+    await loadHolidays()
+    toast(holidayCategoryDraft.value.length
+      ? `已订阅 ${holidayCategoryDraft.value.length} 类国际节日`
+      : '已关闭国际节日，只保留中国节假日', 'ri-calendar-check-line')
+  } catch (error) {
+    holidaySettingsSaveError.value = error instanceof Error ? error.message : '保存节日设置失败'
+  } finally {
+    holidaySettingsSaving.value = false
+  }
+}
+
+const activeHoliday = ref<HolidayEvent | null>(null)
+const holidayReminderEnabled = ref(false)
+const holidayReminderTime = ref('09:00')
+const holidayReminderSaving = ref(false)
+const holidayReminderSaveError = ref('')
+const holidayReminderDraftKey = computed(() => activeHoliday.value
+  ? `wao-holiday-reminder-draft:${session.currentUser.id || 'anonymous'}:${activeHoliday.value.code}`
+  : '')
+
+function openHolidayDetail(holiday: HolidayEvent) {
+  activeHoliday.value = holiday
+  holidayReminderSaveError.value = ''
+  const key = `wao-holiday-reminder-draft:${session.currentUser.id || 'anonymous'}:${holiday.code}`
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || 'null') as { enabled?: unknown; time?: unknown } | null
+    holidayReminderEnabled.value = typeof parsed?.enabled === 'boolean' ? parsed.enabled : holiday.reminderEnabled
+    holidayReminderTime.value = typeof parsed?.time === 'string' ? parsed.time : holiday.reminderTime ?? '09:00'
+  } catch {
+    holidayReminderEnabled.value = holiday.reminderEnabled
+    holidayReminderTime.value = holiday.reminderTime ?? '09:00'
+  }
+}
+
+function closeHolidayDetail() {
+  if (holidayReminderSaving.value) return
+  if (holidayReminderDraftKey.value) localStorage.removeItem(holidayReminderDraftKey.value)
+  activeHoliday.value = null
+}
+
+watch([holidayReminderEnabled, holidayReminderTime], ([enabled, time]) => {
+  if (activeHoliday.value && holidayReminderDraftKey.value) {
+    localStorage.setItem(holidayReminderDraftKey.value, JSON.stringify({ enabled, time }))
+  }
+})
+
+async function submitHolidayReminder() {
+  const holiday = activeHoliday.value
+  if (!holiday) return
+  if (holidayReminderEnabled.value && !holidayReminderTime.value) {
+    holidayReminderSaveError.value = '开启提醒后请选择提醒时间'
+    return
+  }
+  holidayReminderSaving.value = true
+  holidayReminderSaveError.value = ''
+  try {
+    const saved = await saveHolidayReminder(holiday.code, {
+      enabled: holidayReminderEnabled.value,
+      reminderTime: holidayReminderEnabled.value ? holidayReminderTime.value : null,
+    })
+    localStorage.removeItem(holidayReminderDraftKey.value)
+    holidayEvents.value = holidayEvents.value.map((event) => event.code === holiday.code
+      ? { ...event, reminderEnabled: saved.enabled, reminderTime: saved.reminderTime }
+      : event)
+    activeHoliday.value = null
+    toast(saved.enabled ? `${holiday.name}提醒已设为 ${saved.reminderTime}` : `${holiday.name}提醒已关闭`,
+      saved.enabled ? 'ri-notification-3-line' : 'ri-notification-off-line')
+  } catch (error) {
+    holidayReminderSaveError.value = error instanceof Error ? error.message : '保存提醒失败'
+  } finally {
+    holidayReminderSaving.value = false
+  }
+}
+
 // ---------- CalDAV 配置浮层：账户是个人维度，就近在日历页里配置 ----------
 const showCaldavConfig = ref(false)
 function onCaldavChanged() {
@@ -550,6 +697,9 @@ function onDropDay(dayIso: string) {
       </div>
       <span v-if="holidayState === 'loading'" class="holiday-status"><i class="ri-loader-4-line spin"></i>节假日加载中</span>
       <button v-else-if="holidayState === 'error'" class="holiday-status error" @click="loadHolidays"><i class="ri-refresh-line"></i>节假日加载失败 · 重试</button>
+      <button class="holiday-settings-entry" title="选择国际节日范围" @click="openHolidaySettings">
+        <i class="ri-earth-line"></i>节日设置 · {{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类
+      </button>
       <button class="caldav" title="配置 CalDAV 日历账户" @click="showCaldavConfig = true">
         <span class="cd-dot" :style="{ background: caldavState.dot }"></span>{{ caldavState.label }}<i class="ri-settings-3-line"></i>
       </button>
@@ -578,6 +728,11 @@ function onDropDay(dayIso: string) {
         <div class="cal-head">
           <div class="month-title">{{ viewMode === 'year' ? `${calY} 年` : viewMode === 'week' ? `${weekDays[0]?.label} - ${weekDays[6]?.label}` : viewMode === 'day' ? dayView[0]?.label : month.title }}</div>
           <span class="cal-hint">任务、里程碑、节假日与订阅日历合并显示</span>
+        </div>
+        <div v-if="missingHolidayYears.length" class="holiday-source-warning">
+          <i class="ri-information-line"></i>
+          <span>{{ missingHolidayYears.map((year) => `${year.year} 年`).join('、') }}法定放假调休安排尚未收录；当前只显示可由历法确定的节日本日，不推测调休。</span>
+          <a :href="missingHolidayYears[0]!.sourceUrl" target="_blank" rel="noopener">查看历法来源</a>
         </div>
         <template v-if="viewMode === 'month'"><div class="dows">
           <div v-for="d in DOWS" :key="d" class="dow">{{ d }}</div>
@@ -771,6 +926,81 @@ function onDropDay(dayIso: string) {
         </div>
       </div>
     </template>
+
+    <!-- 国际节日范围配置 -->
+    <template v-if="showHolidaySettings">
+      <div class="cd-mask" @click="closeHolidaySettings"></div>
+      <div class="holiday-modal" role="dialog" aria-modal="true" aria-labelledby="holiday-settings-title">
+        <div class="cd-head">
+          <div id="holiday-settings-title" class="cd-title">我的国际节日</div>
+          <div class="spacer"></div>
+          <button class="cd-close" aria-label="关闭节日设置" :disabled="holidaySettingsSaving" @click="closeHolidaySettings"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="holiday-modal-body">
+          <div v-if="holidaySettingsLoading" class="work-schedule-state"><i class="ri-loader-4-line spinning"></i>正在读取节日设置…</div>
+          <div v-else-if="holidaySettingsLoadError || !holidaySettings" class="work-schedule-state error">
+            <span>读取失败：{{ holidaySettingsLoadError || '没有拿到节日设置' }}</span>
+            <button type="button" @click="loadHolidaySettings">重新读取</button>
+          </div>
+          <form v-else @submit.prevent="submitHolidaySettings">
+            <p class="holiday-setting-intro">中国节假日始终显示；国际节日默认不添加，请只选择你真正关心的范围。</p>
+            <div class="holiday-category-list">
+              <label v-for="category in holidaySettings.availableInternationalCategories" :key="category.code" class="holiday-category">
+                <input v-model="holidayCategoryDraft" type="checkbox" :value="category.code" :disabled="holidaySettingsSaving" />
+                <span><b>{{ category.name }}</b><small>{{ category.description }}</small></span>
+              </label>
+            </div>
+            <p class="holiday-setting-note">关闭类别会同时关闭该类别下已经设置的提醒，避免隐藏的节日仍然发送通知。</p>
+            <div v-if="holidaySettingsSaveError" class="work-schedule-state error compact">保存失败：{{ holidaySettingsSaveError }}。选择草稿仍在，可直接重试。</div>
+            <div class="work-schedule-actions">
+              <button type="button" class="work-schedule-cancel" :disabled="holidaySettingsSaving" @click="closeHolidaySettings">取消</button>
+              <button type="submit" class="work-schedule-save" :disabled="holidaySettingsSaving">
+                <i v-if="holidaySettingsSaving" class="ri-loader-4-line spinning"></i>{{ holidaySettingsSaving ? '保存中…' : holidaySettingsSaveError ? '重试保存' : '保存范围' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </template>
+
+    <!-- 节日详情与个人提醒 -->
+    <template v-if="activeHoliday">
+      <div class="cd-mask" @click="closeHolidayDetail"></div>
+      <div class="holiday-modal holiday-detail-modal" role="dialog" aria-modal="true" aria-labelledby="holiday-detail-title">
+        <div class="cd-head">
+          <div id="holiday-detail-title" class="cd-title">{{ activeHoliday.name }}</div>
+          <div class="spacer"></div>
+          <button class="cd-close" aria-label="关闭节日详情" :disabled="holidayReminderSaving" @click="closeHolidayDetail"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="holiday-modal-body">
+          <dl class="holiday-facts">
+            <div><dt>日期</dt><dd>{{ activeHoliday.date }}</dd></div>
+            <div><dt>性质</dt><dd>{{ activeHoliday.dayType === 'DAY_OFF' ? '法定休息日' : activeHoliday.dayType === 'ADJUSTED_WORKDAY' ? '调休上班日' : '普通纪念日' }}</dd></div>
+            <div><dt>年份</dt><dd>{{ activeHoliday.year }} 年数据</dd></div>
+            <div><dt>来源</dt><dd><a v-if="activeHoliday.sourceUrl" :href="activeHoliday.sourceUrl" target="_blank" rel="noopener">{{ activeHoliday.sourceName }}</a><span v-else>{{ activeHoliday.sourceName }}</span></dd></div>
+          </dl>
+          <form v-if="activeHoliday.remindable" class="holiday-reminder-form" @submit.prevent="submitHolidayReminder">
+            <label class="work-schedule-toggle">
+              <span><b>每年提醒我</b><small>{{ holidaySettings?.reminderChannelHint || '提醒将通过当前账号的飞书身份发送' }}</small></span>
+              <input v-model="holidayReminderEnabled" type="checkbox" :disabled="holidayReminderSaving || (!holidaySettings?.reminderChannelAvailable && !activeHoliday.reminderEnabled)" />
+            </label>
+            <label class="work-schedule-field">
+              <span>节日当天提醒时间</span>
+              <input v-model="holidayReminderTime" type="time" required :disabled="!holidayReminderEnabled || holidayReminderSaving" />
+            </label>
+            <div v-if="holidayReminderEnabled && !holidaySettings?.reminderChannelAvailable" class="work-schedule-state error compact">{{ holidaySettings?.reminderChannelHint || '提醒通道暂不可用' }}</div>
+            <div v-if="holidayReminderSaveError" class="work-schedule-state error compact">保存失败：{{ holidayReminderSaveError }}。草稿仍在，可直接重试。</div>
+            <div class="work-schedule-actions">
+              <button type="button" class="work-schedule-cancel" :disabled="holidayReminderSaving" @click="closeHolidayDetail">取消</button>
+              <button type="submit" class="work-schedule-save" :disabled="holidayReminderSaving || (holidayReminderEnabled && !holidaySettings?.reminderChannelAvailable)">
+                <i v-if="holidayReminderSaving" class="ri-loader-4-line spinning"></i>{{ holidayReminderSaving ? '保存中…' : holidayReminderSaveError ? '重试保存' : holidayReminderEnabled ? '保存提醒' : activeHoliday.reminderEnabled ? '关闭提醒' : '保存' }}
+              </button>
+            </div>
+          </form>
+          <div v-else class="holiday-reminder-unavailable"><i class="ri-information-line"></i>这是调休上班或假期延展日；提醒请在对应节日本日设置，避免同一假期重复通知。</div>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -940,7 +1170,7 @@ button.holiday-status { cursor: pointer; }
 .holiday-status.error { color: var(--wao-danger); }
 .holiday-status .spin { display: inline-block; animation: holiday-spin .9s linear infinite; }
 @keyframes holiday-spin { to { transform: rotate(360deg); } }
-.caldav, .work-schedule {
+.caldav, .work-schedule, .holiday-settings-entry {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -952,7 +1182,7 @@ button.holiday-status { cursor: pointer; }
   color: var(--wao-text-2);
   cursor: pointer;
 }
-.caldav:hover, .work-schedule:hover {
+.caldav:hover, .work-schedule:hover, .holiday-settings-entry:hover {
   border-color: #c9cdda;
   background: var(--wao-bg-sub);
 }
@@ -961,7 +1191,7 @@ button.holiday-status { cursor: pointer; }
   height: 6px;
   border-radius: 50%;
 }
-.caldav i, .work-schedule i {
+.caldav i, .work-schedule i, .holiday-settings-entry i {
   font-size: 12px;
   color: var(--wao-text-weak);
 }
@@ -1441,5 +1671,84 @@ button.holiday-status { cursor: pointer; }
 .cd-body {
   padding: 0 20px 20px;
   overflow-y: auto;
+}
+.holiday-source-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0 14px 12px;
+  padding: 9px 11px;
+  border: 1px solid #ead7ad;
+  border-radius: 8px;
+  background: #fffaf0;
+  color: #7b642f;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.holiday-source-warning span { flex: 1; }
+.holiday-source-warning a { flex-shrink: 0; color: #8a6717; }
+.holiday-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 32px));
+  z-index: 101;
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border-radius: 14px;
+  background: var(--wao-bg-page);
+  box-shadow: var(--wao-shadow-modal);
+  animation: waoFade 0.15s ease;
+}
+.holiday-modal-body { padding: 4px 20px 20px; }
+.holiday-setting-intro, .holiday-setting-note {
+  margin: 2px 0 12px;
+  color: var(--wao-text-weak);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.holiday-setting-note { margin: 12px 2px 0; font-size: 11.5px; }
+.holiday-category-list { display: grid; gap: 8px; }
+.holiday-category {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  background: var(--wao-bg-card);
+  cursor: pointer;
+}
+.holiday-category:has(input:checked) { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
+.holiday-category input { width: 17px; height: 17px; accent-color: var(--wao-primary); }
+.holiday-category span, .holiday-category small { display: block; }
+.holiday-category b { font-size: 13px; color: var(--wao-text-1); }
+.holiday-category small { margin-top: 2px; color: var(--wao-text-weak); font-size: 11.5px; }
+.holiday-facts { margin: 0; display: grid; gap: 1px; overflow: hidden; border: 1px solid var(--wao-line); border-radius: 10px; }
+.holiday-facts div { display: grid; grid-template-columns: 76px 1fr; gap: 8px; padding: 9px 11px; background: var(--wao-bg-card); }
+.holiday-facts dt { color: var(--wao-text-weak); font-size: 12px; }
+.holiday-facts dd { margin: 0; color: var(--wao-text-2); font-size: 12px; }
+.holiday-facts a { color: var(--wao-primary); }
+.holiday-reminder-form { margin-top: 14px; }
+.holiday-reminder-form .work-schedule-field { margin-top: 12px; }
+.holiday-reminder-unavailable {
+  display: flex;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-weak);
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 640px) {
+  .cal { padding-inline: 12px; }
+  .holiday-source-warning { flex-wrap: wrap; }
+  .holiday-source-warning a { margin-left: 22px; }
+  .holiday-modal-body { padding-inline: 14px; }
+  .holiday-facts div { grid-template-columns: 58px 1fr; }
+  .holiday-reminder-form .work-schedule-field { grid-template-columns: 1fr; }
 }
 </style>
