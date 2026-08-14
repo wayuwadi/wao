@@ -77,6 +77,32 @@ public class AiAssistantConversationService {
         return new AssistantConversationDetailDto(toDto(conversation), messages);
     }
 
+    /**
+     * 返回归属指定成员会话的最新一条 AI 回复，供受控公开投影使用。
+     *
+     * <p>会话不存在、归属不匹配或尚无成功回复时返回 null，不把用户消息或完整会话暴露给调用方。
+     *
+     * @param conversationId 会话标识
+     * @param memberId 预期的会话所有者
+     * @return 最新 AI 回复，或 null
+     */
+    public String latestAssistantReply(String conversationId, String memberId) {
+        if (!StringUtils.hasText(conversationId) || !StringUtils.hasText(memberId)) return null;
+        AiAssistantConversationEntity conversation = conversationMapper.selectOne(
+                new LambdaQueryWrapper<AiAssistantConversationEntity>()
+                        .eq(AiAssistantConversationEntity::getId, conversationId)
+                        .eq(AiAssistantConversationEntity::getMemberId, memberId)
+                        .last("LIMIT 1"));
+        if (conversation == null) return null;
+        AiAssistantMessageEntity reply = messageMapper.selectOne(
+                new LambdaQueryWrapper<AiAssistantMessageEntity>()
+                        .eq(AiAssistantMessageEntity::getConversationId, conversationId)
+                        .eq(AiAssistantMessageEntity::getRole, "assistant")
+                        .orderByDesc(AiAssistantMessageEntity::getCreatedAt)
+                        .last("LIMIT 1"));
+        return reply == null || !StringUtils.hasText(reply.getContent()) ? null : reply.getContent();
+    }
+
     /** 返回会话最近 10 条可信持久化消息，供 Codex 续接上下文。 */
     public List<ChatMessage> recentHistory(String conversationId, String memberId) {
         if (!StringUtils.hasText(conversationId)) return List.of();

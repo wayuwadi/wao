@@ -64,6 +64,26 @@ class AiAssistantConversationServiceTest {
     }
 
     @Test
+    void returnsOnlyLatestAssistantReplyForOwnedConversation() {
+        when(conversationMapper.selectOne(any())).thenReturn(conversation("cv1", "member-1"));
+        AiAssistantMessageEntity reply = new AiAssistantMessageEntity();
+        reply.setRole("assistant");
+        reply.setContent("## 今日卦意\n\n先放慢一步。");
+        when(messageMapper.selectOne(any())).thenReturn(reply);
+
+        assertThat(service.latestAssistantReply("cv1", "member-1"))
+                .isEqualTo("## 今日卦意\n\n先放慢一步。");
+    }
+
+    @Test
+    void doesNotReadMessagesWhenConversationOwnershipDoesNotMatch() {
+        when(conversationMapper.selectOne(any())).thenReturn(null);
+
+        assertThat(service.latestAssistantReply("cv1", "member-2")).isNull();
+        verify(messageMapper, org.mockito.Mockito.never()).selectOne(any());
+    }
+
+    @Test
     void deleteRejectsConversationWithActiveRun() {
         when(conversationMapper.selectById("cv1")).thenReturn(conversation("cv1", "member-1"));
         when(runMapper.selectCount(any())).thenReturn(1L);

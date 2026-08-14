@@ -3,12 +3,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchSharedTianrenReading, type SharedTianrenReading } from '@/api/tianren'
 import SiteFooter from '@/components/SiteFooter.vue'
+import { renderMarkdown } from '@/utils/markdown'
 
 const route = useRoute()
 const token = computed(() => String(route.params.token ?? ''))
 const reading = ref<SharedTianrenReading | null>(null)
 const loading = ref(true)
 const error = ref('')
+const interpretationHtml = computed(() => renderMarkdown(reading.value?.interpretation ?? ''))
 
 const displayLines = computed(() => (reading.value?.lines ?? []).map((value, index) => ({
   value,
@@ -73,9 +75,17 @@ watch(token, load)
           </div>
         </section>
 
+        <section v-if="reading.interpretation" class="interpretation-card">
+          <div class="interpretation-head">
+            <span><i class="ri-sparkling-2-fill"></i></span>
+            <div><strong>天人一卦 · AI 自照</strong><small>分享者当前最新的生活反思</small></div>
+          </div>
+          <div class="markdown" v-html="interpretationHtml"></div>
+        </section>
+
         <section class="boundary">
           <i class="ri-heart-pulse-line"></i>
-          <div><strong>文化反思，不是医疗建议</strong><p>这是一份由分享者主动公开的卦象结果，不含其私有 AI 对话。它不预测吉凶，也不替代现实判断或医疗建议。</p></div>
+          <div><strong>文化反思，不是医疗建议</strong><p>这是分享者主动公开的卦象及其当前最新 AI 自照，不单独公开关注点原文或完整会话。内容不预测吉凶，也不替代现实判断或医疗建议。</p></div>
         </section>
       </template>
     </main>
@@ -90,6 +100,7 @@ watch(token, load)
 header { padding-bottom: 22px; border-bottom: 1px solid var(--wao-divider); text-align: center; }.brand { margin-bottom: 18px; color: #8e6534; font-size: 11px; font-weight: 650; letter-spacing: .08em; }.brand i { margin-right: 5px; }header > span { color: var(--wao-text-weak); font-size: 11px; }header h1 { margin: 7px 0 5px; font-family: 'STKaiti', 'KaiTi', serif; font-size: clamp(27px, 5vw, 38px); letter-spacing: .04em; }header p { margin: 0; color: var(--wao-text-weak); font-size: 11px; }
 .cast-layout { margin-top: 26px; display: grid; grid-template-columns: minmax(260px, .9fr) minmax(280px, 1fr); gap: clamp(22px, 4vw, 42px); align-items: center; }.line-stack { padding: 16px; display: flex; flex-direction: column; gap: 12px; border-radius: 14px; background: color-mix(in srgb, #3d756b 5%, var(--wao-bg-sub)); }.yao-row { min-height: 26px; display: grid; grid-template-columns: 24px minmax(120px, 1fr) 68px 24px; align-items: center; gap: 9px; color: var(--wao-text-weak); font-size: 10px; }.yao-shape { height: 11px; display: flex; gap: 15%; }.yao-shape i { display: block; flex: 1; border-radius: 2px; background: #283f3b; }.yao-row.changing .yao-shape i { background: #b36b42; box-shadow: 0 0 0 3px color-mix(in srgb, #b36b42 10%, transparent); }.yao-row > b { width: 21px; height: 21px; display: grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, #b36b42 12%, transparent); color: #a85d36; font-size: 9px; }
 .hexagram-flow { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }.hex-card { min-width: 0; padding: 19px 10px; border: 1px solid color-mix(in srgb, #3d756b 24%, var(--wao-line)); border-radius: 14px; display: grid; justify-items: center; gap: 4px; background: color-mix(in srgb, #3d756b 4%, var(--wao-bg-card)); text-align: center; }.hex-card.primary { border-color: color-mix(in srgb, #ae7d40 35%, var(--wao-line)); }.hex-card > span,.hex-card > small { color: var(--wao-text-weak); font-size: 9px; }.hex-card > strong { color: #3d756b; font-size: 51px; line-height: 1; }.hex-card.primary > strong { color: #8e6534; }.hex-card > b { font-family: 'STKaiti', 'KaiTi', serif; font-size: 19px; }.hex-card.muted { opacity: .55; }.flow-arrow { display: grid; justify-items: center; gap: 3px; color: #a65f38; }.flow-arrow i { font-size: 20px; }.flow-arrow span { font-size: 8.5px; white-space: nowrap; }
+.interpretation-card { margin-top: 28px; padding: clamp(18px, 3vw, 26px); border: 1px solid color-mix(in srgb, #3d756b 22%, var(--wao-line)); border-radius: 14px; background: color-mix(in srgb, #3d756b 4%, var(--wao-bg-card)); }.interpretation-head { display: flex; align-items: center; gap: 10px; }.interpretation-head > span { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, #3d756b, #99713e); color: #fff; }.interpretation-head strong,.interpretation-head small { display: block; }.interpretation-head strong { font-size: 13px; }.interpretation-head small { margin-top: 2px; color: var(--wao-text-weak); font-size: 9px; }.markdown { margin-top: 17px; color: var(--wao-text-2); font-size: 12.5px; line-height: 1.75; overflow-wrap: anywhere; }.markdown :deep(h1),.markdown :deep(h2),.markdown :deep(h3) { margin: 18px 0 6px; color: var(--wao-text); font-size: 14px; }.markdown :deep(p) { margin: 0 0 9px; }.markdown :deep(ul),.markdown :deep(ol) { margin: 0 0 9px; padding-left: 20px; }.markdown :deep(blockquote) { margin: 10px 0; padding: 8px 12px; border-left: 3px solid #3d756b; background: var(--wao-bg-sub); }.markdown :deep(pre) { max-width: 100%; padding: 10px; overflow-x: auto; border-radius: 8px; background: var(--wao-bg-sub); }
 .boundary { margin-top: 28px; padding: 14px 16px; display: flex; align-items: flex-start; gap: 10px; border-radius: 12px; background: var(--wao-warning-bg); color: var(--wao-warning-strong); }.boundary > i { font-size: 20px; }.boundary strong { font-size: 11px; }.boundary p { margin: 4px 0 0; color: var(--wao-text-3); font-size: 10px; line-height: 1.65; }
 @keyframes spin { to { transform: rotate(360deg); } }@media (max-width: 680px) { .share-page { padding: 14px 10px; }.share-card { padding: 21px 14px; border-radius: 14px; }.cast-layout { grid-template-columns: 1fr; }.yao-row { grid-template-columns: 21px minmax(100px, 1fr) 62px 21px; gap: 6px; }.boundary { margin-top: 20px; } }@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 </style>

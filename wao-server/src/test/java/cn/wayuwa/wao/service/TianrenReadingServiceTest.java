@@ -83,11 +83,14 @@ class TianrenReadingServiceTest {
         row.setConversationId("cv-private");
         row.setShareToken("0123456789abcdef0123456789abcdef");
         when(mapper.selectOne(any())).thenReturn(row);
+        when(conversations.latestAssistantReply("cv-private", "wg"))
+                .thenReturn("## 四时自照\n\n今天给忙碌留一次停顿。");
 
         var shared = service.shared(row.getShareToken());
 
         assertThat(shared.date()).isEqualTo(row.getReadingDate());
         assertThat(shared.primary().name()).isEqualTo("泰");
+        assertThat(shared.interpretation()).contains("今天给忙碌留一次停顿");
         assertThat(shared.getClass().getRecordComponents())
                 .extracting(component -> component.getName())
                 .doesNotContain("id", "memberId", "conversationId", "shareToken");
