@@ -104,7 +104,68 @@ describe('TianrenView', () => {
     expect(fetchAssistantConversation).toHaveBeenCalledWith('cv1')
     expect(wrapper.text()).toContain('今日卦意')
     expect(wrapper.text()).toContain('稳住节奏')
+    expect(wrapper.text()).toContain('卦象事实')
+    expect(wrapper.text()).toContain('传统观点 · AI 概括')
+    expect(wrapper.text()).toContain('当日建议 · AI 延伸')
     expect(wrapper.find('.ai-mark').exists()).toBe(true)
+  })
+
+  it('点击历史日期恢复当日完整卦象和已保存的联合解读', async () => {
+    const past = {
+      ...reading,
+      id: 'tr-old',
+      date: '2026-08-10',
+      conversationId: 'cv-old',
+      primary: {
+        number: 2, name: '坤', symbol: '䷁',
+        upper: { name: '坤', nature: '地', symbol: '☷' },
+        lower: { name: '坤', nature: '地', symbol: '☷' },
+      },
+      relating: null,
+    }
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
+    vi.mocked(fetchTianrenHistory).mockResolvedValue([reading, past])
+    vi.mocked(fetchAssistantConversation).mockResolvedValue({
+      conversation: { id: 'cv-old', title: '天人一卦', updatedAt: '2026-08-10T10:01:00' },
+      messages: [
+        { id: 'm1', role: 'assistant', content: '## 《易经》卦意（AI 概括）\n以承载与顺势自照。', createdAt: '2026-08-10T10:01:00' },
+      ],
+    })
+    const wrapper = mount(TianrenView)
+    await flushPromises()
+
+    await wrapper.findAll('.history-row')[1]!.trigger('click')
+    await flushPromises()
+
+    expect(fetchAssistantConversation).toHaveBeenCalledWith('cv-old')
+    expect(wrapper.text()).toContain('历史卦象')
+    expect(wrapper.text()).toContain('第 2 卦 · 坤')
+    expect(wrapper.findAll('.yao-row')).toHaveLength(6)
+    expect(wrapper.text()).toContain('以承载与顺势自照')
+    expect(wrapper.find('textarea').exists()).toBe(false)
+    expect(wrapper.find('.interpret-button').exists()).toBe(false)
+    expect(streamTianrenInterpretation).not.toHaveBeenCalled()
+
+    await wrapper.get('.today-button').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('今日卦象')
+    expect(wrapper.find('textarea').exists()).toBe(true)
+  })
+
+  it('没有 AI 会话的历史日期只回看真实卦象且明确显示无解读存档', async () => {
+    const past = { ...reading, id: 'tr-old', date: '2026-08-09', conversationId: null }
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
+    vi.mocked(fetchTianrenHistory).mockResolvedValue([reading, past])
+    const wrapper = mount(TianrenView)
+    await flushPromises()
+
+    await wrapper.findAll('.history-row')[1]!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('这一天没有保存 AI 解读')
+    expect(wrapper.text()).toContain('历史结果不会用今天的接口补做或伪造')
+    expect(fetchAssistantConversation).not.toHaveBeenCalled()
+    expect(streamTianrenInterpretation).not.toHaveBeenCalled()
   })
 
   it('AI 失败时保留本机关注点草稿并提供重试', async () => {
