@@ -1,14 +1,14 @@
 openapi: 3.0.3
 info:
-  title: WAO 内置日历 API
-  version: 0.1.0
-  description: 无需用户配置的中国节假日与常用国际节日只读日历。
+  title: WAO 节假日日历 API
+  version: 0.2.0
+  description: 当前成员主动选择国际节日范围，并为关心的节日设置飞书个人提醒。
 servers:
   - url: /api
 paths:
   /calendar/holidays:
     get:
-      summary: 日期窗内的内置节假日事件
+      summary: 当前成员日期窗内的节日与年度来源状态
       parameters:
         - { name: from, in: query, required: true, schema: { type: string, format: date } }
         - { name: to, in: query, required: true, schema: { type: string, format: date } }
@@ -17,25 +17,88 @@ paths:
           description: OK
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/HolidayEventListResponse' }
+              schema: { $ref: '#/components/schemas/HolidayCalendarResponse' }
         '400': { description: 日期格式错误、to 早于 from 或窗口超过 370 天（code=40001） }
+  /calendar/holidays/settings:
+    get:
+      summary: 当前成员的国际节日范围和提醒通道状态
+      responses:
+        '200': { description: OK }
+    put:
+      summary: 保存当前成员主动选择的国际节日类别
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [selectedInternationalCategories]
+              properties:
+                selectedInternationalCategories:
+                  type: array
+                  maxItems: 10
+                  items: { type: string, enum: [FAMILY, WESTERN_POPULAR, CHRISTIAN, NORTH_AMERICA] }
+      responses:
+        '200': { description: OK；关闭类别时同步关闭该类别提醒 }
+  /calendar/holidays/{holidayCode}/reminder:
+    put:
+      summary: 创建、修改或关闭当前成员的年度节日提醒
+      parameters:
+        - { name: holidayCode, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+                reminderTime: { type: string, format: time, nullable: true, example: '08:30' }
+      responses:
+        '200': { description: OK }
+        '400': { description: 节日未知、类别未订阅、未选择时间或飞书提醒通道不可用 }
 components:
   schemas:
     HolidayEvent:
       type: object
-      required: [id, date, name, category, dayType]
+      required: [id, code, date, year, name, category, dayType, sourceName, remindable, reminderEnabled]
       properties:
         id: { type: string }
+        code: { type: string, example: international.mothers-day }
         date: { type: string, format: date }
+        year: { type: integer, example: 2026 }
         name: { type: string, example: 母亲节 }
         category: { type: string, enum: [CHINA, INTERNATIONAL] }
         dayType: { type: string, enum: [FESTIVAL, DAY_OFF, ADJUSTED_WORKDAY] }
-    HolidayEventListResponse:
+        internationalCategory: { type: string, nullable: true, enum: [FAMILY, WESTERN_POPULAR, CHRISTIAN, NORTH_AMERICA] }
+        sourceName: { type: string }
+        sourceUrl: { type: string, nullable: true }
+        remindable: { type: boolean }
+        reminderEnabled: { type: boolean }
+        reminderTime: { type: string, nullable: true, example: '08:30' }
+    HolidayYearSource:
+      type: object
+      required: [year, officialScheduleAvailable, sourceName, sourceUrl, message]
+      properties:
+        year: { type: integer }
+        officialScheduleAvailable: { type: boolean }
+        sourceName: { type: string }
+        sourceUrl: { type: string }
+        message: { type: string }
+    HolidayCalendar:
+      type: object
+      properties:
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/HolidayEvent' }
+        years:
+          type: array
+          items: { $ref: '#/components/schemas/HolidayYearSource' }
+    HolidayCalendarResponse:
       type: object
       properties:
         code: { type: integer, example: 0 }
         message: { type: string, example: ok }
         timestamp: { type: integer, format: int64 }
-        data:
-          type: array
-          items: { $ref: '#/components/schemas/HolidayEvent' }
+        data: { $ref: '#/components/schemas/HolidayCalendar' }

@@ -339,6 +339,16 @@ OAuth 下发前会先把快过期的 access token 续期。
 首页“给此刻的你”复用 `member_preference` 的 `daily-guidance` 键保存当前成员当天的生成结果，不写入私人聊天
 历史，也不新增长期建议表；生成仍走 `ai_assistant_run` 短期队列，边界见 ADR-062。
 
+日历的国际节日范围复用 `member_preference` 的 `holiday-international-categories` 键；新成员默认空数组，
+不会自动加入全部国际节日。
+
+### holiday_reminder / holiday_reminder_delivery（V67）
+
+`holiday_reminder` 按 `member_id + holiday_code` 唯一保存每年重复的节日提醒、提醒时间和开关；
+`holiday_code` 是跨年份稳定的服务端定义，客户端不能自造节日名称。`holiday_reminder_delivery` 按
+`reminder_id + event_date` 唯一保存发送、失败、错误与重试次数，确保多应用节点不会重复私聊。
+提醒仅投递给该成员账号绑定的飞书身份，未绑定飞书或未配置自建应用时不能开启。
+
 ### ai_account_oauth_session（V39）
 
 | 列 | 类型 | 说明 |
@@ -620,4 +630,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V63__ai_evolution_low_quota_reminder.sql`：按账号与额度重置周期去重飞书低额度提醒。
 - `V64__ai_evolution_mined_suggestions.sql`：保存从真实 WAO 资产挖掘且可追溯的自主进化任务建议批次。
 - `V66__ai_evolution_schedule.sql`：保存自主进化人工设置的空闲间隔与单次任务数。
+- `V67__holiday_preferences_and_reminders.sql`：保存成员节日提醒及按节日日期去重的飞书私聊投递状态。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

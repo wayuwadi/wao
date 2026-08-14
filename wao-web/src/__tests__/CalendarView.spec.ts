@@ -7,7 +7,15 @@ import { fetchAlternateWorkWeek, saveAlternateWorkWeek } from '@/api/workSchedul
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
-import { fetchHolidayEvents } from '@/api/holiday'
+import {
+  fetchHolidayEvents,
+  fetchHolidaySettings,
+  saveHolidayReminder,
+  saveHolidaySettings,
+  type HolidayCalendar,
+  type HolidayEvent,
+  type HolidaySettings,
+} from '@/api/holiday'
 import type { Task } from '@/types'
 import type { AlternateWorkWeekSchedule } from '@/utils/workSchedule'
 
@@ -22,8 +30,34 @@ vi.mock('@/api/workSchedule', () => ({
 }))
 
 vi.mock('@/api/holiday', () => ({
-  fetchHolidayEvents: vi.fn<() => Promise<never[]>>(async () => []),
+  fetchHolidayEvents: vi.fn<() => Promise<HolidayCalendar>>(),
+  fetchHolidaySettings: vi.fn<() => Promise<HolidaySettings>>(),
+  saveHolidaySettings: vi.fn<(selected: string[]) => Promise<HolidaySettings>>(),
+  saveHolidayReminder: vi.fn<(code: string, value: { enabled: boolean; reminderTime: string | null }) => Promise<{
+    holidayCode: string; enabled: boolean; reminderTime: string | null
+  }>>(),
 }))
+
+const emptyHolidayCalendar: HolidayCalendar = { events: [], years: [] }
+const defaultHolidaySettings: HolidaySettings = {
+  selectedInternationalCategories: [],
+  availableInternationalCategories: [
+    { code: 'FAMILY', name: '亲情关怀', description: '母亲节、父亲节' },
+    { code: 'WESTERN_POPULAR', name: '国际流行', description: '情人节、愚人节、万圣节' },
+  ],
+  reminderChannelAvailable: true,
+  reminderChannelHint: '提醒将私聊飞书',
+}
+
+function holiday(patch: Partial<HolidayEvent>): HolidayEvent {
+  return {
+    id: 'h1', code: 'china.spring-festival', date: '2026-08-14', year: 2026,
+    name: '春节', category: 'CHINA', dayType: 'DAY_OFF', internationalCategory: null,
+    sourceName: '2026年国务院办公厅节假日安排', sourceUrl: 'https://www.gov.cn/',
+    remindable: true, reminderEnabled: false, reminderTime: null,
+    ...patch,
+  }
+}
 
 const router = createRouter({
   history: createMemoryHistory(),
@@ -36,7 +70,14 @@ describe('日历成员隔离、清单与时间轴', () => {
     setActivePinia(createPinia())
     vi.mocked(fetchAlternateWorkWeek).mockImplementation(async (today) => ({ enabled: false, anchorWeek: today, anchorType: 'small' }))
     vi.mocked(saveAlternateWorkWeek).mockImplementation(async (value) => value)
-    vi.mocked(fetchHolidayEvents).mockReset().mockResolvedValue([])
+    vi.mocked(fetchHolidayEvents).mockReset().mockResolvedValue(emptyHolidayCalendar)
+    vi.mocked(fetchHolidaySettings).mockReset().mockResolvedValue(defaultHolidaySettings)
+    vi.mocked(saveHolidaySettings).mockReset().mockImplementation(async (selected) => ({
+      ...defaultHolidaySettings, selectedInternationalCategories: selected,
+    }))
+    vi.mocked(saveHolidayReminder).mockReset().mockImplementation(async (holidayCode, value) => ({
+      holidayCode, enabled: value.enabled, reminderTime: value.reminderTime,
+    }))
   })
 
   it('默认只看当前人，待安排清单只含未排期与已逾期任务并可集中筛选', async () => {
@@ -207,11 +248,15 @@ describe('日历成员隔离、清单与时间轴', () => {
       anchorWeek: data.today,
       anchorType: 'small',
     })
-    vi.mocked(fetchHolidayEvents).mockResolvedValue([
-      { id: 'h1', date: data.today, name: '春节', category: 'CHINA', dayType: 'DAY_OFF' },
-      { id: 'h2', date: data.today, name: '母亲节', category: 'INTERNATIONAL', dayType: 'FESTIVAL' },
-      { id: 'h3', date: data.today, name: '春节调休上班', category: 'CHINA', dayType: 'ADJUSTED_WORKDAY' },
-    ])
+    vi.mocked(fetchHolidayEvents).mockResolvedValue({ events: [
+      holiday({ id: 'h1', date: data.today }),
+      holiday({ id: 'h2', code: 'international.mothers-day', date: data.today, name: '母亲节',
+        category: 'INTERNATIONAL', dayType: 'FESTIVAL', internationalCategory: 'FAMILY',
+        sourceName: 'WAO 稳定公历规则', sourceUrl: null }),
+      holiday({ id: 'h3', date: data.today, name: '春节调休上班', dayType: 'ADJUSTED_WORKDAY', remindable: false }),
+    ], years: [{ year: 2026, officialScheduleAvailable: true,
+      sourceName: '2026年国务院办公厅节假日安排', sourceUrl: 'https://www.gov.cn/',
+      message: '该年度法定放假与调休安排已收录' }] })
 
     const wrapper = mount(CalendarView, { global: { plugins: [router] } })
     await flushPromises()
@@ -231,7 +276,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     session.members = [me]
     vi.mocked(fetchHolidayEvents)
       .mockRejectedValueOnce(new Error('网络失败'))
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(emptyHolidayCalendar)
 
     const wrapper = mount(CalendarView, { global: { plugins: [router] } })
     await flushPromises()
@@ -242,5 +287,56 @@ describe('日历成员隔离、清单与时间轴', () => {
     await flushPromises()
     expect(wrapper.find('button.holiday-status.error').exists()).toBe(false)
     expect(fetchHolidayEvents).toHaveBeenCalledTimes(2)
+  })
+
+  it('国际节日默认不添加，用户可主动订阅类别并从节日详情创建和关闭提醒', async () => {
+    const data = useDataStore()
+    const session = useSessionStore()
+    const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me]
+    const mothersDay = holiday({
+      id: 'mother', code: 'international.mothers-day', date: data.today, name: '母亲节',
+      category: 'INTERNATIONAL', dayType: 'FESTIVAL', internationalCategory: 'FAMILY',
+      sourceName: 'WAO 稳定公历规则', sourceUrl: null,
+    })
+    vi.mocked(fetchHolidayEvents)
+      .mockResolvedValueOnce(emptyHolidayCalendar)
+      .mockResolvedValueOnce({ events: [mothersDay], years: [] })
+
+    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('母亲节')
+    expect(wrapper.find('.holiday-settings-entry').text()).toContain('0 类')
+
+    await wrapper.find('.holiday-settings-entry').trigger('click')
+    const family = wrapper.find('.holiday-category input[value="FAMILY"]')
+    await family.setValue(true)
+    await wrapper.find('.holiday-modal form').trigger('submit')
+    await flushPromises()
+
+    expect(saveHolidaySettings).toHaveBeenCalledWith(['FAMILY'])
+    expect(wrapper.text()).toContain('母亲节')
+    await wrapper.findAll('.event').find((event) => event.text().includes('母亲节'))!.trigger('click')
+    expect(wrapper.find('.holiday-detail-modal').exists()).toBe(true)
+    expect(wrapper.text()).toContain('2026 年数据')
+
+    await wrapper.find('.holiday-reminder-form input[type="checkbox"]').setValue(true)
+    await wrapper.find('.holiday-reminder-form input[type="time"]').setValue('08:30')
+    await wrapper.find('.holiday-reminder-form').trigger('submit')
+    await flushPromises()
+    expect(saveHolidayReminder).toHaveBeenCalledWith('international.mothers-day', {
+      enabled: true, reminderTime: '08:30',
+    })
+
+    const updated = { ...mothersDay, reminderEnabled: true, reminderTime: '08:30' }
+    vi.mocked(fetchHolidayEvents).mockResolvedValue({ events: [updated], years: [] })
+    await wrapper.findAll('.event').find((event) => event.text().includes('母亲节'))!.trigger('click')
+    await wrapper.find('.holiday-reminder-form input[type="checkbox"]').setValue(false)
+    await wrapper.find('.holiday-reminder-form').trigger('submit')
+    await flushPromises()
+    expect(saveHolidayReminder).toHaveBeenLastCalledWith('international.mothers-day', {
+      enabled: false, reminderTime: null,
+    })
   })
 })
