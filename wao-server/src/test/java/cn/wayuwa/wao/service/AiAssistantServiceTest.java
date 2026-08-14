@@ -13,6 +13,7 @@ import cn.wayuwa.wao.domain.AiAssistantRunEntity;
 import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.dto.AiAssistantClaimDto;
 import cn.wayuwa.wao.dto.AiRunAccountDto;
+import cn.wayuwa.wao.dto.AssistantChatRequest;
 import cn.wayuwa.wao.dto.CompleteAiAssistantRunRequest;
 import cn.wayuwa.wao.mapper.AiAssistantRunMapper;
 import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
@@ -122,6 +123,22 @@ class AiAssistantServiceTest {
         assertThat(queued.getValue().getPromptText()).contains("生成建议").contains("真实任务上下文");
         verify(conversationService, org.mockito.Mockito.never()).create(any());
         verify(conversationService, org.mockito.Mockito.never()).enqueue(any(), any(), any(), any());
+    }
+
+    @Test
+    void tianrenPromptSeparatesCastFactsTraditionalSummaryAndAiExtension() {
+        AssistantChatRequest request = new AssistantChatRequest(
+                "请结合最近的疲惫给我今天的提示", List.of(), null, "cv1", null);
+
+        String prompt = service.buildPrompt(request, List.of(), null,
+                "<authoritative_tianren_cast>第 11 卦「泰」</authoritative_tianren_cast>");
+
+        assertThat(prompt)
+                .contains("卦象事实", "《易经》卦意（AI 概括）", "当日状态观察（AI 延伸）")
+                .contains("《黄帝内经》生活观（AI 概括）", "今日调养提示（AI 延伸）")
+                .contains("只有确实掌握原句和具体篇名时才可短句引用并标明出处")
+                .contains("不是医疗诊断或治疗方案", "持续不适应咨询合格医务人员")
+                .contains("第 11 卦「泰」", "最近的疲惫");
     }
 
     private AiRunnerNodeEntity runner(String platform, String engines) {

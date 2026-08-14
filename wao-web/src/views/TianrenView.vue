@@ -15,6 +15,7 @@ import { renderMarkdown } from '@/utils/markdown'
 type SyncState = 'loading' | 'casting' | 'saved' | 'error'
 
 const reading = ref<TianrenReading | null>(null)
+const todayReading = ref<TianrenReading | null>(null)
 const history = ref<TianrenReading[]>([])
 const loading = ref(true)
 const casting = ref(false)
@@ -32,6 +33,7 @@ const interpreting = ref(false)
 const interpretation = ref('')
 const interpretationError = ref('')
 const conversationError = ref('')
+const conversationLoading = ref(false)
 
 const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date())
 const draftKey = `wao-tianren-focus-v1:${localDate}`
@@ -57,7 +59,8 @@ const displayLines = computed(() => (reading.value?.lines ?? [])
   .reverse())
 
 const interpretationHtml = computed(() => renderMarkdown(interpretation.value))
-const canInterpret = computed(() => !!reading.value && assistantConfigured.value && !interpreting.value)
+const isViewingToday = computed(() => reading.value?.date === localDate)
+const canInterpret = computed(() => isViewingToday.value && assistantConfigured.value && !interpreting.value)
 const season = computed(() => {
   const month = Number((reading.value?.date ?? localDate).slice(5, 7))
   if (month >= 3 && month <= 5) return { name: '春 · 生', icon: 'ri-seedling-line', note: '留意舒展与循序，给今天保留一点向外生长的空间。' }
@@ -99,16 +102,50 @@ async function loadAssistant() {
 }
 
 async function loadConversation(current: TianrenReading | null) {
+  const requestedId = current?.id
   interpretation.value = ''
   conversationError.value = ''
+  conversationLoading.value = false
   if (!current?.conversationId) return
+  conversationLoading.value = true
   try {
     const detail = await fetchAssistantConversation(current.conversationId)
+    if (reading.value?.id !== requestedId) return
     interpretation.value = [...detail.messages].reverse()
       .find((message) => message.role === 'assistant')?.content ?? ''
   } catch (cause) {
+    if (reading.value?.id !== requestedId) return
     conversationError.value = cause instanceof Error ? cause.message : '历史解读读取失败'
+  } finally {
+    if (reading.value?.id === requestedId) conversationLoading.value = false
   }
+}
+
+async function selectReading(item: TianrenReading) {
+  if (reading.value?.id === item.id) return
+  reading.value = item
+  interpretationError.value = ''
+  resetShareFeedback()
+  await loadConversation(item)
+}
+
+async function showToday() {
+  if (todayReading.value) {
+    await selectReading(todayReading.value)
+    return
+  }
+  reading.value = null
+  interpretation.value = ''
+  interpretationError.value = ''
+  conversationError.value = ''
+  conversationLoading.value = false
+  resetShareFeedback()
+}
+
+function resetShareFeedback() {
+  shareFeedback.value = ''
+  shareUrl.value = ''
+  shareError.value = false
 }
 
 async function loadPage(showLoading = true) {
@@ -120,6 +157,7 @@ async function loadPage(showLoading = true) {
       fetchTodayTianrenReading(),
       fetchTianrenHistory(14),
     ])
+    todayReading.value = today
     reading.value = today
     history.value = recent
     syncState.value = 'saved'
@@ -138,7 +176,8 @@ async function castToday() {
   pageError.value = ''
   syncState.value = 'casting'
   try {
-    reading.value = await createTodayTianrenReading()
+    todayReading.value = await createTodayTianrenReading()
+    reading.value = todayReading.value
     history.value = await fetchTianrenHistory(14)
     syncState.value = 'saved'
   } catch (cause) {
@@ -182,7 +221,10 @@ async function interpretToday() {
       interpretation.value += chunk
     }
     const latest = await fetchTodayTianrenReading()
-    if (latest) reading.value = latest
+    if (latest) {
+      todayReading.value = latest
+      reading.value = latest
+    }
     history.value = await fetchTianrenHistory(14)
     focus.value = ''
   } catch (cause) {
@@ -256,12 +298,15 @@ onMounted(() => {
             <section class="cast-card card">
               <div class="card-head">
                 <div>
-                  <span class="section-kicker">今日卦象 · {{ formatHistoryDate(reading.date) }}</span>
+                  <span class="section-kicker">{{ isViewingToday ? '今日卦象' : '历史卦象' }} · {{ formatHistoryDate(reading.date) }}</span>
                   <h2>{{ reading.primary.symbol }} 第 {{ reading.primary.number }} 卦 · {{ reading.primary.name }}</h2>
                   <p>上{{ reading.primary.upper.name }}（{{ reading.primary.upper.nature }}）下{{ reading.primary.lower.name }}（{{ reading.primary.lower.nature }}）</p>
                 </div>
                 <div class="card-actions">
-                  <span class="once-pill"><i class="ri-lock-line"></i> 今日唯一</span>
+                  <button v-if="!isViewingToday" class="today-button" type="button" @click="showToday">
+                    <i class="ri-sun-line"></i> 回到今日
+                  </button>
+                  <span class="once-pill"><i class="ri-lock-line"></i> {{ isViewingToday ? '今日唯一' : '历史存档' }}</span>
                   <button class="share-button" type="button" :disabled="sharing" @click="shareReading">
                     <i :class="sharing ? 'ri-loader-4-line spin' : 'ri-share-forward-line'"></i>
                     {{ sharing ? '正在生成链接' : '复制分享链接' }}
@@ -308,7 +353,7 @@ onMounted(() => {
               </div>
             </section>
 
-            <section class="reflection-card card">
+            <section v-if="isViewingToday" class="reflection-card card">
               <div class="reflection-head">
                 <div class="season-icon"><i :class="season.icon"></i></div>
                 <div><span>四时自照</span><strong>{{ season.name }}</strong></div>
@@ -347,16 +392,37 @@ onMounted(() => {
               <small class="privacy-note"><i class="ri-shield-user-line"></i> 解读保存在你的成员私有 AI 会话；主动分享本卦后，同一公开链接会展示当前最新一条 AI 自照。</small>
             </section>
 
-            <section v-if="interpreting || interpretation || interpretationError || conversationError" class="answer-card card">
+            <section v-else class="reflection-card history-reflection card">
+              <div class="reflection-head">
+                <div class="season-icon"><i class="ri-history-line"></i></div>
+                <div><span>历史回看</span><strong>{{ formatHistoryDate(reading.date) }}</strong></div>
+                <p>这里恢复当日保存的卦象和最后一份 AI 解读，不会用今天的状态重新生成过去结果。</p>
+              </div>
+            </section>
+
+            <section v-if="!isViewingToday || interpreting || interpretation || interpretationError || conversationError" class="answer-card card">
               <div class="answer-head">
                 <span class="answer-avatar"><i class="ri-sparkling-2-fill"></i></span>
-                <div><strong>天人一卦 · AI 自照</strong><small>基于服务端保存的今日卦象</small></div>
+                <div>
+                  <strong>天人一卦 · 联合解读</strong>
+                  <small>卦象是服务端事实；经典观点与当日建议由 AI 分层标注</small>
+                </div>
               </div>
-              <div v-if="interpreting && !interpretation" class="answer-loading">
+              <div v-if="(interpreting || conversationLoading) && !interpretation" class="answer-loading">
                 <span class="typing"><i></i><i></i><i></i></span>
-                <span>正在梳理卦意、变化与今天可实践的一件小事……</span>
+                <span>{{ conversationLoading ? '正在取回这一天保存的联合解读……' : '正在梳理卦意、生活观察与今天的调养提示……' }}</span>
+              </div>
+              <div v-if="interpretation" class="interpretation-legend" aria-label="解读内容标注说明">
+                <span><i class="ri-lock-line"></i> 卦象事实</span>
+                <span><i class="ri-book-open-line"></i> 传统观点 · AI 概括</span>
+                <span><i class="ri-sparkling-line"></i> 当日建议 · AI 延伸</span>
               </div>
               <div v-if="interpretation" class="markdown" v-html="interpretationHtml"></div>
+              <div v-else-if="!isViewingToday && !conversationLoading && !conversationError" class="history-answer-empty">
+                <i class="ri-chat-history-line"></i>
+                <strong>这一天没有保存 AI 解读</strong>
+                <span>完整卦象仍可回看；历史结果不会用今天的接口补做或伪造。</span>
+              </div>
               <div v-if="interpretationError || conversationError" class="answer-error" role="alert">
                 <i class="ri-error-warning-line"></i>
                 <span>{{ interpretationError || conversationError }}</span>
@@ -374,14 +440,23 @@ onMounted(() => {
               <i class="ri-history-line"></i>
             </div>
             <div v-if="history.length" class="history-list">
-              <div v-for="item in history" :key="item.id" class="history-row" :class="{ today: item.date === localDate }">
+              <button
+                v-for="item in history"
+                :key="item.id"
+                class="history-row"
+                :class="{ today: item.date === localDate, selected: item.id === reading?.id }"
+                type="button"
+                :aria-pressed="item.id === reading?.id"
+                @click="selectReading(item)"
+              >
                 <span class="history-symbol">{{ item.primary.symbol }}</span>
                 <div class="history-main">
                   <strong>{{ item.primary.name }}<template v-if="item.relating"> → {{ item.relating.name }}</template></strong>
                   <span>{{ formatHistoryDate(item.date) }} · {{ item.changingLines.length ? `${item.changingLines.length} 个变爻` : '无变爻' }}</span>
                 </div>
                 <span v-if="item.conversationId" class="ai-mark" title="已有 AI 解读"><i class="ri-sparkling-line"></i></span>
-              </div>
+                <i class="ri-arrow-right-s-line history-arrow"></i>
+              </button>
             </div>
             <div v-else class="history-empty">
               <i class="ri-plant-line"></i>
@@ -394,7 +469,7 @@ onMounted(() => {
             <span class="boundary-icon"><i class="ri-heart-pulse-line"></i></span>
             <div>
               <strong>文化反思，不是医疗建议</strong>
-              <p>产品只提供经典思想的现代转述和日常自我观察；身体持续不适、症状加重或情况紧急时，请及时咨询合格医务人员。</p>
+              <p>传统观点和当日建议均为 AI 辅助的文化学习与自我观察，不是诊断或治疗方案；身体持续不适、症状加重或情况紧急时，请及时咨询合格医务人员。</p>
             </div>
           </section>
 
@@ -431,6 +506,9 @@ onMounted(() => {
 .interpret-button { width: 100%; min-height: 40px; margin-top: 11px; padding: 8px 13px; border: 0; border-radius: 10px; background: linear-gradient(135deg, #3d756b, #59776e); color: #fff; cursor: pointer; font-weight: 650; }.interpret-button i { margin-right: 6px; }.interpret-button:disabled { opacity: .42; cursor: not-allowed; }.privacy-note { margin-top: 9px; display: block; color: var(--wao-text-weak); font-size: 9px; line-height: 1.5; }.privacy-note i { margin-right: 4px; color: #3d756b; }
 .answer-card { padding: clamp(17px, 2.5vw, 23px); }.answer-head { display: flex; align-items: center; gap: 10px; }.answer-avatar { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, #3d756b, #99713e); color: white; }.answer-head strong,.answer-head small { display: block; }.answer-head strong { font-size: 13px; }.answer-head small { margin-top: 2px; color: var(--wao-text-weak); font-size: 9px; }.answer-loading { min-height: 110px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--wao-text-weak); font-size: 11px; }.typing { display: inline-flex; gap: 3px; }.typing i { width: 5px; height: 5px; border-radius: 50%; background: #3d756b; animation: typing 1s infinite; }.typing i:nth-child(2) { animation-delay: .15s; }.typing i:nth-child(3) { animation-delay: .3s; }.markdown { margin-top: 17px; color: var(--wao-text-2); font-size: 12.5px; line-height: 1.75; }.markdown :deep(h2),.markdown :deep(h3) { margin: 18px 0 6px; color: var(--wao-text); font-size: 14px; }.markdown :deep(p) { margin: 0 0 9px; }.markdown :deep(ul),.markdown :deep(ol) { margin: 0 0 9px; padding-left: 20px; }.markdown :deep(blockquote) { margin: 10px 0; padding: 8px 12px; border-left: 3px solid #3d756b; background: var(--wao-bg-sub); }.answer-error { margin-top: 14px; padding: 9px 10px; border-radius: 8px; display: flex; align-items: center; gap: 7px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); font-size: 10.5px; }.answer-error span { flex: 1; }.answer-error button { border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 650; }
 .history-card { overflow: hidden; }.history-head { padding: 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--wao-divider); }.history-head span,.history-head strong { display: block; }.history-head span { color: var(--wao-text-weak); font-size: 9px; }.history-head strong { margin-top: 2px; font-size: 13px; }.history-head > i { color: #8e6534; font-size: 20px; }.history-list { padding: 7px; }.history-row { padding: 9px; display: flex; align-items: center; gap: 9px; border-radius: 9px; }.history-row.today { background: color-mix(in srgb, #3d756b 7%, transparent); }.history-symbol { width: 31px; height: 31px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--wao-bg-sub); color: #8e6534; font-size: 20px; }.history-main { min-width: 0; flex: 1; }.history-main strong,.history-main span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.history-main strong { font-size: 11px; }.history-main span { margin-top: 2px; color: var(--wao-text-weak); font-size: 9px; }.ai-mark { color: #3d756b; font-size: 13px; }.history-empty { min-height: 180px; padding: 22px; display: grid; place-items: center; align-content: center; gap: 7px; color: var(--wao-text-weak); text-align: center; }.history-empty i { color: #3d756b; font-size: 28px; }.history-empty strong { color: var(--wao-text-3); font-size: 11px; }.history-empty span { font-size: 9.5px; }
+.today-button { min-height: 30px; padding: 0 10px; border: 1px solid color-mix(in srgb, #3d756b 35%, var(--wao-line)); border-radius: 999px; background: var(--wao-bg-card); color: #3d756b; cursor: pointer; font-size: 10px; font-weight: 650; white-space: nowrap; }.today-button i { margin-right: 4px; }.today-button:hover { background: color-mix(in srgb, #3d756b 7%, var(--wao-bg-card)); }
+.interpretation-legend { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 6px; }.interpretation-legend span { padding: 5px 8px; border-radius: 999px; background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: 9px; }.interpretation-legend i { margin-right: 3px; color: #3d756b; }.interpretation-legend + .markdown { margin-top: 13px; }.history-answer-empty { min-height: 130px; display: grid; justify-items: center; align-content: center; gap: 7px; color: var(--wao-text-weak); text-align: center; }.history-answer-empty i { color: #3d756b; font-size: 27px; }.history-answer-empty strong { color: var(--wao-text-3); font-size: 11px; }.history-answer-empty span { max-width: 380px; font-size: 9.5px; }
+.history-list .history-row { width: 100%; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }.history-list .history-row:hover,.history-list .history-row:focus-visible { background: var(--wao-bg-sub); outline: 0; }.history-list .history-row.today { background: color-mix(in srgb, #3d756b 7%, transparent); }.history-list .history-row.selected { box-shadow: inset 0 0 0 1px color-mix(in srgb, #3d756b 30%, transparent); }.history-arrow { color: var(--wao-text-weak); font-size: 13px; }
 .boundary-card { padding: 15px; display: flex; align-items: flex-start; gap: 10px; }.boundary-icon { width: 34px; height: 34px; flex: none; border-radius: 9px; display: grid; place-items: center; background: var(--wao-warning-bg); color: var(--wao-warning-strong); }.boundary-card strong { font-size: 11px; }.boundary-card p { margin: 5px 0 0; color: var(--wao-text-weak); font-size: 9.5px; line-height: 1.65; }.method-card { padding: 16px; }.method-card > span { color: var(--wao-text-weak); font-size: 9px; }.method-card > strong { margin-top: 2px; display: block; font-size: 12px; }.method-card ol { margin: 11px 0 0; padding-left: 18px; color: var(--wao-text-weak); font-size: 9.5px; line-height: 1.75; }
 .spin { animation: spin .9s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } } @keyframes pulse { 50% { opacity: .35; transform: scale(.7); } } @keyframes typing { 50% { opacity: .25; transform: translateY(-2px); } }
 @media (max-width: 940px) { .content-grid { grid-template-columns: 1fr; }.side-column { grid-template-columns: repeat(2, minmax(0, 1fr)); }.history-card { grid-row: span 2; }.cast-layout { grid-template-columns: 1fr 1fr; } }
