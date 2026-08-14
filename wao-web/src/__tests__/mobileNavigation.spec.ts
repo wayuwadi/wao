@@ -90,6 +90,17 @@ describe('手机底部模块导航', () => {
     wrapper.unmount()
   })
 
+  it('提供不依赖系统清单快捷方式的 AI 派发入口', async () => {
+    const wrapper = await mountNavigation('/')
+    const ai = wrapper.get('.mobile-ai-item')
+
+    expect(ai.attributes('title')).toBe('AI')
+    await ai.trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.$route.fullPath).toBe('/?console=runs#ai-launcher')
+    wrapper.unmount()
+  })
+
   it('桌面仍应用并保留原有分组折叠偏好', async () => {
     window.matchMedia = ((query: string) => ({
       matches: false,
