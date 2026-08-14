@@ -13,6 +13,7 @@ import Celebration from '@/components/overlays/CelebrationOverlay.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
 import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
 import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
+import IosInstallGuide from '@/components/IosInstallGuide.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -168,6 +169,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <span class="bell-dot"></span>
         </button>
       </header>
+
+      <IosInstallGuide />
 
       <TabBar />
 

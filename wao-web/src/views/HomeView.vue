@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   createAiPairCode,
   fetchAiEvolution,
@@ -43,6 +43,7 @@ type ConsoleView = 'runs' | 'runners' | 'workflows'
 // 与任务描述等输入场景复用同一编辑器；保持异步加载，避免把 ProseMirror 合进首页主包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
+const route = useRoute()
 const router = useRouter()
 const data = useDataStore()
 const session = useSessionStore()
@@ -61,7 +62,10 @@ const logRunner = ref<AiRunner | null>(null)
 const runnerLog = ref<AiRunnerLog | null>(null)
 const runnerLogLoading = ref(false)
 const runnerLogError = ref('')
-const view = ref<ConsoleView>('runs')
+function consoleViewFromQuery(value: unknown): ConsoleView {
+  return value === 'runners' || value === 'workflows' ? value : 'runs'
+}
+const view = ref<ConsoleView>(consoleViewFromQuery(route.query.console))
 const pairCode = ref('')
 const pairExpiresAt = ref('')
 const editingProjectId = ref<string | null>(null)
@@ -353,6 +357,16 @@ function resetText(value: string | null) {
 
 watch(view, (next) => {
   if (next === 'workflows' && !workflows.value.length) void refreshWorkflows()
+})
+
+function revealAiArea() {
+  const target = route.hash === '#ai-launcher' ? '#ai-launcher' : '#ai-console'
+  void nextTick(() => document.querySelector(target)?.scrollIntoView({ block: 'start' }))
+}
+
+watch([() => route.query.console, () => route.hash], ([next]) => {
+  view.value = consoleViewFromQuery(next)
+  if (next) revealAiArea()
 })
 
 watch(activeWorkflows, (next) => {
@@ -685,6 +699,7 @@ onMounted(() => {
   void loadDailyGuidance()
   timer = setInterval(refresh, 5_000)
   evolutionTimer = setInterval(refreshEvolution, 60_000)
+  if (route.query.console) revealAiArea()
 })
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
@@ -909,7 +924,7 @@ onBeforeUnmount(() => {
       </footer>
     </section>
 
-    <section class="goal-launcher" aria-labelledby="goal-launcher-title">
+    <section id="ai-launcher" class="goal-launcher" aria-labelledby="goal-launcher-title">
       <div class="goal-heading">
         <span class="goal-icon"><i class="ri-sparkling-2-line"></i></span>
         <div>
@@ -958,7 +973,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <nav class="console-tabs">
+    <nav id="ai-console" class="console-tabs">
       <button
         v-for="item in VIEWS"
         :key="item.id"

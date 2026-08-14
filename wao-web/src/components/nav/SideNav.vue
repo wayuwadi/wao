@@ -56,6 +56,9 @@ function go(id: NavItemId) {
   const meta = nav.itemMeta(id)
   if (meta) router.push(meta.path)
 }
+function goAi() {
+  router.push({ path: '/', query: { console: 'runs' }, hash: '#ai-launcher' })
+}
 function goSettings() {
   router.push('/settings')
 }
@@ -152,7 +155,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             :key="id"
             class="item"
             :class="{
-              active: activeItem === id,
+              active: activeItem === id && !(id === 'home' && route.query.console),
               center: nav.collapsed,
               dragging: dragId === id,
               'drag-over': dragOverId === id,
@@ -169,6 +172,18 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             <span v-if="!nav.collapsed" class="item-label">{{ nav.itemMeta(id)?.label }}</span>
           </button>
         </div>
+
+        <!-- iOS 清单快捷方式并非所有版本都支持；手机底栏必须自己提供稳定的 AI 派发入口。 -->
+        <button
+          v-if="isMobile && !g.label"
+          class="item mobile-ai-item"
+          :class="{ active: Boolean(route.query.console) }"
+          title="AI"
+          @click="goAi"
+        >
+          <i class="ri-robot-2-line"></i>
+          <span class="item-label">AI</span>
+        </button>
 
         <!-- 收藏分组紧跟首页之后：有收藏才出现，手机底栏不展示 -->
         <template v-if="!g.label && favorites.items.length && !nav.collapsed">
