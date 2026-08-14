@@ -1,5 +1,8 @@
 # Phase 1：iOS 主屏幕应用壳
 
+> 本规格已取消。任务 `t17866728549710` 明确要求原生 iOS，不接受主屏幕 Web App；后续验收以
+> `phase-1-native-ios-client.md` 为准。
+
 对应任务：`t17866681718350`（iOS 版本）。本规格在现有移动端页面和真实业务 API 上增加可随主站发布的
 iOS 应用入口；页面布局继续遵循 `phase-1-mobile-navigation-resilience.md`、
 `phase-1-task-groups-and-mobile.md` 与 `phase-1-task-links-and-mobile-polish.md`。

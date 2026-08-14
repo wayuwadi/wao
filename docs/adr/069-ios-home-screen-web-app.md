@@ -1,5 +1,10 @@
 # ADR-069：iOS 首期采用主屏幕 Web App
 
+## 状态
+
+已被 [ADR-070](070-native-ios-client-and-unsigned-ci-package.md) 取代。任务 `t17866728549710` 明确拒绝
+主屏幕 Web App 形态，相关安装入口已撤下；本 ADR 只保留为决策历史。
+
 ## 背景
 
 WAO 已有适配手机安全区的 Vue 应用、统一登录和项目 / AI Run / 自动化真实接口，但当前发布基础设施只有
