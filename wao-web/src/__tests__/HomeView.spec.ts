@@ -21,6 +21,7 @@ import {
   rerunAiRun,
   saveAiEvolutionSchedule,
   type AiEvolutionOverview,
+  type AiEvolutionSuggestion,
 } from '@/api/ai'
 
 vi.mock('@/api/dailyGuidance', () => ({
@@ -464,6 +465,50 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.suggestion-card').text()).toContain('给任务增加依赖阻塞提示')
     expect(wrapper.find('.suggestion-source').text()).toContain('飞书群聊 · 2026-08-12')
     expect(wrapper.find('.suggestion-source').attributes('href')).toBe('/kb/k1?doc=d1')
+    wrapper.unmount()
+  })
+
+  it('换批期间暂停旧概览轮询，避免新建议被并发响应覆盖', async () => {
+    vi.useFakeTimers()
+    let resolveSuggestions!: (value: AiEvolutionSuggestion[]) => void
+    vi.mocked(refreshEvolutionSuggestions).mockReturnValueOnce(new Promise((resolve) => {
+      resolveSuggestions = resolve
+    }))
+    const { wrapper } = mountHome()
+    await flushPromises()
+    const overviewCalls = vi.mocked(fetchAiEvolution).mock.calls.length
+
+    await wrapper.find('.suggestion-refresh').trigger('click')
+    expect(wrapper.find('.suggestion-feedback').text()).toContain('正在从真实资料生成新一批建议')
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(fetchAiEvolution).toHaveBeenCalledTimes(overviewCalls)
+    resolveSuggestions([{
+      id: 'mined-race-safe', title: '不会被旧轮询覆盖的新建议', description: '刷新结果保持可见',
+      icon: 'ri-chat-3-line', goal: '修复刷新竞态',
+      sourceTitle: '飞书群聊 · 2026-08-15', sourceUrl: '/kb/k1?doc=d2',
+    }])
+    await flushPromises()
+    expect(wrapper.find('.suggestion-card').text()).toContain('不会被旧轮询覆盖的新建议')
+    wrapper.unmount()
+  })
+
+  it('换批失败时在旧建议前就地说明原因并允许重试', async () => {
+    vi.useFakeTimers()
+    vi.mocked(refreshEvolutionSuggestions).mockRejectedValueOnce(new Error('真实资料暂不足以生成 5 条任务'))
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.suggestion-refresh').trigger('click')
+    await flushPromises()
+
+    const feedback = wrapper.find('.suggestion-feedback.error')
+    expect(feedback.text()).toContain('换一批失败')
+    expect(feedback.text()).toContain('原建议已保留')
+    expect(feedback.find('button').text()).toBe('重试')
+    expect(wrapper.find('.suggestion-card').text()).toContain('找出并消除一个高频使用阻力')
+    const panelHtml = wrapper.find('.evolution-panel').html()
+    expect(panelHtml.indexOf('suggestion-feedback error')).toBeLessThan(panelHtml.indexOf('suggestion-grid'))
     wrapper.unmount()
   })
 

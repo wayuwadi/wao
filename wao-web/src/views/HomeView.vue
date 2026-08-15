@@ -196,12 +196,18 @@ async function refreshWorkflows() {
 }
 
 async function refreshEvolution() {
+  // 手动挖掘最长需要五分钟。此时继续轮询会把服务端尚未更新的旧批次写回页面，
+  // 甚至可能在新批次响应之后覆盖刚换好的建议。
+  if (suggestionsRefreshing.value) return
   evolutionLoading.value = true
   evolutionError.value = ''
   let needsInitialSuggestions = false
   try {
     const preserveScheduleDraft = evolutionScheduleInitialized.value && evolutionScheduleDirty.value
-    evolution.value = await fetchAiEvolution()
+    const next = await fetchAiEvolution()
+    // 请求发出后用户可能才点击“刷新换一批”；这份并发返回的概览仍属于旧批次。
+    if (suggestionsRefreshing.value) return
+    evolution.value = next
     if (!preserveScheduleDraft && !evolutionScheduleSaving.value) syncEvolutionScheduleDraft()
     needsInitialSuggestions = evolution.value.suggestions.length === 0 && !initialSuggestionRefreshStarted
   } catch (error) {
@@ -882,6 +888,15 @@ onBeforeUnmount(() => {
           {{ evolutionScheduleSaving ? '保存中…' : '保存设置' }}
         </button>
       </form>
+      <div v-if="suggestionsRefreshing" class="suggestion-feedback loading" role="status" aria-live="polite">
+        <i class="ri-loader-4-line spin"></i>
+        <span>正在从真实资料生成新一批建议，当前建议会保留到生成成功。</span>
+      </div>
+      <div v-else-if="suggestionError" class="suggestion-feedback error" role="alert">
+        <i class="ri-error-warning-line"></i>
+        <span>换一批失败：{{ suggestionError }}。原建议已保留。</span>
+        <button :disabled="suggestionsRefreshing" @click="refreshSuggestions(false)">重试</button>
+      </div>
       <div v-if="evolutionLoading && !evolution" class="suggestion-loading">
         <i class="ri-loader-4-line spin"></i>正在整理改进建议…
       </div>
@@ -911,10 +926,6 @@ onBeforeUnmount(() => {
         <i class="ri-database-2-line"></i>
         <strong>还没有真实资料建议</strong>
         <span>系统会读取知识库和已同步的飞书归档，不会用固定模板或演示数据凑数。</span>
-      </div>
-      <div v-if="suggestionError" class="suggestion-error" role="alert">
-        <i class="ri-error-warning-line"></i><span>{{ suggestionError }}</span>
-        <button :disabled="suggestionsRefreshing" @click="refreshSuggestions(false)">重试</button>
       </div>
       <footer v-if="visibleWeeklyQuotas.length">
         <span v-for="quota in visibleWeeklyQuotas" :key="quota.accountId">
@@ -1615,7 +1626,11 @@ onBeforeUnmount(() => {
 .suggestion-source { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; margin-top: 6px; color: var(--wao-primary); font-size: 9.5px; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .suggestion-card button { height: 30px; padding: 0 9px; border: 1px solid #4a9274; border-radius: 8px; background: #fff; color: #2a7658; cursor: pointer; font-size: 10.5px; white-space: nowrap; }.suggestion-card button i { margin-right: 4px; }.suggestion-card button:disabled { opacity: .5; cursor: not-allowed; }
 .suggestion-empty { min-height: 112px; padding: 20px; display: grid; place-items: center; align-content: center; gap: 5px; color: var(--wao-text-weak); text-align: center; font-size: 10.5px; }.suggestion-empty > i { font-size: 21px; color: #4a9274; }.suggestion-empty strong { color: var(--wao-text-2); font-size: 12px; }
-.suggestion-error { margin: 0 12px 12px; padding: 9px 10px; border: 1px solid var(--wao-danger-line); border-radius: 8px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); display: flex; align-items: center; gap: 7px; font-size: 10.5px; }.suggestion-error span { flex: 1; }.suggestion-error button { border: 0; background: transparent; color: inherit; cursor: pointer; }
+.suggestion-feedback { margin: 0 12px 12px; padding: 9px 10px; border: 1px solid; border-radius: 8px; display: flex; align-items: center; gap: 7px; font-size: 10.5px; }
+.suggestion-feedback span { flex: 1; }
+.suggestion-feedback.loading { border-color: color-mix(in srgb, #3b8c69 32%, var(--wao-line)); background: color-mix(in srgb, #e8f7ef 72%, var(--wao-bg-card)); color: #267c59; }
+.suggestion-feedback.error { border-color: var(--wao-danger-line); background: var(--wao-danger-bg); color: var(--wao-danger-strong); }
+.suggestion-feedback button { border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 650; }
 .evolution-panel > footer { padding: 9px 18px; border-top: 1px solid color-mix(in srgb, #3b8c69 13%, var(--wao-line)); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--wao-text-weak); font-size: 9.5px; }
 .evolution-panel > footer span { padding: 3px 7px; border-radius: 999px; background: #dff2e7; color: #326c56; }.evolution-panel > footer small { margin-left: auto; }
 .goal-launcher {
