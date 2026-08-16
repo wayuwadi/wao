@@ -257,6 +257,17 @@ class DeploymentRoutingConfigTest {
                 .doesNotContain("Allow 0.0.0.0/0");
     }
 
+    @Test
+    void windowsDeploymentRecoversADeadWslDockerDaemonBeforeFailingTheRelease() throws IOException {
+        String windowsDeploy = readFromRepository("deploy/scripts/deploy-windows.ps1");
+
+        assertThat(windowsDeploy)
+                .contains("while ($deployAttempt -le 2)")
+                .contains("wsl.exe --terminate $Distribution")
+                .contains("Start-Sleep -Seconds 10")
+                .contains("failed after restarting the distribution");
+    }
+
     private static String readFromRepository(String relative) throws IOException {
         Path path = Path.of(relative);
         if (!Files.exists(path)) path = Path.of("..").resolve(relative);
