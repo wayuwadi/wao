@@ -1097,27 +1097,30 @@ onBeforeUnmount(() => {
 
       <section v-if="recentRuns.length" class="recent-section">
         <div class="section-head">
-          <div><h2>最近完成</h2><p>完成后任务会自动进入“待验证”。</p></div>
+          <div><h2>最近完成</h2><p>最近 8 条一屏浏览，点击卡片查看结果。</p></div>
         </div>
-        <div class="recent-list">
-          <button v-for="run in recentRuns" :key="run.id" @click="inspectRun(run)">
-            <span v-if="run.previewImages?.[0]" class="recent-icon recent-image">
-              <img :src="run.previewImages[0]" :alt="`${run.taskTitle} · 图片预览`" loading="lazy" />
-            </span>
-            <span v-else class="recent-icon" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">
-              <i :class="metaFor(run).icon"></i>
+        <div class="recent-grid">
+          <button v-for="run in recentRuns" :key="run.id" class="recent-card" @click="inspectRun(run)">
+            <span class="recent-card-top">
+              <span v-if="run.previewImages?.[0]" class="recent-icon recent-image">
+                <img :src="run.previewImages[0]" :alt="`${run.taskTitle} · 图片预览`" loading="lazy" />
+              </span>
+              <span v-else class="recent-icon" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">
+                <i :class="metaFor(run).icon"></i>
+              </span>
+              <span class="recent-status" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">{{ metaFor(run).label }}</span>
+              <span class="run-time">{{ timeText(run.finishedAt) }}</span>
             </span>
             <span class="recent-main">
               <b>{{ run.taskTitle }}</b>
+              <em><i class="ri-stack-line"></i>{{ run.projectName }}</em>
               <em>
-                {{ run.projectName }} · {{ engineLabel(run.engine) }} · {{ run.runnerName || '未分配电脑' }}
+                <i :class="engineIcon(run.engine)"></i>{{ engineLabel(run.engine) }} · {{ run.runnerName || '未分配电脑' }}
                 <span v-if="usageSummary(run.usage)" class="recent-usage">· {{ usageSummary(run.usage) }}</span>
               </em>
               <small v-if="run.status === 'failed'">{{ resultPreview(run) }}</small>
             </span>
-            <span class="recent-status">{{ metaFor(run).label }}</span>
-            <span class="run-time">{{ timeText(run.finishedAt) }}</span>
-            <i class="ri-arrow-right-s-line"></i>
+            <span class="recent-open">查看详情<i class="ri-arrow-right-line"></i></span>
           </button>
         </div>
       </section>
@@ -1988,32 +1991,41 @@ onBeforeUnmount(() => {
 .flow-actions .secondary { border: 1px solid var(--wao-line); background: var(--wao-bg-card); }
 .flow-actions .primary { border: 1px solid var(--wao-primary); background: var(--wao-primary); color: #fff; }
 .flow-actions .primary:disabled { opacity: .6; cursor: not-allowed; }
-.recent-list { overflow: hidden; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); }
-.recent-list button {
+.recent-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.recent-card {
   width: 100%;
-  min-height: 58px;
-  padding: 9px 14px;
-  border: 0;
-  border-bottom: 1px solid var(--wao-bg-tab);
+  min-width: 0;
+  min-height: 150px;
+  padding: 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
   background: var(--wao-bg-card);
   color: inherit;
   text-align: left;
   cursor: pointer;
   display: flex;
-  align-items: center;
-  gap: 11px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 9px;
+  transition: transform .16s, border-color .16s, box-shadow .16s;
 }
-.recent-list button:last-child { border-bottom: 0; }
-.recent-list button:hover { background: var(--wao-bg-sub-2); }
-.recent-icon { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; }
+.recent-card:hover { transform: translateY(-2px); border-color: var(--wao-primary-line); box-shadow: 0 8px 22px #27366c14; }
+.recent-card-top { display: flex; align-items: center; gap: 7px; }
+.recent-icon { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 8px; display: grid; place-items: center; }
 .recent-icon.recent-image { overflow: hidden; border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
 .recent-icon.recent-image img { width: 100%; height: 100%; object-fit: cover; }
-.recent-main { flex: 1; min-width: 0; }
-.recent-main b, .recent-main em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recent-main b { font-size: 12.5px; }
-.recent-main em { margin-top: 2px; color: var(--wao-text-weak); font-size: 10.5px; font-style: normal; }
+.recent-main { min-width: 0; }
+.recent-main b { min-height: 36px; overflow: hidden; font-size: 12.5px; line-height: 1.45; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.recent-main em { display: block; margin-top: 4px; overflow: hidden; color: var(--wao-text-weak); font-size: 10.5px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.recent-main em i { margin-right: 5px; }
 .recent-main small { display: block; margin-top: 4px; overflow: hidden; color: var(--wao-danger-strong); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
-.recent-status { color: var(--wao-text-3); font-size: 11px; }
+.recent-status { padding: 3px 7px; border-radius: 999px; font-size: 10px; font-weight: 650; white-space: nowrap; }
+.recent-card-top .run-time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-open { margin-top: auto; padding-top: 7px; border-top: 1px solid var(--wao-bg-tab); color: var(--wao-primary); font-size: 10.5px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .run-detail-mask {
   position: fixed;
   inset: 0;
@@ -2129,8 +2141,12 @@ onBeforeUnmount(() => {
   .goal-shortcut { margin-left: 0; }
   .goal-submit { margin-left: auto; }
   .console-tabs { overflow-x: auto; }
+  .recent-grid { grid-template-columns: 1fr; }
   .flow-meta { grid-template-columns: 1fr; }
   .flow-form { grid-template-columns: 1fr; }
   .run-detail dl { grid-template-columns: 1fr; }
+}
+@media (min-width: 761px) and (max-width: 1180px) {
+  .recent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

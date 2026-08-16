@@ -652,9 +652,12 @@ describe('HomeView AI 控制台', () => {
     const { wrapper } = mountHome()
     await flushPromises()
 
+    expect(wrapper.find('.recent-grid').exists()).toBe(true)
+    expect(wrapper.find('.recent-card').text()).toContain('查看详情')
+    expect(wrapper.find('.recent-card').text()).toContain('Codex')
     expect(wrapper.find('.recent-main small').text()).toBe('失败阶段：准备 Git 工作区')
 
-    await wrapper.find('.recent-list button').trigger('click')
+    await wrapper.find('.recent-card').trigger('click')
 
     expect(wrapper.find('.run-detail').text()).toContain('失败原因')
     expect(wrapper.find('.run-detail').text()).toContain('仓库地址无法克隆')
@@ -670,7 +673,7 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
 
     // 失败记录：详情里有「基于报错重跑」
-    await wrapper.find('.recent-list button').trigger('click')
+    await wrapper.find('.recent-card').trigger('click')
     const retry = wrapper.find('.run-detail footer .retry')
     expect(retry.exists()).toBe(true)
     expect(retry.text()).toContain('基于报错重跑')
