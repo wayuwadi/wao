@@ -46,7 +46,7 @@ public class AiEvolutionService {
     private static final int MAX_INTERVAL_HOURS = 168;
     private static final int MAX_BATCH_SIZE = 5;
     private static final int CHECK_MINUTES = 15;
-    private static final int SUGGESTION_COUNT = 5;
+    private static final int MAX_SUGGESTION_COUNT = 5;
     private static final String USER_VALUE_CONTRACT = "用户价值验收：本次交付必须以用户可直接使用的新能力、"
             + "操作提效或体验改善为主要结果，并用真实用户链路说明改动前后的差异；"
             + "测试、文档、重构和依赖升级只能作为支撑，不能单独作为交付。"
@@ -151,7 +151,7 @@ public class AiEvolutionService {
         if (updated == 0) throw new IllegalStateException("自主进化调度状态不存在");
     }
 
-    /** 从真实知识库和飞书同步归档挖掘并保存一批新的五条候选任务。 */
+    /** 从真实知识库和飞书同步归档挖掘并保存一批最多五条的新候选任务。 */
     public synchronized List<AiEvolutionSuggestionDto> refreshSuggestions() {
         TaskMiningContext context = assets.taskMiningContext();
         if (context.sources().isEmpty()) {
@@ -383,18 +383,18 @@ public class AiEvolutionService {
                 : previous.stream().map(item -> "- " + item.title())
                         .collect(java.util.stream.Collectors.joining("\n"));
         return """
-                请从下面的 WAO 真实资料里挖掘恰好 5 条尚未进入执行的产品需求或开发任务候选。
+                请从下面的 WAO 真实资料里挖掘最多 5 条尚未进入执行的产品需求或开发任务候选。
 
                 规则：
                 1. 每条必须由某一个 source 的明确内容支持，站在“给当前系统增加或完善真实功能”的需求/任务角度表达。
                 2. 不得把闲聊、已经完成的结果、纯愿望口号、通用代码巡检或资料中不存在的能力包装成任务。
                 3. 优先选择用户可直接使用的新功能、能减少重复操作的提效能力或能恢复工作的体验改善；纯测试补齐、纯文档修订、纯重构、依赖升级和其它只有开发者能感知的技术优化不能作为候选。
-                4. 避开“现有未完成任务”和“上一批建议”；5 条之间标题与目标也不得重复。
+                4. 避开“现有未完成任务”和“上一批建议”；同一批之间标题与目标也不得重复。
                 5. 标题不超过 40 字；description 用不超过 120 字说清用户结果；goal 不超过 1200 字，写成可直接交给开发 AI 的完整中文目标，包含要解决的问题、可观察结果、真实性边界和验收重点。
-                6. sourceIndex 必须是下方真实存在的来源编号。证据不足 5 条功能或提效候选时返回 error，不要用纯技术优化凑数。
+                6. sourceIndex 必须是下方真实存在的来源编号。证据不足 5 条时返回所有仍有明确依据的候选，至少 1 条即可成功换批；一条可靠候选也没有时才返回 error，绝不能用纯技术优化凑数。
                 7. 只输出一个 JSON 对象，不要 Markdown 代码围栏或额外解释：
                 {"suggestions":[{"title":"...","description":"...","goal":"...","sourceIndex":1}]}
-                如果不足：{"error":"具体原因","suggestions":[]}
+                如果一条可靠候选也没有：{"error":"具体原因","suggestions":[]}
 
                 现有未完成任务：
                 """ + existingTasks + """
@@ -414,11 +414,17 @@ public class AiEvolutionService {
             throw new BadRequestException("本地 Codex 返回的任务建议格式无法解析，请重试换一批");
         }
         JsonNode items = root.path("suggestions");
-        if (!items.isArray() || items.size() != SUGGESTION_COUNT) {
+        if (!items.isArray()) {
+            throw new BadRequestException("本地 Codex 返回的任务建议格式不可靠，请重试换一批");
+        }
+        if (items.size() > MAX_SUGGESTION_COUNT) {
+            throw new BadRequestException("本地 Codex 返回了超过 5 条任务建议，请重试换一批");
+        }
+        if (items.isEmpty()) {
             String reason = clean(root.path("error").asText(""));
             throw new BadRequestException(reason.isBlank()
-                    ? "真实资料中未能挖掘出 5 条可靠任务，请补充资料后重试"
-                    : "真实资料暂不足以生成 5 条任务：" + shorten(reason));
+                    ? "真实资料中未能挖掘出可靠的新任务，请补充资料后重试"
+                    : "真实资料暂未提供可靠的新任务线索：" + shorten(reason));
         }
 
         Set<String> previousTitles = previous.stream().map(item -> normalized(item.title()))

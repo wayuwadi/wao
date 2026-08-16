@@ -276,7 +276,7 @@ async function refreshSuggestions(showSuccess = true) {
   try {
     const next = await refreshEvolutionSuggestions()
     evolution.value = { ...evolution.value, suggestions: next }
-    if (showSuccess) toast('已从真实资料换了一批任务建议', 'ri-refresh-line')
+    if (showSuccess) toast(`已从真实资料换出 ${next.length} 条新建议`, 'ri-refresh-line')
   } catch (error) {
     suggestionError.value = error instanceof Error ? error.message : '真实资料挖掘失败，请重试'
   } finally {
@@ -867,7 +867,7 @@ onBeforeUnmount(() => {
           @click="refreshSuggestions()"
         >
           <i :class="suggestionsRefreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
-          {{ suggestionsRefreshing ? '正在挖掘' : evolution.suggestions.length ? '刷新换一批' : '挖掘 5 个任务' }}
+          {{ suggestionsRefreshing ? '正在挖掘' : evolution.suggestions.length ? '刷新换一批' : '挖掘任务' }}
         </button>
         <button
           v-if="evolution"
@@ -937,7 +937,7 @@ onBeforeUnmount(() => {
         <i class="ri-loader-4-line spin"></i>正在整理改进建议…
       </div>
       <div v-else-if="suggestionsRefreshing && !evolution?.suggestions.length" class="suggestion-loading">
-        <i class="ri-loader-4-line spin"></i>正在从知识库和飞书同步资料中挖掘 5 个任务，可能需要几分钟…
+        <i class="ri-loader-4-line spin"></i>正在从知识库和飞书同步资料中挖掘任务，可能需要几分钟…
       </div>
       <div v-else-if="evolution?.suggestions.length" class="suggestion-grid">
         <article v-for="suggestion in evolution.suggestions" :key="suggestion.id" class="suggestion-card">

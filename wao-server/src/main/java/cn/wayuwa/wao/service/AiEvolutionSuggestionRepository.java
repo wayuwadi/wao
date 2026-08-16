@@ -40,7 +40,7 @@ public class AiEvolutionSuggestionRepository {
         return entity == null ? null : toDto(entity);
     }
 
-    /** 在一个事务里落下完整的五条建议，避免页面读到半批数据。 */
+    /** 在一个事务里落下完整的一批建议，避免页面读到半批数据。 */
     @Transactional
     public void saveBatch(String batchId, List<AiEvolutionSuggestionDto> suggestions) {
         LocalDateTime now = LocalDateTime.now();
