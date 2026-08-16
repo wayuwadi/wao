@@ -9,6 +9,7 @@ import type { AiRunner } from '@/types'
 import { fetchDailyGuidance, generateDailyGuidance, type DailyGuidance } from '@/api/dailyGuidance'
 import {
   fetchAiRunnerLog,
+  fetchAiRunHistory,
   fetchAiEvolution,
   fetchAiRunners,
   fetchAiWorkflows,
@@ -75,6 +76,19 @@ vi.mock('@/api/ai', () => ({
       startedAt: '2026-07-25T20:18:05', finishedAt: null,
     },
   ]),
+  fetchAiRunHistory: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    items: [{
+      id: 'ar-history', taskId: 't3', taskTitle: '历史运行', previewImages: [],
+      projectId: 'p1', projectName: 'WAO', engine: 'codex', status: 'succeeded',
+      runnerId: 'rn1', runnerName: '娃哥电脑', requestedRunnerId: null, branchName: null,
+      retryOfRunId: null, resultSummary: '已经完成', reportUrl: null, latestProgress: null,
+      progressUpdatedAt: null, progress: [], usage: { model: null, models: null, inputTokens: 0,
+        outputTokens: 0, cachedInputTokens: 0, totalTokens: 0, costUsd: null, recorded: false },
+      sessionId: null, exitCode: 0, createdAt: '2026-07-24T10:00:00',
+      startedAt: '2026-07-24T10:00:00', finishedAt: '2026-07-24T10:10:00',
+    }],
+    total: 21, page: 1, size: 20,
+  }),
   fetchAiRunners: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
       id: 'rn1', name: '娃哥电脑', platform: 'Windows 11', engines: ['codex'],
@@ -664,6 +678,26 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.run-detail').text()).toContain('-1')
     expect(wrapper.find('.run-detail').text()).not.toContain('等待第一条 AI 反馈')
     expect(wrapper.find('.run-report-link').attributes('href')).toBe('/api/pages/ai-run-ar1')
+    wrapper.unmount()
+  })
+
+  it('从紧凑的最近完成区打开可翻页的完整运行历史', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    expect(wrapper.find('.history-link').text()).toContain('查看全部')
+    await wrapper.find('.history-link').trigger('click')
+    await flushPromises()
+
+    expect(fetchAiRunHistory).toHaveBeenCalledWith(1, 20)
+    expect(wrapper.find('.run-history-detail').text()).toContain('全部运行历史')
+    expect(wrapper.find('.run-history-detail').text()).toContain('历史运行')
+    expect(wrapper.find('.history-pagination').text()).toContain('第 1 / 2 页')
+    await wrapper.find('.run-history-detail .recent-card').trigger('click')
+    expect(wrapper.findAll('.run-detail')).toHaveLength(2)
+    await wrapper.findAll('.run-detail').at(1)?.find('.detail-close').trigger('click')
+    expect(wrapper.find('.run-history-detail').exists()).toBe(true)
     wrapper.unmount()
   })
 

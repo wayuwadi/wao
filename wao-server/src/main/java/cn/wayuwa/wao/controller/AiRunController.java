@@ -12,6 +12,7 @@ import cn.wayuwa.wao.dto.AiPairCodeDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiRunImageContent;
+import cn.wayuwa.wao.dto.AiRunPageDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.AiRunnerLogDto;
@@ -207,6 +208,14 @@ public class AiRunController {
     @GetMapping("/runs")
     public ApiResponse<List<AiRunDto>> runs(@RequestParam(defaultValue = "false") boolean active) {
         return ApiResponse.ok(service.listRuns(active));
+    }
+
+    /** 已结束运行的完整分页历史；首页只取八条，用户主动打开时才读取。 */
+    @GetMapping("/runs/history")
+    public ApiResponse<AiRunPageDto> runHistory(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.ok(service.listRunHistory(page, size));
     }
 
     /** 兼容预览历史任务中遗留的 Base64 图片，不让编码正文进入运行列表响应。 */

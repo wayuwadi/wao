@@ -30,6 +30,7 @@ import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
 import cn.wayuwa.wao.dto.AiRunImageContent;
+import cn.wayuwa.wao.dto.AiRunPageDto;
 import cn.wayuwa.wao.dto.AiRunProgressDto;
 import cn.wayuwa.wao.dto.AiRunUsageDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
@@ -763,6 +764,20 @@ public class AiRunService {
                 .orderByDesc(AiTaskRunEntity::getCreatedAt).last("LIMIT 100");
         if (activeOnly) query.in(AiTaskRunEntity::getStatus, ACTIVE);
         return toRunDtos(runMapper.selectList(query));
+    }
+
+    /**
+     * 分页返回所有已结束运行，避免首页为了紧凑只展示八条后丢失历史入口。
+     * 页大小限制在 10-50 条，防止一次请求带回过多运行进度与图片元数据。
+     */
+    public AiRunPageDto listRunHistory(int requestedPage, int requestedSize) {
+        recoverStaleRuns();
+        int pageNumber = Math.max(1, requestedPage);
+        int pageSize = Math.max(10, Math.min(50, requestedSize));
+        long total = runMapper.countFinishedRuns();
+        long offset = (long) (pageNumber - 1) * pageSize;
+        return new AiRunPageDto(toRunDtos(runMapper.selectFinishedRunPage(offset, pageSize)),
+                total, pageNumber, pageSize);
     }
 
     /** 返回指定任务的 AI 执行档案，供任务详情长期回看。 */

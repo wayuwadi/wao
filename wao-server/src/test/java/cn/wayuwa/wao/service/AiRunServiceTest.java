@@ -295,6 +295,27 @@ class AiRunServiceTest {
     }
 
     @Test
+    void finishedRunHistoryIsPaginatedWithoutTheHomepageLimit() {
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId("ar-history");
+        run.setTaskId("t1");
+        run.setProjectId("p1");
+        run.setStatus("succeeded");
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(runMapper.countFinishedRuns()).thenReturn(61L);
+        when(runMapper.selectFinishedRunPage(20L, 20)).thenReturn(List.of(run));
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "历史运行")));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        var history = service.listRunHistory(2, 20);
+
+        assertThat(history.total()).isEqualTo(61);
+        assertThat(history.page()).isEqualTo(2);
+        assertThat(history.items()).extracting(AiRunDto::taskTitle).containsExactly("历史运行");
+        verify(runMapper).selectFinishedRunPage(20L, 20);
+    }
+
+    @Test
     void quotaDrivenGoalPinsTheAccountThatPassedTheThreshold() {
         TaskEntity task = task("t1", "p1", "自动优化体验");
         when(tasks.create(any(CreateTaskRequest.class), eq("system"))).thenReturn(taskDto(null, null));

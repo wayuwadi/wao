@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   createAiPairCode,
   fetchAiEvolution,
+  fetchAiRunHistory,
   fetchAiRunnerLog,
   fetchAiRunners,
   fetchAiRuns,
@@ -60,6 +61,13 @@ const goalRunnerManuallySelected = ref(false)
 const launchingGoal = ref(false)
 const goalImageUploads = ref(0)
 const selectedRun = ref<AiRun | null>(null)
+const runHistoryOpen = ref(false)
+const runHistory = ref<AiRun[]>([])
+const runHistoryLoading = ref(false)
+const runHistoryError = ref('')
+const runHistoryPage = ref(1)
+const runHistoryTotal = ref(0)
+const RUN_HISTORY_PAGE_SIZE = 20
 const logRunner = ref<AiRunner | null>(null)
 const runnerLog = ref<AiRunnerLog | null>(null)
 const runnerLogLoading = ref(false)
@@ -684,6 +692,24 @@ function inspectRun(run: AiRun) {
   selectedRun.value = run
 }
 
+async function openRunHistory(page = 1) {
+  runHistoryOpen.value = true
+  runHistoryLoading.value = true
+  runHistoryError.value = ''
+  try {
+    const result = await fetchAiRunHistory(page, RUN_HISTORY_PAGE_SIZE)
+    runHistory.value = result.items
+    runHistoryPage.value = result.page
+    runHistoryTotal.value = result.total
+  } catch (error) {
+    runHistoryError.value = error instanceof Error ? error.message : '运行历史读取失败'
+  } finally {
+    runHistoryLoading.value = false
+  }
+}
+
+const runHistoryPages = computed(() => Math.max(1, Math.ceil(runHistoryTotal.value / RUN_HISTORY_PAGE_SIZE)))
+
 /** 失败的运行可以带着报错重跑一次：AI 接着这个错往下修，不用从头再来。 */
 async function rerun(run: AiRun) {
   if (rerunning.value) return
@@ -1098,6 +1124,7 @@ onBeforeUnmount(() => {
       <section v-if="recentRuns.length" class="recent-section">
         <div class="section-head">
           <div><h2>最近完成</h2><p>最近 8 条一屏浏览，点击卡片查看结果。</p></div>
+          <button class="history-link" @click="openRunHistory()">查看全部<i class="ri-arrow-right-line"></i></button>
         </div>
         <div class="recent-grid">
           <button v-for="run in recentRuns" :key="run.id" class="recent-card" @click="inspectRun(run)">
@@ -1399,6 +1426,49 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </template>
+
+    <div v-if="runHistoryOpen" class="run-detail-mask" @click.self="runHistoryOpen = false">
+      <section class="run-detail run-history-detail" role="dialog" aria-modal="true" aria-labelledby="run-history-title">
+        <header>
+          <span class="recent-icon history-icon"><i class="ri-history-line"></i></span>
+          <div>
+            <h2 id="run-history-title">全部运行历史</h2>
+            <p>共 {{ runHistoryTotal }} 条已结束运行，按最新时间排列。</p>
+          </div>
+          <button class="detail-close" aria-label="关闭运行历史" @click="runHistoryOpen = false"><i class="ri-close-line"></i></button>
+        </header>
+        <div v-if="runHistoryLoading" class="history-state"><i class="ri-loader-4-line spin"></i>正在读取运行历史…</div>
+        <div v-else-if="runHistoryError" class="history-state error">
+          <i class="ri-error-warning-line"></i><span>{{ runHistoryError }}</span>
+          <button class="secondary" @click="openRunHistory(runHistoryPage)">重试</button>
+        </div>
+        <div v-else-if="!runHistory.length" class="history-state"><i class="ri-inbox-2-line"></i>还没有已结束的运行。</div>
+        <div v-else class="recent-grid history-grid">
+          <button v-for="run in runHistory" :key="run.id" class="recent-card" @click="inspectRun(run)">
+            <span class="recent-card-top">
+              <span v-if="run.previewImages?.[0]" class="recent-icon recent-image">
+                <img :src="run.previewImages[0]" :alt="`${run.taskTitle} · 图片预览`" loading="lazy" />
+              </span>
+              <span v-else class="recent-icon" :style="{ color: metaFor(run).color, background: metaFor(run).bg }"><i :class="metaFor(run).icon"></i></span>
+              <span class="recent-status" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">{{ metaFor(run).label }}</span>
+              <span class="run-time">{{ timeText(run.finishedAt) }}</span>
+            </span>
+            <span class="recent-main">
+              <b>{{ run.taskTitle }}</b>
+              <em><i class="ri-stack-line"></i>{{ run.projectName }}</em>
+              <em><i :class="engineIcon(run.engine)"></i>{{ engineLabel(run.engine) }} · {{ run.runnerName || '未分配电脑' }}</em>
+              <small v-if="run.status === 'failed'">{{ resultPreview(run) }}</small>
+            </span>
+            <span class="recent-open">查看详情<i class="ri-arrow-right-line"></i></span>
+          </button>
+        </div>
+        <footer v-if="!runHistoryLoading && !runHistoryError && runHistoryTotal > RUN_HISTORY_PAGE_SIZE" class="history-pagination">
+          <button class="secondary" :disabled="runHistoryPage <= 1" @click="openRunHistory(runHistoryPage - 1)"><i class="ri-arrow-left-line"></i>上一页</button>
+          <span>第 {{ runHistoryPage }} / {{ runHistoryPages }} 页</span>
+          <button class="secondary" :disabled="runHistoryPage >= runHistoryPages" @click="openRunHistory(runHistoryPage + 1)">下一页<i class="ri-arrow-right-line"></i></button>
+        </footer>
+      </section>
+    </div>
 
     <div v-if="selectedRun" class="run-detail-mask" @click.self="selectedRun = null">
       <section class="run-detail" role="dialog" aria-modal="true" aria-labelledby="run-detail-title">
@@ -1777,6 +1847,8 @@ onBeforeUnmount(() => {
 .section-head > div { flex: 1; }
 .section-head h2 { margin: 0; font-size: 17px; }
 .section-head p { margin: 4px 0 0; color: var(--wao-text-weak); font-size: 11.5px; }
+.history-link { padding: 6px 9px; border: 0; border-radius: 8px; background: transparent; color: var(--wao-primary); cursor: pointer; font-size: 11.5px; display: inline-flex; align-items: center; gap: 3px; }
+.history-link:hover { background: var(--wao-primary-tint); }
 .live { color: var(--wao-text-weak); font-size: 10.5px; }
 .live i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #35a86e; }
 .run-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
@@ -2044,6 +2116,15 @@ onBeforeUnmount(() => {
   background: var(--wao-bg-card);
   box-shadow: 0 24px 70px rgba(26, 31, 61, .22);
 }
+.run-history-detail { width: min(1080px, 100%); }
+.history-icon { background: var(--wao-primary-tint); color: var(--wao-primary); }
+.history-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 18px; }
+.history-state { min-height: 260px; margin-top: 18px; border: 1px dashed var(--wao-line); border-radius: 12px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.history-state.error { color: var(--wao-danger-strong); }
+.history-state .secondary { margin-left: 4px; padding: 6px 10px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); cursor: pointer; }
+.run-detail footer.history-pagination { justify-content: center; color: var(--wao-text-weak); font-size: 11px; }
+.history-pagination button { display: inline-flex; align-items: center; gap: 4px; }
+.history-pagination button:disabled { opacity: .5; cursor: not-allowed; }
 .run-detail header { display: flex; align-items: center; gap: 12px; }
 .run-detail header > div { flex: 1; min-width: 0; }
 .run-detail h2 { margin: 0; font-size: 17px; }
@@ -2142,11 +2223,14 @@ onBeforeUnmount(() => {
   .goal-submit { margin-left: auto; }
   .console-tabs { overflow-x: auto; }
   .recent-grid { grid-template-columns: 1fr; }
+  .section-head { align-items: center; }
+  .history-grid { grid-template-columns: 1fr; }
   .flow-meta { grid-template-columns: 1fr; }
   .flow-form { grid-template-columns: 1fr; }
   .run-detail dl { grid-template-columns: 1fr; }
 }
 @media (min-width: 761px) and (max-width: 1180px) {
   .recent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
