@@ -4,6 +4,17 @@ import { createPinia, setActivePinia } from 'pinia'
 import MusicPlayer from '@/components/music/MusicPlayer.vue'
 import { useDataStore } from '@/stores/data'
 
+const neteaseApi = vi.hoisted(() => ({
+  getNeteaseMusicStatus: vi.fn(),
+  getNeteaseLikedSongs: vi.fn(),
+  getNeteasePlayUrl: vi.fn(),
+  reportNeteasePlayback: vi.fn(),
+  beginNeteaseAuthorization: vi.fn(),
+  disconnectNeteaseMusic: vi.fn(),
+}))
+
+vi.mock('@/api/neteaseMusic', () => neteaseApi)
+
 const base = { size: '3.2 MB', icon: 'ri-file-line', time: '刚刚', by: 'wg', link: '/download' }
 
 describe('全局音乐播放器', () => {
@@ -13,6 +24,15 @@ describe('全局音乐播放器', () => {
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined)
+    neteaseApi.getNeteaseMusicStatus.mockResolvedValue({
+      configured: false,
+      connected: false,
+      reauthRequired: false,
+      message: '管理员尚未完成网易云音乐开放平台配置',
+    })
+    neteaseApi.getNeteaseLikedSongs.mockReset()
+    neteaseApi.getNeteasePlayUrl.mockReset()
+    neteaseApi.reportNeteasePlayback.mockReset().mockResolvedValue(undefined)
   })
 
   it('只展示真实文件库中的音频，并能切歌和开始播放', async () => {
@@ -70,5 +90,65 @@ describe('全局音乐播放器', () => {
     expect(wrapper.find('.music-launcher').exists()).toBe(true)
     expect(wrapper.find('audio').exists()).toBe(true)
     expect(JSON.parse(localStorage.getItem('wao-music-player-v1') ?? '{}').open).toBe(false)
+  })
+
+  it('只加载当前成员绑定账号的红心歌单，并使用官方临时地址播放和上报', async () => {
+    const data = useDataStore()
+    data.fileLoadState = 'loaded'
+    data.files = []
+    neteaseApi.getNeteaseMusicStatus.mockResolvedValue({
+      configured: true,
+      connected: true,
+      reauthRequired: false,
+      nickname: '我的网易云',
+      message: '已连接',
+    })
+    neteaseApi.getNeteaseLikedSongs.mockResolvedValue({
+      items: [{ id: '163-1', name: '夜曲', duration: 240000, artists: ['周杰伦'], album: '十一月的萧邦', playable: true, audition: false, alg: 'itembased' }],
+      total: 1,
+      offset: 0,
+      limit: 30,
+      playlistId: 'liked-1',
+      playlistName: '我喜欢的音乐',
+    })
+    neteaseApi.getNeteasePlayUrl.mockResolvedValue({ url: 'https://music.example/song.mp3', bitrate: 320 })
+
+    const wrapper = mount(MusicPlayer)
+    await flushPromises()
+    await wrapper.findAll('.source-tabs button')[1]!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.playlist').text()).toContain('夜曲')
+    expect(wrapper.find('.playlist').text()).toContain('周杰伦')
+    expect(wrapper.text()).not.toContain('accessToken')
+
+    await wrapper.find('.playlist li button').trigger('click')
+    await flushPromises()
+    expect(neteaseApi.getNeteasePlayUrl).toHaveBeenCalledWith('163-1')
+    expect(wrapper.find('audio').attributes('src')).toBe('https://music.example/song.mp3')
+
+    await wrapper.find('audio').trigger('play')
+    await flushPromises()
+    expect(neteaseApi.reportNeteasePlayback).toHaveBeenCalledWith(expect.objectContaining({
+      songId: '163-1',
+      action: 'startplay',
+      playlistId: 'liked-1',
+    }))
+
+    const audio = wrapper.find('audio')
+    Object.defineProperty(audio.element, 'currentTime', { configurable: true, value: 2 })
+    await audio.trigger('timeupdate')
+    await audio.trigger('pause')
+    await flushPromises()
+    expect(neteaseApi.reportNeteasePlayback).toHaveBeenCalledTimes(1)
+
+    await wrapper.findAll('.source-tabs button')[0]!.trigger('click')
+    await flushPromises()
+    expect(neteaseApi.reportNeteasePlayback).toHaveBeenLastCalledWith(expect.objectContaining({
+      songId: '163-1',
+      action: 'play',
+      end: 'ui',
+      playedSeconds: 2,
+    }))
   })
 })

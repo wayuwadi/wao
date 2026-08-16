@@ -204,6 +204,20 @@ WAO_VAULT_KEY=<上面生成的值>
 
 写入后在各节点重新执行发布脚本重建 `wao-server` 容器；新装机场景下 `deploy/scripts/new-deployment-env.ps1` 已经会自动生成这个值，不需要手动补。
 
+## 网易云音乐官方开放平台
+
+播放器的网易云来源只走官方开放平台 OAuth 与音乐 API。先在网易云音乐开放平台创建并审核应用，申请用户资料、红心歌单、歌单歌曲、播放地址、令牌刷新和播放数据回传能力，并把公开回调精确配置为：
+
+```text
+https://wao.wayuwa.cn/api/music/netease/callback
+```
+
+审核通过后，将 `.env.example` 中全部 `NETEASE_MUSIC_*` 项写入主、从节点私有的 `deploy/.env`；APP Secret 和单行 Base64 编码的 PKCS#8 RSA 私钥不得提交到 Git。`CHANNEL`、`DEVICE_TYPE`、`OS`、`OS_VER`、`APP_VER`、`BRAND`、`MODEL` 必须使用开放平台审核或分配的真实值，不能照抄示例。最后才设置 `NETEASE_MUSIC_ENABLED=true` 并重新部署。配置不完整时服务会保持禁用，现有 WAO 文件播放器不受影响。
+
+功能和视觉稿还需按开放平台流程完成产品/品牌审核，并用两个测试 UID、两个稳定 device id 完成设备与播放数据验收后再正式上线。浏览器能提供网络类型时 WAO 会传真实的 `wifi/2g/3g/4g/5g`；浏览器不开放该能力时按 `wifi` 兜底，验收时应在目标浏览器和实际网络上核对上报值。
+
+每个 WAO 成员需要在播放器中单独点击“绑定我的账号”。令牌按成员加密保存；解除绑定只删除当前成员记录。官方文档入口：[H5 OAuth](https://developer.music.163.com/st/platformDoc?docId=78eb8f6bec12427d90b120e21b569b16)、[公共参数与设备信息](https://developer.music.163.com/st/platformDoc?docId=0f7801d7d6d24180b8fc9058d1ffe593)、[播放数据回传](https://developer.music.163.com/st/platformDoc?docId=eb0ddaf2efc649e99dffe0677472466a)。
+
 - `MASTER_HOST=linux2.wayuwa.cn`，`SLAVE_HOST=windows1.wayuwa.cn`，云节点使用固定公网地址；
 - Actions 从 GitHub 托管 Runner 直接 SSH 到三个公网目标，不使用跳板机；
 - Actions 在 Runner 上使用官方软件源执行容器构建检查，但 CD 只下发约百 KB 的源码发布包；两台家庭节点使用已预热的 Maven/Temurin 基础镜像和阿里云 Maven/Alpine 镜像本地分层构建，避免跨境传输百 MB 镜像制品；
