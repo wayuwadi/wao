@@ -33,6 +33,7 @@ export type ModuleId =
   | 'tianren'
   | 'action-plans'
   | 'weekly-report'
+  | 'life-review'
   | 'vault'
   | 'settings'
 

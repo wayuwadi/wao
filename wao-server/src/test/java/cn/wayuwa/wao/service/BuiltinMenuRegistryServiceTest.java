@@ -23,10 +23,10 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(15);
+        assertThat(service.getRegistry().menus()).hasSize(16);
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(15);
+        assertThat(service.getRegistry().menus()).hasSize(16);
     }
 
     @Test
@@ -61,6 +61,7 @@ class BuiltinMenuRegistryServiceTest {
     void upgradesOldRegistryWithoutLosingExistingCustomization() throws Exception {
         var oldMenus = new ArrayList<>(service.getRegistry().menus());
         oldMenus.removeIf(menu -> "tianren".equals(menu.id()));
+        oldMenus.removeIf(menu -> "life-review".equals(menu.id()));
         var automation = oldMenus.stream().filter(menu -> "automation".equals(menu.id())).findFirst().orElseThrow();
         oldMenus.set(oldMenus.indexOf(automation), new BuiltinMenuConfigDto(
                 automation.id(), "我的自动化", automation.icon(), automation.group(), automation.order(), false));
@@ -70,7 +71,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(15);
+        assertThat(upgraded.menus()).hasSize(16);
         assertThat(upgraded.menus()).filteredOn(menu -> "automation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("我的自动化");
@@ -87,5 +88,7 @@ class BuiltinMenuRegistryServiceTest {
                 .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("英语训练"));
         assertThat(upgraded.menus()).filteredOn(menu -> "weekly-report".equals(menu.id()))
                 .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("周报生成"));
+        assertThat(upgraded.menus()).filteredOn(menu -> "life-review".equals(menu.id()))
+                .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("人生回顾"));
     }
 }

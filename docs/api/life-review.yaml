@@ -1,0 +1,54 @@
+openapi: 3.0.3
+info:
+  title: WAO 周期人生回顾 API
+  version: 0.1.0
+paths:
+  /api/life-reviews:
+    get:
+      summary: 读取当前成员指定周期的资料覆盖与已有回顾
+      parameters:
+        - { name: period, in: query, schema: { type: string, enum: [WEEK, MONTH, YEAR, LIFE], default: WEEK } }
+        - { name: anchorDate, in: query, schema: { type: string, format: date } }
+      responses:
+        "200": { description: 周期资料与回顾；未生成时 report 为 null }
+  /api/life-reviews/generate:
+    post:
+      summary: 根据真实记录生成并保存当前成员的周期回顾
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [period]
+              properties:
+                period: { type: string, enum: [WEEK, MONTH, YEAR, LIFE] }
+                anchorDate: { type: string, format: date, nullable: true }
+      responses:
+        "200": { description: 已生成且带证据清单的回顾 }
+        "400": { description: 周期无真实资料、Codex 不可用或返回内容未通过引用校验 }
+  /api/life-reviews/history:
+    get:
+      summary: 读取当前成员最近 60 份回顾存档
+      responses:
+        "200": { description: 按生成时间倒序的轻量历史列表 }
+components:
+  schemas:
+    LifeReviewReport:
+      type: object
+      additionalProperties: false
+      required: [pastActions, meaningfulTopics, trajectory, nextFocus]
+      properties:
+        pastActions: { type: string }
+        meaningfulTopics: { type: string }
+        trajectory: { type: string, description: 带证据引用、成立条件和变化变量的趋势假设 }
+        nextFocus: { type: string }
+    LifeReviewSource:
+      type: object
+      required: [id, type, title]
+      properties:
+        id: { type: string, example: S1 }
+        type: { type: string, enum: [已完成任务, WAO AI 对话, 飞书群聊] }
+        title: { type: string }
+        date: { type: string, format: date, nullable: true }
+        url: { type: string, nullable: true }
