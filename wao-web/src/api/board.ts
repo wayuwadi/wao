@@ -256,9 +256,9 @@ export interface CreateDocPayload {
 /** 新建文档：kbId + folderId 必填，创建即完成与知识库的关联。作者由服务端按会话推导。 */
 export const apiCreateDoc = (payload: CreateDocPayload) => post<Doc>('/api/docs', payload)
 
-/** 新建小记：不选知识库，服务端一律落到小记知识库。 */
-export const apiCreateNote = (payload: { title?: string; blocks: DocBlock[] }) =>
-  post<Doc>('/api/docs/notes', payload)
+/** 幂等新建小记：草稿重试沿用同一个 id，服务端不会插入重复小记。 */
+export const apiCreateNote = (id: string, payload: { title?: string; blocks: DocBlock[] }) =>
+  put<Doc>(`/api/docs/notes/${id}`, payload)
 
 export interface PatchDocPayload {
   title?: string

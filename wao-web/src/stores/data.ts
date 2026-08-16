@@ -527,25 +527,23 @@ export const useDataStore = defineStore('data', () => {
    *
    * @param text  小记正文（Markdown）
    * @param title 标题，留空时由正文首行推导
+   * @param noteId 草稿持有的稳定文档 id；重试时沿用，避免重复创建
    * @return 新建的文档 id；正文与标题都为空时返回 null
    */
-  async function addNote(text: string, title = ''): Promise<string | null> {
+  async function addNote(text: string, title = '', noteId?: string): Promise<string | null> {
     const blocks = textToBlocks(text)
     if (!blocks.length && !title.trim()) return null
     if (apiLive.value) {
-      try {
-        const d = await apiCreateNote({ title: title.trim(), blocks })
-        docs[d.id] = d
-        const kb = kbs.value.find((k) => k.id === d.kbId) ?? notesKb()
-        noteFolderOf(kb, d.folderId).docs.push(d.id)
-        return d.id
-      } catch {
-        /* 后端异常时回落本地 */
-      }
+      const d = await apiCreateNote(noteId ?? uid('d'), { title: title.trim(), blocks })
+      docs[d.id] = d
+      const kb = kbs.value.find((k) => k.id === d.kbId) ?? notesKb()
+      const folder = noteFolderOf(kb, d.folderId)
+      if (!folder.docs.includes(d.id)) folder.docs.push(d.id)
+      return d.id
     }
     const kb = notesKb()
     const folder = noteFolderOf(kb)
-    const id = uid('d')
+    const id = noteId ?? uid('d')
     docs[id] = {
       id, title: title.trim() || noteTitleOf(text), author: currentAuthor(),
       created: nowIso(), updated: nowIso(), links: [], blocks, backlinks: [],

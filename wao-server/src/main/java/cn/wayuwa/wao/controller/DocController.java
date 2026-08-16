@@ -20,13 +20,15 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 文档接口。新建文档必须指定所属知识库与文件夹，创建即完成与知识库的关联；
- * 小记（{@code POST /api/docs/notes}）例外，它一律落到小记知识库。
+ * 小记（{@code POST /api/docs/notes} 或幂等的 {@code PUT /api/docs/notes/{id}}）例外，
+ * 它一律落到小记知识库。
  */
 @RestController
 @RequestMapping("/api/docs")
@@ -61,6 +63,15 @@ public class DocController {
     @PostMapping("/notes")
     public ApiResponse<DocDto> createNote(@RequestBody CreateNoteRequest request, HttpServletRequest http) {
         return ApiResponse.ok(knowledge.createNote(request, currentMember.id(http)));
+    }
+
+    /**
+     * 幂等新建一条小记：客户端为草稿保留稳定 id，弱网重试只会更新同一篇，不会生成重复小记。
+     */
+    @PutMapping("/notes/{id}")
+    public ApiResponse<DocDto> putNote(@PathVariable String id, @RequestBody CreateNoteRequest request,
+            HttpServletRequest http) {
+        return ApiResponse.ok(knowledge.createNote(id, request, currentMember.id(http)));
     }
 
     @PatchMapping("/{id}")

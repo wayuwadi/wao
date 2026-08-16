@@ -260,9 +260,15 @@ paths:
     delete: { summary: 删除文档（移入回收站，7 天内可恢复）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   /docs/notes:
     post:
-      summary: 新建小记（不指定知识库，落到小记知识库中以创建人命名的文件夹；作者取当前会话成员）
+      summary: 兼容旧客户端的新建小记（服务端生成文档 ID）
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateNoteRequest' } } } }
       responses: { '200': { description: OK } }
+  /docs/notes/{id}:
+    put:
+      summary: 幂等创建或重试小记（按创建人归档；同一成员与文档 ID 不重复插入）
+      parameters: [ { name: id, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,32}$' } } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateNoteRequest' } } } }
+      responses: { '200': { description: 已创建或返回同一篇小记 }, '400': { description: 文档 ID 不合法或已被其他文档占用 } }
   # 文档协同在场（见 docs/adr/017-doc-realtime-collaboration-presence.md）
   /docs/{id}/presence:
     post:
