@@ -13,6 +13,7 @@ import Celebration from '@/components/overlays/CelebrationOverlay.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
 import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
 import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
+import MusicPlayer from '@/components/music/MusicPlayer.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -195,6 +196,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <Celebration v-if="ui.celebrating" />
     <!-- 助手依赖登录态和私有资产，只挂在受保护的应用壳内，避免遮挡登录页与公开分享页。 -->
     <AiAssistantPanel v-model="ui.assistantOpen" />
+    <!-- 音乐来自真实文件库，只挂在登录后的应用壳；切换页面时 audio 节点不会被路由销毁。 -->
+    <MusicPlayer />
   </div>
 </template>
 

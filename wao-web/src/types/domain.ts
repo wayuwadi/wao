@@ -316,6 +316,8 @@ export interface AutomationJob {
 export interface FileItem {
   id?: string
   name: string
+  /** 服务端保存的 MIME；旧接口数据可能缺失，调用方需按扩展名兜底。 */
+  contentType?: string
   size: string
   icon: string
   time: string
