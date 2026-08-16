@@ -139,3 +139,35 @@ export interface PublishCenter {
   platforms: PlatformSummary[]
   tasks: PublishTask[]
 }
+
+export interface VideoCapability {
+  available: boolean
+  provider: string
+  models: string[]
+  durations: number[]
+  sizes: string[]
+  shutdownDate: string
+  note: string
+}
+
+export interface VideoGeneration {
+  id: string
+  prompt: string
+  model: string
+  seconds: number
+  size: string
+  status: string
+  progress: number
+  attempt: number
+  mediaAssetId?: string
+  contentUrl?: string
+  errorMessage?: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export interface VideoCenter {
+  capability: VideoCapability
+  tasks: VideoGeneration[]
+}

@@ -60,6 +60,13 @@ wao-agent:
     api-key: ${AGENT_AI_API_KEY:}
     model: ${AGENT_AI_MODEL:deepseek-chat}
     timeout-ms: ${AGENT_AI_TIMEOUT_MS:60000}
+  # 视频生成只接受 OpenAI 平台 API Key，不复用 Codex 订阅 OAuth。
+  video:
+    base-url: ${AGENT_VIDEO_BASE_URL:https://api.openai.com/v1}
+    api-key: ${AGENT_VIDEO_API_KEY:}
+    model: ${AGENT_VIDEO_MODEL:sora-2}
+    timeout-ms: ${AGENT_VIDEO_TIMEOUT_MS:120000}
+    poll-delay-ms: ${AGENT_VIDEO_POLL_DELAY_MS:15000}
   platform:
     douyin:
       client-key: ${DOUYIN_CLIENT_KEY:}

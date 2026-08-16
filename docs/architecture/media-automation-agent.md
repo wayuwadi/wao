@@ -30,6 +30,7 @@ flowchart LR
 | `/agent/` | Agent Web | 云节点独立静态目录，支持新窗口 |
 | `/api/agent/**` | Agent Server | 在 `/api/**` 通用规则前分流 |
 | `/api/agent/health` | Agent Server | 无会话部署探针 |
+| `/api/agent/videos/**` | Linux Agent Server | 固定走 VPN 主节点，生成、持久化并鉴权播放视频 |
 
 ## 外部应用注册表
 
@@ -52,6 +53,10 @@ WAO 修改以上名称或序列化方式时，必须先提供兼容窗口。Agen
 Agent 与 WAO 共用 `wao` schema，以便直接恢复 Session 和账号；Agent 业务表统一使用 `agent_` 前缀。Agent Flyway 历史表为 `flyway_agent_schema_history`，其版本只在 `agent-server` 模块内递增。WAO 和 Agent 的已执行 migration 都不可修改。
 
 首版表包括 `agent_workspace`、`agent_workspace_member`、`agent_content_draft`、`agent_run`。草稿使用 version 乐观锁；运行状态和结果持久化，应用重启后可继续推进。
+
+视频生成任务使用 `agent_video_generation`。它只保存提示词、上游任务标识、状态、进度与完成后的
+`agent_media_asset` 标识，不保存 API Key 或临时下载地址。由于媒体卷不跨节点共享，Nginx 按
+[ADR-073](../adr/073-openai-video-generation-sunset-adapter.md) 把全部视频接口固定到 Linux 主节点。
 
 ## 统一部署与运行隔离
 

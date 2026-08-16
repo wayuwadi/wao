@@ -35,3 +35,8 @@ wao-agent:
     base-url: http://localhost:0/v1
     api-key: ""
     model: test-model
+  video:
+    base-url: http://localhost:0/v1
+    api-key: ""
+    model: sora-2
+    poll-delay-ms: 600000
