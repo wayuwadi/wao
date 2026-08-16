@@ -133,6 +133,7 @@ jobs:
         shell: bash
         run: |
           set -u
+          slave_deployed=false
 
           retry_remote() {
             target_label="$1"
@@ -178,7 +179,8 @@ jobs:
             retry_remote "Windows 从节点" scp -o ConnectTimeout=15 wao-secrets.env "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_secrets" || return
             retry_remote "Windows 从节点" scp -o ConnectTimeout=15 deploy/scripts/install-release-windows.ps1 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_installer" || return
             retry_remote "Windows 从节点" ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" 'exit 0' || return
-            retry_remote "Windows 从节点" ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets"
+            retry_remote "Windows 从节点" ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets" || return
+            slave_deployed=true
           }
 
           prepare_cloud_routing() {
@@ -298,7 +300,11 @@ jobs:
           }
 
           restore_upstreams() {
-            set_upstream_state slave up >/dev/null 2>&1 || true
+            if [ "$slave_deployed" = true ]; then
+              set_upstream_state slave up >/dev/null 2>&1 || true
+            else
+              set_upstream_state slave down >/dev/null 2>&1 || true
+            fi
             set_upstream_state master up >/dev/null 2>&1 || true
           }
 
@@ -319,11 +325,17 @@ jobs:
             echo '::notice title=Windows 从节点未摘流::节点发布前不健康，不在 Nginx 中额外标记 down。'
           fi
           if ! deploy_slave >slave.log 2>&1; then
-            set_upstream_state slave up || true
-            printf '\n===== slave =====\n'; cat slave.log
-            exit 1
-          fi
-          if ! set_upstream_state slave up; then
+            echo '::warning title=Windows 从节点已隔离::节点发布失败并保持 down；本次继续发布云前端和 Linux 主节点，修复 WSL 后由下次发布补齐。'
+            if ! set_upstream_state slave down; then
+              printf '\n===== slave =====\n'; cat slave.log
+              exit 1
+            fi
+          elif [ "$slave_deployed" = true ]; then
+            if ! set_upstream_state slave up; then
+              printf '\n===== slave =====\n'; cat slave.log
+              exit 1
+            fi
+          elif ! set_upstream_state slave down; then
             printf '\n===== slave =====\n'; cat slave.log
             exit 1
           fi
@@ -334,8 +346,12 @@ jobs:
             exit 1
           fi
           printf '\n===== cloud =====\n'; cat cloud.log
+          if [ "$slave_deployed" != true ] && ! set_upstream_state slave down; then
+            echo '云前端发布后未能继续隔离 Windows 从节点。'
+            exit 1
+          fi
 
-          if gateway_ready_from_cloud "$SLAVE_HOST"; then
+          if [ "$slave_deployed" = true ] && gateway_ready_from_cloud "$SLAVE_HOST"; then
             if ! set_upstream_state master down; then
               echo '云端未能摘流 Linux 主节点，本次不冒险重启主节点。' >master.log
               printf '\n===== master =====\n'; cat master.log

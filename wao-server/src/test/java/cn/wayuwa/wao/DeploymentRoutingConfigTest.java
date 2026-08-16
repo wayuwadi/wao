@@ -159,6 +159,10 @@ class DeploymentRoutingConfigTest {
                 .isLessThan(workflow.indexOf("if ! deploy_master >master.log 2>&1; then"));
         assertThat(workflow)
                 .doesNotContain("deploy_master >master.log 2>&1 &")
+                .contains("slave_deployed=false")
+                .contains("slave_deployed=true")
+                .contains("Windows 从节点已隔离")
+                .contains("[ \"$slave_deployed\" != true ] && ! set_upstream_state slave down")
                 .contains("test \"$ai_read_route\" = 'dual-gateway-ai'")
                 .contains("test \"$ai_write_route\" = 'linux-vpn-master'");
         assertThat(probe)
