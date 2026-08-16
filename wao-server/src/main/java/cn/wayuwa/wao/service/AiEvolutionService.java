@@ -92,6 +92,7 @@ public class AiEvolutionService {
         int intervalHours = intervalHours(state);
         int batchSize = batchSize(state);
         LocalDateTime eligibleAt = lastActivity == null ? now : lastActivity.plusHours(intervalHours);
+        List<AiEvolutionSuggestionDto> currentSuggestions = suggestions.latest();
         boolean quotaReady = quotas.stream().anyMatch(quota -> "SYNCED".equals(quota.status())
                 && quota.remainingPercent() > MIN_REMAINING_PERCENT);
         String status;
@@ -111,6 +112,9 @@ public class AiEvolutionService {
         } else if (publicBaseUrl == null) {
             status = "quota_unavailable";
             message = "未配置公网任务分享地址，自动进化保持暂停；手动建议仍可直接执行。";
+        } else if (currentSuggestions.isEmpty()) {
+            status = "quota_unavailable";
+            message = "还没有可自动派发的真实建议，生成可靠建议后才会开始调度。";
         } else {
             status = "ready";
             message = "已满足 " + intervalHours + " 小时空闲与周剩余额度门槛，下次检查会自动选择最多 "
@@ -119,8 +123,11 @@ public class AiEvolutionService {
         if (state != null && state.getLastOutcome() != null && !state.getLastOutcome().isBlank()) {
             message += " 最近检查：" + state.getLastOutcome();
         }
-        return new AiEvolutionOverviewDto(sessionQuotas, quotas, suggestions.latest(), status, message,
-                text(lastActivity), text(eligibleAt), state == null ? null : text(state.getLastCheckedAt()),
+        LocalDateTime nextTriggerAt = estimateNextTriggerAt(now, eligibleAt, state,
+                !active && quotaReady && publicBaseUrl != null && !currentSuggestions.isEmpty());
+        return new AiEvolutionOverviewDto(sessionQuotas, quotas, currentSuggestions, status, message,
+                text(lastActivity), text(eligibleAt), text(nextTriggerAt),
+                state == null ? null : text(state.getLastCheckedAt()),
                 state == null ? null : state.getLastRunId(), intervalHours, batchSize);
     }
 
@@ -372,6 +379,16 @@ public class AiEvolutionService {
     private static int batchSize(AiEvolutionStateEntity state) {
         return state == null || state.getBatchSize() == null
                 ? DEFAULT_BATCH_SIZE : state.getBatchSize();
+    }
+
+    private static LocalDateTime estimateNextTriggerAt(LocalDateTime now, LocalDateTime eligibleAt,
+            AiEvolutionStateEntity state, boolean conditionsAvailable) {
+        if (!conditionsAvailable) return null;
+        LocalDateTime checkAt = state == null || state.getNextCheckAt() == null
+                ? now : state.getNextCheckAt();
+        if (checkAt.isBefore(now)) checkAt = now;
+        while (checkAt.isBefore(eligibleAt)) checkAt = checkAt.plusMinutes(CHECK_MINUTES);
+        return checkAt;
     }
 
     private static String suggestionPrompt(TaskMiningContext context,

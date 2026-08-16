@@ -152,6 +152,12 @@ const showWeeklyQuota = computed(() => primaryWeeklyQuota.value !== null || (evo
 const evolutionScheduleDirty = computed(() => Boolean(evolution.value)
   && (evolutionScheduleDraft.intervalHours !== evolution.value?.intervalHours
     || evolutionScheduleDraft.batchSize !== evolution.value?.batchSize))
+const evolutionNextTriggerText = computed(() => {
+  if (!evolution.value) return ''
+  if (evolution.value.nextTriggerAt) return timeText(evolution.value.nextTriggerAt)
+  if (evolution.value.autoStatus === 'busy') return '当前任务结束后重新计时'
+  return '条件满足后重新预计'
+})
 
 /** 每种 AI 工具当前有几台电脑在线，决定 hero 上的接入状态。 */
 const engineStatus = computed(() =>
@@ -906,6 +912,17 @@ onBeforeUnmount(() => {
         </button>
         <button v-else-if="evolutionError" class="secondary" @click="refreshEvolution"><i class="ri-refresh-line"></i>重试</button>
       </header>
+      <div v-if="evolution" class="evolution-schedule-summary" aria-label="当前自动执行策略">
+        <span>
+          <i class="ri-timer-line"></i>
+          当前策略 <b>每 {{ evolution.intervalHours }} 小时检查 · 每轮最多 {{ evolution.batchSize }} 个任务</b>
+        </span>
+        <span>
+          <i class="ri-calendar-event-line"></i>
+          预计最早触发 <b>{{ evolutionNextTriggerText }}</b>
+        </span>
+        <small>预计时间会随 AI 任务、真实周额度和可用建议动态更新。</small>
+      </div>
       <form
         v-if="evolution && evolutionScheduleOpen"
         id="evolution-schedule-form"
@@ -1755,6 +1772,8 @@ onBeforeUnmount(() => {
 .auto-state.ready { background: #d9f1e4; color: #267c59; }.auto-state i { margin-right: 4px; }
 .evolution-panel header > button { padding: 6px 9px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
 .evolution-panel header > button:disabled { opacity: .55; cursor: wait; }
+.evolution-schedule-summary { margin: 0 18px 12px; padding: 10px 12px; border-radius: 9px; background: color-mix(in srgb, #e8f5ed 58%, var(--wao-bg-card)); display: flex; align-items: center; flex-wrap: wrap; gap: 7px 18px; color: var(--wao-text-2); font-size: 11px; }
+.evolution-schedule-summary span { display: inline-flex; align-items: center; gap: 5px; }.evolution-schedule-summary i { color: #317b5d; font-size: 14px; }.evolution-schedule-summary b { color: var(--wao-text-1); }.evolution-schedule-summary small { flex-basis: 100%; color: var(--wao-text-weak); }
 .evolution-schedule { margin: 0 18px 14px; padding: 12px; border: 1px solid color-mix(in srgb, #3b8c69 20%, var(--wao-line)); border-radius: 10px; background: color-mix(in srgb, #e8f5ed 42%, var(--wao-bg-card)); display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
 .evolution-schedule > div:first-child { flex: 1 1 240px; align-self: center; }.evolution-schedule > div:first-child strong, .evolution-schedule > div:first-child span { display: block; }.evolution-schedule > div:first-child strong { color: var(--wao-text-1); font-size: 12px; }.evolution-schedule > div:first-child span { margin-top: 3px; color: var(--wao-text-weak); font-size: 10px; line-height: 1.5; }
 .evolution-schedule label { display: flex; align-items: center; gap: 6px; color: var(--wao-text-2); font-size: 11px; white-space: nowrap; }.evolution-schedule input, .evolution-schedule select { height: 32px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-1); padding: 0 8px; }.evolution-schedule input { width: 64px; }.evolution-schedule select { min-width: 94px; }
