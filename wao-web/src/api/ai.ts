@@ -145,5 +145,16 @@ export const pauseAiRun = (runId: string) => data<AiRun>(http.post(`/api/ai/runs
 export const fetchAiRuns = (active = false) =>
   data<AiRun[]>(http.get('/api/ai/runs', { params: { active } }))
 
+export interface AiRunPage {
+  items: AiRun[]
+  total: number
+  page: number
+  size: number
+}
+
+/** 按页读取全部已结束运行；首页默认八条仍走轻量列表。 */
+export const fetchAiRunHistory = (page = 1, size = 20) =>
+  data<AiRunPage>(http.get('/api/ai/runs/history', { params: { page, size } }))
+
 export const fetchTaskAiRuns = (taskId: string) =>
   data<AiRun[]>(http.get(`/api/ai/tasks/${taskId}/runs`))
