@@ -263,7 +263,9 @@ class DeploymentRoutingConfigTest {
 
         assertThat(windowsDeploy)
                 .contains("while ($deployAttempt -le 2)")
-                .contains("wsl.exe --terminate $Distribution")
+                .contains("Get-Service -Name 'WslService', 'LxssManager'")
+                .contains("Restart-Service -InputObject $wslService -Force")
+                .contains("wsl.exe --shutdown")
                 .contains("Start-Sleep -Seconds 10")
                 .contains("failed after restarting the distribution");
     }

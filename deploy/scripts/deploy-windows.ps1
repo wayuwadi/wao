@@ -19,11 +19,17 @@ while ($deployAttempt -le 2) {
     if ($LASTEXITCODE -eq 0) { break }
     if ($deployAttempt -ge 2) { throw 'WSL Docker Compose deployment failed after restarting the distribution.' }
 
-    # BuildKit 偶发 EOF 后 Docker daemon 与 DrvFS 可能一起进入异常状态，直接重跑只会连续出现
-    # Segmentation fault / Missing /mnt/d/.../.env。先终止发行版，让 systemd 和 Docker 干净重启；
-    # 已构建的层缓存和 deploy/.env 均在持久磁盘上，下一次仍从原发布目录继续。
-    Write-Warning 'WSL Docker deployment failed; restarting the distribution before one retry.'
-    & wsl.exe --terminate $Distribution
+    # BuildKit 偶发 EOF 后 Docker daemon、DrvFS 乃至 WSL 实例服务可能一起进入异常状态，
+    # 只终止发行版无法恢复 Wsl/Service/CreateInstance/E_FAIL。专用从节点的 SSH 会话以管理员
+    # 身份运行，优先重启 WSL 服务；找不到服务时再让 wsl.exe 关闭全部发行版。
+    Write-Warning 'WSL Docker deployment failed; restarting the WSL runtime before one retry.'
+    $wslService = Get-Service -Name 'WslService', 'LxssManager' -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($null -ne $wslService) {
+        Restart-Service -InputObject $wslService -Force
+    } else {
+        & wsl.exe --shutdown
+    }
     Start-Sleep -Seconds 10
     $deployAttempt++
 }
