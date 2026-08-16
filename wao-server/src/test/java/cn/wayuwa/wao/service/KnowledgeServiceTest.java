@@ -420,4 +420,62 @@ class KnowledgeServiceTest {
         verify(folderMapper, times(1)).insert(any(KbFolderEntity.class));
         assertThat(dto.title()).isEqualTo("未命名小记");
     }
+
+    @Test
+    void createNoteWithStableIdDoesNotInsertOrNotifyTwiceOnRetry() throws Exception {
+        String id = "0123456789abcdef0123456789abcdef";
+        DocEntity existing = doc(id, KnowledgeService.NOTES_KB_ID, "kb-notes-wg");
+        existing.setAuthorId("wg");
+        existing.setTitle("网络抖动前已经存好");
+        List<DocBlockDto> blocks = List.of(new DocBlockDto(null, null, "网络抖动前已经存好", null, null));
+        existing.setBlocksJson(new ObjectMapper().writeValueAsString(blocks));
+        when(docMapper.selectById(id)).thenReturn(existing);
+        when(docMapper.selectList(any())).thenReturn(List.of(existing));
+
+        DocDto dto = service.createNote(id, new CreateNoteRequest("网络抖动前已经存好", blocks), "wg");
+
+        assertThat(dto.id()).isEqualTo(id);
+        verify(docMapper, never()).insert(any(DocEntity.class));
+        verify(docMapper, never()).updateById(any(DocEntity.class));
+        verify(taskNotifier, never()).notifyNoteCreated(any(), any(), any(), any());
+    }
+
+    @Test
+    void createNoteRetryUpdatesTheSameDocumentWhenDraftChanged() {
+        String id = "fedcba9876543210fedcba9876543210";
+        DocEntity existing = doc(id, KnowledgeService.NOTES_KB_ID, "kb-notes-wg");
+        existing.setAuthorId("wg");
+        existing.setTitle("旧草稿");
+        existing.setBlocksJson("[{\"p\":\"旧草稿\"}]");
+        when(docMapper.selectById(id)).thenReturn(existing);
+        when(docMapper.selectList(any())).thenReturn(List.of(existing));
+
+        DocDto dto = service.createNote(id, new CreateNoteRequest("重试前补充过",
+                List.of(new DocBlockDto(null, null, "重试前补充过", null, null))), "wg");
+
+        assertThat(dto.id()).isEqualTo(id);
+        assertThat(dto.title()).isEqualTo("重试前补充过");
+        assertThat(dto.rev()).isEqualTo(2);
+        verify(docMapper).updateById(existing);
+        verify(docMapper, never()).insert(any(DocEntity.class));
+        verify(taskNotifier, never()).notifyNoteCreated(any(), any(), any(), any());
+    }
+
+    @Test
+    void createNoteWithStableIdRejectsCollisionsAndInvalidIds() {
+        String occupiedId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        DocEntity occupied = doc(occupiedId, "another-kb", "another-folder");
+        occupied.setAuthorId("someone-else");
+        when(docMapper.selectById(occupiedId)).thenReturn(occupied);
+
+        assertThatThrownBy(() -> service.createNote(occupiedId,
+                new CreateNoteRequest("不能覆盖", List.of()), "wg"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("已被占用");
+        assertThatThrownBy(() -> service.createNote("../bad-id",
+                new CreateNoteRequest("不能创建", List.of()), "wg"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("不合法");
+        verify(docMapper, never()).insert(any(DocEntity.class));
+    }
 }

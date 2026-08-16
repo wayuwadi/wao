@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import cn.wayuwa.wao.common.BadRequestException;
@@ -63,6 +65,7 @@ public class KnowledgeService {
     /** 小记知识库固定 id（migration 里种下，各节点判等用）。 */
     public static final String NOTES_KB_ID = "kb-notes";
     private static final String NOTES_FOLDER_ID = "kb-notes-f";
+    private static final Pattern CLIENT_DOC_ID = Pattern.compile("[A-Za-z0-9_-]{1,32}");
 
     private static final TypeReference<List<DocBlockDto>> BLOCKS_TYPE = new TypeReference<>() { };
     private static final TypeReference<List<DocLinkDto>> LINKS_TYPE = new TypeReference<>() { };
@@ -369,10 +372,51 @@ public class KnowledgeService {
      */
     @Transactional
     public DocDto createNote(CreateNoteRequest req, String author) {
+        return createNote("d" + System.currentTimeMillis(), req, author);
+    }
+
+    /**
+     * 用客户端提供的稳定 id 幂等创建小记。
+     *
+     * <p>第一次请求已落库但响应丢失时，重试会命中同一篇文档。若用户在重试前继续修改了草稿，
+     * 这里把同一作者的同一篇小记更新到最新正文；不会再次插入，也不会再次发送飞书创建通知。
+     * 其他作者或其他知识库已经占用该 id 时拒绝写入，避免把碰撞伪装成成功。
+     *
+     * @param id     客户端草稿持有的文档 id
+     * @param req    小记内容
+     * @param author 作者 member id
+     * @return 新建或更新后的同一篇小记
+     */
+    @Transactional
+    public DocDto createNote(String id, CreateNoteRequest req, String author) {
+        if (id == null || !CLIENT_DOC_ID.matcher(id).matches()) {
+            throw new BadRequestException("小记文档 id 不合法");
+        }
+        String resolvedAuthor = blankOr(author, "wg");
+        DocEntity existing = docMapper.selectById(id);
+        if (existing != null) {
+            if (existing.getDeletedAt() != null || !NOTES_KB_ID.equals(existing.getKbId())
+                    || !Objects.equals(resolvedAuthor, existing.getAuthorId())) {
+                throw new BadRequestException("小记文档 id 已被占用");
+            }
+            List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
+            String title = blankOr(req.title(), titleFrom(blocks));
+            String blocksJson = write(blocks);
+            boolean changed = !Objects.equals(title, existing.getTitle())
+                    || !Objects.equals(blocksJson, existing.getBlocksJson());
+            if (changed) {
+                existing.setTitle(title);
+                existing.setBlocksJson(blocksJson);
+                existing.setRev(rev(existing) + 1);
+                existing.setUpdatedAt(LocalDateTime.now());
+                docMapper.updateById(existing);
+            }
+            return toDto(existing, docMapper.selectList(aliveDocs()));
+        }
         KbEntity kb = notesKb();
         KbFolderEntity folder = authorFolder(kb.getId(), author);
         List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
-        DocDto doc = insertDoc(kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(blocks)), author, blocks);
+        DocDto doc = insertDoc(id, kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(blocks)), author, blocks);
         announceNote(kb.getId(), doc, author);
         return doc;
     }
@@ -479,11 +523,16 @@ public class KnowledgeService {
     }
 
     private DocDto insertDoc(String kbId, String folderId, String title, String author, List<DocBlockDto> blocks) {
+        return insertDoc("d" + System.currentTimeMillis(), kbId, folderId, title, author, blocks);
+    }
+
+    private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
+            List<DocBlockDto> blocks) {
         Long count = docMapper.selectCount(aliveDocs().eq(DocEntity::getFolderId, folderId));
         LocalDateTime now = LocalDateTime.now();
 
         DocEntity e = new DocEntity();
-        e.setId("d" + System.currentTimeMillis());
+        e.setId(id);
         e.setKbId(kbId);
         e.setFolderId(folderId);
         e.setTitle(blankOr(title, ""));
