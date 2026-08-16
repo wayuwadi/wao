@@ -62,7 +62,9 @@ vi.mock('@/api/ai', () => ({
       finishedAt: '2026-07-25T18:51:00',
     },
     {
-      id: 'ar2', taskId: 't2', taskTitle: '实时任务', projectId: 'p1', projectName: 'WAO',
+      id: 'ar2', taskId: 't2', taskTitle: '根据截图修复展示',
+      previewImages: ['/api/images/img-preview-1/raw', '/api/images/img-preview-2/raw'],
+      projectId: 'p1', projectName: 'WAO',
       engine: 'claude',
       status: 'running', runnerId: 'rn2', runnerName: 'Linux 主节点', requestedRunnerId: 'rn2',
       branchName: 'ai/wao-ar2',
@@ -618,6 +620,10 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
     expect(upload).toHaveBeenCalledTimes(2)
     expect(upload.mock.calls.map((call) => call[1])).toEqual(['自主目标', '自主目标'])
+    expect(upload.mock.calls.map((call) => call[2])).toEqual([
+      { requirePersisted: true },
+      { requirePersisted: true },
+    ])
     expect(wrapper.find('.goal-shortcut').text()).toContain('2 张图片上传中')
     expect(wrapper.find('.goal-submit').attributes('disabled')).toBeDefined()
 
@@ -688,10 +694,17 @@ describe('HomeView AI 控制台', () => {
 
     expect(wrapper.find('.run-card').text()).toContain('已定位问题，正在实现实时反馈')
     expect(wrapper.find('.run-card').text()).toContain('Claude Code')
+    expect(wrapper.find('.run-card').text()).toContain('根据截图修复展示')
+    expect(wrapper.find('.run-card').text()).not.toContain('data:image')
+    expect(wrapper.findAll('.run-card .run-image-strip img').map((image) => image.attributes('src'))).toEqual([
+      '/api/images/img-preview-1/raw',
+      '/api/images/img-preview-2/raw',
+    ])
     await wrapper.find('.run-card').trigger('click')
 
     expect(wrapper.find('.run-detail').text()).toContain('AI 执行记录')
     expect(wrapper.find('.run-detail').text()).toContain('Claude Code')
+    expect(wrapper.findAll('.run-detail-images img')).toHaveLength(2)
     expect(router.currentRoute.value.fullPath).toBe('/')
     wrapper.unmount()
   })
@@ -709,7 +722,7 @@ describe('HomeView AI 控制台', () => {
     expect(cards[0]!.classes()).toContain('offline')
     expect(cards[1]!.text()).toContain('Claude Code')
     expect(cards[1]!.text()).toContain('槽位 1 / 2')
-    expect(cards[1]!.find('.runner-tasks button').text()).toBe('实时任务')
+    expect(cards[1]!.find('.runner-tasks button').text()).toBe('根据截图修复展示')
     wrapper.unmount()
   })
 

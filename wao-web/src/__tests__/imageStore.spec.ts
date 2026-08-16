@@ -32,6 +32,15 @@ describe('data store · 图床', () => {
     expect(data.imgs[0]!.from).toContain('未持久化')
   })
 
+  it('业务正文要求持久化时，后端离线不会把 Base64 编码塞回编辑器', async () => {
+    const before = data.imgs.length
+
+    const ref = await data.uploadImage(png('目标截图.png'), '自主目标', { requirePersisted: true })
+
+    expect(ref).toBeNull()
+    expect(data.imgs).toHaveLength(before)
+  })
+
   it('超过 10MB 的图直接拒绝，也不会污染图床列表', async () => {
     const before = data.imgs.length
 

@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.controller;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -10,6 +11,7 @@ import cn.wayuwa.wao.dto.AiAssistantClaimDto;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
+import cn.wayuwa.wao.dto.AiRunImageContent;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.AiRunnerLogDto;
@@ -42,6 +44,8 @@ import cn.wayuwa.wao.service.AiEvolutionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -203,6 +207,17 @@ public class AiRunController {
     @GetMapping("/runs")
     public ApiResponse<List<AiRunDto>> runs(@RequestParam(defaultValue = "false") boolean active) {
         return ApiResponse.ok(service.listRuns(active));
+    }
+
+    /** 兼容预览历史任务中遗留的 Base64 图片，不让编码正文进入运行列表响应。 */
+    @GetMapping("/runs/{runId}/images/{imageIndex}")
+    public ResponseEntity<byte[]> runPreviewImage(@PathVariable String runId, @PathVariable int imageIndex) {
+        AiRunImageContent image = service.runPreviewImage(runId, imageIndex);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(image.contentType()))
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(1)).cachePrivate())
+                .header("X-Content-Type-Options", "nosniff")
+                .body(image.content());
     }
 
     /** 基于一次失败运行重新排队，AI 会拿到上次的报错继续修。 */
