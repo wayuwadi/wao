@@ -55,6 +55,8 @@ const loading = ref(true)
 const workflowsLoading = ref(false)
 const goal = ref('')
 const goalProjectId = ref('')
+const goalRunnerId = ref('')
+const goalRunnerManuallySelected = ref(false)
 const launchingGoal = ref(false)
 const goalImageUploads = ref(0)
 const selectedRun = ref<AiRun | null>(null)
@@ -114,6 +116,25 @@ const onlineRunners = computed(() => runners.value.filter((runner) => runner.onl
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
 const activeWorkflows = computed(() => workflows.value.filter((workflow) => workflow.config.enabled))
+const goalWorkflow = computed(() => activeWorkflows.value.find(
+  (workflow) => workflow.projectId === goalProjectId.value,
+) ?? null)
+/** 自主目标沿用工作流默认 AI 工具，只列出真正装了该工具的执行电脑。 */
+const goalRunnerCandidates = computed(() => {
+  const engine = goalWorkflow.value?.config.defaultEngine
+  return engine ? runners.value.filter((runner) => runner.engines.includes(engine)) : []
+})
+const goalRunnerHint = computed(() => {
+  const picked = goalRunnerCandidates.value.find((runner) => runner.id === goalRunnerId.value)
+  if (picked) {
+    return picked.online
+      ? `${picked.name} 在线，当前占用 ${picked.activeRuns}/${picked.maxConcurrency}`
+      : `${picked.name} 当前离线，任务会排队等它上线`
+  }
+  const online = goalRunnerCandidates.value.filter((runner) => runner.online).length
+  if (online) return `自动分配给 ${online} 台在线电脑中最先空闲的一台`
+  return goalRunnerCandidates.value.length ? '可用电脑当前全部离线，任务会先排队' : '还没有电脑接入工作流使用的 AI 工具'
+})
 const visibleSessionQuotas = computed(() => evolution.value?.sessionQuotas.filter((quota) => quota.status === 'SYNCED') ?? [])
 const primarySessionQuota = computed(() => visibleSessionQuotas.value[0] ?? null)
 const visibleWeeklyQuotas = computed(() => evolution.value?.weeklyQuotas.filter((quota) => quota.status === 'SYNCED') ?? [])
@@ -381,6 +402,21 @@ watch(activeWorkflows, (next) => {
   }
 })
 
+function syncGoalRunnerDefault() {
+  const preferred = goalWorkflow.value?.config.preferredRunnerId ?? ''
+  goalRunnerId.value = goalRunnerCandidates.value.some((runner) => runner.id === preferred) ? preferred : ''
+}
+
+watch(goalProjectId, () => {
+  goalRunnerManuallySelected.value = false
+  syncGoalRunnerDefault()
+})
+
+// 工作流和电脑列表并发加载；电脑晚到时仍应带出项目首选电脑，后续轮询不能覆盖用户手选。
+watch(goalRunnerCandidates, () => {
+  if (!goalRunnerManuallySelected.value) syncGoalRunnerDefault()
+})
+
 async function launchGoal() {
   const normalizedGoal = goal.value.trim()
   if (!normalizedGoal) {
@@ -397,7 +433,7 @@ async function launchGoal() {
   }
   launchingGoal.value = true
   try {
-    const run = await launchAutonomousGoal(goalProjectId.value, normalizedGoal)
+    const run = await launchAutonomousGoal(goalProjectId.value, normalizedGoal, goalRunnerId.value || null)
     runs.value = [run, ...runs.value.filter((item) => item.id !== run.id)]
     goal.value = ''
     view.value = 'runs'
@@ -957,10 +993,28 @@ onBeforeUnmount(() => {
         <div class="goal-actions">
           <label>
             <span>放进哪条工作流</span>
-            <select v-model="goalProjectId" :disabled="workflowsLoading || launchingGoal || !activeWorkflows.length">
+            <select
+              v-model="goalProjectId"
+              class="goal-workflow-select"
+              :disabled="workflowsLoading || launchingGoal || !activeWorkflows.length"
+            >
               <option v-if="!activeWorkflows.length" value="">还没有已启用的工作流</option>
               <option v-for="workflow in activeWorkflows" :key="workflow.projectId" :value="workflow.projectId">
                 {{ workflow.projectName }} · {{ engineLabel(workflow.config.defaultEngine) }}
+              </option>
+            </select>
+          </label>
+          <label class="goal-runner-field" :title="goalRunnerHint">
+            <span>执行电脑</span>
+            <select
+              v-model="goalRunnerId"
+              class="goal-runner-select"
+              :disabled="launchingGoal || !goalWorkflow"
+              @change="goalRunnerManuallySelected = true"
+            >
+              <option value="">自动分配</option>
+              <option v-for="runner in goalRunnerCandidates" :key="runner.id" :value="runner.id">
+                {{ runner.name }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
               </option>
             </select>
           </label>
@@ -1659,6 +1713,7 @@ onBeforeUnmount(() => {
 .goal-actions { min-height: 44px; padding: 7px 8px 8px 12px; border-top: 1px solid #f0f1f5; display: flex; align-items: center; gap: 10px; }
 .goal-actions label { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--wao-text-weak); font-size: 10.5px; }
 .goal-actions select { max-width: 230px; height: 29px; padding: 0 26px 0 8px; border: 1px solid var(--wao-line); border-radius: 7px; background: #fff; color: var(--wao-text-2); font-size: 11px; }
+.goal-actions .goal-runner-select { max-width: 180px; }
 .goal-shortcut { margin-left: auto; color: #a0a5b6; font-size: 9.5px; white-space: nowrap; }
 .goal-submit { min-width: 112px; height: 32px; padding: 0 12px; border: 1px solid #4358d6; border-radius: 8px; background: #4358d6; color: #fff; cursor: pointer; font-size: 11.5px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .goal-submit.setup { min-width: 140px; }

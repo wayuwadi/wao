@@ -529,7 +529,7 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
-  it('只输入一句目标就能创建任务并交给已启用的 AI 工作流', async () => {
+  it('只输入一句目标就能选择执行电脑并交给已启用的 AI 工作流', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
@@ -537,13 +537,45 @@ describe('HomeView AI 控制台', () => {
     const editor = wrapper.findComponent(MarkdownEditor)
     editor.vm.$emit('update:modelValue', '把黄帝内经和易经结合 AI，做成每日一卦产品')
     await flushPromises()
-    expect((wrapper.find('.goal-actions select').element as HTMLSelectElement).value).toBe('p1')
+    expect((wrapper.find('.goal-workflow-select').element as HTMLSelectElement).value).toBe('p1')
+    const runnerSelect = wrapper.find('.goal-runner-select')
+    expect((runnerSelect.element as HTMLSelectElement).value).toBe('rn2')
+    expect(runnerSelect.text()).toContain('Linux 主节点 · 在线 1/2')
+    expect(runnerSelect.text()).not.toContain('娃哥电脑')
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
 
-    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', '把黄帝内经和易经结合 AI，做成每日一卦产品')
+    expect(launchAutonomousGoal).toHaveBeenCalledWith(
+      'p1', '把黄帝内经和易经结合 AI，做成每日一卦产品', 'rn2',
+    )
     expect(editor.props('modelValue')).toBe('')
     expect(wrapper.findAll('.run-card').some((card) => card.text().includes('把黄帝内经和易经结合 AI'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('自主目标可以改选另一台兼容电脑并允许离线排队', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchAiRunners).mockResolvedValueOnce([
+      windowsRunner(),
+      linuxRunner(),
+      runner({
+        id: 'rn3', name: '备用 Linux 电脑', platform: 'Linux', engines: ['claude'],
+        online: false, activeRuns: 0,
+      }),
+    ])
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    const runnerSelect = wrapper.find('.goal-runner-select')
+    expect(runnerSelect.text()).toContain('备用 Linux 电脑 · 离线')
+    await runnerSelect.setValue('rn3')
+    const editor = wrapper.findComponent(MarkdownEditor)
+    editor.vm.$emit('update:modelValue', '只在备用电脑执行这个目标')
+    await flushPromises()
+    await wrapper.find('.goal-submit').trigger('click')
+    await flushPromises()
+
+    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', '只在备用电脑执行这个目标', 'rn3')
     wrapper.unmount()
   })
 
@@ -563,7 +595,7 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.goal-submit').attributes('disabled')).toBeUndefined()
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
-    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', longGoal)
+    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', longGoal, 'rn2')
     wrapper.unmount()
   })
 
