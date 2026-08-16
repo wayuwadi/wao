@@ -1,5 +1,7 @@
 # Phase 1：真实视频生成与站内预览
 
+> 本规格已由 [ADR-074](../adr/074-retire-api-key-video-generation.md) 撤销，仅保留为历史记录。
+
 ## 目标
 
 已登录成员可在“自媒体 Agent → 视频生成”中保存提示词草稿、提交真实 OpenAI Videos API

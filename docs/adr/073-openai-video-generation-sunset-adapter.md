@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳。
+已废弃，由 [ADR-074](074-retire-api-key-video-generation.md) 替代。
 
 ## 上下文
 

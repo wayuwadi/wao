@@ -232,9 +232,6 @@ services:
       AGENT_AI_BASE_URL: ${AGENT_AI_BASE_URL:-https://api.deepseek.com/v1}
       AGENT_AI_API_KEY: ${AGENT_AI_API_KEY:-}
       AGENT_AI_MODEL: ${AGENT_AI_MODEL:-deepseek-chat}
-      AGENT_VIDEO_BASE_URL: ${AGENT_VIDEO_BASE_URL:-https://api.openai.com/v1}
-      AGENT_VIDEO_API_KEY: ${AGENT_VIDEO_API_KEY:-}
-      AGENT_VIDEO_MODEL: ${AGENT_VIDEO_MODEL:-sora-2}
       DOUYIN_CLIENT_KEY: ${DOUYIN_CLIENT_KEY:-}
       DOUYIN_CLIENT_SECRET: ${DOUYIN_CLIENT_SECRET:-}
       DOUYIN_REDIRECT_URI: ${DOUYIN_REDIRECT_URI:-https://wao.wayuwa.cn/api/agent/platforms/DOUYIN/callback}
