@@ -11,6 +11,7 @@ public record AiEvolutionOverviewDto(
         String autoMessage,
         String lastActivityAt,
         String nextEligibleAt,
+        String nextTriggerAt,
         String lastCheckedAt,
         String lastRunId,
         int intervalHours,

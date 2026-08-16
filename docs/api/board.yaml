@@ -323,7 +323,7 @@ paths:
       description: 从真实资产挖掘的候选不包含以纯测试、纯文档或纯技术优化为主要结果的任务；生成和派发均确保目标带有用户价值验收契约。
       responses:
         '200':
-          description: sessionQuotas 只返回 Codex 真实五小时主窗口，weeklyQuotas 只返回供应商真实七天窗口，并返回 intervalHours 与 batchSize；未知额度不返回记录，首页不渲染对应额度卡片
+          description: sessionQuotas 只返回 Codex 真实五小时主窗口，weeklyQuotas 只返回供应商真实七天窗口，并返回 intervalHours、batchSize 与结合十五分钟检查窗口计算的 nextTriggerAt；已知调度条件不足时 nextTriggerAt 为空，未知额度不返回额度记录，首页不渲染对应额度卡片
   /ai/evolution/schedule:
     put:
       summary: 保存自主进化空闲间隔与单次任务数并立即触发一次到期检查

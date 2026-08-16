@@ -85,6 +85,19 @@ class AiEvolutionServiceTest {
     }
 
     @Test
+    void overviewDoesNotClaimSchedulingIsReadyWithoutRealSuggestions() {
+        when(accounts.weeklyQuotas()).thenReturn(List.of(new AiWeeklyQuotaDto(
+                "aa1", "codex", "Codex", "plus", 20, 80, "2026-08-17T10:00:00",
+                LocalDateTime.now().toString(), "SYNCED", "七天额度已用 20%")));
+
+        AiEvolutionOverviewDto overview = service.overview();
+
+        assertThat(overview.autoStatus()).isEqualTo("quota_unavailable");
+        assertThat(overview.autoMessage()).contains("还没有可自动派发的真实建议");
+        assertThat(overview.nextTriggerAt()).isNull();
+    }
+
+    @Test
     void idleSystemWithFreshRealQuotaLaunchesExactlyOneSuggestion() {
         when(stateMapper.update(isNull(), any())).thenReturn(1);
         when(runMapper.selectCount(any())).thenReturn(0L);
@@ -152,6 +165,28 @@ class AiEvolutionServiceTest {
         assertThat(overview.intervalHours()).isEqualTo(2);
         assertThat(overview.batchSize()).isEqualTo(3);
         assertThat(overview.autoMessage()).contains("2 小时").contains("3 项");
+    }
+
+    @Test
+    void overviewEstimatesNextTriggerFromIdleDeadlineAndCheckWindow() {
+        LocalDateTime anchor = LocalDateTime.now();
+        AiEvolutionStateEntity state = new AiEvolutionStateEntity();
+        state.setIntervalHours(4);
+        state.setBatchSize(3);
+        state.setNextCheckAt(anchor.plusMinutes(2));
+        when(stateMapper.selectById("autonomous-evolution")).thenReturn(state);
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(runMapper.latestActivityAt()).thenReturn(anchor.minusHours(1));
+        when(accounts.weeklyQuotas()).thenReturn(List.of(new AiWeeklyQuotaDto(
+                "aa1", "codex", "Codex", "plus", 20, 80, "2026-08-17T10:00:00",
+                anchor.toString(), "SYNCED", "七天额度已用 20%")));
+        when(suggestions.latest()).thenReturn(List.of(suggestion("es1", "候选一")));
+
+        AiEvolutionOverviewDto overview = service.overview();
+
+        LocalDateTime eligibleAt = anchor.plusHours(3);
+        LocalDateTime nextTriggerAt = LocalDateTime.parse(overview.nextTriggerAt());
+        assertThat(nextTriggerAt).isBetween(eligibleAt, eligibleAt.plusMinutes(15));
     }
 
     @Test

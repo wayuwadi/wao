@@ -36,6 +36,7 @@ export interface AiEvolutionOverview {
   autoMessage: string
   lastActivityAt: string | null
   nextEligibleAt: string | null
+  nextTriggerAt: string | null
   lastCheckedAt: string | null
   lastRunId: string | null
   intervalHours: number
