@@ -453,7 +453,7 @@ describe('HomeView AI 控制台', () => {
     failedResult.wrapper.unmount()
   })
 
-  it('可从真实资料刷新换一批并展示可追溯来源', async () => {
+  it('不足五条时仍用可靠的新建议换批并展示可追溯来源', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
@@ -462,6 +462,7 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
 
     expect(refreshEvolutionSuggestions).toHaveBeenCalled()
+    expect(wrapper.findAll('.suggestion-card')).toHaveLength(1)
     expect(wrapper.find('.suggestion-card').text()).toContain('给任务增加依赖阻塞提示')
     expect(wrapper.find('.suggestion-source').text()).toContain('飞书群聊 · 2026-08-12')
     expect(wrapper.find('.suggestion-source').attributes('href')).toBe('/kb/k1?doc=d1')
@@ -495,7 +496,7 @@ describe('HomeView AI 控制台', () => {
 
   it('换批失败时在旧建议前就地说明原因并允许重试', async () => {
     vi.useFakeTimers()
-    vi.mocked(refreshEvolutionSuggestions).mockRejectedValueOnce(new Error('真实资料暂不足以生成 5 条任务'))
+    vi.mocked(refreshEvolutionSuggestions).mockRejectedValueOnce(new Error('真实资料暂未提供可靠的新任务线索'))
     const { wrapper } = mountHome()
     await flushPromises()
 

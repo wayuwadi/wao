@@ -207,6 +207,30 @@ class AiEvolutionServiceTest {
     }
 
     @Test
+    void refreshPersistsPartialBatchWhenOnlyTwoNewSuggestionsAreGrounded() {
+        TaskMiningSource source = new TaskMiningSource(
+                2, "chat", "飞书群聊 · 2026-08-15", "/kb/k1?doc=d2");
+        when(assets.taskMiningContext()).thenReturn(new TaskMiningContext(
+                "<wao_task_mining_sources>[source index=\"2\"]两条明确需求[/source]</wao_task_mining_sources>",
+                List.of(source), List.of()));
+        when(assistant.runReadOnlyJob(eq("evolution-suggestions"), any())).thenReturn("""
+                {"suggestions":[
+                  {"title":"候选一","description":"结果一","goal":"目标一","sourceIndex":2},
+                  {"title":"候选二","description":"结果二","goal":"目标二","sourceIndex":2}
+                ]}
+                """);
+
+        List<AiEvolutionSuggestionDto> refreshed = service.refreshSuggestions();
+
+        assertThat(refreshed).hasSize(2).extracting(AiEvolutionSuggestionDto::title)
+                .containsExactly("候选一", "候选二");
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(assistant).runReadOnlyJob(eq("evolution-suggestions"), prompt.capture());
+        assertThat(prompt.getValue()).contains("至少 1 条即可成功换批");
+        verify(suggestions).saveBatch(any(), eq(refreshed));
+    }
+
+    @Test
     void refreshKeepsPreviousBatchWhenRealEvidenceIsInsufficient() {
         TaskMiningSource source = new TaskMiningSource(1, "knowledge", "产品想法", "/kb/k1?doc=d1");
         when(assets.taskMiningContext()).thenReturn(new TaskMiningContext(
@@ -214,10 +238,10 @@ class AiEvolutionServiceTest {
                 List.of(source), List.of()));
         when(suggestions.latest()).thenReturn(List.of(suggestion("old-1", "上一批任务")));
         when(assistant.runReadOnlyJob(eq("evolution-suggestions"), any()))
-                .thenReturn("{\"error\":\"只有一条可靠线索\",\"suggestions\":[]}");
+                .thenReturn("{\"error\":\"没有尚未执行的可靠线索\",\"suggestions\":[]}");
 
         assertThatThrownBy(service::refreshSuggestions)
-                .hasMessageContaining("真实资料暂不足").hasMessageContaining("只有一条可靠线索");
+                .hasMessageContaining("真实资料暂未提供可靠的新任务线索").hasMessageContaining("没有尚未执行");
         verify(suggestions, org.mockito.Mockito.never()).saveBatch(any(), any());
     }
 

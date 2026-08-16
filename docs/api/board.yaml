@@ -336,10 +336,10 @@ paths:
         '400': { description: 间隔或单次任务数超出允许范围 }
   /ai/evolution/suggestions/refresh:
     post:
-      summary: 从真实知识库与飞书同步归档挖掘并持久化五条新任务建议
+      summary: 从真实知识库与飞书同步归档挖掘并持久化最多五条新任务建议
       responses:
-        '200': { description: 返回新的五条建议，每条含可追溯的 sourceTitle 与 sourceUrl }
-        '400': { description: 没有真实资料、本地 Codex 不可用、证据不足五条或返回格式不可靠 }
+        '200': { description: 返回一至五条新建议，每条含可追溯的 sourceTitle 与 sourceUrl }
+        '400': { description: 没有真实资料、本地 Codex 不可用、没有可靠新线索或返回格式不可靠 }
   /ai/evolution/suggestions/{suggestionId}/launch:
     post:
       summary: 把一条已持久化的真实资产建议交给指定的已启用 AI 工作流

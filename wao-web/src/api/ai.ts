@@ -119,7 +119,7 @@ export const fetchAiEvolution = () => data<AiEvolutionOverview>(http.get('/api/a
   headers: { 'Cache-Control': 'no-cache' },
 }))
 
-/** 从真实知识库和飞书同步归档挖掘五条新建议。 */
+/** 从真实知识库和飞书同步归档挖掘最多五条新建议。 */
 export const refreshEvolutionSuggestions = () =>
   data<AiEvolutionSuggestion[]>(http.post('/api/ai/evolution/suggestions/refresh', null, {
     timeout: 310_000,

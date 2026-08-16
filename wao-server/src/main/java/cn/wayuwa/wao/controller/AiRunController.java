@@ -185,7 +185,7 @@ public class AiRunController {
         return ApiResponse.ok(evolutionService.overview());
     }
 
-    /** 从真实知识库与飞书同步归档重新挖掘五条候选任务。 */
+    /** 从真实知识库与飞书同步归档重新挖掘最多五条候选任务。 */
     @PostMapping("/evolution/suggestions/refresh")
     public ApiResponse<List<AiEvolutionSuggestionDto>> refreshEvolutionSuggestions() {
         return ApiResponse.ok(evolutionService.refreshSuggestions());
