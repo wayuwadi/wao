@@ -696,7 +696,7 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.history-pagination').text()).toContain('第 1 / 2 页')
     await wrapper.find('.run-history-detail .recent-card').trigger('click')
     expect(wrapper.findAll('.run-detail')).toHaveLength(2)
-    await wrapper.findAll('.run-detail').at(1)?.find('.detail-close').trigger('click')
+    await wrapper.findAll('.run-detail')[1]!.find('.detail-close').trigger('click')
     expect(wrapper.find('.run-history-detail').exists()).toBe(true)
     wrapper.unmount()
   })
