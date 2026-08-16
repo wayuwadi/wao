@@ -221,6 +221,27 @@ class AiRunServiceTest {
     }
 
     @Test
+    void autonomousGoalCanTargetTheComputerSelectedForThisLaunch() {
+        TaskEntity task = task("t1", "p1", "在指定电脑执行");
+        when(tasks.create(any(CreateTaskRequest.class), eq("wg"))).thenReturn(taskDto(null, null));
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectById("rn-selected"))
+                .thenReturn(runner("rn-selected", "选中的 Windows 电脑", "codex"));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        AiRunDto result = service.launchGoal("p1", "在指定电脑执行", "wg", "https://wao.example",
+                "rn-selected", null);
+
+        assertThat(result.requestedRunnerId()).isEqualTo("rn-selected");
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getRequestedRunnerId()).isEqualTo("rn-selected");
+    }
+
+    @Test
     void quotaDrivenGoalPinsTheAccountThatPassedTheThreshold() {
         TaskEntity task = task("t1", "p1", "自动优化体验");
         when(tasks.create(any(CreateTaskRequest.class), eq("system"))).thenReturn(taskDto(null, null));

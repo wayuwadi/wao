@@ -162,12 +162,13 @@ public class AiRunController {
                 request.runnerId(), request.accountId(), currentMember.idOr(http, "unknown"), baseUrl));
     }
 
-    /** 把一句目标转成任务并立即交给项目默认 AI 工作流。 */
+    /** 把一句目标转成任务，并交给用户本次选择的执行电脑或自动分配。 */
     @PostMapping("/goals")
     public ApiResponse<AiRunDto> launchGoal(@Valid @RequestBody LaunchAutonomousGoalRequest request,
             HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
-        return ApiResponse.ok(service.launchGoal(request.projectId(), request.goal(), currentMember.id(http), baseUrl));
+        return ApiResponse.ok(service.launchGoal(request.projectId(), request.goal(), currentMember.id(http), baseUrl,
+                request.runnerId(), null));
     }
 
     /** 首页额度驱动的自主进化状态与可直接执行的建议清单。 */
