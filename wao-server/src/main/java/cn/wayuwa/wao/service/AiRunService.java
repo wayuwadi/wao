@@ -7,6 +7,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
@@ -26,6 +29,7 @@ import cn.wayuwa.wao.domain.AiTaskRunEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
+import cn.wayuwa.wao.dto.AiRunImageContent;
 import cn.wayuwa.wao.dto.AiRunProgressDto;
 import cn.wayuwa.wao.dto.AiRunUsageDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
@@ -37,6 +41,7 @@ import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
 import cn.wayuwa.wao.dto.HostedPageDto;
+import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
@@ -83,6 +88,11 @@ public class AiRunService {
     private static final String DEFAULT_ENGINE = "codex";
     private static final Map<String, String> ENGINE_LABELS = Map.of("codex", "Codex", "claude", "Claude Code",
             "qoder", "Qoder");
+    private static final Pattern MARKDOWN_IMAGE = Pattern.compile("!\\[([^\\]]*)]\\(([^\\s)]+)\\)");
+    private static final Pattern DATA_IMAGE = Pattern.compile(
+            "^data:(image/(?:png|jpeg|gif|webp|svg\\+xml|bmp));base64,([a-z0-9+/=]+)$",
+            Pattern.CASE_INSENSITIVE);
+    private static final int MAX_PREVIEW_IMAGES = 4;
 
     private final AiProjectConfigMapper configMapper;
     private final AiRunnerNodeMapper runnerMapper;
@@ -96,11 +106,13 @@ public class AiRunService {
     private final RunnerScriptService scripts;
     private final AiAccountService accounts;
     private final HostedPageService hostedPages;
+    private final ImageService images;
 
     public AiRunService(AiProjectConfigMapper configMapper, AiRunnerNodeMapper runnerMapper,
             AiRunnerPairCodeMapper pairMapper, AiTaskRunMapper runMapper, AiRunProgressMapper progressMapper,
             TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier,
-            RunnerScriptService scripts, AiAccountService accounts, HostedPageService hostedPages) {
+            RunnerScriptService scripts, AiAccountService accounts, HostedPageService hostedPages,
+            ImageService images) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
         this.pairMapper = pairMapper;
@@ -113,6 +125,7 @@ public class AiRunService {
         this.scripts = scripts;
         this.accounts = accounts;
         this.hostedPages = hostedPages;
+        this.images = images;
     }
 
     /** 读取项目配置；尚未保存过时返回安全的关闭状态。 */
@@ -504,7 +517,7 @@ public class AiRunService {
     @Transactional
     public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl,
             String runnerId, String aiAccountId) {
-        String normalizedGoal = trim(goal);
+        String normalizedGoal = persistGoalImages(trim(goal));
         if (!StringUtils.hasText(normalizedGoal)) throw new BadRequestException("请先写下想让 AI 完成的目标");
 
         cn.wayuwa.wao.dto.TaskDto task = tasks.create(new CreateTaskRequest(
@@ -516,9 +529,36 @@ public class AiRunService {
     }
 
     private static String goalTitle(String goal) {
-        String firstLine = goal.lines().map(String::trim).filter(StringUtils::hasText).findFirst().orElse("新的自主目标");
-        firstLine = firstLine.replaceFirst("^#{1,6}\\s*", "").trim();
+        String firstLine = goal.lines()
+                .map(line -> MARKDOWN_IMAGE.matcher(line).replaceAll(""))
+                .map(line -> line.replaceFirst("^#{1,6}\\s*", "")
+                        .replaceFirst("^[-*+]\\s+", "").trim())
+                .filter(StringUtils::hasText)
+                .findFirst()
+                .orElseGet(() -> MARKDOWN_IMAGE.matcher(goal).find() ? "基于图片完成自主目标" : "新的自主目标");
         return firstLine.length() <= 80 ? firstLine : firstLine.substring(0, 79) + "…";
+    }
+
+    /** 把旧客户端提交的内联 Base64 图片落入图床，任务正文从源头只保存稳定地址。 */
+    private String persistGoalImages(String goal) {
+        Matcher markdown = MARKDOWN_IMAGE.matcher(goal);
+        StringBuffer out = new StringBuffer();
+        while (markdown.find()) {
+            Matcher data = DATA_IMAGE.matcher(markdown.group(2));
+            if (!data.matches()) continue;
+            byte[] content;
+            try {
+                content = Base64.getDecoder().decode(data.group(2));
+            } catch (IllegalArgumentException ex) {
+                throw new BadRequestException("粘贴的图片无法读取，请删除后重新粘贴");
+            }
+            String name = StringUtils.hasText(markdown.group(1)) ? markdown.group(1) : "粘贴的图片";
+            ImageItemDto stored = images.store(content, data.group(1), name, "自主目标", true);
+            String replacement = "![" + markdown.group(1) + "](" + stored.url() + ")";
+            markdown.appendReplacement(out, Matcher.quoteReplacement(replacement));
+        }
+        markdown.appendTail(out);
+        return out.toString();
     }
 
     private static String autonomousGoalDescription(String goal) {
@@ -732,6 +772,28 @@ public class AiRunService {
                 .eq(AiTaskRunEntity::getTaskId, taskId)
                 .orderByDesc(AiTaskRunEntity::getCreatedAt)
                 .last("LIMIT 30")));
+    }
+
+    /** 读取历史任务遗留的 Base64 图片；新任务直接使用图床地址，不经过此接口。 */
+    public AiRunImageContent runPreviewImage(String runId, int imageIndex) {
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        TaskEntity task = taskMapper.selectById(run.getTaskId());
+        if (task == null) throw new NotFoundException("任务不存在：" + run.getTaskId());
+        List<String> sources = imageSources(task.getDescription());
+        if (imageIndex < 0 || imageIndex >= sources.size()) throw new NotFoundException("图片预览不存在");
+        Matcher data = DATA_IMAGE.matcher(sources.get(imageIndex));
+        if (!data.matches()) throw new NotFoundException("该图片无需代理预览");
+        byte[] content;
+        try {
+            content = Base64.getDecoder().decode(data.group(2));
+        } catch (IllegalArgumentException ex) {
+            throw new BadRequestException("历史图片内容已损坏");
+        }
+        if (content.length == 0 || content.length > ImageService.MAX_BYTES) {
+            throw new BadRequestException("历史图片内容为空或超过 10MB");
+        }
+        return new AiRunImageContent(data.group(1).toLowerCase(), content);
     }
 
     /** 节点心跳；刷新本机能力，并在响应中返回后台优先的实际并发数供 Runner 动态生效。 */
@@ -1096,7 +1158,7 @@ public class AiRunService {
             ProjectEntity project = projects.get(run.getProjectId());
             AiRunnerNodeEntity runner = StringUtils.hasText(run.getRunnerId())
                     ? runners.get(run.getRunnerId()) : null;
-            return new AiRunDto(run.getId(), run.getTaskId(), task == null ? run.getTaskId() : task.getTitle(),
+            return new AiRunDto(run.getId(), run.getTaskId(), runTaskTitle(run, task), previewImages(run, task),
                     run.getSubId(),
                     StringUtils.hasText(run.getSubId()) ? subTitle(run.getTaskId(), run.getSubId()) : null,
                     run.getProjectId(), project == null ? run.getProjectId() : project.getName(),
@@ -1109,6 +1171,45 @@ public class AiRunService {
                     run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
                     text(run.getStartedAt()), text(run.getFinishedAt()));
         }).toList();
+    }
+
+    /** 旧任务曾把 Markdown 图片串当标题；列表读取时从原目标重新提炼可读标题。 */
+    private static String runTaskTitle(AiTaskRunEntity run, TaskEntity task) {
+        if (task == null) return run.getTaskId();
+        String title = trim(task.getTitle());
+        if (!title.startsWith("![") && !title.contains("data:image")) return title;
+        return goalTitle(autonomousGoalBody(task.getDescription()));
+    }
+
+    private static String autonomousGoalBody(String description) {
+        String body = trim(description);
+        String prefix = "## 目标";
+        String contract = "## 自主执行约定";
+        if (body.startsWith(prefix)) body = body.substring(prefix.length()).trim();
+        int contractAt = body.indexOf(contract);
+        return contractAt >= 0 ? body.substring(0, contractAt).trim() : body;
+    }
+
+    private static List<String> imageSources(String description) {
+        List<String> sources = new ArrayList<>();
+        Matcher matcher = MARKDOWN_IMAGE.matcher(description == null ? "" : description);
+        while (matcher.find()) sources.add(matcher.group(2));
+        return sources;
+    }
+
+    private static List<String> previewImages(AiTaskRunEntity run, TaskEntity task) {
+        if (task == null) return List.of();
+        List<String> sources = imageSources(task.getDescription());
+        List<String> previews = new ArrayList<>();
+        for (int index = 0; index < sources.size() && previews.size() < MAX_PREVIEW_IMAGES; index++) {
+            String source = sources.get(index);
+            if (DATA_IMAGE.matcher(source).matches()) {
+                previews.add("/api/ai/runs/" + run.getId() + "/images/" + index);
+            } else if (!source.regionMatches(true, 0, "data:", 0, 5)) {
+                previews.add(source);
+            }
+        }
+        return previews;
     }
 
     /** 历史运行的执行电脑名；电脑已被解除接入时说清楚，别显示成「未分配电脑」。 */

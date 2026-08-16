@@ -1213,9 +1213,14 @@ export const useDataStore = defineStore('data', () => {
    *
    * @param file   图片文件
    * @param source 来源描述，显示在图床列表里
-   * @return 图片引用；超过大小上限或读取失败时返回 null
+   * @param options.requirePersisted 为 true 时禁止回落成 data URL，避免把编码写进业务正文
+   * @return 图片引用；超过大小上限、读取失败或要求持久化但后端不可用时返回 null
    */
-  async function uploadImage(file: File, source?: string): Promise<ImageRef | null> {
+  async function uploadImage(
+    file: File,
+    source?: string,
+    options?: { requirePersisted?: boolean },
+  ): Promise<ImageRef | null> {
     if (!file.type.startsWith('image/') || file.size > MAX_IMAGE_BYTES) return null
     if (apiLive.value) {
       try {
@@ -1223,9 +1228,11 @@ export const useDataStore = defineStore('data', () => {
         imgs.value.unshift(item)
         return { name: item.name, url: item.url }
       } catch {
-        /* 上传失败时回落成本地 data URL，至少不丢用户刚粘的图 */
+        if (options?.requirePersisted) return null
+        /* 普通离线演示态仍可回落成本地 data URL。 */
       }
     }
+    if (options?.requirePersisted) return null
     const url = await new Promise<string | null>((resolve) => {
       const reader = new FileReader()
       reader.onload = () => resolve(String(reader.result))

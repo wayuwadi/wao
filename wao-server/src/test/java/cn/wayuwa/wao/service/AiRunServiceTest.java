@@ -30,6 +30,7 @@ import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
 import cn.wayuwa.wao.dto.HostedPageDto;
+import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
@@ -60,9 +61,10 @@ class AiRunServiceTest {
     private final RunnerScriptService scripts = mock(RunnerScriptService.class);
     private final AiAccountService accounts = mock(AiAccountService.class);
     private final HostedPageService hostedPages = mock(HostedPageService.class);
+    private final ImageService images = mock(ImageService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
-            tasks, notifier, scripts, accounts, hostedPages);
+            tasks, notifier, scripts, accounts, hostedPages, images);
 
     @BeforeEach
     void emptyProgressByDefault() {
@@ -239,6 +241,57 @@ class AiRunServiceTest {
         ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
         verify(runMapper).insert(run.capture());
         assertThat(run.getValue().getRequestedRunnerId()).isEqualTo("rn-selected");
+    }
+
+    @Test
+    void autonomousGoalPersistsInlineImageAndUsesReadableTextAsTitle() {
+        TaskEntity task = task("t1", "p1", "根据截图修复展示");
+        when(images.store(any(byte[].class), eq("image/png"), eq("image.png"), eq("自主目标"), eq(true)))
+                .thenReturn(new ImageItemDto("img1", "image.png", "5 B", "刚刚", "自主目标",
+                        "/api/images/img1/raw", "#eee", "#ddd"));
+        when(tasks.create(any(CreateTaskRequest.class), eq("wg"))).thenReturn(taskDto(null, null));
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "Linux 主节点", "codex")));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        service.launchGoal("p1",
+                "![image.png](data:image/png;base64,aGVsbG8=)\n\n根据截图修复展示", "wg", "https://wao.example");
+
+        ArgumentCaptor<CreateTaskRequest> request = ArgumentCaptor.forClass(CreateTaskRequest.class);
+        verify(tasks).create(request.capture(), eq("wg"));
+        assertThat(request.getValue().title()).isEqualTo("根据截图修复展示");
+        assertThat(request.getValue().desc())
+                .contains("![image.png](/api/images/img1/raw)")
+                .doesNotContain("data:image");
+        verify(images).store(any(byte[].class), eq("image/png"), eq("image.png"), eq("自主目标"), eq(true));
+    }
+
+    @Test
+    void legacyInlineImageGetsReadableTitleAndSmallProxyPreview() {
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId("ar-old");
+        run.setTaskId("t-old");
+        run.setProjectId("p1");
+        run.setStatus("queued");
+        TaskEntity task = task("t-old", "p1", "![image.png](data:image/png;base64,aGVsbG8=)…");
+        task.setDescription("## 目标\n\n![image.png](data:image/png;base64,aGVsbG8=)\n\n根据截图修复展示"
+                + "\n\n## 自主执行约定\n\n- 自行推进");
+        when(runMapper.selectList(any())).thenReturn(List.of(), List.of(run));
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+        when(taskMapper.selectById("t-old")).thenReturn(task);
+        when(runMapper.selectById("ar-old")).thenReturn(run);
+
+        var runs = service.listRuns(false);
+
+        assertThat(runs.get(0).taskTitle()).isEqualTo("根据截图修复展示");
+        assertThat(runs.get(0).previewImages()).containsExactly("/api/ai/runs/ar-old/images/0");
+        assertThat(runs.get(0).toString()).doesNotContain("aGVsbG8=");
+        assertThat(service.runPreviewImage("ar-old", 0).content()).isEqualTo("hello".getBytes());
+        assertThat(service.runPreviewImage("ar-old", 0).contentType()).isEqualTo("image/png");
     }
 
     @Test

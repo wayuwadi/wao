@@ -452,6 +452,8 @@ export interface AiRun {
   id: string
   taskId: string
   taskTitle: string
+  /** 目标里的图片预览地址，最多四张；不包含 Base64 正文。 */
+  previewImages?: string[]
   /** 本次只跑这一条子任务；整个任务的运行为 null。 */
   subId: string | null
   /** 子任务标题，用于在执行记录里标明跑的是哪一条。 */

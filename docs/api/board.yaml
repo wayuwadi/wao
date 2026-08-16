@@ -375,7 +375,9 @@ paths:
   /ai/runs:
     get:
       summary: 最近 100 条 AI 运行
-      description: 已产出持久化 HTML 报告的运行带 reportUrl；托管页被删除后该字段为空。
+      description: |
+        已产出持久化 HTML 报告的运行带 reportUrl；托管页被删除后该字段为空。
+        previewImages 最多返回任务正文前四张图片；历史 Base64 图片返回受控预览地址，列表本身不返回编码正文。
       parameters: [ { name: active, in: query, required: false, schema: { type: boolean } } ]
       responses: { '200': { description: OK } }
     post:
@@ -403,10 +405,20 @@ paths:
               required: [projectId, goal]
               properties:
                 projectId: { type: string }
-                goal: { type: string, minLength: 1, description: 不设 4000 字人为上限；图片应由编辑器上传图床后写入稳定 URL }
+                goal: { type: string, minLength: 1, description: 不设 4000 字人为上限；图片应由编辑器上传图床后写入稳定 URL，旧客户端提交的 Base64 图片由服务端落入图床 }
+                runnerId: { type: string, nullable: true, description: 本次指定的兼容执行电脑；为空时自动分配 }
       responses:
         '200': { description: 返回已创建并入队的运行 }
         '400': { description: 目标为空、项目未启用、未配置仓库或没有执行电脑 }
+  /ai/runs/{runId}/images/{imageIndex}:
+    get:
+      summary: 预览历史 AI 任务遗留的内联 Base64 图片
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: string } }
+        - { name: imageIndex, in: path, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200': { description: 图片二进制正文 }
+        '404': { description: 运行、任务或对应图片不存在 }
   /ai/runs/{runId}/rerun:
     post:
       summary: 基于一次失败运行重新排队；新运行会带上上次的报错交给 AI 继续修

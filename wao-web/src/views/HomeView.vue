@@ -454,7 +454,7 @@ async function onGoalImage(file: File, done: (url: string | null, name: string) 
   }
   goalImageUploads.value += 1
   try {
-    const image = await data.uploadImage(file, '自主目标')
+    const image = await data.uploadImage(file, '自主目标', { requirePersisted: true })
     if (!image) toast('图片上传失败，请重试', 'ri-error-warning-line')
     done(image?.url ?? null, image?.name ?? file.name)
   } catch {
@@ -1075,6 +1075,9 @@ onBeforeUnmount(() => {
               </span>
               <span class="run-time">{{ timeText(run.startedAt || run.createdAt) }}</span>
             </div>
+            <div v-if="run.previewImages?.length" class="run-image-strip" :class="{ single: run.previewImages.length === 1 }">
+              <img v-for="(image, index) in run.previewImages" :key="`${image}-${index}`" :src="image" :alt="`${run.taskTitle} · 图片 ${index + 1}`" loading="lazy" />
+            </div>
             <h3>{{ run.taskTitle }}</h3>
             <div class="run-project"><i class="ri-stack-line"></i>{{ run.projectName }}</div>
             <div class="live-progress">
@@ -1098,7 +1101,10 @@ onBeforeUnmount(() => {
         </div>
         <div class="recent-list">
           <button v-for="run in recentRuns" :key="run.id" @click="inspectRun(run)">
-            <span class="recent-icon" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">
+            <span v-if="run.previewImages?.[0]" class="recent-icon recent-image">
+              <img :src="run.previewImages[0]" :alt="`${run.taskTitle} · 图片预览`" loading="lazy" />
+            </span>
+            <span v-else class="recent-icon" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">
               <i :class="metaFor(run).icon"></i>
             </span>
             <span class="recent-main">
@@ -1403,6 +1409,14 @@ onBeforeUnmount(() => {
           </div>
           <button class="detail-close" aria-label="关闭运行详情" @click="selectedRun = null"><i class="ri-close-line"></i></button>
         </header>
+        <div v-if="selectedRun.previewImages?.length" class="run-detail-images">
+          <img
+            v-for="(image, index) in selectedRun.previewImages"
+            :key="`${image}-${index}`"
+            :src="image"
+            :alt="`${selectedRun.taskTitle} · 图片 ${index + 1}`"
+          />
+        </div>
         <dl>
           <div><dt>AI 工具</dt><dd>{{ engineLabel(selectedRun.engine) }}</dd></div>
           <div><dt>执行电脑</dt><dd>{{ selectedRun.runnerName || '未分配电脑' }}</dd></div>
@@ -1778,6 +1792,10 @@ onBeforeUnmount(() => {
 .status { padding: 4px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 650; }
 .run-time { margin-left: auto; color: var(--wao-text-weak); font-size: 10.5px; }
 .run-card h3 { min-height: 20px; margin: 9px 0 4px; font-size: 14px; line-height: 1.4; }
+.run-image-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(56px, 1fr)); gap: 5px; margin-top: 9px; }
+.run-image-strip.single { grid-template-columns: minmax(0, 1fr); }
+.run-image-strip img { width: 100%; height: 62px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-sub); object-fit: cover; }
+.run-image-strip.single img { height: 112px; }
 .run-project { color: var(--wao-text-weak); font-size: 11.5px; }
 .run-project i { margin-right: 5px; }
 .live-progress { margin-top: 8px; padding: 8px; border-radius: 8px; background: var(--wao-bg-sub); display: flex; gap: 9px; align-items: flex-start; }
@@ -1988,6 +2006,8 @@ onBeforeUnmount(() => {
 .recent-list button:last-child { border-bottom: 0; }
 .recent-list button:hover { background: var(--wao-bg-sub-2); }
 .recent-icon { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; }
+.recent-icon.recent-image { overflow: hidden; border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
+.recent-icon.recent-image img { width: 100%; height: 100%; object-fit: cover; }
 .recent-main { flex: 1; min-width: 0; }
 .recent-main b, .recent-main em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-main b { font-size: 12.5px; }
@@ -2016,6 +2036,8 @@ onBeforeUnmount(() => {
 .run-detail header > div { flex: 1; min-width: 0; }
 .run-detail h2 { margin: 0; font-size: 17px; }
 .run-detail header p { margin: 3px 0 0; overflow: hidden; color: var(--wao-text-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.run-detail-images { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 16px; }
+.run-detail-images img { width: 100%; max-height: 260px; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-sub); object-fit: contain; }
 .detail-close { width: 32px; height: 32px; border: 0; border-radius: 8px; background: var(--wao-bg-hover); cursor: pointer; }
 .run-detail dl { margin: 18px 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .run-detail dl > div { padding: 10px 12px; border-radius: 9px; background: var(--wao-bg-hover); }
