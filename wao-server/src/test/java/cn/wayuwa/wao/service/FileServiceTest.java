@@ -25,6 +25,7 @@ class FileServiceTest {
         var item = service.upload(file, "wg");
 
         assertThat(item.name()).isEqualTo("验收.pdf");
+        assertThat(item.contentType()).isEqualTo("application/pdf");
         assertThat(item.link()).endsWith("/download");
         assertThat(item.icon()).isEqualTo("ri-file-pdf-2-line");
         verify(mapper).insert(any(FileBlobEntity.class));

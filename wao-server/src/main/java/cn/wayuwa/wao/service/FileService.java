@@ -64,9 +64,9 @@ public class FileService {
     public void delete(String id) { if (mapper.deleteById(id) == 0) throw new NotFoundException("文件不存在：" + id); }
 
     private FileItemDto toDto(FileBlobEntity entity) {
-        return new FileItemDto(entity.getId(), entity.getName(), humanSize(entity.getByteSize()), icon(entity.getName()),
-                entity.getCreatedAt() == null ? "" : entity.getCreatedAt().format(TIME_FMT), entity.getCreatedBy(),
-                "/api/files/" + entity.getId() + "/download");
+        return new FileItemDto(entity.getId(), entity.getName(), entity.getContentType(), humanSize(entity.getByteSize()),
+                icon(entity.getName()), entity.getCreatedAt() == null ? "" : entity.getCreatedAt().format(TIME_FMT),
+                entity.getCreatedBy(), "/api/files/" + entity.getId() + "/download");
     }
     private static String safeName(String original) {
         if (original == null || original.isBlank()) return "未命名文件";

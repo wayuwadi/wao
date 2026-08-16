@@ -108,6 +108,7 @@ const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 export type TaskLoadState = 'loading' | 'loaded' | 'error'
+export type FileLoadState = 'loading' | 'loaded' | 'error'
 
 /**
  * 本地 id 生成器。
@@ -143,6 +144,9 @@ export const useDataStore = defineStore('data', () => {
   /** 任务必须以服务端结果为准；加载期间和失败后都不能把 fixtures 当成用户数据展示。 */
   const taskLoadState = ref<TaskLoadState>('loading')
   const taskLoadError = ref('')
+  /** 文件库也是播放器的真实曲目源；失败时必须显式报错，不能把空列表伪装成“没有音乐”。 */
+  const fileLoadState = ref<FileLoadState>('loading')
+  const fileLoadError = ref('')
   /** 密码库读取失败：页面据此显示错误与重试，而不是继续摆着演示凭据。 */
   const vaultError = ref(false)
 
@@ -163,6 +167,8 @@ export const useDataStore = defineStore('data', () => {
     }
     taskLoadState.value = 'loading'
     taskLoadError.value = ''
+    fileLoadState.value = 'loading'
+    fileLoadError.value = ''
     // 启动 hydrate 后立即撤掉演示任务；即使接口超时或失败，也不能让它们冒充用户的待办。
     tasks.value = []
     // 任务请求单独处理结果，不等知识库、文件、密码库等无关域的最慢请求全部结束。
@@ -185,9 +191,23 @@ export const useDataStore = defineStore('data', () => {
           : '暂时无法读取任务，请稍后重试'
         return null
       })
+    const fileRequest = fetchFiles()
+      .then((loadedFiles) => {
+        files.value = loadedFiles
+        fileLoadState.value = 'loaded'
+        return loadedFiles
+      })
+      .catch((cause: unknown) => {
+        files.value = []
+        fileLoadState.value = 'error'
+        fileLoadError.value = cause instanceof Error && cause.message
+          ? cause.message
+          : '暂时无法读取音乐库，请稍后重试'
+        return null
+      })
     const [a, p, t, kb, kg, dc, jb, fl, im, va, sc, sg, gl] = await Promise.all([
       settle(fetchAreas()), settle(fetchProjects()), taskRequest, settle(fetchKbs()),
-      settle(fetchKbGroups()), settle(fetchDocs()), settle(fetchJobs()), settle(fetchFiles()),
+      settle(fetchKbGroups()), settle(fetchDocs()), settle(fetchJobs()), fileRequest,
       settle(fetchImages()), settle(fetchVault()), settle(fetchSchedule()),
       settle(fetchSuggestions()), settle(fetchGoals()),
     ])
@@ -1224,15 +1244,33 @@ export const useDataStore = defineStore('data', () => {
   }
 
   const MAX_FILE_BYTES = 50 * 1024 * 1024
-  async function refreshFiles() {
-    if (!apiLive.value) return
-    try { files.value = await fetchFiles() } catch { /* 保留当前列表 */ }
+  async function refreshFiles(): Promise<boolean> {
+    if (!apiLive.value) {
+      fileLoadState.value = 'error'
+      fileLoadError.value = '服务暂不可用，请稍后重试'
+      return false
+    }
+    fileLoadState.value = 'loading'
+    fileLoadError.value = ''
+    try {
+      files.value = await fetchFiles()
+      fileLoadState.value = 'loaded'
+      return true
+    } catch (cause: unknown) {
+      fileLoadState.value = 'error'
+      fileLoadError.value = cause instanceof Error && cause.message
+        ? cause.message
+        : '暂时无法读取音乐库，请稍后重试'
+      return false
+    }
   }
   async function uploadFile(file: File) {
     if (!apiLive.value || file.size > MAX_FILE_BYTES) return null
     try {
       const item = await apiUploadFile(file)
       files.value.unshift(item)
+      fileLoadState.value = 'loaded'
+      fileLoadError.value = ''
       return item
     } catch { return null }
   }
@@ -1512,7 +1550,8 @@ export const useDataStore = defineStore('data', () => {
 
   return {
     today, areas, projects, tasks, kbs, docs, autos, files, imgs, vault,
-    schedule, suggestions, goals, myGroups, apiLive, taskLoadState, taskLoadError, hydrate,
+    schedule, suggestions, goals, myGroups, apiLive, taskLoadState, taskLoadError,
+    fileLoadState, fileLoadError, hydrate,
     areaById, projectById, taskById, tasksByProject, kbById, docById, areaColor,
     docEdits, setDocEdit, docOf, docPending, saveState, markSaving, markSaved,
     applyRemoteDoc, addDoc, addNote, notesKb,

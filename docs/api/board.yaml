@@ -665,7 +665,7 @@ paths:
         '200': { description: OK }
         '400': { description: Verification Token 不匹配或事件解密失败 }
   /files:
-    get: { summary: 文件元数据列表（不读取二进制正文）, responses: { '200': { description: OK } } }
+    get: { summary: 文件元数据列表（含 contentType，不读取二进制正文）, responses: { '200': { description: OK } } }
     post:
       summary: 上传通用文件（单个不超过 50MB）
       requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } } } } }
@@ -692,6 +692,18 @@ paths:
         '200': { description: 文件字节流 }
         '401': { description: 没有票据也没有登录会话（code=40100） }
         '404': { description: 不存在 }
+  /files/{id}/stream:
+    get:
+      summary: 登录后播放真实音频；支持单段 HTTP Range 和进度拖动
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: Range, in: header, required: false, schema: { type: string }, example: 'bytes=0-1048575' }
+      responses:
+        '200': { description: 完整音频字节流，Content-Disposition 为 inline }
+        '206': { description: 指定范围的音频字节流，带 Content-Range 与 Accept-Ranges }
+        '400': { description: 文件不是受支持的音频 }
+        '401': { description: 没有有效 WAO 登录会话 }
+        '416': { description: Range 不合法或越界 }
   /files/{id}:
     delete: { summary: 删除文件, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   # 单文件 HTML 托管（见 docs/adr/042-hosted-html-pages.md）
@@ -1029,6 +1041,18 @@ components:
         url: { type: string, description: "上传的图为 /api/images/{id}/raw" }
         c1: { type: string }
         c2: { type: string }
+    FileItem:
+      type: object
+      description: 真实文件库元数据；列表不返回二进制正文
+      properties:
+        id: { type: string }
+        name: { type: string }
+        contentType: { type: string, description: 上传时持久化的 MIME，用于识别音频等文件种类 }
+        size: { type: string, description: 人类可读大小 }
+        icon: { type: string }
+        time: { type: string }
+        by: { type: string, description: 上传人成员 id }
+        link: { type: string, description: 既有附件下载地址 }
     SharedTask:
       type: object
       description: 公开分享视图；刻意不含负责人、参与人、评论与活动时间线
