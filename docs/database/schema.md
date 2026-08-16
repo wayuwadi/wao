@@ -570,6 +570,17 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 课程正文是代码内版本化的原创学习材料，不进入业务表；日记录保存当时的 `lesson_id`，历史课程不会因下一轮
 推进而漂移。录音只保留在当前浏览器内存生成的临时 URL，不上传数据库或文件库；边界见 ADR-058。
 
+## 网易云音乐绑定域
+
+### netease_music_binding / netease_music_oauth_state
+
+| 表 | 关键字段 / 唯一约束 | 说明 |
+|---|---|---|
+| netease_music_binding | member_id 主键、四个 token 密文/nonce 字段、token_expires_at、netease_user_id、device_id、status | 一个 WAO 成员最多绑定一个自己的网易云账号；令牌只以 AES-256-GCM 密文保存，成员主键也是所有读取与解绑的隔离边界 |
+| netease_music_oauth_state | state 主键、member_id、device_id、net_status、expires_at | 一次性 OAuth 回调关联；随机 state 最长 30 字符、十分钟失效，回调消费后立即删除；授权发起时的网络类型供回调换令牌使用 |
+
+昵称和头像只用于向当前成员确认绑定身份；播放地址、歌曲列表和播放记录不持久化到 WAO 数据库。安全与官方协议边界见 ADR-071。
+
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
 - `V3__content_schema.sql` 内容域建表 + `V4__content_seed.sql` 种子。
@@ -631,4 +642,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V64__ai_evolution_mined_suggestions.sql`：保存从真实 WAO 资产挖掘且可追溯的自主进化任务建议批次。
 - `V66__ai_evolution_schedule.sql`：保存自主进化人工设置的空闲间隔与单次任务数。
 - `V67__holiday_preferences_and_reminders.sql`：保存成员节日提醒及按节日日期去重的飞书私聊投递状态。
+- `V68__netease_music_binding.sql`：保存成员独立的网易云 OAuth 加密令牌、稳定设备标识和十分钟授权 state（见 ADR-071）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
