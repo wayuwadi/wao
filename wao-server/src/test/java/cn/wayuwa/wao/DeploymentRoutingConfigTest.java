@@ -34,11 +34,13 @@ class DeploymentRoutingConfigTest {
                 .contains("target: agent-runtime")
                 .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081")
                 .contains("WAO_DAILY_GUIDANCE_WARMUP_ENABLED: \"true\"");
+        assertThat(masterCompose).contains("WAO_LIFE_REVIEW_SCHEDULER_ENABLED: \"true\"");
         assertThat(slaveCompose)
                 .contains("wao-agent-server:")
                 .contains("target: agent-runtime")
                 .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081")
                 .doesNotContain("WAO_DAILY_GUIDANCE_WARMUP_ENABLED");
+        assertThat(slaveCompose).doesNotContain("WAO_LIFE_REVIEW_SCHEDULER_ENABLED");
     }
 
     @Test
@@ -103,6 +105,19 @@ class DeploymentRoutingConfigTest {
                 "location = /api/daily-guidance {", "\n    }");
 
         assertThat(guidanceLocation)
+                .contains("proxy_pass https://wao_gateway;")
+                .contains("proxy_read_timeout 330s;")
+                .contains("proxy_next_upstream off;")
+                .contains("X-WAO-API-Route dual-gateway-ai-long always;");
+    }
+
+    @Test
+    void lifeReviewGenerationKeepsFiveMinuteReadOnlyJobAliveWithoutWriteReplay() throws IOException {
+        String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
+        String location = section(nginx,
+                "location = /api/life-reviews/generate {", "\n    }");
+
+        assertThat(location)
                 .contains("proxy_pass https://wao_gateway;")
                 .contains("proxy_read_timeout 330s;")
                 .contains("proxy_next_upstream off;")

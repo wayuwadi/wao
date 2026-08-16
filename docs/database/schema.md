@@ -567,6 +567,12 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 | english_learning_profile | member_id 唯一、goal、daily_target_minutes、start_date | 当前成员的交流目标与可持续投入；所有接口从会话确定成员 |
 | english_learning_session | (member_id, study_date) 唯一、lesson_id、四项完成字段、practice_minutes、confidence、写作与复盘、completed_at | 一天唯一的真实训练过程；只有听说读写与信心齐全才写完成时间 |
 
+## 人生回顾域（V69）
+
+`life_review` 按 `(member_id, period_type, period_key)` 唯一保存成员的周、月、年和至今回顾。`period_start / period_end`
+固定生成时的上海时区日期范围，三个计数字段记录当时纳入的已完成任务、成员私有 WAO AI 对话和飞书聊天归档覆盖；
+`sources_json` 只保存来源编号、类型、标题、日期与内部链接，`report_json` 保存四段结构化回顾，不重复保存原始聊天正文。
+
 课程正文是代码内版本化的原创学习材料，不进入业务表；日记录保存当时的 `lesson_id`，历史课程不会因下一轮
 推进而漂移。录音只保留在当前浏览器内存生成的临时 URL，不上传数据库或文件库；边界见 ADR-058。
 
@@ -643,4 +649,5 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 - `V66__ai_evolution_schedule.sql`：保存自主进化人工设置的空闲间隔与单次任务数。
 - `V67__holiday_preferences_and_reminders.sql`：保存成员节日提醒及按节日日期去重的飞书私聊投递状态。
 - `V68__netease_music_binding.sql`：保存成员独立的网易云 OAuth 加密令牌、稳定设备标识和十分钟授权 state（见 ADR-071）。
+- `V69__life_review.sql`：成员私有的证据化周、月、年和至今回顾存档（见 ADR-072）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

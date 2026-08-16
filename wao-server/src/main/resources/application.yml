@@ -62,6 +62,8 @@ wao:
       scheduler-enabled: ${WAO_AI_EVOLUTION_SCHEDULER_ENABLED:false}
     # 首页每日建议只由 Linux 主节点预热，避免双节点重复占用本地 Codex。
     daily-guidance-warmup-enabled: ${WAO_DAILY_GUIDANCE_WARMUP_ENABLED:false}
+    # 周/月/年回顾只由 Linux 主节点补齐，避免双节点重复生成同一周期。
+    life-review-scheduler-enabled: ${WAO_LIFE_REVIEW_SCHEDULER_ENABLED:false}
   share:
     # 分享 Markdown 里图片的绝对地址前缀。留空则按当前请求推导（依赖 Nginx 透传
     # X-Forwarded-Proto / Host）；代理层不透传时在此写死，如 https://wao.wayuwa.cn
