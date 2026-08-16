@@ -8,9 +8,11 @@ import cn.wayuwa.wao.agent.dto.MediaAssetDto;
 import cn.wayuwa.wao.agent.mapper.MediaAssetMapper;
 import cn.wayuwa.wao.agent.platform.MediaKind;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.UUID;
@@ -86,6 +88,69 @@ public class MediaAssetService {
     /** 按标识读取素材；未传标识时返回 {@code null}。 */
     public MediaAssetEntity find(String mediaAssetId) {
         return mediaAssetId == null ? null : mediaMapper.selectById(mediaAssetId);
+    }
+
+    /**
+     * 把模型生成的媒体流原子写入现有媒体卷并登记为工作区素材。
+     *
+     * <p>先写同目录临时文件，只有上游完整下载成功后才移动成最终文件，避免页面读到半个 MP4。
+     */
+    public MediaAssetEntity storeGenerated(String workspaceId, String originalName, String contentType,
+                                           GeneratedMediaWriter writer) {
+        String id = UUID.randomUUID().toString();
+        Path dir = Paths.get(properties.directory(), workspaceId).toAbsolutePath().normalize();
+        Path target = dir.resolve(id + ".mp4");
+        Path temporary = dir.resolve(id + ".part");
+        try {
+            Files.createDirectories(dir);
+            try (OutputStream output = Files.newOutputStream(temporary)) {
+                writer.write(output, properties.limit());
+            }
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            long byteSize = Files.size(target);
+            if (byteSize <= 0) throw new IOException("上游返回空文件");
+
+            MediaAssetEntity entity = new MediaAssetEntity();
+            entity.setId(id);
+            entity.setWorkspaceId(workspaceId);
+            entity.setKind(MediaKind.VIDEO);
+            entity.setOriginalName(safeName(originalName));
+            entity.setContentType(contentType);
+            entity.setByteSize(byteSize);
+            entity.setStoragePath(target.toString());
+            entity.setNodeId(node.resolved());
+            entity.setCreatedAt(LocalDateTime.now());
+            mediaMapper.insert(entity);
+            return entity;
+        } catch (IOException | RuntimeException ex) {
+            try {
+                Files.deleteIfExists(temporary);
+                Files.deleteIfExists(target);
+            } catch (IOException ignored) {
+                // 原始错误更重要；未登记的残留文件不会对外提供。
+            }
+            throw ex instanceof BadRequestException badRequest ? badRequest
+                    : new BadRequestException("生成素材保存失败：" + ex.getMessage());
+        }
+    }
+
+    /** 返回已登记素材的本地文件，并验证数据库路径仍在当前工作区媒体目录内。 */
+    public Path localPath(MediaAssetEntity entity) {
+        Path workspaceDir = Paths.get(properties.directory(), entity.getWorkspaceId()).toAbsolutePath().normalize();
+        Path path = Paths.get(entity.getStoragePath()).toAbsolutePath().normalize();
+        if (!path.startsWith(workspaceDir) || !Files.isRegularFile(path)) {
+            throw new BadRequestException("视频文件不存在或不在当前节点");
+        }
+        return path;
+    }
+
+    @FunctionalInterface
+    public interface GeneratedMediaWriter {
+        void write(OutputStream output, long maxBytes) throws IOException;
     }
 
     private String resolveKind(String contentType, String fileName) {

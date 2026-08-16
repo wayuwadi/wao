@@ -1,0 +1,26 @@
+-- OpenAI Videos API 异步任务。完成文件复用 agent_media_asset，不把临时下载地址写入数据库。
+CREATE TABLE agent_video_generation (
+    id                      VARCHAR(36)  NOT NULL,
+    workspace_id            VARCHAR(36)  NOT NULL,
+    requested_by_account_id VARCHAR(36)  NOT NULL,
+    prompt                  TEXT         NOT NULL,
+    model                   VARCHAR(64)  NOT NULL,
+    seconds                 INT          NOT NULL,
+    size                    VARCHAR(24)  NOT NULL,
+    status                  VARCHAR(24)  NOT NULL,
+    progress                INT          NOT NULL DEFAULT 0,
+    attempt                 INT          NOT NULL DEFAULT 1,
+    provider_job_id         VARCHAR(128),
+    media_asset_id          VARCHAR(36),
+    node_id                 VARCHAR(64)  NOT NULL,
+    error_message           VARCHAR(1000),
+    created_at              TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    completed_at            TIMESTAMP    NULL,
+    PRIMARY KEY (id),
+    KEY idx_agent_video_workspace (workspace_id, created_at),
+    KEY idx_agent_video_status_node (status, node_id, updated_at),
+    CONSTRAINT fk_agent_video_workspace FOREIGN KEY (workspace_id) REFERENCES agent_workspace (id),
+    CONSTRAINT fk_agent_video_requester FOREIGN KEY (requested_by_account_id) REFERENCES account (id),
+    CONSTRAINT fk_agent_video_media FOREIGN KEY (media_asset_id) REFERENCES agent_media_asset (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;

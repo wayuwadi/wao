@@ -89,6 +89,7 @@ class DeploymentConfigTest {
             assertThat(compose)
                     .contains("AGENT_MEDIA_DIR: /var/lib/wao-agent/media")
                     .contains("wao-agent-media:/var/lib/wao-agent/media")
+                    .contains("AGENT_VIDEO_API_KEY: ${AGENT_VIDEO_API_KEY:-}")
                     // 两台节点必须用同一把密钥，否则另一台解不开已落库的平台令牌。
                     // 必须带默认值：节点 .env 还没有这个变量时 compose 不该注入空串并让容器起不来。
                     .contains("AGENT_CREDENTIAL_KEY: ${AGENT_CREDENTIAL_KEY:-}");
@@ -111,7 +112,19 @@ class DeploymentConfigTest {
         assertThat(common)
                 .contains("${DOUYIN_CLIENT_SECRET:}")
                 .contains("${AGENT_AI_API_KEY:}")
+                .contains("${AGENT_VIDEO_API_KEY:}")
                 .contains("${AGENT_CREDENTIAL_KEY:}");
+    }
+
+    @Test
+    void publicVideoWorkflowIsPinnedToLinuxVpnMaster() throws IOException {
+        String nginx = read("deploy/nginx/wao.wayuwa.cn.conf.template");
+
+        assertThat(nginx)
+                .contains("location ~ ^/api/agent/videos(?:/|$)")
+                .contains("proxy_pass https://wao_ai_gateway")
+                .contains("proxy_next_upstream off")
+                .contains("X-WAO-API-Route linux-vpn-master-video");
     }
 
     private static List<String> agentTables(String sql) {

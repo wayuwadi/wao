@@ -4,6 +4,7 @@ import { getSession } from '@/api/agent'
 import { getStudio, markSuggestion, recommendTopics, refreshHotspots, saveProfile } from '@/api/studio'
 import { ApiError } from '@/api/http'
 import PublishCenter from '@/components/PublishCenter.vue'
+import VideoStudio from '@/components/VideoStudio.vue'
 import type { AgentSession, Studio, TopicSuggestion } from '@/types'
 
 type AuthState = 'loading' | 'unauthorized' | 'ready' | 'error'
@@ -21,6 +22,7 @@ const publishTopic = ref('')
 
 const NAV_ITEMS = [
   { id: '选题中心', icon: 'ri-fire-line',           badge: '' },
+  { id: '视频生成', icon: 'ri-movie-2-line',        badge: '' },
   { id: '发布中心', icon: 'ri-send-plane-line',     badge: '' },
 ]
 
@@ -184,7 +186,7 @@ onMounted(async () => {
       <header class="main-header">
         <span class="page-title">{{ activeSection }}</span>
         <div class="header-spacer"></div>
-        <button class="btn-ghost" style="height:30px;font-size:12px;" @click="refreshStudio">
+        <button v-if="activeSection === '选题中心'" class="btn-ghost" style="height:30px;font-size:12px;" @click="refreshStudio">
           <i class="ri-refresh-line"></i>刷新
         </button>
       </header>
@@ -313,6 +315,8 @@ onMounted(async () => {
         </template>
 
         <!-- ===== 发布中心 ===== -->
+        <VideoStudio v-else-if="activeSection === '视频生成'" />
+
         <PublishCenter v-else-if="activeSection === '发布中心'" :initial-topic="publishTopic" />
 
       </div>

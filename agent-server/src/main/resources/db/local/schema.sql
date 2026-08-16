@@ -185,6 +185,33 @@ CREATE INDEX IF NOT EXISTS idx_agent_media_workspace ON agent_media_asset(worksp
 CREATE INDEX IF NOT EXISTS idx_agent_publish_workspace ON agent_publish_task(workspace_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_publish_status ON agent_publish_task(status, updated_at);
 
+-- 与 db/migration/V4__video_generation.sql 对应。
+CREATE TABLE IF NOT EXISTS agent_video_generation (
+    id VARCHAR(36) PRIMARY KEY,
+    workspace_id VARCHAR(36) NOT NULL,
+    requested_by_account_id VARCHAR(36) NOT NULL,
+    prompt CLOB NOT NULL,
+    model VARCHAR(64) NOT NULL,
+    seconds INT NOT NULL,
+    size VARCHAR(24) NOT NULL,
+    status VARCHAR(24) NOT NULL,
+    progress INT NOT NULL,
+    attempt INT NOT NULL,
+    provider_job_id VARCHAR(128),
+    media_asset_id VARCHAR(36),
+    node_id VARCHAR(64) NOT NULL,
+    error_message VARCHAR(1000),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    completed_at TIMESTAMP,
+    CONSTRAINT fk_local_agent_video_workspace FOREIGN KEY (workspace_id) REFERENCES agent_workspace(id),
+    CONSTRAINT fk_local_agent_video_requester FOREIGN KEY (requested_by_account_id) REFERENCES account(id),
+    CONSTRAINT fk_local_agent_video_media FOREIGN KEY (media_asset_id) REFERENCES agent_media_asset(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_video_workspace ON agent_video_generation(workspace_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_video_status_node ON agent_video_generation(status, node_id, updated_at);
+
 CREATE TABLE IF NOT EXISTS SPRING_SESSION (
     PRIMARY_ID CHAR(36) NOT NULL PRIMARY KEY,
     SESSION_ID CHAR(36) NOT NULL UNIQUE,

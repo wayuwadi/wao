@@ -587,6 +587,13 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 
 昵称和头像只用于向当前成员确认绑定身份；播放地址、歌曲列表和播放记录不持久化到 WAO 数据库。安全与官方协议边界见 ADR-071。
 
+## 自媒体 Agent 视频生成域（Agent Flyway V4）
+
+`agent_video_generation` 按工作区保存提示词、官方模型参数、状态、进度、尝试次数、OpenAI 任务标识、
+执行节点与生成后的 `agent_media_asset` 标识。API Key、临时下载地址和本地绝对路径不进入该表；
+完成文件仍由 `agent_media_asset.storage_path` 指向 Linux 主节点媒体卷。该表属于独立的
+`flyway_agent_schema_history`，版本号不与下方 WAO Server migration 混用。
+
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
 - `V3__content_schema.sql` 内容域建表 + `V4__content_seed.sql` 种子。

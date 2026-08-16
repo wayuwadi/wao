@@ -115,7 +115,7 @@ jobs:
           MASTER_USER: ${{ secrets.MASTER_USER }}
         run: |
           umask 077
-          ssh "$MASTER_USER@$MASTER_HOST" 'desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; legacy_env="$desktop_dir/deploy/wao-agent/deploy/.env"; unified_env="$desktop_dir/deploy/wao/deploy/.env.secrets"; if [ -f "$legacy_env" ]; then source_env="$legacy_env"; else source_env="$unified_env"; fi; if [ -f "$source_env" ]; then grep -E "^(AGENT_(CREDENTIAL_KEY|AI_PROVIDER|AI_BASE_URL|AI_API_KEY|AI_MODEL)|DOUYIN_(CLIENT_KEY|CLIENT_SECRET|REDIRECT_URI))=" "$source_env" || true; fi' > wao-agent.env
+          ssh "$MASTER_USER@$MASTER_HOST" 'desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; legacy_env="$desktop_dir/deploy/wao-agent/deploy/.env"; unified_env="$desktop_dir/deploy/wao/deploy/.env.secrets"; if [ -f "$legacy_env" ]; then source_env="$legacy_env"; else source_env="$unified_env"; fi; if [ -f "$source_env" ]; then grep -E "^(AGENT_(CREDENTIAL_KEY|AI_PROVIDER|AI_BASE_URL|AI_API_KEY|AI_MODEL|VIDEO_BASE_URL|VIDEO_API_KEY|VIDEO_MODEL)|DOUYIN_(CLIENT_KEY|CLIENT_SECRET|REDIRECT_URI))=" "$source_env" || true; fi' > wao-agent.env
           if [ -s wao-agent.env ]; then
             cat wao-agent.env >> wao-secrets.env
           else
