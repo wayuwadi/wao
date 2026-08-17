@@ -31,6 +31,7 @@ export type ModuleId =
   | 'vocabulary'
   | 'english-learning'
   | 'tianren'
+  | 'workday-rhythm'
   | 'action-plans'
   | 'weekly-report'
   | 'life-review'

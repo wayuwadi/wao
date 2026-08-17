@@ -98,6 +98,12 @@ const router = createRouter({
           meta: { module: 'action-plans', tabKind: 'module' },
         },
         {
+          path: 'workday-rhythm',
+          name: 'workday-rhythm',
+          component: () => import('@/views/WorkdayRhythmView.vue'),
+          meta: { module: 'workday-rhythm', tabKind: 'module' },
+        },
+        {
           path: 'weekly-report',
           name: 'weekly-report',
           component: () => import('@/views/WeeklyReportView.vue'),

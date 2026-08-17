@@ -86,6 +86,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/english-learning',
   },
   tianren: { id: 'tianren', label: '天人一卦', icon: 'ri-compass-3-line', path: '/tianren' },
+  'workday-rhythm': {
+    id: 'workday-rhythm',
+    label: '今日节奏',
+    icon: 'ri-timer-flash-line',
+    path: '/workday-rhythm',
+  },
   'action-plans': {
     id: 'action-plans',
     label: '行动计划',
@@ -131,6 +137,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
     icon: 'ri-footprint-line',
     group: 'PERSONAL',
     order: 15,
+    visible: true,
+  },
+  {
+    id: 'workday-rhythm',
+    label: '今日节奏',
+    icon: 'ri-timer-flash-line',
+    group: 'PERSONAL',
+    order: 12,
     visible: true,
   },
   {
@@ -234,6 +248,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
 /** 「个人」组的默认顺序；成员拖拽后的自定义顺序存服务端偏好，见 stores/nav.ts。 */
 export const PERSONAL_ITEMS: ModuleId[] = [
   'todo',
+  'workday-rhythm',
   'action-plans',
   'calendar',
   'weekly-report',
