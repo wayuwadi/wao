@@ -1306,7 +1306,7 @@ components:
       type: object
       required: [id, label, icon, group, order, visible]
       properties:
-        id: { type: string, enum: [home, projects, todo, calendar, knowledge, vault, automation, files, games] }
+        id: { type: string, enum: [home, projects, todo, workday-rhythm, action-plans, calendar, weekly-report, life-review, knowledge, english-learning, vocabulary, drawings, vault, tianren, automation, files, games] }
         label: { type: string, maxLength: 24 }
         icon: { type: string, description: Remix Icon 类名 }
         group: { type: string, enum: [ROOT, PUBLIC, PERSONAL, TOOLS] }
@@ -1317,7 +1317,7 @@ components:
       required: [version, menus]
       properties:
         version: { type: integer, minimum: 1 }
-        menus: { type: array, minItems: 9, maxItems: 9, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
+        menus: { type: array, minItems: 17, maxItems: 17, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
     GameMoveRequest:
       type: object
       required: [direction, revision]

@@ -120,6 +120,13 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.module).toBe('weekly-report')
   })
 
+  it('今日节奏默认位于个人组并使用原生模块路由', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('workday-rhythm')
+    const route = router.getRoutes().find((item) => item.name === 'workday-rhythm')
+    expect(route?.path).toBe('/workday-rhythm')
+    expect(route?.meta.module).toBe('workday-rhythm')
+  })
+
   it('人生回顾默认位于个人组并使用原生模块路由', () => {
     expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('life-review')
     const route = router.getRoutes().find((item) => item.name === 'life-review')

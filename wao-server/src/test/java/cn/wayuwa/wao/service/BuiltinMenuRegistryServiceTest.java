@@ -23,10 +23,10 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(16);
+        assertThat(service.getRegistry().menus()).hasSize(17);
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(16);
+        assertThat(service.getRegistry().menus()).hasSize(17);
     }
 
     @Test
@@ -71,7 +71,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(16);
+        assertThat(upgraded.menus()).hasSize(17);
         assertThat(upgraded.menus()).filteredOn(menu -> "automation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("我的自动化");
@@ -90,5 +90,7 @@ class BuiltinMenuRegistryServiceTest {
                 .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("周报生成"));
         assertThat(upgraded.menus()).filteredOn(menu -> "life-review".equals(menu.id()))
                 .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("人生回顾"));
+        assertThat(upgraded.menus()).filteredOn(menu -> "workday-rhythm".equals(menu.id()))
+                .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("今日节奏"));
     }
 }

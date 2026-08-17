@@ -356,6 +356,10 @@ V70 同时种下固定 `kb-memory / kb-memory-f` 的“共享记忆”知识库�
 日历的国际节日范围复用 `member_preference` 的 `holiday-international-categories` 键；新成员默认空数组，
 不会自动加入全部国际节日。
 
+“今日节奏”复用 `member_preference` 的 `workday-rhythm-config-v1` 保存个人时间块模板，并以
+`workday-rhythm-day-YYYY-MM-DD` 保存当天三个重点、时间块完成项、喝水次数、冥想和是否执行；页面同时保留
+未成功提交的本机草稿，见 ADR-079。
+
 ### holiday_reminder / holiday_reminder_delivery（V67）
 
 `holiday_reminder` 按 `member_id + holiday_code` 唯一保存每年重复的节日提醒、提醒时间和开关；
