@@ -23,6 +23,7 @@ import cn.wayuwa.wao.dto.CreateKbRequest;
 import cn.wayuwa.wao.dto.CreateNoteRequest;
 import cn.wayuwa.wao.dto.DocBlockDto;
 import cn.wayuwa.wao.dto.DocDto;
+import cn.wayuwa.wao.dto.DocLinkDto;
 import cn.wayuwa.wao.dto.KbDto;
 import cn.wayuwa.wao.dto.PatchDocRequest;
 import cn.wayuwa.wao.dto.PatchKbRequest;
@@ -95,6 +96,20 @@ class KnowledgeServiceTest {
         assertThat(dto.blocks()).isEmpty();
         assertThat(dto.kbId()).isEqualTo("k1");
         assertThat(dto.rev()).isEqualTo(1);
+    }
+
+    @Test
+    void createDocInProjectKbCarriesTheProjectLink() {
+        KbEntity projectKb = kb("k1");
+        projectKb.setProjectId("p1");
+        when(kbMapper.selectById("k1")).thenReturn(projectKb);
+        when(folderMapper.selectById("f1")).thenReturn(folder("f1", "k1"));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+
+        DocDto dto = service.createDoc(new CreateDocRequest("k1", "f1", "项目文档"), "m-wadi");
+
+        assertThat(dto.links()).containsExactly(new DocLinkDto("project", "p1"));
     }
 
     @Test
