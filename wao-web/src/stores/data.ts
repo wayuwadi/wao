@@ -434,20 +434,20 @@ export const useDataStore = defineStore('data', () => {
     if (apiLive.value) apiRenameKbGroup(id, name).catch(() => {})
   }
   /** 给知识库新增一个文件夹，返回文件夹 id；apiLive 时经后端创建。 */
-  async function addFolder(kbId: string): Promise<string | null> {
+  async function addFolder(kbId: string, name = '新建文件夹'): Promise<string | null> {
     const kb = kbById(kbId)
     if (!kb) return null
     if (apiLive.value) {
       try {
-        const f = await apiCreateFolder(kbId, '新建文件夹')
+        const f = await apiCreateFolder(kbId, name)
         kb.folders.push(f)
         return f.id
       } catch {
-        /* 后端异常时回落本地 */
+        return null
       }
     }
     const id = 'f' + Date.now()
-    kb.folders.push({ id, name: '新建文件夹', docs: [] })
+    kb.folders.push({ id, name, docs: [] })
     return id
   }
 
@@ -468,7 +468,8 @@ export const useDataStore = defineStore('data', () => {
         folder.docs.push(d.id)
         return d.id
       } catch {
-        /* 后端异常时回落本地 */
+        // 在线状态下不能用只存在于内存的文档伪装成功；由入口保留失败态供用户重试。
+        return null
       }
     }
     const id = uid('d')

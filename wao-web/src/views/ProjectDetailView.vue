@@ -64,6 +64,8 @@ watch(
 const settingsOpen = ref(false)
 const selectedTaskIds = ref<string[]>([])
 const aiBatchStarting = ref(false)
+const creatingDoc = ref(false)
+const docCreateError = ref('')
 const creatorFilterOpen = ref(false)
 /** 创建人筛选：按项目记在本地存储里，下次进来还是上次选的（此前刷新即丢）。 */
 const creatorFilter = computed<string | null>({
@@ -99,12 +101,17 @@ const pd = computed(() => (project.value ? decoProj(project.value) : null))
 const ptasks = computed(() => (project.value ? data.tasksByProject(project.value.id) : []))
 const kb = computed(() => data.kbs.find((k) => k.project === pid.value))
 
-const linkedDocs = computed(() =>
-  (project.value?.docs ?? []).map((id) => {
-    const d = data.docById(id)
-    return { id, title: d?.title ?? '', updated: d?.updated ?? '' }
-  }),
-)
+const linkedDocs = computed(() => {
+  const ids = new Set(project.value?.docs ?? [])
+  kb.value?.folders.forEach((folder) => folder.docs.forEach((id) => ids.add(id)))
+  Object.values(data.docs).forEach((doc) => {
+    if (doc.links.some((link) => link.type === 'project' && link.id === pid.value)) ids.add(doc.id)
+  })
+  return [...ids].flatMap((id) => {
+    const doc = data.docById(id)
+    return doc ? [{ id, title: doc.title || '未命名文档', updated: doc.updated }] : []
+  })
+})
 // ---- 已完成任务的收起 / 缓冲 ----
 // 默认收起已完成，点击展开；刚勾完成的任务先原地停留 3 秒再归档，给操作一个反应时间。
 const showDone = ref(false)
@@ -187,6 +194,41 @@ function openDoc(id: string) {
 }
 function openKb() {
   if (kb.value) router.push(`/kb/${kb.value.id}`)
+}
+/**
+ * 从项目里新建文档。项目本身不再预建空知识库；用户首次明确点击时才创建并关联项目知识库。
+ */
+async function createProjectDoc() {
+  const currentProject = project.value
+  if (!currentProject || creatingDoc.value) return
+  creatingDoc.value = true
+  docCreateError.value = ''
+  try {
+    const targetKb = kb.value ?? await data.addKb({
+      name: currentProject.name,
+      desc: `项目「${currentProject.name}」的文档与知识沉淀`,
+      icon: currentProject.icon || 'ri-stack-line',
+      color: data.areaColor(currentProject.area),
+      project: currentProject.id,
+      perm: '成员可编辑',
+    })
+    if (!targetKb) throw new Error('项目知识库创建失败，请重试')
+
+    let folderId = targetKb.folders[0]?.id
+    if (!folderId) folderId = await data.addFolder(targetKb.id, '文档') ?? undefined
+    if (!folderId) throw new Error('文档文件夹创建失败，请重试')
+
+    const id = await data.addDoc(targetKb.id, folderId)
+    if (!id) throw new Error('文档没有保存到服务器，请重试')
+
+    toast('已创建文档并关联到本项目', 'ri-file-add-line')
+    await router.push({ path: `/kb/${targetKb.id}`, query: { doc: id } })
+  } catch (error) {
+    docCreateError.value = error instanceof Error ? error.message : '文档创建失败，请重试'
+    toast(docCreateError.value, 'ri-error-warning-line')
+  } finally {
+    creatingDoc.value = false
+  }
 }
 function comingSoon(msg: string) {
   toast(msg)
@@ -611,7 +653,12 @@ function onDropGroup(groupId: string, overId?: string) {
         <button v-if="kb" class="kb-chip" @click="openKb"><i class="ri-book-2-line"></i>关联知识库 · {{ kb.name }}</button>
         <span v-else class="no-kb">该项目尚未关联知识库</span>
         <div class="spacer"></div>
-        <button class="btn-primary xs" @click="comingSoon('新建文档将在知识库中创建（演示）')"><i class="ri-file-add-line"></i>新建文档</button>
+        <button class="btn-primary xs" :disabled="creatingDoc" @click="createProjectDoc">
+          <i :class="creatingDoc ? 'ri-loader-4-line spin' : 'ri-file-add-line'"></i>{{ creatingDoc ? '创建中…' : docCreateError ? '重试创建' : '新建文档' }}
+        </button>
+      </div>
+      <div v-if="docCreateError" class="doc-create-error" role="alert">
+        <i class="ri-error-warning-line"></i>{{ docCreateError }}；已成功的步骤会保留，可点击“重试创建”。
       </div>
       <div class="doc-list-card">
         <div v-for="d in linkedDocs" :key="d.id" class="doc-row" @click="openDoc(d.id)">
@@ -619,6 +666,10 @@ function onDropGroup(groupId: string, overId?: string) {
           <span class="doc-title">{{ d.title }}</span>
           <span class="doc-time">{{ d.updated }}</span>
           <i class="ri-arrow-right-s-line chev"></i>
+        </div>
+        <div v-if="!linkedDocs.length" class="doc-empty">
+          <i class="ri-file-add-line"></i>
+          <span>{{ kb ? '还没有项目文档，点击“新建文档”开始沉淀。' : '首次新建文档时会创建并关联项目知识库。' }}</span>
         </div>
       </div>
     </div>
@@ -1216,6 +1267,33 @@ function onDropGroup(groupId: string, overId?: string) {
 .no-kb {
   font-size: 12px;
   color: var(--wao-text-weak);
+}
+.doc-create-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--wao-danger-line);
+  border-radius: 8px;
+  background: var(--wao-danger-bg);
+  color: var(--wao-danger-strong);
+  font-size: 12px;
+}
+.doc-empty {
+  min-height: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--wao-text-weak);
+  font-size: 12.5px;
+  text-align: center;
+}
+.doc-empty i {
+  font-size: 22px;
+  color: var(--wao-text-faint);
 }
 
 /* 分组视图：纵向堆叠的卡片，宽屏两列、手机一列都成立 */

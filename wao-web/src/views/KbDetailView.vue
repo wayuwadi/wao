@@ -123,12 +123,18 @@ async function addDocTo(folderId: string) {
     toast('已创建文档并关联到本知识库', 'ri-file-add-line')
     // 新文档标题是空的，光标直接落在标题上，敲进去就是自己的标题
     nextTick(() => titleEl.value?.focus())
+  } else {
+    toast('文档没有保存到服务器，请重试', 'ri-error-warning-line')
   }
 }
 async function addFolder() {
   const id = await data.addFolder(kbId.value)
-  if (id) renamingFolder.value = id
-  toast('已创建文件夹', 'ri-folder-add-line')
+  if (id) {
+    renamingFolder.value = id
+    toast('已创建文件夹', 'ri-folder-add-line')
+  } else {
+    toast('文件夹没有保存到服务器，请重试', 'ri-error-warning-line')
+  }
 }
 function editTitle(e: Event) {
   if (docId.value) data.setDocEdit(docId.value, { title: (e.target as HTMLInputElement).value })

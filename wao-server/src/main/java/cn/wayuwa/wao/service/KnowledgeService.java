@@ -352,9 +352,12 @@ public class KnowledgeService {
      * @param author 作者 member id，由服务端从当前会话推导（不接受请求体指定）
      */
     public DocDto createDoc(CreateDocRequest req, String author) {
-        requireKb(req.kbId());
+        KbEntity kb = requireKb(req.kbId());
         KbFolderEntity folder = requireFolder(req.kbId(), req.folderId());
-        return insertDoc(req.kbId(), folder.getId(), req.title(), author, List.of());
+        List<DocLinkDto> links = kb.getProjectId() == null || kb.getProjectId().isBlank()
+                ? List.of()
+                : List.of(new DocLinkDto("project", kb.getProjectId()));
+        return insertDoc(req.kbId(), folder.getId(), req.title(), author, List.of(), links);
     }
 
     /**
@@ -523,11 +526,21 @@ public class KnowledgeService {
     }
 
     private DocDto insertDoc(String kbId, String folderId, String title, String author, List<DocBlockDto> blocks) {
-        return insertDoc("d" + System.currentTimeMillis(), kbId, folderId, title, author, blocks);
+        return insertDoc(kbId, folderId, title, author, blocks, List.of());
+    }
+
+    private DocDto insertDoc(String kbId, String folderId, String title, String author, List<DocBlockDto> blocks,
+            List<DocLinkDto> links) {
+        return insertDoc("d" + System.currentTimeMillis(), kbId, folderId, title, author, blocks, links);
     }
 
     private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
             List<DocBlockDto> blocks) {
+        return insertDoc(id, kbId, folderId, title, author, blocks, List.of());
+    }
+
+    private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
+            List<DocBlockDto> blocks, List<DocLinkDto> links) {
         Long count = docMapper.selectCount(aliveDocs().eq(DocEntity::getFolderId, folderId));
         LocalDateTime now = LocalDateTime.now();
 
@@ -543,7 +556,7 @@ public class KnowledgeService {
         e.setRev(1);
         e.setCascadeDel(false);
         e.setBlocksJson(write(blocks));
-        e.setLinksJson(write(List.of()));
+        e.setLinksJson(write(links));
         e.setOrd(nextOrd(count));
         docMapper.insert(e);
         return toDto(e, docMapper.selectList(aliveDocs()));
