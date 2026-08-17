@@ -783,7 +783,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="home">
-    <section class="hero">
+    <div class="home-primary">
+      <section class="hero">
       <div>
         <div class="eyebrow">AI CONTROL CENTER</div>
         <!-- 核心理念摆在首屏第一行：这套系统的用法就是「你敢想，AI 就敢做」 -->
@@ -825,9 +826,78 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
-    </section>
+      </section>
 
-    <section class="daily-guidance" aria-labelledby="daily-guidance-title">
+      <section id="ai-launcher" class="goal-launcher" aria-labelledby="goal-launcher-title">
+        <div class="goal-heading">
+          <span class="goal-icon"><i class="ri-sparkling-2-line"></i></span>
+          <div>
+            <div class="eyebrow dark">AUTONOMOUS GOAL</div>
+            <h2 id="goal-launcher-title">给我一个目标，剩下的交给 AI</h2>
+            <p>AI 会先盘点项目里的代码、文档和工具，自己拆解、执行和验证。</p>
+          </div>
+        </div>
+        <div class="goal-compose">
+          <MarkdownEditor
+            v-model="goal"
+            placeholder="例如：把《黄帝内经》和《易经》结合 AI，做成一个每天可以给自己算一卦的产品……可直接粘贴多张图片"
+            :min-height="78"
+            :readonly="launchingGoal"
+            @keydown.ctrl.enter.prevent="launchGoal"
+            @keydown.meta.enter.prevent="launchGoal"
+            @upload-image="onGoalImage"
+          />
+          <div class="goal-actions">
+            <label>
+              <span>放进哪条工作流</span>
+              <select
+                v-model="goalProjectId"
+                class="goal-workflow-select"
+                :disabled="workflowsLoading || launchingGoal || !activeWorkflows.length"
+              >
+                <option v-if="!activeWorkflows.length" value="">还没有已启用的工作流</option>
+                <option v-for="workflow in activeWorkflows" :key="workflow.projectId" :value="workflow.projectId">
+                  {{ workflow.projectName }} · {{ engineLabel(workflow.config.defaultEngine) }}
+                </option>
+              </select>
+            </label>
+            <label class="goal-runner-field" :title="goalRunnerHint">
+              <span>执行电脑</span>
+              <select
+                v-model="goalRunnerId"
+                class="goal-runner-select"
+                :disabled="launchingGoal || !goalWorkflow"
+                @change="goalRunnerManuallySelected = true"
+              >
+                <option value="">自动分配</option>
+                <option v-for="runner in goalRunnerCandidates" :key="runner.id" :value="runner.id">
+                  {{ runner.name }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
+                </option>
+              </select>
+            </label>
+            <span class="goal-shortcut">
+              <template v-if="goalImageUploads">{{ goalImageUploads }} 张图片上传中 · </template>
+              {{ goal.length }} 字 · Ctrl/Command + Enter
+            </span>
+            <button
+              v-if="activeWorkflows.length"
+              class="goal-submit"
+              :disabled="launchingGoal || goalImageUploads > 0 || !goal.trim() || !goalProjectId"
+              @click="launchGoal"
+            >
+              <i :class="launchingGoal ? 'ri-loader-4-line spin' : 'ri-rocket-2-line'"></i>
+              {{ launchingGoal ? '正在派发…' : '让 AI 开始' }}
+            </button>
+            <button v-else class="goal-submit setup" :disabled="workflowsLoading" @click="view = 'workflows'">
+              <i class="ri-settings-3-line"></i>{{ workflowsLoading ? '正在读取…' : '先接入工作流' }}
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="home-recommendations" aria-label="首页相关推荐">
+      <section class="daily-guidance" aria-labelledby="daily-guidance-title">
       <header>
         <span class="guidance-mark"><i class="ri-compass-3-line"></i></span>
         <div>
@@ -875,9 +945,9 @@ onBeforeUnmount(() => {
           <i class="ri-refresh-line"></i>重试
         </button>
       </div>
-    </section>
+      </section>
 
-    <section class="evolution-panel" aria-labelledby="evolution-title">
+      <section class="evolution-panel" aria-labelledby="evolution-title">
       <header>
         <span class="evolution-mark"><i class="ri-seedling-line"></i></span>
         <div>
@@ -1012,74 +1082,8 @@ onBeforeUnmount(() => {
         </span>
         <small>只使用供应商真实七天窗口；未知额度不会参与自动派发。</small>
       </footer>
-    </section>
-
-    <section id="ai-launcher" class="goal-launcher" aria-labelledby="goal-launcher-title">
-      <div class="goal-heading">
-        <span class="goal-icon"><i class="ri-sparkling-2-line"></i></span>
-        <div>
-          <div class="eyebrow dark">AUTONOMOUS GOAL</div>
-          <h2 id="goal-launcher-title">给我一个目标，剩下的交给 AI</h2>
-          <p>AI 会先盘点项目里的代码、文档和工具，自己拆解、执行和验证。</p>
-        </div>
-      </div>
-      <div class="goal-compose">
-        <MarkdownEditor
-          v-model="goal"
-          placeholder="例如：把《黄帝内经》和《易经》结合 AI，做成一个每天可以给自己算一卦的产品……可直接粘贴多张图片"
-          :min-height="78"
-          :readonly="launchingGoal"
-          @keydown.ctrl.enter.prevent="launchGoal"
-          @keydown.meta.enter.prevent="launchGoal"
-          @upload-image="onGoalImage"
-        />
-        <div class="goal-actions">
-          <label>
-            <span>放进哪条工作流</span>
-            <select
-              v-model="goalProjectId"
-              class="goal-workflow-select"
-              :disabled="workflowsLoading || launchingGoal || !activeWorkflows.length"
-            >
-              <option v-if="!activeWorkflows.length" value="">还没有已启用的工作流</option>
-              <option v-for="workflow in activeWorkflows" :key="workflow.projectId" :value="workflow.projectId">
-                {{ workflow.projectName }} · {{ engineLabel(workflow.config.defaultEngine) }}
-              </option>
-            </select>
-          </label>
-          <label class="goal-runner-field" :title="goalRunnerHint">
-            <span>执行电脑</span>
-            <select
-              v-model="goalRunnerId"
-              class="goal-runner-select"
-              :disabled="launchingGoal || !goalWorkflow"
-              @change="goalRunnerManuallySelected = true"
-            >
-              <option value="">自动分配</option>
-              <option v-for="runner in goalRunnerCandidates" :key="runner.id" :value="runner.id">
-                {{ runner.name }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
-              </option>
-            </select>
-          </label>
-          <span class="goal-shortcut">
-            <template v-if="goalImageUploads">{{ goalImageUploads }} 张图片上传中 · </template>
-            {{ goal.length }} 字 · Ctrl/Command + Enter
-          </span>
-          <button
-            v-if="activeWorkflows.length"
-            class="goal-submit"
-            :disabled="launchingGoal || goalImageUploads > 0 || !goal.trim() || !goalProjectId"
-            @click="launchGoal"
-          >
-            <i :class="launchingGoal ? 'ri-loader-4-line spin' : 'ri-rocket-2-line'"></i>
-            {{ launchingGoal ? '正在派发…' : '让 AI 开始' }}
-          </button>
-          <button v-else class="goal-submit setup" :disabled="workflowsLoading" @click="view = 'workflows'">
-            <i class="ri-settings-3-line"></i>{{ workflowsLoading ? '正在读取…' : '先接入工作流' }}
-          </button>
-        </div>
-      </div>
-    </section>
+      </section>
+    </div>
 
     <nav id="ai-console" class="console-tabs">
       <button
@@ -1619,7 +1623,12 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   padding: 16px 24px 36px;
   background: var(--wao-bg-page);
+  display: flex;
+  flex-direction: column;
 }
+.home > * { order: 2; }
+.home-primary { order: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.home-recommendations { order: 3; margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px; }
 .hero {
   min-height: 118px;
   padding: 18px 22px;
@@ -1719,7 +1728,7 @@ onBeforeUnmount(() => {
 .capacity-bar { height: 5px; margin-top: 11px; overflow: hidden; border-radius: 9px; background: #ffffff24; }
 .capacity-bar i { display: block; height: 100%; width: var(--capacity); border-radius: inherit; background: #fff; transition: width .3s; }
 .daily-guidance {
-  margin-top: 16px;
+  margin-top: 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, #7f63d8 25%, var(--wao-line));
   border-radius: 15px;
@@ -1756,7 +1765,7 @@ onBeforeUnmount(() => {
 .guidance-inline-error span { flex: 1; }
 .guidance-inline-error button { border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 650; }
 .evolution-panel {
-  margin-top: 16px;
+  margin-top: 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, #3b8c69 24%, var(--wao-line));
   border-radius: 15px;
@@ -1794,7 +1803,7 @@ onBeforeUnmount(() => {
 .evolution-panel > footer { padding: 9px 18px; border-top: 1px solid color-mix(in srgb, #3b8c69 13%, var(--wao-line)); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--wao-text-weak); font-size: 9.5px; }
 .evolution-panel > footer span { padding: 3px 7px; border-radius: 999px; background: #dff2e7; color: #326c56; }.evolution-panel > footer small { margin-left: auto; }
 .goal-launcher {
-  margin-top: 16px;
+  margin-top: 0;
   padding: 19px 20px;
   border: 1px solid #dfe3f4;
   border-radius: 15px;
@@ -1805,6 +1814,9 @@ onBeforeUnmount(() => {
   gap: 22px;
   align-items: center;
 }
+.home-primary .goal-launcher { grid-template-columns: minmax(0, 1fr); }
+.home-primary .goal-actions { flex-wrap: wrap; }
+.home-recommendations .suggestion-grid { grid-template-columns: minmax(0, 1fr); }
 .goal-heading { min-width: 0; display: flex; align-items: flex-start; gap: 12px; }
 .goal-icon { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px; background: #eef1ff; color: #4358d6; display: grid; place-items: center; font-size: 19px; }
 .eyebrow.dark { color: #7d85a6; opacity: 1; }
@@ -2222,6 +2234,7 @@ onBeforeUnmount(() => {
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
   .home { padding: 16px; }
+  .home-primary, .home-recommendations { grid-template-columns: minmax(0, 1fr); }
   .hero { padding: 22px; flex-direction: column; align-items: stretch; }
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
   .hero-metrics { width: auto; grid-template-columns: 1fr 1fr; }
@@ -2249,6 +2262,7 @@ onBeforeUnmount(() => {
   .run-detail dl { grid-template-columns: 1fr; }
 }
 @media (min-width: 761px) and (max-width: 1180px) {
+  .home-primary { grid-template-columns: minmax(0, 1fr); }
   .recent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
