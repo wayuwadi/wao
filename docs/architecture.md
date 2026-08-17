@@ -17,7 +17,6 @@ Phase 0 建立一条最小但真实的纵向链路：Vue 页面请求 `/api/hell
 | Redis Sentinel |     26379 | 主、从节点 |
 | DDNS-Go        |      9876 | 主、从节点 |
 | Nginx          |    80/443 | 云服务器   |
-| WPF 客户端     |         — | 用户 Windows 电脑 |
 
 ## 请求链路
 
@@ -41,8 +40,6 @@ flowchart LR
 - `dev`：使用本机 Docker 基础设施；Swagger 开启；Nacos 可关闭鉴权。
 - `prod`：敏感值来自环境变量；Swagger 关闭；跨节点通过公网地址和 DDNS 域名通信。
 - 前端生产制品直接由云 Nginx 托管，不运行 Node.js 进程。
-- 原生 Windows 客户端直接通过 HTTPS 访问同一 `/api/**`，版本清单和自包含更新包由云 Nginx 的
-  `/downloads/windows/` 托管；客户端技术与完整性更新边界见 ADR-075。
 - Windows Server 2025 不安装 Docker Desktop；从节点容器运行在 WSL2 Ubuntu 24.04 的 Docker Engine 中，限制为 4 核/8GB，Windows `portproxy` 将公网端口转发到 WSL。原生计划任务以 `wage` 身份保持 WSL 在线并在开机时恢复。
 - 主、从节点检测公网 IPv4 变化并刷新 Nacos 注册；云 Nginx 定期重载以重新解析 DDNS 上游。
 
