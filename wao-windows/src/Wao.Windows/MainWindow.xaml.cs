@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
 using Wao.Core.Api;
+using Wao.Core.Authentication;
 using Wao.Core.Updates;
 
 namespace Wao.Windows;
@@ -25,6 +26,7 @@ public partial class MainWindow : Window
     private DesktopPetWindow? _petWindow;
     private string _currentPage = "projects";
     private bool _restoring;
+    private CancellationTokenSource? _feishuLoginCancellation;
 
     public MainWindow()
     {
@@ -91,12 +93,123 @@ public partial class MainWindow : Window
         finally
         {
             LoginButton.IsEnabled = true;
-            LoginButton.Content = "登录";
+            LoginButton.Content = "邮箱登录";
         }
+    }
+
+    private async void FeishuLogin_Click(object sender, RoutedEventArgs e)
+    {
+        if (_feishuLoginCancellation is not null) return;
+        _feishuLoginCancellation = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        FeishuLoginButton.IsEnabled = false;
+        LoginButton.IsEnabled = false;
+        CancelFeishuButton.Visibility = Visibility.Visible;
+        LoginErrorText.Text = string.Empty;
+
+        try
+        {
+            using var listener = LoopbackCallbackListener.Start();
+            var callbackUrl = Uri.EscapeDataString(listener.CallbackUri.AbsoluteUri);
+            FeishuLoginStatusText.Text = "正在准备飞书安全登录…";
+            var authorization = await _app.Api.GetAsync<FeishuAuthorization>(
+                $"/api/auth/feishu/authorize?scene=windows&callbackUrl={callbackUrl}",
+                _feishuLoginCancellation.Token);
+
+            Process.Start(new ProcessStartInfo(authorization.AuthorizationUrl) { UseShellExecute = true });
+            FeishuLoginStatusText.Text = "请在浏览器中使用飞书扫码并确认授权；完成后会自动回到 WAO。";
+            var callback = await listener.WaitForCallbackAsync(_feishuLoginCancellation.Token);
+
+            FeishuLoginStatusText.Text = "扫码成功，正在进入 WAO…";
+            var resolution = await _app.Api.PostAsync<FeishuExchangeRequest, AuthResolution>(
+                "/api/auth/feishu/exchange",
+                new(callback.Code, callback.State),
+                _feishuLoginCancellation.Token);
+            await AcceptFeishuResolutionAsync(resolution);
+        }
+        catch (OperationCanceledException)
+        {
+            LoginErrorText.Text = "飞书扫码登录已取消或超时，请重试。";
+            FeishuLoginStatusText.Text = "将在系统浏览器打开飞书官方扫码页，授权结果会安全返回 WAO。";
+        }
+        catch (Exception exception)
+        {
+            LoginErrorText.Text = exception.Message;
+            FeishuLoginStatusText.Text = "飞书扫码登录未完成，可以直接重试或改用邮箱。";
+        }
+        finally
+        {
+            _feishuLoginCancellation.Dispose();
+            _feishuLoginCancellation = null;
+            FeishuLoginButton.IsEnabled = true;
+            LoginButton.IsEnabled = true;
+            CancelFeishuButton.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private async Task AcceptFeishuResolutionAsync(AuthResolution resolution)
+    {
+        if (resolution.Session is not null)
+        {
+            _app.CookieStore.Save(_app.Cookies);
+            EnterShell(resolution.Session);
+            await LoadProjectsAsync();
+            return;
+        }
+        if (!resolution.ClaimRequired || resolution.Candidates.Count == 0)
+        {
+            throw new WaoApiException("飞书身份尚未关联 WAO 成员，请联系管理员");
+        }
+
+        LoginMethodsPanel.Visibility = Visibility.Collapsed;
+        ClaimPanel.Visibility = Visibility.Visible;
+        ClaimHintText.Text = $"“{resolution.DisplayName ?? "当前飞书用户"}”首次登录，请选择要永久绑定的 WAO 成员。";
+        ClaimMemberBox.ItemsSource = resolution.Candidates;
+        ClaimMemberBox.SelectedIndex = 0;
+        LoginErrorText.Text = string.Empty;
+    }
+
+    private async void Claim_Click(object sender, RoutedEventArgs e)
+    {
+        if (ClaimMemberBox.SelectedItem is not Member member)
+        {
+            LoginErrorText.Text = "请选择要绑定的 WAO 成员";
+            return;
+        }
+        ClaimButton.IsEnabled = false;
+        ClaimButton.Content = "绑定中…";
+        LoginErrorText.Text = string.Empty;
+        try
+        {
+            var session = await _app.Api.PostAsync<ClaimRequest, AuthSession>(
+                "/api/auth/claim",
+                new(member.Id));
+            _app.CookieStore.Save(_app.Cookies);
+            EnterShell(session);
+            await LoadProjectsAsync();
+        }
+        catch (Exception exception)
+        {
+            LoginErrorText.Text = exception.Message;
+        }
+        finally
+        {
+            ClaimButton.IsEnabled = true;
+            ClaimButton.Content = "确认并登录";
+        }
+    }
+
+    private void CancelFeishu_Click(object sender, RoutedEventArgs e) => _feishuLoginCancellation?.Cancel();
+
+    private async void BackToLogin_Click(object sender, RoutedEventArgs e)
+    {
+        try { await _app.Api.PostAsync<EmptyResponse>("/api/auth/logout"); }
+        catch { }
+        ResetLoginMethods();
     }
 
     private void EnterShell(AuthSession session)
     {
+        _feishuLoginCancellation?.Cancel();
         RestoringPanel.Visibility = Visibility.Collapsed;
         LoginPanel.Visibility = Visibility.Collapsed;
         ShellPanel.Visibility = Visibility.Visible;
@@ -107,11 +220,21 @@ public partial class MainWindow : Window
 
     private void ShowLogin(string? error = null)
     {
+        ResetLoginMethods();
         RestoringPanel.Visibility = Visibility.Collapsed;
         ShellPanel.Visibility = Visibility.Collapsed;
         LoginPanel.Visibility = Visibility.Visible;
         LoginErrorText.Text = error ?? string.Empty;
         _petWindow?.Hide();
+    }
+
+    private void ResetLoginMethods()
+    {
+        LoginMethodsPanel.Visibility = Visibility.Visible;
+        ClaimPanel.Visibility = Visibility.Collapsed;
+        ClaimMemberBox.ItemsSource = null;
+        LoginErrorText.Text = string.Empty;
+        FeishuLoginStatusText.Text = "将在系统浏览器打开飞书官方扫码页，授权结果会安全返回 WAO。";
     }
 
     private async void Logout_Click(object sender, RoutedEventArgs e)
@@ -489,6 +612,12 @@ public partial class MainWindow : Window
 
     private static System.Windows.Media.Brush FindBrush(string value) =>
         (System.Windows.Media.Brush)new System.Windows.Media.BrushConverter().ConvertFromString(value)!;
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _feishuLoginCancellation?.Cancel();
+        base.OnClosed(e);
+    }
 
     private sealed record AiRunDisplay(
         string TaskTitle,

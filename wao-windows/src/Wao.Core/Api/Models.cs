@@ -8,6 +8,19 @@ public sealed record AuthSession(string AccountId, Member Member);
 
 public sealed record EmailLoginRequest(string Email, string Password);
 
+public sealed record FeishuAuthorization(string AuthorizationUrl);
+
+public sealed record FeishuExchangeRequest(string Code, string State);
+
+public sealed record AuthResolution(
+    AuthSession? Session,
+    bool ClaimRequired,
+    string? Provider,
+    string? DisplayName,
+    IReadOnlyList<Member> Candidates);
+
+public sealed record ClaimRequest(string MemberId);
+
 public sealed record Project(string Id, string Name, string Status, int Progress, string Goal);
 
 public sealed record TaskItem(string Id, string Title, string Project, string Status, string Pr, string Due);

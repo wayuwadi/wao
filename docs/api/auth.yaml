@@ -28,9 +28,18 @@ paths:
         "200": { description: 已注销 }
   /api/auth/feishu/authorize:
     get:
-      summary: 获取飞书扫码、授权或绑定场景的签名授权地址
+      summary: 获取飞书扫码、授权、Windows 原生或绑定场景的签名授权地址
+      parameters:
+        - in: query
+          name: scene
+          schema: { type: string, enum: [qr, authorization, workbench, browser, windows, link] }
+        - in: query
+          name: callbackUrl
+          description: 仅 Windows 原生登录使用，必须是固定路径的 127.0.0.1 高位端口回调
+          schema: { type: string, format: uri }
       responses:
         "200": { description: 返回 authorizationUrl }
+        "400": { description: 场景或 Windows 回调地址不合法 }
   /api/auth/feishu/exchange:
     post:
       summary: 交换飞书授权码并登录、绑定或进入成员认领
