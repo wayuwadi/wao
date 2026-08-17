@@ -33,28 +33,10 @@ class FeishuLoginServiceTest {
     }
 
     @Test
-    void returnsWindowsLoginToSignedLoopbackCallback() {
-        String callback = "http://127.0.0.1:49152/wao-auth/callback";
-        String authorizationUrl = service.authorizationUrl("windows", callback);
-        String state = URLDecoder.decode(
-                URI.create(authorizationUrl).getQuery().replaceFirst(".*state=", ""), StandardCharsets.UTF_8);
-
-        assertThat(authorizationUrl).contains("passport.feishu.cn/suite/passport/oauth/authorize");
-        assertThat(service.callbackUri("windows-code", state).toString())
-                .isEqualTo(callback + "?code=windows-code&state=" + state);
-    }
-
-    @Test
-    void rejectsUnsafeWindowsCallbackBeforeCreatingAuthorizationUrl() {
-        assertThatThrownBy(() -> service.authorizationUrl("windows", "https://evil.example/wao-auth/callback"))
+    void rejectsRetiredWindowsLoginScene() {
+        assertThatThrownBy(() -> service.authorizationUrl("windows"))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Invalid Windows callback");
-        assertThatThrownBy(() -> service.authorizationUrl("windows", "http://127.0.0.1:49152/other"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Invalid Windows callback");
-        assertThatThrownBy(() -> service.authorizationUrl("qr", "http://127.0.0.1:49152/wao-auth/callback"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Callback is only supported for Windows login");
+                .hasMessage("Unsupported Feishu login scene");
     }
 
     @Test
