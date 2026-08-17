@@ -21,6 +21,7 @@ export const SHORTCUT_GROUPS: { title: string; items: [keys: string, desc: strin
     items: [
       ['⌘/Ctrl K', '打开搜索'],
       ['⌘/Ctrl J', '打开 AI 助手'],
+      ['⌘/Ctrl S', '拦截浏览器另存为'],
       ['/', '打开搜索'],
       ['N', '新建任务'],
       ['Shift N', '新建项目'],
@@ -56,6 +57,7 @@ function isEditable(el: EventTarget | null): boolean {
 
 /**
  * 全局快捷键。挂在 AppLayout：
+ * - ⌘/Ctrl+S 阻止浏览器打开「另存为」，正文仍沿用各编辑器自身的自动保存；
  * - ⌘/Ctrl+W 关闭当前页签（而非浏览器标签，尽力 preventDefault）；
  * - 单键动作 N / Shift+N / / / ?，以及 G 前缀跳转；
  * - 输入框内、弹窗 / 搜索开启时不触发单键动作，避免误伤打字。
@@ -74,6 +76,12 @@ export function useShortcuts() {
   }
 
   function onKey(e: KeyboardEvent) {
+    // WAO 的编辑内容各自自动保存；只拦截浏览器「另存为」，不额外触发重复写入。
+    // 这条必须早于输入框判断，确保光标在 Tiptap、textarea 或 input 内时同样生效。
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault()
+      return
+    }
     // ⌘/Ctrl+W：关闭当前页签，替代关闭浏览器标签页。
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'w') {
       e.preventDefault()
