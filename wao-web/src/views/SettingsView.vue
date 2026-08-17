@@ -2,7 +2,6 @@
 import { computed, reactive, ref, watch, watchEffect } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
-import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import { updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth'
 import { startFeishuLogin } from '@/api/feishu'
@@ -15,6 +14,7 @@ import {
 import { useDataStore } from '@/stores/data'
 import { useNavStore } from '@/stores/nav'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
+import MemoryMcpPanel from '@/components/settings/MemoryMcpPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import type { QuickLink } from '@/config/quickLinks'
@@ -37,10 +37,11 @@ const route = useRoute()
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members'], ['日历账户 · CalDAV', 'caldav']] },
   { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['菜单配置', 'navigation'], ['通知 · 飞书 Webhook', 'webhook'], ['AI 账号', 'ai-accounts']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['快捷链接', 'quick-links'], ['开发者 · API', 'api']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['快捷链接', 'quick-links'], ['Codex 记忆 · MCP', 'memory-mcp']] },
 ] as const
 
-const tab = ref<string>((route.query.tab as string) || 'members')
+const requestedTab = (route.query.tab as string) || 'members'
+const tab = ref<string>(requestedTab === 'api' ? 'memory-mcp' : requestedTab)
 const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
 const profileForm = reactive({ name: '', initial: '' })
 const accountBusy = ref(false)
@@ -156,37 +157,6 @@ function resetQlLinks() {
   toast('已恢复默认链接，记得点保存', 'ri-history-line')
 }
 
-// 开发者 · API
-interface Token {
-  name: string
-  masked: string
-  scope: string
-  created: string
-  last: string
-}
-const newTokenName = ref('')
-const freshToken = ref<string | null>(null)
-const tokens = ref<Token[]>([])
-
-function makeToken() {
-  const name = newTokenName.value.trim() || '未命名令牌'
-  const rnd = (n: number) => {
-    const c = 'abcdefghijklmnopqrstuvwxyz0123456789'
-    let o = ''
-    for (let i = 0; i < n; i++) o += c[Math.floor(Math.random() * c.length)]
-    return o
-  }
-  const full = 'wao_pat_' + rnd(28)
-  tokens.value = [{ name, masked: full.slice(0, 12) + '••••••••' + full.slice(-4), scope: '读写 · 全部模块', created: '刚刚', last: '—' }, ...tokens.value]
-  newTokenName.value = ''
-  freshToken.value = full
-  toast('令牌已生成，请立即复制保存', 'ri-key-2-line')
-}
-function revoke(i: number) {
-  const t = tokens.value[i]
-  tokens.value = tokens.value.filter((_, j) => j !== i)
-  toast(`已吊销「${t?.name}」，使用该令牌的调用将立即失效`, 'ri-close-circle-line')
-}
 // ---- 系统 · 飞书通知 Webhook ----
 // 全局只有一个：所有需要「说一声」的地方都发到这一个群机器人。地址加密存服务端，
 // 界面上只回脱敏形态，留空保存即表示不改地址。
@@ -909,52 +879,9 @@ function demo(msg: string, icon?: string) {
           </div>
         </template>
 
-        <!-- 开发者 · API -->
-        <template v-else>
-          <div class="s-h1">开发者 · API</div>
-          <div class="card">
-            <div class="card-title">API 端点</div>
-            <div class="kv-list">
-              <div class="kv"><span class="kv-k w76">Base URL</span><span class="kv-v wao-mono flex1">https://api.wayuwa.example/v1</span><button class="mini-btn" @click="copyText('https://api.wayuwa.example/v1', 'Base URL 已复制')">复制</button></div>
-              <div class="kv"><span class="kv-k w76">认证方式</span><span class="kv-v wao-mono">Authorization: Bearer &lt;token&gt;</span></div>
-              <div class="kv"><span class="kv-k w76">文档</span><span class="kv-v link-c">api.wayuwa.example/docs（规划中）</span></div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-title">个人访问令牌（Personal Access Token）</div>
-            <div class="token-note">令牌与你的账号权限一致，用于脚本、自动化与第三方工具接入；请像密码一样妥善保管。</div>
-            <div class="token-input">
-              <input v-model="newTokenName" placeholder="令牌用途，例如「Obsidian 同步」" @keydown.enter="makeToken" />
-              <button class="btn-primary" @click="makeToken"><i class="ri-key-2-line"></i>生成新令牌</button>
-            </div>
-
-            <div v-if="freshToken" class="fresh">
-              <div class="fresh-head"><i class="ri-checkbox-circle-fill"></i>令牌已生成——仅此一次完整显示，请立即复制保存</div>
-              <div class="fresh-row">
-                <span class="fresh-token wao-mono">{{ freshToken }}</span>
-                <button class="fresh-copy" @click="copyText(freshToken, '令牌已复制')">复制</button>
-                <button class="fresh-dismiss" @click="freshToken = null">我已保存</button>
-              </div>
-            </div>
-
-            <div class="token-table">
-              <div class="grid-tokens th">
-                <div>名称</div><div>令牌</div><div>创建于</div><div>最近使用</div><div class="right">操作</div>
-              </div>
-              <div v-for="(t, i) in tokens" :key="i" class="grid-tokens row">
-                <div class="tk-name-wrap">
-                  <div class="tk-name">{{ t.name }}</div>
-                  <div class="tk-scope">{{ t.scope }}</div>
-                </div>
-                <div class="tk-masked wao-mono">{{ t.masked }}</div>
-                <div class="tk-time">{{ t.created }}</div>
-                <div class="tk-time">{{ t.last }}</div>
-                <div class="tk-ops"><button class="revoke" @click="revoke(i)">吊销</button></div>
-              </div>
-              <div v-if="tokens.length === 0" class="tk-empty">还没有令牌——在上方输入用途并生成</div>
-            </div>
-            <div class="token-foot">演示环境：令牌为虚构字符串，不可真实调用；正式版本支持过期时间与最小权限范围（scope）。</div>
-          </div>
+        <!-- Codex 共享记忆 MCP -->
+        <template v-else-if="tab === 'memory-mcp'">
+          <MemoryMcpPanel />
         </template>
       </div>
     </div>
