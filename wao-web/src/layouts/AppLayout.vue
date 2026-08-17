@@ -20,6 +20,7 @@ import { useTabsStore } from '@/stores/tabs'
 import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
+import { useSessionStore } from '@/stores/session'
 import { useTheme } from '@/composables/theme'
 import { useShortcuts } from '@/composables/shortcuts'
 import type { ModuleId } from '@/types'
@@ -30,7 +31,11 @@ const tabs = useTabsStore()
 const ui = useUiStore()
 const data = useDataStore()
 const preferences = usePreferenceStore()
+const session = useSessionStore()
 const theme = useTheme()
+
+// 登录成员切换时先清掉上一名成员的内存偏好，再按当前会话重新读取。
+preferences.prepareForMember(session.currentUser.id)
 
 useShortcuts()
 
