@@ -32,8 +32,10 @@ public class FeishuLoginController {
         this.sessions = sessions;
     }
     @GetMapping("/authorize")
-    public ApiResponse<Map<String, String>> authorize(@RequestParam(defaultValue = "authorization") String scene) {
-        return ApiResponse.ok(Map.of("authorizationUrl", service.authorizationUrl(scene)));
+    public ApiResponse<Map<String, String>> authorize(
+            @RequestParam(defaultValue = "authorization") String scene,
+            @RequestParam(required = false) String callbackUrl) {
+        return ApiResponse.ok(Map.of("authorizationUrl", service.authorizationUrl(scene, callbackUrl)));
     }
     @GetMapping("/callback")
     public ResponseEntity<Void> callback(@RequestParam String code, @RequestParam String state) {

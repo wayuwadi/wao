@@ -23,7 +23,8 @@ import org.springframework.web.client.RestClientResponseException;
 @Service
 public class FeishuLoginService {
     private static final Logger log = LoggerFactory.getLogger(FeishuLoginService.class);
-    private static final Set<String> SCENES = Set.of("qr", "authorization", "workbench", "browser", "link");
+    private static final Set<String> SCENES = Set.of("qr", "authorization", "workbench", "browser", "link", "windows");
+    private static final Set<String> LEGACY_SCENES = Set.of("qr", "workbench", "browser", "windows");
     private final FeishuLoginProperties properties;
     private final RestClient client;
     public FeishuLoginService(FeishuLoginProperties properties, RestClient.Builder builder) {
@@ -33,28 +34,43 @@ public class FeishuLoginService {
 
     /** Creates the OAuth authorization URL used by all four Web login scenarios. */
     public String authorizationUrl(String scene) {
+        return authorizationUrl(scene, null);
+    }
+
+    /**
+     * Creates a Feishu authorization URL, optionally returning the verified callback to the native Windows app.
+     *
+     * @param scene login entry point
+     * @param callbackUrl Windows loopback callback; only accepted for the {@code windows} scene
+     * @return Feishu authorization URL containing a signed, five-minute state
+     */
+    public String authorizationUrl(String scene, String callbackUrl) {
         requireEnabled();
         if (!SCENES.contains(scene)) throw new IllegalArgumentException("Unsupported Feishu login scene");
-        if (Set.of("qr", "workbench", "browser").contains(scene)) {
+        String nativeCallback = validateCallback(scene, callbackUrl);
+        if (LEGACY_SCENES.contains(scene)) {
             return "https://passport.feishu.cn/suite/passport/oauth/authorize?client_id="
                     + encode(properties.appId()) + "&redirect_uri=" + encode(properties.redirectUri())
-                    + "&response_type=code&state=" + encode(signedState(scene));
+                    + "&response_type=code&state=" + encode(signedState(scene, nativeCallback));
         }
         return properties.openApiBaseUrl() + "/open-apis/authen/v1/authorize?app_id=" + encode(properties.appId())
-                + "&redirect_uri=" + encode(properties.redirectUri()) + "&state=" + encode(signedState(scene));
+                + "&redirect_uri=" + encode(properties.redirectUri()) + "&state=" + encode(signedState(scene, null));
     }
     /** Verifies the callback state and returns the SPA callback URL. */
     public URI callbackUri(String code, String state) {
-        verifyState(state);
+        StatePayload statePayload = verifyState(state);
         if (!StringUtils.hasText(code)) throw new IllegalArgumentException("Missing Feishu authorization code");
-        return URI.create(properties.frontendUrl() + "/auth/feishu/callback?code=" + encode(code) + "&state=" + encode(state));
+        String callback = statePayload.callbackUrl() == null
+                ? properties.frontendUrl() + "/auth/feishu/callback"
+                : statePayload.callbackUrl();
+        return URI.create(callback + "?code=" + encode(code) + "&state=" + encode(state));
     }
     /** Exchanges the one-time code server-side and returns only basic user profile data. */
     public FeishuProfile exchange(String code, String state) {
         StatePayload statePayload = verifyState(state);
         if (!StringUtils.hasText(code)) throw new IllegalArgumentException("Missing Feishu authorization code");
         try {
-            TokenResponse tokenResponse = Set.of("qr", "workbench", "browser").contains(statePayload.scene())
+            TokenResponse tokenResponse = LEGACY_SCENES.contains(statePayload.scene())
                     ? exchangeLegacyCode(code) : exchangeOAuthCode(code);
             return profileFrom(tokenResponse, statePayload.scene());
         } catch (RestClientResponseException exception) {
@@ -143,8 +159,9 @@ public class FeishuLoginService {
                         "app_id", properties.appId(), "app_secret", properties.appSecret()))
                 .retrieve().body(TokenResponse.class);
     }
-    private String signedState(String scene) {
-        String payload = Instant.now().plusSeconds(300).getEpochSecond() + ":" + scene + ":" + UUID.randomUUID();
+    private String signedState(String scene, String callbackUrl) {
+        String payload = Instant.now().plusSeconds(300).getEpochSecond() + ":" + scene + ":" + UUID.randomUUID()
+                + (callbackUrl == null ? "" : ":" + callbackUrl);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(payload.getBytes(StandardCharsets.UTF_8)) + "." + sign(payload);
     }
     private StatePayload verifyState(String state) {
@@ -153,12 +170,13 @@ public class FeishuLoginService {
             String[] parts = state == null ? new String[0] : state.split("\\.", 2);
             if (parts.length != 2) throw new IllegalArgumentException("Invalid OAuth state");
             String payload = new String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8);
-            String[] fields = payload.split(":", 3);
-            if (fields.length != 3 || !SCENES.contains(fields[1])
+            String[] fields = payload.split(":", 4);
+            String callbackUrl = fields.length == 4 ? validateCallback(fields[1], fields[3]) : null;
+            if ((fields.length != 3 && fields.length != 4) || !SCENES.contains(fields[1])
                     || Instant.now().getEpochSecond() > Long.parseLong(fields[0])
                     || !java.security.MessageDigest.isEqual(sign(payload).getBytes(StandardCharsets.UTF_8), parts[1].getBytes(StandardCharsets.UTF_8)))
                 throw new IllegalArgumentException("Expired or invalid OAuth state");
-            return new StatePayload(fields[1]);
+            return new StatePayload(fields[1], callbackUrl);
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("Expired or invalid OAuth state", exception);
         }
@@ -173,6 +191,26 @@ public class FeishuLoginService {
     private void requireEnabled() {
         if (!properties.enabled() || !StringUtils.hasText(properties.appId()) || !StringUtils.hasText(properties.appSecret()))
             throw new FeishuLoginException("飞书登录尚未配置，请联系管理员");
+    }
+    private static String validateCallback(String scene, String callbackUrl) {
+        if (!"windows".equals(scene)) {
+            if (StringUtils.hasText(callbackUrl)) throw new IllegalArgumentException("Callback is only supported for Windows login");
+            return null;
+        }
+        if (!StringUtils.hasText(callbackUrl)) throw new IllegalArgumentException("Missing Windows callback");
+        URI callback;
+        try {
+            callback = URI.create(callbackUrl);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("Invalid Windows callback", exception);
+        }
+        if (!"http".equals(callback.getScheme()) || !"127.0.0.1".equals(callback.getHost())
+                || callback.getPort() < 1024 || callback.getPort() > 65535
+                || callback.getRawUserInfo() != null || callback.getRawQuery() != null || callback.getRawFragment() != null
+                || !"/wao-auth/callback".equals(callback.getPath())) {
+            throw new IllegalArgumentException("Invalid Windows callback");
+        }
+        return callback.toString();
     }
     private static String encode(String value) { return URLEncoder.encode(value, StandardCharsets.UTF_8); }
     private record TokenResponse(Integer code, String msg, String error,
@@ -205,6 +243,6 @@ public class FeishuLoginService {
             return unionId;
         }
     }
-    private record StatePayload(String scene) { }
+    private record StatePayload(String scene, String callbackUrl) { }
     public record FeishuProfile(String userId, String name, String avatarUrl, String email, String scene) { }
 }
