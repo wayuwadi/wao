@@ -77,6 +77,42 @@ paths:
       responses:
         '200': { description: text/event-stream，事件为 token / done / error }
         '400': { description: 节点离线、已有活动问答或参数不合法 }
+  /memory/tokens:
+    get:
+      summary: 列出当前成员有效的 Codex 记忆 MCP 设备令牌元数据
+      responses:
+        '200': { description: 不含摘要和完整令牌的设备列表 }
+    post:
+      summary: 为当前成员签发一枚只显示一次明文的 MCP 设备令牌
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties: { name: { type: string, minLength: 1, maxLength: 80 } }
+      responses:
+        '200': { description: 令牌元数据与仅本次返回的 secret }
+        '400': { description: 名称不合法或有效令牌已达到十枚 }
+  /memory/tokens/{tokenId}:
+    delete:
+      summary: 吊销当前成员的一枚 Codex 记忆 MCP 设备令牌
+      parameters: [{ name: tokenId, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: 已吊销 }
+        '404': { description: 令牌不存在或不属于当前成员 }
+  /mcp:
+    post:
+      summary: Codex 共享记忆的无状态 Streamable HTTP MCP JSON-RPC 端点
+      security: [{ memoryBearer: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, description: MCP JSON-RPC 请求 } } }
+      responses:
+        '200': { description: MCP JSON-RPC 结果；支持 initialize、ping、tools/list、tools/call }
+        '202': { description: MCP notification 已接受 }
+        '401': { description: 记忆令牌缺失、无效或已吊销 }
   /daily-guidance:
     get:
       summary: 读取当前成员今天已保存的情境建议或真实可用状态
@@ -864,6 +900,11 @@ paths:
   /suggestions: { get: { summary: AI 建议列表, responses: { '200': { description: OK } } } }
   /goals: { get: { summary: 目标胶囊列表, responses: { '200': { description: OK } } } }
 components:
+  securitySchemes:
+    memoryBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: wao_mcp
   schemas:
     AssistantChatRequest:
       type: object

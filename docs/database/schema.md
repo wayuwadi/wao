@@ -339,6 +339,20 @@ OAuth 下发前会先把快过期的 access token 续期。
 首页“给此刻的你”复用 `member_preference` 的 `daily-guidance` 键保存当前成员当天的生成结果，不写入私人聊天
 历史，也不新增长期建议表；生成仍走 `ai_assistant_run` 短期队列，边界见 ADR-062。
 
+### memory_access_token（V70）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 按设备令牌 id |
+| member_id | VARCHAR(32) | 签发成员；页面只能管理当前成员自己的令牌 |
+| name / token_prefix | VARCHAR | 设备用途与可辨识前缀，列表不返回完整令牌 |
+| token_hash | CHAR(64) UNIQUE | `wao_mcp_...` 高熵令牌的 SHA-256 摘要；数据库不保存明文 |
+| created_at / last_used_at / revoked_at | DATETIME | 创建、最近成功认证和吊销时间 |
+
+V70 同时种下固定 `kb-memory / kb-memory-f` 的“共享记忆”知识库与文件夹。MCP 的 `save_memory` 每次写入一篇
+普通文档，成员可核对、修订和删除；检索继续读取权威 `doc` 表，不维护第二份隐藏记忆或空向量索引。契约与安全
+边界见 ADR-078。
+
 日历的国际节日范围复用 `member_preference` 的 `holiday-international-categories` 键；新成员默认空数组，
 不会自动加入全部国际节日。
 
@@ -657,4 +671,5 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V67__holiday_preferences_and_reminders.sql`：保存成员节日提醒及按节日日期去重的飞书私聊投递状态。
 - `V68__netease_music_binding.sql`：保存成员独立的网易云 OAuth 加密令牌、稳定设备标识和十分钟授权 state（见 ADR-071）。
 - `V69__life_review.sql`：成员私有的证据化周、月、年和至今回顾存档（见 ADR-072）。
+- `V70__shared_memory_mcp.sql`：Codex MCP 按设备令牌摘要与可核对的共享记忆知识库（见 ADR-078）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

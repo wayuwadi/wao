@@ -30,7 +30,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         String path = request.getRequestURI();
         // 飞书事件订阅回调没有 WAO 会话，真实性由 Verification Token / Encrypt Key 保证
         if (path.equals("/api/hello") || path.startsWith("/api/auth/") || path.startsWith("/api/share/")
-                || path.startsWith("/api/public/")
+                || path.startsWith("/api/public/") || path.equals("/api/mcp")
                 || path.startsWith("/api/ai/runner/") || path.equals("/api/feishu/events")
                 || path.equals("/api/music/netease/callback")) return true;
         // 下载确认页要在未登录状态下拿到文件名、出题并兑换票据；下载接口自身再校验票据或会话。
