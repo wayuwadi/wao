@@ -248,6 +248,22 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
+  it('顶部并排展示理念与目标入口，并把推荐内容收拢到下方双列区域', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    const primary = wrapper.find('.home-primary')
+    expect(primary.find('.hero').exists()).toBe(true)
+    expect(primary.find('.goal-launcher').exists()).toBe(true)
+
+    const recommendations = wrapper.find('.home-recommendations')
+    expect(recommendations.attributes('aria-label')).toBe('首页相关推荐')
+    expect(recommendations.find('.daily-guidance').exists()).toBe(true)
+    expect(recommendations.find('.evolution-panel').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('打开首页会展示结合真实任务生成且可刷新的每日建议', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
