@@ -339,6 +339,8 @@ OAuth 下发前会先把快过期的 access token 续期。
 首页“给此刻的你”复用 `member_preference` 的 `daily-guidance` 键保存当前成员当天的生成结果，不写入私人聊天
 历史，也不新增长期建议表；生成仍走 `ai_assistant_run` 短期队列，边界见 ADR-062。
 
+全局音乐播放器复用 `member_preference` 的 `music-player-settings-v1` 键，以 JSON 原子保存“登录后默认打开”和“显示播放器入口”两个布尔值；新成员默认不展开面板但显示入口。
+
 ### memory_access_token（V70）
 
 | 列 | 类型 | 说明 |

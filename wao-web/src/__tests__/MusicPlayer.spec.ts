@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import MusicPlayer from '@/components/music/MusicPlayer.vue'
 import { useDataStore } from '@/stores/data'
+import { usePreferenceStore } from '@/stores/preferences'
 
 const neteaseApi = vi.hoisted(() => ({
   getNeteaseMusicStatus: vi.fn(),
@@ -21,6 +22,10 @@ describe('全局音乐播放器', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    const preferences = usePreferenceStore()
+    preferences.loaded = true
+    preferences.musicPlayerDefaultOpen = true
+    preferences.musicPlayerLauncherVisible = true
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined)
@@ -78,7 +83,7 @@ describe('全局音乐播放器', () => {
     expect(wrapper.find('.player-empty').text()).toContain('添加音乐')
   })
 
-  it('最小化后保留音频节点，并记住播放器偏好', async () => {
+  it('最小化后保留音频节点，且不用本机状态覆盖成员默认开合', async () => {
     const data = useDataStore()
     data.fileLoadState = 'loaded'
     data.files = [{ ...base, id: 'song-1', name: '雨夜.mp3', contentType: 'audio/mpeg' }]
@@ -89,7 +94,22 @@ describe('全局音乐播放器', () => {
     expect(wrapper.find('.music-player').exists()).toBe(false)
     expect(wrapper.find('.music-launcher').exists()).toBe(true)
     expect(wrapper.find('audio').exists()).toBe(true)
-    expect(JSON.parse(localStorage.getItem('wao-music-player-v1') ?? '{}').open).toBe(false)
+    expect(JSON.parse(localStorage.getItem('wao-music-player-v1') ?? '{}')).not.toHaveProperty('open')
+  })
+
+  it('新成员默认不展开面板，并可按成员偏好隐藏入口', async () => {
+    const preferences = usePreferenceStore()
+    preferences.musicPlayerDefaultOpen = false
+    localStorage.setItem('wao-music-player-v1', JSON.stringify({ open: true }))
+
+    const wrapper = mount(MusicPlayer)
+    expect(wrapper.find('.music-player').exists()).toBe(false)
+    expect(wrapper.find('.music-launcher').exists()).toBe(true)
+
+    preferences.musicPlayerLauncherVisible = false
+    await flushPromises()
+    expect(wrapper.find('.music-launcher').exists()).toBe(false)
+    expect(wrapper.find('audio').exists()).toBe(true)
   })
 
   it('只加载当前成员绑定账号的红心歌单，并使用官方临时地址播放和上报', async () => {

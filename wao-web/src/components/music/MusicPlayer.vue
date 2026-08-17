@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { toast } from '@/composables/toast'
 import { useDataStore } from '@/stores/data'
+import { usePreferenceStore } from '@/stores/preferences'
 import { audioStreamUrl, audioTitle, formatPlaybackTime, isAudioFile } from '@/utils/audio'
 import {
   beginNeteaseAuthorization,
@@ -31,7 +32,6 @@ interface PlayerPreference {
   trackId?: string
   volume?: number
   muted?: boolean
-  open?: boolean
   playlistOpen?: boolean
   source?: MusicSource
 }
@@ -50,9 +50,10 @@ function savedPreference(): PlayerPreference {
 
 const saved = savedPreference()
 const data = useDataStore()
+const preferences = usePreferenceStore()
 const audio = ref<HTMLAudioElement | null>(null)
 const picker = ref<HTMLInputElement | null>(null)
-const open = ref(saved.open !== false)
+const open = ref(false)
 const playlistOpen = ref(saved.playlistOpen !== false)
 const source = ref<MusicSource>(saved.source === 'netease' ? 'netease' : 'local')
 const currentId = ref(saved.trackId ?? '')
@@ -88,6 +89,13 @@ interface PlaybackSession {
 }
 let playbackSession: PlaybackSession | null = null
 let currentPlayInfo: NeteasePlayUrl | null = null
+let initialVisibilityApplied = false
+
+watch(() => preferences.loaded, (loaded) => {
+  if (!loaded || initialVisibilityApplied) return
+  open.value = preferences.musicPlayerDefaultOpen
+  initialVisibilityApplied = true
+}, { immediate: true })
 
 const localTracks = computed<PlayerTrack[]>(() => data.files.filter(isAudioFile).map((track) => ({
   id: track.id!,
@@ -122,12 +130,11 @@ watch(tracks, (next) => {
   if (!next.some((track) => track.id === currentId.value)) currentId.value = next[0]!.id!
 }, { immediate: true })
 
-watch([currentId, volume, muted, open, playlistOpen, source], () => {
+watch([currentId, volume, muted, playlistOpen, source], () => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({
     trackId: currentId.value,
     volume: volume.value,
     muted: muted.value,
-    open: open.value,
     playlistOpen: playlistOpen.value,
     source: source.value,
   } satisfies PlayerPreference))
@@ -434,7 +441,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="music-host">
-    <aside v-if="open" class="music-player" aria-label="WAO 音乐播放器">
+    <aside v-if="preferences.loaded && open" class="music-player" aria-label="WAO 音乐播放器">
       <header class="player-head">
         <div class="brand-mark"><i class="ri-music-2-line"></i></div>
         <div>
@@ -561,7 +568,7 @@ onBeforeUnmount(() => {
       <p v-if="uploadError" class="upload-error" role="alert">{{ uploadError }}</p>
     </aside>
 
-    <button v-else class="music-launcher" type="button" title="打开音乐播放器" aria-label="打开音乐播放器" @click="open = true">
+    <button v-else-if="preferences.loaded && preferences.musicPlayerLauncherVisible" class="music-launcher" type="button" title="打开音乐播放器" aria-label="打开音乐播放器" @click="open = true">
       <i :class="playing ? 'ri-disc-fill' : 'ri-music-2-line'"></i>
       <span v-if="playing" class="playing-dot"></span>
     </button>

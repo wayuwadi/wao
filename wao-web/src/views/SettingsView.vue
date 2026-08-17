@@ -13,6 +13,7 @@ import {
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import { useNavStore } from '@/stores/nav'
+import { usePreferenceStore } from '@/stores/preferences'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import MemoryMcpPanel from '@/components/settings/MemoryMcpPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
@@ -31,6 +32,7 @@ const theme = useTheme()
 const quickLinks = useQuickLinks()
 const data = useDataStore()
 const nav = useNavStore()
+const preferences = usePreferenceStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -86,6 +88,39 @@ const prefRows = [
   { name: '每周起始日', desc: '影响日历与「本周」分组', value: '周一' },
   { name: '庆祝动画', desc: '创建任务 / 项目、完成任务时的全屏反馈', value: '细腻纸屑' },
 ]
+
+const musicPreferenceForm = reactive({ defaultOpen: false, launcherVisible: true })
+const musicPreferenceSaving = ref(false)
+const musicPreferenceError = ref('')
+
+watch(
+  [() => preferences.loaded, () => preferences.musicPlayerDefaultOpen, () => preferences.musicPlayerLauncherVisible],
+  ([loaded, defaultOpen, launcherVisible]) => {
+    if (!loaded || musicPreferenceSaving.value) return
+    musicPreferenceForm.defaultOpen = defaultOpen
+    musicPreferenceForm.launcherVisible = launcherVisible
+  },
+  { immediate: true },
+)
+
+async function reloadPreferences() {
+  musicPreferenceError.value = ''
+  await preferences.load(true)
+  if (preferences.loadError) musicPreferenceError.value = preferences.loadError
+}
+
+async function saveMusicPreferences() {
+  musicPreferenceSaving.value = true
+  musicPreferenceError.value = ''
+  try {
+    await preferences.setMusicPlayerSettings({ ...musicPreferenceForm })
+    toast('音乐播放器偏好已保存', 'ri-checkbox-circle-line')
+  } catch (error) {
+    musicPreferenceError.value = error instanceof Error ? error.message : '音乐播放器偏好保存失败'
+  } finally {
+    musicPreferenceSaving.value = false
+  }
+}
 
 function cycleTheme() {
   const order: ThemeMode[] = ['light', 'dark', 'system']
@@ -850,6 +885,48 @@ function demo(msg: string, icon?: string) {
               <button class="value-btn" @click="demo('演示：偏好切换在正式版本生效', 'ri-settings-3-line')">{{ p.value }}<i class="ri-arrow-down-s-line"></i></button>
             </div>
           </div>
+          <div class="card thin music-preferences">
+            <div class="card-row wrap">
+              <div>
+                <div class="card-title">音乐播放器</div>
+                <div class="pref-desc">设置按当前成员保存，换设备登录后仍会生效。</div>
+              </div>
+              <span v-if="musicPreferenceSaving" class="connected"><span class="c-dot"></span>保存中…</span>
+              <span v-else-if="preferences.loading || !preferences.loaded" class="connected"><span class="c-dot"></span>读取中…</span>
+              <span v-else-if="!preferences.loadError && !musicPreferenceError" class="connected"><span class="c-dot"></span>已读取个人偏好</span>
+            </div>
+            <div v-if="preferences.loadError || musicPreferenceError" class="preference-error" role="alert">
+              <span>{{ musicPreferenceError || preferences.loadError }}</span>
+              <button type="button" class="btn-ghost sm" :disabled="preferences.loading" @click="reloadPreferences">
+                {{ preferences.loading ? '重新读取中…' : '重新读取' }}
+              </button>
+            </div>
+            <div v-else-if="preferences.loading || !preferences.loaded" class="preference-loading" aria-live="polite">
+              <i class="ri-loader-4-line"></i>正在读取当前成员的播放器偏好…
+            </div>
+            <template v-else>
+              <div class="pref-row">
+                <div class="pref-main">
+                  <div class="pref-name">登录后默认打开</div>
+                  <div class="pref-desc">关闭时只显示右下角入口，不会自动弹出播放器面板。</div>
+                </div>
+                <button type="button" class="toggle" :class="{ on: musicPreferenceForm.defaultOpen }" aria-label="登录后默认打开播放器" :aria-pressed="musicPreferenceForm.defaultOpen" :disabled="musicPreferenceSaving" @click="musicPreferenceForm.defaultOpen = !musicPreferenceForm.defaultOpen"><span class="knob"></span></button>
+              </div>
+              <div class="pref-row">
+                <div class="pref-main">
+                  <div class="pref-name">显示播放器入口</div>
+                  <div class="pref-desc">关闭后隐藏右下角音乐按钮；需要恢复时返回此页开启。</div>
+                </div>
+                <button type="button" class="toggle" :class="{ on: musicPreferenceForm.launcherVisible }" aria-label="显示播放器入口" :aria-pressed="musicPreferenceForm.launcherVisible" :disabled="musicPreferenceSaving" @click="musicPreferenceForm.launcherVisible = !musicPreferenceForm.launcherVisible"><span class="knob"></span></button>
+              </div>
+              <div class="music-preference-actions">
+                <span>“默认打开”在下次进入 WAO 时应用；当前播放不会被中断。</span>
+                <button type="button" class="btn-primary" :disabled="musicPreferenceSaving" @click="saveMusicPreferences">
+                  {{ musicPreferenceSaving ? '保存中…' : '保存播放器设置' }}
+                </button>
+              </div>
+            </template>
+          </div>
         </template>
 
         <!-- 快捷链接 -->
@@ -1149,6 +1226,12 @@ function demo(msg: string, icon?: string) {
 .bind-actions { display: flex; gap: 10px; margin-top: 12px; }
 .credential-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-top: 12px; }
 .profile-form { grid-template-columns: 1fr 120px auto; margin: 14px 0; }
+.music-preferences { margin-top: 14px; }
+.preference-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0 2px; color: var(--wao-danger); font-size: 12.5px; }
+.preference-loading { display: flex; align-items: center; gap: 7px; padding: 16px 0 2px; color: var(--wao-text-weak); font-size: 12.5px; }
+.preference-loading i { animation: preference-spin 1s linear infinite; }
+.music-preference-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 14px; color: var(--wao-text-weak); font-size: 12px; }
+@keyframes preference-spin { to { transform: rotate(360deg); } }
 .webhook-form { grid-template-columns: 1fr auto auto; }
 .toggle:disabled { opacity: .55; cursor: not-allowed; }
 .btn-ghost:disabled { opacity: .55; cursor: not-allowed; }
@@ -1601,6 +1684,8 @@ function demo(msg: string, icon?: string) {
   .snav-title, .snav-group, .snav-foot { display: none; }
   .snav-items { flex-direction: row; width: max-content; }
   .snav-item { height: 34px; padding: 0 10px; white-space: nowrap; }
+  .music-preference-actions { align-items: stretch; flex-direction: column; }
+  .music-preference-actions .btn-primary { justify-content: center; }
   .spane { overflow: visible; }
   .scontent { padding: 16px 12px 28px; }
   .card { padding: 14px; }
@@ -1612,6 +1697,10 @@ function demo(msg: string, icon?: string) {
   .btn-primary, .btn-ghost { justify-content: center; }
   .grid-tokens { grid-template-columns: minmax(130px, 1fr) 70px; }
   .grid-tokens > :nth-child(2), .grid-tokens > :nth-child(3), .grid-tokens > :nth-child(4) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preference-loading i { animation: none; }
 }
 
 /* 快捷链接管理 */
