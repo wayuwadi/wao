@@ -417,6 +417,24 @@ async function copyMd() {
   margin: 0 0 10px;
   padding-left: 22px;
 }
+.md-body :deep(ol) {
+  list-style-type: decimal;
+}
+.md-body :deep(ol ol) {
+  list-style-type: lower-alpha;
+}
+.md-body :deep(ol ol ol) {
+  list-style-type: lower-roman;
+}
+.md-body :deep(ol ol ol ol) {
+  list-style-type: decimal;
+}
+.md-body :deep(ol ol ol ol ol) {
+  list-style-type: lower-alpha;
+}
+.md-body :deep(ol ol ol ol ol ol) {
+  list-style-type: lower-roman;
+}
 .md-body :deep(code) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12.5px;

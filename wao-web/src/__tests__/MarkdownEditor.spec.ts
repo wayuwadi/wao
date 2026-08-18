@@ -102,6 +102,29 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('嵌套有序列表保持父级顺序，并按数字、字母、罗马数字区分层级', async () => {
+    const source = [
+      '1. 一级第一项',
+      '   1. 二级第一项',
+      '      1. 三级第一项',
+      '2. 一级第二项',
+    ].join('\n')
+    const w = await mountEditor({ modelValue: source })
+
+    const lists = w.findAll('.md-body ol')
+    expect(lists).toHaveLength(3)
+    expect(lists[0]!.element.matches('ol')).toBe(true)
+    expect(lists[1]!.element.matches('ol ol')).toBe(true)
+    expect(lists[2]!.element.matches('ol ol ol')).toBe(true)
+
+    const topLevelItems = w.findAll('.md-body .tiptap > ol > li')
+    expect(topLevelItems).toHaveLength(2)
+    expect(topLevelItems[0]!.text()).toContain('一级第一项')
+    expect(topLevelItems[1]!.text()).toBe('一级第二项')
+    expect(w.vm.$props.modelValue).toBe(source)
+    w.unmount()
+  })
+
   it('粗体、行内代码等行内标记正常还原', async () => {
     const w = await mountEditor({ modelValue: '**重点**与 `代码`' })
 
