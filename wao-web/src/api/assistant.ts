@@ -14,7 +14,7 @@ export interface PolishTextResult {
   polished: string
 }
 
-export type AssistantAssetType = 'chat' | 'knowledge' | 'project' | 'task'
+export type AssistantAssetType = 'memory' | 'chat' | 'knowledge' | 'project' | 'task'
 
 export interface AssistantSourceFilter {
   assetTypes: AssistantAssetType[]

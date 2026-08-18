@@ -13,6 +13,37 @@ export interface CreatedMemoryAccessToken {
   secret: string
 }
 
+export type MemoryCategory =
+  | 'preference'
+  | 'responsibility'
+  | 'plan'
+  | 'decision'
+  | 'context'
+  | 'experience'
+
+export type MemoryMediaType = 'text' | 'image' | 'audio' | 'video' | 'file'
+
+export interface PersonalMemory {
+  id: string
+  title: string
+  content: string
+  category: MemoryCategory
+  captureMode: 'manual' | 'ai'
+  mediaType: MemoryMediaType
+  fileName?: string
+  contentType?: string
+  byteSize?: number
+  createdAt: string
+  updatedAt: string
+  downloadUrl?: string
+}
+
+export interface SavePersonalMemory {
+  title: string
+  content: string
+  category: MemoryCategory
+}
+
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
 }
@@ -25,3 +56,23 @@ export const createMemoryAccessToken = (name: string) =>
 
 export const revokeMemoryAccessToken = (tokenId: string) =>
   http.delete(`/api/memory/tokens/${tokenId}`)
+
+export const fetchPersonalMemories = (query = '', category = '') =>
+  data<PersonalMemory[]>(http.get('/api/memory/entries', { params: { query: query || undefined, category: category || undefined } }))
+
+export const createPersonalMemory = (payload: SavePersonalMemory) =>
+  data<PersonalMemory>(http.post('/api/memory/entries', payload))
+
+export const updatePersonalMemory = (id: string, payload: SavePersonalMemory) =>
+  data<PersonalMemory>(http.patch(`/api/memory/entries/${id}`, payload))
+
+export async function uploadPersonalMemory(payload: SavePersonalMemory, file: File) {
+  const form = new FormData()
+  form.append('title', payload.title)
+  form.append('content', payload.content)
+  form.append('category', payload.category)
+  form.append('file', file)
+  return data<PersonalMemory>(http.post('/api/memory/entries/upload', form, { timeout: 120_000 }))
+}
+
+export const deletePersonalMemory = (id: string) => http.delete(`/api/memory/entries/${id}`)

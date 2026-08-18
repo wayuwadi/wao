@@ -128,6 +128,12 @@ const router = createRouter({
           meta: { module: 'knowledge', tabKind: 'kb' },
         },
         {
+          path: 'memory',
+          name: 'memory',
+          component: () => import('@/views/MemoryView.vue'),
+          meta: { module: 'memory', tabKind: 'module' },
+        },
+        {
           path: 'files',
           name: 'files',
           component: () => import('@/views/FilesView.vue'),
