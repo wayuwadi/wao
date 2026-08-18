@@ -18,6 +18,29 @@ export interface AiSessionQuota extends AiWeeklyQuota {
   provider: 'codex'
 }
 
+export interface CodexQuotaWindow {
+  usedPercent: number
+  windowDurationMinutes: number | null
+  resetsAt: number | null
+}
+
+export interface CodexQuotaLimit {
+  id: string
+  label: string
+  windows: CodexQuotaWindow[]
+}
+
+export interface CodexQuotaAccount {
+  key: string
+  accountEmail: string | null
+  plan: string | null
+  credits: { hasCredits: boolean; unlimited: boolean; balance: string | null } | null
+  limits: CodexQuotaLimit[]
+  runnerNames: string[]
+  lastSyncedAt: string
+  fresh: boolean
+}
+
 export interface AiEvolutionSuggestion {
   id: string
   title: string
@@ -29,6 +52,7 @@ export interface AiEvolutionSuggestion {
 }
 
 export interface AiEvolutionOverview {
+  codexQuotas: CodexQuotaAccount[]
   sessionQuotas: AiSessionQuota[]
   weeklyQuotas: AiWeeklyQuota[]
   suggestions: AiEvolutionSuggestion[]

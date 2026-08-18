@@ -21,6 +21,7 @@ import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiSessionQuotaDto;
 import cn.wayuwa.wao.dto.AiWeeklyQuotaDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
+import cn.wayuwa.wao.dto.CodexQuotaAccountDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AiEvolutionStateMapper;
 import cn.wayuwa.wao.mapper.AiTaskRunMapper;
@@ -51,9 +52,10 @@ class AiEvolutionServiceTest {
     private final AiEvolutionSuggestionRepository suggestions = mock(AiEvolutionSuggestionRepository.class);
     private final AiAssistantService assistant = mock(AiAssistantService.class);
     private final AiAssistantAssetService assets = mock(AiAssistantAssetService.class);
+    private final CodexQuotaService codexQuotas = mock(CodexQuotaService.class);
     private final AiEvolutionService service = new AiEvolutionService(
             accounts, runs, runMapper, stateMapper, notifier, suggestions, assistant, assets,
-            new ObjectMapper(), "https://wao.example");
+            new ObjectMapper(), codexQuotas, "https://wao.example");
 
     @Test
     void overviewDoesNotTreatUnknownQuotaAsFullAllowance() {
@@ -70,6 +72,8 @@ class AiEvolutionServiceTest {
 
     @Test
     void overviewIncludesRealCodexSessionQuotaWithoutChangingWeeklyGate() {
+        CodexQuotaAccountDto localQuota = mock(CodexQuotaAccountDto.class);
+        when(codexQuotas.listAccounts()).thenReturn(List.of(localQuota));
         when(accounts.sessionQuotas()).thenReturn(List.of(new AiSessionQuotaDto(
                 "aa1", "codex", "Codex", "plus", 26, 74, "2026-08-14T15:00:00",
                 LocalDateTime.now().toString(), "SYNCED", "五小时会话额度已用 26%")));
@@ -81,6 +85,7 @@ class AiEvolutionServiceTest {
             assertThat(quota.provider()).isEqualTo("codex");
             assertThat(quota.remainingPercent()).isEqualTo(74);
         });
+        assertThat(overview.codexQuotas()).containsExactly(localQuota);
         assertThat(overview.autoStatus()).isEqualTo("quota_unavailable");
     }
 
