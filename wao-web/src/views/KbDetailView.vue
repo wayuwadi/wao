@@ -126,11 +126,23 @@ const toc = computed(() => (doc.value?.blocks ?? [])
 const activeToc = ref(0)
 
 function isOpen(fid: string) {
-  return folderOpen[fid] !== false
+  return folderOpen[fid] === true
 }
 function toggleFolder(fid: string) {
   folderOpen[fid] = !isOpen(fid)
 }
+/**
+ * 文件夹首次进入默认收起，避免目录较多时文档列表铺满整栏；当前文档所在文件夹例外，
+ * 保证从分享链接、收藏或跨文档链接进入时仍能立刻看见选中项。
+ */
+watch(
+  [docId, kb],
+  ([currentDocId, currentKb]) => {
+    const activeFolder = currentKb?.folders.find((folder) => folder.docs.includes(currentDocId ?? ''))
+    if (activeFolder) folderOpen[activeFolder.id] = true
+  },
+  { immediate: true },
+)
 function selectDoc(id: string) {
   docId.value = id
 }
@@ -685,8 +697,10 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 }
 .kb-detail {
   display: flex;
-  height: 100%;
+  /* 应用壳已经占去顶栏和页签栏；锁定剩余视口后，左右两栏才能各自滚动。 */
+  height: calc(100dvh - var(--wao-header-h) - var(--wao-tabbar-h));
   min-height: 0;
+  overflow: hidden;
   animation: waoFade 0.2s ease;
 }
 .spacer {
@@ -823,6 +837,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 .tree {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 4px 8px 8px;
 }
 .folder-row {
@@ -1009,6 +1024,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--wao-bg-card);
 }
 .doc-wrap {
@@ -1423,6 +1439,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 
 @media (max-width: 760px) {
   .kb-detail {
+    height: calc(100dvh - 48px - 64px - env(safe-area-inset-bottom));
     padding: 16px 12px 28px;
   }
   .doc-head {
