@@ -120,7 +120,7 @@ class HolidayCalendarServiceTest {
         service.sendDueReminders(LocalDateTime.of(2026, 5, 10, 8, 30));
 
         verify(feishu).sendDirectCard(eq("token"), eq("ou_test"), eq("节日提醒 · 母亲节"),
-                any(), eq("https://wao.wayuwa.cn/calendar"));
+                any(), eq("https://wao.wayuwa.cn/calendar"), eq("打开 WAO 日历"));
         ArgumentCaptor<HolidayReminderDeliveryEntity> updated =
                 ArgumentCaptor.forClass(HolidayReminderDeliveryEntity.class);
         verify(deliveries).updateById(updated.capture());

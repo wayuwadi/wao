@@ -380,6 +380,13 @@ V70 同时种下固定 `kb-memory / kb-memory-f` 的“共享记忆”知识库�
 `reminder_id + event_date` 唯一保存发送、失败、错误与重试次数，确保多应用节点不会重复私聊。
 提醒仅投递给该成员账号绑定的飞书身份，未绑定飞书或未配置自建应用时不能开启。
 
+### family_important_date / family_important_date_delivery（V72）
+
+`family_important_date` 按 `member_id` 隔离保存成员自己维护的生日、纪念日等重要日；`event_date`
+保留原始年份，展示和提醒按公历月日逐年展开。提醒可设为当天或提前 0–30 天，并记录上海时区的发送时间。
+`family_important_date_delivery` 按 `important_date_id + occurrence_date` 唯一保存一次年度投递，提前提醒也以
+重要日实际发生日期作为幂等键。删除维护项时由外键级联删除投递记录。
+
 ### ai_account_oauth_session（V39）
 
 | 列 | 类型 | 说明 |
@@ -686,6 +693,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V64__ai_evolution_mined_suggestions.sql`：保存从真实 WAO 资产挖掘且可追溯的自主进化任务建议批次。
 - `V66__ai_evolution_schedule.sql`：保存自主进化人工设置的空闲间隔与单次任务数。
 - `V67__holiday_preferences_and_reminders.sql`：保存成员节日提醒及按节日日期去重的飞书私聊投递状态。
+- `V72__family_important_dates.sql`：保存成员家庭重要日、提前提醒配置与按年度发生日期去重的飞书投递状态。
 - `V68__netease_music_binding.sql`：保存成员独立的网易云 OAuth 加密令牌、稳定设备标识和十分钟授权 state（见 ADR-071）。
 - `V69__life_review.sql`：成员私有的证据化周、月、年和至今回顾存档（见 ADR-072）。
 - `V70__shared_memory_mcp.sql`：Codex MCP 按设备令牌摘要与可核对的共享记忆知识库（见 ADR-078）。

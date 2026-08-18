@@ -1,11 +1,54 @@
 openapi: 3.0.3
 info:
   title: WAO 节假日日历 API
-  version: 0.2.0
-  description: 当前成员主动选择国际节日范围，并为关心的节日设置飞书个人提醒。
+  version: 0.3.0
+  description: 当前成员维护家庭重要日、主动选择国际节日范围，并设置飞书个人提醒。
 servers:
   - url: /api
 paths:
+  /calendar/important-dates:
+    get:
+      summary: 当前成员的家庭重要日维护列表、日期窗事件和飞书通道状态
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FamilyImportantDateCalendarResponse' }
+        '400': { description: 日期格式错误、to 早于 from 或窗口超过 370 天 }
+    post:
+      summary: 新建当前成员每年重复的家庭重要日
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveFamilyImportantDate' }
+      responses:
+        '200': { description: OK }
+        '400': { description: 字段不合法或开启提醒时飞书通道不可用 }
+  /calendar/important-dates/{id}:
+    put:
+      summary: 修改当前成员拥有的家庭重要日
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveFamilyImportantDate' }
+      responses:
+        '200': { description: OK }
+        '404': { description: 资源不存在或不属于当前成员 }
+    delete:
+      summary: 删除当前成员拥有的家庭重要日及其投递记录
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200': { description: OK }
+        '404': { description: 资源不存在或不属于当前成员 }
   /calendar/holidays:
     get:
       summary: 当前成员日期窗内的节日与年度来源状态
@@ -60,6 +103,54 @@ paths:
         '400': { description: 节日未知、类别未订阅、未选择时间或飞书提醒通道不可用 }
 components:
   schemas:
+    SaveFamilyImportantDate:
+      type: object
+      required: [name, eventDate, reminderEnabled, reminderDaysBefore]
+      properties:
+        name: { type: string, maxLength: 64, example: 妈妈生日 }
+        eventDate: { type: string, format: date, example: '1990-05-10' }
+        note: { type: string, nullable: true, maxLength: 200, example: 记得提前订花 }
+        reminderEnabled: { type: boolean }
+        reminderDaysBefore: { type: integer, minimum: 0, maximum: 30, example: 3 }
+        reminderTime: { type: string, format: time, nullable: true, example: '08:30' }
+    FamilyImportantDate:
+      allOf:
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string }
+        - { $ref: '#/components/schemas/SaveFamilyImportantDate' }
+    FamilyImportantDateEvent:
+      type: object
+      required: [id, importantDateId, date, name, reminderEnabled, reminderDaysBefore]
+      properties:
+        id: { type: string }
+        importantDateId: { type: string }
+        date: { type: string, format: date }
+        name: { type: string }
+        note: { type: string, nullable: true }
+        reminderEnabled: { type: boolean }
+        reminderDaysBefore: { type: integer }
+        reminderTime: { type: string, nullable: true }
+    FamilyImportantDateCalendar:
+      type: object
+      required: [items, events, reminderChannelAvailable, reminderChannelHint]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/FamilyImportantDate' }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/FamilyImportantDateEvent' }
+        reminderChannelAvailable: { type: boolean }
+        reminderChannelHint: { type: string }
+    FamilyImportantDateCalendarResponse:
+      type: object
+      properties:
+        code: { type: integer, example: 0 }
+        message: { type: string, example: ok }
+        timestamp: { type: integer, format: int64 }
+        data: { $ref: '#/components/schemas/FamilyImportantDateCalendar' }
     HolidayEvent:
       type: object
       required: [id, code, date, year, name, category, dayType, sourceName, remindable, reminderEnabled]
