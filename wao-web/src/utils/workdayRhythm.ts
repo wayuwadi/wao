@@ -9,6 +9,15 @@ export interface WorkdayRhythmBlock {
 export interface WorkdayRhythmConfig {
   version: 1
   blocks: WorkdayRhythmBlock[]
+  energyNotification: WorkdayRhythmEnergyNotification
+}
+
+export interface WorkdayRhythmEnergyNotification {
+  enabled: boolean
+  chatId: string
+  chatName: string
+  notifyWater: boolean
+  notifyMeditation: boolean
 }
 
 export interface WorkdayRhythmDay {
@@ -30,6 +39,13 @@ export interface ShanghaiClock {
 
 export const DEFAULT_WORKDAY_RHYTHM: WorkdayRhythmConfig = {
   version: 1,
+  energyNotification: {
+    enabled: false,
+    chatId: '',
+    chatName: '',
+    notifyWater: true,
+    notifyMeditation: true,
+  },
   blocks: [
     {
       id: 'morning',
@@ -93,7 +109,7 @@ export function parseRhythmConfig(raw: string): WorkdayRhythmConfig | null {
   if (!raw) return null
   try {
     const candidate = JSON.parse(raw) as WorkdayRhythmConfig
-    return rhythmConfigError(candidate) ? null : cloneRhythmConfig(candidate)
+    return rhythmConfigError(candidate) ? null : normalizeRhythmConfig(candidate)
   } catch {
     return null
   }
@@ -135,12 +151,37 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
     return sum + (end > start ? end - start : end + 24 * 60 - start)
   }, 0)
   if (totalMinutes !== 24 * 60) return '时间块必须完整覆盖一天且不能相互重叠'
+  const notification = value.energyNotification
+  if (notification !== undefined) {
+    if (
+      typeof notification.enabled !== 'boolean' ||
+      typeof notification.notifyWater !== 'boolean' ||
+      typeof notification.notifyMeditation !== 'boolean' ||
+      typeof notification.chatId !== 'string' ||
+      notification.chatId.length > 128 ||
+      typeof notification.chatName !== 'string' ||
+      notification.chatName.length > 100
+    ) {
+      return '精力补给通知配置不正确'
+    }
+    if (notification.enabled && !notification.chatId.trim()) return '请选择精力补给通知群'
+    if (notification.enabled && !notification.notifyWater && !notification.notifyMeditation)
+      return '请至少选择一种需要通知的精力补给动作'
+  }
   return ''
 }
 
 export function normalizeRhythmConfig(value: WorkdayRhythmConfig): WorkdayRhythmConfig {
+  const notification = value.energyNotification ?? DEFAULT_WORKDAY_RHYTHM.energyNotification
   return {
     version: 1,
+    energyNotification: {
+      enabled: notification.enabled,
+      chatId: notification.chatId.trim(),
+      chatName: notification.chatName.trim(),
+      notifyWater: notification.notifyWater,
+      notifyMeditation: notification.notifyMeditation,
+    },
     blocks: value.blocks.map((block) => ({
       id: block.id,
       start: block.start,

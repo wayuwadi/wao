@@ -51,6 +51,22 @@ describe('工作日节奏规则', () => {
     expect(rhythmConfigError(overlapping)).toContain('不能相互重叠')
   })
 
+  it('兼容旧模板并校验成员自己的精力通知设置', () => {
+    const legacy = structuredClone(DEFAULT_WORKDAY_RHYTHM) as Partial<typeof DEFAULT_WORKDAY_RHYTHM>
+    delete legacy.energyNotification
+    expect(parseRhythmConfig(JSON.stringify(legacy))?.energyNotification).toEqual(
+      DEFAULT_WORKDAY_RHYTHM.energyNotification,
+    )
+
+    const configured = structuredClone(DEFAULT_WORKDAY_RHYTHM)
+    configured.energyNotification.enabled = true
+    expect(rhythmConfigError(configured)).toContain('请选择')
+    configured.energyNotification.chatId = 'oc_daily'
+    configured.energyNotification.notifyWater = false
+    configured.energyNotification.notifyMeditation = false
+    expect(rhythmConfigError(configured)).toContain('至少选择一种')
+  })
+
   it('每日记录只恢复当天且仍属于模板的真实条目', () => {
     const ids = DEFAULT_WORKDAY_RHYTHM.blocks.map((block) => block.id)
     const restored = parseRhythmDay(

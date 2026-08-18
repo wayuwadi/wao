@@ -5,7 +5,10 @@ import {
   fetchWorkdayRhythmDay,
   saveWorkdayRhythm,
   saveWorkdayRhythmDay,
+  sendEnergyNotification,
+  type WorkdayRhythmEnergyAction,
 } from '@/api/workdayRhythm'
+import { fetchFeishuChats, type FeishuChat } from '@/api/system'
 import { toast } from '@/composables/toast'
 import {
   DEFAULT_WORKDAY_RHYTHM,
@@ -33,6 +36,13 @@ const editorOpen = ref(false)
 const editorBusy = ref(false)
 const editorError = ref('')
 const editorDraft = ref<WorkdayRhythmConfig>(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
+const notificationChats = ref<FeishuChat[]>([])
+const notificationChatsLoading = ref(false)
+const notificationChatsError = ref('')
+const energyNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle')
+const pendingEnergyNotification = ref<{ action: WorkdayRhythmEnergyAction; date: string } | null>(
+  null,
+)
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
 const dayDraftKey = computed(() => `wao-workday-rhythm-day-draft-${clock.value.date}`)
@@ -61,6 +71,19 @@ const completionRate = computed(() =>
 )
 const weekdayLabel = computed(
   () => ['一', '二', '三', '四', '五', '六', '日'][clock.value.weekday - 1],
+)
+const energyActionBusy = computed(
+  () =>
+    dayState.value === 'saving' ||
+    energyNotificationState.value === 'sending' ||
+    energyNotificationState.value === 'error',
+)
+const configuredChatMissing = computed(
+  () =>
+    !!editorDraft.value.energyNotification.chatId &&
+    !notificationChats.value.some(
+      (chat) => chat.chatId === editorDraft.value.energyNotification.chatId,
+    ),
 )
 
 function loadLocalDayDraft(validIds: string[]): WorkdayRhythmDay | null {
@@ -92,8 +115,8 @@ function markDayDirty() {
   localStorage.setItem(dayDraftKey.value, JSON.stringify(day.value))
 }
 
-async function persistDay(successMessage = '') {
-  if (dayState.value === 'saving') return
+async function persistDay(successMessage = ''): Promise<boolean> {
+  if (dayState.value === 'saving') return false
   dayState.value = 'saving'
   localStorage.setItem(dayDraftKey.value, JSON.stringify(day.value))
   try {
@@ -101,12 +124,14 @@ async function persistDay(successMessage = '') {
     localStorage.removeItem(dayDraftKey.value)
     dayState.value = 'saved'
     if (successMessage) toast(successMessage, 'ri-check-line')
+    return true
   } catch (error) {
     dayState.value = 'error'
     toast(
       error instanceof Error ? `${error.message}，草稿仍在本机` : '保存失败，草稿仍在本机',
       'ri-error-warning-line',
     )
+    return false
   }
 }
 
@@ -119,18 +144,58 @@ function toggleBlock(id: string) {
   void persistDay(day.value.completed.includes(id) ? '时间块已记为完成' : '已撤销这次完成记录')
 }
 
-function addWater() {
-  if (dayState.value === 'saving' || day.value.waterCount >= 99) return
-  day.value.waterCount += 1
-  markDayDirty()
-  void persistDay('已记录这次喝水')
+async function dispatchEnergyNotification(action: WorkdayRhythmEnergyAction, date: string) {
+  const notification = config.value.energyNotification
+  const selected = action === 'WATER' ? notification.notifyWater : notification.notifyMeditation
+  if (!notification.enabled || !selected) return
+  pendingEnergyNotification.value = { action, date }
+  energyNotificationState.value = 'sending'
+  try {
+    const result = await sendEnergyNotification(action, date)
+    if (!result.sent) {
+      energyNotificationState.value = 'idle'
+      pendingEnergyNotification.value = null
+      return
+    }
+    energyNotificationState.value = 'sent'
+    pendingEnergyNotification.value = null
+    toast(`已通知「${result.chatName}」`, 'ri-send-plane-fill')
+  } catch (error) {
+    energyNotificationState.value = 'error'
+    toast(
+      error instanceof Error
+        ? `记录已保存，但群通知失败：${error.message}`
+        : '记录已保存，但群通知失败',
+      'ri-error-warning-line',
+    )
+  }
 }
 
-function toggleMeditation() {
-  if (dayState.value === 'saving') return
-  day.value.meditated = !day.value.meditated
+async function retryEnergyNotification() {
+  if (!pendingEnergyNotification.value) return
+  await dispatchEnergyNotification(
+    pendingEnergyNotification.value.action,
+    pendingEnergyNotification.value.date,
+  )
+}
+
+async function addWater() {
+  if (energyActionBusy.value || day.value.waterCount >= 99) return
+  day.value.waterCount += 1
   markDayDirty()
-  void persistDay(day.value.meditated ? '今天的冥想已记录' : '已撤销冥想记录')
+  if (await persistDay('已记录这次喝水')) {
+    await dispatchEnergyNotification('WATER', day.value.date)
+  }
+}
+
+async function toggleMeditation() {
+  if (energyActionBusy.value) return
+  day.value.meditated = !day.value.meditated
+  const justRecorded = day.value.meditated
+  markDayDirty()
+  if (await persistDay(justRecorded ? '今天的冥想已记录' : '已撤销冥想记录')) {
+    if (justRecorded) await dispatchEnergyNotification('MEDITATION', day.value.date)
+  }
 }
 
 function toggleWorkday() {
@@ -156,6 +221,30 @@ function openEditor() {
   editorDraft.value = savedDraft ?? cloneRhythmConfig(config.value)
   editorError.value = ''
   editorOpen.value = true
+  if (editorDraft.value.energyNotification.enabled) void loadNotificationChats()
+}
+
+async function loadNotificationChats() {
+  if (notificationChatsLoading.value) return
+  notificationChatsLoading.value = true
+  notificationChatsError.value = ''
+  try {
+    notificationChats.value = await fetchFeishuChats()
+    if (!notificationChats.value.length)
+      notificationChatsError.value = '机器人当前不在任何可选群聊中'
+  } catch (error) {
+    notificationChatsError.value =
+      error instanceof Error ? error.message : '可用飞书群读取失败，请稍后重试'
+  } finally {
+    notificationChatsLoading.value = false
+  }
+}
+
+function selectNotificationChat() {
+  const selected = notificationChats.value.find(
+    (chat) => chat.chatId === editorDraft.value.energyNotification.chatId,
+  )
+  editorDraft.value.energyNotification.chatName = selected?.name ?? ''
 }
 
 function resetEditor() {
@@ -165,7 +254,10 @@ function resetEditor() {
     )
   )
     return
-  editorDraft.value = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
+  editorDraft.value = {
+    ...cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM),
+    energyNotification: { ...editorDraft.value.energyNotification },
+  }
   editorError.value = ''
 }
 
@@ -183,6 +275,15 @@ async function submitEditor() {
       config.value.blocks.some((block) => block.id === id),
     )
     localStorage.removeItem(CONFIG_DRAFT_KEY)
+    const pendingAction = pendingEnergyNotification.value?.action
+    if (
+      !config.value.energyNotification.enabled ||
+      (pendingAction === 'WATER' && !config.value.energyNotification.notifyWater) ||
+      (pendingAction === 'MEDITATION' && !config.value.energyNotification.notifyMeditation)
+    ) {
+      pendingEnergyNotification.value = null
+      energyNotificationState.value = 'idle'
+    }
     editorOpen.value = false
     toast('工作日节奏已保存并跨设备生效', 'ri-check-line')
   } catch (error) {
@@ -202,9 +303,22 @@ watch(
 )
 
 watch(
+  () => editorDraft.value.energyNotification.enabled,
+  (enabled) => {
+    if (enabled && editorOpen.value && !notificationChats.value.length) {
+      void loadNotificationChats()
+    }
+  },
+)
+
+watch(
   () => clock.value.date,
   (date, previous) => {
-    if (date !== previous) void load()
+    if (date !== previous) {
+      pendingEnergyNotification.value = null
+      energyNotificationState.value = 'idle'
+      void load()
+    }
   },
 )
 
@@ -333,13 +447,23 @@ onBeforeUnmount(() => {
 
         <aside class="energy-card">
           <header>
-            <small>ENERGY CHECK</small>
-            <h2>精力补给</h2>
+            <div>
+              <small>ENERGY CHECK</small>
+              <h2>精力补给</h2>
+            </div>
+            <button
+              type="button"
+              aria-label="设置精力补给通知"
+              title="设置精力补给通知"
+              @click="openEditor"
+            >
+              <i class="ri-settings-4-line"></i>
+            </button>
           </header>
           <button
             class="energy-action water"
             type="button"
-            :disabled="dayState === 'saving'"
+            :disabled="energyActionBusy"
             @click="addWater"
           >
             <i class="ri-cup-line"></i
@@ -351,7 +475,7 @@ onBeforeUnmount(() => {
             class="energy-action meditate"
             :class="{ done: day.meditated }"
             type="button"
-            :disabled="dayState === 'saving'"
+            :disabled="energyActionBusy"
             @click="toggleMeditation"
           >
             <i :class="day.meditated ? 'ri-checkbox-circle-fill' : 'ri-mental-health-line'"></i
@@ -365,6 +489,20 @@ onBeforeUnmount(() => {
           <p>
             <i class="ri-information-line"></i>只记录你实际做过的次数，不替你设定饮水或健康处方。
           </p>
+          <div v-if="energyNotificationState === 'sending'" class="energy-notice sending">
+            <i class="ri-loader-4-line spin"></i><span>记录已保存，正在通知群聊…</span>
+          </div>
+          <div
+            v-else-if="energyNotificationState === 'error'"
+            class="energy-notice error"
+            role="alert"
+          >
+            <i class="ri-cloud-off-line"></i><span>记录已保存，群通知未发出。</span>
+            <button type="button" @click="retryEnergyNotification">重试通知</button>
+          </div>
+          <div v-else-if="energyNotificationState === 'sent'" class="energy-notice sent">
+            <i class="ri-send-plane-fill"></i><span>群通知已发出</span>
+          </div>
         </aside>
       </section>
 
@@ -418,8 +556,8 @@ onBeforeUnmount(() => {
       <section class="editor" role="dialog" aria-modal="true" aria-labelledby="rhythm-editor-title">
         <header>
           <div>
-            <small>个人工作日模板</small>
-            <h2 id="rhythm-editor-title">调整时间与行动提示</h2>
+            <small>个人工作日配置</small>
+            <h2 id="rhythm-editor-title">调整节奏与精力补给</h2>
           </div>
           <button type="button" aria-label="关闭" @click="editorOpen = false">
             <i class="ri-close-line"></i>
@@ -427,8 +565,70 @@ onBeforeUnmount(() => {
         </header>
         <div class="editor-body">
           <p class="editor-intro">
-            时间块必须首尾相接并覆盖完整一天；编辑草稿会先留在本机，保存后才跨设备生效。
+            时间线与通知目标都按你的账号保存；编辑草稿会先留在本机，保存后才跨设备生效。
           </p>
+          <section class="energy-editor" aria-labelledby="energy-editor-title">
+            <header>
+              <div>
+                <small>ENERGY NOTIFICATION</small>
+                <h3 id="energy-editor-title">精力补给群通知</h3>
+              </div>
+              <label class="toggle-field">
+                <input v-model="editorDraft.energyNotification.enabled" type="checkbox" />
+                <span>{{ editorDraft.energyNotification.enabled ? '已启用' : '未启用' }}</span>
+              </label>
+            </header>
+            <p>喝水或首次记录冥想成功后，使用 WAO 已配置的飞书应用通知你选择的群。</p>
+            <div v-if="editorDraft.energyNotification.enabled" class="energy-editor-fields">
+              <label class="chat-field">
+                <span>通知到</span>
+                <select
+                  v-model="editorDraft.energyNotification.chatId"
+                  :disabled="notificationChatsLoading"
+                  @change="selectNotificationChat"
+                >
+                  <option value="">请选择机器人所在的群</option>
+                  <option
+                    v-if="configuredChatMissing"
+                    :value="editorDraft.energyNotification.chatId"
+                  >
+                    已保存 · {{ editorDraft.energyNotification.chatName || '未知群聊' }}
+                  </option>
+                  <option v-for="chat in notificationChats" :key="chat.chatId" :value="chat.chatId">
+                    {{ chat.name }}
+                  </option>
+                </select>
+              </label>
+              <button
+                class="refresh-chats"
+                type="button"
+                :disabled="notificationChatsLoading"
+                @click="loadNotificationChats"
+              >
+                <i
+                  :class="notificationChatsLoading ? 'ri-loader-4-line spin' : 'ri-refresh-line'"
+                ></i>
+                {{ notificationChatsLoading ? '读取中' : '刷新群聊' }}
+              </button>
+              <label class="action-field">
+                <input v-model="editorDraft.energyNotification.notifyWater" type="checkbox" />
+                <span><b>喝水 +1</b><small>每次真实记录后通知</small></span>
+              </label>
+              <label class="action-field">
+                <input v-model="editorDraft.energyNotification.notifyMeditation" type="checkbox" />
+                <span><b>冥想一下</b><small>每天首次记录后通知</small></span>
+              </label>
+            </div>
+            <p v-if="notificationChatsError" class="chat-load-error" role="alert">
+              <i class="ri-error-warning-line"></i
+              >{{ notificationChatsError }}；请确认自动化中的飞书应用凭据可用。
+            </p>
+          </section>
+          <div class="timeline-editor-title">
+            <small>DAILY FLOW</small>
+            <h3>时间线与行动提示</h3>
+            <p>时间块必须首尾相接并完整覆盖一天。</p>
+          </div>
           <div v-for="(block, index) in editorDraft.blocks" :key="block.id" class="block-editor">
             <div class="block-number">{{ index + 1 }}</div>
             <div class="time-fields">
@@ -814,6 +1014,20 @@ textarea {
 }
 .energy-card > header {
   margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.energy-card > header button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 9px;
+  background: var(--wao-bg-page);
+  color: var(--wao-text-weak);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
 }
 .energy-action {
   width: 100%;
@@ -876,6 +1090,34 @@ textarea {
 }
 .energy-card > p i {
   margin-right: 4px;
+}
+.energy-notice {
+  min-height: 34px;
+  margin-top: 10px;
+  border-radius: 8px;
+  padding: 7px 9px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--wao-text-weak);
+  background: var(--wao-bg-page);
+  font-size: 10px;
+}
+.energy-notice.error {
+  color: #9b4141;
+  background: #fff2f1;
+}
+.energy-notice.sent {
+  color: #267c65;
+  background: #eff8f4;
+}
+.energy-notice button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 700;
 }
 .timeline-card {
   margin-top: 14px;
@@ -1044,6 +1286,114 @@ textarea {
   color: var(--wao-text-faint);
   font-size: 10.5px;
 }
+.energy-editor {
+  margin-bottom: 16px;
+  border: 1px solid #b9d8cc;
+  border-radius: 13px;
+  padding: 13px;
+  background: #f1f8f5;
+}
+.energy-editor > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.energy-editor h3,
+.timeline-editor-title h3 {
+  margin: 2px 0 0;
+  color: var(--wao-text);
+  font-size: 14px;
+}
+.energy-editor > p {
+  margin: 8px 0 0;
+  color: var(--wao-text-weak);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+.toggle-field {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #267c65;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.toggle-field input,
+.action-field input {
+  accent-color: #267c65;
+}
+.energy-editor-fields {
+  margin-top: 11px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(125px, 0.65fr) minmax(125px, 0.65fr);
+  align-items: end;
+  gap: 8px;
+}
+.chat-field {
+  display: grid;
+  gap: 4px;
+}
+.chat-field > span {
+  color: var(--wao-text-faint);
+  font-size: 9.5px;
+}
+.chat-field select {
+  width: 100%;
+  height: 36px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  padding: 0 8px;
+  font-size: 11px;
+}
+.refresh-chats {
+  height: 36px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-weak);
+  padding: 0 9px;
+  cursor: pointer;
+  font-size: 10px;
+}
+.action-field {
+  min-height: 36px;
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  padding: 5px 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.action-field > span {
+  display: grid;
+}
+.action-field b {
+  font-size: 10.5px;
+}
+.action-field small {
+  color: var(--wao-text-faint);
+  font-size: 8.5px;
+}
+.energy-editor > .chat-load-error {
+  color: #9b4141;
+}
+.chat-load-error i {
+  margin-right: 4px;
+}
+.timeline-editor-title {
+  margin: 2px 2px 9px;
+}
+.timeline-editor-title p {
+  margin: 4px 0 0;
+  color: var(--wao-text-faint);
+  font-size: 10px;
+}
 .block-editor {
   margin-top: 8px;
   padding: 10px;
@@ -1204,6 +1554,12 @@ textarea {
   }
   .editor-body {
     padding: 12px;
+  }
+  .energy-editor-fields {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .action-field {
+    min-height: 42px;
   }
   .block-editor {
     grid-template-columns: 25px 1fr 1fr;

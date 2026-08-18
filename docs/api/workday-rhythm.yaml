@@ -1,0 +1,42 @@
+openapi: 3.0.3
+info:
+  title: WAO 今日节奏 API
+  version: 0.1.0
+paths:
+  /api/workday-rhythm/energy-notifications:
+    post:
+      summary: 把当前成员已经保存的精力补给动作通知到本人配置的飞书群
+      description: >-
+        服务端从会话确定成员，并重新读取 workday-rhythm-config-v1 与指定日期的成员偏好；
+        请求不接受成员 id、目标群、喝水次数或冥想完成状态。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action, date]
+              properties:
+                action: { type: string, enum: [WATER, MEDITATION] }
+                date: { type: string, format: date }
+      responses:
+        "200":
+          description: 返回是否实际投递；总开关或动作开关关闭时 sent 为 false
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/EnergyNotificationResult"
+        "400": { description: 配置损坏、缺少目标群、飞书应用未配置或当天动作尚未保存 }
+        "502": { description: 飞书开放平台拒绝请求或暂不可达 }
+components:
+  schemas:
+    EnergyNotificationResult:
+      type: object
+      required: [sent, chatName]
+      properties:
+        sent: { type: boolean }
+        chatName: { type: string }
