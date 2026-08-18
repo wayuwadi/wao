@@ -6,6 +6,7 @@ import {
   defaultRhythmDay,
   minutesUntilEnd,
   parseRhythmConfig,
+  parseRhythmConfigDraft,
   parseRhythmDay,
   rhythmConfigError,
   type ShanghaiClock,
@@ -53,18 +54,30 @@ describe('工作日节奏规则', () => {
 
   it('兼容旧模板并校验成员自己的精力通知设置', () => {
     const legacy = structuredClone(DEFAULT_WORKDAY_RHYTHM) as Partial<typeof DEFAULT_WORKDAY_RHYTHM>
-    delete legacy.energyNotification
-    expect(parseRhythmConfig(JSON.stringify(legacy))?.energyNotification).toEqual(
-      DEFAULT_WORKDAY_RHYTHM.energyNotification,
-    )
+    delete legacy.energyItems
+    legacy.energyNotification!.notifyWater = false
+    legacy.energyNotification!.notifyMeditation = true
+    expect(parseRhythmConfig(JSON.stringify(legacy))?.energyItems).toEqual([
+      expect.objectContaining({ id: 'WATER', notify: false, mode: 'COUNT' }),
+      expect.objectContaining({ id: 'MEDITATION', notify: true, mode: 'DAILY_ONCE' }),
+    ])
 
     const configured = structuredClone(DEFAULT_WORKDAY_RHYTHM)
     configured.energyNotification.enabled = true
     expect(rhythmConfigError(configured)).toContain('请选择')
     configured.energyNotification.chatId = 'oc_daily'
-    configured.energyNotification.notifyWater = false
-    configured.energyNotification.notifyMeditation = false
-    expect(rhythmConfigError(configured)).toContain('至少选择一种')
+    configured.energyItems.forEach((item) => (item.notify = false))
+    expect(rhythmConfigError(configured)).toContain('至少选择一个')
+
+    configured.energyNotification.enabled = false
+    configured.energyItems.push({
+      id: 'WALK',
+      title: '起身走动',
+      guidance: '离开座位活动几分钟',
+      mode: 'DAILY_ONCE',
+      notify: true,
+    })
+    expect(rhythmConfigError(configured)).toBe('')
   })
 
   it('每日记录只恢复当天且仍属于模板的真实条目', () => {
@@ -85,9 +98,42 @@ describe('工作日节奏规则', () => {
     )
     expect(restored.completed).toEqual(['morning'])
     expect(restored.waterCount).toBe(99)
+    expect(restored.energyRecords).toEqual({ WATER: 99, MEDITATION: 1 })
     expect(restored.focus).toEqual(['重点一', '重点二', '重点三'])
     expect(
       parseRhythmDay(JSON.stringify({ ...restored, date: '2026-08-16' }), '2026-08-17', 1, ids),
     ).toEqual(defaultRhythmDay('2026-08-17', 1))
+  })
+
+  it('只恢复配置中仍存在的自定义补给记录', () => {
+    const restored = parseRhythmDay(
+      JSON.stringify({
+        version: 1,
+        date: '2026-08-17',
+        workdayActive: true,
+        completed: [],
+        energyRecords: { WALK: 3, REMOVED: 8 },
+        focus: ['', '', ''],
+      }),
+      '2026-08-17',
+      1,
+      [],
+      ['WALK'],
+    )
+    expect(restored.energyRecords).toEqual({ WALK: 3 })
+  })
+
+  it('保留尚未填完的设置草稿，正式读取时仍拒绝无效配置', () => {
+    const draft = structuredClone(DEFAULT_WORKDAY_RHYTHM)
+    draft.energyItems.push({
+      id: 'WALK',
+      title: '',
+      guidance: '',
+      mode: 'DAILY_ONCE',
+      notify: false,
+    })
+    const raw = JSON.stringify(draft)
+    expect(parseRhythmConfig(raw)).toBeNull()
+    expect(parseRhythmConfigDraft(raw)?.energyItems).toHaveLength(3)
   })
 })

@@ -58,7 +58,7 @@ class WorkdayRhythmNotificationServiceTest {
                 org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
         assertThat(card.getValue().title()).isEqualTo("精力补给 · 喝水 +1");
         assertThat(card.getValue().fields()).contains(java.util.List.of("成员", "娃弟"),
-                java.util.List.of("今日记录", "已喝水 3 次"));
+                java.util.List.of("今日记录", "已记录 3 次"));
     }
 
     @Test
@@ -87,8 +87,8 @@ class WorkdayRhythmNotificationServiceTest {
         ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
         verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("tenant-token"),
                 org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
-        assertThat(card.getValue().title()).isEqualTo("精力补给 · 冥想一下");
-        assertThat(card.getValue().fields()).contains(java.util.List.of("今日记录", "已完成至少一次冥想"));
+        assertThat(card.getValue().title()).isEqualTo("精力补给 · 至少冥想一次");
+        assertThat(card.getValue().fields()).contains(java.util.List.of("今日记录", "今日已完成"));
     }
 
     @Test
@@ -102,6 +102,42 @@ class WorkdayRhythmNotificationServiceTest {
         assertThatThrownBy(() -> service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY)))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("尚未保存");
+        verify(feishu, never()).sendCard(any(), any(), any());
+    }
+
+    @Test
+    void sendsConfiguredCustomEnergyItemFromPersistedRecord() {
+        when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
+                {"energyNotification":{"enabled":true,"chatId":"oc_target","chatName":"娃屋日常"},
+                "energyItems":[{"id":"WALK","title":"起身走动","guidance":"活动几分钟",
+                "mode":"DAILY_ONCE","notify":true}]}
+                """);
+        when(preferences.find("wd", "workday-rhythm-day-2026-08-18"))
+                .thenReturn("{\"energyRecords\":{\"WALK\":1}}");
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app-id");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("app-secret");
+        when(feishu.tenantAccessToken("app-id", "app-secret")).thenReturn("tenant-token");
+
+        var result = service.notifyEnergy("wd", new SendEnergyNotificationRequest("WALK", DAY));
+
+        assertThat(result.sent()).isTrue();
+        ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("tenant-token"),
+                org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
+        assertThat(card.getValue().title()).isEqualTo("精力补给 · 起身走动");
+        assertThat(card.getValue().fields()).contains(java.util.List.of("今日记录", "今日已完成"));
+    }
+
+    @Test
+    void rejectsDeletedOrUnknownEnergyItemBeforeReadingDay() {
+        when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
+                {"energyNotification":{"enabled":true},"energyItems":[]}
+                """);
+
+        assertThatThrownBy(() -> service.notifyEnergy("wd", new SendEnergyNotificationRequest("REMOVED", DAY)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("不存在或已删除");
+        verify(preferences, never()).find("wd", "workday-rhythm-day-2026-08-18");
         verify(feishu, never()).sendCard(any(), any(), any());
     }
 

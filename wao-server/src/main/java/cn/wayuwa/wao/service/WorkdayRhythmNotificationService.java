@@ -49,10 +49,12 @@ public class WorkdayRhythmNotificationService {
      * @return 是否实际发送，以及目标群名称
      */
     public EnergyNotificationResultDto notifyEnergy(String memberId, SendEnergyNotificationRequest request) {
-        JsonNode notification = read(preferences.find(memberId, CONFIG_KEY)).path("energyNotification");
+        JsonNode config = read(preferences.find(memberId, CONFIG_KEY));
+        JsonNode notification = config.path("energyNotification");
+        EnergyAction action = action(config, request.action());
         String chatName = notification.path("chatName").asText("").trim();
         if (!notification.path("enabled").asBoolean(false)
-                || !notification.path(flagFor(request.action())).asBoolean(true)) {
+                || !action.shouldNotify()) {
             return new EnergyNotificationResultDto(false, chatName);
         }
 
@@ -68,41 +70,71 @@ public class WorkdayRhythmNotificationService {
 
         JsonNode day = read(preferences.find(memberId, DAY_KEY_PREFIX + request.date()));
         String memberName = memberName(memberId);
-        FeishuWebhookNotifier.Card card = card(request.action(), request.date(), day, memberName);
+        FeishuWebhookNotifier.Card card = card(action, request.action(), request.date(), day, memberName);
         feishu.sendCard(feishu.tenantAccessToken(appId, appSecret), chatId, card);
         return new EnergyNotificationResultDto(true,
                 StringUtils.hasText(chatName) ? chatName : "已配置群聊");
     }
 
-    private FeishuWebhookNotifier.Card card(String action, LocalDate date, JsonNode day, String memberName) {
-        if ("WATER".equals(action)) {
-            int count = day.path("waterCount").asInt(0);
-            if (count < 1) {
-                throw new BadRequestException("当天喝水记录尚未保存，请先重试保存");
-            }
-            return new FeishuWebhookNotifier.Card(
-                    "精力补给 · 喝水 +1", "blue",
-                    List.of(List.of("成员", memberName), List.of("日期", date.toString()),
-                            List.of("今日记录", "已喝水 " + count + " 次")),
-                    "这次行动已由本人在「今日节奏」中记录。", "打开今日节奏", links.open("/workday-rhythm"));
+    private FeishuWebhookNotifier.Card card(EnergyAction action, String actionId, LocalDate date, JsonNode day,
+            String memberName) {
+        int count = persistedCount(day, actionId);
+        if (count < 1) {
+            throw new BadRequestException("当天「" + action.title() + "」记录尚未保存，请先重试保存");
         }
-        if (!day.path("meditated").asBoolean(false)) {
-            throw new BadRequestException("当天冥想记录尚未保存，请先重试保存");
-        }
+        String result = "COUNT".equals(action.mode()) ? "已记录 " + count + " 次" : "今日已完成";
         return new FeishuWebhookNotifier.Card(
-                "精力补给 · 冥想一下", "turquoise",
+                "精力补给 · " + action.title() + ("COUNT".equals(action.mode()) ? " +1" : ""),
+                "COUNT".equals(action.mode()) ? "blue" : "turquoise",
                 List.of(List.of("成员", memberName), List.of("日期", date.toString()),
-                        List.of("今日记录", "已完成至少一次冥想")),
+                        List.of("今日记录", result)),
                 "这次行动已由本人在「今日节奏」中记录。", "打开今日节奏", links.open("/workday-rhythm"));
+    }
+
+    private EnergyAction action(JsonNode config, String actionId) {
+        JsonNode items = config.path("energyItems");
+        if (items.isArray()) {
+            for (JsonNode item : items) {
+                if (actionId.equals(item.path("id").asText())) {
+                    String title = item.path("title").asText("").trim();
+                    String mode = item.path("mode").asText("");
+                    if (!StringUtils.hasText(title) || title.length() > 20
+                            || !("COUNT".equals(mode) || "DAILY_ONCE".equals(mode))) {
+                        throw new BadRequestException("精力补给项目配置已损坏，请重新保存后再试");
+                    }
+                    return new EnergyAction(title, mode, item.path("notify").asBoolean(true));
+                }
+            }
+            throw new BadRequestException("精力补给项目不存在或已删除");
+        }
+        JsonNode notification = config.path("energyNotification");
+        if ("WATER".equals(actionId)) {
+            return new EnergyAction("喝水", "COUNT", notification.path("notifyWater").asBoolean(true));
+        }
+        if ("MEDITATION".equals(actionId)) {
+            return new EnergyAction("至少冥想一次", "DAILY_ONCE",
+                    notification.path("notifyMeditation").asBoolean(true));
+        }
+        throw new BadRequestException("精力补给项目不存在或已删除");
+    }
+
+    private int persistedCount(JsonNode day, String actionId) {
+        JsonNode stored = day.path("energyRecords").path(actionId);
+        if (stored.isIntegralNumber()) {
+            return Math.max(0, stored.asInt());
+        }
+        if ("WATER".equals(actionId)) {
+            return Math.max(0, day.path("waterCount").asInt(0));
+        }
+        if ("MEDITATION".equals(actionId) && day.path("meditated").asBoolean(false)) {
+            return 1;
+        }
+        return 0;
     }
 
     private String memberName(String memberId) {
         MemberEntity member = members.selectById(memberId);
         return member != null && StringUtils.hasText(member.getName()) ? member.getName() : memberId;
-    }
-
-    private String flagFor(String action) {
-        return "WATER".equals(action) ? "notifyWater" : "notifyMeditation";
     }
 
     private JsonNode read(String raw) {
@@ -115,4 +147,6 @@ public class WorkdayRhythmNotificationService {
             throw new BadRequestException("今日节奏配置已损坏，请重新保存后再试");
         }
     }
+
+    private record EnergyAction(String title, String mode, boolean shouldNotify) { }
 }

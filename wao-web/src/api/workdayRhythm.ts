@@ -31,16 +31,17 @@ export async function fetchWorkdayRhythmDay(
   date: string,
   weekday: number,
   validIds: string[],
+  validEnergyIds: string[],
 ): Promise<WorkdayRhythmDay> {
   const raw = await fetchPreference(dayKey(date))
-  return parseRhythmDay(raw, date, weekday, validIds)
+  return parseRhythmDay(raw, date, weekday, validIds, validEnergyIds)
 }
 
 export async function saveWorkdayRhythmDay(value: WorkdayRhythmDay): Promise<void> {
   await savePreference(dayKey(value.date), JSON.stringify(value))
 }
 
-export type WorkdayRhythmEnergyAction = 'WATER' | 'MEDITATION'
+export type WorkdayRhythmEnergyAction = string
 
 export interface EnergyNotificationResult {
   sent: boolean
