@@ -18,6 +18,15 @@ import {
 } from '@/api/holiday'
 import type { Task } from '@/types'
 import type { AlternateWorkWeekSchedule } from '@/utils/workSchedule'
+import {
+  createFamilyImportantDate,
+  deleteFamilyImportantDate,
+  fetchFamilyImportantDates,
+  updateFamilyImportantDate,
+  type FamilyImportantDate,
+  type FamilyImportantDateCalendar,
+  type SaveFamilyImportantDate,
+} from '@/api/importantDates'
 
 vi.mock('@/api/caldav', () => ({
   fetchCaldavAccounts: vi.fn<() => Promise<never[]>>(async () => []),
@@ -38,6 +47,13 @@ vi.mock('@/api/holiday', () => ({
   }>>(),
 }))
 
+vi.mock('@/api/importantDates', () => ({
+  fetchFamilyImportantDates: vi.fn<() => Promise<FamilyImportantDateCalendar>>(),
+  createFamilyImportantDate: vi.fn<(value: SaveFamilyImportantDate) => Promise<FamilyImportantDate>>(),
+  updateFamilyImportantDate: vi.fn<(id: string, value: SaveFamilyImportantDate) => Promise<FamilyImportantDate>>(),
+  deleteFamilyImportantDate: vi.fn<(id: string) => Promise<void>>(),
+}))
+
 const emptyHolidayCalendar: HolidayCalendar = { events: [], years: [] }
 const defaultHolidaySettings: HolidaySettings = {
   selectedInternationalCategories: [],
@@ -47,6 +63,9 @@ const defaultHolidaySettings: HolidaySettings = {
   ],
   reminderChannelAvailable: true,
   reminderChannelHint: '提醒将私聊飞书',
+}
+const emptyImportantDates: FamilyImportantDateCalendar = {
+  items: [], events: [], reminderChannelAvailable: true, reminderChannelHint: '提醒将私聊飞书',
 }
 
 function holiday(patch: Partial<HolidayEvent>): HolidayEvent {
@@ -78,6 +97,10 @@ describe('日历成员隔离、清单与时间轴', () => {
     vi.mocked(saveHolidayReminder).mockReset().mockImplementation(async (holidayCode, value) => ({
       holidayCode, enabled: value.enabled, reminderTime: value.reminderTime,
     }))
+    vi.mocked(fetchFamilyImportantDates).mockReset().mockResolvedValue(emptyImportantDates)
+    vi.mocked(createFamilyImportantDate).mockReset()
+    vi.mocked(updateFamilyImportantDate).mockReset()
+    vi.mocked(deleteFamilyImportantDate).mockReset().mockResolvedValue()
   })
 
   it('默认只看当前人，待安排清单只含未排期与已逾期任务并可集中筛选', async () => {
@@ -338,5 +361,68 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(saveHolidayReminder).toHaveBeenLastCalledWith('international.mothers-day', {
       enabled: false, reminderTime: null,
     })
+  })
+
+  it('可维护每年显示的家庭重要日，并设置提前飞书提醒', async () => {
+    const data = useDataStore()
+    const session = useSessionStore()
+    const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me]
+    const items: FamilyImportantDate[] = []
+    vi.mocked(fetchFamilyImportantDates).mockImplementation(async () => ({
+      ...emptyImportantDates,
+      items: [...items],
+      events: items.map((item) => ({
+        id: `event-${item.id}`, importantDateId: item.id, date: data.today, name: item.name,
+        note: item.note, reminderEnabled: item.reminderEnabled,
+        reminderDaysBefore: item.reminderDaysBefore, reminderTime: item.reminderTime,
+      })),
+    }))
+    vi.mocked(createFamilyImportantDate).mockImplementation(async (value) => {
+      const saved = { id: 'fid1', ...value }
+      items.push(saved)
+      return saved
+    })
+    vi.mocked(updateFamilyImportantDate).mockImplementation(async (id, value) => {
+      const saved = { id, ...value }
+      items.splice(0, 1, saved)
+      return saved
+    })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.mocked(deleteFamilyImportantDate).mockImplementation(async () => { items.splice(0) })
+
+    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    await flushPromises()
+    await wrapper.find('.important-date-entry').trigger('click')
+    expect(wrapper.find('.important-date-empty').text()).toContain('还没有家庭重要日')
+
+    await wrapper.find('.important-date-empty button').trigger('click')
+    await wrapper.find('.important-date-field input[type="text"]').setValue('妈妈生日')
+    await wrapper.find('.important-date-field input[type="date"]').setValue(data.today)
+    await wrapper.find('.important-date-field textarea').setValue('记得提前订花')
+    await wrapper.find('.important-date-reminder-toggle input').setValue(true)
+    await wrapper.find('.important-date-field input[type="number"]').setValue(3)
+    await wrapper.find('.important-date-field input[type="time"]').setValue('08:30')
+    await wrapper.find('.important-date-form').trigger('submit')
+    await flushPromises()
+
+    expect(createFamilyImportantDate).toHaveBeenCalledWith({
+      name: '妈妈生日', eventDate: data.today, note: '记得提前订花', reminderEnabled: true,
+      reminderDaysBefore: 3, reminderTime: '08:30',
+    })
+    expect(wrapper.find('.important-date-item').text()).toContain('提前 3 天 08:30 飞书提醒')
+    expect(wrapper.findAll('.event').some((event) => event.text().includes('妈妈生日'))).toBe(true)
+
+    await wrapper.find('.important-date-main').trigger('click')
+    await wrapper.find('.important-date-field input[type="text"]').setValue('妈妈生日纪念')
+    await wrapper.find('.important-date-form').trigger('submit')
+    await flushPromises()
+    expect(updateFamilyImportantDate).toHaveBeenCalledWith('fid1', expect.objectContaining({ name: '妈妈生日纪念' }))
+
+    await wrapper.find('.important-date-delete').trigger('click')
+    await flushPromises()
+    expect(deleteFamilyImportantDate).toHaveBeenCalledWith('fid1')
+    expect(wrapper.find('.important-date-empty').exists()).toBe(true)
   })
 })

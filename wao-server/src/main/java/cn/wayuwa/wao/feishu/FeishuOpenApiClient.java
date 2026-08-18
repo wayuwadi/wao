@@ -198,6 +198,12 @@ public class FeishuOpenApiClient {
 
     /** 往一个成员的飞书私聊发送带 WAO 跳转按钮的行动提醒。 */
     public void sendDirectCard(String token, String openId, String title, String body, String actionUrl) {
+        sendDirectCard(token, openId, title, body, actionUrl, "打开 WAO 打卡");
+    }
+
+    /** 往一个成员的飞书私聊发送带自定义 WAO 跳转按钮的提醒。 */
+    public void sendDirectCard(String token, String openId, String title, String body, String actionUrl,
+            String actionLabel) {
         Map<String, Object> card = Map.of(
                 "config", Map.of("wide_screen_mode", true),
                 "header", Map.of("template", "turquoise",
@@ -206,7 +212,7 @@ public class FeishuOpenApiClient {
                         Map.of("tag", "div", "text", Map.of("tag", "lark_md", "content", body)),
                         Map.of("tag", "action", "actions", List.of(Map.of(
                                 "tag", "button", "type", "primary",
-                                "text", Map.of("tag", "plain_text", "content", "打开 WAO 打卡"),
+                                "text", Map.of("tag", "plain_text", "content", actionLabel),
                                 "url", actionUrl)))));
         post("/open-apis/im/v1/messages?receive_id_type=open_id",
                 Map.of("receive_id", openId, "msg_type", "interactive", "content", writeJson(card)), token);

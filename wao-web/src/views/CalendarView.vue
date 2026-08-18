@@ -16,6 +16,15 @@ import {
   type HolidaySettings,
   type HolidayYearSource,
 } from '@/api/holiday'
+import {
+  createFamilyImportantDate,
+  deleteFamilyImportantDate,
+  fetchFamilyImportantDates,
+  updateFamilyImportantDate,
+  type FamilyImportantDate,
+  type FamilyImportantDateEvent,
+  type SaveFamilyImportantDate,
+} from '@/api/importantDates'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
 import type { Task } from '@/types'
@@ -39,6 +48,7 @@ interface CalEvt {
   taskId?: string
   holidayDayType?: HolidayDayType
   holiday?: HolidayEvent
+  importantDate?: FamilyImportantDateEvent
   go?: () => void
 }
 
@@ -151,6 +161,13 @@ const holidayEvents = ref<HolidayEvent[]>([])
 const holidayYears = ref<HolidayYearSource[]>([])
 const holidayState = ref<'loading' | 'ready' | 'error'>('loading')
 let holidayRequestSequence = 0
+const importantDateItems = ref<FamilyImportantDate[]>([])
+const importantDateEvents = ref<FamilyImportantDateEvent[]>([])
+const importantDateState = ref<'loading' | 'ready' | 'error'>('loading')
+const importantDateLoadError = ref('')
+const importantDateChannelAvailable = ref(false)
+const importantDateChannelHint = ref('正在读取飞书提醒通道状态…')
+let importantDateRequestSequence = 0
 
 const caldavState = computed(() => {
   if (!accounts.value.length) return { label: '接入 CalDAV 日历', dot: '#9A9DA9' }
@@ -225,9 +242,33 @@ async function loadHolidays() {
   }
 }
 
+/** 拉取当前成员维护的家庭重要日；旧日期窗响应不能覆盖快速翻页后的结果。 */
+async function loadImportantDates() {
+  const requestSequence = ++importantDateRequestSequence
+  const { from, to } = visibleRange()
+  importantDateState.value = 'loading'
+  importantDateLoadError.value = ''
+  try {
+    const result = await fetchFamilyImportantDates(iso(from), iso(to))
+    if (requestSequence !== importantDateRequestSequence) return
+    importantDateItems.value = result.items
+    importantDateEvents.value = result.events
+    importantDateChannelAvailable.value = result.reminderChannelAvailable
+    importantDateChannelHint.value = result.reminderChannelHint
+    importantDateState.value = 'ready'
+  } catch (error) {
+    if (requestSequence !== importantDateRequestSequence) return
+    importantDateItems.value = []
+    importantDateEvents.value = []
+    importantDateLoadError.value = error instanceof Error ? error.message : '读取家庭重要日失败'
+    importantDateState.value = 'error'
+  }
+}
+
 function loadCalendarSources() {
   loadEvents()
   loadHolidays()
+  loadImportantDates()
 }
 
 function iso(d: Date) {
@@ -256,6 +297,9 @@ const legend = computed(() => {
   }
   if (holidayEvents.value.some((event) => event.dayType === 'ADJUSTED_WORKDAY')) {
     items.push({ label: '调休上班', color: '#79808F' })
+  }
+  if (importantDateItems.value.length || importantDateEvents.value.length) {
+    items.push({ label: '家庭重要日', color: '#D0527F' })
   }
   for (const a of accounts.value) {
     for (const c of a.calendars) {
@@ -305,6 +349,17 @@ const events = computed<CalEvt[]>(() => {
       holidayDayType: holiday.dayType,
       holiday,
       go: () => openHolidayDetail(holiday),
+    })
+  })
+  importantDateEvents.value.forEach((importantDate) => {
+    evs.push({
+      date: importantDate.date,
+      title: importantDate.name,
+      color: '#D0527F',
+      time: importantDate.reminderEnabled && importantDate.reminderDaysBefore === 0
+        ? importantDate.reminderTime ?? undefined : undefined,
+      importantDate,
+      go: () => openImportantDateEvent(importantDate),
     })
   })
   return evs
@@ -610,6 +665,170 @@ async function submitHolidayReminder() {
   }
 }
 
+// ---------- 家庭重要日：成员级维护、年度日历事件与飞书提醒 ----------
+const showImportantDates = ref(false)
+const importantDateEditorOpen = ref(false)
+const editingImportantDateId = ref<string | null>(null)
+const importantDateSaving = ref(false)
+const importantDateSaveError = ref('')
+const importantDateDeletingId = ref<string | null>(null)
+const importantDateDraft = reactive<SaveFamilyImportantDate>({
+  name: '',
+  eventDate: data.today,
+  note: null,
+  reminderEnabled: false,
+  reminderDaysBefore: 0,
+  reminderTime: '09:00',
+})
+const importantDateDraftKey = computed(() =>
+  `wao-family-important-date-draft:${session.currentUser.id || 'anonymous'}:${editingImportantDateId.value || 'new'}`)
+
+function copyImportantDateDraft(value?: FamilyImportantDate) {
+  importantDateDraft.name = value?.name ?? ''
+  importantDateDraft.eventDate = value?.eventDate ?? data.today
+  importantDateDraft.note = value?.note ?? null
+  importantDateDraft.reminderEnabled = value?.reminderEnabled ?? false
+  importantDateDraft.reminderDaysBefore = value?.reminderDaysBefore ?? 0
+  importantDateDraft.reminderTime = value?.reminderTime ?? '09:00'
+}
+
+function restoreImportantDateDraft(value?: FamilyImportantDate) {
+  copyImportantDateDraft(value)
+  try {
+    const parsed = JSON.parse(localStorage.getItem(importantDateDraftKey.value) || 'null') as Partial<SaveFamilyImportantDate> | null
+    if (!parsed) return
+    if (typeof parsed.name === 'string') importantDateDraft.name = parsed.name
+    if (typeof parsed.eventDate === 'string') importantDateDraft.eventDate = parsed.eventDate
+    if (typeof parsed.note === 'string' || parsed.note === null) importantDateDraft.note = parsed.note
+    if (typeof parsed.reminderEnabled === 'boolean') importantDateDraft.reminderEnabled = parsed.reminderEnabled
+    if (typeof parsed.reminderDaysBefore === 'number') importantDateDraft.reminderDaysBefore = parsed.reminderDaysBefore
+    if (typeof parsed.reminderTime === 'string') importantDateDraft.reminderTime = parsed.reminderTime
+  } catch {
+    copyImportantDateDraft(value)
+  }
+}
+
+function openImportantDateManager() {
+  editingImportantDateId.value = null
+  importantDateEditorOpen.value = false
+  importantDateSaveError.value = ''
+  showImportantDates.value = true
+}
+
+function closeImportantDateManager() {
+  if (importantDateSaving.value || importantDateDeletingId.value) return
+  showImportantDates.value = false
+  editingImportantDateId.value = null
+  importantDateEditorOpen.value = false
+  importantDateSaveError.value = ''
+}
+
+function startNewImportantDate() {
+  editingImportantDateId.value = null
+  importantDateEditorOpen.value = true
+  importantDateSaveError.value = ''
+  restoreImportantDateDraft()
+}
+
+function editImportantDate(value: FamilyImportantDate) {
+  editingImportantDateId.value = value.id
+  importantDateEditorOpen.value = true
+  importantDateSaveError.value = ''
+  restoreImportantDateDraft(value)
+}
+
+function openImportantDateEvent(event: FamilyImportantDateEvent) {
+  showImportantDates.value = true
+  const item = importantDateItems.value.find((value) => value.id === event.importantDateId)
+  if (item) editImportantDate(item)
+}
+
+function backToImportantDateList() {
+  if (importantDateSaving.value) return
+  editingImportantDateId.value = null
+  importantDateEditorOpen.value = false
+  importantDateSaveError.value = ''
+}
+
+watch(importantDateDraft, (value) => {
+  if (showImportantDates.value && importantDateEditorOpen.value
+      && (editingImportantDateId.value || value.name || value.note)) {
+    localStorage.setItem(importantDateDraftKey.value, JSON.stringify(value))
+  }
+}, { deep: true })
+
+async function submitImportantDate() {
+  if (!importantDateDraft.name.trim()) {
+    importantDateSaveError.value = '请填写重要日名称'
+    return
+  }
+  if (!importantDateDraft.eventDate) {
+    importantDateSaveError.value = '请选择日期'
+    return
+  }
+  if (importantDateDraft.reminderEnabled && !importantDateDraft.reminderTime) {
+    importantDateSaveError.value = '开启飞书提醒后请选择时间'
+    return
+  }
+  importantDateSaving.value = true
+  importantDateSaveError.value = ''
+  const draftKey = importantDateDraftKey.value
+  const payload: SaveFamilyImportantDate = {
+    ...importantDateDraft,
+    name: importantDateDraft.name.trim(),
+    note: importantDateDraft.note?.trim() || null,
+    reminderTime: importantDateDraft.reminderEnabled ? importantDateDraft.reminderTime : null,
+  }
+  try {
+    if (editingImportantDateId.value) {
+      await updateFamilyImportantDate(editingImportantDateId.value, payload)
+    } else {
+      await createFamilyImportantDate(payload)
+    }
+    localStorage.removeItem(draftKey)
+    const name = payload.name
+    editingImportantDateId.value = null
+    importantDateEditorOpen.value = false
+    await loadImportantDates()
+    toast(`${name}已保存，并会每年显示在日历中`, 'ri-heart-3-line')
+  } catch (error) {
+    importantDateSaveError.value = error instanceof Error ? error.message : '保存家庭重要日失败'
+  } finally {
+    importantDateSaving.value = false
+  }
+}
+
+async function removeImportantDate(value: FamilyImportantDate) {
+  if (!window.confirm(`删除“${value.name}”？日历事件和飞书提醒也会一并删除。`)) return
+  importantDateDeletingId.value = value.id
+  importantDateSaveError.value = ''
+  try {
+    await deleteFamilyImportantDate(value.id)
+    localStorage.removeItem(`wao-family-important-date-draft:${session.currentUser.id || 'anonymous'}:${value.id}`)
+    if (editingImportantDateId.value === value.id) {
+      editingImportantDateId.value = null
+      importantDateEditorOpen.value = false
+    }
+    await loadImportantDates()
+    toast(`${value.name}已删除`, 'ri-delete-bin-line')
+  } catch (error) {
+    importantDateSaveError.value = error instanceof Error ? error.message : '删除家庭重要日失败'
+  } finally {
+    importantDateDeletingId.value = null
+  }
+}
+
+function importantDateMonthDay(value: string) {
+  const [, month, day] = value.split('-')
+  return `${Number(month)} 月 ${Number(day)} 日`
+}
+
+function importantDateReminderLabel(value: FamilyImportantDate) {
+  if (!value.reminderEnabled) return '仅在日历显示'
+  const before = value.reminderDaysBefore ? `提前 ${value.reminderDaysBefore} 天` : '当天'
+  return `${before} ${value.reminderTime} 飞书提醒`
+}
+
 // ---------- CalDAV 配置浮层：账户是个人维度，就近在日历页里配置 ----------
 const showCaldavConfig = ref(false)
 function onCaldavChanged() {
@@ -700,6 +919,10 @@ function onDropDay(dayIso: string) {
       <button class="holiday-settings-entry" title="选择国际节日范围" @click="openHolidaySettings">
         <i class="ri-earth-line"></i>节日设置 · {{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类
       </button>
+      <button class="important-date-entry" title="维护家人的生日、纪念日等重要日期" @click="openImportantDateManager">
+        <i :class="importantDateState === 'loading' ? 'ri-loader-4-line spinning' : importantDateState === 'error' ? 'ri-error-warning-line' : 'ri-heart-3-line'"></i>
+        重要日 · {{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}
+      </button>
       <button class="caldav" title="配置 CalDAV 日历账户" @click="showCaldavConfig = true">
         <span class="cd-dot" :style="{ background: caldavState.dot }"></span>{{ caldavState.label }}<i class="ri-settings-3-line"></i>
       </button>
@@ -727,7 +950,7 @@ function onDropDay(dayIso: string) {
       <div class="cal-card">
         <div class="cal-head">
           <div class="month-title">{{ viewMode === 'year' ? `${calY} 年` : viewMode === 'week' ? `${weekDays[0]?.label} - ${weekDays[6]?.label}` : viewMode === 'day' ? dayView[0]?.label : month.title }}</div>
-          <span class="cal-hint">任务、里程碑、节假日与订阅日历合并显示</span>
+          <span class="cal-hint">任务、里程碑、节假日、家庭重要日与订阅日历合并显示</span>
         </div>
         <div v-if="missingHolidayYears.length" class="holiday-source-warning">
           <i class="ri-information-line"></i>
@@ -923,6 +1146,100 @@ function onDropDay(dayIso: string) {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </template>
+
+    <!-- 家庭重要日维护浮层 -->
+    <template v-if="showImportantDates">
+      <div class="cd-mask" @click="closeImportantDateManager"></div>
+      <div class="important-date-modal" role="dialog" aria-modal="true" aria-labelledby="important-date-title">
+        <div class="cd-head">
+          <button v-if="importantDateEditorOpen" class="important-date-back" type="button" :disabled="importantDateSaving" @click="backToImportantDateList">
+            <i class="ri-arrow-left-line"></i><span>返回</span>
+          </button>
+          <div id="important-date-title" class="cd-title">{{ importantDateEditorOpen ? (editingImportantDateId ? '编辑家庭重要日' : '新增家庭重要日') : '家庭重要日' }}</div>
+          <div class="spacer"></div>
+          <button class="cd-close" aria-label="关闭家庭重要日" :disabled="importantDateSaving || !!importantDateDeletingId" @click="closeImportantDateManager"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="important-date-body">
+          <form v-if="importantDateEditorOpen" class="important-date-form" @submit.prevent="submitImportantDate">
+            <p class="important-date-intro">保存后会按公历月日每年出现在 WAO 日历；可同时设置当天或提前飞书提醒。</p>
+            <label class="important-date-field">
+              <span>名称</span>
+              <input v-model="importantDateDraft.name" type="text" maxlength="64" required placeholder="例如：妈妈生日、结婚纪念日" :disabled="importantDateSaving" />
+            </label>
+            <label class="important-date-field">
+              <span>日期</span>
+              <input v-model="importantDateDraft.eventDate" type="date" required :disabled="importantDateSaving" />
+              <small>从所选年份起按月和日每年重复；2 月 29 日只在闰年显示。</small>
+            </label>
+            <label class="important-date-field">
+              <span>备注（可选）</span>
+              <textarea v-model="importantDateDraft.note" maxlength="200" rows="3" placeholder="例如：喜欢百合花，记得提前订餐" :disabled="importantDateSaving"></textarea>
+            </label>
+            <label class="important-date-reminder-toggle">
+              <span><b>飞书私聊提醒</b><small>{{ importantDateChannelHint }}</small></span>
+              <input v-model="importantDateDraft.reminderEnabled" type="checkbox" :disabled="importantDateSaving || (!importantDateChannelAvailable && !importantDateDraft.reminderEnabled)" />
+            </label>
+            <div class="important-date-reminder-fields">
+              <label class="important-date-field">
+                <span>提前天数</span>
+                <input v-model.number="importantDateDraft.reminderDaysBefore" type="number" min="0" max="30" required :disabled="importantDateSaving || !importantDateDraft.reminderEnabled" />
+                <small>0 表示当天提醒，最多提前 30 天。</small>
+              </label>
+              <label class="important-date-field">
+                <span>提醒时间</span>
+                <input v-model="importantDateDraft.reminderTime" type="time" required :disabled="importantDateSaving || !importantDateDraft.reminderEnabled" />
+                <small>按上海时区发送。</small>
+              </label>
+            </div>
+            <div v-if="importantDateDraft.reminderEnabled && !importantDateChannelAvailable" class="work-schedule-state error compact">{{ importantDateChannelHint }}</div>
+            <div v-if="importantDateSaveError" class="work-schedule-state error compact">保存失败：{{ importantDateSaveError }}。草稿已保留，可直接重试。</div>
+            <div class="work-schedule-actions">
+              <button type="button" class="work-schedule-cancel" :disabled="importantDateSaving" @click="backToImportantDateList">返回列表</button>
+              <button type="submit" class="work-schedule-save" :disabled="importantDateSaving || (importantDateDraft.reminderEnabled && !importantDateChannelAvailable)">
+                <i v-if="importantDateSaving" class="ri-loader-4-line spinning"></i>{{ importantDateSaving ? '保存中…' : importantDateSaveError ? '重试保存' : '保存重要日' }}
+              </button>
+            </div>
+          </form>
+          <template v-else>
+            <div class="important-date-list-head">
+              <div>
+                <b>每年记得重要的人与重要的日子</b>
+                <span>这里只维护当前账号的家庭重要日。</span>
+              </div>
+              <button type="button" @click="startNewImportantDate"><i class="ri-add-line"></i>新增重要日</button>
+            </div>
+            <div v-if="importantDateState === 'loading'" class="work-schedule-state"><i class="ri-loader-4-line spinning"></i>正在读取已保存的重要日…</div>
+            <div v-else-if="importantDateState === 'error'" class="work-schedule-state error">
+              <span>读取失败：{{ importantDateLoadError }}</span>
+              <button type="button" @click="loadImportantDates">重新读取</button>
+            </div>
+            <div v-else-if="!importantDateItems.length" class="important-date-empty">
+              <i class="ri-heart-add-line"></i>
+              <b>还没有家庭重要日</b>
+              <span>新增生日或纪念日后，它会每年显示在日历里。</span>
+              <button type="button" @click="startNewImportantDate">新增第一个重要日</button>
+            </div>
+            <div v-else class="important-date-list">
+              <article v-for="item in importantDateItems" :key="item.id" class="important-date-item">
+                <button class="important-date-main" type="button" @click="editImportantDate(item)">
+                  <span class="important-date-icon"><i class="ri-heart-3-line"></i></span>
+                  <span class="important-date-copy">
+                    <b>{{ item.name }}</b>
+                    <small>{{ importantDateMonthDay(item.eventDate) }} · {{ importantDateReminderLabel(item) }}</small>
+                    <em v-if="item.note">{{ item.note }}</em>
+                  </span>
+                  <i class="ri-arrow-right-s-line"></i>
+                </button>
+                <button class="important-date-delete" type="button" :disabled="!!importantDateDeletingId" :aria-label="`删除${item.name}`" @click="removeImportantDate(item)">
+                  <i :class="importantDateDeletingId === item.id ? 'ri-loader-4-line spinning' : 'ri-delete-bin-line'"></i>
+                </button>
+              </article>
+            </div>
+            <div v-if="importantDateSaveError" class="work-schedule-state error compact">操作失败：{{ importantDateSaveError }}，请重试。</div>
+          </template>
         </div>
       </div>
     </template>
@@ -1170,7 +1487,7 @@ button.holiday-status { cursor: pointer; }
 .holiday-status.error { color: var(--wao-danger); }
 .holiday-status .spin { display: inline-block; animation: holiday-spin .9s linear infinite; }
 @keyframes holiday-spin { to { transform: rotate(360deg); } }
-.caldav, .work-schedule, .holiday-settings-entry {
+.caldav, .work-schedule, .holiday-settings-entry, .important-date-entry {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1182,7 +1499,7 @@ button.holiday-status { cursor: pointer; }
   color: var(--wao-text-2);
   cursor: pointer;
 }
-.caldav:hover, .work-schedule:hover, .holiday-settings-entry:hover {
+.caldav:hover, .work-schedule:hover, .holiday-settings-entry:hover, .important-date-entry:hover {
   border-color: #c9cdda;
   background: var(--wao-bg-sub);
 }
@@ -1191,7 +1508,7 @@ button.holiday-status { cursor: pointer; }
   height: 6px;
   border-radius: 50%;
 }
-.caldav i, .work-schedule i, .holiday-settings-entry i {
+.caldav i, .work-schedule i, .holiday-settings-entry i, .important-date-entry i {
   font-size: 12px;
   color: var(--wao-text-weak);
 }
@@ -1743,6 +2060,100 @@ button.holiday-status { cursor: pointer; }
   font-size: 12px;
   line-height: 1.6;
 }
+.important-date-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(600px, calc(100vw - 32px));
+  max-height: min(780px, calc(100dvh - 32px));
+  z-index: 101;
+  overflow: auto;
+  transform: translate(-50%, -50%);
+  border-radius: 14px;
+  background: var(--wao-bg-page);
+  box-shadow: var(--wao-shadow-modal);
+  animation: waoFade 0.15s ease;
+}
+.important-date-body { padding: 4px 20px 20px; }
+.important-date-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 8px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wao-text-3);
+  cursor: pointer;
+}
+.important-date-back:hover { background: var(--wao-bg-hover); }
+.important-date-intro { margin: 2px 0 14px; color: var(--wao-text-weak); font-size: 12px; line-height: 1.6; }
+.important-date-form { display: grid; gap: 12px; }
+.important-date-field { display: grid; gap: 6px; color: var(--wao-text-2); font-size: 12px; }
+.important-date-field input, .important-date-field textarea {
+  width: 100%;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-1);
+  font: inherit;
+}
+.important-date-field input { height: 36px; }
+.important-date-field textarea { resize: vertical; line-height: 1.5; }
+.important-date-field small { color: var(--wao-text-weak); font-size: 11px; line-height: 1.5; }
+.important-date-reminder-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  background: var(--wao-bg-card);
+}
+.important-date-reminder-toggle span, .important-date-reminder-toggle small { display: block; }
+.important-date-reminder-toggle b { font-size: 13px; }
+.important-date-reminder-toggle small { margin-top: 3px; color: var(--wao-text-weak); font-size: 11px; line-height: 1.45; }
+.important-date-reminder-toggle input { width: 18px; height: 18px; accent-color: #d0527f; flex-shrink: 0; }
+.important-date-reminder-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.important-date-list-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 2px 0 14px; }
+.important-date-list-head div, .important-date-list-head span { display: block; }
+.important-date-list-head b { color: var(--wao-text-1); font-size: 13px; }
+.important-date-list-head span { margin-top: 3px; color: var(--wao-text-weak); font-size: 11.5px; }
+.important-date-list-head button, .important-date-empty button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #d0527f;
+  color: #fff;
+  cursor: pointer;
+}
+.important-date-list { display: grid; gap: 8px; }
+.important-date-item { display: flex; align-items: stretch; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-card); overflow: hidden; }
+.important-date-item:hover { border-color: #df9db5; }
+.important-date-main { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; padding: 11px 12px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.important-date-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; background: #fbeef3; color: #bd3e6c; }
+.important-date-copy { display: block; min-width: 0; flex: 1; }
+.important-date-copy b, .important-date-copy small, .important-date-copy em { display: block; }
+.important-date-copy b { color: var(--wao-text-1); font-size: 13px; }
+.important-date-copy small { margin-top: 3px; color: var(--wao-text-weak); font-size: 11.5px; }
+.important-date-copy em { margin-top: 4px; overflow: hidden; color: var(--wao-text-3); font-size: 11px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.important-date-delete { width: 42px; flex-shrink: 0; border: 0; border-left: 1px solid var(--wao-divider); background: transparent; color: var(--wao-text-weak); cursor: pointer; }
+.important-date-delete:hover { background: #fff2f0; color: var(--wao-danger); }
+.important-date-delete:disabled { cursor: not-allowed; opacity: .6; }
+.important-date-empty { display: flex; min-height: 240px; align-items: center; justify-content: center; flex-direction: column; gap: 7px; color: var(--wao-text-weak); text-align: center; }
+.important-date-empty > i { font-size: 34px; color: #d0527f; }
+.important-date-empty b { color: var(--wao-text-2); font-size: 14px; }
+.important-date-empty span { font-size: 12px; }
+.important-date-empty button { margin-top: 8px; }
 @media (max-width: 640px) {
   .cal { padding-inline: 12px; }
   .holiday-source-warning { flex-wrap: wrap; }
@@ -1750,5 +2161,9 @@ button.holiday-status { cursor: pointer; }
   .holiday-modal-body { padding-inline: 14px; }
   .holiday-facts div { grid-template-columns: 58px 1fr; }
   .holiday-reminder-form .work-schedule-field { grid-template-columns: 1fr; }
+  .important-date-body { padding-inline: 14px; }
+  .important-date-reminder-fields { grid-template-columns: 1fr; }
+  .important-date-list-head { align-items: flex-start; }
+  .important-date-list-head span { max-width: 190px; }
 }
 </style>

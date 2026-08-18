@@ -207,7 +207,7 @@ public class HolidayCalendarService {
             feishu.sendDirectCard(feishu.tenantAccessToken(appId, secret), identity.getProviderSubject(),
                     "节日提醒 · " + event.name(),
                     "今天是 " + event.date() + "（" + event.name() + "）。你曾在 WAO 为这个节日开启提醒。",
-                    FeishuAppLinks.SITE + "/calendar");
+                    FeishuAppLinks.SITE + "/calendar", "打开 WAO 日历");
             delivery.setStatus("SENT");
             delivery.setSentAt(now);
             delivery.setErrorMessage(null);
