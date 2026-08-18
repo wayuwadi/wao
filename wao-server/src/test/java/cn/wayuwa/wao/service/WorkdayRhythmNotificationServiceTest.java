@@ -1,0 +1,114 @@
+package cn.wayuwa.wao.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.LocalDate;
+
+import cn.wayuwa.wao.auth.FeishuLoginProperties;
+import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.domain.MemberEntity;
+import cn.wayuwa.wao.dto.SendEnergyNotificationRequest;
+import cn.wayuwa.wao.feishu.FeishuAppLinks;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
+import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
+import cn.wayuwa.wao.mapper.MemberMapper;
+import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+class WorkdayRhythmNotificationServiceTest {
+
+    private static final LocalDate DAY = LocalDate.of(2026, 8, 18);
+
+    private final MemberPreferenceMapper preferences = mock(MemberPreferenceMapper.class);
+    private final MemberMapper members = mock(MemberMapper.class);
+    private final SettingService settings = mock(SettingService.class);
+    private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
+    private final FeishuAppLinks links = new FeishuAppLinks(
+            new FeishuLoginProperties(false, "", "", "", "", "https://open.feishu.cn"));
+    private final WorkdayRhythmNotificationService service = new WorkdayRhythmNotificationService(
+            preferences, members, settings, feishu, links, new ObjectMapper());
+
+    @Test
+    void sendsPersistedWaterRecordToMembersOwnConfiguredChat() {
+        configured(true, true);
+        when(preferences.find("wd", "workday-rhythm-day-2026-08-18"))
+                .thenReturn("{\"waterCount\":3,\"meditated\":false}");
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app-id");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("app-secret");
+        when(feishu.tenantAccessToken("app-id", "app-secret")).thenReturn("tenant-token");
+        MemberEntity member = new MemberEntity();
+        member.setId("wd");
+        member.setName("娃弟");
+        when(members.selectById("wd")).thenReturn(member);
+
+        var result = service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY));
+
+        assertThat(result.sent()).isTrue();
+        assertThat(result.chatName()).isEqualTo("娃屋日常");
+        ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("tenant-token"),
+                org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
+        assertThat(card.getValue().title()).isEqualTo("精力补给 · 喝水 +1");
+        assertThat(card.getValue().fields()).contains(java.util.List.of("成员", "娃弟"),
+                java.util.List.of("今日记录", "已喝水 3 次"));
+    }
+
+    @Test
+    void disabledActionDoesNotReadAnotherMembersDayOrSend() {
+        configured(true, false);
+
+        var result = service.notifyEnergy("wd", new SendEnergyNotificationRequest("MEDITATION", DAY));
+
+        assertThat(result.sent()).isFalse();
+        verify(preferences, never()).find("wd", "workday-rhythm-day-2026-08-18");
+        verify(feishu, never()).sendCard(any(), any(), any());
+    }
+
+    @Test
+    void sendsMeditationOnlyAfterTheMembersCompletionWasPersisted() {
+        configured(true, true);
+        when(preferences.find("wd", "workday-rhythm-day-2026-08-18"))
+                .thenReturn("{\"waterCount\":1,\"meditated\":true}");
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app-id");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("app-secret");
+        when(feishu.tenantAccessToken("app-id", "app-secret")).thenReturn("tenant-token");
+
+        var result = service.notifyEnergy("wd", new SendEnergyNotificationRequest("MEDITATION", DAY));
+
+        assertThat(result.sent()).isTrue();
+        ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("tenant-token"),
+                org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
+        assertThat(card.getValue().title()).isEqualTo("精力补给 · 冥想一下");
+        assertThat(card.getValue().fields()).contains(java.util.List.of("今日记录", "已完成至少一次冥想"));
+    }
+
+    @Test
+    void rejectsNotificationWhenTheClaimedActionWasNotPersisted() {
+        configured(true, true);
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app-id");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("app-secret");
+        when(preferences.find("wd", "workday-rhythm-day-2026-08-18"))
+                .thenReturn("{\"waterCount\":0,\"meditated\":false}");
+
+        assertThatThrownBy(() -> service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("尚未保存");
+        verify(feishu, never()).sendCard(any(), any(), any());
+    }
+
+    private void configured(boolean enabled, boolean meditation) {
+        when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
+                {"energyNotification":{"enabled":%s,"chatId":"oc_target","chatName":"娃屋日常",
+                "notifyWater":true,"notifyMeditation":%s}}
+                """.formatted(enabled, meditation));
+    }
+}

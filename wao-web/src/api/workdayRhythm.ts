@@ -1,4 +1,5 @@
 import { fetchPreference, savePreference } from './favorites'
+import { http, type ApiResponse } from './http'
 import {
   DEFAULT_WORKDAY_RHYTHM,
   cloneRhythmConfig,
@@ -37,4 +38,23 @@ export async function fetchWorkdayRhythmDay(
 
 export async function saveWorkdayRhythmDay(value: WorkdayRhythmDay): Promise<void> {
   await savePreference(dayKey(value.date), JSON.stringify(value))
+}
+
+export type WorkdayRhythmEnergyAction = 'WATER' | 'MEDITATION'
+
+export interface EnergyNotificationResult {
+  sent: boolean
+  chatName: string
+}
+
+/** 当天记录成功落库后，由服务端复核本人记录并用服务端飞书凭据向本人配置的群发通知。 */
+export async function sendEnergyNotification(
+  action: WorkdayRhythmEnergyAction,
+  date: string,
+): Promise<EnergyNotificationResult> {
+  const res = await http.post<ApiResponse<EnergyNotificationResult>>(
+    '/api/workday-rhythm/energy-notifications',
+    { action, date },
+  )
+  return res.data.data
 }

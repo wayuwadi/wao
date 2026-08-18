@@ -6,7 +6,9 @@ import {
   fetchWorkdayRhythmDay,
   saveWorkdayRhythm,
   saveWorkdayRhythmDay,
+  sendEnergyNotification,
 } from '@/api/workdayRhythm'
+import { fetchFeishuChats } from '@/api/system'
 import {
   DEFAULT_WORKDAY_RHYTHM,
   cloneRhythmConfig,
@@ -15,11 +17,14 @@ import {
 } from '@/utils/workdayRhythm'
 
 vi.mock('@/api/workdayRhythm', () => ({
-  fetchWorkdayRhythm: vi.fn(),
-  fetchWorkdayRhythmDay: vi.fn(),
-  saveWorkdayRhythm: vi.fn(),
-  saveWorkdayRhythmDay: vi.fn(),
+  fetchWorkdayRhythm: vi.fn<typeof fetchWorkdayRhythm>(),
+  fetchWorkdayRhythmDay: vi.fn<typeof fetchWorkdayRhythmDay>(),
+  saveWorkdayRhythm: vi.fn<typeof saveWorkdayRhythm>(),
+  saveWorkdayRhythmDay: vi.fn<typeof saveWorkdayRhythmDay>(),
+  sendEnergyNotification: vi.fn<typeof sendEnergyNotification>(),
 }))
+
+vi.mock('@/api/system', () => ({ fetchFeishuChats: vi.fn<typeof fetchFeishuChats>() }))
 
 const clock = shanghaiClock()
 
@@ -36,6 +41,8 @@ describe('WorkdayRhythmView', () => {
     vi.mocked(fetchWorkdayRhythmDay).mockResolvedValue(defaultRhythmDay(clock.date, clock.weekday))
     vi.mocked(saveWorkdayRhythmDay).mockResolvedValue()
     vi.mocked(saveWorkdayRhythm).mockResolvedValue(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
+    vi.mocked(sendEnergyNotification).mockResolvedValue({ sent: true, chatName: '娃屋日常' })
+    vi.mocked(fetchFeishuChats).mockResolvedValue([{ chatId: 'oc_daily', name: '娃屋日常' }])
   })
   afterEach(() => vi.clearAllMocks())
 
@@ -111,6 +118,61 @@ describe('WorkdayRhythmView', () => {
       }),
     )
     expect(wrapper.find('.editor').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('从精力卡设置本人通知群并随节奏配置跨设备保存', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.energy-card header button').trigger('click')
+    await flushPromises()
+    await wrapper.get('.toggle-field input').setValue(true)
+    await flushPromises()
+    await wrapper.get('.chat-field select').setValue('oc_daily')
+    await wrapper.get('.editor .primary').trigger('click')
+    await flushPromises()
+
+    expect(saveWorkdayRhythm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        energyNotification: {
+          enabled: true,
+          chatId: 'oc_daily',
+          chatName: '娃屋日常',
+          notifyWater: true,
+          notifyMeditation: true,
+        },
+      }),
+    )
+    wrapper.unmount()
+  })
+
+  it('喝水记录落库后通知本人配置的群，失败时可原位重试', async () => {
+    const configured = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
+    configured.energyNotification = {
+      enabled: true,
+      chatId: 'oc_daily',
+      chatName: '娃屋日常',
+      notifyWater: true,
+      notifyMeditation: true,
+    }
+    vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
+    vi.mocked(sendEnergyNotification)
+      .mockRejectedValueOnce(new Error('飞书暂时不可用'))
+      .mockResolvedValueOnce({ sent: true, chatName: '娃屋日常' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.energy-action.water').trigger('click')
+    await flushPromises()
+    expect(saveWorkdayRhythmDay).toHaveBeenCalledWith(expect.objectContaining({ waterCount: 1 }))
+    expect(sendEnergyNotification).toHaveBeenCalledWith('WATER', clock.date)
+    expect(wrapper.get('.energy-notice.error').text()).toContain('群通知未发出')
+
+    await wrapper.get('.energy-notice.error button').trigger('click')
+    await flushPromises()
+    expect(sendEnergyNotification).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('.energy-notice.sent').text()).toContain('群通知已发出')
     wrapper.unmount()
   })
 })
