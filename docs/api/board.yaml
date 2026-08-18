@@ -8,6 +8,31 @@ info:
 servers:
   - url: /api
 paths:
+  /workspaces:
+    get:
+      summary: 按最近更新时间列出当前成员自己的工作空间
+      responses: { '200': { description: 空间摘要列表，不包含其他成员数据 } }
+    post:
+      summary: 创建当前成员的工作空间和空的默认分组
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CreateWorkspaceRequest' } } }
+      responses: { '200': { description: 新空间完整快照 }, '400': { description: 名称或项目关联不合法 } }
+  /workspaces/{workspaceId}:
+    parameters:
+      - { name: workspaceId, in: path, required: true, schema: { type: string } }
+    get:
+      summary: 读取当前成员一个工作空间的完整快照
+      responses: { '200': { description: 空间与分组链接 }, '404': { description: 空间不存在或不属于当前成员 } }
+    put:
+      summary: 原子保存当前成员一个工作空间的完整快照
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SaveWorkspaceRequest' } } }
+      responses: { '200': { description: 服务端规整后的完整快照 }, '400': { description: 超出数量、字段或 URL 安全限制 }, '404': { description: 空间不存在或不属于当前成员 } }
+    delete:
+      summary: 删除当前成员的工作空间，不访问链接指向的系统
+      responses: { '200': { description: 已删除 }, '404': { description: 空间不存在或不属于当前成员 } }
   /action-plans:
     get:
       summary: 按日期读取当前成员的行动计划和真实打卡投影
@@ -974,6 +999,41 @@ components:
       scheme: bearer
       bearerFormat: wao_mcp
   schemas:
+    WorkspaceLink:
+      type: object
+      required: [id, title, url, description, environment, icon, order, favorite]
+      properties:
+        id: { type: string, maxLength: 32 }
+        title: { type: string, minLength: 1, maxLength: 100 }
+        url: { type: string, maxLength: 2048, description: 仅允许无账号密码的 http / https 地址 }
+        description: { type: string, maxLength: 300 }
+        environment: { type: string, maxLength: 30 }
+        icon: { type: string, pattern: '^ri-[a-z0-9-]+$' }
+        order: { type: integer, minimum: 0 }
+        favorite: { type: boolean }
+    WorkspaceGroup:
+      type: object
+      required: [id, name, icon, order, links]
+      properties:
+        id: { type: string, maxLength: 32 }
+        name: { type: string, minLength: 1, maxLength: 40 }
+        icon: { type: string, pattern: '^ri-[a-z0-9-]+$' }
+        order: { type: integer, minimum: 0 }
+        links: { type: array, items: { $ref: '#/components/schemas/WorkspaceLink' } }
+    CreateWorkspaceRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 60 }
+        description: { type: string, maxLength: 400 }
+        projectId: { type: string, maxLength: 32, nullable: true, description: 必须是当前成员可见项目 }
+    SaveWorkspaceRequest:
+      allOf:
+        - { $ref: '#/components/schemas/CreateWorkspaceRequest' }
+        - type: object
+          required: [groups]
+          properties:
+            groups: { type: array, maxItems: 12, items: { $ref: '#/components/schemas/WorkspaceGroup' } }
     AssistantChatRequest:
       type: object
       required: [message]

@@ -111,6 +111,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/life-review',
   },
   memory: { id: 'memory', label: '个人记忆', icon: 'ri-brain-line', path: '/memory' },
+  workspaces: {
+    id: 'workspaces',
+    label: '工作台',
+    icon: 'ri-layout-grid-line',
+    path: '/workspaces',
+  },
   vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
@@ -178,6 +184,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
     icon: 'ri-brain-line',
     group: 'PERSONAL',
     order: 29,
+    visible: true,
+  },
+  {
+    id: 'workspaces',
+    label: '工作台',
+    icon: 'ri-layout-grid-line',
+    group: 'PERSONAL',
+    order: 28,
     visible: true,
   },
   {
@@ -262,6 +276,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
   'calendar',
   'weekly-report',
   'life-review',
+  'workspaces',
   'memory',
   'knowledge',
   'english-learning',

@@ -106,6 +106,13 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.module).toBe('vocabulary')
   })
 
+  it('工作台默认位于个人组并使用成员私有空间路由', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('workspaces')
+    const route = router.getRoutes().find((item) => item.name === 'workspaces')
+    expect(route?.path).toBe('/workspaces')
+    expect(route?.meta.module).toBe('workspaces')
+  })
+
   it('英语训练默认位于个人组并使用原生模块路由', () => {
     expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('english-learning')
     const route = router.getRoutes().find((item) => item.name === 'english-learning')

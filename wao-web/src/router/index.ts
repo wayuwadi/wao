@@ -134,6 +134,12 @@ const router = createRouter({
           meta: { module: 'memory', tabKind: 'module' },
         },
         {
+          path: 'workspaces',
+          name: 'workspaces',
+          component: () => import('@/views/WorkspacesView.vue'),
+          meta: { module: 'workspaces', tabKind: 'module' },
+        },
+        {
           path: 'files',
           name: 'files',
           component: () => import('@/views/FilesView.vue'),
