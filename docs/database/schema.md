@@ -393,6 +393,20 @@ V70 同时种下固定 `kb-memory / kb-memory-f` 的“共享记忆”知识库�
 所有查询、修改、删除和附件下载都同时限定 `id + member_id`，访问其他成员的 id 按 404 处理。当前只对正文、
 标题和文件名做关键词检索，不伪造向量、OCR、转写或模型训练能力。
 
+### personal_workspace（V75）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 工作空间稳定 id（`ws` 前缀） |
+| owner_member_id | VARCHAR(32) | 服务端从当前 Session 推导的归属成员；所有读写同时按此列隔离 |
+| project_id | VARCHAR(32) NULL | 可选关联的当前成员可见 WAO 项目；项目删除或失去可见性后读取为空关联 |
+| name / description_text | VARCHAR(60/400) | 空间名称和用途说明 |
+| content_json | JSON | `version + groups[] + links[]` 的完整原子快照；服务端限制 12 组、240 个链接 |
+| created_at / updated_at | DATETIME(3) | 创建和最近一次完整保存时间 |
+
+链接快照只接受不含账号密码的 `http://` / `https://` 地址，以兼容公司内网测试环境并拒绝脚本 URL；
+WAO 不主动探测、抓取或删除链接对应的外部系统。聚合边界与后续关系表拆分条件见 ADR-085。
+
 日历的国际节日范围复用 `member_preference` 的 `holiday-international-categories` 键；新成员默认空数组，
 不会自动加入全部国际节日。
 
@@ -727,4 +741,5 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V71__document_templates.sql`：按成员隔离的文档模板正文快照（见 ADR-080）。
 - `V73__personal_multimodal_memory.sql`：保存按成员隔离的文字与多模态个人记忆原件（见 ADR-082）。
 - `V74__runner_codex_quota.sql`：保存 Runner 本地 Codex 脱敏额度，并触发现有 Codex 节点获取新版脚本（见 ADR-083）。
+- `V75__personal_workspace.sql`：保存按成员隔离、可关联项目的工作空间导航快照（见 ADR-085）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

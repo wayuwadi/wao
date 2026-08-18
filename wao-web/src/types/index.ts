@@ -36,6 +36,7 @@ export type ModuleId =
   | 'weekly-report'
   | 'life-review'
   | 'memory'
+  | 'workspaces'
   | 'vault'
   | 'settings'
 
