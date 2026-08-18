@@ -10,6 +10,7 @@ import cn.wayuwa.wao.dto.FolderDto;
 import cn.wayuwa.wao.dto.KbDto;
 import cn.wayuwa.wao.dto.PatchFolderRequest;
 import cn.wayuwa.wao.dto.PatchKbRequest;
+import cn.wayuwa.wao.dto.ReorderDocsRequest;
 import cn.wayuwa.wao.service.KnowledgeService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 知识库与文件夹接口。 */
@@ -78,6 +80,13 @@ public class KbController {
     public ApiResponse<Void> deleteFolder(@PathVariable String id, @PathVariable String folderId,
             HttpServletRequest http) {
         knowledge.deleteFolder(id, folderId, currentMember.id(http));
+        return ApiResponse.ok(null);
+    }
+
+    /** 保存文档树拖拽后的完整顺序，也支持文档跨文件夹移动。 */
+    @PutMapping("/{id}/document-order")
+    public ApiResponse<Void> reorderDocs(@PathVariable String id, @RequestBody ReorderDocsRequest request) {
+        knowledge.reorderDocs(id, request);
         return ApiResponse.ok(null);
     }
 }

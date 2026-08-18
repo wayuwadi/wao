@@ -208,7 +208,8 @@ class ShareServiceTest {
     private DocDto doc(String kbId) {
         return new DocDto("d1", "装修避坑清单", "wg", "2026-07-01T10:00:00+08:00", "2026-07-20T09:30:00+08:00",
                 false, List.of(),
-                List.of(new DocBlockDto(null, "水电阶段", null, null, null),
+                List.of(new DocBlockDto(null, "装修总览", null, null, null, 1),
+                        new DocBlockDto(null, "水电阶段", null, null, null),
                         new DocBlockDto(null, null, "先看这张 ![图](/api/images/img9/raw)。", null, null),
                         new DocBlockDto("留好每面墙的走线照片", null, null, null, null),
                         new DocBlockDto(null, null, null, List.of("插座要带开关", "网线走六类"), null),
@@ -225,6 +226,7 @@ class ShareServiceTest {
         assertThat(shared.title()).isEqualTo("装修避坑清单");
         assertThat(shared.note()).isFalse();
         assertThat(shared.kbId()).isEqualTo("kb1");
+        assertThat(shared.md()).contains("# 装修总览");
         assertThat(shared.md()).contains("## 水电阶段");
         assertThat(shared.md()).contains("- 插座要带开关\n- 网线走六类");
         // 提示块 / 引用块用标准 blockquote，任何 Markdown 渲染器都认识

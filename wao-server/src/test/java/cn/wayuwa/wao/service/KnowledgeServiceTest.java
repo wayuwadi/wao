@@ -15,10 +15,12 @@ import java.util.List;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.DocEntity;
+import cn.wayuwa.wao.domain.DocTemplateEntity;
 import cn.wayuwa.wao.domain.KbEntity;
 import cn.wayuwa.wao.domain.KbFolderEntity;
 import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.dto.CreateDocRequest;
+import cn.wayuwa.wao.dto.CreateDocTemplateRequest;
 import cn.wayuwa.wao.dto.CreateKbRequest;
 import cn.wayuwa.wao.dto.CreateNoteRequest;
 import cn.wayuwa.wao.dto.DocBlockDto;
@@ -27,8 +29,10 @@ import cn.wayuwa.wao.dto.DocLinkDto;
 import cn.wayuwa.wao.dto.KbDto;
 import cn.wayuwa.wao.dto.PatchDocRequest;
 import cn.wayuwa.wao.dto.PatchKbRequest;
+import cn.wayuwa.wao.dto.ReorderDocsRequest;
 import cn.wayuwa.wao.dto.TrashEntryDto;
 import cn.wayuwa.wao.mapper.DocMapper;
+import cn.wayuwa.wao.mapper.DocTemplateMapper;
 import cn.wayuwa.wao.mapper.KbFolderMapper;
 import cn.wayuwa.wao.mapper.KbGroupMapper;
 import cn.wayuwa.wao.mapper.KbMapper;
@@ -42,10 +46,11 @@ class KnowledgeServiceTest {
     private final KbMapper kbMapper = mock(KbMapper.class);
     private final KbFolderMapper folderMapper = mock(KbFolderMapper.class);
     private final DocMapper docMapper = mock(DocMapper.class);
+    private final DocTemplateMapper templateMapper = mock(DocTemplateMapper.class);
     private final MemberMapper memberMapper = mock(MemberMapper.class);
     private final FeishuTaskNotifier taskNotifier = mock(FeishuTaskNotifier.class);
     private final KnowledgeService service = new KnowledgeService(groupMapper, kbMapper, folderMapper, docMapper,
-            memberMapper, new ObjectMapper(), taskNotifier);
+            templateMapper, memberMapper, new ObjectMapper(), taskNotifier);
 
     private MemberEntity member(String id, String name) {
         MemberEntity m = new MemberEntity();
@@ -156,6 +161,82 @@ class KnowledgeServiceTest {
 
         assertThat(dto.created()).matches("\\d{4}-\\d{2}-\\d{2}T.*");
         assertThat(dto.updated()).matches("\\d{4}-\\d{2}-\\d{2}T.*");
+    }
+
+    @Test
+    void createTemplateCopiesCurrentBlocksAndCreatesDocFromIt() {
+        DocEntity source = doc("d-source", "k1", "f1");
+        source.setBlocksJson("[{\"h\":\"每日计划\",\"hLevel\":1},{\"p\":\"今日重点\"}]");
+        when(docMapper.selectById("d-source")).thenReturn(source);
+        when(templateMapper.selectCount(any())).thenReturn(0L);
+
+        var template = service.createTemplate(new CreateDocTemplateRequest(
+                "每日计划", "每天复用", "d-source", null), "m1");
+
+        var captor = org.mockito.ArgumentCaptor.forClass(DocTemplateEntity.class);
+        verify(templateMapper).insert(captor.capture());
+        DocTemplateEntity savedTemplate = captor.getValue();
+        assertThat(template.blocks()).hasSize(2);
+        assertThat(template.blocks().get(0).hLevel()).isEqualTo(1);
+
+        when(templateMapper.selectById(savedTemplate.getId())).thenReturn(savedTemplate);
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        when(folderMapper.selectById("f1")).thenReturn(folder("f1", "k1"));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+
+        DocDto created = service.createDoc(new CreateDocRequest("k1", "f1", "", savedTemplate.getId()), "m1");
+        assertThat(created.blocks()).extracting(DocBlockDto::h, DocBlockDto::p)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("每日计划", null),
+                        org.assertj.core.groups.Tuple.tuple(null, "今日重点"));
+    }
+
+    @Test
+    void templateCannotBeReadAcrossMembers() {
+        DocTemplateEntity template = new DocTemplateEntity();
+        template.setId("dt1");
+        template.setCreatedBy("m1");
+        when(templateMapper.selectById("dt1")).thenReturn(template);
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        when(folderMapper.selectById("f1")).thenReturn(folder("f1", "k1"));
+
+        assertThatThrownBy(() -> service.createDoc(new CreateDocRequest("k1", "f1", "", "dt1"), "m2"))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void reorderDocsPersistsOrderAndCrossFolderMove() {
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        KbFolderEntity f1 = folder("f1", "k1");
+        KbFolderEntity f2 = folder("f2", "k1");
+        DocEntity d1 = doc("d1", "k1", "f1");
+        DocEntity d2 = doc("d2", "k1", "f1");
+        when(folderMapper.selectList(any())).thenReturn(List.of(f1, f2));
+        when(docMapper.selectList(any())).thenReturn(List.of(d1, d2));
+
+        service.reorderDocs("k1", new ReorderDocsRequest(List.of(
+                new ReorderDocsRequest.FolderOrder("f1", List.of("d2")),
+                new ReorderDocsRequest.FolderOrder("f2", List.of("d1")))));
+
+        assertThat(d2.getFolderId()).isEqualTo("f1");
+        assertThat(d2.getOrd()).isEqualTo(1);
+        assertThat(d1.getFolderId()).isEqualTo("f2");
+        assertThat(d1.getOrd()).isEqualTo(1);
+        verify(docMapper).updateById(d1);
+        verify(docMapper).updateById(d2);
+    }
+
+    @Test
+    void reorderDocsRejectsMissingDocuments() {
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        when(folderMapper.selectList(any())).thenReturn(List.of(folder("f1", "k1")));
+        when(docMapper.selectList(any())).thenReturn(List.of(doc("d1", "k1", "f1")));
+
+        assertThatThrownBy(() -> service.reorderDocs("k1", new ReorderDocsRequest(List.of(
+                new ReorderDocsRequest.FolderOrder("f1", List.of())))))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("全部");
     }
 
     @Test

@@ -4,7 +4,10 @@ import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-/** 文档正文块。字段互斥，命中哪个就是哪种块（提示 / 标题 / 段落 / 列表 / 引用）。 */
+/** 文档正文块。标题层级缺省为 2，以兼容旧数据。 */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record DocBlockDto(String call, String h, String p, List<String> ul, List<String> q) {
+public record DocBlockDto(String call, String h, String p, List<String> ul, List<String> q, Integer hLevel) {
+    public DocBlockDto(String call, String h, String p, List<String> ul, List<String> q) {
+        this(call, h, p, ul, q, null);
+    }
 }

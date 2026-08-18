@@ -10,5 +10,10 @@ import jakarta.validation.constraints.NotBlank;
 public record CreateDocRequest(
         @NotBlank String kbId,
         @NotBlank String folderId,
-        String title) {
+        String title,
+        String templateId) {
+
+    public CreateDocRequest(String kbId, String folderId, String title) {
+        this(kbId, folderId, title, null);
+    }
 }

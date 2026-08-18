@@ -7,6 +7,7 @@ import type {
   DocBlock,
   DocLink,
   DocPeer,
+  DocTemplate,
   FileItem,
   Folder,
   ImageItem,
@@ -252,6 +253,7 @@ export interface CreateDocPayload {
   kbId: string
   folderId: string
   title?: string
+  templateId?: string
 }
 /** 新建文档：kbId + folderId 必填，创建即完成与知识库的关联。作者由服务端按会话推导。 */
 export const apiCreateDoc = (payload: CreateDocPayload) => post<Doc>('/api/docs', payload)
@@ -269,6 +271,20 @@ export interface PatchDocPayload {
 export const apiPatchDoc = (id: string, payload: PatchDocPayload) => patch<Doc>(`/api/docs/${id}`, payload)
 /** 删除文档 —— 后端移入回收站，7 天内可恢复。 */
 export const apiDeleteDoc = (id: string) => del(`/api/docs/${id}`)
+
+// ---------------- 文档模板与文档树排序 ----------------
+
+export const fetchDocTemplates = () => get<DocTemplate[]>('/api/doc-templates')
+export const apiCreateDocTemplate = (payload: { name: string; description?: string; sourceDocId: string; blocks: DocBlock[] }) =>
+  post<DocTemplate>('/api/doc-templates', payload)
+export const apiPatchDocTemplate = (id: string, payload: { name?: string; description?: string }) =>
+  patch<DocTemplate>(`/api/doc-templates/${id}`, payload)
+export const apiDeleteDocTemplate = (id: string) => del(`/api/doc-templates/${id}`)
+export interface DocumentOrderPayload {
+  folders: { folderId: string; docIds: string[] }[]
+}
+export const apiReorderDocs = (kbId: string, payload: DocumentOrderPayload) =>
+  put<void>(`/api/kbs/${kbId}/document-order`, payload)
 
 // ---------------- 文档协同在场（见 ADR-017） ----------------
 
