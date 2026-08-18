@@ -16,12 +16,14 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
+import { BubbleMenu } from '@tiptap/vue-3/menus'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Markdown } from '@tiptap/markdown'
 import { Extension } from '@tiptap/core'
+import { polishDocumentText } from '@/api/assistant'
 
 /** 协作者标记：把某个人钉在他光标所在的那一行（顶层块序号）。 */
 export interface EditorPeer {
@@ -47,8 +49,18 @@ const props = withDefaults(
     allowH1?: boolean
     /** 此刻也在这篇文档里的人；空数组即不显示协作轨道。 */
     peers?: EditorPeer[]
+    /** 文档正文允许选中文字后调用真实本地 Codex 润色。 */
+    polishable?: boolean
   }>(),
-  { placeholder: '写点什么…支持 Markdown 快捷输入', minHeight: 84, readonly: false, bare: false, allowH1: false, peers: () => [] },
+  {
+    placeholder: '写点什么…支持 Markdown 快捷输入',
+    minHeight: 84,
+    readonly: false,
+    bare: false,
+    allowH1: false,
+    peers: () => [],
+    polishable: false,
+  },
 )
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -82,6 +94,19 @@ const TabIndent = Extension.create({
   },
 })
 
+interface PolishDialog {
+  from: number
+  to: number
+  original: string
+  sourceDocument: string
+  inline: boolean
+  marks: { type: string; attrs?: Record<string, unknown> }[]
+  polished: string
+  loading: boolean
+  error: string
+}
+const polishDialog = ref<PolishDialog | null>(null)
+
 const editor = useEditor({
   content: props.modelValue,
   contentType: 'markdown',
@@ -90,7 +115,10 @@ const editor = useEditor({
     StarterKit.configure({
       // 只有知识库文档开放 h1；描述场景仍限制成 h2–h4，避免压过页面标题。
       heading: { levels: props.allowH1 ? [1, 2, 3, 4] : [2, 3, 4] },
-      link: { openOnClick: false, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } },
+      link: {
+        openOnClick: false,
+        HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
+      },
     }),
     Image.configure({ inline: false, HTMLAttributes: { class: 'md-img' } }),
     TaskList,
@@ -119,6 +147,115 @@ const editor = useEditor({
   onBlur: () => flushExternal(),
 })
 
+/** 只在可编辑文档有非空文字选区时展示润色入口。 */
+function shouldShowPolish({
+  from,
+  to,
+  state,
+}: {
+  from: number
+  to: number
+  state: { doc: { textBetween: (from: number, to: number, separator?: string) => string } }
+}) {
+  return (
+    props.polishable &&
+    !props.readonly &&
+    from !== to &&
+    state.doc.textBetween(from, to, '\n').trim().length > 0
+  )
+}
+
+/**
+ * 把当前选区转成适合交给 Codex 的文字：单段只取纯文本，多块选区保留 Markdown 结构。
+ * 同时冻结选区与整篇正文，避免等待 AI 时的协同更新导致结果替换到错误位置。
+ */
+async function startPolish() {
+  const e = editor.value
+  if (!e) return
+  const { from, to, $from } = e.state.selection
+  if (from === to) return
+  const inline = $from.sameParent(e.state.doc.resolve(to)) && $from.parent.isTextblock
+  const original = inline
+    ? e.state.doc.textBetween(from, to, '\n')
+    : (e.markdown?.serialize({
+        type: 'doc',
+        content: e.state.doc.slice(from, to).content.toJSON(),
+      }) ?? e.state.doc.textBetween(from, to, '\n'))
+  const dialog: PolishDialog = {
+    from,
+    to,
+    original: original.trim(),
+    sourceDocument: e.getMarkdown(),
+    inline,
+    marks: $from.marks().map((mark) => mark.toJSON()),
+    polished: '',
+    loading: false,
+    error: '',
+  }
+  polishDialog.value = dialog
+  // ref 会把对象转成响应式代理；后续异步状态必须写代理，界面才能及时更新。
+  const current = polishDialog.value
+  if (!current.original) {
+    current.error = '请先选中需要润色的文字'
+    return
+  }
+  if (current.original.length > 4000) {
+    current.error = '一次最多润色 4000 字，请缩小选区后重试'
+    return
+  }
+  await requestPolish(current)
+}
+
+async function requestPolish(dialog: PolishDialog) {
+  dialog.loading = true
+  dialog.error = ''
+  try {
+    const result = await polishDocumentText(dialog.original)
+    if (polishDialog.value !== dialog) return
+    dialog.polished = result.polished.trim()
+    if (!dialog.polished) dialog.error = 'AI 没有返回可用内容，请重试'
+  } catch (cause) {
+    if (polishDialog.value !== dialog) return
+    dialog.error = cause instanceof Error ? cause.message : '润色失败，请重试'
+  } finally {
+    if (polishDialog.value === dialog) dialog.loading = false
+  }
+}
+
+async function retryPolish() {
+  if (polishDialog.value) await requestPolish(polishDialog.value)
+}
+
+function keepOriginal() {
+  polishDialog.value = null
+}
+
+/** 用户明确选择“替换选区”后才修改正文；修改会走既有 update:modelValue 与自动保存链路。 */
+function applyPolish() {
+  const e = editor.value
+  const dialog = polishDialog.value
+  if (!e || !dialog || !dialog.polished) return
+  if (e.getMarkdown() !== dialog.sourceDocument) {
+    dialog.error = '等待润色期间文档已发生变化。为避免覆盖新内容，请保留原文后重新选择。'
+    return
+  }
+  const replacement = dialog.inline
+    ? {
+        type: 'text',
+        text: dialog.polished.replace(/\s*\n+\s*/g, ' '),
+        marks: dialog.marks.length ? dialog.marks : undefined,
+      }
+    : dialog.polished
+  const options = dialog.inline
+    ? undefined
+    : { contentType: 'markdown' as const, updateSelection: true }
+  e.chain()
+    .focus()
+    .insertContentAt({ from: dialog.from, to: dialog.to }, replacement, options)
+    .run()
+  polishDialog.value = null
+}
+
 // ---- 协作者行标记 ----
 
 const shell = ref<HTMLElement | null>(null)
@@ -127,7 +264,12 @@ const imagePicker = ref<HTMLInputElement | null>(null)
 const lineTops = ref<Record<number, number>>({})
 
 /** 光标所在的顶层块序号；取不到时给 -1（只在查看）。 */
-function caretLine(e: { state: { selection: { from: number }; doc: { resolve: (pos: number) => { index: (depth: number) => number } } } }): number {
+function caretLine(e: {
+  state: {
+    selection: { from: number }
+    doc: { resolve: (pos: number) => { index: (depth: number) => number } }
+  }
+}): number {
   try {
     return e.state.doc.resolve(e.state.selection.from).index(0)
   } catch {
@@ -145,7 +287,9 @@ function measure() {
   const view = editor.value?.view
   const doc = editor.value?.state.doc
   if (!view || !doc) return
-  const wanted = [...new Set(props.peers.map((p) => p.line))].filter((l) => l >= 0 && l < doc.childCount)
+  const wanted = [...new Set(props.peers.map((p) => p.line))].filter(
+    (l) => l >= 0 && l < doc.childCount,
+  )
   const next: Record<number, number> = {}
   for (const line of wanted) {
     let pos = 0
@@ -225,8 +369,15 @@ function dataImageFile(src: string, alt: string, index: number): File | null {
     const binary = atob(match[2]!.replace(/\s/g, ''))
     const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0))
     const mime = match[1]!.toLowerCase()
-    const subtype = mime.split('/')[1]!.replace(/^jpeg$/, 'jpg').replace(/[^a-z0-9]+/g, '') || 'png'
-    const baseName = alt.trim().replace(/[\\/:*?"<>|]/g, '-').slice(0, 80)
+    const subtype =
+      mime
+        .split('/')[1]!
+        .replace(/^jpeg$/, 'jpg')
+        .replace(/[^a-z0-9]+/g, '') || 'png'
+    const baseName = alt
+      .trim()
+      .replace(/[\\/:*?"<>|]/g, '-')
+      .slice(0, 80)
     return new File([bytes], baseName || `clipboard-image-${index + 1}.${subtype}`, { type: mime })
   } catch {
     return null
@@ -243,17 +394,28 @@ type UploadedImage = { url: string; name: string }
  */
 let imageInsertionQueue = Promise.resolve()
 function insertImages(files: File[]) {
-  const uploaded = Promise.all(files.map((file) => new Promise<UploadedImage | null>((resolve) => {
-    emit('upload-image', file, (url, name) => resolve(url ? { url, name } : null))
-  })))
+  const uploaded = Promise.all(
+    files.map(
+      (file) =>
+        new Promise<UploadedImage | null>((resolve) => {
+          emit('upload-image', file, (url, name) => resolve(url ? { url, name } : null))
+        }),
+    ),
+  )
   imageInsertionQueue = imageInsertionQueue.then(async () => {
     const images = (await uploaded).filter((item): item is UploadedImage => item != null)
     const currentEditor = editor.value
     if (!images.length || !currentEditor) return
-    currentEditor.chain().focus().insertContent(images.map((image) => ({
-      type: 'image',
-      attrs: { src: image.url, alt: image.name },
-    }))).run()
+    currentEditor
+      .chain()
+      .focus()
+      .insertContent(
+        images.map((image) => ({
+          type: 'image',
+          attrs: { src: image.url, alt: image.name },
+        })),
+      )
+      .run()
   })
 }
 
@@ -307,32 +469,150 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleMeasure)
   editor.value?.destroy()
 })
-
 </script>
 
 <template>
   <div ref="shell" class="md" :class="{ ro: readonly, collab: peers.length > 0, bare }">
-    <input ref="imagePicker" class="image-picker" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" @change="onImagePicked" />
+    <input
+      ref="imagePicker"
+      class="image-picker"
+      type="file"
+      accept="image/*"
+      multiple
+      tabindex="-1"
+      aria-hidden="true"
+      @change="onImagePicked"
+    />
     <div v-if="peerMarks.length" class="peer-track" aria-hidden="true">
       <template v-for="m in peerMarks" :key="m.id">
-        <span v-if="m.editing" class="peer-line" :style="{ top: m.top + 'px', background: m.color }"></span>
+        <span
+          v-if="m.editing"
+          class="peer-line"
+          :style="{ top: m.top + 'px', background: m.color }"
+        ></span>
         <span
           class="peer-av"
           :class="{ typing: m.editing }"
           :style="{ top: m.top + 'px', left: m.offset + 'px', background: m.color }"
           :title="`${m.name} ${m.editing ? '正在编辑这一行' : '在这一行'}`"
-        >{{ m.initial }}</span>
+          >{{ m.initial }}</span
+        >
       </template>
     </div>
     <div class="md-editor-wrap">
+      <BubbleMenu
+        v-if="editor && polishable"
+        :editor="editor"
+        :should-show="shouldShowPolish"
+        :options="{ placement: 'top', offset: 8 }"
+      >
+        <button
+          type="button"
+          class="polish-trigger"
+          aria-label="润色选中文字"
+          @mousedown.prevent
+          @click="startPolish"
+        >
+          <i class="ri-magic-line"></i><span>润色</span>
+        </button>
+      </BubbleMenu>
       <EditorContent :editor="editor" class="md-body" :style="{ minHeight: minHeight + 'px' }" />
-      <button v-if="!readonly" type="button" class="image-upload" title="从图册选择图片" aria-label="从图册选择图片" @mousedown.prevent @click="chooseImage">
+      <button
+        v-if="!readonly"
+        type="button"
+        class="image-upload"
+        title="从图册选择图片"
+        aria-label="从图册选择图片"
+        @mousedown.prevent
+        @click="chooseImage"
+      >
         <i class="ri-image-add-line"></i><span>图片</span>
       </button>
     </div>
-    <div v-if="previewImage" class="image-lightbox" role="dialog" aria-modal="true" :aria-label="previewImage.alt || '图片预览'" @click.self="previewImage = null">
-      <button type="button" class="image-lightbox-close" aria-label="关闭图片预览" @click="previewImage = null"><i class="ri-close-line"></i></button>
+    <div
+      v-if="previewImage"
+      class="image-lightbox"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="previewImage.alt || '图片预览'"
+      @click.self="previewImage = null"
+    >
+      <button
+        type="button"
+        class="image-lightbox-close"
+        aria-label="关闭图片预览"
+        @click="previewImage = null"
+      >
+        <i class="ri-close-line"></i>
+      </button>
       <img :src="previewImage.src" :alt="previewImage.alt" />
+    </div>
+    <div v-if="polishDialog" class="polish-mask" @click.self="keepOriginal">
+      <section class="polish-dialog" role="dialog" aria-modal="true" aria-labelledby="polish-title">
+        <header>
+          <div>
+            <small>AI 文档助手</small>
+            <h2 id="polish-title">对照后再决定是否替换</h2>
+          </div>
+          <button
+            type="button"
+            class="polish-close"
+            aria-label="关闭并保留原文"
+            @click="keepOriginal"
+          >
+            <i class="ri-close-line"></i>
+          </button>
+        </header>
+
+        <div class="polish-compare">
+          <article>
+            <div class="polish-card-title"><span>原文</span><em>当前文档保持不变</em></div>
+            <pre>{{ polishDialog.original }}</pre>
+          </article>
+          <article>
+            <div class="polish-card-title"><span>润色结果</span><em>确认后才会写入</em></div>
+            <div v-if="polishDialog.loading" class="polish-state">
+              <i class="ri-loader-4-line"></i><span>本地 Codex 正在润色…</span>
+            </div>
+            <pre v-else-if="polishDialog.polished">{{ polishDialog.polished }}</pre>
+            <div v-else class="polish-state">
+              <i class="ri-quill-pen-line"></i><span>暂时没有候选内容</span>
+            </div>
+          </article>
+        </div>
+
+        <div v-if="polishDialog.error" class="polish-error" role="alert">
+          <i class="ri-error-warning-line"></i><span>{{ polishDialog.error }}</span>
+          <button
+            v-if="polishDialog.original.length <= 4000"
+            type="button"
+            :disabled="polishDialog.loading"
+            @click="retryPolish"
+          >
+            重试
+          </button>
+        </div>
+
+        <footer>
+          <button type="button" class="polish-keep" @click="keepOriginal">保留原文</button>
+          <button
+            type="button"
+            class="polish-retry"
+            :disabled="polishDialog.loading"
+            @click="retryPolish"
+          >
+            <i class="ri-refresh-line"></i>重新润色
+          </button>
+          <button
+            type="button"
+            class="polish-apply"
+            :disabled="polishDialog.loading || !polishDialog.polished || !!polishDialog.error"
+            @click="applyPolish"
+          >
+            <i class="ri-check-line"></i>替换选区
+          </button>
+        </footer>
+      </section>
     </div>
   </div>
 </template>
@@ -342,7 +622,9 @@ onBeforeUnmount(() => {
   width: 100%;
   position: relative;
 }
-.image-picker { display: none; }
+.image-picker {
+  display: none;
+}
 .image-lightbox {
   position: fixed;
   inset: 0;
@@ -374,8 +656,222 @@ onBeforeUnmount(() => {
   font-size: 20px;
   cursor: pointer;
 }
-.image-lightbox-close:hover { background: rgba(255, 255, 255, 0.28); }
-.md-editor-wrap { position: relative; }
+.image-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+.polish-trigger {
+  min-height: 34px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 9px;
+  background: #292b35;
+  box-shadow: 0 7px 22px rgba(18, 20, 28, 0.24);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.polish-trigger:hover {
+  background: #65558f;
+}
+.polish-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(24, 25, 32, 0.46);
+}
+.polish-dialog {
+  width: min(760px, 100%);
+  max-height: min(720px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--wao-line);
+  border-radius: 16px;
+  background: var(--wao-bg-card);
+  box-shadow: 0 24px 72px rgba(16, 18, 28, 0.28);
+}
+.polish-dialog > header,
+.polish-dialog > footer,
+.polish-card-title,
+.polish-error {
+  display: flex;
+  align-items: center;
+}
+.polish-dialog > header {
+  justify-content: space-between;
+  gap: 16px;
+}
+.polish-dialog header small {
+  color: #65558f;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 1px;
+}
+.polish-dialog header h2 {
+  margin: 3px 0 0;
+  color: var(--wao-text);
+  font-size: 18px;
+}
+.polish-close {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-weak);
+  cursor: pointer;
+}
+.polish-compare {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.polish-compare article {
+  min-width: 0;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.polish-card-title {
+  min-height: 42px;
+  padding: 0 13px;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--wao-bg-sub);
+}
+.polish-card-title span {
+  color: var(--wao-text-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+.polish-card-title em {
+  color: var(--wao-text-faint);
+  font-size: 9px;
+  font-style: normal;
+}
+.polish-compare pre {
+  min-height: 180px;
+  max-height: 320px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.75;
+}
+.polish-state {
+  min-height: 180px;
+  padding: 20px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--wao-text-weak);
+  font-size: 11px;
+}
+.polish-state i {
+  color: #65558f;
+  font-size: 22px;
+}
+.polish-state .ri-loader-4-line {
+  animation: polishSpin 0.9s linear infinite;
+}
+.polish-error {
+  margin-top: 12px;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--wao-danger-bg);
+  color: var(--wao-danger-strong);
+  font-size: 11px;
+}
+.polish-error span {
+  flex: 1;
+}
+.polish-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.polish-dialog > footer {
+  margin-top: 16px;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.polish-dialog > footer button {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.polish-dialog > footer button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.polish-keep,
+.polish-retry {
+  border: 1px solid var(--wao-line-control);
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+}
+.polish-apply {
+  border: 0;
+  background: #65558f;
+  color: #fff;
+  font-weight: 700;
+}
+@keyframes polishSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 680px) {
+  .polish-mask {
+    padding: 10px;
+    align-items: end;
+  }
+  .polish-dialog {
+    max-height: calc(100vh - 20px);
+    padding: 16px;
+    border-radius: 16px 16px 10px 10px;
+  }
+  .polish-compare {
+    grid-template-columns: 1fr;
+  }
+  .polish-compare pre,
+  .polish-state {
+    min-height: 110px;
+    max-height: 190px;
+  }
+  .polish-card-title em {
+    display: none;
+  }
+  .polish-dialog > footer {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .polish-apply {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+}
+.md-editor-wrap {
+  position: relative;
+}
 /* 协作轨道占住左侧一条窄边，正文相应右移，头像不会压到字上 */
 .md.collab {
   padding-left: 26px;
@@ -437,9 +933,16 @@ onBeforeUnmount(() => {
   font-size: 11px;
   cursor: pointer;
 }
-.image-upload:hover { border-color: var(--wao-primary); color: var(--wao-primary); }
-.image-upload i { font-size: 13px; }
-.md.bare .image-upload { right: 0; }
+.image-upload:hover {
+  border-color: var(--wao-primary);
+  color: var(--wao-primary);
+}
+.image-upload i {
+  font-size: 13px;
+}
+.md.bare .image-upload {
+  right: 0;
+}
 .md:not(.ro) .md-body:hover {
   border-color: var(--wao-divider);
 }

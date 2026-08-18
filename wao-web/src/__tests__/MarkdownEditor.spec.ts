@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+import { polishDocumentText } from '@/api/assistant'
+
+vi.mock('@/api/assistant', () => ({
+  polishDocumentText: vi.fn<(text: string) => Promise<{ polished: string }>>(),
+}))
 
 /** Tiptap 需要真实 DOM 与一帧时间来完成挂载。 */
 async function mountEditor(props: {
@@ -9,7 +14,15 @@ async function mountEditor(props: {
   readonly?: boolean
   placeholder?: string
   allowH1?: boolean
-  peers?: { id: string; name: string; initial: string; color: string; line: number; editing: boolean }[]
+  peers?: {
+    id: string
+    name: string
+    initial: string
+    color: string
+    line: number
+    editing: boolean
+  }[]
+  polishable?: boolean
 }) {
   const w = mount(MarkdownEditor, { props, attachTo: document.body })
   await nextTick()
@@ -35,7 +48,12 @@ function pasteInto(el: Element, files: File[]) {
 function pasteHtmlInto(el: Element, html: string) {
   const event = new Event('paste', { bubbles: true, cancelable: true })
   Object.defineProperty(event, 'clipboardData', {
-    value: { files: [], items: [], types: ['text/html'], getData: (type: string) => type === 'text/html' ? html : '' },
+    value: {
+      files: [],
+      items: [],
+      types: ['text/html'],
+      getData: (type: string) => (type === 'text/html' ? html : ''),
+    },
   })
   el.dispatchEvent(event)
 }
@@ -186,7 +204,10 @@ describe('MarkdownEditor（所见即所得）', () => {
     const w = await mountEditor({ modelValue: '' })
     const source = 'data:image/png;base64,aGVsbG8='
 
-    pasteHtmlInto(w.find('.md-body [contenteditable]').element, `<div><img src="${source}" alt="剪贴板截图"></div>`)
+    pasteHtmlInto(
+      w.find('.md-body [contenteditable]').element,
+      `<div><img src="${source}" alt="剪贴板截图"></div>`,
+    )
     await nextTick()
 
     const emitted = w.emitted('upload-image')
@@ -298,11 +319,113 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('润色结果先与原文对照，选择保留原文时不修改编辑器', async () => {
+    vi.mocked(polishDocumentText).mockResolvedValueOnce({ polished: '这句话表达得更加自然。' })
+    const source = '这句话写得不是特别顺。'
+    const w = await mountEditor({ modelValue: source, polishable: true })
+    const instance = w.vm as unknown as {
+      editor: { commands: { setTextSelection: (range: { from: number; to: number }) => void } }
+      startPolish: () => Promise<void>
+    }
+    instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
+
+    await instance.startPolish()
+    await flushPromises()
+
+    expect(polishDocumentText).toHaveBeenCalledWith(source)
+    expect(w.find('.polish-dialog').exists()).toBe(true)
+    expect(w.findAll('.polish-compare pre').map((node) => node.text())).toEqual([
+      source,
+      '这句话表达得更加自然。',
+    ])
+    await w.find('.polish-keep').trigger('click')
+    expect(w.find('.polish-dialog').exists()).toBe(false)
+    expect(w.emitted('update:modelValue')).toBeFalsy()
+    expect(w.find('.md-body').text()).toContain(source)
+    w.unmount()
+  })
+
+  it('只有明确选择替换时才把润色结果写入选区并触发现有保存事件', async () => {
+    vi.mocked(polishDocumentText).mockResolvedValueOnce({ polished: '这句话表达得更加自然。' })
+    const source = '这句话写得不是特别顺。'
+    const w = await mountEditor({ modelValue: source, polishable: true })
+    const instance = w.vm as unknown as {
+      editor: { commands: { setTextSelection: (range: { from: number; to: number }) => void } }
+      startPolish: () => Promise<void>
+    }
+    instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
+    await instance.startPolish()
+    await flushPromises()
+
+    await w.find('.polish-apply').trigger('click')
+    await nextTick()
+
+    const updates = w.emitted('update:modelValue') as [string][]
+    const latest = updates[updates.length - 1]?.[0]
+    expect(latest).toContain('这句话表达得更加自然。')
+    expect(latest).not.toContain(source)
+    expect(w.find('.polish-dialog').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('跨段选区以 Markdown 交给 AI，并能把多段候选完整替换回文档', async () => {
+    vi.mocked(polishDocumentText).mockResolvedValueOnce({
+      polished: '第一段表达更流畅。\n\n第二段表达更清楚。',
+    })
+    const w = await mountEditor({ modelValue: '第一段原文。\n\n第二段原文。', polishable: true })
+    const instance = w.vm as unknown as {
+      editor: {
+        state: { doc: { content: { size: number } } }
+        commands: { setTextSelection: (range: { from: number; to: number }) => void }
+      }
+      startPolish: () => Promise<void>
+    }
+    instance.editor.commands.setTextSelection({
+      from: 1,
+      to: instance.editor.state.doc.content.size - 1,
+    })
+    await instance.startPolish()
+    await flushPromises()
+
+    expect(polishDocumentText).toHaveBeenCalledWith('第一段原文。\n\n第二段原文。')
+    await w.find('.polish-apply').trigger('click')
+    await nextTick()
+
+    const updates = w.emitted('update:modelValue') as [string][]
+    expect(updates[updates.length - 1]?.[0]).toBe('第一段表达更流畅。\n\n第二段表达更清楚。')
+    w.unmount()
+  })
+
+  it('润色失败时保留原文并提供原选区重试', async () => {
+    vi.mocked(polishDocumentText)
+      .mockRejectedValueOnce(new Error('本地 Codex 暂时离线'))
+      .mockResolvedValueOnce({ polished: '重试后的润色结果。' })
+    const source = '等待润色的原文。'
+    const w = await mountEditor({ modelValue: source, polishable: true })
+    const instance = w.vm as unknown as {
+      editor: { commands: { setTextSelection: (range: { from: number; to: number }) => void } }
+      startPolish: () => Promise<void>
+    }
+    instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
+    await instance.startPolish()
+    await flushPromises()
+
+    expect(w.find('.polish-error').text()).toContain('本地 Codex 暂时离线')
+    expect(w.emitted('update:modelValue')).toBeFalsy()
+    await w.find('.polish-error button').trigger('click')
+    await flushPromises()
+
+    expect(w.find('.polish-error').exists()).toBe(false)
+    expect(w.findAll('.polish-compare pre')[1]?.text()).toBe('重试后的润色结果。')
+    w.unmount()
+  })
+
   it('光标移动会报出自己所在的行号，供上报协同在场', async () => {
     const w = await mountEditor({ modelValue: '第一行\n\n第二行' })
 
     // 挂载后把光标放到文末，应当报出最后一个顶层块的序号
-    const editor = (w.vm as unknown as { editor: { commands: { focus: (p: string) => void } } }).editor
+    const editor = (w.vm as unknown as { editor: { commands: { focus: (p: string) => void } } })
+      .editor
     editor?.commands.focus('end')
     await nextTick()
 
