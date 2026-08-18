@@ -1016,6 +1016,29 @@ onBeforeUnmount(() => {
   margin: 0 0 8px;
   padding-left: 20px;
 }
+/*
+ * 嵌套有序列表不能继续全用 1、2、3：子级的 1 会夹在父级 1、2 之间，
+ * 看起来像父级顺序被打乱。按层级循环数字、字母、罗马数字，结构和 Markdown
+ * 存储都不变，只让层级关系一眼可辨。
+ */
+.md-body :deep(ol) {
+  list-style-type: decimal;
+}
+.md-body :deep(ol ol) {
+  list-style-type: lower-alpha;
+}
+.md-body :deep(ol ol ol) {
+  list-style-type: lower-roman;
+}
+.md-body :deep(ol ol ol ol) {
+  list-style-type: decimal;
+}
+.md-body :deep(ol ol ol ol ol) {
+  list-style-type: lower-alpha;
+}
+.md-body :deep(ol ol ol ol ol ol) {
+  list-style-type: lower-roman;
+}
 .md-body :deep(li) {
   margin: 2px 0;
 }
