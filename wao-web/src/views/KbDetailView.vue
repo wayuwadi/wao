@@ -82,11 +82,21 @@ const body = computed({
 })
 const saving = computed(() => (docId.value ? data.docPending(docId.value) : false))
 /** 上一次写透成功的时刻，给「自动保存成功 14:32」用。 */
-const docSavedAt = computed(() => (docId.value ? data.saveState(`doc:${docId.value}`).savedAt : null))
-const createdLabel = computed(() => (base.value?.created ? relativeTime(base.value.created, now.value) : '—'))
-const updatedLabel = computed(() => (base.value?.updated ? relativeTime(base.value.updated, now.value) : '—'))
+const docSavedAt = computed(() =>
+  docId.value ? data.saveState(`doc:${docId.value}`).savedAt : null,
+)
+const createdLabel = computed(() =>
+  base.value?.created ? relativeTime(base.value.created, now.value) : '—',
+)
+const updatedLabel = computed(() =>
+  base.value?.updated ? relativeTime(base.value.updated, now.value) : '—',
+)
 
-const TYPE_ICON: Record<string, string> = { project: 'ri-stack-line', task: 'ri-checkbox-circle-line', doc: 'ri-file-text-line' }
+const TYPE_ICON: Record<string, string> = {
+  project: 'ri-stack-line',
+  task: 'ri-checkbox-circle-line',
+  doc: 'ri-file-text-line',
+}
 function linkName(l: DocLink) {
   if (l.type === 'project') return '项目 · ' + (data.projectById(l.id)?.name ?? '')
   if (l.type === 'task') return '任务 · ' + (data.taskById(l.id)?.title ?? '')
@@ -101,7 +111,12 @@ const docLinks = computed(() =>
   (base.value?.links ?? []).map((l) => ({ icon: TYPE_ICON[l.type]!, label: linkName(l), link: l })),
 )
 const backlinks = computed(() =>
-  (base.value?.backlinks ?? []).map((b) => ({ icon: TYPE_ICON[b.type]!, label: linkName(b), snippet: b.snippet, link: b })),
+  (base.value?.backlinks ?? []).map((b) => ({
+    icon: TYPE_ICON[b.type]!,
+    label: linkName(b),
+    snippet: b.snippet,
+    link: b,
+  })),
 )
 
 /** 目录只收一级、二级标题；旧文档标题没有层级时按二级处理。 */
@@ -322,7 +337,11 @@ async function removeDoc(id: string) {
 function tocGo(index: number) {
   const el = scrollEl.value?.querySelectorAll('.doc-body h1, .doc-body h2')[index] as HTMLElement | undefined
   const c = scrollEl.value
-  if (el && c) c.scrollTop = Math.max(0, el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 24)
+  if (el && c)
+    c.scrollTop = Math.max(
+      0,
+      el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 24,
+    )
 }
 function onDocScroll() {
   const c = scrollEl.value
@@ -373,7 +392,9 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
     <!-- 左栏 -->
     <div class="side">
       <div class="side-top">
-        <button class="back" @click="router.push('/knowledge')"><i class="ri-arrow-left-line"></i>全部知识库</button>
+        <button class="back" @click="router.push('/knowledge')">
+          <i class="ri-arrow-left-line"></i>全部知识库
+        </button>
         <div class="side-kb">
           <div class="side-icon" :style="{ background: kb.color }"><i :class="kb.icon"></i></div>
           <div class="side-name">{{ kb.name }}</div>
@@ -387,7 +408,8 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
           </button>
         </div>
         <button v-if="kb.project" class="proj-chip" @click="gotoProject">
-          <i class="ri-stack-line"></i><span class="ellip">关联项目 · {{ data.projectById(kb.project)?.name }}</span>
+          <i class="ri-stack-line"></i
+          ><span class="ellip">关联项目 · {{ data.projectById(kb.project)?.name }}</span>
         </button>
         <div class="side-actions">
           <button class="new-folder" @click="addFolder"><i class="ri-folder-add-line"></i>新建文件夹</button>
@@ -413,14 +435,27 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             />
             <template v-else>
               <button class="folder-btn" @click="toggleFolder(f.id)">
-                <i :class="isOpen(f.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'" class="chev"></i>
+                <i
+                  :class="isOpen(f.id) ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"
+                  class="chev"
+                ></i>
                 <i class="ri-folder-3-line folder-icon"></i>
                 <span class="folder-name">{{ f.name }}</span>
                 <span class="folder-count wao-tabular">{{ f.docs.length }}</span>
               </button>
-              <button class="row-act" title="重命名文件夹" @click="renamingFolder = f.id"><i class="ri-edit-line"></i></button>
-              <button class="row-act danger" title="删除文件夹（进回收站）" @click="removeFolder(f.id)"><i class="ri-delete-bin-line"></i></button>
-              <button class="row-act" title="在此文件夹新建文档" @click="addDocTo(f.id)"><i class="ri-add-line"></i></button>
+              <button class="row-act" title="重命名文件夹" @click="renamingFolder = f.id">
+                <i class="ri-edit-line"></i>
+              </button>
+              <button
+                class="row-act danger"
+                title="删除文件夹（进回收站）"
+                @click="removeFolder(f.id)"
+              >
+                <i class="ri-delete-bin-line"></i>
+              </button>
+              <button class="row-act" title="在此文件夹新建文档" @click="addDocTo(f.id)">
+                <i class="ri-add-line"></i>
+              </button>
             </template>
           </div>
           <div v-if="isOpen(f.id)" class="doc-tree">
@@ -437,7 +472,10 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             >
               <i class="drag-handle ri-draggable" title="拖拽调整顺序或移动到其他文件夹"></i>
               <button class="doc-node" :class="{ on: docId === dId }" @click="selectDoc(dId)">
-                <i :class="data.docById(dId)?.auto ? 'ri-flashlight-line' : 'ri-file-text-line'" class="doc-node-icon"></i>
+                <i
+                  :class="data.docById(dId)?.auto ? 'ri-flashlight-line' : 'ri-file-text-line'"
+                  class="doc-node-icon"
+                ></i>
                 <span class="doc-node-title">{{ data.docOf(dId).title || '未命名文档' }}</span>
               </button>
               <button class="row-act danger" title="删除文档（进回收站）" @click="removeDoc(dId)">
@@ -451,7 +489,10 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 
       <div v-if="kb.auto" class="sync-bar">
         <div class="sync-title"><span class="sync-dot"></span>飞书群聊 · 每日自动同步沉淀</div>
-        <div class="sync-sub">上次 今天 06:12 · 新增 12 条 · <button class="link" @click="router.push('/automation')">查看自动化</button></div>
+        <div class="sync-sub">
+          上次 今天 06:12 · 新增 12 条 ·
+          <button class="link" @click="router.push('/automation')">查看自动化</button>
+        </div>
       </div>
     </div>
 
@@ -468,7 +509,11 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 
             <!-- 协同：只有此刻真的打开着这篇文档的人才会出现 -->
             <span class="collab">
-              <span class="c-av" :title="`${session.currentUser.name}（我）`" :style="{ background: session.currentUser.color }">
+              <span
+                class="c-av"
+                :title="`${session.currentUser.name}（我）`"
+                :style="{ background: session.currentUser.color }"
+              >
                 {{ session.currentUser.initial }}
               </span>
               <span
@@ -477,9 +522,12 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
                 class="c-av peer"
                 :title="`${p.name} 正在${p.editing ? '编辑' : '查看'}`"
                 :style="{ background: p.color }"
-              >{{ p.initial }}</span>
+                >{{ p.initial }}</span
+              >
             </span>
-            <span v-if="peers.length" class="realtime"><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span>
+            <span v-if="peers.length" class="realtime"
+              ><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span
+            >
 
             <SaveHint :saving="saving" :saved-at="docSavedAt" />
             <button class="icon-act" title="另存为模板" @click="openSaveTemplate"><i class="ri-file-copy-2-line"></i></button>
@@ -493,27 +541,43 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
               <i :class="favorites.isFav('doc', docId) ? 'ri-star-fill' : 'ri-star-line'"></i>
             </button>
             <div class="share-wrap">
-              <button class="icon-act" title="复制分享链接" @click="shareMenu = !shareMenu"><i class="ri-links-line"></i></button>
+              <button class="icon-act" title="复制分享链接" @click="shareMenu = !shareMenu">
+                <i class="ri-links-line"></i>
+              </button>
               <div v-if="shareMenu" class="menu-mask" @click="shareMenu = false"></div>
               <div v-if="shareMenu" class="share-menu">
-                <div class="share-scope">分享整篇{{ kb.notes ? '小记' : '文档' }} · 公开只读，免登录</div>
+                <div class="share-scope">
+                  分享整篇{{ kb.notes ? '小记' : '文档' }} · 公开只读，免登录
+                </div>
                 <button class="share-item" @click="copyDocShare('page')">
                   <i class="ri-external-link-line"></i>
                   <span class="share-main"><b>复制分享页链接</b><em>公开只读页面，给人看</em></span>
                 </button>
                 <button class="share-item" @click="copyDocShare('md')">
                   <i class="ri-robot-2-line"></i>
-                  <span class="share-main"><b>复制 Markdown 地址</b><em>一次 GET 即全文，给 AI 用</em></span>
+                  <span class="share-main"
+                    ><b>复制 Markdown 地址</b><em>一次 GET 即全文，给 AI 用</em></span
+                  >
                 </button>
               </div>
             </div>
-            <button class="icon-act danger" title="删除这篇文档（进回收站）" @click="removeDoc(docId!)">
+            <button
+              class="icon-act danger"
+              title="删除这篇文档（进回收站）"
+              @click="removeDoc(docId!)"
+            >
               <i class="ri-delete-bin-line"></i>
             </button>
           </div>
 
           <template v-if="doc">
-            <input ref="titleEl" class="doc-title" :value="doc.title" placeholder="未命名文档" @input="editTitle" />
+            <input
+              ref="titleEl"
+              class="doc-title"
+              :value="doc.title"
+              placeholder="未命名文档"
+              @input="editTitle"
+            />
 
             <div class="doc-meta">
               <span class="m-av" :style="{ background: author.color }">{{ author.initial }}</span>
@@ -535,6 +599,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
               class="doc-body"
               bare
               allow-h1
+              polishable
               placeholder="开始写作…敲 # / ## 变标题、Tab 缩进，可直接粘贴截图"
               :min-height="360"
               :peers="peers"
@@ -1357,9 +1422,20 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 .spin { display: inline-block; animation: waoSpin .9s linear infinite; }
 
 @media (max-width: 760px) {
-  .kb-detail { padding: 16px 12px 28px; }
-  .doc-head { align-items: flex-start; flex-wrap: wrap; }
-  .doc-actions { width: 100%; flex-wrap: wrap; }
-  .doc-actions button { flex: 1; justify-content: center; }
+  .kb-detail {
+    padding: 16px 12px 28px;
+  }
+  .doc-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .doc-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .doc-actions button {
+    flex: 1;
+    justify-content: center;
+  }
 }
 </style>

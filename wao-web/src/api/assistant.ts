@@ -10,6 +10,10 @@ export interface AssistantStatus {
   message: string
 }
 
+export interface PolishTextResult {
+  polished: string
+}
+
 export type AssistantAssetType = 'chat' | 'knowledge' | 'project' | 'task'
 
 export interface AssistantSourceFilter {
@@ -56,10 +60,16 @@ async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
 }
 
 export const fetchAssistantStatus = () =>
-  data<AssistantStatus>(http.get('/api/assistant/status', {
-    params: { _: Date.now() },
-    headers: { 'Cache-Control': 'no-cache' },
-  }))
+  data<AssistantStatus>(
+    http.get('/api/assistant/status', {
+      params: { _: Date.now() },
+      headers: { 'Cache-Control': 'no-cache' },
+    }),
+  )
+
+/** 润色文档中明确选中的文字；结果不会写进 AI 助手聊天历史。 */
+export const polishDocumentText = (text: string) =>
+  data<PolishTextResult>(http.post('/api/assistant/polish', { text }, { timeout: 310_000 }))
 
 export const fetchAssistantSourceOptions = () =>
   data<AssistantSourceOptions>(http.get('/api/assistant/source-options'))
@@ -82,7 +92,12 @@ export const sendChat = async (
   pageContext?: string,
   sourceFilter?: AssistantSourceFilter,
 ): Promise<string> => {
-  const res = await http.post('/api/assistant/chat', { message, history, pageContext, sourceFilter })
+  const res = await http.post('/api/assistant/chat', {
+    message,
+    history,
+    pageContext,
+    sourceFilter,
+  })
   return res.data.data.content
 }
 
@@ -95,6 +110,10 @@ export async function* streamChat(
   sourceFilter?: AssistantSourceFilter,
 ): AsyncGenerator<string> {
   yield* streamTextEvents('/api/assistant/chat/stream', {
-    message, history, pageContext, conversationId, sourceFilter,
+    message,
+    history,
+    pageContext,
+    conversationId,
+    sourceFilter,
   })
 }

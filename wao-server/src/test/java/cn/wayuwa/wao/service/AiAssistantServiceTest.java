@@ -126,6 +126,31 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void documentPolishUsesMemberScopedReadOnlyRunWithoutConversationHistory() {
+        AiRunnerNodeEntity local = runner("Windows Server 2025", "codex");
+        when(runnerMapper.selectList(any())).thenReturn(List.of(local));
+        when(mapper.selectCount(any())).thenReturn(0L);
+        AiAssistantRunEntity finished = assistantRun("succeeded");
+        finished.setMemberId("wg");
+        finished.setResponseText("这段表达更加自然、清晰。");
+        when(mapper.selectById(any())).thenReturn(finished);
+
+        assertThat(service.polishText("这段话写的不是特别顺。", "wg"))
+                .isEqualTo("这段表达更加自然、清晰。");
+
+        ArgumentCaptor<AiAssistantRunEntity> queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insert(queued.capture());
+        assertThat(queued.getValue().getMemberId()).isEqualTo("wg");
+        assertThat(queued.getValue().getConversationId()).isNull();
+        assertThat(queued.getValue().getPromptText())
+                .contains("只改进表达的清晰度、流畅度和语气自然度")
+                .contains("<selected_text>", "这段话写的不是特别顺。", "</selected_text>")
+                .contains("只返回可直接替换选区的润色结果");
+        verify(conversationService, org.mockito.Mockito.never()).create(any());
+        verify(conversationService, org.mockito.Mockito.never()).enqueue(any(), any(), any(), any());
+    }
+
+    @Test
     void tianrenPromptSeparatesCastFactsTraditionalSummaryAndAiExtension() {
         AssistantChatRequest request = new AssistantChatRequest(
                 "请结合最近的疲惫给我今天的提示", List.of(), null, "cv1", null);

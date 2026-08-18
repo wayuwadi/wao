@@ -10,6 +10,8 @@ import cn.wayuwa.wao.dto.AssistantConversationDto;
 import cn.wayuwa.wao.dto.AssistantReplyDto;
 import cn.wayuwa.wao.dto.AssistantStatusDto;
 import cn.wayuwa.wao.dto.AssistantSourceOptionsDto;
+import cn.wayuwa.wao.dto.PolishTextDto;
+import cn.wayuwa.wao.dto.PolishTextRequest;
 import cn.wayuwa.wao.service.AiAssistantAssetService;
 import cn.wayuwa.wao.service.AiAssistantConversationService;
 import cn.wayuwa.wao.service.AiAssistantService;
@@ -48,6 +50,14 @@ public class AiAssistantController {
     @GetMapping("/status")
     public ApiResponse<AssistantStatusDto> status() {
         return ApiResponse.ok(service.status());
+    }
+
+    /** 把文档中明确选中的文字交给只读本地 Codex 润色，不写入助手聊天历史。 */
+    @PostMapping("/polish")
+    public ApiResponse<PolishTextDto> polish(@Valid @RequestBody PolishTextRequest request,
+            HttpServletRequest http) {
+        return ApiResponse.ok(new PolishTextDto(
+                service.polishText(request.text(), currentMember.idOr(http, "unknown"))));
     }
 
     /** 返回助手可检索资产的群聊、发言人、日期和项目筛选选项。 */
