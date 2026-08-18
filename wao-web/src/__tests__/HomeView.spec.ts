@@ -121,6 +121,19 @@ vi.mock('@/api/ai', () => ({
     },
   ]),
   fetchAiEvolution: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    codexQuotas: [{
+      key: 'wage@example.com', accountEmail: 'wage@example.com', plan: 'pro',
+      credits: { hasCredits: false, unlimited: false, balance: '0' },
+      limits: [
+        { id: 'codex', label: '通用使用限额', windows: [{
+          usedPercent: 62, windowDurationMinutes: 10080, resetsAt: 1787201290,
+        }] },
+        { id: 'codex_bengalfox', label: 'GPT-5.3-Codex-Spark', windows: [{
+          usedPercent: 0, windowDurationMinutes: 10080, resetsAt: 1787629119,
+        }] },
+      ],
+      runnerNames: ['娃哥电脑', 'Linux 主节点'], lastSyncedAt: '2026-08-18T11:00:00', fresh: true,
+    }],
     sessionQuotas: [{
       accountId: 'aa-codex', provider: 'codex', label: 'Codex 主账号', plan: 'plus',
       usedPercent: 12, remainingPercent: 88, resetsAt: '2026-08-14T15:00:00',
@@ -167,7 +180,7 @@ vi.mock('@/api/ai', () => ({
   ]),
   saveAiEvolutionSchedule: vi.fn<(intervalHours: number, batchSize: number) => Promise<Record<string, unknown>>>().mockImplementation(
     async (intervalHours: number, batchSize: number) => ({
-      sessionQuotas: [], weeklyQuotas: [], suggestions: [], autoStatus: 'ready',
+      codexQuotas: [], sessionQuotas: [], weeklyQuotas: [], suggestions: [], autoStatus: 'ready',
       autoMessage: `已满足 ${intervalHours} 小时空闲与周剩余额度门槛，下次检查会自动选择最多 ${batchSize} 项改进。`,
       lastActivityAt: null, nextEligibleAt: null, nextTriggerAt: '2026-08-12T20:15:00',
       lastCheckedAt: null, lastRunId: null,
@@ -372,7 +385,13 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.session-quota').text()).toContain('88%')
     expect(wrapper.find('.session-quota').text()).toContain('5 小时周期')
     expect(wrapper.find('.weekly-quota').text()).toContain('周剩余额度')
-    expect(wrapper.find('.weekly-quota').text()).toContain('100%')
+    expect(wrapper.find('.weekly-quota').text()).toContain('38%')
+    expect(wrapper.find('.codex-usage-panel').text()).toContain('wage@example.com')
+    expect(wrapper.find('.codex-usage-panel').text()).toContain('Pro 套餐')
+    expect(wrapper.find('.codex-usage-panel').text()).toContain('点数余额0')
+    expect(wrapper.find('.codex-usage-panel').text()).toContain('GPT-5.3-Codex-Spark')
+    expect(wrapper.find('.codex-usage-panel').text()).toContain('100%')
+    expect(wrapper.find('.codex-usage-panel').text()).toContain('2 台电脑同账号')
     expect(wrapper.find('.evolution-panel').text()).toContain('已满足 12 小时空闲')
     expect(wrapper.find('.evolution-policy').text()).toContain('建议挖掘和自动派发只选择用户可感知的功能与提效改进')
     expect(wrapper.find('.suggestion-card').text()).toContain('找出并消除一个高频使用阻力')
@@ -414,7 +433,7 @@ describe('HomeView AI 控制台', () => {
     vi.mocked(saveAiEvolutionSchedule)
       .mockRejectedValueOnce(new Error('网络暂时不可用'))
       .mockResolvedValueOnce({
-        sessionQuotas: [], weeklyQuotas: [], suggestions: [], autoStatus: 'ready',
+        codexQuotas: [], sessionQuotas: [], weeklyQuotas: [], suggestions: [], autoStatus: 'ready',
         autoMessage: '已满足 2 小时空闲与周剩余额度门槛，下次检查会自动选择最多 5 项改进。',
         lastActivityAt: null, nextEligibleAt: null, nextTriggerAt: null,
         lastCheckedAt: null, lastRunId: null,
@@ -442,6 +461,7 @@ describe('HomeView AI 控制台', () => {
   it('真实周额度为空、同步失败或读取失败时不在首页展示额度', async () => {
     vi.useFakeTimers()
     const unavailableOverview: AiEvolutionOverview = {
+      codexQuotas: [],
       sessionQuotas: [],
       weeklyQuotas: [],
       suggestions: [{
@@ -555,7 +575,7 @@ describe('HomeView AI 控制台', () => {
   it('首次没有已保存批次时自动从真实资料生成', async () => {
     vi.useFakeTimers()
     vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
-      sessionQuotas: [], weeklyQuotas: [], suggestions: [], autoStatus: 'quota_unavailable',
+      codexQuotas: [], sessionQuotas: [], weeklyQuotas: [], suggestions: [], autoStatus: 'quota_unavailable',
       autoMessage: '等待真实额度', lastActivityAt: null, nextEligibleAt: null,
       nextTriggerAt: null, lastCheckedAt: null, lastRunId: null, intervalHours: 12, batchSize: 1,
     })

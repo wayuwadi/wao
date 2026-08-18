@@ -46,6 +46,7 @@ import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
+import cn.wayuwa.wao.dto.RunnerCodexQuotaReport;
 import cn.wayuwa.wao.dto.RunnerScriptDto;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.Step;
@@ -108,12 +109,13 @@ public class AiRunService {
     private final AiAccountService accounts;
     private final HostedPageService hostedPages;
     private final ImageService images;
+    private final CodexQuotaService codexQuotas;
 
     public AiRunService(AiProjectConfigMapper configMapper, AiRunnerNodeMapper runnerMapper,
             AiRunnerPairCodeMapper pairMapper, AiTaskRunMapper runMapper, AiRunProgressMapper progressMapper,
             TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier,
             RunnerScriptService scripts, AiAccountService accounts, HostedPageService hostedPages,
-            ImageService images) {
+            ImageService images, CodexQuotaService codexQuotas) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
         this.pairMapper = pairMapper;
@@ -127,6 +129,7 @@ public class AiRunService {
         this.accounts = accounts;
         this.hostedPages = hostedPages;
         this.images = images;
+        this.codexQuotas = codexQuotas;
     }
 
     /** 读取项目配置；尚未保存过时返回安全的关闭状态。 */
@@ -813,7 +816,8 @@ public class AiRunService {
 
     /** 节点心跳；刷新本机能力，并在响应中返回后台优先的实际并发数供 Runner 动态生效。 */
     public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines, String scriptHash,
-            String wakeMac, String wakeHost, String logTail) {
+            String wakeMac, String wakeHost, String logTail, RunnerCodexQuotaReport codexQuota,
+            String codexQuotaError) {
         AiRunnerNodeEntity runner = requireRunner(token);
         boolean clearUpdateRequest = false;
         boolean storeLog = false;
@@ -855,6 +859,12 @@ public class AiRunService {
             runnerMapper.update(runner, update);
         } else {
             runnerMapper.updateById(runner);
+        }
+        try {
+            codexQuotas.report(runner.getId(), codexQuota, codexQuotaError, now);
+        } catch (RuntimeException ex) {
+            // 本地额度属于附加观测能力，格式异常或落库失败不能让 Runner 心跳和任务领取整体离线。
+            LOG.warn("忽略 Runner {} 的 Codex 额度上报失败：{}", runner.getId(), ex.getMessage());
         }
         return listRunners().stream().filter(r -> r.id().equals(runner.getId())).findFirst().orElseThrow();
     }

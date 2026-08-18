@@ -50,6 +50,10 @@ CD 不再下载、上传、安装或重启 Codex CLI/Runner，避免业务发布
 `--claude-model opus`。Qoder 的引擎 id 是 `qoder`，命令名国际版叫 `qodercli`、国内版叫
 `qoderclicn`，自动探测按顺序两个名字都认。
 
+Runner 检测到 Codex 后，还会每五分钟通过本机 `codex app-server` 读取一次套餐、点数与真实限额，
+把脱敏快照随心跳交给首页展示。同一账号在多台电脑登录时由服务端按邮箱合并；Token、Cookie 和
+`~/.codex/auth.json` 不会上传。读取失败只保留一条脱敏诊断并沿用上次成功快照，不影响任务领取。
+
 右下角 AI 助手会由任一在线且上报 `codex` 能力的本地 Runner 领取，Windows 和 Linux 均可；面板打开时
 每 5 秒自动恢复一次短暂断开的状态，无需手动刷新整个页面。
 

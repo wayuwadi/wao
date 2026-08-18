@@ -35,6 +35,7 @@ import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
+import cn.wayuwa.wao.dto.RunnerCodexQuotaReport;
 import cn.wayuwa.wao.mapper.AiProjectConfigMapper;
 import cn.wayuwa.wao.mapper.AiRunProgressMapper;
 import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
@@ -62,9 +63,10 @@ class AiRunServiceTest {
     private final AiAccountService accounts = mock(AiAccountService.class);
     private final HostedPageService hostedPages = mock(HostedPageService.class);
     private final ImageService images = mock(ImageService.class);
+    private final CodexQuotaService codexQuotas = mock(CodexQuotaService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
-            tasks, notifier, scripts, accounts, hostedPages, images);
+            tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas);
 
     @BeforeEach
     void emptyProgressByDefault() {
@@ -536,7 +538,7 @@ class AiRunServiceTest {
         when(runMapper.selectList(any())).thenReturn(List.of());
 
         var result = service.heartbeat(
-                "local-token", 3, null, null, "30-56-0f-09-61-11", "203.0.113.8", null);
+                "local-token", 3, null, null, "30-56-0f-09-61-11", "203.0.113.8", null, null, null);
 
         assertThat(runner.getAdminMaxConcurrency()).isEqualTo(5);
         assertThat(runner.getMaxConcurrency()).isEqualTo(3);
@@ -557,7 +559,7 @@ class AiRunServiceTest {
         when(scripts.available()).thenReturn(true);
         when(scripts.hash()).thenReturn("latest-hash");
 
-        service.heartbeat("local-token", null, null, "latest-hash", null, null, null);
+        service.heartbeat("local-token", null, null, "latest-hash", null, null, null, null, null);
 
         assertThat(runner.getScriptHash()).isEqualTo("latest-hash");
         assertThat(runner.getUpdateRequestedAt()).isNull();
@@ -576,7 +578,7 @@ class AiRunServiceTest {
         when(scripts.available()).thenReturn(true);
         when(scripts.hash()).thenReturn("latest-hash");
 
-        AiRunnerDto dto = service.heartbeat("local-token", null, null, "old-hash", null, null, null);
+        AiRunnerDto dto = service.heartbeat("local-token", null, null, "old-hash", null, null, null, null, null);
 
         assertThat(runner.getUpdateRequestedAt()).isNotNull();
         assertThat(dto.updateRequested()).isTrue();
@@ -594,12 +596,26 @@ class AiRunServiceTest {
         when(runMapper.selectList(any())).thenReturn(List.of());
         String oversized = "prefix-" + "x".repeat(30_000) + "-latest";
 
-        service.heartbeat("local-token", null, null, null, null, null, oversized);
+        service.heartbeat("local-token", null, null, null, null, null, oversized, null, null);
 
         assertThat(runner.getLogTail()).hasSize(30_000).endsWith("-latest");
         assertThat(runner.getLogUpdatedAt()).isNotNull();
         verify(runnerMapper).update(eq(runner), any());
         verify(runnerMapper, never()).updateById(runner);
+    }
+
+    @Test
+    void heartbeatPassesTheLocalCodexQuotaToTheCredentialFreeSnapshotService() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setTokenHash("hashed-token");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        RunnerCodexQuotaReport report = mock(RunnerCodexQuotaReport.class);
+
+        service.heartbeat("local-token", null, null, null, null, null, null, report, null);
+
+        verify(codexQuotas).report(eq("rn1"), eq(report), isNull(), any(LocalDateTime.class));
     }
 
     @Test

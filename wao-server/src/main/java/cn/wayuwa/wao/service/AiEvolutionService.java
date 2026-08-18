@@ -62,11 +62,13 @@ public class AiEvolutionService {
     private final AiAssistantAssetService assets;
     private final ObjectMapper json;
     private final String publicBaseUrl;
+    private final CodexQuotaService codexQuotas;
 
     public AiEvolutionService(AiAccountService accounts, AiRunService runs, AiTaskRunMapper runMapper,
             AiEvolutionStateMapper stateMapper, FeishuWebhookNotifier notifier,
             AiEvolutionSuggestionRepository suggestions, AiAssistantService assistant,
             AiAssistantAssetService assets, ObjectMapper json,
+            CodexQuotaService codexQuotas,
             @Value("${wao.share.base-url:}") String configuredBaseUrl) {
         this.accounts = accounts;
         this.runs = runs;
@@ -77,6 +79,7 @@ public class AiEvolutionService {
         this.assistant = assistant;
         this.assets = assets;
         this.json = json;
+        this.codexQuotas = codexQuotas;
         this.publicBaseUrl = configuredBaseUrl == null || configuredBaseUrl.isBlank()
                 ? null : configuredBaseUrl.replaceFirst("/+$", "");
     }
@@ -125,7 +128,8 @@ public class AiEvolutionService {
         }
         LocalDateTime nextTriggerAt = estimateNextTriggerAt(now, eligibleAt, state,
                 !active && quotaReady && publicBaseUrl != null && !currentSuggestions.isEmpty());
-        return new AiEvolutionOverviewDto(sessionQuotas, quotas, currentSuggestions, status, message,
+        return new AiEvolutionOverviewDto(codexQuotas.listAccounts(), sessionQuotas, quotas,
+                currentSuggestions, status, message,
                 text(lastActivity), text(eligibleAt), text(nextTriggerAt),
                 state == null ? null : text(state.getLastCheckedAt()),
                 state == null ? null : state.getLastRunId(), intervalHours, batchSize);

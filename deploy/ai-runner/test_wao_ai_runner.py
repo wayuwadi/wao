@@ -232,6 +232,12 @@ class RunnerConcurrencyTest(unittest.TestCase):
                 patch.object(RUNNER, "build_cli_environment", return_value=({}, True, "gh")), \
                 patch.object(RUNNER, "remote_log_tail", return_value=""), \
                 patch.object(RUNNER, "script_hash", return_value="script-hash"), \
+                patch.object(RUNNER, "read_codex_quota", return_value={
+                    "accountEmail": "wage@example.com", "plan": "pro", "credits": None,
+                    "limits": [{"id": "codex", "label": "通用使用限额", "windows": [{
+                        "usedPercent": 62, "windowDurationMinutes": 10080, "resetsAt": 1787201290,
+                    }]}],
+                }), \
                 patch.object(RUNNER, "ThreadPoolExecutor", return_value=executor_context) as pool, \
                 patch.object(RUNNER, "execute_claim"), \
                 patch.object(RUNNER, "log"), \
@@ -241,6 +247,45 @@ class RunnerConcurrencyTest(unittest.TestCase):
 
         self.assertEqual(RUNNER.MAX_RUNNER_CONCURRENCY, pool.call_args.kwargs["max_workers"])
         self.assertEqual(5, executor.submit.call_count)
+        heartbeat = next(call for call in api.post.call_args_list if call.args[0].startswith(
+            "/api/ai/runner/heartbeat"))
+        self.assertEqual("wage@example.com", heartbeat.args[1]["codexQuota"]["accountEmail"])
+
+
+class CodexQuotaTest(unittest.TestCase):
+    """本地 Codex 额度只保留首页需要的脱敏字段。"""
+
+    def test_normalizes_general_and_model_specific_weekly_limits(self) -> None:
+        result = RUNNER.normalize_codex_quota(
+            {"account": {"type": "chatgpt", "email": "wage@example.com", "planType": "pro"}},
+            {
+                "rateLimits": {
+                    "limitId": "codex", "planType": "pro",
+                    "credits": {"hasCredits": False, "unlimited": False, "balance": "0"},
+                },
+                "rateLimitsByLimitId": {
+                    "codex": {"limitId": "codex", "primary": {
+                        "usedPercent": 62, "windowDurationMins": 10080, "resetsAt": 1787201290,
+                    }},
+                    "codex_bengalfox": {
+                        "limitId": "codex_bengalfox", "limitName": "GPT-5.3-Codex-Spark",
+                        "primary": {"usedPercent": 0, "windowDurationMins": 10080,
+                                    "resetsAt": 1787629119},
+                    },
+                },
+            },
+        )
+
+        self.assertEqual("wage@example.com", result["accountEmail"])
+        self.assertEqual("pro", result["plan"])
+        self.assertEqual("0", result["credits"]["balance"])
+        self.assertEqual(["通用使用限额", "GPT-5.3-Codex-Spark"],
+                         [item["label"] for item in result["limits"]])
+        self.assertEqual(38, 100 - result["limits"][0]["windows"][0]["usedPercent"])
+
+    def test_rejects_empty_or_unparseable_limits(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "没有返回可解析"):
+            RUNNER.normalize_codex_quota({"account": None}, {"rateLimits": {}})
 
 
 class RepoUrlTest(unittest.TestCase):

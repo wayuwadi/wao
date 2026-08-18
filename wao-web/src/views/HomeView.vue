@@ -22,6 +22,8 @@ import {
   wakeAiRunner,
   type AiEvolutionOverview,
   type AiEvolutionSuggestion,
+  type CodexQuotaAccount,
+  type CodexQuotaWindow,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
@@ -147,8 +149,22 @@ const visibleSessionQuotas = computed(() => evolution.value?.sessionQuotas.filte
 const primarySessionQuota = computed(() => visibleSessionQuotas.value[0] ?? null)
 const visibleWeeklyQuotas = computed(() => evolution.value?.weeklyQuotas.filter((quota) => quota.status === 'SYNCED') ?? [])
 const primaryWeeklyQuota = computed(() => visibleWeeklyQuotas.value[0] ?? null)
-const showSessionQuota = computed(() => primarySessionQuota.value !== null)
-const showWeeklyQuota = computed(() => primaryWeeklyQuota.value !== null || (evolutionLoading.value && !evolution.value))
+const codexQuotaAccounts = computed(() => evolution.value?.codexQuotas ?? [])
+const primaryCodexAccount = computed(() => codexQuotaAccounts.value.find((account) => account.fresh)
+  ?? codexQuotaAccounts.value[0] ?? null)
+const localSessionWindow = computed(() => findCodexWindow(primaryCodexAccount.value, 300))
+const localWeeklyWindow = computed(() => findCodexWindow(primaryCodexAccount.value, 10_080))
+const heroSessionQuota = computed(() => localSessionWindow.value ? {
+  remainingPercent: 100 - localSessionWindow.value.usedPercent,
+  resetsAt: unixTime(localSessionWindow.value.resetsAt),
+} : primarySessionQuota.value)
+const heroWeeklyQuota = computed(() => localWeeklyWindow.value ? {
+  remainingPercent: 100 - localWeeklyWindow.value.usedPercent,
+  resetsAt: unixTime(localWeeklyWindow.value.resetsAt),
+  provider: 'codex',
+} : primaryWeeklyQuota.value)
+const showSessionQuota = computed(() => heroSessionQuota.value !== null)
+const showWeeklyQuota = computed(() => heroWeeklyQuota.value !== null || (evolutionLoading.value && !evolution.value))
 const evolutionScheduleDirty = computed(() => Boolean(evolution.value)
   && (evolutionScheduleDraft.intervalHours !== evolution.value?.intervalHours
     || evolutionScheduleDraft.batchSize !== evolution.value?.batchSize))
@@ -390,6 +406,39 @@ function providerLabel(provider: string) {
 
 function quotaClass(remaining: number) {
   return remaining < 20 ? 'danger' : remaining < 50 ? 'warn' : 'good'
+}
+
+function findCodexWindow(account: CodexQuotaAccount | null, durationMinutes: number) {
+  if (!account) return null
+  const general = account.limits.find((limit) => limit.id === 'codex') ?? account.limits[0]
+  return general?.windows.find((window) => window.windowDurationMinutes === durationMinutes) ?? null
+}
+
+function unixTime(value: number | null) {
+  return value ? new Date(value * 1000).toISOString() : null
+}
+
+function codexResetText(window: CodexQuotaWindow) {
+  return resetText(unixTime(window.resetsAt))
+}
+
+function quotaDuration(minutes: number | null) {
+  if (minutes === 300) return '5 小时周期'
+  if (minutes === 10_080) return '每周使用限额'
+  if (!minutes) return '周期未知'
+  if (minutes % 1_440 === 0) return `${minutes / 1_440} 天周期`
+  if (minutes % 60 === 0) return `${minutes / 60} 小时周期`
+  return `${minutes} 分钟周期`
+}
+
+function planText(plan: string | null) {
+  if (!plan) return '套餐未提供'
+  return `${plan.charAt(0).toUpperCase()}${plan.slice(1)} 套餐`
+}
+
+function creditsText(account: CodexQuotaAccount) {
+  if (account.credits?.unlimited) return '不限'
+  return account.credits?.balance ?? '未提供'
 }
 
 function resetText(value: string | null) {
@@ -802,18 +851,18 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div class="hero-metrics" :class="{ single: !showSessionQuota && !showWeeklyQuota, 'with-two-quotas': showSessionQuota && showWeeklyQuota }">
-        <div v-if="primarySessionQuota" class="quota-card session-quota" :class="quotaClass(primarySessionQuota.remainingPercent)">
+        <div v-if="heroSessionQuota" class="quota-card session-quota" :class="quotaClass(heroSessionQuota.remainingPercent)">
           <span><i class="ri-timer-line"></i>Codex 本轮剩余额度</span>
-          <strong>{{ primarySessionQuota.remainingPercent }}<em>%</em></strong>
-          <small>5 小时周期 · {{ resetText(primarySessionQuota.resetsAt) }}</small>
+          <strong>{{ heroSessionQuota.remainingPercent }}<em>%</em></strong>
+          <small>5 小时周期 · {{ resetText(heroSessionQuota.resetsAt) }}</small>
         </div>
-        <div v-if="showWeeklyQuota" class="quota-card weekly-quota" :class="primaryWeeklyQuota ? quotaClass(primaryWeeklyQuota.remainingPercent) : 'unknown'">
+        <div v-if="showWeeklyQuota" class="quota-card weekly-quota" :class="heroWeeklyQuota ? quotaClass(heroWeeklyQuota.remainingPercent) : 'unknown'">
           <span><i class="ri-speed-up-line"></i>周剩余额度</span>
           <template v-if="evolutionLoading && !evolution"><strong>···</strong><small>正在读取真实额度</small></template>
-          <template v-else-if="primaryWeeklyQuota">
-            <strong>{{ primaryWeeklyQuota.remainingPercent }}<em>%</em></strong>
+          <template v-else-if="heroWeeklyQuota">
+            <strong>{{ heroWeeklyQuota.remainingPercent }}<em>%</em></strong>
             <small>
-              {{ providerLabel(primaryWeeklyQuota.provider) }} · {{ resetText(primaryWeeklyQuota.resetsAt) }}
+              {{ providerLabel(heroWeeklyQuota.provider) }} · {{ resetText(heroWeeklyQuota.resetsAt) }}
             </small>
           </template>
         </div>
@@ -895,6 +944,65 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
+
+    <section class="codex-usage-panel" aria-labelledby="codex-usage-title">
+      <header>
+        <span class="codex-usage-mark"><i class="ri-bar-chart-box-line"></i></span>
+        <div>
+          <div class="eyebrow dark">LOCAL CODEX USAGE</div>
+          <h2 id="codex-usage-title">Codex 使用情况与余额</h2>
+          <p>从已接入电脑的 Codex 本地接口读取；同一账号跨电脑自动合并。</p>
+        </div>
+      </header>
+      <div v-if="evolutionLoading && !evolution" class="codex-quota-state">
+        <i class="ri-loader-4-line spin"></i><span>正在读取执行电脑上的真实 Codex 额度…</span>
+      </div>
+      <div v-else-if="codexQuotaAccounts.length" class="codex-account-grid">
+        <article v-for="account in codexQuotaAccounts" :key="account.key" class="codex-account-card">
+          <div class="codex-account-head">
+            <span class="codex-logo"><i class="ri-openai-fill"></i></span>
+            <div>
+              <strong>{{ account.accountEmail || 'Codex 本地账号' }}</strong>
+              <small>{{ planText(account.plan) }}</small>
+            </div>
+            <span class="quota-freshness" :class="{ stale: !account.fresh }">
+              <i :class="account.fresh ? 'ri-checkbox-circle-fill' : 'ri-time-line'"></i>
+              {{ account.fresh ? '额度已同步' : '历史快照' }}
+            </span>
+          </div>
+          <dl class="codex-account-meta">
+            <div><dt>当前套餐</dt><dd>{{ planText(account.plan) }}</dd></div>
+            <div><dt>点数余额</dt><dd>{{ creditsText(account) }}</dd></div>
+            <div><dt>来源电脑</dt><dd>{{ account.runnerNames.join('、') || '已接入 Runner' }}</dd></div>
+          </dl>
+          <div class="codex-limit-list">
+            <template v-for="limit in account.limits" :key="limit.id">
+              <div v-for="(window, index) in limit.windows" :key="`${limit.id}-${index}`" class="codex-limit-row">
+                <div class="codex-limit-copy">
+                  <strong>{{ limit.label }}</strong>
+                  <small>{{ quotaDuration(window.windowDurationMinutes) }} · {{ codexResetText(window) }}</small>
+                </div>
+                <div class="codex-limit-meter">
+                  <span><i :style="{ width: `${100 - window.usedPercent}%` }"></i></span>
+                  <b>{{ 100 - window.usedPercent }}%</b>
+                </div>
+              </div>
+            </template>
+          </div>
+          <footer>
+            <span><i class="ri-computer-line"></i>{{ account.runnerNames.length }} 台电脑同账号</span>
+            <small>{{ timeText(account.lastSyncedAt) }} 同步</small>
+          </footer>
+        </article>
+      </div>
+      <div v-else class="codex-quota-state empty">
+        <i class="ri-computer-line"></i>
+        <span><b>还没有执行电脑上报 Codex 额度</b>保持一台已登录 Codex 的 Runner 在线；新版脚本下次心跳后会自动读取。</span>
+      </div>
+      <footer class="codex-privacy">
+        <i class="ri-shield-keyhole-line"></i>只上传套餐、余额与限额窗口；OAuth Token、Cookie 和本地认证文件不会离开执行电脑。
+      </footer>
+    </section>
 
     <div class="home-recommendations" aria-label="首页相关推荐">
       <section class="daily-guidance" aria-labelledby="daily-guidance-title">
@@ -1628,6 +1736,7 @@ onBeforeUnmount(() => {
 }
 .home > * { order: 2; }
 .home-primary { order: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.codex-usage-panel { order: 2; margin-top: 16px; }
 .home-recommendations { order: 3; margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px; }
 .hero {
   min-height: 118px;
@@ -1727,6 +1836,40 @@ onBeforeUnmount(() => {
 .capacity-num span { font-size: 14px; opacity: .6; }
 .capacity-bar { height: 5px; margin-top: 11px; overflow: hidden; border-radius: 9px; background: #ffffff24; }
 .capacity-bar i { display: block; height: 100%; width: var(--capacity); border-radius: inherit; background: #fff; transition: width .3s; }
+.codex-usage-panel {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #4663d7 22%, var(--wao-line));
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 96% 0, rgba(85, 111, 220, .11), transparent 30%),
+    var(--wao-bg-card);
+  box-shadow: 0 8px 24px rgba(43, 59, 141, .06);
+}
+.codex-usage-panel > header { padding: 16px 18px 12px; display: flex; align-items: flex-start; gap: 11px; }
+.codex-usage-panel > header > div { flex: 1; min-width: 0; }
+.codex-usage-panel h2 { margin: 4px 0; color: var(--wao-text-1); font-size: 17px; }
+.codex-usage-panel header p { margin: 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }
+.codex-usage-mark { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px; background: #e9edff; color: #3c54b8; display: grid; place-items: center; font-size: 19px; }
+.codex-account-grid { padding: 2px 18px 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(410px, 100%), 1fr)); gap: 12px; }
+.codex-account-card { overflow: hidden; border: 1px solid var(--wao-line); border-radius: 12px; background: color-mix(in srgb, #f5f7ff 42%, var(--wao-bg-card)); }
+.codex-account-head { padding: 12px 13px 10px; display: flex; align-items: center; gap: 9px; }
+.codex-logo { width: 31px; height: 31px; flex: 0 0 auto; border-radius: 9px; background: #e7ebff; color: #334eb5; display: grid; place-items: center; font-size: 16px; }
+.codex-account-head > div { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.codex-account-head strong { overflow: hidden; color: var(--wao-text-1); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.codex-account-head small { color: var(--wao-text-weak); font-size: 9.5px; }
+.quota-freshness { padding: 4px 7px; border-radius: 999px; background: #ddf4e7; color: #24714d; font-size: 9px; white-space: nowrap; }
+.quota-freshness.stale { background: #f4efe0; color: #876714; }.quota-freshness i { margin-right: 3px; }
+.codex-account-meta { margin: 0 13px 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.codex-account-meta div { min-width: 0; padding: 8px 9px; border-radius: 8px; background: color-mix(in srgb, #eef1ff 42%, var(--wao-bg-card)); }
+.codex-account-meta dt { color: var(--wao-text-weak); font-size: 8.5px; }.codex-account-meta dd { margin: 3px 0 0; overflow: hidden; color: var(--wao-text-2); font-size: 10.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.codex-limit-list { margin: 0 13px 11px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); }
+.codex-limit-row { min-height: 51px; padding: 9px 11px; display: flex; align-items: center; gap: 16px; }
+.codex-limit-row + .codex-limit-row { border-top: 1px solid var(--wao-line); }
+.codex-limit-copy { min-width: 0; flex: 1; display: grid; gap: 3px; }.codex-limit-copy strong { overflow: hidden; color: var(--wao-text-1); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }.codex-limit-copy small { color: var(--wao-text-weak); font-size: 8.5px; }
+.codex-limit-meter { width: min(42%, 190px); display: flex; align-items: center; gap: 9px; }.codex-limit-meter > span { height: 6px; flex: 1; overflow: hidden; border-radius: 999px; background: var(--wao-line); }.codex-limit-meter i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4058c7, #7388e9); }.codex-limit-meter b { width: 34px; color: var(--wao-text-2); font-size: 10px; text-align: right; }
+.codex-account-card > footer { padding: 8px 13px; border-top: 1px solid var(--wao-line); color: var(--wao-text-weak); font-size: 8.5px; display: flex; justify-content: space-between; gap: 10px; }.codex-account-card > footer i { margin-right: 4px; }
+.codex-quota-state { min-height: 96px; padding: 18px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 11px; }.codex-quota-state.empty > i { font-size: 23px; color: #6176cf; }.codex-quota-state.empty span { display: grid; gap: 3px; }.codex-quota-state.empty b { color: var(--wao-text-2); font-size: 12px; }
+.codex-privacy { padding: 8px 18px; border-top: 1px solid var(--wao-line); background: color-mix(in srgb, #eef1ff 45%, var(--wao-bg-card)); color: var(--wao-text-weak); font-size: 9px; }.codex-privacy i { margin-right: 5px; color: #4058c7; }
 .daily-guidance {
   margin-top: 0;
   overflow: hidden;
@@ -2240,6 +2383,8 @@ onBeforeUnmount(() => {
   .hero-metrics { width: auto; grid-template-columns: 1fr 1fr; }
   .hero-metrics.single { grid-template-columns: 1fr; }
   .hero-metrics.with-two-quotas .capacity { grid-column: 1 / -1; }
+  .codex-account-meta { grid-template-columns: 1fr; }
+  .codex-limit-row { align-items: flex-start; flex-direction: column; gap: 7px; }.codex-limit-meter { width: 100%; }
   .capacity { width: auto; }
   .daily-guidance > header { flex-wrap: wrap; }
   .guidance-refresh { margin-left: 51px; }

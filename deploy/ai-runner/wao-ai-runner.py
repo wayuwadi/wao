@@ -41,6 +41,10 @@ MAX_RUN_REPORT_BYTES = 10 * 1024 * 1024
 # 服务端和后台配置允许的单机并发上限。线程池按这个能力上限创建，但线程会按需启动；
 # 实际领取数仍由心跳返回的 maxConcurrency 动态控制。
 MAX_RUNNER_CONCURRENCY = 8
+# Codex Desktop/CLI 共享的 app-server 会返回真实套餐、点数与限额；每五分钟读取一次即可，
+# 避免心跳每十秒都启动本地进程。上报内容不包含 auth.json、Token 或 Cookie。
+CODEX_QUOTA_INTERVAL_SECONDS = 300
+CODEX_QUOTA_TIMEOUT_SECONDS = 20
 # Windows CreateProcess 标志在非 Windows Python 上通常不存在，保留官方数值便于跨平台单测，
 # 且只有 os.name == "nt" 时才会传入 subprocess。
 WINDOWS_CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -104,6 +108,11 @@ def remote_log_tail(path: Path | None = None) -> str:
         return ""
     lines = source.read_text(encoding="utf-8", errors="replace").splitlines()[-REMOTE_LOG_LINES:]
     content = "\n".join(lines)[-REMOTE_LOG_CHARS:]
+    return redact_sensitive_text(content)
+
+
+def redact_sensitive_text(content: str) -> str:
+    """二次遮盖外部命令可能带出的常见凭据格式。"""
     # 防御外部命令异常把常见凭据格式带进日志；节点令牌本身从不参与日志拼接。
     content = re.sub(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [已脱敏]", content)
     content = re.sub(
@@ -117,6 +126,134 @@ def remote_log_tail(path: Path | None = None) -> str:
         content,
     )
     return content
+
+
+def normalize_codex_quota(account_result: Any, rate_limit_result: Any) -> dict[str, Any]:
+    """把 Codex app-server 响应收窄成可安全上报的额度字段。"""
+    account = account_result.get("account") if isinstance(account_result, dict) else None
+    account = account if isinstance(account, dict) else {}
+    rates = rate_limit_result if isinstance(rate_limit_result, dict) else {}
+    default_rate = rates.get("rateLimits") if isinstance(rates.get("rateLimits"), dict) else {}
+    buckets = rates.get("rateLimitsByLimitId")
+    if not isinstance(buckets, dict) or not buckets:
+        limit_id = str(default_rate.get("limitId") or "codex")
+        buckets = {limit_id: default_rate}
+
+    limits: list[dict[str, Any]] = []
+    ordered = sorted(buckets.items(), key=lambda item: (str(item[0]) != "codex", str(item[0])))
+    for fallback_id, raw in ordered:
+        if not isinstance(raw, dict):
+            continue
+        windows = []
+        for name in ("primary", "secondary"):
+            window = raw.get(name)
+            if not isinstance(window, dict) or not isinstance(window.get("usedPercent"), (int, float)):
+                continue
+            windows.append({
+                "usedPercent": max(0, min(100, round(window["usedPercent"]))),
+                "windowDurationMinutes": window.get("windowDurationMins"),
+                "resetsAt": window.get("resetsAt"),
+            })
+        if not windows:
+            continue
+        limit_id = str(raw.get("limitId") or fallback_id)[:64]
+        label = raw.get("limitName")
+        if not isinstance(label, str) or not label.strip():
+            label = "通用使用限额" if limit_id == "codex" else limit_id
+        limits.append({"id": limit_id, "label": label.strip()[:100], "windows": windows})
+
+    if not limits:
+        raise RuntimeError("Codex 本地接口没有返回可解析的限额窗口")
+    credits = default_rate.get("credits") if isinstance(default_rate.get("credits"), dict) else None
+    safe_credits = None
+    if credits is not None:
+        balance = credits.get("balance")
+        safe_credits = {
+            "hasCredits": bool(credits.get("hasCredits")),
+            "unlimited": bool(credits.get("unlimited")),
+            "balance": str(balance)[:40] if balance is not None else None,
+        }
+    email = account.get("email") if isinstance(account.get("email"), str) else None
+    plan = default_rate.get("planType") or account.get("planType")
+    return {
+        "accountEmail": email.strip()[:255] if email else None,
+        "plan": str(plan)[:32] if plan else None,
+        "credits": safe_credits,
+        "limits": limits,
+    }
+
+
+def read_codex_quota(codex_command: str) -> dict[str, Any]:
+    """通过当前 Codex CLI 的本地 app-server 读取真实额度，不读取或上传认证文件。"""
+    process = subprocess.Popen(
+        [codex_command, "app-server", "--stdio"],
+        text=True, encoding="utf-8", errors="replace",
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        creationflags=windows_creation_flags(),
+    )
+    responses: queue.Queue[dict[str, Any] | None] = queue.Queue()
+
+    def consume() -> None:
+        assert process.stdout is not None
+        for line in process.stdout:
+            try:
+                event = json.loads(line)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if isinstance(event, dict):
+                responses.put(event)
+        responses.put(None)
+
+    reader = threading.Thread(target=consume, name="wao-codex-quota", daemon=True)
+    reader.start()
+    deadline = time.monotonic() + CODEX_QUOTA_TIMEOUT_SECONDS
+
+    def send(message: dict[str, Any]) -> None:
+        if process.stdin is None:
+            raise RuntimeError("Codex 本地接口没有可写输入流")
+        process.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
+        process.stdin.flush()
+
+    def await_response(expected: set[int]) -> dict[int, Any]:
+        found: dict[int, Any] = {}
+        while expected - found.keys():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Codex 本地额度读取超时")
+            event = responses.get(timeout=remaining)
+            if event is None:
+                raise RuntimeError("Codex 本地接口提前退出")
+            event_id = event.get("id")
+            if event_id not in expected:
+                continue
+            if event.get("error"):
+                message = event["error"].get("message") if isinstance(event["error"], dict) else event["error"]
+                raise RuntimeError(f"Codex 本地接口返回错误：{str(message)[:240]}")
+            found[event_id] = event.get("result")
+        return found
+
+    try:
+        send({"id": 1, "method": "initialize", "params": {
+            "clientInfo": {"name": "wao-runner", "version": "1"}, "capabilities": {}}})
+        await_response({1})
+        send({"method": "initialized"})
+        send({"id": 2, "method": "account/read", "params": {"refreshToken": False}})
+        send({"id": 3, "method": "account/rateLimits/read", "params": None})
+        result = await_response({2, 3})
+        return normalize_codex_quota(result[2], result[3])
+    finally:
+        if process.stdin is not None:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=3)
 
 
 class PairingRevokedError(RuntimeError):
@@ -1348,11 +1485,26 @@ def main() -> int:
     futures: set[Future[None]] = set()
     last_credentials_sync = time.monotonic()
     last_reported_log_hash: str | None = None
+    last_codex_quota_check = float("-inf")
+    codex_quota_report: dict[str, Any] | None = None
+    codex_quota_error: str | None = None
+    codex_quota_pending = False
     CREDENTIALS_SYNC_INTERVAL_SECONDS = 300
     with ThreadPoolExecutor(max_workers=MAX_RUNNER_CONCURRENCY, thread_name_prefix="wao-ai") as executor:
         while True:
             futures = {future for future in futures if not future.done()}
             try:
+                now = time.monotonic()
+                if "codex" in engine_commands and now - last_codex_quota_check >= CODEX_QUOTA_INTERVAL_SECONDS:
+                    last_codex_quota_check = now
+                    try:
+                        codex_quota_report = read_codex_quota(engine_commands["codex"])
+                        codex_quota_error = None
+                    except Exception as exc:  # noqa: BLE001 - 额度失败不能影响任务领取
+                        codex_quota_report = None
+                        codex_quota_error = redact_sensitive_text(str(exc))[:500]
+                        log(f"Codex 本地额度读取失败，保留服务端上一次真实快照：{codex_quota_error}")
+                    codex_quota_pending = True
                 heartbeat_query = urllib.parse.urlencode({
                     "maxConcurrency": args.max_concurrency,
                     "engines": ",".join(engines),
@@ -1362,8 +1514,14 @@ def main() -> int:
                 log_tail = remote_log_tail()
                 log_hash = hashlib.sha256(log_tail.encode("utf-8")).hexdigest()
                 heartbeat_body = {"logTail": log_tail} if log_hash != last_reported_log_hash else {}
+                if codex_quota_pending:
+                    if codex_quota_report is not None:
+                        heartbeat_body["codexQuota"] = codex_quota_report
+                    elif codex_quota_error:
+                        heartbeat_body["codexQuotaError"] = codex_quota_error
                 status = api.post(f"/api/ai/runner/heartbeat?{heartbeat_query}", heartbeat_body)
                 last_reported_log_hash = log_hash
+                codex_quota_pending = False
                 next_concurrency = resolve_runtime_concurrency(status, runtime_concurrency)
                 if next_concurrency != runtime_concurrency:
                     log(f"后台并发配置已生效：{runtime_concurrency} → {next_concurrency}")

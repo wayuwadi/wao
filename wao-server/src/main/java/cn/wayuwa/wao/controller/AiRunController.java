@@ -269,7 +269,9 @@ public class AiRunController {
             @RequestBody(required = false) RunnerHeartbeatRequest request,
             HttpServletRequest http) {
         AiRunnerDto runner = service.heartbeat(token, maxConcurrency, engines, scriptHash,
-                wakeMac, clientAddress(http), request == null ? null : request.logTail());
+                wakeMac, clientAddress(http), request == null ? null : request.logTail(),
+                request == null ? null : request.codexQuota(),
+                request == null ? null : request.codexQuotaError());
         lifecycleService.markOnline(runner.id());
         return ApiResponse.ok(runner);
     }

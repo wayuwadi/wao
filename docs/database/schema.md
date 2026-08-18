@@ -249,6 +249,19 @@ erDiagram
   完整日志仍只保留在执行电脑本机。
 `ai_runner_pair_code` 保存一次性配对码哈希、过期时间和使用时间，明文只在生成接口返回一次。
 
+### codex_runner_quota（V74）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| runner_id | VARCHAR(32) PK/FK | 上报快照的执行电脑；解除接入时级联删除 |
+| account_email / plan | VARCHAR | Codex app-server 返回的账号标识与套餐，不含认证信息 |
+| snapshot_json | TEXT NULL | 点数、通用与模型专属限额的脱敏结构化快照 |
+| error_message | VARCHAR(500) NULL | 最近一次读取失败原因；失败不覆盖成功快照 |
+| last_success_at / last_checked_at | DATETIME | 最近成功与最近尝试时间 |
+
+Runner 每五分钟在本机调用 Codex app-server。服务端按规范化邮箱合并多台电脑的同一账号，只把快照用于首页
+可见性；集中账号与自主进化的服务端额度门槛保持不变。详见 ADR-083。
+
 ### ai_task_run
 
 | 列 | 类型 | 说明 |
@@ -713,4 +726,5 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V70__shared_memory_mcp.sql`：Codex MCP 按设备令牌摘要与可核对的共享记忆知识库（见 ADR-078）。
 - `V71__document_templates.sql`：按成员隔离的文档模板正文快照（见 ADR-080）。
 - `V73__personal_multimodal_memory.sql`：保存按成员隔离的文字与多模态个人记忆原件（见 ADR-082）。
+- `V74__runner_codex_quota.sql`：保存 Runner 本地 Codex 脱敏额度，并触发现有 Codex 节点获取新版脚本（见 ADR-083）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
