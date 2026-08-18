@@ -280,7 +280,7 @@ public class AiAssistantService {
             history = request.history() == null ? List.of() : request.history();
         }
         String assetContext = includeAssets
-                ? assetService.relevantAssets(request.message(), request.sourceFilter()) : null;
+                ? assetService.relevantAssets(request.message(), request.sourceFilter(), memberId) : null;
         run.setPromptText(buildPrompt(request, history, assetContext, trustedContext));
         run.setCreatedAt(now);
         run.setUpdatedAt(now);

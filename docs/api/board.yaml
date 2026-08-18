@@ -104,6 +104,54 @@ paths:
       responses:
         '200': { description: 令牌元数据与仅本次返回的 secret }
         '400': { description: 名称不合法或有效令牌已达到十枚 }
+  /memory/entries:
+    get:
+      summary: 按当前成员列出个人记忆，不返回附件二进制
+      parameters:
+        - { name: query, in: query, required: false, schema: { type: string, maxLength: 500 } }
+        - { name: category, in: query, required: false, schema: { type: string } }
+      responses: { '200': { description: 最多 300 条当前成员自己的个人记忆 } }
+    post:
+      summary: 当前成员人工保存一条文字记忆
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SavePersonalMemory' } } }
+      responses: { '200': { description: 已保存，captureMode=manual、mediaType=text } }
+  /memory/entries/upload:
+    post:
+      summary: 当前成员人工保存一份真实多模态原件及说明
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [category, file]
+              properties:
+                title: { type: string, maxLength: 120, description: 为空时使用安全文件名 }
+                content: { type: string, maxLength: 20000 }
+                category: { type: string, enum: [preference, responsibility, plan, decision, context, experience] }
+                file: { type: string, format: binary, description: 单个不超过 50MB }
+      responses: { '200': { description: 已保存原件与元数据 }, '400': { description: 文件为空、超限或分类不支持 } }
+  /memory/entries/{memoryId}:
+    patch:
+      summary: 修改当前成员记忆的标题、说明和分类，附件原件保持不变
+      parameters: [{ name: memoryId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SavePersonalMemory' } } }
+      responses: { '200': { description: 已更新 }, '404': { description: 记忆不存在或不属于当前成员 } }
+    delete:
+      summary: 删除当前成员记忆及附件原件
+      parameters: [{ name: memoryId, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: 已删除 }, '404': { description: 记忆不存在或不属于当前成员 } }
+  /memory/entries/{memoryId}/attachment:
+    get:
+      summary: 下载当前成员记忆的附件原件
+      parameters: [{ name: memoryId, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: 真实附件字节 }
+        '404': { description: 记忆/附件不存在或不属于当前成员 }
   /memory/tokens/{tokenId}:
     delete:
       summary: 吊销当前成员的一枚 Codex 记忆 MCP 设备令牌
@@ -113,7 +161,7 @@ paths:
         '404': { description: 令牌不存在或不属于当前成员 }
   /mcp:
     post:
-      summary: Codex 共享记忆的无状态 Streamable HTTP MCP JSON-RPC 端点
+      summary: Codex 个人记忆的无状态 Streamable HTTP MCP JSON-RPC 端点
       security: [{ memoryBearer: [] }]
       requestBody:
         required: true
@@ -953,8 +1001,8 @@ components:
       properties:
         assetTypes:
           type: array
-          maxItems: 4
-          items: { type: string, enum: [chat, knowledge, project, task] }
+          maxItems: 5
+          items: { type: string, enum: [memory, chat, knowledge, project, task] }
         chatIds:
           type: array
           maxItems: 20
@@ -1332,7 +1380,7 @@ components:
       type: object
       required: [id, label, icon, group, order, visible]
       properties:
-        id: { type: string, enum: [home, projects, todo, workday-rhythm, action-plans, calendar, weekly-report, life-review, knowledge, english-learning, vocabulary, drawings, vault, tianren, automation, files, games] }
+        id: { type: string, enum: [home, projects, todo, workday-rhythm, action-plans, calendar, weekly-report, life-review, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, automation, files, games] }
         label: { type: string, maxLength: 24 }
         icon: { type: string, description: Remix Icon 类名 }
         group: { type: string, enum: [ROOT, PUBLIC, PERSONAL, TOOLS] }
@@ -1343,7 +1391,29 @@ components:
       required: [version, menus]
       properties:
         version: { type: integer, minimum: 1 }
-        menus: { type: array, minItems: 17, maxItems: 17, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
+        menus: { type: array, minItems: 18, maxItems: 18, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
+    SavePersonalMemory:
+      type: object
+      required: [title, content, category]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        content: { type: string, maxLength: 20000 }
+        category: { type: string, enum: [preference, responsibility, plan, decision, context, experience] }
+    PersonalMemory:
+      allOf:
+        - { $ref: '#/components/schemas/SavePersonalMemory' }
+        - type: object
+          required: [id, captureMode, mediaType, createdAt, updatedAt]
+          properties:
+            id: { type: string }
+            captureMode: { type: string, enum: [manual, ai] }
+            mediaType: { type: string, enum: [text, image, audio, video, file] }
+            fileName: { type: string, nullable: true }
+            contentType: { type: string, nullable: true }
+            byteSize: { type: integer, format: int64, nullable: true }
+            downloadUrl: { type: string, nullable: true }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
     GameMoveRequest:
       type: object
       required: [direction, revision]

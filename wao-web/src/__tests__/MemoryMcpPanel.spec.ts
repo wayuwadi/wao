@@ -26,7 +26,7 @@ describe('MemoryMcpPanel', () => {
     const wrapper = mount(MemoryMcpPanel)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('WAO 是跨设备记忆源')
+    expect(wrapper.text()).toContain('WAO 是账号私有的跨设备记忆源')
     expect(wrapper.text()).toContain('没有稳定 embedding 来源时不建立会过期的空向量副本')
     expect(wrapper.text()).toContain('codex mcp add wao-memory --url http://localhost:3000/api/mcp')
     expect(wrapper.text()).toContain('外部 Codex 历史没有官方可靠导出接口')

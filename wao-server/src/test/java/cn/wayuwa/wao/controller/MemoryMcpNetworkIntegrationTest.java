@@ -7,7 +7,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
-import cn.wayuwa.wao.mapper.DocMapper;
+import cn.wayuwa.wao.mapper.PersonalMemoryMapper;
 import cn.wayuwa.wao.service.MemoryAccessTokenService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,7 +31,7 @@ class MemoryMcpNetworkIntegrationTest {
 
     @Autowired private TestRestTemplate http;
     @Autowired private MemoryAccessTokenService tokens;
-    @Autowired private DocMapper docs;
+    @Autowired private PersonalMemoryMapper memories;
     @Autowired private ObjectMapper json;
     @LocalServerPort private int port;
 
@@ -46,7 +46,7 @@ class MemoryMcpNetworkIntegrationTest {
                 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"codex","version":"test"}}}
                 """);
         assertThat(initialized.path("result").path("serverInfo").path("name").asText())
-                .isEqualTo("wao-shared-memory");
+                .isEqualTo("wao-personal-memory");
 
         JsonNode tools = post(headers, """
                 {"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
@@ -59,16 +59,17 @@ class MemoryMcpNetworkIntegrationTest {
                   "title":"跨设备职责","content":"负责 WAO 的产品与交付。","category":"responsibility"
                 }}}
                 """);
-        String docId = saved.path("result").path("structuredContent").path("id").asText();
-        assertThat(docs.selectById(docId).getBlocksJson()).contains("负责 WAO 的产品与交付");
+        String memoryId = saved.path("result").path("structuredContent").path("id").asText();
+        assertThat(memories.selectById(memoryId).getContent()).contains("负责 WAO 的产品与交付");
+        assertThat(memories.selectById(memoryId).getMemberId()).isEqualTo("wg");
 
         JsonNode searched = post(headers, """
                 {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search_memory","arguments":{
-                  "query":"WAO 产品交付","filter":{"assetTypes":["knowledge"]}
+                  "query":"WAO 产品交付"
                 }}}
                 """);
         assertThat(searched.path("result").path("content").get(0).path("text").asText())
-                .contains("跨设备职责", "/kb/kb-memory?doc=" + docId);
+                .contains("跨设备职责", "/memory?entry=" + memoryId);
 
         tokens.revoke("wg", created.token().id());
         HttpResponse<String> revoked = HttpClient.newHttpClient().send(HttpRequest.newBuilder()

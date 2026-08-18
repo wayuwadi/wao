@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 9;
+    private static final int VERSION = 10;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
@@ -29,6 +29,7 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("calendar", "日历", "ri-calendar-2-line", "PERSONAL", 20, true),
             new BuiltinMenuConfigDto("weekly-report", "周报生成", "ri-file-list-3-line", "PERSONAL", 25, true),
             new BuiltinMenuConfigDto("life-review", "人生回顾", "ri-route-line", "PERSONAL", 27, true),
+            new BuiltinMenuConfigDto("memory", "个人记忆", "ri-brain-line", "PERSONAL", 29, true),
             new BuiltinMenuConfigDto("knowledge", "知识库", "ri-book-2-line", "PERSONAL", 30, true),
             new BuiltinMenuConfigDto("english-learning", "英语训练", "ri-speak-line", "PERSONAL", 35, true),
             new BuiltinMenuConfigDto("vocabulary", "单词本", "ri-book-marked-line", "PERSONAL", 40, true),

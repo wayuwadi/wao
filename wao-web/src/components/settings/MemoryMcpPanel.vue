@@ -82,17 +82,17 @@ onMounted(load)
 
 <template>
   <div class="memory-panel">
-    <div class="s-h1">Codex 共享记忆 · MCP</div>
+    <div class="s-h1">Codex 个人记忆 · MCP</div>
 
     <section class="card memory-overview">
-      <div class="memory-title"><span><i class="ri-brain-line"></i></span><div><b>WAO 是跨设备记忆源</b><small>检索真实资产，也能把稳定信息写回“共享记忆”知识库</small></div></div>
+      <div class="memory-title"><span><i class="ri-brain-line"></i></span><div><b>WAO 是账号私有的跨设备记忆源</b><small>只检索令牌所属成员，也能把稳定信息写回“个人记忆”</small></div></div>
       <div class="memory-flow">
-        <span>飞书每日归档</span><i class="ri-arrow-right-line"></i>
-        <span>WAO 知识库 / 项目 / Task</span><i class="ri-arrow-right-line"></i>
+        <span>人工文字 / 多模态原件</span><i class="ri-arrow-right-line"></i>
+        <span>当前账号的个人记忆</span><i class="ri-arrow-right-line"></i>
         <span>MCP</span><i class="ri-arrow-right-line"></i>
         <span>Codex 桌面端 / CLI / IDE</span>
       </div>
-      <p>当前数据量直接检索权威业务表，更新后立即可查。没有稳定 embedding 来源时不建立会过期的空向量副本；达到规模或召回阈值后再升级为结构化条件 + 向量的混合检索。</p>
+      <p>当前数据量直接检索按成员隔离的权威业务表，更新后立即可查。没有稳定 embedding 来源时不建立会过期的空向量副本；图片、录音和视频只保存真实原件与人工说明，不伪造自动理解结果。</p>
     </section>
 
     <section class="card">
@@ -144,7 +144,7 @@ onMounted(load)
       <div class="verify-grid">
         <span><i class="ri-search-eye-line"></i><b>检索</b><small>对 Codex 说：“先查 WAO 记忆，再告诉我目前的工作职责和长期规划。”</small></span>
         <span><i class="ri-save-3-line"></i><b>保存</b><small>对 Codex 说：“请记住：以后每个任务都主动给出一条体验建议。”</small></span>
-        <span><i class="ri-book-open-line"></i><b>核对</b><small>打开知识库中的“共享记忆”，确认新文档可见、可编辑、可删除。</small></span>
+        <span><i class="ri-book-open-line"></i><b>核对</b><small>打开“个人记忆”，确认 AI 采集记录可见、可编辑、可删除。</small></span>
       </div>
       <p class="safety-note"><i class="ri-shield-keyhole-line"></i>不要让 Codex 保存密码、令牌、私钥或临时闲聊。外部 Codex 历史没有官方可靠导出接口，因此不会伪造自动导入；需要跨设备复用的结论通过 <code>save_memory</code> 明确沉淀。</p>
     </section>

@@ -110,6 +110,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-route-line',
     path: '/life-review',
   },
+  memory: { id: 'memory', label: '个人记忆', icon: 'ri-brain-line', path: '/memory' },
   vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
@@ -169,6 +170,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
     icon: 'ri-route-line',
     group: 'PERSONAL',
     order: 27,
+    visible: true,
+  },
+  {
+    id: 'memory',
+    label: '个人记忆',
+    icon: 'ri-brain-line',
+    group: 'PERSONAL',
+    order: 29,
     visible: true,
   },
   {
@@ -253,6 +262,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
   'calendar',
   'weekly-report',
   'life-review',
+  'memory',
   'knowledge',
   'english-learning',
   'vocabulary',

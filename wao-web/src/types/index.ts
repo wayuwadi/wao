@@ -35,6 +35,7 @@ export type ModuleId =
   | 'action-plans'
   | 'weekly-report'
   | 'life-review'
+  | 'memory'
   | 'vault'
   | 'settings'
 

@@ -11,12 +11,14 @@ import java.util.List;
 
 import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.domain.KbEntity;
+import cn.wayuwa.wao.domain.PersonalMemoryEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AssistantSourceFilter;
 import cn.wayuwa.wao.dto.AssistantSourceOptionsDto;
 import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.KbMapper;
+import cn.wayuwa.wao.mapper.PersonalMemoryMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import cn.wayuwa.wao.service.AiAssistantAssetService.TaskMiningContext;
@@ -31,8 +33,9 @@ class AiAssistantAssetServiceTest {
     private final KbMapper kbMapper = mock(KbMapper.class);
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final TaskMapper taskMapper = mock(TaskMapper.class);
+    private final PersonalMemoryMapper memoryMapper = mock(PersonalMemoryMapper.class);
     private final AiAssistantAssetService service = new AiAssistantAssetService(
-            settings, docMapper, kbMapper, projectMapper, taskMapper, new ObjectMapper());
+            settings, docMapper, kbMapper, projectMapper, taskMapper, memoryMapper, new ObjectMapper());
 
     @BeforeEach
     void emptyCollectionsByDefault() {
@@ -40,6 +43,29 @@ class AiAssistantAssetServiceTest {
         when(kbMapper.selectList(any())).thenReturn(List.of());
         when(projectMapper.selectList(any())).thenReturn(List.of());
         when(taskMapper.selectList(any())).thenReturn(List.of());
+        when(memoryMapper.selectList(any())).thenReturn(List.of());
+    }
+
+    @Test
+    void includesOnlyCurrentMembersPersonalMemoryInPageAssistantContext() {
+        PersonalMemoryEntity memory = new PersonalMemoryEntity();
+        memory.setId("mem1");
+        memory.setMemberId("wg");
+        memory.setTitle("晨跑偏好");
+        memory.setContent("喜欢日出前安静地跑步");
+        memory.setCategory("preference");
+        memory.setCaptureMode("manual");
+        memory.setMediaType("text");
+        memory.setUpdatedAt(LocalDateTime.now());
+        when(memoryMapper.selectList(any())).thenReturn(List.of(memory));
+        AssistantSourceFilter filter = new AssistantSourceFilter(
+                List.of("memory"), List.of(), List.of(), null, null, List.of());
+
+        String own = service.relevantAssets("晨跑偏好", filter, "wg");
+        String organizationJob = service.relevantAssets("晨跑偏好", filter);
+
+        assertThat(own).contains("type=\"memory\"", "喜欢日出前安静地跑步", "/memory?entry=mem1");
+        assertThat(organizationJob).isEmpty();
     }
 
     @Test

@@ -362,9 +362,23 @@ OAuth 下发前会先把快过期的 access token 续期。
 | token_hash | CHAR(64) UNIQUE | `wao_mcp_...` 高熵令牌的 SHA-256 摘要；数据库不保存明文 |
 | created_at / last_used_at / revoked_at | DATETIME | 创建、最近成功认证和吊销时间 |
 
-V70 同时种下固定 `kb-memory / kb-memory-f` 的“共享记忆”知识库与文件夹。MCP 的 `save_memory` 每次写入一篇
-普通文档，成员可核对、修订和删除；检索继续读取权威 `doc` 表，不维护第二份隐藏记忆或空向量索引。契约与安全
-边界见 ADR-078。
+V70 同时种下固定 `kb-memory / kb-memory-f` 的“共享记忆”知识库与文件夹。它保留为历史协作资料；从 V73
+开始 MCP 的个人记忆读写迁移到按成员隔离的 `personal_memory`，不再向固定共享库写入，见 ADR-082。
+
+### personal_memory（V73）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 个人记忆稳定 id |
+| member_id | VARCHAR(32) | 服务端从会话或 MCP 令牌推导的归属成员 |
+| title / content / category | VARCHAR / TEXT | 可检索标题、人工说明与六类长期记忆分类 |
+| capture_mode / media_type | VARCHAR | `manual` / `ai` 与 `text` / `image` / `audio` / `video` / `file` |
+| file_name / content_type / byte_size | VARCHAR / BIGINT | 可选多模态原件元数据 |
+| file_content | LONGBLOB | 可选真实原件；列表查询默认不读取 |
+| created_at / updated_at | DATETIME | 创建和最后编辑时间 |
+
+所有查询、修改、删除和附件下载都同时限定 `id + member_id`，访问其他成员的 id 按 404 处理。当前只对正文、
+标题和文件名做关键词检索，不伪造向量、OCR、转写或模型训练能力。
 
 日历的国际节日范围复用 `member_preference` 的 `holiday-international-categories` 键；新成员默认空数组，
 不会自动加入全部国际节日。
@@ -698,4 +712,5 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V69__life_review.sql`：成员私有的证据化周、月、年和至今回顾存档（见 ADR-072）。
 - `V70__shared_memory_mcp.sql`：Codex MCP 按设备令牌摘要与可核对的共享记忆知识库（见 ADR-078）。
 - `V71__document_templates.sql`：按成员隔离的文档模板正文快照（见 ADR-080）。
+- `V73__personal_multimodal_memory.sql`：保存按成员隔离的文字与多模态个人记忆原件（见 ADR-082）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
