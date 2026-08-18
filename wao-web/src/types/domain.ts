@@ -201,14 +201,27 @@ export interface Task {
 export interface DocBlock {
   /** 提示块（浅蓝） */
   call?: string
-  /** H2 标题 */
+  /** 标题 */
   h?: string
+  /** 标题级别；旧数据缺省为 2。 */
+  hLevel?: number
   /** 段落 */
   p?: string
   /** 无序列表 */
   ul?: string[]
   /** 引用：[正文, 出处] */
   q?: [string, string]
+}
+
+/** 当前成员可复用的文档正文模板。 */
+export interface DocTemplate {
+  id: string
+  name: string
+  description: string
+  blocks: DocBlock[]
+  sourceDocId: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface DocLink {

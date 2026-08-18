@@ -121,7 +121,8 @@ public class ShareService {
     private static String docMarkdown(List<DocBlockDto> blocks) {
         return blocks.stream().map(b -> {
             if (b.h() != null) {
-                return "## " + b.h();
+                int level = b.hLevel() == null ? 2 : Math.max(1, Math.min(6, b.hLevel()));
+                return "#".repeat(level) + " " + b.h();
             }
             if (b.p() != null) {
                 return b.p();

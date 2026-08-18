@@ -281,6 +281,11 @@ paths:
   /kbs/{id}/folders/{folderId}:
     patch: { summary: 重命名文件夹, parameters: [ { name: id, in: path, required: true, schema: { type: string } }, { name: folderId, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     delete: { summary: 删除文件夹（移入回收站，其下文档一并带走）, parameters: [ { name: id, in: path, required: true, schema: { type: string } }, { name: folderId, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /kbs/{id}/document-order:
+    put:
+      summary: 原子保存知识库完整文档树顺序，支持同文件夹排序与跨文件夹移动
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK }, '400': { description: 文件夹或文档缺失、重复或不属于该知识库 } }
   /docs:
     get: { summary: 文档列表（含正文块与动态计算的反向链接）, responses: { '200': { description: OK } } }
     post:
@@ -305,6 +310,12 @@ paths:
       parameters: [ { name: id, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,32}$' } } ]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateNoteRequest' } } } }
       responses: { '200': { description: 已创建或返回同一篇小记 }, '400': { description: 文档 ID 不合法或已被其他文档占用 } }
+  /doc-templates:
+    get: { summary: 当前登录成员的文档模板列表, responses: { '200': { description: OK } } }
+    post: { summary: 把一篇文档的当前正文快照另存为当前成员模板, responses: { '200': { description: 返回新模板 }, '404': { description: 来源文档不存在 } } }
+  /doc-templates/{id}:
+    patch: { summary: 修改当前成员模板的名称与使用说明, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 模板不存在或不属于当前成员 } } }
+    delete: { summary: 删除当前成员模板；不影响已创建文档, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 模板不存在或不属于当前成员 } } }
   # 文档协同在场（见 docs/adr/017-doc-realtime-collaboration-presence.md）
   /docs/{id}/presence:
     post:
@@ -1197,6 +1208,7 @@ components:
         kbId: { type: string }
         folderId: { type: string }
         title: { type: string }
+        templateId: { type: string, description: 可选；从当前成员的该模板复制正文快照 }
     CreateNoteRequest:
       type: object
       description: 小记正文；title 留空时由正文首行推导

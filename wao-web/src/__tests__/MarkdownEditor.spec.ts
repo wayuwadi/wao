@@ -8,6 +8,7 @@ async function mountEditor(props: {
   modelValue: string
   readonly?: boolean
   placeholder?: string
+  allowH1?: boolean
   peers?: { id: string; name: string; initial: string; color: string; line: number; editing: boolean }[]
 }) {
   const w = mount(MarkdownEditor, { props, attachTo: document.body })
@@ -49,6 +50,29 @@ describe('MarkdownEditor（所见即所得）', () => {
     // 不该出现源码态的 ## 或旧版的 textarea
     expect(w.find('textarea').exists()).toBe(false)
     expect(w.find('.md-body').text()).not.toContain('##')
+    w.unmount()
+  })
+
+  it('文档场景可启用一级标题，供右侧目录形成层级', async () => {
+    const w = await mountEditor({ modelValue: '# 每日计划\n\n## 今日重点', allowH1: true })
+
+    expect(w.find('.md-body h1').text()).toBe('每日计划')
+    expect(w.find('.md-body h2').text()).toBe('今日重点')
+    w.unmount()
+  })
+
+  it('Tab 在编辑器内完成缩进，不再把焦点跳到图片按钮', async () => {
+    const w = await mountEditor({ modelValue: '正文' })
+    const editable = w.find('.md-body [contenteditable]').element as HTMLElement
+    editable.focus()
+    const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+
+    editable.dispatchEvent(event)
+    await nextTick()
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(editable)
+    expect(w.emitted('update:modelValue')?.flat().some((value) => String(value).includes('\t'))).toBe(true)
     w.unmount()
   })
 

@@ -115,6 +115,28 @@ describe('data store · 知识库', () => {
     expect(data.docById(docId)).toBeUndefined()
   })
 
+  it('拖拽可以重排文档并移动到另一个文件夹', async () => {
+    const kb = data.kbs.find((k) => k.folders.length)!
+    const source = kb.folders[0]!
+    const existing = [...source.docs]
+    const targetId = (await data.addFolder(kb.id, '归档'))!
+    const target = kb.folders.find((folder) => folder.id === targetId)!
+    const first = (await data.addDoc(kb.id, source.id))!
+    const second = (await data.addDoc(kb.id, source.id))!
+
+    const ok = await data.reorderDocs(kb.id, [
+      { folderId: source.id, docIds: [second, ...existing] },
+      ...kb.folders.filter((folder) => folder.id !== source.id && folder.id !== target.id)
+        .map((folder) => ({ folderId: folder.id, docIds: [...folder.docs] })),
+      { folderId: target.id, docIds: [first] },
+    ])
+
+    expect(ok).toBe(true)
+    expect(source.docs).toEqual([second, ...existing])
+    expect(target.docs).toEqual([first])
+    expect(data.docById(first)!.folderId).toBe(target.id)
+  })
+
   it('小记知识库不允许删除——它是「新建小记」的落点', async () => {
     const notes = data.notesKb()
 

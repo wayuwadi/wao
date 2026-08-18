@@ -155,6 +155,17 @@ erDiagram
 | deleted_at / deleted_by | DATETIME / VARCHAR(32) NULL | 回收站：删除时间与删除人 |
 | cascade_del | TINYINT(1) | 1 = 随父级一起被删，恢复父级时一并恢复 |
 
+### doc_template（文档模板）
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 模板 id |
+| name / description | VARCHAR | 模板名称与使用说明 |
+| blocks_json | JSON | 创建模板时的文档正文快照 |
+| source_doc_id | VARCHAR(32) NULL | 来源文档，仅用于追溯；来源删除不影响模板 |
+| created_by | VARCHAR(32) | 模板创建成员；列表与增删改均按当前成员隔离 |
+| created_at / updated_at | DATETIME | 真实创建、更新时间 |
+| ord | INT | 模板选择面板中的顺序 |
+
 ### doc_presence（文档协同在场）
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -678,4 +689,5 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V68__netease_music_binding.sql`：保存成员独立的网易云 OAuth 加密令牌、稳定设备标识和十分钟授权 state（见 ADR-071）。
 - `V69__life_review.sql`：成员私有的证据化周、月、年和至今回顾存档（见 ADR-072）。
 - `V70__shared_memory_mcp.sql`：Codex MCP 按设备令牌摘要与可核对的共享记忆知识库（见 ADR-078）。
+- `V71__document_templates.sql`：按成员隔离的文档模板正文快照（见 ADR-080）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。

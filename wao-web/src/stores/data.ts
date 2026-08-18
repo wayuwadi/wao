@@ -41,6 +41,7 @@ import {
   apiRenameKbGroup,
   apiRenameVaultGroup,
   apiReorderVaultGroups,
+  apiReorderDocs,
   apiRestoreTrash,
   apiResumeJob,
   apiRevealVaultItem,
@@ -457,13 +458,13 @@ export const useDataStore = defineStore('data', () => {
    * <p>标题留空而不是塞「未命名文档」：新建后光标就落在标题上，占位文案由 placeholder 提供，
    * 用户一敲就是自己的标题，不用先把四个字删掉。作者由服务端按会话署名，离线兜底才用当前登录成员。
    */
-  async function addDoc(kbId: string, folderId: string): Promise<string | null> {
+  async function addDoc(kbId: string, folderId: string, templateId?: string): Promise<string | null> {
     const kb = kbById(kbId)
     const folder = kb?.folders.find((f) => f.id === folderId)
     if (!kb || !folder) return null
     if (apiLive.value) {
       try {
-        const d = await apiCreateDoc({ kbId, folderId, title: '' })
+        const d = await apiCreateDoc({ kbId, folderId, title: '', templateId })
         docs[d.id] = d
         folder.docs.push(d.id)
         return d.id
@@ -480,6 +481,31 @@ export const useDataStore = defineStore('data', () => {
     }
     folder.docs.push(id)
     return id
+  }
+
+  /** 保存拖拽后的完整文档树；在线失败时恢复拖拽前的顺序与文件夹归属。 */
+  async function reorderDocs(kbId: string, folders: { folderId: string; docIds: string[] }[]): Promise<boolean> {
+    const kb = kbById(kbId)
+    if (!kb) return false
+    const before = kb.folders.map((folder) => ({ folderId: folder.id, docIds: [...folder.docs] }))
+    const apply = (orders: { folderId: string; docIds: string[] }[]) => {
+      const byFolder = new Map(orders.map((order) => [order.folderId, order.docIds]))
+      kb.folders.forEach((folder) => {
+        folder.docs = [...(byFolder.get(folder.id) ?? [])]
+        folder.docs.forEach((id) => {
+          if (docs[id]) docs[id]!.folderId = folder.id
+        })
+      })
+    }
+    apply(folders)
+    if (!apiLive.value) return true
+    try {
+      await apiReorderDocs(kbId, { folders })
+      return true
+    } catch {
+      apply(before)
+      return false
+    }
   }
 
   /** 当前登录成员 id；未登录（演示态）时回落到 wg。 */
@@ -1560,7 +1586,7 @@ export const useDataStore = defineStore('data', () => {
     fileLoadState, fileLoadError, hydrate,
     areaById, projectById, taskById, tasksByProject, kbById, docById, areaColor,
     docEdits, setDocEdit, docOf, docPending, saveState, markSaving, markSaved,
-    applyRemoteDoc, addDoc, addNote, notesKb,
+    applyRemoteDoc, addDoc, addNote, notesKb, reorderDocs,
     addGroup, renameGroup, addFolder, renameFolder, deleteFolder, deleteDoc,
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,

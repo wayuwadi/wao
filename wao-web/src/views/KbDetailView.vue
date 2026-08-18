@@ -19,7 +19,13 @@ import { absoluteTime, relativeTime } from '@/utils/time'
 import { useNow } from '@/composables/now'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { useFavoritesStore } from '@/stores/favorites'
-import type { DocLink } from '@/types'
+import {
+  apiCreateDocTemplate,
+  apiDeleteDocTemplate,
+  apiPatchDocTemplate,
+  fetchDocTemplates,
+} from '@/api/board'
+import type { DocLink, DocTemplate } from '@/types'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
@@ -98,8 +104,11 @@ const backlinks = computed(() =>
   (base.value?.backlinks ?? []).map((b) => ({ icon: TYPE_ICON[b.type]!, label: linkName(b), snippet: b.snippet, link: b })),
 )
 
-/** 目录：正文里的二级标题。 */
-const toc = computed(() => (doc.value?.blocks ?? []).map((b, i) => ({ text: b.h, i })).filter((t) => t.text))
+/** 目录只收一级、二级标题；旧文档标题没有层级时按二级处理。 */
+const toc = computed(() => (doc.value?.blocks ?? [])
+  .filter((block) => block.h && (block.hLevel == null || block.hLevel <= 2))
+  .map((block) => ({ text: block.h!, level: block.hLevel ?? 2 })))
+const activeToc = ref(0)
 
 function isOpen(fid: string) {
   return folderOpen[fid] !== false
@@ -115,16 +124,152 @@ function openDoc(id: string) {
   if (k && k.id !== kbId.value) router.push({ path: `/kb/${k.id}`, query: { doc: id } })
   else selectDoc(id)
 }
-async function addDocTo(folderId: string) {
-  const id = await data.addDoc(kbId.value, folderId)
+const newDocFolderId = ref<string | null>(null)
+const creatingDoc = ref(false)
+function addDocTo(folderId: string) {
+  newDocFolderId.value = folderId
+}
+async function createDocFrom(templateId?: string) {
+  const folderId = newDocFolderId.value
+  if (!folderId || creatingDoc.value) return
+  creatingDoc.value = true
+  const id = await data.addDoc(kbId.value, folderId, templateId)
+  creatingDoc.value = false
   if (id) {
+    newDocFolderId.value = null
     folderOpen[folderId] = true
     docId.value = id
-    toast('已创建文档并关联到本知识库', 'ri-file-add-line')
+    toast(templateId ? '已从模板创建文档' : '已创建空白文档', 'ri-file-add-line')
     // 新文档标题是空的，光标直接落在标题上，敲进去就是自己的标题
     nextTick(() => titleEl.value?.focus())
   } else {
     toast('文档没有保存到服务器，请重试', 'ri-error-warning-line')
+  }
+}
+
+// ---- 文档模板 ----
+
+const templates = ref<DocTemplate[]>([])
+const templateLoading = ref(false)
+const templateError = ref('')
+const templateManagerOpen = ref(false)
+const saveTemplateOpen = ref(false)
+const savingTemplate = ref(false)
+const templateForm = reactive({ name: '', description: '' })
+const editingTemplateId = ref<string | null>(null)
+const editingTemplateSaving = ref(false)
+const editTemplateForm = reactive({ name: '', description: '' })
+
+async function loadTemplates() {
+  if (!data.apiLive) return
+  templateLoading.value = true
+  templateError.value = ''
+  try {
+    templates.value = await fetchDocTemplates()
+  } catch {
+    templateError.value = '模板加载失败，请重试'
+  } finally {
+    templateLoading.value = false
+  }
+}
+// AppLayout 在子页面挂载后才异步 hydrate；服务端连通的那一刻再拉模板，不能只看首次 mounted。
+watch(() => data.apiLive, (live) => {
+  if (live) void loadTemplates()
+}, { immediate: true })
+function openSaveTemplate() {
+  templateForm.name = `${doc.value?.title || '未命名文档'}模板`
+  templateForm.description = ''
+  saveTemplateOpen.value = true
+}
+async function saveAsTemplate() {
+  if (!docId.value || !templateForm.name.trim() || savingTemplate.value) return
+  savingTemplate.value = true
+  try {
+    const created = await apiCreateDocTemplate({
+      name: templateForm.name.trim(),
+      description: templateForm.description.trim(),
+      sourceDocId: docId.value,
+      blocks: doc.value?.blocks ?? [],
+    })
+    templates.value.push(created)
+    saveTemplateOpen.value = false
+    toast('已另存为模板，可在新建文档时直接选择', 'ri-file-copy-2-line')
+  } catch {
+    toast('模板没有保存成功，请重试', 'ri-error-warning-line')
+  } finally {
+    savingTemplate.value = false
+  }
+}
+function beginEditTemplate(template: DocTemplate) {
+  editingTemplateId.value = template.id
+  editTemplateForm.name = template.name
+  editTemplateForm.description = template.description
+}
+async function saveTemplateMeta(template: DocTemplate) {
+  if (!editTemplateForm.name.trim() || editingTemplateSaving.value) return
+  editingTemplateSaving.value = true
+  try {
+    const updated = await apiPatchDocTemplate(template.id, {
+      name: editTemplateForm.name.trim(),
+      description: editTemplateForm.description.trim(),
+    })
+    Object.assign(template, updated)
+    editingTemplateId.value = null
+    toast('模板信息已保存', 'ri-check-line')
+  } catch {
+    toast('模板修改失败，请重试', 'ri-error-warning-line')
+  } finally {
+    editingTemplateSaving.value = false
+  }
+}
+async function removeTemplate(template: DocTemplate) {
+  try {
+    await apiDeleteDocTemplate(template.id)
+    templates.value = templates.value.filter((item) => item.id !== template.id)
+    toast(`已删除模板「${template.name}」`, 'ri-delete-bin-line')
+  } catch {
+    toast('模板删除失败，请重试', 'ri-error-warning-line')
+  }
+}
+
+// ---- 文档树拖拽 ----
+
+const draggingDocId = ref<string | null>(null)
+const treeSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+let pendingOrder: { folderId: string; docIds: string[] }[] | null = null
+function startDocDrag(id: string, event: DragEvent) {
+  draggingDocId.value = id
+  event.dataTransfer?.setData('text/plain', id)
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+function currentDocumentOrder() {
+  return (kb.value?.folders ?? []).map((folder) => ({ folderId: folder.id, docIds: [...folder.docs] }))
+}
+async function dropDoc(folderId: string, targetIndex: number) {
+  const movingId = draggingDocId.value
+  draggingDocId.value = null
+  if (!movingId || treeSaveState.value === 'saving') return
+  const orders = currentDocumentOrder()
+  const source = orders.find((order) => order.docIds.includes(movingId))
+  const target = orders.find((order) => order.folderId === folderId)
+  if (!source || !target) return
+  const sourceIndex = source.docIds.indexOf(movingId)
+  source.docIds.splice(sourceIndex, 1)
+  if (source === target && sourceIndex < targetIndex) targetIndex--
+  target.docIds.splice(Math.max(0, Math.min(targetIndex, target.docIds.length)), 0, movingId)
+  pendingOrder = orders
+  await persistDocumentOrder()
+}
+async function persistDocumentOrder() {
+  if (!pendingOrder) return
+  treeSaveState.value = 'saving'
+  const ok = await data.reorderDocs(kbId.value, pendingOrder)
+  treeSaveState.value = ok ? 'saved' : 'error'
+  if (ok) {
+    pendingOrder = null
+    window.setTimeout(() => {
+      if (treeSaveState.value === 'saved') treeSaveState.value = 'idle'
+    }, 1800)
   }
 }
 async function addFolder() {
@@ -175,9 +320,20 @@ async function removeDoc(id: string) {
   toast(`已把「${title}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
 }
 function tocGo(index: number) {
-  const el = scrollEl.value?.querySelectorAll('.doc-body h2')[index] as HTMLElement | undefined
+  const el = scrollEl.value?.querySelectorAll('.doc-body h1, .doc-body h2')[index] as HTMLElement | undefined
   const c = scrollEl.value
   if (el && c) c.scrollTop = Math.max(0, el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 24)
+}
+function onDocScroll() {
+  const c = scrollEl.value
+  const headings = Array.from(c?.querySelectorAll('.doc-body h1, .doc-body h2') ?? []) as HTMLElement[]
+  if (!c || !headings.length) return
+  const top = c.getBoundingClientRect().top + 48
+  let passed = -1
+  headings.forEach((heading, index) => {
+    if (heading.getBoundingClientRect().top <= top) passed = index
+  })
+  activeToc.value = Math.max(0, passed)
 }
 
 /** 分享菜单开关（文档与小记共用同一个入口）。 */
@@ -233,12 +389,20 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
         <button v-if="kb.project" class="proj-chip" @click="gotoProject">
           <i class="ri-stack-line"></i><span class="ellip">关联项目 · {{ data.projectById(kb.project)?.name }}</span>
         </button>
-        <button class="new-folder" @click="addFolder"><i class="ri-folder-add-line"></i>新建文件夹</button>
+        <div class="side-actions">
+          <button class="new-folder" @click="addFolder"><i class="ri-folder-add-line"></i>新建文件夹</button>
+          <button class="new-folder" @click="templateManagerOpen = true"><i class="ri-file-copy-2-line"></i>模板管理</button>
+        </div>
+        <div v-if="treeSaveState !== 'idle'" class="tree-save" :class="treeSaveState">
+          <i :class="treeSaveState === 'saving' ? 'ri-loader-4-line spin' : treeSaveState === 'error' ? 'ri-error-warning-line' : 'ri-check-line'"></i>
+          <span>{{ treeSaveState === 'saving' ? '正在保存顺序' : treeSaveState === 'error' ? '顺序保存失败' : '顺序已保存' }}</span>
+          <button v-if="treeSaveState === 'error'" @click="persistDocumentOrder">重试</button>
+        </div>
       </div>
 
       <div class="tree">
         <div v-for="f in kb.folders" :key="f.id">
-          <div class="folder-row">
+          <div class="folder-row" @dragover.prevent @drop="dropDoc(f.id, f.docs.length)">
             <input
               v-if="renamingFolder === f.id"
               class="folder-input"
@@ -260,7 +424,18 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             </template>
           </div>
           <div v-if="isOpen(f.id)" class="doc-tree">
-            <div v-for="dId in f.docs" :key="dId" class="doc-row">
+            <div
+              v-for="(dId, index) in f.docs"
+              :key="dId"
+              class="doc-row"
+              :class="{ dragging: draggingDocId === dId }"
+              draggable="true"
+              @dragstart="startDocDrag(dId, $event)"
+              @dragend="draggingDocId = null"
+              @dragover.prevent
+              @drop.stop="dropDoc(f.id, index)"
+            >
+              <i class="drag-handle ri-draggable" title="拖拽调整顺序或移动到其他文件夹"></i>
               <button class="doc-node" :class="{ on: docId === dId }" @click="selectDoc(dId)">
                 <i :class="data.docById(dId)?.auto ? 'ri-flashlight-line' : 'ri-file-text-line'" class="doc-node-icon"></i>
                 <span class="doc-node-title">{{ data.docOf(dId).title || '未命名文档' }}</span>
@@ -269,7 +444,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
                 <i class="ri-delete-bin-line"></i>
               </button>
             </div>
-            <div v-if="!f.docs.length" class="folder-empty">还没有文档 —— 点右侧 + 新建</div>
+            <div v-if="!f.docs.length" class="folder-empty" @dragover.prevent @drop="dropDoc(f.id, 0)">还没有文档 —— 点右侧 + 新建，也可把文档拖到这里</div>
           </div>
         </div>
       </div>
@@ -281,7 +456,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
     </div>
 
     <!-- 文档区 -->
-    <div ref="scrollEl" class="doc-scroll">
+    <div ref="scrollEl" class="doc-scroll" @scroll.passive="onDocScroll">
       <div class="doc-wrap">
         <div class="doc-col">
           <div v-if="doc" class="doc-bar">
@@ -307,6 +482,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             <span v-if="peers.length" class="realtime"><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span>
 
             <SaveHint :saving="saving" :saved-at="docSavedAt" />
+            <button class="icon-act" title="另存为模板" @click="openSaveTemplate"><i class="ri-file-copy-2-line"></i></button>
             <button
               v-if="docId"
               class="icon-act"
@@ -358,7 +534,8 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
               v-model="body"
               class="doc-body"
               bare
-              placeholder="开始写作…敲 ## 变标题、- 变列表，可直接粘贴截图"
+              allow-h1
+              placeholder="开始写作…敲 # / ## 变标题、Tab 缩进，可直接粘贴截图"
               :min-height="360"
               :peers="peers"
               @caret-line="setCaretLine"
@@ -380,13 +557,57 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
           <div v-else class="doc-empty pad">这个知识库还没有文档——在左侧文件夹点 + 新建。</div>
         </div>
 
-        <div v-if="toc.length > 1" class="toc">
+        <div v-if="toc.length" class="toc">
           <div class="toc-label">目录</div>
           <div class="toc-list">
-            <button v-for="(t, i) in toc" :key="i" class="toc-item" @click="tocGo(i)">{{ t.text }}</button>
+            <button v-for="(t, i) in toc" :key="`${t.text}-${i}`" class="toc-item" :class="{ sub: t.level === 2, active: activeToc === i }" @click="tocGo(i)">{{ t.text }}</button>
           </div>
         </div>
       </div>
+    </div>
+
+    <div v-if="newDocFolderId" class="modal-backdrop" @click.self="newDocFolderId = null">
+      <section class="template-modal" role="dialog" aria-modal="true" aria-label="新建文档">
+        <header><div><h2>新建文档</h2><p>选择空白文档，或复用已有模板的正文结构。</p></div><button @click="newDocFolderId = null"><i class="ri-close-line"></i></button></header>
+        <div v-if="templateLoading" class="template-state"><i class="ri-loader-4-line spin"></i>正在加载模板…</div>
+        <div v-else-if="templateError" class="template-state error">{{ templateError }}<button @click="loadTemplates">重试</button></div>
+        <div v-else class="template-grid">
+          <button class="template-card blank" :disabled="creatingDoc" @click="createDocFrom()"><i class="ri-file-add-line"></i><b>空白文档</b><span>从空白页面开始写作</span></button>
+          <button v-for="item in templates" :key="item.id" class="template-card" :disabled="creatingDoc" @click="createDocFrom(item.id)"><i class="ri-file-copy-2-line"></i><b>{{ item.name }}</b><span>{{ item.description || `${item.blocks.length} 个正文块` }}</span></button>
+        </div>
+        <footer><button class="link-button" @click="newDocFolderId = null; templateManagerOpen = true">管理模板</button><span v-if="creatingDoc">正在创建并保存…</span></footer>
+      </section>
+    </div>
+
+    <div v-if="saveTemplateOpen" class="modal-backdrop" @click.self="saveTemplateOpen = false">
+      <section class="template-modal compact" role="dialog" aria-modal="true" aria-label="另存为模板">
+        <header><div><h2>另存为模板</h2><p>保存当前正文快照，之后新建文档可直接复用。</p></div><button @click="saveTemplateOpen = false"><i class="ri-close-line"></i></button></header>
+        <label>模板名称<input v-model="templateForm.name" maxlength="128" autofocus /></label>
+        <label>使用说明<textarea v-model="templateForm.description" maxlength="512" rows="3" placeholder="例如：每天复盘时使用"></textarea></label>
+        <footer><button class="secondary" @click="saveTemplateOpen = false">取消</button><button class="primary" :disabled="!templateForm.name.trim() || savingTemplate" @click="saveAsTemplate">{{ savingTemplate ? '保存中…' : '保存模板' }}</button></footer>
+      </section>
+    </div>
+
+    <div v-if="templateManagerOpen" class="modal-backdrop" @click.self="templateManagerOpen = false">
+      <section class="template-modal manager" role="dialog" aria-modal="true" aria-label="文档模板管理">
+        <header><div><h2>文档模板管理</h2><p>模板属于当前账号；删除模板不会影响已创建的文档。</p></div><button @click="templateManagerOpen = false"><i class="ri-close-line"></i></button></header>
+        <div v-if="templateLoading" class="template-state"><i class="ri-loader-4-line spin"></i>正在加载模板…</div>
+        <div v-else-if="templateError" class="template-state error">{{ templateError }}<button @click="loadTemplates">重试</button></div>
+        <div v-else-if="!templates.length" class="template-state empty"><i class="ri-file-copy-2-line"></i><b>还没有模板</b><span>打开任意文档，点击顶部“另存为模板”即可创建。</span></div>
+        <div v-else class="template-list">
+          <article v-for="item in templates" :key="item.id">
+            <template v-if="editingTemplateId === item.id">
+              <input v-model="editTemplateForm.name" maxlength="128" />
+              <textarea v-model="editTemplateForm.description" maxlength="512" rows="2"></textarea>
+              <div class="template-row-actions"><button :disabled="editingTemplateSaving" @click="editingTemplateId = null">取消</button><button class="primary" :disabled="!editTemplateForm.name.trim() || editingTemplateSaving" @click="saveTemplateMeta(item)">{{ editingTemplateSaving ? '保存中…' : '保存' }}</button></div>
+            </template>
+            <template v-else>
+              <div class="template-copy"><b>{{ item.name }}</b><span>{{ item.description || `${item.blocks.length} 个正文块` }}</span></div>
+              <div class="template-row-actions"><button @click="beginEditTemplate(item)"><i class="ri-edit-line"></i>编辑</button><button class="danger" @click="removeTemplate(item)"><i class="ri-delete-bin-line"></i>删除</button></div>
+            </template>
+          </article>
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -529,6 +750,11 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 .new-folder i {
   font-size: 13px;
 }
+.side-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.tree-save { margin-top: 7px; min-height: 24px; display: flex; align-items: center; gap: 5px; color: var(--wao-text-weak); font-size: 11px; }
+.tree-save.saved { color: var(--wao-success-strong); }
+.tree-save.error { color: var(--wao-danger-strong); }
+.tree-save button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; padding: 0; }
 .tree {
   flex: 1;
   overflow-y: auto;
@@ -632,6 +858,9 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   display: flex;
   align-items: center;
 }
+.doc-row.dragging { opacity: .38; }
+.drag-handle { flex: none; color: var(--wao-text-faint); cursor: grab; font-size: 13px; }
+.drag-handle:active { cursor: grabbing; }
 .doc-node {
   flex: 1;
   min-width: 0;
@@ -966,6 +1195,10 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   font-size: 18px;
   margin: 26px 0 6px;
 }
+.doc-body :deep(h1) {
+  font-size: 23px;
+  margin: 30px 0 8px;
+}
 .doc-body :deep(h3) {
   font-size: 16px;
 }
@@ -1081,6 +1314,47 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   color: var(--wao-primary-text);
   border-left-color: var(--wao-primary);
 }
+.toc-item.sub { padding-left: 22px; font-size: 11.5px; }
+.toc-item.active { color: var(--wao-primary-text); border-left-color: var(--wao-primary); background: var(--wao-primary-soft); }
+
+/* 文档模板弹窗 */
+.modal-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 20px; background: rgba(13, 17, 35, .56); backdrop-filter: blur(3px); }
+.template-modal { width: min(680px, 100%); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--wao-line); border-radius: 18px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-modal); padding: 22px; }
+.template-modal.compact { width: min(520px, 100%); }
+.template-modal.manager { width: min(620px, 100%); }
+.template-modal header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.template-modal h2 { margin: 0; color: var(--wao-text); font-size: 20px; }
+.template-modal header p { margin: 5px 0 0; color: var(--wao-text-weak); font-size: 12px; }
+.template-modal header > button { width: 32px; height: 32px; flex: none; border: 0; border-radius: 50%; background: var(--wao-bg-sub); color: var(--wao-text-3); cursor: pointer; }
+.template-modal label { display: flex; flex-direction: column; gap: 7px; margin-top: 14px; color: var(--wao-text-2); font-size: 12px; font-weight: 600; }
+.template-modal input, .template-modal textarea { width: 100%; border: 1px solid var(--wao-line-control); border-radius: 9px; background: var(--wao-bg-card); color: var(--wao-text); padding: 10px 11px; font: inherit; resize: vertical; }
+.template-modal footer { display: flex; justify-content: flex-end; align-items: center; gap: 9px; min-height: 34px; margin-top: 18px; color: var(--wao-text-weak); font-size: 11px; }
+.template-modal footer .link-button { margin-right: auto; border: 0; background: none; color: var(--wao-primary-text); cursor: pointer; }
+.template-modal button.primary, .template-modal footer .primary { border: 0; border-radius: 8px; background: var(--wao-primary); color: #fff; padding: 9px 14px; cursor: pointer; }
+.template-modal button.secondary { border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); padding: 8px 14px; cursor: pointer; }
+.template-modal button:disabled { opacity: .55; cursor: wait; }
+.template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.template-card { min-height: 118px; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; border: 1px solid var(--wao-line); border-radius: 12px; background: var(--wao-bg-card); padding: 15px; text-align: left; cursor: pointer; }
+.template-card:hover { border-color: var(--wao-primary); background: var(--wao-primary-tint); }
+.template-card > i { font-size: 21px; color: var(--wao-primary); }
+.template-card > b { color: var(--wao-text); font-size: 13px; }
+.template-card > span { color: var(--wao-text-weak); font-size: 11px; line-height: 1.5; }
+.template-card.blank { border-style: dashed; }
+.template-state { min-height: 160px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--wao-text-weak); font-size: 12px; }
+.template-state.error { color: var(--wao-danger-strong); }
+.template-state.error button { border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; }
+.template-state.empty { flex-direction: column; }
+.template-state.empty i { font-size: 30px; color: var(--wao-text-faint); }
+.template-list { display: flex; flex-direction: column; gap: 9px; }
+.template-list article { display: flex; align-items: center; gap: 12px; border: 1px solid var(--wao-line); border-radius: 11px; padding: 12px; }
+.template-list article:has(textarea) { display: grid; }
+.template-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.template-copy b { color: var(--wao-text); font-size: 13px; }
+.template-copy span { color: var(--wao-text-weak); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.template-row-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.template-row-actions button { border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-3); padding: 6px 9px; cursor: pointer; }
+.template-row-actions button.danger { color: var(--wao-danger-strong); }
+.spin { display: inline-block; animation: waoSpin .9s linear infinite; }
 
 @media (max-width: 760px) {
   .kb-detail { padding: 16px 12px 28px; }

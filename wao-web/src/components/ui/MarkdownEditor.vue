@@ -21,6 +21,7 @@ import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Markdown } from '@tiptap/markdown'
+import { Extension } from '@tiptap/core'
 
 /** 协作者标记：把某个人钉在他光标所在的那一行（顶层块序号）。 */
 export interface EditorPeer {
@@ -42,10 +43,12 @@ const props = withDefaults(
     readonly?: boolean
     /** 文档正文等沉浸场景不显示输入框边框与底色。 */
     bare?: boolean
+    /** 文档正文允许一级标题；任务描述等场景仍从二级标题开始。 */
+    allowH1?: boolean
     /** 此刻也在这篇文档里的人；空数组即不显示协作轨道。 */
     peers?: EditorPeer[]
   }>(),
-  { placeholder: '写点什么…支持 Markdown 快捷输入', minHeight: 84, readonly: false, bare: false, peers: () => [] },
+  { placeholder: '写点什么…支持 Markdown 快捷输入', minHeight: 84, readonly: false, bare: false, allowH1: false, peers: () => [] },
 )
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -57,14 +60,36 @@ const emit = defineEmits<{
 
 const previewImage = ref<{ src: string; alt: string } | null>(null)
 
+/**
+ * Tab 留在编辑器内：列表项缩进 / 反缩进，普通段落插入一个真实制表符。
+ * 返回 true 会阻止浏览器把焦点跳到编辑器后的“图片”按钮。
+ */
+const TabIndent = Extension.create({
+  name: 'tabIndent',
+  addKeyboardShortcuts() {
+    return {
+      Tab: () => {
+        if (this.editor.isActive('taskItem')) return this.editor.commands.sinkListItem('taskItem') || true
+        if (this.editor.isActive('listItem')) return this.editor.commands.sinkListItem('listItem') || true
+        return this.editor.commands.insertContent('\t') || true
+      },
+      'Shift-Tab': () => {
+        if (this.editor.isActive('taskItem')) return this.editor.commands.liftListItem('taskItem') || true
+        if (this.editor.isActive('listItem')) return this.editor.commands.liftListItem('listItem') || true
+        return true
+      },
+    }
+  },
+})
+
 const editor = useEditor({
   content: props.modelValue,
   contentType: 'markdown',
   editable: !props.readonly,
   extensions: [
     StarterKit.configure({
-      // 描述场景用不到大标题，限制成 h2–h4，避免一份描述里出现比页面标题还大的字
-      heading: { levels: [2, 3, 4] },
+      // 只有知识库文档开放 h1；描述场景仍限制成 h2–h4，避免压过页面标题。
+      heading: { levels: props.allowH1 ? [1, 2, 3, 4] : [2, 3, 4] },
       link: { openOnClick: false, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } },
     }),
     Image.configure({ inline: false, HTMLAttributes: { class: 'md-img' } }),
@@ -72,6 +97,7 @@ const editor = useEditor({
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: () => props.placeholder }),
     Markdown,
+    TabIndent,
   ],
   editorProps: {
     handlePaste: (_view, event) => consumeImages(event.clipboardData),
@@ -462,12 +488,16 @@ onBeforeUnmount(() => {
   color: var(--wao-text-faint);
 }
 .md-body :deep(h2),
+.md-body :deep(h1),
 .md-body :deep(h3),
 .md-body :deep(h4) {
   margin: 14px 0 6px;
   font-weight: 700;
   color: var(--wao-text);
   line-height: 1.4;
+}
+.md-body :deep(h1) {
+  font-size: 18px;
 }
 .md-body :deep(h2) {
   font-size: 15px;

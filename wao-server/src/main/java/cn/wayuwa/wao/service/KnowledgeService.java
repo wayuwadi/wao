@@ -4,9 +4,11 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -14,12 +16,14 @@ import java.util.stream.Collectors;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.DocEntity;
+import cn.wayuwa.wao.domain.DocTemplateEntity;
 import cn.wayuwa.wao.domain.KbEntity;
 import cn.wayuwa.wao.domain.KbFolderEntity;
 import cn.wayuwa.wao.domain.KbGroupEntity;
 import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.dto.BacklinkDto;
 import cn.wayuwa.wao.dto.CreateDocRequest;
+import cn.wayuwa.wao.dto.CreateDocTemplateRequest;
 import cn.wayuwa.wao.dto.CreateFolderRequest;
 import cn.wayuwa.wao.dto.CreateKbGroupRequest;
 import cn.wayuwa.wao.dto.CreateKbRequest;
@@ -27,15 +31,19 @@ import cn.wayuwa.wao.dto.CreateNoteRequest;
 import cn.wayuwa.wao.dto.DocBlockDto;
 import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.DocLinkDto;
+import cn.wayuwa.wao.dto.DocTemplateDto;
 import cn.wayuwa.wao.dto.FolderDto;
 import cn.wayuwa.wao.dto.KbDto;
 import cn.wayuwa.wao.dto.KbGroupDto;
 import cn.wayuwa.wao.dto.PatchDocRequest;
+import cn.wayuwa.wao.dto.PatchDocTemplateRequest;
 import cn.wayuwa.wao.dto.PatchFolderRequest;
 import cn.wayuwa.wao.dto.PatchKbGroupRequest;
 import cn.wayuwa.wao.dto.PatchKbRequest;
+import cn.wayuwa.wao.dto.ReorderDocsRequest;
 import cn.wayuwa.wao.dto.TrashEntryDto;
 import cn.wayuwa.wao.mapper.DocMapper;
+import cn.wayuwa.wao.mapper.DocTemplateMapper;
 import cn.wayuwa.wao.mapper.KbFolderMapper;
 import cn.wayuwa.wao.mapper.KbGroupMapper;
 import cn.wayuwa.wao.mapper.KbMapper;
@@ -79,6 +87,7 @@ public class KnowledgeService {
     private final KbMapper kbMapper;
     private final KbFolderMapper folderMapper;
     private final DocMapper docMapper;
+    private final DocTemplateMapper templateMapper;
     private final MemberMapper memberMapper;
     private final ObjectMapper json;
     private final FeishuTaskNotifier taskNotifier;
@@ -86,11 +95,13 @@ public class KnowledgeService {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(KnowledgeService.class);
 
     public KnowledgeService(KbGroupMapper groupMapper, KbMapper kbMapper, KbFolderMapper folderMapper,
-            DocMapper docMapper, MemberMapper memberMapper, ObjectMapper json, FeishuTaskNotifier taskNotifier) {
+            DocMapper docMapper, DocTemplateMapper templateMapper, MemberMapper memberMapper, ObjectMapper json,
+            FeishuTaskNotifier taskNotifier) {
         this.groupMapper = groupMapper;
         this.kbMapper = kbMapper;
         this.folderMapper = folderMapper;
         this.docMapper = docMapper;
+        this.templateMapper = templateMapper;
         this.memberMapper = memberMapper;
         this.json = json;
         this.taskNotifier = taskNotifier;
@@ -358,13 +369,128 @@ public class KnowledgeService {
      * @param req    新建请求
      * @param author 作者 member id，由服务端从当前会话推导（不接受请求体指定）
      */
+    @Transactional
     public DocDto createDoc(CreateDocRequest req, String author) {
         KbEntity kb = requireKb(req.kbId());
         KbFolderEntity folder = requireFolder(req.kbId(), req.folderId());
         List<DocLinkDto> links = kb.getProjectId() == null || kb.getProjectId().isBlank()
                 ? List.of()
                 : List.of(new DocLinkDto("project", kb.getProjectId()));
-        return insertDoc(req.kbId(), folder.getId(), req.title(), author, List.of(), links);
+        List<DocBlockDto> blocks = List.of();
+        if (req.templateId() != null && !req.templateId().isBlank()) {
+            blocks = templateBlocks(requireTemplate(req.templateId(), author));
+        }
+        return insertDoc(req.kbId(), folder.getId(), req.title(), author, blocks, links);
+    }
+
+    // ---------------- 文档模板 ----------------
+
+    /** 列出当前成员自己的模板，供新建文档和模板管理共同使用。 */
+    public List<DocTemplateDto> listTemplates(String memberId) {
+        return templateMapper.selectList(new LambdaQueryWrapper<DocTemplateEntity>()
+                        .eq(DocTemplateEntity::getCreatedBy, memberId)
+                        .orderByAsc(DocTemplateEntity::getOrd, DocTemplateEntity::getCreatedAt))
+                .stream().map(this::toTemplateDto).toList();
+    }
+
+    /** 把现有文档的当前正文快照另存为当前成员的模板。 */
+    @Transactional
+    public DocTemplateDto createTemplate(CreateDocTemplateRequest req, String memberId) {
+        DocEntity source = requireDoc(req.sourceDocId());
+        LocalDateTime now = LocalDateTime.now();
+        DocTemplateEntity template = new DocTemplateEntity();
+        template.setId("dt" + UUID.randomUUID().toString().replace("-", "").substring(0, 30));
+        template.setName(req.name().trim());
+        template.setDescription(req.description() == null ? "" : req.description().trim());
+        template.setBlocksJson(req.blocks() == null ? source.getBlocksJson() : write(req.blocks()));
+        template.setSourceDocId(source.getId());
+        template.setCreatedBy(memberId);
+        template.setCreatedAt(now);
+        template.setUpdatedAt(now);
+        template.setOrd(nextOrd(templateMapper.selectCount(new LambdaQueryWrapper<DocTemplateEntity>()
+                .eq(DocTemplateEntity::getCreatedBy, memberId))));
+        templateMapper.insert(template);
+        return toTemplateDto(template);
+    }
+
+    /** 修改当前成员模板的名称与说明。 */
+    public DocTemplateDto updateTemplate(String id, PatchDocTemplateRequest req, String memberId) {
+        DocTemplateEntity template = requireTemplate(id, memberId);
+        if (req.name() != null) {
+            if (req.name().isBlank()) {
+                throw new BadRequestException("模板名称不能为空");
+            }
+            template.setName(req.name().trim());
+        }
+        if (req.description() != null) {
+            template.setDescription(req.description().trim());
+        }
+        template.setUpdatedAt(LocalDateTime.now());
+        templateMapper.updateById(template);
+        return toTemplateDto(template);
+    }
+
+    /** 删除当前成员自己的模板；由模板创建的文档不受影响。 */
+    public void deleteTemplate(String id, String memberId) {
+        requireTemplate(id, memberId);
+        templateMapper.deleteById(id);
+    }
+
+    private DocTemplateEntity requireTemplate(String id, String memberId) {
+        DocTemplateEntity template = templateMapper.selectById(id);
+        if (template == null || !Objects.equals(template.getCreatedBy(), memberId)) {
+            throw new NotFoundException("文档模板不存在：" + id);
+        }
+        return template;
+    }
+
+    private List<DocBlockDto> templateBlocks(DocTemplateEntity template) {
+        return readList(template.getBlocksJson(), BLOCKS_TYPE);
+    }
+
+    private DocTemplateDto toTemplateDto(DocTemplateEntity template) {
+        return new DocTemplateDto(template.getId(), template.getName(), template.getDescription(),
+                templateBlocks(template), template.getSourceDocId(), iso(template.getCreatedAt()),
+                iso(template.getUpdatedAt()));
+    }
+
+    /**
+     * 原子保存知识库完整文档树顺序。
+     *
+     * <p>请求必须且只能包含知识库当前全部文档一次，避免并发或前端缺陷把遗漏文档静默丢出树。
+     */
+    @Transactional
+    public void reorderDocs(String kbId, ReorderDocsRequest request) {
+        requireKb(kbId);
+        if (request == null || request.folders() == null) {
+            throw new BadRequestException("文档顺序不能为空");
+        }
+        List<KbFolderEntity> folders = folderMapper.selectList(aliveFolders().eq(KbFolderEntity::getKbId, kbId));
+        Set<String> validFolderIds = folders.stream().map(KbFolderEntity::getId).collect(Collectors.toSet());
+        List<DocEntity> docs = docMapper.selectList(aliveDocs().eq(DocEntity::getKbId, kbId));
+        Map<String, DocEntity> docById = docs.stream().collect(Collectors.toMap(DocEntity::getId, d -> d));
+        Set<String> seenFolders = new HashSet<>();
+        Set<String> seenDocs = new HashSet<>();
+
+        for (ReorderDocsRequest.FolderOrder order : request.folders()) {
+            if (order == null || !validFolderIds.contains(order.folderId()) || !seenFolders.add(order.folderId())) {
+                throw new BadRequestException("文档顺序包含无效或重复的文件夹");
+            }
+            List<String> docIds = order.docIds() == null ? List.of() : order.docIds();
+            for (int index = 0; index < docIds.size(); index++) {
+                String docId = docIds.get(index);
+                DocEntity doc = docById.get(docId);
+                if (doc == null || !seenDocs.add(docId)) {
+                    throw new BadRequestException("文档顺序包含无效或重复的文档");
+                }
+                doc.setFolderId(order.folderId());
+                doc.setOrd(index + 1);
+                docMapper.updateById(doc);
+            }
+        }
+        if (!seenFolders.equals(validFolderIds) || !seenDocs.equals(docById.keySet())) {
+            throw new BadRequestException("文档顺序必须包含当前知识库的全部文件夹和文档");
+        }
     }
 
     /**
