@@ -10,14 +10,26 @@ export interface WorkdayRhythmConfig {
   version: 1
   blocks: WorkdayRhythmBlock[]
   energyNotification: WorkdayRhythmEnergyNotification
+  energyItems: WorkdayRhythmEnergyItem[]
 }
 
 export interface WorkdayRhythmEnergyNotification {
   enabled: boolean
   chatId: string
   chatName: string
-  notifyWater: boolean
-  notifyMeditation: boolean
+  /** 旧版配置字段只用于读取迁移，新版是否通知由每个补给项目决定。 */
+  notifyWater?: boolean
+  notifyMeditation?: boolean
+}
+
+export type WorkdayRhythmEnergyMode = 'COUNT' | 'DAILY_ONCE'
+
+export interface WorkdayRhythmEnergyItem {
+  id: string
+  title: string
+  guidance: string
+  mode: WorkdayRhythmEnergyMode
+  notify: boolean
 }
 
 export interface WorkdayRhythmDay {
@@ -27,6 +39,7 @@ export interface WorkdayRhythmDay {
   completed: string[]
   waterCount: number
   meditated: boolean
+  energyRecords: Record<string, number>
   focus: string[]
 }
 
@@ -43,9 +56,23 @@ export const DEFAULT_WORKDAY_RHYTHM: WorkdayRhythmConfig = {
     enabled: false,
     chatId: '',
     chatName: '',
-    notifyWater: true,
-    notifyMeditation: true,
   },
+  energyItems: [
+    {
+      id: 'WATER',
+      title: '喝水',
+      guidance: '今天已真实记录',
+      mode: 'COUNT',
+      notify: true,
+    },
+    {
+      id: 'MEDITATION',
+      title: '至少冥想一次',
+      guidance: '累之前，先停下来几分钟',
+      mode: 'DAILY_ONCE',
+      notify: true,
+    },
+  ],
   blocks: [
     {
       id: 'morning',
@@ -109,7 +136,18 @@ export function parseRhythmConfig(raw: string): WorkdayRhythmConfig | null {
   if (!raw) return null
   try {
     const candidate = JSON.parse(raw) as WorkdayRhythmConfig
-    return rhythmConfigError(candidate) ? null : normalizeRhythmConfig(candidate)
+    const normalized = normalizeRhythmConfig(candidate)
+    return rhythmConfigError(normalized) ? null : normalized
+  } catch {
+    return null
+  }
+}
+
+/** 设置弹窗恢复未完成草稿时不做业务校验，避免空名称等中间态被当成损坏配置丢弃。 */
+export function parseRhythmConfigDraft(raw: string): WorkdayRhythmConfig | null {
+  if (!raw) return null
+  try {
+    return normalizeRhythmConfig(JSON.parse(raw) as WorkdayRhythmConfig)
   } catch {
     return null
   }
@@ -155,8 +193,6 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
   if (notification !== undefined) {
     if (
       typeof notification.enabled !== 'boolean' ||
-      typeof notification.notifyWater !== 'boolean' ||
-      typeof notification.notifyMeditation !== 'boolean' ||
       typeof notification.chatId !== 'string' ||
       notification.chatId.length > 128 ||
       typeof notification.chatName !== 'string' ||
@@ -165,23 +201,63 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
       return '精力补给通知配置不正确'
     }
     if (notification.enabled && !notification.chatId.trim()) return '请选择精力补给通知群'
-    if (notification.enabled && !notification.notifyWater && !notification.notifyMeditation)
-      return '请至少选择一种需要通知的精力补给动作'
   }
+  if (
+    !Array.isArray(value.energyItems) ||
+    value.energyItems.length < 1 ||
+    value.energyItems.length > 8
+  )
+    return '精力补给需要保留 1 到 8 个项目'
+  const energyIds = new Set<string>()
+  for (const item of value.energyItems) {
+    if (
+      !item ||
+      typeof item.id !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,40}$/.test(item.id) ||
+      energyIds.has(item.id)
+    )
+      return '精力补给项目标识不正确'
+    energyIds.add(item.id)
+    if (!item.title?.trim() || item.title.trim().length > 20)
+      return '每个精力补给项目都要有不超过 20 字的名称'
+    if (!item.guidance?.trim() || item.guidance.trim().length > 60)
+      return '每个精力补给项目都要有不超过 60 字的提示'
+    if (item.mode !== 'COUNT' && item.mode !== 'DAILY_ONCE') return '请选择正确的点击机制'
+    if (typeof item.notify !== 'boolean') return '精力补给项目通知配置不正确'
+  }
+  if (notification.enabled && !value.energyItems.some((item) => item.notify))
+    return '请至少选择一个需要通知的精力补给项目'
   return ''
 }
 
 export function normalizeRhythmConfig(value: WorkdayRhythmConfig): WorkdayRhythmConfig {
   const notification = value.energyNotification ?? DEFAULT_WORKDAY_RHYTHM.energyNotification
+  const legacyNotification = notification as WorkdayRhythmEnergyNotification
+  const energyItems = Array.isArray(value.energyItems)
+    ? value.energyItems
+    : DEFAULT_WORKDAY_RHYTHM.energyItems.map((item) => ({
+        ...item,
+        notify:
+          item.id === 'WATER'
+            ? legacyNotification.notifyWater !== false
+            : legacyNotification.notifyMeditation !== false,
+      }))
   return {
     version: 1,
     energyNotification: {
       enabled: notification.enabled,
       chatId: notification.chatId.trim(),
       chatName: notification.chatName.trim(),
-      notifyWater: notification.notifyWater,
-      notifyMeditation: notification.notifyMeditation,
+      notifyWater: energyItems.find((item) => item.id === 'WATER')?.notify ?? true,
+      notifyMeditation: energyItems.find((item) => item.id === 'MEDITATION')?.notify ?? true,
     },
+    energyItems: energyItems.map((item) => ({
+      id: item.id,
+      title: item.title.trim(),
+      guidance: item.guidance.trim(),
+      mode: item.mode,
+      notify: item.notify,
+    })),
     blocks: value.blocks.map((block) => ({
       id: block.id,
       start: block.start,
@@ -200,6 +276,7 @@ export function defaultRhythmDay(date: string, weekday: number): WorkdayRhythmDa
     completed: [],
     waterCount: 0,
     meditated: false,
+    energyRecords: {},
     focus: ['', '', ''],
   }
 }
@@ -209,6 +286,7 @@ export function parseRhythmDay(
   date: string,
   weekday: number,
   validIds: string[],
+  validEnergyIds: string[] = DEFAULT_WORKDAY_RHYTHM.energyItems.map((item) => item.id),
 ): WorkdayRhythmDay {
   const fallback = defaultRhythmDay(date, weekday)
   if (!raw) return fallback
@@ -230,6 +308,24 @@ export function parseRhythmDay(
           typeof candidate.focus?.[index] === 'string' ? candidate.focus[index]!.slice(0, 100) : '',
         )
       : fallback.focus
+    const energyRecords: Record<string, number> = {}
+    const candidateRecords =
+      candidate.energyRecords && typeof candidate.energyRecords === 'object'
+        ? candidate.energyRecords
+        : {}
+    for (const id of validEnergyIds) {
+      const stored = candidateRecords[id]
+      const legacy =
+        id === 'WATER'
+          ? candidate.waterCount
+          : id === 'MEDITATION'
+            ? candidate.meditated === true
+              ? 1
+              : 0
+            : 0
+      const value = Number.isInteger(stored) ? Number(stored) : Number(legacy)
+      energyRecords[id] = Math.max(0, Math.min(99, Number.isFinite(value) ? value : 0))
+    }
     return {
       version: 1,
       date,
@@ -238,10 +334,9 @@ export function parseRhythmDay(
           ? candidate.workdayActive
           : fallback.workdayActive,
       completed,
-      waterCount: Number.isInteger(candidate.waterCount)
-        ? Math.max(0, Math.min(99, candidate.waterCount!))
-        : 0,
-      meditated: candidate.meditated === true,
+      waterCount: energyRecords.WATER ?? 0,
+      meditated: (energyRecords.MEDITATION ?? 0) > 0,
+      energyRecords,
       focus,
     }
   } catch {

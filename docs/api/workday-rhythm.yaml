@@ -8,7 +8,7 @@ paths:
       summary: 把当前成员已经保存的精力补给动作通知到本人配置的飞书群
       description: >-
         服务端从会话确定成员，并重新读取 workday-rhythm-config-v1 与指定日期的成员偏好；
-        请求不接受成员 id、目标群、喝水次数或冥想完成状态。
+        请求不接受成员 id、目标群、项目名称、次数或完成状态。
       requestBody:
         required: true
         content:
@@ -18,7 +18,12 @@ paths:
               additionalProperties: false
               required: [action, date]
               properties:
-                action: { type: string, enum: [WATER, MEDITATION] }
+                action:
+                  type: string
+                  minLength: 1
+                  maxLength: 40
+                  pattern: "^[A-Za-z0-9_-]+$"
+                  description: 当前成员精力补给配置中的稳定项目标识
                 date: { type: string, format: date }
       responses:
         "200":

@@ -17,12 +17,13 @@ import {
   currentBlockIndex,
   defaultRhythmDay,
   minutesUntilEnd,
-  parseRhythmConfig,
+  parseRhythmConfigDraft,
   parseRhythmDay,
   rhythmConfigError,
   shanghaiClock,
   type WorkdayRhythmConfig,
   type WorkdayRhythmDay,
+  type WorkdayRhythmEnergyItem,
 } from '@/utils/workdayRhythm'
 
 const CONFIG_DRAFT_KEY = 'wao-workday-rhythm-config-draft-v1'
@@ -85,11 +86,18 @@ const configuredChatMissing = computed(
       (chat) => chat.chatId === editorDraft.value.energyNotification.chatId,
     ),
 )
+let energyItemSequence = 0
 
-function loadLocalDayDraft(validIds: string[]): WorkdayRhythmDay | null {
+function loadLocalDayDraft(validIds: string[], validEnergyIds: string[]): WorkdayRhythmDay | null {
   const raw = localStorage.getItem(dayDraftKey.value)
   if (!raw) return null
-  const parsed = parseRhythmDay(raw, clock.value.date, clock.value.weekday, validIds)
+  const parsed = parseRhythmDay(
+    raw,
+    clock.value.date,
+    clock.value.weekday,
+    validIds,
+    validEnergyIds,
+  )
   return parsed.date === clock.value.date ? parsed : null
 }
 
@@ -99,9 +107,15 @@ async function load() {
   try {
     const loadedConfig = await fetchWorkdayRhythm()
     const validIds = loadedConfig.blocks.map((block) => block.id)
-    const loadedDay = await fetchWorkdayRhythmDay(clock.value.date, clock.value.weekday, validIds)
+    const validEnergyIds = loadedConfig.energyItems.map((item) => item.id)
+    const loadedDay = await fetchWorkdayRhythmDay(
+      clock.value.date,
+      clock.value.weekday,
+      validIds,
+      validEnergyIds,
+    )
     config.value = loadedConfig
-    day.value = loadLocalDayDraft(validIds) ?? loadedDay
+    day.value = loadLocalDayDraft(validIds, validEnergyIds) ?? loadedDay
     dayState.value = localStorage.getItem(dayDraftKey.value) ? 'error' : 'idle'
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '今日节奏暂时无法读取'
@@ -146,7 +160,7 @@ function toggleBlock(id: string) {
 
 async function dispatchEnergyNotification(action: WorkdayRhythmEnergyAction, date: string) {
   const notification = config.value.energyNotification
-  const selected = action === 'WATER' ? notification.notifyWater : notification.notifyMeditation
+  const selected = config.value.energyItems.some((item) => item.id === action && item.notify)
   if (!notification.enabled || !selected) return
   pendingEnergyNotification.value = { action, date }
   energyNotificationState.value = 'sending'
@@ -179,22 +193,26 @@ async function retryEnergyNotification() {
   )
 }
 
-async function addWater() {
-  if (energyActionBusy.value || day.value.waterCount >= 99) return
-  day.value.waterCount += 1
-  markDayDirty()
-  if (await persistDay('已记录这次喝水')) {
-    await dispatchEnergyNotification('WATER', day.value.date)
-  }
+function energyCount(item: WorkdayRhythmEnergyItem): number {
+  return day.value.energyRecords[item.id] ?? 0
 }
 
-async function toggleMeditation() {
-  if (energyActionBusy.value) return
-  day.value.meditated = !day.value.meditated
-  const justRecorded = day.value.meditated
+function syncLegacyEnergyFields() {
+  day.value.waterCount = day.value.energyRecords.WATER ?? 0
+  day.value.meditated = (day.value.energyRecords.MEDITATION ?? 0) > 0
+}
+
+async function recordEnergy(item: WorkdayRhythmEnergyItem) {
+  const current = energyCount(item)
+  if (energyActionBusy.value || current >= 99 || (item.mode === 'DAILY_ONCE' && current > 0)) return
+  day.value.energyRecords = {
+    ...day.value.energyRecords,
+    [item.id]: item.mode === 'DAILY_ONCE' ? 1 : current + 1,
+  }
+  syncLegacyEnergyFields()
   markDayDirty()
-  if (await persistDay(justRecorded ? '今天的冥想已记录' : '已撤销冥想记录')) {
-    if (justRecorded) await dispatchEnergyNotification('MEDITATION', day.value.date)
+  if (await persistDay(`${item.title}已记录`)) {
+    await dispatchEnergyNotification(item.id, day.value.date)
   }
 }
 
@@ -217,7 +235,7 @@ function saveFocus() {
 }
 
 function openEditor() {
-  const savedDraft = parseRhythmConfig(localStorage.getItem(CONFIG_DRAFT_KEY) ?? '')
+  const savedDraft = parseRhythmConfigDraft(localStorage.getItem(CONFIG_DRAFT_KEY) ?? '')
   editorDraft.value = savedDraft ?? cloneRhythmConfig(config.value)
   editorError.value = ''
   editorOpen.value = true
@@ -261,6 +279,23 @@ function resetEditor() {
   editorError.value = ''
 }
 
+function addEnergyItem() {
+  if (editorDraft.value.energyItems.length >= 8) return
+  energyItemSequence += 1
+  editorDraft.value.energyItems.push({
+    id: `energy-${Date.now().toString(36)}-${energyItemSequence}`,
+    title: '',
+    guidance: '',
+    mode: 'COUNT',
+    notify: true,
+  })
+}
+
+function removeEnergyItem(index: number) {
+  if (editorDraft.value.energyItems.length <= 1) return
+  editorDraft.value.energyItems.splice(index, 1)
+}
+
 async function submitEditor() {
   const error = rhythmConfigError(editorDraft.value)
   if (error) {
@@ -274,12 +309,15 @@ async function submitEditor() {
     day.value.completed = day.value.completed.filter((id) =>
       config.value.blocks.some((block) => block.id === id),
     )
+    day.value.energyRecords = Object.fromEntries(
+      config.value.energyItems.map((item) => [item.id, day.value.energyRecords[item.id] ?? 0]),
+    )
+    syncLegacyEnergyFields()
     localStorage.removeItem(CONFIG_DRAFT_KEY)
     const pendingAction = pendingEnergyNotification.value?.action
     if (
       !config.value.energyNotification.enabled ||
-      (pendingAction === 'WATER' && !config.value.energyNotification.notifyWater) ||
-      (pendingAction === 'MEDITATION' && !config.value.energyNotification.notifyMeditation)
+      !config.value.energyItems.some((item) => item.id === pendingAction && item.notify)
     ) {
       pendingEnergyNotification.value = null
       energyNotificationState.value = 'idle'
@@ -461,33 +499,48 @@ onBeforeUnmount(() => {
             </button>
           </header>
           <button
-            class="energy-action water"
+            v-for="(item, index) in config.energyItems"
+            :key="item.id"
+            class="energy-action"
+            :class="{
+              water: item.id === 'WATER',
+              meditate: item.id === 'MEDITATION',
+              once: item.mode === 'DAILY_ONCE',
+              done: item.mode === 'DAILY_ONCE' && energyCount(item) > 0,
+            }"
             type="button"
-            :disabled="energyActionBusy"
-            @click="addWater"
+            :disabled="
+              energyActionBusy ||
+              energyCount(item) >= 99 ||
+              (item.mode === 'DAILY_ONCE' && energyCount(item) > 0)
+            "
+            @click="recordEnergy(item)"
           >
-            <i class="ri-cup-line"></i
+            <i
+              :class="
+                item.mode === 'DAILY_ONCE' && energyCount(item) > 0
+                  ? 'ri-checkbox-circle-fill'
+                  : item.id === 'WATER'
+                    ? 'ri-cup-line'
+                    : item.id === 'MEDITATION'
+                      ? 'ri-mental-health-line'
+                      : index % 2 === 0
+                        ? 'ri-flashlight-line'
+                        : 'ri-leaf-line'
+              "
+            ></i
             ><span
-              ><b>喝水 +1</b><small>今天已真实记录 {{ day.waterCount }} 次</small></span
-            ><strong>{{ day.waterCount }}</strong>
-          </button>
-          <button
-            class="energy-action meditate"
-            :class="{ done: day.meditated }"
-            type="button"
-            :disabled="energyActionBusy"
-            @click="toggleMeditation"
-          >
-            <i :class="day.meditated ? 'ri-checkbox-circle-fill' : 'ri-mental-health-line'"></i
-            ><span
-              ><b>至少冥想一次</b
-              ><small>{{
-                day.meditated ? '今天已经留过一次空白' : '累之前，先停下来几分钟'
+              ><b>{{ item.title }}{{ item.mode === 'COUNT' ? ' +1' : '' }}</b
+              ><small v-if="item.mode === 'COUNT'"
+                >{{ item.guidance }} {{ energyCount(item) }} 次</small
+              ><small v-else>{{
+                energyCount(item) > 0 ? '今天已完成' : item.guidance
               }}</small></span
             >
+            <strong v-if="item.mode === 'COUNT'">{{ energyCount(item) }}</strong>
           </button>
           <p>
-            <i class="ri-information-line"></i>只记录你实际做过的次数，不替你设定饮水或健康处方。
+            <i class="ri-information-line"></i>累计项目可反复记录；每天一次项目完成后当天不再重复。
           </p>
           <div v-if="energyNotificationState === 'sending'" class="energy-notice sending">
             <i class="ri-loader-4-line spin"></i><span>记录已保存，正在通知群聊…</span>
@@ -578,7 +631,7 @@ onBeforeUnmount(() => {
                 <span>{{ editorDraft.energyNotification.enabled ? '已启用' : '未启用' }}</span>
               </label>
             </header>
-            <p>喝水或首次记录冥想成功后，使用 WAO 已配置的飞书应用通知你选择的群。</p>
+            <p>补给项目成功保存后，使用 WAO 已配置的飞书应用通知你选择的群。</p>
             <div v-if="editorDraft.energyNotification.enabled" class="energy-editor-fields">
               <label class="chat-field">
                 <span>通知到</span>
@@ -610,19 +663,66 @@ onBeforeUnmount(() => {
                 ></i>
                 {{ notificationChatsLoading ? '读取中' : '刷新群聊' }}
               </button>
-              <label class="action-field">
-                <input v-model="editorDraft.energyNotification.notifyWater" type="checkbox" />
-                <span><b>喝水 +1</b><small>每次真实记录后通知</small></span>
-              </label>
-              <label class="action-field">
-                <input v-model="editorDraft.energyNotification.notifyMeditation" type="checkbox" />
-                <span><b>冥想一下</b><small>每天首次记录后通知</small></span>
-              </label>
             </div>
             <p v-if="notificationChatsError" class="chat-load-error" role="alert">
               <i class="ri-error-warning-line"></i
               >{{ notificationChatsError }}；请确认自动化中的飞书应用凭据可用。
             </p>
+          </section>
+          <section class="energy-items-editor" aria-labelledby="energy-items-title">
+            <header>
+              <div>
+                <small>ENERGY ITEMS</small>
+                <h3 id="energy-items-title">精力补给项目</h3>
+                <p>每项选择累计次数或每天只能完成一次，保存后会按顺序展示。</p>
+              </div>
+              <button
+                type="button"
+                :disabled="editorDraft.energyItems.length >= 8"
+                @click="addEnergyItem"
+              >
+                <i class="ri-add-line"></i>添加项目
+              </button>
+            </header>
+            <div
+              v-for="(item, index) in editorDraft.energyItems"
+              :key="item.id"
+              class="energy-item-editor"
+            >
+              <span class="energy-item-number">{{ index + 1 }}</span>
+              <label class="energy-name-field"
+                ><span>名称</span
+                ><input v-model="item.title" maxlength="20" placeholder="例如：起身走动"
+              /></label>
+              <label class="energy-guidance-field"
+                ><span>未完成时提示</span
+                ><input
+                  v-model="item.guidance"
+                  maxlength="60"
+                  placeholder="例如：离开座位活动几分钟"
+              /></label>
+              <label class="energy-mode-field"
+                ><span>点击机制</span
+                ><select v-model="item.mode">
+                  <option value="COUNT">累计次数</option>
+                  <option value="DAILY_ONCE">每天一次</option>
+                </select></label
+              >
+              <label class="energy-notify-field">
+                <input v-model="item.notify" type="checkbox" />
+                <span>群通知</span>
+              </label>
+              <button
+                class="remove-energy-item"
+                type="button"
+                aria-label="删除补给项目"
+                :disabled="editorDraft.energyItems.length <= 1"
+                @click="removeEnergyItem(index)"
+              >
+                <i class="ri-delete-bin-line"></i>
+              </button>
+            </div>
+            <small class="energy-item-limit">{{ editorDraft.energyItems.length }} / 8 个项目</small>
           </section>
           <div class="timeline-editor-title">
             <small>DAILY FLOW</small>
@@ -1070,15 +1170,21 @@ textarea {
   color: #37738a;
   font-size: 21px;
 }
+.energy-action:disabled {
+  cursor: default;
+}
+.energy-action:disabled:not(.done) {
+  opacity: 0.62;
+}
 .energy-action.meditate > i {
   background: #efe9f6;
   color: #775b92;
 }
-.energy-action.meditate.done {
+.energy-action.once.done {
   border-color: #9ac7b7;
   background: #eff8f4;
 }
-.energy-action.meditate.done > i {
+.energy-action.once.done > i {
   background: #d9eee5;
   color: #267c65;
 }
@@ -1327,7 +1433,7 @@ textarea {
 .energy-editor-fields {
   margin-top: 11px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(125px, 0.65fr) minmax(125px, 0.65fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 8px;
 }
@@ -1385,6 +1491,118 @@ textarea {
 }
 .chat-load-error i {
   margin-right: 4px;
+}
+.energy-items-editor {
+  margin-bottom: 16px;
+}
+.energy-items-editor > header {
+  margin: 0 2px 9px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+.energy-items-editor h3 {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+.energy-items-editor header p {
+  margin: 4px 0 0;
+  color: var(--wao-text-faint);
+  font-size: 10px;
+}
+.energy-items-editor > header button {
+  min-height: 32px;
+  border: 1px solid #9fcaba;
+  border-radius: 8px;
+  background: #eff8f4;
+  color: #267c65;
+  padding: 0 10px;
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.energy-items-editor > header button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.energy-item-editor {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--wao-line);
+  border-radius: 11px;
+  background: var(--wao-bg-page);
+  display: grid;
+  grid-template-columns: 25px minmax(110px, 0.7fr) minmax(180px, 1.3fr) 120px 72px 32px;
+  align-items: end;
+  gap: 8px;
+}
+.energy-item-number {
+  width: 25px;
+  height: 25px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  background: #dceee6;
+  color: #267c65;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 800;
+}
+.energy-item-editor label:not(.energy-notify-field) {
+  display: grid;
+  gap: 4px;
+}
+.energy-item-editor label > span {
+  color: var(--wao-text-faint);
+  font-size: 9px;
+}
+.energy-item-editor input[type='text'],
+.energy-item-editor input:not([type]),
+.energy-item-editor select {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  padding: 0 8px;
+  font: inherit;
+  font-size: 10.5px;
+}
+.energy-notify-field {
+  height: 34px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.energy-notify-field input {
+  accent-color: #267c65;
+}
+.remove-energy-item {
+  width: 32px;
+  height: 34px;
+  border: 1px solid #e2c5c1;
+  border-radius: 8px;
+  background: #fff4f2;
+  color: #a04f45;
+  cursor: pointer;
+}
+.remove-energy-item:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.energy-item-limit {
+  display: block;
+  margin: 7px 2px 0;
+  color: var(--wao-text-faint);
+  text-align: right;
+  font-size: 9px;
 }
 .timeline-editor-title {
   margin: 2px 2px 9px;
@@ -1558,8 +1776,18 @@ textarea {
   .energy-editor-fields {
     grid-template-columns: minmax(0, 1fr) auto;
   }
-  .action-field {
-    min-height: 42px;
+  .energy-item-editor {
+    grid-template-columns: 25px minmax(0, 1fr) 32px;
+  }
+  .energy-name-field,
+  .energy-guidance-field,
+  .energy-mode-field,
+  .energy-notify-field {
+    grid-column: 2 / 3;
+  }
+  .remove-energy-item {
+    grid-column: 3 / 4;
+    grid-row: 1;
   }
   .block-editor {
     grid-template-columns: 25px 1fr 1fr;

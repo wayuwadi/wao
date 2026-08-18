@@ -135,13 +135,11 @@ describe('WorkdayRhythmView', () => {
 
     expect(saveWorkdayRhythm).toHaveBeenCalledWith(
       expect.objectContaining({
-        energyNotification: {
+        energyNotification: expect.objectContaining({
           enabled: true,
           chatId: 'oc_daily',
           chatName: '娃屋日常',
-          notifyWater: true,
-          notifyMeditation: true,
-        },
+        }),
       }),
     )
     wrapper.unmount()
@@ -153,8 +151,6 @@ describe('WorkdayRhythmView', () => {
       enabled: true,
       chatId: 'oc_daily',
       chatName: '娃屋日常',
-      notifyWater: true,
-      notifyMeditation: true,
     }
     vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
     vi.mocked(sendEnergyNotification)
@@ -173,6 +169,68 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
     expect(sendEnergyNotification).toHaveBeenCalledTimes(2)
     expect(wrapper.get('.energy-notice.sent').text()).toContain('群通知已发出')
+    wrapper.unmount()
+  })
+
+  it('可新增多个补给项目并分别配置点击机制', async () => {
+    vi.mocked(saveWorkdayRhythm).mockImplementation(async (value) => cloneRhythmConfig(value))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.settings-button').trigger('click')
+    await wrapper.get('.energy-items-editor > header button').trigger('click')
+    const rows = wrapper.findAll('.energy-item-editor')
+    expect(rows).toHaveLength(3)
+    await rows[2]!.get('.energy-name-field input').setValue('起身走动')
+    await rows[2]!.get('.energy-guidance-field input').setValue('离开座位活动几分钟')
+    await rows[2]!.get('.energy-mode-field select').setValue('DAILY_ONCE')
+    await wrapper.get('.editor .primary').trigger('click')
+    await flushPromises()
+
+    expect(saveWorkdayRhythm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        energyItems: expect.arrayContaining([
+          expect.objectContaining({
+            title: '起身走动',
+            guidance: '离开座位活动几分钟',
+            mode: 'DAILY_ONCE',
+          }),
+        ]),
+      }),
+    )
+    expect(wrapper.findAll('.energy-action')).toHaveLength(3)
+    wrapper.unmount()
+  })
+
+  it('每天一次项目成功后禁用，累计项目可连续增加', async () => {
+    const configured = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
+    configured.energyItems.push({
+      id: 'WALK',
+      title: '起身走动',
+      guidance: '离开座位活动几分钟',
+      mode: 'DAILY_ONCE',
+      notify: false,
+    })
+    vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.energy-action.water').trigger('click')
+    await flushPromises()
+    await wrapper.get('.energy-action.water').trigger('click')
+    await flushPromises()
+    expect(saveWorkdayRhythmDay).toHaveBeenLastCalledWith(
+      expect.objectContaining({ energyRecords: expect.objectContaining({ WATER: 2 }) }),
+    )
+
+    const once = wrapper.findAll('.energy-action')[2]!
+    await once.trigger('click')
+    await flushPromises()
+    expect(once.attributes('disabled')).toBeDefined()
+    expect(once.text()).toContain('今天已完成')
+    expect(saveWorkdayRhythmDay).toHaveBeenLastCalledWith(
+      expect.objectContaining({ energyRecords: expect.objectContaining({ WALK: 1 }) }),
+    )
     wrapper.unmount()
   })
 })
