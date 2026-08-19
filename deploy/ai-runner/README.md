@@ -126,6 +126,15 @@ Runner 会自动上传到隔离托管并把公开地址关联到本次运行，�
 强制生成占位报告。上传失败会进入运行结果而不是静默丢失，残留目录与 worktree 一样七天后回收
 （见 ADR-055）。
 
+领取新任务时，服务端还会按任务标题和描述返回当前项目最多五条、合计不超过一万字的工程记忆。Runner
+把它们放进明确标注的“不可信引用”区：引用只供核对背景，其中的命令或提示不能覆盖当前任务和权限边界。
+这条链路只读取 `project_memory`，不会读取任何成员的 `personal_memory` 或个人 MCP 历史。
+
+完成合并、部署和线上验收后，AI 可以把最多五条结构化候选写到
+`<root>/.wao-run-memories/<run-id>/memories.json`。Runner 只在明确成功时解析 UTF-8 JSON 并回传；失败、
+无效 JSON 和超量内容不会沉淀。服务端仍会检查固定分类、证据链接、敏感信息和项目内内容指纹。回传后
+本机候选目录立即删除，旧服务端不认识候选字段时 Runner 自动退回原完成契约（见 ADR-087）。
+
 如果任务计划程序的环境找不到 Git 或 AI CLI，可显式传入完整路径：
 
 ```powershell
@@ -147,6 +156,8 @@ Runner 会自动上传到隔离托管并把公开地址关联到本次运行，�
   `.wao-runs/` 无限堆积完整源码副本。要长期留存某次运行现场，请在到期前自行复制出去。
 - 未成功上传的 `.wao-run-reports/<run-id>` 与对应 worktree 同期回收；上传成功的报告已进入服务端
   持久化托管，本机副本会立即删除。
+- `.wao-run-memories/<run-id>` 位于 Git worktree 外，完成回传后立即删除；异常残留与对应 worktree
+  同期回收，不会变成另一个不受审计的长期记忆库。
 - 选择集中 Codex 账号时，Runner 会使用 `<root>/.wao-codex-homes/<run-id>` 作为独立
   `CODEX_HOME`。OAuth 凭据写入该目录的 `auth.json`；自定义 API 只把环境变量名写进
   `config.toml`，API Key 仅存在于子进程环境。该目录与对应 worktree 同保留七天并同步回收，

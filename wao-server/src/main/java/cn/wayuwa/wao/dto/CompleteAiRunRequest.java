@@ -1,6 +1,7 @@
 package cn.wayuwa.wao.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 节点完成 AI CLI 进程后的结果回传。
@@ -18,5 +19,14 @@ public record CompleteAiRunRequest(
         Long outputTokens,
         Long cachedInputTokens,
         Long totalTokens,
-        BigDecimal costUsd) {
+        BigDecimal costUsd,
+        /** Runner 从非 Git JSON 产物解析出的结构化项目记忆候选；旧 Runner 缺省为空。 */
+        List<ProjectMemoryCandidate> projectMemoryCandidates) {
+
+    public CompleteAiRunRequest(Integer exitCode, String resultSummary, String sessionId, String model,
+            String models, Long inputTokens, Long outputTokens, Long cachedInputTokens, Long totalTokens,
+            BigDecimal costUsd) {
+        this(exitCode, resultSummary, sessionId, model, models, inputTokens, outputTokens,
+                cachedInputTokens, totalTokens, costUsd, List.of());
+    }
 }

@@ -33,6 +33,7 @@ import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
+import cn.wayuwa.wao.dto.ProjectMemoryCandidate;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.dto.RunnerCodexQuotaReport;
@@ -64,14 +65,18 @@ class AiRunServiceTest {
     private final HostedPageService hostedPages = mock(HostedPageService.class);
     private final ImageService images = mock(ImageService.class);
     private final CodexQuotaService codexQuotas = mock(CodexQuotaService.class);
+    private final ProjectMemoryService projectMemories = mock(ProjectMemoryService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
-            tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas);
+            tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas, projectMemories);
 
     @BeforeEach
     void emptyProgressByDefault() {
         when(progressMapper.selectList(any())).thenReturn(List.of());
         when(hostedPages.runReportUrls(any())).thenReturn(Map.of());
+        when(projectMemories.recall(any(), any())).thenReturn(List.of());
+        when(projectMemories.readReferences(any())).thenReturn(Map.of());
+        when(projectMemories.writeReferences(any())).thenReturn(Map.of());
     }
 
     @Test
@@ -1052,6 +1057,45 @@ class AiRunServiceTest {
 
         verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"), any(),
                 eq("Claude Code"), eq("整个任务"), eq(true), eq(false), any());
+    }
+
+    @Test
+    void successfulRunPersistsStructuredMemoryCandidates() {
+        AiTaskRunEntity run = runningRun();
+        var candidates = List.of(new ProjectMemoryCandidate("verification", "后端验收命令",
+                "执行 mvn test 后全部通过。", List.of("https://github.com/acme/wao/pull/1")));
+
+        service.complete("local-token", "ar1",
+                new CompleteAiRunRequest(0, "WAO_RUN_STATUS: SUCCESS", "sess-1", null, null,
+                        null, null, null, null, null, candidates));
+
+        verify(projectMemories).persistCandidates(run, candidates);
+    }
+
+    @Test
+    void failedRunNeverPersistsMemoryCandidates() {
+        runningRun();
+        var candidates = List.of(new ProjectMemoryCandidate("context", "未经验证结论",
+                "这条内容来自失败运行。", List.of()));
+
+        service.complete("local-token", "ar1",
+                new CompleteAiRunRequest(1, "WAO_RUN_STATUS: BLOCKED", "sess-1", null, null,
+                        null, null, null, null, null, candidates));
+
+        verify(projectMemories, never()).persistCandidates(any(), any());
+    }
+
+    @Test
+    void zeroExitWithoutVerifiedStatusNeverPersistsMemoryCandidates() {
+        runningRun();
+        var candidates = List.of(new ProjectMemoryCandidate("context", "未确认结论",
+                "CLI 退出了，但没有证明 PR、部署和线上验收完成。", List.of("https://example.com/run")));
+
+        service.complete("local-token", "ar1",
+                new CompleteAiRunRequest(0, "会话正常退出", "sess-1", null, null,
+                        null, null, null, null, null, candidates));
+
+        verify(projectMemories, never()).persistCandidates(any(), any());
     }
 
     @Test

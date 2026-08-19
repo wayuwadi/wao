@@ -393,6 +393,18 @@ V70 同时种下固定 `kb-memory / kb-memory-f` 的“共享记忆”知识库�
 所有查询、修改、删除和附件下载都同时限定 `id + member_id`，访问其他成员的 id 按 404 处理。当前只对正文、
 标题和文件名做关键词检索，不伪造向量、OCR、转写或模型训练能力。
 
+### project_memory / ai_run_memory_read / ai_run_memory_write（V76）
+
+| 表 | 关键字段 / 唯一约束 | 说明 |
+|---|---|---|
+| project_memory | project_id、固定 category、title/content、source_task_id/source_run_id、evidence_links_json、content_fingerprint；`(project_id, content_fingerprint)` 唯一 | 项目授权成员共享的工程经验，与 personal_memory 分表隔离 |
+| ai_run_memory_read | id 主键、`(run_id, memory_id)` 唯一、rank_order | Runner 领取时实际注入且按顺序固化的引用 |
+| ai_run_memory_write | id 主键、`(run_id, memory_id)` 唯一、rank_order | 成功运行经安全过滤和指纹去重后实际写入的引用 |
+
+项目记忆分类固定为 `decision / convention / pitfall / verification / operation / context`。召回只在当前项目内
+做有界关键词排序，最多五条、标题与正文合计不超过一万字；失败、阻塞、无证据、敏感与重复候选不落库。
+权限、Runner 兼容和不可信引用边界见 ADR-087。
+
 ### personal_workspace（V75）
 
 | 列 | 类型 | 说明 |
@@ -742,4 +754,5 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V73__personal_multimodal_memory.sql`：保存按成员隔离的文字与多模态个人记忆原件（见 ADR-082）。
 - `V74__runner_codex_quota.sql`：保存 Runner 本地 Codex 脱敏额度，并触发现有 Codex 节点获取新版脚本（见 ADR-083）。
 - `V75__personal_workspace.sql`：保存按成员隔离、可关联项目的工作空间导航快照（见 ADR-085）。
+- `V76__project_engineering_memory.sql`：保存项目工程记忆及 AI Run 实际读写引用（见 ADR-087）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
