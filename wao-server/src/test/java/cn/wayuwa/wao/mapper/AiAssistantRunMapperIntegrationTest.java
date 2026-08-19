@@ -1,0 +1,179 @@
+package cn.wayuwa.wao.mapper;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import cn.wayuwa.wao.domain.AiAssistantRunEntity;
+import java.time.LocalDateTime;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+/** 用真实 SQL CAS 验证同一 Runner 重领时旧尝试不能完成新尝试。 */
+@SpringBootTest(properties =
+        "spring.datasource.url=jdbc:h2:mem:assistantclaimtoken;DB_CLOSE_DELAY=-1;MODE=MySQL")
+class AiAssistantRunMapperIntegrationTest {
+
+    @Autowired private AiAssistantRunMapper mapper;
+    @Autowired private JdbcTemplate jdbc;
+
+    @BeforeEach
+    void recreateTable() {
+        jdbc.execute("DROP TABLE IF EXISTS ai_assistant_run");
+        jdbc.execute("""
+                CREATE TABLE ai_assistant_run (
+                    id VARCHAR(32) PRIMARY KEY,
+                    member_id VARCHAR(64) NULL,
+                    runner_id VARCHAR(32) NULL,
+                    claim_token VARCHAR(64) NULL,
+                    status VARCHAR(16) NOT NULL,
+                    prompt_text CLOB NULL,
+                    response_text CLOB NULL,
+                    error_text CLOB NULL,
+                    created_at TIMESTAMP(6) NULL,
+                    claimed_at TIMESTAMP(6) NULL,
+                    finished_at TIMESTAMP(6) NULL,
+                    updated_at TIMESTAMP(6) NOT NULL
+                )
+                """);
+    }
+
+    @Test
+    void insertReadOnlyQueuedPreservesTheRequestedQueueKindAndUsesDatabaseTime() {
+        AiAssistantRunEntity ordinary = readOnlyRun("ordinary", "queued");
+        AiAssistantRunEntity durable = readOnlyRun("durable", "secure_queued");
+
+        assertThat(mapper.insertReadOnlyQueued(ordinary)).isEqualTo(1);
+        assertThat(mapper.insertReadOnlyQueued(durable)).isEqualTo(1);
+
+        assertThat(rowWithCreatedAt("ordinary"))
+                .containsEntry("STATUS", "queued")
+                .containsEntry("MEMBER_ID", "internal-test")
+                .containsEntry("PROMPT_TEXT", "请总结")
+                .doesNotContainValue(null);
+        assertThat(rowWithCreatedAt("durable"))
+                .containsEntry("STATUS", "secure_queued")
+                .containsEntry("MEMBER_ID", "internal-test")
+                .containsEntry("PROMPT_TEXT", "请总结")
+                .doesNotContainValue(null);
+    }
+
+    @Test
+    void staleAttemptCannotCompleteAReclaimByTheSameRunner() {
+        LocalDateTime firstClaim = LocalDateTime.now();
+        insert("ac1", firstClaim.minusMinutes(1));
+
+        assertThat(mapper.claimQueued(
+                "ac1", "rn1", "attempt-old", "queued", "running")).isEqualTo(1);
+        assertThat(mapper.requeueStale("ac1", firstClaim.plusMinutes(1))).isEqualTo(1);
+        assertThat(row("ac1"))
+                .containsEntry("STATUS", "queued")
+                .containsEntry("CLAIM_TOKEN", null);
+
+        LocalDateTime secondClaim = firstClaim.plusMinutes(4);
+        assertThat(mapper.claimQueued(
+                "ac1", "rn1", "attempt-new", "queued", "running")).isEqualTo(1);
+        assertThat(mapper.completeSucceeded(
+                "ac1", "rn1", "attempt-old", "running", "迟到答复")).isZero();
+        assertThat(row("ac1"))
+                .containsEntry("STATUS", "running")
+                .containsEntry("CLAIM_TOKEN", "attempt-new")
+                .containsEntry("RESPONSE_TEXT", null);
+
+        assertThat(mapper.completeSucceeded(
+                "ac1", "rn1", "attempt-new", "running", "新答复")).isEqualTo(1);
+        assertThat(row("ac1"))
+                .containsEntry("STATUS", "succeeded")
+                .containsEntry("CLAIM_TOKEN", null)
+                .containsEntry("RESPONSE_TEXT", "新答复");
+    }
+
+    @Test
+    void everyTerminalPathClearsTheAttemptToken() {
+        LocalDateTime now = LocalDateTime.of(2026, 8, 19, 10, 0);
+        insert("failed-by-runner", now);
+        assertThat(mapper.claimQueued(
+                "failed-by-runner", "rn1", "attempt-failed", "queued", "running"))
+                .isEqualTo(1);
+        assertThat(mapper.completeFailed(
+                "failed-by-runner", "rn1", "attempt-failed", "running", "Codex 失败"))
+                .isEqualTo(1);
+        assertThat(row("failed-by-runner"))
+                .containsEntry("STATUS", "failed")
+                .containsEntry("CLAIM_TOKEN", null);
+
+        insert("failed-by-timeout", now);
+        assertThat(mapper.claimQueued(
+                "failed-by-timeout", "rn1", "attempt-timeout", "queued", "running"))
+                .isEqualTo(1);
+        assertThat(mapper.failActive("failed-by-timeout", "执行超时")).isEqualTo(1);
+        assertThat(row("failed-by-timeout"))
+                .containsEntry("STATUS", "failed")
+                .containsEntry("CLAIM_TOKEN", null);
+    }
+
+    @Test
+    void secureQueuedRunRequiresTheSecureClaimAndCompletionStates() {
+        insert("secure-ac1", "secure_queued", LocalDateTime.now());
+
+        assertThat(mapper.claimQueued(
+                "secure-ac1", "rn1", "secure-attempt", "queued", "running")).isZero();
+        assertThat(row("secure-ac1"))
+                .containsEntry("STATUS", "secure_queued")
+                .containsEntry("CLAIM_TOKEN", null);
+
+        assertThat(mapper.claimQueued(
+                "secure-ac1", "rn1", "secure-attempt", "secure_queued", "secure_running"))
+                .isEqualTo(1);
+        assertThat(mapper.completeSucceeded(
+                "secure-ac1", "rn1", "secure-attempt", "running", "旧协议结果"))
+                .isZero();
+        assertThat(row("secure-ac1"))
+                .containsEntry("STATUS", "secure_running")
+                .containsEntry("CLAIM_TOKEN", "secure-attempt")
+                .containsEntry("RESPONSE_TEXT", null);
+
+        assertThat(mapper.completeSucceeded(
+                "secure-ac1", "rn1", "secure-attempt", "secure_running", "安全协议结果"))
+                .isEqualTo(1);
+        assertThat(row("secure-ac1"))
+                .containsEntry("STATUS", "succeeded")
+                .containsEntry("CLAIM_TOKEN", null)
+                .containsEntry("RESPONSE_TEXT", "安全协议结果");
+    }
+
+    private void insert(String id, LocalDateTime updatedAt) {
+        insert(id, "queued", updatedAt);
+    }
+
+    private void insert(String id, String status, LocalDateTime updatedAt) {
+        jdbc.update("""
+                INSERT INTO ai_assistant_run (id, status, prompt_text, updated_at)
+                VALUES (?, ?, '请总结', ?)
+                """, id, status, updatedAt);
+    }
+
+    private Map<String, Object> row(String id) {
+        return jdbc.queryForMap("""
+                SELECT status, claim_token, response_text FROM ai_assistant_run WHERE id = ?
+                """, id);
+    }
+
+    private Map<String, Object> rowWithCreatedAt(String id) {
+        return jdbc.queryForMap("""
+                SELECT status, member_id, prompt_text, created_at, updated_at
+                  FROM ai_assistant_run WHERE id = ?
+                """, id);
+    }
+
+    private AiAssistantRunEntity readOnlyRun(String id, String status) {
+        AiAssistantRunEntity run = new AiAssistantRunEntity();
+        run.setId(id);
+        run.setMemberId("internal-test");
+        run.setStatus(status);
+        run.setPromptText("请总结");
+        return run;
+    }
+}

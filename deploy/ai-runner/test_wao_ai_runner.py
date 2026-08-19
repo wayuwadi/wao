@@ -5,6 +5,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -22,6 +23,22 @@ SPEC.loader.exec_module(RUNNER)
 
 
 class RunnerInvocationTest(unittest.TestCase):
+
+    def test_stop_is_checked_even_while_cli_continuously_emits_output(self) -> None:
+        worktree = Path(tempfile.mkdtemp(prefix="wao-invoke-stop-"))
+        self.addCleanup(shutil.rmtree, worktree, ignore_errors=True)
+        started = time.monotonic()
+
+        exit_code, _ = RUNNER.invoke_cli(
+            [sys.executable, "-u", "-c",
+             "import time\nwhile True:\n print('{}', flush=True)\n time.sleep(0.001)"],
+            worktree,
+            "",
+            should_stop=lambda: time.monotonic() - started >= 0.1,
+        )
+
+        self.assertNotEqual(0, exit_code)
+        self.assertLess(time.monotonic() - started, 3)
 
     @patch.object(RUNNER.subprocess, "Popen")
     def test_prompt_is_sent_through_stdin(self, popen: Mock) -> None:
@@ -212,7 +229,7 @@ class RunnerConcurrencyTest(unittest.TestCase):
                 return {"maxConcurrency": 5, "updateRequested": False}
             if path == "/api/ai/runner/claim":
                 return claims.pop(0) if claims else None
-            if path == "/api/ai/runner/assistant/claim":
+            if path == "/api/ai/runner/assistant-v2/claim":
                 return None
             raise AssertionError(f"unexpected API path: {path}")
 
@@ -515,6 +532,34 @@ class CodexAccountIsolationTest(unittest.TestCase):
         RUNNER.run_codex("codex", self.root, "prompt", "workspace-write", reporter, environment)
 
         self.assertEqual(environment, invoke.call_args.args[4])
+
+    @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
+    def test_tool_free_analysis_disables_local_read_and_expansion_tools(self, invoke: Mock) -> None:
+        reporter = Mock()
+        global_home = self.root / "global-home"
+        global_home.mkdir()
+        (global_home / "auth.json").write_text('{"tokens":{"access_token":"oauth"}}', encoding="utf-8")
+        (global_home / "config.toml").write_text(
+            '[mcp_servers.evil]\ncommand = "steal-secrets"\n', encoding="utf-8")
+        isolated_home = self.root / "isolated-home"
+
+        RUNNER.run_codex(
+            "codex", self.root, "prompt", "read-only", reporter,
+            {"CODEX_HOME": str(global_home), "PATH": "runner-path"},
+            codex_home=isolated_home, tools_disabled=True,
+        )
+
+        command = invoke.call_args.args[0]
+        self.assertIn("--ephemeral", command)
+        self.assertIn("--ignore-rules", command)
+        self.assertIn("shell_tool", command)
+        self.assertIn("multi_agent", command)
+        self.assertIn("tools.view_image=false", command)
+        self.assertIn('web_search="disabled"', command)
+        child_environment = invoke.call_args.args[4]
+        self.assertEqual(str(isolated_home), child_environment["CODEX_HOME"])
+        self.assertTrue((isolated_home / "auth.json").is_file())
+        self.assertFalse((isolated_home / "config.toml").exists())
 
 
 class UsageAccountingTest(unittest.TestCase):
@@ -886,18 +931,67 @@ class LinuxCodexAssistantTest(unittest.TestCase):
     def test_assistant_uses_read_only_sandbox_and_removes_temporary_data(self, run_codex: Mock) -> None:
         run_codex.return_value = (0, "只读答复", None, {})
         api = Mock()
-        claim = {"runId": "ac-test", "prompt": "请总结", "account": {"id": "aa1"}}
+        claim = {"runId": "ac-test", "claimToken": "attempt-new",
+                 "prompt": "请总结", "maxRuntimeSeconds": 1740,
+                 "account": {"id": "aa1"}}
 
-        RUNNER.execute_assistant_claim(api, claim, self.root, "codex", "git")
+        with patch.object(RUNNER.time, "monotonic", side_effect=[100.0, 100.0, 1841.0]):
+            RUNNER.execute_assistant_claim(
+                api, claim, self.root, "codex", "git",
+                {"PATH": "runner-path", "GH_TOKEN": "github-secret",
+                 "GITHUB_TOKEN": "other-secret"},
+            )
+            should_stop = run_codex.call_args.kwargs["should_stop"]
+            self.assertFalse(should_stop())
+            self.assertTrue(should_stop())
 
         self.assertEqual("read-only", run_codex.call_args.args[3])
         self.assertEqual(claim["account"], run_codex.call_args.kwargs["account"])
+        self.assertTrue(run_codex.call_args.kwargs["tools_disabled"])
+        self.assertEqual({"PATH": "runner-path"}, run_codex.call_args.args[5])
         self.assertFalse((self.root / ".wao-assistant" / "ac-test").exists())
         self.assertFalse((self.root / ".wao-assistant-codex-homes" / "ac-test").exists())
         api.post.assert_called_once_with(
-            "/api/ai/runner/assistant/ac-test/complete",
-            {"exitCode": 0, "response": "只读答复", "error": ""},
+            "/api/ai/runner/assistant-v2/ac-test/complete",
+            {"claimToken": "attempt-new", "exitCode": 0, "response": "只读答复", "error": ""},
         )
+
+    @patch.object(RUNNER, "run_codex")
+    def test_assistant_failure_does_not_return_partial_model_output(self, run_codex: Mock) -> None:
+        run_codex.return_value = (2, "原对话与未完成报告 [S1]", None, {})
+        api = Mock()
+        claim = {"runId": "ac-failed", "claimToken": "attempt-failed", "prompt": "请总结"}
+
+        RUNNER.execute_assistant_claim(api, claim, self.root, "codex", "git")
+
+        api.post.assert_called_once_with(
+            "/api/ai/runner/assistant-v2/ac-failed/complete",
+            {"claimToken": "attempt-failed", "exitCode": 2,
+             "response": "", "error": "Codex 执行失败（退出码 2）"},
+        )
+
+    @patch.object(RUNNER.time, "sleep")
+    @patch.object(RUNNER, "run_codex")
+    def test_assistant_completion_retries_when_first_v2_request_hits_old_server(
+            self, run_codex: Mock, sleep: Mock) -> None:
+        run_codex.return_value = (0, "只读答复", None, {})
+        api = Mock()
+        api.post.side_effect = [RuntimeError("old server returned 404"), None]
+        claim = {"runId": "ac-retry", "claimToken": "attempt-retry", "prompt": "请总结"}
+
+        RUNNER.execute_assistant_claim(api, claim, self.root, "codex", "git")
+
+        self.assertEqual(2, api.post.call_count)
+        self.assertEqual(
+            ["/api/ai/runner/assistant-v2/ac-retry/complete"] * 2,
+            [request.args[0] for request in api.post.call_args_list],
+        )
+        self.assertEqual(
+            {"claimToken": "attempt-retry", "exitCode": 0,
+             "response": "只读答复", "error": ""},
+            api.post.call_args_list[-1].args[1],
+        )
+        sleep.assert_called_once_with(2)
 
 
 class ScriptUpdateTest(unittest.TestCase):

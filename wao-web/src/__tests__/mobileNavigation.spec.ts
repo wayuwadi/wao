@@ -78,7 +78,17 @@ describe('手机底部模块导航', () => {
     const wrapper = await mountNavigation()
     const labels = wrapper.findAll('.item').map((item) => item.attributes('title'))
 
-    expect(labels).toEqual(expect.arrayContaining(['待办', '日历', '密码本', '自动化', '文件与图床', '游戏厅']))
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        '聊天复盘',
+        '待办',
+        '日历',
+        '密码本',
+        '自动化',
+        '文件与图床',
+        '游戏厅',
+      ]),
+    )
     wrapper.unmount()
   })
 

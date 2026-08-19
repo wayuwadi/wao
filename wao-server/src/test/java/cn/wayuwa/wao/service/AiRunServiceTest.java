@@ -593,6 +593,25 @@ class AiRunServiceTest {
     }
 
     @Test
+    void heartbeatAutomaticallyRequestsUpdateForAnOutdatedRunner() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setTokenHash("hashed-token");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(scripts.available()).thenReturn(true);
+        when(scripts.hash()).thenReturn("latest-hash");
+
+        AiRunnerDto dto = service.heartbeat(
+                "local-token", null, null, "old-hash", null, null, null, null, null);
+
+        assertThat(runner.getUpdateRequestedAt()).isNotNull();
+        assertThat(dto.updateRequested()).isTrue();
+        assertThat(dto.scriptUpToDate()).isFalse();
+        verify(runnerMapper).updateById(runner);
+    }
+
+    @Test
     void heartbeatStoresOnlyTheBoundedRunnerLogTail() {
         AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
         runner.setTokenHash("hashed-token");

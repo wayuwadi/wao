@@ -18,9 +18,10 @@ ADR-050 已把主、从节点改为先后发布，并为纯读请求增加容错
 
 - AI 专用 upstream 只承载会发生服务端供应商出站或明文凭据下发的接口：
   `/api/settings/ai-accounts/**`、`/api/ai/runner/accounts`、`/api/ai/runner/claim` 和
-  `/api/ai/runner/assistant/claim`。这些接口继续固定到具备 VPN 出口的 Linux 主节点，不回退 Windows。
+  `/api/ai/runner/assistant-v2/claim`。这些接口继续固定到具备 VPN 出口的 Linux 主节点，不回退 Windows。旧
+  `/api/ai/runner/assistant/claim` 已不存在，不得保留一条指向 404 的 Nginx 特例路由。
 - `/api/ai/goals`、`/api/ai/runs`、Runner 心跳、控制、进度和结果回传等编排接口走普通双节点 upstream。
-  入队时只校验账号存在、启用状态和 provider，不读取凭据；令牌续期延后到 Runner 领取阶段。
+  其中 `/api/ai/runner/assistant-v2/{runId}/complete` 是无凭据的 CAS 结果回传，也走普通双节点 upstream。入队时只校验账号存在、启用状态和 provider，不读取凭据；令牌续期延后到 Runner 领取阶段。
 - 天人解读的 SSE 长请求按 ADR-047 保持 Linux 专用 upstream 与 330 秒超时，本 ADR 不改变该边界。
 - CD 保持 ADR-050 的 Windows 从节点→云前端/Nginx→Linux 主节点顺序。正式发布前先把摘流脚本和模板
   安装到云端，并移除已由主配置接管的旧 Game / Insight 路由片段；发布一个当前健康的应用节点前，

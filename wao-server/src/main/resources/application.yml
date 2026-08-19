@@ -27,6 +27,12 @@ spring:
       max-request-size: 52MB
   jackson:
     time-zone: Asia/Shanghai
+    parser:
+      # 聊天复盘等严格 JSON 入口不允许重复键被“后值覆盖前值”。
+      strict-duplicate-detection: true
+    deserialization:
+      # 拒绝首个 JSON 根值之后追加的第二个对象或其他 token。
+      fail-on-trailing-tokens: true
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
@@ -56,7 +62,16 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  chat-review:
+    # 共享聊天复盘由所有 API 节点候选执行，数据库租约保证唯一抢占。
+    # 回退时可设 WAO_CHAT_REVIEW_PROCESSING_ENABLED=false 停止新的后台推进，已归档和报告不删除。
+    processing-enabled: ${WAO_CHAT_REVIEW_PROCESSING_ENABLED:true}
   ai:
+    read-only:
+      # 非阻塞内部任务允许等待 Runner 上线；领取后改按实际执行时间独立计时。
+      queued-timeout: ${WAO_AI_READ_ONLY_QUEUED_TIMEOUT:60m}
+      running-timeout: ${WAO_AI_READ_ONLY_RUNNING_TIMEOUT:30m}
+      cleanup-enabled: ${WAO_AI_READ_ONLY_CLEANUP_ENABLED:true}
     evolution:
       # 额度同步必须从具备受控出口的 Linux 主节点发起；其它节点保持关闭。
       scheduler-enabled: ${WAO_AI_EVOLUTION_SCHEDULER_ENABLED:false}

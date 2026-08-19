@@ -87,7 +87,25 @@ erDiagram
 
 ## 内容 / 参考域（文档表，只读）
 
-文件、图床、日历、日程、AI 建议、目标仍以纯展示为主，采用「文档表」`(id, ord, payload JSON)`：payload 存完整 JSON（与前端类型一致），`ord` 保证展示顺序。读接口经 `ContentMapper`（`@Select payload`）+ `ContentService`（JSON 直通）返回，不为其定义 DTO。表：`file_item, image_item, calendar_event, schedule_item, suggestion, goal`。这些域当前只读；实际的文件上传存储、AI 建议生成等超出本轮范围，留待各自的 spec/ADR 立项。
+V3 的文件、图床、日历、日程、AI 建议、目标 fixtures 采用「文档表」`(id, ord, payload JSON)`：payload 存完整 JSON（与前端类型一致），`ord` 保证展示顺序。
+读接口经 `ContentMapper`（`@Select payload`）+ `ContentService`（JSON 直通）返回，不为其定义 DTO。表：`file_item, image_item, calendar_event, schedule_item, suggestion, goal`。
+真实图片与文件上传已分别迁入下述 `image_blob`（V11）和 `file_blob`（V15）；其它 fixture 域的后续持久化仍由各自 spec / ADR 立项。
+
+### image_blob（V11 / V22 / V77）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(40) PK | 图片稳定 id，正文接口按此寻址 |
+| name / content_type | VARCHAR(255) / VARCHAR(100) | 安全文件名与 MIME 类型 |
+| byte_size | BIGINT | 图片字节数，单张最大 10MB |
+| source | VARCHAR(160) NULL | 来源描述，例如飞书群名或任务 |
+| content_hash | CHAR(64) NULL（V22） | 图片正文 SHA-256；`(content_hash, byte_size)` 普通索引支持写前查重 |
+| dedupe_key | CHAR(64) NULL（V77） | 仅 `deduplicate = true` 的服务端转存写 SHA-256；唯一索引 `uk_image_blob_dedupe_key` |
+| created_at | DATETIME | 落库时间；索引支持图床倒序列表 |
+| content | LONGBLOB | 图片二进制正文；元数据列表不读取 |
+
+飞书聊天图片等服务端去重写入先按摘要与字节数查询；两个节点仍并发插入时，nullable 唯一键只允许一个 `dedupe_key` 获胜，冲突方按 key 读取并复用赢家 id，
+不会重复保存同一 LONGBLOB。普通图床上传始终令 `dedupe_key = NULL`，利用 MySQL 唯一索引允许多个 NULL 的语义继续保留相同图片的独立记录。
 
 知识库、自动化、密钥库已从「文档表」升级为关系表（见下），不再只读。
 
@@ -154,6 +172,32 @@ erDiagram
 | ord | INT | 展示顺序 |
 | deleted_at / deleted_by | DATETIME / VARCHAR(32) NULL | 回收站：删除时间与删除人 |
 | cascade_del | TINYINT(1) | 1 = 随父级一起被删，恢复父级时一并恢复 |
+| auto_sync_scope | VARCHAR(128) NULL（V77） | 自动归档稳定来源；飞书群聊写 `chat_id`，普通文档和 migration 未匹配的旧自动文档为空 |
+| auto_sync_date | DATE NULL（V77） | 自动归档对应的上海自然日；与 scope 一起区分不同群的同日文档 |
+| auto_sync_version | BIGINT NULL（V77） | 数据库签发的飞书自动归档抓取版本；普通文档为空，只有更大版本能 CAS 覆盖自动归档正文 |
+
+V77 增加唯一索引 `uk_doc_auto_sync_identity(kb_id, auto_sync_scope, auto_sync_date)`，从数据库层禁止同一知识库、群和自然日出现两篇已标记归档；
+MySQL 允许多个含 NULL 的组合，因此普通文档和未回填旧文档不冲突。标题仍显示 `飞书群聊 · YYYY-MM-DD`，但不再作为跨群归档身份。
+
+### feishu_chat_archive_sequence（V77）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | TINYINT PK | 固定为 1 的全局序列行 |
+| next_value | BIGINT | 已签发的最新飞书聊天归档版本；同步消息查询前和 scoped 归档文档 `PATCH` 前都在事务中 `SELECT ... FOR UPDATE` 后递增 |
+
+V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id / chat-id`：仅在该知识库内匹配
+`auto = 1` 且标题满足 `飞书群聊 · YYYY-MM-DD` 的旧文档。同一知识库 / 标题的候选里，优先选未软删除文档的 `MIN(id)`；仅当全部候选都已软删除时，才选全部候选的 `MIN(id)`。
+被选中文档回填为当前群、标题日期和版本 0，以保留一篇原文的 `docId` / 链接，并避免存活副本与恢复后的已删副本同时可见。
+同标题其余旧文档及其它未匹配文档保持 NULL，运行时永不认领。
+
+每次飞书消息查询先签发跨节点单调版本，再发外部请求。归档写事务锁定知识库父行，并按精确身份查询包含软删除在内的全部文档；没有身份才创建并初始化身份 / 版本。
+命中时只有 `auto_sync_version IS NULL OR auto_sync_version < 新版本` 才原子更新正文，同时清空 `deleted_at / deleted_by`、重置 `cascade_del` 并移到目标月份目录，
+因此软删除后重同步复用同一 `docId`，之后恢复也不会产生双文档。旧查询晚到会失败，不返回新文档供旧批消息绑定为复盘来源；切换群后同日同步也不会覆盖旧群文档。
+
+已绑定身份的归档仍可手动编辑。服务端在文档 `PATCH` 修改标题、正文、链接或所在目录时，从同一全局序列签发 `nextVersion`，专用 CAS 只在
+`id = ? AND auto_sync_scope = ? AND auto_sync_date = ? AND auto_sync_version = expectedVersion AND deleted_at IS NULL` 匹配时，一次更新文档可编辑字段、`rev` 和 `auto_sync_version = nextVersion`。并发同步 / `PATCH` 先胜时影响 0 行并对外返回 409，不用普通 `updateById` 绕过归档版本。
+`PATCH` 修改保护于更旧的同步快照，但不改变“新一次自动同步可覆盖当日归档”的原有产品语义。完整文档树拖拽另走窄更新，只写 `folder_id / ord`，不更改正文、链接或 `auto_sync_version`、不签发序列；因此它不可能回写旧正文，且下一次自动同步可恢复固定月目录。V77 不创建数据库 trigger；旧二进制的兼容风险由首次发布的全节点静止窗口处理。
 
 ### doc_template（文档模板）
 | 列 | 类型 | 说明 |
@@ -216,11 +260,13 @@ erDiagram
 ### system_setting（系统级配置，V17）
 | 列 | 类型 | 说明 |
 |---|---|---|
-| cfg_key | VARCHAR(64) PK | 配置键，如 `feishu.webhook.url`、`feishu.chat-sync.app-secret`、`navigation.builtin-menus`（内置菜单名称、图标、分组、排序和显隐注册表） |
+| cfg_key | VARCHAR(64) PK | 配置键，如 `feishu.webhook.url`、`feishu.chat-sync.app-secret`、`navigation.builtin-menus`（内置菜单注册表）、`feishu.chat-review.speakers`（当前群与两位固定发言人） |
 | cfg_value | TEXT | 配置值；敏感键加密存储，密文带 `enc:` 前缀 |
 | updated_at | DATETIME | 最后修改时间 |
 
 全局唯一一份的键值配置。敏感值（webhook 地址、App Secret）复用 `VaultCryptoService` 的 AES-256-GCM 加密后落库，接口只回脱敏形态（`SettingService.mask`），明文只在服务端调飞书接口时解出来用；因此真实凭据既不进 Git 也不必写进环境变量。
+飞书同步配置保存多个 `feishu.chat-sync.*` 键时使用一个事务；读取 App、群、知识库和发送者映射时使用一次批量 SQL 的事务快照，避免调用方看到半套新配置。
+V77 首次发布临时使用 `deployment.v77.feishu-sync-status` 保留 automation 的最初状态，并用持久键 `deployment.v77.rollout-state` 记录 `in-progress / complete`。安全窗口只在 Flyway V77 成功记录与 `complete` 同时存在时结束；`complete-v77-rollout` 只在 Flyway V77 记录、状态保存键和目标 job 均恰好存在时，才在同一事务中恢复 job、写入 `complete` 并删除保存键；前置缺失时不写完成标记。
 
 ## AI Run 域（V18）
 
@@ -243,7 +289,7 @@ erDiagram
 心跳刷新）、并发槽位、令牌 SHA-256 哈希和最后心跳；不保存令牌明文。
 - `max_concurrency`：Runner 本地自报的最大并发线程数。
 - `admin_max_concurrency`：管理员在后台配置的线程数，存在时优先于 `max_concurrency` 生效。
-- `script_hash`：Runner 心跳自报的脚本 SHA-256，用于判断是否落后于服务端打包的最新版。
+- `script_hash`：Runner 心跳自报的脚本原始字节 SHA-256，与服务端当前构建内打包脚本的哈希精确比较。它不仅用于判断是否落后，也是 assistant-v2 无工具、attempt token、单调超时与清理能力的 fail-closed 门禁；未上报或不精确相等的节点不能领取该协议任务。
 - `update_requested_at`：后台一键下发脚本更新的时间；节点自更新后上报最新哈希时自动清除。
 - `log_tail` / `log_updated_at`（V48）：Runner 心跳上报的已脱敏日志尾部（最多 30,000 字符）及快照时间；
   完整日志仍只保留在执行电脑本机。
@@ -343,16 +389,22 @@ OAuth 下发前会先把快过期的 access token 续期。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
-| id | VARCHAR(32) PK | 一次页面问答 id |
-| member_id | VARCHAR(32) | 发起成员；同一成员只允许一个活动问答 |
+| id | VARCHAR(32) PK | 一次页面问答或服务端内部只读分析 id |
+| member_id | VARCHAR(32) | 页面问答的发起成员，或内部只读分析的 `internal-*` 操作标识；同一标识只允许一个活动运行 |
 | conversation_id / user_message_id | VARCHAR(32) NULL（V53） | 关联持久化会话和触发本次运行的用户消息 |
 | runner_id | VARCHAR(32) NULL | 实际领取问答的本地 Codex Runner |
-| status | VARCHAR(16) | queued / running / succeeded / failed |
-| prompt_text | MEDIUMTEXT NULL | 拼好的页面上下文与对话；完成后立即清空 |
+| claim_token | VARCHAR(64) NULL（V77） | 每次 Runner 领取签发的唯一 attempt token；历史运行重排或任何终态清空 |
+| status | VARCHAR(16) | 页面助手与五分钟同步兼容包装使用 queued / running；非阻塞 durable 内部只读任务使用 secure_queued / secure_running；终态为 succeeded / failed |
+| prompt_text | MEDIUMTEXT NULL | 拼好的页面上下文与对话；成功、失败或后台超时清理进入终态时立即清空 |
 | response_text / error_text | MEDIUMTEXT / TEXT NULL | 最终答复或可读错误 |
-| created_at / claimed_at / finished_at / updated_at | DATETIME(6) | 短期队列时间线 |
+| created_at / claimed_at / finished_at / updated_at | DATETIME(6) | 短期队列时间线；内部只读运行的入队、领取和终态全部由 MySQL `CURRENT_TIMESTAMP(6)` 写入 |
 
-这张表只负责把一次请求可靠交给 Runner；完成后仍清除拼装提示词。长期消息由 V53 的会话表保存，见 ADR-045。
+这张表只负责把一次请求可靠交给 Runner；完成时必须以 `id + runner_id + claim_token + 当前执行中状态` 原子 CAS，防止迟到的旧 attempt 覆盖终态。
+完成后仍清除拼装提示词和 `claim_token`；非阻塞 durable 内部任务由后台按 `secure_queued / secure_running` 超时阈值扫描，使用活动状态条件更新为失败并清空这两个字段，不依赖调用方继续查询。同步兼容包装使用普通 `queued / running`，保留五分钟调用等待与终止语义。
+内部只读任务的 `created_at / claimed_at / finished_at / updated_at` 与超时截止比较都使用数据库时钟；过期 SQL 以
+`DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL ... SECOND)` 比较 `created_at / claimed_at`，不让多 API 节点或 Runner 的本地时钟决定生命周期。`secure_running` 不经历 3 分钟 JVM stale requeue，只会正常完成或在默认 30 分钟的 DB 执行硬超时中失败。
+运行时不另存 `maxRuntimeSeconds`；assistant-v2 claim 根据执行硬超时扣除保护余量计算后下发（默认 1,740 秒），Runner 用本地单调时钟执行。
+长期消息由 V53 的会话表保存，见 ADR-045。
 
 ### ai_assistant_conversation / ai_assistant_message（V53）
 
@@ -664,6 +716,58 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 固定生成时的上海时区日期范围，三个计数字段记录当时纳入的已完成任务、成员私有 WAO AI 对话和飞书聊天归档覆盖；
 `sources_json` 只保存来源编号、类型、标题、日期与内部链接，`report_json` 保存四段结构化回顾，不重复保存原始聊天正文。
 
+## 共享聊天复盘域（V77）
+
+聊天复盘的当前群与两位分析对象保存在全局 `system_setting` 键 `feishu.chat-review.speakers`，值为
+`{chatId, speakerIds:[openId1,openId2]}`。不在该配置中复制展示名、飞书 App ID、Secret 或知识库凭据；群和归档知识库以当前
+飞书同步配置校验，两个不同 open_id 及展示名以当前 `feishu.chat-sync.senders` 已配置成员映射校验和解析。复盘配置读写不实时调用飞书成员 API。
+读取飞书同步多键配置使用一次批量 SQL 事务快照；创建运行时把群和知识库一并固化到运行记录。执行、重试和再次运行都会把当前群 / 知识库与快照比较，任一变化即失败。
+
+### chat_review_run
+
+`chat_review_run` 是纯追加的共享运行档案。运行进入 `SUCCEEDED` 后同一条记录就是可阅读报告；终态历史同时保留 `FAILED` 尝试。
+重试和按原参数再次运行都插入新记录，不 upsert 旧报告。
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 不可猜测的运行 id |
+| chat_id / chat_name | VARCHAR(128) / VARCHAR(255) | 发起时唯一飞书群的 id 与展示名快照 |
+| kb_id | VARCHAR(32) | 发起时飞书聊天归档知识库 id 快照；执行、重试和再次运行不得静默改用新知识库 |
+| speaker_one_id / speaker_two_id | VARCHAR(128) | 两位固定发言人的 open_id 快照；提取同批飞书消息时还必须同时满足 `sender_type == user`，机器人不得进入 AI 材料 |
+| speaker_one_name / speaker_two_name | VARCHAR(128) | 两人发起时的展示名快照，仅用于历史展示 |
+| start_date / end_date | DATE | 包含边界的上海自然日；服务层保证不早于 1970-01-01、范围 1–31 天且 end 不晚于上海当天 |
+| focus_text | VARCHAR(1000) NULL | 可选的本次重点快照；只影响分析关注点 |
+| stage | VARCHAR(16) | `WAITING / SYNCING / VERIFYING / ANALYZING / SUCCEEDED / FAILED` |
+| failed_stage | VARCHAR(16) NULL | 失败时的阶段快照，成功或尚未失败时为空 |
+| progress_current / progress_total | INT | 已完成同步日数 / 请求范围总日数，分母包含无有效目标消息的日期；全范围同步后 `VERIFYING / ANALYZING / SUCCEEDED` 一直保留 N/N，不改写为 0/1 或 1/1 |
+| processing_date | DATE NULL | `SYNCING` 期间正在处理的日期；避免使用 MySQL `CURRENT_DATE` 保留关键字，API 仍以 `currentDate` 返回 |
+| failed_date | DATE NULL | 某日同步失败时的具体日期；其它错误为空 |
+| message_count | INT | 全范围按 open_id 且 `sender_type == user` 精确匹配两位发言人的有效消息总数 |
+| ai_run_id | VARCHAR(32) NULL, FK→ai_assistant_run | 关联的非阻塞只读 Codex 运行；队列记录被清理时 `ON DELETE SET NULL` |
+| retry_of_id | VARCHAR(32) NULL, FK→chat_review_run | 重试新运行指回原失败运行；原记录不修改，`ON DELETE SET NULL` |
+| sources_json | JSON NULL | 保存全范围每日的 `S编号 / 日期 / kbId / documentId / 站内链接 / 过滤后消息数`；消息数可为 0，不保存聊天正文 |
+| report_json | JSON NULL | 仅在服务端验证通过后原子写入四段报告；conclusions 含“已明确：/ 暂定：/ 未解决：”三个非空分类，recommendations 以“AI 建议：”或同名标题开头；失败运行保持空 |
+| error_text | TEXT NULL | 真实的同步、资料或 AI / 验证错误，不含凭据或聊天正文；服务层限制为 2,000 字 |
+| created_by / created_by_name | VARCHAR(32) / VARCHAR(128) | 发起成员 id 与名称快照，仅供追溯；查询不按此字段隔离 |
+| worker_token / lease_until | VARCHAR(64) NULL / DATETIME(6) NULL | 双 API 节点 worker 的有期限数据库租约；领取、所有状态写入与 AI 运行关联均用它们做 fencing，并以数据库时钟续租 |
+| created_at / started_at / finished_at / updated_at | DATETIME(6) | 提交、首次执行、进入终态与最近持久化更新的时间；均由 MySQL `CURRENT_TIMESTAMP(6)` 写入，尚未开始或结束的时间为空 |
+| active_chat_id | VARCHAR(128) GENERATED STORED | stage 为四个活动值时固定为 `active`，终态时为 NULL；字段名保留 chat 语义但一期约束为全局活动槽位 |
+
+发给 AI 的动态材料不把展示名当成身份键。服务端按 `speaker_one_id / speaker_two_id` 稳定映射“对象A / 对象B”，参数分别保留 `label + name`，来源消息使用“对象A（姓名）/对象B（姓名）”。
+因此两个不同 open_id 即使同名，也不会在提示材料中合并。
+
+约束与索引：
+
+- `UNIQUE(active_chat_id)` 利用 MySQL 允许多个 NULL 的语义，从数据库层保证全局同时只有一条 `WAITING / SYNCING / VERIFYING / ANALYZING`；切换配置不会释放旧活动运行；
+- `(stage, created_at)` 支持 worker 按阶段扫描早期运行，领取时再以 `lease_until / worker_token` 做条件更新；
+- `(finished_at)` 支持按终态时间读取最近 60 条共享历史，`(ai_run_id)` 支持 AI 运行关联，`retry_of_id` 外键支持重试链追溯。
+
+页面创建只插入 `WAITING`。worker claim、续租以及 `ai_run_id` 关联统一使用 MySQL `CURRENT_TIMESTAMP(6)` 判断和延长租约，不依赖 JVM 时钟；
+阶段、进度、来源、报告、错误写入均使用带有效 `worker_token / lease_until` 的条件更新，影响 0 行时视为租约丢失。飞书同步在日边界、消息渲染和图片处理期间定期 heartbeat 续租。
+AI 运行插入与 `ai_run_id` 关联处在同一事务中，关联还要求当前阶段为 `VERIFYING`、`ai_run_id` 为空且数据库时钟下租约有效；失败时整体回滚，防止旧 worker 重复入队。
+返回 API 时，`createdAt / startedAt / finishedAt` 按上海时区转为带 `+08:00` 偏移的 RFC 3339 `date-time`，不返回无时区的本地时间字符串。
+不用 JVM 锁代替跨节点并发控制，外部飞书或 Codex 调用期间不持有长事务。
+
 课程正文是代码内版本化的原创学习材料，不进入业务表；日记录保存当时的 `lesson_id`，历史课程不会因下一轮
 推进而漂移。录音只保留在当前浏览器内存生成的临时 URL，不上传数据库或文件库；边界见 ADR-058。
 
@@ -755,4 +859,9 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V74__runner_codex_quota.sql`：保存 Runner 本地 Codex 脱敏额度，并触发现有 Codex 节点获取新版脚本（见 ADR-083）。
 - `V75__personal_workspace.sql`：保存按成员隔离、可关联项目的工作空间导航快照（见 ADR-085）。
 - `V76__project_engineering_memory.sql`：保存项目工程记忆及 AI Run 实际读写引用（见 ADR-087）。
+- `V77__chat_review.sql`：为 `doc` 增加群 / 自然日唯一归档身份、旧标题归档一次性回填、数据库单调版本与 CAS 栅栏，为服务端图片去重增加 nullable SHA-256 唯一键，
+  保存带知识库快照的共享聊天复盘运行，并为页面 / 内部 AI 队列增加领取 attempt token（见 ADR-088）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
+
+V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V77 链路，
+并覆盖全局活动唯一抢占、lease、归档身份与同步 / scoped 文档 `PATCH` 的全局版本 CAS、树拖拽窄更新不回写正文或版本、AI 入队关联回滚和 DB-time 超时清理；Docker 不可用时显式跳过。

@@ -116,6 +116,12 @@ const router = createRouter({
           meta: { module: 'life-review', tabKind: 'module' },
         },
         {
+          path: 'chat-reviews',
+          name: 'chat-reviews',
+          component: () => import('@/views/ChatReviewsView.vue'),
+          meta: { module: 'chat-reviews', tabKind: 'module' },
+        },
+        {
           path: 'knowledge',
           name: 'knowledge',
           component: () => import('@/views/KnowledgeView.vue'),

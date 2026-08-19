@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -14,6 +15,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.ConflictException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.domain.DocTemplateEntity;
@@ -79,7 +81,6 @@ public class KnowledgeService {
     public static final String MEMORY_FOLDER_ID = "kb-memory-f";
     private static final String NOTES_FOLDER_ID = "kb-notes-f";
     private static final Pattern CLIENT_DOC_ID = Pattern.compile("[A-Za-z0-9_-]{1,32}");
-
     private static final TypeReference<List<DocBlockDto>> BLOCKS_TYPE = new TypeReference<>() { };
     private static final TypeReference<List<DocLinkDto>> LINKS_TYPE = new TypeReference<>() { };
 
@@ -91,12 +92,13 @@ public class KnowledgeService {
     private final MemberMapper memberMapper;
     private final ObjectMapper json;
     private final FeishuTaskNotifier taskNotifier;
+    private final FeishuChatArchiveVersionService archiveVersions;
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(KnowledgeService.class);
 
     public KnowledgeService(KbGroupMapper groupMapper, KbMapper kbMapper, KbFolderMapper folderMapper,
             DocMapper docMapper, DocTemplateMapper templateMapper, MemberMapper memberMapper, ObjectMapper json,
-            FeishuTaskNotifier taskNotifier) {
+            FeishuTaskNotifier taskNotifier, FeishuChatArchiveVersionService archiveVersions) {
         this.groupMapper = groupMapper;
         this.kbMapper = kbMapper;
         this.folderMapper = folderMapper;
@@ -105,6 +107,7 @@ public class KnowledgeService {
         this.memberMapper = memberMapper;
         this.json = json;
         this.taskNotifier = taskNotifier;
+        this.archiveVersions = archiveVersions;
     }
 
     // ---------------- 分组 ----------------
@@ -284,7 +287,7 @@ public class KnowledgeService {
      */
     @Transactional
     public KbFolderEntity ensureAutoFolder(String kbId, String name) {
-        requireKb(kbId);
+        lockAliveKb(kbId);
         KbFolderEntity existing = folderMapper.selectOne(aliveFolders()
                 .eq(KbFolderEntity::getKbId, kbId).eq(KbFolderEntity::getName, name));
         if (existing != null) {
@@ -485,7 +488,9 @@ public class KnowledgeService {
                 }
                 doc.setFolderId(order.folderId());
                 doc.setOrd(index + 1);
-                docMapper.updateById(doc);
+                if (docMapper.updateTreeOrder(doc.getId(), kbId, order.folderId(), index + 1) != 1) {
+                    throw new ConflictException("文档树已在其他页面更新，请刷新后重试");
+                }
             }
         }
         if (!seenFolders.equals(validFolderIds) || !seenDocs.equals(docById.keySet())) {
@@ -687,7 +692,8 @@ public class KnowledgeService {
 
     private DocDto insertDoc(String kbId, String folderId, String title, String author, List<DocBlockDto> blocks,
             List<DocLinkDto> links) {
-        return insertDoc("d" + System.currentTimeMillis(), kbId, folderId, title, author, blocks, links);
+        return insertDoc("d" + UUID.randomUUID().toString().replace("-", "").substring(0, 31),
+                kbId, folderId, title, author, blocks, links);
     }
 
     private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
@@ -732,17 +738,21 @@ public class KnowledgeService {
      */
     @Transactional
     public DocDto upsertAutoDoc(String kbId, String folderId, String title, List<DocBlockDto> blocks) {
-        requireKb(kbId);
+        lockAliveKb(kbId);
         KbFolderEntity folder = requireFolder(kbId, folderId);
         DocEntity existing = docMapper.selectList(aliveDocs()
                         .eq(DocEntity::getFolderId, folder.getId()).eq(DocEntity::getTitle, title))
                 .stream().findFirst().orElse(null);
         if (existing == null) {
             DocDto created = insertDoc(kbId, folder.getId(), title, "auto", blocks);
-            DocEntity e = requireDoc(created.id());
-            e.setAuto(true);
-            docMapper.updateById(e);
-            return toDto(e, docMapper.selectList(aliveDocs()));
+            DocEntity inserted = requireDoc(created.id());
+            inserted.setAuto(true);
+            docMapper.updateById(inserted);
+            return toDto(inserted, docMapper.selectList(aliveDocs()));
+        }
+        if (existing.getAutoSyncScope() != null && !existing.getAutoSyncScope().isBlank()
+                && existing.getAutoSyncDate() != null) {
+            throw new ConflictException("该文档已绑定稳定归档身份，必须使用带版本的同步路径");
         }
         existing.setBlocksJson(write(blocks));
         existing.setAuto(true);
@@ -752,9 +762,68 @@ public class KnowledgeService {
         return toDto(existing, docMapper.selectList(aliveDocs()));
     }
 
+    /**
+     * 按稳定来源与自然日幂等覆盖自动归档，并用数据库签发版本拒绝旧快照晚到。
+     *
+     * <p>V77 会根据迁移当时的唯一群配置回填旧文档身份，保留原文档 id 和链接。
+     * 运行时不会猜测尚未标记的文档属于哪个群；切换群后同日会建立独立文档。
+     *
+     * @param kbId 目标知识库 id
+     * @param folderId 目标文件夹 id
+     * @param title 文档标题
+     * @param blocks 正文块
+     * @param syncScope 稳定来源标识（飞书群聊使用 chat_id）
+     * @param syncDate 归档自然日
+     * @param syncVersion 抓取前签发的单调版本
+     * @return 实际保存在知识库中的文档
+     */
+    @Transactional
+    public DocDto upsertAutoDoc(String kbId, String folderId, String title,
+            List<DocBlockDto> blocks, String syncScope, LocalDate syncDate, long syncVersion) {
+        lockAliveKb(kbId);
+        KbFolderEntity folder = requireFolder(kbId, folderId);
+        DocEntity existing = docMapper.selectList(new LambdaQueryWrapper<DocEntity>()
+                        .eq(DocEntity::getKbId, kbId)
+                        .eq(DocEntity::getAutoSyncScope, syncScope)
+                        .eq(DocEntity::getAutoSyncDate, syncDate))
+                .stream().findFirst().orElse(null);
+        if (existing == null) {
+            DocDto created = insertDoc(kbId, folder.getId(), title, "auto", blocks);
+            if (docMapper.initializeAutoArchive(created.id(), syncScope, syncDate, syncVersion) != 1) {
+                throw new IllegalStateException("自动归档文档初始化失败");
+            }
+            DocEntity e = requireDoc(created.id());
+            return toDto(e, docMapper.selectList(aliveDocs()));
+        }
+        if (docMapper.updateAutoArchive(existing.getId(), kbId, folder.getId(), title, write(blocks),
+                syncScope, syncDate, syncVersion) != 1) {
+            throw new StaleChatArchiveException();
+        }
+        DocEntity saved = requireDoc(existing.getId());
+        return toDto(saved, docMapper.selectList(aliveDocs()));
+    }
+
+    /**
+     * 自动归档以知识库父行作为数据库互斥锁。
+     *
+     * <p>手动补录、定时同步和聊天复盘都会经过这条路径；即使分布在不同 API 节点，
+     * 也必须等前一个事务完成后再查找同名文档，不依赖 JVM 锁。
+     */
+    private KbEntity lockAliveKb(String kbId) {
+        KbEntity kb = kbMapper.selectByIdForUpdate(kbId);
+        if (kb == null || kb.getDeletedAt() != null) {
+            throw new NotFoundException("知识库不存在：" + kbId);
+        }
+        return kb;
+    }
+
     /** 局部更新文档：标题 / 正文块 / 出链 / 所在文件夹。正文或标题变化时版本号 +1。 */
     public DocDto updateDoc(String id, PatchDocRequest req) {
         DocEntity e = requireDoc(id);
+        if (e.getAutoSyncScope() != null && !e.getAutoSyncScope().isBlank() && e.getAutoSyncDate() != null
+                && e.getAutoSyncVersion() != null) {
+            return updateVersionedArchive(e, req);
+        }
         boolean contentChanged = false;
         if (req.title() != null && !req.title().equals(e.getTitle())) {
             e.setTitle(req.title());
@@ -780,6 +849,31 @@ public class KnowledgeService {
         return toDto(e, docMapper.selectList(aliveDocs()));
     }
 
+    private DocDto updateVersionedArchive(DocEntity e, PatchDocRequest req) {
+        String title = req.title() == null ? e.getTitle() : req.title();
+        String blocks = req.blocks() == null ? e.getBlocksJson() : write(req.blocks());
+        String links = req.links() == null ? e.getLinksJson() : write(req.links());
+        String folderId = e.getFolderId();
+        if (req.folderId() != null && !req.folderId().isBlank()) {
+            requireFolder(e.getKbId(), req.folderId());
+            folderId = req.folderId();
+        }
+        boolean contentChanged = !Objects.equals(title, e.getTitle())
+                || !Objects.equals(blocks, e.getBlocksJson());
+        boolean changed = contentChanged || !Objects.equals(links, e.getLinksJson())
+                || !Objects.equals(folderId, e.getFolderId());
+        if (!changed) return toDto(e, docMapper.selectList(aliveDocs()));
+
+        long nextVersion = archiveVersions.nextVersion();
+        int nextRev = contentChanged ? rev(e) + 1 : rev(e);
+        if (docMapper.updateAutoArchiveManually(e.getId(), folderId, title, blocks, links, nextRev,
+                e.getAutoSyncScope(), e.getAutoSyncDate(), e.getAutoSyncVersion(), nextVersion) != 1) {
+            throw new ConflictException("飞书聊天归档已被同步更新，请刷新后重试");
+        }
+        DocEntity saved = requireDoc(e.getId());
+        return toDto(saved, docMapper.selectList(aliveDocs()));
+    }
+
     /**
      * 把文档移入回收站。
      *
@@ -803,7 +897,7 @@ public class KnowledgeService {
         d.setDeletedAt(now);
         d.setDeletedBy(memberId);
         d.setCascadeDel(cascade);
-        docMapper.updateById(d);
+        docMapper.markDeleted(d.getId(), now, memberId, cascade);
     }
 
     // ---------------- 回收站 ----------------
@@ -926,7 +1020,7 @@ public class KnowledgeService {
         d.setDeletedAt(null);
         d.setDeletedBy(null);
         d.setCascadeDel(false);
-        docMapper.updateById(d);
+        docMapper.clearDeleted(d.getId());
     }
 
     /**

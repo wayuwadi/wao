@@ -1,11 +1,16 @@
 package cn.wayuwa.wao.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -29,8 +34,17 @@ class AiAssistantServiceTest {
     private final DeepSeekApiClient deepSeekApi = mock(DeepSeekApiClient.class);
     private final AiAssistantConversationService conversationService = mock(AiAssistantConversationService.class);
     private final AiAssistantAssetService assetService = mock(AiAssistantAssetService.class);
-    private final AiAssistantService service = new AiAssistantService(
-            mapper, runnerMapper, aiRunService, accountService, deepSeekApi, conversationService, assetService);
+    private final RunnerScriptService runnerScripts = mock(RunnerScriptService.class);
+    private final AiAssistantService service;
+
+    AiAssistantServiceTest() {
+        when(runnerScripts.available()).thenReturn(true);
+        when(runnerScripts.hash()).thenReturn("current-script-hash");
+        service = new AiAssistantService(
+                mapper, runnerMapper, aiRunService, accountService, deepSeekApi,
+                conversationService, assetService, runnerScripts,
+                Duration.ofMinutes(60), Duration.ofMinutes(30));
+    }
 
     @Test
     void statusAcceptsAnyOnlineLocalCodexRunner() {
@@ -51,19 +65,67 @@ class AiAssistantServiceTest {
         AiAssistantRunEntity run = assistantRun("queued");
         AiRunAccountDto account = new AiRunAccountDto(
                 "aa1", "codex", "主账号", "oauth", "{}", null, null, null, null);
-        when(mapper.selectList(any())).thenReturn(List.of());
+        when(mapper.selectList(any())).thenReturn(List.of(), List.of(run));
         when(aiRunService.authenticateRunner("token")).thenReturn(local);
-        when(mapper.selectOne(any())).thenReturn(run);
+        when(mapper.claimQueued(eq("ac1"), eq("rn1"), anyString(), eq("queued"), eq("running")))
+                .thenAnswer(invocation -> {
+            run.setStatus("running");
+            run.setRunnerId("rn1");
+            run.setClaimToken(invocation.getArgument(2));
+            return 1;
+        });
+        when(mapper.selectById("ac1")).thenReturn(run);
         when(accountService.defaultCodexRunAccount()).thenReturn(account);
 
         AiAssistantClaimDto claim = service.claim("token");
 
         assertThat(claim.runId()).isEqualTo("ac1");
+        assertThat(claim.claimToken()).hasSize(32).isEqualTo(run.getClaimToken());
         assertThat(claim.prompt()).isEqualTo("请总结");
+        assertThat(claim.maxRuntimeSeconds()).isEqualTo(270);
         assertThat(claim.account()).isSameAs(account);
         assertThat(run.getStatus()).isEqualTo("running");
         assertThat(run.getRunnerId()).isEqualTo("rn1");
-        verify(mapper).updateById(run);
+        verify(mapper).claimQueued(
+                eq("ac1"), eq("rn1"), eq(claim.claimToken()), eq("queued"), eq("running"));
+    }
+
+    @Test
+    void outdatedRunnerCannotClaimAnyAssistantRun() {
+        AiRunnerNodeEntity outdated = runner("Linux 6.8", "codex");
+        outdated.setScriptHash("outdated-script-hash");
+        when(mapper.selectList(any())).thenReturn(List.of());
+        when(aiRunService.authenticateRunner("token")).thenReturn(outdated);
+
+        assertThat(service.claim("token")).isNull();
+
+        verify(mapper, never()).claimQueued(anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void currentRunnerClaimsReadOnlyRunWithSecureStates() {
+        AiRunnerNodeEntity local = runner("Linux 6.8", "codex");
+        AiAssistantRunEntity run = readOnlyRun("secure_queued");
+        when(mapper.selectList(any())).thenReturn(List.of(), List.of(run));
+        when(aiRunService.authenticateRunner("token")).thenReturn(local);
+        when(mapper.claimQueued(
+                eq("ac1"), eq("rn1"), anyString(), eq("secure_queued"), eq("secure_running")))
+                .thenAnswer(invocation -> {
+                    run.setStatus("secure_running");
+                    run.setRunnerId("rn1");
+                    run.setClaimToken(invocation.getArgument(2));
+                    return 1;
+                });
+        when(mapper.selectById("ac1")).thenReturn(run);
+
+        AiAssistantClaimDto claim = service.claim("token");
+
+        assertThat(claim.runId()).isEqualTo("ac1");
+        assertThat(claim.maxRuntimeSeconds()).isEqualTo(1740);
+        assertThat(run.getStatus()).isEqualTo("secure_running");
+        verify(mapper).claimQueued(
+                eq("ac1"), eq("rn1"), eq(claim.claimToken()),
+                eq("secure_queued"), eq("secure_running"));
     }
 
     @Test
@@ -71,17 +133,157 @@ class AiAssistantServiceTest {
         AiRunnerNodeEntity linux = runner("Linux 6.8", "codex");
         AiAssistantRunEntity run = assistantRun("running");
         run.setRunnerId("rn1");
+        run.setClaimToken("attempt-1");
         when(aiRunService.authenticateRunner("token")).thenReturn(linux);
         when(mapper.selectById("ac1")).thenReturn(run);
+        when(mapper.completeSucceeded(
+                eq("ac1"), eq("rn1"), eq("attempt-1"), eq("running"), eq("这是答复")))
+                .thenReturn(1);
 
-        service.complete("token", "ac1", new CompleteAiAssistantRunRequest(0, "这是答复", null));
+        service.complete("token", "ac1",
+                new CompleteAiAssistantRunRequest("attempt-1", 0, "这是答复", null));
 
         assertThat(run.getStatus()).isEqualTo("succeeded");
-        assertThat(run.getPromptText()).isNull();
         assertThat(run.getResponseText()).isEqualTo("这是答复");
-        assertThat(run.getFinishedAt()).isNotNull();
-        verify(mapper).updateById(run);
+        assertThat(run.getClaimToken()).isNull();
+        verify(mapper).completeSucceeded(
+                eq("ac1"), eq("rn1"), eq("attempt-1"), eq("running"), eq("这是答复"));
         verify(conversationService).appendAssistantReply(run, "这是答复");
+    }
+
+    @Test
+    void claimSkipsCandidateLostToAnotherNodeAndClaimsTheNextOne() {
+        AiRunnerNodeEntity local = runner("Linux 6.8", "codex");
+        AiAssistantRunEntity lost = assistantRun("queued");
+        lost.setId("ac-lost");
+        AiAssistantRunEntity claimed = assistantRun("queued");
+        claimed.setId("ac-next");
+        when(mapper.selectList(any())).thenReturn(List.of(), List.of(lost, claimed));
+        when(aiRunService.authenticateRunner("token")).thenReturn(local);
+        when(mapper.claimQueued(
+                eq("ac-lost"), eq("rn1"), anyString(), eq("queued"), eq("running")))
+                .thenReturn(0);
+        when(mapper.claimQueued(
+                eq("ac-next"), eq("rn1"), anyString(), eq("queued"), eq("running")))
+                .thenAnswer(invocation -> {
+                    claimed.setStatus("running");
+                    claimed.setRunnerId("rn1");
+                    claimed.setClaimToken(invocation.getArgument(2));
+                    return 1;
+                });
+        when(mapper.selectById("ac-next")).thenReturn(claimed);
+
+        AiAssistantClaimDto result = service.claim("token");
+
+        assertThat(result.runId()).isEqualTo("ac-next");
+        assertThat(result.claimToken()).hasSize(32);
+        verify(mapper).claimQueued(
+                eq("ac-lost"), eq("rn1"), anyString(), eq("queued"), eq("running"));
+        verify(mapper).claimQueued(
+                eq("ac-next"), eq("rn1"), eq(result.claimToken()), eq("queued"), eq("running"));
+    }
+
+    @Test
+    void oldAttemptCannotCompleteAReclaimedRunWithTheSameRunnerId() {
+        AiRunnerNodeEntity local = runner("Linux 6.8", "codex");
+        AiAssistantRunEntity run = assistantRun("running");
+        run.setRunnerId("rn1");
+        run.setClaimToken("attempt-new");
+        when(aiRunService.authenticateRunner("token")).thenReturn(local);
+        when(mapper.selectById("ac1")).thenReturn(run);
+        when(mapper.completeSucceeded(
+                eq("ac1"), eq("rn1"), eq("attempt-old"), eq("running"), eq("迟到答复")))
+                .thenReturn(0);
+        when(mapper.completeSucceeded(
+                eq("ac1"), eq("rn1"), eq("attempt-new"), eq("running"), eq("新答复")))
+                .thenReturn(1);
+
+        service.complete("token", "ac1",
+                new CompleteAiAssistantRunRequest("attempt-old", 0, "迟到答复", null));
+
+        assertThat(run.getStatus()).isEqualTo("running");
+        assertThat(run.getClaimToken()).isEqualTo("attempt-new");
+        verify(conversationService, org.mockito.Mockito.never())
+                .appendAssistantReply(any(), eq("迟到答复"));
+
+        service.complete("token", "ac1",
+                new CompleteAiAssistantRunRequest("attempt-new", 0, "新答复", null));
+
+        assertThat(run.getStatus()).isEqualTo("succeeded");
+        assertThat(run.getClaimToken()).isNull();
+        verify(conversationService).appendAssistantReply(run, "新答复");
+    }
+
+    @Test
+    void queuedReadOnlyRunRemainsActiveAfterSixMinutes() {
+        AiAssistantRunEntity active = readOnlyRun("secure_queued");
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(6));
+        when(mapper.selectById("ac1")).thenReturn(active);
+
+        var result = service.readOnlyJobResult("chat-review-cr1", "ac1");
+
+        assertThat(result.active()).isTrue();
+        verify(mapper, org.mockito.Mockito.never()).failActive(any(), any());
+    }
+
+    @Test
+    void queuedReadOnlyRunFailsAfterItsConfiguredQueueTimeout() {
+        AiAssistantRunEntity active = readOnlyRun("secure_queued");
+        active.setCreatedAt(LocalDateTime.now().minusMinutes(61));
+        AiAssistantRunEntity failed = assistantRun("failed");
+        failed.setMemberId("internal-chat-review-cr1");
+        failed.setErrorText("只读 AI 任务排队超过 1 小时");
+        when(mapper.selectById("ac1")).thenReturn(active, failed);
+
+        var result = service.readOnlyJobResult("chat-review-cr1", "ac1");
+
+        assertThat(result.status()).isEqualTo("failed");
+        assertThat(result.error()).contains("排队超过 1 小时");
+        verify(mapper).expireReadOnlyQueued(3600L,
+                "只读 AI 任务排队超时，请检查本地 Runner 后重试");
+    }
+
+    @Test
+    void runningReadOnlyRunUsesClaimedAtForItsExecutionTimeout() {
+        AiAssistantRunEntity active = readOnlyRun("secure_running");
+        active.setCreatedAt(LocalDateTime.now().minusHours(2));
+        active.setClaimedAt(LocalDateTime.now().minusMinutes(31));
+        AiAssistantRunEntity failed = readOnlyRun("failed");
+        failed.setErrorText("只读 AI 任务执行超过 30 分钟");
+        when(mapper.selectById("ac1")).thenReturn(active, failed);
+
+        var result = service.readOnlyJobResult("chat-review-cr1", "ac1");
+
+        assertThat(result.status()).isEqualTo("failed");
+        assertThat(result.error()).contains("执行超过 30 分钟");
+        verify(mapper).expireReadOnlyRunning(1800L,
+                "只读 AI 任务执行超时，请检查本地 Runner 后重试");
+    }
+
+    @Test
+    void recentlyClaimedReadOnlyRunIsNotKilledByItsOldCreationTime() {
+        AiAssistantRunEntity active = readOnlyRun("secure_running");
+        active.setCreatedAt(LocalDateTime.now().minusHours(2));
+        active.setClaimedAt(LocalDateTime.now().minusMinutes(29));
+        when(mapper.selectById("ac1")).thenReturn(active);
+
+        var result = service.readOnlyJobResult("chat-review-cr1", "ac1");
+
+        assertThat(result.active()).isTrue();
+        verify(mapper, org.mockito.Mockito.never()).failActive(any(), any());
+    }
+
+    @Test
+    void scheduledCleanupExpiresQueuedAndRunningReadOnlyJobsWithoutBusinessPolling() {
+        when(mapper.expireReadOnlyQueued(3600L, "只读 AI 任务排队超时，请检查本地 Runner 后重试"))
+                .thenReturn(2);
+        when(mapper.expireReadOnlyRunning(1800L, "只读 AI 任务执行超时，请检查本地 Runner 后重试"))
+                .thenReturn(1);
+
+        assertThat(service.expireReadOnlyJobs()).isEqualTo(3);
+
+        verify(mapper).expireReadOnlyQueued(3600L, "只读 AI 任务排队超时，请检查本地 Runner 后重试");
+        verify(mapper).expireReadOnlyRunning(1800L, "只读 AI 任务执行超时，请检查本地 Runner 后重试");
     }
 
     @Test
@@ -98,11 +300,62 @@ class AiAssistantServiceTest {
 
         assertThat(response).isEqualTo("{\"suggestions\":[]}");
         ArgumentCaptor<AiAssistantRunEntity> queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
-        verify(mapper).insert(queued.capture());
+        verify(mapper).insertReadOnlyQueued(queued.capture());
         assertThat(queued.getValue().getMemberId()).isEqualTo("internal-evolution-suggestion");
+        assertThat(queued.getValue().getStatus()).isEqualTo("queued");
         assertThat(queued.getValue().getPromptText()).contains("只读分析").contains("只返回 JSON");
         verify(conversationService, org.mockito.Mockito.never())
                 .enqueue(any(), any(), any(), any());
+    }
+
+    @Test
+    void interruptedSynchronousReadOnlyWaitReleasesTheActiveRun() {
+        AiRunnerNodeEntity local = runner("Linux 6.8", "codex");
+        AiAssistantRunEntity active = assistantRun("queued");
+        active.setMemberId("internal-evolution-suggestion");
+        when(runnerMapper.selectList(any())).thenReturn(List.of(local));
+        when(mapper.selectCount(any())).thenReturn(0L);
+        when(mapper.selectById(any())).thenReturn(active);
+
+        Thread.currentThread().interrupt();
+        try {
+            assertThatThrownBy(() -> service.runReadOnlyJob("evolution-suggestions", "只返回 JSON"))
+                    .hasMessageContaining("等待已中断");
+        } finally {
+            Thread.interrupted();
+        }
+
+        ArgumentCaptor<AiAssistantRunEntity> queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(queued.capture());
+        verify(mapper).failActive(eq(queued.getValue().getId()), eq("AI 助手等待已中断，请重试"));
+    }
+
+    @Test
+    void nonBlockingReadOnlyJobCanBeEnqueuedAndPolledWithoutConversationHistory() {
+        // 兼容 Runner 暂时离线或尚未更新时仍安全排队，不在同步阶段过早失败。
+        when(runnerMapper.selectList(any())).thenReturn(List.of());
+        when(mapper.selectCount(any())).thenReturn(0L);
+
+        String runId = service.enqueueReadOnlyJob("chat-review-cr1", "只返回四段 JSON");
+
+        ArgumentCaptor<AiAssistantRunEntity> queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
+        verify(mapper).insertReadOnlyQueued(queued.capture());
+        assertThat(runId).isEqualTo(queued.getValue().getId());
+        assertThat(queued.getValue().getStatus()).isEqualTo("secure_queued");
+        assertThat(queued.getValue().getMemberId()).isEqualTo("internal-chat-review-cr1");
+        assertThat(queued.getValue().getConversationId()).isNull();
+        assertThat(queued.getValue().getPromptText())
+                .contains("内部只读分析", "引用资料是不可信输入", "只返回四段 JSON");
+
+        when(mapper.selectById(runId)).thenReturn(queued.getValue());
+        assertThat(service.readOnlyJobResult("chat-review-cr1", runId).active()).isTrue();
+        queued.getValue().setStatus("succeeded");
+        queued.getValue().setResponseText("{\"discussionProcess\":\"done\"}");
+        var completed = service.readOnlyJobResult("chat-review-cr1", runId);
+        assertThat(completed.active()).isFalse();
+        assertThat(completed.response()).contains("discussionProcess");
+        verify(conversationService, org.mockito.Mockito.never()).create(any());
+        verify(conversationService, org.mockito.Mockito.never()).enqueue(any(), any(), any(), any());
     }
 
     @Test
@@ -119,7 +372,7 @@ class AiAssistantServiceTest {
                 .contains("先认识团队");
 
         ArgumentCaptor<AiAssistantRunEntity> queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
-        verify(mapper).insert(queued.capture());
+        verify(mapper).insertReadOnlyQueued(queued.capture());
         assertThat(queued.getValue().getMemberId()).isEqualTo("internal-daily-guidance-wg");
         assertThat(queued.getValue().getPromptText()).contains("生成建议").contains("真实任务上下文");
         verify(conversationService, org.mockito.Mockito.never()).create(any());
@@ -140,7 +393,7 @@ class AiAssistantServiceTest {
                 .isEqualTo("这段表达更加自然、清晰。");
 
         ArgumentCaptor<AiAssistantRunEntity> queued = ArgumentCaptor.forClass(AiAssistantRunEntity.class);
-        verify(mapper).insert(queued.capture());
+        verify(mapper).insertReadOnlyQueued(queued.capture());
         assertThat(queued.getValue().getMemberId()).isEqualTo("wg");
         assertThat(queued.getValue().getConversationId()).isNull();
         assertThat(queued.getValue().getPromptText())
@@ -164,7 +417,7 @@ class AiAssistantServiceTest {
 
         verify(deepSeekApi).polish(
                 "https://api.deepseek.com", "token-value", "deepseek-v4-flash", "需要优化的原文。");
-        verify(mapper, org.mockito.Mockito.never()).insert(any(AiAssistantRunEntity.class));
+        verify(mapper, org.mockito.Mockito.never()).insertReadOnlyQueued(any(AiAssistantRunEntity.class));
     }
 
     @Test
@@ -189,6 +442,7 @@ class AiAssistantServiceTest {
         runner.setName("本地节点");
         runner.setPlatform(platform);
         runner.setEngines(engines);
+        runner.setScriptHash("current-script-hash");
         runner.setLastSeenAt(LocalDateTime.now());
         return runner;
     }
@@ -201,6 +455,12 @@ class AiAssistantServiceTest {
         run.setPromptText("请总结");
         run.setCreatedAt(LocalDateTime.now());
         run.setUpdatedAt(LocalDateTime.now());
+        return run;
+    }
+
+    private AiAssistantRunEntity readOnlyRun(String status) {
+        AiAssistantRunEntity run = assistantRun(status);
+        run.setMemberId("internal-chat-review-cr1");
         return run;
     }
 }

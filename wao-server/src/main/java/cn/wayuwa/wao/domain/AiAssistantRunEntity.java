@@ -3,6 +3,8 @@ package cn.wayuwa.wao.domain;
 import java.time.LocalDateTime;
 
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 
 /** 页面 AI 助手的一次短期 Codex 队列记录。 */
@@ -15,7 +17,10 @@ public class AiAssistantRunEntity {
     private String conversationId;
     private String userMessageId;
     private String runnerId;
+    private String claimToken;
     private String status;
+    /** 终态时必须真正写回 NULL，不受 MyBatis-Plus 默认忽略 null 字段影响。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String promptText;
     private String responseText;
     private String errorText;
@@ -34,6 +39,8 @@ public class AiAssistantRunEntity {
     public void setUserMessageId(String userMessageId) { this.userMessageId = userMessageId; }
     public String getRunnerId() { return runnerId; }
     public void setRunnerId(String runnerId) { this.runnerId = runnerId; }
+    public String getClaimToken() { return claimToken; }
+    public void setClaimToken(String claimToken) { this.claimToken = claimToken; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public String getPromptText() { return promptText; }

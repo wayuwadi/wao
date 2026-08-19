@@ -51,7 +51,7 @@ CD 流水线也会跑同一个探针，但只作为告警：失败时 run 摘要
 
 ## 云服务器
 
-当前状态：已完成。`wao.wayuwa.cn` 已签发并自动续期 HTTPS 证书，静态前端已上线，Nginx 已配置 Linux/Windows 双 Gateway 上游；云机保持前端-only，不运行 Docker。AI 账号、集中凭据下发和 Runner 领取凭据固定走具备 VPN 出口的 Linux 主节点；目标创建、运行编排、心跳与结果回传和普通 API 一样走双节点。Linux 的 Codex OAuth 客户端再经 host-network 内部代理复用主机 VPN，阿里云 VM 本身不需要 VPN。CD 按 ADR-050 顺序发布，并在应用节点重启前按 ADR-051 从云 Nginx 主动摘流。
+当前状态：已完成。`wao.wayuwa.cn` 已签发并自动续期 HTTPS 证书，静态前端已上线，Nginx 已配置 Linux/Windows 双 Gateway 上游；云机保持前端-only，不运行 Docker。AI 账号、集中凭据下发和 Runner 领取凭据（包括 `/api/ai/runner/assistant-v2/claim`）固定走具备 VPN 出口的 Linux 主节点；目标创建、运行编排、心跳与结果回传（包括 `/api/ai/runner/assistant-v2/{runId}/complete`）和普通 API 一样走双节点。旧 `/api/ai/runner/assistant/claim` 不再映射，Nginx 也不保留该旧特例。Linux 的 Codex OAuth 客户端再经 host-network 内部代理复用主机 VPN，阿里云 VM 本身不需要 VPN。CD 按 ADR-050 顺序发布，并在应用节点重启前按 ADR-051 从云 Nginx 主动摘流。
 
 1. 把专用部署公钥加入 root 的 `authorized_keys`，将代码放在 `/opt/wao`；云机不复制包含数据库凭据的 `deploy/.env`。
 2. 将 `wao.wayuwa.cn` 的 A 记录指向 `8.136.152.131`，安全组放行 22、80、443。
@@ -65,6 +65,32 @@ CD 流水线也会跑同一个探针，但只作为告警：失败时 run 摘要
 - 两个 DDNS 域名、公网端口映射和 `wao.wayuwa.cn` DNS 已生效；
 - 主、从节点已拥有同一份私有 `deploy/.env` 和对应 Gateway 证书；
 - 手工首发与数据复制验收通过后，再将 `DEPLOY_ENABLED` 设为 `true`。
+
+## V77 首次发布安全窗口
+
+V77 为飞书按日归档增加稳定身份和全局版本 CAS。旧 `wao-server` 不会签发版本，所以首次应用 V77 时不能使用日常“一个旧节点留在流量中”的滚动顺序。本次上线不创建 MySQL trigger：trigger 的 binlog / 权限、`DEFINER` 和与应用回滚无法事务化协调的风险过高。
+
+发布前确认：
+
+- Linux 主节点、Windows / WSL 从节点和云 Nginx 三个 SSH 目标都可达，两台应用节点都能执行 Docker Compose stop；从节点无法连接不是“可跳过”，而是本次 V77 窗口必须 fail-closed。
+- 云机已安装 `set-nginx-upstream-state.sh`，两个 upstream 状态可写；主库、复制与备份健康。
+- 不手工恢复飞书同步 job、不手工启动旧镜像，也不用 `workflow_dispatch` 或新 push 绕过已开始但未完成的窗口。CI 将 `deployment.v77.rollout-state` 作为持久 rollout marker，而不只看当次 push 的文件列表；该发布必须不可被后续 push 取消。
+
+`WAO Fast CD` 自动顺序：
+
+1. 在路由准备前先上传静止脚本并运行 `rollout-status`。脚本只在 Flyway schema history 已有 V77 成功记录且 `deployment.v77.rollout-state = complete` 时返回完成；任一条件不满足都执行以下安全流程。运行 `deploy/scripts/test-quiesce-wao-server.sh` 确认 Linux / Windows 静止脚本的 Compose 参数和 automation SQL 未漂移。
+2. 将 master 和 slave 两个云 Nginx upstream 都设为 `down`；用 8 秒有界探测确认 Windows 从节点可达，再向该节点上传 WSL 静止脚本与 Windows 包装脚本。从节点不可达时在暂停 job 和 migration 前 fail-closed。
+3. 执行 `pause-feishu-sync`：以 `INSERT IGNORE` 把 `job-feishu-chat-sync` 首次读到的状态保存到 `deployment.v77.feishu-sync-status`，写入 `deployment.v77.rollout-state = in-progress`，再暂停 job。重试不覆盖最初值，因此保留原来就暂停的语义，成功后也不会一律设为启用。
+4. 分别调用 `deploy/scripts/quiesce-wao-server.sh ... stop` 和 `deploy/scripts/quiesce-wao-server-windows.ps1 -Action stop`，确认主、从所有旧 `wao-server` 都已停止。任一节点无法确认时到此终止，不允许新容器执行 migration。
+5. 部署全新节点；第一个新 `wao-server` 启动时由 Flyway 执行 V77。只有运行新二进制且健康检查通过的节点可重新入流；不允许旧节点因发布脚本回滚而入流。
+6. 全新节点完成发布后执行 `complete-v77-rollout`：先确认 Flyway V77 成功记录、`deployment.v77.feishu-sync-status` 和 `job-feishu-chat-sync` 均恰好存在，再在同一事务中恢复 job、写入 `deployment.v77.rollout-state = complete` 并删除保存键。任一前置缺失或事务失败时都返回 `required`、继续保持 marker 未完成并让 workflow 失败，不伪报发布成功。该动作成功后立即再执行 `rollout-status`，只有仍返回 `complete` 才标记发布完成并恢复 master upstream。
+
+失败处理：
+
+- migration 前失败时不应有任何 schema 变更；修复 SSH、Docker 或 Nginx 问题后，由 `rollout-status` 在同一持久 marker 下继续安全流程。
+- migration 已开始后任一新节点部署失败，发布脚本可能先恢复它的旧镜像；维护窗口必须随即再次 stop 该旧容器。在 marker 未完成时 master upstream 保持 `down`，不通过旧二进制回滚 schema。
+- 只有确认在线节点全部运行新二进制、`/api/hello` 正常、Flyway 已记录 V77、飞书 job 已恢复原状态、`deployment.v77.rollout-state = complete` 且保存键已删除后，才解除维护窗口。如果仅 completion 失败，先保持 job 暂停和 master upstream down；确认新节点后再在 Linux 主节点重试
+  `sh deploy/scripts/quiesce-wao-server.sh master complete-v77-rollout`，不单独调用 `restore-feishu-sync`、不猜测原状态或手写 SQL。
 
 ## 上线验收
 

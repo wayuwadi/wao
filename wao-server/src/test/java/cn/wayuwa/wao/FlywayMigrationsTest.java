@@ -56,4 +56,21 @@ class FlywayMigrationsTest {
         assertThat(migrations().stream().map(path -> path.getFileName().toString()))
                 .allMatch(name -> name.matches("V\\d+__[A-Za-z0-9_]+\\.sql"), "V<数字>__<名字>.sql");
     }
+
+    @Test
+    void chatReviewMigrationKeepsDatabaseEnforcedSingleActiveRunAndLeaseColumns() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V77__chat_review.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("worker_token VARCHAR(64)", "lease_until DATETIME(6)")
+                .contains("ALTER TABLE ai_assistant_run", "claim_token VARCHAR(64) NULL")
+                .contains("processing_date DATE NULL")
+                .contains("active_chat_id VARCHAR(128) GENERATED ALWAYS AS")
+                .contains("stage IN ('WAITING', 'SYNCING', 'VERIFYING', 'ANALYZING')")
+                .contains("UNIQUE KEY uk_chat_review_active_chat (active_chat_id)")
+                .doesNotContain("current_date DATE");
+    }
 }

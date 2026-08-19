@@ -28,4 +28,9 @@ public interface ImageBlobMapper extends BaseMapper<ImageBlobEntity> {
             + "FROM image_blob WHERE content_hash = #{hash} AND byte_size = #{byteSize} "
             + "ORDER BY created_at LIMIT 1")
     ImageBlobEntity findByContentHash(@Param("hash") String hash, @Param("byteSize") long byteSize);
+
+    /** 在并发去重写入冲突后读取已获胜的唯一记录。 */
+    @Select("SELECT id, name, content_type, byte_size, source, content_hash, dedupe_key, created_at "
+            + "FROM image_blob WHERE dedupe_key = #{dedupeKey} LIMIT 1 FOR UPDATE")
+    ImageBlobEntity findByDedupeKey(@Param("dedupeKey") String dedupeKey);
 }

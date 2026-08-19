@@ -25,13 +25,25 @@ describe('侧边栏导航配置', () => {
 
   it('自媒体 Agent 默认出现在公共组，并保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
-    expect(publicGroup?.items).toEqual(['projects', externalAppItemId('media-agent')])
+    expect(publicGroup?.items).toEqual([
+      'projects',
+      'chat-reviews',
+      externalAppItemId('media-agent'),
+    ])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
       '/apps/media-agent',
     )
     const route = router.getRoutes().find((item) => item.name === 'external-app')
     expect(route?.path).toBe('/apps/:appId')
     expect(route?.meta.tabKind).toBe('external')
+  })
+
+  it('聊天复盘作为双方共享模块位于公共组', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('chat-reviews')
+    expect(PERSONAL_ITEMS).not.toContain('chat-reviews')
+    const route = router.getRoutes().find((item) => item.name === 'chat-reviews')
+    expect(route?.path).toBe('/chat-reviews')
+    expect(route?.meta.module).toBe('chat-reviews')
   })
 
   it('多个外部应用可分组排序和隐藏，且不破坏个人拖拽顺序', () => {

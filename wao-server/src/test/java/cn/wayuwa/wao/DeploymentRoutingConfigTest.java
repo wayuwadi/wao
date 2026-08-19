@@ -58,7 +58,9 @@ class DeploymentRoutingConfigTest {
         assertThat(route.matcher("/api/settings/ai-accounts/login/start").find()).isTrue();
         assertThat(route.matcher("/api/ai/runner/accounts").find()).isTrue();
         assertThat(route.matcher("/api/ai/runner/claim").find()).isTrue();
-        assertThat(route.matcher("/api/ai/runner/assistant/claim").find()).isTrue();
+        assertThat(route.matcher("/api/ai/runner/assistant-v2/claim").find()).isTrue();
+        assertThat(route.matcher("/api/ai/runner/assistant-v2/ac1/complete").find()).isFalse();
+        assertThat(route.matcher("/api/ai/runner/assistant/claim").find()).isFalse();
         assertThat(route.matcher("/api/tianren/readings/today/interpret/stream").find()).isTrue();
         assertThat(route.matcher("/api/ai/goals").find()).isFalse();
         assertThat(route.matcher("/api/ai/runs").find()).isFalse();

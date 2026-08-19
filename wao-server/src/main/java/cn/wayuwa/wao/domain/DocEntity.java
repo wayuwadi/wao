@@ -1,9 +1,12 @@
 package cn.wayuwa.wao.domain;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 
 /**
  * 文档表实体。正文块（blocks）与出链（links）为 JSON 列，反向链接不落库、按需动态计算。
@@ -35,6 +38,13 @@ public class DocEntity {
     private LocalDateTime deletedAt;
     private String deletedBy;
     private Boolean cascadeDel;
+    /** 只能由 DocMapper 的归档 CAS SQL 更新，普通整实体保存永不回写这些归档标识。 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private String autoSyncScope;
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private LocalDate autoSyncDate;
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Long autoSyncVersion;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -70,4 +80,10 @@ public class DocEntity {
     public void setDeletedBy(String deletedBy) { this.deletedBy = deletedBy; }
     public Boolean getCascadeDel() { return cascadeDel; }
     public void setCascadeDel(Boolean cascadeDel) { this.cascadeDel = cascadeDel; }
+    public String getAutoSyncScope() { return autoSyncScope; }
+    public void setAutoSyncScope(String autoSyncScope) { this.autoSyncScope = autoSyncScope; }
+    public LocalDate getAutoSyncDate() { return autoSyncDate; }
+    public void setAutoSyncDate(LocalDate autoSyncDate) { this.autoSyncDate = autoSyncDate; }
+    public Long getAutoSyncVersion() { return autoSyncVersion; }
+    public void setAutoSyncVersion(Long autoSyncVersion) { this.autoSyncVersion = autoSyncVersion; }
 }
