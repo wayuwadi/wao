@@ -26,10 +26,11 @@ class AiAssistantServiceTest {
     private final AiRunnerNodeMapper runnerMapper = mock(AiRunnerNodeMapper.class);
     private final AiRunService aiRunService = mock(AiRunService.class);
     private final AiAccountService accountService = mock(AiAccountService.class);
+    private final DeepSeekApiClient deepSeekApi = mock(DeepSeekApiClient.class);
     private final AiAssistantConversationService conversationService = mock(AiAssistantConversationService.class);
     private final AiAssistantAssetService assetService = mock(AiAssistantAssetService.class);
     private final AiAssistantService service = new AiAssistantService(
-            mapper, runnerMapper, aiRunService, accountService, conversationService, assetService);
+            mapper, runnerMapper, aiRunService, accountService, deepSeekApi, conversationService, assetService);
 
     @Test
     void statusAcceptsAnyOnlineLocalCodexRunner() {
@@ -148,6 +149,22 @@ class AiAssistantServiceTest {
                 .contains("只返回可直接替换选区的润色结果");
         verify(conversationService, org.mockito.Mockito.never()).create(any());
         verify(conversationService, org.mockito.Mockito.never()).enqueue(any(), any(), any(), any());
+    }
+
+    @Test
+    void documentPolishUsesConfiguredDeepSeekWithoutRunnerQueue() {
+        AiRunAccountDto account = new AiRunAccountDto(
+                "aa-deepseek", "deepseek", "DeepSeek 文档润色", "api_key", null,
+                "token-value", "https://api.deepseek.com", "deepseek-v4-flash", "chat_completions");
+        when(accountService.defaultDeepSeekPolishAccount()).thenReturn(account);
+        when(deepSeekApi.polish(account.baseUrl(), account.apiKey(), account.model(), "需要优化的原文。"))
+                .thenReturn("表达更清晰的原文。");
+
+        assertThat(service.polishText("需要优化的原文。", "wg")).isEqualTo("表达更清晰的原文。");
+
+        verify(deepSeekApi).polish(
+                "https://api.deepseek.com", "token-value", "deepseek-v4-flash", "需要优化的原文。");
+        verify(mapper, org.mockito.Mockito.never()).insert(any(AiAssistantRunEntity.class));
     }
 
     @Test

@@ -58,16 +58,19 @@ public class AiAssistantService {
     private final AiRunnerNodeMapper runnerMapper;
     private final AiRunService aiRunService;
     private final AiAccountService accountService;
+    private final DeepSeekApiClient deepSeekApi;
     private final AiAssistantConversationService conversationService;
     private final AiAssistantAssetService assetService;
 
     public AiAssistantService(AiAssistantRunMapper mapper, AiRunnerNodeMapper runnerMapper,
             AiRunService aiRunService, AiAccountService accountService,
+            DeepSeekApiClient deepSeekApi,
             AiAssistantConversationService conversationService, AiAssistantAssetService assetService) {
         this.mapper = mapper;
         this.runnerMapper = runnerMapper;
         this.aiRunService = aiRunService;
         this.accountService = accountService;
+        this.deepSeekApi = deepSeekApi;
         this.conversationService = conversationService;
         this.assetService = assetService;
     }
@@ -161,6 +164,10 @@ public class AiAssistantService {
         if (!StringUtils.hasText(selectedText)) throw new BadRequestException("请先选中需要润色的文字");
         if (selectedText.length() > POLISH_TEXT_LIMIT) {
             throw new BadRequestException("一次最多润色 4000 字，请缩小选区后重试");
+        }
+        var deepSeek = accountService.defaultDeepSeekPolishAccount();
+        if (deepSeek != null) {
+            return deepSeekApi.polish(deepSeek.baseUrl(), deepSeek.apiKey(), deepSeek.model(), selectedText);
         }
         String instruction = """
                 你正在润色用户从文档中明确选中的一段文字。只改进表达的清晰度、流畅度和语气自然度，

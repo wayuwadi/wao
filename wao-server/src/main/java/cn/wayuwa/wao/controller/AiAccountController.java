@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** AI 账号集中管理：Claude Code / Codex / Qoder 的凭据与额度快照。 */
+/** AI 账号集中管理：CLI 账号及 DeepSeek 等模型 API 的加密凭据与连接状态。 */
 @RestController
 @RequestMapping("/api/settings/ai-accounts")
 public class AiAccountController {

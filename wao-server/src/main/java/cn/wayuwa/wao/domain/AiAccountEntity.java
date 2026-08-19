@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
-/** 集中管理的 AI 工具账号（Claude Code / Codex / Qoder）。凭据加密落库，明文只解密给已配对 Runner。 */
+/** 集中管理的 AI 工具账号与 API（Claude Code / Codex / Qoder / DeepSeek），凭据始终加密落库。 */
 @TableName("ai_account")
 public class AiAccountEntity {
 
