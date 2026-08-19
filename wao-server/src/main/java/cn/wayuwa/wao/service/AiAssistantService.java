@@ -320,15 +320,24 @@ public class AiAssistantService {
      *
      * <p>这保证聊天复盘 worker 被关闭或 Runner 长时间离线时，
      * {@code prompt_text} 中的聊天材料仍会在有界时间后被清除，且不会数天后被迟到领取。
+     * 候选读取不加锁，状态变更按主键顺序逐条 CAS；不得改回按状态索引扫描的批量 UPDATE，
+     * 否则会与 Runner 的按主键完成路径形成 InnoDB 锁序反转。
      *
      * @return 本次转为失败的任务数
      */
-    @Transactional
     public int expireReadOnlyJobs() {
-        int queued = mapper.expireReadOnlyQueued(readOnlyQueuedTimeout.toSeconds(),
-                "只读 AI 任务排队超时，请检查本地 Runner 后重试");
-        int running = mapper.expireReadOnlyRunning(readOnlyRunningTimeout.toSeconds(),
-                "只读 AI 任务执行超时，请检查本地 Runner 后重试");
+        long queuedTimeoutSeconds = readOnlyQueuedTimeout.toSeconds();
+        int queued = 0;
+        for (String id : mapper.findExpiredReadOnlyQueuedIds(queuedTimeoutSeconds)) {
+            queued += mapper.expireReadOnlyQueuedById(id, queuedTimeoutSeconds,
+                    "只读 AI 任务排队超时，请检查本地 Runner 后重试");
+        }
+        long runningTimeoutSeconds = readOnlyRunningTimeout.toSeconds();
+        int running = 0;
+        for (String id : mapper.findExpiredReadOnlyRunningIds(runningTimeoutSeconds)) {
+            running += mapper.expireReadOnlyRunningById(id, runningTimeoutSeconds,
+                    "只读 AI 任务执行超时，请检查本地 Runner 后重试");
+        }
         return queued + running;
     }
 
