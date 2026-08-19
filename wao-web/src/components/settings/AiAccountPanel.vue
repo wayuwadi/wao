@@ -8,16 +8,16 @@ import {
 } from '@/api/aiAccount'
 
 type OAuthProvider = 'claude' | 'codex'
-type FormMode = 'credentials' | 'custom'
+type FormMode = 'credentials' | 'custom' | 'deepseek'
 type ProviderFilter = 'all' | AiAccount['provider'] | 'custom'
 type StatusFilter = 'all' | 'enabled' | 'disabled' | 'problem'
 type QuotaWindowDetail = { key: string; label: string; percent: number; resetsAt: string | null }
 
 const providerLabels: Record<AiAccount['provider'], string> = {
-  codex: 'Codex', claude: 'Claude Code', qoder: 'Qoder',
+  codex: 'Codex', claude: 'Claude Code', qoder: 'Qoder', deepseek: 'DeepSeek',
 }
 const providerIcons: Record<AiAccount['provider'], string> = {
-  codex: 'ri-openai-fill', claude: 'ri-claude-fill', qoder: 'ri-terminal-box-fill',
+  codex: 'ri-openai-fill', claude: 'ri-claude-fill', qoder: 'ri-terminal-box-fill', deepseek: 'ri-sparkling-2-fill',
 }
 const statusLabels: Record<string, string> = {
   UNKNOWN: '等待检测', NO_API: '无额度接口', SYNCED: '状态正常', FAILED: '连接异常',
@@ -25,7 +25,12 @@ const statusLabels: Record<string, string> = {
 const providerTabs: Array<{ value: ProviderFilter; label: string }> = [
   { value: 'all', label: '全部' }, { value: 'codex', label: 'Codex' },
   { value: 'claude', label: 'Claude' }, { value: 'qoder', label: 'Qoder' },
+  { value: 'deepseek', label: 'DeepSeek' },
   { value: 'custom', label: '自定义 API' },
+]
+const deepSeekModels = [
+  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash（快速）' },
+  { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro（质量优先）' },
 ]
 const draftKey = 'wao:ai-account-form-draft'
 
@@ -53,11 +58,22 @@ const hasForm = computed(() => showForm.value || editingId.value !== null)
 const isEditing = computed(() => editingId.value !== null)
 const enabledCount = computed(() => accounts.value.filter((account) => account.enabled).length)
 const problemCount = computed(() => accounts.value.filter((account) => account.quotaStatus === 'FAILED').length)
+const defaultDeepSeekId = computed(() => accounts.value.find(
+  (account) => account.provider === 'deepseek' && account.enabled,
+)?.id ?? null)
+const formTitle = computed(() => isEditing.value
+  ? '编辑配置'
+  : formMode.value === 'deepseek' ? '添加 DeepSeek API'
+    : formMode.value === 'custom' ? '添加自定义 API' : '导入凭据')
+const formEyebrow = computed(() => formMode.value === 'deepseek'
+  ? 'DEEPSEEK API' : formMode.value === 'custom' ? 'CUSTOM ENDPOINT' : 'CREDENTIAL FILE')
 const filteredAccounts = computed(() => {
   const needle = query.value.trim().toLowerCase()
   return accounts.value.filter((account) => {
     const providerOk = providerFilter.value === 'all'
-      || (providerFilter.value === 'custom' ? account.authMethod === 'api_key' : account.provider === providerFilter.value)
+      || (providerFilter.value === 'custom'
+        ? account.authMethod === 'api_key' && account.provider === 'codex'
+        : account.provider === providerFilter.value)
     const statusOk = statusFilter.value === 'all'
       || (statusFilter.value === 'enabled' && account.enabled)
       || (statusFilter.value === 'disabled' && !account.enabled)
@@ -288,6 +304,10 @@ function openAdd(mode: FormMode) {
   clearForm(false)
   formMode.value = mode
   if (mode === 'custom') form.provider = 'codex'
+  if (mode === 'deepseek') Object.assign(form, {
+    provider: 'deepseek', label: 'DeepSeek 文档润色', baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-v4-flash', apiProtocol: 'chat_completions',
+  })
   showForm.value = true
   const saved = sessionStorage.getItem(draftKey)
   if (saved) {
@@ -301,11 +321,12 @@ function openAdd(mode: FormMode) {
 function openEdit(account: AiAccount) {
   clearForm(false)
   editingId.value = account.id
-  formMode.value = account.authMethod === 'api_key' ? 'custom' : 'credentials'
+  formMode.value = account.provider === 'deepseek'
+    ? 'deepseek' : account.authMethod === 'api_key' ? 'custom' : 'credentials'
   Object.assign(form, {
     provider: account.provider, label: account.label, email: account.email ?? '', credentials: '',
     enabled: account.enabled, baseUrl: account.baseUrl ?? '', model: account.model ?? '',
-    apiProtocol: 'responses', apiKey: '',
+    apiProtocol: account.apiProtocol ?? 'responses', apiKey: '',
   })
   showForm.value = true
 }
@@ -313,12 +334,17 @@ function openEdit(account: AiAccount) {
 async function save() {
   const label = form.label.trim()
   if (!label) return toast('请输入展示名称')
-  if (formMode.value === 'custom' && (!form.baseUrl?.trim() || !form.model?.trim())) {
+  if ((formMode.value === 'custom' || formMode.value === 'deepseek')
+    && (!form.baseUrl?.trim() || !form.model?.trim())) {
     return toast('请填写 Base URL 和默认模型')
   }
-  if (!isEditing.value && formMode.value === 'custom' && !form.apiKey?.trim()) return toast('请输入 API Key')
+  if (!isEditing.value && formMode.value !== 'credentials' && !form.apiKey?.trim()) return toast('请输入 API Key')
   if (!isEditing.value && formMode.value === 'credentials' && !form.credentials?.trim()) return toast('请粘贴凭据 JSON')
-  const payload: AiAccountForm = formMode.value === 'custom' ? {
+  const payload: AiAccountForm = formMode.value === 'deepseek' ? {
+    provider: 'deepseek', label, enabled: form.enabled,
+    baseUrl: 'https://api.deepseek.com', model: form.model?.trim(), apiProtocol: 'chat_completions',
+    apiKey: form.apiKey?.trim() || undefined,
+  } : formMode.value === 'custom' ? {
     provider: 'codex', label, email: form.email?.trim() || undefined, enabled: form.enabled,
     baseUrl: form.baseUrl?.trim(), model: form.model?.trim(), apiProtocol: 'responses',
     apiKey: form.apiKey?.trim() || undefined,
@@ -377,7 +403,11 @@ async function toggle(account: AiAccount) {
 
 watch(form, () => {
   if (showForm.value && !isEditing.value) {
-    sessionStorage.setItem(draftKey, JSON.stringify({ mode: formMode.value, form: { ...form } }))
+    sessionStorage.setItem(draftKey, JSON.stringify({
+      mode: formMode.value,
+      // 展示名和模型可防丢，Token 与 CLI 凭据不进入浏览器存储。
+      form: { ...form, apiKey: '', credentials: '' },
+    }))
   }
 }, { deep: true })
 watch(() => true, load, { immediate: true })
@@ -389,7 +419,7 @@ watch(() => true, load, { immediate: true })
       <div>
         <div class="eyebrow">AI ACCESS</div>
         <h1>AI 账号与 API</h1>
-        <p>集中管理 OAuth 登录、CLI 凭据和 CLIProxyAPI 自定义端点，运行任务时再选择要用的账号。</p>
+        <p>集中管理 OAuth、CLI 凭据和模型 API；DeepSeek Token 加密保存，所选模型直接用于文档润色。</p>
       </div>
       <button class="refresh-btn" :disabled="busy" @click="load">
         <i :class="busy ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ busy ? '读取中' : '刷新列表' }}
@@ -458,6 +488,7 @@ watch(() => true, load, { immediate: true })
         <div><h2>认证与端点</h2><span>{{ accounts.length }}</span></div>
         <div class="manager-actions">
           <button class="ghost" :disabled="hasForm" @click="openAdd('credentials')"><i class="ri-file-upload-line"></i>导入凭据</button>
+          <button class="deepseek-btn" :disabled="hasForm" @click="openAdd('deepseek')"><i class="ri-sparkling-2-line"></i>添加 DeepSeek</button>
           <button class="primary" :disabled="hasForm" @click="openAdd('custom')"><i class="ri-add-line"></i>添加自定义 API</button>
         </div>
       </div>
@@ -481,7 +512,7 @@ watch(() => true, load, { immediate: true })
 
       <div v-if="!loaded && busy" class="empty-state"><i class="ri-loader-4-line spin"></i><b>正在读取账号…</b></div>
       <div v-else-if="accounts.length === 0" class="empty-state">
-        <i class="ri-shield-user-line"></i><b>还没有 AI 账号</b><p>从上方 OAuth 登录，或添加 CLIProxyAPI 自定义端点。</p>
+        <i class="ri-shield-user-line"></i><b>还没有 AI 账号</b><p>从上方 OAuth 登录，或添加 DeepSeek / 自定义 API。</p>
       </div>
       <div v-else-if="filteredAccounts.length === 0" class="empty-state"><i class="ri-search-eye-line"></i><b>没有符合筛选条件的账号</b></div>
       <div v-else class="account-grid">
@@ -498,7 +529,7 @@ watch(() => true, load, { immediate: true })
           <div class="account-top">
             <div class="account-icon" :class="account.provider"><i :class="providerIcons[account.provider]"></i></div>
             <div class="account-title">
-              <div class="tags"><span>{{ providerLabels[account.provider] }}</span><em>{{ account.authMethod === 'api_key' ? '自定义 API' : account.authMethod === 'oauth' ? 'OAuth' : '凭据文件' }}</em></div>
+              <div class="tags"><span>{{ providerLabels[account.provider] }}</span><em>{{ account.provider === 'deepseek' ? '官方 API' : account.authMethod === 'api_key' ? '自定义 API' : account.authMethod === 'oauth' ? 'OAuth' : '凭据文件' }}</em><em v-if="account.id === defaultDeepSeekId" class="polish-default">文档润色</em></div>
               <b :title="account.label">{{ account.label }}</b>
             </div>
             <span class="state-pill" :class="{ on: account.enabled, bad: account.quotaStatus === 'FAILED' }">{{ account.quotaStatus === 'FAILED' ? '异常' : account.enabled ? '启用' : '停用' }}</span>
@@ -512,7 +543,7 @@ watch(() => true, load, { immediate: true })
 
           <div v-if="account.authMethod === 'api_key'" class="endpoint-info">
             <div><span>模型</span><b>{{ account.model || '未配置' }}</b></div>
-            <div><span>协议</span><b>OpenAI Responses</b></div>
+            <div><span>协议</span><b>{{ account.apiProtocol === 'chat_completions' ? 'Chat Completions' : 'OpenAI Responses' }}</b></div>
           </div>
           <div v-else class="quota-overview">
             <div class="health-label">
@@ -573,18 +604,24 @@ watch(() => true, load, { immediate: true })
     </section>
 
     <section v-if="hasForm" class="editor-card">
-      <div class="editor-head"><div><span>{{ formMode === 'custom' ? 'CUSTOM ENDPOINT' : 'CREDENTIAL FILE' }}</span><h2>{{ isEditing ? '编辑配置' : formMode === 'custom' ? '添加自定义 API' : '导入凭据' }}</h2></div><button class="close" @click="clearForm()"><i class="ri-close-line"></i></button></div>
+      <div class="editor-head"><div><span>{{ formEyebrow }}</span><h2>{{ formTitle }}</h2></div><button class="close" @click="clearForm()"><i class="ri-close-line"></i></button></div>
       <form class="account-form" @submit.prevent="save">
         <label v-if="formMode === 'credentials'"><span>AI 工具</span><select v-model="form.provider"><option value="claude">Claude Code</option><option value="codex">Codex</option><option value="qoder">Qoder</option></select></label>
         <label><span>展示名称</span><input v-model.trim="form.label" maxlength="128" placeholder="例如 娃哥-Codex" required /></label>
         <label v-if="formMode === 'credentials'"><span>账号邮箱 / 标识</span><input v-model.trim="form.email" maxlength="255" placeholder="可选，方便识别" /></label>
+        <template v-if="formMode === 'deepseek'">
+          <label class="wide"><span>官方 API 地址</span><input value="https://api.deepseek.com" readonly /><small>Token 只会由服务端发送到 DeepSeek 官方 HTTPS 主机</small></label>
+          <label><span>文档润色模型</span><select v-model="form.model"><option v-for="model in deepSeekModels" :key="model.value" :value="model.value">{{ model.label }}</option></select></label>
+          <label><span>协议</span><input value="Chat Completions" readonly /></label>
+          <label class="wide"><span>DeepSeek Token</span><input v-model.trim="form.apiKey" type="password" autocomplete="new-password" :placeholder="isEditing ? '留空表示保留原 Token' : '只会加密保存，不会在页面回显'" /></label>
+        </template>
         <template v-if="formMode === 'custom'">
           <label class="wide"><span>Base URL</span><input v-model.trim="form.baseUrl" maxlength="512" placeholder="https://proxy.example.com/v1" required /><small>未写 /v1 时服务端会自动补齐</small></label>
           <label><span>默认模型</span><input v-model.trim="form.model" maxlength="128" placeholder="gpt-5.4" required /></label>
           <label><span>协议</span><select v-model="form.apiProtocol"><option value="responses">OpenAI Responses</option></select></label>
           <label class="wide"><span>API Key</span><input v-model.trim="form.apiKey" type="password" autocomplete="new-password" :placeholder="isEditing ? '留空表示保留原 API Key' : '只会加密保存，不会在页面回显'" /></label>
         </template>
-        <label v-else class="wide"><span>凭据 JSON</span><textarea v-model.trim="form.credentials" rows="8" :placeholder="isEditing ? '留空表示不修改已存凭据' : '粘贴完整 auth.json 或 CLI 凭据 JSON'"></textarea></label>
+        <label v-if="formMode === 'credentials'" class="wide"><span>凭据 JSON</span><textarea v-model.trim="form.credentials" rows="8" :placeholder="isEditing ? '留空表示不修改已存凭据' : '粘贴完整 auth.json 或 CLI 凭据 JSON'"></textarea></label>
         <label class="enable-row"><span>创建后启用</span><button type="button" class="toggle" :class="{ on: form.enabled }" @click="form.enabled = !form.enabled"><span></span></button></label>
         <div class="form-actions"><button type="button" class="ghost" :disabled="saving" @click="clearForm()">取消</button><button class="primary" :disabled="saving"><i :class="saving ? 'ri-loader-4-line spin' : 'ri-save-line'"></i>{{ saving ? '保存中…' : '保存配置' }}</button></div>
       </form>
@@ -609,9 +646,10 @@ watch(() => true, load, { immediate: true })
 .page-head h1 { margin: 4px 0 6px; font-size: 25px; letter-spacing: -.5px; }
 .page-head p { margin: 0; color: var(--wao-text-weak); font-size: 12px; line-height: 1.7; }
 button { font: inherit; }
-.refresh-btn, .ghost, .primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 13px; border-radius: 9px; cursor: pointer; font-size: 12px; font-weight: 650; }
+.refresh-btn, .ghost, .primary, .deepseek-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 13px; border-radius: 9px; cursor: pointer; font-size: 12px; font-weight: 650; }
 .refresh-btn, .ghost { border: 1px solid var(--wao-line); background: var(--wao-bg-card); color: var(--wao-text-2); }
 .primary { border: 1px solid #475bd8; background: #475bd8; color: #fff; box-shadow: 0 7px 18px rgba(71,91,216,.18); }
+.deepseek-btn { border: 1px solid #396fcb; background: #eef5ff; color: #285aa9; }
 button:disabled { opacity: .55; cursor: not-allowed; }
 .confirm-mask { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 18px; background: rgba(25,29,46,.32); backdrop-filter: blur(3px); }
 .confirm-card { width: min(390px, 100%); padding: 24px; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); box-shadow: 0 24px 70px rgba(27,32,61,.24); text-align: center; }
@@ -679,6 +717,8 @@ input:focus, select:focus, textarea:focus { border-color: #7e8ce0; box-shadow: 0
 .account-icon { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px; font-size: 16px; }
 .account-icon.codex { background: #edf0ff; color: #5264d8; }
 .account-icon.qoder { background: #e8f7ef; color: #2f9061; }
+.account-icon.deepseek { background: #e7f2ff; color: #2f6fc2; }
+.tags .polish-default { background: #e9f7ef; color: #287a50; }
 .account-title { flex: 1; min-width: 0; }
 .tags { display: flex; gap: 5px; margin-bottom: 4px; }
 .tags span, .tags em { padding: 2px 6px; border-radius: 7px; background: #eef0ff; color: #5666ce; font-size: 8px; font-style: normal; font-weight: 700; }
@@ -754,5 +794,5 @@ input:focus, select:focus, textarea:focus { border-color: #7e8ce0; box-shadow: 0
 .spin { display: inline-block; animation: spin .9s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes details-in { from { opacity: 0; transform: translateY(-3px); } }
 @media (max-width: 920px) { .oauth-grid, .account-grid { grid-template-columns: 1fr; }.filters { grid-template-columns: 1fr; }.filter-tabs { overflow-x: auto; }.summary-row .secure { margin-left: 0; }.summary-row { flex-wrap: wrap; } }
-@media (max-width: 620px) { .page-head { flex-direction: column; }.refresh-btn { align-self: stretch; }.oauth-card { grid-template-columns: 38px 1fr; }.oauth-card > button { grid-column: 1 / -1; }.manager-head { align-items: stretch; flex-direction: column; }.manager-actions { display: grid; grid-template-columns: 1fr 1fr; }.login-actions { flex-wrap: wrap; }.login-actions input { flex-basis: 100%; }.account-form { grid-template-columns: 1fr; }.account-form .wide, .form-actions { grid-column: 1; }.account-foot { align-items: flex-end; }.switch-label { flex-direction: column; }.details-grid { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .page-head { flex-direction: column; }.refresh-btn { align-self: stretch; }.oauth-card { grid-template-columns: 38px 1fr; }.oauth-card > button { grid-column: 1 / -1; }.manager-head { align-items: stretch; flex-direction: column; }.manager-actions { display: grid; grid-template-columns: 1fr; }.login-actions { flex-wrap: wrap; }.login-actions input { flex-basis: 100%; }.account-form { grid-template-columns: 1fr; }.account-form .wide, .form-actions { grid-column: 1; }.account-foot { align-items: flex-end; }.switch-label { flex-direction: column; }.details-grid { grid-template-columns: 1fr; } }
 </style>

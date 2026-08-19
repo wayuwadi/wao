@@ -44,7 +44,7 @@ import org.springframework.util.StringUtils;
  * 集中管理 AI 工具账号。
  *
  * <p>凭据用 {@link VaultCryptoService} AES-256-GCM 加密后落库，明文只在服务端按需解密：
- * 设置页永远不回传凭据，已配对的 Runner 通过专用接口拉取明文凭据以写入本机 CLI 配置文件。
+ * 设置页永远不回传凭据；CLI 凭据只给已配对 Runner，模型 API Token 只用于对应的服务端上游请求。
  * 额度/余额查询只使用真实存在的接口；没有可靠接口时直接标记 {@code NO_API}，不伪造数字。
  */
 @Service
@@ -52,9 +52,9 @@ public class AiAccountService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String ENC_PREFIX = "enc:";
-    private static final List<String> VALID_PROVIDERS = List.of("codex", "claude", "qoder");
+    private static final List<String> VALID_PROVIDERS = List.of("codex", "claude", "qoder", "deepseek");
     private static final Map<String, String> PROVIDER_LABELS = Map.of("codex", "Codex / ChatGPT",
-            "claude", "Claude Code", "qoder", "Qoder");
+            "claude", "Claude Code", "qoder", "Qoder", "deepseek", "DeepSeek");
     /** AI 供应商限额窗口的中文说明；未收录的窗口直接显示原名。 */
     private static final Map<String, String> WINDOW_LABELS = Map.of(
             "session", "五小时会话额度", "five_hour", "五小时会话额度",
@@ -70,17 +70,20 @@ public class AiAccountService {
     private final AnthropicOAuthClient anthropic;
     private final OpenAiCodexOAuthClient codex;
     private final AiCustomApiClient customApi;
+    private final DeepSeekApiClient deepSeekApi;
     private final AiOauthSessionMapper sessionMapper;
 
     public AiAccountService(AiAccountMapper mapper, VaultCryptoService crypto, ObjectMapper objectMapper,
             AnthropicOAuthClient anthropic, OpenAiCodexOAuthClient codex,
-            AiCustomApiClient customApi, AiOauthSessionMapper sessionMapper) {
+            AiCustomApiClient customApi, DeepSeekApiClient deepSeekApi,
+            AiOauthSessionMapper sessionMapper) {
         this.mapper = mapper;
         this.crypto = crypto;
         this.objectMapper = objectMapper;
         this.anthropic = anthropic;
         this.codex = codex;
         this.customApi = customApi;
+        this.deepSeekApi = deepSeekApi;
         this.sessionMapper = sessionMapper;
     }
 
@@ -228,25 +231,29 @@ public class AiAccountService {
     @Transactional
     public AiAccountDto create(AiAccountFormRequest request) {
         validateProvider(request.provider());
+        String provider = request.provider().trim().toLowerCase();
         boolean custom = StringUtils.hasText(request.baseUrl());
-        if (custom && !"codex".equals(request.provider().trim().toLowerCase())) {
-            throw new BadRequestException("自定义 Responses API 目前只用于 Codex");
+        if ("deepseek".equals(provider) && !custom) {
+            throw new BadRequestException("请填写 DeepSeek API 配置");
+        }
+        if (custom && !"codex".equals(provider) && !"deepseek".equals(provider)) {
+            throw new BadRequestException("API Key 配置目前只支持 Codex 自定义端点和 DeepSeek");
         }
         if (custom && !StringUtils.hasText(request.apiKey())) throw new BadRequestException("API Key 不能为空");
         if (!custom && !StringUtils.hasText(request.credentials())) throw new BadRequestException("凭据不能为空");
         if (!custom) validateJson(request.credentials());
         AiAccountEntity entity = new AiAccountEntity();
         entity.setId(id("aa"));
-        entity.setProvider(request.provider().trim().toLowerCase());
+        entity.setProvider(provider);
         entity.setLabel(request.label().trim());
         entity.setEmail(trimToNull(request.email()));
         entity.setCredentialJson(encrypt(custom ? apiKeyJson(request.apiKey()) : request.credentials().trim()));
         entity.setEnabled(request.enabled() == null || request.enabled());
         entity.setQuotaStatus("UNKNOWN");
         entity.setAuthMethod(custom ? "api_key" : "manual");
-        entity.setBaseUrl(custom ? customApi.normalizeBaseUrl(request.baseUrl()) : null);
-        entity.setModel(custom ? requireModel(request.model()) : null);
-        entity.setApiProtocol(custom ? "responses" : null);
+        entity.setBaseUrl(custom ? normalizeApiBaseUrl(provider, request.baseUrl()) : null);
+        entity.setModel(custom ? requireModel(provider, request.model()) : null);
+        entity.setApiProtocol(custom ? apiProtocol(provider) : null);
         entity.setTokenExpiresAt(custom ? null : expiryOf(readTree(request.credentials().trim())));
         entity.setCreatedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
@@ -446,17 +453,21 @@ public class AiAccountService {
     public AiAccountDto update(String id, AiAccountFormRequest request) {
         validateProvider(request.provider());
         AiAccountEntity entity = require(id);
+        String provider = request.provider().trim().toLowerCase();
         boolean custom = StringUtils.hasText(request.baseUrl()) || "api_key".equals(entity.getAuthMethod());
-        if (custom && !"codex".equals(request.provider().trim().toLowerCase())) {
-            throw new BadRequestException("自定义 Responses API 目前只用于 Codex");
+        if ("deepseek".equals(provider) && !custom) {
+            throw new BadRequestException("请填写 DeepSeek API 配置");
         }
-        entity.setProvider(request.provider().trim().toLowerCase());
+        if (custom && !"codex".equals(provider) && !"deepseek".equals(provider)) {
+            throw new BadRequestException("API Key 配置目前只支持 Codex 自定义端点和 DeepSeek");
+        }
+        entity.setProvider(provider);
         entity.setLabel(request.label().trim());
         entity.setEmail(trimToNull(request.email()));
         if (custom) {
-            entity.setBaseUrl(customApi.normalizeBaseUrl(blankOr(request.baseUrl(), entity.getBaseUrl())));
-            entity.setModel(requireModel(blankOr(request.model(), entity.getModel())));
-            entity.setApiProtocol("responses");
+            entity.setBaseUrl(normalizeApiBaseUrl(provider, blankOr(request.baseUrl(), entity.getBaseUrl())));
+            entity.setModel(requireModel(provider, blankOr(request.model(), entity.getModel())));
+            entity.setApiProtocol(apiProtocol(provider));
             if (StringUtils.hasText(request.apiKey())) {
                 entity.setCredentialJson(encrypt(apiKeyJson(request.apiKey())));
             } else if (!"api_key".equals(entity.getAuthMethod())) {
@@ -490,7 +501,12 @@ public class AiAccountService {
         AiAccountEntity entity = require(id);
         if ("api_key".equals(entity.getAuthMethod())) {
             try {
-                List<String> models = customApi.models(entity.getBaseUrl(), apiKeyOf(entity));
+                List<String> models = "deepseek".equals(entity.getProvider())
+                        ? deepSeekApi.models(entity.getBaseUrl(), apiKeyOf(entity))
+                        : customApi.models(entity.getBaseUrl(), apiKeyOf(entity));
+                if ("deepseek".equals(entity.getProvider()) && !models.contains(entity.getModel())) {
+                    throw new BadRequestException("连接正常，但当前 Token 不支持模型 " + entity.getModel());
+                }
                 entity.setQuotaStatus("SYNCED");
                 entity.setQuotaMessage(models.isEmpty() ? "连接正常，但 /models 没有返回模型"
                         : "连接正常，可用 " + models.size() + " 个模型");
@@ -726,6 +742,22 @@ public class AiAccountService {
     }
 
     /**
+     * 返回设置页最新创建且仍启用的 DeepSeek API 配置，供文档润色直接调用。
+     *
+     * <p>若没有配置则返回 {@code null}，调用方可继续使用既有本地 Codex 兼容链路；
+     * 一旦存在配置，上游失败必须原样反馈，不能静默改用另一个供应商。
+     */
+    public AiRunAccountDto defaultDeepSeekPolishAccount() {
+        return mapper.selectList(null).stream()
+                .filter(entity -> "deepseek".equals(entity.getProvider()))
+                .filter(entity -> Boolean.TRUE.equals(entity.getEnabled()))
+                .filter(entity -> "api_key".equals(entity.getAuthMethod()))
+                .max(Comparator.comparing(AiAccountEntity::getCreatedAt))
+                .map(entity -> runAccount(entity.getId(), "deepseek"))
+                .orElse(null);
+    }
+
+    /**
      * 下发给 Runner 前先确保令牌没过期。
      *
      * <p>续期失败（凭据是手工粘贴的、字段对不上、refresh token 已作废）时原样下发已存的凭据：
@@ -855,9 +887,23 @@ public class AiAccountService {
         return objectMapper.createObjectNode().put("apiKey", apiKey.trim()).toString();
     }
 
-    private static String requireModel(String model) {
+    private static String requireModel(String provider, String model) {
         if (!StringUtils.hasText(model)) throw new BadRequestException("请填写自定义 API 默认模型");
-        return model.trim();
+        String value = model.trim();
+        if ("deepseek".equals(provider) && !DeepSeekApiClient.POLISH_MODELS.contains(value)) {
+            throw new BadRequestException("请选择可用的 DeepSeek V4 模型");
+        }
+        return value;
+    }
+
+    private String normalizeApiBaseUrl(String provider, String baseUrl) {
+        return "deepseek".equals(provider)
+                ? deepSeekApi.normalizeBaseUrl(baseUrl)
+                : customApi.normalizeBaseUrl(baseUrl);
+    }
+
+    private static String apiProtocol(String provider) {
+        return "deepseek".equals(provider) ? "chat_completions" : "responses";
     }
 
     /** 从凭据 JSON 里读出 access token 的过期时间（毫秒时间戳）。 */

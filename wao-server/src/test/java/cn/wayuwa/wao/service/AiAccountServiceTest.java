@@ -42,9 +42,10 @@ class AiAccountServiceTest {
     private final AnthropicOAuthClient anthropic = mock(AnthropicOAuthClient.class);
     private final OpenAiCodexOAuthClient codex = mock(OpenAiCodexOAuthClient.class);
     private final AiCustomApiClient customApi = mock(AiCustomApiClient.class);
+    private final DeepSeekApiClient deepSeekApi = mock(DeepSeekApiClient.class);
     private final AiOauthSessionMapper sessionMapper = mock(AiOauthSessionMapper.class);
     private final AiAccountService service = new AiAccountService(mapper, crypto, objectMapper,
-            anthropic, codex, customApi, sessionMapper);
+            anthropic, codex, customApi, deepSeekApi, sessionMapper);
 
     private Map<String, AiAccountEntity> backedByMemory() {
         Map<String, AiAccountEntity> rows = new HashMap<>();
@@ -404,6 +405,57 @@ class AiAccountServiceTest {
         assertThat(result.status()).isEqualTo("SYNCED");
         assertThat(result.message()).contains("2 个模型");
         assertThat(result.rawJson()).contains("gpt-5.4");
+    }
+
+    @Test
+    void deepSeekTokenIsEncryptedAndSelectedModelDrivesDocumentPolish() {
+        backedByMemory();
+        when(deepSeekApi.normalizeBaseUrl("https://api.deepseek.com"))
+                .thenReturn("https://api.deepseek.com");
+        var created = service.create(new AiAccountFormRequest(
+                "deepseek", "DeepSeek 快速润色", null, null, true,
+                "https://api.deepseek.com", "deepseek-v4-flash", "chat_completions", "token-secret"));
+
+        AiAccountEntity stored = mapper.selectById(created.id());
+        assertThat(stored.getProvider()).isEqualTo("deepseek");
+        assertThat(stored.getAuthMethod()).isEqualTo("api_key");
+        assertThat(stored.getApiProtocol()).isEqualTo("chat_completions");
+        assertThat(stored.getCredentialJson()).startsWith("enc:").doesNotContain("token-secret");
+
+        var selected = service.defaultDeepSeekPolishAccount();
+        assertThat(selected.id()).isEqualTo(created.id());
+        assertThat(selected.apiKey()).isEqualTo("token-secret");
+        assertThat(selected.model()).isEqualTo("deepseek-v4-flash");
+
+        service.update(created.id(), new AiAccountFormRequest(
+                "deepseek", "DeepSeek 快速润色", null, null, true,
+                "https://api.deepseek.com", "deepseek-v4-pro", "chat_completions", null));
+        var updated = service.defaultDeepSeekPolishAccount();
+        assertThat(updated.apiKey()).isEqualTo("token-secret");
+        assertThat(updated.model()).isEqualTo("deepseek-v4-pro");
+
+        service.update(created.id(), new AiAccountFormRequest(
+                "deepseek", "DeepSeek 快速润色", null, null, true,
+                "https://api.deepseek.com", "deepseek-v4-pro", "chat_completions", "token-rotated"));
+        assertThat(service.defaultDeepSeekPolishAccount().apiKey()).isEqualTo("token-rotated");
+        assertThat(mapper.selectById(created.id()).getCredentialJson()).doesNotContain("token-secret");
+    }
+
+    @Test
+    void deepSeekConnectionTestRequiresConfiguredModelToBeAvailable() {
+        backedByMemory();
+        when(deepSeekApi.normalizeBaseUrl("https://api.deepseek.com"))
+                .thenReturn("https://api.deepseek.com");
+        when(deepSeekApi.models("https://api.deepseek.com", "token-secret"))
+                .thenReturn(List.of("deepseek-v4-pro"));
+        var created = service.create(new AiAccountFormRequest(
+                "deepseek", "DeepSeek 快速润色", null, null, true,
+                "https://api.deepseek.com", "deepseek-v4-flash", "chat_completions", "token-secret"));
+
+        AiAccountSyncResultDto result = service.sync(created.id());
+
+        assertThat(result.status()).isEqualTo("FAILED");
+        assertThat(result.message()).contains("不支持模型 deepseek-v4-flash");
     }
 
     @Test

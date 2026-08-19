@@ -49,6 +49,7 @@ describe('AiAccountPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubGlobal('open', vi.fn())
+    sessionStorage.clear()
   })
 
   it('把额度画成进度条并标出窗口与重置时间', async () => {
@@ -228,5 +229,62 @@ describe('AiAccountPanel', () => {
     expect(wrapper.find('input[placeholder="gpt-5.4"]').exists()).toBe(true)
     expect(wrapper.find('input[type="password"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('OpenAI Responses')
+  })
+
+  it('DeepSeek 配置可选择官方模型并以密码框管理 Token', async () => {
+    fetchAiAccounts.mockResolvedValue([])
+    createAiAccount.mockResolvedValue({})
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('添加 DeepSeek'))!.trigger('click')
+
+    const form = wrapper.find('.account-form')
+    expect(form.text()).toContain('DeepSeek V4 Flash（快速）')
+    expect(form.text()).toContain('DeepSeek V4 Pro（质量优先）')
+    expect(form.find('input[value="https://api.deepseek.com"]').attributes('readonly')).toBeDefined()
+    const token = form.find('input[type="password"]')
+    await token.setValue('token-input')
+    await flushPromises()
+    expect(sessionStorage.getItem('wao:ai-account-form-draft')).not.toContain('token-input')
+    await form.find('select').setValue('deepseek-v4-pro')
+    await form.trigger('submit')
+    await flushPromises()
+
+    expect(createAiAccount).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'deepseek',
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-pro',
+      apiProtocol: 'chat_completions',
+      apiKey: 'token-input',
+    }))
+  })
+
+  it('已启用的最新 DeepSeek 配置明确标记为文档润色默认项', async () => {
+    fetchAiAccounts.mockResolvedValue([
+      account({
+        id: 'ds-new', provider: 'deepseek', label: 'DeepSeek 文档润色', email: null,
+        authMethod: 'api_key', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash',
+        apiProtocol: 'chat_completions', quotaPercent: null,
+      }),
+      account({
+        id: 'ds-old', provider: 'deepseek', label: '备用 DeepSeek', email: null,
+        authMethod: 'api_key', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro',
+        apiProtocol: 'chat_completions', quotaPercent: null,
+      }),
+    ])
+
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+
+    const cards = wrapper.findAll('.account-card')
+    const first = cards[0]
+    const second = cards[1]
+    expect(first).toBeDefined()
+    expect(second).toBeDefined()
+    if (!first || !second) throw new Error('应渲染两个 DeepSeek 配置')
+    expect(first.find('.polish-default').text()).toBe('文档润色')
+    expect(second.find('.polish-default').exists()).toBe(false)
+    expect(first.text()).toContain('Chat Completions')
   })
 })

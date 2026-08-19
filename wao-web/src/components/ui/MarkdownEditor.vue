@@ -49,7 +49,7 @@ const props = withDefaults(
     allowH1?: boolean
     /** 此刻也在这篇文档里的人；空数组即不显示协作轨道。 */
     peers?: EditorPeer[]
-    /** 文档正文允许选中文字后调用真实本地 Codex 润色。 */
+    /** 文档正文允许选中文字后调用设置页配置的真实 AI 润色。 */
     polishable?: boolean
   }>(),
   {
@@ -166,7 +166,7 @@ function shouldShowPolish({
 }
 
 /**
- * 把当前选区转成适合交给 Codex 的文字：单段只取纯文本，多块选区保留 Markdown 结构。
+ * 把当前选区转成适合交给 AI 的文字：单段只取纯文本，多块选区保留 Markdown 结构。
  * 同时冻结选区与整篇正文，避免等待 AI 时的协同更新导致结果替换到错误位置。
  */
 async function startPolish() {
@@ -572,7 +572,7 @@ onBeforeUnmount(() => {
           <article>
             <div class="polish-card-title"><span>润色结果</span><em>确认后才会写入</em></div>
             <div v-if="polishDialog.loading" class="polish-state">
-              <i class="ri-loader-4-line"></i><span>本地 Codex 正在润色…</span>
+              <i class="ri-loader-4-line"></i><span>AI 正在润色…</span>
             </div>
             <pre v-else-if="polishDialog.polished">{{ polishDialog.polished }}</pre>
             <div v-else class="polish-state">
