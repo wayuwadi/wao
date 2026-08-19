@@ -37,5 +37,9 @@ public record AiRunDto(
         Integer exitCode,
         String createdAt,
         String startedAt,
-        String finishedAt) {
+        String finishedAt,
+        /** 领取时实际注入给 AI 的项目工程记忆。 */
+        List<ProjectMemoryReferenceDto> memoryReads,
+        /** 本次成功运行实际沉淀的项目工程记忆。 */
+        List<ProjectMemoryReferenceDto> memoryWrites) {
 }

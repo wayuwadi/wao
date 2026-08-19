@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -17,6 +17,7 @@ import { copyToClipboard } from '@/utils/clipboard'
 import { continueAiRun, createAiRuns, fetchTaskAiRuns, pauseAiRun } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
+import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
 import TaskRelationPicker from '@/components/task/TaskRelationPicker.vue'
 import { formatCost, formatTokens, shortModel } from '@/composables/aiUsage'
 import { engineIcon, engineLabel } from '@/composables/aiEngines'
@@ -33,6 +34,7 @@ const data = useDataStore()
 const session = useSessionStore()
 const favorites = useFavoritesStore()
 const router = useRouter()
+const route = useRoute()
 const { decoTask } = useDeco()
 
 const isMobile = useIsMobile()
@@ -53,6 +55,7 @@ const attachmentUploading = ref(false)
 /** 执行方式选择器当前是为哪条子任务打开的；null 表示整个任务。 */
 const aiLauncherSubId = ref<string | null>(null)
 const aiRuns = ref<AiRun[]>([])
+const requestedRunId = computed(() => typeof route.query.run === 'string' ? route.query.run : '')
 const aiRunsLoading = ref(false)
 /** 首次打开可显示加载态；后续轮询不得反复推挤评论区。 */
 const aiRunsLoaded = ref(false)
@@ -1163,7 +1166,7 @@ function demo(msg: string) {
               <em v-if="activeAiRun"><i></i>实时更新中</em>
             </div>
             <div v-if="aiRunsLoading && !aiRuns.length" class="ai-archive-loading"><i class="ri-loader-4-line"></i>正在读取 AI 记录…</div>
-            <details v-for="(run, index) in aiRuns" v-else :key="run.id" class="ai-run-entry" :open="index === 0">
+            <details v-for="(run, index) in aiRuns" v-else :key="run.id" class="ai-run-entry" :open="run.id === requestedRunId || index === 0">
               <summary>
                 <span class="ai-run-state" :class="aiRunStatusUnreported(run) ? 'state-unconfirmed' : `state-${run.status}`">{{ aiRunStateLabel(run) }}</span>
                 <span class="ai-run-engine" :title="`执行工具：${engineLabel(run.engine)}`"><i :class="engineIcon(run.engine)"></i></span>
@@ -1185,6 +1188,7 @@ function demo(msg: string) {
                   <span v-if="formatCost(run.usage.costUsd)" class="usage-part">{{ formatCost(run.usage.costUsd) }}</span>
                 </div>
                 <AiRunProgressTimeline :run="run" />
+                <AiRunMemoryReferences :reads="run.memoryReads" :writes="run.memoryWrites" />
                 <div v-if="run.resultSummary" class="ai-final-result">
                   <b>{{ aiRunResultTitle(run) }}</b>
                   <p>{{ run.resultSummary }}</p>

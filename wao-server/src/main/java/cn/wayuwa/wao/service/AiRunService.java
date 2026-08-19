@@ -46,6 +46,7 @@ import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
+import cn.wayuwa.wao.dto.ProjectMemoryContextDto;
 import cn.wayuwa.wao.dto.RunnerCodexQuotaReport;
 import cn.wayuwa.wao.dto.RunnerScriptDto;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
@@ -110,12 +111,13 @@ public class AiRunService {
     private final HostedPageService hostedPages;
     private final ImageService images;
     private final CodexQuotaService codexQuotas;
+    private final ProjectMemoryService projectMemories;
 
     public AiRunService(AiProjectConfigMapper configMapper, AiRunnerNodeMapper runnerMapper,
             AiRunnerPairCodeMapper pairMapper, AiTaskRunMapper runMapper, AiRunProgressMapper progressMapper,
             TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier,
             RunnerScriptService scripts, AiAccountService accounts, HostedPageService hostedPages,
-            ImageService images, CodexQuotaService codexQuotas) {
+            ImageService images, CodexQuotaService codexQuotas, ProjectMemoryService projectMemories) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
         this.pairMapper = pairMapper;
@@ -130,6 +132,7 @@ public class AiRunService {
         this.hostedPages = hostedPages;
         this.images = images;
         this.codexQuotas = codexQuotas;
+        this.projectMemories = projectMemories;
     }
 
     /** 读取项目配置；尚未保存过时返回安全的关闭状态。 */
@@ -912,13 +915,15 @@ public class AiRunService {
             setTaskStatus(run.getTaskId(), "AI 进行中");
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());
+            List<ProjectMemoryContextDto> memoryContext = projectMemories.recall(run, task);
             notifyStarted(run, task, project, runner.getName());
             return new AiRunnerClaimDto(run.getId(), run.getTaskId(), task.getTitle(), run.getProjectId(),
                     project == null ? run.getProjectId() : project.getName(), engine, run.getPromptUrl(),
                     config.getRepoUrl(), blankOr(config.getDefaultBranch(), "main"),
                     blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName(),
                     previousFailure(run), run.getSessionId(), continuationInput,
-                    accounts.runAccount(run.getAiAccountId(), engine));
+                    accounts.runAccount(run.getAiAccountId(), engine), memoryContext,
+                    memoryContext.stream().map(ProjectMemoryContextDto::id).toList());
         }
         return null;
     }
@@ -967,6 +972,9 @@ public class AiRunService {
                 : exitCode == 3 ? engine + " 已结束会话但未报告任务状态，请根据原始答复确认结果"
                 : engine + " 执行未完成，请查看失败原因";
         appendProgress(run, "result", completion);
+        if (verifiedMemoryCompletion(exitCode, request.resultSummary())) {
+            projectMemories.persistCandidates(run, request.projectMemoryCandidates());
+        }
         setTaskStatus(run.getTaskId(), exitCode == 0 ? "待验证" : "进行中");
         runner.setLastSeenAt(LocalDateTime.now());
         runnerMapper.updateById(runner);
@@ -1113,6 +1121,12 @@ public class AiRunService {
         run.setModels(limit(mergeModels(run.getModels(), request.models()), 500));
     }
 
+    /** 只有 Runner 明确证明已完成（或按真实能力边界完成有效部分）才允许沉淀长期结论。 */
+    private static boolean verifiedMemoryCompletion(int exitCode, String summary) {
+        if (exitCode != 0 || !StringUtils.hasText(summary)) return false;
+        return summary.contains("WAO_RUN_STATUS: SUCCESS") || summary.contains("WAO_RUN_STATUS: SKIPPED");
+    }
+
     /** 把续跑用到的模型并进已记录的列表，保持去重和稳定顺序。 */
     private static String mergeModels(String recorded, String reported) {
         Set<String> names = new java.util.TreeSet<>();
@@ -1154,6 +1168,8 @@ public class AiRunService {
     private List<AiRunDto> toRunDtos(List<AiTaskRunEntity> runs) {
         if (runs.isEmpty()) return List.of();
         List<String> runIds = runs.stream().map(AiTaskRunEntity::getId).toList();
+        var memoryReadsByRun = projectMemories.readReferences(runIds);
+        var memoryWritesByRun = projectMemories.writeReferences(runIds);
         Map<String, List<AiRunProgressDto>> progressByRun = progressMapper.selectList(
                         new LambdaQueryWrapper<AiRunProgressEntity>()
                                 .in(AiRunProgressEntity::getRunId, runIds)
@@ -1194,7 +1210,9 @@ public class AiRunService {
                     text(run.getProgressUpdatedAt()),
                     progressByRun.getOrDefault(run.getId(), List.of()), toUsageDto(run),
                     run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
-                    text(run.getStartedAt()), text(run.getFinishedAt()));
+                    text(run.getStartedAt()), text(run.getFinishedAt()),
+                    memoryReadsByRun.getOrDefault(run.getId(), List.of()),
+                    memoryWritesByRun.getOrDefault(run.getId(), List.of()));
         }).toList();
     }
 

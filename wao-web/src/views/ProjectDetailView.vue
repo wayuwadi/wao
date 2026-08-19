@@ -16,6 +16,7 @@ import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue
 import { useFavoritesStore } from '@/stores/favorites'
 import { MAX_TASK_GROUPS } from '@/types'
 import type { TaskStatus } from '@/types'
+import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -154,7 +155,7 @@ const pdTabs = computed(() => {
   // 任务角标只数未完成的：一个跑了半年的项目里「25」几乎全是已完成，看不出还剩多少事。
   const openCount = ptasks.value.filter((t) => isOpenStatus(t.status)).length
   const counts: Record<string, number> = { 任务: openCount, 文档: linkedDocs.value.length, 文件: project.value?.files.length ?? 0 }
-  return (['任务', '文档', '文件', '动态'] as const).map((t) => ({
+  return (['任务', '文档', '文件', '记忆', '动态'] as const).map((t) => ({
     label: t, count: counts[t], showCount: ['任务', '文档', '文件'].includes(t), on: projTab.value === t,
     title: t === '任务' ? `${openCount} 个未完成 / 共 ${ptasks.value.length} 个` : '',
   }))
@@ -685,6 +686,9 @@ function onDropGroup(groupId: string, overId?: string) {
         </div>
       </div>
     </div>
+
+    <!-- 项目级工程记忆与个人生活记忆严格分域 -->
+    <ProjectMemoryPanel v-else-if="projTab === '记忆'" :project-id="pid" />
 
     <!-- 动态 -->
     <div v-else class="feed-card">

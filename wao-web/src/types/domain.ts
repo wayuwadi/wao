@@ -461,6 +461,27 @@ export interface AiRunUsage {
   recorded: boolean
 }
 
+export type ProjectMemoryCategory =
+  | 'decision' | 'convention' | 'pitfall' | 'verification' | 'operation' | 'context'
+
+/** 项目工程记忆；与当前成员的个人记忆是完全独立的数据域。 */
+export interface ProjectMemory {
+  id: string
+  projectId: string
+  category: ProjectMemoryCategory
+  title: string
+  content: string
+  sourceTaskId: string | null
+  sourceRunId: string | null
+  evidenceLinks: string[]
+  createdBy?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export type ProjectMemoryReference = Pick<ProjectMemory,
+  'id' | 'projectId' | 'category' | 'title' | 'content' | 'sourceTaskId' | 'sourceRunId' | 'evidenceLinks'>
+
 export interface AiRun {
   id: string
   taskId: string
@@ -496,6 +517,9 @@ export interface AiRun {
   createdAt: string
   startedAt: string | null
   finishedAt: string | null
+  /** 旧服务端和历史运行没有这两个字段。 */
+  memoryReads?: ProjectMemoryReference[]
+  memoryWrites?: ProjectMemoryReference[]
 }
 
 export interface VaultItem {
