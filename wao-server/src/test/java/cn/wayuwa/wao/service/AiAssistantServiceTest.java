@@ -234,12 +234,15 @@ class AiAssistantServiceTest {
         failed.setMemberId("internal-chat-review-cr1");
         failed.setErrorText("只读 AI 任务排队超过 1 小时");
         when(mapper.selectById("ac1")).thenReturn(active, failed);
+        when(mapper.findExpiredReadOnlyQueuedIds(3600L)).thenReturn(List.of("ac1"));
+        when(mapper.expireReadOnlyQueuedById("ac1", 3600L,
+                "只读 AI 任务排队超时，请检查本地 Runner 后重试")).thenReturn(1);
 
         var result = service.readOnlyJobResult("chat-review-cr1", "ac1");
 
         assertThat(result.status()).isEqualTo("failed");
         assertThat(result.error()).contains("排队超过 1 小时");
-        verify(mapper).expireReadOnlyQueued(3600L,
+        verify(mapper).expireReadOnlyQueuedById("ac1", 3600L,
                 "只读 AI 任务排队超时，请检查本地 Runner 后重试");
     }
 
@@ -251,12 +254,15 @@ class AiAssistantServiceTest {
         AiAssistantRunEntity failed = readOnlyRun("failed");
         failed.setErrorText("只读 AI 任务执行超过 30 分钟");
         when(mapper.selectById("ac1")).thenReturn(active, failed);
+        when(mapper.findExpiredReadOnlyRunningIds(1800L)).thenReturn(List.of("ac1"));
+        when(mapper.expireReadOnlyRunningById("ac1", 1800L,
+                "只读 AI 任务执行超时，请检查本地 Runner 后重试")).thenReturn(1);
 
         var result = service.readOnlyJobResult("chat-review-cr1", "ac1");
 
         assertThat(result.status()).isEqualTo("failed");
         assertThat(result.error()).contains("执行超过 30 分钟");
-        verify(mapper).expireReadOnlyRunning(1800L,
+        verify(mapper).expireReadOnlyRunningById("ac1", 1800L,
                 "只读 AI 任务执行超时，请检查本地 Runner 后重试");
     }
 
@@ -275,15 +281,19 @@ class AiAssistantServiceTest {
 
     @Test
     void scheduledCleanupExpiresQueuedAndRunningReadOnlyJobsWithoutBusinessPolling() {
-        when(mapper.expireReadOnlyQueued(3600L, "只读 AI 任务排队超时，请检查本地 Runner 后重试"))
-                .thenReturn(2);
-        when(mapper.expireReadOnlyRunning(1800L, "只读 AI 任务执行超时，请检查本地 Runner 后重试"))
-                .thenReturn(1);
+        when(mapper.findExpiredReadOnlyQueuedIds(3600L)).thenReturn(List.of("ac-q1", "ac-q2"));
+        when(mapper.findExpiredReadOnlyRunningIds(1800L)).thenReturn(List.of("ac-r1"));
+        when(mapper.expireReadOnlyQueuedById(anyString(), eq(3600L), anyString())).thenReturn(1);
+        when(mapper.expireReadOnlyRunningById(anyString(), eq(1800L), anyString())).thenReturn(1);
 
         assertThat(service.expireReadOnlyJobs()).isEqualTo(3);
 
-        verify(mapper).expireReadOnlyQueued(3600L, "只读 AI 任务排队超时，请检查本地 Runner 后重试");
-        verify(mapper).expireReadOnlyRunning(1800L, "只读 AI 任务执行超时，请检查本地 Runner 后重试");
+        verify(mapper).expireReadOnlyQueuedById(
+                "ac-q1", 3600L, "只读 AI 任务排队超时，请检查本地 Runner 后重试");
+        verify(mapper).expireReadOnlyQueuedById(
+                "ac-q2", 3600L, "只读 AI 任务排队超时，请检查本地 Runner 后重试");
+        verify(mapper).expireReadOnlyRunningById(
+                "ac-r1", 1800L, "只读 AI 任务执行超时，请检查本地 Runner 后重试");
     }
 
     @Test

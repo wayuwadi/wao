@@ -421,51 +421,69 @@ class ChatReviewMySqlIntegrationTest {
     }
 
     private void assertSecureCompletionAndDatabaseTimeoutAreSerialized() throws Exception {
-        jdbc.update("""
-                INSERT INTO ai_assistant_run
-                    (id, member_id, runner_id, status, prompt_text, claim_token,
-                     created_at, claimed_at, updated_at)
-                VALUES
-                    ('ac-secure-race', 'internal-secure-race', 'runner-mysql', 'secure_running',
-                     '完整聊天材料', 'claim-secure-race', CURRENT_TIMESTAMP(6),
-                     DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL 31 MINUTE), CURRENT_TIMESTAMP(6))
-                """);
-        CountDownLatch start = new CountDownLatch(1);
         var pool = Executors.newFixedThreadPool(2);
         try {
-            Future<Integer> completed = pool.submit(() -> {
-                start.await();
-                return aiRuns.completeSucceeded("ac-secure-race", "runner-mysql",
-                        "claim-secure-race", "secure_running", "完整报告");
-            });
-            Future<Integer> timedOut = pool.submit(() -> {
-                start.await();
-                return aiRuns.expireReadOnlyRunning(30 * 60, "只读 AI 任务执行超时");
-            });
-            start.countDown();
-            int completionRows = completed.get();
-            int timeoutRows = timedOut.get();
-            assertThat(completionRows + timeoutRows).isEqualTo(1);
+            for (int attempt = 0; attempt < 16; attempt++) {
+                String runId = "ac-secure-race-" + attempt;
+                String claimToken = "claim-secure-race-" + attempt;
+                jdbc.update("""
+                        INSERT INTO ai_assistant_run
+                            (id, member_id, runner_id, status, prompt_text, claim_token,
+                             created_at, claimed_at, updated_at)
+                        VALUES
+                            (?, 'internal-secure-race', 'runner-mysql', 'secure_running',
+                             '完整聊天材料', ?, CURRENT_TIMESTAMP(6),
+                             DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL 31 MINUTE), CURRENT_TIMESTAMP(6))
+                        """, runId, claimToken);
+                assertThat(aiRuns.findExpiredReadOnlyRunningIds(30 * 60)).contains(runId);
+                String timeoutUpdateKey = jdbc.queryForObject("""
+                        EXPLAIN UPDATE ai_assistant_run
+                           SET status = 'failed'
+                         WHERE id = ?
+                           AND status = 'secure_running'
+                           AND member_id LIKE 'internal-%'
+                           AND claimed_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL 1800 SECOND)
+                        """, (result, row) -> result.getString("key"), runId);
+                assertThat(timeoutUpdateKey).isEqualTo("PRIMARY");
 
-            Map<String, Object> terminal = jdbc.queryForMap("""
-                    SELECT status, prompt_text, claim_token, response_text, finished_at
-                      FROM ai_assistant_run WHERE id = 'ac-secure-race'
-                    """);
-            assertThat(terminal)
-                    .containsEntry("prompt_text", null)
-                    .containsEntry("claim_token", null);
-            assertThat(terminal.get("finished_at")).isNotNull();
-            if (completionRows == 1) {
+                CountDownLatch ready = new CountDownLatch(2);
+                CountDownLatch start = new CountDownLatch(1);
+                Future<Integer> completed = pool.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    return aiRuns.completeSucceeded(runId, "runner-mysql",
+                            claimToken, "secure_running", "完整报告");
+                });
+                Future<Integer> timedOut = pool.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    return assistant.expireReadOnlyJobs();
+                });
+                ready.await();
+                start.countDown();
+                int completionRows = completed.get();
+                int timeoutRows = timedOut.get();
+                assertThat(completionRows + timeoutRows).isEqualTo(1);
+
+                Map<String, Object> terminal = jdbc.queryForMap("""
+                        SELECT status, prompt_text, claim_token, response_text, finished_at
+                          FROM ai_assistant_run WHERE id = ?
+                        """, runId);
                 assertThat(terminal)
-                        .containsEntry("status", "succeeded")
-                        .containsEntry("response_text", "完整报告");
-            } else {
-                assertThat(terminal)
-                        .containsEntry("status", "failed")
-                        .containsEntry("response_text", null);
+                        .containsEntry("prompt_text", null)
+                        .containsEntry("claim_token", null);
+                assertThat(terminal.get("finished_at")).isNotNull();
+                if (completionRows == 1) {
+                    assertThat(terminal)
+                            .containsEntry("status", "succeeded")
+                            .containsEntry("response_text", "完整报告");
+                } else {
+                    assertThat(terminal)
+                            .containsEntry("status", "failed")
+                            .containsEntry("response_text", null);
+                }
             }
         } finally {
-            start.countDown();
             pool.shutdownNow();
         }
     }

@@ -3,9 +3,11 @@ package cn.wayuwa.wao.mapper;
 import cn.wayuwa.wao.domain.AiAssistantRunEntity;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 @Mapper
@@ -80,29 +82,55 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
             """)
     int requeueStale(@Param("id") String id, @Param("staleBefore") LocalDateTime staleBefore);
 
-    /** 用数据库时钟终止超时的内部只读排队，并立即清除完整提示。 */
-    @Update("""
-            UPDATE ai_assistant_run
-               SET status = 'failed', response_text = NULL, error_text = #{reason},
-                   prompt_text = NULL, runner_id = NULL, claim_token = NULL,
-                   finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
+    /** 用数据库时钟按主键顺序查找超时的内部只读排队。 */
+    @Select("""
+            SELECT id
+              FROM ai_assistant_run
              WHERE status = 'secure_queued'
                AND member_id LIKE 'internal-%'
                AND created_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
+             ORDER BY id
             """)
-    int expireReadOnlyQueued(@Param("timeoutSeconds") long timeoutSeconds,
-            @Param("reason") String reason);
+    List<String> findExpiredReadOnlyQueuedIds(@Param("timeoutSeconds") long timeoutSeconds);
 
-    /** 用数据库时钟终止执行超时的内部只读任务，旧 Runner 回传会被 CAS 拒绝。 */
+    /** 按主键 CAS 终止一条仍超时的只读排队，并立即清除完整提示。 */
     @Update("""
             UPDATE ai_assistant_run
                SET status = 'failed', response_text = NULL, error_text = #{reason},
                    prompt_text = NULL, runner_id = NULL, claim_token = NULL,
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id}
+               AND status = 'secure_queued'
+               AND member_id LIKE 'internal-%'
+               AND created_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
+            """)
+    int expireReadOnlyQueuedById(@Param("id") String id,
+            @Param("timeoutSeconds") long timeoutSeconds,
+            @Param("reason") String reason);
+
+    /** 用数据库时钟按主键顺序查找执行超时的内部只读任务。 */
+    @Select("""
+            SELECT id
+              FROM ai_assistant_run
              WHERE status = 'secure_running'
                AND member_id LIKE 'internal-%'
                AND claimed_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
+             ORDER BY id
             """)
-    int expireReadOnlyRunning(@Param("timeoutSeconds") long timeoutSeconds,
+    List<String> findExpiredReadOnlyRunningIds(@Param("timeoutSeconds") long timeoutSeconds);
+
+    /** 按主键 CAS 终止一条仍超时的只读任务，旧 Runner 回传会被拒绝。 */
+    @Update("""
+            UPDATE ai_assistant_run
+               SET status = 'failed', response_text = NULL, error_text = #{reason},
+                   prompt_text = NULL, runner_id = NULL, claim_token = NULL,
+                   finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id}
+               AND status = 'secure_running'
+               AND member_id LIKE 'internal-%'
+               AND claimed_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
+            """)
+    int expireReadOnlyRunningById(@Param("id") String id,
+            @Param("timeoutSeconds") long timeoutSeconds,
             @Param("reason") String reason);
 }
