@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: wao-main-deploy
-  cancel-in-progress: true
+  # V77 等需要持久化维护窗口的 migration 不能在停旧节点后被下一次 push 取消。
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -33,6 +34,8 @@ jobs:
           cache: maven
       - name: Validate Nginx DDNS rendering
         run: sh deploy/scripts/test-render-nginx-config.sh
+      - name: Validate schema quiescing scripts
+        run: sh deploy/scripts/test-quiesce-wao-server.sh
       - name: Validate Flyway migration versions
         run: |
           duplicates="$(find wao-server/src/main/resources/db/migration -maxdepth 1 -type f -name 'V*__*.sql' -printf '%f\n' \
@@ -134,6 +137,10 @@ jobs:
         run: |
           set -u
           slave_deployed=false
+          schema_quiesced=false
+          schema_rollout_complete=false
+          safe_slave_reachable=false
+          safe_schema_rollout=false
 
           retry_remote() {
             target_label="$1"
@@ -299,7 +306,28 @@ jobs:
               "/opt/wao/deploy/scripts/set-nginx-upstream-state.sh $node $state"
           }
 
+          quiesce_master() {
+            action="$1"
+            retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" \
+              "sh /tmp/wao-quiesce-server.sh master $action"
+          }
+
+          quiesce_slave() {
+            action="$1"
+            retry_remote "Windows 从节点" ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" \
+              "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\wao-quiesce-server.ps1 -Action $action"
+          }
+
           restore_upstreams() {
+            if [ "$schema_quiesced" = true ] && [ "$schema_rollout_complete" != true ]; then
+              if [ "$slave_deployed" = true ]; then
+                set_upstream_state slave up >/dev/null 2>&1 || true
+              else
+                set_upstream_state slave down >/dev/null 2>&1 || true
+              fi
+              set_upstream_state master down >/dev/null 2>&1 || true
+              return
+            fi
             if [ "$slave_deployed" = true ]; then
               set_upstream_state slave up >/dev/null 2>&1 || true
             else
@@ -308,12 +336,63 @@ jobs:
             set_upstream_state master up >/dev/null 2>&1 || true
           }
 
+          # 是否需要 V77 维护窗口以主库持久状态为准，不依赖单次 push 的文件列表。
+          # 这样 workflow_dispatch、失败重跑或人工取消后的下一次部署都会继续 fail-closed 流程。
+          retry_remote "Linux 主节点" scp -o ConnectTimeout=15 \
+            deploy/scripts/quiesce-wao-server.sh \
+            "$MASTER_USER@$MASTER_HOST:/tmp/wao-quiesce-server.sh" || exit 1
+          rollout_status_output="$(quiesce_master rollout-status)" || exit 1
+          rollout_status="$(printf '%s\n' "$rollout_status_output" | tr -d '\r' | tail -n 1)"
+          case "$rollout_status" in
+            complete) safe_schema_rollout=false ;;
+            required) safe_schema_rollout=true ;;
+            *) printf '无法识别 V77 发布状态：%s\n' "$rollout_status"; exit 1 ;;
+          esac
+
           if ! prepare_cloud_routing >routing.log 2>&1; then
             printf '\n===== cloud routing =====\n'; cat routing.log
             exit 1
           fi
 
           trap restore_upstreams EXIT
+
+          # V77 首次引入带版本的飞书归档写入。旧二进制不认识新栅栏，因此该次 push
+          # 用一次性维护窗口：先暂停定时同步、摘流并停掉全部旧 server，再允许任一新节点执行 migration。
+          if [ "$safe_schema_rollout" = true ]; then
+            echo '::notice title=V77 安全升级::暂停飞书定时同步并停止旧版 API 节点后再执行 migration。'
+            if ! set_upstream_state slave down || ! set_upstream_state master down; then
+              echo '无法为 V77 建立全量摘流窗口。'
+              exit 1
+            fi
+            if ! timeout 8s ssh -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 \
+                "$SLAVE_USER@$SLAVE_HOST" 'exit 0'; then
+              echo 'Windows 从节点不可达，无法确认旧版 server 已停止；V77 保持未发布。'
+              exit 1
+            fi
+            safe_slave_reachable=true
+            retry_remote "Windows 从节点" scp -o ConnectTimeout=15 \
+              deploy/scripts/quiesce-wao-server.sh \
+              "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-quiesce-server.sh" || exit 1
+            retry_remote "Windows 从节点" scp -o ConnectTimeout=15 \
+              deploy/scripts/quiesce-wao-server-windows.ps1 \
+              "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-quiesce-server.ps1" || exit 1
+            if ! quiesce_master pause-feishu-sync; then
+              echo '无法暂停飞书定时同步，V77 未开始。'
+              exit 1
+            fi
+            if ! quiesce_slave stop; then
+              quiesce_master restore-feishu-sync || true
+              echo '无法停止 Windows 旧版 server，V77 未开始。'
+              exit 1
+            fi
+            if ! quiesce_master stop; then
+              if [ "$safe_slave_reachable" = true ]; then quiesce_slave start || true; fi
+              quiesce_master restore-feishu-sync || true
+              echo '无法停止 Linux 旧版 server，V77 未开始。'
+              exit 1
+            fi
+            schema_quiesced=true
+          fi
 
           if gateway_ready_from_cloud "$SLAVE_HOST"; then
             if ! set_upstream_state slave down; then
@@ -325,7 +404,17 @@ jobs:
             echo '::notice title=Windows 从节点未摘流::节点发布前不健康，不在 Nginx 中额外标记 down。'
           fi
           if ! deploy_slave >slave.log 2>&1; then
+            if [ "$safe_schema_rollout" = true ]; then
+              quiesce_slave stop || true
+              set_upstream_state slave down || true
+              printf '\n===== slave =====\n'; cat slave.log
+              echo 'V77 维护窗口中的 Windows 从节点升级失败；保持旧节点停止、定时同步暂停，等待下次部署继续。'
+              exit 1
+            fi
             echo '::warning title=Windows 从节点已隔离::节点发布失败并保持 down；本次继续发布云前端和 Linux 主节点，修复 WSL 后由下次发布补齐。'
+            if [ "$safe_schema_rollout" = true ] && [ "$safe_slave_reachable" = true ]; then
+              quiesce_slave stop || exit 1
+            fi
             if ! set_upstream_state slave down; then
               printf '\n===== slave =====\n'; cat slave.log
               exit 1
@@ -351,7 +440,9 @@ jobs:
             exit 1
           fi
 
-          if [ "$slave_deployed" = true ] && gateway_ready_from_cloud "$SLAVE_HOST"; then
+          if [ "$safe_schema_rollout" = true ]; then
+            set_upstream_state master down || exit 1
+          elif [ "$slave_deployed" = true ] && gateway_ready_from_cloud "$SLAVE_HOST"; then
             if ! set_upstream_state master down; then
               echo '云端未能摘流 Linux 主节点，本次不冒险重启主节点。' >master.log
               printf '\n===== master =====\n'; cat master.log
@@ -361,9 +452,27 @@ jobs:
             echo '::notice title=Linux 主节点未摘流::Windows 从节点当前不健康，保留主节点路由以避免主动制造全站中断。'
           fi
           if ! deploy_master >master.log 2>&1; then
-            set_upstream_state master up || true
+            if [ "$safe_schema_rollout" = true ]; then
+              quiesce_master stop || true
+              set_upstream_state master down || true
+            else
+              set_upstream_state master up || true
+            fi
             printf '\n===== master =====\n'; cat master.log
             exit 1
+          fi
+          if [ "$safe_schema_rollout" = true ]; then
+            if ! quiesce_master complete-v77-rollout; then
+              echo 'V77 已安全部署，但飞书定时同步原状态恢复失败，保持暂停并等待人工处理。'
+              exit 1
+            fi
+            completed_status_output="$(quiesce_master rollout-status)" || exit 1
+            completed_status="$(printf '%s\n' "$completed_status_output" | tr -d '\r' | tail -n 1)"
+            if [ "$completed_status" != complete ]; then
+              echo 'V77 完成标记复核失败，保持全部节点摘流并等待下次部署继续。'
+              exit 1
+            fi
+            schema_rollout_complete=true
           fi
           if ! set_upstream_state master up; then
             printf '\n===== master =====\n'; cat master.log
@@ -396,6 +505,9 @@ jobs:
           credential_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/ai/runner/accounts \
             | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
           test "$credential_route" = 'linux-vpn-master'
+          assistant_claim_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/ai/runner/assistant-v2/claim \
+            | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
+          test "$assistant_claim_route" = 'linux-vpn-master'
           tianren_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/tianren/readings/today/interpret/stream \
             | tr -d '\r' | awk -F ': ' 'tolower($1) == "x-wao-api-route" {print $2}')"
           test "$tianren_route" = 'linux-vpn-master'

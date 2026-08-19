@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
@@ -16,6 +17,8 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.dto.DocBlockDto;
@@ -39,22 +42,27 @@ class FeishuChatSyncServiceTest {
     private final KnowledgeService knowledge = mock(KnowledgeService.class);
     private final ImageService images = mock(ImageService.class);
     private final FeishuWebhookNotifier notifier = mock(FeishuWebhookNotifier.class);
+    private final FeishuChatArchiveVersionService archiveVersions = mock(FeishuChatArchiveVersionService.class);
     private final FeishuChatSyncService service =
-            new FeishuChatSyncService(settings, feishu, knowledge, images, notifier, new ObjectMapper());
+            new FeishuChatSyncService(settings, feishu, knowledge, images, notifier,
+                    archiveVersions, new ObjectMapper());
 
     private void configured() {
-        when(settings.get(SettingService.CHAT_SYNC_APP_ID)).thenReturn("cli_demo");
-        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET)).thenReturn("secret");
-        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID)).thenReturn("oc_chat");
-        when(settings.get(SettingService.CHAT_SYNC_KB_ID)).thenReturn("kb1");
+        when(settings.getAll(any())).thenReturn(Map.of(
+                SettingService.CHAT_SYNC_APP_ID, "cli_demo",
+                SettingService.CHAT_SYNC_APP_SECRET, "secret",
+                SettingService.CHAT_SYNC_CHAT_ID, "oc_chat",
+                SettingService.CHAT_SYNC_CHAT_NAME, "研发群",
+                SettingService.CHAT_SYNC_KB_ID, "kb1",
+                SettingService.CHAT_SYNC_SENDERS,
+                "[{\"id\":\"ou_ge\",\"name\":\"娃哥\"},{\"id\":\"ou_di\",\"name\":\"娃弟\"}]"));
         KbFolderEntity folder = new KbFolderEntity();
         folder.setId("f202607");
         when(knowledge.ensureAutoFolder("kb1", "2026 年 7 月")).thenReturn(folder);
-        when(settings.get(SettingService.CHAT_SYNC_SENDERS))
-                .thenReturn("[{\"id\":\"ou_ge\",\"name\":\"娃哥\"},{\"id\":\"ou_di\",\"name\":\"娃弟\"}]");
-        when(settings.get(eq(SettingService.CHAT_SYNC_CHAT_NAME), anyString())).thenReturn("研发群");
         when(feishu.tenantAccessToken("cli_demo", "secret")).thenReturn("t-token");
-        when(knowledge.upsertAutoDoc(anyString(), anyString(), anyString(), any()))
+        when(archiveVersions.nextVersion()).thenReturn(42L);
+        when(knowledge.upsertAutoDoc(anyString(), anyString(), anyString(), any(),
+                anyString(), any(LocalDate.class), anyLong()))
                 .thenReturn(new DocDto("d1", "飞书群聊 · 2026-07-25", "auto", null, null, false,
                         List.of(), List.of(), List.of(), "kb1", "f202607", 1));
     }
@@ -76,7 +84,8 @@ class FeishuChatSyncServiceTest {
         String result = service.syncDay(DAY);
 
         ArgumentCaptor<List<DocBlockDto>> blocks = ArgumentCaptor.captor();
-        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-25"), blocks.capture());
+        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-25"),
+                blocks.capture(), eq("oc_chat"), eq(DAY), eq(42L));
         String rendered = blocks.getValue().stream()
                 .map(b -> String.valueOf(b.call()) + b.h() + b.p()).reduce("", String::concat);
         assertThat(rendered).contains("09:15 娃哥", "09:20 娃弟", "早上好");
@@ -100,6 +109,69 @@ class FeishuChatSyncServiceTest {
     }
 
     @Test
+    void silentSyncReturnsStructuredArchiveResultWithoutSendingNotification() {
+        configured();
+        FeishuMessage message = text("ou_ge", 9, 15, "早上好");
+        when(feishu.listMessages(anyString(), anyString(), anyLong(), anyLong()))
+                .thenReturn(List.of(message));
+
+        FeishuChatSyncService.ChatSyncDayResult result = service.syncDaySilently(DAY);
+
+        assertThat(result.day()).isEqualTo(DAY);
+        assertThat(result.chatId()).isEqualTo("oc_chat");
+        assertThat(result.kbId()).isEqualTo("kb1");
+        assertThat(result.document().id()).isEqualTo("d1");
+        assertThat(result.messages()).containsExactly(message);
+        verifyNoInteractions(notifier);
+    }
+
+    @Test
+    void reviewSyncRejectsAChangedChatOrKnowledgeBaseBeforeCallingFeishu() {
+        configured();
+
+        assertThatThrownBy(() -> service.syncDaySilently(DAY, "oc_other", "kb1"))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("群聊或知识库已变更");
+
+        verifyNoInteractions(feishu);
+        verifyNoInteractions(archiveVersions);
+    }
+
+    @Test
+    void longMediaRenderingRenewsTheOwningReviewLease() {
+        configured();
+        AtomicInteger heartbeats = new AtomicInteger();
+        long millis = DAY.atTime(LocalTime.of(10, 0)).atZone(ZONE).toInstant().toEpochMilli();
+        when(feishu.listMessages(anyString(), anyString(), anyLong(), anyLong())).thenReturn(List.of(
+                new FeishuMessage("om_img", "ou_ge", "image", "{\"image_key\":\"img_key\"}", millis, false)));
+        when(feishu.downloadImage("t-token", "om_img", "img_key")).thenReturn(new byte[]{1});
+        when(images.store(any(), anyString(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new ImageItemDto("img9", "img_key.png", "1 B", "", "飞书群聊",
+                        "/api/images/img9/raw", "", ""));
+
+        service.syncDaySilently(DAY, "oc_chat", "kb1", heartbeats::incrementAndGet);
+
+        assertThat(heartbeats).hasValueGreaterThanOrEqualTo(4);
+    }
+
+    @Test
+    void reviewEvidenceUsesPlaceholdersInsteadOfClaimingMediaRecognition() {
+        long millis = DAY.atStartOfDay(ZONE).toInstant().toEpochMilli();
+
+        assertThat(service.reviewTextOf(new FeishuMessage(
+                "image", "ou_ge", "image", "{\"image_key\":\"img1\"}", millis, false)))
+                .isEqualTo("[图片]");
+        assertThat(service.reviewTextOf(new FeishuMessage(
+                "audio", "ou_ge", "audio", "{}", millis, false)))
+                .isEqualTo("[语音]");
+        assertThat(service.reviewTextOf(new FeishuMessage(
+                "video", "ou_ge", "media", "{\"file_name\":\"demo.mp4\"}", millis, false)))
+                .isEqualTo("[视频] demo.mp4");
+        assertThat(service.reviewTextOf(new FeishuMessage(
+                "file", "ou_ge", "file", "{\"file_name\":\"plan.pdf\"}", millis, false)))
+                .isEqualTo("[文件] plan.pdf");
+    }
+
+    @Test
     void scheduledRunUsesTheCronPlanDateInsteadOfWallClockDate() {
         configured();
         when(feishu.listMessages(anyString(), anyString(), anyLong(), anyLong())).thenReturn(List.of());
@@ -107,7 +179,8 @@ class FeishuChatSyncServiceTest {
         service.execute(new cn.wayuwa.wao.domain.AutomationJobEntity(),
                 LocalDateTime.of(2026, 7, 25, 23, 59));
 
-        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-25"), any());
+        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-25"),
+                any(), eq("oc_chat"), eq(DAY), anyLong());
     }
 
     @Test
@@ -117,9 +190,12 @@ class FeishuChatSyncServiceTest {
 
         String result = service.syncDays(LocalDate.of(2026, 7, 4), LocalDate.of(2026, 7, 6));
 
-        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-04"), any());
-        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-05"), any());
-        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-06"), any());
+        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-04"),
+                any(), eq("oc_chat"), eq(LocalDate.of(2026, 7, 4)), anyLong());
+        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-05"),
+                any(), eq("oc_chat"), eq(LocalDate.of(2026, 7, 5)), anyLong());
+        verify(knowledge).upsertAutoDoc(eq("kb1"), eq("f202607"), eq("飞书群聊 · 2026-07-06"),
+                any(), eq("oc_chat"), eq(LocalDate.of(2026, 7, 6)), anyLong());
         assertThat(result).contains("2026-07-04 至 2026-07-06", "共 3 天、0 条消息");
     }
 
@@ -143,7 +219,8 @@ class FeishuChatSyncServiceTest {
         service.syncDay(DAY);
 
         ArgumentCaptor<List<DocBlockDto>> blocks = ArgumentCaptor.captor();
-        verify(knowledge).upsertAutoDoc(anyString(), anyString(), anyString(), blocks.capture());
+        verify(knowledge).upsertAutoDoc(anyString(), anyString(), anyString(), blocks.capture(),
+                anyString(), any(LocalDate.class), anyLong());
         assertThat(blocks.getValue().stream().map(DocBlockDto::p).filter(java.util.Objects::nonNull).toList())
                 .anyMatch(p -> p.contains("![群聊图片](/api/images/img9/raw)"));
     }
@@ -186,7 +263,8 @@ class FeishuChatSyncServiceTest {
         service.syncDay(DAY);
 
         ArgumentCaptor<List<DocBlockDto>> blocks = ArgumentCaptor.captor();
-        verify(knowledge).upsertAutoDoc(anyString(), anyString(), anyString(), blocks.capture());
+        verify(knowledge).upsertAutoDoc(anyString(), anyString(), anyString(), blocks.capture(),
+                anyString(), any(LocalDate.class), anyLong());
         String rendered = blocks.getValue().stream().map(DocBlockDto::p)
                 .filter(java.util.Objects::nonNull).reduce("", String::concat);
         assertThat(rendered).contains("部署成功", "改动 已完成同步").doesNotContain("[interactive]");
@@ -194,7 +272,7 @@ class FeishuChatSyncServiceTest {
 
     @Test
     void syncFailsFastWhenChatNotConfigured() {
-        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID)).thenReturn(null);
+        when(settings.getAll(any())).thenReturn(Map.of());
 
         assertThatThrownBy(() -> service.syncDay(DAY))
                 .isInstanceOf(BadRequestException.class)
@@ -203,8 +281,8 @@ class FeishuChatSyncServiceTest {
 
     @Test
     void configMasksAppSecret() {
-        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET)).thenReturn("fake0000000000000000000000secret");
-        when(settings.get(anyString(), anyString())).thenAnswer(i -> i.getArgument(1));
+        when(settings.getAll(any())).thenReturn(Map.of(
+                SettingService.CHAT_SYNC_APP_SECRET, "fake0000000000000000000000secret"));
 
         assertThat(service.config().appSecretMask()).isEqualTo("fake••••••cret");
         assertThat(service.config().appSecretSet()).isTrue();

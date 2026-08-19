@@ -2,12 +2,15 @@ package cn.wayuwa.wao.service;
 
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 import cn.wayuwa.wao.common.VaultCryptoService;
 import cn.wayuwa.wao.domain.SystemSettingEntity;
 import cn.wayuwa.wao.mapper.SystemSettingMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 系统级配置读写：全局唯一一份的键值配置（飞书通知 webhook、群聊同步凭据与映射等）。
@@ -44,6 +47,8 @@ public class SettingService {
     public static final String CHAT_SYNC_FOLDER_ID = "feishu.chat-sync.folder-id";
     /** 发言人映射：JSON 数组 [{"id":"ou_x","name":"娃哥"}]。 */
     public static final String CHAT_SYNC_SENDERS = "feishu.chat-sync.senders";
+    /** 聊天复盘固定的群 id 和两位发言人 open_id（非敏感 JSON）。 */
+    public static final String CHAT_REVIEW_SPEAKERS = "feishu.chat-review.speakers";
     /** 群聊快速收集：@机器人 直接建任务的总开关。 */
     public static final String QUICK_COLLECT_ENABLED = "feishu.quick-collect.enabled";
     /** 快速收集出来的任务默认落到哪个项目。 */
@@ -89,6 +94,22 @@ public class SettingService {
     public String get(String key, String fallback) {
         String value = get(key);
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    /**
+     * 在同一数据库快照中读取一组配置，避免多行配置保存时被调用方读到新旧混合值。
+     *
+     * @param keys 配置键
+     * @return 已解密值；不存在的键映射为 null
+     */
+    @Transactional(readOnly = true)
+    public Map<String, String> getAll(Set<String> keys) {
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String key : keys) values.put(key, null);
+        for (SystemSettingEntity setting : mapper.selectBatchIds(keys)) {
+            values.put(setting.getCfgKey(), decode(setting.getCfgValue()));
+        }
+        return values;
     }
 
     /** 读一个布尔配置项（只有字面量 {@code true} 算真）。 */

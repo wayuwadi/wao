@@ -3,6 +3,8 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -10,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 
 import cn.wayuwa.wao.common.BadRequestException;
@@ -49,8 +52,9 @@ class KnowledgeServiceTest {
     private final DocTemplateMapper templateMapper = mock(DocTemplateMapper.class);
     private final MemberMapper memberMapper = mock(MemberMapper.class);
     private final FeishuTaskNotifier taskNotifier = mock(FeishuTaskNotifier.class);
+    private final FeishuChatArchiveVersionService archiveVersions = mock(FeishuChatArchiveVersionService.class);
     private final KnowledgeService service = new KnowledgeService(groupMapper, kbMapper, folderMapper, docMapper,
-            templateMapper, memberMapper, new ObjectMapper(), taskNotifier);
+            templateMapper, memberMapper, new ObjectMapper(), taskNotifier, archiveVersions);
 
     private MemberEntity member(String id, String name) {
         MemberEntity m = new MemberEntity();
@@ -85,6 +89,59 @@ class KnowledgeServiceTest {
         d.setLinksJson("[]");
         d.setRev(1);
         return d;
+    }
+
+    @Test
+    void olderChatSnapshotCannotOverwriteOrMasqueradeAsTheLatestArchive() {
+        KbEntity kb = kb("kb-chat");
+        KbFolderEntity folder = folder("f-chat", kb.getId());
+        DocEntity latest = doc("d-chat", kb.getId(), folder.getId());
+        latest.setTitle("飞书群聊 · 2026-08-19");
+        latest.setAutoSyncScope("oc_chat");
+        latest.setAutoSyncDate(LocalDate.of(2026, 8, 19));
+        latest.setAutoSyncVersion(12L);
+        when(kbMapper.selectByIdForUpdate(kb.getId())).thenReturn(kb);
+        when(folderMapper.selectById(folder.getId())).thenReturn(folder);
+        when(docMapper.selectList(any())).thenReturn(List.of(latest));
+        when(docMapper.updateAutoArchive(latest.getId(), kb.getId(), folder.getId(), latest.getTitle(), "[]",
+                "oc_chat", LocalDate.of(2026, 8, 19), 11L)).thenReturn(0);
+
+        assertThatThrownBy(() -> service.upsertAutoDoc(
+                kb.getId(), folder.getId(), latest.getTitle(), List.of(),
+                "oc_chat", LocalDate.of(2026, 8, 19), 11L))
+                .isInstanceOf(StaleChatArchiveException.class)
+                .hasMessageContaining("旧快照");
+
+        verify(docMapper, never()).updateById(any(DocEntity.class));
+    }
+
+    @Test
+    void manualArchiveEditSignsANewerVersionAndUsesTheDedicatedCas() {
+        LocalDate day = LocalDate.of(2026, 8, 19);
+        DocEntity archive = doc("d-chat", "kb-chat", "f-chat");
+        archive.setTitle("飞书群聊 · 2026-08-19");
+        archive.setAuto(true);
+        archive.setAutoSyncScope("oc_chat");
+        archive.setAutoSyncDate(day);
+        archive.setAutoSyncVersion(12L);
+        when(docMapper.selectById(archive.getId())).thenReturn(archive);
+        when(docMapper.selectList(any())).thenReturn(List.of(archive));
+        when(archiveVersions.nextVersion()).thenReturn(13L);
+        when(docMapper.updateAutoArchiveManually(eq(archive.getId()), eq("f-chat"),
+                eq(archive.getTitle()), anyString(), anyString(), eq(2), eq("oc_chat"), eq(day),
+                eq(12L), eq(13L))).thenAnswer(invocation -> {
+                    archive.setBlocksJson(invocation.getArgument(3));
+                    archive.setRev(invocation.getArgument(5));
+                    archive.setAutoSyncVersion(invocation.getArgument(9));
+                    return 1;
+                });
+
+        DocDto edited = service.updateDoc(archive.getId(), new PatchDocRequest(
+                null, List.of(new DocBlockDto(null, null, "手工修订", null, null)), null, null));
+
+        assertThat(edited.blocks()).extracting(DocBlockDto::p).containsExactly("手工修订");
+        assertThat(archive.getAutoSyncVersion()).isEqualTo(13L);
+        verify(docMapper, never()).updateById(any(DocEntity.class));
     }
 
     @Test
@@ -214,6 +271,7 @@ class KnowledgeServiceTest {
         DocEntity d2 = doc("d2", "k1", "f1");
         when(folderMapper.selectList(any())).thenReturn(List.of(f1, f2));
         when(docMapper.selectList(any())).thenReturn(List.of(d1, d2));
+        when(docMapper.updateTreeOrder(any(), any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(1);
 
         service.reorderDocs("k1", new ReorderDocsRequest(List.of(
                 new ReorderDocsRequest.FolderOrder("f1", List.of("d2")),
@@ -223,8 +281,8 @@ class KnowledgeServiceTest {
         assertThat(d2.getOrd()).isEqualTo(1);
         assertThat(d1.getFolderId()).isEqualTo("f2");
         assertThat(d1.getOrd()).isEqualTo(1);
-        verify(docMapper).updateById(d1);
-        verify(docMapper).updateById(d2);
+        verify(docMapper).updateTreeOrder("d1", "k1", "f2", 1);
+        verify(docMapper).updateTreeOrder("d2", "k1", "f1", 1);
     }
 
     @Test
@@ -352,7 +410,7 @@ class KnowledgeServiceTest {
         assertThat(d.getDeletedAt()).isNotNull();
         assertThat(d.getDeletedBy()).isEqualTo("m1");
         assertThat(d.getCascadeDel()).isFalse();
-        verify(docMapper).updateById(d);
+        verify(docMapper).markDeleted(eq("d1"), any(LocalDateTime.class), eq("m1"), eq(false));
         verify(docMapper, never()).deleteById(any(java.io.Serializable.class));
     }
 
@@ -423,6 +481,7 @@ class KnowledgeServiceTest {
         assertThat(d.getDeletedAt()).isNull();
         assertThat(f.getDeletedAt()).isNull();
         assertThat(k.getDeletedAt()).isNull();
+        verify(docMapper).clearDeleted("d1");
     }
 
     @Test

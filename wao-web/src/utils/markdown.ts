@@ -21,6 +21,11 @@ const ALLOWED_TAGS = [
 ]
 const ALLOWED_ATTR = ['href', 'title', 'src', 'alt', 'target', 'rel', 'class', 'type', 'checked', 'disabled']
 
+/** AI 复盘是不可信模型输出：只允许排版，禁止链接和会自动发起请求的图片。 */
+const CHAT_REVIEW_TAGS = [
+  'p', 'br', 'hr', 'strong', 'em', 'del', 's', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li',
+]
+
 /** 外链一律 target=_blank + noopener，避免反向控制打开者的标签页。 */
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'A' && node.getAttribute('href')) {
@@ -39,4 +44,19 @@ export function renderMarkdown(text: string): string {
   if (!text?.trim()) return ''
   const html = marked.parse(text, { async: false })
   return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR })
+}
+
+/**
+ * 用无外联能力的专用白名单渲染聊天复盘报告。
+ *
+ * <p>即使后端校验被回归改动，图片、链接和原始 HTML 也不会进入页面 DOM。
+ */
+export function renderChatReviewMarkdown(text: string): string {
+  if (!text?.trim()) return ''
+  const html = marked.parse(text, { async: false })
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: CHAT_REVIEW_TAGS,
+    ALLOWED_ATTR: [],
+    FORBID_TAGS: ['a', 'img', 'video', 'audio', 'source', 'iframe', 'object', 'embed'],
+  })
 }

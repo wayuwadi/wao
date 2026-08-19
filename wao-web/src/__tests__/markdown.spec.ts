@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { renderMarkdown } from '@/utils/markdown'
+import { renderChatReviewMarkdown, renderMarkdown } from '@/utils/markdown'
 
 describe('renderMarkdown', () => {
   it('渲染标题、列表与行内样式', () => {
@@ -30,5 +30,21 @@ describe('renderMarkdown', () => {
   it('空内容返回空串', () => {
     expect(renderMarkdown('')).toBe('')
     expect(renderMarkdown('   ')).toBe('')
+  })
+
+  it('聊天复盘专用渲染保留列表样式但移除所有外联资源', () => {
+    const html = renderChatReviewMarkdown(`
+- **结论** [S1]
+- [追踪链接](https://evil.example/collect)
+- ![追踪图](https://evil.example/pixel.png)
+<img src="https://evil.example/raw.png">
+`)
+
+    expect(html).toContain('<ul>')
+    expect(html).toContain('<strong>结论</strong>')
+    expect(html).not.toContain('<a')
+    expect(html).not.toContain('<img')
+    expect(html).not.toContain('href=')
+    expect(html).not.toContain('src=')
   })
 })

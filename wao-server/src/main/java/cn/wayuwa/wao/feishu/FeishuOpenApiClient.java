@@ -3,12 +3,17 @@ package cn.wayuwa.wao.feishu;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -32,9 +37,22 @@ public class FeishuOpenApiClient {
     private final RestClient client;
     private final Map<String, CachedToken> tokens = new java.util.concurrent.ConcurrentHashMap<>();
 
+    @Autowired
     public FeishuOpenApiClient(RestClient.Builder builder,
                                @Value("${feishu.login.open-api-base-url:https://open.feishu.cn}") String baseUrl) {
+        this(builder, baseUrl, requestFactory());
+    }
+
+    FeishuOpenApiClient(RestClient.Builder builder, String baseUrl, ClientHttpRequestFactory requestFactory) {
+        if (requestFactory != null) builder.requestFactory(requestFactory);
         this.client = builder.baseUrl(baseUrl).build();
+    }
+
+    private static ClientHttpRequestFactory requestFactory() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(10));
+        factory.setReadTimeout(Duration.ofSeconds(30));
+        return factory;
     }
 
     /**
@@ -71,9 +89,10 @@ public class FeishuOpenApiClient {
         List<FeishuChat> out = new ArrayList<>();
         String pageToken = null;
         for (int page = 0; page < MAX_PAGES; page++) {
-            String uri = "/open-apis/im/v1/chats?page_size=" + PAGE_SIZE
-                    + (pageToken == null ? "" : "&page_token=" + pageToken);
-            JsonNode data = get(uri, token);
+            JsonNode data = pageToken == null
+                    ? get("/open-apis/im/v1/chats?page_size={pageSize}", token, PAGE_SIZE)
+                    : get("/open-apis/im/v1/chats?page_size={pageSize}&page_token={pageToken}",
+                            token, PAGE_SIZE, pageToken);
             for (JsonNode item : data.path("items")) {
                 out.add(new FeishuChat(text(item, "chat_id"), text(item, "name")));
             }
@@ -96,9 +115,11 @@ public class FeishuOpenApiClient {
         List<FeishuChatMember> out = new ArrayList<>();
         String pageToken = null;
         for (int page = 0; page < MAX_PAGES; page++) {
-            String uri = "/open-apis/im/v1/chats/" + chatId + "/members?member_id_type=open_id&page_size=100"
-                    + (pageToken == null ? "" : "&page_token=" + pageToken);
-            JsonNode data = get(uri, token);
+            JsonNode data = pageToken == null
+                    ? get("/open-apis/im/v1/chats/{chatId}/members?member_id_type=open_id&page_size=100",
+                            token, chatId)
+                    : get("/open-apis/im/v1/chats/{chatId}/members?member_id_type=open_id&page_size=100"
+                            + "&page_token={pageToken}", token, chatId, pageToken);
             for (JsonNode item : data.path("items")) {
                 out.add(new FeishuChatMember(text(item, "member_id"), text(item, "name")));
             }
@@ -118,26 +139,46 @@ public class FeishuOpenApiClient {
      * @param startSecs 起始时间（秒级时间戳，含）
      * @param endSecs   结束时间（秒级时间戳，含）
      * @return 该区间内的消息，按发送时间升序
+     * @throws FeishuApiException 消息超过单次同步上限，无法保证返回完整结果时
      */
     public List<FeishuMessage> listMessages(String token, String chatId, long startSecs, long endSecs) {
         List<FeishuMessage> out = new ArrayList<>();
+        Set<String> seenPageTokens = new HashSet<>();
         String pageToken = null;
         for (int page = 0; page < MAX_PAGES; page++) {
-            String uri = "/open-apis/im/v1/messages?container_id_type=chat&container_id=" + chatId
-                    + "&start_time=" + startSecs + "&end_time=" + endSecs
-                    + "&sort_type=ByCreateTimeAsc&page_size=" + PAGE_SIZE
-                    + (pageToken == null ? "" : "&page_token=" + pageToken);
-            JsonNode data = get(uri, token);
+            String uri = "/open-apis/im/v1/messages?container_id_type=chat&container_id={chatId}"
+                    + "&start_time={start}&end_time={end}"
+                    + "&sort_type=ByCreateTimeAsc&page_size={pageSize}"
+                    + (pageToken == null ? "" : "&page_token={pageToken}");
+            JsonNode data = pageToken == null
+                    ? get(uri, token, chatId, startSecs, endSecs, PAGE_SIZE)
+                    : get(uri, token, chatId, startSecs, endSecs, PAGE_SIZE, pageToken);
             for (JsonNode item : data.path("items")) {
                 out.add(new FeishuMessage(
                         text(item, "message_id"),
                         item.path("sender").path("id").asText(""),
+                        item.path("sender").path("sender_type").asText(""),
                         text(item, "msg_type"),
                         item.path("body").path("content").asText(""),
                         item.path("create_time").asLong(0),
                         item.path("deleted").asBoolean(false)));
             }
-            pageToken = nextPageToken(data);
+            boolean hasMore = data.path("has_more").asBoolean(false);
+            if (page == MAX_PAGES - 1 && hasMore) {
+                throw new FeishuApiException("已达到飞书群聊单次同步分页上限 "
+                        + MAX_PAGES + " 页（每页最多 " + PAGE_SIZE
+                        + " 条），但飞书仍有更多消息；已停止以避免保存不完整归档");
+            }
+            String nextPageToken = nextPageToken(data);
+            if (hasMore && nextPageToken == null) {
+                throw new FeishuApiException("飞书消息分页返回 has_more=true，但 page_token 为空；"
+                        + "已停止以避免返回不完整消息");
+            }
+            if (nextPageToken != null && !seenPageTokens.add(nextPageToken)) {
+                throw new FeishuApiException("飞书消息分页返回了重复 page_token；"
+                        + "已停止以避免返回不完整消息");
+            }
+            pageToken = nextPageToken;
             if (pageToken == null) {
                 break;
             }
@@ -226,9 +267,9 @@ public class FeishuOpenApiClient {
         }
     }
 
-    private JsonNode get(String uri, String token) {
+    private JsonNode get(String uri, String token, Object... uriVariables) {
         try {
-            JsonNode res = client.get().uri(uri).header("Authorization", "Bearer " + token)
+            JsonNode res = client.get().uri(uri, uriVariables).header("Authorization", "Bearer " + token)
                     .retrieve().body(JsonNode.class);
             return requireOk(res);
         } catch (RestClientException ex) {
@@ -283,11 +324,18 @@ public class FeishuOpenApiClient {
      *
      * @param messageId  消息 id
      * @param senderId   发送者 open_id
+     * @param senderType 发送者类型（user / app）
      * @param msgType    消息类型（text / image / post / …）
      * @param content    原始 content JSON 字符串
      * @param createTime 发送时间（毫秒时间戳）
      * @param deleted    是否已撤回
      */
-    public record FeishuMessage(String messageId, String senderId, String msgType, String content,
-                                long createTime, boolean deleted) { }
+    public record FeishuMessage(String messageId, String senderId, String senderType,
+                                String msgType, String content, long createTime, boolean deleted) {
+        /** 保持既有服务单元测与内部构造的用户消息语义。 */
+        public FeishuMessage(String messageId, String senderId, String msgType, String content,
+                long createTime, boolean deleted) {
+            this(messageId, senderId, "user", msgType, content, createTime, deleted);
+        }
+    }
 }

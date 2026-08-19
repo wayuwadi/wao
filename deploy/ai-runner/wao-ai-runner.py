@@ -599,6 +599,18 @@ def build_cli_environment(git_command: str) -> tuple[dict[str, str], bool, str |
     return environment, bool(token), github_cli
 
 
+def assistant_cli_environment(environment: dict[str, str] | None) -> dict[str, str] | None:
+    """页面只读分析不需要 GitHub 权限，避免把代码仓库凭据带进不可信材料的进程。"""
+    if environment is None:
+        return None
+    sanitized = dict(environment)
+    for key in list(sanitized):
+        upper = key.upper()
+        if upper in {"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN"} or upper.startswith("GITHUB_TOKEN_"):
+            sanitized.pop(key, None)
+    return sanitized
+
+
 def invoke_cli(command: list[str], worktree: Path, prompt: str,
         on_event: Callable[[dict[str, Any]], None] | None = None,
         environment: dict[str, str] | None = None,
@@ -624,14 +636,19 @@ def invoke_cli(command: list[str], worktree: Path, prompt: str,
 
     threading.Thread(target=read_output, daemon=True).start()
     stopping = False
+    stop_started_at: float | None = None
     while True:
+        if should_stop and should_stop() and not stopping:
+            log("收到暂停请求，正在终止本地 AI CLI")
+            terminate_process_tree(process)
+            stopping = True
+            stop_started_at = time.monotonic()
+        elif (stopping and stop_started_at is not None and process.poll() is None
+                and time.monotonic() - stop_started_at >= 5):
+            force_kill_process_tree(process)
         try:
             line = output.get(timeout=1)
         except queue.Empty:
-            if should_stop and should_stop() and not stopping:
-                log("收到暂停请求，正在终止本地 AI CLI")
-                terminate_process_tree(process)
-                stopping = True
             continue
         if line is None:
             break
@@ -643,6 +660,9 @@ def invoke_cli(command: list[str], worktree: Path, prompt: str,
         if on_event:
             on_event(event)
     process.wait()
+    close_output = getattr(process.stdout, "close", None)
+    if callable(close_output):
+        close_output()
     return process.returncode, "".join(lines)
 
 
@@ -655,7 +675,21 @@ def terminate_process_tree(process: subprocess.Popen[str]) -> None:
             creationflags=windows_creation_flags(),
         )
     else:
-        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+
+def force_kill_process_tree(process: subprocess.Popen[str]) -> None:
+    """在优雅终止宽限期后强制回收仍存活的 AI CLI 进程树。"""
+    if os.name == "nt":
+        terminate_process_tree(process)
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 def _readable_text(value: Any) -> str:
@@ -1059,13 +1093,29 @@ def prepare_codex_home(codex_home: Path, account: dict[str, Any]) -> dict[str, s
     return environment
 
 
+def prepare_tool_free_codex_home(codex_home: Path, environment: dict[str, str]) -> dict[str, str]:
+    """只复制本地 OAuth 登录文件，不继承全局 config、MCP、规则或插件。"""
+    codex_home.mkdir(parents=True, exist_ok=True)
+    if os.name != "nt":
+        codex_home.chmod(0o700)
+    source_home = Path(environment.get("CODEX_HOME") or (Path.home() / ".codex"))
+    source_auth = source_home / "auth.json"
+    if source_auth.is_file():
+        target_auth = codex_home / "auth.json"
+        target_auth.write_bytes(source_auth.read_bytes())
+        if os.name != "nt":
+            target_auth.chmod(0o600)
+    return {"CODEX_HOME": str(codex_home)}
+
+
 def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter",
         environment: dict[str, str] | None = None,
         session_id: str | None = None,
         should_stop: Callable[[], bool] | None = None,
         account: dict[str, Any] | None = None,
-        codex_home: Path | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
+        codex_home: Path | None = None,
+        tools_disabled: bool = False) -> tuple[int, str, str | None, dict[str, Any]]:
     """跑一次 `codex exec --json`，返回退出码、最终答复、会话 id 和用量。"""
     result_file = worktree / ".wao-ai-result.txt"
     command = [
@@ -1073,11 +1123,25 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         "-c", 'approval_policy="never"', "-C", str(worktree),
         "--output-last-message", str(result_file), "-",
     ]
+    if tools_disabled:
+        # 页面分析只需要模型生成文字。关闭能读取本机文件或扩散执行面的工具，避免不可信
+        # 聊天正文通过提示注入读取 CODEX_HOME/auth.json 或 API Key 环境变量。
+        command[2:2] = [
+            "--ephemeral", "--ignore-rules",
+            "--disable", "shell_tool",
+            "--disable", "multi_agent",
+            "-c", "tools.view_image=false",
+            "-c", 'web_search="disabled"',
+        ]
     run_environment = dict(environment or os.environ)
     if account:
         if codex_home is None:
             raise RuntimeError("选择集中账号时缺少隔离的 CODEX_HOME")
         run_environment.update(prepare_codex_home(codex_home, account))
+    elif tools_disabled:
+        if codex_home is None:
+            raise RuntimeError("无工具页面分析必须使用隔离的 CODEX_HOME")
+        run_environment.update(prepare_tool_free_codex_home(codex_home, run_environment))
     exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, run_environment, should_stop)
     reporter.flush()
     session_id = None
@@ -1355,33 +1419,56 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
         git_command: str, cli_environment: dict[str, str] | None = None) -> None:
     """在临时空仓库和只读沙箱中执行页面问答，结束后不保留用户上下文。"""
     run_id = claim["runId"]
+    claim_token = str(claim.get("claimToken") or "")
     worktree = root / ".wao-assistant" / run_id
     codex_home = root / ".wao-assistant-codex-homes" / run_id
     exit_code = -1
     response = ""
     error = ""
     try:
+        max_runtime_seconds = max(1, min(86_400, int(claim.get("maxRuntimeSeconds") or 1_740)))
+    except (TypeError, ValueError):
+        max_runtime_seconds = 1_740
+    deadline = time.monotonic() + max_runtime_seconds
+    try:
         worktree.mkdir(parents=True, exist_ok=True)
         run([git_command, "init", "-q"], worktree)
         log(f"[{run_id}] 开始页面只读问答")
         exit_code, response, _, _ = run_codex(
             executable, worktree, str(claim.get("prompt") or ""), "read-only",
-            NoopProgressReporter(), cli_environment, account=claim.get("account"), codex_home=codex_home)
+            NoopProgressReporter(), assistant_cli_environment(cli_environment),
+            should_stop=lambda: time.monotonic() >= deadline,
+            account=claim.get("account"), codex_home=codex_home,
+            tools_disabled=True)
         response = response.strip()
         if exit_code != 0:
-            error = f"Codex 退出码 {exit_code}：{response or '没有返回错误详情'}"
+            # 非零退出的部分 stdout 可能包含原对话或未完成报告，不回传、不持久化。
+            response = ""
+            error = f"Codex 执行失败（退出码 {exit_code}）"
         elif not response:
             exit_code = 1
             error = "Codex 没有返回文字答复"
     except Exception as exc:  # noqa: BLE001 - 必须把节点错误回传给页面
-        error = str(exc)
-        log(f"[{run_id}] 页面问答失败：{exc}")
+        error = f"Codex 执行异常（{type(exc).__name__}）"
+        log(f"[{run_id}] 页面问答失败：{type(exc).__name__}")
     finally:
         try:
-            api.post(
-                f"/api/ai/runner/assistant/{run_id}/complete",
-                {"exitCode": exit_code, "response": response[-30000:], "error": error[-2000:]},
-            )
+            completion = {"claimToken": claim_token, "exitCode": exit_code,
+                          "response": response[-30000:], "error": error[-2000:]}
+            # v2 路径与旧 API 隔离：滚动发布命中旧服务端时会 404，
+            # 短暂重试直到请求落到新节点，不让旧 complete 逻辑吞掉 claim token。
+            last_error: Exception | None = None
+            for attempt in range(6):
+                try:
+                    api.post(f"/api/ai/runner/assistant-v2/{run_id}/complete", completion)
+                    last_error = None
+                    break
+                except Exception as exc:  # noqa: BLE001 - 滚动发布期间换节点重试
+                    last_error = exc
+                    if attempt < 5:
+                        time.sleep(2)
+            if last_error is not None:
+                raise last_error
         except Exception as exc:  # noqa: BLE001
             log(f"[{run_id}] 页面问答结果回传失败：{exc}")
         shutil.rmtree(worktree, ignore_errors=True)
@@ -1636,7 +1723,9 @@ def main() -> int:
                     while len(futures) < runtime_concurrency:
                         claim = api.post("/api/ai/runner/claim")
                         if not claim and "codex" in engine_commands:
-                            assistant_claim = api.post("/api/ai/runner/assistant/claim")
+                            # v2 路径让旧 API 节点在滚动发布期间明确 404，
+                            # 旧服务端无法领取新的 tool-free 安全队列。
+                            assistant_claim = api.post("/api/ai/runner/assistant-v2/claim")
                             if assistant_claim:
                                 futures.add(executor.submit(
                                     execute_assistant_claim, api, assistant_claim, root,

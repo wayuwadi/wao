@@ -366,6 +366,7 @@ paths:
   /kbs/{id}/document-order:
     put:
       summary: 原子保存知识库完整文档树顺序，支持同文件夹排序与跨文件夹移动
+      description: 只窄更新每篇文档的 folder_id / ord；即使命中 scoped 自动归档，也不回写正文、链接或 auto_sync_version、不签发归档序列。后续自动同步可将归档恢复到固定月目录
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '400': { description: 文件夹或文档缺失、重复或不属于该知识库 } }
   /docs:
@@ -590,9 +591,33 @@ paths:
       parameters:
         - { name: maxConcurrency, in: query, required: false, schema: { type: integer } }
         - { name: engines, in: query, required: false, schema: { type: string }, description: 逗号分隔，如 codex,claude }
+        - { name: scriptHash, in: query, required: false, schema: { type: string, pattern: '^[0-9a-f]{64}$' }, description: Runner 脚本原始字节 SHA-256；必须与当前 API 构建打包脚本精确相同才能领取 assistant-v2 }
       responses: { '200': { description: OK }, '401': { description: 节点令牌无效 } }
   /ai/runner/claim:
     post: { summary: 按 AI 工具、指定电脑与并发限制领取下一条任务（重跑的任务会带上 previousFailure）, responses: { '200': { description: 无可领取任务时 data 为 null } } }
+  /ai/runner/assistant-v2/claim:
+    post:
+      summary: 具备精确打包脚本哈希的 Codex Runner 领取一条无工具页面助手或内部安全只读任务
+      description: >
+        独立 v2 协议；旧 assistant 路由不存在，滚动发布期间不回退。内部任务从 secure_queued CAS 为 secure_running。
+        响应的 claimToken 是本次 attempt 唯一凭据；maxRuntimeSeconds 由服务端硬超时扣除保护余量下发，Runner 用单调时钟执行。
+      responses:
+        '200': { description: 返回 AiAssistantClaim；无任务或哈希能力门禁不通过时 data 为 null }
+        '401': { description: 节点令牌无效 }
+  /ai/runner/assistant-v2/{runId}/complete:
+    post:
+      summary: Runner 用 attempt token 回传无工具问答或内部只读分析结果
+      description: >
+        只有 runId、Runner、claimToken 和当前执行中状态全部匹配时才 CAS 进入终态。旧 attempt 的迟到回传不覆盖终态；
+        非零退出不保存部分 response。新 Runner 遇到旧 API 404 时只重试该 v2 路由，不降级。
+      parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/CompleteAiAssistantRunRequest' } } }
+      responses:
+        '200': { description: 已接受当前 attempt，或幂等忽略已终态 / 迟到 attempt }
+        '400': { description: claimToken 缺失或请求字段不合法 }
+        '401': { description: 节点令牌无效或运行不属于当前节点 }
   /ai/runner/runs/{runId}/complete:
     post:
       summary: Runner 回传 AI CLI 退出码、摘要、会话 id 与本次用量
@@ -761,9 +786,11 @@ paths:
   /feishu/chat-sync/config:
     get:
       summary: 同步配置（appSecret 只回脱敏形态）
+      description: App、群、知识库和发送者映射通过一次批量 SQL 读取为同一事务快照。
       responses: { '200': { description: OK } }
     put:
       summary: 保存同步配置（appSecret 省略表示保留原值）
+      description: 多个 feishu.chat-sync.* 配置键在一个数据库事务中整体保存，不暴露半套新配置。
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/SaveChatSyncConfigRequest' } } }
@@ -781,6 +808,12 @@ paths:
   /feishu/chat-sync/run:
     post:
       summary: 手动同步某一天（默认今天）或一段连续日期，批量时逐日覆盖各自当天的归档
+      description: >
+        每日消息查询前签发数据库单调版本；归档按知识库、chatId 和自然日唯一定位，只有同一身份的更新版本能 CAS 覆盖文档，旧快照失败。
+        V77 migration 仅按执行时的当前群 / KB 回填旧日期标题：重复候选优先取未软删除文档中 id 最小的一篇，仅全部已删时回退至全体最小 id；运行时不认领无身份旧文档。软删除的同身份文档重同步时原地恢复，
+        切换群后同日创建独立文档，不覆盖旧群来源链接。
+        飞书图片走 SHA-256 唯一去重写入，并发冲突复用已落库图片；普通用户上传不启用该唯一去重键。
+        飞书连接 / 读取超时分别为 10 秒 / 30 秒。
       parameters:
         - { name: day, in: query, required: false, schema: { type: string, format: date } }
         - { name: startDay, in: query, required: false, schema: { type: string, format: date }, description: 批量同步起始日期，须与 endDay 同时提供 }
@@ -1358,6 +1391,16 @@ components:
         cachedInputTokens: { type: integer, format: int64, description: 缓存读取与缓存写入之和 }
         totalTokens: { type: integer, format: int64, description: 三类 token 合计 }
         costUsd: { type: number, nullable: true, description: 折算额度（美元）；Codex 不回传时为 null }
+    CompleteAiAssistantRunRequest:
+      type: object
+      additionalProperties: false
+      required: [claimToken, exitCode]
+      description: assistant-v2 完成 attempt；非零退出时 Runner 必须将 response 置空，服务端也不保存部分输出
+      properties:
+        claimToken: { type: string, minLength: 1, maxLength: 64 }
+        exitCode: { type: integer }
+        response: { type: string, maxLength: 30000 }
+        error: { type: string, maxLength: 2000, description: Runner 诊断字段；服务端只落库稳定有界错误 }
     AiRunUsage:
       type: object
       description: 运行详情里返回的用量账单
@@ -1440,7 +1483,7 @@ components:
       type: object
       required: [id, label, icon, group, order, visible]
       properties:
-        id: { type: string, enum: [home, projects, todo, workday-rhythm, action-plans, calendar, weekly-report, life-review, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, automation, files, games] }
+        id: { type: string, enum: [home, projects, chat-reviews, todo, workday-rhythm, action-plans, calendar, weekly-report, life-review, workspaces, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, automation, files, games] }
         label: { type: string, maxLength: 24 }
         icon: { type: string, description: Remix Icon 类名 }
         group: { type: string, enum: [ROOT, PUBLIC, PERSONAL, TOOLS] }
@@ -1451,7 +1494,7 @@ components:
       required: [version, menus]
       properties:
         version: { type: integer, minimum: 1 }
-        menus: { type: array, minItems: 18, maxItems: 18, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
+        menus: { type: array, minItems: 20, maxItems: 20, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
     SavePersonalMemory:
       type: object
       required: [title, content, category]

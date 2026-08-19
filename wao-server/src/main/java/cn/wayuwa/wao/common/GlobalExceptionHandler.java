@@ -5,12 +5,13 @@ import cn.wayuwa.wao.auth.WechatLoginException;
 import cn.wayuwa.wao.feishu.FeishuApiException;
 import cn.wayuwa.wao.service.NeteaseMusicApiException;
 import java.util.Optional;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -40,6 +41,18 @@ public class GlobalExceptionHandler {
                 .map(FieldError::getDefaultMessage)
                 .orElse("请求参数不合法");
         return ApiResponse.fail(40001, message);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleUnreadableJson(HttpMessageNotReadableException exception) {
+        return ApiResponse.fail(40002, "请求体不是合法 JSON");
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+    public ApiResponse<Void> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException exception) {
+        return ApiResponse.fail(41500, "不支持该请求 Content-Type");
     }
 
     @ExceptionHandler(UnauthorizedException.class)

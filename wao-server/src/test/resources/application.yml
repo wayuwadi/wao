@@ -11,6 +11,11 @@ spring:
     enabled: false
   session:
     store-type: none
+  jackson:
+    parser:
+      strict-duplicate-detection: true
+    deserialization:
+      fail-on-trailing-tokens: true
   cloud:
     nacos:
       discovery:
@@ -30,6 +35,12 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  chat-review:
+    # 大多数测试不创建 chat_review_run 表，禁止真实定时线程在后台吞掉缺表异常。
+    processing-enabled: false
+  ai:
+    read-only:
+      cleanup-enabled: false
   auth:
     protection-enabled: false
     registration-enabled: true

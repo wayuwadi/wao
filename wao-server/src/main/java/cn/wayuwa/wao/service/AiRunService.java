@@ -825,7 +825,8 @@ public class AiRunService {
         boolean clearUpdateRequest = false;
         boolean storeLog = false;
         LocalDateTime now = LocalDateTime.now();
-        runner.setLastSeenAt(now);
+        // 心跳时间由主库统一生成；实体中的旧值不参与本次更新。
+        runner.setLastSeenAt(null);
         if (maxConcurrency != null) runner.setMaxConcurrency(clamp(maxConcurrency, 1, 8, 1));
         if (StringUtils.hasText(engines)) runner.setEngines(joinEngines(List.of(engines.split(","))));
         if (StringUtils.hasText(scriptHash)) {
@@ -834,6 +835,9 @@ public class AiRunService {
             if (scripts.available() && scripts.hash().equals(runner.getScriptHash())) {
                 runner.setUpdateRequestedAt(null);
                 clearUpdateRequest = true;
+            } else if (scripts.available() && runner.getUpdateRequestedAt() == null) {
+                // 安全只读协议必须与服务端打包脚本同版；发现旧节点即自动下发更新。
+                runner.setUpdateRequestedAt(now);
             }
         }
         if (StringUtils.hasText(wakeMac)) {
@@ -863,6 +867,7 @@ public class AiRunService {
         } else {
             runnerMapper.updateById(runner);
         }
+        runnerMapper.touchLastSeenAt(runner.getId());
         try {
             codexQuotas.report(runner.getId(), codexQuota, codexQuotaError, now);
         } catch (RuntimeException ex) {
@@ -877,8 +882,7 @@ public class AiRunService {
     public synchronized AiRunnerClaimDto claim(String token) {
         recoverStaleRuns();
         AiRunnerNodeEntity runner = requireRunner(token);
-        runner.setLastSeenAt(LocalDateTime.now());
-        runnerMapper.updateById(runner);
+        runnerMapper.touchLastSeenAt(runner.getId());
         long ownActive = countRuns(new LambdaQueryWrapper<AiTaskRunEntity>()
                 .eq(AiTaskRunEntity::getRunnerId, runner.getId())
                 .in(AiTaskRunEntity::getStatus, List.of("claimed", "running")));
@@ -943,8 +947,7 @@ public class AiRunService {
         String content = limit(request.content(), MAX_PROGRESS);
         if (!StringUtils.hasText(content) || content.equals(run.getLatestProgress())) return;
         appendProgress(run, kind, content);
-        runner.setLastSeenAt(LocalDateTime.now());
-        runnerMapper.updateById(runner);
+        runnerMapper.touchLastSeenAt(runner.getId());
     }
 
     /** 节点回传退出码和摘要；成功进入待验证，失败回到进行中。 */
@@ -976,8 +979,7 @@ public class AiRunService {
             projectMemories.persistCandidates(run, request.projectMemoryCandidates());
         }
         setTaskStatus(run.getTaskId(), exitCode == 0 ? "待验证" : "进行中");
-        runner.setLastSeenAt(LocalDateTime.now());
-        runnerMapper.updateById(runner);
+        runnerMapper.touchLastSeenAt(runner.getId());
         notifyFinished(run, engine, exitCode);
         return toRunDtos(List.of(run)).get(0);
     }
@@ -1007,8 +1009,7 @@ public class AiRunService {
         title = limit(title, 200);
         var report = hostedPages.saveRunReport(runId, html, title, run.getRequestedBy());
         appendProgress(run, "message", "已生成持久化报告，可随时查看和分享");
-        runner.setLastSeenAt(LocalDateTime.now());
-        runnerMapper.updateById(runner);
+        runnerMapper.touchLastSeenAt(runner.getId());
         return report;
     }
 

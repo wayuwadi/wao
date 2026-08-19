@@ -31,6 +31,9 @@
     开发任务优先领取。成员的会话和消息单独持久化，宽屏聊天工作台左侧提供历史搜索、切换和删除；页面明确
     显示节点在线、等待、失败与重试状态。回答可以统一检索群聊、知识库、项目和 Task 并提供可追溯来源；
     群聊支持按群、发言人和归档日期范围筛选，不再依赖单独的 Chat Completions Key。
+    服务端内部只读分析另外支持“非阻塞入队→按运行 id 查询终态”：首个使用者是共享聊天复盘（见
+    [ADR-088](../adr/088-shared-chat-review-workflow.md)）。该能力仅为 Java 服务内部接口，不提供通用工作流 HTTP API；现有同步
+    `runReadOnlyJob` 继续作为旧调用方的兼容包装。
 12. 首页展示已启用 Codex 集中账号的真实五小时会话剩余值，以及 Codex / Claude 集中账号的真实七天
     额度剩余值；已接入 Runner 还通过 Codex 本地接口上报脱敏的套餐、点数、通用与模型专属限额，
     同一账号跨电脑合并展示。首页同时从知识库与飞书同步归档中挖掘最多五条
@@ -60,6 +63,33 @@
 - 节点只领取自己装了对应 CLI 的运行；单次指定了电脑时，只有那台电脑能领，它离线则继续排队。
 - AI 助手来源选项来自真实配置和业务数据；日期范围必须在查询候选前生效，发言人筛选后不得把其他人的
   消息正文交给 Codex。知识库、项目和 Task 的引用可以回到对应 WAO 页面；密钥库和系统凭据不得进入资产层。
+- 非阻塞内部只读任务入队后立即返回 `ai_assistant_run.id`，其活动状态专用 `secure_queued / secure_running`，查询只允许调用方按该 id 读取状态和结果；
+  不创建 `ai_assistant_conversation` 或 `ai_assistant_message`。成员页面助手以及保留五分钟等待的 `runReadOnlyJob / executeReadOnlyJob` 同步兼容包装使用 `queued / running`；它们与 durable `secure_*` 共用一张表，但超时恢复语义不同。AI 运行进入成功、失败或超时终态时都必须立即将 `prompt_text` 显式置空，
+  开发任务队列仍优先于页面问答和内部分析。
+- 内部 secure enqueue 要求当前 API 构建中的 bundled Runner 脚本可读，并验证提示非空和同一操作没有活动运行；提示的业务上限由调用方在入队前执行。它不依赖当下兼容 Runner 在线或哈希匹配。节点哈希 / Codex 能力只在 assistant-v2 claim 时检查；无兼容节点时 `secure_queued` 可等待到后续节点上线，但默认 60 分钟后由 DB 硬超时失败并清空 prompt。
+- 内部只读运行的入队 `created_at / updated_at`、领取 `claimed_at / updated_at`、成功 / 失败 / 超时终态 `finished_at / updated_at` 均由 MySQL
+  `CURRENT_TIMESTAMP(6)` 直接写入；超时 SQL 用 `DATE_SUB(CURRENT_TIMESTAMP(6), ...)` 比较。API 节点和 Runner 本地时钟不参与这些时间戳及过期判断。
+- 内部只读任务的过期不能依赖调用方继续查询。服务端后台周期扫描并以活动状态条件更新清理超时运行：`secure_queued` 从 `created_at` 起超过
+  `wao.ai.read-only.queued-timeout`（环境变量 `WAO_AI_READ_ONLY_QUEUED_TIMEOUT`，默认 60 分钟），或 `secure_running` 从 `claimed_at` 起超过
+  `wao.ai.read-only.running-timeout`（环境变量 `WAO_AI_READ_ONLY_RUNNING_TIMEOUT`，默认 30 分钟）时转为 `failed`，只保存有界稳定超时错误并清空
+  `prompt_text / claim_token`。`secure_running` 不进入成员页面助手使用 JVM 墙上时钟的 3 分钟 stale requeue；它只会正常完成，或由 MySQL 时钟的 30 分钟执行硬超时终止为失败，不重排同份敏感材料。
+  清理与 Runner 完成并发时只能有一个终态 CAS 成功；即使没有页面轮询或上层 worker 已停止，敏感提示正文也会按时释放。
+- 页面助手和内部安全只读运行只通过独立协议 `POST /api/ai/runner/assistant-v2/claim` 与
+  `POST /api/ai/runner/assistant-v2/{runId}/complete` 流转。新 API 不映射旧 `assistant` 路由；新 Runner 命中旧 API 的 v2 404 时只重试 v2，不降级到旧 claim / complete。
+- 能力门禁不信任 Runner 自报的布尔标志：心跳上报的 `scriptHash` 必须与当前 API 构建中打包的 Runner 脚本原始字节 SHA-256 完全相同，节点也必须上报 Codex 能力，才能领取。服务端未打包脚本、节点未上报或哈希不匹配时均返回无任务。
+  滚动发布时，旧 Runner 不调用 v2 且哈希不匹配，旧 API 不识别 v2；两端均 fail-closed，安全任务等待兼容节点或 DB 硬超时，不能落入旧协议或带工具执行。
+- 每次 v2 claim 生成新的 32 字符随机 `claimToken`，与 `runnerId` 一起写入 `ai_assistant_run`，并返回从安全执行硬超时扣除保护余量得到的 `maxRuntimeSeconds`（默认 1,740 秒）。Runner 必须用本地单调时钟计算截止时间；
+  到期后终止 Codex 子进程，不使用可回拨的墙上时钟也不回传部分结果。complete 必须原样带回 token；服务端只在 `id + runner_id + claim_token + 当前执行中状态` 全部匹配时 CAS 接受成功或失败，终态清空 token，旧 attempt 迟到完成无法覆盖终态。
+- 页面助手和内部只读分析（包括聊天复盘）每次都在临时空 Git 仓库、独立临时 `CODEX_HOME` 与 `read-only` sandbox 中运行。Runner 调用 Codex 时必须同时使用
+  `--ephemeral`、`--ignore-rules`、`--disable shell_tool`、`--disable multi_agent`、`tools.view_image=false`、`web_search=disabled`，并在子进程环境中剥离
+  `GH_TOKEN`、`GITHUB_TOKEN` 及同类 GitHub Token。这些进程级约束才是阻断不可信正文读取本机、联网检索、调用子代理或触达 GitHub 凭据的安全边界；提示中的“不可信引用”标签只是纵深防御。
+- 任一强制开关不被当前 Codex CLI 识别时，该只读任务必须失败关闭；Runner 不得删去开关后重试、切换到可用工具的旧模式或继承开发任务权限。Codex 非零退出时不得回传
+  stdout 或最后消息中的部分答案，只回传稳定失败类别与退出码；服务端只保存有界稳定错误，不保存部分 `response_text`。Runner 在尝试 v2 完成回传后进入 `finally`，无论成功、非零、单调超时或回传失败都清理临时仓库与 `CODEX_HOME`。
+- Runner / 服务端验收覆盖 `secure_queued / secure_running`、无兼容 Runner 在线时仍可入队并由 60 分钟 DB 超时收口、精确 bundled-script hash 能力门禁、旧 Runner / 旧 API 滚动发布 fail-closed、旧 v1 路由 404 且不回退、v2 `claimToken / maxRuntimeSeconds`、单调截止和全路径临时目录清理。
+  另需验证旧 `claimToken` 迟到完成更新 0 行，后台在没有任何结果查询时仍会清理安全排队 / 执行超时、清空提示与 token，安全执行不会被 3 分钟 JVM stale requeue，且 DB 硬超时与正常完成竞争时不覆盖先到终态。
+- 内部只读队列与聊天复盘的数据库集成测试使用 `mysql:9.0` Testcontainers：Docker 可用时覆盖 Flyway V1–V77、全局活动唯一约束、lease、归档身份与 CAS、
+  AI 入队关联事务回滚和数据库时间超时清理；Docker 不可用时显式跳过，不降级到 H2 后宣称完成 MySQL 9 并发 / 时钟验收。
+- 同步兼容包装与非阻塞接口共用 `ai_assistant_run` 和 assistant-v2 领取 / 完成协议；拆分不得建第二张 AI 队列表，也不得让内部分析获得开发任务的写权限。同步包装明确使用普通 `queued / running` 及五分钟窗口；非阻塞 durable 运行使用 `secure_*`，不经历页面助手的 3 分钟 stale requeue，仍遵守独立 60 / 30 分钟数据库硬超时语义。
 - 控制台三个视图（运行状态 / 执行电脑 / AI 工作流）覆盖原本分散在首页和项目设置里的信息：
   电脑卡片展示平台、接入的 AI 工具、槽位占用、心跳和正在跑的任务；工作流卡片可就地编辑
   仓库、分支、目录、默认 AI 工具、固定电脑与并发，并展示进行中/成功/失败统计。已保存的工作流
@@ -160,9 +190,8 @@
   孤儿任务分支和独立 worktree，AI 的首个提交即为该仓库的首版内容；不得因远端默认分支不存在
   而报“无效引用”。
 - Linux 主节点的 Codex CLI 和 Runner 能力由管理员作为主机级依赖独立维护；CD 不下载、上传、安装、升级或重启
-  Codex CLI/Runner。已配对 Runner 需主动上报 `codex` 能力并同步集中账号。页面问答允许任一在线的本地 Codex
-  Runner 领取，不限 Windows 或 Linux；在临时空仓库中用 `read-only` 沙箱执行，完成后清除问题正文和临时目录；每位成员同时
-  只允许一条问答。
+  Codex CLI/Runner。已配对 Runner 需主动上报 `codex` 能力、与服务端打包脚本精确匹配的 `scriptHash`，并同步集中账号。页面问答允许任一满足这些门禁的在线本地 Codex
+  Runner 领取，不限 Windows 或 Linux；按上述强制无工具档位执行，完成后清除问题正文、临时仓库和运行级 `CODEX_HOME`；每位成员同时只允许一条问答。
 
 ## 安全边界
 
@@ -177,5 +206,7 @@
 - 配对码和节点令牌不写日志、不进 Git；节点令牌只保存于 `~/.wao/ai-runner.json`。
 - WAO 可按 ADR-030～032 加密保存用户主动添加的 Codex、Claude Code、OpenAI 兼容 API 凭据；
   列表和浏览器接口不回传明文。GitHub 凭据仍只留 Runner 本机。
+- GitHub 凭据仅可注入需要提交代码的开发任务。页面助手和内部只读分析必须从继承环境移除 `GH_TOKEN`、`GITHUB_TOKEN` 及同类 GitHub Token；
+  无工具开关与 `read-only`、空仓库共同限制提示注入，不能以自然语言规则替代进程隔离。旧 CLI 缺少安全开关时失败关闭，不提供兼容降级。
 - Runner 协议仅开放配对、心跳（含受限日志尾部）、领取、进展、完成五类接口；业务配置、任务档案与运行列表仍要求
   WAO 会话。单条进展最多 1000 字，服务端校验运行归属并拒绝未知类型。

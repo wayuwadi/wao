@@ -21,6 +21,7 @@ import cn.wayuwa.wao.mapper.ImageBlobMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.mock.web.MockMultipartFile;
 
 class ImageServiceTest {
@@ -128,7 +129,26 @@ class ImageServiceTest {
         ArgumentCaptor<ImageBlobEntity> saved = ArgumentCaptor.forClass(ImageBlobEntity.class);
         verify(mapper).insert(saved.capture());
         assertThat(saved.getValue().getContentHash()).hasSize(64);
+        assertThat(saved.getValue().getDedupeKey()).isEqualTo(saved.getValue().getContentHash());
         assertThat(dto.name()).isEqualTo("新图.png");
+    }
+
+    @Test
+    void concurrentDeduplicatedInsertReusesTheDatabaseUniqueKeyWinner() {
+        when(mapper.findByContentHash(anyString(), eq(3L))).thenReturn(null);
+        when(mapper.insert(any(ImageBlobEntity.class))).thenThrow(new DuplicateKeyException("dedupe race"));
+        ImageBlobEntity winner = new ImageBlobEntity();
+        winner.setId("img-winner");
+        winner.setName("获胜图.png");
+        winner.setContentType("image/png");
+        winner.setByteSize(3L);
+        when(mapper.findByDedupeKey(anyString())).thenReturn(winner);
+
+        ImageItemDto dto = service.store(
+                new byte[]{1, 2, 3}, "image/png", "候选图.png", "飞书群聊", true);
+
+        assertThat(dto.id()).isEqualTo("img-winner");
+        verify(mapper).findByDedupeKey(anyString());
     }
 
     @Test
@@ -140,5 +160,8 @@ class ImageServiceTest {
         // 用户主动上传不走去重：两处各自引用自己的那份，删掉一份不该让另一处变成死链。
         verify(mapper).insert(any(ImageBlobEntity.class));
         verify(mapper, never()).findByContentHash(anyString(), anyLong());
+        ArgumentCaptor<ImageBlobEntity> saved = ArgumentCaptor.forClass(ImageBlobEntity.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getDedupeKey()).isNull();
     }
 }

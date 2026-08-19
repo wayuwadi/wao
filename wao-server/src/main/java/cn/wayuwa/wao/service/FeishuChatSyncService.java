@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.dto.DocBlockDto;
@@ -30,6 +31,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 飞书群聊消息同步知识库：每天 23:59 把当天 00:00–23:59 的群聊记录沉淀成一篇文档。
@@ -52,21 +54,28 @@ public class FeishuChatSyncService implements JobHandler {
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm");
     private static final TypeReference<List<FeishuSenderDto>> SENDERS_TYPE = new TypeReference<>() { };
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    private static final Set<String> SYNC_CONFIG_KEYS = Set.of(
+            SettingService.CHAT_SYNC_APP_ID, SettingService.CHAT_SYNC_APP_SECRET,
+            SettingService.CHAT_SYNC_CHAT_ID, SettingService.CHAT_SYNC_CHAT_NAME,
+            SettingService.CHAT_SYNC_KB_ID, SettingService.CHAT_SYNC_SENDERS);
 
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
     private final KnowledgeService knowledge;
     private final ImageService images;
     private final FeishuWebhookNotifier notifier;
+    private final FeishuChatArchiveVersionService archiveVersions;
     private final ObjectMapper json;
 
     public FeishuChatSyncService(SettingService settings, FeishuOpenApiClient feishu, KnowledgeService knowledge,
-            ImageService images, FeishuWebhookNotifier notifier, ObjectMapper json) {
+            ImageService images, FeishuWebhookNotifier notifier,
+            FeishuChatArchiveVersionService archiveVersions, ObjectMapper json) {
         this.settings = settings;
         this.feishu = feishu;
         this.knowledge = knowledge;
         this.images = images;
         this.notifier = notifier;
+        this.archiveVersions = archiveVersions;
         this.json = json;
     }
 
@@ -89,15 +98,11 @@ public class FeishuChatSyncService implements JobHandler {
 
     /** 当前配置（App Secret 只回脱敏形态）。 */
     public FeishuChatSyncConfigDto config() {
-        String secret = settings.get(SettingService.CHAT_SYNC_APP_SECRET);
+        SyncConfig snapshot = syncConfig();
         return new FeishuChatSyncConfigDto(
-                settings.get(SettingService.CHAT_SYNC_APP_ID, ""),
-                SettingService.mask(secret),
-                secret != null && !secret.isBlank(),
-                settings.get(SettingService.CHAT_SYNC_CHAT_ID, ""),
-                settings.get(SettingService.CHAT_SYNC_CHAT_NAME, ""),
-                settings.get(SettingService.CHAT_SYNC_KB_ID, ""),
-                senders());
+                value(snapshot.appId()), SettingService.mask(snapshot.appSecret()),
+                hasText(snapshot.appSecret()), value(snapshot.chatId()), value(snapshot.chatName()),
+                value(snapshot.kbId()), snapshot.senders());
     }
 
     /**
@@ -106,6 +111,7 @@ public class FeishuChatSyncService implements JobHandler {
      * @param req 配置表单
      * @return 保存后的配置（脱敏）
      */
+    @Transactional
     public FeishuChatSyncConfigDto saveConfig(SaveChatSyncConfigRequest req) {
         settings.put(SettingService.CHAT_SYNC_APP_ID, trimmed(req.appId()));
         settings.put(SettingService.CHAT_SYNC_APP_SECRET, trimmed(req.appSecret()));
@@ -135,13 +141,14 @@ public class FeishuChatSyncService implements JobHandler {
      * @return 成员列表（已按现有映射覆盖显示名）
      */
     public List<FeishuSenderDto> members(String chatId) {
-        String target = chatId == null || chatId.isBlank() ? settings.get(SettingService.CHAT_SYNC_CHAT_ID) : chatId;
+        SyncConfig snapshot = syncConfig();
+        String target = chatId == null || chatId.isBlank() ? snapshot.chatId() : chatId;
         if (target == null || target.isBlank()) {
             throw new BadRequestException("请先选择要同步的群聊");
         }
-        Map<String, String> mapped = senderNames();
+        Map<String, String> mapped = senderNames(snapshot.senders());
         List<FeishuSenderDto> out = new ArrayList<>();
-        for (FeishuChatMember m : feishu.listChatMembers(token(), target)) {
+        for (FeishuChatMember m : feishu.listChatMembers(token(snapshot), target)) {
             out.add(new FeishuSenderDto(m.openId(), mapped.getOrDefault(m.openId(), m.name())));
         }
         return out;
@@ -156,9 +163,50 @@ public class FeishuChatSyncService implements JobHandler {
      * @throws FeishuApiException  调用飞书失败时
      */
     public String syncDay(LocalDate day) {
+        return syncDayResult(day, true).summary();
+    }
+
+    /**
+     * 为一次上层批量流程同步单日归档，不逐日发送飞书通知。
+     *
+     * <p>返回的消息与刚刚覆盖进知识库的文档来自同一次飞书查询，上层可以用
+     * {@code senderId/open_id} 精确过滤，不必从只保留显示名的 Markdown 里反向猜测身份。
+     *
+     * @param day 要同步的上海时区自然日
+     * @return 归档文档与同批原始消息（不含凭据）
+     */
+    public ChatSyncDayResult syncDaySilently(LocalDate day) {
+        return syncDayResult(day, false);
+    }
+
+    /**
+     * 使用运行快照指定的群聊与知识库同步一天；当前目标发生变化时在抓取前失败。
+     */
+    public ChatSyncDayResult syncDaySilently(LocalDate day, String expectedChatId, String expectedKbId) {
+        return syncDaySilently(day, expectedChatId, expectedKbId, () -> { });
+    }
+
+    /** 使用上层租约心跳同步；长图片处理期间一旦执行权转移便立即停止。 */
+    public ChatSyncDayResult syncDaySilently(LocalDate day, String expectedChatId, String expectedKbId,
+            Runnable heartbeat) {
+        return syncDayResult(day, false, expectedChatId, expectedKbId,
+                heartbeat == null ? () -> { } : heartbeat);
+    }
+
+    private ChatSyncDayResult syncDayResult(LocalDate day, boolean notify) {
+        return syncDayResult(day, notify, null, null, () -> { });
+    }
+
+    private ChatSyncDayResult syncDayResult(LocalDate day, boolean notify,
+            String expectedChatId, String expectedKbId, Runnable heartbeat) {
         LocalDate target = day == null ? LocalDate.now(ZONE) : day;
-        String chatId = required(SettingService.CHAT_SYNC_CHAT_ID, "请先选择要同步的群聊");
-        String kbId = required(SettingService.CHAT_SYNC_KB_ID, "请先选择沉淀到哪个知识库");
+        SyncConfig snapshot = syncConfig();
+        String chatId = requiredValue(snapshot.chatId(), "请先选择要同步的群聊");
+        String kbId = requiredValue(snapshot.kbId(), "请先选择沉淀到哪个知识库");
+        if (hasText(expectedChatId) && !expectedChatId.equals(chatId)
+                || hasText(expectedKbId) && !expectedKbId.equals(kbId)) {
+            throw new BadRequestException("飞书同步群聊或知识库已变更，本次复盘已停止");
+        }
         String monthFolder = target.getYear() + " 年 " + target.getMonthValue() + " 月";
         String folderId = knowledge.ensureAutoFolder(kbId, monthFolder).getId();
 
@@ -166,25 +214,42 @@ public class FeishuChatSyncService implements JobHandler {
         long start = target.atStartOfDay(ZONE).toEpochSecond();
         long end = target.atTime(LocalTime.of(23, 59, 59)).atZone(ZONE).toEpochSecond();
 
-        String token = token();
+        String token = token(snapshot);
+        // 以请求发起顺序签版；后发起的查询永远优先，失败烧号不影响正确性。
+        long archiveVersion = archiveVersions.nextVersion();
         List<FeishuMessage> messages = feishu.listMessages(token, chatId, start, end);
-        Map<String, String> names = senderNames();
-        List<DocBlockDto> blocks = render(token, target, messages, names);
+        heartbeat.run();
+        Map<String, String> names = senderNames(snapshot.senders());
+        String chatName = hasText(snapshot.chatName()) ? snapshot.chatName().trim() : "群聊";
+        List<DocBlockDto> blocks = render(token, target, messages, names, chatName, heartbeat);
 
         String title = "飞书群聊 · " + target.format(DAY);
-        DocDto doc = knowledge.upsertAutoDoc(kbId, folderId, title, blocks);
+        heartbeat.run();
+        assertCurrentTarget(chatId, kbId);
+        DocDto doc = knowledge.upsertAutoDoc(
+                kbId, folderId, title, blocks, chatId, target, archiveVersion);
+        assertCurrentTarget(chatId, kbId);
         log.info("飞书群聊同步完成：{} 条消息写入文档 {}", messages.size(), doc.id());
-        notifier.notifyCard(new FeishuWebhookNotifier.Card(
-                "群聊记录已沉淀",
-                "green",
-                List.of(
-                        List.of("日期", target.format(DAY) + " 00:00–23:59"),
-                        List.of("群聊", settings.get(SettingService.CHAT_SYNC_CHAT_NAME, "群聊")),
-                        List.of("消息", messages.size() + " 条")),
-                null,
-                "打开文档",
-                "https://wao.wayuwa.cn/kb/" + kbId + "?doc=" + doc.id()));
-        return "成功 · " + target.format(DAY) + " 共 " + messages.size() + " 条消息";
+        if (notify) {
+            notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                    "群聊记录已沉淀",
+                    "green",
+                    List.of(
+                            List.of("日期", target.format(DAY) + " 00:00–23:59"),
+                            List.of("群聊", chatName),
+                            List.of("消息", messages.size() + " 条")),
+                    null,
+                    "打开文档",
+                    "https://wao.wayuwa.cn/kb/" + kbId + "?doc=" + doc.id()));
+        }
+        return new ChatSyncDayResult(target, chatId, chatName, kbId, doc, List.copyOf(messages));
+    }
+
+    private void assertCurrentTarget(String expectedChatId, String expectedKbId) {
+        SyncConfig current = syncConfig();
+        if (!expectedChatId.equals(current.chatId()) || !expectedKbId.equals(current.kbId())) {
+            throw new BadRequestException("飞书同步群聊或知识库已变更，本次复盘已停止");
+        }
     }
 
     /**
@@ -206,21 +271,56 @@ public class FeishuChatSyncService implements JobHandler {
             throw new BadRequestException("一次最多同步 366 天，请缩小历史范围后重试");
         }
         int messages = 0;
+        DocDto lastDoc = null;
         for (LocalDate day = start; !day.isAfter(end); day = day.plusDays(1)) {
-            String result = syncDay(day);
-            int marker = result.indexOf(" 共 ");
-            int suffix = result.indexOf(" 条消息");
-            if (marker >= 0 && suffix > marker) {
-                messages += Integer.parseInt(result.substring(marker + 3, suffix));
-            }
+            ChatSyncDayResult result = syncDayResult(day, false);
+            messages += result.messages().size();
+            lastDoc = result.document();
+        }
+        if (lastDoc != null) {
+            notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                    "群聊历史已批量沉淀",
+                    "green",
+                    List.of(
+                            List.of("范围", start.format(DAY) + " 至 " + end.format(DAY)),
+                            List.of("天数", days + " 天"),
+                            List.of("消息", messages + " 条")),
+                    null,
+                    "打开最后一天",
+                    "https://wao.wayuwa.cn/kb/" + lastDoc.kbId() + "?doc=" + lastDoc.id()));
         }
         return "成功 · 已同步 " + start.format(DAY) + " 至 " + end.format(DAY)
                 + "，共 " + days + " 天、" + messages + " 条消息";
     }
 
+    /**
+     * 把一条已归档消息转成供聊天复盘使用的文字；多媒体只留占位或文件名。
+     *
+     * @param message 本次归档使用的飞书消息
+     * @return 可供只读 AI 引用的文字；空白消息返回空串
+     */
+    public String reviewTextOf(FeishuMessage message) {
+        if (message == null || message.deleted()) return "";
+        if ("image".equals(message.msgType())) return "[图片]";
+        String text = textOf(message).trim();
+        if ("post".equals(message.msgType()) && postContainsImage(readContent(message))) {
+            return text.isBlank() ? "[图片]" : text + " [图片]";
+        }
+        return text;
+    }
+
+    private static boolean postContainsImage(JsonNode content) {
+        for (JsonNode line : content.path("content")) {
+            for (JsonNode span : line) {
+                if ("img".equals(span.path("tag").asText(""))) return true;
+            }
+        }
+        return false;
+    }
+
     /** 正文：一条消息一段，图片单独成段，按小时分节。 */
     private List<DocBlockDto> render(String token, LocalDate day, List<FeishuMessage> messages,
-            Map<String, String> names) {
+            Map<String, String> names, String chatName, Runnable heartbeat) {
         List<DocBlockDto> blocks = new ArrayList<>();
         blocks.add(block(day.format(DAY) + " 00:00–23:59 的群聊记录，由自动化每天 23:59 同步，"
                 + "手动编辑会在下次同步时被覆盖。", null, null, null));
@@ -229,7 +329,9 @@ public class FeishuChatSyncService implements JobHandler {
             return blocks;
         }
         String currentHour = "";
+        int processed = 0;
         for (FeishuMessage m : messages) {
+            if (processed++ % 25 == 0) heartbeat.run();
             if (m.deleted()) {
                 continue;
             }
@@ -240,11 +342,12 @@ public class FeishuChatSyncService implements JobHandler {
                 blocks.add(heading(hour));
             }
             String who = names.getOrDefault(m.senderId(), shortId(m.senderId()));
-            String text = textOf(m);
+            // 多媒体也保留「时间 + 发言人 + 占位」，依旧不声称完成 OCR 或转写。
+            String text = reviewTextOf(m);
             if (!text.isBlank()) {
                 blocks.add(paragraph("**" + time + " " + who + "**：" + text));
             }
-            for (String url : imageUrls(token, m)) {
+            for (String url : imageUrls(token, m, chatName, heartbeat)) {
                 blocks.add(paragraph("![群聊图片](" + url + ")"));
             }
         }
@@ -315,7 +418,7 @@ public class FeishuChatSyncService implements JobHandler {
     }
 
     /** 消息里的图片：下载后转存图床，返回本地地址；下载或转存失败就跳过这一张。 */
-    private List<String> imageUrls(String token, FeishuMessage m) {
+    private List<String> imageUrls(String token, FeishuMessage m, String chatName, Runnable heartbeat) {
         List<String> keys = new ArrayList<>();
         JsonNode content = readContent(m);
         if ("image".equals(m.msgType())) {
@@ -337,6 +440,7 @@ public class FeishuChatSyncService implements JobHandler {
         }
         List<String> urls = new ArrayList<>();
         for (String key : keys) {
+            heartbeat.run();
             byte[] bytes = feishu.downloadImage(token, m.messageId(), key);
             if (bytes == null || bytes.length == 0) {
                 log.warn("飞书群聊图片下载失败，已跳过：message={} key={}", m.messageId(), key);
@@ -345,7 +449,7 @@ public class FeishuChatSyncService implements JobHandler {
             try {
                 // 补录 / 重跑同一天时会再抓一遍同样的图，按内容去重，不在图床里堆重复副本。
                 ImageItemDto stored = images.store(bytes, "image/png", key + ".png",
-                        "飞书群聊 · " + settings.get(SettingService.CHAT_SYNC_CHAT_NAME, "群聊"), true);
+                        "飞书群聊 · " + chatName, true);
                 urls.add(stored.url());
             } catch (RuntimeException ex) {
                 log.warn("飞书群聊图片转存图床失败，已跳过：{}", ex.getMessage());
@@ -364,7 +468,10 @@ public class FeishuChatSyncService implements JobHandler {
 
     /** 已配置的发言人映射。 */
     public List<FeishuSenderDto> senders() {
-        String raw = settings.get(SettingService.CHAT_SYNC_SENDERS);
+        return readSenders(settings.get(SettingService.CHAT_SYNC_SENDERS));
+    }
+
+    private List<FeishuSenderDto> readSenders(String raw) {
         if (raw == null || raw.isBlank()) {
             return List.of();
         }
@@ -375,9 +482,9 @@ public class FeishuChatSyncService implements JobHandler {
         }
     }
 
-    private Map<String, String> senderNames() {
+    private Map<String, String> senderNames(List<FeishuSenderDto> configured) {
         Map<String, String> out = new LinkedHashMap<>();
-        for (FeishuSenderDto s : senders()) {
+        for (FeishuSenderDto s : configured) {
             if (s.id() != null && !s.id().isBlank() && s.name() != null && !s.name().isBlank()) {
                 out.put(s.id().trim(), s.name().trim());
             }
@@ -386,8 +493,12 @@ public class FeishuChatSyncService implements JobHandler {
     }
 
     private String token() {
-        String appId = required(SettingService.CHAT_SYNC_APP_ID, "请先填写飞书应用的 App ID");
-        String appSecret = required(SettingService.CHAT_SYNC_APP_SECRET, "请先填写飞书应用的 App Secret");
+        return token(syncConfig());
+    }
+
+    private String token(SyncConfig snapshot) {
+        String appId = requiredValue(snapshot.appId(), "请先填写飞书应用的 App ID");
+        String appSecret = requiredValue(snapshot.appSecret(), "请先填写飞书应用的 App Secret");
         return feishu.tenantAccessToken(appId, appSecret);
     }
 
@@ -397,6 +508,30 @@ public class FeishuChatSyncService implements JobHandler {
             throw new BadRequestException(message);
         }
         return value.trim();
+    }
+
+    private SyncConfig syncConfig() {
+        Map<String, String> values = settings.getAll(SYNC_CONFIG_KEYS);
+        return new SyncConfig(
+                values.get(SettingService.CHAT_SYNC_APP_ID),
+                values.get(SettingService.CHAT_SYNC_APP_SECRET),
+                values.get(SettingService.CHAT_SYNC_CHAT_ID),
+                values.get(SettingService.CHAT_SYNC_CHAT_NAME),
+                values.get(SettingService.CHAT_SYNC_KB_ID),
+                readSenders(values.get(SettingService.CHAT_SYNC_SENDERS)));
+    }
+
+    private static String requiredValue(String value, String message) {
+        if (!hasText(value)) throw new BadRequestException(message);
+        return value.trim();
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private static String value(String value) {
+        return value == null ? "" : value;
     }
 
     /** 没映射上的发言人：留一段可辨识的 ID，方便回配置页补上。 */
@@ -430,4 +565,16 @@ public class FeishuChatSyncService implements JobHandler {
             return "[]";
         }
     }
+
+    /** 同一次飞书查询产生的单日归档结果。 */
+    public record ChatSyncDayResult(LocalDate day, String chatId, String chatName, String kbId,
+            DocDto document, List<FeishuMessage> messages) {
+        /** 与旧手动同步接口兼容的中文摘要。 */
+        public String summary() {
+            return "成功 · " + day.format(DAY) + " 共 " + messages.size() + " 条消息";
+        }
+    }
+
+    private record SyncConfig(String appId, String appSecret, String chatId, String chatName,
+            String kbId, List<FeishuSenderDto> senders) { }
 }

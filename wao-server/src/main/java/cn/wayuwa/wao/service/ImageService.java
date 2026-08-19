@@ -16,6 +16,7 @@ import cn.wayuwa.wao.domain.ImageBlobEntity;
 import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.mapper.ImageBlobMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -129,9 +130,17 @@ public class ImageService {
         e.setByteSize((long) content.length);
         e.setSource(source);
         e.setContentHash(hash);
+        e.setDedupeKey(deduplicate ? hash : null);
         e.setCreatedAt(LocalDateTime.now());
         e.setContent(content);
-        mapper.insert(e);
+        try {
+            mapper.insert(e);
+        } catch (DuplicateKeyException exception) {
+            if (!deduplicate) throw exception;
+            ImageBlobEntity winner = mapper.findByDedupeKey(hash);
+            if (winner == null) throw exception;
+            return toDto(winner);
+        }
         return toDto(e);
     }
 
