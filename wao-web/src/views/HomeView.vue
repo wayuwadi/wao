@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { useRoute, useRouter } from 'vue-router'
 import {
   createAiPairCode,
+  fetchAiEvolution,
   fetchAiRunHistory,
   fetchAiRunnerLog,
   fetchAiRunners,
@@ -16,6 +17,8 @@ import {
   saveAiProjectConfig,
   updateRunnerMaxConcurrency,
   wakeAiRunner,
+  type AiEvolutionOverview,
+  type CodexQuotaAccount,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
@@ -43,6 +46,7 @@ const runners = ref<AiRunner[]>([])
 const workflows = ref<AiWorkflow[]>([])
 const loading = ref(true)
 const workflowsLoading = ref(false)
+const quotaOverview = ref<AiEvolutionOverview | null>(null)
 const goal = ref('')
 const goalDraftState = ref<'idle' | 'saved' | 'error'>('idle')
 const goalProjectId = ref('')
@@ -88,6 +92,7 @@ const form = reactive({
   maxParallelRuns: 2,
 })
 let timer: ReturnType<typeof setInterval> | null = null
+let quotaTimer: ReturnType<typeof setInterval> | null = null
 
 const activeRuns = computed(() => runs.value.filter((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 const recentRuns = computed(() => runs.value.filter((run) => !['queued', 'claimed', 'running'].includes(run.status)).slice(0, 8))
@@ -114,6 +119,35 @@ const goalRunnerHint = computed(() => {
   if (online) return `自动分配给 ${online} 台在线电脑中最先空闲的一台`
   return goalRunnerCandidates.value.length ? '可用电脑当前全部离线，任务会先排队' : '还没有电脑接入工作流使用的 AI 工具'
 })
+const WEEKLY_QUOTA_FRESH_MS = 45 * 60 * 1_000
+const WEEKLY_QUOTA_CLOCK_SKEW_MS = 5 * 60 * 1_000
+
+/** OAuth 快照没有单独 fresh 标记，只展示仍在有效窗口且最近四十五分钟同步成功的数据。 */
+function isFreshWeeklyQuota(quota: AiEvolutionOverview['weeklyQuotas'][number]) {
+  const reset = quota.resetsAt ? Date.parse(quota.resetsAt) : Number.NaN
+  const synced = quota.lastSyncedAt ? Date.parse(quota.lastSyncedAt) : Number.NaN
+  const age = Date.now() - synced
+  const resetValid = quota.resetsAt === null || (Number.isFinite(reset) && reset > Date.now())
+  return quota.status === 'SYNCED'
+    && resetValid
+    && Number.isFinite(synced)
+    && age >= -WEEKLY_QUOTA_CLOCK_SKEW_MS
+    && age <= WEEKLY_QUOTA_FRESH_MS
+}
+
+const visibleWeeklyQuotas = computed(() => quotaOverview.value?.weeklyQuotas.filter(isFreshWeeklyQuota) ?? [])
+const primaryWeeklyQuota = computed(() => visibleWeeklyQuotas.value.find((quota) => quota.provider === 'codex') ?? null)
+const codexQuotaAccounts = computed(() => quotaOverview.value?.codexQuotas ?? [])
+const primaryCodexAccount = computed(() => codexQuotaAccounts.value.find((account) => account.fresh) ?? null)
+const localWeeklyWindow = computed(() => {
+  const window = findCodexWindow(primaryCodexAccount.value, 10_080)
+  if (!window) return null
+  return window.resetsAt === null || window.resetsAt * 1_000 > Date.now() ? window : null
+})
+const heroWeeklyQuota = computed(() => localWeeklyWindow.value ? {
+  remainingPercent: 100 - localWeeklyWindow.value.usedPercent,
+  resetsAt: unixTime(localWeeklyWindow.value.resetsAt),
+} : primaryWeeklyQuota.value)
 
 /** 每种 AI 工具当前有几台电脑在线，决定 hero 上的接入状态。 */
 const engineStatus = computed(() =>
@@ -184,6 +218,33 @@ async function refreshWorkflows() {
   } finally {
     workflowsLoading.value = false
   }
+}
+
+/** 额度仍在首页展示，但不再渲染、生成或派发任何自主进化建议。 */
+async function refreshQuotaOverview() {
+  try {
+    quotaOverview.value = await fetchAiEvolution()
+  } catch {
+    // 额度读取失败时隐藏入口，运行状态与目标派发继续可用。
+  }
+}
+
+function quotaClass(remaining: number) {
+  return remaining < 20 ? 'danger' : remaining < 50 ? 'warn' : 'good'
+}
+
+function findCodexWindow(account: CodexQuotaAccount | null, durationMinutes: number) {
+  if (!account) return null
+  const general = account.limits.find((limit) => limit.id === 'codex') ?? account.limits[0]
+  return general?.windows.find((window) => window.windowDurationMinutes === durationMinutes) ?? null
+}
+
+function unixTime(value: number | null) {
+  return value ? new Date(value * 1000).toISOString() : null
+}
+
+function resetText(value: string | null) {
+  return value ? `${timeText(value)} 刷新` : '刷新时间未知'
 }
 
 watch(view, (next) => {
@@ -585,11 +646,14 @@ onMounted(() => {
   restoreGoalDraft()
   void refresh()
   void refreshWorkflows()
+  void refreshQuotaOverview()
   timer = setInterval(refresh, 5_000)
+  quotaTimer = setInterval(refreshQuotaOverview, 60_000)
   if (route.query.console) revealAiArea()
 })
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
+  if (quotaTimer) clearInterval(quotaTimer)
 })
 </script>
 
@@ -705,6 +769,14 @@ onBeforeUnmount(() => {
         <em v-if="item.id === 'runs' && activeRuns.length">{{ activeRuns.length }}</em>
         <em v-else-if="item.id === 'runners' && onlineRunners.length">{{ onlineRunners.length }}</em>
       </button>
+      <span
+        v-if="heroWeeklyQuota"
+        class="console-quota"
+        :class="quotaClass(heroWeeklyQuota.remainingPercent)"
+        :title="`Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}`"
+      >
+        <i class="ri-speed-up-line"></i><span>总剩余</span><b>{{ heroWeeklyQuota.remainingPercent }}%</b>
+      </span>
       <span class="live"><i></i>每 5 秒刷新</span>
     </nav>
 
@@ -1340,6 +1412,12 @@ onBeforeUnmount(() => {
 .console-tabs button:hover { background: var(--wao-bg-hover); }
 .console-tabs button.on { background: #eef1ff; color: var(--wao-primary-text); font-weight: 650; }
 .console-tabs em { padding: 1px 6px; border-radius: 20px; background: #e3e7f6; color: #4358d6; font-size: 10px; font-style: normal; }
+.console-quota { min-height: 32px; padding: 0 10px; border-radius: 9px; display: inline-flex; align-items: center; gap: 6px; color: var(--wao-text-2); font-size: 11px; white-space: nowrap; }
+.console-quota i { font-size: 14px; }
+.console-quota b { font-size: 12px; }
+.console-quota.good { background: #e9f7ef; color: #24714d; }
+.console-quota.warn { background: #fff6dc; color: #876714; }
+.console-quota.danger { background: #fff0f0; color: #a33c3c; }
 .console-tabs .live { margin-left: auto; padding-right: 8px; }
 .section-title { margin-right: 4px; font-size: 12px; font-weight: 650; color: var(--wao-text-2); }
 .online-dot { width: 7px; height: 7px; border-radius: 50%; background: #31a56a; box-shadow: 0 0 0 3px #dff5e9; }
@@ -1721,6 +1799,7 @@ onBeforeUnmount(() => {
   .goal-shortcut { margin-left: 0; }
   .goal-submit { margin-left: auto; }
   .console-tabs { overflow-x: auto; }
+  .console-quota span { display: none; }
   .recent-grid { grid-template-columns: 1fr; }
   .section-head { align-items: center; }
   .history-grid { grid-template-columns: 1fr; }
