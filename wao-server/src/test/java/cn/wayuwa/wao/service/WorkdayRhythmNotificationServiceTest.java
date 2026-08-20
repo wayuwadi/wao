@@ -31,10 +31,12 @@ class WorkdayRhythmNotificationServiceTest {
     private final MemberMapper members = mock(MemberMapper.class);
     private final SettingService settings = mock(SettingService.class);
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
+    private final FeishuWebhookConfigService webhooks = mock(FeishuWebhookConfigService.class);
+    private final FeishuWebhookNotifier webhookNotifier = mock(FeishuWebhookNotifier.class);
     private final FeishuAppLinks links = new FeishuAppLinks(
             new FeishuLoginProperties(false, "", "", "", "", "https://open.feishu.cn"));
     private final WorkdayRhythmNotificationService service = new WorkdayRhythmNotificationService(
-            preferences, members, settings, feishu, links, new ObjectMapper());
+            preferences, members, settings, feishu, links, webhooks, webhookNotifier, new ObjectMapper());
 
     @Test
     void sendsPersistedWaterRecordToMembersOwnConfiguredChat() {
@@ -126,6 +128,29 @@ class WorkdayRhythmNotificationServiceTest {
                 org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
         assertThat(card.getValue().title()).isEqualTo("精力补给 · 起身走动");
         assertThat(card.getValue().fields()).contains(java.util.List.of("今日记录", "今日已完成"));
+    }
+
+    @Test
+    void sendsPersistedActionThroughSelectedSystemWebhookWithoutAppCredentials() {
+        when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
+                {"energyNotification":{"enabled":true,"channel":"WEBHOOK",
+                "webhookId":"fw_energy","webhookName":"过期名称"},
+                "energyItems":[{"id":"WATER","title":"喝水","guidance":"补水",
+                "mode":"COUNT","notify":true}]}
+                """);
+        when(preferences.find("wd", "workday-rhythm-day-2026-08-18"))
+                .thenReturn("{\"energyRecords\":{\"WATER\":2}}");
+        when(webhooks.enabledTarget("fw_energy")).thenReturn(
+                new FeishuWebhookConfigService.NotificationTarget(
+                        "fw_energy", "精力补给群", "https://open.feishu.cn/safe-placeholder", true));
+
+        var result = service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY));
+
+        assertThat(result.sent()).isTrue();
+        assertThat(result.chatName()).isEqualTo("精力补给群");
+        verify(webhookNotifier).send(org.mockito.ArgumentMatchers.eq("https://open.feishu.cn/safe-placeholder"),
+                any(FeishuWebhookNotifier.Card.class));
+        verify(feishu, never()).tenantAccessToken(any(), any());
     }
 
     @Test

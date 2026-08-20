@@ -163,7 +163,8 @@ public class FeishuWebhookConfigService {
         importLegacyDefaultIfNecessary();
         return defaultEntity().map(entity -> {
             Credential credential = credential(entity);
-            return new NotificationTarget(entity.getId(), credential.usable() ? credential.url() : "",
+            return new NotificationTarget(entity.getId(), entity.getName(),
+                    credential.usable() ? credential.url() : "",
                     credential.usable() && Boolean.TRUE.equals(entity.getEnabled()));
         });
     }
@@ -178,6 +179,25 @@ public class FeishuWebhookConfigService {
             throw new BadRequestException("当前 Webhook 地址无法安全使用，请先填写新的飞书官方地址");
         }
         return credential.url();
+    }
+
+    /**
+     * 返回指定业务选择的通知目标；配置不存在、已停用或凭据不可读时明确拒绝发送。
+     *
+     * @param id 业务偏好中保存的稳定配置 id
+     * @return 可发送的内部目标，地址不得写入响应或日志
+     */
+    @Transactional(readOnly = true)
+    public NotificationTarget enabledTarget(String id) {
+        FeishuWebhookConfigEntity entity = required(id);
+        Credential credential = credential(entity);
+        if (!credential.usable()) {
+            throw new BadRequestException("所选 Webhook 地址无法安全使用，请在系统设置中更新");
+        }
+        if (!Boolean.TRUE.equals(entity.getEnabled())) {
+            throw new BadRequestException("所选 Webhook 已停用，请在今日节奏中改选或启用它");
+        }
+        return new NotificationTarget(entity.getId(), entity.getName(), credential.url(), true);
     }
 
     /**
@@ -395,7 +415,7 @@ public class FeishuWebhookConfigService {
     }
 
     /** 服务端内部通知目标；url 含密钥，不得进入接口响应或日志。 */
-    public record NotificationTarget(String id, String url, boolean enabled) {
+    public record NotificationTarget(String id, String name, String url, boolean enabled) {
     }
 
     /** 解密后的内部凭据状态；不可用状态只携带固定安全提示，不保留异常或历史明文。 */

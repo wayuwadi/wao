@@ -17,7 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-/** 今日节奏的成员级精力补给通知。群目标来自成员偏好，应用凭据只在服务端读取。 */
+/** 今日节奏的成员级精力补给通知。目标来自成员偏好，Webhook 与应用凭据只在服务端读取。 */
 @Service
 public class WorkdayRhythmNotificationService {
 
@@ -29,15 +29,20 @@ public class WorkdayRhythmNotificationService {
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
     private final FeishuAppLinks links;
+    private final FeishuWebhookConfigService webhooks;
+    private final FeishuWebhookNotifier webhookNotifier;
     private final ObjectMapper json;
 
     public WorkdayRhythmNotificationService(MemberPreferenceMapper preferences, MemberMapper members,
-            SettingService settings, FeishuOpenApiClient feishu, FeishuAppLinks links, ObjectMapper json) {
+            SettingService settings, FeishuOpenApiClient feishu, FeishuAppLinks links,
+            FeishuWebhookConfigService webhooks, FeishuWebhookNotifier webhookNotifier, ObjectMapper json) {
         this.preferences = preferences;
         this.members = members;
         this.settings = settings;
         this.feishu = feishu;
         this.links = links;
+        this.webhooks = webhooks;
+        this.webhookNotifier = webhookNotifier;
         this.json = json;
     }
 
@@ -52,10 +57,27 @@ public class WorkdayRhythmNotificationService {
         JsonNode config = read(preferences.find(memberId, CONFIG_KEY));
         JsonNode notification = config.path("energyNotification");
         EnergyAction action = action(config, request.action());
-        String chatName = notification.path("chatName").asText("").trim();
+        boolean webhookChannel = "WEBHOOK".equals(notification.path("channel").asText(""));
+        String targetName = webhookChannel
+                ? notification.path("webhookName").asText("").trim()
+                : notification.path("chatName").asText("").trim();
         if (!notification.path("enabled").asBoolean(false)
                 || !action.shouldNotify()) {
-            return new EnergyNotificationResultDto(false, chatName);
+            return new EnergyNotificationResultDto(false, targetName);
+        }
+
+        JsonNode day = read(preferences.find(memberId, DAY_KEY_PREFIX + request.date()));
+        String memberName = memberName(memberId);
+        FeishuWebhookNotifier.Card card = card(action, request.action(), request.date(), day, memberName);
+        if (webhookChannel) {
+            String webhookId = notification.path("webhookId").asText("").trim();
+            if (!StringUtils.hasText(webhookId)) {
+                throw new BadRequestException("请先在今日节奏里选择精力补给通知 Webhook");
+            }
+            FeishuWebhookConfigService.NotificationTarget target = webhooks.enabledTarget(webhookId);
+            webhookNotifier.send(target.url(), card);
+            return new EnergyNotificationResultDto(true,
+                    StringUtils.hasText(target.name()) ? target.name() : "已配置 Webhook");
         }
 
         String chatId = notification.path("chatId").asText("").trim();
@@ -68,12 +90,9 @@ public class WorkdayRhythmNotificationService {
             throw new BadRequestException("飞书应用尚未配置，请先在自动化的飞书群聊配置中填写应用凭据");
         }
 
-        JsonNode day = read(preferences.find(memberId, DAY_KEY_PREFIX + request.date()));
-        String memberName = memberName(memberId);
-        FeishuWebhookNotifier.Card card = card(action, request.action(), request.date(), day, memberName);
         feishu.sendCard(feishu.tenantAccessToken(appId, appSecret), chatId, card);
         return new EnergyNotificationResultDto(true,
-                StringUtils.hasText(chatName) ? chatName : "已配置群聊");
+                StringUtils.hasText(targetName) ? targetName : "已配置群聊");
     }
 
     private FeishuWebhookNotifier.Card card(EnergyAction action, String actionId, LocalDate date, JsonNode day,

@@ -493,7 +493,8 @@ WAO 不主动探测、抓取或删除链接对应的外部系统。聚合边界�
 日历的国际节日范围复用 `member_preference` 的 `holiday-international-categories` 键；新成员默认空数组，
 不会自动加入全部国际节日。
 
-“今日节奏”复用 `member_preference` 的 `workday-rhythm-config-v1` 保存个人时间块模板及精力补给通知目标/动作开关，并以
+“今日节奏”复用 `member_preference` 的 `workday-rhythm-config-v1` 保存个人时间块模板及精力补给通知通道、Webhook 配置 id
+或飞书群 `chat_id`、动作开关，并以
 `workday-rhythm-day-YYYY-MM-DD` 保存当天三个重点、时间块完成项、喝水次数、冥想和是否执行；页面同时保留
 未成功提交的本机草稿。每日记录还保存当时精力项目的名称/机制快照，按当前成员和有界日期键范围提供历史回顾；
 没有记录的日期不生成数据，损坏记录显式计数跳过。飞书应用密钥仍在系统配置加密保存，不进入成员偏好；

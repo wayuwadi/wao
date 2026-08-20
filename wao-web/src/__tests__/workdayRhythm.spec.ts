@@ -55,9 +55,16 @@ describe('工作日节奏规则', () => {
   it('兼容旧模板并校验成员自己的精力通知设置', () => {
     const legacy = structuredClone(DEFAULT_WORKDAY_RHYTHM) as Partial<typeof DEFAULT_WORKDAY_RHYTHM>
     delete legacy.energyItems
+    Reflect.deleteProperty(legacy.energyNotification!, 'channel')
+    Reflect.deleteProperty(legacy.energyNotification!, 'webhookId')
+    Reflect.deleteProperty(legacy.energyNotification!, 'webhookName')
+    legacy.energyNotification!.chatId = 'oc_legacy'
+    legacy.energyNotification!.chatName = '原通知群'
     legacy.energyNotification!.notifyWater = false
     legacy.energyNotification!.notifyMeditation = true
-    expect(parseRhythmConfig(JSON.stringify(legacy))?.energyItems).toEqual([
+    const migrated = parseRhythmConfig(JSON.stringify(legacy))
+    expect(migrated?.energyNotification).toEqual(expect.objectContaining({ channel: 'CHAT' }))
+    expect(migrated?.energyItems).toEqual([
       expect.objectContaining({ id: 'WATER', notify: false, mode: 'COUNT' }),
       expect.objectContaining({ id: 'MEDITATION', notify: true, mode: 'DAILY_ONCE' }),
     ])
@@ -65,6 +72,7 @@ describe('工作日节奏规则', () => {
     const configured = structuredClone(DEFAULT_WORKDAY_RHYTHM)
     configured.energyNotification.enabled = true
     expect(rhythmConfigError(configured)).toContain('请选择')
+    configured.energyNotification.channel = 'CHAT'
     configured.energyNotification.chatId = 'oc_daily'
     configured.energyItems.forEach((item) => (item.notify = false))
     expect(rhythmConfigError(configured)).toContain('至少选择一个')

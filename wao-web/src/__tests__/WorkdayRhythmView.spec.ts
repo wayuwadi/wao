@@ -9,7 +9,7 @@ import {
   saveWorkdayRhythmDay,
   sendEnergyNotification,
 } from '@/api/workdayRhythm'
-import { fetchFeishuChats } from '@/api/system'
+import { fetchFeishuChats, fetchWebhookEndpoints } from '@/api/system'
 import {
   DEFAULT_WORKDAY_RHYTHM,
   cloneRhythmConfig,
@@ -26,7 +26,10 @@ vi.mock('@/api/workdayRhythm', () => ({
   sendEnergyNotification: vi.fn<typeof sendEnergyNotification>(),
 }))
 
-vi.mock('@/api/system', () => ({ fetchFeishuChats: vi.fn<typeof fetchFeishuChats>() }))
+vi.mock('@/api/system', () => ({
+  fetchFeishuChats: vi.fn<typeof fetchFeishuChats>(),
+  fetchWebhookEndpoints: vi.fn<typeof fetchWebhookEndpoints>(),
+}))
 
 const clock = shanghaiClock()
 
@@ -61,6 +64,19 @@ describe('WorkdayRhythmView', () => {
     vi.mocked(saveWorkdayRhythm).mockResolvedValue(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
     vi.mocked(sendEnergyNotification).mockResolvedValue({ sent: true, chatName: '娃屋日常' })
     vi.mocked(fetchFeishuChats).mockResolvedValue([{ chatId: 'oc_daily', name: '娃屋日常' }])
+    vi.mocked(fetchWebhookEndpoints).mockResolvedValue([
+      {
+        id: 'fw_daily',
+        name: '娃屋日常机器人',
+        description: '精力补给',
+        urlMask: 'https://open.feishu.cn/open-apis/bot/v2/hook/••••1234',
+        urlSet: true,
+        enabled: true,
+        systemDefault: false,
+        createdAt: '2026-08-20T10:00:00',
+        updatedAt: '2026-08-20T10:00:00',
+      },
+    ])
   })
   afterEach(() => vi.clearAllMocks())
 
@@ -183,6 +199,8 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
     await wrapper.get('.toggle-field input').setValue(true)
     await flushPromises()
+    await wrapper.get('.channel-field select').setValue('CHAT')
+    await flushPromises()
     await wrapper.get('.chat-field select').setValue('oc_daily')
     await wrapper.get('.editor .primary').trigger('click')
     await flushPromises()
@@ -203,6 +221,9 @@ describe('WorkdayRhythmView', () => {
     const configured = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
     configured.energyNotification = {
       enabled: true,
+      channel: 'CHAT',
+      webhookId: '',
+      webhookName: '',
       chatId: 'oc_daily',
       chatName: '娃屋日常',
     }
@@ -217,12 +238,37 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
     expect(saveWorkdayRhythmDay).toHaveBeenCalledWith(expect.objectContaining({ waterCount: 1 }))
     expect(sendEnergyNotification).toHaveBeenCalledWith('WATER', clock.date)
-    expect(wrapper.get('.energy-notice.error').text()).toContain('群通知未发出')
+    expect(wrapper.get('.energy-notice.error').text()).toContain('飞书通知未发出')
 
     await wrapper.get('.energy-notice.error button').trigger('click')
     await flushPromises()
     expect(sendEnergyNotification).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('.energy-notice.sent').text()).toContain('群通知已发出')
+    expect(wrapper.get('.energy-notice.sent').text()).toContain('飞书通知已发出')
+    wrapper.unmount()
+  })
+
+  it('可直接选择系统设置中的 Webhook 并按稳定配置 id 保存', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.energy-card header button').trigger('click')
+    await wrapper.get('.toggle-field input').setValue(true)
+    await flushPromises()
+    await wrapper.get('.chat-field select').setValue('fw_daily')
+    await wrapper.get('.editor .primary').trigger('click')
+    await flushPromises()
+
+    expect(fetchWebhookEndpoints).toHaveBeenCalled()
+    expect(saveWorkdayRhythm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        energyNotification: expect.objectContaining({
+          enabled: true,
+          channel: 'WEBHOOK',
+          webhookId: 'fw_daily',
+          webhookName: '娃屋日常机器人',
+        }),
+      }),
+    )
     wrapper.unmount()
   })
 
@@ -282,10 +328,12 @@ describe('WorkdayRhythmView', () => {
     await wrapper.get('.focus-card footer button').trigger('click')
     await flushPromises()
 
-    expect(saveWorkdayRhythmDay).toHaveBeenLastCalledWith(expect.objectContaining({
-      energyRecords: expect.objectContaining({ WALK: 3 }),
-      energySnapshot: expect.objectContaining({ WALK: { title: '起身走动', mode: 'COUNT' } }),
-    }))
+    expect(saveWorkdayRhythmDay).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        energyRecords: expect.objectContaining({ WALK: 3 }),
+        energySnapshot: expect.objectContaining({ WALK: { title: '起身走动', mode: 'COUNT' } }),
+      }),
+    )
     wrapper.unmount()
   })
 

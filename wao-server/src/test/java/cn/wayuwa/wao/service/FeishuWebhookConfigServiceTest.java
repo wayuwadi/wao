@@ -225,6 +225,25 @@ class FeishuWebhookConfigServiceTest {
     }
 
     @Test
+    void businessTargetUsesTheSelectedEnabledConfigAndRejectsDisabledOne() {
+        FeishuWebhookConfigEntity selected = entity("fw-energy", true, false, URL);
+        selected.setName("精力补给群");
+        when(mapper.selectById("fw-energy")).thenReturn(selected);
+
+        var target = service.enabledTarget("fw-energy");
+
+        assertThat(target.id()).isEqualTo("fw-energy");
+        assertThat(target.name()).isEqualTo("精力补给群");
+        assertThat(target.url()).isEqualTo(URL);
+
+        selected.setEnabled(false);
+        assertThatThrownBy(() -> service.enabledTarget("fw-energy"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("已停用")
+                .hasMessageNotContaining("secret-token");
+    }
+
+    @Test
     void deletingDefaultPromotesARealRemainingConfigAndMirrorsItForRollingDeploy() {
         FeishuWebhookConfigEntity current = entity("fw-current", true, true, URL);
         FeishuWebhookConfigEntity remaining = entity(

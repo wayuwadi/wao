@@ -72,7 +72,7 @@ class FeishuWebhookNotifierTest {
         FeishuWebhookConfigService webhooks = mock(FeishuWebhookConfigService.class);
         String url = "https://open.feishu.cn/open-apis/bot/v2/hook/server-only-secret";
         when(webhooks.defaultTarget()).thenReturn(Optional.of(
-                new FeishuWebhookConfigService.NotificationTarget("fw1", url, true)));
+                new FeishuWebhookConfigService.NotificationTarget("fw1", "默认机器人", url, true)));
         FeishuWebhookNotifier notifier = new FeishuWebhookNotifier(
                 settings, webhooks, RestClient.builder(), "https://legacy.invalid/hook");
 
