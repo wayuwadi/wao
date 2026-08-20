@@ -23,7 +23,22 @@ async function mountEditor(props: {
     editing: boolean
   }[]
   polishable?: boolean
+  linkControls?: boolean
+  imageControls?: boolean
 }) {
+  // jsdom 的 Range 缺少布局 API；BubbleMenu 只需要一个稳定空矩形完成挂载。
+  if (!Range.prototype.getClientRects) {
+    Object.defineProperty(Range.prototype, 'getClientRects', {
+      configurable: true,
+      value: () => [],
+    })
+  }
+  if (!Range.prototype.getBoundingClientRect) {
+    Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0, x: 0, y: 0 }),
+    })
+  }
   const w = mount(MarkdownEditor, { props, attachTo: document.body })
   await nextTick()
   await new Promise((r) => setTimeout(r, 0))
@@ -134,12 +149,121 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('文档链接点击后在新窗口打开，并保留安全的 target 与 rel', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const w = await mountEditor({
+      modelValue: '[WAO](https://wao.wayuwa.cn)',
+      linkControls: true,
+    })
+
+    const link = w.get('.md-body a')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toContain('noopener')
+    await link.trigger('click')
+
+    expect(open).toHaveBeenCalledWith('https://wao.wayuwa.cn', '_blank', 'noopener,noreferrer')
+    open.mockRestore()
+    w.unmount()
+  })
+
+  it('历史 Markdown 含危险链接协议时，链接工具条不会执行或打开它', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const w = await mountEditor({
+      modelValue: '[危险链接](javascript:alert(1))',
+      linkControls: true,
+    })
+    const instance = w.vm as unknown as {
+      editor: { getAttributes: (name: string) => Record<string, unknown> }
+      openActiveLink: () => void
+    }
+    vi.spyOn(instance.editor, 'getAttributes').mockReturnValue({ href: 'javascript:alert(1)' })
+    instance.openActiveLink()
+
+    expect(open).not.toHaveBeenCalled()
+    open.mockRestore()
+    w.unmount()
+  })
+
+  it('可同时维护链接显示名称与 URL，结果仍以标准 Markdown 保存', async () => {
+    const w = await mountEditor({
+      modelValue: '[旧名称](https://old.example.com)',
+      linkControls: true,
+    })
+    const instance = w.vm as unknown as {
+      editor: { commands: { setTextSelection: (range: { from: number; to: number }) => void } }
+      openLinkEditor: () => void
+    }
+    instance.editor.commands.setTextSelection({ from: 1, to: 4 })
+    instance.openLinkEditor()
+    await nextTick()
+
+    const inputs = w.findAll('.link-dialog input')
+    expect(inputs).toHaveLength(2)
+    await inputs[0]!.setValue('新名称')
+    await inputs[1]!.setValue('docs.example.com/guide')
+    await w.get('.link-dialog').trigger('submit')
+    await nextTick()
+
+    const updates = w.emitted('update:modelValue') as [string][]
+    expect(updates[updates.length - 1]?.[0]).toBe('[新名称](https://docs.example.com/guide)')
+    expect(w.get('.md-body a').text()).toBe('新名称')
+    expect(w.get('.md-body a').attributes('href')).toBe('https://docs.example.com/guide')
+    w.unmount()
+  })
+
   it('图片内联渲染在正文里，不是附件列表', async () => {
     const w = await mountEditor({ modelValue: '![截图](/api/images/img1/raw)' })
 
     const img = w.find('.md-body img')
     expect(img.exists()).toBe(true)
     expect(img.attributes('src')).toBe('/api/images/img1/raw')
+    w.unmount()
+  })
+
+  it('文档图片可按百分比调整，尺寸随 Markdown 往返后仍保留', async () => {
+    const w = await mountEditor({
+      modelValue: '![截图](/api/images/img1/raw)',
+      imageControls: true,
+    })
+    const instance = w.vm as unknown as {
+      editor: { commands: { setNodeSelection: (position: number) => void } }
+      setImageScale: (percent: 25 | 50 | 75 | 100) => void
+    }
+    instance.editor.commands.setNodeSelection(0)
+    instance.setImageScale(50)
+    await nextTick()
+
+    const updates = w.emitted('update:modelValue') as [string][]
+    const markdown = updates[updates.length - 1]?.[0] ?? ''
+    expect(markdown.trim()).toBe('![截图](/api/images/img1/raw "wao-image-size:50%xauto")')
+    w.unmount()
+
+    const restored = await mountEditor({ modelValue: markdown, imageControls: true })
+    expect(restored.get('.md-body img').attributes('style')).toContain('width: 50%')
+    restored.unmount()
+  })
+
+  it('文档图片可设置像素长宽并限制为安全范围', async () => {
+    const w = await mountEditor({
+      modelValue: '![截图](/api/images/img1/raw)',
+      imageControls: true,
+    })
+    const instance = w.vm as unknown as {
+      editor: { commands: { setNodeSelection: (position: number) => void } }
+      imageWidthInput: string
+      imageHeightInput: string
+      applyImageDimensions: () => void
+    }
+    instance.editor.commands.setNodeSelection(0)
+    instance.imageWidthInput = '640'
+    instance.imageHeightInput = '480'
+    instance.applyImageDimensions()
+    await nextTick()
+
+    const updates = w.emitted('update:modelValue') as [string][]
+    const markdown = updates[updates.length - 1]?.[0] ?? ''
+    expect(markdown).toContain('wao-image-size:640x480')
+    expect(w.get('.md-body img').attributes('style')).toContain('aspect-ratio: 640/480')
     w.unmount()
   })
 

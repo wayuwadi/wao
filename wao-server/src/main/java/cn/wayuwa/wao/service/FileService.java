@@ -66,7 +66,8 @@ public class FileService {
     private FileItemDto toDto(FileBlobEntity entity) {
         return new FileItemDto(entity.getId(), entity.getName(), entity.getContentType(), humanSize(entity.getByteSize()),
                 icon(entity.getName()), entity.getCreatedAt() == null ? "" : entity.getCreatedAt().format(TIME_FMT),
-                entity.getCreatedBy(), "/api/files/" + entity.getId() + "/download");
+                entity.getCreatedBy(), "/api/files/" + entity.getId() + "/download",
+                entity.getCreatedAt() == null ? null : entity.getCreatedAt().toString());
     }
     private static String safeName(String original) {
         if (original == null || original.isBlank()) return "未命名文件";

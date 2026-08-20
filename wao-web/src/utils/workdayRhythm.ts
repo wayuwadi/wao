@@ -40,6 +40,7 @@ export interface WorkdayRhythmDay {
   waterCount: number
   meditated: boolean
   energyRecords: Record<string, number>
+  energySnapshot: Record<string, Pick<WorkdayRhythmEnergyItem, 'title' | 'mode'>>
   focus: string[]
 }
 
@@ -277,6 +278,7 @@ export function defaultRhythmDay(date: string, weekday: number): WorkdayRhythmDa
     waterCount: 0,
     meditated: false,
     energyRecords: {},
+    energySnapshot: {},
     focus: ['', '', ''],
   }
 }
@@ -309,6 +311,7 @@ export function parseRhythmDay(
         )
       : fallback.focus
     const energyRecords: Record<string, number> = {}
+    const energySnapshot: WorkdayRhythmDay['energySnapshot'] = {}
     const candidateRecords =
       candidate.energyRecords && typeof candidate.energyRecords === 'object'
         ? candidate.energyRecords
@@ -326,6 +329,27 @@ export function parseRhythmDay(
       const value = Number.isInteger(stored) ? Number(stored) : Number(legacy)
       energyRecords[id] = Math.max(0, Math.min(99, Number.isFinite(value) ? value : 0))
     }
+    // 配置中删除项目只影响今天的操作入口，不能抹掉这一天已经真实落库的历史次数。
+    for (const [id, stored] of Object.entries(candidateRecords)) {
+      if (/^[A-Za-z0-9_-]{1,40}$/.test(id) && Number.isInteger(stored)) {
+        energyRecords[id] = Math.max(0, Math.min(99, Number(stored)))
+      }
+    }
+    const candidateSnapshot = candidate.energySnapshot && typeof candidate.energySnapshot === 'object'
+      ? candidate.energySnapshot
+      : {}
+    for (const [id, snapshot] of Object.entries(candidateSnapshot)) {
+      if (
+        /^[A-Za-z0-9_-]{1,40}$/.test(id) &&
+        snapshot &&
+        typeof snapshot.title === 'string' &&
+        snapshot.title.trim() &&
+        snapshot.title.trim().length <= 20 &&
+        (snapshot.mode === 'COUNT' || snapshot.mode === 'DAILY_ONCE')
+      ) {
+        energySnapshot[id] = { title: snapshot.title.trim(), mode: snapshot.mode }
+      }
+    }
     return {
       version: 1,
       date,
@@ -337,6 +361,7 @@ export function parseRhythmDay(
       waterCount: energyRecords.WATER ?? 0,
       meditated: (energyRecords.MEDITATION ?? 0) > 0,
       energyRecords,
+      energySnapshot,
       focus,
     }
   } catch {

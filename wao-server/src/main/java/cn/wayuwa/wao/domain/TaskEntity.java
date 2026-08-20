@@ -17,6 +17,7 @@ public class TaskEntity {
     private String pr;
     private String ownerId;
     private String createdBy;
+    private LocalDateTime createdAt;
     private String startDate;
     private String dueDate;
     private String waiting;
@@ -38,6 +39,8 @@ public class TaskEntity {
     public void setOwnerId(String ownerId) { this.ownerId = ownerId; }
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public String getStartDate() { return startDate; }
     public void setStartDate(String startDate) { this.startDate = startDate; }
     public String getDueDate() { return dueDate; }

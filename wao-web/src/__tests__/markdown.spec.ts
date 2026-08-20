@@ -27,6 +27,30 @@ describe('renderMarkdown', () => {
     expect(html).toContain('rel="noopener noreferrer"')
   })
 
+  it('只把严格白名单内的图片尺寸元数据转换成安全样式', () => {
+    const percent = renderMarkdown('![截图](/api/images/img1/raw "wao-image-size:50%xauto")')
+    const pixels = renderMarkdown('![截图](/api/images/img1/raw "wao-image-size:640x480")')
+
+    expect(percent).toContain('style="width:50%;height:auto"')
+    expect(percent).not.toContain('wao-image-size:')
+    expect(pixels).toContain(
+      'style="width:640px;aspect-ratio:640/480;height:auto;object-fit:contain"',
+    )
+  })
+
+  it('拒绝越界尺寸和 Markdown 原始任意 style', () => {
+    const invalidMetadata = renderMarkdown(
+      '![越界](/api/images/img1/raw "wao-image-size:9999xauto")',
+    )
+    const rawStyle = renderMarkdown(
+      '<img src="/api/images/img1/raw" style="position:fixed;inset:0" alt="原始样式">',
+    )
+
+    expect(invalidMetadata).not.toContain('style=')
+    expect(invalidMetadata).not.toContain('wao-image-size:')
+    expect(rawStyle).not.toContain('style=')
+  })
+
   it('空内容返回空串', () => {
     expect(renderMarkdown('')).toBe('')
     expect(renderMarkdown('   ')).toBe('')

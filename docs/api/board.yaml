@@ -394,10 +394,28 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateNoteRequest' } } } }
       responses: { '200': { description: 已创建或返回同一篇小记 }, '400': { description: 文档 ID 不合法或已被其他文档占用 } }
   /doc-templates:
-    get: { summary: 当前登录成员的文档模板列表, responses: { '200': { description: OK } } }
-    post: { summary: 把一篇文档的当前正文快照另存为当前成员模板, responses: { '200': { description: 返回新模板 }, '404': { description: 来源文档不存在 } } }
+    get:
+      summary: 当前登录成员的文档模板列表
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/DocTemplateListResponse' } } } }
+    post:
+      summary: 把一篇文档的当前正文快照另存为当前成员模板（名称 128 字、说明 512 字、正文 5000 块且 JSON 1000000 字符以内）
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateDocTemplateRequest' } } } }
+      responses:
+        '200': { description: 返回新模板, content: { application/json: { schema: { $ref: '#/components/schemas/DocTemplateResponse' } } } }
+        '400': { description: 字段为空或超出长度与正文容量限制 }
+        '404': { description: 来源文档不存在 }
   /doc-templates/{id}:
-    patch: { summary: 修改当前成员模板的名称与使用说明, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 模板不存在或不属于当前成员 } } }
+    patch:
+      summary: 按更新时间版本修改当前成员模板的名称、使用说明与正文块快照
+      description: null 字段不修改；expectedUpdatedAt 必须等于当前服务端版本，冲突时保留客户端草稿且不覆盖云端
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PatchDocTemplateRequest' } } } }
+      responses:
+        '200': { description: 返回保存后的完整模板, content: { application/json: { schema: { $ref: '#/components/schemas/DocTemplateResponse' } } } }
+        '400': { description: 字段为空、版本格式无效或超出长度与正文容量限制 }
+        '409': { description: 模板已由其他窗口更新，本次请求没有覆盖云端 }
+        '404': { description: 模板不存在或不属于当前成员 }
     delete: { summary: 删除当前成员模板；不影响已创建文档, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 模板不存在或不属于当前成员 } } }
   # 文档协同在场（见 docs/adr/017-doc-realtime-collaboration-presence.md）
   /docs/{id}/presence:
@@ -663,12 +681,53 @@ paths:
   /jobs/{id}/resume: { post: { summary: 恢复已暂停的任务, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/reauth: { post: { summary: 重新授权（「待修复」恢复为「正常」）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   # 系统配置（全局唯一一份；密钥类字段只回脱敏形态，见 docs/adr/019-feishu-chat-sync-and-system-settings.md）
+  /settings/webhooks:
+    get:
+      summary: 通用飞书自定义机器人列表；系统默认项在前，地址只返回脱敏形态
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/FeishuWebhookEndpointListResponse' } } }
+    post:
+      summary: 新增飞书自定义机器人；第一项自动成为现有系统通知默认目标
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SaveFeishuWebhookEndpointRequest' } } }
+      responses:
+        '200':
+          description: 返回不含明文地址的新配置
+          content: { application/json: { schema: { $ref: '#/components/schemas/FeishuWebhookEndpointResponse' } } }
+        '400': { description: 名称、数量或官方 HTTPS Webhook 地址不合法 }
+  /settings/webhooks/{id}:
+    put:
+      summary: 编辑机器人；url 省略或留空表示保留服务端密文
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SaveFeishuWebhookEndpointRequest' } } }
+      responses:
+        '200':
+          description: 返回脱敏配置
+          content: { application/json: { schema: { $ref: '#/components/schemas/FeishuWebhookEndpointResponse' } } }
+        '400': { description: 字段或默认路由不合法 }
+        '404': { description: 配置不存在 }
+    delete:
+      summary: 删除机器人；删除系统默认项时自动提升一项剩余配置
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: 已删除 }, '404': { description: 配置不存在 } }
+  /settings/webhooks/{id}/test:
+    post:
+      summary: 用指定机器人发送测试卡片；不受业务启用开关影响
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: 已发送 }, '404': { description: 配置不存在 }, '502': { description: 飞书不可达或返回错误，响应不含 Webhook 明文 } }
   /settings/feishu-webhook:
     get:
       summary: 飞书通知 webhook 配置（urlMask 脱敏 / urlSet / enabled）
+      deprecated: true
       responses: { '200': { description: OK } }
     put:
       summary: 保存 webhook（url 省略表示不改地址，只切换 enabled）
+      deprecated: true
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/SaveWebhookRequest' } } }
@@ -676,6 +735,7 @@ paths:
   /settings/feishu-webhook/test:
     post:
       summary: 用当前配置发一条测试通知
+      deprecated: true
       responses: { '200': { description: OK }, '502': { description: webhook 不可达或返回错误（code=50203） }, '400': { description: 尚未配置地址（code=40000） } }
   /settings/site-info:
     get:
@@ -1164,6 +1224,7 @@ components:
         pr: { type: string, enum: [P0, P1, P2, P3] }
         owner: { type: string }
         createdBy: { type: string, nullable: true, description: 创建人成员 ID；历史任务缺少可靠来源时为 null }
+        createdAt: { type: string, nullable: true, description: 任务真实创建时间；V79 前且无法从稳定时间戳 id 回填的极早期任务为 null }
         groupId: { type: string, nullable: true, description: 所属任务分组 id；未归组时为 null，分组视图按第一个分组显示 }
         activity:
           type: array
@@ -1198,7 +1259,7 @@ components:
           items: { $ref: '#/components/schemas/ImageRef' }
         pdcaCycles:
           type: array
-          description: 按时间顺序保存的 PDCA 轮次；空数组表示普通任务
+          description: 历史兼容字段；按时间顺序保存既有 PDCA 轮次，前端已停止新增、编辑和展示
           items: { $ref: '#/components/schemas/PdcaCycle' }
     TaskGroup:
       type: object
@@ -1276,6 +1337,7 @@ components:
         size: { type: string, description: 人类可读大小 }
         icon: { type: string }
         time: { type: string }
+        createdAt: { type: string, nullable: true, description: 文件真实创建时间；time 仅作本地化展示 }
         by: { type: string, description: 上传人成员 id }
         link: { type: string, description: 既有附件下载地址 }
     SharedTask:
@@ -1300,7 +1362,7 @@ components:
           items: { $ref: '#/components/schemas/Step' }
         pdcaCycles:
           type: array
-          description: 主任务的 PDCA 记录；kind 为 sub 时为空
+          description: 历史兼容的主任务 PDCA 记录；kind 为 sub 时为空，公开网页和 Markdown 不再渲染
           items: { $ref: '#/components/schemas/PdcaCycle' }
     CreateProjectRequest:
       type: object
@@ -1343,7 +1405,7 @@ components:
           items: { $ref: '#/components/schemas/ImageRef' }
         pdcaCycles:
           type: array
-          description: 可选的首轮 PDCA；空数组表示创建普通任务
+          description: 历史客户端兼容字段；当前前端不再提供 PDCA 新建入口
           items: { $ref: '#/components/schemas/PdcaCycle' }
     PatchTaskRequest:
       type: object
@@ -1364,6 +1426,43 @@ components:
         folderId: { type: string }
         title: { type: string }
         templateId: { type: string, description: 可选；从当前成员的该模板复制正文快照 }
+    DocTemplateBlock:
+      type: object
+      description: 模板正文块；服务端忽略未知字段并限制整份 JSON 序列化长度
+      properties:
+        call: { type: string, nullable: true }
+        h: { type: string, nullable: true }
+        p: { type: string, nullable: true }
+        ul: { type: array, nullable: true, items: { type: string } }
+        q: { type: array, nullable: true, items: { type: string } }
+        hLevel: { type: integer, nullable: true, minimum: 1, maximum: 3 }
+    CreateDocTemplateRequest:
+      type: object
+      required: [name, sourceDocId]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        description: { type: string, maxLength: 512 }
+        sourceDocId: { type: string, minLength: 1 }
+        blocks: { type: array, maxItems: 5000, items: { $ref: '#/components/schemas/DocTemplateBlock' } }
+    PatchDocTemplateRequest:
+      type: object
+      required: [expectedUpdatedAt]
+      properties:
+        name: { type: string, maxLength: 128, nullable: true }
+        description: { type: string, maxLength: 512, nullable: true }
+        blocks: { type: array, maxItems: 5000, nullable: true, items: { $ref: '#/components/schemas/DocTemplateBlock' } }
+        expectedUpdatedAt: { type: string, minLength: 1, maxLength: 40, description: 上次读取到的服务端本地 ISO-8601 updatedAt }
+    DocTemplate:
+      type: object
+      required: [id, name, description, blocks, sourceDocId, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        blocks: { type: array, items: { $ref: '#/components/schemas/DocTemplateBlock' } }
+        sourceDocId: { type: string }
+        createdAt: { type: string, description: 服务端本地 ISO-8601 日期时间，不携带 UTC 偏移 }
+        updatedAt: { type: string, description: 服务端本地 ISO-8601 日期时间，不携带 UTC 偏移；也是 PATCH 的并发版本 }
     CreateNoteRequest:
       type: object
       description: 小记正文；title 留空时由正文首行推导
@@ -1436,10 +1535,35 @@ components:
           description: 任务进入「收集中」时要 @ 的成员 open_id；操作人自己永远会被排除
     SaveWebhookRequest:
       type: object
-      description: url 省略表示不修改地址；明文只在服务端使用，加密后落 system_setting
+      deprecated: true
+      description: 旧版单例兼容请求；url 省略表示不修改地址，明文只在服务端使用
       properties:
         url: { type: string, description: 飞书群机器人 webhook 地址 }
         enabled: { type: boolean }
+    FeishuWebhookEndpoint:
+      type: object
+      required: [id, name, description, urlMask, urlSet, enabled, systemDefault, createdAt, updatedAt]
+      description: 通用飞书机器人安全视图；任何响应都不含 Webhook 明文
+      properties:
+        id: { type: string }
+        name: { type: string, maxLength: 64 }
+        description: { type: string, maxLength: 255 }
+        urlMask: { type: string, description: 仅保留官方域名与 token 末四位的脱敏地址 }
+        urlSet: { type: boolean }
+        enabled: { type: boolean }
+        systemDefault: { type: boolean, description: 是否承接任务、评论和 AI 运行等现有系统通知 }
+        createdAt: { type: string, description: 服务端本地 ISO-8601 日期时间，不携带 UTC 偏移 }
+        updatedAt: { type: string, description: 服务端本地 ISO-8601 日期时间，不携带 UTC 偏移 }
+    SaveFeishuWebhookEndpointRequest:
+      type: object
+      required: [name, enabled, systemDefault]
+      description: 新增时 url 必填；编辑时省略或留空表示保留已加密地址
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        description: { type: string, maxLength: 255 }
+        url: { type: string, maxLength: 1024, description: 飞书 / Lark 官方 HTTPS 自定义机器人地址 }
+        enabled: { type: boolean }
+        systemDefault: { type: boolean }
     SiteInfo:
       type: object
       required: [siteName, description, icpNumber, icpUrl]
@@ -1617,3 +1741,23 @@ components:
         - $ref: '#/components/schemas/ApiResponse'
         - type: object
           properties: { data: { type: array, items: { $ref: '#/components/schemas/Task' } } }
+    FeishuWebhookEndpointResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties: { data: { $ref: '#/components/schemas/FeishuWebhookEndpoint' } }
+    FeishuWebhookEndpointListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties: { data: { type: array, items: { $ref: '#/components/schemas/FeishuWebhookEndpoint' } } }
+    DocTemplateResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties: { data: { $ref: '#/components/schemas/DocTemplate' } }
+    DocTemplateListResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponse'
+        - type: object
+          properties: { data: { type: array, items: { $ref: '#/components/schemas/DocTemplate' } } }

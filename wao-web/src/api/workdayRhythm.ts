@@ -48,6 +48,38 @@ export interface EnergyNotificationResult {
   chatName: string
 }
 
+export interface WorkdayRhythmHistoryEnergy {
+  id: string
+  title: string
+  mode: 'COUNT' | 'DAILY_ONCE'
+  count: number
+}
+
+export interface WorkdayRhythmHistoryDay {
+  date: string
+  workdayActive: boolean
+  focus: string[]
+  energyItems: WorkdayRhythmHistoryEnergy[]
+}
+
+export interface WorkdayRhythmHistory {
+  from: string
+  to: string
+  items: WorkdayRhythmHistoryDay[]
+  skippedCount: number
+}
+
+/** 读取当前成员已保存的每日目标与精力补给次数，不补造没有记录的日期。 */
+export async function fetchWorkdayRhythmHistory(
+  from: string,
+  to: string,
+): Promise<WorkdayRhythmHistory> {
+  const res = await http.get<ApiResponse<WorkdayRhythmHistory>>('/api/workday-rhythm/history', {
+    params: { from, to },
+  })
+  return res.data.data
+}
+
 /** 当天记录成功落库后，由服务端复核本人记录并用服务端飞书凭据向本人配置的群发通知。 */
 export async function sendEnergyNotification(
   action: WorkdayRhythmEnergyAction,

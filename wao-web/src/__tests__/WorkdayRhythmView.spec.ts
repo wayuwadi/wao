@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkdayRhythmView from '@/views/WorkdayRhythmView.vue'
 import {
+  fetchWorkdayRhythmHistory,
   fetchWorkdayRhythm,
   fetchWorkdayRhythmDay,
   saveWorkdayRhythm,
@@ -17,6 +18,7 @@ import {
 } from '@/utils/workdayRhythm'
 
 vi.mock('@/api/workdayRhythm', () => ({
+  fetchWorkdayRhythmHistory: vi.fn<typeof fetchWorkdayRhythmHistory>(),
   fetchWorkdayRhythm: vi.fn<typeof fetchWorkdayRhythm>(),
   fetchWorkdayRhythmDay: vi.fn<typeof fetchWorkdayRhythmDay>(),
   saveWorkdayRhythm: vi.fn<typeof saveWorkdayRhythm>(),
@@ -38,6 +40,22 @@ describe('WorkdayRhythmView', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.mocked(fetchWorkdayRhythm).mockResolvedValue(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
+    vi.mocked(fetchWorkdayRhythmHistory).mockResolvedValue({
+      from: `${clock.date.slice(0, 7)}-01`,
+      to: `${clock.date.slice(0, 7)}-31`,
+      skippedCount: 0,
+      items: [
+        {
+          date: clock.date,
+          workdayActive: true,
+          focus: ['完成上线链路验收', '整理今日复盘'],
+          energyItems: [
+            { id: 'WATER', title: '喝水', mode: 'COUNT', count: 3 },
+            { id: 'MEDITATION', title: '至少冥想一次', mode: 'DAILY_ONCE', count: 1 },
+          ],
+        },
+      ],
+    })
     vi.mocked(fetchWorkdayRhythmDay).mockResolvedValue(defaultRhythmDay(clock.date, clock.weekday))
     vi.mocked(saveWorkdayRhythmDay).mockResolvedValue()
     vi.mocked(saveWorkdayRhythm).mockResolvedValue(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
@@ -76,6 +94,42 @@ describe('WorkdayRhythmView', () => {
       }),
     )
     expect(wrapper.text()).toContain('已保存到你的 WAO 账号')
+    wrapper.unmount()
+  })
+
+  it('从调整节奏旁按月回顾真实每日目标和项目执行次数', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.history-button').trigger('click')
+    await flushPromises()
+
+    expect(fetchWorkdayRhythmHistory).toHaveBeenCalledWith(
+      `${clock.date.slice(0, 7)}-01`,
+      expect.stringMatching(new RegExp(`^${clock.date.slice(0, 7)}-\\d{2}$`)),
+    )
+    expect(wrapper.get('.history-dialog').text()).toContain('完成上线链路验收')
+    expect(wrapper.get('.history-dialog').text()).toContain('喝水3 次')
+    expect(wrapper.get('.history-dialog').text()).toContain('至少冥想一次已完成')
+    wrapper.unmount()
+  })
+
+  it('整月存档都损坏时如实提示而不宣称没有保存记录', async () => {
+    vi.mocked(fetchWorkdayRhythmHistory).mockResolvedValueOnce({
+      from: `${clock.date.slice(0, 7)}-01`,
+      to: `${clock.date.slice(0, 7)}-31`,
+      skippedCount: 2,
+      items: [],
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.history-button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.history-dialog').text()).toContain('2 条已保存记录暂时无法读取')
+    expect(wrapper.get('.history-dialog').text()).toContain('没有被伪装成空白日期')
+    expect(wrapper.get('.history-dialog').text()).not.toContain('这个月还没有已保存记录')
     wrapper.unmount()
   })
 
@@ -199,6 +253,39 @@ describe('WorkdayRhythmView', () => {
       }),
     )
     expect(wrapper.findAll('.energy-action')).toHaveLength(3)
+    wrapper.unmount()
+  })
+
+  it('删除补给配置后再次保存仍保留当天既有次数和名称快照', async () => {
+    const configured = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
+    configured.energyItems.push({
+      id: 'WALK',
+      title: '起身走动',
+      guidance: '离开座位活动几分钟',
+      mode: 'COUNT',
+      notify: false,
+    })
+    const storedDay = defaultRhythmDay(clock.date, clock.weekday)
+    storedDay.energyRecords.WALK = 3
+    storedDay.energySnapshot.WALK = { title: '起身走动', mode: 'COUNT' }
+    vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
+    vi.mocked(fetchWorkdayRhythmDay).mockResolvedValue(storedDay)
+    vi.mocked(saveWorkdayRhythm).mockImplementationOnce(async (value) => cloneRhythmConfig(value))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.settings-button').trigger('click')
+    await wrapper.findAll('.remove-energy-item')[2]!.trigger('click')
+    await wrapper.get('.editor .primary').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.focus-card input')[0]!.setValue('保存其它真实目标')
+    await wrapper.get('.focus-card footer button').trigger('click')
+    await flushPromises()
+
+    expect(saveWorkdayRhythmDay).toHaveBeenLastCalledWith(expect.objectContaining({
+      energyRecords: expect.objectContaining({ WALK: 3 }),
+      energySnapshot: expect.objectContaining({ WALK: { title: '起身走动', mode: 'COUNT' } }),
+    }))
     wrapper.unmount()
   })
 

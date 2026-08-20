@@ -224,4 +224,4 @@ https://wao.wayuwa.cn/api/music/netease/callback
 - `DEPLOY_SSH_KNOWN_HOSTS` 必须保存人工核验后的三个 SSH 主机公钥；
 - 密码登录仅用于首次安装公钥，流水线只使用专用部署密钥；
 - 飞书 Webhook 只保存在 GitHub Secret。它同时用于 main 部署结果和 WAO 任务新评论通知；CD 会私密下发为 `FEISHU_COMMENT_WEBHOOK_URL`，不写入仓库。
-- `FEISHU_COMMENT_WEBHOOK_URL` 现在只是**兜底**：系统通知统一读「设置 → 通知 · 飞书 Webhook」里那一个地址（加密存 `system_setting`，见 ADR-019）。界面上配过就以界面为准，没配过才回落到这个环境变量。
+- `FEISHU_COMMENT_WEBHOOK_URL` 现在只是首次接管前的**兜底**：系统通知统一读「设置 → Webhook配置」里标记为系统默认的机器人（加密存 `feishu_webhook_config`，见 ADR-089）。首次打开配置页会把仅存在于环境变量的旧地址加密迁入；用户删空注册表后不会再回落恢复它。

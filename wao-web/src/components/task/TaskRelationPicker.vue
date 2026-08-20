@@ -9,12 +9,13 @@ interface RelationCandidate {
   meta: string
   icon: string
   selected: boolean
+  createdAt?: string | null
 }
 
 const props = defineProps<{
-  docs: Array<{ id: string; title: string; kbName: string }>
-  tasks: Array<{ id: string; title: string; projectName: string }>
-  files: Array<{ id: string; name: string; size: string; icon: string }>
+  docs: Array<{ id: string; title: string; kbName: string; createdAt?: string | null }>
+  tasks: Array<{ id: string; title: string; projectName: string; createdAt?: string | null }>
+  files: Array<{ id: string; name: string; size: string; icon: string; createdAt?: string | null }>
   selectedDocIds: string[]
   selectedTaskIds: string[]
   selectedFileIds: string[]
@@ -28,20 +29,41 @@ const type = ref<RelationType>('all')
 const query = ref('')
 const search = ref<HTMLInputElement | null>(null)
 
-const items = computed<RelationCandidate[]>(() => [
-  ...props.docs.map((doc) => ({
-    id: doc.id, type: 'doc' as const, title: doc.title || '未命名文档', meta: doc.kbName,
-    icon: 'ri-book-2-line', selected: props.selectedDocIds.includes(doc.id),
-  })),
-  ...props.tasks.map((task) => ({
-    id: task.id, type: 'task' as const, title: task.title, meta: task.projectName,
-    icon: 'ri-checkbox-circle-line', selected: props.selectedTaskIds.includes(task.id),
-  })),
-  ...props.files.map((file) => ({
-    id: file.id, type: 'file' as const, title: file.name, meta: file.size,
-    icon: file.icon || 'ri-file-line', selected: props.selectedFileIds.includes(file.id),
-  })),
-])
+/** 只接受可解析的真实时间；没有可靠时间的历史数据保持原顺序并排在最后。 */
+function createdMillis(value?: string | null): number | null {
+  if (!value) return null
+  // Task/File 的历史契约是上海本地 ISO 时间，Doc 已经带 +08:00；显式补偏移，避免浏览器
+  // 位于其它时区时把三类候选按不同基准解释，导致跨类型顺序错八小时。
+  const localIso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/
+  const parsed = Date.parse(localIso.test(value) ? `${value}+08:00` : value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const items = computed<RelationCandidate[]>(() => {
+  const candidates: RelationCandidate[] = [
+    ...props.docs.map((doc) => ({
+      id: doc.id, type: 'doc' as const, title: doc.title || '未命名文档', meta: doc.kbName,
+      icon: 'ri-book-2-line', selected: props.selectedDocIds.includes(doc.id), createdAt: doc.createdAt,
+    })),
+    ...props.tasks.map((task) => ({
+      id: task.id, type: 'task' as const, title: task.title, meta: task.projectName,
+      icon: 'ri-checkbox-circle-line', selected: props.selectedTaskIds.includes(task.id), createdAt: task.createdAt,
+    })),
+    ...props.files.map((file) => ({
+      id: file.id, type: 'file' as const, title: file.name, meta: file.size,
+      icon: file.icon || 'ri-file-line', selected: props.selectedFileIds.includes(file.id), createdAt: file.createdAt,
+    })),
+  ]
+  return candidates
+    .map((item, index) => ({ item, index, createdAt: createdMillis(item.createdAt) }))
+    .sort((a, b) => {
+      if (a.createdAt === null && b.createdAt === null) return a.index - b.index
+      if (a.createdAt === null) return 1
+      if (b.createdAt === null) return -1
+      return b.createdAt - a.createdAt || a.index - b.index
+    })
+    .map(({ item }) => item)
+})
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase()
   return items.value.filter((item) =>
@@ -69,7 +91,7 @@ void nextTick(() => search.value?.focus())
     <header>
       <div>
         <b>关联到任务</b>
-        <p>从真实知识库、任务和文件库中选择</p>
+        <p>从真实知识库、未完成任务和文件库中选择，最近创建的排在前面</p>
       </div>
       <button class="close" aria-label="关闭关联选择器" @click="emit('close')"><i class="ri-close-line"></i></button>
     </header>

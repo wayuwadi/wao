@@ -22,7 +22,7 @@ import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Markdown } from '@tiptap/markdown'
-import { Extension } from '@tiptap/core'
+import { Extension, mergeAttributes, type Editor } from '@tiptap/core'
 import { polishDocumentText } from '@/api/assistant'
 
 /** 协作者标记：把某个人钉在他光标所在的那一行（顶层块序号）。 */
@@ -51,6 +51,10 @@ const props = withDefaults(
     peers?: EditorPeer[]
     /** 文档正文允许选中文字后调用设置页配置的真实 AI 润色。 */
     polishable?: boolean
+    /** 文档正文允许点击打开、创建和维护链接。 */
+    linkControls?: boolean
+    /** 文档正文允许按比例或像素长宽调整图片。 */
+    imageControls?: boolean
   }>(),
   {
     placeholder: '写点什么…支持 Markdown 快捷输入',
@@ -60,6 +64,8 @@ const props = withDefaults(
     allowH1: false,
     peers: () => [],
     polishable: false,
+    linkControls: false,
+    imageControls: false,
   },
 )
 const emit = defineEmits<{
@@ -71,6 +77,117 @@ const emit = defineEmits<{
 }>()
 
 const previewImage = ref<{ src: string; alt: string } | null>(null)
+
+type ImageDimension = number | `${number}%` | null
+
+/**
+ * 图片尺寸继续存进 Markdown，而不是另开一份浏览器状态：用图片 title 的 WAO 元数据
+ * 保存百分比或像素长宽，普通 Markdown 阅读器仍能照常显示图片。
+ */
+const IMAGE_SIZE_PREFIX = 'wao-image-size:'
+const IMAGE_SCALES = [25, 50, 75, 100] as const
+
+function parseImageDimension(value: unknown): ImageDimension {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= 4000) {
+    return Math.round(value)
+  }
+  if (typeof value !== 'string') return null
+  if (/^(25|50|75|100)%$/.test(value)) return value as `${number}%`
+  if (!/^\d{1,4}$/.test(value)) return null
+  const parsed = Number(value)
+  return parsed > 0 && parsed <= 4000 ? parsed : null
+}
+
+function decodeImageTitle(value: unknown) {
+  const title = typeof value === 'string' ? value : ''
+  if (!title.startsWith(IMAGE_SIZE_PREFIX)) {
+    return { title: title || null, width: null as ImageDimension, height: null as ImageDimension }
+  }
+  const match = /^wao-image-size:([^x;]+)x([^;]+)(?:;title=(.*))?$/.exec(title)
+  if (!match) return { title: null, width: null as ImageDimension, height: null as ImageDimension }
+  const width = match[1] === 'auto' ? null : parseImageDimension(match[1])
+  const height = match[2] === 'auto' ? null : parseImageDimension(match[2])
+  const valid = (typeof width === 'string' && height == null)
+    || (typeof width !== 'string' && typeof height !== 'string' && (width != null || height != null))
+  if ((match[1] !== 'auto' && width == null)
+    || (match[2] !== 'auto' && height == null)
+    || !valid) {
+    return { title: null, width: null as ImageDimension, height: null as ImageDimension }
+  }
+  let originalTitle: string | null = null
+  if (match[3]) {
+    try {
+      originalTitle = decodeURIComponent(match[3])
+    } catch {
+      originalTitle = null
+    }
+  }
+  return {
+    title: originalTitle,
+    width,
+    height,
+  }
+}
+
+function encodeImageTitle(width: unknown, height: unknown, title: unknown): string {
+  const safeWidth = parseImageDimension(width)
+  const safeHeight = parseImageDimension(height)
+  const originalTitle = typeof title === 'string' ? title : ''
+  if (safeWidth == null && safeHeight == null) return originalTitle
+  if (typeof safeHeight === 'string' || (typeof safeWidth === 'string' && safeHeight != null)) {
+    return originalTitle
+  }
+  const suffix = originalTitle ? `;title=${encodeURIComponent(originalTitle)}` : ''
+  return `${IMAGE_SIZE_PREFIX}${safeWidth ?? 'auto'}x${safeHeight ?? 'auto'}${suffix}`
+}
+
+function imageStyle(attributes: Record<string, unknown>): string {
+  const width = parseImageDimension(attributes.width)
+  const height = parseImageDimension(attributes.height)
+  const styles: string[] = []
+  if (typeof width === 'string') {
+    styles.push(`width:${width}`, 'height:auto')
+  } else if (width != null && height != null) {
+    // 窄屏仍由 max-width 收住；aspect-ratio 让按长宽设置的图片等比缩小而不变形。
+    styles.push(`width:${width}px`, `aspect-ratio:${width}/${height}`, 'height:auto', 'object-fit:contain')
+  } else if (width != null) {
+    styles.push(`width:${width}px`, 'height:auto')
+  } else if (typeof height === 'number') {
+    styles.push(`height:${height}px`, 'width:auto')
+  }
+  return styles.join(';')
+}
+
+/** Tiptap 自带 Image 已有 width/height 属性；这里只补 Markdown 往返和百分比渲染。 */
+const DocumentImage = Image.extend({
+  parseMarkdown: (token, helpers) => {
+    const size = decodeImageTitle(token.title)
+    return helpers.createNode('image', {
+      src: token.href,
+      alt: token.text,
+      title: size.title,
+      width: size.width,
+      height: size.height,
+    })
+  },
+  renderMarkdown: (node) => {
+    const src = node.attrs?.src ?? ''
+    const alt = node.attrs?.alt ?? ''
+    const title = encodeImageTitle(node.attrs?.width, node.attrs?.height, node.attrs?.title)
+    return title ? `![${alt}](${src} "${title}")` : `![${alt}](${src})`
+  },
+  renderHTML({ HTMLAttributes }) {
+    const attributes = { ...HTMLAttributes }
+    const style = imageStyle(attributes)
+    delete attributes.width
+    delete attributes.height
+    delete attributes.style
+    return [
+      'img',
+      mergeAttributes(this.options.HTMLAttributes, attributes, style ? { style } : {}),
+    ]
+  },
+})
 
 /**
  * Tab 留在编辑器内：列表项缩进 / 反缩进，普通段落插入一个真实制表符。
@@ -116,11 +233,13 @@ const editor = useEditor({
       // 只有知识库文档开放 h1；描述场景仍限制成 h2–h4，避免压过页面标题。
       heading: { levels: props.allowH1 ? [1, 2, 3, 4] : [2, 3, 4] },
       link: {
+        // 可编辑态由下方 handleClick 统一“选中整段 + 安全新开窗口”，避免插件与编辑菜单各开一次。
         openOnClick: false,
+        enableClickSelection: false,
         HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' },
       },
     }),
-    Image.configure({ inline: false, HTMLAttributes: { class: 'md-img' } }),
+    DocumentImage.configure({ inline: false, HTMLAttributes: { class: 'md-img' } }),
     TaskList,
     TaskItem.configure({ nested: true }),
     Placeholder.configure({ placeholder: () => props.placeholder }),
@@ -130,20 +249,34 @@ const editor = useEditor({
   editorProps: {
     handlePaste: (_view, event) => consumeImages(event.clipboardData),
     handleDrop: (_view, event) => consumeImages((event as DragEvent).dataTransfer),
-    handleClick: (_view, _pos, event) => {
+    handleClick: (_view, pos, event) => {
       const target = event.target
       if (target instanceof HTMLImageElement) {
+        if (props.imageControls && !props.readonly) {
+          editor.value?.commands.setNodeSelection(pos)
+          return true
+        }
         previewImage.value = { src: target.currentSrc || target.src, alt: target.alt }
         return true
       }
       return false
     },
+    handleDoubleClick: (_view, _pos, event) => {
+      const target = event.target
+      if (!(target instanceof HTMLImageElement)) return false
+      previewImage.value = { src: target.currentSrc || target.src, alt: target.alt }
+      return true
+    },
   },
   onUpdate: ({ editor: e }) => {
     emit('update:modelValue', e.getMarkdown())
+    syncSelectionControls(e)
     scheduleMeasure()
   },
-  onSelectionUpdate: ({ editor: e }) => emit('caret-line', caretLine(e)),
+  onSelectionUpdate: ({ editor: e }) => {
+    emit('caret-line', caretLine(e))
+    syncSelectionControls(e)
+  },
   onBlur: () => flushExternal(),
 })
 
@@ -254,6 +387,212 @@ function applyPolish() {
     .insertContentAt({ from: dialog.from, to: dialog.to }, replacement, options)
     .run()
   polishDialog.value = null
+}
+
+// ---- 文档链接与图片尺寸 ----
+
+interface MenuContext {
+  editor: Editor
+  from: number
+  to: number
+  state: Editor['state']
+}
+
+interface LinkDialog {
+  from: number
+  to: number
+  name: string
+  url: string
+  marks: { type: string; attrs?: Record<string, unknown> }[]
+  error: string
+}
+
+const linkDialog = ref<LinkDialog | null>(null)
+const linkSelectionActive = ref(false)
+const imageWidthInput = ref('')
+const imageHeightInput = ref('')
+const selectedImageScale = ref<number | null>(null)
+const imageSizeError = ref('')
+
+function syncSelectionControls(e: Editor) {
+  linkSelectionActive.value = e.isActive('link')
+  if (!e.isActive('image')) return
+  const attrs = e.getAttributes('image')
+  const width = parseImageDimension(attrs.width)
+  const height = parseImageDimension(attrs.height)
+  selectedImageScale.value = typeof width === 'string' ? Number(width.slice(0, -1)) : null
+  imageWidthInput.value = typeof width === 'number' ? String(width) : ''
+  imageHeightInput.value = typeof height === 'number' ? String(height) : ''
+  imageSizeError.value = ''
+}
+
+/** 只给同一文本块内的选区提供链接维护，跨段选区不能成为一个 HTML 链接。 */
+function shouldShowLink({ editor: e, from, to, state }: MenuContext) {
+  if (!props.linkControls || props.readonly) return false
+  if (e.isActive('image')) return false
+  if (e.isActive('link')) return true
+  return from !== to && state.doc.resolve(from).sameParent(state.doc.resolve(to))
+}
+
+function shouldShowImage({ editor: e }: MenuContext) {
+  return props.imageControls && !props.readonly && e.isActive('image')
+}
+
+function openLinkEditor() {
+  const e = editor.value
+  if (!e) return
+  if (e.isActive('link')) e.commands.extendMarkRange('link')
+  const { from, to } = e.state.selection
+  if (from === to || !e.state.doc.resolve(from).sameParent(e.state.doc.resolve(to))) return
+  const attrs = e.getAttributes('link')
+  linkDialog.value = {
+    from,
+    to,
+    name: e.state.doc.textBetween(from, to, ''),
+    url: typeof attrs.href === 'string' ? attrs.href : '',
+    marks: e.state.doc
+      .resolve(from)
+      .marks()
+      .filter((mark) => mark.type.name !== 'link')
+      .map((mark) => mark.toJSON()),
+    error: '',
+  }
+}
+
+/** 补全常见裸域名，同时拒绝会执行脚本或读取本地数据的协议。 */
+function normalizedLinkUrl(raw: string): string | null {
+  const value = raw.trim()
+  const unsafeSpacing = [...value].some((character) => {
+    const code = character.charCodeAt(0)
+    return /\s/u.test(character) || code < 0x20 || code === 0x7f
+  })
+  if (!value || unsafeSpacing) return null
+  if (/^[\w.-]+\.[a-z]{2,}(?:[/:?#].*)?$/i.test(value)) return `https://${value}`
+  if (/^(\/|#|\.\.?\/)/.test(value)) return value
+  if (/^mailto:[^@]+@[^@]+$/i.test(value)) return value
+  if (/^tel:\+?[0-9().-]+$/i.test(value)) return value
+  try {
+    const parsed = new URL(value)
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return value
+  } catch {
+    // 不是可解析的绝对 HTTP(S) 地址。
+  }
+  return null
+}
+
+function saveLink() {
+  const e = editor.value
+  const dialog = linkDialog.value
+  if (!e || !dialog) return
+  const name = dialog.name.trim()
+  const href = normalizedLinkUrl(dialog.url)
+  if (!name) {
+    dialog.error = '显示名称不能为空'
+    return
+  }
+  if (!href) {
+    dialog.error = '请输入 http(s)、邮件、电话或站内相对地址'
+    return
+  }
+  const inserted = e
+    .chain()
+    .focus()
+    .insertContentAt(
+      { from: dialog.from, to: dialog.to },
+      {
+        type: 'text',
+        text: name,
+        marks: [
+          ...dialog.marks,
+          {
+            type: 'link',
+            attrs: { href, target: '_blank', rel: 'noopener noreferrer' },
+          },
+        ],
+      },
+    )
+    .setTextSelection(dialog.from + name.length)
+    .run()
+  if (!inserted) {
+    dialog.error = '链接没有写入，请重试'
+    return
+  }
+  linkDialog.value = null
+}
+
+function removeActiveLink() {
+  const e = editor.value
+  if (!e || !e.isActive('link')) return
+  e.chain().focus().extendMarkRange('link').unsetLink().run()
+  linkDialog.value = null
+}
+
+function openActiveLink() {
+  const href = editor.value?.getAttributes('link').href
+  const safeHref = typeof href === 'string' ? normalizedLinkUrl(href) : null
+  if (safeHref) window.open(safeHref, '_blank', 'noopener,noreferrer')
+}
+
+/** 可编辑区原生点击链接：阻止当前页跳转，选中整段供返回后编辑，并安全新开窗口。 */
+function onEditorContentClick(event: MouseEvent) {
+  const target = event.target
+  const link = target instanceof Element ? target.closest<HTMLAnchorElement>('a[href]') : null
+  const e = editor.value
+  if (!props.linkControls || !link || !e) return
+  event.preventDefault()
+  const href = normalizedLinkUrl(link.getAttribute('href') ?? '')
+  if (!href) return
+  try {
+    const from = e.view.posAtDOM(link, 0)
+    const to = e.view.posAtDOM(link, link.childNodes.length)
+    e.chain().setTextSelection({ from, to }).extendMarkRange('link').run()
+  } catch {
+    // 即使第三方节点视图无法反查位置，打开链接仍是确定且安全的用户动作。
+  }
+  window.open(href, '_blank', 'noopener,noreferrer')
+}
+
+function setImageScale(percent: 25 | 50 | 75 | 100) {
+  const e = editor.value
+  if (!e?.isActive('image')) return
+  e.chain().updateAttributes('image', { width: `${percent}%`, height: null }).run()
+  selectedImageScale.value = percent
+  imageWidthInput.value = ''
+  imageHeightInput.value = ''
+  imageSizeError.value = ''
+}
+
+function applyImageDimensions() {
+  const e = editor.value
+  if (!e?.isActive('image')) return
+  const width = imageWidthInput.value.trim()
+  const height = imageHeightInput.value.trim()
+  const parsedWidth = width ? parseImageDimension(width) : null
+  const parsedHeight = height ? parseImageDimension(height) : null
+  if ((!width && !height) || (width && typeof parsedWidth !== 'number') || (height && typeof parsedHeight !== 'number')) {
+    imageSizeError.value = '长宽至少填写一项，范围为 1–4000 像素'
+    return
+  }
+  e.chain().updateAttributes('image', { width: parsedWidth, height: parsedHeight }).run()
+  selectedImageScale.value = null
+  imageSizeError.value = ''
+}
+
+function clearImageSize() {
+  const e = editor.value
+  if (!e?.isActive('image')) return
+  e.chain().updateAttributes('image', { width: null, height: null }).run()
+  selectedImageScale.value = null
+  imageWidthInput.value = ''
+  imageHeightInput.value = ''
+  imageSizeError.value = ''
+}
+
+function openSelectedImage() {
+  const attrs = editor.value?.getAttributes('image')
+  if (typeof attrs?.src === 'string' && attrs.src) {
+    previewImage.value = { src: attrs.src, alt: typeof attrs.alt === 'string' ? attrs.alt : '' }
+  }
 }
 
 // ---- 协作者行标记 ----
@@ -501,8 +840,74 @@ onBeforeUnmount(() => {
     </div>
     <div class="md-editor-wrap">
       <BubbleMenu
+        v-if="editor && linkControls"
+        :editor="editor"
+        plugin-key="documentLinkMenu"
+        :should-show="shouldShowLink"
+        :options="{ placement: 'bottom', offset: 8 }"
+      >
+        <div class="link-toolbar" role="toolbar" aria-label="链接操作">
+          <button type="button" @mousedown.prevent @click="openLinkEditor">
+            <i class="ri-edit-line"></i>{{ linkSelectionActive ? '编辑链接' : '添加链接' }}
+          </button>
+          <button
+            v-if="linkSelectionActive"
+            type="button"
+            title="在新窗口打开"
+            aria-label="在新窗口打开链接"
+            @mousedown.prevent
+            @click="openActiveLink"
+          >
+            <i class="ri-external-link-line"></i>
+          </button>
+          <button
+            v-if="linkSelectionActive"
+            type="button"
+            title="移除链接"
+            aria-label="移除链接"
+            @mousedown.prevent
+            @click="removeActiveLink"
+          >
+            <i class="ri-link-unlink-m"></i>
+          </button>
+        </div>
+      </BubbleMenu>
+      <BubbleMenu
+        v-if="editor && imageControls"
+        :editor="editor"
+        plugin-key="documentImageMenu"
+        :should-show="shouldShowImage"
+        :options="{ placement: 'bottom', offset: 8 }"
+      >
+        <form class="image-size-toolbar" aria-label="调整图片大小" @submit.prevent="applyImageDimensions">
+          <div class="image-scale-options">
+            <button
+              v-for="percent in IMAGE_SCALES"
+              :key="percent"
+              type="button"
+              :class="{ active: selectedImageScale === percent }"
+              @click="setImageScale(percent)"
+            >
+              {{ percent }}%
+            </button>
+          </div>
+          <div class="image-pixel-fields">
+            <label>宽 <input v-model="imageWidthInput" type="number" min="1" max="4000" inputmode="numeric" aria-label="图片宽度（像素）" /></label>
+            <span>×</span>
+            <label>高 <input v-model="imageHeightInput" type="number" min="1" max="4000" inputmode="numeric" aria-label="图片高度（像素）" /></label>
+            <button type="submit">应用</button>
+          </div>
+          <div v-if="imageSizeError" class="image-size-error" role="alert">{{ imageSizeError }}</div>
+          <div class="image-size-actions">
+            <button type="button" @click="clearImageSize">原始大小</button>
+            <button type="button" @click="openSelectedImage"><i class="ri-zoom-in-line"></i>查看原图</button>
+          </div>
+        </form>
+      </BubbleMenu>
+      <BubbleMenu
         v-if="editor && polishable"
         :editor="editor"
+        plugin-key="documentPolishMenu"
         :should-show="shouldShowPolish"
         :options="{ placement: 'top', offset: 8 }"
       >
@@ -516,7 +921,12 @@ onBeforeUnmount(() => {
           <i class="ri-magic-line"></i><span>润色</span>
         </button>
       </BubbleMenu>
-      <EditorContent :editor="editor" class="md-body" :style="{ minHeight: minHeight + 'px' }" />
+      <EditorContent
+        :editor="editor"
+        class="md-body"
+        :style="{ minHeight: minHeight + 'px' }"
+        @click="onEditorContentClick"
+      />
       <button
         v-if="!readonly"
         type="button"
@@ -546,6 +956,25 @@ onBeforeUnmount(() => {
         <i class="ri-close-line"></i>
       </button>
       <img :src="previewImage.src" :alt="previewImage.alt" />
+    </div>
+    <div v-if="linkDialog" class="link-dialog-mask" @click.self="linkDialog = null">
+      <form class="link-dialog" role="dialog" aria-modal="true" aria-labelledby="link-dialog-title" @submit.prevent="saveLink">
+        <header>
+          <div>
+            <small>文档超链接</small>
+            <h2 id="link-dialog-title">维护链接名称与地址</h2>
+          </div>
+          <button type="button" aria-label="关闭链接编辑" @click="linkDialog = null"><i class="ri-close-line"></i></button>
+        </header>
+        <label>显示名称<input v-model="linkDialog.name" maxlength="500" autofocus /></label>
+        <label>URL<input v-model="linkDialog.url" maxlength="2048" inputmode="url" placeholder="https://example.com/page" /></label>
+        <div v-if="linkDialog.error" class="link-dialog-error" role="alert">{{ linkDialog.error }}</div>
+        <footer>
+          <button v-if="linkSelectionActive" type="button" class="link-remove" @click="removeActiveLink">移除链接</button>
+          <button type="button" class="link-cancel" @click="linkDialog = null">取消</button>
+          <button type="submit" class="link-save">保存链接</button>
+        </footer>
+      </form>
     </div>
     <div v-if="polishDialog" class="polish-mask" @click.self="keepOriginal">
       <section class="polish-dialog" role="dialog" aria-modal="true" aria-labelledby="polish-title">
@@ -658,6 +1087,208 @@ onBeforeUnmount(() => {
 }
 .image-lightbox-close:hover {
   background: rgba(255, 255, 255, 0.28);
+}
+.link-toolbar,
+.image-size-toolbar {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: #292b35;
+  box-shadow: 0 9px 28px rgba(18, 20, 28, 0.28);
+  color: #fff;
+}
+.link-toolbar {
+  min-height: 36px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.link-toolbar button {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.link-toolbar button:hover,
+.image-size-toolbar button:hover,
+.image-size-toolbar button.active {
+  background: rgba(255, 255, 255, 0.14);
+}
+.image-size-toolbar {
+  width: min(330px, calc(100vw - 20px));
+  padding: 9px;
+}
+.image-scale-options,
+.image-pixel-fields,
+.image-size-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.image-scale-options button,
+.image-size-actions button,
+.image-pixel-fields > button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+.image-scale-options button {
+  flex: 1;
+}
+.image-pixel-fields {
+  margin-top: 7px;
+}
+.image-pixel-fields label {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+}
+.image-pixel-fields input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  padding: 0 6px;
+  font: inherit;
+}
+.image-pixel-fields > span {
+  color: rgba(255, 255, 255, 0.5);
+}
+.image-pixel-fields > button {
+  padding: 0 9px;
+  background: #65558f;
+  font-weight: 650;
+}
+.image-size-error {
+  margin-top: 6px;
+  color: #ffb7b7;
+  font-size: 9.5px;
+}
+.image-size-actions {
+  justify-content: flex-end;
+  margin-top: 7px;
+}
+.image-size-actions button {
+  padding: 0 8px;
+}
+.link-dialog-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(24, 25, 32, 0.46);
+}
+.link-dialog {
+  width: min(500px, 100%);
+  padding: 20px;
+  border: 1px solid var(--wao-line);
+  border-radius: 16px;
+  background: var(--wao-bg-card);
+  box-shadow: 0 24px 72px rgba(16, 18, 28, 0.28);
+}
+.link-dialog header,
+.link-dialog footer {
+  display: flex;
+  align-items: center;
+}
+.link-dialog header {
+  justify-content: space-between;
+  gap: 12px;
+}
+.link-dialog header small {
+  color: #65558f;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 1px;
+}
+.link-dialog h2 {
+  margin: 3px 0 0;
+  color: var(--wao-text);
+  font-size: 18px;
+}
+.link-dialog header > button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-weak);
+  cursor: pointer;
+}
+.link-dialog label {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--wao-text-2);
+  font-size: 11px;
+  font-weight: 650;
+}
+.link-dialog label input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  padding: 0 10px;
+  font: inherit;
+  font-weight: 400;
+}
+.link-dialog-error {
+  margin-top: 10px;
+  color: var(--wao-danger-strong);
+  font-size: 10.5px;
+}
+.link-dialog footer {
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 16px;
+}
+.link-dialog footer button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.link-cancel,
+.link-remove {
+  border: 1px solid var(--wao-line-control);
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+}
+.link-remove {
+  margin-right: auto;
+  color: var(--wao-danger-strong);
+}
+.link-save {
+  border: 0;
+  background: #65558f;
+  color: #fff;
+  font-weight: 700;
 }
 .polish-trigger {
   min-height: 34px;

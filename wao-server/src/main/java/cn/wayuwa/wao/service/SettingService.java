@@ -22,9 +22,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SettingService {
 
-    /** 飞书通知 webhook（全局一个，见需求「全局使用一个就可以了」）。 */
+    /** 旧版单例飞书通知 webhook；通用注册表上线后作为滚动发布和回滚兼容镜像保留。 */
     public static final String FEISHU_WEBHOOK_URL = "feishu.webhook.url";
     public static final String FEISHU_WEBHOOK_ENABLED = "feishu.webhook.enabled";
+    /** 通用 Webhook 注册表一旦被编辑或删空便不再恢复部署环境中的旧单例。 */
+    public static final String FEISHU_WEBHOOK_REGISTRY_INITIALIZED = "feishu.webhooks.initialized";
     /** 公开展示的网站信息与 ICP 备案信息。 */
     public static final String SITE_NAME = "site.name";
     public static final String SITE_DESCRIPTION = "site.description";

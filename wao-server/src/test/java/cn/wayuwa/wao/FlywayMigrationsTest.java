@@ -73,4 +73,37 @@ class FlywayMigrationsTest {
                 .contains("UNIQUE KEY uk_chat_review_active_chat (active_chat_id)")
                 .doesNotContain("current_date DATE");
     }
+
+    @Test
+    void webhookRegistryMigrationMovesOnlyEncryptedLegacyValuesAndEnforcesOneDefault() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V78__feishu_webhook_configs.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("webhook_ciphertext VARBINARY(2048)")
+                .contains("UNIQUE KEY uk_feishu_webhook_default (default_marker)")
+                .contains("url_setting.cfg_value LIKE 'enc:%:%'")
+                .contains("FROM_BASE64(SUBSTRING_INDEX(url_setting.cfg_value, ':', -1))")
+                .contains("decoded.webhook_nonce IS NOT NULL")
+                .contains("OCTET_LENGTH(decoded.webhook_nonce) = 12")
+                .contains("decoded.webhook_ciphertext IS NOT NULL")
+                .contains("OCTET_LENGTH(decoded.webhook_ciphertext) BETWEEN 16 AND 2048")
+                .doesNotContain("open-apis/bot/v2/hook/");
+    }
+
+    @Test
+    void taskCreatedAtMigrationBackfillsBothServerAndIdempotentClientIds() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V79__task_created_at.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("created_at DATETIME(3) NULL DEFAULT CURRENT_TIMESTAMP(3)")
+                .contains("^t[0-9]{13}[0-9a-z]*$")
+                .contains("SUBSTRING(id, 2, 13)")
+                .contains("SET created_at = NULL");
+    }
 }

@@ -2,12 +2,18 @@ package cn.wayuwa.wao.feishu;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import cn.wayuwa.wao.service.FeishuWebhookConfigService;
+import cn.wayuwa.wao.service.SettingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClient;
 
 class FeishuWebhookNotifierTest {
 
@@ -58,5 +64,32 @@ class FeishuWebhookNotifierTest {
                 .isEqualTo("https://wao.wayuwa.cn/comic/insight.svg");
         assertThat(FeishuWebhookNotifier.ComicIllustrations.success("https://wao.wayuwa.cn/"))
                 .isEqualTo("https://wao.wayuwa.cn/comic/success.svg");
+    }
+
+    @Test
+    void existingNotificationsUseTheEnabledRegistryDefaultWithoutReadingLegacyUrl() {
+        SettingService settings = mock(SettingService.class);
+        FeishuWebhookConfigService webhooks = mock(FeishuWebhookConfigService.class);
+        String url = "https://open.feishu.cn/open-apis/bot/v2/hook/server-only-secret";
+        when(webhooks.defaultTarget()).thenReturn(Optional.of(
+                new FeishuWebhookConfigService.NotificationTarget("fw1", url, true)));
+        FeishuWebhookNotifier notifier = new FeishuWebhookNotifier(
+                settings, webhooks, RestClient.builder(), "https://legacy.invalid/hook");
+
+        assertThat(notifier.resolvedUrl()).isEqualTo(url);
+        assertThat(notifier.enabled()).isTrue();
+    }
+
+    @Test
+    void deletingAllManagedConfigsDoesNotRestoreTheLegacyDeploymentUrl() {
+        SettingService settings = mock(SettingService.class);
+        FeishuWebhookConfigService webhooks = mock(FeishuWebhookConfigService.class);
+        when(webhooks.defaultTarget()).thenReturn(Optional.empty());
+        when(webhooks.registryInitialized()).thenReturn(true);
+        FeishuWebhookNotifier notifier = new FeishuWebhookNotifier(
+                settings, webhooks, RestClient.builder(), "https://legacy.invalid/hook");
+
+        assertThat(notifier.resolvedUrl()).isEmpty();
+        assertThat(notifier.enabled()).isFalse();
     }
 }

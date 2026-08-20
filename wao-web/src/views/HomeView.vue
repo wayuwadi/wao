@@ -23,7 +23,6 @@ import {
   type AiEvolutionOverview,
   type AiEvolutionSuggestion,
   type CodexQuotaAccount,
-  type CodexQuotaWindow,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
@@ -58,6 +57,7 @@ const workflows = ref<AiWorkflow[]>([])
 const loading = ref(true)
 const workflowsLoading = ref(false)
 const goal = ref('')
+const goalDraftState = ref<'idle' | 'saved' | 'error'>('idle')
 const goalProjectId = ref('')
 const goalRunnerId = ref('')
 const goalRunnerManuallySelected = ref(false)
@@ -146,26 +146,36 @@ const goalRunnerHint = computed(() => {
   if (online) return `自动分配给 ${online} 台在线电脑中最先空闲的一台`
   return goalRunnerCandidates.value.length ? '可用电脑当前全部离线，任务会先排队' : '还没有电脑接入工作流使用的 AI 工具'
 })
-const visibleSessionQuotas = computed(() => evolution.value?.sessionQuotas.filter((quota) => quota.status === 'SYNCED') ?? [])
-const primarySessionQuota = computed(() => visibleSessionQuotas.value[0] ?? null)
-const visibleWeeklyQuotas = computed(() => evolution.value?.weeklyQuotas.filter((quota) => quota.status === 'SYNCED') ?? [])
-const primaryWeeklyQuota = computed(() => visibleWeeklyQuotas.value[0] ?? null)
+const WEEKLY_QUOTA_FRESH_MS = 45 * 60 * 1_000
+const WEEKLY_QUOTA_CLOCK_SKEW_MS = 5 * 60 * 1_000
+
+/** OAuth 快照没有单独 fresh 标记，只展示仍在有效窗口且最近四十五分钟同步成功的数据。 */
+function isFreshWeeklyQuota(quota: AiEvolutionOverview['weeklyQuotas'][number]) {
+  const reset = quota.resetsAt ? Date.parse(quota.resetsAt) : Number.NaN
+  const synced = quota.lastSyncedAt ? Date.parse(quota.lastSyncedAt) : Number.NaN
+  const age = Date.now() - synced
+  const resetValid = quota.resetsAt === null || (Number.isFinite(reset) && reset > Date.now())
+  return quota.status === 'SYNCED'
+    && resetValid
+    && Number.isFinite(synced)
+    && age >= -WEEKLY_QUOTA_CLOCK_SKEW_MS
+    && age <= WEEKLY_QUOTA_FRESH_MS
+}
+
+const visibleWeeklyQuotas = computed(() => evolution.value?.weeklyQuotas.filter(isFreshWeeklyQuota) ?? [])
+// 这个入口明确汇总 Codex；不能在 Codex 无可用快照时误拿 Claude 的周额度冒充。
+const primaryWeeklyQuota = computed(() => visibleWeeklyQuotas.value.find((quota) => quota.provider === 'codex') ?? null)
 const codexQuotaAccounts = computed(() => evolution.value?.codexQuotas ?? [])
-const primaryCodexAccount = computed(() => codexQuotaAccounts.value.find((account) => account.fresh)
-  ?? codexQuotaAccounts.value[0] ?? null)
-const localSessionWindow = computed(() => findCodexWindow(primaryCodexAccount.value, 300))
-const localWeeklyWindow = computed(() => findCodexWindow(primaryCodexAccount.value, 10_080))
-const heroSessionQuota = computed(() => localSessionWindow.value ? {
-  remainingPercent: 100 - localSessionWindow.value.usedPercent,
-  resetsAt: unixTime(localSessionWindow.value.resetsAt),
-} : primarySessionQuota.value)
+const primaryCodexAccount = computed(() => codexQuotaAccounts.value.find((account) => account.fresh) ?? null)
+const localWeeklyWindow = computed(() => {
+  const window = findCodexWindow(primaryCodexAccount.value, 10_080)
+  if (!window) return null
+  return window.resetsAt === null || window.resetsAt * 1_000 > Date.now() ? window : null
+})
 const heroWeeklyQuota = computed(() => localWeeklyWindow.value ? {
   remainingPercent: 100 - localWeeklyWindow.value.usedPercent,
   resetsAt: unixTime(localWeeklyWindow.value.resetsAt),
-  provider: 'codex',
 } : primaryWeeklyQuota.value)
-const showSessionQuota = computed(() => heroSessionQuota.value !== null)
-const showWeeklyQuota = computed(() => heroWeeklyQuota.value !== null || (evolutionLoading.value && !evolution.value))
 const evolutionScheduleDirty = computed(() => Boolean(evolution.value)
   && (evolutionScheduleDraft.intervalHours !== evolution.value?.intervalHours
     || evolutionScheduleDraft.batchSize !== evolution.value?.batchSize))
@@ -401,10 +411,6 @@ async function launchSuggestion(suggestion: AiEvolutionSuggestion) {
   }
 }
 
-function providerLabel(provider: string) {
-  return provider === 'codex' ? 'Codex' : provider === 'claude' ? 'Claude' : provider
-}
-
 function quotaClass(remaining: number) {
   return remaining < 20 ? 'danger' : remaining < 50 ? 'warn' : 'good'
 }
@@ -417,29 +423,6 @@ function findCodexWindow(account: CodexQuotaAccount | null, durationMinutes: num
 
 function unixTime(value: number | null) {
   return value ? new Date(value * 1000).toISOString() : null
-}
-
-function codexResetText(window: CodexQuotaWindow) {
-  return resetText(unixTime(window.resetsAt))
-}
-
-function quotaDuration(minutes: number | null) {
-  if (minutes === 300) return '5 小时周期'
-  if (minutes === 10_080) return '每周使用限额'
-  if (!minutes) return '周期未知'
-  if (minutes % 1_440 === 0) return `${minutes / 1_440} 天周期`
-  if (minutes % 60 === 0) return `${minutes / 60} 小时周期`
-  return `${minutes} 分钟周期`
-}
-
-function planText(plan: string | null) {
-  if (!plan) return '套餐未提供'
-  return `${plan.charAt(0).toUpperCase()}${plan.slice(1)} 套餐`
-}
-
-function creditsText(account: CodexQuotaAccount) {
-  if (account.credits?.unlimited) return '不限'
-  return account.credits?.balance ?? '未提供'
 }
 
 function resetText(value: string | null) {
@@ -476,6 +459,31 @@ watch(goalProjectId, () => {
   syncGoalRunnerDefault()
 })
 
+function goalDraftKey() {
+  return `wao-home-goal-draft-v1:${session.currentUser.id || 'wg'}`
+}
+
+function restoreGoalDraft() {
+  try {
+    goal.value = localStorage.getItem(goalDraftKey()) ?? ''
+    goalDraftState.value = goal.value ? 'saved' : 'idle'
+  } catch {
+    goalDraftState.value = 'error'
+  }
+}
+
+function saveGoalDraft(value: string) {
+  try {
+    if (value) localStorage.setItem(goalDraftKey(), value)
+    else localStorage.removeItem(goalDraftKey())
+    goalDraftState.value = value ? 'saved' : 'idle'
+  } catch {
+    goalDraftState.value = 'error'
+  }
+}
+
+watch(goal, saveGoalDraft)
+
 // 工作流和电脑列表并发加载；电脑晚到时仍应带出项目首选电脑，后续轮询不能覆盖用户手选。
 watch(goalRunnerCandidates, () => {
   if (!goalRunnerManuallySelected.value) syncGoalRunnerDefault()
@@ -488,7 +496,7 @@ async function launchGoal() {
     return
   }
   if (!goalProjectId.value) {
-    toast('请先圬「AI 工作流」中接入一个项目', 'ri-information-line')
+    toast('请先在「AI 工作流」中接入一个项目', 'ri-information-line')
     return
   }
   if (goalImageUploads.value) {
@@ -817,6 +825,7 @@ function progressAge(value: string | null) {
 }
 
 onMounted(() => {
+  restoreGoalDraft()
   void refresh()
   void refreshWorkflows()
   void refreshEvolution()
@@ -839,41 +848,25 @@ onBeforeUnmount(() => {
         <div class="eyebrow">AI CONTROL CENTER</div>
         <!-- 核心理念摆在首屏第一行：这套系统的用法就是「你敢想，AI 就敢做」 -->
         <h1 class="slogan">娃有多大胆，AI 有多大产</h1>
-        <div class="hero-now"><i class="ri-pulse-line"></i>现在有 <b>{{ activeRuns.length }}</b> 个任务在跑</div>
-        <p>同一个项目可以交给不同电脑上的不同 AI 工具，每个任务使用独立会话和 Git worktree。</p>
-        <div class="engine-status">
-          <span v-for="engine in engineStatus" :key="engine.id" :class="{ dim: !engine.online }">
-            <i :class="engine.icon"></i>{{ engine.label }}
-            <b>{{ engine.online ? `${engine.online} 台在线` : engine.total ? '全部离线' : '未接入' }}</b>
+        <div class="hero-signals" aria-label="AI 控制中心状态">
+          <span :title="`正在运行 ${activeRuns.length} 个任务`" :aria-label="`正在运行 ${activeRuns.length} 个任务`">
+            <i class="ri-pulse-line"></i><b>{{ activeRuns.length }}</b>
           </span>
-        </div>
-        <button class="hero-link" @click="router.push('/dashboard')">
-          <i class="ri-line-chart-line"></i>查看数据仪表盘
-        </button>
-      </div>
-      <div class="hero-metrics" :class="{ single: !showSessionQuota && !showWeeklyQuota, 'with-two-quotas': showSessionQuota && showWeeklyQuota }">
-        <div v-if="heroSessionQuota" class="quota-card session-quota" :class="quotaClass(heroSessionQuota.remainingPercent)">
-          <span><i class="ri-timer-line"></i>Codex 本轮剩余额度</span>
-          <strong>{{ heroSessionQuota.remainingPercent }}<em>%</em></strong>
-          <small>5 小时周期 · {{ resetText(heroSessionQuota.resetsAt) }}</small>
-        </div>
-        <div v-if="showWeeklyQuota" class="quota-card weekly-quota" :class="heroWeeklyQuota ? quotaClass(heroWeeklyQuota.remainingPercent) : 'unknown'">
-          <span><i class="ri-speed-up-line"></i>周剩余额度</span>
-          <template v-if="evolutionLoading && !evolution"><strong>···</strong><small>正在读取真实额度</small></template>
-          <template v-else-if="heroWeeklyQuota">
-            <strong>{{ heroWeeklyQuota.remainingPercent }}<em>%</em></strong>
-            <small>
-              {{ providerLabel(heroWeeklyQuota.provider) }} · {{ resetText(heroWeeklyQuota.resetsAt) }}
-            </small>
-          </template>
-        </div>
-        <div class="capacity" :style="{ '--capacity': `${totalSlots ? Math.min(100, usedSlots / totalSlots * 100) : 0}%` }">
-          <div class="capacity-orbit" aria-hidden="true"><i></i><b></b><em></em></div>
-          <div class="capacity-copy">
-            <div class="capacity-num">{{ usedSlots }}<span>/ {{ totalSlots }}</span></div>
-            <div>执行槽位占用</div>
-            <div class="capacity-bar"><i></i></div>
-          </div>
+          <span
+            v-for="engine in engineStatus"
+            :key="engine.id"
+            :class="{ dim: !engine.online }"
+            :title="`${engine.label}：${engine.online ? `${engine.online} 台在线` : engine.total ? '全部离线' : '未接入'}`"
+            :aria-label="`${engine.label}：${engine.online ? `${engine.online} 台在线` : engine.total ? '全部离线' : '未接入'}`"
+          >
+            <i :class="engine.icon"></i><i class="signal-dot"></i>
+          </span>
+          <span :title="`执行槽位 ${usedSlots}/${totalSlots}`" :aria-label="`执行槽位 ${usedSlots}/${totalSlots}`">
+            <i class="ri-server-line"></i><b>{{ usedSlots }}/{{ totalSlots }}</b>
+          </span>
+          <button type="button" title="查看数据仪表盘" aria-label="查看数据仪表盘" @click="router.push('/dashboard')">
+            <i class="ri-line-chart-line"></i>
+          </button>
         </div>
       </div>
       </section>
@@ -927,6 +920,8 @@ onBeforeUnmount(() => {
             </label>
             <span class="goal-shortcut">
               <template v-if="goalImageUploads">{{ goalImageUploads }} 张图片上传中 · </template>
+              <template v-else-if="goalDraftState === 'saved'">草稿已保存在本机 · </template>
+              <template v-else-if="goalDraftState === 'error'">本机草稿保存失败 · </template>
               {{ goal.length }} 字 · Ctrl/Command + Enter
             </span>
             <button
@@ -945,65 +940,6 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </div>
-
-    <section class="codex-usage-panel" aria-labelledby="codex-usage-title">
-      <header>
-        <span class="codex-usage-mark"><i class="ri-bar-chart-box-line"></i></span>
-        <div>
-          <div class="eyebrow dark">LOCAL CODEX USAGE</div>
-          <h2 id="codex-usage-title">Codex 使用情况与余额</h2>
-          <p>从已接入电脑的 Codex 本地接口读取；同一账号跨电脑自动合并。</p>
-        </div>
-      </header>
-      <div v-if="evolutionLoading && !evolution" class="codex-quota-state">
-        <i class="ri-loader-4-line spin"></i><span>正在读取执行电脑上的真实 Codex 额度…</span>
-      </div>
-      <div v-else-if="codexQuotaAccounts.length" class="codex-account-grid">
-        <article v-for="account in codexQuotaAccounts" :key="account.key" class="codex-account-card">
-          <div class="codex-account-head">
-            <span class="codex-logo"><i class="ri-openai-fill"></i></span>
-            <div>
-              <strong>{{ account.accountEmail || 'Codex 本地账号' }}</strong>
-              <small>{{ planText(account.plan) }}</small>
-            </div>
-            <span class="quota-freshness" :class="{ stale: !account.fresh }">
-              <i :class="account.fresh ? 'ri-checkbox-circle-fill' : 'ri-time-line'"></i>
-              {{ account.fresh ? '额度已同步' : '历史快照' }}
-            </span>
-          </div>
-          <dl class="codex-account-meta">
-            <div><dt>当前套餐</dt><dd>{{ planText(account.plan) }}</dd></div>
-            <div><dt>点数余额</dt><dd>{{ creditsText(account) }}</dd></div>
-            <div><dt>来源电脑</dt><dd>{{ account.runnerNames.join('、') || '已接入 Runner' }}</dd></div>
-          </dl>
-          <div class="codex-limit-list">
-            <template v-for="limit in account.limits" :key="limit.id">
-              <div v-for="(window, index) in limit.windows" :key="`${limit.id}-${index}`" class="codex-limit-row">
-                <div class="codex-limit-copy">
-                  <strong>{{ limit.label }}</strong>
-                  <small>{{ quotaDuration(window.windowDurationMinutes) }} · {{ codexResetText(window) }}</small>
-                </div>
-                <div class="codex-limit-meter">
-                  <span><i :style="{ width: `${100 - window.usedPercent}%` }"></i></span>
-                  <b>{{ 100 - window.usedPercent }}%</b>
-                </div>
-              </div>
-            </template>
-          </div>
-          <footer>
-            <span><i class="ri-computer-line"></i>{{ account.runnerNames.length }} 台电脑同账号</span>
-            <small>{{ timeText(account.lastSyncedAt) }} 同步</small>
-          </footer>
-        </article>
-      </div>
-      <div v-else class="codex-quota-state empty">
-        <i class="ri-computer-line"></i>
-        <span><b>还没有执行电脑上报 Codex 额度</b>保持一台已登录 Codex 的 Runner 在线；新版脚本下次心跳后会自动读取。</span>
-      </div>
-      <footer class="codex-privacy">
-        <i class="ri-shield-keyhole-line"></i>只上传套餐、余额与限额窗口；OAuth Token、Cookie 和本地认证文件不会离开执行电脑。
-      </footer>
-    </section>
 
     <div class="home-recommendations" aria-label="首页相关推荐">
       <section class="daily-guidance" aria-labelledby="daily-guidance-title">
@@ -1185,12 +1121,6 @@ onBeforeUnmount(() => {
         <strong>还没有真实资料建议</strong>
         <span>系统会读取知识库和已同步的飞书归档，不会用固定模板或演示数据凑数。</span>
       </div>
-      <footer v-if="visibleWeeklyQuotas.length">
-        <span v-for="quota in visibleWeeklyQuotas" :key="quota.accountId">
-          {{ quota.label }} · 周剩余 <b>{{ quota.remainingPercent }}%</b>
-        </span>
-        <small>只使用供应商真实七天窗口；未知额度不会参与自动派发。</small>
-      </footer>
       </section>
     </div>
 
@@ -1205,6 +1135,14 @@ onBeforeUnmount(() => {
         <em v-if="item.id === 'runs' && activeRuns.length">{{ activeRuns.length }}</em>
         <em v-else-if="item.id === 'runners' && onlineRunners.length">{{ onlineRunners.length }}</em>
       </button>
+      <span
+        v-if="heroWeeklyQuota"
+        class="console-quota"
+        :class="quotaClass(heroWeeklyQuota.remainingPercent)"
+        :title="`Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}`"
+      >
+        <i class="ri-speed-up-line"></i><span>总剩余</span><b>{{ heroWeeklyQuota.remainingPercent }}%</b>
+      </span>
       <span class="live"><i></i>每 5 秒刷新</span>
     </nav>
 
@@ -1738,7 +1676,6 @@ onBeforeUnmount(() => {
 }
 .home > * { order: 2; }
 .home-primary { order: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.codex-usage-panel { order: 2; margin-top: 16px; }
 .home-recommendations { order: 3; margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px; }
 .hero {
   min-height: 118px;
@@ -1757,121 +1694,30 @@ onBeforeUnmount(() => {
 .eyebrow { font-size: 10px; letter-spacing: 2px; opacity: .65; }
 .hero h1 { margin: 8px 0 6px; font-size: 28px; }
 .hero h1.slogan { font-size: 25px; font-weight: 800; letter-spacing: .7px; line-height: 1.2; }
-.hero p { margin: 0; font-size: 13px; opacity: .72; }
-.hero-now {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 11px;
-  margin-bottom: 8px;
-  border: 1px solid #ffffff33;
-  border-radius: 999px;
-  background: #ffffff1f;
-  font-size: 12px;
-}
-.hero-now b { font-size: 14px; }
-.engine-status { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
-.engine-status span {
-  padding: 5px 10px;
-  border: 1px solid #ffffff2e;
-  border-radius: 8px;
-  background: #ffffff14;
-  font-size: 11px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.engine-status span.dim { opacity: .55; }
-.engine-status b { font-weight: 600; opacity: .8; }
-.hero-link {
-  margin-top: 12px;
-  padding: 6px 12px;
-  border: 1px solid #ffffff55;
-  border-radius: 999px;
-  background: #ffffff1f;
-  color: #fff;
-  font-size: 12px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.hero-link:hover { background: #ffffff33; }
-.hero-link i { font-size: 14px; }
-.hero-metrics { width: 188px; flex: 0 0 auto; display: grid; gap: 9px; }
-.quota-card {
-  min-height: 92px;
-  padding: 12px 14px;
-  border: 1px solid #ffffff2b;
-  border-radius: 14px;
-  background: #ffffff12;
-  display: grid;
-  align-content: center;
-}
-.quota-card > span { color: #ffffffb5; font-size: 10.5px; }.quota-card > span i { margin-right: 5px; }
-.quota-card strong { margin-top: 2px; color: #fff; font-size: 35px; line-height: 1; }.quota-card strong em { font-size: 17px; font-style: normal; }
-.quota-card small { margin-top: 6px; color: #ffffff9c; font-size: 9.5px; line-height: 1.35; }
-.quota-card.good strong { color: #c7ffdf; }.quota-card.warn strong { color: #ffe9a9; }.quota-card.danger strong { color: #ffd0d0; }
-.capacity {
+.hero-signals { margin-top: 13px; display: flex; align-items: center; gap: 7px; }
+.hero-signals > span,
+.hero-signals > button {
   position: relative;
-  width: auto;
-  padding: 12px;
-  border: 1px solid #ffffff2b;
-  border-radius: 14px;
-  background: #ffffff12;
-  font-size: 11px;
-  color: #ffffffa8;
-  display: flex;
+  min-width: 34px;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid #ffffff38;
+  border-radius: 9px;
+  background: #ffffff17;
+  color: #fff;
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  overflow: hidden;
+  justify-content: center;
+  gap: 5px;
 }
-.capacity-orbit { position: relative; width: 48px; height: 48px; flex: 0 0 auto; border: 2px solid #ffffff32; border-radius: 50%; }
-.capacity-orbit::before, .capacity-orbit::after { content: ''; position: absolute; border: 1px solid #ffffff4a; border-radius: 50%; animation: orbit 4s linear infinite; }
-.capacity-orbit::before { inset: 7px -8px; transform: rotate(58deg); }
-.capacity-orbit::after { inset: -8px 7px; animation-duration: 6s; animation-direction: reverse; }
-.capacity-orbit i { position: absolute; inset: 8px; border-radius: 50%; background: conic-gradient(#fff var(--capacity), #ffffff22 0); mask: radial-gradient(transparent 58%, #000 60%); }
-.capacity-orbit b { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: #fff; transform: translate(-50%, -50%); box-shadow: 0 0 12px #fff; animation: corePulse 1.8s ease-in-out infinite; }
-.capacity-orbit em { position: absolute; right: -3px; top: 6px; width: 5px; height: 5px; border-radius: 50%; background: #aef5d0; box-shadow: 0 0 9px #aef5d0; }
-.capacity-copy { min-width: 0; flex: 1; }
-.capacity-num { color: #fff; font-size: 30px; font-weight: 750; }
-.capacity-num span { font-size: 14px; opacity: .6; }
-.capacity-bar { height: 5px; margin-top: 11px; overflow: hidden; border-radius: 9px; background: #ffffff24; }
-.capacity-bar i { display: block; height: 100%; width: var(--capacity); border-radius: inherit; background: #fff; transition: width .3s; }
-.codex-usage-panel {
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, #4663d7 22%, var(--wao-line));
-  border-radius: 15px;
-  background:
-    radial-gradient(circle at 96% 0, rgba(85, 111, 220, .11), transparent 30%),
-    var(--wao-bg-card);
-  box-shadow: 0 8px 24px rgba(43, 59, 141, .06);
-}
-.codex-usage-panel > header { padding: 16px 18px 12px; display: flex; align-items: flex-start; gap: 11px; }
-.codex-usage-panel > header > div { flex: 1; min-width: 0; }
-.codex-usage-panel h2 { margin: 4px 0; color: var(--wao-text-1); font-size: 17px; }
-.codex-usage-panel header p { margin: 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }
-.codex-usage-mark { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px; background: #e9edff; color: #3c54b8; display: grid; place-items: center; font-size: 19px; }
-.codex-account-grid { padding: 2px 18px 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(410px, 100%), 1fr)); gap: 12px; }
-.codex-account-card { overflow: hidden; border: 1px solid var(--wao-line); border-radius: 12px; background: color-mix(in srgb, #f5f7ff 42%, var(--wao-bg-card)); }
-.codex-account-head { padding: 12px 13px 10px; display: flex; align-items: center; gap: 9px; }
-.codex-logo { width: 31px; height: 31px; flex: 0 0 auto; border-radius: 9px; background: #e7ebff; color: #334eb5; display: grid; place-items: center; font-size: 16px; }
-.codex-account-head > div { min-width: 0; flex: 1; display: grid; gap: 2px; }
-.codex-account-head strong { overflow: hidden; color: var(--wao-text-1); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.codex-account-head small { color: var(--wao-text-weak); font-size: 9.5px; }
-.quota-freshness { padding: 4px 7px; border-radius: 999px; background: #ddf4e7; color: #24714d; font-size: 9px; white-space: nowrap; }
-.quota-freshness.stale { background: #f4efe0; color: #876714; }.quota-freshness i { margin-right: 3px; }
-.codex-account-meta { margin: 0 13px 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
-.codex-account-meta div { min-width: 0; padding: 8px 9px; border-radius: 8px; background: color-mix(in srgb, #eef1ff 42%, var(--wao-bg-card)); }
-.codex-account-meta dt { color: var(--wao-text-weak); font-size: 8.5px; }.codex-account-meta dd { margin: 3px 0 0; overflow: hidden; color: var(--wao-text-2); font-size: 10.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.codex-limit-list { margin: 0 13px 11px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); }
-.codex-limit-row { min-height: 51px; padding: 9px 11px; display: flex; align-items: center; gap: 16px; }
-.codex-limit-row + .codex-limit-row { border-top: 1px solid var(--wao-line); }
-.codex-limit-copy { min-width: 0; flex: 1; display: grid; gap: 3px; }.codex-limit-copy strong { overflow: hidden; color: var(--wao-text-1); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }.codex-limit-copy small { color: var(--wao-text-weak); font-size: 8.5px; }
-.codex-limit-meter { width: min(42%, 190px); display: flex; align-items: center; gap: 9px; }.codex-limit-meter > span { height: 6px; flex: 1; overflow: hidden; border-radius: 999px; background: var(--wao-line); }.codex-limit-meter i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4058c7, #7388e9); }.codex-limit-meter b { width: 34px; color: var(--wao-text-2); font-size: 10px; text-align: right; }
-.codex-account-card > footer { padding: 8px 13px; border-top: 1px solid var(--wao-line); color: var(--wao-text-weak); font-size: 8.5px; display: flex; justify-content: space-between; gap: 10px; }.codex-account-card > footer i { margin-right: 4px; }
-.codex-quota-state { min-height: 96px; padding: 18px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 9px; font-size: 11px; }.codex-quota-state.empty > i { font-size: 23px; color: #6176cf; }.codex-quota-state.empty span { display: grid; gap: 3px; }.codex-quota-state.empty b { color: var(--wao-text-2); font-size: 12px; }
-.codex-privacy { padding: 8px 18px; border-top: 1px solid var(--wao-line); background: color-mix(in srgb, #eef1ff 45%, var(--wao-bg-card)); color: var(--wao-text-weak); font-size: 9px; }.codex-privacy i { margin-right: 5px; color: #4058c7; }
+.hero-signals > button { cursor: pointer; }
+.hero-signals > button:hover { background: #ffffff2b; }
+.hero-signals > span.dim { opacity: .48; }
+.hero-signals > span > i:first-child,
+.hero-signals > button i { font-size: 15px; }
+.hero-signals b { font-size: 11px; }
+.signal-dot { width: 5px; height: 5px; border-radius: 50%; background: #9bf0c2; box-shadow: 0 0 7px #9bf0c2; }
+.hero-signals .dim .signal-dot { background: #ffffff72; box-shadow: none; }
 .daily-guidance {
   margin-top: 0;
   overflow: hidden;
@@ -1981,8 +1827,6 @@ onBeforeUnmount(() => {
 .goal-submit { min-width: 112px; height: 32px; padding: 0 12px; border: 1px solid #4358d6; border-radius: 8px; background: #4358d6; color: #fff; cursor: pointer; font-size: 11.5px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .goal-submit.setup { min-width: 140px; }
 .goal-submit:disabled { opacity: .55; cursor: not-allowed; }
-@keyframes orbit { to { transform: rotate(418deg); } }
-@keyframes corePulse { 50% { transform: translate(-50%, -50%) scale(.68); opacity: .55; } }
 .console-tabs {
   margin-top: 10px;
   padding: 5px;
@@ -2008,6 +1852,12 @@ onBeforeUnmount(() => {
 .console-tabs button:hover { background: var(--wao-bg-hover); }
 .console-tabs button.on { background: #eef1ff; color: var(--wao-primary-text); font-weight: 650; }
 .console-tabs em { padding: 1px 6px; border-radius: 20px; background: #e3e7f6; color: #4358d6; font-size: 10px; font-style: normal; }
+.console-quota { min-height: 32px; padding: 0 10px; border-radius: 9px; display: inline-flex; align-items: center; gap: 6px; color: var(--wao-text-2); font-size: 11px; white-space: nowrap; }
+.console-quota i { font-size: 14px; }
+.console-quota b { font-size: 12px; }
+.console-quota.good { background: #e9f7ef; color: #24714d; }
+.console-quota.warn { background: #fff6dc; color: #876714; }
+.console-quota.danger { background: #fff0f0; color: #a33c3c; }
 .console-tabs .live { margin-left: auto; padding-right: 8px; }
 .section-title { margin-right: 4px; font-size: 12px; font-weight: 650; color: var(--wao-text-2); }
 .online-dot { width: 7px; height: 7px; border-radius: 50%; background: #31a56a; box-shadow: 0 0 0 3px #dff5e9; }
@@ -2380,14 +2230,8 @@ onBeforeUnmount(() => {
 @media (max-width: 760px) {
   .home { padding: 16px; }
   .home-primary, .home-recommendations { grid-template-columns: minmax(0, 1fr); }
-  .hero { padding: 22px; flex-direction: column; align-items: stretch; }
+  .hero { padding: 22px; }
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
-  .hero-metrics { width: auto; grid-template-columns: 1fr 1fr; }
-  .hero-metrics.single { grid-template-columns: 1fr; }
-  .hero-metrics.with-two-quotas .capacity { grid-column: 1 / -1; }
-  .codex-account-meta { grid-template-columns: 1fr; }
-  .codex-limit-row { align-items: flex-start; flex-direction: column; gap: 7px; }.codex-limit-meter { width: 100%; }
-  .capacity { width: auto; }
   .daily-guidance > header { flex-wrap: wrap; }
   .guidance-refresh { margin-left: 51px; }
   .guidance-content { padding-left: 19px; }
@@ -2401,6 +2245,7 @@ onBeforeUnmount(() => {
   .goal-shortcut { margin-left: 0; }
   .goal-submit { margin-left: auto; }
   .console-tabs { overflow-x: auto; }
+  .console-quota span { display: none; }
   .recent-grid { grid-template-columns: 1fr; }
   .section-head { align-items: center; }
   .history-grid { grid-template-columns: 1fr; }

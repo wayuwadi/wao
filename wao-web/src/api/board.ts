@@ -121,7 +121,7 @@ export interface CreateTaskPayload {
   images?: ImageRef[]
   /** 落进哪个任务分组（分组视图里的「+」带上它）。 */
   groupId?: string | null
-  /** 可选的首轮 PDCA；空数组表示普通任务。 */
+  /** 历史客户端兼容字段；当前前端不再提供 PDCA 新建入口。 */
   pdcaCycles?: PdcaCycle[]
 }
 export async function apiCreateTask(payload: CreateTaskPayload): Promise<Task> {
@@ -277,7 +277,7 @@ export const apiDeleteDoc = (id: string) => del(`/api/docs/${id}`)
 export const fetchDocTemplates = () => get<DocTemplate[]>('/api/doc-templates')
 export const apiCreateDocTemplate = (payload: { name: string; description?: string; sourceDocId: string; blocks: DocBlock[] }) =>
   post<DocTemplate>('/api/doc-templates', payload)
-export const apiPatchDocTemplate = (id: string, payload: { name?: string; description?: string }) =>
+export const apiPatchDocTemplate = (id: string, payload: { name?: string; description?: string; blocks?: DocBlock[]; expectedUpdatedAt: string }) =>
   patch<DocTemplate>(`/api/doc-templates/${id}`, payload)
 export const apiDeleteDocTemplate = (id: string) => del(`/api/doc-templates/${id}`)
 export interface DocumentOrderPayload {

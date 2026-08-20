@@ -104,7 +104,7 @@ class ShareServiceTest {
     }
 
     @Test
-    void markdownIncludesRealPdcaHistory() {
+    void markdownRetiresPdcaDisplayWithoutDeletingHistoryFromDto() {
         PdcaCycle cycle = new PdcaCycle("pc1", "连续七天早睡", "做到了六天，周五被临时工作打断",
                 "下一轮给临时工作预留半小时", "部分达成",
                 "2026-08-01T09:00:00+08:00", "2026-08-08T21:00:00+08:00");
@@ -114,12 +114,11 @@ class ShareServiceTest {
                 null, null, null, List.of(cycle));
         when(tasks.get("t8")).thenReturn(task);
 
-        String md = service.toMarkdown(service.shareTask("t8", false), BASE);
+        SharedTaskDto shared = service.shareTask("t8", false);
+        String md = service.toMarkdown(shared, BASE);
 
-        assertThat(md).contains("## PDCA 记录");
-        assertThat(md).contains("### 第 1 轮 · 部分达成");
-        assertThat(md).contains("P（计划）：连续七天早睡");
-        assertThat(md).contains("A（改进）：下一轮给临时工作预留半小时");
+        assertThat(shared.pdcaCycles()).containsExactly(cycle);
+        assertThat(md).doesNotContain("PDCA 记录", "连续七天早睡", "下一轮给临时工作预留半小时");
     }
 
     @Test

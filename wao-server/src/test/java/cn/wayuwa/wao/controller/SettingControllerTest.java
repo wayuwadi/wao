@@ -7,12 +7,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import cn.wayuwa.wao.dto.ExternalAppRegistryDto;
+import cn.wayuwa.wao.dto.FeishuWebhookEndpointDto;
 import cn.wayuwa.wao.dto.MediaAgentMenuConfigDto;
 import cn.wayuwa.wao.dto.SaveSiteInfoRequest;
 import cn.wayuwa.wao.dto.SiteInfoDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.service.ExternalAppRegistryService;
+import cn.wayuwa.wao.service.FeishuWebhookConfigService;
 import cn.wayuwa.wao.service.SettingService;
+import cn.wayuwa.wao.service.BuiltinMenuRegistryService;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -20,8 +24,10 @@ class SettingControllerTest {
 
     private final SettingService settings = mock(SettingService.class);
     private final ExternalAppRegistryService externalApps = mock(ExternalAppRegistryService.class);
+    private final FeishuWebhookConfigService webhooks = mock(FeishuWebhookConfigService.class);
     private final SettingController controller = new SettingController(
-            settings, externalApps, mock(FeishuWebhookNotifier.class));
+            settings, externalApps, mock(BuiltinMenuRegistryService.class),
+            mock(FeishuWebhookNotifier.class), webhooks);
 
     @Test
     void siteInfoUsesPublicDefaultsBeforeFirstSave() {
@@ -78,5 +84,19 @@ class SettingControllerTest {
         var result = controller.externalAppRegistry().data();
 
         assertThat(result).isEqualTo(expected);
+    }
+
+    @Test
+    void genericWebhookListDelegatesWithoutAddingSecretFields() {
+        LocalDateTime now = LocalDateTime.now();
+        var expected = new FeishuWebhookEndpointDto(
+                "fw1", "WAO 主群", "系统通知", "https://open.feishu.cn/open-apis/bot/v2/hook/••••1234",
+                true, true, true, now, now);
+        when(webhooks.list()).thenReturn(List.of(expected));
+
+        var result = controller.webhooks().data();
+
+        assertThat(result).containsExactly(expected);
+        assertThat(result.get(0).urlMask()).doesNotContain("secret-token");
     }
 }

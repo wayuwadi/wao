@@ -2,17 +2,20 @@ package cn.wayuwa.wao.controller;
 
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.FeishuWebhookConfigDto;
+import cn.wayuwa.wao.dto.FeishuWebhookEndpointDto;
 import cn.wayuwa.wao.dto.ExternalAppRegistryDto;
 import cn.wayuwa.wao.dto.MediaAgentMenuConfigDto;
 import cn.wayuwa.wao.dto.SaveExternalAppRegistryRequest;
 import cn.wayuwa.wao.dto.SaveMediaAgentMenuConfigRequest;
 import cn.wayuwa.wao.dto.SaveWebhookRequest;
+import cn.wayuwa.wao.dto.SaveFeishuWebhookEndpointRequest;
 import cn.wayuwa.wao.dto.SaveSiteInfoRequest;
 import cn.wayuwa.wao.dto.SiteInfoDto;
 import cn.wayuwa.wao.dto.BuiltinMenuRegistryDto;
 import cn.wayuwa.wao.dto.SaveBuiltinMenuRegistryRequest;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.service.ExternalAppRegistryService;
+import cn.wayuwa.wao.service.FeishuWebhookConfigService;
 import cn.wayuwa.wao.service.SettingService;
 import cn.wayuwa.wao.service.BuiltinMenuRegistryService;
 import jakarta.validation.Valid;
@@ -20,11 +23,14 @@ import java.net.URI;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
 
 /** 系统配置接口：网站信息、一级导航与全局飞书通知。 */
 @RestController
@@ -35,26 +41,63 @@ public class SettingController {
     private final ExternalAppRegistryService externalApps;
     private final BuiltinMenuRegistryService builtinMenus;
     private final FeishuWebhookNotifier notifier;
+    private final FeishuWebhookConfigService webhooks;
 
     @Autowired
     public SettingController(SettingService settings, ExternalAppRegistryService externalApps,
             BuiltinMenuRegistryService builtinMenus,
-            FeishuWebhookNotifier notifier) {
+            FeishuWebhookNotifier notifier, FeishuWebhookConfigService webhooks) {
         this.settings = settings;
         this.externalApps = externalApps;
         this.builtinMenus = builtinMenus;
         this.notifier = notifier;
+        this.webhooks = webhooks;
     }
 
     /** 兼容不关心内置菜单注册表的既有单元测试与嵌入调用。 */
     public SettingController(SettingService settings, ExternalAppRegistryService externalApps,
             FeishuWebhookNotifier notifier) {
-        this(settings, externalApps, new BuiltinMenuRegistryService(settings, new ObjectMapper()), notifier);
+        this(settings, externalApps, new BuiltinMenuRegistryService(settings, new ObjectMapper()), notifier, null);
     }
 
     @GetMapping("/feishu-webhook")
     public ApiResponse<FeishuWebhookConfigDto> webhook() {
         return ApiResponse.ok(webhookConfig());
+    }
+
+    /** 通用飞书自定义机器人列表；Webhook 地址始终脱敏。 */
+    @GetMapping("/webhooks")
+    public ApiResponse<List<FeishuWebhookEndpointDto>> webhooks() {
+        return ApiResponse.ok(webhooks.list());
+    }
+
+    /** 新增一项可供系统其它功能复用的机器人配置。 */
+    @PostMapping("/webhooks")
+    public ApiResponse<FeishuWebhookEndpointDto> createWebhook(
+            @Valid @RequestBody SaveFeishuWebhookEndpointRequest request) {
+        return ApiResponse.ok(webhooks.create(request));
+    }
+
+    /** 编辑名称、用途、开关、默认路由，或按需替换 Webhook 地址。 */
+    @PutMapping("/webhooks/{id}")
+    public ApiResponse<FeishuWebhookEndpointDto> updateWebhook(@PathVariable String id,
+            @Valid @RequestBody SaveFeishuWebhookEndpointRequest request) {
+        return ApiResponse.ok(webhooks.update(id, request));
+    }
+
+    /** 删除机器人配置；删除默认项时服务会自动提升一项剩余配置。 */
+    @DeleteMapping("/webhooks/{id}")
+    public ApiResponse<Void> deleteWebhook(@PathVariable String id) {
+        webhooks.delete(id);
+        return ApiResponse.ok(null);
+    }
+
+    /** 用指定配置发送测试卡片，测试不受其启用开关影响。 */
+    @PostMapping("/webhooks/{id}/test")
+    public ApiResponse<Void> testWebhook(@PathVariable String id) {
+        notifier.send(webhooks.endpointUrl(id), FeishuWebhookNotifier.Card.simple(
+                "WAO 测试通知", "green", "机器人配置可用，之后可在 WAO 的通知功能中复用。"));
+        return ApiResponse.ok(null);
     }
 
     @GetMapping("/site-info")
@@ -107,9 +150,13 @@ public class SettingController {
 
     @PutMapping("/feishu-webhook")
     public ApiResponse<FeishuWebhookConfigDto> saveWebhook(@RequestBody SaveWebhookRequest request) {
-        settings.put(SettingService.FEISHU_WEBHOOK_URL, request.url() == null ? null : request.url().trim());
-        if (request.enabled() != null) {
-            settings.put(SettingService.FEISHU_WEBHOOK_ENABLED, String.valueOf(request.enabled()));
+        if (webhooks == null) {
+            settings.put(SettingService.FEISHU_WEBHOOK_URL, request.url() == null ? null : request.url().trim());
+            if (request.enabled() != null) {
+                settings.put(SettingService.FEISHU_WEBHOOK_ENABLED, String.valueOf(request.enabled()));
+            }
+        } else {
+            webhooks.saveLegacyDefault(request.url(), request.enabled());
         }
         return ApiResponse.ok(webhookConfig());
     }
@@ -123,6 +170,14 @@ public class SettingController {
     }
 
     private FeishuWebhookConfigDto webhookConfig() {
+        if (webhooks != null) {
+            var configured = webhooks.defaultConfig();
+            if (configured.isPresent()) {
+                FeishuWebhookEndpointDto endpoint = configured.get();
+                return new FeishuWebhookConfigDto(endpoint.urlMask(), endpoint.urlSet(), endpoint.enabled());
+            }
+            if (webhooks.registryInitialized()) return new FeishuWebhookConfigDto("", false, false);
+        }
         String url = settings.get(SettingService.FEISHU_WEBHOOK_URL);
         return new FeishuWebhookConfigDto(SettingService.mask(url), url != null && !url.isBlank(),
                 settings.getBoolean(SettingService.FEISHU_WEBHOOK_ENABLED));

@@ -117,4 +117,20 @@ describe('ShareTaskView', () => {
     expect(apiShareSub).toHaveBeenCalledWith('t1', 's1')
     expect(wrapper.text()).toContain('子任务分享')
   })
+
+  it('历史 PDCA 数据继续由接口兼容返回，但分享页不再展示该模块', async () => {
+    vi.mocked(apiShareTask).mockResolvedValue({
+      ...shared,
+      pdcaCycles: [{
+        id: 'pc-history', plan: '旧计划', check: '旧复盘', act: '旧行动', outcome: '达成',
+        startedAt: '2026-08-01T09:00:00+08:00', reviewedAt: '2026-08-02T09:00:00+08:00',
+      }],
+    })
+
+    const wrapper = mount(ShareTaskView)
+    await flushPromises()
+
+    expect(wrapper.find('.shared-pdca').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('PDCA 记录')
+  })
 })
