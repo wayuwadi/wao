@@ -40,12 +40,16 @@ class FeishuWebhookMigrationMySqlTest {
         try (var connection = DriverManager.getConnection(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
              var statement = connection.prepareStatement("""
-                     INSERT INTO system_setting (cfg_key, cfg_value, updated_at)
-                     VALUES (?, ?, CURRENT_TIMESTAMP), ('feishu.webhook.enabled', 'true', CURRENT_TIMESTAMP)
+                     UPDATE system_setting
+                        SET cfg_value = CASE cfg_key
+                            WHEN 'feishu.webhook.url' THEN ?
+                            WHEN 'feishu.webhook.enabled' THEN 'true'
+                            END,
+                            updated_at = CURRENT_TIMESTAMP
+                      WHERE cfg_key IN ('feishu.webhook.url', 'feishu.webhook.enabled')
                      """)) {
-            statement.setString(1, "feishu.webhook.url");
-            statement.setString(2, malformed);
-            statement.executeUpdate();
+            statement.setString(1, malformed);
+            assertThat(statement.executeUpdate()).isEqualTo(2);
         }
 
         migrateTo("78");
