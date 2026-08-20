@@ -164,6 +164,10 @@ class DeploymentRoutingConfigTest {
                 .contains("slave_deployed=false")
                 .contains("slave_deployed=true")
                 .contains("Windows 从节点已隔离")
+                .contains("linux_only_schema_rollout=false")
+                .contains("Windows 从节点离线")
+                .contains("Linux 已单节点完成")
+                .doesNotContain("Windows 从节点不可达，无法确认旧版 server 已停止；V77 保持未发布。")
                 .contains("[ \"$slave_deployed\" != true ] && ! set_upstream_state slave down")
                 .contains("test \"$ai_read_route\" = 'dual-gateway-ai'")
                 .contains("test \"$ai_write_route\" = 'linux-vpn-master'");

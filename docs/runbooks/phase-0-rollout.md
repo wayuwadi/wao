@@ -72,24 +72,28 @@ V77 为飞书按日归档增加稳定身份和全局版本 CAS。旧 `wao-server
 
 发布前确认：
 
-- Linux 主节点、Windows / WSL 从节点和云 Nginx 三个 SSH 目标都可达，两台应用节点都能执行 Docker Compose stop；从节点无法连接不是“可跳过”，而是本次 V77 窗口必须 fail-closed。
+- Linux 主节点和云 Nginx 必须可达。Windows / WSL 从节点离线时按 ADR-092 保持 slave upstream 为 `down`，
+  不阻塞 Linux 发布；可达但停止或升级失败时仍必须 fail-closed。
 - 云机已安装 `set-nginx-upstream-state.sh`，两个 upstream 状态可写；主库、复制与备份健康。
 - 不手工恢复飞书同步 job、不手工启动旧镜像，也不用 `workflow_dispatch` 或新 push 绕过已开始但未完成的窗口。CI 将 `deployment.v77.rollout-state` 作为持久 rollout marker，而不只看当次 push 的文件列表；该发布必须不可被后续 push 取消。
 
 `WAO Fast CD` 自动顺序：
 
 1. 在路由准备前先上传静止脚本并运行 `rollout-status`。脚本只在 Flyway schema history 已有 V77 成功记录且 `deployment.v77.rollout-state = complete` 时返回完成；任一条件不满足都执行以下安全流程。运行 `deploy/scripts/test-quiesce-wao-server.sh` 确认 Linux / Windows 静止脚本的 Compose 参数和 automation SQL 未漂移。
-2. 将 master 和 slave 两个云 Nginx upstream 都设为 `down`；用 8 秒有界探测确认 Windows 从节点可达，再向该节点上传 WSL 静止脚本与 Windows 包装脚本。从节点不可达时在暂停 job 和 migration 前 fail-closed。
+2. 将 master 和 slave 两个云 Nginx upstream 都设为 `down`；用 8 秒有界探测 Windows 从节点。可达时上传并执行
+   WSL 静止脚本与 Windows 包装脚本；不可达时保持 slave 摘流，继续 Linux 单节点发布。
 3. 执行 `pause-feishu-sync`：以 `INSERT IGNORE` 把 `job-feishu-chat-sync` 首次读到的状态保存到 `deployment.v77.feishu-sync-status`，写入 `deployment.v77.rollout-state = in-progress`，再暂停 job。重试不覆盖最初值，因此保留原来就暂停的语义，成功后也不会一律设为启用。
-4. 分别调用 `deploy/scripts/quiesce-wao-server.sh ... stop` 和 `deploy/scripts/quiesce-wao-server-windows.ps1 -Action stop`，确认主、从所有旧 `wao-server` 都已停止。任一节点无法确认时到此终止，不允许新容器执行 migration。
+4. 停止 Linux 旧 `wao-server`；Windows 可达时还必须确认其旧服务停止。Windows 离线时不等待它，继续由 Linux
+   新容器执行 migration，但 slave upstream 始终保持 `down`。
 5. 部署全新节点；第一个新 `wao-server` 启动时由 Flyway 执行 V77。只有运行新二进制且健康检查通过的节点可重新入流；不允许旧节点因发布脚本回滚而入流。
-6. 全新节点完成发布后执行 `complete-v77-rollout`：先确认 Flyway V77 成功记录、`deployment.v77.feishu-sync-status` 和 `job-feishu-chat-sync` 均恰好存在，再在同一事务中恢复 job、写入 `deployment.v77.rollout-state = complete` 并删除保存键。任一前置缺失或事务失败时都返回 `required`、继续保持 marker 未完成并让 workflow 失败，不伪报发布成功。该动作成功后立即再执行 `rollout-status`，只有仍返回 `complete` 才标记发布完成并恢复 master upstream。
+6. 两个节点都完成时执行 `complete-v77-rollout` 并恢复飞书同步；若 Windows 离线，则保留 rollout marker 和同步暂停
+   状态，只恢复已升级的 master upstream。下次从节点上线并补齐后再完成双节点标记。
 
 失败处理：
 
 - migration 前失败时不应有任何 schema 变更；修复 SSH、Docker 或 Nginx 问题后，由 `rollout-status` 在同一持久 marker 下继续安全流程。
 - migration 已开始后任一新节点部署失败，发布脚本可能先恢复它的旧镜像；维护窗口必须随即再次 stop 该旧容器。在 marker 未完成时 master upstream 保持 `down`，不通过旧二进制回滚 schema。
-- 只有确认在线节点全部运行新二进制、`/api/hello` 正常、Flyway 已记录 V77、飞书 job 已恢复原状态、`deployment.v77.rollout-state = complete` 且保存键已删除后，才解除维护窗口。如果仅 completion 失败，先保持 job 暂停和 master upstream down；确认新节点后再在 Linux 主节点重试
+- Windows 可达时，只有确认在线节点全部运行新二进制、`/api/hello` 正常、Flyway 已记录 V77、飞书 job 已恢复原状态、`deployment.v77.rollout-state = complete` 且保存键已删除后，才解除完整维护窗口。Windows 离线时允许只恢复已升级的 master upstream，但必须保持 slave down、job 暂停和 marker 未完成。如果仅 completion 失败，先保持 job 暂停和 master upstream down；确认新节点后再在 Linux 主节点重试
   `sh deploy/scripts/quiesce-wao-server.sh master complete-v77-rollout`，不单独调用 `restore-feishu-sync`、不猜测原状态或手写 SQL。
 
 ## 上线验收
