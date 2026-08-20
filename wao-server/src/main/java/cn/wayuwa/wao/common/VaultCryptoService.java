@@ -2,6 +2,7 @@ package cn.wayuwa.wao.common;
 
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.ProviderException;
 import java.security.SecureRandom;
 import java.util.Base64;
 
@@ -57,7 +58,7 @@ public class VaultCryptoService {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, nonce));
             return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
-        } catch (GeneralSecurityException ex) {
+        } catch (GeneralSecurityException | ProviderException ex) {
             throw new IllegalStateException("密码解密失败", ex);
         }
     }
