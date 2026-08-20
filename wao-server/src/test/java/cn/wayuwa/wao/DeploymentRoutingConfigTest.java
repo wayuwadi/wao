@@ -33,7 +33,8 @@ class DeploymentRoutingConfigTest {
                 .contains("wao-agent-server:")
                 .contains("target: agent-runtime")
                 .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081")
-                .contains("WAO_DAILY_GUIDANCE_WARMUP_ENABLED: \"true\"");
+                .contains("WAO_AI_EVOLUTION_SCHEDULER_ENABLED: \"false\"")
+                .contains("WAO_DAILY_GUIDANCE_WARMUP_ENABLED: \"false\"");
         assertThat(masterCompose).contains("WAO_LIFE_REVIEW_SCHEDULER_ENABLED: \"true\"");
         assertThat(slaveCompose)
                 .contains("wao-agent-server:")
