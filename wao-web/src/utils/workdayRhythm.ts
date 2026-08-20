@@ -15,6 +15,9 @@ export interface WorkdayRhythmConfig {
 
 export interface WorkdayRhythmEnergyNotification {
   enabled: boolean
+  channel: 'WEBHOOK' | 'CHAT'
+  webhookId: string
+  webhookName: string
   chatId: string
   chatName: string
   /** 旧版配置字段只用于读取迁移，新版是否通知由每个补给项目决定。 */
@@ -55,6 +58,9 @@ export const DEFAULT_WORKDAY_RHYTHM: WorkdayRhythmConfig = {
   version: 1,
   energyNotification: {
     enabled: false,
+    channel: 'WEBHOOK',
+    webhookId: '',
+    webhookName: '',
     chatId: '',
     chatName: '',
   },
@@ -194,6 +200,11 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
   if (notification !== undefined) {
     if (
       typeof notification.enabled !== 'boolean' ||
+      (notification.channel !== 'WEBHOOK' && notification.channel !== 'CHAT') ||
+      typeof notification.webhookId !== 'string' ||
+      notification.webhookId.length > 64 ||
+      typeof notification.webhookName !== 'string' ||
+      notification.webhookName.length > 64 ||
       typeof notification.chatId !== 'string' ||
       notification.chatId.length > 128 ||
       typeof notification.chatName !== 'string' ||
@@ -201,7 +212,14 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
     ) {
       return '精力补给通知配置不正确'
     }
-    if (notification.enabled && !notification.chatId.trim()) return '请选择精力补给通知群'
+    if (
+      notification.enabled &&
+      notification.channel === 'WEBHOOK' &&
+      !notification.webhookId.trim()
+    )
+      return '请选择精力补给通知 Webhook'
+    if (notification.enabled && notification.channel === 'CHAT' && !notification.chatId.trim())
+      return '请选择精力补给通知群'
   }
   if (
     !Array.isArray(value.energyItems) ||
@@ -234,6 +252,12 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
 export function normalizeRhythmConfig(value: WorkdayRhythmConfig): WorkdayRhythmConfig {
   const notification = value.energyNotification ?? DEFAULT_WORKDAY_RHYTHM.energyNotification
   const legacyNotification = notification as WorkdayRhythmEnergyNotification
+  const channel =
+    notification.channel === 'WEBHOOK' || notification.channel === 'CHAT'
+      ? notification.channel
+      : notification.chatId?.trim()
+        ? 'CHAT'
+        : 'WEBHOOK'
   const energyItems = Array.isArray(value.energyItems)
     ? value.energyItems
     : DEFAULT_WORKDAY_RHYTHM.energyItems.map((item) => ({
@@ -246,9 +270,12 @@ export function normalizeRhythmConfig(value: WorkdayRhythmConfig): WorkdayRhythm
   return {
     version: 1,
     energyNotification: {
-      enabled: notification.enabled,
-      chatId: notification.chatId.trim(),
-      chatName: notification.chatName.trim(),
+      enabled: notification.enabled === true,
+      channel,
+      webhookId: notification.webhookId?.trim() ?? '',
+      webhookName: notification.webhookName?.trim() ?? '',
+      chatId: notification.chatId?.trim() ?? '',
+      chatName: notification.chatName?.trim() ?? '',
       notifyWater: energyItems.find((item) => item.id === 'WATER')?.notify ?? true,
       notifyMeditation: energyItems.find((item) => item.id === 'MEDITATION')?.notify ?? true,
     },
@@ -335,9 +362,10 @@ export function parseRhythmDay(
         energyRecords[id] = Math.max(0, Math.min(99, Number(stored)))
       }
     }
-    const candidateSnapshot = candidate.energySnapshot && typeof candidate.energySnapshot === 'object'
-      ? candidate.energySnapshot
-      : {}
+    const candidateSnapshot =
+      candidate.energySnapshot && typeof candidate.energySnapshot === 'object'
+        ? candidate.energySnapshot
+        : {}
     for (const [id, snapshot] of Object.entries(candidateSnapshot)) {
       if (
         /^[A-Za-z0-9_-]{1,40}$/.test(id) &&

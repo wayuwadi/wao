@@ -21,10 +21,10 @@ paths:
         "400": { description: 日期倒置或范围超过 366 天 }
   /api/workday-rhythm/energy-notifications:
     post:
-      summary: 把当前成员已经保存的精力补给动作通知到本人配置的飞书群
+      summary: 把当前成员已经保存的精力补给动作发送到本人配置的飞书通知目标
       description: >-
         服务端从会话确定成员，并重新读取 workday-rhythm-config-v1 与指定日期的成员偏好；
-        请求不接受成员 id、目标群、项目名称、次数或完成状态。
+        请求不接受成员 id、Webhook 配置 id、目标群、项目名称、次数或完成状态。
       requestBody:
         required: true
         content:

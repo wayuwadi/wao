@@ -11,7 +11,12 @@ import {
   type WorkdayRhythmHistory,
   type WorkdayRhythmHistoryDay,
 } from '@/api/workdayRhythm'
-import { fetchFeishuChats, type FeishuChat } from '@/api/system'
+import {
+  fetchFeishuChats,
+  fetchWebhookEndpoints,
+  type FeishuChat,
+  type FeishuWebhookEndpoint,
+} from '@/api/system'
 import { toast } from '@/composables/toast'
 import {
   DEFAULT_WORKDAY_RHYTHM,
@@ -43,6 +48,9 @@ const editorDraft = ref<WorkdayRhythmConfig>(cloneRhythmConfig(DEFAULT_WORKDAY_R
 const notificationChats = ref<FeishuChat[]>([])
 const notificationChatsLoading = ref(false)
 const notificationChatsError = ref('')
+const notificationWebhooks = ref<FeishuWebhookEndpoint[]>([])
+const notificationWebhooksLoading = ref(false)
+const notificationWebhooksError = ref('')
 const energyNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle')
 const pendingEnergyNotification = ref<{ action: WorkdayRhythmEnergyAction; date: string } | null>(
   null,
@@ -92,6 +100,14 @@ const configuredChatMissing = computed(
     !!editorDraft.value.energyNotification.chatId &&
     !notificationChats.value.some(
       (chat) => chat.chatId === editorDraft.value.energyNotification.chatId,
+    ),
+)
+const configuredWebhookMissing = computed(
+  () =>
+    !!editorDraft.value.energyNotification.webhookId &&
+    !notificationWebhooks.value.some(
+      (endpoint) =>
+        endpoint.id === editorDraft.value.energyNotification.webhookId && endpoint.enabled,
     ),
 )
 let energyItemSequence = 0
@@ -192,8 +208,8 @@ async function dispatchEnergyNotification(action: WorkdayRhythmEnergyAction, dat
     energyNotificationState.value = 'error'
     toast(
       error instanceof Error
-        ? `记录已保存，但群通知失败：${error.message}`
-        : '记录已保存，但群通知失败',
+        ? `记录已保存，但飞书通知失败：${error.message}`
+        : '记录已保存，但飞书通知失败',
       'ri-error-warning-line',
     )
   }
@@ -253,7 +269,7 @@ function openEditor() {
   editorDraft.value = savedDraft ?? cloneRhythmConfig(config.value)
   editorError.value = ''
   editorOpen.value = true
-  if (editorDraft.value.energyNotification.enabled) void loadNotificationChats()
+  if (editorDraft.value.energyNotification.enabled) loadNotificationTargets()
 }
 
 function monthRange(month: string) {
@@ -318,11 +334,39 @@ async function loadNotificationChats() {
   }
 }
 
+async function loadNotificationWebhooks() {
+  if (notificationWebhooksLoading.value) return
+  notificationWebhooksLoading.value = true
+  notificationWebhooksError.value = ''
+  try {
+    notificationWebhooks.value = await fetchWebhookEndpoints()
+    if (!notificationWebhooks.value.some((endpoint) => endpoint.enabled))
+      notificationWebhooksError.value = '系统设置中没有已启用的 Webhook 配置'
+  } catch (error) {
+    notificationWebhooksError.value =
+      error instanceof Error ? error.message : 'Webhook 配置读取失败，请稍后重试'
+  } finally {
+    notificationWebhooksLoading.value = false
+  }
+}
+
+function loadNotificationTargets() {
+  if (editorDraft.value.energyNotification.channel === 'WEBHOOK') void loadNotificationWebhooks()
+  else void loadNotificationChats()
+}
+
 function selectNotificationChat() {
   const selected = notificationChats.value.find(
     (chat) => chat.chatId === editorDraft.value.energyNotification.chatId,
   )
   editorDraft.value.energyNotification.chatName = selected?.name ?? ''
+}
+
+function selectNotificationWebhook() {
+  const selected = notificationWebhooks.value.find(
+    (endpoint) => endpoint.id === editorDraft.value.energyNotification.webhookId,
+  )
+  editorDraft.value.energyNotification.webhookName = selected?.name ?? ''
 }
 
 function resetEditor() {
@@ -406,9 +450,14 @@ watch(
 watch(
   () => editorDraft.value.energyNotification.enabled,
   (enabled) => {
-    if (enabled && editorOpen.value && !notificationChats.value.length) {
-      void loadNotificationChats()
-    }
+    if (enabled && editorOpen.value) loadNotificationTargets()
+  },
+)
+
+watch(
+  () => editorDraft.value.energyNotification.channel,
+  () => {
+    if (editorDraft.value.energyNotification.enabled && editorOpen.value) loadNotificationTargets()
   },
 )
 
@@ -611,18 +660,18 @@ onBeforeUnmount(() => {
             <i class="ri-information-line"></i>累计项目可反复记录；每天一次项目完成后当天不再重复。
           </p>
           <div v-if="energyNotificationState === 'sending'" class="energy-notice sending">
-            <i class="ri-loader-4-line spin"></i><span>记录已保存，正在通知群聊…</span>
+            <i class="ri-loader-4-line spin"></i><span>记录已保存，正在发送飞书通知…</span>
           </div>
           <div
             v-else-if="energyNotificationState === 'error'"
             class="energy-notice error"
             role="alert"
           >
-            <i class="ri-cloud-off-line"></i><span>记录已保存，群通知未发出。</span>
+            <i class="ri-cloud-off-line"></i><span>记录已保存，飞书通知未发出。</span>
             <button type="button" @click="retryEnergyNotification">重试通知</button>
           </div>
           <div v-else-if="energyNotificationState === 'sent'" class="energy-notice sent">
-            <i class="ri-send-plane-fill"></i><span>群通知已发出</span>
+            <i class="ri-send-plane-fill"></i><span>飞书通知已发出</span>
           </div>
         </aside>
       </section>
@@ -692,17 +741,48 @@ onBeforeUnmount(() => {
             <header>
               <div>
                 <small>ENERGY NOTIFICATION</small>
-                <h3 id="energy-editor-title">精力补给群通知</h3>
+                <h3 id="energy-editor-title">精力补给飞书通知</h3>
               </div>
               <label class="toggle-field">
                 <input v-model="editorDraft.energyNotification.enabled" type="checkbox" />
                 <span>{{ editorDraft.energyNotification.enabled ? '已启用' : '未启用' }}</span>
               </label>
             </header>
-            <p>补给项目成功保存后，使用 WAO 已配置的飞书应用通知你选择的群。</p>
+            <p>补给项目成功保存后，可使用系统设置中的 Webhook，或飞书应用通知指定群聊。</p>
             <div v-if="editorDraft.energyNotification.enabled" class="energy-editor-fields">
-              <label class="chat-field">
-                <span>通知到</span>
+              <label class="channel-field">
+                <span>发送方式</span>
+                <select v-model="editorDraft.energyNotification.channel">
+                  <option value="WEBHOOK">系统 Webhook</option>
+                  <option value="CHAT">飞书应用群聊</option>
+                </select>
+              </label>
+              <label v-if="editorDraft.energyNotification.channel === 'WEBHOOK'" class="chat-field">
+                <span>Webhook 配置</span>
+                <select
+                  v-model="editorDraft.energyNotification.webhookId"
+                  :disabled="notificationWebhooksLoading"
+                  @change="selectNotificationWebhook"
+                >
+                  <option value="">请选择系统设置中的 Webhook</option>
+                  <option
+                    v-if="configuredWebhookMissing"
+                    :value="editorDraft.energyNotification.webhookId"
+                    disabled
+                  >
+                    已保存 · {{ editorDraft.energyNotification.webhookName || '配置不可用' }}
+                  </option>
+                  <option
+                    v-for="endpoint in notificationWebhooks.filter((item) => item.enabled)"
+                    :key="endpoint.id"
+                    :value="endpoint.id"
+                  >
+                    {{ endpoint.name }}{{ endpoint.systemDefault ? ' · 系统默认' : '' }}
+                  </option>
+                </select>
+              </label>
+              <label v-else class="chat-field">
+                <span>通知群聊</span>
                 <select
                   v-model="editorDraft.energyNotification.chatId"
                   :disabled="notificationChatsLoading"
@@ -723,16 +803,38 @@ onBeforeUnmount(() => {
               <button
                 class="refresh-chats"
                 type="button"
-                :disabled="notificationChatsLoading"
-                @click="loadNotificationChats"
+                :disabled="notificationChatsLoading || notificationWebhooksLoading"
+                @click="loadNotificationTargets"
               >
                 <i
-                  :class="notificationChatsLoading ? 'ri-loader-4-line spin' : 'ri-refresh-line'"
+                  :class="
+                    notificationChatsLoading || notificationWebhooksLoading
+                      ? 'ri-loader-4-line spin'
+                      : 'ri-refresh-line'
+                  "
                 ></i>
-                {{ notificationChatsLoading ? '读取中' : '刷新群聊' }}
+                {{
+                  notificationChatsLoading || notificationWebhooksLoading ? '读取中' : '刷新选项'
+                }}
               </button>
             </div>
-            <p v-if="notificationChatsError" class="chat-load-error" role="alert">
+            <p
+              v-if="
+                editorDraft.energyNotification.channel === 'WEBHOOK' && notificationWebhooksError
+              "
+              class="chat-load-error"
+              role="alert"
+            >
+              <i class="ri-error-warning-line"></i
+              >{{ notificationWebhooksError }}；可前往系统设置的“Webhook配置”维护。
+            </p>
+            <p
+              v-else-if="
+                editorDraft.energyNotification.channel === 'CHAT' && notificationChatsError
+              "
+              class="chat-load-error"
+              role="alert"
+            >
               <i class="ri-error-warning-line"></i
               >{{ notificationChatsError }}；请确认自动化中的飞书应用凭据可用。
             </p>
@@ -778,7 +880,7 @@ onBeforeUnmount(() => {
               >
               <label class="energy-notify-field">
                 <input v-model="item.notify" type="checkbox" />
-                <span>群通知</span>
+                <span>飞书通知</span>
               </label>
               <button
                 class="remove-energy-item"
@@ -886,12 +988,14 @@ onBeforeUnmount(() => {
         </div>
         <div v-else class="history-list">
           <p v-if="history.skippedCount" class="history-warning">
-            <i class="ri-error-warning-line"></i>{{ history.skippedCount }} 条损坏记录未展示，未用空数据替代。
+            <i class="ri-error-warning-line"></i
+            >{{ history.skippedCount }} 条损坏记录未展示，未用空数据替代。
           </p>
           <article v-for="record in history.items" :key="record.date" class="history-day">
             <header>
               <div>
-                <b>{{ historyDateLabel(record.date) }}</b><small>{{ record.date }}</small>
+                <b>{{ historyDateLabel(record.date) }}</b
+                ><small>{{ record.date }}</small>
               </div>
               <span :class="{ resting: !record.workdayActive }">
                 {{ record.workdayActive ? '工作日节奏' : '休息日' }}
@@ -908,7 +1012,8 @@ onBeforeUnmount(() => {
               <h3><i class="ri-battery-charge-line"></i>项目执行</h3>
               <div class="history-energy-grid">
                 <div v-for="item in record.energyItems" :key="item.id" :title="item.id">
-                  <span>{{ item.title }}</span><b>{{ energyResult(item) }}</b>
+                  <span>{{ item.title }}</span
+                  ><b>{{ energyResult(item) }}</b>
                 </div>
               </div>
             </section>
@@ -1540,10 +1645,25 @@ textarea {
   align-items: center;
   gap: 12px;
 }
-.history-dialog > header > div { min-width: 0; flex: 1; }
-.history-dialog > header small { color: #267c65; font-size: 9px; font-weight: 750; letter-spacing: 1.5px; }
-.history-dialog > header h2 { margin: 3px 0 2px; font-size: 18px; }
-.history-dialog > header p { margin: 0; color: var(--wao-text-weak); font-size: 10.5px; }
+.history-dialog > header > div {
+  min-width: 0;
+  flex: 1;
+}
+.history-dialog > header small {
+  color: #267c65;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 1.5px;
+}
+.history-dialog > header h2 {
+  margin: 3px 0 2px;
+  font-size: 18px;
+}
+.history-dialog > header p {
+  margin: 0;
+  color: var(--wao-text-weak);
+  font-size: 10.5px;
+}
 .history-dialog > header button {
   width: 31px;
   height: 31px;
@@ -1561,8 +1681,15 @@ textarea {
   align-items: flex-end;
   gap: 8px;
 }
-.history-toolbar label { flex: 1; display: grid; gap: 4px; }
-.history-toolbar label span { color: var(--wao-text-faint); font-size: 9px; }
+.history-toolbar label {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+.history-toolbar label span {
+  color: var(--wao-text-faint);
+  font-size: 9px;
+}
 .history-toolbar input,
 .history-toolbar button,
 .history-state button {
@@ -1574,8 +1701,13 @@ textarea {
   padding: 0 10px;
 }
 .history-toolbar button,
-.history-state button { cursor: pointer; }
-.history-toolbar button:disabled { opacity: .55; cursor: wait; }
+.history-state button {
+  cursor: pointer;
+}
+.history-toolbar button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
 .history-state {
   min-height: 260px;
   padding: 24px;
@@ -1586,32 +1718,134 @@ textarea {
   gap: 8px;
   font-size: 11px;
 }
-.history-state.error { color: #9b4141; }
-.history-state.empty { flex-direction: column; text-align: center; }
-.history-state.empty > i { color: #6cad95; font-size: 28px; }
-.history-state.empty.corrupt > i { color: #a66b22; }
-.history-state.empty b { color: var(--wao-text-2); font-size: 13px; }
-.history-list { padding: 12px 19px 20px; overflow-y: auto; }
-.history-warning { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #fff5e7; color: #876714; font-size: 10px; }
-.history-warning i { margin-right: 5px; }
-.history-day { border: 1px solid var(--wao-line); border-radius: 13px; background: var(--wao-bg-card); overflow: hidden; }
-.history-day + .history-day { margin-top: 10px; }
-.history-day > header { padding: 11px 13px; border-bottom: 1px solid var(--wao-divider); background: #f4f8f6; display: flex; align-items: center; gap: 10px; }
-.history-day > header > div { flex: 1; display: grid; gap: 2px; }
-.history-day > header b { font-size: 12px; }
-.history-day > header small { color: var(--wao-text-faint); font-size: 8.5px; }
-.history-day > header > span { padding: 3px 7px; border-radius: 999px; background: #dceee6; color: #267c65; font-size: 9px; }
-.history-day > header > span.resting { background: #e8ecef; color: #65737b; }
-.history-day > section { padding: 10px 13px; }
-.history-day > section + section { border-top: 1px solid var(--wao-divider); }
-.history-day h3 { margin: 0 0 7px; color: var(--wao-text-2); font-size: 10.5px; }
-.history-day h3 i { margin-right: 5px; color: #3f8b71; }
-.history-day ol { margin: 0; padding-left: 20px; color: var(--wao-text-2); font-size: 10.5px; line-height: 1.65; }
-.history-day section > p { margin: 0; color: var(--wao-text-faint); font-size: 10px; }
-.history-energy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 7px; }
-.history-energy-grid > div { min-width: 0; padding: 8px 9px; border-radius: 8px; background: var(--wao-bg-page); display: flex; align-items: center; gap: 8px; }
-.history-energy-grid span { min-width: 0; flex: 1; overflow: hidden; color: var(--wao-text-weak); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.history-energy-grid b { color: #267c65; font-size: 11px; white-space: nowrap; }
+.history-state.error {
+  color: #9b4141;
+}
+.history-state.empty {
+  flex-direction: column;
+  text-align: center;
+}
+.history-state.empty > i {
+  color: #6cad95;
+  font-size: 28px;
+}
+.history-state.empty.corrupt > i {
+  color: #a66b22;
+}
+.history-state.empty b {
+  color: var(--wao-text-2);
+  font-size: 13px;
+}
+.history-list {
+  padding: 12px 19px 20px;
+  overflow-y: auto;
+}
+.history-warning {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff5e7;
+  color: #876714;
+  font-size: 10px;
+}
+.history-warning i {
+  margin-right: 5px;
+}
+.history-day {
+  border: 1px solid var(--wao-line);
+  border-radius: 13px;
+  background: var(--wao-bg-card);
+  overflow: hidden;
+}
+.history-day + .history-day {
+  margin-top: 10px;
+}
+.history-day > header {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--wao-divider);
+  background: #f4f8f6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.history-day > header > div {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+}
+.history-day > header b {
+  font-size: 12px;
+}
+.history-day > header small {
+  color: var(--wao-text-faint);
+  font-size: 8.5px;
+}
+.history-day > header > span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #dceee6;
+  color: #267c65;
+  font-size: 9px;
+}
+.history-day > header > span.resting {
+  background: #e8ecef;
+  color: #65737b;
+}
+.history-day > section {
+  padding: 10px 13px;
+}
+.history-day > section + section {
+  border-top: 1px solid var(--wao-divider);
+}
+.history-day h3 {
+  margin: 0 0 7px;
+  color: var(--wao-text-2);
+  font-size: 10.5px;
+}
+.history-day h3 i {
+  margin-right: 5px;
+  color: #3f8b71;
+}
+.history-day ol {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--wao-text-2);
+  font-size: 10.5px;
+  line-height: 1.65;
+}
+.history-day section > p {
+  margin: 0;
+  color: var(--wao-text-faint);
+  font-size: 10px;
+}
+.history-energy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 7px;
+}
+.history-energy-grid > div {
+  min-width: 0;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: var(--wao-bg-page);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.history-energy-grid span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--wao-text-weak);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-energy-grid b {
+  color: #267c65;
+  font-size: 11px;
+  white-space: nowrap;
+}
 .editor {
   position: fixed;
   z-index: 101;
@@ -1697,19 +1931,22 @@ textarea {
 .energy-editor-fields {
   margin-top: 11px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr) auto;
   align-items: end;
   gap: 8px;
 }
-.chat-field {
+.chat-field,
+.channel-field {
   display: grid;
   gap: 4px;
 }
-.chat-field > span {
+.chat-field > span,
+.channel-field > span {
   color: var(--wao-text-faint);
   font-size: 9.5px;
 }
-.chat-field select {
+.chat-field select,
+.channel-field select {
   width: 100%;
   height: 36px;
   border: 1px solid var(--wao-line-control);
@@ -1995,8 +2232,14 @@ textarea {
   .history-button {
     padding: 0 10px;
   }
-  .history-button { width: 36px; padding: 0; font-size: 0; }
-  .history-button i { font-size: 15px; }
+  .history-button {
+    width: 36px;
+    padding: 0;
+    font-size: 0;
+  }
+  .history-button i {
+    font-size: 15px;
+  }
   .hero {
     min-height: 0;
     padding: 22px 18px;
@@ -2042,14 +2285,23 @@ textarea {
     width: calc(100vw - 20px);
     max-height: calc(100dvh - 20px);
   }
-  .history-dialog > header p { display: none; }
-  .history-list { padding: 10px; }
-  .history-energy-grid { grid-template-columns: 1fr; }
+  .history-dialog > header p {
+    display: none;
+  }
+  .history-list {
+    padding: 10px;
+  }
+  .history-energy-grid {
+    grid-template-columns: 1fr;
+  }
   .editor-body {
     padding: 12px;
   }
   .energy-editor-fields {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .channel-field {
+    grid-column: 1 / -1;
   }
   .energy-item-editor {
     grid-template-columns: 25px minmax(0, 1fr) 32px;
