@@ -9,6 +9,7 @@ import type { AiRunner } from '@/types'
 import {
   fetchAiRunnerLog,
   fetchAiRunHistory,
+  fetchAiEvolution,
   fetchAiRunners,
   fetchAiWorkflows,
   launchAutonomousGoal,
@@ -255,6 +256,8 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.home-recommendations').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('给此刻的你')
     expect(wrapper.text()).not.toContain('让剩余额度持续完善 WAO')
+    expect(fetchAiEvolution).toHaveBeenCalled()
+    expect(wrapper.find('.console-quota').text()).toContain('总剩余38%')
     wrapper.unmount()
   })
 
