@@ -384,6 +384,21 @@ export interface SharedDoc {
 /** 可以托管任务的本地 AI 工具。 */
 export type AiEngine = 'codex' | 'claude' | 'qoder'
 
+export interface AiRunOption {
+  id: string
+  label: string
+  description: string
+}
+
+/** 后台下发的单次 AI Run 模型参数，前端不自行维护模型标识。 */
+export interface AiRunOptions {
+  codexModels: AiRunOption[]
+  reasoningEfforts: AiRunOption[]
+  defaultCodexModel: string
+  defaultReasoningEffort: string
+  serviceTier: 'default'
+}
+
 /** 项目级 AI Run 配置。 */
 export interface AiProjectConfig {
   projectId: string
@@ -499,6 +514,9 @@ export interface AiRun {
   projectId: string
   projectName: string
   engine: AiEngine
+  requestedModel?: string | null
+  reasoningEffort?: string | null
+  serviceTier?: string | null
   status: AiRunStatus
   runnerId: string | null
   runnerName: string | null

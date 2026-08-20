@@ -16,6 +16,12 @@ public record AiRunDto(
         String projectId,
         String projectName,
         String engine,
+        /** 派工时选择的模型；其它引擎或历史记录为 null。 */
+        String requestedModel,
+        /** 派工时选择的推理强度；其它引擎或历史记录为 null。 */
+        String reasoningEffort,
+        /** Codex 服务档位；当前固定为 default，明确表示未开启 Fast。 */
+        String serviceTier,
         String status,
         String runnerId,
         String runnerName,

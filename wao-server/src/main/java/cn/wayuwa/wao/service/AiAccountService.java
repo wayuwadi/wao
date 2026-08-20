@@ -709,6 +709,12 @@ public class AiAccountService {
         requireRunAccount(accountId, engine);
     }
 
+    /** 判断一次运行是否使用自定义 API；这类账号的模型由账号配置决定，不能被官方模型选项覆盖。 */
+    public boolean usesCustomApi(String accountId, String engine) {
+        if (!StringUtils.hasText(accountId)) return false;
+        return "api_key".equals(requireRunAccount(accountId, engine).getAuthMethod());
+    }
+
     /** 解析一次运行选中的账号；凭据只交给已经领取该运行的 Runner。 */
     public AiRunAccountDto runAccount(String accountId, String engine) {
         if (!StringUtils.hasText(accountId)) return null;

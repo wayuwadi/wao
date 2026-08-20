@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchAiProjectConfig, fetchAiRunners } from '@/api/ai'
+import { fetchAiProjectConfig, fetchAiRunners, fetchAiRunOptions } from '@/api/ai'
 import { fetchAiAccounts, type AiAccount } from '@/api/aiAccount'
 import { AI_ENGINES, engineColor } from '@/composables/aiEngines'
-import type { AiEngine, AiRunner } from '@/types'
+import type { AiEngine, AiRunner, AiRunOptions } from '@/types'
 
 const props = defineProps<{ projectId: string; starting?: boolean; scope?: string }>()
-const emit = defineEmits<{ close: []; start: [engine: AiEngine, runnerId: string | null, accountId: string | null] }>()
+const emit = defineEmits<{
+  close: []
+  start: [engine: AiEngine, runnerId: string | null, accountId: string | null,
+    model: string | null, reasoningEffort: string | null]
+}>()
 
 const loading = ref(true)
 const runners = ref<AiRunner[]>([])
@@ -14,6 +18,9 @@ const accounts = ref<AiAccount[]>([])
 const engine = ref<AiEngine>('codex')
 const runnerId = ref('')
 const accountId = ref('')
+const runOptions = ref<AiRunOptions | null>(null)
+const model = ref('')
+const reasoningEffort = ref('')
 const preferredRunnerId = ref('')
 let runnerRefreshTimer: ReturnType<typeof setInterval> | null = null
 
@@ -31,6 +38,9 @@ const linuxCandidate = computed(() => {
     ?? linux[0]
 })
 const centralAccountSelected = computed(() => accountId.value !== '')
+const selectedAccount = computed(() => accounts.value.find((account) => account.id === accountId.value))
+const customApiSelected = computed(() => selectedAccount.value?.authMethod === 'api_key')
+const codexParametersEnabled = computed(() => engine.value === 'codex' && !customApiSelected.value)
 const centralRunnerMissing = computed(() =>
   centralAccountSelected.value && !linuxCandidate.value && !runnerId.value)
 const availability = computed(() =>
@@ -57,6 +67,12 @@ function pickEngine(next: AiEngine) {
   if (!eligibleAccounts.value.some((account) => account.id === accountId.value)) accountId.value = ''
 }
 
+function startRun() {
+  emit('start', engine.value, runnerId.value || null, accountId.value || null,
+    codexParametersEnabled.value ? model.value : null,
+    codexParametersEnabled.value ? reasoningEffort.value : null)
+}
+
 watch(accountId, (next) => {
   if (next) {
     runnerId.value = linuxCandidate.value?.id ?? ''
@@ -77,11 +93,14 @@ async function refreshRunners() {
 
 onMounted(async () => {
   try {
-    const [nodes, config, managedAccounts] = await Promise.all([
-      fetchAiRunners(), fetchAiProjectConfig(props.projectId), fetchAiAccounts(),
+    const [nodes, config, managedAccounts, options] = await Promise.all([
+      fetchAiRunners(), fetchAiProjectConfig(props.projectId), fetchAiAccounts(), fetchAiRunOptions(),
     ])
     runners.value = nodes
     accounts.value = managedAccounts
+    runOptions.value = options
+    model.value = options.defaultCodexModel
+    reasoningEffort.value = options.defaultReasoningEffort
     // 项目默认工具一台电脑都没装时，直接落到已经接入的那种，省得用户先撞一次 400。
     const supported = AI_ENGINES.map((item) => item.id)
       .filter((id) => nodes.some((runner) => runner.engines.includes(id)))
@@ -133,6 +152,27 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
+      <template v-if="engine === 'codex'">
+        <template v-if="codexParametersEnabled && runOptions">
+          <div class="label">本次模型</div>
+          <select v-model="model" class="runner-select">
+            <option v-for="item in runOptions.codexModels" :key="item.id" :value="item.id">
+              {{ item.label }} · {{ item.description }}
+            </option>
+          </select>
+          <div class="label">推理强度</div>
+          <select v-model="reasoningEffort" class="runner-select">
+            <option v-for="item in runOptions.reasoningEfforts" :key="item.id" :value="item.id">
+              {{ item.label }} · {{ item.description }}
+            </option>
+          </select>
+          <p class="hint"><i class="ri-speed-line"></i>标准速度（Fast 未开启）</p>
+        </template>
+        <p v-else-if="customApiSelected" class="hint">
+          <i class="ri-information-line"></i>自定义 API 使用账号中配置的模型
+        </p>
+      </template>
+
       <div class="label">运行账号</div>
       <select v-model="accountId" class="runner-select">
         <option value="">使用执行电脑本地登录态</option>
@@ -155,7 +195,7 @@ onBeforeUnmount(() => {
 
       <footer>
         <button class="secondary" @click="emit('close')">取消</button>
-        <button class="primary" :disabled="starting || centralRunnerMissing" @click="emit('start', engine, runnerId || null, accountId || null)">
+        <button class="primary" :disabled="starting || centralRunnerMissing" @click="startRun">
           <i :class="starting ? 'ri-loader-4-line spin' : 'ri-play-circle-line'"></i>
           {{ starting ? '正在入队…' : '开始运行' }}
         </button>

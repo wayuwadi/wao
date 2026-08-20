@@ -30,8 +30,11 @@ import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
 import cn.wayuwa.wao.dto.AiRunImageContent;
+import cn.wayuwa.wao.dto.AiRunModelOptionDto;
+import cn.wayuwa.wao.dto.AiRunOptionsDto;
 import cn.wayuwa.wao.dto.AiRunPageDto;
 import cn.wayuwa.wao.dto.AiRunProgressDto;
+import cn.wayuwa.wao.dto.AiRunReasoningOptionDto;
 import cn.wayuwa.wao.dto.AiRunUsageDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
@@ -89,6 +92,12 @@ public class AiRunService {
     /** 目前支持的本地 AI 工具；顺序即页面默认展示顺序。 */
     public static final List<String> ENGINES = List.of("codex", "claude", "qoder");
     private static final String DEFAULT_ENGINE = "codex";
+    private static final String DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
+    private static final String DEFAULT_REASONING_EFFORT = "medium";
+    private static final String CODEX_SERVICE_TIER = "default";
+    private static final Set<String> CODEX_MODELS = Set.of(
+            "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
+    private static final Set<String> CODEX_REASONING_EFFORTS = Set.of("medium", "high");
     private static final Map<String, String> ENGINE_LABELS = Map.of("codex", "Codex", "claude", "Claude Code",
             "qoder", "Qoder");
     private static final Pattern MARKDOWN_IMAGE = Pattern.compile("!\\[([^\\]]*)]\\(([^\\s)]+)\\)");
@@ -112,6 +121,19 @@ public class AiRunService {
     private final ImageService images;
     private final CodexQuotaService codexQuotas;
     private final ProjectMemoryService projectMemories;
+
+    /** 返回后台受控的单次运行参数；前端不自行维护模型标识。 */
+    public AiRunOptionsDto runOptions() {
+        return new AiRunOptionsDto(
+                List.of(
+                        new AiRunModelOptionDto("gpt-5.6-sol", "GPT-5.6 Sol", "复杂开发任务的旗舰模型"),
+                        new AiRunModelOptionDto("gpt-5.6-terra", "GPT-5.6 Terra", "兼顾能力与成本"),
+                        new AiRunModelOptionDto("gpt-5.6-luna", "GPT-5.6 Luna", "适合高频、成本敏感任务")),
+                List.of(
+                        new AiRunReasoningOptionDto("medium", "中", "速度与推理深度均衡"),
+                        new AiRunReasoningOptionDto("high", "高", "为复杂任务投入更多推理")),
+                DEFAULT_CODEX_MODEL, DEFAULT_REASONING_EFFORT, CODEX_SERVICE_TIER);
+    }
 
     public AiRunService(AiProjectConfigMapper configMapper, AiRunnerNodeMapper runnerMapper,
             AiRunnerPairCodeMapper pairMapper, AiTaskRunMapper runMapper, AiRunProgressMapper progressMapper,
@@ -406,6 +428,18 @@ public class AiRunService {
     @Transactional
     public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
             String accountId, String requestedBy, String baseUrl) {
+        return enqueue(taskIds, subId, engine, runnerId, accountId, null, null, requestedBy, baseUrl);
+    }
+
+    /**
+     * 把任务加入 AI 队列，并固化本次 Codex 模型参数。
+     *
+     * @param model Codex 模型；留空时使用后台默认模型
+     * @param reasoningEffort Codex 推理强度；留空时使用后台默认强度
+     */
+    @Transactional
+    public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
+            String accountId, String model, String reasoningEffort, String requestedBy, String baseUrl) {
         String requestedEngine = StringUtils.hasText(engine) && !"auto".equals(engine)
                 ? requireEngine(engine) : null;
         String sub = trim(subId);
@@ -431,6 +465,10 @@ public class AiRunService {
             String runEngine = requestedEngine != null
                     ? requestedEngine : requireEngine(blankOr(config.getDefaultEngine(), DEFAULT_ENGINE));
             if (StringUtils.hasText(accountId)) accounts.validateRunAccount(accountId.trim(), runEngine);
+            boolean customApi = accounts.usesCustomApi(accountId, runEngine);
+            String requestedModel = "codex".equals(runEngine) && !customApi ? requireCodexModel(model) : null;
+            String requestedEffort = "codex".equals(runEngine) && !customApi
+                    ? requireReasoningEffort(reasoningEffort) : null;
             AiRunnerNodeEntity runTarget = target;
             if (runTarget == null && StringUtils.hasText(accountId)) {
                 runTarget = preferredLinuxRunner(runEngine);
@@ -460,6 +498,8 @@ public class AiRunService {
             run.setProjectId(task.getProjectId());
             run.setEngine(runEngine);
             run.setAiAccountId(StringUtils.hasText(accountId) ? accountId.trim() : null);
+            run.setRequestedModel(requestedModel);
+            run.setReasoningEffort(requestedEffort);
             run.setStatus("queued");
             run.setRequestedRunnerId(runTarget == null ? null : runTarget.getId());
             run.setRequestedBy(requestedBy);
@@ -700,6 +740,8 @@ public class AiRunService {
         run.setProjectId(source.getProjectId());
         run.setEngine(engine);
         run.setAiAccountId(source.getAiAccountId());
+        run.setRequestedModel(source.getRequestedModel());
+        run.setReasoningEffort(source.getReasoningEffort());
         run.setStatus("queued");
         run.setRequestedRunnerId(source.getRequestedRunnerId());
         run.setRequestedBy(requestedBy);
@@ -922,7 +964,11 @@ public class AiRunService {
             List<ProjectMemoryContextDto> memoryContext = projectMemories.recall(run, task);
             notifyStarted(run, task, project, runner.getName());
             return new AiRunnerClaimDto(run.getId(), run.getTaskId(), task.getTitle(), run.getProjectId(),
-                    project == null ? run.getProjectId() : project.getName(), engine, run.getPromptUrl(),
+                    project == null ? run.getProjectId() : project.getName(), engine,
+                    run.getRequestedModel(), run.getReasoningEffort(),
+                    "codex".equals(engine) && StringUtils.hasText(run.getRequestedModel())
+                            ? CODEX_SERVICE_TIER : null,
+                    run.getPromptUrl(),
                     config.getRepoUrl(), blankOr(config.getDefaultBranch(), "main"),
                     blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName(),
                     previousFailure(run), run.getSessionId(), continuationInput,
@@ -1204,7 +1250,9 @@ public class AiRunService {
                     run.getSubId(),
                     StringUtils.hasText(run.getSubId()) ? subTitle(run.getTaskId(), run.getSubId()) : null,
                     run.getProjectId(), project == null ? run.getProjectId() : project.getName(),
-                    blankOr(run.getEngine(), DEFAULT_ENGINE), run.getStatus(),
+                    blankOr(run.getEngine(), DEFAULT_ENGINE), run.getRequestedModel(),
+                    run.getReasoningEffort(), StringUtils.hasText(run.getRequestedModel())
+                            ? CODEX_SERVICE_TIER : null, run.getStatus(),
                     run.getRunnerId(), runnerName(run, runner), run.getRequestedRunnerId(), run.getRequestedBy(),
                     run.getBranchName(), run.getRetryOfRunId(),
                     run.getResultSummary(), reportUrls.get(run.getId()), run.getLatestProgress(),
@@ -1343,6 +1391,20 @@ public class AiRunService {
     private static String requireEngine(String engine) {
         String value = trim(engine).toLowerCase();
         if (!ENGINES.contains(value)) throw new BadRequestException("不支持的 AI 工具：" + engine);
+        return value;
+    }
+
+    private static String requireCodexModel(String model) {
+        String value = blankOr(model, DEFAULT_CODEX_MODEL).toLowerCase(java.util.Locale.ROOT);
+        if (!CODEX_MODELS.contains(value)) throw new BadRequestException("不支持的 Codex 模型：" + model);
+        return value;
+    }
+
+    private static String requireReasoningEffort(String effort) {
+        String value = blankOr(effort, DEFAULT_REASONING_EFFORT).toLowerCase(java.util.Locale.ROOT);
+        if (!CODEX_REASONING_EFFORTS.contains(value)) {
+            throw new BadRequestException("不支持的 Codex 推理强度：" + effort);
+        }
         return value;
     }
 

@@ -164,7 +164,14 @@ public class AiRunController {
             HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         return ApiResponse.ok(service.enqueue(request.taskIds(), request.subId(), request.engine(),
-                request.runnerId(), request.accountId(), currentMember.idOr(http, "unknown"), baseUrl));
+                request.runnerId(), request.accountId(), request.model(), request.reasoningEffort(),
+                currentMember.idOr(http, "unknown"), baseUrl));
+    }
+
+    /** 返回 AI Run 选择器可用的后台受控模型参数。 */
+    @GetMapping("/run-options")
+    public ApiResponse<cn.wayuwa.wao.dto.AiRunOptionsDto> runOptions() {
+        return ApiResponse.ok(service.runOptions());
     }
 
     /** 把一句目标转成任务，并交给用户本次选择的执行电脑或自动分配。 */

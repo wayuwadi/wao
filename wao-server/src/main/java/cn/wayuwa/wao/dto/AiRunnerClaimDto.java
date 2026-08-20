@@ -10,6 +10,12 @@ public record AiRunnerClaimDto(
         String projectId,
         String projectName,
         String engine,
+        /** 本次 Codex 运行明确选择的模型；其它引擎或自定义 API 为 null。 */
+        String model,
+        /** 本次 Codex 运行明确选择的推理强度。 */
+        String reasoningEffort,
+        /** Codex 服务档位；WAO 开发任务固定为 default，不开启 Fast。 */
+        String serviceTier,
         String promptUrl,
         String repoUrl,
         String defaultBranch,
@@ -33,8 +39,8 @@ public record AiRunnerClaimDto(
             String projectName, String engine, String promptUrl, String repoUrl, String defaultBranch,
             String workspaceDir, String branchName, String previousFailure, String sessionId,
             String continuationInput, AiRunAccountDto account) {
-        this(runId, taskId, taskTitle, projectId, projectName, engine, promptUrl, repoUrl,
-                defaultBranch, workspaceDir, branchName, previousFailure, sessionId,
+        this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null,
+                promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, previousFailure, sessionId,
                 continuationInput, account, List.of(), List.of());
     }
 
@@ -42,8 +48,8 @@ public record AiRunnerClaimDto(
             String projectName, String engine, String promptUrl, String repoUrl, String defaultBranch,
             String workspaceDir, String branchName, String previousFailure, String sessionId,
             String continuationInput) {
-        this(runId, taskId, taskTitle, projectId, projectName, engine, promptUrl, repoUrl,
-                defaultBranch, workspaceDir, branchName, previousFailure, sessionId,
+        this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null,
+                promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, previousFailure, sessionId,
                 continuationInput, null, List.of(), List.of());
     }
 }
