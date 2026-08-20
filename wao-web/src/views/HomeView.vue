@@ -3,26 +3,19 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { useRoute, useRouter } from 'vue-router'
 import {
   createAiPairCode,
-  fetchAiEvolution,
   fetchAiRunHistory,
   fetchAiRunnerLog,
   fetchAiRunners,
   fetchAiRuns,
   fetchAiWorkflows,
   launchAutonomousGoal,
-  launchEvolutionSuggestion,
   removeAiRunner,
   removeAiWorkflow,
-  refreshEvolutionSuggestions,
   requestRunnerScriptUpdate,
   rerunAiRun,
-  saveAiEvolutionSchedule,
   saveAiProjectConfig,
   updateRunnerMaxConcurrency,
   wakeAiRunner,
-  type AiEvolutionOverview,
-  type AiEvolutionSuggestion,
-  type CodexQuotaAccount,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
@@ -30,16 +23,10 @@ import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/
 import { formatCost, formatTokens, shortModel, usageSummary } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
-import {
-  fetchDailyGuidance,
-  generateDailyGuidance,
-  type DailyGuidance,
-} from '@/api/dailyGuidance'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow } from '@/types'
-import { renderMarkdown } from '@/utils/markdown'
 
 type ConsoleView = 'runs' | 'runners' | 'workflows'
 
@@ -88,26 +75,9 @@ const editingRunnerId = ref<string | null>(null)
 const editingRunnerValue = ref(2)
 const editingRunnerSaving = ref(false)
 const updatingRunners = ref(false)
-const evolution = ref<AiEvolutionOverview | null>(null)
-const evolutionLoading = ref(true)
-const evolutionError = ref('')
-const launchingSuggestionId = ref<string | null>(null)
-const suggestionsRefreshing = ref(false)
-const suggestionError = ref('')
-const evolutionScheduleOpen = ref(false)
-const evolutionScheduleSaving = ref(false)
-const evolutionScheduleError = ref('')
-const evolutionScheduleSaved = ref(false)
-const evolutionScheduleInitialized = ref(false)
-const evolutionScheduleDraft = reactive({ intervalHours: 12, batchSize: 1 })
 const wakingRunnerId = ref<string | null>(null)
 const removingRunnerId = ref<string | null>(null)
 const removingWorkflowId = ref<string | null>(null)
-const dailyGuidance = ref<DailyGuidance | null>(readCachedDailyGuidance())
-const dailyGuidanceLoading = ref(!dailyGuidance.value)
-const dailyGuidanceRefreshing = ref(false)
-const dailyGuidanceError = ref('')
-const dailyGuidanceErrorSource = ref<'load' | 'refresh'>('load')
 const form = reactive({
   enabled: false,
   repoUrl: '',
@@ -118,8 +88,6 @@ const form = reactive({
   maxParallelRuns: 2,
 })
 let timer: ReturnType<typeof setInterval> | null = null
-let evolutionTimer: ReturnType<typeof setInterval> | null = null
-let initialSuggestionRefreshStarted = false
 
 const activeRuns = computed(() => runs.value.filter((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 const recentRuns = computed(() => runs.value.filter((run) => !['queued', 'claimed', 'running'].includes(run.status)).slice(0, 8))
@@ -145,45 +113,6 @@ const goalRunnerHint = computed(() => {
   const online = goalRunnerCandidates.value.filter((runner) => runner.online).length
   if (online) return `自动分配给 ${online} 台在线电脑中最先空闲的一台`
   return goalRunnerCandidates.value.length ? '可用电脑当前全部离线，任务会先排队' : '还没有电脑接入工作流使用的 AI 工具'
-})
-const WEEKLY_QUOTA_FRESH_MS = 45 * 60 * 1_000
-const WEEKLY_QUOTA_CLOCK_SKEW_MS = 5 * 60 * 1_000
-
-/** OAuth 快照没有单独 fresh 标记，只展示仍在有效窗口且最近四十五分钟同步成功的数据。 */
-function isFreshWeeklyQuota(quota: AiEvolutionOverview['weeklyQuotas'][number]) {
-  const reset = quota.resetsAt ? Date.parse(quota.resetsAt) : Number.NaN
-  const synced = quota.lastSyncedAt ? Date.parse(quota.lastSyncedAt) : Number.NaN
-  const age = Date.now() - synced
-  const resetValid = quota.resetsAt === null || (Number.isFinite(reset) && reset > Date.now())
-  return quota.status === 'SYNCED'
-    && resetValid
-    && Number.isFinite(synced)
-    && age >= -WEEKLY_QUOTA_CLOCK_SKEW_MS
-    && age <= WEEKLY_QUOTA_FRESH_MS
-}
-
-const visibleWeeklyQuotas = computed(() => evolution.value?.weeklyQuotas.filter(isFreshWeeklyQuota) ?? [])
-// 这个入口明确汇总 Codex；不能在 Codex 无可用快照时误拿 Claude 的周额度冒充。
-const primaryWeeklyQuota = computed(() => visibleWeeklyQuotas.value.find((quota) => quota.provider === 'codex') ?? null)
-const codexQuotaAccounts = computed(() => evolution.value?.codexQuotas ?? [])
-const primaryCodexAccount = computed(() => codexQuotaAccounts.value.find((account) => account.fresh) ?? null)
-const localWeeklyWindow = computed(() => {
-  const window = findCodexWindow(primaryCodexAccount.value, 10_080)
-  if (!window) return null
-  return window.resetsAt === null || window.resetsAt * 1_000 > Date.now() ? window : null
-})
-const heroWeeklyQuota = computed(() => localWeeklyWindow.value ? {
-  remainingPercent: 100 - localWeeklyWindow.value.usedPercent,
-  resetsAt: unixTime(localWeeklyWindow.value.resetsAt),
-} : primaryWeeklyQuota.value)
-const evolutionScheduleDirty = computed(() => Boolean(evolution.value)
-  && (evolutionScheduleDraft.intervalHours !== evolution.value?.intervalHours
-    || evolutionScheduleDraft.batchSize !== evolution.value?.batchSize))
-const evolutionNextTriggerText = computed(() => {
-  if (!evolution.value) return ''
-  if (evolution.value.nextTriggerAt) return timeText(evolution.value.nextTriggerAt)
-  if (evolution.value.autoStatus === 'busy') return '当前任务结束后重新计时'
-  return '条件满足后重新预计'
 })
 
 /** 每种 AI 工具当前有几台电脑在线，决定 hero 上的接入状态。 */
@@ -255,178 +184,6 @@ async function refreshWorkflows() {
   } finally {
     workflowsLoading.value = false
   }
-}
-
-async function refreshEvolution() {
-  // 手动挖掘最长需要五分钟。此时继续轮询会把服务端尚未更新的旧批次写回页面，
-  // 甚至可能在新批次响应之后覆盖刚换好的建议。
-  if (suggestionsRefreshing.value) return
-  evolutionLoading.value = true
-  evolutionError.value = ''
-  let needsInitialSuggestions = false
-  try {
-    const preserveScheduleDraft = evolutionScheduleInitialized.value && evolutionScheduleDirty.value
-    const next = await fetchAiEvolution()
-    // 请求发出后用户可能才点击“刷新换一批”；这份并发返回的概览仍属于旧批次。
-    if (suggestionsRefreshing.value) return
-    evolution.value = next
-    if (!preserveScheduleDraft && !evolutionScheduleSaving.value) syncEvolutionScheduleDraft()
-    needsInitialSuggestions = evolution.value.suggestions.length === 0 && !initialSuggestionRefreshStarted
-  } catch (error) {
-    evolutionError.value = error instanceof Error ? error.message : '周额度与自主进化状态读取失败'
-  } finally {
-    evolutionLoading.value = false
-  }
-  if (needsInitialSuggestions) {
-    initialSuggestionRefreshStarted = true
-    void refreshSuggestions(false)
-  }
-}
-
-function syncEvolutionScheduleDraft() {
-  if (!evolution.value) return
-  evolutionScheduleDraft.intervalHours = evolution.value.intervalHours
-  evolutionScheduleDraft.batchSize = evolution.value.batchSize
-  evolutionScheduleInitialized.value = true
-}
-
-async function saveEvolutionSchedule() {
-  if (evolutionScheduleSaving.value) return
-  evolutionScheduleSaving.value = true
-  evolutionScheduleError.value = ''
-  evolutionScheduleSaved.value = false
-  try {
-    evolution.value = await saveAiEvolutionSchedule(
-      evolutionScheduleDraft.intervalHours,
-      evolutionScheduleDraft.batchSize,
-    )
-    syncEvolutionScheduleDraft()
-    evolutionScheduleSaved.value = true
-    toast('自动执行频率已保存', 'ri-checkbox-circle-line')
-  } catch (error) {
-    evolutionScheduleError.value = error instanceof Error ? error.message : '自动执行频率保存失败'
-  } finally {
-    evolutionScheduleSaving.value = false
-  }
-}
-
-async function refreshSuggestions(showSuccess = true) {
-  if (!evolution.value || suggestionsRefreshing.value) return
-  suggestionsRefreshing.value = true
-  suggestionError.value = ''
-  try {
-    const next = await refreshEvolutionSuggestions()
-    evolution.value = { ...evolution.value, suggestions: next }
-    if (showSuccess) toast(`已从真实资料换出 ${next.length} 条新建议`, 'ri-refresh-line')
-  } catch (error) {
-    suggestionError.value = error instanceof Error ? error.message : '真实资料挖掘失败，请重试'
-  } finally {
-    suggestionsRefreshing.value = false
-  }
-}
-
-async function loadDailyGuidance() {
-  dailyGuidanceLoading.value = !dailyGuidance.value?.content
-  dailyGuidanceError.value = ''
-  dailyGuidanceErrorSource.value = 'load'
-  try {
-    const current = await fetchDailyGuidance()
-    dailyGuidance.value = current
-    rememberDailyGuidance(current)
-  } catch (error) {
-    dailyGuidanceError.value = error instanceof Error ? error.message : '今天的建议读取失败'
-  } finally {
-    dailyGuidanceLoading.value = false
-  }
-}
-
-async function refreshDailyGuidance(refresh = true) {
-  if (dailyGuidanceRefreshing.value) return
-  dailyGuidanceRefreshing.value = true
-  dailyGuidanceError.value = ''
-  dailyGuidanceErrorSource.value = 'refresh'
-  try {
-    dailyGuidance.value = await generateDailyGuidance(refresh)
-    rememberDailyGuidance(dailyGuidance.value)
-  } catch (error) {
-    dailyGuidanceError.value = error instanceof Error ? error.message : '今天的建议生成失败，请重试'
-  } finally {
-    dailyGuidanceRefreshing.value = false
-    dailyGuidanceLoading.value = false
-  }
-}
-
-function guidanceBusinessDate() {
-  const parts = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date())
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
-  return `${value.year}-${value.month}-${value.day}`
-}
-
-function dailyGuidanceCacheKey() {
-  return `wao-daily-guidance-v1:${session.currentUser.id || 'wg'}`
-}
-
-function readCachedDailyGuidance(): DailyGuidance | null {
-  try {
-    const raw = sessionStorage.getItem(dailyGuidanceCacheKey())
-    if (!raw) return null
-    const cached = JSON.parse(raw) as DailyGuidance
-    return cached.status === 'ready' && cached.date === guidanceBusinessDate() && cached.content ? cached : null
-  } catch {
-    return null
-  }
-}
-
-function rememberDailyGuidance(value: DailyGuidance | null) {
-  try {
-    if (value?.status === 'ready' && value.content && value.date === guidanceBusinessDate()) {
-      sessionStorage.setItem(dailyGuidanceCacheKey(), JSON.stringify(value))
-    } else {
-      sessionStorage.removeItem(dailyGuidanceCacheKey())
-    }
-  } catch {
-    // 隐私模式禁用会话存储时仍以服务端预生成结果为准。
-  }
-}
-
-async function launchSuggestion(suggestion: AiEvolutionSuggestion) {
-  if (!goalProjectId.value) {
-    toast('请先在 AI 工作流中接入一个项目', 'ri-information-line')
-    view.value = 'workflows'
-    return
-  }
-  launchingSuggestionId.value = suggestion.id
-  try {
-    const run = await launchEvolutionSuggestion(suggestion.id, goalProjectId.value)
-    runs.value = [run, ...runs.value.filter((item) => item.id !== run.id)]
-    view.value = 'runs'
-    toast(`已让 AI 开始：${suggestion.title}`, 'ri-rocket-2-line')
-    await refreshEvolution()
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '建议派发失败', 'ri-error-warning-line')
-  } finally {
-    launchingSuggestionId.value = null
-  }
-}
-
-function quotaClass(remaining: number) {
-  return remaining < 20 ? 'danger' : remaining < 50 ? 'warn' : 'good'
-}
-
-function findCodexWindow(account: CodexQuotaAccount | null, durationMinutes: number) {
-  if (!account) return null
-  const general = account.limits.find((limit) => limit.id === 'codex') ?? account.limits[0]
-  return general?.windows.find((window) => window.windowDurationMinutes === durationMinutes) ?? null
-}
-
-function unixTime(value: number | null) {
-  return value ? new Date(value * 1000).toISOString() : null
-}
-
-function resetText(value: string | null) {
-  return value ? `${timeText(value)} 刷新` : '刷新时间未知'
 }
 
 watch(view, (next) => {
@@ -828,15 +585,11 @@ onMounted(() => {
   restoreGoalDraft()
   void refresh()
   void refreshWorkflows()
-  void refreshEvolution()
-  void loadDailyGuidance()
   timer = setInterval(refresh, 5_000)
-  evolutionTimer = setInterval(refreshEvolution, 60_000)
   if (route.query.console) revealAiArea()
 })
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
-  if (evolutionTimer) clearInterval(evolutionTimer)
 })
 </script>
 
@@ -941,189 +694,6 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <div class="home-recommendations" aria-label="首页相关推荐">
-      <section class="daily-guidance" aria-labelledby="daily-guidance-title">
-      <header>
-        <span class="guidance-mark"><i class="ri-compass-3-line"></i></span>
-        <div>
-          <div class="eyebrow dark">FOR THIS MOMENT</div>
-          <h2 id="daily-guidance-title">给此刻的你</h2>
-          <p>结合今天的真实任务，由后台提前整理；打开首页即可查看，换设备也能继续看。</p>
-        </div>
-        <button
-          v-if="dailyGuidance?.status === 'ready'"
-          class="guidance-refresh"
-          :disabled="dailyGuidanceRefreshing"
-          @click="refreshDailyGuidance(true)"
-        >
-          <i :class="dailyGuidanceRefreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
-          {{ dailyGuidanceRefreshing ? '正在换一组…' : '换一组' }}
-        </button>
-      </header>
-      <div v-if="dailyGuidanceLoading || (dailyGuidanceRefreshing && !dailyGuidance?.content)" class="guidance-state">
-        <i class="ri-loader-4-line spin"></i>
-        <div><b>正在读取今天的建议</b><span>后台已提前整理，当前只需取回保存的结果。</span></div>
-      </div>
-      <div v-else-if="dailyGuidance?.status === 'ready' && dailyGuidance.content" class="guidance-content">
-        <div class="md-body" v-html="renderMarkdown(dailyGuidance.content)"></div>
-        <small v-if="dailyGuidance.generatedAt"><i class="ri-shield-check-line"></i>{{ timeText(dailyGuidance.generatedAt) }} 生成 · 仅使用你的 WAO 任务上下文</small>
-        <div v-if="dailyGuidanceError" class="guidance-inline-error" role="alert">
-          <i class="ri-error-warning-line"></i><span>{{ dailyGuidanceErrorSource === 'refresh' ? '换一组' : '读取' }}失败：{{ dailyGuidanceError }}，现有建议已保留。</span>
-          <button :disabled="dailyGuidanceRefreshing" @click="dailyGuidanceErrorSource === 'refresh' ? refreshDailyGuidance(true) : loadDailyGuidance()">重试</button>
-        </div>
-      </div>
-      <div v-else-if="dailyGuidance?.status === 'missing'" class="guidance-state">
-        <i class="ri-time-line"></i>
-        <div>
-          <b>今天的建议正在后台准备</b>
-          <span>{{ dailyGuidance.message || '定时任务会在本地 Codex 可用后自动补齐，无需停留等待。' }}</span>
-        </div>
-        <button @click="loadDailyGuidance"><i class="ri-refresh-line"></i>重新读取</button>
-      </div>
-      <div v-else class="guidance-state error">
-        <i class="ri-cloud-off-line"></i>
-        <div>
-          <b>{{ dailyGuidanceError ? '这次没有生成成功' : '本地 Codex 暂未连接' }}</b>
-          <span>{{ dailyGuidanceError || dailyGuidance?.message || '请检查 AI 控制台的执行电脑后重试。' }}</span>
-        </div>
-        <button @click="loadDailyGuidance">
-          <i class="ri-refresh-line"></i>重试
-        </button>
-      </div>
-      </section>
-
-      <section class="evolution-panel" aria-labelledby="evolution-title">
-      <header>
-        <span class="evolution-mark"><i class="ri-seedling-line"></i></span>
-        <div>
-          <div class="eyebrow dark">CONTINUOUS EVOLUTION</div>
-          <h2 id="evolution-title">让剩余额度持续完善 WAO</h2>
-          <div class="evolution-policy"><i class="ri-user-smile-line"></i>建议挖掘和自动派发只选择用户可感知的功能与提效改进</div>
-          <p v-if="evolution">{{ evolution.autoMessage }}</p>
-          <p v-else-if="evolutionError" class="evolution-error">{{ evolutionError }}</p>
-          <p v-else>正在读取真实周额度和自动进化状态…</p>
-        </div>
-        <span v-if="evolution" class="auto-state" :class="evolution.autoStatus">
-          <i :class="evolution.autoStatus === 'ready' ? 'ri-checkbox-circle-line' : 'ri-time-line'"></i>
-          {{ evolution.autoStatus === 'ready' ? '可自动执行' : evolution.autoStatus === 'busy' ? 'AI 正忙' : '等待条件' }}
-        </span>
-        <button
-          v-if="evolution"
-          class="secondary suggestion-refresh"
-          :disabled="suggestionsRefreshing"
-          @click="refreshSuggestions()"
-        >
-          <i :class="suggestionsRefreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
-          {{ suggestionsRefreshing ? '正在挖掘' : evolution.suggestions.length ? '刷新换一批' : '挖掘任务' }}
-        </button>
-        <button
-          v-if="evolution"
-          class="secondary schedule-toggle"
-          :aria-expanded="evolutionScheduleOpen"
-          aria-controls="evolution-schedule-form"
-          @click="evolutionScheduleOpen = !evolutionScheduleOpen"
-        >
-          <i class="ri-settings-3-line"></i>自动执行设置
-        </button>
-        <button v-else-if="evolutionError" class="secondary" @click="refreshEvolution"><i class="ri-refresh-line"></i>重试</button>
-      </header>
-      <div v-if="evolution" class="evolution-schedule-summary" aria-label="当前自动执行策略">
-        <span>
-          <i class="ri-timer-line"></i>
-          当前策略 <b>每 {{ evolution.intervalHours }} 小时检查 · 每轮最多 {{ evolution.batchSize }} 个任务</b>
-        </span>
-        <span>
-          <i class="ri-calendar-event-line"></i>
-          预计最早触发 <b>{{ evolutionNextTriggerText }}</b>
-        </span>
-        <small>预计时间会随 AI 任务、真实周额度和可用建议动态更新。</small>
-      </div>
-      <form
-        v-if="evolution && evolutionScheduleOpen"
-        id="evolution-schedule-form"
-        class="evolution-schedule"
-        @submit.prevent="saveEvolutionSchedule"
-      >
-        <div>
-          <strong>自动检测与派发频率</strong>
-          <span>从最近一次 AI 任务结束后开始计时；达到条件时按设置数量从真实建议中轮换派发。</span>
-        </div>
-        <label>
-          <span>每隔</span>
-          <input
-            v-model.number="evolutionScheduleDraft.intervalHours"
-            type="number"
-            min="1"
-            max="168"
-            required
-            :disabled="evolutionScheduleSaving"
-            @input="evolutionScheduleSaved = false"
-          >
-          <span>小时检测</span>
-        </label>
-        <label>
-          <span>每次最多触发</span>
-          <select
-            v-model.number="evolutionScheduleDraft.batchSize"
-            :disabled="evolutionScheduleSaving"
-            @change="evolutionScheduleSaved = false"
-          >
-            <option v-for="count in 5" :key="count" :value="count">{{ count }} 个任务</option>
-          </select>
-        </label>
-        <div v-if="evolutionScheduleError" class="schedule-feedback error" role="alert">
-          保存失败：{{ evolutionScheduleError }}。草稿仍在，可直接重试。
-        </div>
-        <div v-else-if="evolutionScheduleSaved" class="schedule-feedback saved">
-          <i class="ri-checkbox-circle-line"></i>已保存
-        </div>
-        <button type="submit" :disabled="evolutionScheduleSaving || !evolutionScheduleDirty">
-          <i :class="evolutionScheduleSaving ? 'ri-loader-4-line spin' : 'ri-save-3-line'"></i>
-          {{ evolutionScheduleSaving ? '保存中…' : '保存设置' }}
-        </button>
-      </form>
-      <div v-if="suggestionsRefreshing" class="suggestion-feedback loading" role="status" aria-live="polite">
-        <i class="ri-loader-4-line spin"></i>
-        <span>正在从真实资料生成新一批建议，当前建议会保留到生成成功。</span>
-      </div>
-      <div v-else-if="suggestionError" class="suggestion-feedback error" role="alert">
-        <i class="ri-error-warning-line"></i>
-        <span>换一批失败：{{ suggestionError }}。原建议已保留。</span>
-        <button :disabled="suggestionsRefreshing" @click="refreshSuggestions(false)">重试</button>
-      </div>
-      <div v-if="evolutionLoading && !evolution" class="suggestion-loading">
-        <i class="ri-loader-4-line spin"></i>正在整理改进建议…
-      </div>
-      <div v-else-if="suggestionsRefreshing && !evolution?.suggestions.length" class="suggestion-loading">
-        <i class="ri-loader-4-line spin"></i>正在从知识库和飞书同步资料中挖掘任务，可能需要几分钟…
-      </div>
-      <div v-else-if="evolution?.suggestions.length" class="suggestion-grid">
-        <article v-for="suggestion in evolution.suggestions" :key="suggestion.id" class="suggestion-card">
-          <span><i :class="suggestion.icon"></i></span>
-          <div>
-            <h3>{{ suggestion.title }}</h3>
-            <p>{{ suggestion.description }}</p>
-            <a v-if="suggestion.sourceUrl" class="suggestion-source" :href="suggestion.sourceUrl">
-              <i class="ri-links-line"></i>{{ suggestion.sourceTitle }}
-            </a>
-          </div>
-          <button
-            :disabled="launchingSuggestionId !== null || !activeWorkflows.length"
-            @click="launchSuggestion(suggestion)"
-          >
-            <i :class="launchingSuggestionId === suggestion.id ? 'ri-loader-4-line spin' : 'ri-play-circle-line'"></i>
-            {{ launchingSuggestionId === suggestion.id ? '正在派发' : '直接执行' }}
-          </button>
-        </article>
-      </div>
-      <div v-else-if="evolution" class="suggestion-empty">
-        <i class="ri-database-2-line"></i>
-        <strong>还没有真实资料建议</strong>
-        <span>系统会读取知识库和已同步的飞书归档，不会用固定模板或演示数据凑数。</span>
-      </div>
-      </section>
-    </div>
-
     <nav id="ai-console" class="console-tabs">
       <button
         v-for="item in VIEWS"
@@ -1135,14 +705,6 @@ onBeforeUnmount(() => {
         <em v-if="item.id === 'runs' && activeRuns.length">{{ activeRuns.length }}</em>
         <em v-else-if="item.id === 'runners' && onlineRunners.length">{{ onlineRunners.length }}</em>
       </button>
-      <span
-        v-if="heroWeeklyQuota"
-        class="console-quota"
-        :class="quotaClass(heroWeeklyQuota.remainingPercent)"
-        :title="`Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}`"
-      >
-        <i class="ri-speed-up-line"></i><span>总剩余</span><b>{{ heroWeeklyQuota.remainingPercent }}%</b>
-      </span>
       <span class="live"><i></i>每 5 秒刷新</span>
     </nav>
 
@@ -1679,7 +1241,6 @@ onBeforeUnmount(() => {
 }
 .home > * { order: 2; }
 .home-primary { order: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.home-recommendations { order: 3; margin-top: 16px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px; }
 .hero {
   min-height: 118px;
   padding: 18px 22px;
@@ -1721,81 +1282,6 @@ onBeforeUnmount(() => {
 .hero-signals b { font-size: 11px; }
 .signal-dot { width: 5px; height: 5px; border-radius: 50%; background: #9bf0c2; box-shadow: 0 0 7px #9bf0c2; }
 .hero-signals .dim .signal-dot { background: #ffffff72; box-shadow: none; }
-.daily-guidance {
-  margin-top: 0;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, #7f63d8 25%, var(--wao-line));
-  border-radius: 15px;
-  background:
-    radial-gradient(circle at 94% 0, rgba(167, 139, 250, .13), transparent 34%),
-    linear-gradient(145deg, color-mix(in srgb, #f6f1ff 72%, var(--wao-bg-card)), var(--wao-bg-card));
-  box-shadow: 0 8px 24px rgba(83, 63, 151, .07);
-}
-.daily-guidance > header { padding: 17px 19px 13px; display: flex; align-items: flex-start; gap: 11px; }
-.guidance-mark { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 12px; background: #ece4ff; color: #7253c4; display: grid; place-items: center; font-size: 20px; }
-.daily-guidance header > div { flex: 1; min-width: 0; }
-.daily-guidance h2 { margin: 4px 0; color: var(--wao-text-1); font-size: 18px; }
-.daily-guidance header p { margin: 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }
-.guidance-refresh, .guidance-state button { padding: 7px 11px; border: 1px solid #ac99df; border-radius: 8px; background: var(--wao-bg-card); color: #684bb4; cursor: pointer; font-size: 11px; white-space: nowrap; }
-.guidance-refresh:disabled { opacity: .58; cursor: wait; }
-.guidance-refresh i, .guidance-state button i { margin-right: 4px; }
-.guidance-state { min-height: 112px; padding: 18px 20px; border-top: 1px solid color-mix(in srgb, #7f63d8 12%, var(--wao-line)); color: #6c58a8; display: flex; align-items: center; justify-content: center; gap: 12px; }
-.guidance-state > i { font-size: 23px; }
-.guidance-state div { display: grid; gap: 4px; }
-.guidance-state b { color: var(--wao-text-2); font-size: 13px; }
-.guidance-state span { color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }
-.guidance-state.error { justify-content: flex-start; color: var(--wao-danger-strong); }
-.guidance-state.error div { flex: 1; }
-.guidance-content { padding: 5px 20px 16px 70px; }
-.guidance-content :deep(.md-body) { color: var(--wao-text-2); font-size: 12px; line-height: 1.72; }
-.guidance-content :deep(.md-body > :first-child) { margin-top: 0; }
-.guidance-content :deep(.md-body > :last-child) { margin-bottom: 0; }
-.guidance-content :deep(.md-body h2), .guidance-content :deep(.md-body h3) { margin: 13px 0 5px; color: #4f397f; font-size: 13px; }
-.guidance-content :deep(.md-body p), .guidance-content :deep(.md-body ul) { margin: 6px 0; }
-.guidance-content :deep(.md-body ul) { padding-left: 19px; }
-.guidance-content > small { margin-top: 14px; padding-top: 9px; border-top: 1px solid color-mix(in srgb, #7f63d8 11%, var(--wao-line)); color: var(--wao-text-weak); font-size: 9.5px; display: block; }
-.guidance-content > small i { margin-right: 5px; color: #7253c4; }
-.guidance-inline-error { margin-top: 10px; padding: 8px 10px; border: 1px solid var(--wao-danger-line); border-radius: 8px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); display: flex; align-items: center; gap: 7px; font-size: 10.5px; }
-.guidance-inline-error span { flex: 1; }
-.guidance-inline-error button { border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 650; }
-.evolution-panel {
-  margin-top: 0;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, #3b8c69 24%, var(--wao-line));
-  border-radius: 15px;
-  background: linear-gradient(145deg, color-mix(in srgb, #e8f7ef 76%, var(--wao-bg-card)), var(--wao-bg-card));
-  box-shadow: 0 8px 24px rgba(38, 113, 81, .06);
-}
-.evolution-panel > header { padding: 16px 18px 12px; display: flex; align-items: flex-start; gap: 11px; }
-.evolution-mark { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px; background: #d9f1e4; color: #267c59; display: grid; place-items: center; font-size: 19px; }
-.evolution-panel header > div { flex: 1; min-width: 0; }.evolution-panel h2 { margin: 4px 0 4px; color: var(--wao-text-1); font-size: 17px; }
-.evolution-policy { width: fit-content; margin: 0 0 5px; padding: 3px 7px; border-radius: 999px; background: #e3f3ea; color: #2a7658; font-size: 9.5px; line-height: 1.4; }.evolution-policy i { margin-right: 4px; }
-.evolution-panel header p { margin: 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }.evolution-panel header p.evolution-error { color: var(--wao-danger-strong); }
-.auto-state { padding: 5px 9px; border-radius: 999px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 10.5px; white-space: nowrap; }
-.auto-state.ready { background: #d9f1e4; color: #267c59; }.auto-state i { margin-right: 4px; }
-.evolution-panel header > button { padding: 6px 9px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
-.evolution-panel header > button:disabled { opacity: .55; cursor: wait; }
-.evolution-schedule-summary { margin: 0 18px 12px; padding: 10px 12px; border-radius: 9px; background: color-mix(in srgb, #e8f5ed 58%, var(--wao-bg-card)); display: flex; align-items: center; flex-wrap: wrap; gap: 7px 18px; color: var(--wao-text-2); font-size: 11px; }
-.evolution-schedule-summary span { display: inline-flex; align-items: center; gap: 5px; }.evolution-schedule-summary i { color: #317b5d; font-size: 14px; }.evolution-schedule-summary b { color: var(--wao-text-1); }.evolution-schedule-summary small { flex-basis: 100%; color: var(--wao-text-weak); }
-.evolution-schedule { margin: 0 18px 14px; padding: 12px; border: 1px solid color-mix(in srgb, #3b8c69 20%, var(--wao-line)); border-radius: 10px; background: color-mix(in srgb, #e8f5ed 42%, var(--wao-bg-card)); display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
-.evolution-schedule > div:first-child { flex: 1 1 240px; align-self: center; }.evolution-schedule > div:first-child strong, .evolution-schedule > div:first-child span { display: block; }.evolution-schedule > div:first-child strong { color: var(--wao-text-1); font-size: 12px; }.evolution-schedule > div:first-child span { margin-top: 3px; color: var(--wao-text-weak); font-size: 10px; line-height: 1.5; }
-.evolution-schedule label { display: flex; align-items: center; gap: 6px; color: var(--wao-text-2); font-size: 11px; white-space: nowrap; }.evolution-schedule input, .evolution-schedule select { height: 32px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-1); padding: 0 8px; }.evolution-schedule input { width: 64px; }.evolution-schedule select { min-width: 94px; }
-.evolution-schedule > button { height: 32px; border: 0; border-radius: 7px; background: #317b5d; color: #fff; padding: 0 11px; cursor: pointer; }.evolution-schedule > button:disabled { opacity: .55; cursor: default; }.schedule-feedback { flex-basis: 100%; color: var(--wao-text-weak); font-size: 10px; }.schedule-feedback.error { color: var(--wao-danger-strong); }.schedule-feedback.saved { color: #267c59; }.schedule-feedback i { margin-right: 4px; }
-.suggestion-loading { min-height: 92px; padding: 22px; display: grid; place-content: center; gap: 7px; color: var(--wao-text-weak); font-size: 11px; }
-.suggestion-grid { padding: 0 12px 13px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.suggestion-card { min-width: 0; padding: 12px; border: 1px solid color-mix(in srgb, #3b8c69 14%, var(--wao-line)); border-radius: 11px; background: color-mix(in srgb, var(--wao-bg-card) 92%, transparent); display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 9px; }
-.suggestion-card > span { width: 32px; height: 32px; border-radius: 9px; background: #e3f3ea; color: #2a7658; display: grid; place-items: center; }
-.suggestion-card h3 { margin: 0; color: var(--wao-text-1); font-size: 12px; }.suggestion-card p { margin: 3px 0 0; color: var(--wao-text-weak); font-size: 10px; line-height: 1.45; }
-.suggestion-source { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; margin-top: 6px; color: var(--wao-primary); font-size: 9.5px; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.suggestion-card button { height: 30px; padding: 0 9px; border: 1px solid #4a9274; border-radius: 8px; background: #fff; color: #2a7658; cursor: pointer; font-size: 10.5px; white-space: nowrap; }.suggestion-card button i { margin-right: 4px; }.suggestion-card button:disabled { opacity: .5; cursor: not-allowed; }
-.suggestion-empty { min-height: 112px; padding: 20px; display: grid; place-items: center; align-content: center; gap: 5px; color: var(--wao-text-weak); text-align: center; font-size: 10.5px; }.suggestion-empty > i { font-size: 21px; color: #4a9274; }.suggestion-empty strong { color: var(--wao-text-2); font-size: 12px; }
-.suggestion-feedback { margin: 0 12px 12px; padding: 9px 10px; border: 1px solid; border-radius: 8px; display: flex; align-items: center; gap: 7px; font-size: 10.5px; }
-.suggestion-feedback span { flex: 1; }
-.suggestion-feedback.loading { border-color: color-mix(in srgb, #3b8c69 32%, var(--wao-line)); background: color-mix(in srgb, #e8f7ef 72%, var(--wao-bg-card)); color: #267c59; }
-.suggestion-feedback.error { border-color: var(--wao-danger-line); background: var(--wao-danger-bg); color: var(--wao-danger-strong); }
-.suggestion-feedback button { border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 650; }
-.evolution-panel > footer { padding: 9px 18px; border-top: 1px solid color-mix(in srgb, #3b8c69 13%, var(--wao-line)); display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--wao-text-weak); font-size: 9.5px; }
-.evolution-panel > footer span { padding: 3px 7px; border-radius: 999px; background: #dff2e7; color: #326c56; }.evolution-panel > footer small { margin-left: auto; }
 .goal-launcher {
   margin-top: 0;
   padding: 19px 20px;
@@ -1810,7 +1296,6 @@ onBeforeUnmount(() => {
 }
 .home-primary .goal-launcher { grid-template-columns: minmax(0, 1fr); }
 .home-primary .goal-actions { flex-wrap: wrap; }
-.home-recommendations .suggestion-grid { grid-template-columns: minmax(0, 1fr); }
 .goal-heading { min-width: 0; display: flex; align-items: flex-start; gap: 12px; }
 .goal-icon { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px; background: #eef1ff; color: #4358d6; display: grid; place-items: center; font-size: 19px; }
 .eyebrow.dark { color: #7d85a6; opacity: 1; }
@@ -1855,12 +1340,6 @@ onBeforeUnmount(() => {
 .console-tabs button:hover { background: var(--wao-bg-hover); }
 .console-tabs button.on { background: #eef1ff; color: var(--wao-primary-text); font-weight: 650; }
 .console-tabs em { padding: 1px 6px; border-radius: 20px; background: #e3e7f6; color: #4358d6; font-size: 10px; font-style: normal; }
-.console-quota { min-height: 32px; padding: 0 10px; border-radius: 9px; display: inline-flex; align-items: center; gap: 6px; color: var(--wao-text-2); font-size: 11px; white-space: nowrap; }
-.console-quota i { font-size: 14px; }
-.console-quota b { font-size: 12px; }
-.console-quota.good { background: #e9f7ef; color: #24714d; }
-.console-quota.warn { background: #fff6dc; color: #876714; }
-.console-quota.danger { background: #fff0f0; color: #a33c3c; }
 .console-tabs .live { margin-left: auto; padding-right: 8px; }
 .section-title { margin-right: 4px; font-size: 12px; font-weight: 650; color: var(--wao-text-2); }
 .online-dot { width: 7px; height: 7px; border-radius: 50%; background: #31a56a; box-shadow: 0 0 0 3px #dff5e9; }
@@ -2232,15 +1711,9 @@ onBeforeUnmount(() => {
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
   .home { padding: 16px; }
-  .home-primary, .home-recommendations { grid-template-columns: minmax(0, 1fr); }
+  .home-primary { grid-template-columns: minmax(0, 1fr); }
   .hero { padding: 22px; }
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
-  .daily-guidance > header { flex-wrap: wrap; }
-  .guidance-refresh { margin-left: 51px; }
-  .guidance-content { padding-left: 19px; }
-  .guidance-state { align-items: flex-start; flex-wrap: wrap; }
-  .guidance-state button { margin-left: 35px; }
-  .evolution-panel > header { flex-wrap: wrap; }.auto-state { margin-left: 49px; }.suggestion-grid { grid-template-columns: 1fr; }.suggestion-card { grid-template-columns: 32px minmax(0, 1fr); }.suggestion-card button { grid-column: 2; justify-self: start; }.evolution-panel > footer small { width: 100%; margin-left: 0; }
   .goal-launcher { grid-template-columns: 1fr; padding: 17px; gap: 14px; }
   .goal-actions { flex-wrap: wrap; padding-left: 9px; }
   .goal-actions label { width: 100%; }
@@ -2248,7 +1721,6 @@ onBeforeUnmount(() => {
   .goal-shortcut { margin-left: 0; }
   .goal-submit { margin-left: auto; }
   .console-tabs { overflow-x: auto; }
-  .console-quota span { display: none; }
   .recent-grid { grid-template-columns: 1fr; }
   .section-head { align-items: center; }
   .history-grid { grid-template-columns: 1fr; }
