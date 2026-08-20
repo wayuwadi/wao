@@ -257,7 +257,23 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.text()).not.toContain('给此刻的你')
     expect(wrapper.text()).not.toContain('让剩余额度持续完善 WAO')
     expect(fetchAiEvolution).toHaveBeenCalled()
-    expect(wrapper.find('.console-quota').text()).toContain('总剩余38%')
+    expect(wrapper.find('.hero .weekly-quota').text()).toContain('Codex 周剩余额度')
+    expect(wrapper.find('.hero .weekly-quota').text()).toContain('38%')
+    expect(wrapper.find('.console-quota').exists()).toBe(false)
+    expect(wrapper.find('.capacity-orbit').exists()).toBe(true)
+    expect(wrapper.find('.hero-link').text()).toContain('查看 AI 详情')
+    wrapper.unmount()
+  })
+
+  it('从理念卡片进入 AI 详情仪表盘', async () => {
+    vi.useFakeTimers()
+    const { router, wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.hero-link').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/dashboard')
     wrapper.unmount()
   })
 
