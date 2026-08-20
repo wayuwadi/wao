@@ -126,7 +126,8 @@ vi.mock('@/api/ai', () => ({
       credits: { hasCredits: false, unlimited: false, balance: '0' },
       limits: [
         { id: 'codex', label: '通用使用限额', windows: [{
-          usedPercent: 62, windowDurationMinutes: 10080, resetsAt: 1787201290,
+          usedPercent: 62, windowDurationMinutes: 10080,
+          resetsAt: Math.floor(Date.now() / 1000) + 3_600,
         }] },
         { id: 'codex_bengalfox', label: 'GPT-5.3-Codex-Spark', windows: [{
           usedPercent: 0, windowDurationMinutes: 10080, resetsAt: 1787629119,
@@ -249,6 +250,7 @@ describe('HomeView AI 控制台', () => {
   afterEach(() => {
     vi.useRealTimers()
     sessionStorage.clear()
+    localStorage.clear()
   })
 
   it('首屏不再展示已要求删除的 AI 说明段落', async () => {
@@ -375,23 +377,15 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
-  it('首页展示真实 Codex 本轮和周剩余额度并可一键派发改进建议', async () => {
+  it('把真实 Codex 周剩余额度收口到 AI 页签并可一键派发改进建议', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
 
     expect(fetchAiEvolution).toHaveBeenCalled()
-    expect(wrapper.find('.session-quota').text()).toContain('Codex 本轮剩余额度')
-    expect(wrapper.find('.session-quota').text()).toContain('88%')
-    expect(wrapper.find('.session-quota').text()).toContain('5 小时周期')
-    expect(wrapper.find('.weekly-quota').text()).toContain('周剩余额度')
-    expect(wrapper.find('.weekly-quota').text()).toContain('38%')
-    expect(wrapper.find('.codex-usage-panel').text()).toContain('wage@example.com')
-    expect(wrapper.find('.codex-usage-panel').text()).toContain('Pro 套餐')
-    expect(wrapper.find('.codex-usage-panel').text()).toContain('点数余额0')
-    expect(wrapper.find('.codex-usage-panel').text()).toContain('GPT-5.3-Codex-Spark')
-    expect(wrapper.find('.codex-usage-panel').text()).toContain('100%')
-    expect(wrapper.find('.codex-usage-panel').text()).toContain('2 台电脑同账号')
+    expect(wrapper.find('.console-quota').text()).toContain('总剩余38%')
+    expect(wrapper.find('.codex-usage-panel').exists()).toBe(false)
+    expect(wrapper.find('.hero-signals').text()).toContain('1')
     expect(wrapper.find('.evolution-panel').text()).toContain('已满足 12 小时空闲')
     expect(wrapper.find('.evolution-policy').text()).toContain('建议挖掘和自动派发只选择用户可感知的功能与提效改进')
     expect(wrapper.find('.suggestion-card').text()).toContain('找出并消除一个高频使用阻力')
@@ -478,14 +472,19 @@ describe('HomeView AI 控制台', () => {
 
     const emptyResult = mountHome()
     await flushPromises()
-    expect(emptyResult.wrapper.find('.weekly-quota').exists()).toBe(false)
-    expect(emptyResult.wrapper.find('.session-quota').exists()).toBe(false)
-    expect(emptyResult.wrapper.find('.capacity').exists()).toBe(true)
-    expect(emptyResult.wrapper.find('.hero-metrics').classes()).toContain('single')
+    expect(emptyResult.wrapper.find('.console-quota').exists()).toBe(false)
+    expect(emptyResult.wrapper.find('.hero-signals').exists()).toBe(true)
     emptyResult.wrapper.unmount()
 
     vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
       ...unavailableOverview,
+      codexQuotas: [{
+        key: 'stale@example.com', accountEmail: 'stale@example.com', plan: 'pro', credits: null,
+        limits: [{ id: 'codex', label: '通用使用限额', windows: [{
+          usedPercent: 35, windowDurationMinutes: 10080, resetsAt: 1787201290,
+        }] }],
+        runnerNames: ['离线电脑'], lastSyncedAt: '2026-08-01T10:00:00', fresh: false,
+      }],
       sessionQuotas: [{
         accountId: 'aa-codex', provider: 'codex', label: 'Codex 旧快照', plan: 'plus',
         usedPercent: 45, remainingPercent: 55, resetsAt: '2026-08-14T15:00:00',
@@ -499,17 +498,93 @@ describe('HomeView AI 控制台', () => {
     })
     const staleResult = mountHome()
     await flushPromises()
-    expect(staleResult.wrapper.find('.weekly-quota').exists()).toBe(false)
-    expect(staleResult.wrapper.find('.session-quota').exists()).toBe(false)
-    expect(staleResult.wrapper.find('.evolution-panel footer').exists()).toBe(false)
+    expect(staleResult.wrapper.find('.console-quota').exists()).toBe(false)
     staleResult.wrapper.unmount()
+
+    vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
+      ...unavailableOverview,
+      weeklyQuotas: [{
+        accountId: 'aa-claude', provider: 'claude', label: 'Claude 主账号', plan: 'max',
+        usedPercent: 10, remainingPercent: 90, resetsAt: '2026-08-17T10:00:00',
+        lastSyncedAt: '2026-08-13T10:00:00', status: 'SYNCED', message: null,
+      }],
+    })
+    const otherProviderResult = mountHome()
+    await flushPromises()
+    expect(otherProviderResult.wrapper.find('.console-quota').exists()).toBe(false)
+    otherProviderResult.wrapper.unmount()
 
     vi.mocked(fetchAiEvolution).mockRejectedValueOnce(new Error('额度接口暂时不可用'))
     const failedResult = mountHome()
     await flushPromises()
-    expect(failedResult.wrapper.find('.weekly-quota').exists()).toBe(false)
-    expect(failedResult.wrapper.find('.capacity').exists()).toBe(true)
+    expect(failedResult.wrapper.find('.console-quota').exists()).toBe(false)
+    expect(failedResult.wrapper.find('.hero-signals').exists()).toBe(true)
     failedResult.wrapper.unmount()
+  })
+
+  it('OAuth 周额度只在最近同步且重置窗口尚未过期时展示', async () => {
+    vi.useFakeTimers()
+    const now = Date.now()
+    const overview: AiEvolutionOverview = {
+      codexQuotas: [],
+      sessionQuotas: [],
+      weeklyQuotas: [],
+      suggestions: [],
+      autoStatus: 'ready',
+      autoMessage: '真实额度已同步',
+      lastActivityAt: null,
+      nextEligibleAt: null,
+      nextTriggerAt: null,
+      lastCheckedAt: null,
+      lastRunId: null,
+      intervalHours: 12,
+      batchSize: 1,
+    }
+    const quota = {
+      accountId: 'aa-codex',
+      provider: 'codex' as const,
+      label: 'Codex 主账号',
+      plan: 'plus',
+      usedPercent: 28,
+      remainingPercent: 72,
+      resetsAt: new Date(now + 3_600_000).toISOString(),
+      lastSyncedAt: new Date(now).toISOString(),
+      status: 'SYNCED',
+      message: null,
+    }
+
+    vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
+      ...overview,
+      weeklyQuotas: [{ ...quota, resetsAt: new Date(now - 1_000).toISOString() }],
+    })
+    const expired = mountHome()
+    await flushPromises()
+    expect(expired.wrapper.find('.console-quota').exists()).toBe(false)
+    expired.wrapper.unmount()
+
+    vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
+      ...overview,
+      weeklyQuotas: [{ ...quota, lastSyncedAt: new Date(now - 46 * 60_000).toISOString() }],
+    })
+    const stale = mountHome()
+    await flushPromises()
+    expect(stale.wrapper.find('.console-quota').exists()).toBe(false)
+    stale.wrapper.unmount()
+
+    vi.mocked(fetchAiEvolution).mockResolvedValueOnce({ ...overview, weeklyQuotas: [quota] })
+    const fresh = mountHome()
+    await flushPromises()
+    expect(fresh.wrapper.find('.console-quota').text()).toContain('总剩余72%')
+    fresh.wrapper.unmount()
+
+    vi.mocked(fetchAiEvolution).mockResolvedValueOnce({
+      ...overview,
+      weeklyQuotas: [{ ...quota, resetsAt: null }],
+    })
+    const withoutReset = mountHome()
+    await flushPromises()
+    expect(withoutReset.wrapper.find('.console-quota').text()).toContain('总剩余72%')
+    withoutReset.wrapper.unmount()
   })
 
   it('不足五条时仍用可靠的新建议换批并展示可追溯来源', async () => {
@@ -611,6 +686,29 @@ describe('HomeView AI 控制台', () => {
     expect(editor.props('modelValue')).toBe('')
     expect(wrapper.findAll('.run-card').some((card) => card.text().includes('把黄帝内经和易经结合 AI'))).toBe(true)
     wrapper.unmount()
+  })
+
+  it('离开首页后恢复未派发目标草稿，派发成功才清理', async () => {
+    vi.useFakeTimers()
+    const first = mountHome()
+    await flushPromises()
+    const firstEditor = first.wrapper.findComponent(MarkdownEditor)
+    firstEditor.vm.$emit('update:modelValue', '切换页面后也不能丢掉这条目标')
+    await flushPromises()
+
+    expect(localStorage.getItem('wao-home-goal-draft-v1:wg')).toBe('切换页面后也不能丢掉这条目标')
+    expect(first.wrapper.find('.goal-shortcut').text()).toContain('草稿已保存在本机')
+    first.wrapper.unmount()
+
+    const second = mountHome()
+    await flushPromises()
+    const restoredEditor = second.wrapper.findComponent(MarkdownEditor)
+    expect(restoredEditor.props('modelValue')).toBe('切换页面后也不能丢掉这条目标')
+
+    await second.wrapper.find('.goal-submit').trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('wao-home-goal-draft-v1:wg')).toBeNull()
+    second.wrapper.unmount()
   })
 
   it('自主目标可以改选另一台兼容电脑并允许离线排队', async () => {

@@ -109,7 +109,7 @@ describe('新建任务的所属项目', () => {
     wrapper.unmount()
   })
 
-  it('新建时可写下首轮计划并创建真实 PDCA 轮次', async () => {
+  it('新建任务不再提供 PDCA 入口，普通任务仍可正常创建', async () => {
     const data = useDataStore()
     const before = data.tasks.length
     const wrapper = mount(NewTaskModal, {
@@ -117,14 +117,13 @@ describe('新建任务的所属项目', () => {
     })
 
     await wrapper.find('.title-input').setValue('连续一周早睡')
-    await wrapper.find('.pdca-toggle').trigger('click')
-    await wrapper.find('.pdca-plan textarea').setValue('至少五天在 23:30 前入睡')
+    expect(wrapper.find('.pdca-toggle').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('使用 PDCA 跟踪')
     await wrapper.find('.foot .btn-primary').trigger('click')
 
     expect(data.tasks).toHaveLength(before + 1)
-    expect(data.tasks[0]!.pdcaCycles).toHaveLength(1)
-    expect(data.tasks[0]!.pdcaCycles![0]!.plan).toBe('至少五天在 23:30 前入睡')
-    expect(data.tasks[0]!.pdcaCycles![0]!.reviewedAt).toBeNull()
+    expect(data.tasks[0]!.pdcaCycles).toEqual([])
+    expect(data.tasks[0]!.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     wrapper.unmount()
   })
 })

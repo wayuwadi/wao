@@ -44,7 +44,7 @@ public class DocTemplateController {
 
     @PatchMapping("/{id}")
     public ApiResponse<DocTemplateDto> patch(@PathVariable String id,
-            @RequestBody PatchDocTemplateRequest request, HttpServletRequest http) {
+            @Valid @RequestBody PatchDocTemplateRequest request, HttpServletRequest http) {
         return ApiResponse.ok(knowledge.updateTemplate(id, request, currentMember.id(http)));
     }
 

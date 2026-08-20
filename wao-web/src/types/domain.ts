@@ -170,6 +170,8 @@ export interface Task {
   owner: string
   /** 创建人由服务端根据当前会话写入；历史任务没有可靠来源时为空。 */
   createdBy?: string | null
+  /** 任务真实创建时间；极早期没有可靠来源的历史任务可能为空。 */
+  createdAt?: string | null
   /** 完成时间由服务端在状态进入「已完成」时写入，重新打开时清空。 */
   completedAt?: string | null
   /** 所属任务分组 id（项目分组视图）；未归组时为空，视为落在第一个分组。 */
@@ -334,6 +336,8 @@ export interface FileItem {
   size: string
   icon: string
   time: string
+  /** 真实创建时间；time 只用于面向人的本地化展示。 */
+  createdAt?: string | null
   by: string
   link: string
 }

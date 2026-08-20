@@ -6,10 +6,11 @@ import SettingsView from '@/views/SettingsView.vue'
 import { useDataStore } from '@/stores/data'
 
 vi.mock('@/api/system', () => ({
-  fetchWebhookConfig: vi.fn<() => Promise<Record<string, unknown>>>()
-    .mockResolvedValue({ urlSet: true, urlMask: 'http••••••hook', enabled: true }),
-  saveWebhookConfig: vi.fn<() => Promise<Record<string, unknown>>>(),
-  testWebhook: vi.fn<() => Promise<void>>(),
+  fetchWebhookEndpoints: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
+  createWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
+  updateWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
+  deleteWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
+  testWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
 }))
 
 const router = createRouter({
@@ -17,11 +18,11 @@ const router = createRouter({
   routes: [{ path: '/:p(.*)*', component: { template: '<div/>' } }],
 })
 
-/** 打开「通知 · 飞书 Webhook」页签，那里放着按项目的通知开关。 */
+/** 打开「Webhook配置」页签，那里放着按项目的通知开关。 */
 async function mountWebhookTab() {
   const w = mount(SettingsView, { global: { plugins: [router] } })
   await flushPromises()
-  const entry = w.findAll('.nav-item, .s-nav-item, button').find((b) => b.text().includes('通知 · 飞书'))
+  const entry = w.findAll('.snav-item').find((button) => button.text() === 'Webhook配置')
   await entry!.trigger('click')
   await flushPromises()
   return w

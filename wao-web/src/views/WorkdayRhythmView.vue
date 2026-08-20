@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  fetchWorkdayRhythmHistory,
   fetchWorkdayRhythm,
   fetchWorkdayRhythmDay,
   saveWorkdayRhythm,
   saveWorkdayRhythmDay,
   sendEnergyNotification,
   type WorkdayRhythmEnergyAction,
+  type WorkdayRhythmHistory,
+  type WorkdayRhythmHistoryDay,
 } from '@/api/workdayRhythm'
 import { fetchFeishuChats, type FeishuChat } from '@/api/system'
 import { toast } from '@/composables/toast'
@@ -44,6 +47,11 @@ const energyNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle
 const pendingEnergyNotification = ref<{ action: WorkdayRhythmEnergyAction; date: string } | null>(
   null,
 )
+const historyOpen = ref(false)
+const historyMonth = ref(clock.value.date.slice(0, 7))
+const historyLoading = ref(false)
+const historyError = ref('')
+const history = ref<WorkdayRhythmHistory | null>(null)
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
 const dayDraftKey = computed(() => `wao-workday-rhythm-day-draft-${clock.value.date}`)
@@ -132,6 +140,12 @@ function markDayDirty() {
 async function persistDay(successMessage = ''): Promise<boolean> {
   if (dayState.value === 'saving') return false
   dayState.value = 'saving'
+  day.value.energySnapshot = {
+    ...day.value.energySnapshot,
+    ...Object.fromEntries(
+      config.value.energyItems.map((item) => [item.id, { title: item.title, mode: item.mode }]),
+    ),
+  }
   localStorage.setItem(dayDraftKey.value, JSON.stringify(day.value))
   try {
     await saveWorkdayRhythmDay(day.value)
@@ -242,6 +256,52 @@ function openEditor() {
   if (editorDraft.value.energyNotification.enabled) void loadNotificationChats()
 }
 
+function monthRange(month: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(month)
+  if (!match) return null
+  const year = Number(match[1])
+  const monthNumber = Number(match[2])
+  if (year < 2000 || year > 2100 || monthNumber < 1 || monthNumber > 12) return null
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()
+  return {
+    from: `${match[1]}-${match[2]}-01`,
+    to: `${match[1]}-${match[2]}-${String(lastDay).padStart(2, '0')}`,
+  }
+}
+
+async function loadHistory() {
+  const range = monthRange(historyMonth.value)
+  if (!range || historyLoading.value) return
+  historyLoading.value = true
+  historyError.value = ''
+  history.value = null
+  try {
+    history.value = await fetchWorkdayRhythmHistory(range.from, range.to)
+  } catch (error) {
+    historyError.value = error instanceof Error ? error.message : '历史记录读取失败，请稍后重试'
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function openHistory() {
+  historyMonth.value = clock.value.date.slice(0, 7)
+  historyOpen.value = true
+  void loadHistory()
+}
+
+function historyDateLabel(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return value
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+  const weekday = ['日', '一', '二', '三', '四', '五', '六'][date.getUTCDay()]
+  return `${Number(match[2])} 月 ${Number(match[3])} 日 · 星期${weekday}`
+}
+
+function energyResult(item: WorkdayRhythmHistoryDay['energyItems'][number]) {
+  return item.mode === 'DAILY_ONCE' ? (item.count > 0 ? '已完成' : '未执行') : `${item.count} 次`
+}
+
 async function loadNotificationChats() {
   if (notificationChatsLoading.value) return
   notificationChatsLoading.value = true
@@ -309,9 +369,12 @@ async function submitEditor() {
     day.value.completed = day.value.completed.filter((id) =>
       config.value.blocks.some((block) => block.id === id),
     )
-    day.value.energyRecords = Object.fromEntries(
-      config.value.energyItems.map((item) => [item.id, day.value.energyRecords[item.id] ?? 0]),
-    )
+    day.value.energyRecords = {
+      ...day.value.energyRecords,
+      ...Object.fromEntries(
+        config.value.energyItems.map((item) => [item.id, day.value.energyRecords[item.id] ?? 0]),
+      ),
+    }
     syncLegacyEnergyFields()
     localStorage.removeItem(CONFIG_DRAFT_KEY)
     const pendingAction = pendingEnergyNotification.value?.action
@@ -379,9 +442,14 @@ onBeforeUnmount(() => {
         <h1>今日节奏</h1>
         <p>守住精力边界，把每一段时间用在它真正该做的事上。</p>
       </div>
-      <button class="settings-button" type="button" @click="openEditor">
-        <i class="ri-settings-4-line"></i>调整节奏
-      </button>
+      <div class="head-actions">
+        <button class="history-button" type="button" @click="openHistory">
+          <i class="ri-history-line"></i>历史记录
+        </button>
+        <button class="settings-button" type="button" @click="openEditor">
+          <i class="ri-settings-4-line"></i>调整节奏
+        </button>
+      </div>
     </header>
 
     <div v-if="loading" class="state-card">
@@ -758,6 +826,96 @@ onBeforeUnmount(() => {
         </footer>
       </section>
     </template>
+
+    <template v-if="historyOpen">
+      <div class="mask" @click="historyOpen = false"></div>
+      <section
+        class="history-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rhythm-history-title"
+      >
+        <header>
+          <div>
+            <small>HISTORY · 真实保存记录</small>
+            <h2 id="rhythm-history-title">今日节奏历史</h2>
+            <p>按天回顾每日目标和各精力补给项目的执行次数。</p>
+          </div>
+          <button type="button" aria-label="关闭历史记录" @click="historyOpen = false">
+            <i class="ri-close-line"></i>
+          </button>
+        </header>
+        <div class="history-toolbar">
+          <label>
+            <span>查看月份</span>
+            <input
+              v-model="historyMonth"
+              type="month"
+              min="2000-01"
+              max="2100-12"
+              :disabled="historyLoading"
+              @change="loadHistory"
+            />
+          </label>
+          <button type="button" :disabled="historyLoading" @click="loadHistory">
+            <i :class="historyLoading ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>刷新
+          </button>
+        </div>
+        <div v-if="historyLoading && !history" class="history-state">
+          <i class="ri-loader-4-line spin"></i>正在读取你的真实历史记录…
+        </div>
+        <div v-else-if="historyError" class="history-state error" role="alert">
+          <i class="ri-error-warning-line"></i><span>{{ historyError }}</span>
+          <button type="button" @click="loadHistory">重试</button>
+        </div>
+        <div
+          v-else-if="!history?.items.length"
+          class="history-state empty"
+          :class="{ corrupt: history?.skippedCount }"
+        >
+          <template v-if="history?.skippedCount">
+            <i class="ri-error-warning-line"></i>
+            <b>{{ history.skippedCount }} 条已保存记录暂时无法读取</b>
+            <span>损坏记录没有被伪装成空白日期；请保留数据并联系维护人员处理。</span>
+          </template>
+          <template v-else>
+            <i class="ri-calendar-check-line"></i>
+            <b>这个月还没有已保存记录</b>
+            <span>完成一次打卡、补给记录或保存每日目标后，这里会出现真实历史。</span>
+          </template>
+        </div>
+        <div v-else class="history-list">
+          <p v-if="history.skippedCount" class="history-warning">
+            <i class="ri-error-warning-line"></i>{{ history.skippedCount }} 条损坏记录未展示，未用空数据替代。
+          </p>
+          <article v-for="record in history.items" :key="record.date" class="history-day">
+            <header>
+              <div>
+                <b>{{ historyDateLabel(record.date) }}</b><small>{{ record.date }}</small>
+              </div>
+              <span :class="{ resting: !record.workdayActive }">
+                {{ record.workdayActive ? '工作日节奏' : '休息日' }}
+              </span>
+            </header>
+            <section>
+              <h3><i class="ri-focus-3-line"></i>每日目标</h3>
+              <ol v-if="record.focus.length">
+                <li v-for="(item, index) in record.focus" :key="`${index}-${item}`">{{ item }}</li>
+              </ol>
+              <p v-else>当天没有填写目标</p>
+            </section>
+            <section>
+              <h3><i class="ri-battery-charge-line"></i>项目执行</h3>
+              <div class="history-energy-grid">
+                <div v-for="item in record.energyItems" :key="item.id" :title="item.id">
+                  <span>{{ item.title }}</span><b>{{ energyResult(item) }}</b>
+                </div>
+              </div>
+            </section>
+          </article>
+        </div>
+      </section>
+    </template>
   </main>
 </template>
 
@@ -798,7 +956,13 @@ input,
 textarea {
   font: inherit;
 }
-.settings-button {
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-button,
+.history-button {
   height: 36px;
   border: 1px solid var(--wao-line-control);
   border-radius: 9px;
@@ -809,6 +973,11 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.history-button {
+  border-color: #b9d8cc;
+  background: #f1f8f5;
+  color: #267c65;
 }
 .state-card {
   margin-top: 20px;
@@ -1348,6 +1517,101 @@ textarea {
   z-index: 100;
   background: rgba(18, 29, 26, 0.44);
 }
+.history-dialog {
+  position: fixed;
+  z-index: 101;
+  top: 4vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 28px));
+  max-height: 92vh;
+  border-radius: 17px;
+  background: var(--wao-bg-card);
+  box-shadow: var(--wao-shadow-modal);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.history-dialog > header {
+  min-height: 82px;
+  padding: 15px 19px;
+  border-bottom: 1px solid var(--wao-divider);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.history-dialog > header > div { min-width: 0; flex: 1; }
+.history-dialog > header small { color: #267c65; font-size: 9px; font-weight: 750; letter-spacing: 1.5px; }
+.history-dialog > header h2 { margin: 3px 0 2px; font-size: 18px; }
+.history-dialog > header p { margin: 0; color: var(--wao-text-weak); font-size: 10.5px; }
+.history-dialog > header button {
+  width: 31px;
+  height: 31px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.history-toolbar {
+  padding: 10px 19px;
+  border-bottom: 1px solid var(--wao-divider);
+  background: var(--wao-bg-page);
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.history-toolbar label { flex: 1; display: grid; gap: 4px; }
+.history-toolbar label span { color: var(--wao-text-faint); font-size: 9px; }
+.history-toolbar input,
+.history-toolbar button,
+.history-state button {
+  height: 34px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  padding: 0 10px;
+}
+.history-toolbar button,
+.history-state button { cursor: pointer; }
+.history-toolbar button:disabled { opacity: .55; cursor: wait; }
+.history-state {
+  min-height: 260px;
+  padding: 24px;
+  color: var(--wao-text-weak);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.history-state.error { color: #9b4141; }
+.history-state.empty { flex-direction: column; text-align: center; }
+.history-state.empty > i { color: #6cad95; font-size: 28px; }
+.history-state.empty.corrupt > i { color: #a66b22; }
+.history-state.empty b { color: var(--wao-text-2); font-size: 13px; }
+.history-list { padding: 12px 19px 20px; overflow-y: auto; }
+.history-warning { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: #fff5e7; color: #876714; font-size: 10px; }
+.history-warning i { margin-right: 5px; }
+.history-day { border: 1px solid var(--wao-line); border-radius: 13px; background: var(--wao-bg-card); overflow: hidden; }
+.history-day + .history-day { margin-top: 10px; }
+.history-day > header { padding: 11px 13px; border-bottom: 1px solid var(--wao-divider); background: #f4f8f6; display: flex; align-items: center; gap: 10px; }
+.history-day > header > div { flex: 1; display: grid; gap: 2px; }
+.history-day > header b { font-size: 12px; }
+.history-day > header small { color: var(--wao-text-faint); font-size: 8.5px; }
+.history-day > header > span { padding: 3px 7px; border-radius: 999px; background: #dceee6; color: #267c65; font-size: 9px; }
+.history-day > header > span.resting { background: #e8ecef; color: #65737b; }
+.history-day > section { padding: 10px 13px; }
+.history-day > section + section { border-top: 1px solid var(--wao-divider); }
+.history-day h3 { margin: 0 0 7px; color: var(--wao-text-2); font-size: 10.5px; }
+.history-day h3 i { margin-right: 5px; color: #3f8b71; }
+.history-day ol { margin: 0; padding-left: 20px; color: var(--wao-text-2); font-size: 10.5px; line-height: 1.65; }
+.history-day section > p { margin: 0; color: var(--wao-text-faint); font-size: 10px; }
+.history-energy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 7px; }
+.history-energy-grid > div { min-width: 0; padding: 8px 9px; border-radius: 8px; background: var(--wao-bg-page); display: flex; align-items: center; gap: 8px; }
+.history-energy-grid span { min-width: 0; flex: 1; overflow: hidden; color: var(--wao-text-weak); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.history-energy-grid b { color: #267c65; font-size: 11px; white-space: nowrap; }
 .editor {
   position: fixed;
   z-index: 101;
@@ -1727,9 +1991,12 @@ textarea {
   .page-head p {
     display: none;
   }
-  .settings-button {
+  .settings-button,
+  .history-button {
     padding: 0 10px;
   }
+  .history-button { width: 36px; padding: 0; font-size: 0; }
+  .history-button i { font-size: 15px; }
   .hero {
     min-height: 0;
     padding: 22px 18px;
@@ -1770,6 +2037,14 @@ textarea {
     width: calc(100vw - 20px);
     max-height: calc(100dvh - 20px);
   }
+  .history-dialog {
+    top: 10px;
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+  .history-dialog > header p { display: none; }
+  .history-list { padding: 10px; }
+  .history-energy-grid { grid-template-columns: 1fr; }
   .editor-body {
     padding: 12px;
   }

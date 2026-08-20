@@ -80,7 +80,7 @@ describe('工作日节奏规则', () => {
     expect(rhythmConfigError(configured)).toBe('')
   })
 
-  it('每日记录只恢复当天且仍属于模板的真实条目', () => {
+  it('每日记录只恢复当天并保留已移除项目的历史快照', () => {
     const ids = DEFAULT_WORKDAY_RHYTHM.blocks.map((block) => block.id)
     const restored = parseRhythmDay(
       JSON.stringify({
@@ -90,6 +90,10 @@ describe('工作日节奏规则', () => {
         completed: ['morning', 'unknown', 'morning'],
         waterCount: 120,
         meditated: true,
+        energySnapshot: {
+          WATER: { title: '当天饮水', mode: 'COUNT' },
+          REMOVED: { title: '已删除项目', mode: 'DAILY_ONCE' },
+        },
         focus: ['重点一', '重点二', '重点三', '多余'],
       }),
       '2026-08-17',
@@ -99,13 +103,17 @@ describe('工作日节奏规则', () => {
     expect(restored.completed).toEqual(['morning'])
     expect(restored.waterCount).toBe(99)
     expect(restored.energyRecords).toEqual({ WATER: 99, MEDITATION: 1 })
+    expect(restored.energySnapshot).toEqual({
+      WATER: { title: '当天饮水', mode: 'COUNT' },
+      REMOVED: { title: '已删除项目', mode: 'DAILY_ONCE' },
+    })
     expect(restored.focus).toEqual(['重点一', '重点二', '重点三'])
     expect(
       parseRhythmDay(JSON.stringify({ ...restored, date: '2026-08-16' }), '2026-08-17', 1, ids),
     ).toEqual(defaultRhythmDay('2026-08-17', 1))
   })
 
-  it('只恢复配置中仍存在的自定义补给记录', () => {
+  it('配置删除项目后仍恢复该项目已经落库的真实次数', () => {
     const restored = parseRhythmDay(
       JSON.stringify({
         version: 1,
@@ -120,7 +128,7 @@ describe('工作日节奏规则', () => {
       [],
       ['WALK'],
     )
-    expect(restored.energyRecords).toEqual({ WALK: 3 })
+    expect(restored.energyRecords).toEqual({ WALK: 3, REMOVED: 8 })
   })
 
   it('保留尚未填完的设置草稿，正式读取时仍拒绝无效配置', () => {

@@ -3,6 +3,22 @@ info:
   title: WAO 今日节奏 API
   version: 0.1.0
 paths:
+  /api/workday-rhythm/history:
+    get:
+      summary: 按日期范围读取当前成员已经保存的今日节奏历史
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: 按日期倒序返回真实存档；没有保存的日期不会补零
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: "#/components/schemas/WorkdayRhythmHistory" }
+        "400": { description: 日期倒置或范围超过 366 天 }
   /api/workday-rhythm/energy-notifications:
     post:
       summary: 把当前成员已经保存的精力补给动作通知到本人配置的飞书群
@@ -39,6 +55,37 @@ paths:
         "502": { description: 飞书开放平台拒绝请求或暂不可达 }
 components:
   schemas:
+    WorkdayRhythmHistory:
+      type: object
+      required: [from, to, items, skippedCount]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        skippedCount: { type: integer, minimum: 0 }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/WorkdayRhythmHistoryDay" }
+    WorkdayRhythmHistoryDay:
+      type: object
+      required: [date, workdayActive, focus, energyItems]
+      properties:
+        date: { type: string, format: date }
+        workdayActive: { type: boolean }
+        focus:
+          type: array
+          maxItems: 3
+          items: { type: string }
+        energyItems:
+          type: array
+          items: { $ref: "#/components/schemas/WorkdayRhythmHistoryEnergy" }
+    WorkdayRhythmHistoryEnergy:
+      type: object
+      required: [id, title, mode, count]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        mode: { type: string, enum: [COUNT, DAILY_ONCE] }
+        count: { type: integer, minimum: 0, maximum: 99 }
     EnergyNotificationResult:
       type: object
       required: [sent, chatName]

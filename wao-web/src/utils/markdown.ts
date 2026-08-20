@@ -26,11 +26,67 @@ const CHAT_REVIEW_TAGS = [
   'p', 'br', 'hr', 'strong', 'em', 'del', 's', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li',
 ]
 
+const IMAGE_SIZE_PREFIX = 'wao-image-size:'
+
+function imagePixelDimension(value: string): number | null {
+  if (!/^\d{1,4}$/.test(value)) return null
+  const parsed = Number(value)
+  return parsed >= 1 && parsed <= 4000 ? parsed : null
+}
+
+/**
+ * 只把编辑器生成的图片尺寸元数据转换成一组固定 CSS 属性。
+ * 原始 Markdown 的 style 从不进入这里，因而不能借图片 title 注入任意样式。
+ */
+function safeImageSize(title: string): { style: string; title: string | null } | null {
+  const match = /^wao-image-size:([^x;]+)x([^;]+)(?:;title=(.*))?$/.exec(title)
+  if (!match) return null
+  const widthValue = match[1]!
+  const heightValue = match[2]!
+  let style = ''
+  if (/^(25|50|75|100)%$/.test(widthValue) && heightValue === 'auto') {
+    style = `width:${widthValue};height:auto`
+  } else {
+    const width = widthValue === 'auto' ? null : imagePixelDimension(widthValue)
+    const height = heightValue === 'auto' ? null : imagePixelDimension(heightValue)
+    if ((widthValue !== 'auto' && width == null)
+      || (heightValue !== 'auto' && height == null)
+      || (width == null && height == null)) return null
+    if (width != null && height != null) {
+      style = `width:${width}px;aspect-ratio:${width}/${height};height:auto;object-fit:contain`
+    } else if (width != null) {
+      style = `width:${width}px;height:auto`
+    } else {
+      style = `height:${height}px;width:auto`
+    }
+  }
+  let originalTitle: string | null = null
+  if (match[3]) {
+    try {
+      originalTitle = decodeURIComponent(match[3])
+    } catch {
+      originalTitle = null
+    }
+  }
+  return { style, title: originalTitle }
+}
+
 /** 外链一律 target=_blank + noopener，避免反向控制打开者的标签页。 */
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'A' && node.getAttribute('href')) {
     node.setAttribute('target', '_blank')
     node.setAttribute('rel', 'noopener noreferrer')
+  }
+  if (node.tagName === 'IMG') {
+    const title = node.getAttribute('title') ?? ''
+    const size = safeImageSize(title)
+    if (size) {
+      node.setAttribute('style', size.style)
+      if (size.title) node.setAttribute('title', size.title)
+      else node.removeAttribute('title')
+    } else if (title.startsWith(IMAGE_SIZE_PREFIX)) {
+      node.removeAttribute('title')
+    }
   }
 })
 

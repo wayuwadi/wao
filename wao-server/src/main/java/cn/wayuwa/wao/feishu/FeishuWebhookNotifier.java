@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import cn.wayuwa.wao.service.SettingService;
+import cn.wayuwa.wao.service.FeishuWebhookConfigService;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,10 +16,10 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 /**
- * 飞书群机器人通知：全局一个 webhook，系统里所有需要「说一声」的地方都走它。
+ * 飞书群机器人通知：系统既有通知统一走通用注册表中标记为默认的 webhook。
  *
- * <p>地址由用户在「设置 → 通知」里填，加密存 {@code system_setting}（见 {@link SettingService}），
- * 因此既不进 Git 也不必改环境变量重启。
+ * <p>地址由用户在「设置 → Webhook配置」里维护，加密存 {@code feishu_webhook_config}；
+ * {@code system_setting} 中的旧单例只用于滚动发布兼容，因此既不进 Git 也不必改环境变量重启。
  */
 @Component
 public class FeishuWebhookNotifier {
@@ -26,21 +27,23 @@ public class FeishuWebhookNotifier {
     private static final Logger log = LoggerFactory.getLogger(FeishuWebhookNotifier.class);
 
     private final SettingService settings;
+    private final FeishuWebhookConfigService webhooks;
     private final RestClient client;
     /** 老的部署级 webhook（{@code FEISHU_COMMENT_WEBHOOK_URL}）：界面上还没配时继续用它，线上通知不断档。 */
     private final String legacyUrl;
 
-    public FeishuWebhookNotifier(SettingService settings, RestClient.Builder builder,
+    public FeishuWebhookNotifier(SettingService settings, FeishuWebhookConfigService webhooks,
+            RestClient.Builder builder,
             @Value("${feishu.comment-webhook-url:}") String legacyUrl) {
         this.settings = settings;
+        this.webhooks = webhooks;
         this.client = builder.build();
         this.legacyUrl = legacyUrl;
     }
 
-    /** 实际要用的地址：界面上配过就用界面的，否则回落到部署环境变量。 */
+    /** 实际要用的地址：优先注册表默认项；尚未接管时才回落旧单例或部署环境变量。 */
     public String resolvedUrl() {
-        String configured = settings.get(SettingService.FEISHU_WEBHOOK_URL);
-        return configured != null && !configured.isBlank() ? configured : legacyUrl;
+        return target().url();
     }
 
     /**
@@ -50,11 +53,7 @@ public class FeishuWebhookNotifier {
      * 不该因为这次多了个开关就悄悄停掉。
      */
     public boolean enabled() {
-        String configured = settings.get(SettingService.FEISHU_WEBHOOK_URL);
-        if (configured != null && !configured.isBlank()) {
-            return settings.getBoolean(SettingService.FEISHU_WEBHOOK_ENABLED);
-        }
-        return legacyUrl != null && !legacyUrl.isBlank();
+        return target().enabled();
     }
 
     /**
@@ -64,15 +63,16 @@ public class FeishuWebhookNotifier {
      * @return 是否真的发出去了
      */
     public boolean notifyCard(Card card) {
-        if (!enabled()) {
+        EffectiveTarget target = target();
+        if (!target.enabled()) {
             return false;
         }
         try {
-            send(resolvedUrl(), card);
+            send(target.url(), card);
             return true;
         } catch (RuntimeException ex) {
             // 通知失败不该影响触发它的业务动作，记一条日志就够了
-            log.warn("飞书 webhook 通知发送失败：{}", ex.getMessage());
+            log.warn("飞书 webhook 通知发送失败（凭据与地址已从日志隐藏）");
             return false;
         }
     }
@@ -84,16 +84,34 @@ public class FeishuWebhookNotifier {
      * @return 是否真的发出去了
      */
     public boolean notifyComicCard(ComicCard card) {
-        if (!enabled()) {
+        EffectiveTarget target = target();
+        if (!target.enabled()) {
             return false;
         }
         try {
-            sendComic(resolvedUrl(), card);
+            sendComic(target.url(), card);
             return true;
         } catch (RuntimeException ex) {
-            log.warn("飞书 webhook 漫画卡片发送失败：{}", ex.getMessage());
+            log.warn("飞书 webhook 漫画卡片发送失败（凭据与地址已从日志隐藏）");
             return false;
         }
+    }
+
+    private EffectiveTarget target() {
+        var configuredTarget = webhooks.defaultTarget();
+        if (configuredTarget.isPresent()) {
+            var configured = configuredTarget.get();
+            return new EffectiveTarget(configured.url(), configured.enabled());
+        }
+        if (webhooks.registryInitialized()) return new EffectiveTarget("", false);
+        String configured = settings.get(SettingService.FEISHU_WEBHOOK_URL);
+        if (configured != null && !configured.isBlank()) {
+            return new EffectiveTarget(configured, settings.getBoolean(SettingService.FEISHU_WEBHOOK_ENABLED));
+        }
+        return new EffectiveTarget(legacyUrl, legacyUrl != null && !legacyUrl.isBlank());
+    }
+
+    private record EffectiveTarget(String url, boolean enabled) {
     }
 
     /**

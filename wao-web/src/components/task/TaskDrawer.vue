@@ -23,11 +23,11 @@ import { formatCost, formatTokens, shortModel } from '@/composables/aiUsage'
 import { engineIcon, engineLabel } from '@/composables/aiEngines'
 import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
-import { absoluteTime, nowIso, relativeTime } from '@/utils/time'
+import { absoluteTime, relativeTime } from '@/utils/time'
 import { activitySentence } from '@/utils/activity'
 import { useIsMobile } from '@/composables/viewport'
 import { useFavoritesStore } from '@/stores/favorites'
-import type { AiEngine, AiRun, AiRunStatus, PdcaCycle, PdcaOutcome, Priority, TaskStatus } from '@/types'
+import type { AiEngine, AiRun, AiRunStatus, Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
 const data = useDataStore()
@@ -267,19 +267,22 @@ const linkedDocs = computed(() =>
 )
 const relationDocs = computed(() => Object.values(data.docs).map((doc) => {
   const kb = data.kbs.find((item) => item.id === doc.kbId || item.folders.some((folder) => folder.docs.includes(doc.id)))
-  return { id: doc.id, title: doc.title, kbName: kb?.name ?? '知识文档' }
+  return { id: doc.id, title: doc.title, kbName: kb?.name ?? '知识文档', createdAt: doc.created }
 }))
 const relationTasks = computed(() => data.tasks
-  .filter((item) => item.id !== task.value?.id)
+  .filter((item) => item.id !== task.value?.id && item.status !== '已完成')
   .map((item) => ({
     id: item.id,
     title: item.title,
     projectName: data.projectById(item.project)?.name ?? '未关联项目',
+    createdAt: item.createdAt,
   })))
 // 没有稳定 id 的历史展示附件并不存在可下载正文，不能把它伪装成可关联文件。
 const relationFiles = computed(() => data.files
   .filter((file) => typeof file.id === 'string' && file.id.length > 0)
-  .map((file) => ({ id: file.id!, name: file.name, size: file.size, icon: file.icon })))
+  .map((file) => ({
+    id: file.id!, name: file.name, size: file.size, icon: file.icon, createdAt: file.createdAt,
+  })))
 const selectedFileIds = computed(() => (task.value?.files ?? [])
   .map((file) => file.id)
   .filter((id): id is string => !!id))
@@ -338,84 +341,6 @@ const desc = computed({
     if (task.value) data.patchTask(task.value.id, { desc: v })
   },
 })
-
-// ---- PDCA 闭环 ----
-const pdcaCycles = computed(() => task.value?.pdcaCycles ?? [])
-const currentPdca = computed(() => pdcaCycles.value[pdcaCycles.value.length - 1])
-const previousPdca = computed(() => pdcaCycles.value.slice(0, -1).reverse())
-const pdcaPhase = computed(() => {
-  if (currentPdca.value?.reviewedAt) return 'A · 改进'
-  if (task.value?.status === '待验证' || task.value?.status === '已完成') return 'C · 检查'
-  if (task.value?.status === '进行中' || task.value?.status === 'AI 进行中') return 'D · 执行'
-  return 'P · 计划'
-})
-const pdcaDoSummary = computed(() => {
-  const t = task.value
-  if (!t) return ''
-  const all = [...t.steps, ...t.subs]
-  const done = all.filter((item) => item.done).length
-  return all.length ? `${t.status} · 已完成 ${done}/${all.length} 个步骤` : `${t.status} · 暂无拆分步骤`
-})
-const pdcaInCheck = computed(() => task.value?.status === '待验证' || task.value?.status === '已完成')
-const canReviewPdca = computed(() => {
-  const cycle = currentPdca.value
-  return pdcaInCheck.value && !!cycle && !cycle.reviewedAt && !!cycle.plan.trim() && !!cycle.outcome
-    && !!cycle.check.trim() && !!cycle.act.trim()
-})
-
-function enablePdca() {
-  const t = task.value
-  if (!t || currentPdca.value) return
-  const cycle: PdcaCycle = {
-    id: `pc${Date.now()}`,
-    plan: '', check: '', act: '', outcome: null,
-    startedAt: nowIso(), reviewedAt: null,
-  }
-  data.patchTask(t.id, { pdcaCycles: [cycle] }, '启用了 PDCA 跟踪')
-}
-function updatePdca(field: 'plan' | 'check' | 'act', event: Event) {
-  const t = task.value
-  const cycle = currentPdca.value
-  if (!t || !cycle || cycle.reviewedAt) return
-  const value = (event.target as HTMLTextAreaElement).value
-  data.patchTask(t.id, {
-    pdcaCycles: pdcaCycles.value.map((item) => item.id === cycle.id ? { ...item, [field]: value } : item),
-  })
-}
-function setPdcaOutcome(outcome: PdcaOutcome) {
-  const t = task.value
-  const cycle = currentPdca.value
-  if (!t || !cycle || cycle.reviewedAt) return
-  data.patchTask(t.id, {
-    pdcaCycles: pdcaCycles.value.map((item) => item.id === cycle.id ? { ...item, outcome } : item),
-  })
-}
-function completePdcaReview() {
-  const t = task.value
-  const cycle = currentPdca.value
-  if (!t || !cycle || !canReviewPdca.value) return
-  data.patchTask(t.id, {
-    status: '已完成',
-    pdcaCycles: pdcaCycles.value.map((item) => item.id === cycle.id
-      ? { ...item, reviewedAt: nowIso() }
-      : item),
-  }, `完成了第 ${pdcaCycles.value.length} 轮 PDCA 复盘`)
-  toast('本轮 PDCA 已闭环，改进行动可直接带入下一轮', 'ri-checkbox-circle-fill')
-  ui.celebrate()
-}
-function startNextPdcaCycle() {
-  const t = task.value
-  const cycle = currentPdca.value
-  if (!t || !cycle?.reviewedAt) return
-  const next: PdcaCycle = {
-    id: `pc${Date.now()}`,
-    plan: cycle.act.trim(), check: '', act: '', outcome: null,
-    startedAt: nowIso(), reviewedAt: null,
-  }
-  data.patchTask(t.id, { status: '待办', pdcaCycles: [...pdcaCycles.value, next] },
-    `根据改进行动开启了第 ${pdcaCycles.value.length + 1} 轮 PDCA`)
-  toast('已把改进行动带入新一轮计划', 'ri-loop-right-line')
-}
 
 /**
  * 编辑器里粘贴 / 插入图片：存进图床，再把地址回传给编辑器内联到光标处。
@@ -947,88 +872,6 @@ function demo(msg: string) {
             </div>
           </div>
 
-          <section class="pdca" :class="{ empty: !currentPdca }">
-            <div class="pdca-head">
-              <div>
-                <div class="field-label nomb">PDCA 闭环</div>
-                <p v-if="currentPdca">第 {{ pdcaCycles.length }} 轮 · {{ pdcaPhase }}</p>
-                <p v-else>让任务完成后留下经验，并把改进行动带进下一轮</p>
-              </div>
-              <div v-if="currentPdca" class="pdca-save">
-                <SaveHint :saving="saveState === 'saving'" :saved-at="savedAt" :failed="saveState === 'error'" />
-                <button v-if="saveState === 'error'" type="button" @click="data.flushTask(task.id)">立即重试</button>
-              </div>
-            </div>
-            <button v-if="!currentPdca" class="pdca-enable" type="button" @click="enablePdca">
-              <i class="ri-loop-right-line"></i>启用 PDCA 跟踪
-            </button>
-            <template v-else>
-              <div class="pdca-stages" aria-label="当前 PDCA 阶段">
-                <span v-for="stage in ['P', 'D', 'C', 'A']" :key="stage" :class="{ on: pdcaPhase.startsWith(stage) }">{{ stage }}</span>
-              </div>
-              <label class="pdca-field">
-                <b><em>P</em>计划与判定标准</b>
-                <textarea
-                  :value="currentPdca.plan"
-                  :disabled="!!currentPdca.reviewedAt"
-                  rows="2"
-                  placeholder="这轮要改变什么？做到什么程度算达成？"
-                  @input="updatePdca('plan', $event)"
-                ></textarea>
-              </label>
-              <div class="pdca-do">
-                <b><em>D</em>执行进展</b>
-                <span>{{ pdcaDoSummary }}</span>
-              </div>
-              <div class="pdca-field">
-                <b><em>C</em>检查与复盘</b>
-                <div class="pdca-outcomes">
-                  <button
-                    v-for="outcome in (['达成', '部分达成', '未达成'] as PdcaOutcome[])"
-                    :key="outcome"
-                    type="button"
-                    :class="{ on: currentPdca.outcome === outcome }"
-                    :disabled="!!currentPdca.reviewedAt"
-                    @click="setPdcaOutcome(outcome)"
-                  >{{ outcome }}</button>
-                </div>
-                <textarea
-                  :value="currentPdca.check"
-                  :disabled="!!currentPdca.reviewedAt"
-                  rows="3"
-                  placeholder="实际发生了什么？偏差在哪里？为什么？"
-                  @input="updatePdca('check', $event)"
-                ></textarea>
-              </div>
-              <label class="pdca-field">
-                <b><em>A</em>改进行动</b>
-                <textarea
-                  :value="currentPdca.act"
-                  :disabled="!!currentPdca.reviewedAt"
-                  rows="2"
-                  placeholder="下一轮继续什么、停止什么、尝试什么？"
-                  @input="updatePdca('act', $event)"
-                ></textarea>
-              </label>
-              <div class="pdca-actions">
-                <span v-if="!currentPdca.reviewedAt && !pdcaInCheck">任务进入“待验证”或“已完成”后即可完成复盘</span>
-                <span v-else-if="!currentPdca.reviewedAt && !canReviewPdca">填写计划，选择结果，并补全复盘与改进行动后即可闭环</span>
-                <span v-else-if="currentPdca.reviewedAt"><i class="ri-checkbox-circle-fill"></i>本轮已于 {{ showTime(currentPdca.reviewedAt) }}闭环</span>
-                <button v-if="!currentPdca.reviewedAt" type="button" :disabled="!canReviewPdca" @click="completePdcaReview">完成本轮复盘</button>
-                <button v-else type="button" @click="startNextPdcaCycle"><i class="ri-loop-right-line"></i>开启下一轮</button>
-              </div>
-              <details v-if="previousPdca.length" class="pdca-history">
-                <summary>查看前 {{ previousPdca.length }} 轮复盘</summary>
-                <article v-for="(cycle, index) in previousPdca" :key="cycle.id">
-                  <b>第 {{ pdcaCycles.length - index - 1 }} 轮 · {{ cycle.outcome }}</b>
-                  <p><em>P</em>{{ cycle.plan }}</p>
-                  <p><em>C</em>{{ cycle.check }}</p>
-                  <p><em>A</em>{{ cycle.act }}</p>
-                </article>
-              </details>
-            </template>
-          </section>
-
           <div v-if="stepsTotal" class="field">
             <div class="steps-head">
               <div class="field-label nomb">步骤</div>
@@ -1337,9 +1180,13 @@ function demo(msg: string) {
             </div>
           </div>
 
-          <div class="prop-section">
-            <button class="text-btn small" @click="copyShare('page')"><i class="ri-links-line"></i>复制该子任务分享链接</button>
-            <button class="text-btn small danger" @click="deleteSub"><i class="ri-delete-bin-line"></i>删除子任务</button>
+          <div class="prop-section sub-detail-actions">
+            <button class="sub-detail-action" type="button" @click="copyShare('page')">
+              <i class="ri-links-line"></i>复制该子任务分享链接
+            </button>
+            <button class="sub-detail-action danger" type="button" @click="deleteSub">
+              <i class="ri-delete-bin-line"></i>删除子任务
+            </button>
           </div>
         </div>
 
@@ -1759,153 +1606,6 @@ function demo(msg: string) {
 .field-label.nomb {
   margin-bottom: 0;
 }
-/* PDCA 是任务正文的一部分：P/C/A 可编辑，D 直接投影真实状态和步骤进度。 */
-.pdca {
-  margin-top: 18px;
-  padding: 14px;
-  border: 1px solid #d7ddf5;
-  border-radius: 12px;
-  background: linear-gradient(145deg, var(--wao-bg-card), var(--wao-primary-soft));
-}
-.pdca.empty { background: var(--wao-bg-sub); border-style: dashed; }
-.pdca-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-.pdca-head p {
-  margin: 4px 0 0;
-  color: var(--wao-text-weak);
-  font-size: 11.5px;
-}
-.pdca-save { display: flex; align-items: center; gap: 7px; }
-.pdca-save button {
-  padding: 2px 6px;
-  border: 1px solid var(--wao-danger-line);
-  border-radius: 5px;
-  background: var(--wao-bg-card);
-  color: var(--wao-danger-strong);
-  font-size: 10.5px;
-  cursor: pointer;
-}
-.pdca-enable {
-  margin-top: 10px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid #c7d0f1;
-  border-radius: 8px;
-  background: var(--wao-bg-card);
-  color: var(--wao-primary-text);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.pdca-stages {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 5px;
-  margin: 12px 0;
-}
-.pdca-stages span {
-  height: 5px;
-  border-radius: 999px;
-  background: var(--wao-line-strong);
-  color: transparent;
-  font-size: 0;
-}
-.pdca-stages span.on { background: var(--wao-primary); }
-.pdca-field,
-.pdca-do {
-  display: grid;
-  gap: 6px;
-  margin-top: 10px;
-}
-.pdca-field b,
-.pdca-do b {
-  color: var(--wao-text-2);
-  font-size: 12px;
-}
-.pdca-field b em,
-.pdca-do b em,
-.pdca-history p em {
-  margin-right: 6px;
-  color: var(--wao-primary-text);
-  font-style: normal;
-  font-weight: 750;
-}
-.pdca-field textarea {
-  width: 100%;
-  box-sizing: border-box;
-  resize: vertical;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 8px;
-  padding: 8px 9px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-  font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 400;
-  line-height: 1.65;
-  outline: none;
-}
-.pdca-field textarea:focus {
-  border-color: var(--wao-primary);
-  box-shadow: 0 0 0 3px rgba(67, 88, 214, .1);
-}
-.pdca-field textarea:disabled { color: var(--wao-text-3); background: var(--wao-bg-sub); }
-.pdca-do span {
-  padding: 8px 9px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, .65);
-  color: var(--wao-text-3);
-  font-size: 12px;
-}
-.pdca-outcomes { display: flex; gap: 6px; }
-.pdca-outcomes button {
-  height: 26px;
-  padding: 0 9px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 999px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-3);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.pdca-outcomes button.on { border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
-.pdca-outcomes button:disabled { cursor: default; }
-.pdca-actions {
-  margin-top: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.pdca-actions span {
-  flex: 1;
-  color: var(--wao-text-weak);
-  font-size: 11px;
-}
-.pdca-actions span i { color: var(--wao-success-strong); margin-right: 4px; }
-.pdca-actions button {
-  height: 30px;
-  padding: 0 11px;
-  border: none;
-  border-radius: 8px;
-  background: var(--wao-primary);
-  color: #fff;
-  font-size: 11.5px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.pdca-actions button:disabled { opacity: .45; cursor: not-allowed; }
-.pdca-history { margin-top: 12px; border-top: 1px solid var(--wao-divider); padding-top: 10px; }
-.pdca-history summary { color: var(--wao-text-3); font-size: 11.5px; cursor: pointer; }
-.pdca-history article { margin-top: 9px; padding: 9px; border-radius: 8px; background: rgba(255, 255, 255, .7); }
-.pdca-history article > b { font-size: 11.5px; }
-.pdca-history p { margin: 5px 0 0; color: var(--wao-text-3); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; }
 /* 分享菜单 */
 .share-wrap {
   position: relative;
@@ -2290,10 +1990,6 @@ function demo(msg: string) {
   margin-bottom: 4px;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
 }
-.text-btn.danger:hover {
-  color: #bc4141;
-}
-
 .sub-head {
   display: flex;
   align-items: center;
@@ -2847,6 +2543,42 @@ function demo(msg: string) {
   border-top: 1px solid var(--wao-divider);
   padding-top: 10px;
   position: relative;
+}
+.sub-detail-actions {
+  display: grid;
+  gap: 8px;
+}
+.sub-detail-action {
+  width: 100%;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #cbd4f4;
+  border-radius: 9px;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sub-detail-action:hover {
+  border-color: #9ba9eb;
+  background: #e7ebff;
+}
+.sub-detail-action:focus-visible {
+  outline: 3px solid rgba(67, 88, 214, .16);
+  outline-offset: 1px;
+}
+.sub-detail-action.danger {
+  border-color: var(--wao-danger-line);
+  background: var(--wao-danger-bg);
+  color: var(--wao-danger-strong);
+}
+.sub-detail-action.danger:hover {
+  border-color: #dc9090;
+  background: #fbe7e7;
 }
 .custom-row {
   display: flex;

@@ -175,22 +175,6 @@ public class ShareService {
 
         appendImages(sb, shared.images(), baseUrl);
 
-        if (!shared.pdcaCycles().isEmpty()) {
-            sb.append("## PDCA 记录\n\n");
-            for (int i = 0; i < shared.pdcaCycles().size(); i++) {
-                var cycle = shared.pdcaCycles().get(i);
-                sb.append("### 第 ").append(i + 1).append(" 轮");
-                if (cycle.outcome() != null && !cycle.outcome().isBlank()) {
-                    sb.append(" · ").append(cycle.outcome());
-                }
-                sb.append("\n\n");
-                sb.append("- P（计划）：").append(nz(cycle.plan())).append('\n');
-                sb.append("- C（检查）：").append(nz(cycle.check())).append('\n');
-                sb.append("- A（改进）：").append(nz(cycle.act())).append('\n');
-                sb.append("- 当前进展：").append(cycle.reviewedAt() == null ? "本轮进行中" : "本轮已闭环").append("\n\n");
-            }
-        }
-
         if (!shared.subs().isEmpty()) {
             sb.append("## 子任务\n\n");
             for (Step s : shared.subs()) {

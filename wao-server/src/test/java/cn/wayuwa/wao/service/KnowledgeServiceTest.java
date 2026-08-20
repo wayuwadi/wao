@@ -29,8 +29,10 @@ import cn.wayuwa.wao.dto.CreateNoteRequest;
 import cn.wayuwa.wao.dto.DocBlockDto;
 import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.DocLinkDto;
+import cn.wayuwa.wao.dto.DocTemplateDto;
 import cn.wayuwa.wao.dto.KbDto;
 import cn.wayuwa.wao.dto.PatchDocRequest;
+import cn.wayuwa.wao.dto.PatchDocTemplateRequest;
 import cn.wayuwa.wao.dto.PatchKbRequest;
 import cn.wayuwa.wao.dto.ReorderDocsRequest;
 import cn.wayuwa.wao.dto.TrashEntryDto;
@@ -250,6 +252,46 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void createTemplateAppliesTheSameMetadataAndRequestBodyLimitsAsUpdate() {
+        DocEntity source = doc("d-source", "k1", "f1");
+        source.setBlocksJson("[]");
+        when(docMapper.selectById("d-source")).thenReturn(source);
+        DocBlockDto emptyBlock = new DocBlockDto(null, null, "", null, null);
+
+        assertThatThrownBy(() -> service.createTemplate(new CreateDocTemplateRequest(
+                "名".repeat(129), "", "d-source", null), "m1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("128");
+        assertThatThrownBy(() -> service.createTemplate(new CreateDocTemplateRequest(
+                "模板", "说明".repeat(257), "d-source", null), "m1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("512");
+        assertThatThrownBy(() -> service.createTemplate(new CreateDocTemplateRequest(
+                "模板", "", "d-source", java.util.Collections.nCopies(5_001, emptyBlock)), "m1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("5000 个块");
+        assertThatThrownBy(() -> service.createTemplate(new CreateDocTemplateRequest(
+                "模板", "", "d-source", List.of(
+                        new DocBlockDto(null, null, "正".repeat(1_000_001), null, null))), "m1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("1000000 个字符");
+        verify(templateMapper, never()).insert(any(DocTemplateEntity.class));
+    }
+
+    @Test
+    void createTemplateRejectsAnOversizedSourceDocumentSnapshot() {
+        DocEntity source = doc("d-source", "k1", "f1");
+        source.setBlocksJson("[\"" + "正".repeat(1_000_001) + "\"]");
+        when(docMapper.selectById("d-source")).thenReturn(source);
+
+        assertThatThrownBy(() -> service.createTemplate(new CreateDocTemplateRequest(
+                "模板", "", "d-source", null), "m1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("1000000 个字符");
+        verify(templateMapper, never()).insert(any(DocTemplateEntity.class));
+    }
+
+    @Test
     void templateCannotBeReadAcrossMembers() {
         DocTemplateEntity template = new DocTemplateEntity();
         template.setId("dt1");
@@ -260,6 +302,128 @@ class KnowledgeServiceTest {
 
         assertThatThrownBy(() -> service.createDoc(new CreateDocRequest("k1", "f1", "", "dt1"), "m2"))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void updateTemplatePersistsEditableContentWithMetadata() {
+        DocTemplateEntity template = new DocTemplateEntity();
+        template.setId("dt1");
+        template.setName("旧模板");
+        template.setDescription("旧说明");
+        template.setBlocksJson("[{\"p\":\"旧正文\"}]");
+        template.setCreatedBy("m1");
+        template.setCreatedAt(java.time.LocalDateTime.now().minusDays(1));
+        template.setUpdatedAt(java.time.LocalDateTime.now().minusDays(1));
+        when(templateMapper.selectById("dt1")).thenReturn(template);
+
+        List<DocBlockDto> blocks = List.of(
+                new DocBlockDto(null, "模板标题", null, null, null, 1),
+                new DocBlockDto(null, null, "修改后的正文", null, null));
+        when(templateMapper.updateIfUnchanged(eq(template), any(LocalDateTime.class))).thenReturn(1);
+        DocTemplateDto updated = service.updateTemplate("dt1",
+                new PatchDocTemplateRequest("新模板", "新说明", blocks,
+                        template.getUpdatedAt().atZone(java.time.ZoneId.of("Asia/Shanghai"))
+                                .format(java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME)), "m1");
+
+        assertThat(updated.name()).isEqualTo("新模板");
+        assertThat(updated.description()).isEqualTo("新说明");
+        assertThat(updated.blocks()).extracting(DocBlockDto::h, DocBlockDto::p)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("模板标题", null),
+                        org.assertj.core.groups.Tuple.tuple(null, "修改后的正文"));
+        verify(templateMapper).updateIfUnchanged(eq(template), any(LocalDateTime.class));
+    }
+
+    @Test
+    void updateTemplateRejectsMetadataBeyondDatabaseLimits() {
+        DocTemplateEntity template = editableTemplate();
+        when(templateMapper.selectById("dt1")).thenReturn(template);
+
+        assertThatThrownBy(() -> service.updateTemplate("dt1",
+                new PatchDocTemplateRequest("名".repeat(129), null, null,
+                        template.getUpdatedAt().toString()), "m1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("128");
+        assertThatThrownBy(() -> service.updateTemplate("dt1",
+                new PatchDocTemplateRequest(null, "说明".repeat(257), null,
+                        template.getUpdatedAt().toString()), "m1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("512");
+        verify(templateMapper, never()).updateIfUnchanged(any(DocTemplateEntity.class), any(LocalDateTime.class));
+    }
+
+    @Test
+    void updateTemplateRejectsUnboundedBlockCountAndSerializedContent() {
+        DocTemplateEntity template = editableTemplate();
+        when(templateMapper.selectById("dt1")).thenReturn(template);
+        DocBlockDto emptyBlock = new DocBlockDto(null, null, "", null, null);
+
+        assertThatThrownBy(() -> service.updateTemplate("dt1",
+                new PatchDocTemplateRequest(null, null, java.util.Collections.nCopies(5_001, emptyBlock),
+                        template.getUpdatedAt().toString()), "m1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("5000 个块");
+        assertThatThrownBy(() -> service.updateTemplate("dt1",
+                new PatchDocTemplateRequest(null, null, List.of(
+                        new DocBlockDto(null, null, "正".repeat(1_000_001), null, null)),
+                        template.getUpdatedAt().toString()), "m1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("1000000 个字符");
+        verify(templateMapper, never()).updateIfUnchanged(any(DocTemplateEntity.class), any(LocalDateTime.class));
+    }
+
+    @Test
+    void updateTemplateKeepsNullFieldsUnchanged() {
+        DocTemplateEntity template = editableTemplate();
+        when(templateMapper.selectById("dt1")).thenReturn(template);
+
+        when(templateMapper.updateIfUnchanged(eq(template), any(LocalDateTime.class))).thenReturn(1);
+        DocTemplateDto updated = service.updateTemplate("dt1", new PatchDocTemplateRequest(
+                null, null, null, template.getUpdatedAt().toString()), "m1");
+
+        assertThat(updated.name()).isEqualTo("旧模板");
+        assertThat(updated.description()).isEqualTo("旧说明");
+        assertThat(updated.blocks()).extracting(DocBlockDto::p).containsExactly("旧正文");
+        verify(templateMapper).updateIfUnchanged(eq(template), any(LocalDateTime.class));
+    }
+
+    @Test
+    void updateTemplateRejectsAStaleVersionAndPreservesTheStoredTemplate() {
+        DocTemplateEntity template = editableTemplate();
+        when(templateMapper.selectById("dt1")).thenReturn(template);
+
+        assertThatThrownBy(() -> service.updateTemplate("dt1", new PatchDocTemplateRequest(
+                "旧窗口的名称", null, null, template.getUpdatedAt().minusSeconds(1).toString()), "m1"))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class)
+                .hasMessageContaining("其他窗口更新");
+
+        assertThat(template.getName()).isEqualTo("旧模板");
+        verify(templateMapper, never()).updateIfUnchanged(any(DocTemplateEntity.class), any(LocalDateTime.class));
+    }
+
+    @Test
+    void updateTemplateReturnsConflictWhenAnotherWriteWinsAfterTheRead() {
+        DocTemplateEntity template = editableTemplate();
+        LocalDateTime expected = template.getUpdatedAt();
+        when(templateMapper.selectById("dt1")).thenReturn(template);
+        when(templateMapper.updateIfUnchanged(eq(template), eq(expected))).thenReturn(0);
+
+        assertThatThrownBy(() -> service.updateTemplate("dt1", new PatchDocTemplateRequest(
+                "竞争保存", null, null, expected.toString()), "m1"))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class)
+                .hasMessageContaining("其他窗口更新");
+    }
+
+    private DocTemplateEntity editableTemplate() {
+        DocTemplateEntity template = new DocTemplateEntity();
+        template.setId("dt1");
+        template.setName("旧模板");
+        template.setDescription("旧说明");
+        template.setBlocksJson("[{\"p\":\"旧正文\"}]");
+        template.setCreatedBy("m1");
+        template.setCreatedAt(java.time.LocalDateTime.now().minusDays(1));
+        template.setUpdatedAt(java.time.LocalDateTime.now().minusDays(1));
+        return template;
     }
 
     @Test

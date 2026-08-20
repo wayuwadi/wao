@@ -79,11 +79,14 @@ erDiagram
 | status | VARCHAR(16) | 待办/收集中/进行中/AI 进行中/待验证/已完成（「阻塞」已由 V16 迁到「进行中」，等待他人改由 waiting 表达；进入「收集中」会自动分享到飞书群，见 ADR-027） |
 | pr | CHAR(2) | P0–P3 |
 | owner_id | VARCHAR(32) FK→member | 负责人 |
+| created_by | VARCHAR(32) NULL | 创建人成员 id（V30）；早期历史任务可能为空 |
+| created_at | DATETIME(3) NULL | 真实创建时间（V79）；可从 `t` + 13 位 Unix 毫秒前缀稳定 id 回填的存量任务已回填，无可靠来源的极早期任务保持空值 |
+| completed_at | DATETIME NULL | 最近一次进入已完成状态的时间（V33）；重新打开后清空 |
 | start_date | VARCHAR(16) NULL | 开始；可在任务属性栏直接改，空串表示未排期 |
 | due_date | VARCHAR(16) | 截止；同上 |
 | waiting | VARCHAR(64) NULL | 等待他人标记 |
 | description | MEDIUMTEXT | 描述；V60 起支持不受 4000 字人为上限的长 Markdown，图片仍应存图床并只保留稳定 URL |
-| detail_json | JSON | parts[], steps[], subs[], files[]（真实文件引用含 `file_blob.id`，历史展示附件可为空）, docs[], linkTasks[], comments[], custom[], activity[]（条目含 by=操作人成员 id）, images[], groupId（所属任务分组）, startAt/endAt（可选日历时间段，格式 `yyyy-MM-ddTHH:mm`，endAt 必须晚于 startAt）, pdcaCycles[]（多轮计划、检查、改进行动与闭环时间，见 ADR-048） |
+| detail_json | JSON | parts[], steps[], subs[], files[]（真实文件引用含 `file_blob.id`，历史展示附件可为空）, docs[], linkTasks[], comments[], custom[], activity[]（条目含 by=操作人成员 id）, images[], groupId（所属任务分组）, startAt/endAt（可选日历时间段，格式 `yyyy-MM-ddTHH:mm`，endAt 必须晚于 startAt）, pdcaCycles[]（历史兼容数据；前端已停止新增、编辑和展示，既有轮次仍按 ADR-048 保留） |
 
 ## 内容 / 参考域（文档表，只读）
 
@@ -260,13 +263,28 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 ### system_setting（系统级配置，V17）
 | 列 | 类型 | 说明 |
 |---|---|---|
-| cfg_key | VARCHAR(64) PK | 配置键，如 `feishu.webhook.url`、`feishu.chat-sync.app-secret`、`navigation.builtin-menus`（内置菜单注册表）、`feishu.chat-review.speakers`（当前群与两位固定发言人） |
+| cfg_key | VARCHAR(64) PK | 配置键，如兼容用 `feishu.webhook.url`、`feishu.chat-sync.app-secret`、`navigation.builtin-menus`（内置菜单注册表）、`feishu.chat-review.speakers`（当前群与两位固定发言人） |
 | cfg_value | TEXT | 配置值；敏感键加密存储，密文带 `enc:` 前缀 |
 | updated_at | DATETIME | 最后修改时间 |
 
-全局唯一一份的键值配置。敏感值（webhook 地址、App Secret）复用 `VaultCryptoService` 的 AES-256-GCM 加密后落库，接口只回脱敏形态（`SettingService.mask`），明文只在服务端调飞书接口时解出来用；因此真实凭据既不进 Git 也不必写进环境变量。
+全局唯一一份的键值配置。敏感值（兼容期默认 webhook 地址、App Secret）复用 `VaultCryptoService` 的 AES-256-GCM 加密后落库，接口只回脱敏形态（`SettingService.mask`），明文只在服务端调飞书接口时解出来用；因此真实凭据既不进 Git 也不必写进环境变量。V78 后通用机器人以独立表为准，旧 `feishu.webhook.*` 只保留为滚动发布兼容镜像。
 飞书同步配置保存多个 `feishu.chat-sync.*` 键时使用一个事务；读取 App、群、知识库和发送者映射时使用一次批量 SQL 的事务快照，避免调用方看到半套新配置。
 V77 首次发布临时使用 `deployment.v77.feishu-sync-status` 保留 automation 的最初状态，并用持久键 `deployment.v77.rollout-state` 记录 `in-progress / complete`。安全窗口只在 Flyway V77 成功记录与 `complete` 同时存在时结束；`complete-v77-rollout` 只在 Flyway V77 记录、状态保存键和目标 job 均恰好存在时，才在同一事务中恢复 job、写入 `complete` 并删除保存键；前置缺失时不写完成标记。
+
+### feishu_webhook_config（通用飞书机器人，V78）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | 稳定配置 id，供后续业务选择机器人 |
+| name | VARCHAR(64) | 可辨识名称，如“WAO 主群” |
+| description | VARCHAR(255) | 用途说明 |
+| webhook_ciphertext / webhook_nonce | VARBINARY | AES-256-GCM 密文与随机 nonce；明文不出服务端 |
+| enabled | TINYINT(1) | 业务是否可主动使用；停用项仍可手动测试 |
+| default_marker | VARCHAR(16) UNIQUE NULL | `SYSTEM` 表示任务、评论和 AI 运行等既有系统通知目标；NULL 可重复 |
+| created_at / updated_at | DATETIME | 创建与最后修改时间 |
+
+V78 只把旧 `enc:<nonce>:<ciphertext>` 拆列搬运，不在 migration 中解密。注册表始终最多一个 `SYSTEM`；
+删除默认项时由服务在同一事务中提升剩余项，删空后写入接管标记并停止旧环境变量回落，具体见 ADR-089。
 
 ## AI Run 域（V18）
 
@@ -476,7 +494,9 @@ WAO 不主动探测、抓取或删除链接对应的外部系统。聚合边界�
 
 “今日节奏”复用 `member_preference` 的 `workday-rhythm-config-v1` 保存个人时间块模板及精力补给通知目标/动作开关，并以
 `workday-rhythm-day-YYYY-MM-DD` 保存当天三个重点、时间块完成项、喝水次数、冥想和是否执行；页面同时保留
-未成功提交的本机草稿。飞书应用密钥仍在系统配置加密保存，不进入成员偏好；见 ADR-079、ADR-081。
+未成功提交的本机草稿。每日记录还保存当时精力项目的名称/机制快照，按当前成员和有界日期键范围提供历史回顾；
+没有记录的日期不生成数据，损坏记录显式计数跳过。飞书应用密钥仍在系统配置加密保存，不进入成员偏好；
+见 ADR-079、ADR-081、ADR-090。
 
 ### holiday_reminder / holiday_reminder_delivery（V67）
 
@@ -861,6 +881,8 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V76__project_engineering_memory.sql`：保存项目工程记忆及 AI Run 实际读写引用（见 ADR-087）。
 - `V77__chat_review.sql`：为 `doc` 增加群 / 自然日唯一归档身份、旧标题归档一次性回填、数据库单调版本与 CAS 栅栏，为服务端图片去重增加 nullable SHA-256 唯一键，
   保存带知识库快照的共享聊天复盘运行，并为页面 / 内部 AI 队列增加领取 attempt token（见 ADR-088）。
+- `V78__feishu_webhook_configs.sql`：新增加密的通用飞书机器人注册表，并从 V17 单例密文无损迁移系统默认项（见 ADR-089）。
+- `V79__task_created_at.sql`：新增任务真实创建时间，按稳定 id 的 13 位毫秒时间戳前缀回填可确认的存量任务；无可靠来源的极早期数据保持空值。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V77 链路，

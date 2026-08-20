@@ -71,7 +71,7 @@ function mountDrawer() {
  * 动态 import 的解析要跨若干个微 / 宏任务，固定睡一个时长要么慢要么偶发失败，
  * 所以这里轮询到出现为止，超时才判失败。
  */
-async function waitFor(w: ReturnType<typeof mountDrawer>, selector: string, tries = 50) {
+async function waitFor(w: ReturnType<typeof mountDrawer>, selector: string, tries = 150) {
   for (let i = 0; i < tries; i++) {
     await flushPromises()
     if (w.find(selector).exists()) return true
@@ -111,40 +111,88 @@ describe('TaskDrawer', () => {
     expect(await waitFor(w, '.md-body')).toBe(true)
   })
 
-  it('PDCA 从计划、复盘到下一轮形成可追溯闭环', async () => {
+  it('历史 PDCA 数据仍可加载，但任务详情不再展示或操作该模块', async () => {
     const current = data.taskById(taskId)!
-    current.pdcaCycles = []
-    current.status = '待验证'
+    current.pdcaCycles = [{
+      id: 'pc-history', plan: '旧计划', check: '旧复盘', act: '旧行动', outcome: '达成',
+      startedAt: '2026-08-01T09:00:00+08:00', reviewedAt: '2026-08-02T09:00:00+08:00',
+    }]
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
 
-    await w.find('.pdca-enable').trigger('click')
+    expect(w.find('.pdca').exists()).toBe(false)
+    expect(w.text()).not.toContain('PDCA 闭环')
     expect(current.pdcaCycles).toHaveLength(1)
+    w.unmount()
+  })
 
-    const fields = w.findAll('.pdca-field textarea')
-    await fields[0]!.setValue('连续七天在 23:30 前睡觉')
-    await fields[1]!.setValue('完成六天，周五被临时工作打断')
-    await fields[2]!.setValue('下一轮给临时工作预留半小时')
-    await w.findAll('.pdca-outcomes button')[1]!.trigger('click')
-    // 默认 AI mock 会把任务投影成运行中；本用例在验收阶段完成复盘。
-    current.status = '待验证'
+  it('关联候选按创建时间倒序，并排除已完成任务', async () => {
+    const current = data.taskById(taskId)!
+    const candidates = data.tasks.filter((item) => item.id !== taskId)
+    expect(candidates.length).toBeGreaterThanOrEqual(3)
+    candidates.forEach((item) => { item.createdAt = null })
+    Object.assign(candidates[0]!, {
+      title: '较早的关联候选', status: '待办', createdAt: '2026-08-18T09:00:00',
+    })
+    Object.assign(candidates[1]!, {
+      title: '最近的关联候选', status: '进行中', createdAt: '2026-08-20T09:00:00',
+    })
+    Object.assign(candidates[2]!, {
+      title: '已经完成的关联候选', status: '已完成', createdAt: '2026-08-21T09:00:00',
+    })
+
+    const docs = Object.values(data.docs)
+    docs.forEach((doc) => { doc.created = '历史时间未知' })
+    Object.assign(docs[0]!, { title: '较早知识', created: '2026-08-17T09:00:00+08:00' })
+    Object.assign(docs[1]!, { title: '最近知识', created: '2026-08-19T09:00:00+08:00' })
+    data.files.splice(0, data.files.length,
+      {
+        id: 'file-old', name: '较早文件', size: '1 KB', icon: 'ri-file-line', time: '',
+        createdAt: '2026-08-16T09:00:00', by: 'wg', link: '/api/files/file-old/download',
+      },
+      {
+        id: 'file-new', name: '最近文件', size: '2 KB', icon: 'ri-file-line', time: '',
+        createdAt: '2026-08-20T10:00:00+08:00', by: 'wg', link: '/api/files/file-new/download',
+      },
+    )
+    const nativeDateParse = Date.parse.bind(Date)
+    const dateParse = vi.spyOn(Date, 'parse').mockImplementation((value) => nativeDateParse(value))
+
+    ui.openTask(current.id)
+    const w = mountDrawer()
     await w.vm.$nextTick()
+    await w.findAll('.text-btn').find((button) => button.text().includes('关联知识、任务或文件'))!.trigger('click')
 
-    const review = w.find('.pdca-actions button')
-    expect(review.attributes('disabled')).toBeUndefined()
-    await review.trigger('click')
+    const allRows = w.findAll('.relation-row').map((row) => row.text())
+    expect(dateParse).toHaveBeenCalledWith('2026-08-20T09:00:00+08:00')
+    dateParse.mockRestore()
+    expect(allRows.slice(0, 6).map((row) =>
+      ['最近文件', '最近的关联候选', '最近知识', '较早的关联候选', '较早知识', '较早文件']
+        .find((name) => row.includes(name)),
+    )).toEqual(['最近文件', '最近的关联候选', '最近知识', '较早的关联候选', '较早知识', '较早文件'])
 
-    expect(current.status).toBe('已完成')
-    expect(current.pdcaCycles![0]!.outcome).toBe('部分达成')
-    expect(current.pdcaCycles![0]!.reviewedAt).toBeTruthy()
+    await w.find('.relation-picker .search input').setValue('关联候选')
+    expect(w.findAll('.relation-row').map((row) => row.text())).toHaveLength(2)
+    expect(w.findAll('.relation-row')[0]!.text()).toContain('最近的关联候选')
+    await w.find('.relation-picker .search input').setValue('')
 
-    await w.find('.pdca-actions button').trigger('click')
+    const switchType = async (label: string) => {
+      await w.findAll('.relation-picker nav button').find((button) => button.text().startsWith(label))!.trigger('click')
+      return w.findAll('.relation-row').map((row) => row.text())
+    }
+    const taskRows = await switchType('任务')
+    expect(taskRows.findIndex((row) => row.includes('最近的关联候选')))
+      .toBeLessThan(taskRows.findIndex((row) => row.includes('较早的关联候选')))
+    expect(taskRows.join('')).not.toContain('已经完成的关联候选')
 
-    expect(current.status).toBe('待办')
-    expect(current.pdcaCycles).toHaveLength(2)
-    expect(current.pdcaCycles![1]!.plan).toBe('下一轮给临时工作预留半小时')
-    expect(w.find('.pdca-history').exists()).toBe(true)
+    const docRows = await switchType('知识')
+    expect(docRows[0]).toContain('最近知识')
+    expect(docRows[1]).toContain('较早知识')
+
+    const fileRows = await switchType('文件')
+    expect(fileRows[0]).toContain('最近文件')
+    expect(fileRows[1]).toContain('较早文件')
     w.unmount()
   })
 
@@ -259,6 +307,11 @@ describe('TaskDrawer', () => {
     expect(w.find('.sub-back').exists()).toBe(true)
     expect(w.find('.sub-title-input').attributes('value')).toBe('扫描身份证')
     expect(w.find('.props').text()).not.toContain('自定义属性')
+    const subActions = w.findAll('.sub-detail-action')
+    expect(subActions).toHaveLength(2)
+    expect(subActions[0]!.text()).toContain('复制该子任务分享链接')
+    expect(subActions[1]!.classes()).toContain('danger')
+    expect(subActions[1]!.text()).toContain('删除子任务')
     expect(data.subById(taskId, subId)).toBeDefined()
   })
 

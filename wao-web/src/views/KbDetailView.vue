@@ -16,6 +16,7 @@ import { toast } from '@/composables/toast'
 import { copyToClipboard } from '@/utils/clipboard'
 import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
 import { absoluteTime, relativeTime } from '@/utils/time'
+import { blocksToText, textToBlocks } from '@/utils/doc'
 import { useNow } from '@/composables/now'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { useFavoritesStore } from '@/stores/favorites'
@@ -119,9 +120,9 @@ const backlinks = computed(() =>
   })),
 )
 
-/** 目录只收一级、二级标题；旧文档标题没有层级时按二级处理。 */
+/** 目录展示一至三级标题；旧文档标题没有层级时按二级处理。 */
 const toc = computed(() => (doc.value?.blocks ?? [])
-  .filter((block) => block.h && (block.hLevel == null || block.hLevel <= 2))
+  .filter((block) => block.h && (block.hLevel == null || block.hLevel <= 3))
   .map((block) => ({ text: block.h!, level: block.hLevel ?? 2 })))
 const activeToc = ref(0)
 
@@ -185,7 +186,131 @@ const savingTemplate = ref(false)
 const templateForm = reactive({ name: '', description: '' })
 const editingTemplateId = ref<string | null>(null)
 const editingTemplateSaving = ref(false)
-const editTemplateForm = reactive({ name: '', description: '' })
+const editTemplateForm = reactive({ name: '', description: '', content: '' })
+type TemplateEditState = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict'
+interface StoredTemplateDraft {
+  name: string
+  description: string
+  content: string
+  templateUpdatedAt: string
+  savedAt: string
+}
+const templateEditState = ref<TemplateEditState>('saved')
+const templateDraftRestored = ref(false)
+const templateDraftStorageError = ref(false)
+const editingTemplateExpectedUpdatedAt = ref('')
+const templateConflictRefreshing = ref(false)
+let hydratingTemplateEdit = false
+
+const templateEditStatusText = computed(() => {
+  if (templateEditState.value === 'conflict') {
+    return '服务器已有其他窗口保存的新版本；本机草稿仍在，请选择处理方式'
+  }
+  if (templateDraftStorageError.value) return '本机草稿暂时无法保存，离开前请先保存到服务器'
+  if (templateEditState.value === 'saving') return '正在保存到服务器…'
+  if (templateEditState.value === 'error') return '保存失败，本机草稿仍在，可直接重试'
+  if (templateEditState.value === 'dirty') {
+    return templateDraftRestored.value ? '已恢复本机草稿，尚未同步' : '本机草稿已保存，尚未同步'
+  }
+  return '已保存到服务器'
+})
+
+function templateDraftKey(templateId: string) {
+  const memberId = session.userId
+  if (!memberId) return null
+  return `wao-doc-template-draft-v1:${encodeURIComponent(memberId)}:${encodeURIComponent(templateId)}`
+}
+
+function sameAsTemplate(template: DocTemplate) {
+  return editTemplateForm.name === template.name
+    && editTemplateForm.description === template.description
+    && editTemplateForm.content === blocksToText(template.blocks)
+}
+
+function removeTemplateDraft(templateId: string) {
+  const key = templateDraftKey(templateId)
+  if (!key) return
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    // 服务端保存结果不应被浏览器存储权限错误反转成失败；状态区会提示后续编辑无法落本机。
+  }
+}
+
+function readTemplateDraft(template: DocTemplate): StoredTemplateDraft | null {
+  const key = templateDraftKey(template.id)
+  if (!key) return null
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const draft = JSON.parse(raw) as Partial<StoredTemplateDraft>
+    if (typeof draft.name !== 'string'
+      || typeof draft.description !== 'string'
+      || typeof draft.content !== 'string') {
+      removeTemplateDraft(template.id)
+      return null
+    }
+    if (draft.name === template.name
+      && draft.description === template.description
+      && draft.content === blocksToText(template.blocks)) {
+      removeTemplateDraft(template.id)
+      return null
+    }
+    return {
+      name: draft.name,
+      description: draft.description,
+      content: draft.content,
+      templateUpdatedAt: typeof draft.templateUpdatedAt === 'string' ? draft.templateUpdatedAt : '',
+      savedAt: typeof draft.savedAt === 'string' ? draft.savedAt : '',
+    }
+  } catch {
+    removeTemplateDraft(template.id)
+    return null
+  }
+}
+
+function persistTemplateDraft(template?: DocTemplate) {
+  const id = editingTemplateId.value
+  const current = template ?? templates.value.find((item) => item.id === id)
+  if (!id || !current || hydratingTemplateEdit || editingTemplateSaving.value) return
+  if (sameAsTemplate(current)) {
+    removeTemplateDraft(id)
+    templateEditState.value = 'saved'
+    templateDraftRestored.value = false
+    templateDraftStorageError.value = false
+    return
+  }
+  const key = templateDraftKey(id)
+  if (!key) {
+    if (templateEditState.value !== 'conflict') templateEditState.value = 'dirty'
+    templateDraftStorageError.value = true
+    return
+  }
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      name: editTemplateForm.name,
+      description: editTemplateForm.description,
+      content: editTemplateForm.content,
+      templateUpdatedAt: editingTemplateExpectedUpdatedAt.value || current.updatedAt,
+      savedAt: new Date().toISOString(),
+    } satisfies StoredTemplateDraft))
+    if (templateEditState.value !== 'conflict') templateEditState.value = 'dirty'
+    templateDraftStorageError.value = false
+  } catch {
+    if (templateEditState.value !== 'conflict') templateEditState.value = 'dirty'
+    templateDraftStorageError.value = true
+  }
+}
+
+watch(
+  [
+    () => editTemplateForm.name,
+    () => editTemplateForm.description,
+    () => editTemplateForm.content,
+  ],
+  () => persistTemplateDraft(),
+  { flush: 'sync' },
+)
 
 async function loadTemplates() {
   if (!data.apiLive) return
@@ -227,31 +352,118 @@ async function saveAsTemplate() {
     savingTemplate.value = false
   }
 }
+function mayLeaveTemplateEdit() {
+  if (!editingTemplateId.value) return true
+  if (editingTemplateSaving.value) return false
+  persistTemplateDraft()
+  if (!templateDraftStorageError.value || templateEditState.value === 'saved') return true
+  return window.confirm('本机草稿无法保存，离开编辑会丢失未保存内容。仍要离开吗？')
+}
+function closeTemplateManager() {
+  if (!mayLeaveTemplateEdit()) return
+  editingTemplateId.value = null
+  templateManagerOpen.value = false
+}
+function finishTemplateEdit() {
+  if (!mayLeaveTemplateEdit()) return
+  editingTemplateId.value = null
+}
 function beginEditTemplate(template: DocTemplate) {
+  if (editingTemplateId.value === template.id) return
+  if (editingTemplateId.value && !mayLeaveTemplateEdit()) return
+  const draft = readTemplateDraft(template)
+  hydratingTemplateEdit = true
+  editingTemplateId.value = null
+  editTemplateForm.name = draft?.name ?? template.name
+  editTemplateForm.description = draft?.description ?? template.description
+  editTemplateForm.content = draft?.content ?? blocksToText(template.blocks)
+  editingTemplateExpectedUpdatedAt.value = draft?.templateUpdatedAt || template.updatedAt
   editingTemplateId.value = template.id
-  editTemplateForm.name = template.name
-  editTemplateForm.description = template.description
+  templateEditState.value = draft?.templateUpdatedAt && draft.templateUpdatedAt !== template.updatedAt
+    ? 'conflict'
+    : draft ? 'dirty' : 'saved'
+  templateDraftRestored.value = draft !== null
+  templateDraftStorageError.value = false
+  hydratingTemplateEdit = false
 }
 async function saveTemplateMeta(template: DocTemplate) {
-  if (!editTemplateForm.name.trim() || editingTemplateSaving.value) return
+  if (!editTemplateForm.name.trim()
+    || editingTemplateSaving.value
+    || templateEditState.value === 'conflict') return
+  persistTemplateDraft(template)
   editingTemplateSaving.value = true
+  templateEditState.value = 'saving'
   try {
     const updated = await apiPatchDocTemplate(template.id, {
       name: editTemplateForm.name.trim(),
       description: editTemplateForm.description.trim(),
+      blocks: textToBlocks(editTemplateForm.content),
+      expectedUpdatedAt: editingTemplateExpectedUpdatedAt.value,
     })
     Object.assign(template, updated)
-    editingTemplateId.value = null
-    toast('模板信息已保存', 'ri-check-line')
-  } catch {
-    toast('模板修改失败，请重试', 'ri-error-warning-line')
+    hydratingTemplateEdit = true
+    editTemplateForm.name = updated.name
+    editTemplateForm.description = updated.description
+    editTemplateForm.content = blocksToText(updated.blocks)
+    editingTemplateExpectedUpdatedAt.value = updated.updatedAt
+    hydratingTemplateEdit = false
+    removeTemplateDraft(template.id)
+    templateEditState.value = 'saved'
+    templateDraftRestored.value = false
+    templateDraftStorageError.value = false
+    toast('模板名称、说明与正文已保存', 'ri-check-line')
+  } catch (cause) {
+    editingTemplateSaving.value = false
+    persistTemplateDraft(template)
+    const conflict = cause instanceof Error && cause.message.includes('模板已被其他窗口更新')
+    templateEditState.value = conflict ? 'conflict' : 'error'
+    toast(conflict ? '服务器模板已有新版本，本机草稿已保留' : '模板修改失败，请重试', 'ri-error-warning-line')
   } finally {
     editingTemplateSaving.value = false
   }
 }
+async function latestTemplateForConflict(templateId: string) {
+  if (templateConflictRefreshing.value) return null
+  templateConflictRefreshing.value = true
+  try {
+    const latest = await fetchDocTemplates()
+    templates.value = latest
+    return latest.find((item) => item.id === templateId) ?? null
+  } catch {
+    toast('服务器最新版没有加载成功，请重试', 'ri-error-warning-line')
+    return null
+  } finally {
+    templateConflictRefreshing.value = false
+  }
+}
+async function discardConflictedTemplateDraft(templateId: string) {
+  const latest = await latestTemplateForConflict(templateId)
+  if (!latest) return
+  hydratingTemplateEdit = true
+  editTemplateForm.name = latest.name
+  editTemplateForm.description = latest.description
+  editTemplateForm.content = blocksToText(latest.blocks)
+  editingTemplateExpectedUpdatedAt.value = latest.updatedAt
+  hydratingTemplateEdit = false
+  removeTemplateDraft(templateId)
+  templateDraftRestored.value = false
+  templateDraftStorageError.value = false
+  templateEditState.value = 'saved'
+  toast('已载入服务器最新版', 'ri-refresh-line')
+}
+async function confirmConflictedTemplateOverwrite(templateId: string) {
+  const latest = await latestTemplateForConflict(templateId)
+  if (!latest) return
+  editingTemplateExpectedUpdatedAt.value = latest.updatedAt
+  templateEditState.value = 'dirty'
+  templateDraftRestored.value = true
+  persistTemplateDraft(latest)
+  toast('已确认以本机草稿为准，请再次点击保存', 'ri-draft-line')
+}
 async function removeTemplate(template: DocTemplate) {
   try {
     await apiDeleteDocTemplate(template.id)
+    removeTemplateDraft(template.id)
     templates.value = templates.value.filter((item) => item.id !== template.id)
     toast(`已删除模板「${template.name}」`, 'ri-delete-bin-line')
   } catch {
@@ -347,7 +559,7 @@ async function removeDoc(id: string) {
   toast(`已把「${title}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
 }
 function tocGo(index: number) {
-  const el = scrollEl.value?.querySelectorAll('.doc-body h1, .doc-body h2')[index] as HTMLElement | undefined
+  const el = scrollEl.value?.querySelectorAll('.doc-body h1, .doc-body h2, .doc-body h3')[index] as HTMLElement | undefined
   const c = scrollEl.value
   if (el && c)
     c.scrollTop = Math.max(
@@ -357,7 +569,7 @@ function tocGo(index: number) {
 }
 function onDocScroll() {
   const c = scrollEl.value
-  const headings = Array.from(c?.querySelectorAll('.doc-body h1, .doc-body h2') ?? []) as HTMLElement[]
+  const headings = Array.from(c?.querySelectorAll('.doc-body h1, .doc-body h2, .doc-body h3') ?? []) as HTMLElement[]
   if (!c || !headings.length) return
   const top = c.getBoundingClientRect().top + 48
   let passed = -1
@@ -392,7 +604,11 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
     done(null, '')
     return
   }
-  const ref = await data.uploadImage(file, `文档 · ${doc.value?.title || '未命名文档'}`)
+  const ref = await data.uploadImage(
+    file,
+    `文档 · ${doc.value?.title || '未命名文档'}`,
+    { requirePersisted: true },
+  )
   if (!ref) toast('图片上传失败，请重试', 'ri-error-warning-line')
   done(ref?.url ?? null, ref?.name ?? file.name)
 }
@@ -612,6 +828,8 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
               bare
               allow-h1
               polishable
+              link-controls
+              image-controls
               placeholder="开始写作…敲 # / ## 变标题、Tab 缩进，可直接粘贴截图"
               :min-height="360"
               :peers="peers"
@@ -637,7 +855,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
         <div v-if="toc.length" class="toc">
           <div class="toc-label">目录</div>
           <div class="toc-list">
-            <button v-for="(t, i) in toc" :key="`${t.text}-${i}`" class="toc-item" :class="{ sub: t.level === 2, active: activeToc === i }" @click="tocGo(i)">{{ t.text }}</button>
+            <button v-for="(t, i) in toc" :key="`${t.text}-${i}`" class="toc-item" :class="{ sub: t.level === 2, deep: t.level === 3, active: activeToc === i }" @click="tocGo(i)">{{ t.text }}</button>
           </div>
         </div>
       </div>
@@ -665,22 +883,57 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
       </section>
     </div>
 
-    <div v-if="templateManagerOpen" class="modal-backdrop" @click.self="templateManagerOpen = false">
+    <div v-if="templateManagerOpen" class="modal-backdrop" @click.self="closeTemplateManager">
       <section class="template-modal manager" role="dialog" aria-modal="true" aria-label="文档模板管理">
-        <header><div><h2>文档模板管理</h2><p>模板属于当前账号；删除模板不会影响已创建的文档。</p></div><button @click="templateManagerOpen = false"><i class="ri-close-line"></i></button></header>
+        <header><div><h2>文档模板管理</h2><p>模板属于当前账号；删除模板不会影响已创建的文档。</p></div><button :disabled="editingTemplateSaving" @click="closeTemplateManager"><i class="ri-close-line"></i></button></header>
         <div v-if="templateLoading" class="template-state"><i class="ri-loader-4-line spin"></i>正在加载模板…</div>
         <div v-else-if="templateError" class="template-state error">{{ templateError }}<button @click="loadTemplates">重试</button></div>
         <div v-else-if="!templates.length" class="template-state empty"><i class="ri-file-copy-2-line"></i><b>还没有模板</b><span>打开任意文档，点击顶部“另存为模板”即可创建。</span></div>
         <div v-else class="template-list">
           <article v-for="item in templates" :key="item.id">
             <template v-if="editingTemplateId === item.id">
-              <input v-model="editTemplateForm.name" maxlength="128" />
-              <textarea v-model="editTemplateForm.description" maxlength="512" rows="2"></textarea>
-              <div class="template-row-actions"><button :disabled="editingTemplateSaving" @click="editingTemplateId = null">取消</button><button class="primary" :disabled="!editTemplateForm.name.trim() || editingTemplateSaving" @click="saveTemplateMeta(item)">{{ editingTemplateSaving ? '保存中…' : '保存' }}</button></div>
+              <label>模板名称<input v-model="editTemplateForm.name" maxlength="128" :disabled="editingTemplateSaving" /></label>
+              <label>使用说明<textarea v-model="editTemplateForm.description" maxlength="512" rows="2" :disabled="editingTemplateSaving"></textarea></label>
+              <label class="template-content-field">模板内容</label>
+              <MarkdownEditor
+                v-model="editTemplateForm.content"
+                class="template-content-editor"
+                allow-h1
+                link-controls
+                image-controls
+                :readonly="editingTemplateSaving"
+                placeholder="模板正文可以为空；支持标题、链接与图片"
+                :min-height="180"
+                @upload-image="onUploadImage"
+              />
+              <div class="template-edit-footer">
+                <span class="template-edit-status" :class="templateEditState">
+                  <i :class="templateEditState === 'error' || templateEditState === 'conflict' || templateDraftStorageError ? 'ri-error-warning-line' : templateEditState === 'saved' ? 'ri-checkbox-circle-line' : templateEditState === 'saving' ? 'ri-loader-4-line spin' : 'ri-draft-line'"></i>
+                  {{ templateEditStatusText }}
+                </span>
+                <div v-if="templateEditState === 'conflict'" class="template-row-actions conflict-actions">
+                  <button :disabled="templateConflictRefreshing" @click="discardConflictedTemplateDraft(item.id)">载入服务器版</button>
+                  <button class="primary" :disabled="templateConflictRefreshing" @click="confirmConflictedTemplateOverwrite(item.id)">{{ templateConflictRefreshing ? '检查中…' : '确认保留本机草稿' }}</button>
+                </div>
+                <div v-else class="template-row-actions"><button :disabled="editingTemplateSaving" @click="finishTemplateEdit">{{ templateEditState === 'saved' ? '完成' : '稍后继续' }}</button><button class="primary" :disabled="!editTemplateForm.name.trim() || editingTemplateSaving || templateEditState === 'saved'" @click="saveTemplateMeta(item)">{{ editingTemplateSaving ? '保存中…' : templateEditState === 'error' ? '重试保存' : '保存' }}</button></div>
+              </div>
             </template>
             <template v-else>
-              <div class="template-copy"><b>{{ item.name }}</b><span>{{ item.description || `${item.blocks.length} 个正文块` }}</span></div>
-              <div class="template-row-actions"><button @click="beginEditTemplate(item)"><i class="ri-edit-line"></i>编辑</button><button class="danger" @click="removeTemplate(item)"><i class="ri-delete-bin-line"></i>删除</button></div>
+              <div class="template-summary">
+                <div class="template-copy"><b>{{ item.name }}</b><span>{{ item.description || `${item.blocks.length} 个正文块` }}</span></div>
+                <div class="template-row-actions"><button @click="beginEditTemplate(item)"><i class="ri-edit-line"></i>编辑内容</button><button class="danger" @click="removeTemplate(item)"><i class="ri-delete-bin-line"></i>删除</button></div>
+              </div>
+              <div class="template-content-preview">
+                <MarkdownEditor
+                  v-if="item.blocks.length"
+                  :model-value="blocksToText(item.blocks)"
+                  readonly
+                  bare
+                  allow-h1
+                  :min-height="0"
+                />
+                <span v-else>暂无正文内容</span>
+              </div>
             </template>
           </article>
         </div>
@@ -1396,13 +1649,14 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   border-left-color: var(--wao-primary);
 }
 .toc-item.sub { padding-left: 22px; font-size: 11.5px; }
+.toc-item.deep { padding-left: 34px; font-size: 11px; color: var(--wao-text-weak); }
 .toc-item.active { color: var(--wao-primary-text); border-left-color: var(--wao-primary); background: var(--wao-primary-soft); }
 
 /* 文档模板弹窗 */
 .modal-backdrop { position: fixed; inset: 0; z-index: 1100; display: grid; place-items: center; padding: 20px; background: rgba(13, 17, 35, .56); backdrop-filter: blur(3px); }
 .template-modal { width: min(680px, 100%); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--wao-line); border-radius: 18px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-modal); padding: 22px; }
 .template-modal.compact { width: min(520px, 100%); }
-.template-modal.manager { width: min(620px, 100%); }
+.template-modal.manager { width: min(780px, 100%); }
 .template-modal header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .template-modal h2 { margin: 0; color: var(--wao-text); font-size: 20px; }
 .template-modal header p { margin: 5px 0 0; color: var(--wao-text-weak); font-size: 12px; }
@@ -1427,14 +1681,27 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
 .template-state.empty { flex-direction: column; }
 .template-state.empty i { font-size: 30px; color: var(--wao-text-faint); }
 .template-list { display: flex; flex-direction: column; gap: 9px; }
-.template-list article { display: flex; align-items: center; gap: 12px; border: 1px solid var(--wao-line); border-radius: 11px; padding: 12px; }
-.template-list article:has(textarea) { display: grid; }
+.template-list article { display: grid; gap: 12px; border: 1px solid var(--wao-line); border-radius: 11px; padding: 14px; }
+.template-summary { display: flex; align-items: center; gap: 12px; }
 .template-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .template-copy b { color: var(--wao-text); font-size: 13px; }
 .template-copy span { color: var(--wao-text-weak); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.template-content-preview { max-height: 230px; overflow: auto; padding: 11px 12px; border: 1px solid var(--wao-divider); border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 11px; overscroll-behavior-y: contain; }
+.template-content-preview :deep(.tiptap) { font-size: 12px; line-height: 1.65; }
+.template-content-field { margin-bottom: -5px; }
+.template-content-editor { border: 1px solid var(--wao-line-control); border-radius: 9px; }
+.template-content-editor :deep(.tiptap) { max-height: 340px; overflow: auto; overscroll-behavior-y: contain; }
+.template-edit-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.template-edit-status { display: inline-flex; align-items: center; gap: 5px; color: var(--wao-warning-strong); font-size: 11px; line-height: 1.45; }
+.template-edit-status.saved { color: var(--wao-success-strong); }
+.template-edit-status.error, .template-edit-status.conflict { color: var(--wao-danger-strong); }
 .template-row-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .template-row-actions button { border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-3); padding: 6px 9px; cursor: pointer; }
 .template-row-actions button.danger { color: var(--wao-danger-strong); }
+@media (max-width: 620px) {
+  .template-edit-footer { align-items: flex-start; flex-direction: column; }
+  .template-row-actions { align-self: flex-end; }
+}
 .spin { display: inline-block; animation: waoSpin .9s linear infinite; }
 
 @media (max-width: 760px) {

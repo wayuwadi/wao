@@ -938,11 +938,12 @@ export const useDataStore = defineStore('data', () => {
    */
   async function addTask(payload: NewTaskPayload): Promise<NewTaskResult> {
     const { desc = '', images = [], pdcaCycles = [], ...core } = payload
+    const createdAt = nowIso()
     const local: Task = {
-      id: uid('t'), status: '待办', parts: [], desc, steps: [], subs: [], files: [],
+      id: uid('t'), status: '待办', createdAt, parts: [], desc, steps: [], subs: [], files: [],
       docs: [], linkTasks: [], comments: [], custom: [], images,
       pdcaCycles,
-      activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '创建了任务', time: nowIso(), by: currentAuthor() }],
+      activity: [{ icon: 'ri-add-line', color: '#9A9DA9', text: '创建了任务', time: createdAt, by: currentAuthor() }],
       ...core,
     }
     tasks.value.unshift(local)

@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -143,6 +144,7 @@ class TaskServiceTest {
         assertThat(dto.status()).isEqualTo("待办");
         assertThat(dto.pr()).isEqualTo("P1");
         assertThat(dto.owner()).isEqualTo("wd");
+        assertThat(dto.createdAt()).isNotBlank();
         assertThat(dto.activity()).isNotEmpty();
     }
 
@@ -383,10 +385,12 @@ class TaskServiceTest {
         when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
 
         TaskDto created = service.replace("local-task-1", request, "wg");
+        existing.setCreatedAt(LocalDateTime.parse(created.createdAt()));
         TaskDto retried = service.replace("local-task-1", request, "wg");
 
         assertThat(created.createdBy()).isEqualTo("wg");
         assertThat(retried.createdBy()).isEqualTo("wg");
+        assertThat(retried.createdAt()).isEqualTo(created.createdAt());
         verify(mapper, times(1)).insert(any(TaskEntity.class));
         verify(mapper, times(1)).updateById(any(TaskEntity.class));
     }

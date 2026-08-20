@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch, watchEffect } from 'vue'
+import { computed, onUnmounted, reactive, ref, watch, watchEffect } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { toast } from '@/composables/toast'
@@ -7,15 +7,16 @@ import { updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import {
-  fetchBuiltinMenuRegistry, fetchExternalAppRegistry, fetchSiteInfo, fetchWebhookConfig,
-  saveBuiltinMenuRegistry, saveExternalAppRegistry, saveSiteInfo, saveWebhookConfig, testWebhook,
-  type FeishuWebhookConfig, type SiteInfo,
+  fetchBuiltinMenuRegistry, fetchExternalAppRegistry, fetchSiteInfo,
+  saveBuiltinMenuRegistry, saveExternalAppRegistry, saveSiteInfo,
+  type SiteInfo,
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import { useNavStore } from '@/stores/nav'
 import { usePreferenceStore } from '@/stores/preferences'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import MemoryMcpPanel from '@/components/settings/MemoryMcpPanel.vue'
+import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import type { QuickLink } from '@/config/quickLinks'
@@ -35,15 +36,34 @@ const nav = useNavStore()
 const preferences = usePreferenceStore()
 const router = useRouter()
 const route = useRoute()
+const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const NAV = [
-  { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members'], ['日历账户 · CalDAV', 'caldav']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['菜单配置', 'navigation'], ['通知 · 飞书 Webhook', 'webhook'], ['AI 账号', 'ai-accounts']] },
+  { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['快捷链接', 'quick-links'], ['Codex 记忆 · MCP', 'memory-mcp']] },
 ] as const
 
 const requestedTab = (route.query.tab as string) || 'members'
-const tab = ref<string>(requestedTab === 'api' ? 'memory-mcp' : requestedTab)
+const availableTabs = new Set<string>(NAV.flatMap((group) => group.items.map((item) => item[1])))
+const normalizedTab = requestedTab === 'api' ? 'memory-mcp' : requestedTab === 'caldav' ? 'members' : requestedTab
+const tab = ref<string>(availableTabs.has(normalizedTab) ? normalizedTab : 'members')
+let skipWebhookRouteGuardOnce = false
+
+function selectTab(next: string) {
+  if (tab.value === 'webhook' && next !== 'webhook' && webhookPanel.value
+      && !webhookPanel.value.confirmLeave()) return
+  tab.value = next
+}
+
+const removeWebhookRouteGuard = router.beforeEach(() => {
+  if (skipWebhookRouteGuardOnce) {
+    skipWebhookRouteGuardOnce = false
+    return true
+  }
+  return tab.value !== 'webhook' || !webhookPanel.value || webhookPanel.value.confirmLeave()
+})
+onUnmounted(removeWebhookRouteGuard)
 const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
 const profileForm = reactive({ name: '', initial: '' })
 const accountBusy = ref(false)
@@ -70,12 +90,6 @@ const orgMembers = computed(() =>
     meTag: m.id === session.currentUser.id ? '（我）' : '',
   })),
 )
-
-const caldavCals = reactive([
-  { name: '家庭日历', dot: '#0E8C8C', on: true },
-  { name: '工作日历', dot: '#C05D8E', on: true },
-  { name: '节假日订阅', dot: '#B9821F', on: false },
-])
 
 const THEME_LABELS: Record<ThemeMode, string> = {
   light: '明亮',
@@ -192,12 +206,6 @@ function resetQlLinks() {
   toast('已恢复默认链接，记得点保存', 'ri-history-line')
 }
 
-// ---- 系统 · 飞书通知 Webhook ----
-// 全局只有一个：所有需要「说一声」的地方都发到这一个群机器人。地址加密存服务端，
-// 界面上只回脱敏形态，留空保存即表示不改地址。
-const webhook = ref<FeishuWebhookConfig | null>(null)
-const webhookInput = ref('')
-const webhookBusy = ref(false)
 const site = reactive<SiteInfo>({ siteName: '', description: '', icpNumber: '', icpUrl: '' })
 const siteLoaded = ref(false)
 const siteBusy = ref(false)
@@ -390,43 +398,6 @@ async function saveSiteInformation() {
   finally { siteBusy.value = false }
 }
 
-async function loadWebhook() {
-  try {
-    webhook.value = await fetchWebhookConfig()
-  } catch (error) {
-    toast(error instanceof Error ? error.message : '读取通知配置失败')
-  }
-}
-async function saveWebhook() {
-  webhookBusy.value = true
-  try {
-    webhook.value = await saveWebhookConfig({
-      url: webhookInput.value.trim() || undefined,
-      enabled: webhook.value?.enabled ?? false,
-    })
-    webhookInput.value = ''
-    toast('飞书通知配置已保存', 'ri-check-line')
-  } catch (error) { toast(error instanceof Error ? error.message : '保存失败') }
-  finally { webhookBusy.value = false }
-}
-async function toggleWebhook() {
-  if (!webhook.value) return
-  const next = !webhook.value.enabled
-  webhookBusy.value = true
-  try {
-    webhook.value = await saveWebhookConfig({ enabled: next })
-    toast(next ? '已启用飞书通知' : '已停用飞书通知', 'ri-notification-3-line')
-  } catch (error) { toast(error instanceof Error ? error.message : '保存失败') }
-  finally { webhookBusy.value = false }
-}
-async function sendTestWebhook() {
-  webhookBusy.value = true
-  try {
-    await testWebhook()
-    toast('测试消息已发出，去群里看看', 'ri-send-plane-2-line')
-  } catch (error) { toast(error instanceof Error ? error.message : '发送失败') }
-  finally { webhookBusy.value = false }
-}
 // ---- 系统 · 按项目通知 ----
 // 群机器人原本对所有项目一视同仁地播报，可多数项目的新建、状态变化并不需要有人立刻知道；
 // 通知一多整块就被无视，真正等验收的那条也跟着被划过去。开关落在项目上，
@@ -464,16 +435,12 @@ watch(tab, (t) => {
     if (!externalAppsLoaded.value) loadExternalAppSettings()
     if (!builtinMenusLoaded.value) loadBuiltinMenuSettings()
   }
-  if (t === 'webhook' && !webhook.value) loadWebhook()
   if (t === 'quick-links') quickLinks.load()
 }, { immediate: true })
-
-function toggleCal(c: { on: boolean }) {
-  c.on = !c.on
-  toast('演示：订阅开关在正式版本生效', 'ri-calendar-line')
-}
 async function logout() {
+  if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return
   await session.logout()
+  skipWebhookRouteGuardOnce = true
   await router.push('/login')
 }
 async function saveEmailCredential() {
@@ -522,7 +489,7 @@ function demo(msg: string, icon?: string) {
       <div v-for="g in NAV" :key="g.label">
         <div class="snav-group"><i :class="g.icon"></i>{{ g.label }}</div>
         <div class="snav-items">
-          <button v-for="it in g.items" :key="it[1]" class="snav-item" :class="{ on: tab === it[1] }" @click="tab = it[1]">
+          <button v-for="it in g.items" :key="it[1]" class="snav-item" :class="{ on: tab === it[1] }" @click="selectTab(it[1])">
             {{ it[0] }}
           </button>
         </div>
@@ -558,33 +525,6 @@ function demo(msg: string, icon?: string) {
               <span class="mem-role" :style="{ background: m.roleBg, color: m.roleColor }">{{ m.role }}</span>
             </div>
             <div class="hint">WAO 不区分「个人版 / 团队版」：内容归属由负责人、参与人与可见范围表达。新建项目默认仅创建者可见，可邀请成员并设置查看或编辑权限。</div>
-          </div>
-        </template>
-
-        <!-- CalDAV -->
-        <template v-else-if="tab === 'caldav'">
-          <div class="s-h1">日历账户 · CalDAV</div>
-          <div class="card">
-            <div class="card-row wrap">
-              <div class="card-title">主账户</div>
-              <span class="connected"><span class="c-dot"></span>已连接</span>
-              <div class="spacer"></div>
-              <button class="btn-ghost sm" @click="demo('正在同步 CalDAV…已是最新（演示）', 'ri-refresh-line')"><i class="ri-refresh-line"></i>立即同步</button>
-              <button class="btn-ghost sm" @click="demo('演示：添加 CalDAV 账户在正式版本提供')"><i class="ri-add-line"></i>添加账户</button>
-            </div>
-            <div class="kv-list">
-              <div class="kv"><span class="kv-k">服务器</span><span class="kv-v wao-mono">https://dav.wayuwa.example/caldav</span></div>
-              <div class="kv"><span class="kv-k">账号</span><span class="kv-v">wg@wayuwa.example</span></div>
-              <div class="kv"><span class="kv-k">同步</span><span class="kv-v">每 15 分钟 · 上次同步 今天 12:10</span></div>
-            </div>
-            <div class="sub-block">
-              <div class="sub-label">订阅的日历（与系统日历合并显示）</div>
-              <div v-for="(c, i) in caldavCals" :key="i" class="cal-row">
-                <span class="cal-dot" :style="{ background: c.dot }"></span>
-                <span class="cal-name">{{ c.name }}</span>
-                <button class="toggle" :class="{ on: c.on }" title="启用 / 停用" @click="toggleCal(c)"><span class="knob"></span></button>
-              </div>
-            </div>
           </div>
         </template>
 
@@ -759,27 +699,9 @@ function demo(msg: string, icon?: string) {
           </div>
         </template>
 
-        <!-- 系统 · 飞书通知 Webhook -->
+        <!-- 系统 · 通用 Webhook 配置 -->
         <template v-else-if="tab === 'webhook'">
-          <div class="s-h1">通知 · 飞书 Webhook</div>
-          <div class="card">
-            <div class="card-row wrap">
-              <div class="card-title">群机器人地址</div>
-              <span v-if="webhook?.urlSet" class="connected"><span class="c-dot"></span>已配置</span>
-              <div class="spacer"></div>
-              <button class="toggle" :class="{ on: webhook?.enabled }" :disabled="!webhook?.urlSet || webhookBusy" title="启用 / 停用通知" @click="toggleWebhook"><span class="knob"></span></button>
-            </div>
-            <div class="kv-list">
-              <div class="kv"><span class="kv-k w76">当前地址</span><span class="kv-v wao-mono">{{ webhook?.urlMask || '尚未配置' }}</span></div>
-              <div class="kv"><span class="kv-k w76">状态</span><span class="kv-v">{{ webhook?.enabled ? '已启用 · 系统通知会发到这个群' : '未启用' }}</span></div>
-            </div>
-            <form class="credential-form webhook-form" @submit.prevent="saveWebhook">
-              <input v-model.trim="webhookInput" type="url" placeholder="粘贴飞书群机器人 Webhook 地址（留空即不修改）" />
-              <button class="btn-primary" :disabled="webhookBusy">保存</button>
-              <button type="button" class="btn-ghost" :disabled="webhookBusy || !webhook?.urlSet" @click="sendTestWebhook">发送测试消息</button>
-            </form>
-            <div class="hint">全局只用这一个 webhook：在飞书群里添加「自定义机器人」拿到地址，粘进来即可。地址加密保存在服务端，页面上只显示脱敏形态，不会随接口回传明文。</div>
-          </div>
+          <WebhookConfigPanel ref="webhookPanel" />
 
           <div class="card">
             <div class="card-row wrap">
@@ -802,7 +724,7 @@ function demo(msg: string, icon?: string) {
               </div>
               <div v-if="!notifyProjects.length" class="hint">还没有项目。</div>
             </div>
-            <div class="hint">静音的项目不再往群里发新建任务、状态变化、新增子任务、评论与 AI 执行的卡片，页面内的记录一条不少。上面的总开关关掉时所有项目都不发。</div>
+            <div class="hint">静音的项目不再往群里发新建任务、状态变化、新增子任务、评论与 AI 执行的卡片，页面内的记录一条不少。系统默认机器人停用时，所有项目都不发。</div>
           </div>
         </template>
 
@@ -1232,7 +1154,6 @@ function demo(msg: string, icon?: string) {
 .preference-loading i { animation: preference-spin 1s linear infinite; }
 .music-preference-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 14px; color: var(--wao-text-weak); font-size: 12px; }
 @keyframes preference-spin { to { transform: rotate(360deg); } }
-.webhook-form { grid-template-columns: 1fr auto auto; }
 .toggle:disabled { opacity: .55; cursor: not-allowed; }
 .btn-ghost:disabled { opacity: .55; cursor: not-allowed; }
 .credential-form input { min-width: 0; height: 34px; box-sizing: border-box; border: 1px solid var(--wao-line-control); border-radius: 8px; padding: 0 10px; outline: none; background: var(--wao-bg-card); color: var(--wao-text); }
@@ -1689,7 +1610,7 @@ function demo(msg: string, icon?: string) {
   .spane { overflow: visible; }
   .scontent { padding: 16px 12px 28px; }
   .card { padding: 14px; }
-  .credential-form, .profile-form, .webhook-form { grid-template-columns: 1fr; }
+  .credential-form, .profile-form { grid-template-columns: 1fr; }
   .site-form { grid-template-columns: 1fr; }
   .builtin-menu-row { grid-template-columns: 64px minmax(0, 1fr); }
   .registry-load-error { align-items: stretch; flex-direction: column; }

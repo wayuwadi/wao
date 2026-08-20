@@ -25,6 +25,11 @@ vi.mock('@/api/system', () => ({
   fetchWebhookConfig: vi.fn<() => Promise<unknown>>(),
   saveWebhookConfig: vi.fn<() => Promise<unknown>>(),
   testWebhook: vi.fn<() => Promise<void>>(),
+  fetchWebhookEndpoints: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
+  createWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
+  updateWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
+  deleteWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
+  testWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
   fetchSiteInfo: vi.fn<() => Promise<unknown>>(),
   saveSiteInfo: vi.fn<() => Promise<unknown>>(),
 }))

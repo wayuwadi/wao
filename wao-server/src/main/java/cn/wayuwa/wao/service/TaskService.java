@@ -117,6 +117,7 @@ public class TaskService {
         e.setPr(StringUtils.hasText(req.pr()) ? req.pr() : "P2");
         e.setOwnerId(StringUtils.hasText(req.owner()) ? req.owner() : "wg");
         e.setCreatedBy(createdBy);
+        e.setCreatedAt(LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
         e.setDueDate(StringUtils.hasText(req.due()) ? req.due() : today());
         e.setDescription(req.desc() == null ? "" : req.desc());
         String startAt = dateTime(req.startAt());
@@ -218,6 +219,10 @@ public class TaskService {
         // 前端用本地生成的稳定 id 走 PUT upsert，首次写入的 DTO 还没有服务端创建人；
         // 必须从当前会话补齐，否则创建人筛选和后续协作通知都会丢失身份。
         e.setCreatedBy(previous == null ? blankOr(dto.createdBy(), memberId) : previous.getCreatedBy());
+        // 创建时间由服务端掌管：首次 PUT upsert 取当前时间，后续全文保存必须原样保留。
+        e.setCreatedAt(previous == null
+                ? LocalDateTime.now(ZoneId.of("Asia/Shanghai"))
+                : previous.getCreatedAt());
         e.setStartDate(dto.start());
         e.setDueDate(dto.due());
         e.setWaiting(dto.waiting());
@@ -397,6 +402,7 @@ public class TaskService {
         e.setPr("P2");
         e.setOwnerId(ownerId);
         e.setCreatedBy(ownerId);
+        e.setCreatedAt(LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
         e.setDueDate(today());
         e.setDescription(desc == null ? "" : desc);
         TaskDetail detail = new TaskDetail(
@@ -581,7 +587,8 @@ public class TaskService {
                 nn(d.steps()), nn(d.subs()), nn(d.files()), nn(d.docs()),
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
                 e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
-                d.groupId(), d.startAt(), d.endAt(), nn(d.pdcaCycles()));
+                d.groupId(), d.startAt(), d.endAt(), nn(d.pdcaCycles()),
+                e.getCreatedAt() == null ? null : e.getCreatedAt().toString());
     }
 
     /**

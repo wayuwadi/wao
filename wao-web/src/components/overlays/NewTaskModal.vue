@@ -6,7 +6,6 @@ import { useUiStore } from '@/stores/ui'
 import { usePreferenceStore } from '@/stores/preferences'
 import { priorityMeta } from '@/utils/domain'
 import { toast } from '@/composables/toast'
-import { nowIso } from '@/utils/time'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 import type { Priority } from '@/types'
@@ -32,7 +31,6 @@ const DRAFT_KEY = 'wao-new-task-draft-v1'
 type Draft = {
   title: string; project: string; owner: string; pr: Priority; due: string; desc: string
   scheduleMode: 'deadline' | 'range'; startAt: string; endAt: string
-  usePdca: boolean; pdcaPlan: string
 }
 function loadDraft(): Partial<Draft> {
   try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch { return {} }
@@ -79,20 +77,17 @@ const scheduleMode = ref<'deadline' | 'range'>(
 const startAt = ref(ui.modalStartAt || draft.startAt || `${dueDate(due.value)}T09:00`)
 const endAt = ref(ui.modalEndAt || draft.endAt || `${dueDate(due.value)}T10:00`)
 const desc = ref(draft.desc ?? '')
-const usePdca = ref(draft.usePdca ?? false)
-const pdcaPlan = ref(draft.pdcaPlan ?? '')
 const draftState = ref<'saving' | 'saved'>('saved')
 const createState = ref<'idle' | 'submitting' | 'error'>('idle')
 const pendingTaskId = ref<string | null>(null)
 let draftTimer: ReturnType<typeof setTimeout> | null = null
 
-watch([title, project, owner, pr, due, desc, scheduleMode, startAt, endAt, usePdca, pdcaPlan], () => {
+watch([title, project, owner, pr, due, desc, scheduleMode, startAt, endAt], () => {
   draftState.value = 'saving'
   localStorage.setItem(DRAFT_KEY, JSON.stringify({
     title: title.value, project: project.value, owner: owner.value,
     pr: pr.value, due: due.value, desc: desc.value,
     scheduleMode: scheduleMode.value, startAt: startAt.value, endAt: endAt.value,
-    usePdca: usePdca.value, pdcaPlan: pdcaPlan.value,
   } satisfies Draft))
   if (draftTimer) clearTimeout(draftTimer)
   draftTimer = setTimeout(() => (draftState.value = 'saved'), 180)
@@ -138,21 +133,12 @@ async function create() {
     toast('结束时间必须晚于开始时间', 'ri-error-warning-line')
     return
   }
-  if (usePdca.value && !pdcaPlan.value.trim()) {
-    toast('请先写下本轮希望达成的结果', 'ri-error-warning-line')
-    return
-  }
   const payload = {
     title: name, project: project.value, pr: pr.value, owner: owner.value,
     due: scheduleMode.value === 'range' ? startAt.value.slice(0, 10) : dueDate(due.value),
     startAt: scheduleMode.value === 'range' ? startAt.value : null,
     endAt: scheduleMode.value === 'range' ? endAt.value : null,
     desc: desc.value.trim(), images: [],
-    pdcaCycles: usePdca.value ? [{
-      id: `pc${Date.now()}`,
-      plan: pdcaPlan.value.trim(), check: '', act: '', outcome: null,
-      startedAt: nowIso(), reviewedAt: null,
-    }] : [],
   }
   createState.value = 'submitting'
   let persisted = false
@@ -279,20 +265,6 @@ function requestClose() {
         @upload-image="onUploadImage"
       />
     </div>
-
-    <div class="pdca-option" :class="{ on: usePdca }">
-      <button class="pdca-toggle" type="button" role="switch" :aria-checked="usePdca" @click="usePdca = !usePdca">
-        <span class="switch-dot"></span>
-      </button>
-      <button class="pdca-copy" type="button" @click="usePdca = !usePdca">
-        <b>使用 PDCA 跟踪</b>
-        <span>完成后记录结果和改进，并可从改进行动开启下一轮</span>
-      </button>
-    </div>
-    <label v-if="usePdca" class="pdca-plan">
-      <span>P · 本轮计划与判定标准</span>
-      <textarea v-model="pdcaPlan" rows="3" placeholder="例如：连续 7 天在 23:30 前睡觉；至少达成 5 天即算本轮有效"></textarea>
-    </label>
 
     <div class="foot">
       <span v-if="createState === 'error'" class="create-error" role="alert"><i class="ri-error-warning-line"></i>未保存到服务器，内容和草稿仍在</span>
@@ -608,80 +580,6 @@ function requestClose() {
 .btn-primary:hover:not(:disabled) {
   background: var(--wao-primary-hover);
 }
-.pdca-option {
-  margin-top: 14px;
-  padding: 10px 12px;
-  border: 1px solid var(--wao-line);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--wao-bg-sub);
-}
-.pdca-option.on {
-  border-color: #bfcaf4;
-  background: var(--wao-primary-soft);
-}
-.pdca-toggle {
-  width: 34px;
-  height: 20px;
-  padding: 2px;
-  border: none;
-  border-radius: 999px;
-  background: var(--wao-line-strong);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.pdca-option.on .pdca-toggle { background: var(--wao-primary); }
-.switch-dot {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform .16s ease;
-}
-.pdca-option.on .switch-dot { transform: translateX(14px); }
-.pdca-copy {
-  padding: 0;
-  border: none;
-  background: none;
-  text-align: left;
-  color: var(--wao-text);
-  cursor: pointer;
-  display: grid;
-  gap: 2px;
-}
-.pdca-copy b { font-size: 12.5px; }
-.pdca-copy span { color: var(--wao-text-weak); font-size: 11.5px; }
-.pdca-plan {
-  display: grid;
-  gap: 6px;
-  margin-top: 10px;
-  color: var(--wao-primary-text);
-  font-size: 12px;
-  font-weight: 600;
-}
-.pdca-plan textarea {
-  width: 100%;
-  box-sizing: border-box;
-  resize: vertical;
-  border: 1px solid #c7d0f1;
-  border-radius: 9px;
-  padding: 9px 10px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.6;
-  outline: none;
-}
-.pdca-plan textarea:focus {
-  border-color: var(--wao-primary);
-  box-shadow: 0 0 0 3px rgba(67, 88, 214, .1);
-}
-
 /* 手机：改成从底部升起的整页表单。
    居中弹窗在手机上会被键盘顶得只剩一条缝，标题框还常常被推到屏幕外；
    贴底之后，输入框始终在键盘正上方，创建按钮固定在拇指够得到的地方。 */

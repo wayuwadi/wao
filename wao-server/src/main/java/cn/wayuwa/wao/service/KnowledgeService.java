@@ -82,6 +82,11 @@ public class KnowledgeService {
     private static final String NOTES_FOLDER_ID = "kb-notes-f";
     private static final Pattern CLIENT_DOC_ID = Pattern.compile("[A-Za-z0-9_-]{1,32}");
     private static final TypeReference<List<DocBlockDto>> BLOCKS_TYPE = new TypeReference<>() { };
+    private static final int MAX_TEMPLATE_NAME_LENGTH = 128;
+    private static final int MAX_TEMPLATE_DESCRIPTION_LENGTH = 512;
+    private static final int MAX_TEMPLATE_BLOCK_COUNT = 5_000;
+    /** 防止嵌套块绕过集合长度校验，限制最终准备写入 JSON 列的字符数。 */
+    private static final int MAX_TEMPLATE_BLOCKS_JSON_LENGTH = 1_000_000;
     private static final TypeReference<List<DocLinkDto>> LINKS_TYPE = new TypeReference<>() { };
 
     private final KbGroupMapper groupMapper;
@@ -399,13 +404,18 @@ public class KnowledgeService {
     /** 把现有文档的当前正文快照另存为当前成员的模板。 */
     @Transactional
     public DocTemplateDto createTemplate(CreateDocTemplateRequest req, String memberId) {
+        String name = checkedTemplateName(req.name());
+        String description = checkedTemplateDescription(req.description() == null ? "" : req.description());
         DocEntity source = requireDoc(req.sourceDocId());
-        LocalDateTime now = LocalDateTime.now();
+        // V71 使用 DATETIME（秒精度）；返回值与落库值保持同一精度，才能作为后续 CAS 版本。
+        LocalDateTime now = LocalDateTime.now().withNano(0);
         DocTemplateEntity template = new DocTemplateEntity();
         template.setId("dt" + UUID.randomUUID().toString().replace("-", "").substring(0, 30));
-        template.setName(req.name().trim());
-        template.setDescription(req.description() == null ? "" : req.description().trim());
-        template.setBlocksJson(req.blocks() == null ? source.getBlocksJson() : write(req.blocks()));
+        template.setName(name);
+        template.setDescription(description);
+        template.setBlocksJson(req.blocks() == null
+                ? writeSourceTemplateBlocks(source.getBlocksJson())
+                : writeTemplateBlocks(req.blocks()));
         template.setSourceDocId(source.getId());
         template.setCreatedBy(memberId);
         template.setCreatedAt(now);
@@ -416,20 +426,33 @@ public class KnowledgeService {
         return toTemplateDto(template);
     }
 
-    /** 修改当前成员模板的名称与说明。 */
+    /** 修改当前成员模板的名称、说明与正文快照。 */
+    @Transactional
     public DocTemplateDto updateTemplate(String id, PatchDocTemplateRequest req, String memberId) {
         DocTemplateEntity template = requireTemplate(id, memberId);
-        if (req.name() != null) {
-            if (req.name().isBlank()) {
-                throw new BadRequestException("模板名称不能为空");
-            }
-            template.setName(req.name().trim());
+        LocalDateTime expectedUpdatedAt = checkedTemplateVersion(req.expectedUpdatedAt());
+        if (!expectedUpdatedAt.equals(template.getUpdatedAt())) {
+            throw new ConflictException("模板已被其他窗口更新，请刷新后再决定是否覆盖");
         }
-        if (req.description() != null) {
-            template.setDescription(req.description().trim());
+        String name = req.name() == null ? template.getName() : checkedTemplateName(req.name());
+        String description = req.description() == null
+                ? template.getDescription()
+                : checkedTemplateDescription(req.description());
+        String blocksJson = req.blocks() == null
+                ? template.getBlocksJson()
+                : writeTemplateBlocks(req.blocks());
+        LocalDateTime nextUpdatedAt = LocalDateTime.now().withNano(0);
+        if (!nextUpdatedAt.isAfter(expectedUpdatedAt)) {
+            // DATETIME 只有秒精度；快速连续保存也必须生成不同版本，否则 CAS 会失去作用。
+            nextUpdatedAt = expectedUpdatedAt.plusSeconds(1);
         }
-        template.setUpdatedAt(LocalDateTime.now());
-        templateMapper.updateById(template);
+        template.setName(name);
+        template.setDescription(description);
+        template.setBlocksJson(blocksJson);
+        template.setUpdatedAt(nextUpdatedAt);
+        if (templateMapper.updateIfUnchanged(template, expectedUpdatedAt) != 1) {
+            throw new ConflictException("模板已被其他窗口更新，请刷新后再决定是否覆盖");
+        }
         return toTemplateDto(template);
     }
 
@@ -449,6 +472,63 @@ public class KnowledgeService {
 
     private List<DocBlockDto> templateBlocks(DocTemplateEntity template) {
         return readList(template.getBlocksJson(), BLOCKS_TYPE);
+    }
+
+    /** 校验模板正文的块数与序列化大小，避免无界 JSON 写入数据库。 */
+    private String writeTemplateBlocks(List<DocBlockDto> blocks) {
+        if (blocks.size() > MAX_TEMPLATE_BLOCK_COUNT) {
+            throw new BadRequestException("模板正文不能超过 5000 个块");
+        }
+        String json = write(blocks);
+        if (json.length() > MAX_TEMPLATE_BLOCKS_JSON_LENGTH) {
+            throw new BadRequestException("模板正文不能超过 1000000 个字符");
+        }
+        return json;
+    }
+
+    /** 另存模板时也约束来源文档，先看原始长度再解析，避免超大 JSON 占用额外内存。 */
+    private String writeSourceTemplateBlocks(String blocksJson) {
+        if (blocksJson != null && blocksJson.length() > MAX_TEMPLATE_BLOCKS_JSON_LENGTH) {
+            throw new BadRequestException("模板正文不能超过 1000000 个字符");
+        }
+        return writeTemplateBlocks(readList(blocksJson, BLOCKS_TYPE));
+    }
+
+    private String checkedTemplateName(String value) {
+        if (value == null || value.isBlank()) {
+            throw new BadRequestException("模板名称不能为空");
+        }
+        String name = value.trim();
+        if (name.length() > MAX_TEMPLATE_NAME_LENGTH) {
+            throw new BadRequestException("模板名称不能超过 128 个字符");
+        }
+        return name;
+    }
+
+    private String checkedTemplateDescription(String value) {
+        String description = value.trim();
+        if (description.length() > MAX_TEMPLATE_DESCRIPTION_LENGTH) {
+            throw new BadRequestException("模板说明不能超过 512 个字符");
+        }
+        return description;
+    }
+
+    private LocalDateTime checkedTemplateVersion(String value) {
+        if (value == null || value.isBlank()) {
+            throw new BadRequestException("模板版本不能为空");
+        }
+        try {
+            return java.time.OffsetDateTime.parse(value)
+                    .atZoneSameInstant(java.time.ZoneId.of("Asia/Shanghai"))
+                    .toLocalDateTime();
+        } catch (RuntimeException offsetException) {
+            try {
+                // 兼容尚未带时区的早期客户端；服务端当前响应统一为 ISO_OFFSET_DATE_TIME。
+                return LocalDateTime.parse(value);
+            } catch (RuntimeException localException) {
+                throw new BadRequestException("模板版本格式不合法");
+            }
+        }
     }
 
     private DocTemplateDto toTemplateDto(DocTemplateEntity template) {

@@ -10,8 +10,8 @@ import org.springframework.stereotype.Service;
 /**
  * 把真实任务评论同步到飞书群机器人；通知失败不影响评论持久化。
  *
- * <p>地址不再自己读环境变量：全系统共用「设置 → 通知 · 飞书 Webhook」里那一个
- * （{@link FeishuWebhookNotifier}，见 ADR-019），界面上还没配时仍回落到部署环境变量。
+ * <p>地址不再自己读环境变量：全系统共用「设置 → Webhook配置」里标记为系统默认的机器人
+ * （{@link FeishuWebhookNotifier}，见 ADR-019、ADR-089）；注册表接管前仍兼容部署环境变量。
  */
 @Service
 public class FeishuCommentNotifier {

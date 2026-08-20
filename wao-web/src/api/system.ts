@@ -25,6 +25,10 @@ async function post<T>(url: string, params?: Record<string, string>): Promise<T>
   const res = await http.post<ApiResponse<T>>(url, undefined, { params })
   return res.data.data
 }
+async function postWithBody<T>(url: string, body?: unknown): Promise<T> {
+  const res = await http.post<ApiResponse<T>>(url, body)
+  return res.data.data
+}
 
 /** 飞书通知 webhook 配置。 */
 export interface FeishuWebhookConfig {
@@ -38,6 +42,40 @@ export const fetchWebhookConfig = () => get<FeishuWebhookConfig>('/api/settings/
 export const saveWebhookConfig = (payload: { url?: string; enabled?: boolean }) =>
   put<FeishuWebhookConfig>('/api/settings/feishu-webhook', payload)
 export const testWebhook = () => post<void>('/api/settings/feishu-webhook/test')
+
+/** 可供 WAO 各功能复用的一项飞书自定义机器人；接口永不返回 Webhook 明文。 */
+export interface FeishuWebhookEndpoint {
+  id: string
+  name: string
+  description: string
+  urlMask: string
+  urlSet: boolean
+  enabled: boolean
+  systemDefault: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FeishuWebhookEndpointInput {
+  name: string
+  description: string
+  /** 新增时必填；编辑时留空表示保留服务端密文。 */
+  url?: string
+  enabled: boolean
+  systemDefault: boolean
+}
+
+export const fetchWebhookEndpoints = () =>
+  get<FeishuWebhookEndpoint[]>('/api/settings/webhooks')
+export const createWebhookEndpoint = (payload: FeishuWebhookEndpointInput) =>
+  postWithBody<FeishuWebhookEndpoint>('/api/settings/webhooks', payload)
+export const updateWebhookEndpoint = (id: string, payload: FeishuWebhookEndpointInput) =>
+  put<FeishuWebhookEndpoint>(`/api/settings/webhooks/${id}`, payload)
+export async function deleteWebhookEndpoint(id: string): Promise<void> {
+  await http.delete<ApiResponse<void>>(`/api/settings/webhooks/${id}`)
+}
+export const testWebhookEndpoint = (id: string) =>
+  post<void>(`/api/settings/webhooks/${id}/test`)
 
 /** 网站名称、简介与公开备案信息。 */
 export interface SiteInfo {
