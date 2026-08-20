@@ -681,9 +681,32 @@ onBeforeUnmount(() => {
           <span :title="`执行槽位 ${usedSlots}/${totalSlots}`" :aria-label="`执行槽位 ${usedSlots}/${totalSlots}`">
             <i class="ri-server-line"></i><b>{{ usedSlots }}/{{ totalSlots }}</b>
           </span>
-          <button type="button" title="查看数据仪表盘" aria-label="查看数据仪表盘" @click="router.push('/dashboard')">
-            <i class="ri-line-chart-line"></i>
-          </button>
+        </div>
+        <button class="hero-link" type="button" @click="router.push('/dashboard')">
+          <i class="ri-line-chart-line"></i>查看 AI 详情
+        </button>
+      </div>
+      <div class="hero-metrics" :class="{ single: !heroWeeklyQuota }">
+        <div
+          v-if="heroWeeklyQuota"
+          class="quota-card weekly-quota"
+          :class="quotaClass(heroWeeklyQuota.remainingPercent)"
+          :title="`Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}`"
+        >
+          <span><i class="ri-speed-up-line"></i>Codex 周剩余额度</span>
+          <strong>{{ heroWeeklyQuota.remainingPercent }}<em>%</em></strong>
+          <small>{{ resetText(heroWeeklyQuota.resetsAt) }}</small>
+        </div>
+        <div
+          class="capacity"
+          :style="{ '--capacity': `${totalSlots ? Math.min(100, usedSlots / totalSlots * 100) : 0}%` }"
+        >
+          <div class="capacity-orbit" aria-hidden="true"><i></i><b></b><em></em></div>
+          <div class="capacity-copy">
+            <div class="capacity-num">{{ usedSlots }}<span>/ {{ totalSlots }}</span></div>
+            <div>执行槽位占用</div>
+            <div class="capacity-bar"><i></i></div>
+          </div>
         </div>
       </div>
       </section>
@@ -769,14 +792,6 @@ onBeforeUnmount(() => {
         <em v-if="item.id === 'runs' && activeRuns.length">{{ activeRuns.length }}</em>
         <em v-else-if="item.id === 'runners' && onlineRunners.length">{{ onlineRunners.length }}</em>
       </button>
-      <span
-        v-if="heroWeeklyQuota"
-        class="console-quota"
-        :class="quotaClass(heroWeeklyQuota.remainingPercent)"
-        :title="`Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}`"
-      >
-        <i class="ri-speed-up-line"></i><span>总剩余</span><b>{{ heroWeeklyQuota.remainingPercent }}%</b>
-      </span>
       <span class="live"><i></i>每 5 秒刷新</span>
     </nav>
 
@@ -1331,8 +1346,7 @@ onBeforeUnmount(() => {
 .hero h1 { margin: 8px 0 6px; font-size: 28px; }
 .hero h1.slogan { font-size: 25px; font-weight: 800; letter-spacing: .7px; line-height: 1.2; }
 .hero-signals { margin-top: 13px; display: flex; align-items: center; gap: 7px; }
-.hero-signals > span,
-.hero-signals > button {
+.hero-signals > span {
   position: relative;
   min-width: 34px;
   height: 32px;
@@ -1346,14 +1360,70 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 5px;
 }
-.hero-signals > button { cursor: pointer; }
-.hero-signals > button:hover { background: #ffffff2b; }
 .hero-signals > span.dim { opacity: .48; }
-.hero-signals > span > i:first-child,
-.hero-signals > button i { font-size: 15px; }
+.hero-signals > span > i:first-child { font-size: 15px; }
 .hero-signals b { font-size: 11px; }
 .signal-dot { width: 5px; height: 5px; border-radius: 50%; background: #9bf0c2; box-shadow: 0 0 7px #9bf0c2; }
 .hero-signals .dim .signal-dot { background: #ffffff72; box-shadow: none; }
+.hero-link {
+  margin-top: 13px;
+  padding: 7px 13px;
+  border: 1px solid #ffffff55;
+  border-radius: 999px;
+  background: #ffffff1f;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background .16s, transform .16s;
+}
+.hero-link:hover { background: #ffffff33; transform: translateY(-1px); }
+.hero-link i { font-size: 14px; }
+.hero-metrics { width: 194px; flex: 0 0 auto; display: grid; gap: 9px; }
+.quota-card {
+  min-height: 92px;
+  padding: 12px 14px;
+  border: 1px solid #ffffff2b;
+  border-radius: 14px;
+  background: #ffffff12;
+  display: grid;
+  align-content: center;
+}
+.quota-card > span { color: #ffffffb5; font-size: 10.5px; }
+.quota-card > span i { margin-right: 5px; }
+.quota-card strong { margin-top: 3px; color: #fff; font-size: 35px; line-height: 1; }
+.quota-card strong em { font-size: 17px; font-style: normal; }
+.quota-card small { margin-top: 6px; color: #ffffff9c; font-size: 9.5px; line-height: 1.35; }
+.quota-card.good strong { color: #c7ffdf; }
+.quota-card.warn strong { color: #ffe9a9; }
+.quota-card.danger strong { color: #ffd0d0; }
+.capacity {
+  position: relative;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid #ffffff2b;
+  border-radius: 14px;
+  background: #ffffff12;
+  color: #ffffffa8;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.capacity-orbit { position: relative; width: 48px; height: 48px; flex: 0 0 auto; border: 2px solid #ffffff32; border-radius: 50%; }
+.capacity-orbit::before, .capacity-orbit::after { content: ''; position: absolute; border: 1px solid #ffffff4a; border-radius: 50%; animation: orbit 4s linear infinite; }
+.capacity-orbit::before { inset: 7px -8px; transform: rotate(58deg); }
+.capacity-orbit::after { inset: -8px 7px; animation-duration: 6s; animation-direction: reverse; }
+.capacity-orbit i { position: absolute; inset: 8px; border-radius: 50%; background: conic-gradient(#fff var(--capacity), #ffffff22 0); mask: radial-gradient(transparent 58%, #000 60%); }
+.capacity-orbit b { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; border-radius: 50%; background: #fff; transform: translate(-50%, -50%); box-shadow: 0 0 12px #fff; animation: corePulse 1.8s ease-in-out infinite; }
+.capacity-orbit em { position: absolute; right: -3px; top: 6px; width: 5px; height: 5px; border-radius: 50%; background: #aef5d0; box-shadow: 0 0 9px #aef5d0; }
+.capacity-copy { min-width: 0; flex: 1; }
+.capacity-num { color: #fff; font-size: 30px; font-weight: 750; }
+.capacity-num span { font-size: 14px; opacity: .6; }
+.capacity-bar { height: 5px; margin-top: 11px; overflow: hidden; border-radius: 9px; background: #ffffff24; }
+.capacity-bar i { display: block; height: 100%; width: var(--capacity); border-radius: inherit; background: #fff; transition: width .3s; }
 .goal-launcher {
   margin-top: 0;
   padding: 19px 20px;
@@ -1412,12 +1482,6 @@ onBeforeUnmount(() => {
 .console-tabs button:hover { background: var(--wao-bg-hover); }
 .console-tabs button.on { background: #eef1ff; color: var(--wao-primary-text); font-weight: 650; }
 .console-tabs em { padding: 1px 6px; border-radius: 20px; background: #e3e7f6; color: #4358d6; font-size: 10px; font-style: normal; }
-.console-quota { min-height: 32px; padding: 0 10px; border-radius: 9px; display: inline-flex; align-items: center; gap: 6px; color: var(--wao-text-2); font-size: 11px; white-space: nowrap; }
-.console-quota i { font-size: 14px; }
-.console-quota b { font-size: 12px; }
-.console-quota.good { background: #e9f7ef; color: #24714d; }
-.console-quota.warn { background: #fff6dc; color: #876714; }
-.console-quota.danger { background: #fff0f0; color: #a33c3c; }
 .console-tabs .live { margin-left: auto; padding-right: 8px; }
 .section-title { margin-right: 4px; font-size: 12px; font-weight: 650; color: var(--wao-text-2); }
 .online-dot { width: 7px; height: 7px; border-radius: 50%; background: #31a56a; box-shadow: 0 0 0 3px #dff5e9; }
@@ -1784,14 +1848,18 @@ onBeforeUnmount(() => {
   white-space: pre;
 }
 .runner-log-detail footer button { display: inline-flex; align-items: center; gap: 5px; }
+@keyframes orbit { to { transform: rotate(418deg); } }
+@keyframes corePulse { 50% { transform: translate(-50%, -50%) scale(.68); opacity: .55; } }
 @keyframes livePulse { 50% { opacity: .45; box-shadow: 0 0 0 7px #dff5e955; } }
 .spin { display: inline-block; animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
   .home { padding: 16px; }
   .home-primary { grid-template-columns: minmax(0, 1fr); }
-  .hero { padding: 22px; }
+  .hero { padding: 22px; flex-direction: column; align-items: stretch; }
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
+  .hero-metrics { width: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hero-metrics.single { grid-template-columns: minmax(0, 1fr); }
   .goal-launcher { grid-template-columns: 1fr; padding: 17px; gap: 14px; }
   .goal-actions { flex-wrap: wrap; padding-left: 9px; }
   .goal-actions label { width: 100%; }
@@ -1799,13 +1867,15 @@ onBeforeUnmount(() => {
   .goal-shortcut { margin-left: 0; }
   .goal-submit { margin-left: auto; }
   .console-tabs { overflow-x: auto; }
-  .console-quota span { display: none; }
   .recent-grid { grid-template-columns: 1fr; }
   .section-head { align-items: center; }
   .history-grid { grid-template-columns: 1fr; }
   .flow-meta { grid-template-columns: 1fr; }
   .flow-form { grid-template-columns: 1fr; }
   .run-detail dl { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .capacity-orbit::before, .capacity-orbit::after, .capacity-orbit b { animation: none; }
 }
 @media (min-width: 761px) and (max-width: 1180px) {
   .home-primary { grid-template-columns: minmax(0, 1fr); }
