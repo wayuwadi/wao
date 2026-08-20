@@ -1115,11 +1115,21 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         should_stop: Callable[[], bool] | None = None,
         account: dict[str, Any] | None = None,
         codex_home: Path | None = None,
-        tools_disabled: bool = False) -> tuple[int, str, str | None, dict[str, Any]]:
+        tools_disabled: bool = False,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        service_tier: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
     """跑一次 `codex exec --json`，返回退出码、最终答复、会话 id 和用量。"""
     result_file = worktree / ".wao-ai-result.txt"
+    custom_api = bool(account and str(account.get("authMethod") or "") == "api_key")
+    model_args = [] if custom_api or not model else ["--model", model]
+    if model_args and reasoning_effort:
+        model_args += ["-c", f"model_reasoning_effort={json.dumps(reasoning_effort)}"]
+    if model_args and service_tier:
+        model_args += ["-c", f"service_tier={json.dumps(service_tier)}"]
     command = [
-        executable, "exec", *( ["resume", session_id] if session_id else []), "--json", "--color", "never", "--sandbox", sandbox,
+        executable, "exec", *( ["resume", session_id] if session_id else []), *model_args,
+        "--json", "--color", "never", "--sandbox", sandbox,
         "-c", 'approval_policy="never"', "-C", str(worktree),
         "--output-last-message", str(result_file), "-",
     ]
@@ -1372,7 +1382,9 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         else:
             exit_code, result_text, session_id, usage = run_codex(
                 executable, worktree, prompt, sandbox, reporter, cli_environment, session_id,
-                cancellation_requested, claim.get("account"), root / ".wao-codex-homes" / run_id)
+                cancellation_requested, claim.get("account"), root / ".wao-codex-homes" / run_id,
+                model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
+                service_tier=claim.get("serviceTier"))
         cost_text = "未回传" if usage["costUsd"] is None else "$%.4f" % usage["costUsd"]
         log(f"[{run_id}] 用量：模型 {usage['model'] or '未知'}，"
             f"token {usage['totalTokens']}（输入 {usage['inputTokens']} / 输出 "

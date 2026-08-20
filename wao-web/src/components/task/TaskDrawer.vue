@@ -516,7 +516,8 @@ async function copyShare(kind: 'page' | 'md') {
     'ri-links-line',
   )
 }
-async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: string | null) {
+async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: string | null,
+  model: string | null, reasoningEffort: string | null) {
   const t = task.value
   if (!t || aiStarting.value) return
   // 子任务派工是独立的一条运行，任务整体正在跑也不该拦着
@@ -524,7 +525,9 @@ async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: s
   if (!subId && t.status === 'AI 进行中') return
   aiStarting.value = true
   try {
-    const created = await createAiRuns([t.id], { subId, engine, runnerId, accountId })
+    const created = await createAiRuns([t.id], {
+      subId, engine, runnerId, accountId, model: model || null, reasoningEffort: reasoningEffort || null,
+    })
     if (created.length) {
       const what = subId ? `子任务「${created[0]!.subTitle ?? ''}」` : '任务'
       data.patchTask(t.id, { status: 'AI 进行中' }, `已把${what}交给 ${engineLabel(engine)}`)
@@ -1021,6 +1024,12 @@ function demo(msg: string) {
                 <i class="ri-arrow-down-s-line"></i>
               </summary>
               <div class="ai-run-body">
+                <div v-if="run.requestedModel" class="ai-run-parameters">
+                  <i class="ri-cpu-line"></i>
+                  <span class="usage-model">{{ shortModel(run.requestedModel) }}</span>
+                  <span>推理{{ run.reasoningEffort === 'high' ? '高' : '中' }}</span>
+                  <span>{{ run.serviceTier === 'priority' ? 'Fast' : '标准速度（Fast 未开启）' }}</span>
+                </div>
                 <div v-if="run.usage?.recorded" class="ai-run-usage" :title="run.usage.models || ''">
                   <i class="ri-copper-coin-line"></i>
                   <span v-if="shortModel(run.usage.model)" class="usage-model">{{ shortModel(run.usage.model) }}</span>
@@ -2163,9 +2172,9 @@ function demo(msg: string) {
 .ai-run-latest { flex: 1; min-width: 0; overflow: hidden; color: var(--wao-text-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-run-entry summary time { flex: 0 0 auto; color: var(--wao-text-faint); font-size: 10px; }
 .ai-run-body { padding: 0 10px 10px; }
-.ai-run-usage { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 8px; padding: 6px 9px; border-radius: 7px; background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: 10.5px; }
-.ai-run-usage i { margin-right: -3px; color: #a8862f; }
-.ai-run-usage .usage-model { color: var(--wao-text-2); font-weight: 600; }
+.ai-run-parameters, .ai-run-usage { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 8px; padding: 6px 9px; border-radius: 7px; background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: 10.5px; }
+.ai-run-parameters i, .ai-run-usage i { margin-right: -3px; color: #a8862f; }
+.ai-run-parameters .usage-model, .ai-run-usage .usage-model { color: var(--wao-text-2); font-weight: 600; }
 .ai-run-usage .usage-part b { font-weight: 600; color: var(--wao-text-2); }
 .ai-final-result { margin-top: 10px; padding: 10px 12px; border-radius: 9px; background: var(--wao-bg-sub); }
 .ai-final-result b { font-size: 11px; }

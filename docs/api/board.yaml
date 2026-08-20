@@ -535,7 +535,7 @@ paths:
       parameters: [ { name: active, in: query, required: false, schema: { type: boolean } } ]
       responses: { '200': { description: OK } }
     post:
-      summary: 批量把任务加入 AI 队列；可选 subId 只跑一条子任务、engine（codex/claude）与 runnerId 指定执行电脑，活动运行自动去重
+      summary: 批量把任务加入 AI 队列；可选子任务、工具、电脑、账号与本次 Codex 模型参数，活动运行自动去重
       description: |
         subId 非空时只跑主任务下的这一条子任务（此时 taskIds 只能有一个任务），
         提示词地址指向 /share/tasks/{id}/subs/{subId}.md；主任务派工的提示词地址一律带
@@ -547,6 +547,11 @@ paths:
         '200': { description: 返回实际创建的运行 }
         '400': { description: 项目未启用、未配置仓库、没有电脑接入所选 AI 工具，或按子任务派工时选了多个任务 }
         '404': { description: 任务或子任务不存在 }
+  /ai/run-options:
+    get:
+      summary: 返回后台允许的 Codex 模型、推理强度、默认值与固定服务档位
+      responses:
+        '200': { description: serviceTier 固定为 default，表示本次运行不启用 Fast }
   /ai/goals:
     post:
       summary: 把长 Markdown 目标创建为任务并立即交给项目默认 AI 工作流
@@ -1519,8 +1524,11 @@ components:
       properties:
         taskIds: { type: array, items: { type: string }, minItems: 1 }
         subId: { type: string, nullable: true, description: 子任务标识；历史数据没有 id 时形如 <taskId>#<下标> }
-        engine: { type: string, nullable: true, enum: [codex, claude, auto], description: 留空沿用项目默认工具 }
+        engine: { type: string, nullable: true, enum: [codex, claude, qoder, auto], description: 留空沿用项目默认工具 }
         runnerId: { type: string, nullable: true, description: 留空表示由任意在线且支持该工具的电脑领取 }
+        accountId: { type: string, nullable: true, description: 留空使用执行电脑本地登录态 }
+        model: { type: string, nullable: true, enum: [gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna], description: 仅 Codex 官方登录态生效；留空使用后台默认模型 }
+        reasoningEffort: { type: string, nullable: true, enum: [medium, high], description: 仅 Codex 官方登录态生效；留空使用后台默认值 }
     SaveQuickCollectConfigRequest:
       type: object
       description: 字段为 null 表示不修改；密文字段留空即保留已存的那一份

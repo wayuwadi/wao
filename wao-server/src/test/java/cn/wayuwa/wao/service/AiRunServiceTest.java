@@ -197,6 +197,40 @@ class AiRunServiceTest {
         assertThat(run.getValue().getPromptUrl())
                 .isEqualTo("https://wao.example/api/share/tasks/t1.md?openOnly=true");
         assertThat(run.getValue().getSubId()).isNull();
+        assertThat(run.getValue().getRequestedModel()).isEqualTo("gpt-5.6-sol");
+        assertThat(run.getValue().getReasoningEffort()).isEqualTo("medium");
+        assertThat(result.get(0).serviceTier()).isEqualTo("default");
+    }
+
+    @Test
+    void enqueuePersistsSelectedCodexModelAndHighReasoning() {
+        TaskEntity task = task("t1", "p1", "复杂开发任务");
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "Linux 主节点", "codex")));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        service.enqueue(List.of("t1"), null, "codex", null, null,
+                "gpt-5.6-sol", "high", "wg", "https://wao.example");
+
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getRequestedModel()).isEqualTo("gpt-5.6-sol");
+        assertThat(run.getValue().getReasoningEffort()).isEqualTo("high");
+    }
+
+    @Test
+    void enqueueRejectsUnknownCodexModelBeforeCreatingRun() {
+        when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "错误模型"));
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+
+        assertThatThrownBy(() -> service.enqueue(List.of("t1"), null, "codex", null, null,
+                "invented-model", "medium", "wg", "https://wao.example"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("不支持的 Codex 模型");
+        verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
     }
 
     @Test
@@ -388,6 +422,26 @@ class AiRunServiceTest {
     }
 
     @Test
+    void customApiAccountKeepsItsOwnModelConfiguration() {
+        TaskEntity task = task("t1", "p1", "使用自定义模型");
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectById("rn1")).thenReturn(runner("rn1", "Linux 主节点", "codex"));
+        when(accounts.usesCustomApi("aa-custom", "codex")).thenReturn(true);
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        service.enqueue(List.of("t1"), null, "codex", "rn1", "aa-custom",
+                "gpt-5.6-sol", "high", "wg", "https://wao.example");
+
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getRequestedModel()).isNull();
+        assertThat(run.getValue().getReasoningEffort()).isNull();
+    }
+
+    @Test
     void enqueueWithCentralAccountRequiresLinuxRunnerUnlessComputerIsExplicit() {
         TaskEntity task = task("t1", "p1", "使用集中账号");
         when(taskMapper.selectById("t1")).thenReturn(task);
@@ -425,6 +479,8 @@ class AiRunServiceTest {
         queued.setTaskId("t1");
         queued.setProjectId("p1");
         queued.setStatus("queued");
+        queued.setRequestedModel("gpt-5.6-sol");
+        queued.setReasoningEffort("high");
         queued.setPromptUrl("https://wao.example/api/share/tasks/t1.md");
         queued.setBranchName("ai/wao-ar1");
         when(runnerMapper.selectOne(any())).thenReturn(runner);
@@ -438,6 +494,9 @@ class AiRunServiceTest {
 
         assertThat(result.runId()).isEqualTo("ar1");
         assertThat(result.repoUrl()).isEqualTo("https://github.com/acme/wao.git");
+        assertThat(result.model()).isEqualTo("gpt-5.6-sol");
+        assertThat(result.reasoningEffort()).isEqualTo("high");
+        assertThat(result.serviceTier()).isEqualTo("default");
         assertThat(queued.getStatus()).isEqualTo("running");
         assertThat(queued.getRunnerId()).isEqualTo("rn1");
         verify(runMapper).updateById(eq(queued));

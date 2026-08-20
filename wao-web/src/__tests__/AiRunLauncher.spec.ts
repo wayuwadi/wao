@@ -18,6 +18,17 @@ vi.mock('@/api/ai', () => ({
     defaultBranch: 'main', workspaceDir: 'wao', defaultEngine: 'codex',
     preferredRunnerId: 'rn-win', maxParallelRuns: 2,
   }),
+  fetchAiRunOptions: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    codexModels: [
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', description: '复杂开发任务的旗舰模型' },
+      { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', description: '兼顾能力与成本' },
+    ],
+    reasoningEfforts: [
+      { id: 'medium', label: '中', description: '速度与推理深度均衡' },
+      { id: 'high', label: '高', description: '为复杂任务投入更多推理' },
+    ],
+    defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'medium', serviceTier: 'default',
+  }),
 }))
 
 vi.mock('@/api/aiAccount', () => ({
@@ -47,12 +58,13 @@ describe('AiRunLauncher', () => {
     await flushPromises()
 
     const selects = wrapper.findAll('select')
-    await selects[0]!.setValue('aa-1')
-    expect(selects[1]!.element.value).toBe('rn-linux')
+    await selects[2]!.setValue('aa-1')
+    expect(wrapper.text()).toContain('自定义 API 使用账号中配置的模型')
+    expect(wrapper.findAll('select')[1]!.element.value).toBe('rn-linux')
     await wrapper.find('footer .primary').trigger('click')
 
     expect(wrapper.text()).toContain('CLI Proxy · gpt-5.4')
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-linux', 'aa-1']])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-linux', 'aa-1', null, null]])
   })
 
   it('使用执行电脑本地登录态时保留项目首选 Windows 电脑', async () => {
@@ -60,13 +72,13 @@ describe('AiRunLauncher', () => {
     await flushPromises()
 
     const selects = wrapper.findAll('select')
-    await selects[0]!.setValue('aa-1')
-    expect(selects[1]!.element.value).toBe('rn-linux')
-    await selects[0]!.setValue('')
-    expect(selects[1]!.element.value).toBe('rn-win')
+    await selects[2]!.setValue('aa-1')
+    expect(wrapper.findAll('select')[1]!.element.value).toBe('rn-linux')
+    await wrapper.findAll('select')[0]!.setValue('')
+    expect(wrapper.findAll('select')[3]!.element.value).toBe('rn-win')
     await wrapper.find('footer .primary').trigger('click')
 
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'medium']])
   })
 
   it('集中账号没有对应 Linux CLI 时明确阻止静默落到 Windows', async () => {
@@ -83,9 +95,22 @@ describe('AiRunLauncher', () => {
     await flushPromises()
 
     const selects = wrapper.findAll('select')
-    await selects[0]!.setValue('aa-1')
+    await selects[2]!.setValue('aa-1')
 
     expect(wrapper.text()).toContain('Linux 主节点尚未接入 Codex')
     expect(wrapper.find('footer .primary').attributes('disabled')).toBeDefined()
+  })
+
+  it('可为本次运行选择 GPT-5.6 Sol 高推理且明确关闭 Fast', async () => {
+    const wrapper = mount(AiRunLauncher, { props: { projectId: 'p1' } })
+    await flushPromises()
+
+    const selects = wrapper.findAll('select')
+    await selects[0]!.setValue('gpt-5.6-sol')
+    await selects[1]!.setValue('high')
+    await wrapper.find('footer .primary').trigger('click')
+
+    expect(wrapper.text()).toContain('标准速度（Fast 未开启）')
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high']])
   })
 })

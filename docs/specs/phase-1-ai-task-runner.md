@@ -9,7 +9,8 @@
 2. 新电脑在控制台「执行电脑」视图点击“生成配对码”，按 `deploy/ai-runner/README.md` 启动
    Runner；配对码十分钟有效且只能使用一次。Runner 自己声明本机装了哪些 AI CLI。
 3. 单个任务在详情页点击“AI run”，在弹出的面板里选 AI 工具、集中账号和执行电脑（默认取项目配置；
-   账号留空时使用执行电脑本地登录态）后开始；
+   账号留空时使用执行电脑本地登录态）；选择 Codex 时还可按本次运行选择后台允许的模型与推理强度，
+   默认 `gpt-5.6-sol + medium`，也可选择 `high`，Fast 固定关闭。自定义 API 账号继续使用账号自身模型；
    多个任务在项目列表勾选后批量点击，走项目默认配置。
 4. 首页立即显示排队/运行数量、每种 AI 工具的在线电脑数与槽位。运行卡片持续显示最近一条 AI
    反馈、使用的工具和更新时间，点击先查看实时执行记录，再按需进入对应任务。
@@ -87,7 +88,7 @@
   stdout 或最后消息中的部分答案，只回传稳定失败类别与退出码；服务端只保存有界稳定错误，不保存部分 `response_text`。Runner 在尝试 v2 完成回传后进入 `finally`，无论成功、非零、单调超时或回传失败都清理临时仓库与 `CODEX_HOME`。
 - Runner / 服务端验收覆盖 `secure_queued / secure_running`、无兼容 Runner 在线时仍可入队并由 60 分钟 DB 超时收口、精确 bundled-script hash 能力门禁、旧 Runner / 旧 API 滚动发布 fail-closed、旧 v1 路由 404 且不回退、v2 `claimToken / maxRuntimeSeconds`、单调截止和全路径临时目录清理。
   另需验证旧 `claimToken` 迟到完成更新 0 行，后台在没有任何结果查询时仍会清理安全排队 / 执行超时、清空提示与 token，安全执行不会被 3 分钟 JVM stale requeue，且 DB 硬超时与正常完成竞争时不覆盖先到终态。
-- 内部只读队列与聊天复盘的数据库集成测试使用 `mysql:9.0` Testcontainers：Docker 可用时覆盖 Flyway V1–V77、全局活动唯一约束、lease、归档身份与 CAS、
+- 内部只读队列与聊天复盘的数据库集成测试使用 `mysql:9.0` Testcontainers：Docker 可用时覆盖 Flyway V1–V80、全局活动唯一约束、lease、归档身份与 CAS、
   AI 入队关联事务回滚和数据库时间超时清理；Docker 不可用时显式跳过，不降级到 H2 后宣称完成 MySQL 9 并发 / 时钟验收。
 - 同步兼容包装与非阻塞接口共用 `ai_assistant_run` 和 assistant-v2 领取 / 完成协议；拆分不得建第二张 AI 队列表，也不得让内部分析获得开发任务的写权限。同步包装明确使用普通 `queued / running` 及五分钟窗口；非阻塞 durable 运行使用 `secure_*`，不经历页面助手的 3 分钟 stale requeue，仍遵守独立 60 / 30 分钟数据库硬超时语义。
 - 控制台三个视图（运行状态 / 执行电脑 / AI 工作流）覆盖原本分散在首页和项目设置里的信息：
@@ -105,6 +106,10 @@
 - 每次运行的分支、worktree 和 AI CLI 会话独立。
 - 选择集中账号时，账号必须启用且 provider 与 AI 工具一致；账号 id 固化到运行，重跑与续跑沿用。
   Runner 只在领取该运行时拿到对应明文，并用 `<root>/.wao-codex-homes/<run-id>` 隔离 Codex 配置。
+- Codex 模型选项由服务端统一返回并校验，前端不能提交列表外的模型或推理强度。每次运行固化
+  `requested_model / reasoning_effort`，领取协议同时下发 `serviceTier=default`；Runner 必须显式传给
+  `codex exec`，不能继承执行电脑当前桌面会话的模型、推理强度或 Fast 状态。重跑沿用原选择；
+  自定义 Responses API 仍由账号的模型配置决定，不叠加官方模型参数。
 - AI 账号卡片提供“查看额度”和“刷新额度”。查看额度展开真实套餐、凭据有效期、限额窗口和重置时间；
   刷新额度调用供应商同步接口并展示刷新中、成功或失败状态。供应商没有可靠额度接口时显示明确原因，
   不得把未知额度展示为 0%；自定义 API 只展示和刷新连接检测结果。

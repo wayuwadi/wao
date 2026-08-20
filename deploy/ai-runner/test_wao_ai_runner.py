@@ -534,6 +534,40 @@ class CodexAccountIsolationTest(unittest.TestCase):
         self.assertEqual(environment, invoke.call_args.args[4])
 
     @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
+    def test_selected_codex_model_effort_and_standard_tier_are_explicit(self, invoke: Mock) -> None:
+        reporter = Mock()
+
+        RUNNER.run_codex(
+            "codex", self.root, "prompt", "workspace-write", reporter,
+            model="gpt-5.6-sol", reasoning_effort="high", service_tier="default",
+        )
+
+        command = invoke.call_args.args[0]
+        self.assertIn("--model", command)
+        self.assertIn("gpt-5.6-sol", command)
+        self.assertIn('model_reasoning_effort="high"', command)
+        self.assertIn('service_tier="default"', command)
+        self.assertNotIn('service_tier="fast"', command)
+
+    @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
+    def test_custom_api_account_ignores_official_model_override(self, invoke: Mock) -> None:
+        reporter = Mock()
+        account = {
+            "authMethod": "api_key", "label": "CLI Proxy", "apiKey": "sk-secret",
+            "baseUrl": "https://proxy.example/v1", "model": "custom-model",
+        }
+
+        RUNNER.run_codex(
+            "codex", self.root, "prompt", "workspace-write", reporter,
+            account=account, codex_home=self.root / "home", model="gpt-5.6-sol",
+            reasoning_effort="high", service_tier="default",
+        )
+
+        command = invoke.call_args.args[0]
+        self.assertNotIn("--model", command)
+        self.assertNotIn('model_reasoning_effort="high"', command)
+
+    @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
     def test_tool_free_analysis_disables_local_read_and_expansion_tools(self, invoke: Mock) -> None:
         reporter = Mock()
         global_home = self.root / "global-home"

@@ -495,6 +495,7 @@ describe('TaskDrawer', () => {
 
     expect(createAiRuns).toHaveBeenCalledWith([taskId], {
       subId: null, engine: 'claude', runnerId: null, accountId: null,
+      model: null, reasoningEffort: null,
     })
     w.unmount()
   })
@@ -517,6 +518,7 @@ describe('TaskDrawer', () => {
 
     expect(createAiRuns).toHaveBeenCalledWith([taskId], {
       subId, engine: 'codex', runnerId: null, accountId: null,
+      model: null, reasoningEffort: null,
     })
     w.unmount()
   })
@@ -585,7 +587,8 @@ describe('TaskDrawer', () => {
     const { fetchTaskAiRuns } = await import('@/api/ai')
     vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
       aiRun({
-        id: 'ar9', taskId, status: 'succeeded', engine: 'claude',
+        id: 'ar9', taskId, status: 'succeeded', engine: 'codex',
+        requestedModel: 'gpt-5.6-sol', reasoningEffort: 'high', serviceTier: 'default',
         usage: {
           model: 'claude-opus-5-20260501', models: 'claude-opus-5-20260501',
           inputTokens: 2, outputTokens: 4, cachedInputTokens: 19_189,
@@ -598,6 +601,9 @@ describe('TaskDrawer', () => {
     await flushPromises()
 
     const usage = w.find('.ai-run-usage')
+    expect(w.find('.ai-run-parameters').text()).toContain('gpt-5.6-sol')
+    expect(w.find('.ai-run-parameters').text()).toContain('推理高')
+    expect(w.find('.ai-run-parameters').text()).toContain('标准速度（Fast 未开启）')
     expect(usage.exists()).toBe(true)
     expect(usage.text()).toContain('输入 2')
     expect(usage.text()).toContain('输出 4')

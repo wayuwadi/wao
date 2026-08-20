@@ -1,5 +1,5 @@
 import { http, type ApiResponse } from './http'
-import type { AiEngine, AiProjectConfig, AiRun, AiRunner, AiRunnerLog, AiWorkflow } from '@/types'
+import type { AiEngine, AiProjectConfig, AiRun, AiRunner, AiRunnerLog, AiRunOptions, AiWorkflow } from '@/types'
 
 export interface AiWeeklyQuota {
   accountId: string
@@ -81,6 +81,9 @@ export const saveAiProjectConfig = (
 
 export const fetchAiWorkflows = () => data<AiWorkflow[]>(http.get('/api/ai/workflows'))
 
+/** 后台受控的 Codex 模型、推理强度与服务档位。 */
+export const fetchAiRunOptions = () => data<AiRunOptions>(http.get('/api/ai/run-options'))
+
 /** 删除工作流配置；历史运行记录不受影响。 */
 export const removeAiWorkflow = (projectId: string) =>
   data<void>(http.delete(`/api/ai/workflows/${projectId}`))
@@ -124,7 +127,14 @@ export const createAiPairCode = () =>
  */
 export const createAiRuns = (
   taskIds: string[],
-  options: { subId?: string | null; engine?: AiEngine | null; runnerId?: string | null; accountId?: string | null } = {},
+  options: {
+    subId?: string | null
+    engine?: AiEngine | null
+    runnerId?: string | null
+    accountId?: string | null
+    model?: string | null
+    reasoningEffort?: string | null
+  } = {},
 ) =>
   data<AiRun[]>(http.post('/api/ai/runs', {
     taskIds,
@@ -132,6 +142,8 @@ export const createAiRuns = (
     engine: options.engine ?? null,
     runnerId: options.runnerId ?? null,
     accountId: options.accountId ?? null,
+    model: options.model ?? null,
+    reasoningEffort: options.reasoningEffort ?? null,
   }))
 
 /** 从一句目标创建任务，并立即交给项目默认 AI 工作流；runnerId 可覆盖本次执行电脑。 */

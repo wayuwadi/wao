@@ -11,11 +11,13 @@ import jakarta.validation.constraints.NotEmpty;
  * @param engine   使用的 AI 工具（codex / claude）；留空表示沿用项目默认工具
  * @param runnerId 指定执行电脑；留空表示由任意在线且支持该工具的电脑领取
  * @param accountId 指定这次运行使用的集中账号；留空表示沿用 Runner 本地登录态
+ * @param model Codex 本次使用的模型；留空时使用后台默认值
+ * @param reasoningEffort Codex 本次使用的推理强度；留空时使用后台默认值
  */
 public record CreateAiRunsRequest(@NotEmpty List<String> taskIds, String subId, String engine,
-        String runnerId, String accountId) {
+        String runnerId, String accountId, String model, String reasoningEffort) {
 
     public CreateAiRunsRequest(List<String> taskIds, String subId, String engine, String runnerId) {
-        this(taskIds, subId, engine, runnerId, null);
+        this(taskIds, subId, engine, runnerId, null, null, null);
     }
 }
