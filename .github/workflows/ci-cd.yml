@@ -141,6 +141,7 @@ jobs:
           schema_rollout_complete=false
           safe_slave_reachable=false
           safe_schema_rollout=false
+          linux_only_schema_rollout=false
 
           retry_remote() {
             target_label="$1"
@@ -319,7 +320,8 @@ jobs:
           }
 
           restore_upstreams() {
-            if [ "$schema_quiesced" = true ] && [ "$schema_rollout_complete" != true ]; then
+            if [ "$schema_quiesced" = true ] && [ "$schema_rollout_complete" != true ] && \
+                [ "$linux_only_schema_rollout" != true ]; then
               if [ "$slave_deployed" = true ]; then
                 set_upstream_state slave up >/dev/null 2>&1 || true
               else
@@ -357,30 +359,31 @@ jobs:
           trap restore_upstreams EXIT
 
           # V77 首次引入带版本的飞书归档写入。旧二进制不认识新栅栏，因此该次 push
-          # 用一次性维护窗口：先暂停定时同步、摘流并停掉全部旧 server，再允许任一新节点执行 migration。
+          # 用一次性维护窗口：先暂停定时同步、摘流并停掉所有在线旧 server，再允许新节点执行 migration。
+          # Windows 离线时保持 slave down 与同步暂停，但继续交付 Linux；详见 ADR-092。
           if [ "$safe_schema_rollout" = true ]; then
             echo '::notice title=V77 安全升级::暂停飞书定时同步并停止旧版 API 节点后再执行 migration。'
             if ! set_upstream_state slave down || ! set_upstream_state master down; then
               echo '无法为 V77 建立全量摘流窗口。'
               exit 1
             fi
-            if ! timeout 8s ssh -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 \
+            if timeout 8s ssh -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 \
                 "$SLAVE_USER@$SLAVE_HOST" 'exit 0'; then
-              echo 'Windows 从节点不可达，无法确认旧版 server 已停止；V77 保持未发布。'
-              exit 1
+              safe_slave_reachable=true
+              retry_remote "Windows 从节点" scp -o ConnectTimeout=15 \
+                deploy/scripts/quiesce-wao-server.sh \
+                "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-quiesce-server.sh" || exit 1
+              retry_remote "Windows 从节点" scp -o ConnectTimeout=15 \
+                deploy/scripts/quiesce-wao-server-windows.ps1 \
+                "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-quiesce-server.ps1" || exit 1
+            else
+              echo '::notice title=Windows 从节点离线::保持 slave 摘流，本次继续升级云前端和 Linux 主节点；从节点上线后由下次发布补齐。'
             fi
-            safe_slave_reachable=true
-            retry_remote "Windows 从节点" scp -o ConnectTimeout=15 \
-              deploy/scripts/quiesce-wao-server.sh \
-              "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-quiesce-server.sh" || exit 1
-            retry_remote "Windows 从节点" scp -o ConnectTimeout=15 \
-              deploy/scripts/quiesce-wao-server-windows.ps1 \
-              "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-quiesce-server.ps1" || exit 1
             if ! quiesce_master pause-feishu-sync; then
               echo '无法暂停飞书定时同步，V77 未开始。'
               exit 1
             fi
-            if ! quiesce_slave stop; then
+            if [ "$safe_slave_reachable" = true ] && ! quiesce_slave stop; then
               quiesce_master restore-feishu-sync || true
               echo '无法停止 Windows 旧版 server，V77 未开始。'
               exit 1
@@ -462,17 +465,22 @@ jobs:
             exit 1
           fi
           if [ "$safe_schema_rollout" = true ]; then
-            if ! quiesce_master complete-v77-rollout; then
-              echo 'V77 已安全部署，但飞书定时同步原状态恢复失败，保持暂停并等待人工处理。'
-              exit 1
+            if [ "$safe_slave_reachable" = true ]; then
+              if ! quiesce_master complete-v77-rollout; then
+                echo 'V77 已安全部署，但飞书定时同步原状态恢复失败，保持暂停并等待人工处理。'
+                exit 1
+              fi
+              completed_status_output="$(quiesce_master rollout-status)" || exit 1
+              completed_status="$(printf '%s\n' "$completed_status_output" | tr -d '\r' | tail -n 1)"
+              if [ "$completed_status" != complete ]; then
+                echo 'V77 完成标记复核失败，保持全部节点摘流并等待下次部署继续。'
+                exit 1
+              fi
+              schema_rollout_complete=true
+            else
+              linux_only_schema_rollout=true
+              echo '::warning title=Linux 已单节点完成::Windows 从节点继续保持 down；V77 标记和飞书同步保持暂停，待从节点上线后补齐。'
             fi
-            completed_status_output="$(quiesce_master rollout-status)" || exit 1
-            completed_status="$(printf '%s\n' "$completed_status_output" | tr -d '\r' | tail -n 1)"
-            if [ "$completed_status" != complete ]; then
-              echo 'V77 完成标记复核失败，保持全部节点摘流并等待下次部署继续。'
-              exit 1
-            fi
-            schema_rollout_complete=true
           fi
           if ! set_upstream_state master up; then
             printf '\n===== master =====\n'; cat master.log

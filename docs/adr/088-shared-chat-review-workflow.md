@@ -131,6 +131,9 @@ AI 分析，无法让页面立即获得运行 id，也无法在请求断开后�
 
 ### V77 首次发布的安全窗口
 
+> Windows 从节点离线时的处理已由 ADR-092 调整：保持从节点摘流和同步暂停，但继续完成 Linux 单节点发布；
+> 本节其余关于在线节点静止、迁移和完成标记的安全要求继续有效。
+
 - V77 开始要求飞书归档的同步与文档 `PATCH` 编辑都经过全局版本栅栏，但旧 `wao-server` 二进制不知道这些列和 CAS。文档树拖拽是不回写正文和版本的窄更新，不在此栅栏范围。不在 MySQL 中增加兼容 trigger：生产复制链的 binlog / trigger 权限、`DEFINER` 可移植性，以及 trigger 失败后与应用回滚无法作为一个可靠事务恢复单元，都会引入更大的上线和回退风险。
 - 每次发布先执行 `rollout-status`；只有 Flyway 已记录 V77 成功且持久标记 `deployment.v77.rollout-state = complete` 时才走常规滚动流程，其余情况都必须进入 V77 一次性维护窗口。判定不依赖单次 push 的文件列表，且 CI 不允许后续 push 取消这个已开始的发布。流水线先将云 Nginx 的 master / slave 两个 upstream 都标记为 down，并在修改 job 前确认 Windows 从节点可达、上传静止脚本。随后以 `INSERT IGNORE` 首次保存飞书聊天同步 automation 原状态到 `deployment.v77.feishu-sync-status`，写入 `deployment.v77.rollout-state = in-progress` 后暂停该 job，再通过
   `deploy/scripts/quiesce-wao-server.sh` 和 `quiesce-wao-server-windows.ps1` 确认停止所有旧 `wao-server`，最后才允许新节点启动 Flyway V77。任一旧节点不能确认已停止时必须 fail-closed，不得只靠公网摘流就继续 migration。
