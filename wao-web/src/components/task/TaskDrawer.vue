@@ -521,7 +521,7 @@ async function copyShare(kind: 'page' | 'md') {
   )
 }
 async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: string | null,
-  model: string | null, reasoningEffort: string | null) {
+  model: string | null, reasoningEffort: string | null, planMode: boolean) {
   const t = task.value
   if (!t || aiStarting.value) return
   // 子任务派工是独立的一条运行，任务整体正在跑也不该拦着
@@ -530,7 +530,7 @@ async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: s
   aiStarting.value = true
   try {
     const created = await createAiRuns([t.id], {
-      subId, engine, runnerId, accountId, model: model || null, reasoningEffort: reasoningEffort || null,
+      subId, engine, runnerId, accountId, model: model || null, reasoningEffort: reasoningEffort || null, planMode,
     })
     if (created.length) {
       const what = subId ? `子任务「${created[0]!.subTitle ?? ''}」` : '任务'
@@ -1030,11 +1030,12 @@ function demo(msg: string) {
                 <i class="ri-arrow-down-s-line"></i>
               </summary>
               <div class="ai-run-body">
-                <div v-if="run.requestedModel" class="ai-run-parameters">
+                <div v-if="run.requestedModel || run.planMode" class="ai-run-parameters">
                   <i class="ri-cpu-line"></i>
-                  <span class="usage-model">{{ shortModel(run.requestedModel) }}</span>
-                  <span>推理{{ run.reasoningEffort === 'high' ? '高' : '中' }}</span>
-                  <span>{{ run.serviceTier === 'priority' ? 'Fast' : '标准速度（Fast 未开启）' }}</span>
+                  <span v-if="run.requestedModel" class="usage-model">{{ shortModel(run.requestedModel) }}</span>
+                  <span v-if="run.reasoningEffort">推理{{ run.reasoningEffort === 'high' ? '高' : '中' }}</span>
+                  <span v-if="run.serviceTier">{{ run.serviceTier === 'priority' ? 'Fast' : '标准速度（Fast 未开启）' }}</span>
+                  <span v-if="run.planMode"><i class="ri-route-line"></i>Plan 模式</span>
                 </div>
                 <div v-if="run.usage?.recorded" class="ai-run-usage" :title="run.usage.models || ''">
                   <i class="ri-copper-coin-line"></i>

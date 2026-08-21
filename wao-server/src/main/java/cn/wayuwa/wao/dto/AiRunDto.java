@@ -22,6 +22,8 @@ public record AiRunDto(
         String reasoningEffort,
         /** Codex 服务档位；当前固定为 default，明确表示未开启 Fast。 */
         String serviceTier,
+        /** 是否启用先规划再连续执行的 Codex Plan 工作流。 */
+        Boolean planMode,
         String status,
         String runnerId,
         String runnerName,

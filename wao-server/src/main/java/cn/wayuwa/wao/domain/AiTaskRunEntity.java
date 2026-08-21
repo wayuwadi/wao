@@ -34,6 +34,8 @@ public class AiTaskRunEntity {
     private String requestedModel;
     /** 用户为本次 Codex 运行选择的推理强度；其它引擎或自定义 API 为 null。 */
     private String reasoningEffort;
+    /** Codex 是否先形成计划再连续执行；问题由 Runner 指示其自动采用推荐项。 */
+    private Boolean planMode;
     /** 本次运行输出 token 最多的模型；CLI 没回传时为 null。 */
     private String model;
     /** 本次运行用到的全部模型，逗号分隔；自动选模型时可能不止一个。 */
@@ -90,6 +92,8 @@ public class AiTaskRunEntity {
     public void setRequestedModel(String requestedModel) { this.requestedModel = requestedModel; }
     public String getReasoningEffort() { return reasoningEffort; }
     public void setReasoningEffort(String reasoningEffort) { this.reasoningEffort = reasoningEffort; }
+    public Boolean getPlanMode() { return planMode; }
+    public void setPlanMode(Boolean planMode) { this.planMode = planMode; }
     public String getModel() { return model; }
     public void setModel(String model) { this.model = model; }
     public String getModels() { return models; }

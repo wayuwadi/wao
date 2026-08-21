@@ -516,6 +516,7 @@ export interface AiRun {
   engine: AiEngine
   requestedModel?: string | null
   reasoningEffort?: string | null
+  planMode?: boolean
   serviceTier?: string | null
   status: AiRunStatus
   runnerId: string | null

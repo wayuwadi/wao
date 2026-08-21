@@ -929,6 +929,13 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
         "注意：你一旦停止回复，本次会话就立即结束，不存在「稍后再汇报」；"
         "等待部署这类长任务必须持续轮询直到有结论，然后在同一次答复里给出状态行。"
     )
+    if claim.get("planMode"):
+        prompt = (
+            "本次运行启用 Codex `/plan` 工作流。开始实现前先使用计划工具形成可执行计划，"
+            "然后连续完成计划，不要在输出计划后停止。计划阶段如果需要选择，不要调用输入工具等待用户，必须自动采用标注 "
+            "`(Recommended)` 的选项；没有推荐标记时采用第一个选项。除确实缺少必要信息外，不要等待人工回复。\n\n"
+            + prompt
+        )
     previous = _readable_text(claim.get("previousFailure")).strip()
     if previous:
         prompt += (
@@ -954,7 +961,7 @@ def build_continuation_prompt(
     以为只要在本地改好就算完成。
     """
     base = claim["defaultBranch"]
-    return (
+    prompt = (
         "用户对这次运行给出了新的输入，请在当前任务、已有工作区和你自己的记忆基础上继续，"
         "不要把已经做对的部分推倒重来：\n\n"
         f"{continuation}\n\n"
@@ -969,6 +976,13 @@ def build_continuation_prompt(
         "你一旦停止回复会话就立即结束，不存在「稍后再汇报」；"
         "等待部署这类长任务要持续轮询到有结论，再在同一次答复里给出状态行。"
     ) + _project_memory_prompt(claim, memory_path) + _report_prompt(report_path)
+    if claim.get("planMode"):
+        prompt = (
+            "本次续跑仍启用 Codex `/plan` 工作流。先更新现有计划再连续执行；如果需要选择，"
+            "自动采用标注 `(Recommended)` 的选项，没有推荐标记时采用第一个选项，不等待人工回复。\n\n"
+            + prompt
+        )
+    return prompt
 
 
 def parse_memory_candidates(memory_path: Path) -> list[dict[str, Any]]:

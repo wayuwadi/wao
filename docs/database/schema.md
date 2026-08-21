@@ -342,6 +342,7 @@ Runner 每五分钟在本机调用 Codex app-server。服务端按规范化邮�
 | result_summary / session_id / exit_code | TEXT / VARCHAR / INT | AI CLI 最终摘要、会话 id 与退出码 |
 | pending_input | TEXT | 等待原 AI 会话消费的用户补充输入；仅由原执行电脑恢复 |
 | requested_model / reasoning_effort | VARCHAR(128) / VARCHAR(16) NULL | 派工时固化的 Codex 模型与推理强度；历史、其它引擎和自定义 API 为空（V80） |
+| plan_mode | BOOLEAN | 是否启用 Codex Plan 工作流；旧运行和其它引擎为 false（V81） |
 | model / models | VARCHAR(120) / VARCHAR(500) NULL | 输出 token 最多的模型，以及本次用到的全部模型（逗号分隔） |
 | input_tokens / output_tokens / cached_input_tokens / total_tokens | BIGINT NULL | 本次运行的 token 用量；续跑在同一条记录上累加 |
 | cost_usd | DECIMAL(12,6) NULL | 折算额度（美元）；Codex 不回传花费时为空（见 ADR-026） |
@@ -886,7 +887,8 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V78__feishu_webhook_configs.sql`：新增加密的通用飞书机器人注册表，并从 V17 单例密文无损迁移系统默认项（见 ADR-089）。
 - `V79__task_created_at.sql`：新增任务真实创建时间，按稳定 id 的 13 位毫秒时间戳前缀回填可确认的存量任务；无可靠来源的极早期数据保持空值。
 - `V80__ai_run_model_selection.sql`：固化每次 Codex AI Run 选择的模型与推理强度（见 ADR-091）。
+- `V81__ai_run_plan_mode.sql`：固化每次 Codex AI Run 的 Plan 工作流选择，Runner 在问题出现时自动采用推荐项（见 ADR-093）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
-V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V80 链路，
+V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V81 链路，
 并覆盖全局活动唯一抢占、lease、归档身份与同步 / scoped 文档 `PATCH` 的全局版本 CAS、树拖拽窄更新不回写正文或版本、AI 入队关联回滚和 DB-time 超时清理；Docker 不可用时显式跳过。

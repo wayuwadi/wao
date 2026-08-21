@@ -9,7 +9,7 @@ const props = defineProps<{ projectId: string; starting?: boolean; scope?: strin
 const emit = defineEmits<{
   close: []
   start: [engine: AiEngine, runnerId: string | null, accountId: string | null,
-    model: string | null, reasoningEffort: string | null]
+    model: string | null, reasoningEffort: string | null, planMode: boolean]
 }>()
 
 const loading = ref(true)
@@ -21,6 +21,7 @@ const accountId = ref('')
 const runOptions = ref<AiRunOptions | null>(null)
 const model = ref('')
 const reasoningEffort = ref('')
+const planMode = ref(false)
 const preferredRunnerId = ref('')
 let runnerRefreshTimer: ReturnType<typeof setInterval> | null = null
 
@@ -70,7 +71,8 @@ function pickEngine(next: AiEngine) {
 function startRun() {
   emit('start', engine.value, runnerId.value || null, accountId.value || null,
     codexParametersEnabled.value ? model.value : null,
-    codexParametersEnabled.value ? reasoningEffort.value : null)
+    codexParametersEnabled.value ? reasoningEffort.value : null,
+    engine.value === 'codex' && planMode.value)
 }
 
 watch(accountId, (next) => {
@@ -171,6 +173,18 @@ onBeforeUnmount(() => {
         <p v-else-if="customApiSelected" class="hint">
           <i class="ri-information-line"></i>自定义 API 使用账号中配置的模型
         </p>
+        <div class="label">执行模式</div>
+        <button
+          class="plan-mode"
+          :class="{ on: planMode }"
+          type="button"
+          role="switch"
+          :aria-checked="planMode"
+          @click="planMode = !planMode"
+        >
+          <span class="switch"><i></i></span>
+          <span><b>Plan 模式</b><small>先规划再连续执行；遇到问题自动选择推荐项</small></span>
+        </button>
       </template>
 
       <div class="label">运行账号</div>
@@ -257,6 +271,19 @@ onBeforeUnmount(() => {
   color: var(--wao-text-1);
   font-size: 12px;
 }
+.plan-mode {
+  width: 100%; padding: 9px; display: flex; align-items: center; gap: 9px;
+  border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card);
+  color: var(--wao-text-2); cursor: pointer; text-align: left;
+}
+.plan-mode.on { border-color: var(--wao-primary); background: var(--wao-primary-tint); }
+.plan-mode > span:last-child { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.plan-mode b { font-size: 12px; }
+.plan-mode small { color: var(--wao-text-weak); font-size: 10px; line-height: 1.4; }
+.switch { width: 28px; height: 16px; flex: 0 0 auto; padding: 2px; border-radius: 9px; background: var(--wao-line); }
+.switch i { display: block; width: 12px; height: 12px; border-radius: 50%; background: white; transition: transform .15s ease; }
+.plan-mode.on .switch { background: var(--wao-primary); }
+.plan-mode.on .switch i { transform: translateX(12px); }
 .hint { margin: 9px 0 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.5; }
 .hint i { margin-right: 4px; }
 .hint.danger { color: #c04f47; }
