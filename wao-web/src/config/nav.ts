@@ -61,6 +61,7 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
 export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
+  skills: { id: 'skills', label: 'Skill 市场', icon: 'ri-sparkling-2-line', path: '/skills' },
   calendar: { id: 'calendar', label: '日历', icon: 'ri-calendar-2-line', path: '/calendar' },
   todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
@@ -134,6 +135,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
     icon: 'ri-stack-line',
     group: 'PUBLIC',
     order: 10,
+    visible: true,
+  },
+  {
+    id: 'skills',
+    label: 'Skill 市场',
+    icon: 'ri-sparkling-2-line',
+    group: 'PUBLIC',
+    order: 12,
     visible: true,
   },
   {
@@ -302,7 +311,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
 
 const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
-  { label: '公共', items: ['projects', 'chat-reviews'] },
+  { label: '公共', items: ['projects', 'skills', 'chat-reviews'] },
   { label: '个人', items: PERSONAL_ITEMS },
   { label: '工具', items: ['automation', 'files', 'games'] },
 ]

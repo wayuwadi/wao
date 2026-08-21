@@ -58,6 +58,18 @@ const router = createRouter({
       meta: { public: true },
     },
     {
+      path: '/skills',
+      component: () => import('@/layouts/SkillMarketLayout.vue'),
+      meta: { public: true },
+      children: [
+        { path: '', name: 'skill-market', component: () => import('@/views/SkillMarketView.vue'), meta: { public: true } },
+        { path: 'publish', name: 'skill-publish', component: () => import('@/views/SkillPublishView.vue'), meta: { public: false } },
+        { path: 'manage', name: 'skill-manage', component: () => import('@/views/SkillManageView.vue'), meta: { public: false } },
+        { path: 'reviews', name: 'skill-reviews', component: () => import('@/views/SkillReviewsView.vue'), meta: { public: false } },
+        { path: ':handle/:slug', name: 'skill-detail', component: () => import('@/views/SkillDetailView.vue'), meta: { public: true } },
+      ],
+    },
+    {
       path: '/',
       component: AppLayout,
       children: [
