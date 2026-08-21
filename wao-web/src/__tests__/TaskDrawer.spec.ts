@@ -280,15 +280,18 @@ describe('TaskDrawer', () => {
     }
   })
 
-  it('运行中提供暂停入口，并请求暂停当前运行', async () => {
+  it('运行中提供停止入口，并在确认后请求停止当前运行', async () => {
     const { pauseAiRun } = await import('@/api/ai')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     ui.openTask(taskId)
     const w = mountDrawer()
     await flushPromises()
 
     await w.find('.pause-ai-btn').trigger('click')
 
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('未提交结果可能丢失'))
     expect(pauseAiRun).toHaveBeenCalledWith('ar1')
+    confirm.mockRestore()
     w.unmount()
   })
 
@@ -313,6 +316,27 @@ describe('TaskDrawer', () => {
     expect(subActions[1]!.classes()).toContain('danger')
     expect(subActions[1]!.text()).toContain('删除子任务')
     expect(data.subById(taskId, subId)).toBeDefined()
+  })
+
+  it('删除子任务必须二次确认，取消时保留原数据', async () => {
+    const subId = data.addSub(taskId, '不能误删的子任务')!
+    const confirm = vi.spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+    await w.find('.sub-row').trigger('click')
+    const button = w.find('.sub-detail-action.danger')
+
+    await button.trigger('click')
+    expect(data.subById(taskId, subId)).toBeDefined()
+    await button.trigger('click')
+
+    expect(confirm.mock.calls[0]?.[0]).toContain('执行记录关联也会一并移除')
+    expect(data.subById(taskId, subId)).toBeUndefined()
+    confirm.mockRestore()
+    w.unmount()
   })
 
   it('子任务详情里改名会写回 store', async () => {

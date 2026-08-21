@@ -13,6 +13,7 @@ import {
   fetchAiRunners,
   fetchAiWorkflows,
   launchAutonomousGoal,
+  pauseAiRun,
   removeAiRunner,
   removeAiWorkflow,
   requestRunnerScriptUpdate,
@@ -146,6 +147,17 @@ vi.mock('@/api/ai', () => ({
     runnerName: null, requestedRunnerId: 'rn2', branchName: 'ai/wao-ar-goal', resultSummary: null,
     latestProgress: '目标已进入队列', progressUpdatedAt: '2026-07-25T20:19:00', progress: [],
     sessionId: null, exitCode: null, createdAt: '2026-07-25T20:19:00', startedAt: null, finishedAt: null,
+  }),
+  pauseAiRun: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    id: 'ar2', taskId: 't2', taskTitle: '根据截图修复展示', previewImages: [],
+    projectId: 'p1', projectName: 'WAO', engine: 'claude', status: 'cancelled',
+    runnerId: 'rn2', runnerName: 'Linux 主节点', requestedRunnerId: 'rn2',
+    branchName: 'ai/wao-ar2', retryOfRunId: null, resultSummary: '用户已暂停此 AI 任务',
+    reportUrl: null, latestProgress: '用户已暂停 AI 任务', progressUpdatedAt: '2026-07-25T20:19:00',
+    progress: [], usage: { model: null, models: null, inputTokens: 0, outputTokens: 0,
+      cachedInputTokens: 0, totalTokens: 0, costUsd: null, recorded: false },
+    sessionId: 'sess-1', exitCode: null, createdAt: '2026-07-25T20:18:00',
+    startedAt: '2026-07-25T20:18:05', finishedAt: '2026-07-25T20:19:00',
   }),
   launchEvolutionSuggestion: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
     id: 'ar-evolve', taskId: 't-evolve', taskTitle: '找出并消除一个高频使用阻力', projectId: 'p1',
@@ -497,6 +509,32 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.run-detail').text()).toContain('Claude Code')
     expect(wrapper.findAll('.run-detail-images img')).toHaveLength(2)
     expect(router.currentRoute.value.fullPath).toBe('/')
+    wrapper.unmount()
+  })
+
+  it('运行详情经二次确认后停止真实任务，取消确认时不调用接口', async () => {
+    vi.useFakeTimers()
+    vi.mocked(pauseAiRun).mockClear()
+    const confirm = vi.spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.run-card').trigger('click')
+    const stop = wrapper.get('.run-detail footer .stop-run')
+    expect(stop.text()).toContain('停止任务')
+    await stop.trigger('click')
+    expect(pauseAiRun).not.toHaveBeenCalled()
+
+    await stop.trigger('click')
+    await flushPromises()
+    expect(confirm.mock.calls[1]?.[0]).toContain('未提交结果可能丢失')
+    expect(pauseAiRun).toHaveBeenCalledWith('ar2')
+    expect(wrapper.find('.run-detail footer .stop-run').exists()).toBe(false)
+    expect(wrapper.find('.run-detail').text()).toContain('已取消')
+
+    confirm.mockRestore()
     wrapper.unmount()
   })
 

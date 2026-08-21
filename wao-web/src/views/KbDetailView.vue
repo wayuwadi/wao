@@ -461,6 +461,7 @@ async function confirmConflictedTemplateOverwrite(templateId: string) {
   toast('已确认以本机草稿为准，请再次点击保存', 'ri-draft-line')
 }
 async function removeTemplate(template: DocTemplate) {
+  if (!window.confirm(`删除文档模板「${template.name}」？已用该模板创建的文档不会受影响。`)) return
   try {
     await apiDeleteDocTemplate(template.id)
     removeTemplateDraft(template.id)
@@ -531,6 +532,7 @@ function commitFolderName(folderId: string, e: Event) {
 async function removeFolder(folderId: string) {
   const folder = kb.value?.folders.find((f) => f.id === folderId)
   if (!folder) return
+  if (!window.confirm(`删除文件夹「${folder.name}」及其中 ${folder.docs.length} 篇文档？删除后会进入回收站，7 天内可恢复。`)) return
   const gone = folder.docs.includes(docId.value ?? '')
   await data.deleteFolder(kbId.value, folderId)
   if (gone) docId.value = firstDocId()
@@ -545,6 +547,8 @@ async function removeFolder(folderId: string) {
 async function removeKb() {
   const target = kb.value
   if (!target) return
+  const docTotal = target.folders.reduce((total, folder) => total + folder.docs.length, 0)
+  if (!window.confirm(`删除知识库「${target.name}」及其中 ${docTotal} 篇文档？删除后会进入回收站，7 天内可恢复。`)) return
   const name = target.name
   await data.deleteKb(target.id)
   const next = tabs.close(`kb:${kbId.value}`)
@@ -554,6 +558,7 @@ async function removeKb() {
 
 async function removeDoc(id: string) {
   const title = data.docOf(id).title || '未命名文档'
+  if (!window.confirm(`删除文档「${title}」？删除后会进入回收站，7 天内可恢复。`)) return
   await data.deleteDoc(id)
   if (docId.value === id) docId.value = firstDocId()
   toast(`已把「${title}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')

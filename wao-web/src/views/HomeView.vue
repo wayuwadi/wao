@@ -10,6 +10,7 @@ import {
   fetchAiRuns,
   fetchAiWorkflows,
   launchAutonomousGoal,
+  pauseAiRun,
   removeAiRunner,
   removeAiWorkflow,
   requestRunnerScriptUpdate,
@@ -75,6 +76,7 @@ const pairExpiresAt = ref('')
 const editingProjectId = ref<string | null>(null)
 const saving = ref(false)
 const rerunning = ref(false)
+const pausingRunId = ref<string | null>(null)
 const editingRunnerId = ref<string | null>(null)
 const editingRunnerValue = ref(2)
 const editingRunnerSaving = ref(false)
@@ -605,6 +607,28 @@ async function rerun(run: AiRun) {
     toast(error instanceof Error ? error.message : '重跑失败', 'ri-error-warning-line')
   } finally {
     rerunning.value = false
+  }
+}
+
+/** 首页运行档案也能停止真实执行；后端落为 cancelled，Runner 随后终止整棵 CLI 进程树。 */
+async function stopRun(run: AiRun) {
+  if (pausingRunId.value) return
+  if (!window.confirm(`停止 AI 任务「${run.taskTitle}」？当前执行会被终止，已产生的未提交结果可能丢失。`)) return
+  pausingRunId.value = run.id
+  try {
+    const stopped = await pauseAiRun(run.id)
+    runs.value = runs.value.map((item) => item.id === run.id ? stopped : item)
+    if (run.runnerId) {
+      runners.value = runners.value.map((item) => item.id === run.runnerId
+        ? { ...item, activeRuns: Math.max(0, item.activeRuns - 1) }
+        : item)
+    }
+    selectedRun.value = stopped
+    toast('已停止 AI 任务，执行电脑正在结束当前进程', 'ri-stop-circle-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '停止失败，请重试', 'ri-error-warning-line')
+  } finally {
+    pausingRunId.value = null
   }
 }
 
@@ -1266,6 +1290,15 @@ onBeforeUnmount(() => {
           </a>
           <button class="secondary" @click="selectedRun = null">关闭</button>
           <button
+            v-if="['queued', 'claimed', 'running'].includes(selectedRun.status)"
+            class="secondary stop-run"
+            :disabled="pausingRunId === selectedRun.id"
+            @click="stopRun(selectedRun)"
+          >
+            <i :class="pausingRunId === selectedRun.id ? 'ri-loader-4-line spin' : 'ri-stop-circle-line'"></i>
+            {{ pausingRunId === selectedRun.id ? '停止中…' : '停止任务' }}
+          </button>
+          <button
             v-if="selectedRun.status === 'failed'"
             class="secondary retry"
             :disabled="rerunning"
@@ -1809,6 +1842,8 @@ onBeforeUnmount(() => {
 .run-detail footer button { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
 .run-detail footer .retry { display: inline-flex; align-items: center; gap: 6px; color: var(--wao-danger-strong); border-color: var(--wao-danger-line); }
 .run-detail footer .retry:disabled { opacity: .6; cursor: not-allowed; }
+.run-detail footer .stop-run { display: inline-flex; align-items: center; gap: 6px; border-color: var(--wao-danger-line); color: var(--wao-danger-strong); }
+.run-detail footer .stop-run:disabled { opacity: .6; cursor: not-allowed; }
 .gh-branch-link {
   display: inline-flex;
   align-items: center;
