@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS skill_favorite;
+DROP TABLE IF EXISTS skill_version;
+DROP TABLE IF EXISTS skill;
+DROP TABLE IF EXISTS skill_publisher;
+DROP TABLE IF EXISTS member;
+CREATE TABLE member (id VARCHAR(32) PRIMARY KEY, name VARCHAR(64), initial VARCHAR(8), color VARCHAR(16), role VARCHAR(32));
+CREATE TABLE skill_publisher (id VARCHAR(64) PRIMARY KEY, member_id VARCHAR(32) UNIQUE, handle VARCHAR(32) UNIQUE, display_name VARCHAR(64), created_at TIMESTAMP, updated_at TIMESTAMP);
+CREATE TABLE skill (id VARCHAR(64) PRIMARY KEY, publisher_id VARCHAR(64), slug VARCHAR(64), display_name VARCHAR(128), summary VARCHAR(1000), category VARCHAR(40), tags_json CLOB, status VARCHAR(24), published_version_id VARCHAR(64), download_count BIGINT, favorite_count BIGINT, created_at TIMESTAMP, updated_at TIMESTAMP, UNIQUE(publisher_id,slug));
+CREATE TABLE skill_version (id VARCHAR(64) PRIMARY KEY, skill_id VARCHAR(64), version VARCHAR(32), display_name VARCHAR(128), summary VARCHAR(1000), category VARCHAR(40), tags_json CLOB, changelog VARCHAR(1000), license_code VARCHAR(32), rights_confirmed BOOLEAN, tested_platforms_json CLOB, compatible_platforms_json CLOB, state VARCHAR(24), package_name VARCHAR(180), package_size BIGINT, unpacked_size BIGINT, file_count INT, sha256 CHAR(64), file_manifest_json CLOB, scan_findings_json CLOB, skill_md CLOB, package_content BLOB, submitted_at TIMESTAMP, reviewed_at TIMESTAMP, reviewer_id VARCHAR(32), review_note VARCHAR(1000), created_at TIMESTAMP, updated_at TIMESTAMP, UNIQUE(skill_id,version));
+CREATE TABLE skill_favorite (skill_id VARCHAR(64), member_id VARCHAR(32), created_at TIMESTAMP, PRIMARY KEY(skill_id,member_id));
+INSERT INTO member VALUES ('author','作者','A','#345678','成员');
+INSERT INTO member VALUES ('admin','管理员','M','#123456','管理员');

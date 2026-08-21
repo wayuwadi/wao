@@ -27,8 +27,9 @@ describe('侧边栏导航配置', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
     expect(publicGroup?.items).toEqual([
       'projects',
-      'chat-reviews',
+      'skills',
       externalAppItemId('media-agent'),
+      'chat-reviews',
     ])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
       '/apps/media-agent',
