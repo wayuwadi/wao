@@ -13,11 +13,12 @@ import jakarta.validation.constraints.NotEmpty;
  * @param accountId 指定这次运行使用的集中账号；留空表示沿用 Runner 本地登录态
  * @param model Codex 本次使用的模型；留空时使用后台默认值
  * @param reasoningEffort Codex 本次使用的推理强度；留空时使用后台默认值
+ * @param planMode Codex 是否先规划再连续执行；问题自动采用推荐项
  */
 public record CreateAiRunsRequest(@NotEmpty List<String> taskIds, String subId, String engine,
-        String runnerId, String accountId, String model, String reasoningEffort) {
+        String runnerId, String accountId, String model, String reasoningEffort, Boolean planMode) {
 
     public CreateAiRunsRequest(List<String> taskIds, String subId, String engine, String runnerId) {
-        this(taskIds, subId, engine, runnerId, null, null, null);
+        this(taskIds, subId, engine, runnerId, null, null, null, false);
     }
 }

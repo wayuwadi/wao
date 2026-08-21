@@ -213,12 +213,31 @@ class AiRunServiceTest {
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
         service.enqueue(List.of("t1"), null, "codex", null, null,
-                "gpt-5.6-sol", "high", "wg", "https://wao.example");
+                "gpt-5.6-sol", "high", false, "wg", "https://wao.example");
 
         ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
         verify(runMapper).insert(run.capture());
         assertThat(run.getValue().getRequestedModel()).isEqualTo("gpt-5.6-sol");
         assertThat(run.getValue().getReasoningEffort()).isEqualTo("high");
+        assertThat(run.getValue().getPlanMode()).isFalse();
+    }
+
+    @Test
+    void enqueuePersistsSelectedCodexPlanMode() {
+        TaskEntity task = task("t1", "p1", "先规划再实现");
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "Linux 主节点", "codex")));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        service.enqueue(List.of("t1"), null, "codex", null, null,
+                "gpt-5.6-sol", "medium", true, "wg", "https://wao.example");
+
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getPlanMode()).isTrue();
     }
 
     @Test
@@ -227,7 +246,7 @@ class AiRunServiceTest {
         when(configMapper.selectById("p1")).thenReturn(config("p1"));
 
         assertThatThrownBy(() -> service.enqueue(List.of("t1"), null, "codex", null, null,
-                "invented-model", "medium", "wg", "https://wao.example"))
+                "invented-model", "medium", false, "wg", "https://wao.example"))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("不支持的 Codex 模型");
         verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
@@ -433,7 +452,7 @@ class AiRunServiceTest {
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
 
         service.enqueue(List.of("t1"), null, "codex", "rn1", "aa-custom",
-                "gpt-5.6-sol", "high", "wg", "https://wao.example");
+                "gpt-5.6-sol", "high", false, "wg", "https://wao.example");
 
         ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
         verify(runMapper).insert(run.capture());
@@ -481,6 +500,7 @@ class AiRunServiceTest {
         queued.setStatus("queued");
         queued.setRequestedModel("gpt-5.6-sol");
         queued.setReasoningEffort("high");
+        queued.setPlanMode(true);
         queued.setPromptUrl("https://wao.example/api/share/tasks/t1.md");
         queued.setBranchName("ai/wao-ar1");
         when(runnerMapper.selectOne(any())).thenReturn(runner);
@@ -497,6 +517,7 @@ class AiRunServiceTest {
         assertThat(result.model()).isEqualTo("gpt-5.6-sol");
         assertThat(result.reasoningEffort()).isEqualTo("high");
         assertThat(result.serviceTier()).isEqualTo("default");
+        assertThat(result.planMode()).isTrue();
         assertThat(queued.getStatus()).isEqualTo("running");
         assertThat(queued.getRunnerId()).isEqualTo("rn1");
         verify(runMapper).updateById(eq(queued));

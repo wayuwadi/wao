@@ -428,7 +428,7 @@ public class AiRunService {
     @Transactional
     public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
             String accountId, String requestedBy, String baseUrl) {
-        return enqueue(taskIds, subId, engine, runnerId, accountId, null, null, requestedBy, baseUrl);
+        return enqueue(taskIds, subId, engine, runnerId, accountId, null, null, false, requestedBy, baseUrl);
     }
 
     /**
@@ -436,10 +436,11 @@ public class AiRunService {
      *
      * @param model Codex 模型；留空时使用后台默认模型
      * @param reasoningEffort Codex 推理强度；留空时使用后台默认强度
+     * @param planMode 是否先形成计划再连续执行；仅 Codex 生效
      */
     @Transactional
     public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
-            String accountId, String model, String reasoningEffort, String requestedBy, String baseUrl) {
+            String accountId, String model, String reasoningEffort, Boolean planMode, String requestedBy, String baseUrl) {
         String requestedEngine = StringUtils.hasText(engine) && !"auto".equals(engine)
                 ? requireEngine(engine) : null;
         String sub = trim(subId);
@@ -500,6 +501,7 @@ public class AiRunService {
             run.setAiAccountId(StringUtils.hasText(accountId) ? accountId.trim() : null);
             run.setRequestedModel(requestedModel);
             run.setReasoningEffort(requestedEffort);
+            run.setPlanMode("codex".equals(runEngine) && Boolean.TRUE.equals(planMode));
             run.setStatus("queued");
             run.setRequestedRunnerId(runTarget == null ? null : runTarget.getId());
             run.setRequestedBy(requestedBy);
@@ -742,6 +744,7 @@ public class AiRunService {
         run.setAiAccountId(source.getAiAccountId());
         run.setRequestedModel(source.getRequestedModel());
         run.setReasoningEffort(source.getReasoningEffort());
+        run.setPlanMode(Boolean.TRUE.equals(source.getPlanMode()));
         run.setStatus("queued");
         run.setRequestedRunnerId(source.getRequestedRunnerId());
         run.setRequestedBy(requestedBy);
@@ -968,6 +971,7 @@ public class AiRunService {
                     run.getRequestedModel(), run.getReasoningEffort(),
                     "codex".equals(engine) && StringUtils.hasText(run.getRequestedModel())
                             ? CODEX_SERVICE_TIER : null,
+                    Boolean.TRUE.equals(run.getPlanMode()),
                     run.getPromptUrl(),
                     config.getRepoUrl(), blankOr(config.getDefaultBranch(), "main"),
                     blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName(),
@@ -1252,7 +1256,7 @@ public class AiRunService {
                     run.getProjectId(), project == null ? run.getProjectId() : project.getName(),
                     blankOr(run.getEngine(), DEFAULT_ENGINE), run.getRequestedModel(),
                     run.getReasoningEffort(), StringUtils.hasText(run.getRequestedModel())
-                            ? CODEX_SERVICE_TIER : null, run.getStatus(),
+                            ? CODEX_SERVICE_TIER : null, Boolean.TRUE.equals(run.getPlanMode()), run.getStatus(),
                     run.getRunnerId(), runnerName(run, runner), run.getRequestedRunnerId(), run.getRequestedBy(),
                     run.getBranchName(), run.getRetryOfRunId(),
                     run.getResultSummary(), reportUrls.get(run.getId()), run.getLatestProgress(),

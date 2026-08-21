@@ -519,7 +519,7 @@ describe('TaskDrawer', () => {
 
     expect(createAiRuns).toHaveBeenCalledWith([taskId], {
       subId: null, engine: 'claude', runnerId: null, accountId: null,
-      model: null, reasoningEffort: null,
+      model: null, reasoningEffort: null, planMode: false,
     })
     w.unmount()
   })
@@ -542,8 +542,27 @@ describe('TaskDrawer', () => {
 
     expect(createAiRuns).toHaveBeenCalledWith([taskId], {
       subId, engine: 'codex', runnerId: null, accountId: null,
-      model: null, reasoningEffort: null,
+      model: null, reasoningEffort: null, planMode: false,
     })
+    w.unmount()
+  })
+
+  it('Plan 模式选择会随 Codex 派工请求提交', async () => {
+    const { createAiRuns, fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.find('.ai-run-btn').trigger('click')
+    await flushPromises()
+    await w.find('.plan-mode').trigger('click')
+    await w.find('.launcher footer .primary').trigger('click')
+    await flushPromises()
+
+    expect(createAiRuns).toHaveBeenCalledWith([taskId], expect.objectContaining({
+      engine: 'codex', planMode: true,
+    }))
     w.unmount()
   })
 

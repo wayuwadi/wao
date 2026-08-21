@@ -507,6 +507,21 @@ class CodexAccountIsolationTest(unittest.TestCase):
         self.assertNotIn("sk-secret", config)
         self.assertEqual("sk-secret", overrides["WAO_CODEX_API_KEY"])
 
+    def test_plan_mode_prompt_plans_executes_and_auto_selects_recommended_option(self) -> None:
+        claim = {
+            "defaultBranch": "main", "branchName": "ai/wao-ar-plan",
+            "promptUrl": "https://wao.example/task.md", "planMode": True,
+        }
+
+        prompt = RUNNER.build_prompt(claim)
+        continuation = RUNNER.build_continuation_prompt(claim, "继续修复")
+
+        self.assertIn("Codex `/plan` 工作流", prompt)
+        self.assertIn("连续完成计划", prompt)
+        self.assertIn("`(Recommended)`", prompt)
+        self.assertIn("采用第一个选项", prompt)
+        self.assertIn("先更新现有计划再连续执行", continuation)
+
     @patch.object(RUNNER, "invoke_cli", return_value=(0, '{"thread_id":"thread-1"}'))
     def test_selected_account_preserves_existing_run_environment(self, invoke: Mock) -> None:
         reporter = Mock()

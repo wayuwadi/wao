@@ -16,6 +16,8 @@ public record AiRunnerClaimDto(
         String reasoningEffort,
         /** Codex 服务档位；WAO 开发任务固定为 default，不开启 Fast。 */
         String serviceTier,
+        /** 是否启用无人值守 Plan 工作流；仅 Codex 为 true。 */
+        Boolean planMode,
         String promptUrl,
         String repoUrl,
         String defaultBranch,
@@ -39,7 +41,7 @@ public record AiRunnerClaimDto(
             String projectName, String engine, String promptUrl, String repoUrl, String defaultBranch,
             String workspaceDir, String branchName, String previousFailure, String sessionId,
             String continuationInput, AiRunAccountDto account) {
-        this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null,
+        this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false,
                 promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, previousFailure, sessionId,
                 continuationInput, account, List.of(), List.of());
     }
@@ -48,7 +50,7 @@ public record AiRunnerClaimDto(
             String projectName, String engine, String promptUrl, String repoUrl, String defaultBranch,
             String workspaceDir, String branchName, String previousFailure, String sessionId,
             String continuationInput) {
-        this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null,
+        this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false,
                 promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, previousFailure, sessionId,
                 continuationInput, null, List.of(), List.of());
     }
