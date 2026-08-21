@@ -1,0 +1,16 @@
+<Application x:Class="Wao.Companion.Windows.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+  <Application.Resources>
+    <SolidColorBrush x:Key="WaoPurple" Color="#6C50D8" />
+    <Style TargetType="Button">
+      <Setter Property="FontFamily" Value="Segoe UI" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Padding" Value="14,9" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Background" Value="#EEE9FF" />
+      <Setter Property="Foreground" Value="#4933A7" />
+    </Style>
+  </Application.Resources>
+</Application>

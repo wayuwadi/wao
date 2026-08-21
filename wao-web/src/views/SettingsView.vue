@@ -7,6 +7,14 @@ import { updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import {
+  approveCompanionPairing,
+  fetchCompanionDevices,
+  fetchCompanionPairing,
+  revokeCompanionDevice,
+  type CompanionDevice,
+  type CompanionPairingPreview,
+} from '@/api/companion'
+import {
   fetchBuiltinMenuRegistry, fetchExternalAppRegistry, fetchSiteInfo,
   saveBuiltinMenuRegistry, saveExternalAppRegistry, saveSiteInfo,
   type SiteInfo,
@@ -41,7 +49,7 @@ const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
   { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['快捷链接', 'quick-links'], ['Codex 记忆 · MCP', 'memory-mcp']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['桌面宠物', 'companion'], ['偏好', 'prefs'], ['快捷链接', 'quick-links'], ['Codex 记忆 · MCP', 'memory-mcp']] },
 ] as const
 
 const requestedTab = (route.query.tab as string) || 'members'
@@ -75,6 +83,63 @@ const joinedAt = computed(() => {
   if (!session.account?.createdAt) return '—'
   return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'long' }).format(new Date(session.account.createdAt))
 })
+
+const companionCode = computed(() => typeof route.query.code === 'string' ? route.query.code : '')
+const companionPairing = ref<CompanionPairingPreview | null>(null)
+const companionDevices = ref<CompanionDevice[]>([])
+const companionLoading = ref(false)
+const companionApproving = ref(false)
+const companionError = ref('')
+const companionRevokingId = ref('')
+
+function companionTime(value: string | null) {
+  if (!value) return '尚未连接'
+  return new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+}
+
+async function loadCompanion() {
+  companionLoading.value = true
+  companionError.value = ''
+  try {
+    companionDevices.value = await fetchCompanionDevices()
+    companionPairing.value = companionCode.value
+      ? await fetchCompanionPairing(companionCode.value)
+      : null
+  } catch (error) {
+    companionError.value = error instanceof Error ? error.message : '桌宠连接信息读取失败'
+    if (companionCode.value) companionPairing.value = null
+  } finally {
+    companionLoading.value = false
+  }
+}
+
+async function approveCompanion() {
+  if (!companionCode.value || companionApproving.value) return
+  companionApproving.value = true
+  companionError.value = ''
+  try {
+    companionPairing.value = await approveCompanionPairing(companionCode.value)
+    toast('已批准桌宠，请回到桌面等待连接', 'ri-checkbox-circle-line')
+  } catch (error) {
+    companionError.value = error instanceof Error ? error.message : '桌宠批准失败'
+  } finally {
+    companionApproving.value = false
+  }
+}
+
+async function revokeCompanion(device: CompanionDevice) {
+  if (!window.confirm(`撤销「${device.name}」的桌宠访问？撤销后该设备需要重新配对。`)) return
+  companionRevokingId.value = device.id
+  try {
+    await revokeCompanionDevice(device.id)
+    companionDevices.value = companionDevices.value.filter((item) => item.id !== device.id)
+    toast('桌宠设备已撤销', 'ri-shield-check-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '设备撤销失败')
+  } finally {
+    companionRevokingId.value = ''
+  }
+}
 
 watchEffect(() => {
   if (!profileForm.name) profileForm.name = session.currentUser.name
@@ -436,7 +501,11 @@ watch(tab, (t) => {
     if (!builtinMenusLoaded.value) loadBuiltinMenuSettings()
   }
   if (t === 'quick-links') quickLinks.load()
+  if (t === 'companion') void loadCompanion()
 }, { immediate: true })
+watch(companionCode, () => {
+  if (tab.value === 'companion') void loadCompanion()
+})
 async function logout() {
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return
   await session.logout()
@@ -788,6 +857,75 @@ function demo(msg: string, icon?: string) {
           </div>
         </template>
 
+        <!-- 桌面宠物 -->
+        <template v-else-if="tab === 'companion'">
+          <div class="s-h1">桌面宠物</div>
+          <div class="card companion-hero">
+            <div class="companion-mark"><i class="ri-bear-smile-line"></i></div>
+            <div>
+              <div class="card-title">WAO Companion</div>
+              <div class="companion-copy">透明置顶的小怪兽会跟随你的 AI Run，在需要确认、执行失败或完成时提醒你，并把你带回对应任务。</div>
+            </div>
+            <a class="btn-primary companion-download" href="/downloads/companion/WAO-Companion-win-x64.zip">
+              <i class="ri-windows-fill"></i>下载 Windows 版
+            </a>
+          </div>
+
+          <div v-if="companionCode" class="card companion-pairing">
+            <div class="card-row wrap">
+              <div class="card-title">批准新桌宠</div>
+              <span class="companion-code">{{ companionPairing?.code || companionCode }}</span>
+            </div>
+            <div v-if="companionLoading" class="companion-state"><i class="ri-loader-4-line spin"></i>正在核对配对码…</div>
+            <div v-else-if="companionError" class="companion-error" role="alert">
+              <span>{{ companionError }}</span>
+              <button class="btn-ghost sm" @click="loadCompanion">重新读取</button>
+            </div>
+            <template v-else-if="companionPairing">
+              <div class="companion-device-preview">
+                <span class="companion-device-icon"><i class="ri-computer-line"></i></span>
+                <span><strong>{{ companionPairing.deviceName }}</strong><small>{{ companionPairing.platform }} · 配对码将在 {{ companionTime(companionPairing.expiresAt) }} 失效</small></span>
+              </div>
+              <div v-if="companionPairing.status === 'PENDING'" class="companion-approve-row">
+                <span>只有你正在操作的电脑才应被批准。</span>
+                <button class="btn-primary" :disabled="companionApproving" @click="approveCompanion">
+                  {{ companionApproving ? '批准中…' : '确认连接这台电脑' }}
+                </button>
+              </div>
+              <div v-else class="companion-approved"><i class="ri-checkbox-circle-fill"></i>已批准，请回到桌宠完成连接。</div>
+            </template>
+          </div>
+
+          <div class="card">
+            <div class="card-row wrap">
+              <div class="card-title">已连接设备</div>
+              <div class="spacer"></div>
+              <button class="btn-ghost sm" :disabled="companionLoading" @click="loadCompanion"><i class="ri-refresh-line"></i>刷新</button>
+            </div>
+            <div v-if="companionLoading && !companionDevices.length" class="companion-state">正在读取设备…</div>
+            <div v-else-if="!companionDevices.length" class="companion-empty">
+              <i class="ri-computer-line"></i><strong>还没有桌宠设备</strong><span>下载客户端后，按屏幕上的配对码在这里确认。</span>
+            </div>
+            <div v-for="device in companionDevices" :key="device.id" class="companion-device-row">
+              <span class="companion-device-icon"><i class="ri-windows-fill"></i></span>
+              <span class="companion-device-main"><strong>{{ device.name }}</strong><small>{{ device.platform }} · 最近连接 {{ companionTime(device.lastSeenAt) }}</small></span>
+              <button class="revoke" :disabled="companionRevokingId === device.id" @click="revokeCompanion(device)">
+                {{ companionRevokingId === device.id ? '撤销中…' : '撤销' }}
+              </button>
+            </div>
+            <div class="hint">设备令牌只能读取并确认当前成员自己的桌宠活动，不能访问任务正文、密钥库、Runner 或其他 WAO API。</div>
+          </div>
+
+          <div class="card companion-notes">
+            <div class="card-title">便携版说明</div>
+            <ul>
+              <li>解压后运行 <code>WAO Companion.exe</code>，不要直接在 ZIP 中启动。</li>
+              <li>首版没有安装器和自动更新；Windows SmartScreen 可能提示未知发布者。</li>
+              <li>桌宠右键菜单可以开启用户级开机启动，不需要管理员权限。</li>
+            </ul>
+          </div>
+        </template>
+
         <!-- 偏好 -->
         <template v-else-if="tab === 'prefs'">
           <div class="s-h1">偏好</div>
@@ -888,6 +1026,30 @@ function demo(msg: string, icon?: string) {
 </template>
 
 <style scoped>
+.companion-hero { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 16px; align-items: center; }
+.companion-mark { width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; color: #fff; font-size: 28px; background: linear-gradient(145deg, #8d68ef, #5f48cf); box-shadow: 0 10px 24px rgba(95,72,207,.24); }
+.companion-copy { color: var(--wao-text-weak); font-size: 13px; line-height: 1.65; margin-top: 5px; max-width: 620px; }
+.companion-download { text-decoration: none; white-space: nowrap; }
+.companion-code { font: 700 18px/1 ui-monospace, SFMono-Regular, Consolas, monospace; color: #6750d6; letter-spacing: .08em; }
+.companion-state { padding: 20px 0; color: var(--wao-text-weak); display: flex; align-items: center; gap: 8px; }
+.companion-error { margin-top: 14px; padding: 12px 14px; border-radius: 12px; color: #b64343; background: var(--wao-danger-bg); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.companion-device-preview, .companion-device-row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--wao-border); }
+.companion-device-icon { width: 40px; height: 40px; flex: 0 0 auto; border-radius: 12px; display: grid; place-items: center; color: #6750d6; background: #eee9ff; font-size: 20px; }
+.companion-device-preview > span:last-child, .companion-device-main { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.companion-device-preview small, .companion-device-main small { color: var(--wao-text-weak); }
+.companion-approve-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 14px; color: var(--wao-text-weak); font-size: 13px; }
+.companion-approved { margin-top: 14px; color: #31835b; display: flex; align-items: center; gap: 7px; font-weight: 600; }
+.companion-empty { min-height: 150px; display: grid; place-items: center; align-content: center; gap: 7px; color: var(--wao-text-weak); text-align: center; }
+.companion-empty i { font-size: 32px; color: #8d68ef; }
+.companion-notes ul { margin: 12px 0 0; padding-left: 20px; color: var(--wao-text-weak); line-height: 1.8; font-size: 13px; }
+.companion-notes code { color: var(--wao-text); }
+.spin { animation: companion-spin 1s linear infinite; }
+@keyframes companion-spin { to { transform: rotate(360deg); } }
+@media (max-width: 760px) {
+  .companion-hero { grid-template-columns: 50px 1fr; }
+  .companion-download { grid-column: 1 / -1; justify-content: center; }
+  .companion-approve-row { align-items: stretch; flex-direction: column; }
+}
 .builtin-menu-list { display: grid; gap: 7px; margin-top: 14px; }
 .builtin-menu-row {
   display: grid;

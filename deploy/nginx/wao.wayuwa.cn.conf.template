@@ -60,6 +60,17 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
+    # Windows 桌宠是独立便携包；仅暴露版本入口和校验文件，不落入 SPA fallback。
+    location = /downloads/companion/WAO-Companion-win-x64.zip {
+        alias /var/www/wao-downloads/companion/WAO-Companion-win-x64.zip;
+        add_header Cache-Control "public, max-age=300";
+    }
+
+    location = /downloads/companion/WAO-Companion-win-x64.zip.sha256 {
+        alias /var/www/wao-downloads/companion/WAO-Companion-win-x64.zip.sha256;
+        add_header Cache-Control "public, max-age=300";
+    }
+
     location = /agent {
         return 301 /agent/;
     }

@@ -106,4 +106,18 @@ class FlywayMigrationsTest {
                 .contains("SUBSTRING(id, 2, 13)")
                 .contains("SET created_at = NULL");
     }
+
+    @Test
+    void desktopCompanionMigrationStoresOnlyCredentialHashesAndScopedReceipts() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V81__desktop_companion.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("poll_secret_hash CHAR(64)", "token_hash CHAR(64)")
+                .contains("token_hash CHAR(64)", "UNIQUE KEY uk_companion_device_token")
+                .contains("UNIQUE KEY uk_companion_receipt (device_id, activity_id)")
+                .doesNotContain("poll_secret VARCHAR", "device_token VARCHAR");
+    }
 }

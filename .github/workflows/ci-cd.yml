@@ -14,9 +14,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-companion:
+    name: Build Windows companion portable package
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "8.0.x"
+      - name: Test companion core
+        shell: pwsh
+        run: |
+          dotnet test wao-companion/tests/Wao.Companion.Core.Tests/Wao.Companion.Core.Tests.csproj -c Release
+          dotnet test wao-companion/tests/Wao.Companion.Windows.Tests/Wao.Companion.Windows.Tests.csproj -c Release
+      - name: Publish self-contained win-x64 package
+        shell: pwsh
+        run: |
+          dotnet publish wao-companion/src/Wao.Companion.Windows/Wao.Companion.Windows.csproj `
+            -c Release -r win-x64 --self-contained true `
+            -o companion-publish
+          New-Item -ItemType Directory -Force companion-release | Out-Null
+          Compress-Archive -Path companion-publish/* `
+            -DestinationPath companion-release/WAO-Companion-win-x64.zip -Force
+          $hash = (Get-FileHash companion-release/WAO-Companion-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  WAO-Companion-win-x64.zip" | Set-Content `
+            companion-release/WAO-Companion-win-x64.zip.sha256 -Encoding ascii
+      - uses: actions/upload-artifact@v6
+        with:
+          name: wao-companion-win-x64
+          path: companion-release/*
+          if-no-files-found: error
+          retention-days: 14
+
   deploy:
     name: Build once and deploy with Gateway draining
     runs-on: ubuntu-latest
+    needs: [build-companion]
     if: vars.DEPLOY_ENABLED == 'true'
     steps:
       - uses: actions/checkout@v6
@@ -32,6 +65,10 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: maven
+      - uses: actions/download-artifact@v6
+        with:
+          name: wao-companion-win-x64
+          path: companion-release
       - name: Validate Nginx DDNS rendering
         run: sh deploy/scripts/test-render-nginx-config.sh
       - name: Validate schema quiescing scripts
@@ -224,12 +261,16 @@ jobs:
               WAO_NGINX_RENDER_OUTPUT=wao-nginx.conf sh deploy/scripts/render-nginx-config.sh
             retry_remote "云前端" ssh -o ConnectTimeout=15 "$CLOUD_USER@$CLOUD_HOST" '
               set -eu
-              install -d /tmp/wao-dist /tmp/wao-agent-dist
+              install -d /tmp/wao-dist /tmp/wao-agent-dist /tmp/wao-companion-release
               find /tmp/wao-dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
               find /tmp/wao-agent-dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+              find /tmp/wao-companion-release -mindepth 1 -maxdepth 1 -exec rm -f -- {} +
             ' || return
             retry_remote "云前端" scp -o ConnectTimeout=15 -r wao-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-dist/" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 -r agent-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-agent-dist/" || return
+            retry_remote "云前端" scp -o ConnectTimeout=15 companion-release/WAO-Companion-win-x64.zip \
+              companion-release/WAO-Companion-win-x64.zip.sha256 \
+              "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-companion-release/" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 wao-nginx.conf "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-nginx.conf" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 \
               deploy/nginx/wao.wayuwa.cn.conf.template \
@@ -285,6 +326,11 @@ jobs:
               install -d /var/www/wao-agent/dist
               find /var/www/wao-agent/dist -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
               cp -a /tmp/wao-agent-dist/. /var/www/wao-agent/dist/
+              install -d -m 0755 /var/www/wao-downloads/companion
+              install -m 0644 /tmp/wao-companion-release/WAO-Companion-win-x64.zip \
+                /var/www/wao-downloads/companion/WAO-Companion-win-x64.zip
+              install -m 0644 /tmp/wao-companion-release/WAO-Companion-win-x64.zip.sha256 \
+                /var/www/wao-downloads/companion/WAO-Companion-win-x64.zip.sha256
               systemctl reload nginx
               for legacy_dist in /var/www/wao-game/dist /var/www/wao-insight/dist; do
                 if [ -d "$legacy_dist" ]; then
@@ -499,6 +545,14 @@ jobs:
           printf '%s' "$agent_health" | grep -q '"status":"UP"'
           curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
             https://wao.wayuwa.cn/agent/ | grep -q 'id="app"'
+          mkdir -p companion-verify
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            --output companion-verify/WAO-Companion-win-x64.zip \
+            https://wao.wayuwa.cn/downloads/companion/WAO-Companion-win-x64.zip
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            --output companion-verify/WAO-Companion-win-x64.zip.sha256 \
+            https://wao.wayuwa.cn/downloads/companion/WAO-Companion-win-x64.zip.sha256
+          (cd companion-verify && sha256sum --check WAO-Companion-win-x64.zip.sha256)
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/game/)" = '308'
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/insight/)" = '410'
           ai_read_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/ai/workflows \

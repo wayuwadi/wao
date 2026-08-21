@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: WAO Desktop Companion API
+  version: 0.1.0
+paths:
+  /api/public/companion/pairings:
+    post:
+      summary: 桌宠创建十分钟有效的网页配对请求
+      responses:
+        '200': { description: 返回配对 ID、短码、轮询密钥和验证地址 }
+  /api/public/companion/pairings/{id}/poll:
+    post:
+      summary: 桌宠使用轮询密钥等待网页批准
+      responses:
+        '200': { description: PENDING、PAIRED 或 EXPIRED；首次 PAIRED 一次性返回设备令牌 }
+        '401': { description: 轮询密钥错误 }
+  /api/companion/pairings/{code}:
+    get:
+      summary: 当前登录用户预览待批准设备
+    post:
+      summary: 当前登录用户批准待配对设备
+  /api/companion/devices:
+    get:
+      summary: 当前账号的桌宠设备
+  /api/companion/devices/{id}:
+    delete:
+      summary: 撤销当前账号的一台桌宠设备
+  /api/public/companion/activities:
+    get:
+      summary: 设备令牌读取当前成员的桌宠活动快照
+      security: [{ companionBearer: [] }]
+  /api/public/companion/activities/{id}/read:
+    post:
+      summary: 设备确认一条活动已读
+      security: [{ companionBearer: [] }]
+  /api/public/companion/activities/read-all:
+    post:
+      summary: 设备确认当前全部已结束活动已读
+      security: [{ companionBearer: [] }]
+components:
+  securitySchemes:
+    companionBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque

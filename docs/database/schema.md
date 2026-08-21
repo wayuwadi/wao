@@ -890,3 +890,10 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V80 链路，
 并覆盖全局活动唯一抢占、lease、归档身份与同步 / scoped 文档 `PATCH` 的全局版本 CAS、树拖拽窄更新不回写正文或版本、AI 入队关联回滚和 DB-time 超时清理；Docker 不可用时显式跳过。
+## Windows 桌面伴侣（V81）
+
+| 表 | 关键字段 / 唯一约束 | 说明 |
+|---|---|---|
+| `companion_pairing` | `code_hash` 唯一、`poll_secret_hash`、十分钟 `expires_at` | 网页确认前的短期配对；只存短码与轮询密钥的 SHA-256 |
+| `companion_device` | `client_device_id` 与 `token_hash` 唯一、`account_id`、`member_id`、`revoked_at` | 一台可撤销的桌宠设备；权限只覆盖桌宠活动接口 |
+| `companion_activity_receipt` | `(device_id, activity_id)` 唯一 | 设备级单条已读；`read_before_at` 负责批量已读游标 |
