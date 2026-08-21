@@ -24,7 +24,7 @@ public partial class PetWindow : Window
     private bool _landing;
     private bool _roamingPaused;
     private string _state = "IDLE";
-    private DateTime _roamAfter = DateTime.UtcNow.AddSeconds(3);
+    private DateTime _roamAfter = DateTime.UtcNow.AddSeconds(8);
 
     internal event EventHandler? ToggleTrayRequested;
     internal event EventHandler? OpenWaoRequested;
@@ -39,9 +39,9 @@ public partial class PetWindow : Window
     {
         InitializeComponent();
         _reducedMotion = !SystemParameters.ClientAreaAnimation;
-        _spriteTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(180), DispatcherPriority.Render,
+        _spriteTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(300), DispatcherPriority.Render,
             (_, _) => AdvanceFrame(), Dispatcher);
-        _roamTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(90), DispatcherPriority.Background,
+        _roamTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(160), DispatcherPriority.Background,
             (_, _) => AdvanceRoaming(), Dispatcher);
         Loaded += (_, _) => {
             _spriteTimer.Start();
@@ -127,13 +127,13 @@ public partial class PetWindow : Window
         if (_reducedMotion) return;
         TimeSpan duration = _state switch
         {
-            "RUNNING" => TimeSpan.FromMilliseconds(440),
-            "READY" => TimeSpan.FromMilliseconds(620),
-            "NEEDS_INPUT" => TimeSpan.FromMilliseconds(820),
-            "BLOCKED" => TimeSpan.FromMilliseconds(1500),
-            _ => TimeSpan.FromMilliseconds(1250),
+            "RUNNING" => TimeSpan.FromMilliseconds(950),
+            "READY" => TimeSpan.FromMilliseconds(1700),
+            "NEEDS_INPUT" => TimeSpan.FromMilliseconds(1500),
+            "BLOCKED" => TimeSpan.FromMilliseconds(2300),
+            _ => TimeSpan.FromMilliseconds(2200),
         };
-        double lift = _state switch { "RUNNING" => -6, "READY" => -10, "BLOCKED" => -2, _ => -4 };
+        double lift = _state switch { "RUNNING" => -3, "READY" => -4, "BLOCKED" => -1, _ => -2 };
         PetMove.BeginAnimation(TranslateTransform.YProperty, Loop(0, lift, duration));
         if (_state == "NEEDS_INPUT") PetRotate.BeginAnimation(RotateTransform.AngleProperty, Loop(-3, 3, duration));
         if (_state == "READY") {
@@ -175,16 +175,16 @@ public partial class PetWindow : Window
             if (Left <= area.Left + 10) _roamRight = true;
             else if (Left >= area.Right - Width - 10) _roamRight = false;
             else _roamRight = Random.Shared.Next(2) == 0;
-            _roamStepsRemaining = Random.Shared.Next(20, 42);
+            _roamStepsRemaining = Random.Shared.Next(18, 32);
             SetFrames(_roamRight ? [4, 5] : [2, 3]);
         }
 
         Rect work = CurrentWorkArea();
-        double next = Left + (_roamRight ? 2.4 : -2.4);
+        double next = Left + (_roamRight ? 1.15 : -1.15);
         Left = Math.Clamp(next, work.Left, work.Right - Width);
         _roamStepsRemaining--;
         if (_roamStepsRemaining == 0) {
-            _roamAfter = DateTime.UtcNow.AddSeconds(Random.Shared.Next(3, 7));
+            _roamAfter = DateTime.UtcNow.AddSeconds(Random.Shared.Next(8, 15));
             StartStatusAnimation();
         }
     }
@@ -206,7 +206,7 @@ public partial class PetWindow : Window
     private void StopRoaming()
     {
         _roamStepsRemaining = 0;
-        _roamAfter = DateTime.UtcNow.AddSeconds(3);
+        _roamAfter = DateTime.UtcNow.AddSeconds(8);
         if (!_dragging && !_landing) StartStatusAnimation();
     }
 

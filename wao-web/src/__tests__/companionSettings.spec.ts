@@ -46,8 +46,10 @@ describe('桌面宠物设置', () => {
     expect(companionApi.fetchCompanionPairing).toHaveBeenCalledWith('ABCD-EFGH')
     expect(wrapper.get('.companion-code').text()).toBe('ABCD-EFGH')
     expect(wrapper.text()).toContain('书房电脑')
-    expect(wrapper.get('.companion-download').attributes('href'))
+    expect(wrapper.get('.companion-download.windows').attributes('href'))
       .toBe('/downloads/companion/WAO-Companion-win-x64.zip')
+    expect(wrapper.get('.companion-download.macos').attributes('href'))
+      .toBe('/downloads/companion/WAO-Companion-macos-universal.zip')
 
     await wrapper.get('.companion-approve-row .btn-primary').trigger('click')
     await flushPromises()

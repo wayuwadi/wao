@@ -866,9 +866,14 @@ function demo(msg: string, icon?: string) {
               <div class="card-title">WAO Companion</div>
               <div class="companion-copy">透明置顶的小怪兽会跟随你的 AI Run，在需要确认、执行失败或完成时提醒你，并把你带回对应任务。</div>
             </div>
-            <a class="btn-primary companion-download" href="/downloads/companion/WAO-Companion-win-x64.zip">
-              <i class="ri-windows-fill"></i>下载 Windows 版
-            </a>
+            <div class="companion-downloads">
+              <a class="btn-primary companion-download windows" href="/downloads/companion/WAO-Companion-win-x64.zip">
+                <i class="ri-windows-fill"></i>Windows
+              </a>
+              <a class="btn-ghost companion-download macos" href="/downloads/companion/WAO-Companion-macos-universal.zip">
+                <i class="ri-apple-fill"></i>macOS
+              </a>
+            </div>
           </div>
 
           <div v-if="companionCode" class="card companion-pairing">
@@ -1029,6 +1034,7 @@ function demo(msg: string, icon?: string) {
 .companion-hero { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 16px; align-items: center; }
 .companion-mark { width: 58px; height: 58px; border-radius: 18px; display: grid; place-items: center; color: #fff; font-size: 28px; background: linear-gradient(145deg, #8d68ef, #5f48cf); box-shadow: 0 10px 24px rgba(95,72,207,.24); }
 .companion-copy { color: var(--wao-text-weak); font-size: 13px; line-height: 1.65; margin-top: 5px; max-width: 620px; }
+.companion-downloads { display: flex; align-items: center; gap: 8px; }
 .companion-download { text-decoration: none; white-space: nowrap; }
 .companion-code { font: 700 18px/1 ui-monospace, SFMono-Regular, Consolas, monospace; color: #6750d6; letter-spacing: .08em; }
 .companion-state { padding: 20px 0; color: var(--wao-text-weak); display: flex; align-items: center; gap: 8px; }
@@ -1047,7 +1053,8 @@ function demo(msg: string, icon?: string) {
 @keyframes companion-spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
   .companion-hero { grid-template-columns: 50px 1fr; }
-  .companion-download { grid-column: 1 / -1; justify-content: center; }
+  .companion-downloads { grid-column: 1 / -1; }
+  .companion-download { flex: 1; justify-content: center; }
   .companion-approve-row { align-items: stretch; flex-direction: column; }
 }
 .builtin-menu-list { display: grid; gap: 7px; margin-top: 14px; }

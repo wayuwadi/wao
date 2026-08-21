@@ -46,10 +46,29 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-companion-macos:
+    name: Build macOS companion universal package
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test macOS companion
+        working-directory: wao-companion/src/Wao.Companion.Mac
+        run: swift test
+      - name: Publish ad-hoc signed universal app
+        run: sh wao-companion/src/Wao.Companion.Mac/package-app.sh --universal
+      - uses: actions/upload-artifact@v6
+        with:
+          name: wao-companion-macos-universal
+          path: |
+            wao-companion/artifacts/macos/WAO-Companion-macos-universal.zip
+            wao-companion/artifacts/macos/WAO-Companion-macos-universal.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+
   deploy:
     name: Build once and deploy with Gateway draining
     runs-on: ubuntu-latest
-    needs: [build-companion]
+    needs: [build-companion, build-companion-macos]
     if: vars.DEPLOY_ENABLED == 'true'
     steps:
       - uses: actions/checkout@v6
@@ -68,6 +87,10 @@ jobs:
       - uses: actions/download-artifact@v6
         with:
           name: wao-companion-win-x64
+          path: companion-release
+      - uses: actions/download-artifact@v6
+        with:
+          name: wao-companion-macos-universal
           path: companion-release
       - name: Validate Nginx DDNS rendering
         run: sh deploy/scripts/test-render-nginx-config.sh
@@ -270,6 +293,8 @@ jobs:
             retry_remote "云前端" scp -o ConnectTimeout=15 -r agent-web/dist/. "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-agent-dist/" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 companion-release/WAO-Companion-win-x64.zip \
               companion-release/WAO-Companion-win-x64.zip.sha256 \
+              companion-release/WAO-Companion-macos-universal.zip \
+              companion-release/WAO-Companion-macos-universal.zip.sha256 \
               "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-companion-release/" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 wao-nginx.conf "$CLOUD_USER@$CLOUD_HOST:/tmp/wao-nginx.conf" || return
             retry_remote "云前端" scp -o ConnectTimeout=15 \
@@ -331,6 +356,10 @@ jobs:
                 /var/www/wao-downloads/companion/WAO-Companion-win-x64.zip
               install -m 0644 /tmp/wao-companion-release/WAO-Companion-win-x64.zip.sha256 \
                 /var/www/wao-downloads/companion/WAO-Companion-win-x64.zip.sha256
+              install -m 0644 /tmp/wao-companion-release/WAO-Companion-macos-universal.zip \
+                /var/www/wao-downloads/companion/WAO-Companion-macos-universal.zip
+              install -m 0644 /tmp/wao-companion-release/WAO-Companion-macos-universal.zip.sha256 \
+                /var/www/wao-downloads/companion/WAO-Companion-macos-universal.zip.sha256
               systemctl reload nginx
               for legacy_dist in /var/www/wao-game/dist /var/www/wao-insight/dist; do
                 if [ -d "$legacy_dist" ]; then
@@ -553,6 +582,13 @@ jobs:
             --output companion-verify/WAO-Companion-win-x64.zip.sha256 \
             https://wao.wayuwa.cn/downloads/companion/WAO-Companion-win-x64.zip.sha256
           (cd companion-verify && sha256sum --check WAO-Companion-win-x64.zip.sha256)
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            --output companion-verify/WAO-Companion-macos-universal.zip \
+            https://wao.wayuwa.cn/downloads/companion/WAO-Companion-macos-universal.zip
+          curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+            --output companion-verify/WAO-Companion-macos-universal.zip.sha256 \
+            https://wao.wayuwa.cn/downloads/companion/WAO-Companion-macos-universal.zip.sha256
+          (cd companion-verify && sha256sum --check WAO-Companion-macos-universal.zip.sha256)
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/game/)" = '308'
           test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/insight/)" = '410'
           ai_read_route="$(curl --silent --show-error --head https://wao.wayuwa.cn/api/ai/workflows \
