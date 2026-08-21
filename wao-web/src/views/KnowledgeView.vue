@@ -76,6 +76,7 @@ function cfgDone() {
 }
 async function cfgDelete() {
   if (!cfgKb.value) return
+  if (!window.confirm(`删除知识库「${cfgKb.value.name}」及其中全部文件夹和文档？删除后会进入回收站，7 天内可恢复。`)) return
   const id = cfgKb.value.id
   cfgKb.value = null
   await data.deleteKb(id)
@@ -106,6 +107,7 @@ async function restore(entry: TrashEntry) {
   toast(`已恢复「${entry.name}」`, 'ri-arrow-go-back-line')
 }
 async function purge(entry: TrashEntry) {
+  if (!window.confirm(`彻底删除「${entry.name}」？此操作不可恢复。`)) return
   await data.purgeTrash(entry.type, entry.id)
   toast(`已彻底删除「${entry.name}」`, 'ri-delete-bin-7-line')
 }

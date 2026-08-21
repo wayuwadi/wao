@@ -153,13 +153,14 @@ async function continueRun(runId: string) {
 
 async function pauseRun(runId: string) {
   if (pausingRunId.value) return
+  if (!window.confirm('停止当前 AI 任务？执行电脑会终止当前进程，已产生的未提交结果可能丢失。')) return
   pausingRunId.value = runId
   try {
     await pauseAiRun(runId)
-    toast('已暂停 AI 任务，执行电脑将停止当前执行', 'ri-pause-circle-line')
+    toast('已停止 AI 任务，执行电脑正在结束当前进程', 'ri-stop-circle-line')
     await refreshTaskAiRuns()
   } catch (error) {
-    toast(error instanceof Error ? error.message : '暂停失败，请重试', 'ri-error-warning-line')
+    toast(error instanceof Error ? error.message : '停止失败，请重试', 'ri-error-warning-line')
   } finally {
     pausingRunId.value = null
   }
@@ -219,6 +220,7 @@ async function saveComment() {
 async function removeComment(index: number) {
   const t = task.value
   if (!t) return
+  if (!window.confirm('删除这条评论？此操作不可恢复。')) return
   if (editingComment.value === index) cancelEditComment()
   const ok = await data.deleteTaskComment(t.id, index)
   toast(ok ? '评论已删除' : '评论删除失败，请重试', ok ? 'ri-delete-bin-line' : 'ri-error-warning-line')
@@ -487,7 +489,9 @@ function removeSubImage(idx: number) {
 }
 function deleteSub() {
   const t = task.value
-  if (!t || !openSubId.value) return
+  const sub = openSub.value
+  if (!t || !openSubId.value || !sub) return
+  if (!window.confirm(`删除子任务「${sub.text}」？其描述和执行记录关联也会一并移除。`)) return
   data.removeSub(t.id, openSubId.value)
   openSubId.value = null
   toast('子任务已删除', 'ri-delete-bin-line')
@@ -691,7 +695,9 @@ function updateCustom(index: number, field: 'name' | 'value', event: Event) {
 }
 function removeCustom(index: number) {
   const t = task.value
-  if (!t) return
+  const item = t?.custom[index]
+  if (!t || !item) return
+  if (!window.confirm(`删除自定义属性「${item.name}」？`)) return
   data.patchTask(t.id, { custom: t.custom.filter((_, i) => i !== index) }, '删除了自定义属性')
 }
 function gotoProject() {
@@ -806,11 +812,11 @@ function demo(msg: string) {
           class="pause-ai-btn"
           type="button"
           :disabled="pausingRunId === activeAiRun.id"
-          title="暂停当前 AI 任务"
+          title="停止当前 AI 任务"
           @click="pauseRun(activeAiRun.id)"
         >
-          <i :class="pausingRunId === activeAiRun.id ? 'ri-loader-4-line spin' : 'ri-pause-circle-line'"></i>
-          {{ pausingRunId === activeAiRun.id ? '暂停中' : '暂停 AI' }}
+          <i :class="pausingRunId === activeAiRun.id ? 'ri-loader-4-line spin' : 'ri-stop-circle-line'"></i>
+          {{ pausingRunId === activeAiRun.id ? '停止中' : '停止 AI' }}
         </button>
         <button
           class="icon-btn"

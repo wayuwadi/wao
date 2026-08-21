@@ -95,6 +95,26 @@ describe('知识库详情目录体验', () => {
     wrapper.unmount()
   })
 
+  it('删除文档必须二次确认，取消时不修改持久数据', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7')
+    const data = useDataStore()
+    const remove = vi.spyOn(data, 'deleteDoc').mockResolvedValue(undefined)
+    const confirm = vi.spyOn(window, 'confirm')
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true)
+    const button = wrapper.get('.doc-row .row-act.danger')
+
+    await button.trigger('click')
+    expect(remove).not.toHaveBeenCalled()
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(confirm.mock.calls[0]?.[0]).toContain('7 天内可恢复')
+    expect(remove).toHaveBeenCalledWith('d7')
+    confirm.mockRestore()
+    wrapper.unmount()
+  })
+
   it('右侧目录展示一至三级标题，并按三级缩进表达层级', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     useDataStore().docs.d7!.blocks = [
