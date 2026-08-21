@@ -1044,12 +1044,12 @@ public class KnowledgeService {
         }
         kb.setDeletedAt(null);
         kb.setDeletedBy(null);
-        kbMapper.updateById(kb);
+        kbMapper.clearDeleted(kb.getId());
         for (KbFolderEntity f : folderMapper.selectList(new LambdaQueryWrapper<KbFolderEntity>()
                 .eq(KbFolderEntity::getKbId, id).eq(KbFolderEntity::getCascadeDel, true))) {
             f.setDeletedAt(null);
             f.setCascadeDel(false);
-            folderMapper.updateById(f);
+            folderMapper.clearDeleted(f.getId());
         }
         for (DocEntity d : docMapper.selectList(new LambdaQueryWrapper<DocEntity>()
                 .eq(DocEntity::getKbId, id).eq(DocEntity::getCascadeDel, true))) {
@@ -1064,7 +1064,7 @@ public class KnowledgeService {
         }
         folder.setDeletedAt(null);
         folder.setCascadeDel(false);
-        folderMapper.updateById(folder);
+        folderMapper.clearDeleted(folder.getId());
         for (DocEntity d : docMapper.selectList(new LambdaQueryWrapper<DocEntity>()
                 .eq(DocEntity::getFolderId, id).eq(DocEntity::getCascadeDel, true))) {
             clearDocDeleted(d);
@@ -1082,7 +1082,7 @@ public class KnowledgeService {
         if (folder != null && folder.getDeletedAt() != null) {
             folder.setDeletedAt(null);
             folder.setCascadeDel(false);
-            folderMapper.updateById(folder);
+            folderMapper.clearDeleted(folder.getId());
         }
         reviveKbOf(doc.getKbId());
     }
@@ -1092,7 +1092,7 @@ public class KnowledgeService {
         if (kb != null && kb.getDeletedAt() != null) {
             kb.setDeletedAt(null);
             kb.setDeletedBy(null);
-            kbMapper.updateById(kb);
+            kbMapper.clearDeleted(kb.getId());
         }
     }
 

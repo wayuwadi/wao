@@ -646,6 +646,36 @@ class KnowledgeServiceTest {
         assertThat(f.getDeletedAt()).isNull();
         assertThat(k.getDeletedAt()).isNull();
         verify(docMapper).clearDeleted("d1");
+        verify(folderMapper).clearDeleted("f1");
+        verify(kbMapper).clearDeleted("k1");
+    }
+
+    @Test
+    void restoringAProjectKnowledgeBaseRevivesItsTreeWithoutChangingTheProjectLink() {
+        KbEntity k = kb("k-project");
+        k.setProjectId("p1");
+        k.setDeletedAt(LocalDateTime.now());
+        k.setDeletedBy("m1");
+        KbFolderEntity f = folder("f-project", k.getId());
+        f.setDeletedAt(k.getDeletedAt());
+        f.setCascadeDel(true);
+        DocEntity d = doc("d-project", k.getId(), f.getId());
+        d.setDeletedAt(k.getDeletedAt());
+        d.setDeletedBy("m1");
+        d.setCascadeDel(true);
+        when(kbMapper.selectById(k.getId())).thenReturn(k);
+        when(folderMapper.selectList(any())).thenReturn(List.of(f));
+        when(docMapper.selectList(any())).thenReturn(List.of(d));
+
+        service.restore("kb", k.getId());
+
+        assertThat(k.getProjectId()).isEqualTo("p1");
+        assertThat(k.getDeletedAt()).isNull();
+        assertThat(f.getDeletedAt()).isNull();
+        assertThat(d.getDeletedAt()).isNull();
+        verify(kbMapper).clearDeleted(k.getId());
+        verify(folderMapper).clearDeleted(f.getId());
+        verify(docMapper).clearDeleted(d.getId());
     }
 
     @Test
