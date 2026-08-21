@@ -43,6 +43,12 @@
             <artifactId>commons-compress</artifactId>
             <version>1.27.1</version>
         </dependency>
+        <!-- commons-compress 1.27.x 使用 ArrayFill，需要高于 Spring Boot 3.2 BOM 锁定的 3.13.0。 -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.16.0</version>
+        </dependency>
         <dependency>
             <groupId>org.yaml</groupId>
             <artifactId>snakeyaml</artifactId>
