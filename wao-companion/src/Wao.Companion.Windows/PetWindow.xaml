@@ -38,10 +38,10 @@
         </TransformGroup>
       </Grid.RenderTransform>
       <Ellipse Width="116" Height="20" Fill="#220E0824" VerticalAlignment="Bottom" Margin="0,0,0,8"/>
-      <Rectangle Width="190" Height="180" VerticalAlignment="Bottom">
+      <Rectangle Width="180" Height="190" VerticalAlignment="Bottom">
         <Rectangle.Fill>
-          <ImageBrush x:Name="PetBrush" ImageSource="/Assets/wao-pet-sprites.png"
-                      ViewboxUnits="RelativeToBoundingBox" Viewbox="0,0,0.2,1" Stretch="Uniform"/>
+          <ImageBrush x:Name="PetBrush" ImageSource="/Assets/wao-flame-sprites-v2.png"
+                      ViewboxUnits="RelativeToBoundingBox" Viewbox="0,0,0.25,0.3333333333" Stretch="Uniform"/>
         </Rectangle.Fill>
       </Rectangle>
       <Border x:Name="UnreadBadge" MinWidth="28" Height="28" CornerRadius="14" Padding="7,0"

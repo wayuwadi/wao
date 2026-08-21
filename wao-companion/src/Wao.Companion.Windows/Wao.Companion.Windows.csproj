@@ -18,7 +18,7 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="Assets/wao-pet-sprites.png" />
+    <Resource Include="Assets/wao-flame-sprites-v2.png" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Wao.Companion.Windows.Tests" />

@@ -73,6 +73,7 @@ internal sealed class AppController : IDisposable
         if (_previewMode) {
             EnsurePetWindows();
             _pet!.PreparePreview();
+            _pet.RestorePosition(null, null);
             ApplySnapshot(CreatePreviewSnapshot());
             _pet.Show();
             _pet.Activate();
@@ -175,6 +176,7 @@ internal sealed class AppController : IDisposable
             _tray = new ActivityTrayWindow();
             _tray.ActivitySelected += (_, activity) => _ = OpenActivityAsync(activity);
             _tray.ReadAllRequested += (_, _) => _ = MarkAllReadAsync();
+            _tray.IsVisibleChanged += (_, _) => _pet?.SetRoamingPaused(_tray.IsVisible);
         }
     }
 

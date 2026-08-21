@@ -15,6 +15,9 @@ dotnet publish wao-companion/src/Wao.Companion.Windows/Wao.Companion.Windows.csp
 服务端尚未部署时，可使用 `WAO Companion.exe --preview` 打开仅供本地视觉验收的桌宠与示例活动抽屉。
 预览模式不发起配对、不写入设备令牌，也不读取线上业务数据；不带参数启动时仍进入正式配对流程。
 
+桌宠采用 4×3 原创紫焰精灵图：单击切换活动抽屉，按住可拖动，松手播放落地动作；活动抽屉关闭后，空闲或
+已完成状态会间歇短距离行走。启用 Windows“减少动态效果”后固定显示代表帧并停止自主移动。
+
 首次运行会打开 `https://wao.wayuwa.cn/settings?tab=companion&code=...`。配对成功后，设备令牌仅以 Windows
 DPAPI CurrentUser 密文保存在 `%LOCALAPPDATA%\WAO\Companion\settings.json`。
 
