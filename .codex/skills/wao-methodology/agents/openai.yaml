@@ -1,0 +1,4 @@
+interface:
+  display_name: "WAO 方法论"
+  short_description: "用真实数据、最小可逆改动和证据闭环分析、交付与复盘复杂任务"
+  default_prompt: "使用 $wao-methodology 分析这个任务并制定可验证的交付路径。"
