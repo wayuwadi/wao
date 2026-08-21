@@ -9,7 +9,8 @@ public partial class App : System.Windows.Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        _controller = new AppController();
+        bool previewMode = e.Args.Any(arg => string.Equals(arg, "--preview", StringComparison.OrdinalIgnoreCase));
+        _controller = new AppController(previewMode);
         _ = _controller.StartAsync();
     }
 

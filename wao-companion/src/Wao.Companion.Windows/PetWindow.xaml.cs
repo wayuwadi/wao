@@ -40,6 +40,8 @@ public partial class PetWindow : Window
 
     internal void SetStartupChecked(bool value) => StartupItem.IsChecked = value;
 
+    internal void PreparePreview() => ShowInTaskbar = true;
+
     internal void SetState(string state, int unreadCount, string message)
     {
         int frame = state switch

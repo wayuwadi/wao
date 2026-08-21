@@ -12,6 +12,7 @@ internal sealed class AppController : IDisposable
 {
     private static readonly Uri WaoBaseUri = new("https://wao.wayuwa.cn");
     private readonly LocalSettingsStore _store = new();
+    private readonly bool _previewMode;
     private readonly CompanionSettings _settings;
     private readonly HttpClient _http;
     private readonly CompanionApiClient _api;
@@ -28,8 +29,9 @@ internal sealed class AppController : IDisposable
     private string? _deviceToken;
     private bool _exiting;
 
-    public AppController()
+    public AppController(bool previewMode = false)
     {
+        _previewMode = previewMode;
         _settings = _store.Load();
         _deviceToken = _store.UnprotectToken(_settings.ProtectedToken);
         if (_deviceToken is null && _settings.ProtectedToken is not null) {
@@ -68,6 +70,16 @@ internal sealed class AppController : IDisposable
 
     internal async Task StartAsync()
     {
+        if (_previewMode) {
+            EnsurePetWindows();
+            _pet!.PreparePreview();
+            ApplySnapshot(CreatePreviewSnapshot());
+            _pet.Show();
+            _pet.Activate();
+            _tray!.ShowBeside(_pet);
+            UpdateVisibilityMenus();
+            return;
+        }
         bool actualStartup = StartupShortcutService.IsEnabled;
         if (_settings.StartWithWindows != actualStartup) {
             _settings.StartWithWindows = actualStartup;
@@ -82,6 +94,19 @@ internal sealed class AppController : IDisposable
         if (_settings.PetVisible) ShowPet(); else UpdateVisibilityMenus();
         StartActivityLoop();
     }
+
+    private static CompanionSnapshot CreatePreviewSnapshot() => new(
+        "READY",
+        2,
+        DateTimeOffset.Now.ToString("O"),
+        [
+            new CompanionActivity("preview-ready", "READY", "整理桌面宠物交付清单", "WAO Companion",
+                "构建和本地测试已经完成，可以查看结果了。", null, WaoBaseUri.ToString(), true),
+            new CompanionActivity("preview-running", "RUNNING", "分析本周项目进展", "每周复盘",
+                "正在汇总任务状态与最近进度…", null, WaoBaseUri.ToString(), false),
+            new CompanionActivity("preview-input", "NEEDS_INPUT", "确认发布范围", "产品迭代",
+                "需要你确认是否包含 Windows 便携包。", null, WaoBaseUri.ToString(), true),
+        ]);
 
     private async Task BeginPairingAsync()
     {

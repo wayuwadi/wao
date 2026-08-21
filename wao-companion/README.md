@@ -12,6 +12,9 @@ dotnet build wao-companion/src/Wao.Companion.Windows/Wao.Companion.Windows.cspro
 dotnet publish wao-companion/src/Wao.Companion.Windows/Wao.Companion.Windows.csproj -c Release -r win-x64 --self-contained true
 ```
 
+服务端尚未部署时，可使用 `WAO Companion.exe --preview` 打开仅供本地视觉验收的桌宠与示例活动抽屉。
+预览模式不发起配对、不写入设备令牌，也不读取线上业务数据；不带参数启动时仍进入正式配对流程。
+
 首次运行会打开 `https://wao.wayuwa.cn/settings?tab=companion&code=...`。配对成功后，设备令牌仅以 Windows
 DPAPI CurrentUser 密文保存在 `%LOCALAPPDATA%\WAO\Companion\settings.json`。
 
