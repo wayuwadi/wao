@@ -16,6 +16,9 @@ case "${database}" in
   *[!A-Za-z0-9_]*|'') echo 'DB_NAME must contain only letters, digits, and underscores.' >&2; exit 2 ;;
 esac
 dump_host="${MYSQL_DUMP_HOST:-${MASTER_BIND_IP:-127.0.0.1}}"
+dump_user="${MYSQL_DUMP_USER:-${DB_USER:-wao_app}}"
+dump_password="${MYSQL_DUMP_PASSWORD:-${DB_PASS:-}}"
+test -n "${dump_password}" || { echo 'MYSQL_DUMP_PASSWORD or DB_PASS is required.' >&2; exit 2; }
 temporary="${output}.tmp.$$"
 plain="${temporary}.sql"
 trap 'rm -f "${temporary}" "${plain}"' EXIT HUP INT TERM
@@ -32,10 +35,11 @@ run_docker() {
 }
 
 run_docker run --rm --network host \
-  -e MYSQL_PWD="${DB_ROOT_PASS}" \
+  -e MYSQL_PWD="${dump_password}" \
   mysql:9.7.0 \
-  mysqldump -h "${dump_host}" -uroot \
-    --single-transaction --set-gtid-purged=ON --hex-blob --routines --triggers --events \
+  mysqldump -h "${dump_host}" -u"${dump_user}" \
+    --single-transaction --set-gtid-purged=ON --no-tablespaces \
+    --hex-blob --routines --triggers --events \
     --databases "${database}" >"${plain}"
 gzip -1 <"${plain}" >"${temporary}"
 rm -f "${plain}"
