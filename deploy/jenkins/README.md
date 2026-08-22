@@ -11,8 +11,7 @@ WAO 主站由 Linux 主节点上的单节点 Jenkins LTS 构建和发布。Windo
 sudo sh deploy/jenkins/prepare-controller-secrets.sh
 ```
 
-脚本输出三把公钥。把 Windows 公钥加入 `wage` 的 OpenSSH `authorized_keys`，把云公钥加入云部署账号；
-把 GitHub SCM 公钥作为只读 Deploy Key 加入 `wayuwacn/wao`。
+脚本只输出两把公钥。把 Windows 公钥加入 `wage` 的 OpenSSH `authorized_keys`，把云公钥加入云部署账号。
 私钥始终留在 `/etc/jenkins/secrets`。
 
 人工核对两台目标机器控制台上显示的 SSH 指纹后，把完整 `known_hosts` 行分别保存为：
@@ -22,9 +21,8 @@ sudo sh deploy/jenkins/prepare-controller-secrets.sh
 /etc/jenkins/secrets/cloud-known-hosts
 ```
 
-在 GitHub 创建仅限 `wayuwacn/wao` 的细粒度 PAT，权限为 `Commit statuses: read/write`，
-将令牌直接写入 `/etc/jenkins/secrets/github-pat`，不要粘贴到命令历史或日志。仓库检出使用独立只读
-Deploy Key（Credential ID `wao-github-scm-ssh`），PAT 不参与 Git 传输。
+在 GitHub 创建仅限 `wayuwacn/wao` 的细粒度 PAT，权限为 `Contents: read`、
+`Commit statuses: read/write`，将令牌直接写入 `/etc/jenkins/secrets/github-pat`，不要粘贴到命令历史或日志。
 随后运行：
 
 ```sh

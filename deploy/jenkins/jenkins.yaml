@@ -25,14 +25,6 @@ credentials:
               username: wayuwacn
               password: "${trim:${readFile:/etc/jenkins/secrets/github-pat}}"
               description: WAO private repository contents read and commit statuses write
-          - basicSSHUserPrivateKey:
-              scope: GLOBAL
-              id: wao-github-scm-ssh
-              username: git
-              description: Read-only GitHub deploy key for WAO SCM checkout
-              privateKeySource:
-                directEntry:
-                  privateKey: "${readFile:/etc/jenkins/secrets/github-scm-ed25519}"
           - string:
               scope: GLOBAL
               id: wao-github-webhook-secret
@@ -100,15 +92,15 @@ jobs:
             scm {
               git {
                 remote {
-                  url('git@github.com:wayuwacn/wao.git')
-                  credentials('wao-github-scm-ssh')
+                  url('https://github.com/wayuwacn/wao.git')
+                  credentials('wao-github-pat')
                   refspec('+refs/heads/${WAO_JENKINS_SCM_BRANCH}:refs/remotes/origin/${WAO_JENKINS_SCM_BRANCH}')
                 }
                 branch('*/${WAO_JENKINS_SCM_BRANCH}')
                 extensions {
                   cloneOptions {
                     shallow(false)
-                    noTags(false)
+                    noTags(true)
                     honorRefspec(true)
                     timeout(20)
                   }
