@@ -13,6 +13,7 @@ plugin_manager_version='2.15.0'
 plugin_manager="/usr/local/lib/wao-jenkins/jenkins-plugin-manager-${plugin_manager_version}.jar"
 deploy_owner='wadi'
 jenkins_scm_branch="${WAO_JENKINS_SCM_BRANCH:-main}"
+jenkins_proxy_port="${WAO_JENKINS_PROXY_PORT:-}"
 
 case "$jenkins_scm_branch" in
   ''|*[!A-Za-z0-9._/-]*)
@@ -20,6 +21,26 @@ case "$jenkins_scm_branch" in
     exit 2
     ;;
 esac
+
+if [ -n "$jenkins_proxy_port" ]; then
+  case "$jenkins_proxy_port" in
+    *[!0-9]*)
+      echo "Invalid local Jenkins proxy port: $jenkins_proxy_port" >&2
+      exit 2
+      ;;
+  esac
+  if [ "$jenkins_proxy_port" -lt 1 ] || [ "$jenkins_proxy_port" -gt 65535 ]; then
+    echo "Invalid local Jenkins proxy port: $jenkins_proxy_port" >&2
+    exit 2
+  fi
+  HTTP_PROXY="http://127.0.0.1:${jenkins_proxy_port}"
+  HTTPS_PROXY="$HTTP_PROXY"
+  NO_PROXY='127.0.0.1,localhost,linux2.wayuwa.cn,windows1.wayuwa.cn,8.136.152.131'
+  http_proxy="$HTTP_PROXY"
+  https_proxy="$HTTPS_PROXY"
+  no_proxy="$NO_PROXY"
+  export HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy
+fi
 
 command -v getent >/dev/null
 getent passwd "$deploy_owner" >/dev/null || {
@@ -92,6 +113,13 @@ printf 'Environment="WAO_MASTER_PROJECT_ROOT=%s"\n' "$project_root" \
   >>/etc/systemd/system/jenkins.service.d/override.conf
 printf 'Environment="WAO_JENKINS_SCM_BRANCH=%s"\n' "$jenkins_scm_branch" \
   >>/etc/systemd/system/jenkins.service.d/override.conf
+if [ -n "$jenkins_proxy_port" ]; then
+  printf '%s\n' \
+    "Environment=\"HTTP_PROXY=http://127.0.0.1:${jenkins_proxy_port}\"" \
+    "Environment=\"HTTPS_PROXY=http://127.0.0.1:${jenkins_proxy_port}\"" \
+    'Environment="NO_PROXY=127.0.0.1,localhost,linux2.wayuwa.cn,windows1.wayuwa.cn,8.136.152.131"' \
+    >>/etc/systemd/system/jenkins.service.d/override.conf
+fi
 
 install -m 0644 "$script_dir/wao-jenkins-webhook-tunnel.service" \
   /etc/systemd/system/wao-jenkins-webhook-tunnel.service

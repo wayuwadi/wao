@@ -33,6 +33,17 @@ sudo WAO_JENKINS_SCM_BRANCH=codex/jenkins-cicd sh deploy/jenkins/install-control
 sudo VERIFY_PUBLIC_WEBHOOK=false sh deploy/jenkins/verify-controller.sh
 ```
 
+如果 Linux 到 GitHub 的直连不稳定，而主机已有只监听本机的 HTTP/mixed 代理，可在安装时传入端口。例如
+Clash Verge 默认在本机 `7897` 提供代理时：
+
+```sh
+sudo WAO_JENKINS_SCM_BRANCH=codex/jenkins-cicd \
+  WAO_JENKINS_PROXY_PORT=7897 sh deploy/jenkins/install-controller.sh
+```
+
+安装脚本只接受本机端口，并为 Git 检出、GitHub 状态回写和 Jenkins 下载设置代理；Linux、Windows、
+阿里云以及 Jenkins 本机地址均通过 `NO_PROXY` 直连。代理进程必须在 Jenkins 启动和构建期间持续运行。
+
 这里的临时分支只用于合并前影子构建。首次手工构建必须设置 `DEPLOY_PRODUCTION=false`；验证通过后合并 PR，
 再从 `main` checkout 重跑安装脚本（不设置 `WAO_JENKINS_SCM_BRANCH`）并确认任务 SCM 已切回 `main`。
 生产 Webhook 只能在 SCM 为 `main` 时启用。
