@@ -1,0 +1,108 @@
+jenkins:
+  systemMessage: "WAO 自建 CI/CD。生产流水线只执行受信任的 main。\n"
+  numExecutors: 1
+  mode: NORMAL
+  scmCheckoutRetryCount: 2
+  disableRememberMe: true
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: admin
+          name: WAO Jenkins Administrator
+          password: "${trim:${readFile:/etc/jenkins/secrets/admin-password}}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: wao-github-pat
+              username: wayuwacn
+              password: "${trim:${readFile:/etc/jenkins/secrets/github-pat}}"
+              description: WAO private repository contents read and commit statuses write
+          - string:
+              scope: GLOBAL
+              id: wao-github-webhook-secret
+              secret: "${trim:${readFile:/etc/jenkins/secrets/github-webhook-secret}}"
+              description: GitHub push webhook HMAC secret
+          - basicSSHUserPrivateKey:
+              scope: GLOBAL
+              id: wao-windows-ssh
+              username: wage
+              description: Jenkins deployment key for the Windows node
+              privateKeySource:
+                directEntry:
+                  privateKey: "${readFile:/etc/jenkins/secrets/windows-ed25519}"
+          - file:
+              scope: GLOBAL
+              id: wao-windows-known-hosts
+              fileName: windows-known-hosts
+              secretBytes: "${readFileBase64:/etc/jenkins/secrets/windows-known-hosts}"
+              description: Verified Windows SSH host keys
+          - basicSSHUserPrivateKey:
+              scope: GLOBAL
+              id: wao-cloud-ssh
+              username: root
+              description: Jenkins deployment key for the WAO cloud ingress
+              privateKeySource:
+                directEntry:
+                  privateKey: "${readFile:/etc/jenkins/secrets/cloud-ed25519}"
+          - file:
+              scope: GLOBAL
+              id: wao-cloud-known-hosts
+              fileName: cloud-known-hosts
+              secretBytes: "${readFileBase64:/etc/jenkins/secrets/cloud-known-hosts}"
+              description: Verified cloud SSH host keys
+
+unclassified:
+  location:
+    adminAddress: admin@wayuwa.cn
+    url: http://127.0.0.1:8081/
+  gitHubPluginConfig:
+    hookSecretConfigs:
+      - credentialsId: wao-github-webhook-secret
+        signatureAlgorithm: SHA256
+    configs:
+      - name: wao-github
+        apiUrl: https://api.github.com
+        credentialsId: wao-github-pat
+        manageHooks: false
+
+jobs:
+  - script: >
+      pipelineJob('wao-main-cd') {
+        description('WAO main: test once, build immutable SHA images, deploy Windows → Linux → cloud.')
+        properties {
+          githubProjectUrl('https://github.com/wayuwacn/wao/')
+        }
+        triggers {
+          githubPush()
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/wayuwacn/wao.git')
+                  credentials('wao-github-pat')
+                }
+                branch('*/${WAO_JENKINS_SCM_BRANCH}')
+                extensions {
+                  cloneOptions {
+                    shallow(false)
+                    noTags(false)
+                    timeout(20)
+                  }
+                }
+              }
+            }
+            scriptPath('Jenkinsfile')
+            lightweight(true)
+          }
+        }
+      }

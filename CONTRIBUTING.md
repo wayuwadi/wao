@@ -51,4 +51,4 @@ push 前除了文本冲突，还要核对 git 不会报的**语义冲突**：两
 
 ## 敏感信息
 
-不得提交真实 `.env`、服务器密码、SSH 私钥、DNS Token、Webhook 或生产证书。部署环境使用节点私有 `deploy/.env` 和 GitHub Actions Secrets。
+不得提交真实 `.env`、服务器密码、SSH 私钥、DNS Token、Webhook 或生产证书。部署环境使用节点私有 `deploy/.env`、`deploy/.env.secrets` 和 Jenkins Credential Store。

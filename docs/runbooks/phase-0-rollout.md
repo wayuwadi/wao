@@ -5,7 +5,7 @@
 - Java 17 多模块、Gateway、Nacos、Vue 3 前端与 Hello API 纵向切片。
 - Linux 主节点、Windows/WSL2 从节点及云前端节点的部署与运维脚本。
 - MySQL GTID 主从、Redis 主从与双 Sentinel、DDNS-Go、Gateway TLS、Nginx、备份恢复。
-- GitHub Actions 测试、容器构建、三节点 SSH 发布和飞书结果通知。
+- Linux 自建 Jenkins 测试、容器构建、三节点发布和飞书结果通知。
 - 本机 Vite -> Gateway -> WAO Server 的 `GET /api/hello` 验证。
 
 ## Windows 从节点（娃哥）
@@ -48,7 +48,7 @@ HTTP 200。探针会先验证代理容器的 host-network VPN 直连，再验证
 `docker compose -f deploy/docker-compose-master.yml ps codex-egress-proxy` 及其日志；若返回 403，先确认 Linux
 主机自身已走 VPN，再核对代理是否仍使用 `network_mode: host`，不要给 Windows 从节点或阿里云节点增加回退路由。
 CD 流水线也会跑同一个探针，但只作为告警：失败时 run 摘要出现 warning 注解，部署本身照常算成功（见 ADR-034）。
-所以 Codex 登录报区域错误时，先去 Actions 里翻最近一次部署的这条 warning，而不是等流水线变红。
+所以 Codex 登录报区域错误时，先去 Jenkins 最近一次部署日志查看这条 warning，而不是等流水线变红。
 每次主节点发布都会显式构建并强制重建无状态代理，避免复用同一镜像标签时旧容器仍指向上一版镜像。
 
 ## 云服务器
@@ -62,11 +62,13 @@ CD 流水线也会跑同一个探针，但只作为告警：失败时 run 摘要
 
 ## CI/CD 开启条件
 
-- 三个公网 SSH 目标均已授权专用部署公钥；
-- 三个 SSH 主机公钥已人工核验并写入 `DEPLOY_SSH_KNOWN_HOSTS`；
+- Jenkins 已按 `deploy/jenkins/README.md` 安装在 Linux 主节点且 UI 只监听 loopback；
+- Windows、云节点已授权各自的 Jenkins 专用部署公钥；
+- 两个 SSH 主机公钥已人工核验并写入 Jenkins `windows-known-hosts`、`cloud-known-hosts`；
 - 两个 DDNS 域名、公网端口映射和 `wao.wayuwa.cn` DNS 已生效；
 - 主、从节点已拥有同一份私有 `deploy/.env` 和对应 Gateway 证书；
-- 手工首发与数据复制验收通过后，再将 `DEPLOY_ENABLED` 设为 `true`。
+- GitHub push webhook HMAC 验证和反向 SSH 隧道已通过验收；
+- 手工影子构建通过后，再让 `main` push 自动执行生产发布。
 
 ## V77 首次发布安全窗口
 
@@ -77,9 +79,9 @@ V77 为飞书按日归档增加稳定身份和全局版本 CAS。旧 `wao-server
 - Linux 主节点、Windows / WSL 从节点和云 Nginx 必须全部可达。任一节点预检失败时按 ADR-097 保持故障节点
   upstream 为 `down` 并终止发布，不允许以 Linux 单节点完成作为成功结果。
 - 云机已安装 `set-nginx-upstream-state.sh`，两个 upstream 状态可写；主库、复制与备份健康。
-- 不手工恢复飞书同步 job、不手工启动旧镜像，也不用 `workflow_dispatch` 或新 push 绕过已开始但未完成的窗口。CI 将 `deployment.v77.rollout-state` 作为持久 rollout marker，而不只看当次 push 的文件列表；该发布必须不可被后续 push 取消。
+- 不手工恢复飞书同步 job、不手工启动旧镜像，也不用 Jenkins 手工重跑或新 push 绕过已开始但未完成的窗口。CI 将 `deployment.v77.rollout-state` 作为持久 rollout marker，而不只看当次 push 的文件列表；该发布必须不可被后续 push 取消。
 
-`WAO Fast CD` 自动顺序：
+Jenkins `wao-main-cd` 自动顺序：
 
 1. 在路由准备前先上传静止脚本并运行 `rollout-status`。脚本只在 Flyway schema history 已有 V77 成功记录且 `deployment.v77.rollout-state = complete` 时返回完成；任一条件不满足都执行以下安全流程。运行 `deploy/scripts/test-quiesce-wao-server.sh` 确认 Linux / Windows 静止脚本的 Compose 参数和 automation SQL 未漂移。
 2. 将 master 和 slave 两个云 Nginx upstream 都设为 `down`；用 8 秒有界探测 Windows 从节点。可达时上传并执行

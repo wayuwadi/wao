@@ -1,0 +1,6 @@
+[Unit]
+Description=Backup WAO Jenkins controller state
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/wao-jenkins/backup-controller.sh

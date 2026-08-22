@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily WAO Jenkins controller backup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target

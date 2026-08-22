@@ -17,7 +17,7 @@ ADR-011 为了拿到快速的真实环境反馈，把默认交付路径定成「
 
 - **交付单元 = PR，粒度 = 一个需求或一个 BUG。** 多条需求不塞进同一个 PR；一条需求也不拆成多个 PR。
 - **AI 不再逐次征求同意**：完成与改动相称的本地验证后，直接建分支、提交、push、开 PR、Squash Merge 并删除源分支。
-- **PR 不承担 CI 门禁**。CI/CD 只在 `main` 的 push 上触发（`ci-cd.yml` 的 `on.push.branches: [main]`），所以 PR 页面上没有 checks 是**预期行为，不是失败**——不要因为「等 CI」而卡住。合并前的门禁是本地验证全绿 + `mergeable` 为 `MERGEABLE`。
+- **PR 不承担 CI 门禁**。Jenkins CI/CD 只在 `main` 的 push 上触发，所以 PR 页面上没有 checks 是**预期行为，不是失败**——不要因为「等 CI」而卡住。合并前的门禁是本地验证全绿 + `mergeable` 为 `MERGEABLE`。
 - **push 前必须核对语义冲突**，这类冲突 git 不会报：两边各自新建了同编号的 ADR、同版本号的 Flyway migration，文件名不同所以合并静默通过，但语义上撞车。核对方式是把本地新增的编号和 `origin/main` 上的对一遍，撞了就重新编号。
 
 ## 后果
