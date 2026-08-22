@@ -21,6 +21,7 @@ export interface Org {
 export type ModuleId =
   | 'home'
   | 'projects'
+  | 'ideas'
   | 'calendar'
   | 'todo'
   | 'knowledge'

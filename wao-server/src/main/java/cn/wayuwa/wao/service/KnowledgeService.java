@@ -79,6 +79,8 @@ public class KnowledgeService {
     public static final String MEMORY_KB_ID = "kb-memory";
     /** 共享记忆知识库的固定文件夹。 */
     public static final String MEMORY_FOLDER_ID = "kb-memory-f";
+    /** 点子库自动沉淀调研、方案与验证资产的团队共享知识库。 */
+    public static final String IDEA_ASSET_KB_ID = "kb-idea-assets";
     private static final String NOTES_FOLDER_ID = "kb-notes-f";
     private static final Pattern CLIENT_DOC_ID = Pattern.compile("[A-Za-z0-9_-]{1,32}");
     private static final TypeReference<List<DocBlockDto>> BLOCKS_TYPE = new TypeReference<>() { };
@@ -712,6 +714,85 @@ public class KnowledgeService {
             kbMapper.insert(kb);
         }
         return kb;
+    }
+
+    /**
+     * 返回系统管理的点子资产库。固定 id 是身份，不按名称猜测，因而不会误复用用户同名知识库。
+     */
+    @Transactional
+    public KbEntity ideaAssetKb() {
+        KbEntity existing = kbMapper.selectById(IDEA_ASSET_KB_ID);
+        KbEntity kb = existing == null ? new KbEntity() : existing;
+        kb.setId(IDEA_ASSET_KB_ID);
+        kb.setName("点子资产库");
+        kb.setIcon("ri-lightbulb-flash-line");
+        kb.setColor("#D99A2B");
+        kb.setAuto(true);
+        kb.setNotes(false);
+        kb.setDescription("由点子库沉淀的调研、方案、会议、验证与放弃报告；团队成员可继续编辑。");
+        kb.setPerm("成员可编辑");
+        kb.setOrd(1);
+        kb.setDeletedAt(null);
+        kb.setDeletedBy(null);
+        if (existing == null) kbMapper.insert(kb); else kbMapper.updateById(kb);
+        return kb;
+    }
+
+    /** 为一个点子建立稳定文件夹；标题变化不会打断关联。 */
+    @Transactional
+    public KbFolderEntity ideaFolder(String ideaId, String title) {
+        ideaAssetKb();
+        String id = "if-" + ideaId;
+        KbFolderEntity existing = folderMapper.selectById(id);
+        KbFolderEntity folder = existing == null ? new KbFolderEntity() : existing;
+        folder.setId(id);
+        folder.setKbId(IDEA_ASSET_KB_ID);
+        folder.setName(blankOr(title, "未命名点子") + " · " + ideaId.substring(Math.max(0, ideaId.length() - 6)));
+        folder.setOrd(nextOrd(folderMapper.selectCount(aliveFolders().eq(KbFolderEntity::getKbId, IDEA_ASSET_KB_ID))));
+        folder.setCascadeDel(false);
+        folder.setDeletedAt(null);
+        if (existing == null) folderMapper.insert(folder); else folderMapper.updateById(folder);
+        return folder;
+    }
+
+    /** 新建一篇可继续编辑的点子资产文档；每次调研都创建新文档，不覆盖人工修改。 */
+    @Transactional
+    public DocDto createIdeaDocument(String ideaId, String ideaTitle, String title, String content, String author) {
+        KbFolderEntity folder = ideaFolder(ideaId, ideaTitle);
+        List<DocBlockDto> blocks = ideaBlocks(ideaTitle, content);
+        return insertDoc(IDEA_ASSET_KB_ID, folder.getId(), title, author, blocks);
+    }
+
+    /** 把调研 Markdown 的常用结构转成 WAO 原生块，文档打开后仍可逐块编辑。 */
+    private static List<DocBlockDto> ideaBlocks(String ideaTitle, String content) {
+        List<DocBlockDto> blocks = new ArrayList<>();
+        blocks.add(new DocBlockDto("点子资产 · " + ideaTitle, null, null, null, null));
+        List<String> bullets = new ArrayList<>();
+        for (String raw : (content == null ? "" : content.trim()).split("\\R")) {
+            String line = raw.trim();
+            if (line.startsWith("- ") || line.startsWith("* ")) {
+                bullets.add(line.substring(2).trim());
+                continue;
+            }
+            if (!bullets.isEmpty()) {
+                blocks.add(new DocBlockDto(null, null, null, List.copyOf(bullets), null));
+                bullets.clear();
+            }
+            if (line.isBlank()) continue;
+            int heading = 0;
+            while (heading < line.length() && heading < 6 && line.charAt(heading) == '#') heading++;
+            if (heading > 0 && heading < line.length() && Character.isWhitespace(line.charAt(heading))) {
+                blocks.add(new DocBlockDto(null, line.substring(heading).trim(), null, null, null,
+                        Math.max(1, Math.min(heading, 6))));
+            } else if (line.startsWith("> ")) {
+                blocks.add(new DocBlockDto(null, null, null, null, List.of(line.substring(2).trim())));
+            } else {
+                blocks.add(new DocBlockDto(null, null, line, null, null));
+            }
+        }
+        if (!bullets.isEmpty()) blocks.add(new DocBlockDto(null, null, null, List.copyOf(bullets), null));
+        if (blocks.size() == 1) blocks.add(new DocBlockDto(null, null, "", null, null));
+        return blocks;
     }
 
     /**

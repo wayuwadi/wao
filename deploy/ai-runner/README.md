@@ -112,6 +112,14 @@ Runner 状态、日志或 Git；因此只需让这台电脑的 Git 凭据管理�
 
 - Codex：`codex exec --json` 的 agent message、公开推理摘要、plan update 与阶段/结果。
 - Claude Code：`claude -p --output-format stream-json` 的 assistant 文本与 TodoWrite 计划。
+
+### 点子调研模式
+
+点子库的 `IDEA_RESEARCH` 也通过 assistant-v2 安全协议领取，但落在独立的
+`.wao-idea-research/<run-id>` 临时目录。它不克隆项目仓库，Codex 固定使用只读沙箱、临时
+`CODEX_HOME`，禁用 Shell、多代理与图片工具，并剥离 GitHub Token；只有该模式会用顶层
+`--search` 开放实时 Web 搜索。普通页面问答继续强制 `web_search=disabled`。无论成功、失败、
+超时或回传失败，Runner 最后都会删除研究工作区与隔离认证目录。
 - Qoder：`qodercli -p --output-format stream-json`，事件与 Claude Code 同构，口径相同。
 
 几种工具的命令执行、文件修改、工具调用和网页检索都不会上传，Claude 与 Qoder 的 thinking

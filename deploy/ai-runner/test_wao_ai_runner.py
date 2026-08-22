@@ -610,6 +610,25 @@ class CodexAccountIsolationTest(unittest.TestCase):
         self.assertTrue((isolated_home / "auth.json").is_file())
         self.assertFalse((isolated_home / "config.toml").exists())
 
+    @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
+    def test_idea_research_only_reenables_web_search(self, invoke: Mock) -> None:
+        reporter = Mock()
+        isolated_home = self.root / "research-home"
+
+        RUNNER.run_codex(
+            "codex", self.root, "research prompt", "read-only", reporter,
+            {"PATH": "runner-path"}, codex_home=isolated_home,
+            tools_disabled=True, web_search_enabled=True,
+        )
+
+        command = invoke.call_args.args[0]
+        self.assertIn("--search", command)
+        self.assertLess(command.index("--search"), command.index("exec"))
+        self.assertGreater(command.index("--ephemeral"), command.index("exec"))
+        self.assertNotIn('web_search="disabled"', command)
+        self.assertIn("shell_tool", command)
+        self.assertIn("multi_agent", command)
+
 
 class UsageAccountingTest(unittest.TestCase):
     """用量统计；Claude 的样例取自真实 `claude -p --output-format stream-json` 输出。"""
