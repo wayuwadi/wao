@@ -10,3 +10,24 @@ function ConvertTo-WaoWslPath {
     $tail = $Matches[2] -replace '\\', '/'
     return "/mnt/$drive/$tail"
 }
+
+function Invoke-WaoWsl {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$WslArguments,
+        [string]$FailureMessage = 'WSL command failed.'
+    )
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5 wraps benign WSL host warnings written to stderr as
+        # NativeCommandError records. Use the process exit code as the authority.
+        $ErrorActionPreference = 'Continue'
+        & wsl.exe @WslArguments
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($exitCode -ne 0) {
+        throw "$FailureMessage Exit code: $exitCode"
+    }
+}
