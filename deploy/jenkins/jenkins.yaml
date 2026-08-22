@@ -80,6 +80,10 @@ jobs:
         properties {
           githubProjectUrl('https://github.com/wayuwacn/wao/')
         }
+        parameters {
+          booleanParam('BOOTSTRAP_WINDOWS', false, '仅显式启用时重建 Windows 从库。')
+          booleanParam('DEPLOY_PRODUCTION', true, '关闭时只做完整影子构建，不触碰生产节点。')
+        }
         triggers {
           githubPush()
         }
