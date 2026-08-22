@@ -59,7 +59,9 @@ class DeploymentConfigTest {
         String rollout = read("deploy/jenkins/ci-deploy.sh");
         String verification = read("deploy/jenkins/ci-production-verify.sh");
 
-        assertThat(backendBuild).contains("mvn -B test");
+        assertThat(backendBuild)
+                .contains("-v \"$cache:/tmp/m2\"")
+                .contains("mvn -B -Dmaven.repo.local=/tmp/m2/repository test");
         assertThat(frontendBuild)
                 .contains("run_npm wao-web run test:unit -- --run")
                 .contains("run_npm agent-web run build");
