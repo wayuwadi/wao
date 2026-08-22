@@ -8,6 +8,41 @@ info:
 servers:
   - url: /api
 paths:
+  /ideas:
+    get:
+      summary: 列出团队全部点子
+      responses: { '200': { description: 按更新时间倒序的点子完整档案 } }
+    post:
+      summary: 快速记录点子，创建人默认成为负责人
+      responses: { '200': { description: 已创建点子 }, '400': { description: 标题或优先级不合法 } }
+  /ideas/{ideaId}:
+    parameters: [{ name: ideaId, in: path, required: true, schema: { type: string } }]
+    get:
+      summary: 读取一个点子及资产、任务、迭代、调研与时间线
+      responses: { '200': { description: 点子完整档案 }, '404': { description: 点子不存在 } }
+    patch:
+      summary: 编辑档案、转交负责人或关联项目
+      responses: { '200': { description: 已保存档案 }, '400': { description: 字段或成员、项目不合法 } }
+  /ideas/{ideaId}/transition:
+    post:
+      summary: 由团队成员显式推进或关闭点子
+      responses: { '200': { description: 阶段已改变 }, '400': { description: 阶段门禁未满足 } }
+  /ideas/{ideaId}/research-runs:
+    get: { summary: 列出点子调研运行, responses: { '200': { description: 调研运行列表 } } }
+    post: { summary: 启动新的隔离联网调研, responses: { '200': { description: 已排队 }, '400': { description: 已有活动调研 } } }
+  /ideas/{ideaId}/artifacts:
+    get: { summary: 列出点子知识资产, responses: { '200': { description: 资产关系列表 } } }
+    post: { summary: 关联原生知识文档, responses: { '200': { description: 已建立资产关系 } } }
+  /ideas/{ideaId}/tasks:
+    post: { summary: 创建并关联 MVP 任务或关联已有任务, responses: { '200': { description: 已建立任务关系 } } }
+  /ideas/{ideaId}/tasks/{taskId}:
+    put: { summary: 关联已有任务, responses: { '200': { description: 已建立关系 } } }
+    delete: { summary: 仅解除关系而不删除任务, responses: { '200': { description: 已解除关系 } } }
+  /ideas/{ideaId}/iterations:
+    get: { summary: 列出全部认可和未认可的迭代, responses: { '200': { description: 迭代列表 } } }
+    post: { summary: 记录一轮任务和 AI Run 迭代, responses: { '200': { description: 已创建迭代 } } }
+  /ideas/{ideaId}/iterations/{iterationId}:
+    patch: { summary: 保存迭代结果和人工反馈, responses: { '200': { description: 已更新迭代 } } }
   /workspaces:
     get:
       summary: 按最近更新时间列出当前成员自己的工作空间
@@ -1236,7 +1271,7 @@ components:
           items: { $ref: '#/components/schemas/Activity' }
         start: { type: string, description: 开始日期 yyyy-MM-dd；未排期时为空 }
         due: { type: string }
-        startAt: { type: string, nullable: true, description: 时间段开始，格式 yyyy-MM-ddTHH:mm；普通截止任务为 null }
+        startAt: { type: string, nullable: true, description: '时间段开始，格式 yyyy-MM-ddTHH:mm；普通截止任务为 null' }
         endAt: { type: string, nullable: true, description: 时间段结束，必须晚于 startAt }
         desc: { type: string, description: 描述，Markdown 文本 }
         subs:
@@ -1279,7 +1314,7 @@ components:
         icon: { type: string }
         color: { type: string }
         text: { type: string, description: 事件描述。带 by 时不含主语（如「创建了任务」），由前端按看的人补上「你」或对方名字；历史数据里写死的「你创建了任务」不带 by }
-        time: { type: string, description: 发生时刻（ISO 8601 带 +08:00）；历史数据可能是「刚刚」这类现成文案 }
+        time: { type: string, description: '发生时刻（ISO 8601 带 +08:00）；历史数据可能是「刚刚」这类现成文案' }
         by: { type: string, nullable: true, description: 操作人成员 id；系统事件与历史数据为 null }
     Step:
       type: object
@@ -1401,7 +1436,7 @@ components:
         pr: { type: string }
         owner: { type: string }
         due: { type: string, description: ISO 日期 }
-        startAt: { type: string, nullable: true, description: 时间段开始，格式 yyyy-MM-ddTHH:mm }
+        startAt: { type: string, nullable: true, description: '时间段开始，格式 yyyy-MM-ddTHH:mm' }
         endAt: { type: string, nullable: true, description: 时间段结束，必须晚于 startAt }
         desc: { type: string, description: 描述，Markdown 文本 }
         groupId: { type: string, nullable: true, description: 落进哪个任务分组（分组视图里的「+」带上它） }

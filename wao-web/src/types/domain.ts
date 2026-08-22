@@ -161,6 +161,103 @@ export interface PdcaCycle {
 export type TaskStatus = '待办' | '收集中' | '进行中' | 'AI 进行中' | '待验证' | '已完成'
 export type Priority = 'P0' | 'P1' | 'P2' | 'P3'
 
+export type IdeaStage =
+  | 'INBOX'
+  | 'RESEARCHING'
+  | 'THINKING'
+  | 'ALIGNING'
+  | 'MVP_BUILDING'
+  | 'VALIDATING'
+  | 'ACHIEVED'
+  | 'ABANDONED'
+export type IdeaPriority = 'P0' | 'P1' | 'P2'
+export type IdeaArtifactKind =
+  'RESEARCH_REPORT' | 'SOLUTION_MVP' | 'MEETING_NOTE' | 'VALIDATION_RECORD' | 'ABANDONMENT_REPORT'
+export type IdeaIterationStatus =
+  'PLANNED' | 'RUNNING' | 'READY_FOR_REVIEW' | 'ACCEPTED' | 'REJECTED' | 'FAILED'
+export type IdeaResearchRunStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+
+export interface IdeaDetail {
+  targetUsers?: string | null
+  coreValue?: string | null
+  nonGoals?: string | null
+  feasibility?: string | null
+  mvpHypothesis?: string | null
+  acceptanceCriteria?: string | null
+  meetingDate?: string | null
+  meetingDuration?: number | null
+  meetingParticipants?: string[] | null
+  meetingConclusion?: string | null
+  meetingNotes?: string | null
+  validationConclusion?: string | null
+  validationEvidence?: string | null
+  abandonmentReason?: string | null
+  researchAcceptedAt?: string | null
+  researchAcceptedBy?: string | null
+  activity?: Array<{ action: string; by: string; at: string }>
+}
+
+export interface IdeaArtifact {
+  id: string
+  kind: IdeaArtifactKind
+  docId: string
+  title: string
+  createdBy: string
+  createdAt: string
+}
+export interface IdeaTaskLink {
+  id: string
+  taskId: string
+  title: string
+  status: TaskStatus
+  requiredMvp: boolean
+  order: number
+  createdBy: string
+  createdAt: string
+}
+export interface IdeaIteration {
+  id: string
+  taskId: string
+  aiRunId?: string | null
+  objective: string
+  acceptanceCriteria?: string | null
+  status: IdeaIterationStatus
+  feedback?: string | null
+  resultSummary?: string | null
+  reportUrl?: string | null
+  createdBy: string
+  createdAt: string
+  finishedAt?: string | null
+}
+export interface IdeaResearchRun {
+  id: string
+  status: IdeaResearchRunStatus
+  error?: string | null
+  docId?: string | null
+  createdBy: string
+  createdAt: string
+  finishedAt?: string | null
+}
+export interface Idea {
+  id: string
+  title: string
+  rawIdea?: string | null
+  problem?: string | null
+  targetOutcome?: string | null
+  priority: IdeaPriority
+  stage: IdeaStage
+  createdBy: string
+  ownerId: string
+  projectId?: string | null
+  detail: IdeaDetail
+  artifacts: IdeaArtifact[]
+  tasks: IdeaTaskLink[]
+  iterations: IdeaIteration[]
+  researchRuns: IdeaResearchRun[]
+  createdAt: string
+  updatedAt: string
+}
+
 export interface Task {
   id: string
   title: string
@@ -481,7 +578,7 @@ export interface AiRunUsage {
 }
 
 export type ProjectMemoryCategory =
-  | 'decision' | 'convention' | 'pitfall' | 'verification' | 'operation' | 'context'
+  'decision' | 'convention' | 'pitfall' | 'verification' | 'operation' | 'context'
 
 /** 项目工程记忆；与当前成员的个人记忆是完全独立的数据域。 */
 export interface ProjectMemory {
@@ -498,8 +595,17 @@ export interface ProjectMemory {
   updatedAt?: string | null
 }
 
-export type ProjectMemoryReference = Pick<ProjectMemory,
-  'id' | 'projectId' | 'category' | 'title' | 'content' | 'sourceTaskId' | 'sourceRunId' | 'evidenceLinks'>
+export type ProjectMemoryReference = Pick<
+  ProjectMemory,
+  | 'id'
+  | 'projectId'
+  | 'category'
+  | 'title'
+  | 'content'
+  | 'sourceTaskId'
+  | 'sourceRunId'
+  | 'evidenceLinks'
+>
 
 export interface AiRun {
   id: string

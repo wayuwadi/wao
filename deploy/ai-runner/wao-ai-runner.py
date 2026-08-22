@@ -1130,6 +1130,7 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         account: dict[str, Any] | None = None,
         codex_home: Path | None = None,
         tools_disabled: bool = False,
+        web_search_enabled: bool = False,
         model: str | None = None,
         reasoning_effort: str | None = None,
         service_tier: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
@@ -1150,13 +1151,19 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
     if tools_disabled:
         # 页面分析只需要模型生成文字。关闭能读取本机文件或扩散执行面的工具，避免不可信
         # 聊天正文通过提示注入读取 CODEX_HOME/auth.json 或 API Key 环境变量。
-        command[2:2] = [
+        restricted_tools = [
             "--ephemeral", "--ignore-rules",
             "--disable", "shell_tool",
             "--disable", "multi_agent",
             "-c", "tools.view_image=false",
-            "-c", 'web_search="disabled"',
         ]
+        if web_search_enabled:
+            # --search 是 Codex 顶层开关，必须放在 `exec` 子命令之前。
+            command[1:1] = ["--search"]
+        else:
+            restricted_tools.extend(["-c", 'web_search="disabled"'])
+        exec_index = command.index("exec")
+        command[exec_index + 1:exec_index + 1] = restricted_tools
     run_environment = dict(environment or os.environ)
     if account:
         if codex_home is None:
@@ -1446,8 +1453,10 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
     """在临时空仓库和只读沙箱中执行页面问答，结束后不保留用户上下文。"""
     run_id = claim["runId"]
     claim_token = str(claim.get("claimToken") or "")
-    worktree = root / ".wao-assistant" / run_id
-    codex_home = root / ".wao-assistant-codex-homes" / run_id
+    research_mode = str(claim.get("mode") or "ASSISTANT") == "IDEA_RESEARCH"
+    workspace_name = ".wao-idea-research" if research_mode else ".wao-assistant"
+    worktree = root / workspace_name / run_id
+    codex_home = root / f"{workspace_name}-codex-homes" / run_id
     exit_code = -1
     response = ""
     error = ""
@@ -1459,13 +1468,13 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
     try:
         worktree.mkdir(parents=True, exist_ok=True)
         run([git_command, "init", "-q"], worktree)
-        log(f"[{run_id}] 开始页面只读问答")
+        log(f"[{run_id}] 开始{'点子调研' if research_mode else '页面只读问答'}")
         exit_code, response, _, _ = run_codex(
             executable, worktree, str(claim.get("prompt") or ""), "read-only",
             NoopProgressReporter(), assistant_cli_environment(cli_environment),
             should_stop=lambda: time.monotonic() >= deadline,
             account=claim.get("account"), codex_home=codex_home,
-            tools_disabled=True)
+            tools_disabled=True, web_search_enabled=research_mode)
         response = response.strip()
         if exit_code != 0:
             # 非零退出的部分 stdout 可能包含原对话或未完成报告，不回传、不持久化。

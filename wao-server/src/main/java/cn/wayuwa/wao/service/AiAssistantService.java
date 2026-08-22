@@ -69,6 +69,7 @@ public class AiAssistantService {
     private final AiAssistantConversationService conversationService;
     private final AiAssistantAssetService assetService;
     private final RunnerScriptService runnerScripts;
+    private final IdeaResearchService ideaResearch;
     private final Duration readOnlyQueuedTimeout;
     private final Duration readOnlyRunningTimeout;
 
@@ -76,7 +77,7 @@ public class AiAssistantService {
             AiRunService aiRunService, AiAccountService accountService,
             DeepSeekApiClient deepSeekApi,
             AiAssistantConversationService conversationService, AiAssistantAssetService assetService,
-            RunnerScriptService runnerScripts,
+            RunnerScriptService runnerScripts, IdeaResearchService ideaResearch,
             @Value("${wao.ai.read-only.queued-timeout:60m}") Duration readOnlyQueuedTimeout,
             @Value("${wao.ai.read-only.running-timeout:30m}") Duration readOnlyRunningTimeout) {
         this.mapper = mapper;
@@ -87,6 +88,7 @@ public class AiAssistantService {
         this.conversationService = conversationService;
         this.assetService = assetService;
         this.runnerScripts = runnerScripts;
+        this.ideaResearch = ideaResearch;
         this.readOnlyQueuedTimeout = positiveTimeout(readOnlyQueuedTimeout,
                 "wao.ai.read-only.queued-timeout");
         this.readOnlyRunningTimeout = positiveTimeout(readOnlyRunningTimeout,
@@ -312,7 +314,7 @@ public class AiAssistantService {
                     assistantMaxRuntimeSeconds(SECURE_QUEUED.equals(expected)),
                     accountService.defaultCodexRunAccount());
         }
-        return null;
+        return ideaResearch.claim(runner.getId(), accountService.defaultCodexRunAccount());
     }
 
     /**
@@ -346,7 +348,13 @@ public class AiAssistantService {
     public synchronized void complete(String token, String runId, CompleteAiAssistantRunRequest request) {
         AiRunnerNodeEntity runner = aiRunService.authenticateRunner(token);
         AiAssistantRunEntity run = mapper.selectById(runId);
-        if (run == null) throw new NotFoundException("AI 助手运行不存在：" + runId);
+        if (run == null) {
+            if (ideaResearch.exists(runId)) {
+                ideaResearch.complete(runner.getId(), runId, request);
+                return;
+            }
+            throw new NotFoundException("AI 助手运行不存在：" + runId);
+        }
         if (!runner.getId().equals(run.getRunnerId())) throw new UnauthorizedException("该问答不属于当前执行节点");
         if (!RUNNING_STATUSES.contains(run.getStatus())) return;
         boolean succeeded = request.exitCode() == 0 && StringUtils.hasText(request.response());
