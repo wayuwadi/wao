@@ -2,7 +2,7 @@
 
 ## 状态
 
-已采纳。
+已被 [ADR-097](097-strict-dual-node-delivery.md) 取代。以下内容仅保留为历史记录。
 
 ## 背景
 

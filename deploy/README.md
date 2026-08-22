@@ -96,7 +96,7 @@ Windows 11 Pro 从节点在 WSL2 Ubuntu 24.04 的 Docker Engine 中运行 Linux 
 
 CI/CD 向 Windows 发送 `D:\deploy\wao-release.zip`，由 PowerShell `Expand-Archive` 解压，以完整保留原版技术方案等中文文件名。MySQL 从库只复制 `wao.%`，不会同步 Linux 主机上已有的其他业务库。
 
-CD 开始 Windows 发布前会先做最多 8 秒的 SSH 在线探测。电脑关机、断网或 WSL/Docker 发布失败时，本次会跳过并在云 Nginx 中保持从节点 `down`，不阻塞 Linux 主节点和云前端发布，也不会把故障节点伪报为发布成功。Windows 恢复后会在下一次 `main` 发布时补齐并重新入流；如果需要立即补发，可手动触发 `WAO Fast CD`。
+CD 开始 Windows 发布前会验证专用 SSH 密钥、主机指纹、WSL 和 Docker。任一检查失败时保持从节点 `down`、保留 Linux 当前版本并将流水线判为失败；不再跳过 Windows 后把单节点发布标记为成功。每个应用节点最多自动部署三次，仍失败时由飞书分别报告 Windows、Linux、云节点和最终验收状态。
 
 准备脚本在没有现有配置时将 WSL 限制为 4 核/8GB/2GB swap，关闭交流供电时的自动睡眠/休眠，并安装 OpenSSH。`install-windows-ops-tasks.ps1` 会幂等创建 WSL 保活、开机端口刷新、每五分钟公网 IP 刷新、每日备份和每月恢复演练任务。部署脚本也会刷新 WSL 动态 IP 对应的 `portproxy`。3306、6379、26379、9000 允许公网入站；8080 和 9876 仅允许本地子网诊断。
 
@@ -172,7 +172,7 @@ https://wao.wayuwa.cn/api/hello
 
 ## GitHub Actions
 
-CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。开发期 CD 会构建 WAO Web 与 Agent Web，依次发布 Windows、云端与 Linux；健康节点重启前由云 Nginx 主动摘流，Windows 离线时自动跳过。Agent 模型和平台私有配置在首次统一发布时从旧节点私有目录迁移，不进入 Git。决策见 [ADR-049](../docs/adr/049-unified-product-monorepo-delivery.md)、[ADR-050](../docs/adr/050-rolling-api-deployment.md) 与 [ADR-051](../docs/adr/051-ai-write-routing-and-upstream-draining.md)。
+CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`WINDOWS_DEPLOY_SSH_PRIVATE_KEY`、`WINDOWS_DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。Windows 使用独立密钥和独立 `known_hosts`，避免系统重装后的主机指纹影响 Linux 与云节点。CD 构建一次带 Git SHA 标签的镜像，按 Windows → Linux → 云前端顺序滚动发布；两台应用节点均运行同一 SHA 且通过直连验证后才标记成功。首次重建从库时手动触发 `WAO Fast CD` 并勾选 `bootstrap_windows`，正常发布不得自动重置已有从库。决策见 [ADR-049](../docs/adr/049-unified-product-monorepo-delivery.md)、[ADR-050](../docs/adr/050-rolling-api-deployment.md)、[ADR-051](../docs/adr/051-ai-write-routing-and-upstream-draining.md) 与 [ADR-097](../docs/adr/097-strict-dual-node-delivery.md)。
 
 发布包用 `git archive HEAD` 打出，落到节点上时**先清空上一版源码再解压**：`tar -xzf` 和 `Expand-Archive -Force` 都只覆盖同名文件，不会删除这一版里已经删掉或改过名的文件，留在节点上的旧文件会跟着进 Docker 构建上下文。2026-07-26 连续四次部署回滚就是这么来的：`V18__chat_sync_monthly_archive.sql` 在仓库里已经改名成 V21，节点上的旧副本还在，Flyway 一启动就报「Found more than one migration with version 18」。清理范围是节点目录下除 `deploy/` 以外的全部内容——`deploy/` 里放着节点私有的 `.env`、`.env.secrets`、`certs/`、`data/`，其中被 git 跟踪的文件随即被这次解压整份覆盖。
 
