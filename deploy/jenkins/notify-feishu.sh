@@ -48,6 +48,11 @@ if [ "$WAO_PIPELINE_RESULT" != success ]; then
   header_color=red
 fi
 
+pipeline_kind='生产发布'
+if [ "${DEPLOY_PRODUCTION:-false}" != true ]; then
+  pipeline_kind='影子构建（未部署）'
+fi
+
 commit_message="${WAO_COMMIT_MESSAGE:-$(git log -1 --pretty=%B 2>/dev/null || printf 'Jenkins 手动构建')}"
 if [ "${#commit_message}" -gt 1800 ]; then
   commit_message="$(printf '%s' "$commit_message" | cut -c1-1800)…"
@@ -57,11 +62,12 @@ commit_url="https://github.com/wayuwacn/wao/commit/${WAO_GIT_SHA:-}"
 run_url="${BUILD_URL:-http://127.0.0.1:8081/}"
 
 payload="$(jq -n \
-  --arg title "WAO Jenkins 部署 ${overall}" \
+  --arg title "WAO Jenkins ${pipeline_kind} ${overall}" \
   --arg template "$header_color" \
   --arg sha "$short_sha" \
   --arg sha_url "$commit_url" \
   --arg change "$commit_message" \
+  --arg branch "${WAO_GIT_BRANCH:-main}" \
   --arg deploy "$WAO_PIPELINE_RESULT" \
   --arg windows "${windows_status}（尝试 ${windows_attempts} 次）\n${windows_detail}" \
   --arg linux "${linux_status}（尝试 ${linux_attempts} 次）\n${linux_detail}" \
@@ -76,7 +82,7 @@ payload="$(jq -n \
       elements:[
         {tag:"div",fields:[
           {is_short:true,text:{tag:"lark_md",content:"**仓库**\nwayuwacn/wao"}},
-          {is_short:true,text:{tag:"lark_md",content:"**分支**\nmain"}},
+          {is_short:true,text:{tag:"lark_md",content:("**分支**\n"+$branch)}},
           {is_short:true,text:{tag:"lark_md",content:("**提交**\n["+$sha+"]("+$sha_url+")")}},
           {is_short:true,text:{tag:"lark_md",content:"**触发**\nJenkins / GitHub Webhook"}}
         ]},

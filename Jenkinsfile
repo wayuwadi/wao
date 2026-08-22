@@ -41,6 +41,7 @@ pipeline {
                         script: 'git log -1 --pretty=%B',
                         returnStdout: true
                     ).trim()
+                    env.WAO_GIT_BRANCH = (env.GIT_BRANCH ?: 'main').replaceFirst('^origin/', '')
                 }
                 withCredentials([usernamePassword(
                     credentialsId: 'wao-github-pat',
@@ -112,12 +113,17 @@ pipeline {
         success {
             script {
                 if (env.WAO_GIT_SHA) {
+                    def successDescription = params.DEPLOY_PRODUCTION
+                        ? 'Jenkins 构建与发布成功'
+                        : 'Jenkins 影子构建成功（未部署）'
                     withCredentials([usernamePassword(
                         credentialsId: 'wao-github-pat',
                         usernameVariable: 'GITHUB_USER',
                         passwordVariable: 'GITHUB_PAT'
                     )]) {
-                        sh 'deploy/jenkins/github-status.sh success "Jenkins 构建与发布成功"'
+                        withEnv(["WAO_STATUS_DESCRIPTION=${successDescription}"]) {
+                            sh 'deploy/jenkins/github-status.sh success "$WAO_STATUS_DESCRIPTION"'
+                        }
                     }
                 }
             }
