@@ -2,7 +2,10 @@ param(
     [string]$ArchivePath = 'D:\deploy\wao-release.zip',
     [string]$TargetPath = 'D:\deploy\wao',
     [string]$PrivateEnvPath = 'D:\deploy\wao-secrets.env',
+    [string]$SharedEnvPath,
+    [string]$GatewayCertificatePath,
     [string]$ImageArchivePath,
+    [string]$ImageTag = '',
     [string]$Distribution = 'Ubuntu',
     [string]$LockPath = 'D:\deploy\wao-deploy.lock'
 )
@@ -18,6 +21,18 @@ if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) {
 
 if ($target -eq $targetRoot) {
     throw 'TargetPath must not be a drive root.'
+}
+if ($ImageTag -and $ImageTag -notmatch '^[A-Za-z0-9_.-]+$') {
+    throw 'ImageTag may contain only letters, digits, dots, underscores, and hyphens.'
+}
+foreach ($requiredTransfer in @(
+    @{ Name = 'SharedEnvPath'; Path = $SharedEnvPath },
+    @{ Name = 'GatewayCertificatePath'; Path = $GatewayCertificatePath },
+    @{ Name = 'ImageArchivePath'; Path = $ImageArchivePath }
+)) {
+    if ($requiredTransfer.Path -and -not (Test-Path -LiteralPath $requiredTransfer.Path -PathType Leaf)) {
+        throw "$($requiredTransfer.Name) does not exist: $($requiredTransfer.Path)"
+    }
 }
 
 # GitHub 取消旧流水线时，远端 PowerShell 进程可能仍在收尾。跨进程独占锁确保两次发布不会
@@ -70,11 +85,21 @@ if (-not (Test-Path -LiteralPath $deployScript -PathType Leaf)) {
 if (Test-Path -LiteralPath $PrivateEnvPath -PathType Leaf) {
     $privateEnv = Join-Path $target 'deploy\.env.secrets'
     Copy-Item -LiteralPath $PrivateEnvPath -Destination $privateEnv -Force
-    Remove-Item -LiteralPath $PrivateEnvPath -Force
+}
+
+if ($SharedEnvPath) {
+    Copy-Item -LiteralPath $SharedEnvPath -Destination (Join-Path $target 'deploy\.env') -Force
+}
+
+if ($GatewayCertificatePath) {
+    $certificateDirectory = Join-Path $target 'deploy\certs'
+    New-Item -ItemType Directory -Path $certificateDirectory -Force | Out-Null
+    Copy-Item -LiteralPath $GatewayCertificatePath `
+        -Destination (Join-Path $certificateDirectory 'gateway.p12') -Force
 }
 
 $imageLoaded = $false
-if ($ImageArchivePath -and (Test-Path -LiteralPath $ImageArchivePath -PathType Leaf)) {
+if ($ImageArchivePath) {
     . (Join-Path $target 'deploy\scripts\wsl-common.ps1')
     $linuxImageArchive = ConvertTo-WaoWslPath $ImageArchivePath
     & wsl.exe -d $Distribution -u root -- docker load -i $linuxImageArchive
@@ -82,11 +107,16 @@ if ($ImageArchivePath -and (Test-Path -LiteralPath $ImageArchivePath -PathType L
     $imageLoaded = $true
 }
 
-& $deployScript -Distribution $Distribution -SkipImageBuild:$imageLoaded
+& $deployScript -Distribution $Distribution -SkipImageBuild:$imageLoaded -ImageTag $ImageTag
 if ($LASTEXITCODE -ne 0) { throw 'Windows deployment script failed.' }
 
 Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
 }
 finally {
+    foreach ($privateTransfer in @($PrivateEnvPath, $SharedEnvPath, $GatewayCertificatePath, $ImageArchivePath)) {
+        if ($privateTransfer) {
+            Remove-Item -LiteralPath $privateTransfer -Force -ErrorAction SilentlyContinue
+        }
+    }
     $lockStream.Dispose()
 }

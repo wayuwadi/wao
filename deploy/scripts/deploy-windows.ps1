@@ -1,6 +1,7 @@
 param(
     [string]$Distribution = 'Ubuntu',
-    [switch]$SkipImageBuild
+    [switch]$SkipImageBuild,
+    [string]$ImageTag = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -12,10 +13,21 @@ if (-not $LinuxProjectRoot) {
     throw "Unable to translate project path for WSL distribution $Distribution."
 }
 
-$buildPrefix = if ($SkipImageBuild) { 'SKIP_IMAGE_BUILD=true ' } else { '' }
+if ($ImageTag -and $ImageTag -notmatch '^[A-Za-z0-9_.-]+$') {
+    throw 'ImageTag may contain only letters, digits, dots, underscores, and hyphens.'
+}
+
+$deploymentEnvironment = @()
+if ($SkipImageBuild) { $deploymentEnvironment += 'SKIP_IMAGE_BUILD=true' }
+if ($ImageTag) { $deploymentEnvironment += "WAO_IMAGE_TAG='$ImageTag'" }
+$deploymentPrefix = if ($deploymentEnvironment.Count -gt 0) {
+    ($deploymentEnvironment -join ' ') + ' '
+} else {
+    ''
+}
 $deployAttempt = 1
 while ($deployAttempt -le 2) {
-    & wsl.exe -d $Distribution -u root -- bash -lc "cd '$LinuxProjectRoot' && ${buildPrefix}sh deploy/scripts/deploy-linux.sh slave"
+    & wsl.exe -d $Distribution -u root -- bash -lc "cd '$LinuxProjectRoot' && ${deploymentPrefix}sh deploy/scripts/deploy-linux.sh slave"
     if ($LASTEXITCODE -eq 0) { break }
     if ($deployAttempt -ge 2) { throw 'WSL Docker Compose deployment failed after restarting the distribution.' }
 

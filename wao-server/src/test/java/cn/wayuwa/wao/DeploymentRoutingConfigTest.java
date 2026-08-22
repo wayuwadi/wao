@@ -145,31 +145,30 @@ class DeploymentRoutingConfigTest {
                 .contains("test \"$goal_route\" = 'dual-gateway-ai'")
                 .contains("/api/ai/runner/accounts");
         assertThat(workflow.indexOf("prepare_cloud_routing >routing.log"))
-                .isLessThan(workflow.indexOf("deploy_slave >slave.log"));
-        assertThat(workflow.indexOf("deploy_slave >slave.log"))
+                .isLessThan(workflow.indexOf("retry_node_deploy Windows deploy_slave slave.log"));
+        assertThat(workflow.indexOf("retry_node_deploy Windows deploy_slave slave.log"))
+                .isLessThan(workflow.indexOf("retry_node_deploy Linux deploy_master master.log"));
+        assertThat(workflow.indexOf("retry_node_deploy Linux deploy_master master.log"))
                 .isLessThan(workflow.indexOf("deploy_cloud >cloud.log"));
         assertThat(workflow)
-                .contains("scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env")
-                .contains("deploy/scripts/deploy-linux.sh\" master; rm -f /tmp/wao-secrets.env")
+                .contains("scp -o ConnectTimeout=15 wao-release.tgz wao-images.tar.gz wao-secrets.env")
+                .contains("WAO_IMAGE_TAG='$GITHUB_SHA' SKIP_IMAGE_BUILD=true")
                 .doesNotContain("Prepare Linux Codex package")
                 .doesNotContain("codex-package-x86_64-unknown-linux-musl.tar.gz")
                 .doesNotContain("upload_master_resumable")
                 .doesNotContain("WAO_CODEX_PACKAGE")
                 .doesNotContain("WAO_CODEX_CHECKSUMS");
-        assertThat(workflow.indexOf("if ! deploy_slave >slave.log 2>&1; then"))
-                .isLessThan(workflow.indexOf("if ! deploy_cloud >cloud.log 2>&1; then"));
-        assertThat(workflow.indexOf("if ! deploy_cloud >cloud.log 2>&1; then"))
-                .isLessThan(workflow.indexOf("if ! deploy_master >master.log 2>&1; then"));
         assertThat(workflow)
                 .doesNotContain("deploy_master >master.log 2>&1 &")
                 .contains("slave_deployed=false")
                 .contains("slave_deployed=true")
-                .contains("Windows 从节点已隔离")
-                .contains("linux_only_schema_rollout=false")
-                .contains("Windows 从节点离线")
-                .contains("Linux 已单节点完成")
-                .doesNotContain("Windows 从节点不可达，无法确认旧版 server 已停止；V77 保持未发布。")
-                .contains("[ \"$slave_deployed\" != true ] && ! set_upstream_state slave down")
+                .contains("Windows 从节点严格预检失败")
+                .contains("Windows 从节点三次部署失败")
+                .contains("Linux 主节点三次部署失败")
+                .contains("WINDOWS_DEPLOY_SSH_PRIVATE_KEY")
+                .contains("validate-deployment-node.sh")
+                .contains("start_availability_monitor")
+                .doesNotContain("本次继续升级云前端和 Linux 主节点")
                 .contains("test \"$ai_read_route\" = 'dual-gateway-ai'")
                 .contains("test \"$ai_write_route\" = 'linux-vpn-master'");
         assertThat(probe)

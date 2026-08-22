@@ -2,6 +2,12 @@ name: WAO Fast CD
 
 on:
   workflow_dispatch:
+    inputs:
+      bootstrap_windows:
+        description: Rebuild the fresh Windows MySQL replica from a new GTID snapshot
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [main]
 
@@ -18,6 +24,15 @@ jobs:
     name: Build once and deploy with Gateway draining
     runs-on: ubuntu-latest
     if: vars.DEPLOY_ENABLED == 'true'
+    outputs:
+      windows_status: ${{ steps.deployment-status.outputs.windows_status }}
+      windows_attempts: ${{ steps.deployment-status.outputs.windows_attempts }}
+      windows_detail: ${{ steps.deployment-status.outputs.windows_detail }}
+      linux_status: ${{ steps.deployment-status.outputs.linux_status }}
+      linux_attempts: ${{ steps.deployment-status.outputs.linux_attempts }}
+      linux_detail: ${{ steps.deployment-status.outputs.linux_detail }}
+      cloud_status: ${{ steps.deployment-status.outputs.cloud_status }}
+      verification_status: ${{ steps.deployment-status.outputs.verification_status }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -62,8 +77,20 @@ jobs:
           npm --prefix agent-web run build
       - name: Package release
         run: |
+          set -euo pipefail
           git archive --format=tar.gz -o wao-release.tgz HEAD
           git archive --format=zip -o wao-release.zip HEAD
+          docker build --target server-runtime -t "wao-server:${GITHUB_SHA}" -f deploy/Dockerfile .
+          docker build --target agent-runtime -t "wao-agent-server:${GITHUB_SHA}" -f deploy/Dockerfile .
+          docker build --target gateway-runtime -t "wao-gateway:${GITHUB_SHA}" -f deploy/Dockerfile .
+          docker build --target codex-egress-proxy -t "wao-codex-egress-proxy:${GITHUB_SHA}" -f deploy/Dockerfile .
+          docker save \
+            "wao-server:${GITHUB_SHA}" \
+            "wao-agent-server:${GITHUB_SHA}" \
+            "wao-gateway:${GITHUB_SHA}" \
+            "wao-codex-egress-proxy:${GITHUB_SHA}" |
+            gzip -1 > wao-images.tar.gz
+          gzip -t wao-images.tar.gz
       - name: Prepare private Feishu configuration
         env:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
@@ -96,12 +123,22 @@ jobs:
         env:
           DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
           DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+          WINDOWS_DEPLOY_KEY: ${{ secrets.WINDOWS_DEPLOY_SSH_PRIVATE_KEY }}
+          WINDOWS_DEPLOY_KNOWN_HOSTS: ${{ secrets.WINDOWS_DEPLOY_SSH_KNOWN_HOSTS }}
         run: |
+          test -n "$DEPLOY_KEY"
+          test -n "$DEPLOY_SSH_KNOWN_HOSTS"
+          test -n "$WINDOWS_DEPLOY_KEY"
+          test -n "$WINDOWS_DEPLOY_KNOWN_HOSTS"
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+          printf '%s\n' "$WINDOWS_DEPLOY_KEY" > ~/.ssh/windows_ed25519
+          chmod 600 ~/.ssh/windows_ed25519
+          printf '%s\n' "$WINDOWS_DEPLOY_KNOWN_HOSTS" > ~/.ssh/windows_known_hosts
+          chmod 600 ~/.ssh/windows_known_hosts
       - name: Reuse the existing shared vault key
         env:
           MASTER_HOST: ${{ secrets.MASTER_HOST }}
@@ -125,7 +162,31 @@ jobs:
             echo '::notice title=Agent 私有配置未迁移::旧部署目录和当前统一部署中均没有 Agent 模型或平台配置；对应能力会如实显示为未接入。'
           fi
           rm -f wao-agent.env
+      - name: Prepare shared Windows configuration and optional GTID snapshot
+        env:
+          MASTER_HOST: ${{ secrets.MASTER_HOST }}
+          MASTER_USER: ${{ secrets.MASTER_USER }}
+          BOOTSTRAP_WINDOWS: ${{ inputs.bootstrap_windows || false }}
+        run: |
+          set -eu
+          umask 077
+          master_root='desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; printf "%s/deploy/wao" "$desktop_dir"'
+          project_root="$(ssh "$MASTER_USER@$MASTER_HOST" "$master_root")"
+          test -n "$project_root"
+          ssh "$MASTER_USER@$MASTER_HOST" "cat '$project_root/deploy/.env'" > wao-shared.env
+          ssh "$MASTER_USER@$MASTER_HOST" "cat '$project_root/deploy/certs/gateway.p12'" > wao-gateway.p12
+          test -s wao-shared.env
+          test -s wao-gateway.p12
+          if [ "$BOOTSTRAP_WINDOWS" = true ]; then
+            scp deploy/scripts/create-mysql-snapshot.sh "$MASTER_USER@$MASTER_HOST:/tmp/wao-create-mysql-snapshot.sh"
+            ssh "$MASTER_USER@$MASTER_HOST" \
+              "chmod 700 /tmp/wao-create-mysql-snapshot.sh && cd '$project_root' && /tmp/wao-create-mysql-snapshot.sh /tmp/wao-bootstrap.sql.gz"
+            scp "$MASTER_USER@$MASTER_HOST:/tmp/wao-bootstrap.sql.gz" wao-bootstrap.sql.gz
+            ssh "$MASTER_USER@$MASTER_HOST" 'rm -f /tmp/wao-create-mysql-snapshot.sh /tmp/wao-bootstrap.sql.gz'
+            gzip -t wao-bootstrap.sql.gz
+          fi
       - name: Drain and deploy slave, cloud and master in rolling order
+        id: rollout
         env:
           MASTER_HOST: ${{ secrets.MASTER_HOST }}
           MASTER_USER: ${{ secrets.MASTER_USER }}
@@ -133,22 +194,36 @@ jobs:
           SLAVE_USER: ${{ secrets.SLAVE_USER }}
           CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
           CLOUD_USER: ${{ secrets.CLOUD_USER }}
+          BOOTSTRAP_WINDOWS: ${{ inputs.bootstrap_windows || false }}
         shell: bash
         run: |
           set -u
+          status_file="$RUNNER_TEMP/wao-deploy-status.env"
+          printf '%s\n' \
+            'windows_status=not_started' 'windows_attempts=0' 'windows_detail=not_started' \
+            'linux_status=not_started' 'linux_attempts=0' 'linux_detail=not_started' \
+            'cloud_status=not_started' 'verification_status=not_started' >"$status_file"
           slave_deployed=false
+          master_deployed=false
+          master_drained=false
           schema_quiesced=false
           schema_rollout_complete=false
           safe_slave_reachable=false
           safe_schema_rollout=false
-          linux_only_schema_rollout=false
+
+          set_status() {
+            key="$1"
+            value="$(printf '%s' "$2" | tr '\r\n=' '   ' | cut -c1-500)"
+            sed -i "/^${key}=/d" "$status_file"
+            printf '%s=%s\n' "$key" "$value" >>"$status_file"
+          }
 
           retry_remote() {
             target_label="$1"
             shift
             attempt=1
             while ! "$@"; do
-              if [ "$attempt" -ge 4 ]; then
+              if [ "$attempt" -ge 3 ]; then
                 printf '%s SSH/SCP 连续 %s 次失败，停止重试\n' "$target_label" "$attempt"
                 return 1
               fi
@@ -158,8 +233,40 @@ jobs:
             done
           }
 
+          windows_ssh() {
+            ssh -i ~/.ssh/windows_ed25519 -o IdentitiesOnly=yes \
+              -o UserKnownHostsFile=~/.ssh/windows_known_hosts "$@"
+          }
+
+          windows_scp() {
+            scp -i ~/.ssh/windows_ed25519 -o IdentitiesOnly=yes \
+              -o UserKnownHostsFile=~/.ssh/windows_known_hosts "$@"
+          }
+
+          retry_node_deploy() {
+            label="$1"
+            deploy_function="$2"
+            log_file="$3"
+            : >"$log_file"
+            node_attempt=1
+            while [ "$node_attempt" -le 3 ]; do
+              printf '===== %s deployment attempt %s/3 =====\n' "$label" "$node_attempt" >>"$log_file"
+              if "$deploy_function" >>"$log_file" 2>&1; then
+                NODE_DEPLOY_ATTEMPTS="$node_attempt"
+                return 0
+              fi
+              if [ "$node_attempt" -lt 3 ]; then
+                printf '%s deployment failed; retrying in %s seconds.\n' "$label" "$((node_attempt * 15))" >>"$log_file"
+                sleep "$((node_attempt * 15))"
+              fi
+              node_attempt=$((node_attempt + 1))
+            done
+            NODE_DEPLOY_ATTEMPTS=3
+            return 1
+          }
+
           deploy_master() {
-            retry_remote "Linux 主节点" scp -o ConnectTimeout=15 wao-release.tgz wao-secrets.env \
+            retry_remote "Linux 主节点" scp -o ConnectTimeout=15 wao-release.tgz wao-images.tar.gz wao-secrets.env \
               "$MASTER_USER@$MASTER_HOST:/tmp/" || return
             # 解压前先清掉上一版源码：tar 只覆盖同名文件，删除 / 改名过的文件会留在节点上，
             # 混进 Docker 构建上下文（V18 撞号那次就是被留下的旧 migration 打挂的）。
@@ -167,27 +274,37 @@ jobs:
             # 其中被 git 跟踪的文件随即被这次解压整份覆盖。
             # 远程部署失败时 retry_remote 会重跑整条命令；临时 secrets 必须等部署成功后再删，
             # 否则第一次失败后的重试会因为源文件已被删除而永久失败。
-            retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" 'set -eu; desktop_dir="$(xdg-user-dir DESKTOP 2>/dev/null || printf "%s" "$HOME/Desktop")"; install -d "$desktop_dir/deploy/wao"; find "$desktop_dir/deploy/wao" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +; tar -xzf /tmp/wao-release.tgz -C "$desktop_dir/deploy/wao"; install -m 600 /tmp/wao-secrets.env "$desktop_dir/deploy/wao/deploy/.env.secrets"; sh "$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh" master; rm -f /tmp/wao-secrets.env'
+            retry_remote "Linux 主节点" ssh -o ConnectTimeout=15 "$MASTER_USER@$MASTER_HOST" "set -eu; desktop_dir=\"\$(xdg-user-dir DESKTOP 2>/dev/null || printf '%s' \"\$HOME/Desktop\")\"; install -d \"\$desktop_dir/deploy/wao\"; find \"\$desktop_dir/deploy/wao\" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +; tar -xzf /tmp/wao-release.tgz -C \"\$desktop_dir/deploy/wao\"; install -m 600 /tmp/wao-secrets.env \"\$desktop_dir/deploy/wao/deploy/.env.secrets\"; if docker info >/dev/null 2>&1; then docker load -i /tmp/wao-images.tar.gz; else sudo -n docker load -i /tmp/wao-images.tar.gz; fi; WAO_IMAGE_TAG='$GITHUB_SHA' SKIP_IMAGE_BUILD=true sh \"\$desktop_dir/deploy/wao/deploy/scripts/deploy-linux.sh\" master; sh \"\$desktop_dir/deploy/wao/deploy/scripts/validate-deployment-node.sh\" master '$GITHUB_SHA'; rm -f /tmp/wao-secrets.env /tmp/wao-images.tar.gz"
           }
 
           deploy_slave() {
-            # Windows 会随用户电脑关机，发布前先做一次快速探测。离线不是发布失败：
-            # 本次跳过从节点，它上线后由下一次 main 发布自然补齐版本。
-            if ! timeout 8s ssh -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 \
-              "$SLAVE_USER@$SLAVE_HOST" 'exit 0'; then
-              echo '::notice title=Windows 从节点已跳过::节点当前离线，本次不等待也不部署；上线后随下一次 PR 合并发布。'
-              return 0
-            fi
-
             release_suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
             remote_release="wao-release-${release_suffix}.zip"
             remote_secrets="wao-secrets-${release_suffix}.env"
+            remote_shared_env="wao-shared-${release_suffix}.env"
+            remote_certificate="wao-gateway-${release_suffix}.p12"
+            remote_images="wao-images-${release_suffix}.tar.gz"
+            remote_snapshot="wao-bootstrap-${release_suffix}.sql.gz"
             remote_installer="install-release-windows-${release_suffix}.ps1"
-            retry_remote "Windows 从节点" scp -o ConnectTimeout=15 wao-release.zip "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_release" || return
-            retry_remote "Windows 从节点" scp -o ConnectTimeout=15 wao-secrets.env "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_secrets" || return
-            retry_remote "Windows 从节点" scp -o ConnectTimeout=15 deploy/scripts/install-release-windows.ps1 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_installer" || return
-            retry_remote "Windows 从节点" ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" 'exit 0' || return
-            retry_remote "Windows 从节点" ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets" || return
+            retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
+              wao-release.zip wao-secrets.env wao-shared.env wao-gateway.p12 wao-images.tar.gz \
+              "$SLAVE_USER@$SLAVE_HOST:D:/deploy/" || return
+            retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
+              deploy/scripts/install-release-windows.ps1 \
+              "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_installer" || return
+            retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" \
+              "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Move-Item -Force D:\\deploy\\wao-release.zip D:\\deploy\\$remote_release; Move-Item -Force D:\\deploy\\wao-secrets.env D:\\deploy\\$remote_secrets; Move-Item -Force D:\\deploy\\wao-shared.env D:\\deploy\\$remote_shared_env; Move-Item -Force D:\\deploy\\wao-gateway.p12 D:\\deploy\\$remote_certificate; Move-Item -Force D:\\deploy\\wao-images.tar.gz D:\\deploy\\$remote_images\"" || return
+            retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" \
+              "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets -SharedEnvPath D:\\deploy\\$remote_shared_env -GatewayCertificatePath D:\\deploy\\$remote_certificate -ImageArchivePath D:\\deploy\\$remote_images -ImageTag '$GITHUB_SHA'" || return
+            if [ "$BOOTSTRAP_WINDOWS" = true ]; then
+              test -s wao-bootstrap.sql.gz || return 1
+              retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 wao-bootstrap.sql.gz \
+                "$SLAVE_USER@$SLAVE_HOST:D:/deploy/$remote_snapshot" || return
+              retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" \
+                "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\wao\\deploy\\scripts\\bootstrap-windows-slave.ps1 -SnapshotPath D:\\deploy\\$remote_snapshot" || return
+            fi
+            retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" \
+              "wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-deployment-node.sh slave '$GITHUB_SHA'" || return
             slave_deployed=true
           }
 
@@ -315,27 +432,57 @@ jobs:
 
           quiesce_slave() {
             action="$1"
-            retry_remote "Windows 从节点" ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" \
+            retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "$SLAVE_USER@$SLAVE_HOST" \
               "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\wao-quiesce-server.ps1 -Action $action"
           }
 
           restore_upstreams() {
-            if [ "$schema_quiesced" = true ] && [ "$schema_rollout_complete" != true ] && \
-                [ "$linux_only_schema_rollout" != true ]; then
-              if [ "$slave_deployed" = true ]; then
-                set_upstream_state slave up >/dev/null 2>&1 || true
-              else
-                set_upstream_state slave down >/dev/null 2>&1 || true
-              fi
-              set_upstream_state master down >/dev/null 2>&1 || true
-              return
-            fi
             if [ "$slave_deployed" = true ]; then
               set_upstream_state slave up >/dev/null 2>&1 || true
             else
               set_upstream_state slave down >/dev/null 2>&1 || true
             fi
-            set_upstream_state master up >/dev/null 2>&1 || true
+            if [ "$schema_quiesced" = true ] && [ "$schema_rollout_complete" != true ]; then
+              set_upstream_state master down >/dev/null 2>&1 || true
+              return
+            fi
+            if [ "$master_deployed" = true ] || [ "$master_drained" = false ]; then
+              set_upstream_state master up >/dev/null 2>&1 || true
+            else
+              set_upstream_state master down >/dev/null 2>&1 || true
+            fi
+          }
+
+          availability_pid=''
+          availability_stop="$RUNNER_TEMP/wao-availability.stop"
+          availability_failures="$RUNNER_TEMP/wao-availability.failures"
+          : >"$availability_failures"
+          rm -f "$availability_stop"
+
+          start_availability_monitor() {
+            (
+              while [ ! -f "$availability_stop" ]; do
+                if ! curl --fail --silent --show-error --max-time 8 --retry 2 --retry-delay 1 \
+                    --retry-all-errors https://wao.wayuwa.cn/api/hello >/dev/null; then
+                  date -u '+%Y-%m-%dT%H:%M:%SZ public /api/hello unavailable' >>"$availability_failures"
+                fi
+                sleep 2
+              done
+            ) &
+            availability_pid=$!
+          }
+
+          stop_availability_monitor() {
+            if [ -n "$availability_pid" ]; then
+              touch "$availability_stop"
+              wait "$availability_pid" || true
+              availability_pid=''
+            fi
+          }
+
+          cleanup_rollout() {
+            stop_availability_monitor
+            restore_upstreams
           }
 
           # 是否需要 V77 维护窗口以主库持久状态为准，不依赖单次 push 的文件列表。
@@ -356,34 +503,50 @@ jobs:
             exit 1
           fi
 
-          trap restore_upstreams EXIT
+          trap cleanup_rollout EXIT
+
+          if ! windows_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
+              "$SLAVE_USER@$SLAVE_HOST" 'wsl.exe -d Ubuntu -u root -- docker info' >/dev/null; then
+            set_status windows_status failed
+            set_status windows_detail 'SSH、WSL 或 Docker 预检失败'
+            set_upstream_state slave down || true
+            echo 'Windows 从节点严格预检失败；Linux 保持当前版本，本次发布失败。'
+            exit 1
+          fi
+
+          if [ "$safe_schema_rollout" != true ]; then
+            start_availability_monitor
+          fi
 
           # V77 首次引入带版本的飞书归档写入。旧二进制不认识新栅栏，因此该次 push
           # 用一次性维护窗口：先暂停定时同步、摘流并停掉所有在线旧 server，再允许新节点执行 migration。
-          # Windows 离线时保持 slave down 与同步暂停，但继续交付 Linux；详见 ADR-092。
+          # ADR-097 要求两台节点严格成功；任一节点不可达时保持其摘流并让本次发布失败。
           if [ "$safe_schema_rollout" = true ]; then
             echo '::notice title=V77 安全升级::暂停飞书定时同步并停止旧版 API 节点后再执行 migration。'
             if ! set_upstream_state slave down || ! set_upstream_state master down; then
               echo '无法为 V77 建立全量摘流窗口。'
               exit 1
             fi
-            if timeout 8s ssh -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 \
+            if timeout 8s windows_ssh -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 \
                 "$SLAVE_USER@$SLAVE_HOST" 'exit 0'; then
               safe_slave_reachable=true
-              retry_remote "Windows 从节点" scp -o ConnectTimeout=15 \
+              retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
                 deploy/scripts/quiesce-wao-server.sh \
                 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-quiesce-server.sh" || exit 1
-              retry_remote "Windows 从节点" scp -o ConnectTimeout=15 \
+              retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
                 deploy/scripts/quiesce-wao-server-windows.ps1 \
                 "$SLAVE_USER@$SLAVE_HOST:D:/deploy/wao-quiesce-server.ps1" || exit 1
             else
-              echo '::notice title=Windows 从节点离线::保持 slave 摘流，本次继续升级云前端和 Linux 主节点；从节点上线后由下次发布补齐。'
+              set_status windows_status failed
+              set_status windows_detail '安全迁移前 SSH 预检失败'
+              echo 'Windows 从节点离线；严格双节点发布终止。'
+              exit 1
             fi
             if ! quiesce_master pause-feishu-sync; then
               echo '无法暂停飞书定时同步，V77 未开始。'
               exit 1
             fi
-            if [ "$safe_slave_reachable" = true ] && ! quiesce_slave stop; then
+            if [ "$safe_slave_reachable" = true ] && [ "$BOOTSTRAP_WINDOWS" != true ] && ! quiesce_slave stop; then
               quiesce_master restore-feishu-sync || true
               echo '无法停止 Windows 旧版 server，V77 未开始。'
               exit 1
@@ -397,100 +560,102 @@ jobs:
             schema_quiesced=true
           fi
 
-          if gateway_ready_from_cloud "$SLAVE_HOST"; then
-            if ! set_upstream_state slave down; then
-              printf '云端未能摘流 Windows 从节点，本次不冒险重启从节点。\n' >slave.log
-              printf '\n===== slave =====\n'; cat slave.log
-              exit 1
-            fi
-          else
-            echo '::notice title=Windows 从节点未摘流::节点发布前不健康，不在 Nginx 中额外标记 down。'
+          set_upstream_state slave down || exit 1
+          if [ "$safe_schema_rollout" != true ]; then
+            curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
+              https://wao.wayuwa.cn/api/hello | grep -q '"code":0'
           fi
-          if ! deploy_slave >slave.log 2>&1; then
-            if [ "$safe_schema_rollout" = true ]; then
-              quiesce_slave stop || true
-              set_upstream_state slave down || true
-              printf '\n===== slave =====\n'; cat slave.log
-              echo 'V77 维护窗口中的 Windows 从节点升级失败；保持旧节点停止、定时同步暂停，等待下次部署继续。'
-              exit 1
-            fi
-            echo '::warning title=Windows 从节点已隔离::节点发布失败并保持 down；本次继续发布云前端和 Linux 主节点，修复 WSL 后由下次发布补齐。'
-            if [ "$safe_schema_rollout" = true ] && [ "$safe_slave_reachable" = true ]; then
-              quiesce_slave stop || exit 1
-            fi
-            if ! set_upstream_state slave down; then
-              printf '\n===== slave =====\n'; cat slave.log
-              exit 1
-            fi
-          elif [ "$slave_deployed" = true ]; then
-            if ! set_upstream_state slave up; then
-              printf '\n===== slave =====\n'; cat slave.log
-              exit 1
-            fi
-          elif ! set_upstream_state slave down; then
-            printf '\n===== slave =====\n'; cat slave.log
+
+          if ! retry_node_deploy Windows deploy_slave slave.log; then
+            set_status windows_status failed
+            set_status windows_attempts "$NODE_DEPLOY_ATTEMPTS"
+            set_status windows_detail "$(tail -n 1 slave.log)"
+            set_upstream_state slave down || true
+            printf '\n===== Windows deployment =====\n'; cat slave.log
+            echo 'Windows 从节点三次部署失败；Linux 保持当前版本，本次发布严格失败。'
             exit 1
           fi
-          printf '\n===== slave =====\n'; cat slave.log
+          set_status windows_status success
+          set_status windows_attempts "$NODE_DEPLOY_ATTEMPTS"
+          set_status windows_detail "$GITHUB_SHA"
+          if ! gateway_ready_from_cloud "$SLAVE_HOST"; then
+            set_status windows_status failed
+            set_status windows_detail '云节点无法直连 Windows Gateway'
+            set_upstream_state slave down || true
+            exit 1
+          fi
+          set_upstream_state slave up || exit 1
+          printf '\n===== Windows deployment =====\n'; cat slave.log
+
+          if [ "$safe_schema_rollout" != true ]; then
+            set_upstream_state master down || exit 1
+          fi
+          master_drained=true
+          for probe in 1 2 3 4 5; do
+            hello="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
+              "https://wao.wayuwa.cn/api/hello?windows-rollout-probe=$probe")"
+            printf '%s' "$hello" | grep -q '"code":0'
+          done
+
+          if ! retry_node_deploy Linux deploy_master master.log; then
+            set_status linux_status failed
+            set_status linux_attempts "$NODE_DEPLOY_ATTEMPTS"
+            set_status linux_detail "$(tail -n 1 master.log)"
+            set_upstream_state master down || true
+            printf '\n===== Linux deployment =====\n'; cat master.log
+            echo 'Linux 主节点三次部署失败；Windows 继续承载请求，本次发布严格失败。'
+            exit 1
+          fi
+          master_deployed=true
+          set_status linux_status success
+          set_status linux_attempts "$NODE_DEPLOY_ATTEMPTS"
+          set_status linux_detail "$GITHUB_SHA"
+
+          if [ "$safe_schema_rollout" = true ]; then
+            if ! quiesce_master complete-v77-rollout; then
+              set_status linux_status failed
+              set_status linux_detail 'V77 完成标记或飞书同步恢复失败'
+              exit 1
+            fi
+            completed_status_output="$(quiesce_master rollout-status)" || exit 1
+            completed_status="$(printf '%s\n' "$completed_status_output" | tr -d '\r' | tail -n 1)"
+            if [ "$completed_status" != complete ]; then
+              set_status linux_status failed
+              set_status linux_detail 'V77 完成状态复核失败'
+              exit 1
+            fi
+            schema_rollout_complete=true
+          fi
+          set_upstream_state master up || exit 1
+          printf '\n===== Linux deployment =====\n'; cat master.log
 
           if ! deploy_cloud >cloud.log 2>&1; then
+            set_status cloud_status failed
             printf '\n===== cloud =====\n'; cat cloud.log
             exit 1
           fi
+          set_status cloud_status success
           printf '\n===== cloud =====\n'; cat cloud.log
-          if [ "$slave_deployed" != true ] && ! set_upstream_state slave down; then
-            echo '云前端发布后未能继续隔离 Windows 从节点。'
-            exit 1
-          fi
 
-          if [ "$safe_schema_rollout" = true ]; then
-            set_upstream_state master down || exit 1
-          elif [ "$slave_deployed" = true ] && gateway_ready_from_cloud "$SLAVE_HOST"; then
-            if ! set_upstream_state master down; then
-              echo '云端未能摘流 Linux 主节点，本次不冒险重启主节点。' >master.log
-              printf '\n===== master =====\n'; cat master.log
-              exit 1
-            fi
-          else
-            echo '::notice title=Linux 主节点未摘流::Windows 从节点当前不健康，保留主节点路由以避免主动制造全站中断。'
-          fi
-          if ! deploy_master >master.log 2>&1; then
-            if [ "$safe_schema_rollout" = true ]; then
-              quiesce_master stop || true
-              set_upstream_state master down || true
-            else
-              set_upstream_state master up || true
-            fi
-            printf '\n===== master =====\n'; cat master.log
-            exit 1
-          fi
-          if [ "$safe_schema_rollout" = true ]; then
-            if [ "$safe_slave_reachable" = true ]; then
-              if ! quiesce_master complete-v77-rollout; then
-                echo 'V77 已安全部署，但飞书定时同步原状态恢复失败，保持暂停并等待人工处理。'
-                exit 1
-              fi
-              completed_status_output="$(quiesce_master rollout-status)" || exit 1
-              completed_status="$(printf '%s\n' "$completed_status_output" | tr -d '\r' | tail -n 1)"
-              if [ "$completed_status" != complete ]; then
-                echo 'V77 完成标记复核失败，保持全部节点摘流并等待下次部署继续。'
-                exit 1
-              fi
-              schema_rollout_complete=true
-            else
-              linux_only_schema_rollout=true
-              echo '::warning title=Linux 已单节点完成::Windows 从节点继续保持 down；V77 标记和飞书同步保持暂停，待从节点上线后补齐。'
-            fi
-          fi
-          if ! set_upstream_state master up; then
-            printf '\n===== master =====\n'; cat master.log
-            exit 1
-          fi
+          gateway_ready_from_cloud "$MASTER_HOST"
+          gateway_ready_from_cloud "$SLAVE_HOST"
+          retry_remote "Linux 主节点" ssh "$MASTER_USER@$MASTER_HOST" \
+            "desktop_dir=\"\$(xdg-user-dir DESKTOP 2>/dev/null || printf '%s' \"\$HOME/Desktop\")\"; sh \"\$desktop_dir/deploy/wao/deploy/scripts/validate-deployment-node.sh\" master '$GITHUB_SHA'"
+          retry_remote "Windows 从节点" windows_ssh "$SLAVE_USER@$SLAVE_HOST" \
+            "wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-deployment-node.sh slave '$GITHUB_SHA'"
 
+          stop_availability_monitor
+          if [ -s "$availability_failures" ]; then
+            set_status verification_status failed
+            cat "$availability_failures"
+            echo '滚动发布期间公共入口出现不可用采样。'
+            exit 1
+          fi
+          set_status verification_status success
           trap - EXIT
           restore_upstreams
-          printf '\n===== master =====\n'; cat master.log
       - name: Verify production and Feishu entry point
+        id: production-verification
         run: |
           hello="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors https://wao.wayuwa.cn/api/hello)"
           printf '%s' "$hello" | grep -q '"code":0'
@@ -524,6 +689,41 @@ jobs:
             printf '%s' "$feishu" | grep -q '"code":0'
             printf '%s' "$feishu" | grep -q 'https://open.feishu.cn/open-apis/authen/v1/authorize'
           done
+      - name: Record per-node deployment result
+        id: deployment-status
+        if: always()
+        env:
+          VERIFICATION_OUTCOME: ${{ steps.production-verification.outcome }}
+        run: |
+          status_file="$RUNNER_TEMP/wao-deploy-status.env"
+          if [ -f "$status_file" ]; then
+            read_status() { sed -n "s/^$1=//p" "$status_file" | tail -n 1; }
+            windows_status="$(read_status windows_status)"
+            windows_attempts="$(read_status windows_attempts)"
+            windows_detail="$(read_status windows_detail)"
+            linux_status="$(read_status linux_status)"
+            linux_attempts="$(read_status linux_attempts)"
+            linux_detail="$(read_status linux_detail)"
+            cloud_status="$(read_status cloud_status)"
+            verification_status="$(read_status verification_status)"
+          else
+            windows_status=not_started
+            windows_attempts=0
+            windows_detail=status_file_missing
+            linux_status=not_started
+            linux_attempts=0
+            linux_detail=status_file_missing
+            cloud_status=not_started
+            verification_status=not_started
+          fi
+          if [ "$VERIFICATION_OUTCOME" = failure ]; then
+            verification_status=failed
+          fi
+          for key in windows_status windows_attempts windows_detail \
+              linux_status linux_attempts linux_detail cloud_status verification_status; do
+            eval "value=\${$key}"
+            printf '%s=%s\n' "$key" "$value" >>"$GITHUB_OUTPUT"
+          done
       # Codex 出口只影响 AI 账号登录 / 令牌刷新，属于主节点网络环境问题，不代表这次发布的产物有问题。
       # 探针失败降级为告警：流水线继续，主节点 VPN 掉了仍然能在 run 摘要里看到。
       - name: Probe Codex egress on Linux master (non-blocking)
@@ -545,6 +745,14 @@ jobs:
     env:
       FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
       DEPLOY_RESULT: ${{ needs.deploy.result }}
+      WINDOWS_STATUS: ${{ needs.deploy.outputs.windows_status || 'not_started' }}
+      WINDOWS_ATTEMPTS: ${{ needs.deploy.outputs.windows_attempts || '0' }}
+      WINDOWS_DETAIL: ${{ needs.deploy.outputs.windows_detail || '无状态' }}
+      LINUX_STATUS: ${{ needs.deploy.outputs.linux_status || 'not_started' }}
+      LINUX_ATTEMPTS: ${{ needs.deploy.outputs.linux_attempts || '0' }}
+      LINUX_DETAIL: ${{ needs.deploy.outputs.linux_detail || '无状态' }}
+      CLOUD_STATUS: ${{ needs.deploy.outputs.cloud_status || 'not_started' }}
+      VERIFICATION_STATUS: ${{ needs.deploy.outputs.verification_status || 'not_started' }}
     steps:
       - name: Notify Feishu
         if: env.FEISHU_WEBHOOK_URL != ''
@@ -579,6 +787,10 @@ jobs:
             --arg sha_url "$COMMIT_URL" \
             --arg change "$change_summary" \
             --arg deploy "$DEPLOY_RESULT" \
+            --arg windows "${WINDOWS_STATUS}（尝试 ${WINDOWS_ATTEMPTS} 次）\n${WINDOWS_DETAIL}" \
+            --arg linux "${LINUX_STATUS}（尝试 ${LINUX_ATTEMPTS} 次）\n${LINUX_DETAIL}" \
+            --arg cloud "$CLOUD_STATUS" \
+            --arg verification "$VERIFICATION_STATUS" \
             --arg run_url "$RUN_URL" \
             '{
               msg_type: "interactive",
@@ -595,7 +807,13 @@ jobs:
                   { tag: "hr" },
                   { tag: "div", text: { tag: "lark_md", content: ("**本次改动**\n" + $change) } },
                   { tag: "hr" },
-                  { tag: "div", text: { tag: "lark_md", content: ("**部署结果**\n" + $deploy) } },
+                  { tag: "div", text: { tag: "lark_md", content: ("**整体结果**\n" + $deploy) } },
+                  { tag: "div", fields: [
+                    { is_short: false, text: { tag: "lark_md", content: ("**Windows 从节点**\n" + $windows) } },
+                    { is_short: false, text: { tag: "lark_md", content: ("**Linux 主节点**\n" + $linux) } },
+                    { is_short: true, text: { tag: "lark_md", content: ("**云节点**\n" + $cloud) } },
+                    { is_short: true, text: { tag: "lark_md", content: ("**最终验收**\n" + $verification) } }
+                  ] },
                   { tag: "action", actions: [
                     { tag: "button", text: { tag: "plain_text", content: "查看运行详情" }, url: $run_url, type: "primary" }
                   ] }
