@@ -19,9 +19,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.jdbc.Sql;
+import org.springframework.test.context.jdbc.SqlConfig;
 
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:skillmarket;DB_CLOSE_DELAY=-1;MODE=MySQL")
-@Sql(scripts = "/skill-market-schema.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS)
+@Sql(
+        scripts = "/skill-market-schema.sql",
+        executionPhase = Sql.ExecutionPhase.BEFORE_TEST_CLASS,
+        config = @SqlConfig(encoding = "UTF-8")
+)
 class SkillMarketServiceIntegrationTest {
     @Autowired SkillMarketService market;
     @Autowired JdbcTemplate jdbc;

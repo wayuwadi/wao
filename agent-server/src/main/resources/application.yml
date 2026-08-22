@@ -25,6 +25,7 @@ spring:
   sql:
     init:
       mode: always
+      encoding: UTF-8
       schema-locations: classpath:db/local/schema.sql
   session:
     store-type: jdbc
