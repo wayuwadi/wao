@@ -157,6 +157,13 @@ EOF
 chmod 0440 /etc/sudoers.d/wao-jenkins
 visudo -cf /etc/sudoers.d/wao-jenkins
 
+# Jenkins Git client's temporary AskPass process is unreliable on the controller's
+# Git 2.53 package. Keep the same host-scoped PAT in a native credential helper;
+# neither the token nor its expansion appears in the process command line.
+runuser -u jenkins -- git config --global credential.https://github.com.username wayuwacn
+runuser -u jenkins -- git config --global credential.https://github.com.helper \
+  '!f() { printf "username=wayuwacn\npassword="; tr -d "\r\n" </etc/jenkins/secrets/github-pat; printf "\n\n"; }; f'
+
 systemctl daemon-reload
 systemctl enable --now jenkins.service
 systemctl enable --now wao-jenkins-backup.timer

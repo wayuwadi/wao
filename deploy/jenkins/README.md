@@ -23,6 +23,9 @@ sudo sh deploy/jenkins/prepare-controller-secrets.sh
 
 在 GitHub 创建仅限 `wayuwacn/wao` 的细粒度 PAT，权限为 `Contents: read`、
 `Commit statuses: read/write`，将令牌直接写入 `/etc/jenkins/secrets/github-pat`，不要粘贴到命令历史或日志。
+安装脚本会为 `jenkins` 用户配置仅匹配 `https://github.com` 的 Git credential helper；helper 运行时直接读取
+这个文件，Token 不进入 Git 配置、进程参数或控制台输出。Credential Store 中的同一 PAT 只用于 GitHub API
+和提交状态回写。
 随后运行：
 
 ```sh

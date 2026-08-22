@@ -93,7 +93,6 @@ jobs:
               git {
                 remote {
                   url('https://github.com/wayuwacn/wao.git')
-                  credentials('wao-github-pat')
                   refspec('+refs/heads/${WAO_JENKINS_SCM_BRANCH}:refs/remotes/origin/${WAO_JENKINS_SCM_BRANCH}')
                 }
                 branch('*/${WAO_JENKINS_SCM_BRANCH}')
