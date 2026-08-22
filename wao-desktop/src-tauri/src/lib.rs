@@ -96,6 +96,13 @@ pub fn run() {
                     let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
                 }
             }
+
+            // Switching an already-created macOS window to Accessory mode can leave it
+            // ordered out even when the Tauri configuration says `visible: true`.
+            // Explicitly show it after tray creation and positioning so first launch is
+            // visible on the current Space instead of appearing as a tray-only process.
+            #[cfg(target_os = "macos")]
+            show_pet(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())
