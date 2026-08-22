@@ -5,6 +5,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Update } from '@tauri-apps/plugin-updater'
+import fruitKernelRaccoon from './assets/wao-fruit-kernel-raccoon.png'
 import { findUpdate, installUpdate, type UpdateState } from './update'
 
 const WAO_URL = 'https://wao.wayuwa.cn'
@@ -84,15 +85,14 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="pet" :class="{ working: busy }" aria-label="WAO 桌面宠物">
-      <div class="ears" aria-hidden="true"><i></i><i></i></div>
-      <div class="body">
-        <div class="eyes"><i></i><i></i></div>
-        <div class="mouth"></div>
-        <div class="cheeks"><i></i><i></i></div>
-        <span class="mark">W</span>
-      </div>
-      <div class="shadow"></div>
+    <section class="pet" :class="{ working: busy }" aria-label="WAO 果核狸桌面宠物">
+      <img
+        class="pet-sprite"
+        :src="fruitKernelRaccoon"
+        alt=""
+        aria-hidden="true"
+        draggable="false"
+      >
     </section>
 
     <nav class="pet-actions" aria-label="桌面宠物操作">
