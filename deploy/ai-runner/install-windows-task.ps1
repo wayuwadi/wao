@@ -118,8 +118,8 @@ $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" 
 $task = New-ScheduledTask -Action $action -Trigger $triggers -Settings $settings -Principal $principal `
     -Description 'WAO AI Runner: start at boot/logon, restart after failures, and check every minute.'
 
-Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force | Out-Null
-Start-ScheduledTask -TaskName $TaskName
+Register-ScheduledTask -TaskName $TaskName -InputObject $task -Force -ErrorAction Stop | Out-Null
+Start-ScheduledTask -TaskName $TaskName -ErrorAction Stop
 Write-Host "Scheduled task installed and started: $TaskName"
 Write-Host "Runtime: $taskPython"
 Write-Host "Principal: $($principal.UserId); workspace: $resolvedRoot; concurrency: $MaxConcurrency"
