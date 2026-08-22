@@ -12,6 +12,8 @@ import cn.wayuwa.wao.dto.ProjectMemoryContextDto;
 import cn.wayuwa.wao.dto.ProjectMemoryDto;
 import cn.wayuwa.wao.dto.ProjectMemoryReferenceDto;
 import cn.wayuwa.wao.dto.SaveProjectMemoryRequest;
+import cn.wayuwa.wao.dto.SaveMemoryRequest;
+import cn.wayuwa.wao.dto.MemoryDocumentDto;
 import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.dto.TaskDetail;
 import cn.wayuwa.wao.mapper.AiRunMemoryReadMapper;
@@ -40,6 +42,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -64,18 +67,34 @@ public class ProjectMemoryService {
     private final AiRunMemoryWriteMapper writes;
     private final ProjectService projects;
     private final ObjectMapper json;
+    private final UnifiedMemoryService unified;
 
+    @Autowired
     public ProjectMemoryService(ProjectMemoryMapper memories, AiRunMemoryReadMapper reads,
-            AiRunMemoryWriteMapper writes, ProjectService projects, ObjectMapper json) {
+            AiRunMemoryWriteMapper writes, ProjectService projects, ObjectMapper json,
+            UnifiedMemoryService unified) {
         this.memories = memories;
         this.reads = reads;
         this.writes = writes;
         this.projects = projects;
         this.json = json;
+        this.unified = unified;
+    }
+
+    ProjectMemoryService(ProjectMemoryMapper memories, AiRunMemoryReadMapper reads,
+            AiRunMemoryWriteMapper writes, ProjectService projects, ObjectMapper json) {
+        this.memories = memories; this.reads = reads; this.writes = writes;
+        this.projects = projects; this.json = json; this.unified = null;
     }
 
     /** 列出当前成员可见项目的工程记忆，可按分类和关键词过滤。 */
     public List<ProjectMemoryDto> list(String projectId, String memberId, String query, String category) {
+        if (unified != null) {
+            return unified.list(memberId, "project", projectId, query, category, null).stream()
+                    .filter(document -> StringUtils.hasText(document.currentPublishedRevisionId()))
+                    .filter(document -> !"archived".equals(document.state()))
+                    .map(this::fromUnified).toList();
+        }
         projects.get(projectId, memberId);
         String normalizedCategory = normalizeOptionalCategory(category);
         String needle = trim(query).toLowerCase(Locale.ROOT);
@@ -93,6 +112,11 @@ public class ProjectMemoryService {
     /** 由项目成员人工创建一条工程记忆。 */
     @Transactional
     public ProjectMemoryDto create(String projectId, String memberId, SaveProjectMemoryRequest request) {
+        if (unified != null) {
+            return fromUnified(unified.create(memberId, new SaveMemoryRequest("project", projectId,
+                    request.category(), request.title(), request.content(), "人工提交的项目记忆候选",
+                    request.evidenceLinks(), null, null), "human"));
+        }
         projects.get(projectId, memberId);
         ProjectMemoryEntity entity = build(projectId, request.category(), request.title(), request.content(),
                 request.evidenceLinks(), null, null, memberId);
@@ -105,6 +129,12 @@ public class ProjectMemoryService {
     @Transactional
     public ProjectMemoryDto update(String projectId, String memoryId, String memberId,
             SaveProjectMemoryRequest request) {
+        if (unified != null) {
+            MemoryDocumentDto current = unified.get(memberId, memoryId, null);
+            return fromUnified(unified.revise(memberId, memoryId, new SaveMemoryRequest("project", projectId,
+                    request.category(), request.title(), request.content(), "人工修订的项目记忆候选",
+                    request.evidenceLinks(), null, current.currentPublishedRevisionId()), "human"));
+        }
         projects.get(projectId, memberId);
         ProjectMemoryEntity entity = require(projectId, memoryId);
         ProjectMemoryEntity normalized = build(projectId, request.category(), request.title(), request.content(),
@@ -123,6 +153,7 @@ public class ProjectMemoryService {
     /** 删除一条项目工程记忆；运行引用由数据库外键一并清理。 */
     @Transactional
     public void delete(String projectId, String memoryId, String memberId) {
+        if (unified != null) { unified.archive(memberId, memoryId); return; }
         projects.get(projectId, memberId);
         require(projectId, memoryId);
         memories.deleteById(memoryId);
@@ -205,6 +236,13 @@ public class ProjectMemoryService {
         for (ProjectMemoryCandidate candidate : candidates.stream().limit(MAX_CANDIDATES).toList()) {
             try {
                 if (candidate.evidenceLinks() == null || candidate.evidenceLinks().isEmpty()) continue;
+                if (unified != null) {
+                    MemoryDocumentDto draft = unified.createProjectCandidate(run.getProjectId(), candidate.category(),
+                            candidate.title(), candidate.content(), candidate.evidenceLinks(), run.getTaskId(), run.getId());
+                    created.add(new ProjectMemoryReferenceDto(draft.id(), run.getProjectId(), candidate.category(),
+                            candidate.title(), candidate.content(), run.getTaskId(), run.getId(), candidate.evidenceLinks()));
+                    continue;
+                }
                 ProjectMemoryEntity entity = build(run.getProjectId(), candidate.category(), candidate.title(),
                         candidate.content(), candidate.evidenceLinks(), run.getTaskId(), run.getId(), "ai");
                 if (!fingerprints.add(entity.getContentFingerprint()) || duplicateExists(entity, null)) continue;
@@ -224,6 +262,18 @@ public class ProjectMemoryService {
         return created;
     }
 
+    private ProjectMemoryDto fromUnified(MemoryDocumentDto document) {
+        List<String> links = document.revision().sources().stream().map(source -> source.url())
+                .filter(StringUtils::hasText).toList();
+        String taskId = document.revision().sources().stream().filter(source -> "task".equals(source.type()))
+                .map(source -> source.sourceId()).filter(StringUtils::hasText).findFirst().orElse(null);
+        String runId = document.revision().sources().stream().filter(source -> "run".equals(source.type()))
+                .map(source -> source.sourceId()).filter(StringUtils::hasText).findFirst().orElse(null);
+        return new ProjectMemoryDto(document.id(), document.scopeId(), document.category(),
+                document.revision().title(), document.revision().content(), taskId, runId, links,
+                document.createdBy(), text(document.createdAt()), text(document.updatedAt()));
+    }
+
     /** 批量读取 AI Run 实际读取的记忆引用，供运行详情展示。 */
     public Map<String, List<ProjectMemoryReferenceDto>> readReferences(List<String> runIds) {
         return references(runIds, true);
@@ -231,7 +281,21 @@ public class ProjectMemoryService {
 
     /** 批量读取 AI Run 实际写入的记忆引用，供运行详情展示。 */
     public Map<String, List<ProjectMemoryReferenceDto>> writeReferences(List<String> runIds) {
-        return references(runIds, false);
+        Map<String, List<ProjectMemoryReferenceDto>> result = new LinkedHashMap<>(references(runIds, false));
+        if (unified != null) {
+            unified.projectMemoriesByRuns(runIds).forEach((runId, documents) -> {
+                List<ProjectMemoryReferenceDto> merged = new ArrayList<>(result.getOrDefault(runId, List.of()));
+                for (MemoryDocumentDto document : documents) {
+                    ProjectMemoryDto item = fromUnified(document);
+                    if (merged.stream().noneMatch(existing -> existing.id().equals(item.id()))) {
+                        merged.add(new ProjectMemoryReferenceDto(item.id(), item.projectId(), item.category(),
+                                item.title(), item.content(), item.sourceTaskId(), item.sourceRunId(), item.evidenceLinks()));
+                    }
+                }
+                result.put(runId, merged);
+            });
+        }
+        return result;
     }
 
     private Map<String, List<ProjectMemoryReferenceDto>> references(List<String> runIds, boolean reading) {

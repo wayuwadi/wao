@@ -8,6 +8,8 @@ import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.dto.CreateMemoryAccessTokenRequest;
 import cn.wayuwa.wao.dto.CreatedMemoryAccessTokenDto;
 import cn.wayuwa.wao.dto.MemoryAccessTokenDto;
+import cn.wayuwa.wao.dto.MemoryGrantDto;
+import cn.wayuwa.wao.dto.SaveMemoryGrantsRequest;
 import cn.wayuwa.wao.service.MemoryAccessTokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -51,6 +54,19 @@ public class MemoryAccessTokenController {
     public ApiResponse<Void> revoke(@PathVariable String tokenId, HttpServletRequest request) {
         service.revoke(member(request), tokenId);
         return ApiResponse.ok(null);
+    }
+
+    /** 列出设备可访问的个人、组织和项目上下文。 */
+    @GetMapping("/{tokenId}/grants")
+    public ApiResponse<List<MemoryGrantDto>> grants(@PathVariable String tokenId, HttpServletRequest request) {
+        return ApiResponse.ok(service.listGrants(member(request), tokenId));
+    }
+
+    /** 替换设备的组织/项目授权；个人域授权由服务端固定保留。 */
+    @PutMapping("/{tokenId}/grants")
+    public ApiResponse<List<MemoryGrantDto>> saveGrants(@PathVariable String tokenId,
+            @Valid @RequestBody SaveMemoryGrantsRequest body, HttpServletRequest request) {
+        return ApiResponse.ok(service.saveGrants(member(request), tokenId, body.grants()));
     }
 
     private String member(HttpServletRequest request) {

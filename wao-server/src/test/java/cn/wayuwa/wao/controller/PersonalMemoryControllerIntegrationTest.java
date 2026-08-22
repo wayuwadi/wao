@@ -26,7 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 /** 从真实 HTTP 到数据库验证多模态持久化与成员隔离。 */
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:personalmemorytest;DB_CLOSE_DELAY=-1;MODE=MySQL")
 @AutoConfigureMockMvc
-@Sql("/personal-memory-schema.sql")
+@Sql({"/personal-memory-schema.sql", "/unified-memory-schema.sql"})
 class PersonalMemoryControllerIntegrationTest {
     @Autowired private MockMvc mvc;
     @Autowired private JdbcTemplate jdbc;

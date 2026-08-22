@@ -888,6 +888,8 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V79__task_created_at.sql`：新增任务真实创建时间，按稳定 id 的 13 位毫秒时间戳前缀回填可确认的存量任务；无可靠来源的极早期数据保持空值。
 - `V80__ai_run_model_selection.sql`：固化每次 Codex AI Run 选择的模型与推理强度（见 ADR-091）。
 - `V81__ai_run_plan_mode.sql`：固化每次 Codex AI Run 的 Plan 工作流选择，Runner 在问题出现时自动采用推荐项（见 ADR-093）。
+- `V82__skill_market.sql`：保存 Skill 市场包、不可变版本、审核记录、安装状态与成员评价（见 ADR-094、ADR-095）。
+- `V83__unified_memory_center.sql`：建立个人、组织、项目共用的权威记忆文档、不可变版本、来源、附件、设备授权、outbox 与使用审计，并把旧个人/项目/共享记忆迁为已发布 v1（见 ADR-096）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V81 链路，

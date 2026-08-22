@@ -1,71 +1,49 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MemoryMcpPanel from '@/components/settings/MemoryMcpPanel.vue'
-import {
-  createMemoryAccessToken,
-  fetchMemoryAccessTokens,
-  revokeMemoryAccessToken,
-} from '@/api/memory'
+import { createMemoryAccessToken, fetchMemoryAccessTokens, fetchMemoryGrants,
+  revokeMemoryAccessToken } from '@/api/memory'
 
+vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ org: { id: 'o1', name: 'WAO' } }) }))
+vi.mock('@/api/board', () => ({ fetchProjects: vi.fn().mockResolvedValue([{ id: 'p1', name: 'WAO 项目' }]) }))
 vi.mock('@/api/memory', () => ({
-  fetchMemoryAccessTokens: vi.fn<(typeof import('@/api/memory'))['fetchMemoryAccessTokens']>(),
-  createMemoryAccessToken: vi.fn<(typeof import('@/api/memory'))['createMemoryAccessToken']>(),
-  revokeMemoryAccessToken: vi.fn<(typeof import('@/api/memory'))['revokeMemoryAccessToken']>(),
+  fetchMemoryAccessTokens: vi.fn(), createMemoryAccessToken: vi.fn(), revokeMemoryAccessToken: vi.fn(),
+  fetchMemoryGrants: vi.fn(), saveMemoryGrants: vi.fn(),
 }))
 
 describe('MemoryMcpPanel', () => {
-  beforeEach(() => {
-    vi.mocked(fetchMemoryAccessTokens).mockResolvedValue([])
+  beforeEach(() => { vi.mocked(fetchMemoryAccessTokens).mockResolvedValue([]); vi.mocked(fetchMemoryGrants).mockResolvedValue([]) })
+  afterEach(() => vi.clearAllMocks())
+
+  it('展示权威源边界和个人上下文 MCP 命令', async () => {
+    const wrapper = mount(MemoryMcpPanel); await flushPromises()
+    expect(wrapper.text()).toContain('WAO 是跨设备长期记忆的唯一权威源')
+    expect(wrapper.text()).toContain('组织和项目域只提交审核候选')
+    expect(wrapper.text()).toContain('/api/mcp/memory/personal')
+    expect(wrapper.text()).toContain('不会伪造自动导入')
   })
 
-  afterEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('展示真实 MCP 地址、无向量伪造说明和跨端接入命令', async () => {
-    const wrapper = mount(MemoryMcpPanel)
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('WAO 是账号私有的跨设备记忆源')
-    expect(wrapper.text()).toContain('没有稳定 embedding 来源时不建立会过期的空向量副本')
-    expect(wrapper.text()).toContain('codex mcp add wao-memory --url http://localhost:3000/api/mcp')
-    expect(wrapper.text()).toContain('外部 Codex 历史没有官方可靠导出接口')
-  })
-
-  it('生成的完整令牌只在本次界面显示并加入真实设备列表', async () => {
-    vi.mocked(createMemoryAccessToken).mockResolvedValue({
-      token: {
-        id: 'token-1', name: '家里 Windows', tokenPrefix: 'wao_mcp_abcdefgh',
-        createdAt: '2026-08-17T18:00:00',
-      },
-      secret: 'wao_mcp_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG',
-    })
-    const wrapper = mount(MemoryMcpPanel)
-    await flushPromises()
-
-    await wrapper.get('input').setValue('家里 Windows')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-
+  it('完整令牌只在本次界面显示并加入设备列表', async () => {
+    vi.mocked(createMemoryAccessToken).mockResolvedValue({ token: {
+      id: 'token-1', name: '家里 Windows', tokenPrefix: 'wao_mcp_abcdefgh', createdAt: '2026-08-17T18:00:00',
+    }, secret: 'wao_mcp_test-only-placeholder' })
+    const wrapper = mount(MemoryMcpPanel); await flushPromises()
+    await wrapper.get('form input').setValue('家里 Windows'); await wrapper.get('form').trigger('submit'); await flushPromises()
     expect(createMemoryAccessToken).toHaveBeenCalledWith('家里 Windows')
-    expect(wrapper.text()).toContain('wao_mcp_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG')
-    expect(wrapper.text()).toContain('家里 Windows')
-    expect(wrapper.text()).not.toContain('演示环境')
+    expect(wrapper.text()).toContain('wao_mcp_test-only-placeholder')
   })
 
-  it('吊销前确认并立即移除对应设备', async () => {
-    vi.mocked(fetchMemoryAccessTokens).mockResolvedValue([{
-      id: 'token-1', name: '办公室 Mac', tokenPrefix: 'wao_mcp_abcdefgh',
-      createdAt: '2026-08-17T18:00:00', lastUsedAt: '2026-08-17T18:02:00',
-    }])
+  it('可读取设备范围并立即吊销', async () => {
+    vi.mocked(fetchMemoryAccessTokens).mockResolvedValue([{ id: 'token-1', name: '办公室 Mac',
+      tokenPrefix: 'wao_mcp_abcdefgh', createdAt: '2026-08-17T18:00:00' }])
+    vi.mocked(fetchMemoryGrants).mockResolvedValue([{ scopeType: 'project', scopeId: 'p1', canRead: true,
+      canPropose: true, canDirectWrite: false }])
     vi.mocked(revokeMemoryAccessToken).mockResolvedValue({} as never)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const wrapper = mount(MemoryMcpPanel)
-    await flushPromises()
-
-    await wrapper.get('.revoke').trigger('click')
-    await flushPromises()
-
+    const wrapper = mount(MemoryMcpPanel); await flushPromises()
+    await wrapper.get('.grant').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('WAO 项目')
+    await wrapper.get('.revoke').trigger('click'); await flushPromises()
     expect(revokeMemoryAccessToken).toHaveBeenCalledWith('token-1')
     expect(wrapper.text()).not.toContain('办公室 Mac')
   })

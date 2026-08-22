@@ -147,6 +147,10 @@ const router = createRouter({
         },
         {
           path: 'memory',
+          redirect: { path: '/memories', query: { scope: 'personal' } },
+        },
+        {
+          path: 'memories',
           name: 'memory',
           component: () => import('@/views/MemoryView.vue'),
           meta: { module: 'memory', tabKind: 'module' },

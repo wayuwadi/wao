@@ -87,6 +87,11 @@ public class ProjectService {
         return toDto(requireVisible(id, memberId));
     }
 
+    /** 只校验项目可见性，不加载任务活动等详情，供范围授权等热路径使用。 */
+    public void requireAccess(String id, String memberId) {
+        requireVisible(id, memberId);
+    }
+
     /**
      * 新建项目，并将负责人设为当前登录成员。
      *
