@@ -108,7 +108,9 @@ jobs:
               }
             }
             scriptPath('Jenkinsfile')
-            lightweight(true)
+            // Lightweight checkout uses a separate controller cache and ignores
+            // cloneOptions.noTags; use the pre-warmed job workspace instead.
+            lightweight(false)
           }
         }
       }
