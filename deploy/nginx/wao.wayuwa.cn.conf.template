@@ -60,6 +60,33 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
+    # 桌面宠物安装包与签名更新包独立于 Web dist 生命周期；发布清单最后原子替换且禁止缓存。
+    location = /downloads/desktop/latest.json {
+        alias /var/www/wao-downloads/desktop/latest.json;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header X-Content-Type-Options nosniff always;
+    }
+
+    location = /downloads/desktop/WAO-Pet-windows-x64-setup.exe {
+        alias /var/www/wao-downloads/desktop/WAO-Pet-windows-x64-setup.exe;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header X-Content-Type-Options nosniff always;
+    }
+
+    location = /downloads/desktop/WAO-Pet-macos-universal.dmg {
+        alias /var/www/wao-downloads/desktop/WAO-Pet-macos-universal.dmg;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header X-Content-Type-Options nosniff always;
+    }
+
+    location ^~ /downloads/desktop/ {
+        alias /var/www/wao-downloads/desktop/;
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options nosniff always;
+    }
+
     location = /agent {
         return 301 /agent/;
     }

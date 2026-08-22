@@ -1,0 +1,67 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WAO 桌面宠物",
+  "version": "0.1.0",
+  "identifier": "cn.wayuwa.wao.desktop-pet",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "WAO 桌面宠物",
+        "width": 240,
+        "height": 320,
+        "minWidth": 240,
+        "minHeight": 320,
+        "maxWidth": 240,
+        "maxHeight": 320,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": true,
+        "focus": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' https://wao.wayuwa.cn; img-src 'self' asset:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "10.15"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczNThGNDhGQjQxREFENTcKUldSWHJSMjBqL1JZYzQ3STFDSDNaV3Z2WkkrVFgrNUd4eWxpZmNsUUxSOFp3SjBLV2tCU2RCeEgK",
+      "endpoints": ["https://wao.wayuwa.cn/downloads/desktop/latest.json"],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}
