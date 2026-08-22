@@ -6,7 +6,11 @@ param(
     [ValidateRange(1, 8)][int]$MaxConcurrency = 2,
     [string]$Engines = '',
     [string]$TaskName = 'WAO AI Runner',
-    [string]$PythonPath = ''
+    [string]$PythonPath = '',
+    [string]$GitCommand = '',
+    [string]$CodexCommand = '',
+    [string]$ClaudeCommand = '',
+    [string]$QoderCommand = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,6 +33,44 @@ if (-not $PythonPath) {
 if (-not $PythonPath) {
     throw 'No usable Python interpreter found. Install Python or pass -PythonPath once.'
 }
+
+if (-not $GitCommand) {
+    $GitCommand = (Get-Command git.exe -All -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path -LiteralPath $_.Source } |
+        Select-Object -First 1 -ExpandProperty Source)
+    if (-not $GitCommand) {
+        $programFilesGit = Join-Path $env:ProgramFiles 'Git\cmd\git.exe'
+        if (Test-Path -LiteralPath $programFilesGit -PathType Leaf) {
+            $GitCommand = $programFilesGit
+        }
+    }
+}
+if (-not $GitCommand) {
+    throw 'No usable Git executable found. Install Git for Windows or pass -GitCommand.'
+}
+
+if (-not $CodexCommand) {
+    # The ChatGPT/Codex desktop app also registers a WindowsApps codex.exe alias, but that
+    # protected app binary cannot be launched by a background runner. Prefer the official
+    # OpenAI.Codex winget package before consulting PATH.
+    $wingetPackages = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (Test-Path -LiteralPath $wingetPackages) {
+        $CodexCommand = Get-ChildItem `
+            -LiteralPath $wingetPackages `
+            -Filter 'codex-x86_64-pc-windows-msvc.exe' `
+            -Recurse `
+            -File `
+            -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -like '*OpenAI.Codex*' } |
+            Select-Object -First 1 -ExpandProperty FullName
+    }
+}
+if (-not $CodexCommand) {
+    $CodexCommand = (Get-Command codex.exe -All -ErrorAction SilentlyContinue |
+        Where-Object { $_.Source -notlike '*\WindowsApps\OpenAI.Codex_*' -and (Test-Path -LiteralPath $_.Source) } |
+        Select-Object -First 1 -ExpandProperty Source)
+}
+
 $resolvedPython = (Resolve-Path -LiteralPath $PythonPath).Path
 $pythonwPath = Join-Path (Split-Path $resolvedPython) 'pythonw.exe'
 $taskPython = if (Test-Path -LiteralPath $pythonwPath -PathType Leaf) {
@@ -49,6 +91,17 @@ $arguments = @(
     '--windows-task-name', ('"{0}"' -f $TaskName)
 )
 if ($Engines) { $arguments += @('--engines', ('"{0}"' -f $Engines)) }
+foreach ($command in @(
+    @{ Argument = '--git-command'; Path = $GitCommand },
+    @{ Argument = '--codex-command'; Path = $CodexCommand },
+    @{ Argument = '--claude-command'; Path = $ClaudeCommand },
+    @{ Argument = '--qoder-command'; Path = $QoderCommand }
+)) {
+    if ($command.Path) {
+        $resolvedCommand = (Resolve-Path -LiteralPath $command.Path -ErrorAction Stop).Path
+        $arguments += @($command.Argument, ('"{0}"' -f $resolvedCommand))
+    }
+}
 
 $action = New-ScheduledTaskAction -Execute $taskPython -Argument ($arguments -join ' ') -WorkingDirectory (Split-Path $resolvedRunner)
 $triggers = @(
@@ -70,3 +123,5 @@ Start-ScheduledTask -TaskName $TaskName
 Write-Host "Scheduled task installed and started: $TaskName"
 Write-Host "Runtime: $taskPython"
 Write-Host "Principal: $($principal.UserId); workspace: $resolvedRoot; concurrency: $MaxConcurrency"
+Write-Host "Git: $GitCommand"
+if ($CodexCommand) { Write-Host "Codex: $CodexCommand" }

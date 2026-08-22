@@ -13,7 +13,7 @@ WAO 系统是一个由两名 Java 服务端工程师（娃哥、娃弟）主导�
 | 名称 | 角色 | 系统 | 配置 | 硬盘 | 网络 | 域名/IP |
 |------|------|------|------|------|------|---------|
 | 娃弟的电脑 | 主节点 | Ubuntu | 20 核 / 32G | 500G | 公网动态 IP | linux2.wayuwa.cn |
-| 娃哥的电脑 | 从节点 | Windows Server 2025 | 20 核 / 32G | 100G | 公网动态 IP | windows1.wayuwa.cn |
+| 娃哥的电脑 | 从节点 | Windows 11 Pro | 20 核 / 32G | 100G | 公网动态 IP | windows1.wayuwa.cn |
 | 阿里云服务器 | 接入层 | Ubuntu | 2 核 / 2G | 50G | 固定 IP，开放 80/443 | 8.136.152.131 |
 
 ### 1.3 关键约束
@@ -22,7 +22,7 @@ WAO 系统是一个由两名 Java 服务端工程师（娃哥、娃弟）主导�
 
 **云服务器 2H2G**：仅承载 Nginx（SSL 终止 + 静态文件托管 + 反向代理），不运行 Java 进程。
 
-**Windows Server 2025**：通过 Docker Desktop（WSL2 后端）运行容器，功能完整但运维便利度低于 Linux，因此定为从节点。
+**Windows 11 Pro**：通过 WSL2 Ubuntu 24.04 内的原生 Docker Engine 运行容器，不依赖 Docker Desktop，因此定为从节点。
 
 **硬盘差异**：主节点 500G 承载主库数据；从节点 100G 承载从库 + 备份，需定期清理。
 
@@ -31,7 +31,7 @@ WAO 系统是一个由两名 Java 服务端工程师（娃哥、娃弟）主导�
 | 开发者 | 开发机 | 系统 | AI 工具 | GitHub 账号 |
 |--------|--------|------|---------|-------------|
 | 娃弟 | linux2.wayuwa.cn | Ubuntu | Claude（Claude Code） | wayuwadi |
-| 娃哥 | windows1.wayuwa.cn | Windows Server 2025 | Codex（OpenAI Codex CLI） | wayuwage |
+| 娃哥 | windows1.wayuwa.cn | Windows 11 Pro | Codex（OpenAI Codex CLI） | wayuwage |
 
 两人角色对等，均可参与前端、后端、部署等任何模块的开发。分工按迭代任务动态分配，不做固定绑定。
 
@@ -483,7 +483,7 @@ sudo ddns-go -s install
 # 访问 http://localhost:9876 配置，域名填 linux2.wayuwa.cn
 ```
 
-Windows Server 2025（娃哥电脑）：
+Windows 11 Pro（娃哥电脑）：
 
 ```powershell
 # 下载 Windows 版 ddns-go 解压后管理员运行：
@@ -524,7 +524,7 @@ sudo ufw allow from 8.136.152.131 to any port 22 proto tcp
 sudo ufw enable
 ```
 
-**娃哥电脑（Windows Server 2025）防火墙规则**：
+**娃哥电脑（Windows 11 Pro）防火墙规则**：
 
 通过 Windows Firewall 高级设置，创建入站规则：
 - 9000 端口：仅允许 8.136.152.131

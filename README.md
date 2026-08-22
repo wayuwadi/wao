@@ -61,7 +61,7 @@ Invoke-RestMethod http://localhost:9000/api/hello
 
 ## 为什么 Windows 生产节点使用 WSL2 Ubuntu
 
-MySQL、Redis、Nacos 和项目 Dockerfile 当前均使用 Linux 容器镜像，需要 Linux 内核提供容器运行能力。Docker Desktop 不支持 Windows Server，因此落地方案是在 Windows Server 的 WSL2 中安装轻量的 Ubuntu 24.04 和 Docker Engine。
+MySQL、Redis、Nacos 和项目 Dockerfile 当前均使用 Linux 容器镜像，需要 Linux 内核提供容器运行能力。Windows 生产从节点采用 Windows 11 Pro 的 WSL2，在无桌面的 Ubuntu 24.04 中直接安装 Docker Engine；不依赖 Docker Desktop 的桌面登录和单独生命周期。
 
 这不会把电脑改成 Ubuntu，也不会影响 Windows 日常使用：代码仍在 `D:\CodeSpace\wao`，部署目录仍在 `D:\deploy`，Ubuntu 只作为无桌面的后台容器运行层。实机将 WSL 限制为 4 核、8GB 内存和 2GB swap；当前完整副本运行约占 3GB 内存，动态 VHD 约 4GB。停止计划任务并执行 `wsl --shutdown` 后，运行内存会释放。
 

@@ -14,6 +14,10 @@ AI Runner 安装在娃哥、娃弟的 Windows 电脑和 Linux 主节点上。WAO
    - Codex CLI，执行过 `codex login`；
    - Claude Code CLI，执行过 `claude` 并完成登录；
    - Qoder CLI（国际版命令名 `qodercli`，国内版 `qoderclicn`），执行过一次并在 TUI 里 `/login` 完成登录。
+
+   Windows 11 推荐使用 `winget install --id OpenAI.Codex --exact` 安装独立 Codex CLI。桌面应用也会注册
+   `codex.exe`，但其受保护的内部路径不能供后台 Runner 启动；任务安装器会优先识别官方 winget CLI，
+   并把绝对路径写入计划任务。
 2. 打开 WAO 首页 AI 控制台 →「AI 工作流」，填写仓库地址、默认 AI 工具并开启开关。
 3. 切到「执行电脑」点击“生成配对码”，十分钟内在对应电脑运行。
 
