@@ -17,8 +17,8 @@
   通过 Linux 主动建立的反向 SSH 隧道转发这一条精确路径，不公开 Jenkins UI。
 - Maven 与 Node 工具链使用固定容器，四个应用镜像只构建一次并以完整 Git SHA 标记。发布顺序保持
   Windows → Linux → 云端，任一节点失败都不能伪装成整体成功。
-- Windows 与云节点使用新的 Jenkins 专用 SSH 密钥和独立 `known_hosts`。GitHub PAT 仅限本仓库内容读取和
-  commit status 写入；生产环境、证书与飞书配置继续取自 Linux 主节点的私有部署目录。
+- Windows 与云节点使用新的 Jenkins 专用 SSH 密钥和独立 `known_hosts`。仓库检出使用本仓库只读的
+  GitHub Deploy Key，GitHub PAT 仅用于 commit status 写入；生产环境、证书与飞书配置继续取自 Linux 主节点的私有部署目录。
 - Jenkinsfile、JCasC、插件清单、安装、备份和验收脚本进入仓库；真实 PAT、Webhook secret、SSH 私钥、
   known_hosts 和管理员密码只保存在 `/etc/jenkins/secrets`。
 - Jenkins 每日仅在 executor 空闲时做 Linux 本地备份，保留七份。该选择不承诺 Linux 物理磁盘损坏后的异机恢复。

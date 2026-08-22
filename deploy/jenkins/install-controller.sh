@@ -54,7 +54,7 @@ generate_secret "$secret_dir/github-webhook-secret"
 generate_key "$secret_dir/windows-ed25519"
 generate_key "$secret_dir/cloud-ed25519"
 
-for required in github-pat windows-known-hosts cloud-known-hosts; do
+for required in github-pat github-scm-ed25519 windows-known-hosts cloud-known-hosts; do
   if [ ! -s "$secret_dir/$required" ]; then
     printf 'Missing %s. Follow deploy/jenkins/README.md before installation.\n' \
       "$secret_dir/$required" >&2
