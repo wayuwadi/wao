@@ -37,7 +37,7 @@ run_docker() {
 run_docker run --rm --network host \
   -e MYSQL_PWD="${dump_password}" \
   mysql:9.7.0 \
-  mysqldump --protocol=TCP --connect-timeout=10 -h "${dump_host}" -u"${dump_user}" \
+  mysqldump --protocol=TCP -h "${dump_host}" -u"${dump_user}" \
     --single-transaction --set-gtid-purged=ON --no-tablespaces \
     --hex-blob --routines --triggers --events \
     --databases "${database}" >"${plain}"
