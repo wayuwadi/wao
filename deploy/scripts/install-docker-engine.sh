@@ -24,6 +24,13 @@ Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
 
+  # Ubuntu's docker-compose-v2 owns the same CLI plugin path as Docker's
+  # docker-compose-plugin but does not declare a package conflict. Remove it
+  # before migrating a node from the distro fallback to Docker CE.
+  if dpkg-query -W -f='${db:Status-Abbrev}' docker-compose-v2 2>/dev/null | grep -q '^ii'; then
+    apt-get remove -y docker-compose-v2
+  fi
+
   if ! apt-get update || ! apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
     echo 'Docker official repository is unavailable; falling back to the Ubuntu distribution packages.' >&2
     install_ubuntu_packages
