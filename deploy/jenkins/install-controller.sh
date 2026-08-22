@@ -111,15 +111,24 @@ Host wao-cloud-webhook
 EOF
 chmod 0640 /etc/jenkins/tunnel-ssh-config
 
-curl -fsSL \
-  "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/${plugin_manager_version}/jenkins-plugin-manager-${plugin_manager_version}.jar" \
-  -o "$plugin_manager"
-curl -fsSL \
-  "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/${plugin_manager_version}/jenkins-plugin-manager-${plugin_manager_version}.jar.sha256" \
-  -o "$plugin_manager.sha256"
+if [ ! -s "$plugin_manager.sha256" ]; then
+  curl -fsSL \
+    "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/${plugin_manager_version}/jenkins-plugin-manager-${plugin_manager_version}.jar.sha256" \
+    -o "$plugin_manager.sha256"
+fi
 expected_plugin_manager_sha="$(tr -d '\r\n' <"$plugin_manager.sha256")"
-actual_plugin_manager_sha="$(sha256sum "$plugin_manager" | awk '{print $1}')"
-test "$actual_plugin_manager_sha" = "$expected_plugin_manager_sha"
+actual_plugin_manager_sha=''
+if [ -s "$plugin_manager" ]; then
+  actual_plugin_manager_sha="$(sha256sum "$plugin_manager" | awk '{print $1}')"
+fi
+if [ "$actual_plugin_manager_sha" != "$expected_plugin_manager_sha" ]; then
+  curl -fsSL \
+    "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/${plugin_manager_version}/jenkins-plugin-manager-${plugin_manager_version}.jar" \
+    -o "$plugin_manager.download"
+  actual_plugin_manager_sha="$(sha256sum "$plugin_manager.download" | awk '{print $1}')"
+  test "$actual_plugin_manager_sha" = "$expected_plugin_manager_sha"
+  mv "$plugin_manager.download" "$plugin_manager"
+fi
 
 install -d -o jenkins -g jenkins -m 0750 "$jenkins_home/plugins"
 java -jar "$plugin_manager" \
