@@ -72,13 +72,23 @@ Gateway 证书可以在重启前直接使用 Windows 已安装的 JDK 生成：
 .\deploy\scripts\generate-gateway-cert.ps1
 ```
 
-Windows Server 不支持本项目所需的 Docker Desktop 运行方式，因此从节点在 WSL2 Ubuntu 24.04 的 Docker Engine 中运行 Linux 容器。首次准备需要以 CI/CD 使用的 `wage` 管理员账号执行 PowerShell，确保 WSL 发行版属于同一 Windows 用户：
+Windows 11 Pro 从节点在 WSL2 Ubuntu 24.04 的 Docker Engine 中运行 Linux 容器，不依赖 Docker Desktop。首次准备需要以 CI/CD 使用的 `wage` 管理员账号执行 PowerShell，确保 WSL 发行版、OpenSSH 和运维任务属于同一 Windows 用户。先从 Linux 主节点已授权的部署密钥中取得公钥文件，执行：
 
 ```powershell
-.\deploy\scripts\provision-windows-node.ps1
+.\deploy\scripts\provision-windows-node.ps1 `
+  -InstallLocation D:\WSL\WAO-Ubuntu `
+  -DeployPublicKeyPath D:\deploy\wao-deploy-key.pub
 ```
 
-如果返回 3010，重启 Windows 后再次执行。然后执行：
+如果返回 3010，重启 Windows 后再次执行。先从另一台机器验证部署密钥可以登录，再关闭密码登录：
+
+```powershell
+.\deploy\scripts\provision-windows-node.ps1 `
+  -DeployPublicKeyPath D:\deploy\wao-deploy-key.pub `
+  -DisableSshPasswordAuthentication
+```
+
+然后执行：
 
 ```powershell
 .\deploy\scripts\deploy-windows.ps1
@@ -88,11 +98,11 @@ CI/CD 向 Windows 发送 `D:\deploy\wao-release.zip`，由 PowerShell `Expand-Ar
 
 CD 开始 Windows 发布前会先做最多 8 秒的 SSH 在线探测。电脑关机、断网或 WSL/Docker 发布失败时，本次会跳过并在云 Nginx 中保持从节点 `down`，不阻塞 Linux 主节点和云前端发布，也不会把故障节点伪报为发布成功。Windows 恢复后会在下一次 `main` 发布时补齐并重新入流；如果需要立即补发，可手动触发 `WAO Fast CD`。
 
-准备脚本在没有现有配置时将 WSL 限制为 4 核/8GB/2GB swap，并创建 `WAO WSL Keepalive` 开机计划任务。部署脚本会把公开端口从 Windows `0.0.0.0` 转发到 WSL 当前地址；每次发布都会刷新 WSL 动态 IP 对应的 `portproxy`。
+准备脚本在没有现有配置时将 WSL 限制为 4 核/8GB/2GB swap，关闭交流供电时的自动睡眠/休眠，并安装 OpenSSH。`install-windows-ops-tasks.ps1` 会幂等创建 WSL 保活、开机端口刷新、每五分钟公网 IP 刷新、每日备份和每月恢复演练任务。部署脚本也会刷新 WSL 动态 IP 对应的 `portproxy`。3306、6379、26379、9000 允许公网入站；8080 和 9876 仅允许本地子网诊断。
 
 ## DDNS 与公网 IP 变化
 
-主、从 Compose 都包含固定版本的 DDNS-Go。首次启动后访问对应节点的 `http://<公网域名>:9876`：
+主、从 Compose 都包含固定版本的 DDNS-Go。首次启动后从局域网访问对应节点的 `http://<节点局域网地址>:9876`：
 
 - Linux 主节点配置 `linux2.wayuwa.cn`；
 - Windows 从节点配置 `windows1.wayuwa.cn`；
@@ -124,7 +134,7 @@ wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-slave.
 
 如果主库已经清理了从库所需的早期 binlog，先用 `mysqldump --single-transaction --set-gtid-purged=ON` 生成当前 `wao` 快照，再执行 `bootstrap-mysql-slave.sh <快照.sql.gz>`。该脚本只重置从库 GTID，不修改主库业务数据。
 
-Windows 任务计划每天执行 `deploy\scripts\backup-mysql.ps1`，每月执行 `deploy\scripts\restore-drill.ps1`。备份位于 `deploy\backups`，默认保留 7 天。
+Windows 任务计划每天执行 `deploy\scripts\backup-mysql.ps1`，并在每月 1 日执行 `deploy\scripts\restore-drill.ps1`。任务由 `install-windows-ops-tasks.ps1` 统一安装；备份位于 `deploy\backups`，默认保留 7 天。
 
 最终入口应为：
 

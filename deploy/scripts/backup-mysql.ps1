@@ -1,6 +1,9 @@
+param(
+    [string]$Distribution = 'Ubuntu'
+)
+
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\wsl-common.ps1"
-$Distribution = 'Ubuntu'
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $LinuxProjectRoot = ConvertTo-WaoWslPath $ProjectRoot
 

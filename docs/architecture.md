@@ -40,7 +40,7 @@ flowchart LR
 - `dev`：使用本机 Docker 基础设施；Swagger 开启；Nacos 可关闭鉴权。
 - `prod`：敏感值来自环境变量；Swagger 关闭；跨节点通过公网地址和 DDNS 域名通信。
 - 前端生产制品直接由云 Nginx 托管，不运行 Node.js 进程。
-- Windows Server 2025 不安装 Docker Desktop；从节点容器运行在 WSL2 Ubuntu 24.04 的 Docker Engine 中，限制为 4 核/8GB，Windows `portproxy` 将公网端口转发到 WSL。原生计划任务以 `wage` 身份保持 WSL 在线并在开机时恢复。
+- Windows 11 Pro 不安装 Docker Desktop；从节点容器运行在 WSL2 Ubuntu 24.04 的 Docker Engine 中，限制为 4 核/8GB，Windows `portproxy` 将公网端口转发到 WSL。原生计划任务以 `wage` 身份保持 WSL 在线，并在开机时恢复端口转发和容器服务。
 - 主、从节点检测公网 IPv4 变化并刷新 Nacos 注册；云 Nginx 定期重载以重新解析 DDNS 上游。
 
 ## 版本决策

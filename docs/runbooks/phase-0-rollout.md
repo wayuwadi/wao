@@ -10,15 +10,17 @@
 
 ## Windows 从节点（娃哥）
 
-当前状态：已完成。WSL 2.7.10、Ubuntu 24.04、Docker Engine/Compose、六个从节点容器、Windows `portproxy` 和开机保活任务均已运行；公网 Gateway 及数据复制已通过验收。WSL 位于 `D:\WSL\WAO-Ubuntu`，限制为 4 核/8GB。
+当前状态：Windows 11 Pro 重装后待恢复。旧 WSL、Docker named volumes、DDNS 和 AI Runner 本地状态均不存在；按全新从节点从 Linux 主节点重建 MySQL/Redis 副本。WSL 固定安装在 `D:\WSL\WAO-Ubuntu`，限制为 4 核/8GB/2GB swap。
 
 在 `wage` 的管理员 PowerShell/SSH 会话中可重复执行：
 
 ```powershell
 Set-Location D:\deploy\wao
-.\deploy\scripts\provision-windows-node.ps1
+.\deploy\scripts\provision-windows-node.ps1 -DeployPublicKeyPath D:\deploy\wao-deploy-key.pub
 .\deploy\scripts\deploy-windows.ps1 -SkipImageBuild
 ```
+
+先从外部验证密钥 SSH 登录，再以 `-DisableSshPasswordAuthentication` 重跑准备脚本。准备脚本会安装 OpenSSH、关闭交流供电自动睡眠，并注册 WSL 保活、端口刷新、DDNS/Nacos 刷新、每日备份和每月恢复演练任务。主板“断电恢复后自动开机”和路由器 DHCP/端口映射仍需在固件管理页人工配置。
 
 Windows 发布包使用 ZIP 而不是 tar.gz，确保中文技术方案文件名可在 Windows 上无损解压；节点使用已预热的基础镜像本地构建，避免 GitHub Runner 跨境传输大镜像。MySQL GTID 从库只复制 `wao.%`，复制双线程为 `Yes`、延迟为 0。
 
