@@ -13,5 +13,6 @@ if ($OnlyOnDayOfMonth -gt 0 -and (Get-Date).Day -ne $OnlyOnDayOfMonth) {
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $LinuxProjectRoot = ConvertTo-WaoWslPath $ProjectRoot
 
-& wsl.exe -d $Distribution -u root -- bash -lc "cd '$LinuxProjectRoot' && docker compose --env-file deploy/.env -f deploy/docker-compose-slave.yml exec -T mysql-slave sh /opt/wao/restore-drill.sh"
-if ($LASTEXITCODE -ne 0) { throw 'MySQL restore drill failed.' }
+Invoke-WaoWsl `
+    -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'bash', '-lc', "cd '$LinuxProjectRoot' && docker compose --env-file deploy/.env -f deploy/docker-compose-slave.yml exec -T mysql-slave sh /opt/wao/restore-drill.sh") `
+    -FailureMessage 'MySQL restore drill failed.'

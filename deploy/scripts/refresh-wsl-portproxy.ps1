@@ -4,10 +4,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\wsl-common.ps1"
 $ports = @(3306, 6379, 8080, 9000, 9876, 26379)
 $publicPorts = @(3306, 6379, 9000, 26379)
 $localPorts = @(8080, 9876)
-$wslAddress = ((& wsl.exe -d $Distribution -u root -- hostname -I).Trim() -split '\s+')[0]
+$wslOutput = Invoke-WaoWslCapture `
+    -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'hostname', '-I') `
+    -FailureMessage 'Unable to query the WSL IPv4 address.'
+$wslAddress = (($wslOutput -join ' ').Trim() -split '\s+')[0]
 
 if (-not $wslAddress) { throw 'Unable to determine the WSL IPv4 address.' }
 
