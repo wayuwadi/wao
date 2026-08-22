@@ -31,3 +31,23 @@ function Invoke-WaoWsl {
         throw "$FailureMessage Exit code: $exitCode"
     }
 }
+
+function Invoke-WaoWslCapture {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$WslArguments,
+        [string]$FailureMessage = 'WSL command failed.'
+    )
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = @(& wsl.exe @WslArguments)
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($exitCode -ne 0) {
+        throw "$FailureMessage Exit code: $exitCode"
+    }
+    return $output
+}

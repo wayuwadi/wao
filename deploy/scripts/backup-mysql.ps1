@@ -7,5 +7,6 @@ $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $LinuxProjectRoot = ConvertTo-WaoWslPath $ProjectRoot
 
-& wsl.exe -d $Distribution -u root -- bash -lc "cd '$LinuxProjectRoot' && docker compose --env-file deploy/.env -f deploy/docker-compose-slave.yml exec -T mysql-slave sh /opt/wao/backup-mysql.sh"
-if ($LASTEXITCODE -ne 0) { throw 'MySQL backup failed.' }
+Invoke-WaoWsl `
+    -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'bash', '-lc', "cd '$LinuxProjectRoot' && docker compose --env-file deploy/.env -f deploy/docker-compose-slave.yml exec -T mysql-slave sh /opt/wao/backup-mysql.sh") `
+    -FailureMessage 'MySQL backup failed.'
