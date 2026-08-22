@@ -3,7 +3,7 @@ set -eu
 
 output="${1:?Usage: create-mysql-snapshot.sh OUTPUT.sql.gz}"
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-project_root="$(CDPATH= cd -- "${script_dir}/../.." && pwd)"
+project_root="${WAO_PROJECT_ROOT:-$(CDPATH= cd -- "${script_dir}/../.." && pwd)}"
 env_file="${project_root}/deploy/.env"
 test -f "${env_file}" || { echo "Missing ${env_file}" >&2; exit 1; }
 

@@ -180,7 +180,7 @@ jobs:
           if [ "$BOOTSTRAP_WINDOWS" = true ]; then
             scp deploy/scripts/create-mysql-snapshot.sh "$MASTER_USER@$MASTER_HOST:/tmp/wao-create-mysql-snapshot.sh"
             ssh "$MASTER_USER@$MASTER_HOST" \
-              "chmod 700 /tmp/wao-create-mysql-snapshot.sh && cd '$project_root' && /tmp/wao-create-mysql-snapshot.sh /tmp/wao-bootstrap.sql.gz"
+              "chmod 700 /tmp/wao-create-mysql-snapshot.sh && WAO_PROJECT_ROOT='$project_root' /tmp/wao-create-mysql-snapshot.sh /tmp/wao-bootstrap.sql.gz"
             scp "$MASTER_USER@$MASTER_HOST:/tmp/wao-bootstrap.sql.gz" wao-bootstrap.sql.gz
             ssh "$MASTER_USER@$MASTER_HOST" 'rm -f /tmp/wao-create-mysql-snapshot.sh /tmp/wao-bootstrap.sql.gz'
             gzip -t wao-bootstrap.sql.gz
