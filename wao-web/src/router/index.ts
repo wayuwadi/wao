@@ -29,6 +29,12 @@ const router = createRouter({
       component: () => import('@/views/AccountClaimView.vue'),
       meta: { public: true },
     },
+    {
+      path: '/desktop',
+      name: 'desktop-download',
+      component: () => import('@/views/DesktopDownloadView.vue'),
+      meta: { public: true },
+    },
     // 文件下载页：公开免登录，但要人点一次并过一道人机校验才换得到一次下载。
     {
       path: '/f/:id',

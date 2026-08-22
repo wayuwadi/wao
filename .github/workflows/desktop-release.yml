@@ -1,0 +1,178 @@
+name: WAO Desktop Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer version, for example 0.1.0
+        required: true
+        type: string
+      notes:
+        description: Short release notes shown by the pet
+        required: false
+        default: 改进桌面陪伴体验与稳定性。
+        type: string
+  push:
+    tags:
+      - desktop-v*
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wao-desktop-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - id: release
+        name: Validate release version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#desktop-v}"
+          else
+            version="$INPUT_VERSION"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$'; then
+            echo "Invalid SemVer: $version" >&2
+            exit 1
+          fi
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: desktop-windows
+            paths: |
+              wao-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+              wao-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
+          - os: macos-latest
+            target: universal-apple-darwin
+            artifact: desktop-macos
+            paths: |
+              wao-desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+              wao-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+              wao-desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: wao-desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+      - name: Install frontend dependencies
+        run: npm --prefix wao-desktop ci
+      - name: Build signed desktop bundles
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TARGET: ${{ matrix.target }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: npm --prefix wao-desktop run tauri build -- --target "$TARGET" --config "{\"version\":\"$VERSION\"}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.paths }}
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          path: desktop-release/raw
+          merge-multiple: true
+      - name: Prepare stable installers and signed update manifest
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          NOTES: ${{ inputs.notes || '改进桌面陪伴体验与稳定性。' }}
+        run: |
+          set -eu
+          publish=desktop-release/publish
+          mkdir -p "$publish"
+          windows_installer="$(find desktop-release/raw -type f -name '*-setup.exe' | head -1)"
+          macos_installer="$(find desktop-release/raw -type f -name '*.dmg' | head -1)"
+          macos_update="$(find desktop-release/raw -type f -name '*.app.tar.gz' | head -1)"
+          test -f "$windows_installer"
+          test -f "$windows_installer.sig"
+          test -f "$macos_installer"
+          test -f "$macos_update"
+          test -f "$macos_update.sig"
+
+          windows_update_name="WAO-Pet_${VERSION}_windows-x64-setup.exe"
+          macos_update_name="WAO-Pet_${VERSION}_macos-universal.app.tar.gz"
+          cp "$windows_installer" "$publish/$windows_update_name"
+          cp "$macos_update" "$publish/$macos_update_name"
+          cp "$windows_installer" "$publish/WAO-Pet-windows-x64-setup.exe"
+          cp "$macos_installer" "$publish/WAO-Pet-macos-universal.dmg"
+
+          windows_signature="$(cat "$windows_installer.sig")"
+          macos_signature="$(cat "$macos_update.sig")"
+          pub_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "$NOTES" \
+            --arg pub_date "$pub_date" \
+            --arg windows_url "https://wao.wayuwa.cn/downloads/desktop/$windows_update_name" \
+            --arg windows_signature "$windows_signature" \
+            --arg macos_url "https://wao.wayuwa.cn/downloads/desktop/$macos_update_name" \
+            --arg macos_signature "$macos_signature" \
+            '{version:$version,notes:$notes,pub_date:$pub_date,platforms:{
+              "windows-x86_64":{url:$windows_url,signature:$windows_signature},
+              "darwin-x86_64":{url:$macos_url,signature:$macos_signature},
+              "darwin-aarch64":{url:$macos_url,signature:$macos_signature}
+            }}' > "$publish/latest.json"
+      - name: Configure cloud SSH
+        shell: bash
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Publish desktop release to WAO
+        shell: bash
+        env:
+          CLOUD_HOST: ${{ secrets.CLOUD_HOST }}
+          CLOUD_USER: ${{ secrets.CLOUD_USER }}
+        run: |
+          set -eu
+          incoming="/tmp/wao-desktop-release-${GITHUB_RUN_ID}"
+          ssh "$CLOUD_USER@$CLOUD_HOST" "install -d '$incoming'"
+          scp desktop-release/publish/* "$CLOUD_USER@$CLOUD_HOST:$incoming/"
+          ssh "$CLOUD_USER@$CLOUD_HOST" "
+            set -eu
+            destination=/var/www/wao-downloads/desktop
+            install -d -m 0755 \"\$destination\"
+            for file in '$incoming'/*; do
+              name=\"\${file##*/}\"
+              [ \"\$name\" = latest.json ] && continue
+              install -m 0644 \"\$file\" \"\$destination/\$name\"
+            done
+            install -m 0644 '$incoming/latest.json' \"\$destination/latest.json.next\"
+            mv \"\$destination/latest.json.next\" \"\$destination/latest.json\"
+            rm -rf '$incoming'
+          "
+          curl -fsS https://wao.wayuwa.cn/downloads/desktop/latest.json | jq -e --arg version '${{ needs.prepare.outputs.version }}' '.version == $version and (.platforms | length) == 3'

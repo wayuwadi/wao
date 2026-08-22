@@ -62,8 +62,20 @@ export const DEVOPS_LINKS: QuickLink[] = [
   },
 ]
 
+/** WAO 自身的独立产品入口。 */
+export const PRODUCT_LINKS: QuickLink[] = [
+  {
+    id: 'wao-desktop-pet',
+    label: 'WAO 桌面宠物',
+    subtitle: '下载 Windows / macOS 版本',
+    icon: 'ri-bear-smile-line',
+    url: '/desktop',
+    keywords: ['desktop', 'pet', 'windows', 'macos', 'zhuomian', 'chongwu', 'xiazai'],
+  },
+]
+
 /** 全部快捷链接（供命令面板遍历）。 */
-export const ALL_QUICK_LINKS: QuickLink[] = [...GITHUB_REPOS, ...DEVOPS_LINKS]
+export const ALL_QUICK_LINKS: QuickLink[] = [...PRODUCT_LINKS, ...GITHUB_REPOS, ...DEVOPS_LINKS]
 
 /**
  * 从 Git 仓库 URL 推导 GitHub 浏览地址。

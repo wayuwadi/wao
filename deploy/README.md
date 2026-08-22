@@ -160,6 +160,8 @@ https://wao.wayuwa.cn/api/hello
 
 云节点更新 Nginx 配置后记得 `nginx -t && systemctl reload nginx`，否则上传大图会返回 413。
 
+桌面宠物安装包和签名更新清单独立保存在 `/var/www/wao-downloads/desktop`，由 `WAO Desktop Release` 手动发布；普通 Web CD 只更新 `/var/www/wao/dist`，不会删除历史安装包。`latest.json` 禁止缓存并在所有更新包上传后最后原子替换，版本化更新包允许长期缓存。
+
 额外同域应用的静态路由仍可放在 `/etc/nginx/wao-external-apps.d/*.conf`。自媒体 Agent 已并入 WAO 主仓库和主 CD，随主站一起更新 `/var/www/wao-agent/dist` 与 `wao-agent-server`；游戏已进入原生 `/games`，不再依赖 `/game/` 独立入口。目录继续保留给真正需要独立路由的第三方或后续模块。
 
 图片正文进了 MySQL，`backup-mysql.ps1` 的备份体积会随图片增长，留意 `deploy\backups` 的磁盘占用。
