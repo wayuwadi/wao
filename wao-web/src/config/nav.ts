@@ -7,8 +7,11 @@ export interface ModuleMeta {
   label: string
   icon: string
   path: string
+  /** 需要脱离 WAO 主壳时使用的公开地址；未配置则沿用 path。 */
+  newPagePath?: string
 }
 
+export type MenuOpenMode = 'TAB' | 'NEW_PAGE'
 export type MenuGroupCode = 'PUBLIC' | 'PERSONAL' | 'TOOLS'
 export type BuiltinMenuGroupCode = 'ROOT' | MenuGroupCode
 export type ExternalAppItemId = `external:${string}`
@@ -24,6 +27,7 @@ export interface ExternalAppConfig {
   visible: boolean
   appUrl: string
   healthUrl: string
+  openMode: MenuOpenMode
 }
 
 export interface ExternalAppRegistry {
@@ -38,11 +42,24 @@ export interface BuiltinMenuConfig {
   group: BuiltinMenuGroupCode
   order: number
   visible: boolean
+  openMode: MenuOpenMode
 }
 
 export interface BuiltinMenuRegistry {
   version: number
   menus: BuiltinMenuConfig[]
+}
+
+export function normalizeMenuOpenMode(value: unknown): MenuOpenMode {
+  return value === 'NEW_PAGE' ? 'NEW_PAGE' : 'TAB'
+}
+
+export function normalizeExternalApp(app: ExternalAppConfig): ExternalAppConfig {
+  return { ...app, openMode: normalizeMenuOpenMode(app.openMode) }
+}
+
+export function normalizeBuiltinMenu(menu: BuiltinMenuConfig): BuiltinMenuConfig {
+  return { ...menu, openMode: normalizeMenuOpenMode(menu.openMode) }
 }
 
 export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
@@ -55,13 +72,20 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
     visible: true,
     appUrl: '/agent/',
     healthUrl: '/api/agent/health',
+    openMode: 'TAB',
   },
 ]
 
 export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
-  skills: { id: 'skills', label: 'Skill 市场', icon: 'ri-sparkling-2-line', path: '/skills' },
+  skills: {
+    id: 'skills',
+    label: 'Skill 市场',
+    icon: 'ri-sparkling-2-line',
+    path: '/wao/skills',
+    newPagePath: '/skills',
+  },
   calendar: { id: 'calendar', label: '日历', icon: 'ri-calendar-2-line', path: '/calendar' },
   todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
@@ -127,7 +151,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   vault: { id: 'vault', label: '密码本', icon: 'ri-key-2-line', path: '/vault' },
   settings: { id: 'settings', label: '设置', icon: 'ri-settings-3-line', path: '/settings' },
 }
-export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
+export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = ([
   { id: 'home', label: '首页', icon: 'ri-home-5-line', group: 'ROOT', order: 10, visible: true },
   {
     id: 'projects',
@@ -289,7 +313,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = [
     order: 30,
     visible: true,
   },
-]
+] as Omit<BuiltinMenuConfig, 'openMode'>[]).map((menu) => ({ ...menu, openMode: 'TAB' }))
 
 /** 「个人」组的默认顺序；成员拖拽后的自定义顺序存服务端偏好，见 stores/nav.ts。 */
 export const PERSONAL_ITEMS: ModuleId[] = [
@@ -430,6 +454,11 @@ export function tabFromRoute(route: RouteLocationNormalized): Tab | null {
     }
   }
   const mod = route.meta.module as ModuleId | undefined
-  if (mod) return moduleTab(mod)
+  if (mod) {
+    const tab = moduleTab(mod)
+    // Skill 市场有站内子路由；复用同一页签时保留详情、发布或管理页的位置。
+    if (mod === 'skills' && route.path.startsWith('/wao/skills')) tab.path = route.fullPath
+    return tab
+  }
   return null
 }

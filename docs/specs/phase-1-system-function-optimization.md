@@ -60,6 +60,8 @@
 
 ## 菜单统一管理
 
-- 外部应用注册表继续管理应用入口和健康检查。
-- 新增内置菜单注册表 `/api/settings/navigation/builtin-menus`，统一维护名称、Remix Icon、分组、排序和显隐。
+- 外部应用注册表继续管理应用入口、健康检查及打开方式。
+- 内置菜单注册表 `/api/settings/navigation/builtin-menus` 统一维护名称、Remix Icon、分组、排序、显隐和打开方式。
+- 所有一级菜单支持 `TAB`（WAO 页签）和 `NEW_PAGE`（浏览器新页面），新增项及旧配置缺省均为 `TAB`。
+- Skill 市场从菜单进入时使用 `/wao/skills/**` 融入 WAO 主壳；既有 `/skills/**` 继续作为公开独立页面和新页面目标。
 - 内置菜单稳定 id 与路由不可增删或修改；配置损坏时回退代码默认值，避免导航被清空。

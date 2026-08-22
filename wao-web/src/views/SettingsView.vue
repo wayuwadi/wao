@@ -24,6 +24,8 @@ import {
   DEFAULT_BUILTIN_MENUS,
   DEFAULT_EXTERNAL_APPS,
   externalAppPath,
+  normalizeBuiltinMenu,
+  normalizeExternalApp,
   type BuiltinMenuConfig,
   type ExternalAppConfig,
 } from '@/config/nav'
@@ -209,12 +211,12 @@ function resetQlLinks() {
 const site = reactive<SiteInfo>({ siteName: '', description: '', icpNumber: '', icpUrl: '' })
 const siteLoaded = ref(false)
 const siteBusy = ref(false)
-const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map((app) => ({ ...app })))
+const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map(normalizeExternalApp))
 const externalAppsLoaded = ref(false)
 const externalAppsLoading = ref(false)
 const externalAppsSaving = ref(false)
 const externalAppsError = ref('')
-const builtinMenus = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map((menu) => ({ ...menu })))
+const builtinMenus = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map(normalizeBuiltinMenu))
 const builtinMenusLoaded = ref(false)
 const builtinMenusSaving = ref(false)
 const externalEditorMode = ref<'none' | 'edit' | 'new'>('none')
@@ -223,7 +225,7 @@ const editingExternalAppId = ref('')
 function emptyExternalApp(): ExternalAppConfig {
   return {
     id: '', label: '', icon: 'ri-apps-2-line', group: 'PUBLIC', order: 20,
-    visible: true, appUrl: '/', healthUrl: '',
+    visible: true, appUrl: '/', healthUrl: '', openMode: 'TAB',
   }
 }
 
@@ -278,7 +280,7 @@ async function loadExternalAppSettings() {
   externalAppsError.value = ''
   try {
     const registry = await fetchExternalAppRegistry()
-    externalApps.value = registry.apps.map((app) => ({ ...app }))
+    externalApps.value = registry.apps.map(normalizeExternalApp)
     externalAppsLoaded.value = true
     nav.applyExternalApps(registry.apps)
     const preferred = externalApps.value.find((app) => app.id === editingExternalAppId.value)
@@ -294,7 +296,7 @@ async function loadExternalAppSettings() {
 
 async function loadBuiltinMenuSettings() {
   try {
-    builtinMenus.value = (await fetchBuiltinMenuRegistry()).menus.map((menu) => ({ ...menu }))
+    builtinMenus.value = (await fetchBuiltinMenuRegistry()).menus.map(normalizeBuiltinMenu)
     builtinMenusLoaded.value = true
     nav.applyBuiltinMenus(builtinMenus.value)
   } catch (error) {
@@ -306,7 +308,7 @@ async function saveBuiltinMenuSettings() {
   builtinMenusSaving.value = true
   try {
     const registry = await saveBuiltinMenuRegistry(builtinMenus.value)
-    builtinMenus.value = registry.menus.map((menu) => ({ ...menu }))
+    builtinMenus.value = registry.menus.map(normalizeBuiltinMenu)
     nav.applyBuiltinMenus(registry.menus)
     toast('内置菜单注册表已保存并立即生效', 'ri-check-line')
   } catch (error) {
@@ -349,7 +351,7 @@ async function persistExternalApps(next: ExternalAppConfig[], selectedId: string
   externalAppsError.value = ''
   try {
     const registry = await saveExternalAppRegistry(next)
-    externalApps.value = registry.apps.map((app) => ({ ...app }))
+    externalApps.value = registry.apps.map(normalizeExternalApp)
     externalAppsLoaded.value = true
     nav.applyExternalApps(registry.apps)
     const selected = externalApps.value.find((app) => app.id === selectedId) ?? externalApps.value[0]
@@ -572,6 +574,10 @@ function demo(msg: string, icon?: string) {
                 <input v-model.trim="menuItem.icon" maxlength="64" aria-label="菜单图标" />
                 <input v-model="menuItem.group" list="builtin-menu-groups" aria-label="所属分组" />
                 <input v-model.number="menuItem.order" inputmode="numeric" aria-label="排序值" />
+                <select v-model="menuItem.openMode" aria-label="打开方式">
+                  <option value="TAB">WAO 页签</option>
+                  <option value="NEW_PAGE">新页面</option>
+                </select>
                 <button
                   type="button"
                   class="visibility-choice compact"
@@ -670,6 +676,14 @@ function demo(msg: string, icon?: string) {
                     <span>{{ externalAppForm.visible ? '显示在一级导航中' : '从一级导航中隐藏' }}</span>
                   </button>
                 </label>
+                <label>
+                  <span>打开方式</span>
+                  <select v-model="externalAppForm.openMode">
+                    <option value="TAB">WAO 页签</option>
+                    <option value="NEW_PAGE">新页面</option>
+                  </select>
+                  <small>页签模式嵌入 WAO；新页面模式直接打开应用入口。</small>
+                </label>
                 <label class="wide-field">
                   <span>应用入口</span>
                   <input v-model="externalAppForm.appUrl" maxlength="255" required placeholder="/my-app/ 或 https://app.example.com/" />
@@ -695,7 +709,7 @@ function demo(msg: string, icon?: string) {
               </form>
               <div v-else class="registry-no-selection">选择一个应用编辑，或注册新应用。</div>
             </div>
-            <div class="hint">注册表全局生效：新增、改名、换组、调序、隐藏或删除菜单都只写服务端配置，不需要重新构建 WAO。删除注册只移除菜单和通用页面配置，不会删除独立应用的服务或数据。</div>
+            <div class="hint">注册表全局生效：新增、改名、换组、调序、显隐和打开方式都只写服务端配置，不需要重新构建 WAO。删除注册只移除菜单和通用页面配置，不会删除独立应用的服务或数据。</div>
           </div>
         </template>
 
@@ -891,12 +905,13 @@ function demo(msg: string, icon?: string) {
 .builtin-menu-list { display: grid; gap: 7px; margin-top: 14px; }
 .builtin-menu-row {
   display: grid;
-  grid-template-columns: 92px 1fr 1.25fr 100px 72px 82px;
+  grid-template-columns: 92px 1fr 1.2fr 96px 66px 100px 82px;
   gap: 8px;
   align-items: center;
 }
 .builtin-menu-row code { color: var(--wao-text-weak); font-size: 11.5px; }
-.builtin-menu-row input {
+.builtin-menu-row input,
+.builtin-menu-row select {
   min-width: 0;
   height: 34px;
   border: 1px solid var(--wao-line-control);

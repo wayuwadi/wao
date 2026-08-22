@@ -29,6 +29,7 @@ class BuiltinMenuRegistryServiceTest {
                     assertThat(menu.label()).isEqualTo("Skill 市场");
                     assertThat(menu.group()).isEqualTo("PUBLIC");
                     assertThat(menu.visible()).isTrue();
+                    assertThat(menu.openMode()).isEqualTo("TAB");
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
@@ -41,7 +42,7 @@ class BuiltinMenuRegistryServiceTest {
         var menus = new ArrayList<>(service.getRegistry().menus());
         var calendar = menus.stream().filter(menu -> "calendar".equals(menu.id())).findFirst().orElseThrow();
         menus.set(menus.indexOf(calendar), new BuiltinMenuConfigDto(
-                calendar.id(), "家庭日历", calendar.icon(), "PUBLIC", 1, true));
+                calendar.id(), "家庭日历", calendar.icon(), "PUBLIC", 1, true, "NEW_PAGE"));
 
         var saved = service.saveRegistry(new SaveBuiltinMenuRegistryRequest(menus));
 
@@ -50,6 +51,7 @@ class BuiltinMenuRegistryServiceTest {
                     assertThat(menu.label()).isEqualTo("家庭日历");
                     assertThat(menu.group()).isEqualTo("PUBLIC");
                     assertThat(menu.order()).isEqualTo(1);
+                    assertThat(menu.openMode()).isEqualTo("NEW_PAGE");
                 });
         ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
         verify(settings).put(eq(SettingService.BUILTIN_MENU_REGISTRY), payload.capture());
@@ -72,7 +74,7 @@ class BuiltinMenuRegistryServiceTest {
         oldMenus.removeIf(menu -> "skills".equals(menu.id()));
         var automation = oldMenus.stream().filter(menu -> "automation".equals(menu.id())).findFirst().orElseThrow();
         oldMenus.set(oldMenus.indexOf(automation), new BuiltinMenuConfigDto(
-                automation.id(), "我的自动化", automation.icon(), automation.group(), automation.order(), false));
+                automation.id(), "我的自动化", automation.icon(), automation.group(), automation.order(), false, null));
         var oldPayload = new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(1, oldMenus);
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY))
                 .thenReturn(new ObjectMapper().writeValueAsString(oldPayload));
@@ -84,6 +86,7 @@ class BuiltinMenuRegistryServiceTest {
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("我的自动化");
                     assertThat(menu.visible()).isFalse();
+                    assertThat(menu.openMode()).isEqualTo("TAB");
                 });
         assertThat(upgraded.menus()).filteredOn(menu -> "tianren".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
@@ -116,5 +119,17 @@ class BuiltinMenuRegistryServiceTest {
                     assertThat(menu.group()).isEqualTo("PUBLIC");
                     assertThat(menu.visible()).isTrue();
                 });
+    }
+
+    @Test
+    void rejectsUnknownOpenMode() {
+        var menus = new ArrayList<>(service.getRegistry().menus());
+        var home = menus.get(0);
+        menus.set(0, new BuiltinMenuConfigDto(
+                home.id(), home.label(), home.icon(), home.group(), home.order(), home.visible(), "POPUP"));
+
+        assertThatThrownBy(() -> service.saveRegistry(new SaveBuiltinMenuRegistryRequest(menus)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("打开方式");
     }
 }

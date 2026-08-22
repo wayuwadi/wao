@@ -9,5 +9,6 @@ public record ExternalAppConfigDto(
         int order,
         boolean visible,
         String appUrl,
-        String healthUrl) {
+        String healthUrl,
+        String openMode) {
 }

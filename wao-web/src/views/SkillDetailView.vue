@@ -15,7 +15,7 @@ const installs=[
 ]
 async function load(){loading.value=true;error.value='';try{detail.value=await fetchSkill(handle.value,slug.value);document.title=`${detail.value.skill.displayName} · WAO Skill 市场`}catch(e){error.value=e instanceof Error?e.message:'Skill 加载失败'}finally{loading.value=false}}
 async function toggleFavorite(){if(!detail.value)return;if(!session.authed){toast('请先登录 WAO 再收藏');return}const next=!detail.value.favorite;try{await setSkillFavorite(detail.value.skill.id,next);detail.value.favorite=next;detail.value.skill.favorites+=next?1:-1}catch(e){toast(e instanceof Error?e.message:'操作失败')}}
-async function copyLink(){await navigator.clipboard.writeText(window.location.href);toast('分享链接已复制')}
+async function copyLink(){const publicPath=`/skills/@${handle.value}/${slug.value}`;await navigator.clipboard.writeText(new URL(publicPath,window.location.origin).href);toast('公开分享链接已复制')}
 watch(()=>route.fullPath,load);onMounted(load)
 </script>
 

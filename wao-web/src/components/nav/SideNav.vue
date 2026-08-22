@@ -54,7 +54,14 @@ onMounted(() => {
 
 function go(id: NavItemId) {
   const meta = nav.itemMeta(id)
-  if (meta) router.push(meta.path)
+  if (!meta) return
+  if (meta.openMode === 'NEW_PAGE') {
+    const target = meta.newPagePath ?? meta.path
+    const href = /^https:\/\//i.test(target) ? target : router.resolve(target).href
+    window.open(href, '_blank', 'noopener,noreferrer')
+    return
+  }
+  router.push(meta.path)
 }
 function goAi() {
   router.push({ path: '/', query: { console: 'runs' }, hash: '#ai-launcher' })

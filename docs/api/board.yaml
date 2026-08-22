@@ -788,7 +788,7 @@ paths:
           description: 当前内置菜单注册表
           content: { application/json: { schema: { $ref: '#/components/schemas/BuiltinMenuRegistry' } } }
     put:
-      summary: 整体保存内置菜单名称、图标、分组、排序和显隐；稳定标识与路由不可修改
+      summary: 整体保存内置菜单名称、图标、分组、排序、显隐和打开方式；稳定标识与路由不可修改
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/BuiltinMenuRegistry' } } }
@@ -1591,7 +1591,7 @@ components:
         visible: { type: boolean, description: 是否显示在一级导航；隐藏不影响直接 URL 访问 }
     ExternalAppConfig:
       type: object
-      required: [id, label, icon, group, order, visible, appUrl, healthUrl]
+      required: [id, label, icon, group, order, visible, appUrl, healthUrl, openMode]
       properties:
         id: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 40, example: media-agent }
         label: { type: string, minLength: 1, maxLength: 24, example: 自媒体 Agent }
@@ -1601,11 +1601,12 @@ components:
         visible: { type: boolean }
         appUrl: { type: string, maxLength: 255, example: /agent/, description: 站内绝对路径或 HTTPS 地址 }
         healthUrl: { type: string, maxLength: 255, example: /api/agent/health, description: 可留空；站内绝对路径或 HTTPS 地址 }
+        openMode: { type: string, enum: [TAB, NEW_PAGE], default: TAB, description: 在 WAO 页签嵌入或直接打开浏览器新页面 }
     ExternalAppRegistry:
       type: object
       required: [version, apps]
       properties:
-        version: { type: integer, minimum: 1, example: 2 }
+        version: { type: integer, minimum: 1, example: 3 }
         apps: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/ExternalAppConfig' } }
     SaveExternalAppRegistryRequest:
       type: object
@@ -1614,20 +1615,21 @@ components:
         apps: { type: array, maxItems: 30, items: { $ref: '#/components/schemas/ExternalAppConfig' } }
     BuiltinMenuConfig:
       type: object
-      required: [id, label, icon, group, order, visible]
+      required: [id, label, icon, group, order, visible, openMode]
       properties:
-        id: { type: string, enum: [home, projects, chat-reviews, todo, workday-rhythm, action-plans, calendar, weekly-report, life-review, workspaces, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, automation, files, games] }
+        id: { type: string, enum: [home, projects, skills, chat-reviews, todo, workday-rhythm, action-plans, calendar, weekly-report, life-review, workspaces, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, automation, files, games] }
         label: { type: string, maxLength: 24 }
         icon: { type: string, description: Remix Icon 类名 }
         group: { type: string, enum: [ROOT, PUBLIC, PERSONAL, TOOLS] }
         order: { type: integer, minimum: 0, maximum: 999 }
         visible: { type: boolean }
+        openMode: { type: string, enum: [TAB, NEW_PAGE], default: TAB, description: 在 WAO 页签打开或通过浏览器新页面打开 }
     BuiltinMenuRegistry:
       type: object
       required: [version, menus]
       properties:
         version: { type: integer, minimum: 1 }
-        menus: { type: array, minItems: 20, maxItems: 20, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
+        menus: { type: array, minItems: 21, maxItems: 21, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
     SavePersonalMemory:
       type: object
       required: [title, content, category]
