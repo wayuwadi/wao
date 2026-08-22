@@ -15,10 +15,10 @@ database="${DB_NAME:-wao}"
 case "${database}" in
   *[!A-Za-z0-9_]*|'') echo 'DB_NAME must contain only letters, digits, and underscores.' >&2; exit 2 ;;
 esac
-dump_host="${MYSQL_DUMP_HOST:-${MASTER_BIND_IP:-127.0.0.1}}"
-dump_user="${MYSQL_DUMP_USER:-${DB_USER:-wao_app}}"
-dump_password="${MYSQL_DUMP_PASSWORD:-${DB_PASS:-}}"
-test -n "${dump_password}" || { echo 'MYSQL_DUMP_PASSWORD or DB_PASS is required.' >&2; exit 2; }
+dump_host="${MYSQL_DUMP_HOST:-127.0.0.1}"
+dump_user="${MYSQL_DUMP_USER:-root}"
+dump_password="${MYSQL_DUMP_PASSWORD:-${DB_ROOT_PASS:-}}"
+test -n "${dump_password}" || { echo 'MYSQL_DUMP_PASSWORD or DB_ROOT_PASS is required.' >&2; exit 2; }
 temporary="${output}.tmp.$$"
 plain="${temporary}.sql"
 trap 'rm -f "${temporary}" "${plain}"' EXIT HUP INT TERM
@@ -37,7 +37,7 @@ run_docker() {
 run_docker run --rm --network host \
   -e MYSQL_PWD="${dump_password}" \
   mysql:9.7.0 \
-  mysqldump -h "${dump_host}" -u"${dump_user}" \
+  mysqldump --protocol=TCP --connect-timeout=10 -h "${dump_host}" -u"${dump_user}" \
     --single-transaction --set-gtid-purged=ON --no-tablespaces \
     --hex-blob --routines --triggers --events \
     --databases "${database}" >"${plain}"
