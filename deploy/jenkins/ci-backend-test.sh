@@ -11,4 +11,4 @@ docker run --rm \
   -v "$cache:/tmp/m2" \
   -w /workspace \
   maven:3.9.11-eclipse-temurin-17 \
-  mvn -B test
+  mvn -B -Dmaven.repo.local=/tmp/m2/repository test
