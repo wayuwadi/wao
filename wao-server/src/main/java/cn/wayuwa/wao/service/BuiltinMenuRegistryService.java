@@ -17,12 +17,13 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 12;
+    private static final int VERSION = 13;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
             new BuiltinMenuConfigDto("home", "首页", "ri-home-5-line", "ROOT", 10, true),
             new BuiltinMenuConfigDto("projects", "项目", "ri-stack-line", "PUBLIC", 10, true),
+            new BuiltinMenuConfigDto("skills", "Skill 市场", "ri-sparkling-2-line", "PUBLIC", 12, true),
             new BuiltinMenuConfigDto("chat-reviews", "聊天复盘", "ri-chat-history-line", "PUBLIC", 15, true),
             new BuiltinMenuConfigDto("todo", "待办", "ri-checkbox-multiple-line", "PERSONAL", 10, true),
             new BuiltinMenuConfigDto("workday-rhythm", "今日节奏", "ri-timer-flash-line", "PERSONAL", 12, true),

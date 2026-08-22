@@ -23,10 +23,16 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(20);
+        assertThat(service.getRegistry().menus()).hasSize(21);
+        assertThat(service.getRegistry().menus()).filteredOn(menu -> "skills".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.label()).isEqualTo("Skill 市场");
+                    assertThat(menu.group()).isEqualTo("PUBLIC");
+                    assertThat(menu.visible()).isTrue();
+                });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(20);
+        assertThat(service.getRegistry().menus()).hasSize(21);
     }
 
     @Test
@@ -63,6 +69,7 @@ class BuiltinMenuRegistryServiceTest {
         oldMenus.removeIf(menu -> "tianren".equals(menu.id()));
         oldMenus.removeIf(menu -> "life-review".equals(menu.id()));
         oldMenus.removeIf(menu -> "chat-reviews".equals(menu.id()));
+        oldMenus.removeIf(menu -> "skills".equals(menu.id()));
         var automation = oldMenus.stream().filter(menu -> "automation".equals(menu.id())).findFirst().orElseThrow();
         oldMenus.set(oldMenus.indexOf(automation), new BuiltinMenuConfigDto(
                 automation.id(), "我的自动化", automation.icon(), automation.group(), automation.order(), false));
@@ -72,7 +79,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(20);
+        assertThat(upgraded.menus()).hasSize(21);
         assertThat(upgraded.menus()).filteredOn(menu -> "automation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("我的自动化");
@@ -100,6 +107,12 @@ class BuiltinMenuRegistryServiceTest {
         assertThat(upgraded.menus()).filteredOn(menu -> "chat-reviews".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("聊天复盘");
+                    assertThat(menu.group()).isEqualTo("PUBLIC");
+                    assertThat(menu.visible()).isTrue();
+                });
+        assertThat(upgraded.menus()).filteredOn(menu -> "skills".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.label()).isEqualTo("Skill 市场");
                     assertThat(menu.group()).isEqualTo("PUBLIC");
                     assertThat(menu.visible()).isTrue();
                 });
