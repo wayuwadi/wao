@@ -139,7 +139,7 @@ autoMemoryReclaim=gradual
     )
 }
 
-& wsl.exe --version *> $null
+& cmd.exe /d /c 'wsl.exe --version >nul 2>&1'
 if ($LASTEXITCODE -ne 0) {
     & winget.exe install --id 9P9TQF7MRM4R --exact --source msstore `
         --accept-package-agreements --accept-source-agreements --silent --disable-interactivity
@@ -151,25 +151,36 @@ if (-not $installed) {
     New-Item -ItemType Directory -Path $InstallLocation -Force | Out-Null
     & wsl.exe --install --distribution $Distribution --no-launch --web-download --location $InstallLocation
     if ($LASTEXITCODE -ne 0 -and $Distribution -eq 'Ubuntu') {
-        Write-Warning 'The WSL distribution catalog is unavailable; falling back to the Microsoft Store package.'
-        & winget.exe install --id 9PDXGNCFSCZV --exact --source msstore `
-            --accept-package-agreements --accept-source-agreements --silent --disable-interactivity
-        if ($LASTEXITCODE -ne 0) { throw 'Ubuntu Store package installation failed.' }
-        & ubuntu.exe install --root
-        if ($LASTEXITCODE -ne 0) { throw 'Ubuntu distribution initialization failed.' }
-        & wsl.exe --shutdown
-        & wsl.exe --manage Ubuntu --move $InstallLocation
+        Write-Warning 'The WSL distribution catalog is unavailable; importing the official Ubuntu 24.04 WSL rootfs.'
+        $rootfsPath = Join-Path $env:TEMP 'wao-ubuntu-24.04-wsl.rootfs.tar.gz'
+        try {
+            & curl.exe `
+                --location `
+                --fail `
+                --retry 3 `
+                --silent `
+                --show-error `
+                --output $rootfsPath `
+                'https://cloud-images.ubuntu.com/wsl/releases/noble/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz'
+            if ($LASTEXITCODE -ne 0) { throw 'Ubuntu 24.04 WSL rootfs download failed.' }
+            & wsl.exe --import $Distribution $InstallLocation $rootfsPath --version 2
+        } finally {
+            Remove-Item -LiteralPath $rootfsPath -Force -ErrorAction SilentlyContinue
+        }
     }
     if ($LASTEXITCODE -ne 0) { throw 'WSL distribution installation failed.' }
 }
 
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $LinuxProjectRoot = ConvertTo-WaoWslPath $ProjectRoot
-& wsl.exe -d $Distribution -u root -- bash -lc "printf '[boot]\nsystemd=true\n' >/etc/wsl.conf"
-& wsl.exe --shutdown
+Invoke-WaoWsl `
+    -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'bash', '-lc', "printf '[boot]\nsystemd=true\n' >/etc/wsl.conf") `
+    -FailureMessage 'Failed to enable systemd in Ubuntu.'
+Invoke-WaoWsl -WslArguments @('--shutdown') -FailureMessage 'Failed to stop WSL before enabling systemd.'
 Start-Sleep -Seconds 3
-& wsl.exe -d $Distribution -u root -- bash -lc "cd '$LinuxProjectRoot' && sh deploy/scripts/install-docker-engine.sh"
-if ($LASTEXITCODE -ne 0) { throw 'Docker Engine installation failed.' }
+Invoke-WaoWsl `
+    -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'bash', '-lc', "cd '$LinuxProjectRoot' && sh deploy/scripts/install-docker-engine.sh") `
+    -FailureMessage 'Docker Engine installation failed.'
 
 Install-WaoOpenSshServer `
     -PublicKeyPath $DeployPublicKeyPath `
