@@ -2,8 +2,10 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createSkillDraft, fetchMySkills, fetchPublisher, fetchSkillCategories, savePublisher, submitSkill, type DraftMetadata, type MySkill, type SkillCategory, type SkillPublisher } from '@/api/skills'
+import { useSkillMarketRoutes } from '@/composables/skillMarketRoutes'
 
 const route = useRoute(), router = useRouter()
+const marketRoutes = useSkillMarketRoutes()
 const categories = ref<SkillCategory[]>([]), publisher = ref<SkillPublisher | null>(null), result = ref<MySkill | null>(null)
 const loading = ref(true), savingPublisher = ref(false), uploading = ref(false), submitting = ref(false), progress = ref(0), error = ref('')
 const archive = ref<File | null>(null), folderFiles = ref<File[]>([])
@@ -35,7 +37,7 @@ async function upload() {
 async function submit() {
   if (!result.value || !draftVersion.value) return
   submitting.value = true; error.value = ''
-  try { await submitSkill(result.value.id, draftVersion.value.id); await router.push('/skills/manage') }
+  try { await submitSkill(result.value.id, draftVersion.value.id); await router.push(marketRoutes.path('/manage')) }
   catch (e) { error.value = message(e) } finally { submitting.value = false }
 }
 
@@ -55,7 +57,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <header class="page-head"><div><h1 class="market-title">发布 Skill</h1><p class="market-lead">上传后只解析与安全扫描，不会执行包内任何脚本。</p></div><RouterLink class="market-button" to="/skills/manage">查看草稿</RouterLink></header>
+  <header class="page-head"><div><h1 class="market-title">发布 Skill</h1><p class="market-lead">上传后只解析与安全扫描，不会执行包内任何脚本。</p></div><RouterLink class="market-button" :to="marketRoutes.path('/manage')">查看草稿</RouterLink></header>
   <div v-if="loading" class="market-card market-empty">正在加载发布工作台…</div>
   <template v-else>
     <div v-if="error" class="market-error">{{ error }}</div>
@@ -80,7 +82,7 @@ onMounted(async () => {
       <label class="rights"><input v-model="form.rightsConfirmed" type="checkbox">我确认拥有该内容的公开发布权，并同意按所选许可证分享。</label>
       <div class="actions"><button class="market-button primary" :disabled="uploading" @click="upload">{{ uploading ? `上传中 ${progress}%` : '上传并创建草稿' }}</button><span class="market-muted">表单已自动保存在本机</span></div>
     </section>
-    <section v-else class="market-card preview-card"><div class="preview-head"><div><span class="status">DRAFT</span><h2>{{ result.displayName }} <small>v{{ draftVersion?.version }}</small></h2><p>{{ result.summary }}</p></div><b>{{ draftVersion?.fileCount }} 个文件</b></div><div v-if="draftVersion?.findings.length" class="market-error"><b>发现敏感信息，请清理后上传新版本：</b><div v-for="item in draftVersion.findings" :key="item">{{ item }}</div></div><div class="preview-grid"><div><h3>SKILL.md</h3><pre>{{ draftVersion?.skillMd }}</pre></div><div><h3>文件清单</h3><ul><li v-for="file in draftVersion?.files" :key="file.path"><span>{{ file.path }}</span><small>{{ file.size }} B</small></li></ul></div></div><div class="hash">SHA-256 <code>{{ draftVersion?.sha256 }}</code></div><div class="actions"><button class="market-button primary" :disabled="submitting || !!draftVersion?.findings.length" @click="submit">{{ submitting ? '提交中…' : '提交管理员审核' }}</button><RouterLink class="market-button" to="/skills/manage">保留草稿</RouterLink></div></section>
+    <section v-else class="market-card preview-card"><div class="preview-head"><div><span class="status">DRAFT</span><h2>{{ result.displayName }} <small>v{{ draftVersion?.version }}</small></h2><p>{{ result.summary }}</p></div><b>{{ draftVersion?.fileCount }} 个文件</b></div><div v-if="draftVersion?.findings.length" class="market-error"><b>发现敏感信息，请清理后上传新版本：</b><div v-for="item in draftVersion.findings" :key="item">{{ item }}</div></div><div class="preview-grid"><div><h3>SKILL.md</h3><pre>{{ draftVersion?.skillMd }}</pre></div><div><h3>文件清单</h3><ul><li v-for="file in draftVersion?.files" :key="file.path"><span>{{ file.path }}</span><small>{{ file.size }} B</small></li></ul></div></div><div class="hash">SHA-256 <code>{{ draftVersion?.sha256 }}</code></div><div class="actions"><button class="market-button primary" :disabled="submitting || !!draftVersion?.findings.length" @click="submit">{{ submitting ? '提交中…' : '提交管理员审核' }}</button><RouterLink class="market-button" :to="marketRoutes.path('/manage')">保留草稿</RouterLink></div></section>
   </template>
 </template>
 

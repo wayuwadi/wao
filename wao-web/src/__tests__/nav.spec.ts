@@ -7,9 +7,11 @@ import {
   PERSONAL_ITEMS,
   externalAppItemId,
   resolveNavGroups,
+  tabFromRoute,
 } from '@/config/nav'
 import router from '@/router'
 import type { ModuleId } from '@/types'
+import type { RouteLocationNormalized } from 'vue-router'
 
 describe('侧边栏导航配置', () => {
   it('内置菜单都有模块元数据，外部应用使用命名空间标识', () => {
@@ -21,6 +23,20 @@ describe('侧边栏导航配置', () => {
 
     expect(externalIds).toEqual(externalIds.filter((id) => /^external:[a-z0-9-]+$/.test(id)))
     expect(missingModules).toEqual([])
+    expect(DEFAULT_BUILTIN_MENUS.every((menu) => menu.openMode === 'TAB')).toBe(true)
+    expect(DEFAULT_EXTERNAL_APPS.every((app) => app.openMode === 'TAB')).toBe(true)
+  })
+
+  it('Skill 市场同时保留公开路由和 WAO 页签路由', () => {
+    expect(MODULES.skills.path).toBe('/wao/skills')
+    expect(MODULES.skills.newPagePath).toBe('/skills')
+    expect(router.getRoutes().find((route) => route.name === 'skill-market')?.path).toBe('/skills')
+    const inApp = router.getRoutes().find((route) => route.name === 'wao-skill-market')
+    expect(inApp?.path).toBe('/wao/skills')
+    expect(router.resolve('/wao/skills').meta.module).toBe('skills')
+    expect(router.resolve('/wao/skills').meta.tabKind).toBe('module')
+    expect(tabFromRoute(router.resolve('/wao/skills/manage') as RouteLocationNormalized)?.path)
+      .toBe('/wao/skills/manage')
   })
 
   it('自媒体 Agent 默认出现在公共组，并保留旧地址重定向', () => {
@@ -60,6 +76,7 @@ describe('侧边栏导航配置', () => {
         visible: true,
         appUrl: '/studio/',
         healthUrl: '',
+        openMode: 'NEW_PAGE',
       },
       {
         id: 'hidden-app',
@@ -70,6 +87,7 @@ describe('侧边栏导航配置', () => {
         visible: false,
         appUrl: '/hidden/',
         healthUrl: '',
+        openMode: 'TAB',
       },
     ])
 

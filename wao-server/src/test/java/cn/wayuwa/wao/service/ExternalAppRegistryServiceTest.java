@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -11,6 +12,7 @@ import cn.wayuwa.wao.dto.ExternalAppConfigDto;
 import cn.wayuwa.wao.dto.ExternalAppRegistryDto;
 import cn.wayuwa.wao.dto.SaveExternalAppConfigRequest;
 import cn.wayuwa.wao.dto.SaveExternalAppRegistryRequest;
+import cn.wayuwa.wao.dto.SaveMediaAgentMenuConfigRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -33,7 +35,7 @@ class ExternalAppRegistryServiceTest {
 
         var registry = service.getRegistry();
 
-        assertThat(registry.version()).isEqualTo(2);
+        assertThat(registry.version()).isEqualTo(3);
         assertThat(registry.apps()).singleElement().satisfies(app -> {
             assertThat(app.id()).isEqualTo("media-agent");
             assertThat(app.label()).isEqualTo("内容助手");
@@ -42,6 +44,7 @@ class ExternalAppRegistryServiceTest {
             assertThat(app.visible()).isFalse();
             assertThat(app.appUrl()).isEqualTo("/agent/");
             assertThat(app.healthUrl()).isEqualTo("/api/agent/health");
+            assertThat(app.openMode()).isEqualTo("TAB");
         });
     }
 
@@ -67,14 +70,48 @@ class ExternalAppRegistryServiceTest {
         String stored = json.writeValueAsString(new ExternalAppRegistryDto(1, List.of(
                 new ExternalAppConfigDto(
                         "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
-                        "/agent/", "/api/agent/health"),
+                        "/agent/", "/api/agent/health", null),
                 new ExternalAppConfigDto(
                         "wao-insight", "群聊洞察", "ri-bubble-chart-line", "PUBLIC", 25, true,
-                        "/insight/", "/api/insight/health"))));
+                        "/insight/", "/api/insight/health", null))));
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(stored);
 
         assertThat(service.getRegistry().apps()).extracting("id")
                 .containsExactly("media-agent");
+        assertThat(service.getRegistry().apps()).singleElement()
+                .satisfies(app -> assertThat(app.openMode()).isEqualTo("TAB"));
+    }
+
+    @Test
+    void savesNewPageModeAndRejectsUnknownMode() {
+        var newPage = new SaveExternalAppConfigRequest(
+                "data-studio", "数据工作台", "ri-apps-2-line", "PUBLIC", 20, true,
+                "https://studio.example.com/", "", "NEW_PAGE");
+        assertThat(service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(newPage))).apps())
+                .singleElement().satisfies(app -> assertThat(app.openMode()).isEqualTo("NEW_PAGE"));
+
+        var invalid = new SaveExternalAppConfigRequest(
+                "data-studio", "数据工作台", "ri-apps-2-line", "PUBLIC", 20, true,
+                "https://studio.example.com/", "", "POPUP");
+        assertThatThrownBy(() -> service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(invalid))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("打开方式");
+    }
+
+    @Test
+    void legacyMediaAgentUpdatePreservesOpenMode() throws Exception {
+        var stored = new ExternalAppRegistryDto(3, List.of(new ExternalAppConfigDto(
+                "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
+                "/agent/", "/api/agent/health", "NEW_PAGE")));
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(json.writeValueAsString(stored));
+        clearInvocations(settings);
+
+        service.saveLegacyMediaAgentMenu(new SaveMediaAgentMenuConfigRequest("内容助手", "TOOLS", 5, true));
+
+        ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
+        verify(settings).put(eq(SettingService.EXTERNAL_APP_REGISTRY), payload.capture());
+        assertThat(json.readValue(payload.getValue(), ExternalAppRegistryDto.class).apps())
+                .singleElement().satisfies(app -> assertThat(app.openMode()).isEqualTo("NEW_PAGE"));
     }
 
     @Test
@@ -117,6 +154,6 @@ class ExternalAppRegistryServiceTest {
     private static SaveExternalAppConfigRequest app(
             String id, String label, String appUrl, String healthUrl) {
         return new SaveExternalAppConfigRequest(
-                id, label, "ri-apps-2-line", "PUBLIC", 20, true, appUrl, healthUrl);
+                id, label, "ri-apps-2-line", "PUBLIC", 20, true, appUrl, healthUrl, "TAB");
     }
 }

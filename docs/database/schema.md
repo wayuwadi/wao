@@ -263,7 +263,7 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 ### system_setting（系统级配置，V17）
 | 列 | 类型 | 说明 |
 |---|---|---|
-| cfg_key | VARCHAR(64) PK | 配置键，如兼容用 `feishu.webhook.url`、`feishu.chat-sync.app-secret`、`navigation.builtin-menus`（内置菜单注册表）、`feishu.chat-review.speakers`（当前群与两位固定发言人） |
+| cfg_key | VARCHAR(64) PK | 配置键，如兼容用 `feishu.webhook.url`、`feishu.chat-sync.app-secret`、`navigation.builtin-menus`（含 `TAB/NEW_PAGE` 打开方式的内置菜单注册表）、`feishu.chat-review.speakers`（当前群与两位固定发言人） |
 | cfg_value | TEXT | 配置值；敏感键加密存储，密文带 `enc:` 前缀 |
 | updated_at | DATETIME | 最后修改时间 |
 

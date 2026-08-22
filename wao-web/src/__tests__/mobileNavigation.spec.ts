@@ -5,6 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import SideNav from '@/components/nav/SideNav.vue'
+import { useNavStore } from '@/stores/nav'
 
 vi.mock('@/api/favorites', () => ({
   fetchPreference: vi.fn<() => Promise<string | null>>().mockResolvedValue(null),
@@ -65,6 +66,7 @@ describe('手机底部模块导航', () => {
       routes: [
         { path: '/', component: { template: '<div />' }, meta: { module: 'home' } },
         { path: '/games', component: { template: '<div />' }, meta: { module: 'games' } },
+        { path: '/wao/skills', component: { template: '<div />' }, meta: { module: 'skills' } },
       ],
     })
     await router.push(path)
@@ -108,6 +110,28 @@ describe('手机底部模块导航', () => {
     await ai.trigger('click')
     await flushPromises()
     expect(wrapper.vm.$route.fullPath).toBe('/?console=runs#ai-launcher')
+    wrapper.unmount()
+  })
+
+  it('菜单默认在 WAO 页签路由打开，也可配置为浏览器新页面', async () => {
+    const wrapper = await mountNavigation('/')
+    const skillButton = wrapper.findAll('.item').find((item) => item.attributes('title') === 'Skill 市场')!
+
+    await skillButton.trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.$route.fullPath).toBe('/wao/skills')
+
+    await wrapper.vm.$router.push('/')
+    const nav = useNavStore()
+    nav.applyBuiltinMenus(nav.builtinMenus.map((menu) =>
+      menu.id === 'skills' ? { ...menu, openMode: 'NEW_PAGE' } : menu,
+    ))
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    await skillButton.trigger('click')
+
+    expect(open).toHaveBeenCalledWith('/skills', '_blank', 'noopener,noreferrer')
+    expect(wrapper.vm.$route.fullPath).toBe('/')
+    open.mockRestore()
     wrapper.unmount()
   })
 

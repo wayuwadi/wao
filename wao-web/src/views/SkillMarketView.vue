@@ -2,7 +2,9 @@
 import { onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { fetchSkillCategories, fetchSkills, type SkillCard, type SkillCategory } from '@/api/skills'
+import { useSkillMarketRoutes } from '@/composables/skillMarketRoutes'
 
+const marketRoutes=useSkillMarketRoutes()
 const categories=ref<SkillCategory[]>([]), items=ref<SkillCard[]>([])
 const keyword=ref(''),category=ref(''),platform=ref(''),sort=ref('newest')
 const loading=ref(true),error=ref(''),total=ref(0)
@@ -18,7 +20,7 @@ onMounted(async()=>{try{categories.value=await fetchSkillCategories()}catch{/* �
 <template>
   <section class="market-hero">
     <div><span class="hero-kicker">WAO SKILL MARKET</span><h1 class="market-title">把好用的 AI 工作流，交给更多人</h1><p class="market-lead">发现经过安全检查和人工审核的 Agent Skills。每一次下载都有明确版本、许可证与 SHA-256。</p></div>
-    <RouterLink class="market-button primary" to="/skills/publish"><i class="ri-upload-cloud-2-line"></i>发布 Skill</RouterLink>
+    <RouterLink class="market-button primary" :to="marketRoutes.path('/publish')"><i class="ri-upload-cloud-2-line"></i>发布 Skill</RouterLink>
   </section>
   <section class="market-toolbar market-card">
     <label class="search-box"><i class="ri-search-line"></i><input v-model="keyword" placeholder="搜索 Skill 名称、简介或标签"></label>
@@ -31,7 +33,7 @@ onMounted(async()=>{try{categories.value=await fetchSkillCategories()}catch{/* �
   <div v-else-if="loading" class="skill-grid"><div v-for="n in 6" :key="n" class="skill-card skeleton"></div></div>
   <div v-else-if="!items.length" class="market-card market-empty"><i class="ri-inbox-2-line"></i><h3>还没有匹配的 Skill</h3><p>换个关键词或清空筛选试试。</p></div>
   <div v-else class="skill-grid">
-    <RouterLink v-for="skill in items" :key="skill.id" class="skill-card market-card" :to="`/skills/@${skill.publisher.handle}/${skill.slug}`">
+    <RouterLink v-for="skill in items" :key="skill.id" class="skill-card market-card" :to="marketRoutes.path(`/@${skill.publisher.handle}/${skill.slug}`)">
       <div class="skill-icon">{{ skill.displayName.slice(0,1).toUpperCase() }}</div>
       <div class="skill-copy"><div class="skill-name"><h2>{{ skill.displayName }}</h2><span>v{{ skill.version }}</span></div><p>{{ skill.summary }}</p></div>
       <div class="skill-tags"><span>{{ categoryName(skill.category) }}</span><span v-for="p in skill.compatiblePlatforms.slice(0,3)" :key="p">{{ platformName[p]||p }}</span></div>

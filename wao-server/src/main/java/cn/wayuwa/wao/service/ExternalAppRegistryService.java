@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExternalAppRegistryService {
 
-    private static final int REGISTRY_VERSION = 2;
+    private static final int REGISTRY_VERSION = 3;
     private static final int MAX_APPS = 30;
     private static final String MEDIA_AGENT_ID = "media-agent";
     private static final String DEFAULT_MEDIA_AGENT_LABEL = "自媒体 Agent";
@@ -35,6 +35,7 @@ public class ExternalAppRegistryService {
     private static final Pattern APP_ID = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*");
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("PUBLIC", "PERSONAL", "TOOLS");
+    private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
     private static final Set<String> RETIRED_INTERNAL_APP_IDS = Set.of("wao-insight");
 
     private final SettingService settings;
@@ -63,7 +64,7 @@ public class ExternalAppRegistryService {
             List<SaveExternalAppConfigRequest> requests = stored.apps().stream()
                     .map(app -> new SaveExternalAppConfigRequest(
                             app.id(), app.label(), app.icon(), app.group(), app.order(), app.visible(),
-                            app.appUrl(), app.healthUrl()))
+                            app.appUrl(), app.healthUrl(), app.openMode()))
                     .toList();
             return new ExternalAppRegistryDto(REGISTRY_VERSION, activeApps(canonicalize(requests)));
         } catch (JsonProcessingException | IllegalArgumentException | NullPointerException exception) {
@@ -125,7 +126,8 @@ public class ExternalAppRegistryService {
                 request.order(),
                 request.visible(),
                 current.appUrl(),
-                current.healthUrl());
+                current.healthUrl(),
+                current.openMode());
         if (index >= 0) {
             apps.set(index, updated);
         } else {
@@ -166,6 +168,10 @@ public class ExternalAppRegistryService {
             if (request.visible() == null) {
                 throw new IllegalArgumentException("请选择是否显示");
             }
+            String openMode = request.openMode() == null ? "TAB" : request.openMode();
+            if (!OPEN_MODES.contains(openMode)) {
+                throw new IllegalArgumentException("打开方式不正确");
+            }
             apps.add(new ExternalAppConfigDto(
                     id,
                     label,
@@ -174,7 +180,8 @@ public class ExternalAppRegistryService {
                     request.order(),
                     request.visible(),
                     validateUrl(request.appUrl(), "应用入口", false),
-                    validateUrl(request.healthUrl(), "健康检查地址", true)));
+                    validateUrl(request.healthUrl(), "健康检查地址", true),
+                    openMode));
         }
         return List.copyOf(apps);
     }
@@ -206,7 +213,8 @@ public class ExternalAppRegistryService {
                         SettingService.MEDIA_AGENT_MENU_ORDER, String.valueOf(DEFAULT_MEDIA_AGENT_ORDER))),
                 !"false".equalsIgnoreCase(settings.get(SettingService.MEDIA_AGENT_MENU_VISIBLE, "true")),
                 "/agent/",
-                "/api/agent/health");
+                "/api/agent/health",
+                "TAB");
     }
 
     private static int parseOrder(String value) {

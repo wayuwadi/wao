@@ -33,5 +33,7 @@ public record SaveExternalAppConfigRequest(
         @Size(max = 255, message = "应用入口不能超过 255 个字符")
         String appUrl,
         @Size(max = 255, message = "健康检查地址不能超过 255 个字符")
-        String healthUrl) {
+        String healthUrl,
+        @Pattern(regexp = "TAB|NEW_PAGE", message = "打开方式不正确")
+        String openMode) {
 }

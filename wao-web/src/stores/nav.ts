@@ -8,6 +8,8 @@ import {
   externalAppIdFromItem,
   externalAppItemId,
   externalAppPath,
+  normalizeBuiltinMenu,
+  normalizeExternalApp,
   resolveNavGroups,
   type ExternalAppConfig,
   type BuiltinMenuConfig,
@@ -52,8 +54,8 @@ export const useNavStore = defineStore('nav', () => {
   /** 「个人」组顺序：本地缓存先渲染，登录后再用服务端偏好覆盖。 */
   const personalOrder = ref<ModuleId[]>(normalizeOrder(persisted.personalOrder))
   /** 外部应用注册表为全局配置；接口失败时保留 Agent 默认项，不能让现有入口凭空消失。 */
-  const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map((app) => ({ ...app })))
-  const builtinMenus = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map((menu) => ({ ...menu })))
+  const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map(normalizeExternalApp))
+  const builtinMenus = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map(normalizeBuiltinMenu))
   const externalAppsState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
   const externalAppsError = ref('')
   const groups = computed(() => resolveNavGroups(personalOrder.value, externalApps.value, builtinMenus.value))
@@ -114,7 +116,7 @@ export const useNavStore = defineStore('nav', () => {
     externalAppsState.value = 'loading'
     externalAppsError.value = ''
     try {
-      externalApps.value = (await fetchExternalAppRegistry()).apps.map((app) => ({ ...app }))
+      externalApps.value = (await fetchExternalAppRegistry()).apps.map(normalizeExternalApp)
       externalAppsState.value = 'loaded'
     } catch (error) {
       externalAppsState.value = 'error'
@@ -123,18 +125,18 @@ export const useNavStore = defineStore('nav', () => {
   }
   async function loadBuiltinMenus() {
     try {
-      builtinMenus.value = (await fetchBuiltinMenuRegistry()).menus.map((menu) => ({ ...menu }))
+      builtinMenus.value = (await fetchBuiltinMenuRegistry()).menus.map(normalizeBuiltinMenu)
     } catch {
       /* 坏配置或短暂离线时保留代码默认导航，不能让菜单消失。 */
     }
   }
   function applyBuiltinMenus(menus: BuiltinMenuConfig[]) {
-    builtinMenus.value = menus.map((menu) => ({ ...menu }))
+    builtinMenus.value = menus.map(normalizeBuiltinMenu)
   }
 
   /** 设置页保存成功后立即刷新导航，不等页面重载。 */
   function applyExternalApps(apps: ExternalAppConfig[]) {
-    externalApps.value = apps.map((app) => ({ ...app }))
+    externalApps.value = apps.map(normalizeExternalApp)
     externalAppsState.value = 'loaded'
     externalAppsError.value = ''
   }
@@ -152,12 +154,16 @@ export const useNavStore = defineStore('nav', () => {
         label: app.label,
         icon: app.icon,
         path: externalAppPath(app.id),
+        newPagePath: app.appUrl,
+        openMode: app.openMode,
       } : undefined
     }
     if (!id) return undefined
     const module = MODULES[id as ModuleId]
     const configured = builtinMenus.value.find((menu) => menu.id === id)
-    return configured ? { ...module, label: configured.label, icon: configured.icon } : module
+    return configured
+      ? { ...module, label: configured.label, icon: configured.icon, openMode: configured.openMode }
+      : { ...module, openMode: 'TAB' as const }
   }
 
   return {

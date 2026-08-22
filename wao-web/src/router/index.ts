@@ -60,7 +60,7 @@ const router = createRouter({
     {
       path: '/skills',
       component: () => import('@/layouts/SkillMarketLayout.vue'),
-      meta: { public: true },
+      meta: { public: true, skillBase: '/skills' },
       children: [
         { path: '', name: 'skill-market', component: () => import('@/views/SkillMarketView.vue'), meta: { public: true } },
         { path: 'publish', name: 'skill-publish', component: () => import('@/views/SkillPublishView.vue'), meta: { public: false } },
@@ -90,6 +90,19 @@ const router = createRouter({
           name: 'project',
           component: () => import('@/views/ProjectDetailView.vue'),
           meta: { module: 'projects', tabKind: 'project' },
+        },
+        {
+          path: 'wao/skills',
+          component: () => import('@/layouts/SkillMarketLayout.vue'),
+          props: { embedded: true },
+          meta: { module: 'skills', tabKind: 'module', skillBase: '/wao/skills' },
+          children: [
+            { path: '', name: 'wao-skill-market', component: () => import('@/views/SkillMarketView.vue') },
+            { path: 'publish', name: 'wao-skill-publish', component: () => import('@/views/SkillPublishView.vue') },
+            { path: 'manage', name: 'wao-skill-manage', component: () => import('@/views/SkillManageView.vue') },
+            { path: 'reviews', name: 'wao-skill-reviews', component: () => import('@/views/SkillReviewsView.vue') },
+            { path: ':handle/:slug', name: 'wao-skill-detail', component: () => import('@/views/SkillDetailView.vue') },
+          ],
         },
         {
           path: 'calendar',

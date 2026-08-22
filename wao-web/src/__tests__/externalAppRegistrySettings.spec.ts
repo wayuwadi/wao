@@ -74,7 +74,7 @@ describe('外部应用菜单注册表设置', () => {
   it('注册新应用后立即更新动态菜单 store', async () => {
     const dataStudio = {
       id: 'data-studio', label: '数据工作台', icon: 'ri-dashboard-3-line',
-      group: 'TOOLS' as const, order: 0, visible: true, appUrl: '/studio/', healthUrl: '',
+      group: 'TOOLS' as const, order: 0, visible: true, appUrl: '/studio/', healthUrl: '', openMode: 'NEW_PAGE' as const,
     }
     vi.mocked(saveExternalAppRegistry).mockResolvedValue({
       version: 1,
@@ -86,7 +86,9 @@ describe('外部应用菜单注册表设置', () => {
     await wrapper.get('input[placeholder="例如 data-studio"]').setValue(dataStudio.id)
     await wrapper.get('input[placeholder="例如 数据工作台"]').setValue(dataStudio.label)
     await wrapper.get('input[placeholder="ri-apps-2-line"]').setValue(dataStudio.icon)
-    await wrapper.get('select').setValue(dataStudio.group)
+    const selects = wrapper.findAll('.registry-editor select')
+    await selects[0]!.setValue(dataStudio.group)
+    await selects[1]!.setValue(dataStudio.openMode)
     await wrapper.get('input[type="number"]').setValue(dataStudio.order)
     await wrapper.get('input[placeholder="/my-app/ 或 https://app.example.com/"]').setValue(dataStudio.appUrl)
     await wrapper.get('.registry-editor').trigger('submit')

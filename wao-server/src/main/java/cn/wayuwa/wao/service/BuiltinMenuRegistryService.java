@@ -17,31 +17,32 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 13;
+    private static final int VERSION = 14;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
+    private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
-            new BuiltinMenuConfigDto("home", "首页", "ri-home-5-line", "ROOT", 10, true),
-            new BuiltinMenuConfigDto("projects", "项目", "ri-stack-line", "PUBLIC", 10, true),
-            new BuiltinMenuConfigDto("skills", "Skill 市场", "ri-sparkling-2-line", "PUBLIC", 12, true),
-            new BuiltinMenuConfigDto("chat-reviews", "聊天复盘", "ri-chat-history-line", "PUBLIC", 15, true),
-            new BuiltinMenuConfigDto("todo", "待办", "ri-checkbox-multiple-line", "PERSONAL", 10, true),
-            new BuiltinMenuConfigDto("workday-rhythm", "今日节奏", "ri-timer-flash-line", "PERSONAL", 12, true),
-            new BuiltinMenuConfigDto("action-plans", "行动计划", "ri-footprint-line", "PERSONAL", 15, true),
-            new BuiltinMenuConfigDto("calendar", "日历", "ri-calendar-2-line", "PERSONAL", 20, true),
-            new BuiltinMenuConfigDto("weekly-report", "周报生成", "ri-file-list-3-line", "PERSONAL", 25, true),
-            new BuiltinMenuConfigDto("life-review", "人生回顾", "ri-route-line", "PERSONAL", 27, true),
-            new BuiltinMenuConfigDto("workspaces", "工作台", "ri-layout-grid-line", "PERSONAL", 28, true),
-            new BuiltinMenuConfigDto("memory", "个人记忆", "ri-brain-line", "PERSONAL", 29, true),
-            new BuiltinMenuConfigDto("knowledge", "知识库", "ri-book-2-line", "PERSONAL", 30, true),
-            new BuiltinMenuConfigDto("english-learning", "英语训练", "ri-speak-line", "PERSONAL", 35, true),
-            new BuiltinMenuConfigDto("vocabulary", "单词本", "ri-book-marked-line", "PERSONAL", 40, true),
-            new BuiltinMenuConfigDto("drawings", "草图", "ri-draft-line", "PERSONAL", 50, true),
-            new BuiltinMenuConfigDto("vault", "密码本", "ri-key-2-line", "PERSONAL", 60, true),
-            new BuiltinMenuConfigDto("tianren", "天人一卦", "ri-compass-3-line", "PERSONAL", 70, true),
-            new BuiltinMenuConfigDto("automation", "自动化", "ri-flashlight-line", "TOOLS", 10, true),
-            new BuiltinMenuConfigDto("files", "文件与图床", "ri-hard-drive-2-line", "TOOLS", 20, true),
-            new BuiltinMenuConfigDto("games", "游戏厅", "ri-gamepad-line", "TOOLS", 30, true));
+            new BuiltinMenuConfigDto("home", "首页", "ri-home-5-line", "ROOT", 10, true, "TAB"),
+            new BuiltinMenuConfigDto("projects", "项目", "ri-stack-line", "PUBLIC", 10, true, "TAB"),
+            new BuiltinMenuConfigDto("skills", "Skill 市场", "ri-sparkling-2-line", "PUBLIC", 12, true, "TAB"),
+            new BuiltinMenuConfigDto("chat-reviews", "聊天复盘", "ri-chat-history-line", "PUBLIC", 15, true, "TAB"),
+            new BuiltinMenuConfigDto("todo", "待办", "ri-checkbox-multiple-line", "PERSONAL", 10, true, "TAB"),
+            new BuiltinMenuConfigDto("workday-rhythm", "今日节奏", "ri-timer-flash-line", "PERSONAL", 12, true, "TAB"),
+            new BuiltinMenuConfigDto("action-plans", "行动计划", "ri-footprint-line", "PERSONAL", 15, true, "TAB"),
+            new BuiltinMenuConfigDto("calendar", "日历", "ri-calendar-2-line", "PERSONAL", 20, true, "TAB"),
+            new BuiltinMenuConfigDto("weekly-report", "周报生成", "ri-file-list-3-line", "PERSONAL", 25, true, "TAB"),
+            new BuiltinMenuConfigDto("life-review", "人生回顾", "ri-route-line", "PERSONAL", 27, true, "TAB"),
+            new BuiltinMenuConfigDto("workspaces", "工作台", "ri-layout-grid-line", "PERSONAL", 28, true, "TAB"),
+            new BuiltinMenuConfigDto("memory", "个人记忆", "ri-brain-line", "PERSONAL", 29, true, "TAB"),
+            new BuiltinMenuConfigDto("knowledge", "知识库", "ri-book-2-line", "PERSONAL", 30, true, "TAB"),
+            new BuiltinMenuConfigDto("english-learning", "英语训练", "ri-speak-line", "PERSONAL", 35, true, "TAB"),
+            new BuiltinMenuConfigDto("vocabulary", "单词本", "ri-book-marked-line", "PERSONAL", 40, true, "TAB"),
+            new BuiltinMenuConfigDto("drawings", "草图", "ri-draft-line", "PERSONAL", 50, true, "TAB"),
+            new BuiltinMenuConfigDto("vault", "密码本", "ri-key-2-line", "PERSONAL", 60, true, "TAB"),
+            new BuiltinMenuConfigDto("tianren", "天人一卦", "ri-compass-3-line", "PERSONAL", 70, true, "TAB"),
+            new BuiltinMenuConfigDto("automation", "自动化", "ri-flashlight-line", "TOOLS", 10, true, "TAB"),
+            new BuiltinMenuConfigDto("files", "文件与图床", "ri-hard-drive-2-line", "TOOLS", 20, true, "TAB"),
+            new BuiltinMenuConfigDto("games", "游戏厅", "ri-gamepad-line", "TOOLS", 30, true, "TAB"));
     private static final Map<String, BuiltinMenuConfigDto> BY_ID = DEFAULTS.stream()
             .collect(java.util.stream.Collectors.toUnmodifiableMap(BuiltinMenuConfigDto::id, item -> item));
 
@@ -96,7 +97,10 @@ public class BuiltinMenuRegistryService {
             if (!ICON.matcher(icon).matches()) throw new IllegalArgumentException("菜单图标格式不正确");
             if (!GROUPS.contains(menu.group())) throw new IllegalArgumentException("菜单分组不正确");
             if (menu.order() < 0 || menu.order() > 999) throw new IllegalArgumentException("菜单排序值必须在 0 到 999 之间");
-            result.add(new BuiltinMenuConfigDto(menu.id(), label, icon, menu.group(), menu.order(), menu.visible()));
+            String openMode = menu.openMode() == null ? "TAB" : menu.openMode();
+            if (!OPEN_MODES.contains(openMode)) throw new IllegalArgumentException("菜单打开方式不正确");
+            result.add(new BuiltinMenuConfigDto(
+                    menu.id(), label, icon, menu.group(), menu.order(), menu.visible(), openMode));
         }
         // 新版本增加内置模块时，旧注册表缺少该 id 是正常升级路径：保留用户已有定制并补上新默认项。
         if (!requireAll) {
