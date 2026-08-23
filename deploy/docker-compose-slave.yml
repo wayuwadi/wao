@@ -14,8 +14,6 @@ services:
       - --server-id=2
       - --bind-address=0.0.0.0
       - --relay-log=relay-bin
-      - --read-only=ON
-      - --super-read-only=ON
       - --log-replica-updates=ON
       - --gtid-mode=ON
       - --enforce-gtid-consistency=ON
@@ -42,7 +40,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "mysqladmin ping --protocol=socket -uroot -p$$MYSQL_ROOT_PASSWORD --silent",
+          "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysql --protocol=socket -N -uroot -e 'SELECT 1'",
         ]
       interval: 10s
       timeout: 5s
