@@ -73,6 +73,7 @@ export const fetchTasks = () => get<Task[]>('/api/tasks')
 export const fetchKbs = () => get<KnowledgeBase[]>('/api/kbs')
 export const fetchKbGroups = () => get<KbGroup[]>('/api/kb-groups')
 export const fetchDocs = () => get<Doc[]>('/api/docs')
+export const fetchDoc = (id: string) => get<Doc>(`/api/docs/${id}`)
 export const fetchJobs = () => get<AutomationJob[]>('/api/jobs')
 export const fetchFiles = () => get<FileItem[]>('/api/files')
 export async function apiUploadFile(file: File): Promise<FileItem> {

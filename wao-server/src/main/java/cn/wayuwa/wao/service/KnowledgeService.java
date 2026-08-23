@@ -56,6 +56,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 知识库域服务：分组 / 知识库 / 文件夹 / 文档的增删改查，外加小记与回收站。
@@ -391,6 +392,55 @@ public class KnowledgeService {
             blocks = templateBlocks(requireTemplate(req.templateId(), author));
         }
         return insertDoc(req.kbId(), folder.getId(), req.title(), author, blocks, links);
+    }
+
+    /**
+     * 用稳定 id 幂等创建当天的「今日节奏」文档。
+     *
+     * <p>文档被移入回收站后仍返回原文档，上层展示恢复入口，不会生成第二篇同日文档。
+     *
+     * @param id 由成员与日期派生的稳定文档 id
+     * @param kbId 目标知识库
+     * @param folderId 目标文件夹
+     * @param templateId 可选的文档模板
+     * @param title 已替换日期占位符的标题
+     * @param suppliedBlocks 页面上的最新草稿；空时复制模板
+     * @param author 当前成员
+     * @return 当天唯一文档
+     */
+    @Transactional
+    public DocDto createDailyRhythmDoc(String id, String kbId, String folderId, String templateId,
+            String title, List<DocBlockDto> suppliedBlocks, String author) {
+        DocEntity existing = docMapper.selectById(id);
+        if (existing != null) {
+            if (!Objects.equals(existing.getAuthorId(), author)) {
+                throw new BadRequestException("每日文档标识已被占用");
+            }
+            return toDto(existing, docMapper.selectList(aliveDocs()));
+        }
+        requireKb(kbId);
+        requireFolder(kbId, folderId);
+        List<DocBlockDto> blocks = suppliedBlocks == null ? List.of() : suppliedBlocks;
+        if (blocks.isEmpty() && StringUtils.hasText(templateId)) {
+            blocks = templateBlocks(requireTemplate(templateId, author));
+        }
+        return insertDoc(id, kbId, folderId, title, author, blocks, List.of());
+    }
+
+    /**
+     * 保存每日文档设置前校验目标仍然存在，且模板属于当前成员。
+     *
+     * @param kbId 目标知识库
+     * @param folderId 目标文件夹
+     * @param templateId 可选模板
+     * @param memberId 当前成员
+     */
+    public void validateDailyRhythmTarget(String kbId, String folderId, String templateId, String memberId) {
+        requireKb(kbId);
+        requireFolder(kbId, folderId);
+        if (StringUtils.hasText(templateId)) {
+            requireTemplate(templateId, memberId);
+        }
     }
 
     // ---------------- 文档模板 ----------------

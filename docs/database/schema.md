@@ -500,8 +500,17 @@ WAO 不主动探测、抓取或删除链接对应的外部系统。聚合边界�
 
 “今日节奏”复用 `member_preference` 的 `workday-rhythm-config-v1` 保存个人时间块模板及精力补给通知通道、Webhook 配置 id
 或飞书群 `chat_id`、动作开关，并以
-`workday-rhythm-day-YYYY-MM-DD` 保存当天三个重点、时间块完成项、喝水次数、冥想和是否执行；页面同时保留
-未成功提交的本机草稿。每日记录还保存当时精力项目的名称/机制快照，按当前成员和有界日期键范围提供历史回顾；
+`workday-rhythm-day-YYYY-MM-DD` 保存当天三个重点、时间块完成项、喝水次数、冥想和是否执行；页面同时保留未成功提交的本机草稿。
+
+V84 在不改写上述兼容数据的前提下增加每日面板：
+
+- `workday_rhythm_setting` 保存大小周联动、每日文档目标和卦象模块开关。
+- `workday_rhythm_checklist_item` 保存可维护模板，`system_key` 只对系统联动项唯一，自定义项可有多条。
+- `workday_rhythm_checklist_occurrence` 保存日期快照、完成时间和准时状态，模板修改不改写历史。
+- `workday_rhythm_day` 以成员和日期为主键，保存当天工作日覆盖和唯一每日文档。
+- `workday_rhythm_reminder_delivery` 以实例和通道去重，保存尝试、失败与成功时间。
+
+每日记录还保存当时精力项目的名称/机制快照，按当前成员和有界日期键范围提供历史回顾；
 没有记录的日期不生成数据，损坏记录显式计数跳过。飞书应用密钥仍在系统配置加密保存，不进入成员偏好；
 见 ADR-079、ADR-081、ADR-090。
 

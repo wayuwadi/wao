@@ -3,6 +3,67 @@ info:
   title: WAO 今日节奏 API
   version: 0.1.0
 paths:
+  /api/workday-rhythm/dashboard:
+    get:
+      summary: 读取当前成员指定日期的每日面板
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        "200": { description: 返回工作日判断、当日及跨午夜清单、文档和面板设置 }
+  /api/workday-rhythm/settings:
+    get:
+      summary: 读取大小周联动、每日文档与卦象模块设置
+      responses:
+        "200": { description: OK }
+    put:
+      summary: 保存大小周联动、每日文档与卦象模块设置
+      responses:
+        "200": { description: 已按当前成员保存 }
+        "400": { description: 文档目标或标题格式不合法 }
+  /api/workday-rhythm/checklist-items:
+    get:
+      summary: 读取当前成员的每日必做模板
+      responses:
+        "200": { description: 首次读取会幂等补齐三个默认系统项 }
+    post:
+      summary: 新增自定义每日必做项
+      responses:
+        "200": { description: 已创建 }
+        "400": { description: 适用日、时间窗或通知配置不合法 }
+  /api/workday-rhythm/checklist-items/{id}:
+    patch:
+      summary: 修改当前成员的清单模板，不允许改变系统行为类型
+      responses:
+        "200": { description: 已保存；当天未完成且未投递项同步新快照 }
+        "404": { description: 项目不存在或不属于当前成员 }
+    delete:
+      summary: 软删除自定义项；系统项只能停用
+      responses:
+        "200": { description: 已删除，历史实例保留 }
+        "400": { description: 试图删除系统联动项 }
+  /api/workday-rhythm/days/{date}/workday-status:
+    put:
+      summary: 设置当天工作状态覆盖；active 为 null 时恢复自动判断
+      responses:
+        "200": { description: 返回刷新后的当天面板 }
+  /api/workday-rhythm/days/{date}/focus:
+    put:
+      summary: 保存三个今日重点并联动计划必做项
+      responses:
+        "200": { description: 三项均非空时计划项自动完成 }
+        "400": { description: 不是三项或单项超过 100 字 }
+  /api/workday-rhythm/occurrences/{id}/completion:
+    put:
+      summary: 完成或撤销一条当日必做
+      responses:
+        "200": { description: 返回完成时间、准时结果和当前状态 }
+        "404": { description: 实例不存在或不属于当前成员 }
+  /api/workday-rhythm/days/{date}/document:
+    put:
+      summary: 首次真实输入时幂等创建或返回当天唯一文档
+      responses:
+        "200": { description: 返回可继续使用文档自动保存接口的真实文档 }
+        "400": { description: 未配置知识库/文件夹或目标已失效 }
   /api/workday-rhythm/history:
     get:
       summary: 按日期范围读取当前成员已经保存的今日节奏历史
@@ -67,7 +128,7 @@ components:
           items: { $ref: "#/components/schemas/WorkdayRhythmHistoryDay" }
     WorkdayRhythmHistoryDay:
       type: object
-      required: [date, workdayActive, focus, energyItems]
+      required: [date, workdayActive, focus, energyItems, checklist]
       properties:
         date: { type: string, format: date }
         workdayActive: { type: boolean }
@@ -78,6 +139,19 @@ components:
         energyItems:
           type: array
           items: { $ref: "#/components/schemas/WorkdayRhythmHistoryEnergy" }
+        checklist:
+          type: array
+          items:
+            type: object
+            required: [title, category]
+            properties:
+              title: { type: string }
+              category: { type: string, enum: [WORK, LIFE] }
+              completedAt: { type: string, format: date-time, nullable: true }
+              completedOnTime: { type: boolean, nullable: true }
+        documentId: { type: string, nullable: true }
+        documentKbId: { type: string, nullable: true }
+        documentTitle: { type: string, nullable: true }
     WorkdayRhythmHistoryEnergy:
       type: object
       required: [id, title, mode, count]
