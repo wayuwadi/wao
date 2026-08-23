@@ -14,6 +14,7 @@ if (-not (Test-Path -LiteralPath $snapshot -PathType Leaf)) {
 
 $linuxProjectRoot = ConvertTo-WaoWslPath $ProjectRoot
 $linuxSnapshot = ConvertTo-WaoWslPath $snapshot
+$bootstrapCompleted = $false
 try {
     Invoke-WaoWsl `
         -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'sh',
@@ -23,7 +24,10 @@ try {
         -WslArguments @('-d', $Distribution, '-u', 'root', '--', 'sh',
             "$linuxProjectRoot/deploy/scripts/validate-slave.sh") `
         -FailureMessage 'Slave validation failed after snapshot bootstrap.'
+    $bootstrapCompleted = $true
 }
 finally {
-    Remove-Item -LiteralPath $snapshot -Force -ErrorAction SilentlyContinue
+    if ($bootstrapCompleted) {
+        Remove-Item -LiteralPath $snapshot -Force -ErrorAction SilentlyContinue
+    }
 }
