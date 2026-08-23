@@ -147,14 +147,22 @@ legacy_agent_id="$(run_docker ps -aq \
   --filter 'label=com.docker.compose.service=wao-agent-server' | head -n 1)"
 if [ -n "${legacy_agent_id}" ]; then
   legacy_agent_image="$(run_docker inspect --format '{{.Image}}' "${legacy_agent_id}")"
-  run_docker tag "${legacy_agent_image}" wao-agent-server:rollback
+  if run_docker image inspect "${legacy_agent_image}" >/dev/null 2>&1; then
+    run_docker tag "${legacy_agent_image}" wao-agent-server:rollback
+  else
+    echo "Skipping rollback tag for legacy Agent; image ${legacy_agent_image} is no longer present." >&2
+  fi
 fi
 
 for service in wao-server wao-agent-server wao-gateway; do
   container_id="$(compose ps -q "${service}")"
   if [ -n "${container_id}" ]; then
     image_id="$(run_docker inspect --format '{{.Image}}' "${container_id}")"
-    run_docker tag "${image_id}" "${service}:rollback"
+    if run_docker image inspect "${image_id}" >/dev/null 2>&1; then
+      run_docker tag "${image_id}" "${service}:rollback"
+    else
+      echo "Skipping rollback tag for ${service}; image ${image_id} is no longer present." >&2
+    fi
   fi
 done
 case "${SKIP_IMAGE_BUILD:-false}" in
