@@ -53,6 +53,43 @@ class FeishuOpenApiClientTest {
     }
 
     @Test
+    void readsMentionOpenIdsFromMessageHistory() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(MESSAGES_URL)).andRespond(withSuccess("""
+                {"code":0,"data":{"items":[{
+                  "message_id":"om_mention",
+                  "sender":{"id":"ou_sender","sender_type":"user"},
+                  "msg_type":"text","body":{"content":"{\\"text\\":\\"@_user_1 记录任务\\"}"},
+                  "create_time":150,"deleted":false,
+                  "mentions":[{"key":"@_user_1","id":{"open_id":"ou_bot"},"name":"WAO"}]
+                }],"has_more":false}}
+                """, MediaType.APPLICATION_JSON));
+
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+
+        var message = client.listMessages("token-test", "oc_chat", 100, 200).get(0);
+        assertThat(message.mentions()).containsExactly(
+                new FeishuOpenApiClient.FeishuMention("@_user_1", "ou_bot", "WAO"));
+        server.verify();
+    }
+
+    @Test
+    void readsCurrentBotOpenId() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/bot/v3/info"))
+                .andRespond(withSuccess("""
+                        {"code":0,"data":{"bot":{"open_id":"ou_bot","app_name":"WAO"}}}
+                        """, MediaType.APPLICATION_JSON));
+
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+
+        assertThat(client.botOpenId("token-test")).isEqualTo("ou_bot");
+        server.verify();
+    }
+
+    @Test
     void percentEncodesOpaqueFeishuPageTokensBeforeRequestingTheNextPage() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
