@@ -177,7 +177,7 @@ Jenkins 使用 Windows、云节点两套独立 SSH 密钥与严格 `known_hosts`
 以 Linux 主节点私有部署目录为准。CD 一次构建带 Git SHA 标签的镜像，按 Windows → Linux → 云前端顺序
 滚动发布；两台应用节点均运行同一 SHA 且通过直连验证后才标记成功。首次重建从库时在 Jenkins 手工运行
 `wao-main-cd` 并勾选 `BOOTSTRAP_WINDOWS`，正常发布不得自动重置已有从库。安装与恢复见
-[Jenkins runbook](jenkins/README.md)，决策见 [ADR-098](../docs/adr/098-self-hosted-jenkins-delivery.md)。
+[Jenkins runbook](jenkins/README.md)，决策见 [ADR-099](../docs/adr/099-self-hosted-jenkins-delivery.md)。
 
 发布包用 `git archive HEAD` 打出，落到节点上时**先清空上一版源码再解压**：`tar -xzf` 和 `Expand-Archive -Force` 都只覆盖同名文件，不会删除这一版里已经删掉或改过名的文件，留在节点上的旧文件会跟着进 Docker 构建上下文。2026-07-26 连续四次部署回滚就是这么来的：`V18__chat_sync_monthly_archive.sql` 在仓库里已经改名成 V21，节点上的旧副本还在，Flyway 一启动就报「Found more than one migration with version 18」。清理范围是节点目录下除 `deploy/` 以外的全部内容——`deploy/` 里放着节点私有的 `.env`、`.env.secrets`、`certs/`、`data/`，其中被 git 跟踪的文件随即被这次解压整份覆盖。
 
