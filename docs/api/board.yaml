@@ -946,6 +946,8 @@ paths:
       responses:
         '200': { description: OK }
         '400': { description: Verification Token 不匹配或事件解密失败 }
+  # 开启快速收集时，服务端另使用已配群聊归档 App 凭据每 15 秒主动读取目标群。
+  # 主动轮询不新增 HTTP API；只处理精确提及当前机器人 open_id 的用户消息，并与事件回调共用 message_id 去重。
   /files:
     get: { summary: 文件元数据列表（含 contentType，不读取二进制正文）, responses: { '200': { description: OK } } }
     post:

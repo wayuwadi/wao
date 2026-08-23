@@ -24,6 +24,7 @@ import cn.wayuwa.wao.dto.SaveQuickCollectConfigRequest;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.feishu.FeishuAppLinks;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
@@ -156,6 +157,27 @@ public class FeishuQuickCollectService {
         return Map.of();
     }
 
+    /**
+     * 处理通过飞书开放 API 主动拉到的消息。该链路已由 tenant_access_token 鉴权，仍复用同一套
+     * 身份归属、项目可见性、任务创建、回执与 message_id 持久去重逻辑。
+     *
+     * @param chatId 目标群 id
+     * @param source 飞书消息
+     */
+    public void collectPolled(String chatId, FeishuMessage source) {
+        var event = json.createObjectNode();
+        event.putObject("sender").putObject("sender_id").put("open_id", source.senderId());
+        var message = event.putObject("message");
+        message.put("message_id", source.messageId());
+        message.put("chat_id", chatId);
+        message.put("message_type", source.msgType());
+        message.put("content", source.content());
+        var mentions = message.putArray("mentions");
+        source.mentions().forEach(mention -> mentions.addObject()
+                .put("key", mention.key()).put("name", mention.name()));
+        collect(event, "");
+    }
+
     /** 真正把一条群消息变成任务。 */
     private void collect(JsonNode event, String eventId) {
         JsonNode message = event.path("message");
@@ -280,11 +302,13 @@ public class FeishuQuickCollectService {
     }
 
     private String eventKey(String eventId, String messageId, JsonNode event) {
-        if (StringUtils.hasText(eventId)) {
-            return "event:" + eventId;
-        }
+        // 回调和主动轮询看到的 event_id 不同（轮询没有 event_id），
+        // 但 message_id 是同一条群消息的稳定身份，必须优先用它才能跨入口去重。
         if (StringUtils.hasText(messageId)) {
             return "message:" + messageId;
+        }
+        if (StringUtils.hasText(eventId)) {
+            return "event:" + eventId;
         }
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")

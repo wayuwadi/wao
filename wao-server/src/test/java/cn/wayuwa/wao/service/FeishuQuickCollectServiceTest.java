@@ -30,6 +30,8 @@ import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.feishu.FeishuAppLinks;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMention;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
@@ -107,6 +109,19 @@ class FeishuQuickCollectServiceTest {
     }
 
     @Test
+    void polledMessageUsesTheSamePersonalCapturePath() {
+        enabled();
+
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_poll", "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 记录任务：整理周报\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+
+        verify(tasks).createFromChat("p1", "整理周报", "整理周报", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+    }
+
+    @Test
     void ordinaryGroupConversationWithoutMentionIsIgnored() {
         enabled();
         service.handleEvent(message("ev-normal", "text", "{\\\"text\\\":\\\"这是普通群聊\\\"}", false));
@@ -152,6 +167,32 @@ class FeishuQuickCollectServiceTest {
         service.handleEvent(body);
 
         verify(tasks).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void callbackAndPollingShareMessageIdDeduplication() {
+        enabled();
+        AtomicBoolean claimed = new AtomicBoolean();
+        AtomicReference<FeishuQuickCollectEventEntity> stored = new AtomicReference<>();
+        when(events.insert(any(FeishuQuickCollectEventEntity.class))).thenAnswer(invocation -> {
+            if (!claimed.compareAndSet(false, true)) {
+                throw new DuplicateKeyException("duplicate");
+            }
+            stored.set(invocation.getArgument(0));
+            return 1;
+        });
+        when(events.selectById(any())).thenAnswer(invocation -> stored.get());
+
+        service.handleEvent(message("ev-both", "text",
+                "{\\\"text\\\":\\\"@_user_1 记录任务：同一条消息\\\"}"));
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_ev-both", "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 记录任务：同一条消息\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+
+        verify(tasks, org.mockito.Mockito.times(1))
+                .createFromChat(any(), any(), any(), any(), any());
+        assertThat(stored.get().getEventKey()).isEqualTo("message:om_ev-both");
     }
 
     @Test

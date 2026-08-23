@@ -154,6 +154,14 @@ public class FeishuOpenApiClient {
                     ? get(uri, token, chatId, startSecs, endSecs, PAGE_SIZE)
                     : get(uri, token, chatId, startSecs, endSecs, PAGE_SIZE, pageToken);
             for (JsonNode item : data.path("items")) {
+                List<FeishuMention> mentions = new ArrayList<>();
+                for (JsonNode mention : item.path("mentions")) {
+                    JsonNode mentionId = mention.path("id");
+                    mentions.add(new FeishuMention(
+                            text(mention, "key"),
+                            mentionId.path("open_id").asText(mentionId.isTextual() ? mentionId.asText() : ""),
+                            text(mention, "name")));
+                }
                 out.add(new FeishuMessage(
                         text(item, "message_id"),
                         item.path("sender").path("id").asText(""),
@@ -161,7 +169,8 @@ public class FeishuOpenApiClient {
                         text(item, "msg_type"),
                         item.path("body").path("content").asText(""),
                         item.path("create_time").asLong(0),
-                        item.path("deleted").asBoolean(false)));
+                        item.path("deleted").asBoolean(false),
+                        List.copyOf(mentions)));
             }
             boolean hasMore = data.path("has_more").asBoolean(false);
             if (page == MAX_PAGES - 1 && hasMore) {
@@ -221,6 +230,21 @@ public class FeishuOpenApiClient {
         post("/open-apis/im/v1/messages?receive_id_type=chat_id",
                 Map.of("receive_id", chatId, "msg_type", "interactive", "content", writeJson(card.toPayload())),
                 token);
+    }
+
+    /**
+     * 获取当前应用机器人的 open_id，用于主动拉消息时精确判断被 @ 的是不是本机器人。
+     *
+     * @param token tenant_access_token
+     * @return 当前应用机器人的 open_id
+     */
+    public String botOpenId(String token) {
+        JsonNode data = get("/open-apis/bot/v3/info", token);
+        String openId = data.path("bot").path("open_id").asText("");
+        if (openId.isBlank()) {
+            throw new FeishuApiException("飞书没有返回当前机器人 open_id");
+        }
+        return openId;
     }
 
     /** 发送可回传「做到了 / 没做到」的通知卡片；回调值只含业务通知 id，不含任何凭据。 */
@@ -331,11 +355,21 @@ public class FeishuOpenApiClient {
      * @param deleted    是否已撤回
      */
     public record FeishuMessage(String messageId, String senderId, String senderType,
-                                String msgType, String content, long createTime, boolean deleted) {
+                                String msgType, String content, long createTime, boolean deleted,
+                                List<FeishuMention> mentions) {
+        /** 历史调用未读取 mention 时的兼容构造。 */
+        public FeishuMessage(String messageId, String senderId, String senderType,
+                String msgType, String content, long createTime, boolean deleted) {
+            this(messageId, senderId, senderType, msgType, content, createTime, deleted, List.of());
+        }
+
         /** 保持既有服务单元测与内部构造的用户消息语义。 */
         public FeishuMessage(String messageId, String senderId, String msgType, String content,
                 long createTime, boolean deleted) {
-            this(messageId, senderId, "user", msgType, content, createTime, deleted);
+            this(messageId, senderId, "user", msgType, content, createTime, deleted, List.of());
         }
     }
+
+    /** 消息中一个 @ 对象；open_id 用来精确匹配当前应用机器人。 */
+    public record FeishuMention(String key, String openId, String name) { }
 }
