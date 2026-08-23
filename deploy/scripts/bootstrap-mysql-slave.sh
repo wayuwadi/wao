@@ -26,7 +26,7 @@ mysql_ready=false
 attempt=1
 while [ "${attempt}" -le 60 ]; do
   if docker exec "${mysql_id}" sh -c \
-      'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqladmin --protocol=socket -uroot ping --silent' \
+      'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -N -uroot -e "SELECT 1"' \
       >/dev/null 2>&1; then
     mysql_ready=true
     break
