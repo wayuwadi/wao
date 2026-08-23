@@ -5,7 +5,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Update } from '@tauri-apps/plugin-updater'
-import fruitKernelRaccoonSprites from './assets/wao-fruit-kernel-raccoon-sprites-v1.png'
+import fruitKernelRaccoonSprites from './assets/wao-fruit-kernel-raccoon-sprites-v2.png'
 import { PET_ANIMATIONS, spritePosition, type PetAnimation } from './petAnimation'
 import { findUpdate, installUpdate, type UpdateState } from './update'
 
