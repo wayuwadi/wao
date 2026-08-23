@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { getVersion } from '@tauri-apps/api/app'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Update } from '@tauri-apps/plugin-updater'
-import fruitKernelRaccoon from './assets/wao-fruit-kernel-raccoon.png'
+import waoPuppySprites from './assets/wao-puppy-sprites-v2.png'
+import {
+  dragDirectionFromDelta,
+  PET_ANIMATIONS,
+  spritePosition,
+  type DragDirection,
+  type PetAnimation,
+} from './petAnimation'
 import { findUpdate, installUpdate, type UpdateState } from './update'
 
 const WAO_URL = 'https://wao.wayuwa.cn'
@@ -16,6 +23,19 @@ const updateState = ref<UpdateState>({ phase: 'idle' })
 const pendingUpdate = shallowRef<Update | null>(null)
 const unlisteners: UnlistenFn[] = []
 let initialUpdateTimer: ReturnType<typeof setTimeout> | undefined
+let animationTimer: ReturnType<typeof setInterval> | undefined
+let sleepTimer: ReturnType<typeof setTimeout> | undefined
+const petAnimation = ref<PetAnimation>('idle')
+const petFrame = ref(0)
+let frameCursor = 0
+let dragging = false
+let dragOrigin: { x: number, y: number } | undefined
+let dragDirection: DragDirection = 'neutral'
+
+const petSpriteStyle = computed(() => ({
+  backgroundImage: `url(${waoPuppySprites})`,
+  backgroundPosition: spritePosition(petFrame.value),
+}))
 
 const message = computed(() => {
   if (updateState.value.phase === 'available') return `新版本 ${updateState.value.version} 已经准备好。`
@@ -46,9 +66,71 @@ async function applyUpdate() {
   await installUpdate(pendingUpdate.value, (state) => { updateState.value = state })
 }
 
-function startDragging(event: MouseEvent) {
+function runPetAnimation(name: PetAnimation, after?: () => void) {
+  if (animationTimer) clearTimeout(animationTimer)
+  const sequence = PET_ANIMATIONS[name]
+  petAnimation.value = name
+  frameCursor = 0
+  petFrame.value = sequence.frames[0]
+
+  const advanceFrame = () => {
+    frameCursor += 1
+    if (frameCursor >= sequence.frames.length) {
+      if (sequence.loop) {
+        frameCursor = 0
+      } else {
+        animationTimer = undefined
+        if (after) after()
+        else runPetAnimation('idle')
+        return
+      }
+    }
+    petFrame.value = sequence.frames[frameCursor]
+    animationTimer = setTimeout(advanceFrame, sequence.durations[frameCursor])
+  }
+
+  animationTimer = setTimeout(advanceFrame, sequence.durations[0])
+}
+
+function resetSleepTimer() {
+  if (sleepTimer) clearTimeout(sleepTimer)
+  sleepTimer = setTimeout(() => {
+    if (!busy.value) runPetAnimation('sleepy', () => runPetAnimation('sleeping'))
+  }, 45_000)
+}
+
+function wakePet() {
+  resetSleepTimer()
+  if (petAnimation.value === 'sleeping' || petAnimation.value === 'sleepy') {
+    runPetAnimation('wake')
+  }
+}
+
+function reactToPet() {
+  resetSleepTimer()
+  if (petAnimation.value === 'sleeping' || petAnimation.value === 'sleepy') {
+    runPetAnimation('wake')
+  } else if (!busy.value) {
+    runPetAnimation('wave')
+  }
+}
+
+async function startDragging(event: MouseEvent) {
   if ((event.target as HTMLElement).closest('button')) return
-  void appWindow.startDragging()
+  resetSleepTimer()
+  const position = await appWindow.outerPosition()
+  dragOrigin = { x: position.x, y: position.y }
+  dragDirection = 'neutral'
+  dragging = true
+  if (!busy.value) runPetAnimation('dragging')
+  try {
+    await appWindow.startDragging()
+  } finally {
+    dragging = false
+    dragOrigin = undefined
+    dragDirection = 'neutral'
+    if (!busy.value) runPetAnimation('surprised')
+  }
 }
 
 async function openWao() {
@@ -56,20 +138,37 @@ async function openWao() {
 }
 
 onMounted(async () => {
+  runPetAnimation('idle')
+  resetSleepTimer()
   version.value = await getVersion()
   unlisteners.push(await listen('desktop://check-for-updates', () => void checkForUpdates()))
   unlisteners.push(await listen('desktop://open-wao', () => void openWao()))
+  unlisteners.push(await appWindow.onMoved(({ payload: position }) => {
+    if (!dragging || !dragOrigin || busy.value) return
+    const nextDirection = dragDirectionFromDelta(position.x - dragOrigin.x, position.y - dragOrigin.y)
+    if (nextDirection === 'neutral' || nextDirection === dragDirection) return
+    dragDirection = nextDirection
+    runPetAnimation(`dragging-${nextDirection}`)
+  }))
   initialUpdateTimer = setTimeout(() => void checkForUpdates(true), 12_000)
 })
 
 onBeforeUnmount(() => {
   if (initialUpdateTimer) clearTimeout(initialUpdateTimer)
+  if (animationTimer) clearTimeout(animationTimer)
+  if (sleepTimer) clearTimeout(sleepTimer)
   unlisteners.forEach((unlisten) => unlisten())
+})
+
+watch(busy, (isBusy) => {
+  resetSleepTimer()
+  if (isBusy) runPetAnimation('working')
+  else if (petAnimation.value === 'working') runPetAnimation('idle')
 })
 </script>
 
 <template>
-  <main class="pet-stage" @mousedown.left="startDragging">
+  <main class="pet-stage" @mousedown.left="startDragging" @mousemove="wakePet">
     <section v-if="panelOpen" class="bubble" aria-live="polite">
       <button class="bubble-close" aria-label="关闭更新面板" @click="panelOpen = false">×</button>
       <strong>{{ message }}</strong>
@@ -85,14 +184,23 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="pet" :class="{ working: busy }" aria-label="WAO 果核狸桌面宠物">
-      <img
+    <section
+      class="pet"
+      :class="[`animation-${petAnimation}`, { working: busy }]"
+      role="button"
+      tabindex="0"
+      aria-label="WAO 小沃犬桌面宠物，单击互动，双击打开 WAO"
+      @mousedown.left.stop="startDragging"
+      @click.stop="reactToPet"
+      @dblclick.stop="openWao"
+      @keydown.enter="reactToPet"
+      @keydown.space.prevent="reactToPet"
+    >
+      <span
         class="pet-sprite"
-        :src="fruitKernelRaccoon"
-        alt=""
+        :style="petSpriteStyle"
         aria-hidden="true"
-        draggable="false"
-      >
+      ></span>
     </section>
 
     <nav class="pet-actions" aria-label="桌面宠物操作">
