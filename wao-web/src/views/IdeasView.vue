@@ -52,6 +52,7 @@ const selected = computed(() => ideas.value.find((item) => item.id === selectedI
 const loading = ref(true)
 const error = ref('')
 const view = ref<'board' | 'list'>('board')
+const showQuick = ref(true)
 const search = ref('')
 const filters = reactive({ stage: '', owner: '', creator: '', priority: '', project: '' })
 const quick = reactive({ title: '', rawIdea: '', priority: 'P1' as IdeaPriority })
@@ -96,6 +97,21 @@ const filtered = computed(() =>
 )
 const activeCount = computed(
   () => ideas.value.filter((idea) => activeStages.includes(idea.stage)).length,
+)
+const stageChips = computed(() => [
+  { id: '', label: '全部', count: ideas.value.length },
+  ...stages.map((stage) => ({
+    ...stage,
+    count: ideas.value.filter((idea) => idea.stage === stage.id).length,
+  })),
+])
+const stageGroups = computed(() =>
+  stages
+    .map((stage) => ({
+      ...stage,
+      items: filtered.value.filter((idea) => idea.stage === stage.id),
+    }))
+    .filter((group) => group.items.length > 0),
 )
 const stageLabel = (stage: IdeaStage) => stages.find((item) => item.id === stage)?.label ?? stage
 const memberName = (id: string) => session.members.find((member) => member.id === id)?.name ?? id
@@ -188,6 +204,7 @@ async function submitQuick() {
     selectedId.value = created.id
     quick.title = ''
     quick.rawIdea = ''
+    showQuick.value = false
     copyToDraft(created)
   } finally {
     creating.value = false
@@ -360,53 +377,67 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="ideas-page">
-    <header class="page-head">
-      <div>
+    <header class="ideas-top">
+      <div class="title-line">
         <h1>点子库</h1>
-        <p>{{ ideas.length }} 个点子 · {{ activeCount }} 个进行中</p>
+        <span>{{ ideas.length }} 个点子 · {{ activeCount }} 个进行中</span>
       </div>
-      <div class="view-switch">
-        <button :class="{ active: view === 'board' }" @click="view = 'board'">看板</button
-        ><button :class="{ active: view === 'list' }" @click="view = 'list'">列表</button>
+      <div class="spacer"></div>
+      <div class="view-switch" aria-label="视图切换">
+        <button :class="{ active: view === 'board' }" @click="view = 'board'">
+          <i class="ri-layout-grid-line"></i>看板
+        </button>
+        <button :class="{ active: view === 'list' }" @click="view = 'list'">
+          <i class="ri-list-check-2"></i>列表
+        </button>
       </div>
+      <button class="btn-primary" @click="showQuick = !showQuick">
+        <i :class="showQuick ? 'ri-close-line' : 'ri-add-line'"></i
+        >{{ showQuick ? '收起' : '记录点子' }}
+      </button>
     </header>
 
-    <form class="quick" @submit.prevent="submitQuick">
-      <input v-model="quick.title" required maxlength="160" placeholder="先记下一句话……" />
-      <input v-model="quick.rawIdea" placeholder="原始想法（可稍后补充）" />
-      <select v-model="quick.priority">
+    <form v-if="showQuick" class="quick quick-card" @submit.prevent="submitQuick">
+      <div class="quick-title">
+        <i class="ri-lightbulb-flash-line"></i>
+        <div><strong>快速记录</strong><span>先收进来，稍后再把它想明白</span></div>
+      </div>
+      <input v-model="quick.title" required maxlength="160" placeholder="用一句话写下点子……" />
+      <input v-model="quick.rawIdea" placeholder="补充原始想法（可选）" />
+      <select v-model="quick.priority" aria-label="优先级">
         <option>P0</option>
         <option>P1</option>
         <option>P2</option>
       </select>
-      <button class="primary" :disabled="creating">{{ creating ? '记录中' : '记下来' }}</button>
+      <button class="btn-primary" :disabled="creating">
+        {{ creating ? '记录中…' : '记下来' }}
+      </button>
     </form>
 
-    <section class="filters">
-      <input v-model="search" type="search" placeholder="搜索标题、想法、问题" />
-      <select v-model="filters.stage">
-        <option value="">全部阶段</option>
-        <option v-for="stage in stages" :key="stage.id" :value="stage.id">{{ stage.label }}</option>
-      </select>
-      <select v-model="filters.owner">
+    <section class="toolbar">
+      <label class="search-box">
+        <i class="ri-search-line"></i>
+        <input v-model="search" type="search" placeholder="搜索标题、想法或问题…" />
+      </label>
+      <select v-model="filters.owner" aria-label="负责人">
         <option value="">全部负责人</option>
         <option v-for="member in session.members" :key="member.id" :value="member.id">
           {{ member.name }}
         </option>
       </select>
-      <select v-model="filters.creator">
+      <select v-model="filters.creator" aria-label="创建人">
         <option value="">全部创建人</option>
         <option v-for="member in session.members" :key="member.id" :value="member.id">
           {{ member.name }}
         </option>
       </select>
-      <select v-model="filters.priority">
+      <select v-model="filters.priority" aria-label="优先级">
         <option value="">全部优先级</option>
         <option>P0</option>
         <option>P1</option>
         <option>P2</option>
       </select>
-      <select v-model="filters.project">
+      <select v-model="filters.project" aria-label="关联项目">
         <option value="">全部项目</option>
         <option v-for="project in projects" :key="project.id" :value="project.id">
           {{ project.name }}
@@ -414,30 +445,57 @@ onBeforeUnmount(() => {
       </select>
     </section>
 
+    <nav class="stage-chips" aria-label="按阶段筛选">
+      <button
+        v-for="chip in stageChips"
+        :key="chip.id || 'all'"
+        class="stage-chip"
+        :class="{ active: filters.stage === chip.id }"
+        @click="filters.stage = chip.id"
+      >
+        {{ chip.label }}<span>{{ chip.count }}</span>
+      </button>
+    </nav>
+
     <p v-if="error" class="error">{{ error }} <button @click="error = ''">关闭</button></p>
     <p v-if="loading" class="empty">加载中……</p>
     <section v-else class="workspace">
       <div class="idea-browser" :class="view">
         <template v-if="view === 'board'">
-          <div v-for="stage in stages" :key="stage.id" class="column">
-            <h2>
-              {{ stage.label }}
-              <small>{{ filtered.filter((idea) => idea.stage === stage.id).length }}</small>
-            </h2>
-            <button
-              v-for="idea in filtered.filter((item) => item.stage === stage.id)"
-              :key="idea.id"
-              class="idea-card"
-              :class="{ selected: idea.id === selectedId }"
-              @click="selectedId = idea.id"
-            >
-              <strong>{{ idea.title }}</strong
-              ><span>{{ idea.priority }} · {{ memberName(idea.ownerId) }}</span
-              ><small>{{ projectName(idea.projectId) }}</small>
-            </button>
+          <div v-for="group in stageGroups" :key="group.id" class="stage-group">
+            <div class="group-head">
+              <span class="group-dot"></span>{{ group.label }}
+              <span class="group-count">{{ group.items.length }}</span>
+            </div>
+            <div class="idea-grid">
+              <button
+                v-for="idea in group.items"
+                :key="idea.id"
+                class="idea-card"
+                :class="{ selected: idea.id === selectedId }"
+                @click="selectedId = idea.id"
+              >
+                <div class="card-top">
+                  <span class="idea-icon"><i class="ri-lightbulb-flash-line"></i></span>
+                  <strong>{{ idea.title }}</strong>
+                  <span class="priority" :class="idea.priority.toLowerCase()">{{
+                    idea.priority
+                  }}</span>
+                </div>
+                <p>{{ idea.rawIdea || idea.problem || '还没有补充想法说明' }}</p>
+                <div class="card-meta">
+                  <span><i class="ri-user-3-line"></i>{{ memberName(idea.ownerId) }}</span>
+                  <span><i class="ri-stack-line"></i>{{ projectName(idea.projectId) }}</span>
+                </div>
+              </button>
+            </div>
           </div>
         </template>
         <template v-else>
+          <div class="list-head">
+            <span>点子</span><span>阶段</span><span>优先级</span><span>负责人</span
+            ><span>关联项目</span>
+          </div>
           <button
             v-for="idea in filtered"
             :key="idea.id"
@@ -452,14 +510,23 @@ onBeforeUnmount(() => {
             ><span>{{ projectName(idea.projectId) }}</span>
           </button>
         </template>
-        <p v-if="!filtered.length" class="empty">没有符合筛选条件的点子</p>
+        <div v-if="!filtered.length" class="empty">
+          <i class="ri-filter-3-line"></i>
+          <div>没有符合条件的点子——试试清除搜索或切换阶段</div>
+        </div>
       </div>
 
       <aside v-if="selected" class="detail">
         <div class="detail-head">
           <div>
-            <span class="eyebrow">{{ selected.id }}</span>
-            <h2>{{ selected.title }}</h2>
+            <span class="eyebrow">点子详情 · {{ selected.id }}</span>
+            <div class="detail-title-line">
+              <h2>{{ selected.title }}</h2>
+              <span class="stage-badge">{{ stageLabel(selected.stage) }}</span>
+              <span class="priority" :class="selected.priority.toLowerCase()">{{
+                selected.priority
+              }}</span>
+            </div>
           </div>
           <span class="save" :class="saving" @click="saving === 'error' && saveNow()">{{
             saving === 'saving'
@@ -485,7 +552,13 @@ onBeforeUnmount(() => {
           </button>
         </nav>
 
-        <section class="form-grid">
+        <section class="panel form-grid basic-info">
+          <div class="section-heading wide">
+            <div>
+              <h3>基本信息</h3>
+              <p>随时补充，内容会自动保存为团队共享档案。</p>
+            </div>
+          </div>
           <label class="wide">标题<input v-model="draft.title" @input="queueSave" /></label>
           <label
             >优先级<select v-model="draft.priority" @change="queueSave">
@@ -715,191 +788,49 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* 与「项目」管理页共用同一套视觉语言。以下规则覆盖早期原型样式。 */
 .ideas-page {
-  padding: 24px;
-  color: var(--text-primary, #172033);
-  min-height: 100%;
-  background: #f7f8fb;
-}
-.page-head,
-.detail-head,
-.actions,
-.task,
-.asset {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.page-head h1,
-.detail h2 {
-  margin: 0;
-}
-.page-head p,
-.muted {
-  color: #778096;
-  margin: 5px 0;
-}
-.view-switch,
-.stage-nav {
-  display: flex;
-  background: #fff;
-  border: 1px solid #e4e7ee;
-  border-radius: 10px;
-  padding: 3px;
-}
-.view-switch button,
-.stage-nav button {
-  border: 0;
+  max-width: var(--wao-content-max);
+  margin: 0 auto;
+  padding: 16px 24px 40px;
+  color: var(--wao-text);
   background: transparent;
-  padding: 7px 12px;
-  border-radius: 7px;
-  white-space: nowrap;
+  animation: waoFadeUp 0.25s ease;
 }
-.view-switch .active,
-.stage-nav .current {
-  background: #6558e8;
-  color: #fff;
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
-.quick,
-.filters {
-  display: grid;
-  grid-template-columns: 2fr 3fr 80px 100px;
-  gap: 10px;
-  margin-top: 18px;
-}
-.filters {
-  grid-template-columns: 2fr repeat(5, minmax(100px, 1fr));
-  margin: 12px 0 18px;
-}
-.quick input,
-.quick select,
-.filters input,
-.filters select,
 input,
 select,
 textarea {
   box-sizing: border-box;
   width: 100%;
-  border: 1px solid #dfe3eb;
-  border-radius: 8px;
+  border: 1px solid var(--wao-line-control);
   padding: 9px 10px;
-  background: #fff;
-  font: inherit;
 }
-.primary {
-  background: #6558e8 !important;
-  color: #fff;
-  border-color: #6558e8 !important;
+textarea {
+  resize: vertical;
 }
-.danger {
-  color: #bd3140 !important;
-  border-color: #efb8bf !important;
-}
-.error {
-  background: #fff0f1;
-  color: #a21f31;
-  padding: 10px;
-  border-radius: 8px;
-}
-.error button {
-  float: right;
-}
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(390px, 42%);
-  gap: 16px;
-  align-items: start;
-}
-.idea-browser {
-  min-width: 0;
-  max-height: calc(100vh - 240px);
-  overflow: auto;
-}
-.idea-browser.board {
+.detail-head,
+.detail-title-line,
+.actions,
+.task,
+.asset {
   display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-.column {
-  min-width: 235px;
-  width: 235px;
-  background: #eef0f5;
-  border-radius: 10px;
-  padding: 10px;
-}
-.column h2 {
-  font-size: 14px;
-  margin: 3px 3px 10px;
-}
-.column h2 small {
-  float: right;
-  color: #8991a2;
-}
-.idea-card,
-.idea-row {
-  width: 100%;
-  text-align: left;
-  border: 1px solid #e2e5ec;
-  background: white;
-  border-radius: 9px;
-  padding: 11px;
-  margin-bottom: 8px;
-  color: inherit;
-}
-.idea-card strong,
-.idea-card span,
-.idea-card small {
-  display: block;
-}
-.idea-card strong,
-.detail h2,
-.asset span,
-.iteration p {
-  overflow-wrap: anywhere;
-}
-.idea-card span {
-  font-size: 12px;
-  color: #656f83;
-  margin: 8px 0;
-}
-.idea-card small {
-  color: #969dad;
-}
-.idea-card.selected,
-.idea-row.selected {
-  border-color: #6558e8;
-  box-shadow: 0 0 0 2px #6558e822;
-}
-.idea-row {
-  display: grid;
-  grid-template-columns: 2fr repeat(4, 1fr);
-  gap: 12px;
   align-items: center;
 }
-.detail {
-  background: #fff;
-  border: 1px solid #e1e4eb;
-  border-radius: 12px;
-  padding: 18px;
-  max-height: calc(100vh - 180px);
-  overflow: auto;
+.detail-head,
+.task,
+.asset {
+  justify-content: space-between;
+  gap: 12px;
 }
-.eyebrow {
-  font-size: 11px;
-  color: #9299aa;
-}
-.save {
-  font-size: 12px;
-  color: #7c8494;
-}
-.save.error {
-  color: #bd3140;
-  cursor: pointer;
-}
-.stage-nav {
-  overflow-x: auto;
-  margin: 16px 0;
+.actions {
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .form-grid {
   display: grid;
@@ -907,87 +838,561 @@ textarea {
   gap: 12px;
 }
 .wide {
-  grid-column: 1/-1;
+  grid-column: 1 / -1;
 }
-label {
+.error {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff0f1;
+  color: #a21f31;
+}
+.error button {
+  float: right;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.muted {
+  color: var(--wao-text-weak);
+}
+.ideas-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.title-line h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.4;
+}
+.title-line span {
+  color: var(--wao-text-weak);
   font-size: 12px;
-  color: #687185;
 }
-label input,
-label textarea,
-label select {
-  margin-top: 5px;
-  color: #172033;
+.spacer {
+  flex: 1;
+}
+.btn-primary {
+  min-height: 33px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--wao-primary);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.btn-primary:hover {
+  background: var(--wao-primary-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+.view-switch {
+  border: 1px solid var(--wao-line-control);
+  background: var(--wao-bg-card);
+  border-radius: 8px;
+  padding: 2px;
+}
+.view-switch button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  min-height: 28px;
+  padding: 0 9px;
+  color: var(--wao-text-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.view-switch .active {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+  box-shadow: none;
+}
+.quick-card {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+  box-shadow: var(--wao-shadow-pop);
+  display: grid;
+  grid-template-columns: minmax(170px, 1.4fr) minmax(220px, 2fr) minmax(260px, 3fr) 82px auto;
+  gap: 10px;
+  align-items: center;
+}
+.quick-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.quick-title > i {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+}
+.quick-title strong,
+.quick-title span {
+  display: block;
+}
+.quick-title strong {
+  font-size: 13px;
+}
+.quick-title span {
+  margin-top: 2px;
+  color: var(--wao-text-weak);
+  font-size: 11px;
+}
+.quick-card input,
+.quick-card select,
+.toolbar input,
+.toolbar select,
+.detail input,
+.detail select,
+.detail textarea {
+  border-color: var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  outline: none;
+}
+.quick-card input:focus,
+.quick-card select:focus,
+.toolbar input:focus,
+.toolbar select:focus,
+.detail input:focus,
+.detail select:focus,
+.detail textarea:focus {
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.12);
+}
+.toolbar {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.toolbar select {
+  width: auto;
+  min-width: 118px;
+  height: 32px;
+  padding: 0 28px 0 9px;
+  font-size: 12px;
+  color: var(--wao-text-3);
+}
+.search-box {
+  position: relative;
+  flex: 1 1 230px;
+  max-width: 360px;
+}
+.search-box i {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--wao-text-weak);
+}
+.search-box input {
+  height: 32px;
+  padding: 0 10px 0 32px;
+}
+.stage-chips {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.stage-chip {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 999px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-3);
+  font-size: 12.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.stage-chip span {
+  opacity: 0.62;
+  font-variant-numeric: tabular-nums;
+}
+.stage-chip.active {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+  border-color: #c7d0f1;
+  font-weight: 600;
+}
+.workspace {
+  display: block;
+  margin-top: 4px;
+}
+.idea-browser {
+  max-height: none;
+  overflow: visible;
+}
+.idea-browser.board {
+  display: block;
+}
+.stage-group {
+  margin-top: 14px;
+}
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px;
+  color: var(--wao-text-3);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.group-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--wao-primary);
+}
+.group-count {
+  color: var(--wao-text-faint);
+  font-weight: 400;
+}
+.idea-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.idea-card {
+  min-height: 146px;
+  margin: 0;
+  padding: 15px 16px 13px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.idea-card:hover {
+  border-color: #c9cdda;
+  box-shadow: 0 3px 12px rgba(16, 18, 28, 0.07);
+  transform: translateY(-1px);
+}
+.idea-card.selected {
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 3px rgba(67, 88, 214, 0.1);
+}
+.card-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.idea-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+  display: grid !important;
+  place-items: center;
+  font-size: 17px !important;
+  margin: 0 !important;
+}
+.card-top strong {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.priority,
+.stage-badge {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--wao-bg-hover-2);
+  color: var(--wao-text-3);
+}
+.priority.p0 {
+  background: #fff0f1;
+  color: #b42636;
+}
+.priority.p1 {
+  background: #fff6e5;
+  color: #986000;
+}
+.priority.p2 {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+}
+.idea-card > p {
+  flex: 1;
+  margin: 0;
+  color: var(--wao-text-3);
+  font-size: 12px;
+  line-height: 1.7;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--wao-text-weak);
+  font-size: 11.5px;
+}
+.card-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+.idea-browser.list {
+  margin-top: 14px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--wao-bg-card);
+}
+.list-head,
+.idea-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(90px, 1fr));
+  gap: 12px;
+  align-items: center;
+}
+.list-head {
+  padding: 9px 14px;
+  background: var(--wao-bg-hover-2);
+  color: var(--wao-text-weak);
+  font-size: 11.5px;
+}
+.idea-row {
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-top: 1px solid var(--wao-divider);
+  border-radius: 0;
+  background: transparent;
+  color: var(--wao-text-3);
+  font-size: 12px;
+}
+.idea-row:hover {
+  background: var(--wao-bg-hover);
+}
+.idea-row strong {
+  color: var(--wao-text);
+  font-size: 13px;
+}
+.idea-row.selected {
+  background: var(--wao-primary-soft);
+  box-shadow: inset 3px 0 var(--wao-primary);
+}
+.detail {
+  max-height: none;
+  margin-top: 20px;
+  padding: 20px;
+  border-color: var(--wao-line);
+  border-radius: 14px;
+  background: var(--wao-bg-card);
+  overflow: visible;
+}
+.detail-head {
+  align-items: flex-start;
+}
+.detail-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+.detail-title-line h2 {
+  font-size: 19px;
+  line-height: 1.45;
+}
+.detail h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.eyebrow {
+  color: var(--wao-text-faint);
+}
+.save {
+  padding-top: 5px;
+  color: var(--wao-text-weak);
+}
+.stage-nav {
+  display: flex;
+  overflow-x: auto;
+  margin: 16px 0 0;
+  padding: 4px;
+  border-color: var(--wao-line-control);
+  background: var(--wao-bg-hover-2);
+  border-radius: 10px;
+}
+.stage-nav button {
+  flex: 1 0 auto;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 12px;
+  background: transparent;
+  color: var(--wao-text-3);
+  cursor: pointer;
+}
+.stage-nav .current {
+  background: var(--wao-primary);
+  color: #fff;
 }
 .panel {
-  border-top: 1px solid #edf0f4;
-  padding: 17px 0;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+}
+.panel h3 {
+  color: var(--wao-text);
 }
 .panel h3 {
   margin: 0 0 12px;
   font-size: 15px;
+}
+.section-heading h3 {
+  margin-bottom: 3px;
+}
+.section-heading p,
+.panel > p {
+  margin: 0 0 12px;
+  color: var(--wao-text-weak);
+  font-size: 12px;
+}
+.form-grid {
+  gap: 12px;
+}
+label {
+  color: var(--wao-text-3);
 }
 .panel button,
 .actions button,
 .inline-form button,
 .asset button,
 .task button {
-  border: 1px solid #dfe3eb;
-  background: #fff;
-  border-radius: 7px;
-  padding: 7px 10px;
+  border-color: var(--wao-line-control);
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.panel button:hover,
+.actions button:hover {
+  background: var(--wao-bg-hover);
+}
+.primary {
+  background: var(--wao-primary) !important;
+  border-color: var(--wao-primary) !important;
 }
 .run,
 .iteration {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--wao-bg-hover-2);
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  padding: 10px;
-  background: #f7f8fb;
-  border-radius: 8px;
-  margin-top: 8px;
-}
-.run span {
-  font-size: 12px;
-  color: #70798c;
-}
-.asset,
-.task {
-  border: 1px solid #edf0f4;
-  border-radius: 8px;
-  padding: 9px;
-  margin-top: 8px;
-}
-.link {
-  border: 0 !important;
-  color: #5648d9;
-  text-align: left;
-}
-.inline-form {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
-  margin-top: 10px;
-}
-.iteration {
   align-items: center;
+  gap: 12px;
 }
-.iteration p {
-  margin: 4px 0;
-  color: #657086;
-}
+.run span,
 .iteration small,
 .timeline small {
   display: block;
-  color: #9aa1af;
+  color: var(--wao-text-weak);
+  font-size: 12px;
+}
+.iteration p {
+  margin: 4px 0;
+  color: var(--wao-text-3);
+  overflow-wrap: anywhere;
+}
+.asset,
+.task {
+  margin-top: 8px;
+  padding: 9px;
+  border: 1px solid var(--wao-divider);
+  border-radius: 8px;
+}
+.asset span {
+  overflow-wrap: anywhere;
+}
+.link {
+  border: 0 !important;
+  color: var(--wao-primary-text) !important;
+  text-align: left;
+}
+.inline-form {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
 }
 .terminal textarea {
   margin-bottom: 8px;
 }
+.danger {
+  color: #bd3140 !important;
+  border-color: #efb8bf !important;
+}
 .warn {
   display: block;
-  color: #b66a00;
   margin-top: 4px;
+  color: #b66a00;
 }
 .timeline > div {
   display: flex;
@@ -996,80 +1401,125 @@ label select {
 .timeline i {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
-  background: #6558e8;
+  flex: 0 0 auto;
   margin-top: 7px;
+  border-radius: 50%;
+  background: var(--wao-primary);
 }
 .timeline p {
   margin: 0 0 13px;
 }
 .empty {
-  text-align: center;
-  color: #9299a8;
-  padding: 30px;
+  margin-top: 14px;
+  padding: 44px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-weak);
+  font-size: 13px;
 }
-@media (max-width: 1000px) {
-  .workspace {
-    grid-template-columns: 1fr;
+.empty i {
+  font-size: 22px;
+  color: var(--wao-text-faint-2);
+}
+.empty div {
+  margin-top: 8px;
+}
+
+@media (max-width: 980px) {
+  .quick-card {
+    grid-template-columns: 1fr 1fr;
+  }
+  .quick-title {
+    grid-column: 1 / -1;
   }
   .detail {
-    max-height: none;
-  }
-  .idea-browser {
-    max-height: 440px;
-  }
-  .filters {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
-  .quick {
-    grid-template-columns: 1fr 1fr 80px;
-  }
-  .quick button {
-    grid-column: 1/-1;
-  }
-  .detail {
-    order: -1;
+    order: initial;
   }
 }
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .ideas-page {
-    padding: 12px;
+    padding: 16px 12px 28px;
   }
-  .page-head {
-    align-items: flex-start;
+  .ideas-top .title-line {
+    flex: 1 1 100%;
   }
-  .quick,
-  .filters,
-  .form-grid,
-  .inline-form {
+  .ideas-top .spacer {
+    display: none;
+  }
+  .view-switch {
+    flex: 1;
+  }
+  .view-switch button {
+    flex: 1;
+    justify-content: center;
+    min-height: 34px;
+  }
+  .btn-primary {
+    min-height: 36px;
+  }
+  .quick-card {
     grid-template-columns: 1fr;
   }
-  .wide {
+  .quick-title {
     grid-column: auto;
   }
-  .workspace {
-    display: block;
+  .toolbar {
+    gap: 7px;
   }
-  .idea-browser {
-    margin-top: 12px;
+  .search-box {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .search-box input {
+    height: 38px;
+  }
+  .toolbar select {
+    flex: 1 1 calc(50% - 7px);
+    min-height: 36px;
+  }
+  .idea-grid {
+    grid-template-columns: 1fr;
   }
   .idea-browser.board {
-    overflow-x: auto;
+    overflow: visible;
   }
   .detail {
-    max-height: none;
+    margin-top: 16px;
     padding: 13px;
+  }
+  .detail-head {
+    align-items: flex-start;
   }
   .stage-nav {
     position: sticky;
     top: 0;
     z-index: 2;
   }
+  .panel {
+    padding: 13px;
+  }
+  .list-head {
+    display: none;
+  }
+  .idea-browser.list {
+    border: 0;
+    background: transparent;
+    overflow: visible;
+  }
   .idea-row {
+    margin-bottom: 8px;
+    border: 1px solid var(--wao-line);
+    border-radius: 10px;
+    background: var(--wao-bg-card);
     grid-template-columns: 1fr auto;
   }
   .idea-row span:nth-of-type(n + 2) {
     display: none;
+  }
+  .form-grid,
+  .inline-form {
+    grid-template-columns: 1fr;
   }
 }
 </style>
