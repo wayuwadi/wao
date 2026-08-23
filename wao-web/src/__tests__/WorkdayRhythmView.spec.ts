@@ -8,6 +8,8 @@ import {
   saveWorkdayRhythm,
   saveWorkdayRhythmDay,
   sendEnergyNotification,
+  saveRhythmFocus,
+  setRhythmWorkdayStatus,
 } from '@/api/workdayRhythm'
 import { fetchFeishuChats, fetchWebhookEndpoints } from '@/api/system'
 import {
@@ -24,6 +26,8 @@ vi.mock('@/api/workdayRhythm', () => ({
   saveWorkdayRhythm: vi.fn<typeof saveWorkdayRhythm>(),
   saveWorkdayRhythmDay: vi.fn<typeof saveWorkdayRhythmDay>(),
   sendEnergyNotification: vi.fn<typeof sendEnergyNotification>(),
+  saveRhythmFocus: vi.fn<typeof saveRhythmFocus>(),
+  setRhythmWorkdayStatus: vi.fn<typeof setRhythmWorkdayStatus>(),
 }))
 
 vi.mock('@/api/system', () => ({
@@ -35,7 +39,11 @@ const clock = shanghaiClock()
 
 function mountView() {
   return mount(WorkdayRhythmView, {
-    global: { stubs: { RouterLink: { template: '<a><slot /></a>' } } },
+    global: { stubs: {
+      RouterLink: { template: '<a><slot /></a>' },
+      WorkdayRhythmDailyPanel: true,
+      WorkdayRhythmDailySettings: true,
+    } },
   })
 }
 
@@ -56,6 +64,10 @@ describe('WorkdayRhythmView', () => {
             { id: 'WATER', title: '喝水', mode: 'COUNT', count: 3 },
             { id: 'MEDITATION', title: '至少冥想一次', mode: 'DAILY_ONCE', count: 1 },
           ],
+          checklist: [],
+          documentId: null,
+          documentKbId: null,
+          documentTitle: null,
         },
       ],
     })
@@ -63,6 +75,7 @@ describe('WorkdayRhythmView', () => {
     vi.mocked(saveWorkdayRhythmDay).mockResolvedValue()
     vi.mocked(saveWorkdayRhythm).mockResolvedValue(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
     vi.mocked(sendEnergyNotification).mockResolvedValue({ sent: true, chatName: '娃屋日常' })
+    vi.mocked(saveRhythmFocus).mockResolvedValue({} as never)
     vi.mocked(fetchFeishuChats).mockResolvedValue([{ chatId: 'oc_daily', name: '娃屋日常' }])
     vi.mocked(fetchWebhookEndpoints).mockResolvedValue([
       {

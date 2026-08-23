@@ -5,4 +5,6 @@ import java.util.List;
 
 /** 当前成员一天的今日节奏存档摘要。 */
 public record WorkdayRhythmHistoryDayDto(LocalDate date, boolean workdayActive,
-        List<String> focus, List<WorkdayRhythmHistoryEnergyDto> energyItems) { }
+        List<String> focus, List<WorkdayRhythmHistoryEnergyDto> energyItems,
+        List<WorkdayRhythmHistoryChecklistDto> checklist, String documentId,
+        String documentKbId, String documentTitle) { }

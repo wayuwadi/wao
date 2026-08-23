@@ -106,4 +106,21 @@ class FlywayMigrationsTest {
                 .contains("SUBSTRING(id, 2, 13)")
                 .contains("SET created_at = NULL");
     }
+
+    @Test
+    void workdayRhythmDashboardKeepsHistoricalSnapshotsAndChannelLevelIdempotency() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V84__workday_rhythm_daily_dashboard.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE workday_rhythm_setting")
+                .contains("CREATE TABLE workday_rhythm_checklist_item")
+                .contains("CREATE TABLE workday_rhythm_checklist_occurrence")
+                .contains("UNIQUE KEY uk_rhythm_occurrence_item_date (item_id, occurrence_date)")
+                .contains("UNIQUE KEY uk_rhythm_day_document (document_id)")
+                .contains("UNIQUE KEY uk_rhythm_delivery_occurrence_channel (occurrence_id, channel)")
+                .contains("UNIQUE KEY uk_rhythm_item_member_system (member_id, system_key)");
+    }
 }

@@ -14,7 +14,15 @@ import cn.wayuwa.wao.domain.MemberPreferenceEntity;
 import cn.wayuwa.wao.dto.WorkdayRhythmHistoryDayDto;
 import cn.wayuwa.wao.dto.WorkdayRhythmHistoryDto;
 import cn.wayuwa.wao.dto.WorkdayRhythmHistoryEnergyDto;
+import cn.wayuwa.wao.dto.WorkdayRhythmHistoryChecklistDto;
+import cn.wayuwa.wao.domain.WorkdayRhythmChecklistOccurrenceEntity;
+import cn.wayuwa.wao.domain.WorkdayRhythmDayEntity;
+import cn.wayuwa.wao.domain.DocEntity;
+import cn.wayuwa.wao.mapper.WorkdayRhythmChecklistOccurrenceMapper;
+import cn.wayuwa.wao.mapper.WorkdayRhythmDayMapper;
+import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -30,10 +38,17 @@ public class WorkdayRhythmHistoryService {
 
     private final MemberPreferenceMapper preferences;
     private final ObjectMapper json;
+    private final WorkdayRhythmChecklistOccurrenceMapper occurrences;
+    private final WorkdayRhythmDayMapper days;
+    private final DocMapper docs;
 
-    public WorkdayRhythmHistoryService(MemberPreferenceMapper preferences, ObjectMapper json) {
+    public WorkdayRhythmHistoryService(MemberPreferenceMapper preferences, ObjectMapper json,
+            WorkdayRhythmChecklistOccurrenceMapper occurrences, WorkdayRhythmDayMapper days, DocMapper docs) {
         this.preferences = preferences;
         this.json = json;
+        this.occurrences = occurrences;
+        this.days = days;
+        this.docs = docs;
     }
 
     /**
@@ -50,6 +65,15 @@ public class WorkdayRhythmHistoryService {
         String fromKey = DAY_KEY_PREFIX + from;
         String toKey = DAY_KEY_PREFIX + to;
         List<WorkdayRhythmHistoryDayDto> items = new ArrayList<>();
+        Map<LocalDate, List<WorkdayRhythmChecklistOccurrenceEntity>> checklistByDate = new LinkedHashMap<>();
+        occurrences.selectList(new LambdaQueryWrapper<WorkdayRhythmChecklistOccurrenceEntity>()
+                        .eq(WorkdayRhythmChecklistOccurrenceEntity::getMemberId, memberId)
+                        .between(WorkdayRhythmChecklistOccurrenceEntity::getOccurrenceDate, from, to)
+                        .orderByAsc(WorkdayRhythmChecklistOccurrenceEntity::getCreatedAt))
+                .forEach(value -> checklistByDate.computeIfAbsent(value.getOccurrenceDate(), ignored -> new ArrayList<>()).add(value));
+        Map<LocalDate, WorkdayRhythmDayEntity> rhythmDays = new LinkedHashMap<>();
+        days.findRange(memberId, from, to).forEach(value -> rhythmDays.put(value.getRhythmDate(), value));
+        Set<LocalDate> materializedDates = new LinkedHashSet<>();
         int skipped = 0;
         for (MemberPreferenceEntity entry : preferences.findRange(memberId, fromKey, toKey)) {
             try {
@@ -59,11 +83,17 @@ public class WorkdayRhythmHistoryService {
                     skipped++;
                     continue;
                 }
-                items.add(toDto(date, day, currentItems));
+                items.add(toDto(date, day, currentItems, checklistByDate.getOrDefault(date, List.of()), rhythmDays.get(date)));
+                materializedDates.add(date);
             } catch (Exception ex) {
                 skipped++;
             }
         }
+        Set<LocalDate> relationalDates = new LinkedHashSet<>(checklistByDate.keySet());
+        relationalDates.addAll(rhythmDays.keySet());
+        relationalDates.stream().filter(date -> !materializedDates.contains(date)).forEach(date ->
+                items.add(toRelationalDto(date, checklistByDate.getOrDefault(date, List.of()), rhythmDays.get(date))));
+        items.sort((left, right) -> right.date().compareTo(left.date()));
         return new WorkdayRhythmHistoryDto(from, to, List.copyOf(items), skipped);
     }
 
@@ -130,7 +160,8 @@ public class WorkdayRhythmHistoryService {
     }
 
     private WorkdayRhythmHistoryDayDto toDto(LocalDate date, JsonNode day,
-            Map<String, EnergyMeta> currentItems) {
+            Map<String, EnergyMeta> currentItems, List<WorkdayRhythmChecklistOccurrenceEntity> checklist,
+            WorkdayRhythmDayEntity rhythmDay) {
         List<String> focus = new ArrayList<>();
         if (day.path("focus").isArray()) {
             for (JsonNode value : day.path("focus")) {
@@ -153,8 +184,31 @@ public class WorkdayRhythmHistoryService {
             return new WorkdayRhythmHistoryEnergyDto(id, meta.title(), meta.mode(),
                     counts.getOrDefault(id, 0));
         }).toList();
+        List<WorkdayRhythmHistoryChecklistDto> checklistDto = checklist.stream().map(value ->
+                new WorkdayRhythmHistoryChecklistDto(value.getTitle(), value.getCategory(),
+                        value.getCompletedAt() == null ? null : value.getCompletedAt().toString(),
+                        value.getCompletedOnTime())).toList();
+        DocEntity document = rhythmDay == null || !StringUtils.hasText(rhythmDay.getDocumentId())
+                ? null : docs.selectById(rhythmDay.getDocumentId());
         return new WorkdayRhythmHistoryDayDto(date, day.path("workdayActive").asBoolean(false),
-                List.copyOf(focus), energyItems);
+                List.copyOf(focus), energyItems, checklistDto, document == null ? null : document.getId(),
+                document == null ? null : document.getKbId(), document == null ? null : document.getTitle());
+    }
+
+    private WorkdayRhythmHistoryDayDto toRelationalDto(LocalDate date,
+            List<WorkdayRhythmChecklistOccurrenceEntity> checklist, WorkdayRhythmDayEntity rhythmDay) {
+        List<WorkdayRhythmHistoryChecklistDto> checklistDto = checklist.stream().map(value ->
+                new WorkdayRhythmHistoryChecklistDto(value.getTitle(), value.getCategory(),
+                        value.getCompletedAt() == null ? null : value.getCompletedAt().toString(),
+                        value.getCompletedOnTime())).toList();
+        DocEntity document = rhythmDay == null || !StringUtils.hasText(rhythmDay.getDocumentId())
+                ? null : docs.selectById(rhythmDay.getDocumentId());
+        boolean workdayActive = rhythmDay != null && rhythmDay.getWorkdayOverride() != null
+                ? rhythmDay.getWorkdayOverride()
+                : checklist.stream().anyMatch(value -> "WORK".equals(value.getCategory()));
+        return new WorkdayRhythmHistoryDayDto(date, workdayActive, List.of(), List.of(), checklistDto,
+                document == null ? null : document.getId(), document == null ? null : document.getKbId(),
+                document == null ? null : document.getTitle());
     }
 
     private Map<String, EnergyMeta> currentEnergyItems(String memberId) {

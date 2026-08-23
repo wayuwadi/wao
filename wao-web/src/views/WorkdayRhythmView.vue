@@ -7,6 +7,8 @@ import {
   saveWorkdayRhythm,
   saveWorkdayRhythmDay,
   sendEnergyNotification,
+  saveRhythmFocus,
+  setRhythmWorkdayStatus,
   type WorkdayRhythmEnergyAction,
   type WorkdayRhythmHistory,
   type WorkdayRhythmHistoryDay,
@@ -33,6 +35,8 @@ import {
   type WorkdayRhythmDay,
   type WorkdayRhythmEnergyItem,
 } from '@/utils/workdayRhythm'
+import WorkdayRhythmDailyPanel from '@/components/workday/WorkdayRhythmDailyPanel.vue'
+import WorkdayRhythmDailySettings from '@/components/workday/WorkdayRhythmDailySettings.vue'
 
 const CONFIG_DRAFT_KEY = 'wao-workday-rhythm-config-draft-v1'
 const clock = ref(shanghaiClock())
@@ -60,6 +64,7 @@ const historyMonth = ref(clock.value.date.slice(0, 7))
 const historyLoading = ref(false)
 const historyError = ref('')
 const history = ref<WorkdayRhythmHistory | null>(null)
+const dailyPanelKey = ref(0)
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
 const dayDraftKey = computed(() => `wao-workday-rhythm-day-draft-${clock.value.date}`)
@@ -246,9 +251,17 @@ async function recordEnergy(item: WorkdayRhythmEnergyItem) {
   }
 }
 
-function toggleWorkday() {
+async function toggleWorkday() {
   if (dayState.value === 'saving') return
-  day.value.workdayActive = !day.value.workdayActive
+  const next = !day.value.workdayActive
+  try {
+    const dashboard = await setRhythmWorkdayStatus(clock.value.date, next)
+    day.value.workdayActive = dashboard.workday
+    dailyPanelKey.value += 1
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '今天的工作状态保存失败', 'ri-error-warning-line')
+    return
+  }
   markDayDirty()
   void persistDay(day.value.workdayActive ? '今天已按工作日节奏启用' : '今天已切换为休息日')
 }
@@ -258,10 +271,16 @@ function focusInput() {
   markDayDirty()
 }
 
-function saveFocus() {
+async function saveFocus() {
   day.value.focus = day.value.focus.map((item) => item.trim())
   markDayDirty()
-  void persistDay('今日重点已保存')
+  if (!(await persistDay('今日重点已保存'))) return
+  try {
+    await saveRhythmFocus(day.value.date, day.value.focus)
+    dailyPanelKey.value += 1
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '今日计划联动失败，请重试', 'ri-error-warning-line')
+  }
 }
 
 function openEditor() {
@@ -570,6 +589,12 @@ onBeforeUnmount(() => {
         <i class="ri-cloud-line"></i><span>已保存到你的 WAO 账号</span>
       </div>
 
+      <WorkdayRhythmDailyPanel
+        :date="clock.date"
+        :reload-key="dailyPanelKey"
+        @loaded="day.workdayActive = $event.workday"
+      />
+
       <section class="dashboard-grid">
         <article class="focus-card">
           <header>
@@ -727,7 +752,7 @@ onBeforeUnmount(() => {
         <header>
           <div>
             <small>个人工作日配置</small>
-            <h2 id="rhythm-editor-title">调整节奏与精力补给</h2>
+            <h2 id="rhythm-editor-title">调整每日节奏</h2>
           </div>
           <button type="button" aria-label="关闭" @click="editorOpen = false">
             <i class="ri-close-line"></i>
@@ -737,6 +762,7 @@ onBeforeUnmount(() => {
           <p class="editor-intro">
             时间线与通知目标都按你的账号保存；编辑草稿会先留在本机，保存后才跨设备生效。
           </p>
+          <WorkdayRhythmDailySettings @saved="dailyPanelKey += 1" />
           <section class="energy-editor" aria-labelledby="energy-editor-title">
             <header>
               <div>
@@ -1016,6 +1042,23 @@ onBeforeUnmount(() => {
                   ><b>{{ energyResult(item) }}</b>
                 </div>
               </div>
+            </section>
+            <section v-if="record.checklist?.length">
+              <h3><i class="ri-checkbox-multiple-line"></i>每日必做</h3>
+              <div class="history-energy-grid">
+                <div v-for="(item, index) in record.checklist" :key="`${index}-${item.title}`">
+                  <span>{{ item.title }}</span>
+                  <b :class="{ late: item.completedAt && item.completedOnTime === false }">
+                    {{ item.completedAt ? (item.completedOnTime ? '准时完成' : '逾期完成') : '未完成' }}
+                  </b>
+                </div>
+              </div>
+            </section>
+            <section v-if="record.documentId && record.documentKbId">
+              <h3><i class="ri-file-text-line"></i>每日文档</h3>
+              <RouterLink :to="{ path: `/kb/${record.documentKbId}`, query: { doc: record.documentId } }">
+                {{ record.documentTitle || '打开当天工作记录' }}<i class="ri-arrow-right-up-line"></i>
+              </RouterLink>
             </section>
           </article>
         </div>

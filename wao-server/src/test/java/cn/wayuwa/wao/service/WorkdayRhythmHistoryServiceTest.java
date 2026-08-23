@@ -12,17 +12,24 @@ import java.util.List;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.MemberPreferenceEntity;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
+import cn.wayuwa.wao.mapper.WorkdayRhythmChecklistOccurrenceMapper;
+import cn.wayuwa.wao.mapper.WorkdayRhythmDayMapper;
+import cn.wayuwa.wao.mapper.DocMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 class WorkdayRhythmHistoryServiceTest {
 
     private final MemberPreferenceMapper preferences = mock(MemberPreferenceMapper.class);
+    private final WorkdayRhythmChecklistOccurrenceMapper occurrences = mock(WorkdayRhythmChecklistOccurrenceMapper.class);
+    private final WorkdayRhythmDayMapper days = mock(WorkdayRhythmDayMapper.class);
     private final WorkdayRhythmHistoryService service = new WorkdayRhythmHistoryService(
-            preferences, new ObjectMapper());
+            preferences, new ObjectMapper(), occurrences, days, mock(DocMapper.class));
 
     @Test
     void returnsOnlyCurrentMembersPersistedHistoryAndKeepsDailyItemSnapshot() {
+        when(occurrences.selectList(org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+        when(days.findRange("m1", LocalDate.parse("2026-08-01"), LocalDate.parse("2026-08-31"))).thenReturn(List.of());
         when(preferences.find("m1", WorkdayRhythmHistoryService.CONFIG_KEY)).thenReturn("""
                 {"energyItems":[
                   {"id":"WATER","title":"当前饮水名称","mode":"COUNT"},
