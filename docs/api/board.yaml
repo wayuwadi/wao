@@ -1668,7 +1668,7 @@ components:
       required: [version, menus]
       properties:
         version: { type: integer, minimum: 1 }
-        menus: { type: array, minItems: 21, maxItems: 21, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
+        menus: { type: array, minItems: 22, maxItems: 22, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
     SavePersonalMemory:
       type: object
       required: [title, content, category]
