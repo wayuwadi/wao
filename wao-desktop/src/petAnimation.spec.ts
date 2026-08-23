@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PET_ANIMATIONS, spritePosition } from './petAnimation'
+import { dragDirectionFromDelta, PET_ANIMATIONS, spritePosition } from './petAnimation'
 
 describe('pet animation sprite mapping', () => {
   it('maps the sixteen frames onto a four by four sheet', () => {
@@ -12,5 +12,13 @@ describe('pet animation sprite mapping', () => {
     const frames = Object.values(PET_ANIMATIONS).flatMap((sequence) => sequence.frames)
     expect(frames.every((frame) => frame >= 0 && frame <= 15)).toBe(true)
     expect(() => spritePosition(16)).toThrow(RangeError)
+  })
+
+  it('maps window movement to the dominant drag direction', () => {
+    expect(dragDirectionFromDelta(4, -3)).toBe('neutral')
+    expect(dragDirectionFromDelta(-24, 8)).toBe('left')
+    expect(dragDirectionFromDelta(24, -8)).toBe('right')
+    expect(dragDirectionFromDelta(8, -24)).toBe('up')
+    expect(dragDirectionFromDelta(-8, 24)).toBe('down')
   })
 })

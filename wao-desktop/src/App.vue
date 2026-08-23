@@ -6,7 +6,13 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Update } from '@tauri-apps/plugin-updater'
 import fruitKernelRaccoonSprites from './assets/wao-fruit-kernel-raccoon-sprites-v2.png'
-import { PET_ANIMATIONS, spritePosition, type PetAnimation } from './petAnimation'
+import {
+  dragDirectionFromDelta,
+  PET_ANIMATIONS,
+  spritePosition,
+  type DragDirection,
+  type PetAnimation,
+} from './petAnimation'
 import { findUpdate, installUpdate, type UpdateState } from './update'
 
 const WAO_URL = 'https://wao.wayuwa.cn'
@@ -22,6 +28,9 @@ let sleepTimer: ReturnType<typeof setTimeout> | undefined
 const petAnimation = ref<PetAnimation>('idle')
 const petFrame = ref(0)
 let frameCursor = 0
+let dragging = false
+let dragOrigin: { x: number, y: number } | undefined
+let dragDirection: DragDirection = 'neutral'
 
 const petSpriteStyle = computed(() => ({
   backgroundImage: `url(${fruitKernelRaccoonSprites})`,
@@ -106,9 +115,19 @@ function reactToPet() {
 async function startDragging(event: MouseEvent) {
   if ((event.target as HTMLElement).closest('button')) return
   resetSleepTimer()
+  const position = await appWindow.outerPosition()
+  dragOrigin = { x: position.x, y: position.y }
+  dragDirection = 'neutral'
+  dragging = true
   if (!busy.value) runPetAnimation('dragging')
-  await appWindow.startDragging()
-  if (!busy.value) runPetAnimation('surprised')
+  try {
+    await appWindow.startDragging()
+  } finally {
+    dragging = false
+    dragOrigin = undefined
+    dragDirection = 'neutral'
+    if (!busy.value) runPetAnimation('surprised')
+  }
 }
 
 async function openWao() {
@@ -121,6 +140,13 @@ onMounted(async () => {
   version.value = await getVersion()
   unlisteners.push(await listen('desktop://check-for-updates', () => void checkForUpdates()))
   unlisteners.push(await listen('desktop://open-wao', () => void openWao()))
+  unlisteners.push(await appWindow.onMoved(({ payload: position }) => {
+    if (!dragging || !dragOrigin || busy.value) return
+    const nextDirection = dragDirectionFromDelta(position.x - dragOrigin.x, position.y - dragOrigin.y)
+    if (nextDirection === 'neutral' || nextDirection === dragDirection) return
+    dragDirection = nextDirection
+    runPetAnimation(`dragging-${nextDirection}`)
+  }))
   initialUpdateTimer = setTimeout(() => void checkForUpdates(true), 12_000)
 })
 
