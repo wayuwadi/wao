@@ -445,13 +445,23 @@ if [ "$windows_available" = true ]; then
   set_status windows_attempts "$NODE_DEPLOY_ATTEMPTS"
   set_status windows_detail "$WAO_GIT_SHA"
   if ! gateway_ready_from_cloud "$SLAVE_HOST"; then
-    set_status windows_status failed
-    set_status windows_detail '云节点无法直连 Windows Gateway'
-    set_upstream_state slave down || true
-    exit 1
+    if [ "$ALLOW_WINDOWS_OFFLINE" = true ]; then
+      windows_available=false
+      slave_deployed=false
+      set_status windows_status skipped
+      set_status windows_detail 'Windows 已部署，但云节点无法直连 Gateway；保持摘流并继续 Linux-only 发布'
+      set_upstream_state slave down || true
+      echo 'Windows 已部署且节点内验证通过，但云节点无法直连 Gateway；按显式授权保持摘流并继续发布。'
+    else
+      set_status windows_status failed
+      set_status windows_detail '云节点无法直连 Windows Gateway'
+      set_upstream_state slave down || true
+      exit 1
+    fi
+  else
+    set_upstream_state slave up || exit 1
+    printf '\n===== Windows deployment =====\n'; cat slave.log
   fi
-  set_upstream_state slave up || exit 1
-  printf '\n===== Windows deployment =====\n'; cat slave.log
 fi
 
 if [ "$safe_schema_rollout" != true ]; then
