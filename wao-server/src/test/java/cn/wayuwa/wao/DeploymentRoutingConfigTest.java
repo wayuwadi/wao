@@ -163,7 +163,9 @@ class DeploymentRoutingConfigTest {
                 .doesNotContain("upload_master_resumable")
                 .doesNotContain("WAO_CODEX_PACKAGE")
                 .doesNotContain("WAO_CODEX_CHECKSUMS");
-        assertThat(localDeploy).contains("WAO_IMAGE_TAG=\"$image_tag\" SKIP_IMAGE_BUILD=true");
+        assertThat(localDeploy)
+                .contains("setfacl -m u:jenkins:r \"$project_root/deploy/.env.secrets\"")
+                .contains("WAO_IMAGE_TAG=\"$image_tag\" SKIP_IMAGE_BUILD=true");
         assertThat(rollout)
                 .doesNotContain("deploy_master >master.log 2>&1 &")
                 .contains("slave_deployed=false")
