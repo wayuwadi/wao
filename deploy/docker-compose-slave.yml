@@ -42,7 +42,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent",
+          "mysqladmin ping --protocol=socket -uroot -p$$MYSQL_ROOT_PASSWORD --silent",
         ]
       interval: 10s
       timeout: 5s

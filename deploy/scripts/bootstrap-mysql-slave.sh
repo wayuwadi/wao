@@ -15,7 +15,7 @@ mysql_ready=false
 attempt=1
 while [ "${attempt}" -le 60 ]; do
   if docker exec "${mysql_id}" sh -c \
-      'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqladmin -h127.0.0.1 -uroot ping --silent' \
+      'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqladmin --protocol=socket -uroot ping --silent' \
       >/dev/null 2>&1; then
     mysql_ready=true
     break
@@ -28,7 +28,7 @@ test "${mysql_ready}" = true || {
   exit 1
 }
 
-docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -uroot <<SQL
+docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -uroot <<SQL
 SET GLOBAL super_read_only=OFF;
 SET GLOBAL read_only=OFF;
 STOP REPLICA;
@@ -38,7 +38,7 @@ DROP DATABASE IF EXISTS wao;
 SQL'
 
 gzip -dc "${snapshot}" |
-  docker exec -i "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -uroot'
+  docker exec -i "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -uroot'
 
 docker exec "${mysql_id}" sh /docker-entrypoint-initdb.d/10-replication.sh
 echo 'MySQL replica snapshot bootstrap completed.'

@@ -25,7 +25,7 @@ test -n "${mysql_id}${redis_id}${sentinel_id}${gateway_id}" || {
   exit 1
 }
 
-mysql_status="$(docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -uroot --vertical -e "SHOW REPLICA STATUS"')"
+mysql_status="$(docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -uroot --vertical -e "SHOW REPLICA STATUS"')"
 printf '%s\n' "${mysql_status}" |
   grep -E 'Replica_IO_Running:|Replica_SQL_Running:|Seconds_Behind_Source:|Replicate_Wild_Do_Table:|Last_IO_Error:|Last_SQL_Error:' || true
 printf '%s\n' "${mysql_status}" | grep -q 'Replica_IO_Running: Yes'
@@ -33,14 +33,14 @@ printf '%s\n' "${mysql_status}" | grep -q 'Replica_SQL_Running: Yes'
 printf '%s\n' "${mysql_status}" | grep -Eq 'Seconds_Behind_Source: (0|[1-9][0-9]*)'
 printf '%s\n' "${mysql_status}" | grep -Eq 'Replicate_Wild_Do_Table: wao\.%'
 
-mysql_variables="$(docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -N -uroot -e "SHOW VARIABLES WHERE Variable_name IN ( '\''server_id'\'', '\''read_only'\'', '\''super_read_only'\'', '\''gtid_mode'\'' )"')"
+mysql_variables="$(docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -N -uroot -e "SHOW VARIABLES WHERE Variable_name IN ( '\''server_id'\'', '\''read_only'\'', '\''super_read_only'\'', '\''gtid_mode'\'' )"')"
 printf '%s\n' "${mysql_variables}"
 printf '%s\n' "${mysql_variables}" | grep -Eq '^server_id[[:space:]]+2$'
 printf '%s\n' "${mysql_variables}" | grep -Eq '^read_only[[:space:]]+ON$'
 printf '%s\n' "${mysql_variables}" | grep -Eq '^super_read_only[[:space:]]+ON$'
 printf '%s\n' "${mysql_variables}" | grep -Eq '^gtid_mode[[:space:]]+ON$'
 
-application_schemas="$(docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -N -uroot -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME NOT IN ( '\''information_schema'\'', '\''mysql'\'', '\''performance_schema'\'', '\''sys'\'' ) ORDER BY SCHEMA_NAME"')"
+application_schemas="$(docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -N -uroot -e "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME NOT IN ( '\''information_schema'\'', '\''mysql'\'', '\''performance_schema'\'', '\''sys'\'' ) ORDER BY SCHEMA_NAME"')"
 test "${application_schemas}" = 'wao' || {
   echo "Unexpected application schemas on the replica: ${application_schemas}" >&2
   exit 1
