@@ -2,14 +2,13 @@ package cn.wayuwa.wao.service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -18,8 +17,9 @@ import javax.crypto.spec.SecretKeySpec;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.AccountEntity;
 import cn.wayuwa.wao.domain.AccountIdentityEntity;
-import cn.wayuwa.wao.domain.ProjectEntity;
+import cn.wayuwa.wao.domain.FeishuQuickCollectEventEntity;
 import cn.wayuwa.wao.dto.FeishuQuickCollectConfigDto;
+import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.SaveQuickCollectConfigRequest;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.feishu.FeishuAppLinks;
@@ -27,11 +27,12 @@ import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
-import cn.wayuwa.wao.mapper.ProjectMapper;
+import cn.wayuwa.wao.mapper.FeishuQuickCollectEventMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -51,12 +52,13 @@ public class FeishuQuickCollectService {
 
     /** 打在任务上的来源标签。 */
     public static final String SOURCE_TAG = "群聊快速收集";
+    /** “记录想法”仍是个人待办，但保留来源语义。 */
+    public static final String IDEA_SOURCE_TAG = "群聊想法收集";
     /** 默认落点项目名（用户指定的第一个项目）。 */
     private static final String DEFAULT_PROJECT_NAME = "Wa All in One";
     /** 标题最多取多少字，超出的部分留在描述里。 */
     private static final int TITLE_LIMIT = 40;
-    /** 最近处理过的事件 id：飞书会重推，重推不该变成两条任务。 */
-    private static final int SEEN_EVENTS = 500;
+    private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
 
     private static final Logger log = LoggerFactory.getLogger(FeishuQuickCollectService.class);
 
@@ -65,22 +67,16 @@ public class FeishuQuickCollectService {
     private final FeishuWebhookNotifier notifier;
     private final FeishuAppLinks links;
     private final TaskService tasks;
-    private final ProjectMapper projects;
+    private final ProjectService projects;
     private final AccountMapper accounts;
     private final AccountIdentityMapper identities;
+    private final FeishuQuickCollectEventMapper events;
     private final ObjectMapper json;
     private final NotificationFeedbackService feedback;
-    private final Set<String> seenEvents = Collections.synchronizedSet(
-            Collections.newSetFromMap(new LinkedHashMap<>() {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
-                    return size() > SEEN_EVENTS;
-                }
-            }));
-
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
-            FeishuWebhookNotifier notifier, FeishuAppLinks links, TaskService tasks, ProjectMapper projects,
-            AccountMapper accounts, AccountIdentityMapper identities, ObjectMapper json, NotificationFeedbackService feedback) {
+            FeishuWebhookNotifier notifier, FeishuAppLinks links, TaskService tasks, ProjectService projects,
+            AccountMapper accounts, AccountIdentityMapper identities, FeishuQuickCollectEventMapper events,
+            ObjectMapper json, NotificationFeedbackService feedback) {
         this.settings = settings;
         this.feishu = feishu;
         this.notifier = notifier;
@@ -89,6 +85,7 @@ public class FeishuQuickCollectService {
         this.projects = projects;
         this.accounts = accounts;
         this.identities = identities;
+        this.events = events;
         this.json = json;
         this.feedback = feedback;
     }
@@ -147,15 +144,11 @@ public class FeishuQuickCollectService {
         if (!settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)) {
             return Map.of();
         }
-        String eventId = body.path("header").path("event_id").asText("");
-        if (StringUtils.hasText(eventId) && !seenEvents.add(eventId)) {
-            return Map.of();
-        }
         if (!"im.message.receive_v1".equals(body.path("header").path("event_type").asText(""))) {
             return Map.of();
         }
         try {
-            collect(body.path("event"));
+            collect(body.path("event"), body.path("header").path("event_id").asText(""));
         } catch (RuntimeException ex) {
             // 事件已经收下了，重推同一条只会再失败一次；把原因留在日志里，别把 5xx 抛回飞书
             log.warn("群聊快速收集处理失败：{}", ex.getMessage());
@@ -164,42 +157,142 @@ public class FeishuQuickCollectService {
     }
 
     /** 真正把一条群消息变成任务。 */
-    private void collect(JsonNode event) {
+    private void collect(JsonNode event, String eventId) {
         JsonNode message = event.path("message");
         String chatId = message.path("chat_id").asText("");
         String configured = settings.get(SettingService.CHAT_SYNC_CHAT_ID, "");
         if (StringUtils.hasText(configured) && !configured.equals(chatId)) {
             return;
         }
+        // 普通群聊必须保持零打扰；只有明确 @ 了机器人的消息才能进收集链路。
+        if (!message.path("mentions").isArray() || message.path("mentions").isEmpty()) {
+            return;
+        }
+        String messageId = message.path("message_id").asText("");
+        String eventKey = eventKey(eventId, messageId, event);
+        if (!claim(eventKey, eventId, messageId, chatId,
+                event.path("sender").path("sender_id").path("open_id").asText(""))) {
+            return;
+        }
         String type = message.path("message_type").asText("");
         if ("audio".equals(type)) {
             reply(chatId, FeishuWebhookNotifier.Card.simple("这条语音我记不下来", "orange",
                     "请长按语音条用飞书的「转文字」发一遍，或者直接用语音输入发文字，我就能建任务了。"));
+            finish(eventKey, "IGNORED", "TASK", null, null);
             return;
         }
-        String text = readableText(type, message);
-        if (!StringUtils.hasText(text)) {
+        CaptureText capture = captureText(readableText(type, message));
+        if (!StringUtils.hasText(capture.content())) {
+            reply(chatId, FeishuWebhookNotifier.Card.simple("还差一句具体内容", "orange",
+                    "可以说「记录任务：整理下周方案」、「记录想法：做一个每日面板」，或直接 @机器人 说内容。"));
+            finish(eventKey, "REJECTED", capture.kind(), null, "EMPTY_CONTENT");
             return;
         }
-        ProjectEntity project = targetProject();
+        String memberId = senderMemberId(event.path("sender"));
+        if (!StringUtils.hasText(memberId)) {
+            reply(chatId, new FeishuWebhookNotifier.Card(
+                    "先绑定飞书账号", "orange", List.of(),
+                    "我不知道这条内容应该归到谁的个人任务列表。请先用飞书登录 WAO 完成绑定，然后重新 @ 我。",
+                    "去 WAO 绑定", links.open("/login")));
+            finish(eventKey, "REJECTED", capture.kind(), null, "SENDER_NOT_BOUND");
+            return;
+        }
+        ProjectDto project = targetProject(memberId);
         if (project == null) {
             reply(chatId, FeishuWebhookNotifier.Card.simple("还没有可用的项目", "red",
                     "请先在 WAO 里建一个项目，或在「设置 → 飞书」里指定快速收集的落点项目。"));
+            finish(eventKey, "REJECTED", capture.kind(), null, "NO_PROJECT");
             return;
         }
-        TaskDto task = tasks.createFromChat(project.getId(), title(text), text,
-                senderMemberId(event.path("sender")), SOURCE_TAG);
-        log.info("群聊快速收集：已创建任务 {}（项目 {}）", task.id(), project.getId());
-        reply(chatId, new FeishuWebhookNotifier.Card(
-                "想法已记进 WAO",
-                "blue",
-                List.of(
-                        List.of("项目", project.getName()),
-                        List.of("任务", task.title()),
-                        List.of("标签", SOURCE_TAG)),
-                "点开就能补充细节；想让大家一起补，把状态改成「" + TaskService.COLLECTING + "」会自动分享回群里。",
-                "打开任务",
-                links.taskUrl(project.getId(), task.id())));
+        try {
+            TaskDto task = tasks.createFromChat(project.id(), title(capture.content()), capture.content(),
+                    memberId, capture.sourceTag());
+            finish(eventKey, "CREATED", capture.kind(), task.id(), null);
+            log.info("群聊个人收集：已创建任务 {}（项目 {}）", task.id(), project.id());
+            reply(chatId, new FeishuWebhookNotifier.Card(
+                    "已加入你的任务列表", "blue",
+                    List.of(
+                            List.of("归属", "你（发言人）"),
+                            List.of("项目", project.name()),
+                            List.of("任务", task.title()),
+                            List.of("来源", capture.sourceTag())),
+                    "这是未排期待办，会放在「稍后」；点开后可以再补充日期和细节。",
+                    "打开任务", links.taskUrl(project.id(), task.id())));
+        } catch (RuntimeException ex) {
+            finish(eventKey, "FAILED", capture.kind(), null, abbreviated(ex.getMessage()));
+            reply(chatId, FeishuWebhookNotifier.Card.simple("这次没有记成", "red",
+                    "WAO 创建任务时遇到错误，请稍后重新 @ 我发一次。"));
+            throw ex;
+        }
+    }
+
+    /** 识别口语化前缀；没写命令时仍按普通任务收集。 */
+    static CaptureText captureText(String raw) {
+        String text = raw == null ? "" : raw.trim();
+        String idea = stripPrefix(text, "记录想法", "记个想法", "添加想法", "想法", "点子");
+        if (idea != null) {
+            return new CaptureText("IDEA", idea, IDEA_SOURCE_TAG);
+        }
+        String task = stripPrefix(text, "记录任务", "记个任务", "添加任务", "新建任务", "任务", "待办", "事项");
+        return new CaptureText("TASK", task == null ? text : task, SOURCE_TAG);
+    }
+
+    private static String stripPrefix(String text, String... prefixes) {
+        String candidate = text.startsWith("帮我") ? text.substring(2).trim() : text;
+        for (String prefix : prefixes) {
+            if (candidate.startsWith(prefix)) {
+                String rest = candidate.substring(prefix.length()).trim();
+                return rest.replaceFirst("^[：:，,]\\s*", "").trim();
+            }
+        }
+        return null;
+    }
+
+    private boolean claim(String key, String eventId, String messageId, String chatId, String senderOpenId) {
+        FeishuQuickCollectEventEntity event = new FeishuQuickCollectEventEntity();
+        event.setEventKey(key);
+        event.setEventId(emptyToNull(eventId));
+        event.setMessageId(emptyToNull(messageId));
+        event.setChatId(emptyToNull(chatId));
+        event.setSenderOpenId(emptyToNull(senderOpenId));
+        event.setStatus("PROCESSING");
+        event.setCreatedAt(LocalDateTime.now(SHANGHAI));
+        event.setUpdatedAt(event.getCreatedAt());
+        try {
+            events.insert(event);
+            return true;
+        } catch (DuplicateKeyException ex) {
+            return false;
+        }
+    }
+
+    private void finish(String key, String status, String kind, String targetId, String error) {
+        FeishuQuickCollectEventEntity event = events.selectById(key);
+        if (event == null) {
+            return;
+        }
+        event.setStatus(status);
+        event.setCaptureKind(kind);
+        event.setTargetId(targetId);
+        event.setErrorMessage(error);
+        event.setUpdatedAt(LocalDateTime.now(SHANGHAI));
+        events.updateById(event);
+    }
+
+    private String eventKey(String eventId, String messageId, JsonNode event) {
+        if (StringUtils.hasText(eventId)) {
+            return "event:" + eventId;
+        }
+        if (StringUtils.hasText(messageId)) {
+            return "message:" + messageId;
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(event.toString().getBytes(StandardCharsets.UTF_8));
+            return "body:" + java.util.HexFormat.of().formatHex(digest);
+        } catch (Exception ex) {
+            throw new IllegalStateException("无法生成事件去重键", ex);
+        }
     }
 
     /** 把消息内容读成一行可用的文字，并去掉 @ 机器人留下的占位符。 */
@@ -247,20 +340,20 @@ public class FeishuQuickCollectService {
     }
 
     /** 落点项目：先看配置，其次按名字找「Wa All in One」，最后退回第一个项目。 */
-    private ProjectEntity targetProject() {
+    private ProjectDto targetProject(String memberId) {
+        List<ProjectDto> visible = projects.list(memberId);
         String configured = settings.get(SettingService.QUICK_COLLECT_PROJECT_ID, "");
         if (StringUtils.hasText(configured)) {
-            ProjectEntity project = projects.selectById(configured);
+            ProjectDto project = visible.stream().filter(item -> configured.equals(item.id())).findFirst().orElse(null);
             if (project != null) {
                 return project;
             }
         }
-        List<ProjectEntity> all = projects.selectList(null);
-        return all.stream().filter(p -> DEFAULT_PROJECT_NAME.equalsIgnoreCase(p.getName())).findFirst()
-                .orElseGet(() -> all.isEmpty() ? null : all.get(0));
+        return visible.stream().filter(p -> DEFAULT_PROJECT_NAME.equalsIgnoreCase(p.name())).findFirst()
+                .orElseGet(() -> visible.isEmpty() ? null : visible.get(0));
     }
 
-    /** 发言人对应的 WAO 成员；没绑过飞书的人退回默认负责人。 */
+    /** 发言人对应的 WAO 成员；未绑定时必须拒绝，不能把私人待办记到别人名下。 */
     private String senderMemberId(JsonNode sender) {
         String openId = sender.path("sender_id").path("open_id").asText("");
         if (StringUtils.hasText(openId)) {
@@ -272,7 +365,7 @@ public class FeishuQuickCollectService {
                 }
             }
         }
-        return "wg";
+        return null;
     }
 
     /** 回执优先回到事件发生的那个群；应用凭据没配好时退回全局 webhook。 */
@@ -345,4 +438,17 @@ public class FeishuQuickCollectService {
     private static String trimmed(String value) {
         return value == null ? null : value.trim();
     }
+
+    private static String emptyToNull(String value) {
+        return StringUtils.hasText(value) ? value : null;
+    }
+
+    private static String abbreviated(String value) {
+        if (!StringUtils.hasText(value)) {
+            return "UNKNOWN";
+        }
+        return value.length() <= 500 ? value : value.substring(0, 500);
+    }
+
+    record CaptureText(String kind, String content, String sourceTag) { }
 }

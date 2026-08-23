@@ -286,11 +286,12 @@ async function runHistory() {
           <div class="spacer"></div>
           <label class="switch">
             <input v-model="quickEnabled" type="checkbox" />
-            <span>在群里 @机器人 就建任务</span>
+            <span>在群里 @机器人 就记入我的任务</span>
           </label>
         </div>
         <div class="tip">
-          想法冒出来的时候在群里 @ 一下机器人，消息第一行成为任务标题、全文成为描述，并打上「群聊快速收集」标签。
+          在群里 @ 机器人说「记录任务：…」、「记录想法：…」或直接说内容，会记入发言人自己的未排期任务列表。
+          每个人需要先用同一飞书账号登录过 WAO；普通群聊不会被收集。
           手机上直接用飞书的语音输入说完就发即可；发语音条我认不出来，会回一句提示让你转文字。
         </div>
         <div class="event-url">

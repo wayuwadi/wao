@@ -919,7 +919,7 @@ paths:
         - { name: startDay, in: query, required: false, schema: { type: string, format: date }, description: 批量同步起始日期，须与 endDay 同时提供 }
         - { name: endDay, in: query, required: false, schema: { type: string, format: date }, description: 批量同步结束日期，须与 startDay 同时提供；一次最多 366 天 }
       responses: { '200': { description: OK }, '400': { description: 配置不完整 }, '502': { description: 调用飞书失败（code=50203） } }
-  # 群聊快速收集：@机器人 直接建任务（见 docs/adr/027-feishu-quick-collect-and-subtask-runs.md）
+  # 群聊快速收集：@机器人 记入发言人自己的任务列表（见 ADR-027、ADR-102）
   /feishu/quick-collect/config:
     get:
       summary: 快速收集配置（Verification Token / Encrypt Key 只回脱敏形态）
@@ -936,7 +936,9 @@ paths:
       description: |
         免登录接口，请求真实性由 Verification Token / Encrypt Key 保证。
         不返回 ApiResponse 包装：url_verification 时按飞书协议回 { challenge }，其余回空对象。
-        群里 @机器人 的文本 / 富文本消息会被建成任务并打上「群聊快速收集」标签；
+        普通群聊不处理。群里 @机器人 的文本 / 富文本消息会根据发言人已绑定的飞书身份，
+        建成其本人的未排期任务；“记录任务”与“记录想法”前缀会被去除并区分来源标签。
+        未绑定发言人时只回复绑定指引，不回退到默认负责人；事件结果持久化去重。
         语音条不做转写，回一句提示让发送者改用飞书的语音转文字。
       requestBody:
         required: false
@@ -1569,7 +1571,7 @@ components:
       type: object
       description: 字段为 null 表示不修改；密文字段留空即保留已存的那一份
       properties:
-        enabled: { type: boolean, description: 是否接收群里 @机器人 建任务 }
+        enabled: { type: boolean, description: 是否接收群里 @机器人 记入发言人本人任务列表 }
         projectId: { type: string, description: 落点项目；留空时自动找「Wa All in One」 }
         verificationToken: { type: string, description: 飞书事件订阅的 Verification Token }
         encryptKey: { type: string, description: 飞书事件订阅的 Encrypt Key }
