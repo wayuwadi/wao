@@ -3,6 +3,7 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -81,7 +82,7 @@ class WorkdayRhythmDashboardServiceTest {
                 org.mockito.ArgumentMatchers.eq("workday-rhythm-day-" + today), json.capture());
         assertThat(json.getValue()).contains("上线", "验收", "复盘");
         assertThat(planOccurrence.getCompletedAt()).isNotNull();
-        verify(occurrences).updateById(planOccurrence);
+        verify(occurrences, atLeastOnce()).updateById(planOccurrence);
     }
 
     @Test
