@@ -85,6 +85,8 @@ Windows → Linux → 云端严格滚动发布、线上验收、GitHub commit st
 
 - `DEPLOY_PRODUCTION=false`：完整影子构建，不接触生产节点。
 - `BOOTSTRAP_WINDOWS=true`：显式生成 GTID 快照并重建 Windows 从库；正常发布禁止开启。
+- `ALLOW_WINDOWS_OFFLINE=true`：仅当 Windows 在部署前预检不可达时，保持从节点摘流并继续发布 Linux 与云端；
+  Windows 已通过预检后的任何部署失败仍然 fail-closed。不得与 `BOOTSTRAP_WINDOWS` 同时开启。
 - 同一任务不并发，新 push 排队且不取消正在进行的 migration 或发布。
 
 ## 密钥与恢复

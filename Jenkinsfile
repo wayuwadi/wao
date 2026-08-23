@@ -19,6 +19,11 @@ pipeline {
             defaultValue: true,
             description: '关闭时只执行测试、前端构建、Docker 镜像构建和发布包校验。'
         )
+        booleanParam(
+            name: 'ALLOW_WINDOWS_OFFLINE',
+            defaultValue: false,
+            description: '仅在 Windows 预检不可达时保持从节点摘流并继续发布 Linux 与云端；Windows 可达后的部署失败仍会阻断。'
+        )
     }
 
     environment {
@@ -102,7 +107,7 @@ pipeline {
                         variable: 'CLOUD_KNOWN_HOSTS'
                     )
                 ]) {
-                    sh 'BOOTSTRAP_WINDOWS="$BOOTSTRAP_WINDOWS" deploy/jenkins/ci-deploy.sh'
+                    sh 'BOOTSTRAP_WINDOWS="$BOOTSTRAP_WINDOWS" ALLOW_WINDOWS_OFFLINE="$ALLOW_WINDOWS_OFFLINE" deploy/jenkins/ci-deploy.sh'
                     sh 'deploy/jenkins/ci-production-verify.sh'
                 }
             }

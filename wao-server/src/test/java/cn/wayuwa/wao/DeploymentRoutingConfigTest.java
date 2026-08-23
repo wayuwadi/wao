@@ -168,15 +168,19 @@ class DeploymentRoutingConfigTest {
                 .doesNotContain("deploy_master >master.log 2>&1 &")
                 .contains("slave_deployed=false")
                 .contains("slave_deployed=true")
+                .contains("ALLOW_WINDOWS_OFFLINE")
+                .contains("windows_available=false")
+                .contains("set_status windows_status skipped")
+                .contains("Windows 从节点预检不可达；保持摘流并按显式授权继续发布 Linux 与云端")
                 .contains("Windows 从节点严格预检失败")
                 .contains("Windows 从节点三次部署失败")
                 .contains("Linux 主节点三次部署失败")
                 .contains("validate-deployment-node.sh")
-                .contains("start_availability_monitor")
-                .doesNotContain("本次继续升级云前端和 Linux 主节点");
+                .contains("start_availability_monitor");
         assertThat(pipeline)
                 .contains("credentialsId: 'wao-windows-ssh'")
                 .contains("credentialsId: 'wao-cloud-ssh'")
+                .contains("name: 'ALLOW_WINDOWS_OFFLINE'")
                 .contains("disableConcurrentBuilds(abortPrevious: false)");
         assertThat(probe)
                 .contains("elif sudo -n docker info")

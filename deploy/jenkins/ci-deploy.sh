@@ -12,8 +12,9 @@ set -u
 : "${CLOUD_USER:?CLOUD_USER is required}"
 
 BOOTSTRAP_WINDOWS="${BOOTSTRAP_WINDOWS:-false}"
+ALLOW_WINDOWS_OFFLINE="${ALLOW_WINDOWS_OFFLINE:-false}"
 WAO_BUILD_ATTEMPT="${WAO_BUILD_ATTEMPT:-1}"
-export BOOTSTRAP_WINDOWS WAO_BUILD_ATTEMPT
+export BOOTSTRAP_WINDOWS ALLOW_WINDOWS_OFFLINE WAO_BUILD_ATTEMPT
 
 umask 077
 install -d "$WAO_RUN_TEMP"
@@ -73,6 +74,7 @@ master_drained=false
 schema_quiesced=false
 schema_rollout_complete=false
 safe_slave_reachable=false
+windows_available=true
 safe_schema_rollout=false
 
 set_status() {
@@ -364,14 +366,21 @@ trap cleanup_rollout EXIT
 
 if ! windows_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
     "wao-windows" 'wsl.exe -d Ubuntu -u root -- docker info' >/dev/null; then
-  set_status windows_status failed
-  set_status windows_detail 'SSH、WSL 或 Docker 预检失败'
   set_upstream_state slave down || true
-  echo 'Windows 从节点严格预检失败；Linux 保持当前版本，本次发布失败。'
-  exit 1
+  if [ "$ALLOW_WINDOWS_OFFLINE" = true ] && [ "$safe_schema_rollout" != true ]; then
+    windows_available=false
+    set_status windows_status skipped
+    set_status windows_detail 'Windows 预检不可达；已显式授权 Linux-only 发布'
+    echo 'Windows 从节点预检不可达；保持摘流并按显式授权继续发布 Linux 与云端。'
+  else
+    set_status windows_status failed
+    set_status windows_detail 'SSH、WSL 或 Docker 预检失败'
+    echo 'Windows 从节点严格预检失败；Linux 保持当前版本，本次发布失败。'
+    exit 1
+  fi
 fi
 
-if [ "$safe_schema_rollout" != true ]; then
+if [ "$safe_schema_rollout" != true ] && [ "$windows_available" = true ]; then
   start_availability_monitor
 fi
 
@@ -423,36 +432,40 @@ if [ "$safe_schema_rollout" != true ]; then
     https://wao.wayuwa.cn/api/hello | grep -q '"code":0'
 fi
 
-if ! retry_node_deploy Windows deploy_slave slave.log; then
-  set_status windows_status failed
+if [ "$windows_available" = true ]; then
+  if ! retry_node_deploy Windows deploy_slave slave.log; then
+    set_status windows_status failed
+    set_status windows_attempts "$NODE_DEPLOY_ATTEMPTS"
+    set_status windows_detail "$(tail -n 1 slave.log)"
+    set_upstream_state slave down || true
+    printf '\n===== Windows deployment =====\n'; cat slave.log
+    echo 'Windows 从节点三次部署失败；Linux 保持当前版本，本次发布严格失败。'
+    exit 1
+  fi
+  set_status windows_status success
   set_status windows_attempts "$NODE_DEPLOY_ATTEMPTS"
-  set_status windows_detail "$(tail -n 1 slave.log)"
-  set_upstream_state slave down || true
+  set_status windows_detail "$WAO_GIT_SHA"
+  if ! gateway_ready_from_cloud "$SLAVE_HOST"; then
+    set_status windows_status failed
+    set_status windows_detail '云节点无法直连 Windows Gateway'
+    set_upstream_state slave down || true
+    exit 1
+  fi
+  set_upstream_state slave up || exit 1
   printf '\n===== Windows deployment =====\n'; cat slave.log
-  echo 'Windows 从节点三次部署失败；Linux 保持当前版本，本次发布严格失败。'
-  exit 1
 fi
-set_status windows_status success
-set_status windows_attempts "$NODE_DEPLOY_ATTEMPTS"
-set_status windows_detail "$WAO_GIT_SHA"
-if ! gateway_ready_from_cloud "$SLAVE_HOST"; then
-  set_status windows_status failed
-  set_status windows_detail '云节点无法直连 Windows Gateway'
-  set_upstream_state slave down || true
-  exit 1
-fi
-set_upstream_state slave up || exit 1
-printf '\n===== Windows deployment =====\n'; cat slave.log
 
 if [ "$safe_schema_rollout" != true ]; then
   set_upstream_state master down || exit 1
 fi
 master_drained=true
-for probe in 1 2 3 4 5; do
-  hello="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
-    "https://wao.wayuwa.cn/api/hello?windows-rollout-probe=$probe")"
-  printf '%s' "$hello" | grep -q '"code":0'
-done
+if [ "$windows_available" = true ]; then
+  for probe in 1 2 3 4 5; do
+    hello="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
+      "https://wao.wayuwa.cn/api/hello?windows-rollout-probe=$probe")"
+    printf '%s' "$hello" | grep -q '"code":0'
+  done
+fi
 
 if ! retry_node_deploy Linux deploy_master master.log; then
   set_status linux_status failed
@@ -495,10 +508,12 @@ set_status cloud_status success
 printf '\n===== cloud =====\n'; cat cloud.log
 
 gateway_ready_from_cloud "$MASTER_HOST"
-gateway_ready_from_cloud "$SLAVE_HOST"
 sh "$WAO_MASTER_PROJECT_ROOT/deploy/scripts/validate-deployment-node.sh" master "$WAO_GIT_SHA"
-retry_remote "Windows 从节点" windows_ssh "wao-windows" \
-  "wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-deployment-node.sh slave '$WAO_GIT_SHA'"
+if [ "$windows_available" = true ]; then
+  gateway_ready_from_cloud "$SLAVE_HOST"
+  retry_remote "Windows 从节点" windows_ssh "wao-windows" \
+    "wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-deployment-node.sh slave '$WAO_GIT_SHA'"
+fi
 
 stop_availability_monitor
 if [ -s "$availability_failures" ]; then

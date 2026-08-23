@@ -31,3 +31,13 @@ case "${DEPLOY_PRODUCTION:-false}" in
   true|false) ;;
   *) echo 'DEPLOY_PRODUCTION must be true or false.' >&2; exit 2 ;;
 esac
+
+case "${ALLOW_WINDOWS_OFFLINE:-false}" in
+  true|false) ;;
+  *) echo 'ALLOW_WINDOWS_OFFLINE must be true or false.' >&2; exit 2 ;;
+esac
+
+if [ "${BOOTSTRAP_WINDOWS:-false}" = true ] && [ "${ALLOW_WINDOWS_OFFLINE:-false}" = true ]; then
+  echo 'BOOTSTRAP_WINDOWS and ALLOW_WINDOWS_OFFLINE cannot both be true.' >&2
+  exit 2
+fi
