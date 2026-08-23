@@ -35,14 +35,16 @@ describe('侧边栏导航配置', () => {
     expect(inApp?.path).toBe('/wao/skills')
     expect(router.resolve('/wao/skills').meta.module).toBe('skills')
     expect(router.resolve('/wao/skills').meta.tabKind).toBe('module')
-    expect(tabFromRoute(router.resolve('/wao/skills/manage') as RouteLocationNormalized)?.path)
-      .toBe('/wao/skills/manage')
+    expect(
+      tabFromRoute(router.resolve('/wao/skills/manage') as RouteLocationNormalized)?.path,
+    ).toBe('/wao/skills/manage')
   })
 
   it('自媒体 Agent 默认出现在公共组，并保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
     expect(publicGroup?.items).toEqual([
       'projects',
+      'ideas',
       'skills',
       externalAppItemId('media-agent'),
       'chat-reviews',
@@ -53,6 +55,13 @@ describe('侧边栏导航配置', () => {
     const route = router.getRoutes().find((item) => item.name === 'external-app')
     expect(route?.path).toBe('/apps/:appId')
     expect(route?.meta.tabKind).toBe('external')
+  })
+
+  it('点子库作为团队共享模块进入公共导航且没有公开分享路由', () => {
+    expect(MODULES.ideas.path).toBe('/ideas')
+    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('ideas')
+    expect(router.resolve('/ideas').meta.module).toBe('ideas')
+    expect(router.getRoutes().some((route) => route.path.startsWith('/s/i'))).toBe(false)
   })
 
   it('聊天复盘作为双方共享模块位于公共组', () => {

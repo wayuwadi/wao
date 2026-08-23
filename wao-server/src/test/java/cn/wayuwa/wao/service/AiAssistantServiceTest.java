@@ -35,6 +35,7 @@ class AiAssistantServiceTest {
     private final AiAssistantConversationService conversationService = mock(AiAssistantConversationService.class);
     private final AiAssistantAssetService assetService = mock(AiAssistantAssetService.class);
     private final RunnerScriptService runnerScripts = mock(RunnerScriptService.class);
+    private final IdeaResearchService ideaResearchService = mock(IdeaResearchService.class);
     private final AiAssistantService service;
 
     AiAssistantServiceTest() {
@@ -42,7 +43,7 @@ class AiAssistantServiceTest {
         when(runnerScripts.hash()).thenReturn("current-script-hash");
         service = new AiAssistantService(
                 mapper, runnerMapper, aiRunService, accountService, deepSeekApi,
-                conversationService, assetService, runnerScripts,
+                conversationService, assetService, runnerScripts, ideaResearchService,
                 Duration.ofMinutes(60), Duration.ofMinutes(30));
     }
 
