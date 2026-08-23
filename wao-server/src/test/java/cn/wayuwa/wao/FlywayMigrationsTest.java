@@ -123,4 +123,18 @@ class FlywayMigrationsTest {
                 .contains("UNIQUE KEY uk_rhythm_delivery_occurrence_channel (occurrence_id, channel)")
                 .contains("UNIQUE KEY uk_rhythm_item_member_system (member_id, system_key)");
     }
+
+    @Test
+    void feishuPersonalQuickCaptureUsesDatabaseLevelEventIdempotency() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V85__feishu_personal_quick_capture.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE feishu_quick_collect_event")
+                .contains("event_key       VARCHAR(191) NOT NULL")
+                .contains("PRIMARY KEY (event_key)")
+                .contains("sender_open_id", "capture_kind", "target_id", "error_message");
+    }
 }

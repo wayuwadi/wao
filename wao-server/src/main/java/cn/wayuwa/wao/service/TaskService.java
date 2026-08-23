@@ -381,7 +381,7 @@ public class TaskService {
     }
 
     /**
-     * 群聊快速收集：把飞书群里的一句话直接变成任务。
+     * 群聊快速收集：把飞书群里的一句话直接变成未排期任务。
      *
      * <p>标题取第一行、描述留全文，并打上「群聊快速收集」标签 —— 事后一眼能认出这条是
      * 随口冒出来的想法，而不是正式排期的需求。
@@ -389,11 +389,12 @@ public class TaskService {
      * @param projectId 落点项目 id
      * @param title     任务标题
      * @param desc      任务描述（原始消息全文）
-     * @param ownerId   负责人成员 id；识别不出发言人时由调用方给默认值
+     * @param ownerId   已绑定的发言人成员 id
      * @param source    标签值，例如「群聊快速收集」
      * @return 创建出来的任务
      */
     public TaskDto createFromChat(String projectId, String title, String desc, String ownerId, String source) {
+        requireProjectVisible(projectId, ownerId);
         TaskEntity e = new TaskEntity();
         e.setId("t" + System.currentTimeMillis());
         e.setTitle(title);
@@ -403,7 +404,8 @@ public class TaskService {
         e.setOwnerId(ownerId);
         e.setCreatedBy(ownerId);
         e.setCreatedAt(LocalDateTime.now(ZoneId.of("Asia/Shanghai")));
-        e.setDueDate(today());
+        // 群里随口记下的通常是未来想做、但尚未排期的事，不能全部压到今天。
+        e.setDueDate(null);
         e.setDescription(desc == null ? "" : desc);
         TaskDetail detail = new TaskDetail(
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),

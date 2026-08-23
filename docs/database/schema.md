@@ -901,7 +901,11 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V79__task_created_at.sql`：新增任务真实创建时间，按稳定 id 的 13 位毫秒时间戳前缀回填可确认的存量任务；无可靠来源的极早期数据保持空值。
 - `V80__ai_run_model_selection.sql`：固化每次 Codex AI Run 选择的模型与推理强度（见 ADR-091）。
 - `V81__ai_run_plan_mode.sql`：固化每次 Codex AI Run 的 Plan 工作流选择，Runner 在问题出现时自动采用推荐项（见 ADR-093）。
+- `V82__skill_market.sql`：Skill 市场发布者、版本、审核、收藏与下载统计。
+- `V83__idea_library.sql`：成员私有想法、处理快照和任务转化关系。
+- `V84__workday_rhythm_daily_dashboard.sql`：今日节奏设置、清单模板与日实例、每日文档绑定及通知去重。
+- `V85__feishu_personal_quick_capture.sql`：飞书 @机器人 个人任务收集事件的持久去重与结果记录（见 ADR-102）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
-V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V81 链路，
+V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V85 链路，
 并覆盖全局活动唯一抢占、lease、归档身份与同步 / scoped 文档 `PATCH` 的全局版本 CAS、树拖拽窄更新不回写正文或版本、AI 入队关联回滚和 DB-time 超时清理；Docker 不可用时显式跳过。

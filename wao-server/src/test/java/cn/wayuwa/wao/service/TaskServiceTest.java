@@ -131,6 +131,7 @@ class TaskServiceTest {
 
         assertThat(dto.status()).isEqualTo("待办");
         assertThat(dto.owner()).isEqualTo("wd");
+        assertThat(dto.due()).isNull();
         assertThat(dto.custom()).extracting(cn.wayuwa.wao.dto.CustomProp::value).containsExactly("群聊快速收集");
     }
 
