@@ -1,0 +1,116 @@
+jenkins:
+  systemMessage: "WAO 自建 CI/CD。生产流水线只执行受信任的 main。\n"
+  numExecutors: 1
+  mode: NORMAL
+  scmCheckoutRetryCount: 2
+  disableRememberMe: true
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: admin
+          name: WAO Jenkins Administrator
+          password: "${trim:${readFile:/etc/jenkins/secrets/admin-password}}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - usernamePassword:
+              scope: GLOBAL
+              id: wao-github-pat
+              username: wayuwacn
+              password: "${trim:${readFile:/etc/jenkins/secrets/github-pat}}"
+              description: WAO private repository contents read and commit statuses write
+          - string:
+              scope: GLOBAL
+              id: wao-github-webhook-secret
+              secret: "${trim:${readFile:/etc/jenkins/secrets/github-webhook-secret}}"
+              description: GitHub push webhook HMAC secret
+          - basicSSHUserPrivateKey:
+              scope: GLOBAL
+              id: wao-windows-ssh
+              username: wage
+              description: Jenkins deployment key for the Windows node
+              privateKeySource:
+                directEntry:
+                  privateKey: "${readFile:/etc/jenkins/secrets/windows-ed25519}"
+          - file:
+              scope: GLOBAL
+              id: wao-windows-known-hosts
+              fileName: windows-known-hosts
+              secretBytes: "${readFileBase64:/etc/jenkins/secrets/windows-known-hosts}"
+              description: Verified Windows SSH host keys
+          - basicSSHUserPrivateKey:
+              scope: GLOBAL
+              id: wao-cloud-ssh
+              username: root
+              description: Jenkins deployment key for the WAO cloud ingress
+              privateKeySource:
+                directEntry:
+                  privateKey: "${readFile:/etc/jenkins/secrets/cloud-ed25519}"
+          - file:
+              scope: GLOBAL
+              id: wao-cloud-known-hosts
+              fileName: cloud-known-hosts
+              secretBytes: "${readFileBase64:/etc/jenkins/secrets/cloud-known-hosts}"
+              description: Verified cloud SSH host keys
+
+unclassified:
+  location:
+    adminAddress: admin@wayuwa.cn
+    url: http://127.0.0.1:8081/
+  gitHubPluginConfig:
+    hookSecretConfigs:
+      - credentialsId: wao-github-webhook-secret
+        signatureAlgorithm: SHA256
+    configs:
+      - name: wao-github
+        apiUrl: https://api.github.com
+        credentialsId: wao-github-pat
+        manageHooks: false
+
+jobs:
+  - script: >
+      pipelineJob('wao-main-cd') {
+        description('WAO main: test once, build immutable SHA images, deploy Windows → Linux → cloud.')
+        properties {
+          githubProjectUrl('https://github.com/wayuwacn/wao/')
+        }
+        parameters {
+          booleanParam('BOOTSTRAP_WINDOWS', false, '仅显式启用时重建 Windows 从库。')
+          booleanParam('DEPLOY_PRODUCTION', true, '关闭时只做完整影子构建，不触碰生产节点。')
+          booleanParam('ALLOW_WINDOWS_OFFLINE', false, '仅在 Windows 预检不可达时继续发布 Linux 与云端。')
+        }
+        triggers {
+          githubPush()
+        }
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('https://github.com/wayuwacn/wao.git')
+                  refspec('+refs/heads/${WAO_JENKINS_SCM_BRANCH}:refs/remotes/origin/${WAO_JENKINS_SCM_BRANCH}')
+                }
+                branch('*/${WAO_JENKINS_SCM_BRANCH}')
+                extensions {
+                  cloneOptions {
+                    shallow(false)
+                    noTags(true)
+                    honorRefspec(true)
+                    timeout(20)
+                  }
+                }
+              }
+            }
+            scriptPath('Jenkinsfile')
+            // Lightweight checkout uses a separate controller cache and ignores
+            // cloneOptions.noTags; use the pre-warmed job workspace instead.
+            lightweight(false)
+          }
+        }
+      }

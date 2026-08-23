@@ -43,7 +43,7 @@ WAO 系统是一个由两名 Java 服务端工程师（娃哥、娃弟）主导�
 | Repository | wayuwa-wao |
 | 默认分支 | main（protected，仅接受 PR 合并） |
 | 成员权限 | wayuwage / wayuwadi 均为 org owner |
-| CI/CD | GitHub Actions（推送 main 触发部署） |
+| CI/CD | Linux 自建 Jenkins（GitHub Webhook 推送 main 触发部署） |
 
 ### 1.6 AI 协作开发规范
 
@@ -341,7 +341,7 @@ docs(api): update OpenAPI spec for user module
 | 接入层 | Nginx（阿里云服务器） | SSL 终止 + 静态文件 + 反向代理 |
 | 容器化 | Docker + Docker Compose | 全部服务容器化 |
 | 代码仓库 | Git 单工程（Monorepo） | 前后端 + 部署 + CI/CD 同仓 |
-| CI/CD | GitHub Actions | 推送即构建部署 |
+| CI/CD | Jenkins LTS（Linux 主节点） | Webhook 推送即构建部署 |
 | DDNS | ddns-go | 动态 IP 自动更新 DNS |
 
 ---
@@ -945,9 +945,8 @@ wao/
 │       ├── deploy.sh               # 一键部署脚本
 │       └── backup_mysql.sh         # 数据库备份脚本
 │
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml           # GitHub Actions 流水线
+├── Jenkinsfile                 # 主站 Jenkins 流水线
+├── deploy/jenkins/             # JCasC、安装、备份、隧道与发布脚本
 │
 ├── docs/                       # 设计文档
 │   ├── architecture.md         # 本文档
@@ -1309,85 +1308,19 @@ services:
 
 ## 十、CI/CD 流水线
 
-### 10.1 GitHub Actions 配置
+### 10.1 Jenkins 配置
 
-SSH 目标使用域名（DDNS 保证解析到当前 IP），不使用固定 IP secrets：
-
-```yaml
-# .github/workflows/ci-cd.yml
-name: WAO CI/CD
-
-on:
-  push:
-    branches: [main]
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/wao-server
-
-jobs:
-  build-frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Build
-        run: cd wao-web && npm ci && npm run build
-      - name: Deploy to Nginx
-        run: |
-          scp -o StrictHostKeyChecking=no -r wao-web/dist/* root@8.136.152.131:/var/www/wao/dist/
-
-  build-backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to master (linux2)
-        run: |
-          ssh -o StrictHostKeyChecking=no root@linux2.wayuwa.cn << 'EOF'
-            cd /opt/wao
-            git pull origin main
-            # 记录当前镜像 ID 用于回滚
-            docker inspect --format='{{.Image}}' wao-server > /tmp/last_image_id 2>/dev/null || true
-            docker compose -f deploy/docker-compose-master.yml up -d --build wao-server wao-gateway
-            # 等待启动
-            sleep 15
-            # 健康检查
-            if curl -sf http://localhost:9000/actuator/health | grep -q '"status":"UP"'; then
-              echo "Master deploy OK"
-            else
-              echo "Health check FAILED, rolling back..."
-              docker compose -f deploy/docker-compose-master.yml down
-              docker compose -f deploy/docker-compose-master.yml up -d
-              exit 1
-            fi
-          EOF
-
-      - name: Deploy to slave (windows1)
-        run: |
-          ssh -o StrictHostKeyChecking=no root@windows1.wayuwa.cn << 'EOF'
-            cd /opt/wao
-            git pull origin main
-            docker compose -f deploy/docker-compose-slave.yml up -d --build wao-server wao-gateway
-            sleep 15
-            if curl -sf http://localhost:9000/actuator/health | grep -q '"status":"UP"'; then
-              echo "Slave deploy OK"
-            else
-              echo "Health check FAILED, rolling back..."
-              docker compose -f deploy/docker-compose-slave.yml down
-              docker compose -f deploy/docker-compose-slave.yml up -d
-              exit 1
-            fi
-          EOF
-```
+主站流水线定义在仓库根目录 `Jenkinsfile`，控制器原生安装在 Linux 主节点并只监听
+`127.0.0.1:8081`。GitHub 的签名 push Webhook 经阿里云 Nginx 的精确
+`/github-webhook/` 路由和反向 SSH 隧道到达 Jenkins；UI 不对公网开放。JCasC、固定插件清单、
+安装与恢复步骤见 `deploy/jenkins/`，完整安全边界见 ADR-099。
 
 ### 10.2 部署策略说明
 
-- SSH 目标使用域名 `linux2.wayuwa.cn` / `windows1.wayuwa.cn`，DDNS 保证解析正确，无需维护 IP secrets
-- 每次部署后等待 15 秒，curl Gateway 的 `/actuator/health` 验证服务存活
-- 健康检查失败时自动回滚：停止新容器，重启上一版本
+- Maven、两个 Vue 项目和四个 Docker target 在同一次构建中验证，并以完整 Git SHA 标记镜像。
+- 固定顺序为 Windows → Linux → 阿里云；Windows 失败时 Linux 保持旧版本，Linux 失败时保持摘流并由 Windows 服务。
+- 两个应用节点运行相同 SHA 后才发布静态前端与 Nginx，并验证复制、公共 API、Agent 和飞书登录。
+- 同一流水线禁止并发；后续 `main` push 排队，不取消正在执行的数据库迁移或滚动发布。
 - 主从节点顺序部署：先主后从，主节点失败则不继续部署从节点
 
 ### 10.3 日志管理
@@ -1653,7 +1586,7 @@ Phase 0 的目标：跑通一个完整的请求链路——浏览器访问 `http
 6. **服务治理**：docker compose 起 Nacos + Gateway + 空 Spring Boot App，验证 Nacos 注册发现、Gateway 路由
 7. **前端脚手架**：`npm create vue@latest` 初始化 Vue 3 + TS + Pinia + Router，写一个 Hello World 页面
 8. **全链路验证**：前端 build → scp 到阿里云 → 浏览器访问 → 调 API → 返回 JSON
-9. **CI/CD**：配置 GitHub Actions，push main 自动构建部署
+9. **CI/CD**：配置 Linux 自建 Jenkins，GitHub push main 通过签名 Webhook 自动构建部署
 
 ### 12.3 Phase 1 启动条件
 

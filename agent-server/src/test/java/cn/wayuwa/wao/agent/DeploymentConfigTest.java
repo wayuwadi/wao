@@ -53,15 +53,22 @@ class DeploymentConfigTest {
     }
 
     @Test
-    void unifiedWorkflowBuildsAndDeploysAgentWithWao() throws IOException {
-        String workflow = read(".github/workflows/ci-cd.yml");
+    void unifiedJenkinsPipelineBuildsAndDeploysAgentWithWao() throws IOException {
+        String backendBuild = read("deploy/jenkins/ci-backend-test.sh");
+        String frontendBuild = read("deploy/jenkins/ci-frontend-build.sh");
+        String rollout = read("deploy/jenkins/ci-deploy.sh");
+        String verification = read("deploy/jenkins/ci-production-verify.sh");
 
-        assertThat(workflow)
-                .contains("run: mvn -B test")
-                .contains("npm --prefix wao-web run test:unit -- --run")
-                .contains("npm --prefix agent-web run build")
+        assertThat(backendBuild)
+                .contains("-v \"$cache:/tmp/m2\"")
+                .contains("mvn -B -Dmaven.repo.local=/tmp/m2/repository test");
+        assertThat(frontendBuild)
+                .contains("run_npm wao-web run test:unit -- --run")
+                .contains("run_npm agent-web run build");
+        assertThat(rollout)
                 .contains("agent-web/dist/.")
-                .contains("/var/www/wao-agent/dist")
+                .contains("/var/www/wao-agent/dist");
+        assertThat(verification)
                 .contains("/api/agent/health");
     }
 
@@ -119,10 +126,11 @@ class DeploymentConfigTest {
         String common = read("agent-server/src/main/resources/application.yml");
         String master = read("deploy/docker-compose-master.yml");
         String slave = read("deploy/docker-compose-slave.yml");
-        String workflow = read(".github/workflows/ci-cd.yml");
+        String pipeline = read("Jenkinsfile");
+        String rollout = read("deploy/jenkins/ci-deploy.sh");
         String nginx = read("deploy/nginx/wao.wayuwa.cn.conf.template");
 
-        assertThat(List.of(common, master, slave, workflow))
+        assertThat(List.of(common, master, slave, pipeline, rollout))
                 .allSatisfy(config -> assertThat(config).doesNotContain("AGENT_VIDEO_"));
         assertThat(nginx)
                 .doesNotContain("/api/agent/videos", "linux-vpn-master-video");

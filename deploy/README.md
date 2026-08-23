@@ -170,15 +170,21 @@ https://wao.wayuwa.cn/api/hello
 
 任务分享页 `/s/t/<taskId>` 与 Markdown 直读地址 `/api/share/tasks/<taskId>.md` 都是**公开免登录**的：拿到链接就能读到该任务的标题、描述、图片与子任务（负责人、评论、活动不外泄）。当前任务 id 是可枚举的时间戳，因此这套分享**不适合在有外部成员的正式环境启用**，收敛方案（不可猜的 share token）记在 `docs/adr/013-public-task-share-links.md`。
 
-## GitHub Actions
+## Jenkins CD
 
-CD 使用以下 GitHub Secrets：`DEPLOY_SSH_PRIVATE_KEY`、`DEPLOY_SSH_KNOWN_HOSTS`、`WINDOWS_DEPLOY_SSH_PRIVATE_KEY`、`WINDOWS_DEPLOY_SSH_KNOWN_HOSTS`、`MASTER_HOST`、`MASTER_USER`、`SLAVE_HOST`、`SLAVE_USER`、`CLOUD_HOST`、`CLOUD_USER`、`FEISHU_WEBHOOK_URL`、`FEISHU_APP_ID`、`FEISHU_APP_SECRET`，并用仓库变量 `DEPLOY_ENABLED` 控制是否部署。Windows 使用独立密钥和独立 `known_hosts`，避免系统重装后的主机指纹影响 Linux 与云节点。CD 构建一次带 Git SHA 标签的镜像，按 Windows → Linux → 云前端顺序滚动发布；两台应用节点均运行同一 SHA 且通过直连验证后才标记成功。首次重建从库时手动触发 `WAO Fast CD` 并勾选 `bootstrap_windows`，正常发布不得自动重置已有从库。决策见 [ADR-049](../docs/adr/049-unified-product-monorepo-delivery.md)、[ADR-050](../docs/adr/050-rolling-api-deployment.md)、[ADR-051](../docs/adr/051-ai-write-routing-and-upstream-draining.md) 与 [ADR-097](../docs/adr/097-strict-dual-node-delivery.md)。
+主站 `main` 由 Linux 主节点上的 Jenkins 构建和发布，GitHub 只负责仓库、签名 Webhook 和提交状态。
+Jenkins 使用 Windows、云节点两套独立 SSH 密钥与严格 `known_hosts`；生产 `.env`、`.env.secrets` 和网关证书
+以 Linux 主节点私有部署目录为准。CD 一次构建带 Git SHA 标签的镜像，按 Windows → Linux → 云前端顺序
+滚动发布；两台应用节点均运行同一 SHA 且通过直连验证后才标记成功。首次重建从库时在 Jenkins 手工运行
+`wao-main-cd` 并勾选 `BOOTSTRAP_WINDOWS`，正常发布不得自动重置已有从库。安装与恢复见
+[Jenkins runbook](jenkins/README.md)，决策见 [ADR-099](../docs/adr/099-self-hosted-jenkins-delivery.md)。
 
 发布包用 `git archive HEAD` 打出，落到节点上时**先清空上一版源码再解压**：`tar -xzf` 和 `Expand-Archive -Force` 都只覆盖同名文件，不会删除这一版里已经删掉或改过名的文件，留在节点上的旧文件会跟着进 Docker 构建上下文。2026-07-26 连续四次部署回滚就是这么来的：`V18__chat_sync_monthly_archive.sql` 在仓库里已经改名成 V21，节点上的旧副本还在，Flyway 一启动就报「Found more than one migration with version 18」。清理范围是节点目录下除 `deploy/` 以外的全部内容——`deploy/` 里放着节点私有的 `.env`、`.env.secrets`、`certs/`、`data/`，其中被 git 跟踪的文件随即被这次解压整份覆盖。
 
 ## 飞书登录
 
-将飞书 App ID 与 App Secret 配置为同名 GitHub Actions Secrets。CD 会把它们与主节点现有的 `WAO_VAULT_KEY` 合并下发到主节点和从节点私有的 `deploy/.env.secrets`，不要提交 Git 或写入 GitHub Actions 日志：
+将飞书 App ID、App Secret 与现有 `WAO_VAULT_KEY` 保存在 Linux 主节点私有的 `deploy/.env.secrets`。
+Jenkins 会把同一文件下发到 Windows，不要提交 Git 或写入 Jenkins 日志：
 
 ```dotenv
 FEISHU_LOGIN_ENABLED=true
@@ -191,9 +197,9 @@ AUTH_PROTECTION_ENABLED=true
 SESSION_COOKIE_SECURE=true
 ```
 
-在飞书开发者后台的安全设置中添加同一个重定向 URL。网页应用的工作台在线网页主页配置为 `https://wao.wayuwa.cn/api/auth/feishu/workbench`；PC 端“跳转至浏览器打开新页面”配置为 `https://wao.wayuwa.cn/api/auth/feishu/browser`。修改 Secret 后手动运行一次 `WAO Fast CD`，或随下一次 `main` push 自动下发并重建 `wao-server` 容器。
+在飞书开发者后台的安全设置中添加同一个重定向 URL。网页应用的工作台在线网页主页配置为 `https://wao.wayuwa.cn/api/auth/feishu/workbench`；PC 端“跳转至浏览器打开新页面”配置为 `https://wao.wayuwa.cn/api/auth/feishu/browser`。修改 Secret 后手动运行一次 Jenkins `wao-main-cd`，或随下一次 `main` push 自动下发并重建 `wao-server` 容器。
 
-微信扫码登录需在微信开放平台创建“网站应用”，将授权回调域配置为 `wao.wayuwa.cn`，并新增 GitHub Secrets `WECHAT_APP_ID`、`WECHAT_APP_SECRET`。CD 会自动启用并下发以下配置：
+微信扫码登录需在微信开放平台创建“网站应用”，将授权回调域配置为 `wao.wayuwa.cn`，并在 Linux 主节点私有 `deploy/.env.secrets` 中配置 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`。CD 会自动下发以下配置：
 
 ```dotenv
 WECHAT_LOGIN_ENABLED=true
@@ -231,9 +237,9 @@ https://wao.wayuwa.cn/api/music/netease/callback
 每个 WAO 成员需要在播放器中单独点击“绑定我的账号”。令牌按成员加密保存；解除绑定只删除当前成员记录。官方文档入口：[H5 OAuth](https://developer.music.163.com/st/platformDoc?docId=78eb8f6bec12427d90b120e21b569b16)、[公共参数与设备信息](https://developer.music.163.com/st/platformDoc?docId=0f7801d7d6d24180b8fc9058d1ffe593)、[播放数据回传](https://developer.music.163.com/st/platformDoc?docId=eb0ddaf2efc649e99dffe0677472466a)。
 
 - `MASTER_HOST=linux2.wayuwa.cn`，`SLAVE_HOST=windows1.wayuwa.cn`，云节点使用固定公网地址；
-- Actions 从 GitHub 托管 Runner 直接 SSH 到三个公网目标，不使用跳板机；
-- Actions 在 Runner 上使用官方软件源执行容器构建检查，但 CD 只下发约百 KB 的源码发布包；两台家庭节点使用已预热的 Maven/Temurin 基础镜像和阿里云 Maven/Alpine 镜像本地分层构建，避免跨境传输百 MB 镜像制品；
-- `DEPLOY_SSH_KNOWN_HOSTS` 必须保存人工核验后的三个 SSH 主机公钥；
-- 密码登录仅用于首次安装公钥，流水线只使用专用部署密钥；
-- 飞书 Webhook 只保存在 GitHub Secret。它同时用于 main 部署结果和 WAO 任务新评论通知；CD 会私密下发为 `FEISHU_COMMENT_WEBHOOK_URL`，不写入仓库。
+- Jenkins 在 Linux 本机构建并发布主节点，通过专用密钥 SSH 到 Windows 与云节点；
+- Maven 和 Node 测试使用固定工具容器；四个运行镜像一次构建后，本机直接复用并压缩传给 Windows；
+- `windows-known-hosts` 与 `cloud-known-hosts` 必须保存人工核验后的 SSH 主机公钥；
+- 密码登录仅用于首次安装公钥，流水线只使用 `/etc/jenkins/secrets` 中的专用部署密钥；
+- 飞书 Webhook 保存在主节点 `deploy/.env.secrets`，同时用于 main 部署结果和 WAO 任务新评论通知。
 - `FEISHU_COMMENT_WEBHOOK_URL` 现在只是首次接管前的**兜底**：系统通知统一读「设置 → Webhook配置」里标记为系统默认的机器人（加密存 `feishu_webhook_config`，见 ADR-089）。首次打开配置页会把仅存在于环境变量的旧地址加密迁入；用户删空注册表后不会再回落恢复它。

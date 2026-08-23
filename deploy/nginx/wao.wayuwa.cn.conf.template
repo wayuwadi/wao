@@ -47,6 +47,23 @@ server {
     gzip_min_length 1024;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml image/svg+xml;
 
+    # GitHub can reach only the signed webhook receiver. Jenkins itself stays
+    # bound to Linux loopback and arrives here through a reverse SSH tunnel.
+    location = /github-webhook/ {
+        limit_except POST { deny all; }
+        client_max_body_size 2m;
+        proxy_pass http://127.0.0.1:18081;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 20s;
+        proxy_send_timeout 20s;
+    }
+
     root /var/www/wao/dist;
     index index.html;
 

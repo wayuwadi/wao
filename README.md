@@ -19,7 +19,7 @@ WAO 是一个由 AI 协作开发的前后端分离系统，采用 Spec-Driven De
 - Server：Java 17、Spring Boot 3、MyBatis-Plus、Flyway
 - Gateway：Spring Cloud Gateway、Nacos 2.4.3
 - Data：MySQL 9.7、Redis 7 Sentinel
-- Delivery：Docker Compose、Nginx、GitHub Actions、公网 DDNS
+- Delivery：Docker Compose、Nginx、Linux 自建 Jenkins、公网 DDNS
 
 ## 五分钟启动 Demo（无需 Docker）
 

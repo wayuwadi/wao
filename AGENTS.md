@@ -10,7 +10,7 @@ WAO 是一个前后端分离的 Web 系统，采用 Spec-Driven Development。�
 - 后端：Java 17、Spring Boot 3、MyBatis-Plus、Flyway
 - 网关：Spring Cloud Gateway、Nacos 2.x
 - 数据：MySQL 9、Redis 7
-- 部署：Docker Compose、Nginx、GitHub Actions；Windows Server 从节点在 WSL2 Ubuntu 中运行 Docker Engine
+- 部署：Docker Compose、Nginx、Linux 自建 Jenkins；Windows Server 从节点在 WSL2 Ubuntu 中运行 Docker Engine
 
 当前兼容性基线：Spring Boot 3.2.4、Spring Cloud 2023.0.1、Spring Cloud Alibaba 2023.0.1.0、Nacos 2.4.3。
 
@@ -22,7 +22,7 @@ WAO 是一个前后端分离的 Web 系统，采用 Spec-Driven Development。�
 - Service 公共方法必须有 JavaDoc，核心逻辑必须有单元测试
 - Vue 组件使用 `<script setup lang="ts">`，组件命名使用 PascalCase
 - API 调用统一放在 `wao-web/src/api/`，组件内不直接发起 HTTP 请求
-- 提交信息遵循 Conventional Commits，但除 `type(scope):` 前缀、代码标识、路径和命令外必须使用中文。正文固定包含“改动：”“原因：”“验收：”。CI（`.github/workflows/ci-cd.yml` 的 `notify` job）会把完整提交信息转发到团队飞书通知卡片
+- 提交信息遵循 Conventional Commits，但除 `type(scope):` 前缀、代码标识、路径和命令外必须使用中文。正文固定包含“改动：”“原因：”“验收：”。Jenkins 的 `notify-feishu.sh` 会把完整提交信息转发到团队飞书通知卡片
 - 完成与变更相称的本地验证后，AI 应直接创建详细提交；提交正文必须说明改动、原因和验收结果。开发测试阶段按「一个需求 / 一个 BUG 一个 PR」交付（见下节）；不得提交任何私有环境文件或凭据。
 
 ## 快速交付策略（开发测试阶段，临时）
@@ -31,8 +31,8 @@ WAO 是一个前后端分离的 Web 系统，采用 Spec-Driven Development。�
 
 1. 变更前先执行 `git switch main` 和 `git pull --ff-only origin main`，多人并行时避免基于旧代码工作。
 2. **一个需求或一个 BUG 一个 PR。** 完成与改动相称的本地测试后，AI 在功能分支上创建详细提交，push 分支、建 PR、合并 `main`，全程不必逐次征求用户同意。多条需求不合并进同一个 PR，一条需求也不拆成多个 PR。
-3. PR **不承担重复 CI 门禁**：CI 只在 `main` 的 push 上跑，PR 上没有 checks 是预期行为，不是失败。合并前以本地验证为准——本地测试全绿且 `mergeable` 为 `MERGEABLE` 即可 Squash Merge 并删除源分支。
-4. `main` 的 push 只触发一次 CD：构建 WAO Web 与 Agent Web，按从节点→云前端/Nginx→主节点滚动部署，线上健康检查通过后发送一次飞书通知。
+3. PR **不承担重复 CI 门禁**：Jenkins 只在 `main` 的 push 上跑，PR 上没有 checks 是预期行为，不是失败。合并前以本地验证为准——本地测试全绿且 `mergeable` 为 `MERGEABLE` 即可 Squash Merge 并删除源分支。
+4. `main` 的 push 只触发一次 Jenkins CD：一次构建 Git SHA 镜像，按 Windows 从节点→Linux 主节点→云前端/Nginx 严格滚动发布，双节点与线上健康检查通过后发送一次飞书通知。
 5. push 前必须核对与 `main` 的冲突，**包括 git 不会报的语义冲突**：两边各自新建了同编号的 ADR 或同版本号的 Flyway migration，文件名不同所以 git 静默通过，但语义上撞车，必须重新编号。migration 撞号会让 Flyway 启动失败、整次部署回滚，`FlywayMigrationsTest` 会在 `mvn test` 里拦下这种情况——但 ADR 撞号仍然只能靠人核对。
 6. 本策略只放宽流程门禁，不放宽凭据和数据安全：真实 Secret 不得进入 Git；破坏性生产数据操作仍需明确授权；已执行的 migration 仍不可修改。
 

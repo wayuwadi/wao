@@ -129,48 +129,59 @@ class DeploymentRoutingConfigTest {
 
     @Test
     void deploymentPublishesNginxConfigAndProbesOpenAiInsideMasterContainer() throws IOException {
-        String workflow = readFromRepository(".github/workflows/ci-cd.yml");
+        String pipeline = readFromRepository("Jenkinsfile");
+        String rollout = readFromRepository("deploy/jenkins/ci-deploy.sh");
+        String verification = readFromRepository("deploy/jenkins/ci-production-verify.sh");
+        String localDeploy = readFromRepository("deploy/jenkins/deploy-master-local.sh");
         String probe = readFromRepository("deploy/scripts/probe-codex-egress.sh");
 
-        assertThat(workflow)
+        assertThat(rollout)
                 .contains("WAO_NGINX_RENDER_OUTPUT=wao-nginx.conf sh deploy/scripts/render-nginx-config.sh")
                 .contains("scp -o ConnectTimeout=15 wao-nginx.conf")
-                .contains("nginx -t")
+                .contains("nginx -t");
+        assertThat(verification)
                 .contains("/api/tianren/readings/today/interpret/stream")
-                .contains("probe-codex-egress.sh");
-        assertThat(workflow)
+                .contains("probe-codex-egress.sh")
+                .contains("dual-gateway-ai")
+                .contains("/api/ai/runner/accounts")
+                .contains("linux-vpn-master");
+        assertThat(rollout)
                 .contains("set-nginx-upstream-state.sh")
                 .contains("set_upstream_state slave down")
-                .contains("set_upstream_state master down")
-                .contains("test \"$goal_route\" = 'dual-gateway-ai'")
-                .contains("/api/ai/runner/accounts");
-        assertThat(workflow.indexOf("prepare_cloud_routing >routing.log"))
-                .isLessThan(workflow.indexOf("retry_node_deploy Windows deploy_slave slave.log"));
-        assertThat(workflow.indexOf("retry_node_deploy Windows deploy_slave slave.log"))
-                .isLessThan(workflow.indexOf("retry_node_deploy Linux deploy_master master.log"));
-        assertThat(workflow.indexOf("retry_node_deploy Linux deploy_master master.log"))
-                .isLessThan(workflow.indexOf("deploy_cloud >cloud.log"));
-        assertThat(workflow)
-                .contains("scp -o ConnectTimeout=15 wao-release.tgz wao-images.tar.gz wao-secrets.env")
-                .contains("WAO_IMAGE_TAG='$GITHUB_SHA' SKIP_IMAGE_BUILD=true")
+                .contains("set_upstream_state master down");
+        assertThat(rollout.indexOf("prepare_cloud_routing >routing.log"))
+                .isLessThan(rollout.indexOf("retry_node_deploy Windows deploy_slave slave.log"));
+        assertThat(rollout.indexOf("retry_node_deploy Windows deploy_slave slave.log"))
+                .isLessThan(rollout.indexOf("retry_node_deploy Linux deploy_master master.log"));
+        assertThat(rollout.indexOf("retry_node_deploy Linux deploy_master master.log"))
+                .isLessThan(rollout.indexOf("deploy_cloud >cloud.log"));
+        assertThat(rollout)
+                .contains("wao-release.zip wao-secrets.env wao-shared.env wao-gateway.p12 wao-images.tar.gz")
+                .contains("sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh")
                 .doesNotContain("Prepare Linux Codex package")
                 .doesNotContain("codex-package-x86_64-unknown-linux-musl.tar.gz")
                 .doesNotContain("upload_master_resumable")
                 .doesNotContain("WAO_CODEX_PACKAGE")
                 .doesNotContain("WAO_CODEX_CHECKSUMS");
-        assertThat(workflow)
+        assertThat(localDeploy).contains("WAO_IMAGE_TAG=\"$image_tag\" SKIP_IMAGE_BUILD=true");
+        assertThat(rollout)
                 .doesNotContain("deploy_master >master.log 2>&1 &")
                 .contains("slave_deployed=false")
                 .contains("slave_deployed=true")
+                .contains("ALLOW_WINDOWS_OFFLINE")
+                .contains("windows_available=false")
+                .contains("set_status windows_status skipped")
+                .contains("Windows 从节点预检不可达；保持摘流并按显式授权继续发布 Linux 与云端")
                 .contains("Windows 从节点严格预检失败")
                 .contains("Windows 从节点三次部署失败")
                 .contains("Linux 主节点三次部署失败")
-                .contains("WINDOWS_DEPLOY_SSH_PRIVATE_KEY")
                 .contains("validate-deployment-node.sh")
-                .contains("start_availability_monitor")
-                .doesNotContain("本次继续升级云前端和 Linux 主节点")
-                .contains("test \"$ai_read_route\" = 'dual-gateway-ai'")
-                .contains("test \"$ai_write_route\" = 'linux-vpn-master'");
+                .contains("start_availability_monitor");
+        assertThat(pipeline)
+                .contains("credentialsId: 'wao-windows-ssh'")
+                .contains("credentialsId: 'wao-cloud-ssh'")
+                .contains("name: 'ALLOW_WINDOWS_OFFLINE'")
+                .contains("disableConcurrentBuilds(abortPrevious: false)");
         assertThat(probe)
                 .contains("elif sudo -n docker info")
                 .contains("sudo -n docker \"$@\"")
@@ -189,9 +200,9 @@ class DeploymentRoutingConfigTest {
     void mainSiteDeploymentRetiresSplitAppsAndPreservesThirdPartyRoutes() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String activation = readFromRepository("deploy/scripts/activate-nginx-config.sh");
-        String workflow = readFromRepository(".github/workflows/ci-cd.yml");
-        String routingPreparation = section(workflow,
-                "prepare_cloud_routing() {", "\n          }\n\n          deploy_cloud() {");
+        String rollout = readFromRepository("deploy/jenkins/ci-deploy.sh");
+        String routingPreparation = section(rollout,
+                "prepare_cloud_routing() {", "\n}\n\ndeploy_cloud() {");
 
         assertThat(nginx)
                 .contains("location = /game {")
@@ -202,7 +213,7 @@ class DeploymentRoutingConfigTest {
         assertThat(activation)
                 .contains("external_apps_dir='/etc/nginx/wao-external-apps.d'")
                 .contains("install -d -m 0755 \"${external_apps_dir}\"");
-        assertThat(workflow)
+        assertThat(rollout)
                 .contains("install -d -m 0755 /etc/nginx/wao-external-apps.d")
                 .contains("rm -f /etc/nginx/wao-external-apps.d/wao-game.conf")
                 .contains("/etc/nginx/wao-external-apps.d/wao-insight.conf")
