@@ -11,6 +11,23 @@ compose_file="${project_root}/deploy/docker-compose-slave.yml"
 mysql_id="$(docker compose --env-file "${env_file}" -f "${compose_file}" ps -q mysql-slave)"
 test -n "${mysql_id}" || { echo 'MySQL replica container is not running.' >&2; exit 1; }
 
+mysql_ready=false
+attempt=1
+while [ "${attempt}" -le 60 ]; do
+  if docker exec "${mysql_id}" sh -c \
+      'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqladmin -h127.0.0.1 -uroot ping --silent' \
+      >/dev/null 2>&1; then
+    mysql_ready=true
+    break
+  fi
+  sleep 2
+  attempt=$((attempt + 1))
+done
+test "${mysql_ready}" = true || {
+  echo 'MySQL replica did not become ready for snapshot bootstrap.' >&2
+  exit 1
+}
+
 docker exec "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -h127.0.0.1 -uroot <<SQL
 SET GLOBAL super_read_only=OFF;
 SET GLOBAL read_only=OFF;
