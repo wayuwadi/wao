@@ -13,6 +13,11 @@ public interface AccountIdentityMapper extends BaseMapper<AccountIdentityEntity>
     @Select("SELECT * FROM account_identity WHERE provider = #{provider} AND provider_subject = #{subject} LIMIT 1")
     AccountIdentityEntity findByProviderSubject(@Param("provider") String provider, @Param("subject") String subject);
 
+    @Select("SELECT * FROM account_identity WHERE provider = #{provider} "
+            + "AND provider_union_subject = #{subject} LIMIT 1")
+    AccountIdentityEntity findByProviderUnionSubject(@Param("provider") String provider,
+            @Param("subject") String subject);
+
     @Select("SELECT * FROM account_identity WHERE account_id = #{accountId} ORDER BY created_at")
     List<AccountIdentityEntity> findByAccountId(@Param("accountId") String accountId);
 

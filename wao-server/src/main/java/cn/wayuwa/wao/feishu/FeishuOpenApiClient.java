@@ -112,14 +112,46 @@ public class FeishuOpenApiClient {
      * @return 成员列表（open_id + 飞书昵称）
      */
     public List<FeishuChatMember> listChatMembers(String token, String chatId) {
+        return listChatMembers(token, chatId, "open_id");
+    }
+
+    /**
+     * 把机器人应用下的 Open ID 换成同开发商稳定的 Union ID。
+     *
+     * <p>飞书的群成员接口一次只能选择一种 ID 类型，因此分别读取 Open ID 和
+     * Union ID 列表，再以群内唯一昵称配对。任一列表出现重名就拒绝换算，不猜人。
+     *
+     * @param token tenant_access_token
+     * @param chatId 群 id
+     * @param openId 机器人应用下的成员 Open ID
+     * @return 唯一对应的 Union ID；无法安全配对时返回空串
+     */
+    public String chatMemberUnionId(String token, String chatId, String openId) {
+        if (openId == null || openId.isBlank()) {
+            return "";
+        }
+        List<FeishuChatMember> openMembers = listChatMembers(token, chatId, "open_id");
+        FeishuChatMember source = openMembers.stream()
+                .filter(member -> openId.equals(member.openId())).findFirst().orElse(null);
+        if (source == null || source.name().isBlank()
+                || openMembers.stream().filter(member -> source.name().equals(member.name())).count() != 1) {
+            return "";
+        }
+        List<FeishuChatMember> unionMembers = listChatMembers(token, chatId, "union_id");
+        List<FeishuChatMember> matches = unionMembers.stream()
+                .filter(member -> source.name().equals(member.name())).toList();
+        return matches.size() == 1 ? matches.get(0).openId() : "";
+    }
+
+    private List<FeishuChatMember> listChatMembers(String token, String chatId, String memberIdType) {
         List<FeishuChatMember> out = new ArrayList<>();
         String pageToken = null;
         for (int page = 0; page < MAX_PAGES; page++) {
             JsonNode data = pageToken == null
-                    ? get("/open-apis/im/v1/chats/{chatId}/members?member_id_type=open_id&page_size=100",
-                            token, chatId)
-                    : get("/open-apis/im/v1/chats/{chatId}/members?member_id_type=open_id&page_size=100"
-                            + "&page_token={pageToken}", token, chatId, pageToken);
+                    ? get("/open-apis/im/v1/chats/{chatId}/members?member_id_type={memberIdType}&page_size=100",
+                            token, chatId, memberIdType)
+                    : get("/open-apis/im/v1/chats/{chatId}/members?member_id_type={memberIdType}&page_size=100"
+                            + "&page_token={pageToken}", token, chatId, memberIdType, pageToken);
             for (JsonNode item : data.path("items")) {
                 out.add(new FeishuChatMember(text(item, "member_id"), text(item, "name")));
             }

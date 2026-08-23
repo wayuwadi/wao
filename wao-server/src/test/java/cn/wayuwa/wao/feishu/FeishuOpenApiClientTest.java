@@ -90,6 +90,53 @@ class FeishuOpenApiClientTest {
     }
 
     @Test
+    void mapsChatAppOpenIdToUnionIdOnlyWhenNamesAreUnique() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL
+                        + "/open-apis/im/v1/chats/oc_chat/members?member_id_type=open_id&page_size=100"))
+                .andRespond(withSuccess("""
+                        {"code":0,"data":{"items":[
+                          {"member_id":"ou_sender","name":"娃弟"},
+                          {"member_id":"ou_other","name":"娃哥"}
+                        ]}}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE_URL
+                        + "/open-apis/im/v1/chats/oc_chat/members?member_id_type=union_id&page_size=100"))
+                .andRespond(withSuccess("""
+                        {"code":0,"data":{"items":[
+                          {"member_id":"on_other","name":"娃哥"},
+                          {"member_id":"on_sender","name":"娃弟"}
+                        ]}}
+                        """, MediaType.APPLICATION_JSON));
+
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+
+        assertThat(client.chatMemberUnionId("token-test", "oc_chat", "ou_sender"))
+                .isEqualTo("on_sender");
+        server.verify();
+    }
+
+    @Test
+    void refusesToGuessUnionIdWhenOpenIdListHasDuplicateNames() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL
+                        + "/open-apis/im/v1/chats/oc_chat/members?member_id_type=open_id&page_size=100"))
+                .andRespond(withSuccess("""
+                        {"code":0,"data":{"items":[
+                          {"member_id":"ou_sender","name":"同名"},
+                          {"member_id":"ou_other","name":"同名"}
+                        ]}}
+                        """, MediaType.APPLICATION_JSON));
+
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+
+        assertThat(client.chatMemberUnionId("token-test", "oc_chat", "ou_sender")).isEmpty();
+        server.verify();
+    }
+
+    @Test
     void percentEncodesOpaqueFeishuPageTokensBeforeRequestingTheNextPage() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

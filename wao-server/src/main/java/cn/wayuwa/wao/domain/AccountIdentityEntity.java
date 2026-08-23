@@ -12,6 +12,7 @@ public class AccountIdentityEntity {
     private String accountId;
     private String provider;
     private String providerSubject;
+    private String providerUnionSubject;
     private String email;
     private String displayName;
     private String avatarUrl;
@@ -26,6 +27,8 @@ public class AccountIdentityEntity {
     public void setProvider(String provider) { this.provider = provider; }
     public String getProviderSubject() { return providerSubject; }
     public void setProviderSubject(String providerSubject) { this.providerSubject = providerSubject; }
+    public String getProviderUnionSubject() { return providerUnionSubject; }
+    public void setProviderUnionSubject(String providerUnionSubject) { this.providerUnionSubject = providerUnionSubject; }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
     public String getDisplayName() { return displayName; }
