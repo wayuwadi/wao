@@ -17,6 +17,10 @@ test -d "$project_root/deploy"
 find "$project_root" -mindepth 1 -maxdepth 1 ! -name deploy -exec rm -rf -- {} +
 tar -xzf "$release_archive" -C "$project_root"
 install -m 0600 "$private_env" "$project_root/deploy/.env.secrets"
+# `install -m 0600` creates a fresh inode and masks the directory's default ACL.
+# Restore the controller's read-only access so the next release can package the
+# same private configuration without broadening access for other users.
+setfacl -m u:jenkins:r "$project_root/deploy/.env.secrets"
 
 WAO_IMAGE_TAG="$image_tag" SKIP_IMAGE_BUILD=true \
   sh "$project_root/deploy/scripts/deploy-linux.sh" master
