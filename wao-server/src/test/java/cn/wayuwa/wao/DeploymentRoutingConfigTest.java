@@ -269,6 +269,10 @@ class DeploymentRoutingConfigTest {
                 .contains("apk add --no-cache curl tinyproxy")
                 .contains("USER tinyproxy");
         assertThat(deployScript)
+                .contains("requested_image_tag=\"${WAO_IMAGE_TAG:-}\"")
+                .contains("WAO_IMAGE_TAG=\"${requested_image_tag}\"")
+                .contains("requested_skip_image_build=\"${SKIP_IMAGE_BUILD:-}\"")
+                .contains("SKIP_IMAGE_BUILD=\"${requested_skip_image_build}\"")
                 .contains("compose build codex-egress-proxy wao-server wao-agent-server wao-gateway")
                 .contains("compose up -d --force-recreate --wait codex-egress-proxy")
                 .contains("diagnostic_services=\"codex-egress-proxy ${diagnostic_services}\"")
