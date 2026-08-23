@@ -158,7 +158,7 @@ deploy_slave() {
   retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
     "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Move-Item -Force D:\\deploy\\wao-release.zip D:\\deploy\\$remote_release; Move-Item -Force D:\\deploy\\wao-secrets.env D:\\deploy\\$remote_secrets; Move-Item -Force D:\\deploy\\wao-shared.env D:\\deploy\\$remote_shared_env; Move-Item -Force D:\\deploy\\wao-gateway.p12 D:\\deploy\\$remote_certificate; Move-Item -Force D:\\deploy\\wao-images.tar.gz D:\\deploy\\$remote_images\"" || return
   retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
-    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets -SharedEnvPath D:\\deploy\\$remote_shared_env -GatewayCertificatePath D:\\deploy\\$remote_certificate -ImageArchivePath D:\\deploy\\$remote_images -ImageTag '$WAO_GIT_SHA'" || return
+    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets -SharedEnvPath D:\\deploy\\$remote_shared_env -GatewayCertificatePath D:\\deploy\\$remote_certificate -ImageArchivePath D:\\deploy\\$remote_images -ImageTag $WAO_GIT_SHA" || return
   if [ "$BOOTSTRAP_WINDOWS" = true ]; then
     test -s wao-bootstrap.sql.gz || return 1
     retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 wao-bootstrap.sql.gz \
@@ -167,7 +167,7 @@ deploy_slave() {
       "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\wao\\deploy\\scripts\\bootstrap-windows-slave.ps1 -SnapshotPath D:\\deploy\\$remote_snapshot" || return
   fi
   retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
-    "wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-deployment-node.sh slave '$WAO_GIT_SHA'" || return
+    "wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-deployment-node.sh slave $WAO_GIT_SHA" || return
   slave_deployed=true
 }
 
@@ -516,7 +516,7 @@ sh "$WAO_MASTER_PROJECT_ROOT/deploy/scripts/validate-deployment-node.sh" master 
 if [ "$windows_available" = true ]; then
   gateway_ready_from_cloud "$SLAVE_HOST"
   retry_remote "Windows 从节点" windows_ssh "wao-windows" \
-    "wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-deployment-node.sh slave '$WAO_GIT_SHA'"
+    "wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-deployment-node.sh slave $WAO_GIT_SHA"
 fi
 
 stop_availability_monitor
