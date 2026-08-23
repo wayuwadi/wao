@@ -5,7 +5,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import type { Update } from '@tauri-apps/plugin-updater'
-import fruitKernelRaccoonSprites from './assets/wao-fruit-kernel-raccoon-sprites-v2.png'
+import waoPuppySprites from './assets/wao-puppy-sprites-v2.png'
 import {
   dragDirectionFromDelta,
   PET_ANIMATIONS,
@@ -33,7 +33,7 @@ let dragOrigin: { x: number, y: number } | undefined
 let dragDirection: DragDirection = 'neutral'
 
 const petSpriteStyle = computed(() => ({
-  backgroundImage: `url(${fruitKernelRaccoonSprites})`,
+  backgroundImage: `url(${waoPuppySprites})`,
   backgroundPosition: spritePosition(petFrame.value),
 }))
 
@@ -67,18 +67,18 @@ async function applyUpdate() {
 }
 
 function runPetAnimation(name: PetAnimation, after?: () => void) {
-  if (animationTimer) clearInterval(animationTimer)
+  if (animationTimer) clearTimeout(animationTimer)
   const sequence = PET_ANIMATIONS[name]
   petAnimation.value = name
   frameCursor = 0
   petFrame.value = sequence.frames[0]
-  animationTimer = setInterval(() => {
+
+  const advanceFrame = () => {
     frameCursor += 1
     if (frameCursor >= sequence.frames.length) {
       if (sequence.loop) {
         frameCursor = 0
       } else {
-        if (animationTimer) clearInterval(animationTimer)
         animationTimer = undefined
         if (after) after()
         else runPetAnimation('idle')
@@ -86,7 +86,10 @@ function runPetAnimation(name: PetAnimation, after?: () => void) {
       }
     }
     petFrame.value = sequence.frames[frameCursor]
-  }, sequence.interval)
+    animationTimer = setTimeout(advanceFrame, sequence.durations[frameCursor])
+  }
+
+  animationTimer = setTimeout(advanceFrame, sequence.durations[0])
 }
 
 function resetSleepTimer() {
@@ -152,7 +155,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (initialUpdateTimer) clearTimeout(initialUpdateTimer)
-  if (animationTimer) clearInterval(animationTimer)
+  if (animationTimer) clearTimeout(animationTimer)
   if (sleepTimer) clearTimeout(sleepTimer)
   unlisteners.forEach((unlisten) => unlisten())
 })
@@ -186,7 +189,7 @@ watch(busy, (isBusy) => {
       :class="[`animation-${petAnimation}`, { working: busy }]"
       role="button"
       tabindex="0"
-      aria-label="WAO 果核狸桌面宠物，单击互动，双击打开 WAO"
+      aria-label="WAO 小沃犬桌面宠物，单击互动，双击打开 WAO"
       @mousedown.left.stop="startDragging"
       @click.stop="reactToPet"
       @dblclick.stop="openWao"

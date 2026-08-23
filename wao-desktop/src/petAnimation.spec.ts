@@ -2,16 +2,22 @@ import { describe, expect, it } from 'vitest'
 import { dragDirectionFromDelta, PET_ANIMATIONS, spritePosition } from './petAnimation'
 
 describe('pet animation sprite mapping', () => {
-  it('maps the sixteen frames onto a four by four sheet', () => {
+  it('maps the forty-nine frames onto a seven by seven sheet', () => {
     expect(spritePosition(0)).toBe('0% 0%')
-    expect(spritePosition(5)).toBe(`${100 / 3}% ${100 / 3}%`)
-    expect(spritePosition(15)).toBe('100% 100%')
+    expect(spritePosition(8)).toBe(`${100 / 6}% ${100 / 6}%`)
+    expect(spritePosition(48)).toBe('100% 100%')
   })
 
   it('keeps every animation inside the sprite sheet', () => {
     const frames = Object.values(PET_ANIMATIONS).flatMap((sequence) => sequence.frames)
-    expect(frames.every((frame) => frame >= 0 && frame <= 15)).toBe(true)
-    expect(() => spritePosition(16)).toThrow(RangeError)
+    expect(frames.every((frame) => frame >= 0 && frame <= 48)).toBe(true)
+    expect(() => spritePosition(49)).toThrow(RangeError)
+  })
+
+  it('provides an individual duration for every animation frame', () => {
+    expect(Object.values(PET_ANIMATIONS).every(
+      (sequence) => sequence.frames.length === sequence.durations.length,
+    )).toBe(true)
   })
 
   it('maps window movement to the dominant drag direction', () => {
