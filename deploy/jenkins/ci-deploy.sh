@@ -73,6 +73,7 @@ master_deployed=false
 master_drained=false
 schema_quiesced=false
 schema_rollout_complete=false
+linux_only_schema_rollout=false
 safe_slave_reachable=false
 windows_available=true
 safe_schema_rollout=false
@@ -304,8 +305,10 @@ restore_upstreams() {
     set_upstream_state slave down >/dev/null 2>&1 || true
   fi
   if [ "$schema_quiesced" = true ] && [ "$schema_rollout_complete" != true ]; then
-    set_upstream_state master down >/dev/null 2>&1 || true
-    return
+    if [ "$linux_only_schema_rollout" != true ]; then
+      set_upstream_state master down >/dev/null 2>&1 || true
+      return
+    fi
   fi
   if [ "$master_deployed" = true ] || [ "$master_drained" = false ]; then
     set_upstream_state master up >/dev/null 2>&1 || true
@@ -367,7 +370,7 @@ trap cleanup_rollout EXIT
 if ! windows_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
     "wao-windows" 'wsl.exe -d Ubuntu -u root -- docker info' >/dev/null; then
   set_upstream_state slave down || true
-  if [ "$ALLOW_WINDOWS_OFFLINE" = true ] && [ "$safe_schema_rollout" != true ]; then
+  if [ "$ALLOW_WINDOWS_OFFLINE" = true ]; then
     windows_available=false
     set_status windows_status skipped
     set_status windows_detail 'Windows 预检不可达；已显式授权 Linux-only 发布'
@@ -386,15 +389,14 @@ fi
 
 # V77 首次引入带版本的飞书归档写入。旧二进制不认识新栅栏，因此该次 push
 # 用一次性维护窗口：先暂停定时同步、摘流并停掉所有在线旧 server，再允许新节点执行 migration。
-# ADR-097 要求两台节点严格成功；任一节点不可达时保持其摘流并让本次发布失败。
+# Windows 离线且成员显式授权时保持 slave down 和同步暂停，但继续交付 Linux；详见 ADR-100。
 if [ "$safe_schema_rollout" = true ]; then
   echo '::notice title=V77 安全升级::暂停飞书定时同步并停止旧版 API 节点后再执行 migration。'
   if ! set_upstream_state slave down || ! set_upstream_state master down; then
     echo '无法为 V77 建立全量摘流窗口。'
     exit 1
   fi
-  if windows_ssh -o BatchMode=yes -o ConnectTimeout=5 -o ConnectionAttempts=1 \
-      "wao-windows" 'exit 0'; then
+  if [ "$windows_available" = true ]; then
     safe_slave_reachable=true
     retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
       deploy/scripts/quiesce-wao-server.sh \
@@ -403,10 +405,7 @@ if [ "$safe_schema_rollout" = true ]; then
       deploy/scripts/quiesce-wao-server-windows.ps1 \
       "wao-windows:D:/deploy/wao-quiesce-server.ps1" || exit 1
   else
-    set_status windows_status failed
-    set_status windows_detail '安全迁移前 SSH 预检失败'
-    echo 'Windows 从节点离线；严格双节点发布终止。'
-    exit 1
+    echo 'Windows 从节点离线；保持 slave 摘流和飞书同步暂停，本次继续升级 Linux 与云端。'
   fi
   if ! quiesce_master pause-feishu-sync; then
     echo '无法暂停飞书定时同步，V77 未开始。'
@@ -482,19 +481,24 @@ set_status linux_attempts "$NODE_DEPLOY_ATTEMPTS"
 set_status linux_detail "$WAO_GIT_SHA"
 
 if [ "$safe_schema_rollout" = true ]; then
-  if ! quiesce_master complete-v77-rollout; then
-    set_status linux_status failed
-    set_status linux_detail 'V77 完成标记或飞书同步恢复失败'
-    exit 1
+  if [ "$safe_slave_reachable" = true ]; then
+    if ! quiesce_master complete-v77-rollout; then
+      set_status linux_status failed
+      set_status linux_detail 'V77 完成标记或飞书同步恢复失败'
+      exit 1
+    fi
+    completed_status_output="$(quiesce_master rollout-status)" || exit 1
+    completed_status="$(printf '%s\n' "$completed_status_output" | tr -d '\r' | tail -n 1)"
+    if [ "$completed_status" != complete ]; then
+      set_status linux_status failed
+      set_status linux_detail 'V77 完成状态复核失败'
+      exit 1
+    fi
+    schema_rollout_complete=true
+  else
+    linux_only_schema_rollout=true
+    echo 'Linux 已单节点完成；Windows 继续保持 down，V77 完成标记和飞书同步保持暂停。'
   fi
-  completed_status_output="$(quiesce_master rollout-status)" || exit 1
-  completed_status="$(printf '%s\n' "$completed_status_output" | tr -d '\r' | tail -n 1)"
-  if [ "$completed_status" != complete ]; then
-    set_status linux_status failed
-    set_status linux_detail 'V77 完成状态复核失败'
-    exit 1
-  fi
-  schema_rollout_complete=true
 fi
 set_upstream_state master up || exit 1
 printf '\n===== Linux deployment =====\n'; cat master.log
