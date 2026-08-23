@@ -8,6 +8,17 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 project_root="$(CDPATH= cd -- "${script_dir}/../.." && pwd)"
 env_file="${project_root}/deploy/.env"
 compose_file="${project_root}/deploy/docker-compose-slave.yml"
+
+# BOOTSTRAP_WINDOWS is an explicit full replica rebuild. Recreate the data
+# volume so stale root credentials or partial data from an interrupted prior
+# bootstrap cannot affect the new snapshot import.
+docker compose --env-file "${env_file}" -f "${compose_file}" stop mysql-slave
+docker compose --env-file "${env_file}" -f "${compose_file}" rm -f mysql-slave
+if docker volume inspect wao-slave_mysql-slave-data >/dev/null 2>&1; then
+  docker volume rm wao-slave_mysql-slave-data
+fi
+docker compose --env-file "${env_file}" -f "${compose_file}" up -d mysql-slave
+
 mysql_id="$(docker compose --env-file "${env_file}" -f "${compose_file}" ps -q mysql-slave)"
 test -n "${mysql_id}" || { echo 'MySQL replica container is not running.' >&2; exit 1; }
 
