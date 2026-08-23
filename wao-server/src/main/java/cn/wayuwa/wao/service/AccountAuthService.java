@@ -122,12 +122,19 @@ public class AccountAuthService {
     public ExternalResolution resolveExternal(ExternalIdentityProfile profile, String currentAccountId,
                                               boolean linkRequested) {
         AccountIdentityEntity existing = identityMapper.findByProviderSubject(profile.provider(), profile.subject());
+        AccountIdentityEntity byUnion = StringUtils.hasText(profile.unionSubject())
+                ? identityMapper.findByProviderUnionSubject(profile.provider(), profile.unionSubject()) : null;
+        if (existing == null) {
+            existing = byUnion;
+        } else if (byUnion != null && !existing.getAccountId().equals(byUnion.getAccountId())) {
+            throw new ConflictException("该第三方身份的 Union ID 已绑定到另一个 WAO 账号");
+        }
         if (existing != null) {
             if (linkRequested && StringUtils.hasText(currentAccountId)
                     && !existing.getAccountId().equals(currentAccountId)) {
                 throw new ConflictException("该登录身份已经绑定到另一个 WAO 账号");
             }
-            touch(existing);
+            touch(existing, profile);
             return ExternalResolution.authenticated(session(existing.getAccountId()));
         }
         if (linkRequested) {
@@ -295,11 +302,19 @@ public class AccountAuthService {
     private void bindIdentity(String accountId, ExternalIdentityProfile profile) {
         AccountIdentityEntity byAccount = identityMapper.findByAccountProvider(accountId, profile.provider());
         if (byAccount != null) throw new ConflictException("当前账号已经绑定该类型的登录方式");
+        if (StringUtils.hasText(profile.unionSubject())) {
+            AccountIdentityEntity byUnion = identityMapper.findByProviderUnionSubject(
+                    profile.provider(), profile.unionSubject());
+            if (byUnion != null && !byUnion.getAccountId().equals(accountId)) {
+                throw new ConflictException("该第三方身份已经绑定到另一个 WAO 账号");
+            }
+        }
         AccountIdentityEntity identity = new AccountIdentityEntity();
         identity.setId(UUID.randomUUID().toString());
         identity.setAccountId(accountId);
         identity.setProvider(profile.provider());
         identity.setProviderSubject(profile.subject());
+        identity.setProviderUnionSubject(profile.unionSubject());
         identity.setEmail(profile.email());
         identity.setDisplayName(profile.displayName());
         identity.setAvatarUrl(profile.avatarUrl());
@@ -353,6 +368,15 @@ public class AccountAuthService {
     }
 
     private void touch(AccountIdentityEntity identity) {
+        identity.setLastLoginAt(LocalDateTime.now());
+        identityMapper.updateById(identity);
+    }
+
+    /** 登录成功后同步最新的跨应用身份，但不用空值覆盖已有 Union ID。 */
+    private void touch(AccountIdentityEntity identity, ExternalIdentityProfile profile) {
+        if (StringUtils.hasText(profile.unionSubject())) {
+            identity.setProviderUnionSubject(profile.unionSubject());
+        }
         identity.setLastLoginAt(LocalDateTime.now());
         identityMapper.updateById(identity);
     }

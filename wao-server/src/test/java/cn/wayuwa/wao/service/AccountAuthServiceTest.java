@@ -50,6 +50,37 @@ class AccountAuthServiceTest {
     }
 
     @Test
+    void resolvesAnotherFeishuAppsOpenIdThroughUnionId() {
+        AccountIdentityEntity identity = identity("feishu", "ou_login_app", "acc-wg");
+        identity.setProviderUnionSubject("on_same_person");
+        when(identities.findByProviderUnionSubject("feishu", "on_same_person")).thenReturn(identity);
+        when(accounts.selectById("acc-wg")).thenReturn(account("acc-wg", "wg"));
+        when(members.selectById("wg")).thenReturn(member("wg", "娃哥"));
+        when(identities.findByAccountId("acc-wg")).thenReturn(List.of(identity));
+
+        var result = service.resolveExternal(new ExternalIdentityProfile(
+                "feishu", "ou_other_app", null, "娃哥", null, "on_same_person"), null, false);
+
+        assertThat(result.session().member().id()).isEqualTo("wg");
+        verify(identities).updateById(identity);
+    }
+
+    @Test
+    void successfulFeishuLoginBackfillsUnionIdOnExistingIdentity() {
+        AccountIdentityEntity identity = identity("feishu", "ou_login_app", "acc-wg");
+        when(identities.findByProviderSubject("feishu", "ou_login_app")).thenReturn(identity);
+        when(accounts.selectById("acc-wg")).thenReturn(account("acc-wg", "wg"));
+        when(members.selectById("wg")).thenReturn(member("wg", "娃哥"));
+        when(identities.findByAccountId("acc-wg")).thenReturn(List.of(identity));
+
+        service.resolveExternal(new ExternalIdentityProfile(
+                "feishu", "ou_login_app", null, "娃哥", null, "on_backfilled"), null, false);
+
+        assertThat(identity.getProviderUnionSubject()).isEqualTo("on_backfilled");
+        verify(identities).updateById(identity);
+    }
+
+    @Test
     void refusesToLinkIdentityAlreadyOwnedByAnotherAccount() {
         when(identities.findByProviderSubject("wechat", "union-1"))
                 .thenReturn(identity("wechat", "union-1", "acc-wd"));

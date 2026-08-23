@@ -94,12 +94,14 @@ class FeishuLoginServiceTest {
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header("Authorization", "Bearer u-token"))
                 .andRespond(withSuccess("""
-                        {"code":0,"msg":"success","data":{"open_id":"ou_test","name":"Tester","avatar_url":"avatar"}}
+                        {"code":0,"msg":"success","data":{"open_id":"ou_test","union_id":"on_test",
+                         "name":"Tester","avatar_url":"avatar"}}
                         """, MediaType.APPLICATION_JSON));
 
         FeishuLoginService.FeishuProfile profile = loginService.exchange("auth-code", state);
 
         assertThat(profile.userId()).isEqualTo("ou_test");
+        assertThat(profile.unionId()).isEqualTo("on_test");
         assertThat(profile.name()).isEqualTo("Tester");
         assertThat(profile.avatarUrl()).isEqualTo("avatar");
         server.verify();

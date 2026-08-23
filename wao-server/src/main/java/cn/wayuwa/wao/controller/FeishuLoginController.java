@@ -61,7 +61,8 @@ public class FeishuLoginController {
     }
     private ApiResponse<AuthResolutionDto> resolve(FeishuLoginService.FeishuProfile profile, HttpServletRequest request) {
         AccountAuthService.ExternalResolution resolution = accountAuth.resolveExternal(
-                new ExternalIdentityProfile("feishu", profile.userId(), profile.email(), profile.name(), profile.avatarUrl()),
+                new ExternalIdentityProfile("feishu", profile.userId(), profile.email(), profile.name(),
+                        profile.avatarUrl(), profile.unionId()),
                 sessions.currentAccountId(request), "link".equals(profile.scene()));
         if (resolution.session() != null) sessions.login(request, resolution.session().accountId());
         else sessions.pending(request, resolution.pending());

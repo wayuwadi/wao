@@ -117,7 +117,8 @@ public class FeishuLoginService {
                     userResponse == null ? null : userResponse.code(), reason);
             throw new FeishuLoginException("未能读取飞书用户身份，请确认应用已发布且用户在可用范围内");
         }
-        return new FeishuProfile(externalUserId, user.name(), user.avatarUrl(), user.email(), scene);
+        return new FeishuProfile(externalUserId, user.name(), user.avatarUrl(), user.email(), scene,
+                user.unionId());
     }
 
     private TokenResponse exchangeOAuthCode(String code) {
@@ -208,5 +209,6 @@ public class FeishuLoginService {
         }
     }
     private record StatePayload(String scene) { }
-    public record FeishuProfile(String userId, String name, String avatarUrl, String email, String scene) { }
+    public record FeishuProfile(String userId, String name, String avatarUrl, String email, String scene,
+                                String unionId) { }
 }

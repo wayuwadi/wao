@@ -122,6 +122,27 @@ class FeishuQuickCollectServiceTest {
     }
 
     @Test
+    void polledMessageUsesUnionIdAcrossDifferentFeishuApps() {
+        enabled();
+        when(identities.findByProviderSubject("feishu", "ou_sender")).thenReturn(null);
+        AccountIdentityEntity identity = new AccountIdentityEntity();
+        identity.setAccountId("a1");
+        when(identities.findByProviderUnionSubject("feishu", "on_sender")).thenReturn(identity);
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_chat");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(feishu.tenantAccessToken("cli_chat", "secret")).thenReturn("token");
+        when(feishu.chatMemberUnionId("token", "oc_1", "ou_sender")).thenReturn("on_sender");
+
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_cross_app", "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 记录XXX测试\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+
+        verify(tasks).createFromChat("p1", "记录XXX测试", "记录XXX测试", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+    }
+
+    @Test
     void ordinaryGroupConversationWithoutMentionIsIgnored() {
         enabled();
         service.handleEvent(message("ev-normal", "text", "{\\\"text\\\":\\\"这是普通群聊\\\"}", false));

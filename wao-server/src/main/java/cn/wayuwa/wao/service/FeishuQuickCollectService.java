@@ -166,7 +166,12 @@ public class FeishuQuickCollectService {
      */
     public void collectPolled(String chatId, FeishuMessage source) {
         var event = json.createObjectNode();
-        event.putObject("sender").putObject("sender_id").put("open_id", source.senderId());
+        var senderId = event.putObject("sender").putObject("sender_id");
+        senderId.put("open_id", source.senderId());
+        String unionId = polledSenderUnionId(chatId, source.senderId());
+        if (StringUtils.hasText(unionId)) {
+            senderId.put("union_id", unionId);
+        }
         var message = event.putObject("message");
         message.put("message_id", source.messageId());
         message.put("chat_id", chatId);
@@ -382,14 +387,38 @@ public class FeishuQuickCollectService {
         String openId = sender.path("sender_id").path("open_id").asText("");
         if (StringUtils.hasText(openId)) {
             AccountIdentityEntity identity = identities.findByProviderSubject("feishu", openId);
-            if (identity != null) {
-                AccountEntity account = accounts.selectById(identity.getAccountId());
-                if (account != null && StringUtils.hasText(account.getMemberId())) {
-                    return account.getMemberId();
-                }
-            }
+            String memberId = memberId(identity);
+            if (StringUtils.hasText(memberId)) return memberId;
         }
-        return null;
+        String unionId = sender.path("sender_id").path("union_id").asText("");
+        return StringUtils.hasText(unionId)
+                ? memberId(identities.findByProviderUnionSubject("feishu", unionId)) : null;
+    }
+
+    /** 主动轮询只给出机器人应用 Open ID，通过群成员列表安全换成 Union ID。 */
+    private String polledSenderUnionId(String chatId, String openId) {
+        // 同一应用下的旧绑定仍然直接命中，无需额外请求飞书。
+        if (identities.findByProviderSubject("feishu", openId) != null) {
+            return "";
+        }
+        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+        String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
+        if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)
+                || !StringUtils.hasText(chatId) || !StringUtils.hasText(openId)) {
+            return "";
+        }
+        try {
+            return feishu.chatMemberUnionId(feishu.tenantAccessToken(appId, appSecret), chatId, openId);
+        } catch (RuntimeException ex) {
+            log.warn("飞书群成员跨应用身份换算失败：{}", ex.getMessage());
+            return "";
+        }
+    }
+
+    private String memberId(AccountIdentityEntity identity) {
+        if (identity == null) return null;
+        AccountEntity account = accounts.selectById(identity.getAccountId());
+        return account != null && StringUtils.hasText(account.getMemberId()) ? account.getMemberId() : null;
     }
 
     /** 回执优先回到事件发生的那个群；应用凭据没配好时退回全局 webhook。 */
