@@ -2,7 +2,7 @@
 
 本规格扩展 `phase-1-feishu-personal-quick-capture.md` 与
 `phase-1-feishu-personal-quick-capture-polling.md`。决策依据见
-`docs/adr/110-feishu-quick-capture-message-updates.md`。
+`docs/adr/112-feishu-quick-capture-message-updates.md`。
 
 ## 用户结果
 
