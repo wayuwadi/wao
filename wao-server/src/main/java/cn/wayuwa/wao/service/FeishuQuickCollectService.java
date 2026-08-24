@@ -68,12 +68,13 @@ public class FeishuQuickCollectService {
     private final AccountMapper accounts;
     private final AccountIdentityMapper identities;
     private final FeishuQuickCollectEventMapper events;
+    private final ImageService images;
     private final ObjectMapper json;
     private final NotificationFeedbackService feedback;
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
             TaskService tasks, ProjectService projects, AccountMapper accounts,
-            AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ObjectMapper json,
-            NotificationFeedbackService feedback) {
+            AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ImageService images,
+            ObjectMapper json, NotificationFeedbackService feedback) {
         this.settings = settings;
         this.feishu = feishu;
         this.tasks = tasks;
@@ -81,6 +82,7 @@ public class FeishuQuickCollectService {
         this.accounts = accounts;
         this.identities = identities;
         this.events = events;
+        this.images = images;
         this.json = json;
         this.feedback = feedback;
     }
@@ -191,42 +193,59 @@ public class FeishuQuickCollectService {
         }
         String messageId = message.path("message_id").asText("");
         String eventKey = eventKey(eventId, messageId, event);
-        if (!claim(eventKey, eventId, messageId, chatId,
-                event.path("sender").path("sender_id").path("open_id").asText(""))) {
+        String type = message.path("message_type").asText("");
+        String fingerprint = sourceFingerprint(type, message.path("content").asText(""));
+        ClaimMode claim = claim(eventKey, eventId, messageId, chatId,
+                event.path("sender").path("sender_id").path("open_id").asText(""), fingerprint);
+        if (claim == ClaimMode.NONE) {
             return;
         }
-        String type = message.path("message_type").asText("");
         if ("audio".equals(type)) {
             react(messageId, "ERROR");
-            finish(eventKey, "IGNORED", "TASK", null, null);
+            finish(eventKey, "IGNORED", "TASK", null, fingerprint, null);
             return;
         }
-        CaptureText capture = captureText(readableText(type, message));
+        CaptureText capture;
+        try {
+            capture = captureText(readableText(type, message));
+        } catch (RuntimeException ex) {
+            finish(eventKey, "FAILED", "TASK", null, null, abbreviated(ex.getMessage()));
+            react(messageId, "ERROR");
+            throw ex;
+        }
         if (!StringUtils.hasText(capture.content())) {
             react(messageId, "ERROR");
-            finish(eventKey, "REJECTED", capture.kind(), null, "EMPTY_CONTENT");
+            finish(eventKey, "REJECTED", capture.kind(), null, fingerprint, "EMPTY_CONTENT");
             return;
         }
         String memberId = senderMemberId(event.path("sender"));
         if (!StringUtils.hasText(memberId)) {
             react(messageId, "ERROR");
-            finish(eventKey, "REJECTED", capture.kind(), null, "SENDER_NOT_BOUND");
-            return;
-        }
-        ProjectDto project = targetProject(memberId);
-        if (project == null) {
-            react(messageId, "ERROR");
-            finish(eventKey, "REJECTED", capture.kind(), null, "NO_PROJECT");
+            finish(eventKey, "REJECTED", capture.kind(), null, fingerprint, "SENDER_NOT_BOUND");
             return;
         }
         try {
-            TaskDto task = tasks.createFromChat(project.id(), title(capture.content()), capture.content(),
-                    memberId, capture.sourceTag());
-            finish(eventKey, "CREATED", capture.kind(), task.id(), null);
-            log.info("群聊个人收集：已创建任务 {}（项目 {}）", task.id(), project.id());
+            if (claim == ClaimMode.UPDATE) {
+                FeishuQuickCollectEventEntity stored = events.selectById(eventKey);
+                TaskDto task = tasks.updateFromChat(stored.getTargetId(), title(capture.content()),
+                        capture.content(), memberId);
+                finish(eventKey, "UPDATED", capture.kind(), task.id(), fingerprint, null);
+                log.info("群聊个人收集：已从编辑后的飞书消息更新任务 {}", task.id());
+            } else {
+                ProjectDto project = targetProject(memberId);
+                if (project == null) {
+                    react(messageId, "ERROR");
+                    finish(eventKey, "REJECTED", capture.kind(), null, fingerprint, "NO_PROJECT");
+                    return;
+                }
+                TaskDto task = tasks.createFromChat(project.id(), title(capture.content()), capture.content(),
+                        memberId, capture.sourceTag());
+                finish(eventKey, "CREATED", capture.kind(), task.id(), fingerprint, null);
+                log.info("群聊个人收集：已创建任务 {}（项目 {}）", task.id(), project.id());
+            }
             react(messageId, "DONE");
         } catch (RuntimeException ex) {
-            finish(eventKey, "FAILED", capture.kind(), null, abbreviated(ex.getMessage()));
+            finish(eventKey, "FAILED", capture.kind(), null, null, abbreviated(ex.getMessage()));
             react(messageId, "ERROR");
             throw ex;
         }
@@ -254,7 +273,8 @@ public class FeishuQuickCollectService {
         return null;
     }
 
-    private boolean claim(String key, String eventId, String messageId, String chatId, String senderOpenId) {
+    private ClaimMode claim(String key, String eventId, String messageId, String chatId, String senderOpenId,
+            String fingerprint) {
         FeishuQuickCollectEventEntity event = new FeishuQuickCollectEventEntity();
         event.setEventKey(key);
         event.setEventId(emptyToNull(eventId));
@@ -266,20 +286,35 @@ public class FeishuQuickCollectService {
         event.setUpdatedAt(event.getCreatedAt());
         try {
             events.insert(event);
-            return true;
+            return ClaimMode.CREATE;
         } catch (DuplicateKeyException ex) {
-            return false;
+            FeishuQuickCollectEventEntity existing = events.selectById(key);
+            if (existing == null || fingerprint.equals(existing.getSourceFingerprint())) {
+                return ClaimMode.NONE;
+            }
+            LocalDateTime now = LocalDateTime.now(SHANGHAI);
+            if (StringUtils.hasText(existing.getTargetId())) {
+                return events.claimChangedMessage(key, fingerprint, now) == 1
+                        ? ClaimMode.UPDATE : ClaimMode.NONE;
+            }
+            return "FAILED".equals(existing.getStatus()) && events.retryFailedCreate(key, now) == 1
+                    ? ClaimMode.CREATE : ClaimMode.NONE;
         }
     }
 
-    private void finish(String key, String status, String kind, String targetId, String error) {
+    private void finish(String key, String status, String kind, String targetId, String fingerprint, String error) {
         FeishuQuickCollectEventEntity event = events.selectById(key);
         if (event == null) {
             return;
         }
         event.setStatus(status);
         event.setCaptureKind(kind);
-        event.setTargetId(targetId);
+        if (StringUtils.hasText(targetId)) {
+            event.setTargetId(targetId);
+        }
+        if (StringUtils.hasText(fingerprint)) {
+            event.setSourceFingerprint(fingerprint);
+        }
         event.setErrorMessage(error);
         event.setUpdatedAt(LocalDateTime.now(SHANGHAI));
         events.updateById(event);
@@ -308,7 +343,7 @@ public class FeishuQuickCollectService {
         JsonNode content = read(message.path("content").asText("{}"));
         String text = switch (type) {
             case "text" -> content.path("text").asText("");
-            case "post" -> postText(content);
+            case "post" -> postText(content, message.path("message_id").asText(""));
             default -> "";
         };
         for (JsonNode mention : message.path("mentions")) {
@@ -321,7 +356,7 @@ public class FeishuQuickCollectService {
     }
 
     /** 富文本消息：把段落里的文字拼起来。 */
-    private static String postText(JsonNode content) {
+    private String postText(JsonNode content, String messageId) {
         StringBuilder sb = new StringBuilder();
         String title = content.path("title").asText("");
         if (StringUtils.hasText(title)) {
@@ -334,11 +369,41 @@ public class FeishuQuickCollectService {
                 } else if ("a".equals(span.path("tag").asText(""))) {
                     sb.append(span.path("text").asText("")).append(' ')
                             .append(span.path("href").asText(""));
+                } else if ("img".equals(span.path("tag").asText(""))) {
+                    String key = span.path("image_key").asText("");
+                    if (StringUtils.hasText(key)) {
+                        sb.append("\n\n![飞书图片](").append(storeImage(messageId, key)).append(")\n\n");
+                    }
                 }
             }
             sb.append('\n');
         }
         return sb.toString().trim();
+    }
+
+    /** 用当前应用的真实消息资源权限下载图片并转存 WAO 图床。 */
+    private String storeImage(String messageId, String imageKey) {
+        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+        String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
+        if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) {
+            throw new IllegalStateException("飞书应用未配置，无法转存消息图片");
+        }
+        String token = feishu.tenantAccessToken(appId, appSecret);
+        byte[] bytes = feishu.downloadImage(token, messageId, imageKey);
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalStateException("飞书消息图片下载失败：" + imageKey);
+        }
+        return images.store(bytes, "image/png", imageKey + ".png", "飞书任务 · " + messageId, true).url();
+    }
+
+    private static String sourceFingerprint(String type, String content) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest((type + "\n" + content).getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (Exception ex) {
+            throw new IllegalStateException("无法生成飞书消息内容指纹", ex);
+        }
     }
 
     /** 标题取第一行；一行太长就截断，全文仍然留在描述里。 */
@@ -484,4 +549,6 @@ public class FeishuQuickCollectService {
     }
 
     record CaptureText(String kind, String content, String sourceTag) { }
+
+    private enum ClaimMode { CREATE, UPDATE, NONE }
 }

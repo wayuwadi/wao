@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -26,6 +27,7 @@ import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.AccountEntity;
 import cn.wayuwa.wao.domain.AccountIdentityEntity;
 import cn.wayuwa.wao.domain.FeishuQuickCollectEventEntity;
+import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.feishu.FeishuApiException;
@@ -48,9 +50,10 @@ class FeishuQuickCollectServiceTest {
     private final AccountMapper accounts = mock(AccountMapper.class);
     private final AccountIdentityMapper identities = mock(AccountIdentityMapper.class);
     private final FeishuQuickCollectEventMapper events = mock(FeishuQuickCollectEventMapper.class);
+    private final ImageService images = mock(ImageService.class);
     private final NotificationFeedbackService feedback = mock(NotificationFeedbackService.class);
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
-            settings, feishu, tasks, projects, accounts, identities, events, new ObjectMapper(), feedback);
+            settings, feishu, tasks, projects, accounts, identities, events, images, new ObjectMapper(), feedback);
 
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);
@@ -239,6 +242,51 @@ class FeishuQuickCollectServiceTest {
     }
 
     @Test
+    void editedMessageUpdatesTheOriginalTaskInsteadOfCreatingAnotherOne() {
+        enabled();
+        AtomicBoolean claimed = new AtomicBoolean();
+        AtomicReference<FeishuQuickCollectEventEntity> stored = new AtomicReference<>();
+        when(events.insert(any(FeishuQuickCollectEventEntity.class))).thenAnswer(invocation -> {
+            if (!claimed.compareAndSet(false, true)) {
+                throw new DuplicateKeyException("duplicate");
+            }
+            stored.set(invocation.getArgument(0));
+            return 1;
+        });
+        when(events.selectById(any())).thenAnswer(invocation -> stored.get());
+        when(events.claimChangedMessage(any(), any(), any(LocalDateTime.class))).thenReturn(1);
+        when(tasks.updateFromChat(any(), any(), any(), any())).thenReturn(task("t9", "完善后的方案"));
+
+        service.collectPolled("oc_1", polled("om_edit", "记录任务：先写方案"));
+        service.collectPolled("oc_1", polled("om_edit", "记录任务：完善后的方案"));
+
+        verify(tasks).createFromChat("p1", "先写方案", "先写方案", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+        verify(tasks).updateFromChat("t9", "完善后的方案", "完善后的方案", "wd");
+        verify(tasks, org.mockito.Mockito.times(1)).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void richTextImagesAreStoredAndRenderedInTheTaskDescription() {
+        enabled();
+        reactionsEnabled();
+        when(feishu.downloadImage("token", "om_image", "img_key")).thenReturn(new byte[]{1, 2, 3});
+        when(images.store(any(), eq("image/png"), eq("img_key.png"), eq("飞书任务 · om_image"), eq(true)))
+                .thenReturn(new ImageItemDto("img1", "img_key.png", "3 B", "", "",
+                        "/api/images/img1/raw", "", ""));
+
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_image", "ou_sender", "user", "post",
+                "{\"title\":\"\",\"content\":[[{\"tag\":\"text\",\"text\":\"@_user_1 记录任务：看设计图\"},"
+                        + "{\"tag\":\"img\",\"image_key\":\"img_key\"}]]}",
+                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+
+        verify(tasks).createFromChat("p1", "看设计图",
+                "看设计图\n\n![飞书图片](/api/images/img1/raw)", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+    }
+
+    @Test
     void voiceMessagesAreAnsweredWithAHintInsteadOfAFakeTranscript() {
         enabled();
         reactionsEnabled();
@@ -277,6 +325,18 @@ class FeishuQuickCollectServiceTest {
         when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_chat");
         when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
         when(feishu.tenantAccessToken("cli_chat", "secret")).thenReturn("token");
+    }
+
+    private static FeishuMessage polled(String messageId, String text) {
+        return new FeishuMessage(messageId, "ou_sender", "user", "text",
+                "{\"text\":\"@_user_1 " + text + "\"}", 1L, false,
+                List.of(new FeishuMention("@_user_1", "ou_bot", "WAO")));
+    }
+
+    private static TaskDto task(String id, String title) {
+        return new TaskDto(id, title, "p1", "待办", "P2", "wd",
+                List.of(), null, null, null, title, List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     /** 一条 im.message.receive_v1 事件；content 是转义过的 JSON 字符串，与飞书原样一致。 */
