@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -10,6 +11,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
+import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
 import org.junit.jupiter.api.Test;
@@ -21,27 +23,30 @@ class AiRunnerLifecycleServiceTest {
     private final AiRunnerLifecycleService service = new AiRunnerLifecycleService(mapper, notifier);
 
     @Test
-    void offlineTransitionNotifiesOnlyWhenConditionalUpdateWins() {
+    void offlineTransitionUpdatesStateWithoutGroupNotification() {
         AiRunnerNodeEntity runner = runner(false);
         runner.setOnlineState(true);
         runner.setLastSeenAt(LocalDateTime.now().minusMinutes(3));
         when(mapper.selectList(any())).thenReturn(List.of(runner));
         when(mapper.update(any(), any())).thenReturn(1);
 
-        service.detectOffline(LocalDateTime.now());
+        int changed = service.detectOffline(LocalDateTime.now());
 
-        verify(notifier).notifyCard(any());
+        assertEquals(1, changed);
+        verify(mapper).update(any(), any());
+        verify(notifier, never()).notifyCard(any());
     }
 
     @Test
-    void onlineHeartbeatNotifiesOnceAfterOfflineState() {
+    void onlineHeartbeatUpdatesStateWithoutGroupNotification() {
         AiRunnerNodeEntity runner = runner(false);
         when(mapper.selectById("rn1")).thenReturn(runner);
         when(mapper.update(any(), any())).thenReturn(1);
 
         service.markOnline("rn1");
 
-        verify(notifier).notifyCard(any());
+        verify(mapper).update(any(), any());
+        verify(notifier, never()).notifyCard(any());
     }
 
     @Test
@@ -52,6 +57,16 @@ class AiRunnerLifecycleServiceTest {
         service.markOnline("rn1");
 
         verify(notifier, never()).notifyCard(any());
+    }
+
+    @Test
+    void manualRemovalStillNotifies() {
+        AiRunnerDto runner = new AiRunnerDto("rn1", "娃哥 Windows 电脑", "windows", List.of("codex"),
+                1, null, 0, false, null, null, null, 9, false, null, true, false);
+
+        service.notifyRemoved(runner);
+
+        verify(notifier).notifyCard(any());
     }
 
     private AiRunnerNodeEntity runner(boolean online) {
