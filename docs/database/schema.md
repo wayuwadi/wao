@@ -346,7 +346,7 @@ Runner 每五分钟在本机调用 Codex app-server。服务端按规范化邮�
 | prompt_url / branch_name | VARCHAR | Markdown 任务地址与隔离分支 |
 | retry_of_run_id | VARCHAR(32) NULL | 本次重跑要修复的那一次失败运行；领取时把它的摘要交给 AI（见 ADR-025） |
 | result_summary / session_id / exit_code | TEXT / VARCHAR / INT | AI CLI 最终摘要、会话 id 与退出码 |
-| pending_input | TEXT | 等待原 AI 会话消费的用户补充输入；仅由原执行电脑恢复 |
+| pending_input | TEXT | 等待 AI 会话消费的用户补充输入；排队时并入首次提示，执行中由原电脑中断当前回合并恢复同一 session（ADR-111） |
 | requested_model / reasoning_effort | VARCHAR(128) / VARCHAR(16) NULL | 派工时固化的 Codex 模型与推理强度；历史、其它引擎和自定义 API 为空（V80） |
 | plan_mode | BOOLEAN | 是否启用 Codex Plan 工作流；旧运行和其它引擎为 false（V81） |
 | model / models | VARCHAR(120) / VARCHAR(500) NULL | 输出 token 最多的模型，以及本次用到的全部模型（逗号分隔） |

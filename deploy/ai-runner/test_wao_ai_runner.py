@@ -841,6 +841,13 @@ class PromptTest(unittest.TestCase):
         self.assertIn("不要把它加入 Git 提交", prompt)
         self.assertIn("不要为了凑数生成占位报告", prompt)
 
+    def test_live_update_keeps_the_current_thread_and_changes_direction(self) -> None:
+        prompt = RUNNER.build_live_update_prompt("先修移动端，桌面端保持现状")
+
+        self.assertIn("同一线程", prompt)
+        self.assertIn("调整后续方向", prompt)
+        self.assertIn("先修移动端，桌面端保持现状", prompt)
+
     def test_prompt_injects_project_memories_as_untrusted_citations(self) -> None:
         claim = {
             "promptUrl": "https://wao.example/task.md",
@@ -915,6 +922,55 @@ class PromptTest(unittest.TestCase):
         self.assertEqual("https://wao.example/api/pages/ai-run-ar1", url)
         api.post_file.assert_called_once_with(
             "/api/ai/runner/runs/ar1/report", "html", report, "text/html; charset=UTF-8")
+
+
+class ActiveContinuationTest(unittest.TestCase):
+    """运行中输入必须真实停止当前回合并恢复同一 CLI 会话。"""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="wao-live-input-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.worktree = self.root / ".wao-runs" / "ar-live"
+        self.worktree.mkdir(parents=True)
+
+    @patch.object(RUNNER, "prepare_worktree")
+    @patch.object(RUNNER, "run_codex")
+    def test_runner_interrupts_and_resumes_the_same_session(self, run_codex: Mock,
+            prepare_worktree: Mock) -> None:
+        prepare_worktree.return_value = self.worktree
+        usage = RUNNER._blank_usage()
+        api = Mock()
+        api.get.return_value = {"cancelled": False, "continuationInput": "请先修手机端跳动"}
+        calls = 0
+
+        def turn(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                should_stop = args[7]
+                self.assertTrue(should_stop())
+                return -15, "", "thread-live", usage
+            return 0, "WAO_RUN_STATUS: SUCCESS\n已完成", None, usage
+
+        run_codex.side_effect = turn
+        claim = {
+            "runId": "ar-live", "engine": "codex", "taskTitle": "运行中继续输入",
+            "repoUrl": "https://github.com/acme/wao.git", "workspaceDir": "wao",
+            "defaultBranch": "main", "branchName": "ai/wao-ar-live",
+            "promptUrl": "https://wao.example/task.md",
+        }
+
+        RUNNER.execute_claim(api, claim, self.root, "workspace-write", "git", {"codex": "codex"})
+
+        consume_calls = [call for call in api.post.call_args_list
+                         if call.args and call.args[0].endswith("/continuation/consume")]
+        self.assertEqual(1, len(consume_calls))
+        self.assertEqual({"input": "请先修手机端跳动"}, consume_calls[0].args[1])
+        self.assertEqual("thread-live", run_codex.call_args_list[1].args[6])
+        self.assertIn("请先修手机端跳动", run_codex.call_args_list[1].args[2])
+        complete_calls = [call for call in api.post.call_args_list
+                          if call.args and call.args[0].endswith("/complete")]
+        self.assertEqual("thread-live", complete_calls[-1].args[1]["sessionId"])
 
 
 class SyncCredentialsTest(unittest.TestCase):

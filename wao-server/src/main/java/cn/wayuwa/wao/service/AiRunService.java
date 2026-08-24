@@ -38,6 +38,7 @@ import cn.wayuwa.wao.dto.AiRunReasoningOptionDto;
 import cn.wayuwa.wao.dto.AiRunUsageDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
+import cn.wayuwa.wao.dto.AiRunControlDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.AiRunnerLogDto;
@@ -772,13 +773,23 @@ public class AiRunService {
      * @param requestedBy 触发续跑的成员 id
      * @param baseUrl     当前站点地址，用于把输入里粘贴的站内截图补成绝对地址
      * @return 更新后的运行记录
-     * @throws BadRequestException 运行还在进行中，或这次运行没有可恢复的会话时
+     * @throws BadRequestException 已有一条输入等待接收，或结束的运行没有可恢复会话时
      */
     @Transactional
     public synchronized AiRunDto continueRun(String runId, String input, String requestedBy, String baseUrl) {
         AiTaskRunEntity run = runMapper.selectById(runId);
         if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
-        if (ACTIVE.contains(run.getStatus())) throw new BadRequestException("AI 正在运行，暂时不能重复输入");
+        String normalizedInput = limit(ShareService.absolutizeMarkdown(input, baseUrl), 4000);
+        if (ACTIVE.contains(run.getStatus())) {
+            if (StringUtils.hasText(run.getPendingInput())) {
+                throw new BadRequestException("上一条补充正在等待执行电脑接收，请稍后再发");
+            }
+            run.setPendingInput(normalizedInput);
+            run.setRequestedBy(requestedBy);
+            appendProgress(run, "message", "用户在执行中补充：" + run.getPendingInput());
+            appendProgress(run, "phase", "已收到新输入，执行电脑将更新当前 AI 会话方向");
+            return toRunDtos(List.of(run)).get(0);
+        }
         if (!FINISHED.contains(run.getStatus()) || !StringUtils.hasText(run.getSessionId())
                 || !StringUtils.hasText(run.getRunnerId())) {
             throw new BadRequestException("这次运行无法恢复会话，请使用基于报错重跑");
@@ -788,7 +799,7 @@ public class AiRunService {
             throw new BadRequestException("原来那台执行电脑已解除接入，会话无法恢复，请使用基于报错重跑");
         }
         boolean optimizing = "succeeded".equals(run.getStatus());
-        run.setPendingInput(limit(ShareService.absolutizeMarkdown(input, baseUrl), 4000));
+        run.setPendingInput(normalizedInput);
         run.setRequestedBy(requestedBy);
         run.setRequestedRunnerId(run.getRunnerId());
         run.setStatus("queued");
@@ -1012,11 +1023,23 @@ public class AiRunService {
         // 用户已暂停时，Runner 可能正好在回传退出结果；保留暂停结论，不让迟到回传覆盖它。
         if ("cancelled".equals(run.getStatus())) return toRunDtos(List.of(run)).get(0);
         int exitCode = request.exitCode() == null ? -1 : request.exitCode();
+        if (StringUtils.hasText(request.sessionId())) run.setSessionId(limit(request.sessionId(), 128));
+        applyUsage(run, request);
+        // 用户输入可能恰好在 CLI 自然结束、Runner 尚未来得及轮询时到达。不要把它随终态清掉：
+        // 固定排回原电脑，下一次 claim 会消费 pending_input 并恢复刚回传的同一会话。
+        if (StringUtils.hasText(run.getPendingInput()) && StringUtils.hasText(run.getSessionId())) {
+            run.setRequestedRunnerId(runner.getId());
+            run.setStatus("queued");
+            run.setExitCode(null);
+            run.setFinishedAt(null);
+            appendProgress(run, "phase", "当前回合已结束，正在等待原执行电脑带着新输入恢复 AI 会话");
+            runnerMapper.touchLastSeenAt(runner.getId());
+            return toRunDtos(List.of(run)).get(0);
+        }
         run.setExitCode(exitCode);
         run.setStatus(exitCode == 0 ? "succeeded" : "failed");
         run.setResultSummary(limit(request.resultSummary(), MAX_RESULT));
-        if (StringUtils.hasText(request.sessionId())) run.setSessionId(limit(request.sessionId(), 128));
-        applyUsage(run, request);
+        run.setPendingInput(null);
         run.setFinishedAt(LocalDateTime.now());
         String engine = label(blankOr(run.getEngine(), DEFAULT_ENGINE));
         // 退出码 3 是 Runner 的约定：CLI 正常结束但没有报告任务状态，结果需要人判断，
@@ -1080,15 +1103,34 @@ public class AiRunService {
         return toRunDtos(List.of(run)).get(0);
     }
 
-    /** Runner 轮询自身已领取运行的取消状态。 */
-    public boolean cancelled(String token, String runId) {
+    /** Runner 轮询自身已领取运行的暂停状态和尚未消费的用户输入。 */
+    public AiRunControlDto control(String token, String runId) {
         AiRunnerNodeEntity runner = requireRunner(token);
         AiTaskRunEntity run = runMapper.selectById(runId);
         if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
         if (!runner.getId().equals(run.getRunnerId())) {
             throw new UnauthorizedException("该运行不属于当前执行节点");
         }
-        return "cancelled".equals(run.getStatus());
+        return new AiRunControlDto("cancelled".equals(run.getStatus()), run.getPendingInput());
+    }
+
+    /**
+     * Runner 准备恢复同一会话时确认消费输入；正文必须精确匹配，避免清掉并发到达的新输入。
+     */
+    @Transactional
+    public synchronized void consumeContinuation(String token, String runId, String input) {
+        AiRunnerNodeEntity runner = requireRunner(token);
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        if (!runner.getId().equals(run.getRunnerId())) {
+            throw new UnauthorizedException("该运行不属于当前执行节点");
+        }
+        if (!ACTIVE.contains(run.getStatus())) throw new BadRequestException("该运行已经结束，不能接收补充输入");
+        if (!Objects.equals(run.getPendingInput(), input)) {
+            throw new BadRequestException("待接收输入已经变化，请重新读取运行控制状态");
+        }
+        run.setPendingInput(null);
+        appendProgress(run, "phase", "执行电脑已接收新输入，正在恢复原 AI 会话");
     }
 
     /**
@@ -1262,6 +1304,7 @@ public class AiRunService {
                     run.getResultSummary(), reportUrls.get(run.getId()), run.getLatestProgress(),
                     text(run.getProgressUpdatedAt()),
                     progressByRun.getOrDefault(run.getId(), List.of()), toUsageDto(run),
+                    StringUtils.hasText(run.getPendingInput()),
                     run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
                     text(run.getStartedAt()), text(run.getFinishedAt()),
                     memoryReadsByRun.getOrDefault(run.getId(), List.of()),

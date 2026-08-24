@@ -136,12 +136,15 @@ const openSubDispatched = computed(() => !!openSubId.value && dispatchedSubIds.v
 async function continueRun(runId: string) {
   const input = aiContinuation.value[runId]?.trim()
   if (!input) return toast('请先输入要补充给 AI 的信息', 'ri-information-line')
-  const optimizing = aiRuns.value.find((run) => run.id === runId)?.status === 'succeeded'
+  const targetRun = aiRuns.value.find((run) => run.id === runId)
+  const optimizing = targetRun?.status === 'succeeded'
+  const active = !!targetRun && ['queued', 'claimed', 'running'].includes(targetRun.status)
   continuingRunId.value = runId
   try {
     await continueAiRun(runId, input)
     aiContinuation.value[runId] = ''
-    toast(optimizing ? '已发送，AI 将带着这次的记忆继续优化' : '补充已发送，AI 将在原会话中继续执行',
+    toast(active ? '补充已发送，执行电脑接收后会立即调整当前 AI 会话方向'
+      : optimizing ? '已发送，AI 将带着这次的记忆继续优化' : '补充已发送，AI 将在原会话中继续执行',
       'ri-robot-2-line')
     await refreshTaskAiRuns()
   } catch (error) {
@@ -1064,26 +1067,38 @@ function demo(msg: string) {
                   <em>查看报告<i class="ri-arrow-right-up-line"></i></em>
                 </a>
                 <div
-                  v-if="['failed', 'succeeded'].includes(run.status) && run.sessionId && run.runnerId"
+                  v-if="['queued', 'claimed', 'running'].includes(run.status)
+                    || (['failed', 'succeeded'].includes(run.status) && run.sessionId && run.runnerId)"
                   class="ai-continue"
+                  :class="{ pending: run.continuationPending }"
                 >
                   <div class="ai-continue-head">
                     <span class="ai-continue-icon"><i class="ri-chat-1-line"></i></span>
-                    <div><b>{{ run.status === 'succeeded' ? '继续优化这次结果' : '在原会话中补充信息' }}</b><small>将固定回到 {{ run.runnerName || '原执行电脑' }}，保留本次上下文</small></div>
+                    <div>
+                      <b>{{ ['queued', 'claimed', 'running'].includes(run.status) ? '执行中继续输入' : run.status === 'succeeded' ? '继续优化这次结果' : '在原会话中补充信息' }}</b>
+                      <small v-if="run.continuationPending">补充已保存，正在等待 {{ run.runnerName || '执行电脑' }} 接收</small>
+                      <small v-else-if="['queued', 'claimed', 'running'].includes(run.status)">发送后加入当前线程，{{ run.runnerName || '执行电脑' }} 会据此调整方向</small>
+                      <small v-else>将固定回到 {{ run.runnerName || '原执行电脑' }}，保留本次上下文</small>
+                    </div>
                   </div>
                   <div class="ai-continue-input">
                     <MarkdownEditor
                       :model-value="aiContinuation[run.id] ?? ''"
                       :min-height="56"
-                      :placeholder="run.status === 'succeeded'
+                      :readonly="!!run.continuationPending"
+                      :placeholder="run.continuationPending
+                        ? '上一条补充正在投递…'
+                        : ['queued', 'claimed', 'running'].includes(run.status)
+                          ? '继续说你的想法，AI 会在当前线程中调整方向；截图可直接粘贴'
+                        : run.status === 'succeeded'
                         ? '跑完了但不符合预期？写下要优化的地方，AI 带着这次的记忆接着改；截图可直接粘贴'
                         : '补充信息后，让 AI 在原会话中继续执行；截图可直接粘贴'"
                       @update:model-value="(v: string) => (aiContinuation[run.id] = v)"
                       @upload-image="onContinueImage"
                     />
                   </div>
-                  <button :disabled="continuingRunId === run.id || !aiContinuation[run.id]?.trim()" @click="continueRun(run.id)">
-                    <i :class="continuingRunId === run.id ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ continuingRunId === run.id ? '发送中…' : run.status === 'succeeded' ? '继续优化' : '继续对话' }}
+                  <button :disabled="run.continuationPending || continuingRunId === run.id || !aiContinuation[run.id]?.trim()" @click="continueRun(run.id)">
+                    <i :class="continuingRunId === run.id || run.continuationPending ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ run.continuationPending ? '等待接收…' : continuingRunId === run.id ? '发送中…' : ['queued', 'claimed', 'running'].includes(run.status) ? '发送到当前线程' : run.status === 'succeeded' ? '继续优化' : '继续对话' }}
                   </button>
                 </div>
               </div>
@@ -2196,6 +2211,7 @@ function demo(msg: string) {
 .ai-run-report em { flex: none; color: #16815c; font-size: 10.5px; font-style: normal; font-weight: 600; }
 .ai-run-report em i { margin-left: 3px; }
 .ai-continue { margin-top: 10px; padding: 11px; border: 1px solid #dce2fa; border-radius: 10px; background: linear-gradient(135deg, #f7f8ff, #fff); }
+.ai-continue.pending { border-color: #f0d89a; background: linear-gradient(135deg, #fffaf0, #fff); }
 .ai-continue-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .ai-continue-icon { width: 25px; height: 25px; border-radius: 8px; background: #e8ecff; color: #4358d6; display: grid; place-items: center; }
 .ai-continue-head b, .ai-continue-head small { display: block; }

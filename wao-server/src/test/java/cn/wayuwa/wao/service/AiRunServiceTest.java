@@ -886,6 +886,53 @@ class AiRunServiceTest {
     }
 
     @Test
+    void continueRunWhileActiveWaitsForTheOwningRunnerAndCanBeConsumedExactlyOnce() {
+        AiTaskRunEntity running = runningRun();
+
+        var dto = service.continueRun("ar1", "先保证手机端不跳动，再处理桌面样式", "wg",
+                "https://wao.example");
+
+        assertThat(dto.status()).isEqualTo("running");
+        assertThat(dto.continuationPending()).isTrue();
+        assertThat(service.control("local-token", "ar1").continuationInput())
+                .isEqualTo("先保证手机端不跳动，再处理桌面样式");
+
+        service.consumeContinuation("local-token", "ar1", "先保证手机端不跳动，再处理桌面样式");
+
+        assertThat(running.getPendingInput()).isNull();
+        assertThat(service.control("local-token", "ar1").continuationInput()).isNull();
+        assertThat(running.getLatestProgress()).contains("已接收新输入");
+    }
+
+    @Test
+    void activeRunRefusesToOverwriteAnInputThatTheRunnerHasNotReceived() {
+        AiTaskRunEntity running = runningRun();
+        running.setPendingInput("第一条补充");
+
+        assertThatThrownBy(() -> service.continueRun("ar1", "第二条补充", "wg", "https://wao.example"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("上一条补充");
+
+        assertThat(running.getPendingInput()).isEqualTo("第一条补充");
+    }
+
+    @Test
+    void completionRacesWithNewInputByRequeueingTheSameSessionInsteadOfDroppingIt() {
+        AiTaskRunEntity running = runningRun();
+        service.continueRun("ar1", "验收时请重点检查窄屏", "wg", "https://wao.example");
+
+        var result = service.complete("local-token", "ar1",
+                new CompleteAiRunRequest(0, "WAO_RUN_STATUS: SUCCESS", "sess-live", null, null,
+                        null, null, null, null, null));
+
+        assertThat(result.status()).isEqualTo("queued");
+        assertThat(result.continuationPending()).isTrue();
+        assertThat(running.getSessionId()).isEqualTo("sess-live");
+        assertThat(running.getPendingInput()).isEqualTo("验收时请重点检查窄屏");
+        assertThat(running.getRequestedRunnerId()).isEqualTo("rn1");
+    }
+
+    @Test
     void claimHandsThePreviousFailureToTheRunner() {
         AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
         runner.setMaxConcurrency(2);

@@ -41,6 +41,8 @@ public record AiRunDto(
         List<AiRunProgressDto> progress,
         /** 本次用掉的模型、token 与折算额度。 */
         AiRunUsageDto usage,
+        /** 用户的新输入已保存，正在等待当前执行电脑接收。 */
+        boolean continuationPending,
         String sessionId,
         Integer exitCode,
         String createdAt,
