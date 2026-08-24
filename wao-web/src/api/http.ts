@@ -1,4 +1,5 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
+import { reportBrowserRequest } from '@/utils/requestMetricReporter'
 
 export interface ApiResponse<T> {
   code: number
@@ -18,6 +19,8 @@ export const http = axios.create({
 
 interface RetriableRequestConfig extends InternalAxiosRequestConfig {
   waoGatewayRetry?: number
+  waoMetricStartedAt?: number
+  waoMetricStartedAtEpoch?: number
 }
 
 const RETRIABLE_GATEWAY_STATUSES = new Set([502, 503, 504])
@@ -82,8 +85,28 @@ export async function* streamTextEvents(url: string, body: unknown): AsyncGenera
   }
 }
 
+http.interceptors.request.use((config: RetriableRequestConfig) => {
+  config.waoMetricStartedAt = performance.now()
+  config.waoMetricStartedAtEpoch = Date.now()
+  return config
+})
+
+function report(config: RetriableRequestConfig | undefined, statusCode: number | null) {
+  if (config?.waoMetricStartedAt === undefined || config.waoMetricStartedAtEpoch === undefined)
+    return
+  reportBrowserRequest(
+    config.url,
+    config.method,
+    statusCode,
+    performance.now() - config.waoMetricStartedAt,
+    config.waoMetricStartedAtEpoch,
+    config.waoGatewayRetry ?? 0,
+  )
+}
+
 http.interceptors.response.use(
   (response) => {
+    report(response.config as RetriableRequestConfig, response.status)
     const envelope = response.data as ApiResponse<unknown>
     if (typeof envelope?.code === 'number' && envelope.code !== 0) {
       return Promise.reject(new Error(envelope.message || '请求失败'))
@@ -92,6 +115,7 @@ http.interceptors.response.use(
   },
   (error: unknown) => {
     if (axios.isAxiosError<ApiResponse<unknown>>(error)) {
+      report(error.config as RetriableRequestConfig | undefined, error.response?.status ?? null)
       const retry = retryGatewayRequest(
         error.config as RetriableRequestConfig | undefined,
         error.response?.status,
