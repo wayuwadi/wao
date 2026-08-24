@@ -6,7 +6,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 
+import cn.wayuwa.wao.dto.MemoryGrantDto;
 import cn.wayuwa.wao.mapper.PersonalMemoryMapper;
 import cn.wayuwa.wao.service.MemoryAccessTokenService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,7 +28,7 @@ import org.springframework.test.context.jdbc.Sql;
 /** 通过真实随机端口验证 Codex 的 MCP 初始化、发现、写入与吊销链路。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "spring.datasource.url=jdbc:h2:mem:memorymcpnetwork;DB_CLOSE_DELAY=-1;MODE=MySQL")
-@Sql("/memory-mcp-schema.sql")
+@Sql({"/memory-mcp-schema.sql", "/unified-memory-schema.sql"})
 class MemoryMcpNetworkIntegrationTest {
 
     @Autowired private TestRestTemplate http;
@@ -71,6 +73,22 @@ class MemoryMcpNetworkIntegrationTest {
         assertThat(searched.path("result").path("content").get(0).path("text").asText())
                 .contains("跨设备职责", "/memory?entry=" + memoryId);
 
+        HttpResponse<String> denied = HttpClient.newHttpClient().send(HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/mcp/memory/project/p1"))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + created.secret())
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/list\",\"params\":{}}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(denied.statusCode()).isEqualTo(401);
+        tokens.saveGrants("wg", created.token().id(), List.of(
+                new MemoryGrantDto("project", "p1", true, true, false)));
+        JsonNode projectTools = post("/api/mcp/memory/project/p1", headers,
+                "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/list\",\"params\":{}}");
+        assertThat(projectTools.path("result").path("tools").findValuesAsText("name"))
+                .contains("search_memory", "get_memory", "propose_memory", "memory_source_options")
+                .doesNotContain("save_memory");
+
         tokens.revoke("wg", created.token().id());
         HttpResponse<String> revoked = HttpClient.newHttpClient().send(HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + "/api/mcp"))
@@ -85,7 +103,11 @@ class MemoryMcpNetworkIntegrationTest {
     }
 
     private JsonNode post(HttpHeaders headers, String body) throws Exception {
-        ResponseEntity<String> response = http.exchange("/api/mcp", HttpMethod.POST,
+        return post("/api/mcp", headers, body);
+    }
+
+    private JsonNode post(String path, HttpHeaders headers, String body) throws Exception {
+        ResponseEntity<String> response = http.exchange(path, HttpMethod.POST,
                 new HttpEntity<>(body, headers), String.class);
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         return json.readTree(response.getBody());

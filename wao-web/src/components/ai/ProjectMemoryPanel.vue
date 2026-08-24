@@ -171,7 +171,7 @@ onMounted(load)
         <h2>项目工程记忆</h2>
         <p>只保存可复用、已验证的项目经验；个人生活记忆仍严格私有。</p>
       </div>
-      <button class="primary" @click="openCreate"><i class="ri-add-line"></i>新增记忆</button>
+      <RouterLink class="primary" :to="{ path: '/memories', query: { scope: 'project', project: props.projectId } }"><i class="ri-external-link-line"></i>打开记忆中心</RouterLink>
     </header>
 
     <div class="filters">
@@ -188,7 +188,7 @@ onMounted(load)
       <i class="ri-error-warning-line"></i><span>{{ loadError }}</span><button @click="load">重试</button>
     </div>
     <div v-else-if="!items.length" class="empty">
-      <i class="ri-brain-line"></i><b>还没有项目工程记忆</b><span>AI 成功交付并线上验收后会自动沉淀，也可以人工新增。</span>
+      <i class="ri-brain-line"></i><b>还没有已发布的项目记忆</b><span>AI 交付后只会生成候选，由负责人或管理员在记忆中心审核发布。</span>
     </div>
     <div v-else class="memory-list">
       <article v-for="memory in items" :key="memory.id" :id="`memory-${memory.id}`" :class="{ selected: route.query.memory === memory.id }">

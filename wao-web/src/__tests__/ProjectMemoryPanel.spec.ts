@@ -49,31 +49,15 @@ describe('项目工程记忆', () => {
   it('覆盖加载完成后的空数据状态', async () => {
     const { wrapper } = await mountPanel()
 
-    expect(wrapper.text()).toContain('还没有项目工程记忆')
+    expect(wrapper.text()).toContain('还没有已发布的项目记忆')
     expect(wrapper.text()).toContain('个人生活记忆仍严格私有')
   })
 
-  it('保存失败保留本地草稿并允许原位重试', async () => {
-    memoryApi.createProjectMemory
-      .mockRejectedValueOnce(new Error('网络断开'))
-      .mockResolvedValueOnce(sample)
+  it('深链到统一记忆中心的当前项目范围', async () => {
     const { wrapper } = await mountPanel()
-    await wrapper.findAll('button').find((button) => button.text().includes('新增记忆'))!.trigger('click')
-    const inputs = wrapper.findAll('.editor input')
-    const areas = wrapper.findAll('.editor textarea')
-    await inputs[0]!.setValue('部署验收命令')
-    await areas[0]!.setValue('运行线上健康检查并确认通知成功。')
-
-    expect(wrapper.text()).toContain('草稿已保存在本机')
-    await wrapper.findAll('.editor footer button').find((button) => button.text() === '保存')!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('网络断开')
-    expect((inputs[0]!.element as HTMLInputElement).value).toBe('部署验收命令')
-    await wrapper.findAll('.editor footer button').find((button) => button.text() === '重试保存')!.trigger('click')
-    await flushPromises()
-    expect(memoryApi.createProjectMemory).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('已保存')
+    const link = wrapper.get('a.primary')
+    expect(link.attributes('href')).toContain('/memories?scope=project&project=p1')
+    expect(wrapper.text()).toContain('AI 交付后只会生成候选')
   })
 
   it('删除失败保留记录并提供无需二次确认的重试入口', async () => {

@@ -13,6 +13,14 @@ export interface CreatedMemoryAccessToken {
   secret: string
 }
 
+export interface MemoryGrant {
+  scopeType: 'personal' | 'organization' | 'project'
+  scopeId: string
+  canRead: boolean
+  canPropose: boolean
+  canDirectWrite: boolean
+}
+
 export type MemoryCategory =
   | 'preference'
   | 'responsibility'
@@ -56,6 +64,12 @@ export const createMemoryAccessToken = (name: string) =>
 
 export const revokeMemoryAccessToken = (tokenId: string) =>
   http.delete(`/api/memory/tokens/${tokenId}`)
+
+export const fetchMemoryGrants = (tokenId: string) =>
+  data<MemoryGrant[]>(http.get(`/api/memory/tokens/${tokenId}/grants`))
+
+export const saveMemoryGrants = (tokenId: string, grants: MemoryGrant[]) =>
+  data<MemoryGrant[]>(http.put(`/api/memory/tokens/${tokenId}/grants`, { grants }))
 
 export const fetchPersonalMemories = (query = '', category = '') =>
   data<PersonalMemory[]>(http.get('/api/memory/entries', { params: { query: query || undefined, category: category || undefined } }))

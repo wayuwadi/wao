@@ -20,21 +20,24 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** 从真实 HTTP、ApiResponse、校验到 H2 表验证项目记忆 CRUD。 */
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:projectmemorycontroller;DB_CLOSE_DELAY=-1;MODE=MySQL")
 @AutoConfigureMockMvc
-@Sql("/project-memory-schema.sql")
+@Sql({"/project-memory-schema.sql", "/unified-memory-schema.sql"})
 class ProjectMemoryControllerIntegrationTest {
     @Autowired private MockMvc mvc;
+    @Autowired private JdbcTemplate jdbc;
     @MockBean private ProjectService projects;
     @MockBean private CurrentMember currentMember;
 
     @BeforeEach
     void authenticateProjectMember() {
         when(currentMember.idOr(any(HttpServletRequest.class), eq("wg"))).thenReturn("wg");
+        when(currentMember.id(any(HttpServletRequest.class))).thenReturn("wg");
     }
 
     @Test
@@ -53,7 +56,11 @@ class ProjectMemoryControllerIntegrationTest {
 
         mvc.perform(get("/api/projects/p1/memories").param("query", "MySQL"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(1));
+                .andExpect(jsonPath("$.data.length()").value(0));
+
+        publishLatestDraft(id);
+        mvc.perform(get("/api/projects/p1/memories").param("query", "MySQL"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1));
 
         mvc.perform(patch("/api/projects/p1/memories/{id}", id)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -64,8 +71,20 @@ class ProjectMemoryControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.category").value("convention"));
 
+        mvc.perform(get("/api/projects/p1/memories").param("query", "migration"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(0));
+        publishLatestDraft(id);
+        mvc.perform(get("/api/projects/p1/memories").param("query", "migration"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1));
+
         mvc.perform(delete("/api/projects/p1/memories/{id}", id)).andExpect(status().isOk());
         mvc.perform(get("/api/projects/p1/memories"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(0));
+    }
+
+    private void publishLatestDraft(String memoryId) throws Exception {
+        String revisionId = jdbc.queryForObject("SELECT id FROM memory_revision WHERE memory_id = ? AND state = 'draft' ORDER BY version_no DESC LIMIT 1",
+                String.class, memoryId);
+        mvc.perform(post("/api/memory-revisions/{id}/publish", revisionId)).andExpect(status().isOk());
     }
 }

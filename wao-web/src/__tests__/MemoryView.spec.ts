@@ -1,108 +1,77 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MemoryView from '@/views/MemoryView.vue'
-import {
-  createPersonalMemory,
-  fetchPersonalMemories,
-  uploadPersonalMemory,
-  type PersonalMemory,
-} from '@/api/memory'
+import { createMemory, fetchMemories, reviseMemory, type MemoryDocument } from '@/api/unifiedMemories'
 
-vi.mock('@/api/memory', async () => {
-  const actual = await vi.importActual<typeof import('@/api/memory')>('@/api/memory')
-  return {
-    ...actual,
-    fetchPersonalMemories: vi.fn<(typeof actual)['fetchPersonalMemories']>(),
-    createPersonalMemory: vi.fn<(typeof actual)['createPersonalMemory']>(),
-    updatePersonalMemory: vi.fn<(typeof actual)['updatePersonalMemory']>(),
-    uploadPersonalMemory: vi.fn<(typeof actual)['uploadPersonalMemory']>(),
-    deletePersonalMemory: vi.fn<(typeof actual)['deletePersonalMemory']>(),
-  }
+const route = { query: {} as Record<string, string> }
+const replace = vi.fn()
+vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ replace }) }))
+vi.mock('@/stores/session', () => ({ useSessionStore: () => ({
+  userId: 'wg', org: { id: 'o1', name: 'WAO' }, currentUser: { role: '超级管理员' },
+}) }))
+vi.mock('@/api/board', () => ({ fetchProjects: vi.fn().mockResolvedValue([]) }))
+vi.mock('@/api/unifiedMemories', async () => {
+  const actual = await vi.importActual<typeof import('@/api/unifiedMemories')>('@/api/unifiedMemories')
+  return { ...actual, fetchMemories: vi.fn(), createMemory: vi.fn(), reviseMemory: vi.fn(),
+    fetchMemoryRevisions: vi.fn(), publishMemoryRevision: vi.fn(), rejectMemoryRevision: vi.fn(),
+    archiveMemory: vi.fn() }
 })
-
-const memory = (overrides: Partial<PersonalMemory> = {}): PersonalMemory => ({
-  id: 'mem1', title: '晨跑偏好', content: '喜欢日出前跑步', category: 'preference',
-  captureMode: 'manual', mediaType: 'text', createdAt: '2026-08-18T08:00:00',
-  updatedAt: '2026-08-18T08:00:00', ...overrides,
+const memory = (overrides: Partial<MemoryDocument> = {}): MemoryDocument => ({
+  id: 'mem1', scopeType: 'personal', scopeId: 'wg', category: 'preference', state: 'active',
+  currentPublishedRevisionId: 'rev1', createdBy: 'wg', createdAt: '2026-08-18T08:00:00',
+  updatedAt: '2026-08-18T08:00:00', revision: {
+    id: 'rev1', versionNo: 1, state: 'published', title: '晨跑偏好', content: '喜欢日出前跑步',
+    authorType: 'human', createdBy: 'wg', createdAt: '2026-08-18T08:00:00', sources: [],
+  }, ...overrides,
 })
 
 describe('MemoryView', () => {
   beforeEach(() => {
-    localStorage.clear()
-    vi.clearAllMocks()
-    vi.mocked(fetchPersonalMemories).mockResolvedValue([])
+    localStorage.clear(); vi.clearAllMocks(); route.query = {}
+    vi.mocked(fetchMemories).mockResolvedValue([])
   })
 
-  it('区分人工、AI 与多模态记忆并展示账号私有边界', async () => {
-    vi.mocked(fetchPersonalMemories).mockResolvedValue([
-      memory(),
-      memory({ id: 'mem2', title: '长期职责', captureMode: 'ai', category: 'responsibility' }),
-      memory({ id: 'mem3', title: '海边旅行', mediaType: 'image', category: 'experience',
-        fileName: '海边.png', byteSize: 2048, downloadUrl: '/api/memory/entries/mem3/attachment' }),
-    ])
-
-    const wrapper = mount(MemoryView)
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('当前账号私有')
-    expect(wrapper.text()).toContain('人工采集')
-    expect(wrapper.text()).toContain('AI 采集')
-    expect(wrapper.text()).toContain('海边.png')
-    expect(wrapper.get('a.attachment').attributes('href')).toContain('mem3/attachment')
+  it('展示三种隔离范围和正式个人记忆', async () => {
+    vi.mocked(fetchMemories).mockResolvedValue([memory()])
+    const wrapper = mount(MemoryView); await flushPromises()
+    expect(wrapper.text()).toContain('个人记忆')
+    expect(wrapper.text()).toContain('组织记忆')
+    expect(wrapper.text()).toContain('项目记忆')
+    expect(wrapper.text()).toContain('晨跑偏好')
+    expect(wrapper.text()).toContain('正式版 v1')
   })
 
-  it('恢复本机草稿并成功保存真实文字记忆', async () => {
-    localStorage.setItem('wao-personal-memory-draft-v1', JSON.stringify({
-      title: '未完成的经历', content: '稍后继续写', category: 'experience',
+  it('恢复本机草稿并把个人记忆立即发布', async () => {
+    localStorage.setItem('wao:unified-memory-draft:personal:wg:new', JSON.stringify({
+      category: 'experience', title: '未完成的经历', content: '稍后继续写', changeSummary: '', evidence: '', expiresAt: '',
     }))
-    vi.mocked(createPersonalMemory).mockResolvedValue(memory({
-      title: '未完成的经历', content: '稍后继续写', category: 'experience',
+    vi.mocked(createMemory).mockResolvedValue(memory())
+    const wrapper = mount(MemoryView); await flushPromises()
+    await wrapper.get('.hero .primary').trigger('click')
+    expect(wrapper.text()).toContain('已恢复本机未保存草稿')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(createMemory).toHaveBeenCalledWith(expect.objectContaining({
+      scopeType: 'personal', scopeId: 'wg', category: 'experience', title: '未完成的经历', content: '稍后继续写',
     }))
-    const wrapper = mount(MemoryView)
-    await flushPromises()
-
-    await wrapper.get('.memory-hero > button').trigger('click')
-    expect(wrapper.text()).toContain('已恢复上次未保存的文字草稿')
-    expect((wrapper.get('.composer input').element as HTMLInputElement).value).toBe('未完成的经历')
-    await wrapper.get('.composer footer .primary').trigger('click')
-    await flushPromises()
-
-    expect(createPersonalMemory).toHaveBeenCalledWith({
-      title: '未完成的经历', content: '稍后继续写', category: 'experience',
-    })
-    expect(localStorage.getItem('wao-personal-memory-draft-v1')).toBeNull()
+    expect(localStorage.getItem('wao:unified-memory-draft:personal:wg:new')).toBeNull()
   })
 
-  it('读取失败时保留明确重试入口', async () => {
-    vi.mocked(fetchPersonalMemories).mockRejectedValueOnce(new Error('网络暂不可用')).mockResolvedValueOnce([])
-    const wrapper = mount(MemoryView)
-    await flushPromises()
-
+  it('读取失败时保留重试入口', async () => {
+    vi.mocked(fetchMemories).mockRejectedValueOnce(new Error('网络暂不可用')).mockResolvedValueOnce([])
+    const wrapper = mount(MemoryView); await flushPromises()
     expect(wrapper.text()).toContain('网络暂不可用')
-    await wrapper.get('.state-card.error button').trigger('click')
-    await flushPromises()
-
-    expect(fetchPersonalMemories).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('还没有个人记忆')
+    await wrapper.get('.state-card.error button').trigger('click'); await flushPromises()
+    expect(fetchMemories).toHaveBeenCalledTimes(2)
   })
 
-  it('选择图片后走多模态上传而不是文字接口', async () => {
-    const uploaded = memory({ id: 'mem-img', title: '旅行照', mediaType: 'image', fileName: '旅行.png' })
-    vi.mocked(uploadPersonalMemory).mockResolvedValue(uploaded)
-    const wrapper = mount(MemoryView)
-    await flushPromises()
-    await wrapper.get('.memory-hero > button').trigger('click')
-    const input = wrapper.get('input[type="file"]')
-    const file = new File(['image'], '旅行.png', { type: 'image/png' })
-    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
-    await input.trigger('change')
-    await wrapper.get('.composer textarea').setValue('海边的一天')
-    await wrapper.get('.composer footer .primary').trigger('click')
-    await flushPromises()
-
-    expect(uploadPersonalMemory).toHaveBeenCalledWith({
-      title: '旅行', content: '海边的一天', category: 'experience',
-    }, file)
-    expect(createPersonalMemory).not.toHaveBeenCalled()
+  it('409 时保留正在编辑的草稿', async () => {
+    vi.mocked(fetchMemories).mockResolvedValue([memory()])
+    vi.mocked(reviseMemory).mockRejectedValue(new Error('记忆已在其他设备更新（409）'))
+    const wrapper = mount(MemoryView); await flushPromises()
+    await wrapper.get('.memory-list article footer button').trigger('click')
+    await wrapper.get('.editor textarea').setValue('本机尚未合并的正文')
+    await wrapper.get('.editor footer .primary').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('记忆已在其他设备更新（409）')
+    expect((wrapper.get('.editor textarea').element as HTMLTextAreaElement).value).toBe('本机尚未合并的正文')
   })
 })
