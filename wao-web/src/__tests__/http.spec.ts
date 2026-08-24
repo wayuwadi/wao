@@ -2,6 +2,12 @@ import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { http } from '@/api/http'
+import { reportBrowserRequest } from '@/utils/requestMetricReporter'
+
+vi.mock('@/utils/requestMetricReporter', () => ({
+  reportBrowserRequest:
+    vi.fn<(typeof import('@/utils/requestMetricReporter'))['reportBrowserRequest']>(),
+}))
 
 function gatewayError(config: InternalAxiosRequestConfig, status: number) {
   const response: AxiosResponse = {
@@ -15,7 +21,10 @@ function gatewayError(config: InternalAxiosRequestConfig, status: number) {
 }
 
 describe('HTTP 网关短暂故障自愈', () => {
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.mocked(reportBrowserRequest).mockClear()
+  })
 
   it('对纯读请求的 502/503/504 按退避上限重试', async () => {
     vi.useFakeTimers()
@@ -38,6 +47,7 @@ describe('HTTP 网关短暂故障自愈', () => {
     await vi.runAllTimersAsync()
     await expect(request).resolves.toMatchObject({ status: 200 })
     expect(attempts).toBe(4)
+    expect(reportBrowserRequest).toHaveBeenCalledTimes(4)
   })
 
   it('不重放写请求', async () => {
@@ -55,6 +65,7 @@ describe('HTTP 网关短暂故障自愈', () => {
       ),
     ).rejects.toBeInstanceOf(AxiosError)
     expect(attempts).toBe(1)
+    expect(reportBrowserRequest).toHaveBeenCalledTimes(1)
   })
 
   it('不重试业务或权限错误', async () => {
@@ -68,5 +79,6 @@ describe('HTTP 网关短暂故障自愈', () => {
       }),
     ).rejects.toBeInstanceOf(AxiosError)
     expect(attempts).toBe(1)
+    expect(reportBrowserRequest).toHaveBeenCalledTimes(1)
   })
 })

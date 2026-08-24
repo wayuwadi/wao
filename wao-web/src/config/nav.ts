@@ -98,6 +98,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/automation',
   },
   games: { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', path: '/games' },
+  'request-monitoring': {
+    id: 'request-monitoring',
+    label: '请求监控',
+    icon: 'ri-pulse-line',
+    path: '/request-monitoring',
+  },
   drawings: { id: 'drawings', label: '草图', icon: 'ri-draft-line', path: '/drawings' },
   vocabulary: {
     id: 'vocabulary',
@@ -323,6 +329,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       order: 30,
       visible: true,
     },
+    {
+      id: 'request-monitoring',
+      label: '请求监控',
+      icon: 'ri-pulse-line',
+      group: 'TOOLS',
+      order: 40,
+      visible: true,
+    },
   ] as Omit<BuiltinMenuConfig, 'openMode'>[]
 ).map((menu) => ({ ...menu, openMode: 'TAB' }))
 
@@ -348,7 +362,7 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
   { label: '公共', items: ['projects', 'ideas', 'skills', 'chat-reviews'] },
   { label: '个人', items: PERSONAL_ITEMS },
-  { label: '工具', items: ['automation', 'files', 'games'] },
+  { label: '工具', items: ['automation', 'files', 'games', 'request-monitoring'] },
 ]
 
 const GROUP_LABELS: Record<MenuGroupCode, string> = {

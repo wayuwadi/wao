@@ -125,6 +125,16 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.module).toBe('games')
   })
 
+  it('请求监控默认位于工具组并以独立 Tab 打开', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '工具')?.items).toContain(
+      'request-monitoring',
+    )
+    const route = router.getRoutes().find((item) => item.name === 'request-monitoring')
+    expect(route?.path).toBe('/request-monitoring')
+    expect(route?.meta.module).toBe('request-monitoring')
+    expect(route?.meta.tabKind).toBe('module')
+  })
+
   it('天人一卦默认位于个人组并使用原生模块路由', () => {
     expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('tianren')
     const route = router.getRoutes().find((item) => item.name === 'tianren')
