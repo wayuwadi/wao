@@ -38,6 +38,7 @@ export type ModuleId =
   | 'weekly-report'
   | 'life-review'
   | 'chat-reviews'
+  | 'system-reports'
   | 'skills'
   | 'memory'
   | 'workspaces'

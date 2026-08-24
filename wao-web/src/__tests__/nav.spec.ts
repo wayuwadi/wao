@@ -48,6 +48,7 @@ describe('侧边栏导航配置', () => {
       'skills',
       externalAppItemId('media-agent'),
       'chat-reviews',
+      'system-reports',
     ])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
       '/apps/media-agent',
@@ -70,6 +71,13 @@ describe('侧边栏导航配置', () => {
     const route = router.getRoutes().find((item) => item.name === 'chat-reviews')
     expect(route?.path).toBe('/chat-reviews')
     expect(route?.meta.module).toBe('chat-reviews')
+  })
+
+  it('系统报告作为团队共享模块提供日周月切换入口', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('system-reports')
+    const route = router.getRoutes().find((item) => item.name === 'system-reports')
+    expect(route?.path).toBe('/system-reports')
+    expect(route?.meta.module).toBe('system-reports')
   })
 
   it('多个外部应用可分组排序和隐藏，且不破坏个人拖拽顺序', () => {

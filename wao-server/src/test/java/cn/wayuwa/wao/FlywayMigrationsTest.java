@@ -137,4 +137,18 @@ class FlywayMigrationsTest {
                 .contains("PRIMARY KEY (event_key)")
                 .contains("sender_open_id", "capture_kind", "target_id", "error_message");
     }
+
+    @Test
+    void systemPeriodicReportKeepsOneSnapshotPerNaturalPeriod() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V88__system_periodic_report.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE system_periodic_report")
+                .contains("UNIQUE KEY uk_system_report_period (period_type, period_key)")
+                .contains("task_sources_json", "run_sources_json", "ai_run_metered_count", "total_tokens")
+                .contains("idx_task_created_at", "idx_task_completed_at", "idx_ai_run_created_at");
+    }
 }
