@@ -16,6 +16,7 @@ public class FeishuQuickCollectEventEntity {
     private String captureKind;
     private String status;
     private String targetId;
+    private String sourceFingerprint;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -36,6 +37,8 @@ public class FeishuQuickCollectEventEntity {
     public void setStatus(String status) { this.status = status; }
     public String getTargetId() { return targetId; }
     public void setTargetId(String targetId) { this.targetId = targetId; }
+    public String getSourceFingerprint() { return sourceFingerprint; }
+    public void setSourceFingerprint(String sourceFingerprint) { this.sourceFingerprint = sourceFingerprint; }
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
     public LocalDateTime getCreatedAt() { return createdAt; }

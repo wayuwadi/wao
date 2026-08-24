@@ -23,6 +23,8 @@ public class FeishuQuickCollectPollingScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(FeishuQuickCollectPollingScheduler.class);
     private static final long LOOKBACK_SECONDS = 120;
+    /** 飞书客户端允许用户在发送后一段时间继续编辑，回看一天覆盖该真实交互窗口。 */
+    private static final long EDIT_LOOKBACK_SECONDS = 24 * 60 * 60;
 
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
@@ -81,6 +83,47 @@ public class FeishuQuickCollectPollingScheduler {
             botOpenId = null;
             readyLogged = false;
             log.warn("飞书个人收集轮询失败：{}", ex.getMessage());
+        }
+    }
+
+    /**
+     * 每分钟回看近 24 小时消息，捕获飞书不会再次投递接收事件的客户端编辑。
+     *
+     * <p>内容是否变化、双节点谁负责更新由数据库中的消息指纹原子判定；这里读取当前正文，
+     * 不用创建时间或随机数据推测编辑结果。
+     */
+    @Scheduled(fixedDelayString = "${wao.feishu.quick-collect-edit-poll-ms:60000}", initialDelay = 30000)
+    public void pollEdits() {
+        if (!settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)) {
+            return;
+        }
+        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+        String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
+        String chatId = settings.get(SettingService.CHAT_SYNC_CHAT_ID, "");
+        if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret) || !StringUtils.hasText(chatId)) {
+            return;
+        }
+        long end = Instant.now().getEpochSecond();
+        try {
+            String token = feishu.tenantAccessToken(appId, appSecret);
+            String currentBot = botOpenId;
+            if (!StringUtils.hasText(currentBot)) {
+                currentBot = feishu.botOpenId(token);
+                botOpenId = currentBot;
+            }
+            for (FeishuMessage message : feishu.listMessages(token, chatId, end - EDIT_LOOKBACK_SECONDS, end)) {
+                if (eligible(message, currentBot)) {
+                    try {
+                        quickCollect.collectPolled(chatId, message);
+                    } catch (RuntimeException ex) {
+                        log.warn("飞书编辑消息同步失败：message={} reason={}",
+                                message.messageId(), ex.getMessage());
+                    }
+                }
+            }
+        } catch (RuntimeException ex) {
+            botOpenId = null;
+            log.warn("飞书编辑消息回看失败：{}", ex.getMessage());
         }
     }
 

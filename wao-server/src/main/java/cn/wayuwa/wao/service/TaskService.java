@@ -418,6 +418,29 @@ public class TaskService {
         return toDto(e);
     }
 
+    /**
+     * 群聊快速收集：飞书原消息被编辑后，只覆盖由该消息维护的标题与描述。
+     *
+     * <p>状态、负责人、日期、子任务、评论等后续在 WAO 内补充的内容必须原样保留；只有源消息
+     * 实际改变时才窄更新这两个字段，避免轮询覆盖并发保存的结构化详情。
+     *
+     * @param id      首次收集创建的任务 id
+     * @param title   编辑后消息推导出的标题
+     * @param desc    编辑后完整正文（含已转存的图片 Markdown）
+     * @param ownerId 原飞书发言人对应的成员 id，用于校验任务可见性
+     * @return 更新后的任务
+     */
+    public TaskDto updateFromChat(String id, String title, String desc, String ownerId) {
+        TaskEntity e = requireVisible(id, ownerId);
+        String nextTitle = title == null ? "" : title.trim();
+        String nextDescription = desc == null ? "" : desc;
+        if (nextTitle.equals(e.getTitle()) && nextDescription.equals(nz(e.getDescription()))) {
+            return toDto(e);
+        }
+        taskMapper.updateChatSourceFields(id, nextTitle, nextDescription);
+        return toDto(require(id));
+    }
+
     /** 原子追加一条评论并同步飞书群，避免全文自动保存请求相互覆盖评论。 */
     public CommentDto addComment(String id, String memberId, String text) {
         TaskEntity entity = requireVisible(id, memberId);

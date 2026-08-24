@@ -59,6 +59,21 @@ class FeishuQuickCollectPollingSchedulerTest {
                 message("om_2", "user", false, "ou_person"), "ou_bot")).isFalse();
     }
 
+    @Test
+    void editSweepReplaysCurrentMessageContentThroughTheIdempotentCollector() {
+        enabled();
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
+        when(feishu.botOpenId("token")).thenReturn("ou_bot");
+        FeishuMessage edited = message("om_edited", "user", false, "ou_bot");
+        when(feishu.listMessages(org.mockito.ArgumentMatchers.eq("token"),
+                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong()))
+                .thenReturn(List.of(edited));
+
+        scheduler.pollEdits();
+
+        verify(quickCollect).collectPolled("oc_chat", edited);
+    }
+
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);
         when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app");

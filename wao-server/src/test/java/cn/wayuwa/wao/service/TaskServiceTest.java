@@ -138,6 +138,27 @@ class TaskServiceTest {
     }
 
     @Test
+    void editedChatMessageUpdatesOnlySourceManagedFields() {
+        TaskEntity entity = todo();
+        TaskEntity stored = todo();
+        stored.setTitle("完善后的标题");
+        stored.setDescription("完善后的正文\n\n![飞书图片](/api/images/img1/raw)");
+        when(mapper.selectById("t1")).thenReturn(entity, stored);
+        when(mapper.updateChatSourceFields(eq("t1"), any(), any())).thenReturn(1);
+
+        TaskDto updated = service.updateFromChat("t1", "完善后的标题",
+                "完善后的正文\n\n![飞书图片](/api/images/img1/raw)", "wg");
+
+        assertThat(updated.title()).isEqualTo("完善后的标题");
+        assertThat(updated.desc()).contains("/api/images/img1/raw");
+        assertThat(updated.status()).isEqualTo("待办");
+        assertThat(updated.owner()).isEqualTo("wg");
+        assertThat(updated.steps()).hasSize(1);
+        assertThat(stored.getDetailJson()).contains("\"steps\"");
+        verify(mapper, never()).updateById(any(TaskEntity.class));
+    }
+
+    @Test
     void createProducesTodoTask() {
         when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
 
