@@ -29,6 +29,7 @@ export interface Swatch {
 
 const STATUS: Record<string, Swatch> = {
   规划中: { bg: '#F0F1F4', color: '#5A5E6B' },
+  已搁置: { bg: '#F4F1EE', color: '#75685C' },
   进行中: { bg: '#E9EDFB', color: '#3A4CC2' },
   有风险: { bg: '#FBF3E4', color: '#A96A10' },
   已完成: { bg: '#E8F5EE', color: '#257A50' },

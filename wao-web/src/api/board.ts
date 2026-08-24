@@ -185,7 +185,15 @@ export interface CreateProjectPayload {
   area: string
   goal: string
   visAll: boolean
+  /** false 表示只收进想法箱，首次开始推进时再通知团队。 */
+  announce?: boolean
 }
+
+/** 首次开始推进项目；服务端保证状态和团队通知幂等。 */
+export const apiStartProject = (id: string) => post<Project>(`/api/projects/${id}/start`)
+
+/** 幂等创建或返回项目说明文档。 */
+export const apiEnsureProjectBrief = (id: string) => post<Doc>(`/api/projects/${id}/brief-doc`)
 export async function apiCreateProject(payload: CreateProjectPayload): Promise<Project> {
   const res = await http.post<ApiResponse<Project>>('/api/projects', payload)
   return res.data.data

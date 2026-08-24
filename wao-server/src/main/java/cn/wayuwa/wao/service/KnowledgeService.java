@@ -2,6 +2,7 @@ package cn.wayuwa.wao.service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -33,6 +34,8 @@ import cn.wayuwa.wao.dto.CreateNoteRequest;
 import cn.wayuwa.wao.dto.DocBlockDto;
 import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.DocLinkDto;
+import cn.wayuwa.wao.dto.IdeaDto;
+import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.DocTemplateDto;
 import cn.wayuwa.wao.dto.FolderDto;
 import cn.wayuwa.wao.dto.KbDto;
@@ -811,6 +814,115 @@ public class KnowledgeService {
         KbFolderEntity folder = ideaFolder(ideaId, ideaTitle);
         List<DocBlockDto> blocks = ideaBlocks(ideaTitle, content);
         return insertDoc(IDEA_ASSET_KB_ID, folder.getId(), title, author, blocks);
+    }
+
+    /**
+     * 幂等创建项目说明；只有用户明确点击时才建立项目知识库与文档。
+     *
+     * @param project 项目
+     * @param author 当前成员
+     * @return 稳定的项目说明文档
+     */
+    @Transactional
+    public DocDto ensureProjectBrief(ProjectDto project, String author) {
+        KbFolderEntity folder = ensureProjectFolder(project);
+        String id = stableDocId("project-brief", project.id());
+        DocEntity existing = docMapper.selectById(id);
+        if (existing != null) {
+            existing.setDeletedAt(null);
+            existing.setCascadeDel(false);
+            existing.setLinksJson(write(mergeProjectLink(readList(existing.getLinksJson(), LINKS_TYPE), project.id())));
+            docMapper.updateById(existing);
+            return toDto(existing, docMapper.selectList(aliveDocs()));
+        }
+        List<DocBlockDto> blocks = List.of(
+                new DocBlockDto("这个文档跟随项目长期保留；AI 每次只读取任务明确提供的上下文，不会默认读取整个知识库。",
+                        null, null, null, null),
+                new DocBlockDto(null, "项目目标", null, null, null, 2),
+                new DocBlockDto(null, null, blankOr(project.goal(), "尚未填写目标。"), null, null),
+                new DocBlockDto(null, "背景、决策与验收记录", null, null, null, 2),
+                new DocBlockDto(null, null, "在这里持续补充，不需要按固定阶段填写。", null, null));
+        return insertDoc(id, folder.getKbId(), folder.getId(), "项目说明 · " + project.name(), author, blocks,
+                List.of(new DocLinkDto("project", project.id())));
+    }
+
+    /** 把旧点子的完整历史沉淀为项目知识文档；稳定 id 保证重复归并不产生副本。 */
+    @Transactional
+    public DocDto ensureIdeaArchive(ProjectDto project, IdeaDto idea, String author) {
+        KbFolderEntity folder = ensureProjectFolder(project);
+        String id = stableDocId("idea-archive", idea.id());
+        DocEntity existing = docMapper.selectById(id);
+        if (existing != null) {
+            existing.setDeletedAt(null);
+            existing.setCascadeDel(false);
+            existing.setLinksJson(write(mergeProjectLink(readList(existing.getLinksJson(), LINKS_TYPE), project.id())));
+            docMapper.updateById(existing);
+            return toDto(existing, docMapper.selectList(aliveDocs()));
+        }
+        StringBuilder content = new StringBuilder();
+        content.append("## 原始想法\n\n").append(blankOr(idea.rawIdea(), "未填写"));
+        content.append("\n\n## 要解决的问题\n\n").append(blankOr(idea.problem(), "未填写"));
+        content.append("\n\n## 期望结果\n\n").append(blankOr(idea.targetOutcome(), "未填写"));
+        if (!idea.iterations().isEmpty()) {
+            content.append("\n\n## 历史迭代\n");
+            for (IdeaDto.Iteration iteration : idea.iterations()) {
+                content.append("\n- ").append(iteration.objective()).append(" · ").append(iteration.status());
+                if (StringUtils.hasText(iteration.feedback())) content.append(" · 反馈：").append(iteration.feedback());
+                if (StringUtils.hasText(iteration.reportUrl())) content.append(" · 报告：").append(iteration.reportUrl());
+            }
+        }
+        if (idea.detail().activity() != null && !idea.detail().activity().isEmpty()) {
+            content.append("\n\n## 历史活动\n");
+            for (IdeaDto.Activity activity : idea.detail().activity()) {
+                content.append("\n- ").append(activity.at()).append(" · ").append(activity.action());
+            }
+        }
+        return insertDoc(id, folder.getKbId(), folder.getId(), "原始点子与迭代历史 · " + idea.title(), author,
+                ideaBlocks(idea.title(), content.toString()), List.of(new DocLinkDto("project", project.id())));
+    }
+
+    /** 为旧资产文档补项目出链；文档不移动、不复制，旧地址继续可用。 */
+    @Transactional
+    public DocDto linkDocToProject(String docId, String projectId) {
+        DocEntity doc = requireDoc(docId);
+        doc.setLinksJson(write(mergeProjectLink(readList(doc.getLinksJson(), LINKS_TYPE), projectId)));
+        docMapper.updateById(doc);
+        return toDto(doc, docMapper.selectList(aliveDocs()));
+    }
+
+    private KbFolderEntity ensureProjectFolder(ProjectDto project) {
+        KbEntity kb = kbMapper.selectList(aliveKbs().eq(KbEntity::getProjectId, project.id()))
+                .stream().findFirst().orElse(null);
+        if (kb == null) {
+            KbDto created = createKb(new CreateKbRequest(project.name(),
+                    "项目「" + project.name() + "」的文档与知识沉淀", project.icon(), "#4358D6",
+                    project.id(), null, "成员可编辑"));
+            kb = requireKb(created.id());
+        }
+        KbFolderEntity folder = folderMapper.selectList(aliveFolders().eq(KbFolderEntity::getKbId, kb.getId())
+                .orderByAsc(KbFolderEntity::getOrd)).stream().findFirst().orElse(null);
+        if (folder != null) return folder;
+        folder = new KbFolderEntity();
+        folder.setId("f" + UUID.randomUUID().toString().replace("-", "").substring(0, 31));
+        folder.setKbId(kb.getId());
+        folder.setName("文档");
+        folder.setOrd(1);
+        folder.setCascadeDel(false);
+        folderMapper.insert(folder);
+        return folder;
+    }
+
+    private static List<DocLinkDto> mergeProjectLink(List<DocLinkDto> links, String projectId) {
+        List<DocLinkDto> merged = new ArrayList<>(links == null ? List.of() : links);
+        if (merged.stream().noneMatch(link -> "project".equals(link.type()) && projectId.equals(link.id()))) {
+            merged.add(new DocLinkDto("project", projectId));
+        }
+        return List.copyOf(merged);
+    }
+
+    private static String stableDocId(String namespace, String value) {
+        return UUID.nameUUIDFromBytes((namespace + ":" + value).getBytes(StandardCharsets.UTF_8))
+                .toString().replace("-", "");
     }
 
     /** 把调研 Markdown 的常用结构转成 WAO 原生块，文档打开后仍可逐块编辑。 */

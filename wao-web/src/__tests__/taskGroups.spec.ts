@@ -8,6 +8,7 @@ import { MAX_TASK_GROUPS } from '@/types'
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
+  fetchTaskAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
 }))
 
 const router = createRouter({

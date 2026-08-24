@@ -10,6 +10,7 @@ import type {
   IdeaResearchRun,
   IdeaStage,
   IdeaTaskLink,
+  Project,
 } from '@/types'
 
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
@@ -73,3 +74,7 @@ export const patchIdeaIteration = (
     reportUrl?: string
   },
 ) => data<IdeaIteration>(http.patch(`/api/ideas/${ideaId}/iterations/${iterationId}`, body))
+
+/** 把存量独立点子归并为项目；不传 projectId 时由服务端安全推导或新建。 */
+export const convertIdeaToProject = (ideaId: string, projectId?: string) =>
+  data<Project>(http.post(`/api/ideas/${ideaId}/convert-to-project`, projectId ? { projectId } : {}))

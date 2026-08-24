@@ -7,6 +7,7 @@ import { useDataStore } from '@/stores/data'
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
+  fetchTaskAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
 }))
 
 function makeRouter() {

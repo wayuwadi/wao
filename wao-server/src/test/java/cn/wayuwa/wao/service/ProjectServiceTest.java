@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 
 import java.util.List;
 import java.util.Map;
@@ -25,8 +27,9 @@ class ProjectServiceTest {
 
     private final ProjectMapper mapper = mock(ProjectMapper.class);
     private final ProjectActivityService activities = mock(ProjectActivityService.class);
-    private final ProjectService service = new ProjectService(mapper, new ObjectMapper(),
-            mock(FeishuTaskNotifier.class), mock(MemberService.class), activities);
+    private final FeishuTaskNotifier notifier = mock(FeishuTaskNotifier.class);
+    private final MemberService members = mock(MemberService.class);
+    private final ProjectService service = new ProjectService(mapper, new ObjectMapper(), notifier, members, activities);
 
     @Test
     void assemblesDtoFromColumnsAndDetailJson() {
@@ -78,6 +81,41 @@ class ProjectServiceTest {
     }
 
     @Test
+    void ideaCaptureCanCreateSilently() {
+        service.create(new CreateProjectRequest("静默点子", "career", "最终目标", true, false), "wg");
+
+        verify(notifier, never()).notifyProjectCreated(any(), any(), any(), any());
+    }
+
+    @Test
+    void startMovesProjectAndNotifiesOnlyOnce() {
+        ProjectEntity entity = project("p-start", "wg", "[\"wg\"]");
+        entity.setStatus("规划中");
+        when(mapper.selectByIdForUpdate("p-start")).thenReturn(entity);
+        when(members.list()).thenReturn(List.of());
+
+        ProjectDto first = service.start("p-start", "wg");
+        ProjectDto second = service.start("p-start", "wg");
+
+        assertThat(first.status()).isEqualTo("进行中");
+        assertThat(second.status()).isEqualTo("进行中");
+        verify(notifier).notifyProjectStarted("p-start", "项目 p-start", "wg", null);
+    }
+
+    @Test
+    void startDoesNotReopenCompletedOrShelvedProject() {
+        ProjectEntity entity = project("p-closed", "wg", "[\"wg\"]");
+        entity.setStatus("已搁置");
+        when(mapper.selectByIdForUpdate("p-closed")).thenReturn(entity);
+
+        ProjectDto result = service.start("p-closed", "wg");
+
+        assertThat(result.status()).isEqualTo("已搁置");
+        verify(mapper, never()).updateById(any(ProjectEntity.class));
+        verify(notifier, never()).notifyProjectStarted(any(), any(), any(), any());
+    }
+
+    @Test
     void notificationSwitchCanBeTurnedOffAndBackOn() {
         ProjectEntity e = new ProjectEntity();
         e.setId("p2");
@@ -106,6 +144,9 @@ class ProjectServiceTest {
                 new PatchProjectRequest(null, null, "进行中", null, null, null, null), "wg");
 
         assertThat(updated.status()).isEqualTo("进行中");
+        assertThat(service.update("p-status",
+                new PatchProjectRequest(null, null, "已搁置", null, null, null, null), "wg").status())
+                .isEqualTo("已搁置");
         assertThatThrownBy(() -> service.update("p-status",
                 new PatchProjectRequest(null, null, "随便写", null, null, null, null), "wg"))
                 .isInstanceOf(BadRequestException.class)
