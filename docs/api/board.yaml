@@ -636,16 +636,16 @@ paths:
         '400': { description: 该运行还没结束、任务已有运行在进行中，或项目未启用 AI Run }
   /ai/runs/{runId}/continue:
     post:
-      summary: 向已结束且保留会话 id 的 AI Run 追加提示词；固定派回原执行电脑恢复同一会话
+      summary: 向活动或已结束的 AI Run 追加提示词；活动回合立即转向，结束后固定派回原电脑恢复
       description: |
-        失败的运行用它补充信息接着修；成功但不符合预期的运行用它继续优化 ——
-        两种都在原会话和原 worktree 上继续，不从零重来（见 ADR-027）。
+        queued 输入进入首次提示；running 输入让 Runner 结束当前回合并恢复同一 session/worktree。
+        失败的运行用它补充信息接着修；成功但不符合预期的运行用它继续优化（见 ADR-027、ADR-111）。
       requestBody:
         required: true
         content: { application/json: { schema: { type: object, required: [input], properties: { input: { type: string, maxLength: 4000 } } } } }
       responses:
-        '200': { description: 原运行重新进入队列 }
-        '400': { description: 运行仍在执行或无法恢复原会话 }
+        '200': { description: 输入已进入活动运行的待接收状态，或结束的原运行已重新进入队列 }
+        '400': { description: 上一条输入尚未接收，或结束的运行无法恢复原会话 }
         '404': { description: 运行不存在 }
   /ai/runner/pair:
     post: { summary: Runner 用一次性配对码换取只返回一次的本机令牌（含本机可用的 AI 工具）, responses: { '200': { description: OK }, '401': { description: 配对码无效 } } }
@@ -721,6 +721,24 @@ paths:
       responses:
         '200': { description: 返回关联的 HostedPageDto }
         '400': { description: 文件无效、运行已结束或公开后缀冲突 }
+        '401': { description: 运行不属于当前节点 }
+  /ai/runner/runs/{runId}/control:
+    get:
+      summary: Runner 轮询暂停信号与尚未接收的运行中用户输入
+      parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: 返回 cancelled 与可空 continuationInput }
+        '401': { description: 运行不属于当前节点 }
+  /ai/runner/runs/{runId}/continuation/consume:
+    post:
+      summary: Runner 停止当前回合后精确确认消费用户输入
+      parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [input], properties: { input: { type: string, maxLength: 4000 } } } } }
+      responses:
+        '200': { description: 输入已清除，Runner 可恢复同一会话 }
+        '400': { description: 输入已变化或运行已结束 }
         '401': { description: 运行不属于当前节点 }
   # 自动化域（关系表；cronExpr 非空的任务由服务端调度器按计划自动执行）
   /jobs:

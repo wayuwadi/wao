@@ -641,6 +641,8 @@ export interface AiRun {
   progress: AiRunProgress[]
   /** 本次用掉的模型、token 与折算额度。 */
   usage: AiRunUsage
+  /** 新输入已保存，正在等待当前执行电脑接收。 */
+  continuationPending?: boolean
   sessionId: string | null
   exitCode: number | null
   createdAt: string

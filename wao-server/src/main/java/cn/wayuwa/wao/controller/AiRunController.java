@@ -2,7 +2,6 @@ package cn.wayuwa.wao.controller;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
@@ -11,6 +10,7 @@ import cn.wayuwa.wao.dto.AiAssistantClaimDto;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
+import cn.wayuwa.wao.dto.AiRunControlDto;
 import cn.wayuwa.wao.dto.AiRunImageContent;
 import cn.wayuwa.wao.dto.AiRunPageDto;
 import cn.wayuwa.wao.dto.AiRunnerClaimDto;
@@ -329,11 +329,19 @@ public class AiRunController {
         return ApiResponse.ok(service.saveReport(token, runId, html));
     }
 
-    /** Runner 在执行期间轮询取消状态，以便可靠终止本地 AI CLI 子进程。 */
+    /** Runner 在执行期间轮询暂停和用户追加输入，以便终止当前回合后恢复同一会话。 */
     @GetMapping("/runner/runs/{runId}/control")
-    public ApiResponse<Map<String, Boolean>> control(@RequestHeader(RUNNER_TOKEN) String token,
+    public ApiResponse<AiRunControlDto> control(@RequestHeader(RUNNER_TOKEN) String token,
             @PathVariable String runId) {
-        return ApiResponse.ok(Map.of("cancelled", service.cancelled(token, runId)));
+        return ApiResponse.ok(service.control(token, runId));
+    }
+
+    /** Runner 已停止当前回合并准备恢复会话时，精确确认消费这条用户输入。 */
+    @PostMapping("/runner/runs/{runId}/continuation/consume")
+    public ApiResponse<Void> consumeContinuation(@RequestHeader(RUNNER_TOKEN) String token,
+            @PathVariable String runId, @Valid @RequestBody ContinueAiRunRequest request) {
+        service.consumeContinuation(token, runId, request.input());
+        return ApiResponse.ok(null);
     }
 
     @PostMapping("/runner/runs/{runId}/progress")

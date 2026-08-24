@@ -10,6 +10,7 @@ import type { AiRun } from '@/types'
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
+  continueAiRun: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
   pauseAiRun: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
   fetchAiRunners: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
@@ -53,6 +54,7 @@ function aiRun(overrides: Partial<AiRun> & Pick<AiRun, 'id' | 'taskId'>): AiRun 
       model: null, models: null, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0,
       totalTokens: 0, costUsd: null, recorded: false,
     },
+    continuationPending: false,
     sessionId: null, exitCode: null, createdAt: '2026-07-27T09:00:00',
     startedAt: null, finishedAt: null,
     ...overrides,
@@ -594,6 +596,44 @@ describe('TaskDrawer', () => {
     await flushPromises()
 
     expect(w.find('.ai-continue > button').text()).toContain('继续优化')
+    w.unmount()
+  })
+
+  it('运行中直接显示继续输入入口，并把补充发送到当前线程', async () => {
+    const { continueAiRun, fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({ id: 'ar-live', taskId, status: 'running', runnerId: 'rn1', runnerName: '娃哥电脑' }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    expect(w.find('.ai-continue-head').text()).toContain('执行中继续输入')
+    expect(w.find('.ai-continue > button').text()).toContain('发送到当前线程')
+    w.find('.ai-continue-input').findComponent({ name: 'MarkdownEditor' })
+      .vm.$emit('update:modelValue', '先修手机端跳动')
+    await w.vm.$nextTick()
+    await w.find('.ai-continue > button').trigger('click')
+    await flushPromises()
+
+    expect(continueAiRun).toHaveBeenCalledWith('ar-live', '先修手机端跳动')
+    w.unmount()
+  })
+
+  it('上一条补充等待执行电脑接收时显示投递状态且不能覆盖', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({ id: 'ar-live', taskId, status: 'running', runnerId: 'rn1', runnerName: '娃哥电脑',
+        continuationPending: true }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    expect(w.find('.ai-continue').classes()).toContain('pending')
+    expect(w.find('.ai-continue-head').text()).toContain('正在等待 娃哥电脑 接收')
+    expect(w.find('.ai-continue > button').attributes('disabled')).toBeDefined()
+    expect(w.find('.ai-continue > button').text()).toContain('等待接收')
     w.unmount()
   })
 

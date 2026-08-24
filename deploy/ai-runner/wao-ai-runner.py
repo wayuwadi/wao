@@ -639,7 +639,7 @@ def invoke_cli(command: list[str], worktree: Path, prompt: str,
     stop_started_at: float | None = None
     while True:
         if should_stop and should_stop() and not stopping:
-            log("收到暂停请求，正在终止本地 AI CLI")
+            log("收到运行控制请求，正在结束当前本地 AI CLI 回合")
             terminate_process_tree(process)
             stopping = True
             stop_started_at = time.monotonic()
@@ -985,6 +985,15 @@ def build_continuation_prompt(
     return prompt
 
 
+def build_live_update_prompt(continuation: str) -> str:
+    """运行期间的新输入：保留当前任务与工作区，只调整接下来的执行方向。"""
+    return (
+        "用户在你执行当前任务期间追加了下面的信息。请把它加入同一线程，立即据此调整后续方向；"
+        "保留已经做对的部分，不要从头重做：\n\n"
+        f"{continuation}"
+    )
+
+
 def parse_memory_candidates(memory_path: Path) -> list[dict[str, Any]]:
     """读取并收窄 AI 生成的候选；格式异常只放弃记忆，不影响任务结果。"""
     if not memory_path.is_file():
@@ -1136,6 +1145,7 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         service_tier: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
     """跑一次 `codex exec --json`，返回退出码、最终答复、会话 id 和用量。"""
     result_file = worktree / ".wao-ai-result.txt"
+    result_file.unlink(missing_ok=True)
     custom_api = bool(account and str(account.get("authMethod") or "") == "api_key")
     model_args = [] if custom_api or not model else ["--model", model]
     if model_args and reasoning_effort:
@@ -1264,6 +1274,21 @@ def _blank_usage() -> dict[str, Any]:
             "cachedInputTokens": 0, "totalTokens": 0, "costUsd": None}
 
 
+def merge_usage(total: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    """同一次运行被用户打断并恢复时，合并多个 CLI 回合的真实用量。"""
+    merged = dict(total)
+    for key in ("inputTokens", "outputTokens", "cachedInputTokens", "totalTokens"):
+        merged[key] = _count(total.get(key)) + _count(current.get(key))
+    models = {name for source in (total.get("models"), current.get("models"))
+              for name in str(source or "").split(",") if name}
+    merged["models"] = ",".join(sorted(models)) or None
+    merged["model"] = current.get("model") or total.get("model")
+    costs = [value for value in (total.get("costUsd"), current.get("costUsd"))
+             if isinstance(value, (int, float)) and not isinstance(value, bool)]
+    merged["costUsd"] = round(sum(costs), 6) if costs else None
+    return merged
+
+
 def _finish_usage(usage: dict[str, Any], by_model: dict[str, int], cost: float,
         counted_cost: bool) -> dict[str, Any]:
     """按输出 token 挑出主模型，并把合计与花费补齐。"""
@@ -1355,17 +1380,27 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
     stage = "准备 Git 工作区"
     reporter = ProgressReporter(api, run_id, engine)
     last_cancel_check = 0.0
+    pending_update: str | None = None
+    pause_requested = False
 
-    def cancellation_requested() -> bool:
-        nonlocal last_cancel_check
+    def control_requested() -> bool:
+        nonlocal last_cancel_check, pending_update, pause_requested
         now = time.monotonic()
         if now - last_cancel_check < 3:
             return False
         last_cancel_check = now
         try:
-            return bool((api.get(f"/api/ai/runner/runs/{run_id}/control") or {}).get("cancelled"))
+            control = api.get(f"/api/ai/runner/runs/{run_id}/control") or {}
+            if bool(control.get("cancelled")):
+                pause_requested = True
+                return True
+            continuation_input = _readable_text(control.get("continuationInput")).strip()
+            if continuation_input:
+                pending_update = continuation_input
+                return True
+            return False
         except Exception as exc:  # noqa: BLE001 - 短暂网络错误不应中断正常执行
-            log(f"[{run_id}] 暂停状态检查失败：{exc}")
+            log(f"[{run_id}] 运行控制状态检查失败：{exc}")
             return False
     try:
         log(f"[{run_id}] 开始（{name}）：{claim['taskTitle']}")
@@ -1389,23 +1424,39 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             report_path.parent.mkdir(parents=True, exist_ok=True)
             memory_path.parent.mkdir(parents=True, exist_ok=True)
             prompt = build_prompt(claim, report_path, memory_path)
+            if continuation:
+                prompt += "\n\n" + build_live_update_prompt(continuation)
         stage = f"启动 {name}"
         reporter.send("phase", f"工作区已准备完成，正在启动 {name}", force=True)
         stage = f"等待 {name} 完成"
-        if engine == "claude":
-            exit_code, result_text, session_id, usage = run_claude(
-                executable, worktree, prompt, sandbox, reporter, cli_environment,
-                claude_model, root / claim["workspaceDir"], session_id, cancellation_requested)
-        elif engine == "qoder":
-            exit_code, result_text, session_id, usage = run_qoder(
-                executable, worktree, prompt, sandbox, reporter, cli_environment,
-                root / claim["workspaceDir"], session_id, cancellation_requested)
-        else:
-            exit_code, result_text, session_id, usage = run_codex(
-                executable, worktree, prompt, sandbox, reporter, cli_environment, session_id,
-                cancellation_requested, claim.get("account"), root / ".wao-codex-homes" / run_id,
-                model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
-                service_tier=claim.get("serviceTier"))
+        while True:
+            pending_update = None
+            pause_requested = False
+            if engine == "claude":
+                turn = run_claude(
+                    executable, worktree, prompt, sandbox, reporter, cli_environment,
+                    claude_model, root / claim["workspaceDir"], session_id, control_requested)
+            elif engine == "qoder":
+                turn = run_qoder(
+                    executable, worktree, prompt, sandbox, reporter, cli_environment,
+                    root / claim["workspaceDir"], session_id, control_requested)
+            else:
+                turn = run_codex(
+                    executable, worktree, prompt, sandbox, reporter, cli_environment, session_id,
+                    control_requested, claim.get("account"), root / ".wao-codex-homes" / run_id,
+                    model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
+                    service_tier=claim.get("serviceTier"))
+            exit_code, result_text, turn_session_id, turn_usage = turn
+            session_id = turn_session_id or session_id
+            usage = merge_usage(usage, turn_usage)
+            if pause_requested or not pending_update:
+                break
+            if not session_id:
+                raise RuntimeError(f"{name} 没有返回可恢复的会话 id，无法接收运行中的新输入")
+            api.post(f"/api/ai/runner/runs/{run_id}/continuation/consume",
+                     {"input": pending_update})
+            reporter.send("message", "已接收你刚才补充的信息，正在同一会话中调整执行方向", force=True)
+            prompt = build_live_update_prompt(pending_update)
         cost_text = "未回传" if usage["costUsd"] is None else "$%.4f" % usage["costUsd"]
         log(f"[{run_id}] 用量：模型 {usage['model'] or '未知'}，"
             f"token {usage['totalTokens']}（输入 {usage['inputTokens']} / 输出 "
