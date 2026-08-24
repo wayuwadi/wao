@@ -38,4 +38,6 @@ public record IdeaDto(
     public record IterationRequest(@NotBlank String taskId, @NotBlank String objective,
             String acceptanceCriteria, String aiRunId) {}
     public record IterationPatchRequest(String status, String feedback, String resultSummary, String reportUrl) {}
+    /** 存量点子归并目标；为空时按已关联项目、任务所属项目、新建项目的顺序自动选择。 */
+    public record ConvertRequest(String projectId) {}
 }

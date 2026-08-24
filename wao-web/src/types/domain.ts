@@ -52,7 +52,7 @@ export interface HostedPage {
   url: string
 }
 
-export type ProjectStatus = '进行中' | '有风险' | '规划中' | '已完成'
+export type ProjectStatus = '进行中' | '有风险' | '规划中' | '已完成' | '已搁置'
 
 /**
  * 项目内的任务分组（分组视图）。
@@ -172,7 +172,7 @@ export type IdeaStage =
   | 'ABANDONED'
 export type IdeaPriority = 'P0' | 'P1' | 'P2'
 export type IdeaArtifactKind =
-  'RESEARCH_REPORT' | 'SOLUTION_MVP' | 'MEETING_NOTE' | 'VALIDATION_RECORD' | 'ABANDONMENT_REPORT'
+  'RESEARCH_REPORT' | 'SOLUTION_MVP' | 'MEETING_NOTE' | 'VALIDATION_RECORD' | 'ABANDONMENT_REPORT' | 'LEGACY_ARCHIVE'
 export type IdeaIterationStatus =
   'PLANNED' | 'RUNNING' | 'READY_FOR_REVIEW' | 'ACCEPTED' | 'REJECTED' | 'FAILED'
 export type IdeaResearchRunStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'

@@ -150,6 +150,7 @@ onMounted(loadAiConfig)
       <option value="进行中">进行中</option>
       <option value="有风险">有风险</option>
       <option value="已完成">已完成</option>
+      <option value="已搁置">已搁置</option>
     </select>
 
     <div class="label">项目描述 / 目标</div>

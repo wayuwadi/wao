@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
@@ -34,6 +35,7 @@ import cn.wayuwa.wao.dto.KbDto;
 import cn.wayuwa.wao.dto.PatchDocRequest;
 import cn.wayuwa.wao.dto.PatchDocTemplateRequest;
 import cn.wayuwa.wao.dto.PatchKbRequest;
+import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.ReorderDocsRequest;
 import cn.wayuwa.wao.dto.TrashEntryDto;
 import cn.wayuwa.wao.mapper.DocMapper;
@@ -160,6 +162,35 @@ class KnowledgeServiceTest {
         assertThat(dto.blocks()).isEmpty();
         assertThat(dto.kbId()).isEqualTo("k1");
         assertThat(dto.rev()).isEqualTo(1);
+    }
+
+    @Test
+    void projectBriefIsCreatedLazilyAndReusedByStableId() {
+        ProjectDto project = mock(ProjectDto.class);
+        when(project.id()).thenReturn("p-idea");
+        when(project.name()).thenReturn("桌面应用");
+        when(project.goal()).thenReturn("做出可安装的第一版");
+        KbEntity projectKb = kb("kb-project");
+        projectKb.setProjectId("p-idea");
+        KbFolderEntity projectFolder = folder("f-project", projectKb.getId());
+        when(kbMapper.selectList(any())).thenReturn(List.of(projectKb));
+        when(folderMapper.selectList(any())).thenReturn(List.of(projectFolder));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+        AtomicReference<DocEntity> inserted = new AtomicReference<>();
+        when(docMapper.selectById(anyString())).thenAnswer(invocation -> inserted.get());
+        when(docMapper.insert(any(DocEntity.class))).thenAnswer(invocation -> {
+            inserted.set(invocation.getArgument(0));
+            return 1;
+        });
+
+        DocDto first = service.ensureProjectBrief(project, "wg");
+        DocDto repeated = service.ensureProjectBrief(project, "wg");
+
+        assertThat(repeated.id()).isEqualTo(first.id()).hasSize(32);
+        assertThat(first.title()).isEqualTo("项目说明 · 桌面应用");
+        assertThat(first.links()).containsExactly(new DocLinkDto("project", "p-idea"));
+        verify(docMapper, times(1)).insert(any(DocEntity.class));
     }
 
     @Test

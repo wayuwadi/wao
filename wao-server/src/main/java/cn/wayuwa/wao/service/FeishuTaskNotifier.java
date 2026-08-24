@@ -279,6 +279,22 @@ public class FeishuTaskNotifier {
                 "查看项目", links.open("/projects/" + projectId)));
     }
 
+    /** 想法项目首次开始推进后再通知团队，避免快速收集阶段刷屏。 */
+    public boolean notifyProjectStarted(String projectId, String projectName, String operatorName, String goal) {
+        if (muted(projectId)) {
+            return false;
+        }
+        List<List<String>> fields = new ArrayList<>();
+        fields.add(List.of("项目", blank(projectName, projectId)));
+        if (StringUtils.hasText(operatorName)) {
+            fields.add(List.of("发起人", operatorName));
+        }
+        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "开始推进项目", "blue", fields,
+                excerpt(goal, "项目已经从想法箱进入执行阶段。"),
+                "查看项目", links.open("/projects/" + projectId)));
+    }
+
     /**
      * 新建小记后在群里说一声。
      *

@@ -20,9 +20,11 @@ import cn.wayuwa.wao.domain.IdeaStage;
 import cn.wayuwa.wao.domain.IdeaTaskLinkEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
+import cn.wayuwa.wao.dto.CreateProjectRequest;
 import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.IdeaDto;
 import cn.wayuwa.wao.dto.TaskDto;
+import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.mapper.AiTaskRunMapper;
 import cn.wayuwa.wao.mapper.IdeaArtifactMapper;
 import cn.wayuwa.wao.mapper.IdeaIterationMapper;
@@ -59,16 +61,17 @@ public class IdeaService {
     private final AiTaskRunMapper aiRuns;
     private final TaskService tasks;
     private final KnowledgeService knowledge;
+    private final ProjectService projectService;
     private final ObjectMapper json;
 
     public IdeaService(IdeaMapper ideas, IdeaArtifactMapper artifacts, IdeaTaskLinkMapper links,
             IdeaIterationMapper iterations, IdeaResearchRunMapper researchRuns, TaskMapper taskMapper,
             MemberMapper memberMapper, ProjectMapper projectMapper, AiTaskRunMapper aiRuns,
-            TaskService tasks, KnowledgeService knowledge, ObjectMapper json) {
+            TaskService tasks, KnowledgeService knowledge, ProjectService projectService, ObjectMapper json) {
         this.ideas = ideas; this.artifacts = artifacts; this.links = links; this.iterations = iterations;
         this.researchRuns = researchRuns; this.taskMapper = taskMapper; this.memberMapper = memberMapper;
         this.projectMapper = projectMapper; this.aiRuns = aiRuns;
-        this.tasks = tasks; this.knowledge = knowledge; this.json = json;
+        this.tasks = tasks; this.knowledge = knowledge; this.projectService = projectService; this.json = json;
     }
 
     /** 列出团队共享点子；查询参数由前端本地组合筛选，避免首版引入分页分歧。 */
@@ -235,6 +238,53 @@ public class IdeaService {
         }
         if (req.feedback() != null) e.setFeedback(req.feedback()); if (req.resultSummary() != null) e.setResultSummary(req.resultSummary());
         if (req.reportUrl() != null) e.setReportUrl(req.reportUrl()); iterations.updateById(e); return iteration(e);
+    }
+
+    /**
+     * 把存量独立点子无损归并到项目：不搬任务、不移动文档，只补项目关联并生成历史档案。
+     */
+    @Transactional
+    public ProjectDto convertToProject(String ideaId, IdeaDto.ConvertRequest req, String memberId) {
+        IdeaEntity entity = require(ideaId);
+        String actor = actor(memberId);
+        IdeaDto snapshot = toDto(entity);
+        ProjectDto target = conversionTarget(entity, snapshot, req == null ? null : req.projectId(), actor);
+
+        DocDto archive = knowledge.ensureIdeaArchive(target, snapshot, actor);
+        for (IdeaDto.Artifact artifact : snapshot.artifacts()) {
+            if (!"LEGACY_ARCHIVE".equals(artifact.kind())) {
+                knowledge.linkDocToProject(artifact.docId(), target.id());
+            }
+        }
+        if (snapshot.artifacts().stream().noneMatch(a -> "LEGACY_ARCHIVE".equals(a.kind()))) {
+            addArtifact(entity, "LEGACY_ARCHIVE", archive.id(), archive.title(), actor);
+        }
+        entity.setProjectId(target.id());
+        entity.setDetailJson(write(withActivity(detail(entity), activity("已归并到项目「" + target.name() + "」", actor))));
+        entity.setUpdatedAt(now());
+        ideas.updateById(entity);
+        return target;
+    }
+
+    private ProjectDto conversionTarget(IdeaEntity idea, IdeaDto snapshot, String requestedProjectId, String actor) {
+        if (StringUtils.hasText(requestedProjectId)) {
+            return projectService.get(requestedProjectId.trim(), actor);
+        }
+        if (StringUtils.hasText(idea.getProjectId())) {
+            return projectService.get(idea.getProjectId(), actor);
+        }
+        List<TaskEntity> linkedTasks = snapshot.tasks().stream().map(IdeaDto.TaskLink::taskId)
+                .map(taskMapper::selectById).filter(java.util.Objects::nonNull).toList();
+        Set<String> taskProjects = linkedTasks.stream().map(TaskEntity::getProjectId)
+                .filter(StringUtils::hasText).collect(java.util.stream.Collectors.toSet());
+        boolean everyTaskBelongsToAProject = linkedTasks.size() == snapshot.tasks().size()
+                && linkedTasks.stream().allMatch(task -> StringUtils.hasText(task.getProjectId()));
+        if (everyTaskBelongsToAProject && taskProjects.size() == 1) {
+            return projectService.get(taskProjects.iterator().next(), actor);
+        }
+        String goal = StringUtils.hasText(snapshot.targetOutcome()) ? snapshot.targetOutcome()
+                : StringUtils.hasText(snapshot.rawIdea()) ? snapshot.rawIdea() : snapshot.problem();
+        return projectService.create(new CreateProjectRequest(snapshot.title(), "career", goal, true, false), actor);
     }
 
     private void validateTransition(IdeaEntity e, String target, IdeaDto.TransitionRequest req) {

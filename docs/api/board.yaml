@@ -43,6 +43,10 @@ paths:
     post: { summary: 记录一轮任务和 AI Run 迭代, responses: { '200': { description: 已创建迭代 } } }
   /ideas/{ideaId}/iterations/{iterationId}:
     patch: { summary: 保存迭代结果和人工反馈, responses: { '200': { description: 已更新迭代 } } }
+  /ideas/{ideaId}/convert-to-project:
+    post:
+      summary: 把存量独立点子无损归并到项目并生成历史文档
+      responses: { '200': { description: 归并后的项目 }, '404': { description: 点子或指定项目不存在 } }
   /workspaces:
     get:
       summary: 按最近更新时间列出当前成员自己的工作空间
@@ -308,6 +312,16 @@ paths:
       responses:
         '200': { description: OK }
         '404': { description: 不存在（code=40400） }
+  /projects/{id}/start:
+    post:
+      summary: 首次明确开始推进项目；状态与团队通知均幂等
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: 已进入进行中或返回既有推进状态 }, '404': { description: 项目不存在或不可见 } }
+  /projects/{id}/brief-doc:
+    post:
+      summary: 幂等创建或返回项目说明文档，首次调用时才创建项目知识库
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: 项目说明文档 }, '404': { description: 项目不存在或不可见 } }
   /tasks:
     get:
       summary: 任务列表（跨项目）
@@ -1242,7 +1256,7 @@ components:
         name: { type: string }
         icon: { type: string, description: remixicon 类名，如 ri-stack-line }
         area: { type: string }
-        status: { type: string, enum: [进行中, 有风险, 规划中, 已完成] }
+        status: { type: string, enum: [进行中, 有风险, 规划中, 已完成, 已搁置] }
         health: { type: string }
         progress: { type: integer }
         owner: { type: string }
@@ -1416,13 +1430,14 @@ components:
         area: { type: string }
         goal: { type: string }
         visAll: { type: boolean }
+        announce: { type: boolean, default: true, description: false 时静默收进想法箱，首次开始推进时再通知团队 }
     PatchProjectRequest:
       type: object
       description: 空字段不改
       properties:
         name: { type: string }
         area: { type: string }
-        status: { type: string, enum: [进行中, 有风险, 规划中, 已完成] }
+        status: { type: string, enum: [进行中, 有风险, 规划中, 已完成, 已搁置] }
         goal: { type: string }
         icon: { type: string }
         notifyEnabled: { type: boolean, description: 通知开关；null 表示不改 }

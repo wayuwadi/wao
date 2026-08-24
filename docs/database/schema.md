@@ -6,6 +6,8 @@
 
 `idea` 是独立聚合根：可查询列保存标题、P0–P2、八阶段、创建人、负责人和可选项目，`detail_json` 保存阶段表单与只追加活动时间线。`idea_artifact` 以 `kind + doc_id` 关联原生知识文档；`idea_task_link` 用唯一 `(idea_id, task_id)` 建立不拥有任务生命周期的关系；`idea_iteration` 保存每轮目标、验收、AI Run、结果和人工反馈；`idea_research_run` 是与开发型 `ai_run` 隔离的研究队列，使用 claim token 和终态 CAS。所有子表随点子级联删除，但产品接口不提供无说明删除启动后点子的能力。
 
+自 ADR-107 起该域只承担存量历史兼容：新“点子”直接创建 `规划中` 项目。归并时旧记录不删除，`LEGACY_ARCHIVE` 资产指向项目知识库中的历史文档，原资产只补项目出链而不移动。
+
 ## 设计取舍：关系列 + JSON 文档（混合）
 
 项目与任务是聚合根，含大量可变长嵌套结构（里程碑、趋势、阻塞、动态、步骤、子任务、评论、自定义属性…）。本轮采取**混合建模**：
@@ -62,7 +64,7 @@ erDiagram
 | id | VARCHAR(32) PK | 项目 id |
 | name | VARCHAR(128) | 名称 |
 | area | VARCHAR(32) FK→area | 所属领域 |
-| status | VARCHAR(16) | 进行中/有风险/规划中/已完成 |
+| status | VARCHAR(16) | 进行中/有风险/规划中/已完成/已搁置；任务与 AI Run 不自动改变项目终态 |
 | health | VARCHAR(16) | 良好/需要关注/风险 |
 | progress | INT | 0–100 |
 | owner_id | VARCHAR(32) FK→member | 负责人 |
@@ -72,7 +74,7 @@ erDiagram
 | updated_label | VARCHAR(32) | “26 分钟前”等展示文案 |
 | goal | VARCHAR(512) | 一句话目标 |
 | notify_enabled | TINYINT(1) NOT NULL DEFAULT 1 | 这个项目的动静是否发飞书群（V36）；关掉后新建任务、状态变化、新增子任务、评论与 AI 执行的卡片都不发，全局 webhook 开关仍然一票否决 |
-| detail_json | JSON | members[], milestones[], msDates[], trend[], blockers[], docs[], files[], activity[], icon, taskGroups[]（任务分组，最多 6 个） |
+| detail_json | JSON | members[], milestones[], msDates[], trend[], blockers[], docs[], files[], activity[], icon, taskGroups[]（任务分组，最多 6 个）、startedAt（首次明确推进时间，保证通知幂等） |
 
 ### task（任务）
 | 列 | 类型 | 说明 |

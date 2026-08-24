@@ -45,7 +45,7 @@ const projGroups = computed(() => {
       .map((a) => ({ label: a.name, dot: a.color, items: list.filter((p) => p.area === a.id) }))
       .filter((g) => g.items.length)
   } else if (groupBy.value === '按状态') {
-    groups = (['进行中', '有风险', '规划中', '已完成'] as ProjectStatus[])
+    groups = (['进行中', '有风险', '规划中', '已完成', '已搁置'] as ProjectStatus[])
       .map((st) => ({ label: st, dot: statusMeta(st).color, items: list.filter((p) => p.status === st) }))
       .filter((g) => g.items.length)
   } else {
@@ -58,7 +58,7 @@ const projGroups = computed(() => {
 })
 
 const statusChips = computed(() =>
-  (['全部', '进行中', '有风险', '规划中', '已完成'] as const).map((st) => ({
+  (['全部', '进行中', '有风险', '规划中', '已完成', '已搁置'] as const).map((st) => ({
     label: st,
     count: data.projects.filter((p) => (st === '全部' ? true : p.status === st)).length,
     on: statusF.value === st,

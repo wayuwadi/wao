@@ -17,12 +17,21 @@ public record ProjectDetail(
         List<Activity> activity,
         String icon,
         /** 项目自定义的任务分组（分组视图），最多 6 个；老项目为空。 */
-        List<TaskGroupDto> taskGroups) {
+        List<TaskGroupDto> taskGroups,
+        /** 首次明确开始推进的时间；用于保证团队通知只发送一次。 */
+        String startedAt) {
 
     /** 兼容尚未引入任务分组的既有调用。 */
     public ProjectDetail(List<String> members, List<Milestone> milestones, List<String> msDates,
             List<Integer> trend, List<Blocker> blockers, List<String> docs, List<FileRef> files,
             List<Activity> activity, String icon) {
         this(members, milestones, msDates, trend, blockers, docs, files, activity, icon, null);
+    }
+
+    /** 兼容尚未记录首次推进时间的既有调用。 */
+    public ProjectDetail(List<String> members, List<Milestone> milestones, List<String> msDates,
+            List<Integer> trend, List<Blocker> blockers, List<String> docs, List<FileRef> files,
+            List<Activity> activity, String icon, List<TaskGroupDto> taskGroups) {
+        this(members, milestones, msDates, trend, blockers, docs, files, activity, icon, taskGroups, null);
     }
 }

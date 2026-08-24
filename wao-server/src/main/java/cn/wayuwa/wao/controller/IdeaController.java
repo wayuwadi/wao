@@ -4,6 +4,7 @@ import java.util.List;
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.IdeaDto;
+import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.service.IdeaResearchService;
 import cn.wayuwa.wao.service.IdeaService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,4 +33,5 @@ public class IdeaController {
     @GetMapping("/{id}/iterations") public ApiResponse<List<IdeaDto.Iteration>> iterations(@PathVariable String id){return ApiResponse.ok(ideas.get(id).iterations());}
     @PostMapping("/{id}/iterations") public ApiResponse<IdeaDto.Iteration> iteration(@PathVariable String id,@Valid @RequestBody IdeaDto.IterationRequest req,HttpServletRequest h){return ApiResponse.ok(ideas.createIteration(id,req,current.idOr(h,"wg")));}
     @PatchMapping("/{id}/iterations/{iterationId}") public ApiResponse<IdeaDto.Iteration> patchIteration(@PathVariable String id,@PathVariable String iterationId,@RequestBody IdeaDto.IterationPatchRequest req){return ApiResponse.ok(ideas.patchIteration(id,iterationId,req));}
+    @PostMapping("/{id}/convert-to-project") public ApiResponse<ProjectDto> convert(@PathVariable String id,@RequestBody(required=false) IdeaDto.ConvertRequest req,HttpServletRequest h){return ApiResponse.ok(ideas.convertToProject(id,req,current.idOr(h,"wg")));}
 }

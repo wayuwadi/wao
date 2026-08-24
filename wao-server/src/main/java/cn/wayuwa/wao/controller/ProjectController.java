@@ -7,6 +7,8 @@ import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.dto.CreateProjectRequest;
 import cn.wayuwa.wao.dto.PatchProjectRequest;
 import cn.wayuwa.wao.dto.ProjectDto;
+import cn.wayuwa.wao.dto.DocDto;
+import cn.wayuwa.wao.service.KnowledgeService;
 import cn.wayuwa.wao.service.ProjectService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,10 +28,26 @@ public class ProjectController {
 
     private final ProjectService projectService;
     private final CurrentMember currentMember;
+    private final KnowledgeService knowledgeService;
 
-    public ProjectController(ProjectService projectService, CurrentMember currentMember) {
+    public ProjectController(ProjectService projectService, CurrentMember currentMember,
+            KnowledgeService knowledgeService) {
         this.projectService = projectService;
         this.currentMember = currentMember;
+        this.knowledgeService = knowledgeService;
+    }
+
+    /** 首次明确开始推进；重复调用不会重复发通知。 */
+    @PostMapping("/{id}/start")
+    public ApiResponse<ProjectDto> start(@PathVariable String id, HttpServletRequest http) {
+        return ApiResponse.ok(projectService.start(id, currentMember.idOr(http, "wg")));
+    }
+
+    /** 幂等创建或返回项目说明文档；不预建空知识库。 */
+    @PostMapping("/{id}/brief-doc")
+    public ApiResponse<DocDto> briefDoc(@PathVariable String id, HttpServletRequest http) {
+        String memberId = currentMember.idOr(http, "wg");
+        return ApiResponse.ok(knowledgeService.ensureProjectBrief(projectService.get(id, memberId), memberId));
     }
 
     @GetMapping

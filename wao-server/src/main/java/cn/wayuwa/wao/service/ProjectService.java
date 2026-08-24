@@ -21,13 +21,15 @@ import cn.wayuwa.wao.mapper.ProjectMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /** 项目读取与创建服务。富嵌套字段在 detail_json 与 DTO 间转换。 */
 @Service
 public class ProjectService {
 
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ProjectService.class);
-    private static final Set<String> PROJECT_STATUSES = Set.of("规划中", "进行中", "有风险", "已完成");
+    private static final Set<String> PROJECT_STATUSES = Set.of("规划中", "进行中", "有风险", "已完成", "已搁置");
     /** 一个项目最多能建的任务分组数。 */
     public static final int MAX_TASK_GROUPS = 6;
     /** 分组名长度上限，防止一行名字把分组头撑破。 */
@@ -122,7 +124,36 @@ public class ProjectService {
                 "ri-stack-line", List.of());
         e.setDetailJson(write(detail));
         projectMapper.insert(e);
-        announceCreated(e, owner);
+        if (!Boolean.FALSE.equals(req.announce())) {
+            announceCreated(e, owner);
+        }
+        return toDto(e);
+    }
+
+    /**
+     * 首次明确开始推进项目：状态进入进行中并且只通知一次；重复调用只返回当前项目。
+     *
+     * @param id 项目 id
+     * @param memberId 当前成员
+     * @return 开始推进后的项目
+     */
+    @Transactional
+    public ProjectDto start(String id, String memberId) {
+        ProjectEntity e = projectMapper.selectByIdForUpdate(id);
+        if (e == null || !visibleTo(e, memberId)) {
+            throw new NotFoundException("项目不存在：" + id);
+        }
+        ProjectDetail d = parse(e.getDetailJson());
+        if (StringUtils.hasText(d.startedAt()) || !"规划中".equals(e.getStatus())) {
+            return toDto(e);
+        }
+        String now = OffsetDateTime.now(ZoneId.of("Asia/Shanghai")).toString();
+        e.setStatus("进行中");
+        e.setUpdatedLabel("刚刚");
+        e.setDetailJson(write(new ProjectDetail(d.members(), d.milestones(), d.msDates(), d.trend(),
+                d.blockers(), d.docs(), d.files(), d.activity(), d.icon(), d.taskGroups(), now)));
+        projectMapper.updateById(e);
+        announceStarted(e, memberId);
         return toDto(e);
     }
 
@@ -134,6 +165,17 @@ public class ProjectService {
             taskNotifier.notifyProjectCreated(entity.getId(), entity.getName(), ownerName, entity.getGoal());
         } catch (RuntimeException ex) {
             LOG.warn("新建项目的飞书通知发送失败：{}", ex.getMessage());
+        }
+    }
+
+    /** 首次开始推进时同步团队；通知失败不回滚项目状态。 */
+    private void announceStarted(ProjectEntity entity, String memberId) {
+        try {
+            String memberName = members.list().stream().filter(m -> m.id().equals(memberId))
+                    .map(m -> m.name()).findFirst().orElse(memberId);
+            taskNotifier.notifyProjectStarted(entity.getId(), entity.getName(), memberName, entity.getGoal());
+        } catch (RuntimeException ex) {
+            LOG.warn("项目开始推进通知发送失败：{}", ex.getMessage());
         }
     }
 
@@ -172,7 +214,7 @@ public class ProjectService {
             List<TaskGroupDto> groups = req.taskGroups() == null
                     ? d.taskGroups() : normalizeGroups(req.taskGroups());
             e.setDetailJson(write(new ProjectDetail(d.members(), d.milestones(), d.msDates(), d.trend(),
-                    d.blockers(), d.docs(), d.files(), d.activity(), icon, groups)));
+                    d.blockers(), d.docs(), d.files(), d.activity(), icon, groups, d.startedAt())));
         }
         e.setUpdatedLabel("刚刚");
         projectMapper.updateById(e);
@@ -269,12 +311,12 @@ public class ProjectService {
 
     private ProjectDetail parse(String detailJson) {
         if (detailJson == null || detailJson.isBlank()) {
-            return new ProjectDetail(null, null, null, null, null, null, null, null, null);
+            return new ProjectDetail(null, null, null, null, null, null, null, null, null, null, null);
         }
         try {
             return json.readValue(detailJson, ProjectDetail.class);
         } catch (JsonProcessingException ex) {
-            return new ProjectDetail(null, null, null, null, null, null, null, null, null);
+            return new ProjectDetail(null, null, null, null, null, null, null, null, null, null, null);
         }
     }
 
