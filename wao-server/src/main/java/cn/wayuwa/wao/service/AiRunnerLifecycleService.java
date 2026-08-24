@@ -11,7 +11,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.springframework.stereotype.Service;
 
-/** 追踪 Runner 在线状态边沿，并且只在上线/离线发生变化时通知一次。 */
+/** 追踪 Runner 在线状态边沿；自动离线和恢复不发送群通知。 */
 @Service
 public class AiRunnerLifecycleService {
 
@@ -25,18 +25,18 @@ public class AiRunnerLifecycleService {
         this.notifier = notifier;
     }
 
-    /** 心跳恢复时原子地把离线状态切为在线，并发送一次恢复通知。 */
+    /** 心跳恢复时原子地把离线状态切为在线，不发送群通知。 */
     public void markOnline(String runnerId) {
         AiRunnerNodeEntity runner = runnerMapper.selectById(runnerId);
         if (runner == null || !Boolean.FALSE.equals(runner.getOnlineState())) return;
-        int changed = runnerMapper.update(null, new UpdateWrapper<AiRunnerNodeEntity>()
+        // VPN、休眠和日常断网都会造成正常的心跳恢复，只更新页面状态，不打扰群聊。
+        runnerMapper.update(null, new UpdateWrapper<AiRunnerNodeEntity>()
                 .eq("id", runnerId)
                 .eq("online_state", false)
                 .set("online_state", true));
-        if (changed == 1) notify(runner, true, LocalDateTime.now());
     }
 
-    /** 扫描超过两分钟没有心跳的在线节点，原子切换并发送一次离线通知。 */
+    /** 扫描超过两分钟没有心跳的在线节点，原子切换状态但不发送群通知。 */
     public int detectOffline(LocalDateTime now) {
         LocalDateTime cutoff = now.minusMinutes(OFFLINE_AFTER_MINUTES);
         List<AiRunnerNodeEntity> stale = runnerMapper.selectList(new QueryWrapper<AiRunnerNodeEntity>()
@@ -51,7 +51,6 @@ public class AiRunnerLifecycleService {
                     .set("online_state", false));
             if (updated == 1) {
                 changed++;
-                notify(runner, false, now);
             }
         }
         return changed;
@@ -77,17 +76,4 @@ public class AiRunnerLifecycleService {
                 "查看执行电脑", SITE));
     }
 
-    private void notify(AiRunnerNodeEntity runner, boolean online, LocalDateTime at) {
-        String engines = runner.getEngines() == null || runner.getEngines().isBlank()
-                ? "未上报" : runner.getEngines().replace(",", "、");
-        notifier.notifyCard(new FeishuWebhookNotifier.Card(
-                online ? "AI 执行电脑已上线" : "AI 执行电脑已离线",
-                online ? "green" : "red",
-                List.of(
-                        List.of("电脑", runner.getName()),
-                        List.of("AI 工具", engines),
-                        List.of(online ? "上线时间" : "判定时间", at.toString().replace('T', ' '))),
-                online ? "心跳已经恢复，可以继续领取 AI 任务。" : "超过 2 分钟没有收到心跳，系统会继续等待计划任务或远程唤醒恢复。",
-                "查看执行电脑", SITE));
-    }
 }
