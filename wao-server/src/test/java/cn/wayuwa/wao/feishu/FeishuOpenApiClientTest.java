@@ -2,12 +2,16 @@ package cn.wayuwa.wao.feishu;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -18,6 +22,25 @@ class FeishuOpenApiClientTest {
     private static final String MESSAGES_URL = BASE_URL
             + "/open-apis/im/v1/messages?container_id_type=chat&container_id=oc_chat"
             + "&start_time=100&end_time=200&sort_type=ByCreateTimeAsc&page_size=50";
+
+    @Test
+    void addsReactionToTheOriginalMessage() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_source/reactions"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer token-test"))
+                .andExpect(content().json("{\"reaction_type\":{\"emoji_type\":\"DONE\"}}"))
+                .andRespond(withSuccess("""
+                        {"code":0,"msg":"success","data":{"reaction_id":"reaction-1",
+                         "reaction_type":{"emoji_type":"DONE"}}}
+                        """, MediaType.APPLICATION_JSON));
+
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+
+        client.addMessageReaction("token-test", "om_source", "DONE");
+        server.verify();
+    }
 
     @Test
     void rejectsMaxPageResponseWhenFeishuStillHasMoreMessages() {

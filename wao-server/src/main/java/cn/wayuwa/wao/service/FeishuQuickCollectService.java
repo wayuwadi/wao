@@ -22,10 +22,8 @@ import cn.wayuwa.wao.dto.FeishuQuickCollectConfigDto;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.SaveQuickCollectConfigRequest;
 import cn.wayuwa.wao.dto.TaskDto;
-import cn.wayuwa.wao.feishu.FeishuAppLinks;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
-import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
 import cn.wayuwa.wao.mapper.FeishuQuickCollectEventMapper;
@@ -65,8 +63,6 @@ public class FeishuQuickCollectService {
 
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
-    private final FeishuWebhookNotifier notifier;
-    private final FeishuAppLinks links;
     private final TaskService tasks;
     private final ProjectService projects;
     private final AccountMapper accounts;
@@ -75,13 +71,11 @@ public class FeishuQuickCollectService {
     private final ObjectMapper json;
     private final NotificationFeedbackService feedback;
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
-            FeishuWebhookNotifier notifier, FeishuAppLinks links, TaskService tasks, ProjectService projects,
-            AccountMapper accounts, AccountIdentityMapper identities, FeishuQuickCollectEventMapper events,
-            ObjectMapper json, NotificationFeedbackService feedback) {
+            TaskService tasks, ProjectService projects, AccountMapper accounts,
+            AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ObjectMapper json,
+            NotificationFeedbackService feedback) {
         this.settings = settings;
         this.feishu = feishu;
-        this.notifier = notifier;
-        this.links = links;
         this.tasks = tasks;
         this.projects = projects;
         this.accounts = accounts;
@@ -203,31 +197,25 @@ public class FeishuQuickCollectService {
         }
         String type = message.path("message_type").asText("");
         if ("audio".equals(type)) {
-            reply(chatId, FeishuWebhookNotifier.Card.simple("这条语音我记不下来", "orange",
-                    "请长按语音条用飞书的「转文字」发一遍，或者直接用语音输入发文字，我就能建任务了。"));
+            react(messageId, "ERROR");
             finish(eventKey, "IGNORED", "TASK", null, null);
             return;
         }
         CaptureText capture = captureText(readableText(type, message));
         if (!StringUtils.hasText(capture.content())) {
-            reply(chatId, FeishuWebhookNotifier.Card.simple("还差一句具体内容", "orange",
-                    "可以说「记录任务：整理下周方案」、「记录想法：做一个每日面板」，或直接 @机器人 说内容。"));
+            react(messageId, "ERROR");
             finish(eventKey, "REJECTED", capture.kind(), null, "EMPTY_CONTENT");
             return;
         }
         String memberId = senderMemberId(event.path("sender"));
         if (!StringUtils.hasText(memberId)) {
-            reply(chatId, new FeishuWebhookNotifier.Card(
-                    "先绑定飞书账号", "orange", List.of(),
-                    "我不知道这条内容应该归到谁的个人任务列表。请先用飞书登录 WAO 完成绑定，然后重新 @ 我。",
-                    "去 WAO 绑定", links.open("/login")));
+            react(messageId, "ERROR");
             finish(eventKey, "REJECTED", capture.kind(), null, "SENDER_NOT_BOUND");
             return;
         }
         ProjectDto project = targetProject(memberId);
         if (project == null) {
-            reply(chatId, FeishuWebhookNotifier.Card.simple("还没有可用的项目", "red",
-                    "请先在 WAO 里建一个项目，或在「设置 → 飞书」里指定快速收集的落点项目。"));
+            react(messageId, "ERROR");
             finish(eventKey, "REJECTED", capture.kind(), null, "NO_PROJECT");
             return;
         }
@@ -236,19 +224,10 @@ public class FeishuQuickCollectService {
                     memberId, capture.sourceTag());
             finish(eventKey, "CREATED", capture.kind(), task.id(), null);
             log.info("群聊个人收集：已创建任务 {}（项目 {}）", task.id(), project.id());
-            reply(chatId, new FeishuWebhookNotifier.Card(
-                    "已加入你的任务列表", "blue",
-                    List.of(
-                            List.of("归属", "你（发言人）"),
-                            List.of("项目", project.name()),
-                            List.of("任务", task.title()),
-                            List.of("来源", capture.sourceTag())),
-                    "这是未排期待办，会放在「稍后」；点开后可以再补充日期和细节。",
-                    "打开任务", links.taskUrl(project.id(), task.id())));
+            react(messageId, "DONE");
         } catch (RuntimeException ex) {
             finish(eventKey, "FAILED", capture.kind(), null, abbreviated(ex.getMessage()));
-            reply(chatId, FeishuWebhookNotifier.Card.simple("这次没有记成", "red",
-                    "WAO 创建任务时遇到错误，请稍后重新 @ 我发一次。"));
+            react(messageId, "ERROR");
             throw ex;
         }
     }
@@ -421,19 +400,20 @@ public class FeishuQuickCollectService {
         return account != null && StringUtils.hasText(account.getMemberId()) ? account.getMemberId() : null;
     }
 
-    /** 回执优先回到事件发生的那个群；应用凭据没配好时退回全局 webhook。 */
-    private void reply(String chatId, FeishuWebhookNotifier.Card card) {
+    /** 只给原消息加表情回执；失败时记日志，不向群内补发卡片或 Webhook。 */
+    private void react(String messageId, String emojiType) {
+        if (!StringUtils.hasText(messageId)) {
+            return;
+        }
         try {
             String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
             String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
-            if (StringUtils.hasText(appId) && StringUtils.hasText(appSecret) && StringUtils.hasText(chatId)) {
-                feishu.sendCard(feishu.tenantAccessToken(appId, appSecret), chatId, card);
-                return;
+            if (StringUtils.hasText(appId) && StringUtils.hasText(appSecret)) {
+                feishu.addMessageReaction(feishu.tenantAccessToken(appId, appSecret), messageId, emojiType);
             }
         } catch (RuntimeException ex) {
-            log.warn("群聊快速收集回执发送失败，回落 webhook：{}", ex.getMessage());
+            log.warn("群聊快速收集表情回执失败：{}", ex.getMessage());
         }
-        notifier.notifyCard(card);
     }
 
     /** 配置过 Verification Token 时才校验；没配就跳过（飞书那边也可以不开）。 */

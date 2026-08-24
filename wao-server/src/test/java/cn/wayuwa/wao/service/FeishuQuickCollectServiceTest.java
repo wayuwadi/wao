@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -22,17 +23,15 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import cn.wayuwa.wao.common.BadRequestException;
-import cn.wayuwa.wao.auth.FeishuLoginProperties;
 import cn.wayuwa.wao.domain.AccountEntity;
 import cn.wayuwa.wao.domain.AccountIdentityEntity;
 import cn.wayuwa.wao.domain.FeishuQuickCollectEventEntity;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.TaskDto;
-import cn.wayuwa.wao.feishu.FeishuAppLinks;
+import cn.wayuwa.wao.feishu.FeishuApiException;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMention;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
-import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
 import cn.wayuwa.wao.mapper.FeishuQuickCollectEventMapper;
@@ -44,18 +43,14 @@ class FeishuQuickCollectServiceTest {
 
     private final SettingService settings = mock(SettingService.class);
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
-    private final FeishuWebhookNotifier notifier = mock(FeishuWebhookNotifier.class);
     private final TaskService tasks = mock(TaskService.class);
     private final ProjectService projects = mock(ProjectService.class);
     private final AccountMapper accounts = mock(AccountMapper.class);
     private final AccountIdentityMapper identities = mock(AccountIdentityMapper.class);
     private final FeishuQuickCollectEventMapper events = mock(FeishuQuickCollectEventMapper.class);
     private final NotificationFeedbackService feedback = mock(NotificationFeedbackService.class);
-    private final FeishuAppLinks links = new FeishuAppLinks(
-            new FeishuLoginProperties(false, "", "", "", "", "https://open.feishu.cn"));
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
-            settings, feishu, notifier, links, tasks, projects, accounts, identities, events,
-            new ObjectMapper(), feedback);
+            settings, feishu, tasks, projects, accounts, identities, events, new ObjectMapper(), feedback);
 
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);
@@ -106,6 +101,32 @@ class FeishuQuickCollectServiceTest {
 
         verify(tasks).createFromChat(eq("p1"), eq("做一个群里 @ 机器人就能建任务的功能"),
                 eq("做一个群里 @ 机器人就能建任务的功能"), eq("wd"), eq(FeishuQuickCollectService.SOURCE_TAG));
+    }
+
+    @Test
+    void successfulCaptureAddsDoneReactionWithoutSendingAGroupCard() {
+        enabled();
+        reactionsEnabled();
+
+        service.handleEvent(message("ev-reaction", "text",
+                "{\\\"text\\\":\\\"@_user_1 记录任务：整理方案\\\"}"));
+
+        verify(feishu).addMessageReaction("token", "om_ev-reaction", "DONE");
+        verify(feishu, never()).sendCard(any(), any(), any());
+    }
+
+    @Test
+    void reactionFailureDoesNotUndoTheCreatedTask() {
+        enabled();
+        reactionsEnabled();
+        doThrow(new FeishuApiException("表情回执失败"))
+                .when(feishu).addMessageReaction("token", "om_ev-reaction-failed", "DONE");
+
+        service.handleEvent(message("ev-reaction-failed", "text",
+                "{\\\"text\\\":\\\"@_user_1 记录任务：整理方案\\\"}"));
+
+        verify(tasks).createFromChat("p1", "整理方案", "整理方案", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
     }
 
     @Test
@@ -162,11 +183,12 @@ class FeishuQuickCollectServiceTest {
     @Test
     void unboundSenderGetsBindingGuideAndNoTaskIsCreated() {
         enabled();
+        reactionsEnabled();
         when(identities.findByProviderSubject("feishu", "ou_sender")).thenReturn(null);
         service.handleEvent(message("ev-unbound", "text",
                 "{\\\"text\\\":\\\"@_user_1 记录任务：整理方案\\\"}"));
         verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
-        verify(notifier).notifyCard(any(FeishuWebhookNotifier.Card.class));
+        verify(feishu).addMessageReaction("token", "om_ev-unbound", "ERROR");
     }
 
     @Test
@@ -219,11 +241,12 @@ class FeishuQuickCollectServiceTest {
     @Test
     void voiceMessagesAreAnsweredWithAHintInsteadOfAFakeTranscript() {
         enabled();
+        reactionsEnabled();
 
         service.handleEvent(message("ev3", "audio", "{\\\"file_key\\\":\\\"f1\\\"}"));
 
         verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
-        verify(notifier).notifyCard(any(FeishuWebhookNotifier.Card.class));
+        verify(feishu).addMessageReaction("token", "om_ev3", "ERROR");
     }
 
     @Test
@@ -248,6 +271,12 @@ class FeishuQuickCollectServiceTest {
         service.handleEvent(message("ev-empty", "text",
                 "{\\\"text\\\":\\\"@_user_1 记录任务：\\\"}"));
         verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    private void reactionsEnabled() {
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_chat");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(feishu.tenantAccessToken("cli_chat", "secret")).thenReturn("token");
     }
 
     /** 一条 im.message.receive_v1 事件；content 是转义过的 JSON 字符串，与飞书原样一致。 */

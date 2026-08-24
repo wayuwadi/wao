@@ -384,7 +384,8 @@ public class TaskService {
      * 群聊快速收集：把飞书群里的一句话直接变成未排期任务。
      *
      * <p>标题取第一行、描述留全文，并打上「群聊快速收集」标签 —— 事后一眼能认出这条是
-     * 随口冒出来的想法，而不是正式排期的需求。
+     * 随口冒出来的想法，而不是正式排期的需求。这条入口已经在原飞书消息上回表情，
+     * 因此不再触发通用“新建任务” Webhook，避免同一操作再打扰群聊。
      *
      * @param projectId 落点项目 id
      * @param title     任务标题
@@ -414,7 +415,6 @@ public class TaskService {
                 List.of(), null);
         e.setDetailJson(write(detail));
         taskMapper.insert(e);
-        announceCreated(e, ownerId);
         return toDto(e);
     }
 
