@@ -148,6 +148,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-chat-history-line',
     path: '/chat-reviews',
   },
+  'system-reports': {
+    id: 'system-reports',
+    label: '系统报告',
+    icon: 'ri-bar-chart-box-line',
+    path: '/system-reports',
+  },
   memory: { id: 'memory', label: '个人记忆', icon: 'ri-brain-line', path: '/memory' },
   workspaces: {
     id: 'workspaces',
@@ -191,6 +197,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-chat-history-line',
       group: 'PUBLIC',
       order: 15,
+      visible: true,
+    },
+    {
+      id: 'system-reports',
+      label: '系统报告',
+      icon: 'ri-bar-chart-box-line',
+      group: 'PUBLIC',
+      order: 16,
       visible: true,
     },
     {
@@ -360,7 +374,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
 
 const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
-  { label: '公共', items: ['projects', 'ideas', 'skills', 'chat-reviews'] },
+  { label: '公共', items: ['projects', 'ideas', 'skills', 'chat-reviews', 'system-reports'] },
   { label: '个人', items: PERSONAL_ITEMS },
   { label: '工具', items: ['automation', 'files', 'games', 'request-monitoring'] },
 ]

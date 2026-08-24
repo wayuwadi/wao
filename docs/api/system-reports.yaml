@@ -1,0 +1,81 @@
+openapi: 3.0.3
+info:
+  title: WAO 系统周期报告 API
+  version: 0.1.0
+paths:
+  /api/system-reports:
+    get:
+      summary: 读取指定完整自然周期的系统数据快照
+      parameters:
+        - { name: period, in: query, schema: { type: string, enum: [DAY, WEEK, MONTH], default: DAY } }
+        - { name: anchorDate, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: 报告范围和快照；尚未产出时 generatedAt 为 null，统计与清单为空
+        "400": { description: 周期不支持，或请求的自然周期尚未结束 }
+  /api/system-reports/generate:
+    post:
+      summary: 用当前任务与 AI Run 持久化数据幂等补齐完整周期
+      parameters:
+        - { name: period, in: query, schema: { type: string, enum: [DAY, WEEK, MONTH], default: DAY } }
+        - { name: anchorDate, in: query, schema: { type: string, format: date } }
+      responses:
+        "200": { description: 已生成或更新的唯一周期快照 }
+        "400": { description: 周期不支持，或请求的自然周期尚未结束 }
+components:
+  schemas:
+    SystemPeriodicReport:
+      type: object
+      required: [period, periodKey, startDate, endDate, tasks, runs, coverageMessage]
+      properties:
+        period: { type: string, enum: [DAY, WEEK, MONTH] }
+        periodKey: { type: string }
+        periodLabel: { type: string }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        projectTotal: { type: integer, description: 生成时系统项目总数 }
+        taskTotal: { type: integer, description: 生成时系统任务总数 }
+        openTaskTotal: { type: integer, description: 生成时非已完成任务总数 }
+        aiRunTotal: { type: integer, description: 生成时系统 AI Run 总数 }
+        taskCreatedCount: { type: integer }
+        taskCompletedCount: { type: integer }
+        aiRunCount: { type: integer }
+        aiRunSuccessCount: { type: integer }
+        aiRunFailureCount: { type: integer }
+        aiRunMeteredCount: { type: integer, description: 真实回传 total_tokens 的周期运行数 }
+        totalTokens: { type: integer, format: int64 }
+        tasks:
+          type: array
+          items: { $ref: "#/components/schemas/SystemReportTask" }
+        runs:
+          type: array
+          items: { $ref: "#/components/schemas/SystemReportRun" }
+        generatedAt: { type: string, format: date-time, nullable: true }
+        coverageMessage: { type: string }
+    SystemReportTask:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        projectId: { type: string, nullable: true }
+        projectName: { type: string, nullable: true }
+        status: { type: string }
+        events:
+          type: array
+          items: { type: string, enum: [CREATED, COMPLETED] }
+        createdAt: { type: string, format: date-time, nullable: true }
+        completedAt: { type: string, format: date-time, nullable: true }
+    SystemReportRun:
+      type: object
+      properties:
+        id: { type: string }
+        taskId: { type: string }
+        taskTitle: { type: string, nullable: true }
+        projectId: { type: string }
+        projectName: { type: string, nullable: true }
+        engine: { type: string }
+        status: { type: string }
+        resultSummary: { type: string, nullable: true, description: 最多 500 字符的运行结果快照 }
+        totalTokens: { type: integer, format: int64, nullable: true }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }

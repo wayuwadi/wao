@@ -35,6 +35,8 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  system-report:
+    scheduler-enabled: false
   chat-review:
     # 大多数测试不创建 chat_review_run 表，禁止真实定时线程在后台吞掉缺表异常。
     processing-enabled: false
