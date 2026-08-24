@@ -2,6 +2,7 @@
 set -eu
 
 sh deploy/scripts/test-render-nginx-config.sh
+sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
 
 check_migration_versions() {
