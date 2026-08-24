@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -133,6 +134,7 @@ class TaskServiceTest {
         assertThat(dto.owner()).isEqualTo("wd");
         assertThat(dto.due()).isNull();
         assertThat(dto.custom()).extracting(cn.wayuwa.wao.dto.CustomProp::value).containsExactly("群聊快速收集");
+        verify(taskNotifier, never()).notifyTaskCreated(any(), any(), any(), any(), any(), any());
     }
 
     @Test

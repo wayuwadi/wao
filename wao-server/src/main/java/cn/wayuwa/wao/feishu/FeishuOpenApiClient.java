@@ -265,6 +265,19 @@ public class FeishuOpenApiClient {
     }
 
     /**
+     * 以当前机器人身份给一条消息添加表情回复。
+     *
+     * @param token tenant_access_token
+     * @param messageId 原消息 id
+     * @param emojiType 飞书表情类型，如 {@code DONE}
+     * @throws FeishuApiException 接口不可达或返回错误码时
+     */
+    public void addMessageReaction(String token, String messageId, String emojiType) {
+        post("/open-apis/im/v1/messages/{messageId}/reactions",
+                Map.of("reaction_type", Map.of("emoji_type", emojiType)), token, messageId);
+    }
+
+    /**
      * 获取当前应用机器人的 open_id，用于主动拉消息时精确判断被 @ 的是不是本机器人。
      *
      * @param token tenant_access_token
@@ -333,9 +346,10 @@ public class FeishuOpenApiClient {
         }
     }
 
-    private JsonNode post(String uri, Object body, String token) {
+    private JsonNode post(String uri, Object body, String token, Object... uriVariables) {
         try {
-            RestClient.RequestBodySpec spec = client.post().uri(uri).contentType(MediaType.APPLICATION_JSON);
+            RestClient.RequestBodySpec spec = client.post().uri(uri, uriVariables)
+                    .contentType(MediaType.APPLICATION_JSON);
             if (token != null) {
                 spec = spec.header("Authorization", "Bearer " + token);
             }
