@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -29,8 +30,18 @@ public class PersonalMemoryService {
             "preference", "responsibility", "plan", "decision", "context", "experience");
     private static final Set<String> MEDIA_TYPES = Set.of("text", "image", "audio", "video", "file");
     private final PersonalMemoryMapper mapper;
+    private final UnifiedMemoryService unified;
 
-    public PersonalMemoryService(PersonalMemoryMapper mapper) { this.mapper = mapper; }
+    @Autowired
+    public PersonalMemoryService(PersonalMemoryMapper mapper, UnifiedMemoryService unified) {
+        this.mapper = mapper;
+        this.unified = unified;
+    }
+
+    PersonalMemoryService(PersonalMemoryMapper mapper) {
+        this.mapper = mapper;
+        this.unified = null;
+    }
 
     /** 列出当前成员的记忆，可按关键词和分类筛选。 */
     public List<PersonalMemoryDto> list(String memberId, String query, String category) {
@@ -49,16 +60,19 @@ public class PersonalMemoryService {
     }
 
     /** 手工创建文字记忆。 */
+    @Transactional
     public PersonalMemoryDto createManualText(String memberId, String title, String content, String category) {
         return createText(memberId, title, content, category, "manual");
     }
 
     /** 由成员自己的 MCP 令牌创建 AI 采集的文字记忆。 */
+    @Transactional
     public PersonalMemoryDto createAiText(String memberId, String title, String content, String category) {
         return createText(memberId, title, content, category, "ai");
     }
 
     /** 上传一份真实多模态原件，并保存可检索的人工说明。 */
+    @Transactional
     public PersonalMemoryDto upload(String memberId, String title, String content, String category,
             MultipartFile file) {
         requireMember(memberId);
@@ -80,10 +94,13 @@ public class PersonalMemoryService {
         try { entity.setFileContent(file.getBytes()); }
         catch (IOException exception) { throw new BadRequestException("读取记忆文件失败，请重试"); }
         mapper.insert(entity);
+        if (unified != null) unified.mirrorPersonal(entity.getId(), memberId, category, resolvedTitle, note,
+                "human", entity.getFileName(), entity.getContentType(), entity.getByteSize(), entity.getFileContent());
         return dto(entity);
     }
 
     /** 修改当前成员的一条记忆，不替换已经归档的附件原件。 */
+    @Transactional
     public PersonalMemoryDto update(String memberId, String id, UpdatePersonalMemoryRequest request) {
         PersonalMemoryEntity entity = owned(memberId, id, false);
         validateCategory(request.category());
@@ -96,16 +113,21 @@ public class PersonalMemoryService {
         entity.setCategory(request.category());
         entity.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(entity);
+        if (unified != null) unified.mirrorPersonal(entity.getId(), memberId, entity.getCategory(), entity.getTitle(),
+                entity.getContent(), "ai".equals(entity.getCaptureMode()) ? "ai" : "human",
+                null, null, null, null);
         return dto(entity);
     }
 
     /** 删除当前成员的一条记忆及其附件原件。 */
+    @Transactional
     public void delete(String memberId, String id) {
         requireMember(memberId);
         int deleted = mapper.delete(new LambdaUpdateWrapper<PersonalMemoryEntity>()
                 .eq(PersonalMemoryEntity::getId, id)
                 .eq(PersonalMemoryEntity::getMemberId, memberId));
         if (deleted == 0) throw new NotFoundException("记忆不存在");
+        if (unified != null) unified.archive(memberId, id);
     }
 
     /** 读取当前成员的附件正文；访问他人的 id 统一按不存在处理。 */
@@ -164,6 +186,8 @@ public class PersonalMemoryService {
         if (safeContent.isEmpty()) throw new BadRequestException("记忆正文不能为空");
         PersonalMemoryEntity entity = base(memberId, safeTitle, safeContent, category, captureMode, "text");
         mapper.insert(entity);
+        if (unified != null) unified.mirrorPersonal(entity.getId(), memberId, category, safeTitle, safeContent,
+                "ai".equals(captureMode) ? "ai" : "human", null, null, null, null);
         return dto(entity);
     }
 

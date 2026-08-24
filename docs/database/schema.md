@@ -907,7 +907,11 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V83__idea_library.sql`：成员私有想法、处理快照和任务转化关系。
 - `V84__workday_rhythm_daily_dashboard.sql`：今日节奏设置、清单模板与日实例、每日文档绑定及通知去重。
 - `V85__feishu_personal_quick_capture.sql`：飞书 @机器人 个人任务收集事件的持久去重与结果记录（见 ADR-102）。
+- `V86__feishu_union_identity.sql`：保存跨飞书应用统一身份映射（见 ADR-104）。
+- `V87__http_request_metric.sql`：保存浏览器端 HTTP 请求体验指标。
+- `V88__system_periodic_report.sql`：保存系统日/周/月报告生成状态、快照与发布信息（见 ADR-109）。
+- `V89__unified_memory_center.sql`：建立个人、组织、项目共用的权威记忆文档、不可变版本、来源、附件、设备授权、outbox 与使用审计，并把旧个人/项目/共享记忆迁为已发布 v1（见 ADR-110）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
-V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V85 链路，
+V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
 并覆盖全局活动唯一抢占、lease、归档身份与同步 / scoped 文档 `PATCH` 的全局版本 CAS、树拖拽窄更新不回写正文或版本、AI 入队关联回滚和 DB-time 超时清理；Docker 不可用时显式跳过。

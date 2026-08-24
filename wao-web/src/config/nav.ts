@@ -154,7 +154,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-bar-chart-box-line',
     path: '/system-reports',
   },
-  memory: { id: 'memory', label: '个人记忆', icon: 'ri-brain-line', path: '/memory' },
+  memory: { id: 'memory', label: '记忆中心', icon: 'ri-brain-line', path: '/memories' },
   workspaces: {
     id: 'workspaces',
     label: '工作台',
@@ -257,7 +257,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     },
     {
       id: 'memory',
-      label: '个人记忆',
+      label: '记忆中心',
       icon: 'ri-brain-line',
       group: 'PERSONAL',
       order: 29,
