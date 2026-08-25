@@ -54,6 +54,8 @@ class DeploymentConfigTest {
 
     @Test
     void unifiedJenkinsPipelineBuildsAndDeploysAgentWithWao() throws IOException {
+        String pipeline = read("Jenkinsfile");
+        String changePlan = read("deploy/jenkins/ci-change-plan.sh");
         String backendBuild = read("deploy/jenkins/ci-backend-test.sh");
         String frontendBuild = read("deploy/jenkins/ci-frontend-build.sh");
         String rollout = read("deploy/jenkins/ci-deploy.sh");
@@ -61,10 +63,22 @@ class DeploymentConfigTest {
 
         assertThat(backendBuild)
                 .contains("-v \"$cache:/tmp/m2\"")
-                .contains("mvn -B -Dmaven.repo.local=/tmp/m2/repository test");
+                .contains("WAO_BACKEND_PROJECTS:-all")
+                .contains("-pl \"$maven_projects\" -am")
+                .contains("set -- \"$@\" test");
         assertThat(frontendBuild)
-                .contains("run_npm wao-web run test:unit -- --run")
-                .contains("run_npm agent-web run build");
+                .contains("wao-web|agent-web")
+                .contains("run_npm \"$project\" run test:unit -- --run")
+                .contains("run_npm \"$project\" run build");
+        assertThat(changePlan)
+                .contains("WAO_DEPLOY_REQUIRED=$deploy_required")
+                .contains("force_full_validation")
+                .contains("未登记路径一律回退全量");
+        assertThat(pipeline)
+                .contains("Parallel tests and frontend builds")
+                .contains("env.WAO_DEPLOY_REQUIRED == 'true'")
+                .contains("ci-frontend-build.sh wao-web")
+                .contains("ci-frontend-build.sh agent-web");
         assertThat(rollout)
                 .contains("agent-web/dist/.")
                 .contains("/var/www/wao-agent/dist");

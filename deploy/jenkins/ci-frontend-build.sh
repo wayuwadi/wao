@@ -4,6 +4,18 @@ set -eu
 cache="${JENKINS_HOME:-$HOME}/.npm"
 mkdir -p "$cache"
 
+project="${1:?frontend project is required}"
+run_tests="${2:?run-tests flag is required}"
+build_project="${3:?build flag is required}"
+case "$project" in wao-web|agent-web) ;; *) echo "Invalid frontend project: $project" >&2; exit 2 ;; esac
+case "$run_tests" in true|false) ;; *) echo "Invalid run-tests flag: $run_tests" >&2; exit 2 ;; esac
+case "$build_project" in true|false) ;; *) echo "Invalid build flag: $build_project" >&2; exit 2 ;; esac
+
+if [ "$run_tests" != true ] && [ "$build_project" != true ]; then
+  echo "$project skipped: no tests or production build are required."
+  exit 0
+fi
+
 run_npm() {
   project="$1"
   shift
@@ -18,9 +30,10 @@ run_npm() {
     npm "$@"
 }
 
-run_npm wao-web ci
-run_npm wao-web run test:unit -- --run
-run_npm wao-web run build
-run_npm agent-web ci
-run_npm agent-web run test:unit -- --run
-run_npm agent-web run build
+run_npm "$project" ci
+if [ "$run_tests" = true ]; then
+  run_npm "$project" run test:unit -- --run
+fi
+if [ "$build_project" = true ]; then
+  run_npm "$project" run build
+fi

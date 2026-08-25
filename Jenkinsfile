@@ -28,6 +28,11 @@ pipeline {
 
     environment {
         WAO_RUN_TEMP = "${WORKSPACE}@tmp/wao-${BUILD_NUMBER}"
+        WAO_DEPLOY_REQUIRED = 'true'
+        WAO_BACKEND_PROJECTS = 'all'
+        WAO_TEST_WAO_WEB = 'true'
+        WAO_TEST_AGENT_WEB = 'true'
+        WAO_TEST_AI_RUNNER = 'false'
         MASTER_HOST = 'linux2.wayuwa.cn'
         SLAVE_HOST = 'windows1.wayuwa.cn'
         CLOUD_HOST = '8.136.152.131'
@@ -60,23 +65,71 @@ pipeline {
 
         stage('Validate release inputs') {
             steps {
+                script {
+                    def planOutput = sh(
+                        script: 'deploy/jenkins/ci-change-plan.sh',
+                        returnStdout: true
+                    ).trim()
+                    planOutput.readLines().each { line ->
+                        def pair = line.split('=', 2)
+                        if (pair.size() != 2 || !(pair[0] ==~ /WAO_[A-Z_]+/)) {
+                            error("无法解析变更范围：${line}")
+                        }
+                        env[pair[0]] = pair[1]
+                    }
+                    echo "变更范围：${env.WAO_CHANGED_FILE_COUNT} 个文件；后端=${env.WAO_BACKEND_PROJECTS}；" +
+                        "WAO Web 测试=${env.WAO_TEST_WAO_WEB}；Agent Web 测试=${env.WAO_TEST_AGENT_WEB}；" +
+                        "生产发布=${env.WAO_DEPLOY_REQUIRED}"
+                }
                 sh 'deploy/jenkins/ci-validate.sh'
             }
         }
 
-        stage('Backend tests') {
-            steps {
-                sh 'deploy/jenkins/ci-backend-test.sh'
-            }
-        }
-
-        stage('Frontend tests and build') {
-            steps {
-                sh 'deploy/jenkins/ci-frontend-build.sh'
+        stage('Parallel tests and frontend builds') {
+            parallel {
+                stage('Backend tests') {
+                    when {
+                        expression { env.WAO_BACKEND_PROJECTS != 'none' }
+                    }
+                    steps {
+                        sh 'deploy/jenkins/ci-backend-test.sh'
+                    }
+                }
+                stage('WAO Web tests and build') {
+                    when {
+                        expression {
+                            env.WAO_TEST_WAO_WEB == 'true' || env.WAO_DEPLOY_REQUIRED == 'true'
+                        }
+                    }
+                    steps {
+                        sh 'deploy/jenkins/ci-frontend-build.sh wao-web "$WAO_TEST_WAO_WEB" "$WAO_DEPLOY_REQUIRED"'
+                    }
+                }
+                stage('Agent Web tests and build') {
+                    when {
+                        expression {
+                            env.WAO_TEST_AGENT_WEB == 'true' || env.WAO_DEPLOY_REQUIRED == 'true'
+                        }
+                    }
+                    steps {
+                        sh 'deploy/jenkins/ci-frontend-build.sh agent-web "$WAO_TEST_AGENT_WEB" "$WAO_DEPLOY_REQUIRED"'
+                    }
+                }
+                stage('AI Runner tests') {
+                    when {
+                        expression { env.WAO_TEST_AI_RUNNER == 'true' }
+                    }
+                    steps {
+                        sh 'python3 deploy/ai-runner/test_wao_ai_runner.py'
+                    }
+                }
             }
         }
 
         stage('Build immutable release') {
+            when {
+                expression { env.WAO_DEPLOY_REQUIRED == 'true' }
+            }
             steps {
                 sh 'deploy/jenkins/ci-package.sh'
             }
@@ -84,7 +137,7 @@ pipeline {
 
         stage('Deploy Windows, Linux and cloud') {
             when {
-                expression { params.DEPLOY_PRODUCTION }
+                expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' }
             }
             steps {
                 withCredentials([
@@ -115,7 +168,7 @@ pipeline {
 
         stage('Apply Jenkins controller configuration') {
             when {
-                expression { params.DEPLOY_PRODUCTION }
+                expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' }
             }
             steps {
                 sh 'deploy/jenkins/apply-controller-config.sh'
@@ -127,9 +180,11 @@ pipeline {
         success {
             script {
                 if (env.WAO_GIT_SHA) {
-                    def successDescription = params.DEPLOY_PRODUCTION
-                        ? 'Jenkins 构建与发布成功'
-                        : 'Jenkins 影子构建成功（未部署）'
+                    def successDescription = env.WAO_DEPLOY_REQUIRED != 'true'
+                        ? 'Jenkins 验证成功（无需生产发布）'
+                        : (params.DEPLOY_PRODUCTION
+                            ? 'Jenkins 构建与发布成功'
+                            : 'Jenkins 影子构建成功（未部署）')
                     withCredentials([usernamePassword(
                         credentialsId: 'wao-github-pat',
                         usernameVariable: 'GITHUB_USER',
@@ -142,7 +197,7 @@ pipeline {
                 }
             }
             sh 'WAO_PIPELINE_RESULT=success deploy/jenkins/notify-feishu.sh || true'
-            sh 'if [ "$DEPLOY_PRODUCTION" = true ]; then deploy/jenkins/cleanup-images.sh; fi'
+            sh 'if [ "$DEPLOY_PRODUCTION" = true ] && [ "$WAO_DEPLOY_REQUIRED" = true ]; then deploy/jenkins/cleanup-images.sh; fi'
         }
         failure {
             script {
