@@ -32,6 +32,17 @@ class AiTaskRunMapperSqlTest {
                 .contains("r.status IN ('queued', 'claimed', 'running')");
     }
 
+    @Test
+    void claimUsesQueuedStateAndPendingInputAsDatabaseCompareAndSetConditions() {
+        String claim = sql("claimQueuedRun", Map.of(
+                "runId", "ar1", "runnerId", "rn1", "pendingInput", "继续执行",
+                "progress", "正在启动", "claimedAt", java.time.LocalDateTime.now()));
+
+        assertThat(claim).contains("SET status = 'running'", "pending_input = NULL")
+                .contains("WHERE id = ? AND status = 'queued'")
+                .contains("pending_input = ?", "pending_input IS NULL AND ? IS NULL");
+    }
+
     private static String sql(String method, Map<String, Object> parameters) {
         return mybatis.getMappedStatement(AiTaskRunMapper.class.getName() + "." + method)
                 .getBoundSql(parameters).getSql().replaceAll("\\s+", " ").trim();

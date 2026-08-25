@@ -7,12 +7,32 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
 public interface AiTaskRunMapper extends BaseMapper<AiTaskRunEntity> {
+
+    /**
+     * 用数据库条件更新抢占一条排队运行，防止多 API 节点同时把同一次运行交给多个 Runner。
+     * 待续输入也参与比较，避免领取与用户补充并发时静默丢掉新输入。
+     */
+    @Update("""
+            UPDATE ai_task_run
+            SET status = 'running', runner_id = #{runnerId}, claimed_at = #{claimedAt},
+                started_at = #{claimedAt}, pending_input = NULL,
+                latest_progress = #{progress}, progress_updated_at = #{claimedAt}
+            WHERE id = #{runId} AND status = 'queued'
+              AND (pending_input = #{pendingInput}
+                   OR (pending_input IS NULL AND #{pendingInput} IS NULL))
+            """)
+    int claimQueuedRun(@Param("runId") String runId,
+            @Param("runnerId") String runnerId,
+            @Param("pendingInput") String pendingInput,
+            @Param("progress") String progress,
+            @Param("claimedAt") LocalDateTime claimedAt);
 
     /** 保存一次运行与一条任务的稳定顺序关系。 */
     @Insert("INSERT INTO ai_task_run_task (run_id, task_id, ord) VALUES (#{runId}, #{taskId}, #{ord})")
