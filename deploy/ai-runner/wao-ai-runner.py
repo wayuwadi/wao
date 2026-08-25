@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -385,10 +386,11 @@ def pair(api: WaoApi, args: argparse.Namespace, engines: list[str]) -> dict[str,
     return state
 
 
-def run(command: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
+def run(command: list[str], cwd: Path | None = None, check: bool = True,
+        environment: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         command, cwd=str(cwd) if cwd else None, text=True, encoding="utf-8", errors="replace",
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment,
         creationflags=windows_creation_flags(),
     )
     if check and result.returncode != 0:
@@ -497,7 +499,8 @@ def has_remote_default_branch(project_dir: Path, git_command: str, default_branc
     return result.returncode == 0
 
 
-def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_url: str) -> Path:
+def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_url: str,
+        git_environment: dict[str, str] | None = None) -> Path:
     project_dir = root / claim["workspaceDir"]
     if not (project_dir / ".git").exists():
         project_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -506,10 +509,12 @@ def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_u
             # 上一次克隆失败可能留下半个目录，git clone 会因为目录非空直接报错。
             shutil.rmtree(project_dir)
         # 主克隆不需要工作副本，只提供对象库和 worktree 元数据。
-        run([git_command, "clone", "--no-checkout", repo_url, str(project_dir)])
+        run([git_command, "clone", "--no-checkout", repo_url, str(project_dir)],
+            environment=git_environment)
     # 本机认证方式变了（比如从 HTTPS 换成 SSH）时，把已有仓库的 origin 一并纠正。
     run([git_command, "remote", "set-url", "origin", repo_url], cwd=project_dir, check=False)
-    run([git_command, "fetch", "--prune", "origin"], cwd=project_dir)
+    run([git_command, "fetch", "--prune", "origin"], cwd=project_dir,
+        environment=git_environment)
     run([git_command, "worktree", "prune"], cwd=project_dir)
     detach_primary_clone(project_dir, git_command)
     runs_root = root / ".wao-runs"
@@ -575,8 +580,11 @@ def find_github_cli() -> str | None:
 
 
 def build_cli_environment(git_command: str) -> tuple[dict[str, str], bool, str | None]:
-    """把本机 Git 凭据临时交给 AI CLI 子进程，不写配置文件或日志。"""
+    """把本机 Git 凭据临时交给工作区 Git 与 AI CLI，不写配置文件或日志。"""
     environment = os.environ.copy()
+    # Runner 运行在无终端的后台计划任务中，凭据探测本身也不能触发控制台或浏览器登录。
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    environment["GCM_INTERACTIVE"] = "Never"
     github_cli = find_github_cli()
     if github_cli:
         cli_dir = str(Path(github_cli).parent)
@@ -585,6 +593,7 @@ def build_cli_environment(git_command: str) -> tuple[dict[str, str], bool, str |
         [git_command, "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
         text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL, check=False,
+        env=environment,
         creationflags=windows_creation_flags(),
     )
     fields: dict[str, str] = {}
@@ -594,8 +603,20 @@ def build_cli_environment(git_command: str) -> tuple[dict[str, str], bool, str |
             if separator:
                 fields[key] = value
     token = fields.get("password", "").strip()
+    # 后台计划任务没有可交互终端。即使凭据失效也必须立即返回明确错误，不能让 Git 的
+    # askpass 脚本尝试读取 /dev/tty；有凭据时通过进程环境注入限定到 github.com 的请求头，
+    # 避免令牌出现在命令行、仓库配置或失败日志中。
     if token:
         environment["GH_TOKEN"] = token
+        username = fields.get("username", "x-access-token").strip() or "x-access-token"
+        basic = base64.b64encode(f"{username}:{token}".encode()).decode("ascii")
+        try:
+            config_index = max(0, int(environment.get("GIT_CONFIG_COUNT", "0")))
+        except ValueError:
+            config_index = 0
+        environment["GIT_CONFIG_COUNT"] = str(config_index + 1)
+        environment[f"GIT_CONFIG_KEY_{config_index}"] = "http.https://github.com/.extraheader"
+        environment[f"GIT_CONFIG_VALUE_{config_index}"] = f"Authorization: Basic {basic}"
     return environment, bool(token), github_cli
 
 
@@ -1420,7 +1441,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             prompt = build_continuation_prompt(claim, continuation, report_path, memory_path)
         else:
             worktree = prepare_worktree(
-                claim, root, git_command, resolve_repo_url(claim["repoUrl"], git_protocol, https_ready))
+                claim, root, git_command, resolve_repo_url(claim["repoUrl"], git_protocol, https_ready),
+                cli_environment)
             report_path.parent.mkdir(parents=True, exist_ok=True)
             memory_path.parent.mkdir(parents=True, exist_ok=True)
             prompt = build_prompt(claim, report_path, memory_path)
