@@ -27,6 +27,7 @@ import {
   apiPatchJob,
   apiPatchKb,
   apiPatchProject,
+  apiPromoteTaskToProject,
   apiPatchVaultItem,
   apiPauseJob,
   apiDeleteImage,
@@ -952,6 +953,28 @@ export const useDataStore = defineStore('data', () => {
     }
   }
 
+  /**
+   * 把待验证 / 已完成任务升级成长期项目，并以服务端原子响应同步两个本地集合。
+   *
+   * <p>先写透仍在编辑的草稿，避免升级事务移动任务后，又被旧项目下的本地快照覆盖回去。
+   */
+  async function promoteTaskToProject(id: string): Promise<Project> {
+    if (!apiLive.value) throw new Error('尚未连接真实服务，不能升级项目')
+    await flushTask(id)
+    if (taskSaveState(id) === 'error') throw new Error('任务仍有内容未保存，请先重试保存')
+    const result = await apiPromoteTaskToProject(id)
+    const projectIndex = projects.value.findIndex((item) => item.id === result.project.id)
+    if (projectIndex >= 0) projects.value.splice(projectIndex, 1, result.project)
+    else projects.value.unshift(result.project)
+    const taskIndex = tasks.value.findIndex((item) => item.id === result.task.id)
+    if (taskIndex >= 0) tasks.value.splice(taskIndex, 1, result.task)
+    else tasks.value.unshift(result.task)
+    clearTaskDraft(id)
+    taskSaveStates[id] = 'saved'
+    taskSavedAts[id] = nowIso()
+    return result.project
+  }
+
   /** 合并字段到任务，可选写入一条活动时间线（对齐原型 patchTask）。 */
   function patchTask(id: string, fields: Partial<Task>, activityText?: string) {
     const t = taskById(id)
@@ -1647,6 +1670,7 @@ export const useDataStore = defineStore('data', () => {
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     taskSaveState, taskSavedAt, flushTask, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
+    promoteTaskToProject,
     subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
     uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES, hostedPages, refreshHostedPages, saveHostedPage, deleteHostedPage,

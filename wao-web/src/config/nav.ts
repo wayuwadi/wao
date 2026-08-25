@@ -176,14 +176,6 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
-      id: 'ideas',
-      label: '点子库',
-      icon: 'ri-lightbulb-flash-line',
-      group: 'PUBLIC',
-      order: 11,
-      visible: true,
-    },
-    {
       id: 'skills',
       label: 'Skill 市场',
       icon: 'ri-sparkling-2-line',

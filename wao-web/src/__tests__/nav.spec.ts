@@ -14,6 +14,10 @@ import type { ModuleId } from '@/types'
 import type { RouteLocationNormalized } from 'vue-router'
 
 describe('侧边栏导航配置', () => {
+  it('默认导航不再提供独立点子库入口', () => {
+    expect(DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)).not.toContain('ideas')
+  })
+
   it('内置菜单都有模块元数据，外部应用使用命名空间标识', () => {
     const ids = NAV_GROUPS.flatMap((group) => group.items)
     const externalIds = ids.filter((id) => id.startsWith('external:'))
@@ -40,7 +44,7 @@ describe('侧边栏导航配置', () => {
     ).toBe('/wao/skills/manage')
   })
 
-  it('自媒体 Agent 默认出现在公共组，并保留旧地址重定向', () => {
+  it('公共组保留兼容模块顺序，自媒体 Agent 保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
     expect(publicGroup?.items).toEqual([
       'projects',
@@ -58,9 +62,10 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.tabKind).toBe('external')
   })
 
-  it('点子库作为团队共享模块进入公共导航且没有公开分享路由', () => {
+  it('历史点子归并页保留兼容路由但不进入默认菜单', () => {
     expect(MODULES.ideas.path).toBe('/ideas')
     expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('ideas')
+    expect(DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)).not.toContain('ideas')
     expect(router.resolve('/ideas').meta.module).toBe('ideas')
     expect(router.getRoutes().some((route) => route.path.startsWith('/s/i'))).toBe(false)
   })

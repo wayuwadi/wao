@@ -3,10 +3,12 @@ package cn.wayuwa.wao.service;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
@@ -118,8 +120,34 @@ public class ProjectService {
      * @return 创建后的项目
      */
     public ProjectDto create(CreateProjectRequest req, String ownerId) {
+        return createWithId("p" + System.currentTimeMillis(), req, ownerId);
+    }
+
+    /**
+     * 为已验收任务创建稳定项目；同一任务重复调用始终返回同一个项目。
+     *
+     * @param taskId 来源任务稳定 id
+     * @param req 从任务与原项目推导出的项目字段
+     * @param ownerId 当前操作人成员 id
+     * @return 已存在或新创建的项目
+     */
+    public ProjectDto createFromTask(String taskId, CreateProjectRequest req, String ownerId) {
+        String id = promotionProjectId(taskId);
+        ProjectEntity existing = projectMapper.selectById(id);
+        if (existing != null) return toDto(existing);
+        return createWithId(id, req, ownerId);
+    }
+
+    /** 由任务 id 确定性生成 32 字符项目 id，既可重试也不会与时间戳项目 id 撞名。 */
+    public String promotionProjectId(String taskId) {
+        String hash = UUID.nameUUIDFromBytes(("wao-task-project:" + taskId)
+                .getBytes(StandardCharsets.UTF_8)).toString().replace("-", "");
+        return "pi" + hash.substring(0, 30);
+    }
+
+    private ProjectDto createWithId(String id, CreateProjectRequest req, String ownerId) {
         ProjectEntity e = new ProjectEntity();
-        e.setId("p" + System.currentTimeMillis());
+        e.setId(id);
         e.setName(req.name().trim());
         e.setArea(req.area() == null || req.area().isBlank() ? "career" : req.area());
         e.setStatus("规划中");

@@ -378,6 +378,14 @@ paths:
         required: true
         content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string } } } } }
       responses: { '200': { description: 返回新评论 }, '400': { description: 评论为空 }, '404': { description: 任务不存在 } }
+  /tasks/{id}/promote-to-project:
+    post:
+      summary: 把待验证或已完成任务幂等升级为进行中项目，并移动原任务作为第一轮
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: 返回新项目与移动后的原任务 }
+        '400': { description: 任务尚未进入待验证或已完成 }
+        '404': { description: 任务不存在或所属项目不可见 }
   /tasks/{id}/comments/{commentId}:
     patch:
       summary: 修改自己的评论（commentId 为评论 id；老评论没有 id 时传数组下标）
@@ -1337,6 +1345,12 @@ components:
           type: array
           description: 历史兼容字段；按时间顺序保存既有 PDCA 轮次，前端已停止新增、编辑和展示
           items: { $ref: '#/components/schemas/PdcaCycle' }
+    TaskPromotion:
+      type: object
+      required: [project, task]
+      properties:
+        project: { $ref: '#/components/schemas/Project' }
+        task: { $ref: '#/components/schemas/Task' }
     TaskGroup:
       type: object
       description: 项目内的任务分组（分组视图）；组内只关心做没做完

@@ -131,6 +131,48 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
+  it('待验证任务可升级为长期项目并进入真实项目页', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([])
+    const current = data.taskById(taskId)!
+    current.status = '待验证'
+    const promoted = { ...data.projects[0]!, id: 'pi-promoted', name: current.title, status: '进行中' as const }
+    const promote = vi.spyOn(data, 'promoteTaskToProject').mockResolvedValue(promoted)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.get('.promote-project').trigger('click')
+    await flushPromises()
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('原任务会从'))
+    expect(promote).toHaveBeenCalledWith(taskId)
+    expect(router.currentRoute.value.fullPath).toBe('/projects/pi-promoted')
+    expect(ui.openTaskId).toBeNull()
+    confirm.mockRestore()
+  })
+
+  it('升级失败时保留任务和原地重试入口', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([])
+    const current = data.taskById(taskId)!
+    current.status = '已完成'
+    vi.spyOn(data, 'promoteTaskToProject').mockRejectedValue(new Error('项目升级事务失败'))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.get('.promote-project').trigger('click')
+    await flushPromises()
+
+    expect(ui.openTaskId).toBe(taskId)
+    expect(w.get('.promotion-card').text()).toContain('项目升级事务失败，可原地重试')
+    expect(w.get('.promote-project').attributes('disabled')).toBeUndefined()
+    confirm.mockRestore()
+  })
+
   it('关联候选按创建时间倒序，并排除已完成任务', async () => {
     const current = data.taskById(taskId)!
     const candidates = data.tasks.filter((item) => item.id !== taskId)
