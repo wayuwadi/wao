@@ -38,6 +38,7 @@ import {
 } from '@/utils/workdayRhythm'
 import WorkdayRhythmDailyPanel from '@/components/workday/WorkdayRhythmDailyPanel.vue'
 import WorkdayRhythmDailySettings from '@/components/workday/WorkdayRhythmDailySettings.vue'
+import NotificationTargetPicker from '@/components/notification/NotificationTargetPicker.vue'
 
 const CONFIG_DRAFT_KEY = 'wao-workday-rhythm-config-draft-v1'
 const clock = ref(shanghaiClock())
@@ -65,6 +66,8 @@ const notificationWebhooksLoading = ref(false)
 const notificationWebhooksError = ref('')
 const energyNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle')
 const focusNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle')
+const focusTargetSaving = ref(false)
+const focusTargetError = ref('')
 const pendingFocusNotification = ref<string | null>(null)
 const pendingEnergyNotification = ref<{ action: WorkdayRhythmEnergyAction; date: string } | null>(
   null,
@@ -131,6 +134,31 @@ const configuredWebhookMissing = computed(
         endpoint.id === editorDraft.value.energyNotification.webhookId && endpoint.enabled,
     ),
 )
+const focusNotificationEnabled = computed(() => {
+  const notification = config.value.energyNotification
+  return (
+    notification.enabled &&
+    notification.notifyFocus &&
+    (notification.channel === 'WEBHOOK'
+      ? !!notification.webhookId.trim()
+      : !!notification.chatId.trim())
+  )
+})
+const notificationTargetsLoading = computed(
+  () => notificationChatsLoading.value || notificationWebhooksLoading.value,
+)
+const notificationTargetsError = computed(() => {
+  const hasWebhook = notificationWebhooks.value.some((endpoint) => endpoint.enabled)
+  const hasChat = notificationChats.value.length > 0
+  const sourceErrors = [notificationWebhooksError.value, notificationChatsError.value].filter(
+    (error) =>
+      error &&
+      ((!hasWebhook && !hasChat) ||
+        (error !== '系统设置中没有已启用的 Webhook 配置' &&
+          error !== '机器人当前不在任何可选群聊中')),
+  )
+  return [...new Set([focusTargetError.value, ...sourceErrors].filter(Boolean))].join('；')
+})
 let energyItemSequence = 0
 
 function shiftDate(value: string, days: number) {
@@ -514,6 +542,62 @@ function loadNotificationTargets() {
   else void loadNotificationChats()
 }
 
+async function loadFocusNotificationTargets() {
+  await Promise.all([loadNotificationWebhooks(), loadNotificationChats()])
+}
+
+async function selectFocusNotificationTarget(
+  target: { channel: 'WEBHOOK' | 'CHAT'; id: string; name: string } | null,
+) {
+  if (focusTargetSaving.value) return
+  const next = cloneRhythmConfig(config.value)
+  if (!target) {
+    next.energyNotification.notifyFocus = false
+    if (!next.energyItems.some((item) => item.notify)) next.energyNotification.enabled = false
+  } else {
+    next.energyNotification.enabled = true
+    next.energyNotification.notifyFocus = true
+    next.energyNotification.channel = target.channel
+    if (target.channel === 'WEBHOOK') {
+      next.energyNotification.webhookId = target.id
+      next.energyNotification.webhookName = target.name
+    } else {
+      next.energyNotification.chatId = target.id
+      next.energyNotification.chatName = target.name
+    }
+  }
+  const validationError = rhythmConfigError(next)
+  if (validationError) {
+    focusTargetError.value = validationError
+    return
+  }
+  focusTargetSaving.value = true
+  focusTargetError.value = ''
+  try {
+    config.value = await saveWorkdayRhythm(next)
+    const savedEditorDraft = parseRhythmConfigDraft(localStorage.getItem(CONFIG_DRAFT_KEY) ?? '')
+    if (savedEditorDraft) {
+      savedEditorDraft.energyNotification = { ...config.value.energyNotification }
+      editorDraft.value = savedEditorDraft
+      localStorage.setItem(CONFIG_DRAFT_KEY, JSON.stringify(savedEditorDraft))
+    } else {
+      editorDraft.value = cloneRhythmConfig(config.value)
+    }
+    if (!target) {
+      pendingFocusNotification.value = null
+      focusNotificationState.value = 'idle'
+      toast('今日重点将只保存，不发送群通知', 'ri-notification-off-line')
+    } else {
+      toast(`今日重点通知群已改为「${target.name}」`, 'ri-check-line')
+    }
+  } catch (error) {
+    focusTargetError.value =
+      error instanceof Error ? `${error.message}，原通知群未改变` : '通知群保存失败，原配置未改变'
+  } finally {
+    focusTargetSaving.value = false
+  }
+}
+
 function selectNotificationChat() {
   const selected = notificationChats.value.find(
     (chat) => chat.chatId === editorDraft.value.energyNotification.chatId,
@@ -801,8 +885,28 @@ onBeforeUnmount(() => {
               >
             </div>
             <footer>
-              <small v-if="dayState === 'dirty'">草稿已保存在本机</small><span></span
-              ><button type="button" :disabled="dayState === 'saving'" @click="saveFocus">
+              <small v-if="dayState === 'dirty'">草稿已保存在本机</small>
+              <NotificationTargetPicker
+                :enabled="focusNotificationEnabled"
+                :channel="config.energyNotification.channel"
+                :webhook-id="config.energyNotification.webhookId"
+                :webhook-name="config.energyNotification.webhookName"
+                :chat-id="config.energyNotification.chatId"
+                :chat-name="config.energyNotification.chatName"
+                :webhooks="notificationWebhooks"
+                :chats="notificationChats"
+                :loading="notificationTargetsLoading"
+                :saving="focusTargetSaving"
+                :error="notificationTargetsError"
+                @open="loadFocusNotificationTargets"
+                @select="selectFocusNotificationTarget"
+              />
+              <span></span
+              ><button
+                type="button"
+                :disabled="dayState === 'saving' || focusTargetSaving"
+                @click="saveFocus"
+              >
                 {{ dayState === 'error' ? '重试保存' : '保存今日重点' }}
               </button>
             </footer>

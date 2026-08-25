@@ -125,7 +125,7 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
     const inputs = wrapper.findAll('.focus-card input')
     await inputs[0]!.setValue('完成上线链路验收')
-    await wrapper.get('.focus-card footer button').trigger('click')
+    await wrapper.get('.focus-card footer > button').trigger('click')
     await flushPromises()
 
     expect(saveWorkdayRhythmDay).toHaveBeenCalledWith(
@@ -156,7 +156,7 @@ describe('WorkdayRhythmView', () => {
     await inputs[0]!.setValue('交付最小 MVP')
     await inputs[1]!.setValue('完成上线验收')
     await inputs[2]!.setValue('整理真实反馈')
-    await wrapper.get('.focus-card footer button').trigger('click')
+    await wrapper.get('.focus-card footer > button').trigger('click')
     await flushPromises()
 
     expect(sendFocusNotification).toHaveBeenCalledWith(clock.date)
@@ -170,6 +170,78 @@ describe('WorkdayRhythmView', () => {
       expect.objectContaining({ focusCompleted: [true, false, false] }),
     )
     expect(wrapper.findAll('.focus-row')[1]!.classes()).toContain('active')
+    wrapper.unmount()
+  })
+
+  it('在保存按钮左侧明确选择真实通知群并先保存成员目标', async () => {
+    vi.mocked(saveWorkdayRhythm).mockImplementation(async (value) => cloneRhythmConfig(value))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('.notification-target-trigger').text()).toContain('不发群')
+    await wrapper.get('.notification-target-trigger').trigger('click')
+    await flushPromises()
+
+    expect(fetchWebhookEndpoints).toHaveBeenCalled()
+    expect(fetchFeishuChats).toHaveBeenCalled()
+    const chatOption = wrapper
+      .findAll('.notification-target-option')
+      .find((option) => option.text().includes('机器人所在群'))
+    expect(chatOption).toBeDefined()
+    await chatOption!.trigger('click')
+    await flushPromises()
+
+    expect(saveWorkdayRhythm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        energyNotification: expect.objectContaining({
+          enabled: true,
+          notifyFocus: true,
+          channel: 'CHAT',
+          chatId: 'oc_daily',
+          chatName: '娃屋日常',
+        }),
+      }),
+    )
+    expect(wrapper.get('.notification-target-trigger').text()).toContain('娃屋日常')
+
+    const inputs = wrapper.findAll('.focus-row input')
+    await inputs[0]!.setValue('交付选择器')
+    await inputs[1]!.setValue('完成真实验收')
+    await inputs[2]!.setValue('整理反馈')
+    await wrapper.get('.focus-card footer > button').trigger('click')
+    await flushPromises()
+
+    expect(sendFocusNotification).toHaveBeenCalledWith(clock.date)
+    wrapper.unmount()
+  })
+
+  it('通知群保存失败时保留原目标并展示可恢复错误', async () => {
+    const configured = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
+    configured.energyNotification = {
+      enabled: true,
+      notifyFocus: true,
+      channel: 'CHAT',
+      webhookId: '',
+      webhookName: '',
+      chatId: 'oc_daily',
+      chatName: '娃屋日常',
+    }
+    vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
+    vi.mocked(saveWorkdayRhythm).mockRejectedValueOnce(new Error('网络暂时不可用'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('.notification-target-trigger').trigger('click')
+    await flushPromises()
+    const webhookOption = wrapper
+      .findAll('.notification-target-option')
+      .find((option) => option.text().includes('娃屋日常机器人'))
+    await webhookOption!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.notification-target-trigger').text()).toContain('娃屋日常')
+    await wrapper.get('.notification-target-trigger').trigger('click')
+    expect(wrapper.get('.notification-target-error').text()).toContain('原通知群未改变')
     wrapper.unmount()
   })
 
@@ -191,7 +263,7 @@ describe('WorkdayRhythmView', () => {
     await inputs[0]!.setValue('重点一')
     await inputs[1]!.setValue('重点二')
     await inputs[2]!.setValue('重点三')
-    await wrapper.get('.focus-card footer button').trigger('click')
+    await wrapper.get('.focus-card footer > button').trigger('click')
     await flushPromises()
 
     expect(saveWorkdayRhythmDay).toHaveBeenCalled()
@@ -456,7 +528,7 @@ describe('WorkdayRhythmView', () => {
     await wrapper.get('.editor .primary').trigger('click')
     await flushPromises()
     await wrapper.findAll('.focus-card input')[0]!.setValue('保存其它真实目标')
-    await wrapper.get('.focus-card footer button').trigger('click')
+    await wrapper.get('.focus-card footer > button').trigger('click')
     await flushPromises()
 
     expect(saveWorkdayRhythmDay).toHaveBeenLastCalledWith(
