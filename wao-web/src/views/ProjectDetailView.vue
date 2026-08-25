@@ -151,6 +151,8 @@ const doneTasks = computed(() =>
 const latestTask = computed(() => [...ptasks.value].sort((a, b) =>
   (b.createdAt ?? b.id).localeCompare(a.createdAt ?? a.id))[0] ?? null)
 const latestRun = computed(() => [...iterationRuns.value].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null)
+const latestRoundAcceptanceFailed = computed(() =>
+  Boolean(latestTask.value && data.taskSaveState(latestTask.value.id) === 'error'))
 
 watch(() => latestTask.value?.id, async (taskId) => {
   iterationRuns.value = taskId ? await fetchTaskAiRuns(taskId).catch(() => []) : []
@@ -246,10 +248,18 @@ async function startOnly() {
 
 async function acceptLatestRound() {
   if (!latestTask.value || iterationBusy.value) return
+  const taskId = latestTask.value.id
   iterationBusy.value = true
   try {
-    data.patchTask(latestTask.value.id, { status: '已完成' }, '人工确认本轮满意；项目继续保持开放')
-    await data.flushTask(latestTask.value.id)
+    // 写透失败时保留本地已完成状态和草稿；再次点击只重试同一份快照，不重复写活动。
+    if (!latestRoundAcceptanceFailed.value) {
+      data.patchTask(taskId, { status: '已完成' }, '人工确认本轮满意；项目继续保持开放')
+    }
+    await data.flushTask(taskId)
+    if (data.taskSaveState(taskId) === 'error') {
+      toast('本轮验收保存失败，本地结果已保留；请原地重试', 'ri-error-warning-line')
+      return
+    }
     toast('本轮已完成，项目仍然开放；可以开始下一轮或人工完成项目', 'ri-checkbox-circle-line')
   } finally { iterationBusy.value = false }
 }
@@ -598,7 +608,7 @@ function onDropGroup(groupId: string, overId?: string) {
           <button v-if="!latestTask && project?.status === '规划中'" class="primary" :disabled="iterationBusy" @click="startFirstVersion"><i class="ri-robot-2-line"></i>让 AI 做第一版</button>
           <button v-if="project?.status === '规划中'" :disabled="iterationBusy" @click="startOnly"><i class="ri-rocket-line"></i>开始推进</button>
           <button v-if="latestTask" @click="openTask(latestTask.id)"><i class="ri-chat-3-line"></i>{{ latestTask.status === '待验证' ? '反馈并继续优化' : '打开本轮任务' }}</button>
-          <button v-if="latestTask?.status === '待验证'" :disabled="iterationBusy" @click="acceptLatestRound"><i class="ri-checkbox-circle-line"></i>本轮满意</button>
+          <button v-if="latestTask?.status === '待验证' || latestRoundAcceptanceFailed" :disabled="iterationBusy" @click="acceptLatestRound"><i :class="latestRoundAcceptanceFailed ? 'ri-refresh-line' : 'ri-checkbox-circle-line'"></i>{{ latestRoundAcceptanceFailed ? '重试本轮验收' : '本轮满意' }}</button>
           <button v-if="latestTask" @click="nextRoundOpen = !nextRoundOpen"><i class="ri-loop-right-line"></i>开始下一轮</button>
           <button v-if="!['已完成', '已搁置'].includes(project?.status || '')" class="success" @click="completeProject"><i class="ri-flag-line"></i>项目已达成</button>
           <button v-if="!['已完成', '已搁置'].includes(project?.status || '')" @click="shelveProject"><i class="ri-inbox-archive-line"></i>暂时搁置</button>
