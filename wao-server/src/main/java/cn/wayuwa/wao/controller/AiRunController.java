@@ -23,6 +23,7 @@ import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.AiEvolutionOverviewDto;
 import cn.wayuwa.wao.dto.AiEvolutionSuggestionDto;
+import cn.wayuwa.wao.dto.AiTaskAutoRunPolicyDto;
 import cn.wayuwa.wao.dto.LaunchEvolutionSuggestionRequest;
 import cn.wayuwa.wao.dto.CreateAiRunsRequest;
 import cn.wayuwa.wao.dto.LaunchAutonomousGoalRequest;
@@ -30,6 +31,7 @@ import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.SaveAiEvolutionScheduleRequest;
+import cn.wayuwa.wao.dto.SaveAiTaskAutoRunPolicyRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.dto.RunnerScriptDto;
 import cn.wayuwa.wao.dto.RunnerHeartbeatRequest;
@@ -42,6 +44,7 @@ import cn.wayuwa.wao.service.AiRunService;
 import cn.wayuwa.wao.service.AiRunnerWakeService;
 import cn.wayuwa.wao.service.AiRunnerLifecycleService;
 import cn.wayuwa.wao.service.AiEvolutionService;
+import cn.wayuwa.wao.service.AiTaskAutoRunService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -74,11 +77,13 @@ public class AiRunController {
     private final AiRunnerLifecycleService lifecycleService;
     private final CurrentMember currentMember;
     private final AiEvolutionService evolutionService;
+    private final AiTaskAutoRunService taskAutoRunService;
 
     public AiRunController(AiRunService service, AiAccountService aiAccountService,
             AiAssistantService assistantService,
             AiRunnerWakeService wakeService, AiRunnerLifecycleService lifecycleService,
-            CurrentMember currentMember, AiEvolutionService evolutionService) {
+            CurrentMember currentMember, AiEvolutionService evolutionService,
+            AiTaskAutoRunService taskAutoRunService) {
         this.service = service;
         this.aiAccountService = aiAccountService;
         this.assistantService = assistantService;
@@ -86,6 +91,7 @@ public class AiRunController {
         this.lifecycleService = lifecycleService;
         this.currentMember = currentMember;
         this.evolutionService = evolutionService;
+        this.taskAutoRunService = taskAutoRunService;
     }
 
     @GetMapping("/projects/{projectId}/config")
@@ -173,6 +179,20 @@ public class AiRunController {
     @GetMapping("/run-options")
     public ApiResponse<cn.wayuwa.wao.dto.AiRunOptionsDto> runOptions() {
         return ApiResponse.ok(service.runOptions());
+    }
+
+    /** 首页读取“空闲后执行最早待办”的开关、阈值和最近检查结果。 */
+    @GetMapping("/task-auto-run")
+    public ApiResponse<AiTaskAutoRunPolicyDto> taskAutoRunPolicy() {
+        return ApiResponse.ok(taskAutoRunService.overview());
+    }
+
+    /** 保存自动派发策略；调度器会在下一轮按新设置重新检查。 */
+    @PutMapping("/task-auto-run")
+    public ApiResponse<AiTaskAutoRunPolicyDto> saveTaskAutoRunPolicy(
+            @Valid @RequestBody SaveAiTaskAutoRunPolicyRequest request) {
+        taskAutoRunService.save(request.enabled(), request.idleHours());
+        return ApiResponse.ok(taskAutoRunService.overview());
     }
 
     /** 把一句目标转成任务，并交给用户本次选择的执行电脑或自动分配。 */

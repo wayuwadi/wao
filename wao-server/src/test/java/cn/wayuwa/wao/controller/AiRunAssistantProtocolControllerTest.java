@@ -16,6 +16,7 @@ import cn.wayuwa.wao.service.AiAccountService;
 import cn.wayuwa.wao.service.AiAssistantService;
 import cn.wayuwa.wao.service.AiEvolutionService;
 import cn.wayuwa.wao.service.AiRunService;
+import cn.wayuwa.wao.service.AiTaskAutoRunService;
 import cn.wayuwa.wao.service.AiRunnerLifecycleService;
 import cn.wayuwa.wao.service.AiRunnerWakeService;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ class AiRunAssistantProtocolControllerTest {
     @MockBean private AiRunnerLifecycleService lifecycleService;
     @MockBean private CurrentMember currentMember;
     @MockBean private AiEvolutionService evolutionService;
+    @MockBean private AiTaskAutoRunService taskAutoRunService;
 
     @Test
     void claimReturnsTheAttemptTokenToTheRunner() throws Exception {

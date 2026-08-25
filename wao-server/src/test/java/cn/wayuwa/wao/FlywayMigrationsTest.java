@@ -166,4 +166,19 @@ class FlywayMigrationsTest {
                 .contains("INSERT INTO ai_task_run_task (run_id, task_id, ord)")
                 .contains("SELECT id, task_id, 0", "FROM ai_task_run");
     }
+
+    @Test
+    void oldestTaskAutoRunMigrationDefaultsToEnabledTwoHourPolicy() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V92__oldest_task_auto_run.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE ai_task_auto_run_state")
+                .contains("enabled         BOOLEAN      NOT NULL DEFAULT TRUE")
+                .contains("idle_hours      INT          NOT NULL DEFAULT 2")
+                .contains("CHECK (idle_hours BETWEEN 1 AND 168)")
+                .contains("VALUES ('oldest-task', TRUE, 2)");
+    }
 }

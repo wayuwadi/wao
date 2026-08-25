@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   createAiPairCode,
   fetchAiEvolution,
+  fetchAiTaskAutoRunPolicy,
   fetchAiRunHistory,
   fetchAiRunnerLog,
   fetchAiRunners,
@@ -15,10 +16,12 @@ import {
   removeAiWorkflow,
   requestRunnerScriptUpdate,
   rerunAiRun,
+  saveAiTaskAutoRunPolicy,
   saveAiProjectConfig,
   updateRunnerMaxConcurrency,
   wakeAiRunner,
   type AiEvolutionOverview,
+  type AiTaskAutoRunPolicy,
   type CodexQuotaAccount,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
@@ -48,6 +51,12 @@ const workflows = ref<AiWorkflow[]>([])
 const loading = ref(true)
 const workflowsLoading = ref(false)
 const quotaOverview = ref<AiEvolutionOverview | null>(null)
+const taskAutoRunPolicy = ref<AiTaskAutoRunPolicy | null>(null)
+const taskAutoRunEnabled = ref(true)
+const taskAutoRunHours = ref(2)
+const taskAutoRunDirty = ref(false)
+const taskAutoRunSaving = ref(false)
+const taskAutoRunError = ref('')
 const goal = ref('')
 const goalDraftState = ref<'idle' | 'saved' | 'error'>('idle')
 const goalProjectId = ref('')
@@ -228,6 +237,48 @@ async function refreshQuotaOverview() {
     quotaOverview.value = await fetchAiEvolution()
   } catch {
     // 额度读取失败时隐藏入口，运行状态与目标派发继续可用。
+  }
+}
+
+/** 后台轮询只在没有本地草稿时回填，避免覆盖用户正在修改的开关或小时数。 */
+async function refreshTaskAutoRunPolicy() {
+  try {
+    const policy = await fetchAiTaskAutoRunPolicy()
+    taskAutoRunPolicy.value = policy
+    if (!taskAutoRunDirty.value && !taskAutoRunSaving.value) {
+      taskAutoRunEnabled.value = policy.enabled
+      taskAutoRunHours.value = policy.idleHours
+    }
+    taskAutoRunError.value = ''
+  } catch (error) {
+    taskAutoRunError.value = error instanceof Error ? error.message : '自动派发策略读取失败'
+  }
+}
+
+function markTaskAutoRunDirty() {
+  taskAutoRunDirty.value = true
+  taskAutoRunError.value = ''
+}
+
+async function saveTaskAutoRunPolicy() {
+  const hours = Number(taskAutoRunHours.value)
+  if (!Number.isInteger(hours) || hours < 1 || hours > 168) {
+    taskAutoRunError.value = '空闲时长请输入 1 到 168 之间的整数'
+    return
+  }
+  taskAutoRunSaving.value = true
+  taskAutoRunError.value = ''
+  try {
+    const policy = await saveAiTaskAutoRunPolicy(taskAutoRunEnabled.value, hours)
+    taskAutoRunPolicy.value = policy
+    taskAutoRunEnabled.value = policy.enabled
+    taskAutoRunHours.value = policy.idleHours
+    taskAutoRunDirty.value = false
+    toast(policy.enabled ? '自动派发策略已开启并保存' : '自动派发已关闭', 'ri-check-line')
+  } catch (error) {
+    taskAutoRunError.value = error instanceof Error ? error.message : '自动派发策略保存失败，请重试'
+  } finally {
+    taskAutoRunSaving.value = false
   }
 }
 
@@ -671,8 +722,12 @@ onMounted(() => {
   void refresh()
   void refreshWorkflows()
   void refreshQuotaOverview()
+  void refreshTaskAutoRunPolicy()
   timer = setInterval(refresh, 5_000)
-  quotaTimer = setInterval(refreshQuotaOverview, 60_000)
+  quotaTimer = setInterval(() => {
+    void refreshQuotaOverview()
+    void refreshTaskAutoRunPolicy()
+  }, 60_000)
   if (route.query.console) revealAiArea()
 })
 onBeforeUnmount(() => {
@@ -859,6 +914,59 @@ onBeforeUnmount(() => {
               <i class="ri-arrow-right-line"></i>
             </div>
           </button>
+        </div>
+      </section>
+
+      <section class="auto-run-policy" aria-labelledby="auto-run-policy-title">
+        <div class="auto-run-copy">
+          <span class="auto-run-icon"><i class="ri-timer-flash-line"></i></span>
+          <div>
+            <h2 id="auto-run-policy-title">空闲时自动推进最早待办</h2>
+            <p v-if="taskAutoRunPolicy">{{ taskAutoRunPolicy.message }}</p>
+            <p v-else-if="taskAutoRunError">{{ taskAutoRunError }}</p>
+            <p v-else>正在读取自动派发策略…</p>
+            <small v-if="taskAutoRunPolicy?.nextEligibleAt && taskAutoRunPolicy.status === 'cooling_down'">
+              最早可检查时间：{{ timeText(taskAutoRunPolicy.nextEligibleAt) }}
+            </small>
+          </div>
+        </div>
+        <div class="auto-run-controls">
+          <button
+            class="auto-run-switch"
+            :class="{ on: taskAutoRunEnabled }"
+            type="button"
+            role="switch"
+            :aria-checked="taskAutoRunEnabled"
+            :disabled="taskAutoRunSaving"
+            @click="taskAutoRunEnabled = !taskAutoRunEnabled; markTaskAutoRunDirty()"
+          >
+            <i></i><span>{{ taskAutoRunEnabled ? '已开启' : '已关闭' }}</span>
+          </button>
+          <label>
+            <span>连续空闲</span>
+            <input
+              v-model.number="taskAutoRunHours"
+              type="number"
+              min="1"
+              max="168"
+              step="1"
+              :disabled="taskAutoRunSaving"
+              aria-label="自动派发空闲小时数"
+              @input="markTaskAutoRunDirty"
+            />
+            <span>小时</span>
+          </label>
+          <button
+            class="auto-run-save"
+            :disabled="taskAutoRunSaving || (!taskAutoRunDirty && !taskAutoRunError)"
+            @click="saveTaskAutoRunPolicy"
+          >
+            <i :class="taskAutoRunSaving ? 'ri-loader-4-line spin' : taskAutoRunError ? 'ri-refresh-line' : 'ri-save-3-line'"></i>
+            {{ taskAutoRunSaving ? '保存中' : taskAutoRunError ? '重试' : taskAutoRunDirty ? '保存设置' : '已保存' }}
+          </button>
+        </div>
+        <div v-if="taskAutoRunDirty || taskAutoRunError" class="auto-run-feedback" :class="{ error: taskAutoRunError }" role="status">
+          {{ taskAutoRunError || '设置尚未保存，后台轮询不会覆盖这次修改。' }}
         </div>
       </section>
 
@@ -1527,6 +1635,36 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   background: var(--wao-bg-card);
 }
+.auto-run-policy {
+  margin-top: 10px;
+  padding: 13px 14px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--wao-bg-card), #f7f8ff);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 20px;
+}
+.auto-run-copy { min-width: 0; display: flex; align-items: flex-start; gap: 10px; }
+.auto-run-icon { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 10px; background: #eef1ff; color: #4358d6; display: grid; place-items: center; font-size: 17px; }
+.auto-run-copy h2 { margin: 0; font-size: 14px; }
+.auto-run-copy p { margin: 4px 0 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }
+.auto-run-copy small { display: block; margin-top: 3px; color: var(--wao-text-3); font-size: 10px; }
+.auto-run-controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.auto-run-switch, .auto-run-save { height: 32px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; }
+.auto-run-switch { padding: 0 9px; }
+.auto-run-switch > i { position: relative; width: 25px; height: 14px; border-radius: 999px; background: #c7cad5; transition: .16s; }
+.auto-run-switch > i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: #fff; transition: .16s; }
+.auto-run-switch.on { border-color: #bdc8f6; color: #354db8; background: #f3f5ff; }
+.auto-run-switch.on > i { background: #5269d8; }
+.auto-run-switch.on > i::after { transform: translateX(11px); }
+.auto-run-controls label { height: 32px; padding: 0 7px 0 9px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); font-size: 10.5px; display: flex; align-items: center; gap: 5px; }
+.auto-run-controls input { width: 46px; height: 24px; padding: 0 4px; border: 1px solid var(--wao-line); border-radius: 6px; color: var(--wao-text-1); text-align: center; }
+.auto-run-save { padding: 0 10px; border-color: #4358d6; background: #4358d6; color: #fff; }
+.auto-run-save:disabled, .auto-run-switch:disabled { opacity: .55; cursor: not-allowed; }
+.auto-run-feedback { grid-column: 1 / -1; margin-top: -5px; color: #8a5b0d; font-size: 10.5px; }
+.auto-run-feedback.error { color: var(--wao-danger-strong); }
 .section-head { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; }
 .section-head > div { flex: 1; }
 .section-head h2 { margin: 0; font-size: 17px; }
@@ -1904,6 +2042,8 @@ onBeforeUnmount(() => {
   .goal-submit { margin-left: auto; }
   .console-tabs { overflow-x: auto; }
   .recent-grid { grid-template-columns: 1fr; }
+  .auto-run-policy { grid-template-columns: 1fr; }
+  .auto-run-controls { justify-content: flex-start; flex-wrap: wrap; }
   .section-head { align-items: center; }
   .history-grid { grid-template-columns: 1fr; }
   .flow-meta { grid-template-columns: 1fr; }

@@ -544,13 +544,14 @@ describe('TaskDrawer', () => {
 
     expect(createAiRuns).toHaveBeenCalledWith([taskId], {
       subId, engine: 'codex', runnerId: null, accountId: null,
-      model: null, reasoningEffort: null, planMode: false,
+      model: null, reasoningEffort: null, planMode: true,
     })
     w.unmount()
   })
 
-  it('Plan 模式选择会随 Codex 派工请求提交', async () => {
+  it('Codex 默认 Plan 仍可手动关闭并随派工请求提交', async () => {
     const { createAiRuns, fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(createAiRuns).mockClear()
     vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([])
     ui.openTask(taskId)
     const w = mountDrawer()
@@ -563,7 +564,7 @@ describe('TaskDrawer', () => {
     await flushPromises()
 
     expect(createAiRuns).toHaveBeenCalledWith([taskId], expect.objectContaining({
-      engine: 'codex', planMode: true,
+      engine: 'codex', planMode: false,
     }))
     w.unmount()
   })

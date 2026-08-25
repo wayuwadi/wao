@@ -21,7 +21,7 @@ const accountId = ref('')
 const runOptions = ref<AiRunOptions | null>(null)
 const model = ref('')
 const reasoningEffort = ref('')
-const planMode = ref(false)
+const planMode = ref(true)
 const preferredRunnerId = ref('')
 let runnerRefreshTimer: ReturnType<typeof setInterval> | null = null
 
