@@ -2,16 +2,12 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
-import { useUiStore } from '@/stores/ui'
-import { copyText } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import { relativeTime } from '@/utils/time'
 import { useNow } from '@/composables/now'
-import DemoBanner from '@/components/ui/DemoBanner.vue'
 import type { KnowledgeBase, TrashEntry } from '@/types'
 
 const data = useDataStore()
-const ui = useUiStore()
 const router = useRouter()
 const now = useNow()
 
@@ -24,23 +20,62 @@ const cfgKb = ref<KnowledgeBase | null>(null)
 const newKbOpen = ref(false)
 const newKbName = ref('')
 const newKbDesc = ref('')
+const query = ref('')
+type KnowledgeScope = 'all' | 'project' | 'shared' | 'personal'
+const scope = ref<KnowledgeScope>('all')
+
+const scopeOptions: { value: KnowledgeScope; label: string }[] = [
+  { value: 'all', label: '全部资料' },
+  { value: 'project', label: '项目资料' },
+  { value: 'shared', label: '共享资料' },
+  { value: 'personal', label: '个人资料' },
+]
 
 function docCount(k: KnowledgeBase) {
   return k.folders.reduce((n, f) => n + f.docs.length, 0)
+}
+
+function matchesScope(kb: KnowledgeBase) {
+  if (scope.value === 'project') return !!kb.project
+  if (scope.value === 'shared') return kb.perm === '成员可编辑'
+  if (scope.value === 'personal') return !kb.project && !kb.auto
+  return true
+}
+
+function matchingDocs(kb: KnowledgeBase) {
+  const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
+  if (!keyword) return []
+  return kb.folders.flatMap((folder) => folder.docs)
+    .map((id) => data.docById(id))
+    .filter((doc): doc is NonNullable<typeof doc> => !!doc?.title.toLocaleLowerCase('zh-CN').includes(keyword))
+    .slice(0, 3)
+}
+
+function matchesQuery(kb: KnowledgeBase) {
+  const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
+  if (!keyword) return true
+  return kb.name.toLocaleLowerCase('zh-CN').includes(keyword)
+    || kb.desc.toLocaleLowerCase('zh-CN').includes(keyword)
+    || kb.folders.some((folder) => folder.name.toLocaleLowerCase('zh-CN').includes(keyword))
+    || matchingDocs(kb).length > 0
 }
 
 const groups = computed(() => {
   const projGroup = {
     id: 'proj', label: '项目知识库', fixed: true,
     hint: '跟随项目与自动化 · 默认分组，不可修改',
-    items: data.kbs.filter((k) => k.project || k.auto),
+    items: data.kbs.filter((k) => (k.project || k.auto) && matchesScope(k) && matchesQuery(k)),
   }
   const userGroups = data.myGroups.map((g) => ({
     id: g.id, label: g.name, fixed: false, hint: '',
-    items: data.kbs.filter((k) => !k.project && !k.auto && (k.group || 'g1') === g.id),
+    items: data.kbs.filter((k) => !k.project && !k.auto && (k.group || 'g1') === g.id
+      && matchesScope(k) && matchesQuery(k)),
   }))
   return [projGroup, ...userGroups]
 })
+
+const visibleCount = computed(() => groups.value.reduce((total, group) => total + group.items.length, 0))
+const filtering = computed(() => scope.value !== 'all' || !!query.value.trim())
 
 function projName(k: KnowledgeBase) {
   if (k.project) return data.projectById(k.project)?.name ?? ''
@@ -48,6 +83,9 @@ function projName(k: KnowledgeBase) {
 }
 function openKb(id: string) {
   router.push(`/kb/${id}`)
+}
+function openDoc(kbId: string, docId: string) {
+  router.push({ path: `/kb/${kbId}`, query: { doc: docId } })
 }
 async function newGroup() {
   editGroupId.value = await data.addGroup()
@@ -62,9 +100,6 @@ function commitGroupRename(g: { id: string; name: string }) {
 function openCfg(k: KnowledgeBase) {
   if (!k.perm) k.perm = '仅自己'
   cfgKb.value = k
-}
-function cfgShare() {
-  if (cfgKb.value) copyText(`https://wao.wayuwa.example/kb/${cfgKb.value.id}`, '邀请链接已复制（演示）')
 }
 function cfgDone() {
   if (cfgKb.value) {
@@ -127,17 +162,10 @@ async function createKb() {
 
 <template>
   <div class="know">
-    <DemoBanner
-      icon="ri-book-2-line"
-      title="知识库"
-      text="知识库、分组、文件夹与文档已接入真实后端：新建 / 重命名 / 删除均会保存，删除先进回收站、7 天后自动清理。文档打开即可编辑、停手即存，右上角会显示此刻同在这篇文档里的人。AI 语义搜索仍是演示态，将在后续迭代交付。"
-      storage-key="knowledge"
-    />
     <div class="ktop">
       <div class="ktitle">知识库</div>
       <span class="ktip">按知识库组织文档；项目可关联自己的知识库</span>
       <div class="spacer"></div>
-      <button class="ai-btn" @click="ui.openSearch(true)"><i class="ri-magic-line"></i>AI 语义搜索</button>
       <button class="btn-ghost" @click="openTrash">
         <i class="ri-delete-bin-line"></i>回收站<span v-if="data.trash.length" class="trash-badge">{{ data.trash.length }}</span>
       </button>
@@ -145,7 +173,28 @@ async function createKb() {
       <button class="btn-primary" @click="openNewKb"><i class="ri-add-line"></i>新建知识库</button>
     </div>
 
-    <div v-for="g in groups" :key="g.id" class="kgroup">
+    <div class="kb-discovery">
+      <label class="kb-search">
+        <i class="ri-search-line"></i>
+        <input v-model="query" type="search" placeholder="搜索知识库、文件夹或文档标题" />
+        <button v-if="query" type="button" aria-label="清空搜索" @click="query = ''"><i class="ri-close-line"></i></button>
+      </label>
+      <div class="kb-scopes" role="tablist" aria-label="资料范围">
+        <button
+          v-for="option in scopeOptions"
+          :key="option.value"
+          role="tab"
+          :aria-selected="scope === option.value"
+          :class="{ on: scope === option.value }"
+          @click="scope = option.value"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+      <span class="kb-result-count">{{ visibleCount }} 个知识库</span>
+    </div>
+
+    <div v-for="g in groups" v-show="g.items.length || !filtering" :key="g.id" class="kgroup">
       <div class="kgroup-head">
         <template v-if="!g.fixed && editGroupId === g.id">
           <input
@@ -181,6 +230,11 @@ async function createKb() {
             <button class="gear" title="知识库设置" @click.stop="openCfg(k)"><i class="ri-settings-3-line"></i></button>
           </div>
           <div class="kb-desc">{{ k.desc }}</div>
+          <div v-if="matchingDocs(k).length" class="kb-doc-matches">
+            <button v-for="doc in matchingDocs(k)" :key="doc.id" @click.stop="openDoc(k.id, doc.id)">
+              <i class="ri-file-text-line"></i><span>{{ doc.title }}</span><i class="ri-arrow-right-s-line"></i>
+            </button>
+          </div>
           <div class="kb-meta">
             <i class="ri-file-text-line"></i>{{ docCount(k) }} 篇文档
             <span class="spacer"></span>
@@ -189,6 +243,12 @@ async function createKb() {
         </div>
       </div>
       <div v-if="g.items.length === 0" class="kgroup-empty">这个分组还是空的——在知识库设置中可将个人知识库移入此分组</div>
+    </div>
+    <div v-if="filtering && visibleCount === 0" class="kb-filter-empty">
+      <i class="ri-search-eye-line"></i>
+      <b>没有匹配的真实资料</b>
+      <span>换个关键词或资料范围试试。</span>
+      <button @click="query = ''; scope = 'all'">查看全部资料</button>
     </div>
 
     <!-- 知识库设置弹层 -->
@@ -244,9 +304,9 @@ async function createKb() {
               </div>
             </button>
           </div>
+          <div class="f-note">权限对组织内成员直接生效，不生成虚假的外部邀请链接。</div>
         </div>
         <div class="modal-foot">
-          <button class="btn-ghost" @click="cfgShare"><i class="ri-links-line"></i>复制邀请链接</button>
           <button v-if="!cfgKb.project && !cfgKb.auto && !cfgKb.notes" class="btn-danger" @click="cfgDelete">
             <i class="ri-delete-bin-line"></i>删除
           </button>
@@ -329,24 +389,82 @@ async function createKb() {
   font-size: 12px;
   color: var(--wao-text-weak);
 }
-.ai-btn {
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid #dcd3f2;
-  background: var(--wao-bg-sub);
-  border-radius: 8px;
-  font-size: 12.5px;
-  color: #7a5cc6;
-  cursor: pointer;
+.kb-discovery {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+}
+.kb-search {
+  min-width: 220px;
+  flex: 1 1 320px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-page);
 }
-.ai-btn:hover {
-  background: var(--wao-primary-tint);
+.kb-search:focus-within {
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 3px rgba(67, 88, 214, .1);
 }
-.ai-btn i {
+.kb-search > i {
   font-size: 14px;
+  color: var(--wao-text-weak);
+}
+.kb-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--wao-text);
+  font-size: 12.5px;
+}
+.kb-search button {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wao-text-weak);
+  cursor: pointer;
+}
+.kb-search button:hover { background: var(--wao-bg-hover); color: var(--wao-text); }
+.kb-scopes {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--wao-bg-tab);
+}
+.kb-scopes button {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wao-text-weak);
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kb-scopes button.on {
+  background: var(--wao-bg-card);
+  color: var(--wao-primary-text);
+  box-shadow: 0 1px 4px rgba(16, 18, 28, .08);
+}
+.kb-result-count {
+  color: var(--wao-text-faint);
+  font-size: 11.5px;
+  white-space: nowrap;
 }
 .btn-ghost {
   height: 32px;
@@ -566,6 +684,31 @@ async function createKb() {
   line-height: 1.6;
   min-height: 36px;
 }
+.kb-doc-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--wao-bg-sub);
+}
+.kb-doc-matches button {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wao-text-3);
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.kb-doc-matches button:hover { background: var(--wao-bg-card); color: var(--wao-primary-text); }
+.kb-doc-matches span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-doc-matches i { flex: 0 0 auto; }
 .kb-meta {
   display: flex;
   align-items: center;
@@ -593,6 +736,31 @@ async function createKb() {
   text-align: center;
   color: var(--wao-text-faint);
   font-size: 12.5px;
+}
+.kb-filter-empty {
+  margin-top: 18px;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed var(--wao-line-strong);
+  border-radius: 12px;
+  color: var(--wao-text-weak);
+  font-size: 12px;
+}
+.kb-filter-empty > i { font-size: 26px; color: var(--wao-text-faint); }
+.kb-filter-empty b { color: var(--wao-text-2); font-size: 13.5px; }
+.kb-filter-empty button {
+  margin-top: 4px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-primary-text);
+  cursor: pointer;
 }
 
 .trash-badge {
@@ -845,10 +1013,12 @@ async function createKb() {
 }
 
 @media (max-width: 760px) {
-  .knowledge { padding: 16px 12px 28px; }
-  .toolbar { gap: 7px; }
-  .toolbar .search { flex: 1 1 100%; }
-  .toolbar .search input { width: 100%; height: 38px; }
+  .know { padding: 16px 12px 28px; }
+  .kb-discovery { align-items: stretch; flex-direction: column; gap: 8px; }
+  .kb-search { min-width: 0; flex-basis: auto; }
+  .kb-scopes { width: 100%; overflow-x: auto; }
+  .kb-scopes button { flex: 1 0 auto; }
+  .kb-result-count { padding-left: 2px; }
   .kb-grid { grid-template-columns: 1fr; }
   .kgroup-head { flex-wrap: wrap; }
   .modal { top: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
