@@ -352,7 +352,7 @@ async function toggleCalendar(cal: CaldavCalendar) {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--wao-bg-card);
   transition: left 0.15s ease;
 }
 .toggle.on .knob {

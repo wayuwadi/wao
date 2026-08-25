@@ -1646,7 +1646,7 @@ button.holiday-status { cursor: pointer; }
   font-size: 9px;
   font-weight: 700;
 }
-.day-mark.rest { color: #b73f31; background: #fff0ed; }
+.day-mark.rest { color: var(--wao-danger-strong); background: var(--wao-danger-bg); }
 .day-mark.work { color: #656b78; background: #eceef2; }
 .work-week-mark {
   width: fit-content;
@@ -1662,7 +1662,7 @@ button.holiday-status { cursor: pointer; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.work-week-mark.big, .timeline-work-week.big { background: #fff1ed; color: #ad4934; }
+.work-week-mark.big, .timeline-work-week.big { background: var(--wao-danger-bg); color: var(--wao-danger-strong); }
 .timeline-work-week {
   display: block;
   width: fit-content;
@@ -1916,7 +1916,7 @@ button.holiday-status { cursor: pointer; }
   border: 1px solid #e6b7ac;
   border-radius: 7px;
   padding: 5px 9px;
-  background: #fff7f5;
+  background: var(--wao-danger-bg);
   color: #ad4934;
   cursor: pointer;
 }
@@ -1997,7 +1997,7 @@ button.holiday-status { cursor: pointer; }
   padding: 9px 11px;
   border: 1px solid #ead7ad;
   border-radius: 8px;
-  background: #fffaf0;
+  background: var(--wao-warning-bg);
   color: #7b642f;
   font-size: 11.5px;
   line-height: 1.5;
@@ -2140,14 +2140,14 @@ button.holiday-status { cursor: pointer; }
 .important-date-item { display: flex; align-items: stretch; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-card); overflow: hidden; }
 .important-date-item:hover { border-color: #df9db5; }
 .important-date-main { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; padding: 11px 12px; border: 0; background: transparent; text-align: left; cursor: pointer; }
-.important-date-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; background: #fbeef3; color: #bd3e6c; }
+.important-date-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; background: var(--wao-primary-soft); color: var(--wao-area-growth); }
 .important-date-copy { display: block; min-width: 0; flex: 1; }
 .important-date-copy b, .important-date-copy small, .important-date-copy em { display: block; }
 .important-date-copy b { color: var(--wao-text-1); font-size: 13px; }
 .important-date-copy small { margin-top: 3px; color: var(--wao-text-weak); font-size: 11.5px; }
 .important-date-copy em { margin-top: 4px; overflow: hidden; color: var(--wao-text-3); font-size: 11px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .important-date-delete { width: 42px; flex-shrink: 0; border: 0; border-left: 1px solid var(--wao-divider); background: transparent; color: var(--wao-text-weak); cursor: pointer; }
-.important-date-delete:hover { background: #fff2f0; color: var(--wao-danger); }
+.important-date-delete:hover { background: var(--wao-danger-bg); color: var(--wao-danger); }
 .important-date-delete:disabled { cursor: not-allowed; opacity: .6; }
 .important-date-empty { display: flex; min-height: 240px; align-items: center; justify-content: center; flex-direction: column; gap: 7px; color: var(--wao-text-weak); text-align: center; }
 .important-date-empty > i { font-size: 34px; color: #d0527f; }

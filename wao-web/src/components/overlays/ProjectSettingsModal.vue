@@ -417,7 +417,7 @@ onMounted(loadAiConfig)
   padding: 15px;
   border: 1px solid #dce1f8;
   border-radius: 12px;
-  background: linear-gradient(145deg, #f8f9ff, #fff);
+  background: linear-gradient(145deg, var(--wao-primary-tint), var(--wao-bg-card));
 }
 .ai-head,
 .runner-box {
@@ -470,7 +470,7 @@ onMounted(loadAiConfig)
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #fff;
+  background: var(--wao-bg-card);
   box-shadow: 0 1px 3px #0002;
   transition: 0.2s;
 }

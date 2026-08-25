@@ -10,6 +10,7 @@ import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/ty
 import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useTheme } from '@/composables/theme'
 
 const props = defineProps<{
   sceneJson: string
@@ -23,6 +24,7 @@ const emit = defineEmits<{
 }>()
 
 const host = ref<HTMLElement | null>(null)
+const { effective } = useTheme()
 let root: Root | null = null
 let ready = false
 let mountedKey = ''
@@ -85,6 +87,7 @@ function render() {
       initialData: initialData(),
       langCode: 'zh-CN',
       name: props.name,
+      theme: effective.value,
       autoFocus: true,
       onChange: changed,
       excalidrawAPI: () => {
@@ -97,7 +100,7 @@ function render() {
   )
 }
 
-watch(() => [props.sceneKey, props.name], render)
+watch(() => [props.sceneKey, props.name, effective.value], render)
 onMounted(render)
 onBeforeUnmount(() => {
   root?.unmount()
