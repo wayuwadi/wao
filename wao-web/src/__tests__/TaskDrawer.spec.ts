@@ -587,6 +587,56 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
+  it('子任务详情展示自己的 AI 运行记录，不混入主任务和其它子任务', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    const firstSubId = data.addSub(taskId, '第一条子任务')!
+    const secondSubId = data.addSub(taskId, '第二条子任务')!
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({ id: 'ar-first', taskId, subId: firstSubId, subTitle: '第一条子任务', latestProgress: '正在实现第一条' }),
+      aiRun({ id: 'ar-second', taskId, subId: secondSubId, subTitle: '第二条子任务', latestProgress: '正在实现第二条' }),
+      aiRun({ id: 'ar-task', taskId, latestProgress: '正在实现整条任务' }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    const firstRow = w.findAll('.sub-row').find((row) => row.text().includes('第一条子任务'))!
+    await firstRow.trigger('click')
+
+    const archive = w.find('.sub-ai-archive')
+    expect(archive.exists()).toBe(true)
+    expect(archive.findAll('.ai-run-entry')).toHaveLength(1)
+    expect(archive.text()).toContain('正在实现第一条')
+    expect(archive.text()).not.toContain('正在实现第二条')
+    expect(archive.text()).not.toContain('正在实现整条任务')
+    w.unmount()
+  })
+
+  it('子任务派工成功后立即展示接口返回的真实运行记录', async () => {
+    const { createAiRuns, fetchTaskAiRuns } = await import('@/api/ai')
+    const subId = data.addSub(taskId, '立即看到运行')!
+    const created = aiRun({
+      id: 'ar-created', taskId, subId, subTitle: '立即看到运行', status: 'queued', latestProgress: '等待执行电脑领取',
+    })
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([])
+      .mockImplementationOnce(() => new Promise(() => {}))
+    vi.mocked(createAiRuns).mockResolvedValueOnce([created])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    await w.find('.sub-row .sub-ai').trigger('click')
+    await flushPromises()
+    await w.find('.launcher footer .primary').trigger('click')
+    await flushPromises()
+    await w.find('.sub-row').trigger('click')
+
+    const archive = w.find('.sub-ai-archive')
+    expect(archive.text()).toContain('等待执行电脑领取')
+    expect(archive.find('.ai-run-state').text()).toBe('等待领取')
+    w.unmount()
+  })
+
   it('跑成功的运行也能继续给提示词，按钮写「继续优化」', async () => {
     const { fetchTaskAiRuns } = await import('@/api/ai')
     vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
