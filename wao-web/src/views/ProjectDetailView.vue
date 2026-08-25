@@ -66,6 +66,9 @@ watch(
 const settingsOpen = ref(false)
 const selectedTaskIds = ref<string[]>([])
 const aiBatchStarting = ref(false)
+const openStatusTaskId = ref<string | null>(null)
+const statusSavingTaskId = ref<string | null>(null)
+const statusSaveErrorIds = ref<string[]>([])
 const creatingDoc = ref(false)
 const docCreateError = ref('')
 const creatorFilterOpen = ref(false)
@@ -331,10 +334,34 @@ function toggleSelection(id: string) {
     ? selectedTaskIds.value.filter((item) => item !== id)
     : [...selectedTaskIds.value, id]
 }
-function selectAllOpen() {
-  selectedTaskIds.value = selectedTaskIds.value.length === openTasks.value.length
-    ? []
-    : openTasks.value.map((task) => task.id)
+function toggleStatusMenu(id: string) {
+  if (statusSavingTaskId.value === id) return
+  openStatusTaskId.value = openStatusTaskId.value === id ? null : id
+}
+async function changeTaskStatus(id: string, status: TaskStatus) {
+  const task = data.taskById(id)
+  if (!task || statusSavingTaskId.value) return
+  const retrying = statusSaveErrorIds.value.includes(id)
+  openStatusTaskId.value = null
+  statusSavingTaskId.value = id
+  if (task.status !== status) {
+    data.patchTask(id, { status }, `将状态改为「${status}」`)
+    if (status === '已完成') {
+      selectedTaskIds.value = selectedTaskIds.value.filter((taskId) => taskId !== id)
+    }
+  } else if (!retrying) {
+    statusSavingTaskId.value = null
+    return
+  }
+  await data.flushTask(id)
+  if (data.taskSaveState(id) === 'error') {
+    if (!statusSaveErrorIds.value.includes(id)) statusSaveErrorIds.value.push(id)
+    toast('状态保存失败，本地修改已保留；点击状态可重试', 'ri-error-warning-line')
+  } else {
+    statusSaveErrorIds.value = statusSaveErrorIds.value.filter((taskId) => taskId !== id)
+    toast(`状态已改为「${status}」`, 'ri-check-line')
+  }
+  statusSavingTaskId.value = null
 }
 async function runSelectedWithAi() {
   if (!selectedTaskIds.value.length || aiBatchStarting.value) return
@@ -623,10 +650,6 @@ function onDropGroup(groupId: string, overId?: string) {
           </div>
         </div>
         <div class="spacer"></div>
-        <button v-if="pdTaskView === 'list' && openTasks.length" class="select-all" @click="selectAllOpen">
-          <i :class="selectedTaskIds.length === openTasks.length ? 'ri-checkbox-fill' : 'ri-checkbox-blank-line'"></i>
-          {{ selectedTaskIds.length === openTasks.length ? '取消全选' : '选择任务' }}
-        </button>
         <button
           v-if="selectedTaskIds.length"
           class="batch-ai"
@@ -661,7 +684,35 @@ function onDropGroup(groupId: string, overId?: string) {
           <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
           <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
           <span v-if="t.waitBadge" class="wait-badge">{{ t.waitBadge }}</span>
-          <span class="mini" :style="{ background: t.stBg, color: t.stColor }">{{ t.status }}</span>
+          <div class="task-status" @click.stop>
+            <button
+              class="mini task-status-trigger"
+              :class="{ saving: statusSavingTaskId === t.id, error: statusSaveErrorIds.includes(t.id) }"
+              :style="{ background: t.stBg, color: t.stColor }"
+              :title="statusSaveErrorIds.includes(t.id) ? '状态保存失败，点击重试' : '点击修改状态'"
+              aria-haspopup="menu"
+              :aria-expanded="openStatusTaskId === t.id"
+              @click="toggleStatusMenu(t.id)"
+            >
+              <i v-if="statusSavingTaskId === t.id" class="ri-loader-4-line spin"></i>
+              <i v-else-if="statusSaveErrorIds.includes(t.id)" class="ri-error-warning-line"></i>
+              {{ t.status }}<i class="ri-arrow-down-s-line"></i>
+            </button>
+            <div v-if="openStatusTaskId === t.id" class="task-status-menu" role="menu">
+              <button
+                v-for="status in TASK_STATUSES"
+                :key="status"
+                role="menuitemradio"
+                :aria-checked="t.status === status"
+                :class="{ on: t.status === status }"
+                @click="changeTaskStatus(t.id, status)"
+              >
+                <span class="status-dot" :style="{ background: TASK_STATUS_DOTS[status] }"></span>
+                {{ status }}
+                <i v-if="t.status === status" :class="statusSaveErrorIds.includes(t.id) ? 'ri-refresh-line' : 'ri-check-line'"></i>
+              </button>
+            </div>
+          </div>
           <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
           <span class="owner-av" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
           <span class="trow-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
@@ -678,7 +729,35 @@ function onDropGroup(groupId: string, overId?: string) {
             <i class="drag-grip ri-draggable placeholder"></i>
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
             <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
-            <span class="mini" :style="{ background: t.stBg, color: t.stColor }">{{ t.status }}</span>
+            <div class="task-status" @click.stop>
+              <button
+                class="mini task-status-trigger"
+                :class="{ saving: statusSavingTaskId === t.id, error: statusSaveErrorIds.includes(t.id) }"
+                :style="{ background: t.stBg, color: t.stColor }"
+                :title="statusSaveErrorIds.includes(t.id) ? '状态保存失败，点击重试' : '点击修改状态'"
+                aria-haspopup="menu"
+                :aria-expanded="openStatusTaskId === t.id"
+                @click="toggleStatusMenu(t.id)"
+              >
+                <i v-if="statusSavingTaskId === t.id" class="ri-loader-4-line spin"></i>
+                <i v-else-if="statusSaveErrorIds.includes(t.id)" class="ri-error-warning-line"></i>
+                {{ t.status }}<i class="ri-arrow-down-s-line"></i>
+              </button>
+              <div v-if="openStatusTaskId === t.id" class="task-status-menu" role="menu">
+                <button
+                  v-for="status in TASK_STATUSES"
+                  :key="status"
+                  role="menuitemradio"
+                  :aria-checked="t.status === status"
+                  :class="{ on: t.status === status }"
+                  @click="changeTaskStatus(t.id, status)"
+                >
+                  <span class="status-dot" :style="{ background: TASK_STATUS_DOTS[status] }"></span>
+                  {{ status }}
+                  <i v-if="t.status === status" :class="statusSaveErrorIds.includes(t.id) ? 'ri-refresh-line' : 'ri-check-line'"></i>
+                </button>
+              </div>
+            </div>
             <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
             <span class="owner-av" :title="t.ownerName" :style="{ background: t.ownerColor }">{{ t.ownerInitial }}</span>
             <span class="trow-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
@@ -1194,7 +1273,6 @@ function onDropGroup(groupId: string, overId?: string) {
   display: flex;
   align-items: center;
 }
-.select-all,
 .batch-ai {
   height: 32px;
   padding: 0 11px;
@@ -1204,11 +1282,6 @@ function onDropGroup(groupId: string, overId?: string) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-.select-all {
-  border: 1px solid var(--wao-line-control);
-  background: var(--wao-bg-card);
-  color: var(--wao-text-3);
 }
 .batch-ai {
   border: 1px solid #bec8f5;
@@ -1391,6 +1464,67 @@ function onDropGroup(groupId: string, overId?: string) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.task-status {
+  position: relative;
+  flex-shrink: 0;
+}
+.task-status-trigger {
+  border: 1px solid transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.task-status-trigger:hover,
+.task-status-trigger[aria-expanded='true'] {
+  border-color: currentColor;
+}
+.task-status-trigger.saving {
+  cursor: wait;
+  opacity: 0.72;
+}
+.task-status-trigger.error {
+  box-shadow: 0 0 0 1px #bc4141;
+}
+.task-status-menu {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 5px);
+  right: 0;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid var(--wao-line);
+  border-radius: 9px;
+  background: var(--wao-bg-card);
+  box-shadow: var(--wao-shadow-modal);
+}
+.task-status-menu button {
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--wao-text-2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  text-align: left;
+}
+.task-status-menu button:hover,
+.task-status-menu button.on {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+}
+.task-status-menu button > i { margin-left: auto; }
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 .trow-due {
   font-size: 12px;
@@ -1891,9 +2025,8 @@ function onDropGroup(groupId: string, overId?: string) {
   .tab-toolbar > .seg { order: 1; width: 100%; }
   .seg-btn { flex: 1; justify-content: center; height: 36px; }
   .creator-filter { order: 2; margin-left: 0; }
-  .creator-filter-btn, .select-all, .batch-ai { min-height: 40px; }
+  .creator-filter-btn, .batch-ai { min-height: 40px; }
   .tab-toolbar > .spacer { order: 3; }
-  .select-all { order: 4; }
   .batch-ai { order: 5; }
   .creator-filter-menu { min-width: 160px; }
 
@@ -1905,6 +2038,7 @@ function onDropGroup(groupId: string, overId?: string) {
   .trow-title { order: 3; flex: 1 1 calc(100% - 68px); min-width: calc(100% - 68px); white-space: normal; overflow: visible; line-height: 1.45; text-overflow: clip; }
   .trow.done .trow-title { flex-basis: calc(100% - 32px); min-width: calc(100% - 32px); }
   .trow .wait-badge { order: 4; margin-left: 60px; }
+  .trow .task-status { order: 5; }
   .trow .mini { order: 5; }
   .trow .owner-av { order: 6; }
   .trow-due { order: 7; width: auto; margin-left: auto; }
