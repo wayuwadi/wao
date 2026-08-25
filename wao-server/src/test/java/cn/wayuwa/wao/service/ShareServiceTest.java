@@ -69,6 +69,26 @@ class ShareServiceTest {
     }
 
     @Test
+    void subRunMarkdownUsesParentAndCompletedSubtasksAsReadOnlyMemory() {
+        when(tasks.get("t1")).thenReturn(task());
+
+        String md = service.toSubRunMarkdown("t1", "s2", BASE);
+
+        assertThat(md).startsWith("# 子任务迭代：归档到 NAS");
+        assertThat(md).contains("本次只执行“归档到 NAS”")
+                .contains("不得把它们当成待办重复执行")
+                .contains("## 主任务背景（只读记忆）")
+                .contains("- 标题：整理证件盒")
+                .contains("先按人分堆，再按年份排。")
+                .contains("## 已完成子任务（只读记忆）")
+                .contains("- [x] 扫描身份证")
+                .contains("分辨率 300dpi。");
+        assertThat(md).contains("## 本次目标").contains("（暂无描述）");
+        assertThat(md).doesNotContain("- [ ] 归档到 NAS");
+        assertThat(md).contains("![盒子.png](https://wao.example/api/images/img1/raw)");
+    }
+
+    @Test
     void shareSubFallsBackToIndexKeyForLegacyDataWithoutId() {
         TaskDto legacy = new TaskDto("t9", "老任务", "p1", "待办", "P2", "wg",
                 List.of(), null, "2026-08-01", null, "",

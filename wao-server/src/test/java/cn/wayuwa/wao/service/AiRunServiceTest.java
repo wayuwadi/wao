@@ -1230,7 +1230,7 @@ class AiRunServiceTest {
         verify(runMapper).insert(run.capture());
         assertThat(run.getValue().getSubId()).isEqualTo("s1");
         assertThat(run.getValue().getPromptUrl())
-                .isEqualTo("https://wao.example/api/share/tasks/t1/subs/s1.md");
+                .isEqualTo("https://wao.example/api/share/tasks/t1/subs/s1.md?iteration=true");
     }
 
     @Test

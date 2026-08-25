@@ -70,11 +70,15 @@ public class ShareService {
      * @throws NotFoundException 任务或子任务不存在时
      */
     public SharedTaskDto shareSub(String taskId, String subId) {
-        TaskDto t = tasks.get(taskId);
+        return shareSub(tasks.get(taskId), subId);
+    }
+
+    /** 从同一份任务快照定位子任务，避免迭代 Markdown 重复读取期间拼出不一致上下文。 */
+    private SharedTaskDto shareSub(TaskDto t, String subId) {
         List<Step> subs = nn(t.subs());
         for (int i = 0; i < subs.size(); i++) {
             Step s = subs.get(i);
-            if (subKey(taskId, s, i).equals(subId)) {
+            if (subKey(t.id(), s, i).equals(subId)) {
                 return new SharedTaskDto("sub", t.id(), subId, s.text(),
                         s.done() ? "已完成" : "未完成", null, null,
                         t.project(), projectName(t.project()), nz(s.desc()), nn(s.images()), List.of(), List.of());
@@ -196,6 +200,53 @@ public class ShareService {
     }
 
     /**
+     * 生成单条子任务的迭代上下文：当前子任务是唯一待办，主任务与已完成子任务仅作为历史记忆。
+     *
+     * <p>普通子任务分享仍保持「只含该子任务」的 ADR-013 边界；只有 AI Run 固化的
+     * {@code iteration=true} 提示地址使用本投影。未完成的其它子任务不会进入上下文，避免 AI
+     * 把它们误当成本次范围。
+     *
+     * @param taskId 所属主任务 id
+     * @param subId 本次要执行的子任务 id
+     * @param baseUrl 公网根地址，用于绝对化图片
+     * @return 可供 Runner 直接读取的 Markdown
+     */
+    public String toSubRunMarkdown(String taskId, String subId, String baseUrl) {
+        TaskDto task = tasks.get(taskId);
+        SharedTaskDto target = shareSub(task, subId);
+        List<Step> all = nn(task.subs());
+        List<Step> completed = java.util.stream.IntStream.range(0, all.size())
+                .filter(index -> all.get(index).done() && !subKey(taskId, all.get(index), index).equals(subId))
+                .mapToObj(all::get)
+                .toList();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("# 子任务迭代：").append(target.title()).append("\n\n")
+                .append("> 本次只执行“").append(target.title()).append("”。下方主任务背景与已完成子任务")
+                .append("仅作为只读历史记忆，用于延续已有成果；不得把它们当成待办重复执行。\n\n")
+                .append("## 本次目标\n\n");
+        appendTaskBody(sb, target, baseUrl);
+
+        sb.append("## 主任务背景（只读记忆）\n\n")
+                .append("- 标题：").append(task.title()).append('\n')
+                .append("- 状态：").append(nz(task.status())).append('\n');
+        if (task.pr() != null) sb.append("- 优先级：").append(task.pr()).append('\n');
+        if (task.due() != null && !task.due().isBlank()) sb.append("- 截止：").append(task.due()).append('\n');
+        sb.append("\n### 描述\n\n")
+                .append(nz(task.desc()).isBlank() ? "（暂无描述）" : absolutizeMarkdown(task.desc(), baseUrl))
+                .append("\n\n");
+        appendImages(sb, nn(task.images()), baseUrl, "### 图片");
+
+        sb.append("## 已完成子任务（只读记忆）\n\n");
+        if (completed.isEmpty()) {
+            sb.append("（暂无已完成子任务；本次仅参考主任务背景。）\n");
+        } else {
+            appendSteps(sb, completed, baseUrl);
+        }
+        return sb.toString();
+    }
+
+    /**
      * 把一次合并 AI Run 的全部任务渲染为一份稳定上下文。
      *
      * <p>任务关系只保存 id 和顺序，正文每次从真实任务读取；因此排队期间补充的描述和图片也会进入
@@ -226,13 +277,44 @@ public class ShareService {
     }
 
     private static void appendImages(StringBuilder sb, List<ImageRef> images, String baseUrl) {
+        appendImages(sb, images, baseUrl, "## 图片");
+    }
+
+    /** 按调用位置指定图片标题层级，避免迭代上下文里的图片跳出所属章节。 */
+    private static void appendImages(StringBuilder sb, List<ImageRef> images, String baseUrl, String heading) {
         if (images.isEmpty()) {
             return;
         }
-        sb.append("## 图片\n\n");
+        sb.append(heading).append("\n\n");
         for (ImageRef im : images) {
             sb.append("![").append(nz(im.name())).append("](")
                     .append(absolute(nz(im.url()), baseUrl)).append(")\n");
+        }
+        sb.append('\n');
+    }
+
+    /** 渲染任务元数据、描述和图片；标题由调用方决定层级。 */
+    private static void appendTaskBody(StringBuilder sb, SharedTaskDto task, String baseUrl) {
+        sb.append("- 状态：").append(nz(task.status())).append('\n')
+                .append("\n### 描述\n\n")
+                .append(task.desc().isBlank() ? "（暂无描述）" : absolutizeMarkdown(task.desc(), baseUrl))
+                .append("\n\n");
+        appendImages(sb, task.images(), baseUrl, "### 图片");
+    }
+
+    /** 渲染带描述和图片的子任务清单。 */
+    private static void appendSteps(StringBuilder sb, List<Step> steps, String baseUrl) {
+        for (Step step : steps) {
+            sb.append("- [").append(step.done() ? "x" : " ").append("] ").append(step.text()).append('\n');
+            if (step.desc() != null && !step.desc().isBlank()) {
+                sb.append(absolutizeMarkdown(step.desc(), baseUrl).indent(2));
+            }
+            if (step.images() != null) {
+                for (ImageRef image : step.images()) {
+                    sb.append("  ![").append(nz(image.name())).append("](")
+                            .append(absolute(nz(image.url()), baseUrl)).append(")\n");
+                }
+            }
         }
         sb.append('\n');
     }
