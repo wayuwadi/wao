@@ -365,7 +365,7 @@ h1 {
   border: 1px solid #c8ded5;
   border-radius: 12px;
   padding: 10px 14px;
-  background: #f0f8f4;
+  background: var(--wao-success-bg);
   color: #315e51;
   display: flex;
   align-items: center;
@@ -492,7 +492,7 @@ h1 {
   color: #267c65;
 }
 .ai-state.error {
-  background: #fff1ee;
+  background: var(--wao-danger-bg);
   color: #9f4037;
 }
 .ai-state span {
@@ -540,7 +540,7 @@ h1 {
   border: 1px solid #ecc5be;
   border-radius: 9px;
   padding: 9px;
-  background: #fff5f3;
+  background: var(--wao-danger-bg);
   color: #a33c32;
   display: grid;
   grid-template-columns: auto 1fr;

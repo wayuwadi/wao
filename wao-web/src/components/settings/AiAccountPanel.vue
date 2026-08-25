@@ -659,8 +659,8 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .confirm-card > div:last-child { display: flex; justify-content: center; gap: 9px; }
 .danger-btn { min-height: 34px; padding: 0 14px; border: 1px solid #d94c4c; border-radius: 9px; background: #d94c4c; color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
 .oauth-grid { display: grid; grid-template-columns: 1fr; gap: 13px; }
-.oauth-card { position: relative; display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 14px; min-height: 112px; padding: 17px 18px; overflow: hidden; border: 1px solid #d9deef; border-radius: 15px; background: linear-gradient(120deg,#fff 25%,#f2f5ff); box-shadow: 0 8px 26px rgba(41,52,104,.07); }
-.oauth-card.claude { background: linear-gradient(120deg,#fff 25%,#fff6f1); border-color: #eadfd8; }
+.oauth-card { position: relative; display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 14px; min-height: 112px; padding: 17px 18px; overflow: hidden; border: 1px solid var(--wao-primary-line); border-radius: 15px; background: linear-gradient(120deg,var(--wao-bg-card) 25%,var(--wao-primary-tint)); box-shadow: var(--wao-shadow-card-hover-2); }
+.oauth-card.claude { background: linear-gradient(120deg,var(--wao-bg-card) 25%,var(--wao-warning-bg)); border-color: var(--wao-warning-bg); }
 .provider-mark, .account-icon, .login-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #202638; color: #fff; font-size: 20px; }
 .claude .provider-mark, .account-icon.claude { background: #f1e4db; color: #bd6232; }
 .oauth-title { display: flex; align-items: center; gap: 8px; }

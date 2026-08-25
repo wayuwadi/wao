@@ -1559,7 +1559,7 @@ onBeforeUnmount(() => {
   gap: 4px;
   border: 1px solid var(--wao-divider);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.94);
+  background: color-mix(in srgb, var(--wao-bg-card) 94%, transparent);
   color: var(--wao-text-weak);
   font-size: 11px;
   cursor: pointer;

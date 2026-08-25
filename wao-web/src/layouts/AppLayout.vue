@@ -240,7 +240,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   padding: 9px 12px;
   border: 1px solid #dce2f5;
   border-radius: 9px;
-  background: #f5f7ff;
+  background: var(--wao-primary-tint);
   color: #4358d6;
   font-size: 13px;
   display: flex;
@@ -249,7 +249,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 .data-status.error {
   border-color: #f0c7c7;
-  background: #fff4f4;
+  background: var(--wao-danger-bg);
   color: #a83b3b;
 }
 .data-status span { flex: 1; }
