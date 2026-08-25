@@ -42,6 +42,21 @@ describe('AI Run 状态投影', () => {
     expect(data.taskById('t1')!.status).toBe('进行中')
   })
 
+  it('打开待验证任务时不被历史失败或暂停记录降回进行中', () => {
+    const data = useDataStore()
+    const task = data.taskById('t1')!
+    task.status = '待验证'
+
+    data.applyAiRunStatuses([run('failed')])
+    expect(task.status).toBe('待验证')
+
+    data.applyAiRunStatuses([run('cancelled')])
+    expect(task.status).toBe('待验证')
+
+    data.applyAiRunStatuses([run('running')])
+    expect(task.status).toBe('AI 进行中')
+  })
+
   it('不覆盖人工验收后的已完成状态', () => {
     const data = useDataStore()
     const task = data.taskById('t1')!
