@@ -663,13 +663,32 @@ public class AiRunService {
     @Transactional
     public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl,
             String runnerId, String aiAccountId) {
+        return launchGoal(projectId, goal, requestedBy, baseUrl, runnerId, aiAccountId, false);
+    }
+
+    /**
+     * 使用本次指定的执行电脑和 Plan 偏好创建自主目标。
+     *
+     * @param projectId 承载目标的项目
+     * @param goal 用户输入的原始目标
+     * @param requestedBy 发起人
+     * @param baseUrl 公网任务分享根地址
+     * @param runnerId 本次指定的执行电脑；留空表示自动分配
+     * @param aiAccountId 本次运行固定使用的集中账号；可为空
+     * @param planMode Codex 是否先规划再连续执行；其他引擎忽略
+     * @return 新建并已入队的运行
+     */
+    @Transactional
+    public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl,
+            String runnerId, String aiAccountId, Boolean planMode) {
         String normalizedGoal = persistGoalImages(trim(goal));
         if (!StringUtils.hasText(normalizedGoal)) throw new BadRequestException("请先写下想让 AI 完成的目标");
 
         cn.wayuwa.wao.dto.TaskDto task = tasks.create(new CreateTaskRequest(
                 goalTitle(normalizedGoal), projectId, "P2", requestedBy, "",
                 autonomousGoalDescription(normalizedGoal), List.of(), null, null, null), requestedBy);
-        List<AiRunDto> runs = enqueue(List.of(task.id()), null, null, runnerId, aiAccountId, requestedBy, baseUrl);
+        List<AiRunDto> runs = enqueue(List.of(task.id()), null, null, runnerId, aiAccountId,
+                null, null, planMode, requestedBy, baseUrl);
         if (runs.isEmpty()) throw new IllegalStateException("自主目标创建后未生成 AI 运行");
         return runs.get(0);
     }

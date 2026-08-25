@@ -4,10 +4,12 @@ import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.RequestMetricAcceptedDto;
 import cn.wayuwa.wao.dto.RequestMetricBatchRequest;
+import cn.wayuwa.wao.dto.RequestMetricClearedDto;
 import cn.wayuwa.wao.dto.RequestMetricOverviewDto;
 import cn.wayuwa.wao.service.HttpRequestMetricService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -41,5 +43,11 @@ public class HttpRequestMetricController {
     public ApiResponse<RequestMetricOverviewDto> overview(
             @RequestParam(defaultValue = "24") int hours, HttpServletRequest http) {
         return ApiResponse.ok(metrics.overview(currentMember.idOr(http, "wg"), hours));
+    }
+
+    /** 清空当前成员的全部请求体验历史，其他成员记录保持不变。 */
+    @DeleteMapping
+    public ApiResponse<RequestMetricClearedDto> clear(HttpServletRequest http) {
+        return ApiResponse.ok(new RequestMetricClearedDto(metrics.clear(currentMember.idOr(http, "wg"))));
     }
 }

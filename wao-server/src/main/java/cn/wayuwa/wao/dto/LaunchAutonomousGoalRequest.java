@@ -6,5 +6,6 @@ import jakarta.validation.constraints.NotBlank;
 public record LaunchAutonomousGoalRequest(
         @NotBlank String goal,
         @NotBlank String projectId,
-        String runnerId) {
+        String runnerId,
+        Boolean planMode) {
 }

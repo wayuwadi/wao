@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   flushRequestMetrics,
+  pauseRequestMetricReporter,
   reportBrowserRequest,
   resetRequestMetricReporterForTest,
+  resumeRequestMetricReporter,
 } from '@/utils/requestMetricReporter'
 
 describe('浏览器请求指标上报', () => {
@@ -57,6 +59,24 @@ describe('浏览器请求指标上报', () => {
     vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 401 } as Response)
     reportBrowserRequest('/api/projects', 'get', 401, 20, Date.now())
     await flushRequestMetrics()
+    await flushRequestMetrics()
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('清空历史时等待在途批次并丢弃暂停期间和待重试的旧样本', async () => {
+    let finishUpload!: () => void
+    vi.mocked(fetch).mockReturnValueOnce(new Promise((resolve) => {
+      finishUpload = () => resolve({ ok: true } as Response)
+    }))
+    reportBrowserRequest('/api/projects', 'get', 200, 20, Date.now())
+    const uploading = flushRequestMetrics()
+    const pausing = pauseRequestMetricReporter()
+    reportBrowserRequest('/api/tasks', 'get', 200, 30, Date.now())
+    finishUpload()
+    await uploading
+    await pausing
+
+    resumeRequestMetricReporter()
     await flushRequestMetrics()
     expect(fetch).toHaveBeenCalledTimes(1)
   })

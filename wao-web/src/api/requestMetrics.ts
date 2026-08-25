@@ -40,3 +40,8 @@ export async function fetchRequestMetricOverview(hours = 24) {
   )
   return response.data.data
 }
+
+export async function clearRequestMetricHistory() {
+  const response = await http.delete<ApiResponse<{ cleared: number }>>('/api/request-metrics')
+  return response.data.data
+}

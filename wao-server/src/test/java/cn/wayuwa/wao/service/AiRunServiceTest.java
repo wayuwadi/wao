@@ -350,6 +350,26 @@ class AiRunServiceTest {
     }
 
     @Test
+    void autonomousGoalPersistsTheSelectedCodexPlanMode() {
+        TaskEntity task = task("t1", "p1", "先规划再执行");
+        when(tasks.create(any(CreateTaskRequest.class), eq("wg"))).thenReturn(taskDto(null, null));
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "Linux 主节点", "codex")));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        AiRunDto result = service.launchGoal("p1", "先规划再执行", "wg", "https://wao.example",
+                null, null, true);
+
+        assertThat(result.planMode()).isTrue();
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getPlanMode()).isTrue();
+    }
+
+    @Test
     void autonomousGoalPersistsInlineImageAndUsesReadableTextAsTitle() {
         TaskEntity task = task("t1", "p1", "根据截图修复展示");
         when(images.store(any(byte[].class), eq("image/png"), eq("image.png"), eq("自主目标"), eq(true)))

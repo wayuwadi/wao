@@ -1,11 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { fetchRequestMetricOverview, type RequestMetricOverview } from '@/api/requestMetrics'
+import {
+  clearRequestMetricHistory,
+  fetchRequestMetricOverview,
+  type RequestMetricOverview,
+} from '@/api/requestMetrics'
+import { toast } from '@/composables/toast'
+import {
+  pauseRequestMetricReporter,
+  resumeRequestMetricReporter,
+} from '@/utils/requestMetricReporter'
 
 const overview = ref<RequestMetricOverview | null>(null)
 const loading = ref(true)
 const error = ref('')
 const hours = ref(24)
+const clearing = ref(false)
 
 const cards = computed(() => {
   const value = overview.value
@@ -27,6 +37,23 @@ async function load() {
     error.value = '请求监控加载失败，请检查网络后重试'
   } finally {
     loading.value = false
+  }
+}
+
+async function clearHistory() {
+  if (!window.confirm('清空当前账号的全部 HTTP 请求历史？此操作不可恢复。')) return
+  clearing.value = true
+  try {
+    await pauseRequestMetricReporter()
+    const result = await clearRequestMetricHistory()
+    overview.value = null
+    await load()
+    toast(`已清空 ${result.cleared} 条 HTTP 请求记录`, 'ri-delete-bin-line')
+  } catch {
+    error.value = '历史记录清空失败，请检查网络后重试'
+  } finally {
+    resumeRequestMetricReporter()
+    clearing.value = false
   }
 }
 
@@ -72,6 +99,10 @@ onMounted(load)
         <button :disabled="loading" @click="load">
           <i :class="loading ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
           {{ loading ? '刷新中' : '刷新' }}
+        </button>
+        <button class="clear-button" :disabled="loading || clearing" @click="clearHistory">
+          <i :class="clearing ? 'ri-loader-4-line spin' : 'ri-delete-bin-line'"></i>
+          {{ clearing ? '清空中' : '清空历史' }}
         </button>
       </div>
     </header>
@@ -232,6 +263,11 @@ onMounted(load)
   background: #4f7167;
   color: white;
   border-color: #4f7167;
+}
+.actions .clear-button {
+  border-color: #d9b7b3;
+  background: var(--wao-bg-card);
+  color: var(--wao-danger-strong);
 }
 .actions button:disabled {
   opacity: 0.55;

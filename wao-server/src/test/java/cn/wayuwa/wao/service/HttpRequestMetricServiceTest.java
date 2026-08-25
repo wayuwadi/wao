@@ -86,6 +86,15 @@ class HttpRequestMetricServiceTest {
         verify(mapper).deleteBefore(any(LocalDateTime.class));
     }
 
+    @Test
+    void clearsOnlyTheCurrentMembersHistoryAndReturnsDeletedCount() {
+        when(mapper.deleteOwned("member-a")).thenReturn(7);
+
+        assertThat(service.clear("member-a")).isEqualTo(7);
+
+        verify(mapper).deleteOwned("member-a");
+    }
+
     private HttpRequestMetricEntity metric(long id, String method, String path, Integer status, int duration) {
         HttpRequestMetricEntity metric = new HttpRequestMetricEntity();
         metric.setId(id);

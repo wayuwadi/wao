@@ -62,6 +62,7 @@ const goalDraftState = ref<'idle' | 'saved' | 'error'>('idle')
 const goalProjectId = ref('')
 const goalRunnerId = ref('')
 const goalRunnerManuallySelected = ref(false)
+const goalPlanMode = ref(true)
 const launchingGoal = ref(false)
 const goalImageUploads = ref(0)
 const selectedRun = ref<AiRun | null>(null)
@@ -114,6 +115,7 @@ const activeWorkflows = computed(() => workflows.value.filter((workflow) => work
 const goalWorkflow = computed(() => activeWorkflows.value.find(
   (workflow) => workflow.projectId === goalProjectId.value,
 ) ?? null)
+const goalSupportsPlanMode = computed(() => goalWorkflow.value?.config.defaultEngine === 'codex')
 /** 自主目标沿用工作流默认 AI 工具，只列出真正装了该工具的执行电脑。 */
 const goalRunnerCandidates = computed(() => {
   const engine = goalWorkflow.value?.config.defaultEngine
@@ -376,7 +378,10 @@ async function launchGoal() {
   }
   launchingGoal.value = true
   try {
-    const run = await launchAutonomousGoal(goalProjectId.value, normalizedGoal, goalRunnerId.value || null)
+    const run = await launchAutonomousGoal(
+      goalProjectId.value, normalizedGoal, goalRunnerId.value || null,
+      goalSupportsPlanMode.value && goalPlanMode.value,
+    )
     runs.value = [run, ...runs.value.filter((item) => item.id !== run.id)]
     goal.value = ''
     view.value = 'runs'
@@ -837,6 +842,18 @@ onBeforeUnmount(() => {
                 </option>
               </select>
             </label>
+            <button
+              v-if="goalSupportsPlanMode"
+              class="goal-plan-mode"
+              :class="{ on: goalPlanMode }"
+              type="button"
+              role="switch"
+              :aria-checked="goalPlanMode"
+              :disabled="launchingGoal"
+              @click="goalPlanMode = !goalPlanMode"
+            >
+              <span class="goal-switch"><i></i></span><span>Plan 模式</span>
+            </button>
             <span class="goal-shortcut">
               <template v-if="goalImageUploads">{{ goalImageUploads }} 张图片上传中 · </template>
               <template v-else-if="goalDraftState === 'saved'">草稿已保存在本机 · </template>
@@ -1595,6 +1612,13 @@ onBeforeUnmount(() => {
 .goal-actions label { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--wao-text-weak); font-size: 10.5px; }
 .goal-actions select { max-width: 230px; height: 29px; padding: 0 26px 0 8px; border: 1px solid var(--wao-line); border-radius: 7px; background: #fff; color: var(--wao-text-2); font-size: 11px; }
 .goal-actions .goal-runner-select { max-width: 180px; }
+.goal-plan-mode { height: 29px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--wao-line); border-radius: 7px; background: #fff; color: var(--wao-text-2); cursor: pointer; font-size: 10.5px; white-space: nowrap; }
+.goal-plan-mode.on { border-color: #8f9ee6; background: #eef1ff; color: #4358d6; }
+.goal-plan-mode:disabled { opacity: .55; cursor: default; }
+.goal-switch { width: 24px; height: 14px; flex: 0 0 auto; padding: 2px; border-radius: 8px; background: var(--wao-line); }
+.goal-switch i { display: block; width: 10px; height: 10px; border-radius: 50%; background: #fff; transition: transform .15s ease; }
+.goal-plan-mode.on .goal-switch { background: #4358d6; }
+.goal-plan-mode.on .goal-switch i { transform: translateX(10px); }
 .goal-shortcut { margin-left: auto; color: #a0a5b6; font-size: 9.5px; white-space: nowrap; }
 .goal-submit { min-width: 112px; height: 32px; padding: 0 12px; border: 1px solid #4358d6; border-radius: 8px; background: #4358d6; color: #fff; cursor: pointer; font-size: 11.5px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .goal-submit.setup { min-width: 140px; }

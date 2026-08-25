@@ -21,6 +21,9 @@ public interface HttpRequestMetricMapper extends BaseMapper<HttpRequestMetricEnt
     List<HttpRequestMetricEntity> listOwnedSince(
             @Param("memberId") String memberId, @Param("since") LocalDateTime since);
 
+    @Delete("DELETE FROM http_request_metric WHERE member_id = #{memberId}")
+    int deleteOwned(@Param("memberId") String memberId);
+
     @Delete("DELETE FROM http_request_metric WHERE started_at < #{before}")
     int deleteBefore(@Param("before") LocalDateTime before);
 }
