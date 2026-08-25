@@ -64,7 +64,7 @@ describe('AiRunLauncher', () => {
     await wrapper.find('footer .primary').trigger('click')
 
     expect(wrapper.text()).toContain('CLI Proxy · gpt-5.4')
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-linux', 'aa-1', null, null, false]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-linux', 'aa-1', null, null, true]])
   })
 
   it('使用执行电脑本地登录态时保留项目首选 Windows 电脑', async () => {
@@ -78,7 +78,7 @@ describe('AiRunLauncher', () => {
     expect(wrapper.findAll('select')[3]!.element.value).toBe('rn-win')
     await wrapper.find('footer .primary').trigger('click')
 
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'medium', false]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'medium', true]])
   })
 
   it('集中账号没有对应 Linux CLI 时明确阻止静默落到 Windows', async () => {
@@ -111,20 +111,20 @@ describe('AiRunLauncher', () => {
     await wrapper.find('footer .primary').trigger('click')
 
     expect(wrapper.text()).toContain('标准速度（Fast 未开启）')
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', false]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', true]])
   })
 
-  it('可为 Codex 开启 Plan 模式并说明推荐项会自动选择', async () => {
+  it('Codex 默认开启 Plan 模式，也允许本次手动关闭', async () => {
     const wrapper = mount(AiRunLauncher, { props: { projectId: 'p1' } })
     await flushPromises()
 
     const toggle = wrapper.find('.plan-mode')
-    expect(toggle.attributes('aria-checked')).toBe('false')
+    expect(toggle.attributes('aria-checked')).toBe('true')
     expect(toggle.text()).toContain('遇到问题自动选择推荐项')
     await toggle.trigger('click')
     await wrapper.find('footer .primary').trigger('click')
 
-    expect(toggle.attributes('aria-checked')).toBe('true')
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'medium', true]])
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'medium', false]])
   })
 })

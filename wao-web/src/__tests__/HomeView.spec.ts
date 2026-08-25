@@ -10,6 +10,7 @@ import {
   fetchAiRunnerLog,
   fetchAiRunHistory,
   fetchAiEvolution,
+  fetchAiTaskAutoRunPolicy,
   fetchAiRunners,
   fetchAiWorkflows,
   launchAutonomousGoal,
@@ -18,6 +19,7 @@ import {
   removeAiWorkflow,
   requestRunnerScriptUpdate,
   rerunAiRun,
+  saveAiTaskAutoRunPolicy,
 } from '@/api/ai'
 
 vi.mock('@/api/ai', () => ({
@@ -138,6 +140,18 @@ vi.mock('@/api/ai', () => ({
     lastCheckedAt: '2026-08-13T10:00:00', lastRunId: null,
     intervalHours: 12, batchSize: 1,
   }),
+  fetchAiTaskAutoRunPolicy: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    enabled: true, idleHours: 2, status: 'ready',
+    message: '空闲达到 2 小时后，将自动以 Plan 模式执行录入最早的待办。',
+    lastActivityAt: '2026-08-25T09:00:00', nextEligibleAt: '2026-08-25T11:00:00',
+    lastCheckedAt: '2026-08-25T10:55:00', lastRunId: null,
+  }),
+  saveAiTaskAutoRunPolicy: vi.fn<(enabled: boolean, idleHours: number) => Promise<Record<string, unknown>>>()
+    .mockImplementation(async (enabled: boolean, idleHours: number) => ({
+      enabled, idleHours, status: enabled ? 'ready' : 'disabled',
+      message: enabled ? `空闲达到 ${idleHours} 小时后自动派发。` : '自动派发已关闭。',
+      lastActivityAt: null, nextEligibleAt: null, lastCheckedAt: null, lastRunId: null,
+    })),
   createAiPairCode: vi.fn<() => Promise<{ code: string; expiresAt: string }>>()
     .mockResolvedValue({ code: 'ABCD2345KMNP', expiresAt: '2026-07-25T20:30:00' }),
   saveAiProjectConfig: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
@@ -274,6 +288,28 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.console-quota').exists()).toBe(false)
     expect(wrapper.find('.capacity-orbit').exists()).toBe(true)
     expect(wrapper.find('.hero-link').text()).toContain('查看 AI 详情')
+    wrapper.unmount()
+  })
+
+  it('最近完成列表上方可保存自动派发开关和空闲小时数', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    const policy = wrapper.find('.auto-run-policy')
+    expect(fetchAiTaskAutoRunPolicy).toHaveBeenCalled()
+    expect(policy.text()).toContain('空闲时自动推进最早待办')
+    expect(policy.text()).toContain('Plan 模式')
+    expect(policy.find('.auto-run-switch').attributes('aria-checked')).toBe('true')
+
+    await policy.find('.auto-run-switch').trigger('click')
+    await policy.find('input').setValue(4)
+    expect(policy.text()).toContain('设置尚未保存')
+    await policy.find('.auto-run-save').trigger('click')
+    await flushPromises()
+
+    expect(saveAiTaskAutoRunPolicy).toHaveBeenCalledWith(false, 4)
+    expect(policy.find('.auto-run-save').text()).toContain('已保存')
     wrapper.unmount()
   })
 

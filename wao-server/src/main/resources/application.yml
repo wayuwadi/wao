@@ -78,6 +78,9 @@ wao:
     evolution:
       # 额度同步必须从具备受控出口的 Linux 主节点发起；其它节点保持关闭。
       scheduler-enabled: ${WAO_AI_EVOLUTION_SCHEDULER_ENABLED:false}
+    task-auto-run:
+      # 最早待办只由 Linux 主节点轮询；数据库检查窗口仍阻止误配时重复派发。
+      scheduler-enabled: ${WAO_AI_TASK_AUTO_RUN_SCHEDULER_ENABLED:false}
     # 首页每日建议只由 Linux 主节点预热，避免双节点重复占用本地 Codex。
     daily-guidance-warmup-enabled: ${WAO_DAILY_GUIDANCE_WARMUP_ENABLED:false}
     # 周/月/年回顾只由 Linux 主节点补齐，避免双节点重复生成同一周期。

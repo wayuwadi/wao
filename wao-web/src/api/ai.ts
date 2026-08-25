@@ -67,6 +67,18 @@ export interface AiEvolutionOverview {
   batchSize: number
 }
 
+/** 空闲后自动执行最早待办的持久化策略与真实调度状态。 */
+export interface AiTaskAutoRunPolicy {
+  enabled: boolean
+  idleHours: number
+  status: 'disabled' | 'busy' | 'cooling_down' | 'no_task' | 'ready'
+  message: string
+  lastActivityAt: string | null
+  nextEligibleAt: string | null
+  lastCheckedAt: string | null
+  lastRunId: string | null
+}
+
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
 }
@@ -169,6 +181,15 @@ export const refreshEvolutionSuggestions = () =>
 /** 保存自主进化的空闲间隔与单次自动派发数量。 */
 export const saveAiEvolutionSchedule = (intervalHours: number, batchSize: number) =>
   data<AiEvolutionOverview>(http.put('/api/ai/evolution/schedule', { intervalHours, batchSize }))
+
+export const fetchAiTaskAutoRunPolicy = () =>
+  data<AiTaskAutoRunPolicy>(http.get('/api/ai/task-auto-run', {
+    params: { _: Date.now() },
+    headers: { 'Cache-Control': 'no-cache' },
+  }))
+
+export const saveAiTaskAutoRunPolicy = (enabled: boolean, idleHours: number) =>
+  data<AiTaskAutoRunPolicy>(http.put('/api/ai/task-auto-run', { enabled, idleHours }))
 
 /** 一键把一条建议交给选中的项目工作流。 */
 export const launchEvolutionSuggestion = (suggestionId: string, projectId: string) =>
