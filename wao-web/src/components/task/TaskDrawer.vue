@@ -1554,7 +1554,7 @@ function demo(msg: string) {
   padding: 0 11px;
   border: 1px solid #c9d1f5;
   border-radius: 8px;
-  background: linear-gradient(135deg, #eef1ff, #fff);
+  background: linear-gradient(135deg, var(--wao-primary-soft), var(--wao-bg-card));
   color: var(--wao-primary-text);
   font-size: 11.5px;
   font-weight: 650;
@@ -2455,7 +2455,7 @@ function demo(msg: string) {
 }
 .sub-detail-action.danger:hover {
   border-color: #dc9090;
-  background: #fbe7e7;
+  background: var(--wao-danger-bg);
 }
 .custom-row {
   display: flex;

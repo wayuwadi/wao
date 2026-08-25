@@ -1386,7 +1386,7 @@ textarea {
 }
 .history-button {
   border-color: #b9d8cc;
-  background: #f1f8f5;
+  background: var(--wao-success-bg);
   color: #267c65;
 }
 .state-card {
@@ -1891,7 +1891,7 @@ textarea {
 }
 .energy-notice.error {
   color: #9b4141;
-  background: #fff2f1;
+  background: var(--wao-danger-bg);
 }
 .energy-notice.sent {
   color: #267c65;
@@ -2001,7 +2001,7 @@ textarea {
 }
 .time-block.current {
   border-radius: 10px;
-  background: #f0f8f5;
+  background: var(--wao-success-bg);
 }
 .time-block.current .marker {
   border-color: #267c65;
@@ -2150,7 +2150,7 @@ textarea {
   margin: 0 0 10px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #fff5e7;
+  background: var(--wao-warning-bg);
   color: #876714;
   font-size: 10px;
 }
@@ -2169,7 +2169,7 @@ textarea {
 .history-day > header {
   padding: 11px 13px;
   border-bottom: 1px solid var(--wao-divider);
-  background: #f4f8f6;
+  background: var(--wao-success-bg);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2301,7 +2301,7 @@ textarea {
   border: 1px solid #b9d8cc;
   border-radius: 13px;
   padding: 13px;
-  background: #f1f8f5;
+  background: var(--wao-success-bg);
 }
 .energy-editor > header {
   display: flex;
@@ -2496,7 +2496,7 @@ textarea {
   height: 34px;
   border: 1px solid #e2c5c1;
   border-radius: 8px;
-  background: #fff4f2;
+  background: var(--wao-danger-bg);
   color: #a04f45;
   cursor: pointer;
 }

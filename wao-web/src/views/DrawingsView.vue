@@ -789,7 +789,7 @@ onBeforeUnmount(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #fff;
+  background: var(--wao-bg-card);
 }
 .drawing-toolbar {
   height: 54px;
@@ -1001,7 +1001,7 @@ onBeforeUnmount(() => {
   width: 100vw;
   height: 100dvh;
   min-height: 0;
-  background: #fff;
+  background: var(--wao-bg-page);
 }
 .drawings-page:fullscreen .file-sidebar {
   display: none;

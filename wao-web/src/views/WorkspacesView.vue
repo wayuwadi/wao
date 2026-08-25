@@ -755,8 +755,8 @@ onMounted(loadAll)
 .workspace-page {
   min-height: 100%;
   padding: 30px 34px 70px;
-  background: linear-gradient(155deg, #f7f8fb 0%, #f4f1eb 100%);
-  color: #20232b;
+  background: linear-gradient(155deg, var(--wao-bg-page) 0%, var(--wao-bg-sub) 100%);
+  color: var(--wao-text);
 }
 .workspace-hero,
 .space-toolbar,
@@ -784,7 +784,7 @@ onMounted(loadAll)
 .workspace-hero p,
 .space-intro p {
   margin: 0;
-  color: #6c707c;
+  color: var(--wao-text-3);
 }
 .eyebrow {
   font-size: 11px;
@@ -823,16 +823,16 @@ onMounted(loadAll)
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #fff;
-  border: 1px solid #dedfe3;
+  background: var(--wao-bg-card);
+  border: 1px solid var(--wao-line-control);
   padding: 9px 13px;
-  color: #3f424b;
+  color: var(--wao-text-2);
 }
 .icon-button {
   width: 39px;
   height: 39px;
-  background: #fff;
-  border: 1px solid #dedfe3;
+  background: var(--wao-bg-card);
+  border: 1px solid var(--wao-line-control);
 }
 .danger {
   color: #b64b4b !important;
@@ -841,15 +841,15 @@ onMounted(loadAll)
 .empty-card {
   max-width: 1240px;
   margin: 20px auto;
-  background: #fff;
-  border: 1px solid #e4e2de;
+  background: var(--wao-bg-card);
+  border: 1px solid var(--wao-line);
   border-radius: 16px;
   padding: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: #616571;
+  color: var(--wao-text-3);
 }
 .state-card.error {
   color: #a33c3c;
@@ -868,7 +868,7 @@ onMounted(loadAll)
 .empty-card p {
   max-width: 520px;
   line-height: 1.7;
-  color: #70747e;
+  color: var(--wao-text-3);
 }
 .empty-icon {
   width: 70px;
@@ -885,9 +885,9 @@ onMounted(loadAll)
   margin: 0 auto 14px;
   justify-content: space-between;
   gap: 16px;
-  background: #ffffffc9;
+  background: color-mix(in srgb, var(--wao-bg-card) 79%, transparent);
   backdrop-filter: blur(12px);
-  border: 1px solid #e3e1dc;
+  border: 1px solid var(--wao-line);
   border-radius: 14px;
   padding: 12px 14px;
 }
@@ -899,14 +899,15 @@ onMounted(loadAll)
 .space-switcher span {
   font-size: 12px;
   font-weight: 700;
-  color: #777a82;
+  color: var(--wao-text-3);
 }
 .space-switcher select,
 .editor-meta select,
 .create-modal select {
-  border: 1px solid #d9d9dd;
+  border: 1px solid var(--wao-line-control);
   border-radius: 9px;
-  background: white;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
   padding: 9px 34px 9px 11px;
   min-width: 230px;
   font: inherit;
@@ -919,7 +920,7 @@ onMounted(loadAll)
   gap: 5px;
   align-items: center;
   font-size: 12px;
-  color: #737781;
+  color: var(--wao-text-3);
   margin-right: 4px;
 }
 .save-state.dirty {
@@ -978,8 +979,8 @@ onMounted(loadAll)
   display: flex;
   align-items: center;
   gap: 9px;
-  background: white;
-  border: 1px solid #dfddd8;
+  background: var(--wao-bg-card);
+  border: 1px solid var(--wao-line);
   border-radius: 12px;
   padding: 0 13px;
 }
@@ -988,6 +989,7 @@ onMounted(loadAll)
   border: 0;
   outline: 0;
   background: transparent;
+  color: var(--wao-text);
   padding: 12px 0;
   font: inherit;
 }
@@ -1004,7 +1006,7 @@ onMounted(loadAll)
 .section-title {
   gap: 8px;
   margin: 0 2px 11px;
-  color: #34373e;
+  color: var(--wao-text-2);
 }
 .section-title > i {
   color: #947546;
@@ -1015,7 +1017,7 @@ onMounted(loadAll)
 }
 .section-title span {
   font-size: 11px;
-  color: #8b8e95;
+  color: var(--wao-text-weak);
 }
 .favorite-section .section-title > i {
   color: #d19d37;
@@ -1032,10 +1034,10 @@ onMounted(loadAll)
   gap: 10px;
   align-items: center;
   padding: 14px;
-  background: #fff;
-  color: #292c33;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
   text-decoration: none;
-  border: 1px solid #e2e0dc;
+  border: 1px solid var(--wao-line);
   border-radius: 13px;
   transition: 0.16s ease;
 }
@@ -1068,23 +1070,23 @@ onMounted(loadAll)
 }
 .link-card small {
   margin-top: 3px;
-  color: #8a8d95;
+  color: var(--wao-text-weak);
 }
 .link-card em {
   margin-top: 5px;
-  color: #686c75;
+  color: var(--wao-text-3);
   font-size: 11px;
   font-style: normal;
 }
 .open-icon {
-  color: #b0b2b7;
+  color: var(--wao-text-faint);
 }
 .group-empty {
   padding: 24px;
-  background: #ffffff8c;
-  border: 1px dashed #d7d5d0;
+  background: color-mix(in srgb, var(--wao-bg-card) 55%, transparent);
+  border: 1px dashed var(--wao-line-control);
   border-radius: 12px;
-  color: #909299;
+  color: var(--wao-text-weak);
   text-align: center;
 }
 .workspace-editor {
@@ -1095,8 +1097,8 @@ onMounted(loadAll)
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
-  background: #fff;
-  border: 1px solid #e1dfda;
+  background: var(--wao-bg-card);
+  border: 1px solid var(--wao-line);
   border-radius: 15px;
   padding: 20px;
 }
@@ -1112,7 +1114,7 @@ onMounted(loadAll)
 .link-editor label > span {
   font-size: 12px;
   font-weight: 700;
-  color: #666a73;
+  color: var(--wao-text-3);
 }
 .editor-meta .wide {
   grid-column: 1/-1;
@@ -1123,11 +1125,13 @@ onMounted(loadAll)
 .link-editor input,
 .create-modal input,
 .create-modal textarea {
-  border: 1px solid #d9d8d5;
+  border: 1px solid var(--wao-line-control);
   border-radius: 9px;
   padding: 10px 11px;
   font: inherit;
   outline: none;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
 }
 .editor-meta input:focus,
 .editor-meta textarea:focus,
@@ -1151,13 +1155,13 @@ onMounted(loadAll)
 }
 .inline-error {
   color: #b13d3d;
-  background: #fff1f1;
+  background: var(--wao-danger-bg);
   border-radius: 9px;
   padding: 9px 11px;
 }
 .group-editor {
-  background: white;
-  border: 1px solid #e0ded9;
+  background: var(--wao-bg-card);
+  border: 1px solid var(--wao-line);
   border-radius: 15px;
   padding: 14px;
   margin: 12px 0;
@@ -1181,7 +1185,8 @@ onMounted(loadAll)
 .row-actions button,
 .modal-head button {
   border: 0;
-  background: #f3f3f3;
+  background: var(--wao-bg-hover-2);
+  color: var(--wao-text-2);
   border-radius: 8px;
   width: 34px;
   height: 34px;
@@ -1194,13 +1199,13 @@ onMounted(loadAll)
   align-items: end;
   margin-top: 12px;
   padding: 12px;
-  background: #f7f7f6;
+  background: var(--wao-bg-sub);
   border-radius: 11px;
 }
 .link-editor input {
   width: 100%;
   box-sizing: border-box;
-  background: white;
+  background: var(--wao-bg-card);
 }
 .favorite-toggle {
   align-items: center !important;
@@ -1246,7 +1251,8 @@ onMounted(loadAll)
 .create-modal {
   width: min(500px, calc(100vw - 32px));
   box-sizing: border-box;
-  background: #fff;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
   border-radius: 18px;
   padding: 22px;
   box-shadow: 0 30px 80px #0004;
@@ -1263,7 +1269,7 @@ onMounted(loadAll)
   font-size: 18px;
 }
 .draft-note {
-  color: #7e8188;
+  color: var(--wao-text-weak);
 }
 .modal-actions {
   justify-content: flex-end;
