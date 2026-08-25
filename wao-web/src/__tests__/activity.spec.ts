@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
 import { activitySentence } from '@/utils/activity'
 
@@ -13,6 +14,7 @@ describe('data store · 活动记录', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
     taskId = data.tasks.find((t) => t.status !== '已完成')!.id
     data.taskById(taskId)!.subs = []
     data.taskById(taskId)!.activity = []

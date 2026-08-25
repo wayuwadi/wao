@@ -7,6 +7,7 @@ import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { apiPutTask } from '@/api/board'
 import { useToastHost } from '@/composables/toast'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 import type { Task } from '@/types'
 
 vi.mock('@/api/board', async (importOriginal) => ({
@@ -33,6 +34,7 @@ describe('新建任务的落库反馈', () => {
     useToastHost().items.splice(0)
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
     data.apiLive = true
     putTask.mockReset()
   })

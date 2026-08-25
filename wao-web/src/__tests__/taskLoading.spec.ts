@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
+import { TASKS } from '@/data/fixtures'
 import type { Area, Task } from '@/types'
 
 const fetchTasks = vi.fn<() => Promise<Task[]>>()
@@ -35,9 +36,10 @@ describe('任务真实数据加载', () => {
     resolveAreas = undefined
   })
 
-  it('任务接口一返回就替换 fixtures，不等待其他业务域', async () => {
+  it('任务接口一返回就接管空 store，不等待其他业务域', async () => {
     const data = useDataStore()
-    const realTask = { ...data.tasks[0]!, id: 't-real', title: '我的真实任务' }
+    expect(data.tasks).toEqual([])
+    const realTask = { ...TASKS[0]!, id: 't-real', title: '我的真实任务' }
     fetchTasks.mockResolvedValue([realTask])
 
     const hydrating = data.hydrate()
@@ -48,7 +50,7 @@ describe('任务真实数据加载', () => {
     await hydrating
   })
 
-  it('任务接口失败时清空 fixtures 并保留可见错误', async () => {
+  it('任务接口失败时保持空值并保留可见错误', async () => {
     const data = useDataStore()
     fetchTasks.mockRejectedValue(new Error('任务接口超时'))
 

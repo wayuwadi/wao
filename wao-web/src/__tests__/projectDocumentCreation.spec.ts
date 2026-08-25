@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
@@ -28,6 +29,7 @@ describe('项目内创建文档', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
     const project = data.projectById('p1')!
     project.docs = []
     data.kbs = data.kbs.filter((kb) => kb.project !== project.id)

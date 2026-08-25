@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 import { MAX_TASK_GROUPS } from '@/types'
 
 vi.mock('@/api/ai', () => ({
@@ -35,6 +36,7 @@ describe('项目分组视图', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
   })
 
   it('还没建过分组时给一个「未分组」兜底，项目里的任务全落在里面', async () => {

@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 
 vi.mock('@/api/ai', () => ({
   createAiPairCode: vi.fn(),
@@ -24,6 +25,7 @@ describe('项目设置', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    seedDataStore()
   })
 
   it('可以维护规划中项目的状态并保存到数据层', async () => {

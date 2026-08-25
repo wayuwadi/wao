@@ -7,6 +7,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent } from 'vue'
 import KbDetailView from '@/views/KbDetailView.vue'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
 import { apiPatchDocTemplate, fetchDocTemplates } from '@/api/board'
 
@@ -43,6 +44,7 @@ describe('知识库详情目录体验', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    seedDataStore()
     vi.mocked(fetchDocTemplates).mockReset()
     vi.mocked(apiPatchDocTemplate).mockReset()
   })

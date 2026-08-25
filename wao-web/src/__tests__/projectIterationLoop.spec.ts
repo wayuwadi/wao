@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { ref } from 'vue'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 import type { AiRun } from '@/types'
 
 const { createAiRuns, fetchTaskAiRuns } = vi.hoisted(() => ({
@@ -43,6 +44,7 @@ describe('项目多轮验收闭环', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
     fetchTaskAiRuns.mockResolvedValue([])
     createAiRuns.mockResolvedValue([])
   })

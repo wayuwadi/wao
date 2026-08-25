@@ -1,6 +1,5 @@
 import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
-import * as F from '@/data/fixtures'
 import {
   apiAddTaskComment,
   apiDeleteTask,
@@ -63,6 +62,7 @@ import {
   fetchVault,
   type CreateJobPayload,
   type CreateKbPayload,
+  type GoalDto,
   type PatchJobPayload,
   type PatchKbPayload,
 } from '@/api/board'
@@ -72,8 +72,8 @@ import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import { MAX_TASK_GROUPS } from '@/types'
 import type {
-  AiRun, AutomationJob, Comment, Doc, DocBlock, HostedPage, ImageRef, KnowledgeBase, Project, Task, TaskGroup, TaskStep,
-  TrashEntry, VaultGroup, VaultItem,
+  AiRun, Area, AutomationJob, Comment, Doc, DocBlock, FileItem, HostedPage, ImageItem, ImageRef,
+  KnowledgeBase, Project, ScheduleItem, Suggestion, Task, TaskGroup, TaskStep, TrashEntry, VaultGroup, VaultItem,
 } from '@/types'
 
 /** 兜底分组的 id：项目还没建过分组时，所有任务都算落在它里面。 */
@@ -97,9 +97,8 @@ function emptyDoc(id: string): Doc {
 }
 
 /**
- * 领域数据 store —— 前端阶段的单一数据源，从 fixtures 深拷贝进响应式状态。
- * 变更在内存内生效；文档 Markdown 编辑额外持久化到 localStorage（对齐原型 wao-docs-v1）。
- * 后端就绪后：把此处初始化改为 await src/api/*（读真实 /api），screens 无需改动。
+ * 领域数据 store —— 真实 API 数据的前端单一数据源。
+ * 变更先在内存内生效；文档 Markdown 编辑额外持久化到 localStorage（对齐 wao-docs-v1）。
  */
 
 const DOC_KEY = 'wao-docs-v1'
@@ -108,8 +107,29 @@ const TASK_DRAFT_KEY = 'wao-task-drafts-v1'
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error'
-export type TaskLoadState = 'loading' | 'loaded' | 'error'
-export type FileLoadState = 'loading' | 'loaded' | 'error'
+export type DataLoadState = 'loading' | 'loaded' | 'error'
+export type DataDomain = 'areas' | 'projects' | 'tasks' | 'knowledge' | 'docs' | 'automation'
+  | 'files' | 'images' | 'vault' | 'schedule' | 'suggestions' | 'goals'
+
+const DATA_DOMAINS: DataDomain[] = [
+  'areas', 'projects', 'tasks', 'knowledge', 'docs', 'automation',
+  'files', 'images', 'vault', 'schedule', 'suggestions', 'goals',
+]
+
+const DOMAIN_ERROR_MESSAGES: Record<DataDomain, string> = {
+  areas: '领域读取失败',
+  projects: '项目读取失败',
+  tasks: '任务读取失败',
+  knowledge: '知识库读取失败',
+  docs: '文档读取失败',
+  automation: '自动化读取失败',
+  files: '文件读取失败',
+  images: '图床读取失败',
+  vault: '密码库读取失败',
+  schedule: '日程读取失败',
+  suggestions: '建议读取失败',
+  goals: '目标读取失败',
+}
 
 /**
  * 本地 id 生成器。
@@ -122,56 +142,86 @@ const uid = (prefix: string) => `${prefix}${Date.now()}${(idSeq++).toString(36)}
 
 export const useDataStore = defineStore('data', () => {
   const today = todayIso()
-  const areas = ref(clone(F.AREAS))
-  const projects = ref(clone(F.PROJECTS))
-  const tasks = ref(clone(F.TASKS))
-  const kbs = ref(clone(F.KBS))
-  const docs = reactive<Record<string, Doc>>(clone(F.DOCS))
-  const autos = ref(clone(F.AUTOS))
-  const files = ref(clone(F.FILES))
+  // 生产状态只接受真实接口数据；加载前保持空值，测试样本由测试代码显式注入。
+  const areas = ref<Area[]>([])
+  const projects = ref<Project[]>([])
+  const tasks = ref<Task[]>([])
+  const kbs = ref<KnowledgeBase[]>([])
+  const docs = reactive<Record<string, Doc>>({})
+  const autos = ref<AutomationJob[]>([])
+  const files = ref<FileItem[]>([])
   const hostedPages = ref<HostedPage[]>([])
-  const imgs = ref(clone(F.IMGS))
-  const vault = ref(clone(F.VAULT))
-  const schedule = ref(clone(F.SCHED))
-  const suggestions = ref(clone(F.SUGG))
-  const goals = ref(clone(F.GOALS))
+  const imgs = ref<ImageItem[]>([])
+  const vault = ref<VaultGroup[]>([])
+  const schedule = ref<ScheduleItem[]>([])
+  const suggestions = ref<Suggestion[]>([])
+  const goals = ref<GoalDto[]>([])
   /** 尚未被服务端确认的任务快照；刷新或意外关闭页面后仍可恢复。 */
   const taskDrafts = ref<Record<string, Task>>(loadTaskDrafts())
   /** 用户自建知识库分组（个人库归入其中）。 */
-  const myGroups = ref([{ id: 'g1', name: '我的知识库' }])
+  const myGroups = ref<{ id: string; name: string }[]>([])
 
   /** 核心领域、项目、任务接口是否均已成功接入真实后端。 */
   const apiLive = ref(false)
   /** 任务必须以服务端结果为准；加载期间和失败后都不能把 fixtures 当成用户数据展示。 */
-  const taskLoadState = ref<TaskLoadState>('loading')
+  const taskLoadState = ref<DataLoadState>('loading')
   const taskLoadError = ref('')
   /** 文件库也是播放器的真实曲目源；失败时必须显式报错，不能把空列表伪装成“没有音乐”。 */
-  const fileLoadState = ref<FileLoadState>('loading')
+  const fileLoadState = ref<DataLoadState>('loading')
   const fileLoadError = ref('')
+  /** 各业务域独立暴露加载结果，页面不会再用空状态或原型数据掩盖慢请求与失败。 */
+  const loadStates = reactive<Record<DataDomain, DataLoadState>>(
+    Object.fromEntries(DATA_DOMAINS.map((domain) => [domain, 'loading'])) as Record<DataDomain, DataLoadState>,
+  )
+  const loadErrors = reactive<Partial<Record<DataDomain, string>>>({})
   /** 密码库读取失败：页面据此显示错误与重试，而不是继续摆着演示凭据。 */
   const vaultError = ref(false)
 
   /**
-   * 从 /api 拉取各域数据替换 fixtures；任务和密码库不允许用 fixtures 掩盖读取失败。
+   * 从 /api 拉取各域真实数据；加载与失败期间保持空值，不用原型数据掩盖读取失败。
    *
    * <p>按域独立容错（{@code Promise.allSettled}）：单个域（如内容域表尚未建好而 500）失败时，
    * 其余域仍正常接管，且不会拖垮写路径。只要核心读路径（领域 / 项目 / 任务）可达即判定后端在线
    * （{@code apiLive=true}），从而新建 / 更新会真正落库，而非仅本地乐观更新。
    */
   async function hydrate() {
-    const settle = async <T>(p: Promise<T>): Promise<T | null> => {
+    const settle = async <T>(domain: DataDomain, p: Promise<T>): Promise<T | null> => {
       try {
-        return await p
-      } catch {
+        const result = await p
+        loadStates[domain] = 'loaded'
+        delete loadErrors[domain]
+        return result
+      } catch (cause: unknown) {
+        loadStates[domain] = 'error'
+        loadErrors[domain] = cause instanceof Error && cause.message
+          ? cause.message
+          : DOMAIN_ERROR_MESSAGES[domain]
         return null
       }
+    }
+    for (const domain of DATA_DOMAINS) {
+      loadStates[domain] = 'loading'
+      delete loadErrors[domain]
     }
     taskLoadState.value = 'loading'
     taskLoadError.value = ''
     fileLoadState.value = 'loading'
     fileLoadError.value = ''
-    // 启动 hydrate 后立即撤掉演示任务；即使接口超时或失败，也不能让它们冒充用户的待办。
+    apiLive.value = false
+    vaultError.value = false
+    areas.value = []
+    projects.value = []
     tasks.value = []
+    kbs.value = []
+    myGroups.value = []
+    Object.keys(docs).forEach((id) => delete docs[id])
+    autos.value = []
+    files.value = []
+    imgs.value = []
+    vault.value = []
+    schedule.value = []
+    suggestions.value = []
+    goals.value = []
     // 任务请求单独处理结果，不等知识库、文件、密码库等无关域的最慢请求全部结束。
     const taskRequest = fetchTasks()
       .then((loadedTasks) => {
@@ -182,6 +232,7 @@ export const useDataStore = defineStore('data', () => {
           if (current) Object.assign(current, clone(draft))
         }
         taskLoadState.value = 'loaded'
+        loadStates.tasks = 'loaded'
         return loadedTasks
       })
       .catch((cause: unknown) => {
@@ -190,12 +241,15 @@ export const useDataStore = defineStore('data', () => {
         taskLoadError.value = cause instanceof Error && cause.message
           ? cause.message
           : '暂时无法读取任务，请稍后重试'
+        loadStates.tasks = 'error'
+        loadErrors.tasks = taskLoadError.value
         return null
       })
     const fileRequest = fetchFiles()
       .then((loadedFiles) => {
         files.value = loadedFiles
         fileLoadState.value = 'loaded'
+        loadStates.files = 'loaded'
         return loadedFiles
       })
       .catch((cause: unknown) => {
@@ -204,15 +258,18 @@ export const useDataStore = defineStore('data', () => {
         fileLoadError.value = cause instanceof Error && cause.message
           ? cause.message
           : '暂时无法读取音乐库，请稍后重试'
+        loadStates.files = 'error'
+        loadErrors.files = fileLoadError.value
         return null
       })
-    const [a, p, t, kb, kg, dc, jb, fl, im, va, sc, sg, gl] = await Promise.all([
-      settle(fetchAreas()), settle(fetchProjects()), taskRequest, settle(fetchKbs()),
-      settle(fetchKbGroups()), settle(fetchDocs()), settle(fetchJobs()), fileRequest,
-      settle(fetchImages()), settle(fetchVault()), settle(fetchSchedule()),
-      settle(fetchSuggestions()), settle(fetchGoals()),
+    const knowledgeRequest = settle('knowledge', Promise.all([fetchKbs(), fetchKbGroups()]))
+    const [a, p, t, knowledge, dc, jb, fl, im, va, sc, sg, gl] = await Promise.all([
+      settle('areas', fetchAreas()), settle('projects', fetchProjects()), taskRequest,
+      knowledgeRequest, settle('docs', fetchDocs()), settle('automation', fetchJobs()), fileRequest,
+      settle('images', fetchImages()), settle('vault', fetchVault()), settle('schedule', fetchSchedule()),
+      settle('suggestions', fetchSuggestions()), settle('goals', fetchGoals()),
     ])
-    // `[]` 是后端明确返回的真实空状态，不能继续露出 fixtures；只有请求失败（null）才保留兜底。
+    const [kb, kg] = knowledge ?? [null, null]
     if (a !== null) areas.value = a
     if (p !== null) projects.value = p
     if (kb !== null) kbs.value = kb
@@ -230,12 +287,7 @@ export const useDataStore = defineStore('data', () => {
     if (gl !== null) goals.value = gl
     // 核心读路径任一可达即认为后端在线；写路径（POST/PUT）随之启用。
     apiLive.value = a !== null && p !== null && t !== null
-    // 后端在线却读不出密码库时不能退回 fixtures：页面上摆着一堆假凭据，比空着报错更糟，
-    // 而且会把「接口挂了」伪装成「我的密码没了」（这正是 409 那次的现象）。
-    if (apiLive.value && va === null) {
-      vault.value = []
-      vaultError.value = true
-    }
+    vaultError.value = va === null
     if (apiLive.value) {
       startSync()
       Object.keys(taskDrafts.value).forEach(persistTask)
@@ -1587,7 +1639,7 @@ export const useDataStore = defineStore('data', () => {
   return {
     today, areas, projects, tasks, kbs, docs, autos, files, imgs, vault,
     schedule, suggestions, goals, myGroups, apiLive, taskLoadState, taskLoadError,
-    fileLoadState, fileLoadError, hydrate,
+    fileLoadState, fileLoadError, loadStates, loadErrors, hydrate,
     areaById, projectById, taskById, tasksByProject, kbById, docById, areaColor,
     docEdits, setDocEdit, docOf, docPending, saveState, markSaving, markSaved,
     applyRemoteDoc, addDoc, addNote, notesKb, reorderDocs,
