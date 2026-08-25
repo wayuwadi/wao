@@ -103,10 +103,12 @@ Runner 还会校验最终答复中的完成状态（`WAO_RUN_STATUS: SUCCESS` / 
 等待补充信息误判为成功。
 当 AI 以 BLOCKED 结束且保留会话 id 时，任务详情可直接补充信息；Runner 会把同一条运行固定派回
 原电脑，在原 worktree 中恢复同一个 Codex 或 Claude Code 会话，而不是创建新会话。
-启动时 Runner 会通过 `git credential fill` 读取本机已有的 GitHub HTTPS 凭据，并仅在内存中以
-`GH_TOKEN` 传给 AI CLI 子进程，同时自动补齐 Windows 的 GitHub CLI 安装目录。凭据不会写入
-Runner 状态、日志或 Git；因此只需让这台电脑的 Git 凭据管理器能正常 `git push`，自动任务
-就可以继续创建 PR、合并和跟踪部署，不依赖 AI 工具内置的 GitHub 连接器。
+启动时 Runner 会通过 `git credential fill` 读取本机已有的 GitHub HTTPS 凭据，并仅在子进程
+环境中交给工作区 `git clone/fetch` 和 AI CLI，同时自动补齐 Windows 的 GitHub CLI 安装目录。
+后台 Git 全程禁用交互式凭据询问，凭据失效时直接返回错误，不会尝试访问计划任务不存在的终端。
+凭据不会写入 Runner 状态、命令行、日志或 Git 配置；因此只需让这台电脑的 Git 凭据管理器能
+正常 `git push`，自动任务就可以继续创建 PR、合并和跟踪部署，不依赖 AI 工具内置的 GitHub
+连接器。
 
 运行期间 Runner 消费流式事件把用户可读进展实时回传首页与任务详情：
 

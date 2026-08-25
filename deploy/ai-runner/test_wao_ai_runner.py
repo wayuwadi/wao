@@ -1,3 +1,4 @@
+import base64
 import importlib.util
 import io
 import json
@@ -87,6 +88,15 @@ class RunnerInvocationTest(unittest.TestCase):
         )
 
     @patch.object(RUNNER.subprocess, "run")
+    def test_command_receives_explicit_environment(self, run: Mock) -> None:
+        run.return_value = Mock(returncode=0, stdout="")
+        environment = {"GIT_TERMINAL_PROMPT": "0"}
+
+        RUNNER.run(["git.exe", "fetch"], environment=environment)
+
+        self.assertIs(environment, run.call_args.kwargs["env"])
+
+    @patch.object(RUNNER.subprocess, "run")
     def test_windows_cancellation_kills_process_tree_without_console(self, run: Mock) -> None:
         process = Mock(pid=4321)
 
@@ -130,11 +140,32 @@ class RunnerInvocationTest(unittest.TestCase):
         self.assertTrue(ready)
         self.assertEqual("preserved", environment["WAO_TEST_MARKER"])
         self.assertEqual("secret-token", environment["GH_TOKEN"])
+        self.assertEqual("0", environment["GIT_TERMINAL_PROMPT"])
+        self.assertEqual("Never", environment["GCM_INTERACTIVE"])
+        self.assertEqual("1", environment["GIT_CONFIG_COUNT"])
+        self.assertEqual("http.https://github.com/.extraheader", environment["GIT_CONFIG_KEY_0"])
+        authorization = environment["GIT_CONFIG_VALUE_0"].removeprefix("Authorization: Basic ")
+        self.assertEqual("wao:secret-token", base64.b64decode(authorization).decode())
         self.assertEqual("C:/Program Files/GitHub CLI/gh.exe", cli)
         # 断言不写死分隔符：Linux 主节点也要能跑这套用例。
         cli_dir = str(Path("C:/Program Files/GitHub CLI/gh.exe").parent)
         self.assertTrue(environment["PATH"].startswith(cli_dir + os.pathsep))
+        self.assertIs(environment, run.call_args.kwargs["env"])
         run.assert_called_once()
+
+    @patch.object(RUNNER, "find_github_cli", return_value=None)
+    @patch.object(RUNNER.subprocess, "run")
+    def test_missing_git_credential_fails_without_interactive_prompt(
+            self, run: Mock, _find: Mock) -> None:
+        run.return_value = Mock(returncode=1, stdout="")
+
+        environment, ready, _ = RUNNER.build_cli_environment("git.exe")
+
+        self.assertFalse(ready)
+        self.assertEqual("0", environment["GIT_TERMINAL_PROMPT"])
+        self.assertEqual("Never", environment["GCM_INTERACTIVE"])
+        self.assertNotIn("GH_TOKEN", environment)
+        self.assertIs(environment, run.call_args.kwargs["env"])
 
     def test_success_requires_explicit_completion_marker(self) -> None:
         code, summary = RUNNER.normalize_result(0, "请把任务链接发来")
@@ -747,6 +778,21 @@ class WorkspaceIsolationTest(unittest.TestCase):
 
         self.assertNotEqual(0, head.returncode, "主克隆必须是游离 HEAD")
         self.assertFalse((primary / "README.md").exists(), "主克隆不需要工作副本")
+
+    def test_clone_and_fetch_receive_noninteractive_git_environment(self) -> None:
+        environment = os.environ.copy()
+        environment["GIT_TERMINAL_PROMPT"] = "0"
+
+        with patch.object(RUNNER, "run", wraps=RUNNER.run) as run:
+            RUNNER.prepare_worktree(
+                self.claim, self.workspace, GIT, str(self.origin), environment)
+
+        remote_calls = [
+            item for item in run.call_args_list
+            if item.args and len(item.args[0]) > 1 and item.args[0][1] in {"clone", "fetch"}
+        ]
+        self.assertEqual(["clone", "fetch"], [item.args[0][1] for item in remote_calls])
+        self.assertTrue(all(item.kwargs.get("environment") is environment for item in remote_calls))
 
     def test_existing_clone_on_default_branch_is_repaired_in_place(self) -> None:
         primary = self.workspace / "wao"
