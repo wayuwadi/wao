@@ -16,15 +16,10 @@ function mountView() {
 }
 
 describe('AutomationView 导航', () => {
-  it('在自动化页面提供受保护的 Jenkins 部署记录入口', () => {
+  it('不再把 Jenkins 入口混入自动化业务页面', () => {
     const wrapper = mountView()
-    const link = wrapper.get('a.cicd-open')
-
-    expect(wrapper.get('.cicd-title').text()).toBe('Jenkins 部署中心')
-    expect(link.attributes('href')).toBe('/jenkins/job/wao-main-cd/')
-    expect(link.attributes('target')).toBe('_blank')
-    expect(link.attributes('rel')).toBe('noopener noreferrer')
-    expect(wrapper.get('.cicd-desc').text()).toContain('Jenkins 管理员账号')
+    expect(wrapper.find('.cicd-tool').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Jenkins 部署中心')
     wrapper.unmount()
   })
 

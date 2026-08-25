@@ -116,22 +116,6 @@ async function createAuto() {
         <span class="atip">让记录自己发生</span>
         <div class="spacer"></div>
       </div>
-      <section class="cicd-tool" aria-labelledby="cicd-tool-title">
-        <div class="cicd-icon"><i class="ri-hammer-line"></i></div>
-        <div class="cicd-copy">
-          <div id="cicd-tool-title" class="cicd-title">Jenkins 部署中心</div>
-          <div class="cicd-desc">查看主站构建、滚动部署记录和失败日志；进入后还需使用 Jenkins 管理员账号登录。</div>
-        </div>
-        <a
-          class="cicd-open"
-          href="/jenkins/job/wao-main-cd/"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="在新窗口打开 Jenkins 部署中心"
-        >
-          打开 Jenkins<i class="ri-external-link-line"></i>
-        </a>
-      </section>
       <div class="tabs">
         <button v-for="t in ([['任务列表', 'jobs'], ['运行记录', 'runs']] as const)" :key="t[1]" class="tab" :class="{ on: tab === t[1] }" @click="tab = t[1]">{{ t[0] }}</button>
       </div>
@@ -290,60 +274,6 @@ async function createAuto() {
 .atip {
   font-size: 12px;
   color: var(--wao-text-weak);
-}
-.cicd-tool {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  padding: 14px 16px;
-  border: 1px solid var(--wao-line);
-  border-radius: 12px;
-  background: var(--wao-bg-card);
-}
-.cicd-icon {
-  width: 38px;
-  height: 38px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border-radius: 10px;
-  background: var(--wao-primary-tint);
-  color: var(--wao-primary);
-  font-size: 20px;
-}
-.cicd-copy {
-  min-width: 0;
-  flex: 1;
-}
-.cicd-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--wao-text);
-}
-.cicd-desc {
-  margin-top: 3px;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--wao-text-weak);
-}
-.cicd-open {
-  height: 32px;
-  padding: 0 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  border: 1px solid var(--wao-line-strong);
-  border-radius: 8px;
-  color: var(--wao-text-2);
-  font-size: 12.5px;
-  text-decoration: none;
-}
-.cicd-open:hover {
-  background: var(--wao-bg-hover);
-  color: var(--wao-primary);
 }
 .btn-primary {
   height: 32px;
@@ -841,9 +771,6 @@ async function createAuto() {
 
 @media (max-width: 760px) {
   .auto { padding: 16px 12px 28px; }
-  .cicd-tool { align-items: flex-start; flex-wrap: wrap; }
-  .cicd-copy { min-width: calc(100% - 50px); }
-  .cicd-open { width: 100%; justify-content: center; }
   .toolbar { gap: 7px; }
   .grid-jobs, .grid-aoruns { min-width: 620px; }
   .job-list, .runs-list { overflow-x: auto; }

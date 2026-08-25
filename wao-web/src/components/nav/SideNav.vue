@@ -69,9 +69,6 @@ function goAi() {
 function goSettings() {
   router.push('/settings')
 }
-function openDesktopDownload() {
-  window.open(router.resolve('/desktop').href, '_blank', 'noopener,noreferrer')
-}
 function orgClick() {
   toast('组织切换将在设置 · 组织管理中提供')
 }
@@ -218,11 +215,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
       </template>
     </nav>
 
-    <!-- 快捷链接行：GitHub、PR、Issues 等外部服务一键跳转 -->
+    <!-- 所有左下角链接统一由成员快捷链接配置驱动，不再保留写死的独立图标。 -->
     <div class="quick-row" v-if="!nav.collapsed">
-      <button class="desktop-shortcut" title="下载 Windows / macOS 桌面宠物" @click="openDesktopDownload">
-        <i class="ri-bear-smile-line"></i>
-      </button>
       <QuickLinks />
     </div>
 
@@ -443,19 +437,6 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   align-items: center;
   gap: 4px;
 }
-.desktop-shortcut {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border: none;
-  border-radius: 8px;
-  background: none;
-  color: var(--wao-primary);
-  cursor: pointer;
-}
-.desktop-shortcut:hover { background: var(--wao-primary-soft); }
-.desktop-shortcut i { font-size: 17px; }
 .user-row {
   border-top: 1px solid var(--wao-line);
   padding: 10px;
