@@ -59,7 +59,7 @@ if [ "${#commit_message}" -gt 1800 ]; then
 fi
 short_sha="$(printf '%s' "${WAO_GIT_SHA:-unknown}" | cut -c1-8)"
 commit_url="https://github.com/wayuwacn/wao/commit/${WAO_GIT_SHA:-}"
-run_url="${BUILD_URL:-http://127.0.0.1:8081/}"
+run_url="https://wao.wayuwa.cn/jenkins/job/wao-main-cd/${BUILD_NUMBER:-}/"
 
 payload="$(jq -n \
   --arg title "WAO Jenkins ${pipeline_kind} ${overall}" \

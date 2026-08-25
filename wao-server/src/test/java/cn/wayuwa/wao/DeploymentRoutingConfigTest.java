@@ -201,6 +201,53 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
+    void jenkinsUiRequiresWaoSessionAndKeepsItsOwnAdministratorLogin() throws IOException {
+        String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
+        String service = readFromRepository("deploy/jenkins/jenkins.service.override.conf");
+        String casc = readFromRepository("deploy/jenkins/jenkins.yaml");
+        String updater = readFromRepository("deploy/jenkins/apply-controller-config.sh");
+        String pipeline = readFromRepository("Jenkinsfile");
+        String verification = readFromRepository("deploy/jenkins/ci-production-verify.sh");
+
+        String authLocation = section(nginx,
+                "location = /_wao_jenkins_auth {", "\n    }");
+        String uiLocation = section(nginx, "location ^~ /jenkins/ {", "\n    }");
+        String webhookLocation = section(nginx,
+                "location = /github-webhook/ {", "\n    }");
+
+        assertThat(authLocation)
+                .contains("internal;")
+                .contains("proxy_pass https://wao_gateway/api/auth/session;")
+                .contains("proxy_pass_request_body off;")
+                .contains("proxy_set_header Cookie $http_cookie;");
+        assertThat(uiLocation)
+                .contains("auth_request /_wao_jenkins_auth;")
+                .contains("proxy_pass http://127.0.0.1:18081;")
+                .contains("proxy_request_buffering off;")
+                .contains("proxy_buffering off;")
+                .contains("proxy_set_header X-Forwarded-Proto $scheme;");
+        assertThat(webhookLocation)
+                .contains("limit_except POST { deny all; }")
+                .contains("/jenkins/github-webhook/")
+                .contains("error_page 404 = @legacy_jenkins_webhook;");
+        assertThat(service).contains("--httpListenAddress=127.0.0.1 --prefix=/jenkins");
+        assertThat(casc)
+                .contains("allowsSignup: false")
+                .contains("allowAnonymousRead: false")
+                .contains("url: https://wao.wayuwa.cn/jenkins/");
+        assertThat(updater)
+                .contains("chroot /host systemctl daemon-reload")
+                .contains("/safeRestart")
+                .contains("docker run --rm --privileged --pid=host")
+                .contains("WAO_MASTER_PROJECT_ROOT|WAO_JENKINS_SCM_BRANCH|HTTP_PROXY|HTTPS_PROXY|NO_PROXY")
+                .doesNotContain("/etc/jenkins/secrets:/host");
+        assertThat(pipeline).contains("deploy/jenkins/apply-controller-config.sh");
+        assertThat(verification)
+                .contains("https://wao.wayuwa.cn/jenkins)\" = 308")
+                .contains("https://wao.wayuwa.cn/jenkins/)\" = 401");
+    }
+
+    @Test
     void mainSiteDeploymentRetiresSplitAppsAndPreservesThirdPartyRoutes() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String activation = readFromRepository("deploy/scripts/activate-nginx-config.sh");

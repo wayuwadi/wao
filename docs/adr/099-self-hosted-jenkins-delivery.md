@@ -13,8 +13,10 @@
 ## 决策
 
 - Jenkins LTS 原生安装在 Linux 主节点，使用 Java 21、一个 executor 和受信任的 `main` Pipeline；不执行 fork/PR 中的生产代码。
-- GitHub push 通过带 HMAC secret 的 `/github-webhook/` 触发。Jenkins 只监听 Linux loopback；阿里云 Nginx
-  通过 Linux 主动建立的反向 SSH 隧道转发这一条精确路径，不公开 Jenkins UI。
+- GitHub push 通过带 HMAC secret 的 `/github-webhook/` 触发。Jenkins 只监听 Linux loopback，并使用
+  `/jenkins` context path；阿里云 Nginx 通过 Linux 主动建立的反向 SSH 隧道转发。
+- `/jenkins/` 先以 Nginx `auth_request` 校验 WAO 会话，再由 Jenkins 自身管理员账号完成第二层认证；未登录
+  WAO 的公网请求返回 401。GitHub 只能访问无需 WAO 会话但需要 HMAC 签名的精确 Webhook 路径。
 - Maven 与 Node 工具链使用固定容器，四个应用镜像只构建一次并以完整 Git SHA 标记。发布顺序保持
   Windows → Linux → 云端，任一节点失败都不能伪装成整体成功。
 - Windows 与云节点使用新的 Jenkins 专用 SSH 密钥和独立 `known_hosts`。GitHub PAT 仅限本仓库内容读取和
@@ -26,5 +28,6 @@
 ## 后果
 
 主站每次 `main` push 不再消耗 GitHub Actions 分钟，GitHub 继续承担代码托管、Webhook 和提交状态展示。
-Jenkins 与生产 Docker 共用主机意味着受信任的 `main` 对该主机具有高权限，因此分支写权限、Jenkins UI 和
-凭据范围必须保持最小化。macOS 安装包仍需 macOS 原生环境，待后续增加专用构建节点后再迁移。
+Jenkins 与生产 Docker 共用主机意味着受信任的 `main` 对该主机具有高权限，因此分支写权限、双层 UI 认证和
+凭据范围必须保持最小化。WAO 会话只授予到达 Jenkins 登录页的权限，不替代 Jenkins 授权。macOS 安装包仍需
+macOS 原生环境，待后续增加专用构建节点后再迁移。

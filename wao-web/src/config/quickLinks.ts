@@ -55,10 +55,10 @@ export const DEVOPS_LINKS: QuickLink[] = [
   {
     id: 'gh-wao-actions',
     label: 'GitHub Actions',
-    subtitle: 'CI/CD 构建与部署流水线',
+    subtitle: '桌面端与 iOS 原生构建',
     icon: 'ri-flashlight-line',
     url: 'https://github.com/wayuwacn/wao/actions',
-    keywords: ['ci', 'cd', 'actions', 'goujian', 'bushu', 'liushuixian'],
+    keywords: ['actions', 'desktop', 'ios', 'goujian'],
   },
 ]
 

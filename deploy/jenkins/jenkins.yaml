@@ -62,7 +62,7 @@ credentials:
 unclassified:
   location:
     adminAddress: admin@wayuwa.cn
-    url: http://127.0.0.1:8081/
+    url: https://wao.wayuwa.cn/jenkins/
   gitHubPluginConfig:
     hookSecretConfigs:
       - credentialsId: wao-github-webhook-secret
