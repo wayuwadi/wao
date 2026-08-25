@@ -54,7 +54,7 @@ server {
         client_max_body_size 2m;
         proxy_pass http://127.0.0.1:18081/jenkins/github-webhook/;
         proxy_intercept_errors on;
-        error_page 404 = @legacy_jenkins_webhook;
+        error_page 403 404 = @legacy_jenkins_webhook;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_set_header Host $host;
