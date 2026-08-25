@@ -342,10 +342,45 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
 
     expect(launchAutonomousGoal).toHaveBeenCalledWith(
-      'p1', '把黄帝内经和易经结合 AI，做成每日一卦产品', 'rn2',
+      'p1', '把黄帝内经和易经结合 AI，做成每日一卦产品', 'rn2', false,
     )
     expect(editor.props('modelValue')).toBe('')
     expect(wrapper.findAll('.run-card').some((card) => card.text().includes('把黄帝内经和易经结合 AI'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('Codex 自主目标默认开启 Plan 模式并允许本次关闭', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchAiWorkflows).mockResolvedValueOnce([{
+      projectId: 'p1', projectName: 'Wa All in One',
+      config: {
+        projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
+        workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: 'rn1', maxParallelRuns: 3,
+      },
+      configured: true, projectDeleted: false, preferredRunnerName: '娃哥电脑',
+      activeRuns: 1, succeededRuns: 4, failedRuns: 1, lastRunAt: '2026-07-25T20:18:00',
+    }])
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    const planMode = wrapper.find('.goal-plan-mode')
+    expect(planMode.attributes('aria-checked')).toBe('true')
+    const editor = wrapper.findComponent(MarkdownEditor)
+    editor.vm.$emit('update:modelValue', '先梳理步骤再完成首页体验优化')
+    await flushPromises()
+    await wrapper.find('.goal-submit').trigger('click')
+    await flushPromises()
+    expect(launchAutonomousGoal).toHaveBeenLastCalledWith(
+      'p1', '先梳理步骤再完成首页体验优化', 'rn1', true,
+    )
+
+    editor.vm.$emit('update:modelValue', '直接完成第二个目标')
+    await planMode.trigger('click')
+    await flushPromises()
+    expect(planMode.attributes('aria-checked')).toBe('false')
+    await wrapper.find('.goal-submit').trigger('click')
+    await flushPromises()
+    expect(launchAutonomousGoal).toHaveBeenLastCalledWith('p1', '直接完成第二个目标', 'rn1', false)
     wrapper.unmount()
   })
 
@@ -394,7 +429,7 @@ describe('HomeView AI 控制台', () => {
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
 
-    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', '只在备用电脑执行这个目标', 'rn3')
+    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', '只在备用电脑执行这个目标', 'rn3', false)
     wrapper.unmount()
   })
 
@@ -414,7 +449,7 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.goal-submit').attributes('disabled')).toBeUndefined()
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
-    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', longGoal, 'rn2')
+    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', longGoal, 'rn2', false)
     wrapper.unmount()
   })
 

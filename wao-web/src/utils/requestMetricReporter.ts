@@ -16,7 +16,8 @@ const RETRY_DELAY_MS = 5_000
 const PUBLIC_PREFIXES = ['/api/auth/', '/api/share/', '/api/public/', '/api/ai/runner/']
 let queue: BrowserRequestMetric[] = []
 let timer: number | undefined
-let flushing = false
+let activeFlush: Promise<void> | null = null
+let paused = false
 let pagehideBound = false
 
 function normalizedPath(raw: string | undefined): string | null {
@@ -40,7 +41,7 @@ function currentNetworkType(): string | null {
 }
 
 function schedule(delay = FLUSH_DELAY_MS) {
-  if (typeof window === 'undefined' || timer !== undefined) return
+  if (paused || typeof window === 'undefined' || timer !== undefined) return
   timer = window.setTimeout(() => {
     timer = undefined
     void flushRequestMetrics()
@@ -51,7 +52,7 @@ function bindPagehide() {
   if (pagehideBound || typeof window === 'undefined') return
   pagehideBound = true
   window.addEventListener('pagehide', () => {
-    if (!queue.length || typeof navigator.sendBeacon !== 'function') return
+    if (paused || !queue.length || typeof navigator.sendBeacon !== 'function') return
     const batch = queue.splice(0, BATCH_SIZE)
     const accepted = navigator.sendBeacon(
       ENDPOINT,
@@ -70,6 +71,7 @@ export function reportBrowserRequest(
   startedAtEpochMs: number,
   retryAttempt = 0,
 ) {
+  if (paused) return
   const path = normalizedPath(rawPath)
   if (!path) return
   queue.push({
@@ -87,9 +89,14 @@ export function reportBrowserRequest(
 }
 
 /** 使用原生 fetch 上报，绕开 Axios 拦截器，防止监控请求递归采集。 */
-export async function flushRequestMetrics() {
-  if (flushing || !queue.length || typeof fetch === 'undefined') return
-  flushing = true
+export function flushRequestMetrics(): Promise<void> {
+  if (activeFlush) return activeFlush
+  if (!queue.length || typeof fetch === 'undefined') return Promise.resolve()
+  activeFlush = performFlush()
+  return activeFlush
+}
+
+async function performFlush() {
   const batch = queue.splice(0, BATCH_SIZE)
   try {
     const response = await fetch(ENDPOINT, {
@@ -107,15 +114,31 @@ export async function flushRequestMetrics() {
     if (queue.length > MAX_QUEUE) queue = queue.slice(0, MAX_QUEUE)
     schedule(RETRY_DELAY_MS)
   } finally {
-    flushing = false
-    if (queue.length && timer === undefined) schedule()
+    activeFlush = null
+    if (!paused && queue.length && timer === undefined) schedule()
   }
+}
+
+/** 清空历史前暂停采集，等待在途批次结束并丢弃尚未上报的旧样本。 */
+export async function pauseRequestMetricReporter() {
+  paused = true
+  if (timer !== undefined && typeof window !== 'undefined') window.clearTimeout(timer)
+  timer = undefined
+  queue = []
+  if (activeFlush) await activeFlush
+  queue = []
+}
+
+/** 服务端清空请求结束后恢复后续真实请求的采集。 */
+export function resumeRequestMetricReporter() {
+  paused = false
 }
 
 /** 仅供单元测试隔离模块级队列。 */
 export function resetRequestMetricReporterForTest() {
   queue = []
-  flushing = false
+  activeFlush = null
+  paused = false
   if (timer !== undefined && typeof window !== 'undefined') window.clearTimeout(timer)
   timer = undefined
 }

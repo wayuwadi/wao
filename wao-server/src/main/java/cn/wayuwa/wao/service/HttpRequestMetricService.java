@@ -77,6 +77,17 @@ public class HttpRequestMetricService {
                 (int) metrics.stream().filter(this::failed).count(), endpoints, recent);
     }
 
+    /**
+     * 清空当前成员的全部 HTTP 请求体验历史，不影响其他成员。
+     *
+     * @param memberId 当前成员 id
+     * @return 实际删除条数
+     */
+    @Transactional
+    public int clear(String memberId) {
+        return mapper.deleteOwned(memberId);
+    }
+
     /** 每六小时清理超过 30 天的全局指标；删除不影响业务数据。 */
     @Scheduled(fixedDelay = 21_600_000, initialDelay = 180_000)
     public void purgeExpired() {

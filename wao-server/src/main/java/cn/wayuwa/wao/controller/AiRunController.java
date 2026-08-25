@@ -201,7 +201,7 @@ public class AiRunController {
             HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         return ApiResponse.ok(service.launchGoal(request.projectId(), request.goal(), currentMember.id(http), baseUrl,
-                request.runnerId(), null));
+                request.runnerId(), null, request.planMode()));
     }
 
     /** 首页额度驱动的自主进化状态与可直接执行的建议清单。 */

@@ -1,9 +1,15 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fetchRequestMetricOverview, type RequestMetricOverview } from '@/api/requestMetrics'
+import {
+  clearRequestMetricHistory,
+  fetchRequestMetricOverview,
+  type RequestMetricOverview,
+} from '@/api/requestMetrics'
 import RequestMonitoringView from '@/views/RequestMonitoringView.vue'
 
 vi.mock('@/api/requestMetrics', () => ({
+  clearRequestMetricHistory:
+    vi.fn<(typeof import('@/api/requestMetrics'))['clearRequestMetricHistory']>(),
   fetchRequestMetricOverview:
     vi.fn<(typeof import('@/api/requestMetrics'))['fetchRequestMetricOverview']>(),
 }))
@@ -45,6 +51,8 @@ describe('RequestMonitoringView', () => {
   beforeEach(() => {
     vi.mocked(fetchRequestMetricOverview).mockReset()
     vi.mocked(fetchRequestMetricOverview).mockResolvedValue(overview)
+    vi.mocked(clearRequestMetricHistory).mockReset()
+    vi.mocked(clearRequestMetricHistory).mockResolvedValue({ cleared: 3 })
   })
 
   it('展示真实聚合、慢请求和最近明细', async () => {
@@ -80,5 +88,40 @@ describe('RequestMonitoringView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('请求监控加载失败，请检查网络后重试')
     expect(wrapper.text()).toContain('重新加载')
+  })
+
+  it('确认后清空当前账号的全部历史并重新读取真实空状态', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.mocked(fetchRequestMetricOverview)
+      .mockResolvedValueOnce(overview)
+      .mockResolvedValueOnce({
+        ...overview,
+        totalRequests: 0,
+        endpoints: [],
+        recentRequests: [],
+      })
+    const wrapper = mount(RequestMonitoringView)
+    await flushPromises()
+
+    await wrapper.find('.clear-button').trigger('click')
+    await flushPromises()
+
+    expect(confirm).toHaveBeenCalledWith('清空当前账号的全部 HTTP 请求历史？此操作不可恢复。')
+    expect(clearRequestMetricHistory).toHaveBeenCalledOnce()
+    expect(fetchRequestMetricOverview).toHaveBeenLastCalledWith(24)
+    expect(wrapper.text()).toContain('还没有请求记录')
+    confirm.mockRestore()
+  })
+
+  it('取消确认时保留历史记录', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const wrapper = mount(RequestMonitoringView)
+    await flushPromises()
+
+    await wrapper.find('.clear-button').trigger('click')
+
+    expect(clearRequestMetricHistory).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('/api/projects')
+    confirm.mockRestore()
   })
 })
