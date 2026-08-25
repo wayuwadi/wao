@@ -4,6 +4,7 @@ set -eu
 sh deploy/scripts/test-render-nginx-config.sh
 sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
+sh deploy/jenkins/test-ci-change-plan.sh
 
 check_migration_versions() {
   migration_dir="$1"

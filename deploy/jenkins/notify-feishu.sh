@@ -49,7 +49,15 @@ if [ "$WAO_PIPELINE_RESULT" != success ]; then
 fi
 
 pipeline_kind='生产发布'
-if [ "${DEPLOY_PRODUCTION:-false}" != true ]; then
+if [ "${WAO_DEPLOY_REQUIRED:-true}" != true ]; then
+  pipeline_kind='验证（无需部署）'
+  windows_status=skipped
+  windows_detail='本次提交不改变生产制品'
+  linux_status=skipped
+  linux_detail='本次提交不改变生产制品'
+  cloud_status=skipped
+  verification_status=skipped
+elif [ "${DEPLOY_PRODUCTION:-false}" != true ]; then
   pipeline_kind='影子构建（未部署）'
 fi
 
