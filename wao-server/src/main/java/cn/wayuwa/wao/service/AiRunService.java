@@ -767,11 +767,12 @@ public class AiRunService {
      * 这次运行要交给 AI 读的 Markdown 地址。
      *
      * <p>主任务一律带 {@code openOnly=true}：已完成、以及已经单独派过工的子任务不该再进入
-     * 本次范围，否则同一件事会被两台电脑各做一遍（见需求「避免浪费算力」）。
+     * 本次范围，否则同一件事会被两台电脑各做一遍（见需求「避免浪费算力」）。子任务运行额外带
+     * {@code iteration=true}，把主任务和已完成子任务作为只读历史交给 AI，同时仍只执行当前子任务。
      */
     private static String promptUrl(String baseUrl, String taskId, String subId) {
         return StringUtils.hasText(subId)
-                ? baseUrl + "/api/share/tasks/" + taskId + "/subs/" + subId + ".md"
+                ? baseUrl + "/api/share/tasks/" + taskId + "/subs/" + subId + ".md?iteration=true"
                 : baseUrl + "/api/share/tasks/" + taskId + ".md?openOnly=true";
     }
 

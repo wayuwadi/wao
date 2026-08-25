@@ -540,6 +540,7 @@ describe('TaskDrawer', () => {
     await flushPromises()
 
     expect(w.find('.launcher .scope').text()).toContain('子任务也能单独跑')
+    expect(w.find('.launcher .scope').text()).toContain('带主任务与已完成子任务历史')
 
     await w.find('.launcher footer .primary').trigger('click')
     await flushPromises()

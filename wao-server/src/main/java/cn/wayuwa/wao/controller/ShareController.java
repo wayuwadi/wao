@@ -58,8 +58,13 @@ public class ShareController {
     }
 
     @GetMapping("/tasks/{id}/subs/{subId}.md")
-    public ResponseEntity<byte[]> subMarkdown(@PathVariable String id, @PathVariable String subId) {
-        return markdown(share.toMarkdown(share.shareSub(id, subId), baseUrl()));
+    public ResponseEntity<byte[]> subMarkdown(
+            @PathVariable String id,
+            @PathVariable String subId,
+            @RequestParam(defaultValue = "false") boolean iteration) {
+        return markdown(iteration
+                ? share.toSubRunMarkdown(id, subId, baseUrl())
+                : share.toMarkdown(share.shareSub(id, subId), baseUrl()));
     }
 
     /** 一次合并 AI Run 的公开只读 Markdown；任务边界和用户选择顺序由服务端持久关系保证。 */

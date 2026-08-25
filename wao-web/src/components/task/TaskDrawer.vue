@@ -567,7 +567,7 @@ const aiLauncherScope = computed(() => {
   const key = aiLauncherSubId.value
   if (!key) return '整个任务'
   const row = subRows.value.find((r) => r.key === key)
-  return `子任务「${row?.sub.text ?? ''}」`
+  return `子任务「${row?.sub.text ?? ''}」（带主任务与已完成子任务历史）`
 })
 async function sendComment() {
   if (sendingComment.value) return
@@ -936,7 +936,7 @@ function demo(msg: string) {
                 <button
                   v-else
                   class="sub-ai"
-                  title="只把这一条子任务交给 AI 跑"
+                  title="只执行这条子任务，并带上主任务及已完成子任务作为历史上下文"
                   @click.stop="runSubWithAi(r.key)"
                 >
                   <i class="ri-robot-2-line"></i>AI run
