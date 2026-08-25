@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -78,6 +79,7 @@ class AiRunServiceTest {
         when(projectMemories.recall(any(), any())).thenReturn(List.of());
         when(projectMemories.readReferences(any())).thenReturn(Map.of());
         when(projectMemories.writeReferences(any())).thenReturn(Map.of());
+        when(runMapper.claimQueuedRun(any(), any(), nullable(String.class), any(), any())).thenReturn(1);
     }
 
     @Test
@@ -586,7 +588,37 @@ class AiRunServiceTest {
         assertThat(result.planMode()).isTrue();
         assertThat(queued.getStatus()).isEqualTo("running");
         assertThat(queued.getRunnerId()).isEqualTo("rn1");
-        verify(runMapper).updateById(eq(queued));
+        verify(runMapper).claimQueuedRun(eq("ar1"), eq("rn1"), isNull(),
+                eq("娃弟电脑 已领取任务，Codex 正在启动"), any());
+        verify(notifier).notifyRunStarted(eq("t1"), eq("p1"), eq("完成自动化"),
+                eq("WAO"), eq("Codex"), eq("娃弟电脑"));
+    }
+
+    @Test
+    void distributedClaimLoserDoesNotStartOrNotifyTheSameRunAgain() {
+        AiRunnerNodeEntity runner = runner("rn1", "Linux 主节点", "codex");
+        runner.setMaxConcurrency(2);
+        runner.setLastSeenAt(LocalDateTime.now());
+        AiTaskRunEntity queued = new AiTaskRunEntity();
+        queued.setId("ar1");
+        queued.setTaskId("t1");
+        queued.setProjectId("p1");
+        queued.setEngine("codex");
+        queued.setStatus("queued");
+        queued.setPendingInput("继续检查部署");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runMapper.selectList(any())).thenReturn(List.of(), List.of(queued));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runMapper.claimQueuedRun(eq("ar1"), eq("rn1"), eq("继续检查部署"), any(), any()))
+                .thenReturn(0);
+
+        assertThat(service.claim("local-token")).isNull();
+
+        assertThat(queued.getStatus()).isEqualTo("queued");
+        assertThat(queued.getPendingInput()).isEqualTo("继续检查部署");
+        verify(progressMapper, never()).insert(any(AiRunProgressEntity.class));
+        verify(notifier, never()).notifyRunStarted(any(), any(), any(), any(), any(), any());
     }
 
     @Test

@@ -1107,13 +1107,20 @@ public class AiRunService {
             if (projectActive >= valueOr(config.getMaxParallelRuns(), 2)) continue;
 
             LocalDateTime now = LocalDateTime.now();
+            String continuationInput = run.getPendingInput();
+            String claimProgress = runner.getName() + " 已领取任务，" + label(engine) + " 正在启动";
+            // synchronized 只能保护当前 JVM。生产环境有双 API 节点，必须由数据库 CAS 决定唯一赢家；
+            // pending_input 同时参与比较，避免用户补充恰好到达时被领取动作清空却没有交给 Runner。
+            if (runMapper.claimQueuedRun(run.getId(), runner.getId(), continuationInput,
+                    claimProgress, now) != 1) {
+                continue;
+            }
             run.setRunnerId(runner.getId());
             run.setStatus("running");
             run.setClaimedAt(now);
             run.setStartedAt(now);
-            String continuationInput = run.getPendingInput();
             run.setPendingInput(null);
-            appendProgress(run, "phase", runner.getName() + " 已领取任务，" + label(engine) + " 正在启动");
+            insertProgress(run, "phase", claimProgress, now);
             setTaskStatuses(run, "AI 进行中");
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());
@@ -1524,6 +1531,12 @@ public class AiRunService {
 
     private void appendProgress(AiTaskRunEntity run, String kind, String content) {
         LocalDateTime now = LocalDateTime.now();
+        insertProgress(run, kind, content, now);
+        runMapper.updateById(run);
+    }
+
+    /** 只插入进度记录；调用方已经用条件 SQL 原子更新运行摘要时，不再用整行更新覆盖并发输入。 */
+    private void insertProgress(AiTaskRunEntity run, String kind, String content, LocalDateTime now) {
         AiRunProgressEntity progress = new AiRunProgressEntity();
         progress.setId(id("ap"));
         progress.setRunId(run.getId());
@@ -1533,7 +1546,6 @@ public class AiRunService {
         progressMapper.insert(progress);
         run.setLatestProgress(progress.getContent());
         run.setProgressUpdatedAt(now);
-        runMapper.updateById(run);
     }
 
     /**
