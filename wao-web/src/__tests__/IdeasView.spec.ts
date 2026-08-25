@@ -1,19 +1,13 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import IdeasView from '@/views/IdeasView.vue'
-import { apiCreateProject, fetchProjects } from '@/api/board'
+import { fetchProjects } from '@/api/board'
 import { convertIdeaToProject, fetchIdeas } from '@/api/ideas'
 import type { Idea, Project } from '@/types'
 
 const push = vi.fn()
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
-vi.mock('@/stores/session', () => ({
-  useSessionStore: () => ({
-    members: [{ id: 'wg', name: '娃哥' }, { id: 'wd', name: '瓦弟' }],
-    refreshDirectory: vi.fn().mockResolvedValue(undefined),
-  }),
-}))
-vi.mock('@/api/board', () => ({ fetchProjects: vi.fn(), apiCreateProject: vi.fn() }))
+vi.mock('@/api/board', () => ({ fetchProjects: vi.fn() }))
 vi.mock('@/api/ideas', () => ({ fetchIdeas: vi.fn(), convertIdeaToProject: vi.fn() }))
 
 const project = (overrides: Partial<Project> = {}): Project => ({
@@ -34,37 +28,18 @@ describe('IdeasView', () => {
     localStorage.clear()
     vi.mocked(fetchProjects).mockResolvedValue([project(), project({ id: 'p2', name: '进行中项目', status: '进行中' })])
     vi.mocked(fetchIdeas).mockResolvedValue([idea])
-    vi.mocked(apiCreateProject).mockResolvedValue(project({ id: 'p3', name: '新点子' }))
     vi.mocked(convertIdeaToProject).mockResolvedValue(project({ id: 'p4', name: '旧点子' }))
   })
   afterEach(() => vi.clearAllMocks())
 
-  it('只把规划中项目展示为想法，并保留进行中统计', async () => {
+  it('只保留历史归并，不再复制规划中项目或提供新点子入口', async () => {
     const wrapper = mount(IdeasView)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('1 个待推进 · 1 个进行中')
-    expect(wrapper.text()).toContain('桌面应用')
-    expect(wrapper.text()).not.toContain('打开项目开始第一轮 进行中项目')
+    expect(wrapper.text()).toContain('新想法已融合进任务与项目')
     expect(wrapper.text()).toContain('历史点子待归并')
-  })
-
-  it('快速记录静默创建规划中项目并清掉本地草稿', async () => {
-    const wrapper = mount(IdeasView)
-    await flushPromises()
-    const inputs = wrapper.findAll('.capture input')
-    await inputs[0]!.setValue('新点子')
-    await inputs[1]!.setValue('做到自己满意')
-    expect(localStorage.getItem('wao-project-idea-draft')).toContain('做到自己满意')
-
-    await wrapper.get('.capture').trigger('submit')
-    await flushPromises()
-
-    expect(apiCreateProject).toHaveBeenCalledWith({
-      name: '新点子', area: 'career', goal: '做到自己满意', visAll: true, announce: false,
-    })
-    expect(wrapper.text()).toContain('已静默保存，团队尚未收到通知')
-    expect(localStorage.getItem('wao-project-idea-draft')).toBeNull()
+    expect(wrapper.find('.project-card').exists()).toBe(false)
+    expect(wrapper.find('.capture').exists()).toBe(false)
   })
 
   it('归并旧点子后进入项目且不再保留独立编辑流程', async () => {
@@ -76,5 +51,14 @@ describe('IdeasView', () => {
     expect(convertIdeaToProject).toHaveBeenCalledWith('i1', undefined)
     expect(push).toHaveBeenCalledWith('/projects/p4')
     expect(wrapper.text()).not.toContain('看明白')
+  })
+
+  it('历史记录已全部归并时引导从一句任务开始', async () => {
+    vi.mocked(fetchIdeas).mockResolvedValue([])
+    const wrapper = mount(IdeasView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('没有待归并的历史点子')
+    expect(wrapper.text()).toContain('新想法请创建为一句任务')
   })
 })

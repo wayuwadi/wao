@@ -17,14 +17,15 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 17;
+    private static final int VERSION = 18;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
+    /** 已融合进其它模块的旧入口；读取旧注册表时忽略，不能因此丢掉用户的其它菜单定制。 */
+    private static final Set<String> RETIRED_IDS = Set.of("ideas");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
             new BuiltinMenuConfigDto("home", "首页", "ri-home-5-line", "ROOT", 10, true, "TAB"),
             new BuiltinMenuConfigDto("projects", "项目", "ri-stack-line", "PUBLIC", 10, true, "TAB"),
-            new BuiltinMenuConfigDto("ideas", "点子库", "ri-lightbulb-flash-line", "PUBLIC", 11, true, "TAB"),
             new BuiltinMenuConfigDto("skills", "Skill 市场", "ri-sparkling-2-line", "PUBLIC", 12, true, "TAB"),
             new BuiltinMenuConfigDto("chat-reviews", "聊天复盘", "ri-chat-history-line", "PUBLIC", 15, true, "TAB"),
             new BuiltinMenuConfigDto("system-reports", "系统报告", "ri-bar-chart-box-line", "PUBLIC", 16, true, "TAB"),
@@ -85,12 +86,13 @@ public class BuiltinMenuRegistryService {
     }
 
     private List<BuiltinMenuConfigDto> canonicalize(List<BuiltinMenuConfigDto> menus, boolean requireAll) {
-        if (menus == null || menus.size() > DEFAULTS.size() || (requireAll && menus.size() != DEFAULTS.size())) {
+        if (menus == null || (requireAll && menus.size() != DEFAULTS.size())) {
             throw new IllegalArgumentException("内置菜单数量不正确");
         }
         Set<String> ids = new HashSet<>();
         List<BuiltinMenuConfigDto> result = new ArrayList<>();
         for (BuiltinMenuConfigDto menu : menus) {
+            if (!requireAll && menu != null && RETIRED_IDS.contains(menu.id())) continue;
             if (menu == null || !BY_ID.containsKey(menu.id()) || !ids.add(menu.id())) {
                 throw new IllegalArgumentException("内置菜单标识不正确");
             }

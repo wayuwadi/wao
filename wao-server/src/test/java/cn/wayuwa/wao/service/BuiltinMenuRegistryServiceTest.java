@@ -23,7 +23,7 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(24);
+        assertThat(service.getRegistry().menus()).hasSize(23);
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "skills".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("Skill 市场");
@@ -33,7 +33,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(24);
+        assertThat(service.getRegistry().menus()).hasSize(23);
     }
 
     @Test
@@ -72,19 +72,21 @@ class BuiltinMenuRegistryServiceTest {
         oldMenus.removeIf(menu -> "life-review".equals(menu.id()));
         oldMenus.removeIf(menu -> "chat-reviews".equals(menu.id()));
         oldMenus.removeIf(menu -> "skills".equals(menu.id()));
-        oldMenus.removeIf(menu -> "ideas".equals(menu.id()));
         oldMenus.removeIf(menu -> "request-monitoring".equals(menu.id()));
         oldMenus.removeIf(menu -> "system-reports".equals(menu.id()));
         var automation = oldMenus.stream().filter(menu -> "automation".equals(menu.id())).findFirst().orElseThrow();
         oldMenus.set(oldMenus.indexOf(automation), new BuiltinMenuConfigDto(
                 automation.id(), "我的自动化", automation.icon(), automation.group(), automation.order(), false, null));
+        // 模拟 V17 注册表中仍存在、V18 已退役的点子库入口。
+        oldMenus.add(new BuiltinMenuConfigDto("ideas", "我的旧点子入口", "ri-lightbulb-flash-line",
+                "PUBLIC", 11, true, "TAB"));
         var oldPayload = new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(1, oldMenus);
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY))
                 .thenReturn(new ObjectMapper().writeValueAsString(oldPayload));
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(24);
+        assertThat(upgraded.menus()).hasSize(23);
         assertThat(upgraded.menus()).filteredOn(menu -> "automation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("我的自动化");
@@ -122,13 +124,7 @@ class BuiltinMenuRegistryServiceTest {
                     assertThat(menu.group()).isEqualTo("PUBLIC");
                     assertThat(menu.visible()).isTrue();
                 });
-        assertThat(upgraded.menus()).filteredOn(menu -> "ideas".equals(menu.id()))
-                .singleElement().satisfies(menu -> {
-                    assertThat(menu.label()).isEqualTo("点子库");
-                    assertThat(menu.group()).isEqualTo("PUBLIC");
-                    assertThat(menu.order()).isEqualTo(11);
-                    assertThat(menu.visible()).isTrue();
-                });
+        assertThat(upgraded.menus()).noneMatch(menu -> "ideas".equals(menu.id()));
         assertThat(upgraded.menus()).filteredOn(menu -> "request-monitoring".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("请求监控");
