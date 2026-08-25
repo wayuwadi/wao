@@ -611,6 +611,8 @@ export interface AiRun {
   id: string
   taskId: string
   taskTitle: string
+  /** 合并运行覆盖的全部任务；旧服务端和单任务运行可缺省。 */
+  taskIds?: string[]
   /** 目标里的图片预览地址，最多四张；不包含 Base64 正文。 */
   previewImages?: string[]
   /** 本次只跑这一条子任务；整个任务的运行为 null。 */

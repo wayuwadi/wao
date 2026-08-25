@@ -14,11 +14,13 @@ import jakarta.validation.constraints.NotEmpty;
  * @param model Codex 本次使用的模型；留空时使用后台默认值
  * @param reasoningEffort Codex 本次使用的推理强度；留空时使用后台默认值
  * @param planMode Codex 是否先规划再连续执行；问题自动采用推荐项
+ * @param mergeTasks 是否把同一项目的多条主任务合并为一次运行
  */
 public record CreateAiRunsRequest(@NotEmpty List<String> taskIds, String subId, String engine,
-        String runnerId, String accountId, String model, String reasoningEffort, Boolean planMode) {
+        String runnerId, String accountId, String model, String reasoningEffort, Boolean planMode,
+        Boolean mergeTasks) {
 
     public CreateAiRunsRequest(List<String> taskIds, String subId, String engine, String runnerId) {
-        this(taskIds, subId, engine, runnerId, null, null, null, false);
+        this(taskIds, subId, engine, runnerId, null, null, null, false, false);
     }
 }

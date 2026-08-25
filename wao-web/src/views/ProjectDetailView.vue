@@ -338,13 +338,14 @@ function selectAllOpen() {
 }
 async function runSelectedWithAi() {
   if (!selectedTaskIds.value.length || aiBatchStarting.value) return
+  const taskIds = [...selectedTaskIds.value]
   aiBatchStarting.value = true
   try {
     await ensureStarted()
-    const created = await createAiRuns(selectedTaskIds.value)
-    created.forEach((run) => data.patchTask(run.taskId, { status: 'AI 进行中' }, '已将任务交给 AI Run'))
+    const created = await createAiRuns(taskIds, { mergeTasks: true })
+    taskIds.forEach((taskId) => data.patchTask(taskId, { status: 'AI 进行中' }, '已合并到同一次 AI Run'))
     selectedTaskIds.value = []
-    toast(`已将 ${created.length} 个任务加入 AI Run，可在首页查看`, 'ri-robot-2-line')
+    toast(`已将 ${taskIds.length} 个任务合并为 ${created.length} 次 AI Run，可在首页查看`, 'ri-robot-2-line')
   } catch (error) {
     toast(error instanceof Error ? error.message : '批量 AI Run 启动失败', 'ri-error-warning-line')
   } finally {
@@ -633,7 +634,7 @@ function onDropGroup(groupId: string, overId?: string) {
           @click="runSelectedWithAi"
         >
           <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-robot-2-line'"></i>
-          AI run run · {{ selectedTaskIds.length }}
+          合并给 AI · {{ selectedTaskIds.length }}
         </button>
       </div>
       <div v-if="pdTaskView === 'list'" class="task-list-card">
@@ -652,7 +653,7 @@ function onDropGroup(groupId: string, overId?: string) {
           <button
             class="select-dot"
             :class="{ on: selectedTaskIds.includes(t.id) }"
-            title="选择后批量交给 AI"
+            title="选择后合并为一次 AI Run"
             @click.stop="toggleSelection(t.id)"
           >
             <i class="ri-robot-2-line"></i>
@@ -827,7 +828,7 @@ function onDropGroup(groupId: string, overId?: string) {
               <button
                 class="select-dot board-select"
                 :class="{ on: selectedTaskIds.includes(t.id) }"
-                title="选择后批量交给 AI"
+                title="选择后合并为一次 AI Run"
                 @click.stop="toggleSelection(t.id)"
               >
                 <i class="ri-robot-2-line"></i>

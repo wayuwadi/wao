@@ -195,6 +195,36 @@ public class ShareService {
         return sb.toString();
     }
 
+    /**
+     * 把一次合并 AI Run 的全部任务渲染为一份稳定上下文。
+     *
+     * <p>任务关系只保存 id 和顺序，正文每次从真实任务读取；因此排队期间补充的描述和图片也会进入
+     * Runner 最终领取的上下文。每个任务单独成节，避免直接拼接多个一级标题后让 AI 看不出边界。
+     *
+     * @param runId AI Run id
+     * @param openOnly 是否过滤已完成或已单独派工的子任务
+     * @param baseUrl 公网根地址，用于绝对化图片
+     * @return 一次运行可直接读取的完整 Markdown
+     */
+    public String toRunMarkdown(String runId, boolean openOnly, String baseUrl) {
+        List<String> taskIds = aiRuns.runTaskIds(runId);
+        StringBuilder sb = new StringBuilder();
+        sb.append("# 合并 AI Run：").append(taskIds.size()).append(" 个任务\n\n")
+                .append("> 以下任务属于同一次执行。请在一个工作区和一个上下文中整体推进，逐项完成，")
+                .append("并在最终摘要中逐项说明结果与验收证据。\n\n");
+        for (int i = 0; i < taskIds.size(); i++) {
+            SharedTaskDto task = shareTask(taskIds.get(i), openOnly);
+            sb.append("---\n\n## 任务 ").append(i + 1).append('/').append(taskIds.size())
+                    .append("：").append(task.title()).append("\n\n");
+            String markdown = toMarkdown(task, baseUrl);
+            int bodyStart = markdown.indexOf('\n');
+            sb.append(bodyStart < 0 ? markdown : markdown.substring(bodyStart + 1).stripLeading());
+            if (!markdown.endsWith("\n")) sb.append('\n');
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
     private static void appendImages(StringBuilder sb, List<ImageRef> images, String baseUrl) {
         if (images.isEmpty()) {
             return;

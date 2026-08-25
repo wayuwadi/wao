@@ -355,6 +355,17 @@ Runner 每五分钟在本机调用 Codex app-server。服务端按规范化邮�
 | latest_progress / progress_updated_at | VARCHAR(1000) / DATETIME | 首页快速读取的最近一条用户可读进展 |
 | created_at / claimed_at / started_at / finished_at | DATETIME | 完整运行时间线 |
 
+### ai_task_run_task（V91）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| run_id / task_id | VARCHAR(32) | 运行与任务的复合主键；历史单任务运行也有一条关系 |
+| ord | INT | 合并上下文中的稳定顺序；同一次运行内唯一 |
+
+`ai_task_run.task_id` 继续保存第一条任务，兼容既有跳转和 Runner 协议；真实作用域以关系表为准。合并运行只允许
+同一项目的主任务，公开 `/api/share/ai-runs/{runId}.md?openOnly=true` 按 `ord` 读取真实任务内容。运行的状态流转、
+档案查询、重跑和续跑都会覆盖全部关联任务。
+
 ### ai_run_progress
 
 | 列 | 类型 | 说明 |
