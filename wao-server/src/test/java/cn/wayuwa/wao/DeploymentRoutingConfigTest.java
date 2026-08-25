@@ -236,7 +236,7 @@ class DeploymentRoutingConfigTest {
         assertThat(webhookLocation)
                 .contains("limit_except POST { deny all; }")
                 .contains("/jenkins/github-webhook/")
-                .contains("error_page 404 = @legacy_jenkins_webhook;");
+                .contains("error_page 403 404 = @legacy_jenkins_webhook;");
         assertThat(service).contains("--httpListenAddress=127.0.0.1 --prefix=/jenkins");
         assertThat(casc)
                 .contains("allowsSignup: false")
