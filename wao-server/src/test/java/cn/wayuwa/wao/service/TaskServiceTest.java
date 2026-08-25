@@ -2,6 +2,7 @@ package cn.wayuwa.wao.service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -255,11 +256,11 @@ class TaskServiceTest {
         hidden.setId("t2");
         hidden.setProjectId("private-project");
         when(mapper.selectList(null)).thenReturn(List.of(visible, hidden));
-        when(projects.get("p1", "wg")).thenReturn(null);
-        when(projects.get("private-project", "wg"))
-                .thenThrow(new NotFoundException("项目不存在：private-project"));
+        when(projects.visibleProjectIds("wg")).thenReturn(Set.of("p1"));
 
         assertThat(service.list("wg")).extracting(TaskDto::id).containsExactly("t1");
+        verify(projects, times(1)).visibleProjectIds("wg");
+        verify(projects, never()).get(any(), eq("wg"));
     }
 
     @Test

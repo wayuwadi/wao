@@ -67,6 +67,22 @@ public class ProjectService {
     }
 
     /**
+     * 一次性读取当前成员可见的项目 id，供其它列表接口批量完成权限过滤。
+     *
+     * <p>这里只解析项目自身的负责人和成员字段，不加载项目动态活动；任务列表据此避免按任务逐条
+     * 调用 {@link #get(String, String)} 形成 N+1 查询。
+     *
+     * @param memberId 当前登录成员 id；为空时返回全部项目 id
+     * @return 可见项目 id 集合
+     */
+    public Set<String> visibleProjectIds(String memberId) {
+        return projectMapper.selectList(null).stream()
+                .filter(project -> visibleTo(project, memberId))
+                .map(ProjectEntity::getId)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    /**
      * 按 id 获取单个项目（内部调用，不做可见性校验）。
      *
      * @param id 项目 id

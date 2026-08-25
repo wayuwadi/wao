@@ -536,6 +536,26 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void listDocsBuildsAllBacklinksFromOneDocumentQuery() {
+        DocEntity first = doc("d1", "k1", "f1");
+        DocEntity second = doc("d2", "k1", "f1");
+        DocEntity source = doc("d3", "k1", "f1");
+        source.setBlocksJson("[{\"p\":\"同时引用两篇文档\"}]");
+        source.setLinksJson("[{\"type\":\"doc\",\"id\":\"d1\"},{\"type\":\"doc\",\"id\":\"d2\"}]");
+        when(docMapper.selectList(any())).thenReturn(List.of(first, second, source));
+
+        List<DocDto> docs = service.listDocs();
+
+        assertThat(docs).extracting(DocDto::id).containsExactly("d1", "d2", "d3");
+        assertThat(docs.get(0).backlinks()).extracting(cn.wayuwa.wao.dto.BacklinkDto::id)
+                .containsExactly("d3");
+        assertThat(docs.get(1).backlinks()).extracting(cn.wayuwa.wao.dto.BacklinkDto::id)
+                .containsExactly("d3");
+        assertThat(docs.get(2).backlinks()).isEmpty();
+        verify(docMapper, times(1)).selectList(any());
+    }
+
+    @Test
     void getDocThrowsWhenAlreadyInTrash() {
         DocEntity trashed = doc("d1", "k1", "f1");
         trashed.setDeletedAt(LocalDateTime.now());

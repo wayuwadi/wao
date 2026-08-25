@@ -66,6 +66,19 @@ class ProjectServiceTest {
     }
 
     @Test
+    void visibleProjectIdsUsesOneProjectReadWithoutLoadingActivities() {
+        ProjectEntity owned = project("p-owned", "wg", "[\"wg\"]");
+        ProjectEntity shared = project("p-shared", "wd", "[\"wg\",\"wd\"]");
+        ProjectEntity hidden = project("p-hidden", "wd", "[\"wd\"]");
+        when(mapper.selectList(null)).thenReturn(List.of(owned, shared, hidden));
+
+        assertThat(service.visibleProjectIds("wg")).containsExactlyInAnyOrder("p-owned", "p-shared");
+
+        verify(mapper).selectList(null);
+        verify(activities, never()).forProjects(anyCollection());
+    }
+
+    @Test
     void createProducesPlanningProject() {
         when(mapper.insert(any(ProjectEntity.class))).thenReturn(1);
 
