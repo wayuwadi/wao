@@ -187,6 +187,16 @@ class ProjectServiceTest {
     }
 
     @Test
+    void visibleProjectIdsUsesTheSameAccessRulesWithoutLoadingActivities() {
+        ProjectEntity shared = project("pa", "wg", "[\"wg\",\"wd\"]");
+        ProjectEntity privateProject = project("pb", "wg", "[\"wg\"]");
+        when(mapper.selectList(null)).thenReturn(List.of(shared, privateProject));
+
+        assertThat(service.visibleProjectIds("wd")).containsExactly("pa");
+        verify(activities, never()).forProjects(anyCollection());
+    }
+
+    @Test
     void personalProjectOfSomeoneElseIsInvisibleEvenById() {
         when(mapper.selectById("pc")).thenReturn(project("pc", "wd", "[\"wd\"]"));
 

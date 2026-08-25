@@ -2,6 +2,7 @@ package cn.wayuwa.wao.service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -243,6 +244,18 @@ class TaskServiceTest {
     }
 
     @Test
+    void scheduledCreateKeepsRealOwnerAndUsesSystemActor() {
+        when(mapper.insert(any(TaskEntity.class))).thenReturn(1);
+
+        TaskDto dto = service.createScheduled(new CreateTaskRequest(
+                "夜间性能巡检", "p1", "P2", "wg", "", "真实指标", List.of()));
+
+        assertThat(dto.owner()).isEqualTo("wg");
+        assertThat(dto.createdBy()).isNull();
+        verify(projects, never()).get("p1", "wg");
+    }
+
+    @Test
     void getThrowsWhenMissing() {
         when(mapper.selectById("nope")).thenReturn(null);
         assertThatThrownBy(() -> service.get("nope")).isInstanceOf(NotFoundException.class);
@@ -251,15 +264,12 @@ class TaskServiceTest {
     @Test
     void listHidesTasksFromProjectsTheMemberCannotAccess() {
         TaskEntity visible = todo();
-        TaskEntity hidden = todo();
-        hidden.setId("t2");
-        hidden.setProjectId("private-project");
-        when(mapper.selectList(null)).thenReturn(List.of(visible, hidden));
-        when(projects.get("p1", "wg")).thenReturn(null);
-        when(projects.get("private-project", "wg"))
-                .thenThrow(new NotFoundException("项目不存在：private-project"));
+        when(projects.visibleProjectIds("wg")).thenReturn(Set.of("p1"));
+        when(mapper.selectList(any())).thenReturn(List.of(visible));
 
         assertThat(service.list("wg")).extracting(TaskDto::id).containsExactly("t1");
+        verify(projects).visibleProjectIds("wg");
+        verify(projects, never()).get("p1", "wg");
     }
 
     @Test

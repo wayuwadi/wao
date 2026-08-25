@@ -66,6 +66,25 @@ public class HttpRequestMetricService {
         if (hours < 1 || hours > 168) throw new BadRequestException("hours 必须在 1 到 168 之间");
         LocalDateTime now = LocalDateTime.now(ZONE);
         List<HttpRequestMetricEntity> metrics = mapper.listOwnedSince(memberId, now.minusHours(hours));
+        return aggregate(hours, now, metrics);
+    }
+
+    /**
+     * 为系统夜间性能巡检聚合全体成员的去身份化指标。
+     *
+     * <p>原始表只含方法、路径、状态与耗时；返回值同样不暴露成员 id、请求参数或正文。
+     *
+     * @param hours 1～168 小时
+     * @return 全局真实请求体验概览
+     */
+    public RequestMetricOverviewDto systemOverview(int hours) {
+        if (hours < 1 || hours > 168) throw new BadRequestException("hours 必须在 1 到 168 之间");
+        LocalDateTime now = LocalDateTime.now(ZONE);
+        return aggregate(hours, now, mapper.listSince(now.minusHours(hours)));
+    }
+
+    private RequestMetricOverviewDto aggregate(int hours, LocalDateTime now,
+            List<HttpRequestMetricEntity> metrics) {
         List<RequestMetricEndpointDto> endpoints = endpointStats(metrics).stream()
                 .sorted(Comparator.comparingInt(RequestMetricEndpointDto::averageDurationMs).reversed()
                         .thenComparing(RequestMetricEndpointDto::path))

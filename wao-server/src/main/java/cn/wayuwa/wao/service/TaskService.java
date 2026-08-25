@@ -22,6 +22,7 @@ import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.dto.TaskDetail;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.mapper.TaskMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -61,10 +62,16 @@ public class TaskService {
      * @return 可见任务列表
      */
     public List<TaskDto> list(String memberId) {
-        return taskMapper.selectList(null).stream()
-                .filter(task -> visibleTo(task, memberId))
-                .map(this::toDto)
-                .toList();
+        List<TaskEntity> tasks;
+        if (!StringUtils.hasText(memberId)) {
+            tasks = taskMapper.selectList(null);
+        } else {
+            Set<String> projectIds = projects.visibleProjectIds(memberId);
+            if (projectIds.isEmpty()) return List.of();
+            tasks = taskMapper.selectList(new LambdaQueryWrapper<TaskEntity>()
+                    .in(TaskEntity::getProjectId, projectIds));
+        }
+        return tasks.stream().map(this::toDto).toList();
     }
 
     /**
@@ -108,7 +115,21 @@ public class TaskService {
      * @return 创建后的任务
      */
     public TaskDto create(CreateTaskRequest req, String createdBy) {
-        requireProjectVisible(req.project(), createdBy);
+        return create(req, createdBy, true);
+    }
+
+    /**
+     * 由服务端受控调度创建任务；任务负责人仍是真实项目成员，创建人留空表示系统触发。
+     *
+     * @param req 已由调度服务选定真实项目和负责人的创建请求
+     * @return 创建后的任务
+     */
+    public TaskDto createScheduled(CreateTaskRequest req) {
+        return create(req, null, false);
+    }
+
+    private TaskDto create(CreateTaskRequest req, String createdBy, boolean requireAccess) {
+        if (requireAccess) requireProjectVisible(req.project(), createdBy);
         TaskEntity e = new TaskEntity();
         e.setId("t" + System.currentTimeMillis());
         e.setTitle(req.title().trim());
@@ -133,6 +154,14 @@ public class TaskService {
         taskMapper.insert(e);
         announceCreated(e, createdBy);
         return toDto(e);
+    }
+
+    /** 判断指定项目是否已有同标题任务，供确定性日任务避免重复派发。 */
+    public boolean existsByProjectAndTitle(String projectId, String title) {
+        Long count = taskMapper.selectCount(new LambdaQueryWrapper<TaskEntity>()
+                .eq(TaskEntity::getProjectId, projectId)
+                .eq(TaskEntity::getTitle, title));
+        return count != null && count > 0;
     }
 
     /**

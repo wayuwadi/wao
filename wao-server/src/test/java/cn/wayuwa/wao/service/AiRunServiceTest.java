@@ -350,6 +350,31 @@ class AiRunServiceTest {
     }
 
     @Test
+    void scheduledGoalKeepsSystemActorAndEnablesPlanMode() {
+        TaskEntity task = task("t1", "p1", "HTTP 请求性能夜间巡检");
+        when(tasks.createScheduled(any(CreateTaskRequest.class))).thenReturn(taskDto(null, null));
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectById("rn-selected"))
+                .thenReturn(runner("rn-selected", "Linux 主节点", "codex"));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        service.launchScheduledGoal("p1", "HTTP 请求性能夜间巡检", "wg",
+                "https://wao.example", "rn-selected");
+
+        ArgumentCaptor<CreateTaskRequest> request = ArgumentCaptor.forClass(CreateTaskRequest.class);
+        verify(tasks).createScheduled(request.capture());
+        assertThat(request.getValue().owner()).isEqualTo("wg");
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getRequestedBy()).isNull();
+        assertThat(run.getValue().getPlanMode()).isTrue();
+        assertThat(run.getValue().getRequestedRunnerId()).isEqualTo("rn-selected");
+    }
+
+    @Test
     void autonomousGoalPersistsInlineImageAndUsesReadableTextAsTitle() {
         TaskEntity task = task("t1", "p1", "根据截图修复展示");
         when(images.store(any(byte[].class), eq("image/png"), eq("image.png"), eq("自主目标"), eq(true)))

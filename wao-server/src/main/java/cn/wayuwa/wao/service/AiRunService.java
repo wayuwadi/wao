@@ -674,6 +674,30 @@ public class AiRunService {
         return runs.get(0);
     }
 
+    /**
+     * 创建并派发一条服务端定时目标；负责人是项目真实成员，创建人和发起人留空表示系统调度。
+     *
+     * @param projectId 承载目标的项目
+     * @param goal 带真实观测证据的完整目标
+     * @param ownerId 任务负责人
+     * @param baseUrl 公网任务分享根地址
+     * @param runnerId 项目首选执行电脑；为空时自动分配
+     * @return 新建并已入队的运行
+     */
+    @Transactional
+    public synchronized AiRunDto launchScheduledGoal(String projectId, String goal, String ownerId,
+            String baseUrl, String runnerId) {
+        String normalizedGoal = persistGoalImages(trim(goal));
+        if (!StringUtils.hasText(normalizedGoal)) throw new BadRequestException("定时目标不能为空");
+        cn.wayuwa.wao.dto.TaskDto task = tasks.createScheduled(new CreateTaskRequest(
+                goalTitle(normalizedGoal), projectId, "P2", ownerId, "",
+                autonomousGoalDescription(normalizedGoal), List.of(), null, null, null));
+        List<AiRunDto> runs = enqueue(List.of(task.id()), null, null, runnerId, null,
+                null, null, true, false, null, baseUrl);
+        if (runs.isEmpty()) throw new IllegalStateException("定时目标创建后未生成 AI 运行");
+        return runs.get(0);
+    }
+
     private static String goalTitle(String goal) {
         String firstLine = goal.lines()
                 .map(line -> MARKDOWN_IMAGE.matcher(line).replaceAll(""))

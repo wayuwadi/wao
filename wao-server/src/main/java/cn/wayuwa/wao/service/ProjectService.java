@@ -67,6 +67,22 @@ public class ProjectService {
     }
 
     /**
+     * 只读取当前成员可见的项目 id，不加载项目活动和展示详情。
+     *
+     * <p>任务列表等热路径先一次得到授权范围，再按项目索引批量读取业务数据，避免为每条记录
+     * 重复查询同一个项目。
+     *
+     * @param memberId 当前登录成员 id；为空时返回全部项目 id
+     * @return 可见项目 id 集合
+     */
+    public Set<String> visibleProjectIds(String memberId) {
+        return projectMapper.selectList(null).stream()
+                .filter(project -> visibleTo(project, memberId))
+                .map(ProjectEntity::getId)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    /**
      * 按 id 获取单个项目（内部调用，不做可见性校验）。
      *
      * @param id 项目 id

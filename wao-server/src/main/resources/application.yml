@@ -62,6 +62,10 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  http-performance:
+    # 浏览器真实指标的夜间 AI 巡检只在 Linux 主节点启用；从节点保持关闭。
+    scheduler-enabled: ${WAO_HTTP_PERFORMANCE_SCHEDULER_ENABLED:false}
+    cron: ${WAO_HTTP_PERFORMANCE_CRON:0 30 23 * * *}
   system-report:
     # 确定性系统报告只由 Linux 主节点按上海午夜产出；其它节点仍可读和手动补齐。
     scheduler-enabled: ${WAO_SYSTEM_REPORT_SCHEDULER_ENABLED:false}

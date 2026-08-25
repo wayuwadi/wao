@@ -86,6 +86,23 @@ class HttpRequestMetricServiceTest {
         verify(mapper).deleteBefore(any(LocalDateTime.class));
     }
 
+    @Test
+    void systemOverviewAggregatesAcrossMembersWithoutReturningIdentity() {
+        HttpRequestMetricEntity first = metric(2, "GET", "/api/tasks", 200, 2_000);
+        HttpRequestMetricEntity second = metric(1, "GET", "/api/tasks", 500, 4_000);
+        second.setMemberId("member-b");
+        when(mapper.listSince(any(LocalDateTime.class))).thenReturn(List.of(first, second));
+
+        var overview = service.systemOverview(24);
+
+        assertThat(overview.totalRequests()).isEqualTo(2);
+        assertThat(overview.failedRequests()).isEqualTo(1);
+        assertThat(overview.endpoints()).singleElement().satisfies(endpoint -> {
+            assertThat(endpoint.path()).isEqualTo("/api/tasks");
+            assertThat(endpoint.requestCount()).isEqualTo(2);
+        });
+    }
+
     private HttpRequestMetricEntity metric(long id, String method, String path, Integer status, int duration) {
         HttpRequestMetricEntity metric = new HttpRequestMetricEntity();
         metric.setId(id);
