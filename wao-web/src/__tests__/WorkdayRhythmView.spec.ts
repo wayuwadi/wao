@@ -36,14 +36,20 @@ vi.mock('@/api/system', () => ({
 }))
 
 const clock = shanghaiClock()
+const tomorrow = (() => {
+  const [year, month, date] = clock.date.split('-').map(Number)
+  return new Date(Date.UTC(year!, month! - 1, date! + 1)).toISOString().slice(0, 10)
+})()
 
 function mountView() {
   return mount(WorkdayRhythmView, {
-    global: { stubs: {
-      RouterLink: { template: '<a><slot /></a>' },
-      WorkdayRhythmDailyPanel: true,
-      WorkdayRhythmDailySettings: true,
-    } },
+    global: {
+      stubs: {
+        RouterLink: { template: '<a><slot /></a>' },
+        WorkdayRhythmDailyPanel: true,
+        WorkdayRhythmDailySettings: true,
+      },
+    },
   })
 }
 
@@ -71,7 +77,9 @@ describe('WorkdayRhythmView', () => {
         },
       ],
     })
-    vi.mocked(fetchWorkdayRhythmDay).mockResolvedValue(defaultRhythmDay(clock.date, clock.weekday))
+    vi.mocked(fetchWorkdayRhythmDay).mockImplementation(async (date, weekday) =>
+      defaultRhythmDay(date, weekday),
+    )
     vi.mocked(saveWorkdayRhythmDay).mockResolvedValue()
     vi.mocked(saveWorkdayRhythm).mockResolvedValue(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
     vi.mocked(sendEnergyNotification).mockResolvedValue({ sent: true, chatName: '娃屋日常' })
@@ -123,6 +131,46 @@ describe('WorkdayRhythmView', () => {
       }),
     )
     expect(wrapper.text()).toContain('已保存到你的 WAO 账号')
+    wrapper.unmount()
+  })
+
+  it('提前保存明日重点并在保存成功前持续保留本机草稿', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const input = wrapper.find('.tomorrow-focus input')
+    await input.setValue('为紧急评审准备验收证据')
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-${tomorrow}`)).toContain(
+      '为紧急评审准备验收证据',
+    )
+
+    await wrapper.get('.tomorrow-focus footer button').trigger('click')
+    await flushPromises()
+
+    expect(saveRhythmFocus).toHaveBeenCalledWith(tomorrow, ['为紧急评审准备验收证据', '', ''])
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-${tomorrow}`)).toBeNull()
+    expect(wrapper.get('.tomorrow-focus').text()).toContain('已保存，明天自动接续')
+    wrapper.unmount()
+  })
+
+  it('明日计划保存失败时保留输入并提供原位重试', async () => {
+    vi.mocked(saveRhythmFocus).mockRejectedValueOnce(new Error('网络暂时不可用'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('.tomorrow-focus input').setValue('准备明天的发布清单')
+    await wrapper.get('.tomorrow-focus footer button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.tomorrow-focus').text()).toContain('网络暂时不可用，草稿仍在本机')
+    expect(localStorage.getItem(`wao-workday-rhythm-day-draft-${tomorrow}`)).toContain(
+      '准备明天的发布清单',
+    )
+
+    await wrapper.get('.tomorrow-focus footer button').trigger('click')
+    await flushPromises()
+    expect(saveRhythmFocus).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('.tomorrow-focus').text()).toContain('已保存，明天自动接续')
     wrapper.unmount()
   })
 
