@@ -114,6 +114,25 @@ paths:
                     $ref: "#/components/schemas/EnergyNotificationResult"
         "400": { description: 配置损坏、缺少目标群、飞书应用未配置或当天动作尚未保存 }
         "502": { description: 飞书开放平台拒绝请求或暂不可达 }
+  /api/workday-rhythm/focus-notifications:
+    post:
+      summary: 把当前成员已保存的今日三个重点发到本人通知目标
+      description: >-
+        请求只接收日期；服务端从会话确定成员，重新读取成员的通知目标和指定日期的三个已落库重点。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [date]
+              properties:
+                date: { type: string, format: date }
+      responses:
+        "200": { description: 返回是否实际投递；总开关或重点开关关闭时 sent 为 false }
+        "400": { description: 三个重点未完整落库、配置损坏或通知目标不可用 }
+        "502": { description: 飞书开放平台拒绝请求或暂不可达 }
 components:
   schemas:
     WorkdayRhythmHistory:
