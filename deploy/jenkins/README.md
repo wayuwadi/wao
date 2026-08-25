@@ -96,6 +96,8 @@ Windows → Linux → 云端严格滚动发布、线上验收、GitHub commit st
 - 生产发布验证结束后，流水线会比较仓库内 JCasC、systemd override 和隧道 unit；有变化时只覆盖这三个
   受版本控制的文件，执行 `daemon-reload`，再请求 Jenkins `safeRestart`。重启会等当前构建和通知结束，
   不会在部署中途杀掉控制器。
+- 重启后可用 `curl --head https://wao.wayuwa.cn/jenkins-health` 验证 `/jenkins` context path 已生效；该
+  精确路由只接受 HEAD、没有响应正文，不绕过 `/jenkins/` 的 WAO 会话门禁。
 
 ## 密钥与恢复
 

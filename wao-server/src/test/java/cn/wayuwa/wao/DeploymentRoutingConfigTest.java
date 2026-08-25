@@ -212,6 +212,8 @@ class DeploymentRoutingConfigTest {
         String authLocation = section(nginx,
                 "location = /_wao_jenkins_auth {", "\n    }");
         String uiLocation = section(nginx, "location ^~ /jenkins/ {", "\n    }");
+        String healthLocation = section(nginx,
+                "location = /jenkins-health {", "\n    }");
         String webhookLocation = section(nginx,
                 "location = /github-webhook/ {", "\n    }");
 
@@ -226,6 +228,11 @@ class DeploymentRoutingConfigTest {
                 .contains("proxy_request_buffering off;")
                 .contains("proxy_buffering off;")
                 .contains("proxy_set_header X-Forwarded-Proto $scheme;");
+        assertThat(healthLocation)
+                .contains("if ($request_method != HEAD) { return 405; }")
+                .contains("proxy_pass http://127.0.0.1:18081/jenkins/login;")
+                .contains("proxy_method HEAD;")
+                .contains("proxy_pass_request_body off;");
         assertThat(webhookLocation)
                 .contains("limit_except POST { deny all; }")
                 .contains("/jenkins/github-webhook/")
@@ -236,7 +243,8 @@ class DeploymentRoutingConfigTest {
                 .contains("allowAnonymousRead: false")
                 .contains("url: https://wao.wayuwa.cn/jenkins/");
         assertThat(updater)
-                .contains("chroot /host systemctl daemon-reload")
+                .contains("/host/usr/bin/nsenter --target 1 --mount --pid --")
+                .contains("/usr/bin/systemctl daemon-reload")
                 .contains("/safeRestart")
                 .contains("docker run --rm --privileged --pid=host")
                 .contains("WAO_MASTER_PROJECT_ROOT|WAO_JENKINS_SCM_BRANCH|HTTP_PROXY|HTTPS_PROXY|NO_PROXY")
