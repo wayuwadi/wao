@@ -16,6 +16,8 @@ import {
   type BuiltinMenuRegistry,
   type ExternalAppRegistry,
 } from '@/config/nav'
+import { fetchPreference, savePreference } from '@/api/favorites'
+import { useQuickLinks } from '@/composables/quickLinks'
 
 vi.mock('@/api/system', () => ({
   fetchExternalAppRegistry: vi.fn<() => Promise<ExternalAppRegistry>>(),
@@ -32,6 +34,12 @@ vi.mock('@/api/system', () => ({
   testWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
   fetchSiteInfo: vi.fn<() => Promise<unknown>>(),
   saveSiteInfo: vi.fn<() => Promise<unknown>>(),
+}))
+
+vi.mock('@/api/favorites', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/favorites')>(),
+  fetchPreference: vi.fn<() => Promise<string>>(),
+  savePreference: vi.fn<() => Promise<void>>(),
 }))
 
 const router = createRouter({
@@ -60,6 +68,8 @@ describe('外部应用菜单注册表设置', () => {
       version: 1,
       menus: DEFAULT_BUILTIN_MENUS,
     })
+    vi.mocked(fetchPreference).mockResolvedValue('')
+    vi.mocked(savePreference).mockResolvedValue(undefined)
   })
 
   it('读取注册表并展示现有 Agent 记录', async () => {
@@ -99,5 +109,34 @@ describe('外部应用菜单注册表设置', () => {
     expect(nav.externalAppById('data-studio')?.label).toBe('数据工作台')
     expect(nav.groups.find((group) => group.label === '工具')?.items[0])
       .toBe(externalAppItemId('data-studio'))
+  })
+
+  it('在设置中统一维护左下角现有链接和新增图标', async () => {
+    const wrapper = mount(SettingsView, { global: { plugins: [router] } })
+    const entry = wrapper.findAll('.snav-item').find((button) => button.text() === '左下角链接')
+    await entry!.trigger('click')
+    await flushPromises()
+
+    expect(fetchPreference).toHaveBeenCalledWith('quick-links')
+    expect(useQuickLinks().links.value.length).toBeGreaterThan(0)
+    const configuredLabels = wrapper.findAll('input[placeholder="名称（如 GitHub 仓库）"]')
+      .map((input) => (input.element as HTMLInputElement).value)
+    expect(configuredLabels).toContain('WAO 桌面宠物')
+    expect(configuredLabels).toContain('Jenkins 部署中心')
+
+    await wrapper.get('.ql-edit-actions .btn-ghost').trigger('click')
+    const rows = wrapper.findAll('.ql-edit-row')
+    const last = rows[rows.length - 1]!
+    await last.get('input[placeholder="名称（如 GitHub 仓库）"]').setValue('内部工具')
+    await last.get('input[placeholder="https://…"]').setValue('https://tools.example.com/')
+    await wrapper.get('.ql-edit-actions .btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(savePreference).toHaveBeenCalledOnce()
+    const [key, raw] = vi.mocked(savePreference).mock.calls[0]!
+    const stored = JSON.parse(raw) as { version: number; links: Array<{ label: string }> }
+    expect(key).toBe('quick-links')
+    expect(stored.version).toBe(2)
+    expect(stored.links.some((link) => link.label === '内部工具')).toBe(true)
   })
 })

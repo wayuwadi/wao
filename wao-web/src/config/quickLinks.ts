@@ -1,7 +1,7 @@
 /**
  * 快捷链接配置：集中管理系统中需要频繁访问的外部服务入口。
  *
- * 在侧边栏、命令面板等处复用，新增链接只需在此追加一项。
+ * 在侧边栏、命令面板等处复用。这里仅维护新成员默认值；成员可在设置中自行增删，无需改代码。
  */
 
 export interface QuickLink {
@@ -36,6 +36,14 @@ export const GITHUB_REPOS: QuickLink[] = [
 
 /** 运维 / 基础设施快捷入口。 */
 export const DEVOPS_LINKS: QuickLink[] = [
+  {
+    id: 'wao-jenkins',
+    label: 'Jenkins 部署中心',
+    subtitle: '主站构建、部署记录与失败日志',
+    icon: 'ri-hammer-line',
+    url: '/jenkins/job/wao-main-cd/',
+    keywords: ['jenkins', 'ci', 'cd', 'deploy', 'goujian', 'bushu'],
+  },
   {
     id: 'gh-wao-prs',
     label: 'WAO Pull Requests',
@@ -74,7 +82,7 @@ export const PRODUCT_LINKS: QuickLink[] = [
   },
 ]
 
-/** 全部快捷链接（供命令面板遍历）。 */
+/** 新成员的默认快捷链接；成员保存后以服务端偏好为准。 */
 export const ALL_QUICK_LINKS: QuickLink[] = [...PRODUCT_LINKS, ...GITHUB_REPOS, ...DEVOPS_LINKS]
 
 /**

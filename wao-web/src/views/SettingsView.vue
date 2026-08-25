@@ -43,7 +43,7 @@ const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
   { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['快捷链接', 'quick-links'], ['Codex 记忆 · MCP', 'memory-mcp']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['左下角链接', 'quick-links'], ['Codex 记忆 · MCP', 'memory-mcp']] },
 ] as const
 
 const requestedTab = (route.query.tab as string) || 'members'
@@ -146,16 +146,25 @@ function cycleTheme() {
 }
 
 // ---- 快捷链接管理 ----
-const qlEditing = ref<QuickLink[]>([])
+const qlEditing = ref<QuickLink[]>(
+  (quickLinks.links.value.length ? quickLinks.links.value : quickLinks.defaults).map((link) => ({
+    ...link,
+    keywords: [...link.keywords],
+  })),
+)
 const qlBusy = ref(false)
+const qlError = ref('')
 
 function syncQlEditing() {
-  qlEditing.value = quickLinks.links.value.map((l) => ({ ...l }))
+  qlEditing.value = quickLinks.links.value.map((link) => ({
+    ...link,
+    keywords: [...link.keywords],
+  }))
 }
 
 watch(() => quickLinks.loaded.value, (loaded) => {
   if (loaded && qlEditing.value.length === 0) syncQlEditing()
-})
+}, { immediate: true })
 
 watch(() => quickLinks.links.value, () => {
   if (quickLinks.loaded.value) syncQlEditing()
@@ -166,7 +175,7 @@ function addQlLink() {
     id: `custom-${Date.now()}`,
     label: '',
     subtitle: '',
-    icon: 'ri-link',
+    icon: 'ri-links-line',
     url: '',
     keywords: [],
   })
@@ -189,23 +198,30 @@ function moveQlLink(index: number, dir: -1 | 1) {
 }
 
 async function saveQlLinks() {
-  const valid = qlEditing.value.filter((l) => l.label.trim() && l.url.trim())
   qlBusy.value = true
+  qlError.value = ''
   try {
-    await quickLinks.save(valid)
+    await quickLinks.save(qlEditing.value)
     syncQlEditing()
     toast('快捷链接已保存', 'ri-check-line')
   } catch (error) {
-    toast(error instanceof Error ? error.message : '保存失败')
+    qlError.value = error instanceof Error ? error.message : '保存失败'
+    toast(qlError.value, 'ri-error-warning-line')
   } finally {
     qlBusy.value = false
   }
 }
 
 function resetQlLinks() {
+  qlError.value = ''
   quickLinks.resetToDefaults()
   syncQlEditing()
   toast('已恢复默认链接，记得点保存', 'ri-history-line')
+}
+
+async function loadQuickLinkSettings(force = false) {
+  await quickLinks.load(force)
+  syncQlEditing()
 }
 
 const site = reactive<SiteInfo>({ siteName: '', description: '', icpNumber: '', icpUrl: '' })
@@ -437,7 +453,7 @@ watch(tab, (t) => {
     if (!externalAppsLoaded.value) loadExternalAppSettings()
     if (!builtinMenusLoaded.value) loadBuiltinMenuSettings()
   }
-  if (t === 'quick-links') quickLinks.load()
+  if (t === 'quick-links') void loadQuickLinkSettings()
 }, { immediate: true })
 async function logout() {
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return
@@ -865,11 +881,16 @@ function demo(msg: string, icon?: string) {
           </div>
         </template>
 
-        <!-- 快捷链接 -->
+        <!-- 左下角图标链接 -->
         <template v-else-if="tab === 'quick-links'">
-          <div class="s-h1">快捷链接</div>
+          <div class="s-h1">左下角图标链接</div>
           <div class="card thin">
-            <div class="ql-desc">侧边栏左下角的快捷入口，点击直接跳转外部地址。可自由增删和调整顺序，保存后生效。</div>
+            <div class="ql-desc">管理侧边栏左下角“链接”图标中的全部入口。可自由新增、编辑、删除和排序，支持站内路径或 HTTPS 地址；保存后当前设备立即生效并同步到其他设备。</div>
+            <div v-if="quickLinks.loading.value" class="ql-status"><i class="ri-loader-4-line spin"></i>正在读取配置…</div>
+            <div v-else-if="quickLinks.loadError.value" class="ql-status error">
+              <span>读取失败，当前显示安全默认值：{{ quickLinks.loadError.value }}</span>
+              <button class="btn-ghost" @click="loadQuickLinkSettings(true)">重试</button>
+            </div>
             <div v-for="(link, i) in qlEditing" :key="link.id" class="ql-edit-row">
               <div class="ql-edit-move">
                 <button class="ql-move-btn" :disabled="i === 0" title="上移" @click="moveQlLink(i, -1)"><i class="ri-arrow-up-s-line"></i></button>
@@ -884,8 +905,9 @@ function demo(msg: string, icon?: string) {
               </div>
               <button class="ql-remove" title="删除" @click="removeQlLink(i)"><i class="ri-delete-bin-line"></i></button>
             </div>
+            <div v-if="qlError" class="ql-status error" role="alert">{{ qlError }}，草稿仍保留在当前页面，可修改后重试。</div>
             <div class="ql-edit-actions">
-              <button class="btn-ghost" @click="addQlLink"><i class="ri-add-line"></i>添加链接</button>
+              <button class="btn-ghost" @click="addQlLink"><i class="ri-add-line"></i>添加图标链接</button>
               <button class="btn-ghost" @click="resetQlLinks"><i class="ri-history-line"></i>恢复默认</button>
               <button class="btn-primary" :disabled="qlBusy" @click="saveQlLinks">{{ qlBusy ? '保存中…' : '保存' }}</button>
             </div>
@@ -1645,6 +1667,20 @@ function demo(msg: string, icon?: string) {
   color: var(--wao-text-3);
   padding: 8px 0 4px;
 }
+.ql-status {
+  margin-top: 9px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-weak);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.ql-status span { flex: 1; }
+.ql-status.error { background: var(--wao-danger-bg); color: var(--wao-danger-strong); }
+.ql-status .btn-ghost { min-height: 28px; padding: 0 9px; }
 .ql-edit-row {
   display: flex;
   align-items: flex-start;

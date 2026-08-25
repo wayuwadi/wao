@@ -5,7 +5,7 @@ import { useQuickLinks } from '@/composables/quickLinks'
 import type { QuickLink } from '@/config/quickLinks'
 
 const router = useRouter()
-const { links, load } = useQuickLinks()
+const { links, load, loading, loadError } = useQuickLinks()
 
 const open = ref(false)
 const panelRef = ref<HTMLElement | null>(null)
@@ -27,6 +27,10 @@ function goManage() {
   router.push('/settings?tab=quick-links')
 }
 
+function retryLoad() {
+  void load(true)
+}
+
 /** 点击面板外部或触发按钮外部时关闭。 */
 function onDocClick(e: MouseEvent) {
   const target = e.target as Node
@@ -43,7 +47,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
     <button
       ref="triggerRef"
       class="ql-trigger"
-      title="快捷链接（GitHub、PR、Issues…）"
+      title="快捷链接（Jenkins、桌面宠物、GitHub…）"
       @click="toggle"
     >
       <i class="ri-links-line"></i>
@@ -57,6 +61,12 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
           <button class="ql-manage" title="管理快捷链接" @click="goManage">
             <i class="ri-settings-3-line"></i>
           </button>
+        </div>
+
+        <div v-if="loading" class="ql-state"><i class="ri-loader-4-line spin"></i>正在读取快捷链接…</div>
+        <div v-else-if="loadError" class="ql-state error">
+          <span>读取失败，当前显示默认链接</span>
+          <button @click="retryLoad">重试</button>
         </div>
 
         <button v-for="link in links" :key="link.id" class="ql-item" @click="visit(link)">
@@ -106,6 +116,8 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
   bottom: 0;
   z-index: 200;
   width: 260px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
   padding: 8px;
   border: 1px solid var(--wao-line);
   border-radius: 12px;
@@ -152,6 +164,22 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
   font-size: 12px;
   color: var(--wao-text-weak);
 }
+.ql-state {
+  margin: 0 5px 5px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-weak);
+  font-size: 10.5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.ql-state.error { color: var(--wao-danger-strong); }
+.ql-state span { flex: 1; }
+.ql-state button { border: 0; background: none; color: inherit; cursor: pointer; }
+.spin { animation: ql-spin .9s linear infinite; }
+@keyframes ql-spin { to { transform: rotate(360deg); } }
 .ql-empty-link {
   color: var(--wao-primary);
   cursor: pointer;
