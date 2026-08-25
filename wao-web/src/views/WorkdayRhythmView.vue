@@ -7,6 +7,7 @@ import {
   saveWorkdayRhythm,
   saveWorkdayRhythmDay,
   sendEnergyNotification,
+  sendFocusNotification,
   saveRhythmFocus,
   setRhythmWorkdayStatus,
   type WorkdayRhythmEnergyAction,
@@ -63,6 +64,8 @@ const notificationWebhooks = ref<FeishuWebhookEndpoint[]>([])
 const notificationWebhooksLoading = ref(false)
 const notificationWebhooksError = ref('')
 const energyNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle')
+const focusNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle')
+const pendingFocusNotification = ref<string | null>(null)
 const pendingEnergyNotification = ref<{ action: WorkdayRhythmEnergyAction; date: string } | null>(
   null,
 )
@@ -108,6 +111,11 @@ const energyActionBusy = computed(
     energyNotificationState.value === 'sending' ||
     energyNotificationState.value === 'error',
 )
+const focusReady = computed(() => day.value.focus.every((item) => !!item.trim()))
+const activeFocusIndex = computed(() => {
+  if (!focusReady.value) return -1
+  return day.value.focusCompleted.findIndex((completed) => !completed)
+})
 const configuredChatMissing = computed(
   () =>
     !!editorDraft.value.energyNotification.chatId &&
@@ -324,8 +332,13 @@ async function toggleWorkday() {
   void persistDay(day.value.workdayActive ? '今天已按工作日节奏启用' : '今天已切换为休息日')
 }
 
-function focusInput() {
+function focusInput(index: number) {
   day.value.focus = day.value.focus.map((item) => item.slice(0, 100))
+  day.value.focusCompleted = day.value.focusCompleted.map(
+    (completed, completedIndex) => completedIndex < index && completed,
+  )
+  focusNotificationState.value = 'idle'
+  pendingFocusNotification.value = null
   markDayDirty()
 }
 
@@ -342,12 +355,54 @@ async function saveFocus() {
   try {
     await saveRhythmFocus(day.value.date, day.value.focus)
     dailyPanelKey.value += 1
+    if (focusReady.value) await dispatchFocusNotification(day.value.date)
   } catch (error) {
     toast(
       error instanceof Error ? error.message : '今日计划联动失败，请重试',
       'ri-error-warning-line',
     )
   }
+}
+
+async function dispatchFocusNotification(date: string) {
+  const notification = config.value.energyNotification
+  if (!notification.enabled || !notification.notifyFocus) return
+  pendingFocusNotification.value = date
+  focusNotificationState.value = 'sending'
+  try {
+    const result = await sendFocusNotification(date)
+    if (!result.sent) {
+      focusNotificationState.value = 'idle'
+      pendingFocusNotification.value = null
+      return
+    }
+    focusNotificationState.value = 'sent'
+    pendingFocusNotification.value = null
+    toast(`今日三个重点已发到「${result.chatName}」`, 'ri-send-plane-fill')
+  } catch (error) {
+    focusNotificationState.value = 'error'
+    toast(
+      error instanceof Error
+        ? `重点已保存，但飞书通知失败：${error.message}`
+        : '重点已保存，但飞书通知失败',
+      'ri-error-warning-line',
+    )
+  }
+}
+
+async function retryFocusNotification() {
+  if (pendingFocusNotification.value)
+    await dispatchFocusNotification(pendingFocusNotification.value)
+}
+
+async function completeFocus(index: number) {
+  if (index !== activeFocusIndex.value || dayState.value === 'saving') return
+  day.value.focusCompleted[index] = true
+  markDayDirty()
+  const hasNext = index < day.value.focus.length - 1
+  await persistDay(
+    hasNext ? `重点 ${index + 1} 已完成，现在只推进重点 ${index + 2}` : '今日三个重点已全部完成',
+  )
 }
 
 async function saveTomorrowFocus() {
@@ -533,6 +588,10 @@ async function submitEditor() {
       pendingEnergyNotification.value = null
       energyNotificationState.value = 'idle'
     }
+    if (!config.value.energyNotification.enabled || !config.value.energyNotification.notifyFocus) {
+      pendingFocusNotification.value = null
+      focusNotificationState.value = 'idle'
+    }
     editorOpen.value = false
     toast('工作日节奏已保存并跨设备生效', 'ri-check-line')
   } catch (error) {
@@ -571,6 +630,8 @@ watch(
     if (date !== previous) {
       pendingEnergyNotification.value = null
       energyNotificationState.value = 'idle'
+      pendingFocusNotification.value = null
+      focusNotificationState.value = 'idle'
       void load()
     }
   },
@@ -691,18 +752,54 @@ onBeforeUnmount(() => {
               <RouterLink to="/todo">打开真实待办<i class="ri-arrow-right-line"></i></RouterLink>
             </header>
             <p class="card-help">
-              这里只写今天必须守住的结果；具体任务和进度仍以待办中的真实数据为准。
+              列满三项并保存后发到你选择的群；只推进当前项，完成后再开始下一项。具体进度仍以真实待办为准。
             </p>
-            <label v-for="(_, index) in day.focus" :key="index">
-              <span>{{ index + 1 }}</span
-              ><input
-                v-model="day.focus[index]"
+            <div
+              v-for="(_, index) in day.focus"
+              :key="index"
+              class="focus-row"
+              :class="{ active: index === activeFocusIndex, done: day.focusCompleted[index] }"
+            >
+              <label
+                ><span>{{ index + 1 }}</span
+                ><input
+                  v-model="day.focus[index]"
+                  :disabled="dayState === 'saving'"
+                  maxlength="100"
+                  :placeholder="index === 0 ? '今天最重要、最难的一件事' : '另一个可观察的结果'"
+                  @input="focusInput(index)"
+              /></label>
+              <button
+                v-if="focusReady && index === activeFocusIndex"
+                class="focus-complete"
+                type="button"
                 :disabled="dayState === 'saving'"
-                maxlength="100"
-                :placeholder="index === 0 ? '今天最重要、最难的一件事' : '另一个可观察的结果'"
-                @input="focusInput"
-              />
-            </label>
+                @click="completeFocus(index)"
+              >
+                <i class="ri-check-line"></i
+                >{{ index === day.focus.length - 1 ? '完成今日三个重点' : '完成并开始下一项' }}
+              </button>
+              <small v-else-if="day.focusCompleted[index]" class="focus-done"
+                ><i class="ri-check-line"></i>已完成</small
+              >
+              <small v-else-if="focusReady">等待当前项完成</small>
+            </div>
+            <div
+              v-if="focusNotificationState !== 'idle'"
+              class="focus-notice"
+              :class="focusNotificationState"
+            >
+              <span v-if="focusNotificationState === 'sending'"
+                ><i class="ri-loader-4-line spin"></i>重点已保存，正在发送群通知…</span
+              >
+              <span v-else-if="focusNotificationState === 'sent'"
+                ><i class="ri-send-plane-fill"></i>今日承诺已发到群里</span
+              >
+              <template v-else
+                ><span><i class="ri-cloud-off-line"></i>重点已保存，群通知未发出</span
+                ><button type="button" @click="retryFocusNotification">重试通知</button></template
+              >
+            </div>
             <footer>
               <small v-if="dayState === 'dirty'">草稿已保存在本机</small><span></span
               ><button type="button" :disabled="dayState === 'saving'" @click="saveFocus">
@@ -922,16 +1019,20 @@ onBeforeUnmount(() => {
           <section class="energy-editor" aria-labelledby="energy-editor-title">
             <header>
               <div>
-                <small>ENERGY NOTIFICATION</small>
-                <h3 id="energy-editor-title">精力补给飞书通知</h3>
+                <small>ACTION NOTIFICATION</small>
+                <h3 id="energy-editor-title">今日行动飞书通知</h3>
               </div>
               <label class="toggle-field">
                 <input v-model="editorDraft.energyNotification.enabled" type="checkbox" />
                 <span>{{ editorDraft.energyNotification.enabled ? '已启用' : '未启用' }}</span>
               </label>
             </header>
-            <p>补给项目成功保存后，可使用系统设置中的 Webhook，或飞书应用通知指定群聊。</p>
+            <p>三个重点或补给行动成功保存后，可使用系统 Webhook 或飞书应用通知指定群聊。</p>
             <div v-if="editorDraft.energyNotification.enabled" class="energy-editor-fields">
+              <label class="energy-notify-field">
+                <input v-model="editorDraft.energyNotification.notifyFocus" type="checkbox" />
+                <span>今日三个重点保存后发群</span>
+              </label>
               <label class="channel-field">
                 <span>发送方式</span>
                 <select v-model="editorDraft.energyNotification.channel">
@@ -1542,6 +1643,74 @@ textarea {
   display: flex;
   align-items: center;
   gap: 9px;
+}
+.focus-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.focus-row label {
+  margin: 0;
+}
+.focus-row > small {
+  color: var(--wao-text-weak);
+  font-size: 9px;
+}
+.focus-row.active label {
+  border-color: color-mix(in srgb, var(--wao-primary) 55%, var(--wao-line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--wao-primary) 8%, transparent);
+}
+.focus-row.done label {
+  opacity: 0.62;
+}
+.focus-row.done input {
+  text-decoration: line-through;
+}
+.focus-complete {
+  border: 0;
+  border-radius: 9px;
+  background: var(--wao-primary);
+  color: #fff;
+  padding: 9px 10px;
+  font-size: 9.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.focus-complete:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.focus-done {
+  color: #267c65 !important;
+}
+.focus-notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  font-size: 9.5px;
+}
+.focus-notice.sending {
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-weak);
+}
+.focus-notice.sent {
+  background: color-mix(in srgb, #2f9674 10%, var(--wao-bg-card));
+  color: #267c65;
+}
+.focus-notice.error {
+  background: color-mix(in srgb, var(--wao-danger) 8%, var(--wao-bg-card));
+  color: var(--wao-danger-strong);
+}
+.focus-notice button {
+  border: 0;
+  background: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .focus-card label:focus-within {
   border-color: #71ad98;
@@ -2496,6 +2665,16 @@ textarea {
   .energy-card,
   .timeline-card {
     padding: 14px;
+  }
+  .focus-row {
+    grid-template-columns: 1fr;
+  }
+  .focus-row > small,
+  .focus-complete {
+    justify-self: end;
+  }
+  .focus-notice {
+    align-items: flex-start;
   }
   .time-block {
     min-height: 86px;

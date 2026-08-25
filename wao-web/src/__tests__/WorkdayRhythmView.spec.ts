@@ -8,6 +8,7 @@ import {
   saveWorkdayRhythm,
   saveWorkdayRhythmDay,
   sendEnergyNotification,
+  sendFocusNotification,
   saveRhythmFocus,
   setRhythmWorkdayStatus,
 } from '@/api/workdayRhythm'
@@ -26,6 +27,7 @@ vi.mock('@/api/workdayRhythm', () => ({
   saveWorkdayRhythm: vi.fn<typeof saveWorkdayRhythm>(),
   saveWorkdayRhythmDay: vi.fn<typeof saveWorkdayRhythmDay>(),
   sendEnergyNotification: vi.fn<typeof sendEnergyNotification>(),
+  sendFocusNotification: vi.fn<typeof sendFocusNotification>(),
   saveRhythmFocus: vi.fn<typeof saveRhythmFocus>(),
   setRhythmWorkdayStatus: vi.fn<typeof setRhythmWorkdayStatus>(),
 }))
@@ -83,6 +85,7 @@ describe('WorkdayRhythmView', () => {
     vi.mocked(saveWorkdayRhythmDay).mockResolvedValue()
     vi.mocked(saveWorkdayRhythm).mockResolvedValue(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
     vi.mocked(sendEnergyNotification).mockResolvedValue({ sent: true, chatName: '娃屋日常' })
+    vi.mocked(sendFocusNotification).mockResolvedValue({ sent: true, chatName: '娃屋日常' })
     vi.mocked(saveRhythmFocus).mockResolvedValue({} as never)
     vi.mocked(fetchFeishuChats).mockResolvedValue([{ chatId: 'oc_daily', name: '娃屋日常' }])
     vi.mocked(fetchWebhookEndpoints).mockResolvedValue([
@@ -131,6 +134,72 @@ describe('WorkdayRhythmView', () => {
       }),
     )
     expect(wrapper.text()).toContain('已保存到你的 WAO 账号')
+    wrapper.unmount()
+  })
+
+  it('列满三个重点后发群，并只允许按顺序推进当前项', async () => {
+    const configured = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
+    configured.energyNotification = {
+      enabled: true,
+      notifyFocus: true,
+      channel: 'CHAT',
+      webhookId: '',
+      webhookName: '',
+      chatId: 'oc_daily',
+      chatName: '娃屋日常',
+    }
+    vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const inputs = wrapper.findAll('.focus-row input')
+    await inputs[0]!.setValue('交付最小 MVP')
+    await inputs[1]!.setValue('完成上线验收')
+    await inputs[2]!.setValue('整理真实反馈')
+    await wrapper.get('.focus-card footer button').trigger('click')
+    await flushPromises()
+
+    expect(sendFocusNotification).toHaveBeenCalledWith(clock.date)
+    expect(wrapper.get('.focus-notice.sent').text()).toContain('已发到群里')
+    expect(wrapper.findAll('.focus-complete')).toHaveLength(1)
+    expect(wrapper.findAll('.focus-row')[0]!.classes()).toContain('active')
+
+    await wrapper.get('.focus-complete').trigger('click')
+    await flushPromises()
+    expect(saveWorkdayRhythmDay).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusCompleted: [true, false, false] }),
+    )
+    expect(wrapper.findAll('.focus-row')[1]!.classes()).toContain('active')
+    wrapper.unmount()
+  })
+
+  it('重点通知失败不丢已保存目标，并可原位重试', async () => {
+    const configured = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
+    configured.energyNotification.enabled = true
+    configured.energyNotification.notifyFocus = true
+    configured.energyNotification.channel = 'CHAT'
+    configured.energyNotification.chatId = 'oc_daily'
+    configured.energyNotification.chatName = '娃屋日常'
+    vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
+    vi.mocked(sendFocusNotification)
+      .mockRejectedValueOnce(new Error('飞书暂时不可用'))
+      .mockResolvedValueOnce({ sent: true, chatName: '娃屋日常' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const inputs = wrapper.findAll('.focus-row input')
+    await inputs[0]!.setValue('重点一')
+    await inputs[1]!.setValue('重点二')
+    await inputs[2]!.setValue('重点三')
+    await wrapper.get('.focus-card footer button').trigger('click')
+    await flushPromises()
+
+    expect(saveWorkdayRhythmDay).toHaveBeenCalled()
+    expect(wrapper.get('.focus-notice.error').text()).toContain('群通知未发出')
+    await wrapper.get('.focus-notice.error button').trigger('click')
+    await flushPromises()
+    expect(sendFocusNotification).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('.focus-notice.sent').text()).toContain('已发到群里')
     wrapper.unmount()
   })
 
@@ -282,6 +351,7 @@ describe('WorkdayRhythmView', () => {
     const configured = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
     configured.energyNotification = {
       enabled: true,
+      notifyFocus: true,
       channel: 'CHAT',
       webhookId: '',
       webhookName: '',

@@ -75,6 +75,7 @@ describe('工作日节奏规则', () => {
     configured.energyNotification.channel = 'CHAT'
     configured.energyNotification.chatId = 'oc_daily'
     configured.energyItems.forEach((item) => (item.notify = false))
+    configured.energyNotification.notifyFocus = false
     expect(rhythmConfigError(configured)).toContain('至少选择一个')
 
     configured.energyNotification.enabled = false
@@ -103,6 +104,7 @@ describe('工作日节奏规则', () => {
           REMOVED: { title: '已删除项目', mode: 'DAILY_ONCE' },
         },
         focus: ['重点一', '重点二', '重点三', '多余'],
+        focusCompleted: [true, false, true],
       }),
       '2026-08-17',
       1,
@@ -116,6 +118,7 @@ describe('工作日节奏规则', () => {
       REMOVED: { title: '已删除项目', mode: 'DAILY_ONCE' },
     })
     expect(restored.focus).toEqual(['重点一', '重点二', '重点三'])
+    expect(restored.focusCompleted).toEqual([true, false, true])
     expect(
       parseRhythmDay(JSON.stringify({ ...restored, date: '2026-08-16' }), '2026-08-17', 1, ids),
     ).toEqual(defaultRhythmDay('2026-08-17', 1))

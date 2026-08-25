@@ -4,6 +4,7 @@ import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.dto.EnergyNotificationResultDto;
 import cn.wayuwa.wao.dto.SendEnergyNotificationRequest;
+import cn.wayuwa.wao.dto.SendFocusNotificationRequest;
 import cn.wayuwa.wao.dto.CreateWorkdayRhythmDocumentRequest;
 import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.SaveWorkdayRhythmChecklistItemRequest;
@@ -135,6 +136,12 @@ public class WorkdayRhythmController {
     public ApiResponse<EnergyNotificationResultDto> notifyEnergy(
             @Valid @RequestBody SendEnergyNotificationRequest request, HttpServletRequest http) {
         return ApiResponse.ok(notifications.notifyEnergy(currentMember.idOr(http, FALLBACK_OWNER), request));
+    }
+
+    @PostMapping("/focus-notifications")
+    public ApiResponse<EnergyNotificationResultDto> notifyFocus(
+            @Valid @RequestBody SendFocusNotificationRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(notifications.notifyFocus(currentMember.idOr(http, FALLBACK_OWNER), request.date()));
     }
 
     private String member(HttpServletRequest http) {

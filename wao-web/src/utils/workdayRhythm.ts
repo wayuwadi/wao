@@ -15,6 +15,7 @@ export interface WorkdayRhythmConfig {
 
 export interface WorkdayRhythmEnergyNotification {
   enabled: boolean
+  notifyFocus: boolean
   channel: 'WEBHOOK' | 'CHAT'
   webhookId: string
   webhookName: string
@@ -45,6 +46,7 @@ export interface WorkdayRhythmDay {
   energyRecords: Record<string, number>
   energySnapshot: Record<string, Pick<WorkdayRhythmEnergyItem, 'title' | 'mode'>>
   focus: string[]
+  focusCompleted: boolean[]
 }
 
 export interface ShanghaiClock {
@@ -58,6 +60,7 @@ export const DEFAULT_WORKDAY_RHYTHM: WorkdayRhythmConfig = {
   version: 1,
   energyNotification: {
     enabled: false,
+    notifyFocus: true,
     channel: 'WEBHOOK',
     webhookId: '',
     webhookName: '',
@@ -200,6 +203,7 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
   if (notification !== undefined) {
     if (
       typeof notification.enabled !== 'boolean' ||
+      typeof notification.notifyFocus !== 'boolean' ||
       (notification.channel !== 'WEBHOOK' && notification.channel !== 'CHAT') ||
       typeof notification.webhookId !== 'string' ||
       notification.webhookId.length > 64 ||
@@ -244,8 +248,12 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
     if (item.mode !== 'COUNT' && item.mode !== 'DAILY_ONCE') return '请选择正确的点击机制'
     if (typeof item.notify !== 'boolean') return '精力补给项目通知配置不正确'
   }
-  if (notification.enabled && !value.energyItems.some((item) => item.notify))
-    return '请至少选择一个需要通知的精力补给项目'
+  if (
+    notification.enabled &&
+    !notification.notifyFocus &&
+    !value.energyItems.some((item) => item.notify)
+  )
+    return '请至少选择一个需要通知的今日行动'
   return ''
 }
 
@@ -271,6 +279,7 @@ export function normalizeRhythmConfig(value: WorkdayRhythmConfig): WorkdayRhythm
     version: 1,
     energyNotification: {
       enabled: notification.enabled === true,
+      notifyFocus: notification.notifyFocus !== false,
       channel,
       webhookId: notification.webhookId?.trim() ?? '',
       webhookName: notification.webhookName?.trim() ?? '',
@@ -307,6 +316,7 @@ export function defaultRhythmDay(date: string, weekday: number): WorkdayRhythmDa
     energyRecords: {},
     energySnapshot: {},
     focus: ['', '', ''],
+    focusCompleted: [false, false, false],
   }
 }
 
@@ -337,6 +347,9 @@ export function parseRhythmDay(
           typeof candidate.focus?.[index] === 'string' ? candidate.focus[index]!.slice(0, 100) : '',
         )
       : fallback.focus
+    const focusCompleted = [0, 1, 2].map(
+      (index) => candidate.focusCompleted?.[index] === true && !!focus[index]?.trim(),
+    )
     const energyRecords: Record<string, number> = {}
     const energySnapshot: WorkdayRhythmDay['energySnapshot'] = {}
     const candidateRecords =
@@ -391,6 +404,7 @@ export function parseRhythmDay(
       energyRecords,
       energySnapshot,
       focus,
+      focusCompleted,
     }
   } catch {
     return fallback

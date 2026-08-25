@@ -102,6 +102,15 @@ export async function sendEnergyNotification(
   return res.data.data
 }
 
+/** 三个重点成功落库后，由服务端重读本人当日目标并发送执行承诺。 */
+export async function sendFocusNotification(date: string): Promise<EnergyNotificationResult> {
+  const res = await http.post<ApiResponse<EnergyNotificationResult>>(
+    '/api/workday-rhythm/focus-notifications',
+    { date },
+  )
+  return res.data.data
+}
+
 export type RhythmChecklistStatus = 'UPCOMING' | 'DUE' | 'LATE' | 'ON_TIME' | 'COMPLETED_LATE'
 export type RhythmChecklistKind = 'PLAN' | 'CLOCK_IN' | 'CLOCK_OUT' | 'TIANREN' | 'CUSTOM'
 export type RhythmScheduleType = 'DAILY' | 'WORKDAY' | 'WEEKDAYS'
@@ -193,10 +202,14 @@ export const updateRhythmChecklistItem = (id: string, body: SaveRhythmChecklistI
 export const deleteRhythmChecklistItem = (id: string) =>
   responseData<void>(http.delete(`/api/workday-rhythm/checklist-items/${id}`))
 export const setRhythmWorkdayStatus = (date: string, active: boolean | null) =>
-  responseData<RhythmDashboard>(http.put(`/api/workday-rhythm/days/${date}/workday-status`, { active }))
+  responseData<RhythmDashboard>(
+    http.put(`/api/workday-rhythm/days/${date}/workday-status`, { active }),
+  )
 export const saveRhythmFocus = (date: string, focus: string[]) =>
   responseData<RhythmDashboard>(http.put(`/api/workday-rhythm/days/${date}/focus`, { focus }))
 export const setRhythmOccurrenceCompleted = (id: string, completed: boolean) =>
-  responseData<RhythmOccurrence>(http.put(`/api/workday-rhythm/occurrences/${id}/completion`, { completed }))
+  responseData<RhythmOccurrence>(
+    http.put(`/api/workday-rhythm/occurrences/${id}/completion`, { completed }),
+  )
 export const createRhythmDocument = (date: string, title: string, blocks: DocBlock[]) =>
   responseData<Doc>(http.put(`/api/workday-rhythm/days/${date}/document`, { title, blocks }))
