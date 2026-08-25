@@ -61,8 +61,9 @@ public class TaskService {
      * @return 可见任务列表
      */
     public List<TaskDto> list(String memberId) {
+        Set<String> visibleProjectIds = projects.visibleProjectIds(memberId);
         return taskMapper.selectList(null).stream()
-                .filter(task -> visibleTo(task, memberId))
+                .filter(task -> visibleProjectIds.contains(task.getProjectId()))
                 .map(this::toDto)
                 .toList();
     }

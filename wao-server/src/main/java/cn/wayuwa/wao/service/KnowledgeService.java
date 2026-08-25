@@ -368,7 +368,9 @@ public class KnowledgeService {
     /** 列出全部文档（含正文与反向链接），不含回收站里的。 */
     public List<DocDto> listDocs() {
         List<DocEntity> docs = docMapper.selectList(aliveDocs());
-        return docs.stream().map(d -> toDto(d, docs)).toList();
+        Map<String, List<BacklinkDto>> backlinks = backlinkIndex(docs);
+        return docs.stream().map(doc -> toDtoWithBacklinks(
+                doc, backlinks.getOrDefault(doc.getId(), List.of()))).toList();
     }
 
     /** 按 id 获取单篇文档。 */
@@ -1426,14 +1428,36 @@ public class KnowledgeService {
     }
 
     private DocDto toDto(DocEntity e, List<DocEntity> allDocs) {
+        return toDtoWithBacklinks(e, backlinkIndex(allDocs).getOrDefault(e.getId(), List.of()));
+    }
+
+    /**
+     * 单次解析每篇文档的出链，建立目标文档到来源文档的反向索引。
+     *
+     * <p>旧实现为每一篇目标文档重新扫描并解析全库出链，文档列表会退化成 O(n²)。索引构建后，
+     * 列表路径只解析 n 次出链；单篇文档路径仍复用同一结果口径。
+     */
+    private Map<String, List<BacklinkDto>> backlinkIndex(List<DocEntity> docs) {
+        Map<String, List<BacklinkDto>> backlinks = new java.util.LinkedHashMap<>();
+        Set<String> aliveIds = docs.stream().map(DocEntity::getId).collect(Collectors.toSet());
+        for (DocEntity source : docs) {
+            List<DocLinkDto> links = readList(source.getLinksJson(), LINKS_TYPE);
+            if (links.isEmpty()) continue;
+            BacklinkDto backlink = new BacklinkDto("doc", source.getId(), snippetOf(source));
+            links.stream()
+                    .filter(link -> "doc".equals(link.type()))
+                    .map(DocLinkDto::id)
+                    .filter(targetId -> aliveIds.contains(targetId) && !source.getId().equals(targetId))
+                    .distinct()
+                    .forEach(targetId -> backlinks.computeIfAbsent(targetId, ignored -> new ArrayList<>())
+                            .add(backlink));
+        }
+        return backlinks;
+    }
+
+    private DocDto toDtoWithBacklinks(DocEntity e, List<BacklinkDto> backlinks) {
         List<DocBlockDto> blocks = readList(e.getBlocksJson(), BLOCKS_TYPE);
         List<DocLinkDto> links = readList(e.getLinksJson(), LINKS_TYPE);
-        List<BacklinkDto> backlinks = allDocs.stream()
-                .filter(other -> !other.getId().equals(e.getId()))
-                .filter(other -> readList(other.getLinksJson(), LINKS_TYPE).stream()
-                        .anyMatch(l -> "doc".equals(l.type()) && e.getId().equals(l.id())))
-                .map(other -> new BacklinkDto("doc", other.getId(), snippetOf(other)))
-                .toList();
         return new DocDto(e.getId(), e.getTitle(), e.getAuthorId(),
                 stamp(e.getCreatedAt(), e.getCreatedLabel()), stamp(e.getUpdatedAt(), e.getUpdatedLabel()),
                 e.getAuto(), links, blocks, backlinks, e.getKbId(), e.getFolderId(), rev(e));
