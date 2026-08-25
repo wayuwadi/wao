@@ -303,6 +303,9 @@ export const useDataStore = defineStore('data', () => {
       if (!task || !latest) continue
       // 人工已经验收完成时，运行记录轮询不能把任务重新覆盖为“待验证”。
       if (task.status === '已完成') continue
+      // 抽屉首次加载会拿到全部历史运行。服务端任务已经处于“待验证”时，旧的失败 / 暂停记录
+      // 只是历史档案，不能因为查看详情就把当前状态降回“进行中”；真正新开的活动运行仍优先投影。
+      if (task.status === '待验证' && ['failed', 'cancelled'].includes(latest.status)) continue
       const status = ['queued', 'claimed', 'running'].includes(latest.status)
         ? 'AI 进行中'
         : latest.status === 'succeeded' ? '待验证' : '进行中'
