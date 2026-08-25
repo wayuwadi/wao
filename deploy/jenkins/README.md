@@ -1,7 +1,8 @@
 # WAO Jenkins
 
 WAO 主站由 Linux 主节点上的单节点 Jenkins LTS 构建和发布。Windows 只接收已经构建好的源码包、
-镜像归档和私有配置；阿里云继续托管静态前端、Nginx 和唯一公开的 GitHub webhook 路由。
+镜像归档和私有配置；阿里云托管静态前端、Nginx、受 WAO 会话保护的 Jenkins UI 入口和唯一公开的
+GitHub webhook 路由。
 
 ## 一次性准备
 
@@ -48,13 +49,17 @@ sudo WAO_JENKINS_SCM_BRANCH=codex/jenkins-cicd \
 再从 `main` checkout 重跑安装脚本（不设置 `WAO_JENKINS_SCM_BRANCH`）并确认任务 SCM 已切回 `main`。
 生产 Webhook 只能在 SCM 为 `main` 时启用。
 
-Jenkins UI 只监听 `127.0.0.1:8081`。管理时在自己的电脑建立隧道：
+Jenkins UI 只监听 `127.0.0.1:8081`，并使用 `/jenkins` context path。日常可在登录 WAO 后从
+「自动化 → Jenkins 部署中心」打开 `https://wao.wayuwa.cn/jenkins/`；WAO 会话只负责挡住公网匿名请求，
+进入后仍必须使用 Jenkins 管理员账号登录。
+
+云入口不可用时，可在自己的电脑建立应急隧道：
 
 ```sh
 ssh -L 8081:127.0.0.1:8081 wadi@linux2.wayuwa.cn
 ```
 
-再打开 `http://127.0.0.1:8081`。管理员密码在 Linux 的
+再打开 `http://127.0.0.1:8081/jenkins/`。管理员密码在 Linux 的
 `/etc/jenkins/secrets/admin-password`，不要复制到仓库。
 
 ## GitHub webhook
@@ -68,8 +73,8 @@ Secret: /etc/jenkins/secrets/github-webhook-secret 的内容
 Events: Just the push event
 ```
 
-云 Nginx 只代理这个精确路径到 `127.0.0.1:18081`。该端口由 Linux 主节点发起的反向 SSH 隧道提供；
-Jenkins UI、CLI 和其他 API 不通过云节点暴露。
+云 Nginx 把这个精确路径改写到 Jenkins 的 `/jenkins/github-webhook/`。同一个 `127.0.0.1:18081` 由 Linux
+主节点发起的反向 SSH 隧道提供；其余 `/jenkins/` 请求必须先通过 WAO 会话校验，再经过 Jenkins 自身登录。
 
 首次 Jenkins 手工生产发布会把带 Webhook 路由的新 Nginx 模板原子发布到云节点。随后创建 GitHub Webhook，
 使用 GitHub 的 Test delivery 验证签名请求，再执行完整验收：
@@ -88,6 +93,9 @@ Windows → Linux → 云端严格滚动发布、线上验收、GitHub commit st
 - `ALLOW_WINDOWS_OFFLINE=true`：仅当 Windows 在部署前预检不可达时，保持从节点摘流并继续发布 Linux 与云端；
   Windows 已通过预检后的任何部署失败仍然 fail-closed。不得与 `BOOTSTRAP_WINDOWS` 同时开启。
 - 同一任务不并发，新 push 排队且不取消正在进行的 migration 或发布。
+- 生产发布验证结束后，流水线会比较仓库内 JCasC、systemd override 和隧道 unit；有变化时只覆盖这三个
+  受版本控制的文件，执行 `daemon-reload`，再请求 Jenkins `safeRestart`。重启会等当前构建和通知结束，
+  不会在部署中途杀掉控制器。
 
 ## 密钥与恢复
 

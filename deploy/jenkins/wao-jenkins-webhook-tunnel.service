@@ -1,5 +1,5 @@
 [Unit]
-Description=WAO Jenkins webhook reverse SSH tunnel
+Description=WAO Jenkins UI and webhook reverse SSH tunnel
 After=network-online.target jenkins.service
 Wants=network-online.target
 Requires=jenkins.service

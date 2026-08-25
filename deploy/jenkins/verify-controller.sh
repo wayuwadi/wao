@@ -16,7 +16,7 @@ if printf '%s' "$listen" | grep -Eq '(^|[[:space:]])(0\.0\.0\.0|\[::\]):8081'; t
 fi
 
 curl --fail --silent --show-error -u "admin:$admin_password" \
-  http://127.0.0.1:8081/api/json \
+  http://127.0.0.1:8081/jenkins/api/json \
   | jq -e '.mode == "NORMAL" and .numExecutors == 1' >/dev/null
 
 id -nG jenkins | tr ' ' '\n' | grep -qx docker
@@ -25,6 +25,8 @@ sudo -n -u jenkins docker info >/dev/null
 if [ "${VERIFY_PUBLIC_WEBHOOK:-true}" = true ]; then
   test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
     https://wao.wayuwa.cn/github-webhook/)" = 405
+  test "$(curl --silent --output /dev/null --write-out '%{http_code}' \
+    https://wao.wayuwa.cn/jenkins/)" = 401
 fi
 
-echo 'WAO Jenkins controller, local-only UI and public webhook route are healthy.'
+echo 'WAO Jenkins controller, WAO-protected UI and public webhook route are healthy.'

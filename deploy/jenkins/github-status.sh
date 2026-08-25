@@ -11,7 +11,7 @@ case "$state" in pending|success|failure|error) ;; *) exit 2 ;; esac
 payload="$(jq -n \
   --arg state "$state" \
   --arg description "$description" \
-  --arg target_url "${BUILD_URL:-http://127.0.0.1:8081/}" \
+  --arg target_url "https://wao.wayuwa.cn/jenkins/job/wao-main-cd/${BUILD_NUMBER:-}/" \
   '{state:$state,context:"jenkins/wao-main-cd",description:$description,target_url:$target_url}')"
 
 curl --fail --silent --show-error \

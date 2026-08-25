@@ -112,6 +112,15 @@ pipeline {
                 }
             }
         }
+
+        stage('Apply Jenkins controller configuration') {
+            when {
+                expression { params.DEPLOY_PRODUCTION }
+            }
+            steps {
+                sh 'deploy/jenkins/apply-controller-config.sh'
+            }
+        }
     }
 
     post {
