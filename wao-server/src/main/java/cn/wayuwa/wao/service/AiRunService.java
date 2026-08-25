@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -26,6 +27,7 @@ import cn.wayuwa.wao.domain.AiRunProgressEntity;
 import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.domain.AiRunnerPairCodeEntity;
 import cn.wayuwa.wao.domain.AiTaskRunEntity;
+import cn.wayuwa.wao.domain.AiTaskRunTaskEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
@@ -442,19 +444,42 @@ public class AiRunService {
     @Transactional
     public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
             String accountId, String model, String reasoningEffort, Boolean planMode, String requestedBy, String baseUrl) {
+        return enqueue(taskIds, subId, engine, runnerId, accountId, model, reasoningEffort, planMode, false,
+                requestedBy, baseUrl);
+    }
+
+    /**
+     * 把所选任务逐条派工，或把同一项目的主任务合并为一个上下文和一次运行。
+     *
+     * @param mergeTasks true 时全部任务共享一条运行；子任务不支持合并
+     */
+    @Transactional
+    public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
+            String accountId, String model, String reasoningEffort, Boolean planMode, Boolean mergeTasks,
+            String requestedBy, String baseUrl) {
         String requestedEngine = StringUtils.hasText(engine) && !"auto".equals(engine)
                 ? requireEngine(engine) : null;
         String sub = trim(subId);
-        if (StringUtils.hasText(sub) && taskIds.stream().distinct().count() != 1) {
+        List<String> distinctTaskIds = taskIds.stream().map(AiRunService::trim)
+                .filter(StringUtils::hasText).distinct().toList();
+        if (distinctTaskIds.isEmpty()) throw new BadRequestException("请至少选择一个任务");
+        if (StringUtils.hasText(sub) && distinctTaskIds.size() != 1) {
             throw new BadRequestException("按子任务派工时一次只能选一个任务");
+        }
+        if (StringUtils.hasText(sub) && Boolean.TRUE.equals(mergeTasks)) {
+            throw new BadRequestException("子任务不能与其他任务合并派工");
         }
         AiRunnerNodeEntity target = null;
         if (StringUtils.hasText(runnerId)) {
             target = runnerMapper.selectById(runnerId.trim());
             if (target == null) throw new BadRequestException("指定的执行电脑不存在");
         }
+        if (Boolean.TRUE.equals(mergeTasks) && distinctTaskIds.size() > 1) {
+            return List.of(enqueueMerged(distinctTaskIds, requestedEngine, target, accountId, model,
+                    reasoningEffort, planMode, requestedBy, baseUrl));
+        }
         List<AiTaskRunEntity> created = new ArrayList<>();
-        for (String taskId : taskIds.stream().distinct().toList()) {
+        for (String taskId : distinctTaskIds) {
             TaskEntity task = taskMapper.selectById(taskId);
             if (task == null) throw new NotFoundException("任务不存在：" + taskId);
             AiProjectConfigEntity config = configMapper.selectById(task.getProjectId());
@@ -510,6 +535,7 @@ public class AiRunService {
             run.setBranchName("ai/wao-" + run.getId());
             run.setCreatedAt(LocalDateTime.now());
             runMapper.insert(run);
+            runMapper.insertTaskLink(run.getId(), taskId, 0);
             appendProgress(run, "phase", (subTitle == null ? "任务" : "子任务「" + subTitle + "」")
                     + "已进入队列，等待" + (runTarget == null ? "在线电脑" : runTarget.getName())
                     + "上的 " + label(runEngine) + " 领取");
@@ -518,6 +544,76 @@ public class AiRunService {
             created.add(run);
         }
         return toRunDtos(created);
+    }
+
+    /** 合并派工在落库前完整校验所有任务，避免一条运行只带上部分用户选择。 */
+    private AiRunDto enqueueMerged(List<String> taskIds, String requestedEngine, AiRunnerNodeEntity target,
+            String accountId, String model, String reasoningEffort, Boolean planMode,
+            String requestedBy, String baseUrl) {
+        List<TaskEntity> selected = new ArrayList<>();
+        for (String taskId : taskIds) {
+            TaskEntity task = taskMapper.selectById(taskId);
+            if (task == null) throw new NotFoundException("任务不存在：" + taskId);
+            selected.add(task);
+        }
+        TaskEntity first = selected.get(0);
+        if (selected.stream().anyMatch(task -> !Objects.equals(first.getProjectId(), task.getProjectId()))) {
+            throw new BadRequestException("一次 AI Run 只能合并同一项目的任务");
+        }
+        AiProjectConfigEntity config = configMapper.selectById(first.getProjectId());
+        if (config == null || !Boolean.TRUE.equals(config.getEnabled())) {
+            throw new BadRequestException("项目尚未开启 AI Run，请先在项目设置中配置");
+        }
+        if (!StringUtils.hasText(config.getRepoUrl())) throw new BadRequestException("项目尚未配置 Git 仓库地址");
+        String runEngine = requestedEngine != null
+                ? requestedEngine : requireEngine(blankOr(config.getDefaultEngine(), DEFAULT_ENGINE));
+        if (StringUtils.hasText(accountId)) accounts.validateRunAccount(accountId.trim(), runEngine);
+        boolean customApi = accounts.usesCustomApi(accountId, runEngine);
+        String requestedModel = "codex".equals(runEngine) && !customApi ? requireCodexModel(model) : null;
+        String requestedEffort = "codex".equals(runEngine) && !customApi
+                ? requireReasoningEffort(reasoningEffort) : null;
+        AiRunnerNodeEntity runTarget = target;
+        if (runTarget == null && StringUtils.hasText(accountId)) {
+            runTarget = preferredLinuxRunner(runEngine);
+            if (runTarget == null) {
+                throw new BadRequestException("Linux 主节点尚未接入 " + label(runEngine)
+                        + "，请先安装对应 CLI 并重启 Runner，或明确指定其他执行电脑");
+            }
+        }
+        if (runTarget != null && !engines(runTarget).contains(runEngine)) {
+            throw new BadRequestException(runTarget.getName() + " 没有接入 " + label(runEngine) + "，请换一台电脑或换一个 AI 工具");
+        }
+        if (runTarget == null && !anyRunnerSupports(runEngine)) {
+            throw new BadRequestException("还没有电脑接入 " + label(runEngine) + "，请先在 AI 控制台配对一台");
+        }
+        for (TaskEntity task : selected) {
+            if (runMapper.countActiveMainRunsForTask(task.getId()) > 0) {
+                throw new BadRequestException("任务「" + task.getTitle() + "」已经有 AI Run 在进行中，请结束后再合并");
+            }
+        }
+
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId(id("ar"));
+        run.setTaskId(first.getId());
+        run.setProjectId(first.getProjectId());
+        run.setEngine(runEngine);
+        run.setAiAccountId(StringUtils.hasText(accountId) ? accountId.trim() : null);
+        run.setRequestedModel(requestedModel);
+        run.setReasoningEffort(requestedEffort);
+        run.setPlanMode("codex".equals(runEngine) && Boolean.TRUE.equals(planMode));
+        run.setStatus("queued");
+        run.setRequestedRunnerId(runTarget == null ? null : runTarget.getId());
+        run.setRequestedBy(requestedBy);
+        run.setPromptUrl(mergedPromptUrl(baseUrl, run.getId()));
+        run.setBranchName("ai/wao-" + run.getId());
+        run.setCreatedAt(LocalDateTime.now());
+        runMapper.insert(run);
+        for (int i = 0; i < taskIds.size(); i++) runMapper.insertTaskLink(run.getId(), taskIds.get(i), i);
+        appendProgress(run, "phase", "已合并 " + taskIds.size() + " 个任务进入同一次运行，等待"
+                + (runTarget == null ? "在线电脑" : runTarget.getName()) + "上的 " + label(runEngine) + " 领取");
+        setTaskStatuses(run, "AI 进行中");
+        notifyQueued(run);
+        return toRunDtos(List.of(run)).get(0);
     }
 
     /**
@@ -660,6 +756,11 @@ public class AiRunService {
                 : baseUrl + "/api/share/tasks/" + taskId + ".md?openOnly=true";
     }
 
+    /** 合并运行通过运行关系实时生成上下文，URL 不暴露或复制一长串任务 id。 */
+    private static String mergedPromptUrl(String baseUrl, String runId) {
+        return baseUrl + "/api/share/ai-runs/" + runId + ".md?openOnly=true";
+    }
+
     /** 校验子任务确实存在，并取出标题用于进展文案。 */
     private String requireSubTitle(String taskId, String subId) {
         String title = subTitle(taskId, subId);
@@ -720,13 +821,22 @@ public class AiRunService {
         if (ACTIVE.contains(source.getStatus())) {
             throw new BadRequestException("这次运行还没结束，等它跑完再决定要不要重跑");
         }
-        LambdaQueryWrapper<AiTaskRunEntity> activeQuery = new LambdaQueryWrapper<AiTaskRunEntity>()
-                .eq(AiTaskRunEntity::getTaskId, source.getTaskId()).in(AiTaskRunEntity::getStatus, ACTIVE);
-        if (StringUtils.hasText(source.getSubId())) activeQuery.eq(AiTaskRunEntity::getSubId, source.getSubId());
-        else activeQuery.isNull(AiTaskRunEntity::getSubId);
-        Long active = runMapper.selectCount(activeQuery);
-        if (active != null && active > 0) {
-            throw new BadRequestException("这个任务已经有一次运行在进行中，不用重复重跑");
+        List<String> sourceTaskIds = taskIds(source);
+        if (sourceTaskIds.size() > 1) {
+            for (String taskId : sourceTaskIds) {
+                if (runMapper.countActiveMainRunsForTask(taskId) > 0) {
+                    throw new BadRequestException("合并范围内已经有任务在进行 AI Run，不用重复重跑");
+                }
+            }
+        } else {
+            LambdaQueryWrapper<AiTaskRunEntity> activeQuery = new LambdaQueryWrapper<AiTaskRunEntity>()
+                    .eq(AiTaskRunEntity::getTaskId, source.getTaskId()).in(AiTaskRunEntity::getStatus, ACTIVE);
+            if (StringUtils.hasText(source.getSubId())) activeQuery.eq(AiTaskRunEntity::getSubId, source.getSubId());
+            else activeQuery.isNull(AiTaskRunEntity::getSubId);
+            Long active = runMapper.selectCount(activeQuery);
+            if (active != null && active > 0) {
+                throw new BadRequestException("这个任务已经有一次运行在进行中，不用重复重跑");
+            }
         }
         AiProjectConfigEntity config = configMapper.selectById(source.getProjectId());
         if (config == null || !Boolean.TRUE.equals(config.getEnabled())) {
@@ -749,14 +859,17 @@ public class AiRunService {
         run.setStatus("queued");
         run.setRequestedRunnerId(source.getRequestedRunnerId());
         run.setRequestedBy(requestedBy);
-        run.setPromptUrl(blankOr(source.getPromptUrl(),
-                promptUrl(baseUrl, source.getTaskId(), source.getSubId())));
+        run.setPromptUrl(sourceTaskIds.size() > 1 ? mergedPromptUrl(baseUrl, run.getId())
+                : blankOr(source.getPromptUrl(), promptUrl(baseUrl, source.getTaskId(), source.getSubId())));
         run.setBranchName("ai/wao-" + run.getId());
         run.setRetryOfRunId(source.getId());
         run.setCreatedAt(LocalDateTime.now());
         runMapper.insert(run);
+        for (int i = 0; i < sourceTaskIds.size(); i++) {
+            runMapper.insertTaskLink(run.getId(), sourceTaskIds.get(i), i);
+        }
         appendProgress(run, "phase", "已带着上一次的报错重新排队，等待 " + label(engine) + " 接着修");
-        setTaskStatus(run.getTaskId(), "AI 进行中");
+        setTaskStatuses(run, "AI 进行中");
         notifyQueued(run);
         return toRunDtos(List.of(run)).get(0);
     }
@@ -807,7 +920,7 @@ public class AiRunService {
         run.setFinishedAt(null);
         appendProgress(run, "message", (optimizing ? "用户要求继续优化：" : "用户补充：") + run.getPendingInput());
         appendProgress(run, "phase", "已收到" + (optimizing ? "优化要求" : "补充") + "，等待原执行电脑恢复 AI 会话");
-        setTaskStatus(run.getTaskId(), "AI 进行中");
+        setTaskStatuses(run, "AI 进行中");
         notifyQueued(run);
         return toRunDtos(List.of(run)).get(0);
     }
@@ -845,10 +958,20 @@ public class AiRunService {
     /** 返回指定任务的 AI 执行档案，供任务详情长期回看。 */
     public List<AiRunDto> listTaskRuns(String taskId) {
         if (taskMapper.selectById(taskId) == null) throw new NotFoundException("任务不存在：" + taskId);
-        return toRunDtos(runMapper.selectList(new LambdaQueryWrapper<AiTaskRunEntity>()
-                .eq(AiTaskRunEntity::getTaskId, taskId)
-                .orderByDesc(AiTaskRunEntity::getCreatedAt)
-                .last("LIMIT 30")));
+        List<AiTaskRunEntity> runs = runMapper.selectTaskRuns(taskId, 30);
+        return toRunDtos(runs == null ? List.of() : runs);
+    }
+
+    /**
+     * 返回一次运行按用户选择顺序关联的任务；公开合并 Markdown 与状态流转共用这份真实关系。
+     *
+     * @param runId AI Run id
+     * @return 至少包含兼容主任务的一组任务 id
+     */
+    public List<String> runTaskIds(String runId) {
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        return taskIds(run);
     }
 
     /** 读取历史任务遗留的 Base64 图片；新任务直接使用图床地址，不经过此接口。 */
@@ -972,7 +1095,7 @@ public class AiRunService {
             String continuationInput = run.getPendingInput();
             run.setPendingInput(null);
             appendProgress(run, "phase", runner.getName() + " 已领取任务，" + label(engine) + " 正在启动");
-            setTaskStatus(run.getTaskId(), "AI 进行中");
+            setTaskStatuses(run, "AI 进行中");
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());
             List<ProjectMemoryContextDto> memoryContext = projectMemories.recall(run, task);
@@ -1051,7 +1174,7 @@ public class AiRunService {
         if (verifiedMemoryCompletion(exitCode, request.resultSummary())) {
             projectMemories.persistCandidates(run, request.projectMemoryCandidates());
         }
-        setTaskStatus(run.getTaskId(), exitCode == 0 ? "待验证" : "进行中");
+        setTaskStatuses(run, exitCode == 0 ? "待验证" : "进行中");
         runnerMapper.touchLastSeenAt(runner.getId());
         notifyFinished(run, engine, exitCode);
         return toRunDtos(List.of(run)).get(0);
@@ -1074,7 +1197,9 @@ public class AiRunService {
             throw new BadRequestException("AI 运行已结束，不能再上传报告");
         }
         TaskEntity task = taskMapper.selectById(run.getTaskId());
+        List<String> taskIds = taskIds(run);
         String taskTitle = task == null ? run.getTaskId() : task.getTitle();
+        if (taskIds.size() > 1) taskTitle = taskIds.size() + " 个任务 · " + taskTitle;
         String scopeTitle = StringUtils.hasText(run.getSubId()) ? subTitle(run.getTaskId(), run.getSubId()) : null;
         String title = StringUtils.hasText(scopeTitle)
                 ? taskTitle + " · " + scopeTitle + " · AI 报告"
@@ -1099,7 +1224,7 @@ public class AiRunService {
         run.setFinishedAt(LocalDateTime.now());
         runMapper.updateById(run);
         appendProgress(run, "result", "用户已暂停 AI 任务，执行节点将停止本地执行");
-        setTaskStatus(run.getTaskId(), "进行中");
+        setTaskStatuses(run, "进行中");
         return toRunDtos(List.of(run)).get(0);
     }
 
@@ -1144,9 +1269,7 @@ public class AiRunService {
         try {
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());
-            String scope = StringUtils.hasText(run.getSubId())
-                    ? "子任务 · " + blankOr(subTitle(run.getTaskId(), run.getSubId()), run.getSubId())
-                    : "整个任务";
+            String scope = runScope(run);
             notifier.notifyRunFinished(run.getTaskId(), run.getProjectId(),
                     task == null ? run.getTaskId() : task.getTitle(),
                     project == null ? run.getProjectId() : project.getName(),
@@ -1161,9 +1284,7 @@ public class AiRunService {
         try {
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());
-            String scope = StringUtils.hasText(run.getSubId())
-                    ? "子任务 · " + blankOr(subTitle(run.getTaskId(), run.getSubId()), run.getSubId())
-                    : "整个任务";
+            String scope = runScope(run);
             AiRunnerNodeEntity target = StringUtils.hasText(run.getRequestedRunnerId())
                     ? runnerMapper.selectById(run.getRequestedRunnerId()) : null;
             notifier.notifyRunQueued(run.getTaskId(), run.getProjectId(),
@@ -1179,13 +1300,24 @@ public class AiRunService {
     /** 执行电脑领取任务（AI 开始执行）后的飞书通知；失败只记日志，不影响领取结果。 */
     private void notifyStarted(AiTaskRunEntity run, TaskEntity task, ProjectEntity project, String runnerName) {
         try {
+            List<String> taskIds = taskIds(run);
+            String taskTitle = task == null ? run.getTaskId() : task.getTitle();
+            if (taskIds.size() > 1) taskTitle = taskIds.size() + " 个任务 · " + taskTitle;
             notifier.notifyRunStarted(run.getTaskId(), run.getProjectId(),
-                    task == null ? run.getTaskId() : task.getTitle(),
+                    taskTitle,
                     project == null ? run.getProjectId() : project.getName(),
                     label(blankOr(run.getEngine(), DEFAULT_ENGINE)), runnerName);
         } catch (RuntimeException ex) {
             LOG.warn("AI 开始执行通知发送失败：{}", ex.getMessage());
         }
+    }
+
+    private String runScope(AiTaskRunEntity run) {
+        List<String> taskIds = taskIds(run);
+        if (taskIds.size() > 1) return "合并 " + taskIds.size() + " 个任务";
+        return StringUtils.hasText(run.getSubId())
+                ? "子任务 · " + blankOr(subTitle(run.getTaskId(), run.getSubId()), run.getSubId())
+                : "整个任务";
     }
 
     /**
@@ -1253,7 +1385,7 @@ public class AiRunService {
                 run.setStartedAt(null);
                 run.setResultSummary("执行节点离线，已自动重新排队");
                 appendProgress(run, "phase", "执行电脑离线，任务已自动重新排队");
-                setTaskStatus(run.getTaskId(), "进行中");
+                setTaskStatuses(run, "进行中");
             }
         }
     }
@@ -1261,6 +1393,7 @@ public class AiRunService {
     private List<AiRunDto> toRunDtos(List<AiTaskRunEntity> runs) {
         if (runs.isEmpty()) return List.of();
         List<String> runIds = runs.stream().map(AiTaskRunEntity::getId).toList();
+        Map<String, List<String>> taskIdsByRun = taskIdsByRun(runs);
         var memoryReadsByRun = projectMemories.readReferences(runIds);
         var memoryWritesByRun = projectMemories.writeReferences(runIds);
         Map<String, List<AiRunProgressDto>> progressByRun = progressMapper.selectList(
@@ -1275,9 +1408,10 @@ public class AiRunService {
                                             item.getContent(), text(item.getCreatedAt())))
                                     .toList();
                         })));
-        Map<String, TaskEntity> tasks = taskMapper.selectBatchIds(runs.stream().map(AiTaskRunEntity::getTaskId)
-                        .distinct().toList()).stream()
-                .collect(Collectors.toMap(TaskEntity::getId, Function.identity()));
+        List<String> allTaskIds = taskIdsByRun.values().stream().flatMap(List::stream).distinct().toList();
+        Map<String, TaskEntity> tasks = allTaskIds.isEmpty() ? Map.of()
+                : taskMapper.selectBatchIds(allTaskIds).stream()
+                        .collect(Collectors.toMap(TaskEntity::getId, Function.identity()));
         Map<String, ProjectEntity> projects = projectMapper.selectBatchIds(runs.stream()
                         .map(AiTaskRunEntity::getProjectId).distinct().toList()).stream()
                 .collect(Collectors.toMap(ProjectEntity::getId, Function.identity()));
@@ -1289,10 +1423,12 @@ public class AiRunService {
         Map<String, String> reportUrls = hostedPages.runReportUrls(runIds);
         return runs.stream().map(run -> {
             TaskEntity task = tasks.get(run.getTaskId());
+            List<String> taskIds = taskIdsByRun.getOrDefault(run.getId(), List.of());
             ProjectEntity project = projects.get(run.getProjectId());
             AiRunnerNodeEntity runner = StringUtils.hasText(run.getRunnerId())
                     ? runners.get(run.getRunnerId()) : null;
-            return new AiRunDto(run.getId(), run.getTaskId(), runTaskTitle(run, task), previewImages(run, task),
+            return new AiRunDto(run.getId(), run.getTaskId(), runTaskTitle(run, task, taskIds, tasks), taskIds,
+                    previewImages(run, task),
                     run.getSubId(),
                     StringUtils.hasText(run.getSubId()) ? subTitle(run.getTaskId(), run.getSubId()) : null,
                     run.getProjectId(), project == null ? run.getProjectId() : project.getName(),
@@ -1318,6 +1454,16 @@ public class AiRunService {
         String title = trim(task.getTitle());
         if (!title.startsWith("![") && !title.contains("data:image")) return title;
         return goalTitle(autonomousGoalBody(task.getDescription()));
+    }
+
+    /** 合并运行在所有入口都显示为一个明确的交付单元，同时保留第一条标题帮助辨认。 */
+    private static String runTaskTitle(AiTaskRunEntity run, TaskEntity primary, List<String> taskIds,
+            Map<String, TaskEntity> tasks) {
+        if (taskIds.size() <= 1) return runTaskTitle(run, primary);
+        List<String> titles = taskIds.stream().map(tasks::get).filter(Objects::nonNull)
+                .map(TaskEntity::getTitle).filter(StringUtils::hasText).limit(2).toList();
+        String sample = titles.isEmpty() ? "" : " · " + String.join("、", titles);
+        return taskIds.size() + " 个任务" + sample + (taskIds.size() > 2 ? "等" : "");
     }
 
     private static String autonomousGoalBody(String description) {
@@ -1392,6 +1538,32 @@ public class AiRunService {
         ProjectEntity project = projectMapper.selectById(projectId);
         if (project == null) throw new NotFoundException("项目不存在：" + projectId);
         return project;
+    }
+
+    /** 批量读取关系表；历史或测试桩没有关系时回落到兼容主任务。 */
+    private Map<String, List<String>> taskIdsByRun(List<AiTaskRunEntity> runs) {
+        List<String> runIds = runs.stream().map(AiTaskRunEntity::getId).toList();
+        List<AiTaskRunTaskEntity> links = runMapper.selectTaskLinks(runIds);
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        if (links != null) {
+            for (AiTaskRunTaskEntity link : links) {
+                result.computeIfAbsent(link.getRunId(), ignored -> new ArrayList<>()).add(link.getTaskId());
+            }
+        }
+        for (AiTaskRunEntity run : runs) {
+            result.computeIfAbsent(run.getId(), ignored -> StringUtils.hasText(run.getTaskId())
+                    ? new ArrayList<>(List.of(run.getTaskId())) : new ArrayList<>());
+        }
+        return result;
+    }
+
+    private List<String> taskIds(AiTaskRunEntity run) {
+        return taskIdsByRun(List.of(run)).get(run.getId());
+    }
+
+    /** 一次合并运行的所有任务共享同一生命周期状态。 */
+    private void setTaskStatuses(AiTaskRunEntity run, String status) {
+        for (String taskId : taskIds(run)) setTaskStatus(taskId, status);
     }
 
     private void setTaskStatus(String taskId, String status) {

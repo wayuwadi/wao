@@ -165,7 +165,7 @@ public class AiRunController {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         return ApiResponse.ok(service.enqueue(request.taskIds(), request.subId(), request.engine(),
                 request.runnerId(), request.accountId(), request.model(), request.reasoningEffort(),
-                request.planMode(),
+                request.planMode(), request.mergeTasks(),
                 currentMember.idOr(http, "unknown"), baseUrl));
     }
 

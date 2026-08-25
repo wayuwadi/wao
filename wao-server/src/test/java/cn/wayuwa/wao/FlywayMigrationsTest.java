@@ -151,4 +151,19 @@ class FlywayMigrationsTest {
                 .contains("task_sources_json", "run_sources_json", "ai_run_metered_count", "total_tokens")
                 .contains("idx_task_created_at", "idx_task_completed_at", "idx_ai_run_created_at");
     }
+
+    @Test
+    void mergedTaskRunMigrationBackfillsHistoryAndKeepsStableOrder() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V91__merged_task_ai_run.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE ai_task_run_task")
+                .contains("PRIMARY KEY (run_id, task_id)")
+                .contains("UNIQUE KEY uk_ai_task_run_task_order (run_id, ord)")
+                .contains("INSERT INTO ai_task_run_task (run_id, task_id, ord)")
+                .contains("SELECT id, task_id, 0", "FROM ai_task_run");
+    }
 }

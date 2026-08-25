@@ -104,6 +104,22 @@ class ShareServiceTest {
     }
 
     @Test
+    void mergedRunMarkdownKeepsTaskBoundariesAndOneExecutionContract() {
+        when(aiRuns.runTaskIds("ar1")).thenReturn(List.of("t1", "t2"));
+        when(tasks.get("t1")).thenReturn(task());
+        when(tasks.get("t2")).thenReturn(task());
+        when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在：p1"));
+
+        String md = service.toRunMarkdown("ar1", true, BASE);
+
+        assertThat(md).startsWith("# 合并 AI Run：2 个任务");
+        assertThat(md).contains("一个工作区和一个上下文").contains("逐项说明结果与验收证据");
+        assertThat(md).contains("## 任务 1/2：整理证件盒").contains("## 任务 2/2：整理证件盒");
+        assertThat(md.indexOf("## 任务 1/2")).isLessThan(md.indexOf("## 任务 2/2"));
+        assertThat(md).doesNotContain("# 整理证件盒");
+    }
+
+    @Test
     void markdownRetiresPdcaDisplayWithoutDeletingHistoryFromDto() {
         PdcaCycle cycle = new PdcaCycle("pc1", "连续七天早睡", "做到了六天，周五被临时工作打断",
                 "下一轮给临时工作预留半小时", "部分达成",

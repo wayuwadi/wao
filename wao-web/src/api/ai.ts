@@ -135,6 +135,7 @@ export const createAiRuns = (
     model?: string | null
     reasoningEffort?: string | null
     planMode?: boolean
+    mergeTasks?: boolean
   } = {},
 ) =>
   data<AiRun[]>(http.post('/api/ai/runs', {
@@ -146,6 +147,7 @@ export const createAiRuns = (
     model: options.model ?? null,
     reasoningEffort: options.reasoningEffort ?? null,
     planMode: options.planMode ?? false,
+    mergeTasks: options.mergeTasks ?? false,
   }))
 
 /** 从一句目标创建任务，并立即交给项目默认 AI 工作流；runnerId 可覆盖本次执行电脑。 */

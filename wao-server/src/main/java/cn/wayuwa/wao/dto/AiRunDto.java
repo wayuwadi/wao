@@ -7,6 +7,8 @@ public record AiRunDto(
         String id,
         String taskId,
         String taskTitle,
+        /** 本次运行覆盖的全部任务；历史和单任务运行只有一项。 */
+        List<String> taskIds,
         /** 任务目标里的图片预览地址，最多返回前四张；旧内联图片返回受控代理地址。 */
         List<String> previewImages,
         /** 本次只跑这一条子任务；整个任务的运行为 null。 */
