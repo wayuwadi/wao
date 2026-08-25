@@ -5,6 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 import { useUiStore } from '@/stores/ui'
 import type { AiRun } from '@/types'
 
@@ -91,6 +92,7 @@ describe('TaskDrawer', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
     ui = useUiStore()
     taskId = data.tasks[0]!.id
     data.tasks[0]!.subs = []

@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import TodoView from '@/views/TodoView.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
+import { seedDataStore } from './helpers/seedDataStore'
 
 describe('TodoView', () => {
   let data: ReturnType<typeof useDataStore>
@@ -12,6 +13,7 @@ describe('TodoView', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
     data.taskLoadState = 'loaded'
     useSessionStore().accept({
       accountId: 'a1',

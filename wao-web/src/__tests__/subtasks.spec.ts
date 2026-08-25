@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 
 /** 子任务读写：内嵌在任务的 subs 里，靠稳定 id 定位（历史数据回落到下标合成键）。 */
 describe('data store · 子任务', () => {
@@ -11,6 +12,7 @@ describe('data store · 子任务', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
     taskId = data.tasks[0]!.id
     data.tasks[0]!.subs = []
   })
@@ -99,6 +101,7 @@ describe('data store · 新建任务', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    seedDataStore()
   })
 
   it('立即返回本地任务，不等后端往返', async () => {

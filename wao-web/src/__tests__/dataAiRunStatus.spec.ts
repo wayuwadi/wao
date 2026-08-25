@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 import type { AiRun } from '@/types'
 
 function run(status: AiRun['status'], createdAt = '2026-07-29T09:00:00'): AiRun {
@@ -18,7 +19,10 @@ function run(status: AiRun['status'], createdAt = '2026-07-29T09:00:00'): AiRun 
 }
 
 describe('AI Run 状态投影', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    seedDataStore()
+  })
 
   it('活动运行优先，完成后及时进入待验证且不覆盖本地正文', () => {
     const data = useDataStore()

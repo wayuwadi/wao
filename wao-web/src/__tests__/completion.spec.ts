@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { SETTLE_MS, useCompletionSettle } from '@/composables/completion'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 import { useUiStore } from '@/stores/ui'
 
 /** 组合式函数带 onBeforeUnmount，必须在组件里用。 */
@@ -29,6 +30,7 @@ describe('useCompletionSettle', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
     taskId = data.tasks.find((t) => t.status !== '已完成')!.id
   })
   afterEach(() => vi.useRealTimers())

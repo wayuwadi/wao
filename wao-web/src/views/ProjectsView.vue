@@ -78,13 +78,26 @@ function openProject(id: string) {
       <div class="ptitle">项目</div>
       <span class="ptip">{{ filteredProjects.length }} 个项目 · 软件项目与人生大事都值得正式立项</span>
       <div class="spacer"></div>
-      <button class="btn-primary" @click="ui.openModal('project')">
+      <button class="btn-primary" :disabled="data.loadStates.projects !== 'loaded'" @click="ui.openModal('project')">
         <i class="ri-add-line"></i>新建项目
       </button>
     </div>
 
+    <div v-if="data.loadStates.projects === 'loading'" class="load-state" role="status" aria-live="polite">
+      <i class="ri-loader-4-line spin"></i>
+      <b>正在加载项目…</b>
+      <span>项目数据返回前不会展示示例内容。</span>
+    </div>
+    <div v-else-if="data.loadStates.projects === 'error'" class="load-state error" role="alert">
+      <i class="ri-error-warning-line"></i>
+      <b>项目加载失败</b>
+      <span>{{ data.loadErrors.projects || '暂时无法读取项目，请稍后重试' }}</span>
+      <button type="button" @click="data.hydrate()"><i class="ri-refresh-line"></i>重新加载</button>
+    </div>
+
     <!-- 项目视图 -->
-    <div class="toolbar">
+    <template v-else>
+      <div class="toolbar">
         <div class="spacer"></div>
         <div v-if="openDrop" class="drop-mask" @click="openDrop = null"></div>
         <div class="search">
@@ -175,6 +188,7 @@ function openProject(id: string) {
           <div>没有符合条件的项目——试试清除搜索或切换状态筛选</div>
         </div>
       </div>
+    </template>
   </div>
 </template>
 
@@ -220,9 +234,40 @@ function openProject(id: string) {
 .btn-primary:hover {
   background: var(--wao-primary-hover);
 }
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .btn-primary i {
   font-size: 15px;
 }
+.load-state {
+  min-height: 220px;
+  margin-top: 14px;
+  border: 1px dashed var(--wao-line-strong);
+  border-radius: 12px;
+  color: var(--wao-text-weak);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+.load-state > i { color: var(--wao-primary); font-size: 24px; }
+.load-state b { color: var(--wao-text); }
+.load-state.error > i { color: #bc4141; }
+.load-state button {
+  margin-top: 4px;
+  border: 1px solid var(--wao-line-strong);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  padding: 7px 11px;
+  cursor: pointer;
+}
+.spin { animation: project-spin 0.9s linear infinite; }
+@keyframes project-spin { to { transform: rotate(360deg); } }
 
 .toolbar {
   margin-top: 14px;

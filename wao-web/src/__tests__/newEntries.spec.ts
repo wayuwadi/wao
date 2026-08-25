@@ -7,6 +7,7 @@ import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
+import { seedDataStore } from './helpers/seedDataStore'
 
 /**
  * 新建入口与任务视图：右上角只留两个按钮、看板「待办」列自带加号、视图被记住。
@@ -46,6 +47,7 @@ describe('右上角新建入口', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    seedDataStore()
     vi.spyOn(useDataStore(), 'hydrate').mockResolvedValue(undefined as never)
   })
 
@@ -89,6 +91,7 @@ describe('新建任务的所属项目', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    seedDataStore()
   })
 
   it('真实项目列表替换启动 fixtures 后，首页入口会改选真实项目', async () => {
@@ -135,6 +138,7 @@ describe('项目任务视图', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
   })
 
   async function mountProject() {
@@ -163,6 +167,7 @@ describe('项目任务视图', () => {
     // 换一个 pinia 实例模拟重开页面，localStorage 里的偏好仍在
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
     const second = await mountProject()
     expect(second.find('.task-list-card').exists()).toBe(true)
     second.unmount()

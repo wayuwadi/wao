@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import SettingsView from '@/views/SettingsView.vue'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 
 vi.mock('@/api/system', () => ({
   fetchWebhookEndpoints: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
@@ -35,6 +36,7 @@ describe('按项目的通知开关', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
   })
 
   it('每个项目一行开关，默认都是通知中', async () => {

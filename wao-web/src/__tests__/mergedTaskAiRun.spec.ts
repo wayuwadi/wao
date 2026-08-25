@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { createAiRuns } from '@/api/ai'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 import { useToastHost } from '@/composables/toast'
 import type { AiRun } from '@/types'
 
@@ -17,6 +18,7 @@ describe('项目任务合并为一次 AI Run', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
+    seedDataStore()
     useToastHost().items.splice(0)
     vi.mocked(createAiRuns).mockReset()
   })

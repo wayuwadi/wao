@@ -34,6 +34,9 @@ const preferences = usePreferenceStore()
 const session = useSessionStore()
 const theme = useTheme()
 
+const loadingDomainCount = computed(() => Object.values(data.loadStates).filter((state) => state === 'loading').length)
+const loadErrorMessages = computed(() => [...new Set(Object.values(data.loadErrors).filter(Boolean))])
+
 // 登录成员切换时先清掉上一名成员的内存偏好，再按当前会话重新读取。
 preferences.prepareForMember(session.currentUser.id)
 
@@ -178,6 +181,18 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       <TabBar />
 
       <div class="content">
+        <div v-if="loadErrorMessages.length" class="data-status error" role="alert">
+          <i class="ri-error-warning-line"></i>
+          <span>
+            部分数据加载失败：{{ loadErrorMessages.join('；') }}
+            <template v-if="loadingDomainCount">（其余数据仍在加载）</template>
+          </span>
+          <button v-if="!loadingDomainCount" type="button" @click="data.hydrate()"><i class="ri-refresh-line"></i>重新加载</button>
+        </div>
+        <div v-else-if="loadingDomainCount" class="data-status" role="status" aria-live="polite">
+          <i class="ri-loader-4-line spin"></i>
+          正在加载业务数据…
+        </div>
         <!-- 页面主体撑满剩余高度，备案页脚被压在滚动区最底端：内容不够一屏时也贴住底部，不会跟着内容往上浮 -->
         <div class="page-body"><RouterView /></div>
         <SiteFooter reserve-mobile-actions />
@@ -219,6 +234,37 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   display: flex;
   flex-direction: column;
 }
+.data-status {
+  min-height: 40px;
+  margin: 12px 24px 0;
+  padding: 9px 12px;
+  border: 1px solid #dce2f5;
+  border-radius: 9px;
+  background: #f5f7ff;
+  color: #4358d6;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.data-status.error {
+  border-color: #f0c7c7;
+  background: #fff4f4;
+  color: #a83b3b;
+}
+.data-status span { flex: 1; }
+.data-status button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.spin { animation: data-spin 0.9s linear infinite; }
+@keyframes data-spin { to { transform: rotate(360deg); } }
 .header {
   height: var(--wao-header-h);
   background: var(--wao-bg-card);

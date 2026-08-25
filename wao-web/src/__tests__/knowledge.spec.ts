@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
 
 /**
@@ -16,6 +17,7 @@ describe('data store · 知识库', () => {
     localStorage.clear()
     setActivePinia(createPinia())
     data = useDataStore()
+    seedDataStore(data)
   })
 
   it('默认就有一个小记知识库，不用先建库才能记东西', () => {
