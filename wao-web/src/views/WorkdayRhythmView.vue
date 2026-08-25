@@ -42,9 +42,16 @@ const CONFIG_DRAFT_KEY = 'wao-workday-rhythm-config-draft-v1'
 const clock = ref(shanghaiClock())
 const config = ref<WorkdayRhythmConfig>(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
 const day = ref<WorkdayRhythmDay>(defaultRhythmDay(clock.value.date, clock.value.weekday))
+const tomorrowDate = computed(() => shiftDate(clock.value.date, 1))
+const tomorrowWeekday = computed(() => weekdayOf(tomorrowDate.value))
+const tomorrowDay = ref<WorkdayRhythmDay>(
+  defaultRhythmDay(tomorrowDate.value, tomorrowWeekday.value),
+)
 const loading = ref(true)
 const loadError = ref('')
 const dayState = ref<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle')
+const tomorrowState = ref<'loading' | 'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('loading')
+const tomorrowError = ref('')
 const editorOpen = ref(false)
 const editorBusy = ref(false)
 const editorError = ref('')
@@ -68,6 +75,7 @@ const dailyPanelKey = ref(0)
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
 const dayDraftKey = computed(() => `wao-workday-rhythm-day-draft-${clock.value.date}`)
+const tomorrowDraftKey = computed(() => `wao-workday-rhythm-day-draft-${tomorrowDate.value}`)
 const blockIndex = computed(() => currentBlockIndex(config.value.blocks, clock.value))
 const currentBlock = computed(() => config.value.blocks[blockIndex.value] ?? null)
 const nextBlock = computed(() => {
@@ -117,6 +125,18 @@ const configuredWebhookMissing = computed(
 )
 let energyItemSequence = 0
 
+function shiftDate(value: string, days: number) {
+  const [year, month, date] = value.split('-').map(Number)
+  const shifted = new Date(Date.UTC(year!, month! - 1, date! + days))
+  return shifted.toISOString().slice(0, 10)
+}
+
+function weekdayOf(value: string) {
+  const [year, month, date] = value.split('-').map(Number)
+  const weekday = new Date(Date.UTC(year!, month! - 1, date!)).getUTCDay()
+  return weekday === 0 ? 7 : weekday
+}
+
 function loadLocalDayDraft(validIds: string[], validEnergyIds: string[]): WorkdayRhythmDay | null {
   const raw = localStorage.getItem(dayDraftKey.value)
   if (!raw) return null
@@ -128,6 +148,40 @@ function loadLocalDayDraft(validIds: string[], validEnergyIds: string[]): Workda
     validEnergyIds,
   )
   return parsed.date === clock.value.date ? parsed : null
+}
+
+function loadLocalTomorrowDraft(
+  validIds: string[],
+  validEnergyIds: string[],
+): WorkdayRhythmDay | null {
+  const raw = localStorage.getItem(tomorrowDraftKey.value)
+  if (!raw) return null
+  const parsed = parseRhythmDay(
+    raw,
+    tomorrowDate.value,
+    tomorrowWeekday.value,
+    validIds,
+    validEnergyIds,
+  )
+  return parsed.date === tomorrowDate.value ? parsed : null
+}
+
+async function loadTomorrow(validIds: string[], validEnergyIds: string[]) {
+  tomorrowState.value = 'loading'
+  tomorrowError.value = ''
+  try {
+    const loaded = await fetchWorkdayRhythmDay(
+      tomorrowDate.value,
+      tomorrowWeekday.value,
+      validIds,
+      validEnergyIds,
+    )
+    tomorrowDay.value = loadLocalTomorrowDraft(validIds, validEnergyIds) ?? loaded
+    tomorrowState.value = localStorage.getItem(tomorrowDraftKey.value) ? 'error' : 'idle'
+  } catch (error) {
+    tomorrowState.value = 'error'
+    tomorrowError.value = error instanceof Error ? error.message : '明日计划暂时无法读取'
+  }
 }
 
 async function load() {
@@ -146,6 +200,7 @@ async function load() {
     config.value = loadedConfig
     day.value = loadLocalDayDraft(validIds, validEnergyIds) ?? loadedDay
     dayState.value = localStorage.getItem(dayDraftKey.value) ? 'error' : 'idle'
+    await loadTomorrow(validIds, validEnergyIds)
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '今日节奏暂时无法读取'
   } finally {
@@ -259,7 +314,10 @@ async function toggleWorkday() {
     day.value.workdayActive = dashboard.workday
     dailyPanelKey.value += 1
   } catch (error) {
-    toast(error instanceof Error ? error.message : '今天的工作状态保存失败', 'ri-error-warning-line')
+    toast(
+      error instanceof Error ? error.message : '今天的工作状态保存失败',
+      'ri-error-warning-line',
+    )
     return
   }
   markDayDirty()
@@ -271,6 +329,12 @@ function focusInput() {
   markDayDirty()
 }
 
+function tomorrowFocusInput() {
+  tomorrowDay.value.focus = tomorrowDay.value.focus.map((item) => item.slice(0, 100))
+  if (tomorrowState.value !== 'saving') tomorrowState.value = 'dirty'
+  localStorage.setItem(tomorrowDraftKey.value, JSON.stringify(tomorrowDay.value))
+}
+
 async function saveFocus() {
   day.value.focus = day.value.focus.map((item) => item.trim())
   markDayDirty()
@@ -279,7 +343,28 @@ async function saveFocus() {
     await saveRhythmFocus(day.value.date, day.value.focus)
     dailyPanelKey.value += 1
   } catch (error) {
-    toast(error instanceof Error ? error.message : '今日计划联动失败，请重试', 'ri-error-warning-line')
+    toast(
+      error instanceof Error ? error.message : '今日计划联动失败，请重试',
+      'ri-error-warning-line',
+    )
+  }
+}
+
+async function saveTomorrowFocus() {
+  if (tomorrowState.value === 'saving' || tomorrowState.value === 'loading') return
+  tomorrowDay.value.focus = tomorrowDay.value.focus.map((item) => item.trim())
+  tomorrowState.value = 'saving'
+  localStorage.setItem(tomorrowDraftKey.value, JSON.stringify(tomorrowDay.value))
+  try {
+    await saveRhythmFocus(tomorrowDate.value, tomorrowDay.value.focus)
+    localStorage.removeItem(tomorrowDraftKey.value)
+    tomorrowState.value = 'saved'
+    tomorrowError.value = ''
+    toast('明日计划已保存，明天会直接成为今日重点', 'ri-check-line')
+  } catch (error) {
+    tomorrowState.value = 'error'
+    tomorrowError.value = error instanceof Error ? error.message : '明日计划保存失败'
+    toast(`${tomorrowError.value}，草稿仍在本机`, 'ri-error-warning-line')
   }
 }
 
@@ -596,34 +681,105 @@ onBeforeUnmount(() => {
       />
 
       <section class="dashboard-grid">
-        <article class="focus-card">
-          <header>
-            <div>
-              <small>09:00 前列好</small>
-              <h2>今日三个重点</h2>
+        <div class="focus-stack">
+          <article class="focus-card">
+            <header>
+              <div>
+                <small>09:00 前列好</small>
+                <h2>今日三个重点</h2>
+              </div>
+              <RouterLink to="/todo">打开真实待办<i class="ri-arrow-right-line"></i></RouterLink>
+            </header>
+            <p class="card-help">
+              这里只写今天必须守住的结果；具体任务和进度仍以待办中的真实数据为准。
+            </p>
+            <label v-for="(_, index) in day.focus" :key="index">
+              <span>{{ index + 1 }}</span
+              ><input
+                v-model="day.focus[index]"
+                :disabled="dayState === 'saving'"
+                maxlength="100"
+                :placeholder="index === 0 ? '今天最重要、最难的一件事' : '另一个可观察的结果'"
+                @input="focusInput"
+              />
+            </label>
+            <footer>
+              <small v-if="dayState === 'dirty'">草稿已保存在本机</small><span></span
+              ><button type="button" :disabled="dayState === 'saving'" @click="saveFocus">
+                {{ dayState === 'error' ? '重试保存' : '保存今日重点' }}
+              </button>
+            </footer>
+          </article>
+
+          <article class="focus-card tomorrow-focus">
+            <header>
+              <div>
+                <small>{{ tomorrowDate }} · 提前准备</small>
+                <h2>明日三个重点</h2>
+              </div>
+              <RouterLink to="/todo">查看真实待办<i class="ri-arrow-right-line"></i></RouterLink>
+            </header>
+            <p class="card-help">
+              紧急插入或重要但今天不做的事先放这里；明天打开时会直接成为今日重点。
+            </p>
+            <div v-if="tomorrowState === 'loading'" class="tomorrow-state">
+              <i class="ri-loader-4-line spin"></i>正在读取明日计划…
             </div>
-            <RouterLink to="/todo">打开真实待办<i class="ri-arrow-right-line"></i></RouterLink>
-          </header>
-          <p class="card-help">
-            这里只写今天必须守住的结果；具体任务和进度仍以待办中的真实数据为准。
-          </p>
-          <label v-for="(_, index) in day.focus" :key="index">
-            <span>{{ index + 1 }}</span
-            ><input
-              v-model="day.focus[index]"
-              :disabled="dayState === 'saving'"
-              maxlength="100"
-              :placeholder="index === 0 ? '今天最重要、最难的一件事' : '另一个可观察的结果'"
-              @input="focusInput"
-            />
-          </label>
-          <footer>
-            <small v-if="dayState === 'dirty'">草稿已保存在本机</small><span></span
-            ><button type="button" :disabled="dayState === 'saving'" @click="saveFocus">
-              {{ dayState === 'error' ? '重试保存' : '保存今日重点' }}
-            </button>
-          </footer>
-        </article>
+            <div
+              v-else-if="tomorrowState === 'error' && !tomorrowDay.focus.some(Boolean)"
+              class="tomorrow-state error"
+              role="alert"
+            >
+              <span>{{ tomorrowError || '上次保存失败，草稿仍在本机' }}</span>
+              <button
+                type="button"
+                @click="
+                  loadTomorrow(
+                    config.blocks.map((item) => item.id),
+                    config.energyItems.map((item) => item.id),
+                  )
+                "
+              >
+                重新读取
+              </button>
+            </div>
+            <template v-else>
+              <label v-for="(_, index) in tomorrowDay.focus" :key="index">
+                <span>{{ index + 1 }}</span>
+                <input
+                  v-model="tomorrowDay.focus[index]"
+                  :disabled="tomorrowState === 'saving'"
+                  maxlength="100"
+                  :placeholder="index === 0 ? '明天最重要、最难的一件事' : '另一件值得提前准备的事'"
+                  @input="tomorrowFocusInput"
+                />
+              </label>
+              <footer>
+                <small v-if="tomorrowState === 'dirty'">草稿已保存在本机</small>
+                <small v-else-if="tomorrowState === 'error'" class="focus-error"
+                  >{{ tomorrowError }}，草稿仍在本机</small
+                >
+                <small v-else-if="tomorrowState === 'saved'" class="focus-saved"
+                  >已保存，明天自动接续</small
+                >
+                <span></span>
+                <button
+                  type="button"
+                  :disabled="tomorrowState === 'saving'"
+                  @click="saveTomorrowFocus"
+                >
+                  {{
+                    tomorrowState === 'error'
+                      ? '重试保存'
+                      : tomorrowState === 'saving'
+                        ? '保存中…'
+                        : '保存明日计划'
+                  }}
+                </button>
+              </footer>
+            </template>
+          </article>
+        </div>
 
         <aside class="energy-card">
           <header>
@@ -1049,15 +1205,20 @@ onBeforeUnmount(() => {
                 <div v-for="(item, index) in record.checklist" :key="`${index}-${item.title}`">
                   <span>{{ item.title }}</span>
                   <b :class="{ late: item.completedAt && item.completedOnTime === false }">
-                    {{ item.completedAt ? (item.completedOnTime ? '准时完成' : '逾期完成') : '未完成' }}
+                    {{
+                      item.completedAt ? (item.completedOnTime ? '准时完成' : '逾期完成') : '未完成'
+                    }}
                   </b>
                 </div>
               </div>
             </section>
             <section v-if="record.documentId && record.documentKbId">
               <h3><i class="ri-file-text-line"></i>每日文档</h3>
-              <RouterLink :to="{ path: `/kb/${record.documentKbId}`, query: { doc: record.documentId } }">
-                {{ record.documentTitle || '打开当天工作记录' }}<i class="ri-arrow-right-up-line"></i>
+              <RouterLink
+                :to="{ path: `/kb/${record.documentKbId}`, query: { doc: record.documentId } }"
+              >
+                {{ record.documentTitle || '打开当天工作记录'
+                }}<i class="ri-arrow-right-up-line"></i>
               </RouterLink>
             </section>
           </article>
@@ -1333,6 +1494,11 @@ textarea {
   grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.8fr);
   gap: 14px;
 }
+.focus-stack {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
 .focus-card,
 .energy-card,
 .timeline-card {
@@ -1410,6 +1576,12 @@ textarea {
 .focus-card footer small {
   color: #9a741e;
 }
+.focus-card footer .focus-error {
+  color: var(--wao-danger-strong);
+}
+.focus-card footer .focus-saved {
+  color: #267c65;
+}
 .focus-card footer span {
   flex: 1;
 }
@@ -1425,6 +1597,28 @@ textarea {
 }
 .focus-card footer button:disabled {
   opacity: 0.55;
+}
+.tomorrow-focus {
+  border-color: color-mix(in srgb, var(--wao-primary) 26%, var(--wao-line));
+}
+.tomorrow-state {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--wao-text-weak);
+  font-size: 11px;
+}
+.tomorrow-state.error {
+  flex-direction: column;
+  color: var(--wao-danger-strong);
+}
+.tomorrow-state button {
+  border: 0;
+  background: none;
+  color: var(--wao-primary);
+  cursor: pointer;
 }
 .energy-card {
   padding: 18px;
