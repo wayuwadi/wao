@@ -3,13 +3,13 @@ import { createPinia, setActivePinia } from 'pinia'
 import { usePreferenceStore } from '@/stores/preferences'
 
 const preferenceApi = vi.hoisted(() => ({
-  fetchPreference: vi.fn(),
-  savePreference: vi.fn(),
+  fetchPreference: vi.fn<(key: string) => Promise<string>>(),
+  savePreference: vi.fn<(key: string, value: string) => Promise<void>>(),
 }))
 
 vi.mock('@/api/favorites', () => preferenceApi)
 
-describe('成员级播放器偏好', () => {
+describe('成员级界面偏好', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
@@ -23,7 +23,37 @@ describe('成员级播放器偏好', () => {
 
     expect(preferences.musicPlayerDefaultOpen).toBe(false)
     expect(preferences.musicPlayerLauncherVisible).toBe(true)
+    expect(preferences.controlStyle).toBe('system')
+    expect(preferences.effectiveControlStyle).toBe('minimal')
+    expect(preferences.compactControls).toBe(true)
     expect(preferenceApi.fetchPreference).toHaveBeenCalledWith('music-player-settings-v1')
+    expect(preferenceApi.fetchPreference).toHaveBeenCalledWith('control-style-v1')
+  })
+
+  it('读取并保存跨设备控件风格', async () => {
+    preferenceApi.fetchPreference.mockImplementation((key: string) => Promise.resolve(
+      key === 'control-style-v1' ? 'detailed' : '',
+    ))
+    const preferences = usePreferenceStore()
+    await preferences.load()
+
+    expect(preferences.controlStyle).toBe('detailed')
+    expect(preferences.compactControls).toBe(false)
+
+    await preferences.setControlStyle('minimal')
+    expect(preferenceApi.savePreference).toHaveBeenCalledWith('control-style-v1', 'minimal')
+    expect(preferences.controlStyle).toBe('minimal')
+    expect(preferences.compactControls).toBe(true)
+  })
+
+  it('控件风格保存失败时不伪装已生效', async () => {
+    const preferences = usePreferenceStore()
+    await preferences.load()
+    preferenceApi.savePreference.mockRejectedValueOnce(new Error('网络不可用'))
+
+    await expect(preferences.setControlStyle('detailed')).rejects.toThrow('网络不可用')
+    expect(preferences.controlStyle).toBe('system')
+    expect(preferences.compactControls).toBe(true)
   })
 
   it('从服务端读取成员设置并原子保存两个开关', async () => {
@@ -54,6 +84,7 @@ describe('成员级播放器偏好', () => {
       .rejects.toThrow('网络不可用')
     expect(preferences.musicPlayerDefaultOpen).toBe(false)
     expect(preferences.musicPlayerLauncherVisible).toBe(true)
+    expect(preferences.controlStyle).toBe('system')
   })
 
   it('切换登录成员时先清除上一人的播放器偏好', async () => {

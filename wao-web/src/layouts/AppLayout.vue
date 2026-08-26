@@ -143,7 +143,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :data-control-style="preferences.effectiveControlStyle">
     <SideNav @open-search="openSearch" />
 
     <main class="main">

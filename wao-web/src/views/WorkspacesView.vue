@@ -390,8 +390,8 @@ onMounted(loadAll)
     <template v-else>
       <section class="space-toolbar">
         <label class="space-switcher">
-          <span>当前空间</span>
-          <select :value="activeId" :disabled="detailLoading" @change="selectSpace">
+          <span class="compactible-control-label">当前空间</span>
+          <select :value="activeId" aria-label="当前工作空间" title="切换当前工作空间" :disabled="detailLoading" @change="selectSpace">
             <option v-for="space in summaries" :key="space.id" :value="space.id">
               {{ space.name }} · {{ space.linkCount }} 个链接
             </option>

@@ -1059,8 +1059,8 @@ function onDropDay(dayIso: string) {
         </div>
         <template v-if="showBacklog">
           <label class="bl-filter">
-            <span>筛选</span>
-            <select v-model="backlogFilter">
+            <span class="compactible-control-label">筛选</span>
+            <select v-model="backlogFilter" aria-label="筛选待安排任务" title="筛选待安排任务">
               <option value="attention">未排期 + 已逾期（{{ backlogCounts.attention }}）</option>
               <option value="unplanned">仅未分配时间（{{ backlogCounts.unplanned }}）</option>
               <option value="overdue">仅逾期未完成（{{ backlogCounts.overdue }}）</option>

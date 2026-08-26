@@ -34,6 +34,7 @@ import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
 import { fetchWebhookEndpoints, type FeishuWebhookEndpoint } from '@/api/system'
 import { fetchChatReviews, type ChatReviewRunSummary } from '@/api/chatReviews'
 import { useDataStore } from '@/stores/data'
+import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow, TaskStatus } from '@/types'
@@ -46,6 +47,7 @@ const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/Markdo
 const route = useRoute()
 const router = useRouter()
 const data = useDataStore()
+const preferences = usePreferenceStore()
 const session = useSessionStore()
 const ui = useUiStore()
 const runs = ref<AiRun[]>([])
@@ -897,11 +899,12 @@ onBeforeUnmount(() => {
             @upload-image="onGoalImage"
           />
           <div class="goal-actions">
-            <label>
-              <span>放进哪条工作流</span>
+            <label class="goal-control-field" title="放进哪条工作流">
+              <span v-if="!preferences.compactControls">放进哪条工作流</span>
               <select
                 v-model="goalProjectId"
                 class="goal-workflow-select"
+                aria-label="放进哪条工作流"
                 :disabled="workflowsLoading || launchingGoal || !activeWorkflows.length"
               >
                 <option v-if="!activeWorkflows.length" value="">还没有已启用的工作流</option>
@@ -910,15 +913,16 @@ onBeforeUnmount(() => {
                 </option>
               </select>
             </label>
-            <label class="goal-runner-field" :title="goalRunnerHint">
-              <span>执行电脑</span>
+            <label class="goal-runner-field goal-control-field" :title="`执行电脑：${goalRunnerHint}`">
+              <span v-if="!preferences.compactControls">执行电脑</span>
               <select
                 v-model="goalRunnerId"
                 class="goal-runner-select"
+                aria-label="执行电脑"
                 :disabled="launchingGoal || !goalWorkflow"
                 @change="goalRunnerManuallySelected = true"
               >
-                <option value="">自动分配</option>
+                <option value="">自动分配电脑</option>
                 <option v-for="runner in goalRunnerCandidates" :key="runner.id" :value="runner.id">
                   {{ runner.name }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
                 </option>
