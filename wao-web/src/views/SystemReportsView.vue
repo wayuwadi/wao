@@ -1,30 +1,93 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import {
+  fetchSystemReportSettings,
   fetchSystemReport,
   generateSystemReport,
+  saveSystemReportSettings,
   type SystemPeriodicReport,
+  type SystemReportAggregation,
   type SystemReportPeriod,
+  type SystemReportSettings,
 } from '@/api/systemReports'
 
 const PERIODS: Array<{ id: SystemReportPeriod; label: string; hint: string }> = [
-  { id: 'DAY', label: '日报', hint: '每日 00:00 产出' },
-  { id: 'WEEK', label: '周报', hint: '周日结束后产出' },
-  { id: 'MONTH', label: '月报', hint: '每月 1 日产出' },
+  { id: 'DAY', label: '日报', hint: '最近完整自然日' },
+  { id: 'WEEK', label: '周报', hint: '最近完整自然周' },
+  { id: 'MONTH', label: '月报', hint: '最近完整自然月' },
 ]
+const AGGREGATIONS: Array<{ id: SystemReportAggregation; label: string }> = [
+  { id: 'TASK_CREATED', label: '新建任务' },
+  { id: 'TASK_COMPLETED', label: '完成任务' },
+  { id: 'AI_RUN', label: 'AI Run 与 Token' },
+]
+const PAGE_SIZE = 20
 
 const period = ref<SystemReportPeriod>('DAY')
 const report = ref<SystemPeriodicReport | null>(null)
 const loading = ref(true)
-const generating = ref(false)
+const generatingPeriod = ref<SystemReportPeriod | null>(null)
 const error = ref('')
+const createdTaskPage = ref(1)
+const completedTaskPage = ref(1)
+const runPage = ref(1)
+const settingsOpen = ref(false)
+const settingsLoading = ref(true)
+const settingsSaving = ref(false)
+const settingsError = ref('')
+const settingsSaved = ref(false)
+const reportSettings = ref<SystemReportSettings | null>(null)
+const settingsDraft = ref<SystemReportSettings | null>(null)
+
+function cloneSettings(value: SystemReportSettings): SystemReportSettings {
+  return {
+    ...value,
+    periods: [...value.periods],
+    aggregationOptions: [...value.aggregationOptions],
+  }
+}
 
 const createdTasks = computed(
-  () => report.value?.tasks.filter((task) => task.events.includes('CREATED')) ?? [],
+  () =>
+    report.value?.tasks
+      .filter((task) => task.events.includes('CREATED'))
+      .sort((a, b) => Date.parse(b.createdAt ?? '') - Date.parse(a.createdAt ?? '')) ?? [],
 )
 const completedTasks = computed(
-  () => report.value?.tasks.filter((task) => task.events.includes('COMPLETED')) ?? [],
+  () =>
+    report.value?.tasks
+      .filter((task) => task.events.includes('COMPLETED'))
+      .sort((a, b) => Date.parse(b.completedAt ?? '') - Date.parse(a.completedAt ?? '')) ?? [],
 )
+const createdTaskPages = computed(() =>
+  Math.max(1, Math.ceil(createdTasks.value.length / PAGE_SIZE)),
+)
+const completedTaskPages = computed(() =>
+  Math.max(1, Math.ceil(completedTasks.value.length / PAGE_SIZE)),
+)
+const runPages = computed(() =>
+  Math.max(1, Math.ceil((report.value?.runs.length ?? 0) / PAGE_SIZE)),
+)
+const visibleCreatedTasks = computed(() =>
+  createdTasks.value.slice(
+    (createdTaskPage.value - 1) * PAGE_SIZE,
+    createdTaskPage.value * PAGE_SIZE,
+  ),
+)
+const visibleCompletedTasks = computed(() =>
+  completedTasks.value.slice(
+    (completedTaskPage.value - 1) * PAGE_SIZE,
+    completedTaskPage.value * PAGE_SIZE,
+  ),
+)
+const visibleRuns = computed(() =>
+  (report.value?.runs ?? []).slice((runPage.value - 1) * PAGE_SIZE, runPage.value * PAGE_SIZE),
+)
+const includesCreated = computed(() => report.value?.aggregationOptions.includes('TASK_CREATED'))
+const includesCompleted = computed(() =>
+  report.value?.aggregationOptions.includes('TASK_COMPLETED'),
+)
+const includesRuns = computed(() => report.value?.aggregationOptions.includes('AI_RUN'))
 const canGoNext = computed(() => {
   if (!report.value) return false
   const next = new Date(`${report.value.endDate}T12:00:00+08:00`)
@@ -43,11 +106,18 @@ async function load(anchorDate?: string) {
   error.value = ''
   try {
     report.value = await fetchSystemReport(period.value, anchorDate)
+    resetPagination()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '系统报告读取失败，请重试'
   } finally {
     loading.value = false
   }
+}
+
+function resetPagination() {
+  createdTaskPage.value = 1
+  completedTaskPage.value = 1
+  runPage.value = 1
 }
 
 async function selectPeriod(value: SystemReportPeriod) {
@@ -65,16 +135,58 @@ async function move(direction: -1 | 1) {
   await load(base.toLocaleDateString('sv-SE', { timeZone: 'Asia/Shanghai' }))
 }
 
-async function generate() {
-  if (!report.value || generating.value) return
-  generating.value = true
+async function generate(value = period.value) {
+  if (generatingPeriod.value) return
+  generatingPeriod.value = value
   error.value = ''
   try {
-    report.value = await generateSystemReport(period.value, report.value.startDate)
+    const anchorDate = value === period.value ? report.value?.startDate : undefined
+    report.value = await generateSystemReport(value, anchorDate)
+    period.value = value
+    resetPagination()
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '报告补齐失败，已有快照没有被删除'
+    error.value = cause instanceof Error ? cause.message : '报告重新统计失败，已有快照没有被删除'
   } finally {
-    generating.value = false
+    generatingPeriod.value = null
+  }
+}
+
+async function loadSettings() {
+  settingsLoading.value = true
+  settingsError.value = ''
+  try {
+    reportSettings.value = await fetchSystemReportSettings()
+    settingsDraft.value = cloneSettings(reportSettings.value)
+  } catch (cause) {
+    settingsError.value = cause instanceof Error ? cause.message : '报告设置读取失败，请重试'
+  } finally {
+    settingsLoading.value = false
+  }
+}
+
+function toggleSetting<T extends string>(key: 'periods' | 'aggregationOptions', value: T) {
+  if (!settingsDraft.value) return
+  const values = settingsDraft.value[key] as string[]
+  settingsSaved.value = false
+  settingsDraft.value = {
+    ...settingsDraft.value,
+    [key]: values.includes(value) ? values.filter((item) => item !== value) : [...values, value],
+  }
+}
+
+async function saveSettings() {
+  if (!settingsDraft.value || settingsSaving.value) return
+  settingsSaving.value = true
+  settingsError.value = ''
+  settingsSaved.value = false
+  try {
+    reportSettings.value = await saveSystemReportSettings(settingsDraft.value)
+    settingsDraft.value = cloneSettings(reportSettings.value)
+    settingsSaved.value = true
+  } catch (cause) {
+    settingsError.value = cause instanceof Error ? cause.message : '报告设置保存失败，请重试'
+  } finally {
+    settingsSaving.value = false
   }
 }
 
@@ -106,7 +218,7 @@ function runStatus(value: string) {
   )
 }
 
-onMounted(() => load())
+onMounted(() => Promise.all([load(), loadSettings()]))
 </script>
 
 <template>
@@ -117,23 +229,110 @@ onMounted(() => load())
         <h1>系统报告</h1>
         <p>从真实任务和 AI Run 自动形成 WAO 建设日报、周报与月报。</p>
       </div>
-      <button v-if="report?.generatedAt" :disabled="generating" @click="generate">
-        <i :class="generating ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i
-        >{{ generating ? '正在补齐…' : '重新核对' }}
+      <button type="button" @click="settingsOpen = !settingsOpen">
+        <i class="ri-settings-3-line"></i>{{ settingsOpen ? '收起设置' : '报告设置' }}
       </button>
     </header>
 
     <nav class="period-tabs" aria-label="系统报告周期">
-      <button
-        v-for="item in PERIODS"
-        :key="item.id"
-        :class="{ active: period === item.id }"
-        @click="selectPeriod(item.id)"
-      >
-        <b>{{ item.label }}</b
-        ><small>{{ item.hint }}</small>
-      </button>
+      <div v-for="item in PERIODS" :key="item.id" :class="{ active: period === item.id }">
+        <button class="period-select" type="button" @click="selectPeriod(item.id)">
+          <b>{{ item.label }}</b
+          ><small>{{ item.hint }}</small>
+        </button>
+        <button
+          class="period-refresh"
+          type="button"
+          :aria-label="`重新统计${item.label}`"
+          :title="`重新统计${item.label}`"
+          :disabled="Boolean(generatingPeriod)"
+          @click="generate(item.id)"
+        >
+          <i
+            :class="generatingPeriod === item.id ? 'ri-loader-4-line spin' : 'ri-refresh-line'"
+          ></i>
+        </button>
+      </div>
     </nav>
+
+    <section v-if="settingsOpen" class="settings-card" aria-label="系统报告设置">
+      <div v-if="settingsLoading" class="settings-state">
+        <i class="ri-loader-4-line spin"></i>正在读取团队共享设置…
+      </div>
+      <div v-else-if="!settingsDraft" class="settings-state error">
+        <span>{{ settingsError || '没有读取到报告设置' }}</span>
+        <button type="button" @click="loadSettings">重新读取</button>
+      </div>
+      <form v-else @submit.prevent="saveSettings">
+        <header>
+          <div>
+            <b>自动刷新</b>
+            <small>设置由团队共享，主节点按上海时间读取；手动重新统计不受开关限制。</small>
+          </div>
+          <label class="switch-row">
+            <input
+              v-model="settingsDraft.automaticEnabled"
+              type="checkbox"
+              @change="settingsSaved = false"
+            />
+            <span>{{ settingsDraft.automaticEnabled ? '已开启' : '已关闭' }}</span>
+          </label>
+        </header>
+        <div class="settings-grid">
+          <label>
+            <span>起始刷新时间</span>
+            <input v-model="settingsDraft.refreshTime" type="time" @input="settingsSaved = false" />
+          </label>
+          <label>
+            <span>刷新频率</span>
+            <select
+              v-model.number="settingsDraft.refreshFrequencyHours"
+              @change="settingsSaved = false"
+            >
+              <option :value="1">每 1 小时</option>
+              <option :value="3">每 3 小时</option>
+              <option :value="6">每 6 小时</option>
+              <option :value="12">每 12 小时</option>
+              <option :value="24">每 24 小时</option>
+            </select>
+          </label>
+        </div>
+        <fieldset>
+          <legend>自动刷新的报告</legend>
+          <label v-for="item in PERIODS" :key="item.id">
+            <input
+              type="checkbox"
+              :checked="settingsDraft.periods.includes(item.id)"
+              @change="toggleSetting('periods', item.id)"
+            />{{ item.label }}
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>报告汇总项</legend>
+          <label v-for="item in AGGREGATIONS" :key="item.id">
+            <input
+              type="checkbox"
+              :checked="settingsDraft.aggregationOptions.includes(item.id)"
+              @change="toggleSetting('aggregationOptions', item.id)"
+            />{{ item.label }}
+          </label>
+        </fieldset>
+        <footer>
+          <span :class="{ error: settingsError }">
+            {{
+              settingsError ||
+              (settingsSaved
+                ? '设置已保存'
+                : '保存后用于后续自动刷新和手动重新统计；已有快照保持不变。')
+            }}
+          </span>
+          <button type="submit" :disabled="settingsSaving">
+            <i v-if="settingsSaving" class="ri-loader-4-line spin"></i
+            >{{ settingsSaving ? '保存中…' : settingsError ? '重试保存' : '保存设置' }}
+          </button>
+        </footer>
+      </form>
+    </section>
 
     <section v-if="report" class="scope-bar">
       <button :disabled="loading" aria-label="上一个周期" @click="move(-1)">
@@ -161,8 +360,8 @@ onMounted(() => load())
         <i class="ri-file-warning-line"></i>
         <h2>这个周期尚未产出</h2>
         <p>可以立即用任务与 AI Run 的真实持久化数据补齐，不会生成演示内容。</p>
-        <button :disabled="generating" @click="generate">
-          {{ generating ? '正在补齐…' : '立即补齐报告' }}
+        <button :disabled="Boolean(generatingPeriod)" @click="generate()">
+          {{ generatingPeriod ? '正在重新统计…' : '立即补齐报告' }}
         </button>
       </section>
 
@@ -188,42 +387,42 @@ onMounted(() => load())
         </section>
 
         <section class="period-stats">
-          <article>
+          <article v-if="includesCreated">
             <i class="ri-add-circle-line"></i>
             <div>
               <strong>{{ report.taskCreatedCount }}</strong
               ><span>新建任务</span>
             </div>
           </article>
-          <article>
+          <article v-if="includesCompleted">
             <i class="ri-checkbox-circle-line"></i>
             <div>
               <strong>{{ report.taskCompletedCount }}</strong
               ><span>完成任务</span>
             </div>
           </article>
-          <article>
+          <article v-if="includesRuns">
             <i class="ri-robot-2-line"></i>
             <div>
               <strong>{{ report.aiRunCount }}</strong
               ><span>AI Run</span>
             </div>
           </article>
-          <article>
+          <article v-if="includesRuns">
             <i class="ri-check-double-line"></i>
             <div>
               <strong>{{ report.aiRunSuccessCount }}</strong
               ><span>运行成功</span>
             </div>
           </article>
-          <article>
+          <article v-if="includesRuns">
             <i class="ri-error-warning-line"></i>
             <div>
               <strong>{{ report.aiRunFailureCount }}</strong
               ><span>运行失败</span>
             </div>
           </article>
-          <article>
+          <article v-if="includesRuns">
             <i class="ri-coins-line"></i>
             <div>
               <strong>{{ formatTokens(report.totalTokens) }}</strong
@@ -232,19 +431,19 @@ onMounted(() => load())
           </article>
         </section>
 
-        <section class="activity-card">
+        <section v-if="includesCreated || includesCompleted" class="activity-card">
           <header>
             <div>
               <span>TASK ACTIVITY</span>
               <h2>任务记录</h2>
             </div>
-            <em>{{ report.tasks.length }} 个相关任务</em>
+            <em>每页最多 {{ PAGE_SIZE }} 条</em>
           </header>
           <div v-if="report.tasks.length" class="task-columns">
-            <div>
+            <div v-if="includesCreated">
               <h3>新建 · {{ createdTasks.length }}</h3>
               <a
-                v-for="task in createdTasks"
+                v-for="task in visibleCreatedTasks"
                 :key="`created:${task.id}`"
                 :href="taskUrl(task.projectId, task.id)"
                 ><span
@@ -255,11 +454,18 @@ onMounted(() => load())
                   ></span
                 ><i class="ri-arrow-right-up-line"></i
               ></a>
+              <div v-if="createdTaskPages > 1" class="pagination">
+                <button :disabled="createdTaskPage <= 1" @click="createdTaskPage--">上一页</button>
+                <span>{{ createdTaskPage }} / {{ createdTaskPages }}</span>
+                <button :disabled="createdTaskPage >= createdTaskPages" @click="createdTaskPage++">
+                  下一页
+                </button>
+              </div>
             </div>
-            <div>
+            <div v-if="includesCompleted">
               <h3>完成 · {{ completedTasks.length }}</h3>
               <a
-                v-for="task in completedTasks"
+                v-for="task in visibleCompletedTasks"
                 :key="`done:${task.id}`"
                 :href="taskUrl(task.projectId, task.id)"
                 ><span
@@ -270,21 +476,33 @@ onMounted(() => load())
                   ></span
                 ><i class="ri-arrow-right-up-line"></i
               ></a>
+              <div v-if="completedTaskPages > 1" class="pagination">
+                <button :disabled="completedTaskPage <= 1" @click="completedTaskPage--">
+                  上一页
+                </button>
+                <span>{{ completedTaskPage }} / {{ completedTaskPages }}</span>
+                <button
+                  :disabled="completedTaskPage >= completedTaskPages"
+                  @click="completedTaskPage++"
+                >
+                  下一页
+                </button>
+              </div>
             </div>
           </div>
           <p v-else class="empty-text">这个周期没有新建或完成的任务。</p>
         </section>
 
-        <section class="activity-card">
+        <section v-if="includesRuns" class="activity-card">
           <header>
             <div>
               <span>AI RUN ACTIVITY</span>
               <h2>运行记录</h2>
             </div>
-            <em>生成于 {{ formatTime(report.generatedAt) }}</em>
+            <em>共 {{ report.runs.length }} 条 · 每页最多 {{ PAGE_SIZE }} 条</em>
           </header>
           <div v-if="report.runs.length" class="run-list">
-            <a v-for="run in report.runs" :key="run.id" :href="taskUrl(run.projectId, run.taskId)">
+            <a v-for="run in visibleRuns" :key="run.id" :href="taskUrl(run.projectId, run.taskId)">
               <div class="run-head">
                 <b>{{ run.taskTitle || `任务 ${run.taskId}` }}</b
                 ><span :class="`status ${run.status}`">{{ runStatus(run.status) }}</span>
@@ -299,7 +517,12 @@ onMounted(() => load())
               <p v-if="run.resultSummary">{{ run.resultSummary }}</p>
             </a>
           </div>
-          <p v-else class="empty-text">这个周期没有启动过 AI Run。</p>
+          <div v-if="runPages > 1" class="pagination run-pagination">
+            <button :disabled="runPage <= 1" @click="runPage--">上一页</button>
+            <span>第 {{ runPage }} / {{ runPages }} 页</span>
+            <button :disabled="runPage >= runPages" @click="runPage++">下一页</button>
+          </div>
+          <p v-if="!report.runs.length" class="empty-text">这个周期没有启动过 AI Run。</p>
         </section>
       </template>
     </template>
@@ -351,28 +574,146 @@ onMounted(() => load())
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
-.period-tabs button {
-  padding: 11px;
+.period-tabs > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
   border: 1px solid var(--wao-line);
   border-radius: 10px;
   background: var(--wao-bg-card);
   color: var(--wao-text-3);
-  text-align: left;
+  overflow: hidden;
+}
+.period-tabs button {
+  border: 0;
+  background: transparent;
+  color: inherit;
   cursor: pointer;
 }
-.period-tabs b,
-.period-tabs small {
+.period-select {
+  min-width: 0;
+  padding: 11px;
+  text-align: left;
+}
+.period-refresh {
+  border-left: 1px solid var(--wao-line) !important;
+  font-size: 15px;
+}
+.period-refresh:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.period-select b,
+.period-select small {
   display: block;
 }
-.period-tabs small {
+.period-select small {
   margin-top: 3px;
   color: var(--wao-text-weak);
   font-size: 9px;
 }
-.period-tabs .active {
+.period-tabs > .active {
   border-color: #4f8792;
   background: color-mix(in srgb, #356c78 8%, var(--wao-bg-card));
   color: #356c78;
+}
+.settings-card {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--wao-line);
+  border-radius: 11px;
+  background: var(--wao-bg-card);
+}
+.settings-card form > header,
+.settings-card footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+}
+.settings-card header b,
+.settings-card header small {
+  display: block;
+}
+.settings-card header small,
+.settings-card footer span {
+  margin-top: 3px;
+  color: var(--wao-text-weak);
+  font-size: 9.5px;
+}
+.switch-row,
+.settings-card fieldset label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+}
+.settings-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.settings-grid label > span {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--wao-text-weak);
+  font-size: 9.5px;
+}
+.settings-grid input,
+.settings-grid select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+}
+.settings-card fieldset {
+  margin: 13px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 9px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.settings-card legend {
+  padding: 0 5px;
+  color: var(--wao-text-weak);
+  font-size: 9.5px;
+}
+.settings-card footer {
+  margin-top: 13px;
+}
+.settings-card footer span {
+  flex: 1;
+}
+.settings-card footer span.error,
+.settings-state.error {
+  color: var(--wao-danger-strong);
+}
+.settings-card footer button,
+.settings-state button {
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #356c78;
+  color: #fff;
+  cursor: pointer;
+}
+.settings-card footer button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.settings-state {
+  min-height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--wao-text-weak);
+  font-size: 10.5px;
 }
 .scope-bar {
   margin-top: 12px;
@@ -456,7 +797,7 @@ onMounted(() => load())
   font-size: 18px;
 }
 .period-stats {
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
 }
 .period-stats article {
   padding: 13px;
@@ -482,6 +823,8 @@ onMounted(() => load())
 .activity-card {
   margin-top: 12px;
   padding: 18px;
+  min-width: 0;
+  overflow: hidden;
 }
 .activity-card header {
   display: flex;
@@ -500,8 +843,12 @@ onMounted(() => load())
 .task-columns {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+.task-columns > div {
+  min-width: 0;
+  overflow: hidden;
 }
 .task-columns h3 {
   margin: 0 0 6px;
@@ -541,11 +888,19 @@ onMounted(() => load())
   color: var(--wao-text-weak);
   font-size: 8.5px;
 }
+.run-list small {
+  display: block;
+  overflow-wrap: anywhere;
+}
 .run-list {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
+}
+.run-list > a {
+  min-width: 0;
+  overflow: hidden;
 }
 .run-head {
   display: flex;
@@ -553,6 +908,10 @@ onMounted(() => load())
   gap: 8px;
 }
 .run-head b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 10.5px;
 }
 .status {
@@ -579,6 +938,30 @@ onMounted(() => load())
   margin: 16px 0 2px;
   color: var(--wao-text-weak);
   font-size: 10px;
+}
+.pagination {
+  margin-top: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--wao-text-weak);
+  font-size: 9px;
+}
+.pagination button {
+  padding: 5px 8px;
+  border: 1px solid var(--wao-line);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-3);
+  cursor: pointer;
+}
+.pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.run-pagination {
+  margin-top: 12px;
 }
 .inline-error {
   margin-top: 10px;
@@ -625,6 +1008,17 @@ onMounted(() => load())
   }
   .inventory {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .period-tabs {
+    grid-template-columns: 1fr;
+  }
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+  .settings-card form > header,
+  .settings-card footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
   .period-stats {
     grid-template-columns: repeat(2, 1fr);

@@ -201,6 +201,19 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void configurableSystemReportBackfillsAggregationSnapshot() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V101__configurable_system_periodic_report.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("ADD COLUMN aggregation_options_json JSON NULL")
+                .contains("JSON_ARRAY('TASK_CREATED', 'TASK_COMPLETED', 'AI_RUN')")
+                .contains("MODIFY COLUMN aggregation_options_json JSON NOT NULL");
+    }
+
+    @Test
     void mergedTaskRunMigrationBackfillsHistoryAndKeepsStableOrder() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V91__merged_task_ai_run.sql"))

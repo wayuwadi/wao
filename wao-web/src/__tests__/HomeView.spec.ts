@@ -312,6 +312,7 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.console-quota').exists()).toBe(false)
     expect(wrapper.find('.capacity-orbit').exists()).toBe(true)
     expect(wrapper.find('.hero-link').text()).toContain('查看 AI 详情')
+    expect(wrapper.findAll('.hero-link')[1]!.text()).toContain('查看系统报告')
     wrapper.unmount()
   })
 
@@ -350,6 +351,18 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/dashboard')
+    wrapper.unmount()
+  })
+
+  it('从理念卡片进入系统报告', async () => {
+    vi.useFakeTimers()
+    const { router, wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.findAll('.hero-link')[1]!.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/system-reports')
     wrapper.unmount()
   })
 

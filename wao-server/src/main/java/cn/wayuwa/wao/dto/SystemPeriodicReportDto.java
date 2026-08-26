@@ -11,4 +11,4 @@ public record SystemPeriodicReportDto(
         int taskCreatedCount, int taskCompletedCount, int aiRunCount,
         int aiRunSuccessCount, int aiRunFailureCount, int aiRunMeteredCount, long totalTokens,
         List<SystemReportTaskDto> tasks, List<SystemReportRunDto> runs,
-        LocalDateTime generatedAt, String coverageMessage) { }
+        List<String> aggregationOptions, LocalDateTime generatedAt, String coverageMessage) { }

@@ -40,6 +40,8 @@ public class SettingService {
     /** 通用外部应用菜单注册表（版本化 JSON）；为空时从上面的 Agent 旧键兼容读取。 */
     public static final String EXTERNAL_APP_REGISTRY = "navigation.external-apps";
     public static final String BUILTIN_MENU_REGISTRY = "navigation.builtin-menus";
+    /** 系统日报、周报和月报的团队共享自动刷新与汇总范围。 */
+    public static final String SYSTEM_REPORT_SETTINGS = "system-report.settings";
     /** 飞书群聊同步：自建应用凭据、目标群与落点知识库。 */
     public static final String CHAT_SYNC_APP_ID = "feishu.chat-sync.app-id";
     public static final String CHAT_SYNC_APP_SECRET = "feishu.chat-sync.app-secret";

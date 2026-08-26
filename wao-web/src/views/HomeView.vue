@@ -843,9 +843,14 @@ onBeforeUnmount(() => {
             <i class="ri-server-line"></i><b>{{ usedSlots }}/{{ totalSlots }}</b>
           </span>
         </div>
-        <button class="hero-link" type="button" @click="router.push('/dashboard')">
-          <i class="ri-line-chart-line"></i>查看 AI 详情
-        </button>
+        <div class="hero-links">
+          <button class="hero-link" type="button" @click="router.push('/dashboard')">
+            <i class="ri-line-chart-line"></i>查看 AI 详情
+          </button>
+          <button class="hero-link" type="button" @click="router.push('/system-reports')">
+            <i class="ri-bar-chart-box-line"></i>查看系统报告
+          </button>
+        </div>
       </div>
       <div class="hero-metrics" :class="{ single: !heroWeeklyQuota }">
         <div
@@ -1661,8 +1666,8 @@ onBeforeUnmount(() => {
 .hero-signals b { font-size: 11px; }
 .signal-dot { width: 5px; height: 5px; border-radius: 50%; background: #9bf0c2; box-shadow: 0 0 7px #9bf0c2; }
 .hero-signals .dim .signal-dot { background: #ffffff72; box-shadow: none; }
+.hero-links { margin-top: 13px; display: flex; flex-wrap: wrap; gap: 7px; }
 .hero-link {
-  margin-top: 13px;
   padding: 7px 13px;
   border: 1px solid #ffffff55;
   border-radius: 999px;
