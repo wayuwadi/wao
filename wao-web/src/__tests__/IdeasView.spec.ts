@@ -59,6 +59,6 @@ describe('IdeasView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('没有待归并的历史点子')
-    expect(wrapper.text()).toContain('新想法请创建为一句任务')
+    expect(wrapper.text()).toContain('新想法请直接创建为任务，在任务中持续补充和验收')
   })
 })

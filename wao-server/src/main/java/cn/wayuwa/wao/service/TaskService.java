@@ -14,7 +14,6 @@ import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.Activity;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
-import cn.wayuwa.wao.dto.CreateProjectRequest;
 import cn.wayuwa.wao.dto.CommentDto;
 import cn.wayuwa.wao.dto.CustomProp;
 import cn.wayuwa.wao.dto.PatchTaskRequest;
@@ -22,12 +21,10 @@ import cn.wayuwa.wao.dto.PdcaCycle;
 import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.dto.TaskDetail;
 import cn.wayuwa.wao.dto.TaskDto;
-import cn.wayuwa.wao.dto.TaskPromotionDto;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /** 任务读取、创建与局部更新服务。 */
@@ -195,60 +192,6 @@ public class TaskService {
         announceCollecting(e, previousStatus, memberId);
         announceStatusChanged(e, previousStatus, memberId);
         return toDto(e);
-    }
-
-    /**
-     * 把已进入人工验收的任务升级为长期项目，并让原任务成为项目第一轮。
-     *
-     * <p>任务行锁与任务派生的稳定项目 id 共同保证响应丢失、重复点击和并发请求都不会产生副本。
-     * 未进入待验证或完成的任务没有真实验收结果，服务端拒绝提前立项。
-     *
-     * @param id 来源任务 id
-     * @param memberId 当前成员 id
-     * @return 新项目与移动后的原任务
-     */
-    @Transactional
-    public TaskPromotionDto promoteToProject(String id, String memberId) {
-        TaskEntity e = taskMapper.selectByIdForUpdate(id);
-        if (e == null) throw new NotFoundException("任务不存在：" + id);
-        try {
-            projects.requireAccess(e.getProjectId(), memberId);
-        } catch (NotFoundException ex) {
-            throw new NotFoundException("任务不存在：" + id);
-        }
-
-        String promotedProjectId = projects.promotionProjectId(id);
-        if (promotedProjectId.equals(e.getProjectId())) {
-            return new TaskPromotionDto(projects.get(promotedProjectId, memberId), toDto(e));
-        }
-        if (!Set.of("待验证", DONE).contains(e.getStatus())) {
-            throw new BadRequestException("任务进入待验证或已完成后才能升级为项目");
-        }
-
-        var source = projects.get(e.getProjectId(), memberId);
-        boolean shared = source.members() != null && source.members().size() > 1;
-        String goal = StringUtils.hasText(e.getDescription())
-                ? e.getDescription().trim()
-                : "持续迭代并验收「" + e.getTitle() + "」";
-        int goalCodePoints = goal.codePointCount(0, goal.length());
-        if (goalCodePoints > 512) goal = goal.substring(0, goal.offsetByCodePoints(0, 512));
-        String promotionOwner = source.members() != null && source.members().contains(e.getOwnerId())
-                ? e.getOwnerId() : memberId;
-        var project = projects.createFromTask(id, new CreateProjectRequest(
-                e.getTitle(), source.area(), goal, shared, false),
-                StringUtils.hasText(promotionOwner) ? promotionOwner : memberId);
-
-        TaskDetail detail = parse(e.getDetailJson());
-        List<Activity> activity = new ArrayList<>(nn(detail.activity()));
-        activity.add(0, edit("把任务升级为项目「" + project.name() + "」", memberId));
-        e.setProjectId(project.id());
-        e.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(),
-                detail.docs(), detail.linkTasks(), detail.comments(), detail.custom(), activity, detail.images(),
-                null, detail.startAt(), detail.endAt(), detail.pdcaCycles())));
-        taskMapper.updateById(e);
-        // 通知放在任务移动之后；若数据库更新失败，不应先向团队宣布一个并未完成的升级。
-        project = projects.start(project.id(), memberId);
-        return new TaskPromotionDto(project, toDto(e));
     }
 
     /**

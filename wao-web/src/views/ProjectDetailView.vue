@@ -11,12 +11,11 @@ import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { fmtDate, isOpenStatus, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import { toast } from '@/composables/toast'
-import { createAiRuns, fetchTaskAiRuns } from '@/api/ai'
-import { apiEnsureProjectBrief, apiStartProject } from '@/api/board'
+import { createAiRuns } from '@/api/ai'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
 import { useFavoritesStore } from '@/stores/favorites'
 import { MAX_TASK_GROUPS } from '@/types'
-import type { AiRun, TaskStatus } from '@/types'
+import type { TaskStatus } from '@/types'
 import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
 
 const route = useRoute()
@@ -72,12 +71,6 @@ const statusSaveErrorIds = ref<string[]>([])
 const creatingDoc = ref(false)
 const docCreateError = ref('')
 const creatorFilterOpen = ref(false)
-const iterationBusy = ref(false)
-const iterationRuns = ref<AiRun[]>([])
-const nextRoundOpen = ref(false)
-const nextRoundObjective = ref('')
-const nextRoundAcceptance = ref('')
-const nextRoundTaskId = ref<string | null>(null)
 /** 创建人筛选：按项目记在本地存储里，下次进来还是上次选的（此前刷新即丢）。 */
 const creatorFilter = computed<string | null>({
   get: () => ui.creatorFilterOf(pid.value) || null,
@@ -148,36 +141,6 @@ const doneDesc = (a: { completedAt?: string | null; id: string }, b: { completed
   (b.completedAt ?? '').localeCompare(a.completedAt ?? '') || b.id.localeCompare(a.id)
 const doneTasks = computed(() =>
   allTasks.value.filter((t) => t.status === '已完成' && !isSettling(t.id)).sort(doneDesc))
-const latestTask = computed(() => [...ptasks.value].sort((a, b) =>
-  (b.createdAt ?? b.id).localeCompare(a.createdAt ?? a.id))[0] ?? null)
-const latestRun = computed(() => [...iterationRuns.value].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null)
-const latestRoundAcceptanceFailed = computed(() =>
-  Boolean(latestTask.value && data.taskSaveState(latestTask.value.id) === 'error'))
-
-watch(() => latestTask.value?.id, async (taskId) => {
-  iterationRuns.value = taskId ? await fetchTaskAiRuns(taskId).catch(() => []) : []
-}, { immediate: true })
-const nextRoundDraftKey = computed(() => `wao-project-next-round-${pid.value}`)
-watch(pid, () => {
-  try {
-    const draft = JSON.parse(localStorage.getItem(nextRoundDraftKey.value) || '{}')
-    nextRoundObjective.value = draft.objective || ''
-    nextRoundAcceptance.value = draft.acceptance || ''
-    nextRoundTaskId.value = draft.taskId || null
-  } catch {
-    nextRoundObjective.value = ''
-    nextRoundAcceptance.value = ''
-    nextRoundTaskId.value = null
-  }
-}, { immediate: true })
-watch([nextRoundObjective, nextRoundAcceptance, nextRoundTaskId], () => {
-  if (!nextRoundObjective.value && !nextRoundAcceptance.value && !nextRoundTaskId.value) return
-  localStorage.setItem(nextRoundDraftKey.value, JSON.stringify({
-    objective: nextRoundObjective.value,
-    acceptance: nextRoundAcceptance.value,
-    taskId: nextRoundTaskId.value,
-  }))
-})
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
 const board = computed(() =>
   TASK_STATUSES.map((st) => ({
@@ -203,141 +166,6 @@ const pdTabs = computed(() => {
 
 function openTask(id: string) {
   ui.openTask(id)
-}
-async function ensureStarted() {
-  const current = project.value
-  if (!current || current.status !== '规划中') return
-  const started = await apiStartProject(current.id)
-  Object.assign(current, started)
-}
-
-async function startFirstVersion() {
-  const current = project.value
-  if (!current || iterationBusy.value) return
-  iterationBusy.value = true
-  try {
-    const result = await data.addTask({
-      title: `第一版 · ${current.name}`, project: current.id, pr: 'P1', owner: session.currentUser.id,
-      due: data.today, desc: `## 项目目标\n\n${current.goal}\n\n## 本轮目标\n\n完成一个可供人工体验和反馈的第一版。`,
-      images: [], groupId: null, startAt: null, endAt: null,
-    })
-    if (!result.persisted) throw new Error('第一版任务没有保存到服务器，请重试')
-    await ensureStarted()
-    const runs = await createAiRuns([result.task.id])
-    if (!runs.length) throw new Error('任务已有活动 AI Run')
-    data.patchTask(result.task.id, { status: 'AI 进行中' }, '已开始项目第一轮 AI Run')
-    iterationRuns.value = runs
-    toast('第一版已交给 AI；完成后只会进入待验证，项目不会自动结束', 'ri-robot-2-line')
-  } catch (e) {
-    toast(e instanceof Error ? e.message : '第一版启动失败', 'ri-error-warning-line')
-  } finally {
-    iterationBusy.value = false
-  }
-}
-
-async function startOnly() {
-  if (!project.value || iterationBusy.value) return
-  iterationBusy.value = true
-  try {
-    await ensureStarted()
-    toast('项目已开始推进，团队只收到这一次开始通知', 'ri-rocket-line')
-  } catch (e) {
-    toast(e instanceof Error ? e.message : '项目启动失败', 'ri-error-warning-line')
-  } finally { iterationBusy.value = false }
-}
-
-async function acceptLatestRound() {
-  if (!latestTask.value || iterationBusy.value) return
-  const taskId = latestTask.value.id
-  iterationBusy.value = true
-  try {
-    // 写透失败时保留本地已完成状态和草稿；再次点击只重试同一份快照，不重复写活动。
-    if (!latestRoundAcceptanceFailed.value) {
-      data.patchTask(taskId, { status: '已完成' }, '人工确认本轮满意；项目继续保持开放')
-    }
-    await data.flushTask(taskId)
-    if (data.taskSaveState(taskId) === 'error') {
-      toast('本轮验收保存失败，本地结果已保留；请原地重试', 'ri-error-warning-line')
-      return
-    }
-    toast('本轮已完成，项目仍然开放；可以开始下一轮或人工完成项目', 'ri-checkbox-circle-line')
-  } finally { iterationBusy.value = false }
-}
-
-async function startNextRound() {
-  const current = project.value
-  const objective = nextRoundObjective.value.trim()
-  if (!current || !objective || iterationBusy.value) {
-    if (!objective) toast('请先填写这一轮要达到的目标', 'ri-error-warning-line')
-    return
-  }
-  iterationBusy.value = true
-  try {
-    let taskId = nextRoundTaskId.value
-    if (!taskId) {
-      const round = ptasks.value.length + 1
-      const acceptance = nextRoundAcceptance.value.trim() || '完成后由我人工体验并确认是否满意。'
-      const result = await data.addTask({
-        title: `第 ${round} 轮 · ${objective}`, project: current.id, pr: 'P1', owner: session.currentUser.id,
-        due: data.today, desc: `## 项目最终目标\n\n${current.goal}\n\n## 本轮目标\n\n${objective}\n\n## 验收标准\n\n${acceptance}`,
-        images: [], groupId: null, startAt: null, endAt: null,
-      })
-      if (!result.persisted) throw new Error('本轮任务没有保存到服务器，请重试')
-      taskId = result.task.id
-      nextRoundTaskId.value = taskId
-    }
-    await ensureStarted()
-    const runs = await createAiRuns([taskId])
-    if (!runs.length) throw new Error('本轮任务已有活动 AI Run')
-    data.patchTask(taskId, { status: 'AI 进行中' }, '已开始下一轮 AI Run')
-    iterationRuns.value = runs
-    nextRoundObjective.value = ''
-    nextRoundAcceptance.value = ''
-    nextRoundTaskId.value = null
-    localStorage.removeItem(nextRoundDraftKey.value)
-    nextRoundOpen.value = false
-    toast('下一轮已开始；AI 完成后仍由你人工验收', 'ri-loop-right-line')
-  } catch (e) {
-    toast(e instanceof Error ? e.message : '下一轮启动失败，草稿已保留，可原地重试', 'ri-error-warning-line')
-  } finally { iterationBusy.value = false }
-}
-
-async function completeProject() {
-  const current = project.value
-  if (!current) return
-  const open = ptasks.value.filter((task) => task.status !== '已完成').length
-  const message = open
-    ? `项目还有 ${open} 条未完成任务，它们会保留且不会被批量完成。仍确认项目已经达到最终目标吗？`
-    : '确认这个项目已经达到最终目标？项目历史、文档和 AI Run 会继续保留。'
-  if (!window.confirm(message)) return
-  const saved = await data.updateProject(current.id, { status: '已完成' })
-  toast(saved ? '项目已由你人工标记为达成' : '项目状态保存失败，请重试', saved ? 'ri-flag-line' : 'ri-error-warning-line')
-}
-
-async function shelveProject() {
-  const current = project.value
-  if (!current || !window.confirm('暂时搁置这个项目？任务、文档和运行历史都会保留，之后可以恢复。')) return
-  const saved = await data.updateProject(current.id, { status: '已搁置' })
-  toast(saved ? '项目已搁置，所有历史已保留' : '项目状态保存失败，请重试', saved ? 'ri-inbox-archive-line' : 'ri-error-warning-line')
-}
-
-async function resumeProject() {
-  const current = project.value
-  if (!current) return
-  const saved = await data.updateProject(current.id, { status: '规划中' })
-  toast(saved ? '项目已回到想法箱，可以继续推进' : '项目恢复失败，请重试')
-}
-
-async function openProjectBrief() {
-  const current = project.value
-  if (!current || iterationBusy.value) return
-  iterationBusy.value = true
-  try {
-    const doc = await apiEnsureProjectBrief(current.id)
-    await router.push({ path: `/kb/${doc.kbId}`, query: { doc: doc.id } })
-  } catch (e) {
-    toast(e instanceof Error ? e.message : '项目说明创建失败', 'ri-error-warning-line')
-  } finally { iterationBusy.value = false }
 }
 function toggleSelection(id: string) {
   selectedTaskIds.value = selectedTaskIds.value.includes(id)
@@ -378,7 +206,6 @@ async function runSelectedWithAi() {
   const taskIds = [...selectedTaskIds.value]
   aiBatchStarting.value = true
   try {
-    await ensureStarted()
     const created = await createAiRuns(taskIds, { mergeTasks: true })
     taskIds.forEach((taskId) => data.patchTask(taskId, { status: 'AI 进行中' }, '已合并到同一次 AI Run'))
     selectedTaskIds.value = []
@@ -589,41 +416,6 @@ function onDropGroup(groupId: string, overId?: string) {
       <button class="btn-icon" title="项目设置" @click="settingsOpen = true"><i class="ri-settings-3-line"></i></button>
       <button class="btn-primary sm" @click="ui.openModal('task', pid)"><i class="ri-add-line"></i>新建任务</button>
     </div>
-
-    <section class="project-loop">
-      <div class="project-goal">
-        <span>项目最终目标</span>
-        <p>{{ project?.goal || '还没有填写最终目标' }}</p>
-        <button @click="openProjectBrief"><i class="ri-file-text-line"></i>项目说明</button>
-      </div>
-      <div class="iteration-summary">
-        <div class="iteration-head">
-          <div><span>当前迭代</span><b>{{ latestTask?.title || '还没有开始第一轮' }}</b></div>
-          <span v-if="latestTask" class="iteration-status">{{ latestTask.status }}</span>
-        </div>
-        <p v-if="latestRun">最新 AI Run：{{ latestRun.status }}<template v-if="latestRun.resultSummary"> · {{ latestRun.resultSummary }}</template></p>
-        <p v-else-if="latestTask">任务已经建立；可以打开任务补充说明或交给 AI。</p>
-        <p v-else>一次 AI Run 只完成一轮执行；是否达到最终目标始终由你决定。</p>
-        <div class="iteration-actions">
-          <button v-if="!latestTask && project?.status === '规划中'" class="primary" :disabled="iterationBusy" @click="startFirstVersion"><i class="ri-robot-2-line"></i>让 AI 做第一版</button>
-          <button v-if="project?.status === '规划中'" :disabled="iterationBusy" @click="startOnly"><i class="ri-rocket-line"></i>开始推进</button>
-          <button v-if="latestTask" @click="openTask(latestTask.id)"><i class="ri-chat-3-line"></i>{{ latestTask.status === '待验证' ? '反馈并继续优化' : '打开本轮任务' }}</button>
-          <button v-if="latestTask?.status === '待验证' || latestRoundAcceptanceFailed" :disabled="iterationBusy" @click="acceptLatestRound"><i :class="latestRoundAcceptanceFailed ? 'ri-refresh-line' : 'ri-checkbox-circle-line'"></i>{{ latestRoundAcceptanceFailed ? '重试本轮验收' : '本轮满意' }}</button>
-          <button v-if="latestTask" @click="nextRoundOpen = !nextRoundOpen"><i class="ri-loop-right-line"></i>开始下一轮</button>
-          <button v-if="!['已完成', '已搁置'].includes(project?.status || '')" class="success" @click="completeProject"><i class="ri-flag-line"></i>项目已达成</button>
-          <button v-if="!['已完成', '已搁置'].includes(project?.status || '')" @click="shelveProject"><i class="ri-inbox-archive-line"></i>暂时搁置</button>
-          <button v-if="['已完成', '已搁置'].includes(project?.status || '')" @click="resumeProject"><i class="ri-restart-line"></i>重新开始</button>
-        </div>
-        <div v-if="nextRoundOpen" class="next-round-form">
-          <label>本轮目标<input v-model="nextRoundObjective" :disabled="Boolean(nextRoundTaskId)" placeholder="例如：补齐安装包和自动更新" /></label>
-          <label>验收标准（可选）<textarea v-model="nextRoundAcceptance" :disabled="Boolean(nextRoundTaskId)" rows="3" placeholder="例如：Windows 11 双击即可安装，升级后保留原配置"></textarea></label>
-          <div class="next-round-foot">
-            <span>{{ nextRoundTaskId ? '任务已保存；Run 失败时会复用，不会重复创建。' : '草稿自动保存在本机。' }}</span>
-            <button class="primary" :disabled="iterationBusy" @click="startNextRound">{{ nextRoundTaskId ? '重试 AI Run' : '创建任务并 Run' }}</button>
-          </div>
-        </div>
-      </div>
-    </section>
 
     <div class="ptabs">
       <button v-for="tb in pdTabs" :key="tb.label" class="ptab" :class="{ on: tb.on }" :title="tb.title" @click="setTab(tb.label)">
@@ -1000,8 +792,6 @@ function onDropGroup(groupId: string, overId?: string) {
 </template>
 
 <style scoped>
-.project-loop{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(0,1.7fr);gap:12px;margin:14px 0}.project-goal,.iteration-summary{border:1px solid var(--wao-line);border-radius:13px;background:var(--wao-bg-card);padding:14px}.project-goal>span,.iteration-head span:first-child{display:block;color:var(--wao-text-faint);font-size:10px}.project-goal p{margin:7px 0 12px;line-height:1.6;font-size:13px}.project-goal button,.iteration-actions button{min-height:31px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text);padding:0 10px;cursor:pointer}.iteration-head{display:flex;align-items:center;gap:10px}.iteration-head>div{display:grid;gap:4px;flex:1}.iteration-head b{font-size:13px}.iteration-status{font-size:10px;border-radius:999px;padding:3px 8px;background:var(--wao-primary-soft);color:var(--wao-primary-text)}.iteration-summary>p{margin:9px 0;color:var(--wao-text-weak);font-size:11px;line-height:1.5}.iteration-actions{display:flex;flex-wrap:wrap;gap:7px}.iteration-actions button.primary{border-color:var(--wao-primary);background:var(--wao-primary);color:#fff}.iteration-actions button.success{border-color:#82b6a2;color:#267c65;background:#eff8f4}.iteration-actions button:disabled{opacity:.6;cursor:wait}
-.next-round-form{display:grid;gap:9px;margin-top:12px;padding-top:12px;border-top:1px solid var(--wao-line)}.next-round-form label{display:grid;gap:5px;color:var(--wao-text-weak);font-size:11px}.next-round-form input,.next-round-form textarea{width:100%;box-sizing:border-box;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text);padding:8px 10px;font:inherit;resize:vertical}.next-round-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}.next-round-foot span{color:var(--wao-text-faint);font-size:10px}
 .missing {
   padding: 60px 24px;
   text-align: center;
@@ -2006,7 +1796,6 @@ function onDropGroup(groupId: string, overId?: string) {
 }
 
 @media (max-width: 760px) {
-  .project-loop{grid-template-columns:1fr}.iteration-actions button{min-height:40px;flex:1 1 calc(50% - 7px)}
   .detail { width: 100%; box-sizing: border-box; overflow-x: hidden; padding: 10px 12px 28px; }
   .back { min-height: 36px; margin-left: -4px; padding: 5px 4px; font-size: 12px; }
 

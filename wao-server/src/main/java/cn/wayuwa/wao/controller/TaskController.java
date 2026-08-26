@@ -9,7 +9,6 @@ import cn.wayuwa.wao.dto.CreateCommentRequest;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
 import cn.wayuwa.wao.dto.PatchTaskRequest;
 import cn.wayuwa.wao.dto.TaskDto;
-import cn.wayuwa.wao.dto.TaskPromotionDto;
 import cn.wayuwa.wao.service.TaskService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -55,12 +54,6 @@ public class TaskController {
     public ApiResponse<TaskDto> patch(@PathVariable String id, @RequestBody PatchTaskRequest request,
             HttpServletRequest http) {
         return ApiResponse.ok(taskService.patch(id, request, currentMember.id(http)));
-    }
-
-    /** 把已进入人工验收的任务幂等升级为长期项目。 */
-    @PostMapping("/{id}/promote-to-project")
-    public ApiResponse<TaskPromotionDto> promoteToProject(@PathVariable String id, HttpServletRequest http) {
-        return ApiResponse.ok(taskService.promoteToProject(id, currentMember.id(http)));
     }
 
     @PutMapping("/{id}")

@@ -11,10 +11,6 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface TaskMapper extends BaseMapper<TaskEntity> {
 
-    /** 锁住任务行，保证“升级为项目”在重试或并发点击时只创建一个项目。 */
-    @Select("SELECT * FROM task WHERE id=#{id} FOR UPDATE")
-    TaskEntity selectByIdForUpdate(String id);
-
     /**
      * 读取录入时间最早、尚未开始且具备真实 AI 工作流的任务。
      *

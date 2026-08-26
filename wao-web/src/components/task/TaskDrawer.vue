@@ -48,8 +48,6 @@ const sendingComment = ref(false)
 const aiStarting = ref(false)
 const aiLauncherOpen = ref(false)
 const relationOpen = ref(false)
-const promotingProject = ref(false)
-const promotionError = ref('')
 const attachmentInput = ref<HTMLInputElement | null>(null)
 const attachmentUploading = ref(false)
 /** 执行方式选择器当前是为哪条子任务打开的；null 表示整个任务。 */
@@ -74,8 +72,6 @@ watch(
     aiLauncherOpen.value = false
     aiLauncherSubId.value = null
     relationOpen.value = false
-    promotingProject.value = false
-    promotionError.value = ''
     editingComment.value = null
     confirmingDelete.value = false
     aiRuns.value = []
@@ -689,25 +685,6 @@ function gotoProject() {
   close()
   if (pid) router.push(`/projects/${pid}`)
 }
-async function promoteToProject() {
-  const current = task.value
-  if (!current || promotingProject.value) return
-  const sourceName = data.projectById(current.project)?.name ?? '当前项目'
-  if (!window.confirm(`把任务「${current.title}」升级为长期项目？\n\n原任务会从「${sourceName}」移动到新项目，作为第一轮验收记录；后续想法请在新项目里创建新任务。`)) return
-  promotingProject.value = true
-  promotionError.value = ''
-  try {
-    const project = await data.promoteTaskToProject(current.id)
-    toast('已升级为长期项目；原任务保留为第一轮', 'ri-rocket-line')
-    close()
-    await router.push(`/projects/${project.id}`)
-  } catch (error) {
-    promotionError.value = error instanceof Error ? error.message : '升级失败，请重试'
-    toast(promotionError.value, 'ri-error-warning-line')
-  } finally {
-    promotingProject.value = false
-  }
-}
 function openDoc(id: string) {
   const k = data.kbs.find((kk) => kk.folders.some((f) => f.docs.includes(id)))
   close()
@@ -1244,14 +1221,6 @@ function demo(msg: string) {
           <div class="prop-row">
             <span class="prop-key">所属项目</span>
             <button class="proj-btn" @click="gotoProject"><span class="pdot" :style="{ background: tv.projColor }"></span><span class="ellip">{{ tv.projName }}</span></button>
-          </div>
-          <div v-if="['待验证', '已完成'].includes(task.status)" class="promotion-card">
-            <div><b>继续长期迭代</b><span>把本任务保留为第一轮，后续想法在新项目中创建为新任务。</span></div>
-            <button class="promote-project" :disabled="promotingProject" @click="promoteToProject">
-              <i :class="promotingProject ? 'ri-loader-4-line spin' : 'ri-rocket-line'"></i>
-              {{ promotingProject ? '升级中…' : '升级为项目' }}
-            </button>
-            <p v-if="promotionError" role="alert">{{ promotionError }}，可原地重试。</p>
           </div>
           <div class="prop-row">
             <span class="prop-key">分组</span>
@@ -2427,39 +2396,6 @@ function demo(msg: string) {
 .proj-btn:hover {
   background: #eef1fc;
 }
-.promotion-card {
-  margin: 8px 0 10px;
-  padding: 10px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 10px;
-  background: var(--wao-primary-soft);
-}
-.promotion-card > div b,
-.promotion-card > div span { display: block; }
-.promotion-card > div b { font-size: 12.5px; color: var(--wao-text); }
-.promotion-card > div span {
-  margin-top: 3px;
-  color: var(--wao-text-weak);
-  font-size: 11px;
-  line-height: 1.5;
-}
-.promote-project {
-  width: 100%;
-  min-height: 32px;
-  margin-top: 9px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--wao-primary);
-  color: #fff;
-  cursor: pointer;
-}
-.promote-project:disabled { opacity: .65; cursor: wait; }
-.promotion-card p {
-  margin: 7px 0 0;
-  color: var(--wao-danger-strong);
-  font-size: 11px;
-}
-
 .pmenu {
   position: absolute;
   left: 60px;
