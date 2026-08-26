@@ -19,15 +19,22 @@ public class FileService {
     public static final long MAX_BYTES = 50L * 1024 * 1024;
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("M月d日 HH:mm");
     private final FileBlobMapper mapper;
-    public FileService(FileBlobMapper mapper) { this.mapper = mapper; }
+    private final FileSettingsService settings;
+    public FileService(FileBlobMapper mapper, FileSettingsService settings) {
+        this.mapper = mapper;
+        this.settings = settings;
+    }
 
     /** 列出文件元数据，不把二进制正文加载进内存。 */
     public List<FileItemDto> list() { return mapper.listMeta().stream().map(this::toDto).toList(); }
 
-    /** 上传一个不超过 50MB 的文件并持久化。 */
+    /** 上传一个不超过当前系统设置上限的文件并持久化。 */
     public FileItemDto upload(MultipartFile file, String memberId) {
         if (file == null || file.isEmpty()) throw new BadRequestException("请选择要上传的文件");
-        if (file.getSize() > MAX_BYTES) throw new BadRequestException("文件超过 50MB，请压缩后再上传");
+        int limitMb = settings.get().fileMaxMb();
+        if (file.getSize() > limitMb * 1024L * 1024L) {
+            throw new BadRequestException("文件超过 " + limitMb + "MB，请压缩后再上传");
+        }
         FileBlobEntity entity = new FileBlobEntity();
         entity.setId("file-" + UUID.randomUUID());
         entity.setName(safeName(file.getOriginalFilename()));

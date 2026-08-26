@@ -13,6 +13,7 @@ import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
+import cn.wayuwa.wao.dto.HttpPerformanceInspectionConfigDto;
 import cn.wayuwa.wao.dto.RequestMetricEndpointDto;
 import cn.wayuwa.wao.dto.RequestMetricOverviewDto;
 import cn.wayuwa.wao.mapper.ProjectMapper;
@@ -26,15 +27,25 @@ class HttpPerformanceAiRunJobHandlerTest {
     private final HttpRequestMetricService metrics = mock(HttpRequestMetricService.class);
     private final AiRunService aiRuns = mock(AiRunService.class);
     private final ProjectMapper projects = mock(ProjectMapper.class);
+    private final HttpPerformanceInspectionConfigService config = mock(HttpPerformanceInspectionConfigService.class);
+    private final FeishuTaskNotifier notifier = mock(FeishuTaskNotifier.class);
     private final HttpPerformanceAiRunJobHandler handler = new HttpPerformanceAiRunJobHandler(
-            metrics, aiRuns, projects, "https://wao.wayuwa.cn/");
+            metrics, aiRuns, projects, config, notifier, "https://wao.wayuwa.cn/");
+
+    private void inspectionConfig() {
+        when(config.get()).thenReturn(new HttpPerformanceInspectionConfigDto(
+                true, "DAILY", "06:30", 24, 5, 2, null));
+    }
 
     @Test
     void createsRealAiRunWithTheMeasuredSnapshot() {
+        inspectionConfig();
         workflow();
         when(metrics.overview("wg", 24)).thenReturn(snapshot(3968));
         AiRunDto run = mock(AiRunDto.class);
         when(run.id()).thenReturn("ar-nightly");
+        when(run.taskId()).thenReturn("task-nightly");
+        when(run.taskTitle()).thenReturn("HTTP 请求性能夜间巡检");
         when(aiRuns.launchGoal(eq("p-wao"), anyString(), eq("wg"), eq("https://wao.wayuwa.cn")))
                 .thenReturn(run);
 
@@ -45,11 +56,12 @@ class HttpPerformanceAiRunJobHandlerTest {
         verify(aiRuns).launchGoal(eq("p-wao"), prompt.capture(), eq("wg"), eq("https://wao.wayuwa.cn"));
         assertThat(prompt.getValue())
                 .contains("请求数：3968", "平均耗时：1413 ms", "P95：10005 ms")
-                .contains("`/api/tasks`", "5894");
+                .contains("`/api/tasks`", "5894", "Top N 候选接口：5", "本次最多治理接口数：2");
     }
 
     @Test
     void skipsWithoutCreatingAPlaceholderTaskWhenTheWindowIsEmpty() {
+        inspectionConfig();
         workflow();
         when(metrics.overview("wg", 24)).thenReturn(snapshot(0));
 

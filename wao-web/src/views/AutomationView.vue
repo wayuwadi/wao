@@ -4,6 +4,8 @@ import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
 import ChatSyncConfigModal from '@/components/overlays/ChatSyncConfigModal.vue'
+import HttpPerformanceConfigModal from '@/components/overlays/HttpPerformanceConfigModal.vue'
+import type { HttpPerformanceInspectionConfig } from '@/api/board'
 import type { AutomationJob } from '@/types'
 
 const data = useDataStore()
@@ -21,10 +23,16 @@ const newCron = ref('')
 const newNotification = ref(false)
 
 /** 有配置页的执行器：任务列表与详情上多一个「配置」入口。 */
-const CONFIGURABLE = 'feishu-chat-sync'
-const configOpen = ref(false)
+const CHAT_SYNC_HANDLER = 'feishu-chat-sync'
+const HTTP_PERFORMANCE_HANDLER = 'http-performance-ai-run'
+const chatConfigOpen = ref(false)
+const httpConfigOpen = ref(false)
+const RUN_PAGE_SIZE = 10
+const runPage = ref(1)
 
 const isFail = (result: string) => result.includes('失败')
+const isConfigurable = (handler?: string | null) =>
+  handler === CHAT_SYNC_HANDLER || handler === HTTP_PERFORMANCE_HANDLER
 const durOf = (i: number, j: number) => `${((i * 7 + j * 13) % 46) + 9} 秒`
 
 function stMeta(a: AutomationJob) {
@@ -37,36 +45,81 @@ const jobs = computed(() =>
   data.autos.map((a, i) => {
     const st = stMeta(a)
     const dots = a.runs
-      .map((r) => ({ bg: isFail(r.result) ? '#D65454' : '#2C8A5B', title: `${r.time} · ${r.executor} · ${r.result}` }))
-      .concat([{ bg: '#E3E4EA', title: '更早的运行' }, { bg: '#E3E4EA', title: '更早的运行' }])
+      .map((r) => ({
+        bg: isFail(r.result) ? '#D65454' : '#2C8A5B',
+        title: `${r.time} · ${r.executor} · ${r.result}`,
+      }))
+      .concat([
+        { bg: '#E3E4EA', title: '更早的运行' },
+        { bg: '#E3E4EA', title: '更早的运行' },
+      ])
       .slice(0, 5)
     return {
-      job: a, index: i, stBg: st.bg, stColor: st.color, needFix: a.status === '待修复',
-      configurable: a.handler === CONFIGURABLE, dots,
+      job: a,
+      index: i,
+      stBg: st.bg,
+      stColor: st.color,
+      needFix: a.status === '待修复',
+      configurable: isConfigurable(a.handler),
+      dots,
     }
   }),
 )
 
 const allRuns = computed(() => {
-  const rows: { time: string; executor: string; job: string; icon: string; result: string; dur: string; color: string; bg: string; id: string }[] = []
+  const rows: {
+    time: string
+    executor: string
+    job: string
+    icon: string
+    result: string
+    dur: string
+    color: string
+    bg: string
+    id: string
+    runAt: string | null
+    order: number
+  }[] = []
+  let order = 0
   data.autos.forEach((a, i) =>
     a.runs.forEach((r, j) =>
       rows.push({
-        time: r.time, executor: r.executor, job: a.name, icon: a.icon, result: r.result, dur: durOf(i, j),
-        color: isFail(r.result) ? '#BC4141' : '#257A50', bg: isFail(r.result) ? '#FBEBEB' : '#E8F5EE', id: a.id,
+        time: r.time,
+        executor: r.executor,
+        job: a.name,
+        icon: a.icon,
+        result: r.result,
+        dur:
+          r.durationMs != null ? `${Math.max(1, Math.round(r.durationMs / 1000))} 秒` : durOf(i, j),
+        color: isFail(r.result) ? '#BC4141' : '#257A50',
+        bg: isFail(r.result) ? '#FBEBEB' : '#E8F5EE',
+        id: a.id,
+        runAt: r.runAt ?? null,
+        order: order++,
       }),
     ),
   )
-  return rows
+  return rows.sort((left, right) => {
+    const byTime = Date.parse(right.runAt ?? '') - Date.parse(left.runAt ?? '')
+    return Number.isNaN(byTime) || byTime === 0 ? left.order - right.order : byTime
+  })
 })
+const runPageCount = computed(() => Math.max(1, Math.ceil(allRuns.value.length / RUN_PAGE_SIZE)))
+const visibleRuns = computed(() =>
+  allRuns.value.slice((runPage.value - 1) * RUN_PAGE_SIZE, runPage.value * RUN_PAGE_SIZE),
+)
 
 const sel = computed(() => data.autos.find((a) => a.id === selId.value) ?? null)
 const selMeta = computed(() => (sel.value ? stMeta(sel.value) : { bg: '', color: '' }))
 const selIndex = computed(() => (sel.value ? data.autos.indexOf(sel.value) : 0))
 const aoRuns = computed(() =>
   (sel.value?.runs ?? []).map((r, j) => ({
-    time: r.time, executor: r.executor, result: r.result, dur: durOf(selIndex.value, j),
-    color: isFail(r.result) ? '#BC4141' : '#257A50', bg: isFail(r.result) ? '#FBEBEB' : '#E8F5EE',
+    time: r.time,
+    executor: r.executor,
+    result: r.result,
+    dur: durOf(selIndex.value, j),
+    color: isFail(r.result) ? '#BC4141' : '#257A50',
+    bg: isFail(r.result) ? '#FBEBEB' : '#E8F5EE',
   })),
 )
 
@@ -89,15 +142,39 @@ async function onResume(id: string) {
 async function createAuto() {
   if (!newName.value.trim()) return
   const job = await data.createJob({
-    name: newName.value.trim(), schedule: newSchedule.value.trim() || undefined,
-    desc: newDesc.value.trim() || undefined, source: newSource.value.trim() || undefined,
+    name: newName.value.trim(),
+    schedule: newSchedule.value.trim() || undefined,
+    desc: newDesc.value.trim() || undefined,
+    source: newSource.value.trim() || undefined,
     target: newTarget.value.trim() || undefined,
-    steps: newSteps.value.split('\n').map((s) => s.trim()).filter(Boolean),
+    steps: newSteps.value
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean),
     cronExpr: newCron.value.trim() || undefined,
     handler: newNotification.value ? 'feishu-notification' : undefined,
   })
   newOpen.value = false
   selId.value = job.id
+}
+
+function switchTab(next: 'jobs' | 'runs') {
+  tab.value = next
+  if (next === 'runs') runPage.value = 1
+}
+
+function openConfig(job: AutomationJob) {
+  if (job.handler === CHAT_SYNC_HANDLER) chatConfigOpen.value = true
+  if (job.handler === HTTP_PERFORMANCE_HANDLER) httpConfigOpen.value = true
+}
+
+function onHttpConfigSaved(config: HttpPerformanceInspectionConfig) {
+  const job = data.autos.find((item) => item.handler === HTTP_PERFORMANCE_HANDLER)
+  if (!job) return
+  const frequency =
+    config.frequency === 'DAILY' ? '每日' : config.frequency === 'WEEKDAYS' ? '工作日' : '每周一'
+  job.schedule = `${frequency} ${config.time}`
+  job.status = config.enabled ? '正常' : '已暂停'
 }
 </script>
 
@@ -117,11 +194,27 @@ async function createAuto() {
         <div class="spacer"></div>
       </div>
       <div class="tabs">
-        <button v-for="t in ([['任务列表', 'jobs'], ['运行记录', 'runs']] as const)" :key="t[1]" class="tab" :class="{ on: tab === t[1] }" @click="tab = t[1]">{{ t[0] }}</button>
+        <button
+          v-for="t in [
+            ['任务列表', 'jobs'],
+            ['运行记录', 'runs'],
+          ] as const"
+          :key="t[1]"
+          class="tab"
+          :class="{ on: tab === t[1] }"
+          @click="switchTab(t[1])"
+        >
+          {{ t[0] }}
+        </button>
       </div>
       <div v-if="tab === 'jobs'" class="table-card">
         <div class="grid-jobs th">
-          <div>名称</div><div>计划</div><div>状态</div><div>上次运行</div><div>近 5 次</div><div class="right">操作</div>
+          <div>名称</div>
+          <div>计划</div>
+          <div>状态</div>
+          <div>上次运行</div>
+          <div>近 5 次</div>
+          <div class="right">操作</div>
         </div>
         <div v-for="jb in jobs" :key="jb.job.id" class="grid-jobs row">
           <button class="job-name" @click="selId = jb.job.id">
@@ -129,79 +222,159 @@ async function createAuto() {
             <span class="job-link">{{ jb.job.name }}</span>
           </button>
           <div class="cell">{{ jb.job.schedule }}</div>
-          <div><span class="mini" :style="{ background: jb.stBg, color: jb.stColor }">{{ jb.job.status }}</span></div>
+          <div>
+            <span class="mini" :style="{ background: jb.stBg, color: jb.stColor }">{{
+              jb.job.status
+            }}</span>
+          </div>
           <div class="cell muted ellip">{{ jb.job.last }}</div>
-          <div class="dots"><span v-for="(d, i) in jb.dots" :key="i" class="dot" :title="d.title" :style="{ background: d.bg }"></span></div>
+          <div class="dots">
+            <span
+              v-for="(d, i) in jb.dots"
+              :key="i"
+              class="dot"
+              :title="d.title"
+              :style="{ background: d.bg }"
+            ></span>
+          </div>
           <div class="ops">
-            <button v-if="jb.configurable" class="op" title="配置" @click="configOpen = true"><i class="ri-settings-3-line"></i></button>
-            <button v-if="jb.needFix" class="op fix" title="重新授权" @click="onFix(jb.job.id)"><i class="ri-tools-line"></i></button>
-            <button v-if="jb.job.status === '已暂停'" class="op" title="恢复" @click="onResume(jb.job.id)"><i class="ri-play-circle-line"></i></button>
-            <button v-else class="op" title="暂停" @click="onPause(jb.job.id)"><i class="ri-pause-circle-line"></i></button>
-            <button class="op" title="手动运行" @click="onRun(jb.job.id)"><i class="ri-play-line"></i></button>
+            <button v-if="jb.configurable" class="op" title="配置" @click="openConfig(jb.job)">
+              <i class="ri-settings-3-line"></i>
+            </button>
+            <button v-if="jb.needFix" class="op fix" title="重新授权" @click="onFix(jb.job.id)">
+              <i class="ri-tools-line"></i>
+            </button>
+            <button
+              v-if="jb.job.status === '已暂停'"
+              class="op"
+              title="恢复"
+              @click="onResume(jb.job.id)"
+            >
+              <i class="ri-play-circle-line"></i>
+            </button>
+            <button v-else class="op" title="暂停" @click="onPause(jb.job.id)">
+              <i class="ri-pause-circle-line"></i>
+            </button>
+            <button class="op" title="手动运行" @click="onRun(jb.job.id)">
+              <i class="ri-play-line"></i>
+            </button>
           </div>
         </div>
       </div>
 
       <div v-else class="table-card">
         <div class="grid-runs th">
-          <div>开始时间</div><div>任务</div><div>时长</div><div>结果</div>
+          <div>开始时间</div>
+          <div>任务</div>
+          <div>时长</div>
+          <div>结果</div>
         </div>
-        <div v-for="(rn, i) in allRuns" :key="i" class="grid-runs row link" @click="selId = rn.id">
+        <div
+          v-for="(rn, i) in visibleRuns"
+          :key="`${rn.id}-${rn.runAt ?? rn.time}-${i}`"
+          class="grid-runs row link"
+          @click="selId = rn.id"
+        >
           <div class="cell muted wao-tabular">{{ rn.time }}</div>
-          <div class="run-job"><i :class="rn.icon"></i><span class="ellip">{{ rn.job }}</span></div>
+          <div class="run-job">
+            <i :class="rn.icon"></i><span class="ellip">{{ rn.job }}</span>
+          </div>
           <div class="cell muted wao-tabular">{{ rn.dur }}</div>
-          <div><span class="mini" :style="{ background: rn.bg, color: rn.color }">{{ rn.result }}</span></div>
+          <div>
+            <span class="mini" :style="{ background: rn.bg, color: rn.color }">{{
+              rn.result
+            }}</span>
+          </div>
         </div>
+        <footer v-if="allRuns.length > RUN_PAGE_SIZE" class="run-pagination">
+          <button :disabled="runPage <= 1" @click="runPage--">
+            <i class="ri-arrow-left-line"></i>上一页
+          </button>
+          <span>第 {{ runPage }} / {{ runPageCount }} 页 · 共 {{ allRuns.length }} 条</span>
+          <button :disabled="runPage >= runPageCount" @click="runPage++">
+            下一页<i class="ri-arrow-right-line"></i>
+          </button>
+        </footer>
       </div>
-      <div class="foot-note">「飞书群聊消息同步知识库」点右侧 <i class="ri-settings-3-line"></i> 配置应用凭据与目标群，同步结果按天存在所选知识库里。</div>
+      <div class="foot-note">
+        「飞书群聊消息同步知识库」点右侧
+        <i class="ri-settings-3-line"></i> 配置应用凭据与目标群，同步结果按天存在所选知识库里。
+      </div>
     </template>
 
     <!-- Job 详情 -->
     <template v-else>
-      <button class="back" @click="selId = null"><i class="ri-arrow-left-line"></i>全部自动化</button>
+      <button class="back" @click="selId = null">
+        <i class="ri-arrow-left-line"></i>全部自动化
+      </button>
       <div class="job-head">
         <div class="jh-icon"><i :class="sel.icon"></i></div>
         <div class="jh-main">
           <div class="jh-title-row">
             <div class="jh-title">{{ sel.name }}</div>
-            <span class="mini" :style="{ background: selMeta.bg, color: selMeta.color }">{{ sel.status }}</span>
+            <span class="mini" :style="{ background: selMeta.bg, color: selMeta.color }">{{
+              sel.status
+            }}</span>
           </div>
           <div class="jh-desc">{{ sel.desc }}</div>
         </div>
         <div class="spacer"></div>
-        <button v-if="sel.handler === CONFIGURABLE" class="btn-ghost" @click="configOpen = true"><i class="ri-settings-3-line"></i>配置</button>
-        <button v-if="sel.status === '待修复'" class="btn-danger" @click="onFix(sel.id)">重新授权</button>
-        <button class="btn-primary sm" @click="onRun(sel.id)"><i class="ri-play-line"></i>手动运行</button>
-        <button v-if="sel.status === '已暂停'" class="btn-ghost" @click="onResume(sel.id)"><i class="ri-play-circle-line"></i>恢复</button>
-        <button v-else class="btn-ghost" @click="onPause(sel.id)"><i class="ri-pause-circle-line"></i>暂停</button>
+        <button v-if="isConfigurable(sel.handler)" class="btn-ghost" @click="openConfig(sel)">
+          <i class="ri-settings-3-line"></i>配置
+        </button>
+        <button v-if="sel.status === '待修复'" class="btn-danger" @click="onFix(sel.id)">
+          重新授权
+        </button>
+        <button class="btn-primary sm" @click="onRun(sel.id)">
+          <i class="ri-play-line"></i>手动运行
+        </button>
+        <button v-if="sel.status === '已暂停'" class="btn-ghost" @click="onResume(sel.id)">
+          <i class="ri-play-circle-line"></i>恢复
+        </button>
+        <button v-else class="btn-ghost" @click="onPause(sel.id)">
+          <i class="ri-pause-circle-line"></i>暂停
+        </button>
       </div>
 
       <div class="job-cols">
         <div class="table-card flush">
           <div class="jc-head">运行记录</div>
           <div class="grid-aoruns th sub">
-            <div>开始时间</div><div>执行人</div><div>时长</div><div>结果</div>
+            <div>开始时间</div>
+            <div>执行人</div>
+            <div>时长</div>
+            <div>结果</div>
           </div>
           <div v-for="(r, i) in aoRuns" :key="i" class="grid-aoruns row">
             <div class="cell muted wao-tabular">{{ r.time }}</div>
             <div class="cell muted">{{ r.executor }}</div>
             <div class="cell muted wao-tabular">{{ r.dur }}</div>
-            <div><span class="mini" :style="{ background: r.bg, color: r.color }">{{ r.result }}</span></div>
+            <div>
+              <span class="mini" :style="{ background: r.bg, color: r.color }">{{ r.result }}</span>
+            </div>
           </div>
         </div>
 
         <div class="detail-card">
           <div class="dc-title">Job 详情</div>
           <div class="dc-rows">
-            <div class="dc-row"><span class="dc-key">触发器</span><span class="dc-val">定时 · {{ sel.schedule }}</span></div>
-            <div class="dc-row"><span class="dc-key">数据源</span><span class="dc-val">{{ sel.source }}</span></div>
-            <div class="dc-row"><span class="dc-key">输出到</span><span class="dc-val">{{ sel.target }}</span></div>
+            <div class="dc-row">
+              <span class="dc-key">触发器</span
+              ><span class="dc-val">定时 · {{ sel.schedule }}</span>
+            </div>
+            <div class="dc-row">
+              <span class="dc-key">数据源</span><span class="dc-val">{{ sel.source }}</span>
+            </div>
+            <div class="dc-row">
+              <span class="dc-key">输出到</span><span class="dc-val">{{ sel.target }}</span>
+            </div>
           </div>
           <div class="dc-steps">
             <div class="dc-eyebrow">执行步骤</div>
             <div class="steps">
               <div v-for="(s, i) in sel.steps" :key="i" class="step">
-                <span class="step-n wao-tabular">{{ i + 1 }}</span><span class="step-t">{{ s }}</span>
+                <span class="step-n wao-tabular">{{ i + 1 }}</span
+                ><span class="step-t">{{ s }}</span>
               </div>
             </div>
           </div>
@@ -209,7 +382,12 @@ async function createAuto() {
       </div>
     </template>
 
-    <ChatSyncConfigModal v-if="configOpen" @close="configOpen = false" />
+    <ChatSyncConfigModal v-if="chatConfigOpen" @close="chatConfigOpen = false" />
+    <HttpPerformanceConfigModal
+      v-if="httpConfigOpen"
+      @close="httpConfigOpen = false"
+      @saved="onHttpConfigSaved"
+    />
 
     <!-- 新建自动化弹层 -->
     <template v-if="newOpen">
@@ -228,8 +406,17 @@ async function createAuto() {
           <label class="f-label">Cron 表达式（选填，留空则仅手动触发）</label>
           <input v-model="newCron" class="f-input" placeholder="例如 0 0 6 * * *" />
           <label class="f-label">描述</label>
-          <textarea v-model="newDesc" class="f-textarea" rows="2" :placeholder="newNotification ? '通知正文（将原样发到飞书群）' : '选填'"></textarea>
-          <label class="switch"><input v-model="newNotification" type="checkbox" /><span>这是飞书群提醒 / 公告（发送“做到了”和“没做到”反馈按钮）</span></label>
+          <textarea
+            v-model="newDesc"
+            class="f-textarea"
+            rows="2"
+            :placeholder="newNotification ? '通知正文（将原样发到飞书群）' : '选填'"
+          ></textarea>
+          <label class="switch"
+            ><input v-model="newNotification" type="checkbox" /><span
+              >这是飞书群提醒 / 公告（发送“做到了”和“没做到”反馈按钮）</span
+            ></label
+          >
           <label class="f-label">数据源</label>
           <input v-model="newSource" class="f-input" placeholder="选填" />
           <label class="f-label">输出到</label>
@@ -405,6 +592,28 @@ async function createAuto() {
 }
 .grid-runs.link:hover {
   background: var(--wao-bg-sub-2);
+}
+.run-pagination {
+  min-height: 45px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  color: var(--wao-text-weak);
+  font-size: 11px;
+}
+.run-pagination button {
+  height: 29px;
+  padding: 0 9px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.run-pagination button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 .right {
   text-align: right;
@@ -770,11 +979,27 @@ async function createAuto() {
 }
 
 @media (max-width: 760px) {
-  .auto { padding: 16px 12px 28px; }
-  .toolbar { gap: 7px; }
-  .grid-jobs, .grid-aoruns { min-width: 620px; }
-  .job-list, .runs-list { overflow-x: auto; }
-  .job-cols { grid-template-columns: 1fr; }
-  .modal { top: 12px; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  .auto {
+    padding: 16px 12px 28px;
+  }
+  .toolbar {
+    gap: 7px;
+  }
+  .grid-jobs,
+  .grid-aoruns {
+    min-width: 620px;
+  }
+  .job-list,
+  .runs-list {
+    overflow-x: auto;
+  }
+  .job-cols {
+    grid-template-columns: 1fr;
+  }
+  .modal {
+    top: 12px;
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
 }
 </style>

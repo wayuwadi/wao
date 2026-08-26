@@ -6,6 +6,7 @@ import {
   type RequestMetricOverview,
 } from '@/api/requestMetrics'
 import { toast } from '@/composables/toast'
+import { apiRunJob } from '@/api/board'
 import {
   pauseRequestMetricReporter,
   resumeRequestMetricReporter,
@@ -16,6 +17,10 @@ const loading = ref(true)
 const error = ref('')
 const hours = ref(24)
 const clearing = ref(false)
+const startingInspection = ref(false)
+const TABLE_PAGE_SIZE = 20
+const endpointPage = ref(1)
+const recentPage = ref(1)
 
 const cards = computed(() => {
   const value = overview.value
@@ -27,16 +32,54 @@ const cards = computed(() => {
     { label: '失败请求', value: value?.failedRequests ?? 0, unit: '次', tone: 'danger' },
   ]
 })
+const endpointPageCount = computed(() =>
+  Math.max(1, Math.ceil((overview.value?.endpoints.length ?? 0) / TABLE_PAGE_SIZE)),
+)
+const recentPageCount = computed(() =>
+  Math.max(1, Math.ceil((overview.value?.recentRequests.length ?? 0) / TABLE_PAGE_SIZE)),
+)
+const visibleEndpoints = computed(() =>
+  (overview.value?.endpoints ?? []).slice(
+    (endpointPage.value - 1) * TABLE_PAGE_SIZE,
+    endpointPage.value * TABLE_PAGE_SIZE,
+  ),
+)
+const visibleRecentRequests = computed(() =>
+  (overview.value?.recentRequests ?? []).slice(
+    (recentPage.value - 1) * TABLE_PAGE_SIZE,
+    recentPage.value * TABLE_PAGE_SIZE,
+  ),
+)
 
 async function load() {
   loading.value = true
   error.value = ''
   try {
     overview.value = await fetchRequestMetricOverview(hours.value)
+    endpointPage.value = 1
+    recentPage.value = 1
   } catch {
     error.value = '请求监控加载失败，请检查网络后重试'
   } finally {
     loading.value = false
+  }
+}
+
+async function startInspection() {
+  if (startingInspection.value) return
+  startingInspection.value = true
+  try {
+    const job = await apiRunJob('job-http-performance-ai-run')
+    const result = job.runs[0]?.result ?? job.last
+    if (result.includes('失败') || result.includes('跳过')) {
+      toast(result, 'ri-error-warning-line')
+    } else {
+      toast(result || 'HTTP 性能 AI 巡检已启动', 'ri-rocket-line')
+    }
+  } catch (cause) {
+    toast(cause instanceof Error ? cause.message : '巡检启动失败，请重试', 'ri-error-warning-line')
+  } finally {
+    startingInspection.value = false
   }
 }
 
@@ -89,6 +132,10 @@ onMounted(load)
         <p>浏览器端到端实测，包含当前网络、网关与服务端的完整等待时间。</p>
       </div>
       <div class="actions">
+        <button class="inspection-button" :disabled="startingInspection" @click="startInspection">
+          <i :class="startingInspection ? 'ri-loader-4-line spin' : 'ri-rocket-line'"></i>
+          {{ startingInspection ? '启动中' : '启动 AI 巡检' }}
+        </button>
         <select v-model.number="hours" aria-label="统计时间范围" @change="load">
           <option :value="1">最近 1 小时</option>
           <option :value="6">最近 6 小时</option>
@@ -133,83 +180,109 @@ onMounted(load)
         <span>继续使用项目或密码本后再刷新；这里不会填充演示数据。</span>
       </section>
       <template v-else>
-        <section class="table-card">
-          <header>
-            <div>
-              <span>ENDPOINTS</span>
-              <h2>优先关注的接口</h2>
+        <div class="request-tables">
+          <section class="table-card">
+            <header>
+              <div>
+                <span>ENDPOINTS</span>
+                <h2>优先关注的接口</h2>
+              </div>
+              <small>按平均耗时降序 · 慢请求 ≥ 1000 ms</small>
+            </header>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>接口</th>
+                    <th>次数</th>
+                    <th>平均</th>
+                    <th>P95</th>
+                    <th>慢请求</th>
+                    <th>失败</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in visibleEndpoints" :key="`${item.method}:${item.path}`">
+                    <td>
+                      <b>{{ item.method }}</b
+                      ><code>{{ item.path }}</code>
+                    </td>
+                    <td>{{ item.requestCount }}</td>
+                    <td :class="durationClass(item.averageDurationMs)">
+                      {{ item.averageDurationMs }} ms
+                    </td>
+                    <td :class="durationClass(item.p95DurationMs)">{{ item.p95DurationMs }} ms</td>
+                    <td>{{ item.slowCount }}</td>
+                    <td :class="{ danger: item.failedCount }">{{ item.failedCount }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <small>按平均耗时降序 · 慢请求 ≥ 1000 ms</small>
-          </header>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>接口</th>
-                  <th>次数</th>
-                  <th>平均</th>
-                  <th>P95</th>
-                  <th>慢请求</th>
-                  <th>失败</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in overview.endpoints" :key="`${item.method}:${item.path}`">
-                  <td>
-                    <b>{{ item.method }}</b
-                    ><code>{{ item.path }}</code>
-                  </td>
-                  <td>{{ item.requestCount }}</td>
-                  <td :class="durationClass(item.averageDurationMs)">
-                    {{ item.averageDurationMs }} ms
-                  </td>
-                  <td :class="durationClass(item.p95DurationMs)">{{ item.p95DurationMs }} ms</td>
-                  <td>{{ item.slowCount }}</td>
-                  <td :class="{ danger: item.failedCount }">{{ item.failedCount }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+            <footer v-if="overview.endpoints.length > TABLE_PAGE_SIZE" class="pagination">
+              <button :disabled="endpointPage <= 1" @click="endpointPage--">
+                <i class="ri-arrow-left-line"></i>上一页
+              </button>
+              <span
+                >第 {{ endpointPage }} / {{ endpointPageCount }} 页 · 共
+                {{ overview.endpoints.length }} 条</span
+              >
+              <button :disabled="endpointPage >= endpointPageCount" @click="endpointPage++">
+                下一页<i class="ri-arrow-right-line"></i>
+              </button>
+            </footer>
+          </section>
 
-        <section class="table-card">
-          <header>
-            <div>
-              <span>RECENT REQUESTS</span>
-              <h2>最近请求明细</h2>
+          <section class="table-card">
+            <header>
+              <div>
+                <span>RECENT REQUESTS</span>
+                <h2>最近请求明细</h2>
+              </div>
+              <small>仅保存去除查询参数后的路径</small>
+            </header>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>接口</th>
+                    <th>状态</th>
+                    <th>耗时</th>
+                    <th>网络</th>
+                    <th>尝试</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in visibleRecentRequests" :key="item.id">
+                    <td>{{ formatTime(item.startedAt) }}</td>
+                    <td>
+                      <b>{{ item.method }}</b
+                      ><code>{{ item.path }}</code>
+                    </td>
+                    <td :class="{ danger: item.statusCode === null || item.statusCode >= 400 }">
+                      {{ statusText(item.statusCode) }}
+                    </td>
+                    <td :class="durationClass(item.durationMs)">{{ item.durationMs }} ms</td>
+                    <td>{{ item.networkType || '未知' }}</td>
+                    <td>{{ item.retryAttempt ? `重试 ${item.retryAttempt}` : '首次' }}</td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <small>仅保存去除查询参数后的路径</small>
-          </header>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>时间</th>
-                  <th>接口</th>
-                  <th>状态</th>
-                  <th>耗时</th>
-                  <th>网络</th>
-                  <th>尝试</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in overview.recentRequests" :key="item.id">
-                  <td>{{ formatTime(item.startedAt) }}</td>
-                  <td>
-                    <b>{{ item.method }}</b
-                    ><code>{{ item.path }}</code>
-                  </td>
-                  <td :class="{ danger: item.statusCode === null || item.statusCode >= 400 }">
-                    {{ statusText(item.statusCode) }}
-                  </td>
-                  <td :class="durationClass(item.durationMs)">{{ item.durationMs }} ms</td>
-                  <td>{{ item.networkType || '未知' }}</td>
-                  <td>{{ item.retryAttempt ? `重试 ${item.retryAttempt}` : '首次' }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+            <footer v-if="overview.recentRequests.length > TABLE_PAGE_SIZE" class="pagination">
+              <button :disabled="recentPage <= 1" @click="recentPage--">
+                <i class="ri-arrow-left-line"></i>上一页
+              </button>
+              <span
+                >第 {{ recentPage }} / {{ recentPageCount }} 页 · 共
+                {{ overview.recentRequests.length }} 条</span
+              >
+              <button :disabled="recentPage >= recentPageCount" @click="recentPage++">
+                下一页<i class="ri-arrow-right-line"></i>
+              </button>
+            </footer>
+          </section>
+        </div>
       </template>
     </template>
   </main>
@@ -264,6 +337,11 @@ onMounted(load)
   color: white;
   border-color: #4f7167;
 }
+.actions .inspection-button {
+  background: var(--wao-bg-card);
+  color: var(--wao-danger-strong);
+  border-color: #dfaaa4;
+}
 .actions .clear-button {
   border-color: #d9b7b3;
   background: var(--wao-bg-card);
@@ -315,6 +393,14 @@ onMounted(load)
   border-radius: 12px;
   background: var(--wao-bg-card);
 }
+.request-tables {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.request-tables .table-card {
+  min-width: 0;
+}
 .table-card header {
   display: flex;
   justify-content: space-between;
@@ -335,8 +421,30 @@ onMounted(load)
 }
 table {
   width: 100%;
-  min-width: 760px;
+  min-width: 650px;
   border-collapse: collapse;
+}
+.pagination {
+  min-height: 38px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  color: var(--wao-text-weak);
+  font-size: 9px;
+}
+.pagination button {
+  height: 27px;
+  padding: 0 8px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.pagination button:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 th,
 td {
@@ -423,6 +531,9 @@ td code {
   .metric-grid {
     grid-template-columns: repeat(3, 1fr);
   }
+  .request-tables {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 640px) {
   .monitor-page {
@@ -434,6 +545,7 @@ td code {
   }
   .actions {
     width: 100%;
+    flex-wrap: wrap;
   }
   .actions select {
     flex: 1;

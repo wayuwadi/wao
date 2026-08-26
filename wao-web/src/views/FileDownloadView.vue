@@ -3,7 +3,7 @@
  * 公开的文件下载页 —— 对外分享的链接落在这里，而不是直接给字节。
  *
  * 分享链接以前是 `/api/files/<id>/download`：谁拿到都能无限次拉，脚本一跑就是带宽账单。
- * 现在必须人点一次「下载」并答一道算术题，才换得到一张一次性票据（两分钟内有效、用完即废）。
+ * 现在必须人点一次「下载」换一张一次性票据（两分钟内有效、用完即废）；管理员可再启用算术题。
  * 自己人在站内下载走的是登录会话，不用答题。
  */
 import { onMounted, ref } from 'vue'
@@ -19,6 +19,7 @@ const loadError = ref('')
 const question = ref('')
 const challengeId = ref('')
 const answer = ref('')
+const captchaEnabled = ref(true)
 const busy = ref(false)
 const hint = ref('')
 const done = ref(false)
@@ -40,19 +41,22 @@ async function newChallenge() {
     const c = await apiDownloadChallenge(fileId)
     challengeId.value = c.challengeId
     question.value = c.question
+    captchaEnabled.value = c.captchaEnabled
   } catch (error) {
     hint.value = error instanceof Error ? error.message : '获取验证码失败，请刷新重试'
   }
 }
 
 async function download() {
-  if (busy.value || !answer.value.trim()) return
+  if (busy.value || (captchaEnabled.value && !answer.value.trim())) return
   busy.value = true
   hint.value = ''
   try {
     const { ticket } = await apiDownloadTicket(fileId, challengeId.value, answer.value)
     // 票据只能用一次，交给浏览器自己去取字节，前端不接管大文件的下载流
-    window.location.assign(`/api/files/${encodeURIComponent(fileId)}/download?ticket=${encodeURIComponent(ticket)}`)
+    window.location.assign(
+      `/api/files/${encodeURIComponent(fileId)}/download?ticket=${encodeURIComponent(ticket)}`,
+    )
     done.value = true
     void newChallenge()
   } catch (error) {
@@ -82,7 +86,7 @@ async function download() {
           </div>
         </div>
 
-        <div class="captcha">
+        <div v-if="captchaEnabled" class="captcha">
           <label class="label">请先完成验证</label>
           <div class="row">
             <span class="question wao-tabular">{{ question || '…' }}</span>
@@ -94,16 +98,25 @@ async function download() {
               placeholder="填写答案"
               @keydown.enter="download"
             />
-            <button class="refresh" title="换一题" @click="newChallenge"><i class="ri-refresh-line"></i></button>
+            <button class="refresh" title="换一题" @click="newChallenge">
+              <i class="ri-refresh-line"></i>
+            </button>
           </div>
           <div v-if="hint" class="hint bad">{{ hint }}</div>
           <div v-else-if="done" class="hint ok">已开始下载。再次下载需要重新验证。</div>
         </div>
 
-        <button class="btn-primary" :disabled="busy || !answer.trim()" @click="download">
-          <i class="ri-download-2-line"></i>{{ busy ? '验证中…' : '下载文件' }}
+        <div v-else-if="hint" class="hint bad standalone">{{ hint }}</div>
+        <div v-else-if="done" class="hint ok standalone">已开始下载。再次下载需要重新点击。</div>
+
+        <button
+          class="btn-primary"
+          :disabled="busy || (captchaEnabled && !answer.trim())"
+          @click="download"
+        >
+          <i class="ri-download-2-line"></i>{{ busy ? '准备中…' : '下载文件' }}
         </button>
-        <div class="note">每次验证只能下载一次，链接被转发出去也不会被无限制地反复拉取。</div>
+        <div class="note">每次点击只签发一张一次性票据，链接被转发出去也不能直接反复拉取文件。</div>
       </template>
 
       <div v-else class="missing">读取文件信息…</div>

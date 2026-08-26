@@ -775,6 +775,12 @@ paths:
   /jobs/{id}/pause: { post: { summary: 暂停（停止按计划自动执行）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/resume: { post: { summary: 恢复已暂停的任务, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
   /jobs/{id}/reauth: { post: { summary: 重新授权（「待修复」恢复为「正常」）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK } } } }
+  /jobs/job-http-performance-ai-run/config:
+    get: { summary: 读取 HTTP 性能 AI 巡检的真实计划、范围和启动通知配置, responses: { '200': { description: OK } } }
+    put:
+      summary: 保存巡检配置并立即更新 automation_job 的 Cron、状态和下次触发时间
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/HttpPerformanceInspectionConfig' } } } }
+      responses: { '200': { description: 保存后的生效配置 }, '400': { description: 频率、时间、范围或通知目标无效 } }
   # 系统配置（全局唯一一份；密钥类字段只回脱敏形态，见 docs/adr/019-feishu-chat-sync-and-system-settings.md）
   /settings/webhooks:
     get:
@@ -855,6 +861,12 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/NetworkOutageWindow' } } }
       responses: { '200': { description: 保存后的规范化配置 }, '400': { description: 时间格式错误或起止相同 } }
+  /settings/files:
+    get: { summary: 读取普通文件、图床上传上限与公开下载算术验证码开关, responses: { '200': { description: OK } } }
+    put:
+      summary: 保存文件与图床设置；关闭算术题不会关闭一次性下载票据
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FileSettings' } } } }
+      responses: { '200': { description: 保存后的生效配置 }, '400': { description: 文件上限不在部署支持范围 } }
   /settings/navigation/media-agent:
     get:
       summary: 兼容旧前端：读取自媒体 Agent 的全局一级菜单配置
@@ -1019,13 +1031,13 @@ paths:
   /files:
     get: { summary: 文件元数据列表（含 contentType，不读取二进制正文）, responses: { '200': { description: OK } } }
     post:
-      summary: 上传通用文件（单个不超过 50MB）
+      summary: 上传通用文件（单个不超过系统设置，且最大 50MB）
       requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } } } } }
       responses: { '200': { description: 返回带直链的文件项 }, '400': { description: 空文件或超过限制 } }
   /files/{id}/meta:
     get: { summary: 公开：下载确认页要展示的文件信息（不含正文）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   /files/{id}/challenge:
-    post: { summary: 公开：取一道人机校验题（见 ADR-020）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: 返回 challengeId 与题面 }, '404': { description: 不存在 } } }
+    post: { summary: 公开：取下载挑战；算术题关闭时题面为空，但 challengeId 仍只能兑换一次票据, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: 返回 challengeId、question 与 captchaEnabled }, '404': { description: 不存在 } } }
   /files/{id}/ticket:
     post:
       summary: 公开：用答案换一张一次性下载票据（120 秒内有效、用完即废）
@@ -1093,7 +1105,7 @@ paths:
                   - type: object
                     properties: { data: { type: array, items: { $ref: '#/components/schemas/ImageItem' } } }
     post:
-      summary: 上传图片（单张 ≤ 10MB，仅 PNG/JPEG/GIF/WebP/SVG/BMP）
+      summary: 上传图片（单张不超过系统设置且最大 10MB，仅 PNG/JPEG/GIF/WebP/SVG/BMP）
       requestBody:
         required: true
         content:
@@ -1697,6 +1709,24 @@ components:
         enabled: { type: boolean, description: 是否在该窗口暂停无人值守自动任务 }
         startTime: { type: string, pattern: '^(?:[01]\\d|2[0-3]):[0-5]\\d$', example: '00:00' }
         endTime: { type: string, pattern: '^(?:[01]\\d|2[0-3]):[0-5]\\d$', example: '06:00' }
+    FileSettings:
+      type: object
+      required: [fileMaxMb, imageMaxMb, downloadCaptchaEnabled]
+      properties:
+        fileMaxMb: { type: integer, minimum: 1, maximum: 50 }
+        imageMaxMb: { type: integer, minimum: 1, maximum: 10 }
+        downloadCaptchaEnabled: { type: boolean, description: 只控制算术题；下载页与一次性票据始终启用 }
+    HttpPerformanceInspectionConfig:
+      type: object
+      required: [enabled, frequency, time, windowHours, topN, maxEndpointsPerRun]
+      properties:
+        enabled: { type: boolean }
+        frequency: { type: string, enum: [DAILY, WEEKDAYS, WEEKLY] }
+        time: { type: string, pattern: '^(?:[01]\\d|2[0-3]):[0-5]\\d$', example: '06:30' }
+        windowHours: { type: integer, minimum: 1, maximum: 168 }
+        topN: { type: integer, minimum: 1, maximum: 20 }
+        maxEndpointsPerRun: { type: integer, minimum: 1, maximum: 20, description: 必须小于等于 topN }
+        notificationWebhookId: { type: string, nullable: true, description: 已启用通用 Webhook；空表示系统默认群 }
     MediaAgentMenuConfig:
       type: object
       required: [label, group, order, visible]

@@ -41,6 +41,8 @@ class FeishuTaskNotifierTest {
         assertThat(notifier.notifyProjectStarted("p2", "家庭资料归档", "娃哥", "目标")).isFalse();
         assertThat(notifier.notifyRunQueued("t1", "p2", "标题", "家庭资料归档", "Codex", null, null)).isFalse();
         assertThat(notifier.notifyIdleAutoRun("t1", "p2", "标题", "家庭资料归档", 2, "fw-auto")).isFalse();
+        assertThat(notifier.notifyHttpPerformanceInspectionStarted(
+                "t1", "p2", "标题", "家庭资料归档", 24, 5, 2, "fw-auto")).isFalse();
         assertThat(notifier.notifyRunStarted("t1", "p2", "标题", "家庭资料归档", "Codex", "娃哥电脑")).isFalse();
         assertThat(notifier.notifyRunFinished("t1", "p2", "标题", "家庭资料归档", "Codex", null, true, false, "跑完了"))
                 .isFalse();
@@ -100,6 +102,23 @@ class FeishuTaskNotifierTest {
                 List.of("执行方式", "AI Run · Plan 模式"));
         assertThat(card.getValue().body()).contains("不是人工点击派工");
         assertThat(card.getValue().linkUrl()).contains("/projects/p1?task=t1");
+    }
+
+    @Test
+    void httpInspectionNamesTheMeasuredScopeAndUsesTheConfiguredWebhook() {
+        when(gate.enabled("p1")).thenReturn(true);
+        when(webhook.notifyCard(eq("fw-performance"), any())).thenReturn(true);
+        ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+
+        assertThat(notifier.notifyHttpPerformanceInspectionStarted(
+                "t1", "p1", "HTTP 性能巡检", "Wa All in One", 48, 8, 3, "fw-performance")).isTrue();
+
+        verify(webhook).notifyCard(eq("fw-performance"), card.capture());
+        assertThat(card.getValue().title()).isEqualTo("HTTP 性能 AI 巡检已启动");
+        assertThat(card.getValue().fields()).contains(
+                List.of("指标窗口", "最近 48 小时"),
+                List.of("巡检范围", "Top 8，最多治理 3 个接口"));
+        assertThat(card.getValue().body()).contains("真实聚合指标");
     }
 
     /** 娃哥往娃弟建的任务里加子任务：卡片得说清是娃哥加的，并且 @ 到娃弟。 */

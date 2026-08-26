@@ -294,7 +294,8 @@ public class AutomationService {
 
     private AutomationJobDto toDto(AutomationJobEntity e, List<AutomationRunEntity> runs) {
         List<AutomationRunDto> runPairs = runs.stream()
-                .map(r -> new AutomationRunDto(displayTime(r), executorName(r.getExecutorId()), r.getResult()))
+                .map(r -> new AutomationRunDto(displayTime(r), executorName(r.getExecutorId()), r.getResult(),
+                        r.getRunAt(), r.getDurationMs()))
                 .toList();
         String last = runs.isEmpty() ? e.getLastRunLabel()
                 : displayTime(runs.get(0)) + " · " + runs.get(0).getResult();

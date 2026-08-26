@@ -29,7 +29,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class ImageService {
 
-    /** 单张图片上限 10MB —— 与前端限制、Nginx client_max_body_size 保持一致。 */
+    /** 单张图片基础设施硬上限 10MB；用户主动上传可在设置中进一步调低。 */
     public static final long MAX_BYTES = 10L * 1024 * 1024;
 
     private static final Set<String> ALLOWED_TYPES =
@@ -43,10 +43,12 @@ public class ImageService {
 
     private final ImageBlobMapper mapper;
     private final ContentService content;
+    private final FileSettingsService settings;
 
-    public ImageService(ImageBlobMapper mapper, ContentService content) {
+    public ImageService(ImageBlobMapper mapper, ContentService content, FileSettingsService settings) {
         this.mapper = mapper;
         this.content = content;
+        this.settings = settings;
     }
 
     /**
@@ -55,7 +57,7 @@ public class ImageService {
      * @param file   上传的图片文件
      * @param source 来源描述，如 “任务 · 整理证件盒”，可为空
      * @return 落库后的图床条目（{@code url} 可直接用于 img 标签）
-     * @throws BadRequestException 文件为空、类型不是图片或超过 {@value #MAX_BYTES} 字节时
+     * @throws BadRequestException 文件为空、类型不是图片或超过当前用户上传设置时
      */
     public ImageItemDto upload(MultipartFile file, String source) {
         if (file == null || file.isEmpty()) {
@@ -65,8 +67,9 @@ public class ImageService {
         if (!ALLOWED_TYPES.contains(type)) {
             throw new BadRequestException("只支持 PNG / JPEG / GIF / WebP / SVG / BMP 图片");
         }
-        if (file.getSize() > MAX_BYTES) {
-            throw new BadRequestException("图片超过 10MB，请压缩后再上传");
+        int limitMb = settings.get().imageMaxMb();
+        if (file.getSize() > limitMb * 1024L * 1024L) {
+            throw new BadRequestException("图片超过 " + limitMb + "MB，请压缩后再上传");
         }
 
         byte[] content;

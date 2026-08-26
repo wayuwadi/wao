@@ -6,12 +6,16 @@ import {
   type RequestMetricOverview,
 } from '@/api/requestMetrics'
 import RequestMonitoringView from '@/views/RequestMonitoringView.vue'
+import { apiRunJob } from '@/api/board'
 
 vi.mock('@/api/requestMetrics', () => ({
   clearRequestMetricHistory:
     vi.fn<(typeof import('@/api/requestMetrics'))['clearRequestMetricHistory']>(),
   fetchRequestMetricOverview:
     vi.fn<(typeof import('@/api/requestMetrics'))['fetchRequestMetricOverview']>(),
+}))
+vi.mock('@/api/board', () => ({
+  apiRunJob: vi.fn<(typeof import('@/api/board'))['apiRunJob']>(),
 }))
 
 const overview: RequestMetricOverview = {
@@ -53,6 +57,21 @@ describe('RequestMonitoringView', () => {
     vi.mocked(fetchRequestMetricOverview).mockResolvedValue(overview)
     vi.mocked(clearRequestMetricHistory).mockReset()
     vi.mocked(clearRequestMetricHistory).mockResolvedValue({ cleared: 3 })
+    vi.mocked(apiRunJob).mockReset()
+    vi.mocked(apiRunJob).mockResolvedValue({
+      id: 'job-http-performance-ai-run',
+      name: 'HTTP 请求性能夜间 AI 巡检',
+      icon: '',
+      schedule: '每日 06:30',
+      status: '正常',
+      last: '刚刚 · 成功',
+      desc: '',
+      source: '',
+      target: '',
+      steps: [],
+      handler: 'http-performance-ai-run',
+      runs: [{ time: '刚刚', executor: '你', result: '成功 · 已创建 AI Run ar1' }],
+    })
   })
 
   it('展示真实聚合、慢请求和最近明细', async () => {
@@ -123,5 +142,41 @@ describe('RequestMonitoringView', () => {
     expect(clearRequestMetricHistory).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('/api/projects')
     confirm.mockRestore()
+  })
+
+  it('两块列表左右布局且各自默认只展示20条并可翻页', async () => {
+    vi.mocked(fetchRequestMetricOverview).mockResolvedValue({
+      ...overview,
+      totalRequests: 21,
+      endpoints: Array.from({ length: 21 }, (_, index) => ({
+        ...overview.endpoints[0]!,
+        path: `/api/endpoint-${index + 1}`,
+      })),
+      recentRequests: Array.from({ length: 21 }, (_, index) => ({
+        ...overview.recentRequests[0]!,
+        id: index + 1,
+        path: `/api/recent-${index + 1}`,
+      })),
+    })
+    const wrapper = mount(RequestMonitoringView)
+    await flushPromises()
+
+    expect(wrapper.find('.request-tables').exists()).toBe(true)
+    expect(wrapper.text()).toContain('/api/endpoint-20')
+    expect(wrapper.text()).not.toContain('/api/endpoint-21')
+    expect(wrapper.findAll('.pagination')).toHaveLength(2)
+
+    await wrapper.findAll('.pagination')[0]!.findAll('button')[1]!.trigger('click')
+    expect(wrapper.text()).toContain('/api/endpoint-21')
+  })
+
+  it('从监控页直接触发现有真实巡检任务', async () => {
+    const wrapper = mount(RequestMonitoringView)
+    await flushPromises()
+
+    await wrapper.find('.inspection-button').trigger('click')
+    await flushPromises()
+
+    expect(apiRunJob).toHaveBeenCalledWith('job-http-performance-ai-run')
   })
 })

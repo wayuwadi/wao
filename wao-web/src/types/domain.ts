@@ -172,7 +172,12 @@ export type IdeaStage =
   | 'ABANDONED'
 export type IdeaPriority = 'P0' | 'P1' | 'P2'
 export type IdeaArtifactKind =
-  'RESEARCH_REPORT' | 'SOLUTION_MVP' | 'MEETING_NOTE' | 'VALIDATION_RECORD' | 'ABANDONMENT_REPORT' | 'LEGACY_ARCHIVE'
+  | 'RESEARCH_REPORT'
+  | 'SOLUTION_MVP'
+  | 'MEETING_NOTE'
+  | 'VALIDATION_RECORD'
+  | 'ABANDONMENT_REPORT'
+  | 'LEGACY_ARCHIVE'
 export type IdeaIterationStatus =
   'PLANNED' | 'RUNNING' | 'READY_FOR_REVIEW' | 'ACCEPTED' | 'REJECTED' | 'FAILED'
 export type IdeaResearchRunStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
@@ -407,6 +412,10 @@ export interface JobRun {
   time: string
   executor: string
   result: string
+  /** 真实开始时间，供跨任务运行记录按时间排序；旧数据可为空。 */
+  runAt?: string | null
+  /** 服务端记录的真实或估算耗时；旧数据可为空。 */
+  durationMs?: number | null
 }
 
 export interface AutomationJob {

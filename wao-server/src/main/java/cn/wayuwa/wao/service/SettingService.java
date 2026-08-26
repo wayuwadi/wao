@@ -65,6 +65,17 @@ public class SettingService {
     public static final String QUICK_COLLECT_ENCRYPT_KEY = "feishu.quick-collect.encrypt-key";
     /** 任务进入「收集中」时要 @ 的协作成员 open_id，逗号分隔；留空即只发通知不 @ 人。 */
     public static final String QUICK_COLLECT_MENTIONS = "feishu.quick-collect.mention-open-ids";
+    /** 文件与图床的运行时限制；上限仍受网关和 Spring multipart 部署基线约束。 */
+    public static final String FILE_UPLOAD_MAX_MB = "files.upload-max-mb";
+    public static final String IMAGE_UPLOAD_MAX_MB = "images.upload-max-mb";
+    public static final String FILE_DOWNLOAD_CAPTCHA_ENABLED = "files.download-captcha-enabled";
+    /** HTTP 性能巡检的业务参数；Cron 本体继续保存在 automation_job。 */
+    public static final String HTTP_INSPECTION_FREQUENCY = "http.inspection.frequency";
+    public static final String HTTP_INSPECTION_TIME = "http.inspection.time";
+    public static final String HTTP_INSPECTION_WINDOW_HOURS = "http.inspection.window-hours";
+    public static final String HTTP_INSPECTION_TOP_N = "http.inspection.top-n";
+    public static final String HTTP_INSPECTION_MAX_ENDPOINTS = "http.inspection.max-endpoints";
+    public static final String HTTP_INSPECTION_NOTIFICATION_WEBHOOK_ID = "http.inspection.notification-webhook-id";
 
     /** 这些键的值加密存储、对外脱敏。 */
     private static final Set<String> SECRET_KEYS = Set.of(FEISHU_WEBHOOK_URL, CHAT_SYNC_APP_SECRET,
