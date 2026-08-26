@@ -2,13 +2,16 @@ package cn.wayuwa.wao.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import org.junit.jupiter.api.Test;
 
 class DownloadTicketServiceTest {
 
-    private final DownloadTicketService service = new DownloadTicketService();
+    private final FileSettingsService settings = mock(FileSettingsService.class);
+    private final DownloadTicketService service = new DownloadTicketService(settings);
 
     /** 题面形如「7 + 5 = ?」/「9 − 2 = ?」，这里照着算一遍当作用户的回答。 */
     private String solve(String question) {
@@ -20,6 +23,7 @@ class DownloadTicketServiceTest {
 
     @Test
     void correctAnswerYieldsTicketThatWorksExactlyOnce() {
+        when(settings.captchaEnabled()).thenReturn(true);
         DownloadTicketService.ChallengeDto challenge = service.issueChallenge("file-1");
 
         String ticket = service.redeem("file-1", challenge.challengeId(), solve(challenge.question()));
@@ -31,6 +35,7 @@ class DownloadTicketServiceTest {
 
     @Test
     void wrongAnswerIsRejectedAndBurnsTheChallenge() {
+        when(settings.captchaEnabled()).thenReturn(true);
         DownloadTicketService.ChallengeDto challenge = service.issueChallenge("file-1");
         String wrong = String.valueOf(Integer.parseInt(solve(challenge.question())) + 1);
 
@@ -44,6 +49,7 @@ class DownloadTicketServiceTest {
 
     @Test
     void ticketIsBoundToTheFileItWasIssuedFor() {
+        when(settings.captchaEnabled()).thenReturn(true);
         DownloadTicketService.ChallengeDto challenge = service.issueChallenge("file-1");
         String ticket = service.redeem("file-1", challenge.challengeId(), solve(challenge.question()));
 
@@ -52,6 +58,7 @@ class DownloadTicketServiceTest {
 
     @Test
     void challengeCannotBeRedeemedForAnotherFile() {
+        when(settings.captchaEnabled()).thenReturn(true);
         DownloadTicketService.ChallengeDto challenge = service.issueChallenge("file-1");
 
         assertThatThrownBy(() -> service.redeem("file-2", challenge.challengeId(), solve(challenge.question())))
@@ -63,5 +70,17 @@ class DownloadTicketServiceTest {
         assertThat(service.consume("file-1", null)).isFalse();
         assertThat(service.consume("file-1", "")).isFalse();
         assertThat(service.consume("file-1", "not-a-ticket")).isFalse();
+    }
+
+    @Test
+    void disabledCaptchaStillRequiresAOneTimeChallengeAndTicket() {
+        when(settings.captchaEnabled()).thenReturn(false);
+        DownloadTicketService.ChallengeDto challenge = service.issueChallenge("file-1");
+
+        assertThat(challenge.captchaEnabled()).isFalse();
+        assertThat(challenge.question()).isEmpty();
+        String ticket = service.redeem("file-1", challenge.challengeId(), "");
+        assertThat(service.consume("file-1", ticket)).isTrue();
+        assertThat(service.consume("file-1", ticket)).isFalse();
     }
 }

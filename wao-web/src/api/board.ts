@@ -84,14 +84,22 @@ export async function apiUploadFile(file: File): Promise<FileItem> {
 }
 export const apiDeleteFile = (id: string) => del(`/api/files/${id}`)
 export const fetchHostedPages = () => get<HostedPage[]>('/api/hosted-pages')
-export async function apiSaveHostedPage(payload: { id?: string; html?: File; icon?: File; slug: string; title: string }): Promise<HostedPage> {
+export async function apiSaveHostedPage(payload: {
+  id?: string
+  html?: File
+  icon?: File
+  slug: string
+  title: string
+}): Promise<HostedPage> {
   const form = new FormData()
   if (payload.html) form.append('html', payload.html)
   if (payload.icon) form.append('icon', payload.icon)
   form.append('slug', payload.slug)
   form.append('title', payload.title)
   const res = payload.id
-    ? await http.put<ApiResponse<HostedPage>>(`/api/hosted-pages/${payload.id}`, form, { timeout: 120_000 })
+    ? await http.put<ApiResponse<HostedPage>>(`/api/hosted-pages/${payload.id}`, form, {
+        timeout: 120_000,
+      })
     : await http.post<ApiResponse<HostedPage>>('/api/hosted-pages', form, { timeout: 120_000 })
   return res.data.data
 }
@@ -100,7 +108,9 @@ export const apiDeleteHostedPage = (id: string) => del(`/api/hosted-pages/${id}`
 export const fetchFileMeta = (id: string) => get<FileItem>(`/api/files/${id}/meta`)
 /** 公开：取一道人机校验题。 */
 export const apiDownloadChallenge = (id: string) =>
-  post<{ challengeId: string; question: string }>(`/api/files/${id}/challenge`)
+  post<{ challengeId: string; question: string; captchaEnabled: boolean }>(
+    `/api/files/${id}/challenge`,
+  )
 /** 公开：用答案换一张一次性下载票据。 */
 export const apiDownloadTicket = (id: string, challengeId: string, answer: string) =>
   post<{ ticket: string }>(`/api/files/${id}/ticket`, { challengeId, answer })
@@ -149,14 +159,15 @@ export async function apiPutTask(id: string, task: Task): Promise<Task> {
   const res = await http.put<ApiResponse<Task>>(`/api/tasks/${id}`, task)
   return res.data.data
 }
-export const apiAddTaskComment = (id: string, text: string) => post<Comment>(`/api/tasks/${id}/comments`, { text })
+export const apiAddTaskComment = (id: string, text: string) =>
+  post<Comment>(`/api/tasks/${id}/comments`, { text })
 
 // ---------------- 图床 ----------------
 
 /**
  * 上传一张图片到图床，返回可直接用于 img 的条目。
  *
- * @param file   图片文件（后端限制 10MB，仅接受常见图片类型）
+ * @param file   图片文件（后端按图床设置限制且最高 10MB，仅接受常见图片类型）
  * @param source 来源描述，如「任务 · 整理证件盒」，会显示在图床列表里
  */
 export async function apiUploadImage(file: File, source?: string): Promise<ImageItem> {
@@ -223,7 +234,8 @@ export async function apiDeleteProject(id: string): Promise<void> {
 // ---------------- 知识库分组 ----------------
 
 export const apiCreateKbGroup = (name: string) => post<KbGroup>('/api/kb-groups', { name })
-export const apiRenameKbGroup = (id: string, name: string) => patch<KbGroup>(`/api/kb-groups/${id}`, { name })
+export const apiRenameKbGroup = (id: string, name: string) =>
+  patch<KbGroup>(`/api/kb-groups/${id}`, { name })
 export const apiDeleteKbGroup = (id: string) => del(`/api/kb-groups/${id}`)
 
 // ---------------- 知识库 / 文件夹 ----------------
@@ -247,14 +259,16 @@ export interface PatchKbPayload {
   group?: string
   perm?: string
 }
-export const apiPatchKb = (id: string, payload: PatchKbPayload) => patch<KnowledgeBase>(`/api/kbs/${id}`, payload)
+export const apiPatchKb = (id: string, payload: PatchKbPayload) =>
+  patch<KnowledgeBase>(`/api/kbs/${id}`, payload)
 export const apiDeleteKb = (id: string) => del(`/api/kbs/${id}`)
 
 export const apiCreateFolder = (kbId: string, name: string) =>
   post<Folder>(`/api/kbs/${kbId}/folders`, { name })
 export const apiRenameFolder = (kbId: string, folderId: string, name: string) =>
   patch<Folder>(`/api/kbs/${kbId}/folders/${folderId}`, { name })
-export const apiDeleteFolder = (kbId: string, folderId: string) => del(`/api/kbs/${kbId}/folders/${folderId}`)
+export const apiDeleteFolder = (kbId: string, folderId: string) =>
+  del(`/api/kbs/${kbId}/folders/${folderId}`)
 
 // ---------------- 文档 ----------------
 
@@ -277,17 +291,24 @@ export interface PatchDocPayload {
   links?: DocLink[]
   folderId?: string
 }
-export const apiPatchDoc = (id: string, payload: PatchDocPayload) => patch<Doc>(`/api/docs/${id}`, payload)
+export const apiPatchDoc = (id: string, payload: PatchDocPayload) =>
+  patch<Doc>(`/api/docs/${id}`, payload)
 /** 删除文档 —— 后端移入回收站，7 天内可恢复。 */
 export const apiDeleteDoc = (id: string) => del(`/api/docs/${id}`)
 
 // ---------------- 文档模板与文档树排序 ----------------
 
 export const fetchDocTemplates = () => get<DocTemplate[]>('/api/doc-templates')
-export const apiCreateDocTemplate = (payload: { name: string; description?: string; sourceDocId: string; blocks: DocBlock[] }) =>
-  post<DocTemplate>('/api/doc-templates', payload)
-export const apiPatchDocTemplate = (id: string, payload: { name?: string; description?: string; blocks?: DocBlock[]; expectedUpdatedAt: string }) =>
-  patch<DocTemplate>(`/api/doc-templates/${id}`, payload)
+export const apiCreateDocTemplate = (payload: {
+  name: string
+  description?: string
+  sourceDocId: string
+  blocks: DocBlock[]
+}) => post<DocTemplate>('/api/doc-templates', payload)
+export const apiPatchDocTemplate = (
+  id: string,
+  payload: { name?: string; description?: string; blocks?: DocBlock[]; expectedUpdatedAt: string },
+) => patch<DocTemplate>(`/api/doc-templates/${id}`, payload)
 export const apiDeleteDocTemplate = (id: string) => del(`/api/doc-templates/${id}`)
 export interface DocumentOrderPayload {
   folders: { folderId: string; docIds: string[] }[]
@@ -319,7 +340,8 @@ export const apiLeaveDoc = (id: string) => del(`/api/docs/${id}/presence`)
 // ---------------- 回收站 ----------------
 
 export const fetchTrash = () => get<TrashEntry[]>('/api/trash')
-export const apiRestoreTrash = (type: string, id: string) => post<void>(`/api/trash/${type}/${id}/restore`)
+export const apiRestoreTrash = (type: string, id: string) =>
+  post<void>(`/api/trash/${type}/${id}/restore`)
 export const apiPurgeTrash = (type: string, id: string) => del(`/api/trash/${type}/${id}`)
 
 // ---------------- 自动化 ----------------
@@ -339,7 +361,8 @@ export interface CreateJobPayload {
 export const apiCreateJob = (payload: CreateJobPayload) => post<AutomationJob>('/api/jobs', payload)
 
 export type PatchJobPayload = Partial<CreateJobPayload>
-export const apiPatchJob = (id: string, payload: PatchJobPayload) => patch<AutomationJob>(`/api/jobs/${id}`, payload)
+export const apiPatchJob = (id: string, payload: PatchJobPayload) =>
+  patch<AutomationJob>(`/api/jobs/${id}`, payload)
 export const apiDeleteJob = (id: string) => del(`/api/jobs/${id}`)
 export const apiDeleteTask = (id: string) => del(`/api/tasks/${id}`)
 export const apiUpdateTaskComment = (taskId: string, commentId: string, text: string) =>
@@ -351,12 +374,30 @@ export const apiPauseJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/
 export const apiResumeJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/resume`)
 export const apiReauthJob = (id: string) => post<AutomationJob>(`/api/jobs/${id}/reauth`)
 
+export interface HttpPerformanceInspectionConfig {
+  enabled: boolean
+  frequency: 'DAILY' | 'WEEKDAYS' | 'WEEKLY'
+  time: string
+  windowHours: number
+  topN: number
+  maxEndpointsPerRun: number
+  notificationWebhookId: string | null
+}
+
+const HTTP_INSPECTION_CONFIG_URL = '/api/jobs/job-http-performance-ai-run/config'
+export const fetchHttpPerformanceInspectionConfig = () =>
+  get<HttpPerformanceInspectionConfig>(HTTP_INSPECTION_CONFIG_URL)
+export const saveHttpPerformanceInspectionConfig = (payload: HttpPerformanceInspectionConfig) =>
+  put<HttpPerformanceInspectionConfig>(HTTP_INSPECTION_CONFIG_URL, payload)
+
 // ---------------- 密钥库 ----------------
 
 export const apiCreateVaultGroup = (name: string) => post<VaultGroup>('/api/vault/groups', { name })
-export const apiRenameVaultGroup = (id: string, name: string) => patch<VaultGroup>(`/api/vault/groups/${id}`, { name })
+export const apiRenameVaultGroup = (id: string, name: string) =>
+  patch<VaultGroup>(`/api/vault/groups/${id}`, { name })
 export const apiDeleteVaultGroup = (id: string) => del(`/api/vault/groups/${id}`)
-export const apiReorderVaultGroups = (ids: string[]) => put<void>('/api/vault/groups/order', { ids })
+export const apiReorderVaultGroups = (ids: string[]) =>
+  put<void>('/api/vault/groups/order', { ids })
 
 export interface CreateVaultItemPayload {
   groupId: string
@@ -367,11 +408,15 @@ export interface CreateVaultItemPayload {
   note?: string
   secret?: string
 }
-export const apiCreateVaultItem = (payload: CreateVaultItemPayload) => post<VaultItem>('/api/vault/items', payload)
+export const apiCreateVaultItem = (payload: CreateVaultItemPayload) =>
+  post<VaultItem>('/api/vault/items', payload)
 
-export type PatchVaultItemPayload = Partial<Omit<CreateVaultItemPayload, 'groupId'>> & { groupId?: string }
+export type PatchVaultItemPayload = Partial<Omit<CreateVaultItemPayload, 'groupId'>> & {
+  groupId?: string
+}
 export const apiPatchVaultItem = (id: string, payload: PatchVaultItemPayload) =>
   patch<VaultItem>(`/api/vault/items/${id}`, payload)
 export const apiDeleteVaultItem = (id: string) => del(`/api/vault/items/${id}`)
 /** 按需解密并返回一次密码明文；未设置密码的条目返回 null。 */
-export const apiRevealVaultItem = (id: string) => post<{ secret: string | null }>(`/api/vault/items/${id}/reveal`)
+export const apiRevealVaultItem = (id: string) =>
+  post<{ secret: string | null }>(`/api/vault/items/${id}/reveal`)

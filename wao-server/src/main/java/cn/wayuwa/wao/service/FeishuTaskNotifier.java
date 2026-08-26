@@ -403,6 +403,26 @@ public class FeishuTaskNotifier {
     }
 
     /**
+     * HTTP 性能巡检自动派工时向所选群说明数据窗口与本轮治理上限。
+     *
+     * @param webhookId 巡检设置选择的通用 Webhook
+     * @return 是否真实发送成功
+     */
+    public boolean notifyHttpPerformanceInspectionStarted(String taskId, String projectId, String taskTitle,
+            String projectName, int windowHours, int topN, int maxEndpoints, String webhookId) {
+        if (muted(projectId)) return false;
+        return notifier.notifyCard(webhookId, new FeishuWebhookNotifier.Card(
+                "HTTP 性能 AI 巡检已启动", "blue",
+                List.of(
+                        List.of("项目", blank(projectName, projectId)),
+                        List.of("任务", blank(taskTitle, taskId)),
+                        List.of("指标窗口", "最近 " + windowHours + " 小时"),
+                        List.of("巡检范围", "Top " + topN + "，最多治理 " + maxEndpoints + " 个接口")),
+                "这是系统按 HTTP 请求监控中的真实聚合指标自动触发的 AI Run。",
+                "查看任务", taskUrl(projectId, taskId)));
+    }
+
+    /**
      * AI 开始执行（执行电脑领取任务）后在群里说一声。
      *
      * @param taskId      任务 id

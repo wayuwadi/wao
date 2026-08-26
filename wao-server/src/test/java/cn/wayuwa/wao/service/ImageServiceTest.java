@@ -17,6 +17,7 @@ import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.ImageBlobEntity;
 import cn.wayuwa.wao.dto.ImageItemDto;
+import cn.wayuwa.wao.dto.FileSettingsDto;
 import cn.wayuwa.wao.mapper.ImageBlobMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -28,10 +29,16 @@ class ImageServiceTest {
 
     private final ImageBlobMapper mapper = mock(ImageBlobMapper.class);
     private final ContentService content = mock(ContentService.class);
-    private final ImageService service = new ImageService(mapper, content);
+    private final FileSettingsService settings = mock(FileSettingsService.class);
+    private final ImageService service = new ImageService(mapper, content, settings);
+
+    private void defaultLimit() {
+        when(settings.get()).thenReturn(new FileSettingsDto(50, 10, true));
+    }
 
     @Test
     void uploadStoresBytesAndReturnsRawUrl() {
+        defaultLimit();
         MockMultipartFile file = new MockMultipartFile("file", "截图.png", "image/png", new byte[]{1, 2, 3});
 
         ImageItemDto dto = service.upload(file, "任务 · 整理证件盒");
@@ -45,6 +52,7 @@ class ImageServiceTest {
 
     @Test
     void uploadRejectsNonImageContentType() {
+        defaultLimit();
         MockMultipartFile file = new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[]{1});
 
         assertThatThrownBy(() -> service.upload(file, null))
@@ -54,6 +62,7 @@ class ImageServiceTest {
 
     @Test
     void uploadRejectsEmptyFile() {
+        defaultLimit();
         MockMultipartFile file = new MockMultipartFile("file", "x.png", "image/png", new byte[0]);
 
         assertThatThrownBy(() -> service.upload(file, null)).isInstanceOf(BadRequestException.class);
@@ -61,6 +70,7 @@ class ImageServiceTest {
 
     @Test
     void uploadRejectsOversizedImage() {
+        defaultLimit();
         byte[] big = new byte[(int) ImageService.MAX_BYTES + 1];
         MockMultipartFile file = new MockMultipartFile("file", "big.png", "image/png", big);
 
@@ -71,6 +81,7 @@ class ImageServiceTest {
 
     @Test
     void uploadStripsDirectoryFromFileName() {
+        defaultLimit();
         MockMultipartFile file = new MockMultipartFile("file", "C:\\Users\\me\\a.png", "image/png", new byte[]{1});
 
         assertThat(service.upload(file, null).name()).isEqualTo("a.png");
@@ -153,6 +164,7 @@ class ImageServiceTest {
 
     @Test
     void uploadKeepsEveryCopySoDeletingOneNeverBreaksAnother() {
+        defaultLimit();
         MockMultipartFile file = new MockMultipartFile("file", "截图.png", "image/png", new byte[]{1, 2, 3});
 
         service.upload(file, "任务 · 整理证件盒");

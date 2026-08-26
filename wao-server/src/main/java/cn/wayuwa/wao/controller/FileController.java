@@ -36,7 +36,7 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * 真实文件模块接口。
  *
- * <p>下载不再是任人无限次拉取的公开直链：外部访问要先在确认页上过一道人机校验，换一张
+ * <p>下载不再是任人无限次拉取的公开直链：外部访问要先在确认页点击，按设置完成人机校验，换一张
  * 一次性票据（{@link DownloadTicketService}）；已登录的自己人凭会话直接下，不用答题。
  * 上传和删除一律需要登录会话。
  */
@@ -70,14 +70,14 @@ public class FileController {
         return ApiResponse.ok(files.meta(id));
     }
 
-    /** 取一道人机校验题（公开）。 */
+    /** 取一次公开下载挑战；算术题可关闭，一次性票据不可关闭。 */
     @PostMapping("/{id}/challenge")
     public ApiResponse<DownloadTicketService.ChallengeDto> challenge(@PathVariable String id) {
         files.meta(id);
         return ApiResponse.ok(tickets.issueChallenge(id));
     }
 
-    /** 用答案换一张一次性下载票据（公开）。 */
+    /** 消费挑战并按需校验答案，换一张一次性下载票据（公开）。 */
     @PostMapping("/{id}/ticket")
     public ApiResponse<Map<String, String>> ticket(@PathVariable String id, @RequestBody TicketRequest request) {
         files.meta(id);

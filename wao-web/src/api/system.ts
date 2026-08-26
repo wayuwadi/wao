@@ -65,8 +65,7 @@ export interface FeishuWebhookEndpointInput {
   systemDefault: boolean
 }
 
-export const fetchWebhookEndpoints = () =>
-  get<FeishuWebhookEndpoint[]>('/api/settings/webhooks')
+export const fetchWebhookEndpoints = () => get<FeishuWebhookEndpoint[]>('/api/settings/webhooks')
 export const createWebhookEndpoint = (payload: FeishuWebhookEndpointInput) =>
   postWithBody<FeishuWebhookEndpoint>('/api/settings/webhooks', payload)
 export const updateWebhookEndpoint = (id: string, payload: FeishuWebhookEndpointInput) =>
@@ -74,8 +73,7 @@ export const updateWebhookEndpoint = (id: string, payload: FeishuWebhookEndpoint
 export async function deleteWebhookEndpoint(id: string): Promise<void> {
   await http.delete<ApiResponse<void>>(`/api/settings/webhooks/${id}`)
 }
-export const testWebhookEndpoint = (id: string) =>
-  post<void>(`/api/settings/webhooks/${id}/test`)
+export const testWebhookEndpoint = (id: string) => post<void>(`/api/settings/webhooks/${id}/test`)
 
 /** 网站名称、简介与公开备案信息。 */
 export interface SiteInfo {
@@ -100,6 +98,17 @@ export const fetchNetworkOutageWindow = () =>
   get<NetworkOutageWindow>('/api/settings/network-outage-window')
 export const saveNetworkOutageWindow = (payload: NetworkOutageWindow) =>
   put<NetworkOutageWindow>('/api/settings/network-outage-window', payload)
+
+/** 文件与图床当前真实生效的上传限制和公开下载校验策略。 */
+export interface FileSettings {
+  fileMaxMb: number
+  imageMaxMb: number
+  downloadCaptchaEnabled: boolean
+}
+
+export const fetchFileSettings = () => get<FileSettings>('/api/settings/files')
+export const saveFileSettings = (payload: FileSettings) =>
+  put<FileSettings>('/api/settings/files', payload)
 
 /** WAO 壳内所有外部应用的全局菜单与嵌入入口注册表。 */
 export const fetchExternalAppRegistry = () =>

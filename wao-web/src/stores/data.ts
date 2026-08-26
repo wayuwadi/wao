@@ -1332,7 +1332,7 @@ export const useDataStore = defineStore('data', () => {
 
   // ---- 图床 ----
 
-  /** 单张图片上限 10MB，与后端 ImageService.MAX_BYTES 一致。 */
+  /** 浏览器基础设施硬上限 10MB；服务端还会按文件与图床设置执行更低的真实上限。 */
   const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
   /**
@@ -1380,6 +1380,7 @@ export const useDataStore = defineStore('data', () => {
     return { name, url }
   }
 
+  /** 浏览器基础设施硬上限 50MB；服务端还会按文件与图床设置执行更低的真实上限。 */
   const MAX_FILE_BYTES = 50 * 1024 * 1024
   async function refreshFiles(): Promise<boolean> {
     if (!apiLive.value) {
