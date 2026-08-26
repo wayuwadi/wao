@@ -72,10 +72,31 @@ pipeline {
                     ).trim()
                     planOutput.readLines().each { line ->
                         def pair = line.split('=', 2)
-                        if (pair.size() != 2 || !(pair[0] ==~ /WAO_[A-Z_]+/)) {
+                        if (pair.size() != 2) {
                             error("无法解析变更范围：${line}")
                         }
-                        env[pair[0]] = pair[1]
+                        switch (pair[0]) {
+                            case 'WAO_DEPLOY_REQUIRED':
+                                env.WAO_DEPLOY_REQUIRED = pair[1]
+                                break
+                            case 'WAO_BACKEND_PROJECTS':
+                                env.WAO_BACKEND_PROJECTS = pair[1]
+                                break
+                            case 'WAO_TEST_WAO_WEB':
+                                env.WAO_TEST_WAO_WEB = pair[1]
+                                break
+                            case 'WAO_TEST_AGENT_WEB':
+                                env.WAO_TEST_AGENT_WEB = pair[1]
+                                break
+                            case 'WAO_TEST_AI_RUNNER':
+                                env.WAO_TEST_AI_RUNNER = pair[1]
+                                break
+                            case 'WAO_CHANGED_FILE_COUNT':
+                                env.WAO_CHANGED_FILE_COUNT = pair[1]
+                                break
+                            default:
+                                error("无法识别变更范围字段：${pair[0]}")
+                        }
                     }
                     echo "变更范围：${env.WAO_CHANGED_FILE_COUNT} 个文件；后端=${env.WAO_BACKEND_PROJECTS}；" +
                         "WAO Web 测试=${env.WAO_TEST_WAO_WEB}；Agent Web 测试=${env.WAO_TEST_AGENT_WEB}；" +

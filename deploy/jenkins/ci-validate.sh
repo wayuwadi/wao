@@ -6,6 +6,22 @@ sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 
+check_change_plan_environment_contract() {
+  if grep -Fq 'env[' Jenkinsfile; then
+    echo 'Jenkinsfile must not use sandbox-blocked dynamic env[] assignment.' >&2
+    return 1
+  fi
+  for key in DEPLOY_REQUIRED BACKEND_PROJECTS TEST_WAO_WEB TEST_AGENT_WEB \
+    TEST_AI_RUNNER CHANGED_FILE_COUNT; do
+    grep -Fq "env.WAO_${key} = pair[1]" Jenkinsfile || {
+      printf 'Jenkinsfile does not explicitly assign WAO_%s.\n' "$key" >&2
+      return 1
+    }
+  done
+}
+
+check_change_plan_environment_contract
+
 check_migration_versions() {
   migration_dir="$1"
   label="$2"
