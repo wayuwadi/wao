@@ -99,7 +99,7 @@ public class AiRunService {
     public static final List<String> ENGINES = List.of("codex", "claude", "qoder");
     private static final String DEFAULT_ENGINE = "codex";
     private static final String DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
-    private static final String DEFAULT_REASONING_EFFORT = "medium";
+    private static final String DEFAULT_REASONING_EFFORT = "high";
     private static final String CODEX_SERVICE_TIER = "default";
     private static final Set<String> CODEX_MODELS = Set.of(
             "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
