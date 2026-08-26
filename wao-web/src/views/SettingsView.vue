@@ -7,9 +7,9 @@ import { updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import {
-  fetchBuiltinMenuRegistry, fetchExternalAppRegistry, fetchSiteInfo,
-  saveBuiltinMenuRegistry, saveExternalAppRegistry, saveSiteInfo,
-  type SiteInfo,
+  fetchBuiltinMenuRegistry, fetchExternalAppRegistry, fetchNetworkOutageWindow, fetchSiteInfo,
+  saveBuiltinMenuRegistry, saveExternalAppRegistry, saveNetworkOutageWindow, saveSiteInfo,
+  type NetworkOutageWindow, type SiteInfo,
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import { useNavStore } from '@/stores/nav'
@@ -42,7 +42,7 @@ const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['断网时段', 'network-outage'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['左下角链接', 'quick-links'], ['Codex 记忆 · MCP', 'memory-mcp']] },
 ] as const
 
@@ -55,6 +55,7 @@ let skipWebhookRouteGuardOnce = false
 function selectTab(next: string) {
   if (tab.value === 'webhook' && next !== 'webhook' && webhookPanel.value
       && !webhookPanel.value.confirmLeave()) return
+  if (tab.value === 'network-outage' && next !== 'network-outage' && !confirmNetworkOutageDraft()) return
   tab.value = next
 }
 
@@ -63,7 +64,8 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
     skipWebhookRouteGuardOnce = false
     return true
   }
-  return tab.value !== 'webhook' || !webhookPanel.value || webhookPanel.value.confirmLeave()
+  if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return false
+  return tab.value !== 'network-outage' || confirmNetworkOutageDraft()
 })
 onUnmounted(removeWebhookRouteGuard)
 const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
@@ -227,6 +229,13 @@ async function loadQuickLinkSettings(force = false) {
 const site = reactive<SiteInfo>({ siteName: '', description: '', icpNumber: '', icpUrl: '' })
 const siteLoaded = ref(false)
 const siteBusy = ref(false)
+const networkOutage = reactive<NetworkOutageWindow>({ enabled: true, startTime: '00:00', endTime: '06:00' })
+const networkOutageSaved = ref<NetworkOutageWindow | null>(null)
+const networkOutageLoading = ref(false)
+const networkOutageSaving = ref(false)
+const networkOutageError = ref('')
+const networkOutageDirty = computed(() => !!networkOutageSaved.value
+  && JSON.stringify(networkOutage) !== JSON.stringify(networkOutageSaved.value))
 const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map(normalizeExternalApp))
 const externalAppsLoaded = ref(false)
 const externalAppsLoading = ref(false)
@@ -416,6 +425,39 @@ async function saveSiteInformation() {
   finally { siteBusy.value = false }
 }
 
+async function loadNetworkOutageWindow() {
+  networkOutageLoading.value = true
+  networkOutageError.value = ''
+  try {
+    const value = await fetchNetworkOutageWindow()
+    Object.assign(networkOutage, value)
+    networkOutageSaved.value = { ...value }
+  } catch (error) {
+    networkOutageError.value = error instanceof Error ? error.message : '读取断网时段失败'
+  } finally {
+    networkOutageLoading.value = false
+  }
+}
+
+async function persistNetworkOutageWindow() {
+  networkOutageSaving.value = true
+  networkOutageError.value = ''
+  try {
+    const value = await saveNetworkOutageWindow({ ...networkOutage })
+    Object.assign(networkOutage, value)
+    networkOutageSaved.value = { ...value }
+    toast('断网时段已保存，自动任务已按新时间生效', 'ri-check-line')
+  } catch (error) {
+    networkOutageError.value = error instanceof Error ? error.message : '断网时段保存失败，请重试'
+  } finally {
+    networkOutageSaving.value = false
+  }
+}
+
+function confirmNetworkOutageDraft() {
+  return !networkOutageDirty.value || window.confirm('断网时段还有未保存的修改，确认离开吗？')
+}
+
 // ---- 系统 · 按项目通知 ----
 // 群机器人原本对所有项目一视同仁地播报，可多数项目的新建、状态变化并不需要有人立刻知道；
 // 通知一多整块就被无视，真正等验收的那条也跟着被划过去。开关落在项目上，
@@ -449,6 +491,9 @@ async function toggleProjectNotify(id: string) {
 
 watch(tab, (t) => {
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
+  if (t === 'network-outage' && !networkOutageSaved.value && !networkOutageLoading.value) {
+    void loadNetworkOutageWindow()
+  }
   if (t === 'navigation') {
     if (!externalAppsLoaded.value) loadExternalAppSettings()
     if (!builtinMenusLoaded.value) loadBuiltinMenuSettings()
@@ -457,6 +502,7 @@ watch(tab, (t) => {
 }, { immediate: true })
 async function logout() {
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return
+  if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return
   await session.logout()
   skipWebhookRouteGuardOnce = true
   await router.push('/login')
@@ -568,6 +614,39 @@ function demo(msg: string, icon?: string) {
               <a v-if="site.icpNumber" :href="site.icpUrl || undefined" target="_blank" rel="noopener noreferrer">· {{ site.icpNumber }}</a>
             </div>
             <div class="hint">保存后，备案号会自动展示在登录页、公开任务分享页和登录后的系统页脚；无需修改代码或重新发布前端。</div>
+          </div>
+        </template>
+
+        <!-- 系统 · 断网时段 -->
+        <template v-else-if="tab === 'network-outage'">
+          <div class="s-h1">断网时段</div>
+          <div class="card">
+            <div class="card-row wrap">
+              <div class="card-title">自动任务停机窗口</div>
+              <span v-if="networkOutageLoading" class="connected">正在读取…</span>
+              <span v-else-if="networkOutageDirty" class="connected err"><span class="c-dot"></span>有未保存修改</span>
+              <span v-else-if="networkOutageSaved" class="connected"><span class="c-dot"></span>已保存</span>
+            </div>
+            <div v-if="networkOutageLoading && !networkOutageSaved" class="menu-loading">正在读取断网时段…</div>
+            <div v-else-if="networkOutageError && !networkOutageSaved" class="registry-load-error">
+              <span>{{ networkOutageError }}</span>
+              <button type="button" class="btn-ghost" @click="loadNetworkOutageWindow">重新读取</button>
+            </div>
+            <form v-else class="site-form" @submit.prevent="persistNetworkOutageWindow">
+              <label class="outage-switch">
+                <span>启用断网时段</span>
+                <input v-model="networkOutage.enabled" type="checkbox" aria-label="启用断网时段" />
+              </label>
+              <label><span>每天开始时间</span><input v-model="networkOutage.startTime" type="time" required /></label>
+              <label><span>每天结束时间</span><input v-model="networkOutage.endTime" type="time" required /></label>
+              <p v-if="networkOutageError" class="form-error">{{ networkOutageError }}</p>
+              <div class="hint">按上海时间生效，开始时间包含、结束时间不包含，支持跨午夜。窗口内不会自动派发待办或执行自动化 Cron；手动运行不受影响。HTTP 性能巡检固定在每天 06:30。</div>
+              <div class="site-actions">
+                <button class="btn-primary" :disabled="networkOutageSaving || !networkOutageDirty">
+                  {{ networkOutageSaving ? '保存中…' : '保存断网时段' }}
+                </button>
+              </div>
+            </form>
           </div>
         </template>
 
@@ -1202,6 +1281,10 @@ function demo(msg: string, icon?: string) {
 .site-form select { height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; outline: none; background: var(--wao-bg-card); color: var(--wao-text); }
 .site-form select:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px var(--wao-primary-soft); }
 .site-form small { color: var(--wao-text-faint); line-height: 1.5; }
+.site-form .outage-switch { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; border-radius: 8px; background: var(--wao-bg-sub); }
+.site-form .outage-switch input { width: 18px; height: 18px; padding: 0; accent-color: var(--wao-primary); }
+.site-form > .hint, .site-form > .form-error { grid-column: 1 / -1; }
+.site-form > .form-error { margin: 0; color: var(--wao-danger); font-size: 12px; }
 .site-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; }
 .menu-loading { margin-top: 16px; padding: 28px 12px; border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); text-align: center; font-size: 12.5px; }
 .registry-load-error { margin-top: 16px; padding: 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 12.5px; }

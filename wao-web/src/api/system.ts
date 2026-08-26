@@ -89,6 +89,18 @@ export const fetchPublicSiteInfo = () => get<SiteInfo>('/api/public/site-info')
 export const fetchSiteInfo = () => get<SiteInfo>('/api/settings/site-info')
 export const saveSiteInfo = (payload: SiteInfo) => put<SiteInfo>('/api/settings/site-info', payload)
 
+/** 自动任务统一遵守的每日断网时段，使用上海时间且支持跨午夜。 */
+export interface NetworkOutageWindow {
+  enabled: boolean
+  startTime: string
+  endTime: string
+}
+
+export const fetchNetworkOutageWindow = () =>
+  get<NetworkOutageWindow>('/api/settings/network-outage-window')
+export const saveNetworkOutageWindow = (payload: NetworkOutageWindow) =>
+  put<NetworkOutageWindow>('/api/settings/network-outage-window', payload)
+
 /** WAO 壳内所有外部应用的全局菜单与嵌入入口注册表。 */
 export const fetchExternalAppRegistry = () =>
   get<ExternalAppRegistry>('/api/settings/navigation/external-apps')

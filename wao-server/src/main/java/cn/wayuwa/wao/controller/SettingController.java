@@ -5,11 +5,13 @@ import cn.wayuwa.wao.dto.FeishuWebhookConfigDto;
 import cn.wayuwa.wao.dto.FeishuWebhookEndpointDto;
 import cn.wayuwa.wao.dto.ExternalAppRegistryDto;
 import cn.wayuwa.wao.dto.MediaAgentMenuConfigDto;
+import cn.wayuwa.wao.dto.NetworkOutageWindowDto;
 import cn.wayuwa.wao.dto.SaveExternalAppRegistryRequest;
 import cn.wayuwa.wao.dto.SaveMediaAgentMenuConfigRequest;
 import cn.wayuwa.wao.dto.SaveWebhookRequest;
 import cn.wayuwa.wao.dto.SaveFeishuWebhookEndpointRequest;
 import cn.wayuwa.wao.dto.SaveSiteInfoRequest;
+import cn.wayuwa.wao.dto.SaveNetworkOutageWindowRequest;
 import cn.wayuwa.wao.dto.SiteInfoDto;
 import cn.wayuwa.wao.dto.BuiltinMenuRegistryDto;
 import cn.wayuwa.wao.dto.SaveBuiltinMenuRegistryRequest;
@@ -17,6 +19,7 @@ import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.service.ExternalAppRegistryService;
 import cn.wayuwa.wao.service.FeishuWebhookConfigService;
 import cn.wayuwa.wao.service.SettingService;
+import cn.wayuwa.wao.service.NetworkOutageWindowService;
 import cn.wayuwa.wao.service.BuiltinMenuRegistryService;
 import jakarta.validation.Valid;
 import java.net.URI;
@@ -32,7 +35,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
-/** 系统配置接口：网站信息、一级导航与全局飞书通知。 */
+/** 系统配置接口：网站信息、断网时段、一级导航与全局飞书通知。 */
 @RestController
 @RequestMapping("/api/settings")
 public class SettingController {
@@ -42,22 +45,39 @@ public class SettingController {
     private final BuiltinMenuRegistryService builtinMenus;
     private final FeishuWebhookNotifier notifier;
     private final FeishuWebhookConfigService webhooks;
+    private final NetworkOutageWindowService networkOutageWindow;
 
     @Autowired
     public SettingController(SettingService settings, ExternalAppRegistryService externalApps,
             BuiltinMenuRegistryService builtinMenus,
-            FeishuWebhookNotifier notifier, FeishuWebhookConfigService webhooks) {
+            FeishuWebhookNotifier notifier, FeishuWebhookConfigService webhooks,
+            NetworkOutageWindowService networkOutageWindow) {
         this.settings = settings;
         this.externalApps = externalApps;
         this.builtinMenus = builtinMenus;
         this.notifier = notifier;
         this.webhooks = webhooks;
+        this.networkOutageWindow = networkOutageWindow;
     }
 
     /** 兼容不关心内置菜单注册表的既有单元测试与嵌入调用。 */
     public SettingController(SettingService settings, ExternalAppRegistryService externalApps,
             FeishuWebhookNotifier notifier) {
-        this(settings, externalApps, new BuiltinMenuRegistryService(settings, new ObjectMapper()), notifier, null);
+        this(settings, externalApps, new BuiltinMenuRegistryService(settings, new ObjectMapper()), notifier, null,
+                new NetworkOutageWindowService(settings));
+    }
+
+    /** 返回自动任务统一遵守的每日断网时段。 */
+    @GetMapping("/network-outage-window")
+    public ApiResponse<NetworkOutageWindowDto> networkOutageWindow() {
+        return ApiResponse.ok(networkOutageWindow.get());
+    }
+
+    /** 保存断网时段；支持跨午夜，开始时间包含、结束时间不包含。 */
+    @PutMapping("/network-outage-window")
+    public ApiResponse<NetworkOutageWindowDto> saveNetworkOutageWindow(
+            @Valid @RequestBody SaveNetworkOutageWindowRequest request) {
+        return ApiResponse.ok(networkOutageWindow.save(request));
     }
 
     @GetMapping("/feishu-webhook")

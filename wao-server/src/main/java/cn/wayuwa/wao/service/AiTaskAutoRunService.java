@@ -36,15 +36,17 @@ public class AiTaskAutoRunService {
     private final AiTaskRunMapper runMapper;
     private final TaskMapper taskMapper;
     private final AiRunService runs;
+    private final NetworkOutageWindowService networkOutageWindow;
     private final String publicBaseUrl;
 
     public AiTaskAutoRunService(AiTaskAutoRunStateMapper stateMapper, AiTaskRunMapper runMapper,
-            TaskMapper taskMapper, AiRunService runs,
+            TaskMapper taskMapper, AiRunService runs, NetworkOutageWindowService networkOutageWindow,
             @Value("${wao.share.base-url:}") String configuredBaseUrl) {
         this.stateMapper = stateMapper;
         this.runMapper = runMapper;
         this.taskMapper = taskMapper;
         this.runs = runs;
+        this.networkOutageWindow = networkOutageWindow;
         this.publicBaseUrl = configuredBaseUrl == null || configuredBaseUrl.isBlank()
                 ? null : configuredBaseUrl.replaceFirst("/+$", "");
     }
@@ -104,6 +106,7 @@ public class AiTaskAutoRunService {
 
     /** 双节点安全地抢占检查窗口，并在满足条件时派发唯一一条最早待办。 */
     public void checkAndLaunch() {
+        if (networkOutageWindow.isUnavailable()) return;
         if (stateMapper.claimDueCheck() == 0) return;
         AiTaskAutoRunStateEntity state = requireState();
         LocalDateTime now = LocalDateTime.now(ZONE);
