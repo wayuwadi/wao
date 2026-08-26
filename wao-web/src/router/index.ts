@@ -168,6 +168,12 @@ const router = createRouter({
           meta: { module: 'calendar', tabKind: 'module' },
         },
         {
+          path: 'skill-connections',
+          name: 'skill-connections',
+          component: () => import('@/views/SkillConnectionsView.vue'),
+          meta: { module: 'skill-connections', tabKind: 'module' },
+        },
+        {
           path: 'todo',
           name: 'todo',
           component: () => import('@/views/TodoView.vue'),

@@ -44,6 +44,23 @@ describe('侧边栏导航配置', () => {
     ).toBe('/wao/skills/manage')
   })
 
+  it('Skill 接入作为独立公共菜单打开真实管理入口', () => {
+    expect(MODULES['skill-connections']).toMatchObject({
+      label: 'Skill 接入',
+      path: '/skill-connections',
+    })
+    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'skill-connections')).toMatchObject({
+      group: 'PUBLIC',
+      visible: true,
+      openMode: 'TAB',
+    })
+    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('skill-connections')
+    expect(router.resolve('/skill-connections').meta).toMatchObject({
+      module: 'skill-connections',
+      tabKind: 'module',
+    })
+  })
+
   it('公共组保留兼容模块顺序，自媒体 Agent 保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
     expect(publicGroup?.items).toEqual([
@@ -51,6 +68,7 @@ describe('侧边栏导航配置', () => {
       'ideas',
       'skills',
       externalAppItemId('media-agent'),
+      'skill-connections',
       'chat',
     ])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
