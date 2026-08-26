@@ -51,6 +51,7 @@ describe('侧边栏导航配置', () => {
       'ideas',
       'skills',
       externalAppItemId('media-agent'),
+      'chat',
       'chat-reviews',
       'system-reports',
     ])
@@ -60,6 +61,13 @@ describe('侧边栏导航配置', () => {
     const route = router.getRoutes().find((item) => item.name === 'external-app')
     expect(route?.path).toBe('/apps/:appId')
     expect(route?.meta.tabKind).toBe('external')
+  })
+
+  it('聊天默认位于公共组并使用原生模块路由', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('chat')
+    const route = router.getRoutes().find((item) => item.name === 'chat')
+    expect(route?.path).toBe('/chat')
+    expect(route?.meta.module).toBe('chat')
   })
 
   it('历史点子归并页保留兼容路由但不进入默认菜单', () => {

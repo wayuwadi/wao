@@ -142,6 +142,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-route-line',
     path: '/life-review',
   },
+  chat: { id: 'chat', label: '聊天', icon: 'ri-chat-3-line', path: '/chat' },
   'chat-reviews': {
     id: 'chat-reviews',
     label: '聊天复盘',
@@ -181,6 +182,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-sparkling-2-line',
       group: 'PUBLIC',
       order: 12,
+      visible: true,
+    },
+    {
+      id: 'chat',
+      label: '聊天',
+      icon: 'ri-chat-3-line',
+      group: 'PUBLIC',
+      order: 14,
       visible: true,
     },
     {
@@ -366,7 +375,10 @@ export const PERSONAL_ITEMS: ModuleId[] = [
 
 const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
-  { label: '公共', items: ['projects', 'ideas', 'skills', 'chat-reviews', 'system-reports'] },
+  {
+    label: '公共',
+    items: ['projects', 'ideas', 'skills', 'chat', 'chat-reviews', 'system-reports'],
+  },
   { label: '个人', items: PERSONAL_ITEMS },
   { label: '工具', items: ['automation', 'files', 'games', 'request-monitoring'] },
 ]

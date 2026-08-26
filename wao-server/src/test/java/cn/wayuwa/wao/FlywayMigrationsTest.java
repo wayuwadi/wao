@@ -52,6 +52,21 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void sharedChatMigrationKeepsIdempotencyAndIndependentDeliveryState() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V96__shared_chat.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE shared_chat_message")
+                .contains("UNIQUE KEY uk_shared_chat_member_token (member_id, client_token)")
+                .contains("feishu_status  VARCHAR(16)   NOT NULL")
+                .contains("CONSTRAINT fk_shared_chat_member")
+                .contains("CONSTRAINT fk_shared_chat_image");
+    }
+
+    @Test
     void migrationsFollowTheVersionedNamingConvention() throws Exception {
         assertThat(migrations().stream().map(path -> path.getFileName().toString()))
                 .allMatch(name -> name.matches("V\\d+__[A-Za-z0-9_]+\\.sql"), "V<数字>__<名字>.sql");

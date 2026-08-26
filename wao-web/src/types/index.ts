@@ -37,6 +37,7 @@ export type ModuleId =
   | 'action-plans'
   | 'weekly-report'
   | 'life-review'
+  | 'chat'
   | 'chat-reviews'
   | 'system-reports'
   | 'skills'
