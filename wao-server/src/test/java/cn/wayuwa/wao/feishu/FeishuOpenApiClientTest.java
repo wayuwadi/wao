@@ -8,11 +8,14 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
@@ -38,7 +41,70 @@ class FeishuOpenApiClientTest {
 
         FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
 
-        client.addMessageReaction("token-test", "om_source", "DONE");
+        assertThat(client.addMessageReaction("token-test", "om_source", "DONE")).isEqualTo("reaction-1");
+        server.verify();
+    }
+
+    @Test
+    void sendsNormalPostWithStableUuidAndReturnsMessageId() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL
+                + "/open-apis/im/v1/messages?receive_id_type=chat_id&uuid=msg1"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer token-test"))
+                .andExpect(request -> {
+                    ObjectMapper mapper = new ObjectMapper();
+                    JsonNode body = mapper.readTree(((MockClientHttpRequest) request).getBodyAsString());
+                    assertThat(body.path("receive_id").asText()).isEqualTo("oc_chat");
+                    assertThat(body.path("msg_type").asText()).isEqualTo("post");
+                    assertThat(mapper.readTree(body.path("content").asText())).isEqualTo(mapper.readTree("""
+                            {"zh_cn":{"title":"","content":[[{"tag":"text","text":"你好"}]]}}
+                            """));
+                })
+                .andRespond(withSuccess("""
+                        {"code":0,"data":{"message_id":"om_created","msg_type":"post"}}
+                        """, MediaType.APPLICATION_JSON));
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+
+        String id = client.sendPostMessage("token-test", "oc_chat",
+                java.util.Map.of("zh_cn", java.util.Map.of("title", "", "content",
+                        List.of(List.of(java.util.Map.of("tag", "text", "text", "你好"))))),
+                "msg1", null);
+
+        assertThat(id).isEqualTo("om_created");
+        server.verify();
+    }
+
+    @Test
+    void repliesToOriginalFeishuMessageInsteadOfCreatingANewCard() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_parent/reply?uuid=msg2"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("""
+                        {"code":0,"data":{"message_id":"om_reply","parent_id":"om_parent"}}
+                        """, MediaType.APPLICATION_JSON));
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+
+        String id = client.sendPostMessage("token-test", "oc_chat", java.util.Map.of(),
+                "msg2", "om_parent");
+
+        assertThat(id).isEqualTo("om_reply");
+        server.verify();
+    }
+
+    @Test
+    void deletesReactionByTheReturnedReactionId() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_source/reactions/reaction-1"))
+                .andExpect(method(HttpMethod.DELETE))
+                .andRespond(withSuccess("{\"code\":0,\"msg\":\"success\"}", MediaType.APPLICATION_JSON));
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+
+        client.deleteMessageReaction("token-test", "om_source", "reaction-1");
+
         server.verify();
     }
 

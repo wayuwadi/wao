@@ -71,10 +71,11 @@ public class FeishuQuickCollectService {
     private final ImageService images;
     private final ObjectMapper json;
     private final NotificationFeedbackService feedback;
+    private final SharedChatFeishuBridge sharedChat;
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
             TaskService tasks, ProjectService projects, AccountMapper accounts,
             AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ImageService images,
-            ObjectMapper json, NotificationFeedbackService feedback) {
+            ObjectMapper json, NotificationFeedbackService feedback, SharedChatFeishuBridge sharedChat) {
         this.settings = settings;
         this.feishu = feishu;
         this.tasks = tasks;
@@ -85,6 +86,7 @@ public class FeishuQuickCollectService {
         this.images = images;
         this.json = json;
         this.feedback = feedback;
+        this.sharedChat = sharedChat;
     }
 
     /** 当前配置（Token / Encrypt Key 只回脱敏形态）。 */
@@ -136,6 +138,9 @@ public class FeishuQuickCollectService {
         requireToken(body.path("header").path("token").asText(body.path("token").asText("")));
         if ("card.action.trigger".equals(body.path("header").path("event_type").asText(""))) {
             feedback.collect(body.path("event"));
+            return Map.of();
+        }
+        if (sharedChat.handleEvent(body)) {
             return Map.of();
         }
         if (!settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)) {

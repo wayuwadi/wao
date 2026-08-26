@@ -35,6 +35,9 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 
 wao:
+  feishu:
+    shared-chat:
+      polling-enabled: false
   system-report:
     scheduler-enabled: false
   chat-review:

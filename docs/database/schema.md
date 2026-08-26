@@ -831,6 +831,18 @@ AI 运行插入与 `ai_run_id` 关联处在同一事务中，关联还要求当�
 
 昵称和头像只用于向当前成员确认绑定身份；播放地址、歌曲列表和播放记录不持久化到 WAO 数据库。安全与官方协议边界见 ADR-071。
 
+## 组织共享聊天域（V96 / V98）
+
+`shared_chat_message` 保存 WAO 与飞书群共用的消息流。WAO 消息按 `(member_id, client_token)` 去重；飞书消息按
+`feishu_message_id` 去重。`source` 区分 `WAO / FEISHU`，未绑定成员的飞书消息允许 `member_id` 为空并保留稳定
+外部发送者 id 与真实群成员名称。正文升级为 `MEDIUMTEXT`，WAO 主动发送仍由服务端限制 2,000 字，飞书入站
+不截断真实消息。`reply_to_id` 表达站内引用；飞书 `parent_id` 能命中时关联同一父消息。
+
+`shared_chat_message_read` 按 `(message_id, reader_key, source)` 保存 WAO 页面阅读与飞书官方已读事件；同一身份可由
+绑定关系收敛到 `member:<id>`，未绑定身份保存 `feishu:<id>`，统计时按 reader key 去重，不把轮询或页面打开时间
+伪装成飞书已读。`shared_chat_reaction` 按 `(message_id, reactor_key, emoji_type)` 保存表情事实及当前应用创建的
+`reaction_id`，用于可靠撤销。边界见 ADR-126、ADR-127。
+
 ## 已退役的自媒体 Agent 视频生成域（Agent Flyway V4）
 
 `agent_video_generation` 曾按工作区保存 OpenAI Videos API 任务。能力已按
@@ -925,6 +937,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V94__network_outage_window.sql`：把 HTTP 性能巡检调整到默认断网窗口后的每日 06:30（见 ADR-121）。
 - `V97__configurable_task_auto_run.sql`：为最早任务空闲自动派发增加单项目、多来源状态与通用 Webhook 目标；
   存量策略默认回填“Wa All in One”和“待办”（见 ADR-114）。
+- `V98__shared_chat_feishu_bridge.sql`：共享聊天飞书外部身份、消息幂等 id、引用关系、真实已读与表情事实（见 ADR-127）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

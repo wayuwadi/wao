@@ -11,9 +11,16 @@ public class SharedChatMessageEntity {
     private String id;
     private String memberId;
     private String clientToken;
+    private String source;
+    private String externalSenderId;
+    private String externalSenderName;
     private String content;
     private String imageId;
     private String imageName;
+    private String feishuChatId;
+    private String feishuMessageId;
+    private String replyToId;
+    private Boolean deleted;
     private String feishuStatus;
     private String feishuError;
     private LocalDateTime createdAt;
@@ -25,12 +32,26 @@ public class SharedChatMessageEntity {
     public void setMemberId(String memberId) { this.memberId = memberId; }
     public String getClientToken() { return clientToken; }
     public void setClientToken(String clientToken) { this.clientToken = clientToken; }
+    public String getSource() { return source; }
+    public void setSource(String source) { this.source = source; }
+    public String getExternalSenderId() { return externalSenderId; }
+    public void setExternalSenderId(String externalSenderId) { this.externalSenderId = externalSenderId; }
+    public String getExternalSenderName() { return externalSenderName; }
+    public void setExternalSenderName(String externalSenderName) { this.externalSenderName = externalSenderName; }
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
     public String getImageId() { return imageId; }
     public void setImageId(String imageId) { this.imageId = imageId; }
     public String getImageName() { return imageName; }
     public void setImageName(String imageName) { this.imageName = imageName; }
+    public String getFeishuChatId() { return feishuChatId; }
+    public void setFeishuChatId(String feishuChatId) { this.feishuChatId = feishuChatId; }
+    public String getFeishuMessageId() { return feishuMessageId; }
+    public void setFeishuMessageId(String feishuMessageId) { this.feishuMessageId = feishuMessageId; }
+    public String getReplyToId() { return replyToId; }
+    public void setReplyToId(String replyToId) { this.replyToId = replyToId; }
+    public Boolean getDeleted() { return deleted; }
+    public void setDeleted(Boolean deleted) { this.deleted = deleted; }
     public String getFeishuStatus() { return feishuStatus; }
     public void setFeishuStatus(String feishuStatus) { this.feishuStatus = feishuStatus; }
     public String getFeishuError() { return feishuError; }
