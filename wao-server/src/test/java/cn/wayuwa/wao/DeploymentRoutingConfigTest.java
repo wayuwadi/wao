@@ -15,6 +15,8 @@ class DeploymentRoutingConfigTest {
     @Test
     void jenkinsChangePlanUsesSandboxSafeStaticEnvironmentAssignments() throws IOException {
         String pipeline = readFromRepository("Jenkinsfile");
+        String declarativeEnvironment = section(pipeline,
+                "    environment {", "\n    }\n\n    stages {");
 
         assertThat(pipeline)
                 .contains("env.WAO_DEPLOY_REQUIRED = line.substring")
@@ -24,6 +26,12 @@ class DeploymentRoutingConfigTest {
                 .contains("env.WAO_TEST_AI_RUNNER = line.substring")
                 .contains("env.WAO_CHANGED_FILE_COUNT = line.substring")
                 .doesNotContain("env[pair[0]]");
+        assertThat(declarativeEnvironment)
+                .doesNotContain("WAO_DEPLOY_REQUIRED")
+                .doesNotContain("WAO_BACKEND_PROJECTS")
+                .doesNotContain("WAO_TEST_WAO_WEB")
+                .doesNotContain("WAO_TEST_AGENT_WEB")
+                .doesNotContain("WAO_TEST_AI_RUNNER");
     }
 
     @Test
