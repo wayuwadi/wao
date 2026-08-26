@@ -70,12 +70,26 @@ pipeline {
                         script: 'deploy/jenkins/ci-change-plan.sh',
                         returnStdout: true
                     ).trim()
-                    planOutput.readLines().each { line ->
-                        def pair = line.split('=', 2)
-                        if (pair.size() != 2 || !(pair[0] ==~ /WAO_[A-Z_]+/)) {
+                    def planLines = planOutput.readLines()
+                    if (planLines.size() != 6) {
+                        error("变更范围字段数量错误：${planLines.size()}")
+                    }
+                    planLines.each { line ->
+                        if (line ==~ /WAO_DEPLOY_REQUIRED=(true|false)/) {
+                            env.WAO_DEPLOY_REQUIRED = line.substring('WAO_DEPLOY_REQUIRED='.length())
+                        } else if (line ==~ /WAO_BACKEND_PROJECTS=[a-z,-]+/) {
+                            env.WAO_BACKEND_PROJECTS = line.substring('WAO_BACKEND_PROJECTS='.length())
+                        } else if (line ==~ /WAO_TEST_WAO_WEB=(true|false)/) {
+                            env.WAO_TEST_WAO_WEB = line.substring('WAO_TEST_WAO_WEB='.length())
+                        } else if (line ==~ /WAO_TEST_AGENT_WEB=(true|false)/) {
+                            env.WAO_TEST_AGENT_WEB = line.substring('WAO_TEST_AGENT_WEB='.length())
+                        } else if (line ==~ /WAO_TEST_AI_RUNNER=(true|false)/) {
+                            env.WAO_TEST_AI_RUNNER = line.substring('WAO_TEST_AI_RUNNER='.length())
+                        } else if (line ==~ /WAO_CHANGED_FILE_COUNT=[0-9]+/) {
+                            env.WAO_CHANGED_FILE_COUNT = line.substring('WAO_CHANGED_FILE_COUNT='.length())
+                        } else {
                             error("无法解析变更范围：${line}")
                         }
-                        env[pair[0]] = pair[1]
                     }
                     echo "变更范围：${env.WAO_CHANGED_FILE_COUNT} 个文件；后端=${env.WAO_BACKEND_PROJECTS}；" +
                         "WAO Web 测试=${env.WAO_TEST_WAO_WEB}；Agent Web 测试=${env.WAO_TEST_AGENT_WEB}；" +
