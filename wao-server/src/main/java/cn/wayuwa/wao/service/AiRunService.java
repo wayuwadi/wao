@@ -101,6 +101,8 @@ public class AiRunService {
     private static final String DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
     private static final String DEFAULT_REASONING_EFFORT = "high";
     private static final String CODEX_SERVICE_TIER = "default";
+    /** 空闲自动派发使用独立通知卡片，避免与通用入队通知重复。 */
+    static final String IDLE_AUTO_RUN_REQUESTED_BY = "system:idle-auto-run";
     private static final Set<String> CODEX_MODELS = Set.of(
             "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
     private static final Set<String> CODEX_REASONING_EFFORTS = Set.of("medium", "high");
@@ -1340,6 +1342,7 @@ public class AiRunService {
 
     /** 派工（进入 / 回到执行队列）后的飞书通知；失败只记日志，不影响派工结果。 */
     private void notifyQueued(AiTaskRunEntity run) {
+        if (IDLE_AUTO_RUN_REQUESTED_BY.equals(run.getRequestedBy())) return;
         try {
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());

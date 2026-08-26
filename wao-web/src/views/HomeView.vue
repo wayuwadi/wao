@@ -31,10 +31,11 @@ import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/
 import { formatCost, formatTokens, shortModel, usageSummary } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
+import { fetchWebhookEndpoints, type FeishuWebhookEndpoint } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
-import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow } from '@/types'
+import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow, TaskStatus } from '@/types'
 
 type ConsoleView = 'runs' | 'runners' | 'workflows'
 
@@ -55,6 +56,13 @@ const quotaOverview = ref<AiEvolutionOverview | null>(null)
 const taskAutoRunPolicy = ref<AiTaskAutoRunPolicy | null>(null)
 const taskAutoRunEnabled = ref(true)
 const taskAutoRunHours = ref(2)
+const taskAutoRunProjectId = ref('')
+const taskAutoRunStatuses = ref<TaskStatus[]>(['待办'])
+const taskAutoRunWebhookId = ref('')
+const taskAutoRunWebhooks = ref<FeishuWebhookEndpoint[]>([])
+const taskAutoRunWebhooksLoading = ref(true)
+const taskAutoRunProjectError = ref('')
+const taskAutoRunWebhookError = ref('')
 const taskAutoRunDirty = ref(false)
 const taskAutoRunSaving = ref(false)
 const taskAutoRunError = ref('')
@@ -113,6 +121,11 @@ const onlineRunners = computed(() => runners.value.filter((runner) => runner.onl
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
 const activeWorkflows = computed(() => workflows.value.filter((workflow) => workflow.config.enabled))
+const runnableAutoRunWorkflows = computed(() => activeWorkflows.value.filter(
+  (workflow) => !workflow.projectDeleted && workflow.config.repoUrl.trim(),
+))
+const enabledTaskAutoRunWebhooks = computed(() => taskAutoRunWebhooks.value.filter((endpoint) => endpoint.enabled))
+const AUTO_RUN_TASK_STATUSES: TaskStatus[] = ['待办', '收集中', '进行中']
 const goalWorkflow = computed(() => activeWorkflows.value.find(
   (workflow) => workflow.projectId === goalProjectId.value,
 ) ?? null)
@@ -227,7 +240,9 @@ async function refreshWorkflows() {
   workflowsLoading.value = true
   try {
     workflows.value = await fetchAiWorkflows()
+    taskAutoRunProjectError.value = ''
   } catch (error) {
+    taskAutoRunProjectError.value = error instanceof Error ? error.message : '自动派发项目读取失败'
     toast(error instanceof Error ? error.message : 'AI 工作流读取失败', 'ri-error-warning-line')
   } finally {
     workflowsLoading.value = false
@@ -251,10 +266,25 @@ async function refreshTaskAutoRunPolicy() {
     if (!taskAutoRunDirty.value && !taskAutoRunSaving.value) {
       taskAutoRunEnabled.value = policy.enabled
       taskAutoRunHours.value = policy.idleHours
+      taskAutoRunProjectId.value = policy.projectId ?? ''
+      taskAutoRunStatuses.value = [...policy.taskStatuses]
+      taskAutoRunWebhookId.value = policy.notificationWebhookId ?? ''
     }
     taskAutoRunError.value = ''
   } catch (error) {
     taskAutoRunError.value = error instanceof Error ? error.message : '自动派发策略读取失败'
+  }
+}
+
+async function refreshTaskAutoRunWebhooks() {
+  taskAutoRunWebhooksLoading.value = true
+  try {
+    taskAutoRunWebhooks.value = await fetchWebhookEndpoints()
+    taskAutoRunWebhookError.value = ''
+  } catch (error) {
+    taskAutoRunWebhookError.value = error instanceof Error ? error.message : '通知群读取失败，请重试'
+  } finally {
+    taskAutoRunWebhooksLoading.value = false
   }
 }
 
@@ -269,13 +299,33 @@ async function saveTaskAutoRunPolicy() {
     taskAutoRunError.value = '空闲时长请输入 1 到 168 之间的整数'
     return
   }
+  if (!taskAutoRunProjectId.value) {
+    taskAutoRunError.value = '请选择自动派发项目'
+    return
+  }
+  const statuses = taskAutoRunStatuses.value.filter(
+    (status): status is '待办' | '收集中' | '进行中' => AUTO_RUN_TASK_STATUSES.includes(status),
+  )
+  if (!statuses.length) {
+    taskAutoRunError.value = '请至少选择一种任务状态'
+    return
+  }
   taskAutoRunSaving.value = true
   taskAutoRunError.value = ''
   try {
-    const policy = await saveAiTaskAutoRunPolicy(taskAutoRunEnabled.value, hours)
+    const policy = await saveAiTaskAutoRunPolicy(
+      taskAutoRunEnabled.value,
+      hours,
+      taskAutoRunProjectId.value,
+      statuses,
+      taskAutoRunWebhookId.value || null,
+    )
     taskAutoRunPolicy.value = policy
     taskAutoRunEnabled.value = policy.enabled
     taskAutoRunHours.value = policy.idleHours
+    taskAutoRunProjectId.value = policy.projectId ?? ''
+    taskAutoRunStatuses.value = [...policy.taskStatuses]
+    taskAutoRunWebhookId.value = policy.notificationWebhookId ?? ''
     taskAutoRunDirty.value = false
     toast(policy.enabled ? '自动派发策略已开启并保存' : '自动派发已关闭', 'ri-check-line')
   } catch (error) {
@@ -729,6 +779,7 @@ onMounted(() => {
   void refreshWorkflows()
   void refreshQuotaOverview()
   void refreshTaskAutoRunPolicy()
+  void refreshTaskAutoRunWebhooks()
   timer = setInterval(refresh, 5_000)
   quotaTimer = setInterval(() => {
     void refreshQuotaOverview()
@@ -981,6 +1032,51 @@ onBeforeUnmount(() => {
           >
             <i :class="taskAutoRunSaving ? 'ri-loader-4-line spin' : taskAutoRunError ? 'ri-refresh-line' : 'ri-save-3-line'"></i>
             {{ taskAutoRunSaving ? '保存中' : taskAutoRunError ? '重试' : taskAutoRunDirty ? '保存设置' : '已保存' }}
+          </button>
+        </div>
+        <div class="auto-run-options">
+          <label class="auto-run-select">
+            <span>任务项目</span>
+            <select
+              v-model="taskAutoRunProjectId"
+              :disabled="taskAutoRunSaving || workflowsLoading"
+              aria-label="自动派发任务项目"
+              @change="markTaskAutoRunDirty"
+            >
+              <option value="" disabled>
+                {{ workflowsLoading ? '正在读取项目…' : runnableAutoRunWorkflows.length ? '请选择项目' : '没有可用的 AI 工作流' }}
+              </option>
+              <option v-for="workflow in runnableAutoRunWorkflows" :key="workflow.projectId" :value="workflow.projectId">
+                {{ workflow.projectName }}
+              </option>
+            </select>
+          </label>
+          <fieldset class="auto-run-statuses" :disabled="taskAutoRunSaving">
+            <legend>任务状态</legend>
+            <label v-for="status in AUTO_RUN_TASK_STATUSES" :key="status" :class="{ on: taskAutoRunStatuses.includes(status) }">
+              <input v-model="taskAutoRunStatuses" type="checkbox" :value="status" @change="markTaskAutoRunDirty" />
+              <i class="ri-check-line"></i>{{ status }}
+            </label>
+          </fieldset>
+          <label class="auto-run-select">
+            <span>触发通知群</span>
+            <select
+              v-model="taskAutoRunWebhookId"
+              :disabled="taskAutoRunSaving || taskAutoRunWebhooksLoading"
+              aria-label="自动派发触发通知群"
+              @change="markTaskAutoRunDirty"
+            >
+              <option value="">系统默认通知群</option>
+              <option v-for="endpoint in enabledTaskAutoRunWebhooks" :key="endpoint.id" :value="endpoint.id">
+                {{ endpoint.name }}{{ endpoint.systemDefault ? '（系统默认）' : '' }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <div v-if="taskAutoRunProjectError || taskAutoRunWebhookError" class="auto-run-options-error" role="alert">
+          <span>{{ [taskAutoRunProjectError, taskAutoRunWebhookError].filter(Boolean).join('；') }}</span>
+          <button type="button" @click="refreshWorkflows(); refreshTaskAutoRunWebhooks()">
+            <i class="ri-refresh-line"></i>重试读取
           </button>
         </div>
         <div v-if="taskAutoRunDirty || taskAutoRunError" class="auto-run-feedback" :class="{ error: taskAutoRunError }" role="status">
@@ -1687,6 +1783,19 @@ onBeforeUnmount(() => {
 .auto-run-switch.on > i::after { transform: translateX(11px); }
 .auto-run-controls label { height: 32px; padding: 0 7px 0 9px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); font-size: 10.5px; display: flex; align-items: center; gap: 5px; }
 .auto-run-controls input { width: 46px; height: 24px; padding: 0 4px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-sub); color: var(--wao-text); text-align: center; }
+.auto-run-options { grid-column: 1 / -1; padding-top: 11px; border-top: 1px solid var(--wao-divider); display: grid; grid-template-columns: minmax(180px, .9fr) minmax(280px, 1.2fr) minmax(200px, 1fr); align-items: end; gap: 10px; }
+.auto-run-select { min-width: 0; display: grid; gap: 5px; color: var(--wao-text-weak); font-size: 10.5px; }
+.auto-run-select select { width: 100%; height: 32px; padding: 0 28px 0 9px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); font: inherit; }
+.auto-run-select select:disabled { opacity: .58; }
+.auto-run-statuses { min-width: 0; margin: 0; padding: 0; border: 0; display: flex; align-items: center; gap: 6px; }
+.auto-run-statuses legend { margin-bottom: 5px; color: var(--wao-text-weak); font-size: 10.5px; }
+.auto-run-statuses label { height: 32px; padding: 0 9px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; }
+.auto-run-statuses label.on { border-color: var(--wao-primary-line); background: var(--wao-primary-tint); color: var(--wao-primary-text); }
+.auto-run-statuses input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.auto-run-statuses i { display: none; }
+.auto-run-statuses label.on i { display: inline; }
+.auto-run-options-error { grid-column: 1 / -1; color: var(--wao-danger-strong); font-size: 10.5px; display: flex; align-items: center; gap: 8px; }
+.auto-run-options-error button { padding: 3px 7px; border: 1px solid var(--wao-danger-line); border-radius: 6px; background: var(--wao-danger-bg); color: inherit; cursor: pointer; font: inherit; }
 .auto-run-save { padding: 0 10px; border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
 .auto-run-save:disabled, .auto-run-switch:disabled { opacity: .55; cursor: not-allowed; }
 .auto-run-feedback { grid-column: 1 / -1; margin-top: -5px; color: var(--wao-warning-strong); font-size: 10.5px; }
@@ -2070,6 +2179,8 @@ onBeforeUnmount(() => {
   .recent-grid { grid-template-columns: 1fr; }
   .auto-run-policy { grid-template-columns: 1fr; }
   .auto-run-controls { justify-content: flex-start; flex-wrap: wrap; }
+  .auto-run-options { grid-template-columns: 1fr; }
+  .auto-run-statuses { flex-wrap: wrap; }
   .section-head { align-items: center; }
   .history-grid { grid-template-columns: 1fr; }
   .flow-meta { grid-template-columns: 1fr; }

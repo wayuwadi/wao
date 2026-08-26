@@ -4,6 +4,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,11 +40,13 @@ class FeishuTaskNotifierTest {
         assertThat(notifier.notifyProjectCreated("p2", "家庭资料归档", "娃哥", "目标")).isFalse();
         assertThat(notifier.notifyProjectStarted("p2", "家庭资料归档", "娃哥", "目标")).isFalse();
         assertThat(notifier.notifyRunQueued("t1", "p2", "标题", "家庭资料归档", "Codex", null, null)).isFalse();
+        assertThat(notifier.notifyIdleAutoRun("t1", "p2", "标题", "家庭资料归档", 2, "fw-auto")).isFalse();
         assertThat(notifier.notifyRunStarted("t1", "p2", "标题", "家庭资料归档", "Codex", "娃哥电脑")).isFalse();
         assertThat(notifier.notifyRunFinished("t1", "p2", "标题", "家庭资料归档", "Codex", null, true, false, "跑完了"))
                 .isFalse();
 
         verify(webhook, never()).notifyCard(any());
+        verify(webhook, never()).notifyCard(eq("fw-auto"), any());
     }
 
     @Test
@@ -78,6 +81,25 @@ class FeishuTaskNotifierTest {
         assertThat(card.getValue().imageUrl()).contains("/comic/insight.svg");
         assertThat(card.getValue().linkText()).isEqualTo("查看洞察详情");
         assertThat(card.getValue().linkUrl()).contains("/projects/p1");
+    }
+
+    @Test
+    void idleAutoRunNamesTheTriggerAndUsesTheConfiguredWebhook() {
+        when(gate.enabled("p1")).thenReturn(true);
+        when(webhook.notifyCard(eq("fw-auto"), any())).thenReturn(true);
+        ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+
+        assertThat(notifier.notifyIdleAutoRun(
+                "t1", "p1", "修复自动任务", "Wa All in One", 4, "fw-auto")).isTrue();
+
+        verify(webhook).notifyCard(eq("fw-auto"), card.capture());
+        assertThat(card.getValue().title()).isEqualTo("闲置时间已自动推进任务");
+        assertThat(card.getValue().fields()).contains(
+                List.of("项目", "Wa All in One"),
+                List.of("触发方式", "连续空闲 4 小时"),
+                List.of("执行方式", "AI Run · Plan 模式"));
+        assertThat(card.getValue().body()).contains("不是人工点击派工");
+        assertThat(card.getValue().linkUrl()).contains("/projects/p1?task=t1");
     }
 
     /** 娃哥往娃弟建的任务里加子任务：卡片得说清是娃哥加的，并且 @ 到娃弟。 */

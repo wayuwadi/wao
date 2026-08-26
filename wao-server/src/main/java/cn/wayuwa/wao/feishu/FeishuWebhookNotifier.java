@@ -78,6 +78,25 @@ public class FeishuWebhookNotifier {
     }
 
     /**
+     * 向业务显式选择的机器人发卡片；目标不可用时只返回失败，不影响已经完成的业务动作。
+     *
+     * @param webhookId 通用 Webhook 注册表中的稳定 id；为空时沿用系统默认目标
+     * @param card 卡片内容
+     * @return 是否真实发送成功
+     */
+    public boolean notifyCard(String webhookId, Card card) {
+        if (webhookId == null || webhookId.isBlank()) return notifyCard(card);
+        try {
+            FeishuWebhookConfigService.NotificationTarget target = webhooks.enabledTarget(webhookId.trim());
+            send(target.url(), card);
+            return true;
+        } catch (RuntimeException ex) {
+            log.warn("飞书 webhook 指定目标通知发送失败（凭据与地址已从日志隐藏）");
+            return false;
+        }
+    }
+
+    /**
      * 按当前配置发一张漫画风格卡片通知；没配置或未启用时直接跳过。
      *
      * @param card 漫画卡片内容

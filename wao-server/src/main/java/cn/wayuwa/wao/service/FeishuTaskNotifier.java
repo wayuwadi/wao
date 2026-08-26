@@ -382,6 +382,27 @@ public class FeishuTaskNotifier {
     }
 
     /**
+     * 空闲调度器自动派工时向策略指定的群说明触发原因，避免被误认为人工操作。
+     *
+     * @param idleHours 触发本次派工的连续空闲阈值
+     * @param webhookId 策略选中的 Webhook；为空时使用系统默认目标
+     * @return 是否真实发送成功
+     */
+    public boolean notifyIdleAutoRun(String taskId, String projectId, String taskTitle, String projectName,
+            int idleHours, String webhookId) {
+        if (muted(projectId)) return false;
+        return notifier.notifyCard(webhookId, new FeishuWebhookNotifier.Card(
+                "闲置时间已自动推进任务", "blue",
+                List.of(
+                        List.of("项目", blank(projectName, projectId)),
+                        List.of("任务", blank(taskTitle, taskId)),
+                        List.of("触发方式", "连续空闲 " + idleHours + " 小时"),
+                        List.of("执行方式", "AI Run · Plan 模式")),
+                "这是系统按首页自动派发策略触发的任务，不是人工点击派工。",
+                "查看任务", taskUrl(projectId, taskId)));
+    }
+
+    /**
      * AI 开始执行（执行电脑领取任务）后在群里说一声。
      *
      * @param taskId      任务 id

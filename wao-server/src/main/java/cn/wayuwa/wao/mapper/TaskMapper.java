@@ -6,24 +6,30 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+import java.util.List;
 
 /** 任务表 Mapper。 */
 @Mapper
 public interface TaskMapper extends BaseMapper<TaskEntity> {
 
     /**
-     * 读取录入时间最早、尚未开始且具备真实 AI 工作流的任务。
+     * 读取所选项目、所选安全状态中录入时间最早且具备真实 AI 工作流的任务。
      *
-     * <p>进行中、待验证和收集中的任务都不应被无人值守调度擅自重跑。
+     * <p>允许的来源状态由服务层限制；AI 进行中、待验证和已完成不会进入无人值守候选。
      */
     @Select("""
+            <script>
             SELECT t.*
             FROM task t
             JOIN ai_project_config c ON c.project_id = t.project_id
-            WHERE t.status = '待办'
+            WHERE t.project_id = #{projectId}
+              AND t.status IN
+              <foreach collection="taskStatuses" item="status" open="(" separator="," close=")">
+                #{status}
+              </foreach>
               AND c.enabled = TRUE
               AND c.repo_url IS NOT NULL
-              AND TRIM(c.repo_url) <> ''
+              AND TRIM(c.repo_url) &lt;&gt; ''
               AND NOT EXISTS (
                 SELECT 1
                 FROM ai_task_run_task rt
@@ -34,8 +40,10 @@ public interface TaskMapper extends BaseMapper<TaskEntity> {
               )
             ORDER BY t.created_at IS NULL, t.created_at, t.id
             LIMIT 1
+            </script>
             """)
-    TaskEntity selectOldestAutoRunCandidate();
+    TaskEntity selectOldestAutoRunCandidate(@Param("projectId") String projectId,
+            @Param("taskStatuses") List<String> taskStatuses);
 
     /** 飞书原消息编辑只窄更新来源字段，避免覆盖并发保存的任务结构化详情。 */
     @Update("UPDATE task SET title = #{title}, description = #{description} WHERE id = #{id}")
