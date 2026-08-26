@@ -923,6 +923,8 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V88__system_periodic_report.sql`：保存系统日/周/月报告生成状态、快照与发布信息（见 ADR-109）。
 - `V89__unified_memory_center.sql`：建立个人、组织、项目共用的权威记忆文档、不可变版本、来源、附件、设备授权、outbox 与使用审计，并把旧个人/项目/共享记忆迁为已发布 v1（见 ADR-110）。
 - `V94__network_outage_window.sql`：把 HTTP 性能巡检调整到默认断网窗口后的每日 06:30（见 ADR-121）。
+- `V97__configurable_task_auto_run.sql`：为最早任务空闲自动派发增加单项目、多来源状态与通用 Webhook 目标；
+  存量策略默认回填“Wa All in One”和“待办”（见 ADR-114）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

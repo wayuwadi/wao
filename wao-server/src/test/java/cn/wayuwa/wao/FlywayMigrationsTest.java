@@ -210,4 +210,18 @@ class FlywayMigrationsTest {
                 .contains("CURTIME() < '06:30:00'")
                 .contains("WHERE id = 'job-http-performance-ai-run'");
     }
+
+    @Test
+    void configurableTaskAutoRunMigrationDefaultsToWaoTodoAndKeepsWebhookOptional() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V97__configurable_task_auto_run.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("ADD COLUMN project_id VARCHAR(32) NULL")
+                .contains("task_statuses_json JSON NOT NULL DEFAULT (JSON_ARRAY('待办'))")
+                .contains("notification_webhook_id VARCHAR(32) NULL")
+                .contains("WHERE p.name = 'Wa All in One'");
+    }
 }

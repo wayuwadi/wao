@@ -222,6 +222,22 @@ class AiRunServiceTest {
     }
 
     @Test
+    void idleAutoRunSkipsTheDuplicateGenericQueuedNotification() {
+        TaskEntity task = task("t1", "p1", "修复登录");
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "娃哥电脑", "codex")));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        service.enqueue(List.of("t1"), null, null, null, null, null, null, true,
+                AiRunService.IDLE_AUTO_RUN_REQUESTED_BY, "https://wao.example");
+
+        verify(notifier, never()).notifyRunQueued(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     void enqueueMergesSelectedTasksIntoOneRunAndOneOrderedContext() {
         TaskEntity first = task("t1", "p1", "整理机器人点子");
         TaskEntity second = task("t2", "p1", "补齐批量验收");

@@ -21,6 +21,7 @@ import {
   rerunAiRun,
   saveAiTaskAutoRunPolicy,
 } from '@/api/ai'
+import { fetchWebhookEndpoints } from '@/api/system'
 
 vi.mock('@/api/ai', () => ({
   fetchAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
@@ -141,14 +142,21 @@ vi.mock('@/api/ai', () => ({
     intervalHours: 12, batchSize: 1,
   }),
   fetchAiTaskAutoRunPolicy: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
-    enabled: true, idleHours: 2, status: 'ready',
-    message: '空闲达到 2 小时后，将自动以 Plan 模式执行录入最早的待办。',
+    enabled: true, idleHours: 2, projectId: 'p1', taskStatuses: ['待办'],
+    notificationWebhookId: 'fw-auto', status: 'ready',
+    message: '空闲达到 2 小时后，将从「Wa All in One」自动以 Plan 模式执行录入最早的匹配任务。',
     lastActivityAt: '2026-08-25T09:00:00', nextEligibleAt: '2026-08-25T11:00:00',
     lastCheckedAt: '2026-08-25T10:55:00', lastRunId: null,
   }),
-  saveAiTaskAutoRunPolicy: vi.fn<(enabled: boolean, idleHours: number) => Promise<Record<string, unknown>>>()
-    .mockImplementation(async (enabled: boolean, idleHours: number) => ({
-      enabled, idleHours, status: enabled ? 'ready' : 'disabled',
+  saveAiTaskAutoRunPolicy: vi.fn<(
+    enabled: boolean,
+    idleHours: number,
+    projectId: string,
+    taskStatuses: Array<'待办' | '收集中' | '进行中'>,
+    notificationWebhookId: string | null,
+  ) => Promise<Record<string, unknown>>>()
+    .mockImplementation(async (enabled, idleHours, projectId, taskStatuses, notificationWebhookId) => ({
+      enabled, idleHours, projectId, taskStatuses, notificationWebhookId, status: enabled ? 'ready' : 'disabled',
       message: enabled ? `空闲达到 ${idleHours} 小时后自动派发。` : '自动派发已关闭。',
       lastActivityAt: null, nextEligibleAt: null, lastCheckedAt: null, lastRunId: null,
     })),
@@ -217,6 +225,16 @@ vi.mock('@/api/ai', () => ({
   removeAiWorkflow: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   rerunAiRun: vi.fn<() => Promise<Record<string, unknown>>>()
     .mockResolvedValue({ id: 'ar3', taskId: 't1', taskTitle: '修复自动任务', retryOfRunId: 'ar1' }),
+}))
+
+vi.mock('@/api/system', () => ({
+  fetchWebhookEndpoints: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
+    {
+      id: 'fw-auto', name: '自动任务群', description: '无人值守任务通知', urlMask: 'https://open.feishu.cn/***',
+      urlSet: true, enabled: true, systemDefault: false,
+      createdAt: '2026-08-25T09:00:00', updatedAt: '2026-08-25T09:00:00',
+    },
+  ]),
 }))
 
 /** 解除接入用例里要按台改列表，这里补齐 AiRunner 的全部字段。 */
@@ -300,15 +318,19 @@ describe('HomeView AI 控制台', () => {
     expect(fetchAiTaskAutoRunPolicy).toHaveBeenCalled()
     expect(policy.text()).toContain('空闲时自动推进最早待办')
     expect(policy.text()).toContain('Plan 模式')
+    expect(policy.text()).toContain('Wa All in One')
+    expect(policy.text()).toContain('自动任务群')
+    expect(fetchWebhookEndpoints).toHaveBeenCalled()
     expect(policy.find('.auto-run-switch').attributes('aria-checked')).toBe('true')
 
     await policy.find('.auto-run-switch').trigger('click')
     await policy.find('input').setValue(4)
+    await policy.findAll('.auto-run-statuses input')[1]!.setValue(true)
     expect(policy.text()).toContain('设置尚未保存')
     await policy.find('.auto-run-save').trigger('click')
     await flushPromises()
 
-    expect(saveAiTaskAutoRunPolicy).toHaveBeenCalledWith(false, 4)
+    expect(saveAiTaskAutoRunPolicy).toHaveBeenCalledWith(false, 4, 'p1', ['待办', '收集中'], 'fw-auto')
     expect(policy.find('.auto-run-save').text()).toContain('已保存')
     wrapper.unmount()
   })
