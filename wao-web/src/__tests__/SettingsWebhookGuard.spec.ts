@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import SettingsView from '@/views/SettingsView.vue'
+import { fetchNetworkOutageWindow, saveNetworkOutageWindow } from '@/api/system'
 
 vi.mock('@/api/system', () => ({
   fetchWebhookEndpoints: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
@@ -13,9 +14,14 @@ vi.mock('@/api/system', () => ({
   fetchBuiltinMenuRegistry: vi.fn<() => Promise<unknown>>(),
   fetchExternalAppRegistry: vi.fn<() => Promise<unknown>>(),
   fetchSiteInfo: vi.fn<() => Promise<unknown>>(),
+  fetchNetworkOutageWindow: vi.fn<() => Promise<unknown>>().mockResolvedValue({
+    enabled: true, startTime: '00:00', endTime: '06:00',
+  }),
   saveBuiltinMenuRegistry: vi.fn<() => Promise<unknown>>(),
   saveExternalAppRegistry: vi.fn<() => Promise<unknown>>(),
   saveSiteInfo: vi.fn<() => Promise<unknown>>(),
+  saveNetworkOutageWindow: vi.fn<(value: { enabled: boolean; startTime: string; endTime: string }) => Promise<unknown>>()
+    .mockImplementation(async (value) => value),
 }))
 
 describe('设置页 Webhook 草稿路由保护', () => {
@@ -56,5 +62,27 @@ describe('设置页 Webhook 草稿路由保护', () => {
     expect(window.confirm).toHaveBeenCalledOnce()
     expect((wrapper.get('input[placeholder="例如 WAO 主群"]').element as HTMLInputElement).value)
       .toBe('未保存机器人')
+  })
+
+  it('断网时段覆盖加载、草稿防丢和保存成功状态', async () => {
+    const entry = wrapper.findAll('.snav-item').find((button) => button.text() === '断网时段')
+    await entry!.trigger('click')
+    await flushPromises()
+
+    expect(fetchNetworkOutageWindow).toHaveBeenCalledOnce()
+    const times = wrapper.findAll('input[type="time"]')
+    await times[1]!.setValue('06:30')
+    expect(wrapper.text()).toContain('有未保存修改')
+
+    window.confirm = vi.fn<(message?: string) => boolean>(() => false)
+    await router.push('/other')
+    expect(router.currentRoute.value.path).toBe('/settings')
+
+    await wrapper.get('form.site-form').trigger('submit')
+    await flushPromises()
+    expect(saveNetworkOutageWindow).toHaveBeenCalledWith({
+      enabled: true, startTime: '00:00', endTime: '06:30',
+    })
+    expect(wrapper.text()).toContain('已保存')
   })
 })

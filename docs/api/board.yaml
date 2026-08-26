@@ -827,6 +827,19 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/SiteInfo' } } }
       responses: { '200': { description: OK }, '400': { description: 字段为空、超长或备案查询链接不合法 } }
+  /settings/network-outage-window:
+    get:
+      summary: 读取自动任务统一遵守的每日断网时段
+      responses:
+        '200':
+          description: 未保存时默认启用上海时间 00:00–06:00
+          content: { application/json: { schema: { $ref: '#/components/schemas/NetworkOutageWindow' } } }
+    put:
+      summary: 保存每日断网时段；开始包含、结束不包含，支持跨午夜
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/NetworkOutageWindow' } } }
+      responses: { '200': { description: 保存后的规范化配置 }, '400': { description: 时间格式错误或起止相同 } }
   /settings/navigation/media-agent:
     get:
       summary: 兼容旧前端：读取自媒体 Agent 的全局一级菜单配置
@@ -1667,6 +1680,13 @@ components:
         description: { type: string, maxLength: 160, example: 个人事务与 AI 协作系统 }
         icpNumber: { type: string, maxLength: 64, example: 豫ICP备2024105476号-1 }
         icpUrl: { type: string, format: uri, maxLength: 255, example: 'https://beian.miit.gov.cn' }
+    NetworkOutageWindow:
+      type: object
+      required: [enabled, startTime, endTime]
+      properties:
+        enabled: { type: boolean, description: 是否在该窗口暂停无人值守自动任务 }
+        startTime: { type: string, pattern: '^(?:[01]\\d|2[0-3]):[0-5]\\d$', example: '00:00' }
+        endTime: { type: string, pattern: '^(?:[01]\\d|2[0-3]):[0-5]\\d$', example: '06:00' }
     MediaAgentMenuConfig:
       type: object
       required: [label, group, order, visible]

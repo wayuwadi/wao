@@ -39,8 +39,9 @@ class AiTaskAutoRunServiceTest {
     private final AiTaskRunMapper runMapper = mock(AiTaskRunMapper.class);
     private final TaskMapper taskMapper = mock(TaskMapper.class);
     private final AiRunService runs = mock(AiRunService.class);
+    private final NetworkOutageWindowService networkOutageWindow = mock(NetworkOutageWindowService.class);
     private final AiTaskAutoRunService service = new AiTaskAutoRunService(
-            stateMapper, runMapper, taskMapper, runs, "https://wao.example/");
+            stateMapper, runMapper, taskMapper, runs, networkOutageWindow, "https://wao.example/");
     private AiTaskAutoRunStateEntity state;
 
     @BeforeEach
@@ -90,6 +91,16 @@ class AiTaskAutoRunServiceTest {
         service.checkAndLaunch();
 
         verify(taskMapper, never()).selectOldestAutoRunCandidate();
+        verify(runs, never()).enqueue(anyList(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void outageWindowDoesNotConsumeTheDatabaseCheckSlot() {
+        when(networkOutageWindow.isUnavailable()).thenReturn(true);
+
+        service.checkAndLaunch();
+
+        verify(stateMapper, never()).claimDueCheck();
         verify(runs, never()).enqueue(anyList(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 }

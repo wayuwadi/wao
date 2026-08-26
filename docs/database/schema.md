@@ -273,7 +273,7 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 | cfg_value | TEXT | 配置值；敏感键加密存储，密文带 `enc:` 前缀 |
 | updated_at | DATETIME | 最后修改时间 |
 
-全局唯一一份的键值配置。敏感值（兼容期默认 webhook 地址、App Secret）复用 `VaultCryptoService` 的 AES-256-GCM 加密后落库，接口只回脱敏形态（`SettingService.mask`），明文只在服务端调飞书接口时解出来用；因此真实凭据既不进 Git 也不必写进环境变量。V78 后通用机器人以独立表为准，旧 `feishu.webhook.*` 只保留为滚动发布兼容镜像。
+全局唯一一份的键值配置。敏感值（兼容期默认 webhook 地址、App Secret）复用 `VaultCryptoService` 的 AES-256-GCM 加密后落库，接口只回脱敏形态（`SettingService.mask`），明文只在服务端调飞书接口时解出来用；因此真实凭据既不进 Git 也不必写进环境变量。V78 后通用机器人以独立表为准，旧 `feishu.webhook.*` 只保留为滚动发布兼容镜像。每日断网窗口使用 `network.outage-window.enabled / start / end` 三个非敏感键，未保存时默认启用上海时间 `00:00–06:00`。
 飞书同步配置保存多个 `feishu.chat-sync.*` 键时使用一个事务；读取 App、群、知识库和发送者映射时使用一次批量 SQL 的事务快照，避免调用方看到半套新配置。
 V77 首次发布临时使用 `deployment.v77.feishu-sync-status` 保留 automation 的最初状态，并用持久键 `deployment.v77.rollout-state` 记录 `in-progress / complete`。安全窗口只在 Flyway V77 成功记录与 `complete` 同时存在时结束；`complete-v77-rollout` 只在 Flyway V77 记录、状态保存键和目标 job 均恰好存在时，才在同一事务中恢复 job、写入 `complete` 并删除保存键；前置缺失时不写完成标记。
 
@@ -922,6 +922,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V87__http_request_metric.sql`：保存浏览器端 HTTP 请求体验指标。
 - `V88__system_periodic_report.sql`：保存系统日/周/月报告生成状态、快照与发布信息（见 ADR-109）。
 - `V89__unified_memory_center.sql`：建立个人、组织、项目共用的权威记忆文档、不可变版本、来源、附件、设备授权、outbox 与使用审计，并把旧个人/项目/共享记忆迁为已发布 v1（见 ADR-110）。
+- `V94__network_outage_window.sql`：把 HTTP 性能巡检调整到默认断网窗口后的每日 06:30（见 ADR-121）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

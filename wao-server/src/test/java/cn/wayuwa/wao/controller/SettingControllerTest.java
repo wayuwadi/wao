@@ -9,12 +9,15 @@ import static org.mockito.Mockito.when;
 import cn.wayuwa.wao.dto.ExternalAppRegistryDto;
 import cn.wayuwa.wao.dto.FeishuWebhookEndpointDto;
 import cn.wayuwa.wao.dto.MediaAgentMenuConfigDto;
+import cn.wayuwa.wao.dto.NetworkOutageWindowDto;
+import cn.wayuwa.wao.dto.SaveNetworkOutageWindowRequest;
 import cn.wayuwa.wao.dto.SaveSiteInfoRequest;
 import cn.wayuwa.wao.dto.SiteInfoDto;
 import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.service.ExternalAppRegistryService;
 import cn.wayuwa.wao.service.FeishuWebhookConfigService;
 import cn.wayuwa.wao.service.SettingService;
+import cn.wayuwa.wao.service.NetworkOutageWindowService;
 import cn.wayuwa.wao.service.BuiltinMenuRegistryService;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,9 +28,10 @@ class SettingControllerTest {
     private final SettingService settings = mock(SettingService.class);
     private final ExternalAppRegistryService externalApps = mock(ExternalAppRegistryService.class);
     private final FeishuWebhookConfigService webhooks = mock(FeishuWebhookConfigService.class);
+    private final NetworkOutageWindowService networkOutageWindow = mock(NetworkOutageWindowService.class);
     private final SettingController controller = new SettingController(
             settings, externalApps, mock(BuiltinMenuRegistryService.class),
-            mock(FeishuWebhookNotifier.class), webhooks);
+            mock(FeishuWebhookNotifier.class), webhooks, networkOutageWindow);
 
     @Test
     void siteInfoUsesPublicDefaultsBeforeFirstSave() {
@@ -98,5 +102,15 @@ class SettingControllerTest {
 
         assertThat(result).containsExactly(expected);
         assertThat(result.get(0).urlMask()).doesNotContain("secret-token");
+    }
+
+    @Test
+    void networkOutageWindowEndpointDelegatesValidatedConfiguration() {
+        var request = new SaveNetworkOutageWindowRequest(true, "00:00", "06:30");
+        var expected = new NetworkOutageWindowDto(true, "00:00", "06:30");
+        when(networkOutageWindow.save(request)).thenReturn(expected);
+
+        assertThat(controller.saveNetworkOutageWindow(request).data()).isEqualTo(expected);
+        verify(networkOutageWindow).save(request);
     }
 }

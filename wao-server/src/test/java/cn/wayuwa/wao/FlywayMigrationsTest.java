@@ -181,4 +181,18 @@ class FlywayMigrationsTest {
                 .contains("CHECK (idle_hours BETWEEN 1 AND 168)")
                 .contains("VALUES ('oldest-task', TRUE, 2)");
     }
+
+    @Test
+    void networkOutageMigrationMovesHttpInspectionAfterRecovery() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V94__network_outage_window.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("schedule_label = '每日 06:30'")
+                .contains("cron_expr = '0 30 6 * * *'")
+                .contains("CURTIME() < '06:30:00'")
+                .contains("WHERE id = 'job-http-performance-ai-run'");
+    }
 }
