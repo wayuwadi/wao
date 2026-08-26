@@ -130,12 +130,14 @@ public class SharedChatService {
         SharedChatMessageEntity through = messages.selectById(throughId);
         if (through == null) throw new BadRequestException("要标记已读的消息不存在");
         LocalDateTime now = LocalDateTime.now();
+        List<SharedChatMessageReadEntity> pending = new ArrayList<>();
         for (SharedChatMessageEntity message : messages.latest(MAX_MESSAGES)) {
             boolean notAfter = message.getCreatedAt().isBefore(through.getCreatedAt())
                     || (message.getCreatedAt().equals(through.getCreatedAt())
                     && message.getId().compareTo(through.getId()) <= 0);
-            if (notAfter) markOneRead(message.getId(), memberId, "WAO", now);
+            if (notAfter) pending.add(readRow(message.getId(), memberId, "WAO", now));
         }
+        if (!pending.isEmpty()) reads.insertBatchIgnore(pending);
     }
 
     /** 切换当前成员对一条消息的表情回复，并返回刷新后的消息状态。 */
@@ -241,6 +243,18 @@ public class SharedChatService {
 
     private void markOneRead(String messageId, String memberId, String source, LocalDateTime at) {
         reads.insertIgnore(uuid(), messageId, "member:" + memberId, memberId, source, at);
+    }
+
+    private static SharedChatMessageReadEntity readRow(String messageId, String memberId,
+            String source, LocalDateTime at) {
+        SharedChatMessageReadEntity row = new SharedChatMessageReadEntity();
+        row.setId(uuid());
+        row.setMessageId(messageId);
+        row.setReaderKey("member:" + memberId);
+        row.setMemberId(memberId);
+        row.setSource(source);
+        row.setReadAt(at);
+        return row;
     }
 
     private MemberEntity requireMember(String memberId) {
