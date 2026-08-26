@@ -4,6 +4,7 @@ import { toast } from '@/composables/toast'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { audioStreamUrl, audioTitle, formatPlaybackTime, isAudioFile } from '@/utils/audio'
+import { useFloatingDrag } from '@/composables/floatingDrag'
 import {
   beginNeteaseAuthorization,
   disconnectNeteaseMusic,
@@ -49,6 +50,8 @@ function savedPreference(): PlayerPreference {
 }
 
 const saved = savedPreference()
+const { style: launcherStyle, dragging: launcherDragging, onPointerDown: startLauncherDrag,
+  consumeClick: consumeLauncherClick } = useFloatingDrag('wao-music-launcher-position-v1')
 const data = useDataStore()
 const preferences = usePreferenceStore()
 const audio = ref<HTMLAudioElement | null>(null)
@@ -74,6 +77,10 @@ const neteaseLoading = ref(false)
 const neteaseError = ref('')
 const bindingBusy = ref(false)
 const neteaseStreamUrl = ref('')
+
+function openFromLauncher(event: MouseEvent) {
+  if (!consumeLauncherClick(event)) open.value = true
+}
 
 interface PlaybackSession {
   songId: string
@@ -568,7 +575,7 @@ onBeforeUnmount(() => {
       <p v-if="uploadError" class="upload-error" role="alert">{{ uploadError }}</p>
     </aside>
 
-    <button v-else-if="preferences.loaded && preferences.musicPlayerLauncherVisible" class="music-launcher" type="button" title="打开音乐播放器" aria-label="打开音乐播放器" @click="open = true">
+    <button v-else-if="preferences.loaded && preferences.musicPlayerLauncherVisible" class="music-launcher" :class="{ dragging: launcherDragging }" :style="launcherStyle" type="button" title="拖动调整位置，点击打开音乐播放器" aria-label="打开音乐播放器" @pointerdown="startLauncherDrag" @click="openFromLauncher">
       <i :class="playing ? 'ri-disc-fill' : 'ri-music-2-line'"></i>
       <span v-if="playing" class="playing-dot"></span>
     </button>
@@ -672,7 +679,8 @@ input[type='range'] { height: 4px; accent-color: var(--wao-primary); cursor: poi
 .player-foot button { margin-left: auto; padding: 6px 9px; font-size: 10px; }
 .player-foot i, .player-empty i { margin-right: 3px; }
 .upload-error { margin-top: 9px; }
-.music-launcher { position: fixed; right: 22px; bottom: 22px; width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--wao-primary) 25%, transparent); border-radius: 50%; background: var(--wao-primary); color: #fff; box-shadow: 0 8px 24px color-mix(in srgb, var(--wao-primary) 32%, transparent); cursor: pointer; }
+.music-launcher { position: fixed; right: 22px; bottom: 22px; width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--wao-primary) 25%, transparent); border-radius: 50%; background: var(--wao-primary); color: #fff; box-shadow: 0 8px 24px color-mix(in srgb, var(--wao-primary) 32%, transparent); cursor: grab; touch-action: none; user-select: none; }
+.music-launcher.dragging { cursor: grabbing; }
 .music-launcher i { font-size: 21px; }
 .playing-dot { position: absolute; top: 3px; right: 2px; width: 9px; height: 9px; border: 2px solid var(--wao-bg-card); border-radius: 50%; background: var(--wao-success); }
 .spin { animation: spin .85s linear infinite; }

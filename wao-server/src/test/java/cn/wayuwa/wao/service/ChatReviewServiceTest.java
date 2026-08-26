@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.ChatReviewRunEntity;
 import cn.wayuwa.wao.domain.MemberEntity;
+import cn.wayuwa.wao.domain.SharedChatMessageEntity;
 import cn.wayuwa.wao.dto.ChatReviewReportDto;
 import cn.wayuwa.wao.dto.ChatReviewSourceDto;
 import cn.wayuwa.wao.dto.DocDto;
@@ -23,6 +24,7 @@ import cn.wayuwa.wao.dto.FeishuSenderDto;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
 import cn.wayuwa.wao.mapper.ChatReviewRunMapper;
 import cn.wayuwa.wao.mapper.MemberMapper;
+import cn.wayuwa.wao.mapper.SharedChatMessageMapper;
 import cn.wayuwa.wao.service.AiAssistantService.ReadOnlyJobResult;
 import cn.wayuwa.wao.service.FeishuChatSyncService.ChatSyncDayResult;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -54,10 +56,12 @@ class ChatReviewServiceTest {
     private final SettingService settings = mock(SettingService.class);
     private final AiAssistantService assistant = mock(AiAssistantService.class);
     private final ChatReviewAiQueue aiQueue = mock(ChatReviewAiQueue.class);
+    private final SharedChatMessageMapper sharedMessages = mock(SharedChatMessageMapper.class);
+    private final ChatReviewArtifactService artifacts = mock(ChatReviewArtifactService.class);
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
     private final Map<String, String> settingValues = new HashMap<>();
     private final ChatReviewService service = new ChatReviewService(
-            mapper, members, chatSync, settings, assistant, aiQueue, json);
+            mapper, members, chatSync, settings, assistant, aiQueue, sharedMessages, artifacts, json);
 
     @BeforeAll
     static void initializeLambdaMetadata() {
@@ -79,6 +83,8 @@ class ChatReviewServiceTest {
                 .thenReturn(1);
         when(chatSync.reviewTextOf(any(FeishuMessage.class)))
                 .thenAnswer(invocation -> ((FeishuMessage) invocation.getArgument(0)).content());
+        when(artifacts.publish(any(), any())).thenReturn(
+                new ChatReviewArtifactService.Result("/api/pages/report", "crd-cr1", "/kb/kb-chat-reviews"));
     }
 
     @Test
@@ -161,6 +167,47 @@ class ChatReviewServiceTest {
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("上海时区的今天");
         assertThatThrownBy(() -> service.create(LocalDate.of(1, 1, 1), LocalDate.of(1, 1, 1), null, "wg"))
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("1970-01-01");
+    }
+
+    @Test
+    void snapshotsRecentSharedMessagesAndEnqueuesTheirRealContent() throws Exception {
+        SharedChatMessageEntity first = sharedMessage("sm1", "第一条", LocalDateTime.of(2026, 8, 26, 9, 0));
+        SharedChatMessageEntity second = sharedMessage("sm2",
+                "第二条 ![飞书图片](/api/images/img1/raw)", LocalDateTime.of(2026, 8, 26, 9, 1));
+        when(sharedMessages.latest(20)).thenReturn(List.of(second, first));
+        MemberEntity creator = new MemberEntity();
+        creator.setName("娃哥");
+        when(members.selectById("wg")).thenReturn(creator);
+
+        String runId = service.createShared("MESSAGES", 20, " 关注结论 ", "wg");
+
+        ArgumentCaptor<ChatReviewRunEntity> inserted = ArgumentCaptor.forClass(ChatReviewRunEntity.class);
+        verify(mapper).insertWaiting(inserted.capture());
+        ChatReviewRunEntity run = inserted.getValue();
+        assertThat(runId).isEqualTo(run.getId());
+        assertThat(run.getSourceKind()).isEqualTo("SHARED_CHAT");
+        assertThat(run.getRangeKind()).isEqualTo("MESSAGES");
+        assertThat(run.getRangeValue()).isEqualTo(20);
+        assertThat(run.getFocusText()).isEqualTo("关注结论");
+        assertThat(json.readValue(run.getSourceMessageIdsJson(), String[].class))
+                .containsExactly("sm1", "sm2");
+
+        run.setWorkerToken(WORKER);
+        when(mapper.selectById(run.getId())).thenReturn(run);
+        when(sharedMessages.selectBatchIds(List.of("sm1", "sm2"))).thenReturn(List.of(first, second));
+        when(aiQueue.enqueue(eq(run.getId()), eq(WORKER), anyString())).thenReturn("ac-shared");
+
+        service.processClaimed(run.getId(), WORKER);
+
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(aiQueue).enqueue(eq(run.getId()), eq(WORKER), prompt.capture());
+        assertThat(prompt.getValue())
+                .contains("第一条", "第二条", "[图片]", "关注结论")
+                .doesNotContain("/api/images/img1/raw");
+        ChatReviewSourceDto[] sources = json.readValue(run.getSourcesJson(), ChatReviewSourceDto[].class);
+        assertThat(sources).extracting(ChatReviewSourceDto::documentId).containsExactly("sm1", "sm2");
+        assertThat(sources).extracting(ChatReviewSourceDto::messageCount).containsExactly(1, 1);
+        assertThat(run.getMessageCount()).isEqualTo(2);
     }
 
     @Test
@@ -576,6 +623,17 @@ class ChatReviewServiceTest {
             String content, boolean deleted) {
         long millis = day.atTime(LocalTime.of(hour, minute)).atZone(SHANGHAI).toInstant().toEpochMilli();
         return new FeishuMessage(id, sender, "text", content, millis, deleted);
+    }
+
+    private SharedChatMessageEntity sharedMessage(String id, String content, LocalDateTime createdAt) {
+        SharedChatMessageEntity message = new SharedChatMessageEntity();
+        message.setId(id);
+        message.setSource("FEISHU");
+        message.setExternalSenderName("娃弟");
+        message.setContent(content);
+        message.setDeleted(false);
+        message.setCreatedAt(createdAt);
+        return message;
     }
 
     private ChatReviewSourceDto source(String id, int messageCount) {

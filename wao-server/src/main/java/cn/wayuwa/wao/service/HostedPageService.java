@@ -77,6 +77,37 @@ public class HostedPageService {
         return dto(entity);
     }
 
+    /** 保存由服务端已校验业务结果生成的 UTF-8 HTML，不要求先伪装成浏览器上传文件。 */
+    public HostedPageDto saveGeneratedReport(String runId, byte[] html, String title, String memberId) {
+        if (html == null || html.length == 0) throw new BadRequestException("生成的 HTML 报告不能为空");
+        if (html.length > MAX_HTML_BYTES) throw new BadRequestException("HTML 文件超过 10MB");
+        decode(html);
+        String pageId = runReportPageId(runId);
+        HostedPageEntity entity = mapper.selectById(pageId);
+        if (entity == null) {
+            entity = new HostedPageEntity();
+            entity.setId(pageId);
+            entity.setSlug("ai-run-" + runId);
+            entity.setTitle(title);
+            entity.setCreatedAt(LocalDateTime.now());
+            entity.setCreatedBy(memberId == null ? "AI Run" : memberId);
+            entity.setFileName("report.html");
+            entity.setHtmlContent(html);
+            entity.setUpdatedAt(LocalDateTime.now());
+            try {
+                mapper.insert(entity);
+            } catch (DuplicateKeyException exception) {
+                throw new BadRequestException("AI 报告公开地址已被占用，请删除冲突页面后重试");
+            }
+        } else {
+            entity.setHtmlContent(html);
+            entity.setFileName("report.html");
+            entity.setUpdatedAt(LocalDateTime.now());
+            mapper.updateById(entity);
+        }
+        return dto(entity);
+    }
+
     /** 批量返回 AI Run 与其仍然存在的公开报告地址；查询只取元数据，不加载 HTML 正文。 */
     public Map<String, String> runReportUrls(List<String> runIds) {
         if (runIds == null || runIds.isEmpty()) return Map.of();

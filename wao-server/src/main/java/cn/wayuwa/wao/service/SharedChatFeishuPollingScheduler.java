@@ -12,7 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-/** 共享聊天入站兜底：15 秒拉新消息，每分钟回看一天以同步编辑和撤回。 */
+/** 共享聊天入站兜底：按持久化秒级配置拉新消息，每分钟回看一天以同步编辑和撤回。 */
 @Component
 @ConditionalOnProperty(prefix = "wao.feishu.shared-chat", name = "polling-enabled",
         havingValue = "true", matchIfMissing = true)
@@ -26,6 +26,7 @@ public class SharedChatFeishuPollingScheduler {
     private final SharedChatFeishuBridge bridge;
     private volatile long lastSuccessfulEnd = Instant.now().getEpochSecond();
     private volatile String lastChatId = "";
+    private volatile long lastMessagePollNanos;
 
     public SharedChatFeishuPollingScheduler(SettingService settings, FeishuOpenApiClient feishu,
             SharedChatFeishuBridge bridge) {
@@ -35,8 +36,12 @@ public class SharedChatFeishuPollingScheduler {
     }
 
     /** 新消息轮询；水位只有整批成功后才前移。 */
-    @Scheduled(fixedDelayString = "${wao.feishu.shared-chat-poll-ms:15000}", initialDelay = 15000)
+    @Scheduled(fixedDelayString = "${wao.feishu.shared-chat-poll-check-ms:1000}", initialDelay = 1000)
     public void poll() {
+        long now = System.nanoTime();
+        long interval = bridge.pollIntervalSeconds() * 1_000_000_000L;
+        if (lastMessagePollNanos != 0 && now - lastMessagePollNanos < interval) return;
+        lastMessagePollNanos = now;
         pollRange(false);
     }
 

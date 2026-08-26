@@ -82,6 +82,24 @@ public class ChatReviewController {
         return ApiResponse.ok(new ChatReviewCreatedDto(runId));
     }
 
+    /** 从共享聊天当前真实消息快照入队，范围可以按条数或小时表达。 */
+    @PostMapping("/shared")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public ApiResponse<ChatReviewCreatedDto> createShared(@RequestBody JsonNode body,
+            HttpServletRequest http) {
+        requireObject(body, Set.of("rangeKind", "rangeValue", "focus"),
+                Set.of("rangeKind", "rangeValue"));
+        JsonNode kind = body.get("rangeKind");
+        JsonNode value = body.get("rangeValue");
+        if (kind == null || !kind.isTextual()) throw new BadRequestException("rangeKind 必须是字符串");
+        if (value == null || !value.isIntegralNumber() || !value.canConvertToInt()) {
+            throw new BadRequestException("rangeValue 必须是整数");
+        }
+        String runId = service.createShared(kind.asText(), value.intValue(),
+                optionalText(body.get("focus"), "focus"), currentMember.idOr(http, "unknown"));
+        return ApiResponse.ok(new ChatReviewCreatedDto(runId));
+    }
+
     /** 返回当前活动运行和双方共享的最近终态历史。 */
     @GetMapping
     public ApiResponse<ChatReviewListDto> list() {

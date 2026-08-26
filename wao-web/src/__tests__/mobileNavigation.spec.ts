@@ -82,7 +82,7 @@ describe('手机底部模块导航', () => {
 
     expect(labels).toEqual(
       expect.arrayContaining([
-        '聊天复盘',
+        '聊天',
         '待办',
         '日历',
         '密码本',

@@ -48,6 +48,7 @@ export interface SharedChatConfig {
   chatId: string
   chatName: string
   configured: boolean
+  pollIntervalSeconds: number
 }
 
 export interface SharedChatFeishuGroup {
@@ -78,8 +79,8 @@ export const toggleSharedChatReaction = (id: string, emojiType: string) =>
 
 export const fetchSharedChatConfig = () => data<SharedChatConfig>(http.get('/api/chat/config'))
 
-export const saveSharedChatConfig = (chatId: string) =>
-  data<SharedChatConfig>(http.put('/api/chat/config', { chatId }))
+export const saveSharedChatConfig = (chatId: string, pollIntervalSeconds?: number) =>
+  data<SharedChatConfig>(http.put('/api/chat/config', { chatId, pollIntervalSeconds }))
 
 export const fetchSharedChatFeishuGroups = () =>
   data<SharedChatFeishuGroup[]>(http.get('/api/chat/feishu-chats'))

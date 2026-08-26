@@ -72,6 +72,7 @@ describe('ChatView', () => {
       chatId: '',
       chatName: '',
       configured: false,
+      pollIntervalSeconds: 15,
     })
     vi.mocked(fetchSharedChatFeishuGroups).mockResolvedValue([])
     vi.mocked(markSharedChatRead).mockResolvedValue(undefined)
@@ -79,6 +80,7 @@ describe('ChatView', () => {
       chatId: '',
       chatName: '',
       configured: false,
+      pollIntervalSeconds: 15,
     })
     vi.mocked(toggleSharedChatReaction).mockResolvedValue(message)
     vi.mocked(sendSharedChatMessage).mockResolvedValue(message)
@@ -127,6 +129,7 @@ describe('ChatView', () => {
       chatId: 'oc_real',
       chatName: '娃屋日常',
       configured: true,
+      pollIntervalSeconds: 15,
     })
     const wrapper = await mountView()
 
@@ -135,7 +138,7 @@ describe('ChatView', () => {
     await wrapper.findAll('.group-menu > button')[1]!.trigger('click')
     await flushPromises()
 
-    expect(saveSharedChatConfig).toHaveBeenCalledWith('oc_real')
+    expect(saveSharedChatConfig).toHaveBeenCalledWith('oc_real', 15)
     expect(wrapper.get('.group-trigger').text()).toContain('娃屋日常')
   })
 

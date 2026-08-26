@@ -26,6 +26,7 @@ import { useSessionStore } from '@/stores/session'
 import { renderMarkdown } from '@/utils/markdown'
 
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
+const ChatReviewPanel = defineAsyncComponent(() => import('@/components/chat/ChatReviewPanel.vue'))
 const POLL_MS = 5_000
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const EMOJIS = ['😀', '😂', '😊', '🥰', '👍', '👏', '🙏', '🎉', '✅', '❤️', '🔥', '🤔']
@@ -59,6 +60,10 @@ const configLoading = ref(true)
 const groupsLoading = ref(false)
 const configSaving = ref(false)
 const configError = ref('')
+const pollIntervalAmount = ref(15)
+const pollIntervalUnit = ref<'SECONDS' | 'MINUTES'>('SECONDS')
+const reviewOpen = ref(false)
+const initialReviewId = ref('')
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 let alive = true
 
@@ -157,6 +162,14 @@ async function loadConfig() {
   configLoading.value = true
   try {
     config.value = await fetchSharedChatConfig()
+    const seconds = config.value.pollIntervalSeconds || 15
+    if (seconds >= 60 && seconds % 60 === 0) {
+      pollIntervalUnit.value = 'MINUTES'
+      pollIntervalAmount.value = seconds / 60
+    } else {
+      pollIntervalUnit.value = 'SECONDS'
+      pollIntervalAmount.value = seconds
+    }
     configError.value = ''
   } catch (error) {
     configError.value = messageOf(error, '飞书群配置读取失败')
@@ -183,7 +196,7 @@ async function toggleGroupMenu() {
 async function selectGroup(chatId: string) {
   configSaving.value = true
   try {
-    config.value = await saveSharedChatConfig(chatId)
+    config.value = await saveSharedChatConfig(chatId, intervalSeconds())
     configError.value = ''
     groupMenuOpen.value = false
   } catch (error) {
@@ -191,6 +204,25 @@ async function selectGroup(chatId: string) {
   } finally {
     configSaving.value = false
   }
+}
+
+function intervalSeconds() {
+  return Math.round(pollIntervalAmount.value * (pollIntervalUnit.value === 'MINUTES' ? 60 : 1))
+}
+
+async function savePollingInterval() {
+  const seconds = intervalSeconds()
+  if (seconds < 5 || seconds > 3_600) {
+    configError.value = '同步频率必须在 5 秒到 60 分钟之间'
+    return
+  }
+  configSaving.value = true
+  try {
+    config.value = await saveSharedChatConfig(config.value?.chatId || '', seconds)
+    configError.value = ''
+  } catch (error) {
+    configError.value = messageOf(error, '同步频率保存失败，原设置未改变')
+  } finally { configSaving.value = false }
 }
 
 async function uploadInlineImage(file: File, done: (url: string | null, name: string) => void) {
@@ -288,6 +320,9 @@ watch([draft, replyingTo], () => {
 })
 
 onMounted(async () => {
+  const review = new URLSearchParams(window.location.search).get('review') || ''
+  reviewOpen.value = !!review
+  initialReviewId.value = review === '1' ? '' : review
   let restoredReplyId = ''
   const stored =
     localStorage.getItem(storageKey.value) ??
@@ -330,7 +365,11 @@ onBeforeUnmount(() => {
         </h1>
         <p>WAO 与所选飞书群共享同一条消息流；Markdown、图文、引用、已读和表情均保留真实状态。</p>
       </div>
-      <div class="group-picker">
+      <div class="header-actions">
+        <button class="review-trigger" type="button" @click="reviewOpen = true">
+          <i class="ri-chat-history-line"></i><span>复盘</span>
+        </button>
+        <div class="group-picker">
         <button
           class="group-trigger"
           type="button"
@@ -374,7 +413,15 @@ onBeforeUnmount(() => {
               暂无真实群，请先在自动化中配置飞书自建应用。
             </div>
           </template>
+          <section class="poll-config">
+            <div><b>消息同步频率</b><small>和当前群一起保存</small></div>
+            <label><input v-model.number="pollIntervalAmount" type="number" min="1" max="3600" />
+              <select v-model="pollIntervalUnit"><option value="SECONDS">秒</option><option value="MINUTES">分钟</option></select>
+            </label>
+            <button type="button" :disabled="configSaving" @click="savePollingInterval">保存频率</button>
+          </section>
           <div v-if="configError" class="config-error">{{ configError }}</div>
+        </div>
         </div>
       </div>
     </header>
@@ -463,11 +510,8 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </div>
-              <div class="delivery" :class="message.feishuStatus.toLowerCase()">
-                <template v-if="message.source === 'FEISHU'"
-                  ><i class="ri-arrow-left-right-line"></i> 来自飞书</template
-                >
-                <template v-else-if="message.feishuStatus === 'SENT'">
+              <div v-if="message.source !== 'FEISHU'" class="delivery" :class="message.feishuStatus.toLowerCase()">
+                <template v-if="message.feishuStatus === 'SENT'">
                   <i class="ri-check-double-line"></i>
                   {{
                     message.feishuReadCount
@@ -553,6 +597,11 @@ onBeforeUnmount(() => {
         </div>
       </form>
     </section>
+    <ChatReviewPanel
+      :open="reviewOpen"
+      :initial-run-id="initialReviewId || undefined"
+      @update:open="reviewOpen = $event"
+    />
   </main>
 </template>
 
@@ -563,6 +612,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  box-sizing: border-box;
+  padding: 0 clamp(16px, 2.2vw, 32px) 16px;
 }
 .chat-header {
   display: flex;
@@ -596,6 +647,8 @@ onBeforeUnmount(() => {
 .group-picker {
   position: relative;
 }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.review-trigger { height: 36px; padding: 0 13px; border: 1px solid var(--wao-line-control); border-radius: 10px; background: var(--wao-primary); color: #fff; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .group-trigger {
   width: 180px;
   height: 36px;
@@ -664,6 +717,15 @@ onBeforeUnmount(() => {
   color: var(--wao-text-weak);
   font-size: 10px;
 }
+.poll-config { margin-top: 6px; padding: 10px 7px 5px; border-top: 1px solid var(--wao-divider); display: grid; grid-template-columns: 1fr auto; gap: 7px; align-items: center; }
+.poll-config>div { display: grid; }
+.poll-config small { color: var(--wao-text-faint); font-size: 8px; }
+.poll-config label { display: flex; }
+.poll-config input { width: 54px; }
+.poll-config input,.poll-config select { min-height: 30px; border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); padding: 4px 6px; }
+.poll-config input { border-radius: 7px 0 0 7px; }
+.poll-config select { border-left: 0; border-radius: 0 7px 7px 0; }
+.poll-config>button { grid-column: 1/-1; min-height: 30px; border: 0; border-radius: 7px; background: var(--wao-primary-soft); color: var(--wao-primary-text); cursor: pointer; }
 .config-error {
   color: var(--wao-danger);
   background: var(--wao-danger-tint);
@@ -722,6 +784,7 @@ onBeforeUnmount(() => {
 }
 .message-body {
   min-width: 0;
+  position: relative;
 }
 .message-meta {
   display: flex;
@@ -809,9 +872,15 @@ onBeforeUnmount(() => {
   opacity: 0;
   display: flex;
   gap: 6px;
-  margin-top: 4px;
+  position: absolute;
+  left: calc(100% + 7px);
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+  white-space: nowrap;
   transition: 0.15s;
 }
+.message-row.mine .message-actions { left: auto; right: calc(100% + 7px); flex-direction: row-reverse; }
 .message-row:hover .message-actions,
 .message-actions:focus-within {
   opacity: 1;
@@ -986,6 +1055,7 @@ onBeforeUnmount(() => {
   .chat-page {
     height: calc(100dvh - 82px);
     min-height: 520px;
+    padding: 0 8px 8px;
   }
   .chat-header {
     align-items: flex-start;
@@ -996,6 +1066,8 @@ onBeforeUnmount(() => {
   .group-trigger {
     width: 145px;
   }
+  .review-trigger span { display: none; }
+  .review-trigger { width: 36px; padding: 0; justify-content: center; }
   .message-stream {
     padding: 14px 10px;
   }
@@ -1014,7 +1086,11 @@ onBeforeUnmount(() => {
   }
   .message-actions {
     opacity: 1;
+    position: static;
+    transform: none;
+    margin-top: 4px;
   }
+  .message-row.mine .message-actions { flex-direction: row; }
   .message-text {
     font-size: 12px;
   }
