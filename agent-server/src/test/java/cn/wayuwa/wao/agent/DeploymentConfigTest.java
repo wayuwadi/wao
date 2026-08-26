@@ -150,6 +150,22 @@ class DeploymentConfigTest {
                 .doesNotContain("/api/agent/videos", "linux-vpn-master-video");
     }
 
+    @Test
+    void browserVideoWorkflowStaysOnLinuxMediaNodeWithoutRequestReplay() throws IOException {
+        String nginx = read("deploy/nginx/wao.wayuwa.cn.conf.template");
+
+        assertThat(nginx)
+                .contains("location ^~ /api/agent/video-workflow")
+                .contains("X-WAO-API-Route linux-master-video-workflow")
+                .contains("client_max_body_size 320m")
+                .contains("proxy_request_buffering off");
+        String block = nginx.substring(nginx.indexOf("location ^~ /api/agent/video-workflow"));
+        block = block.substring(0, block.indexOf("\n    }"));
+        assertThat(block)
+                .contains("proxy_pass https://wao_ai_gateway")
+                .contains("proxy_next_upstream off");
+    }
+
     private static List<String> agentTables(String sql) {
         var matcher = java.util.regex.Pattern
                 .compile("CREATE TABLE (?:IF NOT EXISTS )?(agent_\\w+)", java.util.regex.Pattern.CASE_INSENSITIVE)
