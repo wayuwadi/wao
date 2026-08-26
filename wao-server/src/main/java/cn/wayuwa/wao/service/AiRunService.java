@@ -8,6 +8,7 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -91,6 +92,8 @@ public class AiRunService {
     private static final int MAX_RUNNER_LOG = 30_000;
     private static final int MAX_PROGRESS = 1_000;
     private static final int MAX_PROGRESS_PER_RUN = 50;
+    /** 首页只展示最近八条结束记录，完整历史由分页接口按需读取。 */
+    private static final int HOMEPAGE_FINISHED_RUNS = 8;
     private static final Set<String> PROGRESS_KINDS = Set.of("phase", "message", "plan", "result");
     /** 目前支持的本地 AI 工具；顺序即页面默认展示顺序。 */
     public static final List<String> ENGINES = List.of("codex", "claude", "qoder");
@@ -955,10 +958,23 @@ public class AiRunService {
     /** 最近运行；activeOnly 为 true 时只返回排队和运行中的记录。 */
     public List<AiRunDto> listRuns(boolean activeOnly) {
         recoverStaleRuns();
-        LambdaQueryWrapper<AiTaskRunEntity> query = new LambdaQueryWrapper<AiTaskRunEntity>()
-                .orderByDesc(AiTaskRunEntity::getCreatedAt).last("LIMIT 100");
-        if (activeOnly) query.in(AiTaskRunEntity::getStatus, ACTIVE);
-        return toRunDtos(runMapper.selectList(query));
+        if (activeOnly) {
+            return toRunDtos(runMapper.selectList(new LambdaQueryWrapper<AiTaskRunEntity>()
+                    .in(AiTaskRunEntity::getStatus, ACTIVE)
+                    .orderByDesc(AiTaskRunEntity::getCreatedAt).last("LIMIT 100")));
+        }
+
+        // 首页必须保留全部活动运行，但只展示八条结束记录。旧实现先读 100 条再在前端 slice(0, 8)，
+        // 还会为不可见历史批量组装进度、任务、项目、记忆和报告元数据，数据越多首页越慢。
+        Map<String, AiTaskRunEntity> homepageRuns = new LinkedHashMap<>();
+        List<AiTaskRunEntity> active = runMapper.selectActiveRuns();
+        List<AiTaskRunEntity> finished = runMapper.selectRecentFinishedRuns(HOMEPAGE_FINISHED_RUNS);
+        if (active != null) active.forEach(run -> homepageRuns.put(run.getId(), run));
+        if (finished != null) finished.forEach(run -> homepageRuns.putIfAbsent(run.getId(), run));
+        return toRunDtos(homepageRuns.values().stream()
+                .sorted(Comparator.comparing(AiTaskRunEntity::getCreatedAt,
+                        Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList());
     }
 
     /**

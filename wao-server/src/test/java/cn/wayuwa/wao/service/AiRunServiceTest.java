@@ -407,7 +407,9 @@ class AiRunServiceTest {
         TaskEntity task = task("t-old", "p1", "![image.png](data:image/png;base64,aGVsbG8=)…");
         task.setDescription("## 目标\n\n![image.png](data:image/png;base64,aGVsbG8=)\n\n根据截图修复展示"
                 + "\n\n## 自主执行约定\n\n- 自行推进");
-        when(runMapper.selectList(any())).thenReturn(List.of(), List.of(run));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(runMapper.selectActiveRuns()).thenReturn(List.of(run));
+        when(runMapper.selectRecentFinishedRuns(8)).thenReturn(List.of());
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
         when(taskMapper.selectById("t-old")).thenReturn(task);
@@ -420,6 +422,31 @@ class AiRunServiceTest {
         assertThat(runs.get(0).toString()).doesNotContain("aGVsbG8=");
         assertThat(service.runPreviewImage("ar-old", 0).content()).isEqualTo("hello".getBytes());
         assertThat(service.runPreviewImage("ar-old", 0).contentType()).isEqualTo("image/png");
+    }
+
+    @Test
+    void homepageKeepsAllActiveRunsAndOnlyEightFinishedRuns() {
+        List<AiTaskRunEntity> active = java.util.stream.IntStream.range(0, 2)
+                .mapToObj(index -> run("ar-active-" + index, "t-active-" + index, "running", index + 20))
+                .toList();
+        List<AiTaskRunEntity> finished = java.util.stream.IntStream.range(0, 8)
+                .mapToObj(index -> run("ar-finished-" + index, "t-finished-" + index, "succeeded", index))
+                .toList();
+        List<TaskEntity> tasks = java.util.stream.Stream.concat(active.stream(), finished.stream())
+                .map(run -> task(run.getTaskId(), "p1", run.getTaskId()))
+                .toList();
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(runMapper.selectActiveRuns()).thenReturn(active);
+        when(runMapper.selectRecentFinishedRuns(8)).thenReturn(finished);
+        when(taskMapper.selectBatchIds(any())).thenReturn(tasks);
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        var runs = service.listRuns(false);
+
+        assertThat(runs).hasSize(10);
+        assertThat(runs.stream().filter(item -> "running".equals(item.status()))).hasSize(2);
+        assertThat(runs.stream().filter(item -> "succeeded".equals(item.status()))).hasSize(8);
+        verify(runMapper).selectRecentFinishedRuns(8);
     }
 
     @Test
@@ -1119,8 +1146,10 @@ class AiRunServiceTest {
         run.setProjectId("p1");
         run.setStatus("succeeded");
         run.setRunnerId("rn-gone");
-        // 第一次 selectList 是自动回收扫描，第二次才是列表查询
-        when(runMapper.selectList(any())).thenReturn(List.of(), List.of(run));
+        // selectList 用于自动回收扫描；首页记录由有界专用查询读取。
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        when(runMapper.selectActiveRuns()).thenReturn(List.of());
+        when(runMapper.selectRecentFinishedRuns(8)).thenReturn(List.of(run));
         when(runnerMapper.selectBatchIds(any())).thenReturn(List.of());
         when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task("t1", "p1", "记录用量")));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
@@ -1138,6 +1167,16 @@ class AiRunServiceTest {
         runner.setEngines(String.join(",", engines));
         runner.setMaxConcurrency(1);
         return runner;
+    }
+
+    private static AiTaskRunEntity run(String id, String taskId, String status, int minute) {
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId(id);
+        run.setTaskId(taskId);
+        run.setProjectId("p1");
+        run.setStatus(status);
+        run.setCreatedAt(LocalDateTime.of(2026, 8, 26, 9, minute));
+        return run;
     }
 
     private static AiTaskRunTaskEntity runTask(String runId, String taskId, int ord) {
