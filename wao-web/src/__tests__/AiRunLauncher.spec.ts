@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
+import { usePreferenceStore } from '@/stores/preferences'
 
 vi.mock('@/api/ai', () => ({
   fetchAiRunners: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
@@ -44,6 +46,27 @@ vi.mock('@/api/aiAccount', () => ({
 }))
 
 describe('AiRunLauncher', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('极简风格收起自描述标签，详细风格恢复标签', async () => {
+    const preferences = usePreferenceStore()
+    const compact = mount(AiRunLauncher, { props: { projectId: 'p1' } })
+    await flushPromises()
+
+    expect(compact.find('.launcher').classes()).toContain('compact')
+    expect(compact.findAll('.label')).toHaveLength(0)
+    expect(compact.find('select[aria-label="执行电脑"]').exists()).toBe(true)
+    expect(compact.find('.plan-mode').text()).toContain('Plan 模式')
+    compact.unmount()
+
+    preferences.controlStyle = 'detailed'
+    const detailed = mount(AiRunLauncher, { props: { projectId: 'p1' } })
+    await flushPromises()
+    expect(detailed.find('.launcher').classes()).not.toContain('compact')
+    expect(detailed.findAll('.label').some((label) => label.text() === '执行电脑')).toBe(true)
+    detailed.unmount()
+  })
+
   it('超长子任务范围不挤掉开始按钮，并保留完整标题提示', async () => {
     const scope = `子任务「${'移动端关联与执行状态'.repeat(40)}」`
     const wrapper = mount(AiRunLauncher, { props: { projectId: 'p1', scope } })

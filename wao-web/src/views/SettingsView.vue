@@ -13,7 +13,7 @@ import {
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import { useNavStore } from '@/stores/nav'
-import { usePreferenceStore } from '@/stores/preferences'
+import { usePreferenceStore, type ControlStyle } from '@/stores/preferences'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import MemoryMcpPanel from '@/components/settings/MemoryMcpPanel.vue'
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
@@ -107,9 +107,28 @@ const prefRows = [
   { name: '庆祝动画', desc: '创建任务 / 项目、完成任务时的全屏反馈', value: '细腻纸屑' },
 ]
 
+const CONTROL_STYLE_OPTIONS: Array<{ value: ControlStyle; name: string; desc: string }> = [
+  { value: 'system', name: '系统默认', desc: '当前跟随极简风格，以后可随系统设计升级' },
+  { value: 'minimal', name: '极简风格', desc: '收起可从选中值判断的标签，适合窄屏和紧凑卡片' },
+  { value: 'detailed', name: '详细风格', desc: '始终显示控件的用途标签' },
+]
+const controlStyleForm = ref<ControlStyle>('system')
+const controlStyleSaving = ref(false)
+const controlStyleError = ref('')
+const lastControlStyleAttempt = ref<ControlStyle>('system')
+
 const musicPreferenceForm = reactive({ defaultOpen: false, launcherVisible: true })
 const musicPreferenceSaving = ref(false)
 const musicPreferenceError = ref('')
+
+watch(
+  [() => preferences.loaded, () => preferences.controlStyle],
+  ([loaded, style]) => {
+    if (!loaded || controlStyleSaving.value) return
+    controlStyleForm.value = style
+  },
+  { immediate: true },
+)
 
 watch(
   [() => preferences.loaded, () => preferences.musicPlayerDefaultOpen, () => preferences.musicPlayerLauncherVisible],
@@ -122,9 +141,27 @@ watch(
 )
 
 async function reloadPreferences() {
+  controlStyleError.value = ''
   musicPreferenceError.value = ''
   await preferences.load(true)
   if (preferences.loadError) musicPreferenceError.value = preferences.loadError
+}
+
+async function saveControlStyle(style: ControlStyle) {
+  if (controlStyleSaving.value) return
+  lastControlStyleAttempt.value = style
+  controlStyleForm.value = style
+  controlStyleSaving.value = true
+  controlStyleError.value = ''
+  try {
+    await preferences.setControlStyle(style)
+    toast('界面控件风格已保存', 'ri-checkbox-circle-line')
+  } catch (error) {
+    controlStyleForm.value = preferences.controlStyle
+    controlStyleError.value = error instanceof Error ? error.message : '界面控件风格保存失败'
+  } finally {
+    controlStyleSaving.value = false
+  }
 }
 
 async function saveMusicPreferences() {
@@ -900,6 +937,47 @@ function demo(msg: string, icon?: string) {
         <!-- 偏好 -->
         <template v-else-if="tab === 'prefs'">
           <div class="s-h1">偏好</div>
+          <div class="card thin control-style-preferences">
+            <div class="card-row wrap">
+              <div>
+                <div class="card-title">界面控件风格</div>
+                <div class="pref-desc">按当前成员跨设备保存，不会改变功能和已选数据。</div>
+              </div>
+              <span v-if="controlStyleSaving" class="connected"><span class="c-dot"></span>保存中…</span>
+              <span v-else-if="preferences.loading || !preferences.loaded" class="connected"><span class="c-dot"></span>读取中…</span>
+              <span v-else-if="!preferences.loadError && !controlStyleError" class="connected"><span class="c-dot"></span>已保存</span>
+            </div>
+            <div v-if="preferences.loadError" class="preference-error" role="alert">
+              <span>{{ preferences.loadError }}</span>
+              <button type="button" class="btn-ghost sm" :disabled="preferences.loading" @click="reloadPreferences">
+                {{ preferences.loading ? '重新读取中…' : '重新读取' }}
+              </button>
+            </div>
+            <div v-else-if="preferences.loading || !preferences.loaded" class="preference-loading" aria-live="polite">
+              <i class="ri-loader-4-line"></i>正在读取当前成员的界面风格…
+            </div>
+            <template v-else>
+              <div class="control-style-options" role="radiogroup" aria-label="界面控件风格">
+                <button
+                  v-for="option in CONTROL_STYLE_OPTIONS"
+                  :key="option.value"
+                  type="button"
+                  role="radio"
+                  :aria-checked="controlStyleForm === option.value"
+                  :class="{ on: controlStyleForm === option.value }"
+                  :disabled="controlStyleSaving"
+                  @click="saveControlStyle(option.value)"
+                >
+                  <i :class="controlStyleForm === option.value ? 'ri-radio-button-line' : 'ri-checkbox-blank-circle-line'"></i>
+                  <span><b>{{ option.name }}</b><small>{{ option.desc }}</small></span>
+                </button>
+              </div>
+              <div v-if="controlStyleError" class="preference-error control-style-save-error" role="alert">
+                <span>{{ controlStyleError }}，已保留原有风格。</span>
+                <button type="button" class="btn-ghost sm" @click="saveControlStyle(lastControlStyleAttempt)">重试保存</button>
+              </div>
+            </template>
+          </div>
           <div class="card thin">
             <div class="pref-row">
               <div class="pref-main">
@@ -1265,6 +1343,16 @@ function demo(msg: string, icon?: string) {
 .credential-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-top: 12px; }
 .profile-form { grid-template-columns: 1fr 120px auto; margin: 14px 0; }
 .music-preferences { margin-top: 14px; }
+.control-style-preferences { margin-bottom: 14px; }
+.control-style-options { margin-top: 13px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.control-style-options button { min-width: 0; padding: 11px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); color: var(--wao-text-3); cursor: pointer; display: flex; align-items: flex-start; gap: 8px; text-align: left; }
+.control-style-options button.on { border-color: var(--wao-primary); background: var(--wao-primary-tint); color: var(--wao-primary-text); box-shadow: 0 0 0 2px var(--wao-primary-soft); }
+.control-style-options button:disabled { opacity: .6; cursor: wait; }
+.control-style-options button > i { margin-top: 1px; flex: 0 0 auto; }
+.control-style-options span { min-width: 0; display: grid; gap: 4px; }
+.control-style-options b { font-size: 12.5px; }
+.control-style-options small { color: var(--wao-text-weak); font-size: 10.5px; line-height: 1.45; }
+.control-style-save-error { padding-bottom: 0; }
 .preference-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0 2px; color: var(--wao-danger); font-size: 12.5px; }
 .preference-loading { display: flex; align-items: center; gap: 7px; padding: 16px 0 2px; color: var(--wao-text-weak); font-size: 12.5px; }
 .preference-loading i { animation: preference-spin 1s linear infinite; }
@@ -1726,6 +1814,7 @@ function demo(msg: string, icon?: string) {
   .snav-items { flex-direction: row; width: max-content; }
   .snav-item { height: 34px; padding: 0 10px; white-space: nowrap; }
   .music-preference-actions { align-items: stretch; flex-direction: column; }
+  .control-style-options { grid-template-columns: 1fr; }
   .music-preference-actions .btn-primary { justify-content: center; }
   .spane { overflow: visible; }
   .scontent { padding: 16px 12px 28px; }

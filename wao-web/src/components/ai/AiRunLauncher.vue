@@ -3,9 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchAiProjectConfig, fetchAiRunners, fetchAiRunOptions } from '@/api/ai'
 import { fetchAiAccounts, type AiAccount } from '@/api/aiAccount'
 import { AI_ENGINES, engineColor } from '@/composables/aiEngines'
+import { usePreferenceStore } from '@/stores/preferences'
 import type { AiEngine, AiRunner, AiRunOptions } from '@/types'
 
 const props = defineProps<{ projectId: string; starting?: boolean; scope?: string }>()
+const preferences = usePreferenceStore()
 const emit = defineEmits<{
   close: []
   start: [engine: AiEngine, runnerId: string | null, accountId: string | null,
@@ -128,7 +130,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="launcher-mask" @click.self="emit('close')"></div>
-  <section class="launcher" role="dialog" aria-label="选择执行方式">
+  <section class="launcher" :class="{ compact: preferences.compactControls }" role="dialog" aria-label="选择执行方式">
     <header>
       <b>交给谁来跑？</b>
       <button class="close" aria-label="关闭" @click="emit('close')"><i class="ri-close-line"></i></button>
@@ -138,7 +140,7 @@ onBeforeUnmount(() => {
 
     <div v-if="loading" class="loading"><i class="ri-loader-4-line spin"></i>正在读取可用的电脑…</div>
     <template v-else>
-      <div class="label">AI 工具</div>
+      <div v-if="!preferences.compactControls" class="label">AI 工具</div>
       <div class="engine-picker">
         <button
           v-for="item in availability"
@@ -156,14 +158,14 @@ onBeforeUnmount(() => {
 
       <template v-if="engine === 'codex'">
         <template v-if="codexParametersEnabled && runOptions">
-          <div class="label">本次模型</div>
-          <select v-model="model" class="runner-select">
+          <div v-if="!preferences.compactControls" class="label">本次模型</div>
+          <select v-model="model" class="runner-select" aria-label="本次模型" title="本次模型">
             <option v-for="item in runOptions.codexModels" :key="item.id" :value="item.id">
               {{ item.label }} · {{ item.description }}
             </option>
           </select>
-          <div class="label">推理强度</div>
-          <select v-model="reasoningEffort" class="runner-select">
+          <div v-if="!preferences.compactControls" class="label">推理强度</div>
+          <select v-model="reasoningEffort" class="runner-select" aria-label="推理强度" title="推理强度">
             <option v-for="item in runOptions.reasoningEfforts" :key="item.id" :value="item.id">
               {{ item.label }} · {{ item.description }}
             </option>
@@ -173,13 +175,14 @@ onBeforeUnmount(() => {
         <p v-else-if="customApiSelected" class="hint">
           <i class="ri-information-line"></i>自定义 API 使用账号中配置的模型
         </p>
-        <div class="label">执行模式</div>
+        <div v-if="!preferences.compactControls" class="label">执行模式</div>
         <button
           class="plan-mode"
           :class="{ on: planMode }"
           type="button"
           role="switch"
           :aria-checked="planMode"
+          title="Plan 模式：先规划再连续执行"
           @click="planMode = !planMode"
         >
           <span class="switch"><i></i></span>
@@ -187,8 +190,8 @@ onBeforeUnmount(() => {
         </button>
       </template>
 
-      <div class="label">运行账号</div>
-      <select v-model="accountId" class="runner-select">
+      <div v-if="!preferences.compactControls" class="label">运行账号</div>
+      <select v-model="accountId" class="runner-select" aria-label="运行账号" title="运行账号">
         <option value="">使用执行电脑本地登录态</option>
         <option v-for="account in eligibleAccounts" :key="account.id" :value="account.id">
           {{ account.label }}{{ account.authMethod === 'api_key' ? ` · ${account.model || '自定义 API'}` : account.email ? ` · ${account.email}` : '' }}
@@ -198,8 +201,8 @@ onBeforeUnmount(() => {
         <i class="ri-information-line"></i>没有启用中的集中账号，将使用执行电脑已有登录态
       </p>
 
-      <div class="label">执行电脑</div>
-      <select v-model="runnerId" class="runner-select">
+      <div v-if="!preferences.compactControls" class="label">执行电脑</div>
+      <select v-model="runnerId" class="runner-select" aria-label="执行电脑" :title="`执行电脑：${hint}`">
         <option value="">{{ centralAccountSelected ? '默认使用 Linux 主节点' : '自动分配（任意在线电脑）' }}</option>
         <option v-for="runner in candidates" :key="runner.id" :value="runner.id">
           {{ runner.name }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
@@ -247,6 +250,7 @@ onBeforeUnmount(() => {
 .loading { padding: 18px 0; color: var(--wao-text-weak); font-size: 12px; display: flex; align-items: center; gap: 7px; justify-content: center; }
 .label { margin: 13px 0 7px; color: var(--wao-text-weak); font-size: 10.5px; font-weight: 650; letter-spacing: .5px; }
 .engine-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.launcher.compact .engine-picker { margin-top: 12px; }
 .engine-option {
   padding: 10px 9px;
   border: 1px solid var(--wao-line);
@@ -271,6 +275,7 @@ onBeforeUnmount(() => {
   color: var(--wao-text-1);
   font-size: 12px;
 }
+.launcher.compact .runner-select, .launcher.compact .plan-mode { margin-top: 10px; }
 .plan-mode {
   width: 100%; padding: 9px; display: flex; align-items: center; gap: 9px;
   border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card);

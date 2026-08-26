@@ -6,13 +6,13 @@ import SettingsView from '@/views/SettingsView.vue'
 import { usePreferenceStore } from '@/stores/preferences'
 
 const preferenceApi = vi.hoisted(() => ({
-  fetchPreference: vi.fn(),
-  savePreference: vi.fn(),
+  fetchPreference: vi.fn<(key: string) => Promise<string>>(),
+  savePreference: vi.fn<(key: string, value: string) => Promise<void>>(),
 }))
 
 vi.mock('@/api/favorites', () => preferenceApi)
 
-describe('设置页音乐播放器偏好', () => {
+describe('设置页成员偏好', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
@@ -48,5 +48,54 @@ describe('设置页音乐播放器偏好', () => {
     )
     expect(preferences.musicPlayerDefaultOpen).toBe(true)
     expect(preferences.musicPlayerLauncherVisible).toBe(false)
+  })
+
+  it('可切换极简与详细控件风格并跨设备保存', async () => {
+    const preferences = usePreferenceStore()
+    await preferences.load()
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/settings', component: { template: '<div />' } }],
+    })
+    await router.push('/settings?tab=prefs')
+    await router.isReady()
+
+    const wrapper = mount(SettingsView, { global: { plugins: [router] } })
+    const choices = wrapper.findAll('.control-style-options button')
+    expect(choices).toHaveLength(3)
+    expect(choices[0]!.attributes('aria-checked')).toBe('true')
+
+    await choices[2]!.trigger('click')
+    await flushPromises()
+
+    expect(preferenceApi.savePreference).toHaveBeenCalledWith('control-style-v1', 'detailed')
+    expect(preferences.controlStyle).toBe('detailed')
+    expect(choices[2]!.attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('.control-style-preferences').text()).toContain('已保存')
+  })
+
+  it('界面风格保存失败后回退并提供重试', async () => {
+    const preferences = usePreferenceStore()
+    await preferences.load()
+    preferenceApi.savePreference.mockRejectedValueOnce(new Error('网络不可用'))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/settings', component: { template: '<div />' } }],
+    })
+    await router.push('/settings?tab=prefs')
+    await router.isReady()
+
+    const wrapper = mount(SettingsView, { global: { plugins: [router] } })
+    await wrapper.findAll('.control-style-options button')[2]!.trigger('click')
+    await flushPromises()
+
+    expect(preferences.controlStyle).toBe('system')
+    expect(wrapper.find('.control-style-save-error').text()).toContain('网络不可用')
+    expect(wrapper.find('.control-style-save-error button').text()).toBe('重试保存')
+
+    await wrapper.find('.control-style-save-error button').trigger('click')
+    await flushPromises()
+    expect(preferenceApi.savePreference).toHaveBeenLastCalledWith('control-style-v1', 'detailed')
+    expect(preferences.controlStyle).toBe('detailed')
   })
 })

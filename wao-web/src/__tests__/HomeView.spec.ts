@@ -5,6 +5,7 @@ import { createPinia } from 'pinia'
 import HomeView from '@/views/HomeView.vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import { useDataStore } from '@/stores/data'
+import { usePreferenceStore } from '@/stores/preferences'
 import type { AiRunner } from '@/types'
 import {
   fetchAiRunnerLog,
@@ -267,7 +268,7 @@ function mountHome() {
   })
   const pinia = createPinia()
   const data = useDataStore(pinia)
-  return { data, router, wrapper: mount(HomeView, { global: { plugins: [pinia, router] } }) }
+  return { data, router, pinia, wrapper: mount(HomeView, { global: { plugins: [pinia, router] } }) }
 }
 
 function pasteInto(el: Element, files: File[]) {
@@ -387,6 +388,24 @@ describe('HomeView AI 控制台', () => {
     )
     expect(editor.props('modelValue')).toBe('')
     expect(wrapper.findAll('.run-card').some((card) => card.text().includes('把黄帝内经和易经结合 AI'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('自主目标按成员偏好切换极简与详细标签', async () => {
+    vi.useFakeTimers()
+    const { pinia, wrapper } = mountHome()
+    await flushPromises()
+    const preferences = usePreferenceStore(pinia)
+
+    expect(wrapper.findAll('.goal-control-field > span')).toHaveLength(0)
+    expect(wrapper.find('.goal-workflow-select').attributes('aria-label')).toBe('放进哪条工作流')
+    expect(wrapper.find('.goal-runner-select').text()).toContain('自动分配电脑')
+
+    preferences.controlStyle = 'detailed'
+    await flushPromises()
+    expect(wrapper.findAll('.goal-control-field > span')).toHaveLength(2)
+    expect(wrapper.text()).toContain('放进哪条工作流')
+    expect(wrapper.text()).toContain('执行电脑')
     wrapper.unmount()
   })
 
