@@ -117,6 +117,17 @@ const DATA_DOMAINS: DataDomain[] = [
   'files', 'images', 'vault', 'schedule', 'suggestions', 'goals',
 ]
 
+/**
+ * 多端数据同步在连续无变化时逐级退避，避免可见页面每 15 秒永久下载完整项目与任务。
+ * 一旦发现变化、请求失败或窗口重新聚焦，就回到最快档保证恢复与协作更新及时。
+ */
+const SERVER_SYNC_DELAYS_MS = [15_000, 30_000, 60_000] as const
+export function nextServerSyncDelay(unchangedRounds: number): number {
+  return SERVER_SYNC_DELAYS_MS[
+    Math.min(Math.max(unchangedRounds, 0), SERVER_SYNC_DELAYS_MS.length - 1)
+  ]!
+}
+
 const DOMAIN_ERROR_MESSAGES: Record<DataDomain, string> = {
   areas: '领域读取失败',
   projects: '项目读取失败',
@@ -290,6 +301,7 @@ export const useDataStore = defineStore('data', () => {
     apiLive.value = a !== null && p !== null && t !== null
     vaultError.value = va === null
     if (apiLive.value) {
+      lastServerSyncFingerprint = serverSyncFingerprint(p!, t!)
       startSync()
       Object.keys(taskDrafts.value).forEach(persistTask)
     }
@@ -300,20 +312,54 @@ export const useDataStore = defineStore('data', () => {
    * 无需手动大刷即可出现（对齐「新建任务后别人要刷新才可见」的修复）。
    * 仅在页面可见时轮询，避免后台标签页空转；页面重新获得焦点时立即同步一次。
    */
-  let syncTimer: ReturnType<typeof setInterval> | null = null
+  let syncTimer: ReturnType<typeof setTimeout> | null = null
   let syncing = false
+  let unchangedSyncRounds = 0
+  let lastServerSyncFingerprint = ''
+
+  function serverSyncFingerprint(projectList: Project[], taskList: Task[]) {
+    return JSON.stringify([projectList, taskList])
+  }
+
+  function scheduleSync() {
+    if (syncTimer || !apiLive.value) return
+    syncTimer = setTimeout(() => {
+      syncTimer = null
+      void syncFromServer()
+    }, nextServerSyncDelay(unchangedSyncRounds))
+  }
+
   async function syncFromServer() {
-    if (!apiLive.value || syncing || document.hidden) return
+    if (!apiLive.value || syncing) return
+    if (document.hidden) {
+      scheduleSync()
+      return
+    }
     syncing = true
     try {
       const [p, t] = await Promise.all([fetchProjects(), fetchTasks()])
+      const fingerprint = serverSyncFingerprint(p, t)
+      unchangedSyncRounds = fingerprint === lastServerSyncFingerprint
+        ? unchangedSyncRounds + 1
+        : 0
+      lastServerSyncFingerprint = fingerprint
       if (Array.isArray(p)) mergeList(projects.value, p)
       if (Array.isArray(t)) mergeList(tasks.value, t, taskProtectedIds())
     } catch {
+      unchangedSyncRounds = 0
       /* 网络抖动时静默跳过，下个周期重试 */
     } finally {
       syncing = false
+      scheduleSync()
     }
+  }
+
+  function syncImmediately() {
+    if (document.hidden) return
+    unchangedSyncRounds = 0
+    if (syncTimer) clearTimeout(syncTimer)
+    syncTimer = null
+    void syncFromServer()
   }
   /** 用服务端列表就地合并本地数组：更新已存在项、追加新项、移除已删除项，保持数组引用稳定。 */
   function mergeList<T extends { id: string }>(local: T[], remote: T[], protectedIds = new Set<string>()) {
@@ -334,9 +380,9 @@ export const useDataStore = defineStore('data', () => {
   }
   function startSync() {
     if (syncTimer) return
-    syncTimer = setInterval(syncFromServer, 15_000)
-    window.addEventListener('focus', syncFromServer)
-    document.addEventListener('visibilitychange', syncFromServer)
+    scheduleSync()
+    window.addEventListener('focus', syncImmediately)
+    document.addEventListener('visibilitychange', syncImmediately)
   }
 
   /**
