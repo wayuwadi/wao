@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.service;
 
+import java.time.LocalDateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -8,7 +9,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** 只在指定节点于上海午夜产出系统日报，并按边界同时产出周报、月报。 */
+/** 只在指定节点按团队共享设置刷新系统日报、周报和月报。 */
 @Component
 @ConditionalOnProperty(name = "wao.system-report.scheduler-enabled", havingValue = "true")
 public class SystemPeriodicReportScheduler {
@@ -25,14 +26,15 @@ public class SystemPeriodicReportScheduler {
         prepare("启动补齐");
     }
 
-    /** 每天上海时间 00:00 产出最近结束的周期；幂等键允许安全重试。 */
-    @Scheduled(cron = "${wao.system-report.cron:0 0 0 * * *}", zone = "Asia/Shanghai")
-    public void prepareAtMidnight() {
+    /** 每分钟检查持久化刷新时间与频率；未命中时不查询报告数据。 */
+    @Scheduled(cron = "0 * * * * *", zone = "Asia/Shanghai")
+    public void prepareConfiguredReports() {
         try {
-            reports.prepareMidnightReports();
-            log.info("系统日/周/月报告午夜产出完成");
+            if (reports.prepareScheduledReports(LocalDateTime.now(SystemPeriodicReportService.SHANGHAI))) {
+                log.info("系统日/周/月报告按共享设置刷新完成");
+            }
         } catch (RuntimeException exception) {
-            log.error("系统日/周/月报告午夜产出失败，将在下次启动或调度时重试", exception);
+            log.error("系统日/周/月报告自动刷新失败，将在下次启动或调度时重试", exception);
         }
     }
 

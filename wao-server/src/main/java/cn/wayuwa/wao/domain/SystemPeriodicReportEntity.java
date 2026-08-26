@@ -26,6 +26,7 @@ public class SystemPeriodicReportEntity {
     private Long totalTokens;
     private String taskSourcesJson;
     private String runSourcesJson;
+    private String aggregationOptionsJson;
     private LocalDateTime generatedAt;
 
     public String getId() { return id; }
@@ -64,6 +65,8 @@ public class SystemPeriodicReportEntity {
     public void setTaskSourcesJson(String taskSourcesJson) { this.taskSourcesJson = taskSourcesJson; }
     public String getRunSourcesJson() { return runSourcesJson; }
     public void setRunSourcesJson(String runSourcesJson) { this.runSourcesJson = runSourcesJson; }
+    public String getAggregationOptionsJson() { return aggregationOptionsJson; }
+    public void setAggregationOptionsJson(String aggregationOptionsJson) { this.aggregationOptionsJson = aggregationOptionsJson; }
     public LocalDateTime getGeneratedAt() { return generatedAt; }
     public void setGeneratedAt(LocalDateTime generatedAt) { this.generatedAt = generatedAt; }
 }

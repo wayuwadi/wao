@@ -948,6 +948,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
   存量策略默认回填“Wa All in One”和“待办”（见 ADR-114）。
 - `V98__shared_chat_feishu_bridge.sql`：共享聊天飞书外部身份、消息幂等 id、引用关系、真实已读与表情事实（见 ADR-127）。
 - `V100__shared_chat_review_integration.sql`：聊天复盘共享消息范围、托管报告与知识库文档关联（见 ADR-130）。
+- `V101__configurable_system_periodic_report.sql`：为系统周期报告补充当次汇总项快照，存量报告回填任务与 AI Run 全量汇总语义（见 ADR-109）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

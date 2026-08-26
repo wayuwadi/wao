@@ -52,7 +52,6 @@ describe('侧边栏导航配置', () => {
       'skills',
       externalAppItemId('media-agent'),
       'chat',
-      'system-reports',
     ])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
       '/apps/media-agent',
@@ -86,8 +85,9 @@ describe('侧边栏导航配置', () => {
     expect(route?.redirect).toEqual({ path: '/chat', query: { review: '1' } })
   })
 
-  it('系统报告作为团队共享模块提供日周月切换入口', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('system-reports')
+  it('系统报告从首页进入但保留兼容路由', () => {
+    expect(DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)).not.toContain('system-reports')
+    expect(NAV_GROUPS.flatMap((group) => group.items)).not.toContain('system-reports')
     const route = router.getRoutes().find((item) => item.name === 'system-reports')
     expect(route?.path).toBe('/system-reports')
     expect(route?.meta.module).toBe('system-reports')

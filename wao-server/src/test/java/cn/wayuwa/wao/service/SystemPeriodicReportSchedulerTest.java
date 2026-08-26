@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.service;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -7,14 +8,14 @@ import org.junit.jupiter.api.Test;
 
 class SystemPeriodicReportSchedulerTest {
     @Test
-    void startupBackfillsMissingPeriodsAndMidnightUsesBoundarySchedule() {
+    void startupBackfillsMissingPeriodsAndSchedulerUsesPersistedSettings() {
         SystemPeriodicReportService service = mock(SystemPeriodicReportService.class);
         SystemPeriodicReportScheduler scheduler = new SystemPeriodicReportScheduler(service);
 
         scheduler.prepareAfterStartup();
-        scheduler.prepareAtMidnight();
+        scheduler.prepareConfiguredReports();
 
         verify(service).prepareClosedPeriods();
-        verify(service).prepareMidnightReports();
+        verify(service).prepareScheduledReports(any());
     }
 }

@@ -14,12 +14,12 @@ public interface SystemPeriodicReportMapper extends BaseMapper<SystemPeriodicRep
               (id, period_type, period_key, period_start, period_end, project_total, task_total,
                open_task_total, ai_run_total, task_created_count, task_completed_count, ai_run_count,
                ai_run_success_count, ai_run_failure_count, ai_run_metered_count, total_tokens,
-               task_sources_json, run_sources_json, generated_at)
+               task_sources_json, run_sources_json, aggregation_options_json, generated_at)
             VALUES
               (#{id}, #{periodType}, #{periodKey}, #{periodStart}, #{periodEnd}, #{projectTotal}, #{taskTotal},
                #{openTaskTotal}, #{aiRunTotal}, #{taskCreatedCount}, #{taskCompletedCount}, #{aiRunCount},
                #{aiRunSuccessCount}, #{aiRunFailureCount}, #{aiRunMeteredCount}, #{totalTokens},
-               #{taskSourcesJson}, #{runSourcesJson}, #{generatedAt})
+               #{taskSourcesJson}, #{runSourcesJson}, #{aggregationOptionsJson}, #{generatedAt})
             ON DUPLICATE KEY UPDATE
               period_start=VALUES(period_start), period_end=VALUES(period_end), project_total=VALUES(project_total),
               task_total=VALUES(task_total), open_task_total=VALUES(open_task_total), ai_run_total=VALUES(ai_run_total),
@@ -27,7 +27,8 @@ public interface SystemPeriodicReportMapper extends BaseMapper<SystemPeriodicRep
               ai_run_count=VALUES(ai_run_count), ai_run_success_count=VALUES(ai_run_success_count),
               ai_run_failure_count=VALUES(ai_run_failure_count), ai_run_metered_count=VALUES(ai_run_metered_count),
               total_tokens=VALUES(total_tokens), task_sources_json=VALUES(task_sources_json),
-              run_sources_json=VALUES(run_sources_json), generated_at=VALUES(generated_at)
+              run_sources_json=VALUES(run_sources_json), aggregation_options_json=VALUES(aggregation_options_json),
+              generated_at=VALUES(generated_at)
             """)
     int upsert(SystemPeriodicReportEntity report);
 }

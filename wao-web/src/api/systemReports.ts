@@ -1,6 +1,15 @@
 import { http, type ApiResponse } from './http'
 
 export type SystemReportPeriod = 'DAY' | 'WEEK' | 'MONTH'
+export type SystemReportAggregation = 'TASK_CREATED' | 'TASK_COMPLETED' | 'AI_RUN'
+
+export interface SystemReportSettings {
+  automaticEnabled: boolean
+  refreshTime: string
+  refreshFrequencyHours: 1 | 3 | 6 | 12 | 24
+  periods: SystemReportPeriod[]
+  aggregationOptions: SystemReportAggregation[]
+}
 
 export interface SystemReportTask {
   id: string
@@ -46,8 +55,22 @@ export interface SystemPeriodicReport {
   totalTokens: number
   tasks: SystemReportTask[]
   runs: SystemReportRun[]
+  aggregationOptions: SystemReportAggregation[]
   generatedAt: string | null
   coverageMessage: string
+}
+
+export async function fetchSystemReportSettings() {
+  const response = await http.get<ApiResponse<SystemReportSettings>>('/api/system-reports/settings')
+  return response.data.data
+}
+
+export async function saveSystemReportSettings(settings: SystemReportSettings) {
+  const response = await http.put<ApiResponse<SystemReportSettings>>(
+    '/api/system-reports/settings',
+    settings,
+  )
+  return response.data.data
 }
 
 export async function fetchSystemReport(period: SystemReportPeriod, anchorDate?: string) {

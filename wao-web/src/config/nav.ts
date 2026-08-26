@@ -193,14 +193,6 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
-      id: 'system-reports',
-      label: '系统报告',
-      icon: 'ri-bar-chart-box-line',
-      group: 'PUBLIC',
-      order: 16,
-      visible: true,
-    },
-    {
       id: 'todo',
       label: '待办',
       icon: 'ri-checkbox-multiple-line',
@@ -369,7 +361,7 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
   {
     label: '公共',
-    items: ['projects', 'ideas', 'skills', 'chat', 'system-reports'],
+    items: ['projects', 'ideas', 'skills', 'chat'],
   },
   { label: '个人', items: PERSONAL_ITEMS },
   { label: '工具', items: ['automation', 'files', 'games', 'request-monitoring'] },
