@@ -53,6 +53,42 @@ assert_plan 'WAO_TEST_WAO_WEB=true' "$plan"
 assert_plan 'WAO_TEST_AGENT_WEB=true' "$plan"
 
 base="$(git -C "$fixture" rev-parse HEAD)"
+mkdir -p "$fixture/wao-web/src/__tests__"
+printf 'web test\n' >"$fixture/wao-web/src/__tests__/App.spec.ts"
+git -C "$fixture" add wao-web
+git -C "$fixture" commit -qm wao-web-test-only
+plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
+assert_plan 'WAO_DEPLOY_REQUIRED=false' "$plan"
+assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
+assert_plan 'WAO_TEST_WAO_WEB=true' "$plan"
+assert_plan 'WAO_TEST_AGENT_WEB=false' "$plan"
+assert_plan 'WAO_TEST_AI_RUNNER=false' "$plan"
+
+base="$(git -C "$fixture" rev-parse HEAD)"
+mkdir -p "$fixture/agent-web/src/components"
+printf 'agent test\n' >"$fixture/agent-web/src/components/PublishCenter.spec.ts"
+git -C "$fixture" add agent-web
+git -C "$fixture" commit -qm agent-web-test-only
+plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
+assert_plan 'WAO_DEPLOY_REQUIRED=false' "$plan"
+assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
+assert_plan 'WAO_TEST_WAO_WEB=false' "$plan"
+assert_plan 'WAO_TEST_AGENT_WEB=true' "$plan"
+assert_plan 'WAO_TEST_AI_RUNNER=false' "$plan"
+
+base="$(git -C "$fixture" rev-parse HEAD)"
+mkdir -p "$fixture/deploy/ai-runner"
+printf 'runner test\n' >"$fixture/deploy/ai-runner/test_runner.py"
+git -C "$fixture" add deploy/ai-runner
+git -C "$fixture" commit -qm ai-runner-test-only
+plan="$(cd "$fixture" && sh "$planner" "$base" HEAD)"
+assert_plan 'WAO_DEPLOY_REQUIRED=false' "$plan"
+assert_plan 'WAO_BACKEND_PROJECTS=none' "$plan"
+assert_plan 'WAO_TEST_WAO_WEB=false' "$plan"
+assert_plan 'WAO_TEST_AGENT_WEB=false' "$plan"
+assert_plan 'WAO_TEST_AI_RUNNER=true' "$plan"
+
+base="$(git -C "$fixture" rev-parse HEAD)"
 printf 'pipeline\n' >"$fixture/Jenkinsfile"
 git -C "$fixture" add Jenkinsfile
 git -C "$fixture" commit -qm pipeline

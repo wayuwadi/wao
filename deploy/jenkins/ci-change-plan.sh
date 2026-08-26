@@ -67,13 +67,22 @@ else
             *) deploy_required=true ;;
           esac
           ;;
+        wao-web/src/__tests__/*)
+          test_wao_web=true
+          ;;
         wao-web/*)
           test_wao_web=true
           deploy_required=true
           ;;
+        agent-web/src/__tests__/*|agent-web/src/*.spec.*|agent-web/src/*.test.*)
+          test_agent_web=true
+          ;;
         agent-web/*)
           test_agent_web=true
           deploy_required=true
+          ;;
+        deploy/ai-runner/test_*.py)
+          test_ai_runner=true
           ;;
         deploy/ai-runner/*)
           add_backend_project wao-server
