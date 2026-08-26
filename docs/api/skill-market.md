@@ -5,6 +5,7 @@
 - `GET /api/public/skill-categories`：返回固定分类。
 - `GET /api/public/skills`：支持 `keyword`、`category`、`platform`、`sort=newest|downloads|favorites`、`page`、`pageSize`。
 - `GET /api/public/skills/{handle}/{slug}`：返回当前公开版本、历史公开版本和登录成员的收藏状态。
+- `GET /api/public/skills/{handle}/{slug}/files?version=...&path=...`：只读预览已审核版本中的单个 UTF-8 文本文件；二进制、非 UTF-8 或超过 512 KiB 的文件返回不可预览原因。
 - `GET /api/public/skills/{handle}/{slug}/download?version=...`：下载已审核 ZIP，响应头 `X-Skill-Sha256` 返回包哈希。
 
 ## 成员接口
@@ -24,4 +25,4 @@
 - `POST /api/admin/skill-reviews/{versionId}/approve`：通过并原子切换当前公开版本。
 - `POST /api/admin/skill-reviews/{versionId}/reject`：驳回，`note` 必填。
 
-所有 JSON 接口使用 `ApiResponse<T>`。公共下载与成员上传会经过 Redis 限速；Redis 短时故障时业务不被中断。
+所有 JSON 接口使用 `ApiResponse<T>`。公共下载、文件预览与成员上传会经过 Redis 限速；Redis 短时故障时业务不被中断。

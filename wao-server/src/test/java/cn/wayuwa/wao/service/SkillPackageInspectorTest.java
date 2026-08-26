@@ -50,6 +50,24 @@ class SkillPackageInspectorTest {
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("UTF-8");
     }
 
+    @Test
+    void previewsUtf8FilesAndClosesBinaryOrOversizedContent() throws Exception {
+        Map<String, byte[]> entries = new LinkedHashMap<>();
+        entries.put("SKILL.md", valid().getBytes(StandardCharsets.UTF_8));
+        entries.put("references/rules.md", "先检查，再执行。".getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/logo.png", new byte[] {1, 0, 2});
+        entries.put("references/large.txt", new byte[SkillPackageInspector.MAX_PREVIEW_BYTES + 1]);
+        byte[] canonical = inspector.inspectZip(zipBytes(entries)).packageContent();
+
+        var text = inspector.previewFile(canonical, "references/rules.md");
+        assertThat(text.previewable()).isTrue();
+        assertThat(text.content()).isEqualTo("先检查，再执行。");
+        assertThat(inspector.previewFile(canonical, "assets/logo.png").message()).contains("二进制");
+        assertThat(inspector.previewFile(canonical, "references/large.txt").message()).contains("512 KiB");
+        assertThatThrownBy(() -> inspector.previewFile(canonical, "../SKILL.md"))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("不安全路径");
+    }
+
     private static String valid() { return "---\nname: Safe skill\ndescription: A safe test skill\n---\n# Safe"; }
     private static byte[] zip(Map<String, String> entries) throws Exception {
         Map<String, byte[]> bytes = new LinkedHashMap<>(); entries.forEach((key, value) -> bytes.put(key, value.getBytes(StandardCharsets.UTF_8)));

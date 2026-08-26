@@ -41,6 +41,12 @@ public class PublicSkillController {
         return ApiResponse.ok(market.detail(handle,slug,currentMember.id(request)));
     }
 
+    @GetMapping("/skills/{handle}/{slug}/files")
+    public ApiResponse<SkillDtos.FilePreview> file(@PathVariable String handle, @PathVariable String slug,
+            @RequestParam(required=false) String version, @RequestParam String path, HttpServletRequest request) {
+        return ApiResponse.ok(market.filePreview(handle,slug,version,path,clientKey(request)));
+    }
+
     @GetMapping("/skills/{handle}/{slug}/download")
     public ResponseEntity<byte[]> download(@PathVariable String handle, @PathVariable String slug,
             @RequestParam(required=false) String version, HttpServletRequest request) {

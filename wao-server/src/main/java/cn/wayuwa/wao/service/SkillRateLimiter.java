@@ -28,6 +28,13 @@ public class SkillRateLimiter {
         if (increment(key, Duration.ofHours(2)) > 20) throw new BadRequestException("下载过于频繁，请稍后再试");
     }
 
+    /** 同一网络地址每小时对同一 Skill 最多预览 120 个文件，避免反复解压消耗资源。 */
+    public void checkPreview(String clientKey, String skillId) {
+        long hour = System.currentTimeMillis() / 3_600_000L;
+        String key = "wao:skill:preview:" + clientKey + ":" + skillId + ":" + hour;
+        if (increment(key, Duration.ofHours(2)) > 120) throw new BadRequestException("文件预览过于频繁，请稍后再试");
+    }
+
     private long increment(String key, Duration ttl) {
         if (redis == null) return 0;
         try {

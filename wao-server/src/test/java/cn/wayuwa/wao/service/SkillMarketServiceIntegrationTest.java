@@ -50,6 +50,9 @@ class SkillMarketServiceIntegrationTest {
         assertThat(market.market("meeting", "", "codex", "newest", 1, 20).total()).isEqualTo(1);
         var detail = market.detail("wao-author", "meeting-helper", null);
         assertThat(detail.publishedVersion().version()).isEqualTo("1.0.1");
+        var preview = market.filePreview("wao-author", "meeting-helper", null, "references/guide.md", "preview-ip");
+        assertThat(preview.previewable()).isTrue();
+        assertThat(preview.content()).isEqualTo("Guide for 1.0.1");
         market.favorite("author", first.id(), true); market.favorite("author", first.id(), true);
         assertThat(market.detail("wao-author", "meeting-helper", "author").skill().favorites()).isEqualTo(1);
         var oldDownload = market.download("wao-author", "meeting-helper", "1.0.1", "test-ip");
@@ -63,6 +66,8 @@ class SkillMarketServiceIntegrationTest {
         market.approve("admin", pending.id());
         assertThat(market.detail("wao-author", "meeting-helper", null).publishedVersion().version()).isEqualTo("2.0.0");
         assertThat(market.download("wao-author", "meeting-helper", "1.0.1", "history-ip").sha256()).isEqualTo(oldDownload.sha256());
+        assertThat(market.filePreview("wao-author", "meeting-helper", "1.0.1", "references/guide.md", "history-ip").content())
+                .isEqualTo("Guide for 1.0.1");
     }
 
     @Test void onlyAdministratorsCanReview() throws Exception {
@@ -92,6 +97,9 @@ class SkillMarketServiceIntegrationTest {
         try (ZipArchiveOutputStream zip = new ZipArchiveOutputStream(out)) {
             zip.putArchiveEntry(new ZipArchiveEntry("meeting/SKILL.md"));
             zip.write(("---\nname: Meeting Helper\ndescription: Release " + version + "\n---\n# Install").getBytes(StandardCharsets.UTF_8));
+            zip.closeArchiveEntry();
+            zip.putArchiveEntry(new ZipArchiveEntry("meeting/references/guide.md"));
+            zip.write(("Guide for " + version).getBytes(StandardCharsets.UTF_8));
             zip.closeArchiveEntry();
         }
         return new MockMultipartFile("archive", "meeting.zip", "application/zip", out.toByteArray());

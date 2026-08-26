@@ -239,6 +239,21 @@ public class SkillMarketService {
         return new SkillDtos.Detail(toCard(row), toVersion(published), history, favorite);
     }
 
+    /** 预览一个已审核版本中的单个文件；包内容始终只读且不会执行。 */
+    public SkillDtos.FilePreview filePreview(String handle, String slug, String requestedVersion,
+            String path, String clientKey) {
+        SkillMarketRow row = skills.findPublic(handle, slug);
+        if (row == null) throw new NotFoundException("Skill 不存在或已下架");
+        SkillVersionEntity selected = publicVersion(row, requestedVersion);
+        limiter.checkPreview(clientKey, row.getId());
+        SkillVersionEntity stored = versions.selectById(selected.getId());
+        byte[] content = stored == null ? null : stored.getPackageContent();
+        if (content == null) throw new NotFoundException("Skill 包不存在");
+        SkillPackageInspector.FilePreview preview = inspector.previewFile(content, path);
+        return new SkillDtos.FilePreview(selected.getVersion(), preview.path(), preview.size(), preview.previewable(),
+                preview.content(), preview.message());
+    }
+
     /** 收藏或取消收藏公开 Skill。 */
     @Transactional
     public void favorite(String memberId, String skillId, boolean enabled) {
@@ -254,16 +269,21 @@ public class SkillMarketService {
     public Download download(String handle, String slug, String requestedVersion, String clientKey) {
         SkillMarketRow row = skills.findPublic(handle, slug);
         if (row == null) throw new NotFoundException("Skill 不存在或已下架");
-        SkillVersionEntity selected = versions.listMeta(row.getId()).stream()
-                .filter(v -> "PUBLISHED".equals(v.getState()))
-                .filter(v -> text(requestedVersion).isBlank() ? v.getId().equals(row.getVersionId()) : v.getVersion().equals(requestedVersion))
-                .findFirst().orElseThrow(() -> new NotFoundException("Skill 版本不存在或未通过审核"));
+        SkillVersionEntity selected = publicVersion(row, requestedVersion);
         limiter.checkDownload(clientKey, row.getId());
         SkillVersionEntity stored = versions.selectById(selected.getId());
         byte[] content = stored == null ? null : stored.getPackageContent();
         if (content == null) throw new NotFoundException("Skill 包不存在");
         skills.incrementDownloads(row.getId());
         return new Download(selected.getPackageName(), selected.getSha256(), content);
+    }
+
+    private SkillVersionEntity publicVersion(SkillMarketRow row, String requestedVersion) {
+        return versions.listMeta(row.getId()).stream()
+                .filter(v -> "PUBLISHED".equals(v.getState()))
+                .filter(v -> text(requestedVersion).isBlank() ? v.getId().equals(row.getVersionId())
+                        : v.getVersion().equals(requestedVersion))
+                .findFirst().orElseThrow(() -> new NotFoundException("Skill 版本不存在或未通过审核"));
     }
 
     /** 管理员待审队列。 */
@@ -386,7 +406,8 @@ public class SkillMarketService {
     }
 
     private SkillDtos.Version toVersion(SkillVersionEntity version) {
-        return new SkillDtos.Version(version.getId(),version.getVersion(),version.getState(),version.getChangelog(),version.getLicenseCode(),
+        return new SkillDtos.Version(version.getId(),version.getVersion(),version.getDisplayName(),version.getSummary(),
+                version.getState(),version.getChangelog(),version.getLicenseCode(),
                 readStrings(version.getTestedPlatformsJson()),readStrings(version.getCompatiblePlatformsJson()),n(version.getPackageSize()),
                 n(version.getUnpackedSize()),version.getFileCount()==null?0:version.getFileCount(),version.getSha256(),
                 readMaps(version.getFileManifestJson()),readStrings(version.getScanFindingsJson()),version.getSkillMd(),version.getReviewNote(),
