@@ -68,7 +68,7 @@ onMounted(load)
     </section>
     <section v-else-if="!loading" class="empty-card">
       <i class="ri-checkbox-circle-line"></i><b>没有待归并的历史点子</b>
-      <span>新想法请创建为一句任务；完成一轮并进入验收后，可在任务详情升级为项目。</span>
+      <span>新想法请直接创建为任务，在任务中持续补充和验收。</span>
       <button class="all-projects" @click="router.push('/projects')">返回项目</button>
     </section>
   </main>

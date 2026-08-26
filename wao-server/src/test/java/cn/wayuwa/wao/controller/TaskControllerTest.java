@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.controller;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -59,5 +60,11 @@ class TaskControllerTest {
         mockMvc.perform(get("/api/tasks/nope"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(40400));
+    }
+
+    @Test
+    void taskPromotionEndpointIsRetired() {
+        assertFalse(java.util.Arrays.stream(TaskController.class.getDeclaredMethods())
+                .anyMatch(method -> method.getName().equals("promoteToProject")));
     }
 }

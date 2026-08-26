@@ -22,7 +22,6 @@ import cn.wayuwa.wao.dto.PatchTaskRequest;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.dto.PdcaCycle;
-import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -123,63 +122,6 @@ class TaskServiceTest {
         assertThat(cleared.start()).isEmpty();
         assertThat(cleared.due()).isEqualTo("2026-07-24");
         assertThat(cleared.activity()).extracting(cn.wayuwa.wao.dto.Activity::text).contains("清空了开始日期");
-    }
-
-    @Test
-    void promotionRejectsTaskBeforeHumanVerification() {
-        when(mapper.selectByIdForUpdate("t1")).thenReturn(todo());
-        when(projects.promotionProjectId("t1")).thenReturn("pi-promoted");
-
-        assertThatThrownBy(() -> service.promoteToProject("t1", "wg"))
-                .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("待验证或已完成");
-
-        verify(projects, never()).createFromTask(any(), any(), any());
-        verify(mapper, never()).updateById(any(TaskEntity.class));
-    }
-
-    @Test
-    void promotionMovesVerifiedTaskIntoStartedProjectAndClearsOldGroup() {
-        TaskEntity entity = todo();
-        entity.setStatus("待验证");
-        entity.setOwnerId("wd");
-        entity.setDetailJson("{\"groupId\":\"old-group\",\"steps\":[{\"text\":\"a\",\"done\":true}],\"activity\":[]}");
-        ProjectDto source = projectDto("p1", "原项目", "career", "进行中");
-        ProjectDto planning = projectDto("pi-promoted", entity.getTitle(), "career", "规划中");
-        ProjectDto started = projectDto("pi-promoted", entity.getTitle(), "career", "进行中");
-        when(mapper.selectByIdForUpdate("t1")).thenReturn(entity);
-        when(projects.promotionProjectId("t1")).thenReturn("pi-promoted");
-        when(projects.get("p1", "wg")).thenReturn(source);
-        when(projects.createFromTask(eq("t1"), any(), eq("wd"))).thenReturn(planning);
-        when(projects.start("pi-promoted", "wg")).thenReturn(started);
-
-        var result = service.promoteToProject("t1", "wg");
-
-        assertThat(result.project().status()).isEqualTo("进行中");
-        assertThat(result.task().id()).isEqualTo("t1");
-        assertThat(result.task().project()).isEqualTo("pi-promoted");
-        assertThat(result.task().status()).isEqualTo("待验证");
-        assertThat(result.task().groupId()).isNull();
-        assertThat(result.task().steps()).hasSize(1);
-        assertThat(result.task().activity().get(0).text()).contains("升级为项目");
-        verify(mapper).updateById(entity);
-    }
-
-    @Test
-    void promotionRetryReturnsTheSameProjectWithoutCreatingAnother() {
-        TaskEntity entity = todo();
-        entity.setProjectId("pi-promoted");
-        ProjectDto started = projectDto("pi-promoted", entity.getTitle(), "career", "进行中");
-        when(mapper.selectByIdForUpdate("t1")).thenReturn(entity);
-        when(projects.promotionProjectId("t1")).thenReturn("pi-promoted");
-        when(projects.get("pi-promoted", "wg")).thenReturn(started);
-
-        var result = service.promoteToProject("t1", "wg");
-
-        assertThat(result.project().id()).isEqualTo("pi-promoted");
-        assertThat(result.task().project()).isEqualTo("pi-promoted");
-        verify(projects, never()).createFromTask(any(), any(), any());
-        verify(mapper, never()).updateById(any(TaskEntity.class));
     }
 
     @Test
@@ -299,13 +241,6 @@ class TaskServiceTest {
 
         assertThat(dto.owner()).isEqualTo("wd");
         assertThat(dto.createdBy()).isEqualTo("wg");
-    }
-
-    private static ProjectDto projectDto(String id, String name, String area, String status) {
-        return new ProjectDto(id, name, area, status, "良好", 0, "wg", List.of("wg", "wd"),
-                "2026-08-25", "2026-10-25", "组织内 2 人 · 可查看", "刚刚", "目标",
-                List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-                "ri-stack-line", true, List.of());
     }
 
     @Test

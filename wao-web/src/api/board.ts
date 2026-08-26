@@ -144,15 +144,6 @@ export async function apiPatchTask(id: string, payload: PatchTaskPayload): Promi
   return res.data.data
 }
 
-export interface TaskPromotion {
-  project: Project
-  task: Task
-}
-
-/** 把已进入人工验收的任务幂等升级为长期项目。 */
-export const apiPromoteTaskToProject = (id: string) =>
-  post<TaskPromotion>(`/api/tasks/${encodeURIComponent(id)}/promote-to-project`)
-
 /** 全量替换任务（本地变更后的写透）。 */
 export async function apiPutTask(id: string, task: Task): Promise<Task> {
   const res = await http.put<ApiResponse<Task>>(`/api/tasks/${id}`, task)

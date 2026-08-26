@@ -101,24 +101,6 @@ class ProjectServiceTest {
     }
 
     @Test
-    void taskPromotionUsesStableProjectIdAndReusesExistingProject() {
-        when(mapper.insert(any(ProjectEntity.class))).thenReturn(1);
-        String stableId = service.promotionProjectId("t1787660094494");
-
-        ProjectDto created = service.createFromTask("t1787660094494",
-                new CreateProjectRequest("点子升级", "career", "持续迭代", true, false), "wg");
-        ProjectEntity stored = project(stableId, "wg", "[\"wg\",\"wd\"]");
-        when(mapper.selectById(stableId)).thenReturn(stored);
-        ProjectDto retried = service.createFromTask("t1787660094494",
-                new CreateProjectRequest("不应重复创建", "career", "", true, false), "wg");
-
-        assertThat(stableId).hasSize(32).startsWith("pi");
-        assertThat(created.id()).isEqualTo(stableId);
-        assertThat(retried.id()).isEqualTo(stableId);
-        verify(mapper).insert(any(ProjectEntity.class));
-    }
-
-    @Test
     void startMovesProjectAndNotifiesOnlyOnce() {
         ProjectEntity entity = project("p-start", "wg", "[\"wg\"]");
         entity.setStatus("规划中");
