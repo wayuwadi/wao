@@ -28,11 +28,6 @@ pipeline {
 
     environment {
         WAO_RUN_TEMP = "${WORKSPACE}@tmp/wao-${BUILD_NUMBER}"
-        WAO_DEPLOY_REQUIRED = 'true'
-        WAO_BACKEND_PROJECTS = 'all'
-        WAO_TEST_WAO_WEB = 'true'
-        WAO_TEST_AGENT_WEB = 'true'
-        WAO_TEST_AI_RUNNER = 'false'
         MASTER_HOST = 'linux2.wayuwa.cn'
         SLAVE_HOST = 'windows1.wayuwa.cn'
         CLOUD_HOST = '8.136.152.131'
