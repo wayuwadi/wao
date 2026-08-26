@@ -27,6 +27,11 @@ public class AiRunnerNodeEntity {
     private String scriptHash;
     /** 后台一键下发脚本更新的时间；节点上报最新哈希后自动清除。 */
     private LocalDateTime updateRequestedAt;
+    /** 是否允许本节点把本机 Codex 记忆整理成待审核报告。 */
+    private Boolean memoryCollectionEnabled;
+    private LocalDateTime lastMemoryCollectionAttemptAt;
+    private LocalDateTime lastMemoryCollectedAt;
+    private String lastMemoryCollectionError;
     /** Runner 最近一次心跳上报的已脱敏日志尾部，不包含完整历史日志。 */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private String logTail;
@@ -63,6 +68,14 @@ public class AiRunnerNodeEntity {
     public void setScriptHash(String scriptHash) { this.scriptHash = scriptHash; }
     public LocalDateTime getUpdateRequestedAt() { return updateRequestedAt; }
     public void setUpdateRequestedAt(LocalDateTime updateRequestedAt) { this.updateRequestedAt = updateRequestedAt; }
+    public Boolean getMemoryCollectionEnabled() { return memoryCollectionEnabled; }
+    public void setMemoryCollectionEnabled(Boolean value) { this.memoryCollectionEnabled = value; }
+    public LocalDateTime getLastMemoryCollectionAttemptAt() { return lastMemoryCollectionAttemptAt; }
+    public void setLastMemoryCollectionAttemptAt(LocalDateTime value) { this.lastMemoryCollectionAttemptAt = value; }
+    public LocalDateTime getLastMemoryCollectedAt() { return lastMemoryCollectedAt; }
+    public void setLastMemoryCollectedAt(LocalDateTime value) { this.lastMemoryCollectedAt = value; }
+    public String getLastMemoryCollectionError() { return lastMemoryCollectionError; }
+    public void setLastMemoryCollectionError(String value) { this.lastMemoryCollectionError = value; }
     public String getLogTail() { return logTail; }
     public void setLogTail(String logTail) { this.logTail = logTail; }
     public LocalDateTime getLogUpdatedAt() { return logUpdatedAt; }

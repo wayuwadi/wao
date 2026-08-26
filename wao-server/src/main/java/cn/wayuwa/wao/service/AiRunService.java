@@ -342,8 +342,26 @@ public class AiRunService {
                         r.getWakeMac(), r.getWakeHost(), r.getWakePort() == null ? 9 : r.getWakePort(),
                         StringUtils.hasText(r.getWakeMac()) && StringUtils.hasText(r.getWakeHost()),
                         r.getLastWakeRequestedAt() == null ? null : r.getLastWakeRequestedAt().toString(),
-                        scriptUpToDate(r), r.getUpdateRequestedAt() != null))
+                        scriptUpToDate(r), r.getUpdateRequestedAt() != null,
+                        !Boolean.FALSE.equals(r.getMemoryCollectionEnabled()), memoryCollectionDue(r),
+                        time(r.getLastMemoryCollectionAttemptAt()), time(r.getLastMemoryCollectedAt()),
+                        r.getLastMemoryCollectionError()))
                 .toList();
+    }
+
+    private boolean memoryCollectionDue(AiRunnerNodeEntity runner) {
+        if (Boolean.FALSE.equals(runner.getMemoryCollectionEnabled()) || !engines(runner).contains("codex")) return false;
+        LocalDateTime now = LocalDateTime.now();
+        if (runner.getLastMemoryCollectionAttemptAt() == null) return true;
+        if (StringUtils.hasText(runner.getLastMemoryCollectionError())) {
+            return runner.getLastMemoryCollectionAttemptAt().isBefore(now.minusHours(6));
+        }
+        return runner.getLastMemoryCollectedAt() == null
+                || runner.getLastMemoryCollectedAt().isBefore(now.minusHours(24));
+    }
+
+    private static String time(LocalDateTime value) {
+        return value == null ? null : value.toString();
     }
 
     /** 返回一台执行电脑最近上报的已脱敏日志快照；尚未上报时内容为空。 */

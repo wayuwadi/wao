@@ -16,7 +16,7 @@ paths:
         '200': { description: 当前范围的记忆 }
         '404': { description: 范围不存在或无权访问 }
     post:
-      summary: 创建个人正式记忆或组织/项目候选
+      summary: 创建个人正式记忆或组织/项目/机器/应用候选
       requestBody:
         required: true
         content:
@@ -52,7 +52,7 @@ paths:
         '409': { description: 基础版本已落后，客户端草稿应保留 }
   /api/memory-revisions/{id}/publish:
     post:
-      summary: 发布组织或项目候选
+      summary: 发布组织、项目、机器或应用候选
       parameters: [ { $ref: '#/components/parameters/RevisionId' } ]
       responses:
         '200': { description: 已发布 }
@@ -101,6 +101,23 @@ paths:
       responses:
         '200': { description: JSON-RPC 响应；提供 search/get/propose/options，不提供发布 }
         '401': { description: 设备令牌未获得该范围授权 }
+  /api/ai/runner/memory-reports:
+    post:
+      summary: 已配对 Runner 上传脱敏后的机器/应用记忆报告或失败终态
+      description: 原始 CODEX_HOME 文件不进入请求；相同报告只刷新采集时间，变化后形成待审核版本。
+      parameters:
+        - in: header
+          name: X-WAO-Runner-Token
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RunnerMemoryReportRequest' }
+      responses:
+        '200': { description: 本次新建或更新的候选列表 }
+        '401': { description: Runner 令牌无效或已吊销 }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer }
@@ -109,7 +126,7 @@ components:
     RevisionId: { in: path, name: id, required: true, schema: { type: string } }
     TokenId: { in: path, name: tokenId, required: true, schema: { type: string } }
   schemas:
-    ScopeType: { type: string, enum: [personal, organization, project] }
+    ScopeType: { type: string, enum: [personal, organization, project, machine, application] }
     SaveMemory:
       type: object
       required: [scopeType, scopeId, category, title, content]
@@ -123,3 +140,20 @@ components:
         evidenceLinks: { type: array, items: { type: string, format: uri } }
         expiresAt: { type: string, format: date-time }
         baseRevisionId: { type: string }
+    RunnerMemoryReportRequest:
+      type: object
+      required: [reports]
+      properties:
+        reports:
+          type: array
+          maxItems: 2
+          items:
+            type: object
+            required: [scopeType, scopeId, category, title, content]
+            properties:
+              scopeType: { type: string, enum: [machine, application] }
+              scopeId: { type: string, description: 机器范围由服务端改用当前 Runner id；应用必须是 Runner 真实上报的引擎 }
+              category: { type: string, enum: [decision, convention, pitfall, verification, operation, context] }
+              title: { type: string, minLength: 1, maxLength: 200 }
+              content: { type: string, minLength: 1, maxLength: 20000 }
+        error: { type: string, maxLength: 1000, description: reports 为空时记录的已脱敏失败原因 }

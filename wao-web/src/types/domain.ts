@@ -529,6 +529,11 @@ export interface AiRunner {
   scriptUpToDate?: boolean | null
   /** 后台已下发脚本更新、该电脑还没完成自更新重启。 */
   updateRequested?: boolean
+  memoryCollectionEnabled?: boolean
+  memoryCollectionDue?: boolean
+  lastMemoryCollectionAttemptAt?: string | null
+  lastMemoryCollectedAt?: string | null
+  lastMemoryCollectionError?: string | null
 }
 
 /** 执行电脑最近一次心跳上报的已脱敏日志快照。 */
