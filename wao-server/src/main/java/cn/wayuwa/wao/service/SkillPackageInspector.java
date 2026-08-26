@@ -32,6 +32,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 public class SkillPackageInspector {
     public static final long MAX_PACKAGE_BYTES = 10L * 1024 * 1024;
     public static final long MAX_UNPACKED_BYTES = 20L * 1024 * 1024;
+    public static final int MAX_PREVIEW_BYTES = 512 * 1024;
     public static final int MAX_FILES = 200;
     private static final Set<String> EXECUTABLE_SUFFIXES = Set.of(
             ".exe", ".dll", ".so", ".dylib", ".com", ".msi", ".apk", ".dmg", ".class", ".jar");
@@ -85,6 +86,42 @@ public class SkillPackageInspector {
             throw new BadRequestException("读取 Skill 文件夹失败，请重试");
         }
         return inspect(entries);
+    }
+
+    /** 从已规范化的审核 ZIP 中读取一个文件；文本可预览，二进制和超大文件只返回说明。 */
+    public FilePreview previewFile(byte[] source, String requestedPath) {
+        if (source == null || source.length == 0) throw new BadRequestException("Skill 包不存在");
+        String path = safePath(requestedPath);
+        try (ZipFile zip = ZipFile.builder().setByteArray(source).get()) {
+            Enumeration<ZipArchiveEntry> all = zip.getEntries();
+            while (all.hasMoreElements()) {
+                ZipArchiveEntry entry = all.nextElement();
+                if (entry.isDirectory() || !entry.getName().equals(path)) continue;
+                long size = entry.getSize();
+                if (size > MAX_PREVIEW_BYTES) {
+                    return new FilePreview(path, size, false, null, "文件超过 512 KiB，请下载 ZIP 后查看");
+                }
+                byte[] content = zip.getInputStream(entry).readNBytes(MAX_PREVIEW_BYTES + 1);
+                if (content.length > MAX_PREVIEW_BYTES) {
+                    return new FilePreview(path, content.length, false, null, "文件超过 512 KiB，请下载 ZIP 后查看");
+                }
+                if (containsNul(content)) {
+                    return new FilePreview(path, content.length, false, null, "二进制文件不支持在线预览，请下载 ZIP 后查看");
+                }
+                try {
+                    String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(content)).toString();
+                    return new FilePreview(path, content.length, true, text, null);
+                } catch (CharacterCodingException ex) {
+                    return new FilePreview(path, content.length, false, null, "非 UTF-8 文件不支持在线预览，请下载 ZIP 后查看");
+                }
+            }
+        } catch (BadRequestException ex) {
+            throw ex;
+        } catch (IOException | RuntimeException ex) {
+            throw new BadRequestException("Skill 文件读取失败，请重试");
+        }
+        throw new cn.wayuwa.wao.common.NotFoundException("Skill 文件不存在");
     }
 
     private Inspection inspect(List<EntryData> rawEntries) {
@@ -246,6 +283,7 @@ public class SkillPackageInspector {
     public record InputFile(String path, byte[] content) { }
     private record EntryData(String path, byte[] content) { }
     public record FileMeta(String path, long size) { }
+    public record FilePreview(String path, long size, boolean previewable, String content, String message) { }
     public record Inspection(byte[] packageContent, long unpackedSize, List<FileMeta> files, String skillMd,
             String name, String description, List<String> findings, List<String> compatiblePlatforms, String sha256) { }
 }

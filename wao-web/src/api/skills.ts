@@ -8,12 +8,13 @@ export interface SkillCard {
   version: string; compatiblePlatforms: string[]
 }
 export interface SkillVersion {
-  id: string; version: string; state: string; changelog: string; license: string
+  id: string; version: string; displayName: string; summary: string; state: string; changelog: string; license: string
   testedPlatforms: string[]; compatiblePlatforms: string[]; packageSize: number; unpackedSize: number
   fileCount: number; sha256: string; files: { path: string; size: number }[]; findings: string[]
   skillMd: string; reviewNote: string; submittedAt: string; reviewedAt: string
 }
 export interface SkillDetail { skill: SkillCard; publishedVersion: SkillVersion; versions: SkillVersion[]; favorite: boolean }
+export interface SkillFilePreview { version: string; path: string; size: number; previewable: boolean; content: string | null; message: string | null }
 export interface SkillPage { items: SkillCard[]; total: number; page: number; pageSize: number }
 export interface MySkill {
   id: string; slug: string; displayName: string; summary: string; category: string; status: string
@@ -30,6 +31,7 @@ const data = <T>(response: { data: ApiResponse<T> }) => response.data.data
 export async function fetchSkillCategories() { return data(await http.get<ApiResponse<SkillCategory[]>>('/api/public/skill-categories')) }
 export async function fetchSkills(params: Record<string, string | number | undefined>) { return data(await http.get<ApiResponse<SkillPage>>('/api/public/skills', { params })) }
 export async function fetchSkill(handle: string, slug: string) { return data(await http.get<ApiResponse<SkillDetail>>(`/api/public/skills/${encodeURIComponent(handle)}/${encodeURIComponent(slug)}`)) }
+export async function fetchSkillFile(handle: string, slug: string, version: string, path: string) { return data(await http.get<ApiResponse<SkillFilePreview>>(`/api/public/skills/${encodeURIComponent(handle)}/${encodeURIComponent(slug)}/files`, { params: { version, path } })) }
 export const skillDownloadUrl = (handle: string, slug: string, version?: string) => `/api/public/skills/${encodeURIComponent(handle)}/${encodeURIComponent(slug)}/download${version ? `?version=${encodeURIComponent(version)}` : ''}`
 export async function fetchPublisher() { return data(await http.get<ApiResponse<SkillPublisher | null>>('/api/skills/publisher/me')) }
 export async function savePublisher(body: SkillPublisher) { return data(await http.put<ApiResponse<SkillPublisher>>('/api/skills/publisher/me', body)) }
