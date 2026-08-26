@@ -52,8 +52,10 @@ class FeishuQuickCollectServiceTest {
     private final FeishuQuickCollectEventMapper events = mock(FeishuQuickCollectEventMapper.class);
     private final ImageService images = mock(ImageService.class);
     private final NotificationFeedbackService feedback = mock(NotificationFeedbackService.class);
+    private final SharedChatFeishuBridge sharedChat = mock(SharedChatFeishuBridge.class);
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
-            settings, feishu, tasks, projects, accounts, identities, events, images, new ObjectMapper(), feedback);
+            settings, feishu, tasks, projects, accounts, identities, events, images, new ObjectMapper(), feedback,
+            sharedChat);
 
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);

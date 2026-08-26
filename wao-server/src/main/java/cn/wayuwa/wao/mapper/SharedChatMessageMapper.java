@@ -35,4 +35,7 @@ public interface SharedChatMessageMapper extends BaseMapper<SharedChatMessageEnt
             """)
     SharedChatMessageEntity findByClientToken(@Param("memberId") String memberId,
                                                @Param("clientToken") String clientToken);
+
+    @Select("SELECT * FROM shared_chat_message WHERE feishu_message_id = #{messageId} LIMIT 1")
+    SharedChatMessageEntity findByFeishuMessageId(@Param("messageId") String messageId);
 }

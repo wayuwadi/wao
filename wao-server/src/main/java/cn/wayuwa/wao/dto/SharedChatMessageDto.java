@@ -10,6 +10,13 @@ public record SharedChatMessageDto(
         String imageId,
         String imageName,
         String imageUrl,
+        String source,
+        SharedChatReplyDto replyTo,
+        boolean deleted,
+        boolean read,
+        int readCount,
+        int feishuReadCount,
+        java.util.List<SharedChatReactionDto> reactions,
         String feishuStatus,
         String feishuError,
         LocalDateTime createdAt) {

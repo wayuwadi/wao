@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
@@ -202,7 +204,7 @@ public class FeishuOpenApiClient {
                         item.path("body").path("content").asText(""),
                         item.path("create_time").asLong(0),
                         item.path("deleted").asBoolean(false),
-                        List.copyOf(mentions)));
+                        List.copyOf(mentions), text(item, "root_id"), text(item, "parent_id")));
             }
             boolean hasMore = data.path("has_more").asBoolean(false);
             if (page == MAX_PAGES - 1 && hasMore) {
@@ -272,9 +274,59 @@ public class FeishuOpenApiClient {
      * @param emojiType 飞书表情类型，如 {@code DONE}
      * @throws FeishuApiException 接口不可达或返回错误码时
      */
-    public void addMessageReaction(String token, String messageId, String emojiType) {
-        post("/open-apis/im/v1/messages/{messageId}/reactions",
+    public String addMessageReaction(String token, String messageId, String emojiType) {
+        JsonNode data = post("/open-apis/im/v1/messages/{messageId}/reactions",
                 Map.of("reaction_type", Map.of("emoji_type", emojiType)), token, messageId);
+        return text(data, "reaction_id");
+    }
+
+    /** 删除当前应用创建的一次表情回复。 */
+    public void deleteMessageReaction(String token, String messageId, String reactionId) {
+        delete("/open-apis/im/v1/messages/{messageId}/reactions/{reactionId}", token,
+                messageId, reactionId);
+    }
+
+    /**
+     * 发送普通飞书富文本消息；传 parentMessageId 时按飞书原生回复关系发送。
+     * uuid 使用 WAO 消息 id，网络超时重试不会在飞书产生第二条消息。
+     */
+    public String sendPostMessage(String token, String chatId, Object postContent, String uuid,
+            String parentMessageId) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        if (parentMessageId == null || parentMessageId.isBlank()) body.put("receive_id", chatId);
+        body.put("msg_type", "post");
+        body.put("content", writeJson(postContent));
+        JsonNode data = parentMessageId == null || parentMessageId.isBlank()
+                ? post("/open-apis/im/v1/messages?receive_id_type=chat_id&uuid={uuid}", body,
+                        token, uuid)
+                : post("/open-apis/im/v1/messages/{messageId}/reply?uuid={uuid}", body,
+                        token, parentMessageId, uuid);
+        String messageId = text(data, "message_id");
+        if (messageId.isBlank()) throw new FeishuApiException("飞书没有返回消息 id");
+        return messageId;
+    }
+
+    /** 上传一张用于普通图文消息的图片，返回可放进 post img 元素的 image_key。 */
+    public String uploadMessageImage(String token, byte[] bytes, String contentType, String filename) {
+        try {
+            MultipartBodyBuilder body = new MultipartBodyBuilder();
+            body.part("image_type", "message");
+            body.part("image", new ByteArrayResource(bytes) {
+                @Override public String getFilename() {
+                    return filename == null || filename.isBlank() ? "image.png" : filename;
+                }
+            }).contentType(MediaType.parseMediaType(
+                    contentType == null || contentType.isBlank() ? "image/png" : contentType));
+            JsonNode res = client.post().uri("/open-apis/im/v1/images")
+                    .header("Authorization", "Bearer " + token)
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .body(body.build()).retrieve().body(JsonNode.class);
+            String key = text(requireOk(res), "image_key");
+            if (key.isBlank()) throw new FeishuApiException("飞书没有返回图片 key");
+            return key;
+        } catch (RestClientException ex) {
+            throw new FeishuApiException("上传飞书消息图片失败", ex);
+        }
     }
 
     /**
@@ -360,6 +412,17 @@ public class FeishuOpenApiClient {
         }
     }
 
+    private void delete(String uri, String token, Object... uriVariables) {
+        try {
+            JsonNode res = client.delete().uri(uri, uriVariables)
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve().body(JsonNode.class);
+            requireOk(res);
+        } catch (RestClientException ex) {
+            throw new FeishuApiException("调用飞书接口失败：" + uri, ex);
+        }
+    }
+
     /** 飞书用 HTTP 200 + body.code 表达业务失败，非 0 一律当异常。 */
     private JsonNode requireOk(JsonNode res) {
         if (res == null) {
@@ -402,17 +465,27 @@ public class FeishuOpenApiClient {
      */
     public record FeishuMessage(String messageId, String senderId, String senderType,
                                 String msgType, String content, long createTime, boolean deleted,
-                                List<FeishuMention> mentions) {
+                                List<FeishuMention> mentions, String rootId, String parentId) {
+        /** 兼容尚不关心回复关系的调用。 */
+        public FeishuMessage(String messageId, String senderId, String senderType,
+                String msgType, String content, long createTime, boolean deleted,
+                List<FeishuMention> mentions) {
+            this(messageId, senderId, senderType, msgType, content, createTime, deleted,
+                    mentions, "", "");
+        }
+
         /** 历史调用未读取 mention 时的兼容构造。 */
         public FeishuMessage(String messageId, String senderId, String senderType,
                 String msgType, String content, long createTime, boolean deleted) {
-            this(messageId, senderId, senderType, msgType, content, createTime, deleted, List.of());
+            this(messageId, senderId, senderType, msgType, content, createTime, deleted,
+                    List.of(), "", "");
         }
 
         /** 保持既有服务单元测与内部构造的用户消息语义。 */
         public FeishuMessage(String messageId, String senderId, String msgType, String content,
                 long createTime, boolean deleted) {
-            this(messageId, senderId, "user", msgType, content, createTime, deleted, List.of());
+            this(messageId, senderId, "user", msgType, content, createTime, deleted,
+                    List.of(), "", "");
         }
     }
 

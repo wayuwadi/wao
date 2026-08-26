@@ -67,6 +67,23 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void sharedChatBridgeMigrationKeepsExternalIdempotencyReadAndReactionFacts() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V98__shared_chat_feishu_bridge.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("uk_shared_chat_feishu_message (feishu_message_id)")
+                .contains("MODIFY COLUMN content MEDIUMTEXT NOT NULL")
+                .contains("CREATE TABLE shared_chat_message_read")
+                .contains("uk_shared_chat_read (message_id, reader_key, source)")
+                .contains("CREATE TABLE shared_chat_reaction")
+                .contains("uk_shared_chat_reaction (message_id, reactor_key, emoji_type)")
+                .contains("FOREIGN KEY (reply_to_id)");
+    }
+
+    @Test
     void migrationsFollowTheVersionedNamingConvention() throws Exception {
         assertThat(migrations().stream().map(path -> path.getFileName().toString()))
                 .allMatch(name -> name.matches("V\\d+__[A-Za-z0-9_]+\\.sql"), "V<数字>__<名字>.sql");

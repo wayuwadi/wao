@@ -5,6 +5,10 @@ import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.dto.CreateSharedChatMessageRequest;
 import cn.wayuwa.wao.dto.SharedChatMessageDto;
+import cn.wayuwa.wao.dto.SaveSharedChatConfigRequest;
+import cn.wayuwa.wao.dto.SharedChatConfigDto;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuChat;
+import cn.wayuwa.wao.service.SharedChatFeishuBridge;
 import cn.wayuwa.wao.service.SharedChatService;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -14,36 +18,71 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 已登录成员共享的轻量聊天室。 */
 @RestController
-@RequestMapping("/api/chat/messages")
+@RequestMapping("/api/chat")
 public class SharedChatController {
     private final SharedChatService service;
+    private final SharedChatFeishuBridge bridge;
     private final CurrentMember currentMember;
 
-    public SharedChatController(SharedChatService service, CurrentMember currentMember) {
+    public SharedChatController(SharedChatService service, SharedChatFeishuBridge bridge,
+            CurrentMember currentMember) {
         this.service = service;
+        this.bridge = bridge;
         this.currentMember = currentMember;
     }
 
-    @GetMapping
+    @GetMapping("/messages")
     public ApiResponse<List<SharedChatMessageDto>> list(
-            @RequestParam(value = "after", required = false) String after) {
-        return ApiResponse.ok(service.list(after));
+            @RequestParam(value = "after", required = false) String after, HttpServletRequest request) {
+        return ApiResponse.ok(service.list(requireMember(request), after));
     }
 
-    @PostMapping
+    @PostMapping("/messages")
     public ApiResponse<SharedChatMessageDto> create(@RequestBody CreateSharedChatMessageRequest body,
             HttpServletRequest request) {
         return ApiResponse.ok(service.create(requireMember(request), body));
     }
 
-    @PostMapping("/{id}/retry-feishu")
+    @PostMapping("/messages/{id}/retry-feishu")
     public ApiResponse<SharedChatMessageDto> retry(@PathVariable String id, HttpServletRequest request) {
+        String memberId = requireMember(request);
+        return ApiResponse.ok(service.retry(memberId, id));
+    }
+
+    @PostMapping("/messages/read")
+    public ApiResponse<Void> read(@RequestParam String through, HttpServletRequest request) {
+        service.markRead(requireMember(request), through);
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/messages/{id}/reactions/{emojiType}")
+    public ApiResponse<SharedChatMessageDto> reaction(@PathVariable String id,
+            @PathVariable String emojiType, HttpServletRequest request) {
+        return ApiResponse.ok(service.toggleReaction(requireMember(request), id, emojiType));
+    }
+
+    @GetMapping("/config")
+    public ApiResponse<SharedChatConfigDto> config(HttpServletRequest request) {
         requireMember(request);
-        return ApiResponse.ok(service.retry(id));
+        return ApiResponse.ok(bridge.config());
+    }
+
+    @PutMapping("/config")
+    public ApiResponse<SharedChatConfigDto> saveConfig(@RequestBody SaveSharedChatConfigRequest body,
+            HttpServletRequest request) {
+        requireMember(request);
+        return ApiResponse.ok(bridge.saveConfig(body));
+    }
+
+    @GetMapping("/feishu-chats")
+    public ApiResponse<List<FeishuChat>> chats(HttpServletRequest request) {
+        requireMember(request);
+        return ApiResponse.ok(bridge.chats());
     }
 
     private String requireMember(HttpServletRequest request) {

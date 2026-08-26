@@ -12,14 +12,16 @@ import cn.wayuwa.wao.dto.CreateSharedChatMessageRequest;
 import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.dto.SharedChatMessageDto;
 import cn.wayuwa.wao.service.SharedChatService;
+import cn.wayuwa.wao.service.SharedChatFeishuBridge;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
 class SharedChatControllerTest {
     private final SharedChatService service = mock(SharedChatService.class);
+    private final SharedChatFeishuBridge bridge = mock(SharedChatFeishuBridge.class);
     private final CurrentMember currentMember = mock(CurrentMember.class);
-    private final SharedChatController controller = new SharedChatController(service, currentMember);
+    private final SharedChatController controller = new SharedChatController(service, bridge, currentMember);
     private final HttpServletRequest http = mock(HttpServletRequest.class);
 
     @Test
@@ -27,7 +29,8 @@ class SharedChatControllerTest {
         var body = new CreateSharedChatMessageRequest("client_token_123", "你好", null);
         var message = new SharedChatMessageDto("msg1",
                 new MemberDto("m1", "娃哥", "娃", "#6655BE", "管理员"), "你好",
-                null, null, null, "SENT", null, LocalDateTime.now());
+                null, null, null, "WAO", null, false, true, 1, 0, java.util.List.of(),
+                "SENT", null, LocalDateTime.now());
         when(currentMember.id(http)).thenReturn("m1");
         when(service.create("m1", body)).thenReturn(message);
 
