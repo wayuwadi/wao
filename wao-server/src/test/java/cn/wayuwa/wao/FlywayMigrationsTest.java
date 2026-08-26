@@ -110,7 +110,7 @@ class FlywayMigrationsTest {
     void integratedChatReviewMigrationKeepsRealMessageSnapshotAndArtifactLinks() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString()
-                        .equals("V99__shared_chat_review_integration.sql"))
+                        .equals("V100__shared_chat_review_integration.sql"))
                 .findFirst().orElseThrow();
         String sql = Files.readString(migration);
 

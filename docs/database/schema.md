@@ -947,7 +947,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V97__configurable_task_auto_run.sql`：为最早任务空闲自动派发增加单项目、多来源状态与通用 Webhook 目标；
   存量策略默认回填“Wa All in One”和“待办”（见 ADR-114）。
 - `V98__shared_chat_feishu_bridge.sql`：共享聊天飞书外部身份、消息幂等 id、引用关系、真实已读与表情事实（见 ADR-127）。
-- `V99__shared_chat_review_integration.sql`：聊天复盘共享消息范围、托管报告与知识库文档关联（见 ADR-129）。
+- `V100__shared_chat_review_integration.sql`：聊天复盘共享消息范围、托管报告与知识库文档关联（见 ADR-130）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

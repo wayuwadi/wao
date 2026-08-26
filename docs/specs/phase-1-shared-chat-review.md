@@ -1,7 +1,7 @@
 # Phase 1：娃与娃聊天复盘
 
 决策见 [ADR-088](../adr/088-shared-chat-review-workflow.md)，聊天页融合入口与共享消息范围见
-[ADR-129](../adr/129-integrated-shared-chat-review-and-polish.md)。
+[ADR-130](../adr/130-integrated-shared-chat-review-and-polish.md)。
 
 ## 目标与范围
 
