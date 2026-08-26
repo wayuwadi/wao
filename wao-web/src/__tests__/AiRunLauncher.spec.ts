@@ -27,7 +27,7 @@ vi.mock('@/api/ai', () => ({
       { id: 'medium', label: '中', description: '速度与推理深度均衡' },
       { id: 'high', label: '高', description: '为复杂任务投入更多推理' },
     ],
-    defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'medium', serviceTier: 'default',
+    defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'high', serviceTier: 'default',
   }),
 }))
 
@@ -78,7 +78,7 @@ describe('AiRunLauncher', () => {
     expect(wrapper.findAll('select')[3]!.element.value).toBe('rn-win')
     await wrapper.find('footer .primary').trigger('click')
 
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'medium', true]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', true]])
   })
 
   it('集中账号没有对应 Linux CLI 时明确阻止静默落到 Windows', async () => {
@@ -125,6 +125,6 @@ describe('AiRunLauncher', () => {
     await wrapper.find('footer .primary').trigger('click')
 
     expect(toggle.attributes('aria-checked')).toBe('false')
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'medium', false]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', false]])
   })
 })

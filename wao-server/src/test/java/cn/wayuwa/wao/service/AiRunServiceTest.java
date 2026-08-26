@@ -83,6 +83,16 @@ class AiRunServiceTest {
     }
 
     @Test
+    void runOptionsDefaultToHighReasoningEffort() {
+        var options = service.runOptions();
+
+        assertThat(options.defaultCodexModel()).isEqualTo("gpt-5.6-sol");
+        assertThat(options.defaultReasoningEffort()).isEqualTo("high");
+        assertThat(options.reasoningEfforts()).extracting("id")
+                .containsExactly("medium", "high");
+    }
+
+    @Test
     void runningNodeCanPublishPersistentReport() {
         runningRun();
         var html = new MockMultipartFile("html", "report.html", "text/html", "<html>报告</html>".getBytes());
@@ -201,7 +211,7 @@ class AiRunServiceTest {
                 .isEqualTo("https://wao.example/api/share/tasks/t1.md?openOnly=true");
         assertThat(run.getValue().getSubId()).isNull();
         assertThat(run.getValue().getRequestedModel()).isEqualTo("gpt-5.6-sol");
-        assertThat(run.getValue().getReasoningEffort()).isEqualTo("medium");
+        assertThat(run.getValue().getReasoningEffort()).isEqualTo("high");
         assertThat(result.get(0).serviceTier()).isEqualTo("default");
     }
 
