@@ -98,6 +98,8 @@ Windows → Linux → 云端严格滚动发布、线上验收、GitHub commit st
 - `ALLOW_WINDOWS_OFFLINE=true`：仅当 Windows 在部署前预检不可达时，保持从节点摘流并继续发布 Linux 与云端；
   Windows 已通过预检后的任何部署失败仍然 fail-closed。不得与 `BOOTSTRAP_WINDOWS` 同时开启。
 - 同一任务不并发，新 push 排队且不取消正在进行的 migration 或发布。
+- 失败时 GitHub commit status 会写明失败阶段，方便没有 Jenkins UI 会话的自动任务先定位门禁；完整命令输出仍只
+  保留在受 WAO 会话保护的 Jenkins 控制台，不把日志或凭据复制到公开状态描述。
 - 生产发布验证结束后，流水线会比较仓库内 JCasC、systemd override 和隧道 unit；有变化时只覆盖这三个
   受版本控制的文件，执行 `daemon-reload`，再请求 Jenkins `safeRestart`。重启会等当前构建和通知结束，
   不会在部署中途杀掉控制器。
