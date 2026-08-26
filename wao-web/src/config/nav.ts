@@ -87,6 +87,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/wao/skills',
     newPagePath: '/skills',
   },
+  'skill-connections': {
+    id: 'skill-connections',
+    label: 'Skill 接入',
+    icon: 'ri-apps-2-line',
+    path: '/skill-connections',
+  },
   calendar: { id: 'calendar', label: '日历', icon: 'ri-calendar-2-line', path: '/calendar' },
   todo: { id: 'todo', label: '待办', icon: 'ri-checkbox-multiple-line', path: '/todo' },
   knowledge: { id: 'knowledge', label: '知识库', icon: 'ri-book-2-line', path: '/knowledge' },
@@ -182,6 +188,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-sparkling-2-line',
       group: 'PUBLIC',
       order: 12,
+      visible: true,
+    },
+    {
+      id: 'skill-connections',
+      label: 'Skill 接入',
+      icon: 'ri-apps-2-line',
+      group: 'PUBLIC',
+      order: 13,
       visible: true,
     },
     {
@@ -361,7 +375,7 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
   {
     label: '公共',
-    items: ['projects', 'ideas', 'skills', 'chat'],
+    items: ['projects', 'ideas', 'skills', 'skill-connections', 'chat'],
   },
   { label: '个人', items: PERSONAL_ITEMS },
   { label: '工具', items: ['automation', 'files', 'games', 'request-monitoring'] },

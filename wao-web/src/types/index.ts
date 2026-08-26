@@ -41,6 +41,7 @@ export type ModuleId =
   | 'chat-reviews'
   | 'system-reports'
   | 'skills'
+  | 'skill-connections'
   | 'memory'
   | 'workspaces'
   | 'vault'
