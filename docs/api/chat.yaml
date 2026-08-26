@@ -1,0 +1,103 @@
+openapi: 3.0.3
+info:
+  title: WAO 组织共享聊天 API
+  version: 0.1.0
+  description: 所有接口需要 WAO 登录会话；作者由服务端会话确定，消息对组织成员共享。
+security:
+  - cookieAuth: []
+paths:
+  /api/chat/messages:
+    get:
+      operationId: listSharedChatMessages
+      summary: 读取最近 100 条消息或游标后的增量消息
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema: { type: string, maxLength: 32 }
+          description: 页面当前最后一条消息 id；不存在时返回 400，客户端应重新全量读取
+      responses:
+        "200":
+          description: 按 createdAt、id 正序返回
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageListEnvelope" }
+        "400": { description: 游标已经失效 }
+    post:
+      operationId: createSharedChatMessage
+      summary: 保存文字和/或一张已上传截图，并尝试同步飞书
+      description: >
+        消息先落库再尝试系统默认 Webhook；外部投递失败不会回滚消息。
+        相同成员与 clientToken 的重复请求返回首条消息，不再次投递。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMessageRequest" }
+      responses:
+        "200":
+          description: 返回含飞书同步终态的已保存消息
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageEnvelope" }
+        "400": { description: 消息为空、文字超过 2000 字、token 非法或截图不存在 }
+  /api/chat/messages/{id}/retry-feishu:
+    post:
+      operationId: retrySharedChatFeishu
+      summary: 重试一条未成功同步的消息
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, maxLength: 32 } }
+      responses:
+        "200":
+          description: 已成功的消息原样返回，其余重新解析当前系统默认机器人并投递
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageEnvelope" }
+        "404": { description: 消息不存在 }
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: WAO_SESSION
+  schemas:
+    CreateMessageRequest:
+      type: object
+      required: [clientToken, content]
+      properties:
+        clientToken: { type: string, minLength: 8, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }
+        content: { type: string, maxLength: 2000 }
+        imageId: { type: string, maxLength: 32, nullable: true }
+      description: content 与 imageId 至少一个有效
+    Member:
+      type: object
+      required: [id, name, initial, color, role]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        initial: { type: string }
+        color: { type: string }
+        role: { type: string }
+    Message:
+      type: object
+      required: [id, author, content, feishuStatus, createdAt]
+      properties:
+        id: { type: string, maxLength: 32 }
+        author: { $ref: "#/components/schemas/Member" }
+        content: { type: string, maxLength: 2000 }
+        imageId: { type: string, nullable: true }
+        imageName: { type: string, nullable: true }
+        imageUrl: { type: string, nullable: true }
+        feishuStatus: { type: string, enum: [PENDING, SENT, FAILED, UNAVAILABLE] }
+        feishuError: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    MessageEnvelope:
+      type: object
+      properties:
+        data: { $ref: "#/components/schemas/Message" }
+    MessageListEnvelope:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Message" }
