@@ -13,6 +13,20 @@ import org.junit.jupiter.api.Test;
 class DeploymentRoutingConfigTest {
 
     @Test
+    void jenkinsChangePlanUsesSandboxSafeStaticEnvironmentAssignments() throws IOException {
+        String pipeline = readFromRepository("Jenkinsfile");
+
+        assertThat(pipeline)
+                .contains("env.WAO_DEPLOY_REQUIRED = line.substring")
+                .contains("env.WAO_BACKEND_PROJECTS = line.substring")
+                .contains("env.WAO_TEST_WAO_WEB = line.substring")
+                .contains("env.WAO_TEST_AGENT_WEB = line.substring")
+                .contains("env.WAO_TEST_AI_RUNNER = line.substring")
+                .contains("env.WAO_CHANGED_FILE_COUNT = line.substring")
+                .doesNotContain("env[pair[0]]");
+    }
+
+    @Test
     void agentUsesBundledStaticDirectoryServiceAndDedicatedGatewayRoute() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String gateway = readFromRepository("wao-gateway/src/main/resources/application.yml");
