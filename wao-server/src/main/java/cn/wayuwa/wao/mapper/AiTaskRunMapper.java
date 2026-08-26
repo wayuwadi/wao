@@ -88,6 +88,23 @@ public interface AiTaskRunMapper extends BaseMapper<AiTaskRunEntity> {
     @Select("SELECT COUNT(*) FROM ai_task_run WHERE status NOT IN ('queued', 'claimed', 'running')")
     long countFinishedRuns();
 
+    /** 首页读取全部活动运行；数量受 Runner 并发槽位约束，不能因历史展示上限而漏掉。 */
+    @Select("""
+            SELECT * FROM ai_task_run
+            WHERE status IN ('queued', 'claimed', 'running')
+            ORDER BY created_at DESC
+            """)
+    List<AiTaskRunEntity> selectActiveRuns();
+
+    /** 首页只读取最近的已结束运行；完整档案由分页历史接口按需提供。 */
+    @Select("""
+            SELECT * FROM ai_task_run
+            WHERE status NOT IN ('queued', 'claimed', 'running')
+            ORDER BY created_at DESC
+            LIMIT #{limit}
+            """)
+    List<AiTaskRunEntity> selectRecentFinishedRuns(@Param("limit") int limit);
+
     /** 按最新时间读取一页已结束运行，不依赖全局分页插件。 */
     @Select("""
             SELECT * FROM ai_task_run
