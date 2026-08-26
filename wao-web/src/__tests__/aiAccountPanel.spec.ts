@@ -260,6 +260,37 @@ describe('AiAccountPanel', () => {
     }))
   })
 
+  it('模型网关固定可信地址和当前授权模型且不会把 Token 写入草稿', async () => {
+    fetchAiAccounts.mockResolvedValue([])
+    createAiAccount.mockResolvedValue({})
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text().includes('添加模型网关'))!.trigger('click')
+
+    const form = wrapper.find('.account-form')
+    expect(form.text()).toContain('DeepSeek V4 Flash（每日共享额度）')
+    expect(form.text()).toContain('不会进入 AI Run')
+    const endpoint = form.find(
+      'input[value="https://ai.xingshiapp.cn/api/model-credentials/litellm-proxy/v1"]',
+    )
+    expect(endpoint.attributes('readonly')).toBeDefined()
+    const token = form.find('input[type="password"]')
+    await token.setValue('gateway-token-input')
+    await flushPromises()
+    expect(sessionStorage.getItem('wao:ai-account-form-draft')).not.toContain('gateway-token-input')
+    await form.trigger('submit')
+    await flushPromises()
+
+    expect(createAiAccount).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'model_gateway',
+      baseUrl: 'https://ai.xingshiapp.cn/api/model-credentials/litellm-proxy/v1',
+      model: 'deepseek-v4-flash',
+      apiProtocol: 'chat_completions',
+      apiKey: 'gateway-token-input',
+    }))
+  })
+
   it('已启用的最新 DeepSeek 配置明确标记为文档润色默认项', async () => {
     fetchAiAccounts.mockResolvedValue([
       account({
@@ -286,5 +317,29 @@ describe('AiAccountPanel', () => {
     expect(first.find('.polish-default').text()).toBe('文档润色')
     expect(second.find('.polish-default').exists()).toBe(false)
     expect(first.text()).toContain('Chat Completions')
+  })
+
+  it('最新模型网关配置与 DeepSeek 共用唯一文档润色标记', async () => {
+    fetchAiAccounts.mockResolvedValue([
+      account({
+        id: 'gateway-new', provider: 'model_gateway', label: '醒市模型网关', email: null,
+        authMethod: 'api_key',
+        baseUrl: 'https://ai.xingshiapp.cn/api/model-credentials/litellm-proxy/v1',
+        model: 'deepseek-v4-flash', apiProtocol: 'chat_completions', quotaPercent: null,
+      }),
+      account({
+        id: 'deepseek-old', provider: 'deepseek', label: 'DeepSeek 备用', email: null,
+        authMethod: 'api_key', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro',
+        apiProtocol: 'chat_completions', quotaPercent: null,
+      }),
+    ])
+
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+
+    const cards = wrapper.findAll('.account-card')
+    expect(cards[0]?.text()).toContain('受信网关')
+    expect(cards[0]?.find('.polish-default').text()).toBe('文档润色')
+    expect(cards[1]?.find('.polish-default').exists()).toBe(false)
   })
 })

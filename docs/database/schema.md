@@ -393,7 +393,7 @@ V63 新增 `last_low_quota_key`，保存已经成功发送飞书提醒的“账�
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | VARCHAR(32) PK | 账号 id |
-| provider | VARCHAR(24) | AI 工具：codex / claude / qoder |
+| provider | VARCHAR(24) | AI 工具或 API：codex / claude / qoder / deepseek / model_gateway |
 | label | VARCHAR(128) | 展示名称 |
 | email | VARCHAR(255) NULL | 账号邮箱或标识 |
 | credential_json | TEXT | AES-256-GCM 加密后的凭据 JSON；密文带 `enc:` 前缀 |
@@ -409,9 +409,9 @@ V63 新增 `last_low_quota_key`，保存已经成功发送飞书提醒的“账�
 | quota_window | VARCHAR(32) NULL（V39） | 最紧张的限额窗口，如 session / weekly_all |
 | quota_percent | INT NULL（V39） | 该窗口已用百分比；**NULL 表示没查到，不等于 0** |
 | quota_resets_at | DATETIME NULL（V39） | 该窗口的重置时间 |
-| base_url | VARCHAR(512) NULL（V40） | 自定义 Responses API 根地址，服务端规范化为 `/v1` 结尾 |
-| model | VARCHAR(128) NULL（V40） | 自定义 API 的默认 Codex 模型 |
-| api_protocol | VARCHAR(24) NULL（V40） | 自定义 API 协议，目前固定为 `responses` |
+| base_url | VARCHAR(512) NULL（V40） | API 根地址；自定义 Responses API 规范化为 `/v1`，供应商 API 固定可信主机/路径 |
+| model | VARCHAR(128) NULL（V40） | API 默认模型；供应商类型只接受规格允许的模型 |
+| api_protocol | VARCHAR(24) NULL（V40） | API 协议：`responses` / `chat_completions` |
 
 集中管理 AI 工具账号，解决多台 Runner 重复登录和额度查看不统一的问题。
 凭据加密存储，前端接口不回传明文；未绑定到运行的官方/手工凭据仍可通过 opt-in 的
@@ -420,7 +420,8 @@ V63 新增 `last_low_quota_key`，保存已经成功发送飞书提醒的“账�
 OAuth 下发前会先把快过期的 access token 续期。
 额度查询只使用真实返回：Claude 走 Anthropic 的 `/api/oauth/usage`；Codex OAuth 使用同一登录态
 尽力读取 ChatGPT 的 `backend-api/wham/usage`，失败时标记 `FAILED` 并允许重试；Qoder 没有可靠接口时
-标记为 `NO_API`。任何未知额度都不伪造成 0%。详见 ADR-030 至 ADR-032。
+标记为 `NO_API`。DeepSeek 与 `model_gateway` 供服务端文档润色使用，后者不进入 AI Run；两者都用真实
+`/models` 验证权限且不把未知配额伪造成 0%。详见 ADR-030 至 ADR-032、ADR-086、ADR-128。
 
 ### ai_assistant_run（V50）
 

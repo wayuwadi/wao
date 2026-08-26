@@ -420,14 +420,33 @@ class AiAssistantServiceTest {
         AiRunAccountDto account = new AiRunAccountDto(
                 "aa-deepseek", "deepseek", "DeepSeek 文档润色", "api_key", null,
                 "token-value", "https://api.deepseek.com", "deepseek-v4-flash", "chat_completions");
-        when(accountService.defaultDeepSeekPolishAccount()).thenReturn(account);
-        when(deepSeekApi.polish(account.baseUrl(), account.apiKey(), account.model(), "需要优化的原文。"))
+        when(accountService.defaultDocumentPolishAccount()).thenReturn(account);
+        when(deepSeekApi.polish(account.provider(), account.baseUrl(), account.apiKey(), account.model(),
+                "需要优化的原文。"))
                 .thenReturn("表达更清晰的原文。");
 
         assertThat(service.polishText("需要优化的原文。", "wg")).isEqualTo("表达更清晰的原文。");
 
-        verify(deepSeekApi).polish(
+        verify(deepSeekApi).polish("deepseek",
                 "https://api.deepseek.com", "token-value", "deepseek-v4-flash", "需要优化的原文。");
+        verify(mapper, org.mockito.Mockito.never()).insertReadOnlyQueued(any(AiAssistantRunEntity.class));
+    }
+
+    @Test
+    void documentPolishUsesConfiguredModelGatewayWithoutExposingItToAiRuns() {
+        AiRunAccountDto account = new AiRunAccountDto(
+                "aa-gateway", "model_gateway", "醒市模型网关", "api_key", null,
+                "gateway-value", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL,
+                "deepseek-v4-flash", "chat_completions");
+        when(accountService.defaultDocumentPolishAccount()).thenReturn(account);
+        when(deepSeekApi.polish(account.provider(), account.baseUrl(), account.apiKey(), account.model(),
+                "需要优化的原文。"))
+                .thenReturn("网关返回的润色结果。");
+
+        assertThat(service.polishText("需要优化的原文。", "wg")).isEqualTo("网关返回的润色结果。");
+
+        verify(deepSeekApi).polish("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL,
+                "gateway-value", "deepseek-v4-flash", "需要优化的原文。");
         verify(mapper, org.mockito.Mockito.never()).insertReadOnlyQueued(any(AiAssistantRunEntity.class));
     }
 

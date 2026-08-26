@@ -107,13 +107,13 @@ paths:
         '200': { description: 返回 configured 与可读状态说明 }
   /assistant/polish:
     post:
-      summary: 优先用设置页启用的 DeepSeek 官方 API 润色文档选区，无配置时回退只读本地 Codex
+      summary: 优先用设置页启用的受信模型网关或 DeepSeek API 润色文档选区，无配置时回退只读本地 Codex
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/PolishTextRequest' } } }
       responses:
         '200': { description: 返回可直接替换选区的 polished 文字 }
-        '400': { description: 选区为空或超长、DeepSeek 鉴权/模型/响应失败，或 Codex 回退链路不可用 }
+        '400': { description: 选区为空或超长、模型 API 鉴权/模型/响应失败，或 Codex 回退链路不可用 }
   /assistant/source-options:
     get:
       summary: AI 助手当前可用的群聊、发言人、项目和聊天日期范围
