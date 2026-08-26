@@ -7,7 +7,12 @@ import TaskDrawer from '@/components/task/TaskDrawer.vue'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 import { useUiStore } from '@/stores/ui'
+import { useToastHost } from '@/composables/toast'
 import type { AiRun } from '@/types'
+
+vi.mock('@/utils/clipboard', () => ({
+  copyToClipboard: vi.fn().mockResolvedValue(true),
+}))
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
@@ -96,6 +101,7 @@ describe('TaskDrawer', () => {
     ui = useUiStore()
     taskId = data.tasks[0]!.id
     data.tasks[0]!.subs = []
+    useToastHost().items.splice(0)
   })
 
   it('没有打开的任务时不渲染抽屉', () => {
@@ -113,6 +119,37 @@ describe('TaskDrawer', () => {
     // 编辑器是异步组件（ProseMirror 不进首屏包），要等它解析完才出现在 DOM 里
     expect(w.find('textarea.desc').exists()).toBe(false)
     expect(await waitFor(w, '.md-body')).toBe(true)
+  })
+
+  it('属性栏展示真实 JOBID，点击后复制任务稳定标识', async () => {
+    const { copyToClipboard } = await import('@/utils/clipboard')
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    const jobId = w.get('.job-id-copy')
+    expect(jobId.text()).toContain(taskId)
+    await jobId.trigger('click')
+    await flushPromises()
+
+    expect(copyToClipboard).toHaveBeenCalledWith(taskId)
+    expect(useToastHost().items.some((item) => item.text === `JOBID ${taskId} 已复制`)).toBe(true)
+    w.unmount()
+  })
+
+  it('JOBID 复制失败时保留可手动选择的真实标识', async () => {
+    const { copyToClipboard } = await import('@/utils/clipboard')
+    vi.mocked(copyToClipboard).mockResolvedValueOnce(false)
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.get('.job-id-copy').trigger('click')
+    await flushPromises()
+
+    expect(w.get('.job-id-copy').text()).toContain(taskId)
+    expect(useToastHost().items.some((item) => item.text.includes('复制失败'))).toBe(true)
+    w.unmount()
   })
 
   it('历史 PDCA 数据仍可加载，但任务详情不再展示或操作该模块', async () => {
