@@ -25,6 +25,7 @@ import { absoluteTime, relativeTime } from '@/utils/time'
 import { activitySentence } from '@/utils/activity'
 import { useIsMobile } from '@/composables/viewport'
 import { useFavoritesStore } from '@/stores/favorites'
+import { nextTaskAiRunPollDelay, taskAiRunFingerprint } from '@/utils/taskAiRunPolling'
 import type { AiEngine, AiRun, Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
@@ -58,9 +59,19 @@ const aiRunsLoading = ref(false)
 /** 首次打开可显示加载态；后续轮询不得反复推挤评论区。 */
 const aiRunsLoaded = ref(false)
 const pausingRunId = ref<string | null>(null)
-let aiRunsTimer: ReturnType<typeof setInterval> | null = null
+let aiRunsTimer: ReturnType<typeof setTimeout> | null = null
+let aiRunsUnchangedRounds = 0
+let lastAiRunsFingerprint = ''
+let aiRunsRequestTaskId: string | null = null
+let aiRunsRequestGeneration = 0
+let aiRunsPollingStopped = false
 /** 右侧栏当前展开的子任务标识；为 null 时显示任务属性栏。 */
 const openSubId = ref<string | null>(null)
+
+function clearAiRunsTimer() {
+  if (aiRunsTimer) clearTimeout(aiRunsTimer)
+  aiRunsTimer = null
+}
 
 watch(
   () => ui.openTaskId,
@@ -76,6 +87,9 @@ watch(
     confirmingDelete.value = false
     aiRuns.value = []
     aiRunsLoaded.value = false
+    aiRunsUnchangedRounds = 0
+    lastAiRunsFingerprint = ''
+    clearAiRunsTimer()
   },
 )
 
@@ -85,20 +99,43 @@ async function refreshTaskAiRuns() {
     aiRuns.value = []
     return
   }
+  // 同一任务的慢请求尚未结束时不再叠一层；切换任务则允许新任务立即读取，旧响应会被代次丢弃。
+  if (aiRunsRequestTaskId === taskId) return
+  clearAiRunsTimer()
+  const generation = ++aiRunsRequestGeneration
+  aiRunsRequestTaskId = taskId
   aiRunsLoading.value = true
+  let failed = false
   try {
     const next = await fetchTaskAiRuns(taskId)
-    if (ui.openTaskId === taskId) {
+    if (ui.openTaskId === taskId && generation === aiRunsRequestGeneration) {
+      const fingerprint = taskAiRunFingerprint(next)
+      aiRunsUnchangedRounds = fingerprint === lastAiRunsFingerprint
+        ? aiRunsUnchangedRounds + 1
+        : 0
+      lastAiRunsFingerprint = fingerprint
       aiRuns.value = next
       data.applyAiRunStatuses(next)
     }
   } catch {
+    failed = true
+    aiRunsUnchangedRounds = 0
     // 保留上一帧，网络抖动不应让已展示的 AI 档案消失。
   } finally {
-    if (ui.openTaskId === taskId) {
+    if (generation === aiRunsRequestGeneration) {
+      aiRunsRequestTaskId = null
+    }
+    if (ui.openTaskId === taskId && generation === aiRunsRequestGeneration) {
       aiRunsLoading.value = false
       // 请求失败同样结束首次加载态；下一轮会重试，但页面布局保持稳定。
       aiRunsLoaded.value = true
+      // setTimeout 在本次请求结束后才启动，P95 超过轮询间隔时也不会堆积并发请求。
+      if (!aiRunsPollingStopped && !document.hidden) {
+        aiRunsTimer = setTimeout(
+          () => void refreshTaskAiRuns(),
+          nextTaskAiRunPollDelay(aiRuns.value, aiRunsUnchangedRounds, failed),
+        )
+      }
     }
   }
 }
@@ -279,16 +316,30 @@ function onKey(e: KeyboardEvent) {
   else if (openSubId.value) openSubId.value = null
   else close()
 }
+function syncTaskAiRunsImmediately() {
+  if (document.hidden || !ui.openTaskId) return
+  aiRunsUnchangedRounds = 0
+  clearAiRunsTimer()
+  void refreshTaskAiRuns()
+}
+function onTaskAiRunsVisibilityChange() {
+  if (document.hidden) clearAiRunsTimer()
+  else syncTaskAiRunsImmediately()
+}
 onMounted(() => {
+  aiRunsPollingStopped = false
   window.addEventListener('keydown', onKey)
-  aiRunsTimer = setInterval(() => {
-    // 抽屉打开期间始终轮询：运行可能从另一个页面 / 另一台电脑发起，不能因为首帧没有活动运行就停掉。
-    if (ui.openTaskId) void refreshTaskAiRuns()
-  }, 5_000)
+  window.addEventListener('focus', syncTaskAiRunsImmediately)
+  document.addEventListener('visibilitychange', onTaskAiRunsVisibilityChange)
 })
 onBeforeUnmount(() => {
+  aiRunsPollingStopped = true
+  aiRunsRequestGeneration += 1
+  aiRunsRequestTaskId = null
   window.removeEventListener('keydown', onKey)
-  if (aiRunsTimer) clearInterval(aiRunsTimer)
+  window.removeEventListener('focus', syncTaskAiRunsImmediately)
+  document.removeEventListener('visibilitychange', onTaskAiRunsVisibilityChange)
+  clearAiRunsTimer()
 })
 function editTitle(e: Event) {
   if (task.value) data.patchTask(task.value.id, { title: (e.target as HTMLTextAreaElement).value })
