@@ -127,6 +127,7 @@ public class AiRunService {
     private final ImageService images;
     private final CodexQuotaService codexQuotas;
     private final ProjectMemoryService projectMemories;
+    private final AiSkillCapabilityService skillCapabilities;
 
     /** 返回后台受控的单次运行参数；前端不自行维护模型标识。 */
     public AiRunOptionsDto runOptions() {
@@ -145,7 +146,8 @@ public class AiRunService {
             AiRunnerPairCodeMapper pairMapper, AiTaskRunMapper runMapper, AiRunProgressMapper progressMapper,
             TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier,
             RunnerScriptService scripts, AiAccountService accounts, HostedPageService hostedPages,
-            ImageService images, CodexQuotaService codexQuotas, ProjectMemoryService projectMemories) {
+            ImageService images, CodexQuotaService codexQuotas, ProjectMemoryService projectMemories,
+            AiSkillCapabilityService skillCapabilities) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
         this.pairMapper = pairMapper;
@@ -161,6 +163,7 @@ public class AiRunService {
         this.images = images;
         this.codexQuotas = codexQuotas;
         this.projectMemories = projectMemories;
+        this.skillCapabilities = skillCapabilities;
     }
 
     /** 读取项目配置；尚未保存过时返回安全的关闭状态。 */
@@ -531,6 +534,7 @@ public class AiRunService {
             run.setRequestedModel(requestedModel);
             run.setReasoningEffort(requestedEffort);
             run.setPlanMode("codex".equals(runEngine) && Boolean.TRUE.equals(planMode));
+            run.setCapabilityManifestJson(capabilityManifest(task.getProjectId(), runEngine));
             run.setStatus("queued");
             run.setRequestedRunnerId(runTarget == null ? null : runTarget.getId());
             run.setRequestedBy(requestedBy);
@@ -604,6 +608,7 @@ public class AiRunService {
         run.setRequestedModel(requestedModel);
         run.setReasoningEffort(requestedEffort);
         run.setPlanMode("codex".equals(runEngine) && Boolean.TRUE.equals(planMode));
+        run.setCapabilityManifestJson(capabilityManifest(first.getProjectId(), runEngine));
         run.setStatus("queued");
         run.setRequestedRunnerId(runTarget == null ? null : runTarget.getId());
         run.setRequestedBy(requestedBy);
@@ -879,6 +884,7 @@ public class AiRunService {
         run.setRequestedModel(source.getRequestedModel());
         run.setReasoningEffort(source.getReasoningEffort());
         run.setPlanMode(Boolean.TRUE.equals(source.getPlanMode()));
+        run.setCapabilityManifestJson(capabilityManifest(source.getProjectId(), engine));
         run.setStatus("queued");
         run.setRequestedRunnerId(source.getRequestedRunnerId());
         run.setRequestedBy(requestedBy);
@@ -1111,6 +1117,13 @@ public class AiRunService {
             if (config == null || !Boolean.TRUE.equals(config.getEnabled())) continue;
             String engine = blankOr(run.getEngine(), DEFAULT_ENGINE);
             if (!ownEngines.contains(engine)) continue;
+            List<cn.wayuwa.wao.dto.AiSkillCapabilityDto> runSkills =
+                    skillCapabilities.manifest(run.getCapabilityManifestJson());
+            // 旧 Runner 不认识 skills 字段时会静默忽略。带能力清单的任务只允许精确脚本哈希领取，
+            // 滚动发布期间宁可继续排队，也不能无 Skill 执行。
+            if (!runSkills.isEmpty() && (!scripts.available() || !scripts.hash().equals(runner.getScriptHash()))) {
+                continue;
+            }
             // 单次运行指定的电脑优先级最高；没有指定时才回落到项目的首选电脑。
             if (StringUtils.hasText(run.getRequestedRunnerId())) {
                 if (!runner.getId().equals(run.getRequestedRunnerId())) continue;
@@ -1154,7 +1167,8 @@ public class AiRunService {
                     blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName(),
                     previousFailure(run), run.getSessionId(), continuationInput,
                     accounts.runAccount(run.getAiAccountId(), engine), memoryContext,
-                    memoryContext.stream().map(ProjectMemoryContextDto::id).toList());
+                    memoryContext.stream().map(ProjectMemoryContextDto::id).toList(),
+                    runSkills);
         }
         return null;
     }
@@ -1191,6 +1205,8 @@ public class AiRunService {
         int exitCode = request.exitCode() == null ? -1 : request.exitCode();
         if (StringUtils.hasText(request.sessionId())) run.setSessionId(limit(request.sessionId(), 128));
         applyUsage(run, request);
+        run.setCapabilityAuditJson(skillCapabilities.writeAudit(
+                skillCapabilities.normalizeAudit(run.getCapabilityManifestJson(), request.skillAudits())));
         // 用户输入可能恰好在 CLI 自然结束、Runner 尚未来得及轮询时到达。不要把它随终态清掉：
         // 固定排回原电脑，下一次 claim 会消费 pending_input 并恢复刚回传的同一会话。
         if (StringUtils.hasText(run.getPendingInput()) && StringUtils.hasText(run.getSessionId())) {
@@ -1487,8 +1503,43 @@ public class AiRunService {
                     run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
                     text(run.getStartedAt()), text(run.getFinishedAt()),
                     memoryReadsByRun.getOrDefault(run.getId(), List.of()),
-                    memoryWritesByRun.getOrDefault(run.getId(), List.of()));
+                    memoryWritesByRun.getOrDefault(run.getId(), List.of()),
+                    skillCapabilities.manifest(run.getCapabilityManifestJson()),
+                    skillCapabilities.readAudit(run.getCapabilityAuditJson()));
         }).toList();
+    }
+
+    /** Runner 下载某次运行快照里的审核 Skill；清单外版本一律拒绝。 */
+    public AiSkillCapabilityService.SkillPackage downloadRunSkill(String token, String runId, String versionId) {
+        AiRunnerNodeEntity runner = requireRunner(token);
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        if (!runner.getId().equals(run.getRunnerId())) throw new UnauthorizedException("该运行不属于当前执行节点");
+        boolean allowed = skillCapabilities.manifest(run.getCapabilityManifestJson()).stream()
+                .anyMatch(item -> item.versionId().equals(versionId));
+        if (!allowed) throw new UnauthorizedException("这个 Skill 不在本次运行的固定能力清单中");
+        return skillCapabilities.packageContent(versionId);
+    }
+
+    /** 校验 Runner 与运行归属，并返回创建市场草稿所需的真实发起人。 */
+    public String skillCandidateOwner(String token, String runId) {
+        AiRunnerNodeEntity runner = requireRunner(token);
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        if (!runner.getId().equals(run.getRunnerId())) throw new UnauthorizedException("该运行不属于当前执行节点");
+        if (!"running".equals(run.getStatus())) throw new BadRequestException("只能在运行完成回传前上传 Skill 候选");
+        if (!StringUtils.hasText(run.getRequestedBy()) || "unknown".equals(run.getRequestedBy())) {
+            throw new BadRequestException("本次运行缺少真实发起人，不能归属 Skill 草稿");
+        }
+        return run.getRequestedBy();
+    }
+
+    private String capabilityManifest(String projectId, String engine) {
+        String manifest = skillCapabilities.snapshot(projectId);
+        if (!skillCapabilities.manifest(manifest).isEmpty() && !"codex".equals(engine)) {
+            throw new BadRequestException("项目已启用 Skill，当前只支持 Codex；请改用 Codex 或先解除 Skill 绑定");
+        }
+        return manifest;
     }
 
     /** 旧任务曾把 Markdown 图片串当标题；列表读取时从原目标重新提炼可读标题。 */

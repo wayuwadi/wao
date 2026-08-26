@@ -108,6 +108,28 @@ public class SkillMarketService {
         return createDraft(memberId, request, inspector.inspectFiles(files, paths));
     }
 
+    /**
+     * 把成功 AI Run 产出的候选包收进发起人的市场草稿，不自动确认授权或提交审核。
+     * 同名 Skill 会递增补丁版本，使方法可以迭代但不会覆盖已发布快照。
+     */
+    @Transactional
+    public SkillDtos.MySkill createAiDraft(String memberId, MultipartFile archive, String runId) {
+        try {
+            SkillPackageInspector.Inspection packageInfo = inspector.inspectZip(archive == null ? null : archive.getBytes());
+            String slug = aiSlug(packageInfo.name(), packageInfo.sha256());
+            SkillEntity existing = skills.findOwnedBySlug(requiredMember(memberId), slug);
+            String version = existing == null ? "0.1.0" : nextPatchVersion(existing.getId());
+            SkillRequests.Draft request = new SkillRequests.Draft(existing == null ? null : existing.getId(), slug,
+                    limitText(packageInfo.name(), 100), limitText(packageInfo.description(), 500),
+                    "agent-automation", List.of("ai-run", "candidate"), version,
+                    "由 AI Run " + limitText(text(runId), 64) + " 根据已验收工作生成，等待作者复核适用范围与授权。",
+                    "ALL-RIGHTS-RESERVED", List.of("codex"), false);
+            return createDraft(memberId, request, packageInfo);
+        } catch (java.io.IOException ex) {
+            throw new BadRequestException("读取 AI Skill 候选失败，请重试");
+        }
+    }
+
     private SkillDtos.MySkill createDraft(String memberId, SkillRequests.Draft request,
             SkillPackageInspector.Inspection packageInfo) {
         memberId = requiredMember(memberId); validateDraft(request);
@@ -283,6 +305,24 @@ public class SkillMarketService {
         if (!SLUG.matcher(text(request.slug()).toLowerCase()).matches()) throw new BadRequestException("slug 需为 1-64 位小写字母、数字或连字符");
         if (!SEMVER.matcher(text(request.version())).matches()) throw new BadRequestException("版本号必须符合语义化版本，如 1.0.0");
         validateMetadata(request.displayName(), request.summary(), request.category(), request.tags(), request.changelog(), request.license(), request.testedPlatforms());
+    }
+
+    private String nextPatchVersion(String skillId) {
+        int[] latest = versions.listMeta(skillId).stream().map(SkillVersionEntity::getVersion)
+                .map(value -> value == null ? new int[]{0, 0, 0} : java.util.Arrays.stream(value.split("[.-]", 4))
+                        .limit(3).mapToInt(part -> part.matches("\\d+") ? Integer.parseInt(part) : 0).toArray())
+                .filter(parts -> parts.length == 3)
+                .max((left, right) -> left[0] != right[0] ? Integer.compare(left[0], right[0])
+                        : left[1] != right[1] ? Integer.compare(left[1], right[1]) : Integer.compare(left[2], right[2]))
+                .orElse(new int[]{0, 0, 0});
+        return latest[0] + "." + latest[1] + "." + (latest[2] + 1);
+    }
+
+    private String aiSlug(String name, String sha256) {
+        String value = text(name).toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("^-+|-+$", "");
+        if (value.isBlank()) value = "ai-skill-" + sha256.substring(0, 12);
+        return value.length() <= 64 ? value : value.substring(0, 64).replaceAll("-+$", "");
     }
 
     private void applyDraft(SkillVersionEntity version, String displayName, String summary, String category,

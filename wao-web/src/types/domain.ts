@@ -577,6 +577,26 @@ export interface AiRunUsage {
   recorded: boolean
 }
 
+/** 项目绑定并在 AI Run 入队时固化的审核 Skill。 */
+export interface AiSkillCapability {
+  skillId: string
+  versionId: string
+  displayName: string
+  summary: string
+  version: string
+  sha256: string
+  compatiblePlatforms: string[]
+}
+
+export interface AiSkillAudit {
+  skillId: string
+  versionId: string
+  displayName: string
+  version: string
+  status: 'loaded' | 'failed' | 'incompatible' | 'not_reported'
+  message: string | null
+}
+
 export type ProjectMemoryCategory =
   'decision' | 'convention' | 'pitfall' | 'verification' | 'operation' | 'context'
 
@@ -647,6 +667,10 @@ export interface AiRun {
   continuationPending?: boolean
   sessionId: string | null
   exitCode: number | null
+  /** 本次入队时固定的 Skill 版本，不随项目之后的配置变化。 */
+  skills?: AiSkillCapability[]
+  /** Runner 实际装配结果；运行未结束时可能为空。 */
+  skillAudits?: AiSkillAudit[]
   createdAt: string
   startedAt: string | null
   finishedAt: string | null

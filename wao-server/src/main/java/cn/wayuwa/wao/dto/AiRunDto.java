@@ -53,5 +53,9 @@ public record AiRunDto(
         /** 领取时实际注入给 AI 的项目工程记忆。 */
         List<ProjectMemoryReferenceDto> memoryReads,
         /** 本次成功运行实际沉淀的项目工程记忆。 */
-        List<ProjectMemoryReferenceDto> memoryWrites) {
+        List<ProjectMemoryReferenceDto> memoryWrites,
+        /** 入队时固化的 Skill 清单。 */
+        List<AiSkillCapabilityDto> skills,
+        /** Runner 实际装配 Skill 的审计结果。 */
+        List<AiSkillAuditDto> skillAudits) {
 }

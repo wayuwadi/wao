@@ -17,6 +17,8 @@ import cn.wayuwa.wao.service.AiAssistantService;
 import cn.wayuwa.wao.service.AiEvolutionService;
 import cn.wayuwa.wao.service.AiRunService;
 import cn.wayuwa.wao.service.AiTaskAutoRunService;
+import cn.wayuwa.wao.service.AiSkillCapabilityService;
+import cn.wayuwa.wao.service.SkillMarketService;
 import cn.wayuwa.wao.service.AiRunnerLifecycleService;
 import cn.wayuwa.wao.service.AiRunnerWakeService;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,8 @@ class AiRunAssistantProtocolControllerTest {
     @MockBean private CurrentMember currentMember;
     @MockBean private AiEvolutionService evolutionService;
     @MockBean private AiTaskAutoRunService taskAutoRunService;
+    @MockBean private AiSkillCapabilityService skillCapabilities;
+    @MockBean private SkillMarketService skillMarket;
 
     @Test
     void claimReturnsTheAttemptTokenToTheRunner() throws Exception {

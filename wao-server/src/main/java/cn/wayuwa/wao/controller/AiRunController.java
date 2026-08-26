@@ -30,6 +30,8 @@ import cn.wayuwa.wao.dto.LaunchAutonomousGoalRequest;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
+import cn.wayuwa.wao.dto.SaveProjectSkillsRequest;
+import cn.wayuwa.wao.dto.AiSkillCapabilityDto;
 import cn.wayuwa.wao.dto.SaveAiEvolutionScheduleRequest;
 import cn.wayuwa.wao.dto.SaveAiTaskAutoRunPolicyRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
@@ -45,6 +47,8 @@ import cn.wayuwa.wao.service.AiRunnerWakeService;
 import cn.wayuwa.wao.service.AiRunnerLifecycleService;
 import cn.wayuwa.wao.service.AiEvolutionService;
 import cn.wayuwa.wao.service.AiTaskAutoRunService;
+import cn.wayuwa.wao.service.AiSkillCapabilityService;
+import cn.wayuwa.wao.service.SkillMarketService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -78,12 +82,15 @@ public class AiRunController {
     private final CurrentMember currentMember;
     private final AiEvolutionService evolutionService;
     private final AiTaskAutoRunService taskAutoRunService;
+    private final AiSkillCapabilityService skillCapabilities;
+    private final SkillMarketService skillMarket;
 
     public AiRunController(AiRunService service, AiAccountService aiAccountService,
             AiAssistantService assistantService,
             AiRunnerWakeService wakeService, AiRunnerLifecycleService lifecycleService,
             CurrentMember currentMember, AiEvolutionService evolutionService,
-            AiTaskAutoRunService taskAutoRunService) {
+            AiTaskAutoRunService taskAutoRunService, AiSkillCapabilityService skillCapabilities,
+            SkillMarketService skillMarket) {
         this.service = service;
         this.aiAccountService = aiAccountService;
         this.assistantService = assistantService;
@@ -92,6 +99,8 @@ public class AiRunController {
         this.currentMember = currentMember;
         this.evolutionService = evolutionService;
         this.taskAutoRunService = taskAutoRunService;
+        this.skillCapabilities = skillCapabilities;
+        this.skillMarket = skillMarket;
     }
 
     @GetMapping("/projects/{projectId}/config")
@@ -103,6 +112,25 @@ public class AiRunController {
     public ApiResponse<AiProjectConfigDto> saveConfig(@PathVariable String projectId,
             @RequestBody SaveAiProjectConfigRequest request) {
         return ApiResponse.ok(service.saveConfig(projectId, request));
+    }
+
+    /** 返回市场当前可供项目启用的 Codex Skill。 */
+    @GetMapping("/skills/available")
+    public ApiResponse<List<AiSkillCapabilityDto>> availableSkills() {
+        return ApiResponse.ok(skillCapabilities.available());
+    }
+
+    /** 返回项目固定启用的审核 Skill 版本。 */
+    @GetMapping("/projects/{projectId}/skills")
+    public ApiResponse<List<AiSkillCapabilityDto>> projectSkills(@PathVariable String projectId) {
+        return ApiResponse.ok(skillCapabilities.projectSkills(projectId));
+    }
+
+    /** 整体保存项目 Skill 绑定；升级只影响之后新建的运行。 */
+    @PutMapping("/projects/{projectId}/skills")
+    public ApiResponse<List<AiSkillCapabilityDto>> saveProjectSkills(@PathVariable String projectId,
+            @Valid @RequestBody SaveProjectSkillsRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(skillCapabilities.saveProjectSkills(projectId, request.versionIds(), currentMember.id(http)));
     }
 
     @GetMapping("/workflows")
@@ -320,6 +348,26 @@ public class AiRunController {
     @PostMapping("/runner/claim")
     public ApiResponse<AiRunnerClaimDto> claim(@RequestHeader(RUNNER_TOKEN) String token) {
         return ApiResponse.ok(service.claim(token));
+    }
+
+    /** Runner 拉取本次运行快照中的不可变 Skill 包。 */
+    @GetMapping("/runner/runs/{runId}/skills/{versionId}")
+    public ResponseEntity<byte[]> runSkill(@RequestHeader(RUNNER_TOKEN) String token,
+            @PathVariable String runId, @PathVariable String versionId) {
+        AiSkillCapabilityService.SkillPackage skill = service.downloadRunSkill(token, runId, versionId);
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .cacheControl(CacheControl.noStore()).header("X-Content-Type-Options", "nosniff")
+                .header("X-WAO-Skill-SHA256", skill.sha256())
+                .header("Content-Disposition", "attachment; filename=\"" + skill.filename().replace("\"", "") + "\"")
+                .body(skill.content());
+    }
+
+    /** 成功运行把自建 Skill 候选上传为发起人的未授权草稿，绝不自动发布。 */
+    @PostMapping(value = "/runner/runs/{runId}/skill-candidates", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<cn.wayuwa.wao.dto.SkillDtos.MySkill> skillCandidate(
+            @RequestHeader(RUNNER_TOKEN) String token, @PathVariable String runId,
+            @RequestParam MultipartFile archive) {
+        return ApiResponse.ok(skillMarket.createAiDraft(service.skillCandidateOwner(token, runId), archive, runId));
     }
 
     /** 空闲的本地 Codex 节点领取一条页面问答。 */

@@ -35,7 +35,9 @@ public record AiRunnerClaimDto(
         /** 按任务关键词筛出的不可信项目背景引用，最多五条、合计不超过一万字。 */
         List<ProjectMemoryContextDto> projectMemories,
         /** 本次实际读取的记忆 id；旧 Runner 可忽略。 */
-        List<String> projectMemoryIds) {
+        List<String> projectMemoryIds,
+        /** 入队时固化的审核 Skill；Runner 只装配这里列出的版本。 */
+        List<AiSkillCapabilityDto> skills) {
 
     public AiRunnerClaimDto(String runId, String taskId, String taskTitle, String projectId,
             String projectName, String engine, String promptUrl, String repoUrl, String defaultBranch,
@@ -43,7 +45,7 @@ public record AiRunnerClaimDto(
             String continuationInput, AiRunAccountDto account) {
         this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false,
                 promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, previousFailure, sessionId,
-                continuationInput, account, List.of(), List.of());
+                continuationInput, account, List.of(), List.of(), List.of());
     }
 
     public AiRunnerClaimDto(String runId, String taskId, String taskTitle, String projectId,
@@ -52,6 +54,6 @@ public record AiRunnerClaimDto(
             String continuationInput) {
         this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false,
                 promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, previousFailure, sessionId,
-                continuationInput, null, List.of(), List.of());
+                continuationInput, null, List.of(), List.of(), List.of());
     }
 }

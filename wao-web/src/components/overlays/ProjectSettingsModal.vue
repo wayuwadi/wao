@@ -4,12 +4,15 @@ import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import {
   createAiPairCode,
+  fetchAvailableAiSkills,
   fetchAiProjectConfig,
+  fetchAiProjectSkills,
   fetchAiRunners,
   saveAiProjectConfig,
+  saveAiProjectSkills,
 } from '@/api/ai'
 import { AI_ENGINES, engineLabel } from '@/composables/aiEngines'
-import type { AiEngine, AiRunner, Project } from '@/types'
+import type { AiEngine, AiRunner, AiSkillCapability, Project } from '@/types'
 
 const props = defineProps<{ project: Project }>()
 const emit = defineEmits<{ close: []; deleted: [] }>()
@@ -33,6 +36,18 @@ const maxParallelRuns = ref(2)
 const runners = ref<AiRunner[]>([])
 const pairCode = ref('')
 const pairExpiresAt = ref('')
+const availableSkills = ref<AiSkillCapability[]>([])
+const selectedSkillVersions = ref<string[]>([])
+
+function toggleSkill(skill: AiSkillCapability, checked: boolean) {
+  if (!checked) {
+    selectedSkillVersions.value = selectedSkillVersions.value.filter((versionId) => versionId !== skill.versionId)
+    return
+  }
+  const sameSkillVersions = new Set(availableSkills.value.filter((item) => item.skillId === skill.skillId).map((item) => item.versionId))
+  selectedSkillVersions.value = selectedSkillVersions.value.filter((versionId) => !sameSkillVersions.has(versionId))
+  selectedSkillVersions.value.push(skill.versionId)
+}
 
 /** 可选项目图标（remixicon）。 */
 const ICONS = [
@@ -62,6 +77,7 @@ async function save() {
       preferredRunnerId: preferredRunnerId.value || null,
       maxParallelRuns: maxParallelRuns.value,
     })
+    await saveAiProjectSkills(props.project.id, selectedSkillVersions.value)
     toast('项目设置与 AI Run 配置已保存', 'ri-check-line')
     emit('close')
   } catch (error) {
@@ -77,9 +93,11 @@ async function remove() {
 async function loadAiConfig() {
   aiLoading.value = true
   try {
-    const [config, nodes] = await Promise.all([
+    const [config, nodes, skills, enabledSkills] = await Promise.all([
       fetchAiProjectConfig(props.project.id),
       fetchAiRunners(),
+      fetchAvailableAiSkills(),
+      fetchAiProjectSkills(props.project.id),
     ])
     aiEnabled.value = config.enabled
     repoUrl.value = config.repoUrl
@@ -89,6 +107,9 @@ async function loadAiConfig() {
     preferredRunnerId.value = config.preferredRunnerId ?? ''
     maxParallelRuns.value = config.maxParallelRuns
     runners.value = nodes
+    const availableVersionIds = new Set(skills.map((item) => item.versionId))
+    availableSkills.value = [...skills, ...enabledSkills.filter((item) => !availableVersionIds.has(item.versionId))]
+    selectedSkillVersions.value = enabledSkills.map((item) => item.versionId)
   } catch (error) {
     toast(error instanceof Error ? error.message : 'AI Run 配置加载失败', 'ri-error-warning-line')
   } finally {
@@ -200,6 +221,19 @@ onMounted(loadAiConfig)
               {{ runner.name }} · {{ runner.engines.map(engineLabel).join(' / ') }}{{ runner.online ? ` · 在线 ${runner.activeRuns}/${runner.maxConcurrency}` : ' · 离线' }}
             </option>
           </select>
+        </label>
+      </div>
+
+      <div v-if="!aiLoading" class="skill-config" :class="{ muted: !aiEnabled }">
+        <div class="skill-config-head">
+          <div><b>项目 Skill</b><span>固定审核版本，只在隔离的 Codex 运行中加载；升级不会改写历史运行。</span></div>
+          <RouterLink to="/wao/skills" target="_blank">打开 Skill 市场</RouterLink>
+        </div>
+        <div v-if="defaultEngine !== 'codex'" class="skill-engine-warning">项目 Skill 当前只支持 Codex；改用其它默认工具前请先取消全部绑定。</div>
+        <div v-if="!availableSkills.length" class="skill-empty">市场暂无可启用的 Codex Skill，可先发布并通过审核。</div>
+        <label v-for="skill in availableSkills" v-else :key="skill.versionId" class="skill-option">
+          <input type="checkbox" :value="skill.versionId" :checked="selectedSkillVersions.includes(skill.versionId)" :disabled="defaultEngine !== 'codex' || (selectedSkillVersions.length >= 10 && !selectedSkillVersions.includes(skill.versionId) && !availableSkills.some((item) => item.skillId === skill.skillId && selectedSkillVersions.includes(item.versionId)))" @change="toggleSkill(skill, ($event.target as HTMLInputElement).checked)" />
+          <span><b>{{ skill.displayName }} <small>v{{ skill.version }}</small></b><em>{{ skill.summary }}</em></span>
         </label>
       </div>
 
@@ -425,6 +459,20 @@ onMounted(loadAiConfig)
   align-items: center;
   gap: 14px;
 }
+.skill-config { margin-top: 14px; border-top: 1px solid var(--wao-line); padding-top: 13px; }
+.skill-config-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.skill-config-head > div { display: grid; gap: 3px; }
+.skill-config-head b { font-size: 12px; }
+.skill-config-head span,.skill-empty { font-size: 11px; color: var(--wao-text-weak); line-height: 1.5; }
+.skill-config-head a { flex: none; font-size: 11px; color: var(--wao-primary-text); text-decoration: none; }
+.skill-option { margin-top: 8px; display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; border: 1px solid var(--wao-line-control); border-radius: 9px; background: var(--wao-bg-card); cursor: pointer; }
+.skill-option input { margin-top: 3px; accent-color: var(--wao-primary); }
+.skill-option span { min-width: 0; display: grid; gap: 3px; }
+.skill-option b { font-size: 12px; color: var(--wao-text); }
+.skill-option small { color: var(--wao-text-weak); font-weight: 500; }
+.skill-option em { font-size: 11px; color: var(--wao-text-weak); font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.skill-empty { padding: 12px 0 2px; }
+.skill-engine-warning { margin-top: 8px; color: var(--wao-warning-strong); font-size: 11px; }
 .ai-head > div,
 .runner-box > div {
   flex: 1;

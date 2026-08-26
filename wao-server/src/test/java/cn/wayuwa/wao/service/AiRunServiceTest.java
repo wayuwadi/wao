@@ -68,9 +68,10 @@ class AiRunServiceTest {
     private final ImageService images = mock(ImageService.class);
     private final CodexQuotaService codexQuotas = mock(CodexQuotaService.class);
     private final ProjectMemoryService projectMemories = mock(ProjectMemoryService.class);
+    private final AiSkillCapabilityService skillCapabilities = mock(AiSkillCapabilityService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
-            tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas, projectMemories);
+            tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas, projectMemories, skillCapabilities);
 
     @BeforeEach
     void emptyProgressByDefault() {
@@ -79,6 +80,11 @@ class AiRunServiceTest {
         when(projectMemories.recall(any(), any())).thenReturn(List.of());
         when(projectMemories.readReferences(any())).thenReturn(Map.of());
         when(projectMemories.writeReferences(any())).thenReturn(Map.of());
+        when(skillCapabilities.snapshot(any())).thenReturn("[]");
+        when(skillCapabilities.manifest(nullable(String.class))).thenReturn(List.of());
+        when(skillCapabilities.normalizeAudit(nullable(String.class), any())).thenReturn(List.of());
+        when(skillCapabilities.writeAudit(any())).thenReturn("[]");
+        when(skillCapabilities.readAudit(nullable(String.class))).thenReturn(List.of());
         when(runMapper.claimQueuedRun(any(), any(), nullable(String.class), any(), any())).thenReturn(1);
     }
 
@@ -629,6 +635,27 @@ class AiRunServiceTest {
                 eq("娃弟电脑 已领取任务，Codex 正在启动"), any());
         verify(notifier).notifyRunStarted(eq("t1"), eq("p1"), eq("完成自动化"),
                 eq("WAO"), eq("Codex"), eq("娃弟电脑"));
+    }
+
+    @Test
+    void skillRunWaitsForExactRunnerScriptInsteadOfRunningWithoutSkills() {
+        AiRunnerNodeEntity runner = runner("rn1", "旧电脑", "codex");
+        runner.setMaxConcurrency(2); runner.setScriptHash("old-hash"); runner.setLastSeenAt(LocalDateTime.now());
+        AiTaskRunEntity queued = new AiTaskRunEntity();
+        queued.setId("ar1"); queued.setTaskId("t1"); queued.setProjectId("p1");
+        queued.setStatus("queued"); queued.setCapabilityManifestJson("[{\"versionId\":\"sv-1\"}]");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runMapper.selectList(any())).thenReturn(List.of(), List.of(queued));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(skillCapabilities.manifest(queued.getCapabilityManifestJson())).thenReturn(List.of(
+                new cn.wayuwa.wao.dto.AiSkillCapabilityDto("skill-1", "sv-1", "代码审查", "检查风险",
+                        "1.0.0", "abc", List.of("codex"))));
+        when(scripts.available()).thenReturn(true); when(scripts.hash()).thenReturn("new-hash");
+
+        assertThat(service.claim("local-token")).isNull();
+
+        verify(runMapper, never()).claimQueuedRun(eq("ar1"), any(), nullable(String.class), any(), any());
     }
 
     @Test

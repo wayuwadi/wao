@@ -69,6 +69,20 @@ class SkillMarketServiceIntegrationTest {
         assertThatThrownBy(() -> market.reviews("author")).isInstanceOf(UnauthorizedException.class);
     }
 
+    @Test void aiCandidateBecomesUnconfirmedDraftAndIteratesPatchVersion() throws Exception {
+        market.savePublisher("author", new SkillRequests.PublisherProfile("wao-author", "WAO 作者"));
+
+        var first = market.createAiDraft("author", file("verified method"), "ar-1");
+        var second = market.createAiDraft("author", file("improved method"), "ar-2");
+
+        assertThat(first.slug()).isEqualTo("meeting-helper");
+        assertThat(first.versions()).extracting("version").containsExactly("0.1.0");
+        assertThat(second.id()).isEqualTo(first.id());
+        assertThat(second.versions()).extracting("version").contains("0.1.1", "0.1.0");
+        assertThat(second.versions().get(0).state()).isEqualTo("DRAFT");
+        assertThat(second.versions().get(0).license()).isEqualTo("ALL-RIGHTS-RESERVED");
+    }
+
     private static SkillRequests.Draft draft(String skillId, String version) {
         return new SkillRequests.Draft(skillId, "meeting-helper", "Meeting Helper", "Summarize meetings and decisions safely",
                 "office-efficiency", List.of("meeting", "notes"), version, "Release " + version, "MIT", List.of("codex", "claude-code"), true);

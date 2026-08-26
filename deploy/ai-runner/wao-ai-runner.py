@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import io
 import json
 import os
 import platform
@@ -21,6 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zipfile
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
@@ -40,6 +42,7 @@ RUN_REPORT_DIR = ".wao-run-reports"
 RUN_REPORT_FILE = "report.html"
 RUN_MEMORY_DIR = ".wao-run-memories"
 RUN_MEMORY_FILE = "memories.json"
+RUN_SKILL_DIR = ".wao-run-skills"
 MAX_MEMORY_FILE_BYTES = 256 * 1024
 MEMORY_CATEGORIES = {"decision", "convention", "pitfall", "verification", "operation", "context"}
 MAX_RUN_REPORT_BYTES = 10 * 1024 * 1024
@@ -304,6 +307,21 @@ class WaoApi:
         if self.token:
             headers["X-WAO-Runner-Token"] = self.token
         return self._send(urllib.request.Request(self.server + path, headers=headers, method="GET"))
+
+    def get_bytes(self, path: str) -> bytes:
+        """读取 Runner 专用二进制响应；Skill 包不套 JSON 信封。"""
+        headers = {"Accept": "application/octet-stream"}
+        if self.token:
+            headers["X-WAO-Runner-Token"] = self.token
+        request = urllib.request.Request(self.server + path, headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return response.read(10 * 1024 * 1024 + 1)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 401 and self.token:
+                raise PairingRevokedError(f"WAO 不再认可本机令牌: {detail[:300]}") from exc
+            raise RuntimeError(f"WAO 返回 HTTP {exc.code}: {detail[:300]}") from exc
 
     def _send(self, request: urllib.request.Request) -> Any:
         try:
@@ -917,8 +935,20 @@ def _project_memory_prompt(claim: dict[str, Any], memory_path: Path | None) -> s
     return "".join(parts)
 
 
+def _skill_candidate_prompt(skill_path: Path | None) -> str:
+    if skill_path is None:
+        return ""
+    return (
+        "\n\n如果本次成功交付中形成了可跨任务复用、已由真实验收证实的方法，并且仓库现有 Skill 不能承载它，"
+        f"可以在 `{skill_path}` 下创建最多 3 个候选子目录；每个子目录根部必须有完整 `SKILL.md`，"
+        "可带 references、scripts 或 assets。这里只放通用方法，不放项目私密事实、凭据、临时对话或未经验证的猜测。"
+        "候选会由 Runner 重新扫描后进入本次发起人的 Skill 市场草稿；不会自动确认授权、提交审核或覆盖已发布版本。"
+        "没有合格候选时不要创建目录。"
+    )
+
+
 def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
-        memory_path: Path | None = None) -> str:
+        memory_path: Path | None = None, skill_path: Path | None = None) -> str:
     base = claim["defaultBranch"]
     prompt = (
         "这是 WAO 自动派发的开发任务。请先读取下面的公开 Markdown 地址，然后在当前独立 "
@@ -967,12 +997,13 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
             f"{previous[-8000:]}\n"
             "----- 失败详情结束 -----"
         )
-    return prompt + _project_memory_prompt(claim, memory_path) + _report_prompt(report_path)
+    return (prompt + _project_memory_prompt(claim, memory_path)
+            + _skill_candidate_prompt(skill_path) + _report_prompt(report_path))
 
 
 def build_continuation_prompt(
         claim: dict[str, Any], continuation: str, report_path: Path | None = None,
-        memory_path: Path | None = None) -> str:
+        memory_path: Path | None = None, skill_path: Path | None = None) -> str:
     """
     续跑的提示词。
 
@@ -996,7 +1027,7 @@ def build_continuation_prompt(
         "确实阻塞才写 `WAO_RUN_STATUS: BLOCKED`。"
         "你一旦停止回复会话就立即结束，不存在「稍后再汇报」；"
         "等待部署这类长任务要持续轮询到有结论，再在同一次答复里给出状态行。"
-    ) + _project_memory_prompt(claim, memory_path) + _report_prompt(report_path)
+    ) + _project_memory_prompt(claim, memory_path) + _skill_candidate_prompt(skill_path) + _report_prompt(report_path)
     if claim.get("planMode"):
         prompt = (
             "本次续跑仍启用 Codex `/plan` 工作流。先更新现有计划再连续执行；如果需要选择，"
@@ -1062,16 +1093,130 @@ def completion_memory_candidates(exit_code: int, memory_path: Path) -> list[dict
 
 
 def post_run_completion(api: WaoApi, run_id: str, payload: dict[str, Any],
-        candidates: list[dict[str, Any]]) -> None:
-    """新服务端接收候选；旧服务端若拒绝未知字段则自动回退原契约。"""
-    body = {**payload, "projectMemoryCandidates": candidates}
+        candidates: list[dict[str, Any]], skill_audits: list[dict[str, Any]] | None = None) -> None:
+    """新服务端接收候选和 Skill 审计；旧服务端拒绝未知字段时回退原契约。"""
+    body = {**payload, "projectMemoryCandidates": candidates, "skillAudits": skill_audits or []}
     try:
         api.post(f"/api/ai/runner/runs/{run_id}/complete", body)
     except RuntimeError as exc:
-        if not candidates or "HTTP 400" not in str(exc):
+        if (not candidates and not skill_audits) or "HTTP 400" not in str(exc):
             raise
         log(f"[{run_id}] 服务端尚未支持项目记忆候选，按旧完成契约重试")
         api.post(f"/api/ai/runner/runs/{run_id}/complete", payload)
+
+
+def install_run_skills(api: WaoApi, claim: dict[str, Any], codex_home: Path) -> list[dict[str, Any]]:
+    """在运行级 CODEX_HOME 中装配固定 Skill，并重新校验哈希、大小和路径。"""
+    raw_skills = claim.get("skills")
+    skills = raw_skills if isinstance(raw_skills, list) else []
+    if not skills:
+        return []
+    if str(claim.get("engine") or "codex") != "codex":
+        audits = [{
+            "skillId": str(item.get("skillId") or ""), "versionId": str(item.get("versionId") or ""),
+            "displayName": str(item.get("displayName") or ""), "version": str(item.get("version") or ""),
+            "status": "incompatible", "message": "当前 Runner 只支持把项目 Skill 隔离装配到 Codex",
+        } for item in skills if isinstance(item, dict)]
+        raise SkillInstallError("当前 AI 工具不支持项目 Skill，请改用 Codex", audits)
+    audits: list[dict[str, Any]] = []
+    skills_root = codex_home / "skills"
+    skills_root.mkdir(parents=True, exist_ok=True)
+    for item in skills:
+        if not isinstance(item, dict):
+            continue
+        skill_id = str(item.get("skillId") or "")
+        version_id = str(item.get("versionId") or "")
+        display_name = str(item.get("displayName") or skill_id)
+        version = str(item.get("version") or "")
+        audit = {"skillId": skill_id, "versionId": version_id, "displayName": display_name, "version": version}
+        try:
+            if not version_id or not re.fullmatch(r"[A-Za-z0-9-]{1,100}", version_id):
+                raise RuntimeError("Skill 版本标识不合法")
+            content = api.get_bytes(
+                f"/api/ai/runner/runs/{urllib.parse.quote(str(claim['runId']))}/skills/{urllib.parse.quote(version_id)}")
+            if len(content) > 10 * 1024 * 1024:
+                raise RuntimeError("Skill 包超过 10 MiB")
+            expected = str(item.get("sha256") or "").lower()
+            actual = hashlib.sha256(content).hexdigest()
+            if not expected or actual != expected:
+                raise RuntimeError("Skill 包 SHA-256 与运行快照不一致")
+            target = skills_root / version_id
+            if target.exists():
+                shutil.rmtree(target)
+            target.mkdir(parents=True)
+            total = 0
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                files = [entry for entry in archive.infolist() if not entry.is_dir()]
+                if len(files) > 200:
+                    raise RuntimeError("Skill 包文件数超过 200")
+                for entry in files:
+                    path = entry.filename.replace("\\", "/")
+                    parts = path.split("/")
+                    if (not path or path.startswith("/") or re.match(r"^[A-Za-z]:/", path)
+                            or any(part in ("", ".", "..") for part in parts)):
+                        raise RuntimeError(f"Skill 包包含不安全路径：{path}")
+                    if (entry.external_attr >> 16) & 0o170000 == 0o120000:
+                        raise RuntimeError(f"Skill 包不允许符号链接：{path}")
+                    total += entry.file_size
+                    if total > 20 * 1024 * 1024:
+                        raise RuntimeError("Skill 包解压后超过 20 MiB")
+                    destination = target.joinpath(*parts)
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.open(entry) as source, destination.open("wb") as output:
+                        shutil.copyfileobj(source, output)
+            if not (target / "SKILL.md").is_file():
+                raise RuntimeError("Skill 包根目录缺少 SKILL.md")
+            audits.append({**audit, "status": "loaded", "message": "已校验并装配到本次运行的隔离 CODEX_HOME"})
+        except Exception as exc:  # noqa: BLE001 - 必须记录精确到单个 Skill 的失败
+            failed = {**audit, "status": "failed", "message": redact_sensitive_text(str(exc))[:500]}
+            audits.append(failed)
+            raise SkillInstallError(f"Skill「{display_name}」装配失败：{exc}", audits) from exc
+    return audits
+
+
+class SkillInstallError(RuntimeError):
+    def __init__(self, message: str, audits: list[dict[str, Any]]) -> None:
+        super().__init__(message)
+        self.audits = audits
+
+
+def upload_skill_candidates(api: WaoApi, run_id: str, skill_path: Path) -> list[str]:
+    """把 AI 生成的有限 Skill 目录打包上传；服务端仍执行完整包扫描并只建草稿。"""
+    if not skill_path.is_dir():
+        return []
+    candidates = sorted(path for path in skill_path.iterdir() if path.is_dir())
+    if len(candidates) > 3:
+        raise RuntimeError("AI 生成的 Skill 候选超过 3 个")
+    results: list[str] = []
+    for candidate in candidates:
+        files = sorted(path for path in candidate.rglob("*") if path.is_file())
+        if not (candidate / "SKILL.md").is_file():
+            raise RuntimeError(f"Skill 候选 {candidate.name} 根目录缺少 SKILL.md")
+        if len(files) > 200:
+            raise RuntimeError(f"Skill 候选 {candidate.name} 文件数超过 200")
+        total = 0
+        archive_path = skill_path / f".{candidate.name}-{uuid.uuid4().hex}.zip"
+        try:
+            with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for path in files:
+                    if path.is_symlink():
+                        raise RuntimeError(f"Skill 候选不允许符号链接：{path.name}")
+                    size = path.stat().st_size
+                    total += size
+                    if total > 20 * 1024 * 1024:
+                        raise RuntimeError(f"Skill 候选 {candidate.name} 超过 20 MiB")
+                    archive.write(path, path.relative_to(candidate).as_posix())
+            if archive_path.stat().st_size > 10 * 1024 * 1024:
+                raise RuntimeError(f"Skill 候选 {candidate.name} 压缩后超过 10 MiB")
+            response = api.post_file(
+                f"/api/ai/runner/runs/{run_id}/skill-candidates", "archive", archive_path, "application/zip")
+            display_name = str((response or {}).get("displayName") or candidate.name)
+            versions = (response or {}).get("versions")
+            version = str(versions[0].get("version")) if isinstance(versions, list) and versions else "草稿"
+            results.append(f"{display_name} v{version}")
+        finally:
+            archive_path.unlink(missing_ok=True)
+    return results
 
 
 def publish_run_report(api: WaoApi, run_id: str, report_path: Path) -> str | None:
@@ -1398,11 +1543,14 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
     summary = ""
     report_path = root / RUN_REPORT_DIR / run_id / RUN_REPORT_FILE
     memory_path = root / RUN_MEMORY_DIR / run_id / RUN_MEMORY_FILE
+    skill_path = root / RUN_SKILL_DIR / run_id
     stage = "准备 Git 工作区"
     reporter = ProgressReporter(api, run_id, engine)
     last_cancel_check = 0.0
     pending_update: str | None = None
     pause_requested = False
+    skill_audits: list[dict[str, Any]] = []
+    codex_home = root / ".wao-codex-homes" / run_id
 
     def control_requested() -> bool:
         nonlocal last_cancel_check, pending_update, pause_requested
@@ -1438,16 +1586,22 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             reporter.send("phase", "正在恢复原 AI 会话", force=True)
             report_path.parent.mkdir(parents=True, exist_ok=True)
             memory_path.parent.mkdir(parents=True, exist_ok=True)
-            prompt = build_continuation_prompt(claim, continuation, report_path, memory_path)
+            skill_path.mkdir(parents=True, exist_ok=True)
+            prompt = build_continuation_prompt(claim, continuation, report_path, memory_path, skill_path)
         else:
             worktree = prepare_worktree(
                 claim, root, git_command, resolve_repo_url(claim["repoUrl"], git_protocol, https_ready),
                 cli_environment)
             report_path.parent.mkdir(parents=True, exist_ok=True)
             memory_path.parent.mkdir(parents=True, exist_ok=True)
-            prompt = build_prompt(claim, report_path, memory_path)
+            skill_path.mkdir(parents=True, exist_ok=True)
+            prompt = build_prompt(claim, report_path, memory_path, skill_path)
             if continuation:
                 prompt += "\n\n" + build_live_update_prompt(continuation)
+        stage = "装配项目 Skill"
+        skill_audits = install_run_skills(api, claim, codex_home)
+        if skill_audits:
+            reporter.send("phase", f"已校验并加载 {len(skill_audits)} 个项目 Skill", force=True)
         stage = f"启动 {name}"
         reporter.send("phase", f"工作区已准备完成，正在启动 {name}", force=True)
         stage = f"等待 {name} 完成"
@@ -1465,7 +1619,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             else:
                 turn = run_codex(
                     executable, worktree, prompt, sandbox, reporter, cli_environment, session_id,
-                    control_requested, claim.get("account"), root / ".wao-codex-homes" / run_id,
+                    control_requested, claim.get("account"), codex_home,
                     model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
                     service_tier=claim.get("serviceTier"))
             exit_code, result_text, turn_session_id, turn_usage = turn
@@ -1484,6 +1638,11 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             f"token {usage['totalTokens']}（输入 {usage['inputTokens']} / 输出 "
             f"{usage['outputTokens']} / 缓存 {usage['cachedInputTokens']}），折算额度 {cost_text}")
         exit_code, result_text = normalize_result(exit_code, result_text, engine)
+        if exit_code == 0:
+            created_skills = upload_skill_candidates(api, run_id, skill_path)
+            if created_skills:
+                reporter.send("message", f"已把 {len(created_skills)} 个可复用方法收进 Skill 市场草稿", force=True)
+                result_text = (result_text + "\n\nSkill 市场草稿：" + "、".join(created_skills)).strip()
         try:
             report_url = publish_run_report(api, run_id, report_path)
             if report_url:
@@ -1505,6 +1664,10 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         reporter.send("result", closing, force=True)
         summary = f"执行工具：{name}\n工作目录：{worktree}\n\n{result_text}"[-30000:]
     except Exception as exc:  # noqa: BLE001 - 必须把节点错误回传给 WAO
+        if isinstance(exc, SkillInstallError):
+            skill_audits = exc.audits
+        if exit_code == 0:
+            exit_code = 2
         summary = (f"失败阶段：{stage}\n错误详情：{exc}\n执行工具：{name}\n"
                    f"工作目录：{worktree or '尚未创建'}\n本机日志：{LOG_FILE}")[-30000:]
         log(f"[{run_id}] {stage}失败：{exc}")
@@ -1513,12 +1676,13 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             candidates = completion_memory_candidates(exit_code, memory_path)
             post_run_completion(api, run_id,
                 {"exitCode": exit_code, "resultSummary": summary, "sessionId": session_id, **usage},
-                candidates)
+                candidates, skill_audits)
             log(f"[{run_id}] 已回传，退出码 {exit_code}")
         except Exception as exc:  # noqa: BLE001
             log(f"[{run_id}] 回传失败，下次心跳会让任务重新排队：{exc}")
         finally:
             shutil.rmtree(memory_path.parent, ignore_errors=True)
+            shutil.rmtree(skill_path, ignore_errors=True)
 
 
 def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, executable: str,

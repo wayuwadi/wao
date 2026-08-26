@@ -26,6 +26,7 @@ import {
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
+import AiRunSkillCapabilities from '@/components/ai/AiRunSkillCapabilities.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
 import { formatCost, formatTokens, shortModel, usageSummary } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
@@ -1382,6 +1383,7 @@ onBeforeUnmount(() => {
         <div class="result-title result-gap">AI 执行记录</div>
         <AiRunProgressTimeline :run="selectedRun" />
         <AiRunMemoryReferences :reads="selectedRun.memoryReads" :writes="selectedRun.memoryWrites" />
+        <AiRunSkillCapabilities :skills="selectedRun.skills" :audits="selectedRun.skillAudits" />
         <template v-if="selectedRun.resultSummary">
           <div class="result-title result-gap">{{ resultTitle(selectedRun) }}</div>
           <pre>{{ selectedRun.resultSummary }}</pre>

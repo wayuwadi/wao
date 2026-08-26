@@ -1,5 +1,5 @@
 import { http, type ApiResponse } from './http'
-import type { AiEngine, AiProjectConfig, AiRun, AiRunner, AiRunnerLog, AiRunOptions, AiWorkflow } from '@/types'
+import type { AiEngine, AiProjectConfig, AiRun, AiRunner, AiRunnerLog, AiRunOptions, AiSkillCapability, AiWorkflow } from '@/types'
 
 export interface AiWeeklyQuota {
   accountId: string
@@ -90,6 +90,16 @@ export const saveAiProjectConfig = (
   projectId: string,
   payload: Omit<AiProjectConfig, 'projectId'>,
 ) => data<AiProjectConfig>(http.put(`/api/ai/projects/${projectId}/config`, payload))
+
+export const fetchAvailableAiSkills = () =>
+  data<AiSkillCapability[]>(http.get('/api/ai/skills/available'))
+
+export const fetchAiProjectSkills = (projectId: string) =>
+  data<AiSkillCapability[]>(http.get(`/api/ai/projects/${projectId}/skills`))
+
+/** 整体替换固定版本绑定；变化只影响之后新建的 AI Run。 */
+export const saveAiProjectSkills = (projectId: string, versionIds: string[]) =>
+  data<AiSkillCapability[]>(http.put(`/api/ai/projects/${projectId}/skills`, { versionIds }))
 
 export const fetchAiWorkflows = () => data<AiWorkflow[]>(http.get('/api/ai/workflows'))
 
