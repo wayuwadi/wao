@@ -268,7 +268,8 @@ class DeploymentRoutingConfigTest {
                 .contains("/jenkins/github-webhook/")
                 .contains("error_page 403 404 = @legacy_jenkins_webhook;");
         assertThat(service).contains("--httpListenAddress=127.0.0.1 --prefix=/jenkins");
-        assertThat(dockerfile).contains("apk add --no-cache curl util-linux-misc");
+        assertThat(dockerfile).contains("apk add --no-cache curl")
+                .doesNotContain("util-linux-misc");
         assertThat(casc)
                 .contains("reverseProxy:")
                 .contains("headerGroups: X-Forwarded-Groups")
@@ -279,7 +280,7 @@ class DeploymentRoutingConfigTest {
                 .contains("- Job/Read")
                 .contains("url: https://wao.wayuwa.cn/jenkins/");
         assertThat(updater)
-                .contains("/usr/bin/nsenter --target 1 --mount --pid --")
+                .contains("chroot /host /usr/bin/nsenter --target 1 --mount --pid --")
                 .contains("/usr/bin/systemctl daemon-reload")
                 .contains("/safeRestart")
                 .contains("X-Forwarded-User: wao-controller-maintenance")

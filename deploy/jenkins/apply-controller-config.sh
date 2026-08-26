@@ -59,7 +59,7 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
   -v "$workspace:/workspace:ro" \
   --entrypoint /bin/sh "$image" -ceu '
     # 先进入宿主 mount/pid namespace 验证 systemd 通道，避免复制配置后才发现无法 reload。
-    /usr/bin/nsenter --target 1 --mount --pid -- \
+    chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl show --property=FragmentPath jenkins.service >/dev/null
     cp /workspace/deploy/jenkins/jenkins.yaml /host/etc/jenkins/jenkins.yaml
     cp /workspace/deploy/jenkins/plugins.txt /host/etc/jenkins/plugins.txt
@@ -81,7 +81,7 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/etc/systemd/system/jenkins.service.d/override.conf \
       /host/etc/systemd/system/wao-jenkins-webhook-tunnel.service
     chmod 0755 /host/usr/local/lib/wao-jenkins/backup-controller.sh
-    /usr/bin/nsenter --target 1 --mount --pid -- \
+    chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl daemon-reload
   '
 

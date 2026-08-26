@@ -29,7 +29,7 @@ FROM eclipse-temurin:17-jre-alpine AS runtime
 ARG ALPINE_MIRROR_HOST=dl-cdn.alpinelinux.org
 WORKDIR /app
 RUN sed -i "s/dl-cdn.alpinelinux.org/${ALPINE_MIRROR_HOST}/g" /etc/apk/repositories \
-    && apk add --no-cache curl util-linux-misc \
+    && apk add --no-cache curl \
     && addgroup -S wao \
     && adduser -S wao -G wao
 USER wao
