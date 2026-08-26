@@ -5,15 +5,28 @@ jenkins:
   scmCheckoutRetryCount: 2
   disableRememberMe: true
   securityRealm:
-    local:
-      allowsSignup: false
-      users:
-        - id: admin
-          name: WAO Jenkins Administrator
-          password: "${trim:${readFile:/etc/jenkins/secrets/admin-password}}"
+    reverseProxy:
+      forwardedUser: X-Forwarded-User
+      forwardedEmail: X-Forwarded-Mail
+      forwardedDisplayName: X-Forwarded-DisplayName
+      headerGroups: X-Forwarded-Groups
+      headerGroupsDelimiter: "|"
+      inhibitInferRootDN: false
+      disableLdapEmailResolver: true
+      updateInterval: 15
   authorizationStrategy:
-    loggedInUsersCanDoAnything:
-      allowAnonymousRead: false
+    globalMatrix:
+      entries:
+        - group:
+            name: wao-admins
+            permissions:
+              - Overall/Administer
+        - group:
+            name: wao-members
+            permissions:
+              - Overall/Read
+              - Job/Read
+              - View/Read
 
 credentials:
   system:

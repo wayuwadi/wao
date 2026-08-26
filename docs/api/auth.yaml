@@ -9,6 +9,13 @@ paths:
       responses:
         "200": { description: 已登录 }
         "401": { description: 未登录 }
+  /api/auth/jenkins:
+    get:
+      summary: 为 Nginx 内部鉴权子请求返回当前成员的 Jenkins 身份与固定角色组
+      responses:
+        "200":
+          description: 会话有效；X-WAO-Jenkins-User 和 X-WAO-Jenkins-Groups 响应头可供受信任代理读取
+        "401": { description: WAO 会话缺失或已过期 }
   /api/auth/email/register:
     post:
       summary: 以邮箱、密码和昵称注册并登录

@@ -81,11 +81,11 @@ server {
         proxy_send_timeout 20s;
     }
 
-    # Jenkins remains bound to Linux loopback. The cloud route first requires a
-    # valid WAO session, then Jenkins performs its own administrator login.
+    # Jenkins remains bound to Linux loopback. This internal subrequest validates
+    # the WAO session and returns server-derived identity/role headers for SSO.
     location = /_wao_jenkins_auth {
         internal;
-        proxy_pass https://wao_gateway/api/auth/session;
+        proxy_pass https://wao_gateway/api/auth/jenkins;
         proxy_ssl_verify off;
         proxy_pass_request_body off;
         proxy_set_header Content-Length "";
@@ -118,6 +118,8 @@ server {
 
     location ^~ /jenkins/ {
         auth_request /_wao_jenkins_auth;
+        auth_request_set $wao_jenkins_user $upstream_http_x_wao_jenkins_user;
+        auth_request_set $wao_jenkins_groups $upstream_http_x_wao_jenkins_groups;
         proxy_pass http://127.0.0.1:18081;
         proxy_http_version 1.1;
         proxy_request_buffering off;
@@ -129,6 +131,13 @@ server {
         proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Forwarded-Port 443;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Never trust identity or credentials supplied by the browser. Only the
+        # values returned by WAO's internal auth subrequest reach Jenkins.
+        proxy_set_header Authorization "";
+        proxy_set_header X-Forwarded-User $wao_jenkins_user;
+        proxy_set_header X-Forwarded-Groups $wao_jenkins_groups;
+        proxy_set_header X-Forwarded-Mail "";
+        proxy_set_header X-Forwarded-DisplayName "";
         proxy_connect_timeout 5s;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;

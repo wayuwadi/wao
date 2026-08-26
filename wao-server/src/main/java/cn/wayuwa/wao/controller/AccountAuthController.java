@@ -12,6 +12,7 @@ import cn.wayuwa.wao.dto.EmailLoginRequest;
 import cn.wayuwa.wao.dto.EmailRegisterRequest;
 import cn.wayuwa.wao.service.AccountAuthService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api")
 public class AccountAuthController {
+    static final String JENKINS_USER_HEADER = "X-WAO-Jenkins-User";
+    static final String JENKINS_GROUPS_HEADER = "X-WAO-Jenkins-Groups";
+    static final String JENKINS_MEMBER_GROUP = "wao-members";
+    static final String JENKINS_ADMIN_GROUP = "wao-admins";
+
     private final AccountAuthService auth;
     private final AuthSessionManager sessions;
 
@@ -37,6 +43,17 @@ public class AccountAuthController {
     @GetMapping("/auth/session")
     public ApiResponse<AuthSessionDto> session(HttpServletRequest request) {
         return ApiResponse.ok(auth.session(requireAccount(request)));
+    }
+
+    @GetMapping("/auth/jenkins")
+    public ApiResponse<Void> jenkins(HttpServletRequest request, HttpServletResponse response) {
+        AuthSessionDto current = auth.session(requireAccount(request));
+        response.setHeader(JENKINS_USER_HEADER, current.member().id());
+        String groups = isAdmin(current.member().role())
+                ? JENKINS_MEMBER_GROUP + "|" + JENKINS_ADMIN_GROUP
+                : JENKINS_MEMBER_GROUP;
+        response.setHeader(JENKINS_GROUPS_HEADER, groups);
+        return ApiResponse.ok(null);
     }
 
     @PostMapping("/auth/email/register")
@@ -93,5 +110,9 @@ public class AccountAuthController {
         String accountId = sessions.currentAccountId(request);
         if (accountId == null) throw new UnauthorizedException("登录已过期，请重新登录");
         return accountId;
+    }
+
+    private boolean isAdmin(String role) {
+        return "管理员".equals(role) || "超级管理员".equals(role);
     }
 }

@@ -50,8 +50,8 @@ sudo WAO_JENKINS_SCM_BRANCH=codex/jenkins-cicd \
 生产 Webhook 只能在 SCM 为 `main` 时启用。
 
 Jenkins UI 只监听 `127.0.0.1:8081`，并使用 `/jenkins` context path。日常可在登录 WAO 后从
-「自动化 → Jenkins 部署中心」打开 `https://wao.wayuwa.cn/jenkins/`；WAO 会话只负责挡住公网匿名请求，
-进入后仍必须使用 Jenkins 管理员账号登录。
+左下角「链接 → Jenkins」打开 `https://wao.wayuwa.cn/jenkins/`；Nginx 通过内部鉴权子请求传递 WAO 成员 id
+和角色组，Jenkins 不再显示第二个登录页。普通成员只读，WAO 管理员和超级管理员保留管理权限。
 
 云入口不可用时，可在自己的电脑建立应急隧道：
 
@@ -59,8 +59,9 @@ Jenkins UI 只监听 `127.0.0.1:8081`，并使用 `/jenkins` context path。日�
 ssh -L 8081:127.0.0.1:8081 wadi@linux2.wayuwa.cn
 ```
 
-再打开 `http://127.0.0.1:8081/jenkins/`。管理员密码在 Linux 的
-`/etc/jenkins/secrets/admin-password`，不要复制到仓库。
+直接打开 `http://127.0.0.1:8081/jenkins/` 不包含受信任身份头，不再作为日常登录方式。故障处理优先恢复
+WAO 会话和云 Nginx 链路；`/etc/jenkins/secrets/admin-password` 仅保留为首次认证域迁移回退，不提供给成员，
+也不复制到仓库、命令历史或日志。
 
 ## GitHub webhook
 

@@ -223,11 +223,13 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void jenkinsUiRequiresWaoSessionAndKeepsItsOwnAdministratorLogin() throws IOException {
+    void jenkinsUiUsesWaoSessionIdentityWithRoleBasedJenkinsAuthorization() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String service = readFromRepository("deploy/jenkins/jenkins.service.override.conf");
         String casc = readFromRepository("deploy/jenkins/jenkins.yaml");
         String updater = readFromRepository("deploy/jenkins/apply-controller-config.sh");
+        String backup = readFromRepository("deploy/jenkins/backup-controller.sh");
+        String plugins = readFromRepository("deploy/jenkins/plugins.txt");
         String pipeline = readFromRepository("Jenkinsfile");
         String verification = readFromRepository("deploy/jenkins/ci-production-verify.sh");
 
@@ -241,15 +243,20 @@ class DeploymentRoutingConfigTest {
 
         assertThat(authLocation)
                 .contains("internal;")
-                .contains("proxy_pass https://wao_gateway/api/auth/session;")
+                .contains("proxy_pass https://wao_gateway/api/auth/jenkins;")
                 .contains("proxy_pass_request_body off;")
                 .contains("proxy_set_header Cookie $http_cookie;");
         assertThat(uiLocation)
                 .contains("auth_request /_wao_jenkins_auth;")
+                .contains("auth_request_set $wao_jenkins_user $upstream_http_x_wao_jenkins_user;")
+                .contains("auth_request_set $wao_jenkins_groups $upstream_http_x_wao_jenkins_groups;")
                 .contains("proxy_pass http://127.0.0.1:18081;")
                 .contains("proxy_request_buffering off;")
                 .contains("proxy_buffering off;")
-                .contains("proxy_set_header X-Forwarded-Proto $scheme;");
+                .contains("proxy_set_header X-Forwarded-Proto $scheme;")
+                .contains("proxy_set_header Authorization \"\";")
+                .contains("proxy_set_header X-Forwarded-User $wao_jenkins_user;")
+                .contains("proxy_set_header X-Forwarded-Groups $wao_jenkins_groups;");
         assertThat(healthLocation)
                 .contains("if ($request_method != HEAD) { return 405; }")
                 .contains("proxy_pass http://127.0.0.1:18081/jenkins/login;")
@@ -261,16 +268,35 @@ class DeploymentRoutingConfigTest {
                 .contains("error_page 403 404 = @legacy_jenkins_webhook;");
         assertThat(service).contains("--httpListenAddress=127.0.0.1 --prefix=/jenkins");
         assertThat(casc)
-                .contains("allowsSignup: false")
-                .contains("allowAnonymousRead: false")
+                .contains("reverseProxy:")
+                .contains("headerGroups: X-Forwarded-Groups")
+                .contains("globalMatrix:")
+                .contains("name: wao-admins")
+                .contains("- Overall/Administer")
+                .contains("name: wao-members")
+                .contains("- Job/Read")
                 .contains("url: https://wao.wayuwa.cn/jenkins/");
         assertThat(updater)
                 .contains("/host/usr/bin/nsenter --target 1 --mount --pid --")
                 .contains("/usr/bin/systemctl daemon-reload")
                 .contains("/safeRestart")
+                .contains("X-Forwarded-User: wao-controller-maintenance")
+                .contains("X-Forwarded-Groups: wao-admins")
+                .contains("jenkins_auth='legacy'")
+                .contains("jenkins-plugin-manager-2.15.0.jar")
+                .contains("--plugin-file deploy/jenkins/plugins.txt")
+                .contains("/host/etc/jenkins/plugins.txt")
+                .contains("/host/usr/local/lib/wao-jenkins/backup-controller.sh")
                 .contains("docker run --rm --privileged --pid=host")
                 .contains("WAO_MASTER_PROJECT_ROOT|WAO_JENKINS_SCM_BRANCH|HTTP_PROXY|HTTPS_PROXY|NO_PROXY")
                 .doesNotContain("/etc/jenkins/secrets:/host");
+        assertThat(plugins)
+                .contains("reverse-proxy-auth-plugin:257.v7dc0e405b_624")
+                .contains("matrix-auth:3.3");
+        assertThat(backup)
+                .contains("X-Forwarded-User: wao-controller-backup")
+                .contains("X-Forwarded-Groups: wao-members")
+                .doesNotContain("admin-password");
         assertThat(pipeline).contains("deploy/jenkins/apply-controller-config.sh");
         assertThat(verification)
                 .contains("https://wao.wayuwa.cn/jenkins)\" = 308")
