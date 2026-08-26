@@ -283,6 +283,7 @@ class DeploymentRoutingConfigTest {
                 .contains("chroot /host /usr/bin/nsenter --target 1 --mount --pid --")
                 .contains("/usr/bin/systemctl daemon-reload")
                 .contains("/safeRestart")
+                .contains("--cookie \"$controller_cookie\" --cookie-jar \"$controller_cookie\"")
                 .contains("X-Forwarded-User: wao-controller-maintenance")
                 .contains("X-Forwarded-Groups: wao-admins")
                 .contains("jenkins_auth='legacy'")

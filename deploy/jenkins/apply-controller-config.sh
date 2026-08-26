@@ -9,7 +9,8 @@ changed=false
 plugins_changed=false
 expected_override="$(mktemp)"
 dynamic_override="$(mktemp)"
-cleanup() { rm -f "$expected_override" "$dynamic_override"; }
+controller_cookie="$(mktemp)"
+cleanup() { rm -f "$expected_override" "$dynamic_override" "$controller_cookie"; }
 trap cleanup EXIT HUP INT TERM
 
 needs_update() {
@@ -121,11 +122,14 @@ controller_curl() {
   shift
   if [ "$jenkins_auth" = proxy ]; then
     curl --fail --silent --show-error \
+      --cookie "$controller_cookie" --cookie-jar "$controller_cookie" \
       -H 'X-Forwarded-User: wao-controller-maintenance' \
       -H 'X-Forwarded-Groups: wao-admins' "$@" \
       "http://127.0.0.1:8081${jenkins_base}${path}"
   else
-    curl --fail --silent --show-error -u "admin:$admin_password" "$@" \
+    curl --fail --silent --show-error \
+      --cookie "$controller_cookie" --cookie-jar "$controller_cookie" \
+      -u "admin:$admin_password" "$@" \
       "http://127.0.0.1:8081${jenkins_base}${path}"
   fi
 }
