@@ -19,7 +19,7 @@ async function del<T>(url: string): Promise<T> {
 
 export interface AiAccount {
   id: string
-  provider: 'codex' | 'claude' | 'qoder' | 'deepseek'
+  provider: 'codex' | 'claude' | 'qoder' | 'deepseek' | 'model_gateway'
   label: string
   email: string | null
   enabled: boolean
@@ -59,7 +59,7 @@ export interface AiAccountLoginStatus {
 }
 
 export interface AiAccountForm {
-  provider: 'codex' | 'claude' | 'qoder' | 'deepseek'
+  provider: 'codex' | 'claude' | 'qoder' | 'deepseek' | 'model_gateway'
   label: string
   email?: string
   credentials?: string

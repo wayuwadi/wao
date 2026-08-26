@@ -52,9 +52,11 @@ public class AiAccountService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String ENC_PREFIX = "enc:";
-    private static final List<String> VALID_PROVIDERS = List.of("codex", "claude", "qoder", "deepseek");
+    private static final List<String> VALID_PROVIDERS =
+            List.of("codex", "claude", "qoder", "deepseek", DeepSeekApiClient.MODEL_GATEWAY_PROVIDER);
     private static final Map<String, String> PROVIDER_LABELS = Map.of("codex", "Codex / ChatGPT",
-            "claude", "Claude Code", "qoder", "Qoder", "deepseek", "DeepSeek");
+            "claude", "Claude Code", "qoder", "Qoder", "deepseek", "DeepSeek",
+            DeepSeekApiClient.MODEL_GATEWAY_PROVIDER, "醒市模型网关");
     /** AI 供应商限额窗口的中文说明；未收录的窗口直接显示原名。 */
     private static final Map<String, String> WINDOW_LABELS = Map.of(
             "session", "五小时会话额度", "five_hour", "五小时会话额度",
@@ -233,11 +235,11 @@ public class AiAccountService {
         validateProvider(request.provider());
         String provider = request.provider().trim().toLowerCase();
         boolean custom = StringUtils.hasText(request.baseUrl());
-        if ("deepseek".equals(provider) && !custom) {
-            throw new BadRequestException("请填写 DeepSeek API 配置");
+        if (isDocumentPolishApi(provider) && !custom) {
+            throw new BadRequestException("请填写" + label(provider) + " API 配置");
         }
-        if (custom && !"codex".equals(provider) && !"deepseek".equals(provider)) {
-            throw new BadRequestException("API Key 配置目前只支持 Codex 自定义端点和 DeepSeek");
+        if (custom && !"codex".equals(provider) && !isDocumentPolishApi(provider)) {
+            throw new BadRequestException("API Key 配置目前只支持 Codex 自定义端点、DeepSeek 和醒市模型网关");
         }
         if (custom && !StringUtils.hasText(request.apiKey())) throw new BadRequestException("API Key 不能为空");
         if (!custom && !StringUtils.hasText(request.credentials())) throw new BadRequestException("凭据不能为空");
@@ -455,11 +457,11 @@ public class AiAccountService {
         AiAccountEntity entity = require(id);
         String provider = request.provider().trim().toLowerCase();
         boolean custom = StringUtils.hasText(request.baseUrl()) || "api_key".equals(entity.getAuthMethod());
-        if ("deepseek".equals(provider) && !custom) {
-            throw new BadRequestException("请填写 DeepSeek API 配置");
+        if (isDocumentPolishApi(provider) && !custom) {
+            throw new BadRequestException("请填写" + label(provider) + " API 配置");
         }
-        if (custom && !"codex".equals(provider) && !"deepseek".equals(provider)) {
-            throw new BadRequestException("API Key 配置目前只支持 Codex 自定义端点和 DeepSeek");
+        if (custom && !"codex".equals(provider) && !isDocumentPolishApi(provider)) {
+            throw new BadRequestException("API Key 配置目前只支持 Codex 自定义端点、DeepSeek 和醒市模型网关");
         }
         entity.setProvider(provider);
         entity.setLabel(request.label().trim());
@@ -501,10 +503,10 @@ public class AiAccountService {
         AiAccountEntity entity = require(id);
         if ("api_key".equals(entity.getAuthMethod())) {
             try {
-                List<String> models = "deepseek".equals(entity.getProvider())
-                        ? deepSeekApi.models(entity.getBaseUrl(), apiKeyOf(entity))
+                List<String> models = isDocumentPolishApi(entity.getProvider())
+                        ? deepSeekApi.models(entity.getProvider(), entity.getBaseUrl(), apiKeyOf(entity))
                         : customApi.models(entity.getBaseUrl(), apiKeyOf(entity));
-                if ("deepseek".equals(entity.getProvider()) && !models.contains(entity.getModel())) {
+                if (isDocumentPolishApi(entity.getProvider()) && !models.contains(entity.getModel())) {
                     throw new BadRequestException("连接正常，但当前 Token 不支持模型 " + entity.getModel());
                 }
                 entity.setQuotaStatus("SYNCED");
@@ -748,18 +750,18 @@ public class AiAccountService {
     }
 
     /**
-     * 返回设置页最新创建且仍启用的 DeepSeek API 配置，供文档润色直接调用。
+     * 返回设置页最新创建且仍启用的 Chat Completions API 配置，供文档润色直接调用。
      *
      * <p>若没有配置则返回 {@code null}，调用方可继续使用既有本地 Codex 兼容链路；
      * 一旦存在配置，上游失败必须原样反馈，不能静默改用另一个供应商。
      */
-    public AiRunAccountDto defaultDeepSeekPolishAccount() {
+    public AiRunAccountDto defaultDocumentPolishAccount() {
         return mapper.selectList(null).stream()
-                .filter(entity -> "deepseek".equals(entity.getProvider()))
+                .filter(entity -> isDocumentPolishApi(entity.getProvider()))
                 .filter(entity -> Boolean.TRUE.equals(entity.getEnabled()))
                 .filter(entity -> "api_key".equals(entity.getAuthMethod()))
                 .max(Comparator.comparing(AiAccountEntity::getCreatedAt))
-                .map(entity -> runAccount(entity.getId(), "deepseek"))
+                .map(entity -> runAccount(entity.getId(), entity.getProvider()))
                 .orElse(null);
     }
 
@@ -899,17 +901,25 @@ public class AiAccountService {
         if ("deepseek".equals(provider) && !DeepSeekApiClient.POLISH_MODELS.contains(value)) {
             throw new BadRequestException("请选择可用的 DeepSeek V4 模型");
         }
+        if (DeepSeekApiClient.MODEL_GATEWAY_PROVIDER.equals(provider)
+                && !DeepSeekApiClient.MODEL_GATEWAY_POLISH_MODELS.contains(value)) {
+            throw new BadRequestException("请选择醒市模型网关当前支持的文档润色模型");
+        }
         return value;
     }
 
     private String normalizeApiBaseUrl(String provider, String baseUrl) {
-        return "deepseek".equals(provider)
-                ? deepSeekApi.normalizeBaseUrl(baseUrl)
+        return isDocumentPolishApi(provider)
+                ? deepSeekApi.normalizeBaseUrl(provider, baseUrl)
                 : customApi.normalizeBaseUrl(baseUrl);
     }
 
     private static String apiProtocol(String provider) {
-        return "deepseek".equals(provider) ? "chat_completions" : "responses";
+        return isDocumentPolishApi(provider) ? "chat_completions" : "responses";
+    }
+
+    private static boolean isDocumentPolishApi(String provider) {
+        return "deepseek".equals(provider) || DeepSeekApiClient.MODEL_GATEWAY_PROVIDER.equals(provider);
     }
 
     /** 从凭据 JSON 里读出 access token 的过期时间（毫秒时间戳）。 */

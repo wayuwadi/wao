@@ -222,9 +222,10 @@ public class AiAssistantService {
         if (selectedText.length() > POLISH_TEXT_LIMIT) {
             throw new BadRequestException("一次最多润色 4000 字，请缩小选区后重试");
         }
-        var deepSeek = accountService.defaultDeepSeekPolishAccount();
-        if (deepSeek != null) {
-            return deepSeekApi.polish(deepSeek.baseUrl(), deepSeek.apiKey(), deepSeek.model(), selectedText);
+        var modelApi = accountService.defaultDocumentPolishAccount();
+        if (modelApi != null) {
+            return deepSeekApi.polish(modelApi.provider(), modelApi.baseUrl(), modelApi.apiKey(),
+                    modelApi.model(), selectedText);
         }
         String instruction = """
                 你正在润色用户从文档中明确选中的一段文字。只改进表达的清晰度、流畅度和语气自然度，

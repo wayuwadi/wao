@@ -29,6 +29,22 @@ class DeepSeekApiClientTest {
     }
 
     @Test
+    void modelGatewayOnlyAcceptsTheAssignedHttpsBasePath() {
+        DeepSeekApiClient client = new DeepSeekApiClient(RestClient.builder());
+
+        assertThat(client.normalizeBaseUrl("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/"))
+                .isEqualTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL);
+        assertThatThrownBy(() -> client.normalizeBaseUrl(
+                "model_gateway", "https://ai.xingshiapp.cn/api/model-credentials/another-proxy/v1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL);
+        assertThatThrownBy(() -> client.normalizeBaseUrl(
+                "model_gateway", "https://proxy.example/v1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("只允许发送到");
+    }
+
+    @Test
     void listsModelsWithBearerToken() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -85,5 +101,32 @@ class DeepSeekApiClientTest {
                 null, "token-test", "deepseek-v4-pro", "很长的原文"))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("被截断");
+    }
+
+    @Test
+    void modelGatewayUsesOpenAiV1RoutesAndBearerToken() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/models"))
+                .andExpect(header(AUTHORIZATION, "Bearer gateway-token"))
+                .andRespond(withSuccess("""
+                        {"object":"list","data":[{"id":"deepseek-v4-flash"}]}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/chat/completions"))
+                .andExpect(header(AUTHORIZATION, "Bearer gateway-token"))
+                .andExpect(content().json("""
+                        {"model":"deepseek-v4-flash","stream":false}
+                        """, false))
+                .andRespond(withSuccess("""
+                        {"choices":[{"finish_reason":"stop","message":{"content":"网关润色结果。"}}]}
+                        """, MediaType.APPLICATION_JSON));
+        DeepSeekApiClient client = new DeepSeekApiClient(builder);
+
+        assertThat(client.models("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "gateway-token"))
+                .containsExactly("deepseek-v4-flash");
+        assertThat(client.polish("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL,
+                "gateway-token", "deepseek-v4-flash", "待润色内容。"))
+                .isEqualTo("网关润色结果。");
+        server.verify();
     }
 }

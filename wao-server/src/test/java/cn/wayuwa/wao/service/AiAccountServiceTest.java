@@ -410,7 +410,7 @@ class AiAccountServiceTest {
     @Test
     void deepSeekTokenIsEncryptedAndSelectedModelDrivesDocumentPolish() {
         backedByMemory();
-        when(deepSeekApi.normalizeBaseUrl("https://api.deepseek.com"))
+        when(deepSeekApi.normalizeBaseUrl("deepseek", "https://api.deepseek.com"))
                 .thenReturn("https://api.deepseek.com");
         var created = service.create(new AiAccountFormRequest(
                 "deepseek", "DeepSeek 快速润色", null, null, true,
@@ -422,7 +422,7 @@ class AiAccountServiceTest {
         assertThat(stored.getApiProtocol()).isEqualTo("chat_completions");
         assertThat(stored.getCredentialJson()).startsWith("enc:").doesNotContain("token-secret");
 
-        var selected = service.defaultDeepSeekPolishAccount();
+        var selected = service.defaultDocumentPolishAccount();
         assertThat(selected.id()).isEqualTo(created.id());
         assertThat(selected.apiKey()).isEqualTo("token-secret");
         assertThat(selected.model()).isEqualTo("deepseek-v4-flash");
@@ -430,27 +430,66 @@ class AiAccountServiceTest {
         service.update(created.id(), new AiAccountFormRequest(
                 "deepseek", "DeepSeek 快速润色", null, null, true,
                 "https://api.deepseek.com", "deepseek-v4-pro", "chat_completions", null));
-        var updated = service.defaultDeepSeekPolishAccount();
+        var updated = service.defaultDocumentPolishAccount();
         assertThat(updated.apiKey()).isEqualTo("token-secret");
         assertThat(updated.model()).isEqualTo("deepseek-v4-pro");
 
         service.update(created.id(), new AiAccountFormRequest(
                 "deepseek", "DeepSeek 快速润色", null, null, true,
                 "https://api.deepseek.com", "deepseek-v4-pro", "chat_completions", "token-rotated"));
-        assertThat(service.defaultDeepSeekPolishAccount().apiKey()).isEqualTo("token-rotated");
+        assertThat(service.defaultDocumentPolishAccount().apiKey()).isEqualTo("token-rotated");
         assertThat(mapper.selectById(created.id()).getCredentialJson()).doesNotContain("token-secret");
     }
 
     @Test
     void deepSeekConnectionTestRequiresConfiguredModelToBeAvailable() {
         backedByMemory();
-        when(deepSeekApi.normalizeBaseUrl("https://api.deepseek.com"))
+        when(deepSeekApi.normalizeBaseUrl("deepseek", "https://api.deepseek.com"))
                 .thenReturn("https://api.deepseek.com");
-        when(deepSeekApi.models("https://api.deepseek.com", "token-secret"))
+        when(deepSeekApi.models("deepseek", "https://api.deepseek.com", "token-secret"))
                 .thenReturn(List.of("deepseek-v4-pro"));
         var created = service.create(new AiAccountFormRequest(
                 "deepseek", "DeepSeek 快速润色", null, null, true,
                 "https://api.deepseek.com", "deepseek-v4-flash", "chat_completions", "token-secret"));
+
+        AiAccountSyncResultDto result = service.sync(created.id());
+
+        assertThat(result.status()).isEqualTo("FAILED");
+        assertThat(result.message()).contains("不支持模型 deepseek-v4-flash");
+    }
+
+    @Test
+    void modelGatewayTokenIsEncryptedAndNewestApiConfigurationDrivesDocumentPolish() {
+        backedByMemory();
+        when(deepSeekApi.normalizeBaseUrl("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL))
+                .thenReturn(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL);
+        var created = service.create(new AiAccountFormRequest(
+                "model_gateway", "醒市模型网关", null, null, true,
+                DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "deepseek-v4-flash",
+                "chat_completions", "gateway-secret"));
+
+        AiAccountEntity stored = mapper.selectById(created.id());
+        assertThat(stored.getProvider()).isEqualTo("model_gateway");
+        assertThat(stored.getCredentialJson()).startsWith("enc:").doesNotContain("gateway-secret");
+        assertThat(stored.getApiProtocol()).isEqualTo("chat_completions");
+
+        var selected = service.defaultDocumentPolishAccount();
+        assertThat(selected.id()).isEqualTo(created.id());
+        assertThat(selected.provider()).isEqualTo("model_gateway");
+        assertThat(selected.apiKey()).isEqualTo("gateway-secret");
+    }
+
+    @Test
+    void modelGatewayConnectionTestUsesRealModelListAndRejectsMissingPermission() {
+        backedByMemory();
+        when(deepSeekApi.normalizeBaseUrl("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL))
+                .thenReturn(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL);
+        when(deepSeekApi.models("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "gateway-secret"))
+                .thenReturn(List.of("another-model"));
+        var created = service.create(new AiAccountFormRequest(
+                "model_gateway", "醒市模型网关", null, null, true,
+                DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "deepseek-v4-flash",
+                "chat_completions", "gateway-secret"));
 
         AiAccountSyncResultDto result = service.sync(created.id());
 
