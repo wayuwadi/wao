@@ -212,6 +212,23 @@ CREATE TABLE IF NOT EXISTS agent_video_generation (
 CREATE INDEX IF NOT EXISTS idx_agent_video_workspace ON agent_video_generation(workspace_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_video_status_node ON agent_video_generation(status, node_id, updated_at);
 
+-- 与 db/migration/V5__controllable_video_workflow.sql 对应。
+CREATE TABLE IF NOT EXISTS agent_video_project (
+    id VARCHAR(36) PRIMARY KEY,
+    workspace_id VARCHAR(36) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    scenes_json CLOB NOT NULL,
+    status VARCHAR(24) NOT NULL,
+    output_media_asset_id VARCHAR(36),
+    version INT NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    exported_at TIMESTAMP,
+    CONSTRAINT uk_local_agent_video_project_workspace UNIQUE (workspace_id),
+    CONSTRAINT fk_local_agent_video_project_workspace FOREIGN KEY (workspace_id) REFERENCES agent_workspace(id),
+    CONSTRAINT fk_local_agent_video_project_media FOREIGN KEY (output_media_asset_id) REFERENCES agent_media_asset(id)
+);
+
 CREATE TABLE IF NOT EXISTS SPRING_SESSION (
     PRIMARY_ID CHAR(36) NOT NULL PRIMARY KEY,
     SESSION_ID CHAR(36) NOT NULL UNIQUE,

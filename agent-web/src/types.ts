@@ -139,3 +139,28 @@ export interface PublishCenter {
   platforms: PlatformSummary[]
   tasks: PublishTask[]
 }
+
+export interface VideoScene {
+  id: string
+  kicker: string
+  title: string
+  body: string
+  seconds: number
+  accent: string
+  enabled: boolean
+}
+
+export interface VideoProject {
+  id: string
+  title: string
+  scenes: VideoScene[]
+  totalSeconds: number
+  status: 'DRAFT' | 'EXPORTED'
+  version: number
+  outputMediaAssetId?: string
+  outputName?: string
+  outputByteSize?: number
+  outputUrl?: string
+  updatedAt: string
+  exportedAt?: string
+}

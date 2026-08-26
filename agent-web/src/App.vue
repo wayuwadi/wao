@@ -4,6 +4,7 @@ import { getSession } from '@/api/agent'
 import { getStudio, markSuggestion, recommendTopics, refreshHotspots, saveProfile } from '@/api/studio'
 import { ApiError } from '@/api/http'
 import PublishCenter from '@/components/PublishCenter.vue'
+import VideoWorkflow from '@/components/VideoWorkflow.vue'
 import type { AgentSession, Studio, TopicSuggestion } from '@/types'
 
 type AuthState = 'loading' | 'unauthorized' | 'ready' | 'error'
@@ -21,6 +22,7 @@ const publishTopic = ref('')
 
 const NAV_ITEMS = [
   { id: '选题中心', icon: 'ri-fire-line',           badge: '' },
+  { id: '视频工作流', icon: 'ri-movie-2-line',       badge: '新' },
   { id: '发布中心', icon: 'ri-send-plane-line',     badge: '' },
 ]
 
@@ -311,6 +313,9 @@ onMounted(async () => {
             </div>
           </div>
         </template>
+
+        <!-- ===== 视频工作流 ===== -->
+        <VideoWorkflow v-else-if="activeSection === '视频工作流'" />
 
         <!-- ===== 发布中心 ===== -->
         <PublishCenter v-else-if="activeSection === '发布中心'" :initial-topic="publishTopic" />
