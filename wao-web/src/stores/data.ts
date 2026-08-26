@@ -400,6 +400,9 @@ export const useDataStore = defineStore('data', () => {
       const latest = active ?? [...taskRuns].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
       const task = taskById(taskId)
       if (!task || !latest) continue
+      // “待办 / 收集中”是用户明确把任务退出 AI 执行链路后的人工状态。打开详情会加载全部
+      // 历史运行，不能因为旧记录仍是成功、失败甚至活动态，就把已经写透的人工选择改回去。
+      if (['待办', '收集中'].includes(task.status)) continue
       // 人工已经验收完成时，运行记录轮询不能把任务重新覆盖为“待验证”。
       if (task.status === '已完成') continue
       // 抽屉首次加载会拿到全部历史运行。服务端任务已经处于“待验证”时，旧的失败 / 暂停记录

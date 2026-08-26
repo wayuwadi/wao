@@ -61,6 +61,21 @@ describe('AI Run 状态投影', () => {
     expect(task.status).toBe('AI 进行中')
   })
 
+  it.each(['待办', '收集中'] as const)('人工移回%s后，打开历史运行不再改回 AI 状态', (status) => {
+    const data = useDataStore()
+    const task = data.taskById('t1')!
+    task.status = status
+
+    data.applyAiRunStatuses([run('succeeded')])
+    expect(task.status).toBe(status)
+
+    data.applyAiRunStatuses([run('failed')])
+    expect(task.status).toBe(status)
+
+    data.applyAiRunStatuses([run('running')])
+    expect(task.status).toBe(status)
+  })
+
   it('不覆盖人工验收后的已完成状态', () => {
     const data = useDataStore()
     const task = data.taskById('t1')!

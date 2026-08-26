@@ -490,6 +490,17 @@ async function copyShare(kind: 'page' | 'md') {
     'ri-links-line',
   )
 }
+
+/** 复制任务的稳定标识，方便用户在对话里准确告诉 AI 要处理哪一条任务。 */
+async function copyJobId() {
+  const id = task.value?.id
+  if (!id) return
+  const copied = await copyToClipboard(id)
+  toast(
+    copied ? `JOBID ${id} 已复制` : '复制失败，请手动选中 JOBID 复制',
+    copied ? 'ri-file-copy-line' : 'ri-error-warning-line',
+  )
+}
 async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: string | null,
   model: string | null, reasoningEffort: string | null, planMode: boolean) {
   const t = task.value
@@ -1144,6 +1155,13 @@ function demo(msg: string) {
         <div v-else class="props">
           <div v-if="menu && menu !== 'share'" class="menu-mask" @click="menu = null"></div>
           <div class="props-label">属性</div>
+
+          <div class="prop-row">
+            <span class="prop-key">JOBID</span>
+            <button class="job-id-copy" type="button" :title="`复制 JOBID ${task.id}`" @click="copyJobId">
+              <code>{{ task.id }}</code><i class="ri-file-copy-line"></i>
+            </button>
+          </div>
 
           <div class="prop-row">
             <span class="prop-key">状态</span>
@@ -2249,6 +2267,34 @@ function demo(msg: string) {
 }
 .prop-val.due i {
   color: inherit;
+}
+.job-id-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: calc(100% - 68px);
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.job-id-copy:hover,
+.job-id-copy:focus-visible {
+  border-color: var(--wao-line-control);
+  background: var(--wao-primary-soft);
+}
+.job-id-copy code {
+  overflow: hidden;
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.job-id-copy i {
+  flex-shrink: 0;
+  color: var(--wao-text-weak);
 }
 /* 日期看着仍像一行属性文字，鼠标移上去才显出可点的边框——属性栏不该被输入框撑成表单 */
 .date-input,
