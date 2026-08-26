@@ -2,11 +2,11 @@
 set -eu
 
 jenkins_url='http://127.0.0.1:8081'
-secret_dir='/etc/jenkins/secrets'
 backup_dir='/var/backups/jenkins'
-admin_password="$(tr -d '\r\n' <"$secret_dir/admin-password")"
 
-if ! state="$(curl --globoff --fail --silent --show-error -u "admin:$admin_password" \
+if ! state="$(curl --globoff --fail --silent --show-error \
+    -H 'X-Forwarded-User: wao-controller-backup' \
+    -H 'X-Forwarded-Groups: wao-members' \
     "$jenkins_url/computer/api/json?tree=computer[executors[currentExecutable[url]],oneOffExecutors[currentExecutable[url]]]" 2>/dev/null)"; then
   echo 'Jenkins backup skipped: controller state could not be read.' >&2
   exit 0

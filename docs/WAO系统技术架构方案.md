@@ -1312,9 +1312,9 @@ services:
 
 主站流水线定义在仓库根目录 `Jenkinsfile`，控制器原生安装在 Linux 主节点并只监听
 `127.0.0.1:8081`。GitHub 的签名 push Webhook 经阿里云 Nginx 的精确
-`/github-webhook/` 路由和反向 SSH 隧道到达 Jenkins。UI 使用 `/jenkins/` 同域入口并接入自动化页面：
-Nginx 先校验 WAO 会话，Jenkins 再校验自身管理员账号，匿名公网请求不能到达 Jenkins。JCasC、固定插件清单、
-安装与恢复步骤见 `deploy/jenkins/`，完整安全边界见 ADR-099。
+`/github-webhook/` 路由和反向 SSH 隧道到达 Jenkins。UI 使用 `/jenkins/` 同域入口：Nginx 校验 WAO 会话并把
+服务端派生的成员 id、角色组传给 Jenkins，普通成员只读、WAO 管理员可管理，匿名公网请求不能到达 Jenkins。
+JCasC、固定插件清单、安装与恢复步骤见 `deploy/jenkins/`，交付边界见 ADR-099，单点登录边界见 ADR-122。
 
 ### 10.2 部署策略说明
 

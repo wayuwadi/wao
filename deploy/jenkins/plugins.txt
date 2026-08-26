@@ -18,3 +18,5 @@ junit:1424.vc64a_edde7777
 matrix-project:917.v22eda_817646e
 timestamper:1.30
 ws-cleanup:0.49
+reverse-proxy-auth-plugin:257.v7dc0e405b_624
+matrix-auth:3.3

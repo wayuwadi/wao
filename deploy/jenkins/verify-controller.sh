@@ -2,7 +2,6 @@
 set -eu
 
 secret_dir='/etc/jenkins/secrets'
-admin_password="$(tr -d '\r\n' <"$secret_dir/admin-password")"
 
 systemctl is-active --quiet jenkins.service
 systemctl is-active --quiet wao-jenkins-webhook-tunnel.service
@@ -15,7 +14,9 @@ if printf '%s' "$listen" | grep -Eq '(^|[[:space:]])(0\.0\.0\.0|\[::\]):8081'; t
   exit 1
 fi
 
-curl --fail --silent --show-error -u "admin:$admin_password" \
+curl --fail --silent --show-error \
+  -H 'X-Forwarded-User: wao-controller-verification' \
+  -H 'X-Forwarded-Groups: wao-admins' \
   http://127.0.0.1:8081/jenkins/api/json \
   | jq -e '.mode == "NORMAL" and .numExecutors == 1' >/dev/null
 

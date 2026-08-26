@@ -178,8 +178,8 @@ Jenkins 使用 Windows、云节点两套独立 SSH 密钥与严格 `known_hosts`
 滚动发布；两台应用节点均运行同一 SHA 且通过直连验证后才标记成功。首次重建从库时在 Jenkins 手工运行
 `wao-main-cd` 并勾选 `BOOTSTRAP_WINDOWS`，正常发布不得自动重置已有从库。安装与恢复见
 [Jenkins runbook](jenkins/README.md)，决策见 [ADR-099](../docs/adr/099-self-hosted-jenkins-delivery.md)。
-登录 WAO 后可从「自动化 → Jenkins 部署中心」查看构建与部署记录；公网入口先校验 WAO 会话，随后仍需
-Jenkins 管理员登录，普通 WAO 会话不会直接获得生产流水线操作权限。
+登录 WAO 后可从左下角「链接 → Jenkins」查看构建与部署记录；公网入口继承 WAO 成员身份，不再要求或分发
+Jenkins 管理员密码。普通成员只读，WAO 管理员和超级管理员才获得 Jenkins 管理权限。
 
 发布包用 `git archive HEAD` 打出，落到节点上时**先清空上一版源码再解压**：`tar -xzf` 和 `Expand-Archive -Force` 都只覆盖同名文件，不会删除这一版里已经删掉或改过名的文件，留在节点上的旧文件会跟着进 Docker 构建上下文。2026-07-26 连续四次部署回滚就是这么来的：`V18__chat_sync_monthly_archive.sql` 在仓库里已经改名成 V21，节点上的旧副本还在，Flyway 一启动就报「Found more than one migration with version 18」。清理范围是节点目录下除 `deploy/` 以外的全部内容——`deploy/` 里放着节点私有的 `.env`、`.env.secrets`、`certs/`、`data/`，其中被 git 跟踪的文件随即被这次解压整份覆盖。
 
