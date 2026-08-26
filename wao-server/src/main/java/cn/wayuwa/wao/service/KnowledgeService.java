@@ -371,9 +371,15 @@ public class KnowledgeService {
     /** 列出全部文档（含正文与反向链接），不含回收站里的。 */
     public List<DocDto> listDocs() {
         List<DocEntity> docs = docMapper.selectList(aliveDocs());
-        Map<String, List<BacklinkDto>> backlinks = backlinkIndex(docs);
+        Map<String, List<DocLinkDto>> linksById = docs.stream().collect(Collectors.toMap(
+                DocEntity::getId, doc -> readList(doc.getLinksJson(), LINKS_TYPE)));
+        Map<String, List<DocBlockDto>> blocksById = docs.stream().collect(Collectors.toMap(
+                DocEntity::getId, doc -> readList(doc.getBlocksJson(), BLOCKS_TYPE)));
+        Map<String, List<BacklinkDto>> backlinks = backlinkIndex(docs,
+                doc -> linksById.get(doc.getId()), doc -> snippetOf(doc, blocksById.get(doc.getId())));
         return docs.stream().map(doc -> toDtoWithBacklinks(
-                doc, backlinks.getOrDefault(doc.getId(), List.of()))).toList();
+                doc, backlinks.getOrDefault(doc.getId(), List.of()),
+                linksById.get(doc.getId()), blocksById.get(doc.getId()))).toList();
     }
 
     /** 按 id 获取单篇文档。 */
@@ -1505,12 +1511,19 @@ public class KnowledgeService {
      * 列表路径只解析 n 次出链；单篇文档路径仍复用同一结果口径。
      */
     private Map<String, List<BacklinkDto>> backlinkIndex(List<DocEntity> docs) {
+        return backlinkIndex(docs,
+                source -> readList(source.getLinksJson(), LINKS_TYPE), this::snippetOf);
+    }
+
+    private Map<String, List<BacklinkDto>> backlinkIndex(List<DocEntity> docs,
+            java.util.function.Function<DocEntity, List<DocLinkDto>> linksOf,
+            java.util.function.Function<DocEntity, String> snippetOf) {
         Map<String, List<BacklinkDto>> backlinks = new java.util.LinkedHashMap<>();
         Set<String> aliveIds = docs.stream().map(DocEntity::getId).collect(Collectors.toSet());
         for (DocEntity source : docs) {
-            List<DocLinkDto> links = readList(source.getLinksJson(), LINKS_TYPE);
+            List<DocLinkDto> links = linksOf.apply(source);
             if (links.isEmpty()) continue;
-            BacklinkDto backlink = new BacklinkDto("doc", source.getId(), snippetOf(source));
+            BacklinkDto backlink = new BacklinkDto("doc", source.getId(), snippetOf.apply(source));
             links.stream()
                     .filter(link -> "doc".equals(link.type()))
                     .map(DocLinkDto::id)
@@ -1525,6 +1538,11 @@ public class KnowledgeService {
     private DocDto toDtoWithBacklinks(DocEntity e, List<BacklinkDto> backlinks) {
         List<DocBlockDto> blocks = readList(e.getBlocksJson(), BLOCKS_TYPE);
         List<DocLinkDto> links = readList(e.getLinksJson(), LINKS_TYPE);
+        return toDtoWithBacklinks(e, backlinks, links, blocks);
+    }
+
+    private DocDto toDtoWithBacklinks(DocEntity e, List<BacklinkDto> backlinks,
+            List<DocLinkDto> links, List<DocBlockDto> blocks) {
         return new DocDto(e.getId(), e.getTitle(), e.getAuthorId(),
                 stamp(e.getCreatedAt(), e.getCreatedLabel()), stamp(e.getUpdatedAt(), e.getUpdatedLabel()),
                 e.getAuto(), links, blocks, backlinks, e.getKbId(), e.getFolderId(), rev(e));
@@ -1580,7 +1598,11 @@ public class KnowledgeService {
     }
 
     private String snippetOf(DocEntity e) {
-        for (DocBlockDto b : readList(e.getBlocksJson(), BLOCKS_TYPE)) {
+        return snippetOf(e, readList(e.getBlocksJson(), BLOCKS_TYPE));
+    }
+
+    private String snippetOf(DocEntity e, List<DocBlockDto> blocks) {
+        for (DocBlockDto b : blocks) {
             String text = b.p() != null ? b.p() : b.h() != null ? b.h() : b.call();
             if (text != null && !text.isBlank()) {
                 return text.length() > 60 ? text.substring(0, 60) + "…" : text;

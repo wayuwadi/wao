@@ -16,6 +16,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.DocEntity;
@@ -553,6 +555,36 @@ class KnowledgeServiceTest {
                 .containsExactly("d3");
         assertThat(docs.get(2).backlinks()).isEmpty();
         verify(docMapper, times(1)).selectList(any());
+    }
+
+    @Test
+    void listDocsParsesEachDocumentsBlocksAndLinksOnlyOnce() {
+        DocEntity first = doc("d1", "k1", "f1");
+        DocEntity source = doc("d2", "k1", "f1");
+        source.setBlocksJson("[{\"p\":\"引用了目标文档\"}]");
+        source.setLinksJson("[{\"type\":\"doc\",\"id\":\"d1\"}]");
+        when(docMapper.selectList(any())).thenReturn(List.of(first, source));
+        CountingObjectMapper json = new CountingObjectMapper();
+        KnowledgeService measured = new KnowledgeService(groupMapper, kbMapper, folderMapper, docMapper,
+                templateMapper, memberMapper, json, taskNotifier, archiveVersions);
+
+        List<DocDto> docs = measured.listDocs();
+
+        assertThat(json.readCount).isEqualTo(4);
+        assertThat(docs.get(0).backlinks()).extracting(cn.wayuwa.wao.dto.BacklinkDto::id)
+                .containsExactly("d2");
+        assertThat(docs.get(1).blocks()).containsExactly(new DocBlockDto(
+                null, null, "引用了目标文档", null, null, null));
+    }
+
+    private static final class CountingObjectMapper extends ObjectMapper {
+        private int readCount;
+
+        @Override
+        public <T> T readValue(String content, TypeReference<T> valueTypeRef) throws JsonProcessingException {
+            readCount++;
+            return super.readValue(content, valueTypeRef);
+        }
     }
 
     @Test

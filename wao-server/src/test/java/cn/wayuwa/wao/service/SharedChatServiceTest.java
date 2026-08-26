@@ -3,6 +3,7 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -13,12 +14,14 @@ import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.ImageBlobEntity;
 import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.domain.SharedChatMessageEntity;
+import cn.wayuwa.wao.domain.SharedChatMessageReadEntity;
 import cn.wayuwa.wao.dto.CreateSharedChatMessageRequest;
 import cn.wayuwa.wao.mapper.ImageBlobMapper;
 import cn.wayuwa.wao.mapper.MemberMapper;
 import cn.wayuwa.wao.mapper.SharedChatMessageMapper;
 import cn.wayuwa.wao.mapper.SharedChatMessageReadMapper;
 import cn.wayuwa.wao.mapper.SharedChatReactionMapper;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -106,5 +109,39 @@ class SharedChatServiceTest {
                 new CreateSharedChatMessageRequest("client_token_long", "好".repeat(2_001), null)))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("2000");
+    }
+
+    @Test
+    void marksVisibleMessagesThroughTheCursorWithOneIdempotentBatch() {
+        LocalDateTime at = LocalDateTime.of(2026, 8, 27, 6, 30);
+        SharedChatMessageEntity before = message("a", at.minusSeconds(1));
+        SharedChatMessageEntity through = message("m", at);
+        SharedChatMessageEntity sameTimeAfter = message("z", at);
+        SharedChatMessageEntity future = message("future", at.plusSeconds(1));
+        when(messages.selectById("m")).thenReturn(through);
+        when(messages.latest(100)).thenReturn(List.of(future, sameTimeAfter, through, before));
+
+        service.markRead("m1", "m");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<SharedChatMessageReadEntity>> rows =
+                ArgumentCaptor.forClass(List.class);
+        verify(reads).insertBatchIgnore(rows.capture());
+        assertThat(rows.getValue()).extracting(SharedChatMessageReadEntity::getMessageId)
+                .containsExactly("m", "a");
+        assertThat(rows.getValue()).allSatisfy(row -> {
+            assertThat(row.getReaderKey()).isEqualTo("member:m1");
+            assertThat(row.getMemberId()).isEqualTo("m1");
+            assertThat(row.getSource()).isEqualTo("WAO");
+            assertThat(row.getReadAt()).isEqualTo(rows.getValue().get(0).getReadAt());
+        });
+        verify(reads, never()).insertIgnore(anyString(), anyString(), anyString(), anyString(), anyString(), any());
+    }
+
+    private static SharedChatMessageEntity message(String id, LocalDateTime createdAt) {
+        SharedChatMessageEntity message = new SharedChatMessageEntity();
+        message.setId(id);
+        message.setCreatedAt(createdAt);
+        return message;
     }
 }
