@@ -23,6 +23,57 @@ RUNNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNNER)
 
 
+class RunnerMemoryCollectionTest(unittest.TestCase):
+
+    def test_reads_only_bounded_utf8_memory_files_and_redacts_credentials(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="wao-codex-memory-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        memories = root / "memories"
+        memories.mkdir()
+        (memories / "durable.md").write_text("发布前验收\napi_key=abcdefghijk12345", encoding="utf-8")
+        (memories / "binary.bin").write_bytes(b"abc\0def")
+        outside = root / "outside.md"
+        outside.write_text("不应读取", encoding="utf-8")
+        try:
+            (memories / "link.md").symlink_to(outside)
+        except OSError:
+            pass
+
+        sources = RUNNER.read_local_codex_memories({"CODEX_HOME": str(root)})
+
+        self.assertEqual(["durable.md"], [item["path"] for item in sources])
+        self.assertIn("api_key=[已脱敏]", sources[0]["content"])
+        self.assertNotIn("abcdefghijk12345", sources[0]["content"])
+
+    def test_missing_local_memory_reports_real_failure_without_calling_model(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="wao-no-memory-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        api = Mock()
+
+        with patch.object(RUNNER, "run_codex") as run_codex:
+            RUNNER.collect_codex_memory_report(api, "测试电脑", "codex", {"CODEX_HOME": str(root)})
+
+        run_codex.assert_not_called()
+        payload = api.post.call_args.args[1]
+        self.assertEqual([], payload["reports"])
+        self.assertIn("未发现 CODEX_HOME/memories", payload["error"])
+
+    def test_parses_machine_and_application_reports_with_strict_bounds(self) -> None:
+        result = RUNNER.parse_memory_reports(json.dumps({"reports": [
+            {"scopeType": "machine", "scopeId": "ignored", "category": "operation",
+             "title": "Windows 执行节点的稳定维护方法", "content": "每天检查 Runner 心跳、磁盘容量和脚本版本，异常时先保留完整诊断日志再重试。"},
+            {"scopeType": "application", "scopeId": "codex", "category": "convention",
+             "title": "Codex 的长期工作约定", "content": "任务完成前执行真实测试并记录结果，发布后继续跟踪部署终态、线上用户链路和通知结果。"},
+        ]}, ensure_ascii=False))
+
+        self.assertEqual(["machine", "application"], [item["scopeType"] for item in result])
+        with self.assertRaisesRegex(RuntimeError, "应用报告"):
+            RUNNER.parse_memory_reports(json.dumps({"reports": [{
+                "scopeType": "application", "scopeId": "unknown", "category": "context",
+                "title": "一个足够长的应用记忆标题", "content": "正文内容足够长，且不应该接受未知的应用范围标识。",
+            }]}, ensure_ascii=False))
+
+
 class RunnerInvocationTest(unittest.TestCase):
 
     def test_stop_is_checked_even_while_cli_continuously_emits_output(self) -> None:

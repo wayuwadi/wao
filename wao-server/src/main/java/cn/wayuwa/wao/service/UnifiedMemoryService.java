@@ -3,6 +3,7 @@ package cn.wayuwa.wao.service;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.ConflictException;
 import cn.wayuwa.wao.common.NotFoundException;
+import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.domain.MemoryAttachmentEntity;
 import cn.wayuwa.wao.domain.MemoryDocumentEntity;
@@ -17,6 +18,7 @@ import cn.wayuwa.wao.dto.MemoryDocumentDto;
 import cn.wayuwa.wao.dto.MemoryRevisionDto;
 import cn.wayuwa.wao.dto.MemorySourceDto;
 import cn.wayuwa.wao.dto.SaveMemoryRequest;
+import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
 import cn.wayuwa.wao.mapper.MemberMapper;
 import cn.wayuwa.wao.mapper.MemoryAttachmentMapper;
 import cn.wayuwa.wao.mapper.MemoryDocumentMapper;
@@ -56,17 +58,19 @@ import org.springframework.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** 个人、组织和项目三种范围共用的版本化记忆领域服务。 */
+/** 个人、组织、项目、机器和应用范围共用的版本化记忆领域服务。 */
 @Service
 public class UnifiedMemoryService {
     private static final Logger log = LoggerFactory.getLogger(UnifiedMemoryService.class);
     public static final int MAX_SEARCH_RESULTS = 5;
     public static final int MAX_SEARCH_CHARS = 10_000;
-    public static final Set<String> SCOPES = Set.of("personal", "organization", "project");
+    public static final Set<String> SCOPES = Set.of("personal", "organization", "project", "machine", "application");
     private static final Map<String, Set<String>> CATEGORIES = Map.of(
             "personal", Set.of("preference", "responsibility", "plan", "decision", "context", "experience"),
             "organization", Set.of("decision", "policy", "standard", "glossary", "responsibility", "context"),
-            "project", Set.of("decision", "convention", "pitfall", "verification", "operation", "context"));
+            "project", Set.of("decision", "convention", "pitfall", "verification", "operation", "context"),
+            "machine", Set.of("decision", "convention", "pitfall", "verification", "operation", "context"),
+            "application", Set.of("decision", "convention", "pitfall", "verification", "operation", "context"));
     private static final Pattern WORD = Pattern.compile("[\\p{IsHan}]{2,}|[A-Za-z0-9_./-]{2,}");
     private static final Pattern SENSITIVE = Pattern.compile(
             "(?is)(-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
@@ -84,6 +88,7 @@ public class UnifiedMemoryService {
     private final MemberMapper members;
     private final OrgMapper orgs;
     private final ProjectMapper projects;
+    private final AiRunnerNodeMapper runners;
     private final ProjectMemoryMapper projectMemories;
     private final ProjectService projectService;
     private final ObjectMapper json;
@@ -91,7 +96,7 @@ public class UnifiedMemoryService {
     public UnifiedMemoryService(MemoryDocumentMapper documents, MemoryRevisionMapper revisions,
             MemorySourceMapper sources, MemoryAttachmentMapper attachments,
             MemoryOutboxMapper outbox, MemoryUsageLogMapper usage,
-            MemberMapper members, OrgMapper orgs, ProjectMapper projects,
+            MemberMapper members, OrgMapper orgs, ProjectMapper projects, AiRunnerNodeMapper runners,
             ProjectMemoryMapper projectMemories, ProjectService projectService, ObjectMapper json) {
         this.documents = documents;
         this.revisions = revisions;
@@ -102,6 +107,7 @@ public class UnifiedMemoryService {
         this.members = members;
         this.orgs = orgs;
         this.projects = projects;
+        this.runners = runners;
         this.projectMemories = projectMemories;
         this.projectService = projectService;
         this.json = json;
@@ -196,6 +202,40 @@ public class UnifiedMemoryService {
         insertInternalSource(revision.getId(), "task", taskId, now);
         insertInternalSource(revision.getId(), "run", runId, now);
         event("memory.project.candidate.created", document.getId(), revision.getId(), now);
+        return dto(document, revision);
+    }
+
+    /** Runner 的受控内部入口：机器或应用报告只形成候选，不接收原始本机文件。 */
+    @Transactional
+    public MemoryDocumentDto createCollectedCandidate(String memoryId, String runnerId, String scopeType,
+            String scopeId, String category, String title, String content) {
+        String type = normalizeScope(scopeType);
+        if (!Set.of("machine", "application").contains(type)) {
+            throw new BadRequestException("自动采集只支持机器或应用记忆");
+        }
+        SaveMemoryRequest request = new SaveMemoryRequest(type, scopeId, category, title, content,
+                "Runner 定时整理本机 Codex 记忆后生成", List.of(), null, null);
+        Normalized input = normalize(type, request);
+        LocalDateTime now = LocalDateTime.now();
+        MemoryDocumentEntity document = StringUtils.hasText(memoryId) ? requireDocument(memoryId) : null;
+        if (document == null) {
+            document = new MemoryDocumentEntity();
+            document.setId(newId("md")); document.setScopeType(type); document.setScopeId(scopeId);
+            document.setCategory(input.category()); document.setState("draft"); document.setCreatedBy("ai");
+            document.setCreatedAt(now); document.setUpdatedAt(now); documents.insert(document);
+        } else {
+            if (!type.equals(document.getScopeType()) || !scopeId.equals(document.getScopeId())) {
+                throw new BadRequestException("采集文档范围与既有映射不一致");
+            }
+            document.setCategory(input.category()); document.setState("draft"); document.setUpdatedAt(now);
+            documents.updateById(document);
+        }
+        MemoryRevisionEntity revision = buildRevision(document, nextVersion(document.getId()),
+                document.getCurrentPublishedRevisionId(), input, "ai", "ai", now);
+        revisions.insert(revision);
+        insertInternalSource(revision.getId(), "runner", runnerId, now);
+        if ("application".equals(type)) insertInternalSource(revision.getId(), "application", scopeId, now);
+        event("memory.collection.candidate.created", document.getId(), revision.getId(), now);
         return dto(document, revision);
     }
 
@@ -497,7 +537,7 @@ public class UnifiedMemoryService {
         MemoryRevisionEntity revision = new MemoryRevisionEntity();
         revision.setId(newId("mr")); revision.setMemoryId(document.getId()); revision.setVersionNo(version);
         revision.setState("draft"); revision.setTitle(input.title()); revision.setContentMd(input.content());
-        revision.setChangeSummary(input.changeSummary()); revision.setContentFingerprint(fingerprint(input.content()));
+        revision.setChangeSummary(input.changeSummary()); revision.setContentFingerprint(contentFingerprint(input.content()));
         revision.setBaseRevisionId(baseRevisionId); revision.setEvidenceLinksJson(writeLinks(input.evidenceLinks()));
         revision.setAuthorType("ai".equals(authorType) ? "ai" : "human"); revision.setCreatedBy(memberId);
         revision.setCreatedAt(now); revision.setExpiresAt(input.expiresAt());
@@ -538,6 +578,24 @@ public class UnifiedMemoryService {
             if (members.selectById(memberId) == null) throw new NotFoundException("记忆范围不存在");
             return new Scope(type, org.getId());
         }
+        if ("machine".equals(type)) {
+            if (!StringUtils.hasText(requestedId) || runners.selectById(requestedId) == null) {
+                throw new NotFoundException("记忆范围不存在");
+            }
+            if (members.selectById(memberId) == null) throw new NotFoundException("记忆范围不存在");
+            return new Scope(type, requestedId);
+        }
+        if ("application".equals(type)) {
+            String application = text(requestedId).trim().toLowerCase(Locale.ROOT);
+            if (application.isEmpty() || !application.matches("[a-z0-9][a-z0-9_-]{0,63}")) {
+                throw new NotFoundException("记忆范围不存在");
+            }
+            boolean available = runners.selectList(null).stream().anyMatch(runner ->
+                    ("," + text(runner.getEngines()).toLowerCase(Locale.ROOT).replace(" ", "") + ",")
+                            .contains("," + application + ","));
+            if (!available || members.selectById(memberId) == null) throw new NotFoundException("记忆范围不存在");
+            return new Scope(type, application);
+        }
         if (!StringUtils.hasText(requestedId)) throw new BadRequestException("项目记忆必须指定项目");
         projectService.requireAccess(requestedId, memberId);
         return new Scope(type, requestedId);
@@ -548,6 +606,7 @@ public class UnifiedMemoryService {
         MemberEntity member = members.selectById(memberId);
         boolean admin = member != null && ("管理员".equals(member.getRole()) || "超级管理员".equals(member.getRole()));
         if ("organization".equals(document.getScopeType()) && admin) return;
+        if (Set.of("machine", "application").contains(document.getScopeType()) && admin) return;
         if ("project".equals(document.getScopeType())) {
             ProjectEntity project = projects.selectById(document.getScopeId());
             if (admin || project != null && memberId.equals(project.getOwnerId())) return;
@@ -696,7 +755,7 @@ public class UnifiedMemoryService {
         catch (JsonProcessingException impossible) { throw new IllegalStateException(impossible); }
     }
 
-    private static String fingerprint(String value) {
+    public static String contentFingerprint(String value) {
         try {
             String normalized = text(value).toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")

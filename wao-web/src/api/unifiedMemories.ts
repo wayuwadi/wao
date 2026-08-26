@@ -1,6 +1,6 @@
 import { http, type ApiResponse } from './http'
 
-export type MemoryScope = 'personal' | 'organization' | 'project'
+export type MemoryScope = 'personal' | 'organization' | 'project' | 'machine' | 'application'
 export type MemoryState = 'active' | 'draft' | 'rejected' | 'archived'
 
 export interface MemorySource {

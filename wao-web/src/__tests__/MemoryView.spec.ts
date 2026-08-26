@@ -10,6 +10,11 @@ vi.mock('@/stores/session', () => ({ useSessionStore: () => ({
   userId: 'wg', org: { id: 'o1', name: 'WAO' }, currentUser: { role: '超级管理员' },
 }) }))
 vi.mock('@/api/board', () => ({ fetchProjects: vi.fn().mockResolvedValue([]) }))
+vi.mock('@/api/ai', () => ({ fetchAiRunners: vi.fn().mockResolvedValue([{
+  id: 'rn1', name: '开发电脑', platform: 'linux', engines: ['codex'], maxConcurrency: 1,
+  activeRuns: 0, online: true, lastSeenAt: null, wakeMac: null, wakeHost: null,
+  wakePort: 9, wakeConfigured: false, lastWakeRequestedAt: null,
+}]) }))
 vi.mock('@/api/unifiedMemories', async () => {
   const actual = await vi.importActual<typeof import('@/api/unifiedMemories')>('@/api/unifiedMemories')
   return { ...actual, fetchMemories: vi.fn(), createMemory: vi.fn(), reviseMemory: vi.fn(),
@@ -31,12 +36,14 @@ describe('MemoryView', () => {
     vi.mocked(fetchMemories).mockResolvedValue([])
   })
 
-  it('展示三种隔离范围和正式个人记忆', async () => {
+  it('展示五种隔离范围和正式个人记忆', async () => {
     vi.mocked(fetchMemories).mockResolvedValue([memory()])
     const wrapper = mount(MemoryView); await flushPromises()
     expect(wrapper.text()).toContain('个人记忆')
     expect(wrapper.text()).toContain('组织记忆')
     expect(wrapper.text()).toContain('项目记忆')
+    expect(wrapper.text()).toContain('机器记忆')
+    expect(wrapper.text()).toContain('应用记忆')
     expect(wrapper.text()).toContain('晨跑偏好')
     expect(wrapper.text()).toContain('正式版 v1')
   })
