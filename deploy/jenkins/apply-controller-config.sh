@@ -38,8 +38,17 @@ cat "$dynamic_override" >>"$expected_override"
 needs_update "$expected_override" /etc/systemd/system/jenkins.service.d/override.conf
 
 if [ "$changed" = false ]; then
-  echo 'Jenkins controller configuration is already current.'
-  exit 0
+  for candidate_base in /jenkins ''; do
+    if curl --fail --silent --show-error \
+      -H 'X-Forwarded-User: wao-controller-runtime-check' \
+      -H 'X-Forwarded-Groups: wao-admins' \
+      "http://127.0.0.1:8081${candidate_base}/api/json" >/dev/null 2>&1; then
+      echo 'Jenkins controller configuration is already current and active.'
+      exit 0
+    fi
+  done
+  echo 'Jenkins controller files are current, but the running security realm still needs activation.'
+  changed=true
 fi
 
 # JCasC 只能在所需插件已经落盘后加载。插件管理器以 Jenkins 用户运行，复用控制器服务的代理环境，
