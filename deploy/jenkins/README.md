@@ -88,7 +88,8 @@ sudo sh deploy/jenkins/verify-controller.sh
 `Jenkinsfile` 默认从 `main` 拉取代码并先生成可审计的变更范围：只运行受影响 Maven 模块和前端的测试，
 后端、WAO Web、Agent Web 三路并行；运行时代码变更仍构建完整的四个 SHA 镜像和两个前端，并执行
 Windows → Linux → 云端严格滚动发布、线上验收、GitHub commit status 和飞书通知。纯文档提交只完成
-输入校验并明确通知“无需部署”，不生成制品或触碰生产节点。无法识别的新路径自动回退全量验证和发布。
+输入校验并明确通知“无需部署”；只改自动化测试时仅运行对应模块测试。两者都不生成制品或触碰生产节点。
+无法识别的新路径自动回退全量验证和发布。
 
 - `DEPLOY_PRODUCTION=false`：对需要发布的变更执行完整影子构建，不接触生产节点；纯文档仍只做校验。
 - `BOOTSTRAP_WINDOWS=true`：显式生成 GTID 快照并重建 Windows 从库；正常发布禁止开启。

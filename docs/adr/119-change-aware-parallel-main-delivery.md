@@ -18,6 +18,8 @@
   明确计划。缺少父提交、空 diff、流水线自身变化或出现未登记路径时 fail-safe 回退全量验证和发布。
 - 后端使用 Maven `-pl ... -am` 只测试受影响 Reactor 模块；前端只运行受影响应用的 Vitest。后端测试、
   WAO Web、Agent Web 和按需 AI Runner 测试作为并行分支运行。
+- 只修改后端 `src/test/**`、WAO Web `src/__tests__/**`、Agent Web 的 `*.spec.*` / `*.test.*` 或 AI Runner
+  `test_*.py` 时，只运行对应测试，不生成生产制品，也不触碰生产节点。
 - 任何运行时代码变更仍构建两个前端、全部 Java 镜像和 Codex 出口镜像。继续以同一 Git SHA 打包并严格执行
   Windows → Linux → 云端滚动发布和线上探针，不复用线上静态文件，也不给旧镜像补贴新 SHA。
 - 纯 `docs/**`、Markdown 和 `.github/**` 变化不产生主站运行制品，因而只执行输入与规划脚本校验；Jenkins
