@@ -35,6 +35,20 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
+    void jenkinsFailureStatusIdentifiesTheFailedStage() throws IOException {
+        String pipeline = readFromRepository("Jenkinsfile");
+
+        assertThat(pipeline)
+                .contains("env.WAO_FAILURE_STAGE = 'Validate release inputs'")
+                .contains("env.WAO_FAILURE_STAGE = 'Backend tests'")
+                .contains("env.WAO_FAILURE_STAGE = 'Build immutable release'")
+                .contains("env.WAO_FAILURE_STAGE = 'Deploy Windows, Linux and cloud'")
+                .contains("env.WAO_FAILURE_STAGE = 'Apply Jenkins controller configuration'")
+                .contains("Jenkins 失败：${env.WAO_FAILURE_STAGE.trim()}")
+                .contains("github-status.sh failure \"$WAO_STATUS_DESCRIPTION\"");
+    }
+
+    @Test
     void agentUsesBundledStaticDirectoryServiceAndDedicatedGatewayRoute() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String gateway = readFromRepository("wao-gateway/src/main/resources/application.yml");

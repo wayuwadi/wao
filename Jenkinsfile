@@ -56,6 +56,11 @@ pipeline {
                     sh 'deploy/jenkins/github-status.sh pending "Jenkins 已开始构建"'
                 }
             }
+            post {
+                failure {
+                    script { env.WAO_FAILURE_STAGE = 'Checkout trusted main' }
+                }
+            }
         }
 
         stage('Validate release inputs') {
@@ -92,6 +97,11 @@ pipeline {
                 }
                 sh 'deploy/jenkins/ci-validate.sh'
             }
+            post {
+                failure {
+                    script { env.WAO_FAILURE_STAGE = 'Validate release inputs' }
+                }
+            }
         }
 
         stage('Parallel tests and frontend builds') {
@@ -103,6 +113,11 @@ pipeline {
                     steps {
                         sh 'deploy/jenkins/ci-backend-test.sh'
                     }
+                    post {
+                        failure {
+                            script { env.WAO_FAILURE_STAGE = 'Backend tests' }
+                        }
+                    }
                 }
                 stage('WAO Web tests and build') {
                     when {
@@ -112,6 +127,11 @@ pipeline {
                     }
                     steps {
                         sh 'deploy/jenkins/ci-frontend-build.sh wao-web "$WAO_TEST_WAO_WEB" "$WAO_DEPLOY_REQUIRED"'
+                    }
+                    post {
+                        failure {
+                            script { env.WAO_FAILURE_STAGE = 'WAO Web tests and build' }
+                        }
                     }
                 }
                 stage('Agent Web tests and build') {
@@ -123,6 +143,11 @@ pipeline {
                     steps {
                         sh 'deploy/jenkins/ci-frontend-build.sh agent-web "$WAO_TEST_AGENT_WEB" "$WAO_DEPLOY_REQUIRED"'
                     }
+                    post {
+                        failure {
+                            script { env.WAO_FAILURE_STAGE = 'Agent Web tests and build' }
+                        }
+                    }
                 }
                 stage('AI Runner tests') {
                     when {
@@ -130,6 +155,11 @@ pipeline {
                     }
                     steps {
                         sh 'python3 deploy/ai-runner/test_wao_ai_runner.py'
+                    }
+                    post {
+                        failure {
+                            script { env.WAO_FAILURE_STAGE = 'AI Runner tests' }
+                        }
                     }
                 }
             }
@@ -141,6 +171,11 @@ pipeline {
             }
             steps {
                 sh 'deploy/jenkins/ci-package.sh'
+            }
+            post {
+                failure {
+                    script { env.WAO_FAILURE_STAGE = 'Build immutable release' }
+                }
             }
         }
 
@@ -173,6 +208,11 @@ pipeline {
                     sh 'deploy/jenkins/ci-production-verify.sh'
                 }
             }
+            post {
+                failure {
+                    script { env.WAO_FAILURE_STAGE = 'Deploy Windows, Linux and cloud' }
+                }
+            }
         }
 
         stage('Apply Jenkins controller configuration') {
@@ -181,6 +221,11 @@ pipeline {
             }
             steps {
                 sh 'deploy/jenkins/apply-controller-config.sh'
+            }
+            post {
+                failure {
+                    script { env.WAO_FAILURE_STAGE = 'Apply Jenkins controller configuration' }
+                }
             }
         }
     }
@@ -211,12 +256,17 @@ pipeline {
         failure {
             script {
                 if (env.WAO_GIT_SHA) {
+                    def failureDescription = env.WAO_FAILURE_STAGE?.trim()
+                        ? "Jenkins 失败：${env.WAO_FAILURE_STAGE.trim()}"
+                        : 'Jenkins 构建或发布失败'
                     withCredentials([usernamePassword(
                         credentialsId: 'wao-github-pat',
                         usernameVariable: 'GITHUB_USER',
                         passwordVariable: 'GITHUB_PAT'
                     )]) {
-                        sh 'deploy/jenkins/github-status.sh failure "Jenkins 构建或发布失败"'
+                        withEnv(["WAO_STATUS_DESCRIPTION=${failureDescription}"]) {
+                            sh 'deploy/jenkins/github-status.sh failure "$WAO_STATUS_DESCRIPTION"'
+                        }
                     }
                 }
             }
