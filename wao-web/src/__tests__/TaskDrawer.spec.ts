@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SETTLE_MS } from '@/composables/completion'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createWebHistory } from 'vue-router'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
@@ -10,8 +10,10 @@ import { useUiStore } from '@/stores/ui'
 import { useToastHost } from '@/composables/toast'
 import type { AiRun } from '@/types'
 
+enableAutoUnmount(afterEach)
+
 vi.mock('@/utils/clipboard', () => ({
-  copyToClipboard: vi.fn().mockResolvedValue(true),
+  copyToClipboard: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
 }))
 
 vi.mock('@/api/ai', () => ({
@@ -320,7 +322,7 @@ describe('TaskDrawer', () => {
   it('空的 AI 记录轮询不会反复插入加载区而推挤评论', async () => {
     const { fetchTaskAiRuns } = await import('@/api/ai')
     const fetchRuns = vi.mocked(fetchTaskAiRuns)
-    // 首次打开和下一次五秒轮询都没有记录；其后的测试仍使用默认 mock 返回值。
+    // 首次打开和下一次空闲轮询都没有记录；其后的测试仍使用默认 mock 返回值。
     fetchRuns.mockResolvedValueOnce([]).mockResolvedValueOnce([])
     vi.useFakeTimers()
     try {
@@ -329,11 +331,71 @@ describe('TaskDrawer', () => {
       await flushPromises()
       expect(w.find('.ai-archive').exists()).toBe(false)
 
-      await vi.advanceTimersByTimeAsync(5_000)
+      await vi.advanceTimersByTimeAsync(15_000)
       await flushPromises()
       expect(w.find('.ai-archive').exists()).toBe(false)
       w.unmount()
     } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('活动运行的慢请求结束后才安排下一轮，避免轮询重叠', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    const fetchRuns = vi.mocked(fetchTaskAiRuns)
+    fetchRuns.mockClear()
+    let finishSecondRequest!: (runs: AiRun[]) => void
+    fetchRuns
+      .mockResolvedValueOnce([aiRun({ id: 'ar-live', taskId, status: 'running' })])
+      .mockImplementationOnce(() => new Promise((resolve) => { finishSecondRequest = resolve }))
+      .mockResolvedValueOnce([aiRun({ id: 'ar-live', taskId, status: 'running' })])
+    vi.useFakeTimers()
+    try {
+      ui.openTask(taskId)
+      const w = mountDrawer()
+      await flushPromises()
+      expect(fetchRuns).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(fetchRuns).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(fetchRuns).toHaveBeenCalledTimes(2)
+
+      finishSecondRequest([aiRun({ id: 'ar-live', taskId, status: 'running' })])
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(fetchRuns).toHaveBeenCalledTimes(3)
+      w.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('页面隐藏时暂停空闲轮询，重新可见后立即同步', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    const fetchRuns = vi.mocked(fetchTaskAiRuns)
+    fetchRuns.mockClear()
+    fetchRuns.mockResolvedValueOnce([]).mockResolvedValueOnce([])
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    vi.useFakeTimers()
+    try {
+      ui.openTask(taskId)
+      const w = mountDrawer()
+      await flushPromises()
+      expect(fetchRuns).toHaveBeenCalledTimes(1)
+
+      hidden.mockReturnValue(true)
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(fetchRuns).toHaveBeenCalledTimes(1)
+
+      hidden.mockReturnValue(false)
+      document.dispatchEvent(new Event('visibilitychange'))
+      await flushPromises()
+      expect(fetchRuns).toHaveBeenCalledTimes(2)
+      w.unmount()
+    } finally {
+      hidden.mockRestore()
       vi.useRealTimers()
     }
   })
