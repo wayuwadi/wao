@@ -45,6 +45,9 @@ public interface SkillMapper extends BaseMapper<SkillEntity> {
     @Select("SELECT s.* FROM skill s JOIN skill_publisher p ON p.id=s.publisher_id WHERE s.id=#{id} AND p.member_id=#{memberId}")
     SkillEntity findOwned(String id, String memberId);
 
+    @Select("SELECT s.* FROM skill s JOIN skill_publisher p ON p.id=s.publisher_id WHERE p.member_id=#{memberId} AND s.slug=#{slug}")
+    SkillEntity findOwnedBySlug(String memberId, String slug);
+
     @Update("UPDATE skill SET download_count=download_count+1 WHERE id=#{id}")
     int incrementDownloads(String id);
     @Update("UPDATE skill SET favorite_count=favorite_count+#{delta} WHERE id=#{id} AND favorite_count+#{delta} >= 0")

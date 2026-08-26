@@ -36,6 +36,10 @@ public class AiTaskRunEntity {
     private String reasoningEffort;
     /** Codex 是否先形成计划再连续执行；问题由 Runner 指示其自动采用推荐项。 */
     private Boolean planMode;
+    /** 入队时固化的项目 Skill 版本清单。 */
+    private String capabilityManifestJson;
+    /** Runner 对各 Skill 的实际装配结果。 */
+    private String capabilityAuditJson;
     /** 本次运行输出 token 最多的模型；CLI 没回传时为 null。 */
     private String model;
     /** 本次运行用到的全部模型，逗号分隔；自动选模型时可能不止一个。 */
@@ -94,6 +98,10 @@ public class AiTaskRunEntity {
     public void setReasoningEffort(String reasoningEffort) { this.reasoningEffort = reasoningEffort; }
     public Boolean getPlanMode() { return planMode; }
     public void setPlanMode(Boolean planMode) { this.planMode = planMode; }
+    public String getCapabilityManifestJson() { return capabilityManifestJson; }
+    public void setCapabilityManifestJson(String value) { capabilityManifestJson = value; }
+    public String getCapabilityAuditJson() { return capabilityAuditJson; }
+    public void setCapabilityAuditJson(String value) { capabilityAuditJson = value; }
     public String getModel() { return model; }
     public void setModel(String model) { this.model = model; }
     public String getModels() { return models; }

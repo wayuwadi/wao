@@ -504,6 +504,17 @@ paths:
       summary: 保存开关、仓库、分支、文件夹、默认 AI 工具、首选电脑与项目并发数
       parameters: [ { name: projectId, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '400': { description: 配置不合法 } }
+  /ai/skills/available:
+    get: { summary: 返回市场当前可供项目启用的 Codex Skill 审核版本, responses: { '200': { description: OK } } }
+  /ai/projects/{projectId}/skills:
+    get:
+      summary: 返回项目当前固定绑定的 Skill 版本
+      parameters: [ { name: projectId, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK }, '404': { description: 项目不存在 } }
+    put:
+      summary: 整体替换项目 Skill 固定版本绑定，最多十项
+      parameters: [ { name: projectId, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: 返回保存后的绑定 }, '400': { description: 版本未审核、已下架或超过十项 } }
   /ai/workflows:
     get: { summary: 各项目的 AI 工作流配置与运行统计（控制台「AI 工作流」视图）, responses: { '200': { description: OK } } }
   /ai/workflows/{projectId}:
@@ -703,6 +714,18 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/CompleteAiRunRequest' } } }
       responses: { '200': { description: OK }, '401': { description: 运行不属于当前节点 } }
+  /ai/runner/runs/{runId}/skills/{versionId}:
+    get:
+      summary: Runner 下载本次固化能力清单中的不可变 Skill 包
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: string } }
+        - { name: versionId, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: 二进制 ZIP 与 X-WAO-Skill-SHA256 }, '401': { description: 运行不属于节点或版本不在清单 } }
+  /ai/runner/runs/{runId}/skill-candidates:
+    post:
+      summary: Runner 把成功运行产生的 Skill 候选收进发起人的未授权市场草稿
+      parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: 返回新建或迭代后的市场草稿 }, '400': { description: 未设置发布身份或包扫描失败 } }
   /ai/runner/runs/{runId}/report:
     post:
       summary: Runner 上传本次运行生成的持久化单文件 HTML 报告
@@ -1580,6 +1603,7 @@ components:
         cachedInputTokens: { type: integer, format: int64, description: 缓存读取与缓存写入之和 }
         totalTokens: { type: integer, format: int64, description: 三类 token 合计 }
         costUsd: { type: number, nullable: true, description: 折算额度（美元）；Codex 不回传时为 null }
+        skillAudits: { type: array, description: 固定 Skill 的实际 loaded / failed / incompatible 装配结果, items: { type: object } }
     CompleteAiAssistantRunRequest:
       type: object
       additionalProperties: false

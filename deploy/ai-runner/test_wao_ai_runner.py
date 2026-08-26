@@ -1320,5 +1320,72 @@ class PairingRevokedTest(unittest.TestCase):
         run.assert_not_called()
 
 
+class RunSkillInstallTest(unittest.TestCase):
+    def package(self, path: str = "SKILL.md") -> bytes:
+        output = io.BytesIO()
+        with RUNNER.zipfile.ZipFile(output, "w") as archive:
+            archive.writestr(path, "---\nname: review\ndescription: review changes\n---\n# Review")
+        return output.getvalue()
+
+    def test_verified_package_is_loaded_into_isolated_codex_home(self) -> None:
+        content = self.package()
+        api = Mock()
+        api.get_bytes.return_value = content
+        root = Path(tempfile.mkdtemp(prefix="wao-skill-home-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        claim = {"runId": "ar1", "engine": "codex", "skills": [{
+            "skillId": "skill-1", "versionId": "sv-1", "displayName": "代码审查",
+            "version": "1.0.0", "sha256": RUNNER.hashlib.sha256(content).hexdigest(),
+        }]}
+
+        audits = RUNNER.install_run_skills(api, claim, root)
+
+        self.assertTrue((root / "skills" / "sv-1" / "SKILL.md").is_file())
+        self.assertEqual("loaded", audits[0]["status"])
+
+    def test_hash_mismatch_fails_closed_and_records_audit(self) -> None:
+        api = Mock()
+        api.get_bytes.return_value = self.package()
+        root = Path(tempfile.mkdtemp(prefix="wao-skill-home-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        claim = {"runId": "ar1", "engine": "codex", "skills": [{
+            "skillId": "skill-1", "versionId": "sv-1", "displayName": "代码审查",
+            "version": "1.0.0", "sha256": "0" * 64,
+        }]}
+
+        with self.assertRaises(RUNNER.SkillInstallError) as raised:
+            RUNNER.install_run_skills(api, claim, root)
+
+        self.assertEqual("failed", raised.exception.audits[0]["status"])
+
+    def test_non_codex_engine_fails_instead_of_silently_ignoring_skills(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="wao-skill-home-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        claim = {"runId": "ar1", "engine": "claude", "skills": [{
+            "skillId": "skill-1", "versionId": "sv-1", "displayName": "代码审查", "version": "1.0.0",
+        }]}
+
+        with self.assertRaisesRegex(RUNNER.SkillInstallError, "改用 Codex") as raised:
+            RUNNER.install_run_skills(Mock(), claim, root)
+
+        self.assertEqual("incompatible", raised.exception.audits[0]["status"])
+
+    def test_verified_candidate_is_uploaded_as_zip(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="wao-skill-candidate-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        candidate = root / "review"
+        candidate.mkdir()
+        (candidate / "SKILL.md").write_text(
+            "---\nname: review\ndescription: review changes\n---\n# Review", encoding="utf-8")
+        api = Mock()
+        api.post_file.return_value = {"displayName": "代码审查", "versions": [{"version": "0.1.0"}]}
+
+        result = RUNNER.upload_skill_candidates(api, "ar1", root)
+
+        self.assertEqual(["代码审查 v0.1.0"], result)
+        api.post_file.assert_called_once()
+        self.assertFalse(any(path.suffix == ".zip" for path in root.iterdir()))
+
+
 if __name__ == "__main__":
     unittest.main()

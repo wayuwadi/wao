@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
+import AiRunSkillCapabilities from '@/components/ai/AiRunSkillCapabilities.vue'
 import { continueAiRun } from '@/api/ai'
 import { toast } from '@/composables/toast'
 import { formatCost, formatTokens, shortModel } from '@/composables/aiUsage'
@@ -113,6 +114,7 @@ async function continueRun(runId: string) {
         </div>
         <AiRunProgressTimeline :run="run" />
         <AiRunMemoryReferences :reads="run.memoryReads" :writes="run.memoryWrites" />
+        <AiRunSkillCapabilities :skills="run.skills" :audits="run.skillAudits" />
         <div v-if="run.resultSummary" class="ai-final-result">
           <b>{{ resultTitle(run) }}</b>
           <p>{{ run.resultSummary }}</p>

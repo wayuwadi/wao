@@ -7,6 +7,11 @@ import { seedDataStore } from './helpers/seedDataStore'
 
 vi.mock('@/api/ai', () => ({
   createAiPairCode: vi.fn(),
+  fetchAvailableAiSkills: vi.fn(async () => [{
+    skillId: 'skill-1', versionId: 'sv-1', displayName: '代码审查', summary: '检查改动风险',
+    version: '1.0.0', sha256: 'abc', compatiblePlatforms: ['codex'],
+  }]),
+  fetchAiProjectSkills: vi.fn(async () => []),
   fetchAiRunners: vi.fn(async () => []),
   fetchAiProjectConfig: vi.fn(async () => ({
     projectId: 'p1',
@@ -19,6 +24,7 @@ vi.mock('@/api/ai', () => ({
     maxParallelRuns: 2,
   })),
   saveAiProjectConfig: vi.fn(async () => ({})),
+  saveAiProjectSkills: vi.fn(async () => []),
 }))
 
 describe('项目设置', () => {
@@ -42,6 +48,17 @@ describe('项目设置', () => {
 
     expect(data.projectById(project.id)?.status).toBe('进行中')
     expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('展示审核 Skill 并允许固定版本到项目', async () => {
+    const project = useDataStore().projects[0]!
+    const wrapper = mount(ProjectSettingsModal, { props: { project } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('代码审查')
+    await wrapper.get('.skill-option input').setValue(true)
+    expect((wrapper.get('.skill-option input').element as HTMLInputElement).checked).toBe(true)
     wrapper.unmount()
   })
 })

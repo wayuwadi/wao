@@ -21,12 +21,21 @@ public record CompleteAiRunRequest(
         Long totalTokens,
         BigDecimal costUsd,
         /** Runner 从非 Git JSON 产物解析出的结构化项目记忆候选；旧 Runner 缺省为空。 */
-        List<ProjectMemoryCandidate> projectMemoryCandidates) {
+        List<ProjectMemoryCandidate> projectMemoryCandidates,
+        /** Runner 实际加载、失败或不兼容的 Skill 结果。 */
+        List<AiSkillAuditDto> skillAudits) {
 
     public CompleteAiRunRequest(Integer exitCode, String resultSummary, String sessionId, String model,
             String models, Long inputTokens, Long outputTokens, Long cachedInputTokens, Long totalTokens,
             BigDecimal costUsd) {
         this(exitCode, resultSummary, sessionId, model, models, inputTokens, outputTokens,
-                cachedInputTokens, totalTokens, costUsd, List.of());
+                cachedInputTokens, totalTokens, costUsd, List.of(), List.of());
+    }
+
+    public CompleteAiRunRequest(Integer exitCode, String resultSummary, String sessionId, String model,
+            String models, Long inputTokens, Long outputTokens, Long cachedInputTokens, Long totalTokens,
+            BigDecimal costUsd, List<ProjectMemoryCandidate> projectMemoryCandidates) {
+        this(exitCode, resultSummary, sessionId, model, models, inputTokens, outputTokens,
+                cachedInputTokens, totalTokens, costUsd, projectMemoryCandidates, List.of());
     }
 }
