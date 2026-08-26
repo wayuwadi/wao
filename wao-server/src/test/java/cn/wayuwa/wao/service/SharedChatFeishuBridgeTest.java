@@ -11,6 +11,7 @@ import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.domain.SharedChatMessageEntity;
 import cn.wayuwa.wao.domain.SharedChatReactionEntity;
 import cn.wayuwa.wao.dto.SaveSharedChatConfigRequest;
+import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuChat;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
@@ -64,6 +65,17 @@ class SharedChatFeishuBridgeTest {
     }
 
     @Test
+    void savesThePollingIntervalTogetherWithTheGroup() {
+        when(feishu.listChats("token")).thenReturn(List.of(new FeishuChat("oc_real", "娃屋日常")));
+        when(settings.get(SettingService.SHARED_CHAT_POLL_INTERVAL_SECONDS, "15")).thenReturn("60");
+
+        var result = bridge.saveConfig(new SaveSharedChatConfigRequest("oc_real", 60));
+
+        verify(settings).put(SettingService.SHARED_CHAT_POLL_INTERVAL_SECONDS, "60");
+        assertThat(result.pollIntervalSeconds()).isEqualTo(60);
+    }
+
+    @Test
     void sendsNormalPostAndPersistsReturnedFeishuMessageId() {
         when(settings.get(SettingService.SHARED_CHAT_CHAT_ID, "")).thenReturn("oc_real");
         when(settings.get(SettingService.SHARED_CHAT_CHAT_NAME, "")).thenReturn("娃屋日常");
@@ -94,6 +106,34 @@ class SharedChatFeishuBridgeTest {
         assertThat(captured.getValue().getFeishuMessageId()).isEqualTo("om_in");
         assertThat(captured.getValue().getExternalSenderName()).isEqualTo("娃弟");
         assertThat(captured.getValue().getContent()).isEqualTo("飞书发来的话");
+    }
+
+    @Test
+    void keepsAllImagesFromOneFeishuPostInOneBubbleAndInOrder() {
+        when(feishu.downloadImage("token", "om_images", "img-a")).thenReturn(new byte[] {1});
+        when(feishu.downloadImage("token", "om_images", "img-b")).thenReturn(new byte[] {2});
+        when(imageService.store(any(), eq("image/png"), any(), eq("飞书聊天 · 娃屋日常"), eq(true)))
+                .thenReturn(new ImageItemDto("a", "a.png", "1 B", "刚刚", "飞书", "/api/images/a/raw",
+                                null, null),
+                        new ImageItemDto("b", "b.png", "1 B", "刚刚", "飞书", "/api/images/b/raw",
+                                null, null));
+        FeishuMessage source = new FeishuMessage("om_images", "ou_sender", "user", "post", """
+                {"zh_cn":{"title":"","content":[[
+                  {"tag":"text","text":"两张图"},
+                  {"tag":"img","image_key":"img-a"},
+                  {"tag":"img","image_key":"img-b"}
+                ]]}}
+                """, 1_787_700_000_000L, false);
+
+        bridge.importMessage("token", "oc_real", "娃屋日常", source, Map.of("ou_sender", "娃弟"));
+
+        ArgumentCaptor<SharedChatMessageEntity> captured = ArgumentCaptor.forClass(SharedChatMessageEntity.class);
+        verify(messages).insert(captured.capture());
+        SharedChatMessageEntity imported = captured.getValue();
+        assertThat(imported.getImageId()).isNull();
+        assertThat(imported.getContent()).contains("两张图", "/api/images/a/raw", "/api/images/b/raw");
+        assertThat(imported.getContent().indexOf("/api/images/a/raw"))
+                .isLessThan(imported.getContent().indexOf("/api/images/b/raw"));
     }
 
     @Test

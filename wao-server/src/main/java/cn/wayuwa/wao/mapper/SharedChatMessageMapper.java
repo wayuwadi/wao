@@ -3,6 +3,7 @@ package cn.wayuwa.wao.mapper;
 import cn.wayuwa.wao.domain.SharedChatMessageEntity;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import java.util.List;
+import java.time.LocalDateTime;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -17,6 +18,13 @@ public interface SharedChatMessageMapper extends BaseMapper<SharedChatMessageEnt
              LIMIT #{limit}
             """)
     List<SharedChatMessageEntity> latest(@Param("limit") int limit);
+
+    @Select("""
+            SELECT * FROM shared_chat_message
+             WHERE created_at >= #{since}
+             ORDER BY created_at ASC, id ASC
+            """)
+    List<SharedChatMessageEntity> since(@Param("since") LocalDateTime since);
 
     @Select("""
             SELECT message.* FROM shared_chat_message message

@@ -206,8 +206,7 @@ const router = createRouter({
         {
           path: 'chat-reviews',
           name: 'chat-reviews',
-          component: () => import('@/views/ChatReviewsView.vue'),
-          meta: { module: 'chat-reviews', tabKind: 'module' },
+          redirect: { path: '/chat', query: { review: '1' } },
         },
         {
           path: 'system-reports',

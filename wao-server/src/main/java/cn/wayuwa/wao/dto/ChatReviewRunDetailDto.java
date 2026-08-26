@@ -7,6 +7,9 @@ import java.util.List;
 /** 一次共享聊天复盘的完整进度、报告和来源。 */
 public record ChatReviewRunDetailDto(
         String id,
+        String sourceKind,
+        String rangeKind,
+        Integer rangeValue,
         LocalDate startDate,
         LocalDate endDate,
         String focus,
@@ -20,6 +23,8 @@ public record ChatReviewRunDetailDto(
         int messageCount,
         String createdById,
         String createdByName,
+        String reportUrl,
+        String knowledgeUrl,
         OffsetDateTime createdAt,
         OffsetDateTime startedAt,
         OffsetDateTime finishedAt,

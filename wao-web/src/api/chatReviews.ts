@@ -20,8 +20,11 @@ export interface ChatReviewConfig {
 
 export interface ChatReviewRunSummary {
   id: string
-  startDate: string
-  endDate: string
+  sourceKind: 'FEISHU_ARCHIVE' | 'SHARED_CHAT'
+  rangeKind: 'MESSAGES' | 'HOURS' | null
+  rangeValue: number | null
+  startDate: string | null
+  endDate: string | null
   focus: string | null
   stage: ChatReviewStage
   progressCurrent: number
@@ -33,6 +36,8 @@ export interface ChatReviewRunSummary {
   messageCount: number
   createdById: string
   createdByName: string
+  reportUrl: string | null
+  knowledgeUrl: string | null
   createdAt: string
   startedAt: string | null
   finishedAt: string | null
@@ -41,7 +46,7 @@ export interface ChatReviewRunSummary {
 export interface ChatReviewSource {
   id: string
   date: string
-  kbId: string
+  kbId: string | null
   documentId: string
   url: string
   messageCount: number
@@ -55,7 +60,7 @@ export interface ChatReviewReport {
 }
 
 export interface ChatReviewRunDetail extends ChatReviewRunSummary {
-  chatId: string
+  chatId: string | null
   chatName: string
   speakers: ChatReviewSpeaker[]
   aiRunId: string | null
@@ -86,6 +91,12 @@ export const saveChatReviewConfig = (speakerIds: [string, string]) =>
 
 export const createChatReview = (payload: CreateChatReviewRequest) =>
   data<{ runId: string }>(http.post('/api/chat-reviews', payload))
+
+export const createSharedChatReview = (payload: {
+  rangeKind: 'MESSAGES' | 'HOURS'
+  rangeValue: number
+  focus?: string
+}) => data<{ runId: string }>(http.post('/api/chat-reviews/shared', payload))
 
 export const fetchChatReviews = () => data<ChatReviewList>(http.get('/api/chat-reviews'))
 

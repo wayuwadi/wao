@@ -63,6 +63,9 @@ function summary(
 ): ChatReviewRunSummary {
   return {
     id,
+    sourceKind: 'FEISHU_ARCHIVE',
+    rangeKind: null,
+    rangeValue: null,
     startDate: '2026-08-13',
     endDate: '2026-08-19',
     focus: '关注上线节奏',
@@ -76,6 +79,8 @@ function summary(
     messageCount: 42,
     createdById: 'm1',
     createdByName: '娃哥',
+    reportUrl: null,
+    knowledgeUrl: null,
     createdAt: '2026-08-19T10:00:00+08:00',
     startedAt: '2026-08-19T10:00:01+08:00',
     finishedAt: ['SUCCEEDED', 'FAILED'].includes(stage) ? '2026-08-19T10:05:00+08:00' : null,

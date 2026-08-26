@@ -781,12 +781,15 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | VARCHAR(32) PK | 不可猜测的运行 id |
+| source_kind | VARCHAR(24) | `FEISHU_ARCHIVE / SHARED_CHAT`；旧记录默认前者 |
 | chat_id / chat_name | VARCHAR(128) / VARCHAR(255) | 发起时唯一飞书群的 id 与展示名快照 |
 | kb_id | VARCHAR(32) | 发起时飞书聊天归档知识库 id 快照；执行、重试和再次运行不得静默改用新知识库 |
 | speaker_one_id / speaker_two_id | VARCHAR(128) | 两位固定发言人的 open_id 快照；提取同批飞书消息时还必须同时满足 `sender_type == user`，机器人不得进入 AI 材料 |
 | speaker_one_name / speaker_two_name | VARCHAR(128) | 两人发起时的展示名快照，仅用于历史展示 |
 | start_date / end_date | DATE | 包含边界的上海自然日；服务层保证不早于 1970-01-01、范围 1–31 天且 end 不晚于上海当天 |
 | focus_text | VARCHAR(1000) NULL | 可选的本次重点快照；只影响分析关注点 |
+| range_kind / range_value | VARCHAR(16) / INT NULL | 共享聊天模式的 `MESSAGES / HOURS` 与范围值；日期模式为空 |
+| source_message_ids_json | JSON NULL | 共享聊天点击时固化的消息 id 有序数组，最多 500 个；不复制正文 |
 | stage | VARCHAR(16) | `WAITING / SYNCING / VERIFYING / ANALYZING / SUCCEEDED / FAILED` |
 | failed_stage | VARCHAR(16) NULL | 失败时的阶段快照，成功或尚未失败时为空 |
 | progress_current / progress_total | INT | 已完成同步日数 / 请求范围总日数，分母包含无有效目标消息的日期；全范围同步后 `VERIFYING / ANALYZING / SUCCEEDED` 一直保留 N/N，不改写为 0/1 或 1/1 |
@@ -797,6 +800,7 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 | retry_of_id | VARCHAR(32) NULL, FK→chat_review_run | 重试新运行指回原失败运行；原记录不修改，`ON DELETE SET NULL` |
 | sources_json | JSON NULL | 保存全范围每日的 `S编号 / 日期 / kbId / documentId / 站内链接 / 过滤后消息数`；消息数可为 0，不保存聊天正文 |
 | report_json | JSON NULL | 仅在服务端验证通过后原子写入四段报告；conclusions 含“已明确：/ 暂定：/ 未解决：”三个非空分类，recommendations 以“AI 建议：”或同名标题开头；失败运行保持空 |
+| report_url / report_doc_id | VARCHAR(1024) / VARCHAR(32) NULL | 成功后幂等生成的公开托管页与“聊天复盘”知识库文档；文档删除时外键置空 |
 | error_text | TEXT NULL | 真实的同步、资料或 AI / 验证错误，不含凭据或聊天正文；服务层限制为 2,000 字 |
 | created_by / created_by_name | VARCHAR(32) / VARCHAR(128) | 发起成员 id 与名称快照，仅供追溯；查询不按此字段隔离 |
 | worker_token / lease_until | VARCHAR(64) NULL / DATETIME(6) NULL | 双 API 节点 worker 的有期限数据库租约；领取、所有状态写入与 AI 运行关联均用它们做 fencing，并以数据库时钟续租 |
@@ -843,6 +847,10 @@ AI 运行插入与 `ai_run_id` 关联处在同一事务中，关联还要求当�
 绑定关系收敛到 `member:<id>`，未绑定身份保存 `feishu:<id>`，统计时按 reader key 去重，不把轮询或页面打开时间
 伪装成飞书已读。`shared_chat_reaction` 按 `(message_id, reactor_key, emoji_type)` 保存表情事实及当前应用创建的
 `reaction_id`，用于可靠撤销。边界见 ADR-126、ADR-127。
+
+`system_setting.feishu.shared-chat.poll-interval-seconds` 保存共享聊天飞书入站轮询秒数，合法范围 5～3,600，缺失或损坏时回退 15 秒。
+聊天复盘固定知识库 id 为 `kb-chat-reviews`、文件夹 id 为 `kb-chat-reviews-f`，文档 id 由 `crd-<runId>` 稳定派生；固定 id
+用于 worker 接管后的幂等覆盖，不按名称猜测或复用用户自建同名知识库。
 
 ## 已退役的自媒体 Agent 视频生成域（Agent Flyway V4）
 
@@ -939,6 +947,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V97__configurable_task_auto_run.sql`：为最早任务空闲自动派发增加单项目、多来源状态与通用 Webhook 目标；
   存量策略默认回填“Wa All in One”和“待办”（见 ADR-114）。
 - `V98__shared_chat_feishu_bridge.sql`：共享聊天飞书外部身份、消息幂等 id、引用关系、真实已读与表情事实（见 ADR-127）。
+- `V99__shared_chat_review_integration.sql`：聊天复盘共享消息范围、托管报告与知识库文档关联（见 ADR-129）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

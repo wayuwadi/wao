@@ -107,6 +107,22 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void integratedChatReviewMigrationKeepsRealMessageSnapshotAndArtifactLinks() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V99__shared_chat_review_integration.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("source_kind VARCHAR(24) NOT NULL DEFAULT 'FEISHU_ARCHIVE'")
+                .contains("source_message_ids_json JSON NULL")
+                .contains("report_url VARCHAR(1024) NULL", "report_doc_id VARCHAR(32) NULL")
+                .contains("FOREIGN KEY (report_doc_id)")
+                .contains("REFERENCES doc(id) ON DELETE SET NULL");
+    }
+
+    @Test
     void webhookRegistryMigrationMovesOnlyEncryptedLegacyValuesAndEnforcesOneDefault() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V78__feishu_webhook_configs.sql"))

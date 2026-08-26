@@ -49,6 +49,7 @@ public class SharedChatFeishuBridge {
     private static final Set<String> EMOJIS = Set.of("THUMBSUP", "HEART", "SMILE", "DONE");
     private static final Pattern LOCAL_IMAGE = Pattern.compile(
             "!\\[([^]]*)]\\((?:https?://[^/]+)?/api/images/([A-Za-z0-9_-]+)/raw(?:\\s+\"[^\"]*\")?\\)");
+    private static final int DEFAULT_POLL_INTERVAL_SECONDS = 15;
 
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
@@ -84,7 +85,7 @@ public class SharedChatFeishuBridge {
     public SharedChatConfigDto config() {
         String id = settings.get(SettingService.SHARED_CHAT_CHAT_ID, "");
         String name = settings.get(SettingService.SHARED_CHAT_CHAT_NAME, "");
-        return new SharedChatConfigDto(id, name, StringUtils.hasText(id));
+        return new SharedChatConfigDto(id, name, StringUtils.hasText(id), pollIntervalSeconds());
     }
 
     /** 机器人真实所在群，未配置自建应用时返回明确错误。 */
@@ -96,6 +97,12 @@ public class SharedChatFeishuBridge {
     @Transactional
     public SharedChatConfigDto saveConfig(SaveSharedChatConfigRequest request) {
         String id = request == null || request.chatId() == null ? "" : request.chatId().trim();
+        int interval = request == null || request.pollIntervalSeconds() == null
+                ? pollIntervalSeconds() : request.pollIntervalSeconds();
+        if (interval < 5 || interval > 3_600) {
+            throw new BadRequestException("聊天同步频率必须在 5 秒到 60 分钟之间");
+        }
+        settings.put(SettingService.SHARED_CHAT_POLL_INTERVAL_SECONDS, String.valueOf(interval));
         if (id.isEmpty()) {
             settings.put(SettingService.SHARED_CHAT_CHAT_ID, "");
             settings.put(SettingService.SHARED_CHAT_CHAT_NAME, "");
@@ -106,6 +113,18 @@ public class SharedChatFeishuBridge {
         settings.put(SettingService.SHARED_CHAT_CHAT_ID, selected.chatId());
         settings.put(SettingService.SHARED_CHAT_CHAT_NAME, selected.name());
         return config();
+    }
+
+    /** 返回已经校验的动态消息轮询秒数；损坏旧值安全回退到 15 秒。 */
+    public int pollIntervalSeconds() {
+        try {
+            int value = Integer.parseInt(settings.get(
+                    SettingService.SHARED_CHAT_POLL_INTERVAL_SECONDS,
+                    String.valueOf(DEFAULT_POLL_INTERVAL_SECONDS)));
+            return value >= 5 && value <= 3_600 ? value : DEFAULT_POLL_INTERVAL_SECONDS;
+        } catch (NumberFormatException ignored) {
+            return DEFAULT_POLL_INTERVAL_SECONDS;
+        }
     }
 
     /** 把已落库 WAO 消息投递成普通飞书图文或原生引用回复。 */
@@ -272,10 +291,10 @@ public class SharedChatFeishuBridge {
         JsonNode content = read(message.content());
         if (content.has("zh_cn")) content = content.path("zh_cn");
         StringBuilder text = new StringBuilder();
-        List<String> imageKeys = new ArrayList<>();
         switch (message.msgType()) {
             case "text" -> text.append(content.path("text").asText(""));
-            case "image" -> imageKeys.add(content.path("image_key").asText(""));
+            case "image" -> appendIncomingImage(text, token, chatName, message,
+                    content.path("image_key").asText(""));
             case "post" -> {
                 if (StringUtils.hasText(content.path("title").asText(""))) {
                     text.append("**").append(content.path("title").asText()).append("**\n\n");
@@ -287,7 +306,8 @@ public class SharedChatFeishuBridge {
                             case "a" -> text.append('[').append(span.path("text").asText(""))
                                     .append("](").append(span.path("href").asText("")).append(')');
                             case "at" -> text.append('@').append(span.path("user_name").asText(""));
-                            case "img" -> imageKeys.add(span.path("image_key").asText(""));
+                            case "img" -> appendIncomingImage(text, token, chatName, message,
+                                    span.path("image_key").asText(""));
                             default -> { }
                         }
                     }
@@ -300,23 +320,18 @@ public class SharedChatFeishuBridge {
             case "sticker" -> text.append("[表情]");
             default -> text.append('[').append(message.msgType()).append(']');
         }
-        String firstImageId = null;
-        String firstImageName = null;
-        for (String key : imageKeys) {
-            if (!StringUtils.hasText(key)) continue;
-            byte[] bytes = feishu.downloadImage(token, message.messageId(), key);
-            if (bytes == null || bytes.length == 0) continue;
-            ImageItemDto image = imageService.store(bytes, "image/png", key + ".png",
-                    "飞书聊天 · " + chatName, true);
-            if (firstImageId == null) {
-                firstImageId = image.id();
-                firstImageName = image.name();
-            } else {
-                if (!text.isEmpty()) text.append("\n\n");
-                text.append("![飞书图片](").append(image.url()).append(')');
-            }
-        }
-        return new RenderedIncoming(text.toString().trim(), firstImageId, firstImageName);
+        return new RenderedIncoming(text.toString().trim(), null, null);
+    }
+
+    private void appendIncomingImage(StringBuilder text, String token, String chatName,
+            FeishuMessage message, String imageKey) {
+        if (!StringUtils.hasText(imageKey)) return;
+        byte[] bytes = feishu.downloadImage(token, message.messageId(), imageKey);
+        if (bytes == null || bytes.length == 0) return;
+        ImageItemDto image = imageService.store(bytes, "image/png", imageKey + ".png",
+                "飞书聊天 · " + chatName, true);
+        if (!text.isEmpty() && text.charAt(text.length() - 1) != '\n') text.append("\n\n");
+        text.append("![飞书图片](").append(image.url()).append(')');
     }
 
     private void insertReaction(String messageId, Identity identity, String emoji, String source,

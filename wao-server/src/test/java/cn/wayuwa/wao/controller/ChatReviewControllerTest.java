@@ -65,6 +65,29 @@ class ChatReviewControllerTest {
     }
 
     @Test
+    void createsSharedChatReviewWithStrictRangeInput() throws Exception {
+        when(service.createShared("MESSAGES", 20, "结论", "wd")).thenReturn("cr-shared");
+
+        mockMvc.perform(post("/api/chat-reviews/shared")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"rangeKind":"MESSAGES","rangeValue":20,"focus":"结论"}
+                                """))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.runId").value("cr-shared"));
+        verify(service).createShared("MESSAGES", 20, "结论", "wd");
+
+        mockMvc.perform(post("/api/chat-reviews/shared")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"rangeKind":"HOURS","rangeValue":3,"unknown":true}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message")
+                        .value(org.hamcrest.Matchers.containsString("额外字段")));
+    }
+
+    @Test
     void omittedFocusIsAcceptedButExplicitNullAndOtherTypesAreRejected() throws Exception {
         when(service.create(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 8, 7), null, "wd"))
                 .thenReturn("cr-no-focus");
@@ -206,11 +229,11 @@ class ChatReviewControllerTest {
         ChatReviewConfigDto config = new ChatReviewConfigDto(true, true, "oc_chat", "研发群",
                 List.of(first, second), List.of(first, second), "已配置");
         ChatReviewRunSummaryDto summary = new ChatReviewRunSummaryDto(
-                "cr1", day, day, null, "FAILED", 0, 1, null, "SYNCING", day,
-                "飞书超时", 0, "wg", "娃哥", now, now, now);
+                "cr1", "FEISHU_ARCHIVE", null, null, day, day, null, "FAILED", 0, 1,
+                null, "SYNCING", day, "飞书超时", 0, "wg", "娃哥", null, null, now, now, now);
         ChatReviewRunDetailDto detail = new ChatReviewRunDetailDto(
-                "cr1", day, day, null, "FAILED", 0, 1, null, "SYNCING", day,
-                "飞书超时", 0, "wg", "娃哥", now, now, now,
+                "cr1", "FEISHU_ARCHIVE", null, null, day, day, null, "FAILED", 0, 1,
+                null, "SYNCING", day, "飞书超时", 0, "wg", "娃哥", null, null, now, now, now,
                 "oc_chat", "研发群", List.of(first, second), null, List.of(), null);
         when(service.config()).thenReturn(config);
         when(service.list()).thenReturn(new ChatReviewListDto(summary, List.of(summary)));

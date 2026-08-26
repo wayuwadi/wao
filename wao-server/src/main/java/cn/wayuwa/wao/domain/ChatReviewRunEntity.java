@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 public class ChatReviewRunEntity {
     @TableId
     private String id;
+    private String sourceKind;
     private String chatId;
     private String chatName;
     private String kbId;
@@ -21,6 +22,9 @@ public class ChatReviewRunEntity {
     private LocalDate startDate;
     private LocalDate endDate;
     private String focusText;
+    private String rangeKind;
+    private Integer rangeValue;
+    private String sourceMessageIdsJson;
     private String stage;
     private String failedStage;
     private Integer progressCurrent;
@@ -34,6 +38,8 @@ public class ChatReviewRunEntity {
     private String retryOfId;
     private String sourcesJson;
     private String reportJson;
+    private String reportUrl;
+    private String reportDocId;
     private String errorText;
     private String createdBy;
     private String createdByName;
@@ -46,6 +52,8 @@ public class ChatReviewRunEntity {
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
+    public String getSourceKind() { return sourceKind; }
+    public void setSourceKind(String sourceKind) { this.sourceKind = sourceKind; }
     public String getChatId() { return chatId; }
     public void setChatId(String chatId) { this.chatId = chatId; }
     public String getChatName() { return chatName; }
@@ -66,6 +74,12 @@ public class ChatReviewRunEntity {
     public void setEndDate(LocalDate endDate) { this.endDate = endDate; }
     public String getFocusText() { return focusText; }
     public void setFocusText(String focusText) { this.focusText = focusText; }
+    public String getRangeKind() { return rangeKind; }
+    public void setRangeKind(String rangeKind) { this.rangeKind = rangeKind; }
+    public Integer getRangeValue() { return rangeValue; }
+    public void setRangeValue(Integer rangeValue) { this.rangeValue = rangeValue; }
+    public String getSourceMessageIdsJson() { return sourceMessageIdsJson; }
+    public void setSourceMessageIdsJson(String sourceMessageIdsJson) { this.sourceMessageIdsJson = sourceMessageIdsJson; }
     public String getStage() { return stage; }
     public void setStage(String stage) { this.stage = stage; }
     public String getFailedStage() { return failedStage; }
@@ -88,6 +102,10 @@ public class ChatReviewRunEntity {
     public void setSourcesJson(String sourcesJson) { this.sourcesJson = sourcesJson; }
     public String getReportJson() { return reportJson; }
     public void setReportJson(String reportJson) { this.reportJson = reportJson; }
+    public String getReportUrl() { return reportUrl; }
+    public void setReportUrl(String reportUrl) { this.reportUrl = reportUrl; }
+    public String getReportDocId() { return reportDocId; }
+    public void setReportDocId(String reportDocId) { this.reportDocId = reportDocId; }
     public String getErrorText() { return errorText; }
     public void setErrorText(String errorText) { this.errorText = errorText; }
     public String getCreatedBy() { return createdBy; }

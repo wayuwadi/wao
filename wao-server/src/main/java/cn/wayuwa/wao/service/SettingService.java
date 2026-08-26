@@ -52,6 +52,7 @@ public class SettingService {
     /** 共享聊天桥接独立选择的飞书群，不改变知识库归档目标。 */
     public static final String SHARED_CHAT_CHAT_ID = "feishu.shared-chat.chat-id";
     public static final String SHARED_CHAT_CHAT_NAME = "feishu.shared-chat.chat-name";
+    public static final String SHARED_CHAT_POLL_INTERVAL_SECONDS = "feishu.shared-chat.poll-interval-seconds";
     /** 聊天复盘固定的群 id 和两位发言人 open_id（非敏感 JSON）。 */
     public static final String CHAT_REVIEW_SPEAKERS = "feishu.chat-review.speakers";
     /** 群聊快速收集：@机器人 直接建任务的总开关。 */

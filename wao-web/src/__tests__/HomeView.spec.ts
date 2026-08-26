@@ -22,6 +22,7 @@ import {
   saveAiTaskAutoRunPolicy,
 } from '@/api/ai'
 import { fetchWebhookEndpoints } from '@/api/system'
+import { fetchChatReviews } from '@/api/chatReviews'
 
 vi.mock('@/api/ai', () => ({
   fetchAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
@@ -225,6 +226,11 @@ vi.mock('@/api/ai', () => ({
   removeAiWorkflow: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   rerunAiRun: vi.fn<() => Promise<Record<string, unknown>>>()
     .mockResolvedValue({ id: 'ar3', taskId: 't1', taskTitle: '修复自动任务', retryOfRunId: 'ar1' }),
+}))
+
+vi.mock('@/api/chatReviews', () => ({
+  fetchChatReviews: vi.fn<(typeof import('@/api/chatReviews'))['fetchChatReviews']>()
+    .mockResolvedValue({ activeRun: null, history: [] }),
 }))
 
 vi.mock('@/api/system', () => ({
@@ -557,6 +563,31 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.findAll('.run-detail')).toHaveLength(2)
     await wrapper.findAll('.run-detail')[1]!.find('.detail-close').trigger('click')
     expect(wrapper.find('.run-history-detail').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('在 AI 运行列表标出聊天复盘并从聊天页打开结果', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchChatReviews).mockResolvedValueOnce({
+      activeRun: null,
+      history: [{
+        id: 'cr-shared', sourceKind: 'SHARED_CHAT', rangeKind: 'MESSAGES', rangeValue: 20,
+        startDate: null, endDate: null, focus: null, stage: 'SUCCEEDED', progressCurrent: 20,
+        progressTotal: 20, currentDate: null, failedStage: null, failedDate: null, error: null,
+        messageCount: 20, createdById: 'wd', createdByName: '娃弟',
+        reportUrl: '/api/pages/ai-run-cr-shared', knowledgeUrl: '/kb/kb-chat-reviews?doc=crd-cr-shared',
+        createdAt: '2026-08-26T10:00:00+08:00', startedAt: '2026-08-26T10:00:01+08:00',
+        finishedAt: '2026-08-26T10:01:00+08:00',
+      }],
+    } as Awaited<ReturnType<typeof fetchChatReviews>>)
+    const { router, wrapper } = mountHome()
+    await flushPromises()
+
+    const review = wrapper.findAll('.recent-card').find((card) => card.text().includes('聊天复盘'))!
+    expect(review.text()).toContain('20 条真实消息')
+    await review.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/chat?review=cr-shared')
     wrapper.unmount()
   })
 

@@ -52,7 +52,6 @@ describe('侧边栏导航配置', () => {
       'skills',
       externalAppItemId('media-agent'),
       'chat',
-      'chat-reviews',
       'system-reports',
     ])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
@@ -78,12 +77,13 @@ describe('侧边栏导航配置', () => {
     expect(router.getRoutes().some((route) => route.path.startsWith('/s/i'))).toBe(false)
   })
 
-  it('聊天复盘作为双方共享模块位于公共组', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('chat-reviews')
+  it('聊天复盘入口融合进聊天页并保留旧地址跳转', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).not.toContain('chat-reviews')
+    expect(DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)).not.toContain('chat-reviews')
     expect(PERSONAL_ITEMS).not.toContain('chat-reviews')
     const route = router.getRoutes().find((item) => item.name === 'chat-reviews')
     expect(route?.path).toBe('/chat-reviews')
-    expect(route?.meta.module).toBe('chat-reviews')
+    expect(route?.redirect).toEqual({ path: '/chat', query: { review: '1' } })
   })
 
   it('系统报告作为团队共享模块提供日周月切换入口', () => {

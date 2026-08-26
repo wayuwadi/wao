@@ -193,14 +193,6 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
-      id: 'chat-reviews',
-      label: '聊天复盘',
-      icon: 'ri-chat-history-line',
-      group: 'PUBLIC',
-      order: 15,
-      visible: true,
-    },
-    {
       id: 'system-reports',
       label: '系统报告',
       icon: 'ri-bar-chart-box-line',
@@ -377,7 +369,7 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home'] },
   {
     label: '公共',
-    items: ['projects', 'ideas', 'skills', 'chat', 'chat-reviews', 'system-reports'],
+    items: ['projects', 'ideas', 'skills', 'chat', 'system-reports'],
   },
   { label: '个人', items: PERSONAL_ITEMS },
   { label: '工具', items: ['automation', 'files', 'games', 'request-monitoring'] },

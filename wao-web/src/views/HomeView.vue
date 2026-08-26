@@ -32,6 +32,7 @@ import { formatCost, formatTokens, shortModel, usageSummary } from '@/composable
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
 import { fetchWebhookEndpoints, type FeishuWebhookEndpoint } from '@/api/system'
+import { fetchChatReviews, type ChatReviewRunSummary } from '@/api/chatReviews'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -48,6 +49,7 @@ const data = useDataStore()
 const session = useSessionStore()
 const ui = useUiStore()
 const runs = ref<AiRun[]>([])
+const chatReviewRuns = ref<ChatReviewRunSummary[]>([])
 const runners = ref<AiRunner[]>([])
 const workflows = ref<AiWorkflow[]>([])
 const loading = ref(true)
@@ -117,6 +119,7 @@ let quotaTimer: ReturnType<typeof setInterval> | null = null
 
 const activeRuns = computed(() => runs.value.filter((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 const recentRuns = computed(() => runs.value.filter((run) => !['queued', 'claimed', 'running'].includes(run.status)).slice(0, 8))
+const recentChatReviews = computed(() => chatReviewRuns.value.slice(0, 4))
 const onlineRunners = computed(() => runners.value.filter((runner) => runner.online))
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
@@ -220,9 +223,16 @@ function resultTitle(run: AiRun) {
 async function refresh() {
   try {
     const prevSucceededIds = new Set(runs.value.filter((run) => run.status === 'succeeded').map((run) => run.id))
-    const [nextRuns, nextRunners] = await Promise.all([fetchAiRuns(false), fetchAiRunners()])
+    const [nextRuns, nextRunners, reviews] = await Promise.all([
+      fetchAiRuns(false),
+      fetchAiRunners(),
+      fetchChatReviews().catch(() => null),
+    ])
     runs.value = nextRuns
     runners.value = nextRunners
+    if (reviews) {
+      chatReviewRuns.value = [reviews.activeRun, ...reviews.history].filter(Boolean) as ChatReviewRunSummary[]
+    }
     if (selectedRun.value) selectedRun.value = nextRuns.find((run) => run.id === selectedRun.value?.id) ?? selectedRun.value
     // 首次加载时不庆祝；检测到本次轮询有运行刚变成 succeeded 时触发庆祝。
     if (!loading.value) {
@@ -683,6 +693,21 @@ function inspectRun(run: AiRun) {
   selectedRun.value = run
 }
 
+function openChatReview(run: ChatReviewRunSummary) {
+  void router.push({ path: '/chat', query: { review: run.id } })
+}
+
+function chatReviewState(run: ChatReviewRunSummary) {
+  if (run.stage === 'SUCCEEDED') return { label: '报告已保存', icon: 'ri-check-line', color: 'var(--wao-success-strong)', bg: 'var(--wao-success-bg)' }
+  if (run.stage === 'FAILED') return { label: '运行失败', icon: 'ri-error-warning-line', color: 'var(--wao-danger-strong)', bg: 'var(--wao-danger-bg)' }
+  return { label: 'AI 分析中', icon: 'ri-loader-4-line spin', color: 'var(--wao-primary-text)', bg: 'var(--wao-primary-soft)' }
+}
+
+function chatReviewRange(run: ChatReviewRunSummary) {
+  return run.rangeKind === 'HOURS' ? `最近 ${run.rangeValue} 小时` : run.rangeKind === 'MESSAGES'
+    ? `最近 ${run.rangeValue} 条消息` : `${run.startDate} 至 ${run.endDate}`
+}
+
 async function openRunHistory(page = 1) {
   runHistoryOpen.value = true
   runHistoryLoading.value = true
@@ -1084,12 +1109,26 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section v-if="recentRuns.length" class="recent-section">
+      <section v-if="recentRuns.length || recentChatReviews.length" class="recent-section">
         <div class="section-head">
-          <div><h2>最近完成</h2><p>最近 8 条一屏浏览，点击卡片查看结果。</p></div>
+          <div><h2>最近 AI 运行</h2><p>开发任务与聊天复盘统一浏览；复盘卡片带有明确标签。</p></div>
           <button class="history-link" @click="openRunHistory()">查看全部<i class="ri-arrow-right-line"></i></button>
         </div>
         <div class="recent-grid">
+          <button v-for="review in recentChatReviews" :key="review.id" class="recent-card" @click="openChatReview(review)">
+            <span class="recent-card-top">
+              <span class="recent-icon" :style="{ color: chatReviewState(review).color, background: chatReviewState(review).bg }"><i :class="chatReviewState(review).icon"></i></span>
+              <span class="recent-status" :style="{ color: chatReviewState(review).color, background: chatReviewState(review).bg }">{{ chatReviewState(review).label }}</span>
+              <span class="run-time">{{ timeText(review.finishedAt || review.createdAt) }}</span>
+            </span>
+            <span class="recent-main">
+              <b>聊天复盘</b>
+              <em><i class="ri-chat-3-line"></i>{{ chatReviewRange(review) }}</em>
+              <em><i class="ri-sparkling-2-line"></i>聊天复盘 · {{ review.messageCount }} 条真实消息</em>
+              <small v-if="review.stage === 'FAILED'">{{ review.error }}</small>
+            </span>
+            <span class="recent-open">打开复盘<i class="ri-arrow-right-line"></i></span>
+          </button>
           <button v-for="run in recentRuns" :key="run.id" class="recent-card" @click="inspectRun(run)">
             <span class="recent-card-top">
               <span v-if="run.previewImages?.[0]" class="recent-icon recent-image">

@@ -85,6 +85,9 @@ public class KnowledgeService {
     public static final String MEMORY_FOLDER_ID = "kb-memory-f";
     /** 点子库自动沉淀调研、方案与验证资产的团队共享知识库。 */
     public static final String IDEA_ASSET_KB_ID = "kb-idea-assets";
+    /** 聊天复盘成功报告的共享知识库。 */
+    public static final String CHAT_REVIEW_KB_ID = "kb-chat-reviews";
+    private static final String CHAT_REVIEW_FOLDER_ID = "kb-chat-reviews-f";
     private static final String NOTES_FOLDER_ID = "kb-notes-f";
     private static final Pattern CLIENT_DOC_ID = Pattern.compile("[A-Za-z0-9_-]{1,32}");
     private static final TypeReference<List<DocBlockDto>> BLOCKS_TYPE = new TypeReference<>() { };
@@ -816,6 +819,70 @@ public class KnowledgeService {
         KbFolderEntity folder = ideaFolder(ideaId, ideaTitle);
         List<DocBlockDto> blocks = ideaBlocks(ideaTitle, content);
         return insertDoc(IDEA_ASSET_KB_ID, folder.getId(), title, author, blocks);
+    }
+
+    /**
+     * 幂等保存一份聊天复盘；固定知识库和运行派生文档 id 避免 worker 接管时重复沉淀。
+     */
+    @Transactional
+    public DocDto saveChatReviewReport(String runId, String title,
+            cn.wayuwa.wao.dto.ChatReviewReportDto report, String reportUrl, String author) {
+        KbEntity existingKb = kbMapper.selectById(CHAT_REVIEW_KB_ID);
+        KbEntity kb = existingKb == null ? new KbEntity() : existingKb;
+        kb.setId(CHAT_REVIEW_KB_ID);
+        kb.setName("聊天复盘");
+        kb.setIcon("ri-chat-history-line");
+        kb.setColor("#4D6BDE");
+        kb.setAuto(true);
+        kb.setNotes(false);
+        kb.setDescription("由 WAO 共享聊天中的真实消息生成；每份报告保留讨论过程、方向、结论、建议与公开报告入口。");
+        kb.setPerm("成员可编辑");
+        kb.setOrd(2);
+        kb.setDeletedAt(null);
+        kb.setDeletedBy(null);
+        if (existingKb == null) kbMapper.insert(kb); else kbMapper.updateById(kb);
+
+        KbFolderEntity existingFolder = folderMapper.selectById(CHAT_REVIEW_FOLDER_ID);
+        KbFolderEntity folder = existingFolder == null ? new KbFolderEntity() : existingFolder;
+        folder.setId(CHAT_REVIEW_FOLDER_ID);
+        folder.setKbId(CHAT_REVIEW_KB_ID);
+        folder.setName("复盘报告");
+        folder.setOrd(1);
+        folder.setCascadeDel(false);
+        folder.setDeletedAt(null);
+        if (existingFolder == null) folderMapper.insert(folder); else folderMapper.updateById(folder);
+
+        List<DocBlockDto> blocks = List.of(
+                new DocBlockDto("AI 依据所选共享聊天消息生成；模型输出已经过字段、引用和外链校验。公开报告：" + reportUrl,
+                        null, null, null, null),
+                new DocBlockDto(null, "讨论过程", null, null, null, 2),
+                new DocBlockDto(null, null, report.discussionProcess(), null, null),
+                new DocBlockDto(null, "讨论方向", null, null, null, 2),
+                new DocBlockDto(null, null, report.discussionDirections(), null, null),
+                new DocBlockDto(null, "讨论结论", null, null, null, 2),
+                new DocBlockDto(null, null, report.conclusions(), null, null),
+                new DocBlockDto(null, "后续建议", null, null, null, 2),
+                new DocBlockDto(null, null, report.recommendations(), null, null));
+        String docId = "crd-" + runId;
+        DocEntity existingDoc = docMapper.selectById(docId);
+        if (existingDoc == null) {
+            insertDoc(docId, CHAT_REVIEW_KB_ID, CHAT_REVIEW_FOLDER_ID, title, author, blocks);
+            existingDoc = docMapper.selectById(docId);
+        }
+        existingDoc.setKbId(CHAT_REVIEW_KB_ID);
+        existingDoc.setFolderId(CHAT_REVIEW_FOLDER_ID);
+        existingDoc.setTitle(title);
+        existingDoc.setAuthorId(blankOr(author, "auto"));
+        existingDoc.setAuto(true);
+        existingDoc.setBlocksJson(write(blocks));
+        existingDoc.setLinksJson("[]");
+        existingDoc.setDeletedAt(null);
+        existingDoc.setDeletedBy(null);
+        existingDoc.setCascadeDel(false);
+        existingDoc.setRev(rev(existingDoc) + 1);
+        existingDoc.setUpdatedAt(LocalDateTime.now());
+        docMapper.updateById(existingDoc);
+        return toDto(existingDoc, docMapper.selectList(aliveDocs()));
     }
 
     /**
