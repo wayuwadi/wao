@@ -20,6 +20,8 @@ $taskPrincipal = New-ScheduledTaskPrincipal `
     -RunLevel Highest
 $taskSettings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew `
     -RestartCount 12 `
     -RestartInterval (New-TimeSpan -Minutes 1) `

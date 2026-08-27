@@ -186,10 +186,7 @@ Install-WaoOpenSshServer `
     -PublicKeyPath $DeployPublicKeyPath `
     -DisablePasswordAuthentication:$DisableSshPasswordAuthentication
 
-& powercfg.exe /change standby-timeout-ac 0
-if ($LASTEXITCODE -ne 0) { throw 'Failed to disable AC sleep timeout.' }
-& powercfg.exe /change hibernate-timeout-ac 0
-if ($LASTEXITCODE -ne 0) { throw 'Failed to disable AC hibernate timeout.' }
+& "$PSScriptRoot\configure-windows-node-availability.ps1"
 
 & "$PSScriptRoot\install-windows-ops-tasks.ps1" `
     -Distribution $Distribution `

@@ -98,7 +98,7 @@ CI/CD 向 Windows 发送 `D:\deploy\wao-release.zip`，由 PowerShell `Expand-Ar
 
 CD 开始 Windows 发布前会验证专用 SSH 密钥、主机指纹、WSL 和 Docker。任一检查失败时保持从节点 `down`、保留 Linux 当前版本并将流水线判为失败；不再跳过 Windows 后把单节点发布标记为成功。每个应用节点最多自动部署三次，仍失败时由飞书分别报告 Windows、Linux、云节点和最终验收状态。
 
-准备脚本在没有现有配置时将 WSL 限制为 4 核/8GB/2GB swap，关闭交流供电时的自动睡眠/休眠，并安装 OpenSSH。`install-windows-ops-tasks.ps1` 会幂等创建 WSL 保活、开机端口刷新、每五分钟公网 IP 刷新、每日备份和每月恢复演练任务。部署脚本也会刷新 WSL 动态 IP 对应的 `portproxy`。3306、6379、26379、9000 允许公网入站；8080 和 9876 仅允许本地子网诊断。
+准备脚本在没有现有配置时将 WSL 限制为 4 核/8GB/2GB swap，关闭交流和电池供电时的自动睡眠/休眠，并安装 OpenSSH。每次 Windows 发布都会再次核对两种供电模式的电源策略、OpenSSH 自动启动和失败恢复，避免 Windows 更新或切换电源计划后让后续 Jenkins 发布永久失去修复入口。`install-windows-ops-tasks.ps1` 会幂等创建 WSL 保活、开机端口刷新、每五分钟公网 IP 刷新、每日备份和每月恢复演练任务；这些任务在电池供电时也保持运行。部署脚本也会刷新 WSL 动态 IP 对应的 `portproxy`。3306、6379、26379、9000 允许公网入站；8080 和 9876 仅允许本地子网诊断。
 
 ## DDNS 与公网 IP 变化
 

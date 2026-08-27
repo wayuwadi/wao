@@ -4,6 +4,7 @@ set -eu
 sh deploy/scripts/test-render-nginx-config.sh
 sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
+sh deploy/scripts/test-windows-node-availability.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py
 sh deploy/jumpserver/test-ensure-sso-secret.sh
