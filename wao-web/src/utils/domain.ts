@@ -64,6 +64,58 @@ export const TASK_STATUS_DOTS: Record<TaskStatus, string> = {
   已完成: '#5CB88A',
 }
 
+/**
+ * 面向需求治理的四个交付阶段。
+ *
+ * 交付阶段只解释现有任务状态，不再维护第二份可漂移的字段：收集中仍表示方向尚在征集，
+ * 待验证仍表示已经产出但没有人工验收，只有已完成才算已验证。
+ */
+export type TaskDeliveryStage = 'exploration' | 'development' | 'acceptance' | 'verified'
+
+export interface TaskDeliveryStageOption {
+  id: TaskDeliveryStage
+  label: string
+  description: string
+  statuses: TaskStatus[]
+}
+
+export const TASK_DELIVERY_STAGES: TaskDeliveryStageOption[] = [
+  {
+    id: 'exploration',
+    label: '方向探索',
+    description: '正在征集和补充想法，尚未视为已定需求',
+    statuses: ['收集中'],
+  },
+  {
+    id: 'development',
+    label: '待开发',
+    description: '已经进入待办、人工执行或 AI 执行链路',
+    statuses: ['待办', '进行中', 'AI 进行中'],
+  },
+  {
+    id: 'acceptance',
+    label: '待验收',
+    description: '已经产出结果，等待真实用户链路确认',
+    statuses: ['待验证'],
+  },
+  {
+    id: 'verified',
+    label: '已验证',
+    description: '已经由成员人工验收完成',
+    statuses: ['已完成'],
+  },
+]
+
+/** 从唯一权威的任务状态派生交付阶段。 */
+export function taskDeliveryStage(status: TaskStatus): TaskDeliveryStage {
+  return TASK_DELIVERY_STAGES.find((stage) => stage.statuses.includes(status))!.id
+}
+
+/** 返回某个交付阶段覆盖的原始任务状态，供看板按同一规则收窄列。 */
+export function taskStatusesForDeliveryStage(stage: TaskDeliveryStage): TaskStatus[] {
+  return TASK_DELIVERY_STAGES.find((option) => option.id === stage)!.statuses
+}
+
 /** 未完成 = 除「已完成」外的所有状态（含待验证：还没验收就不算做完）。 */
 export const isOpenStatus = (s: TaskStatus) => s !== '已完成'
 

@@ -187,6 +187,30 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
+  it('只补齐缺失的验收记录字段且不写伪造结果', async () => {
+    const current = data.taskById(taskId)!
+    current.custom = [
+      { name: '成功条件', value: '登录成员可以筛选' },
+      { name: '通知结果', value: '' },
+      { name: '原有属性', value: '保留' },
+    ]
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    const button = w.get('.acceptance-template-btn')
+    expect(button.text()).toContain('补齐验收记录')
+    await button.trigger('click')
+
+    expect(current.custom.map((item) => item.name)).toEqual([
+      '成功条件', '通知结果', '原有属性', '验收证据', '端到端耗时', '异常与恢复',
+    ])
+    expect(current.custom.slice(-3).map((item) => item.value)).toEqual(['', '', ''])
+    expect(w.get('.acceptance-template-btn').attributes('disabled')).toBeDefined()
+    expect(useToastHost().items.some((item) => item.text.includes('已补齐 3 个验收字段'))).toBe(true)
+    w.unmount()
+  })
+
   it('关联候选按创建时间倒序，并排除已完成任务', async () => {
     const current = data.taskById(taskId)!
     const candidates = data.tasks.filter((item) => item.id !== taskId)

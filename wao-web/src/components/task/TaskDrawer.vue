@@ -38,8 +38,14 @@ const { decoTask } = useDeco()
 
 const isMobile = useIsMobile()
 
+/** 复用任务已有的持久化自定义属性，不新增一套会漂移的验收数据模型。 */
+const ACCEPTANCE_FIELD_NAMES = ['成功条件', '验收证据', '端到端耗时', '异常与恢复', '通知结果'] as const
+
 const task = computed(() => (ui.openTaskId ? data.taskById(ui.openTaskId) : undefined))
 const tv = computed(() => (task.value ? decoTask(task.value) : null))
+const acceptanceFieldsComplete = computed(() => Boolean(task.value)
+  && ACCEPTANCE_FIELD_NAMES.every((name) => task.value!.custom.some((item) => item.name === name)))
+const isAcceptanceField = (name: string) => (ACCEPTANCE_FIELD_NAMES as readonly string[]).includes(name)
 
 const menu = ref<'status' | 'pr' | 'owner' | 'prop' | 'share' | 'group' | null>(null)
 const newSub = ref('')
@@ -715,12 +721,23 @@ function addCustom(type: string) {
   data.patchTask(t.id, { custom: [...t.custom, { name: `未命名属性（${type}）`, value: '—' }] }, '添加了自定义属性')
   menu.value = null
 }
+function addAcceptanceFields() {
+  const t = task.value
+  if (!t) return
+  const existing = new Set(t.custom.map((item) => item.name))
+  const missing = ACCEPTANCE_FIELD_NAMES.filter((name) => !existing.has(name))
+  if (!missing.length) return
+  data.patchTask(t.id, {
+    custom: [...t.custom, ...missing.map((name) => ({ name, value: '' }))],
+  }, '补齐了任务验收记录字段')
+  toast(`已补齐 ${missing.length} 个验收字段，请按真实结果填写`, 'ri-clipboard-line')
+}
 function updateCustom(index: number, field: 'name' | 'value', event: Event) {
   const t = task.value
   if (!t) return
   const value = (event.target as HTMLInputElement).value.trim()
   const current = t.custom[index]
-  if (!current || !value || value === current[field]) return
+  if (!current || (field === 'name' && !value) || value === current[field]) return
   const custom = t.custom.map((item, i) => i === index ? { ...item, [field]: value } : item)
   data.patchTask(t.id, { custom }, '修改了自定义属性')
 }
@@ -1291,10 +1308,18 @@ function demo(msg: string) {
           </div>
 
           <div class="prop-section">
-            <div class="props-label sm">自定义属性</div>
+            <div class="props-label sm acceptance-head">
+              <span>自定义属性</span>
+              <button
+                class="acceptance-template-btn"
+                :disabled="acceptanceFieldsComplete"
+                title="补齐成功条件、验收证据、端到端耗时、异常与恢复、通知结果"
+                @click="addAcceptanceFields"
+              ><i class="ri-clipboard-line"></i>{{ acceptanceFieldsComplete ? '验收字段已齐' : '补齐验收记录' }}</button>
+            </div>
             <div v-for="(cp, i) in task.custom" :key="i" class="custom-row">
               <input class="custom-name" :value="cp.name" aria-label="属性名称" @change="updateCustom(i, 'name', $event)" />
-              <input class="custom-val" :value="cp.value" aria-label="属性值" @change="updateCustom(i, 'value', $event)" />
+              <input class="custom-val" :value="cp.value" :placeholder="isAcceptanceField(cp.name) ? '待填写真实结果' : ''" aria-label="属性值" @change="updateCustom(i, 'value', $event)" />
               <button class="custom-delete" title="删除属性" @click="removeCustom(i)"><i class="ri-delete-bin-line"></i></button>
             </div>
             <button class="text-btn small" @click="menu = menu === 'prop' ? null : 'prop'"><i class="ri-add-line"></i>添加属性</button>
@@ -2559,6 +2584,27 @@ function demo(msg: string) {
   gap: 8px;
   padding: 6px 0;
 }
+.acceptance-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.acceptance-template-btn {
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-primary-text);
+  font-size: 11.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.acceptance-template-btn:hover:not(:disabled) { background: var(--wao-primary-soft); }
+.acceptance-template-btn:disabled { color: var(--wao-text-faint); cursor: default; }
 .custom-name {
   width: 82px;
   font-size: 12px;
