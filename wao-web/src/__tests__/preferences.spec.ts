@@ -46,6 +46,34 @@ describe('成员级界面偏好', () => {
     expect(preferences.compactControls).toBe(true)
   })
 
+  it('从服务端读取周起始日与庆祝动画并原子保存', async () => {
+    preferenceApi.fetchPreference.mockImplementation((key: string) => Promise.resolve(
+      key === 'week-start' ? '周日' : key === 'celebration' ? '关闭' : '',
+    ))
+    const preferences = usePreferenceStore()
+    await preferences.load()
+
+    expect(preferences.weekStart).toBe('周日')
+    expect(preferences.celebration).toBe('关闭')
+
+    await preferences.setWeekStart('周一')
+    await preferences.setCelebration('细腻纸屑')
+
+    expect(preferenceApi.savePreference).toHaveBeenCalledWith('week-start', '周一')
+    expect(preferenceApi.savePreference).toHaveBeenCalledWith('celebration', '细腻纸屑')
+    expect(preferences.weekStart).toBe('周一')
+    expect(preferences.celebration).toBe('细腻纸屑')
+  })
+
+  it('周起始日保存失败时保留服务端原值', async () => {
+    const preferences = usePreferenceStore()
+    await preferences.load()
+    preferenceApi.savePreference.mockRejectedValueOnce(new Error('网络不可用'))
+
+    await expect(preferences.setWeekStart('周日')).rejects.toThrow('网络不可用')
+    expect(preferences.weekStart).toBe('周一')
+  })
+
   it('控件风格保存失败时不伪装已生效', async () => {
     const preferences = usePreferenceStore()
     await preferences.load()

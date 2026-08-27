@@ -7,6 +7,7 @@ import TaskDrawer from '@/components/task/TaskDrawer.vue'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 import { useUiStore } from '@/stores/ui'
+import { useSessionStore } from '@/stores/session'
 import { useToastHost } from '@/composables/toast'
 import type { AiRun } from '@/types'
 
@@ -137,6 +138,30 @@ describe('TaskDrawer', () => {
     expect(copyToClipboard).toHaveBeenCalledWith(taskId)
     expect(useToastHost().items.some((item) => item.text === `JOBID ${taskId} 已复制`)).toBe(true)
     w.unmount()
+  })
+
+  it('从真实成员目录增加和移除任务参与人', async () => {
+    const session = useSessionStore()
+    session.members = [
+      { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' },
+      { id: 'wd', name: '娃弟', initial: '弟', color: '#2C8A5B', role: '成员' },
+    ]
+    data.taskById(taskId)!.parts = []
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    const participantRow = w.findAll('.prop-row').find((row) => row.text().startsWith('参与人'))!
+    expect(participantRow.text()).toContain('未添加')
+    await participantRow.get('.add-part').trigger('click')
+    await participantRow.findAll('.participant-menu .pmenu-item')[1]!.trigger('click')
+
+    expect(data.taskById(taskId)!.parts).toEqual(['wd'])
+    expect(participantRow.text()).toContain('弟')
+
+    await participantRow.findAll('.participant-menu .pmenu-item')[1]!.trigger('click')
+    expect(data.taskById(taskId)!.parts).toEqual([])
+    expect(participantRow.text()).toContain('未添加')
   })
 
   it('JOBID 复制失败时保留可手动选择的真实标识', async () => {

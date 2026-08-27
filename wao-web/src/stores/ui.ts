@@ -76,7 +76,6 @@ export const useUiStore = defineStore('ui', () => {
   const modalEndAt = ref<string>('') // 日/周时间轴框选后的结束时间
 
   const searchOpen = ref(false)
-  const searchAI = ref(false)
 
   const celebrating = ref<string | null>(null)
 
@@ -110,9 +109,7 @@ export const useUiStore = defineStore('ui', () => {
     modal.value = null
   }
 
-  /** ai=true 时进入知识库语义搜索态。 */
-  function openSearch(ai = false) {
-    searchAI.value = ai
+  function openSearch() {
     searchOpen.value = true
   }
   function closeSearch() {
@@ -180,7 +177,7 @@ export const useUiStore = defineStore('ui', () => {
 
   return {
     openTaskId, modal, modalProject, modalDue, modalStartAt, modalEndAt,
-    searchOpen, searchAI, celebrating, helpOpen, assistantOpen, taskViews,
+    searchOpen, celebrating, helpOpen, assistantOpen, taskViews,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
     taskViewOf, setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, toggleHelp, closeHelp,
     openAssistant, closeAssistant, toggleAssistant,

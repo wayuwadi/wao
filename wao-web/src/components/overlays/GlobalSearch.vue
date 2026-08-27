@@ -62,27 +62,20 @@ const groups = computed(() => {
   return gs
 })
 
-const aiLine = computed(() =>
-  ui.searchAI && q.value.trim()
-    ? `语义理解：查找与「${q.value.trim()}」相关的目标、项目与长期笔记（演示结果）`
-    : '',
-)
-const HINTS = ['任务详情', '体检', '照片 扫描', '滇西北']
 </script>
 
 <template>
   <div class="mask" @click="close"></div>
   <div class="panel">
     <div class="bar">
-      <i :class="ui.searchAI ? 'ri-magic-line' : 'ri-search-line'" class="bar-icon"></i>
+      <i class="ri-search-line bar-icon"></i>
       <input
         ref="inputEl"
         v-model="q"
-        :placeholder="ui.searchAI ? '用自然语言问：例如「上次体检的结论是什么」' : '搜索项目、任务、文档…'"
+        placeholder="搜索真实项目、任务、文档…"
       />
       <span class="kbd">Esc</span>
     </div>
-    <div v-if="aiLine" class="ai-line"><i class="ri-magic-line"></i>{{ aiLine }}</div>
     <div class="results">
       <template v-for="g in groups" :key="g.label">
         <div class="g-label">{{ g.label }}</div>
@@ -98,10 +91,7 @@ const HINTS = ['任务详情', '体检', '照片 扫描', '滇西北']
       <div v-if="groups.length === 0" class="empty">没有匹配结果——换个关键词试试</div>
     </div>
     <div class="footer">
-      <span class="try">试试：</span>
-      <button v-for="h in HINTS" :key="h" class="hint" @click="q = h">{{ h }}</button>
-      <div class="spacer"></div>
-      <span class="demo-note">语义检索为演示效果</span>
+      <span class="try">按真实项目名称与目标、任务标题、文档标题匹配</span>
     </div>
   </div>
 </template>
@@ -157,17 +147,6 @@ const HINTS = ['任务详情', '体检', '照片 扫描', '滇西北']
   padding: 1px 6px;
   background: var(--wao-bg-page);
   color: var(--wao-text-weak);
-}
-.ai-line {
-  padding: 10px 18px 2px;
-  font-size: 12.5px;
-  color: #7a5cc6;
-  display: flex;
-  gap: 7px;
-  align-items: center;
-}
-.ai-line i {
-  font-size: 14px;
 }
 .results {
   max-height: 50vh;
@@ -236,29 +215,8 @@ const HINTS = ['任务详情', '体检', '照片 扫描', '滇西北']
   border-top: 1px solid var(--wao-divider);
   background: var(--wao-bg-sub);
 }
-.spacer {
-  flex: 1;
-}
 .try {
   font-size: 11.5px;
   color: var(--wao-text-faint);
-}
-.hint {
-  height: 24px;
-  padding: 0 9px;
-  border: 1px solid var(--wao-line);
-  background: var(--wao-bg-card);
-  border-radius: 999px;
-  font-size: 11.5px;
-  color: var(--wao-text-3);
-  cursor: pointer;
-}
-.hint:hover {
-  border-color: #c7d0f1;
-  color: var(--wao-primary-text);
-}
-.demo-note {
-  font-size: 11.5px;
-  color: var(--wao-text-faint-2);
 }
 </style>

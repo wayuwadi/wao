@@ -33,7 +33,8 @@ const runPage = ref(1)
 const isFail = (result: string) => result.includes('失败')
 const isConfigurable = (handler?: string | null) =>
   handler === CHAT_SYNC_HANDLER || handler === HTTP_PERFORMANCE_HANDLER
-const durOf = (i: number, j: number) => `${((i * 7 + j * 13) % 46) + 9} 秒`
+const durationOf = (durationMs?: number | null) =>
+  durationMs == null ? '—' : `${Math.max(1, Math.round(durationMs / 1000))} 秒`
 
 function stMeta(a: AutomationJob) {
   if (a.status === '正常') return { bg: '#E8F5EE', color: '#257A50' }
@@ -42,21 +43,16 @@ function stMeta(a: AutomationJob) {
 }
 
 const jobs = computed(() =>
-  data.autos.map((a, i) => {
+  data.autos.map((a) => {
     const st = stMeta(a)
     const dots = a.runs
       .map((r) => ({
         bg: isFail(r.result) ? '#D65454' : '#2C8A5B',
         title: `${r.time} · ${r.executor} · ${r.result}`,
       }))
-      .concat([
-        { bg: '#E3E4EA', title: '更早的运行' },
-        { bg: '#E3E4EA', title: '更早的运行' },
-      ])
       .slice(0, 5)
     return {
       job: a,
-      index: i,
       stBg: st.bg,
       stColor: st.color,
       needFix: a.status === '待修复',
@@ -81,16 +77,15 @@ const allRuns = computed(() => {
     order: number
   }[] = []
   let order = 0
-  data.autos.forEach((a, i) =>
-    a.runs.forEach((r, j) =>
+  data.autos.forEach((a) =>
+    a.runs.forEach((r) =>
       rows.push({
         time: r.time,
         executor: r.executor,
         job: a.name,
         icon: a.icon,
         result: r.result,
-        dur:
-          r.durationMs != null ? `${Math.max(1, Math.round(r.durationMs / 1000))} 秒` : durOf(i, j),
+        dur: durationOf(r.durationMs),
         color: isFail(r.result) ? '#BC4141' : '#257A50',
         bg: isFail(r.result) ? '#FBEBEB' : '#E8F5EE',
         id: a.id,
@@ -111,13 +106,12 @@ const visibleRuns = computed(() =>
 
 const sel = computed(() => data.autos.find((a) => a.id === selId.value) ?? null)
 const selMeta = computed(() => (sel.value ? stMeta(sel.value) : { bg: '', color: '' }))
-const selIndex = computed(() => (sel.value ? data.autos.indexOf(sel.value) : 0))
 const aoRuns = computed(() =>
-  (sel.value?.runs ?? []).map((r, j) => ({
+  (sel.value?.runs ?? []).map((r) => ({
     time: r.time,
     executor: r.executor,
     result: r.result,
-    dur: durOf(selIndex.value, j),
+    dur: durationOf(r.durationMs),
     color: isFail(r.result) ? '#BC4141' : '#257A50',
     bg: isFail(r.result) ? '#FBEBEB' : '#E8F5EE',
   })),

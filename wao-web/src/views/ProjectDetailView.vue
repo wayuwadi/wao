@@ -46,7 +46,7 @@ const project = computed(() => data.projectById(pid.value))
 // 进项目直接看任务。老链接上的 ?tab=总览 也归到任务，不至于打开一片空白。
 const projTab = computed(() => {
   const t = route.query.tab as string | undefined
-  return t && t !== '总览' ? t : '任务'
+  return t && !['总览', '文件'].includes(t) ? t : '任务'
 })
 // URL 上写了 view 就听 URL 的（分享出去的链接要能指定视图）；没写时用记住的偏好。
 const pdTaskView = computed<TaskView>(() => {
@@ -185,9 +185,9 @@ const board = computed(() =>
 const pdTabs = computed(() => {
   // 任务角标只数未完成的：一个跑了半年的项目里「25」几乎全是已完成，看不出还剩多少事。
   const openCount = ptasks.value.filter((t) => isOpenStatus(t.status)).length
-  const counts: Record<string, number> = { 任务: openCount, 文档: linkedDocs.value.length, 文件: project.value?.files.length ?? 0 }
-  return (['任务', '文档', '文件', '记忆', '动态'] as const).map((t) => ({
-    label: t, count: counts[t], showCount: ['任务', '文档', '文件'].includes(t), on: projTab.value === t,
+  const counts: Record<string, number> = { 任务: openCount, 文档: linkedDocs.value.length }
+  return (['任务', '文档', '记忆', '动态'] as const).map((t) => ({
+    label: t, count: counts[t], showCount: ['任务', '文档'].includes(t), on: projTab.value === t,
     title: t === '任务' ? `${openCount} 个未完成 / 共 ${ptasks.value.length} 个` : '',
   }))
 })
@@ -291,10 +291,6 @@ async function createProjectDoc() {
     creatingDoc.value = false
   }
 }
-function comingSoon(msg: string) {
-  toast(msg)
-}
-
 // ---- 分组视图 ----
 // 一个项目里同时压着好几个 domain 的事：按状态切的看板帮不上忙，得按「这是哪一摊事」分。
 // 分组里只关心做没做完，所以行上不再堆状态 / 优先级 / 负责人这些标签。
@@ -819,18 +815,6 @@ function onDropGroup(groupId: string, overId?: string) {
         <div v-if="!linkedDocs.length" class="doc-empty">
           <i class="ri-file-add-line"></i>
           <span>{{ kb ? '还没有项目文档，点击“新建文档”开始沉淀。' : '首次新建文档时会创建并关联项目知识库。' }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 文件 -->
-    <div v-else-if="projTab === '文件'">
-      <div class="file-list-card">
-        <div v-for="(f, i) in pd.files" :key="i" class="doc-row" @click="comingSoon('演示：文件预览与下载在正式版本提供')">
-          <i :class="f.icon"></i>
-          <span class="doc-title">{{ f.name }}</span>
-          <span class="doc-time">{{ f.size }}</span>
-          <i class="ri-download-2-line chev"></i>
         </div>
       </div>
     </div>
