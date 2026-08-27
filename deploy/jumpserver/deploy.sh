@@ -17,6 +17,8 @@ private_env="$project_root/deploy/.env.secrets"
 asset_env="$state_root/assets.env"
 asset_private_key="$volume_dir/core/data/bootstrap/wao-assets"
 asset_public_key="$asset_private_key.pub"
+legacy_asset_private_key="$state_root/wao-assets"
+legacy_asset_public_key="$legacy_asset_private_key.pub"
 published_public_key="$project_root/deploy/.jumpserver-asset-key.pub"
 
 test -f "$private_env"
@@ -123,10 +125,26 @@ set_config DOMAINS 'jms.wayuwa.cn:443'
 set_config BASE_SITE_URL 'https://jms.wayuwa.cn'
 set_config HTTP_PORT '127.0.0.1:18080'
 
-if [ ! -f "$asset_private_key" ]; then
-  sudo -n -u wadi ssh-keygen -q -t ed25519 -N '' -C 'wao-jumpserver-managed' -f "$state_root/wao-assets"
-  sudo -n install -m 0600 -o root -g root "$state_root/wao-assets" "$asset_private_key"
-  sudo -n install -m 0644 -o root -g root "$state_root/wao-assets.pub" "$asset_public_key"
+if [ ! -s "$asset_private_key" ] || [ ! -s "$asset_public_key" ]; then
+  key_tmp_dir=''
+  cleanup_key_tmp() {
+    [ -z "$key_tmp_dir" ] || rm -rf -- "$key_tmp_dir"
+  }
+  trap cleanup_key_tmp EXIT HUP INT TERM
+  if [ -s "$legacy_asset_private_key" ] && [ -s "$legacy_asset_public_key" ]; then
+    key_source="$legacy_asset_private_key"
+  else
+    key_tmp_dir="$(mktemp -d)"
+    key_source="$key_tmp_dir/wao-assets"
+    ssh-keygen -q -t ed25519 -N '' -C 'wao-jumpserver-managed' -f "$key_source"
+  fi
+  sudo -n install -m 0600 -o root -g root "$key_source" "$asset_private_key"
+  sudo -n install -m 0644 -o root -g root "$key_source.pub" "$asset_public_key"
+  if [ "$key_source" = "$legacy_asset_private_key" ]; then
+    sudo -n rm -f -- "$legacy_asset_private_key" "$legacy_asset_public_key"
+  fi
+  cleanup_key_tmp
+  trap - EXIT HUP INT TERM
 fi
 install -d -m 0700 "$HOME/.ssh"
 touch "$HOME/.ssh/authorized_keys"

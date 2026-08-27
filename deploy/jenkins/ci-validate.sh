@@ -33,6 +33,13 @@ grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
   deploy/nginx/wao.bootstrap.conf
 grep -Fq "printf 'DOCKER_IMAGE_MIRROR=1\\n'" deploy/jumpserver/deploy.sh
 grep -Fqx 'set_config DOCKER_IMAGE_MIRROR 1' deploy/jumpserver/deploy.sh
+grep -Fq 'key_tmp_dir="$(mktemp -d)"' deploy/jumpserver/deploy.sh
+grep -Fq 'key_source="$key_tmp_dir/wao-assets"' deploy/jumpserver/deploy.sh
+if grep -Fq 'ssh-keygen -q -t ed25519 -N '\''\'\'' -C '\''wao-jumpserver-managed'\'' -f "$state_root/wao-assets"' \
+    deploy/jumpserver/deploy.sh; then
+  echo 'JumpServer asset key must not be generated at a persistent staging path.' >&2
+  exit 1
+fi
 
 check_migration_versions() {
   migration_dir="$1"
