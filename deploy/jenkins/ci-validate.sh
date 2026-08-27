@@ -7,10 +7,12 @@ sh deploy/scripts/test-quiesce-wao-server.sh
 sh deploy/scripts/test-windows-node-availability.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py
+sh deploy/jumpserver/test-ensure-asset-key.sh
 sh deploy/jumpserver/test-ensure-sso-secret.sh
 
 for script in \
   deploy/jumpserver/deploy.sh \
+  deploy/jumpserver/ensure-asset-key.sh \
   deploy/jumpserver/ensure-sso-secret.sh \
   deploy/jumpserver/install-public-key.sh \
   deploy/jumpserver/verify-assets.sh \
