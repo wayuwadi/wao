@@ -175,7 +175,7 @@ sudo -n docker exec \
   -e "WAO_JMS_CLOUD_ADDRESS=$WAO_JMS_CLOUD_ADDRESS" \
   -e "WAO_JMS_CLOUD_USER=$WAO_JMS_CLOUD_USER" \
   -i jms_core sh -c \
-  'python manage.py shell < /opt/jumpserver/data/bootstrap/bootstrap_wao_assets.py'
+  'python /opt/jumpserver/apps/manage.py shell < /opt/jumpserver/data/bootstrap/bootstrap_wao_assets.py'
 
 sudo -n install -m 0644 "$project_root/deploy/jumpserver/wao-jumpserver-tunnel.service" \
   /etc/systemd/system/wao-jumpserver-tunnel.service
