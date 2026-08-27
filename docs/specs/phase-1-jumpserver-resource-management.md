@@ -15,7 +15,8 @@
 
 - 固定使用 JumpServer `v4.10.19-ce`。JumpServer Core、Celery、KoKo、Lion、Chen、Web 以及它自己的
   PostgreSQL 16、Redis 7 运行在 Linux 主节点的独立 Compose 项目中，持久数据位于
-  `/opt/wao-jumpserver`，不进入 Git，也不复用 WAO 的 MySQL/Redis。
+  `/opt/wao-jumpserver`，不进入 Git，也不复用 WAO 的 MySQL/Redis。大陆节点通过安装器官方
+  `DOCKER_IMAGE_MIRROR` 开关使用其内置阿里云镜像前缀，现有配置也必须在每次部署时幂等收敛。
 - JumpServer Web 只绑定 Linux loopback `127.0.0.1:18080`；独立 systemd 反向 SSH 隧道把它映射到云
   Nginx 的 `127.0.0.1:18082`。公网只开放云节点的 `https://jms.wayuwa.cn`，Core、数据库、Redis 和容器
   端口不直接暴露。

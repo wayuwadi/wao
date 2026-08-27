@@ -87,6 +87,7 @@ if [ ! -f "$config_file" ]; then
     printf 'SESSION_COOKIE_SECURE=true\nCSRF_COOKIE_SECURE=true\n'
     printf 'DOMAINS=jms.wayuwa.cn:443\nBASE_SITE_URL=https://jms.wayuwa.cn\n'
     printf 'USE_LB=1\nTZ=Asia/Shanghai\nCURRENT_VERSION=%s\n' "$edition_version"
+    printf 'DOCKER_IMAGE_MIRROR=1\n'
     printf 'USE_XPACK=0\nKOTL_ENABLED=0\nKOKO_SSH_PORT=127.0.0.1:2222\n'
     printf 'AUTH_CUSTOM_SSO=true\nAUTH_CUSTOM_SSO_QUERY_PARAMS=token\n'
     printf 'JUMPSERVER_SSO_SHARED_SECRET=%s\n' "$JUMPSERVER_SSO_SHARED_SECRET"
@@ -113,6 +114,7 @@ set_config() {
 
 custom_sso_md5="$(md5sum "$project_root/deploy/jumpserver/custom_sso.py" | awk '{print $1}')"
 set_config CURRENT_VERSION "$edition_version"
+set_config DOCKER_IMAGE_MIRROR 1
 set_config AUTH_CUSTOM_SSO true
 set_config AUTH_CUSTOM_SSO_QUERY_PARAMS token
 set_config AUTH_CUSTOM_SSO_FILE_MD5 "$custom_sso_md5"
