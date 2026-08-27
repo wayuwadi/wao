@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import MemoryMcpPanel from '@/components/settings/MemoryMcpPanel.vue'
+import MemoryMcpPanel from '@/components/memory/MemoryMcpPanel.vue'
 import { createMemoryAccessToken, fetchMemoryAccessTokens, fetchMemoryGrants,
   revokeMemoryAccessToken } from '@/api/memory'
 

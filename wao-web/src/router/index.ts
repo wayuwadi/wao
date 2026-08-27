@@ -2,6 +2,11 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '@/layouts/AppLayout.vue'
 import { useSessionStore } from '@/stores/session'
 
+export function legacyMemorySettingsRedirect(tab: unknown) {
+  if (!['memory-mcp', 'api'].includes(String(tab || ''))) return
+  return { path: '/memories', query: { section: 'mcp' }, replace: true } as const
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -319,6 +324,7 @@ const router = createRouter({
           path: 'settings',
           name: 'settings',
           component: () => import('@/views/SettingsView.vue'),
+          beforeEnter: (to) => legacyMemorySettingsRedirect(to.query.tab) || true,
           meta: { module: 'settings', tabKind: 'module' },
         },
       ],
