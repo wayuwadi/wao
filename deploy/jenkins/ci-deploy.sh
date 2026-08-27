@@ -171,7 +171,8 @@ provision_jumpserver_asset_access() {
 }
 
 verify_jumpserver_assets() {
-  sudo -n sh "$WAO_MASTER_PROJECT_ROOT/deploy/jumpserver/verify-assets.sh"
+  sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
+    --verify-jumpserver-assets "$WAO_MASTER_PROJECT_ROOT"
 }
 
 deploy_slave() {

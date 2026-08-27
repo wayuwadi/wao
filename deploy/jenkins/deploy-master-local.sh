@@ -4,7 +4,7 @@ set -eu
 if [ "${1:-}" = "--verify-jumpserver-assets" ]; then
   project_root="${2:?project root is required}"
   case "$project_root" in ''|/) echo "Unsafe project root: $project_root" >&2; exit 2 ;; esac
-  exec sh "$project_root/deploy/jumpserver/verify-assets.sh"
+  exec sudo -n sh "$project_root/deploy/jumpserver/verify-assets.sh"
 fi
 
 project_root="${1:?project root is required}"
