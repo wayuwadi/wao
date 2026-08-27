@@ -43,6 +43,9 @@ grep -Fq 'exec sudo -n sh "$project_root/deploy/jumpserver/verify-assets.sh"' \
 test "$(grep -Fc 'python /opt/jumpserver/apps/manage.py shell' \
   deploy/jumpserver/verify-assets.sh)" = 2
 ! grep -Fq 'python manage.py' deploy/jumpserver/verify-assets.sh
+grep -Fq 'WAO_WEB_BUILD_VERSION=$web_build_version' deploy/jenkins/ci-frontend-build.sh
+grep -Fq "versionType: ciBuildVersion ? 'custom' : 'git_commit_hash'" wao-web/vite.config.ts
+grep -Fq 'customVersion: ciBuildVersion' wao-web/vite.config.ts
 
 check_migration_versions() {
   migration_dir="$1"

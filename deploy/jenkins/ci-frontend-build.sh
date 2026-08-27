@@ -11,6 +11,12 @@ case "$project" in wao-web|agent-web) ;; *) echo "Invalid frontend project: $pro
 case "$run_tests" in true|false) ;; *) echo "Invalid run-tests flag: $run_tests" >&2; exit 2 ;; esac
 case "$build_project" in true|false) ;; *) echo "Invalid build flag: $build_project" >&2; exit 2 ;; esac
 
+web_build_version=''
+if [ "$project" = wao-web ] && [ "$build_project" = true ]; then
+  : "${WAO_GIT_SHA:?WAO_GIT_SHA is required for the WAO Web production build}"
+  web_build_version="$(git rev-parse --short "$WAO_GIT_SHA")"
+fi
+
 if [ "$run_tests" != true ] && [ "$build_project" != true ]; then
   echo "$project skipped: no tests or production build are required."
   exit 0
@@ -23,6 +29,7 @@ run_npm() {
     --user "$(id -u):$(id -g)" \
     -e HOME=/tmp/home \
     -e npm_config_cache=/tmp/npm-cache \
+    -e "WAO_WEB_BUILD_VERSION=$web_build_version" \
     -v "$PWD:/workspace" \
     -v "$cache:/tmp/npm-cache" \
     -w "/workspace/$project" \

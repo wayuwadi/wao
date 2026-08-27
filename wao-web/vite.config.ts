@@ -5,13 +5,19 @@ import vue from '@vitejs/plugin-vue'
 import { webUpdateNotice } from '@plugin-web-update-notification/vite'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
+const ciBuildVersion = process.env.WAO_WEB_BUILD_VERSION?.trim()
+if (ciBuildVersion && !/^[0-9a-f]{7,40}$/.test(ciBuildVersion)) {
+  throw new Error('WAO_WEB_BUILD_VERSION must be a Git commit SHA')
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
     vueDevTools(),
     webUpdateNotice({
-      versionType: 'git_commit_hash',
+      versionType: ciBuildVersion ? 'custom' : 'git_commit_hash',
+      ...(ciBuildVersion ? { customVersion: ciBuildVersion } : {}),
       checkInterval: 60_000,
       hiddenDefaultNotification: true,
       checkOnLoadFileError: false,
