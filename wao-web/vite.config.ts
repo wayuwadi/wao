@@ -2,11 +2,22 @@ import { fileURLToPath, URL } from 'node:url'
 
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { webUpdateNotice } from '@plugin-web-update-notification/vite'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [vue(), vueDevTools()],
+  plugins: [
+    vue(),
+    vueDevTools(),
+    webUpdateNotice({
+      versionType: 'git_commit_hash',
+      checkInterval: 60_000,
+      hiddenDefaultNotification: true,
+      checkOnLoadFileError: false,
+      logVersion: false,
+    }),
+  ],
   // Excalidraw 用该常量在 React / Preact 运行时间选择；WAO 使用 React 岛。
   define: {
     'process.env.IS_PREACT': false,

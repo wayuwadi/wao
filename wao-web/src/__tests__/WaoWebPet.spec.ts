@@ -1,16 +1,60 @@
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import WaoWebPet from '@/components/assistant/WaoWebPet.vue'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import type { Task, TaskStatus } from '@/types'
+import {
+  cloneRhythmConfig,
+  defaultRhythmDay,
+  DEFAULT_WORKDAY_RHYTHM,
+  shanghaiClock,
+  type WorkdayRhythmConfig,
+  type WorkdayRhythmDay,
+} from '@/utils/workdayRhythm'
+
+const rhythmApi = vi.hoisted(() => ({
+  fetchWorkdayRhythm: vi.fn<() => Promise<WorkdayRhythmConfig>>(),
+  fetchWorkdayRhythmDay:
+    vi.fn<
+      (
+        date: string,
+        weekday: number,
+        blockIds: string[],
+        energyIds: string[],
+      ) => Promise<WorkdayRhythmDay>
+    >(),
+  saveWorkdayRhythmDay: vi.fn<(day: WorkdayRhythmDay) => Promise<void>>(),
+  sendEnergyNotification:
+    vi.fn<(action: string, date: string) => Promise<{ sent: boolean; chatName: string }>>(),
+}))
+
+vi.mock('@/api/workdayRhythm', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/workdayRhythm')>()),
+  ...rhythmApi,
+}))
 
 function task(id: string, title: string, status: TaskStatus, pr: Task['pr'] = 'P2'): Task {
   return {
-    id, title, status, pr, project: 'p1', owner: 'wg', parts: [], due: '2026-08-27',
-    desc: '', steps: [], subs: [], files: [], docs: [], linkTasks: [], comments: [], custom: [], activity: [],
+    id,
+    title,
+    status,
+    pr,
+    project: 'p1',
+    owner: 'wg',
+    parts: [],
+    due: '2026-08-27',
+    desc: '',
+    steps: [],
+    subs: [],
+    files: [],
+    docs: [],
+    linkTasks: [],
+    comments: [],
+    custom: [],
+    activity: [],
   }
 }
 
@@ -18,6 +62,15 @@ describe('WaoWebPet', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    const clock = shanghaiClock()
+    rhythmApi.fetchWorkdayRhythm.mockReset()
+    rhythmApi.fetchWorkdayRhythmDay.mockReset()
+    rhythmApi.saveWorkdayRhythmDay.mockReset()
+    rhythmApi.sendEnergyNotification.mockReset()
+    rhythmApi.fetchWorkdayRhythm.mockResolvedValue(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
+    rhythmApi.fetchWorkdayRhythmDay.mockResolvedValue(defaultRhythmDay(clock.date, clock.weekday))
+    rhythmApi.saveWorkdayRhythmDay.mockResolvedValue(undefined)
+    rhythmApi.sendEnergyNotification.mockResolvedValue({ sent: true, chatName: 'WAO 群' })
   })
 
   afterEach(() => {
@@ -82,6 +135,155 @@ describe('WaoWebPet', () => {
     expect(wrapper.text()).toContain('任务接口暂时不可达')
     await wrapper.get('.pet-avatar').trigger('click')
     expect(wrapper.emitted('open-assistant')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('悬停后展示前三个真实补给项目并把累计动作保存到当天记录', async () => {
+    const clock = shanghaiClock()
+    const config = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
+    config.energyItems = [
+      { id: 'WATER', title: '喝水', guidance: '补充水分', mode: 'COUNT', notify: false },
+      { id: 'EXERCISE', title: '运动', guidance: '活动一下', mode: 'COUNT', notify: false },
+      {
+        id: 'MEDITATION',
+        title: '冥想',
+        guidance: '停下来几分钟',
+        mode: 'DAILY_ONCE',
+        notify: false,
+      },
+      { id: 'WALK', title: '散步', guidance: '出去走走', mode: 'COUNT', notify: false },
+    ]
+    const day = defaultRhythmDay(clock.date, clock.weekday)
+    day.energyRecords.EXERCISE = 1
+    rhythmApi.fetchWorkdayRhythm.mockResolvedValue(config)
+    rhythmApi.fetchWorkdayRhythmDay.mockResolvedValue(day)
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+
+    await wrapper.get('.pet-control').trigger('pointerenter')
+    await flushPromises()
+
+    const actions = wrapper.findAll('.pet-rhythm-action')
+    expect(actions).toHaveLength(3)
+    expect(actions.map((action) => action.get('b').text())).toEqual(['喝水', '运动', '冥想'])
+    expect(wrapper.text()).not.toContain('散步')
+
+    await actions[1]!.trigger('click')
+    await flushPromises()
+
+    expect(rhythmApi.saveWorkdayRhythmDay).toHaveBeenCalledTimes(1)
+    expect(rhythmApi.saveWorkdayRhythmDay.mock.calls[0]![0].energyRecords.EXERCISE).toBe(2)
+    expect(wrapper.findAll('.pet-rhythm-action')[1]!.text()).toContain('2')
+
+    await wrapper.findAll('.pet-rhythm-action')[2]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.pet-rhythm-action')[2]!.text()).toContain('已保存')
+    expect(wrapper.findAll('.pet-rhythm-action')[2]!.attributes('disabled')).toBeDefined()
+    expect(rhythmApi.saveWorkdayRhythmDay.mock.calls[1]![0].energyRecords.MEDITATION).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('键盘聚焦宠物后同样加载快捷动作并暂时收起任务提示', async () => {
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+
+    expect(wrapper.find('.pet-notice').exists()).toBe(true)
+    await wrapper.get('.pet-avatar').trigger('focusin')
+    await flushPromises()
+
+    expect(wrapper.find('.pet-notice').exists()).toBe(false)
+    expect(wrapper.findAll('.pet-rhythm-action')).toHaveLength(2)
+    expect(rhythmApi.fetchWorkdayRhythm).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('保存失败后点击原动作只重试同一条记录，不重复累计', async () => {
+    rhythmApi.saveWorkdayRhythmDay
+      .mockRejectedValueOnce(new Error('偏好服务暂时不可用'))
+      .mockResolvedValueOnce(undefined)
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+
+    await wrapper.get('.pet-control').trigger('pointerenter')
+    await flushPromises()
+    await wrapper.findAll('.pet-rhythm-action')[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.pet-rhythm-action')[0]!.text()).toContain('保存失败 · 点击重试')
+
+    await wrapper.findAll('.pet-rhythm-action')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(rhythmApi.saveWorkdayRhythmDay).toHaveBeenCalledTimes(2)
+    expect(rhythmApi.saveWorkdayRhythmDay.mock.calls[0]![0].energyRecords.WATER).toBe(1)
+    expect(rhythmApi.saveWorkdayRhythmDay.mock.calls[1]![0].energyRecords.WATER).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('通知失败后重试只重新发送通知，不再次保存或增加次数', async () => {
+    const config = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
+    config.energyNotification.enabled = true
+    rhythmApi.fetchWorkdayRhythm.mockResolvedValue(config)
+    rhythmApi.sendEnergyNotification
+      .mockRejectedValueOnce(new Error('飞书暂时不可达'))
+      .mockResolvedValueOnce({ sent: true, chatName: 'WAO 群' })
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+
+    await wrapper.get('.pet-control').trigger('pointerenter')
+    await flushPromises()
+    await wrapper.findAll('.pet-rhythm-action')[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.pet-rhythm-action')[0]!.text()).toContain('通知失败，点击重试')
+
+    await wrapper.findAll('.pet-rhythm-action')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(rhythmApi.saveWorkdayRhythmDay).toHaveBeenCalledTimes(1)
+    expect(rhythmApi.sendEnergyNotification).toHaveBeenCalledTimes(2)
+    expect(rhythmApi.saveWorkdayRhythmDay.mock.calls[0]![0].energyRecords.WATER).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('检测到今日节奏未保存草稿时禁止快捷写入并提供恢复入口', async () => {
+    const clock = shanghaiClock()
+    localStorage.setItem(`wao-workday-rhythm-day-draft-${clock.date}`, '{"draft":true}')
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+
+    await wrapper.get('.pet-control').trigger('pointerenter')
+    await flushPromises()
+
+    expect(wrapper.findAll('.pet-rhythm-action')).toHaveLength(0)
+    const recovery = wrapper.get('.pet-rhythm-state.conflict')
+    expect(recovery.text()).toContain('先保存页面草稿')
+    expect(recovery.attributes('href')).toBe('/workday-rhythm')
+    expect(rhythmApi.saveWorkdayRhythmDay).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('今日节奏读取失败时显示真实原因并可原位重试', async () => {
+    rhythmApi.fetchWorkdayRhythm
+      .mockRejectedValueOnce(new Error('成员偏好接口暂时不可达'))
+      .mockResolvedValueOnce(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+
+    await wrapper.get('.pet-control').trigger('pointerenter')
+    await flushPromises()
+    const retry = wrapper.get('.pet-rhythm-state.error')
+    expect(retry.text()).toContain('成员偏好接口暂时不可达')
+
+    await retry.trigger('click')
+    await flushPromises()
+
+    expect(rhythmApi.fetchWorkdayRhythm).toHaveBeenCalledTimes(2)
+    expect(wrapper.findAll('.pet-rhythm-action')).toHaveLength(2)
     wrapper.unmount()
   })
 })
