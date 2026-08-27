@@ -9,13 +9,22 @@ import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
-import { fmtDate, isOpenStatus, TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
+import {
+  fmtDate,
+  isOpenStatus,
+  TASK_DELIVERY_STAGES,
+  TASK_STATUSES,
+  TASK_STATUS_DOTS,
+  taskDeliveryStage,
+  taskStatusesForDeliveryStage,
+} from '@/utils/domain'
 import { toast } from '@/composables/toast'
 import { createAiRuns } from '@/api/ai'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
 import { useFavoritesStore } from '@/stores/favorites'
 import { MAX_TASK_GROUPS } from '@/types'
 import type { TaskStatus } from '@/types'
+import type { TaskDeliveryStage } from '@/utils/domain'
 import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
 
 const route = useRoute()
@@ -132,8 +141,24 @@ const effectiveCreator = computed(() =>
 const activeCreatorName = computed(() =>
   effectiveCreator.value ? creatorOptions.value.find((creator) => creator.id === effectiveCreator.value)?.name ?? effectiveCreator.value : '创建人',
 )
-const allTasks = computed(() => ptasks.value
-  .filter((task) => !effectiveCreator.value || task.createdBy === effectiveCreator.value)
+const creatorTasks = computed(() => ptasks.value
+  .filter((task) => !effectiveCreator.value || task.createdBy === effectiveCreator.value))
+const deliveryStageFilter = computed<TaskDeliveryStage | null>(() => {
+  const stage = route.query.stage
+  return typeof stage === 'string' && TASK_DELIVERY_STAGES.some((option) => option.id === stage)
+    ? stage as TaskDeliveryStage
+    : null
+})
+const deliveryStageOptions = computed(() => TASK_DELIVERY_STAGES.map((stage) => ({
+  ...stage,
+  count: creatorTasks.value.filter((task) => taskDeliveryStage(task.status) === stage.id).length,
+})))
+function setDeliveryStage(stage: TaskDeliveryStage | null) {
+  selectedTaskIds.value = []
+  router.replace({ query: { ...route.query, stage: stage ?? undefined } })
+}
+const allTasks = computed(() => creatorTasks.value
+  .filter((task) => !deliveryStageFilter.value || taskDeliveryStage(task.status) === deliveryStageFilter.value)
   .map(decoTask))
 const openTasks = computed(() => allTasks.value.filter((t) => t.status !== '已完成' || isSettling(t.id)))
 /** 已完成倒序：最新完成的排最前；老数据没有完成时间时按 id（含创建时间戳）倒序兜底。 */
@@ -142,8 +167,11 @@ const doneDesc = (a: { completedAt?: string | null; id: string }, b: { completed
 const doneTasks = computed(() =>
   allTasks.value.filter((t) => t.status === '已完成' && !isSettling(t.id)).sort(doneDesc))
 // 看板没有勾选框，状态只能靠拖拽改变，所以不需要缓冲；「已完成」列默认收起，点列头展开。
+const boardStatuses = computed(() => deliveryStageFilter.value
+  ? taskStatusesForDeliveryStage(deliveryStageFilter.value)
+  : TASK_STATUSES)
 const board = computed(() =>
-  TASK_STATUSES.map((st) => ({
+  boardStatuses.value.map((st) => ({
     label: st,
     dot: TASK_STATUS_DOTS[st],
     collapsible: st === '已完成',
@@ -476,6 +504,25 @@ function onDropGroup(groupId: string, overId?: string) {
           </button>
         </div>
       </div>
+      <div class="delivery-filter" role="group" aria-label="按交付阶段筛选任务">
+        <span class="delivery-filter-label">交付阶段</span>
+        <button
+          class="delivery-filter-button"
+          :class="{ on: !deliveryStageFilter }"
+          :aria-pressed="!deliveryStageFilter"
+          title="查看当前创建人范围内的全部任务"
+          @click="setDeliveryStage(null)"
+        >全部 <em class="wao-tabular">{{ creatorTasks.length }}</em></button>
+        <button
+          v-for="stage in deliveryStageOptions"
+          :key="stage.id"
+          class="delivery-filter-button"
+          :class="{ on: deliveryStageFilter === stage.id }"
+          :aria-pressed="deliveryStageFilter === stage.id"
+          :title="stage.description"
+          @click="setDeliveryStage(deliveryStageFilter === stage.id ? null : stage.id)"
+        >{{ stage.label }} <em class="wao-tabular">{{ stage.count }}</em></button>
+      </div>
       <div v-if="pdTaskView === 'list'" class="task-list-card">
         <div
           v-for="t in openTasks"
@@ -535,12 +582,18 @@ function onDropGroup(groupId: string, overId?: string) {
         </div>
 
         <!-- 已完成默认收起 -->
-        <button v-if="doneTasks.length" class="done-toggle" @click="showDone = !showDone">
-          <i :class="showDone ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
+        <button
+          v-if="doneTasks.length"
+          class="done-toggle"
+          :class="{ fixed: deliveryStageFilter === 'verified' }"
+          :aria-expanded="showDone || deliveryStageFilter === 'verified'"
+          @click="deliveryStageFilter !== 'verified' && (showDone = !showDone)"
+        >
+          <i :class="showDone || deliveryStageFilter === 'verified' ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
           已完成<span class="done-count wao-tabular">{{ doneTasks.length }}</span>
-          <span class="done-hint">{{ showDone ? '点击收起' : '点击展开' }}</span>
+          <span class="done-hint">{{ deliveryStageFilter === 'verified' ? '筛选结果' : showDone ? '点击收起' : '点击展开' }}</span>
         </button>
-        <template v-if="showDone">
+        <template v-if="showDone || deliveryStageFilter === 'verified'">
           <div v-for="t in doneTasks" :key="t.id" class="trow done" @click="openTask(t.id)">
             <i class="drag-grip ri-draggable placeholder"></i>
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
@@ -580,7 +633,8 @@ function onDropGroup(groupId: string, overId?: string) {
           </div>
         </template>
 
-        <div v-if="allTasks.length === 0" class="empty-inline">还没有任务——点右上角「新建任务」开始拆解</div>
+        <div v-if="!ptasks.length" class="empty-inline">还没有任务——点右上角「新建任务」开始拆解</div>
+        <div v-else-if="!allTasks.length" class="empty-inline">当前筛选没有任务，切换交付阶段或创建人后再看</div>
         <div v-else-if="!openTasks.length && !showDone" class="empty-inline">未完成的任务都清空了 🎉</div>
       </div>
 
@@ -1204,6 +1258,44 @@ function onDropGroup(groupId: string, overId?: string) {
 }
 .creator-filter-menu button:hover,
 .creator-filter-menu button.on { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.delivery-filter {
+  margin-top: 9px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding-bottom: 1px;
+}
+.delivery-filter-label {
+  color: var(--wao-text-weak);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+.delivery-filter-button {
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 999px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-3);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.delivery-filter-button em {
+  margin-left: 3px;
+  color: var(--wao-text-faint);
+  font-style: normal;
+}
+.delivery-filter-button:hover,
+.delivery-filter-button.on {
+  border-color: #c7d0f1;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+}
+.delivery-filter-button.on em { color: inherit; }
 .task-list-card,
 .doc-list-card,
 .file-list-card {
@@ -1252,6 +1344,11 @@ function onDropGroup(groupId: string, overId?: string) {
 }
 .done-toggle:hover {
   color: var(--wao-text-2);
+}
+.done-toggle.fixed,
+.done-toggle.fixed:hover {
+  color: var(--wao-text-weak);
+  cursor: default;
 }
 .done-toggle > i {
   font-size: 15px;
@@ -1849,6 +1946,8 @@ function onDropGroup(groupId: string, overId?: string) {
   .seg-btn { flex: 1; justify-content: center; height: 36px; }
   .creator-filter { order: 2; margin-left: 0; }
   .creator-filter-btn, .batch-ai { min-height: 40px; }
+  .delivery-filter { margin-top: 8px; }
+  .delivery-filter-button { min-height: 36px; padding: 0 11px; }
   .tab-toolbar > .spacer { order: 3; }
   .batch-ai-actions { order: 5; width: 100%; }
   .batch-ai-actions .batch-ai { flex: 1; justify-content: center; }

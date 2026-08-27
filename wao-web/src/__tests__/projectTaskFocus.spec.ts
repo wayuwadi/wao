@@ -32,4 +32,37 @@ describe('项目页聚焦任务', () => {
     expect(wrapper.find('.tab-toolbar').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('按派生交付阶段展示真实数量并用 URL 恢复筛选', async () => {
+    const data = useDataStore()
+    data.taskById('t1')!.status = '进行中'
+    data.taskById('t2')!.status = '收集中'
+    data.taskById('t3')!.status = '待验证'
+    data.taskById('t12')!.status = '已完成'
+    await router.push('/projects/p1?view=board')
+    await router.isReady()
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    const filters = wrapper.findAll('.delivery-filter-button')
+    expect(filters.map((button) => button.text())).toEqual([
+      '全部 6', '方向探索 1', '待开发 3', '待验收 1', '已验证 1',
+    ])
+
+    await filters[3]!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.stage).toBe('acceptance')
+    expect(wrapper.findAll('.board-col')).toHaveLength(1)
+    expect(wrapper.get('.board-col-label').text()).toBe('待验证')
+    expect(wrapper.text()).toContain(data.taskById('t3')!.title)
+    expect(wrapper.text()).not.toContain(data.taskById('t2')!.title)
+
+    wrapper.unmount()
+    await router.push('/projects/p1?view=board&stage=acceptance')
+    const restored = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+    expect(restored.get('.delivery-filter-button.on').text()).toContain('待验收')
+    expect(restored.findAll('.board-col')).toHaveLength(1)
+    restored.unmount()
+  })
 })
