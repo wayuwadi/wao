@@ -35,6 +35,7 @@ grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
   deploy/nginx/wao.bootstrap.conf
 grep -Fq "printf 'DOCKER_IMAGE_MIRROR=1\\n'" deploy/jumpserver/deploy.sh
 grep -Fqx 'set_config DOCKER_IMAGE_MIRROR 1' deploy/jumpserver/deploy.sh
+grep -Fq 'python /opt/jumpserver/apps/manage.py shell' deploy/jumpserver/deploy.sh
 
 check_migration_versions() {
   migration_dir="$1"
