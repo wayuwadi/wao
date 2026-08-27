@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 22;
+    private static final int VERSION = 23;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
@@ -43,6 +43,7 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("drawings", "草图", "ri-draft-line", "PERSONAL", 50, true, "TAB"),
             new BuiltinMenuConfigDto("vault", "密码本", "ri-key-2-line", "PERSONAL", 60, true, "TAB"),
             new BuiltinMenuConfigDto("tianren", "天人一卦", "ri-compass-3-line", "PERSONAL", 70, true, "TAB"),
+            new BuiltinMenuConfigDto("dashboard", "使用统计", "ri-bar-chart-box-line", "TOOLS", 5, true, "TAB"),
             new BuiltinMenuConfigDto("automation", "自动化", "ri-flashlight-line", "TOOLS", 10, true, "TAB"),
             new BuiltinMenuConfigDto("files", "文件与图床", "ri-hard-drive-2-line", "TOOLS", 20, true, "TAB"),
             new BuiltinMenuConfigDto("games", "游戏厅", "ri-gamepad-line", "TOOLS", 30, true, "TAB"),

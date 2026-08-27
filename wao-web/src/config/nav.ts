@@ -121,6 +121,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-pulse-line',
     path: '/request-monitoring',
   },
+  dashboard: {
+    id: 'dashboard',
+    label: '使用统计',
+    icon: 'ri-bar-chart-box-line',
+    path: '/dashboard',
+  },
   drawings: { id: 'drawings', label: '草图', icon: 'ri-draft-line', path: '/drawings' },
   vocabulary: {
     id: 'vocabulary',
@@ -330,6 +336,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
+      id: 'dashboard',
+      label: '使用统计',
+      icon: 'ri-bar-chart-box-line',
+      group: 'TOOLS',
+      order: 5,
+      visible: true,
+    },
+    {
       id: 'automation',
       label: '自动化',
       icon: 'ri-flashlight-line',
@@ -389,7 +403,7 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
     items: ['projects', 'ideas', 'skills', 'skill-connections', 'chat'],
   },
   { label: '个人', items: PERSONAL_ITEMS },
-  { label: '工具', items: ['automation', 'files', 'games', 'request-monitoring'] },
+  { label: '工具', items: ['dashboard', 'automation', 'files', 'games', 'request-monitoring'] },
 ]
 
 const GROUP_LABELS: Record<MenuGroupCode, string> = {

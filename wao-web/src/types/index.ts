@@ -29,6 +29,7 @@ export type ModuleId =
   | 'automation'
   | 'games'
   | 'request-monitoring'
+  | 'dashboard'
   | 'drawings'
   | 'vocabulary'
   | 'english-learning'
