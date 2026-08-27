@@ -92,6 +92,21 @@ class RunnerInvocationTest(unittest.TestCase):
         self.assertNotEqual(0, exit_code)
         self.assertLess(time.monotonic() - started, 3)
 
+    def test_scalar_json_and_progress_callback_failure_do_not_abort_cli(self) -> None:
+        worktree = Path(tempfile.mkdtemp(prefix="wao-invoke-events-"))
+        self.addCleanup(shutil.rmtree, worktree, ignore_errors=True)
+        events = Mock(side_effect=AttributeError("'str' object has no attribute 'get'"))
+
+        exit_code, output = RUNNER.invoke_cli(
+            [sys.executable, "-u", "-c",
+             "print('\\\"unexpected scalar\\\"'); print('{\\\"type\\\":\\\"turn.started\\\"}')"],
+            worktree, "", on_event=events,
+        )
+
+        self.assertEqual(0, exit_code)
+        self.assertIn("unexpected scalar", output)
+        events.assert_called_once_with({"type": "turn.started"})
+
     @patch.object(RUNNER.subprocess, "Popen")
     def test_prompt_is_sent_through_stdin(self, popen: Mock) -> None:
         process = popen.return_value
@@ -185,7 +200,8 @@ class RunnerInvocationTest(unittest.TestCase):
     def test_git_credential_is_only_injected_into_child_environment(self, run: Mock, _find: Mock) -> None:
         run.return_value = Mock(returncode=0, stdout="username=wao\npassword=secret-token\n")
 
-        with patch.dict(os.environ, {"WAO_TEST_MARKER": "preserved"}):
+        isolated = {"PATH": os.environ.get("PATH", ""), "WAO_TEST_MARKER": "preserved"}
+        with patch.dict(os.environ, isolated, clear=True):
             environment, ready, cli = RUNNER.build_cli_environment("git.exe")
 
         self.assertTrue(ready)
@@ -210,7 +226,8 @@ class RunnerInvocationTest(unittest.TestCase):
             self, run: Mock, _find: Mock) -> None:
         run.return_value = Mock(returncode=1, stdout="")
 
-        environment, ready, _ = RUNNER.build_cli_environment("git.exe")
+        with patch.dict(os.environ, {"PATH": os.environ.get("PATH", "")}, clear=True):
+            environment, ready, _ = RUNNER.build_cli_environment("git.exe")
 
         self.assertFalse(ready)
         self.assertEqual("0", environment["GIT_TERMINAL_PROMPT"])
@@ -1068,6 +1085,82 @@ class ActiveContinuationTest(unittest.TestCase):
         complete_calls = [call for call in api.post.call_args_list
                           if call.args and call.args[0].endswith("/complete")]
         self.assertEqual("thread-live", complete_calls[-1].args[1]["sessionId"])
+
+
+class FailureRetryTest(unittest.TestCase):
+    """CLI 临时失败先在同一运行内恢复，只有最终结果才回传服务端。"""
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="wao-failure-retry-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.worktree = self.root / ".wao-runs" / "ar-retry"
+        self.worktree.mkdir(parents=True)
+        self.claim = {
+            "runId": "ar-retry", "engine": "codex", "taskTitle": "临时失败自动恢复",
+            "repoUrl": "https://github.com/acme/wao.git", "workspaceDir": "wao",
+            "defaultBranch": "main", "branchName": "ai/wao-ar-retry",
+            "promptUrl": "https://wao.example/task.md", "failureRetryCount": 2,
+        }
+
+    @patch.object(RUNNER, "prepare_worktree")
+    @patch.object(RUNNER, "run_codex")
+    def test_nonzero_exit_retries_then_only_reports_success(self, run_codex: Mock,
+            prepare_worktree: Mock) -> None:
+        prepare_worktree.return_value = self.worktree
+        usage = RUNNER._blank_usage()
+        run_codex.side_effect = [
+            (1, "临时网络异常", "thread-retry", usage),
+            (0, "WAO_RUN_STATUS: SUCCESS\n重试后已完成", "thread-retry", usage),
+        ]
+        api = Mock()
+        api.get.return_value = {"cancelled": False}
+
+        RUNNER.execute_claim(
+            api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
+
+        self.assertEqual(2, run_codex.call_count)
+        self.assertIn("自动恢复，第 1/2 次重试", run_codex.call_args_list[1].args[2])
+        complete_calls = [call for call in api.post.call_args_list
+                          if call.args and call.args[0].endswith("/complete")]
+        self.assertEqual(1, len(complete_calls))
+        self.assertEqual(0, complete_calls[0].args[1]["exitCode"])
+        self.assertIn("重试后已完成", complete_calls[0].args[1]["resultSummary"])
+
+    @patch.object(RUNNER, "prepare_worktree")
+    @patch.object(RUNNER, "run_codex")
+    def test_exceptions_stop_after_configured_retry_count(self, run_codex: Mock,
+            prepare_worktree: Mock) -> None:
+        prepare_worktree.return_value = self.worktree
+        run_codex.side_effect = RuntimeError("本地 CLI 异常")
+        api = Mock()
+        api.get.return_value = {"cancelled": False}
+
+        RUNNER.execute_claim(
+            api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
+
+        self.assertEqual(3, run_codex.call_count)
+        complete = [call for call in api.post.call_args_list
+                    if call.args and call.args[0].endswith("/complete")][-1]
+        self.assertNotEqual(0, complete.args[1]["exitCode"])
+        self.assertIn("本地 CLI 异常", complete.args[1]["resultSummary"])
+
+    @patch.object(RUNNER, "prepare_worktree")
+    @patch.object(RUNNER, "run_codex")
+    def test_business_blocked_result_is_not_retried(self, run_codex: Mock,
+            prepare_worktree: Mock) -> None:
+        prepare_worktree.return_value = self.worktree
+        run_codex.return_value = (
+            0, "WAO_RUN_STATUS: BLOCKED\n缺少必要权限", "thread-blocked", RUNNER._blank_usage())
+        api = Mock()
+        api.get.return_value = {"cancelled": False}
+
+        RUNNER.execute_claim(
+            api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
+
+        run_codex.assert_called_once()
+        complete = [call for call in api.post.call_args_list
+                    if call.args and call.args[0].endswith("/complete")][-1]
+        self.assertEqual(2, complete.args[1]["exitCode"])
 
 
 class SyncCredentialsTest(unittest.TestCase):

@@ -131,7 +131,7 @@ vi.mock('@/api/ai', () => ({
       projectName: 'Wa All in One',
       config: {
         projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
-        workspaceDir: 'wao', defaultEngine: 'claude', preferredRunnerId: 'rn2', maxParallelRuns: 3,
+        workspaceDir: 'wao', defaultEngine: 'claude', preferredRunnerId: 'rn2', maxParallelRuns: 3, failureRetryCount: 2,
       },
       configured: true,
       projectDeleted: false,
@@ -498,7 +498,7 @@ describe('HomeView AI 控制台', () => {
       projectId: 'p1', projectName: 'Wa All in One',
       config: {
         projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
-        workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: 'rn1', maxParallelRuns: 3,
+        workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: 'rn1', maxParallelRuns: 3, failureRetryCount: 2,
       },
       configured: true, projectDeleted: false, preferredRunnerName: '娃哥电脑',
       activeRuns: 1, succeededRuns: 4, failedRuns: 1, lastRunAt: '2026-07-25T20:18:00',
@@ -534,6 +534,7 @@ describe('HomeView AI 控制台', () => {
       config: {
         projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
         workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: 'rn1', maxParallelRuns: 3,
+        failureRetryCount: 2,
       },
       configured: true, projectDeleted: false, preferredRunnerName: '娃哥电脑',
       activeRuns: 1, succeededRuns: 4, failedRuns: 1, lastRunAt: '2026-07-25T20:18:00',

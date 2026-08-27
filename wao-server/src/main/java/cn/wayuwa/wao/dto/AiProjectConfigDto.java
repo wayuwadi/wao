@@ -9,5 +9,6 @@ public record AiProjectConfigDto(
         String workspaceDir,
         String defaultEngine,
         String preferredRunnerId,
-        int maxParallelRuns) {
+        int maxParallelRuns,
+        int failureRetryCount) {
 }

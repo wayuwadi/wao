@@ -52,6 +52,8 @@ sudo WAO_JENKINS_SCM_BRANCH=codex/jenkins-cicd \
 Jenkins UI 只监听 `127.0.0.1:8081`，并使用 `/jenkins` context path。日常可在登录 WAO 后从
 左下角「链接 → Jenkins」打开 `https://wao.wayuwa.cn/jenkins/`；Nginx 通过内部鉴权子请求传递 WAO 成员 id
 和角色组，Jenkins 不再显示第二个登录页。普通成员只读，WAO 管理员和超级管理员保留管理权限。
+控制器通过官方简体中文本地化与 Locale 插件统一固定为 `zh_CN`，不依赖浏览器语言；插件没有翻译的专有名词
+和历史构建日志仍保留原文。
 
 云入口不可用时，可在自己的电脑建立应急隧道：
 

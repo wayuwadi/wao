@@ -17,6 +17,7 @@ public class AiProjectConfigEntity {
     private String defaultEngine;
     private String preferredRunnerId;
     private Integer maxParallelRuns;
+    private Integer failureRetryCount;
     private LocalDateTime updatedAt;
 
     public String getProjectId() { return projectId; }
@@ -35,6 +36,8 @@ public class AiProjectConfigEntity {
     public void setPreferredRunnerId(String preferredRunnerId) { this.preferredRunnerId = preferredRunnerId; }
     public Integer getMaxParallelRuns() { return maxParallelRuns; }
     public void setMaxParallelRuns(Integer maxParallelRuns) { this.maxParallelRuns = maxParallelRuns; }
+    public Integer getFailureRetryCount() { return failureRetryCount; }
+    public void setFailureRetryCount(Integer failureRetryCount) { this.failureRetryCount = failureRetryCount; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

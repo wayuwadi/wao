@@ -23,6 +23,8 @@ public record AiRunnerClaimDto(
         String defaultBranch,
         String workspaceDir,
         String branchName,
+        /** AI CLI 异常或非零退出后，在本次运行内静默自动重试的次数。 */
+        int failureRetryCount,
         /**
          * 上一次失败运行的报错摘要；本次是重跑时才有值。
          *
@@ -44,7 +46,7 @@ public record AiRunnerClaimDto(
             String workspaceDir, String branchName, String previousFailure, String sessionId,
             String continuationInput, AiRunAccountDto account) {
         this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false,
-                promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, previousFailure, sessionId,
+                promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, 2, previousFailure, sessionId,
                 continuationInput, account, List.of(), List.of(), List.of());
     }
 
@@ -53,7 +55,7 @@ public record AiRunnerClaimDto(
             String workspaceDir, String branchName, String previousFailure, String sessionId,
             String continuationInput) {
         this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false,
-                promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, previousFailure, sessionId,
+                promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, 2, previousFailure, sessionId,
                 continuationInput, null, List.of(), List.of(), List.of());
     }
 }

@@ -19,6 +19,8 @@
 
 ## 状态与验收
 
+- Jenkins 由官方简体中文本地化与 Locale 插件提供资源，JCasC 固定 `zh_CN` 并忽略浏览器语言；成员从 WAO
+  打开控制器时常用导航、任务页和构建页显示中文，未翻译的插件专有名词与历史日志允许保留原文（见 ADR-139）。
 - WAO 会话有效时，访问 `/jenkins/job/wao-main-cd/` 不出现 Jenkins 登录页，页面身份等于当前成员 id。
 - 普通成员能读取最近构建和控制台日志，但不能构建、重放、取消或配置任务；管理员保留这些操作。
 - 清除 WAO 会话后访问 `/jenkins/` 返回 401；伪造 `X-Forwarded-User`、`X-Forwarded-Groups` 或

@@ -69,7 +69,7 @@ class AiTaskAutoRunServiceTest {
         when(runMapper.selectCount(any())).thenReturn(0L);
         when(projectMapper.selectById("p-wao")).thenReturn(project);
         when(runs.getConfig("p-wao")).thenReturn(new AiProjectConfigDto(
-                "p-wao", true, "https://github.com/example/wao.git", "main", "wao", "codex", null, 2));
+                "p-wao", true, "https://github.com/example/wao.git", "main", "wao", "codex", null, 2, 2));
     }
 
     @Test

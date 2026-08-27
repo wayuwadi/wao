@@ -515,6 +515,8 @@ export interface AiProjectConfig {
   defaultEngine: AiEngine
   preferredRunnerId: string | null
   maxParallelRuns: number
+  /** AI CLI 异常或非零退出后，在同一次运行内自动重试的次数。 */
+  failureRetryCount: number
 }
 
 /** 一台已和 WAO 配对的执行电脑，可能同时装了 Codex 和 Claude Code。 */

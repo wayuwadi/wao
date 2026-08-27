@@ -292,6 +292,8 @@ class DeploymentRoutingConfigTest {
                 .contains("- Overall/Administer")
                 .contains("name: wao-members")
                 .contains("- Job/Read")
+                .contains("systemLocale: zh_CN")
+                .contains("ignoreAcceptLanguage: true")
                 .contains("url: https://wao.wayuwa.cn/jenkins/");
         assertThat(updater)
                 .contains("chroot /host /usr/bin/nsenter --target 1 --mount --pid --")
@@ -312,7 +314,9 @@ class DeploymentRoutingConfigTest {
                 .doesNotContain("/etc/jenkins/secrets:/host");
         assertThat(plugins)
                 .contains("reverse-proxy-auth-plugin:257.v7dc0e405b_624")
-                .contains("matrix-auth:3.3");
+                .contains("matrix-auth:3.3")
+                .contains("localization-zh-cn:371.v23851f835d6b_")
+                .contains("locale:641.v84f22d75fd8b_");
         assertThat(backup)
                 .contains("X-Forwarded-User: wao-controller-backup")
                 .contains("X-Forwarded-Groups: wao-members")
