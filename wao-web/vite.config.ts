@@ -5,13 +5,18 @@ import vue from '@vitejs/plugin-vue'
 import { webUpdateNotice } from '@plugin-web-update-notification/vite'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
+const buildCommitSha = process.env.WAO_GIT_SHA?.trim()
+const buildVersion = buildCommitSha ? buildCommitSha.slice(0, 7) : undefined
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
     vueDevTools(),
     webUpdateNotice({
-      versionType: 'git_commit_hash',
+      ...(buildVersion
+        ? { versionType: 'custom', customVersion: buildVersion }
+        : { versionType: 'git_commit_hash' }),
       checkInterval: 60_000,
       hiddenDefaultNotification: true,
       checkOnLoadFileError: false,

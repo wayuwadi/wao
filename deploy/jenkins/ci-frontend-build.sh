@@ -23,6 +23,7 @@ run_npm() {
     --user "$(id -u):$(id -g)" \
     -e HOME=/tmp/home \
     -e npm_config_cache=/tmp/npm-cache \
+    -e WAO_GIT_SHA="${WAO_GIT_SHA:-}" \
     -v "$PWD:/workspace" \
     -v "$cache:/tmp/npm-cache" \
     -w "/workspace/$project" \
