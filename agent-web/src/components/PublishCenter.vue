@@ -2,15 +2,19 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   createPublishTask, getAuthorizeUrl, getPublishCenter, submitPublishTask,
-  unbindAccount, updatePublishTask, uploadMedia,
+  listMedia, unbindAccount, updatePublishTask, uploadMedia,
 } from '@/api/publish'
 import {
   canSubmitPublish, formatBytes, isPublishEditable, isPublishInFlight, publishStatusLabel,
 } from '@/publishStatus'
-import type { PlatformSummary, PublishCenter, PublishTask } from '@/types'
+import type { MediaAsset, PlatformSummary, PublishCenter, PublishTask } from '@/types'
 
-const props = defineProps<{ initialTopic?: string }>()
+type CenterMode = 'full' | 'accounts' | 'content' | 'publishing'
+
+const props = withDefaults(defineProps<{ initialTopic?: string; mode?: CenterMode }>(), { mode: 'full' })
+const emit = defineEmits<{ 'topic-consumed': []; 'dirty-change': [dirty: boolean] }>()
 const center = ref<PublishCenter | null>(null)
+const mediaAssets = ref<MediaAsset[]>([])
 const selectedId = ref('')
 const loading = ref(true)
 const busy = ref('')
@@ -26,10 +30,21 @@ const selectedPlatform = computed(() => platform(selected.value?.platform))
 const editable = computed(() => !!selected.value && isPublishEditable(selected.value.status))
 const canPublish = computed(() => !!selected.value && !!selectedPlatform.value
   && canSubmitPublish(selected.value.status, selectedPlatform.value.publishSupported))
+const showAccounts = computed(() => props.mode === 'full' || props.mode === 'accounts')
+const showCreate = computed(() => props.mode === 'full' || props.mode === 'content')
+const showWorkspace = computed(() => props.mode === 'full' || props.mode === 'content' || props.mode === 'publishing')
+const showPublishControls = computed(() => props.mode === 'full' || props.mode === 'publishing')
+const loadingLabel = computed(() => ({
+  accounts: '正在读取真实账号状态…',
+  content: '正在读取真实内容…',
+  publishing: '正在读取真实发布状态…',
+  full: '正在读取真实发布状态…',
+})[props.mode])
 
 watch(() => props.initialTopic, (topic) => {
   if (topic) createForm.topic = topic
 }, { immediate: true })
+watch(dirty, (value) => emit('dirty-change', value))
 
 function platform(code?: string): PlatformSummary | undefined {
   return center.value?.platforms.find((item) => item.platform === code)
@@ -52,6 +67,7 @@ async function refresh(silent = false) {
   error.value = ''
   try {
     center.value = await getPublishCenter()
+    if (showWorkspace.value) mediaAssets.value = await listMedia()
     const current = center.value.tasks.find((task) => task.id === selectedId.value)
     if (!dirty.value && current) selectTask(current, true)
     else if (!selectedId.value && center.value.tasks[0]) selectTask(center.value.tasks[0], true)
@@ -74,6 +90,7 @@ async function createTask() {
     const current = center.value?.tasks.find((task) => task.id === created.id) ?? created
     selectTask(current, true)
     createForm.topic = ''
+    emit('topic-consumed')
     message.value = created.status === 'GENERATING' ? '已开始生成文案' : '已创建草稿，请人工完善后保存'
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '创建发布任务失败'
@@ -119,6 +136,7 @@ async function upload(event: Event) {
   error.value = ''
   try {
     const asset = await uploadMedia(file)
+    mediaAssets.value = [asset, ...mediaAssets.value.filter((item) => item.id !== asset.id)]
     editForm.mediaAssetId = asset.id
     dirty.value = true
     message.value = `素材已上传：${asset.originalName}（${formatBytes(asset.byteSize)}），请保存任务`
@@ -177,22 +195,33 @@ async function unbind(id: string) {
 
 onMounted(async () => {
   await refresh()
-  pollTimer = window.setInterval(() => {
-    if (center.value?.tasks.some((task) => isPublishInFlight(task.status))) void refresh(true)
-  }, 3000)
+  if (showWorkspace.value) {
+    pollTimer = window.setInterval(() => {
+      if (center.value?.tasks.some((task) => isPublishInFlight(task.status))) void refresh(true)
+    }, 3000)
+  }
 })
-onBeforeUnmount(() => { if (pollTimer) window.clearInterval(pollTimer) })
+function warnBeforeUnload(event: BeforeUnloadEvent) {
+  if (!dirty.value) return
+  event.preventDefault()
+}
+
+onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
+onBeforeUnmount(() => {
+  if (pollTimer) window.clearInterval(pollTimer)
+  window.removeEventListener('beforeunload', warnBeforeUnload)
+})
 </script>
 
 <template>
   <div class="publish-center">
     <div v-if="message" class="notice"><i class="ri-information-line"></i>{{ message }}</div>
     <div v-if="error" class="error" role="alert"><i class="ri-error-warning-line"></i><span>{{ error }}</span><button @click="refresh()">重试</button></div>
-    <div v-if="loading" class="loading"><span></span>正在读取真实发布状态…</div>
+    <div v-if="loading" class="loading"><span></span>{{ loadingLabel }}</div>
 
     <template v-else-if="center">
-      <section class="capabilities">
-        <article class="ai-card" :class="{ unavailable: !center.ai.available }">
+      <section v-if="showAccounts" class="capabilities">
+        <article v-if="mode === 'full'" class="ai-card" :class="{ unavailable: !center.ai.available }">
           <i class="ri-sparkling-2-line"></i><div><strong>AI 文案</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model}` : '尚未配置模型，只能手工写稿' }}</span></div>
         </article>
         <article v-for="item in center.platforms" :key="item.platform" class="platform-card">
@@ -204,26 +233,26 @@ onBeforeUnmount(() => { if (pollTimer) window.clearInterval(pollTimer) })
         </article>
       </section>
 
-      <section class="create-card">
-        <div><strong>新建发布任务</strong><span>AI 生成后仍需人工确认；没有官方接口的平台只保留成稿和导出。</span></div>
+      <section v-if="showCreate" class="create-card">
+        <div><strong>新建内容</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model} 可生成初稿，仍需人工审核。` : '尚未配置模型，创建后可手工写稿。' }}</span></div>
         <input v-model="createForm.topic" maxlength="200" placeholder="这次想创作什么？" @keyup.enter="createTask" />
         <select v-model="createForm.platform"><option v-for="item in center.platforms" :key="item.platform" :value="item.platform">{{ item.label }}</option></select>
         <label><input v-model="createForm.generateCopy" type="checkbox" :disabled="!center.ai.available" /> AI 生成</label>
         <button :disabled="busy === 'create' || !createForm.topic.trim()" @click="createTask">{{ busy === 'create' ? '创建中…' : '开始创作' }}</button>
       </section>
 
-      <div class="workspace">
+      <div v-if="showWorkspace" class="workspace">
         <aside class="task-list">
-          <div class="panel-head"><strong>最近任务</strong><button @click="refresh()"><i class="ri-refresh-line"></i></button></div>
+          <div class="panel-head"><strong>{{ mode === 'publishing' ? '待发布与历史内容' : '最近内容' }}</strong><button @click="refresh()"><i class="ri-refresh-line"></i></button></div>
           <button v-for="task in center.tasks" :key="task.id" class="task" :class="{ active: selectedId === task.id }" @click="selectTask(task)">
             <span><strong>{{ task.title || task.topic }}</strong><small>{{ task.platformLabel }} · {{ publishStatusLabel(task.status) }}</small></span><em>{{ task.progress }}%</em>
           </button>
-          <div v-if="!center.tasks.length" class="empty">还没有发布任务，从上方创建第一条。</div>
+          <div v-if="!center.tasks.length" class="empty">{{ mode === 'publishing' ? '还没有可发布的内容，请先到内容管理创建。' : '还没有内容，从上方创建第一条。' }}</div>
         </aside>
 
         <main v-if="selected" class="editor">
           <div class="editor-head">
-            <div><strong>{{ selected.platformLabel }}发布稿</strong><span :class="`status ${selected.status.toLowerCase()}`">{{ publishStatusLabel(selected.status) }}</span></div>
+            <div><strong>{{ selected.platformLabel }}{{ mode === 'publishing' ? '发布稿' : '内容稿' }}</strong><span :class="`status ${selected.status.toLowerCase()}`">{{ publishStatusLabel(selected.status) }}</span></div>
             <small>v{{ selected.version }} · {{ dirty ? '有未保存修改' : '已与服务端同步' }}</small>
           </div>
           <div v-if="selected.errorMessage" class="task-error">{{ selected.errorMessage }}</div>
@@ -231,13 +260,16 @@ onBeforeUnmount(() => { if (pollTimer) window.clearInterval(pollTimer) })
           <label>正文<textarea v-model="editForm.content" rows="10" :disabled="!editable" @input="markDirty"></textarea></label>
           <label>标签<input v-model="editForm.tags" placeholder="用空格分隔" :disabled="!editable" @input="markDirty" /></label>
           <div class="editor-grid">
-            <label>发布账号<select v-model="editForm.platformAccountId" :disabled="!editable" @change="markDirty"><option value="">暂不选择</option><option v-for="account in selectedPlatform?.accounts" :key="account.id" :value="account.id">{{ account.displayName }} · {{ account.status }}</option></select></label>
-            <label>媒体素材<span class="file"><input type="file" :disabled="!editable || busy === 'upload'" @change="upload" />{{ busy === 'upload' ? '上传中…' : selected.mediaName || (editForm.mediaAssetId ? '已选择新素材' : '选择文件') }}</span></label>
+            <label v-if="showPublishControls">发布账号<select v-model="editForm.platformAccountId" :disabled="!editable" @change="markDirty"><option value="">暂不选择</option><option v-for="account in selectedPlatform?.accounts" :key="account.id" :value="account.id">{{ account.displayName }} · {{ account.status }}</option></select></label>
+            <label>素材库<select v-model="editForm.mediaAssetId" :disabled="!editable" @change="markDirty"><option value="">暂不选择</option><option v-for="asset in mediaAssets" :key="asset.id" :value="asset.id">{{ asset.originalName }} · {{ formatBytes(asset.byteSize) }}</option></select></label>
+            <label>上传新素材<span class="file"><input type="file" :disabled="!editable || busy === 'upload'" @change="upload" />{{ busy === 'upload' ? '上传中…' : '选择图片或视频' }}</span></label>
           </div>
           <div class="actions">
             <button class="secondary" :disabled="!editable || !dirty || busy === 'save'" @click="saveTask">{{ busy === 'save' ? '保存中…' : '保存审核稿' }}</button>
-            <button v-if="selectedPlatform?.publishSupported" :disabled="!canPublish || dirty || busy === 'submit'" @click="submitTask">{{ busy === 'submit' ? '提交中…' : `确认发布到${selected.platformLabel}` }}</button>
-            <span v-else>{{ selectedPlatform?.note }}</span>
+            <template v-if="showPublishControls">
+              <button v-if="selectedPlatform?.publishSupported" :disabled="!canPublish || dirty || busy === 'submit'" @click="submitTask">{{ busy === 'submit' ? '提交中…' : `确认发布到${selected.platformLabel}` }}</button>
+              <span v-else>{{ selectedPlatform?.note }}</span>
+            </template>
           </div>
         </main>
         <main v-else class="editor empty">选择一条任务查看成稿；创建后也会自动打开。</main>

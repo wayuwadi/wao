@@ -7,11 +7,13 @@ import cn.wayuwa.wao.agent.domain.MediaAssetEntity;
 import cn.wayuwa.wao.agent.dto.MediaAssetDto;
 import cn.wayuwa.wao.agent.mapper.MediaAssetMapper;
 import cn.wayuwa.wao.agent.platform.MediaKind;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -70,8 +72,19 @@ public class MediaAssetService {
         entity.setNodeId(node.resolved());
         entity.setCreatedAt(LocalDateTime.now());
         mediaMapper.insert(entity);
-        return new MediaAssetDto(entity.getId(), entity.getKind(), entity.getOriginalName(),
-                entity.getContentType(), entity.getByteSize());
+        return toDto(entity);
+    }
+
+    /** 按创建时间倒序读取当前账号工作区最近的真实素材。 */
+    public List<MediaAssetDto> list(String accountId) {
+        String workspaceId = accounts.workspaceId(accountId);
+        return mediaMapper.selectList(new LambdaQueryWrapper<MediaAssetEntity>()
+                        .eq(MediaAssetEntity::getWorkspaceId, workspaceId)
+                        .orderByDesc(MediaAssetEntity::getCreatedAt)
+                        .last("LIMIT 100"))
+                .stream()
+                .map(this::toDto)
+                .toList();
     }
 
     /** 读取本工作区的素材记录。 */
@@ -111,5 +124,10 @@ public class MediaAssetService {
         if (!StringUtils.hasText(fileName)) return "media";
         String name = Paths.get(fileName.replace('\\', '/')).getFileName().toString();
         return name.length() > 200 ? name.substring(name.length() - 200) : name;
+    }
+
+    private MediaAssetDto toDto(MediaAssetEntity entity) {
+        return new MediaAssetDto(entity.getId(), entity.getKind(), entity.getOriginalName(),
+                entity.getContentType(), entity.getByteSize(), entity.getCreatedAt());
     }
 }

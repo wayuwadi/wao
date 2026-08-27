@@ -125,6 +125,7 @@ export interface MediaAsset {
   originalName: string
   contentType: string
   byteSize: number
+  createdAt: string
 }
 
 export interface AiStatus {
