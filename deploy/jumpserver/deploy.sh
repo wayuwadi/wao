@@ -123,11 +123,8 @@ set_config DOMAINS 'jms.wayuwa.cn:443'
 set_config BASE_SITE_URL 'https://jms.wayuwa.cn'
 set_config HTTP_PORT '127.0.0.1:18080'
 
-if [ ! -f "$asset_private_key" ]; then
-  sudo -n -u wadi ssh-keygen -q -t ed25519 -N '' -C 'wao-jumpserver-managed' -f "$state_root/wao-assets"
-  sudo -n install -m 0600 -o root -g root "$state_root/wao-assets" "$asset_private_key"
-  sudo -n install -m 0644 -o root -g root "$state_root/wao-assets.pub" "$asset_public_key"
-fi
+sh "$project_root/deploy/jumpserver/ensure-asset-key.sh" \
+  "$state_root" "$asset_private_key" "$asset_public_key"
 install -d -m 0700 "$HOME/.ssh"
 touch "$HOME/.ssh/authorized_keys"
 chmod 0600 "$HOME/.ssh/authorized_keys"
