@@ -11,7 +11,7 @@ const label = (status?: AiSkillAudit['status']) => ({ loaded: '已加载', faile
     <div class="skill-title">本次固定 Skill</div>
     <div class="skill-list">
       <div v-for="skill in skills" :key="skill.versionId" class="skill-row">
-        <span><b>{{ skill.displayName }}</b><small>v{{ skill.version }} · {{ skill.sha256.slice(0, 12) }}</small></span>
+        <span><b>{{ skill.displayName }}</b><small>{{ skill.activationScope === 'WAO_APPLICATION' ? 'WAO 默认' : '项目设置' }} · v{{ skill.version }} · {{ skill.sha256.slice(0, 12) }}</small></span>
         <em :class="audit(skill.versionId)?.status || 'pending'" :title="audit(skill.versionId)?.message || '等待 Runner 装配'">
           {{ audit(skill.versionId) ? label(audit(skill.versionId)?.status) : '等待加载' }}
         </em>

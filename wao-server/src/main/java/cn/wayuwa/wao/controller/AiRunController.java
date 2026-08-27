@@ -31,6 +31,7 @@ import cn.wayuwa.wao.dto.PairedAiRunnerDto;
 import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.SaveProjectSkillsRequest;
+import cn.wayuwa.wao.dto.SaveWaoApplicationSkillsRequest;
 import cn.wayuwa.wao.dto.AiSkillCapabilityDto;
 import cn.wayuwa.wao.dto.SaveAiEvolutionScheduleRequest;
 import cn.wayuwa.wao.dto.SaveAiTaskAutoRunPolicyRequest;
@@ -118,6 +119,19 @@ public class AiRunController {
     @GetMapping("/skills/available")
     public ApiResponse<List<AiSkillCapabilityDto>> availableSkills() {
         return ApiResponse.ok(skillCapabilities.available());
+    }
+
+    /** 返回 WAO 应用默认装配的固定审核 Skill。 */
+    @GetMapping("/application-skills")
+    public ApiResponse<List<AiSkillCapabilityDto>> applicationSkills() {
+        return ApiResponse.ok(skillCapabilities.waoApplicationSkills());
+    }
+
+    /** 管理员整体保存 WAO 应用默认 Skill；变化只影响之后新建的运行。 */
+    @PutMapping("/application-skills")
+    public ApiResponse<List<AiSkillCapabilityDto>> saveApplicationSkills(
+            @Valid @RequestBody SaveWaoApplicationSkillsRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(skillCapabilities.saveWaoApplicationSkills(request.versionIds(), currentMember.id(http)));
     }
 
     /** 返回项目固定启用的审核 Skill 版本。 */

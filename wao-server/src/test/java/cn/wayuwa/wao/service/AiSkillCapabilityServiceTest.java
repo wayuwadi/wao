@@ -9,15 +9,20 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.UnauthorizedException;
+import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.ProjectSkillBindingEntity;
 import cn.wayuwa.wao.domain.SkillEntity;
 import cn.wayuwa.wao.domain.SkillVersionEntity;
+import cn.wayuwa.wao.domain.WaoApplicationSkillBindingEntity;
+import cn.wayuwa.wao.mapper.MemberMapper;
 import cn.wayuwa.wao.dto.AiSkillAuditDto;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.ProjectSkillBindingMapper;
 import cn.wayuwa.wao.mapper.SkillMapper;
 import cn.wayuwa.wao.mapper.SkillVersionMapper;
+import cn.wayuwa.wao.mapper.WaoApplicationSkillBindingMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,11 +30,13 @@ import org.junit.jupiter.api.Test;
 class AiSkillCapabilityServiceTest {
     private final ProjectSkillBindingMapper bindings=mock(ProjectSkillBindingMapper.class);
     private final ProjectMapper projects=mock(ProjectMapper.class);
+    private final WaoApplicationSkillBindingMapper applicationBindings=mock(WaoApplicationSkillBindingMapper.class);
+    private final MemberMapper members=mock(MemberMapper.class);
     private final SkillMapper skills=mock(SkillMapper.class);
     private final SkillVersionMapper versions=mock(SkillVersionMapper.class);
-    private final AiSkillCapabilityService service=new AiSkillCapabilityService(bindings,projects,skills,versions,new ObjectMapper());
+    private final AiSkillCapabilityService service=new AiSkillCapabilityService(bindings,projects,applicationBindings,members,skills,versions,new ObjectMapper());
 
-    @BeforeEach void projectExists(){ProjectEntity project=new ProjectEntity();project.setId("p1");when(projects.selectById("p1")).thenReturn(project);when(bindings.selectList(any())).thenReturn(List.of());}
+    @BeforeEach void projectExists(){ProjectEntity project=new ProjectEntity();project.setId("p1");when(projects.selectById("p1")).thenReturn(project);when(bindings.selectList(any())).thenReturn(List.of());when(applicationBindings.selectList(any())).thenReturn(List.of());}
 
     @Test void savesOnlyCurrentPublishedVersionAndSnapshotsIt() {
         SkillEntity skill=skill("skill-1","sv-1","PUBLISHED"); SkillVersionEntity version=version("sv-1","skill-1","PUBLISHED");
@@ -64,6 +71,38 @@ class AiSkillCapabilityServiceTest {
 
         assertThat(result).hasSize(1);assertThat(result.get(0).displayName()).isEqualTo("代码审查");
         assertThat(result.get(0).version()).isEqualTo("1.0.0");
+    }
+
+    @Test void administratorSavesWaoDefaultsAsFixedPublishedVersions() {
+        MemberEntity admin=new MemberEntity();admin.setId("admin");admin.setRole("管理员");when(members.selectById("admin")).thenReturn(admin);
+        SkillEntity skill=skill("skill-1","sv-1","PUBLISHED");SkillVersionEntity version=version("sv-1","skill-1","PUBLISHED");
+        when(skills.selectById("skill-1")).thenReturn(skill);when(versions.findMeta("sv-1")).thenReturn(version);
+
+        var saved=service.saveWaoApplicationSkills(List.of("sv-1"),"admin");
+
+        assertThat(saved).extracting("activationScope").containsExactly("WAO_APPLICATION");
+        verify(applicationBindings).deleteByApplication("wao");verify(applicationBindings).insert(any(WaoApplicationSkillBindingEntity.class));
+    }
+
+    @Test void regularMemberCannotChangeWaoDefaults() {
+        MemberEntity member=new MemberEntity();member.setId("member-1");member.setRole("成员");when(members.selectById("member-1")).thenReturn(member);
+
+        assertThatThrownBy(()->service.saveWaoApplicationSkills(List.of(),"member-1"))
+                .isInstanceOf(UnauthorizedException.class).hasMessageContaining("只有管理员");
+    }
+
+    @Test void projectVersionOverridesWaoDefaultForTheSameSkill() {
+        WaoApplicationSkillBindingEntity application=new WaoApplicationSkillBindingEntity();application.setSkillId("skill-1");application.setSkillVersionId("sv-1");
+        ProjectSkillBindingEntity project=new ProjectSkillBindingEntity();project.setSkillId("skill-1");project.setSkillVersionId("sv-2");
+        when(applicationBindings.selectList(any())).thenReturn(List.of(application));when(bindings.selectList(any())).thenReturn(List.of(project));
+        when(skills.selectById("skill-1")).thenReturn(skill("skill-1","sv-2","PUBLISHED"));
+        when(versions.findMeta("sv-1")).thenReturn(version("sv-1","skill-1","PUBLISHED"));
+        when(versions.findMeta("sv-2")).thenReturn(version("sv-2","skill-1","PUBLISHED"));
+
+        var manifest=service.manifest(service.snapshot("p1"));
+
+        assertThat(manifest).hasSize(1);assertThat(manifest.get(0).versionId()).isEqualTo("sv-2");
+        assertThat(manifest.get(0).activationScope()).isEqualTo("PROJECT");
     }
 
     private static SkillEntity skill(String id,String published,String status){SkillEntity value=new SkillEntity();value.setId(id);value.setPublishedVersionId(published);value.setStatus(status);return value;}

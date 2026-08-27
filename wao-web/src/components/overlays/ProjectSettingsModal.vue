@@ -5,6 +5,7 @@ import { toast } from '@/composables/toast'
 import {
   createAiPairCode,
   fetchAvailableAiSkills,
+  fetchWaoApplicationSkills,
   fetchAiProjectConfig,
   fetchAiProjectSkills,
   fetchAiRunners,
@@ -37,6 +38,7 @@ const runners = ref<AiRunner[]>([])
 const pairCode = ref('')
 const pairExpiresAt = ref('')
 const availableSkills = ref<AiSkillCapability[]>([])
+const waoApplicationSkills = ref<AiSkillCapability[]>([])
 const selectedSkillVersions = ref<string[]>([])
 
 function toggleSkill(skill: AiSkillCapability, checked: boolean) {
@@ -93,10 +95,11 @@ async function remove() {
 async function loadAiConfig() {
   aiLoading.value = true
   try {
-    const [config, nodes, skills, enabledSkills] = await Promise.all([
+    const [config, nodes, skills, applicationSkills, enabledSkills] = await Promise.all([
       fetchAiProjectConfig(props.project.id),
       fetchAiRunners(),
       fetchAvailableAiSkills(),
+      fetchWaoApplicationSkills(),
       fetchAiProjectSkills(props.project.id),
     ])
     aiEnabled.value = config.enabled
@@ -107,6 +110,7 @@ async function loadAiConfig() {
     preferredRunnerId.value = config.preferredRunnerId ?? ''
     maxParallelRuns.value = config.maxParallelRuns
     runners.value = nodes
+    waoApplicationSkills.value = applicationSkills
     const availableVersionIds = new Set(skills.map((item) => item.versionId))
     availableSkills.value = [...skills, ...enabledSkills.filter((item) => !availableVersionIds.has(item.versionId))]
     selectedSkillVersions.value = enabledSkills.map((item) => item.versionId)
@@ -229,7 +233,10 @@ onMounted(loadAiConfig)
           <div><b>项目 Skill</b><span>固定审核版本，只在隔离的 Codex 运行中加载；升级不会改写历史运行。</span></div>
           <RouterLink to="/wao/skills" target="_blank">打开 Skill 市场</RouterLink>
         </div>
-        <div v-if="defaultEngine !== 'codex'" class="skill-engine-warning">项目 Skill 当前只支持 Codex；改用其它默认工具前请先取消全部绑定。</div>
+        <div v-if="waoApplicationSkills.length" class="application-skill-note">
+          WAO 默认将加载：{{ waoApplicationSkills.map((item) => `${item.displayName} v${item.version}`).join('、') }}。项目选择同一 Skill 时以项目版本为准。
+        </div>
+        <div v-if="defaultEngine !== 'codex' && (selectedSkillVersions.length || waoApplicationSkills.length)" class="skill-engine-warning">WAO 默认或项目 Skill 当前只支持 Codex；其它工具的运行会在入队前明确拒绝。</div>
         <div v-if="!availableSkills.length" class="skill-empty">市场暂无可启用的 Codex Skill，可先发布并通过审核。</div>
         <label v-for="skill in availableSkills" v-else :key="skill.versionId" class="skill-option">
           <input type="checkbox" :value="skill.versionId" :checked="selectedSkillVersions.includes(skill.versionId)" :disabled="defaultEngine !== 'codex' || (selectedSkillVersions.length >= 10 && !selectedSkillVersions.includes(skill.versionId) && !availableSkills.some((item) => item.skillId === skill.skillId && selectedSkillVersions.includes(item.versionId)))" @change="toggleSkill(skill, ($event.target as HTMLInputElement).checked)" />
@@ -473,6 +480,7 @@ onMounted(loadAiConfig)
 .skill-option em { font-size: 11px; color: var(--wao-text-weak); font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .skill-empty { padding: 12px 0 2px; }
 .skill-engine-warning { margin-top: 8px; color: var(--wao-warning-strong); font-size: 11px; }
+.application-skill-note { margin-top: 8px; padding: 8px 9px; border-radius: 8px; background: var(--wao-success-bg); color: var(--wao-success-strong); font-size: 11px; line-height: 1.5; }
 .ai-head > div,
 .runner-box > div {
   flex: 1;
