@@ -75,7 +75,7 @@ class AutomationServiceTest {
     }
 
     @Test
-    void runJobOnHealthyStatusSucceeds() {
+    void runJobWithoutRealHandlerFailsClosed() {
         AutomationJobEntity e = job("正常");
         when(jobMapper.selectById("j1")).thenReturn(e);
         when(runMapper.selectList(any())).thenReturn(List.of());
@@ -83,12 +83,13 @@ class AutomationServiceTest {
         AutomationJobDto dto = service.runJob("j1", "wg");
 
         assertThat(dto.status()).isEqualTo("正常");
-        assertThat(dto.last()).contains("成功");
+        assertThat(dto.last()).contains("失败 · 未配置真实执行器");
 
         ArgumentCaptor<cn.wayuwa.wao.domain.AutomationRunEntity> saved = ArgumentCaptor.captor();
         verify(runMapper).insert(saved.capture());
         assertThat(saved.getValue().getRunAt()).isNotNull();
         assertThat(saved.getValue().getRunTimeLabel()).matches("\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}");
+        assertThat(saved.getValue().getDurationMs()).isZero();
     }
 
     @Test
@@ -174,6 +175,9 @@ class AutomationServiceTest {
         AutomationJobDto dto = withHandler.runJob("j1", "wg");
 
         assertThat(dto.last()).contains("成功 · 共 3 条消息");
+        ArgumentCaptor<cn.wayuwa.wao.domain.AutomationRunEntity> saved = ArgumentCaptor.captor();
+        verify(runMapper).insert(saved.capture());
+        assertThat(saved.getValue().getDurationMs()).isNotNegative();
     }
 
     @Test

@@ -118,20 +118,36 @@ const aoRuns = computed(() =>
 )
 
 async function onRun(id: string) {
-  await data.runJob(id)
-  toast('已手动触发', 'ri-play-line')
+  try {
+    await data.runJob(id)
+    toast('已手动触发真实执行器', 'ri-play-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '自动化运行失败，请重试', 'ri-error-warning-line')
+  }
 }
 async function onFix(id: string) {
-  await data.reauthJob(id)
-  toast('已重新授权', 'ri-tools-line')
+  try {
+    await data.reauthJob(id)
+    toast('已重新授权', 'ri-tools-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '重新授权失败，请重试', 'ri-error-warning-line')
+  }
 }
 async function onPause(id: string) {
-  await data.pauseJob(id)
-  toast('已暂停，将不再按计划运行', 'ri-pause-circle-line')
+  try {
+    await data.pauseJob(id)
+    toast('已暂停，将不再按计划运行', 'ri-pause-circle-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '暂停失败，请重试', 'ri-error-warning-line')
+  }
 }
 async function onResume(id: string) {
-  await data.resumeJob(id)
-  toast('已恢复', 'ri-play-circle-line')
+  try {
+    await data.resumeJob(id)
+    toast('已恢复', 'ri-play-circle-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '恢复失败，请重试', 'ri-error-warning-line')
+  }
 }
 async function createAuto() {
   if (!newName.value.trim()) return

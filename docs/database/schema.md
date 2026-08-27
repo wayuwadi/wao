@@ -250,7 +250,7 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 | steps_json | JSON | 执行步骤（描述性文本数组，不是可执行代码） |
 | next_fire_at | DATETIME NULL | 下次计划触发时间，调度器轮询用 |
 | ord | INT | 展示顺序 |
-| handler | VARCHAR(64) NULL | 服务端真实执行器名（如 `feishu-chat-sync`）；为空表示模拟运行 |
+| handler | VARCHAR(64) NULL | 服务端真实执行器名（如 `feishu-chat-sync`）；为空或未登记时执行失败关闭 |
 
 ### automation_run（运行记录）
 | 列 | 类型 | 说明 |
@@ -261,10 +261,10 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 | run_at | DATETIME NULL | 上海时区的真实开始时间；接口按当前日期动态显示“今天 / 昨天 / M月d日” |
 | result | VARCHAR(64) | 结果文案（含「成功」/「失败」关键字供前端着色） |
 | executor_id | VARCHAR(32) NULL | 手动触发的成员；定时任务为空，界面显示「定时任务」 |
-| duration_ms | INT | 模拟耗时 |
+| duration_ms | INT | 服务端用单调时钟实测的执行耗时；旧记录可为空或为历史估算值 |
 | ord | INT | 顺序（0 = 最近一次） |
 
-执行引擎：`JobSchedulerService` 每分钟轮询到期的 Cron 任务并调用 `AutomationService.executeScheduled`。下一次触发时间从原计划点推进，延迟或停机恢复后会逐次补跑而不跳过业务日期；执行器同时收到该次计划时间。`handler` 非空的任务交给对应的 `JobHandler` 真的执行（目前只有 `feishu-chat-sync`，见 ADR-019），运行记录写执行器返回的结果；`handler` 为空的任务仍是「真实触发时机 + 模拟执行结果」——`steps_json` 只是描述性文本，NAS / 邮箱等外部系统尚未接入。
+执行引擎：`JobSchedulerService` 每分钟轮询到期的 Cron 任务并调用 `AutomationService.executeScheduled`。下一次触发时间从原计划点推进，延迟或停机恢复后会逐次补跑而不跳过业务日期；执行器同时收到该次计划时间。任务交给 `handler` 对应的 `JobHandler` 真实执行，运行记录保存执行器返回结果与单调时钟实测耗时；`handler` 为空或未登记时写入“失败 · 未配置真实执行器”，不把 `steps_json` 描述冒充执行结果。V107 精确删除 V8 写入的四条无真实数据源演示任务及其演示运行记录，已有飞书同步、HTTP 巡检和共享聊天核对任务不受影响。
 
 ### system_setting（系统级配置，V17）
 | 列 | 类型 | 说明 |
@@ -958,6 +958,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V100__shared_chat_review_integration.sql`：聊天复盘共享消息范围、托管报告与知识库文档关联（见 ADR-130）。
 - `V101__configurable_system_periodic_report.sql`：为系统周期报告补充当次汇总项快照，存量报告回填任务与 AI Run 全量汇总语义（见 ADR-109）。
 - `V104__configurable_chat_review_ai.sql`：固化问问 AI / 复盘的只读能力，新增全局自动复盘策略和调度索引（见 ADR-137）。
+- `V107__remove_mock_automation_jobs.sql`：删除 V8 的四条演示自动化及演示运行记录；未知执行器由服务层失败关闭。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
