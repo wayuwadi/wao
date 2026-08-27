@@ -97,6 +97,13 @@ export const saveAiProjectConfig = (
 export const fetchAvailableAiSkills = () =>
   data<AiSkillCapability[]>(http.get('/api/ai/skills/available'))
 
+export const fetchWaoApplicationSkills = () =>
+  data<AiSkillCapability[]>(http.get('/api/ai/application-skills'))
+
+/** 整体替换 WAO 默认固定版本；变化只影响之后新建的 AI Run。 */
+export const saveWaoApplicationSkills = (versionIds: string[]) =>
+  data<AiSkillCapability[]>(http.put('/api/ai/application-skills', { versionIds }))
+
 export const fetchAiProjectSkills = (projectId: string) =>
   data<AiSkillCapability[]>(http.get(`/api/ai/projects/${projectId}/skills`))
 

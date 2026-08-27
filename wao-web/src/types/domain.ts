@@ -591,7 +591,7 @@ export interface AiRunUsage {
   recorded: boolean
 }
 
-/** 项目绑定并在 AI Run 入队时固化的审核 Skill。 */
+/** WAO 默认或项目绑定，并在 AI Run 入队时固化的审核 Skill。 */
 export interface AiSkillCapability {
   skillId: string
   versionId: string
@@ -600,6 +600,7 @@ export interface AiSkillCapability {
   version: string
   sha256: string
   compatiblePlatforms: string[]
+  activationScope?: 'WAO_APPLICATION' | 'PROJECT' | null
 }
 
 export interface AiSkillAudit {

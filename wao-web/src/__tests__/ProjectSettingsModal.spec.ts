@@ -11,6 +11,7 @@ vi.mock('@/api/ai', () => ({
     skillId: 'skill-1', versionId: 'sv-1', displayName: '代码审查', summary: '检查改动风险',
     version: '1.0.0', sha256: 'abc', compatiblePlatforms: ['codex'],
   }]),
+  fetchWaoApplicationSkills: vi.fn(async () => []),
   fetchAiProjectSkills: vi.fn(async () => []),
   fetchAiRunners: vi.fn(async () => []),
   fetchAiProjectConfig: vi.fn(async () => ({

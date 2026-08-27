@@ -16,6 +16,7 @@ import { useNavStore } from '@/stores/nav'
 import { usePreferenceStore, type ControlStyle } from '@/stores/preferences'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import MemoryMcpPanel from '@/components/settings/MemoryMcpPanel.vue'
+import WaoAiCapabilitiesPanel from '@/components/settings/WaoAiCapabilitiesPanel.vue'
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
@@ -39,10 +40,11 @@ const preferences = usePreferenceStore()
 const router = useRouter()
 const route = useRoute()
 const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
+const waoAiCapabilitiesPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['断网时段', 'network-outage'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['断网时段', 'network-outage'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['左下角链接', 'quick-links'], ['Codex 记忆 · MCP', 'memory-mcp']] },
 ] as const
 
@@ -56,6 +58,8 @@ function selectTab(next: string) {
   if (tab.value === 'webhook' && next !== 'webhook' && webhookPanel.value
       && !webhookPanel.value.confirmLeave()) return
   if (tab.value === 'network-outage' && next !== 'network-outage' && !confirmNetworkOutageDraft()) return
+  if (tab.value === 'wao-ai-capabilities' && next !== 'wao-ai-capabilities'
+      && waoAiCapabilitiesPanel.value && !waoAiCapabilitiesPanel.value.confirmLeave()) return
   tab.value = next
 }
 
@@ -65,7 +69,9 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
     return true
   }
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return false
-  return tab.value !== 'network-outage' || confirmNetworkOutageDraft()
+  if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return false
+  return tab.value !== 'wao-ai-capabilities' || !waoAiCapabilitiesPanel.value
+    || waoAiCapabilitiesPanel.value.confirmLeave()
 })
 onUnmounted(removeWebhookRouteGuard)
 const accountForm = reactive({ email: '', currentPassword: '', newPassword: '' })
@@ -877,6 +883,11 @@ function demo(msg: string, icon?: string) {
         <!-- 系统 · AI 账号 -->
         <template v-else-if="tab === 'ai-accounts'">
           <AiAccountPanel />
+        </template>
+
+        <!-- 系统 · WAO AI 能力 -->
+        <template v-else-if="tab === 'wao-ai-capabilities'">
+          <WaoAiCapabilitiesPanel ref="waoAiCapabilitiesPanel" />
         </template>
 
         <!-- 个人资料 -->
