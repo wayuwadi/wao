@@ -26,10 +26,10 @@ verify_ssh 'Linux master' "$WAO_JMS_MASTER_USER" "$WAO_JMS_MASTER_ADDRESS"
 verify_ssh 'Windows node' "$WAO_JMS_WINDOWS_USER" "$WAO_JMS_WINDOWS_ADDRESS"
 verify_ssh 'Cloud ingress' "$WAO_JMS_CLOUD_USER" "$WAO_JMS_CLOUD_ADDRESS"
 
-test "$(sudo -n docker exec jms_core python manage.py shell -c \
+test "$(sudo -n docker exec jms_core python /opt/jumpserver/apps/manage.py shell -c \
   'from assets.models import Host; print(Host.objects.filter(name__startswith="WAO ").count())' \
   | tail -n 1)" = 3
-test "$(sudo -n docker exec jms_core python manage.py shell -c \
+test "$(sudo -n docker exec jms_core python /opt/jumpserver/apps/manage.py shell -c \
   'from accounts.models import Account; print(Account.objects.filter(name="wao-jumpserver").count())' \
   | tail -n 1)" = 3
 echo 'JumpServer three-host inventory and dedicated accounts verified.'
