@@ -121,10 +121,12 @@ with tmp_to_org(Organization.default()):
             "comment": "娃哥、娃弟使用 JumpServer 专用 SSH 密钥管理三台 WAO 主机。",
         },
     )
-    ssh_permission.users.clear()
+    # JumpServer v4.10.19 的权限缓存信号不能处理 clear() 发送的 pk_set=None；
+    # set([]) 只对真实差集发送带主键的 remove 事件，并保持幂等收敛。
+    ssh_permission.users.set([])
     ssh_permission.user_groups.set([group])
     ssh_permission.assets.set(list(registered_assets.values()))
-    ssh_permission.nodes.clear()
+    ssh_permission.nodes.set([])
 
     rdp_permission, _ = AssetPermission.objects.update_or_create(
         name=RDP_PERMISSION_NAME,
@@ -135,9 +137,9 @@ with tmp_to_org(Organization.default()):
             "comment": "娃哥、娃弟连接时手动输入真实 Windows 凭据，不在 JumpServer 中复制密码。",
         },
     )
-    rdp_permission.users.clear()
+    rdp_permission.users.set([])
     rdp_permission.user_groups.set([group])
     rdp_permission.assets.set([registered_assets["WAO Windows 从节点"]])
-    rdp_permission.nodes.clear()
+    rdp_permission.nodes.set([])
 
 print("WAO JumpServer assets and dual-member SSH/RDP grants registered")
