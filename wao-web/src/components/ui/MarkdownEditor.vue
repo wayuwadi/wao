@@ -253,7 +253,10 @@ const editor = useEditor({
       const target = event.target
       if (target instanceof HTMLImageElement) {
         if (props.imageControls && !props.readonly) {
-          editor.value?.commands.setNodeSelection(pos)
+          // 用户在尺寸输入框或“应用”上操作后，ProseMirror 仍保留原来的
+          // NodeSelection，但浏览器焦点已离开编辑器。此时只重复设置相同选区不会产生
+          // 可让 BubbleMenu 重新显示的状态变化，所以点击图片时必须同时取回焦点。
+          editor.value?.chain().focus().setNodeSelection(pos).run()
           return true
         }
         previewImage.value = { src: target.currentSrc || target.src, alt: target.alt }

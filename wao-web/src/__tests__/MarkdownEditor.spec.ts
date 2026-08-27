@@ -267,6 +267,42 @@ describe('MarkdownEditor（所见即所得）', () => {
     w.unmount()
   })
 
+  it('应用尺寸后再次点击同一张图会重新取回焦点以继续调整', async () => {
+    const w = await mountEditor({
+      modelValue: '![截图](/api/images/img1/raw "wao-image-size:640x480")',
+      imageControls: true,
+    })
+    const instance = w.vm as unknown as {
+      editor: {
+        commands: { setNodeSelection: (position: number) => void }
+        view: {
+          hasFocus: () => boolean
+          someProp: (
+            name: 'handleClick',
+            run: (handler: (view: unknown, position: number, event: MouseEvent) => boolean) => boolean,
+          ) => boolean
+        }
+      }
+    }
+    instance.editor.commands.setNodeSelection(0)
+
+    // 在尺寸输入框或“应用”按钮操作后，浏览器焦点已离开 ProseMirror。
+    const outside = document.createElement('button')
+    document.body.append(outside)
+    outside.focus()
+    expect(instance.editor.view.hasFocus()).toBe(false)
+
+    const click = new MouseEvent('click', { bubbles: true })
+    Object.defineProperty(click, 'target', { value: w.get('.md-body img').element })
+    instance.editor.view.someProp('handleClick', (handler) => handler(instance.editor.view, 0, click))
+    await nextTick()
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+
+    expect(instance.editor.view.hasFocus()).toBe(true)
+    outside.remove()
+    w.unmount()
+  })
+
   it('只读模式下不可编辑', async () => {
     const w = await mountEditor({ modelValue: '内容', readonly: true })
 
