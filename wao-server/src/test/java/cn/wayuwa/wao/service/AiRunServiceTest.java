@@ -95,7 +95,7 @@ class AiRunServiceTest {
         assertThat(options.defaultCodexModel()).isEqualTo("gpt-5.6-sol");
         assertThat(options.defaultReasoningEffort()).isEqualTo("high");
         assertThat(options.reasoningEfforts()).extracting("id")
-                .containsExactly("medium", "high");
+                .containsExactly("high", "medium", "low");
     }
 
     @Test
@@ -401,6 +401,26 @@ class AiRunServiceTest {
         ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
         verify(runMapper).insert(run.capture());
         assertThat(run.getValue().getPlanMode()).isTrue();
+    }
+
+    @Test
+    void autonomousGoalPersistsTheSelectedLowReasoningEffort() {
+        TaskEntity task = task("t1", "p1", "快速完成低复杂度改动");
+        when(tasks.create(any(CreateTaskRequest.class), eq("wg"))).thenReturn(taskDto(null, null));
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "Linux 主节点", "codex")));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        AiRunDto result = service.launchGoal("p1", "快速完成低复杂度改动", "wg", "https://wao.example",
+                null, null, true, "low");
+
+        assertThat(result.reasoningEffort()).isEqualTo("low");
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getReasoningEffort()).isEqualTo("low");
     }
 
     @Test

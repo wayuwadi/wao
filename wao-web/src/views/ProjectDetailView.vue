@@ -201,15 +201,19 @@ async function changeTaskStatus(id: string, status: TaskStatus) {
   }
   statusSavingTaskId.value = null
 }
-async function runSelectedWithAi() {
+async function runSelectedWithAi(mergeTasks: boolean) {
   if (!selectedTaskIds.value.length || aiBatchStarting.value) return
   const taskIds = [...selectedTaskIds.value]
   aiBatchStarting.value = true
   try {
-    const created = await createAiRuns(taskIds, { mergeTasks: true })
-    taskIds.forEach((taskId) => data.patchTask(taskId, { status: 'AI 进行中' }, '已合并到同一次 AI Run'))
+    const created = await createAiRuns(taskIds, { mergeTasks })
+    taskIds.forEach((taskId) => data.patchTask(taskId, { status: 'AI 进行中' },
+      mergeTasks ? '已合并到同一次 AI Run' : '已单独创建 AI Run'))
     selectedTaskIds.value = []
-    toast(`已将 ${taskIds.length} 个任务合并为 ${created.length} 次 AI Run，可在首页查看`, 'ri-robot-2-line')
+    toast(mergeTasks
+      ? `已将 ${taskIds.length} 个任务合并为 ${created.length} 次 AI Run，可在首页查看`
+      : `已将 ${taskIds.length} 个任务单独创建为 ${created.length} 次 AI Run，可在首页查看`,
+    'ri-robot-2-line')
   } catch (error) {
     toast(error instanceof Error ? error.message : '批量 AI Run 启动失败', 'ri-error-warning-line')
   } finally {
@@ -452,15 +456,25 @@ function onDropGroup(groupId: string, overId?: string) {
           </div>
         </div>
         <div class="spacer"></div>
-        <button
-          v-if="selectedTaskIds.length"
-          class="batch-ai"
-          :disabled="aiBatchStarting"
-          @click="runSelectedWithAi"
-        >
-          <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-robot-2-line'"></i>
-          合并给 AI · {{ selectedTaskIds.length }}
-        </button>
+        <div v-if="selectedTaskIds.length" class="batch-ai-actions" aria-label="批量 AI Run 执行方式">
+          <button
+            class="batch-ai separate"
+            :disabled="aiBatchStarting"
+            @click="runSelectedWithAi(false)"
+          >
+            <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-send-plane-line'"></i>
+            单独给 AI · {{ selectedTaskIds.length }}
+          </button>
+          <button
+            v-if="selectedTaskIds.length > 1"
+            class="batch-ai merge"
+            :disabled="aiBatchStarting"
+            @click="runSelectedWithAi(true)"
+          >
+            <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-node-tree'"></i>
+            合并给 AI · {{ selectedTaskIds.length }}
+          </button>
+        </div>
       </div>
       <div v-if="pdTaskView === 'list'" class="task-list-card">
         <div
@@ -478,7 +492,7 @@ function onDropGroup(groupId: string, overId?: string) {
           <button
             class="select-dot"
             :class="{ on: selectedTaskIds.includes(t.id) }"
-            title="选择后合并为一次 AI Run"
+            title="选择后可单独或合并交给 AI"
             @click.stop="toggleSelection(t.id)"
           >
             <i class="ri-robot-2-line"></i>
@@ -709,7 +723,7 @@ function onDropGroup(groupId: string, overId?: string) {
               <button
                 class="select-dot board-select"
                 :class="{ on: selectedTaskIds.includes(t.id) }"
-                title="选择后合并为一次 AI Run"
+                title="选择后可单独或合并交给 AI"
                 @click.stop="toggleSelection(t.id)"
               >
                 <i class="ri-robot-2-line"></i>
@@ -1073,6 +1087,11 @@ function onDropGroup(groupId: string, overId?: string) {
   display: flex;
   align-items: center;
 }
+.batch-ai-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
 .batch-ai {
   height: 32px;
   padding: 0 11px;
@@ -1082,6 +1101,11 @@ function onDropGroup(groupId: string, overId?: string) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.batch-ai.separate {
+  border-color: var(--wao-line-control);
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
 }
 .batch-ai {
   border: 1px solid #bec8f5;
@@ -1826,7 +1850,8 @@ function onDropGroup(groupId: string, overId?: string) {
   .creator-filter { order: 2; margin-left: 0; }
   .creator-filter-btn, .batch-ai { min-height: 40px; }
   .tab-toolbar > .spacer { order: 3; }
-  .batch-ai { order: 5; }
+  .batch-ai-actions { order: 5; width: 100%; }
+  .batch-ai-actions .batch-ai { flex: 1; justify-content: center; }
   .creator-filter-menu { min-width: 160px; }
 
   .task-list-card, .doc-list-card, .file-list-card { margin-top: 8px; padding: 4px; border-radius: 11px; }

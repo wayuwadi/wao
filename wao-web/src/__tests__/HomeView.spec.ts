@@ -77,6 +77,15 @@ vi.mock('@/api/ai', () => ({
     }],
     total: 21, page: 1, size: 20,
   }),
+  fetchAiRunOptions: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    codexModels: [{ id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', description: '复杂开发任务的旗舰模型' }],
+    reasoningEfforts: [
+      { id: 'high', label: '高', description: '为复杂任务投入更多推理' },
+      { id: 'medium', label: '中', description: '速度与推理深度均衡' },
+      { id: 'low', label: '低', description: '优先速度与较低消耗' },
+    ],
+    defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'high', serviceTier: 'default',
+  }),
   fetchAiRunners: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
       id: 'rn1', name: '娃哥电脑', platform: 'Windows 11', engines: ['codex'],
@@ -384,7 +393,7 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
 
     expect(launchAutonomousGoal).toHaveBeenCalledWith(
-      'p1', '把黄帝内经和易经结合 AI，做成每日一卦产品', 'rn2', false,
+      'p1', '把黄帝内经和易经结合 AI，做成每日一卦产品', 'rn2', false, null,
     )
     expect(editor.props('modelValue')).toBe('')
     expect(wrapper.findAll('.run-card').some((card) => card.text().includes('把黄帝内经和易经结合 AI'))).toBe(true)
@@ -431,7 +440,7 @@ describe('HomeView AI 控制台', () => {
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
     expect(launchAutonomousGoal).toHaveBeenLastCalledWith(
-      'p1', '先梳理步骤再完成首页体验优化', 'rn1', true,
+      'p1', '先梳理步骤再完成首页体验优化', 'rn1', true, 'high',
     )
 
     editor.vm.$emit('update:modelValue', '直接完成第二个目标')
@@ -440,7 +449,38 @@ describe('HomeView AI 控制台', () => {
     expect(planMode.attributes('aria-checked')).toBe('false')
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
-    expect(launchAutonomousGoal).toHaveBeenLastCalledWith('p1', '直接完成第二个目标', 'rn1', false)
+    expect(launchAutonomousGoal).toHaveBeenLastCalledWith('p1', '直接完成第二个目标', 'rn1', false, 'high')
+    wrapper.unmount()
+  })
+
+  it('Codex 自主目标可选择高、中、低思考深度并固化低档', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchAiWorkflows).mockResolvedValueOnce([{
+      projectId: 'p1', projectName: 'Wa All in One',
+      config: {
+        projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
+        workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: 'rn1', maxParallelRuns: 3,
+      },
+      configured: true, projectDeleted: false, preferredRunnerName: '娃哥电脑',
+      activeRuns: 1, succeededRuns: 4, failedRuns: 1, lastRunAt: '2026-07-25T20:18:00',
+    }])
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    const reasoning = wrapper.get('select[aria-label="模型思考深度"]')
+    expect(reasoning.text()).toContain('高 · 为复杂任务投入更多推理')
+    expect(reasoning.text()).toContain('中 · 速度与推理深度均衡')
+    expect(reasoning.text()).toContain('低 · 优先速度与较低消耗')
+    expect((reasoning.element as HTMLSelectElement).value).toBe('high')
+    await reasoning.setValue('low')
+    wrapper.findComponent(MarkdownEditor).vm.$emit('update:modelValue', '快速完成一个低复杂度目标')
+    await flushPromises()
+    await wrapper.get('.goal-submit').trigger('click')
+    await flushPromises()
+
+    expect(launchAutonomousGoal).toHaveBeenLastCalledWith(
+      'p1', '快速完成一个低复杂度目标', 'rn1', true, 'low',
+    )
     wrapper.unmount()
   })
 
@@ -489,7 +529,7 @@ describe('HomeView AI 控制台', () => {
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
 
-    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', '只在备用电脑执行这个目标', 'rn3', false)
+    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', '只在备用电脑执行这个目标', 'rn3', false, null)
     wrapper.unmount()
   })
 
@@ -509,7 +549,7 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.goal-submit').attributes('disabled')).toBeUndefined()
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
-    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', longGoal, 'rn2', false)
+    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', longGoal, 'rn2', false, null)
     wrapper.unmount()
   })
 

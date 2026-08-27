@@ -184,8 +184,12 @@ export const createAiRuns = (
 
 /** 从一句目标创建任务并派发；runnerId 和 Codex Plan 模式都只覆盖本次运行。 */
 export const launchAutonomousGoal = (
-  projectId: string, goal: string, runnerId: string | null = null, planMode = false,
-) => data<AiRun>(http.post('/api/ai/goals', { projectId, goal, runnerId, planMode }))
+  projectId: string,
+  goal: string,
+  runnerId: string | null = null,
+  planMode = false,
+  reasoningEffort: string | null = null,
+) => data<AiRun>(http.post('/api/ai/goals', { projectId, goal, runnerId, planMode, reasoningEffort }))
 
 /** 首页真实会话/周额度、自主进化状态和最近一批真实资产建议。 */
 export const fetchAiEvolution = () => data<AiEvolutionOverview>(http.get('/api/ai/evolution', {

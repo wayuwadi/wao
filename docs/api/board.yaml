@@ -626,6 +626,8 @@ paths:
                 projectId: { type: string }
                 goal: { type: string, minLength: 1, description: 不设 4000 字人为上限；图片应由编辑器上传图床后写入稳定 URL，旧客户端提交的 Base64 图片由服务端落入图床 }
                 runnerId: { type: string, nullable: true, description: 本次指定的兼容执行电脑；为空时自动分配 }
+                planMode: { type: boolean, default: false, description: 仅 Codex 生效；先形成计划再连续执行 }
+                reasoningEffort: { type: string, nullable: true, enum: [high, medium, low], description: 仅 Codex 生效；留空使用后台默认值 }
       responses:
         '200': { description: 返回已创建并入队的运行 }
         '400': { description: 目标为空、项目未启用、未配置仓库或没有执行电脑 }
@@ -1649,8 +1651,9 @@ components:
         runnerId: { type: string, nullable: true, description: 留空表示由任意在线且支持该工具的电脑领取 }
         accountId: { type: string, nullable: true, description: 留空使用执行电脑本地登录态 }
         model: { type: string, nullable: true, enum: [gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna], description: 仅 Codex 官方登录态生效；留空使用后台默认模型 }
-        reasoningEffort: { type: string, nullable: true, enum: [medium, high], description: 仅 Codex 官方登录态生效；留空使用后台默认值 }
+        reasoningEffort: { type: string, nullable: true, enum: [high, medium, low], description: 仅 Codex 官方登录态生效；留空使用后台默认值 }
         planMode: { type: boolean, default: false, description: 仅 Codex 生效；先形成计划再连续执行，问题自动采用推荐项 }
+        mergeTasks: { type: boolean, default: false, description: true 时把同一项目的多条主任务合并为一次运行；false 时逐条创建独立运行 }
     SaveQuickCollectConfigRequest:
       type: object
       description: 字段为 null 表示不修改；密文字段留空即保留已存的那一份

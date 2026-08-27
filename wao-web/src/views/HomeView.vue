@@ -6,6 +6,7 @@ import {
   fetchAiEvolution,
   fetchAiTaskAutoRunPolicy,
   fetchAiRunHistory,
+  fetchAiRunOptions,
   fetchAiRunnerLog,
   fetchAiRunners,
   fetchAiRuns,
@@ -28,7 +29,7 @@ import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
 import AiRunSkillCapabilities from '@/components/ai/AiRunSkillCapabilities.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
-import { formatCost, formatTokens, shortModel, usageSummary } from '@/composables/aiUsage'
+import { formatCost, formatTokens, reasoningEffortLabel, shortModel, usageSummary } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
 import { fetchWebhookEndpoints, type FeishuWebhookEndpoint } from '@/api/system'
@@ -37,7 +38,7 @@ import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
-import type { AiEngine, AiRun, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow, TaskStatus } from '@/types'
+import type { AiEngine, AiRun, AiRunOptions, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow, TaskStatus } from '@/types'
 
 type ConsoleView = 'runs' | 'runners' | 'workflows'
 
@@ -76,6 +77,10 @@ const goalProjectId = ref('')
 const goalRunnerId = ref('')
 const goalRunnerManuallySelected = ref(false)
 const goalPlanMode = ref(true)
+const goalRunOptions = ref<AiRunOptions | null>(null)
+const goalRunOptionsLoading = ref(true)
+const goalRunOptionsError = ref('')
+const goalReasoningEffort = ref('')
 const launchingGoal = ref(false)
 const goalImageUploads = ref(0)
 const selectedRun = ref<AiRun | null>(null)
@@ -261,6 +266,24 @@ async function refreshWorkflows() {
   }
 }
 
+/** 首页思考深度使用后台允许列表和默认值，避免前端与 Runner 能力漂移。 */
+async function refreshGoalRunOptions() {
+  goalRunOptionsLoading.value = true
+  try {
+    const options = await fetchAiRunOptions()
+    goalRunOptions.value = options
+    if (!options.reasoningEfforts.some((item) => item.id === goalReasoningEffort.value)) {
+      goalReasoningEffort.value = options.defaultReasoningEffort
+    }
+    goalRunOptionsError.value = ''
+  } catch (error) {
+    goalRunOptions.value = null
+    goalRunOptionsError.value = error instanceof Error ? error.message : '思考深度读取失败'
+  } finally {
+    goalRunOptionsLoading.value = false
+  }
+}
+
 /** 额度仍在首页展示，但不再渲染、生成或派发任何自主进化建议。 */
 async function refreshQuotaOverview() {
   try {
@@ -439,11 +462,16 @@ async function launchGoal() {
     toast('图片还在上传，请稍候再派发', 'ri-information-line')
     return
   }
+  if (goalSupportsPlanMode.value && !goalRunOptions.value) {
+    toast(goalRunOptionsError.value || '正在读取思考深度，请稍候再派发', 'ri-information-line')
+    return
+  }
   launchingGoal.value = true
   try {
     const run = await launchAutonomousGoal(
       goalProjectId.value, normalizedGoal, goalRunnerId.value || null,
       goalSupportsPlanMode.value && goalPlanMode.value,
+      goalSupportsPlanMode.value ? goalReasoningEffort.value : null,
     )
     runs.value = [run, ...runs.value.filter((item) => item.id !== run.id)]
     goal.value = ''
@@ -804,6 +832,7 @@ onMounted(() => {
   restoreGoalDraft()
   void refresh()
   void refreshWorkflows()
+  void refreshGoalRunOptions()
   void refreshQuotaOverview()
   void refreshTaskAutoRunPolicy()
   void refreshTaskAutoRunWebhooks()
@@ -928,6 +957,30 @@ onBeforeUnmount(() => {
                 </option>
               </select>
             </label>
+            <label v-if="goalSupportsPlanMode" class="goal-control-field" title="为本次 Codex AI Run 选择模型思考深度">
+              <span v-if="!preferences.compactControls">思考深度</span>
+              <select
+                v-if="goalRunOptions"
+                v-model="goalReasoningEffort"
+                class="goal-reasoning-select"
+                aria-label="模型思考深度"
+                :disabled="launchingGoal"
+              >
+                <option v-for="option in goalRunOptions.reasoningEfforts" :key="option.id" :value="option.id">
+                  {{ option.label }} · {{ option.description }}
+                </option>
+              </select>
+              <button
+                v-else
+                type="button"
+                class="goal-reasoning-retry"
+                :disabled="goalRunOptionsLoading"
+                @click="refreshGoalRunOptions"
+              >
+                <i :class="goalRunOptionsLoading ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
+                {{ goalRunOptionsLoading ? '读取思考深度' : '重试思考深度' }}
+              </button>
+            </label>
             <button
               v-if="goalSupportsPlanMode"
               class="goal-plan-mode"
@@ -949,7 +1002,7 @@ onBeforeUnmount(() => {
             <button
               v-if="activeWorkflows.length"
               class="goal-submit"
-              :disabled="launchingGoal || goalImageUploads > 0 || !goal.trim() || !goalProjectId"
+              :disabled="launchingGoal || goalImageUploads > 0 || !goal.trim() || !goalProjectId || (goalSupportsPlanMode && !goalRunOptions)"
               @click="launchGoal"
             >
               <i :class="launchingGoal ? 'ri-loader-4-line spin' : 'ri-rocket-2-line'"></i>
@@ -1504,7 +1557,7 @@ onBeforeUnmount(() => {
         <dl>
           <div><dt>AI 工具</dt><dd>{{ engineLabel(selectedRun.engine) }}</dd></div>
           <div v-if="selectedRun.requestedModel"><dt>本次模型</dt><dd>{{ shortModel(selectedRun.requestedModel) }}</dd></div>
-          <div v-if="selectedRun.reasoningEffort"><dt>推理强度</dt><dd>{{ selectedRun.reasoningEffort === 'high' ? '高' : '中' }}</dd></div>
+          <div v-if="selectedRun.reasoningEffort"><dt>推理强度</dt><dd>{{ reasoningEffortLabel(selectedRun.reasoningEffort) }}</dd></div>
           <div v-if="selectedRun.serviceTier"><dt>运行速度</dt><dd>{{ selectedRun.serviceTier === 'default' ? '标准（Fast 未开启）' : selectedRun.serviceTier }}</dd></div>
           <div><dt>执行模式</dt><dd>{{ selectedRun.planMode ? 'Plan（推荐项自动选择）' : '直接执行' }}</dd></div>
           <div><dt>执行电脑</dt><dd>{{ selectedRun.runnerName || '未分配电脑' }}</dd></div>
@@ -1758,6 +1811,9 @@ onBeforeUnmount(() => {
 .goal-actions label { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--wao-text-weak); font-size: 10.5px; }
 .goal-actions select { max-width: 230px; height: 29px; padding: 0 26px 0 8px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 11px; }
 .goal-actions .goal-runner-select { max-width: 180px; }
+.goal-actions .goal-reasoning-select { max-width: 190px; }
+.goal-reasoning-retry { height: 29px; padding: 0 9px; border: 1px solid var(--wao-danger); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-danger-strong); cursor: pointer; font-size: 10.5px; white-space: nowrap; }
+.goal-reasoning-retry:disabled { border-color: var(--wao-line); color: var(--wao-text-weak); cursor: default; }
 .goal-plan-mode { height: 29px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; font-size: 10.5px; white-space: nowrap; }
 .goal-plan-mode.on { border-color: var(--wao-primary); background: var(--wao-primary-soft); color: var(--wao-primary-text); }
 .goal-plan-mode:disabled { opacity: .55; cursor: default; }

@@ -5,7 +5,7 @@ import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
 import AiRunSkillCapabilities from '@/components/ai/AiRunSkillCapabilities.vue'
 import { continueAiRun } from '@/api/ai'
 import { toast } from '@/composables/toast'
-import { formatCost, formatTokens, shortModel } from '@/composables/aiUsage'
+import { formatCost, formatTokens, reasoningEffortLabel, shortModel } from '@/composables/aiUsage'
 import { engineIcon, engineLabel } from '@/composables/aiEngines'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
@@ -99,7 +99,7 @@ async function continueRun(runId: string) {
         <div v-if="run.requestedModel || run.planMode" class="ai-run-parameters">
           <i class="ri-cpu-line"></i>
           <span v-if="run.requestedModel" class="usage-model">{{ shortModel(run.requestedModel) }}</span>
-          <span v-if="run.reasoningEffort">推理{{ run.reasoningEffort === 'high' ? '高' : '中' }}</span>
+          <span v-if="run.reasoningEffort">推理{{ reasoningEffortLabel(run.reasoningEffort) }}</span>
           <span v-if="run.serviceTier">{{ run.serviceTier === 'priority' ? 'Fast' : '标准速度（Fast 未开启）' }}</span>
           <span v-if="run.planMode"><i class="ri-route-line"></i>Plan 模式</span>
         </div>
