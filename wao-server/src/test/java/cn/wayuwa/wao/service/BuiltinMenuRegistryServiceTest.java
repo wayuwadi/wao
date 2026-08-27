@@ -23,17 +23,17 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(24);
+        assertThat(service.getRegistry().menus()).hasSize(25);
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "skills".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("Skill 市场");
                     assertThat(menu.group()).isEqualTo("PUBLIC");
-                    assertThat(menu.visible()).isTrue();
+                    assertThat(menu.visible()).isFalse();
                     assertThat(menu.openMode()).isEqualTo("TAB");
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(24);
+        assertThat(service.getRegistry().menus()).hasSize(25);
     }
 
     @Test
@@ -68,6 +68,7 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void upgradesOldRegistryWithoutLosingExistingCustomization() throws Exception {
         var oldMenus = new ArrayList<>(service.getRegistry().menus());
+        oldMenus.removeIf(menu -> "navigation".equals(menu.id()));
         oldMenus.removeIf(menu -> "tianren".equals(menu.id()));
         oldMenus.removeIf(menu -> "life-review".equals(menu.id()));
         oldMenus.removeIf(menu -> "chat".equals(menu.id()));
@@ -78,6 +79,12 @@ class BuiltinMenuRegistryServiceTest {
         var automation = oldMenus.stream().filter(menu -> "automation".equals(menu.id())).findFirst().orElseThrow();
         oldMenus.set(oldMenus.indexOf(automation), new BuiltinMenuConfigDto(
                 automation.id(), "我的自动化", automation.icon(), automation.group(), automation.order(), false, null));
+        var games = oldMenus.stream().filter(menu -> "games".equals(menu.id())).findFirst().orElseThrow();
+        oldMenus.set(oldMenus.indexOf(games), new BuiltinMenuConfigDto(
+                games.id(), games.label(), games.icon(), games.group(), games.order(), true, games.openMode()));
+        var drawings = oldMenus.stream().filter(menu -> "drawings".equals(menu.id())).findFirst().orElseThrow();
+        oldMenus.set(oldMenus.indexOf(drawings), new BuiltinMenuConfigDto(
+                drawings.id(), "我的草图", drawings.icon(), drawings.group(), drawings.order(), true, drawings.openMode()));
         // 模拟 V17 注册表中仍存在、V18 已退役的点子库入口。
         oldMenus.add(new BuiltinMenuConfigDto("ideas", "我的旧点子入口", "ri-lightbulb-flash-line",
                 "PUBLIC", 11, true, "TAB"));
@@ -91,12 +98,24 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(24);
+        assertThat(upgraded.menus()).hasSize(25);
+        assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.group()).isEqualTo("ROOT");
+                    assertThat(menu.visible()).isTrue();
+                });
         assertThat(upgraded.menus()).filteredOn(menu -> "automation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("我的自动化");
                     assertThat(menu.visible()).isFalse();
                     assertThat(menu.openMode()).isEqualTo("TAB");
+                });
+        assertThat(upgraded.menus()).filteredOn(menu -> "games".equals(menu.id()))
+                .singleElement().satisfies(menu -> assertThat(menu.visible()).isFalse());
+        assertThat(upgraded.menus()).filteredOn(menu -> "drawings".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.label()).isEqualTo("我的草图");
+                    assertThat(menu.visible()).isTrue();
                 });
         assertThat(upgraded.menus()).filteredOn(menu -> "tianren".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
@@ -127,27 +146,27 @@ class BuiltinMenuRegistryServiceTest {
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("Skill 市场");
                     assertThat(menu.group()).isEqualTo("PUBLIC");
-                    assertThat(menu.visible()).isTrue();
+                    assertThat(menu.visible()).isFalse();
                 });
         assertThat(upgraded.menus()).filteredOn(menu -> "skill-connections".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("Skill 接入");
                     assertThat(menu.group()).isEqualTo("PUBLIC");
-                    assertThat(menu.visible()).isTrue();
+                    assertThat(menu.visible()).isFalse();
                 });
         assertThat(upgraded.menus()).noneMatch(menu -> "ideas".equals(menu.id()));
         assertThat(upgraded.menus()).filteredOn(menu -> "request-monitoring".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("请求监控");
                     assertThat(menu.group()).isEqualTo("TOOLS");
-                    assertThat(menu.visible()).isTrue();
+                    assertThat(menu.visible()).isFalse();
                 });
         assertThat(upgraded.menus()).filteredOn(menu -> "dashboard".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("使用统计");
                     assertThat(menu.group()).isEqualTo("TOOLS");
                     assertThat(menu.openMode()).isEqualTo("TAB");
-                    assertThat(menu.visible()).isTrue();
+                    assertThat(menu.visible()).isFalse();
                 });
         assertThat(upgraded.menus()).noneMatch(menu -> "system-reports".equals(menu.id()));
     }

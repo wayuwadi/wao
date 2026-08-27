@@ -1783,7 +1783,7 @@ components:
       type: object
       required: [id, label, icon, group, order, visible, openMode]
       properties:
-        id: { type: string, enum: [home, projects, skills, chat-reviews, todo, workday-rhythm, action-plans, calendar, weekly-report, life-review, workspaces, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, automation, files, games] }
+        id: { type: string, enum: [home, navigation, projects, skills, skill-connections, chat, todo, workday-rhythm, action-plans, calendar, weekly-report, life-review, workspaces, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, dashboard, automation, files, games, request-monitoring] }
         label: { type: string, maxLength: 24 }
         icon: { type: string, description: Remix Icon 类名 }
         group: { type: string, enum: [ROOT, PUBLIC, PERSONAL, TOOLS] }
@@ -1795,7 +1795,7 @@ components:
       required: [version, menus]
       properties:
         version: { type: integer, minimum: 1 }
-        menus: { type: array, minItems: 22, maxItems: 22, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
+        menus: { type: array, minItems: 25, maxItems: 25, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
     SavePersonalMemory:
       type: object
       required: [title, content, category]

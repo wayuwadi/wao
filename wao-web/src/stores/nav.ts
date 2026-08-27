@@ -42,7 +42,9 @@ function load(): Persisted {
 
 /** 校正一份存下来的顺序：去掉未知项、补上新增模块，保证不丢菜单。 */
 function normalizeOrder(order: unknown): ModuleId[] {
-  const saved = Array.isArray(order) ? order.filter((id): id is ModuleId => PERSONAL_ITEMS.includes(id as ModuleId)) : []
+  const saved = Array.isArray(order)
+    ? order.filter((id): id is ModuleId => PERSONAL_ITEMS.includes(id as ModuleId))
+    : []
   const missing = PERSONAL_ITEMS.filter((id) => !saved.includes(id))
   return [...saved, ...missing]
 }
@@ -58,7 +60,11 @@ export const useNavStore = defineStore('nav', () => {
   const builtinMenus = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map(normalizeBuiltinMenu))
   const externalAppsState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
   const externalAppsError = ref('')
-  const groups = computed(() => resolveNavGroups(personalOrder.value, externalApps.value, builtinMenus.value))
+  const builtinMenusState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
+  const builtinMenusError = ref('')
+  const groups = computed(() =>
+    resolveNavGroups(personalOrder.value, externalApps.value, builtinMenus.value),
+  )
 
   function persist() {
     localStorage.setItem(
@@ -123,15 +129,24 @@ export const useNavStore = defineStore('nav', () => {
       externalAppsError.value = error instanceof Error ? error.message : '外部应用注册表读取失败'
     }
   }
-  async function loadBuiltinMenus() {
+  async function loadBuiltinMenus(force = false) {
+    if (builtinMenusState.value === 'loading') return
+    if (!force && builtinMenusState.value === 'loaded') return
+    builtinMenusState.value = 'loading'
+    builtinMenusError.value = ''
     try {
       builtinMenus.value = (await fetchBuiltinMenuRegistry()).menus.map(normalizeBuiltinMenu)
-    } catch {
+      builtinMenusState.value = 'loaded'
+    } catch (error) {
+      builtinMenusState.value = 'error'
+      builtinMenusError.value = error instanceof Error ? error.message : '内置菜单注册表读取失败'
       /* 坏配置或短暂离线时保留代码默认导航，不能让菜单消失。 */
     }
   }
   function applyBuiltinMenus(menus: BuiltinMenuConfig[]) {
     builtinMenus.value = menus.map(normalizeBuiltinMenu)
+    builtinMenusState.value = 'loaded'
+    builtinMenusError.value = ''
   }
 
   /** 设置页保存成功后立即刷新导航，不等页面重载。 */
@@ -149,14 +164,16 @@ export const useNavStore = defineStore('nav', () => {
     const externalId = externalAppIdFromItem(id)
     if (externalId) {
       const app = externalAppById(externalId)
-      return app ? {
-        id: externalAppItemId(app.id),
-        label: app.label,
-        icon: app.icon,
-        path: externalAppPath(app.id),
-        newPagePath: app.appUrl,
-        openMode: app.openMode,
-      } : undefined
+      return app
+        ? {
+            id: externalAppItemId(app.id),
+            label: app.label,
+            icon: app.icon,
+            path: externalAppPath(app.id),
+            newPagePath: app.appUrl,
+            openMode: app.openMode,
+          }
+        : undefined
     }
     if (!id) return undefined
     const module = MODULES[id as ModuleId]
@@ -167,9 +184,26 @@ export const useNavStore = defineStore('nav', () => {
   }
 
   return {
-    collapsed, foldedGroups, personalOrder, groups,
-    externalApps, builtinMenus, externalAppsState, externalAppsError,
-    toggleCollapse, toggleGroup, isFolded, loadPersonalOrder, setPersonalOrder,
-    loadExternalApps, loadBuiltinMenus, applyExternalApps, applyBuiltinMenus, externalAppById, itemMeta,
+    collapsed,
+    foldedGroups,
+    personalOrder,
+    groups,
+    externalApps,
+    builtinMenus,
+    externalAppsState,
+    externalAppsError,
+    builtinMenusState,
+    builtinMenusError,
+    toggleCollapse,
+    toggleGroup,
+    isFolded,
+    loadPersonalOrder,
+    setPersonalOrder,
+    loadExternalApps,
+    loadBuiltinMenus,
+    applyExternalApps,
+    applyBuiltinMenus,
+    externalAppById,
+    itemMeta,
   }
 })

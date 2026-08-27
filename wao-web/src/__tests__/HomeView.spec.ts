@@ -695,6 +695,10 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.run-detail').text()).toContain('-1')
     expect(wrapper.find('.run-detail').text()).not.toContain('等待第一条 AI 反馈')
     expect(wrapper.find('.run-report-link').attributes('href')).toBe('/api/pages/ai-run-ar1')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.run-detail').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -713,8 +717,13 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.history-pagination').text()).toContain('第 1 / 2 页')
     await wrapper.find('.run-history-detail .recent-card').trigger('click')
     expect(wrapper.findAll('.run-detail')).toHaveLength(2)
-    await wrapper.findAll('.run-detail')[1]!.find('.detail-close').trigger('click')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
     expect(wrapper.find('.run-history-detail').exists()).toBe(true)
+    expect(wrapper.findAll('.run-detail')).toHaveLength(1)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.run-history-detail').exists()).toBe(false)
     wrapper.unmount()
   })
 

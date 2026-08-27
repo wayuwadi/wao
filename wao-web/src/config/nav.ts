@@ -100,6 +100,12 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
 
 export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
+  navigation: {
+    id: 'navigation',
+    label: '导航',
+    icon: 'ri-compass-discover-line',
+    path: '/navigation',
+  },
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
   ideas: { id: 'ideas', label: '点子库', icon: 'ri-lightbulb-flash-line', path: '/ideas' },
   skills: {
@@ -203,6 +209,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
   [
     { id: 'home', label: '首页', icon: 'ri-home-5-line', group: 'ROOT', order: 10, visible: true },
     {
+      id: 'navigation',
+      label: '导航',
+      icon: 'ri-compass-discover-line',
+      group: 'ROOT',
+      order: 20,
+      visible: true,
+    },
+    {
       id: 'projects',
       label: '项目',
       icon: 'ri-stack-line',
@@ -216,7 +230,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-sparkling-2-line',
       group: 'PUBLIC',
       order: 12,
-      visible: true,
+      visible: false,
     },
     {
       id: 'skill-connections',
@@ -224,7 +238,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-apps-2-line',
       group: 'PUBLIC',
       order: 13,
-      visible: true,
+      visible: false,
     },
     {
       id: 'chat',
@@ -248,7 +262,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-footprint-line',
       group: 'PERSONAL',
       order: 15,
-      visible: true,
+      visible: false,
     },
     {
       id: 'workday-rhythm',
@@ -272,7 +286,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-file-list-3-line',
       group: 'PERSONAL',
       order: 25,
-      visible: true,
+      visible: false,
     },
     {
       id: 'life-review',
@@ -280,7 +294,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-route-line',
       group: 'PERSONAL',
       order: 27,
-      visible: true,
+      visible: false,
     },
     {
       id: 'memory',
@@ -296,7 +310,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-layout-grid-line',
       group: 'PERSONAL',
       order: 28,
-      visible: true,
+      visible: false,
     },
     {
       id: 'knowledge',
@@ -312,7 +326,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-speak-line',
       group: 'PERSONAL',
       order: 35,
-      visible: true,
+      visible: false,
     },
     {
       id: 'vocabulary',
@@ -320,7 +334,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-book-marked-line',
       group: 'PERSONAL',
       order: 40,
-      visible: true,
+      visible: false,
     },
     {
       id: 'drawings',
@@ -328,7 +342,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-draft-line',
       group: 'PERSONAL',
       order: 50,
-      visible: true,
+      visible: false,
     },
     {
       id: 'vault',
@@ -336,7 +350,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-key-2-line',
       group: 'PERSONAL',
       order: 60,
-      visible: true,
+      visible: false,
     },
     {
       id: 'tianren',
@@ -344,7 +358,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-compass-3-line',
       group: 'PERSONAL',
       order: 70,
-      visible: true,
+      visible: false,
     },
     {
       id: 'dashboard',
@@ -352,7 +366,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-bar-chart-box-line',
       group: 'TOOLS',
       order: 5,
-      visible: true,
+      visible: false,
     },
     {
       id: 'automation',
@@ -360,7 +374,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-flashlight-line',
       group: 'TOOLS',
       order: 10,
-      visible: true,
+      visible: false,
     },
     {
       id: 'files',
@@ -368,7 +382,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-hard-drive-2-line',
       group: 'TOOLS',
       order: 20,
-      visible: true,
+      visible: false,
     },
     {
       id: 'games',
@@ -376,7 +390,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-gamepad-line',
       group: 'TOOLS',
       order: 30,
-      visible: true,
+      visible: false,
     },
     {
       id: 'request-monitoring',
@@ -384,7 +398,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-pulse-line',
       group: 'TOOLS',
       order: 40,
-      visible: true,
+      visible: false,
     },
   ] as Omit<BuiltinMenuConfig, 'openMode'>[]
 ).map((menu) => ({ ...menu, openMode: 'TAB' }))
@@ -408,7 +422,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
 ]
 
 const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
-  { label: '', items: ['home'] },
+  { label: '', items: ['home', 'navigation'] },
   {
     label: '公共',
     items: ['projects', 'ideas', 'skills', 'skill-connections', 'chat'],
@@ -483,7 +497,11 @@ export function externalAppPath(id: string): string {
 }
 
 /** 左侧导航默认分组；首次加载注册表前也保证 Agent 位于「公共」。 */
-export const NAV_GROUPS = resolveNavGroups(PERSONAL_ITEMS, DEFAULT_EXTERNAL_APPS)
+export const NAV_GROUPS = resolveNavGroups(
+  PERSONAL_ITEMS,
+  DEFAULT_EXTERNAL_APPS,
+  DEFAULT_BUILTIN_MENUS,
+)
 
 /** 由模块 id 生成页签。首页固定不可关闭。 */
 export function moduleTab(id: ModuleId): Tab {

@@ -949,6 +949,29 @@ function progressAge(value: string | null) {
   return `${Math.floor(seconds / 60)} 分钟前更新`
 }
 
+/**
+ * 首页运行弹层不属于 AppLayout 的全局 UI store，需要自己进入 Escape 关闭栈。
+ * 详情可能叠在完整历史之上，因此一次只关闭最上层；全局弹层或任务抽屉在前景时交回各自处理。
+ */
+function onDialogKeydown(event: KeyboardEvent) {
+  if (
+    event.key !== 'Escape'
+    || ui.assistantOpen
+    || ui.celebrating
+    || ui.helpOpen
+    || ui.searchOpen
+    || ui.modal
+    || ui.openTaskId
+  ) return
+  if (selectedRun.value) selectedRun.value = null
+  else if (logRunner.value) closeRunnerLog()
+  else if (runHistoryOpen.value) runHistoryOpen.value = false
+  else if (quickTaskListOpen.value) quickTaskListOpen.value = false
+  else return
+  event.preventDefault()
+  event.stopPropagation()
+}
+
 onMounted(() => {
   restoreGoalDraft()
   void refresh()
@@ -962,11 +985,13 @@ onMounted(() => {
     void refreshQuotaOverview()
     void refreshTaskAutoRunPolicy()
   }, 60_000)
+  window.addEventListener('keydown', onDialogKeydown)
   if (route.query.console) revealAiArea()
 })
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
   if (quotaTimer) clearInterval(quotaTimer)
+  window.removeEventListener('keydown', onDialogKeydown)
 })
 </script>
 
