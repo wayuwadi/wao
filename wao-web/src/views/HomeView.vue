@@ -1740,7 +1740,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="selectedRun" class="run-detail-mask" @click.self="selectedRun = null">
-      <section class="run-detail" role="dialog" aria-modal="true" aria-labelledby="run-detail-title">
+      <section class="run-detail run-activity-detail" role="dialog" aria-modal="true" aria-labelledby="run-detail-title">
         <header>
           <span class="recent-icon" :style="{ color: metaFor(selectedRun).color, background: metaFor(selectedRun).bg }">
             <i :class="metaFor(selectedRun).icon"></i>
@@ -1801,42 +1801,46 @@ onBeforeUnmount(() => {
           <div><b>查看持久化报告</b><small>完整报告已关联本次运行，可直接分享公开链接</small></div>
           <i class="ri-arrow-right-up-line"></i>
         </a>
-        <footer>
-          <span v-if="selectedRun.retryOfRunId" class="retry-note">
-            <i class="ri-corner-down-right-line"></i>本次是基于上一次报错的重跑
-          </span>
-          <a
-            v-if="selectedRun.branchName"
-            class="secondary gh-branch-link"
-            :href="findWorkflowForRun(selectedRun)?.config?.repoUrl
-              ? githubSubPage(findWorkflowForRun(selectedRun)!.config.repoUrl, `tree/${selectedRun.branchName}`)
-              : '#'"
-            :class="{ disabled: !findWorkflowForRun(selectedRun)?.config?.repoUrl }"
-            target="_blank"
-            rel="noopener"
-            :title="selectedRun.branchName"
-          >
-            <i class="ri-git-branch-line"></i>{{ selectedRun.branchName }}
-          </a>
-          <button class="secondary" @click="selectedRun = null">关闭</button>
-          <button
-            v-if="['queued', 'claimed', 'running'].includes(selectedRun.status)"
-            class="secondary stop-run"
-            :disabled="pausingRunId === selectedRun.id"
-            @click="stopRun(selectedRun)"
-          >
-            <i :class="pausingRunId === selectedRun.id ? 'ri-loader-4-line spin' : 'ri-stop-circle-line'"></i>
-            {{ pausingRunId === selectedRun.id ? '停止中…' : '停止任务' }}
-          </button>
-          <button
-            v-if="selectedRun.status === 'failed'"
-            class="secondary retry"
-            :disabled="rerunning"
-            @click="rerun(selectedRun)"
-          >
-            <i :class="rerunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>基于报错重跑
-          </button>
-          <button class="primary" @click="openRun(selectedRun)">打开对应任务</button>
+        <footer class="run-detail-footer">
+          <div v-if="selectedRun.retryOfRunId || selectedRun.branchName" class="run-detail-context">
+            <span v-if="selectedRun.retryOfRunId" class="retry-note">
+              <i class="ri-corner-down-right-line"></i>本次是基于上一次报错的重跑
+            </span>
+            <a
+              v-if="selectedRun.branchName"
+              class="secondary gh-branch-link"
+              :href="findWorkflowForRun(selectedRun)?.config?.repoUrl
+                ? githubSubPage(findWorkflowForRun(selectedRun)!.config.repoUrl, `tree/${selectedRun.branchName}`)
+                : '#'"
+              :class="{ disabled: !findWorkflowForRun(selectedRun)?.config?.repoUrl }"
+              target="_blank"
+              rel="noopener"
+              :title="selectedRun.branchName"
+            >
+              <i class="ri-git-branch-line"></i><span>{{ selectedRun.branchName }}</span>
+            </a>
+          </div>
+          <div class="run-detail-actions">
+            <button class="secondary" @click="selectedRun = null">关闭</button>
+            <button
+              v-if="['queued', 'claimed', 'running'].includes(selectedRun.status)"
+              class="secondary stop-run"
+              :disabled="pausingRunId === selectedRun.id"
+              @click="stopRun(selectedRun)"
+            >
+              <i :class="pausingRunId === selectedRun.id ? 'ri-loader-4-line spin' : 'ri-stop-circle-line'"></i>
+              {{ pausingRunId === selectedRun.id ? '停止中…' : '停止任务' }}
+            </button>
+            <button
+              v-if="selectedRun.status === 'failed'"
+              class="secondary retry"
+              :disabled="rerunning"
+              @click="rerun(selectedRun)"
+            >
+              <i :class="rerunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>基于报错重跑
+            </button>
+            <button class="primary" @click="openRun(selectedRun)">打开对应任务</button>
+          </div>
         </footer>
       </section>
     </div>
@@ -2434,6 +2438,10 @@ onBeforeUnmount(() => {
   background: var(--wao-bg-card);
   box-shadow: 0 24px 70px rgba(26, 31, 61, .22);
 }
+.run-activity-detail {
+  width: min(960px, 100%);
+  max-height: min(820px, calc(100dvh - 48px));
+}
 .run-history-detail { width: min(1080px, 100%); }
 .quick-task-dialog { width: min(860px, 100%); }
 .quick-task-dialog-icon { background: var(--wao-primary-tint); color: var(--wao-primary); }
@@ -2482,7 +2490,11 @@ onBeforeUnmount(() => {
 .run-report-link small { margin-top: 2px; color: var(--wao-text-weak); font-size: 10.5px; }
 .run-report-link > i { color: var(--wao-success-strong); }
 .run-detail footer { margin-top: 18px; display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.run-activity-detail > footer { flex-wrap: wrap; gap: 10px 14px; }
+.run-detail-context { min-width: 0; flex: 1 1 300px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.run-detail-actions { flex: 0 1 auto; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
 .run-detail footer .retry-note { margin-right: auto; color: var(--wao-text-weak); font-size: 11px; }
+.run-activity-detail footer .retry-note { margin-right: 0; }
 .run-detail footer .retry-note i { margin-right: 4px; }
 .run-detail footer button { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
 .run-detail footer .retry { display: inline-flex; align-items: center; gap: 6px; color: var(--wao-danger-strong); border-color: var(--wao-danger-line); }
@@ -2490,8 +2502,11 @@ onBeforeUnmount(() => {
 .run-detail footer .stop-run { display: inline-flex; align-items: center; gap: 6px; border-color: var(--wao-danger-line); color: var(--wao-danger-strong); }
 .run-detail footer .stop-run:disabled { opacity: .6; cursor: not-allowed; }
 .gh-branch-link {
+  min-width: 0;
+  max-width: min(280px, 100%);
   display: inline-flex;
   align-items: center;
+  flex: 0 1 auto;
   gap: 5px;
   color: #4358d6;
   border-color: var(--wao-line-control);
@@ -2499,6 +2514,7 @@ onBeforeUnmount(() => {
 .gh-branch-link:hover { border-color: var(--wao-primary-line); background: var(--wao-primary-tint); }
 .gh-branch-link.disabled { opacity: .5; pointer-events: none; }
 .gh-branch-link i { font-size: 13px; }
+.gh-branch-link span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-detail footer .secondary { border: 1px solid var(--wao-line); background: var(--wao-bg-card); }
 .run-detail footer .primary { border: 1px solid var(--wao-primary); background: var(--wao-primary); color: #fff; }
 .runner-log-detail { width: min(860px, 100%); }
@@ -2535,6 +2551,14 @@ onBeforeUnmount(() => {
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
   .home { padding: 16px; }
+  .run-detail-mask { padding: 12px; }
+  .run-detail { max-height: calc(100dvh - 24px); padding: 16px; }
+  .run-activity-detail > footer { align-items: stretch; }
+  .run-detail-context { flex-basis: 100%; align-items: stretch; flex-direction: column; }
+  .gh-branch-link { max-width: 100%; }
+  .run-detail-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .run-detail-actions button { width: 100%; min-width: 0; }
+  .run-detail-actions .primary { grid-column: 1 / -1; }
   .home-primary { grid-template-columns: minmax(0, 1fr); }
   .hero { padding: 22px; flex-direction: column; align-items: stretch; }
   .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
