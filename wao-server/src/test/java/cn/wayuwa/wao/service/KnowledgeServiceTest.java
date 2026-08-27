@@ -48,6 +48,7 @@ import cn.wayuwa.wao.mapper.KbMapper;
 import cn.wayuwa.wao.mapper.MemberMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class KnowledgeServiceTest {
 
@@ -468,7 +469,7 @@ class KnowledgeServiceTest {
         DocEntity d2 = doc("d2", "k1", "f1");
         when(folderMapper.selectList(any())).thenReturn(List.of(f1, f2));
         when(docMapper.selectList(any())).thenReturn(List.of(d1, d2));
-        when(docMapper.updateTreeOrder(any(), any(), any(), org.mockito.ArgumentMatchers.anyInt())).thenReturn(1);
+        when(docMapper.updateTreeOrders(eq("k1"), any())).thenReturn(2);
 
         service.reorderDocs("k1", new ReorderDocsRequest(List.of(
                 new ReorderDocsRequest.FolderOrder("f1", List.of("d2")),
@@ -478,8 +479,23 @@ class KnowledgeServiceTest {
         assertThat(d2.getOrd()).isEqualTo(1);
         assertThat(d1.getFolderId()).isEqualTo("f2");
         assertThat(d1.getOrd()).isEqualTo(1);
-        verify(docMapper).updateTreeOrder("d1", "k1", "f2", 1);
-        verify(docMapper).updateTreeOrder("d2", "k1", "f1", 1);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<DocEntity>> ordered = ArgumentCaptor.forClass(List.class);
+        verify(docMapper).updateTreeOrders(eq("k1"), ordered.capture());
+        assertThat(ordered.getValue()).extracting(DocEntity::getId).containsExactly("d2", "d1");
+    }
+
+    @Test
+    void reorderDocsReturnsConflictWhenBatchCannotMatchEveryValidatedDocument() {
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        when(folderMapper.selectList(any())).thenReturn(List.of(folder("f1", "k1")));
+        when(docMapper.selectList(any())).thenReturn(List.of(doc("d1", "k1", "f1"), doc("d2", "k1", "f1")));
+        when(docMapper.updateTreeOrders(eq("k1"), any())).thenReturn(1);
+
+        assertThatThrownBy(() -> service.reorderDocs("k1", new ReorderDocsRequest(List.of(
+                new ReorderDocsRequest.FolderOrder("f1", List.of("d2", "d1"))))))
+                .isInstanceOf(cn.wayuwa.wao.common.ConflictException.class)
+                .hasMessageContaining("其他页面更新");
     }
 
     @Test

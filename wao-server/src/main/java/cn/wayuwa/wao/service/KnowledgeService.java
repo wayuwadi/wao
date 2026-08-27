@@ -620,6 +620,7 @@ public class KnowledgeService {
         Map<String, DocEntity> docById = docs.stream().collect(Collectors.toMap(DocEntity::getId, d -> d));
         Set<String> seenFolders = new HashSet<>();
         Set<String> seenDocs = new HashSet<>();
+        List<DocEntity> orderedDocs = new ArrayList<>(docs.size());
 
         for (ReorderDocsRequest.FolderOrder order : request.folders()) {
             if (order == null || !validFolderIds.contains(order.folderId()) || !seenFolders.add(order.folderId())) {
@@ -634,13 +635,14 @@ public class KnowledgeService {
                 }
                 doc.setFolderId(order.folderId());
                 doc.setOrd(index + 1);
-                if (docMapper.updateTreeOrder(doc.getId(), kbId, order.folderId(), index + 1) != 1) {
-                    throw new ConflictException("文档树已在其他页面更新，请刷新后重试");
-                }
+                orderedDocs.add(doc);
             }
         }
         if (!seenFolders.equals(validFolderIds) || !seenDocs.equals(docById.keySet())) {
             throw new BadRequestException("文档顺序必须包含当前知识库的全部文件夹和文档");
+        }
+        if (!orderedDocs.isEmpty() && docMapper.updateTreeOrders(kbId, orderedDocs) != orderedDocs.size()) {
+            throw new ConflictException("文档树已在其他页面更新，请刷新后重试");
         }
     }
 

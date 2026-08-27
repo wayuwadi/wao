@@ -318,8 +318,9 @@ class ChatReviewMySqlIntegrationTest {
                 "kb-chat-test", "folder-chat-test", "飞书群聊 · 2026-08-19",
                 List.of(new DocBlockDto(null, null, "版本 11", null, null)),
                 "oc-Ab", day, 11L);
-        assertThat(docs.updateTreeOrder(
-                staleMetadataSnapshot.getId(), "kb-chat-test", "folder-chat-test", 7)).isEqualTo(1);
+        staleMetadataSnapshot.setFolderId("folder-chat-test");
+        staleMetadataSnapshot.setOrd(7);
+        assertThat(docs.updateTreeOrders("kb-chat-test", List.of(staleMetadataSnapshot))).isEqualTo(1);
         docs.markDeleted(staleMetadataSnapshot.getId(), java.time.LocalDateTime.now(), "member-test", false);
         docs.clearDeleted(staleMetadataSnapshot.getId());
         assertThat(jdbc.queryForMap("""
