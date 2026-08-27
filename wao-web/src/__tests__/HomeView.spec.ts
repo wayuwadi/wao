@@ -5,6 +5,7 @@ import { createPinia } from 'pinia'
 import HomeView from '@/views/HomeView.vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import { useDataStore } from '@/stores/data'
+import { seedDataStore } from '@/__tests__/helpers/seedDataStore'
 import { usePreferenceStore } from '@/stores/preferences'
 import type { AiRunner } from '@/types'
 import {
@@ -21,11 +22,13 @@ import {
   requestRunnerScriptUpdate,
   rerunAiRun,
   saveAiTaskAutoRunPolicy,
+  createAiRuns,
 } from '@/api/ai'
 import { fetchWebhookEndpoints } from '@/api/system'
 import { fetchChatReviews } from '@/api/chatReviews'
 
 vi.mock('@/api/ai', () => ({
+  createAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
   fetchAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
       id: 'ar1',
@@ -324,6 +327,60 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.hero-link').text()).toContain('查看 AI 详情')
     expect(wrapper.findAll('.hero-link')[1]!.text()).toContain('查看系统报告')
     wrapper.unmount()
+  })
+
+  it('没有活动运行时推荐真实可执行任务，并一次点击按项目默认工作流入队', async () => {
+    vi.useFakeTimers()
+    const { fetchAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchAiRuns).mockResolvedValueOnce([])
+    vi.mocked(createAiRuns).mockResolvedValueOnce([{
+      id: 'ar-quick', taskId: 't1', taskTitle: '设计任务详情抽屉交互稿', projectId: 'p1',
+      projectName: 'Wa All in One', engine: 'claude', status: 'queued', runnerId: null,
+      runnerName: null, requestedRunnerId: 'rn2', branchName: 'ai/wao-ar-quick', subId: null, subTitle: null,
+      retryOfRunId: null, resultSummary: null, reportUrl: null,
+      latestProgress: '任务已进入队列', progressUpdatedAt: '2026-08-27T12:00:00', progress: [],
+      usage: { model: null, models: null, inputTokens: 0, outputTokens: 0,
+        cachedInputTokens: 0, totalTokens: 0, costUsd: null, recorded: false },
+      sessionId: null, exitCode: null, createdAt: '2026-08-27T12:00:00', startedAt: null, finishedAt: null,
+    }])
+    const mounted = mountHome()
+    seedDataStore(mounted.data)
+    await flushPromises()
+
+    const empty = mounted.wrapper.find('.quick-run-empty')
+    expect(empty.text()).toContain('为你推荐 3 条可直接执行的任务')
+    expect(empty.text()).toContain('设计任务详情抽屉交互稿')
+    expect(empty.text()).not.toContain('「品牌名讨论」结论沉淀到知识库')
+    expect(empty.findAll('.quick-task-card')).toHaveLength(3)
+
+    await empty.find('.quick-task-start').trigger('click')
+    await flushPromises()
+
+    expect(createAiRuns).toHaveBeenCalledWith(['t1'], {
+      engine: 'claude', runnerId: 'rn2', planMode: false,
+    })
+    expect(mounted.data.taskById('t1')?.status).toBe('AI 进行中')
+    expect(mounted.wrapper.findAll('.run-card').some((card) => card.text().includes('设计任务详情抽屉交互稿'))).toBe(true)
+    mounted.wrapper.unmount()
+  })
+
+  it('正在运行时仍可从标题旁打开完整的可 AI Run 任务清单', async () => {
+    vi.useFakeTimers()
+    const mounted = mountHome()
+    seedDataStore(mounted.data)
+    await flushPromises()
+
+    const trigger = mounted.wrapper.find('.quick-task-list-trigger')
+    expect(trigger.text()).toContain('可 AI Run 的任务')
+    await trigger.trigger('click')
+
+    const dialog = mounted.wrapper.find('.quick-task-dialog')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.attributes('role')).toBe('dialog')
+    expect(dialog.text()).toContain('一次点击即可按项目默认配置运行')
+    expect(dialog.text()).not.toContain('根据截图修复展示')
+    expect(dialog.findAll('.quick-task-list-item').length).toBeGreaterThan(0)
+    mounted.wrapper.unmount()
   })
 
   it('最近完成列表上方可保存自动派发开关和空闲小时数', async () => {
