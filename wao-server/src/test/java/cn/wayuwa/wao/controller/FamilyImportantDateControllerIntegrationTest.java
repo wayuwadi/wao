@@ -40,5 +40,33 @@ class FamilyImportantDateControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.reminderChannelAvailable").value(false))
                 .andExpect(jsonPath("$.data.reminderChannelHint").value(
                         org.hamcrest.Matchers.containsString("尚未绑定飞书")));
+
+        mvc.perform(get("/api/calendar/important-dates/date-conversion")
+                        .queryParam("calendarType", "LUNAR")
+                        .queryParam("lunarYear", "2026")
+                        .queryParam("lunarMonth", "1")
+                        .queryParam("lunarDay", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.solarDate").value("2026-02-17"))
+                .andExpect(jsonPath("$.data.lunarLabel").value(
+                        org.hamcrest.Matchers.containsString("正月初一")));
+
+        mvc.perform(post("/api/calendar/important-dates")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"农历生日","eventDate":"2025-01-29","note":null,
+                                 "calendarType":"LUNAR","lunarMonth":1,"lunarDay":1,
+                                 "lunarLeapMonth":false,"notificationType":"DIRECT",
+                                 "reminderEnabled":false,"reminderDaysBefore":0,"reminderTime":null}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.calendarType").value("LUNAR"));
+
+        mvc.perform(get("/api/calendar/important-dates")
+                        .queryParam("from", "2026-02-01").queryParam("to", "2026-02-28"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.events[0].date").value("2026-02-17"))
+                .andExpect(jsonPath("$.data.events[0].lunarDateLabel").value(
+                        org.hamcrest.Matchers.containsString("正月初一")));
     }
 }

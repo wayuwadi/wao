@@ -145,6 +145,32 @@ public class FeishuOpenApiClient {
         return matches.size() == 1 ? matches.get(0).openId() : "";
     }
 
+    /**
+     * 把同开发商稳定的 Union ID 换成当前群机器人应用可用于 @ 的 Open ID。
+     *
+     * <p>飞书没有提供直接转换端点；这里分别读取两种 id_type 的群成员，并且只有昵称在两份列表中
+     * 都唯一时才配对。重名、已退群或未保存 Union ID 时返回空串，绝不猜测要 @ 的人。
+     *
+     * @param token tenant_access_token
+     * @param chatId 目标群 id
+     * @param unionId 当前成员在同开发商下的 Union ID
+     * @return 当前应用下的 Open ID；无法唯一映射时为空串
+     */
+    public String chatMemberOpenIdByUnionId(String token, String chatId, String unionId) {
+        if (unionId == null || unionId.isBlank()) return "";
+        List<FeishuChatMember> unionMembers = listChatMembers(token, chatId, "union_id");
+        FeishuChatMember source = unionMembers.stream()
+                .filter(member -> unionId.equals(member.openId())).findFirst().orElse(null);
+        if (source == null || source.name().isBlank()
+                || unionMembers.stream().filter(member -> source.name().equals(member.name())).count() != 1) {
+            return "";
+        }
+        List<FeishuChatMember> openMembers = listChatMembers(token, chatId, "open_id");
+        List<FeishuChatMember> matches = openMembers.stream()
+                .filter(member -> source.name().equals(member.name())).toList();
+        return matches.size() == 1 ? matches.get(0).openId() : "";
+    }
+
     private List<FeishuChatMember> listChatMembers(String token, String chatId, String memberIdType) {
         List<FeishuChatMember> out = new ArrayList<>();
         String pageToken = null;

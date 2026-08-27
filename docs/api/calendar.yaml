@@ -1,14 +1,14 @@
 openapi: 3.0.3
 info:
   title: WAO 节假日日历 API
-  version: 0.3.0
-  description: 当前成员维护家庭重要日、主动选择国际节日范围，并设置飞书个人提醒。
+  version: 0.4.0
+  description: 当前成员维护公历/农历提醒事项、主动选择节日范围，并设置飞书私聊或群提醒。
 servers:
   - url: /api
 paths:
   /calendar/important-dates:
     get:
-      summary: 当前成员的家庭重要日维护列表、日期窗事件和飞书通道状态
+      summary: 当前成员的日历提醒事项、日期窗事件和飞书通道状态
       parameters:
         - { name: from, in: query, required: true, schema: { type: string, format: date } }
         - { name: to, in: query, required: true, schema: { type: string, format: date } }
@@ -20,7 +20,7 @@ paths:
               schema: { $ref: '#/components/schemas/FamilyImportantDateCalendarResponse' }
         '400': { description: 日期格式错误、to 早于 from 或窗口超过 370 天 }
     post:
-      summary: 新建当前成员每年重复的家庭重要日
+      summary: 新建当前成员每年重复的公历或农历提醒事项
       requestBody:
         required: true
         content:
@@ -29,9 +29,22 @@ paths:
       responses:
         '200': { description: OK }
         '400': { description: 字段不合法或开启提醒时飞书通道不可用 }
+  /calendar/important-dates/date-conversion:
+    get:
+      summary: 公历与农历权威双向转换
+      parameters:
+        - { name: calendarType, in: query, required: true, schema: { type: string, enum: [SOLAR, LUNAR] } }
+        - { name: solarDate, in: query, required: false, schema: { type: string, format: date } }
+        - { name: lunarYear, in: query, required: false, schema: { type: integer, minimum: 1900, maximum: 2100 } }
+        - { name: lunarMonth, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 12 } }
+        - { name: lunarDay, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 30 } }
+        - { name: lunarLeapMonth, in: query, required: false, schema: { type: boolean, default: false } }
+      responses:
+        '200': { description: 同一天的公历、农历字段和中文标签 }
+        '400': { description: 日期不存在、字段缺失或超出支持范围 }
   /calendar/important-dates/{id}:
     put:
-      summary: 修改当前成员拥有的家庭重要日
+      summary: 修改当前成员拥有的日历提醒事项
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -43,7 +56,7 @@ paths:
         '200': { description: OK }
         '404': { description: 资源不存在或不属于当前成员 }
     delete:
-      summary: 删除当前成员拥有的家庭重要日及其投递记录
+      summary: 删除当前成员拥有的日历提醒事项及其投递记录
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
@@ -105,7 +118,7 @@ components:
   schemas:
     SaveFamilyImportantDate:
       type: object
-      required: [name, eventDate, reminderEnabled, reminderDaysBefore]
+      required: [name, eventDate, reminderEnabled, reminderDaysBefore, calendarType, notificationType]
       properties:
         name: { type: string, maxLength: 64, example: 妈妈生日 }
         eventDate: { type: string, format: date, example: '1990-05-10' }
@@ -113,16 +126,25 @@ components:
         reminderEnabled: { type: boolean }
         reminderDaysBefore: { type: integer, minimum: 0, maximum: 30, example: 3 }
         reminderTime: { type: string, format: time, nullable: true, example: '08:30' }
+        calendarType: { type: string, enum: [SOLAR, LUNAR] }
+        lunarMonth: { type: integer, nullable: true, minimum: 1, maximum: 12 }
+        lunarDay: { type: integer, nullable: true, minimum: 1, maximum: 30 }
+        lunarLeapMonth: { type: boolean, default: false }
+        notificationType: { type: string, enum: [DIRECT, GROUP] }
+        chatId: { type: string, nullable: true, maxLength: 128 }
+        chatName: { type: string, nullable: true, maxLength: 128 }
     FamilyImportantDate:
       allOf:
         - type: object
           required: [id]
           properties:
             id: { type: string }
+            solarDateLabel: { type: string }
+            lunarDateLabel: { type: string }
         - { $ref: '#/components/schemas/SaveFamilyImportantDate' }
     FamilyImportantDateEvent:
       type: object
-      required: [id, importantDateId, date, name, reminderEnabled, reminderDaysBefore]
+      required: [id, importantDateId, date, name, reminderEnabled, reminderDaysBefore, calendarType, solarDateLabel, lunarDateLabel, notificationType]
       properties:
         id: { type: string }
         importantDateId: { type: string }
@@ -132,9 +154,14 @@ components:
         reminderEnabled: { type: boolean }
         reminderDaysBefore: { type: integer }
         reminderTime: { type: string, nullable: true }
+        calendarType: { type: string, enum: [SOLAR, LUNAR] }
+        solarDateLabel: { type: string }
+        lunarDateLabel: { type: string }
+        notificationType: { type: string, enum: [DIRECT, GROUP] }
+        chatName: { type: string, nullable: true }
     FamilyImportantDateCalendar:
       type: object
-      required: [items, events, reminderChannelAvailable, reminderChannelHint]
+      required: [items, events, reminderChannelAvailable, reminderChannelHint, groupChannelAvailable, groupChannelHint]
       properties:
         items:
           type: array
@@ -144,6 +171,8 @@ components:
           items: { $ref: '#/components/schemas/FamilyImportantDateEvent' }
         reminderChannelAvailable: { type: boolean }
         reminderChannelHint: { type: string }
+        groupChannelAvailable: { type: boolean }
+        groupChannelHint: { type: string }
     FamilyImportantDateCalendarResponse:
       type: object
       properties:

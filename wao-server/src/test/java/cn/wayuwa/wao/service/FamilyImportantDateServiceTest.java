@@ -43,6 +43,7 @@ class FamilyImportantDateServiceTest {
         account.setId("a1");
         AccountIdentityEntity identity = new AccountIdentityEntity();
         identity.setProviderSubject("ou_family");
+        identity.setProviderUnionSubject("on_family");
         when(accounts.findByMemberId("wg")).thenReturn(account);
         when(identities.findByAccountProvider("a1", "feishu")).thenReturn(identity);
         when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app-id");
@@ -96,7 +97,7 @@ class FamilyImportantDateServiceTest {
 
         service.sendDueReminders(LocalDateTime.of(2026, 5, 7, 8, 30));
 
-        verify(feishu).sendDirectCard(eq("token"), eq("ou_family"), eq("家庭重要日 · 妈妈生日"),
+        verify(feishu).sendDirectCard(eq("token"), eq("ou_family"), eq("日历提醒 · 妈妈生日"),
                 org.mockito.ArgumentMatchers.contains("3 天后"), eq("https://wao.wayuwa.cn/calendar"),
                 eq("打开 WAO 日历"));
         ArgumentCaptor<FamilyImportantDateDeliveryEntity> inserted =
@@ -109,12 +110,79 @@ class FamilyImportantDateServiceTest {
         assertThat(updated.getValue().getStatus()).isEqualTo("SENT");
     }
 
+    @Test
+    void convertsBothDirectionsAndExpandsLunarReminderByLunarMonthDay() {
+        var conversion = service.fromLunar(2026, 1, 1, false);
+        assertThat(conversion.solarDate()).isEqualTo("2026-02-17");
+        assertThat(service.fromSolar(LocalDate.of(2026, 2, 17)).lunarLabel()).contains("正月初一");
+
+        FamilyImportantDateEntity lunar = date("fid-lunar", LocalDate.of(2025, 1, 29));
+        lunar.setCalendarType("LUNAR");
+        lunar.setLunarMonth(1);
+        lunar.setLunarDay(1);
+        lunar.setLunarLeapMonth(false);
+        when(dates.selectList(any())).thenReturn(List.of(lunar));
+
+        var calendar = service.calendar("wg", LocalDate.of(2026, 2, 1), LocalDate.of(2026, 2, 28));
+
+        assertThat(calendar.events()).singleElement()
+                .satisfies(event -> {
+                    assertThat(event.date()).isEqualTo("2026-02-17");
+                    assertThat(event.calendarType()).isEqualTo("LUNAR");
+                    assertThat(event.lunarDateLabel()).contains("正月初一");
+                });
+    }
+
+    @Test
+    void sendsGroupReminderAndMentionsOnlyTheCreatorMappedThroughUnionId() {
+        FamilyImportantDateEntity reminder = date("fid-group", LocalDate.of(2025, 5, 10));
+        reminder.setReminderEnabled(true);
+        reminder.setReminderDaysBefore(1);
+        reminder.setReminderTime(LocalTime.of(9, 0));
+        reminder.setNotificationType("GROUP");
+        reminder.setChatId("oc_team");
+        reminder.setChatName("家人群");
+        when(dates.selectList(any())).thenReturn(List.of(reminder));
+        when(deliveries.selectOne(any())).thenReturn(null);
+        when(feishu.tenantAccessToken("app-id", "secret")).thenReturn("token");
+        when(feishu.chatMemberOpenIdByUnionId("token", "oc_team", "on_family"))
+                .thenReturn("ou_group_family");
+
+        service.sendDueReminders(LocalDateTime.of(2026, 5, 9, 9, 0));
+
+        ArgumentCaptor<cn.wayuwa.wao.feishu.FeishuWebhookNotifier.Card> card =
+                ArgumentCaptor.forClass(cn.wayuwa.wao.feishu.FeishuWebhookNotifier.Card.class);
+        verify(feishu).sendCard(eq("token"), eq("oc_team"), card.capture());
+        assertThat(card.getValue().body()).contains("<at id=ou_group_family></at>", "1 天后");
+    }
+
+    @Test
+    void savesOnlyARealSelectedChatWhoseCreatorCanBeMentioned() {
+        when(feishu.tenantAccessToken("app-id", "secret")).thenReturn("token");
+        when(feishu.listChats("token")).thenReturn(List.of(
+                new FeishuOpenApiClient.FeishuChat("oc_family", "家人群")));
+        when(feishu.chatMemberOpenIdByUnionId("token", "oc_family", "on_family"))
+                .thenReturn("ou_group_family");
+
+        service.create("wg", new SaveFamilyImportantDateRequest(
+                "续费提醒", LocalDate.of(2026, 9, 1), null, true, 1, LocalTime.of(9, 0),
+                "SOLAR", null, null, false, "GROUP", "oc_family", "家人群"));
+
+        verify(dates).insert(any(FamilyImportantDateEntity.class));
+        assertThatThrownBy(() -> service.create("wg", new SaveFamilyImportantDateRequest(
+                "伪造群名", LocalDate.of(2026, 9, 1), null, true, 1, LocalTime.of(9, 0),
+                "SOLAR", null, null, false, "GROUP", "oc_family", "另一个群")))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("重新选择");
+    }
+
     private static FamilyImportantDateEntity date(String id, LocalDate eventDate) {
         FamilyImportantDateEntity entity = new FamilyImportantDateEntity();
         entity.setId(id);
         entity.setMemberId("wg");
         entity.setName("妈妈生日");
         entity.setEventDate(eventDate);
+        entity.setCalendarType("SOLAR");
+        entity.setNotificationType("DIRECT");
         entity.setReminderEnabled(false);
         entity.setReminderDaysBefore(0);
         return entity;

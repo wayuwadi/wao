@@ -4,6 +4,7 @@ import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.dto.FamilyImportantDateCalendarDto;
+import cn.wayuwa.wao.dto.CalendarDateConversionDto;
 import cn.wayuwa.wao.dto.FamilyImportantDateDto;
 import cn.wayuwa.wao.dto.SaveFamilyImportantDateRequest;
 import cn.wayuwa.wao.service.FamilyImportantDateService;
@@ -20,7 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 当前成员维护家庭重要日并获取年度日历事件的接口。 */
+/** 当前成员维护日历提醒事项、转换阴阳历并获取年度事件的接口。 */
 @RestController
 @RequestMapping("/api/calendar/important-dates")
 public class FamilyImportantDateController {
@@ -50,21 +51,43 @@ public class FamilyImportantDateController {
         return ApiResponse.ok(service.calendar(member(http), start, end));
     }
 
-    /** 新建一个每年显示的家庭重要日。 */
+    /** 公历或农历输入发生变化时，返回两种历法的同一天。 */
+    @GetMapping("/date-conversion")
+    public ApiResponse<CalendarDateConversionDto> convertDate(
+            @RequestParam(defaultValue = "SOLAR") String calendarType,
+            @RequestParam(required = false) String solarDate,
+            @RequestParam(required = false) Integer lunarYear,
+            @RequestParam(required = false) Integer lunarMonth,
+            @RequestParam(required = false) Integer lunarDay,
+            @RequestParam(defaultValue = "false") boolean lunarLeapMonth) {
+        if ("LUNAR".equalsIgnoreCase(calendarType)) {
+            if (lunarYear == null || lunarMonth == null || lunarDay == null) {
+                throw new BadRequestException("农历日期需要填写年、月、日");
+            }
+            return ApiResponse.ok(service.fromLunar(lunarYear, lunarMonth, lunarDay, lunarLeapMonth));
+        }
+        try {
+            return ApiResponse.ok(service.fromSolar(LocalDate.parse(solarDate)));
+        } catch (Exception exception) {
+            throw new BadRequestException("公历日期格式应为 yyyy-MM-dd");
+        }
+    }
+
+    /** 新建一个每年显示的日历提醒事项。 */
     @PostMapping
     public ApiResponse<FamilyImportantDateDto> create(@Valid @RequestBody SaveFamilyImportantDateRequest request,
             HttpServletRequest http) {
         return ApiResponse.ok(service.create(member(http), request));
     }
 
-    /** 修改当前成员拥有的家庭重要日。 */
+    /** 修改当前成员拥有的日历提醒事项。 */
     @PutMapping("/{id}")
     public ApiResponse<FamilyImportantDateDto> update(@PathVariable String id,
             @Valid @RequestBody SaveFamilyImportantDateRequest request, HttpServletRequest http) {
         return ApiResponse.ok(service.update(member(http), id, request));
     }
 
-    /** 删除当前成员拥有的家庭重要日。 */
+    /** 删除当前成员拥有的日历提醒事项。 */
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest http) {
         service.delete(member(http), id);

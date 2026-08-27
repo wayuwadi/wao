@@ -59,6 +59,11 @@ public class HolidayService {
             international("圣诞节", "international.christmas", CHRISTIAN));
     private static final Definition EASTER = new Definition(
             "international.easter", "复活节", INTERNATIONAL, CHRISTIAN);
+    private static final Set<String> SOLAR_TERMS = Set.of(
+            "立春", "雨水", "惊蛰", "春分", "清明", "谷雨",
+            "立夏", "小满", "芒种", "夏至", "小暑", "大暑",
+            "立秋", "处暑", "白露", "秋分", "寒露", "霜降",
+            "立冬", "小雪", "大雪", "冬至", "小寒", "大寒");
 
     /** 返回日期窗内的中国节日和当前成员主动选择的国际节日。 */
     public List<HolidayEventDto> events(LocalDate from, LocalDate to, Set<String> selectedInternationalCategories) {
@@ -128,7 +133,13 @@ public class HolidayService {
             Definition definition = CHINESE.get(festival);
             if (definition != null) addFestivalUnlessScheduled(out, date, definition);
         }
-        if ("清明".equals(lunar.getJieQi())) addFestivalUnlessScheduled(out, date, CHINESE.get("清明节"));
+        String solarTerm = lunar.getJieQi();
+        if ("清明".equals(solarTerm)) addFestivalUnlessScheduled(out, date, CHINESE.get("清明节"));
+        if (SOLAR_TERMS.contains(solarTerm)) {
+            Definition definition = new Definition("china.solar-term." + solarTerm, solarTerm, CHINA, null);
+            add(out, new Candidate(date, definition, "节气 · " + solarTerm, FESTIVAL,
+                    LUNAR_SOURCE, LUNAR_SOURCE_URL, false));
+        }
     }
 
     private void addInternationalFestivals(Map<String, Candidate> out, LocalDate date, Set<String> selected) {

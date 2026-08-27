@@ -20,6 +20,7 @@ import type { Task } from '@/types'
 import type { AlternateWorkWeekSchedule } from '@/utils/workSchedule'
 import {
   createFamilyImportantDate,
+  convertCalendarDate,
   deleteFamilyImportantDate,
   fetchFamilyImportantDates,
   updateFamilyImportantDate,
@@ -27,6 +28,7 @@ import {
   type FamilyImportantDateCalendar,
   type SaveFamilyImportantDate,
 } from '@/api/importantDates'
+import { fetchFeishuChats } from '@/api/system'
 
 vi.mock('@/api/caldav', () => ({
   fetchCaldavAccounts: vi.fn<() => Promise<never[]>>(async () => []),
@@ -52,6 +54,11 @@ vi.mock('@/api/importantDates', () => ({
   createFamilyImportantDate: vi.fn<(value: SaveFamilyImportantDate) => Promise<FamilyImportantDate>>(),
   updateFamilyImportantDate: vi.fn<(id: string, value: SaveFamilyImportantDate) => Promise<FamilyImportantDate>>(),
   deleteFamilyImportantDate: vi.fn<(id: string) => Promise<void>>(),
+  convertCalendarDate: vi.fn(),
+}))
+
+vi.mock('@/api/system', () => ({
+  fetchFeishuChats: vi.fn(async () => [{ chatId: 'oc_family', name: '家人群' }]),
 }))
 
 const emptyHolidayCalendar: HolidayCalendar = { events: [], years: [] }
@@ -66,6 +73,7 @@ const defaultHolidaySettings: HolidaySettings = {
 }
 const emptyImportantDates: FamilyImportantDateCalendar = {
   items: [], events: [], reminderChannelAvailable: true, reminderChannelHint: '提醒将私聊飞书',
+  groupChannelAvailable: true, groupChannelHint: '提醒将发到所选群并 @ 我',
 }
 
 function holiday(patch: Partial<HolidayEvent>): HolidayEvent {
@@ -101,6 +109,16 @@ describe('日历成员隔离、清单与时间轴', () => {
     vi.mocked(createFamilyImportantDate).mockReset()
     vi.mocked(updateFamilyImportantDate).mockReset()
     vi.mocked(deleteFamilyImportantDate).mockReset().mockResolvedValue()
+    vi.mocked(fetchFeishuChats).mockReset().mockResolvedValue([{ chatId: 'oc_family', name: '家人群' }])
+    vi.mocked(convertCalendarDate).mockReset().mockImplementation(async (value) => ({
+      solarDate: value.solarDate ?? '2026-02-17',
+      lunarYear: value.lunarYear ?? 2026,
+      lunarMonth: value.lunarMonth ?? 1,
+      lunarDay: value.lunarDay ?? 1,
+      lunarLeapMonth: Boolean(value.lunarLeapMonth),
+      solarLabel: value.solarDate ?? '2026-02-17',
+      lunarLabel: '农历二〇二六年正月初一',
+    }))
   })
 
   it('默认只看当前人，待安排清单只含未排期与已逾期任务并可集中筛选', async () => {
@@ -147,6 +165,8 @@ describe('日历成员隔离、清单与时间轴', () => {
     await slots[10]!.trigger('mouseenter')
     await wrapper.find('.timeline').trigger('mouseup')
 
+    expect(wrapper.find('.create-choice-modal').exists()).toBe(true)
+    await wrapper.find('.create-choice-grid button').trigger('click')
     expect(ui.modal).toBe('task')
     expect(ui.modalStartAt).toBe(`${data.today}T09:00`)
     expect(ui.modalEndAt).toBe(`${data.today}T11:00`)
@@ -193,6 +213,11 @@ describe('日历成员隔离、清单与时间轴', () => {
       expect.stringContaining('已完成的截止任务'),
     ]))
     expect(wrapper.findAll('.bl-item')).toHaveLength(0)
+
+    await wrapper.find('.completed-toggle').trigger('click')
+    expect(wrapper.findAll('.event.completed')).toHaveLength(0)
+    expect(wrapper.find('.completed-toggle').text()).toContain('显示已完成任务')
+    await wrapper.find('.completed-toggle').trigger('click')
 
     await wrapper.findAll('.view-switch button')[3]!.trigger('click')
     const timelineEvent = wrapper.find('.timeline-event.completed')
@@ -377,15 +402,20 @@ describe('日历成员隔离、清单与时间轴', () => {
         id: `event-${item.id}`, importantDateId: item.id, date: data.today, name: item.name,
         note: item.note, reminderEnabled: item.reminderEnabled,
         reminderDaysBefore: item.reminderDaysBefore, reminderTime: item.reminderTime,
+        calendarType: item.calendarType, solarDateLabel: data.today,
+        lunarDateLabel: item.lunarDateLabel, notificationType: item.notificationType,
+        chatName: item.chatName,
       })),
     }))
     vi.mocked(createFamilyImportantDate).mockImplementation(async (value) => {
-      const saved = { id: 'fid1', ...value }
+      const saved = { id: 'fid1', ...value, solarDateLabel: value.eventDate,
+        lunarDateLabel: '农历二〇二六年七月初二' }
       items.push(saved)
       return saved
     })
     vi.mocked(updateFamilyImportantDate).mockImplementation(async (id, value) => {
-      const saved = { id, ...value }
+      const saved = { id, ...value, solarDateLabel: value.eventDate,
+        lunarDateLabel: '农历二〇二六年七月初二' }
       items.splice(0, 1, saved)
       return saved
     })
@@ -395,9 +425,10 @@ describe('日历成员隔离、清单与时间轴', () => {
     const wrapper = mount(CalendarView, { global: { plugins: [router] } })
     await flushPromises()
     await wrapper.find('.important-date-entry').trigger('click')
-    expect(wrapper.find('.important-date-empty').text()).toContain('还没有家庭重要日')
+    expect(wrapper.find('.important-date-empty').text()).toContain('还没有提醒事项')
 
     await wrapper.find('.important-date-empty button').trigger('click')
+    await flushPromises()
     await wrapper.find('.important-date-field input[type="text"]').setValue('妈妈生日')
     await wrapper.find('.important-date-field input[type="date"]').setValue(data.today)
     await wrapper.find('.important-date-field textarea').setValue('记得提前订花')
@@ -410,8 +441,10 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(createFamilyImportantDate).toHaveBeenCalledWith({
       name: '妈妈生日', eventDate: data.today, note: '记得提前订花', reminderEnabled: true,
       reminderDaysBefore: 3, reminderTime: '08:30',
+      calendarType: 'SOLAR', lunarMonth: 1, lunarDay: 1, lunarLeapMonth: false,
+      notificationType: 'DIRECT', chatId: null, chatName: null,
     })
-    expect(wrapper.find('.important-date-item').text()).toContain('提前 3 天 08:30 飞书提醒')
+    expect(wrapper.find('.important-date-item').text()).toContain('提前 3 天 08:30 飞书私聊提醒')
     expect(wrapper.findAll('.event').some((event) => event.text().includes('妈妈生日'))).toBe(true)
 
     await wrapper.find('.important-date-main').trigger('click')
@@ -424,5 +457,52 @@ describe('日历成员隔离、清单与时间轴', () => {
     await flushPromises()
     expect(deleteFamilyImportantDate).toHaveBeenCalledWith('fid1')
     expect(wrapper.find('.important-date-empty').exists()).toBe(true)
+  })
+
+  it('从日历可分流创建农历群提醒，并可搜索后跳到当日预览', async () => {
+    const data = useDataStore()
+    const session = useSessionStore()
+    const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me]
+    const reminder: FamilyImportantDate = {
+      id: 'fid-lunar', name: '农历生日', eventDate: data.today, note: null,
+      reminderEnabled: true, reminderDaysBefore: 1, reminderTime: '09:00',
+      calendarType: 'LUNAR', lunarMonth: 7, lunarDay: 2, lunarLeapMonth: false,
+      solarDateLabel: data.today, lunarDateLabel: '农历二〇二六年七月初二',
+      notificationType: 'GROUP', chatId: 'oc_family', chatName: '家人群',
+    }
+    vi.mocked(fetchFamilyImportantDates).mockResolvedValue({
+      ...emptyImportantDates, items: [reminder], events: [{
+        id: 'event-lunar', importantDateId: reminder.id, date: data.today, name: reminder.name,
+        note: null, reminderEnabled: true, reminderDaysBefore: 1, reminderTime: '09:00',
+        calendarType: 'LUNAR', solarDateLabel: data.today,
+        lunarDateLabel: reminder.lunarDateLabel, notificationType: 'GROUP', chatName: '家人群',
+      }],
+    })
+
+    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    await wrapper.find('.day-num').trigger('dblclick')
+    expect(wrapper.find('.create-choice-modal').text()).toContain('任务')
+    expect(wrapper.find('.create-choice-modal').text()).toContain('提醒事项')
+    await wrapper.findAll('.create-choice-grid button')[1]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.important-date-form').exists()).toBe(true)
+    await wrapper.findAll('.calendar-type-switch button')[1]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.date-conversion').text()).toContain('对应公历')
+    await wrapper.findAll('.notification-type button')[1]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.important-date-field select option').exists()).toBe(true)
+
+    await wrapper.find('.cd-close').trigger('click')
+    await wrapper.find('.calendar-search input').setValue('农历生日')
+    expect(wrapper.find('.calendar-search-results').text()).toContain('农历生日')
+    await wrapper.find('.calendar-search-results button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.important-date-modal').exists()).toBe(true)
+    expect(wrapper.find('.important-date-form input[type="text"]').element).toHaveProperty('value', '农历生日')
   })
 })
