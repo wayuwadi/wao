@@ -114,6 +114,17 @@ class PublishFlowIntegrationTest {
     }
 
     @Test
+    void uploadedMediaAppearsInAuthenticatedLibrary() throws Exception {
+        String mediaId = uploadVideo();
+
+        mvc.perform(get("/api/agent/publish/media"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[*].id", org.hamcrest.Matchers.hasItem(mediaId)))
+                .andExpect(jsonPath("$.data[?(@.id == '" + mediaId + "')].createdAt",
+                        org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.notNullValue())));
+    }
+
+    @Test
     void generationIsRefusedWhenNoModelConfigured() throws Exception {
         mvc.perform(post("/api/agent/publish/tasks")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -12,6 +12,7 @@ import cn.wayuwa.wao.agent.service.MediaAssetService;
 import cn.wayuwa.wao.agent.service.PublishTaskService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -62,6 +63,11 @@ public class PublishController {
     @PostMapping("/media")
     public ApiResponse<MediaAssetDto> upload(@RequestParam("file") MultipartFile file, HttpServletRequest request) {
         return ApiResponse.ok(mediaAssets.store(accountId(request), file));
+    }
+
+    @GetMapping("/media")
+    public ApiResponse<List<MediaAssetDto>> media(HttpServletRequest request) {
+        return ApiResponse.ok(mediaAssets.list(accountId(request)));
     }
 
     private String accountId(HttpServletRequest request) {

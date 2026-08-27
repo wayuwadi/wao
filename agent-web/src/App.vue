@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { getSession } from '@/api/agent'
 import { getStudio, markSuggestion, recommendTopics, refreshHotspots, saveProfile } from '@/api/studio'
 import { ApiError } from '@/api/http'
+import MaterialLibrary from '@/components/MaterialLibrary.vue'
 import PublishCenter from '@/components/PublishCenter.vue'
 import VideoWorkflow from '@/components/VideoWorkflow.vue'
 import type { AgentSession, Studio, TopicSuggestion } from '@/types'
@@ -17,13 +18,18 @@ const profileForm = reactive({ niche: '', audience: '', tone: '', avoid: '' })
 const recommendForm = reactive({ platform: 'DOUYIN', count: 5 })
 const authState = ref<AuthState>('loading')
 const message = ref('正在读取 WAO 登录会话…')
-const activeSection = ref('选题中心')
+const activeSection = ref('内容创作')
+const creationMode = ref<'topics' | 'video'>('topics')
 const publishTopic = ref('')
+const profileDirty = ref(false)
+const contentDirty = ref(false)
 
 const NAV_ITEMS = [
-  { id: '选题中心', icon: 'ri-fire-line',           badge: '' },
-  { id: '视频工作流', icon: 'ri-movie-2-line',       badge: '新' },
-  { id: '发布中心', icon: 'ri-send-plane-line',     badge: '' },
+  { id: '账号管理', icon: 'ri-user-settings-line', badge: '' },
+  { id: '内容管理', icon: 'ri-file-list-3-line', badge: '' },
+  { id: '素材管理', icon: 'ri-gallery-line', badge: '' },
+  { id: '内容创作', icon: 'ri-quill-pen-line', badge: '' },
+  { id: '内容发布', icon: 'ri-send-plane-line', badge: '' },
 ]
 
 function formatHeat(heat?: number) {
@@ -33,13 +39,15 @@ function formatHeat(heat?: number) {
   return String(heat)
 }
 
-async function refreshStudio() {
+async function refreshStudio(force = false) {
+  if (profileDirty.value && !force && !window.confirm('账号定位还有未保存修改，仍要重新读取吗？')) return
   studio.value = await getStudio()
   const p = studio.value.profile
   profileForm.niche    = p.niche    || ''
   profileForm.audience = p.audience || ''
   profileForm.tone     = p.tone     || ''
   profileForm.avoid    = p.avoid    || ''
+  profileDirty.value = false
 }
 
 async function runStudio(kind: string, action: () => Promise<unknown>) {
@@ -69,8 +77,28 @@ function doRefreshHotspots() {
 function doSaveProfile() {
   return runStudio('profile', async () => {
     await saveProfile({ ...profileForm })
+    profileDirty.value = false
     studioMessage.value = '账号定位已保存'
   })
+}
+
+function markProfileDirty() {
+  profileDirty.value = true
+  studioMessage.value = '账号定位有未保存修改'
+}
+
+function switchSection(next: string) {
+  if (next === activeSection.value) return
+  const leavingProfile = activeSection.value === '账号管理' && profileDirty.value
+  const leavingContent = (activeSection.value === '内容管理' || activeSection.value === '内容发布')
+    && contentDirty.value
+  if ((leavingProfile || leavingContent) && !window.confirm('当前内容还有未保存修改，仍要离开吗？')) return
+  if (leavingProfile) {
+    profileDirty.value = false
+    void refreshStudio(true)
+  }
+  contentDirty.value = false
+  activeSection.value = next
 }
 
 function doRecommend() {
@@ -86,7 +114,7 @@ function useSuggestion(suggestion: TopicSuggestion) {
   return runStudio('use-' + suggestion.id, async () => {
     await markSuggestion(suggestion.id, 'USED')
     publishTopic.value = suggestion.topic
-    activeSection.value = '发布中心'
+    switchSection('内容管理')
   })
 }
 
@@ -104,7 +132,13 @@ function reloadPage() {
   window.location.reload()
 }
 
+function warnBeforeUnload(event: BeforeUnloadEvent) {
+  if (!profileDirty.value) return
+  event.preventDefault()
+}
+
 onMounted(async () => {
+  window.addEventListener('beforeunload', warnBeforeUnload)
   try {
     session.value = await getSession()
     await refreshStudio()
@@ -120,6 +154,7 @@ onMounted(async () => {
     }
   }
 })
+onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
 </script>
 
 <template>
@@ -154,14 +189,14 @@ onMounted(async () => {
       </div>
 
       <nav class="sidebar-menu">
-        <div class="menu-group-label">创作</div>
+        <div class="menu-group-label">内容创作</div>
         <div class="menu-items">
           <button
             v-for="item in NAV_ITEMS"
             :key="item.id"
             class="menu-item"
             :class="{ active: activeSection === item.id }"
-            @click="activeSection = item.id"
+            @click="switchSection(item.id)"
           >
             <i :class="item.icon"></i>
             <span class="menu-item-label">{{ item.id }}</span>
@@ -186,23 +221,58 @@ onMounted(async () => {
       <header class="main-header">
         <span class="page-title">{{ activeSection }}</span>
         <div class="header-spacer"></div>
-        <button class="btn-ghost" style="height:30px;font-size:12px;" @click="refreshStudio">
+        <button v-if="activeSection === '账号管理' || activeSection === '内容创作'" class="btn-ghost" style="height:30px;font-size:12px;" @click="refreshStudio()">
           <i class="ri-refresh-line"></i>刷新
         </button>
       </header>
 
       <div class="main-body">
 
-        <!-- ===== 选题中心 ===== -->
-        <template v-if="activeSection === '选题中心' && studio">
+        <!-- ===== 账号管理 ===== -->
+        <template v-if="activeSection === '账号管理' && studio">
           <p v-if="studioMessage" class="message-bar">{{ studioMessage }}</p>
 
-          <div v-if="!studio.profile.configured" class="capability-note">
-            <i class="ri-error-warning-line"></i>
-            <span>还没填账号定位。不填也能推荐，但填上「领域」后推荐质量差别很大。</span>
+          <div class="account-layout">
+            <section class="panel account-profile">
+              <div class="panel-head"><div><h2>账号定位</h2><p>决定热点推荐和成稿语气，保存后按当前工作区持久化</p></div></div>
+              <label class="field-mini">领域<input v-model="profileForm.niche" maxlength="200" placeholder="例如：程序员 AI 副业" @input="markProfileDirty" /></label>
+              <label class="field-mini">受众<input v-model="profileForm.audience" maxlength="200" placeholder="例如：想用 AI 提效的开发者" @input="markProfileDirty" /></label>
+              <label class="field-mini">语气<input v-model="profileForm.tone" maxlength="200" placeholder="例如：轻松吐槽，像和朋友聊天" @input="markProfileDirty" /></label>
+              <label class="field-mini">避免<input v-model="profileForm.avoid" maxlength="500" placeholder="例如：绝对化用词、政治话题" @input="markProfileDirty" /></label>
+              <button class="btn-primary profile-save" :disabled="studioBusy === 'profile' || !profileDirty" @click="doSaveProfile">
+                <i class="ri-save-line"></i>{{ studioBusy === 'profile' ? '保存中…' : '保存账号定位' }}
+              </button>
+            </section>
+            <section class="account-platforms">
+              <div class="section-heading compact"><div><h2>平台账号</h2><p>仅展示后端声明的真实 OAuth 与发布能力</p></div></div>
+              <PublishCenter mode="accounts" />
+            </section>
+          </div>
+        </template>
+
+        <!-- ===== 内容创作 ===== -->
+        <template v-else-if="activeSection === '内容创作' && studio">
+          <div class="creation-tabs" role="tablist" aria-label="内容创作方式">
+            <button :class="{ active: creationMode === 'topics' }" role="tab" :aria-selected="creationMode === 'topics'" @click="creationMode = 'topics'">
+              <i class="ri-fire-line"></i>热点选题
+            </button>
+            <button :class="{ active: creationMode === 'video' }" role="tab" :aria-selected="creationMode === 'video'" @click="creationMode = 'video'">
+              <i class="ri-movie-2-line"></i>视频创作
+            </button>
           </div>
 
-          <div class="studio-grid">
+          <VideoWorkflow v-if="creationMode === 'video'" />
+
+          <template v-else>
+            <p v-if="studioMessage" class="message-bar">{{ studioMessage }}</p>
+
+            <button v-if="!studio.profile.configured" class="capability-note actionable" @click="switchSection('账号管理')">
+              <i class="ri-error-warning-line"></i>
+              <span>还没填账号定位。不填也能推荐，但补全「领域」后推荐质量差别很大。</span>
+              <b>去设置</b>
+            </button>
+
+            <div class="studio-grid">
             <!-- 热点列 -->
             <div class="panel">
               <div class="panel-head">
@@ -235,21 +305,9 @@ onMounted(async () => {
               </ul>
             </div>
 
-            <!-- 账号定位 + 推荐 -->
+            <!-- 推荐 -->
             <div class="panel">
-              <div class="panel-head"><div><h2>账号定位</h2><p>决定推荐质量</p></div></div>
-              <label class="field-mini">领域<input v-model="profileForm.niche"    maxlength="200" placeholder="例如：程序员 AI 副业" /></label>
-              <label class="field-mini">受众<input v-model="profileForm.audience" maxlength="200" placeholder="例如：想用 AI 提效的开发者" /></label>
-              <label class="field-mini">语气<input v-model="profileForm.tone"     maxlength="200" placeholder="例如：轻松吐槽，像和朋友聊天" /></label>
-              <label class="field-mini">避免<input v-model="profileForm.avoid"    maxlength="500" placeholder="例如：绝对化用词、政治话题" /></label>
-              <button class="btn-ghost full" style="margin-bottom:16px;"
-                      :disabled="studioBusy === 'profile'" @click="doSaveProfile">
-                <i class="ri-save-line"></i>{{ studioBusy === 'profile' ? '保存中…' : '保存定位' }}
-              </button>
-
-              <div class="panel-head" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--wao-divider);">
-                <div><h2>选题推荐</h2><p>从热榜里挑你能做的</p></div>
-              </div>
+              <div class="panel-head"><div><h2>选题推荐</h2><p>结合账号定位，从热榜里挑当前账号能做的</p></div></div>
               <div class="recommend-bar">
                 <select v-model="recommendForm.platform" style="flex:1;">
                   <option value="DOUYIN">抖音</option>
@@ -266,20 +324,20 @@ onMounted(async () => {
                 </button>
               </div>
             </div>
-          </div>
+            </div>
 
           <!-- 选题建议 -->
-          <div v-if="studio.suggestions.length" class="section-heading">
+            <div v-if="studio.suggestions.length" class="section-heading">
             <div><h2>选题建议</h2><p>共 {{ studio.suggestions.length }} 条</p></div>
           </div>
-          <div v-if="!studio.suggestions.length" class="panel" style="margin-top:14px;">
+            <div v-if="!studio.suggestions.length" class="panel" style="margin-top:14px;">
             <div class="empty">
               <i class="ri-lightbulb-line"></i>
               <b>还没有选题建议</b>
               <span>先刷新热点，再点「推荐选题」。</span>
             </div>
           </div>
-          <div v-else class="suggestion-grid">
+            <div v-else class="suggestion-grid">
             <div v-for="item in studio.suggestions" :key="item.id"
                  class="suggestion-card" :class="{ used: item.status === 'USED' }">
               <div class="suggestion-head">
@@ -311,14 +369,18 @@ onMounted(async () => {
                 </template>
               </div>
             </div>
-          </div>
+            </div>
+          </template>
         </template>
 
-        <!-- ===== 视频工作流 ===== -->
-        <VideoWorkflow v-else-if="activeSection === '视频工作流'" />
+        <!-- ===== 内容管理 ===== -->
+        <PublishCenter v-else-if="activeSection === '内容管理'" mode="content" :initial-topic="publishTopic" @topic-consumed="publishTopic = ''" @dirty-change="contentDirty = $event" />
 
-        <!-- ===== 发布中心 ===== -->
-        <PublishCenter v-else-if="activeSection === '发布中心'" :initial-topic="publishTopic" />
+        <!-- ===== 素材管理 ===== -->
+        <MaterialLibrary v-else-if="activeSection === '素材管理'" />
+
+        <!-- ===== 内容发布 ===== -->
+        <PublishCenter v-else-if="activeSection === '内容发布'" mode="publishing" @dirty-change="contentDirty = $event" />
 
       </div>
     </div>

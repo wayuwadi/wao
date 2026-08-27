@@ -1,13 +1,14 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PublishCenter from './PublishCenter.vue'
-import { createPublishTask, getPublishCenter } from '@/api/publish'
+import { createPublishTask, getPublishCenter, listMedia } from '@/api/publish'
 import type { PublishCenter as PublishCenterData, PublishTask } from '@/types'
 
 vi.mock('@/api/publish', () => ({
   createPublishTask: vi.fn(),
   getAuthorizeUrl: vi.fn(),
   getPublishCenter: vi.fn(),
+  listMedia: vi.fn(),
   submitPublishTask: vi.fn(),
   unbindAccount: vi.fn(),
   updatePublishTask: vi.fn(),
@@ -42,6 +43,7 @@ describe('真实发布中心', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getPublishCenter).mockResolvedValue(structuredClone(center))
+    vi.mocked(listMedia).mockResolvedValue([])
     vi.mocked(createPublishTask).mockResolvedValue(task())
   })
 
@@ -56,5 +58,29 @@ describe('真实发布中心', () => {
 
     expect(createPublishTask).toHaveBeenCalledWith('从真实热点生成内容', 'DOUYIN', false)
     wrapper.unmount()
+  })
+
+  it('内容管理只编辑草稿，内容发布才展示平台提交入口', async () => {
+    vi.mocked(getPublishCenter).mockResolvedValue({ ...structuredClone(center), tasks: [task()] })
+    vi.mocked(listMedia).mockResolvedValue([{
+      id: 'asset-1', kind: 'VIDEO', originalName: '已上传成片.webm', contentType: 'video/webm',
+      byteSize: 4096, createdAt: '2026-08-27T10:00:00',
+    }])
+
+    const content = mount(PublishCenter, { props: { mode: 'content' } })
+    await flushPromises()
+    expect(content.text()).toContain('新建内容')
+    expect(content.text()).toContain('抖音内容稿')
+    expect(content.text()).toContain('已上传成片.webm · 4.0 KB')
+    expect(content.text()).not.toContain('连接账号')
+    expect(content.text()).not.toContain('确认发布到抖音')
+    content.unmount()
+
+    const publishing = mount(PublishCenter, { props: { mode: 'publishing' } })
+    await flushPromises()
+    expect(publishing.text()).not.toContain('新建内容')
+    expect(publishing.text()).toContain('抖音发布稿')
+    expect(publishing.text()).toContain('确认发布到抖音')
+    publishing.unmount()
   })
 })

@@ -37,3 +37,5 @@ export const uploadMedia = (file: File) => {
   form.append('file', file)
   return unwrap<MediaAsset>(http.post('/api/agent/publish/media', form, { timeout: 0 }))
 }
+
+export const listMedia = () => unwrap<MediaAsset[]>(http.get('/api/agent/publish/media'))

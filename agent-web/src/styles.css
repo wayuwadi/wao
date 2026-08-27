@@ -384,6 +384,22 @@
 
 /* ===== 选题中心 ===== */
 .studio-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 14px; }
+.account-layout { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.account-profile { position: sticky; top: 0; }
+.account-platforms { min-width: 0; }
+.profile-save { width: 100%; min-height: 36px; margin-top: 5px; justify-content: center; }
+.section-heading.compact { margin: 0 0 10px; }
+.creation-tabs {
+  width: fit-content; margin-bottom: 14px; padding: 3px;
+  display: flex; gap: 2px; border: 1px solid var(--wao-line);
+  border-radius: 9px; background: var(--wao-bg-card);
+}
+.creation-tabs button {
+  min-height: 32px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px;
+  border: 0; border-radius: 7px; background: transparent; color: var(--wao-text-weak);
+  cursor: pointer; font-size: 12px;
+}
+.creation-tabs button.active { background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: 600; }
 .source-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .source-chip {
   display: inline-flex; align-items: center; gap: 4px;
@@ -475,6 +491,9 @@ a.suggestion-origin:hover { color: var(--wao-primary); }
 }
 .capability-note i    { font-size: 14px; flex-shrink: 0; }
 .capability-note.small { font-size: 11px; padding: 8px 10px; margin-bottom: 10px; }
+.capability-note.actionable { width: 100%; align-items: center; text-align: left; cursor: pointer; }
+.capability-note.actionable span { flex: 1; }
+.capability-note.actionable b { white-space: nowrap; font-size: 11px; }
 
 /* ===== 占位页 ===== */
 .placeholder-page {
@@ -503,6 +522,8 @@ a.suggestion-origin:hover { color: var(--wao-primary); }
 /* ===== 响应式 ===== */
 @media (max-width: 1100px) {
   .studio-grid, .suggestion-grid { grid-template-columns: 1fr; }
+  .account-layout { grid-template-columns: 1fr; }
+  .account-profile { position: static; }
   .stats-row { grid-template-columns: repeat(2, 1fr); }
   .two-col   { grid-template-columns: 1fr; }
 }
@@ -539,4 +560,6 @@ a.suggestion-origin:hover { color: var(--wao-primary); }
   .launch-form { flex-wrap: wrap; width: 100%; }
   .launch-form input { flex-basis: 100%; }
   .stats-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .creation-tabs { width: 100%; }
+  .creation-tabs button { flex: 1; justify-content: center; }
 }
