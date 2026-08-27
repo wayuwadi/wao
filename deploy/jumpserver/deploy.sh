@@ -149,11 +149,21 @@ run_jmsctl() {
 }
 
 schema_marker="$state_root/schema-$edition_version"
+core_container_before="$(sudo -n docker inspect --format '{{.Id}}' jms_core 2>/dev/null || true)"
+web_container_before="$(sudo -n docker inspect --format '{{.Id}}' jms_web 2>/dev/null || true)"
 run_jmsctl start --skip-kotl
 if [ ! -f "$schema_marker" ]; then
   run_jmsctl migrate_db
   sudo -n install -m 0644 /dev/null "$schema_marker"
   run_jmsctl restart --skip-kotl
+fi
+
+core_container_after="$(sudo -n docker inspect --format '{{.Id}}' jms_core 2>/dev/null || true)"
+test -n "$core_container_after"
+# JumpServer Web 的 Nginx 只在启动时解析 Core。Compose 单独替换 Core 后，旧 Web 会继续访问失效 IP；
+# 仅在确实发生替换时刷新无状态 Web，避免普通 WAO 发布造成额外中断。
+if [ -n "$web_container_before" ] && [ "$core_container_before" != "$core_container_after" ]; then
+  sudo -n docker restart jms_web >/dev/null
 fi
 
 attempt=1

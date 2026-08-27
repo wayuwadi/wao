@@ -140,6 +140,8 @@ JumpServer CE 固定运行在 Linux 主节点 `/opt/wao-jumpserver`，使用独�
 主发布链路会维护仅包含娃哥、娃弟的「WAO 基础设施维护者」组：该组通过专用 SSH 密钥访问三项资产，
 Windows 从节点另提供 RDP 3389。RDP 使用 JumpServer 的手动账号模式，连接时输入真实 Windows 凭据，
 不会把 Windows 密码写入仓库或部署环境。Windows 防火墙只允许 JumpServer 主节点当前 IPv4 访问 3389。
+发布脚本检测到 JumpServer Core 容器被替换时会同步刷新无状态 Web，避免 Nginx 继续缓存旧 Core 地址；Core
+未变化时不会额外重启 Web。
 
 日常验证：
 
