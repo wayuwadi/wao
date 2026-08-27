@@ -58,6 +58,7 @@ test "$(grep -Fc 'python /opt/jumpserver/apps/manage.py shell' \
 grep -Fq 'enable-rdp.ps1' deploy/jenkins/ci-deploy.sh
 grep -Fq 'RemoteAddress = $remoteAddresses' deploy/jumpserver/enable-rdp.ps1
 ! grep -Fq 'Enable-NetFirewallRule -DisplayGroup' deploy/jumpserver/enable-rdp.ps1
+python3 -c 'from pathlib import Path; Path("deploy/jumpserver/enable-rdp.ps1").read_bytes().decode("ascii")'
 python3 -m py_compile \
   deploy/jumpserver/bootstrap_wao_assets.py \
   deploy/jumpserver/verify_wao_access.py
