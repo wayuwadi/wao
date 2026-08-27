@@ -20,7 +20,7 @@ import {
 } from '@/api/assistant'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { useFloatingDrag } from '@/composables/floatingDrag'
+import WaoWebPet from '@/components/assistant/WaoWebPet.vue'
 
 interface Msg {
   id?: string
@@ -31,12 +31,6 @@ interface Msg {
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void }>()
-const { style: fabStyle, dragging: fabDragging, onPointerDown: startFabDrag,
-  consumeClick: consumeFabClick } = useFloatingDrag('wao-assistant-fab-position-v1')
-
-function openFromFab(event: MouseEvent) {
-  if (!consumeFabClick(event)) emit('update:modelValue', true)
-}
 
 const router = useRouter()
 const open = ref(false)
@@ -600,11 +594,11 @@ onBeforeUnmount(stopStatusRefresh)
       </div>
     </Transition>
 
-    <button v-if="!open" class="assistant-fab" :class="{ dragging: fabDragging }" :style="fabStyle" title="拖动调整位置，点击打开 WAO AI" @pointerdown="startFabDrag" @click="openFromFab">
-      <span class="fab-icon"><i class="ri-robot-2-line"></i></span>
-      <span class="fab-label">问问 AI</span>
-      <span class="fab-status" :class="{ online: assistantStatus.configured }"></span>
-    </button>
+    <WaoWebPet
+      v-if="!open"
+      :assistant-status="assistantStatus"
+      @open-assistant="emit('update:modelValue', true)"
+    />
   </Teleport>
 </template>
 
@@ -642,7 +636,7 @@ onBeforeUnmount(stopStatusRefresh)
   flex-direction: column;
 }
 .history-brand { display: flex; align-items: center; gap: 10px; padding: 0 6px 16px; }
-.brand-icon, .welcome-icon, .fab-icon {
+.brand-icon, .welcome-icon {
   background: linear-gradient(135deg, #4358d6, #7658d8);
   color: #fff;
   display: inline-flex;
@@ -820,13 +814,6 @@ onBeforeUnmount(stopStatusRefresh)
 .send-btn:disabled { opacity: .35; cursor: not-allowed; }
 .send-btn i { font-size: 18px; }
 
-.assistant-fab { position: fixed; right: 24px; bottom: 24px; z-index: 70; height: 48px; padding: 4px 14px 4px 5px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; background: linear-gradient(135deg, #4358d6, #684fd3); color: #fff; box-shadow: 0 10px 28px rgba(67, 88, 214, .35); cursor: grab; touch-action: none; user-select: none; display: flex; align-items: center; gap: 9px; transition: transform .18s ease, box-shadow .18s ease; }
-.assistant-fab.dragging { cursor: grabbing; transition: none; }
-.assistant-fab:hover { transform: translateY(-2px); box-shadow: 0 13px 32px rgba(67, 88, 214, .42); }
-.fab-icon { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,.14); font-size: 21px; }
-.fab-label { font-size: 13px; font-weight: 600; }
-.fab-status { width: 7px; height: 7px; border-radius: 50%; background: #f0a33a; box-shadow: 0 0 0 3px rgba(240,163,58,.18); }
-.fab-status.online { background: #63d59b; box-shadow: 0 0 0 3px rgba(99,213,155,.18); }
 .mobile-sidebar-mask { display: none; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -857,10 +844,5 @@ onBeforeUnmount(stopStatusRefresh)
   .welcome { padding-top: 65px; }
   .welcome-actions { grid-template-columns: 1fr; }
   .composer-foot > span { display: none; }
-  /* 与最右侧的新建任务按钮并排：两个都是高频入口，不增加二级菜单，也不能互相覆盖。 */
-  .assistant-fab {
-    right: 80px;
-    bottom: calc(80px + env(safe-area-inset-bottom));
-  }
 }
 </style>

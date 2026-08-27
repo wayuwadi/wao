@@ -6,7 +6,7 @@ interface Point { left: number; top: number }
 export function useFloatingDrag(storageKey: string) {
   const position = ref<Point | null>(load(storageKey))
   const dragging = ref(false)
-  let element: HTMLElement | null = null
+  const elementRef = ref<HTMLElement | null>(null)
   let pointerId = -1
   let offsetX = 0
   let offsetY = 0
@@ -20,8 +20,8 @@ export function useFloatingDrag(storageKey: string) {
   } : undefined)
 
   function clamp(point: Point) {
-    const width = element?.offsetWidth || 48
-    const height = element?.offsetHeight || 48
+    const width = elementRef.value?.offsetWidth || 48
+    const height = elementRef.value?.offsetHeight || 48
     return {
       left: Math.max(8, Math.min(point.left, window.innerWidth - width - 8)),
       top: Math.max(8, Math.min(point.top, window.innerHeight - height - 8)),
@@ -30,8 +30,8 @@ export function useFloatingDrag(storageKey: string) {
 
   function onPointerDown(event: PointerEvent) {
     if (event.button !== 0) return
-    element = event.currentTarget as HTMLElement
-    const rect = element.getBoundingClientRect()
+    elementRef.value = event.currentTarget as HTMLElement
+    const rect = elementRef.value.getBoundingClientRect()
     pointerId = event.pointerId
     offsetX = event.clientX - rect.left
     offsetY = event.clientY - rect.top
@@ -40,7 +40,7 @@ export function useFloatingDrag(storageKey: string) {
     moved = false
     position.value = { left: rect.left, top: rect.top }
     dragging.value = true
-    element.setPointerCapture(pointerId)
+    elementRef.value.setPointerCapture(pointerId)
     window.addEventListener('pointermove', onPointerMove, { passive: false })
     window.addEventListener('pointerup', onPointerUp)
     window.addEventListener('pointercancel', onPointerUp)
@@ -55,7 +55,7 @@ export function useFloatingDrag(storageKey: string) {
 
   function onPointerUp(event: PointerEvent) {
     if (event.pointerId !== pointerId) return
-    if (element?.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId)
+    if (elementRef.value?.hasPointerCapture(pointerId)) elementRef.value.releasePointerCapture(pointerId)
     dragging.value = false
     suppressNextClick = moved
     if (position.value && moved) localStorage.setItem(storageKey, JSON.stringify(position.value))
@@ -83,7 +83,7 @@ export function useFloatingDrag(storageKey: string) {
     window.removeEventListener('pointerup', onPointerUp)
     window.removeEventListener('pointercancel', onPointerUp)
   })
-  return { style, dragging, onPointerDown, consumeClick }
+  return { elementRef, style, dragging, onPointerDown, consumeClick }
 }
 
 function load(storageKey: string): Point | null {
