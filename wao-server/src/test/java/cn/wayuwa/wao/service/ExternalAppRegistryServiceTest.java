@@ -35,8 +35,9 @@ class ExternalAppRegistryServiceTest {
 
         var registry = service.getRegistry();
 
-        assertThat(registry.version()).isEqualTo(3);
-        assertThat(registry.apps()).singleElement().satisfies(app -> {
+        assertThat(registry.version()).isEqualTo(4);
+        assertThat(registry.apps()).hasSize(2);
+        assertThat(registry.apps().get(0)).satisfies(app -> {
             assertThat(app.id()).isEqualTo("media-agent");
             assertThat(app.label()).isEqualTo("内容助手");
             assertThat(app.group()).isEqualTo("TOOLS");
@@ -45,6 +46,14 @@ class ExternalAppRegistryServiceTest {
             assertThat(app.appUrl()).isEqualTo("/agent/");
             assertThat(app.healthUrl()).isEqualTo("/api/agent/health");
             assertThat(app.openMode()).isEqualTo("TAB");
+        });
+        assertThat(registry.apps().get(1)).satisfies(app -> {
+            assertThat(app.id()).isEqualTo("getnote");
+            assertThat(app.label()).isEqualTo("得到大脑");
+            assertThat(app.group()).isEqualTo("TOOLS");
+            assertThat(app.appUrl()).isEqualTo("https://www.biji.com/");
+            assertThat(app.healthUrl()).isEmpty();
+            assertThat(app.openMode()).isEqualTo("NEW_PAGE");
         });
     }
 
@@ -77,9 +86,25 @@ class ExternalAppRegistryServiceTest {
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(stored);
 
         assertThat(service.getRegistry().apps()).extracting("id")
+                .containsExactly("media-agent", "getnote");
+        assertThat(service.getRegistry().apps().get(0).openMode()).isEqualTo("TAB");
+    }
+
+    @Test
+    void upgradesVersionThreeRegistryOnceAndRespectsLaterRemoval() throws Exception {
+        var mediaAgent = new ExternalAppConfigDto(
+                "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
+                "/agent/", "/api/agent/health", "TAB");
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
+                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(3, List.of(mediaAgent))));
+
+        assertThat(service.getRegistry().apps()).extracting("id")
+                .containsExactly("media-agent", "getnote");
+
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
+                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(4, List.of(mediaAgent))));
+        assertThat(service.getRegistry().apps()).extracting("id")
                 .containsExactly("media-agent");
-        assertThat(service.getRegistry().apps()).singleElement()
-                .satisfies(app -> assertThat(app.openMode()).isEqualTo("TAB"));
     }
 
     @Test
@@ -111,6 +136,7 @@ class ExternalAppRegistryServiceTest {
         ArgumentCaptor<String> payload = ArgumentCaptor.forClass(String.class);
         verify(settings).put(eq(SettingService.EXTERNAL_APP_REGISTRY), payload.capture());
         assertThat(json.readValue(payload.getValue(), ExternalAppRegistryDto.class).apps())
+                .filteredOn(app -> "media-agent".equals(app.id()))
                 .singleElement().satisfies(app -> assertThat(app.openMode()).isEqualTo("NEW_PAGE"));
     }
 

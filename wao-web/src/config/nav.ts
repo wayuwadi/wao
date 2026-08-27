@@ -74,6 +74,17 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
     healthUrl: '/api/agent/health',
     openMode: 'TAB',
   },
+  {
+    id: 'getnote',
+    label: '得到大脑',
+    icon: 'ri-video-upload-line',
+    group: 'TOOLS',
+    order: 10,
+    visible: true,
+    appUrl: 'https://www.biji.com/',
+    healthUrl: '',
+    openMode: 'NEW_PAGE',
+  },
 ]
 
 export const MODULES: Record<ModuleId, ModuleMeta> = {

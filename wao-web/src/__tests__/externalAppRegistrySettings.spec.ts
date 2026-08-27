@@ -85,7 +85,7 @@ describe('菜单与快捷链接统一设置', () => {
     expect(fetchBuiltinMenuRegistry).toHaveBeenCalledOnce()
     expect(fetchExternalAppRegistry).toHaveBeenCalledOnce()
     expect(wrapper.findAll('.menu-row input').map((input) => (input.element as HTMLInputElement).value))
-      .toContain('自媒体 Agent')
+      .toEqual(expect.arrayContaining(['自媒体 Agent', '得到大脑']))
     expect(wrapper.get('.menu-card').text()).toContain('已注册应用')
     expect(wrapper.text()).not.toContain('注册新应用')
     expect(wrapper.find('.registry-editor').exists()).toBe(false)
@@ -108,9 +108,11 @@ describe('菜单与快捷链接统一设置', () => {
     await flushPromises()
 
     const saved = vi.mocked(saveBuiltinMenuRegistry).mock.calls[0]![0]
-    expect(saved.find((menu) => menu.id === 'projects')).toMatchObject({ group: 'TOOLS', visible: false })
-    expect(saved.filter((menu) => menu.group === 'TOOLS').map((menu) => menu.order))
-      .toEqual(expect.arrayContaining([10, 20, 30, 40, 50]))
+    const savedToolMenus = saved.filter((menu) => menu.group === 'TOOLS')
+    const project = savedToolMenus.find((menu) => menu.id === 'projects')!
+    expect(project).toMatchObject({ group: 'TOOLS', visible: false })
+    expect(project.order).toBe(Math.max(...savedToolMenus.map((menu) => menu.order)))
+    expect(new Set(savedToolMenus.map((menu) => menu.order)).size).toBe(savedToolMenus.length)
   })
 
   it('外部应用可拖进其他分组，快捷链接可配置 WAO 页签并保存 v2 偏好', async () => {
@@ -122,9 +124,10 @@ describe('菜单与快捷链接统一设置', () => {
     await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
 
-    expect(saveExternalAppRegistry).toHaveBeenCalledWith([
+    expect(saveExternalAppRegistry).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({ id: 'media-agent', group: 'TOOLS' }),
-    ])
+      expect.objectContaining({ id: 'getnote', openMode: 'NEW_PAGE' }),
+    ]))
 
     const firstLink = wrapper.get('.quick-link-row')
     await firstLink.get('select').setValue('TAB')

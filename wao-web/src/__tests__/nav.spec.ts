@@ -28,7 +28,12 @@ describe('侧边栏导航配置', () => {
     expect(externalIds).toEqual(externalIds.filter((id) => /^external:[a-z0-9-]+$/.test(id)))
     expect(missingModules).toEqual([])
     expect(DEFAULT_BUILTIN_MENUS.every((menu) => menu.openMode === 'TAB')).toBe(true)
-    expect(DEFAULT_EXTERNAL_APPS.every((app) => app.openMode === 'TAB')).toBe(true)
+    expect(DEFAULT_EXTERNAL_APPS.find((app) => app.id === 'media-agent')?.openMode).toBe('TAB')
+    expect(DEFAULT_EXTERNAL_APPS.find((app) => app.id === 'getnote')).toMatchObject({
+      label: '得到大脑',
+      appUrl: 'https://www.biji.com/',
+      openMode: 'NEW_PAGE',
+    })
   })
 
   it('Skill 市场同时保留公开路由和 WAO 页签路由', () => {
