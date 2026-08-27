@@ -175,7 +175,7 @@ provision_jumpserver_asset_access() {
   retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
     'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-public-key.ps1 -PublicKeyPath D:\deploy\.jumpserver-asset-key.pub' || return
   retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
-    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\enable-rdp.ps1 -JumpServerHost '$MASTER_HOST'" || return
+    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\enable-rdp.ps1 -JumpServerHost $MASTER_HOST" || return
 
   retry_remote "云前端" scp -o ConnectTimeout=15 \
     "$public_key" deploy/jumpserver/install-public-key.sh \
