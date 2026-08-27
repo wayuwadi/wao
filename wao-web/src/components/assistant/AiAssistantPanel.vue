@@ -582,7 +582,7 @@ onBeforeUnmount(stopStatusRefresh)
                   @keydown.enter.exact.prevent="send()"
                 ></textarea>
                 <div class="composer-foot">
-                  <span><i class="ri-shield-check-line"></i>只读对话 · Enter 发送，Shift+Enter 换行</span>
+                  <span><i class="ri-global-line"></i>只读对话 · 按需联网 · Enter 发送，Shift+Enter 换行</span>
                   <button class="send-btn" :disabled="!input.trim() || sending || !assistantStatus.configured" @click="send()">
                     <i :class="sending ? 'ri-loader-4-line spin' : 'ri-arrow-up-line'"></i>
                   </button>

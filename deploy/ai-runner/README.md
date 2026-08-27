@@ -127,12 +127,19 @@ Runner 还会校验最终答复中的完成状态（`WAO_RUN_STATUS: SUCCESS` / 
 - Codex：`codex exec --json` 的 agent message、公开推理摘要、plan update 与阶段/结果。
 - Claude Code：`claude -p --output-format stream-json` 的 assistant 文本与 TodoWrite 计划。
 
+### 隔离联网模式
+
+普通“问问 AI”会在时效性或外部事实需要核验时按需联网。本地 / 集中 Codex 能力直接在页面问答的隔离会话中
+使用顶层 `--search`；选择 DeepSeek 或受信模型网关时，Runner 先生成带公开 URL 的有界联网材料，服务端再交给
+用户选定的 Provider 生成最终答复，不会偷偷换掉所选模型。两条路径都继续禁用 Shell、多代理、图片、本机文件和
+GitHub Token；内部只读分析、聊天复盘、文档润色与天人解读仍强制 `web_search=disabled`。
+
 ### 点子调研模式
 
 点子库的 `IDEA_RESEARCH` 也通过 assistant-v2 安全协议领取，但落在独立的
 `.wao-idea-research/<run-id>` 临时目录。它不克隆项目仓库，Codex 固定使用只读沙箱、临时
-`CODEX_HOME`，禁用 Shell、多代理与图片工具，并剥离 GitHub Token；只有该模式会用顶层
-`--search` 开放实时 Web 搜索。普通页面问答继续强制 `web_search=disabled`。无论成功、失败、
+`CODEX_HOME`，禁用 Shell、多代理与图片工具，并剥离 GitHub Token；与普通页面问答一样用顶层
+`--search` 开放实时 Web 搜索。无论成功、失败、
 超时或回传失败，Runner 最后都会删除研究工作区与隔离认证目录。
 - Qoder：`qodercli -p --output-format stream-json`，事件与 Claude Code 同构，口径相同。
 

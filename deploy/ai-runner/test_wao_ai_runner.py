@@ -731,7 +731,7 @@ class CodexAccountIsolationTest(unittest.TestCase):
         self.assertFalse((isolated_home / "config.toml").exists())
 
     @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
-    def test_idea_research_only_reenables_web_search(self, invoke: Mock) -> None:
+    def test_isolated_analysis_can_reenable_web_search_without_other_tools(self, invoke: Mock) -> None:
         reporter = Mock()
         isolated_home = self.root / "research-home"
 
@@ -1268,7 +1268,7 @@ class LinuxCodexAssistantTest(unittest.TestCase):
         api = Mock()
         claim = {"runId": "ac-test", "claimToken": "attempt-new",
                  "prompt": "请总结", "maxRuntimeSeconds": 1740,
-                 "account": {"id": "aa1"}}
+                 "account": {"id": "aa1"}, "mode": "ASSISTANT"}
 
         with patch.object(RUNNER.time, "monotonic", side_effect=[100.0, 100.0, 1841.0]):
             RUNNER.execute_assistant_claim(
@@ -1283,6 +1283,7 @@ class LinuxCodexAssistantTest(unittest.TestCase):
         self.assertEqual("read-only", run_codex.call_args.args[3])
         self.assertEqual(claim["account"], run_codex.call_args.kwargs["account"])
         self.assertTrue(run_codex.call_args.kwargs["tools_disabled"])
+        self.assertTrue(run_codex.call_args.kwargs["web_search_enabled"])
         self.assertEqual({"PATH": "runner-path"}, run_codex.call_args.args[5])
         self.assertFalse((self.root / ".wao-assistant" / "ac-test").exists())
         self.assertFalse((self.root / ".wao-assistant-codex-homes" / "ac-test").exists())

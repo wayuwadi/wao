@@ -430,15 +430,17 @@ OAuth 下发前会先把快过期的 access token 续期。
 | id | VARCHAR(32) PK | 一次页面问答或服务端内部只读分析 id |
 | member_id | VARCHAR(32) | 页面问答的发起成员，或内部只读分析的 `internal-*` 操作标识；同一标识只允许一个活动运行 |
 | ai_capability_id | VARCHAR(64) NULL（V104） | 当次只读 AI 能力；`local-codex` 或已启用的 `ai_account.id`，不保存凭据 |
+| web_search_enabled | TINYINT(1)（V108） | 仅普通页面问答允许隔离 Web Search；内部分析、复盘、润色和天人解读固定为 0 |
 | conversation_id / user_message_id | VARCHAR(32) NULL（V53） | 关联持久化会话和触发本次运行的用户消息 |
 | runner_id | VARCHAR(32) NULL | 实际领取问答的本地 Codex Runner |
 | claim_token | VARCHAR(64) NULL（V77） | 每次 Runner 领取签发的唯一 attempt token；历史运行重排或任何终态清空 |
-| status | VARCHAR(16) | 页面助手与同步包装使用 queued / running；非阻塞 Codex 分析使用 secure_queued / secure_running；服务端 API 使用 provider_queued / provider_running；终态为 succeeded / failed |
+| status | VARCHAR(32) | Codex 页面助手与同步包装使用 queued / running；Provider 页面问答的联网阶段使用 web_search_queued / web_search_running；非阻塞 Codex 分析使用 secure_queued / secure_running；服务端 API 使用 provider_queued / provider_running；终态为 succeeded / failed |
 | prompt_text | MEDIUMTEXT NULL | 拼好的页面上下文与对话；成功、失败或后台超时清理进入终态时立即清空 |
+| web_context | MEDIUMTEXT NULL（V108） | Provider 最终回答前由隔离 Runner 返回的有界联网材料；终态立即清空 |
 | response_text / error_text | MEDIUMTEXT / TEXT NULL | 最终答复或可读错误 |
 | created_at / claimed_at / finished_at / updated_at | DATETIME(6) | 短期队列时间线；内部只读运行的入队、领取和终态全部由 MySQL `CURRENT_TIMESTAMP(6)` 写入 |
 
-这张表只负责把一次请求可靠交给 Runner；完成时必须以 `id + runner_id + claim_token + 当前执行中状态` 原子 CAS，防止迟到的旧 attempt 覆盖终态。
+这张表只负责把一次请求可靠交给 Runner 或服务端 Provider；完成时必须以 `id + runner_id + claim_token + 当前执行中状态` 原子 CAS，防止迟到的旧 attempt 覆盖终态。
 完成后仍清除拼装提示词和 `claim_token`；非阻塞 durable 内部任务由后台按 `secure_queued / secure_running` 超时阈值扫描，使用活动状态条件更新为失败并清空这两个字段，不依赖调用方继续查询。同步兼容包装使用普通 `queued / running`，保留五分钟调用等待与终止语义。
 内部只读任务的 `created_at / claimed_at / finished_at / updated_at` 与超时截止比较都使用数据库时钟；过期 SQL 以
 `DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL ... SECOND)` 比较 `created_at / claimed_at`，不让多 API 节点或 Runner 的本地时钟决定生命周期。`secure_running` 不经历 3 分钟 JVM stale requeue，只会正常完成或在默认 30 分钟的 DB 执行硬超时中失败。
@@ -959,6 +961,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V101__configurable_system_periodic_report.sql`：为系统周期报告补充当次汇总项快照，存量报告回填任务与 AI Run 全量汇总语义（见 ADR-109）。
 - `V104__configurable_chat_review_ai.sql`：固化问问 AI / 复盘的只读能力，新增全局自动复盘策略和调度索引（见 ADR-137）。
 - `V107__remove_mock_automation_jobs.sql`：删除 V8 的四条演示自动化及演示运行记录；未知执行器由服务层失败关闭。
+- `V108__assistant_web_search.sql`：固化普通页面问答的联网开关，并为所选 API Provider 暂存有界搜索材料；终态清除（见 ADR-142）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
