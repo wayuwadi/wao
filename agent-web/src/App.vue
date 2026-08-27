@@ -9,11 +9,14 @@ import VideoWorkflow from '@/components/VideoWorkflow.vue'
 import type { AgentSession, Studio, TopicSuggestion } from '@/types'
 
 type AuthState = 'loading' | 'unauthorized' | 'ready' | 'error'
+type StudioState = 'idle' | 'loading' | 'ready' | 'error'
 
 const session = ref<AgentSession | null>(null)
 const studio = ref<Studio | null>(null)
 const studioBusy = ref('')
 const studioMessage = ref('')
+const studioState = ref<StudioState>('idle')
+const studioError = ref('')
 const profileForm = reactive({ niche: '', audience: '', tone: '', avoid: '' })
 const recommendForm = reactive({ platform: 'DOUYIN', count: 5 })
 const authState = ref<AuthState>('loading')
@@ -41,13 +44,31 @@ function formatHeat(heat?: number) {
 
 async function refreshStudio(force = false) {
   if (profileDirty.value && !force && !window.confirm('账号定位还有未保存修改，仍要重新读取吗？')) return
-  studio.value = await getStudio()
-  const p = studio.value.profile
-  profileForm.niche    = p.niche    || ''
-  profileForm.audience = p.audience || ''
-  profileForm.tone     = p.tone     || ''
-  profileForm.avoid    = p.avoid    || ''
-  profileDirty.value = false
+  studioState.value = 'loading'
+  studioError.value = ''
+  try {
+    studio.value = await getStudio()
+    const p = studio.value.profile
+    profileForm.niche    = p.niche    || ''
+    profileForm.audience = p.audience || ''
+    profileForm.tone     = p.tone     || ''
+    profileForm.avoid    = p.avoid    || ''
+    profileDirty.value = false
+    studioState.value = 'ready'
+  } catch (error) {
+    studioState.value = 'error'
+    studioError.value = error instanceof Error ? error.message : '内容工作台加载失败'
+    throw error
+  }
+}
+
+async function retryStudio(force = false) {
+  studioMessage.value = ''
+  try {
+    await refreshStudio(force)
+  } catch {
+    studioMessage.value = studioError.value
+  }
 }
 
 async function runStudio(kind: string, action: () => Promise<unknown>) {
@@ -95,7 +116,7 @@ function switchSection(next: string) {
   if ((leavingProfile || leavingContent) && !window.confirm('当前内容还有未保存修改，仍要离开吗？')) return
   if (leavingProfile) {
     profileDirty.value = false
-    void refreshStudio(true)
+    void retryStudio(true)
   }
   contentDirty.value = false
   activeSection.value = next
@@ -141,7 +162,6 @@ onMounted(async () => {
   window.addEventListener('beforeunload', warnBeforeUnload)
   try {
     session.value = await getSession()
-    await refreshStudio()
     authState.value = 'ready'
     message.value   = ''
   } catch (error) {
@@ -152,7 +172,9 @@ onMounted(async () => {
       authState.value = 'error'
       message.value   = error instanceof Error ? error.message : 'Agent 服务暂时不可用'
     }
+    return
   }
+  await retryStudio()
 })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
 </script>
@@ -221,15 +243,29 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       <header class="main-header">
         <span class="page-title">{{ activeSection }}</span>
         <div class="header-spacer"></div>
-        <button v-if="activeSection === '账号管理' || activeSection === '内容创作'" class="btn-ghost" style="height:30px;font-size:12px;" @click="refreshStudio()">
-          <i class="ri-refresh-line"></i>刷新
+        <button v-if="activeSection === '账号管理' || activeSection === '内容创作'" class="btn-ghost" style="height:30px;font-size:12px;" :disabled="studioState === 'loading'" @click="retryStudio()">
+          <i class="ri-refresh-line"></i>{{ studioState === 'loading' ? '加载中…' : '刷新' }}
         </button>
       </header>
 
       <div class="main-body">
 
+        <section
+          v-if="(activeSection === '账号管理' || activeSection === '内容创作') && !studio"
+          class="panel studio-load-state"
+          :class="{ error: studioState === 'error' }"
+        >
+          <span v-if="studioState === 'loading'" class="loader"><span></span></span>
+          <i v-else class="ri-error-warning-line"></i>
+          <div>
+            <b>{{ studioState === 'loading' ? '正在加载内容工作台…' : '内容工作台暂时无法加载' }}</b>
+            <span v-if="studioState === 'error'">{{ studioError }}</span>
+          </div>
+          <button v-if="studioState === 'error'" class="btn-primary" @click="retryStudio()">重试</button>
+        </section>
+
         <!-- ===== 账号管理 ===== -->
-        <template v-if="activeSection === '账号管理' && studio">
+        <template v-else-if="activeSection === '账号管理' && studio">
           <p v-if="studioMessage" class="message-bar">{{ studioMessage }}</p>
 
           <div class="account-layout">

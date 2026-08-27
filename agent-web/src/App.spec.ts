@@ -56,4 +56,35 @@ describe('内容创作工作台导航', () => {
     await wrapper.findAll('.menu-item')[4].trigger('click')
     expect(wrapper.get('.publish-stub').text()).toBe('publishing')
   })
+
+  it('工作台数据首次加载失败时仍显示五个菜单并允许重试', async () => {
+    vi.mocked(getStudio).mockRejectedValueOnce(new Error('热点服务暂时不可用'))
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          PublishCenter: { props: ['mode'], template: '<div class="publish-stub">{{ mode }}</div>' },
+          MaterialLibrary: { template: '<div class="material-stub">素材库</div>' },
+          VideoWorkflow: { template: '<div class="video-stub">视频创作</div>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.menu-group-label').text()).toBe('内容创作')
+    expect(wrapper.findAll('.menu-item')).toHaveLength(5)
+    expect(wrapper.get('.studio-load-state').text()).toContain('热点服务暂时不可用')
+
+    await wrapper.findAll('.menu-item')[2].trigger('click')
+    expect(wrapper.get('.material-stub').text()).toBe('素材库')
+
+    vi.mocked(getStudio).mockResolvedValue({
+      profile: { configured: true, niche: '技术' }, sources: [], hotspots: [], suggestions: [],
+    })
+    await wrapper.findAll('.menu-item')[3].trigger('click')
+    await wrapper.get('.studio-load-state button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.studio-load-state').exists()).toBe(false)
+    expect(wrapper.text()).toContain('热点选题')
+  })
 })

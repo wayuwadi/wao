@@ -389,6 +389,15 @@
 .account-platforms { min-width: 0; }
 .profile-save { width: 100%; min-height: 36px; margin-top: 5px; justify-content: center; }
 .section-heading.compact { margin: 0 0 10px; }
+.studio-load-state {
+  min-height: 220px; padding: 28px; display: flex; align-items: center; justify-content: center; gap: 12px;
+  color: var(--wao-text-weak); text-align: left;
+}
+.studio-load-state > i { color: var(--wao-danger-strong); font-size: 24px; }
+.studio-load-state > div { max-width: 520px; display: grid; gap: 5px; }
+.studio-load-state b { color: var(--wao-text); font-size: 14px; }
+.studio-load-state span { font-size: 11px; line-height: 1.5; }
+.studio-load-state > button { min-height: 34px; padding: 0 14px; }
 .creation-tabs {
   width: fit-content; margin-bottom: 14px; padding: 3px;
   display: flex; gap: 2px; border: 1px solid var(--wao-line);
