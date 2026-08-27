@@ -11,8 +11,21 @@ if [ "$resolved" != "$expected_ipv4" ]; then
 fi
 
 certificate_dir='/etc/letsencrypt/live/jms.wayuwa.cn'
-if [ -s "$certificate_dir/fullchain.pem" ] && [ -s "$certificate_dir/privkey.pem" ]; then
+certificate_matches_domain() {
+  [ -s "$certificate_dir/fullchain.pem" ] &&
+    [ -s "$certificate_dir/privkey.pem" ] &&
+    openssl x509 -in "$certificate_dir/fullchain.pem" -noout \
+      -checkhost jms.wayuwa.cn >/dev/null 2>&1
+}
+
+if certificate_matches_domain; then
   exit 0
+fi
+
+force_renewal=false
+if [ -e "$certificate_dir/fullchain.pem" ] || [ -e "$certificate_dir/privkey.pem" ]; then
+  force_renewal=true
+  echo 'Existing JumpServer certificate does not cover jms.wayuwa.cn; requesting a replacement.' >&2
 fi
 
 bootstrap='/etc/nginx/conf.d/jms.bootstrap.conf'
@@ -34,7 +47,7 @@ printf '%s\n' \
 nginx -t
 systemctl reload nginx
 
-certbot certonly \
+set -- certbot certonly \
   --non-interactive \
   --agree-tos \
   --register-unsafely-without-email \
@@ -42,9 +55,15 @@ certbot certonly \
   --webroot-path /var/www/certbot \
   --cert-name jms.wayuwa.cn \
   --domain jms.wayuwa.cn
+if [ "$force_renewal" = true ]; then
+  set -- "$@" --force-renewal
+fi
+"$@"
 
-test -s "$certificate_dir/fullchain.pem"
-test -s "$certificate_dir/privkey.pem"
+if ! certificate_matches_domain; then
+  echo 'Issued certificate does not cover jms.wayuwa.cn.' >&2
+  exit 1
+fi
 trap - EXIT HUP INT TERM
 cleanup
 echo 'JumpServer TLS certificate is ready.'

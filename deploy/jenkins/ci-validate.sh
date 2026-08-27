@@ -9,6 +9,7 @@ sh deploy/jenkins/test-ci-change-plan.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py
 sh deploy/jumpserver/test-ensure-asset-key.sh
 sh deploy/jumpserver/test-ensure-sso-secret.sh
+sh deploy/scripts/test-ensure-jumpserver-certificate.sh
 
 for script in \
   deploy/jumpserver/deploy.sh \
@@ -16,6 +17,7 @@ for script in \
   deploy/jumpserver/ensure-sso-secret.sh \
   deploy/jumpserver/install-public-key.sh \
   deploy/jumpserver/verify-assets.sh \
+  deploy/scripts/test-ensure-jumpserver-certificate.sh \
   deploy/scripts/ensure-jumpserver-certificate.sh \
   deploy/jenkins/ci-deploy.sh \
   deploy/jenkins/deploy-master-local.sh; do
