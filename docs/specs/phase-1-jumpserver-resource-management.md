@@ -21,7 +21,8 @@
   Nginx 的 `127.0.0.1:18082`。公网只开放云节点的 `https://jms.wayuwa.cn`，Core、数据库、Redis 和容器
   端口不直接暴露。
 - `jms.wayuwa.cn` 使用指向 `wao.wayuwa.cn` 的 CNAME 和独立 Let's Encrypt 证书。证书签发前必须确认解析
-  已指向云入口；解析不正确时发布失败关闭，不能回退到 HTTP 或忽略 TLS 校验。
+  已指向云入口；复用已有证书前还必须用域名校验确认其覆盖 `jms.wayuwa.cn`，文件存在但域名不匹配时由
+  Certbot 非交互重签。解析或证书不正确时发布失败关闭，不能回退到 HTTP 或忽略 TLS 校验。
 - 主站部署先保持 Windows 节点在线，再部署 Linux 上的 WAO 与 JumpServer，之后安装三台资产的专用公钥，
   最后更新云 Nginx。资产密钥生成必须支持失败后非交互幂等重跑，不得因持久目录中的中间文件等待覆盖确认。
   任一步失败都保留原 WAO 服务，并把 JumpServer 发布判为失败。
