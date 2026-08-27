@@ -25,6 +25,12 @@ grep -q 'proxy_pass http://127.0.0.1:18082;' deploy/nginx/jms.wayuwa.cn.conf
 grep -q 'location = /api/auth/jumpserver' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'X-WAO-API-Route linux-jumpserver-sso' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'location = /api/external/jumpserver/health' deploy/nginx/wao.wayuwa.cn.conf.template
+grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
+  deploy/nginx/wao.wayuwa.cn.conf.template
+grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
+  deploy/nginx/wao.pending.conf
+grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
+  deploy/nginx/wao.bootstrap.conf
 
 check_migration_versions() {
   migration_dir="$1"

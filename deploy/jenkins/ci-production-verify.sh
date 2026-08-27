@@ -11,6 +11,9 @@ mark_verification() {
 }
 trap 'mark_verification failed' EXIT HUP INT TERM
 
+: "${WAO_GIT_SHA:?WAO_GIT_SHA is required}"
+short_sha="$(git rev-parse --short "$WAO_GIT_SHA")"
+
 hello="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://wao.wayuwa.cn/api/hello)"
 printf '%s' "$hello" | grep -q '"code":0'
@@ -50,6 +53,15 @@ test "$(header_value /api/ai/runner/assistant-v2/claim X-WAO-API-Route)" = linux
 test "$(header_value /api/tianren/readings/today/interpret/stream X-WAO-API-Route)" = linux-vpn-master
 test "$(header_value /api/auth/jumpserver X-WAO-API-Route)" = linux-jumpserver-sso
 test "$(header_value /api/external/jumpserver/health X-WAO-API-Route)" = jumpserver-health-tunnel
+test "$(header_value /pluginWebUpdateNotice/web_version_by_plugin.json Cache-Control)" = \
+  'no-cache, no-store, must-revalidate'
+
+web_version="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+  "https://wao.wayuwa.cn/pluginWebUpdateNotice/web_version_by_plugin.json?t=$(date +%s)")"
+printf '%s' "$web_version" | grep -Eq \
+  "\"version\"[[:space:]]*:[[:space:]]*\"${short_sha}\""
+curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+  https://wao.wayuwa.cn/index.html | grep -q "data-v=\"${short_sha}\""
 
 probe=1
 while [ "$probe" -le 8 ]; do

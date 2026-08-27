@@ -183,6 +183,11 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
+    location = /pluginWebUpdateNotice/web_version_by_plugin.json {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
     # 桌面宠物安装包与签名更新包独立于 Web dist 生命周期；发布清单最后原子替换且禁止缓存。
     location = /downloads/desktop/latest.json {
         alias /var/www/wao-downloads/desktop/latest.json;
