@@ -12,7 +12,7 @@ mark_verification() {
 trap 'mark_verification failed' EXIT HUP INT TERM
 
 : "${WAO_GIT_SHA:?WAO_GIT_SHA is required}"
-short_sha="$(git rev-parse --short "$WAO_GIT_SHA")"
+short_sha="$(printf '%.7s' "$WAO_GIT_SHA")"
 
 hello="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://wao.wayuwa.cn/api/hello)"
