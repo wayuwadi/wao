@@ -8,6 +8,18 @@ export interface ChatMessage {
 export interface AssistantStatus {
   configured: boolean
   message: string
+  capabilityId?: string
+  capabilityLabel?: string
+}
+
+export interface AiCapability {
+  id: string
+  label: string
+  provider: 'codex' | 'deepseek' | 'model_gateway'
+  model?: string | null
+  executionMode: 'RUNNER' | 'SERVER_API'
+  available: boolean
+  message: string
 }
 
 export interface PolishTextResult {
@@ -59,13 +71,19 @@ async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
 }
 
-export const fetchAssistantStatus = () =>
+export const fetchAssistantStatus = (capabilityId?: string) =>
   data<AssistantStatus>(
     http.get('/api/assistant/status', {
-      params: { _: Date.now() },
+      params: { _: Date.now(), capabilityId },
       headers: { 'Cache-Control': 'no-cache' },
     }),
   )
+
+export const fetchAiCapabilities = () =>
+  data<AiCapability[]>(http.get('/api/assistant/capabilities', {
+    params: { _: Date.now() },
+    headers: { 'Cache-Control': 'no-cache' },
+  }))
 
 /** 润色文档中明确选中的文字；结果不会写进 AI 助手聊天历史。 */
 export const polishDocumentText = (text: string) =>
@@ -108,6 +126,7 @@ export async function* streamChat(
   pageContext?: string,
   conversationId?: string,
   sourceFilter?: AssistantSourceFilter,
+  aiCapabilityId?: string,
 ): AsyncGenerator<string> {
   yield* streamTextEvents('/api/assistant/chat/stream', {
     message,
@@ -115,5 +134,6 @@ export async function* streamChat(
     pageContext,
     conversationId,
     sourceFilter,
+    aiCapabilityId,
   })
 }

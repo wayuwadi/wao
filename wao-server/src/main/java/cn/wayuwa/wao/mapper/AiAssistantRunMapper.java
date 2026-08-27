@@ -16,9 +16,9 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     /** 内部只读任务的起始时间由数据库统一签发，不信任节点本地时钟。 */
     @Insert("""
             INSERT INTO ai_assistant_run
-                (id, member_id, status, prompt_text, created_at, updated_at)
+                (id, member_id, ai_capability_id, status, prompt_text, created_at, updated_at)
             VALUES
-                (#{id}, #{memberId}, #{status}, #{promptText},
+                (#{id}, #{memberId}, #{aiCapabilityId}, #{status}, #{promptText},
                  CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
             """)
     int insertReadOnlyQueued(AiAssistantRunEntity run);
@@ -34,6 +34,88 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
             @Param("claimToken") String claimToken,
             @Param("expectedStatus") String expectedStatus,
             @Param("claimedStatus") String claimedStatus);
+
+    /** 服务端 API worker 跨节点领取一条指定 Provider 的等待任务。 */
+    @Update("""
+            UPDATE ai_assistant_run
+               SET status = 'provider_running', claim_token = #{claimToken},
+                   claimed_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id} AND status = 'provider_queued'
+            """)
+    int claimProviderQueued(@Param("id") String id, @Param("claimToken") String claimToken);
+
+    /** 读取最早一批服务端 API 等待任务，实际归属仍由 CAS 决定。 */
+    @Select("""
+            SELECT * FROM ai_assistant_run
+             WHERE status = 'provider_queued'
+             ORDER BY created_at ASC
+             LIMIT 8
+            """)
+    List<AiAssistantRunEntity> selectProviderQueued();
+
+    /** 服务端 Provider 只允许持有本次 claim token 的 worker 写入成功终态。 */
+    @Update("""
+            UPDATE ai_assistant_run
+               SET status = 'succeeded', response_text = #{response}, error_text = NULL,
+                   prompt_text = NULL, claim_token = NULL,
+                   finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id} AND claim_token = #{claimToken} AND status = 'provider_running'
+            """)
+    int completeProviderSucceeded(@Param("id") String id, @Param("claimToken") String claimToken,
+            @Param("response") String response);
+
+    /** 服务端 Provider 的失败终态不保存任何部分输出。 */
+    @Update("""
+            UPDATE ai_assistant_run
+               SET status = 'failed', response_text = NULL, error_text = #{error},
+                   prompt_text = NULL, claim_token = NULL,
+                   finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id} AND claim_token = #{claimToken} AND status = 'provider_running'
+            """)
+    int completeProviderFailed(@Param("id") String id, @Param("claimToken") String claimToken,
+            @Param("error") String error);
+
+    /** 用数据库时钟按主键顺序读取 API Provider 排队超时候选。 */
+    @Select("""
+            SELECT id FROM ai_assistant_run
+             WHERE status = 'provider_queued'
+               AND created_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
+             ORDER BY id
+            """)
+    List<String> findExpiredProviderQueuedIds(@Param("timeoutSeconds") long timeoutSeconds);
+
+    /** 按主键 CAS 终止一条 API Provider 排队任务。 */
+    @Update("""
+            UPDATE ai_assistant_run
+               SET status = 'failed', response_text = NULL, error_text = #{reason},
+                   prompt_text = NULL, claim_token = NULL,
+                   finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id} AND status = 'provider_queued'
+               AND created_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
+            """)
+    int expireProviderQueuedById(@Param("id") String id, @Param("timeoutSeconds") long timeoutSeconds,
+            @Param("reason") String reason);
+
+    /** 用数据库时钟按主键顺序读取 API Provider 执行超时候选。 */
+    @Select("""
+            SELECT id FROM ai_assistant_run
+             WHERE status = 'provider_running'
+               AND claimed_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
+             ORDER BY id
+            """)
+    List<String> findExpiredProviderRunningIds(@Param("timeoutSeconds") long timeoutSeconds);
+
+    /** API Provider 执行超时后按主键令旧 claim token 失效。 */
+    @Update("""
+            UPDATE ai_assistant_run
+               SET status = 'failed', response_text = NULL, error_text = #{reason},
+                   prompt_text = NULL, claim_token = NULL,
+                   finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id} AND status = 'provider_running'
+               AND claimed_at <= DATE_SUB(CURRENT_TIMESTAMP(6), INTERVAL #{timeoutSeconds} SECOND)
+            """)
+    int expireProviderRunningById(@Param("id") String id, @Param("timeoutSeconds") long timeoutSeconds,
+            @Param("reason") String reason);
 
     /** 只允许实际持有运行的 Runner 提交一次成功结果。 */
     @Update("""
@@ -67,7 +149,9 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
                SET status = 'failed', response_text = NULL, error_text = #{reason},
                    prompt_text = NULL, claim_token = NULL,
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
-             WHERE id = #{id} AND status IN ('queued', 'running', 'secure_queued', 'secure_running')
+             WHERE id = #{id} AND status IN
+                   ('queued', 'running', 'secure_queued', 'secure_running',
+                    'provider_queued', 'provider_running')
             """)
     int failActive(@Param("id") String id, @Param("reason") String reason);
 

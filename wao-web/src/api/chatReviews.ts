@@ -26,6 +26,8 @@ export interface ChatReviewRunSummary {
   startDate: string | null
   endDate: string | null
   focus: string | null
+  aiCapabilityId?: string
+  triggerKind?: 'MANUAL' | 'AUTOMATIC'
   stage: ChatReviewStage
   progressCurrent: number
   progressTotal: number
@@ -79,6 +81,18 @@ export interface CreateChatReviewRequest {
   focus?: string
 }
 
+export interface ChatReviewAutoConfig {
+  enabled: boolean
+  intervalSeconds: number
+  rangeKind: 'MESSAGES' | 'HOURS'
+  rangeValue: number
+  focus: string | null
+  aiCapabilityId: string
+  nextFireAt: string | null
+  lastRunId: string | null
+  updatedAt: string
+}
+
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
 }
@@ -96,7 +110,15 @@ export const createSharedChatReview = (payload: {
   rangeKind: 'MESSAGES' | 'HOURS'
   rangeValue: number
   focus?: string
+  aiCapabilityId?: string
 }) => data<{ runId: string }>(http.post('/api/chat-reviews/shared', payload))
+
+export const fetchChatReviewAutomation = () =>
+  data<ChatReviewAutoConfig>(http.get('/api/chat-reviews/automation'))
+
+export const saveChatReviewAutomation = (payload: Omit<ChatReviewAutoConfig,
+  'nextFireAt' | 'lastRunId' | 'updatedAt'>) =>
+  data<ChatReviewAutoConfig>(http.put('/api/chat-reviews/automation', payload))
 
 export const fetchChatReviews = () => data<ChatReviewList>(http.get('/api/chat-reviews'))
 

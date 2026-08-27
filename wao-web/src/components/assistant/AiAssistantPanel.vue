@@ -8,12 +8,14 @@ import {
   fetchAssistantConversations,
   fetchAssistantSourceOptions,
   fetchAssistantStatus,
+  fetchAiCapabilities,
   streamChat,
   type AssistantConversation,
   type AssistantAssetType,
   type AssistantSourceFilter,
   type AssistantSourceOptions,
   type AssistantStatus,
+  type AiCapability,
   type ChatMessage,
 } from '@/api/assistant'
 import { marked } from 'marked'
@@ -61,6 +63,8 @@ const sourceFilter = reactive<{
   projectIds: string[]
 }>({ assetTypes: ['memory', 'chat', 'knowledge', 'project', 'task'], chatIds: [], senders: [], dateFrom: '', dateTo: '', projectIds: [] })
 const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查本地 Codex…' })
+const capabilities = ref<AiCapability[]>([])
+const capabilityId = ref(localStorage.getItem('wao-assistant-capability-v1') || 'local-codex')
 const listRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 let statusRefreshTimer: ReturnType<typeof setInterval> | null = null
@@ -141,11 +145,23 @@ async function loadStatus() {
   if (statusLoading.value) return
   statusLoading.value = true
   try {
-    assistantStatus.value = await fetchAssistantStatus()
+    assistantStatus.value = await fetchAssistantStatus(capabilityId.value)
   } catch {
     assistantStatus.value = { configured: false, message: '无法读取 AI 状态，请稍后重试' }
   } finally {
     statusLoading.value = false
+  }
+}
+
+async function loadCapabilities() {
+  try {
+    capabilities.value = await fetchAiCapabilities()
+    if (!capabilities.value.some((item) => item.id === capabilityId.value)) {
+      capabilityId.value = capabilities.value[0]?.id || 'local-codex'
+    }
+  } catch {
+    capabilities.value = [{ id: 'local-codex', label: '本地 Codex', provider: 'codex',
+      executionMode: 'RUNNER', available: false, message: '能力列表读取失败' }]
   }
 }
 
@@ -285,7 +301,8 @@ async function send(text?: string, context?: string) {
     scrollToBottom()
 
     try {
-      for await (const token of streamChat(msg, history, context, conversationId, currentSourceFilter())) {
+      for await (const token of streamChat(msg, history, context, conversationId,
+        currentSourceFilter(), capabilityId.value)) {
         assistantMsg.content += token
         scrollToBottom()
       }
@@ -341,6 +358,7 @@ watch(() => props.modelValue, (value) => {
   if (value) {
     sidebarOpen.value = window.innerWidth > 760
     void loadStatus()
+    void loadCapabilities()
     void loadConversations(true)
     void loadSourceOptions()
     startStatusRefresh()
@@ -350,9 +368,15 @@ watch(() => props.modelValue, (value) => {
   }
 })
 watch(open, (value) => { if (!value) emit('update:modelValue', false) })
+watch(capabilityId, (value) => {
+  try { localStorage.setItem('wao-assistant-capability-v1', value) } catch { /* 当前会话仍可使用 */ }
+  assistantStatus.value = { configured: false, message: '正在检查所选 AI 能力…' }
+  void loadStatus()
+})
 
 onMounted(() => {
   void loadStatus()
+  void loadCapabilities()
   void loadSourceOptions()
   if (props.modelValue) {
     open.value = true
@@ -451,7 +475,7 @@ onBeforeUnmount(stopStatusRefresh)
               <div v-else-if="messages.length === 0" class="welcome">
                 <span class="welcome-icon"><i class="ri-robot-2-line"></i></span>
                 <h2>有什么可以帮你？</h2>
-                <p>本地 Codex 会检索群聊、知识库、项目和 Task，问答也会保存在你的个人历史中。</p>
+                <p>所选 AI 能力会检索群聊、知识库、项目和 Task，问答也会保存在你的个人历史中。</p>
                 <div class="welcome-actions">
                   <button
                     v-for="cmd in QUICK_COMMANDS"
@@ -542,6 +566,14 @@ onBeforeUnmount(stopStatusRefresh)
                 </template>
               </div>
               <div class="assistant-input" :class="{ disabled: !assistantStatus.configured }">
+                <label class="capability-picker">
+                  <i class="ri-sparkling-2-line"></i>
+                  <select v-model="capabilityId" :disabled="sending" aria-label="本次 AI 能力">
+                    <option v-for="capability in capabilities" :key="capability.id" :value="capability.id">
+                      {{ capability.label }}{{ capability.model ? ` · ${capability.model}` : '' }}{{ capability.available ? '' : ' · 当前不可用' }}
+                    </option>
+                  </select>
+                </label>
                 <button class="source-summary" :class="{ active: sourcePanelOpen || activeFilterCount }" @click="sourcePanelOpen = !sourcePanelOpen">
                   <i class="ri-database-2-line"></i><span>{{ sourceSummary }}</span>
                   <em v-if="activeFilterCount">{{ activeFilterCount }}</em>
@@ -751,6 +783,8 @@ onBeforeUnmount(stopStatusRefresh)
 .assistant-input:focus-within { border-color: color-mix(in srgb, var(--wao-primary) 65%, var(--wao-line)); box-shadow: 0 8px 28px rgba(67, 88, 214, .12); }
 .assistant-input.disabled { opacity: .68; }
 .assistant-input textarea { width: 100%; min-height: 48px; max-height: 140px; resize: none; border: 0; outline: 0; background: transparent; color: var(--wao-text); font: 13px/1.55 inherit; }
+.capability-picker { max-width: 100%; margin-bottom: 4px; color: var(--wao-primary); font-size: 10px; display: flex; align-items: center; gap: 5px; }
+.capability-picker select { min-width: 0; max-width: 280px; border: 0; outline: 0; background: transparent; color: var(--wao-text-2); font: 10px inherit; cursor: pointer; }
 .source-summary { max-width: 100%; margin: -2px 0 5px; padding: 4px 7px; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text-weak); cursor: pointer; font-size: 10px; display: flex; align-items: center; gap: 5px; }
 .source-summary:hover, .source-summary.active { background: color-mix(in srgb, var(--wao-primary) 8%, transparent); color: var(--wao-primary); }
 .source-summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

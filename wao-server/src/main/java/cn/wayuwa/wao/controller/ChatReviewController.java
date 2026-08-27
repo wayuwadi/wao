@@ -4,10 +4,12 @@ import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.dto.ChatReviewConfigDto;
+import cn.wayuwa.wao.dto.ChatReviewAutoConfigDto;
 import cn.wayuwa.wao.dto.ChatReviewCreatedDto;
 import cn.wayuwa.wao.dto.ChatReviewListDto;
 import cn.wayuwa.wao.dto.ChatReviewRunDetailDto;
 import cn.wayuwa.wao.service.ChatReviewService;
+import cn.wayuwa.wao.service.ChatReviewAutomationService;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
@@ -19,6 +21,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,11 +40,49 @@ public class ChatReviewController {
     private static final int MAX_SPEAKER_ID_CHARS = 128;
 
     private final ChatReviewService service;
+    private final ChatReviewAutomationService automation;
     private final CurrentMember currentMember;
 
-    public ChatReviewController(ChatReviewService service, CurrentMember currentMember) {
+    @Autowired
+    public ChatReviewController(ChatReviewService service, ChatReviewAutomationService automation,
+            CurrentMember currentMember) {
         this.service = service;
+        this.automation = automation;
         this.currentMember = currentMember;
+    }
+
+    /** 兼容只覆盖历史复盘接口的窄单元测试。 */
+    ChatReviewController(ChatReviewService service, CurrentMember currentMember) {
+        this(service, null, currentMember);
+    }
+
+    /** 读取自动复盘策略和下次触发时间。 */
+    @GetMapping("/automation")
+    public ApiResponse<ChatReviewAutoConfigDto> automation() {
+        return ApiResponse.ok(automation.config());
+    }
+
+    /** 严格保存自动复盘的完整策略。 */
+    @PutMapping("/automation")
+    public ApiResponse<ChatReviewAutoConfigDto> saveAutomation(@RequestBody JsonNode body,
+            HttpServletRequest http) {
+        requireObject(body, Set.of("enabled", "intervalSeconds", "rangeKind", "rangeValue",
+                "focus", "aiCapabilityId"),
+                Set.of("enabled", "intervalSeconds", "rangeKind", "rangeValue", "aiCapabilityId"));
+        if (!body.get("enabled").isBoolean()) throw new BadRequestException("enabled 必须是布尔值");
+        JsonNode interval = body.get("intervalSeconds");
+        JsonNode range = body.get("rangeValue");
+        if (!interval.isIntegralNumber() || !interval.canConvertToInt()) {
+            throw new BadRequestException("intervalSeconds 必须是整数");
+        }
+        if (!body.get("rangeKind").isTextual() || !range.isIntegralNumber() || !range.canConvertToInt()) {
+            throw new BadRequestException("复盘范围格式不正确");
+        }
+        String capability = optionalText(body.get("aiCapabilityId"), "aiCapabilityId");
+        if (!StringUtils.hasText(capability)) throw new BadRequestException("请选择 AI 能力");
+        return ApiResponse.ok(automation.save(body.get("enabled").asBoolean(), interval.intValue(),
+                body.get("rangeKind").asText(), range.intValue(), optionalText(body.get("focus"), "focus"),
+                capability, currentMember.idOr(http, "unknown")));
     }
 
     /** 读取唯一群聊与两位固定发言人配置。 */
@@ -87,7 +129,7 @@ public class ChatReviewController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<ChatReviewCreatedDto> createShared(@RequestBody JsonNode body,
             HttpServletRequest http) {
-        requireObject(body, Set.of("rangeKind", "rangeValue", "focus"),
+        requireObject(body, Set.of("rangeKind", "rangeValue", "focus", "aiCapabilityId"),
                 Set.of("rangeKind", "rangeValue"));
         JsonNode kind = body.get("rangeKind");
         JsonNode value = body.get("rangeValue");
@@ -96,7 +138,8 @@ public class ChatReviewController {
             throw new BadRequestException("rangeValue 必须是整数");
         }
         String runId = service.createShared(kind.asText(), value.intValue(),
-                optionalText(body.get("focus"), "focus"), currentMember.idOr(http, "unknown"));
+                optionalText(body.get("focus"), "focus"), currentMember.idOr(http, "unknown"),
+                optionalText(body.get("aiCapabilityId"), "aiCapabilityId"));
         return ApiResponse.ok(new ChatReviewCreatedDto(runId));
     }
 

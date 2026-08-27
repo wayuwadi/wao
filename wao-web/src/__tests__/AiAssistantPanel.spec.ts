@@ -6,6 +6,7 @@ import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
 import {
   createAssistantConversation,
   fetchAssistantConversation,
+  fetchAiCapabilities,
   fetchAssistantConversations,
   fetchAssistantSourceOptions,
   fetchAssistantStatus,
@@ -17,6 +18,7 @@ vi.mock('@/api/assistant', () => ({
   fetchAssistantConversations: vi.fn<(typeof import('@/api/assistant'))['fetchAssistantConversations']>(),
   fetchAssistantConversation: vi.fn<(typeof import('@/api/assistant'))['fetchAssistantConversation']>(),
   fetchAssistantSourceOptions: vi.fn<(typeof import('@/api/assistant'))['fetchAssistantSourceOptions']>(),
+  fetchAiCapabilities: vi.fn<(typeof import('@/api/assistant'))['fetchAiCapabilities']>(),
   createAssistantConversation: vi.fn<(typeof import('@/api/assistant'))['createAssistantConversation']>(),
   deleteAssistantConversation: vi.fn<(typeof import('@/api/assistant'))['deleteAssistantConversation']>(),
   streamChat: vi.fn<(typeof import('@/api/assistant'))['streamChat']>(),
@@ -34,6 +36,10 @@ async function router() {
 
 describe('AiAssistantPanel', () => {
   beforeEach(() => {
+    vi.mocked(fetchAiCapabilities).mockResolvedValue([{
+      id: 'local-codex', label: '本地 Codex', provider: 'codex', model: null,
+      executionMode: 'RUNNER', available: true, message: '安全只读 Runner 在线',
+    }])
     vi.mocked(fetchAssistantSourceOptions).mockResolvedValue({
       chats: [{ id: 'oc_chat', name: 'WAO 项目群' }],
       senders: ['娃哥', '娃弟'],
@@ -142,6 +148,7 @@ describe('AiAssistantPanel', () => {
         dateFrom: '2026-07-01',
         dateTo: '2026-07-31',
       }),
+      'local-codex',
     )
     expect(document.body.textContent).toContain('找到了')
     wrapper.unmount()

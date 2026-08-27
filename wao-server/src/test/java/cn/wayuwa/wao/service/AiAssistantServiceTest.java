@@ -451,6 +451,44 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void providerWorkerClaimsConfiguredDeepSeekAndPersistsOnlyTheFinalAnswer() {
+        AiAssistantRunEntity run = assistantRun("provider_queued");
+        run.setAiCapabilityId("aa-deepseek");
+        run.setPromptText("只分析这段真实材料");
+        AiRunAccountDto account = new AiRunAccountDto(
+                "aa-deepseek", "deepseek", "DeepSeek 分析", "api_key", null,
+                "token-value", "https://api.deepseek.com", "deepseek-chat", "chat_completions");
+        when(mapper.selectProviderQueued()).thenReturn(List.of(run));
+        when(mapper.claimProviderQueued(eq("ac1"), anyString())).thenReturn(1);
+        when(mapper.selectById("ac1")).thenReturn(run);
+        when(accountService.assistantAccount("aa-deepseek")).thenReturn(account);
+        when(deepSeekApi.complete(eq("deepseek"), eq("https://api.deepseek.com"),
+                eq("token-value"), eq("deepseek-chat"), anyString(), eq("只分析这段真实材料")))
+                .thenReturn("真实 API 答复");
+        when(mapper.completeProviderSucceeded(eq("ac1"), anyString(), eq("真实 API 答复")))
+                .thenReturn(1);
+
+        assertThat(service.processNextProviderRun()).isTrue();
+
+        verify(conversationService).appendAssistantReply(run, "真实 API 答复");
+        verify(mapper, never()).insertReadOnlyQueued(any(AiAssistantRunEntity.class));
+    }
+
+    @Test
+    void providerTimeoutCleanupUsesStablePrimaryKeyOrderAndCas() {
+        when(mapper.findExpiredProviderQueuedIds(3600)).thenReturn(List.of("ac1", "ac2"));
+        when(mapper.findExpiredProviderRunningIds(1800)).thenReturn(List.of("ac3"));
+        when(mapper.expireProviderQueuedById(anyString(), eq(3600L), anyString())).thenReturn(1);
+        when(mapper.expireProviderRunningById(eq("ac3"), eq(1800L), anyString())).thenReturn(1);
+
+        assertThat(service.expireProviderJobs()).isEqualTo(3);
+
+        verify(mapper).expireProviderQueuedById(eq("ac1"), eq(3600L), anyString());
+        verify(mapper).expireProviderQueuedById(eq("ac2"), eq(3600L), anyString());
+        verify(mapper).expireProviderRunningById(eq("ac3"), eq(1800L), anyString());
+    }
+
+    @Test
     void tianrenPromptSeparatesCastFactsTraditionalSummaryAndAiExtension() {
         AssistantChatRequest request = new AssistantChatRequest(
                 "请结合最近的疲惫给我今天的提示", List.of(), null, "cv1", null);

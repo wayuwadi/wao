@@ -131,6 +131,51 @@ public class DeepSeekApiClient {
         return result;
     }
 
+    /**
+     * 使用已验证的 Chat Completions 账号执行一项无工具只读 AI 请求。
+     *
+     * <p>系统规则与业务材料分开传递；上游失败、截断或空答复均明确失败，不切换供应商。
+     */
+    public String complete(String provider, String baseUrl, String apiKey, String model,
+            String systemPrompt, String userPrompt) {
+        List<String> allowedModels = MODEL_GATEWAY_PROVIDER.equals(provider)
+                ? MODEL_GATEWAY_POLISH_MODELS : POLISH_MODELS;
+        if (!allowedModels.contains(model)) {
+            throw new BadRequestException("请选择" + providerLabel(provider) + "当前已验证的模型");
+        }
+        Map<String, Object> body = Map.of(
+                "model", model,
+                "messages", List.of(
+                        Map.of("role", "system", "content", systemPrompt),
+                        Map.of("role", "user", "content", userPrompt)),
+                "thinking", Map.of("type", "disabled"),
+                "temperature", 0.2,
+                "max_tokens", 16384,
+                "stream", false);
+        JsonNode json;
+        try {
+            json = restClient.post().uri(normalizeBaseUrl(provider, baseUrl) + "/chat/completions")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientException ex) {
+            throw new BadRequestException(providerLabel(provider) + "请求失败：" + safeMessage(ex));
+        }
+        if (json == null) throw new BadRequestException(providerLabel(provider) + "没有返回内容");
+        JsonNode choice = json.path("choices").path(0);
+        if ("length".equals(choice.path("finish_reason").asText(""))) {
+            throw new BadRequestException(providerLabel(provider) + "返回内容被截断，请缩小资料范围后重试");
+        }
+        String result = choice.path("message").path("content").asText("").trim();
+        if (!StringUtils.hasText(result)) {
+            throw new BadRequestException(providerLabel(provider) + "没有返回有效内容");
+        }
+        return result;
+    }
+
     private static String providerLabel(String provider) {
         return MODEL_GATEWAY_PROVIDER.equals(provider) ? "醒市模型网关" : "DeepSeek";
     }

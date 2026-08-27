@@ -5,8 +5,9 @@ import {
   createAiRuns,
   createAiPairCode,
   fetchAiEvolution,
+  fetchAiActivities,
+  fetchAiRun,
   fetchAiTaskAutoRunPolicy,
-  fetchAiRunHistory,
   fetchAiRunOptions,
   fetchAiRunnerLog,
   fetchAiRunners,
@@ -25,6 +26,8 @@ import {
   type AiEvolutionOverview,
   type AiTaskAutoRunPolicy,
   type CodexQuotaAccount,
+  type AiActivity,
+  type AiActivityType,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
@@ -34,7 +37,6 @@ import { formatCost, formatTokens, reasoningEffortLabel, shortModel, usageSummar
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
 import { fetchWebhookEndpoints, type FeishuWebhookEndpoint } from '@/api/system'
-import { fetchChatReviews, type ChatReviewRunSummary } from '@/api/chatReviews'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
@@ -53,7 +55,8 @@ const preferences = usePreferenceStore()
 const session = useSessionStore()
 const ui = useUiStore()
 const runs = ref<AiRun[]>([])
-const chatReviewRuns = ref<ChatReviewRunSummary[]>([])
+const recentActivities = ref<AiActivity[]>([])
+const activityFilter = ref<AiActivityType>('ALL')
 const runners = ref<AiRunner[]>([])
 const workflows = ref<AiWorkflow[]>([])
 const loading = ref(true)
@@ -86,7 +89,7 @@ const launchingGoal = ref(false)
 const goalImageUploads = ref(0)
 const selectedRun = ref<AiRun | null>(null)
 const runHistoryOpen = ref(false)
-const runHistory = ref<AiRun[]>([])
+const runHistory = ref<AiActivity[]>([])
 const runHistoryLoading = ref(false)
 const runHistoryError = ref('')
 const runHistoryPage = ref(1)
@@ -94,6 +97,11 @@ const runHistoryTotal = ref(0)
 const RUN_HISTORY_PAGE_SIZE = 20
 const quickTaskListOpen = ref(false)
 const startingQuickTaskId = ref<string | null>(null)
+const ACTIVITY_FILTERS: Array<{ id: AiActivityType; label: string }> = [
+  { id: 'ALL', label: '全部' },
+  { id: 'FEATURE_DEVELOPMENT', label: '功能开发' },
+  { id: 'CHAT_REVIEW', label: '聊天复盘' },
+]
 const logRunner = ref<AiRunner | null>(null)
 const runnerLog = ref<AiRunnerLog | null>(null)
 const runnerLogLoading = ref(false)
@@ -128,8 +136,6 @@ let timer: ReturnType<typeof setInterval> | null = null
 let quotaTimer: ReturnType<typeof setInterval> | null = null
 
 const activeRuns = computed(() => runs.value.filter((run) => ['queued', 'claimed', 'running'].includes(run.status)))
-const recentRuns = computed(() => runs.value.filter((run) => !['queued', 'claimed', 'running'].includes(run.status)).slice(0, 8))
-const recentChatReviews = computed(() => chatReviewRuns.value.slice(0, 4))
 const onlineRunners = computed(() => runners.value.filter((runner) => runner.online))
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
@@ -254,16 +260,14 @@ function resultTitle(run: AiRun) {
 async function refresh() {
   try {
     const prevSucceededIds = new Set(runs.value.filter((run) => run.status === 'succeeded').map((run) => run.id))
-    const [nextRuns, nextRunners, reviews] = await Promise.all([
+    const [nextRuns, nextRunners, activities] = await Promise.all([
       fetchAiRuns(false),
       fetchAiRunners(),
-      fetchChatReviews().catch(() => null),
+      fetchAiActivities(activityFilter.value, 1, 8).catch(() => null),
     ])
     runs.value = nextRuns
     runners.value = nextRunners
-    if (reviews) {
-      chatReviewRuns.value = [reviews.activeRun, ...reviews.history].filter(Boolean) as ChatReviewRunSummary[]
-    }
+    if (activities) recentActivities.value = activities.items
     if (selectedRun.value) selectedRun.value = nextRuns.find((run) => run.id === selectedRun.value?.id) ?? selectedRun.value
     // 首次加载时不庆祝；检测到本次轮询有运行刚变成 succeeded 时触发庆祝。
     if (!loading.value) {
@@ -800,19 +804,28 @@ function inspectRun(run: AiRun) {
   selectedRun.value = run
 }
 
-function openChatReview(run: ChatReviewRunSummary) {
-  void router.push({ path: '/chat', query: { review: run.id } })
+function activityMeta(activity: AiActivity) {
+  if (activity.status === 'FAILED') return { label: '运行失败', icon: 'ri-error-warning-line', color: 'var(--wao-danger-strong)', bg: 'var(--wao-danger-bg)' }
+  return activity.type === 'CHAT_REVIEW'
+    ? { label: '报告已保存', icon: 'ri-chat-history-line', color: 'var(--wao-success-strong)', bg: 'var(--wao-success-bg)' }
+    : { label: '功能开发', icon: 'ri-code-box-line', color: 'var(--wao-primary-text)', bg: 'var(--wao-primary-soft)' }
 }
 
-function chatReviewState(run: ChatReviewRunSummary) {
-  if (run.stage === 'SUCCEEDED') return { label: '报告已保存', icon: 'ri-check-line', color: 'var(--wao-success-strong)', bg: 'var(--wao-success-bg)' }
-  if (run.stage === 'FAILED') return { label: '运行失败', icon: 'ri-error-warning-line', color: 'var(--wao-danger-strong)', bg: 'var(--wao-danger-bg)' }
-  return { label: 'AI 分析中', icon: 'ri-loader-4-line spin', color: 'var(--wao-primary-text)', bg: 'var(--wao-primary-soft)' }
+async function openActivity(activity: AiActivity) {
+  if (activity.type === 'CHAT_REVIEW') void router.push({ path: '/chat', query: { review: activity.targetId } })
+  else {
+    try {
+      selectedRun.value = runs.value.find((run) => run.id === activity.id) ?? await fetchAiRun(activity.id)
+    } catch (error) {
+      toast(error instanceof Error ? error.message : '运行详情读取失败', 'ri-error-warning-line')
+    }
+  }
 }
 
-function chatReviewRange(run: ChatReviewRunSummary) {
-  return run.rangeKind === 'HOURS' ? `最近 ${run.rangeValue} 小时` : run.rangeKind === 'MESSAGES'
-    ? `最近 ${run.rangeValue} 条消息` : `${run.startDate} 至 ${run.endDate}`
+async function selectActivityFilter(type: AiActivityType) {
+  activityFilter.value = type
+  try { recentActivities.value = (await fetchAiActivities(type, 1, 8)).items }
+  catch (error) { toast(error instanceof Error ? error.message : 'AI 运行分类读取失败', 'ri-error-warning-line') }
 }
 
 async function openRunHistory(page = 1) {
@@ -820,7 +833,7 @@ async function openRunHistory(page = 1) {
   runHistoryLoading.value = true
   runHistoryError.value = ''
   try {
-    const result = await fetchAiRunHistory(page, RUN_HISTORY_PAGE_SIZE)
+    const result = await fetchAiActivities(activityFilter.value, page, RUN_HISTORY_PAGE_SIZE)
     runHistory.value = result.items
     runHistoryPage.value = result.page
     runHistoryTotal.value = result.total
@@ -1291,47 +1304,29 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section v-if="recentRuns.length || recentChatReviews.length" class="recent-section">
+      <section class="recent-section">
         <div class="section-head">
-          <div><h2>最近 AI 运行</h2><p>开发任务与聊天复盘统一浏览；复盘卡片带有明确标签。</p></div>
+          <div><h2>最近 AI 运行</h2><p>开发任务与聊天复盘按完成时间统一排列，类型可继续扩展。</p></div>
           <button class="history-link" @click="openRunHistory()">查看全部<i class="ri-arrow-right-line"></i></button>
         </div>
+        <div class="activity-filters" role="tablist" aria-label="AI 运行类型">
+          <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" @click="selectActivityFilter(option.id)">{{ option.label }}</button>
+        </div>
+        <div v-if="!recentActivities.length && !loading" class="history-state"><i class="ri-inbox-2-line"></i>该类型还没有已结束的运行。</div>
         <div class="recent-grid">
-          <button v-for="review in recentChatReviews" :key="review.id" class="recent-card" @click="openChatReview(review)">
+          <button v-for="activity in recentActivities" :key="`${activity.type}-${activity.id}`" class="recent-card" @click="openActivity(activity)">
             <span class="recent-card-top">
-              <span class="recent-icon" :style="{ color: chatReviewState(review).color, background: chatReviewState(review).bg }"><i :class="chatReviewState(review).icon"></i></span>
-              <span class="recent-status" :style="{ color: chatReviewState(review).color, background: chatReviewState(review).bg }">{{ chatReviewState(review).label }}</span>
-              <span class="run-time">{{ timeText(review.finishedAt || review.createdAt) }}</span>
+              <span class="recent-icon" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i></span>
+              <span class="recent-status" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }">{{ activityMeta(activity).label }}</span>
+              <span class="run-time">{{ timeText(activity.finishedAt || activity.createdAt) }}</span>
             </span>
             <span class="recent-main">
-              <b>聊天复盘</b>
-              <em><i class="ri-chat-3-line"></i>{{ chatReviewRange(review) }}</em>
-              <em><i class="ri-sparkling-2-line"></i>聊天复盘 · {{ review.messageCount }} 条真实消息</em>
-              <small v-if="review.stage === 'FAILED'">{{ review.error }}</small>
+              <b>{{ activity.title }}</b>
+              <em><i :class="activity.type === 'CHAT_REVIEW' ? 'ri-chat-3-line' : 'ri-stack-line'"></i>{{ activity.subtitle }}</em>
+              <em><i class="ri-sparkling-2-line"></i>{{ activity.type === 'CHAT_REVIEW' ? '聊天复盘' : '功能开发' }} · {{ activity.capabilityLabel }}</em>
+              <small v-if="activity.status === 'FAILED'">{{ activity.resultPreview }}</small>
             </span>
-            <span class="recent-open">打开复盘<i class="ri-arrow-right-line"></i></span>
-          </button>
-          <button v-for="run in recentRuns" :key="run.id" class="recent-card" @click="inspectRun(run)">
-            <span class="recent-card-top">
-              <span v-if="run.previewImages?.[0]" class="recent-icon recent-image">
-                <img :src="run.previewImages[0]" :alt="`${run.taskTitle} · 图片预览`" loading="lazy" />
-              </span>
-              <span v-else class="recent-icon" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">
-                <i :class="metaFor(run).icon"></i>
-              </span>
-              <span class="recent-status" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">{{ metaFor(run).label }}</span>
-              <span class="run-time">{{ timeText(run.finishedAt) }}</span>
-            </span>
-            <span class="recent-main">
-              <b>{{ run.taskTitle }}</b>
-              <em><i class="ri-stack-line"></i>{{ run.projectName }}</em>
-              <em>
-                <i :class="engineIcon(run.engine)"></i>{{ engineLabel(run.engine) }} · {{ run.runnerName || '未分配电脑' }}
-                <span v-if="usageSummary(run.usage)" class="recent-usage">· {{ usageSummary(run.usage) }}</span>
-              </em>
-              <small v-if="run.status === 'failed'">{{ resultPreview(run) }}</small>
-            </span>
-            <span class="recent-open">查看详情<i class="ri-arrow-right-line"></i></span>
+            <span class="recent-open">{{ activity.type === 'CHAT_REVIEW' ? '打开复盘' : '查看详情' }}<i class="ri-arrow-right-line"></i></span>
           </button>
         </div>
       </section>
@@ -1667,6 +1662,9 @@ onBeforeUnmount(() => {
           </div>
           <button class="detail-close" aria-label="关闭运行历史" @click="runHistoryOpen = false"><i class="ri-close-line"></i></button>
         </header>
+        <div class="activity-filters history-filters" role="tablist" aria-label="历史运行类型">
+          <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" @click="selectActivityFilter(option.id); openRunHistory(1)">{{ option.label }}</button>
+        </div>
         <div v-if="runHistoryLoading" class="history-state"><i class="ri-loader-4-line spin"></i>正在读取运行历史…</div>
         <div v-else-if="runHistoryError" class="history-state error">
           <i class="ri-error-warning-line"></i><span>{{ runHistoryError }}</span>
@@ -1674,22 +1672,19 @@ onBeforeUnmount(() => {
         </div>
         <div v-else-if="!runHistory.length" class="history-state"><i class="ri-inbox-2-line"></i>还没有已结束的运行。</div>
         <div v-else class="recent-grid history-grid">
-          <button v-for="run in runHistory" :key="run.id" class="recent-card" @click="inspectRun(run)">
+          <button v-for="activity in runHistory" :key="`${activity.type}-${activity.id}`" class="recent-card" @click="openActivity(activity)">
             <span class="recent-card-top">
-              <span v-if="run.previewImages?.[0]" class="recent-icon recent-image">
-                <img :src="run.previewImages[0]" :alt="`${run.taskTitle} · 图片预览`" loading="lazy" />
-              </span>
-              <span v-else class="recent-icon" :style="{ color: metaFor(run).color, background: metaFor(run).bg }"><i :class="metaFor(run).icon"></i></span>
-              <span class="recent-status" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">{{ metaFor(run).label }}</span>
-              <span class="run-time">{{ timeText(run.finishedAt) }}</span>
+              <span class="recent-icon" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i></span>
+              <span class="recent-status" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }">{{ activityMeta(activity).label }}</span>
+              <span class="run-time">{{ timeText(activity.finishedAt || activity.createdAt) }}</span>
             </span>
             <span class="recent-main">
-              <b>{{ run.taskTitle }}</b>
-              <em><i class="ri-stack-line"></i>{{ run.projectName }}</em>
-              <em><i :class="engineIcon(run.engine)"></i>{{ engineLabel(run.engine) }} · {{ run.runnerName || '未分配电脑' }}</em>
-              <small v-if="run.status === 'failed'">{{ resultPreview(run) }}</small>
+              <b>{{ activity.title }}</b>
+              <em><i :class="activity.type === 'CHAT_REVIEW' ? 'ri-chat-3-line' : 'ri-stack-line'"></i>{{ activity.subtitle }}</em>
+              <em><i class="ri-sparkling-2-line"></i>{{ activity.capabilityLabel }}</em>
+              <small v-if="activity.status === 'FAILED'">{{ activity.resultPreview }}</small>
             </span>
-            <span class="recent-open">查看详情<i class="ri-arrow-right-line"></i></span>
+            <span class="recent-open">{{ activity.type === 'CHAT_REVIEW' ? '打开复盘' : '查看详情' }}<i class="ri-arrow-right-line"></i></span>
           </button>
         </div>
         <footer v-if="!runHistoryLoading && !runHistoryError && runHistoryTotal > RUN_HISTORY_PAGE_SIZE" class="history-pagination">
@@ -2330,6 +2325,10 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
+.activity-filters { margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.activity-filters button { min-height: 30px; padding: 0 11px; border: 1px solid var(--wao-line); border-radius: 999px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; font-size: 11px; }
+.activity-filters button.active { border-color: var(--wao-primary-line); background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: 650; }
+.history-filters { margin: 14px 0 4px; }
 .recent-card {
   width: 100%;
   min-width: 0;

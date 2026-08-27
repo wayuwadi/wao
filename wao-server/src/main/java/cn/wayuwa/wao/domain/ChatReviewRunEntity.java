@@ -22,6 +22,8 @@ public class ChatReviewRunEntity {
     private LocalDate startDate;
     private LocalDate endDate;
     private String focusText;
+    private String aiCapabilityId;
+    private String triggerKind;
     private String rangeKind;
     private Integer rangeValue;
     private String sourceMessageIdsJson;
@@ -74,6 +76,10 @@ public class ChatReviewRunEntity {
     public void setEndDate(LocalDate endDate) { this.endDate = endDate; }
     public String getFocusText() { return focusText; }
     public void setFocusText(String focusText) { this.focusText = focusText; }
+    public String getAiCapabilityId() { return aiCapabilityId; }
+    public void setAiCapabilityId(String aiCapabilityId) { this.aiCapabilityId = aiCapabilityId; }
+    public String getTriggerKind() { return triggerKind; }
+    public void setTriggerKind(String triggerKind) { this.triggerKind = triggerKind; }
     public String getRangeKind() { return rangeKind; }
     public void setRangeKind(String rangeKind) { this.rangeKind = rangeKind; }
     public Integer getRangeValue() { return rangeValue; }

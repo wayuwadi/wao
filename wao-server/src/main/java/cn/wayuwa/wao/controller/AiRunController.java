@@ -289,6 +289,12 @@ public class AiRunController {
         return ApiResponse.ok(service.listRunHistory(page, size));
     }
 
+    /** 统一活动列表点开功能开发时读取原有完整运行详情。 */
+    @GetMapping("/runs/{runId}")
+    public ApiResponse<AiRunDto> runDetail(@PathVariable String runId) {
+        return ApiResponse.ok(service.runDetail(runId));
+    }
+
     /** 兼容预览历史任务中遗留的 Base64 图片，不让编码正文进入运行列表响应。 */
     @GetMapping("/runs/{runId}/images/{imageIndex}")
     public ResponseEntity<byte[]> runPreviewImage(@PathVariable String runId, @PathVariable int imageIndex) {

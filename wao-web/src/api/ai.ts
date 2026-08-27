@@ -246,9 +246,35 @@ export interface AiRunPage {
   size: number
 }
 
+export type AiActivityType = 'ALL' | 'FEATURE_DEVELOPMENT' | 'CHAT_REVIEW'
+export interface AiActivity {
+  id: string
+  type: Exclude<AiActivityType, 'ALL'>
+  title: string
+  status: string
+  subtitle: string
+  capabilityLabel: string
+  targetId: string
+  resultPreview?: string | null
+  createdAt: string
+  finishedAt?: string | null
+}
+export interface AiActivityPage {
+  items: AiActivity[]
+  total: number
+  page: number
+  size: number
+}
+
+export const fetchAiActivities = (type: AiActivityType = 'ALL', page = 1, size = 20) =>
+  data<AiActivityPage>(http.get('/api/ai/activities', { params: { type, page, size } }))
+
 /** 按页读取全部已结束运行；首页默认八条仍走轻量列表。 */
 export const fetchAiRunHistory = (page = 1, size = 20) =>
   data<AiRunPage>(http.get('/api/ai/runs/history', { params: { page, size } }))
+
+export const fetchAiRun = (runId: string) =>
+  data<AiRun>(http.get(`/api/ai/runs/${encodeURIComponent(runId)}`))
 
 export const fetchTaskAiRuns = (taskId: string) =>
   data<AiRun[]>(http.get(`/api/ai/tasks/${taskId}/runs`))

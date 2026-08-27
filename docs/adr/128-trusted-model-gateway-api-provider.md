@@ -25,8 +25,8 @@ WAO 获得了一枚每日 100,000,000 Token 配额的 LiteLLM 网关密钥。网
   未授权、响应格式异常或模型缺失均保存为失败状态，不伪造可用性或额度。
 - 最新创建且启用的 `model_gateway` 或 DeepSeek 配置作为文档润色 API；没有这两类配置时仍回退本地 Codex。
   API 调用失败时正文保持不变并允许重试，不静默切换供应商。
-- `model_gateway` 不进入 `defaultCodexRunAccount`、AI Run 账号筛选或 Runner 凭据同步。以后若要用于 AI Run，
-  必须另做需求和协议/工具调用验收，不能因 `/models` 成功就推断 Responses 工具调用可用。
+- `model_gateway` 不进入功能开发 AI Run 的账号筛选或 Runner 凭据同步。ADR-137 允许它进入无工具、服务端执行的
+  “问问 AI”和聊天复盘只读能力列表；这不代表它支持仓库工具调用，不能因 `/models` 成功就推断开发 AI Run 可用。
 
 ## 后果
 

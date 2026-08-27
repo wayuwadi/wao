@@ -1,0 +1,49 @@
+package cn.wayuwa.wao.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.domain.AiActivityRow;
+import cn.wayuwa.wao.mapper.AiActivityMapper;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+class AiActivityServiceTest {
+    private final AiActivityMapper mapper = mock(AiActivityMapper.class);
+    private final AiActivityService service = new AiActivityService(mapper);
+
+    @Test
+    void normalizesTypeAndUsesUnifiedPagination() {
+        AiActivityRow row = new AiActivityRow();
+        row.setId("cr1");
+        row.setActivityType("CHAT_REVIEW");
+        row.setTitle("聊天复盘");
+        row.setStatus("SUCCEEDED");
+        row.setSubtitle("最近 20 条消息 · 20 条真实消息");
+        row.setCapabilityLabel("DeepSeek");
+        row.setTargetId("cr1");
+        when(mapper.count("CHAT_REVIEW")).thenReturn(17L);
+        when(mapper.page("CHAT_REVIEW", 8, 8)).thenReturn(List.of(row));
+
+        var result = service.page("chat_review", 2, 3);
+
+        assertThat(result.total()).isEqualTo(17);
+        assertThat(result.page()).isEqualTo(2);
+        assertThat(result.size()).isEqualTo(8);
+        assertThat(result.items()).singleElement().satisfies(item -> {
+            assertThat(item.type()).isEqualTo("CHAT_REVIEW");
+            assertThat(item.capabilityLabel()).isEqualTo("DeepSeek");
+        });
+        verify(mapper).page("CHAT_REVIEW", 8, 8);
+    }
+
+    @Test
+    void rejectsUnknownFutureTypesUntilTheyHaveARealSource() {
+        assertThatThrownBy(() -> service.page("VIDEO", 1, 20))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("不支持");
+    }
+}

@@ -5,6 +5,7 @@ import java.util.List;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.dto.AssistantChatRequest;
+import cn.wayuwa.wao.dto.AiCapabilityDto;
 import cn.wayuwa.wao.dto.AssistantConversationDetailDto;
 import cn.wayuwa.wao.dto.AssistantConversationDto;
 import cn.wayuwa.wao.dto.AssistantReplyDto;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -48,8 +50,15 @@ public class AiAssistantController {
 
     /** 是否存在可提供页面问答的在线本地 Codex。 */
     @GetMapping("/status")
-    public ApiResponse<AssistantStatusDto> status() {
-        return ApiResponse.ok(service.status());
+    public ApiResponse<AssistantStatusDto> status(
+            @RequestParam(required = false) String capabilityId) {
+        return ApiResponse.ok(service.status(capabilityId));
+    }
+
+    /** 返回可选择的本地 Runner 与集中 API/Token 配置，不暴露凭据。 */
+    @GetMapping("/capabilities")
+    public ApiResponse<List<AiCapabilityDto>> capabilities() {
+        return ApiResponse.ok(service.capabilities());
     }
 
     /** 把文档中明确选中的文字交给只读本地 Codex 润色，不写入助手聊天历史。 */
@@ -111,7 +120,7 @@ public class AiAssistantController {
     public ApiResponse<AssistantReplyDto> chat(@Valid @RequestBody AssistantChatRequest request,
             HttpServletRequest http) {
         String content = service.chatOnce(request, currentMember.idOr(http, "unknown"));
-        String status = service.configured() ? "ok" : "no_config";
+        String status = service.status(request.aiCapabilityId()).configured() ? "ok" : "no_config";
         return ApiResponse.ok(new AssistantReplyDto(java.util.UUID.randomUUID().toString(), content, status));
     }
 }

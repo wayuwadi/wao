@@ -28,6 +28,7 @@ import cn.wayuwa.wao.dto.AiSessionQuotaDto;
 import cn.wayuwa.wao.dto.AiWeeklyQuotaDto;
 import cn.wayuwa.wao.dto.CompleteAiAccountLoginRequest;
 import cn.wayuwa.wao.dto.AiRunAccountDto;
+import cn.wayuwa.wao.dto.AiCapabilityDto;
 import cn.wayuwa.wao.dto.StartAiAccountLoginRequest;
 import cn.wayuwa.wao.mapper.AiAccountMapper;
 import cn.wayuwa.wao.mapper.AiOauthSessionMapper;
@@ -747,6 +748,35 @@ public class AiAccountService {
                 .orderByAsc(AiAccountEntity::getCreatedAt)
                 .last("LIMIT 1"));
         return entity == null ? null : runAccount(entity.getId(), "codex");
+    }
+
+    /**
+     * 返回可用于只读页面 AI 的启用账号；只包含展示元数据，不解密或返回凭据。
+     *
+     * <p>Claude / Qoder 目前没有经过 assistant-v2 无工具协议或服务端 API 调用验证，不能列为可选项。
+     */
+    public List<AiCapabilityDto> assistantCapabilities() {
+        return mapper.selectList(new LambdaQueryWrapper<AiAccountEntity>()
+                        .eq(AiAccountEntity::getEnabled, true)
+                        .in(AiAccountEntity::getProvider,
+                                List.of("codex", "deepseek", DeepSeekApiClient.MODEL_GATEWAY_PROVIDER))
+                        .orderByAsc(AiAccountEntity::getCreatedAt))
+                .stream().map(entity -> new AiCapabilityDto(entity.getId(), entity.getLabel(),
+                        entity.getProvider(), entity.getModel(),
+                        "codex".equals(entity.getProvider()) ? "RUNNER" : "SERVER_API",
+                        true, "已启用"))
+                .toList();
+    }
+
+    /** 解析只读页面 AI 选择的集中账号；调用方只在实际执行时获取明文凭据。 */
+    public AiRunAccountDto assistantAccount(String capabilityId) {
+        AiAccountEntity entity = require(capabilityId);
+        if (!Boolean.TRUE.equals(entity.getEnabled())) throw new BadRequestException("选择的 AI 配置已停用");
+        if (!List.of("codex", "deepseek", DeepSeekApiClient.MODEL_GATEWAY_PROVIDER)
+                .contains(entity.getProvider())) {
+            throw new BadRequestException("选择的 AI 配置暂不支持页面问答和聊天复盘");
+        }
+        return runAccount(entity.getId(), entity.getProvider());
     }
 
     /**

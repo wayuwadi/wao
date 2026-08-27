@@ -14,11 +14,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.GlobalExceptionHandler;
 import cn.wayuwa.wao.dto.ChatReviewConfigDto;
+import cn.wayuwa.wao.dto.ChatReviewAutoConfigDto;
 import cn.wayuwa.wao.dto.ChatReviewListDto;
 import cn.wayuwa.wao.dto.ChatReviewRunDetailDto;
 import cn.wayuwa.wao.dto.ChatReviewRunSummaryDto;
 import cn.wayuwa.wao.dto.ChatReviewSpeakerDto;
 import cn.wayuwa.wao.service.ChatReviewService;
+import cn.wayuwa.wao.service.ChatReviewAutomationService;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -41,11 +43,25 @@ class ChatReviewControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockBean private ChatReviewService service;
+    @MockBean private ChatReviewAutomationService automation;
     @MockBean private CurrentMember currentMember;
 
     @BeforeEach
     void currentSessionMember() {
         when(currentMember.idOr(any(), eq("unknown"))).thenReturn("wd");
+    }
+
+    @Test
+    void automationReturnsThePersistedPolicy() throws Exception {
+        when(automation.config()).thenReturn(new ChatReviewAutoConfigDto(
+                true, 3600, "MESSAGES", 40, "只看分歧", "aa-deepseek",
+                OffsetDateTime.parse("2026-08-27T13:00:00+08:00"), "cr-auto",
+                OffsetDateTime.parse("2026-08-27T12:00:00+08:00")));
+
+        mockMvc.perform(get("/api/chat-reviews/automation"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(true))
+                .andExpect(jsonPath("$.data.aiCapabilityId").value("aa-deepseek"));
     }
 
     @Test
@@ -66,7 +82,7 @@ class ChatReviewControllerTest {
 
     @Test
     void createsSharedChatReviewWithStrictRangeInput() throws Exception {
-        when(service.createShared("MESSAGES", 20, "结论", "wd")).thenReturn("cr-shared");
+        when(service.createShared("MESSAGES", 20, "结论", "wd", null)).thenReturn("cr-shared");
 
         mockMvc.perform(post("/api/chat-reviews/shared")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -75,7 +91,7 @@ class ChatReviewControllerTest {
                                 """))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.runId").value("cr-shared"));
-        verify(service).createShared("MESSAGES", 20, "结论", "wd");
+        verify(service).createShared("MESSAGES", 20, "结论", "wd", null);
 
         mockMvc.perform(post("/api/chat-reviews/shared")
                         .contentType(MediaType.APPLICATION_JSON)
