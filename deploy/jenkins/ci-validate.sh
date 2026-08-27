@@ -51,8 +51,14 @@ grep -Fq 'python /opt/jumpserver/apps/manage.py shell' deploy/jumpserver/deploy.
 grep -Fq 'exec sudo -n sh "$project_root/deploy/jumpserver/verify-assets.sh"' \
   deploy/jenkins/deploy-master-local.sh
 test "$(grep -Fc 'python /opt/jumpserver/apps/manage.py shell' \
-  deploy/jumpserver/verify-assets.sh)" = 2
+  deploy/jumpserver/verify-assets.sh)" = 1
 ! grep -Fq 'python manage.py' deploy/jumpserver/verify-assets.sh
+grep -Fq 'enable-rdp.ps1' deploy/jenkins/ci-deploy.sh
+grep -Fq 'RemoteAddress = $remoteAddresses' deploy/jumpserver/enable-rdp.ps1
+! grep -Fq 'Enable-NetFirewallRule -DisplayGroup' deploy/jumpserver/enable-rdp.ps1
+python3 -m py_compile \
+  deploy/jumpserver/bootstrap_wao_assets.py \
+  deploy/jumpserver/verify_wao_access.py
 
 check_migration_versions() {
   migration_dir="$1"
