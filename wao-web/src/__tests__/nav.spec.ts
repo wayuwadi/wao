@@ -179,6 +179,28 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.tabKind).toBe('module')
   })
 
+  it('使用统计默认位于工具组并复用真实用量仪表盘', () => {
+    expect(MODULES.dashboard).toMatchObject({
+      label: '使用统计',
+      path: '/dashboard',
+    })
+    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'dashboard')).toMatchObject({
+      group: 'TOOLS',
+      visible: true,
+      openMode: 'TAB',
+    })
+    expect(NAV_GROUPS.find((group) => group.label === '工具')?.items[0]).toBe('dashboard')
+    expect(router.resolve('/dashboard').meta).toMatchObject({
+      module: 'dashboard',
+      tabKind: 'module',
+    })
+    expect(tabFromRoute(router.resolve('/dashboard') as RouteLocationNormalized)).toMatchObject({
+      key: 'dashboard',
+      label: '使用统计',
+      path: '/dashboard',
+    })
+  })
+
   it('天人一卦默认位于个人组并使用原生模块路由', () => {
     expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('tianren')
     const route = router.getRoutes().find((item) => item.name === 'tianren')

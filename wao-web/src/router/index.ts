@@ -305,7 +305,7 @@ const router = createRouter({
           path: 'dashboard',
           name: 'dashboard',
           component: () => import('@/views/DashboardView.vue'),
-          meta: { tabKind: 'dashboard' },
+          meta: { module: 'dashboard', tabKind: 'module' },
         },
         { path: 'media-agent', redirect: '/apps/media-agent' },
         {
