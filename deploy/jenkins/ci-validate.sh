@@ -36,6 +36,8 @@ grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
 grep -Fq "printf 'DOCKER_IMAGE_MIRROR=1\\n'" deploy/jumpserver/deploy.sh
 grep -Fqx 'set_config DOCKER_IMAGE_MIRROR 1' deploy/jumpserver/deploy.sh
 grep -Fq 'python /opt/jumpserver/apps/manage.py shell' deploy/jumpserver/deploy.sh
+grep -Fq 'sudo -n sh "$WAO_MASTER_PROJECT_ROOT/deploy/jumpserver/verify-assets.sh"' \
+  deploy/jenkins/ci-deploy.sh
 test "$(grep -Fc 'python /opt/jumpserver/apps/manage.py shell' \
   deploy/jumpserver/verify-assets.sh)" = 2
 ! grep -Fq 'python manage.py' deploy/jumpserver/verify-assets.sh
