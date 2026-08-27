@@ -150,6 +150,21 @@ describe('手机底部模块导航', () => {
     wrapper.unmount()
   })
 
+  it('资源管理入口先通过 WAO 会话换取 JumpServer 登录票据', async () => {
+    const wrapper = await mountNavigation('/')
+    const jumpServerButton = wrapper
+      .findAll('.item')
+      .find((item) => item.attributes('title') === '资源管理')!
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    await jumpServerButton.trigger('click')
+
+    expect(open).toHaveBeenCalledWith('/api/auth/jumpserver', '_blank', 'noopener,noreferrer')
+    expect(wrapper.vm.$route.fullPath).toBe('/')
+    open.mockRestore()
+    wrapper.unmount()
+  })
+
   it('桌面仍应用并保留原有分组折叠偏好', async () => {
     window.matchMedia = ((query: string) => ({
       matches: false,

@@ -124,6 +124,30 @@ sudo sh deploy/scripts/provision-cloud-node.sh <证书通知邮箱>
 
 脚本只安装 Nginx 与 Certbot，签发 TLS 证书，安装健康检查与 Nginx DDNS 激活任务，并验证证书续期。云节点不安装 Docker、不运行数据库或 Sentinel；前端生产制品放在 `/var/www/wao/dist`。证书签发前的 HTTP 引导配置会提供静态前端；证书签发后，如果两个 Gateway 健康端点均未就绪，则使用 HTTPS 待后端模式并让 `/api/` 返回 503。定时任务每分钟解析两个 DDNS 域名的 IPv4，只有地址变化时才重载 Nginx；即使 DDNS 同时发布不可达的 AAAA，也不会把 IPv6 加入上游。检测到至少一个 Gateway 健康端点可用后，会自动切换到正式双 Gateway 配置。CD 会用 `set-nginx-upstream-state.sh` 在应用节点发布前临时摘流；摘流锁存在时 DDNS 定时任务不会覆盖临时状态。
 
+## JumpServer 资源管理
+
+JumpServer CE 固定运行在 Linux 主节点 `/opt/wao-jumpserver`，使用独立 PostgreSQL、Redis 和数据卷；Web
+只绑定 `127.0.0.1:18080`，经现有 Jenkins 反向 SSH 通道映射到云节点 `127.0.0.1:18082`。云 Nginx 仅从
+`https://jms.wayuwa.cn` 暴露服务。首次发布前需把 `jms.wayuwa.cn` 解析到云入口 `8.136.152.131`；CD 会先
+严格核对解析，再签发独立 Let's Encrypt 证书。
+
+主发布脚本会幂等生成 WAO 与 JumpServer 的共享 SSO 密钥、部署社区版 Custom SSO、生成独立资产 SSH
+密钥，并把公钥安装到 Linux、Windows 和云节点。私钥只保存在 `/opt/wao-jumpserver` 受限目录和 JumpServer
+账户数据中，不复用 Jenkins 发布私钥。已登录成员从「工具 → 资源管理」进入；管理员映射为系统管理员，普通
+成员只建立系统用户身份，仍需在 JumpServer 中显式配置资产授权。
+
+日常验证：
+
+```bash
+curl --fail https://jms.wayuwa.cn/api/health/
+sudo -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
+  --verify-jumpserver-assets "$(xdg-user-dir DESKTOP)/deploy/wao"
+```
+
+备份至少包含 `/opt/wao-jumpserver/config` 与 `/opt/wao-jumpserver/data`，并在停止 JumpServer 写入后制作一致性
+快照；恢复演练必须同时验证登录、三项资产和专用 SSH 账户。升级必须先核对官方发行说明和社区版镜像，再修改
+固定版本与校验值，禁止直接跟随 `latest`。具体边界见 [ADR-143](../docs/adr/143-jumpserver-isolated-community-sso.md)。
+
 ## 数据、备份与验收
 
 MySQL 从库只在数据卷首次初始化时自动配置 GTID 复制。MySQL 9 的复制密码最多 32 个字符，`new-deployment-env.ps1` 已为该字段生成 32 位十六进制随机值。验证：

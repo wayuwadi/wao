@@ -85,6 +85,17 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
     healthUrl: '',
     openMode: 'NEW_PAGE',
   },
+  {
+    id: 'jumpserver',
+    label: '资源管理',
+    icon: 'ri-server-line',
+    group: 'TOOLS',
+    order: 15,
+    visible: true,
+    appUrl: '/api/auth/jumpserver',
+    healthUrl: '/api/external/jumpserver/health',
+    openMode: 'NEW_PAGE',
+  },
 ]
 
 export const MODULES: Record<ModuleId, ModuleMeta> = {

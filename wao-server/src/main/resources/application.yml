@@ -92,6 +92,11 @@ wao:
   auth:
     protection-enabled: ${AUTH_PROTECTION_ENABLED:true}
     registration-enabled: ${AUTH_REGISTRATION_ENABLED:true}
+    jumpserver:
+      enabled: ${JUMPSERVER_SSO_ENABLED:false}
+      shared-secret: ${JUMPSERVER_SSO_SHARED_SECRET:}
+      login-url: ${JUMPSERVER_SSO_LOGIN_URL:https://jms.wayuwa.cn/api/v1/authentication/custom-sso/login/}
+      ticket-ttl: ${JUMPSERVER_SSO_TICKET_TTL:45s}
   vault:
     # base64 编码的 32 字节 AES-256 密钥；生产环境必须通过环境变量 WAO_VAULT_KEY 覆盖，
     # 下面的默认值只用于本地 / dev 演示环境，不是真实密钥。

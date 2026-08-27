@@ -5,6 +5,25 @@ sh deploy/scripts/test-render-nginx-config.sh
 sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
 sh deploy/jenkins/test-ci-change-plan.sh
+python3 -m unittest deploy/jumpserver/test_custom_sso.py
+sh deploy/jumpserver/test-ensure-sso-secret.sh
+
+for script in \
+  deploy/jumpserver/deploy.sh \
+  deploy/jumpserver/ensure-sso-secret.sh \
+  deploy/jumpserver/install-public-key.sh \
+  deploy/jumpserver/verify-assets.sh \
+  deploy/scripts/ensure-jumpserver-certificate.sh \
+  deploy/jenkins/ci-deploy.sh \
+  deploy/jenkins/deploy-master-local.sh; do
+  sh -n "$script"
+done
+
+grep -q 'server_name jms.wayuwa.cn;' deploy/nginx/jms.wayuwa.cn.conf
+grep -q 'proxy_pass http://127.0.0.1:18082;' deploy/nginx/jms.wayuwa.cn.conf
+grep -q 'location = /api/auth/jumpserver' deploy/nginx/wao.wayuwa.cn.conf.template
+grep -q 'X-WAO-API-Route linux-jumpserver-sso' deploy/nginx/wao.wayuwa.cn.conf.template
+grep -q 'location = /api/external/jumpserver/health' deploy/nginx/wao.wayuwa.cn.conf.template
 
 check_migration_versions() {
   migration_dir="$1"

@@ -26,14 +26,16 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExternalAppRegistryService {
 
-    private static final int REGISTRY_VERSION = 4;
+    private static final int REGISTRY_VERSION = 5;
     private static final int GETNOTE_INTRODUCED_VERSION = 4;
+    private static final int JUMPSERVER_INTRODUCED_VERSION = 5;
     private static final int MAX_APPS = 30;
     private static final String MEDIA_AGENT_ID = "media-agent";
     private static final String DEFAULT_MEDIA_AGENT_LABEL = "自媒体 Agent";
     private static final String DEFAULT_MEDIA_AGENT_GROUP = "PUBLIC";
     private static final int DEFAULT_MEDIA_AGENT_ORDER = 20;
     private static final String GETNOTE_ID = "getnote";
+    private static final String JUMPSERVER_ID = "jumpserver";
     private static final Pattern APP_ID = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*");
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("PUBLIC", "PERSONAL", "TOOLS");
@@ -71,6 +73,10 @@ public class ExternalAppRegistryService {
             if (stored.version() < GETNOTE_INTRODUCED_VERSION
                     && requests.stream().noneMatch(app -> GETNOTE_ID.equals(app.id()))) {
                 requests.add(getNoteRequest());
+            }
+            if (stored.version() < JUMPSERVER_INTRODUCED_VERSION
+                    && requests.stream().noneMatch(app -> JUMPSERVER_ID.equals(app.id()))) {
+                requests.add(jumpServerRequest());
             }
             return new ExternalAppRegistryDto(REGISTRY_VERSION, activeApps(canonicalize(requests)));
         } catch (JsonProcessingException | IllegalArgumentException | NullPointerException exception) {
@@ -224,7 +230,7 @@ public class ExternalAppRegistryService {
     }
 
     private List<ExternalAppConfigDto> defaultApps() {
-        return List.of(legacyMediaAgent(), getNoteApp());
+        return List.of(legacyMediaAgent(), getNoteApp(), jumpServerApp());
     }
 
     private static ExternalAppConfigDto getNoteApp() {
@@ -242,6 +248,26 @@ public class ExternalAppRegistryService {
 
     private static SaveExternalAppConfigRequest getNoteRequest() {
         ExternalAppConfigDto app = getNoteApp();
+        return new SaveExternalAppConfigRequest(
+                app.id(), app.label(), app.icon(), app.group(), app.order(), app.visible(),
+                app.appUrl(), app.healthUrl(), app.openMode());
+    }
+
+    private static ExternalAppConfigDto jumpServerApp() {
+        return new ExternalAppConfigDto(
+                JUMPSERVER_ID,
+                "资源管理",
+                "ri-server-line",
+                "TOOLS",
+                15,
+                true,
+                "/api/auth/jumpserver",
+                "/api/external/jumpserver/health",
+                "NEW_PAGE");
+    }
+
+    private static SaveExternalAppConfigRequest jumpServerRequest() {
+        ExternalAppConfigDto app = jumpServerApp();
         return new SaveExternalAppConfigRequest(
                 app.id(), app.label(), app.icon(), app.group(), app.order(), app.visible(),
                 app.appUrl(), app.healthUrl(), app.openMode());

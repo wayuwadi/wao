@@ -35,8 +35,8 @@ class ExternalAppRegistryServiceTest {
 
         var registry = service.getRegistry();
 
-        assertThat(registry.version()).isEqualTo(4);
-        assertThat(registry.apps()).hasSize(2);
+        assertThat(registry.version()).isEqualTo(5);
+        assertThat(registry.apps()).hasSize(3);
         assertThat(registry.apps().get(0)).satisfies(app -> {
             assertThat(app.id()).isEqualTo("media-agent");
             assertThat(app.label()).isEqualTo("内容助手");
@@ -53,6 +53,14 @@ class ExternalAppRegistryServiceTest {
             assertThat(app.group()).isEqualTo("TOOLS");
             assertThat(app.appUrl()).isEqualTo("https://www.biji.com/");
             assertThat(app.healthUrl()).isEmpty();
+            assertThat(app.openMode()).isEqualTo("NEW_PAGE");
+        });
+        assertThat(registry.apps().get(2)).satisfies(app -> {
+            assertThat(app.id()).isEqualTo("jumpserver");
+            assertThat(app.label()).isEqualTo("资源管理");
+            assertThat(app.group()).isEqualTo("TOOLS");
+            assertThat(app.appUrl()).isEqualTo("/api/auth/jumpserver");
+            assertThat(app.healthUrl()).isEqualTo("/api/external/jumpserver/health");
             assertThat(app.openMode()).isEqualTo("NEW_PAGE");
         });
     }
@@ -86,7 +94,7 @@ class ExternalAppRegistryServiceTest {
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(stored);
 
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent", "getnote");
+                .containsExactly("media-agent", "getnote", "jumpserver");
         assertThat(service.getRegistry().apps().get(0).openMode()).isEqualTo("TAB");
     }
 
@@ -99,10 +107,15 @@ class ExternalAppRegistryServiceTest {
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(3, List.of(mediaAgent))));
 
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent", "getnote");
+                .containsExactly("media-agent", "getnote", "jumpserver");
 
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(4, List.of(mediaAgent))));
+        assertThat(service.getRegistry().apps()).extracting("id")
+                .containsExactly("media-agent", "jumpserver");
+
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
+                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(5, List.of(mediaAgent))));
         assertThat(service.getRegistry().apps()).extracting("id")
                 .containsExactly("media-agent");
     }
