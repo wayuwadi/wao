@@ -48,6 +48,27 @@ describe('MemoryView', () => {
     expect(wrapper.text()).toContain('正式版 v1')
   })
 
+  it('在记忆中心内打开 Codex 连接，不再跳到设置页', async () => {
+    const wrapper = mount(MemoryView, { global: { stubs: {
+      MemoryMcpPanel: { template: '<div data-testid="mcp-panel">设备令牌与接入说明</div>' },
+    } } })
+    await flushPromises()
+    await wrapper.get('.scope-note button').trigger('click')
+    expect(replace).toHaveBeenLastCalledWith({ query: { section: 'mcp' } })
+    expect(wrapper.get('[data-testid="mcp-panel"]').text()).toBe('设备令牌与接入说明')
+    expect(wrapper.find('.scope-tabs').exists()).toBe(false)
+  })
+
+  it('Codex 连接深链不发起无关的记忆列表请求', async () => {
+    route.query = { section: 'mcp' }
+    const wrapper = mount(MemoryView, { global: { stubs: {
+      MemoryMcpPanel: { template: '<div data-testid="mcp-panel">设备令牌与接入说明</div>' },
+    } } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="mcp-panel"]').exists()).toBe(true)
+    expect(fetchMemories).not.toHaveBeenCalled()
+  })
+
   it('恢复本机草稿并把个人记忆立即发布', async () => {
     localStorage.setItem('wao:unified-memory-draft:personal:wg:new', JSON.stringify({
       category: 'experience', title: '未完成的经历', content: '稍后继续写', changeSummary: '', evidence: '', expiresAt: '',

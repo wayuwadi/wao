@@ -129,7 +129,7 @@ onMounted(load)
 
 <template>
   <div class="memory-panel">
-    <div class="s-h1">Codex 记忆中心 · MCP</div>
+    <div class="s-h1">Codex 连接 · MCP</div>
 
     <section class="card memory-overview">
       <div class="memory-title"><span><i class="ri-brain-line"></i></span><div><b>WAO 是跨设备长期记忆的唯一权威源</b><small>个人域直接写入；组织和项目域只提交审核候选</small></div></div>

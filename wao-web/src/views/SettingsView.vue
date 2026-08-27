@@ -15,7 +15,6 @@ import { useDataStore } from '@/stores/data'
 import { useNavStore } from '@/stores/nav'
 import { usePreferenceStore, type ControlStyle } from '@/stores/preferences'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
-import MemoryMcpPanel from '@/components/settings/MemoryMcpPanel.vue'
 import WaoAiCapabilitiesPanel from '@/components/settings/WaoAiCapabilitiesPanel.vue'
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
@@ -45,12 +44,12 @@ const waoAiCapabilitiesPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
   { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['断网时段', 'network-outage'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['左下角链接', 'quick-links'], ['Codex 记忆 · MCP', 'memory-mcp']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs'], ['左下角链接', 'quick-links']] },
 ] as const
 
 const requestedTab = (route.query.tab as string) || 'members'
 const availableTabs = new Set<string>(NAV.flatMap((group) => group.items.map((item) => item[1])))
-const normalizedTab = requestedTab === 'api' ? 'memory-mcp' : requestedTab === 'caldav' ? 'members' : requestedTab
+const normalizedTab = requestedTab === 'caldav' ? 'members' : requestedTab
 const tab = ref<string>(availableTabs.has(normalizedTab) ? normalizedTab : 'members')
 let skipWebhookRouteGuardOnce = false
 
@@ -1082,10 +1081,6 @@ function demo(msg: string, icon?: string) {
           </div>
         </template>
 
-        <!-- Codex 共享记忆 MCP -->
-        <template v-else-if="tab === 'memory-mcp'">
-          <MemoryMcpPanel />
-        </template>
       </div>
     </div>
   </div>
