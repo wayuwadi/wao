@@ -431,7 +431,7 @@ paths:
   /kbs/{id}/document-order:
     put:
       summary: 原子保存知识库完整文档树顺序，支持同文件夹排序与跨文件夹移动
-      description: 只窄更新每篇文档的 folder_id / ord；即使命中 scoped 自动归档，也不回写正文、链接或 auto_sync_version、不签发归档序列。后续自动同步可将归档恢复到固定月目录
+      description: 完整校验后用一条批量语句窄更新每篇文档的 folder_id / ord；即使命中 scoped 自动归档，也不回写正文、链接或 auto_sync_version、不签发归档序列。后续自动同步可将归档恢复到固定月目录
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '400': { description: 文件夹或文档缺失、重复或不属于该知识库 } }
   /docs:
