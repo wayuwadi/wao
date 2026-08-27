@@ -7,5 +7,6 @@ public record LaunchAutonomousGoalRequest(
         @NotBlank String goal,
         @NotBlank String projectId,
         String runnerId,
-        Boolean planMode) {
+        Boolean planMode,
+        String reasoningEffort) {
 }

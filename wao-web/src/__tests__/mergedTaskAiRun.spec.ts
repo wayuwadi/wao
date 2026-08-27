@@ -39,7 +39,8 @@ describe('项目任务合并为一次 AI Run', () => {
     expect(selectable.length).toBeGreaterThanOrEqual(2)
 
     await selectable[0]!.trigger('click')
-    expect(wrapper.get('.batch-ai').text()).toContain('合并给 AI · 1')
+    expect(wrapper.get('.batch-ai.separate').text()).toContain('单独给 AI · 1')
+    expect(wrapper.find('.batch-ai.merge').exists()).toBe(false)
     await selectable[1]!.trigger('click')
     const selectedIds = data.tasksByProject('p1').filter((task) => task.status !== '已完成')
       .slice(0, 2).map((task) => task.id)
@@ -47,13 +48,42 @@ describe('项目任务合并为一次 AI Run', () => {
       id: 'ar-merged', taskId: selectedIds[0], taskIds: selectedIds,
     } as AiRun])
 
-    expect(wrapper.get('.batch-ai').text()).toContain('合并给 AI · 2')
-    await wrapper.get('.batch-ai').trigger('click')
+    expect(wrapper.get('.batch-ai.merge').text()).toContain('合并给 AI · 2')
+    await wrapper.get('.batch-ai.merge').trigger('click')
     await flushPromises()
 
     expect(createAiRuns).toHaveBeenCalledWith(selectedIds, { mergeTasks: true })
     expect(selectedIds.map((id) => data.taskById(id)?.status)).toEqual(['AI 进行中', 'AI 进行中'])
     expect(useToastHost().items.some((item) => item.text.includes('2 个任务合并为 1 次 AI Run'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('把所选任务分别派成独立 AI Run', async () => {
+    const data = useDataStore()
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id', component: { template: '<div />' } }],
+    })
+    await router.push('/projects/p1?view=list')
+    await router.isReady()
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+    const selectable = wrapper.findAll('.task-list-card .select-dot')
+    await selectable[0]!.trigger('click')
+    await selectable[1]!.trigger('click')
+    const selectedIds = data.tasksByProject('p1').filter((task) => task.status !== '已完成')
+      .slice(0, 2).map((task) => task.id)
+    vi.mocked(createAiRuns).mockResolvedValueOnce(selectedIds.map((taskId, index) => ({
+      id: `ar-separate-${index}`, taskId, taskIds: [taskId],
+    } as AiRun)))
+
+    expect(wrapper.get('.batch-ai.separate').text()).toContain('单独给 AI · 2')
+    await wrapper.get('.batch-ai.separate').trigger('click')
+    await flushPromises()
+
+    expect(createAiRuns).toHaveBeenCalledWith(selectedIds, { mergeTasks: false })
+    expect(selectedIds.map((id) => data.taskById(id)?.status)).toEqual(['AI 进行中', 'AI 进行中'])
+    expect(useToastHost().items.some((item) => item.text.includes('2 个任务单独创建为 2 次 AI Run'))).toBe(true)
     wrapper.unmount()
   })
 

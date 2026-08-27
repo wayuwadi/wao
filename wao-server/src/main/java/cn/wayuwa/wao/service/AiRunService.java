@@ -105,7 +105,7 @@ public class AiRunService {
     static final String IDLE_AUTO_RUN_REQUESTED_BY = "system:idle-auto-run";
     private static final Set<String> CODEX_MODELS = Set.of(
             "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
-    private static final Set<String> CODEX_REASONING_EFFORTS = Set.of("medium", "high");
+    private static final Set<String> CODEX_REASONING_EFFORTS = Set.of("low", "medium", "high");
     private static final Map<String, String> ENGINE_LABELS = Map.of("codex", "Codex", "claude", "Claude Code",
             "qoder", "Qoder");
     private static final Pattern MARKDOWN_IMAGE = Pattern.compile("!\\[([^\\]]*)]\\(([^\\s)]+)\\)");
@@ -139,8 +139,9 @@ public class AiRunService {
                         new AiRunModelOptionDto("gpt-5.6-terra", "GPT-5.6 Terra", "兼顾能力与成本"),
                         new AiRunModelOptionDto("gpt-5.6-luna", "GPT-5.6 Luna", "适合高频、成本敏感任务")),
                 List.of(
+                        new AiRunReasoningOptionDto("high", "高", "为复杂任务投入更多推理"),
                         new AiRunReasoningOptionDto("medium", "中", "速度与推理深度均衡"),
-                        new AiRunReasoningOptionDto("high", "高", "为复杂任务投入更多推理")),
+                        new AiRunReasoningOptionDto("low", "低", "优先速度与较低消耗")),
                 DEFAULT_CODEX_MODEL, DEFAULT_REASONING_EFFORT, CODEX_SERVICE_TIER);
     }
 
@@ -709,6 +710,25 @@ public class AiRunService {
     @Transactional
     public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl,
             String runnerId, String aiAccountId, Boolean planMode) {
+        return launchGoal(projectId, goal, requestedBy, baseUrl, runnerId, aiAccountId, planMode, null);
+    }
+
+    /**
+     * 使用本次指定的执行电脑、Plan 偏好和 Codex 推理强度创建自主目标。
+     *
+     * @param projectId 承载目标的项目
+     * @param goal 用户输入的原始目标
+     * @param requestedBy 发起人
+     * @param baseUrl 公网任务分享根地址
+     * @param runnerId 本次指定的执行电脑；留空表示自动分配
+     * @param aiAccountId 本次运行固定使用的集中账号；可为空
+     * @param planMode Codex 是否先规划再连续执行；其他引擎忽略
+     * @param reasoningEffort Codex 推理强度；留空时使用后台默认强度
+     * @return 新建并已入队的运行
+     */
+    @Transactional
+    public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl,
+            String runnerId, String aiAccountId, Boolean planMode, String reasoningEffort) {
         String normalizedGoal = persistGoalImages(trim(goal));
         if (!StringUtils.hasText(normalizedGoal)) throw new BadRequestException("请先写下想让 AI 完成的目标");
 
@@ -716,7 +736,7 @@ public class AiRunService {
                 goalTitle(normalizedGoal), projectId, "P2", requestedBy, "",
                 autonomousGoalDescription(normalizedGoal), List.of(), null, null, null), requestedBy);
         List<AiRunDto> runs = enqueue(List.of(task.id()), null, null, runnerId, aiAccountId,
-                null, null, planMode, requestedBy, baseUrl);
+                null, reasoningEffort, planMode, requestedBy, baseUrl);
         if (runs.isEmpty()) throw new IllegalStateException("自主目标创建后未生成 AI 运行");
         return runs.get(0);
     }

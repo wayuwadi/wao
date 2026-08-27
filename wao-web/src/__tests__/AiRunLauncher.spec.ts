@@ -26,8 +26,9 @@ vi.mock('@/api/ai', () => ({
       { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', description: '兼顾能力与成本' },
     ],
     reasoningEfforts: [
-      { id: 'medium', label: '中', description: '速度与推理深度均衡' },
       { id: 'high', label: '高', description: '为复杂任务投入更多推理' },
+      { id: 'medium', label: '中', description: '速度与推理深度均衡' },
+      { id: 'low', label: '低', description: '优先速度与较低消耗' },
     ],
     defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'high', serviceTier: 'default',
   }),
@@ -135,6 +136,17 @@ describe('AiRunLauncher', () => {
 
     expect(wrapper.text()).toContain('标准速度（Fast 未开启）')
     expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', true]])
+  })
+
+  it('允许为低复杂度任务选择低思考深度', async () => {
+    const wrapper = mount(AiRunLauncher, { props: { projectId: 'p1' } })
+    await flushPromises()
+
+    await wrapper.findAll('select')[1]!.setValue('low')
+    await wrapper.find('footer .primary').trigger('click')
+
+    expect(wrapper.find('select[aria-label="推理强度"]').text()).toContain('低 · 优先速度与较低消耗')
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'low', true]])
   })
 
   it('Codex 默认开启 Plan 模式，也允许本次手动关闭', async () => {

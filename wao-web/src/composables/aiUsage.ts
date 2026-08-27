@@ -21,6 +21,12 @@ export function shortModel(model: string | null | undefined) {
   return model.replace(/^(anthropic|openai|us|eu)\./, '').replace(/-\d{8}$/, '')
 }
 
+/** 把后台固化的 Codex 推理强度转成用户可读标签；未知新值仍原样展示，避免误标。 */
+export function reasoningEffortLabel(effort: string | null | undefined) {
+  if (!effort) return null
+  return ({ low: '低', medium: '中', high: '高' } as Record<string, string>)[effort] ?? effort
+}
+
 /** 一行摘要：`Claude Opus 5 · 19.2K tokens · $0.087`；没记上账时返回 null。 */
 export function usageSummary(usage: AiRunUsage | null | undefined) {
   if (!usage?.recorded) return null
