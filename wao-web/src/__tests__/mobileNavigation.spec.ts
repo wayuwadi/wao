@@ -135,6 +135,21 @@ describe('手机底部模块导航', () => {
     wrapper.unmount()
   })
 
+  it('得到大脑入口在浏览器新页面打开官方地址', async () => {
+    const wrapper = await mountNavigation('/')
+    const getnoteButton = wrapper
+      .findAll('.item')
+      .find((item) => item.attributes('title') === '得到大脑')!
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    await getnoteButton.trigger('click')
+
+    expect(open).toHaveBeenCalledWith('https://www.biji.com/', '_blank', 'noopener,noreferrer')
+    expect(wrapper.vm.$route.fullPath).toBe('/')
+    open.mockRestore()
+    wrapper.unmount()
+  })
+
   it('桌面仍应用并保留原有分组折叠偏好', async () => {
     window.matchMedia = ((query: string) => ({
       matches: false,

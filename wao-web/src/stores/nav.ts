@@ -53,7 +53,7 @@ export const useNavStore = defineStore('nav', () => {
   const foldedGroups = ref<Record<string, boolean>>(persisted.foldedGroups)
   /** 「个人」组顺序：本地缓存先渲染，登录后再用服务端偏好覆盖。 */
   const personalOrder = ref<ModuleId[]>(normalizeOrder(persisted.personalOrder))
-  /** 外部应用注册表为全局配置；接口失败时保留 Agent 默认项，不能让现有入口凭空消失。 */
+  /** 外部应用注册表为全局配置；接口失败时保留安全默认项，不能让现有入口凭空消失。 */
   const externalApps = ref<ExternalAppConfig[]>(DEFAULT_EXTERNAL_APPS.map(normalizeExternalApp))
   const builtinMenus = ref<BuiltinMenuConfig[]>(DEFAULT_BUILTIN_MENUS.map(normalizeBuiltinMenu))
   const externalAppsState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
@@ -109,7 +109,7 @@ export const useNavStore = defineStore('nav', () => {
     })
   }
 
-  /** 从服务端读取外部应用注册表；失败时回退默认 Agent 并允许显式重试。 */
+  /** 从服务端读取外部应用注册表；失败时回退安全默认项并允许显式重试。 */
   async function loadExternalApps(force = false) {
     if (externalAppsState.value === 'loading') return
     if (!force && externalAppsState.value === 'loaded') return
