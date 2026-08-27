@@ -58,6 +58,7 @@ vi.mock('@/api/ai', () => ({
       projectId: 'p1', projectName: 'WAO',
       engine: 'claude',
       status: 'running', runnerId: 'rn2', runnerName: 'Linux 主节点', requestedRunnerId: 'rn2',
+      retryOfRunId: 'ar1',
       branchName: 'ai/wao-ar2',
       resultSummary: null, latestProgress: '已定位问题，正在实现实时反馈',
       progressUpdatedAt: '2026-07-25T20:18:20',
@@ -778,6 +779,11 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.run-detail').text()).toContain('AI 执行记录')
     expect(wrapper.find('.run-detail').text()).toContain('Claude Code')
     expect(wrapper.findAll('.run-detail-images img')).toHaveLength(2)
+    expect(wrapper.find('.run-detail').classes()).toContain('run-activity-detail')
+    expect(wrapper.find('.run-detail-context .retry-note').text()).toContain('基于上一次报错的重跑')
+    expect(wrapper.find('.run-detail-context .gh-branch-link span').text()).toBe('ai/wao-ar2')
+    expect(wrapper.find('.run-detail-actions').text()).toContain('停止任务')
+    expect(wrapper.find('.run-detail-actions').text()).toContain('打开对应任务')
     expect(router.currentRoute.value.fullPath).toBe('/')
     wrapper.unmount()
   })
