@@ -137,7 +137,42 @@ retry_node_deploy() {
 
 deploy_master() {
   sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
-    "$WAO_MASTER_PROJECT_ROOT" wao-release.tgz wao-secrets.env "$WAO_GIT_SHA"
+    "$WAO_MASTER_PROJECT_ROOT" wao-release.tgz wao-secrets.env "$WAO_GIT_SHA" \
+    "$SLAVE_USER" "$CLOUD_USER" "$SLAVE_HOST" "$CLOUD_HOST"
+}
+
+install_master_deploy_helper() {
+  workspace="$(pwd -P)"
+  docker run --rm --privileged --user 0 \
+    -v /:/host -v "$workspace:/workspace:ro" \
+    --entrypoint /bin/sh "wao-server:$WAO_GIT_SHA" -ceu '
+      cp /workspace/deploy/jenkins/deploy-master-local.sh \
+        /host/usr/local/lib/wao-jenkins/deploy-master-local.sh
+      chown 0:0 /host/usr/local/lib/wao-jenkins/deploy-master-local.sh
+      chmod 0755 /host/usr/local/lib/wao-jenkins/deploy-master-local.sh
+    '
+}
+
+provision_jumpserver_asset_access() {
+  public_key="$WAO_MASTER_PROJECT_ROOT/deploy/.jumpserver-asset-key.pub"
+  test -s "$public_key"
+
+  retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
+    "$public_key" deploy/jumpserver/install-public-key.ps1 \
+    "wao-windows:D:/deploy/" || return
+  retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
+    'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-public-key.ps1 -PublicKeyPath D:\deploy\.jumpserver-asset-key.pub' || return
+
+  retry_remote "云前端" scp -o ConnectTimeout=15 \
+    "$public_key" deploy/jumpserver/install-public-key.sh \
+    "wao-cloud:/tmp/" || return
+  retry_remote "云前端" ssh -o ConnectTimeout=15 "wao-cloud" \
+    'sh /tmp/install-public-key.sh /tmp/.jumpserver-asset-key.pub' || return
+}
+
+verify_jumpserver_assets() {
+  sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
+    --verify-jumpserver-assets "$WAO_MASTER_PROJECT_ROOT"
 }
 
 deploy_slave() {
@@ -174,16 +209,20 @@ deploy_slave() {
 prepare_cloud_routing() {
   retry_remote "云前端路由" scp -o ConnectTimeout=15 \
     deploy/nginx/wao.wayuwa.cn.conf.template \
+    deploy/nginx/jms.wayuwa.cn.conf \
     deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
+    deploy/scripts/ensure-jumpserver-certificate.sh \
     deploy/scripts/set-nginx-upstream-state.sh \
     "wao-cloud:/tmp/" || return
   retry_remote "云前端路由" ssh -o ConnectTimeout=15 "wao-cloud" '
     set -eu
     install -d -m 0755 /opt/wao/deploy/nginx /opt/wao/deploy/scripts
     install -m 0644 /tmp/wao.wayuwa.cn.conf.template /opt/wao/deploy/nginx/wao.wayuwa.cn.conf.template
+    install -m 0644 /tmp/jms.wayuwa.cn.conf /opt/wao/deploy/nginx/jms.wayuwa.cn.conf
     install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
     install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
     install -m 0755 /tmp/set-nginx-upstream-state.sh /opt/wao/deploy/scripts/set-nginx-upstream-state.sh
+    install -m 0755 /tmp/ensure-jumpserver-certificate.sh /opt/wao/deploy/scripts/ensure-jumpserver-certificate.sh
     # 新主配置已经接管 /game 与 /insight；首次摘流也会渲染它，必须先移除旧片段，
     # 否则 nginx -t 会因 duplicate location 拒绝摘流，永远到不了 deploy_cloud 的清理步骤。
     install -d -m 0755 /etc/nginx/wao-external-apps.d
@@ -213,15 +252,26 @@ deploy_cloud() {
   retry_remote "云前端" scp -o ConnectTimeout=15 wao-nginx.conf "wao-cloud:/tmp/wao-nginx.conf" || return
   retry_remote "云前端" scp -o ConnectTimeout=15 \
     deploy/nginx/wao.wayuwa.cn.conf.template \
+    deploy/nginx/jms.wayuwa.cn.conf \
     deploy/scripts/activate-nginx-config.sh deploy/scripts/render-nginx-config.sh \
+    deploy/scripts/ensure-jumpserver-certificate.sh \
     deploy/scripts/set-nginx-upstream-state.sh \
     "wao-cloud:/tmp/" || return
+  retry_remote "云前端" ssh -o ConnectTimeout=15 "wao-cloud" \
+    "/bin/sh /tmp/ensure-jumpserver-certificate.sh $CLOUD_HOST" || return
   retry_remote "云前端" ssh -o ConnectTimeout=15 "wao-cloud" '
     set -eu
     final=/etc/nginx/conf.d/wao.wayuwa.cn.conf
+    jms_final=/etc/nginx/conf.d/jms.wayuwa.cn.conf
     previous="$(mktemp)"
+    jms_previous="$(mktemp)"
+    jms_had_previous=false
     retired_routes_backup="$(mktemp -d)"
     cp "$final" "$previous"
+    if [ -f "$jms_final" ]; then
+      cp "$jms_final" "$jms_previous"
+      jms_had_previous=true
+    fi
     # 真正独立的第三方应用继续使用此目录；已经并入或取消的内部应用精确退役。
     install -d -m 0755 /etc/nginx/wao-external-apps.d
     for route in wao-game.conf wao-insight.conf; do
@@ -231,28 +281,37 @@ deploy_cloud() {
     done
     rm -f /etc/nginx/wao-external-apps.d/wao-game.conf /etc/nginx/wao-external-apps.d/wao-insight.conf
     install -m 0644 /tmp/wao-nginx.conf "$final"
+    install -m 0644 /tmp/jms.wayuwa.cn.conf "$jms_final"
     if ! nginx -t; then
       cp "$previous" "$final"
+      if [ "$jms_had_previous" = true ]; then
+        cp "$jms_previous" "$jms_final"
+      else
+        rm -f "$jms_final"
+      fi
       for route in "$retired_routes_backup"/*; do
         [ -f "$route" ] || continue
         cp "$route" /etc/nginx/wao-external-apps.d/
       done
       rm -f "$retired_routes_backup/wao-game.conf" "$retired_routes_backup/wao-insight.conf"
       rmdir "$retired_routes_backup"
-      rm -f "$previous" /tmp/wao-nginx.conf
+      rm -f "$previous" "$jms_previous" /tmp/wao-nginx.conf
       nginx -t
       exit 1
     fi
     rm -f "$retired_routes_backup/wao-game.conf" "$retired_routes_backup/wao-insight.conf"
     rmdir "$retired_routes_backup"
-    rm -f "$previous" /tmp/wao-nginx.conf
+    rm -f "$previous" "$jms_previous" /tmp/wao-nginx.conf
     install -d -m 0755 /opt/wao/deploy/nginx /opt/wao/deploy/scripts
     install -m 0644 /tmp/wao.wayuwa.cn.conf.template /opt/wao/deploy/nginx/wao.wayuwa.cn.conf.template
+    install -m 0644 /tmp/jms.wayuwa.cn.conf /opt/wao/deploy/nginx/jms.wayuwa.cn.conf
     install -m 0755 /tmp/activate-nginx-config.sh /opt/wao/deploy/scripts/activate-nginx-config.sh
     install -m 0755 /tmp/render-nginx-config.sh /opt/wao/deploy/scripts/render-nginx-config.sh
     install -m 0755 /tmp/set-nginx-upstream-state.sh /opt/wao/deploy/scripts/set-nginx-upstream-state.sh
+    install -m 0755 /tmp/ensure-jumpserver-certificate.sh /opt/wao/deploy/scripts/ensure-jumpserver-certificate.sh
     rm -f /tmp/wao.wayuwa.cn.conf.template /tmp/activate-nginx-config.sh \
-      /tmp/render-nginx-config.sh /tmp/set-nginx-upstream-state.sh
+      /tmp/render-nginx-config.sh /tmp/set-nginx-upstream-state.sh \
+      /tmp/jms.wayuwa.cn.conf /tmp/ensure-jumpserver-certificate.sh
     printf "%s\n" \
       "SHELL=/bin/sh" \
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
@@ -464,6 +523,12 @@ if [ "$windows_available" = true ]; then
   fi
 fi
 
+if ! install_master_deploy_helper; then
+  set_status linux_status failed
+  set_status linux_detail '无法安装本次发布的 Linux 部署助手'
+  exit 1
+fi
+
 if [ "$safe_schema_rollout" != true ]; then
   set_upstream_state master down || exit 1
 fi
@@ -512,6 +577,17 @@ if [ "$safe_schema_rollout" = true ]; then
 fi
 set_upstream_state master up || exit 1
 printf '\n===== Linux deployment =====\n'; cat master.log
+
+if ! provision_jumpserver_asset_access; then
+  set_status linux_status failed
+  set_status linux_detail 'JumpServer 专用资产公钥安装失败'
+  exit 1
+fi
+if ! verify_jumpserver_assets; then
+  set_status linux_status failed
+  set_status linux_detail 'JumpServer 三节点 SSH 或资产登记验收失败'
+  exit 1
+fi
 
 if ! deploy_cloud >cloud.log 2>&1; then
   set_status cloud_status failed

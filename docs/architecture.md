@@ -17,6 +17,8 @@ Phase 0 建立一条最小但真实的纵向链路：Vue 页面请求 `/api/hell
 | Redis Sentinel |     26379 | 主、从节点 |
 | DDNS-Go        |      9876 | 主、从节点 |
 | Nginx          |    80/443 | 云服务器   |
+| JumpServer CE  |     18080 | 主节点回环 |
+| JMS SSH 隧道端 |     18082 | 云节点回环 |
 
 ## 请求链路
 
@@ -33,6 +35,10 @@ flowchart LR
     Server2 --> MySQL
     Server1 --> Redis[("Redis Sentinel")]
     Server2 --> Redis
+    Browser -->|"HTTPS jms.wayuwa.cn"| JmsNginx["云 Nginx"]
+    JmsNginx -->|"反向 SSH 隧道"| JumpServer["JumpServer CE"]
+    JumpServer -->|"专用 SSH 密钥"| Server1
+    JumpServer -->|"专用 SSH 密钥"| Server2
 ```
 
 ## 环境策略
@@ -56,3 +62,5 @@ flowchart LR
 - 密码库按成员归属：`/api/vault/*` 一律只在当前登录成员自己的分组范围内工作，别人的分组按不存在处理（ADR-024）。
 - Gateway 使用同机 `wao-server:8080`，避免服务发现结果依赖家庭路由器的 8080 回环；云 Nginx 的上游健康检查验证 `/api/hello` 全链路，而不只验证 Gateway 进程。
 - 正式生产前必须重新评估端口白名单、数据库链路加密、SSH 防爆破和私网/VPN。
+- JumpServer 使用独立 PostgreSQL、Redis 和持久目录，不复用 WAO 数据服务；公网只暴露云节点的
+  `jms.wayuwa.cn`。WAO 短时一次性票据只负责身份建立，资产授权继续由 JumpServer 管理（ADR-143）。

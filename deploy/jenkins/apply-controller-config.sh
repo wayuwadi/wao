@@ -27,6 +27,7 @@ if ! cmp -s deploy/jenkins/plugins.txt /etc/jenkins/plugins.txt; then
   plugins_changed=true
 fi
 needs_update deploy/jenkins/backup-controller.sh /usr/local/lib/wao-jenkins/backup-controller.sh
+needs_update deploy/jenkins/deploy-master-local.sh /usr/local/lib/wao-jenkins/deploy-master-local.sh
 needs_update deploy/jenkins/wao-jenkins-webhook-tunnel.service \
   /etc/systemd/system/wao-jenkins-webhook-tunnel.service
 
@@ -75,6 +76,8 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     cp /workspace/deploy/jenkins/plugins.txt /host/etc/jenkins/plugins.txt
     cp /workspace/deploy/jenkins/backup-controller.sh \
       /host/usr/local/lib/wao-jenkins/backup-controller.sh
+    cp /workspace/deploy/jenkins/deploy-master-local.sh \
+      /host/usr/local/lib/wao-jenkins/deploy-master-local.sh
     awk '\''/^Environment="(WAO_MASTER_PROJECT_ROOT|WAO_JENKINS_SCM_BRANCH|HTTP_PROXY|HTTPS_PROXY|NO_PROXY)=/'\'' \
       /host/etc/systemd/system/jenkins.service.d/override.conf >/tmp/wao-jenkins-dynamic.conf
     cp /workspace/deploy/jenkins/jenkins.service.override.conf \
@@ -87,10 +90,12 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/etc/systemd/system/jenkins.service.d/override.conf \
       /host/etc/systemd/system/wao-jenkins-webhook-tunnel.service
     chown 0:0 /host/usr/local/lib/wao-jenkins/backup-controller.sh
+    chown 0:0 /host/usr/local/lib/wao-jenkins/deploy-master-local.sh
     chmod 0644 /host/etc/jenkins/jenkins.yaml /host/etc/jenkins/plugins.txt \
       /host/etc/systemd/system/jenkins.service.d/override.conf \
       /host/etc/systemd/system/wao-jenkins-webhook-tunnel.service
     chmod 0755 /host/usr/local/lib/wao-jenkins/backup-controller.sh
+    chmod 0755 /host/usr/local/lib/wao-jenkins/deploy-master-local.sh
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl daemon-reload
   '

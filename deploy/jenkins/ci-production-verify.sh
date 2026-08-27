@@ -25,6 +25,14 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/insight/)" = 410
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins/)" = 401
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/api/auth/jumpserver)" = 401
+
+jumpserver_health="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
+  https://jms.wayuwa.cn/api/health/)"
+printf '%s' "$jumpserver_health" | grep -q '"status":true'
+same_origin_jumpserver_health="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+  https://wao.wayuwa.cn/api/external/jumpserver/health)"
+printf '%s' "$same_origin_jumpserver_health" | grep -q '"status":true'
 
 header_value() {
   path="$1"
@@ -40,6 +48,8 @@ test "$(header_value /api/settings/ai-accounts X-WAO-API-Route)" = linux-vpn-mas
 test "$(header_value /api/ai/runner/accounts X-WAO-API-Route)" = linux-vpn-master
 test "$(header_value /api/ai/runner/assistant-v2/claim X-WAO-API-Route)" = linux-vpn-master
 test "$(header_value /api/tianren/readings/today/interpret/stream X-WAO-API-Route)" = linux-vpn-master
+test "$(header_value /api/auth/jumpserver X-WAO-API-Route)" = linux-jumpserver-sso
+test "$(header_value /api/external/jumpserver/health X-WAO-API-Route)" = jumpserver-health-tunnel
 
 probe=1
 while [ "$probe" -le 8 ]; do

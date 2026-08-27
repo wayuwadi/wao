@@ -2,6 +2,7 @@ package cn.wayuwa.wao.controller;
 
 import cn.wayuwa.wao.auth.AuthSessionManager;
 import cn.wayuwa.wao.auth.ExternalIdentityProfile;
+import cn.wayuwa.wao.auth.JumpServerSsoService;
 import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.dto.AuthSessionDto;
@@ -13,6 +14,7 @@ import cn.wayuwa.wao.dto.EmailRegisterRequest;
 import cn.wayuwa.wao.service.AccountAuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,10 +36,13 @@ public class AccountAuthController {
 
     private final AccountAuthService auth;
     private final AuthSessionManager sessions;
+    private final JumpServerSsoService jumpServerSso;
 
-    public AccountAuthController(AccountAuthService auth, AuthSessionManager sessions) {
+    public AccountAuthController(AccountAuthService auth, AuthSessionManager sessions,
+                                 JumpServerSsoService jumpServerSso) {
         this.auth = auth;
         this.sessions = sessions;
+        this.jumpServerSso = jumpServerSso;
     }
 
     @GetMapping("/auth/session")
@@ -54,6 +59,12 @@ public class AccountAuthController {
                 : JENKINS_MEMBER_GROUP;
         response.setHeader(JENKINS_GROUPS_HEADER, groups);
         return ApiResponse.ok(null);
+    }
+
+    @GetMapping("/auth/jumpserver")
+    public void jumpServer(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        AuthSessionDto current = auth.session(requireAccount(request));
+        response.sendRedirect(jumpServerSso.loginUrl(current));
     }
 
     @PostMapping("/auth/email/register")

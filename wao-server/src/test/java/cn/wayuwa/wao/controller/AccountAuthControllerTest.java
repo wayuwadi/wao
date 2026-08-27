@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import cn.wayuwa.wao.auth.AuthSessionManager;
+import cn.wayuwa.wao.auth.JumpServerSsoService;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.dto.AuthSessionDto;
 import cn.wayuwa.wao.dto.MemberDto;
@@ -20,7 +21,8 @@ class AccountAuthControllerTest {
 
     private final AccountAuthService auth = mock(AccountAuthService.class);
     private final AuthSessionManager sessions = mock(AuthSessionManager.class);
-    private final AccountAuthController controller = new AccountAuthController(auth, sessions);
+    private final JumpServerSsoService jumpServerSso = mock(JumpServerSsoService.class);
+    private final AccountAuthController controller = new AccountAuthController(auth, sessions, jumpServerSso);
 
     @Test
     void jenkinsForwardsStableMemberIdentityAndReadOnlyGroup() {
@@ -53,6 +55,31 @@ class AccountAuthControllerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
 
         assertThatThrownBy(() -> controller.jenkins(request, new MockHttpServletResponse()))
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessage("登录已过期，请重新登录");
+    }
+
+    @Test
+    void jumpServerRedirectsAuthenticatedMemberToSignedLoginUrl() throws Exception {
+        MockHttpServletRequest request = requestFor("account-1");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AuthSessionDto current = session("member-1", "成员");
+        when(auth.session("account-1")).thenReturn(current);
+        when(jumpServerSso.loginUrl(current)).thenReturn(
+                "https://jms.wayuwa.cn/api/v1/authentication/custom-sso/login/?token=signed");
+
+        controller.jumpServer(request, response);
+
+        assertThat(response.getStatus()).isEqualTo(302);
+        assertThat(response.getRedirectedUrl()).isEqualTo(
+                "https://jms.wayuwa.cn/api/v1/authentication/custom-sso/login/?token=signed");
+    }
+
+    @Test
+    void jumpServerRejectsRequestWithoutWaoSession() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+
+        assertThatThrownBy(() -> controller.jumpServer(request, new MockHttpServletResponse()))
                 .isInstanceOf(UnauthorizedException.class)
                 .hasMessage("登录已过期，请重新登录");
     }

@@ -85,7 +85,7 @@ describe('菜单与快捷链接统一设置', () => {
     expect(fetchBuiltinMenuRegistry).toHaveBeenCalledOnce()
     expect(fetchExternalAppRegistry).toHaveBeenCalledOnce()
     expect(wrapper.findAll('.menu-row input').map((input) => (input.element as HTMLInputElement).value))
-      .toEqual(expect.arrayContaining(['自媒体 Agent', '得到大脑']))
+      .toEqual(expect.arrayContaining(['自媒体 Agent', '得到大脑', '资源管理']))
     expect(wrapper.get('.menu-card').text()).toContain('已注册应用')
     expect(wrapper.text()).not.toContain('注册新应用')
     expect(wrapper.find('.registry-editor').exists()).toBe(false)
@@ -127,6 +127,7 @@ describe('菜单与快捷链接统一设置', () => {
     expect(saveExternalAppRegistry).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({ id: 'media-agent', group: 'TOOLS' }),
       expect.objectContaining({ id: 'getnote', openMode: 'NEW_PAGE' }),
+      expect.objectContaining({ id: 'jumpserver', openMode: 'NEW_PAGE' }),
     ]))
 
     const firstLink = wrapper.get('.quick-link-row')
