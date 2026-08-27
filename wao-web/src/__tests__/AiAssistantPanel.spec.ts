@@ -102,6 +102,7 @@ describe('AiAssistantPanel', () => {
     await flushPromises()
 
     expect(document.body.textContent).toContain('我的问答知识库')
+    expect(document.body.textContent).toContain('按需联网')
     expect(document.body.textContent).toContain('项目复盘')
     expect(document.body.textContent).toContain('帮我复盘项目')
     expect(document.body.textContent).toContain('这是复盘建议')

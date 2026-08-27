@@ -37,7 +37,8 @@
     那台电脑上的 Runner 下一次心跳就会发现自己已被解除，删掉本机令牌后自行退出。
 11. 全局 AI 助手把问答写入短期队列，由任一在线本地 Codex Runner 的空闲槽位以只读沙箱回答；
     开发任务优先领取。成员的会话和消息单独持久化，宽屏聊天工作台左侧提供历史搜索、切换和删除；页面明确
-    显示节点在线、等待、失败与重试状态。回答可以统一检索群聊、知识库、项目和 Task 并提供可追溯来源；
+    显示节点在线、等待、失败与重试状态。回答可以统一检索群聊、知识库、项目和 Task，并在涉及最新外部事实或
+    现有材料不足时由隔离 Codex Runner 按需联网，WAO 资产和网页事实分别提供可追溯来源；
     群聊支持按群、发言人和归档日期范围筛选，不再依赖单独的 Chat Completions Key。
     服务端内部只读分析另外支持“非阻塞入队→按运行 id 查询终态”：首个使用者是共享聊天复盘（见
     [ADR-088](../adr/088-shared-chat-review-workflow.md)）。该能力仅为 Java 服务内部接口，不提供通用工作流 HTTP API；现有同步
@@ -105,8 +106,11 @@
 - 每次 v2 claim 生成新的 32 字符随机 `claimToken`，与 `runnerId` 一起写入 `ai_assistant_run`，并返回从安全执行硬超时扣除保护余量得到的 `maxRuntimeSeconds`（默认 1,740 秒）。Runner 必须用本地单调时钟计算截止时间；
   到期后终止 Codex 子进程，不使用可回拨的墙上时钟也不回传部分结果。complete 必须原样带回 token；服务端只在 `id + runner_id + claim_token + 当前执行中状态` 全部匹配时 CAS 接受成功或失败，终态清空 token，旧 attempt 迟到完成无法覆盖终态。
 - 页面助手和内部只读分析（包括聊天复盘）每次都在临时空 Git 仓库、独立临时 `CODEX_HOME` 与 `read-only` sandbox 中运行。Runner 调用 Codex 时必须同时使用
-  `--ephemeral`、`--ignore-rules`、`--disable shell_tool`、`--disable multi_agent`、`tools.view_image=false`、`web_search=disabled`，并在子进程环境中剥离
-  `GH_TOKEN`、`GITHUB_TOKEN` 及同类 GitHub Token。这些进程级约束才是阻断不可信正文读取本机、联网检索、调用子代理或触达 GitHub 凭据的安全边界；提示中的“不可信引用”标签只是纵深防御。
+  `--ephemeral`、`--ignore-rules`、`--disable shell_tool`、`--disable multi_agent`、`tools.view_image=false`，并在子进程环境中剥离
+  `GH_TOKEN`、`GITHUB_TOKEN` 及同类 GitHub Token。只有普通页面问答和点子调研使用顶层 `--search`；内部只读分析、聊天复盘、文档润色和天人解读继续强制
+  `web_search=disabled`。这些进程级约束才是阻断不可信正文读取本机、扩散工具、调用子代理或触达 GitHub 凭据的安全边界；提示中的“不可信引用”标签只是纵深防御。
+- 页面选择 DeepSeek 或受信模型网关时，assistant-v2 Runner 先以 `ASSISTANT_WEB_SEARCH` 生成最多 20,000 字、带公开 URL 的有界联网材料，再 CAS 转入
+  `provider_queued`，由用户选定的 Provider 生成最终答复；不能把最终回答偷偷换成本地 Codex。联网材料在终态与完整提示一起清除，任一阶段失败不静默降级。
 - 任一强制开关不被当前 Codex CLI 识别时，该只读任务必须失败关闭；Runner 不得删去开关后重试、切换到可用工具的旧模式或继承开发任务权限。Codex 非零退出时不得回传
   stdout 或最后消息中的部分答案，只回传稳定失败类别与退出码；服务端只保存有界稳定错误，不保存部分 `response_text`。Runner 在尝试 v2 完成回传后进入 `finally`，无论成功、非零、单调超时或回传失败都清理临时仓库与 `CODEX_HOME`。
 - Runner / 服务端验收覆盖 `secure_queued / secure_running`、无兼容 Runner 在线时仍可入队并由 60 分钟 DB 超时收口、精确 bundled-script hash 能力门禁、旧 Runner / 旧 API 滚动发布 fail-closed、旧 v1 路由 404 且不回退、v2 `claimToken / maxRuntimeSeconds`、单调截止和全路径临时目录清理。
@@ -251,7 +255,7 @@
   而报“无效引用”。
 - Linux 主节点的 Codex CLI 和 Runner 能力由管理员作为主机级依赖独立维护；CD 不下载、上传、安装、升级或重启
   Codex CLI/Runner。已配对 Runner 需主动上报 `codex` 能力、与服务端打包脚本精确匹配的 `scriptHash`，并同步集中账号。页面问答允许任一满足这些门禁的在线本地 Codex
-  Runner 领取，不限 Windows 或 Linux；按上述强制无工具档位执行，完成后清除问题正文、临时仓库和运行级 `CODEX_HOME`；每位成员同时只允许一条问答。
+  Runner 领取，不限 Windows 或 Linux；按上述强制隔离档位执行，普通页面问答仅额外开放 Web Search，完成后清除问题正文、联网材料、临时仓库和运行级 `CODEX_HOME`；每位成员同时只允许一条问答。
 
 ## 安全边界
 

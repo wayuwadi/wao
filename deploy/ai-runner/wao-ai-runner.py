@@ -1842,7 +1842,9 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
     """在临时空仓库和只读沙箱中执行页面问答，结束后不保留用户上下文。"""
     run_id = claim["runId"]
     claim_token = str(claim.get("claimToken") or "")
-    research_mode = str(claim.get("mode") or "ASSISTANT") == "IDEA_RESEARCH"
+    assistant_mode = str(claim.get("mode") or "READ_ONLY")
+    research_mode = assistant_mode == "IDEA_RESEARCH"
+    web_search_enabled = assistant_mode in {"ASSISTANT", "ASSISTANT_WEB_SEARCH", "IDEA_RESEARCH"}
     workspace_name = ".wao-idea-research" if research_mode else ".wao-assistant"
     worktree = root / workspace_name / run_id
     codex_home = root / f"{workspace_name}-codex-homes" / run_id
@@ -1863,7 +1865,7 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
             NoopProgressReporter(), assistant_cli_environment(cli_environment),
             should_stop=lambda: time.monotonic() >= deadline,
             account=claim.get("account"), codex_home=codex_home,
-            tools_disabled=True, web_search_enabled=research_mode)
+            tools_disabled=True, web_search_enabled=web_search_enabled)
         response = response.strip()
         if exit_code != 0:
             # 非零退出的部分 stdout 可能包含原对话或未完成报告，不回传、不持久化。

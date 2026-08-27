@@ -15,6 +15,7 @@ public class AiAssistantRunEntity {
     private String id;
     private String memberId;
     private String aiCapabilityId;
+    private Boolean webSearchEnabled;
     private String conversationId;
     private String userMessageId;
     private String runnerId;
@@ -23,6 +24,9 @@ public class AiAssistantRunEntity {
     /** 终态时必须真正写回 NULL，不受 MyBatis-Plus 默认忽略 null 字段影响。 */
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String promptText;
+    /** Provider 最终回答前由隔离 Codex Runner 生成的有界联网材料。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String webContext;
     private String responseText;
     private String errorText;
     private LocalDateTime createdAt;
@@ -36,6 +40,8 @@ public class AiAssistantRunEntity {
     public void setMemberId(String memberId) { this.memberId = memberId; }
     public String getAiCapabilityId() { return aiCapabilityId; }
     public void setAiCapabilityId(String aiCapabilityId) { this.aiCapabilityId = aiCapabilityId; }
+    public Boolean getWebSearchEnabled() { return webSearchEnabled; }
+    public void setWebSearchEnabled(Boolean webSearchEnabled) { this.webSearchEnabled = webSearchEnabled; }
     public String getConversationId() { return conversationId; }
     public void setConversationId(String conversationId) { this.conversationId = conversationId; }
     public String getUserMessageId() { return userMessageId; }
@@ -48,6 +54,8 @@ public class AiAssistantRunEntity {
     public void setStatus(String status) { this.status = status; }
     public String getPromptText() { return promptText; }
     public void setPromptText(String promptText) { this.promptText = promptText; }
+    public String getWebContext() { return webContext; }
+    public void setWebContext(String webContext) { this.webContext = webContext; }
     public String getResponseText() { return responseText; }
     public void setResponseText(String responseText) { this.responseText = responseText; }
     public String getErrorText() { return errorText; }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -61,6 +62,23 @@ class AiAssistantServiceTest {
     }
 
     @Test
+    void providerPageQuestionRequiresCompatibleRunnerForWebSearchStage() {
+        AiRunAccountDto gateway = new AiRunAccountDto(
+                "aa-gateway", "model_gateway", "醒市模型网关", "api_key", null,
+                "gateway-value", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL,
+                "deepseek-v4-flash", "chat_completions");
+        when(accountService.assistantAccount("aa-gateway")).thenReturn(gateway);
+        when(runnerMapper.selectList(any())).thenReturn(List.of());
+
+        assertThat(service.status("aa-gateway").configured()).isFalse();
+        assertThat(service.status("aa-gateway").message()).contains("按需联网需要");
+
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("Windows Server 2025", "codex")));
+        assertThat(service.status("aa-gateway").configured()).isTrue();
+        assertThat(service.status("aa-gateway").message()).contains("按需联网已就绪");
+    }
+
+    @Test
     void localCodexRunnerClaimsAssistantWithCentralAccount() {
         AiRunnerNodeEntity local = runner("Windows Server 2025", "codex,claude");
         AiAssistantRunEntity run = assistantRun("queued");
@@ -85,6 +103,7 @@ class AiAssistantServiceTest {
         assertThat(claim.prompt()).isEqualTo("请总结");
         assertThat(claim.maxRuntimeSeconds()).isEqualTo(270);
         assertThat(claim.account()).isSameAs(account);
+        assertThat(claim.mode()).isEqualTo("ASSISTANT");
         assertThat(run.getStatus()).isEqualTo("running");
         assertThat(run.getRunnerId()).isEqualTo("rn1");
         verify(mapper).claimQueued(
@@ -123,6 +142,7 @@ class AiAssistantServiceTest {
 
         assertThat(claim.runId()).isEqualTo("ac1");
         assertThat(claim.maxRuntimeSeconds()).isEqualTo(1740);
+        assertThat(claim.mode()).isEqualTo("READ_ONLY");
         assertThat(run.getStatus()).isEqualTo("secure_running");
         verify(mapper).claimQueued(
                 eq("ac1"), eq("rn1"), eq(claim.claimToken()),
@@ -150,6 +170,55 @@ class AiAssistantServiceTest {
         verify(mapper).completeSucceeded(
                 eq("ac1"), eq("rn1"), eq("attempt-1"), eq("running"), eq("这是答复"));
         verify(conversationService).appendAssistantReply(run, "这是答复");
+    }
+
+    @Test
+    void providerPageQuestionUsesCodexWebSearchBeforeSelectedProvider() {
+        AiRunnerNodeEntity local = runner("Linux 6.8", "codex");
+        AiAssistantRunEntity run = assistantRun("web_search_queued");
+        run.setAiCapabilityId("aa-gateway");
+        AiRunAccountDto codex = new AiRunAccountDto(
+                "aa-codex", "codex", "Codex 联网账号", "oauth", "{}", null, null, null, null);
+        when(mapper.selectList(any())).thenReturn(List.of(), List.of(run));
+        when(aiRunService.authenticateRunner("token")).thenReturn(local);
+        when(mapper.claimQueued(eq("ac1"), eq("rn1"), anyString(),
+                eq("web_search_queued"), eq("web_search_running")))
+                .thenAnswer(invocation -> {
+                    run.setStatus("web_search_running");
+                    run.setRunnerId("rn1");
+                    run.setClaimToken(invocation.getArgument(2));
+                    return 1;
+                });
+        when(mapper.selectById("ac1")).thenReturn(run);
+        when(accountService.defaultCodexRunAccount()).thenReturn(codex);
+
+        AiAssistantClaimDto claim = service.claim("token");
+
+        assertThat(claim.mode()).isEqualTo("ASSISTANT_WEB_SEARCH");
+        assertThat(claim.maxRuntimeSeconds()).isEqualTo(180);
+        assertThat(claim.account()).isSameAs(codex);
+        assertThat(claim.prompt()).contains("隔离联网检索阶段", "请总结");
+        verify(accountService, never()).assistantAccount("aa-gateway");
+    }
+
+    @Test
+    void successfulProviderWebSearchQueuesFinalProviderWithoutSavingAssistantReply() {
+        AiRunnerNodeEntity local = runner("Linux 6.8", "codex");
+        AiAssistantRunEntity run = assistantRun("web_search_running");
+        run.setRunnerId("rn1");
+        run.setClaimToken("attempt-search");
+        when(aiRunService.authenticateRunner("token")).thenReturn(local);
+        when(mapper.selectById("ac1")).thenReturn(run);
+        when(mapper.completeWebSearchSucceeded(
+                "ac1", "rn1", "attempt-search", "来源：https://example.com/current"))
+                .thenReturn(1);
+
+        service.complete("token", "ac1", new CompleteAiAssistantRunRequest(
+                "attempt-search", 0, "来源：https://example.com/current", null));
+
+        assertThat(run.getStatus()).isEqualTo("provider_queued");
+        assertThat(run.getWebContext()).contains("https://example.com/current");
+        verify(conversationService, never()).appendAssistantReply(any(), anyString());
     }
 
     @Test
@@ -455,6 +524,7 @@ class AiAssistantServiceTest {
         AiAssistantRunEntity run = assistantRun("provider_queued");
         run.setAiCapabilityId("aa-deepseek");
         run.setPromptText("只分析这段真实材料");
+        run.setWebContext("当前材料：https://example.com/current");
         AiRunAccountDto account = new AiRunAccountDto(
                 "aa-deepseek", "deepseek", "DeepSeek 分析", "api_key", null,
                 "token-value", "https://api.deepseek.com", "deepseek-chat", "chat_completions");
@@ -463,7 +533,8 @@ class AiAssistantServiceTest {
         when(mapper.selectById("ac1")).thenReturn(run);
         when(accountService.assistantAccount("aa-deepseek")).thenReturn(account);
         when(deepSeekApi.complete(eq("deepseek"), eq("https://api.deepseek.com"),
-                eq("token-value"), eq("deepseek-chat"), anyString(), eq("只分析这段真实材料")))
+                eq("token-value"), eq("deepseek-chat"), anyString(),
+                contains("<web_search_context>")))
                 .thenReturn("真实 API 答复");
         when(mapper.completeProviderSucceeded(eq("ac1"), anyString(), eq("真实 API 答复")))
                 .thenReturn(1);
@@ -471,6 +542,9 @@ class AiAssistantServiceTest {
         assertThat(service.processNextProviderRun()).isTrue();
 
         verify(conversationService).appendAssistantReply(run, "真实 API 答复");
+        verify(deepSeekApi).complete(eq("deepseek"), eq("https://api.deepseek.com"),
+                eq("token-value"), eq("deepseek-chat"), anyString(),
+                contains("https://example.com/current"));
         verify(mapper, never()).insertReadOnlyQueued(any(AiAssistantRunEntity.class));
     }
 
@@ -520,6 +594,7 @@ class AiAssistantServiceTest {
         run.setId("ac1");
         run.setMemberId("wg");
         run.setStatus(status);
+        run.setWebSearchEnabled(true);
         run.setPromptText("请总结");
         run.setCreatedAt(LocalDateTime.now());
         run.setUpdatedAt(LocalDateTime.now());
@@ -529,6 +604,7 @@ class AiAssistantServiceTest {
     private AiAssistantRunEntity readOnlyRun(String status) {
         AiAssistantRunEntity run = assistantRun(status);
         run.setMemberId("internal-chat-review-cr1");
+        run.setWebSearchEnabled(false);
         return run;
     }
 }

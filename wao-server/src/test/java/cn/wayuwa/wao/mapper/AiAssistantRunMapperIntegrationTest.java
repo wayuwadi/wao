@@ -27,10 +27,12 @@ class AiAssistantRunMapperIntegrationTest {
                     id VARCHAR(32) PRIMARY KEY,
                     member_id VARCHAR(64) NULL,
                     ai_capability_id VARCHAR(32) NULL,
+                    web_search_enabled BOOLEAN NOT NULL DEFAULT FALSE,
                     runner_id VARCHAR(32) NULL,
                     claim_token VARCHAR(64) NULL,
-                    status VARCHAR(16) NOT NULL,
+                    status VARCHAR(32) NOT NULL,
                     prompt_text CLOB NULL,
+                    web_context CLOB NULL,
                     response_text CLOB NULL,
                     error_text CLOB NULL,
                     created_at TIMESTAMP(6) NULL,
@@ -145,6 +147,36 @@ class AiAssistantRunMapperIntegrationTest {
                 .containsEntry("RESPONSE_TEXT", "安全协议结果");
     }
 
+    @Test
+    void providerWebSearchMaterialIsHeldOnlyBetweenTheTwoStages() {
+        insert("web-ac1", "web_search_queued", LocalDateTime.now());
+
+        assertThat(mapper.claimQueued("web-ac1", "rn1", "search-attempt",
+                "web_search_queued", "web_search_running")).isEqualTo(1);
+        assertThat(mapper.completeWebSearchSucceeded("web-ac1", "rn1", "search-attempt",
+                "来源：https://example.com/current")).isEqualTo(1);
+        assertThat(jdbc.queryForMap("""
+                SELECT status, runner_id, claim_token, web_context
+                  FROM ai_assistant_run WHERE id = 'web-ac1'
+                """))
+                .containsEntry("STATUS", "provider_queued")
+                .containsEntry("RUNNER_ID", null)
+                .containsEntry("CLAIM_TOKEN", null)
+                .containsEntry("WEB_CONTEXT", "来源：https://example.com/current");
+
+        assertThat(mapper.claimProviderQueued("web-ac1", "provider-attempt")).isEqualTo(1);
+        assertThat(mapper.completeProviderSucceeded(
+                "web-ac1", "provider-attempt", "最终答复")).isEqualTo(1);
+        assertThat(jdbc.queryForMap("""
+                SELECT status, prompt_text, web_context, response_text
+                  FROM ai_assistant_run WHERE id = 'web-ac1'
+                """))
+                .containsEntry("STATUS", "succeeded")
+                .containsEntry("PROMPT_TEXT", null)
+                .containsEntry("WEB_CONTEXT", null)
+                .containsEntry("RESPONSE_TEXT", "最终答复");
+    }
+
     private void insert(String id, LocalDateTime updatedAt) {
         insert(id, "queued", updatedAt);
     }
@@ -173,6 +205,7 @@ class AiAssistantRunMapperIntegrationTest {
         AiAssistantRunEntity run = new AiAssistantRunEntity();
         run.setId(id);
         run.setMemberId("internal-test");
+        run.setWebSearchEnabled(false);
         run.setStatus(status);
         run.setPromptText("请总结");
         return run;

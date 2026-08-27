@@ -16,9 +16,10 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     /** 内部只读任务的起始时间由数据库统一签发，不信任节点本地时钟。 */
     @Insert("""
             INSERT INTO ai_assistant_run
-                (id, member_id, ai_capability_id, status, prompt_text, created_at, updated_at)
+                (id, member_id, ai_capability_id, web_search_enabled, status, prompt_text,
+                 created_at, updated_at)
             VALUES
-                (#{id}, #{memberId}, #{aiCapabilityId}, #{status}, #{promptText},
+                (#{id}, #{memberId}, #{aiCapabilityId}, #{webSearchEnabled}, #{status}, #{promptText},
                  CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
             """)
     int insertReadOnlyQueued(AiAssistantRunEntity run);
@@ -56,7 +57,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     /** 服务端 Provider 只允许持有本次 claim token 的 worker 写入成功终态。 */
     @Update("""
             UPDATE ai_assistant_run
-               SET status = 'succeeded', response_text = #{response}, error_text = NULL,
+               SET status = 'succeeded', web_context = NULL, response_text = #{response}, error_text = NULL,
                    prompt_text = NULL, claim_token = NULL,
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
              WHERE id = #{id} AND claim_token = #{claimToken} AND status = 'provider_running'
@@ -67,7 +68,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     /** 服务端 Provider 的失败终态不保存任何部分输出。 */
     @Update("""
             UPDATE ai_assistant_run
-               SET status = 'failed', response_text = NULL, error_text = #{error},
+               SET status = 'failed', web_context = NULL, response_text = NULL, error_text = #{error},
                    prompt_text = NULL, claim_token = NULL,
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
              WHERE id = #{id} AND claim_token = #{claimToken} AND status = 'provider_running'
@@ -87,7 +88,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     /** 按主键 CAS 终止一条 API Provider 排队任务。 */
     @Update("""
             UPDATE ai_assistant_run
-               SET status = 'failed', response_text = NULL, error_text = #{reason},
+               SET status = 'failed', web_context = NULL, response_text = NULL, error_text = #{reason},
                    prompt_text = NULL, claim_token = NULL,
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
              WHERE id = #{id} AND status = 'provider_queued'
@@ -108,7 +109,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     /** API Provider 执行超时后按主键令旧 claim token 失效。 */
     @Update("""
             UPDATE ai_assistant_run
-               SET status = 'failed', response_text = NULL, error_text = #{reason},
+               SET status = 'failed', web_context = NULL, response_text = NULL, error_text = #{reason},
                    prompt_text = NULL, claim_token = NULL,
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
              WHERE id = #{id} AND status = 'provider_running'
@@ -117,10 +118,22 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     int expireProviderRunningById(@Param("id") String id, @Param("timeoutSeconds") long timeoutSeconds,
             @Param("reason") String reason);
 
+    /** Provider 页面问答的联网阶段成功后，只保存有界材料并转交所选 Provider。 */
+    @Update("""
+            UPDATE ai_assistant_run
+               SET status = 'provider_queued', web_context = #{webContext}, error_text = NULL,
+                   runner_id = NULL, claim_token = NULL, claimed_at = NULL,
+                   updated_at = CURRENT_TIMESTAMP(6)
+             WHERE id = #{id} AND runner_id = #{runnerId}
+               AND claim_token = #{claimToken} AND status = 'web_search_running'
+            """)
+    int completeWebSearchSucceeded(@Param("id") String id, @Param("runnerId") String runnerId,
+            @Param("claimToken") String claimToken, @Param("webContext") String webContext);
+
     /** 只允许实际持有运行的 Runner 提交一次成功结果。 */
     @Update("""
             UPDATE ai_assistant_run
-               SET status = 'succeeded', response_text = #{response}, error_text = NULL,
+               SET status = 'succeeded', web_context = NULL, response_text = #{response}, error_text = NULL,
                    prompt_text = NULL, claim_token = NULL,
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
              WHERE id = #{id} AND runner_id = #{runnerId}
@@ -133,7 +146,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     /** 只允许实际持有运行的 Runner 提交一次失败结果。 */
     @Update("""
             UPDATE ai_assistant_run
-               SET status = 'failed', response_text = NULL, error_text = #{error},
+               SET status = 'failed', web_context = NULL, response_text = NULL, error_text = #{error},
                    prompt_text = NULL, claim_token = NULL,
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
              WHERE id = #{id} AND runner_id = #{runnerId}
@@ -151,6 +164,7 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
                    finished_at = CURRENT_TIMESTAMP(6), updated_at = CURRENT_TIMESTAMP(6)
              WHERE id = #{id} AND status IN
                    ('queued', 'running', 'secure_queued', 'secure_running',
+                    'web_search_queued', 'web_search_running',
                     'provider_queued', 'provider_running')
             """)
     int failActive(@Param("id") String id, @Param("reason") String reason);
@@ -158,10 +172,14 @@ public interface AiAssistantRunMapper extends BaseMapper<AiAssistantRunEntity> {
     /** 仅将仍处于旧心跳时间的 running 运行放回队列。 */
     @Update("""
             UPDATE ai_assistant_run
-               SET status = CASE WHEN status = 'secure_running' THEN 'secure_queued' ELSE 'queued' END,
+               SET status = CASE
+                       WHEN status = 'secure_running' THEN 'secure_queued'
+                       WHEN status = 'web_search_running' THEN 'web_search_queued'
+                       ELSE 'queued'
+                   END,
                    runner_id = NULL, claim_token = NULL,
                    claimed_at = NULL, updated_at = CURRENT_TIMESTAMP(6)
-             WHERE id = #{id} AND status IN ('running', 'secure_running')
+             WHERE id = #{id} AND status IN ('running', 'secure_running', 'web_search_running')
                AND updated_at < #{staleBefore}
             """)
     int requeueStale(@Param("id") String id, @Param("staleBefore") LocalDateTime staleBefore);
