@@ -12,8 +12,9 @@
 
 首个正式版本上线前，将本地验证作为开发门禁。AI 或开发者在开始变更前同步最新 `main`，完成与风险相称的本地测试后，可以直接提交并 push `main`。功能分支和 PR 仅在并行协作、较大重构或隔离试验确有价值时使用，不作为部署前强制门禁。
 
-Linux 主节点上的 Jenkins 只响应 `main` push 和手动触发。每次运行构建 WAO Web 与 Agent Web，并按
-ADR-097 依次严格发布 Windows、Linux 和云端；任一应用节点失败都将流水线标红，不再降级成单节点成功。
+Linux 主节点上的 Jenkins 只响应 `main` push 和手动触发；按 [ADR-144](144-batched-ai-run-delivery.md) 将相邻
+push 合成批次。每次运行构建 WAO Web 与 Agent Web，并按 ADR-097 依次严格发布 Windows、Linux 和云端；
+任一应用节点失败都将流水线标红，不再降级成单节点成功。
 发布完成后执行线上健康检查和飞书登录入口检查，最后发送包含完整提交说明的飞书 webhook 通知。
 
 飞书 App ID、Secret 和 `WAO_VAULT_KEY` 继续保存在 Linux 主节点私有部署目录。Jenkins 通过精确 ACL 读取，

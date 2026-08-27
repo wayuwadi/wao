@@ -1052,6 +1052,26 @@ class AiRunServiceTest {
         assertThat(run.getProgressUpdatedAt()).isNotNull();
     }
 
+    @Test
+    void deliveryProgressSeparatesMergedCodeFromDeploymentWait() {
+        AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
+        runner.setId("rn1");
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId("ar1");
+        run.setRunnerId("rn1");
+        run.setStatus("running");
+        run.setDeliveryStage("coding");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runMapper.selectById("ar1")).thenReturn(run);
+
+        service.reportProgress("local-token", "ar1",
+                new ReportAiRunProgressRequest("delivery", "untrusted runner text"));
+
+        assertThat(run.getDeliveryStage()).isEqualTo("waiting_deployment");
+        assertThat(run.getLatestProgress()).isEqualTo("代码已完成并合并，正在等待批量部署");
+        verify(runMapper).updateById(run);
+    }
+
     // ---------------- 基于报错重跑 ----------------
 
     @Test
@@ -1238,6 +1258,7 @@ class AiRunServiceTest {
         succeeded.setTaskId("t1");
         succeeded.setProjectId("p1");
         succeeded.setStatus("succeeded");
+        succeeded.setDeliveryStage("deployment_succeeded");
         succeeded.setRunnerId("rn1");
         succeeded.setSessionId("thread-1");
         when(runMapper.selectById("ar1")).thenReturn(succeeded);
@@ -1311,6 +1332,31 @@ class AiRunServiceTest {
         assertThat(run.getCostUsd()).isEqualByComparingTo("0.087053");
         assertThat(result.usage().recorded()).isTrue();
         assertThat(result.usage().model()).isEqualTo("claude-opus-5");
+        assertThat(result.deliveryStage()).isEqualTo("deployment_succeeded");
+    }
+
+    @Test
+    void failureAfterCodeMergeIsClassifiedAsDeploymentFailure() {
+        AiTaskRunEntity run = runningRun();
+        run.setDeliveryStage("waiting_deployment");
+
+        AiRunDto result = service.complete("local-token", "ar1", new CompleteAiRunRequest(
+                2, "Jenkins 最后一次部署失败", "sess-1", null, null,
+                null, null, null, null, null));
+
+        assertThat(result.deliveryStage()).isEqualTo("deployment_failed");
+    }
+
+    @Test
+    void failureBeforeCodeMergeIsNotMisreportedAsDeploymentFailure() {
+        AiTaskRunEntity run = runningRun();
+        run.setDeliveryStage("coding");
+
+        AiRunDto result = service.complete("local-token", "ar1", new CompleteAiRunRequest(
+                2, "本地测试失败", "sess-1", null, null,
+                null, null, null, null, null));
+
+        assertThat(result.deliveryStage()).isEqualTo("code_failed");
     }
 
     @Test
@@ -1415,6 +1461,7 @@ class AiRunServiceTest {
         succeeded.setTaskId("t1");
         succeeded.setProjectId("p1");
         succeeded.setStatus("succeeded");
+        succeeded.setDeliveryStage("deployment_succeeded");
         succeeded.setRunnerId("rn1");
         succeeded.setSessionId("thread-1");
         when(runMapper.selectById("ar1")).thenReturn(succeeded);
@@ -1425,6 +1472,7 @@ class AiRunServiceTest {
         var dto = service.continueRun("ar1", "移动端弹窗还是会跳动，继续优化", "wg", "https://wao.example");
 
         assertThat(dto.status()).isEqualTo("queued");
+        assertThat(dto.deliveryStage()).isEqualTo("coding");
         assertThat(succeeded.getPendingInput()).isEqualTo("移动端弹窗还是会跳动，继续优化");
         assertThat(succeeded.getRequestedRunnerId()).isEqualTo("rn1");
     }
@@ -1553,6 +1601,7 @@ class AiRunServiceTest {
         run.setProjectId("p1");
         run.setEngine("claude");
         run.setStatus("running");
+        run.setDeliveryStage("coding");
         run.setRunnerId("rn1");
         when(runnerMapper.selectOne(any())).thenReturn(runner);
         when(runMapper.selectById("ar1")).thenReturn(run);

@@ -235,6 +235,9 @@
   0 到 5 次（默认 2 次）。中间失败只显示“正在自动重试”的运行进展，不回传终态、不发送飞书失败卡片；
   任一次恢复成功只发送最终成功通知，连续失败耗尽后才回传最后错误并定义为失败。人工暂停、运行中补充输入和
   AI 正常返回的 `SUCCESS / SKIPPED / BLOCKED` 不进入该重试链路（见 ADR-138）。
+- PR 合并后 Runner 接收 AI 文字事件中的结构化等待部署标记，把交付阶段切到 waiting_deployment；首页和任务档案
+  分开展示代码完成、等待部署与部署终态。Jenkins 以五分钟 quiet period 合并相邻 main push，按线上真实版本计算
+  整个未部署范围并把同一次构建状态回写到每个提交；旧构建失败不能让仍等待后继批次的运行提前失败（见 ADR-144）。
 - AI 判断某项非必要功能缺少真实数据源或可靠接口时，不得以 mock/演示数据伪造实现；取消该功能并完成其余交付后返回 `WAO_RUN_STATUS: SKIPPED`，运行按成功进入待验证，不显示失败或“基于报错重跑”。
 - Runner 使用 `codex exec --json` 的 JSONL 事件流，只保存 agent message、公开的 reasoning summary、
   plan update 与阶段/结果；command execution、file change、MCP tool call、web search 不进入 WAO。

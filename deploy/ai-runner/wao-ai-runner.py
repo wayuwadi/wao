@@ -851,6 +851,25 @@ def extract_progress(event: dict[str, Any], engine: str = "codex") -> tuple[str,
     return extract_codex_progress(event)
 
 
+def reports_waiting_deployment(event: dict[str, Any], engine: str = "codex") -> bool:
+    """只从 AI 的文字消息识别结构化交付阶段，不扫描命令或工具参数里的提示词。"""
+    texts: list[str] = []
+    if engine in CLAUDE_STYLE_ENGINES:
+        if event.get("type") != "assistant":
+            return False
+        blocks = (event.get("message") or {}).get("content")
+        if isinstance(blocks, list):
+            texts = [_readable_text(block.get("text")) for block in blocks
+                     if isinstance(block, dict) and block.get("type") == "text"]
+    else:
+        item = event.get("item")
+        if (event.get("type") or "").startswith("item.") and isinstance(item, dict) \
+                and item.get("type") == "agent_message":
+            texts = [_readable_text(item.get("text") or item.get("content"))]
+    return any(line.strip() == "WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT"
+               for value in texts for line in value.splitlines())
+
+
 def _claude_plan_text(todos: Any) -> str:
     if not isinstance(todos, list):
         return ""
@@ -935,6 +954,7 @@ class ProgressReporter:
         self.last_sent_at = 0.0
         self.last_content = ""
         self.pending: tuple[str, str] | None = None
+        self.delivery_reported = False
 
     def send(self, kind: str, content: str, force: bool = False) -> None:
         content = " ".join(content.split())[:1000]
@@ -953,6 +973,11 @@ class ProgressReporter:
             log(f"[{self.run_id}] 进展上报失败，继续执行：{exc}")
 
     def event(self, event: dict[str, Any]) -> None:
+        if reports_waiting_deployment(event, self.engine):
+            if not self.delivery_reported:
+                self.delivery_reported = True
+                self.send("delivery", "代码已完成并合并，正在等待批量部署", force=True)
+            return
         progress = extract_progress(event, self.engine)
         if progress:
             self.send(*progress)
@@ -1063,9 +1088,14 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
         "Runner 已把本机 Git 凭据通过 GH_TOKEN 临时交给当前进程，并把 GitHub CLI 加入 PATH；"
         "GitHub 操作优先使用 gh，不要因为 AI 工具内置的 GitHub 连接器不可用而停止。"
         "不要停下来等待人工确认。若外部权限确实阻塞，请在最终结果中准确说明。\n\n"
+        "PR 合并完成、开始等待部署之前，必须先单独输出一条 "
+        "`WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT`。这只是让 Runner 把页面切换到“代码已完成 · 等待部署”，"
+        "不是最终答复，输出后继续盯部署。\n\n"
         "合并只是做完了一半：合并后必须用 gh（如 `gh run watch` / `gh run view --log-failed`）"
         "盯住 main 上的这次部署，直到它跑完为止，再验证线上结果与飞书通知。"
         "部署失败时先读报错、修好、重新走一次提交与合并，直到部署成功；"
+        "只把包含本次合并提交（或其后继提交）的部署当成本次结果；队列中更旧的构建失败时继续等待，"
+        "后续批次成功且包含本次改动时即视为部署成功，不要把旧构建失败误报到所有任务。"
         "只有部署确实成功并且线上验证通过，才可以回复 SUCCESS —— "
         "部署还没结束、或者最后一次部署是失败的，一律回复 BLOCKED 并把完整报错写进摘要，"
         "由用户在 WAO 里点「基于报错重跑」让下一次运行接着修。\n\n"
@@ -1120,7 +1150,8 @@ def build_continuation_prompt(
         f"`git fetch origin {base}` 之后读 `origin/{base}`。"
         "如果上一次的改动已经合并进 main，这次就在它的基础上继续改。\n\n"
         "改完同样要跑与风险相称的测试、写详细中文提交、创建 PR 并合并 main，"
-        "然后用 gh 盯住这次部署直到成功，再验证线上结果。\n\n"
+        "PR 合并后先单独输出 `WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT`，再用 gh 盯住这次部署直到成功并验证线上结果；"
+        "只认包含本次合并提交或其后继提交的部署，忽略队列里更旧构建的失败。\n\n"
         "最终答复仍以状态行开头：完成并验收通过写 `WAO_RUN_STATUS: SUCCESS`；"
         "因缺少真实实现条件而取消功能、其余已完成写 `WAO_RUN_STATUS: SKIPPED`；"
         "确实阻塞才写 `WAO_RUN_STATUS: BLOCKED`。"

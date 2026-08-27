@@ -42,8 +42,29 @@ pipeline {
                         script: 'git rev-parse HEAD',
                         returnStdout: true
                     ).trim()
+                    env.WAO_CHANGE_BASE = sh(
+                        script: 'deploy/jenkins/resolve-batch-base.sh "$WAO_GIT_SHA"',
+                        returnStdout: true
+                    ).trim()
+                    env.WAO_STATUS_SHA_FILE = "${env.WAO_RUN_TEMP}/status-shas"
+                    sh '''
+                        mkdir -p "$WAO_RUN_TEMP"
+                        git rev-list --reverse --first-parent "$WAO_CHANGE_BASE..$WAO_GIT_SHA" >"$WAO_STATUS_SHA_FILE"
+                        if [ ! -s "$WAO_STATUS_SHA_FILE" ]; then printf '%s\n' "$WAO_GIT_SHA" >"$WAO_STATUS_SHA_FILE"; fi
+                    '''
+                    env.WAO_BATCH_COMMIT_COUNT = sh(
+                        script: 'wc -l <"$WAO_STATUS_SHA_FILE" | tr -d " "',
+                        returnStdout: true
+                    ).trim()
                     env.WAO_COMMIT_MESSAGE = sh(
-                        script: 'git log -1 --pretty=%B',
+                        script: '''
+                            if [ "$WAO_BATCH_COMMIT_COUNT" -le 1 ]; then
+                              git log -1 --pretty=%B "$WAO_GIT_SHA"
+                            else
+                              printf '批量交付 %s 个 main 提交：\n' "$WAO_BATCH_COMMIT_COUNT"
+                              git log --reverse --first-parent --pretty='- %h %s' "$WAO_CHANGE_BASE..$WAO_GIT_SHA"
+                            fi
+                        ''',
                         returnStdout: true
                     ).trim()
                     env.WAO_GIT_BRANCH = (env.GIT_BRANCH ?: 'main').replaceFirst('^origin/', '')
@@ -67,7 +88,7 @@ pipeline {
             steps {
                 script {
                     def planOutput = sh(
-                        script: 'deploy/jenkins/ci-change-plan.sh',
+                        script: 'deploy/jenkins/ci-change-plan.sh "$WAO_CHANGE_BASE" "$WAO_GIT_SHA"',
                         returnStdout: true
                     ).trim()
                     def planLines = planOutput.readLines()
@@ -93,7 +114,7 @@ pipeline {
                     }
                     echo "变更范围：${env.WAO_CHANGED_FILE_COUNT} 个文件；后端=${env.WAO_BACKEND_PROJECTS}；" +
                         "WAO Web 测试=${env.WAO_TEST_WAO_WEB}；Agent Web 测试=${env.WAO_TEST_AGENT_WEB}；" +
-                        "生产发布=${env.WAO_DEPLOY_REQUIRED}"
+                        "生产发布=${env.WAO_DEPLOY_REQUIRED}；批次提交=${env.WAO_BATCH_COMMIT_COUNT}"
                 }
                 sh 'deploy/jenkins/ci-validate.sh'
             }

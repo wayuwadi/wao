@@ -580,6 +580,7 @@ export interface AiWorkflow {
 }
 
 export type AiRunStatus = 'queued' | 'claimed' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type AiRunDeliveryStage = 'coding' | 'waiting_deployment' | 'deployment_succeeded' | 'deployment_failed' | 'code_failed'
 
 export interface AiRunProgress {
   id: string
@@ -672,6 +673,8 @@ export interface AiRun {
   planMode?: boolean
   serviceTier?: string | null
   status: AiRunStatus
+  /** 代码提交与生产发布分开展示；滚动升级期间旧 API 可暂时缺失。 */
+  deliveryStage?: AiRunDeliveryStage
   runnerId: string | null
   runnerName: string | null
   requestedRunnerId: string | null

@@ -14,10 +14,25 @@ payload="$(jq -n \
   --arg target_url "https://wao.wayuwa.cn/jenkins/job/wao-main-cd/${BUILD_NUMBER:-}/" \
   '{state:$state,context:"jenkins/wao-main-cd",description:$description,target_url:$target_url}')"
 
-curl --fail --silent --show-error \
-  -X POST \
-  -H 'Accept: application/vnd.github+json' \
-  -H "Authorization: Bearer $GITHUB_PAT" \
-  -H 'X-GitHub-Api-Version: 2022-11-28' \
-  "https://api.github.com/repos/wayuwacn/wao/statuses/$WAO_GIT_SHA" \
-  --data "$payload" >/dev/null
+post_status() {
+  sha="$1"
+  printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$' || {
+    echo "Invalid status SHA: $sha" >&2
+    exit 2
+  }
+  curl --fail --silent --show-error \
+    -X POST \
+    -H 'Accept: application/vnd.github+json' \
+    -H "Authorization: Bearer $GITHUB_PAT" \
+    -H 'X-GitHub-Api-Version: 2022-11-28' \
+    "https://api.github.com/repos/wayuwacn/wao/statuses/$sha" \
+    --data "$payload" >/dev/null
+}
+
+if [ -n "${WAO_STATUS_SHA_FILE:-}" ] && [ -s "$WAO_STATUS_SHA_FILE" ]; then
+  while IFS= read -r sha; do
+    [ -n "$sha" ] && post_status "$sha"
+  done <"$WAO_STATUS_SHA_FILE"
+else
+  post_status "$WAO_GIT_SHA"
+fi

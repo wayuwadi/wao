@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
+import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
 import AiRunSkillCapabilities from '@/components/ai/AiRunSkillCapabilities.vue'
 import { continueAiRun } from '@/api/ai'
@@ -47,7 +48,12 @@ function statusUnreported(run: AiRun) {
 }
 
 function stateLabel(run: AiRun) {
-  return statusUnreported(run) ? '结果待确认' : runLabel[run.status]
+  if (statusUnreported(run)) return '结果待确认'
+  if (run.deliveryStage === 'waiting_deployment') return '代码已完成 · 等待部署'
+  if (run.deliveryStage === 'deployment_succeeded') return '部署成功 · 等待验收'
+  if (run.deliveryStage === 'deployment_failed') return '部署失败'
+  if (run.deliveryStage === 'code_failed') return '代码未完成'
+  return runLabel[run.status]
 }
 
 function resultTitle(run: AiRun) {
@@ -96,6 +102,7 @@ async function continueRun(runId: string) {
         <i class="ri-arrow-down-s-line"></i>
       </summary>
       <div class="ai-run-body">
+        <AiRunDeliverySteps v-if="run.deliveryStage" :stage="run.deliveryStage" />
         <div v-if="run.requestedModel || run.planMode" class="ai-run-parameters">
           <i class="ri-cpu-line"></i>
           <span v-if="run.requestedModel" class="usage-model">{{ shortModel(run.requestedModel) }}</span>

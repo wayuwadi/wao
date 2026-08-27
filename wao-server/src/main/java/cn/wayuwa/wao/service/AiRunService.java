@@ -96,6 +96,11 @@ public class AiRunService {
     /** 首页只展示最近八条结束记录，完整历史由分页接口按需读取。 */
     private static final int HOMEPAGE_FINISHED_RUNS = 8;
     private static final Set<String> PROGRESS_KINDS = Set.of("phase", "message", "plan", "result");
+    private static final String DELIVERY_WAITING = "waiting_deployment";
+    private static final String DELIVERY_SUCCEEDED = "deployment_succeeded";
+    private static final String DELIVERY_FAILED = "deployment_failed";
+    private static final String DELIVERY_CODING = "coding";
+    private static final String DELIVERY_CODE_FAILED = "code_failed";
     /** 目前支持的本地 AI 工具；顺序即页面默认展示顺序。 */
     public static final List<String> ENGINES = List.of("codex", "claude", "qoder");
     private static final String DEFAULT_ENGINE = "codex";
@@ -559,6 +564,7 @@ public class AiRunService {
             run.setSubId(StringUtils.hasText(sub) ? sub : null);
             run.setProjectId(task.getProjectId());
             run.setEngine(runEngine);
+            run.setDeliveryStage(DELIVERY_CODING);
             run.setAiAccountId(StringUtils.hasText(accountId) ? accountId.trim() : null);
             run.setRequestedModel(requestedModel);
             run.setReasoningEffort(requestedEffort);
@@ -633,6 +639,7 @@ public class AiRunService {
         run.setTaskId(first.getId());
         run.setProjectId(first.getProjectId());
         run.setEngine(runEngine);
+        run.setDeliveryStage(DELIVERY_CODING);
         run.setAiAccountId(StringUtils.hasText(accountId) ? accountId.trim() : null);
         run.setRequestedModel(requestedModel);
         run.setReasoningEffort(requestedEffort);
@@ -928,6 +935,7 @@ public class AiRunService {
         run.setSubId(source.getSubId());
         run.setProjectId(source.getProjectId());
         run.setEngine(engine);
+        run.setDeliveryStage(DELIVERY_CODING);
         run.setAiAccountId(source.getAiAccountId());
         run.setRequestedModel(source.getRequestedModel());
         run.setReasoningEffort(source.getReasoningEffort());
@@ -976,6 +984,7 @@ public class AiRunService {
             }
             run.setPendingInput(normalizedInput);
             run.setRequestedBy(requestedBy);
+            run.setDeliveryStage(DELIVERY_CODING);
             appendProgress(run, "message", "用户在执行中补充：" + run.getPendingInput());
             appendProgress(run, "phase", "已收到新输入，执行电脑将更新当前 AI 会话方向");
             return toRunDtos(List.of(run)).get(0);
@@ -993,6 +1002,7 @@ public class AiRunService {
         run.setRequestedBy(requestedBy);
         run.setRequestedRunnerId(run.getRunnerId());
         run.setStatus("queued");
+        run.setDeliveryStage(DELIVERY_CODING);
         run.setExitCode(null);
         run.setFinishedAt(null);
         appendProgress(run, "message", (optimizing ? "用户要求继续优化：" : "用户补充：") + run.getPendingInput());
@@ -1281,6 +1291,12 @@ public class AiRunService {
         }
         if (!ACTIVE.contains(run.getStatus())) throw new BadRequestException("该运行已经结束，不能继续回传进展");
         String kind = trim(request.kind()).toLowerCase();
+        if ("delivery".equals(kind)) {
+            run.setDeliveryStage(DELIVERY_WAITING);
+            appendProgress(run, "phase", "代码已完成并合并，正在等待批量部署");
+            runnerMapper.touchLastSeenAt(runner.getId());
+            return;
+        }
         if (!PROGRESS_KINDS.contains(kind)) throw new BadRequestException("不支持的进展类型：" + kind);
         String content = limit(request.content(), MAX_PROGRESS);
         if (!StringUtils.hasText(content) || content.equals(run.getLatestProgress())) return;
@@ -1309,6 +1325,7 @@ public class AiRunService {
         if (StringUtils.hasText(run.getPendingInput()) && StringUtils.hasText(run.getSessionId())) {
             run.setRequestedRunnerId(runner.getId());
             run.setStatus("queued");
+            run.setDeliveryStage(DELIVERY_CODING);
             run.setExitCode(null);
             run.setFinishedAt(null);
             appendProgress(run, "phase", "当前回合已结束，正在等待原执行电脑带着新输入恢复 AI 会话");
@@ -1317,6 +1334,8 @@ public class AiRunService {
         }
         run.setExitCode(exitCode);
         run.setStatus(exitCode == 0 ? "succeeded" : "failed");
+        run.setDeliveryStage(exitCode == 0 ? DELIVERY_SUCCEEDED
+                : DELIVERY_WAITING.equals(run.getDeliveryStage()) ? DELIVERY_FAILED : DELIVERY_CODE_FAILED);
         run.setResultSummary(limit(request.resultSummary(), MAX_RESULT));
         run.setPendingInput(null);
         run.setFinishedAt(LocalDateTime.now());
@@ -1376,6 +1395,7 @@ public class AiRunService {
             throw new BadRequestException("该 AI 运行已经结束，不能暂停");
         }
         run.setStatus("cancelled");
+        run.setDeliveryStage(DELIVERY_CODING);
         run.setResultSummary("用户已暂停此 AI 任务");
         run.setFinishedAt(LocalDateTime.now());
         runMapper.updateById(run);
@@ -1592,6 +1612,7 @@ public class AiRunService {
                     blankOr(run.getEngine(), DEFAULT_ENGINE), run.getRequestedModel(),
                     run.getReasoningEffort(), StringUtils.hasText(run.getRequestedModel())
                             ? CODEX_SERVICE_TIER : null, Boolean.TRUE.equals(run.getPlanMode()), run.getStatus(),
+                    blankOr(run.getDeliveryStage(), deliveryStageForLegacy(run)),
                     run.getRunnerId(), runnerName(run, runner), run.getRequestedRunnerId(), run.getRequestedBy(),
                     run.getBranchName(), run.getRetryOfRunId(),
                     run.getResultSummary(), reportUrls.get(run.getId()), run.getLatestProgress(),
@@ -1605,6 +1626,13 @@ public class AiRunService {
                     skillCapabilities.manifest(run.getCapabilityManifestJson()),
                     skillCapabilities.readAudit(run.getCapabilityAuditJson()));
         }).toList();
+    }
+
+    /** 历史记录没有交付阶段列值时，从不可变终态给出兼容展示，不伪造等待过程。 */
+    private static String deliveryStageForLegacy(AiTaskRunEntity run) {
+        if ("succeeded".equals(run.getStatus())) return DELIVERY_SUCCEEDED;
+        if ("failed".equals(run.getStatus())) return DELIVERY_CODE_FAILED;
+        return DELIVERY_CODING;
     }
 
     /** Runner 下载某次运行快照里的审核 Skill；清单外版本一律拒绝。 */

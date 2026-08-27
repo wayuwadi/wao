@@ -30,6 +30,7 @@ import {
   type AiActivityType,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
+import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
 import AiRunSkillCapabilities from '@/components/ai/AiRunSkillCapabilities.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
@@ -250,7 +251,20 @@ function statusUnreported(run: AiRun) {
 }
 
 function metaFor(run: AiRun) {
-  return statusUnreported(run) ? UNCONFIRMED_META : statusMeta[run.status]
+  if (statusUnreported(run)) return UNCONFIRMED_META
+  if (run.deliveryStage === 'waiting_deployment') {
+    return { label: '代码已完成 · 等待部署', icon: 'ri-upload-cloud-2-line', color: 'var(--wao-warning-strong)', bg: 'var(--wao-warning-bg)' }
+  }
+  if (run.deliveryStage === 'deployment_succeeded') {
+    return { ...statusMeta.succeeded, label: '部署成功 · 等待验收' }
+  }
+  if (run.deliveryStage === 'deployment_failed') {
+    return { ...statusMeta.failed, label: '部署失败' }
+  }
+  if (run.deliveryStage === 'code_failed') {
+    return { ...statusMeta.failed, label: '代码未完成' }
+  }
+  return statusMeta[run.status]
 }
 
 function resultTitle(run: AiRun) {
@@ -1197,9 +1211,9 @@ onBeforeUnmount(() => {
         <div v-else class="run-grid">
           <button v-for="run in activeRuns" :key="run.id" class="run-card" @click="inspectRun(run)">
             <div class="run-top">
-              <span class="status" :style="{ color: statusMeta[run.status].color, background: statusMeta[run.status].bg }">
-                <i :class="[statusMeta[run.status].icon, { spin: run.status === 'running' }]"></i>
-                {{ statusMeta[run.status].label }}
+              <span class="status" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">
+                <i :class="[metaFor(run).icon, { spin: run.status === 'running' && run.deliveryStage !== 'waiting_deployment' }]"></i>
+                {{ metaFor(run).label }}
               </span>
               <span class="run-time">{{ timeText(run.startedAt || run.createdAt) }}</span>
             </div>
@@ -1759,6 +1773,7 @@ onBeforeUnmount(() => {
             :alt="`${selectedRun.taskTitle} · 图片 ${index + 1}`"
           />
         </div>
+        <AiRunDeliverySteps v-if="selectedRun.deliveryStage" :stage="selectedRun.deliveryStage" />
         <dl>
           <div><dt>AI 工具</dt><dd>{{ engineLabel(selectedRun.engine) }}</dd></div>
           <div v-if="selectedRun.requestedModel"><dt>本次模型</dt><dd>{{ shortModel(selectedRun.requestedModel) }}</dd></div>

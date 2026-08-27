@@ -88,7 +88,9 @@ sudo sh deploy/jenkins/verify-controller.sh
 
 ## 流水线
 
-`Jenkinsfile` 默认从 `main` 拉取代码并先生成可审计的变更范围：只运行受影响 Maven 模块和前端的测试，
+`wao-main-cd` 会先等待 300 秒，把窗口内相邻的 main push 合并成一个批次；已有构建执行时，后续 push 继续由
+Jenkins 合并到唯一待执行项，不会中断正在进行的 migration 或滚动发布。`Jenkinsfile` 从 `main` 拉取最新代码，
+以线上前端真实版本作为批次基线并生成可审计的变更范围：只运行受影响 Maven 模块和前端的测试，
 后端、WAO Web、Agent Web 三路并行；运行时代码变更仍构建完整的四个 SHA 镜像和两个前端，并执行
 Windows → Linux → 云端严格滚动发布、线上验收、GitHub commit status 和飞书通知。纯文档提交只完成
 输入校验并明确通知“无需部署”；只改自动化测试时仅运行对应模块测试。两者都不生成制品或触碰生产节点。
@@ -100,6 +102,8 @@ Windows → Linux → 云端严格滚动发布、线上验收、GitHub commit st
 - `ALLOW_WINDOWS_OFFLINE=true`：仅当 Windows 在部署前预检不可达时，保持从节点摘流并继续发布 Linux 与云端；
   Windows 已通过预检后的任何部署失败仍然 fail-closed。不得与 `BOOTSTRAP_WINDOWS` 同时开启。
 - 同一任务不并发，新 push 排队且不取消正在进行的 migration 或发布。
+- GitHub 状态会写到线上版本之后、本批次头之前的每个提交；失败不会推进线上基线，后继成功批次会把其中已经随同
+  上线的祖先提交更新为成功。飞书只发送一张批次卡片，并列出批次提交数与需求级标题。
 - 失败时 GitHub commit status 会写明失败阶段，方便没有 Jenkins UI 会话的自动任务先定位门禁；完整命令输出仍只
   保留在受 WAO 会话保护的 Jenkins 控制台，不把日志或凭据复制到公开状态描述。
 - 生产发布验证结束后，流水线会比较仓库内 JCasC、systemd override 和隧道 unit；有变化时只覆盖这三个

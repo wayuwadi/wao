@@ -18,6 +18,8 @@ public class AiTaskRunEntity {
     private String engine;
     private String aiAccountId;
     private String status;
+    /** 面向用户的代码到部署阶段；与 Runner 进程状态分开，等待部署时运行仍保持 active。 */
+    private String deliveryStage;
     private String runnerId;
     private String requestedRunnerId;
     private String requestedBy;
@@ -70,6 +72,8 @@ public class AiTaskRunEntity {
     public void setAiAccountId(String aiAccountId) { this.aiAccountId = aiAccountId; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getDeliveryStage() { return deliveryStage; }
+    public void setDeliveryStage(String deliveryStage) { this.deliveryStage = deliveryStage; }
     public String getRunnerId() { return runnerId; }
     public void setRunnerId(String runnerId) { this.runnerId = runnerId; }
     public String getRequestedRunnerId() { return requestedRunnerId; }

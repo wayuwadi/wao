@@ -35,6 +35,31 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
+    void jenkinsBatchesMainPushesAndCoversEveryUndeployedCommit() throws IOException {
+        String pipeline = readFromRepository("Jenkinsfile");
+        String casc = readFromRepository("deploy/jenkins/jenkins.yaml");
+        String status = readFromRepository("deploy/jenkins/github-status.sh");
+        String resolver = readFromRepository("deploy/jenkins/resolve-batch-base.sh");
+        String notification = readFromRepository("deploy/jenkins/notify-feishu.sh");
+
+        assertThat(casc).contains("quietPeriod(300)");
+        assertThat(pipeline)
+                .contains("resolve-batch-base.sh \"$WAO_GIT_SHA\"")
+                .contains("git rev-list --reverse --first-parent \"$WAO_CHANGE_BASE..$WAO_GIT_SHA\"")
+                .contains("ci-change-plan.sh \"$WAO_CHANGE_BASE\" \"$WAO_GIT_SHA\"")
+                .contains("WAO_BATCH_COMMIT_COUNT");
+        assertThat(resolver)
+                .contains("pluginWebUpdateNotice/web_version_by_plugin.json")
+                .contains("git rev-list --first-parent \"$head\"")
+                .contains("GIT_PREVIOUS_SUCCESSFUL_COMMIT")
+                .contains("GIT_PREVIOUS_COMMIT");
+        assertThat(status)
+                .contains("WAO_STATUS_SHA_FILE")
+                .contains("done <\"$WAO_STATUS_SHA_FILE\"");
+        assertThat(notification).contains("$batch+\" 个 main 提交\"");
+    }
+
+    @Test
     void jenkinsFailureStatusIdentifiesTheFailedStage() throws IOException {
         String pipeline = readFromRepository("Jenkinsfile");
 
