@@ -46,6 +46,8 @@ Host wao-windows
   IdentitiesOnly yes
   UserKnownHostsFile $WINDOWS_KNOWN_HOSTS
   StrictHostKeyChecking yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 6
 Host wao-cloud
   HostName $CLOUD_HOST
   User $CLOUD_USER
@@ -108,6 +110,12 @@ windows_scp() {
   command scp -F "$WAO_SSH_CONFIG" "$@"
 }
 
+windows_deploy_ssh() {
+  # 包含最多 10 分钟的部署锁等待，并为镜像导入和容器重建保留余量；即使远端进程
+  # 仍保持 SSH 连接，也不能让单次 Jenkins 尝试无限挂起。
+  command timeout --foreground --signal=TERM 30m ssh -F "$WAO_SSH_CONFIG" "$@"
+}
+
 # After the Linux-local calls below are handled explicitly, every plain SSH/SCP
 # operation in this script targets the cloud alias from the strict config.
 ssh() { command ssh -F "$WAO_SSH_CONFIG" "$@"; }
@@ -120,13 +128,16 @@ retry_node_deploy() {
   : >"$log_file"
   node_attempt=1
   while [ "$node_attempt" -le 3 ]; do
-    printf '===== %s deployment attempt %s/3 =====\n' "$label" "$node_attempt" >>"$log_file"
-    if "$deploy_function" >>"$log_file" 2>&1; then
+    printf '===== %s deployment attempt %s/3 =====\n' "$label" "$node_attempt" | tee -a "$log_file"
+    # 节点安装、镜像导入可能持续数分钟。实时复制到 Jenkins 控制台，避免正常等待被误判为卡死；
+    # 子 shell 的 pipefail 仍以部署函数的退出码决定是否重试。
+    if (set -o pipefail; "$deploy_function" 2>&1 | tee -a "$log_file"); then
       NODE_DEPLOY_ATTEMPTS="$node_attempt"
       return 0
     fi
     if [ "$node_attempt" -lt 3 ]; then
-      printf '%s deployment failed; retrying in %s seconds.\n' "$label" "$((node_attempt * 15))" >>"$log_file"
+      printf '%s deployment failed; retrying in %s seconds.\n' \
+        "$label" "$((node_attempt * 15))" | tee -a "$log_file"
       sleep "$((node_attempt * 15))"
     fi
     node_attempt=$((node_attempt + 1))
@@ -192,7 +203,7 @@ deploy_slave() {
     "wao-windows:D:/deploy/$remote_installer" || return
   retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
     "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Move-Item -Force D:\\deploy\\wao-release.zip D:\\deploy\\$remote_release; Move-Item -Force D:\\deploy\\wao-secrets.env D:\\deploy\\$remote_secrets; Move-Item -Force D:\\deploy\\wao-shared.env D:\\deploy\\$remote_shared_env; Move-Item -Force D:\\deploy\\wao-gateway.p12 D:\\deploy\\$remote_certificate; Move-Item -Force D:\\deploy\\wao-images.tar.gz D:\\deploy\\$remote_images\"" || return
-  retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
+  retry_remote "Windows 从节点" windows_deploy_ssh -o ConnectTimeout=15 "wao-windows" \
     "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets -SharedEnvPath D:\\deploy\\$remote_shared_env -GatewayCertificatePath D:\\deploy\\$remote_certificate -ImageArchivePath D:\\deploy\\$remote_images -ImageTag $WAO_GIT_SHA" || return
   if [ "$BOOTSTRAP_WINDOWS" = true ]; then
     test -s wao-bootstrap.sql.gz || return 1
@@ -496,7 +507,6 @@ if [ "$windows_available" = true ]; then
     set_status windows_attempts "$NODE_DEPLOY_ATTEMPTS"
     set_status windows_detail "$(tail -n 1 slave.log)"
     set_upstream_state slave down || true
-    printf '\n===== Windows deployment =====\n'; cat slave.log
     echo 'Windows 从节点三次部署失败；Linux 保持当前版本，本次发布严格失败。'
     exit 1
   fi
@@ -519,7 +529,7 @@ if [ "$windows_available" = true ]; then
     fi
   else
     set_upstream_state slave up || exit 1
-    printf '\n===== Windows deployment =====\n'; cat slave.log
+    echo 'Windows deployment completed and the node is back in the public upstream.'
   fi
 fi
 
@@ -546,7 +556,6 @@ if ! retry_node_deploy Linux deploy_master master.log; then
   set_status linux_attempts "$NODE_DEPLOY_ATTEMPTS"
   set_status linux_detail "$(tail -n 1 master.log)"
   set_upstream_state master down || true
-  printf '\n===== Linux deployment =====\n'; cat master.log
   echo 'Linux 主节点三次部署失败；Windows 继续承载请求，本次发布严格失败。'
   exit 1
 fi
@@ -576,7 +585,7 @@ if [ "$safe_schema_rollout" = true ]; then
   fi
 fi
 set_upstream_state master up || exit 1
-printf '\n===== Linux deployment =====\n'; cat master.log
+echo 'Linux deployment completed and the node is back in the public upstream.'
 
 if ! provision_jumpserver_asset_access; then
   set_status linux_status failed

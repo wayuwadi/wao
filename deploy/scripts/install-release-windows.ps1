@@ -39,12 +39,19 @@ foreach ($requiredTransfer in @(
 # 同时解压到同一目录或重建同一组容器；每次流水线的独立压缩包则避免上传阶段互相覆盖。
 $lockStream = $null
 $lockDeadline = [DateTime]::UtcNow.AddMinutes(10)
+$nextLockNotice = [DateTime]::UtcNow
 while ($null -eq $lockStream -and [DateTime]::UtcNow -lt $lockDeadline) {
     try {
         $lockStream = [IO.File]::Open($LockPath, [IO.FileMode]::OpenOrCreate,
             [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     }
     catch [IO.IOException] {
+        if ([DateTime]::UtcNow -ge $nextLockNotice) {
+            $remainingSeconds = [Math]::Max(0, [Math]::Ceiling(
+                ($lockDeadline - [DateTime]::UtcNow).TotalSeconds))
+            Write-Output "Another Windows deployment is finishing; waiting for the deployment lock (up to $remainingSeconds seconds remaining)."
+            $nextLockNotice = [DateTime]::UtcNow.AddSeconds(30)
+        }
         Start-Sleep -Seconds 5
     }
 }
