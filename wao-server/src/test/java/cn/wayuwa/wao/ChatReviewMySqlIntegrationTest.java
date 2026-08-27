@@ -7,6 +7,7 @@ import cn.wayuwa.wao.domain.ChatReviewRunEntity;
 import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.dto.DocBlockDto;
 import cn.wayuwa.wao.dto.DocDto;
+import cn.wayuwa.wao.mapper.AiActivityMapper;
 import cn.wayuwa.wao.mapper.AiAssistantRunMapper;
 import cn.wayuwa.wao.mapper.ChatReviewRunMapper;
 import cn.wayuwa.wao.mapper.DocMapper;
@@ -69,6 +70,7 @@ class ChatReviewMySqlIntegrationTest {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private KnowledgeService knowledge;
     @Autowired private DocMapper docs;
+    @Autowired private AiActivityMapper activities;
     @Autowired private ChatReviewRunMapper reviews;
     @Autowired private AiAssistantRunMapper aiRuns;
     @Autowired private ChatReviewAiQueue aiQueue;
@@ -91,6 +93,7 @@ class ChatReviewMySqlIntegrationTest {
         assertAiInsertRollsBackWhenLeaseLinkIsLost();
         assertSecureCompletionAndDatabaseTimeoutAreSerialized();
         assertDatabaseClockExpiresAndClearsReadOnlyPrompts();
+        migrateLatestAndAssertUnifiedAiActivityCollations();
     }
 
     private void seedLegacyArchiveBeforeV77() {
@@ -517,5 +520,24 @@ class ChatReviewMySqlIntegrationTest {
                 .containsEntry("status", "failed")
                 .containsEntry("prompt_text", null)
                 .containsEntry("claim_token", null);
+    }
+
+    private void migrateLatestAndAssertUnifiedAiActivityCollations() {
+        Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+        jdbc.update("""
+                INSERT INTO ai_account (id, provider, label, credential_json)
+                VALUES ('activity-collation-account', 'deepseek', 'DeepSeek 验收账号', '{}')
+                """);
+        jdbc.update("""
+                UPDATE chat_review_run
+                   SET ai_capability_id = 'activity-collation-account'
+                 WHERE id = 'cr-lease-takeover'
+                """);
+
+        assertThat(activities.page("CHAT_REVIEW", 0, 50))
+                .filteredOn(row -> "cr-lease-takeover".equals(row.getId()))
+                .singleElement()
+                .satisfies(row -> assertThat(row.getCapabilityLabel()).isEqualTo("DeepSeek 验收账号"));
+        assertThat(activities.count("ALL")).isGreaterThanOrEqualTo(1);
     }
 }

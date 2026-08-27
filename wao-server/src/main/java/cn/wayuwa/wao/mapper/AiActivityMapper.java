@@ -10,6 +10,7 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface AiActivityMapper {
 
+    // ai_account 沿用 utf8mb4_unicode_ci；显式归一化聊天复盘能力列，避免 MySQL 9 的关联与 UNION 冲突。
     @Select("""
             SELECT activity.*
               FROM (
@@ -34,11 +35,13 @@ public interface AiActivityMapper {
                             THEN CONCAT('最近 ', cr.range_value, ' 条消息 · ', cr.message_count, ' 条真实消息')
                             ELSE CONCAT(cr.start_date, ' 至 ', cr.end_date, ' · ', cr.message_count, ' 条真实消息') END AS subtitle,
                        CASE WHEN cr.ai_capability_id = 'local-codex' THEN '本地 Codex'
-                            ELSE COALESCE(account.label, cr.ai_capability_id) END AS capability_label,
+                            ELSE COALESCE(account.label,
+                                    cr.ai_capability_id COLLATE utf8mb4_unicode_ci) END AS capability_label,
                        cr.id AS target_id, cr.error_text AS result_preview,
                        cr.created_at, cr.finished_at
                   FROM chat_review_run cr
-                  LEFT JOIN ai_account account ON account.id = cr.ai_capability_id
+                  LEFT JOIN ai_account account
+                    ON account.id = cr.ai_capability_id COLLATE utf8mb4_unicode_ci
                  WHERE cr.stage IN ('SUCCEEDED', 'FAILED')
               ) activity
              WHERE (#{type} = 'ALL' OR activity.activity_type = #{type})
