@@ -74,6 +74,58 @@ describe('设置页成员偏好', () => {
     expect(wrapper.find('.control-style-preferences').text()).toContain('已保存')
   })
 
+  it('真实保存周起始日和庆祝动画且不再展示无效语言切换', async () => {
+    const preferences = usePreferenceStore()
+    await preferences.load()
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/settings', component: { template: '<div />' } }],
+    })
+    await router.push('/settings?tab=prefs')
+    await router.isReady()
+
+    const wrapper = mount(SettingsView, { global: { plugins: [router] } })
+    const weekStart = wrapper.get<HTMLSelectElement>('select[aria-label="每周起始日"]')
+    const celebration = wrapper.get<HTMLSelectElement>('select[aria-label="庆祝动画"]')
+
+    await weekStart.setValue('周日')
+    await flushPromises()
+    await celebration.setValue('关闭')
+    await flushPromises()
+
+    expect(preferenceApi.savePreference).toHaveBeenCalledWith('week-start', '周日')
+    expect(preferenceApi.savePreference).toHaveBeenCalledWith('celebration', '关闭')
+    expect(preferences.weekStart).toBe('周日')
+    expect(preferences.celebration).toBe('关闭')
+    expect(wrapper.text()).not.toContain('界面显示语言')
+    expect(wrapper.text()).toContain('当前仅提供完整的简体中文版本')
+  })
+
+  it('周起始日保存失败时恢复原值并可原位重试', async () => {
+    const preferences = usePreferenceStore()
+    await preferences.load()
+    preferenceApi.savePreference.mockRejectedValueOnce(new Error('网络不可用'))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/settings', component: { template: '<div />' } }],
+    })
+    await router.push('/settings?tab=prefs')
+    await router.isReady()
+
+    const wrapper = mount(SettingsView, { global: { plugins: [router] } })
+    const weekStart = wrapper.get<HTMLSelectElement>('select[aria-label="每周起始日"]')
+    await weekStart.setValue('周日')
+    await flushPromises()
+
+    expect(weekStart.element.value).toBe('周一')
+    expect(wrapper.get('.personal-preference-save-error').text()).toContain('网络不可用')
+    await wrapper.get('.personal-preference-save-error button').trigger('click')
+    await flushPromises()
+
+    expect(preferenceApi.savePreference).toHaveBeenLastCalledWith('week-start', '周日')
+    expect(preferences.weekStart).toBe('周日')
+  })
+
   it('界面风格保存失败后回退并提供重试', async () => {
     const preferences = usePreferenceStore()
     await preferences.load()

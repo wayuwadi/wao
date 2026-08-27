@@ -82,6 +82,24 @@ describe('AutomationView 导航', () => {
     expect(wrapper.text()).toContain('第11次')
   })
 
+  it('只展示真实运行圆点，缺少服务端耗时时不伪造秒数', async () => {
+    const item = job(1)
+    item.runs[0]!.durationMs = undefined
+    const wrapper = mountView([item])
+
+    expect(wrapper.findAll('.dot')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('更早的运行')
+
+    await wrapper
+      .findAll('.tab')
+      .find((tab) => tab.text() === '运行记录')!
+      .trigger('click')
+    expect(wrapper.get('.grid-runs.row').text()).toContain('—')
+
+    await wrapper.get('.grid-runs.row').trigger('click')
+    expect(wrapper.get('.grid-aoruns.row').text()).toContain('—')
+  })
+
   it('HTTP性能巡检任务显示真实配置入口', async () => {
     const wrapper = mountView([job()])
     await wrapper.find('.op[title="配置"]').trigger('click')

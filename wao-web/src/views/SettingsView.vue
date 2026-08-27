@@ -3,7 +3,7 @@ import { computed, onUnmounted, reactive, ref, watch, watchEffect } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSessionStore } from '@/stores/session'
 import { toast } from '@/composables/toast'
-import { updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth'
+import { apiCreateAccount, updateEmailCredential, updateProfile, unlinkIdentity } from '@/api/auth'
 import { startFeishuLogin } from '@/api/feishu'
 import { startWechatLogin } from '@/api/wechat'
 import {
@@ -13,7 +13,13 @@ import {
 } from '@/api/system'
 import { useDataStore } from '@/stores/data'
 import { useNavStore } from '@/stores/nav'
-import { usePreferenceStore, type ControlStyle } from '@/stores/preferences'
+import {
+  usePreferenceStore,
+  type Celebration,
+  type ControlStyle,
+  type WeekStart,
+} from '@/stores/preferences'
+import { useUiStore } from '@/stores/ui'
 import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import WaoAiCapabilitiesPanel from '@/components/settings/WaoAiCapabilitiesPanel.vue'
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
@@ -36,6 +42,7 @@ const quickLinks = useQuickLinks()
 const data = useDataStore()
 const nav = useNavStore()
 const preferences = usePreferenceStore()
+const ui = useUiStore()
 const router = useRouter()
 const route = useRoute()
 const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
@@ -106,12 +113,6 @@ const THEME_LABELS: Record<ThemeMode, string> = {
   system: '跟随系统',
 }
 
-const prefRows = [
-  { name: '语言', desc: '界面显示语言', value: '简体中文' },
-  { name: '每周起始日', desc: '影响日历与「本周」分组', value: '周一' },
-  { name: '庆祝动画', desc: '创建任务 / 项目、完成任务时的全屏反馈', value: '细腻纸屑' },
-]
-
 const CONTROL_STYLE_OPTIONS: Array<{ value: ControlStyle; name: string; desc: string }> = [
   { value: 'system', name: '系统默认', desc: '当前跟随极简风格，以后可随系统设计升级' },
   { value: 'minimal', name: '极简风格', desc: '收起可从选中值判断的标签，适合窄屏和紧凑卡片' },
@@ -121,6 +122,13 @@ const controlStyleForm = ref<ControlStyle>('system')
 const controlStyleSaving = ref(false)
 const controlStyleError = ref('')
 const lastControlStyleAttempt = ref<ControlStyle>('system')
+const personalPreferenceForm = reactive<{ weekStart: WeekStart; celebration: Celebration }>({
+  weekStart: '周一',
+  celebration: '细腻纸屑',
+})
+const personalPreferenceSaving = ref<'weekStart' | 'celebration' | ''>('')
+const personalPreferenceError = ref('')
+const lastPersonalPreferenceAttempt = ref<{ key: 'weekStart' | 'celebration'; value: WeekStart | Celebration } | null>(null)
 
 const musicPreferenceForm = reactive({ defaultOpen: false, launcherVisible: true })
 const musicPreferenceSaving = ref(false)
@@ -131,6 +139,16 @@ watch(
   ([loaded, style]) => {
     if (!loaded || controlStyleSaving.value) return
     controlStyleForm.value = style
+  },
+  { immediate: true },
+)
+
+watch(
+  [() => preferences.loaded, () => preferences.weekStart, () => preferences.celebration],
+  ([loaded, weekStart, celebration]) => {
+    if (!loaded || personalPreferenceSaving.value) return
+    personalPreferenceForm.weekStart = weekStart
+    personalPreferenceForm.celebration = celebration
   },
   { immediate: true },
 )
@@ -148,8 +166,42 @@ watch(
 async function reloadPreferences() {
   controlStyleError.value = ''
   musicPreferenceError.value = ''
+  personalPreferenceError.value = ''
   await preferences.load(true)
   if (preferences.loadError) musicPreferenceError.value = preferences.loadError
+}
+
+async function savePersonalPreference(
+  key: 'weekStart' | 'celebration',
+  value: WeekStart | Celebration,
+) {
+  if (personalPreferenceSaving.value) return
+  lastPersonalPreferenceAttempt.value = { key, value }
+  personalPreferenceSaving.value = key
+  personalPreferenceError.value = ''
+  try {
+    if (key === 'weekStart') {
+      await preferences.setWeekStart(value as WeekStart)
+      personalPreferenceForm.weekStart = preferences.weekStart
+      toast('每周起始日已保存并应用到日历', 'ri-calendar-check-line')
+    } else {
+      await preferences.setCelebration(value as Celebration)
+      personalPreferenceForm.celebration = preferences.celebration
+      if (value !== '关闭') ui.celebrate(value)
+      toast(value === '关闭' ? '庆祝动画已关闭' : '庆祝动画已保存', 'ri-checkbox-circle-line')
+    }
+  } catch (error) {
+    personalPreferenceForm.weekStart = preferences.weekStart
+    personalPreferenceForm.celebration = preferences.celebration
+    personalPreferenceError.value = error instanceof Error ? error.message : '个人偏好保存失败'
+  } finally {
+    personalPreferenceSaving.value = ''
+  }
+}
+
+function retryPersonalPreference() {
+  const attempt = lastPersonalPreferenceAttempt.value
+  if (attempt) void savePersonalPreference(attempt.key, attempt.value)
 }
 
 async function saveControlStyle(style: ControlStyle) {
@@ -179,6 +231,38 @@ async function saveMusicPreferences() {
     musicPreferenceError.value = error instanceof Error ? error.message : '音乐播放器偏好保存失败'
   } finally {
     musicPreferenceSaving.value = false
+  }
+}
+
+const canManageMembers = computed(() => ['管理员', '超级管理员'].includes(session.currentUser.role))
+const accountCreateOpen = ref(false)
+const accountCreateForm = reactive({ name: '', email: '', password: '' })
+const accountCreateBusy = ref(false)
+const accountCreateError = ref('')
+
+function closeAccountCreate(force = false) {
+  if (accountCreateBusy.value && !force) return
+  accountCreateOpen.value = false
+  accountCreateError.value = ''
+  accountCreateForm.name = ''
+  accountCreateForm.email = ''
+  accountCreateForm.password = ''
+}
+
+async function createMemberAccount() {
+  if (accountCreateBusy.value) return
+  accountCreateBusy.value = true
+  accountCreateError.value = ''
+  try {
+    await apiCreateAccount(accountCreateForm.name, accountCreateForm.email, accountCreateForm.password)
+    await session.refreshDirectory()
+    const memberName = accountCreateForm.name
+    closeAccountCreate(true)
+    toast(`已创建成员账号「${memberName}」`, 'ri-user-add-line')
+  } catch (error) {
+    accountCreateError.value = error instanceof Error ? error.message : '成员账号创建失败'
+  } finally {
+    accountCreateBusy.value = false
   }
 }
 
@@ -582,9 +666,6 @@ async function bindFeishu() {
   try { await startFeishuLogin('link') }
   catch (error) { toast(error instanceof Error ? error.message : '飞书登录暂不可用') }
 }
-function demo(msg: string, icon?: string) {
-  toast(msg, icon)
-}
 </script>
 
 <template>
@@ -623,8 +704,23 @@ function demo(msg: string, icon?: string) {
             <div class="card-row">
               <div class="card-title">成员</div>
               <div class="spacer"></div>
-              <button class="btn-primary sm" disabled title="邀请流程将在后续成员管理需求中实现"><i class="ri-user-add-line"></i>邀请成员（待实现）</button>
+              <button
+                v-if="canManageMembers"
+                class="btn-primary sm"
+                type="button"
+                @click="accountCreateOpen = !accountCreateOpen"
+              ><i class="ri-user-add-line"></i>新建成员账号</button>
             </div>
+            <form v-if="accountCreateOpen" class="credential-form member-account-form" @submit.prevent="createMemberAccount">
+              <input v-model.trim="accountCreateForm.name" maxlength="64" required placeholder="成员姓名" />
+              <input v-model.trim="accountCreateForm.email" type="email" autocomplete="off" required placeholder="登录邮箱" />
+              <input v-model="accountCreateForm.password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required placeholder="初始密码（至少 8 位）" />
+              <div class="member-account-actions">
+                <button type="button" class="btn-ghost" :disabled="accountCreateBusy" @click="closeAccountCreate()">取消</button>
+                <button class="btn-primary" :disabled="accountCreateBusy">{{ accountCreateBusy ? '创建中…' : '创建账号' }}</button>
+              </div>
+              <div v-if="accountCreateError" class="form-error" role="alert">{{ accountCreateError }}</div>
+            </form>
             <div v-for="(m, i) in orgMembers" :key="i" class="mem-row">
               <span class="mem-av" :style="{ background: m.color }">{{ m.initial }}</span>
               <span class="mem-name">{{ m.name }}<span class="me-tag">{{ m.meTag }}</span></span>
@@ -988,7 +1084,7 @@ function demo(msg: string, icon?: string) {
               </div>
             </template>
           </div>
-          <div class="card thin">
+          <div class="card thin personal-preferences">
             <div class="pref-row">
               <div class="pref-main">
                 <div class="pref-name">主题</div>
@@ -996,13 +1092,45 @@ function demo(msg: string, icon?: string) {
               </div>
               <button class="value-btn" @click="cycleTheme">{{ THEME_LABELS[theme.mode.value] }}<i class="ri-arrow-down-s-line"></i></button>
             </div>
-            <div v-for="(p, i) in prefRows" :key="i" class="pref-row">
+            <div class="pref-row">
               <div class="pref-main">
-                <div class="pref-name">{{ p.name }}</div>
-                <div class="pref-desc">{{ p.desc }}</div>
+                <div class="pref-name">每周起始日</div>
+                <div class="pref-desc">按当前成员跨设备保存，立即影响日历与「本周」分组。</div>
               </div>
-              <button class="value-btn" @click="demo('演示：偏好切换在正式版本生效', 'ri-settings-3-line')">{{ p.value }}<i class="ri-arrow-down-s-line"></i></button>
+              <select
+                v-model="personalPreferenceForm.weekStart"
+                class="value-select"
+                aria-label="每周起始日"
+                :disabled="!!personalPreferenceSaving || preferences.loading || !preferences.loaded || !!preferences.loadError"
+                @change="savePersonalPreference('weekStart', personalPreferenceForm.weekStart)"
+              >
+                <option value="周一">周一</option>
+                <option value="周日">周日</option>
+              </select>
+              <span v-if="personalPreferenceSaving === 'weekStart'" class="row-saving">保存中…</span>
             </div>
+            <div class="pref-row">
+              <div class="pref-main">
+                <div class="pref-name">庆祝动画</div>
+                <div class="pref-desc">创建任务 / 项目、完成任务时的全屏反馈；开启后保存时立即预览。</div>
+              </div>
+              <select
+                v-model="personalPreferenceForm.celebration"
+                class="value-select"
+                aria-label="庆祝动画"
+                :disabled="!!personalPreferenceSaving || preferences.loading || !preferences.loaded || !!preferences.loadError"
+                @change="savePersonalPreference('celebration', personalPreferenceForm.celebration)"
+              >
+                <option value="细腻纸屑">细腻纸屑</option>
+                <option value="关闭">关闭</option>
+              </select>
+              <span v-if="personalPreferenceSaving === 'celebration'" class="row-saving">保存中…</span>
+            </div>
+            <div v-if="personalPreferenceError" class="preference-error personal-preference-save-error" role="alert">
+              <span>{{ personalPreferenceError }}，已保留原有设置。</span>
+              <button type="button" class="btn-ghost sm" @click="retryPersonalPreference">重试保存</button>
+            </div>
+            <div class="hint language-boundary">界面当前仅提供完整的简体中文版本；没有可用的第二套翻译前不展示无效的语言切换。</div>
           </div>
           <div class="card thin music-preferences">
             <div class="card-row wrap">
@@ -1347,6 +1475,9 @@ function demo(msg: string, icon?: string) {
 .identity-icon { width: 30px; height: 30px; display: grid; place-content: center; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-primary); font-size: 17px; }
 .bind-actions { display: flex; gap: 10px; margin-top: 12px; }
 .credential-form { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 8px; margin-top: 12px; }
+.member-account-form { padding: 13px; border-radius: 9px; background: var(--wao-bg-sub); }
+.member-account-actions { display: flex; gap: 8px; }
+.member-account-form .form-error { grid-column: 1 / -1; color: var(--wao-danger); font-size: 12px; }
 .profile-form { grid-template-columns: 1fr 120px auto; margin: 14px 0; }
 .music-preferences { margin-top: 14px; }
 .control-style-preferences { margin-bottom: 14px; }
@@ -1637,6 +1768,21 @@ function demo(msg: string, icon?: string) {
   font-size: 13px;
   color: var(--wao-text-weak);
 }
+.value-select {
+  height: 30px;
+  min-width: 104px;
+  padding: 0 28px 0 11px;
+  border: 1px solid var(--wao-line-strong);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  font-size: 12px;
+}
+.value-select:focus { border-color: var(--wao-primary); outline: none; box-shadow: 0 0 0 3px var(--wao-primary-soft); }
+.value-select:disabled { opacity: .6; cursor: wait; }
+.row-saving { color: var(--wao-text-weak); font-size: 11.5px; }
+.personal-preference-save-error { border-top: 1px solid var(--wao-divider-2); }
+.language-boundary { padding-top: 12px; }
 
 .token-note {
   margin-top: 4px;

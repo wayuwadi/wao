@@ -47,7 +47,7 @@ const acceptanceFieldsComplete = computed(() => Boolean(task.value)
   && ACCEPTANCE_FIELD_NAMES.every((name) => task.value!.custom.some((item) => item.name === name)))
 const isAcceptanceField = (name: string) => (ACCEPTANCE_FIELD_NAMES as readonly string[]).includes(name)
 
-const menu = ref<'status' | 'pr' | 'owner' | 'prop' | 'share' | 'group' | null>(null)
+const menu = ref<'status' | 'pr' | 'owner' | 'participants' | 'prop' | 'share' | 'group' | null>(null)
 const newSub = ref('')
 const commentText = ref('')
 const mentionOpen = ref(false)
@@ -648,6 +648,17 @@ function setOwner(id: string) {
   menu.value = null
 }
 
+function toggleParticipant(id: string) {
+  const t = task.value
+  if (!t) return
+  const currentParts = t.parts ?? []
+  const selected = currentParts.includes(id)
+  const memberName = session.memberById(id).name
+  data.patchTask(t.id, {
+    parts: selected ? currentParts.filter((memberId) => memberId !== id) : [...currentParts, id],
+  }, `${selected ? '移除了' : '添加了'}参与人「${memberName}」`)
+}
+
 // ---- 任务分组 ----
 // 手机上没法拖拽，分组只能在这里改；桌面上从属性栏改也比拖回列表快。
 const taskGroups = computed(() => (task.value ? data.taskGroupsOf(task.value.project) : []))
@@ -814,9 +825,6 @@ async function uploadAttachment(event: Event) {
   } finally {
     attachmentUploading.value = false
   }
-}
-function demo(msg: string) {
-  toast(msg)
 }
 </script>
 
@@ -1250,8 +1258,29 @@ function demo(msg: string) {
             <span class="prop-key">参与人</span>
             <span class="parts">
               <span v-for="(p, i) in parts" :key="i" class="mini-av bordered" :title="p.name" :style="{ background: p.color }">{{ p.initial }}</span>
+              <span v-if="parts.length === 0" class="parts-empty">未添加</span>
             </span>
-            <button class="add-part" title="添加参与人" @click="demo('演示：成员选择器在下一轮迭代提供')"><i class="ri-add-line"></i></button>
+            <button
+              class="add-part"
+              type="button"
+              title="管理参与人"
+              aria-label="管理参与人"
+              @click="menu = menu === 'participants' ? null : 'participants'"
+            ><i class="ri-add-line"></i></button>
+            <div v-if="menu === 'participants'" class="pmenu w190 participant-menu">
+              <div v-if="session.members.length === 0" class="pmenu-empty">没有可选成员</div>
+              <button
+                v-for="m in session.members"
+                :key="m.id"
+                class="pmenu-item"
+                type="button"
+                @click="toggleParticipant(m.id)"
+              >
+                <span class="mini-av" :style="{ background: m.color }">{{ m.initial }}</span>
+                <span class="pmenu-name">{{ m.name }}</span>
+                <i v-if="(task.parts ?? []).includes(m.id)" class="ri-check-line chk"></i>
+              </button>
+            </div>
           </div>
 
           <div class="prop-row">
@@ -2435,6 +2464,7 @@ function demo(msg: string) {
   display: flex;
   align-items: center;
 }
+.parts-empty { color: var(--wao-text-faint); font-size: 11.5px; }
 .add-part {
   width: 20px;
   height: 20px;
@@ -2512,6 +2542,7 @@ function demo(msg: string) {
 .pmenu-item:hover {
   background: var(--wao-bg-hover-2);
 }
+.pmenu-empty { padding: 8px; color: var(--wao-text-faint); font-size: 12px; text-align: center; }
 .pmenu-item.plain {
   font-size: 13px;
   color: var(--wao-text);

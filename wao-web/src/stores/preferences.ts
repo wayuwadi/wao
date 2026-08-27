@@ -94,8 +94,16 @@ export const usePreferenceStore = defineStore('preferences', () => {
       }
     }
   }
-  async function setWeekStart(value: WeekStart) { weekStart.value = value; await savePreference(KEYS.weekStart, value) }
-  async function setCelebration(value: Celebration) { celebration.value = value; await savePreference(KEYS.celebration, value) }
+  async function setWeekStart(value: WeekStart) {
+    await savePreference(KEYS.weekStart, value)
+    weekStart.value = value
+    loadError.value = ''
+  }
+  async function setCelebration(value: Celebration) {
+    await savePreference(KEYS.celebration, value)
+    celebration.value = value
+    loadError.value = ''
+  }
   async function setDefaultProject(value: string) { defaultProject.value = value; await savePreference(DEFAULT_PROJECT_KEY, value) }
   async function setControlStyle(value: ControlStyle) {
     await savePreference(CONTROL_STYLE_KEY, value)
