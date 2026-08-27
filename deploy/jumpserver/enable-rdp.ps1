@@ -17,7 +17,7 @@ $remoteAddresses = if ([System.Net.IPAddress]::TryParse($JumpServerHost, [ref]$p
 }
 
 if ($remoteAddresses.Count -eq 0) {
-    throw "JumpServer 主机未解析到 IPv4 地址：$JumpServerHost"
+    throw "JumpServer host did not resolve to an IPv4 address: $JumpServerHost"
 }
 
 Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 0
@@ -27,7 +27,7 @@ if ($null -eq $existingRule) {
     $firewallParams = @{
         Name = $ruleName
         DisplayName = 'WAO JumpServer RDP'
-        Description = '仅允许当前 JumpServer 主节点访问 Windows 远程桌面。'
+        Description = 'Allow Windows RDP only from the current JumpServer host.'
         Enabled = 'True'
         Direction = 'Inbound'
         Action = 'Allow'
@@ -56,7 +56,7 @@ do {
 } while ((Get-Date) -lt $deadline)
 
 if (-not $listener) {
-    throw 'Windows 远程桌面服务未监听 3389 端口。'
+    throw 'Windows Remote Desktop did not listen on port 3389.'
 }
 
-Write-Host "Windows RDP 已启用，3389 仅允许 JumpServer 地址：$($remoteAddresses -join ', ')"
+Write-Host "Windows RDP is enabled for JumpServer addresses only: $($remoteAddresses -join ', ')"
