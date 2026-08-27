@@ -100,6 +100,47 @@ describe('WaoWebPet', () => {
     wrapper.unmount()
   })
 
+  it('真实指针序列由提醒按钮保持捕获并打开对应任务', async () => {
+    const data = useDataStore()
+    const ui = useUiStore()
+    data.taskLoadState = 'loaded'
+    data.tasks.push(task('review-pointer', '验收气泡点击', '待验证', 'P1'))
+
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+    const notice = wrapper.get('.pet-notice')
+    const setPointerCapture = vi.fn<(pointerId: number) => void>()
+    const releasePointerCapture = vi.fn<(pointerId: number) => void>()
+    Object.defineProperties(notice.element, {
+      setPointerCapture: { configurable: true, value: setPointerCapture },
+      hasPointerCapture: { configurable: true, value: () => true },
+      releasePointerCapture: { configurable: true, value: releasePointerCapture },
+    })
+
+    const pointerEvent = (type: string) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX: 120,
+        clientY: 60,
+      })
+      Object.defineProperty(event, 'pointerId', { value: 7 })
+      return event
+    }
+    notice.element.dispatchEvent(pointerEvent('pointerdown'))
+    await nextTick()
+    expect(setPointerCapture).toHaveBeenCalledWith(7)
+
+    window.dispatchEvent(pointerEvent('pointerup'))
+    await nextTick()
+    await notice.trigger('click')
+
+    expect(releasePointerCapture).toHaveBeenCalledWith(7)
+    expect(ui.openTaskId).toBe('review-pointer')
+    wrapper.unmount()
+  })
+
   it('按待验收、执行中、待办顺序轮播真实任务动态', async () => {
     vi.useFakeTimers()
     const data = useDataStore()

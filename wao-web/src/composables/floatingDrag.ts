@@ -14,6 +14,7 @@ export function useFloatingDrag(storageKey: string) {
   let startY = 0
   let moved = false
   let suppressNextClick = false
+  let captureTarget: Element | null = null
 
   const style = computed(() => position.value ? {
     left: `${position.value.left}px`, top: `${position.value.top}px`, right: 'auto', bottom: 'auto',
@@ -31,6 +32,7 @@ export function useFloatingDrag(storageKey: string) {
   function onPointerDown(event: PointerEvent) {
     if (event.button !== 0) return
     elementRef.value = event.currentTarget as HTMLElement
+    captureTarget = event.target instanceof Element ? event.target : elementRef.value
     const rect = elementRef.value.getBoundingClientRect()
     pointerId = event.pointerId
     offsetX = event.clientX - rect.left
@@ -40,7 +42,9 @@ export function useFloatingDrag(storageKey: string) {
     moved = false
     position.value = { left: rect.left, top: rect.top }
     dragging.value = true
-    elementRef.value.setPointerCapture(pointerId)
+    // 捕获到最初按下的按钮或其子元素，确保未发生拖动时浏览器仍把 click 派发给按钮。
+    // 如果改由外层拖拽容器捕获，pointerup 会被重定向到外层，按钮的 click 将不会生成。
+    captureTarget.setPointerCapture(pointerId)
     window.addEventListener('pointermove', onPointerMove, { passive: false })
     window.addEventListener('pointerup', onPointerUp)
     window.addEventListener('pointercancel', onPointerUp)
@@ -55,7 +59,8 @@ export function useFloatingDrag(storageKey: string) {
 
   function onPointerUp(event: PointerEvent) {
     if (event.pointerId !== pointerId) return
-    if (elementRef.value?.hasPointerCapture(pointerId)) elementRef.value.releasePointerCapture(pointerId)
+    if (captureTarget?.hasPointerCapture(pointerId)) captureTarget.releasePointerCapture(pointerId)
+    captureTarget = null
     dragging.value = false
     suppressNextClick = moved
     if (position.value && moved) localStorage.setItem(storageKey, JSON.stringify(position.value))
