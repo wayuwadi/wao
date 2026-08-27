@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  createAiRuns,
   createAiPairCode,
   fetchAiEvolution,
   fetchAiTaskAutoRunPolicy,
@@ -38,7 +39,7 @@ import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
-import type { AiEngine, AiRun, AiRunOptions, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow, TaskStatus } from '@/types'
+import type { AiEngine, AiRun, AiRunOptions, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow, Task, TaskStatus } from '@/types'
 
 type ConsoleView = 'runs' | 'runners' | 'workflows'
 
@@ -91,6 +92,8 @@ const runHistoryError = ref('')
 const runHistoryPage = ref(1)
 const runHistoryTotal = ref(0)
 const RUN_HISTORY_PAGE_SIZE = 20
+const quickTaskListOpen = ref(false)
+const startingQuickTaskId = ref<string | null>(null)
 const logRunner = ref<AiRunner | null>(null)
 const runnerLog = ref<AiRunnerLog | null>(null)
 const runnerLogLoading = ref(false)
@@ -134,8 +137,29 @@ const activeWorkflows = computed(() => workflows.value.filter((workflow) => work
 const runnableAutoRunWorkflows = computed(() => activeWorkflows.value.filter(
   (workflow) => !workflow.projectDeleted && workflow.config.repoUrl.trim(),
 ))
+const runnableWorkflowByProject = computed(() => new Map(
+  runnableAutoRunWorkflows.value.map((workflow) => [workflow.projectId, workflow]),
+))
 const enabledTaskAutoRunWebhooks = computed(() => taskAutoRunWebhooks.value.filter((endpoint) => endpoint.enabled))
 const AUTO_RUN_TASK_STATUSES: TaskStatus[] = ['待办', '收集中', '进行中']
+const QUICK_TASK_PRIORITY = new Map([['P0', 0], ['P1', 1], ['P2', 2], ['P3', 3]])
+const activeTaskIds = computed(() => new Set(activeRuns.value.flatMap(
+  (run) => run.taskIds?.length ? run.taskIds : [run.taskId],
+)))
+/** 首页快捷派工只展示真实可运行工作流中的人工待处理任务；最终资格仍由后端入队事务校验。 */
+const runnableTasks = computed(() => data.tasks
+  .filter((task) => AUTO_RUN_TASK_STATUSES.includes(task.status))
+  .filter((task) => runnableWorkflowByProject.value.has(task.project))
+  .filter((task) => !activeTaskIds.value.has(task.id))
+  .sort((left, right) => {
+    const priority = (QUICK_TASK_PRIORITY.get(left.pr) ?? 99) - (QUICK_TASK_PRIORITY.get(right.pr) ?? 99)
+    if (priority) return priority
+    const leftCreated = left.createdAt ? Date.parse(left.createdAt) : Number.POSITIVE_INFINITY
+    const rightCreated = right.createdAt ? Date.parse(right.createdAt) : Number.POSITIVE_INFINITY
+    if (leftCreated !== rightCreated) return leftCreated - rightCreated
+    return left.id.localeCompare(right.id)
+  }))
+const recommendedTasks = computed(() => runnableTasks.value.slice(0, 3))
 const goalWorkflow = computed(() => activeWorkflows.value.find(
   (workflow) => workflow.projectId === goalProjectId.value,
 ) ?? null)
@@ -714,6 +738,59 @@ function openRun(run: AiRun) {
   router.push({ path: `/projects/${run.projectId}`, query: { task: run.taskId } })
 }
 
+function openTask(task: Task) {
+  quickTaskListOpen.value = false
+  void router.push({ path: `/projects/${task.project}`, query: { task: task.id } })
+}
+
+function taskProjectName(task: Task) {
+  return runnableWorkflowByProject.value.get(task.project)?.projectName
+    ?? data.projectById(task.project)?.name
+    ?? '未知项目'
+}
+
+function taskExcerpt(task: Task) {
+  const text = task.desc
+    .replace(/!\[[^\]]*]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+    .replace(/[`#>*_~-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return text || '打开任务可查看完整描述和未完成子任务。'
+}
+
+/** 一次点击沿用项目默认工作流直接入队；后端继续负责 Runner 能力、重复运行和权限的最终校验。 */
+async function startQuickTask(task: Task) {
+  if (startingQuickTaskId.value) return
+  const workflow = runnableWorkflowByProject.value.get(task.project)
+  if (!workflow) {
+    toast('这个项目当前没有可用的 AI 工作流，请先完成接入', 'ri-information-line')
+    return
+  }
+  startingQuickTaskId.value = task.id
+  try {
+    const created = await createAiRuns([task.id], {
+      engine: workflow.config.defaultEngine,
+      runnerId: workflow.config.preferredRunnerId,
+      planMode: workflow.config.defaultEngine === 'codex',
+    })
+    if (!created.length) {
+      await refresh()
+      toast('这个任务已经在运行，无需重复派发', 'ri-information-line')
+      return
+    }
+    runs.value = [...created, ...runs.value.filter((item) => !created.some((run) => run.id === item.id))]
+    task.status = 'AI 进行中'
+    quickTaskListOpen.value = false
+    view.value = 'runs'
+    toast(`已把「${task.title}」交给 ${engineLabel(workflow.config.defaultEngine)}，正在等待执行电脑`, 'ri-rocket-2-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '任务派发失败，请重试', 'ri-error-warning-line')
+  } finally {
+    startingQuickTaskId.value = null
+  }
+}
+
 /** 根据 run 找到对应的工作流配置，用于拼接 GitHub 链接。 */
 function findWorkflowForRun(run: AiRun) {
   return workflows.value.find((w) => w.projectId === run.projectId)
@@ -1037,12 +1114,55 @@ onBeforeUnmount(() => {
             <h2>正在运行</h2>
             <p>点击卡片查看 AI 的实时反馈和执行档案。</p>
           </div>
+          <button
+            class="quick-task-list-trigger"
+            @click="quickTaskListOpen = true"
+          >
+            <i class="ri-list-check-3"></i>可 AI Run 的任务
+            <em v-if="runnableTasks.length">{{ runnableTasks.length }}</em>
+          </button>
         </div>
         <div v-if="loading" class="empty"><i class="ri-loader-4-line spin"></i>正在读取 AI 运行状态…</div>
-        <div v-else-if="!activeRuns.length" class="empty ready">
-          <i class="ri-robot-2-line"></i>
-          <b>当前没有任务在运行</b>
-          <span>打开项目任务，点击 “AI run” 选择电脑和 AI 工具即可开始。</span>
+        <div v-else-if="!activeRuns.length" class="quick-run-empty">
+          <div class="quick-run-empty-title">
+            <span><i class="ri-robot-2-line"></i></span>
+            <div>
+              <b>当前没有任务在运行</b>
+              <p v-if="recommendedTasks.length">为你推荐 {{ recommendedTasks.length }} 条可直接执行的任务，按优先级和录入时间排序。</p>
+              <p v-else>这里会展示已接入 AI 工作流、且当前可以执行的真实任务。</p>
+            </div>
+          </div>
+          <div v-if="data.taskLoadState === 'loading' || workflowsLoading" class="quick-task-state">
+            <i class="ri-loader-4-line spin"></i>正在读取可执行任务…
+          </div>
+          <div v-else-if="data.taskLoadState === 'error' || taskAutoRunProjectError" class="quick-task-state error" role="alert">
+            <i class="ri-error-warning-line"></i>
+            <span>{{ data.taskLoadError || taskAutoRunProjectError }}</span>
+            <button @click="data.hydrate(); refreshWorkflows()">重试</button>
+          </div>
+          <div v-else-if="recommendedTasks.length" class="quick-task-grid">
+            <article v-for="task in recommendedTasks" :key="task.id" class="quick-task-card">
+              <div class="quick-task-meta">
+                <span :class="`priority ${task.pr.toLowerCase()}`">{{ task.pr }}</span>
+                <span>{{ task.status }}</span>
+                <span><i class="ri-stack-line"></i>{{ taskProjectName(task) }}</span>
+              </div>
+              <button class="quick-task-title" :title="`打开任务：${task.title}`" @click="openTask(task)">{{ task.title }}</button>
+              <p>{{ taskExcerpt(task) }}</p>
+              <footer>
+                <span v-if="task.createdAt"><i class="ri-time-line"></i>{{ timeText(task.createdAt) }} 录入</span>
+                <button class="quick-task-start" :disabled="startingQuickTaskId !== null" @click="startQuickTask(task)">
+                  <i :class="startingQuickTaskId === task.id ? 'ri-loader-4-line spin' : 'ri-play-circle-line'"></i>
+                  {{ startingQuickTaskId === task.id ? '正在派发…' : '开始运行' }}
+                </button>
+              </footer>
+            </article>
+          </div>
+          <div v-else class="quick-task-state">
+            <i class="ri-checkbox-circle-line"></i>
+            <span>{{ runnableAutoRunWorkflows.length ? '目前没有待办、收集中或进行中的可执行任务。' : '还没有已启用且配置了 Git 仓库的 AI 工作流。' }}</span>
+            <button v-if="!runnableAutoRunWorkflows.length" @click="view = 'workflows'">接入工作流</button>
+          </div>
         </div>
         <div v-else class="run-grid">
           <button v-for="run in activeRuns" :key="run.id" class="run-card" @click="inspectRun(run)">
@@ -1491,6 +1611,52 @@ onBeforeUnmount(() => {
       </section>
     </template>
 
+    <div v-if="quickTaskListOpen" class="run-detail-mask" @click.self="quickTaskListOpen = false">
+      <section class="run-detail quick-task-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-task-dialog-title">
+        <header>
+          <span class="recent-icon quick-task-dialog-icon"><i class="ri-list-check-3"></i></span>
+          <div>
+            <h2 id="quick-task-dialog-title">可 AI Run 的任务</h2>
+            <p>来自已启用的真实工作流；按优先级和录入时间排序，一次点击即可按项目默认配置运行。</p>
+          </div>
+          <button class="detail-close" aria-label="关闭可 AI Run 的任务清单" @click="quickTaskListOpen = false"><i class="ri-close-line"></i></button>
+        </header>
+        <div v-if="data.taskLoadState === 'loading' || workflowsLoading" class="quick-task-dialog-state">
+          <i class="ri-loader-4-line spin"></i>正在读取可执行任务…
+        </div>
+        <div v-else-if="data.taskLoadState === 'error' || taskAutoRunProjectError" class="quick-task-dialog-state error" role="alert">
+          <i class="ri-error-warning-line"></i>
+          <span>{{ data.taskLoadError || taskAutoRunProjectError }}</span>
+          <button class="secondary" @click="data.hydrate(); refreshWorkflows()">重试</button>
+        </div>
+        <div v-else-if="runnableTasks.length" class="quick-task-list">
+          <article v-for="task in runnableTasks" :key="task.id" class="quick-task-list-item">
+            <div class="quick-task-list-copy">
+              <div class="quick-task-meta">
+                <span :class="`priority ${task.pr.toLowerCase()}`">{{ task.pr }}</span>
+                <span>{{ task.status }}</span>
+                <span><i class="ri-stack-line"></i>{{ taskProjectName(task) }}</span>
+              </div>
+              <button class="quick-task-title" :title="`打开任务：${task.title}`" @click="openTask(task)">{{ task.title }}</button>
+              <p>{{ taskExcerpt(task) }}</p>
+            </div>
+            <button class="quick-task-start" :disabled="startingQuickTaskId !== null" @click="startQuickTask(task)">
+              <i :class="startingQuickTaskId === task.id ? 'ri-loader-4-line spin' : 'ri-play-circle-line'"></i>
+              {{ startingQuickTaskId === task.id ? '正在派发…' : '开始运行' }}
+            </button>
+          </article>
+        </div>
+        <div v-else class="quick-task-dialog-state">
+          <i class="ri-checkbox-circle-line"></i>
+          <span>{{ runnableAutoRunWorkflows.length ? '当前没有可执行任务。' : '还没有可用的 AI 工作流，请先完成接入。' }}</span>
+        </div>
+        <footer>
+          <span class="retry-note"><i class="ri-shield-check-line"></i>重复运行、执行电脑能力和项目配置仍由服务端校验</span>
+          <button class="secondary" @click="quickTaskListOpen = false">关闭</button>
+        </footer>
+      </section>
+    </div>
+
     <div v-if="runHistoryOpen" class="run-detail-mask" @click.self="runHistoryOpen = false">
       <section class="run-detail run-history-detail" role="dialog" aria-modal="true" aria-labelledby="run-history-title">
         <header>
@@ -1908,6 +2074,14 @@ onBeforeUnmount(() => {
 .section-head > div { flex: 1; }
 .section-head h2 { margin: 0; font-size: 17px; }
 .section-head p { margin: 4px 0 0; color: var(--wao-text-weak); font-size: 11.5px; }
+.quick-task-list-trigger {
+  min-height: 32px; padding: 0 10px; border: 1px solid var(--wao-primary-line); border-radius: 8px;
+  background: var(--wao-primary-tint); color: var(--wao-primary-text); cursor: pointer; font-size: 11.5px;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.quick-task-list-trigger:hover { background: var(--wao-primary-soft); }
+.quick-task-list-trigger:disabled { opacity: .58; cursor: wait; }
+.quick-task-list-trigger em { min-width: 18px; padding: 1px 5px; border-radius: 999px; background: var(--wao-primary); color: #fff; font-size: 9.5px; font-style: normal; }
 .history-link { padding: 6px 9px; border: 0; border-radius: 8px; background: transparent; color: var(--wao-primary); cursor: pointer; font-size: 11.5px; display: inline-flex; align-items: center; gap: 3px; }
 .history-link:hover { background: var(--wao-primary-tint); }
 .live { color: var(--wao-text-weak); font-size: 10.5px; }
@@ -1959,6 +2133,33 @@ onBeforeUnmount(() => {
 .empty.ready { flex-direction: column; gap: 5px; }
 .empty.ready > i { margin-bottom: 4px; color: #7d8ddd; font-size: 26px; }
 .empty.ready b { color: var(--wao-text-2); font-size: 13px; }
+.quick-run-empty { min-height: 150px; padding: 14px; border: 1px dashed var(--wao-line); border-radius: 13px; background: var(--wao-bg-sub); }
+.quick-run-empty-title { display: flex; align-items: center; gap: 10px; }
+.quick-run-empty-title > span { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 10px; background: var(--wao-primary-soft); color: var(--wao-primary-text); display: grid; place-items: center; font-size: 18px; }
+.quick-run-empty-title b { color: var(--wao-text-2); font-size: 13.5px; }
+.quick-run-empty-title p { margin: 3px 0 0; color: var(--wao-text-weak); font-size: 11px; }
+.quick-task-grid { margin-top: 12px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.quick-task-card, .quick-task-list-item { border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-card); }
+.quick-task-card { min-width: 0; padding: 10px; }
+.quick-task-meta { min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--wao-text-weak); font-size: 9.5px; }
+.quick-task-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quick-task-meta > span:last-child { margin-left: auto; }
+.quick-task-meta i { margin-right: 3px; }
+.quick-task-meta .priority { flex: 0 0 auto; padding: 2px 5px; border-radius: 5px; background: var(--wao-bg-hover); color: var(--wao-text-2); font-weight: 700; }
+.quick-task-meta .priority.p0 { background: var(--wao-danger-bg); color: var(--wao-danger-strong); }
+.quick-task-meta .priority.p1 { background: var(--wao-warning-bg); color: var(--wao-warning-strong); }
+.quick-task-title { width: 100%; margin-top: 7px; padding: 0; overflow: hidden; border: 0; background: transparent; color: var(--wao-text-1); cursor: pointer; font: inherit; font-size: 12.5px; font-weight: 650; line-height: 1.45; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.quick-task-title:hover { color: var(--wao-primary-text); }
+.quick-task-card > p, .quick-task-list-copy > p { margin: 4px 0 0; overflow: hidden; color: var(--wao-text-weak); font-size: 10.5px; line-height: 1.45; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.quick-task-card footer { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--wao-divider); display: flex; align-items: center; gap: 8px; }
+.quick-task-card footer > span { min-width: 0; overflow: hidden; color: var(--wao-text-weak); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
+.quick-task-card footer > span i { margin-right: 3px; }
+.quick-task-start { min-height: 29px; margin-left: auto; padding: 0 9px; flex: 0 0 auto; border: 1px solid var(--wao-primary); border-radius: 7px; background: var(--wao-primary); color: #fff; cursor: pointer; font-size: 10.5px; display: inline-flex; align-items: center; gap: 4px; }
+.quick-task-start:hover { filter: brightness(.96); }
+.quick-task-start:disabled { opacity: .58; cursor: not-allowed; }
+.quick-task-state { min-height: 90px; color: var(--wao-text-weak); font-size: 11.5px; display: flex; align-items: center; justify-content: center; gap: 7px; }
+.quick-task-state.error { color: var(--wao-danger-strong); }
+.quick-task-state button { padding: 5px 8px; border: 1px solid currentColor; border-radius: 7px; background: transparent; color: inherit; cursor: pointer; }
 .runner-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
 .runner-card { padding: 16px; border: 1px solid var(--wao-line); border-radius: 13px; background: var(--wao-bg-card); }
 .runner-card.offline { background: var(--wao-bg-sub); opacity: .8; }
@@ -2178,6 +2379,16 @@ onBeforeUnmount(() => {
   box-shadow: 0 24px 70px rgba(26, 31, 61, .22);
 }
 .run-history-detail { width: min(1080px, 100%); }
+.quick-task-dialog { width: min(860px, 100%); }
+.quick-task-dialog-icon { background: var(--wao-primary-tint); color: var(--wao-primary); }
+.quick-task-list { max-height: min(520px, calc(100vh - 220px)); margin-top: 16px; overflow-y: auto; display: grid; gap: 8px; }
+.quick-task-list-item { padding: 11px 12px; display: flex; align-items: center; gap: 14px; }
+.quick-task-list-copy { min-width: 0; flex: 1; }
+.quick-task-list-copy .quick-task-title { font-size: 13px; }
+.quick-task-list-copy > p { -webkit-line-clamp: 1; }
+.quick-task-dialog-state { min-height: 280px; margin-top: 16px; border: 1px dashed var(--wao-line); border-radius: 12px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.quick-task-dialog-state.error { color: var(--wao-danger-strong); }
+.quick-task-dialog-state button { margin-left: 4px; padding: 6px 10px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); cursor: pointer; }
 .history-icon { background: var(--wao-primary-tint); color: var(--wao-primary); }
 .history-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 18px; }
 .history-state { min-height: 260px; margin-top: 18px; border: 1px dashed var(--wao-line); border-radius: 12px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -2286,6 +2497,12 @@ onBeforeUnmount(() => {
   .auto-run-options { grid-template-columns: 1fr; }
   .auto-run-statuses { flex-wrap: wrap; }
   .section-head { align-items: center; }
+  .section-head .quick-task-list-trigger { min-width: 34px; }
+  .quick-task-list-trigger em { display: none; }
+  .quick-task-grid { grid-template-columns: 1fr; }
+  .quick-task-list-item { align-items: stretch; flex-direction: column; gap: 9px; }
+  .quick-task-list-item .quick-task-start { align-self: flex-end; }
+  .quick-task-dialog header p { white-space: normal; }
   .history-grid { grid-template-columns: 1fr; }
   .flow-meta { grid-template-columns: 1fr; }
   .flow-form { grid-template-columns: 1fr; }
