@@ -37,6 +37,9 @@ grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
   deploy/nginx/wao.bootstrap.conf
 grep -Fq -- '-e WAO_GIT_SHA="${WAO_GIT_SHA:-}"' deploy/jenkins/ci-frontend-build.sh
 grep -Fq "versionType: 'custom'" wao-web/vite.config.ts
+grep -Fq 'while ! verify_frontend_version; do' deploy/jenkins/ci-production-verify.sh
+grep -Fq 'Production frontend did not converge to version' \
+  deploy/jenkins/ci-production-verify.sh
 grep -Fq "printf 'DOCKER_IMAGE_MIRROR=1\\n'" deploy/jumpserver/deploy.sh
 grep -Fqx 'set_config DOCKER_IMAGE_MIRROR 1' deploy/jumpserver/deploy.sh
 grep -Fq 'python /opt/jumpserver/apps/manage.py shell' deploy/jumpserver/deploy.sh

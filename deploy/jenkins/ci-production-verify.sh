@@ -56,12 +56,32 @@ test "$(header_value /api/external/jumpserver/health X-WAO-API-Route)" = jumpser
 test "$(header_value /pluginWebUpdateNotice/web_version_by_plugin.json Cache-Control)" = \
   'no-cache, no-store, must-revalidate'
 
-web_version="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  "https://wao.wayuwa.cn/pluginWebUpdateNotice/web_version_by_plugin.json?t=$(date +%s)")"
-printf '%s' "$web_version" | grep -Eq \
-  "\"version\"[[:space:]]*:[[:space:]]*\"${short_sha}\""
-curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/index.html | grep -q "data-v=\"${short_sha}\""
+verify_frontend_version() {
+  cache_buster="$(date +%s)"
+  web_version="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors \
+    -H 'Cache-Control: no-cache' \
+    "https://wao.wayuwa.cn/pluginWebUpdateNotice/web_version_by_plugin.json?t=${cache_buster}")" \
+    || return 1
+  index_html="$(curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors \
+    -H 'Cache-Control: no-cache' \
+    "https://wao.wayuwa.cn/index.html?t=${cache_buster}")" \
+    || return 1
+
+  printf '%s' "$web_version" | grep -Eq \
+    "\"version\"[[:space:]]*:[[:space:]]*\"${short_sha}\"" \
+    && printf '%s' "$index_html" | grep -q "data-v=\"${short_sha}\""
+}
+
+frontend_attempt=1
+while ! verify_frontend_version; do
+  if [ "$frontend_attempt" -ge 12 ]; then
+    echo "Production frontend did not converge to version ${short_sha} after 12 attempts." >&2
+    exit 1
+  fi
+  echo "Production frontend is not yet at version ${short_sha}; retrying (${frontend_attempt}/12)." >&2
+  frontend_attempt=$((frontend_attempt + 1))
+  sleep 5
+done
 
 probe=1
 while [ "$probe" -le 8 ]; do

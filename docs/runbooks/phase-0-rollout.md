@@ -101,6 +101,6 @@ Jenkins `wao-main-cd` 自动顺序：
 
 ## 上线验收
 
-访问 `https://wao.wayuwa.cn/api/hello`，应得到 HTTP 200、`X-Request-Id` 和 `code=0`。随后检查 MySQL `SHOW REPLICA STATUS`、两个 Sentinel 的 master 视图、Nacos 的两组实例，以及一次备份恢复演练。双 Sentinel 只提供监控与发现；整机故障下的自动切换要等独立第三仲裁节点加入后再启用。
+访问 `https://wao.wayuwa.cn/api/hello`，应得到 HTTP 200、`X-Request-Id` 和 `code=0`。前端发布后，Jenkins 会在最多 12 次、每次间隔 5 秒的有界窗口内同时核对版本文件与首页 `data-v` 已收敛到当前提交短 SHA；这是为了覆盖云节点原子替换后的短暂可见性窗口，而不是放宽最终版本一致性要求。随后检查 MySQL `SHOW REPLICA STATUS`、两个 Sentinel 的 master 视图、Nacos 的两组实例，以及一次备份恢复演练。双 Sentinel 只提供监控与发现；整机故障下的自动切换要等独立第三仲裁节点加入后再启用。
 
 真实密码、Token、私钥和 DNS 凭据不得写入仓库。SSH 密码只用于首次安装公钥，CI/CD 只使用专用部署密钥。
