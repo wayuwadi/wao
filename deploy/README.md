@@ -134,7 +134,8 @@ JumpServer CE 固定运行在 Linux 主节点 `/opt/wao-jumpserver`，使用独�
 
 主发布脚本会幂等生成 WAO 与 JumpServer 的共享 SSO 密钥、部署社区版 Custom SSO、生成独立资产 SSH
 密钥，并把公钥安装到 Linux、Windows 和云节点。私钥只保存在 `/opt/wao-jumpserver` 受限目录和 JumpServer
-账户数据中，不复用 Jenkins 发布私钥。已登录成员从「工具 → 资源管理」进入；管理员映射为系统管理员，普通
+账户数据中，不复用 Jenkins 发布私钥；中断后重跑会忽略旧固定暂存文件，在唯一临时目录重新生成并原子安装，
+不会等待交互式覆盖确认。已登录成员从「工具 → 资源管理」进入；管理员映射为系统管理员，普通
 成员只建立系统用户身份，仍需在 JumpServer 中显式配置资产授权。
 
 日常验证：
