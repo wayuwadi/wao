@@ -293,7 +293,8 @@ pipeline {
             }
             sh 'WAO_PIPELINE_RESULT=failure deploy/jenkins/notify-feishu.sh || true'
         }
-        always {
+        // Declarative Pipeline 的 always 早于 success / failure；临时批次清单必须保留到状态回写和飞书通知结束。
+        cleanup {
             sh 'deploy/jenkins/cleanup-workspace.sh || true'
         }
     }

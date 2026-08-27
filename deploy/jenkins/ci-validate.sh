@@ -45,6 +45,8 @@ grep -Fq "short_sha=\"\$(printf '%.7s' \"\$WAO_GIT_SHA\")\"" \
   deploy/jenkins/ci-production-verify.sh
 grep -Fq 'Production frontend did not converge to version' \
   deploy/jenkins/ci-production-verify.sh
+grep -Fq 'cleanup {' Jenkinsfile
+! grep -A1 -F 'always {' Jenkinsfile | grep -Fq 'deploy/jenkins/cleanup-workspace.sh'
 grep -Fq "printf 'DOCKER_IMAGE_MIRROR=1\\n'" deploy/jumpserver/deploy.sh
 grep -Fqx 'set_config DOCKER_IMAGE_MIRROR 1' deploy/jumpserver/deploy.sh
 grep -Fq 'python /opt/jumpserver/apps/manage.py shell' deploy/jumpserver/deploy.sh
