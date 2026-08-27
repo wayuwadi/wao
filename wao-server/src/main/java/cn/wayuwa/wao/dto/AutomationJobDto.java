@@ -6,7 +6,7 @@ import java.util.List;
  * 自动化任务对外表示，字段与前端 {@code AutomationJob} 一致；runs 为 [time, result] 二元组数组。
  *
  * <p>{@code handler} 是服务端真实执行器名（如 {@code feishu-chat-sync}），前端据此决定要不要
- * 显示对应的配置入口；为空表示这条任务还只是描述性的模拟运行。
+ * 显示对应的配置入口；为空表示没有可执行能力，触发时必须明确失败。
  */
 public record AutomationJobDto(
         String id,

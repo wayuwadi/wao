@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import cn.wayuwa.wao.common.NotFoundException;
@@ -30,9 +31,8 @@ import org.springframework.stereotype.Service;
 /**
  * 自动化域服务：任务的增删改查、手动触发、暂停 / 恢复 / 重新授权。
  *
- * <p>steps 为描述性文本（拉取 / 聚类 / 写入等），本轮不接入真实执行引擎（飞书 / NAS / 邮箱等外部系统集成
- * 超出当前范围），运行记录由模拟执行产生；但 {@code cronExpr} 非空的任务会被 {@link JobSchedulerService}
- * 按真实 Cron 表达式周期性触发，而非仅停留在展示态。
+ * <p>steps 只用于说明真实执行器会做什么，不能当成可执行逻辑。任务必须通过 {@code handler} 关联已经登记的
+ * {@link JobHandler}；缺失或未知的执行器会留下明确失败记录，不能生成模拟成功结果。
  */
 @Service
 public class AutomationService {
@@ -49,6 +49,8 @@ public class AutomationService {
     /** 已登记的真实执行器，按 {@link JobHandler#name()} 索引。 */
     private final Map<String, JobHandler> handlers;
     private final MemberService members;
+
+    private record ExecutionResult(String message, int durationMs) { }
 
     public AutomationService(AutomationJobMapper jobMapper, AutomationRunMapper runMapper, ObjectMapper json,
             List<JobHandler> handlers, MemberService members) {
@@ -146,14 +148,15 @@ public class AutomationService {
      * 手动触发一次运行；「待修复」状态的任务会运行失败并提示需要先重新授权。
      *
      * <p>登记了真实执行器（{@code handler}）的任务会真的去跑一遍，运行记录写的是执行器返回的结果；
-     * 没有执行器的仍是模拟运行。
+     * 没有可用执行器时失败关闭，不伪造成功。
      */
     public AutomationJobDto runJob(String id, String executorId) {
         AutomationJobEntity e = requireJob(id);
         if ("待修复".equals(e.getStatus())) {
-            recordRun(e, "失败 · 需要先重新授权", executorId);
+            recordRun(e, "失败 · 需要先重新授权", executorId, 0);
         } else {
-            recordRun(e, execute(e, "成功 · 手动触发", null), executorId);
+            ExecutionResult execution = execute(e, null);
+            recordRun(e, execution.message(), executorId, execution.durationMs());
         }
         jobMapper.updateById(e);
         return getJob(id);
@@ -201,31 +204,39 @@ public class AutomationService {
             return;
         }
         e.setNextFireAt(nextFireAt);
-        recordRun(e, execute(e, "成功 · 自动执行", scheduledFireAt), null);
+        ExecutionResult execution = execute(e, scheduledFireAt);
+        recordRun(e, execution.message(), null, execution.durationMs());
         jobMapper.updateById(e);
     }
 
     /**
-     * 跑一次任务本体：有真实执行器就调它，否则按模拟执行返回默认文案。
+     * 跑一次任务本体：只有真实执行器存在时才调用；缺失或未知执行器时失败关闭。
      *
      * <p>执行器抛异常不往上传 —— 一次失败只该变成一条「失败 · 原因」的运行记录，
      * 不该让手动触发接口 500，也不该中断调度器对其它任务的轮询。
      *
-     * @param e            任务
-     * @param simulatedResult 没有执行器时写进运行记录的文案
-     * @return 运行结果文案
+     * @param e               任务
+     * @param scheduledFireAt 本次计划触发时间；手动触发时为空
+     * @return 真实执行结果与实测耗时
      */
-    private String execute(AutomationJobEntity e, String simulatedResult, LocalDateTime scheduledFireAt) {
+    private ExecutionResult execute(AutomationJobEntity e, LocalDateTime scheduledFireAt) {
         JobHandler handler = e.getHandler() == null ? null : handlers.get(e.getHandler());
         if (handler == null) {
-            return simulatedResult;
+            return new ExecutionResult("失败 · 未配置真实执行器", 0);
         }
+        long startedAt = System.nanoTime();
         try {
-            return handler.execute(e, scheduledFireAt);
+            return new ExecutionResult(handler.execute(e, scheduledFireAt), elapsedMillis(startedAt));
         } catch (RuntimeException ex) {
             log.warn("自动化任务 {} 执行失败：{}", e.getId(), ex.getMessage());
-            return "失败 · " + shortReason(ex);
+            return new ExecutionResult("失败 · " + shortReason(ex), elapsedMillis(startedAt));
         }
+    }
+
+    /** 把单次执行的单调时钟耗时安全压到数据库 INT 范围。 */
+    private static int elapsedMillis(long startedAt) {
+        long elapsed = TimeUnit.NANOSECONDS.toMillis(Math.max(0, System.nanoTime() - startedAt));
+        return (int) Math.min(Integer.MAX_VALUE, elapsed);
     }
 
     /** 运行记录那一列只有 64 字符，失败原因取前一段就够定位。 */
@@ -242,7 +253,7 @@ public class AutomationService {
                 .le(AutomationJobEntity::getNextFireAt, now));
     }
 
-    private void recordRun(AutomationJobEntity e, String result, String executorId) {
+    private void recordRun(AutomationJobEntity e, String result, String executorId, int durationMs) {
         LocalDateTime runAt = LocalDateTime.now(ZONE);
         AutomationRunEntity run = new AutomationRunEntity();
         run.setId("r" + System.currentTimeMillis());
@@ -251,8 +262,7 @@ public class AutomationService {
         run.setRunAt(runAt);
         run.setResult(result);
         run.setExecutorId(executorId);
-        int stepCount = readSteps(e.getStepsJson()).size();
-        run.setDurationMs(800 + stepCount * 1200);
+        run.setDurationMs(durationMs);
         run.setOrd(0);
         runMapper.insert(run);
         // 让新记录排在最前（最近一次在前），其余顺延。

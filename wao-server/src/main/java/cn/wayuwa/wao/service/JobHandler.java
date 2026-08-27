@@ -8,7 +8,7 @@ import cn.wayuwa.wao.domain.AutomationJobEntity;
  * 自动化任务的真实执行器。
  *
  * <p>{@code automation_job.handler} 里登记名字，{@link AutomationService} 触发时按名字找到实现并执行；
- * 没有登记执行器的任务仍是模拟运行（步骤只是描述性文本）。
+ * 没有登记执行器的任务失败关闭，步骤描述不能替代真实执行。
  */
 public interface JobHandler {
 

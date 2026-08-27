@@ -23,7 +23,7 @@ public class AutomationJobEntity {
     private String stepsJson;
     private LocalDateTime nextFireAt;
     private Integer ord;
-    /** 真实执行器名；为空表示没有接外部系统，运行记录由模拟执行产生。 */
+    /** 真实执行器名；为空或未登记时运行会明确失败。 */
     private String handler;
 
     public String getId() { return id; }

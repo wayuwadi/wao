@@ -414,7 +414,7 @@ export interface JobRun {
   result: string
   /** 真实开始时间，供跨任务运行记录按时间排序；旧数据可为空。 */
   runAt?: string | null
-  /** 服务端记录的真实或估算耗时；旧数据可为空。 */
+  /** 服务端记录的真实执行耗时；旧数据可为空。 */
   durationMs?: number | null
 }
 
@@ -430,7 +430,7 @@ export interface AutomationJob {
   target: string
   steps: string[]
   runs: JobRun[]
-  /** 服务端真实执行器名（如 feishu-chat-sync）；为空表示这条任务只是描述性的模拟运行。 */
+  /** 服务端真实执行器名（如 feishu-chat-sync）；为空或未知时运行会明确失败。 */
   handler?: string | null
 }
 

@@ -244,6 +244,23 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void mockAutomationCleanupOnlyTargetsKnownSeedRows() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V107__remove_mock_automation_jobs.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("DELETE FROM automation_run")
+                .contains("DELETE FROM automation_job")
+                .contains("WHERE job_id IN (")
+                .contains("id IN ('j1', 'j2', 'j3', 'j4')")
+                .contains("handler IS NULL")
+                .doesNotContain("TRUNCATE", "DELETE FROM automation_job;");
+    }
+
+    @Test
     void networkOutageMigrationMovesHttpInspectionAfterRecovery() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V94__network_outage_window.sql"))

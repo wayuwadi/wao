@@ -1471,93 +1471,63 @@ export const useDataStore = defineStore('data', () => {
   // ---- 自动化 ----
   const jobById = (id: string) => autos.value.find((j) => j.id === id)
 
-  /** 新建自动化任务；apiLive 时经后端创建，否则本地乐观创建。 */
+  function requireAutomationApi() {
+    if (!apiLive.value) throw new Error('自动化服务当前不可用，未执行任何更改')
+  }
+
+  /** 新建自动化任务；只接受服务端确认的真实任务。 */
   async function createJob(payload: CreateJobPayload): Promise<AutomationJob> {
-    if (apiLive.value) {
-      try {
-        const job = await apiCreateJob(payload)
-        autos.value.unshift(job)
-        return job
-      } catch {
-        /* 后端异常时回落本地 */
-      }
-    }
-    const job: AutomationJob = {
-      id: 'j' + Date.now(), name: payload.name, icon: payload.icon || 'ri-flashlight-line',
-      schedule: payload.schedule || (payload.cronExpr ?? '仅手动触发'), status: '正常', last: '尚未运行',
-      desc: payload.desc || '', source: payload.source || '', target: payload.target || '',
-      steps: payload.steps || [], runs: [],
-    }
+    requireAutomationApi()
+    const job = await apiCreateJob(payload)
     autos.value.unshift(job)
     return job
   }
 
-  /** 更新自动化任务；apiLive 时写透后端。 */
+  /** 更新自动化任务；服务端成功后才更新本地状态。 */
   async function updateJob(id: string, payload: PatchJobPayload) {
     const j = jobById(id)
     if (!j) return
-    Object.assign(j, payload)
-    if (apiLive.value) {
-      try {
-        const updated = await apiPatchJob(id, payload)
-        Object.assign(j, updated)
-      } catch {
-        /* 保留本地乐观更新 */
-      }
-    }
+    requireAutomationApi()
+    Object.assign(j, await apiPatchJob(id, payload))
   }
 
-  /** 删除自动化任务；apiLive 时写透后端。 */
+  /** 删除自动化任务；服务端成功后才从列表移除。 */
   async function deleteJob(id: string) {
+    requireAutomationApi()
+    await apiDeleteJob(id)
     autos.value = autos.value.filter((j) => j.id !== id)
-    if (apiLive.value) {
-      try {
-        await apiDeleteJob(id)
-      } catch {
-        /* 后端删除失败时不回滚 */
-      }
-    }
   }
 
-  /** 手动触发一次运行。 */
+  /** 手动触发一次真实运行；服务端失败时不补本地运行记录。 */
   async function runJob(id: string) {
     const j = jobById(id)
     if (!j) return
-    if (apiLive.value) {
-      try {
-        Object.assign(j, await apiRunJob(id))
-        return
-      } catch {
-        /* 后端异常时回落本地 */
-      }
-    }
-    const result = j.status === '待修复' ? '失败 · 需要先重新授权' : '成功 · 手动触发'
-    j.runs.unshift({ time: '刚刚', executor: '你', result })
-    j.last = '刚刚 · ' + result
+    requireAutomationApi()
+    Object.assign(j, await apiRunJob(id))
   }
 
   /** 暂停自动化任务。 */
   async function pauseJob(id: string) {
     const j = jobById(id)
     if (!j) return
-    j.status = '已暂停'
-    if (apiLive.value) apiPauseJob(id).catch(() => {})
+    requireAutomationApi()
+    Object.assign(j, await apiPauseJob(id))
   }
 
   /** 恢复已暂停的自动化任务。 */
   async function resumeJob(id: string) {
     const j = jobById(id)
     if (!j) return
-    j.status = '正常'
-    if (apiLive.value) apiResumeJob(id).catch(() => {})
+    requireAutomationApi()
+    Object.assign(j, await apiResumeJob(id))
   }
 
   /** 重新授权「待修复」的自动化任务。 */
   async function reauthJob(id: string) {
     const j = jobById(id)
     if (!j) return
-    j.status = '正常'
-    if (apiLive.value) apiReauthJob(id).catch(() => {})
+    requireAutomationApi()
+    Object.assign(j, await apiReauthJob(id))
   }
 
   // ---- 密钥库 ----
