@@ -137,6 +137,9 @@ JumpServer CE 固定运行在 Linux 主节点 `/opt/wao-jumpserver`，使用独�
 账户数据中，不复用 Jenkins 发布私钥；中断后重跑会忽略旧固定暂存文件，在唯一临时目录重新生成并原子安装，
 不会等待交互式覆盖确认。已登录成员从「工具 → 资源管理」进入；管理员映射为系统管理员，普通
 成员只建立系统用户身份，仍需在 JumpServer 中显式配置资产授权。
+主发布链路会维护仅包含娃哥、娃弟的「WAO 基础设施维护者」组：该组通过专用 SSH 密钥访问三项资产，
+Windows 从节点另提供 RDP 3389。RDP 使用 JumpServer 的手动账号模式，连接时输入真实 Windows 凭据，
+不会把 Windows 密码写入仓库或部署环境。Windows 防火墙只允许 JumpServer 主节点当前 IPv4 访问 3389。
 
 日常验证：
 
@@ -145,6 +148,9 @@ curl --fail https://jms.wayuwa.cn/api/health/
 sudo -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
   --verify-jumpserver-assets "$(xdg-user-dir DESKTOP)/deploy/wao"
 ```
+
+第二条命令会同时验证三项 SSH、Windows 3389 网络可达性、娃哥/娃弟组成员、两条资产授权和 RDP 手动账号
+边界；任一项未收敛都会让发布失败。
 
 备份至少包含 `/opt/wao-jumpserver/config` 与 `/opt/wao-jumpserver/data`，并在停止 JumpServer 写入后制作一致性
 快照；恢复演练必须同时验证登录、三项资产和专用 SSH 账户。升级必须先核对官方发行说明和社区版镜像，再修改

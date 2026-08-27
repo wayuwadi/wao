@@ -26,10 +26,11 @@ verify_ssh 'Linux master' "$WAO_JMS_MASTER_USER" "$WAO_JMS_MASTER_ADDRESS"
 verify_ssh 'Windows node' "$WAO_JMS_WINDOWS_USER" "$WAO_JMS_WINDOWS_ADDRESS"
 verify_ssh 'Cloud ingress' "$WAO_JMS_CLOUD_USER" "$WAO_JMS_CLOUD_ADDRESS"
 
-test "$(sudo -n docker exec jms_core python /opt/jumpserver/apps/manage.py shell -c \
-  'from assets.models import Host; print(Host.objects.filter(name__startswith="WAO ").count())' \
-  | tail -n 1)" = 3
-test "$(sudo -n docker exec jms_core python /opt/jumpserver/apps/manage.py shell -c \
-  'from accounts.models import Account; print(Account.objects.filter(name="wao-jumpserver").count())' \
-  | tail -n 1)" = 3
-echo 'JumpServer three-host inventory and dedicated accounts verified.'
+sudo -n docker exec -e "WAO_JMS_WINDOWS_ADDRESS=$WAO_JMS_WINDOWS_ADDRESS" \
+  jms_core python -c \
+  'import os, socket; connection = socket.create_connection((os.environ["WAO_JMS_WINDOWS_ADDRESS"], 3389), 12); connection.close()'
+echo 'Windows RDP port is reachable from JumpServer.'
+
+sudo -n docker exec -i jms_core sh -c \
+  'python /opt/jumpserver/apps/manage.py shell < /opt/jumpserver/data/bootstrap/verify_wao_access.py'
+echo 'JumpServer three-host inventory, accounts, protocols, and dual-member grants verified.'

@@ -22,6 +22,7 @@ published_public_key="$project_root/deploy/.jumpserver-asset-key.pub"
 test -f "$private_env"
 test -f "$project_root/deploy/jumpserver/custom_sso.py"
 test -f "$project_root/deploy/jumpserver/bootstrap_wao_assets.py"
+test -f "$project_root/deploy/jumpserver/verify_wao_access.py"
 
 set -a
 . "$project_root/deploy/.env"
@@ -40,7 +41,7 @@ validate_user() {
   case "$1" in *[!A-Za-z0-9_.@-]*|'') return 1 ;; esac
 }
 
-master_address="${JUMPSERVER_MASTER_ADDRESS:-${MASTER_BIND_IP:-linux2.wayuwa.cn}}"
+master_address="${JUMPSERVER_MASTER_ADDRESS:-${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}}"
 windows_address="${JUMPSERVER_WINDOWS_ADDRESS:-windows1.wayuwa.cn}"
 cloud_address="${JUMPSERVER_CLOUD_ADDRESS:-8.136.152.131}"
 master_user="${JUMPSERVER_MASTER_USER:-wadi}"
@@ -101,6 +102,8 @@ sudo -n install -m 0644 "$project_root/deploy/jumpserver/custom_sso.py" \
   "$volume_dir/core/data/auth/custom_sso.py"
 sudo -n install -m 0644 "$project_root/deploy/jumpserver/bootstrap_wao_assets.py" \
   "$volume_dir/core/data/bootstrap/bootstrap_wao_assets.py"
+sudo -n install -m 0644 "$project_root/deploy/jumpserver/verify_wao_access.py" \
+  "$volume_dir/core/data/bootstrap/verify_wao_access.py"
 
 set_config() {
   key="$1"

@@ -1,11 +1,21 @@
-"""Idempotently register WAO's three real hosts and their dedicated SSH account."""
+"""Idempotently register WAO hosts, protocols, accounts, and member grants."""
 
 import os
 
 from accounts.models import Account
 from assets.models import Host, Node, Platform, Protocol
+from common.utils import asset_permission_date_expired_default
+from django.utils import timezone
 from orgs.models import Organization
 from orgs.utils import tmp_to_org
+from perms.models import ActionChoices, AssetPermission
+from users.models import User, UserGroup
+
+
+AUTHORIZED_MEMBER_NAMES = {"娃哥", "娃弟"}
+AUTHORIZED_GROUP_NAME = "WAO 基础设施维护者"
+SSH_PERMISSION_NAME = "WAO 双人 SSH 管理"
+RDP_PERMISSION_NAME = "WAO 双人 Windows 图形管理"
 
 
 def required(name):
@@ -29,14 +39,18 @@ assets = [
 
 with tmp_to_org(Organization.default()):
     node, _ = Node.org_root().get_or_create_child("WAO 基础设施")
+    registered_assets = {}
+    ssh_usernames = set()
     for name, address, username, platform_type in assets:
         platform = Platform.objects.filter(category="host", type=platform_type).first()
         if platform is None and platform_type == "windows":
             platform = Platform.objects.filter(category="host", name__icontains="Windows").first()
-        if platform is None:
+        if platform is None and platform_type == "linux":
             platform = Platform.objects.filter(category="host", type="linux").first()
         if platform is None:
             raise RuntimeError("JumpServer host platform is unavailable: " + platform_type)
+        if platform_type == "windows" and not platform.protocols.filter(name="rdp").exists():
+            raise RuntimeError("JumpServer Windows platform does not support RDP")
 
         asset, _ = Host.objects.update_or_create(
             name=name,
@@ -51,6 +65,10 @@ with tmp_to_org(Organization.default()):
         Protocol.objects.update_or_create(
             asset=asset, name="ssh", defaults={"port": 22}
         )
+        if platform_type == "windows":
+            Protocol.objects.update_or_create(
+                asset=asset, name="rdp", defaults={"port": 3389}
+            )
         Account.objects.update_or_create(
             asset=asset,
             name="wao-jumpserver",
@@ -63,8 +81,63 @@ with tmp_to_org(Organization.default()):
                 "comment": "WAO 自动生成的 JumpServer 专用维护账户",
             },
         )
+        registered_assets[name] = asset
+        ssh_usernames.add(username)
 
     if Host.objects.filter(name__startswith="WAO ").count() < 3:
         raise RuntimeError("WAO assets were not fully registered")
 
-print("WAO JumpServer assets registered: 3")
+    authorized_users = list(User.objects.filter(
+        username__startswith="wao_",
+        name__in=AUTHORIZED_MEMBER_NAMES,
+        is_active=True,
+    ))
+    found_names = {user.name for user in authorized_users}
+    missing_names = AUTHORIZED_MEMBER_NAMES - found_names
+    if missing_names or len(authorized_users) != len(AUTHORIZED_MEMBER_NAMES):
+        raise RuntimeError(
+            "WAO JumpServer authorized users are missing or ambiguous: "
+            + ", ".join(sorted(missing_names or found_names))
+        )
+
+    group, _ = UserGroup.objects.update_or_create(
+        name=AUTHORIZED_GROUP_NAME,
+        defaults={"comment": "仅包含娃哥、娃弟，用于 WAO 基础设施资产授权。"},
+    )
+    group.users.set(authorized_users)
+
+    permission_defaults = {
+        "actions": ActionChoices.all(),
+        "date_start": timezone.now() - timezone.timedelta(seconds=1),
+        "date_expired": asset_permission_date_expired_default(),
+        "is_active": True,
+    }
+    ssh_permission, _ = AssetPermission.objects.update_or_create(
+        name=SSH_PERMISSION_NAME,
+        defaults={
+            **permission_defaults,
+            "accounts": sorted(ssh_usernames),
+            "protocols": ["ssh"],
+            "comment": "娃哥、娃弟使用 JumpServer 专用 SSH 密钥管理三台 WAO 主机。",
+        },
+    )
+    ssh_permission.users.clear()
+    ssh_permission.user_groups.set([group])
+    ssh_permission.assets.set(list(registered_assets.values()))
+    ssh_permission.nodes.clear()
+
+    rdp_permission, _ = AssetPermission.objects.update_or_create(
+        name=RDP_PERMISSION_NAME,
+        defaults={
+            **permission_defaults,
+            "accounts": ["@INPUT"],
+            "protocols": ["rdp"],
+            "comment": "娃哥、娃弟连接时手动输入真实 Windows 凭据，不在 JumpServer 中复制密码。",
+        },
+    )
+    rdp_permission.users.clear()
+    rdp_permission.user_groups.set([group])
+    rdp_permission.assets.set([registered_assets["WAO Windows 从节点"]])
+    rdp_permission.nodes.clear()
+
+print("WAO JumpServer assets and dual-member SSH/RDP grants registered")

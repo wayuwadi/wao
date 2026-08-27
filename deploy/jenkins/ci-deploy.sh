@@ -167,12 +167,15 @@ install_master_deploy_helper() {
 provision_jumpserver_asset_access() {
   public_key="$WAO_MASTER_PROJECT_ROOT/deploy/.jumpserver-asset-key.pub"
   test -s "$public_key"
+  case "$MASTER_HOST" in *[!A-Za-z0-9.-]*|'') return 1 ;; esac
 
   retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
-    "$public_key" deploy/jumpserver/install-public-key.ps1 \
+    "$public_key" deploy/jumpserver/install-public-key.ps1 deploy/jumpserver/enable-rdp.ps1 \
     "wao-windows:D:/deploy/" || return
   retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
     'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-public-key.ps1 -PublicKeyPath D:\deploy\.jumpserver-asset-key.pub' || return
+  retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
+    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\enable-rdp.ps1 -JumpServerHost '$MASTER_HOST'" || return
 
   retry_remote "云前端" scp -o ConnectTimeout=15 \
     "$public_key" deploy/jumpserver/install-public-key.sh \
