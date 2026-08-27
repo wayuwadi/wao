@@ -904,6 +904,20 @@ function timeText(value: string | null) {
     : date.toLocaleString('zh-CN', { hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
+function capacityText(value?: number | null) {
+  if (value == null || value < 0) return '—'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = value
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1 }
+  return `${size >= 100 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`
+}
+
+function resourcePercent(total?: number | null, available?: number | null) {
+  if (!total || available == null) return 0
+  return Math.max(0, Math.min(100, Math.round((total - available) * 100 / total)))
+}
+
 function durationText(startedAt: string | null, finishedAt: string | null) {
   if (!startedAt) return '尚未开始'
   const end = finishedAt ? new Date(finishedAt).getTime() : Date.now()
@@ -1339,8 +1353,8 @@ onBeforeUnmount(() => {
       <section class="run-section">
         <div class="section-head">
           <div>
-            <h2>执行电脑</h2>
-            <p>每台电脑自己声明装了哪些 AI 工具；登录态和源码都留在本机。</p>
+            <h2>执行电脑与服务器资源</h2>
+            <p>每台已连接节点上报 AI 工具与有界资源快照；登录态、进程和文件明细仍留在本机。</p>
           </div>
           <button class="pair-btn ghost" :disabled="updatingRunners" @click="pushRunnerUpdate">
             <i :class="updatingRunners ? 'ri-loader-4-line spin' : 'ri-download-cloud-2-line'"></i>更新 Runner 脚本
@@ -1386,6 +1400,28 @@ onBeforeUnmount(() => {
                 <i :class="engineIcon(engine)"></i>{{ engineLabel(engine) }}
               </span>
             </div>
+            <section v-if="runner.systemMetricsCollectedAt" class="runner-resources">
+              <header><b>机器资源</b><small>{{ timeText(runner.systemMetricsCollectedAt) }} 采集</small></header>
+              <div class="resource-row">
+                <span><i class="ri-cpu-line"></i>CPU</span>
+                <b>{{ runner.cpuUsagePercent == null ? '等待第二次采样' : `${runner.cpuUsagePercent.toFixed(1)}%` }}</b>
+                <em><i :style="{ width: `${runner.cpuUsagePercent || 0}%` }"></i></em>
+                <small>{{ runner.cpuCores || '—' }} 核</small>
+              </div>
+              <div class="resource-row">
+                <span><i class="ri-ram-line"></i>内存</span>
+                <b>{{ resourcePercent(runner.memoryTotalBytes, runner.memoryAvailableBytes) }}%</b>
+                <em><i :style="{ width: `${resourcePercent(runner.memoryTotalBytes, runner.memoryAvailableBytes)}%` }"></i></em>
+                <small>可用 {{ capacityText(runner.memoryAvailableBytes) }} / {{ capacityText(runner.memoryTotalBytes) }}</small>
+              </div>
+              <div class="resource-row">
+                <span><i class="ri-hard-drive-3-line"></i>磁盘 {{ runner.diskRoot || '' }}</span>
+                <b>{{ resourcePercent(runner.diskTotalBytes, runner.diskFreeBytes) }}%</b>
+                <em><i :style="{ width: `${resourcePercent(runner.diskTotalBytes, runner.diskFreeBytes)}%` }"></i></em>
+                <small>可用 {{ capacityText(runner.diskFreeBytes) }} / {{ capacityText(runner.diskTotalBytes) }}</small>
+              </div>
+            </section>
+            <div v-else class="runner-resource-empty"><i class="ri-pulse-line"></i>等待新版 Runner 上报真实机器资源</div>
             <div class="slot-line">
               <template v-if="editingRunnerId === runner.id">
                 <span class="concurrency-edit">
@@ -2172,6 +2208,19 @@ onBeforeUnmount(() => {
 .runner-platform { margin-top: 8px; color: var(--wao-text-weak); font-size: 11px; }
 .runner-platform i { margin-right: 5px; }
 .engine-tags { margin-top: 11px; display: flex; flex-wrap: wrap; gap: 6px; }
+.runner-resources { margin-top: 13px; padding: 10px; border: 1px solid var(--wao-divider); border-radius: 10px; background: var(--wao-bg-sub); }
+.runner-resources > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.runner-resources > header b { font-size: 11px; }
+.runner-resources > header small { color: var(--wao-text-faint); font-size: 8px; }
+.resource-row { display: grid; grid-template-columns: minmax(78px, auto) auto; gap: 3px 8px; align-items: center; margin-top: 7px; }
+.resource-row > span { color: var(--wao-text-3); font-size: 10px; }
+.resource-row > span i { margin-right: 4px; color: var(--wao-primary-text); }
+.resource-row > b { justify-self: end; font-size: 10px; }
+.resource-row > em { grid-column: 1 / -1; height: 4px; overflow: hidden; border-radius: 9px; background: var(--wao-bg-tab); }
+.resource-row > em i { display: block; height: 100%; border-radius: inherit; background: var(--wao-primary); }
+.resource-row > small { grid-column: 1 / -1; color: var(--wao-text-faint); font-size: 8.5px; }
+.runner-resource-empty { margin-top: 12px; padding: 9px; border-radius: 9px; background: var(--wao-bg-sub); color: var(--wao-text-faint); font-size: 9.5px; }
+.runner-resource-empty i { margin-right: 5px; }
 .slot-line { margin-top: 13px; display: flex; align-items: center; color: var(--wao-text-3); font-size: 11px; }
 .slot-bar { height: 5px; margin-top: 6px; overflow: hidden; border-radius: 9px; background: var(--wao-bg-tab); }
 .slot-bar i { display: block; height: 100%; border-radius: inherit; background: var(--wao-primary); transition: width .3s; }

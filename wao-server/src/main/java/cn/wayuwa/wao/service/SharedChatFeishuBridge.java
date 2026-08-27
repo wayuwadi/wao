@@ -25,12 +25,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.HexFormat;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -150,32 +153,40 @@ public class SharedChatFeishuBridge {
     }
 
     /** 轮询到的一条用户群消息按 message_id 幂等写入；编辑与撤回覆盖同一条。 */
-    public void importMessage(String token, String chatId, String chatName, FeishuMessage source,
+    public ImportResult importMessage(String token, String chatId, String chatName, FeishuMessage source,
             Map<String, String> senderNames) {
-        if (source == null || !StringUtils.hasText(source.messageId())) return;
+        if (source == null || !StringUtils.hasText(source.messageId())) return ImportResult.skipped();
         SharedChatMessageEntity existing = messages.findByFeishuMessageId(source.messageId());
         // 当前应用发出的 WAO 消息已经由 deliver 绑定；其它应用消息不冒充成员聊天。
-        if (!"user".equals(source.senderType())) return;
+        if (!"user".equals(source.senderType())) return ImportResult.skipped();
+        String feishuSenderName = senderNames.getOrDefault(source.senderId(), "飞书成员");
+        String fingerprint = sourceHash(source, feishuSenderName);
+        if (existing != null && "FEISHU".equals(existing.getSource())
+                && fingerprint.equals(existing.getFeishuSourceHash())) {
+            return ImportResult.unchanged();
+        }
 
         String memberId = memberId(source.senderId(), chatId, token);
         MemberEntity member = StringUtils.hasText(memberId) ? members.selectById(memberId) : null;
-        String senderName = member != null ? member.getName()
-                : senderNames.getOrDefault(source.senderId(), "飞书成员");
+        String senderName = member != null ? member.getName() : feishuSenderName;
         RenderedIncoming rendered = renderIncoming(token, chatName, source);
         SharedChatMessageEntity parent = StringUtils.hasText(source.parentId())
                 ? messages.findByFeishuMessageId(source.parentId()) : null;
         LocalDateTime now = LocalDateTime.now(SHANGHAI);
         if (existing != null) {
-            if (!"FEISHU".equals(existing.getSource())) return;
+            if (!"FEISHU".equals(existing.getSource())) return ImportResult.skipped();
+            int oldContentBytes = utf8Bytes(existing.getContent());
             existing.setContent(rendered.content());
             existing.setImageId(rendered.imageId());
             existing.setImageName(rendered.imageName());
             existing.setExternalSenderName(senderName);
             existing.setReplyToId(parent == null ? null : parent.getId());
             existing.setDeleted(source.deleted());
+            existing.setFeishuSourceHash(fingerprint);
             existing.setUpdatedAt(now);
             messages.updateById(existing);
-            return;
+            return new ImportResult(0, 1, rendered.imageBytes()
+                    + Math.max(0, utf8Bytes(rendered.content()) - oldContentBytes));
         }
         SharedChatMessageEntity entity = new SharedChatMessageEntity();
         entity.setId(uuid());
@@ -188,6 +199,7 @@ public class SharedChatFeishuBridge {
         entity.setImageName(rendered.imageName());
         entity.setFeishuChatId(chatId);
         entity.setFeishuMessageId(source.messageId());
+        entity.setFeishuSourceHash(fingerprint);
         entity.setReplyToId(parent == null ? null : parent.getId());
         entity.setDeleted(source.deleted());
         entity.setFeishuStatus("RECEIVED");
@@ -199,7 +211,9 @@ public class SharedChatFeishuBridge {
             messages.insert(entity);
         } catch (DuplicateKeyException ignored) {
             // Linux / Windows 节点同时轮询时由 feishu_message_id 唯一键选出唯一赢家。
+            return ImportResult.unchanged();
         }
+        return new ImportResult(1, 0, rendered.imageBytes() + utf8Bytes(rendered.content()));
     }
 
     /** 处理官方已读或表情事件；返回 true 表示事件属于共享聊天并已收下。 */
@@ -287,13 +301,14 @@ public class SharedChatFeishuBridge {
     }
 
     private RenderedIncoming renderIncoming(String token, String chatName, FeishuMessage message) {
-        if (message.deleted()) return new RenderedIncoming("[消息已撤回]", null, null);
+        if (message.deleted()) return new RenderedIncoming("[消息已撤回]", null, null, 0);
         JsonNode content = read(message.content());
         if (content.has("zh_cn")) content = content.path("zh_cn");
         StringBuilder text = new StringBuilder();
+        long imageBytes = 0;
         switch (message.msgType()) {
             case "text" -> text.append(content.path("text").asText(""));
-            case "image" -> appendIncomingImage(text, token, chatName, message,
+            case "image" -> imageBytes += appendIncomingImage(text, token, chatName, message,
                     content.path("image_key").asText(""));
             case "post" -> {
                 if (StringUtils.hasText(content.path("title").asText(""))) {
@@ -306,7 +321,7 @@ public class SharedChatFeishuBridge {
                             case "a" -> text.append('[').append(span.path("text").asText(""))
                                     .append("](").append(span.path("href").asText("")).append(')');
                             case "at" -> text.append('@').append(span.path("user_name").asText(""));
-                            case "img" -> appendIncomingImage(text, token, chatName, message,
+                            case "img" -> imageBytes += appendIncomingImage(text, token, chatName, message,
                                     span.path("image_key").asText(""));
                             default -> { }
                         }
@@ -320,18 +335,19 @@ public class SharedChatFeishuBridge {
             case "sticker" -> text.append("[表情]");
             default -> text.append('[').append(message.msgType()).append(']');
         }
-        return new RenderedIncoming(text.toString().trim(), null, null);
+        return new RenderedIncoming(text.toString().trim(), null, null, imageBytes);
     }
 
-    private void appendIncomingImage(StringBuilder text, String token, String chatName,
+    private long appendIncomingImage(StringBuilder text, String token, String chatName,
             FeishuMessage message, String imageKey) {
-        if (!StringUtils.hasText(imageKey)) return;
+        if (!StringUtils.hasText(imageKey)) return 0;
         byte[] bytes = feishu.downloadImage(token, message.messageId(), imageKey);
-        if (bytes == null || bytes.length == 0) return;
+        if (bytes == null || bytes.length == 0) return 0;
         ImageItemDto image = imageService.store(bytes, "image/png", imageKey + ".png",
                 "飞书聊天 · " + chatName, true);
         if (!text.isEmpty() && text.charAt(text.length() - 1) != '\n') text.append("\n\n");
         text.append("![飞书图片](").append(image.url()).append(')');
+        return bytes.length;
     }
 
     private void insertReaction(String messageId, Identity identity, String emoji, String source,
@@ -436,6 +452,26 @@ public class SharedChatFeishuBridge {
         return UUID.randomUUID().toString().replace("-", "");
     }
 
-    private record RenderedIncoming(String content, String imageId, String imageName) { }
+    private static String sourceHash(FeishuMessage source, String senderName) {
+        String value = String.join("\u001f", source.senderId(), source.senderType(), source.msgType(),
+                source.content(), String.valueOf(source.deleted()), source.rootId(), source.parentId(), senderName);
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("JDK 缺少 SHA-256", impossible);
+        }
+    }
+
+    private static int utf8Bytes(String value) {
+        return value == null ? 0 : value.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    /** 单条飞书消息对持久化内容造成的真实可归因增量。 */
+    public record ImportResult(int inserted, int updated, long bytesAdded) {
+        static ImportResult skipped() { return new ImportResult(0, 0, 0); }
+        static ImportResult unchanged() { return new ImportResult(0, 0, 0); }
+    }
+    private record RenderedIncoming(String content, String imageId, String imageName, long imageBytes) { }
     private record Identity(String key, String memberId, String name) { }
 }

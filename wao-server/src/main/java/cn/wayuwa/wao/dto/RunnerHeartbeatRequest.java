@@ -4,5 +4,6 @@ package cn.wayuwa.wao.dto;
 public record RunnerHeartbeatRequest(
         String logTail,
         RunnerCodexQuotaReport codexQuota,
-        String codexQuotaError) {
+        String codexQuotaError,
+        RunnerSystemMetricsReport systemMetrics) {
 }

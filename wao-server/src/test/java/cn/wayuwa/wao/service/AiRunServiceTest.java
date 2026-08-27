@@ -39,6 +39,7 @@ import cn.wayuwa.wao.dto.ProjectMemoryCandidate;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.dto.RunnerCodexQuotaReport;
+import cn.wayuwa.wao.dto.RunnerSystemMetricsReport;
 import cn.wayuwa.wao.mapper.AiProjectConfigMapper;
 import cn.wayuwa.wao.mapper.AiRunProgressMapper;
 import cn.wayuwa.wao.mapper.AiRunnerNodeMapper;
@@ -933,6 +934,28 @@ class AiRunServiceTest {
         service.heartbeat("local-token", null, null, null, null, null, null, report, null);
 
         verify(codexQuotas).report(eq("rn1"), eq(report), isNull(), any(LocalDateTime.class));
+    }
+
+    @Test
+    void heartbeatStoresOnlyBoundedMachineCapacityMetrics() {
+        AiRunnerNodeEntity runner = runner("rn1", "娃哥电脑", "codex");
+        runner.setTokenHash("hashed-token");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner));
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        RunnerSystemMetricsReport metrics = new RunnerSystemMetricsReport(
+                20, 34.56, 16_000L, 6_000L, 500_000L, 200_000L, "C:", "ignored-client-time");
+
+        AiRunnerDto result = service.heartbeat(
+                "local-token", null, null, null, null, null, null, null, null, metrics);
+
+        assertThat(result.cpuCores()).isEqualTo(20);
+        assertThat(result.cpuUsagePercent()).isEqualTo(34.6);
+        assertThat(result.memoryAvailableBytes()).isEqualTo(6_000L);
+        assertThat(result.diskFreeBytes()).isEqualTo(200_000L);
+        assertThat(result.diskRoot()).isEqualTo("C:");
+        assertThat(result.systemMetricsCollectedAt()).isNotBlank();
+        assertThat(runner.getSystemMetricsCollectedAt()).isNotNull();
     }
 
     @Test

@@ -55,6 +55,7 @@ import cn.wayuwa.wao.dto.PairAiRunnerRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.dto.ProjectMemoryContextDto;
 import cn.wayuwa.wao.dto.RunnerCodexQuotaReport;
+import cn.wayuwa.wao.dto.RunnerSystemMetricsReport;
 import cn.wayuwa.wao.dto.RunnerScriptDto;
 import cn.wayuwa.wao.dto.SaveAiProjectConfigRequest;
 import cn.wayuwa.wao.dto.Step;
@@ -351,7 +352,9 @@ public class AiRunService {
                         scriptUpToDate(r), r.getUpdateRequestedAt() != null,
                         !Boolean.FALSE.equals(r.getMemoryCollectionEnabled()), memoryCollectionDue(r),
                         time(r.getLastMemoryCollectionAttemptAt()), time(r.getLastMemoryCollectedAt()),
-                        r.getLastMemoryCollectionError()))
+                        r.getLastMemoryCollectionError(), r.getCpuCores(), r.getCpuUsagePercent(),
+                        r.getMemoryTotalBytes(), r.getMemoryAvailableBytes(), r.getDiskTotalBytes(),
+                        r.getDiskFreeBytes(), r.getDiskRoot(), time(r.getSystemMetricsCollectedAt())))
                 .toList();
     }
 
@@ -1094,6 +1097,14 @@ public class AiRunService {
     public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines, String scriptHash,
             String wakeMac, String wakeHost, String logTail, RunnerCodexQuotaReport codexQuota,
             String codexQuotaError) {
+        return heartbeat(token, maxConcurrency, engines, scriptHash, wakeMac, wakeHost, logTail,
+                codexQuota, codexQuotaError, null);
+    }
+
+    /** 节点心跳并接收新版 Runner 的有界机器资源快照。 */
+    public AiRunnerDto heartbeat(String token, Integer maxConcurrency, String engines, String scriptHash,
+            String wakeMac, String wakeHost, String logTail, RunnerCodexQuotaReport codexQuota,
+            String codexQuotaError, RunnerSystemMetricsReport systemMetrics) {
         AiRunnerNodeEntity runner = requireRunner(token);
         boolean clearUpdateRequest = false;
         boolean storeLog = false;
@@ -1128,6 +1139,7 @@ public class AiRunService {
             runner.setLogUpdatedAt(now);
             storeLog = true;
         }
+        applySystemMetrics(runner, systemMetrics, now);
         if (runner.getWakePort() == null) runner.setWakePort(9);
         if (clearUpdateRequest || storeLog) {
             UpdateWrapper<AiRunnerNodeEntity> update = new UpdateWrapper<AiRunnerNodeEntity>()
@@ -1148,6 +1160,38 @@ public class AiRunService {
             LOG.warn("忽略 Runner {} 的 Codex 额度上报失败：{}", runner.getId(), ex.getMessage());
         }
         return listRunners().stream().filter(r -> r.id().equals(runner.getId())).findFirst().orElseThrow();
+    }
+
+    private static void applySystemMetrics(AiRunnerNodeEntity runner, RunnerSystemMetricsReport report,
+            LocalDateTime now) {
+        if (report == null) return;
+        Integer cores = report.cpuCores();
+        Double usage = report.cpuUsagePercent();
+        Long memoryTotal = report.memoryTotalBytes();
+        Long memoryAvailable = report.memoryAvailableBytes();
+        Long diskTotal = report.diskTotalBytes();
+        Long diskFree = report.diskFreeBytes();
+        if (cores != null && cores >= 1 && cores <= 1024) runner.setCpuCores(cores);
+        if (usage != null && Double.isFinite(usage) && usage >= 0 && usage <= 100) {
+            runner.setCpuUsagePercent(Math.round(usage * 10.0) / 10.0);
+        }
+        if (validCapacity(memoryTotal, memoryAvailable)) {
+            runner.setMemoryTotalBytes(memoryTotal);
+            runner.setMemoryAvailableBytes(memoryAvailable);
+        }
+        if (validCapacity(diskTotal, diskFree)) {
+            runner.setDiskTotalBytes(diskTotal);
+            runner.setDiskFreeBytes(diskFree);
+        }
+        if (StringUtils.hasText(report.diskRoot())) {
+            String root = report.diskRoot().trim();
+            if (root.matches("(?:[A-Za-z]:|/)") && root.length() <= 3) runner.setDiskRoot(root);
+        }
+        runner.setSystemMetricsCollectedAt(now);
+    }
+
+    private static boolean validCapacity(Long total, Long available) {
+        return total != null && available != null && total > 0 && available >= 0 && available <= total;
     }
 
     /** 节点领取下一条满足节点偏好和项目并发上限的任务。 */

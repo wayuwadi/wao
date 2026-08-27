@@ -7,7 +7,10 @@ CREATE TABLE ai_runner_node (
     last_wake_requested_at TIMESTAMP, online_state BOOLEAN, token_hash CHAR(64), script_hash CHAR(64),
     update_requested_at TIMESTAMP, memory_collection_enabled BOOLEAN,
     last_memory_collection_attempt_at TIMESTAMP, last_memory_collected_at TIMESTAMP,
-    last_memory_collection_error VARCHAR(1000), log_tail CLOB, log_updated_at TIMESTAMP,
+    last_memory_collection_error VARCHAR(1000), cpu_cores INT, cpu_usage_percent DECIMAL(5,1),
+    memory_total_bytes BIGINT, memory_available_bytes BIGINT, disk_total_bytes BIGINT,
+    disk_free_bytes BIGINT, disk_root VARCHAR(3), system_metrics_collected_at TIMESTAMP,
+    log_tail CLOB, log_updated_at TIMESTAMP,
     last_seen_at TIMESTAMP, created_at TIMESTAMP);
 
 CREATE TABLE memory_collection_document (
@@ -21,4 +24,3 @@ INSERT INTO ai_runner_node (id, name, platform, engines, max_concurrency, online
     memory_collection_enabled, last_seen_at, created_at)
 VALUES ('rn1', '开发电脑', 'linux', 'codex', 1, TRUE,
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', TRUE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-

@@ -6,24 +6,28 @@ import {
   fetchSharedChatConfig,
   fetchSharedChatFeishuGroups,
   fetchSharedChatMessages,
+  fetchSharedChatSyncRuns,
   markSharedChatRead,
   retrySharedChatFeishu,
   saveSharedChatConfig,
   sendSharedChatMessage,
   toggleSharedChatReaction,
+  runSharedChatSyncNow,
   uploadSharedChatImage,
   type SharedChatMessage,
 } from '@/api/chat'
 
 vi.mock('@/api/chat', () => ({
-  fetchSharedChatConfig: vi.fn(),
-  fetchSharedChatFeishuGroups: vi.fn(),
+  fetchSharedChatConfig: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatConfig']>(),
+  fetchSharedChatFeishuGroups: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatFeishuGroups']>(),
   fetchSharedChatMessages: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatMessages']>(),
-  markSharedChatRead: vi.fn(),
+  fetchSharedChatSyncRuns: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatSyncRuns']>(),
+  markSharedChatRead: vi.fn<(typeof import('@/api/chat'))['markSharedChatRead']>(),
   retrySharedChatFeishu: vi.fn<(typeof import('@/api/chat'))['retrySharedChatFeishu']>(),
-  saveSharedChatConfig: vi.fn(),
+  saveSharedChatConfig: vi.fn<(typeof import('@/api/chat'))['saveSharedChatConfig']>(),
   sendSharedChatMessage: vi.fn<(typeof import('@/api/chat'))['sendSharedChatMessage']>(),
-  toggleSharedChatReaction: vi.fn(),
+  toggleSharedChatReaction: vi.fn<(typeof import('@/api/chat'))['toggleSharedChatReaction']>(),
+  runSharedChatSyncNow: vi.fn<(typeof import('@/api/chat'))['runSharedChatSyncNow']>(),
   uploadSharedChatImage: vi.fn<(typeof import('@/api/chat'))['uploadSharedChatImage']>(),
 }))
 
@@ -75,6 +79,7 @@ describe('ChatView', () => {
       pollIntervalSeconds: 15,
     })
     vi.mocked(fetchSharedChatFeishuGroups).mockResolvedValue([])
+    vi.mocked(fetchSharedChatSyncRuns).mockResolvedValue([])
     vi.mocked(markSharedChatRead).mockResolvedValue(undefined)
     vi.mocked(saveSharedChatConfig).mockResolvedValue({
       chatId: '',
@@ -84,6 +89,11 @@ describe('ChatView', () => {
     })
     vi.mocked(toggleSharedChatReaction).mockResolvedValue(message)
     vi.mocked(sendSharedChatMessage).mockResolvedValue(message)
+    vi.mocked(runSharedChatSyncNow).mockResolvedValue({
+      id: 'sync1', triggerType: 'MANUAL', chatName: '娃屋日常', syncDay: '2026-08-27',
+      status: 'SUCCEEDED', messagesScanned: 8, messagesInserted: 2, messagesUpdated: 1,
+      contentBytesAdded: 1536, startedAt: '2026-08-27T10:00:00', finishedAt: '2026-08-27T10:00:01',
+    })
     vi.mocked(uploadSharedChatImage).mockResolvedValue({
       id: 'img1',
       name: '截图.png',
@@ -140,6 +150,29 @@ describe('ChatView', () => {
 
     expect(saveSharedChatConfig).toHaveBeenCalledWith('oc_real', 15)
     expect(wrapper.get('.group-trigger').text()).toContain('娃屋日常')
+  })
+
+  it('展示真实同步空间口径并可立即核对当日聊天', async () => {
+    vi.mocked(fetchSharedChatConfig).mockResolvedValue({
+      chatId: 'oc_real', chatName: '娃屋日常', configured: true, pollIntervalSeconds: 15,
+    })
+    vi.mocked(fetchSharedChatSyncRuns).mockResolvedValue([{
+      id: 'sync0', triggerType: 'NIGHTLY', chatName: '娃屋日常', syncDay: '2026-08-26',
+      status: 'SUCCEEDED', messagesScanned: 12, messagesInserted: 3, messagesUpdated: 1,
+      contentBytesAdded: 2048, startedAt: '2026-08-27T00:10:00', finishedAt: '2026-08-27T00:10:03',
+    }])
+    const wrapper = await mountView()
+
+    await wrapper.get('.group-trigger').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.sync-history').text()).toContain('扫描 12 · 新增 3 · 更新 1')
+    expect(wrapper.get('.sync-history').text()).toContain('+2.0 KB')
+    expect(wrapper.get('.sync-history').text()).toContain('不把数据库索引页')
+
+    await wrapper.get('.sync-history header button').trigger('click')
+    await flushPromises()
+    expect(runSharedChatSyncNow).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.sync-history').text()).toContain('扫描 8 · 新增 2 · 更新 1')
   })
 
   it('发送时保留引用关系并可添加真实表情回复', async () => {

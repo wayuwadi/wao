@@ -119,6 +119,10 @@ vi.mock('@/api/ai', () => ({
     {
       id: 'rn2', name: 'Linux 主节点', platform: 'Linux 7.0', engines: ['claude'],
       maxConcurrency: 2, activeRuns: 1, online: true, lastSeenAt: '2026-07-25T20:18:20',
+      cpuCores: 8, cpuUsagePercent: 32.5,
+      memoryTotalBytes: 17179869184, memoryAvailableBytes: 6442450944,
+      diskTotalBytes: 536870912000, diskFreeBytes: 214748364800, diskRoot: '/',
+      systemMetricsCollectedAt: '2026-07-25T20:18:20',
     },
   ]),
   fetchAiRunnerLog: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
@@ -817,6 +821,10 @@ describe('HomeView AI 控制台', () => {
     expect(cards[0]!.classes()).toContain('offline')
     expect(cards[1]!.text()).toContain('Claude Code')
     expect(cards[1]!.text()).toContain('槽位 1 / 2')
+    expect(cards[1]!.text()).toContain('CPU32.5%')
+    expect(cards[1]!.text()).toContain('内存63%')
+    expect(cards[1]!.text()).toContain('磁盘 /60%')
+    expect(cards[0]!.text()).toContain('等待新版 Runner 上报真实机器资源')
     expect(cards[1]!.find('.runner-tasks button').text()).toBe('根据截图修复展示')
     wrapper.unmount()
   })
