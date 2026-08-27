@@ -14,10 +14,10 @@
 
 ## 决策
 
-- Jenkins 在 checkout 后比较 `HEAD^` 与 `HEAD`，生成后端模块、两个前端、AI Runner 和是否需要生产部署的
+- Jenkins 在 checkout 后比较部署基线与 `HEAD`，生成后端模块、两个前端、AI Runner 和是否需要生产部署的
   明确计划。Jenkinsfile 只通过显式白名单字段写入未被 Declarative `environment` 预声明的环境变量，不依赖
   管理员批准动态 Groovy 方法，也不会被声明式默认值阻止覆盖。缺少父提交、空 diff、流水线自身变化或出现
-  未登记路径时 fail-safe 回退全量验证和发布。
+  未登记路径时 fail-safe 回退全量验证和发布。部署基线和批次行为由 ADR-144 修订：优先使用线上真实版本，不能再固定为 `HEAD^`。
 - 后端使用 Maven `-pl ... -am` 只测试受影响 Reactor 模块；前端只运行受影响应用的 Vitest。后端测试、
   WAO Web、Agent Web 和按需 AI Runner 测试作为并行分支运行。
 - 只修改后端 `src/test/**`、WAO Web `src/__tests__/**`、Agent Web 的 `*.spec.*` / `*.test.*` 或 AI Runner

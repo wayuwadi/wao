@@ -27,6 +27,8 @@ public record AiRunDto(
         /** 是否启用先规划再连续执行的 Codex Plan 工作流。 */
         Boolean planMode,
         String status,
+        /** 代码与部署的细分阶段：coding / waiting_deployment / deployment_succeeded / deployment_failed / code_failed。 */
+        String deliveryStage,
         String runnerId,
         String runnerName,
         String requestedRunnerId,

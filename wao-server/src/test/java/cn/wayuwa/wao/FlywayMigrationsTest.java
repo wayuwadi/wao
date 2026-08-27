@@ -214,6 +214,20 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void aiRunDeliveryStageBackfillsOnlyVerifiedHistoricalOutcomes() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V109__ai_run_delivery_stage.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("ADD COLUMN delivery_stage VARCHAR(32) NOT NULL DEFAULT 'coding'")
+                .contains("WHEN status = 'succeeded' THEN 'deployment_succeeded'")
+                .contains("WHEN status = 'failed' THEN 'code_failed'")
+                .doesNotContain("WHEN status = 'failed' THEN 'deployment_failed'");
+    }
+
+    @Test
     void mergedTaskRunMigrationBackfillsHistoryAndKeepsStableOrder() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V91__merged_task_ai_run.sql"))

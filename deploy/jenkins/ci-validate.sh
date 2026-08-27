@@ -6,6 +6,7 @@ sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
 sh deploy/scripts/test-windows-node-availability.sh
 sh deploy/jenkins/test-ci-change-plan.sh
+sh deploy/jenkins/test-resolve-batch-base.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py
 sh deploy/jumpserver/test-ensure-asset-key.sh
 sh deploy/jumpserver/test-ensure-sso-secret.sh
@@ -20,6 +21,8 @@ for script in \
   deploy/scripts/test-ensure-jumpserver-certificate.sh \
   deploy/scripts/ensure-jumpserver-certificate.sh \
   deploy/jenkins/ci-deploy.sh \
+  deploy/jenkins/resolve-batch-base.sh \
+  deploy/jenkins/test-resolve-batch-base.sh \
   deploy/jenkins/deploy-master-local.sh; do
   sh -n "$script"
 done

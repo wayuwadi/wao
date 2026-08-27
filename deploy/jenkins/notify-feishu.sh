@@ -74,6 +74,7 @@ payload="$(jq -n \
   --arg template "$header_color" \
   --arg sha "$short_sha" \
   --arg sha_url "$commit_url" \
+  --arg batch "${WAO_BATCH_COMMIT_COUNT:-1}" \
   --arg change "$commit_message" \
   --arg branch "${WAO_GIT_BRANCH:-main}" \
   --arg deploy "$WAO_PIPELINE_RESULT" \
@@ -92,7 +93,7 @@ payload="$(jq -n \
           {is_short:true,text:{tag:"lark_md",content:"**仓库**\nwayuwacn/wao"}},
           {is_short:true,text:{tag:"lark_md",content:("**分支**\n"+$branch)}},
           {is_short:true,text:{tag:"lark_md",content:("**提交**\n["+$sha+"]("+$sha_url+")")}},
-          {is_short:true,text:{tag:"lark_md",content:"**触发**\nJenkins / GitHub Webhook"}}
+          {is_short:true,text:{tag:"lark_md",content:("**批次**\n"+$batch+" 个 main 提交")}}
         ]},
         {tag:"hr"},
         {tag:"div",text:{tag:"lark_md",content:("**本次改动**\n"+$change)}},

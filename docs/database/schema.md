@@ -341,6 +341,7 @@ Runner 每五分钟在本机调用 Codex app-server。服务端按规范化邮�
 | engine | VARCHAR(24) | 本次使用的 AI 工具：codex / claude |
 | ai_account_id | VARCHAR(32) NULL（V40） | 本次固定使用的集中账号；为空时使用 Runner 本地登录态（见 ADR-032） |
 | status | VARCHAR(24) | queued / running / succeeded / failed / cancelled |
+| delivery_stage | VARCHAR(32)（V109） | coding / waiting_deployment / deployment_succeeded / deployment_failed / code_failed；与进程状态分开，等待部署时运行仍保持 active |
 | runner_id | VARCHAR(32) NULL | 实际领取的电脑 |
 | requested_runner_id | VARCHAR(32) NULL | 入队时点名的电脑；优先于项目的 preferred_runner_id |
 | prompt_url / branch_name | VARCHAR | Markdown 任务地址与隔离分支 |
@@ -371,7 +372,7 @@ Runner 每五分钟在本机调用 Codex app-server。服务端按规范化邮�
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id / run_id | VARCHAR(32) | 进展与所属运行 id |
-| kind | VARCHAR(24) | phase / message / plan / result |
+| kind | VARCHAR(24) | phase / message / plan / result；Runner 的结构化 delivery 事件会先更新 delivery_stage，再以 phase 文案归档 |
 | content | VARCHAR(1000) | 过滤命令和工具调用后的用户可读摘要 |
 | created_at | DATETIME | 上报时间，用于实时展示与任务档案排序 |
 
@@ -962,6 +963,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V104__configurable_chat_review_ai.sql`：固化问问 AI / 复盘的只读能力，新增全局自动复盘策略和调度索引（见 ADR-137）。
 - `V107__remove_mock_automation_jobs.sql`：删除 V8 的四条演示自动化及演示运行记录；未知执行器由服务层失败关闭。
 - `V108__assistant_web_search.sql`：固化普通页面问答的联网开关，并为所选 API Provider 暂存有界搜索材料；终态清除（见 ADR-142）。
+- `V109__ai_run_delivery_stage.sql`：把 AI Run 的代码、等待部署与部署终态分开持久化，并只把历史成功回填为已部署（见 ADR-144）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

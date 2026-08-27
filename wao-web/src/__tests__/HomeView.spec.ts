@@ -57,7 +57,7 @@ vi.mock('@/api/ai', () => ({
       previewImages: ['/api/images/img-preview-1/raw', '/api/images/img-preview-2/raw'],
       projectId: 'p1', projectName: 'WAO',
       engine: 'claude',
-      status: 'running', runnerId: 'rn2', runnerName: 'Linux 主节点', requestedRunnerId: 'rn2',
+      status: 'running', deliveryStage: 'waiting_deployment', runnerId: 'rn2', runnerName: 'Linux 主节点', requestedRunnerId: 'rn2',
       retryOfRunId: 'ar1',
       branchName: 'ai/wao-ar2',
       resultSummary: null, latestProgress: '已定位问题，正在实现实时反馈',
@@ -767,6 +767,7 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
 
     expect(wrapper.find('.run-card').text()).toContain('已定位问题，正在实现实时反馈')
+    expect(wrapper.find('.run-card').text()).toContain('代码已完成 · 等待部署')
     expect(wrapper.find('.run-card').text()).toContain('Claude Code')
     expect(wrapper.find('.run-card').text()).toContain('根据截图修复展示')
     expect(wrapper.find('.run-card').text()).not.toContain('data:image')
@@ -777,6 +778,9 @@ describe('HomeView AI 控制台', () => {
     await wrapper.find('.run-card').trigger('click')
 
     expect(wrapper.find('.run-detail').text()).toContain('AI 执行记录')
+    expect(wrapper.find('.run-detail').text()).toContain('代码完成')
+    expect(wrapper.find('.run-detail').text()).toContain('等待部署')
+    expect(wrapper.find('.run-detail').text()).toContain('部署结果')
     expect(wrapper.find('.run-detail').text()).toContain('Claude Code')
     expect(wrapper.findAll('.run-detail-images img')).toHaveLength(2)
     expect(wrapper.find('.run-detail').classes()).toContain('run-activity-detail')

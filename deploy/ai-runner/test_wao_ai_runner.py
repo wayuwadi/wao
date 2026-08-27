@@ -311,6 +311,35 @@ class RunnerInvocationTest(unittest.TestCase):
         self.assertEqual(("message", "已定位登录失败原因，正在修复回调校验"), message)
         self.assertIsNone(command)
 
+    def test_delivery_stage_only_accepts_ai_text_marker(self) -> None:
+        message = {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT"},
+        }
+        command = {
+            "type": "item.completed",
+            "item": {"type": "command_execution", "command": "echo WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT"},
+        }
+
+        self.assertTrue(RUNNER.reports_waiting_deployment(message))
+        self.assertFalse(RUNNER.reports_waiting_deployment(command))
+
+    def test_progress_reporter_turns_delivery_marker_into_one_structured_event(self) -> None:
+        api = Mock()
+        reporter = RUNNER.ProgressReporter(api, "ar1", interval=0)
+        event = {
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT"},
+        }
+
+        reporter.event(event)
+        reporter.event(event)
+
+        api.post.assert_called_once_with(
+            "/api/ai/runner/runs/ar1/progress",
+            {"kind": "delivery", "content": "代码已完成并合并，正在等待批量部署"},
+        )
+
     def test_reasoning_only_uses_public_summary(self) -> None:
         without_summary = RUNNER.extract_progress({
             "type": "item.completed", "item": {"type": "reasoning", "text": "内部推理"},
@@ -963,6 +992,10 @@ class PromptTest(unittest.TestCase):
         self.assertIn("不存在「稍后再汇报」", self.PROMPT)
         self.assertIn("不存在「稍后再汇报」", RUNNER.build_continuation_prompt(
             {"branchName": "ai/wao-ar1", "defaultBranch": "main"}, "继续盯部署"))
+
+    def test_prompt_reports_waiting_stage_and_ignores_older_failed_builds(self) -> None:
+        self.assertIn("WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT", self.PROMPT)
+        self.assertIn("队列中更旧的构建失败时继续等待", self.PROMPT)
 
     def test_prompt_exposes_optional_report_path_outside_git(self) -> None:
         path = Path("C:/wao/.wao-run-reports/ar1/report.html")

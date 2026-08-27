@@ -108,6 +108,10 @@ Runner 会把启动信息、Git 与各 AI CLI 的命令路径和任务失败阶�
 任务提示通过标准输入交给 CLI，避免 Windows 的 `.cmd` 转发脚本截断包含链接的多行提示；
 Runner 还会校验最终答复中的完成状态（`WAO_RUN_STATUS: SUCCESS` / `BLOCKED`），不再把反问、
 等待补充信息误判为成功。
+开发任务在 PR 合并后会先输出 `WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT`。Runner 只从 AI 的文字消息识别
+这一独占行，并把页面切到“代码已完成 · 等待部署”；命令、工具参数和任务正文里的同样文本不会触发。最终状态仍要等
+包含本次提交的 Jenkins 批次、线上链路和飞书通知全部验证后回传。队列里更旧构建失败时继续等待后继批次，不把旧失败
+复制成多条 AI Run 失败。
 当 AI 以 BLOCKED 结束且保留会话 id 时，任务详情可直接补充信息；Runner 会把同一条运行固定派回
 原电脑，在原 worktree 中恢复同一个 Codex 或 Claude Code 会话，而不是创建新会话。
 
