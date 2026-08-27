@@ -56,6 +56,15 @@ class HolidayServiceTest {
     }
 
     @Test
+    void exposesAllSolarTermsAsRealCalendarNodes() {
+        assertThat(service.events(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), Set.of()))
+                .filteredOn(event -> event.name().startsWith("节气 · "))
+                .hasSize(24)
+                .extracting(HolidayEventDto::name)
+                .contains("节气 · 立春", "节气 · 春分", "节气 · 夏至", "节气 · 冬至");
+    }
+
+    @Test
     void doesNotAddInternationalFestivalsUntilCategoryIsSelected() {
         LocalDate mothersDay = LocalDate.of(2026, 5, 10);
         assertThat(service.events(mothersDay, mothersDay, Set.of()))

@@ -270,4 +270,20 @@ class FlywayMigrationsTest {
                 .contains("notification_webhook_id VARCHAR(32) NULL")
                 .contains("WHERE p.name = 'Wa All in One'");
     }
+
+    @Test
+    void lunarCalendarReminderMigrationKeepsExistingRowsCompatible() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V103__lunar_calendar_group_reminders.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("calendar_type VARCHAR(16) NOT NULL DEFAULT 'SOLAR'")
+                .contains("notification_type VARCHAR(16) NOT NULL DEFAULT 'DIRECT'")
+                .contains("lunar_leap_month TINYINT(1) NOT NULL DEFAULT 0")
+                .contains("chat_id VARCHAR(128) NULL")
+                .doesNotContain("DROP TABLE", "RENAME TABLE");
+    }
 }

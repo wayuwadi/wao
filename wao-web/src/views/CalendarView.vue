@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -18,6 +18,7 @@ import {
 } from '@/api/holiday'
 import {
   createFamilyImportantDate,
+  convertCalendarDate,
   deleteFamilyImportantDate,
   fetchFamilyImportantDates,
   updateFamilyImportantDate,
@@ -25,6 +26,7 @@ import {
   type FamilyImportantDateEvent,
   type SaveFamilyImportantDate,
 } from '@/api/importantDates'
+import { fetchFeishuChats, type FeishuChat } from '@/api/system'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
 import type { Task } from '@/types'
@@ -49,6 +51,8 @@ interface CalEvt {
   holidayDayType?: HolidayDayType
   holiday?: HolidayEvent
   importantDate?: FamilyImportantDateEvent
+  kind?: string
+  sourceLabel?: string
   go?: () => void
 }
 
@@ -167,6 +171,8 @@ const importantDateState = ref<'loading' | 'ready' | 'error'>('loading')
 const importantDateLoadError = ref('')
 const importantDateChannelAvailable = ref(false)
 const importantDateChannelHint = ref('正在读取飞书提醒通道状态…')
+const importantDateGroupChannelAvailable = ref(false)
+const importantDateGroupChannelHint = ref('正在读取飞书群提醒通道状态…')
 let importantDateRequestSequence = 0
 
 const caldavState = computed(() => {
@@ -255,6 +261,8 @@ async function loadImportantDates() {
     importantDateEvents.value = result.events
     importantDateChannelAvailable.value = result.reminderChannelAvailable
     importantDateChannelHint.value = result.reminderChannelHint
+    importantDateGroupChannelAvailable.value = Boolean(result.groupChannelAvailable)
+    importantDateGroupChannelHint.value = result.groupChannelHint || '飞书群提醒通道暂不可用'
     importantDateState.value = 'ready'
   } catch (error) {
     if (requestSequence !== importantDateRequestSequence) return
@@ -284,7 +292,7 @@ onMounted(() => {
 })
 watch([calY, calM, calD, viewMode, () => preferences.weekStart], loadCalendarSources)
 
-// ---------- 图例：固定两类 + 每个启用的订阅日历 ----------
+// ---------- 图例：固定来源 + 每个启用的订阅日历 ----------
 const legend = computed(() => {
   const items = [
     { label: '任务截止', color: '#4358D6' },
@@ -299,7 +307,7 @@ const legend = computed(() => {
     items.push({ label: '调休上班', color: '#79808F' })
   }
   if (importantDateItems.value.length || importantDateEvents.value.length) {
-    items.push({ label: '家庭重要日', color: '#D0527F' })
+    items.push({ label: '提醒事项', color: '#D0527F' })
   }
   for (const a of accounts.value) {
     for (const c of a.calendars) {
@@ -309,11 +317,13 @@ const legend = computed(() => {
   return items
 })
 
-// ---------- 事件合并 ----------
+// ---------- 事件合并、已完成显隐与搜索 ----------
+const showCompletedTasks = ref(true)
 const events = computed<CalEvt[]>(() => {
   const evs: CalEvt[] = []
   data.tasks
-    .filter((t) => t.owner === calendarMemberId.value && (t.due || t.startAt))
+    .filter((t) => t.owner === calendarMemberId.value && (t.due || t.startAt)
+      && (showCompletedTasks.value || t.status !== '已完成'))
     .forEach((t) => evs.push({
       date: t.startAt?.slice(0, 10) || t.due,
       title: t.title,
@@ -322,12 +332,14 @@ const events = computed<CalEvt[]>(() => {
       time: t.startAt?.slice(11, 16),
       endTime: t.endAt?.slice(11, 16),
       taskId: t.id,
+      kind: '任务',
+      sourceLabel: data.projectById(t.project)?.name ?? '个人事项',
       go: () => ui.openTask(t.id),
     }))
   data.projects.forEach((p) => {
     p.msDates.forEach((d, i) => {
       const name = p.milestones[i]?.name
-      if (d && name) evs.push({ date: d, title: `里程碑 · ${name}`, color: '#B9821F', go: () => router.push(`/projects/${p.id}`) })
+      if (d && name) evs.push({ date: d, title: `里程碑 · ${name}`, color: '#B9821F', kind: '里程碑', sourceLabel: p.name, go: () => router.push(`/projects/${p.id}`) })
     })
   })
   caldavEvents.value.forEach((e) => {
@@ -337,6 +349,8 @@ const events = computed<CalEvt[]>(() => {
       color: e.color,
       time: e.allDay ? '' : e.start.slice(11, 16),
       endTime: e.allDay ? '' : e.end?.slice(11, 16),
+      kind: 'CalDAV',
+      sourceLabel: e.calendarName,
     })
   })
   holidayEvents.value.forEach((holiday) => {
@@ -348,6 +362,8 @@ const events = computed<CalEvt[]>(() => {
         : holiday.category === 'CHINA' ? '#D9634C' : '#8A5BD9',
       holidayDayType: holiday.dayType,
       holiday,
+      kind: holiday.name.startsWith('节气 · ') ? '二十四节气' : '节假日',
+      sourceLabel: holiday.sourceName,
       go: () => openHolidayDetail(holiday),
     })
   })
@@ -359,11 +375,34 @@ const events = computed<CalEvt[]>(() => {
       time: importantDate.reminderEnabled && importantDate.reminderDaysBefore === 0
         ? importantDate.reminderTime ?? undefined : undefined,
       importantDate,
+      kind: '提醒事项',
+      sourceLabel: importantDate.calendarType === 'LUNAR' ? importantDate.lunarDateLabel : importantDate.solarDateLabel,
       go: () => openImportantDateEvent(importantDate),
     })
   })
   return evs
 })
+
+const calendarSearch = ref('')
+const searchPreview = ref<CalEvt | null>(null)
+const searchResults = computed(() => {
+  const keyword = calendarSearch.value.trim().toLocaleLowerCase()
+  if (!keyword) return []
+  return events.value.filter((event) => [event.title, event.kind, event.sourceLabel, event.date]
+    .some((value) => value?.toLocaleLowerCase().includes(keyword))).slice(0, 30)
+})
+
+async function selectSearchResult(event: CalEvt) {
+  const date = new Date(`${event.date}T00:00:00`)
+  calY.value = date.getFullYear()
+  calM.value = date.getMonth()
+  calD.value = date.getDate()
+  viewMode.value = 'day'
+  calendarSearch.value = ''
+  await nextTick()
+  if (event.go) event.go()
+  else searchPreview.value = event
+}
 
 const month = computed(() => {
   const y = calY.value
@@ -529,7 +568,7 @@ function finishTimeSelection() {
   const from = Math.min(value.from, value.to)
   const to = Math.max(value.from, value.to) + 1
   const p = (n: number) => String(n).padStart(2, '0')
-  ui.openModal('task', '', value.day, `${value.day}T${p(from)}:00`, `${value.day}T${p(to)}:00`)
+  openCreateChoice(value.day, `${value.day}T${p(from)}:00`, `${value.day}T${p(to)}:00`)
 }
 const yearMonths = computed(() => Array.from({ length: 12 }, (_, index) => {
   const prefix = `${calY.value}-${String(index + 1).padStart(2, '0')}`
@@ -679,7 +718,22 @@ const importantDateDraft = reactive<SaveFamilyImportantDate>({
   reminderEnabled: false,
   reminderDaysBefore: 0,
   reminderTime: '09:00',
+  calendarType: 'SOLAR',
+  lunarMonth: null,
+  lunarDay: null,
+  lunarLeapMonth: false,
+  notificationType: 'DIRECT',
+  chatId: null,
+  chatName: null,
 })
+const lunarYear = ref(new Date(`${data.today}T00:00:00`).getFullYear())
+const dateConversionLabel = ref('')
+const dateConversionState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const dateConversionError = ref('')
+let dateConversionSequence = 0
+const feishuChats = ref<FeishuChat[]>([])
+const feishuChatsState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const feishuChatsError = ref('')
 const importantDateDraftKey = computed(() =>
   `wao-family-important-date-draft:${session.currentUser.id || 'anonymous'}:${editingImportantDateId.value || 'new'}`)
 
@@ -690,12 +744,20 @@ function copyImportantDateDraft(value?: FamilyImportantDate) {
   importantDateDraft.reminderEnabled = value?.reminderEnabled ?? false
   importantDateDraft.reminderDaysBefore = value?.reminderDaysBefore ?? 0
   importantDateDraft.reminderTime = value?.reminderTime ?? '09:00'
+  importantDateDraft.calendarType = value?.calendarType ?? 'SOLAR'
+  importantDateDraft.lunarMonth = value?.lunarMonth ?? null
+  importantDateDraft.lunarDay = value?.lunarDay ?? null
+  importantDateDraft.lunarLeapMonth = value?.lunarLeapMonth ?? false
+  importantDateDraft.notificationType = value?.notificationType ?? 'DIRECT'
+  importantDateDraft.chatId = value?.chatId ?? null
+  importantDateDraft.chatName = value?.chatName ?? null
+  lunarYear.value = new Date(`${value?.eventDate ?? data.today}T00:00:00`).getFullYear()
 }
 
 function restoreImportantDateDraft(value?: FamilyImportantDate) {
   copyImportantDateDraft(value)
   try {
-    const parsed = JSON.parse(localStorage.getItem(importantDateDraftKey.value) || 'null') as Partial<SaveFamilyImportantDate> | null
+    const parsed = JSON.parse(localStorage.getItem(importantDateDraftKey.value) || 'null') as (Partial<SaveFamilyImportantDate> & { lunarYear?: number }) | null
     if (!parsed) return
     if (typeof parsed.name === 'string') importantDateDraft.name = parsed.name
     if (typeof parsed.eventDate === 'string') importantDateDraft.eventDate = parsed.eventDate
@@ -703,6 +765,14 @@ function restoreImportantDateDraft(value?: FamilyImportantDate) {
     if (typeof parsed.reminderEnabled === 'boolean') importantDateDraft.reminderEnabled = parsed.reminderEnabled
     if (typeof parsed.reminderDaysBefore === 'number') importantDateDraft.reminderDaysBefore = parsed.reminderDaysBefore
     if (typeof parsed.reminderTime === 'string') importantDateDraft.reminderTime = parsed.reminderTime
+    if (parsed.calendarType === 'SOLAR' || parsed.calendarType === 'LUNAR') importantDateDraft.calendarType = parsed.calendarType
+    if (typeof parsed.lunarMonth === 'number') importantDateDraft.lunarMonth = parsed.lunarMonth
+    if (typeof parsed.lunarDay === 'number') importantDateDraft.lunarDay = parsed.lunarDay
+    if (typeof parsed.lunarLeapMonth === 'boolean') importantDateDraft.lunarLeapMonth = parsed.lunarLeapMonth
+    if (parsed.notificationType === 'DIRECT' || parsed.notificationType === 'GROUP') importantDateDraft.notificationType = parsed.notificationType
+    if (typeof parsed.chatId === 'string' || parsed.chatId === null) importantDateDraft.chatId = parsed.chatId
+    if (typeof parsed.chatName === 'string' || parsed.chatName === null) importantDateDraft.chatName = parsed.chatName
+    if (typeof parsed.lunarYear === 'number') lunarYear.value = parsed.lunarYear
   } catch {
     copyImportantDateDraft(value)
   }
@@ -713,6 +783,7 @@ function openImportantDateManager() {
   importantDateEditorOpen.value = false
   importantDateSaveError.value = ''
   showImportantDates.value = true
+  loadFeishuChats()
 }
 
 function closeImportantDateManager() {
@@ -723,11 +794,14 @@ function closeImportantDateManager() {
   importantDateSaveError.value = ''
 }
 
-function startNewImportantDate() {
+function startNewImportantDate(presetDate?: string, presetTime?: string) {
   editingImportantDateId.value = null
   importantDateEditorOpen.value = true
   importantDateSaveError.value = ''
   restoreImportantDateDraft()
+  if (typeof presetDate === 'string') importantDateDraft.eventDate = presetDate
+  if (presetTime) importantDateDraft.reminderTime = presetTime
+  void refreshDateConversion()
 }
 
 function editImportantDate(value: FamilyImportantDate) {
@@ -735,6 +809,61 @@ function editImportantDate(value: FamilyImportantDate) {
   importantDateEditorOpen.value = true
   importantDateSaveError.value = ''
   restoreImportantDateDraft(value)
+  void refreshDateConversion()
+}
+
+async function loadFeishuChats() {
+  if (!importantDateGroupChannelAvailable.value || feishuChatsState.value === 'loading') return
+  feishuChatsState.value = 'loading'
+  feishuChatsError.value = ''
+  try {
+    feishuChats.value = await fetchFeishuChats()
+    feishuChatsState.value = 'ready'
+  } catch (error) {
+    feishuChats.value = []
+    feishuChatsError.value = error instanceof Error ? error.message : '读取飞书群失败'
+    feishuChatsState.value = 'error'
+  }
+}
+
+function selectReminderChat() {
+  const chat = feishuChats.value.find((item) => item.chatId === importantDateDraft.chatId)
+  importantDateDraft.chatName = chat?.name ?? null
+}
+
+async function refreshDateConversion() {
+  const sequence = ++dateConversionSequence
+  dateConversionState.value = 'loading'
+  dateConversionError.value = ''
+  try {
+    const converted = importantDateDraft.calendarType === 'LUNAR'
+      ? await convertCalendarDate({
+          calendarType: 'LUNAR', lunarYear: lunarYear.value,
+          lunarMonth: importantDateDraft.lunarMonth ?? undefined,
+          lunarDay: importantDateDraft.lunarDay ?? undefined,
+          lunarLeapMonth: importantDateDraft.lunarLeapMonth,
+        })
+      : await convertCalendarDate({ calendarType: 'SOLAR', solarDate: importantDateDraft.eventDate })
+    if (sequence !== dateConversionSequence) return
+    importantDateDraft.eventDate = converted.solarDate
+    importantDateDraft.lunarMonth = converted.lunarMonth
+    importantDateDraft.lunarDay = converted.lunarDay
+    importantDateDraft.lunarLeapMonth = converted.lunarLeapMonth
+    lunarYear.value = converted.lunarYear
+    dateConversionLabel.value = importantDateDraft.calendarType === 'LUNAR'
+      ? `对应公历：${converted.solarLabel}` : `对应农历：${converted.lunarLabel}`
+    dateConversionState.value = 'ready'
+  } catch (error) {
+    if (sequence !== dateConversionSequence) return
+    dateConversionLabel.value = ''
+    dateConversionError.value = error instanceof Error ? error.message : '日期转换失败'
+    dateConversionState.value = 'error'
+  }
+}
+
+function switchCalendarType(type: 'SOLAR' | 'LUNAR') {
+  importantDateDraft.calendarType = type
+  void refreshDateConversion()
 }
 
 function openImportantDateEvent(event: FamilyImportantDateEvent) {
@@ -753,9 +882,15 @@ function backToImportantDateList() {
 watch(importantDateDraft, (value) => {
   if (showImportantDates.value && importantDateEditorOpen.value
       && (editingImportantDateId.value || value.name || value.note)) {
-    localStorage.setItem(importantDateDraftKey.value, JSON.stringify(value))
+    localStorage.setItem(importantDateDraftKey.value, JSON.stringify({ ...value, lunarYear: lunarYear.value }))
   }
 }, { deep: true })
+watch(lunarYear, () => {
+  if (showImportantDates.value && importantDateEditorOpen.value) {
+    localStorage.setItem(importantDateDraftKey.value,
+      JSON.stringify({ ...importantDateDraft, lunarYear: lunarYear.value }))
+  }
+})
 
 async function submitImportantDate() {
   if (!importantDateDraft.name.trim()) {
@@ -766,8 +901,17 @@ async function submitImportantDate() {
     importantDateSaveError.value = '请选择日期'
     return
   }
+  if (dateConversionState.value === 'loading' || dateConversionState.value === 'error') {
+    importantDateSaveError.value = dateConversionState.value === 'loading' ? '请等待日期转换完成' : dateConversionError.value
+    return
+  }
   if (importantDateDraft.reminderEnabled && !importantDateDraft.reminderTime) {
     importantDateSaveError.value = '开启飞书提醒后请选择时间'
+    return
+  }
+  if (importantDateDraft.reminderEnabled && importantDateDraft.notificationType === 'GROUP'
+      && (!importantDateDraft.chatId || !importantDateDraft.chatName)) {
+    importantDateSaveError.value = '请选择要发送提醒的飞书群'
     return
   }
   importantDateSaving.value = true
@@ -826,7 +970,8 @@ function importantDateMonthDay(value: string) {
 function importantDateReminderLabel(value: FamilyImportantDate) {
   if (!value.reminderEnabled) return '仅在日历显示'
   const before = value.reminderDaysBefore ? `提前 ${value.reminderDaysBefore} 天` : '当天'
-  return `${before} ${value.reminderTime} 飞书提醒`
+  const target = value.notificationType === 'GROUP' ? `群聊「${value.chatName}」` : '飞书私聊'
+  return `${before} ${value.reminderTime} ${target}提醒`
 }
 
 // ---------- CalDAV 配置浮层：账户是个人维度，就近在日历页里配置 ----------
@@ -836,9 +981,30 @@ function onCaldavChanged() {
   loadEvents()
 }
 
-/** 双击某天直接建任务，弹窗里的截止日就是这一天。 */
+const showCreateChoice = ref(false)
+const createPreset = reactive({ day: data.today, startAt: '', endAt: '' })
+
+/** 日历创建先选任务或提醒事项，避免把没有行动责任的纪念日塞进个人任务。 */
+function openCreateChoice(dayIso: string, startAt = '', endAt = '') {
+  createPreset.day = dayIso
+  createPreset.startAt = startAt
+  createPreset.endAt = endAt
+  showCreateChoice.value = true
+}
+
 function quickCreate(dayIso: string) {
-  ui.openModal('task', '', dayIso)
+  openCreateChoice(dayIso)
+}
+
+function continueCreateTask() {
+  showCreateChoice.value = false
+  ui.openModal('task', '', createPreset.day, createPreset.startAt, createPreset.endAt)
+}
+
+function continueCreateReminder() {
+  showCreateChoice.value = false
+  openImportantDateManager()
+  startNewImportantDate(createPreset.day, createPreset.startAt?.slice(11, 16) || '09:00')
 }
 
 // ---------- 待安排任务：只收未排期与已逾期；按优先级、具体时间排序 ----------
@@ -919,9 +1085,9 @@ function onDropDay(dayIso: string) {
       <button class="holiday-settings-entry" title="选择国际节日范围" @click="openHolidaySettings">
         <i class="ri-earth-line"></i>节日设置 · {{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类
       </button>
-      <button class="important-date-entry" title="维护家人的生日、纪念日等重要日期" @click="openImportantDateManager">
+      <button class="important-date-entry" title="维护公历或农历提醒事项" @click="openImportantDateManager">
         <i :class="importantDateState === 'loading' ? 'ri-loader-4-line spinning' : importantDateState === 'error' ? 'ri-error-warning-line' : 'ri-heart-3-line'"></i>
-        重要日 · {{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}
+        提醒事项 · {{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}
       </button>
       <button class="caldav" title="配置 CalDAV 日历账户" @click="showCaldavConfig = true">
         <span class="cd-dot" :style="{ background: caldavState.dot }"></span>{{ caldavState.label }}<i class="ri-settings-3-line"></i>
@@ -937,6 +1103,21 @@ function onDropDay(dayIso: string) {
           </option>
         </select>
       </label>
+      <button class="completed-toggle" :class="{ on: showCompletedTasks }" type="button" @click="showCompletedTasks = !showCompletedTasks">
+        <i :class="showCompletedTasks ? 'ri-eye-line' : 'ri-eye-off-line'"></i>
+        {{ showCompletedTasks ? '隐藏已完成任务' : '显示已完成任务' }}
+      </button>
+      <div class="calendar-search">
+        <i class="ri-search-line"></i>
+        <input v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、提醒、节日…" @keydown.esc="calendarSearch = ''" />
+        <div v-if="calendarSearch.trim()" class="calendar-search-results">
+          <button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)">
+            <span class="search-result-date">{{ result.date }}</span>
+            <span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span>
+          </button>
+          <div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div>
+        </div>
+      </div>
       <div class="spacer"></div>
       <div class="view-switch"><button :class="{ on: viewMode === 'year' }" @click="viewMode = 'year'">年</button><button :class="{ on: viewMode === 'month' }" @click="viewMode = 'month'">月</button><button :class="{ on: viewMode === 'week' }" @click="viewMode = 'week'">周</button><button :class="{ on: viewMode === 'day' }" @click="viewMode = 'day'">日</button></div>
       <select v-model.number="calY" class="jump-select" title="快速切换年份"><option v-for="y in Array.from({ length: 21 }, (_, i) => now.getFullYear() - 10 + i)" :key="y" :value="y">{{ y }} 年</option></select>
@@ -950,7 +1131,7 @@ function onDropDay(dayIso: string) {
       <div class="cal-card">
         <div class="cal-head">
           <div class="month-title">{{ viewMode === 'year' ? `${calY} 年` : viewMode === 'week' ? `${weekDays[0]?.label} - ${weekDays[6]?.label}` : viewMode === 'day' ? dayView[0]?.label : month.title }}</div>
-          <span class="cal-hint">任务、里程碑、节假日、家庭重要日与订阅日历合并显示</span>
+          <span class="cal-hint">任务、提醒事项、二十四节气、节假日与订阅日历合并显示</span>
         </div>
         <div v-if="missingHolidayYears.length" class="holiday-source-warning">
           <i class="ri-information-line"></i>
@@ -967,7 +1148,7 @@ function onDropDay(dayIso: string) {
             class="day"
             :class="{ 'drop-target': dragTaskId, 'drop-over': dragOverDay === dy.iso }"
             :style="{ background: dy.bg }"
-            title="双击这一天，直接新建以它为截止日的任务"
+            title="双击这一天，选择新建任务或提醒事项"
             @dblclick.self="quickCreate(dy.iso)"
             @dragover.prevent="dragOverDay = dy.iso"
             @dragleave="dragOverDay === dy.iso && (dragOverDay = null)"
@@ -1088,6 +1269,34 @@ function onDropDay(dayIso: string) {
       </aside>
     </div>
 
+    <template v-if="showCreateChoice">
+      <div class="cd-mask" @click="showCreateChoice = false"></div>
+      <div class="create-choice-modal" role="dialog" aria-modal="true" aria-labelledby="create-choice-title">
+        <div class="cd-head">
+          <div id="create-choice-title" class="cd-title">在 {{ createPreset.day }} 创建</div>
+          <div class="spacer"></div>
+          <button class="cd-close" aria-label="关闭创建类型选择" @click="showCreateChoice = false"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="create-choice-grid">
+          <button type="button" @click="continueCreateTask"><i class="ri-checkbox-circle-line"></i><b>任务</b><span>有负责人、项目和完成状态，继续进入个人事项。</span></button>
+          <button type="button" @click="continueCreateReminder"><i class="ri-notification-3-line"></i><b>提醒事项</b><span>独立保存在日历提醒中，不进入个人任务列表。</span></button>
+        </div>
+      </div>
+    </template>
+
+    <template v-if="searchPreview">
+      <div class="cd-mask" @click="searchPreview = null"></div>
+      <div class="search-preview-modal" role="dialog" aria-modal="true" aria-labelledby="search-preview-title">
+        <div class="cd-head"><div id="search-preview-title" class="cd-title">{{ searchPreview.title }}</div><div class="spacer"></div><button class="cd-close" aria-label="关闭事项预览" @click="searchPreview = null"><i class="ri-close-line"></i></button></div>
+        <dl class="holiday-facts">
+          <div><dt>日期</dt><dd>{{ searchPreview.date }}</dd></div>
+          <div><dt>类型</dt><dd>{{ searchPreview.kind || '日历事项' }}</dd></div>
+          <div v-if="searchPreview.time"><dt>时间</dt><dd>{{ searchPreview.time }}<template v-if="searchPreview.endTime">–{{ searchPreview.endTime }}</template></dd></div>
+          <div v-if="searchPreview.sourceLabel"><dt>来源</dt><dd>{{ searchPreview.sourceLabel }}</dd></div>
+        </dl>
+      </div>
+    </template>
+
     <!-- CalDAV 配置浮层 -->
     <template v-if="showCaldavConfig">
       <div class="cd-mask" @click="showCaldavConfig = false"></div>
@@ -1150,7 +1359,7 @@ function onDropDay(dayIso: string) {
       </div>
     </template>
 
-    <!-- 家庭重要日维护浮层 -->
+    <!-- 日历提醒事项维护浮层 -->
     <template v-if="showImportantDates">
       <div class="cd-mask" @click="closeImportantDateManager"></div>
       <div class="important-date-modal" role="dialog" aria-modal="true" aria-labelledby="important-date-title">
@@ -1158,29 +1367,56 @@ function onDropDay(dayIso: string) {
           <button v-if="importantDateEditorOpen" class="important-date-back" type="button" :disabled="importantDateSaving" @click="backToImportantDateList">
             <i class="ri-arrow-left-line"></i><span>返回</span>
           </button>
-          <div id="important-date-title" class="cd-title">{{ importantDateEditorOpen ? (editingImportantDateId ? '编辑家庭重要日' : '新增家庭重要日') : '家庭重要日' }}</div>
+          <div id="important-date-title" class="cd-title">{{ importantDateEditorOpen ? (editingImportantDateId ? '编辑提醒事项' : '新增提醒事项') : '日历提醒事项' }}</div>
           <div class="spacer"></div>
-          <button class="cd-close" aria-label="关闭家庭重要日" :disabled="importantDateSaving || !!importantDateDeletingId" @click="closeImportantDateManager"><i class="ri-close-line"></i></button>
+          <button class="cd-close" aria-label="关闭日历提醒事项" :disabled="importantDateSaving || !!importantDateDeletingId" @click="closeImportantDateManager"><i class="ri-close-line"></i></button>
         </div>
         <div class="important-date-body">
           <form v-if="importantDateEditorOpen" class="important-date-form" @submit.prevent="submitImportantDate">
-            <p class="important-date-intro">保存后会按公历月日每年出现在 WAO 日历；可同时设置当天或提前飞书提醒。</p>
+            <p class="important-date-intro">事项独立保存在日历中，不进入个人任务；按所选公历或农历日期每年显示，并可提前通知。</p>
             <label class="important-date-field">
               <span>名称</span>
-              <input v-model="importantDateDraft.name" type="text" maxlength="64" required placeholder="例如：妈妈生日、结婚纪念日" :disabled="importantDateSaving" />
+              <input v-model="importantDateDraft.name" type="text" maxlength="64" required placeholder="例如：妈妈生日、合同续费日" :disabled="importantDateSaving" />
             </label>
-            <label class="important-date-field">
-              <span>日期</span>
-              <input v-model="importantDateDraft.eventDate" type="date" required :disabled="importantDateSaving" />
-              <small>从所选年份起按月和日每年重复；2 月 29 日只在闰年显示。</small>
+            <div class="calendar-type-switch" role="group" aria-label="录入历法">
+              <button type="button" :class="{ on: importantDateDraft.calendarType === 'SOLAR' }" @click="switchCalendarType('SOLAR')">公历录入</button>
+              <button type="button" :class="{ on: importantDateDraft.calendarType === 'LUNAR' }" @click="switchCalendarType('LUNAR')">农历录入</button>
+            </div>
+            <label v-if="importantDateDraft.calendarType === 'SOLAR'" class="important-date-field">
+              <span>公历日期</span>
+              <input v-model="importantDateDraft.eventDate" type="date" required :disabled="importantDateSaving" @change="refreshDateConversion" />
+              <small>从所选年份起按公历月日每年重复；2 月 29 日只在闰年显示。</small>
             </label>
+            <div v-else class="lunar-date-fields">
+              <label class="important-date-field"><span>农历年</span><input v-model.number="lunarYear" type="number" min="1900" max="2100" required @change="refreshDateConversion" /></label>
+              <label class="important-date-field"><span>月</span><select v-model.number="importantDateDraft.lunarMonth" required @change="refreshDateConversion"><option :value="null" disabled>请选择</option><option v-for="monthNumber in 12" :key="monthNumber" :value="monthNumber">{{ monthNumber }} 月</option></select></label>
+              <label class="important-date-field"><span>日</span><select v-model.number="importantDateDraft.lunarDay" required @change="refreshDateConversion"><option :value="null" disabled>请选择</option><option v-for="dayNumber in 30" :key="dayNumber" :value="dayNumber">{{ dayNumber }} 日</option></select></label>
+              <label class="lunar-leap-toggle"><input v-model="importantDateDraft.lunarLeapMonth" type="checkbox" @change="refreshDateConversion" />闰月</label>
+            </div>
+            <div class="date-conversion" :class="dateConversionState">
+              <i :class="dateConversionState === 'loading' ? 'ri-loader-4-line spinning' : dateConversionState === 'error' ? 'ri-error-warning-line' : 'ri-swap-line'"></i>
+              {{ dateConversionState === 'loading' ? '正在换算另一种历法…' : dateConversionState === 'error' ? dateConversionError : dateConversionLabel }}
+            </div>
             <label class="important-date-field">
               <span>备注（可选）</span>
               <textarea v-model="importantDateDraft.note" maxlength="200" rows="3" placeholder="例如：喜欢百合花，记得提前订餐" :disabled="importantDateSaving"></textarea>
             </label>
             <label class="important-date-reminder-toggle">
-              <span><b>飞书私聊提醒</b><small>{{ importantDateChannelHint }}</small></span>
-              <input v-model="importantDateDraft.reminderEnabled" type="checkbox" :disabled="importantDateSaving || (!importantDateChannelAvailable && !importantDateDraft.reminderEnabled)" />
+              <span><b>飞书通知</b><small>{{ importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelHint : importantDateChannelHint }}</small></span>
+              <input v-model="importantDateDraft.reminderEnabled" type="checkbox" :disabled="importantDateSaving || (!(importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelAvailable : importantDateChannelAvailable) && !importantDateDraft.reminderEnabled)" />
+            </label>
+            <div class="calendar-type-switch notification-type" role="group" aria-label="通知方式">
+              <button type="button" :class="{ on: importantDateDraft.notificationType === 'DIRECT' }" @click="importantDateDraft.notificationType = 'DIRECT'">私聊我</button>
+              <button type="button" :class="{ on: importantDateDraft.notificationType === 'GROUP' }" @click="importantDateDraft.notificationType = 'GROUP'; loadFeishuChats()">群聊并 @ 我</button>
+            </div>
+            <label v-if="importantDateDraft.notificationType === 'GROUP'" class="important-date-field">
+              <span>目标飞书群</span>
+              <select v-model="importantDateDraft.chatId" :disabled="feishuChatsState === 'loading' || !importantDateGroupChannelAvailable" required @change="selectReminderChat">
+                <option :value="null" disabled>{{ feishuChatsState === 'loading' ? '正在读取机器人所在群…' : '请选择群聊' }}</option>
+                <option v-for="chat in feishuChats" :key="chat.chatId" :value="chat.chatId">{{ chat.name }}</option>
+              </select>
+              <small v-if="feishuChatsState === 'error'" class="field-error">读取失败：{{ feishuChatsError }}。<button type="button" @click="loadFeishuChats">重试</button></small>
+              <small v-else>群列表实时来自飞书；发送时会通过 Union ID 重新确认并只 @ 配置人。</small>
             </label>
             <div class="important-date-reminder-fields">
               <label class="important-date-field">
@@ -1194,22 +1430,22 @@ function onDropDay(dayIso: string) {
                 <small>按上海时区发送。</small>
               </label>
             </div>
-            <div v-if="importantDateDraft.reminderEnabled && !importantDateChannelAvailable" class="work-schedule-state error compact">{{ importantDateChannelHint }}</div>
+            <div v-if="importantDateDraft.reminderEnabled && !(importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelAvailable : importantDateChannelAvailable)" class="work-schedule-state error compact">{{ importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelHint : importantDateChannelHint }}</div>
             <div v-if="importantDateSaveError" class="work-schedule-state error compact">保存失败：{{ importantDateSaveError }}。草稿已保留，可直接重试。</div>
             <div class="work-schedule-actions">
               <button type="button" class="work-schedule-cancel" :disabled="importantDateSaving" @click="backToImportantDateList">返回列表</button>
-              <button type="submit" class="work-schedule-save" :disabled="importantDateSaving || (importantDateDraft.reminderEnabled && !importantDateChannelAvailable)">
-                <i v-if="importantDateSaving" class="ri-loader-4-line spinning"></i>{{ importantDateSaving ? '保存中…' : importantDateSaveError ? '重试保存' : '保存重要日' }}
+              <button type="submit" class="work-schedule-save" :disabled="importantDateSaving || dateConversionState === 'loading' || (importantDateDraft.reminderEnabled && !(importantDateDraft.notificationType === 'GROUP' ? importantDateGroupChannelAvailable : importantDateChannelAvailable))">
+                <i v-if="importantDateSaving" class="ri-loader-4-line spinning"></i>{{ importantDateSaving ? '保存中…' : importantDateSaveError ? '重试保存' : '保存提醒事项' }}
               </button>
             </div>
           </form>
           <template v-else>
             <div class="important-date-list-head">
               <div>
-                <b>每年记得重要的人与重要的日子</b>
-                <span>这里只维护当前账号的家庭重要日。</span>
+                <b>单独管理无需完成状态的日期提醒</b>
+                <span>这里只维护当前账号的提醒事项，任务仍在个人事项中。</span>
               </div>
-              <button type="button" @click="startNewImportantDate"><i class="ri-add-line"></i>新增重要日</button>
+              <button type="button" @click="startNewImportantDate()"><i class="ri-add-line"></i>新增提醒事项</button>
             </div>
             <div v-if="importantDateState === 'loading'" class="work-schedule-state"><i class="ri-loader-4-line spinning"></i>正在读取已保存的重要日…</div>
             <div v-else-if="importantDateState === 'error'" class="work-schedule-state error">
@@ -1218,9 +1454,9 @@ function onDropDay(dayIso: string) {
             </div>
             <div v-else-if="!importantDateItems.length" class="important-date-empty">
               <i class="ri-heart-add-line"></i>
-              <b>还没有家庭重要日</b>
-              <span>新增生日或纪念日后，它会每年显示在日历里。</span>
-              <button type="button" @click="startNewImportantDate">新增第一个重要日</button>
+              <b>还没有提醒事项</b>
+              <span>新增后会按所选公历或农历日期每年显示在日历里。</span>
+              <button type="button" @click="startNewImportantDate()">新增第一个提醒事项</button>
             </div>
             <div v-else class="important-date-list">
               <article v-for="item in importantDateItems" :key="item.id" class="important-date-item">
@@ -1228,7 +1464,7 @@ function onDropDay(dayIso: string) {
                   <span class="important-date-icon"><i class="ri-heart-3-line"></i></span>
                   <span class="important-date-copy">
                     <b>{{ item.name }}</b>
-                    <small>{{ importantDateMonthDay(item.eventDate) }} · {{ importantDateReminderLabel(item) }}</small>
+                    <small>{{ item.calendarType === 'LUNAR' ? item.lunarDateLabel : importantDateMonthDay(item.eventDate) }} · {{ importantDateReminderLabel(item) }}</small>
                     <em v-if="item.note">{{ item.note }}</em>
                   </span>
                   <i class="ri-arrow-right-s-line"></i>
@@ -1314,7 +1550,7 @@ function onDropDay(dayIso: string) {
               </button>
             </div>
           </form>
-          <div v-else class="holiday-reminder-unavailable"><i class="ri-information-line"></i>这是调休上班或假期延展日；提醒请在对应节日本日设置，避免同一假期重复通知。</div>
+          <div v-else class="holiday-reminder-unavailable"><i class="ri-information-line"></i>{{ activeHoliday.name.startsWith('节气 · ') ? '这是历法数据中的二十四节气节点；如需通知，可在日历上创建独立提醒事项并选择提前天数与目标群。' : '这是调休上班或假期延展日；提醒请在对应节日本日设置，避免同一假期重复通知。' }}</div>
         </div>
       </div>
     </template>
@@ -2091,7 +2327,7 @@ button.holiday-status { cursor: pointer; }
 .important-date-intro { margin: 2px 0 14px; color: var(--wao-text-weak); font-size: 12px; line-height: 1.6; }
 .important-date-form { display: grid; gap: 12px; }
 .important-date-field { display: grid; gap: 6px; color: var(--wao-text-2); font-size: 12px; }
-.important-date-field input, .important-date-field textarea {
+.important-date-field input, .important-date-field textarea, .important-date-field select {
   width: 100%;
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
@@ -2100,7 +2336,7 @@ button.holiday-status { cursor: pointer; }
   color: var(--wao-text-1);
   font: inherit;
 }
-.important-date-field input { height: 36px; }
+.important-date-field input, .important-date-field select { height: 36px; }
 .important-date-field textarea { resize: vertical; line-height: 1.5; }
 .important-date-field small { color: var(--wao-text-weak); font-size: 11px; line-height: 1.5; }
 .important-date-reminder-toggle {
@@ -2154,6 +2390,36 @@ button.holiday-status { cursor: pointer; }
 .important-date-empty b { color: var(--wao-text-2); font-size: 14px; }
 .important-date-empty span { font-size: 12px; }
 .important-date-empty button { margin-top: 8px; }
+.completed-toggle {
+  height: 30px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px;
+  border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card);
+  color: var(--wao-text-3); font-size: 11.5px; cursor: pointer;
+}
+.completed-toggle.on { color: var(--wao-primary); border-color: color-mix(in srgb, var(--wao-primary) 45%, var(--wao-line-control)); }
+.calendar-search { position: relative; width: min(240px, 100%); height: 30px; }
+.calendar-search > i { position: absolute; z-index: 1; left: 9px; top: 7px; color: var(--wao-text-weak); }
+.calendar-search > input { width: 100%; height: 30px; padding: 0 9px 0 28px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-1); }
+.calendar-search-results { position: absolute; z-index: 20; top: 35px; right: 0; width: min(420px, calc(100vw - 28px)); max-height: 360px; overflow: auto; padding: 5px; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-modal); }
+.calendar-search-results button { display: grid; grid-template-columns: 84px 1fr; gap: 8px; width: 100%; padding: 8px; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text-2); text-align: left; cursor: pointer; }
+.calendar-search-results button:hover { background: var(--wao-bg-hover); }
+.calendar-search-results b, .calendar-search-results small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-search-results b { font-size: 12px; }.calendar-search-results small, .search-result-date { color: var(--wao-text-weak); font-size: 10.5px; }
+.calendar-search-empty { padding: 16px; color: var(--wao-text-weak); font-size: 12px; text-align: center; }
+.create-choice-modal, .search-preview-modal { position: fixed; z-index: 101; top: 50%; left: 50%; width: min(520px, calc(100vw - 32px)); transform: translate(-50%, -50%); border-radius: 14px; background: var(--wao-bg-page); box-shadow: var(--wao-shadow-modal); animation: waoFade .15s ease; }
+.create-choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 8px 20px 20px; }
+.create-choice-grid button { display: grid; justify-items: start; gap: 7px; padding: 16px; border: 1px solid var(--wao-line); border-radius: 11px; background: var(--wao-bg-card); color: var(--wao-text-2); text-align: left; cursor: pointer; }
+.create-choice-grid button:hover { border-color: var(--wao-primary); background: var(--wao-primary-soft); }
+.create-choice-grid i { font-size: 24px; color: var(--wao-primary); }.create-choice-grid b { font-size: 14px; }.create-choice-grid span { color: var(--wao-text-weak); font-size: 11.5px; line-height: 1.55; }
+.search-preview-modal .holiday-facts { margin: 4px 20px 20px; }
+.calendar-type-switch { display: inline-flex; width: fit-content; padding: 2px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); }
+.calendar-type-switch button { min-width: 90px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-3); cursor: pointer; }
+.calendar-type-switch button.on { background: var(--wao-primary); color: #fff; }
+.notification-type { opacity: 1; }.notification-type button { min-width: 110px; }
+.lunar-date-fields { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; align-items: end; gap: 8px; }
+.lunar-leap-toggle { display: inline-flex; height: 36px; align-items: center; gap: 5px; color: var(--wao-text-2); font-size: 12px; }
+.date-conversion { display: flex; align-items: center; gap: 6px; min-height: 34px; padding: 7px 10px; border-radius: 8px; background: var(--wao-primary-soft); color: var(--wao-primary-text); font-size: 11.5px; }
+.date-conversion.error { background: var(--wao-danger-bg); color: var(--wao-danger); }
+.field-error { color: var(--wao-danger) !important; }.field-error button { padding: 0; border: 0; background: transparent; color: var(--wao-primary); cursor: pointer; }
 @media (max-width: 640px) {
   .cal { padding-inline: 12px; }
   .holiday-source-warning { flex-wrap: wrap; }
@@ -2165,5 +2431,8 @@ button.holiday-status { cursor: pointer; }
   .important-date-reminder-fields { grid-template-columns: 1fr; }
   .important-date-list-head { align-items: flex-start; }
   .important-date-list-head span { max-width: 190px; }
+  .create-choice-grid { grid-template-columns: 1fr; }
+  .lunar-date-fields { grid-template-columns: 1fr 1fr; }
+  .calendar-search { width: 100%; }
 }
 </style>
