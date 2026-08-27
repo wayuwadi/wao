@@ -3,27 +3,29 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 import SettingsView from '@/views/SettingsView.vue'
-import { useNavStore } from '@/stores/nav'
 import {
   fetchBuiltinMenuRegistry,
   fetchExternalAppRegistry,
+  saveBuiltinMenuRegistry,
   saveExternalAppRegistry,
 } from '@/api/system'
 import {
   DEFAULT_BUILTIN_MENUS,
   DEFAULT_EXTERNAL_APPS,
-  externalAppItemId,
+  type BuiltinMenuConfig,
   type BuiltinMenuRegistry,
+  type ExternalAppConfig,
   type ExternalAppRegistry,
 } from '@/config/nav'
 import { fetchPreference, savePreference } from '@/api/favorites'
-import { useQuickLinks } from '@/composables/quickLinks'
 
 vi.mock('@/api/system', () => ({
   fetchExternalAppRegistry: vi.fn<() => Promise<ExternalAppRegistry>>(),
-  saveExternalAppRegistry: vi.fn<(apps: ExternalAppRegistry['apps']) => Promise<ExternalAppRegistry>>(),
+  saveExternalAppRegistry: vi.fn<(apps: ExternalAppConfig[]) => Promise<ExternalAppRegistry>>(),
   fetchBuiltinMenuRegistry: vi.fn<() => Promise<BuiltinMenuRegistry>>(),
-  saveBuiltinMenuRegistry: vi.fn<() => Promise<BuiltinMenuRegistry>>(),
+  saveBuiltinMenuRegistry: vi.fn<(menus: BuiltinMenuConfig[]) => Promise<BuiltinMenuRegistry>>(),
+  fetchNetworkOutageWindow: vi.fn<() => Promise<unknown>>(),
+  saveNetworkOutageWindow: vi.fn<() => Promise<unknown>>(),
   fetchWebhookConfig: vi.fn<() => Promise<unknown>>(),
   saveWebhookConfig: vi.fn<() => Promise<unknown>>(),
   testWebhook: vi.fn<() => Promise<void>>(),
@@ -42,101 +44,97 @@ vi.mock('@/api/favorites', async (importOriginal) => ({
   savePreference: vi.fn<() => Promise<void>>(),
 }))
 
-const router = createRouter({
-  history: createMemoryHistory(),
-  routes: [{ path: '/:p(.*)*', component: { template: '<div/>' } }],
-})
-
-async function mountRegistrySettings() {
+async function mountSettings() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }],
+  })
+  await router.push('/settings?tab=navigation')
+  await router.isReady()
   const wrapper = mount(SettingsView, { global: { plugins: [router] } })
-  const entry = wrapper.findAll('.snav-item').find((button) => button.text() === '菜单配置')
-  await entry!.trigger('click')
   await flushPromises()
   return wrapper
 }
 
-describe('外部应用菜单注册表设置', () => {
+function menuRow(wrapper: ReturnType<typeof mount>, label: string) {
+  return wrapper.findAll('.menu-row').find((row) =>
+    (row.find('input').element as HTMLInputElement | undefined)?.value === label,
+  )!
+}
+
+function menuGroup(wrapper: ReturnType<typeof mount>, label: string) {
+  return wrapper.findAll('.menu-group').find((group) => group.find('header').text().startsWith(label))!
+}
+
+describe('菜单与快捷链接统一设置', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
     setActivePinia(createPinia())
-    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({
-      version: 1,
-      apps: DEFAULT_EXTERNAL_APPS,
-    })
-    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({
-      version: 1,
-      menus: DEFAULT_BUILTIN_MENUS,
-    })
+    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({ version: 1, menus: DEFAULT_BUILTIN_MENUS })
+    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({ version: 1, apps: DEFAULT_EXTERNAL_APPS })
+    vi.mocked(saveBuiltinMenuRegistry).mockImplementation(async (menus) => ({ version: 1, menus }))
+    vi.mocked(saveExternalAppRegistry).mockImplementation(async (apps) => ({ version: 1, apps }))
     vi.mocked(fetchPreference).mockResolvedValue('')
     vi.mocked(savePreference).mockResolvedValue(undefined)
   })
 
-  it('读取注册表并展示现有 Agent 记录', async () => {
-    const wrapper = await mountRegistrySettings()
+  it('把已注册应用并入真实菜单分组，并隐藏独立注册表编辑器', async () => {
+    const wrapper = await mountSettings()
 
+    expect(fetchBuiltinMenuRegistry).toHaveBeenCalledOnce()
     expect(fetchExternalAppRegistry).toHaveBeenCalledOnce()
-    expect(wrapper.find('.registry-list').text()).toContain('自媒体 Agent')
-    expect(wrapper.find('.registry-list').text()).toContain('media-agent')
-    expect(wrapper.find('.registry-editor').text()).toContain('/apps/media-agent')
+    expect(wrapper.findAll('.menu-row input').map((input) => (input.element as HTMLInputElement).value))
+      .toContain('自媒体 Agent')
+    expect(wrapper.get('.menu-card').text()).toContain('已注册应用')
+    expect(wrapper.text()).not.toContain('注册新应用')
+    expect(wrapper.find('.registry-editor').exists()).toBe(false)
   })
 
-  it('注册新应用后立即更新动态菜单 store', async () => {
-    const dataStudio = {
-      id: 'data-studio', label: '数据工作台', icon: 'ri-dashboard-3-line',
-      group: 'TOOLS' as const, order: 0, visible: true, appUrl: '/studio/', healthUrl: '', openMode: 'NEW_PAGE' as const,
-    }
-    vi.mocked(saveExternalAppRegistry).mockResolvedValue({
-      version: 1,
-      apps: [...DEFAULT_EXTERNAL_APPS, dataStudio],
-    })
-    const wrapper = await mountRegistrySettings()
+  it('分组下拉始终展示完整选项，隐藏后置底并由界面重建排序值', async () => {
+    const wrapper = await mountSettings()
+    const projects = menuRow(wrapper, '项目')
+    const groupSelect = projects.get('select[aria-label="所属分组"]')
+    expect(groupSelect.findAll('option').map((option) => option.text())).toEqual(['顶层', '公共', '个人', '工具'])
 
-    await wrapper.get('button.btn-primary.sm').trigger('click')
-    await wrapper.get('input[placeholder="例如 data-studio"]').setValue(dataStudio.id)
-    await wrapper.get('input[placeholder="例如 数据工作台"]').setValue(dataStudio.label)
-    await wrapper.get('input[placeholder="ri-apps-2-line"]').setValue(dataStudio.icon)
-    const selects = wrapper.findAll('.registry-editor select')
-    await selects[0]!.setValue(dataStudio.group)
-    await selects[1]!.setValue(dataStudio.openMode)
-    await wrapper.get('input[type="number"]').setValue(dataStudio.order)
-    await wrapper.get('input[placeholder="/my-app/ 或 https://app.example.com/"]').setValue(dataStudio.appUrl)
-    await wrapper.get('.registry-editor').trigger('submit')
+    await groupSelect.setValue('TOOLS')
+    await projects.get('button.visibility').trigger('click')
     await flushPromises()
 
-    expect(saveExternalAppRegistry).toHaveBeenCalledWith([...DEFAULT_EXTERNAL_APPS, dataStudio])
-    const nav = useNavStore()
-    expect(nav.externalAppById('data-studio')?.label).toBe('数据工作台')
-    expect(nav.groups.find((group) => group.label === '工具')?.items[0])
-      .toBe(externalAppItemId('data-studio'))
+    const toolsRows = menuGroup(wrapper, '工具').findAll('.menu-row')
+    const lastToolRow = toolsRows[toolsRows.length - 1]!
+    expect((lastToolRow.find('input').element as HTMLInputElement).value).toBe('项目')
+    await wrapper.get('.menu-card button.primary').trigger('click')
+    await flushPromises()
+
+    const saved = vi.mocked(saveBuiltinMenuRegistry).mock.calls[0]![0]
+    expect(saved.find((menu) => menu.id === 'projects')).toMatchObject({ group: 'TOOLS', visible: false })
+    expect(saved.filter((menu) => menu.group === 'TOOLS').map((menu) => menu.order))
+      .toEqual(expect.arrayContaining([10, 20, 30, 40, 50]))
   })
 
-  it('在设置中统一维护左下角现有链接和新增图标', async () => {
-    const wrapper = mount(SettingsView, { global: { plugins: [router] } })
-    const entry = wrapper.findAll('.snav-item').find((button) => button.text() === '左下角链接')
-    await entry!.trigger('click')
+  it('外部应用可拖进其他分组，快捷链接可配置 WAO 页签并保存 v2 偏好', async () => {
+    const wrapper = await mountSettings()
+    const external = menuRow(wrapper, '自媒体 Agent')
+    const transfer = { setData: vi.fn<(format: string, data: string) => void>(), effectAllowed: '' }
+    await external.get('.drag-handle').trigger('dragstart', { dataTransfer: transfer })
+    await menuGroup(wrapper, '工具').trigger('drop')
+    await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
 
-    expect(fetchPreference).toHaveBeenCalledWith('quick-links')
-    expect(useQuickLinks().links.value.length).toBeGreaterThan(0)
-    const configuredLabels = wrapper.findAll('input[placeholder="名称（如 GitHub 仓库）"]')
-      .map((input) => (input.element as HTMLInputElement).value)
-    expect(configuredLabels).toContain('WAO 桌面宠物')
-    expect(configuredLabels).toContain('Jenkins 部署中心')
+    expect(saveExternalAppRegistry).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 'media-agent', group: 'TOOLS' }),
+    ])
 
-    await wrapper.get('.ql-edit-actions .btn-ghost').trigger('click')
-    const rows = wrapper.findAll('.ql-edit-row')
-    const last = rows[rows.length - 1]!
-    await last.get('input[placeholder="名称（如 GitHub 仓库）"]').setValue('内部工具')
-    await last.get('input[placeholder="https://…"]').setValue('https://tools.example.com/')
-    await wrapper.get('.ql-edit-actions .btn-primary').trigger('click')
+    const firstLink = wrapper.get('.quick-link-row')
+    await firstLink.get('select').setValue('TAB')
+    await wrapper.get('.links-card button.primary').trigger('click')
     await flushPromises()
 
-    expect(savePreference).toHaveBeenCalledOnce()
     const [key, raw] = vi.mocked(savePreference).mock.calls[0]!
-    const stored = JSON.parse(raw) as { version: number; links: Array<{ label: string }> }
+    const stored = JSON.parse(raw) as { version: number; links: Array<{ openMode: string }> }
     expect(key).toBe('quick-links')
     expect(stored.version).toBe(2)
-    expect(stored.links.some((link) => link.label === '内部工具')).toBe(true)
+    expect(stored.links[0]?.openMode).toBe('TAB')
   })
 })

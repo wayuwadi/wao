@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuickLinks } from '@/composables/quickLinks'
-import type { QuickLink } from '@/config/quickLinks'
+import { quickLinkPath, type QuickLink } from '@/config/quickLinks'
 
 const router = useRouter()
 const { links, load, loading, loadError } = useQuickLinks()
@@ -10,25 +10,42 @@ const { links, load, loading, loadError } = useQuickLinks()
 const open = ref(false)
 const panelRef = ref<HTMLElement | null>(null)
 const triggerRef = ref<HTMLButtonElement | null>(null)
+const panelPosition = ref({ left: 0, bottom: 0 })
+const panelStyle = computed(() => ({
+  left: `${panelPosition.value.left}px`,
+  bottom: `${panelPosition.value.bottom}px`,
+}))
 
 onMounted(() => load())
 
 function toggle() {
   open.value = !open.value
+  if (open.value) updatePanelPosition()
 }
 
 function visit(link: QuickLink) {
-  window.open(link.url, '_blank', 'noopener')
+  if (link.openMode === 'TAB') void router.push(quickLinkPath(link.id))
+  else window.open(link.url, '_blank', 'noopener')
   open.value = false
 }
 
 function goManage() {
   open.value = false
-  router.push('/settings?tab=quick-links')
+  router.push('/settings?tab=navigation')
 }
 
 function retryLoad() {
   void load(true)
+}
+
+/** Teleport 到 body 后按触发按钮定位，避免侧栏 overflow 裁掉浮层。 */
+function updatePanelPosition() {
+  const rect = triggerRef.value?.getBoundingClientRect()
+  if (!rect) return
+  panelPosition.value = {
+    left: Math.max(8, Math.min(rect.right + 8, window.innerWidth - 276)),
+    bottom: Math.max(8, window.innerHeight - rect.bottom),
+  }
 }
 
 /** 点击面板外部或触发按钮外部时关闭。 */
@@ -39,7 +56,11 @@ function onDocClick(e: MouseEvent) {
 }
 
 onMounted(() => document.addEventListener('mousedown', onDocClick))
-onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
+onMounted(() => window.addEventListener('resize', updatePanelPosition))
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', onDocClick)
+  window.removeEventListener('resize', updatePanelPosition)
+})
 </script>
 
 <template>
@@ -53,8 +74,9 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
       <i class="ri-links-line"></i>
     </button>
 
-    <Transition name="ql-pop">
-      <div v-if="open" ref="panelRef" class="ql-panel">
+    <Teleport to="body">
+      <Transition name="ql-pop">
+        <div v-if="open" ref="panelRef" class="ql-panel" :style="panelStyle">
         <div class="ql-head">
           <i class="ri-links-line"></i>
           <span>快捷链接</span>
@@ -75,14 +97,15 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
             <span class="ql-label">{{ link.label }}</span>
             <span v-if="link.subtitle" class="ql-sub">{{ link.subtitle }}</span>
           </span>
-          <i class="ri-external-link-line ql-ext"></i>
+          <i :class="link.openMode === 'TAB' ? 'ri-layout-right-line' : 'ri-external-link-line'" class="ql-ext"></i>
         </button>
 
         <div v-if="links.length === 0" class="ql-empty">
           暂无快捷链接，<a class="ql-empty-link" @click="goManage">前往添加</a>
         </div>
-      </div>
-    </Transition>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -111,10 +134,8 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocClick))
 }
 
 .ql-panel {
-  position: absolute;
-  left: calc(100% + 8px);
-  bottom: 0;
-  z-index: 200;
+  position: fixed;
+  z-index: 1200;
   width: 260px;
   max-height: min(70vh, 520px);
   overflow-y: auto;

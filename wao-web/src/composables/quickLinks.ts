@@ -32,6 +32,7 @@ function normalizeLink(value: unknown): QuickLink {
   const subtitle = typeof source.subtitle === 'string' ? source.subtitle.trim() : ''
   const icon = typeof source.icon === 'string' ? source.icon.trim() : ''
   const url = typeof source.url === 'string' ? source.url.trim() : ''
+  const openMode = source.openMode === 'TAB' ? 'TAB' : 'NEW_PAGE'
   const keywords = Array.isArray(source.keywords)
     ? source.keywords
         .filter((item): item is string => typeof item === 'string')
@@ -44,7 +45,7 @@ function normalizeLink(value: unknown): QuickLink {
   if (subtitle.length > 100) throw new Error(`快捷链接描述过长：${label}`)
   if (!ICON_PATTERN.test(icon) || icon.length > 64) throw new Error(`快捷链接图标不正确：${label}`)
   if (!isSafeUrl(url)) throw new Error(`快捷链接地址必须是站内路径或 HTTPS 地址：${label}`)
-  return { id, label, subtitle, icon, url, keywords }
+  return { id, label, subtitle, icon, url, openMode, keywords }
 }
 
 function isSafeUrl(value: string): boolean {

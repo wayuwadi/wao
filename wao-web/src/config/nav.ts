@@ -494,6 +494,17 @@ export function tabFromRoute(route: RouteLocationNormalized): Tab | null {
       closable: true,
     }
   }
+  if (kind === 'quick-link') {
+    const id = String(route.params.linkId)
+    return {
+      key: `quick-link:${id}`,
+      label: '快捷链接',
+      labelPlaceholder: true,
+      icon: 'ri-links-line',
+      path: route.path,
+      closable: true,
+    }
+  }
   const mod = route.meta.module as ModuleId | undefined
   if (mod) {
     const tab = moduleTab(mod)

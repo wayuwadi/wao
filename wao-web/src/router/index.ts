@@ -315,6 +315,12 @@ const router = createRouter({
           meta: { tabKind: 'external' },
         },
         {
+          path: 'quick-links/:linkId',
+          name: 'quick-link',
+          component: () => import('@/views/QuickLinkView.vue'),
+          meta: { tabKind: 'quick-link' },
+        },
+        {
           path: 'vault',
           name: 'vault',
           component: () => import('@/views/VaultView.vue'),

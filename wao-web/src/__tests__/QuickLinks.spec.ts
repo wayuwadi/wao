@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { createPinia, setActivePinia } from 'pinia'
 import * as preferenceApi from '@/api/favorites'
 import QuickLinks from '@/components/nav/QuickLinks.vue'
+import QuickLinkView from '@/views/QuickLinkView.vue'
 import {
   canonicalizeQuickLinks,
   parseQuickLinksPreference,
@@ -20,6 +22,7 @@ const customLink = {
   subtitle: '内部文档入口',
   icon: 'ri-book-line',
   url: 'https://docs.example.com/',
+  openMode: 'NEW_PAGE' as const,
   keywords: ['docs'],
 }
 
@@ -28,6 +31,8 @@ describe('左下角快捷链接配置', () => {
     vi.clearAllMocks()
     vi.mocked(preferenceApi.fetchPreference).mockResolvedValue('')
     vi.mocked(preferenceApi.savePreference).mockResolvedValue(undefined)
+    setActivePinia(createPinia())
+    document.body.innerHTML = ''
   })
 
   it('默认提供桌面宠物和 Jenkins，不再依赖业务页面', () => {
@@ -48,6 +53,10 @@ describe('左下角快捷链接配置', () => {
 
     const current = parseQuickLinksPreference(JSON.stringify({ version: 2, links: [customLink] }))
     expect(current.map((link) => link.id)).toEqual(['custom-docs'])
+    expect(parseQuickLinksPreference(JSON.stringify({
+      version: 2,
+      links: [{ ...customLink, openMode: undefined }],
+    }))[0]?.openMode).toBe('NEW_PAGE')
   })
 
   it('拒绝重复标识和非 HTTPS 外部地址', () => {
@@ -67,16 +76,48 @@ describe('左下角快捷链接配置', () => {
     await router.push('/')
     await router.isReady()
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
-    const wrapper = mount(QuickLinks, { global: { plugins: [router] } })
+    const wrapper = mount(QuickLinks, { attachTo: document.body, global: { plugins: [router] } })
     await flushPromises()
 
     await wrapper.get('.ql-trigger').trigger('click')
-    const jenkins = wrapper.findAll('.ql-item').find((item) => item.text().includes('Jenkins 部署中心'))
+    const jenkins = [...document.body.querySelectorAll<HTMLButtonElement>('.ql-item')]
+      .find((item) => item.textContent?.includes('Jenkins 部署中心'))
     expect(jenkins).toBeDefined()
-    await jenkins!.trigger('click')
+    jenkins!.click()
 
     expect(open).toHaveBeenCalledWith('/jenkins/job/wao-main-cd/', '_blank', 'noopener')
     wrapper.unmount()
+  })
+
+  it('TAB 模式从弹层进入 WAO 页签，并用真实成员链接渲染 iframe', async () => {
+    const tabLink = { ...customLink, openMode: 'TAB' as const }
+    const quickLinks = useQuickLinks()
+    await quickLinks.save([tabLink])
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', component: { template: '<div />' } },
+        { path: '/quick-links/:linkId', component: QuickLinkView, meta: { tabKind: 'quick-link' } },
+      ],
+    })
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(QuickLinks, { attachTo: document.body, global: { plugins: [router] } })
+    await flushPromises()
+
+    await wrapper.get('.ql-trigger').trigger('click')
+    const docs = [...document.body.querySelectorAll<HTMLButtonElement>('.ql-item')]
+      .find((item) => item.textContent?.includes('文档站'))
+    docs!.click()
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/quick-links/custom-docs')
+    wrapper.unmount()
+
+    const page = mount(QuickLinkView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+    expect(page.get('iframe').attributes('src')).toBe('https://docs.example.com/')
+    expect(page.get('iframe').attributes('title')).toBe('文档站')
   })
 
   it('保存失败时不覆盖当前正在使用的入口', async () => {
