@@ -14,6 +14,17 @@ import type { ModuleId } from '@/types'
 import type { RouteLocationNormalized } from 'vue-router'
 
 describe('侧边栏导航配置', () => {
+  it('首页后固定提供全量导航入口，默认侧栏只保留高频功能', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '')?.items).toEqual(['home', 'navigation'])
+    expect(MODULES.navigation.path).toBe('/navigation')
+    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'navigation')).toMatchObject({
+      group: 'ROOT',
+      visible: true,
+    })
+    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'todo')?.visible).toBe(true)
+    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'games')?.visible).toBe(false)
+  })
+
   it('默认导航不再提供独立点子库入口', () => {
     expect(DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)).not.toContain('ideas')
   })
@@ -62,10 +73,12 @@ describe('侧边栏导航配置', () => {
     })
     expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'skill-connections')).toMatchObject({
       group: 'PUBLIC',
-      visible: true,
+      visible: false,
       openMode: 'TAB',
     })
-    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('skill-connections')
+    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).not.toContain(
+      'skill-connections',
+    )
     expect(router.resolve('/skill-connections').meta).toMatchObject({
       module: 'skill-connections',
       tabKind: 'module',
@@ -74,14 +87,7 @@ describe('侧边栏导航配置', () => {
 
   it('公共组保留兼容模块顺序，自媒体 Agent 保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
-    expect(publicGroup?.items).toEqual([
-      'projects',
-      'ideas',
-      'skills',
-      externalAppItemId('media-agent'),
-      'skill-connections',
-      'chat',
-    ])
+    expect(publicGroup?.items).toEqual(['projects', 'chat', externalAppItemId('media-agent')])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
       '/apps/media-agent',
     )
@@ -99,7 +105,7 @@ describe('侧边栏导航配置', () => {
 
   it('历史点子归并页保留兼容路由但不进入默认菜单', () => {
     expect(MODULES.ideas.path).toBe('/ideas')
-    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('ideas')
+    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).not.toContain('ideas')
     expect(DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)).not.toContain('ideas')
     expect(router.resolve('/ideas').meta.module).toBe('ideas')
     expect(router.getRoutes().some((route) => route.path.startsWith('/s/i'))).toBe(false)
@@ -169,14 +175,14 @@ describe('侧边栏导航配置', () => {
   })
 
   it('游戏厅默认位于工具组并使用原生模块路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '工具')?.items).toContain('games')
+    expect(NAV_GROUPS.find((group) => group.label === '工具')?.items).not.toContain('games')
     const route = router.getRoutes().find((item) => item.name === 'games')
     expect(route?.path).toBe('/games')
     expect(route?.meta.module).toBe('games')
   })
 
   it('请求监控默认位于工具组并以独立 Tab 打开', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '工具')?.items).toContain(
+    expect(NAV_GROUPS.find((group) => group.label === '工具')?.items).not.toContain(
       'request-monitoring',
     )
     const route = router.getRoutes().find((item) => item.name === 'request-monitoring')
@@ -192,10 +198,10 @@ describe('侧边栏导航配置', () => {
     })
     expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'dashboard')).toMatchObject({
       group: 'TOOLS',
-      visible: true,
+      visible: false,
       openMode: 'TAB',
     })
-    expect(NAV_GROUPS.find((group) => group.label === '工具')?.items[0]).toBe('dashboard')
+    expect(NAV_GROUPS.find((group) => group.label === '工具')?.items).not.toContain('dashboard')
     expect(router.resolve('/dashboard').meta).toMatchObject({
       module: 'dashboard',
       tabKind: 'module',
@@ -208,42 +214,44 @@ describe('侧边栏导航配置', () => {
   })
 
   it('天人一卦默认位于个人组并使用原生模块路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('tianren')
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('tianren')
     const route = router.getRoutes().find((item) => item.name === 'tianren')
     expect(route?.path).toBe('/tianren')
     expect(route?.meta.module).toBe('tianren')
   })
 
   it('草图默认位于个人组并使用原生模块路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('drawings')
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('drawings')
     const route = router.getRoutes().find((item) => item.name === 'drawings')
     expect(route?.path).toBe('/drawings')
     expect(route?.meta.module).toBe('drawings')
   })
 
   it('单词本默认位于个人组并使用原生模块路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('vocabulary')
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('vocabulary')
     const route = router.getRoutes().find((item) => item.name === 'vocabulary')
     expect(route?.path).toBe('/vocabulary')
     expect(route?.meta.module).toBe('vocabulary')
   })
 
   it('工作台默认位于个人组并使用成员私有空间路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('workspaces')
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('workspaces')
     const route = router.getRoutes().find((item) => item.name === 'workspaces')
     expect(route?.path).toBe('/workspaces')
     expect(route?.meta.module).toBe('workspaces')
   })
 
   it('英语训练默认位于个人组并使用原生模块路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('english-learning')
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain(
+      'english-learning',
+    )
     const route = router.getRoutes().find((item) => item.name === 'english-learning')
     expect(route?.path).toBe('/english-learning')
     expect(route?.meta.module).toBe('english-learning')
   })
 
   it('周报生成默认位于个人组并使用原生模块路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('weekly-report')
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('weekly-report')
     const route = router.getRoutes().find((item) => item.name === 'weekly-report')
     expect(route?.path).toBe('/weekly-report')
     expect(route?.meta.module).toBe('weekly-report')
@@ -257,7 +265,7 @@ describe('侧边栏导航配置', () => {
   })
 
   it('人生回顾默认位于个人组并使用原生模块路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('life-review')
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('life-review')
     const route = router.getRoutes().find((item) => item.name === 'life-review')
     expect(route?.path).toBe('/life-review')
     expect(route?.meta.module).toBe('life-review')

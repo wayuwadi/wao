@@ -39,7 +39,7 @@ vi.mock('@/api/system', () => ({
 }))
 
 vi.mock('@/api/favorites', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/api/favorites')>(),
+  ...(await importOriginal<typeof import('@/api/favorites')>()),
   fetchPreference: vi.fn<() => Promise<string>>(),
   savePreference: vi.fn<() => Promise<void>>(),
 }))
@@ -57,13 +57,15 @@ async function mountSettings() {
 }
 
 function menuRow(wrapper: ReturnType<typeof mount>, label: string) {
-  return wrapper.findAll('.menu-row').find((row) =>
-    (row.find('input').element as HTMLInputElement | undefined)?.value === label,
-  )!
+  return wrapper
+    .findAll('.menu-row')
+    .find((row) => (row.find('input').element as HTMLInputElement | undefined)?.value === label)!
 }
 
 function menuGroup(wrapper: ReturnType<typeof mount>, label: string) {
-  return wrapper.findAll('.menu-group').find((group) => group.find('header').text().startsWith(label))!
+  return wrapper
+    .findAll('.menu-group')
+    .find((group) => group.find('header').text().startsWith(label))!
 }
 
 describe('菜单与快捷链接统一设置', () => {
@@ -71,8 +73,14 @@ describe('菜单与快捷链接统一设置', () => {
     vi.clearAllMocks()
     localStorage.clear()
     setActivePinia(createPinia())
-    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({ version: 1, menus: DEFAULT_BUILTIN_MENUS })
-    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({ version: 1, apps: DEFAULT_EXTERNAL_APPS })
+    vi.mocked(fetchBuiltinMenuRegistry).mockResolvedValue({
+      version: 1,
+      menus: DEFAULT_BUILTIN_MENUS,
+    })
+    vi.mocked(fetchExternalAppRegistry).mockResolvedValue({
+      version: 1,
+      apps: DEFAULT_EXTERNAL_APPS,
+    })
     vi.mocked(saveBuiltinMenuRegistry).mockImplementation(async (menus) => ({ version: 1, menus }))
     vi.mocked(saveExternalAppRegistry).mockImplementation(async (apps) => ({ version: 1, apps }))
     vi.mocked(fetchPreference).mockResolvedValue('')
@@ -84,8 +92,9 @@ describe('菜单与快捷链接统一设置', () => {
 
     expect(fetchBuiltinMenuRegistry).toHaveBeenCalledOnce()
     expect(fetchExternalAppRegistry).toHaveBeenCalledOnce()
-    expect(wrapper.findAll('.menu-row input').map((input) => (input.element as HTMLInputElement).value))
-      .toEqual(expect.arrayContaining(['自媒体 Agent', '得到大脑', '资源管理']))
+    expect(
+      wrapper.findAll('.menu-row input').map((input) => (input.element as HTMLInputElement).value),
+    ).toEqual(expect.arrayContaining(['自媒体 Agent', '得到大脑', '资源管理']))
     expect(wrapper.get('.menu-card').text()).toContain('已注册应用')
     expect(wrapper.text()).not.toContain('注册新应用')
     expect(wrapper.find('.registry-editor').exists()).toBe(false)
@@ -95,15 +104,27 @@ describe('菜单与快捷链接统一设置', () => {
     const wrapper = await mountSettings()
     const projects = menuRow(wrapper, '项目')
     const groupSelect = projects.get('select[aria-label="所属分组"]')
-    expect(groupSelect.findAll('option').map((option) => option.text())).toEqual(['顶层', '公共', '个人', '工具'])
+    expect(groupSelect.findAll('option').map((option) => option.text())).toEqual([
+      '顶层',
+      '公共',
+      '个人',
+      '工具',
+    ])
 
     await groupSelect.setValue('TOOLS')
     await projects.get('button.visibility').trigger('click')
     await flushPromises()
 
     const toolsRows = menuGroup(wrapper, '工具').findAll('.menu-row')
-    const lastToolRow = toolsRows[toolsRows.length - 1]!
-    expect((lastToolRow.find('input').element as HTMLInputElement).value).toBe('项目')
+    const projectIndex = toolsRows.findIndex(
+      (row) => (row.find('input').element as HTMLInputElement).value === '项目',
+    )
+    const lastVisibleIndex = toolsRows.reduce(
+      (lastIndex, row, index) =>
+        row.get('button.visibility').classes('on') ? index : lastIndex,
+      -1,
+    )
+    expect(projectIndex).toBeGreaterThan(lastVisibleIndex)
     await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
 
@@ -111,7 +132,9 @@ describe('菜单与快捷链接统一设置', () => {
     const savedToolMenus = saved.filter((menu) => menu.group === 'TOOLS')
     const project = savedToolMenus.find((menu) => menu.id === 'projects')!
     expect(project).toMatchObject({ group: 'TOOLS', visible: false })
-    expect(project.order).toBe(Math.max(...savedToolMenus.map((menu) => menu.order)))
+    expect(project.order).toBeGreaterThan(
+      Math.max(...savedToolMenus.filter((menu) => menu.visible).map((menu) => menu.order)),
+    )
     expect(new Set(savedToolMenus.map((menu) => menu.order)).size).toBe(savedToolMenus.length)
   })
 
@@ -124,11 +147,13 @@ describe('菜单与快捷链接统一设置', () => {
     await wrapper.get('.menu-card button.primary').trigger('click')
     await flushPromises()
 
-    expect(saveExternalAppRegistry).toHaveBeenCalledWith(expect.arrayContaining([
-      expect.objectContaining({ id: 'media-agent', group: 'TOOLS' }),
-      expect.objectContaining({ id: 'getnote', openMode: 'NEW_PAGE' }),
-      expect.objectContaining({ id: 'jumpserver', openMode: 'NEW_PAGE' }),
-    ]))
+    expect(saveExternalAppRegistry).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'media-agent', group: 'TOOLS' }),
+        expect.objectContaining({ id: 'getnote', openMode: 'NEW_PAGE' }),
+        expect.objectContaining({ id: 'jumpserver', openMode: 'NEW_PAGE' }),
+      ]),
+    )
 
     const firstLink = wrapper.get('.quick-link-row')
     await firstLink.get('select').setValue('TAB')

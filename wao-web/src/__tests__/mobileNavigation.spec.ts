@@ -60,11 +60,14 @@ describe('手机底部模块导航', () => {
     scrollIntoView.mockReset()
   })
 
-  async function mountNavigation(path = '/games') {
+  async function mountNavigation(path = '/calendar') {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
         { path: '/', component: { template: '<div />' }, meta: { module: 'home' } },
+        { path: '/navigation', component: { template: '<div />' }, meta: { module: 'navigation' } },
+        { path: '/projects', component: { template: '<div />' }, meta: { module: 'projects' } },
+        { path: '/calendar', component: { template: '<div />' }, meta: { module: 'calendar' } },
         { path: '/games', component: { template: '<div />' }, meta: { module: 'games' } },
         { path: '/wao/skills', component: { template: '<div />' }, meta: { module: 'skills' } },
       ],
@@ -81,23 +84,16 @@ describe('手机底部模块导航', () => {
     const labels = wrapper.findAll('.item').map((item) => item.attributes('title'))
 
     expect(labels).toEqual(
-      expect.arrayContaining([
-        '聊天',
-        '待办',
-        '日历',
-        '密码本',
-        '自动化',
-        '文件与图床',
-        '游戏厅',
-      ]),
+      expect.arrayContaining(['聊天', '待办', '日历', '导航', '项目', '记忆中心', '知识库']),
     )
+    expect(labels).not.toEqual(expect.arrayContaining(['密码本', '自动化', '游戏厅']))
     wrapper.unmount()
   })
 
   it('进入靠后的模块时把当前入口滚入可见区域', async () => {
     const wrapper = await mountNavigation()
 
-    expect(wrapper.get('.item.active').attributes('title')).toBe('游戏厅')
+    expect(wrapper.get('.item.active').attributes('title')).toBe('日历')
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'center' })
     wrapper.unmount()
   })
@@ -115,21 +111,25 @@ describe('手机底部模块导航', () => {
 
   it('菜单默认在 WAO 页签路由打开，也可配置为浏览器新页面', async () => {
     const wrapper = await mountNavigation('/')
-    const skillButton = wrapper.findAll('.item').find((item) => item.attributes('title') === 'Skill 市场')!
+    const projectButton = wrapper
+      .findAll('.item')
+      .find((item) => item.attributes('title') === '项目')!
 
-    await skillButton.trigger('click')
+    await projectButton.trigger('click')
     await flushPromises()
-    expect(wrapper.vm.$route.fullPath).toBe('/wao/skills')
+    expect(wrapper.vm.$route.fullPath).toBe('/projects')
 
     await wrapper.vm.$router.push('/')
     const nav = useNavStore()
-    nav.applyBuiltinMenus(nav.builtinMenus.map((menu) =>
-      menu.id === 'skills' ? { ...menu, openMode: 'NEW_PAGE' } : menu,
-    ))
+    nav.applyBuiltinMenus(
+      nav.builtinMenus.map((menu) =>
+        menu.id === 'projects' ? { ...menu, openMode: 'NEW_PAGE' } : menu,
+      ),
+    )
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
-    await skillButton.trigger('click')
+    await projectButton.trigger('click')
 
-    expect(open).toHaveBeenCalledWith('/skills', '_blank', 'noopener,noreferrer')
+    expect(open).toHaveBeenCalledWith('/projects', '_blank', 'noopener,noreferrer')
     expect(wrapper.vm.$route.fullPath).toBe('/')
     open.mockRestore()
     wrapper.unmount()
