@@ -129,7 +129,8 @@ sudo sh deploy/scripts/provision-cloud-node.sh <证书通知邮箱>
 JumpServer CE 固定运行在 Linux 主节点 `/opt/wao-jumpserver`，使用独立 PostgreSQL、Redis 和数据卷；Web
 只绑定 `127.0.0.1:18080`，经现有 Jenkins 反向 SSH 通道映射到云节点 `127.0.0.1:18082`。云 Nginx 仅从
 `https://jms.wayuwa.cn` 暴露服务。首次发布前需把 `jms.wayuwa.cn` 解析到云入口 `8.136.152.131`；CD 会先
-严格核对解析，再签发独立 Let's Encrypt 证书。
+严格核对解析，再签发独立 Let's Encrypt 证书。Linux 主节点使用 JumpServer 安装器内置的阿里云镜像源
+拉取社区版应用镜像，避免首次部署依赖跨境 Docker Hub 链路；Redis、PostgreSQL 等基础镜像仍按安装器规则处理。
 
 主发布脚本会幂等生成 WAO 与 JumpServer 的共享 SSO 密钥、部署社区版 Custom SSO、生成独立资产 SSH
 密钥，并把公钥安装到 Linux、Windows 和云节点。私钥只保存在 `/opt/wao-jumpserver` 受限目录和 JumpServer
