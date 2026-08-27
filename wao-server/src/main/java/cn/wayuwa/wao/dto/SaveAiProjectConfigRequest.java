@@ -8,5 +8,6 @@ public record SaveAiProjectConfigRequest(
         String workspaceDir,
         String defaultEngine,
         String preferredRunnerId,
-        Integer maxParallelRuns) {
+        Integer maxParallelRuns,
+        Integer failureRetryCount) {
 }

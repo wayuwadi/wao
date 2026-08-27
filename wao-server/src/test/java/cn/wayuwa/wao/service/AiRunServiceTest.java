@@ -118,7 +118,7 @@ class AiRunServiceTest {
         when(projectMapper.selectById("p1")).thenReturn(project("p1", "WAO"));
 
         assertThatThrownBy(() -> service.saveConfig("p1",
-                new SaveAiProjectConfigRequest(true, "", "main", "wao", "codex", null, 2)))
+                new SaveAiProjectConfigRequest(true, "", "main", "wao", "codex", null, 2, 2)))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("仓库");
     }
@@ -129,11 +129,23 @@ class AiRunServiceTest {
         when(configMapper.selectById("p1")).thenReturn(null);
 
         var result = service.saveConfig("p1",
-                new SaveAiProjectConfigRequest(true, "https://github.com/acme/wao.git", "main", "wao", "claude", null, 3));
+                new SaveAiProjectConfigRequest(true, "https://github.com/acme/wao.git", "main", "wao", "claude", null, 3, 1));
 
         assertThat(result.enabled()).isTrue();
         assertThat(result.maxParallelRuns()).isEqualTo(3);
+        assertThat(result.failureRetryCount()).isEqualTo(1);
         verify(configMapper).insert(any(AiProjectConfigEntity.class));
+    }
+
+    @Test
+    void rejectsFailureRetryCountOutsideSafeRange() {
+        when(projectMapper.selectById("p1")).thenReturn(project("p1", "WAO"));
+
+        assertThatThrownBy(() -> service.saveConfig("p1",
+                new SaveAiProjectConfigRequest(true, "https://github.com/acme/wao.git",
+                        "main", "wao", "codex", null, 2, 6)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("0 到 5");
     }
 
     @Test
@@ -653,7 +665,9 @@ class AiRunServiceTest {
         when(runnerMapper.selectOne(any())).thenReturn(runner);
         when(runMapper.selectList(any())).thenReturn(List.of(), List.of(queued));
         when(runMapper.selectCount(any())).thenReturn(0L);
-        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        AiProjectConfigEntity retryConfig = config("p1");
+        retryConfig.setFailureRetryCount(1);
+        when(configMapper.selectById("p1")).thenReturn(retryConfig);
         when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "完成自动化"));
         when(projectMapper.selectById("p1")).thenReturn(project("p1", "WAO"));
 
@@ -665,6 +679,7 @@ class AiRunServiceTest {
         assertThat(result.reasoningEffort()).isEqualTo("high");
         assertThat(result.serviceTier()).isEqualTo("default");
         assertThat(result.planMode()).isTrue();
+        assertThat(result.failureRetryCount()).isEqualTo(1);
         assertThat(queued.getStatus()).isEqualTo("running");
         assertThat(queued.getRunnerId()).isEqualTo("rn1");
         verify(runMapper).claimQueuedRun(eq("ar1"), eq("rn1"), isNull(),

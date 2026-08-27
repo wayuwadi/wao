@@ -34,6 +34,7 @@ const workspaceDir = ref('')
 const defaultEngine = ref<AiEngine>('codex')
 const preferredRunnerId = ref('')
 const maxParallelRuns = ref(2)
+const failureRetryCount = ref(2)
 const runners = ref<AiRunner[]>([])
 const pairCode = ref('')
 const pairExpiresAt = ref('')
@@ -78,6 +79,7 @@ async function save() {
       defaultEngine: defaultEngine.value,
       preferredRunnerId: preferredRunnerId.value || null,
       maxParallelRuns: maxParallelRuns.value,
+      failureRetryCount: failureRetryCount.value,
     })
     await saveAiProjectSkills(props.project.id, selectedSkillVersions.value)
     toast('项目设置与 AI Run 配置已保存', 'ri-check-line')
@@ -109,6 +111,7 @@ async function loadAiConfig() {
     defaultEngine.value = config.defaultEngine
     preferredRunnerId.value = config.preferredRunnerId ?? ''
     maxParallelRuns.value = config.maxParallelRuns
+    failureRetryCount.value = config.failureRetryCount
     runners.value = nodes
     waoApplicationSkills.value = applicationSkills
     const availableVersionIds = new Set(skills.map((item) => item.versionId))
@@ -216,6 +219,10 @@ onMounted(loadAiConfig)
         <label class="form-field">
           <span>同项目最大并发</span>
           <input v-model.number="maxParallelRuns" type="number" min="1" max="10" />
+        </label>
+        <label class="form-field">
+          <span>失败自动重试次数</span>
+          <input v-model.number="failureRetryCount" type="number" min="0" max="5" />
         </label>
         <label class="form-field">
           <span>优先执行电脑</span>

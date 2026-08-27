@@ -131,6 +131,7 @@ const form = reactive({
   defaultEngine: 'codex' as AiEngine,
   preferredRunnerId: '',
   maxParallelRuns: 2,
+  failureRetryCount: 2,
 })
 let timer: ReturnType<typeof setInterval> | null = null
 let quotaTimer: ReturnType<typeof setInterval> | null = null
@@ -679,6 +680,7 @@ function startEditing(workflow: AiWorkflow) {
     defaultEngine: workflow.config.defaultEngine,
     preferredRunnerId: workflow.config.preferredRunnerId ?? '',
     maxParallelRuns: workflow.config.maxParallelRuns,
+    failureRetryCount: workflow.config.failureRetryCount,
   })
 }
 
@@ -693,6 +695,7 @@ async function saveWorkflow(projectId: string) {
       defaultEngine: form.defaultEngine,
       preferredRunnerId: form.preferredRunnerId || null,
       maxParallelRuns: form.maxParallelRuns,
+      failureRetryCount: form.failureRetryCount,
     })
     editingProjectId.value = null
     await refreshWorkflows()
@@ -1524,6 +1527,7 @@ onBeforeUnmount(() => {
               <div><dt>基线分支</dt><dd>{{ workflow.config.defaultBranch }}</dd></div>
               <div><dt>固定电脑</dt><dd>{{ workflow.preferredRunnerName || '自动分配' }}</dd></div>
               <div><dt>项目并发</dt><dd>{{ workflow.config.maxParallelRuns }}</dd></div>
+              <div><dt>失败重试</dt><dd>{{ workflow.config.failureRetryCount }} 次</dd></div>
             </dl>
             <div class="flow-stats">
               <span><i class="ri-loader-4-line"></i>进行中 {{ workflow.activeRuns }}</span>
@@ -1593,6 +1597,10 @@ onBeforeUnmount(() => {
               <label class="form-field">
                 <span>同项目最大并发</span>
                 <input v-model.number="form.maxParallelRuns" type="number" min="1" max="10" />
+              </label>
+              <label class="form-field">
+                <span>失败自动重试次数</span>
+                <input v-model.number="form.failureRetryCount" type="number" min="0" max="5" />
               </label>
               <div class="flow-actions">
                 <button class="secondary" @click="editingProjectId = null">取消</button>

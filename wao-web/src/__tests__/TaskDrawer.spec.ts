@@ -33,7 +33,7 @@ vi.mock('@/api/ai', () => ({
   ]),
   fetchAiProjectConfig: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
     projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
-    workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: null, maxParallelRuns: 2,
+    workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: null, maxParallelRuns: 2, failureRetryCount: 2,
   }),
   fetchTaskAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {

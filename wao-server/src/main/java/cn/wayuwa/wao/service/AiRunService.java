@@ -174,7 +174,7 @@ public class AiRunService {
         requireProject(projectId);
         AiProjectConfigEntity entity = configMapper.selectById(projectId);
         return entity == null
-                ? new AiProjectConfigDto(projectId, false, "", "main", defaultFolder(projectId), DEFAULT_ENGINE, null, 2)
+                ? new AiProjectConfigDto(projectId, false, "", "main", defaultFolder(projectId), DEFAULT_ENGINE, null, 2, 2)
                 : toConfigDto(entity);
     }
 
@@ -200,7 +200,7 @@ public class AiRunService {
             AiProjectConfigEntity config = configs.get(project.getId());
             AiProjectConfigDto dto = config == null
                     ? new AiProjectConfigDto(project.getId(), false, "", "main",
-                            safeFolder(project.getName(), project.getId()), DEFAULT_ENGINE, null, 2)
+                            safeFolder(project.getName(), project.getId()), DEFAULT_ENGINE, null, 2, 2)
                     : toConfigDto(config);
             workflows.add(toWorkflow(project.getId(), project.getName(), dto, config != null, false,
                     runnerNames, runsByProject));
@@ -242,6 +242,7 @@ public class AiRunService {
         String branch = blankOr(request.defaultBranch(), "main");
         String folder = blankOr(request.workspaceDir(), safeFolder(project.getName(), projectId));
         int maxParallel = request.maxParallelRuns() == null ? 2 : request.maxParallelRuns();
+        int failureRetries = request.failureRetryCount() == null ? 2 : request.failureRetryCount();
         if (enabled && !StringUtils.hasText(repoUrl)) {
             throw new BadRequestException("启用 AI Run 前请填写 Git 仓库地址");
         }
@@ -257,6 +258,9 @@ public class AiRunService {
         }
         if (maxParallel < 1 || maxParallel > 10) {
             throw new BadRequestException("项目并发数必须在 1 到 10 之间");
+        }
+        if (failureRetries < 0 || failureRetries > 5) {
+            throw new BadRequestException("失败自动重试次数必须在 0 到 5 之间");
         }
         String engine = requireEngine(blankOr(request.defaultEngine(), DEFAULT_ENGINE));
         String preferred = trim(request.preferredRunnerId());
@@ -279,6 +283,7 @@ public class AiRunService {
         entity.setDefaultEngine(engine);
         entity.setPreferredRunnerId(StringUtils.hasText(preferred) ? preferred : null);
         entity.setMaxParallelRuns(maxParallel);
+        entity.setFailureRetryCount(failureRetries);
         entity.setUpdatedAt(LocalDateTime.now());
         if (configMapper.selectById(projectId) == null) configMapper.insert(entity);
         else configMapper.updateById(entity);
@@ -1212,6 +1217,7 @@ public class AiRunService {
                     run.getPromptUrl(),
                     config.getRepoUrl(), blankOr(config.getDefaultBranch(), "main"),
                     blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName(),
+                    clamp(config.getFailureRetryCount(), 0, 5, 2),
                     previousFailure(run), run.getSessionId(), continuationInput,
                     accounts.runAccount(run.getAiAccountId(), engine), memoryContext,
                     memoryContext.stream().map(ProjectMemoryContextDto::id).toList(),
@@ -1732,7 +1738,8 @@ public class AiRunService {
                 blankOr(entity.getRepoUrl(), ""), blankOr(entity.getDefaultBranch(), "main"),
                 blankOr(entity.getWorkspaceDir(), defaultFolder(entity.getProjectId())),
                 blankOr(entity.getDefaultEngine(), DEFAULT_ENGINE),
-                entity.getPreferredRunnerId(), valueOr(entity.getMaxParallelRuns(), 2));
+                entity.getPreferredRunnerId(), valueOr(entity.getMaxParallelRuns(), 2),
+                clamp(entity.getFailureRetryCount(), 0, 5, 2));
     }
 
     private AiWorkflowDto toWorkflow(String projectId, String projectName, AiProjectConfigDto config,

@@ -110,6 +110,11 @@ Runner 还会校验最终答复中的完成状态（`WAO_RUN_STATUS: SUCCESS` / 
 等待补充信息误判为成功。
 当 AI 以 BLOCKED 结束且保留会话 id 时，任务详情可直接补充信息；Runner 会把同一条运行固定派回
 原电脑，在原 worktree 中恢复同一个 Codex 或 Claude Code 会话，而不是创建新会话。
+
+项目设置中的“失败自动重试次数”控制 AI CLI 非零退出或调用异常后的同运行恢复，默认 2 次、范围 0 到 5。
+重试保留当前 worktree 和已有会话，中间错误只写进展与本机日志，不提前完成运行或发送飞书失败通知；任一次
+恢复成功只产生最终成功通知，全部耗尽后才回传最后错误。AI 明确返回 `BLOCKED`、用户暂停或运行中补充输入
+不属于临时故障，不会被自动重试。
 启动时 Runner 会通过 `git credential fill` 读取本机已有的 GitHub HTTPS 凭据，并仅在子进程
 环境中交给工作区 `git clone/fetch` 和 AI CLI，同时自动补齐 Windows 的 GitHub CLI 安装目录。
 后台 Git 全程禁用交互式凭据询问，凭据失效时直接返回错误，不会尝试访问计划任务不存在的终端。

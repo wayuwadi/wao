@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
+import { saveAiProjectConfig } from '@/api/ai'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 
@@ -23,6 +24,7 @@ vi.mock('@/api/ai', () => ({
     defaultEngine: 'codex',
     preferredRunnerId: null,
     maxParallelRuns: 2,
+    failureRetryCount: 2,
   })),
   saveAiProjectConfig: vi.fn(async () => ({})),
   saveAiProjectSkills: vi.fn(async () => []),
@@ -48,6 +50,9 @@ describe('项目设置', () => {
     await flushPromises()
 
     expect(data.projectById(project.id)?.status).toBe('进行中')
+    expect(vi.mocked(saveAiProjectConfig)).toHaveBeenCalledWith(project.id, expect.objectContaining({
+      failureRetryCount: 2,
+    }))
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
   })
@@ -58,6 +63,7 @@ describe('项目设置', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('代码审查')
+    expect(wrapper.text()).toContain('失败自动重试次数')
     await wrapper.get('.skill-option input').setValue(true)
     expect((wrapper.get('.skill-option input').element as HTMLInputElement).checked).toBe(true)
     wrapper.unmount()

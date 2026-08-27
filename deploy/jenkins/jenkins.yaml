@@ -86,6 +86,12 @@ unclassified:
         credentialsId: wao-github-pat
         manageHooks: false
 
+appearance:
+  locale:
+    systemLocale: zh_CN
+    ignoreAcceptLanguage: true
+    allowUserPreferences: false
+
 jobs:
   - script: >
       pipelineJob('wao-main-cd') {

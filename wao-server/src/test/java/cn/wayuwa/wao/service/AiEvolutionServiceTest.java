@@ -110,7 +110,7 @@ class AiEvolutionServiceTest {
                 "aa1", "codex", "Codex", "plus", 20, 80, "2026-08-17T10:00:00",
                 LocalDateTime.now().toString(), "SYNCED", "七天额度已用 20%")));
         AiProjectConfigDto config = new AiProjectConfigDto("p1", true,
-                "https://github.com/wayuwacn/wao.git", "main", "wao", "codex", null, 2);
+                "https://github.com/wayuwacn/wao.git", "main", "wao", "codex", null, 2, 2);
         when(runs.listWorkflows()).thenReturn(List.of(new AiWorkflowDto(
                 "p1", "Wa All in One", config, null, 0, 1, 0, null)));
         when(suggestions.latest()).thenReturn(List.of(suggestion("es1", "修复真实体验问题")));
@@ -145,7 +145,7 @@ class AiEvolutionServiceTest {
                 "aa1", "codex", "Codex", "plus", 20, 80, "2026-08-17T10:00:00",
                 LocalDateTime.now().toString(), "SYNCED", "七天额度已用 20%")));
         AiProjectConfigDto config = new AiProjectConfigDto("p1", true,
-                "https://github.com/wayuwacn/wao.git", "main", "wao", "codex", null, 3);
+                "https://github.com/wayuwacn/wao.git", "main", "wao", "codex", null, 3, 2);
         when(runs.listWorkflows()).thenReturn(List.of(new AiWorkflowDto(
                 "p1", "Wa All in One", config, null, 0, 1, 0, null)));
         when(suggestions.latest()).thenReturn(List.of(

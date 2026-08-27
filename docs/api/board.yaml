@@ -517,7 +517,7 @@ paths:
       parameters: [ { name: projectId, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '404': { description: 项目不存在 } }
     put:
-      summary: 保存开关、仓库、分支、文件夹、默认 AI 工具、首选电脑与项目并发数
+      summary: 保存开关、仓库、分支、文件夹、默认 AI 工具、首选电脑、项目并发数与失败自动重试次数（0 到 5，默认 2）
       parameters: [ { name: projectId, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '400': { description: 配置不合法 } }
   /ai/skills/available:

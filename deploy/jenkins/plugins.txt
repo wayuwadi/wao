@@ -20,3 +20,5 @@ timestamper:1.30
 ws-cleanup:0.49
 reverse-proxy-auth-plugin:257.v7dc0e405b_624
 matrix-auth:3.3
+localization-zh-cn:371.v23851f835d6b_
+locale:641.v84f22d75fd8b_

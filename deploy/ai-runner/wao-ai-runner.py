@@ -65,6 +65,8 @@ WINDOWS_CREATE_NO_WINDOW = 0x08000000
 # RestartPreventExitStatus=78 认这个码，避免每十秒重启一次刷屏。
 EXIT_PAIRING_REVOKED = 78
 ENGINE_LABELS = {"codex": "Codex", "claude": "Claude Code", "qoder": "Qoder"}
+DEFAULT_FAILURE_RETRY_COUNT = 2
+MAX_FAILURE_RETRY_COUNT = 5
 # 引擎 id 到本机候选命令名的映射，按顺序探测第一个存在的。Qoder 的命令名与引擎 id
 # 不同，且国际版叫 qodercli、国内版叫 qoderclicn，两个名字都要认。
 ENGINE_COMMANDS = {"codex": ("codex",), "claude": ("claude",), "qoder": ("qodercli", "qoderclicn")}
@@ -706,8 +708,13 @@ def invoke_cli(command: list[str], worktree: Path, prompt: str,
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if on_event:
-            on_event(event)
+        # CLI 偶尔会输出合法 JSON 字符串/数组，进展解析器只接受对象。进展属于附加观测能力，
+        # 即使将来遇到新的事件形状或回调解析异常，也不能杀掉仍在工作的 AI 子进程。
+        if on_event and isinstance(event, dict):
+            try:
+                on_event(event)
+            except Exception as exc:  # noqa: BLE001
+                log(f"忽略无法解析的 AI CLI 进展事件：{exc}")
     process.wait()
     close_output = getattr(process.stdout, "close", None)
     if callable(close_output):
@@ -1054,6 +1061,29 @@ def build_live_update_prompt(continuation: str) -> str:
         "保留已经做对的部分，不要从头重做：\n\n"
         f"{continuation}"
     )
+
+
+def build_failure_retry_prompt(original_prompt: str, retry_number: int,
+        max_retries: int, failure_detail: str) -> str:
+    """在同一运行和工作区中恢复一次失败的 AI CLI 回合。"""
+    detail = redact_sensitive_text(failure_detail).strip()[-2000:] or "AI CLI 未返回可读错误"
+    return (
+        f"{original_prompt}\n\n"
+        f"这是本次 AI Run 的自动恢复，第 {retry_number}/{max_retries} 次重试。上一回合因执行异常结束，"
+        "系统尚未把它作为最终失败通知用户。请保留当前分支、worktree、已有改动和已经完成的外部状态，"
+        "先核对现场，再从未完成处继续；不要推倒重来，也不要重复已经成功的外部副作用。"
+        "完成后仍须按原约定返回唯一最终状态。\n"
+        f"上一回合错误摘要：\n{detail}"
+    )
+
+
+def configured_failure_retries(value: Any) -> int:
+    """兼容旧服务端缺字段和脏值，并把项目配置限制在安全范围内。"""
+    try:
+        configured = int(value)
+    except (TypeError, ValueError):
+        configured = DEFAULT_FAILURE_RETRY_COUNT
+    return max(0, min(MAX_FAILURE_RETRY_COUNT, configured))
 
 
 def parse_memory_candidates(memory_path: Path) -> list[dict[str, Any]]:
@@ -1559,6 +1589,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
     last_cancel_check = 0.0
     pending_update: str | None = None
     pause_requested = False
+    failure_retries = 0
+    max_failure_retries = configured_failure_retries(claim.get("failureRetryCount"))
     skill_audits: list[dict[str, Any]] = []
     codex_home = root / ".wao-codex-homes" / run_id
 
@@ -1608,6 +1640,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             prompt = build_prompt(claim, report_path, memory_path, skill_path)
             if continuation:
                 prompt += "\n\n" + build_live_update_prompt(continuation)
+        turn_prompt_base = prompt
         stage = "装配项目 Skill"
         skill_audits = install_run_skills(api, claim, codex_home)
         if skill_audits:
@@ -1618,31 +1651,58 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         while True:
             pending_update = None
             pause_requested = False
-            if engine == "claude":
-                turn = run_claude(
-                    executable, worktree, prompt, sandbox, reporter, cli_environment,
-                    claude_model, root / claim["workspaceDir"], session_id, control_requested)
-            elif engine == "qoder":
-                turn = run_qoder(
-                    executable, worktree, prompt, sandbox, reporter, cli_environment,
-                    root / claim["workspaceDir"], session_id, control_requested)
-            else:
-                turn = run_codex(
-                    executable, worktree, prompt, sandbox, reporter, cli_environment, session_id,
-                    control_requested, claim.get("account"), codex_home,
-                    model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
-                    service_tier=claim.get("serviceTier"))
+            try:
+                if engine == "claude":
+                    turn = run_claude(
+                        executable, worktree, prompt, sandbox, reporter, cli_environment,
+                        claude_model, root / claim["workspaceDir"], session_id, control_requested)
+                elif engine == "qoder":
+                    turn = run_qoder(
+                        executable, worktree, prompt, sandbox, reporter, cli_environment,
+                        root / claim["workspaceDir"], session_id, control_requested)
+                else:
+                    turn = run_codex(
+                        executable, worktree, prompt, sandbox, reporter, cli_environment, session_id,
+                        control_requested, claim.get("account"), codex_home,
+                        model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
+                        service_tier=claim.get("serviceTier"))
+            except Exception as exc:  # noqa: BLE001 - 项目配置允许在最终失败前自动恢复
+                if failure_retries >= max_failure_retries:
+                    raise
+                failure_retries += 1
+                detail = redact_sensitive_text(str(exc))[-1000:]
+                log(f"[{run_id}] {name} 本轮异常，自动重试 "
+                    f"{failure_retries}/{max_failure_retries}：{detail}")
+                reporter.send("message", f"{name} 本轮异常，正在自动重试（"
+                              f"{failure_retries}/{max_failure_retries}）", force=True)
+                prompt = build_failure_retry_prompt(
+                    turn_prompt_base, failure_retries, max_failure_retries, detail)
+                continue
             exit_code, result_text, turn_session_id, turn_usage = turn
             session_id = turn_session_id or session_id
             usage = merge_usage(usage, turn_usage)
-            if pause_requested or not pending_update:
+            if pause_requested:
                 break
-            if not session_id:
-                raise RuntimeError(f"{name} 没有返回可恢复的会话 id，无法接收运行中的新输入")
-            api.post(f"/api/ai/runner/runs/{run_id}/continuation/consume",
-                     {"input": pending_update})
-            reporter.send("message", "已接收你刚才补充的信息，正在同一会话中调整执行方向", force=True)
-            prompt = build_live_update_prompt(pending_update)
+            if pending_update:
+                if not session_id:
+                    raise RuntimeError(f"{name} 没有返回可恢复的会话 id，无法接收运行中的新输入")
+                api.post(f"/api/ai/runner/runs/{run_id}/continuation/consume",
+                         {"input": pending_update})
+                reporter.send("message", "已接收你刚才补充的信息，正在同一会话中调整执行方向", force=True)
+                prompt = build_live_update_prompt(pending_update)
+                turn_prompt_base = prompt
+                continue
+            if exit_code != 0 and failure_retries < max_failure_retries:
+                failure_retries += 1
+                detail = result_text[-2000:] or f"{name} 退出码 {exit_code}"
+                log(f"[{run_id}] {name} 非零退出 {exit_code}，自动重试 "
+                    f"{failure_retries}/{max_failure_retries}")
+                reporter.send("message", f"{name} 本轮执行未完成，正在自动重试（"
+                              f"{failure_retries}/{max_failure_retries}）", force=True)
+                prompt = build_failure_retry_prompt(
+                    turn_prompt_base, failure_retries, max_failure_retries, detail)
+                continue
+            break
         cost_text = "未回传" if usage["costUsd"] is None else "$%.4f" % usage["costUsd"]
         log(f"[{run_id}] 用量：模型 {usage['model'] or '未知'}，"
             f"token {usage['totalTokens']}（输入 {usage['inputTokens']} / 输出 "
