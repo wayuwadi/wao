@@ -48,6 +48,8 @@ grep -Fq 'Production frontend did not converge to version' \
 grep -Fq "printf 'DOCKER_IMAGE_MIRROR=1\\n'" deploy/jumpserver/deploy.sh
 grep -Fqx 'set_config DOCKER_IMAGE_MIRROR 1' deploy/jumpserver/deploy.sh
 grep -Fq 'python /opt/jumpserver/apps/manage.py shell' deploy/jumpserver/deploy.sh
+grep -Fq "core_container_before=" deploy/jumpserver/deploy.sh
+grep -Fq 'sudo -n docker restart jms_web' deploy/jumpserver/deploy.sh
 grep -Fq 'exec sudo -n sh "$project_root/deploy/jumpserver/verify-assets.sh"' \
   deploy/jenkins/deploy-master-local.sh
 test "$(grep -Fc 'python /opt/jumpserver/apps/manage.py shell' \
