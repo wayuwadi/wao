@@ -61,6 +61,7 @@ grep -Fq 'RemoteAddress = $remoteAddresses' deploy/jumpserver/enable-rdp.ps1
 python3 -m py_compile \
   deploy/jumpserver/bootstrap_wao_assets.py \
   deploy/jumpserver/verify_wao_access.py
+! grep -Fq '.clear()' deploy/jumpserver/bootstrap_wao_assets.py
 
 check_migration_versions() {
   migration_dir="$1"
