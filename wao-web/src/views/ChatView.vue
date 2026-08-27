@@ -12,15 +12,18 @@ import {
   fetchSharedChatConfig,
   fetchSharedChatFeishuGroups,
   fetchSharedChatMessages,
+  fetchSharedChatSyncRuns,
   markSharedChatRead,
   retrySharedChatFeishu,
   saveSharedChatConfig,
   sendSharedChatMessage,
   toggleSharedChatReaction,
+  runSharedChatSyncNow,
   uploadSharedChatImage,
   type SharedChatConfig,
   type SharedChatFeishuGroup,
   type SharedChatMessage,
+  type SharedChatSyncRun,
 } from '@/api/chat'
 import { useSessionStore } from '@/stores/session'
 import { renderMarkdown } from '@/utils/markdown'
@@ -60,6 +63,10 @@ const configLoading = ref(true)
 const groupsLoading = ref(false)
 const configSaving = ref(false)
 const configError = ref('')
+const syncRuns = ref<SharedChatSyncRun[]>([])
+const syncRunsLoading = ref(false)
+const syncRunning = ref(false)
+const syncError = ref('')
 const pollIntervalAmount = ref(15)
 const pollIntervalUnit = ref<'SECONDS' | 'MINUTES'>('SECONDS')
 const reviewOpen = ref(false)
@@ -181,7 +188,9 @@ async function loadConfig() {
 async function toggleGroupMenu() {
   if (configSaving.value) return
   groupMenuOpen.value = !groupMenuOpen.value
-  if (!groupMenuOpen.value || groups.value.length) return
+  if (!groupMenuOpen.value) return
+  void loadSyncRuns()
+  if (groups.value.length) return
   groupsLoading.value = true
   try {
     groups.value = await fetchSharedChatFeishuGroups()
@@ -191,6 +200,36 @@ async function toggleGroupMenu() {
   } finally {
     groupsLoading.value = false
   }
+}
+
+async function loadSyncRuns() {
+  syncRunsLoading.value = true
+  try {
+    syncRuns.value = await fetchSharedChatSyncRuns(6)
+    syncError.value = ''
+  } catch (error) {
+    syncError.value = messageOf(error, '同步运行读取失败')
+  } finally { syncRunsLoading.value = false }
+}
+
+async function syncToday() {
+  if (!config.value?.configured || syncRunning.value) return
+  syncRunning.value = true
+  syncError.value = ''
+  try {
+    const result = await runSharedChatSyncNow()
+    syncRuns.value = [result, ...syncRuns.value.filter((item) => item.id !== result.id)].slice(0, 6)
+    await load(false)
+  } catch (error) {
+    syncError.value = messageOf(error, '当日聊天核对失败，请查看原因后重试')
+    await loadSyncRuns()
+  } finally { syncRunning.value = false }
+}
+
+function storageText(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 async function selectGroup(chatId: string) {
@@ -420,6 +459,25 @@ onBeforeUnmount(() => {
             </label>
             <button type="button" :disabled="configSaving" @click="savePollingInterval">保存频率</button>
           </section>
+          <section class="sync-history">
+            <header><div><b>当日聊天核对</b><small>每日 00:10 自动核对前一日</small></div>
+              <button type="button" :disabled="!config?.configured || syncRunning" @click="syncToday">
+                <i :class="syncRunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ syncRunning ? '核对中' : '立即核对今日' }}
+              </button>
+            </header>
+            <div v-if="syncRunsLoading" class="sync-state"><i class="ri-loader-4-line spin"></i>读取运行记录…</div>
+            <div v-else-if="!syncRuns.length" class="sync-state">还没有夜间或手动核对记录</div>
+            <template v-else>
+              <article v-for="run in syncRuns" :key="run.id" :class="run.status.toLowerCase()">
+                <span><b>{{ run.syncDay }} · {{ run.triggerType === 'NIGHTLY' ? '夜间' : '手动' }}</b>
+                  <small v-if="run.status === 'SUCCEEDED'">扫描 {{ run.messagesScanned }} · 新增 {{ run.messagesInserted }} · 更新 {{ run.messagesUpdated }}</small>
+                  <small v-else>{{ run.errorMessage || '正在核对真实群消息' }}</small></span>
+                <em>{{ run.status === 'SUCCEEDED' ? `+${storageText(run.contentBytesAdded)}` : run.status === 'FAILED' ? '失败' : '运行中' }}</em>
+              </article>
+            </template>
+            <p>空间口径为本次新增正文与图片原始字节，不把数据库索引页或其它进程的磁盘变化算进聊天任务。</p>
+          </section>
+          <div v-if="syncError" class="config-error">{{ syncError }} <button type="button" @click="loadSyncRuns">重试</button></div>
           <div v-if="configError" class="config-error">{{ configError }}</div>
         </div>
         </div>
@@ -726,6 +784,20 @@ onBeforeUnmount(() => {
 .poll-config input { border-radius: 7px 0 0 7px; }
 .poll-config select { border-left: 0; border-radius: 0 7px 7px 0; }
 .poll-config>button { grid-column: 1/-1; min-height: 30px; border: 0; border-radius: 7px; background: var(--wao-primary-soft); color: var(--wao-primary-text); cursor: pointer; }
+.sync-history { margin-top: 8px; padding: 10px 7px 5px; border-top: 1px solid var(--wao-divider); }
+.sync-history > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sync-history > header div { display: grid; }
+.sync-history > header small,.sync-history > p,.sync-state { color: var(--wao-text-faint); font-size: 8px; }
+.sync-history > header button { min-height: 28px; border: 0; border-radius: 7px; padding: 0 8px; background: var(--wao-primary-soft); color: var(--wao-primary-text); font-size: 9px; cursor: pointer; }
+.sync-history > header button:disabled { opacity: .5; cursor: not-allowed; }
+.sync-history article { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding: 7px; border-radius: 8px; background: var(--wao-bg-sub); }
+.sync-history article > span { min-width: 0; flex: 1; display: grid; }
+.sync-history article b { font-size: 9px; }
+.sync-history article small { overflow: hidden; color: var(--wao-text-weak); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.sync-history article em { color: var(--wao-primary-text); font-size: 9px; font-style: normal; }
+.sync-history article.failed em { color: var(--wao-danger); }
+.sync-history > p { margin: 8px 0 0; line-height: 1.45; }
+.config-error button { border: 0; background: transparent; color: inherit; text-decoration: underline; cursor: pointer; }
 .config-error {
   color: var(--wao-danger);
   background: var(--wao-danger-tint);

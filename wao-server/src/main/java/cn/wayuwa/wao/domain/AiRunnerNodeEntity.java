@@ -32,6 +32,15 @@ public class AiRunnerNodeEntity {
     private LocalDateTime lastMemoryCollectionAttemptAt;
     private LocalDateTime lastMemoryCollectedAt;
     private String lastMemoryCollectionError;
+    /** Runner 标准系统接口采集的资源快照；不保存进程、用户名和具体目录。 */
+    private Integer cpuCores;
+    private Double cpuUsagePercent;
+    private Long memoryTotalBytes;
+    private Long memoryAvailableBytes;
+    private Long diskTotalBytes;
+    private Long diskFreeBytes;
+    private String diskRoot;
+    private LocalDateTime systemMetricsCollectedAt;
     /** Runner 最近一次心跳上报的已脱敏日志尾部，不包含完整历史日志。 */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private String logTail;
@@ -76,6 +85,22 @@ public class AiRunnerNodeEntity {
     public void setLastMemoryCollectedAt(LocalDateTime value) { this.lastMemoryCollectedAt = value; }
     public String getLastMemoryCollectionError() { return lastMemoryCollectionError; }
     public void setLastMemoryCollectionError(String value) { this.lastMemoryCollectionError = value; }
+    public Integer getCpuCores() { return cpuCores; }
+    public void setCpuCores(Integer value) { cpuCores = value; }
+    public Double getCpuUsagePercent() { return cpuUsagePercent; }
+    public void setCpuUsagePercent(Double value) { cpuUsagePercent = value; }
+    public Long getMemoryTotalBytes() { return memoryTotalBytes; }
+    public void setMemoryTotalBytes(Long value) { memoryTotalBytes = value; }
+    public Long getMemoryAvailableBytes() { return memoryAvailableBytes; }
+    public void setMemoryAvailableBytes(Long value) { memoryAvailableBytes = value; }
+    public Long getDiskTotalBytes() { return diskTotalBytes; }
+    public void setDiskTotalBytes(Long value) { diskTotalBytes = value; }
+    public Long getDiskFreeBytes() { return diskFreeBytes; }
+    public void setDiskFreeBytes(Long value) { diskFreeBytes = value; }
+    public String getDiskRoot() { return diskRoot; }
+    public void setDiskRoot(String value) { diskRoot = value; }
+    public LocalDateTime getSystemMetricsCollectedAt() { return systemMetricsCollectedAt; }
+    public void setSystemMetricsCollectedAt(LocalDateTime value) { systemMetricsCollectedAt = value; }
     public String getLogTail() { return logTail; }
     public void setLogTail(String logTail) { this.logTail = logTail; }
     public LocalDateTime getLogUpdatedAt() { return logUpdatedAt; }

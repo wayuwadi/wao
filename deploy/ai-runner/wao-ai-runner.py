@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import ctypes
 import hashlib
 import io
 import json
@@ -73,6 +74,87 @@ ENGINE_COMMANDS = {"codex": ("codex",), "claude": ("claude",), "qoder": ("qoderc
 # Qoder 的 stream-json 事件与 Claude Code 同构（system/init、assistant、result），
 # 进展过滤、结果解析和用量统计直接复用 Claude 的口径。
 CLAUDE_STYLE_ENGINES = {"claude", "qoder"}
+_CPU_SAMPLE: tuple[int, int] | None = None
+
+
+def _cpu_counters() -> tuple[int, int] | None:
+    """读取累计 CPU 总时间与空闲时间，不启动外部进程。"""
+    if os.name == "nt":
+        class FileTime(ctypes.Structure):
+            _fields_ = [("low", ctypes.c_uint32), ("high", ctypes.c_uint32)]
+
+        idle, kernel, user = FileTime(), FileTime(), FileTime()
+        if not ctypes.windll.kernel32.GetSystemTimes(  # type: ignore[attr-defined]
+                ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+            return None
+
+        def value(item: FileTime) -> int:
+            return (item.high << 32) | item.low
+
+        return value(kernel) + value(user), value(idle)
+    stat = Path("/proc/stat")
+    if not stat.is_file():
+        return None
+    values = [int(value) for value in stat.read_text(encoding="ascii").splitlines()[0].split()[1:]]
+    if len(values) < 4:
+        return None
+    # /proc/stat 的 guest/guest_nice 已包含在 user/nice 中，不能再次计入总量。
+    return sum(values[:8]), values[3] + (values[4] if len(values) > 4 else 0)
+
+
+def _memory_capacity() -> tuple[int, int] | None:
+    """返回物理内存总量和可用量；不读取进程或用户信息。"""
+    if os.name == "nt":
+        class MemoryStatus(ctypes.Structure):
+            _fields_ = [
+                ("length", ctypes.c_ulong), ("memory_load", ctypes.c_ulong),
+                ("total_physical", ctypes.c_ulonglong), ("available_physical", ctypes.c_ulonglong),
+                ("total_page", ctypes.c_ulonglong), ("available_page", ctypes.c_ulonglong),
+                ("total_virtual", ctypes.c_ulonglong), ("available_virtual", ctypes.c_ulonglong),
+                ("available_extended", ctypes.c_ulonglong),
+            ]
+        status = MemoryStatus()
+        status.length = ctypes.sizeof(status)
+        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):  # type: ignore[attr-defined]
+            return int(status.total_physical), int(status.available_physical)
+        return None
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.is_file():
+        return None
+    values: dict[str, int] = {}
+    for line in meminfo.read_text(encoding="ascii").splitlines():
+        key, _, raw = line.partition(":")
+        if raw.strip().split():
+            values[key] = int(raw.strip().split()[0]) * 1024
+    total = values.get("MemTotal")
+    available = values.get("MemAvailable", values.get("MemFree"))
+    return (total, available) if total and available is not None else None
+
+
+def collect_system_metrics(root: Path) -> dict[str, Any]:
+    """采集用于后台可视化的本机资源快照，只返回容量和利用率。"""
+    global _CPU_SAMPLE
+    disk_root = Path(root.anchor or os.path.sep)
+    disk = shutil.disk_usage(disk_root)
+    current = _cpu_counters()
+    usage: float | None = None
+    if current is not None and _CPU_SAMPLE is not None:
+        total_delta = current[0] - _CPU_SAMPLE[0]
+        idle_delta = current[1] - _CPU_SAMPLE[1]
+        if total_delta > 0:
+            usage = round(max(0.0, min(100.0, (total_delta - idle_delta) * 100.0 / total_delta)), 1)
+    _CPU_SAMPLE = current
+    memory = _memory_capacity()
+    return {
+        "cpuCores": os.cpu_count() or 1,
+        "cpuUsagePercent": usage,
+        "memoryTotalBytes": memory[0] if memory else None,
+        "memoryAvailableBytes": memory[1] if memory else None,
+        "diskTotalBytes": disk.total,
+        "diskFreeBytes": disk.free,
+        "diskRoot": root.anchor.rstrip("\\/") or "/",
+        "collectedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
 # 沙箱强度到各 CLI 参数的映射，保证两种工具在同一档位下权限一致。
 CLAUDE_PERMISSION = {
     "read-only": ["--permission-mode", "plan"],
@@ -2177,7 +2259,9 @@ def main() -> int:
                 })
                 log_tail = remote_log_tail()
                 log_hash = hashlib.sha256(log_tail.encode("utf-8")).hexdigest()
-                heartbeat_body = {"logTail": log_tail} if log_hash != last_reported_log_hash else {}
+                heartbeat_body = {"systemMetrics": collect_system_metrics(root)}
+                if log_hash != last_reported_log_hash:
+                    heartbeat_body["logTail"] = log_tail
                 if codex_quota_pending:
                     if codex_quota_report is not None:
                         heartbeat_body["codexQuota"] = codex_quota_report

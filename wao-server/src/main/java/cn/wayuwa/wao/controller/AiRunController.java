@@ -348,7 +348,8 @@ public class AiRunController {
         AiRunnerDto runner = service.heartbeat(token, maxConcurrency, engines, scriptHash,
                 wakeMac, clientAddress(http), request == null ? null : request.logTail(),
                 request == null ? null : request.codexQuota(),
-                request == null ? null : request.codexQuotaError());
+                request == null ? null : request.codexQuotaError(),
+                request == null ? null : request.systemMetrics());
         lifecycleService.markOnline(runner.id());
         return ApiResponse.ok(runner);
     }

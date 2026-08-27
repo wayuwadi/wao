@@ -23,6 +23,27 @@ RUNNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNNER)
 
 
+class SystemMetricsTest(unittest.TestCase):
+
+    def test_collects_bounded_capacity_and_interval_cpu_without_process_details(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="wao-system-metrics-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        RUNNER._CPU_SAMPLE = None
+        with patch.object(RUNNER, "_cpu_counters", side_effect=[(100, 40), (200, 60)]), \
+                patch.object(RUNNER, "_memory_capacity", return_value=(16_000, 6_000)):
+            first = RUNNER.collect_system_metrics(root)
+            second = RUNNER.collect_system_metrics(root)
+
+        self.assertIsNone(first["cpuUsagePercent"])
+        self.assertEqual(80.0, second["cpuUsagePercent"])
+        self.assertEqual(16_000, second["memoryTotalBytes"])
+        self.assertEqual(6_000, second["memoryAvailableBytes"])
+        self.assertGreater(second["diskTotalBytes"], 0)
+        self.assertLessEqual(second["diskFreeBytes"], second["diskTotalBytes"])
+        self.assertNotIn("processes", second)
+        self.assertIn(second["diskRoot"], {"/", root.anchor.rstrip("\\/")})
+
+
 class RunnerMemoryCollectionTest(unittest.TestCase):
 
     def test_reads_only_bounded_utf8_memory_files_and_redacts_credentials(self) -> None:

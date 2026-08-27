@@ -545,6 +545,14 @@ export interface AiRunner {
   lastMemoryCollectionAttemptAt?: string | null
   lastMemoryCollectedAt?: string | null
   lastMemoryCollectionError?: string | null
+  cpuCores?: number | null
+  cpuUsagePercent?: number | null
+  memoryTotalBytes?: number | null
+  memoryAvailableBytes?: number | null
+  diskTotalBytes?: number | null
+  diskFreeBytes?: number | null
+  diskRoot?: string | null
+  systemMetricsCollectedAt?: string | null
 }
 
 /** 执行电脑最近一次心跳上报的已脱敏日志快照。 */

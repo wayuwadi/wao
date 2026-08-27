@@ -56,6 +56,21 @@ export interface SharedChatFeishuGroup {
   name: string
 }
 
+export interface SharedChatSyncRun {
+  id: string
+  triggerType: 'NIGHTLY' | 'MANUAL'
+  chatName: string
+  syncDay: string
+  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  messagesScanned: number
+  messagesInserted: number
+  messagesUpdated: number
+  contentBytesAdded: number
+  errorMessage?: string
+  startedAt: string
+  finishedAt?: string
+}
+
 async function data<T>(request: Promise<{ data: ApiResponse<T> }>): Promise<T> {
   return (await request).data.data
 }
@@ -84,5 +99,11 @@ export const saveSharedChatConfig = (chatId: string, pollIntervalSeconds?: numbe
 
 export const fetchSharedChatFeishuGroups = () =>
   data<SharedChatFeishuGroup[]>(http.get('/api/chat/feishu-chats'))
+
+export const fetchSharedChatSyncRuns = (limit = 10) =>
+  data<SharedChatSyncRun[]>(http.get('/api/chat/sync-runs', { params: { limit } }))
+
+export const runSharedChatSyncNow = () =>
+  data<SharedChatSyncRun>(http.post('/api/chat/sync-now', undefined, { timeout: 120_000 }))
 
 export const uploadSharedChatImage = (file: File) => apiUploadImage(file, 'WAO 聊天')

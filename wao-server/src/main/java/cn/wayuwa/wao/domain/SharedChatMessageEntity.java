@@ -19,6 +19,7 @@ public class SharedChatMessageEntity {
     private String imageName;
     private String feishuChatId;
     private String feishuMessageId;
+    private String feishuSourceHash;
     private String replyToId;
     private Boolean deleted;
     private String feishuStatus;
@@ -48,6 +49,8 @@ public class SharedChatMessageEntity {
     public void setFeishuChatId(String feishuChatId) { this.feishuChatId = feishuChatId; }
     public String getFeishuMessageId() { return feishuMessageId; }
     public void setFeishuMessageId(String feishuMessageId) { this.feishuMessageId = feishuMessageId; }
+    public String getFeishuSourceHash() { return feishuSourceHash; }
+    public void setFeishuSourceHash(String value) { feishuSourceHash = value; }
     public String getReplyToId() { return replyToId; }
     public void setReplyToId(String replyToId) { this.replyToId = replyToId; }
     public Boolean getDeleted() { return deleted; }

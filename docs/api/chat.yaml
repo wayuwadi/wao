@@ -78,6 +78,21 @@ paths:
       summary: 列出自建应用机器人真实所在群
       responses:
         "200": { description: 飞书开放 API 实时群列表 }
+  /api/chat/sync-runs:
+    get:
+      operationId: listSharedChatSyncRuns
+      summary: 查询最近夜间或手动当日核对运行
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 30, default: 10 } }
+      responses:
+        "200": { description: 返回真实扫描、变更和新增正文/图片字节 }
+  /api/chat/sync-now:
+    post:
+      operationId: runSharedChatSyncNow
+      summary: 立即核对上海时区当日飞书群消息
+      responses:
+        "200": { description: 返回已落库的同步运行终态 }
+        "400": { description: 飞书应用或共享群未配置 }
 components:
   securitySchemes:
     cookieAuth: { type: apiKey, in: cookie, name: WAO_SESSION }

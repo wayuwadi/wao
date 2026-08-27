@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.domain.SharedChatMessageEntity;
@@ -125,7 +126,8 @@ class SharedChatFeishuBridgeTest {
                 ]]}}
                 """, 1_787_700_000_000L, false);
 
-        bridge.importMessage("token", "oc_real", "娃屋日常", source, Map.of("ou_sender", "娃弟"));
+        var result = bridge.importMessage("token", "oc_real", "娃屋日常", source,
+                Map.of("ou_sender", "娃弟"));
 
         ArgumentCaptor<SharedChatMessageEntity> captured = ArgumentCaptor.forClass(SharedChatMessageEntity.class);
         verify(messages).insert(captured.capture());
@@ -134,6 +136,31 @@ class SharedChatFeishuBridgeTest {
         assertThat(imported.getContent()).contains("两张图", "/api/images/a/raw", "/api/images/b/raw");
         assertThat(imported.getContent().indexOf("/api/images/a/raw"))
                 .isLessThan(imported.getContent().indexOf("/api/images/b/raw"));
+        assertThat(imported.getFeishuSourceHash()).hasSize(64);
+        assertThat(result.bytesAdded()).isPositive();
+    }
+
+    @Test
+    void unchangedImageMessageUsesFingerprintWithoutDownloadingOrWritingAgain() {
+        when(feishu.downloadImage("token", "om_image", "img-a")).thenReturn(new byte[] {1, 2, 3});
+        when(imageService.store(any(), eq("image/png"), any(), eq("飞书聊天 · 娃屋日常"), eq(true)))
+                .thenReturn(new ImageItemDto("a", "a.png", "3 B", "刚刚", "飞书",
+                        "/api/images/a/raw", null, null));
+        FeishuMessage source = new FeishuMessage("om_image", "ou_sender", "user", "image",
+                "{\"image_key\":\"img-a\"}", 1_787_700_000_000L, false);
+
+        var first = bridge.importMessage("token", "oc_real", "娃屋日常", source, Map.of());
+        ArgumentCaptor<SharedChatMessageEntity> captured = ArgumentCaptor.forClass(SharedChatMessageEntity.class);
+        verify(messages).insert(captured.capture());
+        when(messages.findByFeishuMessageId("om_image")).thenReturn(captured.getValue());
+
+        var second = bridge.importMessage("token", "oc_real", "娃屋日常", source, Map.of());
+
+        assertThat(first.inserted()).isEqualTo(1);
+        assertThat(first.bytesAdded()).isGreaterThanOrEqualTo(3);
+        assertThat(second).isEqualTo(new SharedChatFeishuBridge.ImportResult(0, 0, 0));
+        verify(feishu, times(1)).downloadImage("token", "om_image", "img-a");
+        verify(messages, times(1)).insert(any(SharedChatMessageEntity.class));
     }
 
     @Test

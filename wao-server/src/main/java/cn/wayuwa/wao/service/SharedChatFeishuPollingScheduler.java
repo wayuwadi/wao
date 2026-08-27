@@ -1,10 +1,10 @@
 package cn.wayuwa.wao.service;
 
-import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
-import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuChatMember;
 import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.UUID;
+import cn.wayuwa.wao.mapper.SharedChatSyncStateMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,19 +20,21 @@ public class SharedChatFeishuPollingScheduler {
     private static final Logger log = LoggerFactory.getLogger(SharedChatFeishuPollingScheduler.class);
     private static final long LOOKBACK_SECONDS = 120;
     private static final long EDIT_LOOKBACK_SECONDS = 24 * 60 * 60;
+    private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
 
     private final SettingService settings;
-    private final FeishuOpenApiClient feishu;
     private final SharedChatFeishuBridge bridge;
-    private volatile long lastSuccessfulEnd = Instant.now().getEpochSecond();
-    private volatile String lastChatId = "";
+    private final SharedChatSynchronizationService synchronization;
+    private final SharedChatSyncStateMapper state;
+    private final String leaseOwner = UUID.randomUUID().toString().replace("-", "");
     private volatile long lastMessagePollNanos;
 
-    public SharedChatFeishuPollingScheduler(SettingService settings, FeishuOpenApiClient feishu,
-            SharedChatFeishuBridge bridge) {
+    public SharedChatFeishuPollingScheduler(SettingService settings, SharedChatFeishuBridge bridge,
+            SharedChatSynchronizationService synchronization, SharedChatSyncStateMapper state) {
         this.settings = settings;
-        this.feishu = feishu;
         this.bridge = bridge;
+        this.synchronization = synchronization;
+        this.state = state;
     }
 
     /** 新消息轮询；水位只有整批成功后才前移。 */
@@ -58,23 +60,18 @@ public class SharedChatFeishuPollingScheduler {
         String chatName = settings.get(SettingService.SHARED_CHAT_CHAT_NAME, "飞书群聊");
         if (!StringUtils.hasText(appId) || !StringUtils.hasText(secret) || !StringUtils.hasText(chatId)) return;
         long end = Instant.now().getEpochSecond();
-        if (!chatId.equals(lastChatId)) {
-            lastChatId = chatId;
-            lastSuccessfulEnd = end;
-        }
+        String key = edits ? "edits" : "realtime";
+        state.prepare(key, chatId, end);
+        LocalDateTime now = LocalDateTime.now(SHANGHAI);
+        if (state.claim(key, leaseOwner, now, now.plusMinutes(10)) != 1) return;
+        Long cursor = state.cursor(key);
         long start = edits ? end - EDIT_LOOKBACK_SECONDS
-                : Math.max(lastSuccessfulEnd - 2, end - LOOKBACK_SECONDS);
+                : Math.max((cursor == null ? end : cursor) - 2, end - LOOKBACK_SECONDS);
         try {
-            String token = feishu.tenantAccessToken(appId, secret);
-            Map<String, String> names = new LinkedHashMap<>();
-            for (FeishuChatMember member : feishu.listChatMembers(token, chatId)) {
-                names.put(member.openId(), member.name());
-            }
-            for (var message : feishu.listMessages(token, chatId, start, end)) {
-                bridge.importMessage(token, chatId, chatName, message, names);
-            }
-            if (!edits) lastSuccessfulEnd = end;
+            synchronization.synchronize(start, end);
+            state.complete(key, leaseOwner, end);
         } catch (RuntimeException exception) {
+            state.release(key, leaseOwner);
             log.warn("共享聊天飞书{}轮询失败：{}", edits ? "编辑" : "消息", exception.getMessage());
         }
     }
