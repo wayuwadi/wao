@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
+import { quickLinkPath } from '@/config/quickLinks'
 import { toast } from '@/composables/toast'
 import { createAiPairCode, fetchAiRunners, wakeAiRunner } from '@/api/ai'
 
@@ -252,7 +253,8 @@ const commands = computed<Command[]>(() => {
       icon: link.icon,
       keywords: link.keywords,
       action: () => {
-        window.open(link.url, '_blank', 'noopener')
+        if (link.openMode === 'TAB') void router.push(quickLinkPath(link.id))
+        else window.open(link.url, '_blank', 'noopener')
         close()
       },
     })),

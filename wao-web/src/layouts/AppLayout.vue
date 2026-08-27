@@ -22,6 +22,7 @@ import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
 import { useTheme } from '@/composables/theme'
+import { useQuickLinks } from '@/composables/quickLinks'
 import { useShortcuts } from '@/composables/shortcuts'
 import type { ModuleId } from '@/types'
 
@@ -33,6 +34,7 @@ const data = useDataStore()
 const preferences = usePreferenceStore()
 const session = useSessionStore()
 const theme = useTheme()
+const quickLinks = useQuickLinks()
 
 const loadingDomainCount = computed(() => Object.values(data.loadStates).filter((state) => state === 'loading').length)
 const loadErrorMessages = computed(() => [...new Set(Object.values(data.loadErrors).filter(Boolean))])
@@ -45,6 +47,10 @@ useShortcuts()
 const crumbA = computed(() => {
   if (route.meta.tabKind === 'external') {
     return nav.externalAppById(String(route.params.appId))?.label ?? '外部应用'
+  }
+  if (route.meta.tabKind === 'quick-link') {
+    return quickLinks.links.value.find((link) => link.id === String(route.params.linkId))?.label
+      ?? '快捷链接'
   }
   const mod = nav.itemMeta(route.meta.module as ModuleId)
   return mod?.label ?? '首页'
@@ -69,6 +75,14 @@ watch(
           tab.labelPlaceholder = false
         }
       }
+      if (route.meta.tabKind === 'quick-link') {
+        const link = quickLinks.links.value.find((item) => item.id === String(route.params.linkId))
+        if (link) {
+          tab.label = link.label
+          tab.icon = link.icon
+          tab.labelPlaceholder = false
+        }
+      }
       tabs.open(tab)
     }
   },
@@ -80,6 +94,16 @@ watch(
   () => {
     for (const app of nav.externalApps) {
       tabs.setMeta(externalAppItemId(app.id), { label: app.label, icon: app.icon })
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => quickLinks.links.value.map((link) => `${link.id}|${link.label}|${link.icon}`).join('\n'),
+  () => {
+    for (const link of quickLinks.links.value) {
+      tabs.setMeta(`quick-link:${link.id}`, { label: link.label, icon: link.icon })
     }
   },
   { immediate: true },

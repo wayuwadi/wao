@@ -10,6 +10,8 @@ export interface QuickLink {
   subtitle: string
   icon: string
   url: string
+  /** 保持旧配置默认新页面；成员可显式改为在 WAO 页签中嵌入。 */
+  openMode: 'TAB' | 'NEW_PAGE'
   /** 命令面板模糊搜索用的额外关键词（拼音 / 英文同义词）。 */
   keywords: string[]
 }
@@ -22,6 +24,7 @@ export const GITHUB_REPOS: QuickLink[] = [
     subtitle: 'wayuwacn/wao',
     icon: 'ri-git-repository-line',
     url: 'https://github.com/wayuwacn/wao',
+    openMode: 'NEW_PAGE',
     keywords: ['github', 'cangku', 'repo', 'wao'],
   },
   {
@@ -30,6 +33,7 @@ export const GITHUB_REPOS: QuickLink[] = [
     subtitle: 'wayuwacn/wao-agent',
     icon: 'ri-git-repository-line',
     url: 'https://github.com/wayuwacn/wao-agent',
+    openMode: 'NEW_PAGE',
     keywords: ['github', 'agent', 'cangku', 'repo'],
   },
 ]
@@ -42,6 +46,7 @@ export const DEVOPS_LINKS: QuickLink[] = [
     subtitle: '主站构建、部署记录与失败日志',
     icon: 'ri-hammer-line',
     url: '/jenkins/job/wao-main-cd/',
+    openMode: 'NEW_PAGE',
     keywords: ['jenkins', 'ci', 'cd', 'deploy', 'goujian', 'bushu'],
   },
   {
@@ -50,6 +55,7 @@ export const DEVOPS_LINKS: QuickLink[] = [
     subtitle: '查看待合并的代码变更',
     icon: 'ri-git-pull-request-line',
     url: 'https://github.com/wayuwacn/wao/pulls',
+    openMode: 'NEW_PAGE',
     keywords: ['pr', 'pull request', 'hebing', 'daima'],
   },
   {
@@ -58,6 +64,7 @@ export const DEVOPS_LINKS: QuickLink[] = [
     subtitle: '缺陷跟踪与需求管理',
     icon: 'ri-error-warning-line',
     url: 'https://github.com/wayuwacn/wao/issues',
+    openMode: 'NEW_PAGE',
     keywords: ['issue', 'bug', 'xuqiu', 'wenti'],
   },
   {
@@ -66,6 +73,7 @@ export const DEVOPS_LINKS: QuickLink[] = [
     subtitle: '桌面端与 iOS 原生构建',
     icon: 'ri-flashlight-line',
     url: 'https://github.com/wayuwacn/wao/actions',
+    openMode: 'NEW_PAGE',
     keywords: ['actions', 'desktop', 'ios', 'goujian'],
   },
 ]
@@ -78,12 +86,18 @@ export const PRODUCT_LINKS: QuickLink[] = [
     subtitle: '下载 Windows / macOS 版本',
     icon: 'ri-bear-smile-line',
     url: '/desktop',
+    openMode: 'NEW_PAGE',
     keywords: ['desktop', 'pet', 'windows', 'macos', 'zhuomian', 'chongwu', 'xiazai'],
   },
 ]
 
 /** 新成员的默认快捷链接；成员保存后以服务端偏好为准。 */
 export const ALL_QUICK_LINKS: QuickLink[] = [...PRODUCT_LINKS, ...GITHUB_REPOS, ...DEVOPS_LINKS]
+
+/** 成员快捷链接在 WAO 壳内复用的稳定路由。 */
+export function quickLinkPath(id: string): string {
+  return `/quick-links/${encodeURIComponent(id)}`
+}
 
 /**
  * 从 Git 仓库 URL 推导 GitHub 浏览地址。
