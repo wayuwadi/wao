@@ -158,6 +158,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         </template>
         <div class="spacer"></div>
 
+        <button class="assistant-entry" title="问问 AI（Ctrl/⌘ + J）" @click="ui.openAssistant()">
+          <i class="ri-robot-2-line"></i>问问 AI
+        </button>
         <!-- 两个最高频的新建动作直接摆在这里，点一次就到位；新建项目留在项目页和 Shift+N。 -->
         <button class="plus" @click="newTask">
           <i class="ri-checkbox-circle-line"></i>新建任务
@@ -328,6 +331,20 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   align-items: center;
   gap: 6px;
 }
+.assistant-entry {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--wao-primary-line);
+  border-radius: 8px;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.assistant-entry:hover { background: var(--wao-bg-hover-2); }
 .plus:hover {
   background: var(--wao-primary-hover);
 }
@@ -434,6 +451,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   .crumb-b,
   .plus,
   .plus.ghost,
+  .assistant-entry,
   .bell-dot {
     display: none;
   }

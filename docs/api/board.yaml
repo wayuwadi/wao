@@ -102,9 +102,16 @@ paths:
       responses: { '200': { description: 已返回更新后计划 } }
   /assistant/status:
     get:
-      summary: AI 助手是否有在线本地 Codex Runner
+      summary: 指定只读 AI 能力是否真实可用
+      parameters:
+        - { name: capabilityId, in: query, required: false, schema: { type: string, maxLength: 32 } }
       responses:
-        '200': { description: 返回 configured 与可读状态说明 }
+        '200': { description: 返回 configured、能力 id、展示名与可读状态说明 }
+  /assistant/capabilities:
+    get:
+      summary: 列出问问 AI 与复盘可选的只读 AI 能力
+      responses:
+        '200': { description: 只含配置元数据与可用性，不含 Token、API Key 或 OAuth 凭据 }
   /assistant/polish:
     post:
       summary: 优先用设置页启用的受信模型网关或 DeepSeek API 润色文档选区，无配置时回退只读本地 Codex
@@ -150,6 +157,15 @@ paths:
       responses:
         '200': { description: text/event-stream，事件为 token / done / error }
         '400': { description: 节点离线、已有活动问答或参数不合法 }
+  /ai/activities:
+    get:
+      summary: 分页读取首页统一 AI 活动
+      parameters:
+        - { name: type, in: query, schema: { type: string, enum: [ALL, FEATURE_DEVELOPMENT, CHAT_REVIEW], default: ALL } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 8, maximum: 50, default: 20 } }
+      responses:
+        '200': { description: 开发运行与聊天复盘按结束时间统一排序，返回真实总数和分页信息 }
   /memory/tokens:
     get:
       summary: 列出当前成员有效的 Codex 记忆 MCP 设备令牌元数据
@@ -1269,6 +1285,7 @@ components:
               content: { type: string, minLength: 1, maxLength: 4000 }
         pageContext: { type: string, maxLength: 10000 }
         conversationId: { type: string, maxLength: 32 }
+        aiCapabilityId: { type: string, maxLength: 32, description: 可省略；默认 local-codex }
         sourceFilter: { $ref: '#/components/schemas/AssistantSourceFilter' }
     PolishTextRequest:
       type: object

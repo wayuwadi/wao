@@ -215,6 +215,24 @@ public class ChatReviewService {
      * @return 新运行 id
      */
     public String createShared(String rangeKind, Integer rangeValue, String focus, String memberId) {
+        return createShared(rangeKind, rangeValue, focus, memberId,
+                AiAssistantService.LOCAL_CODEX_CAPABILITY);
+    }
+
+    /** 从共享聊天创建一次固定 AI 能力的手动复盘。 */
+    public String createShared(String rangeKind, Integer rangeValue, String focus, String memberId,
+            String aiCapabilityId) {
+        return createShared(rangeKind, rangeValue, focus, memberId, aiCapabilityId, "MANUAL");
+    }
+
+    /** 由持久化策略触发共享聊天复盘；创建者明确显示为系统自动复盘。 */
+    public String createAutomatic(String rangeKind, Integer rangeValue, String focus,
+            String aiCapabilityId) {
+        return createShared(rangeKind, rangeValue, focus, "system", aiCapabilityId, "AUTOMATIC");
+    }
+
+    private String createShared(String rangeKind, Integer rangeValue, String focus, String memberId,
+            String aiCapabilityId, String triggerKind) {
         String kind = text(rangeKind).toUpperCase(java.util.Locale.ROOT);
         if (!Set.of("MESSAGES", "HOURS").contains(kind)) {
             throw new BadRequestException("复盘范围只能选择最近消息或最近小时");
@@ -232,8 +250,10 @@ public class ChatReviewService {
         if (selected.size() > MAX_SHARED_MESSAGES) {
             throw new BadRequestException("所选范围超过 500 条消息，请缩短时间范围后重试");
         }
+        String capability = assistant.validateCapability(aiCapabilityId);
         return insertSharedRun(kind, rangeValue, normalizeFocus(focus),
-                selected.stream().map(SharedChatMessageEntity::getId).toList(), memberId, null);
+                selected.stream().map(SharedChatMessageEntity::getId).toList(), memberId, null,
+                capability, triggerKind);
     }
 
     /**
@@ -250,7 +270,8 @@ public class ChatReviewService {
         }
         if (SHARED_CHAT.equals(failed.getSourceKind())) {
             return insertSharedRun(failed.getRangeKind(), failed.getRangeValue(), failed.getFocusText(),
-                    readMessageIds(failed.getSourceMessageIdsJson()), memberId, failed.getId());
+                    readMessageIds(failed.getSourceMessageIdsJson()), memberId, failed.getId(),
+                    assistant.validateCapability(failed.getAiCapabilityId()), "MANUAL");
         }
         FeishuChatSyncConfigDto current = chatSync.config();
         if (!failed.getChatId().equals(current.chatId()) || !failed.getKbId().equals(current.kbId())) {
@@ -277,7 +298,8 @@ public class ChatReviewService {
         }
         if (SHARED_CHAT.equals(original.getSourceKind())) {
             return insertSharedRun(original.getRangeKind(), original.getRangeValue(), original.getFocusText(),
-                    readMessageIds(original.getSourceMessageIdsJson()), memberId, null);
+                    readMessageIds(original.getSourceMessageIdsJson()), memberId, null,
+                    assistant.validateCapability(original.getAiCapabilityId()), "MANUAL");
         }
         FeishuChatSyncConfigDto current = chatSync.config();
         if (!original.getChatId().equals(current.chatId()) || !original.getKbId().equals(current.kbId())) {
@@ -313,7 +335,7 @@ public class ChatReviewService {
         ChatReviewReportDto report = readReport(run.getReportJson());
         return new ChatReviewRunDetailDto(run.getId(), sourceKind(run), run.getRangeKind(), run.getRangeValue(),
                 run.getStartDate(), run.getEndDate(),
-                run.getFocusText(), run.getStage(), value(run.getProgressCurrent()),
+                run.getFocusText(), capability(run), triggerKind(run), run.getStage(), value(run.getProgressCurrent()),
                 value(run.getProgressTotal()), run.getCurrentDate(), run.getFailedStage(),
                 run.getFailedDate(), run.getErrorText(), value(run.getMessageCount()),
                 run.getCreatedBy(), run.getCreatedByName(), run.getReportUrl(), knowledgeUrl(run),
@@ -718,6 +740,8 @@ public class ChatReviewService {
         run.setStartDate(startDate);
         run.setEndDate(endDate);
         run.setFocusText(normalizedFocus);
+        run.setAiCapabilityId(AiAssistantService.LOCAL_CODEX_CAPABILITY);
+        run.setTriggerKind("MANUAL");
         run.setStage(Stage.WAITING.name());
         run.setProgressCurrent(0);
         run.setProgressTotal(days(startDate, endDate));
@@ -738,7 +762,8 @@ public class ChatReviewService {
     }
 
     private String insertSharedRun(String rangeKind, Integer rangeValue, String focus,
-            List<String> messageIds, String memberId, String retryOfId) {
+            List<String> messageIds, String memberId, String retryOfId,
+            String aiCapabilityId, String triggerKind) {
         if (messageIds == null || messageIds.isEmpty()) throw new BadRequestException("复盘消息范围不能为空");
         String creator = StringUtils.hasText(memberId) ? memberId.trim() : "unknown";
         MemberEntity member = members.selectById(creator);
@@ -747,6 +772,8 @@ public class ChatReviewService {
         run.setSourceKind(SHARED_CHAT);
         run.setChatName("WAO 共享聊天");
         run.setFocusText(normalizeFocus(focus));
+        run.setAiCapabilityId(assistant.validateCapability(aiCapabilityId));
+        run.setTriggerKind("AUTOMATIC".equals(triggerKind) ? "AUTOMATIC" : "MANUAL");
         run.setRangeKind(rangeKind);
         run.setRangeValue(rangeValue);
         run.setSourceMessageIdsJson(write(messageIds));
@@ -756,8 +783,9 @@ public class ChatReviewService {
         run.setMessageCount(messageIds.size());
         run.setRetryOfId(retryOfId);
         run.setCreatedBy(creator);
-        run.setCreatedByName(member != null && StringUtils.hasText(member.getName())
-                ? member.getName().trim() : creator);
+        run.setCreatedByName("AUTOMATIC".equals(run.getTriggerKind()) ? "自动复盘"
+                : member != null && StringUtils.hasText(member.getName())
+                        ? member.getName().trim() : creator);
         try {
             mapper.insertWaiting(run);
         } catch (DataIntegrityViolationException exception) {
@@ -832,7 +860,7 @@ public class ChatReviewService {
     private ChatReviewRunSummaryDto summary(ChatReviewRunEntity run) {
         return new ChatReviewRunSummaryDto(run.getId(), sourceKind(run), run.getRangeKind(), run.getRangeValue(),
                 run.getStartDate(), run.getEndDate(),
-                run.getFocusText(), run.getStage(), value(run.getProgressCurrent()),
+                run.getFocusText(), capability(run), triggerKind(run), run.getStage(), value(run.getProgressCurrent()),
                 value(run.getProgressTotal()), run.getCurrentDate(), run.getFailedStage(),
                 run.getFailedDate(), run.getErrorText(), value(run.getMessageCount()),
                 run.getCreatedBy(), run.getCreatedByName(), run.getReportUrl(), knowledgeUrl(run),
@@ -859,6 +887,15 @@ public class ChatReviewService {
 
     private static String sourceKind(ChatReviewRunEntity run) {
         return StringUtils.hasText(run.getSourceKind()) ? run.getSourceKind() : FEISHU_ARCHIVE;
+    }
+
+    private static String capability(ChatReviewRunEntity run) {
+        return StringUtils.hasText(run.getAiCapabilityId())
+                ? run.getAiCapabilityId() : AiAssistantService.LOCAL_CODEX_CAPABILITY;
+    }
+
+    private static String triggerKind(ChatReviewRunEntity run) {
+        return StringUtils.hasText(run.getTriggerKind()) ? run.getTriggerKind() : "MANUAL";
     }
 
     private static String knowledgeUrl(ChatReviewRunEntity run) {

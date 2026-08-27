@@ -16,13 +16,15 @@ public interface ChatReviewRunMapper extends BaseMapper<ChatReviewRunEntity> {
             INSERT INTO chat_review_run
                 (id, source_kind, chat_id, chat_name, kb_id,
                  speaker_one_id, speaker_one_name, speaker_two_id, speaker_two_name,
-                 start_date, end_date, focus_text, range_kind, range_value, source_message_ids_json, stage,
+                 start_date, end_date, focus_text, ai_capability_id, trigger_kind,
+                 range_kind, range_value, source_message_ids_json, stage,
                  progress_current, progress_total, message_count, retry_of_id,
                  created_by, created_by_name, created_at, updated_at)
             VALUES
                 (#{run.id}, #{run.sourceKind}, #{run.chatId}, #{run.chatName}, #{run.kbId},
                  #{run.speakerOneId}, #{run.speakerOneName}, #{run.speakerTwoId}, #{run.speakerTwoName},
-                 #{run.startDate}, #{run.endDate}, #{run.focusText}, #{run.rangeKind}, #{run.rangeValue},
+                 #{run.startDate}, #{run.endDate}, #{run.focusText}, #{run.aiCapabilityId}, #{run.triggerKind},
+                 #{run.rangeKind}, #{run.rangeValue},
                  #{run.sourceMessageIdsJson}, #{run.stage},
                  #{run.progressCurrent}, #{run.progressTotal}, #{run.messageCount}, #{run.retryOfId},
                  #{run.createdBy}, #{run.createdByName}, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))

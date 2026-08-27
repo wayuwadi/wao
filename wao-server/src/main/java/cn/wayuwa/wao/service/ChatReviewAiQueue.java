@@ -30,7 +30,7 @@ public class ChatReviewAiQueue {
     public String enqueue(String reviewId, String workerToken, String prompt) {
         ChatReviewRunEntity run = reviews.selectById(reviewId);
         if (run == null) throw new NotFoundException("聊天复盘运行不存在");
-        String aiRunId = assistant.enqueueReadOnlyJob(reviewId, prompt);
+        String aiRunId = assistant.enqueueReadOnlyJob(reviewId, prompt, run.getAiCapabilityId());
         if (reviews.linkAiRun(reviewId, workerToken, aiRunId) != 1) {
             throw new ChatReviewLeaseLostException();
         }

@@ -12,6 +12,8 @@ public record ChatReviewRunSummaryDto(
         LocalDate startDate,
         LocalDate endDate,
         String focus,
+        String aiCapabilityId,
+        String triggerKind,
         String stage,
         int progressCurrent,
         int progressTotal,
@@ -26,4 +28,18 @@ public record ChatReviewRunSummaryDto(
         String knowledgeUrl,
         OffsetDateTime createdAt,
         OffsetDateTime startedAt,
-        OffsetDateTime finishedAt) { }
+        OffsetDateTime finishedAt) {
+
+    /** 兼容未记录 AI 能力与触发方式的旧调用方。 */
+    public ChatReviewRunSummaryDto(String id, String sourceKind, String rangeKind, Integer rangeValue,
+            LocalDate startDate, LocalDate endDate, String focus, String stage,
+            int progressCurrent, int progressTotal, LocalDate currentDate, String failedStage,
+            LocalDate failedDate, String error, int messageCount, String createdById,
+            String createdByName, String reportUrl, String knowledgeUrl, OffsetDateTime createdAt,
+            OffsetDateTime startedAt, OffsetDateTime finishedAt) {
+        this(id, sourceKind, rangeKind, rangeValue, startDate, endDate, focus,
+                "local-codex", "MANUAL", stage, progressCurrent, progressTotal, currentDate,
+                failedStage, failedDate, error, messageCount, createdById, createdByName,
+                reportUrl, knowledgeUrl, createdAt, startedAt, finishedAt);
+    }
+}

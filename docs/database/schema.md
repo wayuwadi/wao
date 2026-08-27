@@ -429,10 +429,11 @@ OAuth 下发前会先把快过期的 access token 续期。
 |---|---|---|
 | id | VARCHAR(32) PK | 一次页面问答或服务端内部只读分析 id |
 | member_id | VARCHAR(32) | 页面问答的发起成员，或内部只读分析的 `internal-*` 操作标识；同一标识只允许一个活动运行 |
+| ai_capability_id | VARCHAR(64) NULL（V104） | 当次只读 AI 能力；`local-codex` 或已启用的 `ai_account.id`，不保存凭据 |
 | conversation_id / user_message_id | VARCHAR(32) NULL（V53） | 关联持久化会话和触发本次运行的用户消息 |
 | runner_id | VARCHAR(32) NULL | 实际领取问答的本地 Codex Runner |
 | claim_token | VARCHAR(64) NULL（V77） | 每次 Runner 领取签发的唯一 attempt token；历史运行重排或任何终态清空 |
-| status | VARCHAR(16) | 页面助手与五分钟同步兼容包装使用 queued / running；非阻塞 durable 内部只读任务使用 secure_queued / secure_running；终态为 succeeded / failed |
+| status | VARCHAR(16) | 页面助手与同步包装使用 queued / running；非阻塞 Codex 分析使用 secure_queued / secure_running；服务端 API 使用 provider_queued / provider_running；终态为 succeeded / failed |
 | prompt_text | MEDIUMTEXT NULL | 拼好的页面上下文与对话；成功、失败或后台超时清理进入终态时立即清空 |
 | response_text / error_text | MEDIUMTEXT / TEXT NULL | 最终答复或可读错误 |
 | created_at / claimed_at / finished_at / updated_at | DATETIME(6) | 短期队列时间线；内部只读运行的入队、领取和终态全部由 MySQL `CURRENT_TIMESTAMP(6)` 写入 |
@@ -789,6 +790,7 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 | start_date / end_date | DATE | 包含边界的上海自然日；服务层保证不早于 1970-01-01、范围 1–31 天且 end 不晚于上海当天 |
 | focus_text | VARCHAR(1000) NULL | 可选的本次重点快照；只影响分析关注点 |
 | range_kind / range_value | VARCHAR(16) / INT NULL | 共享聊天模式的 `MESSAGES / HOURS` 与范围值；日期模式为空 |
+| ai_capability_id / trigger_kind | VARCHAR(64) / VARCHAR(16)（V104） | 当次只读能力与 `MANUAL / AUTOMATIC` 来源；重试和再次运行复制原值 |
 | source_message_ids_json | JSON NULL | 共享聊天点击时固化的消息 id 有序数组，最多 500 个；不复制正文 |
 | stage | VARCHAR(16) | `WAITING / SYNCING / VERIFYING / ANALYZING / SUCCEEDED / FAILED` |
 | failed_stage | VARCHAR(16) NULL | 失败时的阶段快照，成功或尚未失败时为空 |
@@ -818,6 +820,12 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 
 页面创建只插入 `WAITING`。worker claim、续租以及 `ai_run_id` 关联统一使用 MySQL `CURRENT_TIMESTAMP(6)` 判断和延长租约，不依赖 JVM 时钟；
 阶段、进度、来源、报告、错误写入均使用带有效 `worker_token / lease_until` 的条件更新，影响 0 行时视为租约丢失。飞书同步在日边界、消息渲染和图片处理期间定期 heartbeat 续租。
+
+### chat_review_auto_config（V104）
+
+单例 `id=1` 保存全局自动复盘的启停、`interval_seconds`、消息范围、关注重点、只读 AI 能力、下次数据库计划时间和最近真实运行 id。
+间隔限制为 300～604,800 秒，范围沿用共享复盘的 `MESSAGES / HOURS` 约束。保存配置从 MySQL 当前时间重算下一次触发；调度节点
+只有在 `enabled=TRUE AND next_fire_at<=CURRENT_TIMESTAMP(6)` 时才能用条件更新推进计划点，随后创建 `trigger_kind=AUTOMATIC` 的普通复盘运行。
 AI 运行插入与 `ai_run_id` 关联处在同一事务中，关联还要求当前阶段为 `VERIFYING`、`ai_run_id` 为空且数据库时钟下租约有效；失败时整体回滚，防止旧 worker 重复入队。
 返回 API 时，`createdAt / startedAt / finishedAt` 按上海时区转为带 `+08:00` 偏移的 RFC 3339 `date-time`，不返回无时区的本地时间字符串。
 不用 JVM 锁代替跨节点并发控制，外部飞书或 Codex 调用期间不持有长事务。
@@ -949,6 +957,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V98__shared_chat_feishu_bridge.sql`：共享聊天飞书外部身份、消息幂等 id、引用关系、真实已读与表情事实（见 ADR-127）。
 - `V100__shared_chat_review_integration.sql`：聊天复盘共享消息范围、托管报告与知识库文档关联（见 ADR-130）。
 - `V101__configurable_system_periodic_report.sql`：为系统周期报告补充当次汇总项快照，存量报告回填任务与 AI Run 全量汇总语义（见 ADR-109）。
+- `V104__configurable_chat_review_ai.sql`：固化问问 AI / 复盘的只读能力，新增全局自动复盘策略和调度索引（见 ADR-137）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

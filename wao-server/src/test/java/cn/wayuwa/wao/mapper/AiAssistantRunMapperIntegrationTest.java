@@ -26,6 +26,7 @@ class AiAssistantRunMapperIntegrationTest {
                 CREATE TABLE ai_assistant_run (
                     id VARCHAR(32) PRIMARY KEY,
                     member_id VARCHAR(64) NULL,
+                    ai_capability_id VARCHAR(32) NULL,
                     runner_id VARCHAR(32) NULL,
                     claim_token VARCHAR(64) NULL,
                     status VARCHAR(16) NOT NULL,

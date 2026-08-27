@@ -10,7 +10,7 @@ import { usePreferenceStore } from '@/stores/preferences'
 import type { AiRunner } from '@/types'
 import {
   fetchAiRunnerLog,
-  fetchAiRunHistory,
+  fetchAiActivities,
   fetchAiEvolution,
   fetchAiTaskAutoRunPolicy,
   fetchAiRunners,
@@ -25,7 +25,6 @@ import {
   createAiRuns,
 } from '@/api/ai'
 import { fetchWebhookEndpoints } from '@/api/system'
-import { fetchChatReviews } from '@/api/chatReviews'
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
@@ -67,6 +66,29 @@ vi.mock('@/api/ai', () => ({
       startedAt: '2026-07-25T20:18:05', finishedAt: null,
     },
   ]),
+  fetchAiActivities: vi.fn().mockImplementation(async (_type = 'ALL', _page = 1, size = 20) => ({
+    items: size === 8 ? [{
+      id: 'ar1', type: 'FEATURE_DEVELOPMENT', title: '修复自动任务', status: 'FAILED',
+      subtitle: 'WAO', capabilityLabel: 'Codex', targetId: 't1',
+      resultPreview: '失败阶段：准备 Git 工作区', createdAt: '2026-07-25T18:50:00',
+      finishedAt: '2026-07-25T18:51:00',
+    }] : [{
+      id: 'ar-history', type: 'FEATURE_DEVELOPMENT', title: '历史运行', status: 'SUCCEEDED',
+      subtitle: 'WAO', capabilityLabel: 'Codex', targetId: 't3', resultPreview: '已经完成',
+      createdAt: '2026-07-24T10:00:00', finishedAt: '2026-07-24T10:10:00',
+    }],
+    total: 21, page: 1, size,
+  })),
+  fetchAiRun: vi.fn().mockResolvedValue({
+    id: 'ar-history', taskId: 't3', taskTitle: '历史运行', previewImages: [],
+    projectId: 'p1', projectName: 'WAO', engine: 'codex', status: 'succeeded',
+    runnerId: 'rn1', runnerName: '娃哥电脑', requestedRunnerId: null, branchName: null,
+    retryOfRunId: null, resultSummary: '已经完成', reportUrl: null, latestProgress: null,
+    progressUpdatedAt: null, progress: [], usage: { model: null, models: null, inputTokens: 0,
+      outputTokens: 0, cachedInputTokens: 0, totalTokens: 0, costUsd: null, recorded: false },
+    sessionId: null, exitCode: 0, createdAt: '2026-07-24T10:00:00',
+    startedAt: '2026-07-24T10:00:00', finishedAt: '2026-07-24T10:10:00',
+  }),
   fetchAiRunHistory: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
     items: [{
       id: 'ar-history', taskId: 't3', taskTitle: '历史运行', previewImages: [],
@@ -239,11 +261,6 @@ vi.mock('@/api/ai', () => ({
   removeAiWorkflow: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   rerunAiRun: vi.fn<() => Promise<Record<string, unknown>>>()
     .mockResolvedValue({ id: 'ar3', taskId: 't1', taskTitle: '修复自动任务', retryOfRunId: 'ar1' }),
-}))
-
-vi.mock('@/api/chatReviews', () => ({
-  fetchChatReviews: vi.fn<(typeof import('@/api/chatReviews'))['fetchChatReviews']>()
-    .mockResolvedValue({ activeRun: null, history: [] }),
 }))
 
 vi.mock('@/api/system', () => ({
@@ -684,7 +701,7 @@ describe('HomeView AI 控制台', () => {
     await wrapper.find('.history-link').trigger('click')
     await flushPromises()
 
-    expect(fetchAiRunHistory).toHaveBeenCalledWith(1, 20)
+    expect(fetchAiActivities).toHaveBeenCalledWith('ALL', 1, 20)
     expect(wrapper.find('.run-history-detail').text()).toContain('全部运行历史')
     expect(wrapper.find('.run-history-detail').text()).toContain('历史运行')
     expect(wrapper.find('.history-pagination').text()).toContain('第 1 / 2 页')
@@ -697,18 +714,13 @@ describe('HomeView AI 控制台', () => {
 
   it('在 AI 运行列表标出聊天复盘并从聊天页打开结果', async () => {
     vi.useFakeTimers()
-    vi.mocked(fetchChatReviews).mockResolvedValueOnce({
-      activeRun: null,
-      history: [{
-        id: 'cr-shared', sourceKind: 'SHARED_CHAT', rangeKind: 'MESSAGES', rangeValue: 20,
-        startDate: null, endDate: null, focus: null, stage: 'SUCCEEDED', progressCurrent: 20,
-        progressTotal: 20, currentDate: null, failedStage: null, failedDate: null, error: null,
-        messageCount: 20, createdById: 'wd', createdByName: '娃弟',
-        reportUrl: '/api/pages/ai-run-cr-shared', knowledgeUrl: '/kb/kb-chat-reviews?doc=crd-cr-shared',
-        createdAt: '2026-08-26T10:00:00+08:00', startedAt: '2026-08-26T10:00:01+08:00',
-        finishedAt: '2026-08-26T10:01:00+08:00',
-      }],
-    } as Awaited<ReturnType<typeof fetchChatReviews>>)
+    vi.mocked(fetchAiActivities).mockResolvedValueOnce({
+      items: [{ id: 'cr-shared', type: 'CHAT_REVIEW', title: '聊天复盘', status: 'SUCCEEDED',
+        subtitle: '最近 20 条消息 · 20 条真实消息', capabilityLabel: '本地 Codex',
+        targetId: 'cr-shared', resultPreview: null, createdAt: '2026-08-26T10:00:00+08:00',
+        finishedAt: '2026-08-26T10:01:00+08:00' }],
+      total: 1, page: 1, size: 8,
+    })
     const { router, wrapper } = mountHome()
     await flushPromises()
 

@@ -77,6 +77,38 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ChatReviewListEnvelope" }
 
+  /api/chat-reviews/shared:
+    post:
+      operationId: createSharedChatReview
+      summary: 从共享聊天真实消息范围创建复盘
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSharedChatReviewRequest" }
+      responses:
+        "202": { description: 已固化消息快照、AI 能力与手动触发来源并入队 }
+        "400": { description: 范围、关注重点或 AI 能力无效，或没有真实消息 }
+        "409": { description: 全局已有活动复盘 }
+
+  /api/chat-reviews/automation:
+    get:
+      operationId: getChatReviewAutomation
+      summary: 读取全局自动复盘策略与下次触发时间
+      responses:
+        "200": { description: 返回数据库持久化的完整策略 }
+    put:
+      operationId: saveChatReviewAutomation
+      summary: 原子保存自动复盘完整策略
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatReviewAutomation" }
+      responses:
+        "200": { description: 已从数据库当前时间重算下次计划点 }
+        "400": { description: 间隔、范围、关注重点或 AI 能力无效 }
+
   /api/chat-reviews/{id}:
     parameters:
       - name: id
@@ -166,6 +198,31 @@ components:
           maxLength: 1000
           description: 可省略，但不接受 null；去掉首尾空白后为空时按未填处理；仅改变分析关注点
 
+    CreateSharedChatReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [rangeKind, rangeValue]
+      properties:
+        rangeKind: { type: string, enum: [MESSAGES, HOURS] }
+        rangeValue: { type: integer, description: MESSAGES 为 5～100；HOURS 为 1～168 }
+        focus: { type: string, maxLength: 1000 }
+        aiCapabilityId: { type: string, maxLength: 32, description: 可省略；默认 local-codex }
+
+    ChatReviewAutomation:
+      type: object
+      additionalProperties: false
+      required: [enabled, intervalSeconds, rangeKind, rangeValue, aiCapabilityId]
+      properties:
+        enabled: { type: boolean }
+        intervalSeconds: { type: integer, minimum: 300, maximum: 604800 }
+        rangeKind: { type: string, enum: [MESSAGES, HOURS] }
+        rangeValue: { type: integer, description: MESSAGES 为 5～100；HOURS 为 1～168 }
+        focus: { type: string, maxLength: 1000, nullable: true }
+        aiCapabilityId: { type: string, maxLength: 32 }
+        nextFireAt: { type: string, format: date-time, nullable: true, readOnly: true }
+        lastRunId: { type: string, maxLength: 32, nullable: true, readOnly: true }
+        updatedAt: { type: string, format: date-time, nullable: true, readOnly: true }
+
     ChatReviewSpeaker:
       type: object
       additionalProperties: false
@@ -210,6 +267,9 @@ components:
       additionalProperties: false
       required:
         - id
+        - sourceKind
+        - aiCapabilityId
+        - triggerKind
         - startDate
         - endDate
         - focus
@@ -228,8 +288,13 @@ components:
         - finishedAt
       properties:
         id: { type: string, maxLength: 32 }
-        startDate: { type: string, format: date }
-        endDate: { type: string, format: date }
+        sourceKind: { type: string, enum: [FEISHU_ARCHIVE, SHARED_CHAT] }
+        aiCapabilityId: { type: string, maxLength: 32 }
+        triggerKind: { type: string, enum: [MANUAL, AUTOMATIC] }
+        rangeKind: { type: string, enum: [MESSAGES, HOURS], nullable: true }
+        rangeValue: { type: integer, nullable: true }
+        startDate: { type: string, format: date, nullable: true }
+        endDate: { type: string, format: date, nullable: true }
         focus: { type: string, maxLength: 1000, nullable: true }
         stage: { $ref: "#/components/schemas/ChatReviewStage" }
         progressCurrent: { type: integer, minimum: 0, maximum: 31, description: 已完成同步日数；全范围同步后在分析和终态仍保留 N }
@@ -250,6 +315,9 @@ components:
       additionalProperties: false
       required:
         - id
+        - sourceKind
+        - aiCapabilityId
+        - triggerKind
         - startDate
         - endDate
         - focus
@@ -274,8 +342,13 @@ components:
         - report
       properties:
         id: { type: string, maxLength: 32 }
-        startDate: { type: string, format: date }
-        endDate: { type: string, format: date }
+        sourceKind: { type: string, enum: [FEISHU_ARCHIVE, SHARED_CHAT] }
+        aiCapabilityId: { type: string, maxLength: 32 }
+        triggerKind: { type: string, enum: [MANUAL, AUTOMATIC] }
+        rangeKind: { type: string, enum: [MESSAGES, HOURS], nullable: true }
+        rangeValue: { type: integer, nullable: true }
+        startDate: { type: string, format: date, nullable: true }
+        endDate: { type: string, format: date, nullable: true }
         focus: { type: string, maxLength: 1000, nullable: true }
         stage: { $ref: "#/components/schemas/ChatReviewStage" }
         progressCurrent: { type: integer, minimum: 0, maximum: 31, description: 已完成同步日数；全范围同步后在分析和终态仍保留 N }

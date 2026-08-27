@@ -21,14 +21,14 @@ class ChatReviewAiQueueTest {
         ChatReviewRunEntity review = new ChatReviewRunEntity();
         review.setId("cr1");
         when(reviews.selectById("cr1")).thenReturn(review);
-        when(assistant.enqueueReadOnlyJob("cr1", "prompt")).thenReturn("ac1");
+        when(assistant.enqueueReadOnlyJob("cr1", "prompt", null)).thenReturn("ac1");
         when(reviews.linkAiRun(org.mockito.ArgumentMatchers.eq("cr1"),
                 org.mockito.ArgumentMatchers.eq("worker-1"),
                 org.mockito.ArgumentMatchers.eq("ac1"))).thenReturn(1);
 
         assertThat(queue.enqueue("cr1", "worker-1", "prompt")).isEqualTo("ac1");
 
-        verify(assistant).enqueueReadOnlyJob("cr1", "prompt");
+        verify(assistant).enqueueReadOnlyJob("cr1", "prompt", null);
         verify(reviews).linkAiRun(org.mockito.ArgumentMatchers.eq("cr1"),
                 org.mockito.ArgumentMatchers.eq("worker-1"),
                 org.mockito.ArgumentMatchers.eq("ac1"));
@@ -39,7 +39,7 @@ class ChatReviewAiQueueTest {
         ChatReviewRunEntity review = new ChatReviewRunEntity();
         review.setId("cr1");
         when(reviews.selectById("cr1")).thenReturn(review);
-        when(assistant.enqueueReadOnlyJob("cr1", "prompt")).thenReturn("ac1");
+        when(assistant.enqueueReadOnlyJob("cr1", "prompt", null)).thenReturn("ac1");
         when(reviews.linkAiRun(org.mockito.ArgumentMatchers.eq("cr1"),
                 org.mockito.ArgumentMatchers.eq("stale-worker"),
                 org.mockito.ArgumentMatchers.eq("ac1"))).thenReturn(0);

@@ -1037,6 +1037,13 @@ public class AiRunService {
                 total, pageNumber, pageSize);
     }
 
+    /** 返回一条运行的完整档案，供统一活动列表继续沿用既有详情体验。 */
+    public AiRunDto runDetail(String runId) {
+        AiTaskRunEntity run = runMapper.selectById(runId);
+        if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        return toRunDtos(List.of(run)).get(0);
+    }
+
     /** 返回指定任务的 AI 执行档案，供任务详情长期回看。 */
     public List<AiRunDto> listTaskRuns(String taskId) {
         if (taskMapper.selectById(taskId) == null) throw new NotFoundException("任务不存在：" + taskId);
