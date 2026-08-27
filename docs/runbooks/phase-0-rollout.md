@@ -20,7 +20,7 @@ Set-Location D:\deploy\wao
 .\deploy\scripts\deploy-windows.ps1 -SkipImageBuild
 ```
 
-先从外部验证密钥 SSH 登录，再以 `-DisableSshPasswordAuthentication` 重跑准备脚本。准备脚本会安装 OpenSSH、关闭交流供电自动睡眠，并注册 WSL 保活、端口刷新、DDNS/Nacos 刷新、每日备份和每月恢复演练任务。主板“断电恢复后自动开机”和路由器 DHCP/端口映射仍需在固件管理页人工配置。
+先从外部验证密钥 SSH 登录，再以 `-DisableSshPasswordAuthentication` 重跑准备脚本。准备脚本会安装 OpenSSH、关闭交流和电池供电时的自动睡眠/休眠，并注册不因切换到电池而停止的 WSL 保活、端口刷新、DDNS/Nacos 刷新、每日备份和每月恢复演练任务。后续每次 Windows 发布都会重新核对电源策略和 OpenSSH 失败恢复。主板“断电恢复后自动开机”和路由器 DHCP/端口映射仍需在固件管理页人工配置。
 
 Windows 发布包使用 ZIP 而不是 tar.gz，确保中文技术方案文件名可在 Windows 上无损解压；节点使用已预热的基础镜像本地构建，避免 GitHub Runner 跨境传输大镜像。MySQL GTID 从库只复制 `wao.%`，复制双线程为 `Yes`、延迟为 0。
 

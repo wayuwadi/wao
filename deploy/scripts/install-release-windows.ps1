@@ -98,6 +98,13 @@ if ($GatewayCertificatePath) {
         -Destination (Join-Path $certificateDirectory 'gateway.p12') -Force
 }
 
+# Do not rely on the one-time provisioning state: Windows updates or a changed power plan can
+# restore battery sleep, and a stopped sshd would block every later Jenkins repair deployment.
+& (Join-Path $target 'deploy\scripts\configure-windows-node-availability.ps1')
+& (Join-Path $target 'deploy\scripts\install-windows-ops-tasks.ps1') `
+    -Distribution $Distribution `
+    -ProjectRoot $target
+
 $imageLoaded = $false
 if ($ImageArchivePath) {
     . (Join-Path $target 'deploy\scripts\wsl-common.ps1')
