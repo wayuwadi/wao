@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -1501,15 +1502,30 @@ class AiRunServiceTest {
     }
 
     @Test
-    void completedRunAsksTheGroupToVerifyIt() {
+    void completedRunAddsCompletionReactionWithoutSendingVerificationCard() {
         runningRun();
 
         service.complete("local-token", "ar1",
                 new CompleteAiRunRequest(0, "WAO_RUN_STATUS: SUCCESS", "sess-1", null, null,
                         null, null, null, null, null));
 
-        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"),
-                eq("整个任务"), eq(true), eq(false), any());
+        verify(runReactions).reactAfterSucceeded(List.of("t1"));
+        verifyNoInteractions(notifier);
+    }
+
+    @Test
+    void completedRunIsNotRolledBackWhenCompletionReactionCannotBeScheduled() {
+        AiTaskRunEntity run = runningRun();
+        doThrow(new IllegalStateException("飞书暂不可用"))
+                .when(runReactions).reactAfterSucceeded(any());
+
+        AiRunDto completed = service.complete("local-token", "ar1",
+                new CompleteAiRunRequest(0, "WAO_RUN_STATUS: SUCCESS", "sess-1", null, null,
+                        null, null, null, null, null));
+
+        assertThat(completed.status()).isEqualTo("succeeded");
+        assertThat(run.getStatus()).isEqualTo("succeeded");
+        verifyNoInteractions(notifier);
     }
 
     @Test
@@ -1528,8 +1544,8 @@ class AiRunServiceTest {
 
         assertThat(first.getStatus()).isEqualTo("待验证");
         assertThat(second.getStatus()).isEqualTo("待验证");
-        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"),
-                eq("合并 2 个任务"), eq(true), eq(false), any());
+        verify(runReactions).reactAfterSucceeded(List.of("t1", "t2"));
+        verifyNoInteractions(notifier);
     }
 
     @Test
@@ -1582,8 +1598,9 @@ class AiRunServiceTest {
 
         assertThat(run.getStatus()).isEqualTo("failed");
         assertThat(run.getLatestProgress()).contains("未报告任务状态").doesNotContain("失败原因");
-        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"),
-                eq("整个任务"), eq(false), eq(true), any());
+        verify(notifier).notifyRunFailed(eq("t1"), eq("p1"), eq("记录用量"),
+                eq("整个任务"), eq(true), any());
+        verify(runReactions, never()).reactAfterSucceeded(any());
     }
 
     /** 只带一条子任务的任务视图，供子任务派工用。 */

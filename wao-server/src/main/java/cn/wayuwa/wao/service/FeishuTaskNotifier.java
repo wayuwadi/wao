@@ -56,13 +56,12 @@ public class FeishuTaskNotifier {
      * @param projectId   项目 id
      * @param taskTitle   任务标题
      * @param scope       本次跑的范围描述（整个任务或某条子任务）
-     * @param succeeded   是否成功
      * @param statusUnreported AI 结束了会话但没报告任务状态，成败需要人判断；这时不能笼统说「失败」
      * @param summary     结果摘要，会截断后放进卡片正文
      * @return 是否真的发出去了
      */
-    public boolean notifyRunFinished(String taskId, String projectId, String taskTitle,
-            String scope, boolean succeeded, boolean statusUnreported, String summary) {
+    public boolean notifyRunFailed(String taskId, String projectId, String taskTitle,
+            String scope, boolean statusUnreported, String summary) {
         if (muted(projectId)) {
             return false;
         }
@@ -71,12 +70,6 @@ public class FeishuTaskNotifier {
             taskLabel += " · " + scope;
         }
         List<List<String>> fields = List.of(List.of("任务", taskLabel));
-        if (succeeded) {
-            return notifier.notifyCard(new FeishuWebhookNotifier.Card(
-                    "AI 任务待验收", "green", fields,
-                    successDigest(summary),
-                    "去验收任务", taskUrl(projectId, taskId)));
-        }
         if (statusUnreported) {
             return notifier.notifyCard(new FeishuWebhookNotifier.Card(
                     "AI 已结束，但没说清成没成", "orange", fields,
@@ -419,50 +412,6 @@ public class FeishuTaskNotifier {
         }
         String trimmed = text.trim();
         return trimmed.length() <= 600 ? trimmed : trimmed.substring(0, 600) + "……（点按钮看全文）";
-    }
-
-    /** 把 Runner 的结构化终态压成首屏可读的“改动 + 验收”；旧摘要缺字段时明确引导查看全文。 */
-    private static String successDigest(String summary) {
-        String changes = labeledSection(summary, "改动");
-        String verification = labeledSection(summary, "验收");
-        return "**改了什么**\n"
-                + compact(changes, "结果摘要未提供改动清单，请打开任务查看完整记录。", 220)
-                + "\n\n**怎么验收**\n"
-                + compact(verification, "打开任务查看完整验收步骤并确认结果。", 180);
-    }
-
-    /** 读取“改动：/验收：”区块，兼容 Markdown 标题、粗体和列表，遇到下一个标签即停止。 */
-    private static String labeledSection(String text, String wanted) {
-        if (!StringUtils.hasText(text)) return "";
-        StringBuilder result = new StringBuilder();
-        boolean collecting = false;
-        for (String raw : text.replace("\r", "").split("\n")) {
-            String line = raw.trim();
-            if (line.startsWith("WAO_RUN_STATUS:")) continue;
-            String labelLine = line.replace("#", "").replace("*", "").trim();
-            String label = null;
-            String inline = "";
-            for (String candidate : List.of("改动", "验收")) {
-                if (labelLine.equals(candidate) || labelLine.equals(candidate + "：")
-                        || labelLine.equals(candidate + ":")) {
-                    label = candidate;
-                    break;
-                }
-                if (labelLine.startsWith(candidate + "：") || labelLine.startsWith(candidate + ":")) {
-                    label = candidate;
-                    inline = labelLine.substring(candidate.length() + 1).trim();
-                    break;
-                }
-            }
-            if (label != null) {
-                if (collecting && !wanted.equals(label)) break;
-                collecting = wanted.equals(label);
-                if (collecting && StringUtils.hasText(inline)) result.append(inline).append('\n');
-                continue;
-            }
-            if (collecting && StringUtils.hasText(line)) result.append(line).append('\n');
-        }
-        return result.toString().trim();
     }
 
     /** 通知正文只保留有限字符并折叠空行，完整内容始终留在任务详情中。 */

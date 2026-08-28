@@ -35,6 +35,16 @@ class FeishuAiRunReactionNotifierTest {
     }
 
     @Test
+    void succeededRunAddsDistinctCompletionCheckToItsOriginalMessage() {
+        enabled();
+        when(events.selectList(any())).thenReturn(List.of(event("t1", "om_source")));
+
+        notifier.reactAfterSucceeded(List.of("t1"));
+
+        verify(feishu).addMessageReaction("token", "om_source", "CheckMark");
+    }
+
+    @Test
     void ordinaryTaskWithoutCapturedMessageDoesNotAddReaction() {
         enabled();
         when(events.selectList(any())).thenReturn(List.of());
@@ -68,6 +78,23 @@ class FeishuAiRunReactionNotifierTest {
             TransactionSynchronizationManager.getSynchronizations()
                     .forEach(TransactionSynchronization::afterCommit);
             verify(feishu).addMessageReaction("token", "om_source", "StatusInFlight");
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void succeededReactionAlsoWaitsUntilCommit() {
+        enabled();
+        when(events.selectList(any())).thenReturn(List.of(event("t1", "om_source")));
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            notifier.reactAfterSucceeded(List.of("t1"));
+
+            verify(feishu, never()).addMessageReaction(any(), any(), any());
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+            verify(feishu).addMessageReaction("token", "om_source", "CheckMark");
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }

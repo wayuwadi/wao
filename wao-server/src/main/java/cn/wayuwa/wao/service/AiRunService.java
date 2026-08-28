@@ -1433,21 +1433,22 @@ public class AiRunService {
         appendProgress(run, "phase", "执行电脑已接收新输入，正在恢复原 AI 会话");
     }
 
-    /**
-     * 跑完之后往飞书群里说一声。
-     *
-     * <p>验收是个「必须有人立刻看到」的动作：状态自己变成待验证是不会有人知道的，
-     * 群里那张带跳转按钮的卡片才是真正把人叫过来的东西。通知失败只记日志 ——
-     * 结果已经落库，不能因为发不出通知就把这次运行判成失败。
-     */
+    /** 成功只在飞书来源原消息加完成勾，失败或状态不明才发带处理入口的群卡片。 */
     private void notifyFinished(AiTaskRunEntity run, int exitCode) {
+        if (exitCode == 0) {
+            try {
+                runReactions.reactAfterSucceeded(taskIds(run));
+            } catch (RuntimeException ex) {
+                LOG.warn("AI 运行完成表情发送失败：{}", ex.getMessage());
+            }
+            return;
+        }
         try {
             TaskEntity task = taskMapper.selectById(run.getTaskId());
-            ProjectEntity project = projectMapper.selectById(run.getProjectId());
             String scope = runScope(run);
-            notifier.notifyRunFinished(run.getTaskId(), run.getProjectId(),
+            notifier.notifyRunFailed(run.getTaskId(), run.getProjectId(),
                     task == null ? run.getTaskId() : task.getTitle(),
-                    scope, exitCode == 0, exitCode == 3, run.getResultSummary());
+                    scope, exitCode == 3, run.getResultSummary());
         } catch (RuntimeException ex) {
             LOG.warn("AI 运行完成通知发送失败：{}", ex.getMessage());
         }

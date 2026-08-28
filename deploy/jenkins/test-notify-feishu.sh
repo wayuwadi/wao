@@ -58,11 +58,7 @@ WAO_COMMIT_MESSAGE='- feat(task): 精简 AI Run 通知
 BUILD_NUMBER=321 \
 sh "$project_root/deploy/jenkins/notify-feishu.sh"
 
-assert_json '.card.header.title.content == "WAO 生产发布 ✅ 成功"'
-assert_json '.card.elements | length == 4'
-assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("**本次改动**")'
-assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("Windows、Linux、云端发布与线上验收通过")'
-assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("原因：") | not'
+test ! -e "$fixture/payload.json"
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
 windows_status=success
@@ -92,10 +88,11 @@ BUILD_NUMBER=322 \
 sh "$project_root/deploy/jenkins/notify-feishu.sh"
 
 assert_json '.card.header.title.content == "WAO 生产发布 ❌ 失败"'
-assert_json '.card.elements | length == 4'
-assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("部分完成：Windows 成功 · Linux 失败 · 云端 未开始 · 验收 未开始")'
+assert_json '.card.elements | length == 2'
 assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("三节点滚动发布：健康检查未通过")'
 assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("**本次改动**") | not'
+assert_json '.card.elements[1].actions[0].text.content == "查看 Jenkins 详情"'
+assert_json '.card.elements[1].actions[0].url == "https://wao.wayuwa.cn/jenkins/job/wao-main-cd/322/"'
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
 windows_status=not_started
@@ -124,7 +121,6 @@ WAO_COMMIT_MESSAGE='- feat(task): 精简通知' \
 BUILD_NUMBER=323 \
 sh "$project_root/deploy/jenkins/notify-feishu.sh"
 
-assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("构建或检查失败，生产发布尚未开始")'
 assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("**失败原因**\n后端测试")'
 
 echo 'Jenkins Feishu notification tests passed.'
