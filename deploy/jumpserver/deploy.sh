@@ -158,6 +158,11 @@ if [ ! -f "$schema_marker" ]; then
   run_jmsctl restart --skip-kotl
 fi
 
+# JumpServer 把 Core 数据根目录收紧为 0700，但 Web 容器的 Nginx 以非 root
+# 用户读取同一挂载下的 /static。只补目录穿越权限、不开放目录读取，避免登录页
+# 静态文件因 Permission denied 全部返回 403。
+sudo -n chmod 0711 "$volume_dir/core/data"
+
 core_container_after="$(sudo -n docker inspect --format '{{.Id}}' jms_core 2>/dev/null || true)"
 test -n "$core_container_after"
 # JumpServer Web 的 Nginx 只在启动时解析 Core。Compose 单独替换 Core 后，旧 Web 会继续访问失效 IP；
@@ -175,6 +180,17 @@ until curl --fail --silent --show-error --max-time 10 http://127.0.0.1:18080/api
   fi
   sleep 10
   attempt=$((attempt + 1))
+done
+
+static_attempt=1
+until curl --fail --silent --show-error --max-time 10 \
+    http://127.0.0.1:18080/static/js/jquery-3.6.1.min.js | grep -q 'jQuery'; do
+  if [ "$static_attempt" -ge 6 ]; then
+    echo 'JumpServer login static assets are not readable by the Web container.' >&2
+    exit 1
+  fi
+  sleep 2
+  static_attempt=$((static_attempt + 1))
 done
 
 set -a

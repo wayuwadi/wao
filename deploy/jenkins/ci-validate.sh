@@ -29,6 +29,9 @@ done
 
 grep -q 'server_name jms.wayuwa.cn;' deploy/nginx/jms.wayuwa.cn.conf
 grep -q 'proxy_pass http://127.0.0.1:18082;' deploy/nginx/jms.wayuwa.cn.conf
+grep -Fq 'proxy_hide_header X-Frame-Options;' deploy/nginx/jms.wayuwa.cn.conf
+grep -Fq "frame-ancestors 'self' https://wao.wayuwa.cn" deploy/nginx/jms.wayuwa.cn.conf
+! grep -Fq 'add_header X-Frame-Options SAMEORIGIN' deploy/nginx/jms.wayuwa.cn.conf
 grep -q 'location = /api/auth/jumpserver' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'X-WAO-API-Route linux-jumpserver-sso' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'location = /api/external/jumpserver/health' deploy/nginx/wao.wayuwa.cn.conf.template
@@ -52,6 +55,10 @@ grep -Fqx 'set_config DOCKER_IMAGE_MIRROR 1' deploy/jumpserver/deploy.sh
 grep -Fq 'python /opt/jumpserver/apps/manage.py shell' deploy/jumpserver/deploy.sh
 grep -Fq "core_container_before=" deploy/jumpserver/deploy.sh
 grep -Fq 'sudo -n docker restart jms_web' deploy/jumpserver/deploy.sh
+grep -Fq 'sudo -n chmod 0711 "$volume_dir/core/data"' deploy/jumpserver/deploy.sh
+grep -Fq 'http://127.0.0.1:18080/static/js/jquery-3.6.1.min.js' deploy/jumpserver/deploy.sh
+grep -Fq 'https://jms.wayuwa.cn/static/js/jquery-3.6.1.min.js' \
+  deploy/jenkins/ci-production-verify.sh
 grep -Fq 'exec sudo -n sh "$project_root/deploy/jumpserver/verify-assets.sh"' \
   deploy/jenkins/deploy-master-local.sh
 test "$(grep -Fc 'python /opt/jumpserver/apps/manage.py shell' \
