@@ -70,11 +70,15 @@ class DeploymentRoutingConfigTest {
         assertThat(status)
                 .contains("WAO_STATUS_SHA_FILE")
                 .contains("done <\"$WAO_STATUS_SHA_FILE\"");
+        assertThat(pipeline)
+                .doesNotContain("WAO_PIPELINE_RESULT=success deploy/jenkins/notify-feishu.sh")
+                .contains("WAO_PIPELINE_RESULT=failure deploy/jenkins/notify-feishu.sh");
         assertThat(notification)
-                .contains("$batch+\" 个改动")
-                .contains("**本次改动**")
-                .contains("**失败范围**")
-                .contains("**失败原因**");
+                .contains("Jenkins success notification skipped.")
+                .contains("**失败原因**")
+                .contains("查看 Jenkins 详情")
+                .doesNotContain("**本次改动**")
+                .doesNotContain("**失败范围**");
     }
 
     @Test
