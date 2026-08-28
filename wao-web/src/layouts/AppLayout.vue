@@ -96,6 +96,25 @@ watch(
   { immediate: true },
 )
 
+/** 大体量文档只在会展示文档的路由按需读取；任务抽屉与搜索各自在打开时触发。 */
+function needsDocs() {
+  return route.name === 'project' || route.name === 'kb' || route.meta.module === 'knowledge'
+    || !!ui.openTaskId || ui.searchOpen
+}
+function ensureVisibleHeavyDomains() {
+  if (needsDocs()) void data.ensureDocsLoaded()
+}
+watch(
+  () => [route.name, route.meta.module],
+  ensureVisibleHeavyDomains,
+  { immediate: true },
+)
+
+async function reloadAll() {
+  await data.hydrate()
+  ensureVisibleHeavyDomains()
+}
+
 watch(
   () => nav.builtinMenus.map((menu) => `${menu.id}|${menu.label}|${menu.icon}`).join('\n'),
   () => {
@@ -231,7 +250,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             部分数据加载失败：{{ loadErrorMessages.join('；') }}
             <template v-if="loadingDomainCount">（其余数据仍在加载）</template>
           </span>
-          <button v-if="!loadingDomainCount" type="button" @click="data.hydrate()">
+          <button v-if="!loadingDomainCount" type="button" @click="reloadAll">
             <i class="ri-refresh-line"></i>重新加载
           </button>
         </div>

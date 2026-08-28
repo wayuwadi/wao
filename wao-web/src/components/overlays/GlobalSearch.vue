@@ -10,7 +10,10 @@ const router = useRouter()
 
 const q = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
-onMounted(() => nextTick(() => inputEl.value?.focus()))
+onMounted(() => {
+  void data.ensureDocsLoaded()
+  void nextTick(() => inputEl.value?.focus())
+})
 
 interface Item {
   icon: string
