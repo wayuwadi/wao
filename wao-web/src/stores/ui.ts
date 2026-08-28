@@ -84,6 +84,8 @@ export const useUiStore = defineStore('ui', () => {
 
   /** AI 助手侧边栏。 */
   const assistantOpen = ref(false)
+  /** 由页面动作带入助手的新会话草稿；助手读取后立即清空，避免重复覆盖用户输入。 */
+  const assistantDraft = ref('')
 
   function openTask(id: string) {
     openTaskId.value = id
@@ -165,8 +167,12 @@ export const useUiStore = defineStore('ui', () => {
     helpOpen.value = false
   }
 
-  function openAssistant() {
+  function openAssistant(draft = '') {
+    if (draft.trim()) assistantDraft.value = draft
     assistantOpen.value = true
+  }
+  function consumeAssistantDraft() {
+    assistantDraft.value = ''
   }
   function closeAssistant() {
     assistantOpen.value = false
@@ -177,9 +183,9 @@ export const useUiStore = defineStore('ui', () => {
 
   return {
     openTaskId, modal, modalProject, modalDue, modalStartAt, modalEndAt,
-    searchOpen, celebrating, helpOpen, assistantOpen, taskViews,
+    searchOpen, celebrating, helpOpen, assistantOpen, assistantDraft, taskViews,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
     taskViewOf, setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, toggleHelp, closeHelp,
-    openAssistant, closeAssistant, toggleAssistant,
+    openAssistant, closeAssistant, toggleAssistant, consumeAssistantDraft,
   }
 })

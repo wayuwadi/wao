@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
+import { useUiStore } from '@/stores/ui'
 import {
   createAssistantConversation,
   fetchAssistantConversation,
@@ -106,6 +107,33 @@ describe('AiAssistantPanel', () => {
     expect(document.body.textContent).toContain('项目复盘')
     expect(document.body.textContent).toContain('帮我复盘项目')
     expect(document.body.textContent).toContain('这是复盘建议')
+    wrapper.unmount()
+  })
+
+  it('页面带入的问题只成为可编辑的新会话草稿，不自动发送', async () => {
+    vi.mocked(fetchAssistantStatus).mockResolvedValue({ configured: true, message: '已连接本地 Codex' })
+    vi.mocked(fetchAssistantConversations).mockResolvedValue([{
+      id: 'cv1', title: '旧会话', preview: '旧内容', updatedAt: '2026-08-11T10:00:00',
+    }])
+    const testRouter = await router()
+    const pinia = createPinia()
+    const ui = useUiStore(pinia)
+    ui.openAssistant('请结合今天的成长启发追问我')
+    const wrapper = mount(AiAssistantPanel, {
+      props: { modelValue: true },
+      global: { plugins: [pinia, testRouter] },
+      attachTo: document.body,
+    })
+
+    await flushPromises()
+
+    expect(document.querySelector<HTMLTextAreaElement>('.assistant-input textarea')?.value)
+      .toBe('请结合今天的成长启发追问我')
+    expect(document.querySelector('.chat-heading b')?.textContent).toBe('新对话')
+    expect(ui.assistantDraft).toBe('')
+    expect(fetchAssistantConversation).not.toHaveBeenCalled()
+    expect(createAssistantConversation).not.toHaveBeenCalled()
+    expect(streamChat).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

@@ -11,6 +11,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -28,6 +29,7 @@ import cn.wayuwa.wao.mapper.TaskMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class DailyGuidanceServiceTest {
 
@@ -55,19 +57,28 @@ class DailyGuidanceServiceTest {
     }
 
     @Test
-    void generatesGuidanceFromRealOwnedTasksAndCachesIt() {
+    void generatesGrowthCoachFromActiveAndRecentCompletedTasksAndCachesIt() {
         when(preferenceMapper.find("wg", DailyGuidanceService.PREFERENCE_KEY)).thenReturn(null);
         when(assistant.status()).thenReturn(new AssistantStatusDto(true, "已连接本地节点"));
-        when(taskMapper.selectList(any())).thenReturn(List.of(task()));
+        when(taskMapper.selectList(any())).thenReturn(List.of(
+                task(), completedTask("复盘一次架构返工", 2), completedTask("过期的旧任务", 40)));
         when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project()));
-        when(assistant.dailyGuidanceAnswer(contains("此刻建议"), eq("wg"), contains("明天我就要去上班了")))
-                .thenReturn("## 先观察，再行动\n\n- 主动记住同事名字");
+        when(assistant.dailyGuidanceAnswer(contains("L1 写代码"), eq("wg"), contains("明天我就要去上班了")))
+                .thenReturn("## 今天看到的成长信号\n\n复盘一次架构返工。\n\n"
+                        + "## 换个角度\n\n从实现走向判断。\n\n"
+                        + "## 问问自己\n\n> 哪个判断避免了返工？\n\n"
+                        + "## 今天做个小实验\n\n记录一个判断及结果。");
 
         var result = service.generate("wg", false);
 
         assertThat(result.status()).isEqualTo("ready");
-        assertThat(result.content()).contains("主动记住同事名字");
-        verify(preferenceMapper).upsert(eq("wg"), eq(DailyGuidanceService.PREFERENCE_KEY), contains("先观察"));
+        assertThat(result.content()).contains("哪个判断避免了返工");
+        ArgumentCaptor<String> context = ArgumentCaptor.forClass(String.class);
+        verify(assistant).dailyGuidanceAnswer(any(), eq("wg"), context.capture());
+        assertThat(context.getValue())
+                .contains("## 正在进行", "准备去新公司上班", "## 最近 30 天完成", "复盘一次架构返工")
+                .doesNotContain("过期的旧任务");
+        verify(preferenceMapper).upsert(eq("wg"), eq(DailyGuidanceService.PREFERENCE_KEY), contains("今天看到的成长信号"));
     }
 
     @Test
@@ -160,5 +171,17 @@ class DailyGuidanceServiceTest {
         project.setId("p1");
         project.setName("个人成长");
         return project;
+    }
+
+    private TaskEntity completedTask(String title, int daysAgo) {
+        TaskEntity task = new TaskEntity();
+        task.setId("done-" + daysAgo);
+        task.setTitle(title);
+        task.setDescription("记录当时做出的判断、遇到的风险和最后结果");
+        task.setStatus(TaskService.DONE);
+        task.setCompletedAt(LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai")).minusDays(daysAgo));
+        task.setOwnerId("wg");
+        task.setProjectId("p1");
+        return task;
     }
 }

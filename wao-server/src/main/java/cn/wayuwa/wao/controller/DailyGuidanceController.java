@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 首页成员每日情境建议接口。 */
+/** 首页成员每日成长启发接口。 */
 @RestController
 @RequestMapping("/api/daily-guidance")
 public class DailyGuidanceController {
@@ -25,13 +25,13 @@ public class DailyGuidanceController {
         this.currentMember = currentMember;
     }
 
-    /** 读取当前成员今天已缓存的建议及真实可用状态。 */
+    /** 读取当前成员今天已缓存的成长启发及真实可用状态。 */
     @GetMapping
     public ApiResponse<DailyGuidanceDto> today(HttpServletRequest http) {
         return ApiResponse.ok(service.today(member(http)));
     }
 
-    /** 使用本地 Codex 和当前成员的真实未完成任务生成今天建议。 */
+    /** 使用本地 Codex 和当前成员的真实 Task 生成今天的成长启发。 */
     @PostMapping
     public ApiResponse<DailyGuidanceDto> generate(
             @RequestParam(defaultValue = "false") boolean refresh, HttpServletRequest http) {
