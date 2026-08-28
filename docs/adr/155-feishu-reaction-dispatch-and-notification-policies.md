@@ -14,9 +14,10 @@
 
 1. 订阅 `im.message.reaction.created_v1`，只把用户在 `feishu_quick_collect_event` 已持久化原消息上添加的
    `StatusInFlight` 解释为派工。操作者必须绑定 WAO，且必须是该快速收集消息的原创建者；不按标题或正文猜任务。
-2. reaction 事件只在已配置 Verification Token 或 Encrypt Key 的可信回调上执行，以飞书 `event_id` 持久幂等，无 event id
-   时使用消息、操作者与动作时间摘要。入队和幂等记录同事务提交；双节点或飞书重推不会重复运行，入队失败回滚并给
-   原消息添加 `ERROR`，用户可重新添加表情再次派工。
+2. reaction 事件只在已通过 Verification Token 校验，或确实收到并成功解密 Encrypt Key 信封的可信回调上执行；仅仅
+   保存了 Encrypt Key 不会放行明文事件。事件以飞书 `event_id` 持久幂等，无 event id 时使用消息、操作者与动作时间
+   摘要。入队和幂等记录同事务提交；双节点或飞书重推不会重复运行，入队失败回滚并给原消息添加 `ERROR`，用户可
+   重新添加表情再次派工。
 3. 表情派工使用项目默认 AI 工作流、自动执行节点、后台默认模型与推理强度，并固定开启 Codex Plan；项目、Runner 或仓库
    未真实配置时失败关闭，不创建演示运行。
 4. 全组织飞书策略存 `system_setting.notification.policy.v1`，只允许管理员修改；默认关闭任务普通动态、任务成功和
