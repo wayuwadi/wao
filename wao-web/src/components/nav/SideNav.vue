@@ -109,12 +109,14 @@ function isPersonalModule(id: NavItemId): id is ModuleId {
 
 // ---- 收藏分组 ----
 const FAV_ICONS: Record<Favorite['type'], string> = {
+  module: 'ri-dashboard-line',
   project: 'ri-stack-line',
   task: 'ri-checkbox-circle-line',
   doc: 'ri-file-text-line',
 }
 function openFavorite(f: Favorite) {
-  if (f.type === 'project') router.push(`/projects/${f.targetId}`)
+  if (f.type === 'module') router.push(`/${f.targetId}`)
+  else if (f.type === 'project') router.push(`/projects/${f.targetId}`)
   else if (f.type === 'task') router.push(`/projects/${f.parentId ?? ''}?task=${f.targetId}`)
   else router.push(`/kb/${f.parentId ?? ''}?doc=${f.targetId}`)
 }

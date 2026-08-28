@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   fetchWorkdayRhythmHistory,
   fetchWorkdayRhythm,
@@ -21,6 +22,8 @@ import {
   type FeishuWebhookEndpoint,
 } from '@/api/system'
 import { toast } from '@/composables/toast'
+import { useFavoritesStore } from '@/stores/favorites'
+import { copyText } from '@/utils/clipboard'
 import {
   DEFAULT_WORKDAY_RHYTHM,
   blockProgress,
@@ -41,6 +44,9 @@ import WorkdayRhythmDailySettings from '@/components/workday/WorkdayRhythmDailyS
 import NotificationTargetPicker from '@/components/notification/NotificationTargetPicker.vue'
 
 const CONFIG_DRAFT_KEY = 'wao-workday-rhythm-config-draft-v1'
+const RHYTHM_FAVORITE_ID = 'workday-rhythm'
+const router = useRouter()
+const favorites = useFavoritesStore()
 const clock = ref(shanghaiClock())
 const config = ref<WorkdayRhythmConfig>(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
 const day = ref<WorkdayRhythmDay>(defaultRhythmDay(clock.value.date, clock.value.weekday))
@@ -78,6 +84,7 @@ const historyLoading = ref(false)
 const historyError = ref('')
 const history = ref<WorkdayRhythmHistory | null>(null)
 const dailyPanelKey = ref(0)
+const tomorrowOpen = ref(false)
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
 const dayDraftKey = computed(() => `wao-workday-rhythm-day-draft-${clock.value.date}`)
@@ -97,14 +104,12 @@ const remainingCopy = computed(() => {
   if (remaining >= 60) return `还剩 ${Math.floor(remaining / 60)} 小时 ${remaining % 60} 分钟`
   return `还剩 ${remaining} 分钟`
 })
-const completedCount = computed(
-  () => config.value.blocks.filter((block) => day.value.completed.includes(block.id)).length,
-)
-const completionRate = computed(() =>
-  config.value.blocks.length
-    ? Math.round((completedCount.value / config.value.blocks.length) * 100)
-    : 0,
-)
+const dayProgressRate = computed(() => {
+  if (!config.value.blocks.length || blockIndex.value < 0) return 0
+  return Math.round(
+    ((blockIndex.value + currentProgress.value / 100) / config.value.blocks.length) * 100,
+  )
+})
 const weekdayLabel = computed(
   () => ['一', '二', '三', '四', '五', '六', '日'][clock.value.weekday - 1],
 )
@@ -159,7 +164,20 @@ const notificationTargetsError = computed(() => {
   )
   return [...new Set([focusTargetError.value, ...sourceErrors].filter(Boolean))].join('；')
 })
+const rhythmFavorite = computed(() => favorites.isFav('module', RHYTHM_FAVORITE_ID))
 let energyItemSequence = 0
+
+function pageUrl() {
+  return new URL(router.resolve('/workday-rhythm').href, window.location.origin).toString()
+}
+
+function openStandalone() {
+  window.open(pageUrl(), '_blank', 'noopener,noreferrer')
+}
+
+function toggleRhythmFavorite() {
+  void favorites.toggle('module', RHYTHM_FAVORITE_ID, '今日节奏')
+}
 
 function shiftDate(value: string, days: number) {
   const [year, month, date] = value.split('-').map(Number)
@@ -273,15 +291,6 @@ async function persistDay(successMessage = ''): Promise<boolean> {
     )
     return false
   }
-}
-
-function toggleBlock(id: string) {
-  if (dayState.value === 'saving') return
-  day.value.completed = day.value.completed.includes(id)
-    ? day.value.completed.filter((entry) => entry !== id)
-    : [...day.value.completed, id]
-  markDayDirty()
-  void persistDay(day.value.completed.includes(id) ? '时间块已记为完成' : '已撤销这次完成记录')
 }
 
 async function dispatchEnergyNotification(action: WorkdayRhythmEnergyAction, date: string) {
@@ -722,6 +731,7 @@ watch(
 )
 
 onMounted(() => {
+  void favorites.load()
   void load()
   clockTimer = setInterval(() => {
     clock.value = shanghaiClock()
@@ -737,10 +747,37 @@ onBeforeUnmount(() => {
     <header class="page-head">
       <div>
         <div class="eyebrow">WORKDAY RHYTHM · 上海时间</div>
-        <h1>今日节奏</h1>
-        <p>守住精力边界，把每一段时间用在它真正该做的事上。</p>
+        <div class="title-line">
+          <h1>今日节奏</h1>
+          <p>守住精力边界，把每一段时间用在它真正该做的事上。</p>
+        </div>
       </div>
       <div class="head-actions">
+        <button
+          class="page-action"
+          type="button"
+          title="在新页签单独打开，便于手动置顶"
+          @click="openStandalone"
+        >
+          <i class="ri-external-link-line"></i>单独打开
+        </button>
+        <button
+          class="page-action"
+          type="button"
+          title="复制本人登录后可访问的页面链接"
+          @click="copyText(pageUrl(), '今日节奏页面链接已复制')"
+        >
+          <i class="ri-share-forward-line"></i>复制链接
+        </button>
+        <button
+          class="page-action"
+          :class="{ active: rhythmFavorite }"
+          type="button"
+          @click="toggleRhythmFavorite"
+        >
+          <i :class="rhythmFavorite ? 'ri-star-fill' : 'ri-star-line'"></i
+          >{{ rhythmFavorite ? '已收藏' : '收藏' }}
+        </button>
         <button class="history-button" type="button" @click="openHistory">
           <i class="ri-history-line"></i>历史记录
         </button>
@@ -795,16 +832,27 @@ onBeforeUnmount(() => {
             <p>休息日不会自动记为失败。需要加班或调休时，再手动启用今天的工作日节奏。</p>
           </template>
         </div>
+        <div class="hero-flow" aria-label="完整的一天指导列表">
+          <div class="hero-flow-head"><small>完整的一天</small><span>仅作当下指导</span></div>
+          <ol>
+            <li
+              v-for="(block, index) in config.blocks"
+              :key="block.id"
+              :class="{ current: day.workdayActive && index === blockIndex }"
+            >
+              <time>{{ block.start }}</time
+              ><i></i><span>{{ block.title }}</span>
+            </li>
+          </ol>
+        </div>
         <div class="hero-score">
-          <div class="score-ring" :style="{ '--score': `${completionRate * 3.6}deg` }">
+          <div class="score-ring" :style="{ '--score': `${dayProgressRate * 3.6}deg` }">
             <span
-              ><b>{{ completedCount }}</b
+              ><b>{{ Math.max(blockIndex + 1, 0) }}</b
               ><small>/ {{ config.blocks.length }}</small></span
             >
           </div>
-          <p>
-            {{ completionRate === 100 ? '今日节奏已闭环' : '完成一个时间块，就留下一次真实记录' }}
-          </p>
+          <p>{{ day.workdayActive ? '当前所在时间段' : '休息日不追赶进度' }}</p>
         </div>
       </section>
 
@@ -819,287 +867,252 @@ onBeforeUnmount(() => {
         <i class="ri-cloud-line"></i><span>已保存到你的 WAO 账号</span>
       </div>
 
-      <WorkdayRhythmDailyPanel
-        :date="clock.date"
-        :reload-key="dailyPanelKey"
-        @loaded="day.workdayActive = $event.workday"
-      />
+      <section class="overview-grid">
+        <WorkdayRhythmDailyPanel
+          :date="clock.date"
+          :reload-key="dailyPanelKey"
+          @loaded="day.workdayActive = $event.workday"
+        />
 
-      <section class="dashboard-grid">
-        <div class="focus-stack">
-          <article class="focus-card">
-            <header>
-              <div>
-                <small>09:00 前列好</small>
-                <h2>今日三个重点</h2>
-              </div>
-              <RouterLink to="/todo">打开真实待办<i class="ri-arrow-right-line"></i></RouterLink>
-            </header>
-            <p class="card-help">
-              列满三项并保存后发到你选择的群；只推进当前项，完成后再开始下一项。具体进度仍以真实待办为准。
-            </p>
-            <div
-              v-for="(_, index) in day.focus"
-              :key="index"
-              class="focus-row"
-              :class="{ active: index === activeFocusIndex, done: day.focusCompleted[index] }"
-            >
-              <label
-                ><span>{{ index + 1 }}</span
-                ><input
-                  v-model="day.focus[index]"
-                  :disabled="dayState === 'saving'"
-                  maxlength="100"
-                  :placeholder="index === 0 ? '今天最重要、最难的一件事' : '另一个可观察的结果'"
-                  @input="focusInput(index)"
-              /></label>
-              <button
-                v-if="focusReady && index === activeFocusIndex"
-                class="focus-complete"
-                type="button"
-                :disabled="dayState === 'saving'"
-                @click="completeFocus(index)"
+        <section class="dashboard-grid">
+          <div class="focus-stack">
+            <article class="focus-card">
+              <header>
+                <div>
+                  <small>09:00 前列好</small>
+                  <h2>今日三个重点</h2>
+                </div>
+                <RouterLink to="/todo">打开真实待办<i class="ri-arrow-right-line"></i></RouterLink>
+                <button class="tomorrow-toggle" type="button" @click="tomorrowOpen = !tomorrowOpen">
+                  <i class="ri-calendar-todo-line"></i
+                  >{{ tomorrowOpen ? '收起明日计划' : '提前安排明日' }}
+                </button>
+              </header>
+              <p class="card-help">
+                列满三项并保存后发到你选择的群；只推进当前项，完成后再开始下一项。具体进度仍以真实待办为准。
+              </p>
+              <div
+                v-for="(_, index) in day.focus"
+                :key="index"
+                class="focus-row"
+                :class="{ active: index === activeFocusIndex, done: day.focusCompleted[index] }"
               >
-                <i class="ri-check-line"></i
-                >{{ index === day.focus.length - 1 ? '完成今日三个重点' : '完成并开始下一项' }}
-              </button>
-              <small v-else-if="day.focusCompleted[index]" class="focus-done"
-                ><i class="ri-check-line"></i>已完成</small
-              >
-              <small v-else-if="focusReady">等待当前项完成</small>
-            </div>
-            <div
-              v-if="focusNotificationState !== 'idle'"
-              class="focus-notice"
-              :class="focusNotificationState"
-            >
-              <span v-if="focusNotificationState === 'sending'"
-                ><i class="ri-loader-4-line spin"></i>重点已保存，正在发送群通知…</span
-              >
-              <span v-else-if="focusNotificationState === 'sent'"
-                ><i class="ri-send-plane-fill"></i>今日承诺已发到群里</span
-              >
-              <template v-else
-                ><span><i class="ri-cloud-off-line"></i>重点已保存，群通知未发出</span
-                ><button type="button" @click="retryFocusNotification">重试通知</button></template
-              >
-            </div>
-            <footer>
-              <small v-if="dayState === 'dirty'">草稿已保存在本机</small>
-              <NotificationTargetPicker
-                :enabled="focusNotificationEnabled"
-                :channel="config.energyNotification.channel"
-                :webhook-id="config.energyNotification.webhookId"
-                :webhook-name="config.energyNotification.webhookName"
-                :chat-id="config.energyNotification.chatId"
-                :chat-name="config.energyNotification.chatName"
-                :webhooks="notificationWebhooks"
-                :chats="notificationChats"
-                :loading="notificationTargetsLoading"
-                :saving="focusTargetSaving"
-                :error="notificationTargetsError"
-                @open="loadFocusNotificationTargets"
-                @select="selectFocusNotificationTarget"
-              />
-              <span></span
-              ><button
-                type="button"
-                :disabled="dayState === 'saving' || focusTargetSaving"
-                @click="saveFocus"
-              >
-                {{ dayState === 'error' ? '重试保存' : '保存今日重点' }}
-              </button>
-            </footer>
-          </article>
-
-          <article class="focus-card tomorrow-focus">
-            <header>
-              <div>
-                <small>{{ tomorrowDate }} · 提前准备</small>
-                <h2>明日三个重点</h2>
-              </div>
-              <RouterLink to="/todo">查看真实待办<i class="ri-arrow-right-line"></i></RouterLink>
-            </header>
-            <p class="card-help">
-              紧急插入或重要但今天不做的事先放这里；明天打开时会直接成为今日重点。
-            </p>
-            <div v-if="tomorrowState === 'loading'" class="tomorrow-state">
-              <i class="ri-loader-4-line spin"></i>正在读取明日计划…
-            </div>
-            <div
-              v-else-if="tomorrowState === 'error' && !tomorrowDay.focus.some(Boolean)"
-              class="tomorrow-state error"
-              role="alert"
-            >
-              <span>{{ tomorrowError || '上次保存失败，草稿仍在本机' }}</span>
-              <button
-                type="button"
-                @click="
-                  loadTomorrow(
-                    config.blocks.map((item) => item.id),
-                    config.energyItems.map((item) => item.id),
-                  )
-                "
-              >
-                重新读取
-              </button>
-            </div>
-            <template v-else>
-              <label v-for="(_, index) in tomorrowDay.focus" :key="index">
-                <span>{{ index + 1 }}</span>
-                <input
-                  v-model="tomorrowDay.focus[index]"
-                  :disabled="tomorrowState === 'saving'"
-                  maxlength="100"
-                  :placeholder="index === 0 ? '明天最重要、最难的一件事' : '另一件值得提前准备的事'"
-                  @input="tomorrowFocusInput"
-                />
-              </label>
-              <footer>
-                <small v-if="tomorrowState === 'dirty'">草稿已保存在本机</small>
-                <small v-else-if="tomorrowState === 'error'" class="focus-error"
-                  >{{ tomorrowError }}，草稿仍在本机</small
-                >
-                <small v-else-if="tomorrowState === 'saved'" class="focus-saved"
-                  >已保存，明天自动接续</small
-                >
-                <span></span>
+                <label
+                  ><span>{{ index + 1 }}</span
+                  ><input
+                    v-model="day.focus[index]"
+                    :disabled="dayState === 'saving'"
+                    maxlength="100"
+                    :placeholder="index === 0 ? '今天最重要、最难的一件事' : '另一个可观察的结果'"
+                    @input="focusInput(index)"
+                /></label>
                 <button
+                  v-if="focusReady && index === activeFocusIndex"
+                  class="focus-complete"
                   type="button"
-                  :disabled="tomorrowState === 'saving'"
-                  @click="saveTomorrowFocus"
+                  :disabled="dayState === 'saving'"
+                  @click="completeFocus(index)"
                 >
-                  {{
-                    tomorrowState === 'error'
-                      ? '重试保存'
-                      : tomorrowState === 'saving'
-                        ? '保存中…'
-                        : '保存明日计划'
-                  }}
+                  <i class="ri-check-line"></i
+                  >{{ index === day.focus.length - 1 ? '完成今日三个重点' : '完成并开始下一项' }}
+                </button>
+                <small v-else-if="day.focusCompleted[index]" class="focus-done"
+                  ><i class="ri-check-line"></i>已完成</small
+                >
+                <small v-else-if="focusReady">等待当前项完成</small>
+              </div>
+              <div
+                v-if="focusNotificationState !== 'idle'"
+                class="focus-notice"
+                :class="focusNotificationState"
+              >
+                <span v-if="focusNotificationState === 'sending'"
+                  ><i class="ri-loader-4-line spin"></i>重点已保存，正在发送群通知…</span
+                >
+                <span v-else-if="focusNotificationState === 'sent'"
+                  ><i class="ri-send-plane-fill"></i>今日承诺已发到群里</span
+                >
+                <template v-else
+                  ><span><i class="ri-cloud-off-line"></i>重点已保存，群通知未发出</span
+                  ><button type="button" @click="retryFocusNotification">重试通知</button></template
+                >
+              </div>
+              <footer>
+                <small v-if="dayState === 'dirty'">草稿已保存在本机</small>
+                <NotificationTargetPicker
+                  :enabled="focusNotificationEnabled"
+                  :channel="config.energyNotification.channel"
+                  :webhook-id="config.energyNotification.webhookId"
+                  :webhook-name="config.energyNotification.webhookName"
+                  :chat-id="config.energyNotification.chatId"
+                  :chat-name="config.energyNotification.chatName"
+                  :webhooks="notificationWebhooks"
+                  :chats="notificationChats"
+                  :loading="notificationTargetsLoading"
+                  :saving="focusTargetSaving"
+                  :error="notificationTargetsError"
+                  @open="loadFocusNotificationTargets"
+                  @select="selectFocusNotificationTarget"
+                />
+                <span></span
+                ><button
+                  type="button"
+                  :disabled="dayState === 'saving' || focusTargetSaving"
+                  @click="saveFocus"
+                >
+                  {{ dayState === 'error' ? '重试保存' : '保存今日重点' }}
                 </button>
               </footer>
-            </template>
-          </article>
-        </div>
+            </article>
 
-        <aside class="energy-card">
-          <header>
-            <div>
-              <small>ENERGY CHECK</small>
-              <h2>精力补给</h2>
-            </div>
+            <article v-if="tomorrowOpen" class="focus-card tomorrow-focus">
+              <header>
+                <div>
+                  <small>{{ tomorrowDate }} · 提前准备</small>
+                  <h2>明日三个重点</h2>
+                </div>
+                <RouterLink to="/todo">查看真实待办<i class="ri-arrow-right-line"></i></RouterLink>
+              </header>
+              <p class="card-help">
+                紧急插入或重要但今天不做的事先放这里；明天打开时会直接成为今日重点。
+              </p>
+              <div v-if="tomorrowState === 'loading'" class="tomorrow-state">
+                <i class="ri-loader-4-line spin"></i>正在读取明日计划…
+              </div>
+              <div
+                v-else-if="tomorrowState === 'error' && !tomorrowDay.focus.some(Boolean)"
+                class="tomorrow-state error"
+                role="alert"
+              >
+                <span>{{ tomorrowError || '上次保存失败，草稿仍在本机' }}</span>
+                <button
+                  type="button"
+                  @click="
+                    loadTomorrow(
+                      config.blocks.map((item) => item.id),
+                      config.energyItems.map((item) => item.id),
+                    )
+                  "
+                >
+                  重新读取
+                </button>
+              </div>
+              <template v-else>
+                <label v-for="(_, index) in tomorrowDay.focus" :key="index">
+                  <span>{{ index + 1 }}</span>
+                  <input
+                    v-model="tomorrowDay.focus[index]"
+                    :disabled="tomorrowState === 'saving'"
+                    maxlength="100"
+                    :placeholder="
+                      index === 0 ? '明天最重要、最难的一件事' : '另一件值得提前准备的事'
+                    "
+                    @input="tomorrowFocusInput"
+                  />
+                </label>
+                <footer>
+                  <small v-if="tomorrowState === 'dirty'">草稿已保存在本机</small>
+                  <small v-else-if="tomorrowState === 'error'" class="focus-error"
+                    >{{ tomorrowError }}，草稿仍在本机</small
+                  >
+                  <small v-else-if="tomorrowState === 'saved'" class="focus-saved"
+                    >已保存，明天自动接续</small
+                  >
+                  <span></span>
+                  <button
+                    type="button"
+                    :disabled="tomorrowState === 'saving'"
+                    @click="saveTomorrowFocus"
+                  >
+                    {{
+                      tomorrowState === 'error'
+                        ? '重试保存'
+                        : tomorrowState === 'saving'
+                          ? '保存中…'
+                          : '保存明日计划'
+                    }}
+                  </button>
+                </footer>
+              </template>
+            </article>
+          </div>
+
+          <aside class="energy-card">
+            <header>
+              <div>
+                <small>ENERGY CHECK</small>
+                <h2>精力补给</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="设置精力补给通知"
+                title="设置精力补给通知"
+                @click="openEditor"
+              >
+                <i class="ri-settings-4-line"></i>
+              </button>
+            </header>
             <button
+              v-for="(item, index) in config.energyItems"
+              :key="item.id"
+              class="energy-action"
+              :class="{
+                water: item.id === 'WATER',
+                meditate: item.id === 'MEDITATION',
+                once: item.mode === 'DAILY_ONCE',
+                done: item.mode === 'DAILY_ONCE' && energyCount(item) > 0,
+              }"
               type="button"
-              aria-label="设置精力补给通知"
-              title="设置精力补给通知"
-              @click="openEditor"
-            >
-              <i class="ri-settings-4-line"></i>
-            </button>
-          </header>
-          <button
-            v-for="(item, index) in config.energyItems"
-            :key="item.id"
-            class="energy-action"
-            :class="{
-              water: item.id === 'WATER',
-              meditate: item.id === 'MEDITATION',
-              once: item.mode === 'DAILY_ONCE',
-              done: item.mode === 'DAILY_ONCE' && energyCount(item) > 0,
-            }"
-            type="button"
-            :disabled="
-              energyActionBusy ||
-              energyCount(item) >= 99 ||
-              (item.mode === 'DAILY_ONCE' && energyCount(item) > 0)
-            "
-            @click="recordEnergy(item)"
-          >
-            <i
-              :class="
-                item.mode === 'DAILY_ONCE' && energyCount(item) > 0
-                  ? 'ri-checkbox-circle-fill'
-                  : item.id === 'WATER'
-                    ? 'ri-cup-line'
-                    : item.id === 'MEDITATION'
-                      ? 'ri-mental-health-line'
-                      : index % 2 === 0
-                        ? 'ri-flashlight-line'
-                        : 'ri-leaf-line'
+              :disabled="
+                energyActionBusy ||
+                energyCount(item) >= 99 ||
+                (item.mode === 'DAILY_ONCE' && energyCount(item) > 0)
               "
-            ></i
-            ><span
-              ><b>{{ item.title }}{{ item.mode === 'COUNT' ? ' +1' : '' }}</b
-              ><small v-if="item.mode === 'COUNT'"
-                >{{ item.guidance }} {{ energyCount(item) }} 次</small
-              ><small v-else>{{
-                energyCount(item) > 0 ? '今天已完成' : item.guidance
-              }}</small></span
+              @click="recordEnergy(item)"
             >
-            <strong v-if="item.mode === 'COUNT'">{{ energyCount(item) }}</strong>
-          </button>
-          <p>
-            <i class="ri-information-line"></i>累计项目可反复记录；每天一次项目完成后当天不再重复。
-          </p>
-          <div v-if="energyNotificationState === 'sending'" class="energy-notice sending">
-            <i class="ri-loader-4-line spin"></i><span>记录已保存，正在发送飞书通知…</span>
-          </div>
-          <div
-            v-else-if="energyNotificationState === 'error'"
-            class="energy-notice error"
-            role="alert"
-          >
-            <i class="ri-cloud-off-line"></i><span>记录已保存，飞书通知未发出。</span>
-            <button type="button" @click="retryEnergyNotification">重试通知</button>
-          </div>
-          <div v-else-if="energyNotificationState === 'sent'" class="energy-notice sent">
-            <i class="ri-send-plane-fill"></i><span>飞书通知已发出</span>
-          </div>
-        </aside>
-      </section>
-
-      <section class="timeline-card">
-        <header>
-          <div>
-            <small>DAILY FLOW</small>
-            <h2>完整的一天</h2>
-          </div>
-          <span>{{ completedCount }} / {{ config.blocks.length }} 已完成</span>
-        </header>
-        <div class="timeline">
-          <button
-            v-for="(block, index) in config.blocks"
-            :key="block.id"
-            type="button"
-            class="time-block"
-            :class="{
-              current: day.workdayActive && index === blockIndex,
-              done: day.completed.includes(block.id),
-            }"
-            :disabled="dayState === 'saving'"
-            @click="toggleBlock(block.id)"
-          >
-            <span class="time">{{ block.start }}<i></i>{{ block.end }}</span>
-            <span class="marker"
-              ><i
+              <i
                 :class="
-                  day.completed.includes(block.id)
-                    ? 'ri-check-line'
-                    : index === blockIndex && day.workdayActive
-                      ? 'ri-play-fill'
-                      : ''
+                  item.mode === 'DAILY_ONCE' && energyCount(item) > 0
+                    ? 'ri-checkbox-circle-fill'
+                    : item.id === 'WATER'
+                      ? 'ri-cup-line'
+                      : item.id === 'MEDITATION'
+                        ? 'ri-mental-health-line'
+                        : index % 2 === 0
+                          ? 'ri-flashlight-line'
+                          : 'ri-leaf-line'
                 "
               ></i
-            ></span>
-            <span class="block-copy"
-              ><b>{{ block.title }}</b
-              ><small>{{ block.guidance }}</small></span
+              ><span
+                ><b>{{ item.title }}{{ item.mode === 'COUNT' ? ' +1' : '' }}</b
+                ><small v-if="item.mode === 'COUNT'"
+                  >{{ item.guidance }} {{ energyCount(item) }} 次</small
+                ><small v-else>{{
+                  energyCount(item) > 0 ? '今天已完成' : item.guidance
+                }}</small></span
+              >
+              <strong v-if="item.mode === 'COUNT'">{{ energyCount(item) }}</strong>
+            </button>
+            <p>
+              <i class="ri-information-line"></i
+              >累计项目可反复记录；每天一次项目完成后当天不再重复。
+            </p>
+            <div v-if="energyNotificationState === 'sending'" class="energy-notice sending">
+              <i class="ri-loader-4-line spin"></i><span>记录已保存，正在发送飞书通知…</span>
+            </div>
+            <div
+              v-else-if="energyNotificationState === 'error'"
+              class="energy-notice error"
+              role="alert"
             >
-            <span class="block-action">{{
-              day.completed.includes(block.id) ? '已完成' : '完成打卡'
-            }}</span>
-          </button>
-        </div>
+              <i class="ri-cloud-off-line"></i><span>记录已保存，飞书通知未发出。</span>
+              <button type="button" @click="retryEnergyNotification">重试通知</button>
+            </div>
+            <div v-else-if="energyNotificationState === 'sent'" class="energy-notice sent">
+              <i class="ri-send-plane-fill"></i><span>飞书通知已发出</span>
+            </div>
+          </aside>
+        </section>
       </section>
     </template>
 
@@ -1437,19 +1450,18 @@ onBeforeUnmount(() => {
 .rhythm-page {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 24px 28px 56px;
+  padding: 16px 28px 24px;
   color: var(--wao-text);
 }
 .page-head {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
 }
 .eyebrow,
 article header small,
 aside header small,
-.timeline-card header small,
 .editor header small {
   color: #267c65;
   font-size: 10px;
@@ -1459,6 +1471,11 @@ aside header small,
 h1 {
   margin: 5px 0 1px;
   font-size: 25px;
+}
+.title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
 }
 .page-head p {
   margin: 0;
@@ -1475,6 +1492,7 @@ textarea {
   align-items: center;
   gap: 8px;
 }
+.page-action,
 .settings-button,
 .history-button {
   height: 36px;
@@ -1487,6 +1505,11 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.page-action.active {
+  border-color: #b9d8cc;
+  background: var(--wao-success-bg);
+  color: #267c65;
 }
 .history-button {
   border-color: #b9d8cc;
@@ -1520,17 +1543,17 @@ textarea {
 }
 .hero {
   position: relative;
-  min-height: 245px;
-  margin-top: 20px;
-  padding: 26px 30px;
+  min-height: 205px;
+  margin-top: 14px;
+  padding: 18px 26px;
   border-radius: 20px;
   overflow: hidden;
   background: linear-gradient(128deg, #174f43, #267c65 62%, #3f9677);
   color: #fff;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 210px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(250px, 0.72fr) 135px;
   align-items: center;
-  gap: 30px;
+  gap: 20px;
   box-shadow: 0 18px 40px rgba(32, 99, 78, 0.16);
 }
 .hero::after {
@@ -1550,9 +1573,67 @@ textarea {
   background: linear-gradient(128deg, #344956, #526d75);
 }
 .hero-copy,
+.hero-flow,
 .hero-score {
   position: relative;
   z-index: 1;
+}
+.hero-flow {
+  align-self: stretch;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(11, 58, 47, 0.22);
+  backdrop-filter: blur(4px);
+}
+.hero-flow-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 7px;
+}
+.hero-flow-head small {
+  color: #cce9df;
+  font-size: 10px;
+  font-weight: 700;
+}
+.hero-flow-head span {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 8.5px;
+}
+.hero-flow ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.hero-flow li {
+  min-height: 21px;
+  display: grid;
+  grid-template-columns: 37px 9px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  border-radius: 7px;
+  padding: 0 6px;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 9px;
+}
+.hero-flow li time {
+  font-variant-numeric: tabular-nums;
+}
+.hero-flow li > i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+.hero-flow li.current {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-weight: 700;
+}
+.hero-flow li.current > i {
+  background: #9ce3c8;
+  box-shadow: 0 0 0 3px rgba(156, 227, 200, 0.16);
 }
 .date-line {
   display: flex;
@@ -1577,14 +1658,14 @@ textarea {
 }
 .hero-copy > small {
   display: block;
-  margin-top: 20px;
+  margin-top: 14px;
   color: #b9e4d4;
   font-size: 11px;
   letter-spacing: 1px;
 }
 .hero h2 {
   margin: 3px 0 7px;
-  font-size: clamp(28px, 4vw, 42px);
+  font-size: clamp(28px, 4vw, 38px);
 }
 .hero-copy > p {
   max-width: 650px;
@@ -1595,7 +1676,7 @@ textarea {
 }
 .time-meta {
   max-width: 560px;
-  margin-top: 19px;
+  margin-top: 13px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1693,20 +1774,26 @@ textarea {
   text-decoration: underline;
   cursor: pointer;
 }
-.dashboard-grid {
+.overview-grid {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.8fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    'focus mustdo'
+    'hexagram energy'
+    'tomorrow tomorrow';
   gap: 14px;
+  align-items: stretch;
 }
+.dashboard-grid,
 .focus-stack {
-  min-width: 0;
-  display: grid;
-  gap: 14px;
+  display: contents;
+}
+.focus-stack > .focus-card:first-child {
+  grid-area: focus;
 }
 .focus-card,
-.energy-card,
-.timeline-card {
+.energy-card {
   border: 1px solid var(--wao-line);
   border-radius: 16px;
   background: var(--wao-bg-card);
@@ -1714,13 +1801,15 @@ textarea {
 .focus-card {
   padding: 18px;
 }
+.tomorrow-focus {
+  grid-area: tomorrow;
+}
 .focus-card header {
   display: flex;
   align-items: center;
 }
 .focus-card h2,
-.energy-card h2,
-.timeline-card h2 {
+.energy-card h2 {
   margin: 2px 0 0;
   font-size: 16px;
 }
@@ -1732,6 +1821,16 @@ textarea {
 }
 .focus-card header a i {
   margin-left: 4px;
+}
+.focus-card header .tomorrow-toggle {
+  margin-left: 8px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-page);
+  color: var(--wao-text-2);
+  padding: 6px 8px;
+  font-size: 9.5px;
+  cursor: pointer;
 }
 .card-help {
   margin: 8px 0 13px;
@@ -1894,6 +1993,7 @@ textarea {
   cursor: pointer;
 }
 .energy-card {
+  grid-area: energy;
   padding: 18px;
 }
 .energy-card > header {
@@ -2008,123 +2108,6 @@ textarea {
   color: inherit;
   cursor: pointer;
   font-weight: 700;
-}
-.timeline-card {
-  margin-top: 14px;
-  padding: 18px;
-}
-.timeline-card > header {
-  display: flex;
-  align-items: center;
-}
-.timeline-card > header > span {
-  margin-left: auto;
-  color: var(--wao-text-faint);
-  font-size: 11px;
-}
-.timeline {
-  margin-top: 12px;
-}
-.time-block {
-  position: relative;
-  width: 100%;
-  min-height: 73px;
-  border: 0;
-  border-top: 1px solid var(--wao-divider);
-  background: transparent;
-  color: var(--wao-text);
-  padding: 8px 6px;
-  display: grid;
-  grid-template-columns: 98px 28px minmax(0, 1fr) 70px;
-  align-items: center;
-  gap: 10px;
-  text-align: left;
-  cursor: pointer;
-}
-.time-block:first-child {
-  border-top: 0;
-}
-.time-block:hover {
-  background: var(--wao-bg-hover);
-}
-.time {
-  color: var(--wao-text-weak);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.time i {
-  width: 8px;
-  height: 1px;
-  background: var(--wao-text-faint);
-}
-.marker {
-  position: relative;
-  width: 22px;
-  height: 22px;
-  border: 1.5px solid #bdcbc6;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: 11px;
-}
-.marker::after {
-  content: '';
-  position: absolute;
-  top: 21px;
-  left: 9px;
-  width: 1px;
-  height: 51px;
-  background: var(--wao-line);
-}
-.time-block:last-child .marker::after {
-  display: none;
-}
-.block-copy {
-  min-width: 0;
-  display: grid;
-}
-.block-copy b {
-  font-size: 13px;
-}
-.block-copy small {
-  margin-top: 3px;
-  overflow: hidden;
-  color: var(--wao-text-faint);
-  font-size: 10.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.block-action {
-  color: var(--wao-text-faint);
-  font-size: 10.5px;
-  text-align: right;
-}
-.time-block.current {
-  border-radius: 10px;
-  background: var(--wao-success-bg);
-}
-.time-block.current .marker {
-  border-color: #267c65;
-  background: #267c65;
-}
-.time-block.current .block-copy b,
-.time-block.current .block-action {
-  color: #267c65;
-}
-.time-block.done .marker {
-  border-color: #6cad95;
-  background: #6cad95;
-}
-.time-block.done .block-copy b {
-  color: #4f7165;
-  text-decoration: line-through;
-}
-.time-block.done .block-action {
-  color: #4b856f;
 }
 .mask {
   position: fixed;
@@ -2738,6 +2721,21 @@ textarea {
   .page-head p {
     display: none;
   }
+  .title-line {
+    display: block;
+  }
+  .head-actions {
+    gap: 5px;
+  }
+  .head-actions button {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+  .head-actions button i {
+    font-size: 15px;
+  }
   .settings-button,
   .history-button {
     padding: 0 10px;
@@ -2756,18 +2754,21 @@ textarea {
     grid-template-columns: 1fr;
     gap: 20px;
   }
+  .hero-flow {
+    order: 2;
+  }
   .hero-score {
     display: none;
   }
   .hero h2 {
     font-size: 30px;
   }
-  .dashboard-grid {
-    grid-template-columns: 1fr;
+  .overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'focus' 'mustdo' 'hexagram' 'energy' 'tomorrow';
   }
   .focus-card,
-  .energy-card,
-  .timeline-card {
+  .energy-card {
     padding: 14px;
   }
   .focus-row {
@@ -2779,21 +2780,6 @@ textarea {
   }
   .focus-notice {
     align-items: flex-start;
-  }
-  .time-block {
-    min-height: 86px;
-    grid-template-columns: 72px 24px minmax(0, 1fr);
-    gap: 7px;
-  }
-  .block-copy small {
-    white-space: normal;
-    line-height: 1.35;
-  }
-  .block-action {
-    display: none;
-  }
-  .marker::after {
-    height: 64px;
   }
   .editor {
     top: 10px;

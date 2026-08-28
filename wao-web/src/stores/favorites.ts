@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { apiAddFavorite, apiRemoveFavorite, fetchFavorites, type Favorite } from '@/api/favorites'
 import { toast } from '@/composables/toast'
 
-/** 收藏 store：项目 / 任务 / 文档的星标，落库到服务端、按成员隔离。 */
+/** 收藏 store：模块 / 项目 / 任务 / 文档的星标，落库到服务端、按成员隔离。 */
 export const useFavoritesStore = defineStore('favorites', () => {
   const items = ref<Favorite[]>([])
   const loaded = ref(false)

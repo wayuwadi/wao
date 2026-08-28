@@ -3,6 +3,9 @@
 本规格扩展 [个人工作日节奏](phase-1-workday-rhythm.md)，决策见
 [ADR-101](../adr/101-workday-rhythm-daily-dashboard.md)。
 
+页面紧凑布局、每日工作记录移出与指导型时间线见
+[今日节奏紧凑面板](phase-1-workday-rhythm-compact-dashboard.md)，其页面表达条款优先。
+
 ## 用户结果
 
 1. 「今日节奏」统一展示带时间窗的每日必做、今日三个重点、时间块、精力补给、每日工作文档和每日卦象。

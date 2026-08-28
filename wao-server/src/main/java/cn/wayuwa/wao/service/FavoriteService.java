@@ -3,6 +3,7 @@ package cn.wayuwa.wao.service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -20,7 +21,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
 
 /**
- * 成员收藏：项目 / 任务 / 文档各存一条 (type, targetId)。
+ * 成员收藏：模块 / 项目 / 任务 / 文档各存一条 (type, targetId)。
  *
  * <p>列表时实时解析展示名，目标被删（含进回收站）就自动跳过并顺手清掉收藏记录，
  * 避免侧边栏里挂着点不开的死链接。
@@ -28,7 +29,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class FavoriteService {
 
-    private static final Set<String> TYPES = Set.of("project", "task", "doc");
+    private static final Set<String> TYPES = Set.of("module", "project", "task", "doc");
+    private static final Map<String, String> MODULES = Map.of("workday-rhythm", "今日节奏");
 
     private final MemberFavoriteMapper favoriteMapper;
     private final ProjectMapper projectMapper;
@@ -69,7 +71,7 @@ public class FavoriteService {
      * 收藏一个目标；重复收藏静默幂等。
      *
      * @param memberId 成员 id
-     * @param type     project / task / doc
+     * @param type     module / project / task / doc
      * @param targetId 目标 id
      */
     public void add(String memberId, String type, String targetId) {
@@ -90,7 +92,7 @@ public class FavoriteService {
      * 取消收藏；不存在时静默幂等。
      *
      * @param memberId 成员 id
-     * @param type     project / task / doc
+     * @param type     module / project / task / doc
      * @param targetId 目标 id
      */
     public void remove(String memberId, String type, String targetId) {
@@ -110,6 +112,10 @@ public class FavoriteService {
 
     private FavoriteDto resolve(MemberFavoriteEntity row) {
         switch (row.getTargetType()) {
+            case "module" -> {
+                String label = MODULES.get(row.getTargetId());
+                return label == null ? null : new FavoriteDto("module", row.getTargetId(), label, null);
+            }
             case "project" -> {
                 ProjectEntity p = projectMapper.selectById(row.getTargetId());
                 return p == null ? null : new FavoriteDto("project", p.getId(), p.getName(), null);

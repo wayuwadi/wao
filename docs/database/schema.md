@@ -516,6 +516,9 @@ WAO 不主动探测、抓取或删除链接对应的外部系统。聚合边界�
 日历的国际节日范围复用 `member_preference` 的 `holiday-international-categories` 键；新成员默认空数组，
 不会自动加入全部国际节日。
 
+`member_favorite.target_type` 除项目、任务和文档外支持 `module`；模块收藏使用前端稳定模块 id，当前允许
+`workday-rhythm`，服务端实时解析为“今日节奏”，未知模块会按既有死链接清理规则移除。
+
 “今日节奏”复用 `member_preference` 的 `workday-rhythm-config-v1` 保存个人时间块模板及今日行动通知通道、Webhook 配置 id
 或飞书群 `chat_id`、三个重点与精力补给动作开关，并以
 `workday-rhythm-day-YYYY-MM-DD` 保存当天三个重点、按顺序的主动完成状态、时间块完成项、喝水次数、冥想和是否执行；页面同时保留未成功提交的本机草稿。
