@@ -7,6 +7,7 @@ import {
   PERSONAL_ITEMS,
   externalAppItemId,
   resolveNavGroups,
+  resolveDockItems,
   tabFromRoute,
 } from '@/config/nav'
 import router from '@/router'
@@ -171,6 +172,23 @@ describe('侧边栏导航配置', () => {
       externalAppItemId('data-studio'),
     )
     expect(groups.flatMap((group) => group.items)).not.toContain(externalAppItemId('hidden-app'))
+  })
+
+  it('底部停靠菜单不在分组中重复出现，并按同一注册表顺序合成图标', () => {
+    const builtin = DEFAULT_BUILTIN_MENUS.map((menu) =>
+      menu.id === 'projects' ? { ...menu, placement: 'DOCK' as const, order: 20 } : menu,
+    )
+    const external = DEFAULT_EXTERNAL_APPS.map((app) =>
+      app.id === 'media-agent' ? { ...app, placement: 'DOCK' as const, order: 10 } : app,
+    )
+
+    const groups = resolveNavGroups(PERSONAL_ITEMS, external, builtin)
+    expect(groups.flatMap((group) => group.items)).not.toContain('projects')
+    expect(groups.flatMap((group) => group.items)).not.toContain(externalAppItemId('media-agent'))
+    expect(resolveDockItems(external, builtin)).toEqual([
+      externalAppItemId('media-agent'),
+      'projects',
+    ])
   })
 
   it('回收站仍只保留知识库内入口', () => {

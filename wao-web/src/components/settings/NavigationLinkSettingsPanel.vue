@@ -16,6 +16,7 @@ import {
   type BuiltinMenuGroupCode,
   type ExternalAppConfig,
   type MenuOpenMode,
+  type MenuPlacement,
 } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 
@@ -31,6 +32,7 @@ interface MenuDraft {
   order: number
   visible: boolean
   openMode: MenuOpenMode
+  placement: MenuPlacement
 }
 
 const GROUPS: Array<{ code: BuiltinMenuGroupCode; label: string }> = [
@@ -64,11 +66,11 @@ function cloneQuickLinks(links: readonly QuickLink[]): QuickLink[] {
 }
 
 function draftFromBuiltin(menu: BuiltinMenuConfig): MenuDraft {
-  return { ...menu, key: `builtin:${menu.id}`, source: 'builtin' }
+  return { ...menu, placement: menu.placement ?? 'MENU', key: `builtin:${menu.id}`, source: 'builtin' }
 }
 
 function draftFromExternal(app: ExternalAppConfig): MenuDraft {
-  return { ...app, key: `external:${app.id}`, source: 'external' }
+  return { ...app, placement: app.placement ?? 'MENU', key: `external:${app.id}`, source: 'external' }
 }
 
 function orderedInGroup(group: BuiltinMenuGroupCode): MenuDraft[] {
@@ -86,8 +88,8 @@ function sourceSnapshot(source: MenuSource): string {
   return JSON.stringify(
     menuItems.value
       .filter((item) => item.source === source)
-      .map(({ id, label, icon, group, order, visible, openMode }) => ({
-        id, label, icon, group, order, visible, openMode,
+      .map(({ id, label, icon, group, order, visible, openMode, placement }) => ({
+        id, label, icon, group, order, visible, openMode, placement,
       }))
       .sort((left, right) => left.id.localeCompare(right.id)),
   )
@@ -101,20 +103,26 @@ const qlDirty = computed(() => JSON.stringify(qlEditing.value) !== qlBaseline.va
 
 function resequenceMenuGroups() {
   for (const group of GROUPS) {
-    orderedInGroup(group.code).forEach((item, index) => {
-      item.order = (index + 1) * 10
-    })
+    for (const placement of ['MENU', 'DOCK'] as const) {
+      orderedInGroup(group.code)
+        .filter((item) => item.placement === placement)
+        .forEach((item, index) => { item.order = (index + 1) * 10 })
+    }
   }
 }
 
 function canMoveMenu(item: MenuDraft, direction: -1 | 1): boolean {
-  const sameVisibility = orderedInGroup(item.group).filter((candidate) => candidate.visible === item.visible)
+  const sameVisibility = orderedInGroup(item.group).filter(
+    (candidate) => candidate.visible === item.visible && candidate.placement === item.placement,
+  )
   const index = sameVisibility.findIndex((candidate) => candidate.key === item.key)
   return index >= 0 && index + direction >= 0 && index + direction < sameVisibility.length
 }
 
 function moveMenu(item: MenuDraft, direction: -1 | 1) {
-  const sameVisibility = orderedInGroup(item.group).filter((candidate) => candidate.visible === item.visible)
+  const sameVisibility = orderedInGroup(item.group).filter(
+    (candidate) => candidate.visible === item.visible && candidate.placement === item.placement,
+  )
   const index = sameVisibility.findIndex((candidate) => candidate.key === item.key)
   const target = sameVisibility[index + direction]
   if (!target) return
@@ -197,12 +205,12 @@ async function saveMenuSettings() {
   const externalDirty = sourceSnapshot('external') !== externalBaseline.value
   const builtin = menuItems.value
     .filter((item) => item.source === 'builtin')
-    .map(({ id, label, icon, group, order, visible, openMode }) => ({
-      id, label, icon, group, order, visible, openMode,
+    .map(({ id, label, icon, group, order, visible, openMode, placement }) => ({
+      id, label, icon, group, order, visible, openMode, placement,
     }) as BuiltinMenuConfig)
   const external = menuItems.value
     .filter((item) => item.source === 'external')
-    .map(({ id, label, icon, group, order, visible, openMode }) => ({
+    .map(({ id, label, icon, group, order, visible, openMode, placement }) => ({
       ...externalOriginals.value[id]!,
       id,
       label,
@@ -211,6 +219,7 @@ async function saveMenuSettings() {
       order,
       visible,
       openMode,
+      placement,
     }))
 
   const failures: string[] = []
@@ -337,7 +346,7 @@ onMounted(() => {
       <div class="card-head">
         <div>
           <h2>菜单管理</h2>
-          <p>按真实导航分组排列；拖拽可跨组移动，隐藏项固定排在当前分组底部。</p>
+          <p>按真实导航分组排列；拖拽可跨组移动，也可选择在侧栏底部显示为图标。</p>
         </div>
         <button type="button" class="primary" :disabled="menuLoading || menuSaving || !menuDirty" @click="saveMenuSettings">
           {{ menuSaving ? '保存中…' : menuDirty ? '保存菜单' : '已保存' }}
@@ -390,6 +399,13 @@ onMounted(() => {
                 <select v-model="item.openMode" aria-label="打开方式">
                   <option value="TAB">WAO 页签</option>
                   <option value="NEW_PAGE">新页面</option>
+                </select>
+              </label>
+              <label>
+                <span>展示位置</span>
+                <select v-model="item.placement" aria-label="展示位置" @change="resequenceMenuGroups">
+                  <option value="MENU">分组菜单</option>
+                  <option value="DOCK">底部图标</option>
                 </select>
               </label>
             </div>
@@ -505,7 +521,7 @@ onMounted(() => {
 .drag-handle:hover { background: var(--wao-bg-hover); color: var(--wao-text-2); }
 .menu-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-text-3); }
 .menu-fields, .quick-link-fields { display: grid; gap: 7px; }
-.menu-fields { grid-template-columns: 1.1fr 1.1fr 90px 100px; }
+.menu-fields { grid-template-columns: 1.1fr 1.1fr 90px 100px 92px; }
 .menu-fields label, .quick-link-fields label { display: grid; gap: 4px; min-width: 0; color: var(--wao-text-weak); font-size: 10.5px; }
 .menu-fields input, .menu-fields select, .quick-link-fields input, .quick-link-fields select { min-width: 0; height: 32px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); outline: none; }
 .menu-fields input:focus, .menu-fields select:focus, .quick-link-fields input:focus, .quick-link-fields select:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 2px var(--wao-primary-soft); }

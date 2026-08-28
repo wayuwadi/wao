@@ -35,5 +35,14 @@ public record SaveExternalAppConfigRequest(
         @Size(max = 255, message = "健康检查地址不能超过 255 个字符")
         String healthUrl,
         @Pattern(regexp = "TAB|NEW_PAGE", message = "打开方式不正确")
-        String openMode) {
+        String openMode,
+        @Pattern(regexp = "MENU|DOCK", message = "展示位置不正确")
+        String placement) {
+
+    /** 兼容既有服务调用：未传展示位置时按普通菜单保存。 */
+    public SaveExternalAppConfigRequest(
+            String id, String label, String icon, String group, Integer order, Boolean visible,
+            String appUrl, String healthUrl, String openMode) {
+        this(id, label, icon, group, order, visible, appUrl, healthUrl, openMode, "MENU");
+    }
 }
