@@ -9,6 +9,12 @@ import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
 import { seedDataStore } from './helpers/seedDataStore'
 
+// 本文件只验证入口与表单外壳，不验证编辑器。模块级 mock 可阻止 AppLayout 静态导入
+// NewTaskModal 时在用例结束后继续解析 Tiptap，避免 CI 并行运行时发生环境销毁竞态。
+vi.mock('@/components/ui/MarkdownEditor.vue', () => ({
+  default: { name: 'MarkdownEditor', template: '<div class="markdown-editor-stub" />' },
+}))
+
 /**
  * 新建入口与任务视图：右上角只留两个按钮、看板「待办」列自带加号、视图被记住。
  *
@@ -35,9 +41,17 @@ async function mountLayout() {
     global: {
       plugins: [r],
       stubs: {
-        SideNav: true, TabBar: true, TaskDrawer: true, NewTaskModal: true,
-        NewProjectModal: true, QuickNoteModal: true, GlobalSearch: true,
-        ShortcutsHelp: true, Celebration: true, NotificationCenter: true, RouterView: true,
+        SideNav: true,
+        TabBar: true,
+        TaskDrawer: true,
+        NewTaskModal: true,
+        NewProjectModal: true,
+        QuickNoteModal: true,
+        GlobalSearch: true,
+        ShortcutsHelp: true,
+        Celebration: true,
+        NotificationCenter: true,
+        RouterView: true,
       },
     },
   })
