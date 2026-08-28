@@ -7,6 +7,7 @@ import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from '@/__tests__/helpers/seedDataStore'
 import { usePreferenceStore } from '@/stores/preferences'
+import { useUiStore } from '@/stores/ui'
 import type { AiRunner } from '@/types'
 import {
   fetchAiRunnerLog,
@@ -25,6 +26,7 @@ import {
   createAiRuns,
 } from '@/api/ai'
 import { fetchWebhookEndpoints } from '@/api/system'
+import { fetchDailyGuidance, generateDailyGuidance } from '@/api/dailyGuidance'
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
@@ -286,6 +288,20 @@ vi.mock('@/api/system', () => ({
   ]),
 }))
 
+vi.mock('@/api/dailyGuidance', () => ({
+  fetchDailyGuidance: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date()),
+    status: 'ready',
+    content: '## 今天看到的成长信号\n\n在「设计任务详情抽屉交互稿」里，你正在从实现走向产品判断。\n\n## 换个角度\n\n别只看写了多少代码。\n\n## 问问自己\n\n> 哪个判断让团队少走了弯路？\n\n## 今天做个小实验\n\n记录一次判断及结果。',
+    message: '已结合真实 Task 生成', generatedAt: '2026-08-28T08:00:00',
+  }),
+  generateDailyGuidance: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
+    date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date()),
+    status: 'ready', content: '## 今天看到的成长信号\n\n换一个真实视角。',
+    message: '已结合真实 Task 生成', generatedAt: '2026-08-28T09:00:00',
+  }),
+}))
+
 /** 解除接入用例里要按台改列表，这里补齐 AiRunner 的全部字段。 */
 function runner(patch: Partial<AiRunner>): AiRunner {
   return {
@@ -338,7 +354,7 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
-  it('首页只保留理念、目标入口和 AI 控制台', async () => {
+  it('首页在理念、目标和 AI 控制台之间展示真实 Task 成长教练', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
@@ -349,6 +365,10 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.home-recommendations').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('给此刻的你')
     expect(wrapper.text()).not.toContain('让剩余额度持续完善 WAO')
+    expect(fetchDailyGuidance).toHaveBeenCalled()
+    expect(primary.find('.growth-coach').text()).toContain('今天别只比 Coding')
+    expect(primary.find('.growth-coach').text()).toContain('设计任务详情抽屉交互稿')
+    expect(primary.find('.growth-coach').text()).toContain('哪个判断让团队少走了弯路')
     expect(fetchAiEvolution).toHaveBeenCalled()
     expect(wrapper.find('.hero .weekly-quota').text()).toContain('Codex 周剩余额度')
     expect(wrapper.find('.hero .weekly-quota').text()).toContain('38%')
@@ -356,6 +376,53 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.capacity-orbit').exists()).toBe(true)
     expect(wrapper.find('.hero-link').text()).toContain('查看 AI 详情')
     expect(wrapper.findAll('.hero-link')[1]!.text()).toContain('查看系统报告')
+    wrapper.unmount()
+  })
+
+  it('成长教练只把可编辑问题带入 WAO AI，不替用户自动发送', async () => {
+    vi.useFakeTimers()
+    const { pinia, wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.growth-coach-discuss').trigger('click')
+    const ui = useUiStore(pinia)
+
+    expect(ui.assistantOpen).toBe(true)
+    expect(ui.assistantDraft).toContain('请不要急着给结论')
+    expect(ui.assistantDraft).toContain('哪个判断让团队少走了弯路')
+    wrapper.unmount()
+  })
+
+  it('成长教练可主动换一个真实视角并保留可继续对话入口', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.growth-coach-refresh').trigger('click')
+    await flushPromises()
+
+    expect(generateDailyGuidance).toHaveBeenCalledWith(true)
+    expect(wrapper.find('.growth-coach-content').text()).toContain('换一个真实视角')
+    expect(wrapper.find('.growth-coach-discuss').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('后台尚未准备好时诚实显示状态，并允许成员立即生成', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchDailyGuidance).mockResolvedValueOnce({
+      date: '2026-08-28', status: 'missing', content: null,
+      message: '今天的成长启发正由后台定时任务准备，无需停留等待', generatedAt: null,
+    })
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    expect(wrapper.find('.growth-coach-state').text()).toContain('今天的成长启发正在准备')
+    expect(wrapper.find('.growth-coach-state').text()).toContain('现在生成')
+    await wrapper.find('.growth-coach-state .primary').trigger('click')
+    await flushPromises()
+
+    expect(generateDailyGuidance).toHaveBeenCalledWith(false)
+    expect(wrapper.find('.growth-coach-content').text()).toContain('换一个真实视角')
     wrapper.unmount()
   })
 

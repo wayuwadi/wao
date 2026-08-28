@@ -21,6 +21,7 @@ import {
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import WaoWebPet from '@/components/assistant/WaoWebPet.vue'
+import { useUiStore } from '@/stores/ui'
 
 interface Msg {
   id?: string
@@ -33,6 +34,7 @@ const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void }>()
 
 const router = useRouter()
+const ui = useUiStore()
 const open = ref(false)
 const messages = ref<Msg[]>([])
 const conversations = ref<AssistantConversation[]>([])
@@ -255,6 +257,19 @@ function newChat() {
   focusInput()
 }
 
+/** 页面可以把一个可编辑问题带入新会话，但不能替用户自动发送。 */
+function applyAssistantDraft() {
+  const draft = ui.assistantDraft.trim()
+  if (!draft || !open.value || sending.value) return false
+  activeConversationId.value = null
+  messages.value = []
+  input.value = draft
+  sidebarOpen.value = window.innerWidth > 760
+  ui.consumeAssistantDraft()
+  focusInput()
+  return true
+}
+
 async function removeConversation(event: MouseEvent, conversation: AssistantConversation) {
   event.stopPropagation()
   if (sending.value) return
@@ -353,13 +368,17 @@ watch(() => props.modelValue, (value) => {
     sidebarOpen.value = window.innerWidth > 760
     void loadStatus()
     void loadCapabilities()
-    void loadConversations(true)
+    const hasDraft = applyAssistantDraft()
+    void loadConversations(!hasDraft)
     void loadSourceOptions()
     startStatusRefresh()
     focusInput()
   } else {
     stopStatusRefresh()
   }
+})
+watch(() => ui.assistantDraft, () => {
+  applyAssistantDraft()
 })
 watch(open, (value) => { if (!value) emit('update:modelValue', false) })
 watch(capabilityId, (value) => {
@@ -375,7 +394,8 @@ onMounted(() => {
   if (props.modelValue) {
     open.value = true
     sidebarOpen.value = window.innerWidth > 760
-    void loadConversations(true)
+    const hasDraft = applyAssistantDraft()
+    void loadConversations(!hasDraft)
     startStatusRefresh()
   }
 })
