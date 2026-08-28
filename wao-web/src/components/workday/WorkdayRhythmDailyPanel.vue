@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { fetchAssistantConversation } from '@/api/assistant'
 import {
   fetchRhythmDashboard,
   setRhythmOccurrenceCompleted,
@@ -8,24 +7,14 @@ import {
   type RhythmDashboard,
   type RhythmOccurrence,
 } from '@/api/workdayRhythm'
-import {
-  createTodayTianrenReading,
-  fetchTodayTianrenReading,
-  type TianrenReading,
-} from '@/api/tianren'
 import { toast } from '@/composables/toast'
 
 const props = defineProps<{ date: string; reloadKey?: number }>()
-const emit = defineEmits<{ loaded: [dashboard: RhythmDashboard] }>()
+const emit = defineEmits<{ loaded: [dashboard: RhythmDashboard]; configure: [] }>()
 const dashboard = ref<RhythmDashboard | null>(null)
 const loading = ref(true)
 const error = ref('')
 const toggling = ref('')
-const reading = ref<TianrenReading | null>(null)
-const casting = ref(false)
-const readingSummary = ref('')
-const summaryLoading = ref(false)
-const summaryError = ref('')
 
 const completionRate = computed(() =>
   dashboard.value?.totalCount
@@ -47,49 +36,13 @@ function statusText(item: RhythmOccurrence) {
   return `${item.dueNextDay ? '次日 ' : ''}${item.dueTime} 前完成`
 }
 
-function compactSummary(value: string) {
-  const plain = value
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/[#>*_`~[\]]/g, '')
-    .replace(/\([^)]*\)/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-  return plain.length > 220 ? `${plain.slice(0, 220).trim()}…` : plain
-}
-
-async function loadReadingSummary(current: TianrenReading | null) {
-  readingSummary.value = ''
-  summaryError.value = ''
-  if (!current?.conversationId) return
-  const readingId = current.id
-  summaryLoading.value = true
-  try {
-    const detail = await fetchAssistantConversation(current.conversationId)
-    if (reading.value?.id !== readingId) return
-    const latest = [...detail.messages]
-      .reverse()
-      .find((message) => message.role === 'assistant')?.content
-    readingSummary.value = latest ? compactSummary(latest) : ''
-  } catch (cause) {
-    if (reading.value?.id !== readingId) return
-    summaryError.value = cause instanceof Error ? cause.message : '今日卦象摘要暂时无法读取'
-  } finally {
-    if (reading.value?.id === readingId) summaryLoading.value = false
-  }
-}
-
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [result, todayReading] = await Promise.all([
-      fetchRhythmDashboard(props.date),
-      fetchTodayTianrenReading(),
-    ])
+    const result = await fetchRhythmDashboard(props.date)
     dashboard.value = result
-    reading.value = todayReading
     emit('loaded', result)
-    void loadReadingSummary(todayReading)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '每日面板暂时无法读取'
   } finally {
@@ -130,20 +83,6 @@ async function restoreAutomaticWorkday() {
   }
 }
 
-async function cast() {
-  if (casting.value) return
-  casting.value = true
-  try {
-    reading.value = await createTodayTianrenReading()
-    await load()
-    toast('今日卦象已保存', 'ri-sparkling-line')
-  } catch (cause) {
-    toast(cause instanceof Error ? cause.message : '今日卦象生成失败', 'ri-error-warning-line')
-  } finally {
-    casting.value = false
-  }
-}
-
 watch(
   () => [props.date, props.reloadKey],
   () => void load(),
@@ -180,6 +119,9 @@ onMounted(load)
           <div class="completion">
             <b>{{ completionRate }}%</b
             ><span>{{ dashboard.completedCount }} / {{ dashboard.totalCount }}</span>
+            <button type="button" class="configure-button" @click="emit('configure')">
+              <i class="ri-settings-4-line"></i>配置
+            </button>
           </div>
         </header>
         <div v-if="!dashboard.checklist.length" class="empty-list">
@@ -237,48 +179,6 @@ onMounted(load)
           </section>
         </div>
       </article>
-
-      <article v-if="dashboard.settings.tianrenEnabled" class="daily-card hexagram-card">
-        <header>
-          <div>
-            <small>DAILY HEXAGRAM</small>
-            <h2>每日卦象</h2>
-          </div>
-          <span v-if="dashboard.settings.tianrenRequired">已纳入必做</span>
-        </header>
-        <template v-if="reading">
-          <div class="hex-result">
-            <strong>{{ reading.primary.symbol }}</strong
-            ><span
-              ><b>{{ reading.primary.name }}卦</b
-              ><small v-if="reading.relating"
-                >之 {{ reading.relating.name }}卦 · {{ reading.changingLines.length }} 个变爻</small
-              ><small v-else>今日无变爻</small></span
-            >
-          </div>
-          <div class="hex-guidance">
-            <b><i class="ri-sparkling-2-line"></i>今日启示</b>
-            <p v-if="summaryLoading">正在读取已保存的 AI 自照摘要…</p>
-            <p v-else-if="readingSummary">{{ readingSummary }}</p>
-            <p v-else-if="summaryError" class="error">
-              {{ summaryError }} <button @click="loadReadingSummary(reading)">重试</button>
-            </p>
-            <p v-else>
-              这份卦象还没有 AI 自照；进入详情后可基于真实卦象生成思想方向与当日行动提醒。
-            </p>
-          </div>
-          <RouterLink to="/tianren"
-            >查看完整卦象与 AI 自照<i class="ri-arrow-right-line"></i
-          ></RouterLink>
-        </template>
-        <template v-else>
-          <p class="hex-empty">今天还没有起卦；由你主动开始，不会因为打开页面自动生成。</p>
-          <button class="cast-button" :disabled="casting" @click="cast">
-            <i :class="casting ? 'ri-loader-4-line spin' : 'ri-sparkling-line'"></i
-            >{{ casting ? '正在起卦…' : '起出今日一卦' }}
-          </button>
-        </template>
-      </article>
     </template>
   </div>
 </template>
@@ -303,8 +203,7 @@ onMounted(load)
   color: var(--wao-danger-strong);
 }
 .panel-state button,
-.restore-auto,
-.hex-guidance button {
+.restore-auto {
   border: 0;
   background: none;
   color: var(--wao-primary);
@@ -320,24 +219,18 @@ onMounted(load)
 .checklist-card {
   grid-area: mustdo;
 }
-.hexagram-card {
-  grid-area: hexagram;
-}
-.panel-head,
-.hexagram-card > header {
+.panel-head {
   display: flex;
   justify-content: space-between;
   gap: 14px;
   align-items: flex-start;
 }
-.panel-head small,
-.hexagram-card header small {
+.panel-head small {
   font-size: 9px;
   letter-spacing: 0.18em;
   color: var(--wao-primary);
 }
-.panel-head h2,
-.hexagram-card h2 {
+.panel-head h2 {
   margin: 3px 0;
   font-size: 16px;
 }
@@ -355,8 +248,17 @@ onMounted(load)
   color: var(--wao-primary);
 }
 .completion span {
+  display: block;
   font-size: 9px;
   color: var(--wao-text-weak);
+}
+.configure-button {
+  margin-top: 5px;
+  border: 0;
+  background: none;
+  color: var(--wao-primary);
+  font-size: 9px;
+  cursor: pointer;
 }
 .checklist-columns {
   display: grid;
@@ -433,76 +335,6 @@ onMounted(load)
   border-radius: 11px;
   text-align: center;
   color: var(--wao-text-weak);
-}
-.hexagram-card > header > span {
-  font-size: 9px;
-  color: #97651f;
-}
-.hex-result {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 12px 0;
-}
-.hex-result > strong {
-  font-size: 46px;
-  color: #8e6534;
-}
-.hex-result span {
-  display: grid;
-  gap: 3px;
-}
-.hex-result b {
-  font-family: 'STKaiti', 'KaiTi', serif;
-  font-size: 18px;
-}
-.hex-result small {
-  font-size: 9.5px;
-  color: var(--wao-text-weak);
-}
-.hex-guidance {
-  margin: 10px 0;
-  padding: 10px;
-  border-radius: 10px;
-  background: var(--wao-bg-sub);
-}
-.hex-guidance > b {
-  font-size: 10px;
-  color: var(--wao-primary);
-}
-.hex-guidance > b i {
-  margin-right: 5px;
-}
-.hex-guidance p,
-.hex-empty {
-  margin: 6px 0 0;
-  color: var(--wao-text-weak);
-  font-size: 10px;
-  line-height: 1.55;
-}
-.hex-guidance p {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-}
-.hex-guidance .error {
-  color: var(--wao-danger-strong);
-}
-.hexagram-card > a,
-.cast-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 0;
-  background: none;
-  color: var(--wao-primary);
-  font-size: 10.5px;
-  cursor: pointer;
-  text-decoration: none;
-}
-.hex-empty {
-  margin: 18px 0 12px;
 }
 .spin {
   animation: spin 0.8s linear infinite;

@@ -70,7 +70,7 @@ public class WorkdayRhythmNotificationService {
     }
 
     /**
-     * 把当前成员已落库的三个当日重点发到本人选择的飞书目标。
+     * 把当前成员已落库的当日重点发到本人选择的飞书目标。
      *
      * @param memberId 当前登录成员 id
      * @param date 计划归属日期
@@ -86,13 +86,16 @@ public class WorkdayRhythmNotificationService {
         }
         JsonNode stored = read(preferences.find(memberId, DAY_KEY_PREFIX + date));
         JsonNode focus = stored.path("focus");
-        if (!focus.isArray() || focus.size() != 3) {
-            throw new BadRequestException("今日三个重点尚未完整保存，请先重试保存");
+        if (!focus.isArray() || focus.size() < 3 || focus.size() > 20) {
+            throw new BadRequestException("今日重点尚未完整保存，请先重试保存");
         }
         List<String> goals = new java.util.ArrayList<>();
-        focus.forEach(value -> goals.add(value.isTextual() ? value.asText().trim() : ""));
-        if (goals.stream().anyMatch(value -> !StringUtils.hasText(value) || value.length() > 100)) {
-            throw new BadRequestException("今日三个重点尚未完整保存，请先重试保存");
+        focus.forEach(value -> {
+            String goal = value.isTextual() ? value.asText().trim() : "";
+            if (StringUtils.hasText(goal)) goals.add(goal);
+        });
+        if (goals.size() < 3 || goals.stream().anyMatch(value -> value.length() > 100)) {
+            throw new BadRequestException("请至少完整保存三个今日重点后再重试通知");
         }
         List<List<String>> fields = new java.util.ArrayList<>();
         fields.add(List.of("成员", memberName(memberId)));
@@ -101,7 +104,7 @@ public class WorkdayRhythmNotificationService {
             fields.add(List.of("重点 " + (index + 1), goals.get(index)));
         }
         FeishuWebhookNotifier.Card card = new FeishuWebhookNotifier.Card(
-                "今日三个重点 · 已承诺", "blue", fields,
+                "今日重点 · 已承诺", "blue", fields,
                 "先完成当前重点，完成后再开始下一项。", "打开今日节奏", links.open("/workday-rhythm"));
         return send(notification, card);
     }

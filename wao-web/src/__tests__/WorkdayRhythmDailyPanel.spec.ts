@@ -7,20 +7,11 @@ import {
   setRhythmOccurrenceCompleted,
   setRhythmWorkdayStatus,
 } from '@/api/workdayRhythm'
-import { createTodayTianrenReading, fetchTodayTianrenReading } from '@/api/tianren'
-import { fetchAssistantConversation } from '@/api/assistant'
 
 vi.mock('@/api/workdayRhythm', () => ({
   fetchRhythmDashboard: vi.fn<typeof fetchRhythmDashboard>(),
   setRhythmOccurrenceCompleted: vi.fn<typeof setRhythmOccurrenceCompleted>(),
   setRhythmWorkdayStatus: vi.fn<typeof setRhythmWorkdayStatus>(),
-}))
-vi.mock('@/api/tianren', () => ({
-  fetchTodayTianrenReading: vi.fn<typeof fetchTodayTianrenReading>(),
-  createTodayTianrenReading: vi.fn<typeof createTodayTianrenReading>(),
-}))
-vi.mock('@/api/assistant', () => ({
-  fetchAssistantConversation: vi.fn<typeof fetchAssistantConversation>(),
 }))
 
 const dashboard = {
@@ -109,11 +100,6 @@ describe('WorkdayRhythmDailyPanel', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.mocked(fetchRhythmDashboard).mockResolvedValue(structuredClone(dashboard) as never)
-    vi.mocked(fetchTodayTianrenReading).mockResolvedValue(null)
-    vi.mocked(fetchAssistantConversation).mockResolvedValue({
-      conversation: { id: 'c1', title: '今日一卦', updatedAt: '' },
-      messages: [],
-    })
     vi.mocked(setRhythmOccurrenceCompleted).mockResolvedValue({
       ...dashboard.checklist[0],
       completedAt: '2026-08-23T08:30:00',
@@ -141,63 +127,10 @@ describe('WorkdayRhythmDailyPanel', () => {
     expect(wrapper.find('.daily-editor').exists()).toBe(false)
   })
 
-  it('未起卦时保持主动入口并在成功后显示真实卦象', async () => {
-    vi.mocked(createTodayTianrenReading).mockResolvedValue({
-      id: 'r1',
-      date: '2026-08-23',
-      lines: [7, 7, 7, 7, 7, 7],
-      changingLines: [],
-      primary: {
-        number: 1,
-        name: '乾',
-        symbol: '䷀',
-        upper: { name: '乾', nature: '天', symbol: '☰' },
-        lower: { name: '乾', nature: '天', symbol: '☰' },
-      },
-      relating: null,
-      conversationId: null,
-      createdAt: '',
-    })
+  it('从每日必做卡直接打开配置入口', async () => {
     const wrapper = await mountPanel()
     await flushPromises()
-    expect(wrapper.text()).toContain('不会因为打开页面自动生成')
-    await wrapper.get('.hexagram-card button').trigger('click')
-    await flushPromises()
-    expect(createTodayTianrenReading).toHaveBeenCalled()
-  })
-
-  it('展示已保存的最近一次 AI 自照摘要而不编造运势', async () => {
-    vi.mocked(fetchTodayTianrenReading).mockResolvedValue({
-      id: 'r1',
-      date: '2026-08-23',
-      lines: [7, 7, 7, 7, 7, 7],
-      changingLines: [],
-      primary: {
-        number: 1,
-        name: '乾',
-        symbol: '䷀',
-        upper: { name: '乾', nature: '天', symbol: '☰' },
-        lower: { name: '乾', nature: '天', symbol: '☰' },
-      },
-      relating: null,
-      conversationId: 'c1',
-      createdAt: '',
-    })
-    vi.mocked(fetchAssistantConversation).mockResolvedValue({
-      conversation: { id: 'c1', title: '今日一卦', updatedAt: '' },
-      messages: [
-        {
-          id: 'm1',
-          role: 'assistant',
-          content: '## 今日方向\n\n先守住边界，再集中完成最重要的一件事。',
-          createdAt: '',
-        },
-      ],
-    })
-    const wrapper = await mountPanel()
-    await flushPromises()
-    expect(fetchAssistantConversation).toHaveBeenCalledWith('c1')
-    expect(wrapper.get('.hex-guidance').text()).toContain('先守住边界，再集中完成最重要的一件事')
-    expect(wrapper.text()).not.toContain('大吉')
+    await wrapper.get('.configure-button').trigger('click')
+    expect(wrapper.emitted('configure')).toHaveLength(1)
   })
 })

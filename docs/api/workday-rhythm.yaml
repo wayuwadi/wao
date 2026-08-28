@@ -48,10 +48,10 @@ paths:
         "200": { description: 返回刷新后的当天面板 }
   /api/workday-rhythm/days/{date}/focus:
     put:
-      summary: 保存三个今日重点并联动计划必做项
+      summary: 保存今日重点并联动计划必做项
       responses:
-        "200": { description: 三项均非空时计划项自动完成 }
-        "400": { description: 不是三项或单项超过 100 字 }
+        "200": { description: 至少三项非空时计划项自动完成 }
+        "400": { description: 栏位少于 3 个、超过 20 个或单项超过 100 字 }
   /api/workday-rhythm/occurrences/{id}/completion:
     put:
       summary: 完成或撤销一条当日必做
@@ -116,9 +116,9 @@ paths:
         "502": { description: 飞书开放平台拒绝请求或暂不可达 }
   /api/workday-rhythm/focus-notifications:
     post:
-      summary: 把当前成员已保存的今日三个重点发到本人通知目标
+      summary: 把当前成员已保存的今日重点发到本人通知目标
       description: >-
-        请求只接收日期；服务端从会话确定成员，重新读取成员的通知目标和指定日期的三个已落库重点。
+        请求只接收日期；服务端从会话确定成员，重新读取成员的通知目标和指定日期已落库的非空重点。
       requestBody:
         required: true
         content:
@@ -131,7 +131,7 @@ paths:
                 date: { type: string, format: date }
       responses:
         "200": { description: 返回是否实际投递；总开关或重点开关关闭时 sent 为 false }
-        "400": { description: 三个重点未完整落库、配置损坏或通知目标不可用 }
+        "400": { description: 少于三个重点完整落库、配置损坏或通知目标不可用 }
         "502": { description: 飞书开放平台拒绝请求或暂不可达 }
 components:
   schemas:
@@ -153,7 +153,7 @@ components:
         workdayActive: { type: boolean }
         focus:
           type: array
-          maxItems: 3
+          maxItems: 20
           items: { type: string }
         energyItems:
           type: array

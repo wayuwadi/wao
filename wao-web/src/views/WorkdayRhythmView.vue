@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import {
   fetchWorkdayRhythmHistory,
   fetchWorkdayRhythm,
@@ -11,6 +10,7 @@ import {
   sendFocusNotification,
   saveRhythmFocus,
   setRhythmWorkdayStatus,
+  type RhythmDashboard,
   type WorkdayRhythmEnergyAction,
   type WorkdayRhythmHistory,
   type WorkdayRhythmHistoryDay,
@@ -23,8 +23,8 @@ import {
 } from '@/api/system'
 import { toast } from '@/composables/toast'
 import { useFavoritesStore } from '@/stores/favorites'
-import { copyText } from '@/utils/clipboard'
 import {
+  MAX_FOCUS_COUNT,
   DEFAULT_WORKDAY_RHYTHM,
   blockProgress,
   cloneRhythmConfig,
@@ -41,11 +41,11 @@ import {
 } from '@/utils/workdayRhythm'
 import WorkdayRhythmDailyPanel from '@/components/workday/WorkdayRhythmDailyPanel.vue'
 import WorkdayRhythmDailySettings from '@/components/workday/WorkdayRhythmDailySettings.vue'
+import WorkdayRhythmHexagramSummary from '@/components/workday/WorkdayRhythmHexagramSummary.vue'
 import NotificationTargetPicker from '@/components/notification/NotificationTargetPicker.vue'
 
 const CONFIG_DRAFT_KEY = 'wao-workday-rhythm-config-draft-v1'
 const RHYTHM_FAVORITE_ID = 'workday-rhythm'
-const router = useRouter()
 const favorites = useFavoritesStore()
 const clock = ref(shanghaiClock())
 const config = ref<WorkdayRhythmConfig>(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
@@ -85,6 +85,7 @@ const historyError = ref('')
 const history = ref<WorkdayRhythmHistory | null>(null)
 const dailyPanelKey = ref(0)
 const tomorrowOpen = ref(false)
+const tianrenEnabled = ref(true)
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
 const dayDraftKey = computed(() => `wao-workday-rhythm-day-draft-${clock.value.date}`)
@@ -104,12 +105,6 @@ const remainingCopy = computed(() => {
   if (remaining >= 60) return `还剩 ${Math.floor(remaining / 60)} 小时 ${remaining % 60} 分钟`
   return `还剩 ${remaining} 分钟`
 })
-const dayProgressRate = computed(() => {
-  if (!config.value.blocks.length || blockIndex.value < 0) return 0
-  return Math.round(
-    ((blockIndex.value + currentProgress.value / 100) / config.value.blocks.length) * 100,
-  )
-})
 const weekdayLabel = computed(
   () => ['一', '二', '三', '四', '五', '六', '日'][clock.value.weekday - 1],
 )
@@ -119,10 +114,12 @@ const energyActionBusy = computed(
     energyNotificationState.value === 'sending' ||
     energyNotificationState.value === 'error',
 )
-const focusReady = computed(() => day.value.focus.every((item) => !!item.trim()))
+const focusReady = computed(() => day.value.focus.filter((item) => !!item.trim()).length >= 3)
 const activeFocusIndex = computed(() => {
   if (!focusReady.value) return -1
-  return day.value.focusCompleted.findIndex((completed) => !completed)
+  return day.value.focus.findIndex(
+    (item, index) => !!item.trim() && day.value.focusCompleted[index] !== true,
+  )
 })
 const configuredChatMissing = computed(
   () =>
@@ -167,16 +164,13 @@ const notificationTargetsError = computed(() => {
 const rhythmFavorite = computed(() => favorites.isFav('module', RHYTHM_FAVORITE_ID))
 let energyItemSequence = 0
 
-function pageUrl() {
-  return new URL(router.resolve('/workday-rhythm').href, window.location.origin).toString()
-}
-
-function openStandalone() {
-  window.open(pageUrl(), '_blank', 'noopener,noreferrer')
-}
-
 function toggleRhythmFavorite() {
   void favorites.toggle('module', RHYTHM_FAVORITE_ID, '今日节奏')
+}
+
+function handleDailyPanelLoaded(dashboard: RhythmDashboard) {
+  day.value.workdayActive = dashboard.workday
+  tianrenEnabled.value = dashboard.settings.tianrenEnabled
 }
 
 function shiftDate(value: string, days: number) {
@@ -379,10 +373,43 @@ function focusInput(index: number) {
   markDayDirty()
 }
 
+function addFocus() {
+  if (day.value.focus.length >= MAX_FOCUS_COUNT) return
+  day.value.focus.push('')
+  day.value.focusCompleted.push(false)
+  markDayDirty()
+}
+
+function removeFocus(index: number) {
+  if (day.value.focus.length <= 3) return
+  day.value.focus.splice(index, 1)
+  day.value.focusCompleted.splice(index, 1)
+  day.value.focusCompleted = day.value.focusCompleted.map(
+    (completed, completedIndex) => completedIndex < index && completed,
+  )
+  focusNotificationState.value = 'idle'
+  pendingFocusNotification.value = null
+  markDayDirty()
+}
+
 function tomorrowFocusInput() {
   tomorrowDay.value.focus = tomorrowDay.value.focus.map((item) => item.slice(0, 100))
   if (tomorrowState.value !== 'saving') tomorrowState.value = 'dirty'
   localStorage.setItem(tomorrowDraftKey.value, JSON.stringify(tomorrowDay.value))
+}
+
+function addTomorrowFocus() {
+  if (tomorrowDay.value.focus.length >= MAX_FOCUS_COUNT) return
+  tomorrowDay.value.focus.push('')
+  tomorrowDay.value.focusCompleted.push(false)
+  tomorrowFocusInput()
+}
+
+function removeTomorrowFocus(index: number) {
+  if (tomorrowDay.value.focus.length <= 3) return
+  tomorrowDay.value.focus.splice(index, 1)
+  tomorrowDay.value.focusCompleted.splice(index, 1)
+  tomorrowFocusInput()
 }
 
 async function saveFocus() {
@@ -415,7 +442,7 @@ async function dispatchFocusNotification(date: string) {
     }
     focusNotificationState.value = 'sent'
     pendingFocusNotification.value = null
-    toast(`今日三个重点已发到「${result.chatName}」`, 'ri-send-plane-fill')
+    toast(`今日重点已发到「${result.chatName}」`, 'ri-send-plane-fill')
   } catch (error) {
     focusNotificationState.value = 'error'
     toast(
@@ -436,9 +463,12 @@ async function completeFocus(index: number) {
   if (index !== activeFocusIndex.value || dayState.value === 'saving') return
   day.value.focusCompleted[index] = true
   markDayDirty()
-  const hasNext = index < day.value.focus.length - 1
+  const nextIndex = day.value.focus.findIndex(
+    (item, itemIndex) => itemIndex > index && !!item.trim() && !day.value.focusCompleted[itemIndex],
+  )
+  const hasNext = nextIndex >= 0
   await persistDay(
-    hasNext ? `重点 ${index + 1} 已完成，现在只推进重点 ${index + 2}` : '今日三个重点已全部完成',
+    hasNext ? `重点 ${index + 1} 已完成，现在只推进重点 ${nextIndex + 1}` : '今日重点已全部完成',
   )
 }
 
@@ -755,22 +785,6 @@ onBeforeUnmount(() => {
       <div class="head-actions">
         <button
           class="page-action"
-          type="button"
-          title="在新页签单独打开，便于手动置顶"
-          @click="openStandalone"
-        >
-          <i class="ri-external-link-line"></i>单独打开
-        </button>
-        <button
-          class="page-action"
-          type="button"
-          title="复制本人登录后可访问的页面链接"
-          @click="copyText(pageUrl(), '今日节奏页面链接已复制')"
-        >
-          <i class="ri-share-forward-line"></i>复制链接
-        </button>
-        <button
-          class="page-action"
           :class="{ active: rhythmFavorite }"
           type="button"
           @click="toggleRhythmFavorite"
@@ -796,7 +810,10 @@ onBeforeUnmount(() => {
     </div>
 
     <template v-else>
-      <section class="hero" :class="{ resting: !day.workdayActive }">
+      <section
+        class="hero"
+        :class="{ resting: !day.workdayActive, 'without-hexagram': !tianrenEnabled }"
+      >
         <div class="hero-copy">
           <div class="date-line">
             <span>{{ clock.date }}</span
@@ -845,15 +862,7 @@ onBeforeUnmount(() => {
             </li>
           </ol>
         </div>
-        <div class="hero-score">
-          <div class="score-ring" :style="{ '--score': `${dayProgressRate * 3.6}deg` }">
-            <span
-              ><b>{{ Math.max(blockIndex + 1, 0) }}</b
-              ><small>/ {{ config.blocks.length }}</small></span
-            >
-          </div>
-          <p>{{ day.workdayActive ? '当前所在时间段' : '休息日不追赶进度' }}</p>
-        </div>
+        <WorkdayRhythmHexagramSummary v-if="tianrenEnabled" :date="clock.date" />
       </section>
 
       <div v-if="dayState === 'error'" class="save-banner error" role="alert">
@@ -871,7 +880,8 @@ onBeforeUnmount(() => {
         <WorkdayRhythmDailyPanel
           :date="clock.date"
           :reload-key="dailyPanelKey"
-          @loaded="day.workdayActive = $event.workday"
+          @loaded="handleDailyPanelLoaded"
+          @configure="openEditor"
         />
 
         <section class="dashboard-grid">
@@ -879,17 +889,17 @@ onBeforeUnmount(() => {
             <article class="focus-card">
               <header>
                 <div>
-                  <small>09:00 前列好</small>
-                  <h2>今日三个重点</h2>
+                  <small>今日执行 · 可安排明日</small>
+                  <h2>今日重点</h2>
                 </div>
                 <RouterLink to="/todo">打开真实待办<i class="ri-arrow-right-line"></i></RouterLink>
                 <button class="tomorrow-toggle" type="button" @click="tomorrowOpen = !tomorrowOpen">
                   <i class="ri-calendar-todo-line"></i
-                  >{{ tomorrowOpen ? '收起明日计划' : '提前安排明日' }}
+                  >{{ tomorrowOpen ? '收起明日计划' : '安排明日' }}
                 </button>
               </header>
               <p class="card-help">
-                列满三项并保存后发到你选择的群；只推进当前项，完成后再开始下一项。具体进度仍以真实待办为准。
+                默认列出三项，可继续新增；至少填满三项并保存后发到你选择的群。具体进度仍以真实待办为准。
               </p>
               <div
                 v-for="(_, index) in day.focus"
@@ -914,13 +924,38 @@ onBeforeUnmount(() => {
                   @click="completeFocus(index)"
                 >
                   <i class="ri-check-line"></i
-                  >{{ index === day.focus.length - 1 ? '完成今日三个重点' : '完成并开始下一项' }}
+                  >{{
+                    day.focus.some(
+                      (item, itemIndex) =>
+                        itemIndex > index && !!item.trim() && !day.focusCompleted[itemIndex],
+                    )
+                      ? '完成并开始下一项'
+                      : '完成今日重点'
+                  }}
                 </button>
                 <small v-else-if="day.focusCompleted[index]" class="focus-done"
                   ><i class="ri-check-line"></i>已完成</small
                 >
                 <small v-else-if="focusReady">等待当前项完成</small>
+                <button
+                  v-if="day.focus.length > 3"
+                  class="focus-remove"
+                  type="button"
+                  :aria-label="`删除重点 ${index + 1}`"
+                  :disabled="dayState === 'saving'"
+                  @click="removeFocus(index)"
+                >
+                  <i class="ri-delete-bin-line"></i>
+                </button>
               </div>
+              <button
+                class="focus-add"
+                type="button"
+                :disabled="day.focus.length >= MAX_FOCUS_COUNT || dayState === 'saving'"
+                @click="addFocus"
+              >
+                <i class="ri-add-line"></i>新增重点
+              </button>
               <div
                 v-if="focusNotificationState !== 'idle'"
                 class="focus-notice"
@@ -969,7 +1004,7 @@ onBeforeUnmount(() => {
               <header>
                 <div>
                   <small>{{ tomorrowDate }} · 提前准备</small>
-                  <h2>明日三个重点</h2>
+                  <h2>安排明日重点</h2>
                 </div>
                 <RouterLink to="/todo">查看真实待办<i class="ri-arrow-right-line"></i></RouterLink>
               </header>
@@ -998,18 +1033,40 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <template v-else>
-                <label v-for="(_, index) in tomorrowDay.focus" :key="index">
-                  <span>{{ index + 1 }}</span>
-                  <input
-                    v-model="tomorrowDay.focus[index]"
+                <div v-for="(_, index) in tomorrowDay.focus" :key="index" class="tomorrow-row">
+                  <label>
+                    <span>{{ index + 1 }}</span>
+                    <input
+                      v-model="tomorrowDay.focus[index]"
+                      :disabled="tomorrowState === 'saving'"
+                      maxlength="100"
+                      :placeholder="
+                        index === 0 ? '明天最重要、最难的一件事' : '另一件值得提前准备的事'
+                      "
+                      @input="tomorrowFocusInput"
+                    />
+                  </label>
+                  <button
+                    v-if="tomorrowDay.focus.length > 3"
+                    class="focus-remove"
+                    type="button"
+                    :aria-label="`删除明日重点 ${index + 1}`"
                     :disabled="tomorrowState === 'saving'"
-                    maxlength="100"
-                    :placeholder="
-                      index === 0 ? '明天最重要、最难的一件事' : '另一件值得提前准备的事'
-                    "
-                    @input="tomorrowFocusInput"
-                  />
-                </label>
+                    @click="removeTomorrowFocus(index)"
+                  >
+                    <i class="ri-delete-bin-line"></i>
+                  </button>
+                </div>
+                <button
+                  class="focus-add"
+                  type="button"
+                  :disabled="
+                    tomorrowDay.focus.length >= MAX_FOCUS_COUNT || tomorrowState === 'saving'
+                  "
+                  @click="addTomorrowFocus"
+                >
+                  <i class="ri-add-line"></i>新增明日重点
+                </button>
                 <footer>
                   <small v-if="tomorrowState === 'dirty'">草稿已保存在本机</small>
                   <small v-else-if="tomorrowState === 'error'" class="focus-error"
@@ -1144,11 +1201,11 @@ onBeforeUnmount(() => {
                 <span>{{ editorDraft.energyNotification.enabled ? '已启用' : '未启用' }}</span>
               </label>
             </header>
-            <p>三个重点或补给行动成功保存后，可使用系统 Webhook 或飞书应用通知指定群聊。</p>
+            <p>今日重点或补给行动成功保存后，可使用系统 Webhook 或飞书应用通知指定群聊。</p>
             <div v-if="editorDraft.energyNotification.enabled" class="energy-editor-fields">
               <label class="energy-notify-field">
                 <input v-model="editorDraft.energyNotification.notifyFocus" type="checkbox" />
-                <span>今日三个重点保存后发群</span>
+                <span>今日重点保存后发群</span>
               </label>
               <label class="channel-field">
                 <span>发送方式</span>
@@ -1551,7 +1608,7 @@ textarea {
   background: linear-gradient(128deg, #174f43, #267c65 62%, #3f9677);
   color: #fff;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(250px, 0.72fr) 135px;
+  grid-template-columns: minmax(0, 1.08fr) minmax(220px, 0.72fr) minmax(220px, 0.72fr);
   align-items: center;
   gap: 20px;
   box-shadow: 0 18px 40px rgba(32, 99, 78, 0.16);
@@ -1572,9 +1629,11 @@ textarea {
 .hero.resting {
   background: linear-gradient(128deg, #344956, #526d75);
 }
+.hero.without-hexagram {
+  grid-template-columns: minmax(0, 1.15fr) minmax(250px, 0.72fr);
+}
 .hero-copy,
-.hero-flow,
-.hero-score {
+.hero-flow {
   position: relative;
   z-index: 1;
 }
@@ -1712,46 +1771,6 @@ textarea {
 .next-up i {
   margin-right: 5px;
 }
-.hero-score {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.score-ring {
-  --score: 0deg;
-  width: 130px;
-  height: 130px;
-  padding: 10px;
-  border-radius: 50%;
-  background: conic-gradient(#b0ead5 var(--score), rgba(255, 255, 255, 0.13) 0);
-}
-.score-ring > span {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  background: #286f5c;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  color: #fff;
-}
-.score-ring b {
-  align-self: center;
-  font-size: 36px;
-}
-.score-ring small {
-  align-self: center;
-  margin: 12px 0 0 4px;
-  color: rgba(255, 255, 255, 0.6);
-}
-.hero-score p {
-  max-width: 170px;
-  margin: 12px 0 0;
-  color: rgba(255, 255, 255, 0.62);
-  text-align: center;
-  font-size: 10.5px;
-  line-height: 1.5;
-}
 .save-banner {
   min-height: 32px;
   margin: 9px 2px -4px;
@@ -1777,11 +1796,10 @@ textarea {
 .overview-grid {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-areas:
-    'focus mustdo'
-    'hexagram energy'
-    'tomorrow tomorrow';
+    'focus mustdo energy'
+    'tomorrow tomorrow tomorrow';
   gap: 14px;
   align-items: stretch;
 }
@@ -1849,7 +1867,7 @@ textarea {
 }
 .focus-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
 }
@@ -1886,6 +1904,42 @@ textarea {
 }
 .focus-done {
   color: #267c65 !important;
+}
+.focus-add {
+  margin-top: 9px;
+  border: 1px dashed var(--wao-line-control);
+  border-radius: 9px;
+  background: var(--wao-bg-page);
+  color: var(--wao-primary);
+  padding: 7px 10px;
+  font-size: 10px;
+  cursor: pointer;
+}
+.focus-add:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.focus-remove {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wao-text-faint);
+  cursor: pointer;
+}
+.focus-remove:hover {
+  background: var(--wao-danger-bg);
+  color: var(--wao-danger-strong);
+}
+.tomorrow-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.tomorrow-row label {
+  margin-top: 7px;
 }
 .focus-notice {
   display: flex;
@@ -2754,18 +2808,21 @@ textarea {
     grid-template-columns: 1fr;
     gap: 20px;
   }
-  .hero-flow {
-    order: 2;
+  .hero.without-hexagram {
+    grid-template-columns: 1fr;
   }
-  .hero-score {
-    display: none;
+  .hero-flow {
+    order: 3;
+  }
+  .hero > :last-child {
+    order: 2;
   }
   .hero h2 {
     font-size: 30px;
   }
   .overview-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: 'focus' 'mustdo' 'hexagram' 'energy' 'tomorrow';
+    grid-template-areas: 'focus' 'mustdo' 'energy' 'tomorrow';
   }
   .focus-card,
   .energy-card {
