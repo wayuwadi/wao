@@ -141,7 +141,9 @@ JumpServer CE 固定运行在 Linux 主节点 `/opt/wao-jumpserver`，使用独�
 Windows 从节点另提供 RDP 3389。RDP 使用 JumpServer 的手动账号模式，连接时输入真实 Windows 凭据，
 不会把 Windows 密码写入仓库或部署环境。Windows 防火墙只允许 JumpServer 主节点当前 IPv4 访问 3389。
 发布脚本检测到 JumpServer Core 容器被替换时会同步刷新无状态 Web，避免 Nginx 继续缓存旧 Core 地址；Core
-未变化时不会额外重启 Web。
+未变化时不会额外重启 Web。脚本还会在 Core 启动后只给数据根目录补充目录穿越权限，使非 root Web Nginx
+能读取公开的登录静态资源而不能列举数据根目录；生产验收会实际读取登录脚本，避免健康接口正常但页面资源
+全部 403。资源管理默认仍用新页面打开，显式切换到 WAO 页签时只允许 `https://wao.wayuwa.cn` 嵌入。
 
 日常验证：
 

@@ -25,11 +25,13 @@ MySQL、Redis 或公开主节点端口，也会让运维系统故障扩大到业
 - 三台现有主机使用本次生成的独立 SSH 密钥纳管。公钥通过已有 Jenkins 到 Windows/云节点的受信通道安装，
   私钥只保存在 JumpServer 加密账户和主节点受限持久目录；不得复用 Jenkins 发布密钥。
 - 外部应用注册表新增默认可见的「资源管理」菜单，以 `/api/auth/jumpserver` 为入口并用新页面打开。注册表
-  版本升级只补一次，后续尊重用户隐藏、改名、调序或删除。
+  版本升级只补一次，后续尊重用户隐藏、改名、调序或删除。成员显式改为 WAO 页签时，JumpServer 公网入口
+  仅通过 `Content-Security-Policy: frame-ancestors` 允许 `https://wao.wayuwa.cn` 嵌入，不开放其他来源；反向
+  代理不得继续发送会拒绝跨子域嵌入的 `X-Frame-Options: SAMEORIGIN`。
 
 ## 后果
 
 成员从 WAO 菜单进入 JumpServer 不需要第二套密码，主站 Cookie 仍保持 host-only；JumpServer 故障不会停止
-WAO API 或污染业务库。代价是主节点新增约 8 GiB 的运维负载和一套独立备份对象，且 WAO 退出不会主动撤销
-已经建立的 JumpServer 会话。若以后采购 X-Pack 并需要统一注销，应另写 ADR 迁移到标准 OIDC，而不是在本
-实现上静默改变票据协议。
+WAO API 或污染业务库。WAO 页签只扩大页面嵌入权限，不扩大主站 Cookie 域或 JumpServer 资产授权。代价是
+主节点新增约 8 GiB 的运维负载和一套独立备份对象，且 WAO 退出不会主动撤销已经建立的 JumpServer 会话。
+若以后采购 X-Pack 并需要统一注销，应另写 ADR 迁移到标准 OIDC，而不是在本实现上静默改变票据协议。
