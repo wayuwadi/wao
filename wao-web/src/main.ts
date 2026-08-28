@@ -7,10 +7,14 @@ import router from './router'
 import './styles/tokens.css'
 import './assets/base.css'
 import { useTheme } from './composables/theme'
+import { installNativeContextMenuGuard } from './utils/nativeContextMenu'
 import { installPreloadErrorRecovery } from './utils/preloadErrorRecovery'
 
 // 新版本发布后，长驻旧页面可能仍引用已删除的哈希分包；在任何懒加载发生前安装恢复。
 installPreloadErrorRecovery()
+// WAO 自己承载右键交互；只屏蔽浏览器菜单，不阻断业务 contextmenu 事件。
+const uninstallNativeContextMenuGuard = installNativeContextMenuGuard()
+import.meta.hot?.dispose(uninstallNativeContextMenuGuard)
 
 const app = createApp(App)
 
