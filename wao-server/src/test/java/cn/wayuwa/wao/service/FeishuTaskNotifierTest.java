@@ -16,6 +16,7 @@ import cn.wayuwa.wao.feishu.FeishuWebhookNotifier;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentCaptor;
 
 class FeishuTaskNotifierTest {
@@ -23,10 +24,16 @@ class FeishuTaskNotifierTest {
     private final FeishuWebhookNotifier webhook = mock(FeishuWebhookNotifier.class);
     private final SettingService settings = mock(SettingService.class);
     private final ProjectNotifyGate gate = mock(ProjectNotifyGate.class);
+    private final NotificationSettingsService notificationSettings = mock(NotificationSettingsService.class);
     private final FeishuAppLinks links = new FeishuAppLinks(
             new FeishuLoginProperties(false, "", "", "", "", "https://open.feishu.cn"));
     private final FeishuTaskNotifier notifier = new FeishuTaskNotifier(webhook, links, settings,
-            mock(AccountMapper.class), mock(AccountIdentityMapper.class), gate);
+            mock(AccountMapper.class), mock(AccountIdentityMapper.class), gate, notificationSettings);
+
+    @BeforeEach
+    void allPolicyScenesEnabledByDefaultInFocusedNotifierTests() {
+        when(notificationSettings.allows(any())).thenReturn(true);
+    }
 
     @Test
     void skipsEveryProjectScopedCardWhenTheProjectIsMuted() {
@@ -94,6 +101,27 @@ class FeishuTaskNotifierTest {
         assertThat(card.getValue().title()).isEqualTo("AI 执行未完成");
         assertThat(card.getValue().fields()).containsExactly(List.of("任务", "通知优化"));
         assertThat(card.getValue().body()).startsWith("**失败原因**\n").hasSizeLessThanOrEqualTo(251);
+    }
+
+    @Test
+    void disabledSuccessPolicyKeepsTheGroupQuietWhileManualNotificationCanStayEnabled() {
+        when(gate.enabled("p1")).thenReturn(true);
+        when(notificationSettings.allows(any())).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            java.util.function.Predicate<cn.wayuwa.wao.dto.NotificationSettingsDto.SystemPolicy> scene =
+                    invocation.getArgument(0);
+            return scene.test(new cn.wayuwa.wao.dto.NotificationSettingsDto.SystemPolicy(
+                    true, false, false, false, true, true, true));
+        });
+        when(webhook.notifyCard(any())).thenReturn(true);
+
+        assertThat(notifier.notifyRunSucceeded("t1", "p1", "通知优化", "整个任务", "已完成")).isFalse();
+        assertThat(notifier.notifyStatusChanged(
+                "t1", "p1", "通知优化", "WAO", "待验证", "已完成", "娃哥")).isFalse();
+        assertThat(notifier.notifyManualTask(
+                "t1", "p1", "通知优化", "WAO", "娃哥", "请关注")).isTrue();
+
+        verify(webhook).notifyCard(any());
     }
 
     /** 群聊洞察报告使用漫画卡片，字段里带项目名，按钮落到项目洞察页。 */

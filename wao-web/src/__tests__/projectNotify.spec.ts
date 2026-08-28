@@ -19,11 +19,11 @@ const router = createRouter({
   routes: [{ path: '/:p(.*)*', component: { template: '<div/>' } }],
 })
 
-/** 打开「Webhook配置」页签，那里放着按项目的通知开关。 */
-async function mountWebhookTab() {
+/** 打开「通知设置」页签，那里集中放着按项目的通知开关。 */
+async function mountNotificationTab() {
   const w = mount(SettingsView, { global: { plugins: [router] } })
   await flushPromises()
-  const entry = w.findAll('.snav-item').find((button) => button.text() === 'Webhook配置')
+  const entry = w.findAll('.snav-item').find((button) => button.text() === '通知设置')
   await entry!.trigger('click')
   await flushPromises()
   return w
@@ -40,7 +40,7 @@ describe('按项目的通知开关', () => {
   })
 
   it('每个项目一行开关，默认都是通知中', async () => {
-    const w = await mountWebhookTab()
+    const w = await mountNotificationTab()
 
     const rows = w.findAll('.cal-row')
     expect(rows.length).toBe(data.projects.length)
@@ -50,7 +50,7 @@ describe('按项目的通知开关', () => {
 
   it('关掉某个项目会写透后端并显示已静音', async () => {
     const update = vi.spyOn(data, 'updateProject').mockResolvedValue(true)
-    const w = await mountWebhookTab()
+    const w = await mountNotificationTab()
     const target = data.projects[1]!
 
     await w.findAll('.cal-row')[1]!.find('.toggle').trigger('click')
@@ -68,7 +68,7 @@ describe('按项目的通知开关', () => {
       Object.assign(data.projectById(id)!, patch)
       return false
     })
-    const w = await mountWebhookTab()
+    const w = await mountNotificationTab()
 
     await w.findAll('.cal-row')[1]!.find('.toggle').trigger('click')
     await flushPromises()

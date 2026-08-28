@@ -1441,6 +1441,13 @@ public class AiRunService {
             } catch (RuntimeException ex) {
                 LOG.warn("AI 运行完成表情发送失败：{}", ex.getMessage());
             }
+            try {
+                TaskEntity task = taskMapper.selectById(run.getTaskId());
+                notifier.notifyRunSucceeded(run.getTaskId(), run.getProjectId(),
+                        task == null ? run.getTaskId() : task.getTitle(), runScope(run), run.getResultSummary());
+            } catch (RuntimeException ex) {
+                LOG.warn("AI 运行成功通知策略执行失败：{}", ex.getMessage());
+            }
             return;
         }
         try {

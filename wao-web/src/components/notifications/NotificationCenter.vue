@@ -153,6 +153,9 @@ onBeforeUnmount(() => {
             <h2 id="notification-title">通知中心</h2>
             <p>真实系统动态与使用入口</p>
           </div>
+          <button type="button" aria-label="打开通知设置" title="通知设置" @click="navigate('/settings?tab=notifications')">
+            <i class="ri-settings-3-line"></i>
+          </button>
           <button type="button" aria-label="关闭通知中心" @click="close">
             <i class="ri-close-line"></i>
           </button>
@@ -161,15 +164,15 @@ onBeforeUnmount(() => {
         <section class="report-links" aria-label="查看统计">
           <button type="button" @click="navigate('/dashboard')">
             <i class="ri-bar-chart-box-line"></i
-            ><span><b>AI 使用统计</b><small>频次与真实 Token</small></span>
+            ><span><b>AI 使用统计</b><small>Token 与次数</small></span>
           </button>
           <button type="button" @click="navigate('/system-reports')">
             <i class="ri-file-chart-line"></i
-            ><span><b>系统报告</b><small>日报、周报、月报</small></span>
+            ><span><b>系统报告</b><small>日周月归档</small></span>
           </button>
           <button type="button" @click="navigate('/request-monitoring')">
             <i class="ri-pulse-line"></i
-            ><span><b>请求监控</b><small>耗时、慢请求、失败</small></span>
+            ><span><b>请求监控</b><small>慢请求与失败</small></span>
           </button>
         </section>
 
@@ -218,15 +221,11 @@ onBeforeUnmount(() => {
               @click="navigate(event.targetPath)"
             >
               <span class="event-icon"><i :class="eventMeta[event.type].icon"></i></span>
-              <span class="event-copy">
-                <span class="event-label"
-                  >{{ eventMeta[event.type].label }} · {{ timeText(event.occurredAt) }}</span
-                >
+              <span class="event-copy" :title="`${eventMeta[event.type].label} · ${event.title} · ${event.actorName ? `${event.actorName} · ` : ''}${event.detail}`">
                 <b>{{ event.title }}</b>
-                <small
-                  >{{ event.actorName ? `${event.actorName} · ` : '' }}{{ event.detail }}</small
-                >
+                <small> · {{ event.actorName ? `${event.actorName} · ` : '' }}{{ event.detail }}</small>
               </span>
+              <time>{{ timeText(event.occurredAt) }}</time>
               <i v-if="event.targetPath" class="ri-arrow-right-s-line event-arrow"></i>
             </button>
             <div v-if="!snapshot.events.length" class="notification-state empty">
@@ -406,11 +405,9 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 .report-links small {
-  overflow: hidden;
   color: var(--wao-text-weak);
   font-size: 10px;
   white-space: nowrap;
-  text-overflow: ellipsis;
 }
 .notification-tabs {
   min-height: 45px;
@@ -453,16 +450,16 @@ onBeforeUnmount(() => {
 }
 .event-row {
   width: 100%;
-  min-height: 76px;
-  padding: 11px 16px;
+  min-height: 46px;
+  padding: 7px 16px;
   border: 0;
   border-bottom: 1px solid var(--wao-divider);
   background: transparent;
   color: inherit;
   text-align: left;
   display: flex;
-  align-items: flex-start;
-  gap: 11px;
+  align-items: center;
+  gap: 9px;
 }
 .event-row.clickable {
   cursor: pointer;
@@ -475,9 +472,9 @@ onBeforeUnmount(() => {
 }
 .event-icon {
   flex: 0 0 auto;
-  width: 31px;
-  height: 31px;
-  border-radius: 9px;
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
   background: var(--wao-primary-soft);
   color: var(--wao-primary-text);
   display: flex;
@@ -495,25 +492,23 @@ onBeforeUnmount(() => {
 .event-copy {
   min-width: 0;
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.event-label {
-  color: var(--wao-text-weak);
-  font-size: 10px;
+  overflow: hidden;
+  display: block;
+  line-height: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .event-copy b {
-  overflow: hidden;
   font-size: 13px;
-  line-height: 19px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .event-copy small {
   color: var(--wao-text-3);
   font-size: 11px;
-  line-height: 17px;
+}
+.event-row time {
+  flex: 0 0 auto;
+  color: var(--wao-text-faint);
+  font-size: 10px;
 }
 .event-arrow {
   align-self: center;

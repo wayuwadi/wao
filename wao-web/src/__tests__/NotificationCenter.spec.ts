@@ -72,6 +72,7 @@ async function mounted() {
       { path: '/dashboard', component: { template: '<div />' } },
       { path: '/system-reports', component: { template: '<div />' } },
       { path: '/request-monitoring', component: { template: '<div />' } },
+      { path: '/settings', component: { template: '<div />' } },
     ],
   })
   await router.push('/')
@@ -159,6 +160,23 @@ describe('右上角通知中心', () => {
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/projects/p1?task=t1')
     wrapper.unmount()
+  })
+
+  it('动态压成单行关键信息，固定短摘要不再产生省略号，并可进入通知设置', async () => {
+    const { wrapper, router } = await mounted()
+    await flushPromises()
+    await wrapper.find('.notification-trigger').trigger('click')
+    await flushPromises()
+
+    const row = wrapper.get('.event-row')
+    expect(row.find('.event-label').exists()).toBe(false)
+    expect(row.get('.event-copy').text()).toContain('建设通知中心 · 娃哥 · 创建了任务')
+    expect(wrapper.get('.report-links').text()).toContain('Token 与次数')
+    expect(wrapper.get('.report-links').text()).not.toContain('...')
+
+    await wrapper.get('[aria-label="打开通知设置"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=notifications')
   })
 
   it('Escape 可关闭已经就位的抽屉', async () => {

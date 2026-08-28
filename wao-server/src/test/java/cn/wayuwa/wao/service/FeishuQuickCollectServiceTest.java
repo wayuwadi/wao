@@ -53,9 +53,10 @@ class FeishuQuickCollectServiceTest {
     private final ImageService images = mock(ImageService.class);
     private final NotificationFeedbackService feedback = mock(NotificationFeedbackService.class);
     private final SharedChatFeishuBridge sharedChat = mock(SharedChatFeishuBridge.class);
+    private final FeishuQuickCollectAiRunService reactionAiRuns = mock(FeishuQuickCollectAiRunService.class);
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
             settings, feishu, tasks, projects, accounts, identities, events, images, new ObjectMapper(), feedback,
-            sharedChat);
+            sharedChat, reactionAiRuns);
 
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);
@@ -95,6 +96,28 @@ class FeishuQuickCollectServiceTest {
         assertThatThrownBy(() -> service.handleEvent(
                 "{\"type\":\"url_verification\",\"challenge\":\"abc\",\"token\":\"fake\"}"))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void verifiedFlightReactionDispatchesAndStillReachesTheSharedChatBridge() {
+        enabled();
+        when(settings.get(SettingService.QUICK_COLLECT_VERIFY_TOKEN)).thenReturn("real-token");
+        when(reactionAiRuns.trigger(any(), eq("https://wao.example"))).thenReturn(true);
+
+        service.handleEvent(reaction("real-token"), "https://wao.example");
+
+        verify(reactionAiRuns).trigger(any(), eq("https://wao.example"));
+        verify(sharedChat).handleEvent(any());
+    }
+
+    @Test
+    void unverifiedReactionCannotDispatchAnAiRun() {
+        enabled();
+
+        service.handleEvent(reaction(""), "https://wao.example");
+
+        verify(reactionAiRuns, never()).trigger(any(), any());
+        verify(sharedChat).handleEvent(any());
     }
 
     @Test
@@ -353,6 +376,15 @@ class FeishuQuickCollectServiceTest {
                 + "\"message\":{\"message_id\":\"om_" + eventId + "\",\"chat_id\":\"oc_1\",\"message_type\":\"" + type + "\","
                 + "\"mentions\":" + (mentioned ? "[{\"key\":\"@_user_1\",\"name\":\"娃弟\"}]" : "[]") + ","
                 + "\"content\":\"" + content + "\"}}}";
+    }
+
+    private static String reaction(String token) {
+        return "{\"schema\":\"2.0\",\"header\":{\"event_id\":\"ev-flight\","
+                + "\"event_type\":\"im.message.reaction.created_v1\",\"token\":\"" + token + "\"},"
+                + "\"event\":{\"message_id\":\"om_source\",\"operator_type\":\"user\","
+                + "\"user_id\":{\"open_id\":\"ou_sender\"},"
+                + "\"reaction_type\":{\"emoji_type\":\"StatusInFlight\"},"
+                + "\"action_time\":\"1787900000000\"}}";
     }
 
     /** 按飞书的规则加密：Base64(IV + AES-256-CBC(SHA256(key)))。 */

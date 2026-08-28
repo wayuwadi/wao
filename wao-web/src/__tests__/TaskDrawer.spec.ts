@@ -17,6 +17,11 @@ vi.mock('@/utils/clipboard', () => ({
   copyToClipboard: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
 }))
 
+vi.mock('@/api/board', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api/board')>()),
+  notifyTaskManually: vi.fn<() => Promise<boolean>>().mockResolvedValue(true),
+}))
+
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([]),
   continueAiRun: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({}),
@@ -138,6 +143,19 @@ describe('TaskDrawer', () => {
     expect(copyToClipboard).toHaveBeenCalledWith(taskId)
     expect(useToastHost().items.some((item) => item.text === `JOBID ${taskId} 已复制`)).toBe(true)
     w.unmount()
+  })
+
+  it('人工通知按钮只在后端确认真实发送后提示成功', async () => {
+    const { notifyTaskManually } = await import('@/api/board')
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.get('[title="人工通知到飞书群"]').trigger('click')
+    await flushPromises()
+
+    expect(notifyTaskManually).toHaveBeenCalledWith(taskId)
+    expect(useToastHost().items.some((item) => item.text === '任务已人工通知到飞书群')).toBe(true)
   })
 
   it('从真实成员目录增加和移除任务参与人', async () => {

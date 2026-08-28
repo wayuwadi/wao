@@ -74,6 +74,12 @@ public class TaskController {
         return ApiResponse.ok(taskService.addComment(id, currentMember.idOr(http, "unknown"), request.text()));
     }
 
+    /** 由当前成员明确要求把任务发到通知群；自动成功通知策略不影响这个人工动作。 */
+    @PostMapping("/{id}/notifications")
+    public ApiResponse<Boolean> notifyManually(@PathVariable String id, HttpServletRequest http) {
+        return ApiResponse.ok(taskService.notifyManually(id, currentMember.id(http)));
+    }
+
     /** 改自己的评论；改别人的会被拒。 */
     @PatchMapping("/{id}/comments/{commentId}")
     public ApiResponse<CommentDto> updateComment(@PathVariable String id, @PathVariable String commentId,

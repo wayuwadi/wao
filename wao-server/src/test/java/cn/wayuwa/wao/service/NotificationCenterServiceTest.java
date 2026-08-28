@@ -19,7 +19,13 @@ import org.mockito.ArgumentCaptor;
 class NotificationCenterServiceTest {
     private final NotificationCenterMapper center = mock(NotificationCenterMapper.class);
     private final MemberPreferenceMapper preferences = mock(MemberPreferenceMapper.class);
-    private final NotificationCenterService service = new NotificationCenterService(center, preferences);
+    private final NotificationSettingsService notificationSettings = mock(NotificationSettingsService.class);
+    private final NotificationCenterService service = new NotificationCenterService(
+            center, preferences, notificationSettings);
+
+    private cn.wayuwa.wao.dto.NotificationSettingsDto.PersonalPolicy allEvents() {
+        return new cn.wayuwa.wao.dto.NotificationSettingsDto.PersonalPolicy(true, true, true, true, true, true);
+    }
 
     @Test
     void returnsGroundedEventsUsageAndUsesSevenDayUnreadWindowForFirstVisit() {
@@ -39,10 +45,11 @@ class NotificationCenterServiceTest {
         usage.setCount7Days(3);
         usage.setCount30Days(8);
         usage.setLastLoginAt(LocalDateTime.of(2026, 8, 28, 9, 0));
-        when(center.recentEvents(30)).thenReturn(List.of(event));
+        when(notificationSettings.personalPolicy("wg")).thenReturn(allEvents());
+        when(center.recentEvents(120)).thenReturn(List.of(event));
+        when(center.eventsSince(org.mockito.ArgumentMatchers.any())).thenReturn(List.of(event, event, event, event));
         when(center.loginUsage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(List.of(usage));
-        when(center.countEventsSince(org.mockito.ArgumentMatchers.any())).thenReturn(4L);
 
         var result = service.get("wg");
 
@@ -58,7 +65,7 @@ class NotificationCenterServiceTest {
         assertThat(result.unreadCount()).isEqualTo(4);
         assertThat(result.readAt()).isNull();
         ArgumentCaptor<LocalDateTime> since = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(center).countEventsSince(since.capture());
+        verify(center).eventsSince(since.capture());
         assertThat(since.getValue()).isBetween(LocalDateTime.now().minusDays(7).minusMinutes(1),
                 LocalDateTime.now().minusDays(7).plusMinutes(1));
     }
@@ -67,18 +74,49 @@ class NotificationCenterServiceTest {
     void honorsStoredReadWatermarkAndPersistsMarkReadPerMember() {
         String stored = "2026-08-27T08:15:30+08:00";
         when(preferences.find("wd", NotificationCenterService.READ_AT_KEY)).thenReturn(stored);
-        when(center.recentEvents(30)).thenReturn(List.of());
+        when(notificationSettings.personalPolicy("wd")).thenReturn(allEvents());
+        when(center.recentEvents(120)).thenReturn(List.of());
+        when(center.eventsSince(org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
         when(center.loginUsage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(List.of());
 
         var result = service.get("wd");
 
         assertThat(result.readAt()).isEqualTo(OffsetDateTime.parse(stored));
-        verify(center).countEventsSince(LocalDateTime.of(2026, 8, 27, 8, 15, 30));
+        verify(center).eventsSince(LocalDateTime.of(2026, 8, 27, 8, 15, 30));
 
         OffsetDateTime marked = service.markRead("wd");
         ArgumentCaptor<String> value = ArgumentCaptor.forClass(String.class);
         verify(preferences).upsert(eq("wd"), eq(NotificationCenterService.READ_AT_KEY), value.capture());
         assertThat(OffsetDateTime.parse(value.getValue())).isEqualTo(marked);
+    }
+
+    @Test
+    void personalPolicyFiltersTheListAndUnreadCountWithTheSameRules() {
+        NotificationEventRow success = aiEvent("ai-run:ok", "SUCCESS", "AI 运行成功");
+        NotificationEventRow failure = aiEvent("ai-run:failed", "WARNING", "AI 运行失败");
+        when(notificationSettings.personalPolicy("wd")).thenReturn(
+                new cn.wayuwa.wao.dto.NotificationSettingsDto.PersonalPolicy(
+                        true, false, false, false, true, false));
+        when(center.recentEvents(120)).thenReturn(List.of(success, failure));
+        when(center.eventsSince(org.mockito.ArgumentMatchers.any())).thenReturn(List.of(success, failure));
+        when(center.loginUsage(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of());
+
+        var result = service.get("wd");
+
+        assertThat(result.events()).extracting("id").containsExactly("ai-run:failed");
+        assertThat(result.unreadCount()).isEqualTo(1);
+    }
+
+    private static NotificationEventRow aiEvent(String id, String severity, String detail) {
+        NotificationEventRow event = new NotificationEventRow();
+        event.setEventId(id);
+        event.setEventType("AI_RUN");
+        event.setTitle("通知优化");
+        event.setDetail(detail);
+        event.setSeverity(severity);
+        event.setOccurredAt(LocalDateTime.of(2026, 8, 28, 10, 0));
+        return event;
     }
 }

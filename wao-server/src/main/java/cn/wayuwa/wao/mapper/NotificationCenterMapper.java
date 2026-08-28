@@ -64,6 +64,11 @@ public interface NotificationCenterMapper {
     @Select("SELECT COUNT(*) FROM (" + EVENT_UNION + ") events WHERE events.occurred_at > #{since}")
     long countEventsSince(@Param("since") LocalDateTime since);
 
+    /** 读取未读窗口内真实事件，由成员级偏好在服务层做同一套过滤后计数。 */
+    @Select("SELECT events.* FROM (" + EVENT_UNION + ") events WHERE events.occurred_at > #{since} "
+            + "ORDER BY events.occurred_at DESC, events.event_id DESC")
+    List<NotificationEventRow> eventsSince(@Param("since") LocalDateTime since);
+
     @Select("""
             SELECT m.id AS member_id, m.name AS member_name, m.color,
                    COALESCE(SUM(CASE WHEN e.logged_in_at >= #{sevenDaysAgo} THEN 1 ELSE 0 END), 0) AS count7_days,

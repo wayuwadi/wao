@@ -388,12 +388,19 @@ paths:
         '404': { description: 不存在 }
   /tasks/{id}/comments:
     post:
-      summary: 原子追加评论；持久化成功后以卡片形式通知全局配置的飞书群机器人
+      summary: 原子追加评论；普通评论按任务动态策略通知，真实 @成员按人工通知策略通知
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       requestBody:
         required: true
         content: { application/json: { schema: { type: object, required: [text], properties: { text: { type: string } } } } }
       responses: { '200': { description: 返回新评论 }, '400': { description: 评论为空 }, '404': { description: 任务不存在 } }
+  /tasks/{id}/notifications:
+    post:
+      summary: 当前成员明确把自己可见的任务通知到飞书群
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: data 为是否真实发出卡片；策略、项目或 Webhook 关闭时为 false }
+        '404': { description: 任务不存在或当前成员不可见 }
   /tasks/{id}/comments/{commentId}:
     patch:
       summary: 修改自己的评论（commentId 为评论 id；老评论没有 id 时传数组下标）

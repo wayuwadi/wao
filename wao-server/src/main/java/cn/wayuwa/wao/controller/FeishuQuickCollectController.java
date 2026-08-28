@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 /**
  * 群聊快速收集：配置接口 + 飞书事件订阅回调。
@@ -43,6 +44,7 @@ public class FeishuQuickCollectController {
     /** 飞书事件订阅回调（URL 校验与群消息都走这里）。 */
     @PostMapping("/events")
     public Map<String, Object> events(@RequestBody(required = false) String body) {
-        return service.handleEvent(body);
+        String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
+        return service.handleEvent(body, baseUrl);
     }
 }

@@ -26,6 +26,7 @@ import { activitySentence } from '@/utils/activity'
 import { useIsMobile } from '@/composables/viewport'
 import { useFavoritesStore } from '@/stores/favorites'
 import { nextTaskAiRunPollDelay, taskAiRunFingerprint } from '@/utils/taskAiRunPolling'
+import { notifyTaskManually } from '@/api/board'
 import type { AiEngine, AiRun, Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
@@ -65,6 +66,7 @@ const aiRunsLoading = ref(false)
 /** 首次打开可显示加载态；后续轮询不得反复推挤评论区。 */
 const aiRunsLoaded = ref(false)
 const pausingRunId = ref<string | null>(null)
+const notifyingTask = ref(false)
 let aiRunsTimer: ReturnType<typeof setTimeout> | null = null
 let aiRunsUnchangedRounds = 0
 let lastAiRunsFingerprint = ''
@@ -554,6 +556,21 @@ async function copyJobId() {
     copied ? 'ri-file-copy-line' : 'ri-error-warning-line',
   )
 }
+
+async function notifyTask() {
+  const id = task.value?.id
+  if (!id || notifyingTask.value) return
+  notifyingTask.value = true
+  try {
+    const sent = await notifyTaskManually(id)
+    toast(sent ? '任务已人工通知到飞书群' : '通知未发送，请检查通知策略、项目静音和 Webhook',
+      sent ? 'ri-notification-3-line' : 'ri-error-warning-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '人工通知失败，请重试', 'ri-error-warning-line')
+  } finally {
+    notifyingTask.value = false
+  }
+}
 async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: string | null,
   model: string | null, reasoningEffort: string | null, planMode: boolean) {
   const t = task.value
@@ -881,6 +898,9 @@ async function uploadAttachment(event: Event) {
           @click="favorites.toggle('task', task.id, task.title, task.project)"
         >
           <i :class="favorites.isFav('task', task.id) ? 'ri-star-fill' : 'ri-star-line'"></i>
+        </button>
+        <button class="icon-btn" :disabled="notifyingTask" title="人工通知到飞书群" @click="notifyTask">
+          <i :class="notifyingTask ? 'ri-loader-4-line spin' : 'ri-notification-2-line'"></i>
         </button>
         <div class="share-wrap">
           <button class="icon-btn" title="复制分享链接" @click="menu = menu === 'share' ? null : 'share'"><i class="ri-links-line"></i></button>

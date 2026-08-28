@@ -11,6 +11,7 @@ import java.time.DateTimeException;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import org.springframework.stereotype.Service;
 
 /** 聚合真实系统动态、登录频率并维护成员级已读水位。 */
@@ -22,10 +23,13 @@ public class NotificationCenterService {
 
     private final NotificationCenterMapper center;
     private final MemberPreferenceMapper preferences;
+    private final NotificationSettingsService notificationSettings;
 
-    public NotificationCenterService(NotificationCenterMapper center, MemberPreferenceMapper preferences) {
+    public NotificationCenterService(NotificationCenterMapper center, MemberPreferenceMapper preferences,
+            NotificationSettingsService notificationSettings) {
         this.center = center;
         this.preferences = preferences;
+        this.notificationSettings = notificationSettings;
     }
 
     /** 返回当前成员的最近事件、团队登录频率与未读数量。 */
@@ -34,11 +38,18 @@ public class NotificationCenterService {
         OffsetDateTime readAt = readAt(memberId);
         LocalDateTime unreadSince = (readAt == null ? now.minusDays(7) : readAt)
                 .atZoneSameInstant(ZONE).toLocalDateTime();
+        var policy = notificationSettings.personalPolicy(memberId);
+        List<NotificationEventRow> events = policy.enabled()
+                ? center.recentEvents(EVENT_LIMIT * 4).stream().filter(row -> visible(row, policy))
+                        .limit(EVENT_LIMIT).toList()
+                : List.of();
+        long unread = policy.enabled()
+                ? center.eventsSince(unreadSince).stream().filter(row -> visible(row, policy)).count() : 0;
         return new NotificationCenterDto(
-                center.recentEvents(EVENT_LIMIT).stream().map(this::eventDto).toList(),
+                events.stream().map(this::eventDto).toList(),
                 center.loginUsage(now.minusDays(7).toLocalDateTime(), now.minusDays(30).toLocalDateTime())
                         .stream().map(this::usageDto).toList(),
-                center.countEventsSince(unreadSince), readAt);
+                unread, readAt);
     }
 
     /** 将当前成员的已读水位推进到服务端当前时刻，并返回该水位。 */
@@ -61,6 +72,18 @@ public class NotificationCenterService {
     private NotificationEventDto eventDto(NotificationEventRow row) {
         return new NotificationEventDto(row.getEventId(), row.getEventType(), row.getTitle(), row.getDetail(),
                 row.getActorName(), offset(row.getOccurredAt()), row.getTargetPath(), row.getSeverity());
+    }
+
+    private static boolean visible(NotificationEventRow row,
+            cn.wayuwa.wao.dto.NotificationSettingsDto.PersonalPolicy policy) {
+        return switch (row.getEventType()) {
+            case "TASK_CREATED" -> policy.taskCreated();
+            case "TASK_COMPLETED" -> policy.taskCompleted();
+            case "AI_RUN" -> "SUCCESS".equals(row.getSeverity())
+                    ? policy.aiRunSuccess() : policy.aiRunFailure();
+            case "LOGIN" -> policy.loginActivity();
+            default -> false;
+        };
     }
 
     private MemberLoginUsageDto usageDto(MemberLoginUsageRow row) {

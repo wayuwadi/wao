@@ -18,10 +18,13 @@ public class FeishuCommentNotifier {
 
     private final FeishuWebhookNotifier notifier;
     private final ProjectNotifyGate notifyGate;
+    private final NotificationSettingsService notificationSettings;
 
-    public FeishuCommentNotifier(FeishuWebhookNotifier notifier, ProjectNotifyGate notifyGate) {
+    public FeishuCommentNotifier(FeishuWebhookNotifier notifier, ProjectNotifyGate notifyGate,
+            NotificationSettingsService notificationSettings) {
         this.notifier = notifier;
         this.notifyGate = notifyGate;
+        this.notificationSettings = notificationSettings;
     }
 
     /**
@@ -35,7 +38,10 @@ public class FeishuCommentNotifier {
      */
     public void notifyComment(TaskDto task, CommentDto comment, String memberName, String projectName,
             List<String> mentionOpenIds) {
-        if (!notifyGate.enabled(task.project())) {
+        boolean explicitlyMentioned = mentionOpenIds != null && !mentionOpenIds.isEmpty();
+        boolean allowed = notificationSettings.allows(policy -> explicitlyMentioned
+                ? policy.manualTask() : policy.taskActivity());
+        if (!notifyGate.enabled(task.project()) || !allowed) {
             return;
         }
         StringBuilder body = new StringBuilder();
