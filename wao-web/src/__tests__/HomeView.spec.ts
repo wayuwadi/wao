@@ -830,7 +830,7 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
-  it('在 AI 运行列表标出聊天复盘并从聊天页打开结果', async () => {
+  it('在 AI 运行列表标出聊天复盘并从悬浮聊天打开结果', async () => {
     vi.useFakeTimers()
     vi.mocked(fetchAiActivities).mockResolvedValueOnce({
       items: [{ id: 'cr-shared', type: 'CHAT_REVIEW', title: '聊天复盘', status: 'SUCCEEDED',
@@ -839,14 +839,17 @@ describe('HomeView AI 控制台', () => {
         finishedAt: '2026-08-26T10:01:00+08:00' }],
       total: 1, page: 1, size: 8,
     })
-    const { router, wrapper } = mountHome()
+    const { pinia, router, wrapper } = mountHome()
     await flushPromises()
 
     const review = wrapper.findAll('.recent-card').find((card) => card.text().includes('聊天复盘'))!
     expect(review.text()).toContain('20 条真实消息')
     await review.trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/chat?review=cr-shared')
+    const ui = useUiStore(pinia)
+    expect(ui.chatOpen).toBe(true)
+    expect(ui.chatReviewId).toBe('cr-shared')
+    expect(router.currentRoute.value.fullPath).toBe('/')
     wrapper.unmount()
   })
 

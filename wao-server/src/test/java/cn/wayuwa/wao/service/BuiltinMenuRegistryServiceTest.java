@@ -23,7 +23,7 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(25);
+        assertThat(service.getRegistry().menus()).hasSize(24);
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "skills".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("Skill 市场");
@@ -33,7 +33,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(25);
+        assertThat(service.getRegistry().menus()).hasSize(24);
     }
 
     @Test
@@ -71,7 +71,6 @@ class BuiltinMenuRegistryServiceTest {
         oldMenus.removeIf(menu -> "navigation".equals(menu.id()));
         oldMenus.removeIf(menu -> "tianren".equals(menu.id()));
         oldMenus.removeIf(menu -> "life-review".equals(menu.id()));
-        oldMenus.removeIf(menu -> "chat".equals(menu.id()));
         oldMenus.removeIf(menu -> "skills".equals(menu.id()));
         oldMenus.removeIf(menu -> "skill-connections".equals(menu.id()));
         oldMenus.removeIf(menu -> "request-monitoring".equals(menu.id()));
@@ -88,6 +87,8 @@ class BuiltinMenuRegistryServiceTest {
         // 模拟 V17 注册表中仍存在、V18 已退役的点子库入口。
         oldMenus.add(new BuiltinMenuConfigDto("ideas", "我的旧点子入口", "ri-lightbulb-flash-line",
                 "PUBLIC", 11, true, "TAB"));
+        oldMenus.add(new BuiltinMenuConfigDto("chat", "我的旧聊天入口", "ri-chat-3-line",
+                "PUBLIC", 14, true, "TAB"));
         oldMenus.add(new BuiltinMenuConfigDto("chat-reviews", "旧聊天复盘入口", "ri-chat-history-line",
                 "PUBLIC", 15, true, "TAB"));
         oldMenus.add(new BuiltinMenuConfigDto("system-reports", "我的旧报告入口", "ri-bar-chart-box-line",
@@ -98,7 +99,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(25);
+        assertThat(upgraded.menus()).hasSize(24);
         assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("工作台");
@@ -138,11 +139,7 @@ class BuiltinMenuRegistryServiceTest {
         assertThat(upgraded.menus()).filteredOn(menu -> "workspaces".equals(menu.id()))
                 .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("工作台"));
         assertThat(upgraded.menus()).noneMatch(menu -> "chat-reviews".equals(menu.id()));
-        assertThat(upgraded.menus()).filteredOn(menu -> "chat".equals(menu.id()))
-                .singleElement().satisfies(menu -> {
-                    assertThat(menu.label()).isEqualTo("聊天");
-                    assertThat(menu.group()).isEqualTo("PUBLIC");
-                });
+        assertThat(upgraded.menus()).noneMatch(menu -> "chat".equals(menu.id()));
         assertThat(upgraded.menus()).filteredOn(menu -> "skills".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("Skill 市场");

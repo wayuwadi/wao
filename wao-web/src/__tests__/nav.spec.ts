@@ -87,7 +87,7 @@ describe('侧边栏导航配置', () => {
 
   it('公共组保留兼容模块顺序，自媒体 Agent 保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
-    expect(publicGroup?.items).toEqual(['projects', 'chat', externalAppItemId('media-agent')])
+    expect(publicGroup?.items).toEqual(['projects', externalAppItemId('media-agent')])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
       '/apps/media-agent',
     )
@@ -96,11 +96,15 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.tabKind).toBe('external')
   })
 
-  it('聊天默认位于公共组并使用原生模块路由', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).toContain('chat')
+  it('聊天从菜单和页签退休，旧地址改为打开首页悬浮框', () => {
+    expect(NAV_GROUPS.find((group) => group.label === '公共')?.items).not.toContain('chat')
+    expect(DEFAULT_BUILTIN_MENUS.map((menu) => menu.id)).not.toContain('chat')
     const route = router.getRoutes().find((item) => item.name === 'chat')
     expect(route?.path).toBe('/chat')
-    expect(route?.meta.module).toBe('chat')
+    expect(typeof route?.redirect).toBe('function')
+    expect(
+      (route!.redirect as (to: { query: Record<string, string> }) => unknown)({ query: {} }),
+    ).toEqual({ path: '/', query: { chat: '1' }, replace: true })
   })
 
   it('历史点子归并页保留兼容路由但不进入默认菜单', () => {
@@ -117,7 +121,9 @@ describe('侧边栏导航配置', () => {
     expect(PERSONAL_ITEMS).not.toContain('chat-reviews')
     const route = router.getRoutes().find((item) => item.name === 'chat-reviews')
     expect(route?.path).toBe('/chat-reviews')
-    expect(route?.redirect).toEqual({ path: '/chat', query: { review: '1' } })
+    expect(
+      (route!.redirect as (to: { query: Record<string, string> }) => unknown)({ query: {} }),
+    ).toEqual({ path: '/', query: { chat: '1', review: '1' }, replace: true })
   })
 
   it('系统报告从首页进入但保留兼容路由', () => {

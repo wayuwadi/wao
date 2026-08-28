@@ -118,7 +118,13 @@ describe('tabs store', () => {
       JSON.stringify({
         tabs: [
           { key: 'home', label: '首页', icon: 'ri-home-5-line', path: '/', closable: false },
-          { key: 'trash', label: '回收站', icon: 'ri-delete-bin-6-line', path: '/trash', closable: true },
+          {
+            key: 'trash',
+            label: '回收站',
+            icon: 'ri-delete-bin-6-line',
+            path: '/trash',
+            closable: true,
+          },
         ],
         activeKey: 'trash',
       }),
@@ -127,6 +133,24 @@ describe('tabs store', () => {
     const tabs = useTabsStore()
 
     expect(tabs.tabs.map((t) => t.key)).toEqual(['home'])
+    expect(tabs.activeKey).toBe('home')
+  })
+
+  it('聊天改成悬浮框后清理老浏览器里的聊天页签', () => {
+    localStorage.setItem(
+      'wao-tabs-v1',
+      JSON.stringify({
+        tabs: [
+          { key: 'home', label: '首页', icon: 'ri-home-5-line', path: '/', closable: false },
+          { key: 'chat', label: '聊天', icon: 'ri-chat-3-line', path: '/chat', closable: true },
+        ],
+        activeKey: 'chat',
+      }),
+    )
+
+    const tabs = useTabsStore()
+
+    expect(tabs.tabs.map((tab) => tab.key)).toEqual(['home'])
     expect(tabs.activeKey).toBe('home')
   })
 

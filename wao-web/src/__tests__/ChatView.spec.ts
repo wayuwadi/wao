@@ -19,7 +19,8 @@ import {
 
 vi.mock('@/api/chat', () => ({
   fetchSharedChatConfig: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatConfig']>(),
-  fetchSharedChatFeishuGroups: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatFeishuGroups']>(),
+  fetchSharedChatFeishuGroups:
+    vi.fn<(typeof import('@/api/chat'))['fetchSharedChatFeishuGroups']>(),
   fetchSharedChatMessages: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatMessages']>(),
   fetchSharedChatSyncRuns: vi.fn<(typeof import('@/api/chat'))['fetchSharedChatSyncRuns']>(),
   markSharedChatRead: vi.fn<(typeof import('@/api/chat'))['markSharedChatRead']>(),
@@ -47,8 +48,9 @@ const message: SharedChatMessage = {
 
 let wrappers: VueWrapper[] = []
 
-async function mountView() {
+async function mountView(props: Record<string, unknown> = {}) {
   const wrapper = mount(ChatView, {
+    props,
     global: {
       stubs: {
         MarkdownEditor: {
@@ -90,9 +92,17 @@ describe('ChatView', () => {
     vi.mocked(toggleSharedChatReaction).mockResolvedValue(message)
     vi.mocked(sendSharedChatMessage).mockResolvedValue(message)
     vi.mocked(runSharedChatSyncNow).mockResolvedValue({
-      id: 'sync1', triggerType: 'MANUAL', chatName: '娃屋日常', syncDay: '2026-08-27',
-      status: 'SUCCEEDED', messagesScanned: 8, messagesInserted: 2, messagesUpdated: 1,
-      contentBytesAdded: 1536, startedAt: '2026-08-27T10:00:00', finishedAt: '2026-08-27T10:00:01',
+      id: 'sync1',
+      triggerType: 'MANUAL',
+      chatName: '娃屋日常',
+      syncDay: '2026-08-27',
+      status: 'SUCCEEDED',
+      messagesScanned: 8,
+      messagesInserted: 2,
+      messagesUpdated: 1,
+      contentBytesAdded: 1536,
+      startedAt: '2026-08-27T10:00:00',
+      finishedAt: '2026-08-27T10:00:01',
     })
     vi.mocked(uploadSharedChatImage).mockResolvedValue({
       id: 'img1',
@@ -119,6 +129,26 @@ describe('ChatView', () => {
     expect(wrapper.text()).toContain('从 WAO 发来的消息')
     expect(wrapper.text()).toContain('已同步飞书')
     expect(fetchSharedChatMessages).toHaveBeenCalledWith()
+  })
+
+  it('最小化时保留未读，重新打开后才写入真实已读状态', async () => {
+    const wrapper = await mountView({ floating: true, visible: false })
+
+    expect(wrapper.text()).toContain('1 条未读')
+    expect(markSharedChatRead).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ visible: true })
+    await flushPromises()
+    expect(markSharedChatRead).toHaveBeenCalledWith('msg1')
+    expect(wrapper.text()).not.toContain('1 条未读')
+  })
+
+  it('悬浮模式提供最小化按钮', async () => {
+    const wrapper = await mountView({ floating: true })
+
+    await wrapper.get('.minimize-trigger').trigger('click')
+
+    expect(wrapper.emitted('minimize')).toHaveLength(1)
   })
 
   it('把聊天正文按净化后的 Markdown 展示', async () => {
@@ -154,13 +184,26 @@ describe('ChatView', () => {
 
   it('展示真实同步空间口径并可立即核对当日聊天', async () => {
     vi.mocked(fetchSharedChatConfig).mockResolvedValue({
-      chatId: 'oc_real', chatName: '娃屋日常', configured: true, pollIntervalSeconds: 15,
+      chatId: 'oc_real',
+      chatName: '娃屋日常',
+      configured: true,
+      pollIntervalSeconds: 15,
     })
-    vi.mocked(fetchSharedChatSyncRuns).mockResolvedValue([{
-      id: 'sync0', triggerType: 'NIGHTLY', chatName: '娃屋日常', syncDay: '2026-08-26',
-      status: 'SUCCEEDED', messagesScanned: 12, messagesInserted: 3, messagesUpdated: 1,
-      contentBytesAdded: 2048, startedAt: '2026-08-27T00:10:00', finishedAt: '2026-08-27T00:10:03',
-    }])
+    vi.mocked(fetchSharedChatSyncRuns).mockResolvedValue([
+      {
+        id: 'sync0',
+        triggerType: 'NIGHTLY',
+        chatName: '娃屋日常',
+        syncDay: '2026-08-26',
+        status: 'SUCCEEDED',
+        messagesScanned: 12,
+        messagesInserted: 3,
+        messagesUpdated: 1,
+        contentBytesAdded: 2048,
+        startedAt: '2026-08-27T00:10:00',
+        finishedAt: '2026-08-27T00:10:03',
+      },
+    ])
     const wrapper = await mountView()
 
     await wrapper.get('.group-trigger').trigger('click')
