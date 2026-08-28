@@ -114,6 +114,18 @@ const energyActionBusy = computed(
     energyNotificationState.value === 'error',
 )
 const focusReady = computed(() => day.value.focus.filter((item) => !!item.trim()).length >= 3)
+const focusSaveLabel = computed(() => {
+  if (dayState.value === 'saving') return '正在保存今日重点'
+  if (dayState.value === 'error') return '重试保存今日重点'
+  if (dayState.value === 'dirty') return '保存今日重点，草稿已保存在本机'
+  if (dayState.value === 'saved') return '今日重点已保存'
+  return '保存今日重点'
+})
+const focusSaveIcon = computed(() => {
+  if (dayState.value === 'saving') return 'ri-loader-4-line spin'
+  if (dayState.value === 'error') return 'ri-refresh-line'
+  return 'ri-save-3-line'
+})
 const activeFocusIndex = computed(() => {
   if (!focusReady.value) return -1
   return day.value.focus.findIndex(
@@ -818,15 +830,30 @@ onBeforeUnmount(() => {
                   <small>今日执行</small>
                   <h2>今日重点</h2>
                 </div>
-                <button
-                  class="tomorrow-toggle"
-                  type="button"
-                  :aria-label="tomorrowOpen ? '收起明日计划' : '展开明日计划'"
-                  :title="tomorrowOpen ? '收起明日计划' : '展开明日计划'"
-                  @click="tomorrowOpen = !tomorrowOpen"
-                >
-                  <i :class="tomorrowOpen ? 'ri-calendar-close-line' : 'ri-calendar-todo-line'"></i>
-                </button>
+                <div class="focus-header-actions">
+                  <button
+                    class="focus-save"
+                    :class="dayState"
+                    type="button"
+                    :aria-label="focusSaveLabel"
+                    :title="focusSaveLabel"
+                    :disabled="dayState === 'saving'"
+                    @click="saveFocus"
+                  >
+                    <i :class="focusSaveIcon"></i>
+                  </button>
+                  <button
+                    class="tomorrow-toggle"
+                    type="button"
+                    :aria-label="tomorrowOpen ? '收起明日计划' : '展开明日计划'"
+                    :title="tomorrowOpen ? '收起明日计划' : '展开明日计划'"
+                    @click="tomorrowOpen = !tomorrowOpen"
+                  >
+                    <i
+                      :class="tomorrowOpen ? 'ri-calendar-close-line' : 'ri-calendar-todo-line'"
+                    ></i>
+                  </button>
+                </div>
               </header>
               <div
                 v-for="(_, index) in day.focus"
@@ -901,13 +928,6 @@ onBeforeUnmount(() => {
                   ><button type="button" @click="retryFocusNotification">重试通知</button></template
                 >
               </div>
-              <footer>
-                <small v-if="dayState === 'dirty'"><i class="ri-draft-line"></i>待保存</small>
-                <span></span
-                ><button type="button" :disabled="dayState === 'saving'" @click="saveFocus">
-                  {{ dayState === 'error' ? '重试保存' : '保存今日重点' }}
-                </button>
-              </footer>
             </article>
 
             <article v-if="tomorrowOpen" class="focus-card tomorrow-focus">
@@ -1044,11 +1064,12 @@ onBeforeUnmount(() => {
               ></i
               ><span
                 ><b>{{ item.title }}{{ item.mode === 'COUNT' ? ' +1' : '' }}</b
-                ><small v-if="item.mode === 'COUNT'"
-                  >{{ item.guidance }} {{ energyCount(item) }} 次</small
-                ><small v-else>{{
-                  energyCount(item) > 0 ? '今天已完成' : item.guidance
-                }}</small></span
+                ><small
+                  >·
+                  {{
+                    energyCount(item) > 0 && item.mode !== 'COUNT' ? '今天已完成' : item.guidance
+                  }}</small
+                ></span
               >
               <strong v-if="item.mode === 'COUNT'">{{ energyCount(item) }}</strong>
             </button>
@@ -1510,7 +1531,7 @@ textarea {
   background: linear-gradient(128deg, #174f43, #267c65 62%, #3f9677);
   color: #fff;
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(190px, 1fr) minmax(190px, 1fr);
+  grid-template-columns: minmax(0, 7fr) minmax(0, 1.5fr) minmax(0, 1.5fr);
   align-items: center;
   gap: 20px;
   box-shadow: 0 18px 40px rgba(32, 99, 78, 0.16);
@@ -1532,7 +1553,7 @@ textarea {
   background: linear-gradient(128deg, #344956, #526d75);
 }
 .hero.without-hexagram {
-  grid-template-columns: minmax(0, 1.15fr) minmax(250px, 0.72fr);
+  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
 }
 .hero-copy,
 .hero-flow {
@@ -1741,10 +1762,16 @@ textarea {
   margin: 2px 0 0;
   font-size: 16px;
 }
+.focus-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.focus-card header .focus-save,
 .focus-card header .tomorrow-toggle {
   width: 32px;
   height: 32px;
-  margin-left: auto;
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   background: var(--wao-bg-page);
@@ -1752,6 +1779,20 @@ textarea {
   display: grid;
   place-items: center;
   cursor: pointer;
+}
+.focus-card header .focus-save.dirty {
+  border-color: color-mix(in srgb, var(--wao-primary) 42%, var(--wao-line-control));
+  background: var(--wao-success-bg);
+  color: var(--wao-primary);
+}
+.focus-card header .focus-save.error {
+  border-color: color-mix(in srgb, var(--wao-danger) 42%, var(--wao-line-control));
+  background: var(--wao-danger-bg);
+  color: var(--wao-danger-strong);
+}
+.focus-card header .focus-save:disabled {
+  opacity: 0.55;
+  cursor: wait;
 }
 .focus-card label {
   min-height: 42px;
@@ -1765,25 +1806,36 @@ textarea {
   gap: 9px;
 }
 .focus-row {
-  flex: 1 0 42px;
-  max-height: 70px;
+  flex: 1 0 63px;
+  min-height: 63px;
+  max-height: 76px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
+  margin-top: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--wao-line);
+  border-radius: 11px;
+  background: var(--wao-bg-page);
 }
 .focus-row label {
   margin: 0;
+  min-height: 33px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .focus-row > small {
   color: var(--wao-text-weak);
   font-size: 9px;
 }
-.focus-row.active label {
+.focus-row.active {
   border-color: color-mix(in srgb, var(--wao-primary) 55%, var(--wao-line));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--wao-primary) 8%, transparent);
 }
-.focus-row.done label {
+.focus-row.done {
   opacity: 0.62;
 }
 .focus-row.done input {
@@ -1877,10 +1929,17 @@ textarea {
   border-color: #71ad98;
   box-shadow: 0 0 0 3px rgba(62, 139, 112, 0.08);
 }
+.focus-row label:focus-within {
+  box-shadow: none;
+}
+.focus-row:focus-within {
+  border-color: #71ad98;
+  box-shadow: 0 0 0 3px rgba(62, 139, 112, 0.08);
+}
 .focus-card label span {
-  width: 23px;
-  height: 23px;
-  border-radius: 7px;
+  width: 33px;
+  height: 33px;
+  border-radius: 10px;
   background: #e0f0e9;
   color: #267c65;
   display: grid;
@@ -1897,25 +1956,25 @@ textarea {
   color: var(--wao-text);
   font-size: 12.5px;
 }
-.focus-card footer {
+.tomorrow-focus footer {
   min-height: 35px;
   margin-top: 8px;
   display: flex;
   align-items: center;
 }
-.focus-card footer small {
+.tomorrow-focus footer small {
   color: #9a741e;
 }
-.focus-card footer .focus-error {
+.tomorrow-focus footer .focus-error {
   color: var(--wao-danger-strong);
 }
-.focus-card footer .focus-saved {
+.tomorrow-focus footer .focus-saved {
   color: #267c65;
 }
-.focus-card footer span {
+.tomorrow-focus footer span {
   flex: 1;
 }
-.focus-card footer button {
+.tomorrow-focus footer button {
   height: 31px;
   border: 0;
   border-radius: 8px;
@@ -1925,7 +1984,7 @@ textarea {
   cursor: pointer;
   font-size: 11px;
 }
-.focus-card footer button:disabled {
+.tomorrow-focus footer button:disabled {
   opacity: 0.55;
 }
 .tomorrow-focus {
@@ -1989,16 +2048,25 @@ textarea {
   font-size: 17px;
 }
 .energy-action > span {
+  min-width: 0;
   flex: 1;
-  display: grid;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  overflow: hidden;
 }
 .energy-action b {
+  flex: none;
   font-size: 12.5px;
+  white-space: nowrap;
 }
 .energy-action small {
-  margin-top: 2px;
+  min-width: 0;
+  overflow: hidden;
   color: var(--wao-text-faint);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .energy-action strong {
   color: #37738a;
@@ -2720,6 +2788,7 @@ textarea {
     padding: 14px;
   }
   .focus-row {
+    max-height: none;
     grid-template-columns: 1fr;
   }
   .focus-row > small,

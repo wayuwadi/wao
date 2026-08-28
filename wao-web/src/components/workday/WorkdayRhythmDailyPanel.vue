@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import {
   fetchRhythmDashboard,
   setRhythmOccurrenceCompleted,
@@ -15,18 +15,6 @@ const dashboard = ref<RhythmDashboard | null>(null)
 const loading = ref(true)
 const error = ref('')
 const toggling = ref('')
-
-const completionRate = computed(() =>
-  dashboard.value?.totalCount
-    ? Math.round((dashboard.value.completedCount / dashboard.value.totalCount) * 100)
-    : 0,
-)
-const workItems = computed(
-  () => dashboard.value?.checklist.filter((item) => item.category === 'WORK') ?? [],
-)
-const lifeItems = computed(
-  () => dashboard.value?.checklist.filter((item) => item.category === 'LIFE') ?? [],
-)
 
 function statusText(item: RhythmOccurrence) {
   if (item.status === 'ON_TIME') return '准时完成'
@@ -116,64 +104,36 @@ onMounted(load)
               </button>
             </p>
           </div>
-          <div class="completion">
-            <b>{{ completionRate }}%</b
-            ><span>{{ dashboard.completedCount }} / {{ dashboard.totalCount }}</span>
-          </div>
         </header>
         <div v-if="!dashboard.checklist.length" class="empty-list">
           <i class="ri-checkbox-circle-line"></i>今天没有适用的必做项
         </div>
-        <div v-else class="checklist-columns">
-          <section v-if="workItems.length">
-            <h3><i class="ri-briefcase-4-line"></i>工作</h3>
-            <button
-              v-for="item in workItems"
-              :key="item.id"
-              class="check-row"
-              :class="[item.status.toLowerCase(), { done: item.completedAt }]"
-              :disabled="toggling === item.id"
-              @click="toggle(item)"
-            >
-              <i
-                :class="
-                  item.completedAt ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'
-                "
-              ></i
-              ><span
-                ><b>{{ item.title }}</b
-                ><small
-                  >{{ statusText(item)
-                  }}<em v-if="item.occurrenceDate !== date">
-                    · {{ item.occurrenceDate }} 的跨日事项</em
-                  ></small
-                ></span
-              ><strong>{{
-                item.kind === 'PLAN' ? '自动联动' : item.completedAt ? '撤销' : '完成'
-              }}</strong>
-            </button>
-          </section>
-          <section v-if="lifeItems.length">
-            <h3><i class="ri-heart-3-line"></i>生活</h3>
-            <button
-              v-for="item in lifeItems"
-              :key="item.id"
-              class="check-row"
-              :class="[item.status.toLowerCase(), { done: item.completedAt }]"
-              :disabled="toggling === item.id"
-              @click="toggle(item)"
-            >
-              <i
-                :class="
-                  item.completedAt ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'
-                "
-              ></i
-              ><span
-                ><b>{{ item.title }}</b
-                ><small>{{ statusText(item) }}</small></span
-              ><strong>{{ item.completedAt ? '撤销' : '完成' }}</strong>
-            </button>
-          </section>
+        <div v-else class="checklist-list">
+          <button
+            v-for="item in dashboard.checklist"
+            :key="item.id"
+            class="check-row"
+            :class="[item.status.toLowerCase(), { done: item.completedAt }]"
+            :disabled="toggling === item.id"
+            @click="toggle(item)"
+          >
+            <i
+              :class="
+                item.completedAt ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'
+              "
+            ></i
+            ><span
+              ><b>{{ item.title }}</b
+              ><small
+                >· {{ statusText(item)
+                }}<em v-if="item.occurrenceDate !== date">
+                  · {{ item.occurrenceDate }} 的跨日事项</em
+                ></small
+              ></span
+            ><strong>{{
+              item.kind === 'PLAN' ? '自动联动' : item.completedAt ? '撤销' : '完成'
+            }}</strong>
+          </button>
         </div>
       </article>
     </template>
@@ -240,72 +200,60 @@ onMounted(load)
   color: var(--wao-text-weak);
   font-size: 10px;
 }
-.completion {
-  text-align: right;
-}
-.completion b {
-  display: block;
-  font-size: 22px;
-  color: #267c65;
-}
-.completion span {
-  display: block;
-  font-size: 9px;
-  color: var(--wao-text-weak);
-}
-.checklist-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+.checklist-list {
   margin-top: 14px;
-}
-.checklist-columns h3 {
-  margin: 0 0 6px;
-  font-size: 11px;
-  color: var(--wao-text-2);
-}
-.checklist-columns h3 i {
-  margin-right: 5px;
 }
 .check-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
-  gap: 7px;
+  grid-template-columns: 33px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
-  margin-top: 6px;
-  padding: 8px 9px;
+  min-height: 63px;
+  margin-top: 8px;
+  padding: 9px 11px;
   border: 1px solid var(--wao-line);
-  border-radius: 9px;
+  border-radius: 11px;
   background: var(--wao-bg-page);
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
 .check-row > i {
+  width: 33px;
+  height: 33px;
+  border-radius: 10px;
+  background: #e0f0e9;
+  display: grid;
+  place-items: center;
   font-size: 17px;
-  color: var(--wao-text-faint);
+  color: #267c65;
 }
 .check-row span {
-  display: grid;
-  gap: 1px;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  overflow: hidden;
 }
 .check-row b {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: none;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12.5px;
 }
 .check-row small {
+  min-width: 0;
+  overflow: hidden;
   color: var(--wao-text-weak);
-  font-size: 8.5px;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .check-row em {
   font-style: normal;
 }
 .check-row strong {
-  font-size: 8.5px;
+  font-size: 9.5px;
   color: #267c65;
 }
 .check-row.late {
@@ -341,14 +289,8 @@ onMounted(load)
   .daily-card {
     padding: 14px;
   }
-  .checklist-columns {
-    grid-template-columns: 1fr;
-  }
   .check-row {
-    grid-template-columns: 20px minmax(0, 1fr);
-  }
-  .check-row > strong {
-    display: none;
+    grid-template-columns: 33px minmax(0, 1fr) auto;
   }
 }
 </style>
