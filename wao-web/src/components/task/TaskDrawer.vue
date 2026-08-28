@@ -148,7 +148,10 @@ async function refreshTaskAiRuns() {
   }
 }
 
-watch(() => ui.openTaskId, () => void refreshTaskAiRuns(), { immediate: true })
+watch(() => ui.openTaskId, (taskId) => {
+  void refreshTaskAiRuns()
+  if (taskId) void data.ensureDocsLoaded()
+}, { immediate: true })
 
 const activeAiRun = computed(() => aiRuns.value.find((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 /** 已经单独派过 AI 工的子任务：行上标一下，分享给 AI 时它们也会被自动摘掉。 */

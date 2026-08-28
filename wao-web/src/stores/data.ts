@@ -107,7 +107,7 @@ const TASK_DRAFT_KEY = 'wao-task-drafts-v1'
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'error'
-export type DataLoadState = 'loading' | 'loaded' | 'error'
+export type DataLoadState = 'idle' | 'loading' | 'loaded' | 'error'
 export type DataDomain = 'areas' | 'projects' | 'tasks' | 'knowledge' | 'docs' | 'automation'
   | 'files' | 'images' | 'vault' | 'schedule' | 'suggestions' | 'goals'
 
@@ -115,6 +115,11 @@ const DATA_DOMAINS: DataDomain[] = [
   'areas', 'projects', 'tasks', 'knowledge', 'docs', 'automation',
   'files', 'images', 'vault', 'schedule', 'suggestions', 'goals',
 ]
+/**
+ * 文档列表含全部正文与反向链接，图床列表也会随历史图片增长；二者只在对应功能真正出现时读取。
+ * 其余小型领域继续随壳层启动，保持原有页面可用性。
+ */
+const EAGER_DATA_DOMAINS = DATA_DOMAINS.filter((domain) => !['docs', 'images'].includes(domain))
 
 /**
  * 多端数据同步在连续无变化时逐级退避，避免可见页面每 15 秒永久下载完整项目与任务。
@@ -182,7 +187,10 @@ export const useDataStore = defineStore('data', () => {
   const fileLoadError = ref('')
   /** 各业务域独立暴露加载结果，页面不会再用空状态或原型数据掩盖慢请求与失败。 */
   const loadStates = reactive<Record<DataDomain, DataLoadState>>(
-    Object.fromEntries(DATA_DOMAINS.map((domain) => [domain, 'loading'])) as Record<DataDomain, DataLoadState>,
+    Object.fromEntries(DATA_DOMAINS.map((domain) => [
+      domain,
+      EAGER_DATA_DOMAINS.includes(domain) ? 'loading' : 'idle',
+    ])) as Record<DataDomain, DataLoadState>,
   )
   const loadErrors = reactive<Partial<Record<DataDomain, string>>>({})
   /** 密码库读取失败：页面据此显示错误与重试，而不是继续摆着演示凭据。 */
@@ -196,6 +204,9 @@ export const useDataStore = defineStore('data', () => {
    * （{@code apiLive=true}），从而新建 / 更新会真正落库，而非仅本地乐观更新。
    */
   async function hydrate() {
+    // 已经进入过知识库 / 图床后，手动“重新加载”要继续刷新这些可见数据；首次启动仍保持按需。
+    const reloadDocs = loadStates.docs === 'loaded'
+    const reloadImages = loadStates.images === 'loaded'
     const settle = async <T>(domain: DataDomain, p: Promise<T>): Promise<T | null> => {
       try {
         const result = await p
@@ -210,7 +221,7 @@ export const useDataStore = defineStore('data', () => {
         return null
       }
     }
-    for (const domain of DATA_DOMAINS) {
+    for (const domain of EAGER_DATA_DOMAINS) {
       loadStates[domain] = 'loading'
       delete loadErrors[domain]
     }
@@ -233,6 +244,8 @@ export const useDataStore = defineStore('data', () => {
     schedule.value = []
     suggestions.value = []
     goals.value = []
+    const docsReloadRequest = reloadDocs ? refreshDocs() : null
+    const imagesReloadRequest = reloadImages ? refreshImages() : null
     // 任务请求单独处理结果，不等知识库、文件、密码库等无关域的最慢请求全部结束。
     const taskRequest = fetchTasks()
       .then((loadedTasks) => {
@@ -274,10 +287,10 @@ export const useDataStore = defineStore('data', () => {
         return null
       })
     const knowledgeRequest = settle('knowledge', Promise.all([fetchKbs(), fetchKbGroups()]))
-    const [a, p, t, knowledge, dc, jb, fl, im, va, sc, sg, gl] = await Promise.all([
+    const [a, p, t, knowledge, jb, fl, va, sc, sg, gl] = await Promise.all([
       settle('areas', fetchAreas()), settle('projects', fetchProjects()), taskRequest,
-      knowledgeRequest, settle('docs', fetchDocs()), settle('automation', fetchJobs()), fileRequest,
-      settle('images', fetchImages()), settle('vault', fetchVault()), settle('schedule', fetchSchedule()),
+      knowledgeRequest, settle('automation', fetchJobs()), fileRequest,
+      settle('vault', fetchVault()), settle('schedule', fetchSchedule()),
       settle('suggestions', fetchSuggestions()), settle('goals', fetchGoals()),
     ])
     const [kb, kg] = knowledge ?? [null, null]
@@ -285,13 +298,8 @@ export const useDataStore = defineStore('data', () => {
     if (p !== null) projects.value = p
     if (kb !== null) kbs.value = kb
     if (kg !== null) myGroups.value = kg
-    if (dc !== null) {
-      Object.keys(docs).forEach((id) => delete docs[id])
-      dc.forEach((d) => (docs[d.id] = d))
-    }
     if (jb !== null) autos.value = jb
     if (fl !== null) files.value = fl
-    if (im !== null) imgs.value = im
     if (va !== null) vault.value = va
     if (sc !== null) schedule.value = sc
     if (sg !== null) suggestions.value = sg
@@ -304,6 +312,7 @@ export const useDataStore = defineStore('data', () => {
       startSync()
       Object.keys(taskDrafts.value).forEach(persistTask)
     }
+    await Promise.all([docsReloadRequest, imagesReloadRequest])
   }
 
   /**
@@ -785,6 +794,51 @@ export const useDataStore = defineStore('data', () => {
 
   // ---- 回收站 ----
 
+  let docsRequest: Promise<boolean> | null = null
+
+  function replaceDocs(list: Doc[]) {
+    Object.keys(docs).forEach((id) => delete docs[id])
+    list.forEach((doc) => (docs[doc.id] = doc))
+  }
+
+  /**
+   * 首次需要文档正文时再读取；并发打开搜索、任务抽屉与知识库时复用同一个请求。
+   *
+   * @return 是否已经取得服务端文档列表
+   */
+  async function ensureDocsLoaded(): Promise<boolean> {
+    if (loadStates.docs === 'loaded') return true
+    return loadDocs()
+  }
+
+  /** 强制刷新全部文档，失败时保留上一帧并暴露重试状态。 */
+  async function refreshDocs(): Promise<boolean> {
+    return loadDocs()
+  }
+
+  function loadDocs(): Promise<boolean> {
+    if (docsRequest) return docsRequest
+    loadStates.docs = 'loading'
+    delete loadErrors.docs
+    docsRequest = fetchDocs()
+      .then((list) => {
+        replaceDocs(list)
+        loadStates.docs = 'loaded'
+        return true
+      })
+      .catch((cause: unknown) => {
+        loadStates.docs = 'error'
+        loadErrors.docs = cause instanceof Error && cause.message
+          ? cause.message
+          : DOMAIN_ERROR_MESSAGES.docs
+        return false
+      })
+      .finally(() => {
+        docsRequest = null
+      })
+    return docsRequest
+  }
+
   /** 回收站条目（知识库 / 文件夹 / 文档），保留 7 天后由后端自动清理。 */
   const trash = ref<TrashEntry[]>([])
 
@@ -816,9 +870,8 @@ export const useDataStore = defineStore('data', () => {
   async function refreshKnowledge() {
     if (!apiLive.value) return
     try {
-      const [kb, dc] = await Promise.all([fetchKbs(), fetchDocs()])
+      const [kb] = await Promise.all([fetchKbs(), refreshDocs()])
       if (Array.isArray(kb)) kbs.value = kb
-      if (Array.isArray(dc)) dc.forEach((d) => (docs[d.id] = d))
     } catch {
       /* 拉取失败时保留现有数据 */
     }
@@ -1432,14 +1485,28 @@ export const useDataStore = defineStore('data', () => {
   }
 
   /** 重新拉取图床列表（图床页打开时刷新，让其他标签页 / 其他人上传的图也出现）。 */
+  let imagesRequest: Promise<boolean> | null = null
   async function refreshImages() {
-    if (!apiLive.value) return
-    try {
-      const list = await fetchImages()
-      if (Array.isArray(list)) imgs.value = list
-    } catch {
-      /* 拉取失败时保留现有列表 */
-    }
+    if (imagesRequest) return imagesRequest
+    loadStates.images = 'loading'
+    delete loadErrors.images
+    imagesRequest = fetchImages()
+      .then((list) => {
+        imgs.value = list
+        loadStates.images = 'loaded'
+        return true
+      })
+      .catch((cause: unknown) => {
+        loadStates.images = 'error'
+        loadErrors.images = cause instanceof Error && cause.message
+          ? cause.message
+          : DOMAIN_ERROR_MESSAGES.images
+        return false
+      })
+      .finally(() => {
+        imagesRequest = null
+      })
+    return imagesRequest
   }
 
   /**
@@ -1665,6 +1732,7 @@ export const useDataStore = defineStore('data', () => {
     applyRemoteDoc, addDoc, addNote, notesKb, reorderDocs,
     addGroup, renameGroup, addFolder, renameFolder, deleteFolder, deleteDoc,
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
+    ensureDocsLoaded, refreshDocs,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,
     taskSaveState, taskSavedAt, flushTask, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,

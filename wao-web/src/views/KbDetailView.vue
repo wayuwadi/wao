@@ -64,6 +64,13 @@ watch(
 onMounted(() => {
   if (kb.value) tabs.setLabel(`kb:${kbId.value}`, kb.value.name)
 })
+watch(
+  [kb, () => data.loadStates.docs],
+  () => {
+    if (!docId.value) docId.value = firstDocId()
+  },
+  { immediate: true },
+)
 
 const doc = computed(() => (docId.value ? data.docOf(docId.value) : null))
 const base = computed(() => doc.value?.base ?? null)

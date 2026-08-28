@@ -471,7 +471,16 @@ function onFileSettingsSaved(settings: FileSettings) {
         }}
       </div>
       <div class="img-drop" @dragover.prevent @drop.prevent="onDrop">
-        <div class="img-grid">
+        <div v-if="data.loadStates.images === 'loading'" class="img-empty" role="status">
+          <i class="ri-loader-4-line spin"></i>
+          <div>正在读取真实图床…</div>
+        </div>
+        <div v-else-if="data.loadStates.images === 'error'" class="img-empty" role="alert">
+          <i class="ri-error-warning-line"></i>
+          <div>{{ data.loadErrors.images || '图床读取失败，请重试' }}</div>
+          <button class="img-more" @click="data.refreshImages()">重新读取</button>
+        </div>
+        <div v-else class="img-grid">
           <div v-for="(im, i) in visibleImages" :key="im.id ?? i" class="img-card">
             <div
               class="img-thumb"
@@ -509,7 +518,7 @@ function onFileSettingsSaved(settings: FileSettings) {
           <i class="ri-arrow-up-s-line"></i>收起，只看最近 {{ IMG_PAGE }} 张
         </button>
 
-        <div v-if="!data.imgs.length" class="img-empty">
+        <div v-if="data.loadStates.images === 'loaded' && !data.imgs.length" class="img-empty">
           <i class="ri-image-add-line"></i>
           <div>图床还是空的——把图片拖到这里，或点右上角「上传图片」</div>
         </div>
