@@ -14,6 +14,7 @@ import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
 import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
 import MusicPlayer from '@/components/music/MusicPlayer.vue'
 import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
+import FloatingChat from '@/components/chat/FloatingChat.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -149,8 +150,9 @@ function onKeydown(e: KeyboardEvent) {
     e.preventDefault()
     ui.toggleAssistant()
   } else if (e.key === 'Escape') {
-    // 逐层关闭：助手 → 庆祝 → 帮助 → 搜索 → 弹窗
-    if (ui.assistantOpen) ui.closeAssistant()
+    // 逐层关闭：聊天 → 助手 → 庆祝 → 帮助 → 搜索 → 弹窗
+    if (ui.chatOpen) ui.closeChat()
+    else if (ui.assistantOpen) ui.closeAssistant()
     else if (ui.celebrating) ui.stopCelebrate()
     else if (ui.helpOpen) ui.closeHelp()
     else if (ui.searchOpen) ui.closeSearch()
@@ -206,6 +208,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <button class="bell" title="快捷键（?）" @click="ui.toggleHelp()">
           <i class="ri-keyboard-line"></i>
         </button>
+        <FloatingChat />
         <NotificationCenter />
       </header>
 

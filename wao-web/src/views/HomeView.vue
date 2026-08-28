@@ -945,7 +945,7 @@ function activityTypeMeta(activity: AiActivity) {
 }
 
 async function openActivity(activity: AiActivity) {
-  if (activity.type === 'CHAT_REVIEW') void router.push({ path: '/chat', query: { review: activity.targetId } })
+  if (activity.type === 'CHAT_REVIEW') ui.openChat(activity.targetId)
   else {
     try {
       selectedRun.value = runs.value.find((run) => run.id === activity.id) ?? await fetchAiRun(activity.id)

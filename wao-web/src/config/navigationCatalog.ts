@@ -2,7 +2,7 @@ import type { ModuleId } from '@/types'
 
 export type NavigationCatalogModuleId = Exclude<
   ModuleId,
-  'home' | 'navigation' | 'settings' | 'chat-reviews'
+  'home' | 'navigation' | 'settings' | 'chat' | 'chat-reviews'
 >
 
 export interface NavigationCatalogSection {
@@ -30,11 +30,6 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
         keywords: ['任务', '团队'],
       },
       { id: 'ideas', description: '收集点子并逐步归并到项目执行。', keywords: ['灵感'] },
-      {
-        id: 'chat',
-        description: '查看真实聊天归档，并在同一处发起聊天复盘。',
-        keywords: ['飞书', '复盘'],
-      },
       { id: 'todo', description: '集中处理个人待办和需要跟进的事项。', keywords: ['清单'] },
       { id: 'calendar', description: '按日、周、月安排任务和时间段。', keywords: ['日程'] },
     ],

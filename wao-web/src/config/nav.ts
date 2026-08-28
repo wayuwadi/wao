@@ -247,14 +247,6 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
-      id: 'chat',
-      label: '聊天',
-      icon: 'ri-chat-3-line',
-      group: 'PUBLIC',
-      order: 14,
-      visible: true,
-    },
-    {
       id: 'todo',
       label: '待办',
       icon: 'ri-checkbox-multiple-line',
@@ -431,7 +423,7 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home', 'navigation'] },
   {
     label: '公共',
-    items: ['projects', 'ideas', 'skills', 'skill-connections', 'chat'],
+    items: ['projects', 'ideas', 'skills', 'skill-connections'],
   },
   { label: '个人', items: PERSONAL_ITEMS },
   { label: '工具', items: ['dashboard', 'automation', 'files', 'games', 'request-monitoring'] },
@@ -458,6 +450,7 @@ export function resolveNavGroups(
         items: builtinMenus
           .filter(
             (menu) =>
+              menu.id !== 'chat' &&
               menu.visible &&
               { ROOT: '', PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' }[menu.group] === label,
           )
@@ -506,6 +499,7 @@ export function isMobileNavItemId(value: unknown): value is MobileNavItemId {
   return (
     value === 'action:note' ||
     (typeof value === 'string' &&
+      value !== 'chat' &&
       (value.startsWith('external:') || Object.prototype.hasOwnProperty.call(MODULES, value)))
   )
 }

@@ -217,13 +217,16 @@ const router = createRouter({
         {
           path: 'chat',
           name: 'chat',
-          component: () => import('@/views/ChatView.vue'),
-          meta: { module: 'chat', tabKind: 'module' },
+          redirect: (to) => ({ path: '/', query: { ...to.query, chat: '1' }, replace: true }),
         },
         {
           path: 'chat-reviews',
           name: 'chat-reviews',
-          redirect: { path: '/chat', query: { review: '1' } },
+          redirect: (to) => ({
+            path: '/',
+            query: { ...to.query, chat: '1', review: to.query.review ?? '1' },
+            replace: true,
+          }),
         },
         {
           path: 'system-reports',

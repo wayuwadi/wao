@@ -1,7 +1,8 @@
 # Phase 1：娃与娃聊天复盘
 
-决策见 [ADR-088](../adr/088-shared-chat-review-workflow.md)，聊天页融合入口与共享消息范围见
-[ADR-130](../adr/130-integrated-shared-chat-review-and-polish.md)。
+决策见 [ADR-088](../adr/088-shared-chat-review-workflow.md)，聊天融合入口与共享消息范围见
+[ADR-130](../adr/130-integrated-shared-chat-review-and-polish.md)，右上角悬浮交互见
+[ADR-154](../adr/154-floating-shared-chat-entry.md)。
 
 ## 目标与范围
 
@@ -16,9 +17,9 @@
 一期只支持当前飞书同步配置指向的一个群、两位固定发言人和日期级范围。不支持多群、分钟级范围、公开分享、报告编辑、OCR、
 语音转写或回复关系分析，不创建通用工作流编辑器。
 
-## 聊天页融合入口
+## 聊天悬浮框融合入口
 
-- 默认导航不再展示独立“聊天复盘”；聊天页“复盘”按钮可选择最近 5～100 条真实消息或最近 1～168 小时全部消息。
+- 默认导航不展示聊天或独立“聊天复盘”；右上角聊天悬浮框的“复盘”按钮可选择最近 5～100 条真实消息或最近 1～168 小时全部消息。
 - `POST /api/chat-reviews/shared` 只接受 `rangeKind / rangeValue / focus`，创建时把命中的消息 id 固化；最多 500 条，完整动态资料仍受
   60,000 字门禁，不截断、不抽样。
 - 共享聊天复盘不重新拉取飞书归档，也不要求两位固定发言人；它读取 WAO 已持久化的共享消息，保留真实作者和顺序。图片与语音只作占位。

@@ -28,6 +28,20 @@ import {
 import { useSessionStore } from '@/stores/session'
 import { renderMarkdown } from '@/utils/markdown'
 
+const props = withDefaults(
+  defineProps<{
+    floating?: boolean
+    visible?: boolean
+    reviewId?: string
+    reviewRequestVersion?: number
+  }>(),
+  { floating: false, visible: true, reviewId: '', reviewRequestVersion: 0 },
+)
+const emit = defineEmits<{
+  minimize: []
+  'unread-change': [count: number]
+}>()
+
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 const ChatReviewPanel = defineAsyncComponent(() => import('@/components/chat/ChatReviewPanel.vue'))
 const POLL_MS = 5_000
@@ -128,7 +142,7 @@ function merge(incoming: SharedChatMessage[]) {
 }
 
 async function markVisibleRead() {
-  if (document.visibilityState !== 'visible' || !nearBottom()) return
+  if (!props.visible || document.visibilityState !== 'visible' || !nearBottom()) return
   const last = messages.value[messages.value.length - 1]
   if (!last || messages.value.every((message) => message.read)) return
   try {
@@ -140,7 +154,7 @@ async function markVisibleRead() {
 }
 
 async function load(initial = false) {
-  const shouldFollow = initial || nearBottom()
+  const shouldFollow = props.visible && (initial || nearBottom())
   try {
     const incoming = await fetchSharedChatMessages()
     if (initial && !unreadBoundaryId.value) {
@@ -358,10 +372,31 @@ watch([draft, replyingTo], () => {
   } else localStorage.removeItem(storageKey.value)
 })
 
+watch(unreadCount, (count) => emit('unread-change', count), { immediate: true })
+
+watch(
+  () => props.visible,
+  async (visible) => {
+    if (!visible) return
+    if (!unreadBoundaryId.value) {
+      unreadBoundaryId.value = messages.value.find((message) => !message.read)?.id ?? ''
+    }
+    await scrollBottom()
+    await markVisibleRead()
+  },
+)
+
+watch(
+  () => props.reviewRequestVersion,
+  (version) => {
+    if (!version) return
+    reviewOpen.value = true
+    initialReviewId.value = props.reviewId
+  },
+  { immediate: true },
+)
+
 onMounted(async () => {
-  const review = new URLSearchParams(window.location.search).get('review') || ''
-  reviewOpen.value = !!review
-  initialReviewId.value = review === '1' ? '' : review
   let restoredReplyId = ''
   const stored =
     localStorage.getItem(storageKey.value) ??
@@ -395,7 +430,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="chat-page">
+  <main class="chat-page" :class="{ floating }">
     <header class="chat-header">
       <div>
         <p class="eyebrow">公共空间</p>
@@ -481,6 +516,16 @@ onBeforeUnmount(() => {
           <div v-if="configError" class="config-error">{{ configError }}</div>
         </div>
         </div>
+        <button
+          v-if="floating"
+          class="minimize-trigger"
+          type="button"
+          aria-label="最小化聊天"
+          title="最小化聊天"
+          @click="emit('minimize')"
+        >
+          <i class="ri-subtract-line"></i>
+        </button>
       </div>
     </header>
 
@@ -707,6 +752,8 @@ onBeforeUnmount(() => {
 }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .review-trigger { height: 36px; padding: 0 13px; border: 1px solid var(--wao-line-control); border-radius: 10px; background: var(--wao-primary); color: #fff; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.minimize-trigger { width: 36px; height: 36px; flex: 0 0 36px; border: 1px solid var(--wao-line-control); border-radius: 10px; background: var(--wao-bg-card); color: var(--wao-text-weak); display: grid; place-items: center; cursor: pointer; }
+.minimize-trigger:hover { background: var(--wao-bg-hover-2); color: var(--wao-text); }
 .group-trigger {
   width: 180px;
   height: 36px;
@@ -1114,6 +1161,21 @@ onBeforeUnmount(() => {
   opacity: 0.45;
   cursor: not-allowed;
 }
+.chat-page.floating {
+  height: 100%;
+  min-height: 0;
+  gap: 10px;
+  padding: 14px;
+}
+.floating .chat-header { align-items: center; }
+.floating .chat-header > div:first-child { min-width: 0; flex: 1; }
+.floating .chat-header h1 { margin: 0; font-size: 19px; }
+.floating .chat-header p { display: none; }
+.floating .header-actions { flex: 0 1 auto; min-width: 0; }
+.floating .group-trigger { width: min(180px, 26vw); }
+.floating .chat-shell { border-radius: 13px; }
+.floating .message-stream { padding: 16px 18px; }
+.floating .composer { padding: 9px 11px; }
 .spin {
   display: inline-block;
   animation: spin 1s linear infinite;
@@ -1129,6 +1191,11 @@ onBeforeUnmount(() => {
     min-height: 520px;
     padding: 0 8px 8px;
   }
+  .chat-page.floating {
+    height: 100dvh;
+    min-height: 0;
+    padding: 10px 8px 8px;
+  }
   .chat-header {
     align-items: flex-start;
   }
@@ -1138,6 +1205,7 @@ onBeforeUnmount(() => {
   .group-trigger {
     width: 145px;
   }
+  .floating .group-trigger { width: min(132px, 35vw); }
   .review-trigger span { display: none; }
   .review-trigger { width: 36px; padding: 0; justify-content: center; }
   .message-stream {

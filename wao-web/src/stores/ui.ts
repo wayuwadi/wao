@@ -87,6 +87,12 @@ export const useUiStore = defineStore('ui', () => {
   /** 由页面动作带入助手的新会话草稿；助手读取后立即清空，避免重复覆盖用户输入。 */
   const assistantDraft = ref('')
 
+  /** 共享聊天悬浮框；最小化只改变可见性，组件和未发送草稿都继续保留。 */
+  const chatOpen = ref(false)
+  /** 从历史链接或首页活动带入的复盘请求；序号保证重复打开同一份复盘也会响应。 */
+  const chatReviewId = ref('')
+  const chatReviewRequestVersion = ref(0)
+
   function openTask(id: string) {
     openTaskId.value = id
   }
@@ -181,11 +187,28 @@ export const useUiStore = defineStore('ui', () => {
     assistantOpen.value = !assistantOpen.value
   }
 
+  function openChat(reviewId?: string) {
+    chatOpen.value = true
+    if (reviewId !== undefined) {
+      chatReviewId.value = reviewId === '1' ? '' : reviewId
+      chatReviewRequestVersion.value += 1
+    }
+  }
+  function closeChat() {
+    chatOpen.value = false
+  }
+  function toggleChat() {
+    if (chatOpen.value) closeChat()
+    else openChat()
+  }
+
   return {
     openTaskId, modal, modalProject, modalDue, modalStartAt, modalEndAt,
-    searchOpen, celebrating, helpOpen, assistantOpen, assistantDraft, taskViews,
+    searchOpen, celebrating, helpOpen, assistantOpen, assistantDraft,
+    chatOpen, chatReviewId, chatReviewRequestVersion, taskViews,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
     taskViewOf, setTaskView, creatorFilters, creatorFilterOf, setCreatorFilter, toggleHelp, closeHelp,
     openAssistant, closeAssistant, toggleAssistant, consumeAssistantDraft,
+    openChat, closeChat, toggleChat,
   }
 })
