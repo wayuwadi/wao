@@ -156,7 +156,11 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
     const inputs = wrapper.findAll('.focus-card input')
     await inputs[0]!.setValue('完成上线链路验收')
-    await wrapper.get('.focus-card footer > button').trigger('click')
+    const saveButton = wrapper.get('.focus-save')
+    expect(saveButton.text()).toBe('')
+    expect(saveButton.get('i').classes()).toContain('ri-save-3-line')
+    expect(saveButton.attributes('aria-label')).toContain('草稿已保存在本机')
+    await saveButton.trigger('click')
     await flushPromises()
 
     expect(saveWorkdayRhythmDay).toHaveBeenCalledWith(
@@ -187,7 +191,7 @@ describe('WorkdayRhythmView', () => {
     await inputs[0]!.setValue('交付最小 MVP')
     await inputs[1]!.setValue('完成上线验收')
     await inputs[2]!.setValue('整理真实反馈')
-    await wrapper.get('.focus-card footer > button').trigger('click')
+    await wrapper.get('.focus-save').trigger('click')
     await flushPromises()
 
     expect(sendFocusNotification).toHaveBeenCalledWith(clock.date)
@@ -216,7 +220,7 @@ describe('WorkdayRhythmView', () => {
     await inputs[1]!.setValue('重点二')
     await inputs[2]!.setValue('重点三')
     await inputs[3]!.setValue('临时插入事项')
-    await wrapper.get('.focus-card footer > button').trigger('click')
+    await wrapper.get('.focus-save').trigger('click')
     await flushPromises()
 
     expect(saveRhythmFocus).toHaveBeenCalledWith(clock.date, [
@@ -268,7 +272,7 @@ describe('WorkdayRhythmView', () => {
     await inputs[0]!.setValue('交付选择器')
     await inputs[1]!.setValue('完成真实验收')
     await inputs[2]!.setValue('整理反馈')
-    await wrapper.get('.focus-card footer > button').trigger('click')
+    await wrapper.get('.focus-save').trigger('click')
     await flushPromises()
 
     expect(sendFocusNotification).toHaveBeenCalledWith(clock.date)
@@ -322,7 +326,7 @@ describe('WorkdayRhythmView', () => {
     await inputs[0]!.setValue('重点一')
     await inputs[1]!.setValue('重点二')
     await inputs[2]!.setValue('重点三')
-    await wrapper.get('.focus-card footer > button').trigger('click')
+    await wrapper.get('.focus-save').trigger('click')
     await flushPromises()
 
     expect(saveWorkdayRhythmDay).toHaveBeenCalled()
@@ -604,7 +608,7 @@ describe('WorkdayRhythmView', () => {
     await wrapper.get('.editor .primary').trigger('click')
     await flushPromises()
     await wrapper.findAll('.focus-card input')[0]!.setValue('保存其它真实目标')
-    await wrapper.get('.focus-card footer > button').trigger('click')
+    await wrapper.get('.focus-save').trigger('click')
     await flushPromises()
 
     expect(saveWorkdayRhythmDay).toHaveBeenLastCalledWith(

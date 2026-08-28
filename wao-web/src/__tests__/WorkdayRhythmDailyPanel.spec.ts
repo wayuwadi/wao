@@ -117,7 +117,8 @@ describe('WorkdayRhythmDailyPanel', () => {
     await wrapper.findAll('.check-row')[0]!.trigger('click')
     await flushPromises()
     expect(setRhythmOccurrenceCompleted).toHaveBeenCalledWith('plan', true)
-    expect(wrapper.get('.completion').text()).toContain('1 / 2')
+    expect(wrapper.find('.completion').exists()).toBe(false)
+    expect(wrapper.findAll('.check-row')[0]!.text()).toContain('准时完成')
   })
 
   it('不再加载或展示每日工作记录', async () => {
@@ -130,8 +131,9 @@ describe('WorkdayRhythmDailyPanel', () => {
   it('每日必做项目使用通栏列表且不再提供卡内配置入口', async () => {
     const wrapper = await mountPanel()
     await flushPromises()
-    expect(wrapper.findAll('.checklist-columns > section')).toHaveLength(1)
+    expect(wrapper.find('.checklist-list').exists()).toBe(true)
     expect(wrapper.findAll('.check-row')).toHaveLength(2)
+    expect(wrapper.find('.checklist-list h3').exists()).toBe(false)
     expect(wrapper.find('.configure-button').exists()).toBe(false)
     expect(wrapper.emitted('configure')).toBeUndefined()
   })

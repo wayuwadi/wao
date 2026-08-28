@@ -202,7 +202,7 @@ onMounted(load)
   overflow: hidden;
   margin: 0;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 5;
 }
 .hexagram-state {
   min-height: 92px;
