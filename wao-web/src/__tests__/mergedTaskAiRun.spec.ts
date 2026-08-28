@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
@@ -23,6 +24,18 @@ describe('项目任务合并为一次 AI Run', () => {
     vi.mocked(createAiRuns).mockReset()
   })
 
+  const AiRunLauncherStub = defineComponent({
+    name: 'AiRunLauncher',
+    emits: ['start', 'close'],
+    template: '<button class="stub-ai-run-start" @click="$emit(\'start\', \'codex\', \'rn1\', null, \'gpt-5.6-sol\', \'high\', true)">确认派工</button>',
+  })
+
+  function mountProject(router: ReturnType<typeof createRouter>) {
+    return mount(ProjectDetailView, {
+      global: { plugins: [router], stubs: { AiRunLauncher: AiRunLauncherStub } },
+    })
+  }
+
   it('把所选任务作为一个上下文派发，并同步更新全部任务状态', async () => {
     const data = useDataStore()
     const router = createRouter({
@@ -31,7 +44,7 @@ describe('项目任务合并为一次 AI Run', () => {
     })
     await router.push('/projects/p1?view=list')
     await router.isReady()
-    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    const wrapper = mountProject(router)
     await flushPromises()
     expect(wrapper.find('.select-all').exists()).toBe(false)
     expect(wrapper.find('.batch-ai').exists()).toBe(false)
@@ -50,9 +63,14 @@ describe('项目任务合并为一次 AI Run', () => {
 
     expect(wrapper.get('.batch-ai.merge').text()).toContain('合并给 AI · 2')
     await wrapper.get('.batch-ai.merge').trigger('click')
+    expect(wrapper.find('.stub-ai-run-start').exists()).toBe(true)
+    await wrapper.get('.stub-ai-run-start').trigger('click')
     await flushPromises()
 
-    expect(createAiRuns).toHaveBeenCalledWith(selectedIds, { mergeTasks: true })
+    expect(createAiRuns).toHaveBeenCalledWith(selectedIds, {
+      mergeTasks: true, engine: 'codex', runnerId: 'rn1', accountId: null,
+      model: 'gpt-5.6-sol', reasoningEffort: 'high', planMode: true,
+    })
     expect(selectedIds.map((id) => data.taskById(id)?.status)).toEqual(['AI 进行中', 'AI 进行中'])
     expect(useToastHost().items.some((item) => item.text.includes('2 个任务合并为 1 次 AI Run'))).toBe(true)
     wrapper.unmount()
@@ -66,7 +84,7 @@ describe('项目任务合并为一次 AI Run', () => {
     })
     await router.push('/projects/p1?view=list')
     await router.isReady()
-    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    const wrapper = mountProject(router)
     await flushPromises()
     const selectable = wrapper.findAll('.task-list-card .select-dot')
     await selectable[0]!.trigger('click')
@@ -79,9 +97,13 @@ describe('项目任务合并为一次 AI Run', () => {
 
     expect(wrapper.get('.batch-ai.separate').text()).toContain('单独给 AI · 2')
     await wrapper.get('.batch-ai.separate').trigger('click')
+    await wrapper.get('.stub-ai-run-start').trigger('click')
     await flushPromises()
 
-    expect(createAiRuns).toHaveBeenCalledWith(selectedIds, { mergeTasks: false })
+    expect(createAiRuns).toHaveBeenCalledWith(selectedIds, {
+      mergeTasks: false, engine: 'codex', runnerId: 'rn1', accountId: null,
+      model: 'gpt-5.6-sol', reasoningEffort: 'high', planMode: true,
+    })
     expect(selectedIds.map((id) => data.taskById(id)?.status)).toEqual(['AI 进行中', 'AI 进行中'])
     expect(useToastHost().items.some((item) => item.text.includes('2 个任务单独创建为 2 次 AI Run'))).toBe(true)
     wrapper.unmount()
@@ -95,7 +117,7 @@ describe('项目任务合并为一次 AI Run', () => {
     })
     await router.push('/projects/p1?view=list')
     await router.isReady()
-    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    const wrapper = mountProject(router)
     await flushPromises()
     const firstTask = data.tasksByProject('p1').find((task) => task.status !== '已完成')!
 

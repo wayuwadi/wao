@@ -23,6 +23,7 @@ import AiAccountPanel from '@/components/settings/AiAccountPanel.vue'
 import WaoAiCapabilitiesPanel from '@/components/settings/WaoAiCapabilitiesPanel.vue'
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
+import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 
 const session = useSessionStore()
@@ -35,11 +36,12 @@ const route = useRoute()
 const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const waoAiCapabilitiesPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
+const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
   { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['断网时段', 'network-outage'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
-  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['偏好', 'prefs']] },
+  { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['宠物设置', 'pet'], ['偏好', 'prefs']] },
 ] as const
 
 const requestedTab = (route.query.tab as string) || 'members'
@@ -53,6 +55,8 @@ const tab = ref<string>(availableTabs.has(normalizedTab) ? normalizedTab : 'memb
 let skipWebhookRouteGuardOnce = false
 
 function selectTab(next: string) {
+  if (tab.value === 'pet' && next !== 'pet' && webPetPanel.value
+      && !webPetPanel.value.confirmLeave()) return
   if (tab.value === 'navigation' && next !== 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return
   if (tab.value === 'webhook' && next !== 'webhook' && webhookPanel.value
@@ -61,7 +65,16 @@ function selectTab(next: string) {
   if (tab.value === 'wao-ai-capabilities' && next !== 'wao-ai-capabilities'
       && waoAiCapabilitiesPanel.value && !waoAiCapabilitiesPanel.value.confirmLeave()) return
   tab.value = next
+  void router.replace({ query: { ...route.query, tab: next === 'members' ? undefined : next } })
 }
+
+watch(
+  () => route.query.tab,
+  (value) => {
+    const requested = value === 'quick-links' ? 'navigation' : value === 'caldav' ? 'members' : value
+    if (typeof requested === 'string' && availableTabs.has(requested)) tab.value = requested
+  },
+)
 
 const removeWebhookRouteGuard = router.beforeEach(() => {
   if (skipWebhookRouteGuardOnce) {
@@ -72,6 +85,7 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
   if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return false
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return false
+  if (tab.value === 'pet' && webPetPanel.value && !webPetPanel.value.confirmLeave()) return false
   return tab.value !== 'wao-ai-capabilities' || !waoAiCapabilitiesPanel.value
     || waoAiCapabilitiesPanel.value.confirmLeave()
 })
@@ -628,6 +642,11 @@ async function bindFeishu() {
               <button class="btn-primary" :disabled="accountBusy">保存</button>
             </form>
           </div>
+        </template>
+
+        <!-- 当前成员的网页宠物偏好 -->
+        <template v-else-if="tab === 'pet'">
+          <WebPetSettingsPanel ref="webPetPanel" />
         </template>
 
         <!-- 偏好 -->

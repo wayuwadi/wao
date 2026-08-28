@@ -3,12 +3,31 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import ChatView from '@/views/ChatView.vue'
 import { useUiStore } from '@/stores/ui'
+import { useFloatingDrag } from '@/composables/floatingDrag'
 
 const route = useRoute()
 const ui = useUiStore()
 const trigger = ref<HTMLElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
 const unreadCount = ref(0)
+const {
+  elementRef: draggablePanel,
+  style: panelStyle,
+  dragging: panelDragging,
+  onPointerDown: startPanelDrag,
+} = useFloatingDrag('wao-floating-chat-position-v1')
+
+function setPanelRef(element: unknown) {
+  panel.value = element instanceof HTMLElement ? element : null
+  draggablePanel.value = panel.value
+}
+
+function onPanelPointerDown(event: PointerEvent) {
+  if (window.innerWidth <= 760 || !(event.target instanceof Element)) return
+  if (!event.target.closest('.chat-header')) return
+  if (event.target.closest('button, input, select, textarea, a, [contenteditable="true"]')) return
+  startPanelDrag(event)
+}
 
 function onPointerDown(event: PointerEvent) {
   if (!ui.chatOpen || !(event.target instanceof Node)) return
@@ -51,11 +70,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
   <Teleport to="body">
     <aside
       id="wao-floating-chat"
-      ref="panel"
+      :ref="setPanelRef"
       v-show="ui.chatOpen"
       class="floating-chat"
+      :class="{ dragging: panelDragging }"
+      :style="panelStyle"
       role="dialog"
       aria-label="共享聊天"
+      @pointerdown="onPanelPointerDown"
     >
       <ChatView
         floating
@@ -120,18 +142,21 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onPointerDown,
   background: var(--wao-bg-card);
   box-shadow: 0 24px 64px rgba(15, 23, 42, 0.24);
 }
+.floating-chat :deep(.chat-header) { cursor: grab; user-select: none; }
+.floating-chat.dragging, .floating-chat.dragging :deep(.chat-header) { cursor: grabbing; }
 @media (max-width: 760px) {
   .chat-entry {
     width: 36px;
     height: 36px;
   }
   .floating-chat {
-    inset: 0;
+    inset: 0 !important;
     width: 100vw;
     height: 100dvh;
     min-height: 0;
     border: 0;
     border-radius: 0;
   }
+  .floating-chat :deep(.chat-header) { cursor: default; }
 }
 </style>

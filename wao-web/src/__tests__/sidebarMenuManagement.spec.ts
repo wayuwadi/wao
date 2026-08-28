@@ -91,6 +91,8 @@ describe('桌面侧栏直接维护菜单', () => {
     expect(wrapper.findAll('.items .item[title="项目"]')).toHaveLength(0)
 
     await docked.trigger('contextmenu', { clientX: 20, clientY: 30 })
+    document.querySelector<HTMLButtonElement>('.menu-actions button')!.click()
+    await flushPromises()
     const input = document.querySelector<HTMLInputElement>('#side-menu-rename')!
     input.value = '我的项目'
     input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -122,5 +124,31 @@ describe('桌面侧栏直接维护菜单', () => {
     await expect(nav.moveMenu('projects', 'DOCK', 'TOOLS')).rejects.toThrow('网络不可用')
     expect(nav.menuConfig('projects')).toMatchObject({ group: 'PUBLIC', placement: 'MENU' })
     expect(nav.menuMutationError).toBe('网络不可用')
+  })
+
+  it('右键菜单提供置顶与隐藏并写回统一注册表', async () => {
+    const wrapper = await mountSideNav()
+    await wrapper.get('[title="日历"]').trigger('contextmenu', { clientX: 40, clientY: 80 })
+    const actions = [...document.querySelectorAll<HTMLButtonElement>('.menu-actions button')]
+    expect(actions.map((button) => button.textContent?.trim())).toEqual(['重命名', '置顶', '隐藏'])
+    actions[1]!.click()
+    await flushPromises()
+
+    const pinCalls = vi.mocked(saveBuiltinMenuRegistry).mock.calls
+    const pinCall = pinCalls[pinCalls.length - 1]?.[0] ?? []
+    const calendar = pinCall.find((menu) => menu.id === 'calendar')!
+    const personalPeers = pinCall.filter((menu) => menu.visible && menu.group === 'PERSONAL')
+    expect(calendar.order).toBe(Math.min(...personalPeers.map((menu) => menu.order)))
+
+    await wrapper.get('[title="日历"]').trigger('contextmenu', { clientX: 40, clientY: 80 })
+    document.querySelectorAll<HTMLButtonElement>('.menu-actions button')[2]!.click()
+    await flushPromises()
+
+    const hideCalls = vi.mocked(saveBuiltinMenuRegistry).mock.calls
+    expect(hideCalls[hideCalls.length - 1]?.[0]).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'calendar', visible: false })]),
+    )
+    expect(wrapper.find('[title="日历"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })

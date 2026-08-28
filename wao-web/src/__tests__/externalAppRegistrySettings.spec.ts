@@ -177,4 +177,17 @@ describe('菜单与快捷链接统一设置', () => {
       expect.arrayContaining([expect.objectContaining({ id: 'projects', placement: 'DOCK' })]),
     )
   })
+
+  it('点击当前图标可视化选择并立即保存菜单注册表', async () => {
+    const wrapper = await mountSettings()
+    const projects = menuRow(wrapper, '项目')
+    await projects.get('.icon-trigger').trigger('click')
+    await projects.get('button[title="ri-rocket-2-line"]').trigger('click')
+    await flushPromises()
+
+    expect(saveBuiltinMenuRegistry).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ id: 'projects', icon: 'ri-rocket-2-line' })]),
+    )
+    expect(projects.get('.icon-trigger i').classes()).toContain('ri-rocket-2-line')
+  })
 })
