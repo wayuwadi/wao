@@ -159,6 +159,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-pulse-line',
     path: '/request-monitoring',
   },
+  'data-center': {
+    id: 'data-center',
+    label: '数据中心',
+    icon: 'ri-database-2-line',
+    path: '/data-center',
+  },
   dashboard: {
     id: 'dashboard',
     label: '使用统计',
@@ -372,6 +378,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       group: 'PERSONAL',
       order: 70,
       visible: false,
+    },
+    {
+      id: 'data-center',
+      label: '数据中心',
+      icon: 'ri-database-2-line',
+      group: 'TOOLS',
+      order: 3,
+      visible: true,
     },
     {
       id: 'dashboard',

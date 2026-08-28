@@ -99,6 +99,11 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
     icon: 'ri-dashboard-3-line',
     items: [
       {
+        id: 'data-center',
+        description: '盘点 WAO 已保存的数据、记录量、最近写入时间与采集边界。',
+        keywords: ['数据源', '目录', '采集'],
+      },
+      {
         id: 'dashboard',
         description: '查看 AI 用量、模型和真实调用统计。',
         keywords: ['统计', '额度'],

@@ -23,7 +23,7 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(24);
+        assertThat(service.getRegistry().menus()).hasSize(25);
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "skills".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("Skill 市场");
@@ -33,7 +33,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(24);
+        assertThat(service.getRegistry().menus()).hasSize(25);
     }
 
     @Test
@@ -99,7 +99,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(24);
+        assertThat(upgraded.menus()).hasSize(25);
         assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("工作台");
@@ -165,6 +165,12 @@ class BuiltinMenuRegistryServiceTest {
                     assertThat(menu.group()).isEqualTo("TOOLS");
                     assertThat(menu.openMode()).isEqualTo("TAB");
                     assertThat(menu.visible()).isFalse();
+                });
+        assertThat(upgraded.menus()).filteredOn(menu -> "data-center".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.label()).isEqualTo("数据中心");
+                    assertThat(menu.group()).isEqualTo("TOOLS");
+                    assertThat(menu.visible()).isTrue();
                 });
         assertThat(upgraded.menus()).noneMatch(menu -> "system-reports".equals(menu.id()));
     }

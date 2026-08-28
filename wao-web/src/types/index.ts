@@ -30,6 +30,7 @@ export type ModuleId =
   | 'automation'
   | 'games'
   | 'request-monitoring'
+  | 'data-center'
   | 'dashboard'
   | 'drawings'
   | 'vocabulary'

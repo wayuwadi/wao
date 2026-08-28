@@ -287,6 +287,12 @@ const router = createRouter({
           meta: { module: 'request-monitoring', tabKind: 'module' },
         },
         {
+          path: 'data-center',
+          name: 'data-center',
+          component: () => import('@/views/DataCenterView.vue'),
+          meta: { module: 'data-center', tabKind: 'module' },
+        },
+        {
           path: 'english-learning',
           name: 'english-learning',
           component: () => import('@/views/EnglishLearningView.vue'),
