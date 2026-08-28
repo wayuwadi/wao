@@ -6,6 +6,7 @@ import { externalAppItemId, externalAppPath, moduleTab } from '@/config/nav'
 /**
  * 页签 store：多页签栏的可视化路由栈。
  * 「首页」固定不可关闭且恒在最左；页签列表 + 激活项持久化到 localStorage。
+ * 成员手动置顶的页签会在批量关闭时保留，仍可通过单独关闭明确移除。
  * 关闭操作返回「应导航到的新激活页签」，由调用方（AppLayout）执行 router.push。
  */
 
@@ -26,14 +27,21 @@ function load(): Persisted {
       const parsed = JSON.parse(raw) as Persisted
       const tabs = (parsed.tabs ?? [])
         .filter((t) => !RETIRED_TAB_KEYS.has(t.key))
-        .map((tab) => tab.key === 'mediaAgent' ? {
-          ...tab,
-          key: externalAppItemId('media-agent'),
-          path: externalAppPath('media-agent'),
-        } : tab)
+        .map((tab) => {
+          const normalized = { ...tab, pinned: tab.pinned === true }
+          return tab.key === 'mediaAgent'
+            ? {
+                ...normalized,
+                key: externalAppItemId('media-agent'),
+                path: externalAppPath('media-agent'),
+              }
+            : normalized
+        })
       const activeKey = RETIRED_TAB_KEYS.has(parsed.activeKey)
         ? 'home'
-        : parsed.activeKey === 'mediaAgent' ? externalAppItemId('media-agent') : parsed.activeKey
+        : parsed.activeKey === 'mediaAgent'
+          ? externalAppItemId('media-agent')
+          : parsed.activeKey
       return { tabs, activeKey }
     }
   } catch {
@@ -107,6 +115,14 @@ export const useTabsStore = defineStore('tabs', () => {
     persist()
   }
 
+  /** 切换成员页签的置顶状态；首页本身已经固定，不重复提供置顶操作。 */
+  function togglePin(key: string) {
+    const tab = tabs.value.find((item) => item.key === key)
+    if (!tab?.closable) return
+    tab.pinned = !tab.pinned
+    persist()
+  }
+
   /** 详情视图加载实体后回填页签标签；回填后即不再是占位。 */
   function setLabel(key: string, label: string) {
     const t = tabs.value.find((t) => t.key === key)
@@ -153,7 +169,7 @@ export const useTabsStore = defineStore('tabs', () => {
   }
 
   function closeMany(predicate: (t: Tab, i: number) => boolean): Tab | null {
-    const kept = tabs.value.filter((t, i) => !t.closable || !predicate(t, i))
+    const kept = tabs.value.filter((t, i) => !t.closable || t.pinned || !predicate(t, i))
     tabs.value = kept
     ensureHome()
     if (!tabs.value.some((t) => t.key === activeKey.value)) {
@@ -168,24 +184,24 @@ export const useTabsStore = defineStore('tabs', () => {
     return null
   }
 
-  /** 关闭其它（保留首页与目标）。 */
+  /** 关闭其它（保留首页、目标与置顶页签）。 */
   function closeOthers(key: string) {
     return closeMany((t) => t.key !== key)
   }
 
-  /** 关闭目标左边的可关页签。 */
+  /** 关闭目标左边未置顶的可关页签。 */
   function closeLeft(key: string) {
     const idx = tabs.value.findIndex((t) => t.key === key)
     return closeMany((_t, i) => i < idx)
   }
 
-  /** 关闭目标右边的可关页签。 */
+  /** 关闭目标右边未置顶的可关页签。 */
   function closeRight(key: string) {
     const idx = tabs.value.findIndex((t) => t.key === key)
     return closeMany((_t, i) => i > idx)
   }
 
-  /** 关闭全部（仅保留首页）。 */
+  /** 关闭全部未置顶页签（保留首页与成员置顶页签）。 */
   function closeAll() {
     return closeMany(() => true)
   }
@@ -196,6 +212,7 @@ export const useTabsStore = defineStore('tabs', () => {
     open,
     activate,
     move,
+    togglePin,
     setLabel,
     setMeta,
     activeTab,

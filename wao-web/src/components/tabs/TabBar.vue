@@ -19,7 +19,10 @@ function measureScroll() {
   canRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
 }
 function scrollByPage(direction: -1 | 1) {
-  scroller.value?.scrollBy({ left: direction * Math.max(180, (scroller.value?.clientWidth ?? 400) * 0.7), behavior: 'smooth' })
+  scroller.value?.scrollBy({
+    left: direction * Math.max(180, (scroller.value?.clientWidth ?? 400) * 0.7),
+    behavior: 'smooth',
+  })
 }
 function revealActive() {
   void nextTick(() => {
@@ -35,6 +38,9 @@ const menuTargetClosable = computed(() => {
   const t = tabs.tabs.find((t) => t.key === menu.key)
   return !!t?.closable
 })
+const menuTargetPinned = computed(
+  () => tabs.tabs.find((tab) => tab.key === menu.key)?.pinned === true,
+)
 
 function selectTab(tab: Tab) {
   router.push(tab.path)
@@ -86,6 +92,10 @@ function navigateAfter(next: Tab | null) {
   if (next) router.push(next.path)
   closeMenu()
 }
+function mTogglePin() {
+  tabs.togglePin(menu.key)
+  closeMenu()
+}
 function mCloseCurrent() {
   navigateAfter(tabs.close(menu.key))
 }
@@ -102,44 +112,56 @@ function mCloseAll() {
 
 <template>
   <div class="tabbar-shell">
-    <button class="scroll-btn" :disabled="!canLeft" title="查看左侧页签" @click="scrollByPage(-1)"><i class="ri-arrow-left-s-line"></i></button>
+    <button class="scroll-btn" :disabled="!canLeft" title="查看左侧页签" @click="scrollByPage(-1)">
+      <i class="ri-arrow-left-s-line"></i>
+    </button>
     <div ref="scroller" class="tabbar" @scroll.passive="measureScroll">
-    <div
-      v-for="tab in tabs.tabs"
-      :key="tab.key"
-      class="tab"
-      :class="{ active: tab.key === tabs.activeKey, dragging: dragKey === tab.key, over: overKey === tab.key }"
-      :draggable="tab.key !== 'home'"
-      title="拖动可调整顺序；右键：关闭当前 / 左边 / 右边 / 全部"
-      @click="selectTab(tab)"
-      @contextmenu.prevent="openMenu($event, tab)"
-      @dragstart="onDragStart(tab, $event)"
-      @dragover.prevent="onDragOver(tab)"
-      @drop.prevent="onDrop(tab)"
-      @dragend="onDragEnd"
-    >
-      <i :class="tab.icon"></i>
-      <span class="tab-label">{{ tab.label }}</span>
-      <button
-        v-if="tab.closable"
-        class="close"
-        title="关闭"
-        @click.stop="closeTab(tab)"
+      <div
+        v-for="tab in tabs.tabs"
+        :key="tab.key"
+        class="tab"
+        :class="{
+          active: tab.key === tabs.activeKey,
+          pinned: tab.pinned,
+          dragging: dragKey === tab.key,
+          over: overKey === tab.key,
+        }"
+        :draggable="tab.key !== 'home'"
+        title="拖动可调整顺序；右键：置顶 / 关闭当前 / 左边 / 右边 / 全部"
+        @click="selectTab(tab)"
+        @contextmenu.prevent="openMenu($event, tab)"
+        @dragstart="onDragStart(tab, $event)"
+        @dragover.prevent="onDragOver(tab)"
+        @drop.prevent="onDrop(tab)"
+        @dragend="onDragEnd"
       >
-        <i class="ri-close-line"></i>
-      </button>
+        <i :class="tab.icon"></i>
+        <span class="tab-label">{{ tab.label }}</span>
+        <i v-if="tab.pinned" class="tab-pin ri-pushpin-fill" title="已置顶，批量关闭时保留"></i>
+        <button v-if="tab.closable" class="close" title="关闭" @click.stop="closeTab(tab)">
+          <i class="ri-close-line"></i>
+        </button>
+      </div>
     </div>
-    </div>
-    <button class="scroll-btn" :disabled="!canRight" title="查看右侧页签" @click="scrollByPage(1)"><i class="ri-arrow-right-s-line"></i></button>
+    <button class="scroll-btn" :disabled="!canRight" title="查看右侧页签" @click="scrollByPage(1)">
+      <i class="ri-arrow-right-s-line"></i>
+    </button>
   </div>
 
   <template v-if="menu.open">
     <div class="menu-mask" @click="closeMenu" @contextmenu.prevent="closeMenu"></div>
     <div class="menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }">
+      <button class="menu-item" :disabled="!menuTargetClosable" @click="mTogglePin">
+        <i :class="menuTargetPinned ? 'ri-pushpin-2-line' : 'ri-pushpin-line'"></i>
+        {{ menuTargetPinned ? '取消置顶' : '置顶页签' }}
+      </button>
+      <div class="menu-sep"></div>
       <button class="menu-item" :disabled="!menuTargetClosable" @click="mCloseCurrent">
         <i class="ri-close-line"></i>关闭当前
       </button>
-      <button class="menu-item" @click="mCloseLeft"><i class="ri-arrow-left-line"></i>关闭左边</button>
+      <button class="menu-item" @click="mCloseLeft">
+        <i class="ri-arrow-left-line"></i>关闭左边
+      </button>
       <button class="menu-item" @click="mCloseRight">
         <i class="ri-arrow-right-line"></i>关闭右边
       </button>
@@ -180,8 +202,13 @@ function mCloseAll() {
   color: var(--wao-text-3);
   cursor: pointer;
 }
-.scroll-btn:hover:not(:disabled) { background: var(--wao-bg-hover-2); }
-.scroll-btn:disabled { opacity: 0.22; cursor: default; }
+.scroll-btn:hover:not(:disabled) {
+  background: var(--wao-bg-hover-2);
+}
+.scroll-btn:disabled {
+  opacity: 0.22;
+  cursor: default;
+}
 .tab {
   display: flex;
   align-items: center;
@@ -220,6 +247,10 @@ function mCloseAll() {
 }
 .tab.active i {
   color: var(--wao-primary);
+}
+.tab .tab-pin {
+  font-size: 12px;
+  color: var(--wao-primary-text);
 }
 .tab-label {
   white-space: nowrap;
@@ -301,6 +332,8 @@ function mCloseAll() {
 }
 @media (max-width: 760px) {
   /* 手机由底部模块导航承担切换；桌面多页签条只会重复信息并挤掉项目正文。 */
-  .tabbar-shell { display: none; }
+  .tabbar-shell {
+    display: none;
+  }
 }
 </style>

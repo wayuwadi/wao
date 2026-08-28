@@ -52,6 +52,44 @@ describe('tabs store', () => {
     expect(tabs.activeKey).toBe('home')
   })
 
+  it('关闭全部时保留成员置顶页签，并跳转到最后一个保留项', () => {
+    const tabs = useTabsStore()
+    tabs.open(proj('p1'))
+    tabs.togglePin('proj:p1')
+    tabs.open(proj('p2'))
+
+    const next = tabs.closeAll()
+
+    expect(tabs.tabs.map((tab) => tab.key)).toEqual(['home', 'proj:p1'])
+    expect(tabs.tabs.find((tab) => tab.key === 'proj:p1')?.pinned).toBe(true)
+    expect(next?.key).toBe('proj:p1')
+    expect(tabs.activeKey).toBe('proj:p1')
+  })
+
+  it('置顶状态跨刷新保留，取消置顶后可被批量关闭', () => {
+    const tabs = useTabsStore()
+    tabs.open(proj('p1'))
+    tabs.togglePin('proj:p1')
+
+    setActivePinia(createPinia())
+    const restored = useTabsStore()
+    expect(restored.tabs.find((tab) => tab.key === 'proj:p1')?.pinned).toBe(true)
+
+    restored.togglePin('proj:p1')
+    restored.closeAll()
+    expect(restored.tabs.map((tab) => tab.key)).toEqual(['home'])
+  })
+
+  it('置顶只阻止批量关闭，成员仍可单独关闭该页签', () => {
+    const tabs = useTabsStore()
+    tabs.open(proj('p1'))
+    tabs.togglePin('proj:p1')
+
+    tabs.close('proj:p1')
+
+    expect(tabs.tabs.map((tab) => tab.key)).toEqual(['home'])
+  })
+
   it('closeOthers keeps home and the target', () => {
     const tabs = useTabsStore()
     tabs.open(proj('p1'))
@@ -59,6 +97,26 @@ describe('tabs store', () => {
     tabs.open(proj('p3'))
     tabs.closeOthers('proj:p2')
     expect(tabs.tabs.map((t) => t.key)).toEqual(['home', 'proj:p2'])
+  })
+
+  it('关闭其它、左边和右边时同样保留置顶页签', () => {
+    const tabs = useTabsStore()
+    tabs.open(proj('p1'))
+    tabs.togglePin('proj:p1')
+    tabs.open(proj('p2'))
+    tabs.open(proj('p3'))
+
+    tabs.closeOthers('proj:p3')
+    expect(tabs.tabs.map((tab) => tab.key)).toEqual(['home', 'proj:p1', 'proj:p3'])
+
+    tabs.open(proj('p2'))
+    tabs.closeLeft('proj:p2')
+    expect(tabs.tabs.map((tab) => tab.key)).toEqual(['home', 'proj:p1', 'proj:p2'])
+
+    tabs.open(proj('p3'))
+    tabs.togglePin('proj:p3')
+    tabs.closeRight('proj:p1')
+    expect(tabs.tabs.map((tab) => tab.key)).toEqual(['home', 'proj:p1', 'proj:p3'])
   })
 
   it('回填过真名后，占位标签不再覆盖它——项目内切换标签页时标题会闪成编号', () => {
