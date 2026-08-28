@@ -38,6 +38,9 @@ public class AiTaskAutoRunService {
     private static final int DEFAULT_IDLE_HOURS = 2;
     private static final int MIN_IDLE_HOURS = 1;
     private static final int MAX_IDLE_HOURS = 168;
+    private static final int DEFAULT_BATCH_SIZE = 2;
+    private static final int MIN_BATCH_SIZE = 1;
+    private static final int MAX_BATCH_SIZE = 10;
     private static final String DEFAULT_PROJECT_NAME = "Wa All in One";
     private static final List<String> DEFAULT_TASK_STATUSES = List.of("待办");
     private static final Set<String> ALLOWED_TASK_STATUSES = Set.of("待办", "收集中", "进行中");
@@ -80,6 +83,7 @@ public class AiTaskAutoRunService {
         boolean active = hasActiveRun();
         ProjectEntity project = configuredProject(state);
         List<String> taskStatuses = taskStatuses(state);
+        int launchCount = project == null ? batchSize(state) : effectiveBatchSize(state, project);
         String status;
         String message;
         if (!Boolean.TRUE.equals(state.getEnabled())) {
@@ -94,19 +98,19 @@ public class AiTaskAutoRunService {
         } else if (project == null) {
             status = "invalid_config";
             message = "自动派发项目不存在或未接入可用的 AI 工作流，请重新选择。";
-        } else if (taskMapper.selectOldestAutoRunCandidate(project.getId(), taskStatuses) == null) {
+        } else if (taskMapper.selectOldestAutoRunCandidates(project.getId(), taskStatuses, 1).isEmpty()) {
             status = "no_task";
             message = "「" + project.getName() + "」当前没有状态为“"
                     + String.join(" / ", taskStatuses) + "”的可派发任务。";
         } else {
             status = "ready";
             message = "空闲达到 " + idleHours(state) + " 小时后，将从「" + project.getName()
-                    + "」自动以 Plan 模式执行录入最早的匹配任务。";
+                    + "」自动以 Plan 模式推进录入最早的 " + launchCount + " 条匹配任务。";
         }
         if (state.getLastOutcome() != null && !state.getLastOutcome().isBlank()) {
             message += " 最近检查：" + state.getLastOutcome();
         }
-        return new AiTaskAutoRunPolicyDto(Boolean.TRUE.equals(state.getEnabled()), idleHours(state),
+        return new AiTaskAutoRunPolicyDto(Boolean.TRUE.equals(state.getEnabled()), idleHours(state), launchCount,
                 project == null ? state.getProjectId() : project.getId(), taskStatuses,
                 state.getNotificationWebhookId(), status,
                 message, text(lastActivity), text(eligibleAt), text(state.getLastCheckedAt()), state.getLastRunId());
@@ -117,16 +121,26 @@ public class AiTaskAutoRunService {
      *
      * @param enabled 是否允许无人值守派发
      * @param idleHours 距离最近 AI Run 的最小空闲小时数
+     * @param requestedBatchSize 一次空闲触发要推进的任务数；旧客户端留空时使用项目并发上限
      * @param projectId 只从这个已接入真实工作流的项目选择任务；旧客户端留空时回落默认项目
      * @param taskStatuses 允许进入候选的任务状态；旧客户端留空时回落“待办”
      * @param notificationWebhookId 触发通知目标；留空时沿用系统默认机器人
      */
-    public void save(boolean enabled, int idleHours, String projectId, List<String> taskStatuses,
+    public void save(boolean enabled, int idleHours, Integer requestedBatchSize, String projectId,
+            List<String> taskStatuses,
             String notificationWebhookId) {
         if (idleHours < MIN_IDLE_HOURS || idleHours > MAX_IDLE_HOURS) {
             throw new BadRequestException("空闲时长必须在 1 到 168 小时之间");
         }
         ProjectEntity project = requireRunnableProject(projectId);
+        int projectMaxParallelRuns = runs.getConfig(project.getId()).maxParallelRuns();
+        int batchSize = requestedBatchSize == null ? projectMaxParallelRuns : requestedBatchSize;
+        if (batchSize < MIN_BATCH_SIZE || batchSize > MAX_BATCH_SIZE) {
+            throw new BadRequestException("单次推进数必须在 1 到 10 之间");
+        }
+        if (batchSize > projectMaxParallelRuns) {
+            throw new BadRequestException("单次推进数不能超过所选项目的并发上限 " + projectMaxParallelRuns);
+        }
         List<String> normalizedStatuses = normalizeTaskStatuses(taskStatuses);
         String webhookId = trimToNull(notificationWebhookId);
         if (webhookId != null) webhooks.enabledTarget(webhookId);
@@ -134,19 +148,21 @@ public class AiTaskAutoRunService {
                 .eq(AiTaskAutoRunStateEntity::getId, STATE_ID)
                 .set(AiTaskAutoRunStateEntity::getEnabled, enabled)
                 .set(AiTaskAutoRunStateEntity::getIdleHours, idleHours)
+                .set(AiTaskAutoRunStateEntity::getBatchSize, batchSize)
                 .set(AiTaskAutoRunStateEntity::getProjectId, project.getId())
                 .set(AiTaskAutoRunStateEntity::getTaskStatusesJson, writeStatuses(normalizedStatuses))
                 .set(AiTaskAutoRunStateEntity::getNotificationWebhookId, webhookId)
                 .set(AiTaskAutoRunStateEntity::getNextCheckAt, LocalDateTime.now(ZONE))
                 .set(AiTaskAutoRunStateEntity::getLastOutcome,
                         enabled ? "已开启：" + project.getName() + " · "
-                                + String.join("/", normalizedStatuses) + " · 空闲 " + idleHours + " 小时"
+                                + String.join("/", normalizedStatuses) + " · 空闲 " + idleHours
+                                + " 小时 · 每次 " + batchSize + " 条"
                                 : "已人工关闭")
                 .set(AiTaskAutoRunStateEntity::getUpdatedAt, LocalDateTime.now(ZONE)));
         if (updated == 0) throw new IllegalStateException("待办自动派发策略不存在");
     }
 
-    /** 双节点安全地抢占检查窗口，并在满足条件时派发唯一一条最早待办。 */
+    /** 双节点安全地抢占检查窗口，并按策略批量派发录入最早的待办。 */
     public void checkAndLaunch() {
         if (networkOutageWindow.isUnavailable()) return;
         if (stateMapper.claimDueCheck() == 0) return;
@@ -172,22 +188,26 @@ public class AiTaskAutoRunService {
                 return;
             }
             List<String> statuses = taskStatuses(state);
-            TaskEntity candidate = taskMapper.selectOldestAutoRunCandidate(project.getId(), statuses);
-            if (candidate == null) {
+            int launchCount = effectiveBatchSize(state, project);
+            List<TaskEntity> candidates = taskMapper.selectOldestAutoRunCandidates(
+                    project.getId(), statuses, launchCount);
+            if (candidates.isEmpty()) {
                 outcome("所选项目没有状态为“" + String.join("/", statuses) + "”的可派发任务", null);
                 return;
             }
-            List<AiRunDto> created = runs.enqueue(List.of(candidate.getId()), null, null, null,
+            List<AiRunDto> created = runs.enqueue(candidates.stream().map(TaskEntity::getId).toList(), null, null, null,
                     null, null, null, true, AiRunService.IDLE_AUTO_RUN_REQUESTED_BY, publicBaseUrl);
             if (created.isEmpty()) {
-                outcome("最早待办已被其他操作派发，本轮未重复入队", null);
+                outcome("所选待办已被其他操作派发，本轮未重复入队", null);
                 return;
             }
-            AiRunDto run = created.get(0);
-            boolean notified = notifier.notifyIdleAutoRun(candidate.getId(), project.getId(), candidate.getTitle(),
-                    project.getName(), idleHours(state), state.getNotificationWebhookId());
-            outcome("已用 Plan 模式自动派发「" + shorten(candidate.getTitle()) + "」"
-                    + (notified ? "，闲置触发通知已发送" : "；闲置触发通知未发出，请检查所选通知群"), run.id());
+            long notified = created.stream().filter(run -> notifyIdleAutoRun(
+                    run, project, idleHours(state), state.getNotificationWebhookId())).count();
+            String notificationOutcome = notified == created.size()
+                    ? "，闲置触发通知均已发送"
+                    : "；" + (created.size() - notified) + " 条闲置触发通知未发出，请检查所选通知群";
+            outcome("已用 Plan 模式自动派发 " + created.size() + " 条任务（最早为「"
+                    + shorten(created.get(0).taskTitle()) + "」）" + notificationOutcome, created.get(0).id());
         } catch (RuntimeException ex) {
             String reason = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
             outcome("自动派发失败：" + shorten(reason), null);
@@ -199,6 +219,16 @@ public class AiTaskAutoRunService {
         Long count = runMapper.selectCount(new LambdaQueryWrapper<AiTaskRunEntity>()
                 .in(AiTaskRunEntity::getStatus, "queued", "claimed", "running"));
         return count != null && count > 0;
+    }
+
+    private boolean notifyIdleAutoRun(AiRunDto run, ProjectEntity project, int idleHours, String webhookId) {
+        try {
+            return notifier.notifyIdleAutoRun(run.taskId(), project.getId(), run.taskTitle(),
+                    project.getName(), idleHours, webhookId);
+        } catch (RuntimeException exception) {
+            log.warn("任务 {} 的闲置触发通知发送失败：{}", run.taskId(), exception.getMessage());
+            return false;
+        }
     }
 
     private void outcome(String message, String runId) {
@@ -286,6 +316,15 @@ public class AiTaskAutoRunService {
 
     private static int idleHours(AiTaskAutoRunStateEntity state) {
         return state.getIdleHours() == null ? DEFAULT_IDLE_HOURS : state.getIdleHours();
+    }
+
+    private static int batchSize(AiTaskAutoRunStateEntity state) {
+        Integer value = state.getBatchSize();
+        return value == null ? DEFAULT_BATCH_SIZE : Math.max(MIN_BATCH_SIZE, Math.min(MAX_BATCH_SIZE, value));
+    }
+
+    private int effectiveBatchSize(AiTaskAutoRunStateEntity state, ProjectEntity project) {
+        return Math.min(batchSize(state), runs.getConfig(project.getId()).maxParallelRuns());
     }
 
     private static String text(LocalDateTime value) {

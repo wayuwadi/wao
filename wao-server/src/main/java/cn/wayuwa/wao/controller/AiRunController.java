@@ -233,7 +233,7 @@ public class AiRunController {
     @PutMapping("/task-auto-run")
     public ApiResponse<AiTaskAutoRunPolicyDto> saveTaskAutoRunPolicy(
             @Valid @RequestBody SaveAiTaskAutoRunPolicyRequest request) {
-        taskAutoRunService.save(request.enabled(), request.idleHours(), request.projectId(),
+        taskAutoRunService.save(request.enabled(), request.idleHours(), request.batchSize(), request.projectId(),
                 request.taskStatuses(), request.notificationWebhookId());
         return ApiResponse.ok(taskAutoRunService.overview());
     }
