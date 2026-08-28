@@ -1,8 +1,8 @@
 import { http, type ApiResponse } from './http'
 
-/** 一条收藏。parentId：任务→项目 id，文档→知识库 id，项目为 null。 */
+/** 一条收藏。parentId：任务→项目 id，文档→知识库 id，模块和项目为 null。 */
 export interface Favorite {
-  type: 'project' | 'task' | 'doc'
+  type: 'module' | 'project' | 'task' | 'doc'
   targetId: string
   label: string
   parentId: string | null

@@ -2,7 +2,7 @@ package cn.wayuwa.wao.domain;
 import java.time.LocalDateTime;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-/** 成员收藏的一条链接（项目 / 任务 / 文档），按成员维度隔离。 */
+/** 成员收藏的一条链接（模块 / 项目 / 任务 / 文档），按成员维度隔离。 */
 @TableName("member_favorite")
 public class MemberFavoriteEntity {
  @TableId private String id; private String memberId; private String targetType; private String targetId; private LocalDateTime createdAt;

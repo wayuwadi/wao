@@ -1,4 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkdayRhythmView from '@/views/WorkdayRhythmView.vue'
 import {
@@ -13,6 +15,7 @@ import {
   setRhythmWorkdayStatus,
 } from '@/api/workdayRhythm'
 import { fetchFeishuChats, fetchWebhookEndpoints } from '@/api/system'
+import { apiAddFavorite, apiRemoveFavorite, fetchFavorites } from '@/api/favorites'
 import {
   DEFAULT_WORKDAY_RHYTHM,
   cloneRhythmConfig,
@@ -37,17 +40,32 @@ vi.mock('@/api/system', () => ({
   fetchWebhookEndpoints: vi.fn<typeof fetchWebhookEndpoints>(),
 }))
 
+vi.mock('@/api/favorites', () => ({
+  fetchFavorites: vi.fn<typeof fetchFavorites>(),
+  apiAddFavorite: vi.fn<typeof apiAddFavorite>(),
+  apiRemoveFavorite: vi.fn<typeof apiRemoveFavorite>(),
+}))
+
 const clock = shanghaiClock()
 const tomorrow = (() => {
   const [year, month, date] = clock.date.split('-').map(Number)
   return new Date(Date.UTC(year!, month! - 1, date! + 1)).toISOString().slice(0, 10)
 })()
 
-function mountView() {
+async function mountView() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/workday-rhythm', component: WorkdayRhythmView },
+      { path: '/todo', component: { template: '<div />' } },
+    ],
+  })
+  await router.push('/workday-rhythm')
+  await router.isReady()
   return mount(WorkdayRhythmView, {
     global: {
+      plugins: [createPinia(), router],
       stubs: {
-        RouterLink: { template: '<a><slot /></a>' },
         WorkdayRhythmDailyPanel: true,
         WorkdayRhythmDailySettings: true,
       },
@@ -101,27 +119,26 @@ describe('WorkdayRhythmView', () => {
         updatedAt: '2026-08-20T10:00:00',
       },
     ])
+    vi.mocked(fetchFavorites).mockResolvedValue([])
+    vi.mocked(apiAddFavorite).mockResolvedValue()
+    vi.mocked(apiRemoveFavorite).mockResolvedValue()
   })
   afterEach(() => vi.clearAllMocks())
 
-  it('展示完整真实模板并保存时间块打卡', async () => {
-    const wrapper = mountView()
+  it('把完整真实模板收进顶部指导列表且不再提供时间块打卡', async () => {
+    const wrapper = await mountView()
     await flushPromises()
 
-    expect(wrapper.findAll('.time-block')).toHaveLength(7)
+    expect(wrapper.findAll('.hero-flow li')).toHaveLength(7)
     expect(wrapper.text()).toContain('重点攻坚')
-    await wrapper.findAll('.time-block')[0]!.trigger('click')
-    await flushPromises()
-
-    expect(saveWorkdayRhythmDay).toHaveBeenCalledWith(
-      expect.objectContaining({ completed: ['morning'] }),
-    )
-    expect(wrapper.find('.timeline-card').text()).toContain('1 / 7 已完成')
+    expect(wrapper.find('.timeline-card').exists()).toBe(false)
+    expect(wrapper.find('.time-block').exists()).toBe(false)
+    expect(saveWorkdayRhythmDay).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
   it('把本人填写的今日重点持久化而不生成任务数据', async () => {
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
     const inputs = wrapper.findAll('.focus-card input')
     await inputs[0]!.setValue('完成上线链路验收')
@@ -149,7 +166,7 @@ describe('WorkdayRhythmView', () => {
       chatName: '娃屋日常',
     }
     vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     const inputs = wrapper.findAll('.focus-row input')
@@ -175,7 +192,7 @@ describe('WorkdayRhythmView', () => {
 
   it('在保存按钮左侧明确选择真实通知群并先保存成员目标', async () => {
     vi.mocked(saveWorkdayRhythm).mockImplementation(async (value) => cloneRhythmConfig(value))
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     expect(wrapper.get('.notification-target-trigger').text()).toContain('不发群')
@@ -228,7 +245,7 @@ describe('WorkdayRhythmView', () => {
     }
     vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
     vi.mocked(saveWorkdayRhythm).mockRejectedValueOnce(new Error('网络暂时不可用'))
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     await wrapper.get('.notification-target-trigger').trigger('click')
@@ -256,7 +273,7 @@ describe('WorkdayRhythmView', () => {
     vi.mocked(sendFocusNotification)
       .mockRejectedValueOnce(new Error('飞书暂时不可用'))
       .mockResolvedValueOnce({ sent: true, chatName: '娃屋日常' })
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     const inputs = wrapper.findAll('.focus-row input')
@@ -276,8 +293,10 @@ describe('WorkdayRhythmView', () => {
   })
 
   it('提前保存明日重点并在保存成功前持续保留本机草稿', async () => {
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
+    expect(wrapper.find('.tomorrow-focus').exists()).toBe(false)
+    await wrapper.get('.tomorrow-toggle').trigger('click')
 
     const input = wrapper.find('.tomorrow-focus input')
     await input.setValue('为紧急评审准备验收证据')
@@ -296,8 +315,9 @@ describe('WorkdayRhythmView', () => {
 
   it('明日计划保存失败时保留输入并提供原位重试', async () => {
     vi.mocked(saveRhythmFocus).mockRejectedValueOnce(new Error('网络暂时不可用'))
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
+    await wrapper.get('.tomorrow-toggle').trigger('click')
 
     await wrapper.find('.tomorrow-focus input').setValue('准备明天的发布清单')
     await wrapper.get('.tomorrow-focus footer button').trigger('click')
@@ -315,8 +335,33 @@ describe('WorkdayRhythmView', () => {
     wrapper.unmount()
   })
 
+  it('提供单独打开、复制私有链接和成员级收藏', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined)
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const wrapper = await mountView()
+    await flushPromises()
+
+    const actions = wrapper.findAll('.page-action')
+    await actions[0]!.trigger('click')
+    expect(open).toHaveBeenCalledWith(
+      expect.stringContaining('/workday-rhythm'),
+      '_blank',
+      'noopener,noreferrer',
+    )
+    await actions[1]!.trigger('click')
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/workday-rhythm'))
+    await actions[2]!.trigger('click')
+    await flushPromises()
+    expect(apiAddFavorite).toHaveBeenCalledWith('module', 'workday-rhythm')
+    expect(actions[2]!.text()).toContain('已收藏')
+    open.mockRestore()
+    wrapper.unmount()
+  })
+
   it('从调整节奏旁按月回顾真实每日目标和项目执行次数', async () => {
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     await wrapper.get('.history-button').trigger('click')
@@ -339,7 +384,7 @@ describe('WorkdayRhythmView', () => {
       skippedCount: 2,
       items: [],
     })
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     await wrapper.get('.history-button').trigger('click')
@@ -353,7 +398,7 @@ describe('WorkdayRhythmView', () => {
 
   it('保存失败时保留本机草稿并提供原位重试', async () => {
     vi.mocked(saveWorkdayRhythmDay).mockRejectedValueOnce(new Error('网络暂不可用'))
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
     await wrapper.get('.energy-action.water').trigger('click')
     await flushPromises()
@@ -369,7 +414,7 @@ describe('WorkdayRhythmView', () => {
   })
 
   it('调整模板时拒绝时间空洞并保存首尾相接的修改', async () => {
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
     await wrapper.get('.settings-button').trigger('click')
     const timeInputs = wrapper.findAll('.block-editor input[type="time"]')
@@ -394,7 +439,7 @@ describe('WorkdayRhythmView', () => {
   })
 
   it('从精力卡设置本人通知群并随节奏配置跨设备保存', async () => {
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     await wrapper.get('.energy-card header button').trigger('click')
@@ -434,7 +479,7 @@ describe('WorkdayRhythmView', () => {
     vi.mocked(sendEnergyNotification)
       .mockRejectedValueOnce(new Error('飞书暂时不可用'))
       .mockResolvedValueOnce({ sent: true, chatName: '娃屋日常' })
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     await wrapper.get('.energy-action.water').trigger('click')
@@ -451,7 +496,7 @@ describe('WorkdayRhythmView', () => {
   })
 
   it('可直接选择系统设置中的 Webhook 并按稳定配置 id 保存', async () => {
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     await wrapper.get('.energy-card header button').trigger('click')
@@ -477,7 +522,7 @@ describe('WorkdayRhythmView', () => {
 
   it('可新增多个补给项目并分别配置点击机制', async () => {
     vi.mocked(saveWorkdayRhythm).mockImplementation(async (value) => cloneRhythmConfig(value))
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     await wrapper.get('.settings-button').trigger('click')
@@ -520,7 +565,7 @@ describe('WorkdayRhythmView', () => {
     vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
     vi.mocked(fetchWorkdayRhythmDay).mockResolvedValue(storedDay)
     vi.mocked(saveWorkdayRhythm).mockImplementationOnce(async (value) => cloneRhythmConfig(value))
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     await wrapper.get('.settings-button').trigger('click')
@@ -550,7 +595,7 @@ describe('WorkdayRhythmView', () => {
       notify: false,
     })
     vi.mocked(fetchWorkdayRhythm).mockResolvedValue(configured)
-    const wrapper = mountView()
+    const wrapper = await mountView()
     await flushPromises()
 
     await wrapper.get('.energy-action.water').trigger('click')
