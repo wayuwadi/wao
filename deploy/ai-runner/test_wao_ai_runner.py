@@ -13,7 +13,7 @@ import unittest
 import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 
 RUNNER_FILE = Path(__file__).with_name("wao-ai-runner.py")
@@ -1325,18 +1325,65 @@ class LinuxCodexAssistantTest(unittest.TestCase):
             {"claimToken": "attempt-new", "exitCode": 0, "response": "只读答复", "error": ""},
         )
 
+    @patch.object(RUNNER.time, "sleep")
     @patch.object(RUNNER, "run_codex")
-    def test_assistant_failure_does_not_return_partial_model_output(self, run_codex: Mock) -> None:
+    def test_assistant_failure_retries_three_times_without_returning_partial_model_output(
+            self, run_codex: Mock, sleep: Mock) -> None:
         run_codex.return_value = (2, "原对话与未完成报告 [S1]", None, {})
         api = Mock()
         claim = {"runId": "ac-failed", "claimToken": "attempt-failed", "prompt": "请总结"}
 
         RUNNER.execute_assistant_claim(api, claim, self.root, "codex", "git")
 
+        self.assertEqual(3, run_codex.call_count)
+        self.assertEqual([call(1), call(2)], sleep.call_args_list)
         api.post.assert_called_once_with(
             "/api/ai/runner/assistant-v2/ac-failed/complete",
             {"claimToken": "attempt-failed", "exitCode": 2,
              "response": "", "error": "Codex 执行失败（退出码 2）"},
+        )
+
+    @patch.object(RUNNER.time, "sleep")
+    @patch.object(RUNNER, "run_codex")
+    def test_assistant_transient_failure_only_reports_the_recovered_answer(
+            self, run_codex: Mock, sleep: Mock) -> None:
+        run_codex.side_effect = [
+            (1, "含有不应持久化的部分答复", None, {}),
+            (0, "第二次已生成完整复盘", None, {}),
+        ]
+        api = Mock()
+        claim = {"runId": "ac-recovered", "claimToken": "attempt-recovered", "prompt": "请总结"}
+
+        RUNNER.execute_assistant_claim(api, claim, self.root, "codex", "git")
+
+        self.assertEqual(2, run_codex.call_count)
+        sleep.assert_called_once_with(1)
+        api.post.assert_called_once_with(
+            "/api/ai/runner/assistant-v2/ac-recovered/complete",
+            {"claimToken": "attempt-recovered", "exitCode": 0,
+             "response": "第二次已生成完整复盘", "error": ""},
+        )
+
+    @patch.object(RUNNER.time, "sleep")
+    @patch.object(RUNNER, "run_codex")
+    def test_assistant_retries_cli_exception_and_empty_answer(
+            self, run_codex: Mock, sleep: Mock) -> None:
+        run_codex.side_effect = [
+            RuntimeError("临时无法连接 Codex"),
+            (0, "", None, {}),
+            (0, "第三次返回有效内容", None, {}),
+        ]
+        api = Mock()
+        claim = {"runId": "ac-exception", "claimToken": "attempt-exception", "prompt": "请分析"}
+
+        RUNNER.execute_assistant_claim(api, claim, self.root, "codex", "git")
+
+        self.assertEqual(3, run_codex.call_count)
+        self.assertEqual([call(1), call(2)], sleep.call_args_list)
+        api.post.assert_called_once_with(
+            "/api/ai/runner/assistant-v2/ac-exception/complete",
+            {"claimToken": "attempt-exception", "exitCode": 0,
+             "response": "第三次返回有效内容", "error": ""},
         )
 
     @patch.object(RUNNER.time, "sleep")

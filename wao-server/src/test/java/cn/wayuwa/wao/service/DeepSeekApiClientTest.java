@@ -7,11 +7,14 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.web.client.RestClient;
 
 class DeepSeekApiClientTest {
@@ -101,6 +104,56 @@ class DeepSeekApiClientTest {
                 null, "token-test", "deepseek-v4-pro", "很长的原文"))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("被截断");
+    }
+
+    @Test
+    void completionRetriesTransientFailuresWithinTheSameRequest() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(ExpectedCount.times(2), requestTo("https://api.deepseek.com/chat/completions"))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                .andRespond(withSuccess("""
+                        {"choices":[{"finish_reason":"stop","message":{"content":"第三次生成成功"}}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        DeepSeekApiClient client = new DeepSeekApiClient(builder, ignored -> { });
+
+        assertThat(client.complete("deepseek", null, "token-test", "deepseek-v4-flash",
+                "系统规则", "只读材料")).isEqualTo("第三次生成成功");
+        server.verify();
+    }
+
+    @Test
+    void completionOnlyFailsAfterThreeTransientFailures() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(ExpectedCount.times(3), requestTo("https://api.deepseek.com/chat/completions"))
+                .andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+
+        DeepSeekApiClient client = new DeepSeekApiClient(builder, ignored -> { });
+
+        assertThatThrownBy(() -> client.complete("deepseek", null, "token-test", "deepseek-v4-flash",
+                "系统规则", "只读材料"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("502");
+        server.verify();
+    }
+
+    @Test
+    void completionDoesNotRetryCredentialErrors() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://api.deepseek.com/chat/completions"))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+
+        DeepSeekApiClient client = new DeepSeekApiClient(builder, ignored -> { });
+
+        assertThatThrownBy(() -> client.complete("deepseek", null, "token-test", "deepseek-v4-flash",
+                "系统规则", "只读材料"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("401");
+        server.verify();
     }
 
     @Test
