@@ -52,4 +52,61 @@ describe('FilesView', () => {
     expect(wrapper.text()).toContain('12MB')
     expect(wrapper.text()).toContain('一次性票据')
   })
+
+  it('统一入口按真实文件类型分流，并为 HTML 生成可修改的标题和后缀', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    const uploadImage = vi.spyOn(data, 'uploadImage').mockResolvedValue({
+      name: '封面.png', url: '/api/images/image-1/raw',
+    })
+    const uploadFile = vi.spyOn(data, 'uploadFile').mockResolvedValue({
+      id: 'file-1', name: '说明.pdf', icon: 'ri-file-line', size: '1 B', by: '我', time: '刚刚', link: '/api/files/file-1/download',
+    })
+    const wrapper = mount(FilesView, {
+      global: {
+        plugins: [pinia],
+        stubs: { DemoBanner: true, FileSettingsModal: true },
+      },
+    })
+    await flushPromises()
+
+    const image = new File(['image'], '封面.png', { type: 'image/png' })
+    const html = new File(['<h1>WAO</h1>'], 'WAO Dashboard.html', { type: 'text/html' })
+    const file = new File(['pdf'], '说明.pdf', { type: 'application/pdf' })
+    await wrapper.find('.unified-drop').trigger('drop', {
+      dataTransfer: { files: [image, html, file] },
+    })
+    await flushPromises()
+
+    expect(uploadImage).toHaveBeenCalledWith(image, '图床')
+    expect(uploadFile).toHaveBeenCalledWith(file)
+    expect(wrapper.find('.page-dialog').exists()).toBe(true)
+    const inputs = wrapper.findAll('.page-dialog input')
+    expect((inputs[0]!.element as HTMLInputElement).value).toBe('WAO Dashboard')
+    expect((inputs[1]!.element as HTMLInputElement).value).toBe('wao-dashboard')
+  })
+
+  it('网页托管直接选择 HTML 后也自动补齐默认值', async () => {
+    const pinia = createPinia()
+    const wrapper = mount(FilesView, {
+      global: {
+        plugins: [pinia],
+        stubs: { DemoBanner: true, FileSettingsModal: true },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.findAll('.seg-btn')[2]!.trigger('click')
+    await wrapper.find('.btn-primary').trigger('click')
+    const htmlInput = wrapper.find('.page-dialog input[type="file"]')
+    Object.defineProperty(htmlInput.element, 'files', {
+      value: [new File(['html'], '团队周报.html', { type: 'text/html' })],
+      configurable: true,
+    })
+    await htmlInput.trigger('change')
+
+    const inputs = wrapper.findAll('.page-dialog input')
+    expect((inputs[0]!.element as HTMLInputElement).value).toBe('团队周报')
+    expect((inputs[1]!.element as HTMLInputElement).value).toMatch(/^page-/)
+  })
 })

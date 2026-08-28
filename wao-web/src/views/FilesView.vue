@@ -18,6 +18,8 @@ const pageSlug = ref('')
 const pageHtml = ref<File | null>(null)
 const pageIcon = ref<File | null>(null)
 const pageSaving = ref(false)
+const pageTitleAuto = ref(false)
+const pageSlugAuto = ref(false)
 const settingsOpen = ref(false)
 const fileSettings = ref<FileSettings>({
   fileMaxMb: 50,
@@ -49,6 +51,8 @@ const hiddenCount = computed(() =>
   showAllImages.value ? 0 : Math.max(0, data.imgs.length - IMG_PAGE),
 )
 const fileInput = ref<HTMLInputElement | null>(null)
+const unifiedInput = ref<HTMLInputElement | null>(null)
+const unifiedDragging = ref(false)
 const uploading = ref(0)
 
 // 打开页面时重新拉一次，让其他标签页 / 其他人上传的图也出现
@@ -102,13 +106,56 @@ async function uploadImages(files: FileList | File[]) {
   if (ok) toast(`已上传 ${ok} 张图片到图床`, 'ri-image-add-line')
 }
 
-function openPageDialog(page?: HostedPage) {
+function hostedPageBaseName(fileName: string) {
+  return fileName.replace(/^.*[\\/]/, '').replace(/\.(?:html?|HTML?)$/, '').trim()
+}
+
+function nextHostedPageSlug(fileName: string) {
+  const base = hostedPageBaseName(fileName)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+  const candidate = base || `page-${Math.random().toString(36).slice(2, 10)}`
+  if (!data.hostedPages.some((page) => page.slug === candidate)) return candidate
+  return `${candidate.slice(0, 72)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function setHostedPageHtml(file: File) {
+  pageHtml.value = file
+  if (editingPage.value) return
+  if (pageTitleAuto.value || !pageTitle.value.trim()) {
+    pageTitle.value = hostedPageBaseName(file.name) || '未命名页面'
+    pageTitleAuto.value = true
+  }
+  if (pageSlugAuto.value || !pageSlug.value.trim()) {
+    pageSlug.value = nextHostedPageSlug(file.name)
+    pageSlugAuto.value = true
+  }
+}
+
+function openPageDialog(page?: HostedPage, html?: File) {
   editingPage.value = page ?? null
   pageTitle.value = page?.title ?? ''
   pageSlug.value = page?.slug ?? ''
   pageHtml.value = null
   pageIcon.value = null
+  pageTitleAuto.value = !page
+  pageSlugAuto.value = !page
+  if (html) setHostedPageHtml(html)
   pageDialog.value = true
+}
+
+function closePageDialog() {
+  if (pageSaving.value) return
+  pageDialog.value = false
+}
+
+function onPageHtmlPick(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (file) setHostedPageHtml(file)
 }
 async function savePage() {
   if (
@@ -178,6 +225,44 @@ function onDrop(e: DragEvent) {
     if (tab.value === 'img') void uploadImages(files)
     else void uploadAttachments(files)
   }
+}
+
+function isHostedHtml(file: File) {
+  return file.type === 'text/html' || /\.html?$/i.test(file.name)
+}
+
+/** 统一入口只做确定性的类型路由；真正的大小、内容和权限约束仍由对应服务端接口裁决。 */
+function autoClassifyUploads(files: FileList | File[]) {
+  const list = Array.from(files)
+  if (!list.length) return
+  const images = list.filter((file) => file.type.startsWith('image/'))
+  const pages = list.filter((file) => !file.type.startsWith('image/') && isHostedHtml(file))
+  const attachments = list.filter((file) => !file.type.startsWith('image/') && !isHostedHtml(file))
+
+  if (images.length) void uploadImages(images)
+  if (attachments.length) void uploadAttachments(attachments)
+  if (pages.length) {
+    tab.value = 'pages'
+    openPageDialog(undefined, pages[0])
+    if (pages.length > 1) {
+      toast('一次先配置 1 个托管网页，其余 HTML 请再次拖入', 'ri-information-line')
+    }
+  } else if (images.length && !attachments.length) {
+    tab.value = 'img'
+  } else if (attachments.length && !images.length) {
+    tab.value = 'files'
+  }
+}
+
+function onUnifiedPick(event: Event) {
+  const target = event.target as HTMLInputElement
+  if (target.files?.length) autoClassifyUploads(target.files)
+  target.value = ''
+}
+
+function onUnifiedDrop(event: DragEvent) {
+  unifiedDragging.value = false
+  if (event.dataTransfer?.files.length) autoClassifyUploads(event.dataTransfer.files)
 }
 
 /** 图床里的图是站内相对地址，复制出去必须补成绝对地址才能公网访问。 */
@@ -258,6 +343,28 @@ function onFileSettingsSaved(settings: FileSettings) {
         hidden
         @change="onPick"
       />
+    </div>
+
+    <div
+      class="unified-drop"
+      :class="{ dragging: unifiedDragging, busy: uploading > 0 }"
+      role="button"
+      tabindex="0"
+      @click="unifiedInput?.click()"
+      @keydown.enter.prevent="unifiedInput?.click()"
+      @keydown.space.prevent="unifiedInput?.click()"
+      @dragenter.prevent="unifiedDragging = true"
+      @dragover.prevent="unifiedDragging = true"
+      @dragleave.prevent="unifiedDragging = false"
+      @drop.prevent="onUnifiedDrop"
+    >
+      <i :class="uploading > 0 ? 'ri-loader-4-line spin' : 'ri-drag-drop-line'"></i>
+      <div>
+        <b>{{ uploading > 0 ? `正在上传 ${uploading} 个文件…` : '拖拽或选择任意文件，自动分类' }}</b>
+        <span>图片进入图床，HTML 进入网页托管设置，其余进入文件库</span>
+      </div>
+      <button type="button" :disabled="uploading > 0" @click.stop="unifiedInput?.click()">选择文件</button>
+      <input ref="unifiedInput" type="file" multiple hidden @change="onUnifiedPick" />
     </div>
 
     <template v-if="tab === 'files'">
@@ -415,24 +522,24 @@ function onFileSettingsSaved(settings: FileSettings) {
       </div>
     </template>
 
-    <div v-if="pageDialog" class="dialog-mask" @click.self="pageDialog = false">
+    <div v-if="pageDialog" class="dialog-mask" @click.self="closePageDialog">
       <form class="page-dialog" @submit.prevent="savePage">
         <div class="dialog-title">{{ editingPage ? '修改托管网页' : '托管 HTML' }}</div>
         <label
-          >页面标题<input v-model="pageTitle" maxlength="200" placeholder="显示在浏览器标签页"
+          >页面标题<input v-model="pageTitle" maxlength="200" placeholder="显示在浏览器标签页" @input="pageTitleAuto = false"
         /></label>
         <label
           >链接后缀
           <div class="slug-input">
             <span>/api/pages/</span
-            ><input v-model="pageSlug" maxlength="80" placeholder="my-page" /></div
+            ><input v-model="pageSlug" maxlength="80" placeholder="my-page" @input="pageSlugAuto = false" /></div
         ></label>
         <label
           >HTML 文件<input
             type="file"
             accept=".html,.htm,text/html"
             :required="!editingPage"
-            @change="pageHtml = ($event.target as HTMLInputElement).files?.[0] ?? null"
+            @change="onPageHtmlPick"
           /><small v-if="editingPage">不选择则保留现有文件</small></label
         >
         <label
@@ -445,7 +552,7 @@ function onFileSettingsSaved(settings: FileSettings) {
           ></label
         >
         <div class="dialog-actions">
-          <button type="button" class="copy-btn" @click="pageDialog = false">取消</button
+          <button type="button" class="copy-btn" @click="closePageDialog">取消</button
           ><button class="btn-primary" :disabled="pageSaving">
             {{ pageSaving ? '发布中…' : '发布' }}
           </button>
@@ -557,6 +664,60 @@ function onFileSettingsSaved(settings: FileSettings) {
 }
 .btn-primary i {
   font-size: 14px;
+}
+.unified-drop {
+  margin-top: 14px;
+  min-height: 82px;
+  padding: 14px 18px;
+  border: 1px dashed var(--wao-line-strong);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+}
+.unified-drop:hover,
+.unified-drop:focus-visible,
+.unified-drop.dragging {
+  border-color: var(--wao-primary);
+  background: var(--wao-primary-tint);
+  outline: none;
+}
+.unified-drop.dragging {
+  transform: translateY(-1px);
+}
+.unified-drop > i {
+  font-size: 26px;
+  color: var(--wao-primary);
+}
+.unified-drop > div {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+.unified-drop b {
+  font-size: 13px;
+}
+.unified-drop span {
+  color: var(--wao-text-weak);
+  font-size: 11.5px;
+}
+.unified-drop button {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.unified-drop button:disabled,
+.unified-drop.busy {
+  cursor: progress;
 }
 .note {
   margin-top: 12px;
@@ -912,6 +1073,16 @@ function onFileSettingsSaved(settings: FileSettings) {
   }
   .file-size {
     margin-left: 42px;
+  }
+  .unified-drop {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .unified-drop > div {
+    min-width: calc(100% - 44px);
+  }
+  .unified-drop button {
+    margin-left: 39px;
   }
 }
 </style>
