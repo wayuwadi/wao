@@ -59,7 +59,7 @@ npm run build                     # type-check + 生产构建
 
 请求链路：`浏览器 → 云 Nginx（静态托管 + HTTPS）→ Gateway → 同机 wao-server`。关键约定：**每个 Gateway 只路由到同机 `wao-server:8080`**（见 ADR-006），节点级故障转移由云 Nginx 完成；两个 App 实例仍注册到 Nacos，仅用于注册状态与后续服务治理，不用于 Gateway 选址。
 
-生产为三节点：云服务器（Nginx/TLS/前端）、Linux 主节点、Windows 从节点（容器跑在 WSL2 Ubuntu 的 Docker Engine 中）。部署编排见 `deploy/`（`docker-compose-master.yml`、`docker-compose-slave.yml`、`scripts/`），运维细节见 `deploy/README.md` 与 `docs/runbooks/phase-0-rollout.md`。
+生产为三节点：云服务器（Nginx/TLS/前端）、Linux2 主节点、Linux1 原生 Linux 从节点。部署编排见 `deploy/`（`docker-compose-master.yml`、`docker-compose-slave.yml`、`scripts/`），运维细节见 `deploy/README.md` 与 `docs/runbooks/phase-0-rollout.md`。
 
 ## Claude 特定约定
 

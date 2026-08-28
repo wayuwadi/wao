@@ -10,7 +10,7 @@ if [ -f "${deploy_dir}/.env" ]; then
 fi
 
 MASTER_PUBLIC_HOST="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}"
-SLAVE_PUBLIC_HOST="${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}"
+SLAVE_PUBLIC_HOST="${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}"
 output_path="${WAO_NGINX_RENDER_OUTPUT:-${deploy_dir}/nginx/wao.wayuwa.cn.conf}"
 
 resolve_ipv4() {

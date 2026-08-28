@@ -42,10 +42,10 @@ read_status() {
   printf '%s' "${value:-$fallback}"
 }
 
-windows_status="$(read_status windows_status not_started)"
-windows_detail="$(read_status windows_detail 无状态)"
-linux_status="$(read_status linux_status not_started)"
-linux_detail="$(read_status linux_detail 无状态)"
+slave_status="$(read_status slave_status not_started)"
+slave_detail="$(read_status slave_detail 无状态)"
+master_status="$(read_status master_status not_started)"
+master_detail="$(read_status master_detail 无状态)"
 cloud_status="$(read_status cloud_status not_started)"
 cloud_detail="$(read_status cloud_detail 无状态)"
 verification_status="$(read_status verification_status not_started)"
@@ -67,12 +67,12 @@ case "$failure_stage" in
   'Agent Web tests and build') failure_stage='Agent Web 测试与构建' ;;
   'AI Runner tests') failure_stage='AI Runner 测试' ;;
   'Build immutable release') failure_stage='不可变制品构建' ;;
-  'Deploy Windows, Linux and cloud') failure_stage='三节点滚动发布' ;;
+  'Deploy Linux slave, master and cloud') failure_stage='三节点滚动发布' ;;
   'Apply Jenkins controller configuration') failure_stage='Jenkins 控制器配置' ;;
 esac
 failure_detail=''
-if [ "$windows_status" = failed ]; then failure_detail="$windows_detail";
-elif [ "$linux_status" = failed ]; then failure_detail="$linux_detail";
+if [ "$slave_status" = failed ]; then failure_detail="$slave_detail";
+elif [ "$master_status" = failed ]; then failure_detail="$master_detail";
 elif [ "$cloud_status" = failed ]; then failure_detail="$cloud_detail";
 elif [ "$verification_status" = failed ]; then failure_detail="$verification_detail";
 fi

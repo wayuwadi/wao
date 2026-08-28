@@ -4,47 +4,45 @@ set -u
 : "${WAO_GIT_SHA:?WAO_GIT_SHA is required}"
 : "${WAO_RUN_TEMP:?WAO_RUN_TEMP is required}"
 : "${WAO_MASTER_PROJECT_ROOT:?WAO_MASTER_PROJECT_ROOT is required}"
-: "${WINDOWS_SSH_KEY:?WINDOWS_SSH_KEY is required}"
-: "${WINDOWS_KNOWN_HOSTS:?WINDOWS_KNOWN_HOSTS is required}"
+: "${SLAVE_SSH_KEY:?SLAVE_SSH_KEY is required}"
+: "${SLAVE_KNOWN_HOSTS:?SLAVE_KNOWN_HOSTS is required}"
 : "${SLAVE_USER:?SLAVE_USER is required}"
 : "${CLOUD_SSH_KEY:?CLOUD_SSH_KEY is required}"
 : "${CLOUD_KNOWN_HOSTS:?CLOUD_KNOWN_HOSTS is required}"
 : "${CLOUD_USER:?CLOUD_USER is required}"
 
-BOOTSTRAP_WINDOWS="${BOOTSTRAP_WINDOWS:-false}"
-ALLOW_WINDOWS_OFFLINE="${ALLOW_WINDOWS_OFFLINE:-false}"
+BOOTSTRAP_SLAVE="${BOOTSTRAP_SLAVE:-false}"
+ALLOW_SLAVE_OFFLINE="${ALLOW_SLAVE_OFFLINE:-false}"
 WAO_BUILD_ATTEMPT="${WAO_BUILD_ATTEMPT:-1}"
-export BOOTSTRAP_WINDOWS ALLOW_WINDOWS_OFFLINE WAO_BUILD_ATTEMPT
+export BOOTSTRAP_SLAVE ALLOW_SLAVE_OFFLINE WAO_BUILD_ATTEMPT
 
 umask 077
 install -d "$WAO_RUN_TEMP"
 test -f "$WAO_RUN_TEMP/wao-release.tgz"
-test -f "$WAO_RUN_TEMP/wao-release.zip"
 test -f "$WAO_RUN_TEMP/wao-images.tar.gz"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/certs/gateway.p12"
 
 ln -sf "$WAO_RUN_TEMP/wao-release.tgz" wao-release.tgz
-ln -sf "$WAO_RUN_TEMP/wao-release.zip" wao-release.zip
 ln -sf "$WAO_RUN_TEMP/wao-images.tar.gz" wao-images.tar.gz
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets" wao-secrets.env
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/.env" wao-shared.env
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/certs/gateway.p12" wao-gateway.p12
 
-if [ "$BOOTSTRAP_WINDOWS" = true ]; then
+if [ "$BOOTSTRAP_SLAVE" = true ]; then
   WAO_PROJECT_ROOT="$WAO_MASTER_PROJECT_ROOT" \
     sh deploy/scripts/create-mysql-snapshot.sh wao-bootstrap.sql.gz
 fi
 
 WAO_SSH_CONFIG="$WAO_RUN_TEMP/ssh_config"
 cat >"$WAO_SSH_CONFIG" <<EOF
-Host wao-windows
+Host wao-slave
   HostName $SLAVE_HOST
   User $SLAVE_USER
-  IdentityFile $WINDOWS_SSH_KEY
+  IdentityFile $SLAVE_SSH_KEY
   IdentitiesOnly yes
-  UserKnownHostsFile $WINDOWS_KNOWN_HOSTS
+  UserKnownHostsFile $SLAVE_KNOWN_HOSTS
   StrictHostKeyChecking yes
   ServerAliveInterval 30
   ServerAliveCountMax 6
@@ -59,7 +57,7 @@ EOF
 chmod 0600 "$WAO_SSH_CONFIG"
 
 cleanup_deploy_inputs() {
-  rm -f -- wao-release.tgz wao-release.zip wao-images.tar.gz \
+  rm -f -- wao-release.tgz wao-images.tar.gz \
     wao-secrets.env wao-shared.env wao-gateway.p12 wao-bootstrap.sql.gz
 }
 trap cleanup_deploy_inputs EXIT HUP INT TERM
@@ -67,8 +65,8 @@ trap cleanup_deploy_inputs EXIT HUP INT TERM
 set -u
 status_file="$WAO_RUN_TEMP/wao-deploy-status.env"
 printf '%s\n' \
-  'windows_status=not_started' 'windows_attempts=0' 'windows_detail=not_started' \
-  'linux_status=not_started' 'linux_attempts=0' 'linux_detail=not_started' \
+  'slave_status=not_started' 'slave_attempts=0' 'slave_detail=not_started' \
+  'master_status=not_started' 'master_attempts=0' 'master_detail=not_started' \
   'cloud_status=not_started' 'cloud_detail=not_started' \
   'verification_status=not_started' 'verification_detail=not_started' >"$status_file"
 slave_deployed=false
@@ -78,7 +76,7 @@ schema_quiesced=false
 schema_rollout_complete=false
 linux_only_schema_rollout=false
 safe_slave_reachable=false
-windows_available=true
+slave_available=true
 safe_schema_rollout=false
 
 set_status() {
@@ -103,15 +101,15 @@ retry_remote() {
   done
 }
 
-windows_ssh() {
+slave_ssh() {
   command ssh -F "$WAO_SSH_CONFIG" "$@"
 }
 
-windows_scp() {
+slave_scp() {
   command scp -F "$WAO_SSH_CONFIG" "$@"
 }
 
-windows_deploy_ssh() {
+slave_deploy_ssh() {
   # 包含最多 10 分钟的部署锁等待，并为镜像导入和容器重建保留余量；即使远端进程
   # 仍保持 SSH 连接，也不能让单次 Jenkins 尝试无限挂起。
   command timeout --foreground --signal=TERM 30m ssh -F "$WAO_SSH_CONFIG" "$@"
@@ -168,15 +166,12 @@ install_master_deploy_helper() {
 provision_jumpserver_asset_access() {
   public_key="$WAO_MASTER_PROJECT_ROOT/deploy/.jumpserver-asset-key.pub"
   test -s "$public_key"
-  case "$MASTER_HOST" in *[!A-Za-z0-9.-]*|'') return 1 ;; esac
 
-  retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
-    "$public_key" deploy/jumpserver/install-public-key.ps1 deploy/jumpserver/enable-rdp.ps1 \
-    "wao-windows:D:/deploy/" || return
-  retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
-    'powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\install-public-key.ps1 -PublicKeyPath D:\deploy\.jumpserver-asset-key.pub' || return
-  retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
-    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\enable-rdp.ps1 -JumpServerHost $MASTER_HOST" || return
+  retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
+    "$public_key" deploy/jumpserver/install-public-key.sh \
+    "wao-slave:/tmp/" || return
+  retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
+    'sh /tmp/install-public-key.sh /tmp/.jumpserver-asset-key.pub' || return
 
   retry_remote "云前端" scp -o ConnectTimeout=15 \
     "$public_key" deploy/jumpserver/install-public-key.sh \
@@ -192,32 +187,33 @@ verify_jumpserver_assets() {
 
 deploy_slave() {
   release_suffix="${BUILD_NUMBER}-${WAO_BUILD_ATTEMPT:-1}"
-  remote_release="wao-release-${release_suffix}.zip"
+  remote_release="wao-release-${release_suffix}.tgz"
   remote_secrets="wao-secrets-${release_suffix}.env"
   remote_shared_env="wao-shared-${release_suffix}.env"
   remote_certificate="wao-gateway-${release_suffix}.p12"
   remote_images="wao-images-${release_suffix}.tar.gz"
   remote_snapshot="wao-bootstrap-${release_suffix}.sql.gz"
-  remote_installer="install-release-windows-${release_suffix}.ps1"
-  retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
-    wao-release.zip wao-secrets.env wao-shared.env wao-gateway.p12 wao-images.tar.gz \
-    "wao-windows:D:/deploy/" || return
-  retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
-    deploy/scripts/install-release-windows.ps1 \
-    "wao-windows:D:/deploy/$remote_installer" || return
-  retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
-    "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Move-Item -Force D:\\deploy\\wao-release.zip D:\\deploy\\$remote_release; Move-Item -Force D:\\deploy\\wao-secrets.env D:\\deploy\\$remote_secrets; Move-Item -Force D:\\deploy\\wao-shared.env D:\\deploy\\$remote_shared_env; Move-Item -Force D:\\deploy\\wao-gateway.p12 D:\\deploy\\$remote_certificate; Move-Item -Force D:\\deploy\\wao-images.tar.gz D:\\deploy\\$remote_images\"" || return
-  retry_remote "Windows 从节点" windows_deploy_ssh -o ConnectTimeout=15 "wao-windows" \
-    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\$remote_installer -ArchivePath D:\\deploy\\$remote_release -PrivateEnvPath D:\\deploy\\$remote_secrets -SharedEnvPath D:\\deploy\\$remote_shared_env -GatewayCertificatePath D:\\deploy\\$remote_certificate -ImageArchivePath D:\\deploy\\$remote_images -ImageTag $WAO_GIT_SHA" || return
-  if [ "$BOOTSTRAP_WINDOWS" = true ]; then
+  remote_installer="install-release-linux-${release_suffix}.sh"
+  remote_dir="deploy/incoming/${release_suffix}"
+  retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
+    "install -d -m 0700 '$remote_dir'" || return
+  retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
+    wao-release.tgz wao-secrets.env wao-shared.env wao-gateway.p12 wao-images.tar.gz \
+    "wao-slave:$remote_dir/" || return
+  retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
+    deploy/scripts/install-release-linux.sh \
+    "wao-slave:$remote_dir/$remote_installer" || return
+  retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
+    "cd '$remote_dir' && mv wao-release.tgz '$remote_release' && mv wao-secrets.env '$remote_secrets' && mv wao-shared.env '$remote_shared_env' && mv wao-gateway.p12 '$remote_certificate' && mv wao-images.tar.gz '$remote_images'" || return
+  snapshot_argument=""
+  if [ "$BOOTSTRAP_SLAVE" = true ]; then
     test -s wao-bootstrap.sql.gz || return 1
-    retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 wao-bootstrap.sql.gz \
-      "wao-windows:D:/deploy/$remote_snapshot" || return
-    retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
-      "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\wao\\deploy\\scripts\\bootstrap-windows-slave.ps1 -SnapshotPath D:\\deploy\\$remote_snapshot" || return
+    retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 wao-bootstrap.sql.gz \
+      "wao-slave:$remote_dir/$remote_snapshot" || return
+    snapshot_argument="$remote_dir/$remote_snapshot"
   fi
-  retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
-    "wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-deployment-node.sh slave $WAO_GIT_SHA" || return
+  retry_remote "Linux1 从节点" slave_deploy_ssh -o ConnectTimeout=15 "wao-slave" \
+    "sh '$remote_dir/$remote_installer' '$remote_dir/$remote_release' '$remote_dir/$remote_secrets' '$remote_dir/$remote_shared_env' '$remote_dir/$remote_certificate' '$remote_dir/$remote_images' '$WAO_GIT_SHA' '$snapshot_argument'" || return
   slave_deployed=true
 }
 
@@ -368,8 +364,8 @@ quiesce_master() {
 
 quiesce_slave() {
   action="$1"
-  retry_remote "Windows 从节点" windows_ssh -o ConnectTimeout=15 "wao-windows" \
-    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\\deploy\\wao-quiesce-server.ps1 -Action $action"
+  retry_remote "Linux1 从节点" slave_ssh -o ConnectTimeout=15 "wao-slave" \
+    "sh deploy/wao-quiesce-server.sh slave '$action' \"\$HOME/deploy/wao\""
 }
 
 restore_upstreams() {
@@ -441,53 +437,50 @@ fi
 
 trap cleanup_rollout EXIT
 
-if ! windows_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
-    "wao-windows" 'wsl.exe -d Ubuntu -u root -- docker info' >/dev/null; then
+if ! slave_ssh -o BatchMode=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 \
+    "wao-slave" 'docker info' >/dev/null; then
   set_upstream_state slave down || true
-  if [ "$ALLOW_WINDOWS_OFFLINE" = true ]; then
-    windows_available=false
-    set_status windows_status skipped
-    set_status windows_detail 'Windows 预检不可达；已显式授权 Linux-only 发布'
-    echo 'Windows 从节点预检不可达；保持摘流并按显式授权继续发布 Linux 与云端。'
+  if [ "$ALLOW_SLAVE_OFFLINE" = true ]; then
+    slave_available=false
+    set_status slave_status skipped
+    set_status slave_detail 'Linux1 预检不可达；已显式授权主节点单机发布'
+    echo 'Linux1 从节点预检不可达；保持摘流并按显式授权继续发布主节点与云端。'
   else
-    set_status windows_status failed
-    set_status windows_detail 'SSH、WSL 或 Docker 预检失败'
-    echo 'Windows 从节点严格预检失败；Linux 保持当前版本，本次发布失败。'
+    set_status slave_status failed
+    set_status slave_detail 'SSH 或 Docker 预检失败'
+    echo 'Linux1 从节点严格预检失败；Linux2 保持当前版本，本次发布失败。'
     exit 1
   fi
 fi
 
-if [ "$safe_schema_rollout" != true ] && [ "$windows_available" = true ]; then
+if [ "$safe_schema_rollout" != true ] && [ "$slave_available" = true ]; then
   start_availability_monitor
 fi
 
 # V77 首次引入带版本的飞书归档写入。旧二进制不认识新栅栏，因此该次 push
 # 用一次性维护窗口：先暂停定时同步、摘流并停掉所有在线旧 server，再允许新节点执行 migration。
-# Windows 离线且成员显式授权时保持 slave down 和同步暂停，但继续交付 Linux；详见 ADR-100。
+# 从节点离线且成员显式授权时保持 slave down 和同步暂停，但继续交付主节点；详见 ADR-100。
 if [ "$safe_schema_rollout" = true ]; then
   echo '::notice title=V77 安全升级::暂停飞书定时同步并停止旧版 API 节点后再执行 migration。'
   if ! set_upstream_state slave down || ! set_upstream_state master down; then
     echo '无法为 V77 建立全量摘流窗口。'
     exit 1
   fi
-  if [ "$windows_available" = true ]; then
+  if [ "$slave_available" = true ]; then
     safe_slave_reachable=true
-    retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
+    retry_remote "Linux1 从节点" slave_scp -o ConnectTimeout=15 \
       deploy/scripts/quiesce-wao-server.sh \
-      "wao-windows:D:/deploy/wao-quiesce-server.sh" || exit 1
-    retry_remote "Windows 从节点" windows_scp -o ConnectTimeout=15 \
-      deploy/scripts/quiesce-wao-server-windows.ps1 \
-      "wao-windows:D:/deploy/wao-quiesce-server.ps1" || exit 1
+      "wao-slave:deploy/wao-quiesce-server.sh" || exit 1
   else
-    echo 'Windows 从节点离线；保持 slave 摘流和飞书同步暂停，本次继续升级 Linux 与云端。'
+    echo 'Linux1 从节点离线；保持 slave 摘流和飞书同步暂停，本次继续升级 Linux2 与云端。'
   fi
   if ! quiesce_master pause-feishu-sync; then
     echo '无法暂停飞书定时同步，V77 未开始。'
     exit 1
   fi
-  if [ "$safe_slave_reachable" = true ] && [ "$BOOTSTRAP_WINDOWS" != true ] && ! quiesce_slave stop; then
+  if [ "$safe_slave_reachable" = true ] && [ "$BOOTSTRAP_SLAVE" != true ] && ! quiesce_slave stop; then
     quiesce_master restore-feishu-sync || true
-    echo '无法停止 Windows 旧版 server，V77 未开始。'
+    echo '无法停止 Linux1 旧版 server，V77 未开始。'
     exit 1
   fi
   if ! quiesce_master stop; then
@@ -505,41 +498,41 @@ if [ "$safe_schema_rollout" != true ]; then
     https://wao.wayuwa.cn/api/hello | grep -q '"code":0'
 fi
 
-if [ "$windows_available" = true ]; then
-  if ! retry_node_deploy Windows deploy_slave slave.log; then
-    set_status windows_status failed
-    set_status windows_attempts "$NODE_DEPLOY_ATTEMPTS"
-    set_status windows_detail "$(tail -n 1 slave.log)"
+if [ "$slave_available" = true ]; then
+  if ! retry_node_deploy Linux1 deploy_slave slave.log; then
+    set_status slave_status failed
+    set_status slave_attempts "$NODE_DEPLOY_ATTEMPTS"
+    set_status slave_detail "$(tail -n 1 slave.log)"
     set_upstream_state slave down || true
-    echo 'Windows 从节点三次部署失败；Linux 保持当前版本，本次发布严格失败。'
+    echo 'Linux1 从节点三次部署失败；Linux2 保持当前版本，本次发布严格失败。'
     exit 1
   fi
-  set_status windows_status success
-  set_status windows_attempts "$NODE_DEPLOY_ATTEMPTS"
-  set_status windows_detail "$WAO_GIT_SHA"
+  set_status slave_status success
+  set_status slave_attempts "$NODE_DEPLOY_ATTEMPTS"
+  set_status slave_detail "$WAO_GIT_SHA"
   if ! gateway_ready_from_cloud "$SLAVE_HOST"; then
-    if [ "$ALLOW_WINDOWS_OFFLINE" = true ]; then
-      windows_available=false
+    if [ "$ALLOW_SLAVE_OFFLINE" = true ]; then
+      slave_available=false
       slave_deployed=false
-      set_status windows_status skipped
-      set_status windows_detail 'Windows 已部署，但云节点无法直连 Gateway；保持摘流并继续 Linux-only 发布'
+      set_status slave_status skipped
+      set_status slave_detail 'Linux1 已部署，但云节点无法直连 Gateway；保持摘流并继续主节点单机发布'
       set_upstream_state slave down || true
-      echo 'Windows 已部署且节点内验证通过，但云节点无法直连 Gateway；按显式授权保持摘流并继续发布。'
+      echo 'Linux1 已部署且节点内验证通过，但云节点无法直连 Gateway；按显式授权保持摘流并继续发布。'
     else
-      set_status windows_status failed
-      set_status windows_detail '云节点无法直连 Windows Gateway'
+      set_status slave_status failed
+      set_status slave_detail '云节点无法直连 Linux1 Gateway'
       set_upstream_state slave down || true
       exit 1
     fi
   else
     set_upstream_state slave up || exit 1
-    echo 'Windows deployment completed and the node is back in the public upstream.'
+    echo 'Linux1 deployment completed and the node is back in the public upstream.'
   fi
 fi
 
 if ! install_master_deploy_helper; then
-  set_status linux_status failed
-  set_status linux_detail '无法安装本次发布的 Linux 部署助手'
+  set_status master_status failed
+  set_status master_detail '无法安装本次发布的 Linux2 部署助手'
   exit 1
 fi
 
@@ -547,58 +540,58 @@ if [ "$safe_schema_rollout" != true ]; then
   set_upstream_state master down || exit 1
 fi
 master_drained=true
-if [ "$windows_available" = true ]; then
+if [ "$slave_available" = true ]; then
   for probe in 1 2 3 4 5; do
     hello="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --retry-all-errors \
-      "https://wao.wayuwa.cn/api/hello?windows-rollout-probe=$probe")"
+      "https://wao.wayuwa.cn/api/hello?slave-rollout-probe=$probe")"
     printf '%s' "$hello" | grep -q '"code":0'
   done
 fi
 
 if ! retry_node_deploy Linux deploy_master master.log; then
-  set_status linux_status failed
-  set_status linux_attempts "$NODE_DEPLOY_ATTEMPTS"
-  set_status linux_detail "$(tail -n 1 master.log)"
+  set_status master_status failed
+  set_status master_attempts "$NODE_DEPLOY_ATTEMPTS"
+  set_status master_detail "$(tail -n 1 master.log)"
   set_upstream_state master down || true
-  echo 'Linux 主节点三次部署失败；Windows 继续承载请求，本次发布严格失败。'
+  echo 'Linux2 主节点三次部署失败；Linux1 继续承载请求，本次发布严格失败。'
   exit 1
 fi
 master_deployed=true
-set_status linux_status success
-set_status linux_attempts "$NODE_DEPLOY_ATTEMPTS"
-set_status linux_detail "$WAO_GIT_SHA"
+set_status master_status success
+set_status master_attempts "$NODE_DEPLOY_ATTEMPTS"
+set_status master_detail "$WAO_GIT_SHA"
 
 if [ "$safe_schema_rollout" = true ]; then
   if [ "$safe_slave_reachable" = true ]; then
     if ! quiesce_master complete-v77-rollout; then
-      set_status linux_status failed
-      set_status linux_detail 'V77 完成标记或飞书同步恢复失败'
+      set_status master_status failed
+      set_status master_detail 'V77 完成标记或飞书同步恢复失败'
       exit 1
     fi
     completed_status_output="$(quiesce_master rollout-status)" || exit 1
     completed_status="$(printf '%s\n' "$completed_status_output" | tr -d '\r' | tail -n 1)"
     if [ "$completed_status" != complete ]; then
-      set_status linux_status failed
-      set_status linux_detail 'V77 完成状态复核失败'
+      set_status master_status failed
+      set_status master_detail 'V77 完成状态复核失败'
       exit 1
     fi
     schema_rollout_complete=true
   else
     linux_only_schema_rollout=true
-    echo 'Linux 已单节点完成；Windows 继续保持 down，V77 完成标记和飞书同步保持暂停。'
+    echo 'Linux2 已单节点完成；Linux1 继续保持 down，V77 完成标记和飞书同步保持暂停。'
   fi
 fi
 set_upstream_state master up || exit 1
 echo 'Linux deployment completed and the node is back in the public upstream.'
 
 if ! provision_jumpserver_asset_access; then
-  set_status linux_status failed
-  set_status linux_detail 'JumpServer 专用资产公钥安装失败'
+  set_status master_status failed
+  set_status master_detail 'JumpServer 专用资产公钥安装失败'
   exit 1
 fi
 if ! verify_jumpserver_assets; then
-  set_status linux_status failed
-  set_status linux_detail 'JumpServer 三节点 SSH 或资产登记验收失败'
+  set_status master_status failed
+  set_status master_detail 'JumpServer 三节点 SSH 或资产登记验收失败'
   exit 1
 fi
 
@@ -614,10 +607,10 @@ printf '\n===== cloud =====\n'; cat cloud.log
 
 gateway_ready_from_cloud "$MASTER_HOST"
 sh "$WAO_MASTER_PROJECT_ROOT/deploy/scripts/validate-deployment-node.sh" master "$WAO_GIT_SHA"
-if [ "$windows_available" = true ]; then
+if [ "$slave_available" = true ]; then
   gateway_ready_from_cloud "$SLAVE_HOST"
-  retry_remote "Windows 从节点" windows_ssh "wao-windows" \
-    "wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-deployment-node.sh slave $WAO_GIT_SHA"
+  retry_remote "Linux1 从节点" slave_ssh "wao-slave" \
+    "sh deploy/wao/deploy/scripts/validate-deployment-node.sh slave '$WAO_GIT_SHA'"
 fi
 
 stop_availability_monitor

@@ -10,9 +10,9 @@ pipeline {
 
     parameters {
         booleanParam(
-            name: 'BOOTSTRAP_WINDOWS',
+            name: 'BOOTSTRAP_SLAVE',
             defaultValue: false,
-            description: '从 Linux 主库生成 GTID 快照并重建 Windows 从库。正常发布必须保持关闭。'
+            description: '从 Linux2 主库生成 GTID 快照并重建 Linux1 从库。正常发布必须保持关闭。'
         )
         booleanParam(
             name: 'DEPLOY_PRODUCTION',
@@ -20,16 +20,16 @@ pipeline {
             description: '关闭时只执行测试、前端构建、Docker 镜像构建和发布包校验。'
         )
         booleanParam(
-            name: 'ALLOW_WINDOWS_OFFLINE',
+            name: 'ALLOW_SLAVE_OFFLINE',
             defaultValue: false,
-            description: '仅在 Windows 预检不可达时保持从节点摘流并继续发布 Linux 与云端；Windows 可达后的部署失败仍会阻断。'
+            description: '仅在 Linux1 预检不可达时保持从节点摘流并继续发布主节点与云端；从节点可达后的部署失败仍会阻断。'
         )
     }
 
     environment {
         WAO_RUN_TEMP = "${WORKSPACE}@tmp/wao-${BUILD_NUMBER}"
         MASTER_HOST = 'linux2.wayuwa.cn'
-        SLAVE_HOST = 'windows1.wayuwa.cn'
+        SLAVE_HOST = 'linux1.wayuwa.cn'
         CLOUD_HOST = '8.136.152.131'
     }
 
@@ -195,20 +195,20 @@ pipeline {
             }
         }
 
-        stage('Deploy Windows, Linux and cloud') {
+        stage('Deploy Linux slave, master and cloud') {
             when {
                 expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' }
             }
             steps {
                 withCredentials([
                     sshUserPrivateKey(
-                        credentialsId: 'wao-windows-ssh',
-                        keyFileVariable: 'WINDOWS_SSH_KEY',
+                        credentialsId: 'wao-slave-ssh',
+                        keyFileVariable: 'SLAVE_SSH_KEY',
                         usernameVariable: 'SLAVE_USER'
                     ),
                     file(
-                        credentialsId: 'wao-windows-known-hosts',
-                        variable: 'WINDOWS_KNOWN_HOSTS'
+                        credentialsId: 'wao-slave-known-hosts',
+                        variable: 'SLAVE_KNOWN_HOSTS'
                     ),
                     sshUserPrivateKey(
                         credentialsId: 'wao-cloud-ssh',
@@ -220,13 +220,13 @@ pipeline {
                         variable: 'CLOUD_KNOWN_HOSTS'
                     )
                 ]) {
-                    sh 'BOOTSTRAP_WINDOWS="$BOOTSTRAP_WINDOWS" ALLOW_WINDOWS_OFFLINE="$ALLOW_WINDOWS_OFFLINE" deploy/jenkins/ci-deploy.sh'
+                    sh 'BOOTSTRAP_SLAVE="$BOOTSTRAP_SLAVE" ALLOW_SLAVE_OFFLINE="$ALLOW_SLAVE_OFFLINE" deploy/jenkins/ci-deploy.sh'
                     sh 'deploy/jenkins/ci-production-verify.sh'
                 }
             }
             post {
                 failure {
-                    script { env.WAO_FAILURE_STAGE = 'Deploy Windows, Linux and cloud' }
+                    script { env.WAO_FAILURE_STAGE = 'Deploy Linux slave, master and cloud' }
                 }
             }
         }

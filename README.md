@@ -10,7 +10,7 @@ WAO 是一个由 AI 协作开发的前后端分离系统，采用 Spec-Driven De
 | 前端脚手架       | 已完成 | Vue 3、Vite、TypeScript、Pinia、Vue Router 4、Ant Design Vue     |
 | 本地 Demo        | 可运行 | 使用 `local` Profile，不依赖 Docker、MySQL、Redis 或 Nacos       |
 | 生产部署代码     | 已完成 | 双节点 Compose、MySQL 主从、Redis Sentinel、云 Nginx、TLS、CI/CD |
-| 三节点实机上线   | 已完成 | 云前端/HTTPS、Linux 主节点与 Windows 从节点均已通过公网验收       |
+| 三节点实机上线   | 已完成 | 云前端/HTTPS、Linux2 主节点与 Linux1 从节点组成主从环境          |
 | Phase 1 业务功能 | 待规格 | 需要设计稿、ER 模型和业务 API 契约                               |
 
 ## 技术栈
@@ -59,11 +59,9 @@ Invoke-RestMethod http://localhost:9000/api/hello
 
 当前 Demo 是 Phase 0 的系统状态页，用于验证真实前后端链路；它不是尚未导入的 `WAO Life OS v3` 设计稿成品。
 
-## 为什么 Windows 生产节点使用 WSL2 Ubuntu
+## 双 Linux 生产节点
 
-MySQL、Redis、Nacos 和项目 Dockerfile 当前均使用 Linux 容器镜像，需要 Linux 内核提供容器运行能力。Windows 生产从节点采用 Windows 11 Pro 的 WSL2，在无桌面的 Ubuntu 24.04 中直接安装 Docker Engine；不依赖 Docker Desktop 的桌面登录和单独生命周期。
-
-这不会把电脑改成 Ubuntu，也不会影响 Windows 日常使用：代码仍在 `D:\CodeSpace\wao`，部署目录仍在 `D:\deploy`，Ubuntu 只作为无桌面的后台容器运行层。实机将 WSL 限制为 4 核、8GB 内存和 2GB swap；当前完整副本运行约占 3GB 内存，动态 VHD 约 4GB。停止计划任务并执行 `wsl --shutdown` 后，运行内存会释放。
+生产环境使用两台原生 Linux：`linux2.wayuwa.cn` 作为主节点和 Jenkins 控制器，`linux1.wayuwa.cn` 作为从节点、开发机与 AI Runner。两台应用节点运行同一 Git SHA 的 Linux 容器；MySQL 使用 GTID 主从复制，Redis 使用主从复制和双 Sentinel。旧 Windows1 已重装为 Linux1，不再使用 WSL2、PowerShell 发布或 RDP 运维链路。
 
 ## 完整开发环境
 

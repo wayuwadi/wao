@@ -89,7 +89,7 @@ class DeploymentRoutingConfigTest {
                 .contains("env.WAO_FAILURE_STAGE = 'Validate release inputs'")
                 .contains("env.WAO_FAILURE_STAGE = 'Backend tests'")
                 .contains("env.WAO_FAILURE_STAGE = 'Build immutable release'")
-                .contains("env.WAO_FAILURE_STAGE = 'Deploy Windows, Linux and cloud'")
+                .contains("env.WAO_FAILURE_STAGE = 'Deploy Linux slave, master and cloud'")
                 .contains("env.WAO_FAILURE_STAGE = 'Apply Jenkins controller configuration'")
                 .contains("Jenkins 失败：${env.WAO_FAILURE_STAGE.trim()}")
                 .contains("github-status.sh failure \"$WAO_STATUS_DESCRIPTION\"");
@@ -233,13 +233,13 @@ class DeploymentRoutingConfigTest {
                 .contains("set_upstream_state slave down")
                 .contains("set_upstream_state master down");
         assertThat(rollout.indexOf("prepare_cloud_routing >routing.log"))
-                .isLessThan(rollout.indexOf("retry_node_deploy Windows deploy_slave slave.log"));
-        assertThat(rollout.indexOf("retry_node_deploy Windows deploy_slave slave.log"))
+                .isLessThan(rollout.indexOf("retry_node_deploy Linux1 deploy_slave slave.log"));
+        assertThat(rollout.indexOf("retry_node_deploy Linux1 deploy_slave slave.log"))
                 .isLessThan(rollout.indexOf("retry_node_deploy Linux deploy_master master.log"));
         assertThat(rollout.indexOf("retry_node_deploy Linux deploy_master master.log"))
                 .isLessThan(rollout.indexOf("deploy_cloud >cloud.log"));
         assertThat(rollout)
-                .contains("wao-release.zip wao-secrets.env wao-shared.env wao-gateway.p12 wao-images.tar.gz")
+                .contains("wao-release.tgz wao-secrets.env wao-shared.env wao-gateway.p12 wao-images.tar.gz")
                 .contains("sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh")
                 .doesNotContain("Prepare Linux Codex package")
                 .doesNotContain("codex-package-x86_64-unknown-linux-musl.tar.gz")
@@ -253,21 +253,21 @@ class DeploymentRoutingConfigTest {
                 .doesNotContain("deploy_master >master.log 2>&1 &")
                 .contains("slave_deployed=false")
                 .contains("slave_deployed=true")
-                .contains("ALLOW_WINDOWS_OFFLINE")
-                .contains("windows_available=false")
+                .contains("ALLOW_SLAVE_OFFLINE")
+                .contains("slave_available=false")
                 .contains("linux_only_schema_rollout=true")
-                .contains("set_status windows_status skipped")
-                .contains("Windows 从节点预检不可达；保持摘流并按显式授权继续发布 Linux 与云端")
+                .contains("set_status slave_status skipped")
+                .contains("Linux1 从节点预检不可达；保持摘流并按显式授权继续发布主节点与云端")
                 .contains("V77 完成标记和飞书同步保持暂停")
-                .contains("Windows 从节点严格预检失败")
-                .contains("Windows 从节点三次部署失败")
-                .contains("Linux 主节点三次部署失败")
+                .contains("Linux1 从节点严格预检失败")
+                .contains("Linux1 从节点三次部署失败")
+                .contains("Linux2 主节点三次部署失败")
                 .contains("validate-deployment-node.sh")
                 .contains("start_availability_monitor");
         assertThat(pipeline)
-                .contains("credentialsId: 'wao-windows-ssh'")
+                .contains("credentialsId: 'wao-slave-ssh'")
                 .contains("credentialsId: 'wao-cloud-ssh'")
-                .contains("name: 'ALLOW_WINDOWS_OFFLINE'")
+                .contains("name: 'ALLOW_SLAVE_OFFLINE'")
                 .contains("disableConcurrentBuilds(abortPrevious: false)");
         assertThat(probe)
                 .contains("elif sudo -n docker info")

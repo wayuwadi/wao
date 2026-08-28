@@ -26,9 +26,9 @@ Phase 0 建立一条最小但真实的纵向链路：Vue 页面请求 `/api/hell
 flowchart LR
     Browser["浏览器"] --> Nginx["云 Nginx / 静态文件"]
     Nginx -->|"HTTPS /api/*"| Gateway1["Linux Gateway"]
-    Nginx -->|"HTTPS /api/*"| Gateway2["Windows Gateway"]
+    Nginx -->|"HTTPS /api/*"| Gateway2["Linux1 Gateway"]
     Gateway1 -->|"本机容器网络"| Server1["Linux WAO Server"]
-    Gateway2 -->|"本机容器网络"| Server2["Windows WAO Server"]
+    Gateway2 -->|"本机容器网络"| Server2["Linux1 WAO Server"]
     Server1 -.注册.-> Nacos["Nacos"]
     Server2 -.注册.-> Nacos
     Server1 --> MySQL[("MySQL 主库")]
@@ -46,7 +46,7 @@ flowchart LR
 - `dev`：使用本机 Docker 基础设施；Swagger 开启；Nacos 可关闭鉴权。
 - `prod`：敏感值来自环境变量；Swagger 关闭；跨节点通过公网地址和 DDNS 域名通信。
 - 前端生产制品直接由云 Nginx 托管，不运行 Node.js 进程。
-- Windows 11 Pro 不安装 Docker Desktop；从节点容器运行在 WSL2 Ubuntu 24.04 的 Docker Engine 中，限制为 4 核/8GB，Windows `portproxy` 将公网端口转发到 WSL。原生计划任务以 `wage` 身份保持 WSL 在线，并在开机时恢复端口转发和容器服务。
+- Linux1 使用原生 Ubuntu Docker Engine，作为 Linux2 的 MySQL/Redis 从节点、第二套应用节点、开发机与 AI Runner；开发工作区 `~/workspace/wao` 与生产目录 `~/deploy/wao` 分离。
 - 主、从节点检测公网 IPv4 变化并刷新 Nacos 注册；云 Nginx 定期重载以重新解析 DDNS 上游。
 
 ## 版本决策

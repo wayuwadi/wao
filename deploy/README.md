@@ -7,10 +7,10 @@
 | 节点                   | 公网地址             | 目录                                 |
 | ---------------------- | -------------------- | ------------------------------------ |
 | Linux 主节点（娃弟）   | `linux2.wayuwa.cn`   | `$(xdg-user-dir DESKTOP)/deploy/wao` |
-| Windows 从节点（娃哥） | `windows1.wayuwa.cn` | `D:\deploy\wao`                      |
+| Linux1 从节点（娃哥）  | `linux1.wayuwa.cn`   | `~/deploy/wao`                       |
 | 云节点                 | `8.136.152.131`      | `/opt/wao`；前端 `/var/www/wao/dist` |
 
-每台机器的 `deploy/.env` 都是私有文件，不提交 Git。在 Windows 管理节点生成一份共享的强随机配置：
+每台机器的 `deploy/.env` 都是私有文件，不提交 Git。可用保留的环境生成脚本在受信任的管理机生成一份共享的强随机配置：
 
 ```powershell
 .\deploy\scripts\new-deployment-env.ps1
@@ -23,7 +23,7 @@
 先确认两个家庭出口不是运营商 CGNAT，并将域名分别解析到对应公网 IPv4：
 
 - `linux2.wayuwa.cn` -> Linux 主节点所在出口；
-- `windows1.wayuwa.cn` -> Windows 从节点所在出口；
+- `linux1.wayuwa.cn` -> Linux1 从节点所在出口；
 - `wao.wayuwa.cn` -> `8.136.152.131`。
 
 家庭路由器需要 TCP 端口映射：
@@ -64,55 +64,28 @@ MASTER_BIND_IP=192.168.31.180
 
 Gateway 以非 root 用户运行。部署脚本会将加密的 `gateway.p12` 调整为 `0644` 以便容器读取；私钥仍由私有 `.env` 中的强随机 `GATEWAY_SSL_PASS` 保护，`.env` 本身保持 `0600`。
 
-安装脚本会把当前登录用户加入 `docker` 组；重新登录后再执行部署。主节点部署脚本会为当前用户安装每五分钟运行的公网 IP 刷新任务。
+安装脚本会把当前登录用户加入 `docker` 组；重新登录后再执行部署。主、从节点部署脚本都会为当前用户安装每五分钟运行的公网 IP 刷新任务。
 
-Gateway 证书可以在重启前直接使用 Windows 已安装的 JDK 生成：
+Linux1 从节点使用原生 Docker Engine。首次准备：
 
-```powershell
-.\deploy\scripts\generate-gateway-cert.ps1
+```bash
+cd ~/workspace/wao
+sudo sh deploy/scripts/install-docker-engine.sh
+# 重新登录后
+docker info
 ```
 
-Windows 11 Pro 从节点在 WSL2 Ubuntu 24.04 的 Docker Engine 中运行 Linux 容器，不依赖 Docker Desktop。首次准备需要以 CI/CD 使用的 `wage` 管理员账号执行 PowerShell，确保 WSL 发行版、OpenSSH 和运维任务属于同一 Windows 用户。先从 Linux 主节点已授权的部署密钥中取得公钥文件，执行：
-
-```powershell
-.\deploy\scripts\provision-windows-node.ps1 `
-  -InstallLocation D:\WSL\WAO-Ubuntu `
-  -DeployPublicKeyPath D:\deploy\wao-deploy-key.pub
-```
-
-如果返回 3010，重启 Windows 后再次执行。先从另一台机器验证部署密钥可以登录，再关闭密码登录：
-
-```powershell
-.\deploy\scripts\provision-windows-node.ps1 `
-  -DeployPublicKeyPath D:\deploy\wao-deploy-key.pub `
-  -DisableSshPasswordAuthentication
-```
-
-然后执行：
-
-```powershell
-.\deploy\scripts\deploy-windows.ps1
-```
-
-CI/CD 向 Windows 发送 `D:\deploy\wao-release.zip`，由 PowerShell `Expand-Archive` 解压，以完整保留原版技术方案等中文文件名。MySQL 从库只复制 `wao.%`，不会同步 Linux 主机上已有的其他业务库。
-
-CD 开始 Windows 发布前会验证专用 SSH 密钥、主机指纹、WSL 和 Docker。任一检查失败时保持从节点 `down`、保留 Linux 当前版本并将流水线判为失败；不再跳过 Windows 后把单节点发布标记为成功。每个应用节点最多自动部署三次，仍失败时由飞书分别报告 Windows、Linux、云节点和最终验收状态。
-
-准备脚本在没有现有配置时将 WSL 限制为 4 核/8GB/2GB swap，关闭交流和电池供电时的自动睡眠/休眠，并安装 OpenSSH。每次 Windows 发布都会再次核对两种供电模式的电源策略、OpenSSH 自动启动和失败恢复，避免 Windows 更新或切换电源计划后让后续 Jenkins 发布永久失去修复入口。`install-windows-ops-tasks.ps1` 会幂等创建 WSL 保活、开机端口刷新、每五分钟公网 IP 刷新、每日备份和每月恢复演练任务；这些任务在电池供电时也保持运行。部署脚本也会刷新 WSL 动态 IP 对应的 `portproxy`。3306、6379、26379、9000 允许公网入站；8080 和 9876 仅允许本地子网诊断。
+Jenkins 向 Linux1 的 `~/deploy/incoming` 发送 tar.gz 发布包、镜像归档、共享环境和 Gateway 证书，随后由 `install-release-linux.sh` 在部署锁内更新 `~/deploy/wao`。CD 开始发布前会验证专用 SSH 密钥、主机指纹和 Docker；任一检查失败时保持从节点 `down`、保留 Linux2 当前版本并将流水线判为失败。每个应用节点最多自动部署三次。MySQL 从库只复制 `wao.%`，不会同步 Linux2 上的其他业务库。
 
 ## DDNS 与公网 IP 变化
 
 主、从 Compose 都包含固定版本的 DDNS-Go。首次启动后从局域网访问对应节点的 `http://<节点局域网地址>:9876`：
 
 - Linux 主节点配置 `linux2.wayuwa.cn`；
-- Windows 从节点配置 `windows1.wayuwa.cn`；
+- Linux1 从节点配置 `linux1.wayuwa.cn`；
 - DNS 服务商 Token 只保存在各自 `ddns-go-data` 数据卷，不写入 `.env`、Git 或 CI。
 
-Linux 主节点使用 `refresh-public-ip.sh master`；Windows 从节点使用 `refresh-public-ip.ps1`。公网地址变化时脚本会刷新 Nacos 中的实例注册地址。Windows 可在任务计划程序中让登录用户每五分钟运行：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File D:\deploy\wao\deploy\scripts\refresh-public-ip.ps1
-```
+Linux2 主节点使用 `refresh-public-ip.sh master`，Linux1 从节点使用 `refresh-public-ip.sh slave`。公网地址变化时脚本会刷新 Nacos 中的实例注册地址。Linux1 另有独立 DDNS 程序维护 A/AAAA 记录并发送飞书变更通知。
 
 ## 云节点
 
@@ -133,13 +106,12 @@ JumpServer CE 固定运行在 Linux 主节点 `/opt/wao-jumpserver`，使用独�
 拉取社区版应用镜像，避免首次部署依赖跨境 Docker Hub 链路；Redis、PostgreSQL 等基础镜像仍按安装器规则处理。
 
 主发布脚本会幂等生成 WAO 与 JumpServer 的共享 SSO 密钥、部署社区版 Custom SSO、生成独立资产 SSH
-密钥，并把公钥安装到 Linux、Windows 和云节点。私钥只保存在 `/opt/wao-jumpserver` 受限目录和 JumpServer
+密钥，并把公钥安装到 Linux2、Linux1 和云节点。私钥只保存在 `/opt/wao-jumpserver` 受限目录和 JumpServer
 账户数据中，不复用 Jenkins 发布私钥；中断后重跑会忽略旧固定暂存文件，在唯一临时目录重新生成并原子安装，
 不会等待交互式覆盖确认。已登录成员从「工具 → 资源管理」进入；管理员映射为系统管理员，普通
 成员只建立系统用户身份，仍需在 JumpServer 中显式配置资产授权。
-主发布链路会维护仅包含娃哥、娃弟的「WAO 基础设施维护者」组：该组通过专用 SSH 密钥访问三项资产，
-Windows 从节点另提供 RDP 3389。RDP 使用 JumpServer 的手动账号模式，连接时输入真实 Windows 凭据，
-不会把 Windows 密码写入仓库或部署环境。Windows 防火墙只允许 JumpServer 主节点当前 IPv4 访问 3389。
+主发布链路会维护仅包含娃哥、娃弟的「WAO 基础设施维护者」组：该组通过专用 SSH 密钥访问三项 Linux 资产。
+旧 Windows1 资产与 RDP 授权会被幂等停用，Linux1 不开放 RDP。
 发布脚本检测到 JumpServer Core 容器被替换时会同步刷新无状态 Web，避免 Nginx 继续缓存旧 Core 地址；Core
 未变化时不会额外重启 Web。脚本还会在 Core 启动后只给数据根目录补充目录穿越权限，使非 root Web Nginx
 能读取公开的登录静态资源而不能列举数据根目录；生产验收会实际读取登录脚本，避免健康接口正常但页面资源
@@ -153,8 +125,7 @@ sudo -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
   --verify-jumpserver-assets "$(xdg-user-dir DESKTOP)/deploy/wao"
 ```
 
-第二条命令会同时验证三项 SSH、Windows 3389 网络可达性、娃哥/娃弟组成员、两条资产授权和 RDP 手动账号
-边界；任一项未收敛都会让发布失败。
+第二条命令会同时验证三项 SSH、娃哥/娃弟组成员、SSH 资产授权，以及旧 Windows/RDP 资产已停用；任一项未收敛都会让发布失败。
 
 备份至少包含 `/opt/wao-jumpserver/config` 与 `/opt/wao-jumpserver/data`，并在停止 JumpServer 写入后制作一致性
 快照；恢复演练必须同时验证登录、三项资产和专用 SSH 账户。升级必须先核对官方发行说明和社区版镜像，再修改
@@ -164,13 +135,13 @@ sudo -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
 
 MySQL 从库只在数据卷首次初始化时自动配置 GTID 复制。MySQL 9 的复制密码最多 32 个字符，`new-deployment-env.ps1` 已为该字段生成 32 位十六进制随机值。验证：
 
-```powershell
-wsl.exe -d Ubuntu -u root -- sh /mnt/d/deploy/wao/deploy/scripts/validate-slave.sh
+```bash
+sh ~/deploy/wao/deploy/scripts/validate-slave.sh
 ```
 
 如果主库已经清理了从库所需的早期 binlog，先用 `mysqldump --single-transaction --set-gtid-purged=ON` 生成当前 `wao` 快照，再执行 `bootstrap-mysql-slave.sh <快照.sql.gz>`。该脚本只重置从库 GTID，不修改主库业务数据。
 
-Windows 任务计划每天执行 `deploy\scripts\backup-mysql.ps1`，并在每月 1 日执行 `deploy\scripts\restore-drill.ps1`。任务由 `install-windows-ops-tasks.ps1` 统一安装；备份位于 `deploy\backups`，默认保留 7 天。
+Linux1 使用 cron/systemd 调用 `backup-mysql.sh` 和 `restore-drill.sh`；备份位于 `~/deploy/wao/deploy/backups`，默认保留 7 天。
 
 最终入口应为：
 
@@ -209,20 +180,20 @@ https://wao.wayuwa.cn/api/hello
 ## Jenkins CD
 
 主站 `main` 由 Linux 主节点上的 Jenkins 构建和发布，GitHub 只负责仓库、签名 Webhook 和提交状态。
-Jenkins 使用 Windows、云节点两套独立 SSH 密钥与严格 `known_hosts`；生产 `.env`、`.env.secrets` 和网关证书
-以 Linux 主节点私有部署目录为准。CD 一次构建带 Git SHA 标签的镜像，按 Windows → Linux → 云前端顺序
+Jenkins 使用 Linux1、云节点两套独立 SSH 密钥与严格 `known_hosts`；生产 `.env`、`.env.secrets` 和网关证书
+以 Linux2 主节点私有部署目录为准。CD 一次构建带 Git SHA 标签的镜像，按 Linux1 → Linux2 → 云前端顺序
 滚动发布；两台应用节点均运行同一 SHA 且通过直连验证后才标记成功。首次重建从库时在 Jenkins 手工运行
-`wao-main-cd` 并勾选 `BOOTSTRAP_WINDOWS`，正常发布不得自动重置已有从库。安装与恢复见
+`wao-main-cd` 并勾选 `BOOTSTRAP_SLAVE`，正常发布不得自动重置已有从库。安装与恢复见
 [Jenkins runbook](jenkins/README.md)，决策见 [ADR-099](../docs/adr/099-self-hosted-jenkins-delivery.md)。
 登录 WAO 后可从左下角「链接 → Jenkins」查看构建与部署记录；公网入口继承 WAO 成员身份，不再要求或分发
 Jenkins 管理员密码。普通成员只读，WAO 管理员和超级管理员才获得 Jenkins 管理权限。
 
-发布包用 `git archive HEAD` 打出，落到节点上时**先清空上一版源码再解压**：`tar -xzf` 和 `Expand-Archive -Force` 都只覆盖同名文件，不会删除这一版里已经删掉或改过名的文件，留在节点上的旧文件会跟着进 Docker 构建上下文。2026-07-26 连续四次部署回滚就是这么来的：`V18__chat_sync_monthly_archive.sql` 在仓库里已经改名成 V21，节点上的旧副本还在，Flyway 一启动就报「Found more than one migration with version 18」。清理范围是节点目录下除 `deploy/` 以外的全部内容——`deploy/` 里放着节点私有的 `.env`、`.env.secrets`、`certs/`、`data/`，其中被 git 跟踪的文件随即被这次解压整份覆盖。
+发布包用 `git archive HEAD` 生成 tar.gz，落到节点上时**先清空上一版源码再解压**：`tar -xzf` 只覆盖同名文件，不会删除这一版里已经删掉或改过名的文件，留在节点上的旧文件会跟着进 Docker 构建上下文。2026-07-26 连续四次部署回滚就是这么来的：`V18__chat_sync_monthly_archive.sql` 在仓库里已经改名成 V21，节点上的旧副本还在，Flyway 一启动就报「Found more than one migration with version 18」。清理范围是节点目录下除 `deploy/` 以外的全部内容——`deploy/` 里放着节点私有的 `.env`、`.env.secrets`、`certs/`、`data/`，其中被 git 跟踪的文件随即被这次解压整份覆盖。
 
 ## 飞书登录
 
 将飞书 App ID、App Secret 与现有 `WAO_VAULT_KEY` 保存在 Linux 主节点私有的 `deploy/.env.secrets`。
-Jenkins 会把同一文件下发到 Windows，不要提交 Git 或写入 Jenkins 日志：
+Jenkins 会把同一文件下发到 Linux1，不要提交 Git 或写入 Jenkins 日志：
 
 ```dotenv
 FEISHU_LOGIN_ENABLED=true
@@ -274,10 +245,10 @@ https://wao.wayuwa.cn/api/music/netease/callback
 
 每个 WAO 成员需要在播放器中单独点击“绑定我的账号”。令牌按成员加密保存；解除绑定只删除当前成员记录。官方文档入口：[H5 OAuth](https://developer.music.163.com/st/platformDoc?docId=78eb8f6bec12427d90b120e21b569b16)、[公共参数与设备信息](https://developer.music.163.com/st/platformDoc?docId=0f7801d7d6d24180b8fc9058d1ffe593)、[播放数据回传](https://developer.music.163.com/st/platformDoc?docId=eb0ddaf2efc649e99dffe0677472466a)。
 
-- `MASTER_HOST=linux2.wayuwa.cn`，`SLAVE_HOST=windows1.wayuwa.cn`，云节点使用固定公网地址；
-- Jenkins 在 Linux 本机构建并发布主节点，通过专用密钥 SSH 到 Windows 与云节点；
-- Maven 和 Node 测试使用固定工具容器；四个运行镜像一次构建后，本机直接复用并压缩传给 Windows；
-- `windows-known-hosts` 与 `cloud-known-hosts` 必须保存人工核验后的 SSH 主机公钥；
+- `MASTER_HOST=linux2.wayuwa.cn`，`SLAVE_HOST=linux1.wayuwa.cn`，云节点使用固定公网地址；
+- Jenkins 在 Linux2 本机构建并发布主节点，通过专用密钥 SSH 到 Linux1 与云节点；
+- Maven 和 Node 测试使用固定工具容器；四个运行镜像一次构建后，本机直接复用并压缩传给 Linux1；
+- `slave-known-hosts` 与 `cloud-known-hosts` 必须保存人工核验后的 SSH 主机公钥；
 - 密码登录仅用于首次安装公钥，流水线只使用 `/etc/jenkins/secrets` 中的专用部署密钥；
 - 飞书 Webhook 保存在主节点 `deploy/.env.secrets`，同时用于 main 部署结果和 WAO 任务新评论通知。
 - `FEISHU_COMMENT_WEBHOOK_URL` 现在只是首次接管前的**兜底**：系统通知统一读「设置 → Webhook配置」里标记为系统默认的机器人（加密存 `feishu_webhook_config`，见 ADR-089）。首次打开配置页会把仅存在于环境变量的旧地址加密迁入；用户删空注册表后不会再回落恢复它。
