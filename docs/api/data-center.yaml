@@ -1,0 +1,56 @@
+openapi: 3.0.3
+info:
+  title: WAO 数据中心 API
+  version: 1.0.0
+paths:
+  /api/data-center/overview:
+    get:
+      summary: 读取真实数据源目录与聚合状态
+      responses:
+        '200':
+          description: 数据目录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataCenterEnvelope'
+components:
+  schemas:
+    DataCenterEnvelope:
+      type: object
+      required: [code, message, data, timestamp]
+      properties:
+        code: { type: integer, example: 0 }
+        message: { type: string, example: success }
+        timestamp: { type: integer, format: int64 }
+        data:
+          $ref: '#/components/schemas/DataCenterOverview'
+    DataCenterOverview:
+      type: object
+      required: [generatedAt, sourceCount, populatedSourceCount, totalRecords, sources]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        sourceCount: { type: integer }
+        populatedSourceCount: { type: integer }
+        totalRecords: { type: integer, format: int64 }
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataCenterSource'
+    DataCenterSource:
+      type: object
+      required: [id, label, category, description, recordUnit, recordCount, status, coverage, boundary]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        category: { type: string }
+        description: { type: string }
+        recordUnit: { type: string }
+        recordCount: { type: integer, format: int64 }
+        latestAt: { type: string, format: date-time, nullable: true }
+        status:
+          type: string
+          enum: [READY, TIME_UNKNOWN, EMPTY, REGISTERED_ONLY]
+        coverage:
+          type: string
+          enum: [FULL_RECORDS, REGISTRY_ONLY]
+        boundary: { type: string }
