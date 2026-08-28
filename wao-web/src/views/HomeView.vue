@@ -914,7 +914,6 @@ async function startQuickTask(task: Task) {
     }
     runs.value = [...created, ...runs.value.filter((item) => !created.some((run) => run.id === item.id))]
     task.status = 'AI 进行中'
-    quickTaskListOpen.value = false
     view.value = 'runs'
     toast(`已把「${task.title}」交给 ${engineLabel(workflow.config.defaultEngine)}，正在等待执行电脑`, 'ri-rocket-2-line')
   } catch (error) {

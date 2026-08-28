@@ -481,6 +481,34 @@ describe('HomeView AI 控制台', () => {
     mounted.wrapper.unmount()
   })
 
+  it('从可 AI Run 清单启动任务后保持弹层并继续展示下一条', async () => {
+    vi.useFakeTimers()
+    vi.mocked(createAiRuns).mockResolvedValueOnce([{
+      id: 'ar-dialog', taskId: 't1', taskTitle: '设计任务详情抽屉交互稿', projectId: 'p1',
+      projectName: 'Wa All in One', engine: 'claude', status: 'queued', runnerId: null,
+      runnerName: null, requestedRunnerId: 'rn2', branchName: 'ai/wao-ar-dialog', subId: null, subTitle: null,
+      retryOfRunId: null, resultSummary: null, reportUrl: null,
+      latestProgress: '任务已进入队列', progressUpdatedAt: '2026-08-27T12:00:00', progress: [],
+      usage: { model: null, models: null, inputTokens: 0, outputTokens: 0,
+        cachedInputTokens: 0, totalTokens: 0, costUsd: null, recorded: false },
+      sessionId: null, exitCode: null, createdAt: '2026-08-27T12:00:00', startedAt: null, finishedAt: null,
+    }])
+    const mounted = mountHome()
+    seedDataStore(mounted.data)
+    await flushPromises()
+
+    await mounted.wrapper.find('.quick-task-list-trigger').trigger('click')
+    const firstTitle = mounted.wrapper.find('.quick-task-dialog .quick-task-title').text()
+    await mounted.wrapper.find('.quick-task-dialog .quick-task-start').trigger('click')
+    await flushPromises()
+
+    const dialog = mounted.wrapper.find('.quick-task-dialog')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.text()).not.toContain(firstTitle)
+    expect(dialog.findAll('.quick-task-list-item').length).toBeGreaterThan(0)
+    mounted.wrapper.unmount()
+  })
+
   it('从正在运行标题旁打开自动推进设置并保存策略', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
