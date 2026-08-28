@@ -1957,7 +1957,7 @@ onBeforeUnmount(() => {
           />
         </div>
         <AiRunDeliverySteps v-if="selectedRun.deliveryStage" :stage="selectedRun.deliveryStage" />
-        <dl>
+        <dl class="run-detail-meta">
           <div><dt>AI 工具</dt><dd>{{ engineLabel(selectedRun.engine) }}</dd></div>
           <div v-if="selectedRun.requestedModel"><dt>本次模型</dt><dd>{{ shortModel(selectedRun.requestedModel) }}</dd></div>
           <div v-if="selectedRun.reasoningEffort"><dt>推理强度</dt><dd>{{ reasoningEffortLabel(selectedRun.reasoningEffort) }}</dd></div>
@@ -2739,6 +2739,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .run-detail-images img { width: 100%; max-height: 260px; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-sub); object-fit: contain; }
 .detail-close { width: 32px; height: 32px; border: 0; border-radius: 8px; background: var(--wao-bg-hover); cursor: pointer; }
 .run-detail dl { margin: 18px 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.run-activity-detail .run-detail-meta { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .run-detail dl > div { padding: 10px 12px; border-radius: 9px; background: var(--wao-bg-hover); }
 .run-detail dt { color: var(--wao-text-weak); font-size: 10px; }
 .run-detail dd { margin: 4px 0 0; font-size: 11.5px; font-weight: 600; }
@@ -2869,7 +2870,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .history-grid { grid-template-columns: 1fr; }
   .flow-meta { grid-template-columns: 1fr; }
   .flow-form { grid-template-columns: 1fr; }
-  .run-detail dl { grid-template-columns: 1fr; }
+  .run-detail dl, .run-activity-detail .run-detail-meta { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   .capacity-orbit::before, .capacity-orbit::after, .capacity-orbit b { animation: none; }
