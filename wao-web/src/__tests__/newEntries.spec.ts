@@ -37,7 +37,7 @@ async function mountLayout() {
       stubs: {
         SideNav: true, TabBar: true, TaskDrawer: true, NewTaskModal: true,
         NewProjectModal: true, QuickNoteModal: true, GlobalSearch: true,
-        ShortcutsHelp: true, Celebration: true, RouterView: true,
+        ShortcutsHelp: true, Celebration: true, NotificationCenter: true, RouterView: true,
       },
     },
   })

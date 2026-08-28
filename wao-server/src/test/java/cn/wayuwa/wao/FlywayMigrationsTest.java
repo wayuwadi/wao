@@ -332,4 +332,20 @@ class FlywayMigrationsTest {
                 .contains("chat_id VARCHAR(128) NULL")
                 .doesNotContain("DROP TABLE", "RENAME TABLE");
     }
+
+    @Test
+    void notificationCenterLoginEventsKeepOnlyMinimalSuccessfulLoginFacts() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V111__notification_center_login_events.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE account_login_event")
+                .contains("idx_login_event_member_time (member_id, logged_in_at)")
+                .contains("idx_login_event_time (logged_in_at)")
+                .contains("ON DELETE CASCADE")
+                .doesNotContainIgnoringCase("ip_address", "user_agent", "email", "provider_subject", "password");
+    }
 }

@@ -8,6 +8,7 @@ import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.domain.AccountEntity;
 import cn.wayuwa.wao.domain.AccountIdentityEntity;
+import cn.wayuwa.wao.domain.AccountLoginEventEntity;
 import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.domain.PasswordCredentialEntity;
 import cn.wayuwa.wao.dto.AccountIdentityDto;
@@ -15,6 +16,7 @@ import cn.wayuwa.wao.dto.AuthResolutionDto;
 import cn.wayuwa.wao.dto.AuthSessionDto;
 import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
+import cn.wayuwa.wao.mapper.AccountLoginEventMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
 import cn.wayuwa.wao.mapper.MemberMapper;
 import cn.wayuwa.wao.mapper.PasswordCredentialMapper;
@@ -35,16 +37,19 @@ public class AccountAuthService {
 
     private final AccountMapper accountMapper;
     private final AccountIdentityMapper identityMapper;
+    private final AccountLoginEventMapper loginEventMapper;
     private final PasswordCredentialMapper credentialMapper;
     private final MemberMapper memberMapper;
     private final PasswordEncoder passwordEncoder;
     private final AuthProperties properties;
 
     public AccountAuthService(AccountMapper accountMapper, AccountIdentityMapper identityMapper,
+                              AccountLoginEventMapper loginEventMapper,
                               PasswordCredentialMapper credentialMapper, MemberMapper memberMapper,
                               PasswordEncoder passwordEncoder, AuthProperties properties) {
         this.accountMapper = accountMapper;
         this.identityMapper = identityMapper;
+        this.loginEventMapper = loginEventMapper;
         this.credentialMapper = credentialMapper;
         this.memberMapper = memberMapper;
         this.passwordEncoder = passwordEncoder;
@@ -87,6 +92,7 @@ public class AccountAuthService {
         AccountEntity account = matches.size() == 1 ? matches.get(0) : createAccountAndMember(cleanName);
         bindIdentity(account.getId(), new ExternalIdentityProfile("email", normalized, normalized, cleanName, null));
         savePassword(account.getId(), password);
+        recordLogin(account, "email");
         return session(account.getId());
     }
 
@@ -114,6 +120,7 @@ public class AccountAuthService {
         credential.setLockedUntil(null);
         credentialMapper.updateById(credential);
         touch(identity);
+        recordLogin(account, "email");
         return session(account.getId());
     }
 
@@ -135,6 +142,7 @@ public class AccountAuthService {
                 throw new ConflictException("该登录身份已经绑定到另一个 WAO 账号");
             }
             touch(existing, profile);
+            if (!linkRequested) recordLogin(requireActiveAccount(existing.getAccountId()), profile.provider());
             return ExternalResolution.authenticated(session(existing.getAccountId()));
         }
         if (linkRequested) {
@@ -146,6 +154,7 @@ public class AccountAuthService {
                 ? accountMapper.findUnclaimedByMemberName(profile.displayName().trim()) : List.of();
         if (exact.size() == 1) {
             bindIdentity(exact.get(0).getId(), profile);
+            recordLogin(exact.get(0), profile.provider());
             return ExternalResolution.authenticated(session(exact.get(0).getId()));
         }
         List<MemberDto> candidates = accountMapper.findUnclaimed().stream()
@@ -167,6 +176,7 @@ public class AccountAuthService {
             throw new ConflictException("该成员已经被认领，请选择其他成员或联系管理员");
         }
         bindIdentity(account.getId(), profile);
+        recordLogin(account, profile.provider());
         return session(account.getId());
     }
 
@@ -338,6 +348,16 @@ public class AccountAuthService {
         credential.setLockedUntil(null);
         credential.setPasswordChangedAt(LocalDateTime.now());
         if (create) credentialMapper.insert(credential); else credentialMapper.updateById(credential);
+    }
+
+    private void recordLogin(AccountEntity account, String provider) {
+        AccountLoginEventEntity event = new AccountLoginEventEntity();
+        event.setId(UUID.randomUUID().toString());
+        event.setAccountId(account.getId());
+        event.setMemberId(account.getMemberId());
+        event.setProvider(provider);
+        event.setLoggedInAt(LocalDateTime.now());
+        loginEventMapper.insert(event);
     }
 
     private AccountEntity createAccountAndMember(String name) {

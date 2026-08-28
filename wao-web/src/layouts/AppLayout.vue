@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
-import { toast } from '@/composables/toast'
 import SideNav from '@/components/nav/SideNav.vue'
 import TabBar from '@/components/tabs/TabBar.vue'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
@@ -14,6 +13,7 @@ import SiteFooter from '@/components/SiteFooter.vue'
 import ShortcutsHelp from '@/components/overlays/ShortcutsHelp.vue'
 import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
 import MusicPlayer from '@/components/music/MusicPlayer.vue'
+import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -122,9 +122,6 @@ function newTask() {
 function newNote() {
   ui.openModal('note')
 }
-function bell() {
-  toast('通知中心建设中')
-}
 const themeIcon = computed(() => {
   if (theme.mode.value === 'system') return 'ri-contrast-line'
   return theme.effective.value === 'dark' ? 'ri-sun-line' : 'ri-moon-line'
@@ -209,10 +206,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
         <button class="bell" title="快捷键（?）" @click="ui.toggleHelp()">
           <i class="ri-keyboard-line"></i>
         </button>
-        <button class="bell" title="通知" @click="bell">
-          <i class="ri-notification-3-line"></i>
-          <span class="bell-dot"></span>
-        </button>
+        <NotificationCenter />
       </header>
 
       <TabBar />
@@ -428,16 +422,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 .bell i {
   font-size: 16px;
 }
-.bell-dot {
-  position: absolute;
-  top: 7px;
-  right: 8px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--wao-danger);
-}
-
 .content {
   flex: 1;
   overflow-y: auto;
@@ -497,8 +481,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   .crumb-b,
   .plus,
   .plus.ghost,
-  .assistant-entry,
-  .bell-dot {
+  .assistant-entry {
     display: none;
   }
   .crumb-a {
