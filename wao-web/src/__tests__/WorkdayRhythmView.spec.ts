@@ -52,7 +52,7 @@ const tomorrow = (() => {
   return new Date(Date.UTC(year!, month! - 1, date! + 1)).toISOString().slice(0, 10)
 })()
 
-async function mountView() {
+async function mountView(path = '/workday-rhythm') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -61,7 +61,7 @@ async function mountView() {
       { path: '/tianren', component: { template: '<div />' } },
     ],
   })
-  await router.push('/workday-rhythm')
+  await router.push(path)
   await router.isReady()
   return mount(WorkdayRhythmView, {
     global: {
@@ -136,6 +136,18 @@ describe('WorkdayRhythmView', () => {
     expect(wrapper.find('.timeline-card').exists()).toBe(false)
     expect(wrapper.find('.time-block').exists()).toBe(false)
     expect(saveWorkdayRhythmDay).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('从宠物设置入口直达按账号保存的快捷操作编辑区', async () => {
+    const wrapper = await mountView('/workday-rhythm?settings=pet')
+    await flushPromises()
+
+    expect(wrapper.find('.editor').exists()).toBe(true)
+    expect(wrapper.get('#energy-items-title').text()).toBe('精力补给项目')
+    expect(wrapper.findAll('.energy-item-editor')).toHaveLength(
+      DEFAULT_WORKDAY_RHYTHM.energyItems.length,
+    )
     wrapper.unmount()
   })
 
