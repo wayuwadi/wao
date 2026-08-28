@@ -56,11 +56,27 @@ describe('FilesView', () => {
   it('统一入口按真实文件类型分流，并为 HTML 生成可修改的标题和后缀', async () => {
     const pinia = createPinia()
     const data = useDataStore(pinia)
+    const saveHostedPage = vi.spyOn(data, 'saveHostedPage').mockResolvedValue({
+      id: 'page-1',
+      slug: 'wao-dashboard',
+      title: 'WAO Dashboard',
+      fileName: 'WAO Dashboard.html',
+      hasIcon: false,
+      updatedAt: '2026-08-28T12:00:00',
+      url: '/api/pages/wao-dashboard',
+    })
     const uploadImage = vi.spyOn(data, 'uploadImage').mockResolvedValue({
-      name: '封面.png', url: '/api/images/image-1/raw',
+      name: '封面.png',
+      url: '/api/images/image-1/raw',
     })
     const uploadFile = vi.spyOn(data, 'uploadFile').mockResolvedValue({
-      id: 'file-1', name: '说明.pdf', icon: 'ri-file-line', size: '1 B', by: '我', time: '刚刚', link: '/api/files/file-1/download',
+      id: 'file-1',
+      name: '说明.pdf',
+      icon: 'ri-file-line',
+      size: '1 B',
+      by: '我',
+      time: '刚刚',
+      link: '/api/files/file-1/download',
     })
     const wrapper = mount(FilesView, {
       global: {
@@ -84,6 +100,11 @@ describe('FilesView', () => {
     const inputs = wrapper.findAll('.page-dialog input')
     expect((inputs[0]!.element as HTMLInputElement).value).toBe('WAO Dashboard')
     expect((inputs[1]!.element as HTMLInputElement).value).toBe('wao-dashboard')
+    expect(wrapper.find('.html-picker').text()).toContain('WAO Dashboard.html')
+
+    await wrapper.find('.dialog-actions .btn-primary').trigger('submit')
+    await flushPromises()
+    expect(saveHostedPage).toHaveBeenCalledWith(expect.objectContaining({ html }))
   })
 
   it('网页托管直接选择 HTML 后也自动补齐默认值', async () => {
@@ -108,5 +129,42 @@ describe('FilesView', () => {
     const inputs = wrapper.findAll('.page-dialog input')
     expect((inputs[0]!.element as HTMLInputElement).value).toBe('团队周报')
     expect((inputs[1]!.element as HTMLInputElement).value).toMatch(/^page-/)
+  })
+
+  it('托管弹窗支持拖入 HTML 和 icon，并在发布时使用已选文件', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    const saveHostedPage = vi.spyOn(data, 'saveHostedPage').mockResolvedValue({
+      id: 'page-2',
+      slug: 'dragged-page',
+      title: 'Dragged Page',
+      fileName: 'dragged-page.html',
+      hasIcon: true,
+      updatedAt: '2026-08-28T12:00:00',
+      url: '/api/pages/dragged-page',
+    })
+    const wrapper = mount(FilesView, {
+      global: {
+        plugins: [pinia],
+        stubs: { DemoBanner: true, FileSettingsModal: true },
+      },
+    })
+    await flushPromises()
+
+    await wrapper.findAll('.seg-btn')[2]!.trigger('click')
+    await wrapper.find('.btn-primary').trigger('click')
+    const html = new File(['<h1>拖拽页面</h1>'], 'dragged-page.html', { type: 'text/html' })
+    const icon = new File(['icon'], 'page-icon.png', { type: 'image/png' })
+    await wrapper.find('.html-picker').trigger('drop', { dataTransfer: { files: [html] } })
+    await wrapper.find('.icon-picker').trigger('drop', { dataTransfer: { files: [icon] } })
+
+    expect(wrapper.find('.html-picker').text()).toContain('dragged-page.html')
+    expect(wrapper.find('.icon-picker').text()).toContain('page-icon.png')
+    await wrapper.find('.dialog-actions .btn-primary').trigger('submit')
+    await flushPromises()
+
+    expect(saveHostedPage).toHaveBeenCalledWith(
+      expect.objectContaining({ html, icon, slug: 'dragged-page', title: 'dragged-page' }),
+    )
   })
 })

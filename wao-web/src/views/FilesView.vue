@@ -20,6 +20,10 @@ const pageIcon = ref<File | null>(null)
 const pageSaving = ref(false)
 const pageTitleAuto = ref(false)
 const pageSlugAuto = ref(false)
+const pageHtmlInput = ref<HTMLInputElement | null>(null)
+const pageIconInput = ref<HTMLInputElement | null>(null)
+const pageHtmlDragging = ref(false)
+const pageIconDragging = ref(false)
 const settingsOpen = ref(false)
 const fileSettings = ref<FileSettings>({
   fileMaxMb: 50,
@@ -107,7 +111,10 @@ async function uploadImages(files: FileList | File[]) {
 }
 
 function hostedPageBaseName(fileName: string) {
-  return fileName.replace(/^.*[\\/]/, '').replace(/\.(?:html?|HTML?)$/, '').trim()
+  return fileName
+    .replace(/^.*[\\/]/, '')
+    .replace(/\.(?:html?|HTML?)$/, '')
+    .trim()
 }
 
 function nextHostedPageSlug(fileName: string) {
@@ -157,6 +164,37 @@ function onPageHtmlPick(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (file) setHostedPageHtml(file)
 }
+
+function onPageHtmlDrop(event: DragEvent) {
+  pageHtmlDragging.value = false
+  const file = event.dataTransfer?.files[0]
+  if (!file) return
+  if (!isHostedHtml(file)) {
+    toast('请拖入 HTML 文件', 'ri-error-warning-line')
+    return
+  }
+  setHostedPageHtml(file)
+}
+
+function setPageIcon(file: File) {
+  if (!file.type.startsWith('image/')) {
+    toast('请拖入图片文件作为 icon', 'ri-error-warning-line')
+    return
+  }
+  pageIcon.value = file
+}
+
+function onPageIconPick(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (file) setPageIcon(file)
+}
+
+function onPageIconDrop(event: DragEvent) {
+  pageIconDragging.value = false
+  const file = event.dataTransfer?.files[0]
+  if (file) setPageIcon(file)
+}
+
 async function savePage() {
   if (
     !pageTitle.value.trim() ||
@@ -360,10 +398,14 @@ function onFileSettingsSaved(settings: FileSettings) {
     >
       <i :class="uploading > 0 ? 'ri-loader-4-line spin' : 'ri-drag-drop-line'"></i>
       <div>
-        <b>{{ uploading > 0 ? `正在上传 ${uploading} 个文件…` : '拖拽或选择任意文件，自动分类' }}</b>
+        <b>{{
+          uploading > 0 ? `正在上传 ${uploading} 个文件…` : '拖拽或选择任意文件，自动分类'
+        }}</b>
         <span>图片进入图床，HTML 进入网页托管设置，其余进入文件库</span>
       </div>
-      <button type="button" :disabled="uploading > 0" @click.stop="unifiedInput?.click()">选择文件</button>
+      <button type="button" :disabled="uploading > 0" @click.stop="unifiedInput?.click()">
+        选择文件
+      </button>
       <input ref="unifiedInput" type="file" multiple hidden @change="onUnifiedPick" />
     </div>
 
@@ -526,31 +568,87 @@ function onFileSettingsSaved(settings: FileSettings) {
       <form class="page-dialog" @submit.prevent="savePage">
         <div class="dialog-title">{{ editingPage ? '修改托管网页' : '托管 HTML' }}</div>
         <label
-          >页面标题<input v-model="pageTitle" maxlength="200" placeholder="显示在浏览器标签页" @input="pageTitleAuto = false"
+          >页面标题<input
+            v-model="pageTitle"
+            maxlength="200"
+            placeholder="显示在浏览器标签页"
+            @input="pageTitleAuto = false"
         /></label>
         <label
           >链接后缀
           <div class="slug-input">
             <span>/api/pages/</span
-            ><input v-model="pageSlug" maxlength="80" placeholder="my-page" @input="pageSlugAuto = false" /></div
+            ><input
+              v-model="pageSlug"
+              maxlength="80"
+              placeholder="my-page"
+              @input="pageSlugAuto = false"
+            /></div
         ></label>
-        <label
-          >HTML 文件<input
+        <div class="page-file-field">
+          HTML 文件
+          <button
+            type="button"
+            class="page-file-picker html-picker"
+            :class="{ dragging: pageHtmlDragging, selected: pageHtml }"
+            :disabled="pageSaving"
+            @click="pageHtmlInput?.click()"
+            @dragenter.prevent="pageHtmlDragging = true"
+            @dragover.prevent="pageHtmlDragging = true"
+            @dragleave.prevent="pageHtmlDragging = false"
+            @drop.prevent="onPageHtmlDrop"
+          >
+            <i :class="pageHtml ? 'ri-file-check-line' : 'ri-drag-drop-line'"></i>
+            <span>
+              <b>{{
+                pageHtml
+                  ? pageHtml.name
+                  : editingPage
+                    ? '拖入新的 HTML，或点击替换'
+                    : '拖入 HTML，或点击选择'
+              }}</b>
+              <small>{{
+                pageHtml
+                  ? '已选择，可直接发布'
+                  : editingPage
+                    ? '不选择则保留现有文件'
+                    : '支持 .html 和 .htm 单文件'
+              }}</small>
+            </span>
+          </button>
+          <input
+            ref="pageHtmlInput"
             type="file"
             accept=".html,.htm,text/html"
-            :required="!editingPage"
+            hidden
             @change="onPageHtmlPick"
-          /><small v-if="editingPage">不选择则保留现有文件</small></label
-        >
-        <label
-          >icon 图片（可选）<input
-            type="file"
-            accept="image/*"
-            @change="pageIcon = ($event.target as HTMLInputElement).files?.[0] ?? null"
-          /><small
-            >最大 1MB；不选择则{{ editingPage ? '保留现有 icon' : '使用浏览器默认 icon' }}</small
-          ></label
-        >
+          />
+        </div>
+        <div class="page-file-field">
+          icon 图片（可选）
+          <button
+            type="button"
+            class="page-file-picker icon-picker"
+            :class="{ dragging: pageIconDragging, selected: pageIcon }"
+            :disabled="pageSaving"
+            @click="pageIconInput?.click()"
+            @dragenter.prevent="pageIconDragging = true"
+            @dragover.prevent="pageIconDragging = true"
+            @dragleave.prevent="pageIconDragging = false"
+            @drop.prevent="onPageIconDrop"
+          >
+            <i :class="pageIcon ? 'ri-image-check-line' : 'ri-image-add-line'"></i>
+            <span>
+              <b>{{ pageIcon ? pageIcon.name : '拖入图片，或点击选择' }}</b>
+              <small
+                >最大 1MB；不选择则{{
+                  editingPage ? '保留现有 icon' : '使用浏览器默认 icon'
+                }}</small
+              >
+            </span>
+          </button>
+          <input ref="pageIconInput" type="file" accept="image/*" hidden @change="onPageIconPick" />
+        </div>
         <div class="dialog-actions">
           <button type="button" class="copy-btn" @click="closePageDialog">取消</button
           ><button class="btn-primary" :disabled="pageSaving">
@@ -677,7 +775,10 @@ function onFileSettingsSaved(settings: FileSettings) {
   align-items: center;
   gap: 13px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, transform 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.15s;
 }
 .unified-drop:hover,
 .unified-drop:focus-visible,
@@ -749,7 +850,8 @@ function onFileSettingsSaved(settings: FileSettings) {
   font-size: 18px;
   font-weight: 700;
 }
-.page-dialog label {
+.page-dialog label,
+.page-file-field {
   display: grid;
   gap: 6px;
   font-size: 13px;
@@ -767,6 +869,55 @@ function onFileSettingsSaved(settings: FileSettings) {
 .page-dialog input[type='file'] {
   height: auto;
   padding: 8px;
+}
+.page-file-picker {
+  width: 100%;
+  min-height: 66px;
+  padding: 10px 12px;
+  border: 1px dashed var(--wao-line-strong);
+  border-radius: 9px;
+  background: var(--wao-bg);
+  color: var(--wao-text-2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.page-file-picker:hover,
+.page-file-picker:focus-visible,
+.page-file-picker.dragging {
+  border-color: var(--wao-primary);
+  background: var(--wao-primary-tint);
+  outline: none;
+}
+.page-file-picker.selected {
+  border-style: solid;
+  border-color: var(--wao-primary);
+}
+.page-file-picker:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+.page-file-picker > i {
+  flex-shrink: 0;
+  font-size: 22px;
+  color: var(--wao-primary);
+}
+.page-file-picker > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.page-file-picker b {
+  max-width: 390px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
 }
 .page-dialog small {
   color: var(--wao-text-weak);
