@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   fetchWorkdayRhythmHistory,
   fetchWorkdayRhythm,
@@ -48,6 +48,7 @@ const CONFIG_DRAFT_KEY = 'wao-workday-rhythm-config-draft-v1'
 const RHYTHM_FAVORITE_ID = 'workday-rhythm'
 const favorites = useFavoritesStore()
 const route = useRoute()
+const router = useRouter()
 const clock = ref(shanghaiClock())
 const config = ref<WorkdayRhythmConfig>(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
 const day = ref<WorkdayRhythmDay>(defaultRhythmDay(clock.value.date, clock.value.weekday))
@@ -488,6 +489,7 @@ function openEditor() {
 function openPetSettingsIfRequested() {
   if (route.query.settings !== 'pet' || loading.value || loadError.value || editorOpen.value) return
   openEditor()
+  void router.replace({ query: { ...route.query, settings: undefined } })
   void nextTick(() => document.querySelector('.energy-items-editor')?.scrollIntoView?.())
 }
 

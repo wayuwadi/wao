@@ -144,10 +144,18 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
 
     expect(wrapper.find('.editor').exists()).toBe(true)
+    expect(wrapper.vm.$route.query.settings).toBeUndefined()
     expect(wrapper.get('#energy-items-title').text()).toBe('精力补给项目')
     expect(wrapper.findAll('.energy-item-editor')).toHaveLength(
       DEFAULT_WORKDAY_RHYTHM.energyItems.length,
     )
+
+    await wrapper.get('.editor [aria-label="关闭"]').trigger('click')
+    await wrapper.vm.$router.push({ query: { settings: 'pet' } })
+    await flushPromises()
+
+    expect(wrapper.find('.editor').exists()).toBe(true)
+    expect(wrapper.vm.$route.query.settings).toBeUndefined()
     wrapper.unmount()
   })
 
