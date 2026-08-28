@@ -219,22 +219,25 @@ describe('WorkdayRhythmView', () => {
     wrapper.unmount()
   })
 
-  it('在保存按钮左侧明确选择真实通知群并先保存成员目标', async () => {
+  it('移除三张执行卡的独立入口和冗余文案，并从顶部统一配置通知', async () => {
     vi.mocked(saveWorkdayRhythm).mockImplementation(async (value) => cloneRhythmConfig(value))
     const wrapper = await mountView()
     await flushPromises()
 
-    expect(wrapper.get('.notification-target-trigger').text()).toContain('不发群')
-    await wrapper.get('.notification-target-trigger').trigger('click')
-    await flushPromises()
+    expect(wrapper.find('.notification-target-trigger').exists()).toBe(false)
+    expect(wrapper.find('.energy-card header button').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('打开真实待办')
+    expect(wrapper.text()).not.toContain('草稿已保存在本机')
+    expect(wrapper.text()).not.toContain('新增重点')
+    expect(wrapper.text()).not.toContain('累计项目可反复记录')
 
-    expect(fetchWebhookEndpoints).toHaveBeenCalled()
-    expect(fetchFeishuChats).toHaveBeenCalled()
-    const chatOption = wrapper
-      .findAll('.notification-target-option')
-      .find((option) => option.text().includes('机器人所在群'))
-    expect(chatOption).toBeDefined()
-    await chatOption!.trigger('click')
+    await wrapper.get('.settings-button').trigger('click')
+    await wrapper.get('.toggle-field input').setValue(true)
+    await flushPromises()
+    await wrapper.get('.channel-field select').setValue('CHAT')
+    await flushPromises()
+    await wrapper.get('.chat-field select').setValue('oc_daily')
+    await wrapper.get('.editor .primary').trigger('click')
     await flushPromises()
 
     expect(saveWorkdayRhythm).toHaveBeenCalledWith(
@@ -248,7 +251,6 @@ describe('WorkdayRhythmView', () => {
         }),
       }),
     )
-    expect(wrapper.get('.notification-target-trigger').text()).toContain('娃屋日常')
 
     const inputs = wrapper.findAll('.focus-row input')
     await inputs[0]!.setValue('交付选择器')
@@ -261,7 +263,7 @@ describe('WorkdayRhythmView', () => {
     wrapper.unmount()
   })
 
-  it('通知群保存失败时保留原目标并展示可恢复错误', async () => {
+  it('统一配置保存失败时保留本机草稿并展示可恢复错误', async () => {
     const configured = cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM)
     configured.energyNotification = {
       enabled: true,
@@ -277,17 +279,16 @@ describe('WorkdayRhythmView', () => {
     const wrapper = await mountView()
     await flushPromises()
 
-    await wrapper.get('.notification-target-trigger').trigger('click')
+    await wrapper.get('.settings-button').trigger('click')
+    await wrapper.get('.channel-field select').setValue('WEBHOOK')
     await flushPromises()
-    const webhookOption = wrapper
-      .findAll('.notification-target-option')
-      .find((option) => option.text().includes('娃屋日常机器人'))
-    await webhookOption!.trigger('click')
+    await wrapper.get('.chat-field select').setValue('fw_daily')
+    await wrapper.get('.editor .primary').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.notification-target-trigger').text()).toContain('娃屋日常')
-    await wrapper.get('.notification-target-trigger').trigger('click')
-    expect(wrapper.get('.notification-target-error').text()).toContain('原通知群未改变')
+    expect(wrapper.get('.editor-error').text()).toContain('网络暂时不可用')
+    expect(localStorage.getItem('wao-workday-rhythm-config-draft-v1')).toContain('fw_daily')
+    expect(wrapper.get('.chat-field select').element).toHaveProperty('value', 'fw_daily')
     wrapper.unmount()
   })
 
@@ -456,11 +457,11 @@ describe('WorkdayRhythmView', () => {
     wrapper.unmount()
   })
 
-  it('从精力卡设置本人通知群并随节奏配置跨设备保存', async () => {
+  it('从顶部统一入口设置本人通知群并随节奏配置跨设备保存', async () => {
     const wrapper = await mountView()
     await flushPromises()
 
-    await wrapper.get('.energy-card header button').trigger('click')
+    await wrapper.get('.settings-button').trigger('click')
     await flushPromises()
     await wrapper.get('.toggle-field input').setValue(true)
     await flushPromises()
@@ -517,7 +518,7 @@ describe('WorkdayRhythmView', () => {
     const wrapper = await mountView()
     await flushPromises()
 
-    await wrapper.get('.energy-card header button').trigger('click')
+    await wrapper.get('.settings-button').trigger('click')
     await wrapper.get('.toggle-field input').setValue(true)
     await flushPromises()
     await wrapper.get('.chat-field select').setValue('fw_daily')
