@@ -17,10 +17,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 26;
+    private static final int VERSION = 27;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
+    private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK");
     /** 导航中心上线后，旧版默认可见但非每日使用的入口收进全量目录；用户改名、换组或调序的定制不覆盖。 */
     private static final Set<String> COMPACT_ON_UPGRADE = Set.of(
             "skills", "skill-connections", "action-plans", "weekly-report", "life-review", "workspaces",
@@ -81,7 +82,14 @@ public class BuiltinMenuRegistryService {
 
     /** 校验并整体保存所有内置菜单；不能增加、删除或改稳定 id。 */
     public BuiltinMenuRegistryDto saveRegistry(SaveBuiltinMenuRegistryRequest request) {
-        BuiltinMenuRegistryDto registry = new BuiltinMenuRegistryDto(VERSION, canonicalize(request.menus(), true));
+        Map<String, String> storedPlacements = getRegistry().menus().stream()
+                .collect(java.util.stream.Collectors.toMap(BuiltinMenuConfigDto::id, BuiltinMenuConfigDto::placement));
+        List<BuiltinMenuConfigDto> compatibleMenus = request.menus() == null ? null : request.menus().stream()
+                .map(menu -> menu == null || menu.placement() != null ? menu : new BuiltinMenuConfigDto(
+                        menu.id(), menu.label(), menu.icon(), menu.group(), menu.order(), menu.visible(),
+                        menu.openMode(), storedPlacements.getOrDefault(menu.id(), "MENU")))
+                .toList();
+        BuiltinMenuRegistryDto registry = new BuiltinMenuRegistryDto(VERSION, canonicalize(compatibleMenus, true));
         try {
             settings.put(SettingService.BUILTIN_MENU_REGISTRY, json.writeValueAsString(registry));
             return registry;
@@ -113,8 +121,10 @@ public class BuiltinMenuRegistryService {
             if (menu.order() < 0 || menu.order() > 999) throw new IllegalArgumentException("菜单排序值必须在 0 到 999 之间");
             String openMode = menu.openMode() == null ? "TAB" : menu.openMode();
             if (!OPEN_MODES.contains(openMode)) throw new IllegalArgumentException("菜单打开方式不正确");
+            String placement = menu.placement() == null ? "MENU" : menu.placement();
+            if (!PLACEMENTS.contains(placement)) throw new IllegalArgumentException("菜单展示位置不正确");
             result.add(new BuiltinMenuConfigDto(
-                    menu.id(), label, icon, menu.group(), menu.order(), menu.visible(), openMode));
+                    menu.id(), label, icon, menu.group(), menu.order(), menu.visible(), openMode, placement));
         }
         // 新版本增加内置模块时，旧注册表缺少该 id 是正常升级路径：保留用户已有定制并补上新默认项。
         if (!requireAll) {
@@ -135,7 +145,7 @@ public class BuiltinMenuRegistryService {
                 return menu;
             }
             return new BuiltinMenuConfigDto(menu.id(), menu.label(), menu.icon(), menu.group(), menu.order(),
-                    false, menu.openMode());
+                    false, menu.openMode(), menu.placement());
         }).toList();
     }
 

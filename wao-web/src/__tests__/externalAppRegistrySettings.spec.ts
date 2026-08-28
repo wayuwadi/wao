@@ -120,8 +120,7 @@ describe('菜单与快捷链接统一设置', () => {
       (row) => (row.find('input').element as HTMLInputElement).value === '项目',
     )
     const lastVisibleIndex = toolsRows.reduce(
-      (lastIndex, row, index) =>
-        row.get('button.visibility').classes('on') ? index : lastIndex,
+      (lastIndex, row, index) => (row.get('button.visibility').classes('on') ? index : lastIndex),
       -1,
     )
     expect(projectIndex).toBeGreaterThan(lastVisibleIndex)
@@ -165,5 +164,17 @@ describe('菜单与快捷链接统一设置', () => {
     expect(key).toBe('quick-links')
     expect(stored.version).toBe(2)
     expect(stored.links[0]?.openMode).toBe('TAB')
+  })
+
+  it('菜单位置可改为底部图标并写回同一菜单注册表', async () => {
+    const wrapper = await mountSettings()
+    const projects = menuRow(wrapper, '项目')
+    await projects.get('select[aria-label="展示位置"]').setValue('DOCK')
+    await wrapper.get('.menu-card button.primary').trigger('click')
+    await flushPromises()
+
+    expect(saveBuiltinMenuRegistry).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ id: 'projects', placement: 'DOCK' })]),
+    )
   })
 })

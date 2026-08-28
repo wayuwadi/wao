@@ -97,6 +97,16 @@ watch(
 )
 
 watch(
+  () => nav.builtinMenus.map((menu) => `${menu.id}|${menu.label}|${menu.icon}`).join('\n'),
+  () => {
+    for (const menu of nav.builtinMenus) {
+      tabs.setMeta(menu.id, { label: menu.label, icon: menu.icon })
+    }
+  },
+  { immediate: true },
+)
+
+watch(
   () => nav.externalApps.map((app) => `${app.id}|${app.label}|${app.icon}`).join('\n'),
   () => {
     for (const app of nav.externalApps) {

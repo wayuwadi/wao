@@ -35,7 +35,7 @@ class ExternalAppRegistryServiceTest {
 
         var registry = service.getRegistry();
 
-        assertThat(registry.version()).isEqualTo(5);
+        assertThat(registry.version()).isEqualTo(6);
         assertThat(registry.apps()).hasSize(3);
         assertThat(registry.apps().get(0)).satisfies(app -> {
             assertThat(app.id()).isEqualTo("media-agent");
@@ -46,6 +46,7 @@ class ExternalAppRegistryServiceTest {
             assertThat(app.appUrl()).isEqualTo("/agent/");
             assertThat(app.healthUrl()).isEqualTo("/api/agent/health");
             assertThat(app.openMode()).isEqualTo("TAB");
+            assertThat(app.placement()).isEqualTo("MENU");
         });
         assertThat(registry.apps().get(1)).satisfies(app -> {
             assertThat(app.id()).isEqualTo("getnote");
@@ -134,6 +135,45 @@ class ExternalAppRegistryServiceTest {
         assertThatThrownBy(() -> service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(invalid))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("打开方式");
+    }
+
+    @Test
+    void savesDockPlacementAndDefaultsMissingPlacementToMenu() throws Exception {
+        var docked = new SaveExternalAppConfigRequest(
+                "data-studio", "数据工作台", "ri-apps-2-line", "PUBLIC", 20, true,
+                "https://studio.example.com/", "", "TAB", "DOCK");
+        assertThat(service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(docked))).apps())
+                .singleElement().satisfies(app -> assertThat(app.placement()).isEqualTo("DOCK"));
+
+        var legacy = new ExternalAppConfigDto(
+                "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
+                "/agent/", "/api/agent/health", "TAB", null);
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
+                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(5, List.of(legacy))));
+        assertThat(service.getRegistry().apps()).singleElement()
+                .satisfies(app -> assertThat(app.placement()).isEqualTo("MENU"));
+
+        var invalid = new SaveExternalAppConfigRequest(
+                "data-studio", "数据工作台", "ri-apps-2-line", "PUBLIC", 20, true,
+                "https://studio.example.com/", "", "TAB", "FLOAT");
+        assertThatThrownBy(() -> service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(invalid))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("展示位置");
+    }
+
+    @Test
+    void oldClientSaveWithoutPlacementPreservesDockedApplication() throws Exception {
+        var stored = new ExternalAppConfigDto(
+                "media-agent", "自媒体 Agent", "ri-sparkling-2-line", "PUBLIC", 20, true,
+                "/agent/", "/api/agent/health", "TAB", "DOCK");
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
+                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(6, List.of(stored))));
+        var oldClient = new SaveExternalAppConfigRequest(
+                stored.id(), stored.label(), stored.icon(), stored.group(), stored.order(), stored.visible(),
+                stored.appUrl(), stored.healthUrl(), stored.openMode(), null);
+
+        assertThat(service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(oldClient))).apps())
+                .singleElement().satisfies(app -> assertThat(app.placement()).isEqualTo("DOCK"));
     }
 
     @Test

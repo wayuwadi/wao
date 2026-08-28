@@ -9,8 +9,8 @@ import { useFavoritesStore } from '@/stores/favorites'
 import type { Favorite } from '@/api/favorites'
 import type { ModuleId } from '@/types'
 import {
-  PERSONAL_ITEMS,
   externalAppItemId,
+  type BuiltinMenuGroupCode,
   type MobileNavItemId,
   type NavItemId,
 } from '@/config/nav'
@@ -154,38 +154,102 @@ function orgClick() {
   toast('组织切换将在设置 · 组织管理中提供')
 }
 
-// ---- 个人分组拖拽排序 ----
-const dragId = ref<ModuleId | null>(null)
-const dragOverId = ref<ModuleId | null>(null)
+// ---- 桌面统一菜单拖拽与右键改名 ----
+const dragId = ref<NavItemId | null>(null)
+const dragOverId = ref<NavItemId | 'dock' | null>(null)
+const renameDraft = ref<{
+  id: NavItemId
+  original: string
+  value: string
+  x: number
+  y: number
+  saving: boolean
+  error: string
+} | null>(null)
 
-function onDragStart(id: ModuleId, ev: DragEvent) {
+function groupCode(label: string): BuiltinMenuGroupCode {
+  return (
+    ({ '': 'ROOT', 公共: 'PUBLIC', 个人: 'PERSONAL', 工具: 'TOOLS' } as const)[label] ?? 'PERSONAL'
+  )
+}
+
+function onDragStart(id: NavItemId, ev: DragEvent) {
   dragId.value = id
   ev.dataTransfer?.setData('text/plain', id)
   if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'
 }
-function onDragOver(id: ModuleId) {
+function onDragOver(id: NavItemId | 'dock') {
   if (dragId.value && dragId.value !== id) dragOverId.value = id
 }
-function onDrop(targetId: ModuleId) {
+
+async function onDrop(
+  placement: 'MENU' | 'DOCK',
+  group: BuiltinMenuGroupCode,
+  targetId?: NavItemId,
+) {
   const from = dragId.value
   dragId.value = null
   dragOverId.value = null
   if (!from || from === targetId) return
-  const order = [...nav.personalOrder]
-  const fi = order.indexOf(from)
-  const ti = order.indexOf(targetId)
-  if (fi < 0 || ti < 0) return
-  order.splice(fi, 1)
-  order.splice(ti, 0, from)
-  nav.setPersonalOrder(order)
+  try {
+    await nav.moveMenu(from, placement, group, targetId)
+    toast(placement === 'DOCK' ? '菜单已移到底部图标区' : '菜单位置已保存', 'ri-check-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '菜单保存失败，请重试', 'ri-error-warning-line')
+  }
 }
+
+function onDropDock(targetId?: NavItemId) {
+  const from = dragId.value
+  const configured = from ? nav.menuConfig(from) : undefined
+  void onDrop('DOCK', (configured?.group ?? 'PERSONAL') as BuiltinMenuGroupCode, targetId)
+}
+
 function onDragEnd() {
   dragId.value = null
   dragOverId.value = null
 }
 
-function isPersonalModule(id: NavItemId): id is ModuleId {
-  return !id.startsWith('external:') && PERSONAL_ITEMS.includes(id as ModuleId)
+function openRename(event: MouseEvent, id: NavItemId) {
+  const label = nav.itemMeta(id)?.label
+  if (!label) return
+  renameDraft.value = {
+    id,
+    original: label,
+    value: label,
+    x: Math.min(event.clientX, window.innerWidth - 286),
+    y: Math.min(event.clientY, window.innerHeight - 180),
+    saving: false,
+    error: '',
+  }
+}
+
+function closeRename(force = false) {
+  const draft = renameDraft.value
+  if (!draft) return
+  if (
+    !force &&
+    draft.value.trim() !== draft.original &&
+    !window.confirm('菜单名称尚未保存，确认放弃吗？')
+  )
+    return
+  renameDraft.value = null
+}
+
+async function saveRename() {
+  const draft = renameDraft.value
+  if (!draft || draft.saving) return
+  draft.saving = true
+  draft.error = ''
+  try {
+    await nav.renameMenu(draft.id, draft.value)
+    toast('菜单名称已保存', 'ri-check-line')
+    renameDraft.value = null
+  } catch (error) {
+    draft.error = error instanceof Error ? error.message : '菜单名称保存失败'
+  } finally {
+    if (renameDraft.value) renameDraft.value.saving = false
+  }
 }
 
 // ---- 收藏分组 ----
@@ -259,6 +323,8 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           v-if="g.label && !nav.collapsed"
           class="group-label"
           title="折叠 / 展开分组"
+          @dragover.prevent="onDragOver(g.items[0] ?? 'dock')"
+          @drop.prevent="onDrop('MENU', groupCode(g.label))"
           @click="nav.toggleGroup(g.label)"
         >
           {{ g.label }}
@@ -267,7 +333,12 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
         <div v-else-if="g.label && nav.collapsed" class="group-gap"></div>
 
         <!-- 手机没有分组展开按钮，必须始终展示全部可见模块，不能复用桌面的折叠状态。 -->
-        <div v-if="isMobile || !nav.isFolded(g.label) || nav.collapsed" class="items">
+        <div
+          v-if="isMobile || !nav.isFolded(g.label) || nav.collapsed"
+          class="items"
+          @dragover.prevent
+          @drop.prevent="onDrop('MENU', groupCode(g.label))"
+        >
           <button
             v-for="id in g.items"
             :key="id"
@@ -279,11 +350,12 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
               'drag-over': dragOverId === id,
             }"
             :title="nav.itemMeta(id)?.label"
-            :draggable="g.label === '个人' && isPersonalModule(id) && !nav.collapsed"
+            :draggable="!nav.collapsed"
             @click="go(id)"
-            @dragstart="g.label === '个人' && isPersonalModule(id) && onDragStart(id, $event)"
-            @dragover.prevent="g.label === '个人' && isPersonalModule(id) && onDragOver(id)"
-            @drop.prevent="g.label === '个人' && isPersonalModule(id) && onDrop(id)"
+            @contextmenu.prevent="openRename($event, id)"
+            @dragstart="onDragStart(id, $event)"
+            @dragover.stop.prevent="onDragOver(id)"
+            @drop.stop.prevent="onDrop('MENU', groupCode(g.label), id)"
             @dragend="onDragEnd"
           >
             <i :class="nav.itemMeta(id)?.icon"></i>
@@ -320,9 +392,44 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
       </template>
     </nav>
 
-    <!-- 所有左下角链接统一由成员快捷链接配置驱动，不再保留写死的独立图标。 -->
-    <div class="quick-row" v-if="!nav.collapsed">
+    <!-- 停靠菜单仍由菜单注册表驱动；快捷链接继续使用独立的成员级真实配置。 -->
+    <div
+      v-if="!nav.collapsed"
+      class="quick-row"
+      :class="{ 'drag-over': dragOverId === 'dock' }"
+      aria-label="底部图标区"
+      @dragover.prevent="onDragOver('dock')"
+      @dragleave="dragOverId === 'dock' && (dragOverId = null)"
+      @drop.prevent="onDropDock()"
+    >
       <QuickLinks />
+      <button
+        v-for="id in nav.dockItems"
+        :key="id"
+        type="button"
+        class="dock-item"
+        :class="{
+          active: activeItem === id,
+          dragging: dragId === id,
+          'drag-over': dragOverId === id,
+        }"
+        :title="nav.itemMeta(id)?.label"
+        draggable="true"
+        @click="go(id)"
+        @contextmenu.prevent="openRename($event, id)"
+        @dragstart="onDragStart(id, $event)"
+        @dragover.stop.prevent="onDragOver(id)"
+        @drop.stop.prevent="onDropDock(id)"
+        @dragend="onDragEnd"
+      >
+        <i :class="nav.itemMeta(id)?.icon"></i>
+      </button>
+      <span v-if="dragId && !nav.dockItems.length" class="dock-hint">拖到这里变为图标</span>
+      <i
+        v-if="nav.menuMutationState === 'saving'"
+        class="ri-loader-4-line dock-saving"
+        title="正在保存菜单"
+      ></i>
     </div>
 
     <div class="user-row">
@@ -344,6 +451,37 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
         </template>
       </button>
     </div>
+
+    <Teleport to="body">
+      <div
+        v-if="renameDraft"
+        class="rename-mask"
+        @contextmenu.prevent
+        @mousedown.self="closeRename()"
+      >
+        <form
+          class="rename-menu"
+          :style="{ left: `${renameDraft.x}px`, top: `${renameDraft.y}px` }"
+          @submit.prevent="saveRename"
+        >
+          <label for="side-menu-rename">重命名菜单</label>
+          <input id="side-menu-rename" v-model="renameDraft.value" maxlength="24" autofocus />
+          <p v-if="renameDraft.error" role="alert">{{ renameDraft.error }}，可修改后重试。</p>
+          <div>
+            <button type="button" :disabled="renameDraft.saving" @click="closeRename()">
+              取消
+            </button>
+            <button
+              type="submit"
+              class="primary"
+              :disabled="renameDraft.saving || !renameDraft.value.trim()"
+            >
+              {{ renameDraft.saving ? '保存中…' : '保存' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </Teleport>
   </aside>
 </template>
 
@@ -551,6 +689,124 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-height: 40px;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.quick-row.drag-over {
+  background: var(--wao-primary-soft);
+  box-shadow: inset 0 0 0 2px var(--wao-primary);
+}
+.dock-item {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wao-text-3);
+  cursor: grab;
+}
+.dock-item:hover {
+  background: var(--wao-bg-hover-2);
+}
+.dock-item.active {
+  color: var(--wao-primary);
+  background: var(--wao-primary-soft);
+}
+.dock-item.dragging {
+  opacity: 0.42;
+}
+.dock-item.drag-over {
+  outline: 2px dashed var(--wao-primary);
+  outline-offset: -2px;
+}
+.dock-item i {
+  font-size: 16px;
+}
+.dock-hint {
+  color: var(--wao-text-faint);
+  font-size: 11px;
+}
+.dock-saving {
+  margin-left: auto;
+  color: var(--wao-primary);
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.rename-mask {
+  position: fixed;
+  z-index: 1300;
+  inset: 0;
+}
+.rename-menu {
+  position: fixed;
+  width: 260px;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  background: var(--wao-bg-card);
+  box-shadow: 0 12px 36px rgba(16, 18, 28, 0.2);
+}
+.rename-menu label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--wao-text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.rename-menu input {
+  width: 100%;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  outline: none;
+}
+.rename-menu input:focus {
+  border-color: var(--wao-primary);
+  box-shadow: 0 0 0 2px var(--wao-primary-soft);
+}
+.rename-menu p {
+  margin: 8px 0 0;
+  color: var(--wao-danger-strong);
+  font-size: 11px;
+}
+.rename-menu > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-top: 10px;
+}
+.rename-menu button {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--wao-line);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-3);
+  cursor: pointer;
+}
+.rename-menu button.primary {
+  border-color: var(--wao-primary);
+  background: var(--wao-primary);
+  color: #fff;
+}
+.rename-menu button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .user-row {
   border-top: 1px solid var(--wao-line);

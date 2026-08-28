@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExternalAppRegistryService {
 
-    private static final int REGISTRY_VERSION = 5;
+    private static final int REGISTRY_VERSION = 6;
     private static final int GETNOTE_INTRODUCED_VERSION = 4;
     private static final int JUMPSERVER_INTRODUCED_VERSION = 5;
     private static final int MAX_APPS = 30;
@@ -40,6 +40,7 @@ public class ExternalAppRegistryService {
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
+    private static final Set<String> PLACEMENTS = Set.of("MENU", "DOCK");
     private static final Set<String> RETIRED_INTERNAL_APP_IDS = Set.of("wao-insight");
 
     private final SettingService settings;
@@ -68,7 +69,7 @@ public class ExternalAppRegistryService {
             List<SaveExternalAppConfigRequest> requests = new ArrayList<>(stored.apps().stream()
                     .map(app -> new SaveExternalAppConfigRequest(
                             app.id(), app.label(), app.icon(), app.group(), app.order(), app.visible(),
-                            app.appUrl(), app.healthUrl(), app.openMode()))
+                            app.appUrl(), app.healthUrl(), app.openMode(), app.placement()))
                     .toList());
             if (stored.version() < GETNOTE_INTRODUCED_VERSION
                     && requests.stream().noneMatch(app -> GETNOTE_ID.equals(app.id()))) {
@@ -91,7 +92,14 @@ public class ExternalAppRegistryService {
      * @return 清洗后实际保存的注册表
      */
     public ExternalAppRegistryDto saveRegistry(SaveExternalAppRegistryRequest request) {
-        List<ExternalAppConfigDto> apps = activeApps(canonicalize(request.apps()));
+        var storedPlacements = getRegistry().apps().stream()
+                .collect(java.util.stream.Collectors.toMap(ExternalAppConfigDto::id, ExternalAppConfigDto::placement));
+        List<SaveExternalAppConfigRequest> compatibleApps = request.apps() == null ? null : request.apps().stream()
+                .map(app -> app == null || app.placement() != null ? app : new SaveExternalAppConfigRequest(
+                        app.id(), app.label(), app.icon(), app.group(), app.order(), app.visible(), app.appUrl(),
+                        app.healthUrl(), app.openMode(), storedPlacements.getOrDefault(app.id(), "MENU")))
+                .toList();
+        List<ExternalAppConfigDto> apps = activeApps(canonicalize(compatibleApps));
         return store(apps);
     }
 
@@ -139,7 +147,8 @@ public class ExternalAppRegistryService {
                 request.visible(),
                 current.appUrl(),
                 current.healthUrl(),
-                current.openMode());
+                current.openMode(),
+                current.placement());
         if (index >= 0) {
             apps.set(index, updated);
         } else {
@@ -184,6 +193,10 @@ public class ExternalAppRegistryService {
             if (!OPEN_MODES.contains(openMode)) {
                 throw new IllegalArgumentException("打开方式不正确");
             }
+            String placement = request.placement() == null ? "MENU" : request.placement();
+            if (!PLACEMENTS.contains(placement)) {
+                throw new IllegalArgumentException("展示位置不正确");
+            }
             apps.add(new ExternalAppConfigDto(
                     id,
                     label,
@@ -193,7 +206,8 @@ public class ExternalAppRegistryService {
                     request.visible(),
                     validateUrl(request.appUrl(), "应用入口", false),
                     validateUrl(request.healthUrl(), "健康检查地址", true),
-                    openMode));
+                    openMode,
+                    placement));
         }
         return List.copyOf(apps);
     }

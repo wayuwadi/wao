@@ -12,13 +12,21 @@ import {
   normalizeExternalApp,
   normalizeMobileNavItems,
   resolveNavGroups,
+  resolveDockItems,
   type ExternalAppConfig,
   type BuiltinMenuConfig,
   type MobileNavItemId,
   type NavItemId,
+  type BuiltinMenuGroupCode,
+  type MenuPlacement,
 } from '@/config/nav'
 import { fetchPreference, savePreference } from '@/api/favorites'
-import { fetchBuiltinMenuRegistry, fetchExternalAppRegistry } from '@/api/system'
+import {
+  fetchBuiltinMenuRegistry,
+  fetchExternalAppRegistry,
+  saveBuiltinMenuRegistry,
+  saveExternalAppRegistry,
+} from '@/api/system'
 import type { ModuleId } from '@/types'
 
 /** 导航 store：侧栏整栏折叠态 + 各分组折叠态 + 「个人」组自定义顺序。 */
@@ -68,9 +76,12 @@ export const useNavStore = defineStore('nav', () => {
   const mobileItems = ref<MobileNavItemId[]>(normalizeMobileNavItems(null))
   const mobileItemsState = ref<'idle' | 'loading' | 'loaded' | 'saving' | 'saved' | 'error'>('idle')
   const mobileItemsError = ref('')
+  const menuMutationState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const menuMutationError = ref('')
   const groups = computed(() =>
     resolveNavGroups(personalOrder.value, externalApps.value, builtinMenus.value),
   )
+  const dockItems = computed(() => resolveDockItems(externalApps.value, builtinMenus.value))
 
   function persist() {
     localStorage.setItem(
@@ -187,6 +198,134 @@ export const useNavStore = defineStore('nav', () => {
     builtinMenusError.value = ''
   }
 
+  async function reloadMenuRegistries() {
+    const [builtinRegistry, externalRegistry] = await Promise.all([
+      fetchBuiltinMenuRegistry(),
+      fetchExternalAppRegistry(),
+    ])
+    applyBuiltinMenus(builtinRegistry.menus)
+    applyExternalApps(externalRegistry.apps)
+  }
+
+  async function persistMenuRegistries(
+    nextBuiltin: BuiltinMenuConfig[],
+    nextExternal: ExternalAppConfig[],
+  ) {
+    if (menuMutationState.value === 'saving') throw new Error('菜单正在保存，请稍后再试')
+    const previousBuiltin = builtinMenus.value.map((menu) => ({ ...menu }))
+    const previousExternal = externalApps.value.map((app) => ({ ...app }))
+    const builtinChanged = JSON.stringify(previousBuiltin) !== JSON.stringify(nextBuiltin)
+    const externalChanged = JSON.stringify(previousExternal) !== JSON.stringify(nextExternal)
+    if (!builtinChanged && !externalChanged) return
+    applyBuiltinMenus(nextBuiltin)
+    applyExternalApps(nextExternal)
+    menuMutationState.value = 'saving'
+    menuMutationError.value = ''
+    try {
+      const [savedBuiltin, savedExternal] = await Promise.all([
+        builtinChanged
+          ? saveBuiltinMenuRegistry(nextBuiltin)
+          : Promise.resolve({ version: 0, menus: nextBuiltin }),
+        externalChanged
+          ? saveExternalAppRegistry(nextExternal)
+          : Promise.resolve({ version: 0, apps: nextExternal }),
+      ])
+      applyBuiltinMenus(savedBuiltin.menus)
+      applyExternalApps(savedExternal.apps)
+      menuMutationState.value = 'saved'
+    } catch (error) {
+      menuMutationState.value = 'error'
+      menuMutationError.value = error instanceof Error ? error.message : '菜单保存失败'
+      try {
+        await reloadMenuRegistries()
+      } catch {
+        applyBuiltinMenus(previousBuiltin)
+        applyExternalApps(previousExternal)
+      }
+      throw error
+    }
+  }
+
+  function menuConfig(id: NavItemId) {
+    const externalId = externalAppIdFromItem(id)
+    return externalId
+      ? externalApps.value.find((app) => app.id === externalId)
+      : builtinMenus.value.find((menu) => menu.id === id)
+  }
+
+  /** 保存一次侧栏拖拽；目标列表里的内置菜单和外部应用共同重建顺序。 */
+  async function moveMenu(
+    id: NavItemId,
+    placement: MenuPlacement,
+    group: BuiltinMenuGroupCode,
+    targetId?: NavItemId,
+  ) {
+    const nextBuiltin = builtinMenus.value.map((menu) => ({ ...menu }))
+    const nextExternal = externalApps.value.map((app) => ({ ...app }))
+    const externalId = externalAppIdFromItem(id)
+    const movingBuiltin = externalId ? undefined : nextBuiltin.find((menu) => menu.id === id)
+    const movingExternal = externalId
+      ? nextExternal.find((app) => app.id === externalId)
+      : undefined
+    const moving = movingExternal ?? movingBuiltin
+    if (!moving) throw new Error('菜单不存在，请刷新后重试')
+    if (movingExternal && group === 'ROOT') throw new Error('外部应用不能移动到顶层')
+    moving.placement = placement
+    if (movingExternal) movingExternal.group = group as Exclude<BuiltinMenuGroupCode, 'ROOT'>
+    if (movingBuiltin) movingBuiltin.group = group
+
+    type OrderCandidate = {
+      id: NavItemId
+      menu: {
+        visible: boolean
+        placement?: MenuPlacement
+        group: BuiltinMenuGroupCode
+        order: number
+      }
+      source: number
+    }
+    const candidates: OrderCandidate[] = [
+      ...nextBuiltin.map((menu) => ({ id: menu.id as NavItemId, menu, source: 0 })),
+      ...nextExternal.map((app) => ({
+        id: externalAppItemId(app.id) as NavItemId,
+        menu: app,
+        source: 1,
+      })),
+    ]
+      .filter(
+        (item) =>
+          item.id !== id &&
+          item.menu.visible &&
+          (item.menu.placement ?? 'MENU') === placement &&
+          (placement === 'DOCK' || item.menu.group === group),
+      )
+      .sort((left, right) => left.menu.order - right.menu.order || left.source - right.source)
+    const targetIndex = targetId ? candidates.findIndex((item) => item.id === targetId) : -1
+    candidates.splice(targetIndex >= 0 ? targetIndex : candidates.length, 0, {
+      id,
+      menu: moving,
+      source: externalId ? 1 : 0,
+    })
+    candidates.forEach((item, index) => {
+      item.menu.order = (index + 1) * 10
+    })
+    await persistMenuRegistries(nextBuiltin, nextExternal)
+  }
+
+  async function renameMenu(id: NavItemId, label: string) {
+    const trimmed = label.trim()
+    if (!trimmed || trimmed.length > 24) throw new Error('菜单名称不能为空且不超过 24 个字符')
+    const nextBuiltin = builtinMenus.value.map((menu) => ({ ...menu }))
+    const nextExternal = externalApps.value.map((app) => ({ ...app }))
+    const externalId = externalAppIdFromItem(id)
+    const target = externalId
+      ? nextExternal.find((app) => app.id === externalId)
+      : nextBuiltin.find((menu) => menu.id === id)
+    if (!target) throw new Error('菜单不存在，请刷新后重试')
+    target.label = trimmed
+    await persistMenuRegistries(nextBuiltin, nextExternal)
+  }
+
   /** 设置页保存成功后立即刷新导航，不等页面重载。 */
   function applyExternalApps(apps: ExternalAppConfig[]) {
     externalApps.value = apps.map(normalizeExternalApp)
@@ -226,6 +365,7 @@ export const useNavStore = defineStore('nav', () => {
     foldedGroups,
     personalOrder,
     groups,
+    dockItems,
     externalApps,
     builtinMenus,
     externalAppsState,
@@ -235,6 +375,8 @@ export const useNavStore = defineStore('nav', () => {
     mobileItems,
     mobileItemsState,
     mobileItemsError,
+    menuMutationState,
+    menuMutationError,
     toggleCollapse,
     toggleGroup,
     isFolded,
@@ -246,6 +388,10 @@ export const useNavStore = defineStore('nav', () => {
     loadBuiltinMenus,
     applyExternalApps,
     applyBuiltinMenus,
+    reloadMenuRegistries,
+    moveMenu,
+    renameMenu,
+    menuConfig,
     externalAppById,
     itemMeta,
   }

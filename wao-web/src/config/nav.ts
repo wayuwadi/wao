@@ -12,6 +12,7 @@ export interface ModuleMeta {
 }
 
 export type MenuOpenMode = 'TAB' | 'NEW_PAGE'
+export type MenuPlacement = 'MENU' | 'DOCK'
 export type MenuGroupCode = 'PUBLIC' | 'PERSONAL' | 'TOOLS'
 export type BuiltinMenuGroupCode = 'ROOT' | MenuGroupCode
 export type ExternalAppItemId = `external:${string}`
@@ -34,6 +35,7 @@ export interface ExternalAppConfig {
   appUrl: string
   healthUrl: string
   openMode: MenuOpenMode
+  placement?: MenuPlacement
 }
 
 export interface ExternalAppRegistry {
@@ -49,6 +51,7 @@ export interface BuiltinMenuConfig {
   order: number
   visible: boolean
   openMode: MenuOpenMode
+  placement?: MenuPlacement
 }
 
 export interface BuiltinMenuRegistry {
@@ -60,12 +63,24 @@ export function normalizeMenuOpenMode(value: unknown): MenuOpenMode {
   return value === 'NEW_PAGE' ? 'NEW_PAGE' : 'TAB'
 }
 
+export function normalizeMenuPlacement(value: unknown): MenuPlacement {
+  return value === 'DOCK' ? 'DOCK' : 'MENU'
+}
+
 export function normalizeExternalApp(app: ExternalAppConfig): ExternalAppConfig {
-  return { ...app, openMode: normalizeMenuOpenMode(app.openMode) }
+  return {
+    ...app,
+    openMode: normalizeMenuOpenMode(app.openMode),
+    placement: normalizeMenuPlacement(app.placement),
+  }
 }
 
 export function normalizeBuiltinMenu(menu: BuiltinMenuConfig): BuiltinMenuConfig {
-  return { ...menu, openMode: normalizeMenuOpenMode(menu.openMode) }
+  return {
+    ...menu,
+    openMode: normalizeMenuOpenMode(menu.openMode),
+    placement: normalizeMenuPlacement(menu.placement),
+  }
 }
 
 export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
@@ -452,6 +467,7 @@ export function resolveNavGroups(
             (menu) =>
               menu.id !== 'chat' &&
               menu.visible &&
+              normalizeMenuPlacement(menu.placement) === 'MENU' &&
               { ROOT: '', PUBLIC: '公共', PERSONAL: '个人', TOOLS: '工具' }[menu.group] === label,
           )
           .sort((a, b) => a.order - b.order)
@@ -470,7 +486,10 @@ export function resolveNavGroups(
       ]),
     )
     const configured = externalApps.filter(
-      (app) => app.visible && GROUP_LABELS[app.group] === target.label,
+      (app) =>
+        app.visible &&
+        normalizeMenuPlacement(app.placement) === 'MENU' &&
+        GROUP_LABELS[app.group] === target.label,
     )
     target.items.push(...configured.map((app) => externalAppItemId(app.id)))
     const appOrders = new Map(configured.map((app) => [externalAppItemId(app.id), app.order]))
@@ -481,6 +500,27 @@ export function resolveNavGroups(
     )
   }
   return groups
+}
+
+/** 合成桌面侧栏底部的菜单图标；入口仍使用原菜单 id，不复制成快捷链接。 */
+export function resolveDockItems(
+  externalApps: ExternalAppConfig[],
+  builtinMenus: BuiltinMenuConfig[],
+): NavItemId[] {
+  return [
+    ...builtinMenus
+      .filter((menu) => menu.visible && normalizeMenuPlacement(menu.placement) === 'DOCK')
+      .map((menu) => ({ id: menu.id as NavItemId, order: menu.order, sourceOrder: 0 })),
+    ...externalApps
+      .filter((app) => app.visible && normalizeMenuPlacement(app.placement) === 'DOCK')
+      .map((app) => ({
+        id: externalAppItemId(app.id) as NavItemId,
+        order: app.order,
+        sourceOrder: 1,
+      })),
+  ]
+    .sort((left, right) => left.order - right.order || left.sourceOrder - right.sourceOrder)
+    .map((item) => item.id)
 }
 
 export function externalAppItemId(id: string): ExternalAppItemId {

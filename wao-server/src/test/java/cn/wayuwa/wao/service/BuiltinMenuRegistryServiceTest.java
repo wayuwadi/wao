@@ -203,4 +203,51 @@ class BuiltinMenuRegistryServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("打开方式");
     }
+
+    @Test
+    void savesDockPlacementAndDefaultsMissingPlacementToMenu() throws Exception {
+        var menus = new ArrayList<>(service.getRegistry().menus());
+        var projects = menus.stream().filter(menu -> "projects".equals(menu.id())).findFirst().orElseThrow();
+        menus.set(menus.indexOf(projects), new BuiltinMenuConfigDto(
+                projects.id(), projects.label(), projects.icon(), projects.group(), projects.order(),
+                projects.visible(), projects.openMode(), "DOCK"));
+
+        assertThat(service.saveRegistry(new SaveBuiltinMenuRegistryRequest(menus)).menus())
+                .filteredOn(menu -> "projects".equals(menu.id()))
+                .singleElement().satisfies(menu -> assertThat(menu.placement()).isEqualTo("DOCK"));
+
+        var legacyMenus = menus.stream().map(menu -> new BuiltinMenuConfigDto(
+                menu.id(), menu.label(), menu.icon(), menu.group(), menu.order(), menu.visible(),
+                menu.openMode(), null)).toList();
+        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(new ObjectMapper().writeValueAsString(
+                new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(25, legacyMenus)));
+        assertThat(service.getRegistry().menus()).allSatisfy(menu -> assertThat(menu.placement()).isEqualTo("MENU"));
+
+        var invalid = new ArrayList<>(service.getRegistry().menus());
+        var home = invalid.get(0);
+        invalid.set(0, new BuiltinMenuConfigDto(
+                home.id(), home.label(), home.icon(), home.group(), home.order(), home.visible(),
+                home.openMode(), "FLOAT"));
+        assertThatThrownBy(() -> service.saveRegistry(new SaveBuiltinMenuRegistryRequest(invalid)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("展示位置");
+    }
+
+    @Test
+    void oldClientSaveWithoutPlacementPreservesDockedMenu() throws Exception {
+        var storedMenus = new ArrayList<>(service.getRegistry().menus());
+        var projects = storedMenus.stream().filter(menu -> "projects".equals(menu.id())).findFirst().orElseThrow();
+        storedMenus.set(storedMenus.indexOf(projects), new BuiltinMenuConfigDto(
+                projects.id(), projects.label(), projects.icon(), projects.group(), projects.order(),
+                projects.visible(), projects.openMode(), "DOCK"));
+        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(new ObjectMapper().writeValueAsString(
+                new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(26, storedMenus)));
+        var oldClientMenus = storedMenus.stream().map(menu -> new BuiltinMenuConfigDto(
+                menu.id(), menu.label(), menu.icon(), menu.group(), menu.order(), menu.visible(),
+                menu.openMode(), null)).toList();
+
+        assertThat(service.saveRegistry(new SaveBuiltinMenuRegistryRequest(oldClientMenus)).menus())
+                .filteredOn(menu -> "projects".equals(menu.id()))
+                .singleElement().satisfies(menu -> assertThat(menu.placement()).isEqualTo("DOCK"));
+    }
 }
