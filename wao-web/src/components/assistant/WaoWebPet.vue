@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { AssistantStatus } from '@/api/assistant'
 import {
   fetchWorkdayRhythm,
@@ -37,6 +38,7 @@ interface PetRhythmDraft {
 }
 
 const props = defineProps<{ assistantStatus: AssistantStatus }>()
+const router = useRouter()
 const data = useDataStore()
 const ui = useUiStore()
 const noticeIndex = ref(0)
@@ -429,6 +431,10 @@ function interactWithPet(event: MouseEvent) {
   void loadRhythmActions()
 }
 
+function openPetSettings() {
+  void router.push({ name: 'workday-rhythm', query: { settings: 'pet' } })
+}
+
 function openNotice(event: MouseEvent) {
   if (consumeClick(event)) return
   if (currentNotice.value.taskId) ui.openTask(currentNotice.value.taskId)
@@ -585,11 +591,11 @@ onBeforeUnmount(() => {
             <strong v-if="item.mode === 'COUNT'">{{ rhythmCount(item) }}</strong>
           </button>
         </template>
-        <a class="pet-settings-link" href="/workday-rhythm?settings=pet">
+        <button class="pet-settings-link" type="button" @click="openPetSettings">
           <i class="ri-settings-4-line"></i>
           <span><b>宠物设置</b><small>配置快捷操作清单</small></span>
           <i class="ri-arrow-right-s-line"></i>
-        </a>
+        </button>
       </nav>
     </div>
   </section>

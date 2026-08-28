@@ -1,6 +1,7 @@
 import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import WaoWebPet from '@/components/assistant/WaoWebPet.vue'
 import { useDataStore } from '@/stores/data'
@@ -179,10 +180,34 @@ describe('WaoWebPet', () => {
     expect(wrapper.emitted('open-assistant')).toBeUndefined()
     expect(wrapper.get('.pet-avatar').attributes('aria-expanded')).toBe('true')
     expect(wrapper.findAll('.pet-rhythm-action')).toHaveLength(2)
-    expect(wrapper.get('.pet-settings-link').attributes('href')).toBe(
-      '/workday-rhythm?settings=pet',
-    )
+    expect(wrapper.get('.pet-settings-link').attributes('type')).toBe('button')
     expect(wrapper.find('.pet-name').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('点击宠物设置通过站内路由直达真实配置入口', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', component: { template: '<div />' } },
+        {
+          path: '/workday-rhythm',
+          name: 'workday-rhythm',
+          component: { template: '<div />' },
+        },
+      ],
+    })
+    await router.push('/')
+    await router.isReady()
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+      global: { plugins: [router] },
+    })
+
+    await wrapper.get('.pet-settings-link').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/workday-rhythm?settings=pet')
     wrapper.unmount()
   })
 
