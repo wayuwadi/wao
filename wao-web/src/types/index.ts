@@ -31,6 +31,7 @@ export type ModuleId =
   | 'games'
   | 'request-monitoring'
   | 'data-center'
+  | 'text-polish'
   | 'dashboard'
   | 'drawings'
   | 'vocabulary'

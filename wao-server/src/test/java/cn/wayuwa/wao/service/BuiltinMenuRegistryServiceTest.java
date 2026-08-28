@@ -23,7 +23,7 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(25);
+        assertThat(service.getRegistry().menus()).hasSize(26);
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "skills".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("Skill 市场");
@@ -33,7 +33,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(25);
+        assertThat(service.getRegistry().menus()).hasSize(26);
     }
 
     @Test
@@ -99,7 +99,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(25);
+        assertThat(upgraded.menus()).hasSize(26);
         assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("工作台");
@@ -169,6 +169,12 @@ class BuiltinMenuRegistryServiceTest {
         assertThat(upgraded.menus()).filteredOn(menu -> "data-center".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("数据中心");
+                    assertThat(menu.group()).isEqualTo("TOOLS");
+                    assertThat(menu.visible()).isTrue();
+                });
+        assertThat(upgraded.menus()).filteredOn(menu -> "text-polish".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.label()).isEqualTo("润色");
                     assertThat(menu.group()).isEqualTo("TOOLS");
                     assertThat(menu.visible()).isTrue();
                 });

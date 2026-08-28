@@ -293,6 +293,12 @@ const router = createRouter({
           meta: { module: 'data-center', tabKind: 'module' },
         },
         {
+          path: 'text-polish',
+          name: 'text-polish',
+          component: () => import('@/views/TextPolishView.vue'),
+          meta: { module: 'text-polish', tabKind: 'module' },
+        },
+        {
           path: 'english-learning',
           name: 'english-learning',
           component: () => import('@/views/EnglishLearningView.vue'),

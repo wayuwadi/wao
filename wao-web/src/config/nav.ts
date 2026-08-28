@@ -165,6 +165,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-database-2-line',
     path: '/data-center',
   },
+  'text-polish': {
+    id: 'text-polish',
+    label: '润色',
+    icon: 'ri-magic-line',
+    path: '/text-polish',
+  },
   dashboard: {
     id: 'dashboard',
     label: '使用统计',
@@ -385,6 +391,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-database-2-line',
       group: 'TOOLS',
       order: 3,
+      visible: true,
+    },
+    {
+      id: 'text-polish',
+      label: '润色',
+      icon: 'ri-magic-line',
+      group: 'TOOLS',
+      order: 4,
       visible: true,
     },
     {

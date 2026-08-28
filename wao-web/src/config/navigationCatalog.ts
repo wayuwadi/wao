@@ -90,6 +90,11 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
       { id: 'drawings', description: '创建和整理草图。', keywords: ['画图'] },
       { id: 'files', description: '管理真实文件、图片和分享地址。', keywords: ['图床', '上传'] },
       { id: 'automation', description: '配置自动任务并查看运行结果。', keywords: ['流程'] },
+      {
+        id: 'text-polish',
+        description: '用可编辑的方法提示词润色长文，并回看每次前后对照。',
+        keywords: ['润色', '改写', '表达'],
+      },
     ],
   },
   {
