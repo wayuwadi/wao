@@ -33,15 +33,18 @@ public class FeishuTaskNotifier {
     private final AccountMapper accounts;
     private final AccountIdentityMapper identities;
     private final ProjectNotifyGate notifyGate;
+    private final NotificationSettingsService notificationSettings;
 
     public FeishuTaskNotifier(FeishuWebhookNotifier notifier, FeishuAppLinks links, SettingService settings,
-            AccountMapper accounts, AccountIdentityMapper identities, ProjectNotifyGate notifyGate) {
+            AccountMapper accounts, AccountIdentityMapper identities, ProjectNotifyGate notifyGate,
+            NotificationSettingsService notificationSettings) {
         this.notifier = notifier;
         this.links = links;
         this.settings = settings;
         this.accounts = accounts;
         this.identities = identities;
         this.notifyGate = notifyGate;
+        this.notificationSettings = notificationSettings;
     }
 
     /** 任务详情页地址：配置了飞书应用时是 AppLink（飞书内直接打开），否则是普通网页地址。 */
@@ -62,7 +65,7 @@ public class FeishuTaskNotifier {
      */
     public boolean notifyRunFailed(String taskId, String projectId, String taskTitle,
             String scope, boolean statusUnreported, String summary) {
-        if (muted(projectId)) {
+        if (muted(projectId) || !notificationSettings.allows(policy -> policy.aiRunFailure())) {
             return false;
         }
         String taskLabel = blank(taskTitle, taskId);
@@ -83,6 +86,18 @@ public class FeishuTaskNotifier {
                 "查看失败原因", taskUrl(projectId, taskId)));
     }
 
+    /** AI Run 成功卡片默认关闭；管理员显式开启成功通知后才发送。 */
+    public boolean notifyRunSucceeded(String taskId, String projectId, String taskTitle,
+            String scope, String summary) {
+        if (muted(projectId) || !notificationSettings.allows(policy -> policy.aiRunSuccess())) return false;
+        String taskLabel = blank(taskTitle, taskId);
+        if (StringUtils.hasText(scope) && !"整个任务".equals(scope)) taskLabel += " · " + scope;
+        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "AI 任务待验收", "green", List.of(List.of("任务", taskLabel)),
+                compact(summary, "AI 已完成，点开任务查看结果与验收证据。", 240),
+                "去验收任务", taskUrl(projectId, taskId)));
+    }
+
     /**
      * 任务进入「收集中」时把它分享到群里，请同伴一起补充。
      *
@@ -96,7 +111,7 @@ public class FeishuTaskNotifier {
      */
     public boolean notifyCollecting(String taskId, String projectId, String taskTitle, String projectName,
             String desc, String operatorOpenId) {
-        if (muted(projectId)) {
+        if (taskActivityMuted(projectId)) {
             return false;
         }
         List<String> mentions = mentionTargets(operatorOpenId);
@@ -144,7 +159,7 @@ public class FeishuTaskNotifier {
      */
     public boolean notifyTaskCreated(String taskId, String projectId, String taskTitle, String projectName,
             String creatorName, String desc) {
-        if (muted(projectId)) {
+        if (taskActivityMuted(projectId)) {
             return false;
         }
         List<List<String>> fields = new ArrayList<>();
@@ -173,7 +188,8 @@ public class FeishuTaskNotifier {
      */
     public boolean notifyStatusChanged(String taskId, String projectId, String taskTitle, String projectName,
             String fromStatus, String toStatus, String operatorName) {
-        if (muted(projectId)) {
+        if (muted(projectId) || !notificationSettings.allows(policy ->
+                "已完成".equals(toStatus) ? policy.taskSuccess() : policy.taskActivity())) {
             return false;
         }
         List<List<String>> fields = new ArrayList<>();
@@ -211,7 +227,7 @@ public class FeishuTaskNotifier {
      */
     public boolean notifySubtasksAdded(String taskId, String projectId, String taskTitle, String projectName,
             List<String> subTitles, String operatorName, String creatorName, List<String> mentionOpenIds) {
-        if (muted(projectId)) {
+        if (taskActivityMuted(projectId)) {
             return false;
         }
         if (subTitles == null || subTitles.isEmpty()) {
@@ -255,7 +271,7 @@ public class FeishuTaskNotifier {
      * @return 是否真的发出去了
      */
     public boolean notifyProjectCreated(String projectId, String projectName, String ownerName, String goal) {
-        if (muted(projectId)) {
+        if (taskActivityMuted(projectId)) {
             return false;
         }
         List<List<String>> fields = new ArrayList<>();
@@ -271,7 +287,7 @@ public class FeishuTaskNotifier {
 
     /** 想法项目首次开始推进后再通知团队，避免快速收集阶段刷屏。 */
     public boolean notifyProjectStarted(String projectId, String projectName, String operatorName, String goal) {
-        if (muted(projectId)) {
+        if (taskActivityMuted(projectId)) {
             return false;
         }
         List<List<String>> fields = new ArrayList<>();
@@ -295,6 +311,7 @@ public class FeishuTaskNotifier {
      * @return 是否真的发出去了
      */
     public boolean notifyNoteCreated(String kbId, String docId, String title, String authorName) {
+        if (!notificationSettings.allows(policy -> policy.taskActivity())) return false;
         List<List<String>> fields = new ArrayList<>();
         fields.add(List.of("小记", blank(title, docId)));
         if (StringUtils.hasText(authorName)) {
@@ -322,7 +339,7 @@ public class FeishuTaskNotifier {
      */
     public boolean notifyInsightReport(String projectId, String projectName,
             int ideaCount, int clusterCount, int schemeCount, List<String> topThemes) {
-        if (muted(projectId)) {
+        if (taskActivityMuted(projectId)) {
             return false;
         }
         List<String> highlights = new ArrayList<>();
@@ -350,7 +367,7 @@ public class FeishuTaskNotifier {
      */
     public boolean notifyIdleAutoRun(String taskId, String projectId, String taskTitle, String projectName,
             int idleHours, String webhookId) {
-        if (muted(projectId)) return false;
+        if (muted(projectId) || !notificationSettings.allows(policy -> policy.automation())) return false;
         return notifier.notifyCard(webhookId, new FeishuWebhookNotifier.Card(
                 "闲置时间已自动推进任务", "blue",
                 List.of(
@@ -370,7 +387,7 @@ public class FeishuTaskNotifier {
      */
     public boolean notifyHttpPerformanceInspectionStarted(String taskId, String projectId, String taskTitle,
             String projectName, int windowHours, int topN, int maxEndpoints, String webhookId) {
-        if (muted(projectId)) return false;
+        if (muted(projectId) || !notificationSettings.allows(policy -> policy.automation())) return false;
         return notifier.notifyCard(webhookId, new FeishuWebhookNotifier.Card(
                 "HTTP 性能 AI 巡检已启动", "blue",
                 List.of(
@@ -400,9 +417,26 @@ public class FeishuTaskNotifier {
         return identity == null ? null : identity.getProviderSubject();
     }
 
+    /** 当前成员主动要求把某条任务发到通知群；默认允许，可由管理员整体关闭。 */
+    public boolean notifyManualTask(String taskId, String projectId, String taskTitle,
+            String projectName, String operatorName, String description) {
+        if (muted(projectId) || !notificationSettings.allows(policy -> policy.manualTask())) return false;
+        List<List<String>> fields = new ArrayList<>();
+        fields.add(List.of("项目", blank(projectName, projectId)));
+        fields.add(List.of("任务", blank(taskTitle, taskId)));
+        if (StringUtils.hasText(operatorName)) fields.add(List.of("通知人", operatorName));
+        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
+                "人工通知任务", "blue", fields, excerpt(description, "请打开任务查看详情。"),
+                "查看任务", taskUrl(projectId, taskId)));
+    }
+
     /** 这个项目关掉通知了吗；关了就整条跳过，连卡片都不组装。 */
     private boolean muted(String projectId) {
         return !notifyGate.enabled(projectId);
+    }
+
+    private boolean taskActivityMuted(String projectId) {
+        return muted(projectId) || !notificationSettings.allows(policy -> policy.taskActivity());
     }
 
     /** 摘要正文：卡片放不下长文，超过 600 字截断并提示点按钮看全文。 */

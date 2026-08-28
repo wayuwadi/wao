@@ -78,6 +78,8 @@ public class SettingService {
     public static final String HTTP_INSPECTION_TOP_N = "http.inspection.top-n";
     public static final String HTTP_INSPECTION_MAX_ENDPOINTS = "http.inspection.max-endpoints";
     public static final String HTTP_INSPECTION_NOTIFICATION_WEBHOOK_ID = "http.inspection.notification-webhook-id";
+    /** 管理员维护的全组织飞书通知策略；成员级站内偏好另存 member_preference。 */
+    public static final String NOTIFICATION_POLICY = "notification.policy.v1";
 
     /** 这些键的值加密存储、对外脱敏。 */
     private static final Set<String> SECRET_KEYS = Set.of(FEISHU_WEBHOOK_URL, CHAT_SYNC_APP_SECRET,

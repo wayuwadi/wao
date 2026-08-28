@@ -1,0 +1,62 @@
+openapi: 3.0.3
+info:
+  title: WAO 通知设置 API
+  version: 0.1.0
+paths:
+  /api/notification-settings:
+    get:
+      summary: 读取管理员共享群通知策略与当前成员站内偏好
+      responses:
+        '200':
+          description: 返回权限标记与两层真实配置
+          content: { application/json: { schema: { $ref: '#/components/schemas/NotificationSettingsResponse' } } }
+    put:
+      summary: 保存当前成员偏好；管理员可同时保存系统策略
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SaveNotificationSettingsRequest' } } }
+      responses:
+        '200': { description: 返回保存后的有效配置 }
+        '401': { description: 非管理员尝试修改系统策略 }
+components:
+  schemas:
+    NotificationSettingsResponse:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer, example: 0 }
+        data: { $ref: '#/components/schemas/NotificationSettings' }
+    NotificationSettings:
+      type: object
+      required: [canManageSystem, system, personal]
+      properties:
+        canManageSystem: { type: boolean }
+        system: { $ref: '#/components/schemas/SystemNotificationPolicy' }
+        personal: { $ref: '#/components/schemas/PersonalNotificationPolicy' }
+    SaveNotificationSettingsRequest:
+      type: object
+      required: [personal]
+      properties:
+        system: { $ref: '#/components/schemas/SystemNotificationPolicy' }
+        personal: { $ref: '#/components/schemas/PersonalNotificationPolicy' }
+    SystemNotificationPolicy:
+      type: object
+      required: [enabled, taskActivity, taskSuccess, aiRunSuccess, aiRunFailure, manualTask, automation]
+      properties:
+        enabled: { type: boolean }
+        taskActivity: { type: boolean }
+        taskSuccess: { type: boolean }
+        aiRunSuccess: { type: boolean }
+        aiRunFailure: { type: boolean }
+        manualTask: { type: boolean }
+        automation: { type: boolean }
+    PersonalNotificationPolicy:
+      type: object
+      required: [enabled, taskCreated, taskCompleted, aiRunSuccess, aiRunFailure, loginActivity]
+      properties:
+        enabled: { type: boolean }
+        taskCreated: { type: boolean }
+        taskCompleted: { type: boolean }
+        aiRunSuccess: { type: boolean }
+        aiRunFailure: { type: boolean }
+        loginActivity: { type: boolean }

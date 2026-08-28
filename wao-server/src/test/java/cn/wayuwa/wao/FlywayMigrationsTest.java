@@ -348,4 +348,19 @@ class FlywayMigrationsTest {
                 .contains("ON DELETE CASCADE")
                 .doesNotContainIgnoringCase("ip_address", "user_agent", "email", "provider_subject", "password");
     }
+
+    @Test
+    void feishuReactionDispatchKeepsEventAndRunIdempotencyInMysql() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V112__feishu_reaction_ai_run_trigger.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE feishu_quick_collect_ai_run_trigger")
+                .contains("PRIMARY KEY (event_key)")
+                .contains("REFERENCES task (id) ON DELETE CASCADE")
+                .contains("REFERENCES ai_task_run (id) ON DELETE SET NULL");
+    }
 }

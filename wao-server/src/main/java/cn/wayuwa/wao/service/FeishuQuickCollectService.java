@@ -72,10 +72,12 @@ public class FeishuQuickCollectService {
     private final ObjectMapper json;
     private final NotificationFeedbackService feedback;
     private final SharedChatFeishuBridge sharedChat;
+    private final FeishuQuickCollectAiRunService reactionAiRuns;
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
             TaskService tasks, ProjectService projects, AccountMapper accounts,
             AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ImageService images,
-            ObjectMapper json, NotificationFeedbackService feedback, SharedChatFeishuBridge sharedChat) {
+            ObjectMapper json, NotificationFeedbackService feedback, SharedChatFeishuBridge sharedChat,
+            FeishuQuickCollectAiRunService reactionAiRuns) {
         this.settings = settings;
         this.feishu = feishu;
         this.tasks = tasks;
@@ -87,6 +89,7 @@ public class FeishuQuickCollectService {
         this.json = json;
         this.feedback = feedback;
         this.sharedChat = sharedChat;
+        this.reactionAiRuns = reactionAiRuns;
     }
 
     /** 当前配置（Token / Encrypt Key 只回脱敏形态）。 */
@@ -130,6 +133,17 @@ public class FeishuQuickCollectService {
      * @return 要回给飞书的响应体（URL 校验时是 challenge，其余情况是空对象）
      */
     public Map<String, Object> handleEvent(String rawBody) {
+        return handleEvent(rawBody, "https://wao.wayuwa.cn");
+    }
+
+    /**
+     * 处理一次飞书事件回调，并把当前站点根地址交给表情派工链路生成真实任务分享地址。
+     *
+     * @param rawBody 原始请求体
+     * @param baseUrl 当前请求对应的 WAO 根地址
+     * @return 飞书协议响应
+     */
+    public Map<String, Object> handleEvent(String rawBody, String baseUrl) {
         JsonNode body = decrypt(rawBody);
         if ("url_verification".equals(body.path("type").asText(""))) {
             requireToken(body.path("token").asText(""));
@@ -140,10 +154,24 @@ public class FeishuQuickCollectService {
             feedback.collect(body.path("event"));
             return Map.of();
         }
-        if (sharedChat.handleEvent(body)) {
+        boolean quickCollectEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
+        boolean verifiedReactionChannel = StringUtils.hasText(settings.get(SettingService.QUICK_COLLECT_VERIFY_TOKEN))
+                || StringUtils.hasText(settings.get(SettingService.QUICK_COLLECT_ENCRYPT_KEY));
+        boolean reactionTriggered = false;
+        if (quickCollectEnabled && verifiedReactionChannel) {
+            try {
+                reactionTriggered = reactionAiRuns.trigger(body, baseUrl);
+            } catch (RuntimeException ex) {
+                // 回调必须保持 200；事务会回滚，用户重新添加表情即可再派工，并已尽力在原消息加 ERROR。
+                log.warn("飞书飞机表情触发 AI Run 失败：{}", ex.getMessage());
+                reactionTriggered = true;
+            }
+        }
+        // 同一条飞书消息可能也被共享聊天归档；reaction 既触发派工，也保留聊天里的真实表情事实。
+        if (sharedChat.handleEvent(body) || reactionTriggered) {
             return Map.of();
         }
-        if (!settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)) {
+        if (!quickCollectEnabled) {
             return Map.of();
         }
         if (!"im.message.receive_v1".equals(body.path("header").path("event_type").asText(""))) {

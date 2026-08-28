@@ -162,6 +162,12 @@ export async function apiPutTask(id: string, task: Task): Promise<Task> {
 export const apiAddTaskComment = (id: string, text: string) =>
   post<Comment>(`/api/tasks/${id}/comments`, { text })
 
+/** 当前成员明确把任务发到通知群；返回是否真实发送成功。 */
+export async function notifyTaskManually(id: string): Promise<boolean> {
+  const res = await http.post<ApiResponse<boolean>>(`/api/tasks/${id}/notifications`)
+  return res.data.data
+}
+
 // ---------------- 图床 ----------------
 
 /**

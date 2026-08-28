@@ -24,6 +24,7 @@ import WaoAiCapabilitiesPanel from '@/components/settings/WaoAiCapabilitiesPanel
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
 import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
+import NotificationSettingsPanel from '@/components/settings/NotificationSettingsPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 
 const session = useSessionStore()
@@ -37,10 +38,11 @@ const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const waoAiCapabilitiesPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
+const notificationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['断网时段', 'network-outage'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['宠物设置', 'pet'], ['偏好', 'prefs']] },
 ] as const
 
@@ -55,6 +57,8 @@ const tab = ref<string>(availableTabs.has(normalizedTab) ? normalizedTab : 'memb
 let skipWebhookRouteGuardOnce = false
 
 function selectTab(next: string) {
+  if (tab.value === 'notifications' && next !== 'notifications' && notificationPanel.value
+      && !notificationPanel.value.confirmLeave()) return
   if (tab.value === 'pet' && next !== 'pet' && webPetPanel.value
       && !webPetPanel.value.confirmLeave()) return
   if (tab.value === 'navigation' && next !== 'navigation' && navigationPanel.value
@@ -82,6 +86,8 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
     return true
   }
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return false
+  if (tab.value === 'notifications' && notificationPanel.value
+      && !notificationPanel.value.confirmLeave()) return false
   if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return false
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return false
@@ -382,6 +388,8 @@ watch(tab, (t) => {
   }
 }, { immediate: true })
 async function logout() {
+  if (tab.value === 'notifications' && notificationPanel.value
+      && !notificationPanel.value.confirmLeave()) return
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return
@@ -545,14 +553,9 @@ async function bindFeishu() {
           </div>
         </template>
 
-        <!-- 系统 · 菜单配置 -->
-        <template v-else-if="tab === 'navigation'">
-          <NavigationLinkSettingsPanel ref="navigationPanel" />
-        </template>
-
-        <!-- 系统 · 通用 Webhook 配置 -->
-        <template v-else-if="tab === 'webhook'">
-          <WebhookConfigPanel ref="webhookPanel" />
+        <!-- 系统与个人 · 通知设置 -->
+        <template v-else-if="tab === 'notifications'">
+          <NotificationSettingsPanel ref="notificationPanel" />
 
           <div class="card">
             <div class="card-row wrap">
@@ -577,6 +580,16 @@ async function bindFeishu() {
             </div>
             <div class="hint">静音的项目不再往群里发新建任务、状态变化、新增子任务、评论与 AI 执行的卡片，页面内的记录一条不少。系统默认机器人停用时，所有项目都不发。</div>
           </div>
+        </template>
+
+        <!-- 系统 · 菜单配置 -->
+        <template v-else-if="tab === 'navigation'">
+          <NavigationLinkSettingsPanel ref="navigationPanel" />
+        </template>
+
+        <!-- 系统 · 通用 Webhook 配置 -->
+        <template v-else-if="tab === 'webhook'">
+          <WebhookConfigPanel ref="webhookPanel" />
         </template>
 
         <!-- 系统 · AI 账号 -->

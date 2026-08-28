@@ -1502,7 +1502,7 @@ class AiRunServiceTest {
     }
 
     @Test
-    void completedRunAddsCompletionReactionWithoutSendingVerificationCard() {
+    void completedRunAddsCompletionReactionAndDelegatesOptionalSuccessCardToPolicy() {
         runningRun();
 
         service.complete("local-token", "ar1",
@@ -1510,7 +1510,8 @@ class AiRunServiceTest {
                         null, null, null, null, null));
 
         verify(runReactions).reactAfterSucceeded(List.of("t1"));
-        verifyNoInteractions(notifier);
+        verify(notifier).notifyRunSucceeded("t1", "p1", "记录用量", "整个任务",
+                "WAO_RUN_STATUS: SUCCESS");
     }
 
     @Test
@@ -1525,7 +1526,8 @@ class AiRunServiceTest {
 
         assertThat(completed.status()).isEqualTo("succeeded");
         assertThat(run.getStatus()).isEqualTo("succeeded");
-        verifyNoInteractions(notifier);
+        verify(notifier).notifyRunSucceeded("t1", "p1", "记录用量", "整个任务",
+                "WAO_RUN_STATUS: SUCCESS");
     }
 
     @Test
@@ -1545,7 +1547,8 @@ class AiRunServiceTest {
         assertThat(first.getStatus()).isEqualTo("待验证");
         assertThat(second.getStatus()).isEqualTo("待验证");
         verify(runReactions).reactAfterSucceeded(List.of("t1", "t2"));
-        verifyNoInteractions(notifier);
+        verify(notifier).notifyRunSucceeded("t1", "p1", "记录用量", "合并 2 个任务",
+                "WAO_RUN_STATUS: SUCCESS");
     }
 
     @Test

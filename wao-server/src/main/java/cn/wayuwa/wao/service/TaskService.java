@@ -442,6 +442,19 @@ public class TaskService {
         return toDto(require(id));
     }
 
+    /**
+     * 当前成员显式把一条自己可见的任务发到通知群；自动成功通知关闭时仍保留这个人工入口。
+     *
+     * @param id 任务 id
+     * @param memberId 当前登录成员 id
+     * @return 是否真实发出了飞书卡片
+     */
+    public boolean notifyManually(String id, String memberId) {
+        TaskEntity entity = requireVisible(id, memberId);
+        return taskNotifier.notifyManualTask(entity.getId(), entity.getProjectId(), entity.getTitle(),
+                projectName(entity.getProjectId()), memberName(memberId), entity.getDescription());
+    }
+
     /** 原子追加一条评论并同步飞书群，避免全文自动保存请求相互覆盖评论。 */
     public CommentDto addComment(String id, String memberId, String text) {
         TaskEntity entity = requireVisible(id, memberId);
