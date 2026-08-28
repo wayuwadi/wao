@@ -12,6 +12,7 @@ public class AiTaskAutoRunStateEntity {
     private String id;
     private Boolean enabled;
     private Integer idleHours;
+    private Integer batchSize;
     private String projectId;
     private String taskStatusesJson;
     private String notificationWebhookId;
@@ -27,6 +28,8 @@ public class AiTaskAutoRunStateEntity {
     public void setEnabled(Boolean enabled) { this.enabled = enabled; }
     public Integer getIdleHours() { return idleHours; }
     public void setIdleHours(Integer idleHours) { this.idleHours = idleHours; }
+    public Integer getBatchSize() { return batchSize; }
+    public void setBatchSize(Integer batchSize) { this.batchSize = batchSize; }
     public String getProjectId() { return projectId; }
     public void setProjectId(String projectId) { this.projectId = projectId; }
     public String getTaskStatusesJson() { return taskStatusesJson; }

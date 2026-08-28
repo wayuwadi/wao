@@ -193,7 +193,7 @@ vi.mock('@/api/ai', () => ({
     intervalHours: 12, batchSize: 1,
   }),
   fetchAiTaskAutoRunPolicy: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
-    enabled: true, idleHours: 2, projectId: 'p1', taskStatuses: ['待办'],
+    enabled: true, idleHours: 2, batchSize: 3, projectId: 'p1', taskStatuses: ['待办'],
     notificationWebhookId: 'fw-auto', status: 'ready',
     message: '空闲达到 2 小时后，将从「Wa All in One」自动以 Plan 模式执行录入最早的匹配任务。',
     lastActivityAt: '2026-08-25T09:00:00', nextEligibleAt: '2026-08-25T11:00:00',
@@ -202,12 +202,13 @@ vi.mock('@/api/ai', () => ({
   saveAiTaskAutoRunPolicy: vi.fn<(
     enabled: boolean,
     idleHours: number,
+    batchSize: number,
     projectId: string,
     taskStatuses: Array<'待办' | '收集中' | '进行中'>,
     notificationWebhookId: string | null,
   ) => Promise<Record<string, unknown>>>()
-    .mockImplementation(async (enabled, idleHours, projectId, taskStatuses, notificationWebhookId) => ({
-      enabled, idleHours, projectId, taskStatuses, notificationWebhookId, status: enabled ? 'ready' : 'disabled',
+    .mockImplementation(async (enabled, idleHours, batchSize, projectId, taskStatuses, notificationWebhookId) => ({
+      enabled, idleHours, batchSize, projectId, taskStatuses, notificationWebhookId, status: enabled ? 'ready' : 'disabled',
       message: enabled ? `空闲达到 ${idleHours} 小时后自动派发。` : '自动派发已关闭。',
       lastActivityAt: null, nextEligibleAt: null, lastCheckedAt: null, lastRunId: null,
     })),
@@ -498,17 +499,19 @@ describe('HomeView AI 控制台', () => {
     expect(dialog.text()).toContain('Plan 模式')
     expect(dialog.text()).toContain('Wa All in One')
     expect(dialog.text()).toContain('自动任务群')
+    expect(dialog.text()).toContain('当前项目最多并发 3 条')
     expect(fetchWebhookEndpoints).toHaveBeenCalled()
     expect(policy.find('.auto-run-switch').attributes('aria-checked')).toBe('true')
 
     await policy.find('.auto-run-switch').trigger('click')
-    await policy.find('input').setValue(4)
+    await policy.find('input[aria-label="自动派发空闲小时数"]').setValue(4)
+    await policy.find('input[aria-label="自动派发单次推进数"]').setValue(2)
     await policy.findAll('.auto-run-statuses input')[1]!.setValue(true)
     expect(dialog.text()).toContain('设置尚未保存')
     await dialog.find('.auto-run-save').trigger('click')
     await flushPromises()
 
-    expect(saveAiTaskAutoRunPolicy).toHaveBeenCalledWith(false, 4, 'p1', ['待办', '收集中'], 'fw-auto')
+    expect(saveAiTaskAutoRunPolicy).toHaveBeenCalledWith(false, 4, 2, 'p1', ['待办', '收集中'], 'fw-auto')
     expect(dialog.find('.auto-run-save').text()).toContain('已保存')
     wrapper.unmount()
   })

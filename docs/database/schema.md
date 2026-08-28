@@ -319,6 +319,12 @@ V78 只把旧 `enc:<nonce>:<ciphertext>` 拆列搬运，不在 migration 中解�
   完整日志仍只保留在执行电脑本机。
 `ai_runner_pair_code` 保存一次性配对码哈希、过期时间和使用时间，明文只在生成接口返回一次。
 
+### ai_task_auto_run_state（V92、V97、V110）
+
+全局单例保存最早待办空闲自动推进策略、数据库检查窗口与最近结果。`batch_size` 表示一次触发最多创建多少条独立
+AI Run，范围 1 到 10；升级时按所选项目 `max_parallel_runs` 回填。服务端保存时不允许它超过项目并发上限，
+项目上限后来调低时则即时取两者较小值，避免存量策略阻塞调度。
+
 ### codex_runner_quota（V74）
 
 | 列 | 类型 | 说明 |
@@ -967,6 +973,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V107__remove_mock_automation_jobs.sql`：删除 V8 的四条演示自动化及演示运行记录；未知执行器由服务层失败关闭。
 - `V108__assistant_web_search.sql`：固化普通页面问答的联网开关，并为所选 API Provider 暂存有界搜索材料；终态清除（见 ADR-142）。
 - `V109__ai_run_delivery_stage.sql`：把 AI Run 的代码、等待部署与部署终态分开持久化，并只把历史成功回填为已部署（见 ADR-144）。
+- `V110__batch_oldest_task_auto_run.sql`：为最早待办空闲自动推进增加单次推进数，并按所选项目并发上限回填（见 ADR-152）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

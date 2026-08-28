@@ -71,6 +71,7 @@ export interface AiEvolutionOverview {
 export interface AiTaskAutoRunPolicy {
   enabled: boolean
   idleHours: number
+  batchSize: number
   projectId: string | null
   taskStatuses: Array<'待办' | '收集中' | '进行中'>
   notificationWebhookId: string | null
@@ -216,11 +217,12 @@ export const fetchAiTaskAutoRunPolicy = () =>
 export const saveAiTaskAutoRunPolicy = (
   enabled: boolean,
   idleHours: number,
+  batchSize: number,
   projectId: string,
   taskStatuses: Array<'待办' | '收集中' | '进行中'>,
   notificationWebhookId: string | null,
 ) => data<AiTaskAutoRunPolicy>(http.put('/api/ai/task-auto-run', {
-  enabled, idleHours, projectId, taskStatuses, notificationWebhookId,
+  enabled, idleHours, batchSize, projectId, taskStatuses, notificationWebhookId,
 }))
 
 /** 一键把一条建议交给选中的项目工作流。 */

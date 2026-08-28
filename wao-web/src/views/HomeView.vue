@@ -77,6 +77,7 @@ const quotaOverview = ref<AiEvolutionOverview | null>(null)
 const taskAutoRunPolicy = ref<AiTaskAutoRunPolicy | null>(null)
 const taskAutoRunEnabled = ref(true)
 const taskAutoRunHours = ref(2)
+const taskAutoRunBatchSize = ref(2)
 const taskAutoRunProjectId = ref('')
 const taskAutoRunStatuses = ref<TaskStatus[]>(['待办'])
 const taskAutoRunWebhookId = ref('')
@@ -164,6 +165,9 @@ const runnableAutoRunWorkflows = computed(() => activeWorkflows.value.filter(
 const runnableWorkflowByProject = computed(() => new Map(
   runnableAutoRunWorkflows.value.map((workflow) => [workflow.projectId, workflow]),
 ))
+const taskAutoRunProjectMax = computed(() =>
+  runnableWorkflowByProject.value.get(taskAutoRunProjectId.value)?.config.maxParallelRuns ?? 10,
+)
 const enabledTaskAutoRunWebhooks = computed(() => taskAutoRunWebhooks.value.filter((endpoint) => endpoint.enabled))
 const AUTO_RUN_TASK_STATUSES: TaskStatus[] = ['待办', '收集中', '进行中']
 const QUICK_TASK_PRIORITY = new Map([['P0', 0], ['P1', 1], ['P2', 2], ['P3', 3]])
@@ -439,6 +443,7 @@ async function refreshTaskAutoRunPolicy() {
     if (!taskAutoRunDirty.value && !taskAutoRunSaving.value) {
       taskAutoRunEnabled.value = policy.enabled
       taskAutoRunHours.value = policy.idleHours
+      taskAutoRunBatchSize.value = policy.batchSize
       taskAutoRunProjectId.value = policy.projectId ?? ''
       taskAutoRunStatuses.value = [...policy.taskStatuses]
       taskAutoRunWebhookId.value = policy.notificationWebhookId ?? ''
@@ -466,10 +471,20 @@ function markTaskAutoRunDirty() {
   taskAutoRunError.value = ''
 }
 
+function changeTaskAutoRunProject() {
+  taskAutoRunBatchSize.value = Math.min(taskAutoRunBatchSize.value, taskAutoRunProjectMax.value)
+  markTaskAutoRunDirty()
+}
+
 async function saveTaskAutoRunPolicy() {
   const hours = Number(taskAutoRunHours.value)
   if (!Number.isInteger(hours) || hours < 1 || hours > 168) {
     taskAutoRunError.value = '空闲时长请输入 1 到 168 之间的整数'
+    return
+  }
+  const batchSize = Number(taskAutoRunBatchSize.value)
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > taskAutoRunProjectMax.value) {
+    taskAutoRunError.value = `单次推进数请输入 1 到 ${taskAutoRunProjectMax.value} 之间的整数`
     return
   }
   if (!taskAutoRunProjectId.value) {
@@ -489,6 +504,7 @@ async function saveTaskAutoRunPolicy() {
     const policy = await saveAiTaskAutoRunPolicy(
       taskAutoRunEnabled.value,
       hours,
+      batchSize,
       taskAutoRunProjectId.value,
       statuses,
       taskAutoRunWebhookId.value || null,
@@ -496,6 +512,7 @@ async function saveTaskAutoRunPolicy() {
     taskAutoRunPolicy.value = policy
     taskAutoRunEnabled.value = policy.enabled
     taskAutoRunHours.value = policy.idleHours
+    taskAutoRunBatchSize.value = policy.batchSize
     taskAutoRunProjectId.value = policy.projectId ?? ''
     taskAutoRunStatuses.value = [...policy.taskStatuses]
     taskAutoRunWebhookId.value = policy.notificationWebhookId ?? ''
@@ -1781,7 +1798,7 @@ onBeforeUnmount(() => {
           <span class="recent-icon auto-run-dialog-icon"><i class="ri-timer-flash-line"></i></span>
           <div>
             <h2 id="auto-run-policy-title">空闲时自动推进最早待办</h2>
-            <p>没有 AI Run 活动时，按真实工作流和所选任务状态自动派发录入最早的一条。</p>
+            <p>没有 AI Run 活动时，按真实工作流和所选任务状态批量派发录入最早的待办。</p>
           </div>
           <button class="detail-close" aria-label="关闭自动推进设置" @click="taskAutoRunSettingsOpen = false"><i class="ri-close-line"></i></button>
         </header>
@@ -1805,11 +1822,17 @@ onBeforeUnmount(() => {
               <input v-model.number="taskAutoRunHours" type="number" min="1" max="168" step="1" :disabled="taskAutoRunSaving" aria-label="自动派发空闲小时数" @input="markTaskAutoRunDirty" />
               <span>小时</span>
             </label>
+            <label :title="`所选项目同一时间最多运行 ${taskAutoRunProjectMax} 条任务`">
+              <span>单次推进</span>
+              <input v-model.number="taskAutoRunBatchSize" type="number" min="1" :max="taskAutoRunProjectMax" step="1" :disabled="taskAutoRunSaving" aria-label="自动派发单次推进数" @input="markTaskAutoRunDirty" />
+              <span>条</span>
+            </label>
           </div>
+          <small class="auto-run-limit-hint">每条任务会创建独立 AI Run；当前项目最多并发 {{ taskAutoRunProjectMax }} 条，Runner 暂无空闲槽位时会安全排队。</small>
           <div class="auto-run-options">
             <label class="auto-run-select">
               <span>任务项目</span>
-              <select v-model="taskAutoRunProjectId" :disabled="taskAutoRunSaving || workflowsLoading" aria-label="自动派发任务项目" @change="markTaskAutoRunDirty">
+              <select v-model="taskAutoRunProjectId" :disabled="taskAutoRunSaving || workflowsLoading" aria-label="自动派发任务项目" @change="changeTaskAutoRunProject">
                 <option value="" disabled>{{ workflowsLoading ? '正在读取项目…' : runnableAutoRunWorkflows.length ? '请选择项目' : '没有可用的 AI 工作流' }}</option>
                 <option v-for="workflow in runnableAutoRunWorkflows" :key="workflow.projectId" :value="workflow.projectId">{{ workflow.projectName }}</option>
               </select>
@@ -2332,6 +2355,7 @@ onBeforeUnmount(() => {
 .auto-run-switch.on > i::after { transform: translateX(11px); }
 .auto-run-controls label { height: 32px; padding: 0 7px 0 9px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); font-size: 10.5px; display: flex; align-items: center; gap: 5px; }
 .auto-run-controls input { width: 46px; height: 24px; padding: 0 4px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-sub); color: var(--wao-text); text-align: center; }
+.auto-run-limit-hint { color: var(--wao-text-weak); font-size: 10.5px; line-height: 1.55; }
 .auto-run-options { padding-top: 14px; border-top: 1px solid var(--wao-divider); display: grid; grid-template-columns: minmax(180px, .9fr) minmax(280px, 1.2fr) minmax(200px, 1fr); align-items: end; gap: 10px; }
 .auto-run-select { min-width: 0; display: grid; gap: 5px; color: var(--wao-text-weak); font-size: 10.5px; }
 .auto-run-select select { width: 100%; height: 32px; padding: 0 28px 0 9px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); font: inherit; }

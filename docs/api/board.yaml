@@ -580,6 +580,30 @@ paths:
       responses:
         '200': { description: 返回新建并已入队的 AI Run }
         '400': { description: 建议不存在、工作流未启用或执行条件不满足 }
+  /ai/task-auto-run:
+    get:
+      summary: 读取空闲后批量推进最早待办的持久化策略与最近检查结果
+      responses:
+        '200': { description: 返回 enabled、idleHours、batchSize、项目、任务状态、通知群及真实调度状态 }
+    put:
+      summary: 保存空闲阈值、单次推进数、项目、任务状态与通知群并立即进入一次到期检查
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, idleHours, projectId, taskStatuses]
+              properties:
+                enabled: { type: boolean }
+                idleHours: { type: integer, minimum: 1, maximum: 168 }
+                batchSize: { type: integer, minimum: 1, maximum: 10, description: 不得超过所选项目的 maxParallelRuns；旧客户端省略时使用项目并发上限 }
+                projectId: { type: string }
+                taskStatuses: { type: array, minItems: 1, uniqueItems: true, items: { type: string, enum: [待办, 收集中, 进行中] } }
+                notificationWebhookId: { type: string, nullable: true }
+      responses:
+        '200': { description: 返回保存后的策略及真实调度状态 }
+        '400': { description: 数量超限、项目不可运行、任务状态不安全或通知群不可用 }
   /ai/runners:
     get: { summary: 执行电脑列表、接入的 AI 工具、在线状态与槽位占用, responses: { '200': { description: OK } } }
   /ai/runners/{runnerId}/log:

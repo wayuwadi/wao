@@ -303,6 +303,21 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void batchTaskAutoRunMigrationBackfillsTheSelectedProjectConcurrency() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V110__batch_oldest_task_auto_run.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("batch_size INT NOT NULL DEFAULT 2")
+                .contains("CHECK (batch_size BETWEEN 1 AND 10)")
+                .contains("JOIN ai_project_config c ON c.project_id = s.project_id")
+                .contains("LEAST(GREATEST(c.max_parallel_runs, 1), 10)")
+                .contains("WHERE s.id = 'oldest-task'");
+    }
+
+    @Test
     void lunarCalendarReminderMigrationKeepsExistingRowsCompatible() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString()

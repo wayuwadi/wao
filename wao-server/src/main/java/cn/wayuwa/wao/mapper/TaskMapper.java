@@ -13,7 +13,7 @@ import java.util.List;
 public interface TaskMapper extends BaseMapper<TaskEntity> {
 
     /**
-     * 读取所选项目、所选安全状态中录入时间最早且具备真实 AI 工作流的任务。
+     * 按录入时间读取所选项目、所选安全状态中最早且具备真实 AI 工作流的任务。
      *
      * <p>允许的来源状态由服务层限制；AI 进行中、待验证和已完成不会进入无人值守候选。
      */
@@ -39,11 +39,11 @@ public interface TaskMapper extends BaseMapper<TaskEntity> {
                   AND r.status IN ('queued', 'claimed', 'running')
               )
             ORDER BY t.created_at IS NULL, t.created_at, t.id
-            LIMIT 1
+            LIMIT #{limit}
             </script>
             """)
-    TaskEntity selectOldestAutoRunCandidate(@Param("projectId") String projectId,
-            @Param("taskStatuses") List<String> taskStatuses);
+    List<TaskEntity> selectOldestAutoRunCandidates(@Param("projectId") String projectId,
+            @Param("taskStatuses") List<String> taskStatuses, @Param("limit") int limit);
 
     /** 飞书原消息编辑只窄更新来源字段，避免覆盖并发保存的任务结构化详情。 */
     @Update("UPDATE task SET title = #{title}, description = #{description} WHERE id = #{id}")

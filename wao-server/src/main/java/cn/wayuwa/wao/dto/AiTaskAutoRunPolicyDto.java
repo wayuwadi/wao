@@ -6,6 +6,7 @@ import java.util.List;
 public record AiTaskAutoRunPolicyDto(
         boolean enabled,
         int idleHours,
+        int batchSize,
         String projectId,
         List<String> taskStatuses,
         String notificationWebhookId,

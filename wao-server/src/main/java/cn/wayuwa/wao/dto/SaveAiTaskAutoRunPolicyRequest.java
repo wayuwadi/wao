@@ -12,6 +12,8 @@ public record SaveAiTaskAutoRunPolicyRequest(
         @NotNull(message = "请填写空闲时长")
         @Min(value = 1, message = "空闲时长不能少于 1 小时")
         @Max(value = 168, message = "空闲时长不能超过 168 小时") Integer idleHours,
+        @Min(value = 1, message = "单次至少推进 1 条任务")
+        @Max(value = 10, message = "单次最多推进 10 条任务") Integer batchSize,
         String projectId,
         List<String> taskStatuses,
         String notificationWebhookId) {
