@@ -68,6 +68,7 @@ EXIT_PAIRING_REVOKED = 78
 ENGINE_LABELS = {"codex": "Codex", "claude": "Claude Code", "qoder": "Qoder"}
 DEFAULT_FAILURE_RETRY_COUNT = 2
 MAX_FAILURE_RETRY_COUNT = 5
+READ_ONLY_AI_MAX_ATTEMPTS = 3
 # 引擎 id 到本机候选命令名的映射，按顺序探测第一个存在的。Qoder 的命令名与引擎 id
 # 不同，且国际版叫 qodercli、国内版叫 qoderclicn，两个名字都要认。
 ENGINE_COMMANDS = {"codex": ("codex",), "claude": ("claude",), "qoder": ("qodercli", "qoderclicn")}
@@ -1894,23 +1895,35 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
         worktree.mkdir(parents=True, exist_ok=True)
         run([git_command, "init", "-q"], worktree)
         log(f"[{run_id}] 开始{'点子调研' if research_mode else '页面只读问答'}")
-        exit_code, response, _, _ = run_codex(
-            executable, worktree, str(claim.get("prompt") or ""), "read-only",
-            NoopProgressReporter(), assistant_cli_environment(cli_environment),
-            should_stop=lambda: time.monotonic() >= deadline,
-            account=claim.get("account"), codex_home=codex_home,
-            tools_disabled=True, web_search_enabled=web_search_enabled)
-        response = response.strip()
-        if exit_code != 0:
-            # 非零退出的部分 stdout 可能包含原对话或未完成报告，不回传、不持久化。
-            response = ""
-            error = f"Codex 执行失败（退出码 {exit_code}）"
-        elif not response:
-            exit_code = 1
-            error = "Codex 没有返回文字答复"
-    except Exception as exc:  # noqa: BLE001 - 必须把节点错误回传给页面
-        error = f"Codex 执行异常（{type(exc).__name__}）"
-        log(f"[{run_id}] 页面问答失败：{type(exc).__name__}")
+        for attempt in range(1, READ_ONLY_AI_MAX_ATTEMPTS + 1):
+            try:
+                exit_code, response, _, _ = run_codex(
+                    executable, worktree, str(claim.get("prompt") or ""), "read-only",
+                    NoopProgressReporter(), assistant_cli_environment(cli_environment),
+                    should_stop=lambda: time.monotonic() >= deadline,
+                    account=claim.get("account"), codex_home=codex_home,
+                    tools_disabled=True, web_search_enabled=web_search_enabled)
+                response = response.strip()
+                if exit_code == 0 and response:
+                    error = ""
+                    break
+                # 非零退出的部分 stdout 可能包含原对话或未完成报告，不回传、不持久化。
+                response = ""
+                if exit_code != 0:
+                    error = f"Codex 执行失败（退出码 {exit_code}）"
+                else:
+                    exit_code = 1
+                    error = "Codex 没有返回文字答复"
+            except Exception as exc:  # noqa: BLE001 - 单次 CLI 异常属于可恢复失败
+                exit_code = 2
+                response = ""
+                error = f"Codex 执行异常（{type(exc).__name__}）"
+                log(f"[{run_id}] 页面问答第 {attempt}/{READ_ONLY_AI_MAX_ATTEMPTS} 次执行异常："
+                    f"{type(exc).__name__}")
+            if attempt < READ_ONLY_AI_MAX_ATTEMPTS:
+                log(f"[{run_id}] 页面只读 AI 第 {attempt}/{READ_ONLY_AI_MAX_ATTEMPTS} 次执行未完成，"
+                    "正在自动重试")
+                time.sleep(attempt)
     finally:
         try:
             completion = {"claimToken": claim_token, "exitCode": exit_code,
