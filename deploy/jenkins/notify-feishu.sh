@@ -33,13 +33,13 @@ read_status() {
 }
 
 windows_status="$(read_status windows_status not_started)"
-windows_attempts="$(read_status windows_attempts 0)"
 windows_detail="$(read_status windows_detail 无状态)"
 linux_status="$(read_status linux_status not_started)"
-linux_attempts="$(read_status linux_attempts 0)"
 linux_detail="$(read_status linux_detail 无状态)"
 cloud_status="$(read_status cloud_status not_started)"
+cloud_detail="$(read_status cloud_detail 无状态)"
 verification_status="$(read_status verification_status not_started)"
+verification_detail="$(read_status verification_detail 无状态)"
 
 overall='✅ 成功'
 header_color=green
@@ -62,26 +62,89 @@ elif [ "${DEPLOY_PRODUCTION:-false}" != true ]; then
 fi
 
 commit_message="${WAO_COMMIT_MESSAGE:-$(git log -1 --pretty=%B 2>/dev/null || printf 'Jenkins 手动构建')}"
-if [ "${#commit_message}" -gt 1800 ]; then
-  commit_message="$(printf '%s' "$commit_message" | cut -c1-1800)…"
+batch_count="${WAO_BATCH_COMMIT_COUNT:-1}"
+change_summary="$(printf '%s\n' "$commit_message" | sed -n '1,6p')"
+if [ "$batch_count" -gt 6 ]; then
+  remaining=$((batch_count - 6))
+  change_summary="${change_summary}\n- 另有 ${remaining} 个改动，点开查看"
+fi
+if [ "${#change_summary}" -gt 520 ]; then
+  change_summary="$(printf '%s' "$change_summary" | cut -c1-520)…"
 fi
 short_sha="$(printf '%s' "${WAO_GIT_SHA:-unknown}" | cut -c1-8)"
 commit_url="https://github.com/wayuwacn/wao/commit/${WAO_GIT_SHA:-}"
 run_url="https://wao.wayuwa.cn/jenkins/job/wao-main-cd/${BUILD_NUMBER:-}/"
 
-payload="$(jq -n \
-  --arg title "WAO Jenkins ${pipeline_kind} ${overall}" \
+status_label() {
+  case "$1" in
+    success) printf '成功' ;;
+    failed) printf '失败' ;;
+    skipped) printf '跳过' ;;
+    not_started) printf '未开始' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+status_line="Windows $(status_label "$windows_status") · Linux $(status_label "$linux_status") · 云端 $(status_label "$cloud_status") · 验收 $(status_label "$verification_status")"
+result_heading='**结果**'
+if [ "$WAO_PIPELINE_RESULT" = success ]; then
+  if [ "${WAO_DEPLOY_REQUIRED:-true}" != true ]; then
+    result_summary='验证通过，本次改动无需生产部署。'
+  elif [ "${DEPLOY_PRODUCTION:-false}" != true ]; then
+    result_summary='影子构建通过，本次未发布到生产。'
+  elif [ "$windows_status" = skipped ]; then
+    result_summary='Windows 保持摘流；Linux、云端发布与线上验收通过。'
+  else
+    result_summary='Windows、Linux、云端发布与线上验收通过。'
+  fi
+else
+  result_heading='**失败范围**'
+  case "$windows_status:$linux_status:$cloud_status:$verification_status" in
+    not_started:not_started:not_started:not_started)
+      result_summary='构建或检查失败，生产发布尚未开始。' ;;
+    *success*|*skipped*)
+      result_summary="部分完成：${status_line}" ;;
+    *)
+      result_summary="全部未完成：${status_line}" ;;
+  esac
+fi
+
+failure_stage="${WAO_FAILURE_STAGE:-构建或发布}"
+case "$failure_stage" in
+  'Checkout trusted main') failure_stage='检出可信 main' ;;
+  'Validate release inputs') failure_stage='发布输入校验' ;;
+  'Backend tests') failure_stage='后端测试' ;;
+  'WAO Web tests and build') failure_stage='WAO Web 测试与构建' ;;
+  'Agent Web tests and build') failure_stage='Agent Web 测试与构建' ;;
+  'AI Runner tests') failure_stage='AI Runner 测试' ;;
+  'Build immutable release') failure_stage='不可变制品构建' ;;
+  'Deploy Windows, Linux and cloud') failure_stage='三节点滚动发布' ;;
+  'Apply Jenkins controller configuration') failure_stage='Jenkins 控制器配置' ;;
+esac
+failure_detail=''
+if [ "$windows_status" = failed ]; then failure_detail="$windows_detail";
+elif [ "$linux_status" = failed ]; then failure_detail="$linux_detail";
+elif [ "$cloud_status" = failed ]; then failure_detail="$cloud_detail";
+elif [ "$verification_status" = failed ]; then failure_detail="$verification_detail";
+fi
+failure_reason="$failure_stage"
+if [ -n "$failure_detail" ] && [ "$failure_detail" != 无状态 ] && [ "$failure_detail" != not_started ]; then
+  failure_reason="${failure_reason}：${failure_detail}"
+fi
+if [ "${#failure_reason}" -gt 240 ]; then
+  failure_reason="$(printf '%s' "$failure_reason" | cut -c1-240)…"
+fi
+
+if [ "$WAO_PIPELINE_RESULT" = success ]; then
+  payload="$(jq -n \
+  --arg title "WAO ${pipeline_kind} ${overall}" \
   --arg template "$header_color" \
   --arg sha "$short_sha" \
   --arg sha_url "$commit_url" \
-  --arg batch "${WAO_BATCH_COMMIT_COUNT:-1}" \
-  --arg change "$commit_message" \
-  --arg branch "${WAO_GIT_BRANCH:-main}" \
-  --arg deploy "$WAO_PIPELINE_RESULT" \
-  --arg windows "${windows_status}（尝试 ${windows_attempts} 次）\n${windows_detail}" \
-  --arg linux "${linux_status}（尝试 ${linux_attempts} 次）\n${linux_detail}" \
-  --arg cloud "$cloud_status" \
-  --arg verification "$verification_status" \
+  --arg batch "$batch_count" \
+  --arg change "$change_summary" \
+  --arg result_heading "$result_heading" \
+  --arg result "$result_summary" \
   --arg run_url "$run_url" \
   '{
     msg_type:"interactive",
@@ -89,27 +152,44 @@ payload="$(jq -n \
       config:{wide_screen_mode:true},
       header:{template:$template,title:{tag:"plain_text",content:$title}},
       elements:[
-        {tag:"div",fields:[
-          {is_short:true,text:{tag:"lark_md",content:"**仓库**\nwayuwacn/wao"}},
-          {is_short:true,text:{tag:"lark_md",content:("**分支**\n"+$branch)}},
-          {is_short:true,text:{tag:"lark_md",content:("**提交**\n["+$sha+"]("+$sha_url+")")}},
-          {is_short:true,text:{tag:"lark_md",content:("**批次**\n"+$batch+" 个 main 提交")}}
-        ]},
-        {tag:"hr"},
+        {tag:"div",text:{tag:"lark_md",content:("**批次** "+$batch+" 个改动 · ["+$sha+"]("+$sha_url+")")}},
         {tag:"div",text:{tag:"lark_md",content:("**本次改动**\n"+$change)}},
-        {tag:"div",fields:[
-          {is_short:false,text:{tag:"lark_md",content:("**Windows 从节点**\n"+$windows)}},
-          {is_short:false,text:{tag:"lark_md",content:("**Linux 主节点**\n"+$linux)}},
-          {is_short:true,text:{tag:"lark_md",content:("**云节点**\n"+$cloud)}},
-          {is_short:true,text:{tag:"lark_md",content:("**最终验收**\n"+$verification)}}
-        ]},
+        {tag:"div",text:{tag:"lark_md",content:($result_heading+"\n"+$result)}},
         {tag:"action",actions:[
           {tag:"button",text:{tag:"plain_text",content:"查看 Jenkins 详情"},url:$run_url,type:"primary"}
         ]}
       ]
     }
   }')"
+else
+  payload="$(jq -n \
+  --arg title "WAO ${pipeline_kind} ${overall}" \
+  --arg template "$header_color" \
+  --arg sha "$short_sha" \
+  --arg sha_url "$commit_url" \
+  --arg batch "$batch_count" \
+  --arg result_heading "$result_heading" \
+  --arg result "$result_summary" \
+  --arg reason "$failure_reason" \
+  --arg run_url "$run_url" \
+  '{
+    msg_type:"interactive",
+    card:{
+      config:{wide_screen_mode:true},
+      header:{template:$template,title:{tag:"plain_text",content:$title}},
+      elements:[
+        {tag:"div",text:{tag:"lark_md",content:("**批次** "+$batch+" 个改动 · ["+$sha+"]("+$sha_url+")")}},
+        {tag:"div",text:{tag:"lark_md",content:($result_heading+"\n"+$result)}},
+        {tag:"div",text:{tag:"lark_md",content:("**失败原因**\n"+$reason)}},
+        {tag:"action",actions:[
+          {tag:"button",text:{tag:"plain_text",content:"查看 Jenkins 详情"},url:$run_url,type:"primary"}
+        ]}
+      ]
+    }
+  }')"
+fi
 
 response="$(curl --fail --silent --show-error -X POST "$webhook" \
   -H 'Content-Type: application/json' --data "$payload")"
 printf '%s' "$response" | jq -e '(.code // .StatusCode // 0) == 0' >/dev/null
+echo 'Jenkins Feishu notification delivered.'

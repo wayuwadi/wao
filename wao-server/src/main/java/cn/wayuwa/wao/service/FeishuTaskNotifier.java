@@ -55,41 +55,38 @@ public class FeishuTaskNotifier {
      * @param taskId      任务 id
      * @param projectId   项目 id
      * @param taskTitle   任务标题
-     * @param projectName 项目名称
-     * @param engineLabel 执行工具名（Codex / Claude Code）
      * @param scope       本次跑的范围描述（整个任务或某条子任务）
      * @param succeeded   是否成功
      * @param statusUnreported AI 结束了会话但没报告任务状态，成败需要人判断；这时不能笼统说「失败」
      * @param summary     结果摘要，会截断后放进卡片正文
      * @return 是否真的发出去了
      */
-    public boolean notifyRunFinished(String taskId, String projectId, String taskTitle, String projectName,
-            String engineLabel, String scope, boolean succeeded, boolean statusUnreported, String summary) {
+    public boolean notifyRunFinished(String taskId, String projectId, String taskTitle,
+            String scope, boolean succeeded, boolean statusUnreported, String summary) {
         if (muted(projectId)) {
             return false;
         }
-        List<List<String>> fields = new ArrayList<>();
-        fields.add(List.of("项目", blank(projectName, projectId)));
-        fields.add(List.of("任务", blank(taskTitle, taskId)));
-        fields.add(List.of("执行工具", blank(engineLabel, "AI")));
-        if (StringUtils.hasText(scope)) {
-            fields.add(List.of("范围", scope));
+        String taskLabel = blank(taskTitle, taskId);
+        if (StringUtils.hasText(scope) && !"整个任务".equals(scope)) {
+            taskLabel += " · " + scope;
         }
+        List<List<String>> fields = List.of(List.of("任务", taskLabel));
         if (succeeded) {
             return notifier.notifyCard(new FeishuWebhookNotifier.Card(
-                    "AI 已跑完，等你验收", "green", fields,
-                    excerpt(summary, "AI 已完成执行，任务已转入「待验证」。"),
+                    "AI 任务待验收", "green", fields,
+                    successDigest(summary),
                     "去验收任务", taskUrl(projectId, taskId)));
         }
         if (statusUnreported) {
             return notifier.notifyCard(new FeishuWebhookNotifier.Card(
                     "AI 已结束，但没说清成没成", "orange", fields,
-                    excerpt(summary, "AI 结束了会话但没报告任务状态，请根据它的原始答复确认结果。"),
+                    "**需要确认**\n" + compact(summary,
+                            "AI 结束了会话但没报告任务状态，请根据原始答复确认结果。", 240),
                     "去确认结果", taskUrl(projectId, taskId)));
         }
         return notifier.notifyCard(new FeishuWebhookNotifier.Card(
                 "AI 执行未完成", "red", fields,
-                excerpt(summary, "请打开任务查看失败原因。"),
+                "**失败原因**\n" + compact(summary, "请打开任务查看失败原因。", 240),
                 "查看失败原因", taskUrl(projectId, taskId)));
     }
 
@@ -352,36 +349,6 @@ public class FeishuTaskNotifier {
     }
 
     /**
-     * 任务派给 AI（进入队列）后在群里说一声。
-     *
-     * @param taskId      任务 id
-     * @param projectId   项目 id
-     * @param taskTitle   任务标题
-     * @param projectName 项目名称
-     * @param engineLabel 执行工具名（Codex / Claude Code / Qoder）
-     * @param scope       本次跑的范围描述（整个任务或某条子任务）
-     * @param runnerName  指定的执行电脑名；未指定时可为空
-     * @return 是否真的发出去了
-     */
-    public boolean notifyRunQueued(String taskId, String projectId, String taskTitle, String projectName,
-            String engineLabel, String scope, String runnerName) {
-        if (muted(projectId)) {
-            return false;
-        }
-        List<List<String>> fields = new ArrayList<>();
-        fields.add(List.of("项目", blank(projectName, projectId)));
-        fields.add(List.of("任务", blank(taskTitle, taskId)));
-        fields.add(List.of("执行工具", blank(engineLabel, "AI")));
-        if (StringUtils.hasText(scope)) {
-            fields.add(List.of("范围", scope));
-        }
-        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
-                "任务已派给 AI", "blue", fields,
-                "已进入执行队列，等待" + (StringUtils.hasText(runnerName) ? runnerName : "在线电脑") + "领取。",
-                "查看任务", taskUrl(projectId, taskId)));
-    }
-
-    /**
      * 空闲调度器自动派工时向策略指定的群说明触发原因，避免被误认为人工操作。
      *
      * @param idleHours 触发本次派工的连续空闲阈值
@@ -423,32 +390,6 @@ public class FeishuTaskNotifier {
     }
 
     /**
-     * AI 开始执行（执行电脑领取任务）后在群里说一声。
-     *
-     * @param taskId      任务 id
-     * @param projectId   项目 id
-     * @param taskTitle   任务标题
-     * @param projectName 项目名称
-     * @param engineLabel 执行工具名
-     * @param runnerName  领取任务的执行电脑名
-     * @return 是否真的发出去了
-     */
-    public boolean notifyRunStarted(String taskId, String projectId, String taskTitle, String projectName,
-            String engineLabel, String runnerName) {
-        if (muted(projectId)) {
-            return false;
-        }
-        return notifier.notifyCard(new FeishuWebhookNotifier.Card(
-                "AI 开始执行", "grey",
-                List.of(
-                        List.of("项目", blank(projectName, projectId)),
-                        List.of("任务", blank(taskTitle, taskId)),
-                        List.of("执行工具", blank(engineLabel, "AI"))),
-                blank(runnerName, "执行电脑") + " 已领取任务，" + blank(engineLabel, "AI") + " 正在启动。",
-                "查看任务", taskUrl(projectId, taskId)));
-    }
-
-    /**
      * 查一个成员绑定的飞书 open_id。
      *
      * @param memberId 成员 id
@@ -478,6 +419,57 @@ public class FeishuTaskNotifier {
         }
         String trimmed = text.trim();
         return trimmed.length() <= 600 ? trimmed : trimmed.substring(0, 600) + "……（点按钮看全文）";
+    }
+
+    /** 把 Runner 的结构化终态压成首屏可读的“改动 + 验收”；旧摘要缺字段时明确引导查看全文。 */
+    private static String successDigest(String summary) {
+        String changes = labeledSection(summary, "改动");
+        String verification = labeledSection(summary, "验收");
+        return "**改了什么**\n"
+                + compact(changes, "结果摘要未提供改动清单，请打开任务查看完整记录。", 220)
+                + "\n\n**怎么验收**\n"
+                + compact(verification, "打开任务查看完整验收步骤并确认结果。", 180);
+    }
+
+    /** 读取“改动：/验收：”区块，兼容 Markdown 标题、粗体和列表，遇到下一个标签即停止。 */
+    private static String labeledSection(String text, String wanted) {
+        if (!StringUtils.hasText(text)) return "";
+        StringBuilder result = new StringBuilder();
+        boolean collecting = false;
+        for (String raw : text.replace("\r", "").split("\n")) {
+            String line = raw.trim();
+            if (line.startsWith("WAO_RUN_STATUS:")) continue;
+            String labelLine = line.replace("#", "").replace("*", "").trim();
+            String label = null;
+            String inline = "";
+            for (String candidate : List.of("改动", "验收")) {
+                if (labelLine.equals(candidate) || labelLine.equals(candidate + "：")
+                        || labelLine.equals(candidate + ":")) {
+                    label = candidate;
+                    break;
+                }
+                if (labelLine.startsWith(candidate + "：") || labelLine.startsWith(candidate + ":")) {
+                    label = candidate;
+                    inline = labelLine.substring(candidate.length() + 1).trim();
+                    break;
+                }
+            }
+            if (label != null) {
+                if (collecting && !wanted.equals(label)) break;
+                collecting = wanted.equals(label);
+                if (collecting && StringUtils.hasText(inline)) result.append(inline).append('\n');
+                continue;
+            }
+            if (collecting && StringUtils.hasText(line)) result.append(line).append('\n');
+        }
+        return result.toString().trim();
+    }
+
+    /** 通知正文只保留有限字符并折叠空行，完整内容始终留在任务详情中。 */
+    private static String compact(String text, String fallback, int limit) {
+        if (!StringUtils.hasText(text)) return fallback;
+        String value = text.trim().replaceAll("\\n{3,}", "\n\n");
+        return value.length() <= limit ? value : value.substring(0, limit) + "……";
     }
 
     private static String blank(String value, String fallback) {

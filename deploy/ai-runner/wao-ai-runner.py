@@ -1106,6 +1106,8 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
         "因缺少真实实现条件而取消功能、且其余工作已完成时第一行写 `WAO_RUN_STATUS: SKIPPED`；"
         "只有阻塞导致用户需要的有效结果没有交付，或确实需要用户补充必要信息时，第一行才写 "
         "`WAO_RUN_STATUS: BLOCKED`。状态行后再写中文结果摘要。"
+        "结果摘要固定分为 `改动：` 和 `验收：` 两段，每段最多三条，优先写用户可观察的变化、"
+        "可直接执行的验收步骤及真实结果；失败时用 `改动：` 说明已完成范围，用 `验收：` 写清失败原因与范围。"
         "注意：你一旦停止回复，本次会话就立即结束，不存在「稍后再汇报」；"
         "等待部署这类长任务必须持续轮询直到有结论，然后在同一次答复里给出状态行。"
     )
@@ -1155,6 +1157,7 @@ def build_continuation_prompt(
         "最终答复仍以状态行开头：完成并验收通过写 `WAO_RUN_STATUS: SUCCESS`；"
         "因缺少真实实现条件而取消功能、其余已完成写 `WAO_RUN_STATUS: SKIPPED`；"
         "确实阻塞才写 `WAO_RUN_STATUS: BLOCKED`。"
+        "状态行后的摘要仍固定分为 `改动：` 和 `验收：` 两段，每段最多三条，写清用户变化与真实验收结果。"
         "你一旦停止回复会话就立即结束，不存在「稍后再汇报」；"
         "等待部署这类长任务要持续轮询到有结论，再在同一次答复里给出状态行。"
     ) + _project_memory_prompt(claim, memory_path) + _skill_candidate_prompt(skill_path) + _report_prompt(report_path)

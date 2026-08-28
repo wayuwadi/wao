@@ -15,7 +15,8 @@
 Linux 主节点上的 Jenkins 只响应 `main` push 和手动触发；按 [ADR-144](144-batched-ai-run-delivery.md) 将相邻
 push 合成批次。每次运行构建 WAO Web 与 Agent Web，并按 ADR-097 依次严格发布 Windows、Linux 和云端；
 任一应用节点失败都将流水线标红，不再降级成单节点成功。
-发布完成后执行线上健康检查和飞书登录入口检查，最后发送包含完整提交说明的飞书 webhook 通知。
+发布完成后执行线上健康检查和飞书登录入口检查，最后发送飞书 webhook 通知。卡片最初包含完整提交说明；
+ADR-146 已将其收敛为提交标题清单与成功/失败摘要，完整正文改由 Git 链接按需查阅。
 
 飞书 App ID、Secret 和 `WAO_VAULT_KEY` 继续保存在 Linux 主节点私有部署目录。Jenkins 通过精确 ACL 读取，
 生成仅对当前运行可见的临时文件并安全下发 Windows；这些值不进入源码包、Git 历史或日志。Jenkins 自身的

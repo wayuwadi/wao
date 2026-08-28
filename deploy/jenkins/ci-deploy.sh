@@ -69,7 +69,8 @@ status_file="$WAO_RUN_TEMP/wao-deploy-status.env"
 printf '%s\n' \
   'windows_status=not_started' 'windows_attempts=0' 'windows_detail=not_started' \
   'linux_status=not_started' 'linux_attempts=0' 'linux_detail=not_started' \
-  'cloud_status=not_started' 'verification_status=not_started' >"$status_file"
+  'cloud_status=not_started' 'cloud_detail=not_started' \
+  'verification_status=not_started' 'verification_detail=not_started' >"$status_file"
 slave_deployed=false
 master_deployed=false
 master_drained=false
@@ -603,10 +604,12 @@ fi
 
 if ! deploy_cloud >cloud.log 2>&1; then
   set_status cloud_status failed
+  set_status cloud_detail '云端静态资源或 Nginx 发布失败'
   printf '\n===== cloud =====\n'; cat cloud.log
   exit 1
 fi
 set_status cloud_status success
+set_status cloud_detail "$WAO_GIT_SHA"
 printf '\n===== cloud =====\n'; cat cloud.log
 
 gateway_ready_from_cloud "$MASTER_HOST"
@@ -620,11 +623,13 @@ fi
 stop_availability_monitor
 if [ -s "$availability_failures" ]; then
   set_status verification_status failed
+  set_status verification_detail '滚动发布期间公共入口出现不可用采样'
   cat "$availability_failures"
   echo '滚动发布期间公共入口出现不可用采样。'
   exit 1
 fi
 set_status verification_status success
+set_status verification_detail '双节点、云端与公共入口检查通过'
 trap - EXIT
 restore_upstreams
 cleanup_deploy_inputs
