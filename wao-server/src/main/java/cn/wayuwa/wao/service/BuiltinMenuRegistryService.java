@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 24;
+    private static final int VERSION = 25;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
@@ -30,7 +30,7 @@ public class BuiltinMenuRegistryService {
     private static final Set<String> RETIRED_IDS = Set.of("ideas", "chat-reviews", "system-reports");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
             new BuiltinMenuConfigDto("home", "首页", "ri-home-5-line", "ROOT", 10, true, "TAB"),
-            new BuiltinMenuConfigDto("navigation", "导航", "ri-compass-discover-line", "ROOT", 20, true, "TAB"),
+            new BuiltinMenuConfigDto("navigation", "工作台", "ri-compass-discover-line", "ROOT", 20, true, "TAB"),
             new BuiltinMenuConfigDto("projects", "项目", "ri-stack-line", "PUBLIC", 10, true, "TAB"),
             new BuiltinMenuConfigDto("skills", "Skill 市场", "ri-sparkling-2-line", "PUBLIC", 12, false, "TAB"),
             new BuiltinMenuConfigDto("skill-connections", "Skill 接入", "ri-apps-2-line", "PUBLIC", 13, false, "TAB"),
@@ -72,6 +72,7 @@ public class BuiltinMenuRegistryService {
         try {
             BuiltinMenuRegistryDto stored = json.readValue(raw, BuiltinMenuRegistryDto.class);
             List<BuiltinMenuConfigDto> menus = canonicalize(stored.menus(), false);
+            if (stored.version() < 25) menus = applyWorkbenchDefault(menus);
             if (stored.version() < VERSION) menus = applyCompactDefaults(menus);
             return new BuiltinMenuRegistryDto(VERSION, menus);
         } catch (RuntimeException | JsonProcessingException exception) {
@@ -136,6 +137,18 @@ public class BuiltinMenuRegistryService {
             }
             return new BuiltinMenuConfigDto(menu.id(), menu.label(), menu.icon(), menu.group(), menu.order(),
                     false, menu.openMode());
+        }).toList();
+    }
+
+    /** V25 只把未经定制的旧“导航”改名为“工作台”；成员主动修改过的名称与元数据保持不变。 */
+    private List<BuiltinMenuConfigDto> applyWorkbenchDefault(List<BuiltinMenuConfigDto> menus) {
+        return menus.stream().map(menu -> {
+            if (!"navigation".equals(menu.id()) || !"导航".equals(menu.label())
+                    || !"ri-compass-discover-line".equals(menu.icon()) || !"ROOT".equals(menu.group())
+                    || menu.order() != 20 || !menu.visible() || !"TAB".equals(menu.openMode())) {
+                return menu;
+            }
+            return BY_ID.get("navigation");
         }).toList();
     }
 }

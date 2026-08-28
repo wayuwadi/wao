@@ -1,0 +1,44 @@
+{
+  "id": "/",
+  "name": "WAO Life OS",
+  "short_name": "WAO",
+  "description": "在手机上管理项目、记录小记并使用 WAO 全部真实功能。",
+  "lang": "zh-CN",
+  "start_url": "/projects",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#F5F6FA",
+  "theme_color": "#4358D6",
+  "categories": ["productivity", "lifestyle"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "项目管理",
+      "short_name": "项目",
+      "description": "查看项目和任务",
+      "url": "/projects"
+    },
+    {
+      "name": "工作台",
+      "short_name": "更多",
+      "description": "打开 WAO 全部功能",
+      "url": "/navigation"
+    }
+  ],
+  "prefer_related_applications": false
+}

@@ -10,7 +10,7 @@ import {
 } from '@/config/nav'
 import { NAVIGATION_CATALOG } from '@/config/navigationCatalog'
 import { MODULES } from '@/config/nav'
-import { fetchPreference } from '@/api/favorites'
+import { fetchPreference, savePreference } from '@/api/favorites'
 import { fetchBuiltinMenuRegistry, fetchExternalAppRegistry } from '@/api/system'
 
 vi.mock('@/api/favorites', () => ({
@@ -117,6 +117,25 @@ describe('全量导航页', () => {
     await wrapper.get('.nav-card').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/apps/hidden-app')
+    wrapper.unmount()
+  })
+
+  it('从完整工作台编辑并保存当前成员的手机底栏', async () => {
+    const { wrapper } = await mountNavigation()
+    await wrapper.get('.manage.primary').trigger('click')
+    expect(wrapper.text()).toContain('点选要放到底栏的功能（2/4）')
+
+    await wrapper.get('.search input').setValue('游戏厅')
+    await wrapper.get('.nav-card').trigger('click')
+    expect(wrapper.get('.nav-card').classes()).toContain('selected')
+
+    await wrapper.get('.manage.primary').trigger('click')
+    await flushPromises()
+    expect(savePreference).toHaveBeenCalledWith(
+      'mobile-bottom-nav-v1',
+      JSON.stringify(['projects', 'action:note', 'games']),
+    )
+    expect(wrapper.text()).toContain('底栏已保存')
     wrapper.unmount()
   })
 })

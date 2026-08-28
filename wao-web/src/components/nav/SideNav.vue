@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/composables/toast'
 import { useIsMobile } from '@/composables/viewport'
@@ -8,10 +8,15 @@ import { useSessionStore } from '@/stores/session'
 import { useFavoritesStore } from '@/stores/favorites'
 import type { Favorite } from '@/api/favorites'
 import type { ModuleId } from '@/types'
-import { PERSONAL_ITEMS, externalAppItemId, type NavItemId } from '@/config/nav'
+import {
+  PERSONAL_ITEMS,
+  externalAppItemId,
+  type MobileNavItemId,
+  type NavItemId,
+} from '@/config/nav'
 import QuickLinks from '@/components/nav/QuickLinks.vue'
 
-const emit = defineEmits<{ (e: 'open-search'): void }>()
+const emit = defineEmits<{ (e: 'open-search'): void; (e: 'new-note'): void }>()
 
 const nav = useNavStore()
 const session = useSessionStore()
@@ -20,15 +25,24 @@ const route = useRoute()
 const router = useRouter()
 const isMobile = useIsMobile()
 const menuRef = ref<HTMLElement | null>(null)
+const mobileDragId = ref<MobileNavItemId | null>(null)
+let mobilePressTimer: number | null = null
+let mobilePressStart: { x: number; y: number } | null = null
+let mobileOrderBeforeDrag: MobileNavItemId[] | null = null
+let suppressMobileClick = false
 
 const activeItem = computed<NavItemId | undefined>(() =>
   route.meta.tabKind === 'external'
     ? externalAppItemId(String(route.params.appId))
-    : route.meta.module as ModuleId | undefined,
+    : (route.meta.module as ModuleId | undefined),
 )
 
 const groups = computed(() => nav.groups)
 const groupFingerprint = computed(() => groups.value.flatMap((group) => group.items).join('|'))
+const mobileItems = computed(() => {
+  const valid = nav.mobileItems.filter((id) => id === 'action:note' || nav.itemMeta(id))
+  return valid.length ? valid : (['projects', 'action:note'] as MobileNavItemId[])
+})
 
 /**
  * 底部导航可能比屏幕宽；从地址栏、收藏或页面内跳转到后半段模块时，把当前入口带回视口。
@@ -47,10 +61,12 @@ watch([isMobile, activeItem, groupFingerprint], revealActiveMobileItem, { immedi
 
 onMounted(() => {
   nav.loadPersonalOrder()
+  nav.loadMobileItems()
   nav.loadExternalApps()
   nav.loadBuiltinMenus()
   favorites.load()
 })
+onBeforeUnmount(cancelMobilePress)
 
 function go(id: NavItemId) {
   const meta = nav.itemMeta(id)
@@ -63,11 +79,76 @@ function go(id: NavItemId) {
   }
   router.push(meta.path)
 }
-function goAi() {
-  router.push({ path: '/', query: { console: 'runs' }, hash: '#ai-launcher' })
-}
 function goSettings() {
   router.push('/settings')
+}
+
+function mobileItemMeta(id: MobileNavItemId) {
+  if (id === 'action:note') {
+    return { label: '小记', icon: 'ri-sticky-note-line' }
+  }
+  return nav.itemMeta(id)
+}
+
+function goMobile(id: MobileNavItemId) {
+  if (suppressMobileClick) {
+    suppressMobileClick = false
+    return
+  }
+  if (id === 'action:note') emit('new-note')
+  else go(id)
+}
+
+function cancelMobilePress() {
+  if (mobilePressTimer !== null) window.clearTimeout(mobilePressTimer)
+  mobilePressTimer = null
+  mobilePressStart = null
+}
+
+function startMobilePress(id: MobileNavItemId, event: PointerEvent) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+  cancelMobilePress()
+  mobilePressStart = { x: event.clientX, y: event.clientY }
+  mobilePressTimer = window.setTimeout(() => {
+    mobilePressTimer = null
+    mobileDragId.value = id
+    mobileOrderBeforeDrag = [...mobileItems.value]
+    suppressMobileClick = true
+    navigator.vibrate?.(18)
+  }, 420)
+}
+
+function moveMobilePress(event: PointerEvent) {
+  if (!mobileDragId.value) {
+    const start = mobilePressStart
+    if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8)
+      cancelMobilePress()
+    return
+  }
+  event.preventDefault()
+  const target = document
+    .elementFromPoint(event.clientX, event.clientY)
+    ?.closest<HTMLElement>('[data-mobile-nav-id]')?.dataset.mobileNavId as
+    MobileNavItemId | undefined
+  const from = mobileItems.value.indexOf(mobileDragId.value)
+  const to = target ? mobileItems.value.indexOf(target) : -1
+  if (from < 0 || to < 0 || from === to) return
+  const reordered = [...mobileItems.value]
+  const [item] = reordered.splice(from, 1)
+  if (item) reordered.splice(to, 0, item)
+  nav.mobileItems = reordered
+}
+
+function endMobilePress() {
+  cancelMobilePress()
+  const wasDragging = mobileDragId.value
+  mobileDragId.value = null
+  if (!wasDragging) return
+  const changed = mobileOrderBeforeDrag?.join('|') !== nav.mobileItems.join('|')
+  mobileOrderBeforeDrag = null
+  if (changed) {
+    void nav.saveMobileItems(nav.mobileItems).catch(() => toast('底栏顺序保存失败，请到工作台重试'))
+  }
 }
 function orgClick() {
   toast('组织切换将在设置 · 组织管理中提供')
@@ -145,7 +226,35 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     </div>
 
     <nav ref="menuRef" class="menu" aria-label="模块导航">
-      <template v-for="g in groups" :key="g.label || 'root'">
+      <template v-if="isMobile">
+        <button
+          v-for="id in mobileItems"
+          :key="id"
+          class="item mobile-nav-item"
+          :class="{ active: activeItem === id, dragging: mobileDragId === id }"
+          :title="mobileItemMeta(id)?.label"
+          :data-mobile-nav-id="id"
+          @click="goMobile(id)"
+          @pointerdown="startMobilePress(id, $event)"
+          @pointermove="moveMobilePress"
+          @pointerup="endMobilePress"
+          @pointercancel="endMobilePress"
+        >
+          <i :class="mobileItemMeta(id)?.icon"></i>
+          <span class="item-label">{{ mobileItemMeta(id)?.label }}</span>
+        </button>
+        <button
+          class="item mobile-more-item"
+          :class="{ active: activeItem === 'navigation' }"
+          title="更多"
+          @click="go('navigation')"
+        >
+          <i class="ri-apps-2-line"></i>
+          <span class="item-label">更多</span>
+        </button>
+      </template>
+
+      <template v-for="g in groups" v-else :key="g.label || 'root'">
         <button
           v-if="g.label && !nav.collapsed"
           class="group-label"
@@ -182,21 +291,13 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           </button>
         </div>
 
-        <!-- iOS 清单快捷方式并非所有版本都支持；手机底栏必须自己提供稳定的 AI 派发入口。 -->
-        <button
-          v-if="isMobile && !g.label"
-          class="item mobile-ai-item"
-          :class="{ active: Boolean(route.query.console) }"
-          title="AI"
-          @click="goAi"
-        >
-          <i class="ri-robot-2-line"></i>
-          <span class="item-label">AI</span>
-        </button>
-
         <!-- 收藏分组紧跟首页之后：有收藏才出现，手机底栏不展示 -->
         <template v-if="!g.label && favorites.items.length && !nav.collapsed">
-          <button class="group-label fav-group" title="折叠 / 展开分组" @click="nav.toggleGroup('收藏')">
+          <button
+            class="group-label fav-group"
+            title="折叠 / 展开分组"
+            @click="nav.toggleGroup('收藏')"
+          >
             收藏
             <i :class="nav.isFolded('收藏') ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>
           </button>
@@ -210,7 +311,9 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             >
               <i :class="FAV_ICONS[f.type]"></i>
               <span class="item-label">{{ f.label }}</span>
-              <span class="fav-remove" title="取消收藏" @click="removeFavorite(f, $event)"><i class="ri-star-fill"></i></span>
+              <span class="fav-remove" title="取消收藏" @click="removeFavorite(f, $event)"
+                ><i class="ri-star-fill"></i
+              ></span>
             </button>
           </div>
         </template>
@@ -402,9 +505,19 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.fav-remove { display: inline-flex; padding: 4px; color: var(--wao-warning-strong); border-radius: 5px; }
-.fav-remove:hover { background: var(--wao-warning-bg); }
-.fav-remove i { color: inherit; font-size: 14px; }
+.fav-remove {
+  display: inline-flex;
+  padding: 4px;
+  color: var(--wao-warning-strong);
+  border-radius: 5px;
+}
+.fav-remove:hover {
+  background: var(--wao-warning-bg);
+}
+.fav-remove i {
+  color: inherit;
+  font-size: 14px;
+}
 .item:hover {
   background: var(--wao-bg-hover-2);
 }
@@ -515,22 +628,28 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   .group-gap,
   .fav-item,
   .user-row,
-  .quick-row { display: none; }
+  .quick-row {
+    display: none;
+  }
   .menu {
     display: flex;
     align-items: stretch;
-    gap: 1px;
-    overflow-x: auto;
+    justify-content: space-around;
+    gap: 2px;
+    overflow-x: hidden;
     overflow-y: hidden;
     padding: 4px 6px;
     scrollbar-width: none;
   }
-  .menu::-webkit-scrollbar { display: none; }
-  .items { display: flex; flex-direction: row; padding: 0; gap: 1px; }
+  .menu::-webkit-scrollbar {
+    display: none;
+  }
   .item,
   .item.center {
-    width: 58px;
+    width: auto;
     min-width: 58px;
+    max-width: 88px;
+    flex: 1 1 0;
     height: 54px;
     padding: 4px 2px;
     flex-direction: column;
@@ -546,6 +665,19 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     font-size: 10px;
     line-height: 14px;
   }
-  .item i { font-size: 18px; }
+  .item i {
+    font-size: 18px;
+  }
+  .mobile-nav-item {
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .mobile-nav-item.dragging {
+    opacity: 0.82;
+    background: var(--wao-primary-soft);
+    transform: scale(1.06);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--wao-primary) 22%, transparent);
+  }
 }
 </style>

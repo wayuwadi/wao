@@ -101,6 +101,7 @@ class BuiltinMenuRegistryServiceTest {
         assertThat(upgraded.menus()).hasSize(25);
         assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
+                    assertThat(menu.label()).isEqualTo("工作台");
                     assertThat(menu.group()).isEqualTo("ROOT");
                     assertThat(menu.visible()).isTrue();
                 });
@@ -169,6 +170,29 @@ class BuiltinMenuRegistryServiceTest {
                     assertThat(menu.visible()).isFalse();
                 });
         assertThat(upgraded.menus()).noneMatch(menu -> "system-reports".equals(menu.id()));
+    }
+
+    @Test
+    void upgradesOnlyTheUntouchedNavigationLabelToWorkbench() throws Exception {
+        var oldMenus = new ArrayList<>(service.getRegistry().menus());
+        var navigation = oldMenus.stream().filter(menu -> "navigation".equals(menu.id())).findFirst().orElseThrow();
+        oldMenus.set(oldMenus.indexOf(navigation), new BuiltinMenuConfigDto(
+                navigation.id(), "导航", navigation.icon(), navigation.group(), navigation.order(), true, "TAB"));
+        var oldPayload = new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(24, oldMenus);
+        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY))
+                .thenReturn(new ObjectMapper().writeValueAsString(oldPayload));
+
+        assertThat(service.getRegistry().menus()).filteredOn(menu -> "navigation".equals(menu.id()))
+                .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("工作台"));
+
+        oldMenus.set(oldMenus.indexOf(oldMenus.stream()
+                        .filter(menu -> "navigation".equals(menu.id())).findFirst().orElseThrow()),
+                new BuiltinMenuConfigDto("navigation", "我的入口", "ri-compass-discover-line",
+                        "ROOT", 20, true, "TAB"));
+        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(new ObjectMapper().writeValueAsString(
+                new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(24, oldMenus)));
+        assertThat(service.getRegistry().menus()).filteredOn(menu -> "navigation".equals(menu.id()))
+                .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("我的入口"));
     }
 
     @Test
