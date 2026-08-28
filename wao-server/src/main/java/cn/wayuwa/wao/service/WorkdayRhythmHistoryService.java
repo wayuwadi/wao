@@ -114,7 +114,7 @@ public class WorkdayRhythmHistoryService {
     }
 
     private boolean validFocus(JsonNode focus) {
-        if (!focus.isArray() || focus.size() > 3) return false;
+        if (!focus.isArray() || focus.size() > 20) return false;
         for (JsonNode value : focus) {
             if (!value.isTextual() || value.asText().length() > 100) return false;
         }
@@ -166,7 +166,7 @@ public class WorkdayRhythmHistoryService {
         if (day.path("focus").isArray()) {
             for (JsonNode value : day.path("focus")) {
                 String text = value.asText("").trim();
-                if (StringUtils.hasText(text) && focus.size() < 3) {
+                if (StringUtils.hasText(text) && focus.size() < 20) {
                     focus.add(text.substring(0, Math.min(text.length(), 100)));
                 }
             }

@@ -102,7 +102,7 @@ export async function sendEnergyNotification(
   return res.data.data
 }
 
-/** 三个重点成功落库后，由服务端重读本人当日目标并发送执行承诺。 */
+/** 至少三个重点成功落库后，由服务端重读本人当日全部非空目标并发送执行承诺。 */
 export async function sendFocusNotification(date: string): Promise<EnergyNotificationResult> {
   const res = await http.post<ApiResponse<EnergyNotificationResult>>(
     '/api/workday-rhythm/focus-notifications',

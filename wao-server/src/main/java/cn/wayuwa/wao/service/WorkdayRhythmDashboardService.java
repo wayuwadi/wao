@@ -55,6 +55,8 @@ public class WorkdayRhythmDashboardService {
     private static final Set<String> CATEGORIES = Set.of("WORK", "LIFE");
     private static final Set<String> SCHEDULES = Set.of("DAILY", "WORKDAY", "WEEKDAYS");
     private static final Set<String> SYSTEM_KINDS = Set.of("PLAN", "CLOCK_IN", "CLOCK_OUT", "TIANREN");
+    private static final int MIN_FOCUS_COUNT = 3;
+    private static final int MAX_FOCUS_COUNT = 20;
 
     private final WorkdayRhythmSettingMapper settings;
     private final WorkdayRhythmChecklistItemMapper items;
@@ -173,15 +175,20 @@ public class WorkdayRhythmDashboardService {
         return dashboard(memberId, date);
     }
 
-    /** 保存今日三个重点，落库成功后自动完成「制定今日计划」。 */
+    /** 保存成员今日重点；默认三项并允许追加，至少三项非空时自动完成「制定今日计划」。 */
     @Transactional
     public WorkdayRhythmDashboardDto saveFocus(String memberId, LocalDate date, SaveWorkdayRhythmFocusRequest request) {
-        if (request.focus() == null || request.focus().size() != 3) throw new BadRequestException("请填写三个今日重点");
+        if (request.focus() == null || request.focus().size() < MIN_FOCUS_COUNT
+                || request.focus().size() > MAX_FOCUS_COUNT) {
+            throw new BadRequestException("今日重点需要保留 3 到 20 个栏位");
+        }
         List<String> focus = request.focus().stream().map(this::checkedFocus).toList();
         ObjectNode day = readDay(memberId, date);
         ArrayNode array = day.putArray("focus"); focus.forEach(array::add);
         preferences.upsert(memberId, DAY_KEY_PREFIX + date, write(day));
-        if (focus.stream().allMatch(StringUtils::hasText)) completeSystemItem(memberId, date, "PLAN");
+        if (focus.stream().filter(StringUtils::hasText).count() >= MIN_FOCUS_COUNT) {
+            completeSystemItem(memberId, date, "PLAN");
+        }
         return dashboard(memberId, date);
     }
 

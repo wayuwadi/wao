@@ -117,8 +117,8 @@ describe('工作日节奏规则', () => {
       WATER: { title: '当天饮水', mode: 'COUNT' },
       REMOVED: { title: '已删除项目', mode: 'DAILY_ONCE' },
     })
-    expect(restored.focus).toEqual(['重点一', '重点二', '重点三'])
-    expect(restored.focusCompleted).toEqual([true, false, true])
+    expect(restored.focus).toEqual(['重点一', '重点二', '重点三', '多余'])
+    expect(restored.focusCompleted).toEqual([true, false, true, false])
     expect(
       parseRhythmDay(JSON.stringify({ ...restored, date: '2026-08-16' }), '2026-08-17', 1, ids),
     ).toEqual(defaultRhythmDay('2026-08-17', 1))

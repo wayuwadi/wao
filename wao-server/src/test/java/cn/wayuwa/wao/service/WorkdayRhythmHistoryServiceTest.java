@@ -41,7 +41,7 @@ class WorkdayRhythmHistoryServiceTest {
                 "workday-rhythm-day-2026-08-31")).thenReturn(List.of(
                         entry("workday-rhythm-day-2026-08-20", """
                                 {"version":1,"date":"2026-08-20","workdayActive":true,
-                                 "focus":["完成上线验收","","整理复盘"],
+                                 "focus":["完成上线验收","","整理复盘","处理临时事项"],
                                  "energyRecords":{"WATER":3,"WALK":1,"REMOVED":1},
                                  "energySnapshot":{"WATER":{"title":"当天饮水名称","mode":"COUNT"},
                                    "WALK":{"title":"午后散步","mode":"DAILY_ONCE"}}}
@@ -56,7 +56,8 @@ class WorkdayRhythmHistoryServiceTest {
 
         assertThat(result.items()).hasSize(1);
         assertThat(result.skippedCount()).isEqualTo(2);
-        assertThat(result.items().get(0).focus()).containsExactly("完成上线验收", "整理复盘");
+        assertThat(result.items().get(0).focus())
+                .containsExactly("完成上线验收", "整理复盘", "处理临时事项");
         assertThat(result.items().get(0).energyItems())
                 .extracting(item -> item.title() + ":" + item.count())
                 .containsExactly("当天饮水名称:3", "午后散步:1", "已移除项目:1");

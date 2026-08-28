@@ -154,13 +154,13 @@ class WorkdayRhythmNotificationServiceTest {
     }
 
     @Test
-    void sendsThreePersistedFocusItemsToMembersConfiguredTarget() {
+    void sendsAllPersistedNonBlankFocusItemsToMembersConfiguredTarget() {
         when(preferences.find("wd", WorkdayRhythmNotificationService.CONFIG_KEY)).thenReturn("""
                 {"energyNotification":{"enabled":true,"notifyFocus":true,
                 "chatId":"oc_target","chatName":"娃屋日常"}}
                 """);
         when(preferences.find("wd", "workday-rhythm-day-2026-08-18")).thenReturn("""
-                {"focus":["交付最小 MVP","完成上线验收","整理真实反馈"]}
+                {"focus":["交付最小 MVP","完成上线验收","整理真实反馈","处理临时事项",""]}
                 """);
         when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app-id");
         when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("app-secret");
@@ -174,10 +174,11 @@ class WorkdayRhythmNotificationServiceTest {
         ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
         verify(feishu).sendCard(org.mockito.ArgumentMatchers.eq("tenant-token"),
                 org.mockito.ArgumentMatchers.eq("oc_target"), card.capture());
-        assertThat(card.getValue().title()).isEqualTo("今日三个重点 · 已承诺");
+        assertThat(card.getValue().title()).isEqualTo("今日重点 · 已承诺");
         assertThat(card.getValue().fields()).contains(java.util.List.of("成员", "娃弟"),
                 java.util.List.of("重点 1", "交付最小 MVP"),
-                java.util.List.of("重点 3", "整理真实反馈"));
+                java.util.List.of("重点 3", "整理真实反馈"),
+                java.util.List.of("重点 4", "处理临时事项"));
     }
 
     @Test
@@ -190,7 +191,7 @@ class WorkdayRhythmNotificationServiceTest {
 
         assertThatThrownBy(() -> service.notifyFocus("wd", DAY))
                 .isInstanceOf(BadRequestException.class)
-                .hasMessageContaining("尚未完整保存");
+                .hasMessageContaining("至少完整保存三个");
         verify(feishu, never()).sendCard(any(), any(), any());
     }
 

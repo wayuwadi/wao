@@ -58,6 +58,7 @@ async function mountView() {
     routes: [
       { path: '/workday-rhythm', component: WorkdayRhythmView },
       { path: '/todo', component: { template: '<div />' } },
+      { path: '/tianren', component: { template: '<div />' } },
     ],
   })
   await router.push('/workday-rhythm')
@@ -68,6 +69,7 @@ async function mountView() {
       stubs: {
         WorkdayRhythmDailyPanel: true,
         WorkdayRhythmDailySettings: true,
+        WorkdayRhythmHexagramSummary: true,
       },
     },
   })
@@ -187,6 +189,33 @@ describe('WorkdayRhythmView', () => {
       expect.objectContaining({ focusCompleted: [true, false, false] }),
     )
     expect(wrapper.findAll('.focus-row')[1]!.classes()).toContain('active')
+    wrapper.unmount()
+  })
+
+  it('默认保留三个重点并把追加项完整保存到服务端', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    expect(wrapper.findAll('.focus-row')).toHaveLength(3)
+    await wrapper.get('.focus-add').trigger('click')
+    const inputs = wrapper.findAll('.focus-row input')
+    expect(inputs).toHaveLength(4)
+    await inputs[0]!.setValue('重点一')
+    await inputs[1]!.setValue('重点二')
+    await inputs[2]!.setValue('重点三')
+    await inputs[3]!.setValue('临时插入事项')
+    await wrapper.get('.focus-card footer > button').trigger('click')
+    await flushPromises()
+
+    expect(saveRhythmFocus).toHaveBeenCalledWith(clock.date, [
+      '重点一',
+      '重点二',
+      '重点三',
+      '临时插入事项',
+    ])
+    expect(saveWorkdayRhythmDay).toHaveBeenCalledWith(
+      expect.objectContaining({ focusCompleted: [false, false, false, false] }),
+    )
     wrapper.unmount()
   })
 
@@ -335,28 +364,17 @@ describe('WorkdayRhythmView', () => {
     wrapper.unmount()
   })
 
-  it('提供单独打开、复制私有链接和成员级收藏', async () => {
-    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
-    const writeText = vi.fn<(text: string) => Promise<void>>().mockResolvedValue(undefined)
-    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
-    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  it('移除单独打开和复制链接，并保留成员级收藏', async () => {
     const wrapper = await mountView()
     await flushPromises()
 
+    expect(wrapper.text()).not.toContain('单独打开')
+    expect(wrapper.text()).not.toContain('复制链接')
     const actions = wrapper.findAll('.page-action')
     await actions[0]!.trigger('click')
-    expect(open).toHaveBeenCalledWith(
-      expect.stringContaining('/workday-rhythm'),
-      '_blank',
-      'noopener,noreferrer',
-    )
-    await actions[1]!.trigger('click')
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/workday-rhythm'))
-    await actions[2]!.trigger('click')
     await flushPromises()
     expect(apiAddFavorite).toHaveBeenCalledWith('module', 'workday-rhythm')
-    expect(actions[2]!.text()).toContain('已收藏')
-    open.mockRestore()
+    expect(actions[0]!.text()).toContain('已收藏')
     wrapper.unmount()
   })
 

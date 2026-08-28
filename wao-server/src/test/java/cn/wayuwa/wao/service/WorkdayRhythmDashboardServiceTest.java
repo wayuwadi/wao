@@ -71,16 +71,17 @@ class WorkdayRhythmDashboardServiceTest {
     }
 
     @Test
-    void savingThreeFocusItemsCompletesPlanOnlyAfterPreferenceIsPersisted() {
+    void savingAdditionalFocusItemsCompletesPlanOnlyAfterPreferenceIsPersisted() {
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
         when(preferences.find("m1", "workday-rhythm-day-" + today)).thenReturn(null);
 
-        service.saveFocus("m1", today, new SaveWorkdayRhythmFocusRequest(List.of("上线", "验收", "复盘")));
+        service.saveFocus("m1", today,
+                new SaveWorkdayRhythmFocusRequest(List.of("上线", "验收", "复盘", "处理临时事项")));
 
         ArgumentCaptor<String> json = ArgumentCaptor.forClass(String.class);
         verify(preferences).upsert(org.mockito.ArgumentMatchers.eq("m1"),
                 org.mockito.ArgumentMatchers.eq("workday-rhythm-day-" + today), json.capture());
-        assertThat(json.getValue()).contains("上线", "验收", "复盘");
+        assertThat(json.getValue()).contains("上线", "验收", "复盘", "处理临时事项");
         assertThat(planOccurrence.getCompletedAt()).isNotNull();
         verify(occurrences, atLeastOnce()).updateById(planOccurrence);
     }

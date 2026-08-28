@@ -56,6 +56,9 @@ export interface ShanghaiClock {
   minutes: number
 }
 
+export const DEFAULT_FOCUS_COUNT = 3
+export const MAX_FOCUS_COUNT = 20
+
 export const DEFAULT_WORKDAY_RHYTHM: WorkdayRhythmConfig = {
   version: 1,
   energyNotification: {
@@ -315,8 +318,8 @@ export function defaultRhythmDay(date: string, weekday: number): WorkdayRhythmDa
     meditated: false,
     energyRecords: {},
     energySnapshot: {},
-    focus: ['', '', ''],
-    focusCompleted: [false, false, false],
+    focus: Array.from({ length: DEFAULT_FOCUS_COUNT }, () => ''),
+    focusCompleted: Array.from({ length: DEFAULT_FOCUS_COUNT }, () => false),
   }
 }
 
@@ -342,13 +345,17 @@ export function parseRhythmDay(
           ),
         ]
       : []
-    const focus = Array.isArray(candidate.focus)
-      ? [0, 1, 2].map((index) =>
-          typeof candidate.focus?.[index] === 'string' ? candidate.focus[index]!.slice(0, 100) : '',
-        )
-      : fallback.focus
-    const focusCompleted = [0, 1, 2].map(
-      (index) => candidate.focusCompleted?.[index] === true && !!focus[index]?.trim(),
+    const storedFocus = Array.isArray(candidate.focus)
+      ? candidate.focus
+          .slice(0, MAX_FOCUS_COUNT)
+          .map((item) => (typeof item === 'string' ? item.slice(0, 100) : ''))
+      : []
+    const focus = [
+      ...storedFocus,
+      ...Array.from({ length: Math.max(0, DEFAULT_FOCUS_COUNT - storedFocus.length) }, () => ''),
+    ]
+    const focusCompleted = focus.map(
+      (_, index) => candidate.focusCompleted?.[index] === true && !!focus[index]?.trim(),
     )
     const energyRecords: Record<string, number> = {}
     const energySnapshot: WorkdayRhythmDay['energySnapshot'] = {}
