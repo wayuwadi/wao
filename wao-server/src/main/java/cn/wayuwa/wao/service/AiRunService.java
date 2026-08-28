@@ -136,6 +136,7 @@ public class AiRunService {
     private final CodexQuotaService codexQuotas;
     private final ProjectMemoryService projectMemories;
     private final AiSkillCapabilityService skillCapabilities;
+    private final FeishuAiRunReactionNotifier runReactions;
 
     /** 返回后台受控的单次运行参数；前端不自行维护模型标识。 */
     public AiRunOptionsDto runOptions() {
@@ -156,7 +157,7 @@ public class AiRunService {
             TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier,
             RunnerScriptService scripts, AiAccountService accounts, HostedPageService hostedPages,
             ImageService images, CodexQuotaService codexQuotas, ProjectMemoryService projectMemories,
-            AiSkillCapabilityService skillCapabilities) {
+            AiSkillCapabilityService skillCapabilities, FeishuAiRunReactionNotifier runReactions) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
         this.pairMapper = pairMapper;
@@ -173,6 +174,7 @@ public class AiRunService {
         this.codexQuotas = codexQuotas;
         this.projectMemories = projectMemories;
         this.skillCapabilities = skillCapabilities;
+        this.runReactions = runReactions;
     }
 
     /** 读取项目配置；尚未保存过时返回安全的关闭状态。 */
@@ -584,6 +586,7 @@ public class AiRunService {
             setTaskStatus(taskId, "AI 进行中");
             created.add(run);
         }
+        runReactions.reactAfterEnqueued(created.stream().map(AiTaskRunEntity::getTaskId).toList());
         return toRunDtos(created);
     }
 
@@ -655,6 +658,7 @@ public class AiRunService {
         appendProgress(run, "phase", "已合并 " + taskIds.size() + " 个任务进入同一次运行，等待"
                 + (runTarget == null ? "在线电脑" : runTarget.getName()) + "上的 " + label(runEngine) + " 领取");
         setTaskStatuses(run, "AI 进行中");
+        runReactions.reactAfterEnqueued(taskIds);
         return toRunDtos(List.of(run)).get(0);
     }
 
