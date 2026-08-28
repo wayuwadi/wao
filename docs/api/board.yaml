@@ -121,6 +121,40 @@ paths:
       responses:
         '200': { description: 返回可直接替换选区的 polished 文字 }
         '400': { description: 选区为空或超长、模型 API 鉴权/模型/响应失败，或 Codex 回退链路不可用 }
+  /text-polish:
+    get:
+      summary: 读取当前成员的润色提示词与最近 50 条真实历史
+      responses:
+        '200': { description: 返回成员级 prompt 和包含前后文本、提示词快照的 records }
+  /text-polish/prompt:
+    put:
+      summary: 保存当前成员的润色方法提示词
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt: { type: string, minLength: 1, maxLength: 4000 }
+      responses:
+        '200': { description: 返回已保存并去除首尾空白的提示词 }
+  /text-polish/run:
+    post:
+      summary: 使用成员已保存提示词完成真实 AI 润色并记录前后内容
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [originalText]
+              properties:
+                originalText: { type: string, minLength: 1, maxLength: 12000 }
+      responses:
+        '200': { description: 返回已持久化的原文、结果、提示词快照和时间 }
+        '400': { description: 输入无效、已有 AI 请求执行中或真实 AI 上游失败 }
   /assistant/source-options:
     get:
       summary: AI 助手当前可用的群聊、发言人、项目和聊天日期范围
