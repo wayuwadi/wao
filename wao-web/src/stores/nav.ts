@@ -326,6 +326,35 @@ export const useNavStore = defineStore('nav', () => {
     await persistMenuRegistries(nextBuiltin, nextExternal)
   }
 
+  /** 从侧栏右键菜单即时修改显隐；隐藏项可在设置页重新开启。 */
+  async function setMenuVisibility(id: NavItemId, visible: boolean) {
+    const nextBuiltin = builtinMenus.value.map((menu) => ({ ...menu }))
+    const nextExternal = externalApps.value.map((app) => ({ ...app }))
+    const externalId = externalAppIdFromItem(id)
+    const target = externalId
+      ? nextExternal.find((app) => app.id === externalId)
+      : nextBuiltin.find((menu) => menu.id === id)
+    if (!target) throw new Error('菜单不存在，请刷新后重试')
+    target.visible = visible
+    await persistMenuRegistries(nextBuiltin, nextExternal)
+  }
+
+  /** 把菜单放到当前分组或停靠区的最前面，并立即持久化。 */
+  async function pinMenu(id: NavItemId) {
+    const configured = menuConfig(id)
+    if (!configured) throw new Error('菜单不存在，请刷新后重试')
+    const placement = configured.placement ?? 'MENU'
+    const group = configured.group as BuiltinMenuGroupCode
+    const peers = [
+      ...builtinMenus.value.map((menu) => ({ id: menu.id as NavItemId, menu })),
+      ...externalApps.value.map((app) => ({ id: externalAppItemId(app.id) as NavItemId, menu: app })),
+    ].filter((item) => item.id !== id && item.menu.visible
+      && (item.menu.placement ?? 'MENU') === placement
+      && (placement === 'DOCK' || item.menu.group === group))
+      .sort((left, right) => left.menu.order - right.menu.order)
+    await moveMenu(id, placement, group, peers[0]?.id)
+  }
+
   /** 设置页保存成功后立即刷新导航，不等页面重载。 */
   function applyExternalApps(apps: ExternalAppConfig[]) {
     externalApps.value = apps.map(normalizeExternalApp)
@@ -391,6 +420,8 @@ export const useNavStore = defineStore('nav', () => {
     reloadMenuRegistries,
     moveMenu,
     renameMenu,
+    setMenuVisibility,
+    pinMenu,
     menuConfig,
     externalAppById,
     itemMeta,

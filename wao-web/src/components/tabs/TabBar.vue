@@ -8,6 +8,8 @@ const tabs = useTabsStore()
 const router = useRouter()
 
 const menu = reactive({ open: false, x: 0, y: 0, key: '' })
+const renameDraft = ref('')
+const renaming = ref(false)
 const scroller = ref<HTMLElement | null>(null)
 const canLeft = ref(false)
 const canRight = ref(false)
@@ -24,6 +26,15 @@ function scrollByPage(direction: -1 | 1) {
     behavior: 'smooth',
   })
 }
+function scrollWithWheel(event: WheelEvent) {
+  const el = scroller.value
+  if (!el || el.scrollWidth <= el.clientWidth) return
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  if (!delta) return
+  event.preventDefault()
+  el.scrollLeft += delta
+  measureScroll()
+}
 function revealActive() {
   void nextTick(() => {
     const active = scroller.value?.querySelector<HTMLElement>('.tab.active')
@@ -31,7 +42,7 @@ function revealActive() {
     measureScroll()
   })
 }
-watch(() => [tabs.activeKey, tabs.tabs.length], revealActive)
+watch(() => [tabs.activeKey, tabs.tabs.map((tab) => tab.key).join('|')], revealActive)
 onMounted(revealActive)
 
 const menuTargetClosable = computed(() => {
@@ -84,9 +95,12 @@ function openMenu(e: MouseEvent, tab: Tab) {
   menu.x = e.clientX
   menu.y = e.clientY
   menu.key = tab.key
+  renameDraft.value = tab.label
+  renaming.value = false
 }
 function closeMenu() {
   menu.open = false
+  renaming.value = false
 }
 function navigateAfter(next: Tab | null) {
   if (next) router.push(next.path)
@@ -95,6 +109,12 @@ function navigateAfter(next: Tab | null) {
 function mTogglePin() {
   tabs.togglePin(menu.key)
   closeMenu()
+}
+function mRename() {
+  if (menuTargetClosable.value) renaming.value = true
+}
+function mSaveRename() {
+  if (tabs.rename(menu.key, renameDraft.value)) closeMenu()
 }
 function mCloseCurrent() {
   navigateAfter(tabs.close(menu.key))
@@ -108,6 +128,9 @@ function mCloseRight() {
 function mCloseAll() {
   navigateAfter(tabs.closeAll())
 }
+function mCloseUnpinned() {
+  navigateAfter(tabs.closeUnpinned())
+}
 </script>
 
 <template>
@@ -115,7 +138,7 @@ function mCloseAll() {
     <button class="scroll-btn" :disabled="!canLeft" title="查看左侧页签" @click="scrollByPage(-1)">
       <i class="ri-arrow-left-s-line"></i>
     </button>
-    <div ref="scroller" class="tabbar" @scroll.passive="measureScroll">
+    <div ref="scroller" class="tabbar" @scroll.passive="measureScroll" @wheel="scrollWithWheel">
       <div
         v-for="tab in tabs.tabs"
         :key="tab.key"
@@ -151,6 +174,15 @@ function mCloseAll() {
   <template v-if="menu.open">
     <div class="menu-mask" @click="closeMenu" @contextmenu.prevent="closeMenu"></div>
     <div class="menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }">
+      <form v-if="renaming" class="rename-form" @submit.prevent="mSaveRename">
+        <label for="tab-rename-input">重命名页签</label>
+        <input id="tab-rename-input" v-model="renameDraft" maxlength="24" autofocus />
+        <div><button type="button" @click="renaming = false">返回</button><button class="primary" :disabled="!renameDraft.trim()">保存</button></div>
+      </form>
+      <template v-else>
+      <button class="menu-item" :disabled="!menuTargetClosable" @click="mRename">
+        <i class="ri-edit-line"></i>重命名页签
+      </button>
       <button class="menu-item" :disabled="!menuTargetClosable" @click="mTogglePin">
         <i :class="menuTargetPinned ? 'ri-pushpin-2-line' : 'ri-pushpin-line'"></i>
         {{ menuTargetPinned ? '取消置顶' : '置顶页签' }}
@@ -166,9 +198,13 @@ function mCloseAll() {
         <i class="ri-arrow-right-line"></i>关闭右边
       </button>
       <div class="menu-sep"></div>
+      <button class="menu-item" @click="mCloseUnpinned">
+        <i class="ri-filter-off-line"></i>关闭非置顶
+      </button>
       <button class="menu-item danger" @click="mCloseAll">
         <i class="ri-close-circle-line"></i>关闭全部
       </button>
+      </template>
     </div>
   </template>
 </template>
@@ -290,9 +326,16 @@ function mCloseAll() {
   border-radius: 10px;
   box-shadow: var(--wao-shadow-pop-2);
   padding: 5px;
-  width: 150px;
+  width: 166px;
   animation: waoPop 0.14s ease;
 }
+.rename-form { display: grid; gap: 7px; padding: 4px; }
+.rename-form label { color: var(--wao-text-weak); font-size: 10px; }
+.rename-form input { width: 100%; height: 32px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); outline: none; }
+.rename-form div { display: flex; justify-content: flex-end; gap: 5px; }
+.rename-form button { min-height: 28px; padding: 0 9px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
+.rename-form button.primary { border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
+.rename-form button:disabled { opacity: .5; cursor: default; }
 .menu-item {
   width: 100%;
   display: flex;

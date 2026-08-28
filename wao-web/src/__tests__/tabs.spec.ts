@@ -80,6 +80,23 @@ describe('tabs store', () => {
     expect(restored.tabs.map((tab) => tab.key)).toEqual(['home'])
   })
 
+  it('置顶后自动移到未置顶页签前，并支持本地重命名', () => {
+    const tabs = useTabsStore()
+    tabs.open(proj('p1'))
+    tabs.open(proj('p2'))
+    tabs.open(proj('p3'))
+
+    tabs.togglePin('proj:p3')
+    expect(tabs.tabs.map((tab) => tab.key)).toEqual(['home', 'proj:p3', 'proj:p1', 'proj:p2'])
+    expect(tabs.rename('proj:p3', '常用项目')).toBe(true)
+    expect(tabs.tabs[1]?.label).toBe('常用项目')
+    tabs.open({ ...proj('p3'), label: '服务端项目名' })
+    expect(tabs.tabs[1]?.label).toBe('常用项目')
+
+    tabs.closeUnpinned()
+    expect(tabs.tabs.map((tab) => tab.key)).toEqual(['home', 'proj:p3'])
+  })
+
   it('置顶只阻止批量关闭，成员仍可单独关闭该页签', () => {
     const tabs = useTabsStore()
     tabs.open(proj('p1'))

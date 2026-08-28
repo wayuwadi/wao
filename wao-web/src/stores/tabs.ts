@@ -76,7 +76,7 @@ export const useTabsStore = defineStore('tabs', () => {
     if (existing) {
       existing.path = tab.path
       const keepResolved = tab.labelPlaceholder && !existing.labelPlaceholder
-      if (tab.label && !keepResolved) {
+      if (tab.label && !keepResolved && !existing.customLabel) {
         existing.label = tab.label
         existing.labelPlaceholder = tab.labelPlaceholder
       }
@@ -117,16 +117,38 @@ export const useTabsStore = defineStore('tabs', () => {
 
   /** 切换成员页签的置顶状态；首页本身已经固定，不重复提供置顶操作。 */
   function togglePin(key: string) {
-    const tab = tabs.value.find((item) => item.key === key)
+    const index = tabs.value.findIndex((item) => item.key === key)
+    const tab = tabs.value[index]
     if (!tab?.closable) return
     tab.pinned = !tab.pinned
+    tabs.value.splice(index, 1)
+    if (tab.pinned) {
+      const firstUnpinned = tabs.value.findIndex((item, itemIndex) => itemIndex > 0 && !item.pinned)
+      tabs.value.splice(firstUnpinned < 0 ? tabs.value.length : firstUnpinned, 0, tab)
+    } else {
+      const lastPinned = tabs.value.reduce((result, item, itemIndex) => item.pinned ? itemIndex : result, 0)
+      tabs.value.splice(lastPinned + 1, 0, tab)
+    }
     persist()
+  }
+
+  /** 成员可在页签右键菜单修改当前浏览器里的展示名称。 */
+  function rename(key: string, label: string) {
+    const normalized = label.trim()
+    if (!normalized || normalized.length > 24) return false
+    const tab = tabs.value.find((item) => item.key === key)
+    if (!tab?.closable) return false
+    tab.label = normalized
+    tab.labelPlaceholder = false
+    tab.customLabel = true
+    persist()
+    return true
   }
 
   /** 详情视图加载实体后回填页签标签；回填后即不再是占位。 */
   function setLabel(key: string, label: string) {
     const t = tabs.value.find((t) => t.key === key)
-    if (t && label) {
+    if (t && label && !t.customLabel) {
       t.label = label
       t.labelPlaceholder = false
       persist()
@@ -137,7 +159,7 @@ export const useTabsStore = defineStore('tabs', () => {
   function setMeta(key: string, patch: Pick<Tab, 'label' | 'icon'>) {
     const tab = tabs.value.find((item) => item.key === key)
     if (tab) {
-      tab.label = patch.label
+      if (!tab.customLabel) tab.label = patch.label
       tab.icon = patch.icon
       tab.labelPlaceholder = false
       persist()
@@ -206,6 +228,11 @@ export const useTabsStore = defineStore('tabs', () => {
     return closeMany(() => true)
   }
 
+  /** 明确关闭所有非置顶页签；语义与置顶保护一致。 */
+  function closeUnpinned() {
+    return closeMany((tab) => !tab.pinned)
+  }
+
   return {
     tabs,
     activeKey,
@@ -213,6 +240,7 @@ export const useTabsStore = defineStore('tabs', () => {
     activate,
     move,
     togglePin,
+    rename,
     setLabel,
     setMeta,
     activeTab,
@@ -221,5 +249,6 @@ export const useTabsStore = defineStore('tabs', () => {
     closeLeft,
     closeRight,
     closeAll,
+    closeUnpinned,
   }
 })

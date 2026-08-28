@@ -85,4 +85,25 @@ describe('TabBar', () => {
     expect(tabs.tabs.find((tab) => tab.key === 'proj:p1')?.pinned).toBe(false)
     expect(commonTab.find('.tab-pin').exists()).toBe(false)
   })
+
+  it('右键可重命名并关闭所有非置顶页签', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const tabs = useTabsStore()
+    tabs.open({ key: 'proj:p1', label: '项目一', icon: 'ri-stack-line', path: '/projects/p1', closable: true, pinned: true })
+    tabs.open({ key: 'proj:p2', label: '项目二', icon: 'ri-stack-line', path: '/projects/p2', closable: true })
+    const wrapper = mount(TabBar, { global: { plugins: [pinia, testRouter()] } })
+
+    await wrapper.findAll('.tab')[1]!.trigger('contextmenu', { clientX: 80, clientY: 60 })
+    await wrapper.findAll('.menu-item')[0]!.trigger('click')
+    await wrapper.get('#tab-rename-input').setValue('核心项目')
+    await wrapper.get('.rename-form').trigger('submit')
+    expect(tabs.tabs[1]?.label).toBe('核心项目')
+
+    await wrapper.findAll('.tab')[2]!.trigger('contextmenu', { clientX: 90, clientY: 60 })
+    const closeUnpinned = wrapper.findAll('.menu-item').find((item) => item.text().includes('关闭非置顶'))!
+    await closeUnpinned.trigger('click')
+    expect(tabs.tabs.map((tab) => tab.key)).toEqual(['home', 'proj:p1'])
+    wrapper.unmount()
+  })
 })

@@ -23,9 +23,10 @@ import { createAiRuns } from '@/api/ai'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
 import { useFavoritesStore } from '@/stores/favorites'
 import { MAX_TASK_GROUPS } from '@/types'
-import type { TaskStatus } from '@/types'
+import type { AiEngine, TaskStatus } from '@/types'
 import type { TaskDeliveryStage } from '@/utils/domain'
 import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
+import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -74,6 +75,7 @@ watch(
 const settingsOpen = ref(false)
 const selectedTaskIds = ref<string[]>([])
 const aiBatchStarting = ref(false)
+const aiBatchMode = ref<'separate' | 'merge' | null>(null)
 const openStatusTaskId = ref<string | null>(null)
 const statusSavingTaskId = ref<string | null>(null)
 const statusSaveErrorIds = ref<string[]>([])
@@ -229,15 +231,36 @@ async function changeTaskStatus(id: string, status: TaskStatus) {
   }
   statusSavingTaskId.value = null
 }
-async function runSelectedWithAi(mergeTasks: boolean) {
+const selectedTaskScope = computed(() => selectedTaskIds.value
+  .map((id) => data.taskById(id)?.title)
+  .filter((title): title is string => !!title)
+  .join('、'))
+
+function openBatchAiLauncher(mergeTasks: boolean) {
+  if (!selectedTaskIds.value.length || aiBatchStarting.value) return
+  aiBatchMode.value = mergeTasks ? 'merge' : 'separate'
+}
+
+async function runSelectedWithAi(
+  engine: AiEngine,
+  runnerId: string | null,
+  accountId: string | null,
+  model: string | null,
+  reasoningEffort: string | null,
+  planMode: boolean,
+) {
   if (!selectedTaskIds.value.length || aiBatchStarting.value) return
   const taskIds = [...selectedTaskIds.value]
+  const mergeTasks = aiBatchMode.value === 'merge'
   aiBatchStarting.value = true
   try {
-    const created = await createAiRuns(taskIds, { mergeTasks })
+    const created = await createAiRuns(taskIds, {
+      mergeTasks, engine, runnerId, accountId, model, reasoningEffort, planMode,
+    })
     taskIds.forEach((taskId) => data.patchTask(taskId, { status: 'AI 进行中' },
       mergeTasks ? '已合并到同一次 AI Run' : '已单独创建 AI Run'))
     selectedTaskIds.value = []
+    aiBatchMode.value = null
     toast(mergeTasks
       ? `已将 ${taskIds.length} 个任务合并为 ${created.length} 次 AI Run，可在首页查看`
       : `已将 ${taskIds.length} 个任务单独创建为 ${created.length} 次 AI Run，可在首页查看`,
@@ -484,7 +507,7 @@ function onDropGroup(groupId: string, overId?: string) {
           <button
             class="batch-ai separate"
             :disabled="aiBatchStarting"
-            @click="runSelectedWithAi(false)"
+            @click="openBatchAiLauncher(false)"
           >
             <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-send-plane-line'"></i>
             单独给 AI · {{ selectedTaskIds.length }}
@@ -493,11 +516,19 @@ function onDropGroup(groupId: string, overId?: string) {
             v-if="selectedTaskIds.length > 1"
             class="batch-ai merge"
             :disabled="aiBatchStarting"
-            @click="runSelectedWithAi(true)"
+            @click="openBatchAiLauncher(true)"
           >
             <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-node-tree'"></i>
             合并给 AI · {{ selectedTaskIds.length }}
           </button>
+          <AiRunLauncher
+            v-if="aiBatchMode"
+            :project-id="pid"
+            :starting="aiBatchStarting"
+            :scope="`${aiBatchMode === 'merge' ? '合并' : '单独'}派发 ${selectedTaskIds.length} 个任务：${selectedTaskScope}`"
+            @close="aiBatchMode = null"
+            @start="runSelectedWithAi"
+          />
         </div>
       </div>
       <div class="delivery-filter" role="group" aria-label="按交付阶段筛选任务">
@@ -1126,6 +1157,7 @@ function onDropGroup(groupId: string, overId?: string) {
   align-items: center;
 }
 .batch-ai-actions {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;

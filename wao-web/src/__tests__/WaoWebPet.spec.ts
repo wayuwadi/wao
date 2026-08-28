@@ -191,8 +191,8 @@ describe('WaoWebPet', () => {
       routes: [
         { path: '/', component: { template: '<div />' } },
         {
-          path: '/workday-rhythm',
-          name: 'workday-rhythm',
+          path: '/settings',
+          name: 'settings',
           component: { template: '<div />' },
         },
       ],
@@ -207,7 +207,43 @@ describe('WaoWebPet', () => {
     await wrapper.get('.pet-settings-link').trigger('click')
     await flushPromises()
 
-    expect(router.currentRoute.value.fullPath).toBe('/workday-rhythm?settings=pet')
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=pet')
+    wrapper.unmount()
+  })
+
+  it('右键宠物打开功能气泡，并可临时隐藏为侧边静默图标', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+
+    await wrapper.get('.pet-avatar').trigger('contextmenu')
+    expect(wrapper.get('.pet-settings-actions').classes()).toContain('open')
+    const hideButtons = wrapper.findAll('.pet-menu-group')[1]!.findAll('button')
+    await hideButtons[0]!.trigger('click')
+    await nextTick()
+
+    expect(wrapper.find('.wao-web-pet').exists()).toBe(false)
+    expect(wrapper.get('.pet-silent-dock').attributes('title')).toContain('点击立即恢复')
+    await wrapper.get('.pet-silent-dock').trigger('click')
+    expect(wrapper.find('.wao-web-pet').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('任务气泡关闭按钮提供 5 分钟、10 分钟和自选静音', async () => {
+    const data = useDataStore()
+    data.taskLoadState = 'loaded'
+    data.tasks.push(task('notice-snooze', '稍后处理气泡', '待办'))
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+
+    await wrapper.get('.pet-notice-close').trigger('click')
+    expect(wrapper.get('.notice-snooze-menu').text()).toContain('5 分钟')
+    expect(wrapper.get('.notice-snooze-menu').text()).toContain('10 分钟')
+    expect(wrapper.get('.notice-snooze-menu').text()).toContain('自选 5 分钟')
+    await wrapper.get('.notice-snooze-menu').findAll('button')[0]!.trigger('click')
+    expect(wrapper.find('.pet-notice').exists()).toBe(false)
     wrapper.unmount()
   })
 

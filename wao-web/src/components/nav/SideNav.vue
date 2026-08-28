@@ -166,6 +166,7 @@ const renameDraft = ref<{
   saving: boolean
   error: string
 } | null>(null)
+const contextMenu = ref<{ id: NavItemId; x: number; y: number; busy: boolean; error: string } | null>(null)
 
 function groupCode(label: string): BuiltinMenuGroupCode {
   return (
@@ -221,6 +222,41 @@ function openRename(event: MouseEvent, id: NavItemId) {
     y: Math.min(event.clientY, window.innerHeight - 180),
     saving: false,
     error: '',
+  }
+}
+
+function openContextMenu(event: MouseEvent, id: NavItemId) {
+  if (nav.collapsed || isMobile.value) return
+  contextMenu.value = {
+    id,
+    x: Math.min(event.clientX, window.innerWidth - 190),
+    y: Math.min(event.clientY, window.innerHeight - 190),
+    busy: false,
+    error: '',
+  }
+}
+
+function renameFromContext() {
+  const menu = contextMenu.value
+  if (!menu) return
+  const event = { clientX: menu.x, clientY: menu.y } as MouseEvent
+  contextMenu.value = null
+  openRename(event, menu.id)
+}
+
+async function mutateContext(action: 'hide' | 'pin') {
+  const menu = contextMenu.value
+  if (!menu || menu.busy) return
+  menu.busy = true
+  menu.error = ''
+  try {
+    if (action === 'hide') await nav.setMenuVisibility(menu.id, false)
+    else await nav.pinMenu(menu.id)
+    toast(action === 'hide' ? '菜单已隐藏，可在设置中恢复' : '菜单已置顶', 'ri-check-line')
+    contextMenu.value = null
+  } catch (error) {
+    menu.busy = false
+    menu.error = error instanceof Error ? error.message : '菜单操作失败'
   }
 }
 
@@ -352,7 +388,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
             :title="nav.itemMeta(id)?.label"
             :draggable="!nav.collapsed"
             @click="go(id)"
-            @contextmenu.prevent="openRename($event, id)"
+            @contextmenu.prevent="openContextMenu($event, id)"
             @dragstart="onDragStart(id, $event)"
             @dragover.stop.prevent="onDragOver(id)"
             @drop.stop.prevent="onDrop('MENU', groupCode(g.label), id)"
@@ -416,7 +452,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
         :title="nav.itemMeta(id)?.label"
         draggable="true"
         @click="go(id)"
-        @contextmenu.prevent="openRename($event, id)"
+        @contextmenu.prevent="openContextMenu($event, id)"
         @dragstart="onDragStart(id, $event)"
         @dragover.stop.prevent="onDragOver(id)"
         @drop.stop.prevent="onDropDock(id)"
@@ -453,6 +489,14 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     </div>
 
     <Teleport to="body">
+      <div v-if="contextMenu" class="menu-action-mask" @mousedown.self="contextMenu = null" @contextmenu.prevent>
+        <div class="menu-actions" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }">
+          <button type="button" :disabled="contextMenu.busy" @click="renameFromContext"><i class="ri-edit-line"></i>重命名</button>
+          <button type="button" :disabled="contextMenu.busy" @click="mutateContext('pin')"><i class="ri-pushpin-line"></i>置顶</button>
+          <button type="button" class="danger" :disabled="contextMenu.busy" @click="mutateContext('hide')"><i class="ri-eye-off-line"></i>隐藏</button>
+          <p v-if="contextMenu.error" role="alert">{{ contextMenu.error }}，可重试。</p>
+        </div>
+      </div>
       <div
         v-if="renameDraft"
         class="rename-mask"
@@ -742,11 +786,16 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     transform: rotate(360deg);
   }
 }
+.menu-action-mask,
 .rename-mask {
   position: fixed;
   z-index: 1300;
   inset: 0;
 }
+.menu-actions { position: fixed; width: 170px; box-sizing: border-box; padding: 6px; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop-2); display: grid; gap: 2px; }
+.menu-actions button { min-height: 34px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text); cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.menu-actions button:hover:not(:disabled) { background: var(--wao-bg-hover-2); }.menu-actions button.danger { color: var(--wao-danger-strong); }.menu-actions button:disabled { opacity: .55; cursor: default; }
+.menu-actions p { margin: 5px; color: var(--wao-danger-strong); font-size: 10px; line-height: 1.4; }
 .rename-menu {
   position: fixed;
   width: 260px;

@@ -19,6 +19,7 @@ import {
   type MenuPlacement,
 } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
+import IconPicker from '@/components/ui/IconPicker.vue'
 
 type MenuSource = 'builtin' | 'external'
 
@@ -255,6 +256,12 @@ async function saveMenuSettings() {
   }
 }
 
+function selectMenuIcon() {
+  // 图标选择是明确的单击操作，选择后立即写回统一注册表。
+  if (menuSaving.value) return
+  queueMicrotask(() => void saveMenuSettings())
+}
+
 async function loadQuickLinkSettings(force = false) {
   if (qlLoading.value) return
   qlLoading.value = true
@@ -384,10 +391,9 @@ onMounted(() => {
               @dragstart="dragMenu(item, $event)"
               @dragend="draggedMenuKey = ''"
             ><i class="ri-draggable"></i></button>
-            <span class="menu-icon"><i :class="item.icon || 'ri-apps-line'"></i></span>
+            <IconPicker v-model="item.icon" @select="selectMenuIcon" />
             <div class="menu-fields">
               <label><span>名称</span><input v-model.trim="item.label" maxlength="24" /></label>
-              <label><span>图标</span><input v-model.trim="item.icon" maxlength="64" /></label>
               <label>
                 <span>所属分组</span>
                 <select v-model="item.group" aria-label="所属分组" @change="changeMenuGroup(item)">
@@ -459,12 +465,11 @@ onMounted(() => {
             @dragstart="draggedQuickLinkId = link.id"
             @dragend="draggedQuickLinkId = ''"
           ><i class="ri-draggable"></i></button>
-          <span class="menu-icon"><i :class="link.icon || 'ri-links-line'"></i></span>
+          <IconPicker v-model="link.icon" />
           <div class="quick-link-fields">
             <label><span>名称</span><input v-model.trim="link.label" placeholder="例如 Jenkins" /></label>
             <label><span>地址</span><input v-model.trim="link.url" placeholder="/path 或 https://…" /></label>
             <label><span>描述</span><input v-model.trim="link.subtitle" placeholder="可选" /></label>
-            <label><span>图标</span><input v-model.trim="link.icon" placeholder="ri-links-line" /></label>
             <label class="open-mode">
               <span>打开方式</span>
               <select v-model="link.openMode">
@@ -521,7 +526,7 @@ onMounted(() => {
 .drag-handle:hover { background: var(--wao-bg-hover); color: var(--wao-text-2); }
 .menu-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-text-3); }
 .menu-fields, .quick-link-fields { display: grid; gap: 7px; }
-.menu-fields { grid-template-columns: 1.1fr 1.1fr 90px 100px 92px; }
+.menu-fields { grid-template-columns: 1.1fr 90px 100px 92px; }
 .menu-fields label, .quick-link-fields label { display: grid; gap: 4px; min-width: 0; color: var(--wao-text-weak); font-size: 10.5px; }
 .menu-fields input, .menu-fields select, .quick-link-fields input, .quick-link-fields select { min-width: 0; height: 32px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); outline: none; }
 .menu-fields input:focus, .menu-fields select:focus, .quick-link-fields input:focus, .quick-link-fields select:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 2px var(--wao-primary-soft); }

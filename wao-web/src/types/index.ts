@@ -63,6 +63,8 @@ export interface Tab {
   closable: boolean
   /** 成员手动置顶；批量关闭时保留，并随页签列表在当前浏览器持久化。 */
   pinned?: boolean
+  /** 当前浏览器中由成员显式重命名；后续路由元数据刷新不得覆盖。 */
+  customLabel?: boolean
   /**
    * label 只是「项目 p3」这样的 id 占位，真名要等详情视图加载实体后回填。
    * 打开页签时，占位标签不得覆盖已经解析出来的真名。
