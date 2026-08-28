@@ -66,8 +66,16 @@ vi.mock('@/api/ai', () => ({
       sessionId: 'sess-1', exitCode: null, createdAt: '2026-07-25T20:18:00',
       startedAt: '2026-07-25T20:18:05', finishedAt: null,
     },
+    {
+      id: 'ar3', taskId: 't3', taskTitle: '没有图片也保持同样的卡片骨架', previewImages: [],
+      projectId: 'p1', projectName: 'WAO', engine: 'codex', status: 'queued',
+      runnerId: null, runnerName: null, requestedRunnerId: null, retryOfRunId: null,
+      branchName: 'ai/wao-ar3', resultSummary: null, latestProgress: '等待电脑领取',
+      progressUpdatedAt: '2026-07-25T20:19:00', progress: [], sessionId: null, exitCode: null,
+      createdAt: '2026-07-25T20:19:00', startedAt: null, finishedAt: null,
+    },
   ]),
-  fetchAiActivities: vi.fn().mockImplementation(async (_type = 'ALL', _page = 1, size = 20) => ({
+  fetchAiActivities: vi.fn<(type?: string, page?: number, size?: number) => Promise<Record<string, unknown>>>().mockImplementation(async (_type = 'ALL', _page = 1, size = 20) => ({
     items: size === 8 ? [{
       id: 'ar1', type: 'FEATURE_DEVELOPMENT', title: '修复自动任务', status: 'FAILED',
       subtitle: 'WAO', capabilityLabel: 'Codex', targetId: 't1',
@@ -80,7 +88,7 @@ vi.mock('@/api/ai', () => ({
     }],
     total: 21, page: 1, size,
   })),
-  fetchAiRun: vi.fn().mockResolvedValue({
+  fetchAiRun: vi.fn<(runId: string) => Promise<Record<string, unknown>>>().mockResolvedValue({
     id: 'ar-history', taskId: 't3', taskTitle: '历史运行', previewImages: [],
     projectId: 'p1', projectName: 'WAO', engine: 'codex', status: 'succeeded',
     runnerId: 'rn1', runnerName: '娃哥电脑', requestedRunnerId: null, branchName: null,
@@ -405,29 +413,36 @@ describe('HomeView AI 控制台', () => {
     mounted.wrapper.unmount()
   })
 
-  it('最近完成列表上方可保存自动派发开关和空闲小时数', async () => {
+  it('从正在运行标题旁打开自动推进设置并保存策略', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
 
-    const policy = wrapper.find('.auto-run-policy')
     expect(fetchAiTaskAutoRunPolicy).toHaveBeenCalled()
-    expect(policy.text()).toContain('空闲时自动推进最早待办')
-    expect(policy.text()).toContain('Plan 模式')
-    expect(policy.text()).toContain('Wa All in One')
-    expect(policy.text()).toContain('自动任务群')
+    expect(wrapper.find('.auto-run-policy').exists()).toBe(false)
+    const trigger = wrapper.find('.auto-run-settings-trigger')
+    expect(trigger.text()).toContain('自动推进')
+    expect(trigger.text()).toContain('已开启')
+    await trigger.trigger('click')
+
+    const dialog = wrapper.find('.auto-run-dialog')
+    const policy = dialog.find('.auto-run-policy')
+    expect(dialog.text()).toContain('空闲时自动推进最早待办')
+    expect(dialog.text()).toContain('Plan 模式')
+    expect(dialog.text()).toContain('Wa All in One')
+    expect(dialog.text()).toContain('自动任务群')
     expect(fetchWebhookEndpoints).toHaveBeenCalled()
     expect(policy.find('.auto-run-switch').attributes('aria-checked')).toBe('true')
 
     await policy.find('.auto-run-switch').trigger('click')
     await policy.find('input').setValue(4)
     await policy.findAll('.auto-run-statuses input')[1]!.setValue(true)
-    expect(policy.text()).toContain('设置尚未保存')
-    await policy.find('.auto-run-save').trigger('click')
+    expect(dialog.text()).toContain('设置尚未保存')
+    await dialog.find('.auto-run-save').trigger('click')
     await flushPromises()
 
     expect(saveAiTaskAutoRunPolicy).toHaveBeenCalledWith(false, 4, 'p1', ['待办', '收集中'], 'fw-auto')
-    expect(policy.find('.auto-run-save').text()).toContain('已保存')
+    expect(dialog.find('.auto-run-save').text()).toContain('已保存')
     wrapper.unmount()
   })
 
@@ -727,6 +742,24 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
+  it('最近运行原位翻页，并把类型与运行结果放在各自固定标签中', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    const card = wrapper.find('.recent-card')
+    expect(card.find('.recent-type').text()).toBe('功能开发')
+    expect(card.find('.recent-status').text()).toContain('运行失败')
+    expect(card.find('.recent-main b').attributes('title')).toBe('修复自动任务')
+    expect(wrapper.find('.recent-pagination').text()).toContain('上一页')
+    expect(wrapper.find('.recent-pagination').text()).toContain('下一页')
+
+    await wrapper.findAll('.recent-pagination button')[1]!.trigger('click')
+    await flushPromises()
+    expect(fetchAiActivities).toHaveBeenCalledWith('ALL', 2, 8)
+    wrapper.unmount()
+  })
+
   it('在 AI 运行列表标出聊天复盘并从聊天页打开结果', async () => {
     vi.useFakeTimers()
     vi.mocked(fetchAiActivities).mockResolvedValueOnce({
@@ -784,6 +817,8 @@ describe('HomeView AI 控制台', () => {
       '/api/images/img-preview-1/raw',
       '/api/images/img-preview-2/raw',
     ])
+    expect(wrapper.findAll('.run-card .run-media')).toHaveLength(2)
+    expect(wrapper.findAll('.run-card .run-image-placeholder')).toHaveLength(1)
     await wrapper.find('.run-card').trigger('click')
 
     expect(wrapper.find('.run-detail').text()).toContain('AI 执行记录')

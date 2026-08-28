@@ -34,7 +34,7 @@ import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
 import AiRunSkillCapabilities from '@/components/ai/AiRunSkillCapabilities.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
-import { formatCost, formatTokens, reasoningEffortLabel, shortModel, usageSummary } from '@/composables/aiUsage'
+import { formatCost, formatTokens, reasoningEffortLabel, shortModel } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
 import { fetchWebhookEndpoints, type FeishuWebhookEndpoint } from '@/api/system'
@@ -58,6 +58,11 @@ const ui = useUiStore()
 const runs = ref<AiRun[]>([])
 const recentActivities = ref<AiActivity[]>([])
 const activityFilter = ref<AiActivityType>('ALL')
+const recentActivitiesLoading = ref(true)
+const recentActivitiesError = ref('')
+const recentActivitiesPage = ref(1)
+const recentActivitiesTotal = ref(0)
+const RECENT_ACTIVITY_PAGE_SIZE = 8
 const runners = ref<AiRunner[]>([])
 const workflows = ref<AiWorkflow[]>([])
 const loading = ref(true)
@@ -97,6 +102,7 @@ const runHistoryPage = ref(1)
 const runHistoryTotal = ref(0)
 const RUN_HISTORY_PAGE_SIZE = 20
 const quickTaskListOpen = ref(false)
+const taskAutoRunSettingsOpen = ref(false)
 const startingQuickTaskId = ref<string | null>(null)
 const ACTIVITY_FILTERS: Array<{ id: AiActivityType; label: string }> = [
   { id: 'ALL', label: '全部' },
@@ -278,11 +284,19 @@ async function refresh() {
     const [nextRuns, nextRunners, activities] = await Promise.all([
       fetchAiRuns(false),
       fetchAiRunners(),
-      fetchAiActivities(activityFilter.value, 1, 8).catch(() => null),
+      fetchAiActivities(activityFilter.value, recentActivitiesPage.value, RECENT_ACTIVITY_PAGE_SIZE).catch((error) => {
+        recentActivitiesError.value = error instanceof Error ? error.message : '最近 AI 运行读取失败'
+        return null
+      }),
     ])
     runs.value = nextRuns
     runners.value = nextRunners
-    if (activities) recentActivities.value = activities.items
+    if (activities) {
+      recentActivities.value = activities.items
+      recentActivitiesPage.value = activities.page
+      recentActivitiesTotal.value = activities.total
+      recentActivitiesError.value = ''
+    }
     if (selectedRun.value) selectedRun.value = nextRuns.find((run) => run.id === selectedRun.value?.id) ?? selectedRun.value
     // 首次加载时不庆祝；检测到本次轮询有运行刚变成 succeeded 时触发庆祝。
     if (!loading.value) {
@@ -293,6 +307,7 @@ async function refresh() {
     // 首页轮询失败时保留上一帧，避免网络抖动让运行面板闪空。
   } finally {
     loading.value = false
+    recentActivitiesLoading.value = false
   }
 }
 
@@ -822,9 +837,13 @@ function inspectRun(run: AiRun) {
 }
 
 function activityMeta(activity: AiActivity) {
-  if (activity.status === 'FAILED') return { label: '运行失败', icon: 'ri-error-warning-line', color: 'var(--wao-danger-strong)', bg: 'var(--wao-danger-bg)' }
+  if (activity.status === 'FAILED') return { label: '运行失败', icon: 'ri-close-circle-line', color: 'var(--wao-danger-strong)', bg: 'var(--wao-danger-bg)' }
+  return { label: '运行成功', icon: 'ri-checkbox-circle-line', color: 'var(--wao-success-strong)', bg: 'var(--wao-success-bg)' }
+}
+
+function activityTypeMeta(activity: AiActivity) {
   return activity.type === 'CHAT_REVIEW'
-    ? { label: '报告已保存', icon: 'ri-chat-history-line', color: 'var(--wao-success-strong)', bg: 'var(--wao-success-bg)' }
+    ? { label: '聊天复盘', icon: 'ri-chat-history-line', color: 'var(--wao-success-strong)', bg: 'var(--wao-success-bg)' }
     : { label: '功能开发', icon: 'ri-code-box-line', color: 'var(--wao-primary-text)', bg: 'var(--wao-primary-soft)' }
 }
 
@@ -841,8 +860,22 @@ async function openActivity(activity: AiActivity) {
 
 async function selectActivityFilter(type: AiActivityType) {
   activityFilter.value = type
-  try { recentActivities.value = (await fetchAiActivities(type, 1, 8)).items }
-  catch (error) { toast(error instanceof Error ? error.message : 'AI 运行分类读取失败', 'ri-error-warning-line') }
+  await changeRecentActivitiesPage(1)
+}
+
+async function changeRecentActivitiesPage(page: number) {
+  recentActivitiesLoading.value = true
+  recentActivitiesError.value = ''
+  try {
+    const result = await fetchAiActivities(activityFilter.value, page, RECENT_ACTIVITY_PAGE_SIZE)
+    recentActivities.value = result.items
+    recentActivitiesPage.value = result.page
+    recentActivitiesTotal.value = result.total
+  } catch (error) {
+    recentActivitiesError.value = error instanceof Error ? error.message : '最近 AI 运行读取失败'
+  } finally {
+    recentActivitiesLoading.value = false
+  }
 }
 
 async function openRunHistory(page = 1) {
@@ -862,6 +895,7 @@ async function openRunHistory(page = 1) {
 }
 
 const runHistoryPages = computed(() => Math.max(1, Math.ceil(runHistoryTotal.value / RUN_HISTORY_PAGE_SIZE)))
+const recentActivitiesPages = computed(() => Math.max(1, Math.ceil(recentActivitiesTotal.value / RECENT_ACTIVITY_PAGE_SIZE)))
 
 /** 失败的运行可以带着报错重跑一次：AI 接着这个错往下修，不用从头再来。 */
 async function rerun(run: AiRun) {
@@ -899,15 +933,6 @@ async function stopRun(run: AiRun) {
   } finally {
     pausingRunId.value = null
   }
-}
-
-function resultPreview(run: AiRun) {
-  if (!run.resultSummary) return run.status === 'failed' ? '执行节点没有返回错误详情' : ''
-  const meaningfulLine = run.resultSummary
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line && !line.startsWith('工作目录：') && !line.startsWith('执行工具：') && !line.startsWith('本机日志：'))
-  return meaningfulLine || run.resultSummary.trim()
 }
 
 function timeText(value: string | null) {
@@ -967,6 +992,7 @@ function onDialogKeydown(event: KeyboardEvent) {
   else if (logRunner.value) closeRunnerLog()
   else if (runHistoryOpen.value) runHistoryOpen.value = false
   else if (quickTaskListOpen.value) quickTaskListOpen.value = false
+  else if (taskAutoRunSettingsOpen.value) taskAutoRunSettingsOpen.value = false
   else return
   event.preventDefault()
   event.stopPropagation()
@@ -1183,13 +1209,22 @@ onBeforeUnmount(() => {
             <h2>正在运行</h2>
             <p>点击卡片查看 AI 的实时反馈和执行档案。</p>
           </div>
-          <button
-            class="quick-task-list-trigger"
-            @click="quickTaskListOpen = true"
-          >
-            <i class="ri-list-check-3"></i>可 AI Run 的任务
-            <em v-if="runnableTasks.length">{{ runnableTasks.length }}</em>
-          </button>
+          <div class="run-section-actions">
+            <button
+              class="auto-run-settings-trigger"
+              :class="{ on: taskAutoRunEnabled }"
+              :title="taskAutoRunPolicy?.message || '设置空闲时自动推进最早待办'"
+              @click="taskAutoRunSettingsOpen = true"
+            >
+              <i class="ri-timer-flash-line"></i>
+              <span>自动推进</span>
+              <em>{{ taskAutoRunPolicy ? taskAutoRunEnabled ? '已开启' : '已关闭' : '读取中' }}</em>
+            </button>
+            <button class="quick-task-list-trigger" @click="quickTaskListOpen = true">
+              <i class="ri-list-check-3"></i>可 AI Run 的任务
+              <em v-if="runnableTasks.length">{{ runnableTasks.length }}</em>
+            </button>
+          </div>
         </div>
         <div v-if="loading" class="empty"><i class="ri-loader-4-line spin"></i>正在读取 AI 运行状态…</div>
         <div v-else-if="!activeRuns.length" class="quick-run-empty">
@@ -1242,10 +1277,16 @@ onBeforeUnmount(() => {
               </span>
               <span class="run-time">{{ timeText(run.startedAt || run.createdAt) }}</span>
             </div>
-            <div v-if="run.previewImages?.length" class="run-image-strip" :class="{ single: run.previewImages.length === 1 }">
-              <img v-for="(image, index) in run.previewImages" :key="`${image}-${index}`" :src="image" :alt="`${run.taskTitle} · 图片 ${index + 1}`" loading="lazy" />
+            <div class="run-media" :class="{ 'has-images': run.previewImages?.length }">
+              <div v-if="run.previewImages?.length" class="run-image-strip" :class="{ single: run.previewImages.length === 1 }">
+                <img v-for="(image, index) in run.previewImages" :key="`${image}-${index}`" :src="image" :alt="`${run.taskTitle} · 图片 ${index + 1}`" loading="lazy" />
+              </div>
+              <div v-else class="run-image-placeholder" aria-hidden="true">
+                <span><i :class="engineIcon(run.engine)"></i></span>
+                <i class="ri-code-s-slash-line"></i>
+              </div>
             </div>
-            <h3>{{ run.taskTitle }}</h3>
+            <h3 :title="run.taskTitle">{{ run.taskTitle }}</h3>
             <div class="run-project"><i class="ri-stack-line"></i>{{ run.projectName }}</div>
             <div class="live-progress">
               <span class="live-pulse"></span>
@@ -1262,124 +1303,36 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="auto-run-policy" aria-labelledby="auto-run-policy-title">
-        <div class="auto-run-copy">
-          <span class="auto-run-icon"><i class="ri-timer-flash-line"></i></span>
-          <div>
-            <h2 id="auto-run-policy-title">空闲时自动推进最早待办</h2>
-            <p v-if="taskAutoRunPolicy">{{ taskAutoRunPolicy.message }}</p>
-            <p v-else-if="taskAutoRunError">{{ taskAutoRunError }}</p>
-            <p v-else>正在读取自动派发策略…</p>
-            <small v-if="taskAutoRunPolicy?.nextEligibleAt && taskAutoRunPolicy.status === 'cooling_down'">
-              最早可检查时间：{{ timeText(taskAutoRunPolicy.nextEligibleAt) }}
-            </small>
-          </div>
-        </div>
-        <div class="auto-run-controls">
-          <button
-            class="auto-run-switch"
-            :class="{ on: taskAutoRunEnabled }"
-            type="button"
-            role="switch"
-            :aria-checked="taskAutoRunEnabled"
-            :disabled="taskAutoRunSaving"
-            @click="taskAutoRunEnabled = !taskAutoRunEnabled; markTaskAutoRunDirty()"
-          >
-            <i></i><span>{{ taskAutoRunEnabled ? '已开启' : '已关闭' }}</span>
-          </button>
-          <label>
-            <span>连续空闲</span>
-            <input
-              v-model.number="taskAutoRunHours"
-              type="number"
-              min="1"
-              max="168"
-              step="1"
-              :disabled="taskAutoRunSaving"
-              aria-label="自动派发空闲小时数"
-              @input="markTaskAutoRunDirty"
-            />
-            <span>小时</span>
-          </label>
-          <button
-            class="auto-run-save"
-            :disabled="taskAutoRunSaving || (!taskAutoRunDirty && !taskAutoRunError)"
-            @click="saveTaskAutoRunPolicy"
-          >
-            <i :class="taskAutoRunSaving ? 'ri-loader-4-line spin' : taskAutoRunError ? 'ri-refresh-line' : 'ri-save-3-line'"></i>
-            {{ taskAutoRunSaving ? '保存中' : taskAutoRunError ? '重试' : taskAutoRunDirty ? '保存设置' : '已保存' }}
-          </button>
-        </div>
-        <div class="auto-run-options">
-          <label class="auto-run-select">
-            <span>任务项目</span>
-            <select
-              v-model="taskAutoRunProjectId"
-              :disabled="taskAutoRunSaving || workflowsLoading"
-              aria-label="自动派发任务项目"
-              @change="markTaskAutoRunDirty"
-            >
-              <option value="" disabled>
-                {{ workflowsLoading ? '正在读取项目…' : runnableAutoRunWorkflows.length ? '请选择项目' : '没有可用的 AI 工作流' }}
-              </option>
-              <option v-for="workflow in runnableAutoRunWorkflows" :key="workflow.projectId" :value="workflow.projectId">
-                {{ workflow.projectName }}
-              </option>
-            </select>
-          </label>
-          <fieldset class="auto-run-statuses" :disabled="taskAutoRunSaving">
-            <legend>任务状态</legend>
-            <label v-for="status in AUTO_RUN_TASK_STATUSES" :key="status" :class="{ on: taskAutoRunStatuses.includes(status) }">
-              <input v-model="taskAutoRunStatuses" type="checkbox" :value="status" @change="markTaskAutoRunDirty" />
-              <i class="ri-check-line"></i>{{ status }}
-            </label>
-          </fieldset>
-          <label class="auto-run-select">
-            <span>触发通知群</span>
-            <select
-              v-model="taskAutoRunWebhookId"
-              :disabled="taskAutoRunSaving || taskAutoRunWebhooksLoading"
-              aria-label="自动派发触发通知群"
-              @change="markTaskAutoRunDirty"
-            >
-              <option value="">系统默认通知群</option>
-              <option v-for="endpoint in enabledTaskAutoRunWebhooks" :key="endpoint.id" :value="endpoint.id">
-                {{ endpoint.name }}{{ endpoint.systemDefault ? '（系统默认）' : '' }}
-              </option>
-            </select>
-          </label>
-        </div>
-        <div v-if="taskAutoRunProjectError || taskAutoRunWebhookError" class="auto-run-options-error" role="alert">
-          <span>{{ [taskAutoRunProjectError, taskAutoRunWebhookError].filter(Boolean).join('；') }}</span>
-          <button type="button" @click="refreshWorkflows(); refreshTaskAutoRunWebhooks()">
-            <i class="ri-refresh-line"></i>重试读取
-          </button>
-        </div>
-        <div v-if="taskAutoRunDirty || taskAutoRunError" class="auto-run-feedback" :class="{ error: taskAutoRunError }" role="status">
-          {{ taskAutoRunError || '设置尚未保存，后台轮询不会覆盖这次修改。' }}
-        </div>
-      </section>
-
       <section class="recent-section">
         <div class="section-head">
           <div><h2>最近 AI 运行</h2><p>开发任务与聊天复盘按完成时间统一排列，类型可继续扩展。</p></div>
-          <button class="history-link" @click="openRunHistory()">查看全部<i class="ri-arrow-right-line"></i></button>
+          <div class="recent-actions">
+            <nav v-if="recentActivitiesTotal > RECENT_ACTIVITY_PAGE_SIZE" class="recent-pagination" aria-label="最近 AI 运行分页">
+              <button :disabled="recentActivitiesLoading || recentActivitiesPage <= 1" @click="changeRecentActivitiesPage(recentActivitiesPage - 1)"><i class="ri-arrow-left-line"></i>上一页</button>
+              <span>{{ recentActivitiesPage }} / {{ recentActivitiesPages }}</span>
+              <button :disabled="recentActivitiesLoading || recentActivitiesPage >= recentActivitiesPages" @click="changeRecentActivitiesPage(recentActivitiesPage + 1)">下一页<i class="ri-arrow-right-line"></i></button>
+            </nav>
+            <button class="history-link" @click="openRunHistory()">查看全部<i class="ri-external-link-line"></i></button>
+          </div>
         </div>
         <div class="activity-filters" role="tablist" aria-label="AI 运行类型">
-          <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" @click="selectActivityFilter(option.id)">{{ option.label }}</button>
+          <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" :disabled="recentActivitiesLoading" @click="selectActivityFilter(option.id)">{{ option.label }}</button>
         </div>
-        <div v-if="!recentActivities.length && !loading" class="history-state"><i class="ri-inbox-2-line"></i>该类型还没有已结束的运行。</div>
-        <div class="recent-grid">
+        <div v-if="recentActivitiesLoading" class="recent-state"><i class="ri-loader-4-line spin"></i>正在读取最近 AI 运行…</div>
+        <div v-else-if="recentActivitiesError" class="recent-state error" role="alert"><i class="ri-error-warning-line"></i><span>{{ recentActivitiesError }}</span><button @click="changeRecentActivitiesPage(recentActivitiesPage)">重试</button></div>
+        <div v-else-if="!recentActivities.length" class="recent-state"><i class="ri-inbox-2-line"></i>该类型还没有已结束的运行。</div>
+        <div v-else class="recent-grid">
           <button v-for="activity in recentActivities" :key="`${activity.type}-${activity.id}`" class="recent-card" @click="openActivity(activity)">
             <span class="recent-card-top">
-              <span class="recent-icon" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i></span>
-              <span class="recent-status" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }">{{ activityMeta(activity).label }}</span>
+              <span class="recent-icon" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }"><i :class="activityTypeMeta(activity).icon"></i></span>
+              <span class="recent-type" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }">{{ activityTypeMeta(activity).label }}</span>
+              <span class="recent-status" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i>{{ activityMeta(activity).label }}</span>
               <span class="run-time">{{ timeText(activity.finishedAt || activity.createdAt) }}</span>
             </span>
             <span class="recent-main">
-              <b>{{ activity.title }}</b>
+              <b :title="activity.title">{{ activity.title }}</b>
               <em><i :class="activity.type === 'CHAT_REVIEW' ? 'ri-chat-3-line' : 'ri-stack-line'"></i>{{ activity.subtitle }}</em>
-              <em><i class="ri-sparkling-2-line"></i>{{ activity.type === 'CHAT_REVIEW' ? '聊天复盘' : '功能开发' }} · {{ activity.capabilityLabel }}</em>
+              <em><i class="ri-sparkling-2-line"></i>{{ activity.capabilityLabel }}</em>
               <small v-if="activity.status === 'FAILED'">{{ activity.resultPreview }}</small>
             </span>
             <span class="recent-open">{{ activity.type === 'CHAT_REVIEW' ? '打开复盘' : '查看详情' }}<i class="ri-arrow-right-line"></i></span>
@@ -1689,6 +1642,77 @@ onBeforeUnmount(() => {
       </section>
     </template>
 
+    <div v-if="taskAutoRunSettingsOpen" class="run-detail-mask" @click.self="taskAutoRunSettingsOpen = false">
+      <section class="run-detail auto-run-dialog" role="dialog" aria-modal="true" aria-labelledby="auto-run-policy-title">
+        <header>
+          <span class="recent-icon auto-run-dialog-icon"><i class="ri-timer-flash-line"></i></span>
+          <div>
+            <h2 id="auto-run-policy-title">空闲时自动推进最早待办</h2>
+            <p>没有 AI Run 活动时，按真实工作流和所选任务状态自动派发录入最早的一条。</p>
+          </div>
+          <button class="detail-close" aria-label="关闭自动推进设置" @click="taskAutoRunSettingsOpen = false"><i class="ri-close-line"></i></button>
+        </header>
+        <div class="auto-run-summary" :class="{ enabled: taskAutoRunEnabled }">
+          <span><i :class="taskAutoRunEnabled ? 'ri-checkbox-circle-line' : 'ri-pause-circle-line'"></i></span>
+          <div>
+            <b>{{ taskAutoRunEnabled ? '自动推进已开启' : '自动推进已关闭' }}</b>
+            <p v-if="taskAutoRunPolicy">{{ taskAutoRunPolicy.message }}</p>
+            <p v-else-if="taskAutoRunError">{{ taskAutoRunError }}</p>
+            <p v-else>正在读取自动派发策略…</p>
+            <small v-if="taskAutoRunPolicy?.nextEligibleAt && taskAutoRunPolicy.status === 'cooling_down'">最早可检查时间：{{ timeText(taskAutoRunPolicy.nextEligibleAt) }}</small>
+          </div>
+        </div>
+        <div class="auto-run-policy">
+          <div class="auto-run-controls">
+            <button class="auto-run-switch" :class="{ on: taskAutoRunEnabled }" type="button" role="switch" :aria-checked="taskAutoRunEnabled" :disabled="taskAutoRunSaving" @click="taskAutoRunEnabled = !taskAutoRunEnabled; markTaskAutoRunDirty()">
+              <i></i><span>{{ taskAutoRunEnabled ? '已开启' : '已关闭' }}</span>
+            </button>
+            <label>
+              <span>连续空闲</span>
+              <input v-model.number="taskAutoRunHours" type="number" min="1" max="168" step="1" :disabled="taskAutoRunSaving" aria-label="自动派发空闲小时数" @input="markTaskAutoRunDirty" />
+              <span>小时</span>
+            </label>
+          </div>
+          <div class="auto-run-options">
+            <label class="auto-run-select">
+              <span>任务项目</span>
+              <select v-model="taskAutoRunProjectId" :disabled="taskAutoRunSaving || workflowsLoading" aria-label="自动派发任务项目" @change="markTaskAutoRunDirty">
+                <option value="" disabled>{{ workflowsLoading ? '正在读取项目…' : runnableAutoRunWorkflows.length ? '请选择项目' : '没有可用的 AI 工作流' }}</option>
+                <option v-for="workflow in runnableAutoRunWorkflows" :key="workflow.projectId" :value="workflow.projectId">{{ workflow.projectName }}</option>
+              </select>
+            </label>
+            <fieldset class="auto-run-statuses" :disabled="taskAutoRunSaving">
+              <legend>任务状态</legend>
+              <label v-for="status in AUTO_RUN_TASK_STATUSES" :key="status" :class="{ on: taskAutoRunStatuses.includes(status) }">
+                <input v-model="taskAutoRunStatuses" type="checkbox" :value="status" @change="markTaskAutoRunDirty" />
+                <i class="ri-check-line"></i>{{ status }}
+              </label>
+            </fieldset>
+            <label class="auto-run-select">
+              <span>触发通知群</span>
+              <select v-model="taskAutoRunWebhookId" :disabled="taskAutoRunSaving || taskAutoRunWebhooksLoading" aria-label="自动派发触发通知群" @change="markTaskAutoRunDirty">
+                <option value="">系统默认通知群</option>
+                <option v-for="endpoint in enabledTaskAutoRunWebhooks" :key="endpoint.id" :value="endpoint.id">{{ endpoint.name }}{{ endpoint.systemDefault ? '（系统默认）' : '' }}</option>
+              </select>
+            </label>
+          </div>
+          <div v-if="taskAutoRunProjectError || taskAutoRunWebhookError" class="auto-run-options-error" role="alert">
+            <span>{{ [taskAutoRunProjectError, taskAutoRunWebhookError].filter(Boolean).join('；') }}</span>
+            <button type="button" @click="refreshWorkflows(); refreshTaskAutoRunWebhooks()"><i class="ri-refresh-line"></i>重试读取</button>
+          </div>
+          <div v-if="taskAutoRunDirty || taskAutoRunError" class="auto-run-feedback" :class="{ error: taskAutoRunError }" role="status">{{ taskAutoRunError || '设置尚未保存，后台轮询不会覆盖这次修改。' }}</div>
+        </div>
+        <footer>
+          <span class="retry-note"><i class="ri-shield-check-line"></i>保存后才会改变无人值守派发策略</span>
+          <button class="secondary" @click="taskAutoRunSettingsOpen = false">关闭</button>
+          <button class="primary auto-run-save" :disabled="taskAutoRunSaving || (!taskAutoRunDirty && !taskAutoRunError)" @click="saveTaskAutoRunPolicy">
+            <i :class="taskAutoRunSaving ? 'ri-loader-4-line spin' : taskAutoRunError ? 'ri-refresh-line' : 'ri-save-3-line'"></i>
+            {{ taskAutoRunSaving ? '保存中' : taskAutoRunError ? '重试保存' : taskAutoRunDirty ? '保存设置' : '已保存' }}
+          </button>
+        </footer>
+      </section>
+    </div>
+
     <div v-if="quickTaskListOpen" class="run-detail-mask" @click.self="quickTaskListOpen = false">
       <section class="run-detail quick-task-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-task-dialog-title">
         <header>
@@ -1757,12 +1781,13 @@ onBeforeUnmount(() => {
         <div v-else class="recent-grid history-grid">
           <button v-for="activity in runHistory" :key="`${activity.type}-${activity.id}`" class="recent-card" @click="openActivity(activity)">
             <span class="recent-card-top">
-              <span class="recent-icon" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i></span>
-              <span class="recent-status" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }">{{ activityMeta(activity).label }}</span>
+              <span class="recent-icon" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }"><i :class="activityTypeMeta(activity).icon"></i></span>
+              <span class="recent-type" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }">{{ activityTypeMeta(activity).label }}</span>
+              <span class="recent-status" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i>{{ activityMeta(activity).label }}</span>
               <span class="run-time">{{ timeText(activity.finishedAt || activity.createdAt) }}</span>
             </span>
             <span class="recent-main">
-              <b>{{ activity.title }}</b>
+              <b :title="activity.title">{{ activity.title }}</b>
               <em><i :class="activity.type === 'CHAT_REVIEW' ? 'ri-chat-3-line' : 'ri-stack-line'"></i>{{ activity.subtitle }}</em>
               <em><i class="ri-sparkling-2-line"></i>{{ activity.capabilityLabel }}</em>
               <small v-if="activity.status === 'FAILED'">{{ activity.resultPreview }}</small>
@@ -2110,23 +2135,8 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   background: var(--wao-bg-card);
 }
-.auto-run-policy {
-  margin-top: 10px;
-  padding: 13px 14px;
-  border: 1px solid var(--wao-line);
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--wao-bg-card), var(--wao-primary-tint));
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px 20px;
-}
-.auto-run-copy { min-width: 0; display: flex; align-items: flex-start; gap: 10px; }
-.auto-run-icon { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 10px; background: var(--wao-primary-soft); color: var(--wao-primary-text); display: grid; place-items: center; font-size: 17px; }
-.auto-run-copy h2 { margin: 0; font-size: 14px; }
-.auto-run-copy p { margin: 4px 0 0; color: var(--wao-text-weak); font-size: 11px; line-height: 1.55; }
-.auto-run-copy small { display: block; margin-top: 3px; color: var(--wao-text-3); font-size: 10px; }
-.auto-run-controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.auto-run-policy { margin-top: 16px; display: grid; gap: 14px; }
+.auto-run-controls { display: flex; align-items: center; justify-content: flex-start; gap: 8px; }
 .auto-run-switch, .auto-run-save { height: 32px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; font-size: 11px; display: inline-flex; align-items: center; gap: 6px; }
 .auto-run-switch { padding: 0 9px; }
 .auto-run-switch > i { position: relative; width: 25px; height: 14px; border-radius: 999px; background: #c7cad5; transition: .16s; }
@@ -2136,7 +2146,7 @@ onBeforeUnmount(() => {
 .auto-run-switch.on > i::after { transform: translateX(11px); }
 .auto-run-controls label { height: 32px; padding: 0 7px 0 9px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); font-size: 10.5px; display: flex; align-items: center; gap: 5px; }
 .auto-run-controls input { width: 46px; height: 24px; padding: 0 4px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-sub); color: var(--wao-text); text-align: center; }
-.auto-run-options { grid-column: 1 / -1; padding-top: 11px; border-top: 1px solid var(--wao-divider); display: grid; grid-template-columns: minmax(180px, .9fr) minmax(280px, 1.2fr) minmax(200px, 1fr); align-items: end; gap: 10px; }
+.auto-run-options { padding-top: 14px; border-top: 1px solid var(--wao-divider); display: grid; grid-template-columns: minmax(180px, .9fr) minmax(280px, 1.2fr) minmax(200px, 1fr); align-items: end; gap: 10px; }
 .auto-run-select { min-width: 0; display: grid; gap: 5px; color: var(--wao-text-weak); font-size: 10.5px; }
 .auto-run-select select { width: 100%; height: 32px; padding: 0 28px 0 9px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); font: inherit; }
 .auto-run-select select:disabled { opacity: .58; }
@@ -2151,12 +2161,17 @@ onBeforeUnmount(() => {
 .auto-run-options-error button { padding: 3px 7px; border: 1px solid var(--wao-danger-line); border-radius: 6px; background: var(--wao-danger-bg); color: inherit; cursor: pointer; font: inherit; }
 .auto-run-save { padding: 0 10px; border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
 .auto-run-save:disabled, .auto-run-switch:disabled { opacity: .55; cursor: not-allowed; }
-.auto-run-feedback { grid-column: 1 / -1; margin-top: -5px; color: var(--wao-warning-strong); font-size: 10.5px; }
+.auto-run-feedback { color: var(--wao-warning-strong); font-size: 10.5px; }
 .auto-run-feedback.error { color: var(--wao-danger-strong); }
 .section-head { display: flex; align-items: flex-end; gap: 8px; margin-bottom: 12px; }
 .section-head > div { flex: 1; }
 .section-head h2 { margin: 0; font-size: 17px; }
 .section-head p { margin: 4px 0 0; color: var(--wao-text-weak); font-size: 11.5px; }
+.run-section-actions { flex: 0 0 auto !important; display: flex; align-items: center; gap: 7px; }
+.auto-run-settings-trigger { min-height: 32px; padding: 0 9px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; font-size: 11.5px; display: inline-flex; align-items: center; gap: 5px; }
+.auto-run-settings-trigger:hover { border-color: var(--wao-primary-line); background: var(--wao-primary-tint); }
+.auto-run-settings-trigger.on { border-color: var(--wao-success-line); color: var(--wao-success-strong); background: var(--wao-success-bg); }
+.auto-run-settings-trigger em { padding-left: 6px; border-left: 1px solid currentColor; opacity: .72; font-size: 9.5px; font-style: normal; }
 .quick-task-list-trigger {
   min-height: 32px; padding: 0 10px; border: 1px solid var(--wao-primary-line); border-radius: 8px;
   background: var(--wao-primary-tint); color: var(--wao-primary-text); cursor: pointer; font-size: 11.5px;
@@ -2178,17 +2193,25 @@ onBeforeUnmount(() => {
   color: inherit;
   text-align: left;
   cursor: pointer;
+  display: flex;
+  flex-direction: column;
   transition: .16s;
 }
 .run-card:hover { transform: translateY(-2px); border-color: var(--wao-primary-line); box-shadow: 0 8px 22px #27366c14; }
 .run-top, .run-foot { display: flex; align-items: center; gap: 8px; }
 .status { padding: 4px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 650; }
 .run-time { margin-left: auto; color: var(--wao-text-weak); font-size: 10.5px; }
-.run-card h3 { min-height: 20px; margin: 9px 0 4px; font-size: 14px; line-height: 1.4; }
-.run-image-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(56px, 1fr)); gap: 5px; margin-top: 9px; }
+.run-card h3 { min-height: 39px; max-height: 39px; margin: 9px 0 4px; overflow: hidden; font-size: 14px; line-height: 1.4; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.run-media { height: 112px; margin-top: 9px; overflow: hidden; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-sub); }
+.run-image-strip { height: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(56px, 1fr)); gap: 5px; }
 .run-image-strip.single { grid-template-columns: minmax(0, 1fr); }
-.run-image-strip img { width: 100%; height: 62px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-sub); object-fit: cover; }
-.run-image-strip.single img { height: 112px; }
+.run-image-strip img { width: 100%; height: 100%; min-width: 0; object-fit: cover; }
+.run-image-placeholder { position: relative; height: 100%; overflow: hidden; color: var(--wao-primary-text); display: grid; place-items: center; }
+.run-image-placeholder::before, .run-image-placeholder::after { content: ''; position: absolute; border: 1px solid var(--wao-primary-line); border-radius: 50%; opacity: .55; }
+.run-image-placeholder::before { width: 132px; height: 132px; left: -54px; top: -72px; }
+.run-image-placeholder::after { width: 92px; height: 92px; right: -27px; bottom: -57px; }
+.run-image-placeholder > span { width: 40px; height: 40px; border: 1px solid var(--wao-primary-line); border-radius: 12px; background: var(--wao-bg-card); box-shadow: 0 8px 24px var(--wao-primary-soft); display: grid; place-items: center; font-size: 18px; }
+.run-image-placeholder > i { position: absolute; right: 13px; top: 12px; color: var(--wao-text-faint); font-size: 15px; }
 .run-project { color: var(--wao-text-weak); font-size: 11.5px; }
 .run-project i { margin-right: 5px; }
 .live-progress { margin-top: 8px; padding: 8px; border-radius: 8px; background: var(--wao-bg-sub); display: flex; gap: 9px; align-items: flex-start; }
@@ -2197,7 +2220,7 @@ onBeforeUnmount(() => {
 .live-progress b { overflow: hidden; color: var(--wao-text-2); font-size: 11px; font-weight: 550; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .live-progress small { margin-top: 3px; color: var(--wao-text-weak); font-size: 9.5px; }
 .live-pulse { width: 8px; height: 8px; margin-top: 4px; flex: 0 0 auto; border-radius: 50%; background: #36a86f; box-shadow: 0 0 0 4px #dff5e9; animation: livePulse 1.5s infinite; }
-.run-foot { margin-top: 9px; padding-top: 8px; border-top: 1px solid #f0f1f5; color: var(--wao-text-3); font-size: 11px; }
+.run-foot { margin-top: auto; padding-top: 8px; border-top: 1px solid #f0f1f5; color: var(--wao-text-3); font-size: 11px; }
 .run-foot .foot-runner { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-foot span i { margin-right: 5px; }
 .engine-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; }
@@ -2429,6 +2452,13 @@ onBeforeUnmount(() => {
 .activity-filters { margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px; }
 .activity-filters button { min-height: 30px; padding: 0 11px; border: 1px solid var(--wao-line); border-radius: 999px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; font-size: 11px; }
 .activity-filters button.active { border-color: var(--wao-primary-line); background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: 650; }
+.activity-filters button:disabled { opacity: .55; cursor: wait; }
+.recent-actions { flex: 0 0 auto !important; display: flex; align-items: center; gap: 7px; }
+.recent-pagination { height: 30px; padding: 0 3px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 10.5px; display: flex; align-items: center; gap: 2px; }
+.recent-pagination button { height: 24px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); cursor: pointer; font-size: 10.5px; display: inline-flex; align-items: center; gap: 3px; }
+.recent-pagination button:hover:not(:disabled) { background: var(--wao-bg-card); color: var(--wao-primary-text); }
+.recent-pagination button:disabled { opacity: .38; cursor: not-allowed; }
+.recent-pagination span { min-width: 34px; text-align: center; }
 .history-filters { margin: 14px 0 4px; }
 .recent-card {
   width: 100%;
@@ -2448,7 +2478,7 @@ onBeforeUnmount(() => {
   transition: transform .16s, border-color .16s, box-shadow .16s;
 }
 .recent-card:hover { transform: translateY(-2px); border-color: var(--wao-primary-line); box-shadow: 0 8px 22px #27366c14; }
-.recent-card-top { display: flex; align-items: center; gap: 7px; }
+.recent-card-top { min-height: 28px; display: flex; align-items: center; gap: 6px; }
 .recent-icon { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 8px; display: grid; place-items: center; }
 .recent-icon.recent-image { overflow: hidden; border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
 .recent-icon.recent-image img { width: 100%; height: 100%; object-fit: cover; }
@@ -2457,7 +2487,7 @@ onBeforeUnmount(() => {
 .recent-main em { display: block; margin-top: 4px; overflow: hidden; color: var(--wao-text-weak); font-size: 10.5px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .recent-main em i { margin-right: 5px; }
 .recent-main small { display: block; margin-top: 4px; overflow: hidden; color: var(--wao-danger-strong); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
-.recent-status { padding: 3px 7px; border-radius: 999px; font-size: 10px; font-weight: 650; white-space: nowrap; }
+.recent-type, .recent-status { padding: 3px 6px; border-radius: 999px; font-size: 9.5px; font-weight: 650; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; }
 .recent-card-top .run-time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-open { margin-top: auto; padding-top: 7px; border-top: 1px solid var(--wao-bg-tab); color: var(--wao-primary); font-size: 10.5px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
 .run-detail-mask {
@@ -2484,6 +2514,16 @@ onBeforeUnmount(() => {
 }
 .run-history-detail { width: min(1080px, 100%); }
 .quick-task-dialog { width: min(860px, 100%); }
+.auto-run-dialog { width: min(820px, 100%); }
+.auto-run-dialog-icon { background: var(--wao-primary-tint); color: var(--wao-primary); }
+.auto-run-summary { margin-top: 16px; padding: 12px 13px; border: 1px solid var(--wao-line); border-radius: 11px; background: var(--wao-bg-sub); color: var(--wao-text-weak); display: flex; align-items: flex-start; gap: 10px; }
+.auto-run-summary.enabled { border-color: var(--wao-success-line); background: var(--wao-success-bg); }
+.auto-run-summary > span { color: var(--wao-text-3); font-size: 20px; }
+.auto-run-summary.enabled > span { color: var(--wao-success-strong); }
+.auto-run-summary > div { min-width: 0; }
+.auto-run-summary b { color: var(--wao-text-2); font-size: 12px; }
+.auto-run-summary p { margin: 3px 0 0; font-size: 10.5px; line-height: 1.55; }
+.auto-run-summary small { display: block; margin-top: 3px; color: var(--wao-text-3); font-size: 9.5px; }
 .quick-task-dialog-icon { background: var(--wao-primary-tint); color: var(--wao-primary); }
 .quick-task-list { max-height: min(520px, calc(100vh - 220px)); margin-top: 16px; overflow-y: auto; display: grid; gap: 8px; }
 .quick-task-list-item { padding: 11px 12px; display: flex; align-items: center; gap: 14px; }
@@ -2498,9 +2538,13 @@ onBeforeUnmount(() => {
 .history-state { min-height: 260px; margin-top: 18px; border: 1px dashed var(--wao-line); border-radius: 12px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 8px; }
 .history-state.error { color: var(--wao-danger-strong); }
 .history-state .secondary { margin-left: 4px; padding: 6px 10px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); cursor: pointer; }
+.recent-state { min-height: 150px; border: 1px dashed var(--wao-line); border-radius: 12px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.recent-state.error { color: var(--wao-danger-strong); }
+.recent-state button { margin-left: 4px; padding: 5px 9px; border: 1px solid currentColor; border-radius: 7px; background: transparent; color: inherit; cursor: pointer; }
 .run-detail footer.history-pagination { justify-content: center; color: var(--wao-text-weak); font-size: 11px; }
 .history-pagination button { display: inline-flex; align-items: center; gap: 4px; }
 .history-pagination button:disabled { opacity: .5; cursor: not-allowed; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .run-detail header { display: flex; align-items: center; gap: 12px; }
 .run-detail header > div { flex: 1; min-width: 0; }
 .run-detail h2 { margin: 0; font-size: 17px; }
@@ -2612,17 +2656,21 @@ onBeforeUnmount(() => {
   .goal-submit { margin-left: auto; }
   .console-tabs { overflow-x: auto; }
   .recent-grid { grid-template-columns: 1fr; }
-  .auto-run-policy { grid-template-columns: 1fr; }
   .auto-run-controls { justify-content: flex-start; flex-wrap: wrap; }
   .auto-run-options { grid-template-columns: 1fr; }
   .auto-run-statuses { flex-wrap: wrap; }
-  .section-head { align-items: center; }
-  .section-head .quick-task-list-trigger { min-width: 34px; }
-  .quick-task-list-trigger em { display: none; }
+  .section-head { align-items: flex-start; flex-wrap: wrap; }
+  .run-section-actions, .recent-actions { width: 100%; }
+  .run-section-actions > button { flex: 1; justify-content: center; }
+  .recent-actions { justify-content: space-between; }
+  .recent-pagination { flex: 1; justify-content: space-between; }
+  .recent-pagination button { min-height: 28px; }
+  .auto-run-dialog header p, .quick-task-dialog header p { white-space: normal; }
+  .auto-run-dialog footer { align-items: stretch; flex-wrap: wrap; }
+  .auto-run-dialog footer .retry-note { width: 100%; margin: 0 0 2px; }
   .quick-task-grid { grid-template-columns: 1fr; }
   .quick-task-list-item { align-items: stretch; flex-direction: column; gap: 9px; }
   .quick-task-list-item .quick-task-start { align-self: flex-end; }
-  .quick-task-dialog header p { white-space: normal; }
   .history-grid { grid-template-columns: 1fr; }
   .flow-meta { grid-template-columns: 1fr; }
   .flow-form { grid-template-columns: 1fr; }
