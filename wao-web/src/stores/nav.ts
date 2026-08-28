@@ -10,9 +10,11 @@ import {
   externalAppPath,
   normalizeBuiltinMenu,
   normalizeExternalApp,
+  normalizeMobileNavItems,
   resolveNavGroups,
   type ExternalAppConfig,
   type BuiltinMenuConfig,
+  type MobileNavItemId,
   type NavItemId,
 } from '@/config/nav'
 import { fetchPreference, savePreference } from '@/api/favorites'
@@ -23,6 +25,7 @@ import type { ModuleId } from '@/types'
 
 const NAV_KEY = 'wao-nav-v1'
 const PERSONAL_ORDER_PREF = 'nav-personal-order'
+const MOBILE_NAV_PREF = 'mobile-bottom-nav-v1'
 
 interface Persisted {
   collapsed: boolean
@@ -62,6 +65,9 @@ export const useNavStore = defineStore('nav', () => {
   const externalAppsError = ref('')
   const builtinMenusState = ref<'idle' | 'loading' | 'loaded' | 'error'>('idle')
   const builtinMenusError = ref('')
+  const mobileItems = ref<MobileNavItemId[]>(normalizeMobileNavItems(null))
+  const mobileItemsState = ref<'idle' | 'loading' | 'loaded' | 'saving' | 'saved' | 'error'>('idle')
+  const mobileItemsError = ref('')
   const groups = computed(() =>
     resolveNavGroups(personalOrder.value, externalApps.value, builtinMenus.value),
   )
@@ -113,6 +119,38 @@ export const useNavStore = defineStore('nav', () => {
     void savePreference(PERSONAL_ORDER_PREF, JSON.stringify(personalOrder.value)).catch(() => {
       /* 落库失败下次进来会回到旧顺序，但本次会话内保持用户拖出的样子 */
     })
+  }
+
+  /** 从成员级偏好恢复手机底栏；未配置、损坏或暂时离线时保留安全默认入口。 */
+  async function loadMobileItems(force = false) {
+    if (mobileItemsState.value === 'loading' || mobileItemsState.value === 'saving') return
+    if (!force && ['loaded', 'saved'].includes(mobileItemsState.value)) return
+    mobileItemsState.value = 'loading'
+    mobileItemsError.value = ''
+    try {
+      const raw = await fetchPreference(MOBILE_NAV_PREF)
+      mobileItems.value = normalizeMobileNavItems(raw ? JSON.parse(raw) : null)
+      mobileItemsState.value = 'loaded'
+    } catch (error) {
+      mobileItemsState.value = 'error'
+      mobileItemsError.value = error instanceof Error ? error.message : '手机底栏读取失败'
+    }
+  }
+
+  /** 保存当前成员的手机底栏，供直接拖拽和工作台编辑共同复用。 */
+  async function saveMobileItems(items: MobileNavItemId[]) {
+    const normalized = normalizeMobileNavItems(items)
+    mobileItems.value = normalized
+    mobileItemsState.value = 'saving'
+    mobileItemsError.value = ''
+    try {
+      await savePreference(MOBILE_NAV_PREF, JSON.stringify(normalized))
+      mobileItemsState.value = 'saved'
+    } catch (error) {
+      mobileItemsState.value = 'error'
+      mobileItemsError.value = error instanceof Error ? error.message : '手机底栏保存失败'
+      throw error
+    }
   }
 
   /** 从服务端读取外部应用注册表；失败时回退安全默认项并允许显式重试。 */
@@ -194,11 +232,16 @@ export const useNavStore = defineStore('nav', () => {
     externalAppsError,
     builtinMenusState,
     builtinMenusError,
+    mobileItems,
+    mobileItemsState,
+    mobileItemsError,
     toggleCollapse,
     toggleGroup,
     isFolded,
     loadPersonalOrder,
     setPersonalOrder,
+    loadMobileItems,
+    saveMobileItems,
     loadExternalApps,
     loadBuiltinMenus,
     applyExternalApps,

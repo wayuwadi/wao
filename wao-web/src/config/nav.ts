@@ -16,6 +16,12 @@ export type MenuGroupCode = 'PUBLIC' | 'PERSONAL' | 'TOOLS'
 export type BuiltinMenuGroupCode = 'ROOT' | MenuGroupCode
 export type ExternalAppItemId = `external:${string}`
 export type NavItemId = ModuleId | ExternalAppItemId
+export type MobileActionItemId = 'action:note'
+export type MobileNavItemId = NavItemId | MobileActionItemId
+
+/** 手机底栏只保留高频动作；固定的“更多”不计入成员可配置名额。 */
+export const MOBILE_NAV_MAX_ITEMS = 4
+export const DEFAULT_MOBILE_NAV_ITEMS: MobileNavItemId[] = ['projects', 'action:note']
 
 /** 可由系统设置注册的外部应用；菜单和通用嵌入页都由这份配置驱动。 */
 export interface ExternalAppConfig {
@@ -102,7 +108,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
   navigation: {
     id: 'navigation',
-    label: '导航',
+    label: '工作台',
     icon: 'ri-compass-discover-line',
     path: '/navigation',
   },
@@ -210,7 +216,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     { id: 'home', label: '首页', icon: 'ri-home-5-line', group: 'ROOT', order: 10, visible: true },
     {
       id: 'navigation',
-      label: '导航',
+      label: '工作台',
       icon: 'ri-compass-discover-line',
       group: 'ROOT',
       order: 20,
@@ -494,6 +500,22 @@ export function externalAppIdFromItem(id: NavItemId | undefined): string | null 
 
 export function externalAppPath(id: string): string {
   return `/apps/${id}`
+}
+
+export function isMobileNavItemId(value: unknown): value is MobileNavItemId {
+  return (
+    value === 'action:note' ||
+    (typeof value === 'string' &&
+      (value.startsWith('external:') || Object.prototype.hasOwnProperty.call(MODULES, value)))
+  )
+}
+
+/** 校正成员保存的手机底栏，损坏或空配置回退到项目 + 小记。 */
+export function normalizeMobileNavItems(value: unknown): MobileNavItemId[] {
+  const items = Array.isArray(value)
+    ? value.filter(isMobileNavItemId).filter((id, index, all) => all.indexOf(id) === index)
+    : []
+  return items.length ? items.slice(0, MOBILE_NAV_MAX_ITEMS) : [...DEFAULT_MOBILE_NAV_ITEMS]
 }
 
 /** 左侧导航默认分组；首次加载注册表前也保证 Agent 位于「公共」。 */

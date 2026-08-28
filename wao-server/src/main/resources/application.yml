@@ -3,12 +3,14 @@ server:
   forward-headers-strategy: framework
   servlet:
     session:
-      timeout: 7d
+      timeout: 30d
       cookie:
         name: WAO_SESSION
         http-only: true
         secure: ${SESSION_COOKIE_SECURE:false}
         same-site: lax
+        # 持久 Cookie 与服务端会话同寿命，关闭手机浏览器或主屏幕应用后不要求次日重登。
+        max-age: 30d
 
 spring:
   application:

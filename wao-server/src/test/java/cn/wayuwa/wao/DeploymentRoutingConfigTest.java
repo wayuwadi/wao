@@ -13,6 +13,20 @@ import org.junit.jupiter.api.Test;
 class DeploymentRoutingConfigTest {
 
     @Test
+    void browserSessionPersistsForThirtyDaysWithoutWeakeningCookieProtection() throws IOException {
+        String application = readFromRepository("wao-server/src/main/resources/application.yml");
+        String session = section(application, "    session:\n", "\n\nspring:");
+
+        assertThat(session)
+                .contains("timeout: 30d")
+                .contains("name: WAO_SESSION")
+                .contains("http-only: true")
+                .contains("secure: ${SESSION_COOKIE_SECURE:false}")
+                .contains("same-site: lax")
+                .contains("max-age: 30d");
+    }
+
+    @Test
     void jenkinsChangePlanUsesSandboxSafeStaticEnvironmentAssignments() throws IOException {
         String pipeline = readFromRepository("Jenkinsfile");
         String declarativeEnvironment = section(pipeline,

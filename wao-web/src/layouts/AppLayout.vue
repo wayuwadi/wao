@@ -36,8 +36,12 @@ const session = useSessionStore()
 const theme = useTheme()
 const quickLinks = useQuickLinks()
 
-const loadingDomainCount = computed(() => Object.values(data.loadStates).filter((state) => state === 'loading').length)
-const loadErrorMessages = computed(() => [...new Set(Object.values(data.loadErrors).filter(Boolean))])
+const loadingDomainCount = computed(
+  () => Object.values(data.loadStates).filter((state) => state === 'loading').length,
+)
+const loadErrorMessages = computed(() => [
+  ...new Set(Object.values(data.loadErrors).filter(Boolean)),
+])
 
 // 登录成员切换时先清掉上一名成员的内存偏好，再按当前会话重新读取。
 preferences.prepareForMember(session.currentUser.id)
@@ -49,8 +53,10 @@ const crumbA = computed(() => {
     return nav.externalAppById(String(route.params.appId))?.label ?? '外部应用'
   }
   if (route.meta.tabKind === 'quick-link') {
-    return quickLinks.links.value.find((link) => link.id === String(route.params.linkId))?.label
-      ?? '快捷链接'
+    return (
+      quickLinks.links.value.find((link) => link.id === String(route.params.linkId))?.label ??
+      '快捷链接'
+    )
   }
   const mod = nav.itemMeta(route.meta.module as ModuleId)
   return mod?.label ?? '首页'
@@ -124,7 +130,11 @@ const themeIcon = computed(() => {
   return theme.effective.value === 'dark' ? 'ri-sun-line' : 'ri-moon-line'
 })
 const themeTitle = computed(() => {
-  const labels = { light: '当前：明亮，点击切换深色', dark: '当前：深色，点击切换跟随系统', system: '当前：跟随系统，点击切换明亮' }
+  const labels = {
+    light: '当前：明亮，点击切换深色',
+    dark: '当前：深色，点击切换跟随系统',
+    system: '当前：跟随系统，点击切换明亮',
+  }
   return labels[theme.mode.value]
 })
 function toggleTheme() {
@@ -168,7 +178,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="shell" :data-control-style="preferences.effectiveControlStyle">
-    <SideNav @open-search="openSearch" />
+    <SideNav @open-search="openSearch" @new-note="newNote" />
 
     <main class="main">
       <header class="header">
@@ -214,7 +224,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             部分数据加载失败：{{ loadErrorMessages.join('；') }}
             <template v-if="loadingDomainCount">（其余数据仍在加载）</template>
           </span>
-          <button v-if="!loadingDomainCount" type="button" @click="data.hydrate()"><i class="ri-refresh-line"></i>重新加载</button>
+          <button v-if="!loadingDomainCount" type="button" @click="data.hydrate()">
+            <i class="ri-refresh-line"></i>重新加载
+          </button>
         </div>
         <div v-else-if="loadingDomainCount" class="data-status" role="status" aria-live="polite">
           <i class="ri-loader-4-line spin"></i>
@@ -279,7 +291,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   background: var(--wao-danger-bg);
   color: #a83b3b;
 }
-.data-status span { flex: 1; }
+.data-status span {
+  flex: 1;
+}
 .data-status button {
   border: 0;
   background: transparent;
@@ -290,8 +304,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   align-items: center;
   gap: 4px;
 }
-.spin { animation: data-spin 0.9s linear infinite; }
-@keyframes data-spin { to { transform: rotate(360deg); } }
+.spin {
+  animation: data-spin 0.9s linear infinite;
+}
+@keyframes data-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .header {
   height: var(--wao-header-h);
   background: var(--wao-bg-card);
@@ -368,7 +388,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   align-items: center;
   gap: 5px;
 }
-.assistant-entry:hover { background: var(--wao-bg-hover-2); }
+.assistant-entry:hover {
+  background: var(--wao-bg-hover-2);
+}
 .plus:hover {
   background: var(--wao-primary-hover);
 }
@@ -486,7 +508,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     font-weight: 600;
     color: var(--wao-text);
   }
-  .bell { width: 36px; height: 36px; }
-  .content { overscroll-behavior: contain; }
+  .bell {
+    width: 36px;
+    height: 36px;
+  }
+  .content {
+    overscroll-behavior: contain;
+  }
 }
 </style>
