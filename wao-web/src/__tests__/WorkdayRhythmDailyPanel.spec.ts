@@ -127,10 +127,12 @@ describe('WorkdayRhythmDailyPanel', () => {
     expect(wrapper.find('.daily-editor').exists()).toBe(false)
   })
 
-  it('从每日必做卡直接打开配置入口', async () => {
+  it('每日必做项目使用通栏列表且不再提供卡内配置入口', async () => {
     const wrapper = await mountPanel()
     await flushPromises()
-    await wrapper.get('.configure-button').trigger('click')
-    expect(wrapper.emitted('configure')).toHaveLength(1)
+    expect(wrapper.findAll('.checklist-columns > section')).toHaveLength(1)
+    expect(wrapper.findAll('.check-row')).toHaveLength(2)
+    expect(wrapper.find('.configure-button').exists()).toBe(false)
+    expect(wrapper.emitted('configure')).toBeUndefined()
   })
 })

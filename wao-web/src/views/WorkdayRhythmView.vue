@@ -42,7 +42,6 @@ import {
 import WorkdayRhythmDailyPanel from '@/components/workday/WorkdayRhythmDailyPanel.vue'
 import WorkdayRhythmDailySettings from '@/components/workday/WorkdayRhythmDailySettings.vue'
 import WorkdayRhythmHexagramSummary from '@/components/workday/WorkdayRhythmHexagramSummary.vue'
-import NotificationTargetPicker from '@/components/notification/NotificationTargetPicker.vue'
 
 const CONFIG_DRAFT_KEY = 'wao-workday-rhythm-config-draft-v1'
 const RHYTHM_FAVORITE_ID = 'workday-rhythm'
@@ -72,8 +71,6 @@ const notificationWebhooksLoading = ref(false)
 const notificationWebhooksError = ref('')
 const energyNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle')
 const focusNotificationState = ref<'idle' | 'sending' | 'sent' | 'error'>('idle')
-const focusTargetSaving = ref(false)
-const focusTargetError = ref('')
 const pendingFocusNotification = ref<string | null>(null)
 const pendingEnergyNotification = ref<{ action: WorkdayRhythmEnergyAction; date: string } | null>(
   null,
@@ -136,31 +133,6 @@ const configuredWebhookMissing = computed(
         endpoint.id === editorDraft.value.energyNotification.webhookId && endpoint.enabled,
     ),
 )
-const focusNotificationEnabled = computed(() => {
-  const notification = config.value.energyNotification
-  return (
-    notification.enabled &&
-    notification.notifyFocus &&
-    (notification.channel === 'WEBHOOK'
-      ? !!notification.webhookId.trim()
-      : !!notification.chatId.trim())
-  )
-})
-const notificationTargetsLoading = computed(
-  () => notificationChatsLoading.value || notificationWebhooksLoading.value,
-)
-const notificationTargetsError = computed(() => {
-  const hasWebhook = notificationWebhooks.value.some((endpoint) => endpoint.enabled)
-  const hasChat = notificationChats.value.length > 0
-  const sourceErrors = [notificationWebhooksError.value, notificationChatsError.value].filter(
-    (error) =>
-      error &&
-      ((!hasWebhook && !hasChat) ||
-        (error !== '系统设置中没有已启用的 Webhook 配置' &&
-          error !== '机器人当前不在任何可选群聊中')),
-  )
-  return [...new Set([focusTargetError.value, ...sourceErrors].filter(Boolean))].join('；')
-})
 const rhythmFavorite = computed(() => favorites.isFav('module', RHYTHM_FAVORITE_ID))
 let energyItemSequence = 0
 
@@ -581,62 +553,6 @@ function loadNotificationTargets() {
   else void loadNotificationChats()
 }
 
-async function loadFocusNotificationTargets() {
-  await Promise.all([loadNotificationWebhooks(), loadNotificationChats()])
-}
-
-async function selectFocusNotificationTarget(
-  target: { channel: 'WEBHOOK' | 'CHAT'; id: string; name: string } | null,
-) {
-  if (focusTargetSaving.value) return
-  const next = cloneRhythmConfig(config.value)
-  if (!target) {
-    next.energyNotification.notifyFocus = false
-    if (!next.energyItems.some((item) => item.notify)) next.energyNotification.enabled = false
-  } else {
-    next.energyNotification.enabled = true
-    next.energyNotification.notifyFocus = true
-    next.energyNotification.channel = target.channel
-    if (target.channel === 'WEBHOOK') {
-      next.energyNotification.webhookId = target.id
-      next.energyNotification.webhookName = target.name
-    } else {
-      next.energyNotification.chatId = target.id
-      next.energyNotification.chatName = target.name
-    }
-  }
-  const validationError = rhythmConfigError(next)
-  if (validationError) {
-    focusTargetError.value = validationError
-    return
-  }
-  focusTargetSaving.value = true
-  focusTargetError.value = ''
-  try {
-    config.value = await saveWorkdayRhythm(next)
-    const savedEditorDraft = parseRhythmConfigDraft(localStorage.getItem(CONFIG_DRAFT_KEY) ?? '')
-    if (savedEditorDraft) {
-      savedEditorDraft.energyNotification = { ...config.value.energyNotification }
-      editorDraft.value = savedEditorDraft
-      localStorage.setItem(CONFIG_DRAFT_KEY, JSON.stringify(savedEditorDraft))
-    } else {
-      editorDraft.value = cloneRhythmConfig(config.value)
-    }
-    if (!target) {
-      pendingFocusNotification.value = null
-      focusNotificationState.value = 'idle'
-      toast('今日重点将只保存，不发送群通知', 'ri-notification-off-line')
-    } else {
-      toast(`今日重点通知群已改为「${target.name}」`, 'ri-check-line')
-    }
-  } catch (error) {
-    focusTargetError.value =
-      error instanceof Error ? `${error.message}，原通知群未改变` : '通知群保存失败，原配置未改变'
-  } finally {
-    focusTargetSaving.value = false
-  }
-}
-
 function selectNotificationChat() {
   const selected = notificationChats.value.find(
     (chat) => chat.chatId === editorDraft.value.energyNotification.chatId,
@@ -881,7 +797,6 @@ onBeforeUnmount(() => {
           :date="clock.date"
           :reload-key="dailyPanelKey"
           @loaded="handleDailyPanelLoaded"
-          @configure="openEditor"
         />
 
         <section class="dashboard-grid">
@@ -889,18 +804,19 @@ onBeforeUnmount(() => {
             <article class="focus-card">
               <header>
                 <div>
-                  <small>今日执行 · 可安排明日</small>
+                  <small>今日执行</small>
                   <h2>今日重点</h2>
                 </div>
-                <RouterLink to="/todo">打开真实待办<i class="ri-arrow-right-line"></i></RouterLink>
-                <button class="tomorrow-toggle" type="button" @click="tomorrowOpen = !tomorrowOpen">
-                  <i class="ri-calendar-todo-line"></i
-                  >{{ tomorrowOpen ? '收起明日计划' : '安排明日' }}
+                <button
+                  class="tomorrow-toggle"
+                  type="button"
+                  :aria-label="tomorrowOpen ? '收起明日计划' : '展开明日计划'"
+                  :title="tomorrowOpen ? '收起明日计划' : '展开明日计划'"
+                  @click="tomorrowOpen = !tomorrowOpen"
+                >
+                  <i :class="tomorrowOpen ? 'ri-calendar-close-line' : 'ri-calendar-todo-line'"></i>
                 </button>
               </header>
-              <p class="card-help">
-                默认列出三项，可继续新增；至少填满三项并保存后发到你选择的群。具体进度仍以真实待办为准。
-              </p>
               <div
                 v-for="(_, index) in day.focus"
                 :key="index"
@@ -951,10 +867,12 @@ onBeforeUnmount(() => {
               <button
                 class="focus-add"
                 type="button"
+                aria-label="添加一个今日重点"
+                title="添加一个今日重点"
                 :disabled="day.focus.length >= MAX_FOCUS_COUNT || dayState === 'saving'"
                 @click="addFocus"
               >
-                <i class="ri-add-line"></i>新增重点
+                <i class="ri-add-line"></i>
               </button>
               <div
                 v-if="focusNotificationState !== 'idle'"
@@ -973,28 +891,9 @@ onBeforeUnmount(() => {
                 >
               </div>
               <footer>
-                <small v-if="dayState === 'dirty'">草稿已保存在本机</small>
-                <NotificationTargetPicker
-                  :enabled="focusNotificationEnabled"
-                  :channel="config.energyNotification.channel"
-                  :webhook-id="config.energyNotification.webhookId"
-                  :webhook-name="config.energyNotification.webhookName"
-                  :chat-id="config.energyNotification.chatId"
-                  :chat-name="config.energyNotification.chatName"
-                  :webhooks="notificationWebhooks"
-                  :chats="notificationChats"
-                  :loading="notificationTargetsLoading"
-                  :saving="focusTargetSaving"
-                  :error="notificationTargetsError"
-                  @open="loadFocusNotificationTargets"
-                  @select="selectFocusNotificationTarget"
-                />
+                <small v-if="dayState === 'dirty'"><i class="ri-draft-line"></i>待保存</small>
                 <span></span
-                ><button
-                  type="button"
-                  :disabled="dayState === 'saving' || focusTargetSaving"
-                  @click="saveFocus"
-                >
+                ><button type="button" :disabled="dayState === 'saving'" @click="saveFocus">
                   {{ dayState === 'error' ? '重试保存' : '保存今日重点' }}
                 </button>
               </footer>
@@ -1004,13 +903,9 @@ onBeforeUnmount(() => {
               <header>
                 <div>
                   <small>{{ tomorrowDate }} · 提前准备</small>
-                  <h2>安排明日重点</h2>
+                  <h2>明日重点</h2>
                 </div>
-                <RouterLink to="/todo">查看真实待办<i class="ri-arrow-right-line"></i></RouterLink>
               </header>
-              <p class="card-help">
-                紧急插入或重要但今天不做的事先放这里；明天打开时会直接成为今日重点。
-              </p>
               <div v-if="tomorrowState === 'loading'" class="tomorrow-state">
                 <i class="ri-loader-4-line spin"></i>正在读取明日计划…
               </div>
@@ -1060,15 +955,19 @@ onBeforeUnmount(() => {
                 <button
                   class="focus-add"
                   type="button"
+                  aria-label="添加一个明日重点"
+                  title="添加一个明日重点"
                   :disabled="
                     tomorrowDay.focus.length >= MAX_FOCUS_COUNT || tomorrowState === 'saving'
                   "
                   @click="addTomorrowFocus"
                 >
-                  <i class="ri-add-line"></i>新增明日重点
+                  <i class="ri-add-line"></i>
                 </button>
                 <footer>
-                  <small v-if="tomorrowState === 'dirty'">草稿已保存在本机</small>
+                  <small v-if="tomorrowState === 'dirty'"
+                    ><i class="ri-draft-line"></i>待保存</small
+                  >
                   <small v-else-if="tomorrowState === 'error'" class="focus-error"
                     >{{ tomorrowError }}，草稿仍在本机</small
                   >
@@ -1100,14 +999,6 @@ onBeforeUnmount(() => {
                 <small>ENERGY CHECK</small>
                 <h2>精力补给</h2>
               </div>
-              <button
-                type="button"
-                aria-label="设置精力补给通知"
-                title="设置精力补给通知"
-                @click="openEditor"
-              >
-                <i class="ri-settings-4-line"></i>
-              </button>
             </header>
             <button
               v-for="(item, index) in config.energyItems"
@@ -1150,10 +1041,6 @@ onBeforeUnmount(() => {
               >
               <strong v-if="item.mode === 'COUNT'">{{ energyCount(item) }}</strong>
             </button>
-            <p>
-              <i class="ri-information-line"></i
-              >累计项目可反复记录；每天一次项目完成后当天不再重复。
-            </p>
             <div v-if="energyNotificationState === 'sending'" class="energy-notice sending">
               <i class="ri-loader-4-line spin"></i><span>记录已保存，正在发送飞书通知…</span>
             </div>
@@ -1505,10 +1392,14 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .rhythm-page {
+  min-height: calc(100dvh - var(--wao-header-h) - var(--wao-tabbar-h) - 44px);
+  box-sizing: border-box;
   max-width: 1180px;
   margin: 0 auto;
   padding: 16px 28px 24px;
   color: var(--wao-text);
+  display: flex;
+  flex-direction: column;
 }
 .page-head {
   display: flex;
@@ -1608,7 +1499,7 @@ textarea {
   background: linear-gradient(128deg, #174f43, #267c65 62%, #3f9677);
   color: #fff;
   display: grid;
-  grid-template-columns: minmax(0, 1.08fr) minmax(220px, 0.72fr) minmax(220px, 0.72fr);
+  grid-template-columns: minmax(0, 3fr) minmax(190px, 1fr) minmax(190px, 1fr);
   align-items: center;
   gap: 20px;
   box-shadow: 0 18px 40px rgba(32, 99, 78, 0.16);
@@ -1794,6 +1685,8 @@ textarea {
   cursor: pointer;
 }
 .overview-grid {
+  min-height: 0;
+  flex: 1;
   margin-top: 14px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1812,12 +1705,18 @@ textarea {
 }
 .focus-card,
 .energy-card {
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
   border: 1px solid var(--wao-line);
   border-radius: 16px;
   background: var(--wao-bg-card);
+  overflow-y: auto;
 }
 .focus-card {
   padding: 18px;
+  display: flex;
+  flex-direction: column;
 }
 .tomorrow-focus {
   grid-area: tomorrow;
@@ -1831,41 +1730,32 @@ textarea {
   margin: 2px 0 0;
   font-size: 16px;
 }
-.focus-card header a {
-  margin-left: auto;
-  color: #267c65;
-  text-decoration: none;
-  font-size: 11px;
-}
-.focus-card header a i {
-  margin-left: 4px;
-}
 .focus-card header .tomorrow-toggle {
-  margin-left: 8px;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
   border: 1px solid var(--wao-line-control);
   border-radius: 8px;
   background: var(--wao-bg-page);
   color: var(--wao-text-2);
-  padding: 6px 8px;
-  font-size: 9.5px;
+  display: grid;
+  place-items: center;
   cursor: pointer;
-}
-.card-help {
-  margin: 8px 0 13px;
-  color: var(--wao-text-faint);
-  font-size: 10.5px;
 }
 .focus-card label {
   min-height: 42px;
   margin-top: 7px;
   border: 1px solid var(--wao-line);
   border-radius: 10px;
+  background: var(--wao-bg-page);
   padding: 0 10px;
   display: flex;
   align-items: center;
   gap: 9px;
 }
 .focus-row {
+  flex: 1 0 42px;
+  max-height: 70px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
@@ -1906,13 +1796,16 @@ textarea {
   color: #267c65 !important;
 }
 .focus-add {
+  width: 32px;
+  height: 32px;
   margin-top: 9px;
   border: 1px dashed var(--wao-line-control);
   border-radius: 9px;
   background: var(--wao-bg-page);
   color: var(--wao-primary);
-  padding: 7px 10px;
-  font-size: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
   cursor: pointer;
 }
 .focus-add:disabled {
@@ -2049,6 +1942,8 @@ textarea {
 .energy-card {
   grid-area: energy;
   padding: 18px;
+  display: flex;
+  flex-direction: column;
 }
 .energy-card > header {
   margin-bottom: 12px;
@@ -2056,18 +1951,8 @@ textarea {
   align-items: center;
   justify-content: space-between;
 }
-.energy-card > header button {
-  width: 32px;
-  height: 32px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 9px;
-  background: var(--wao-bg-page);
-  color: var(--wao-text-weak);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
 .energy-action {
+  flex: 1 0 63px;
   width: 100%;
   min-height: 63px;
   margin-top: 8px;
@@ -2125,15 +2010,6 @@ textarea {
 .energy-action.once.done > i {
   background: #d9eee5;
   color: #267c65;
-}
-.energy-card > p {
-  margin: 12px 2px 0;
-  color: var(--wao-text-faint);
-  font-size: 9.5px;
-  line-height: 1.5;
-}
-.energy-card > p i {
-  margin-right: 4px;
 }
 .energy-notice {
   min-height: 34px;
@@ -2767,7 +2643,9 @@ textarea {
 }
 @media (max-width: 760px) {
   .rhythm-page {
+    min-height: 0;
     padding: 16px 12px 96px;
+    display: block;
   }
   .page-head {
     align-items: center;
@@ -2826,6 +2704,8 @@ textarea {
   }
   .focus-card,
   .energy-card {
+    height: auto;
+    overflow: visible;
     padding: 14px;
   }
   .focus-row {

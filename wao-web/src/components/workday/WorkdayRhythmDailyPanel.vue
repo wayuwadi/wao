@@ -10,7 +10,7 @@ import {
 import { toast } from '@/composables/toast'
 
 const props = defineProps<{ date: string; reloadKey?: number }>()
-const emit = defineEmits<{ loaded: [dashboard: RhythmDashboard]; configure: [] }>()
+const emit = defineEmits<{ loaded: [dashboard: RhythmDashboard] }>()
 const dashboard = ref<RhythmDashboard | null>(null)
 const loading = ref(true)
 const error = ref('')
@@ -119,9 +119,6 @@ onMounted(load)
           <div class="completion">
             <b>{{ completionRate }}%</b
             ><span>{{ dashboard.completedCount }} / {{ dashboard.totalCount }}</span>
-            <button type="button" class="configure-button" @click="emit('configure')">
-              <i class="ri-settings-4-line"></i>配置
-            </button>
           </div>
         </header>
         <div v-if="!dashboard.checklist.length" class="empty-list">
@@ -206,15 +203,19 @@ onMounted(load)
 .restore-auto {
   border: 0;
   background: none;
-  color: var(--wao-primary);
+  color: #267c65;
   cursor: pointer;
 }
 .daily-card {
+  height: 100%;
   min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
   padding: 18px;
   border: 1px solid var(--wao-line);
   border-radius: 16px;
   background: var(--wao-bg-card);
+  overflow-y: auto;
 }
 .checklist-card {
   grid-area: mustdo;
@@ -228,7 +229,7 @@ onMounted(load)
 .panel-head small {
   font-size: 9px;
   letter-spacing: 0.18em;
-  color: var(--wao-primary);
+  color: #267c65;
 }
 .panel-head h2 {
   margin: 3px 0;
@@ -245,24 +246,16 @@ onMounted(load)
 .completion b {
   display: block;
   font-size: 22px;
-  color: var(--wao-primary);
+  color: #267c65;
 }
 .completion span {
   display: block;
   font-size: 9px;
   color: var(--wao-text-weak);
 }
-.configure-button {
-  margin-top: 5px;
-  border: 0;
-  background: none;
-  color: var(--wao-primary);
-  font-size: 9px;
-  cursor: pointer;
-}
 .checklist-columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   margin-top: 14px;
 }
@@ -313,7 +306,7 @@ onMounted(load)
 }
 .check-row strong {
   font-size: 8.5px;
-  color: var(--wao-primary);
+  color: #267c65;
 }
 .check-row.late {
   border-color: color-mix(in srgb, var(--wao-danger) 42%, var(--wao-line));
