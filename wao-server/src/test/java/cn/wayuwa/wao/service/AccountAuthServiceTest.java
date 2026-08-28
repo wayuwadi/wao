@@ -12,9 +12,11 @@ import cn.wayuwa.wao.common.ConflictException;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.domain.AccountEntity;
 import cn.wayuwa.wao.domain.AccountIdentityEntity;
+import cn.wayuwa.wao.domain.AccountLoginEventEntity;
 import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.domain.PasswordCredentialEntity;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
+import cn.wayuwa.wao.mapper.AccountLoginEventMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
 import cn.wayuwa.wao.mapper.MemberMapper;
 import cn.wayuwa.wao.mapper.PasswordCredentialMapper;
@@ -26,11 +28,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 class AccountAuthServiceTest {
     private final AccountMapper accounts = mock(AccountMapper.class);
     private final AccountIdentityMapper identities = mock(AccountIdentityMapper.class);
+    private final AccountLoginEventMapper loginEvents = mock(AccountLoginEventMapper.class);
     private final PasswordCredentialMapper credentials = mock(PasswordCredentialMapper.class);
     private final MemberMapper members = mock(MemberMapper.class);
     private final PasswordEncoder passwords = mock(PasswordEncoder.class);
     private final AccountAuthService service = new AccountAuthService(
-            accounts, identities, credentials, members, passwords, new AuthProperties(true, true));
+            accounts, identities, loginEvents, credentials, members, passwords, new AuthProperties(true, true));
 
     @Test
     void existingFeishuIdentityAlwaysReturnsItsOwnMember() {
@@ -47,6 +50,9 @@ class AccountAuthServiceTest {
         assertThat(result.session().accountId()).isEqualTo("acc-wg");
         assertThat(result.session().member().id()).isEqualTo("wg");
         assertThat(result.pending()).isNull();
+        verify(loginEvents).insert(org.mockito.ArgumentMatchers.<AccountLoginEventEntity>argThat(event ->
+                "acc-wg".equals(event.getAccountId()) && "wg".equals(event.getMemberId())
+                        && "feishu".equals(event.getProvider())));
     }
 
     @Test
@@ -89,6 +95,20 @@ class AccountAuthServiceTest {
                 new ExternalIdentityProfile("wechat", "union-1", null, "娃弟", null), "acc-wg", true))
                 .isInstanceOf(ConflictException.class)
                 .hasMessageContaining("另一个 WAO 账号");
+    }
+
+    @Test
+    void linkingASecondIdentityDoesNotCountAsAnotherLogin() {
+        AccountEntity account = account("acc-wg", "wg");
+        when(accounts.selectById("acc-wg")).thenReturn(account);
+        when(members.selectById("wg")).thenReturn(member("wg", "娃哥"));
+        when(identities.findByAccountId("acc-wg")).thenReturn(List.of(identity("email", "wg@example.com", "acc-wg")));
+
+        service.resolveExternal(new ExternalIdentityProfile(
+                "wechat", "wechat-wg", null, "娃哥", null), "acc-wg", true);
+
+        verify(loginEvents, org.mockito.Mockito.never())
+                .insert(org.mockito.ArgumentMatchers.<AccountLoginEventEntity>any());
     }
 
     @Test

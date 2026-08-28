@@ -35,6 +35,9 @@ erDiagram
 
 账号、身份与共享会话表见 [ADR-016](../adr/016-unified-account-and-session.md) 和 `V12__account_auth.sql`。`account` 关联唯一成员；`account_identity` 以 `(provider, provider_subject)` 保证外部身份唯一，并由 `V86__feishu_union_identity.sql` 增加 `(provider, provider_union_subject)` 唯一约束，用于飞书跨应用身份；`password_credential` 保存 BCrypt 哈希、失败次数和锁定时间；`SPRING_SESSION*` 保存跨节点 HttpOnly 会话。
 
+`account_login_event`（V111）从通知中心发布后逐次记录成功登录，只保存账号、成员、登录方式与毫秒级时间，供
+最近 7/30 天真实登录频率使用；不记录失败尝试、IP、设备、浏览器、邮箱或外部身份标识，历史次数不回填。
+
 ### org（组织）
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -974,6 +977,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V108__assistant_web_search.sql`：固化普通页面问答的联网开关，并为所选 API Provider 暂存有界搜索材料；终态清除（见 ADR-142）。
 - `V109__ai_run_delivery_stage.sql`：把 AI Run 的代码、等待部署与部署终态分开持久化，并只把历史成功回填为已部署（见 ADR-144）。
 - `V110__batch_oldest_task_auto_run.sql`：为最早待办空闲自动推进增加单次推进数，并按所选项目并发上限回填（见 ADR-152）。
+- `V111__notification_center_login_events.sql`：逐次记录成功登录的最小事实，供通知中心统计真实成员使用频率（见 ADR-153）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
