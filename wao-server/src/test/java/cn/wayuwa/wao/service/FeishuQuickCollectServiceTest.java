@@ -121,6 +121,28 @@ class FeishuQuickCollectServiceTest {
     }
 
     @Test
+    void configuredEncryptKeyDoesNotTrustAPlaintextReaction() {
+        enabled();
+        when(settings.get(SettingService.QUICK_COLLECT_ENCRYPT_KEY)).thenReturn("my-encrypt-key");
+
+        service.handleEvent(reaction(""), "https://wao.example");
+
+        verify(reactionAiRuns, never()).trigger(any(), any());
+    }
+
+    @Test
+    void encryptedReactionCanDispatchWithoutASeparateVerificationToken() throws Exception {
+        enabled();
+        when(settings.get(SettingService.QUICK_COLLECT_ENCRYPT_KEY)).thenReturn("my-encrypt-key");
+        when(reactionAiRuns.trigger(any(), eq("https://wao.example"))).thenReturn(true);
+        String encrypted = encrypt(reaction(""), "my-encrypt-key");
+
+        service.handleEvent("{\"encrypt\":\"" + encrypted + "\"}", "https://wao.example");
+
+        verify(reactionAiRuns).trigger(any(), eq("https://wao.example"));
+    }
+
+    @Test
     void mentioningTheBotCreatesATaggedTask() {
         enabled();
 

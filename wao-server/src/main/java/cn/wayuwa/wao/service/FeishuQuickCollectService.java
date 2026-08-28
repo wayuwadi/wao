@@ -144,6 +144,7 @@ public class FeishuQuickCollectService {
      * @return 飞书协议响应
      */
     public Map<String, Object> handleEvent(String rawBody, String baseUrl) {
+        boolean encryptedEnvelope = StringUtils.hasText(read(rawBody).path("encrypt").asText(""));
         JsonNode body = decrypt(rawBody);
         if ("url_verification".equals(body.path("type").asText(""))) {
             requireToken(body.path("token").asText(""));
@@ -155,8 +156,10 @@ public class FeishuQuickCollectService {
             return Map.of();
         }
         boolean quickCollectEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
+        boolean encryptedReactionChannel = encryptedEnvelope
+                && StringUtils.hasText(settings.get(SettingService.QUICK_COLLECT_ENCRYPT_KEY));
         boolean verifiedReactionChannel = StringUtils.hasText(settings.get(SettingService.QUICK_COLLECT_VERIFY_TOKEN))
-                || StringUtils.hasText(settings.get(SettingService.QUICK_COLLECT_ENCRYPT_KEY));
+                || encryptedReactionChannel;
         boolean reactionTriggered = false;
         if (quickCollectEnabled && verifiedReactionChannel) {
             try {
