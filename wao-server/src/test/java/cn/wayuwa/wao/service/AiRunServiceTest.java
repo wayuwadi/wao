@@ -11,6 +11,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -235,7 +236,7 @@ class AiRunServiceTest {
     }
 
     @Test
-    void idleAutoRunSkipsTheDuplicateGenericQueuedNotification() {
+    void enqueueKeepsProgressInWaoWithoutSendingProcessNotifications() {
         TaskEntity task = task("t1", "p1", "修复登录");
         when(taskMapper.selectById("t1")).thenReturn(task);
         when(configMapper.selectById("p1")).thenReturn(config("p1"));
@@ -247,7 +248,7 @@ class AiRunServiceTest {
         service.enqueue(List.of("t1"), null, null, null, null, null, null, true,
                 AiRunService.IDLE_AUTO_RUN_REQUESTED_BY, "https://wao.example");
 
-        verify(notifier, never()).notifyRunQueued(any(), any(), any(), any(), any(), any(), any());
+        verifyNoInteractions(notifier);
     }
 
     @Test
@@ -685,8 +686,7 @@ class AiRunServiceTest {
         assertThat(queued.getRunnerId()).isEqualTo("rn1");
         verify(runMapper).claimQueuedRun(eq("ar1"), eq("rn1"), isNull(),
                 eq("娃弟电脑 已领取任务，Codex 正在启动"), any());
-        verify(notifier).notifyRunStarted(eq("t1"), eq("p1"), eq("完成自动化"),
-                eq("WAO"), eq("Codex"), eq("娃弟电脑"));
+        verifyNoInteractions(notifier);
     }
 
     @Test
@@ -734,7 +734,7 @@ class AiRunServiceTest {
         assertThat(queued.getStatus()).isEqualTo("queued");
         assertThat(queued.getPendingInput()).isEqualTo("继续检查部署");
         verify(progressMapper, never()).insert(any(AiRunProgressEntity.class));
-        verify(notifier, never()).notifyRunStarted(any(), any(), any(), any(), any(), any());
+        verifyNoInteractions(notifier);
     }
 
     @Test
@@ -1505,8 +1505,8 @@ class AiRunServiceTest {
                 new CompleteAiRunRequest(0, "WAO_RUN_STATUS: SUCCESS", "sess-1", null, null,
                         null, null, null, null, null));
 
-        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"), any(),
-                eq("Claude Code"), eq("整个任务"), eq(true), eq(false), any());
+        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"),
+                eq("整个任务"), eq(true), eq(false), any());
     }
 
     @Test
@@ -1525,8 +1525,8 @@ class AiRunServiceTest {
 
         assertThat(first.getStatus()).isEqualTo("待验证");
         assertThat(second.getStatus()).isEqualTo("待验证");
-        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"), any(),
-                eq("Claude Code"), eq("合并 2 个任务"), eq(true), eq(false), any());
+        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"),
+                eq("合并 2 个任务"), eq(true), eq(false), any());
     }
 
     @Test
@@ -1579,8 +1579,8 @@ class AiRunServiceTest {
 
         assertThat(run.getStatus()).isEqualTo("failed");
         assertThat(run.getLatestProgress()).contains("未报告任务状态").doesNotContain("失败原因");
-        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"), any(),
-                eq("Claude Code"), eq("整个任务"), eq(false), eq(true), any());
+        verify(notifier).notifyRunFinished(eq("t1"), eq("p1"), eq("记录用量"),
+                eq("整个任务"), eq(false), eq(true), any());
     }
 
     /** 只带一条子任务的任务视图，供子任务派工用。 */

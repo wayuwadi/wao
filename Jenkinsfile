@@ -58,12 +58,7 @@ pipeline {
                     ).trim()
                     env.WAO_COMMIT_MESSAGE = sh(
                         script: '''
-                            if [ "$WAO_BATCH_COMMIT_COUNT" -le 1 ]; then
-                              git log -1 --pretty=%B "$WAO_GIT_SHA"
-                            else
-                              printf '批量交付 %s 个 main 提交：\n' "$WAO_BATCH_COMMIT_COUNT"
-                              git log --reverse --first-parent --pretty='- %h %s' "$WAO_CHANGE_BASE..$WAO_GIT_SHA"
-                            fi
+                            git log --reverse --first-parent --pretty='- %s' "$WAO_CHANGE_BASE..$WAO_GIT_SHA"
                         ''',
                         returnStdout: true
                     ).trim()

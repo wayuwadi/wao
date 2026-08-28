@@ -1,15 +1,15 @@
 ---
 name: commit-message
-description: Use this skill whenever you are about to create a git commit in the WAO repository (wao-server, wao-web, wao-gateway, deploy, docs, or root). WAO's CI/CD pipeline forwards the full commit message to a Feishu (Lark) notification card the whole team reads, so every commit needs a real body, not just a one-line subject. Triggers on "commit", "git commit", "创建提交", "提交代码", "写提交信息", "commit message".
+description: Use this skill whenever you are about to create a git commit in the WAO repository (wao-server, wao-web, wao-gateway, deploy, docs, or root). WAO's Jenkins notification uses commit subjects as a concise Feishu change list, while the full body remains the linked delivery evidence. Triggers on "commit", "git commit", "创建提交", "提交代码", "写提交信息", "commit message".
 ---
 
 # WAO 提交信息规范：标题 + 正文
 
 ## 背景
 
-`.github/workflows/ci-cd.yml` 里的 `notify` job 在每次 push 到 `main`（以及每个 PR）后，把这次提交的**完整提交信息**转发到团队飞书群的通知卡片「本次改动」区块（`change_summary` 取自 `head_commit.message`，PR 场景再拼上 PR 描述）。
+`Jenkinsfile` 在 `main` 的批量发布结束后，把批次内每条提交的**标题**整理成团队飞书群的「本次改动」清单；完整提交正文通过卡片里的提交和 Jenkins 链接查阅。
 
-这意味着提交信息不只是给 `git log` 看的——它会原样出现在同事的飞书通知里。只写一行标题的提交，卡片里就只有一句话，看不出改了什么、为什么改。
+这意味着标题必须言简意赅地说清用户能观察到的结果，正文则承担改动范围、原因和验收证据。短卡片不再复制正文，但 Git 历史仍必须能独立回答为什么改、如何验收。
 
 ## 规则
 
@@ -19,7 +19,7 @@ description: Use this skill whenever you are about to create a git commit in the
 2. **空行**。
 3. **正文**：固定包含“改动：”“原因：”“验收：”三个字段，字段内容使用中文。代码标识、API 路径、命令和专有名词可保留原文。
 
-飞书卡片对「本次改动」做了 1200 字符截断（见 `ci-cd.yml`），正文不需要极简到一句话，但也不必堆砌成整份变更日志——把最关键的信息放在前面几句。
+飞书卡片最多展示六条提交标题；更多改动折叠为数量并引导查看 Jenkins。正文不必堆砌成整份变更日志，但必须保留具体事实和验收命令。
 
 即使只是修正错别字或格式，也要保留三个正文字段；未执行测试时在“验收”中写明原因，不得虚构结果。
 

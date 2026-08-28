@@ -70,7 +70,11 @@ class DeploymentRoutingConfigTest {
         assertThat(status)
                 .contains("WAO_STATUS_SHA_FILE")
                 .contains("done <\"$WAO_STATUS_SHA_FILE\"");
-        assertThat(notification).contains("$batch+\" 个 main 提交\"");
+        assertThat(notification)
+                .contains("$batch+\" 个改动")
+                .contains("**本次改动**")
+                .contains("**失败范围**")
+                .contains("**失败原因**");
     }
 
     @Test

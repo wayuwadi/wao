@@ -39,12 +39,10 @@ class FeishuTaskNotifierTest {
         assertThat(notifier.notifyCollecting("t1", "p2", "标题", "家庭资料归档", "描述", null)).isFalse();
         assertThat(notifier.notifyProjectCreated("p2", "家庭资料归档", "娃哥", "目标")).isFalse();
         assertThat(notifier.notifyProjectStarted("p2", "家庭资料归档", "娃哥", "目标")).isFalse();
-        assertThat(notifier.notifyRunQueued("t1", "p2", "标题", "家庭资料归档", "Codex", null, null)).isFalse();
         assertThat(notifier.notifyIdleAutoRun("t1", "p2", "标题", "家庭资料归档", 2, "fw-auto")).isFalse();
         assertThat(notifier.notifyHttpPerformanceInspectionStarted(
                 "t1", "p2", "标题", "家庭资料归档", 24, 5, 2, "fw-auto")).isFalse();
-        assertThat(notifier.notifyRunStarted("t1", "p2", "标题", "家庭资料归档", "Codex", "娃哥电脑")).isFalse();
-        assertThat(notifier.notifyRunFinished("t1", "p2", "标题", "家庭资料归档", "Codex", null, true, false, "跑完了"))
+        assertThat(notifier.notifyRunFinished("t1", "p2", "标题", null, true, false, "跑完了"))
                 .isFalse();
 
         verify(webhook, never()).notifyCard(any());
@@ -59,13 +57,55 @@ class FeishuTaskNotifierTest {
         when(webhook.notifyComicCard(any())).thenReturn(true);
 
         assertThat(notifier.notifyTaskCreated("t1", "p1", "标题", "Wa All in One", "娃哥", "描述")).isTrue();
-        assertThat(notifier.notifyRunFinished("t1", "p1", "标题", "Wa All in One", "Codex", null, true, false, "跑完了"))
+        assertThat(notifier.notifyRunFinished("t1", "p1", "标题", null, true, false, "跑完了"))
                 .isTrue();
         assertThat(notifier.notifyInsightReport("p1", "Wa All in One", 7, 2, 1, List.of("家庭记账", "AI 助手")))
                 .isTrue();
 
         verify(webhook, org.mockito.Mockito.times(2)).notifyCard(any());
         verify(webhook).notifyComicCard(any());
+    }
+
+    @Test
+    void successfulAiRunCardOnlyShowsActionableChangeAndVerificationDigest() {
+        when(gate.enabled("p1")).thenReturn(true);
+        when(webhook.notifyCard(any())).thenReturn(true);
+        ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        String summary = """
+                改动：
+                - 合并入队和领取阶段的重复通知，只保留最终结果。
+                - 完成卡片只显示本次关键改动。
+
+                验收：
+                - 在飞书确认一次运行只收到一张终态卡片。
+                - 点按钮进入任务详情复核结果。
+                """;
+
+        assertThat(notifier.notifyRunFinished(
+                "t1", "p1", "通知优化", "合并 2 个任务", true, false, summary)).isTrue();
+
+        verify(webhook).notifyCard(card.capture());
+        assertThat(card.getValue().title()).isEqualTo("AI 任务待验收");
+        assertThat(card.getValue().fields()).containsExactly(List.of("任务", "通知优化 · 合并 2 个任务"));
+        assertThat(card.getValue().body())
+                .contains("**改了什么**", "合并入队和领取阶段的重复通知")
+                .contains("**怎么验收**", "一次运行只收到一张终态卡片")
+                .doesNotContain("WAO_RUN_STATUS");
+    }
+
+    @Test
+    void failedAiRunCardKeepsTheReasonShortAndDropsDecorativeFields() {
+        when(gate.enabled("p1")).thenReturn(true);
+        when(webhook.notifyCard(any())).thenReturn(true);
+        ArgumentCaptor<FeishuWebhookNotifier.Card> card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+
+        notifier.notifyRunFinished("t1", "p1", "通知优化", "整个任务", false, false,
+                "部署失败：Linux 主节点健康检查未通过。".repeat(20));
+
+        verify(webhook).notifyCard(card.capture());
+        assertThat(card.getValue().title()).isEqualTo("AI 执行未完成");
+        assertThat(card.getValue().fields()).containsExactly(List.of("任务", "通知优化"));
+        assertThat(card.getValue().body()).startsWith("**失败原因**\n").hasSizeLessThanOrEqualTo(251);
     }
 
     /** 群聊洞察报告使用漫画卡片，字段里带项目名，按钮落到项目洞察页。 */
