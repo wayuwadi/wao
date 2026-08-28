@@ -594,11 +594,7 @@ onBeforeUnmount(stopStatusRefresh)
       </div>
     </Transition>
 
-    <WaoWebPet
-      v-if="!open"
-      :assistant-status="assistantStatus"
-      @open-assistant="emit('update:modelValue', true)"
-    />
+    <WaoWebPet v-if="!open" :assistant-status="assistantStatus" />
   </Teleport>
 </template>
 

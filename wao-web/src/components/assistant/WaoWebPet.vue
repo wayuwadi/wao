@@ -37,12 +37,13 @@ interface PetRhythmDraft {
 }
 
 const props = defineProps<{ assistantStatus: AssistantStatus }>()
-const emit = defineEmits<{ (event: 'open-assistant'): void }>()
 const data = useDataStore()
 const ui = useUiStore()
 const noticeIndex = ref(0)
 const quickPointerActive = ref(false)
 const quickFocusActive = ref(false)
+const quickPinned = ref(false)
+const petActivity = ref<'stretch' | 'hop' | 'step' | null>(null)
 const rhythmConfig = ref<WorkdayRhythmConfig | null>(null)
 const rhythmDay = ref<WorkdayRhythmDay | null>(null)
 const rhythmDate = ref(shanghaiClock().date)
@@ -56,6 +57,8 @@ const rhythmPageDraftConflict = ref(false)
 let rhythmLoadedAt = 0
 let noticeTimer: ReturnType<typeof setInterval> | null = null
 let rhythmSavedTimer: ReturnType<typeof setTimeout> | null = null
+let activityTimer: ReturnType<typeof setInterval> | null = null
+let activitySequence = 0
 const {
   elementRef: petRef,
   style: petStyle,
@@ -160,7 +163,9 @@ const notices = computed<PetNotice[]>(() => {
 })
 
 const currentNotice = computed(() => notices.value[noticeIndex.value % notices.value.length]!)
-const quickMenuActive = computed(() => quickPointerActive.value || quickFocusActive.value)
+const quickMenuActive = computed(
+  () => quickPointerActive.value || quickFocusActive.value || quickPinned.value,
+)
 const rhythmActions = computed(() => rhythmConfig.value?.energyItems.slice(0, 3) ?? [])
 const actionableCount = computed(
   () => data.tasks.filter((task) => ['AI 进行中', '待验证', '待办'].includes(task.status)).length,
@@ -411,14 +416,23 @@ function restartNoticeTimer() {
   }
 }
 
-function openAssistant(event: MouseEvent) {
-  if (!consumeClick(event)) emit('open-assistant')
+function playPetActivity() {
+  const activities = ['stretch', 'hop', 'step'] as const
+  petActivity.value = activities[activitySequence % activities.length]!
+  activitySequence += 1
+}
+
+function interactWithPet(event: MouseEvent) {
+  if (consumeClick(event)) return
+  quickPinned.value = !quickPinned.value
+  playPetActivity()
+  void loadRhythmActions()
 }
 
 function openNotice(event: MouseEvent) {
   if (consumeClick(event)) return
   if (currentNotice.value.taskId) ui.openTask(currentNotice.value.taskId)
-  else emit('open-assistant')
+  else interactWithPet(event)
 }
 
 watch(
@@ -429,10 +443,16 @@ watch(
   },
 )
 
-onMounted(restartNoticeTimer)
+onMounted(() => {
+  restartNoticeTimer()
+  activityTimer = setInterval(() => {
+    if (!petDragging.value && !quickMenuActive.value) playPetActivity()
+  }, 16_000)
+})
 onBeforeUnmount(() => {
   if (noticeTimer) clearInterval(noticeTimer)
   if (rhythmSavedTimer) clearTimeout(rhythmSavedTimer)
+  if (activityTimer) clearInterval(activityTimer)
 })
 </script>
 
@@ -442,7 +462,7 @@ onBeforeUnmount(() => {
     class="wao-web-pet"
     :class="{ dragging: petDragging }"
     :style="petStyle"
-    aria-label="WAO AI 网页宠物"
+    aria-label="WAO 网页宠物"
     @pointerdown="startPetDrag"
   >
     <Transition name="pet-notice" mode="out-in">
@@ -453,7 +473,7 @@ onBeforeUnmount(() => {
         :class="`tone-${currentNotice.tone}`"
         type="button"
         aria-live="polite"
-        :title="currentNotice.taskId ? `打开任务：${currentNotice.detail}` : '打开 WAO AI'"
+        :title="currentNotice.taskId ? `打开任务：${currentNotice.detail}` : '和宠物互动'"
         @click="openNotice"
       >
         <i :class="[currentNotice.icon, { spin: currentNotice.id === 'loading' }]"></i>
@@ -474,10 +494,14 @@ onBeforeUnmount(() => {
     >
       <button
         class="pet-avatar"
+        :class="petActivity ? `activity-${petActivity}` : ''"
         type="button"
-        title="拖动调整位置，点击打开 WAO AI；悬停可记录今日节奏"
-        aria-label="打开 WAO AI，拖动可调整宠物位置，聚焦后可记录今日节奏"
-        @click="openAssistant"
+        title="点击和宠物互动并打开快捷操作，拖动可调整位置"
+        aria-label="和宠物互动并打开快捷操作，拖动可调整宠物位置"
+        :aria-expanded="quickMenuActive"
+        aria-controls="pet-quick-actions"
+        @click="interactWithPet"
+        @animationend="petActivity = null"
       >
         <span
           v-if="actionableCount"
@@ -494,8 +518,13 @@ onBeforeUnmount(() => {
         ></span>
       </button>
 
-      <nav class="pet-quick-actions" aria-label="今日节奏快捷记录" @pointerdown.stop>
-        <span class="quick-actions-label">今日节奏</span>
+      <nav
+        id="pet-quick-actions"
+        class="pet-quick-actions"
+        aria-label="宠物快捷操作"
+        @pointerdown.stop
+      >
+        <span class="quick-actions-label">快捷操作</span>
         <a
           v-if="rhythmPageDraftConflict && pendingRhythmStage !== 'notifying'"
           class="pet-rhythm-state conflict"
@@ -556,8 +585,12 @@ onBeforeUnmount(() => {
             <strong v-if="item.mode === 'COUNT'">{{ rhythmCount(item) }}</strong>
           </button>
         </template>
+        <a class="pet-settings-link" href="/workday-rhythm?settings=pet">
+          <i class="ri-settings-4-line"></i>
+          <span><b>宠物设置</b><small>配置快捷操作清单</small></span>
+          <i class="ri-arrow-right-s-line"></i>
+        </a>
       </nav>
-      <span class="pet-name">WAO AI</span>
     </div>
   </section>
 </template>
@@ -565,7 +598,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .wao-web-pet {
   position: fixed;
-  right: 18px;
+  right: 78px;
   bottom: 12px;
   z-index: 70;
   width: min(280px, calc(100vw - 24px));
@@ -581,6 +614,7 @@ onBeforeUnmount(() => {
   cursor: grabbing;
 }
 .pet-notice {
+  position: relative;
   width: 230px;
   min-height: 58px;
   margin: 0 54px -11px 0;
@@ -597,9 +631,20 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 7px;
 }
+.pet-notice::before {
+  content: '';
+  position: absolute;
+  right: 30px;
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  border-right: 1px solid color-mix(in srgb, var(--wao-primary) 20%, var(--wao-line));
+  border-bottom: 1px solid color-mix(in srgb, var(--wao-primary) 20%, var(--wao-line));
+  background: color-mix(in srgb, var(--wao-bg-card) 96%, transparent);
+  transform: rotate(45deg);
+}
 .pet-notice:hover {
   border-color: var(--wao-primary-line);
-  transform: translateY(-1px);
 }
 .pet-notice > i:first-child {
   color: var(--wao-primary);
@@ -692,7 +737,8 @@ onBeforeUnmount(() => {
   letter-spacing: 0.12em;
 }
 .pet-rhythm-action,
-.pet-rhythm-state {
+.pet-rhythm-state,
+.pet-settings-link {
   width: 166px;
   min-height: 40px;
   padding: 6px 9px;
@@ -713,12 +759,14 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .pet-rhythm-action:hover:not(:disabled),
-.pet-rhythm-state:hover:not(:disabled) {
+.pet-rhythm-state:hover:not(:disabled),
+.pet-settings-link:hover {
   border-color: var(--wao-primary-line);
   transform: translateX(-2px);
 }
 .pet-rhythm-action > i,
-.pet-rhythm-state > i {
+.pet-rhythm-state > i,
+.pet-settings-link > i {
   color: var(--wao-primary);
   font-size: 17px;
   text-align: center;
@@ -728,21 +776,32 @@ onBeforeUnmount(() => {
 .pet-rhythm-action small,
 .pet-rhythm-state span,
 .pet-rhythm-state b,
-.pet-rhythm-state small {
+.pet-rhythm-state small,
+.pet-settings-link span,
+.pet-settings-link b,
+.pet-settings-link small {
   min-width: 0;
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.pet-settings-link {
+  cursor: pointer;
+}
+.pet-settings-link > i:last-child {
+  color: var(--wao-text-weak);
+}
 .pet-rhythm-action b,
-.pet-rhythm-state b {
+.pet-rhythm-state b,
+.pet-settings-link b {
   color: var(--wao-text);
   font-size: 11px;
   font-weight: 700;
 }
 .pet-rhythm-action small,
-.pet-rhythm-state small {
+.pet-rhythm-state small,
+.pet-settings-link small {
   margin-top: 1px;
   color: var(--wao-text-weak);
   font-size: 9px;
@@ -821,33 +880,16 @@ onBeforeUnmount(() => {
   line-height: 18px;
   text-align: center;
 }
-.pet-name {
-  position: absolute;
-  right: 20px;
-  bottom: 2px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #4358d6, #684fd3);
-  color: #fff;
-  box-shadow: 0 5px 14px rgba(67, 88, 214, 0.28);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  pointer-events: none;
-}
 .spin {
   animation: pet-spin 1s linear infinite;
 }
 .pet-notice-enter-active,
 .pet-notice-leave-active {
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease;
+  transition: opacity 0.18s ease;
 }
 .pet-notice-enter-from,
 .pet-notice-leave-to {
   opacity: 0;
-  transform: translateY(5px) scale(0.98);
 }
 @keyframes pet-breathe {
   0%,
@@ -874,10 +916,61 @@ onBeforeUnmount(() => {
     transform: rotate(360deg);
   }
 }
+@keyframes pet-stretch {
+  0%,
+  100% {
+    transform: scale(1) rotate(0);
+  }
+  35% {
+    transform: scaleX(1.08) scaleY(0.92) rotate(-4deg);
+  }
+  70% {
+    transform: scaleX(0.96) scaleY(1.06) rotate(3deg);
+  }
+}
+@keyframes pet-hop {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  35% {
+    transform: translateY(-13px) rotate(-5deg);
+  }
+  58% {
+    transform: translateY(1px) rotate(4deg);
+  }
+  76% {
+    transform: translateY(-5px) rotate(-2deg);
+  }
+}
+@keyframes pet-step {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0);
+  }
+  25% {
+    transform: translateX(-12px) rotate(-6deg);
+  }
+  50% {
+    transform: translateX(8px) rotate(5deg);
+  }
+  75% {
+    transform: translateX(-4px) rotate(-3deg);
+  }
+}
+.pet-avatar.activity-stretch img {
+  animation: pet-stretch 0.8s ease-in-out;
+}
+.pet-avatar.activity-hop img {
+  animation: pet-hop 0.9s ease-in-out;
+}
+.pet-avatar.activity-step img {
+  animation: pet-step 1s ease-in-out;
+}
 
 @media (max-width: 760px) {
   .wao-web-pet {
-    right: 72px;
+    right: 94px;
     bottom: calc(71px + env(safe-area-inset-bottom));
     width: min(238px, calc(100vw - 92px));
     min-height: 144px;
@@ -902,18 +995,17 @@ onBeforeUnmount(() => {
     width: 158px;
   }
   .pet-rhythm-action,
-  .pet-rhythm-state {
+  .pet-rhythm-state,
+  .pet-settings-link {
     width: 152px;
     min-height: 38px;
     padding: 5px 8px;
-  }
-  .pet-name {
-    right: 13px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .pet-avatar,
+  .pet-avatar img,
   .pet-notice.tone-running > i:first-child,
   .spin {
     animation: none;

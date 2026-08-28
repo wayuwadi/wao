@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   fetchWorkdayRhythmHistory,
   fetchWorkdayRhythm,
@@ -46,6 +47,7 @@ import WorkdayRhythmHexagramSummary from '@/components/workday/WorkdayRhythmHexa
 const CONFIG_DRAFT_KEY = 'wao-workday-rhythm-config-draft-v1'
 const RHYTHM_FAVORITE_ID = 'workday-rhythm'
 const favorites = useFavoritesStore()
+const route = useRoute()
 const clock = ref(shanghaiClock())
 const config = ref<WorkdayRhythmConfig>(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
 const day = ref<WorkdayRhythmDay>(defaultRhythmDay(clock.value.date, clock.value.weekday))
@@ -225,6 +227,7 @@ async function load() {
     loadError.value = error instanceof Error ? error.message : '今日节奏暂时无法读取'
   } finally {
     loading.value = false
+    openPetSettingsIfRequested()
   }
 }
 
@@ -470,6 +473,12 @@ function openEditor() {
   if (editorDraft.value.energyNotification.enabled) loadNotificationTargets()
 }
 
+function openPetSettingsIfRequested() {
+  if (route.query.settings !== 'pet' || loading.value || loadError.value || editorOpen.value) return
+  openEditor()
+  void nextTick(() => document.querySelector('.energy-items-editor')?.scrollIntoView?.())
+}
+
 function monthRange(month: string) {
   const match = /^(\d{4})-(\d{2})$/.exec(month)
   if (!match) return null
@@ -640,6 +649,8 @@ async function submitEditor() {
     editorBusy.value = false
   }
 }
+
+watch(() => route.query.settings, openPetSettingsIfRequested)
 
 watch(
   editorDraft,

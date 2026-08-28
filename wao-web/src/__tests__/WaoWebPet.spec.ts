@@ -164,7 +164,7 @@ describe('WaoWebPet', () => {
     wrapper.unmount()
   })
 
-  it('任务读取失败时明确显示失败，宠物仍能打开问答工作台', async () => {
+  it('任务读取失败时明确显示失败，点击宠物只互动并展开真实快捷操作', async () => {
     const data = useDataStore()
     data.taskLoadState = 'error'
     data.taskLoadError = '任务接口暂时不可达'
@@ -175,7 +175,14 @@ describe('WaoWebPet', () => {
     expect(wrapper.text()).toContain('任务动态暂时不可用')
     expect(wrapper.text()).toContain('任务接口暂时不可达')
     await wrapper.get('.pet-avatar').trigger('click')
-    expect(wrapper.emitted('open-assistant')).toHaveLength(1)
+    await flushPromises()
+    expect(wrapper.emitted('open-assistant')).toBeUndefined()
+    expect(wrapper.get('.pet-avatar').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.findAll('.pet-rhythm-action')).toHaveLength(2)
+    expect(wrapper.get('.pet-settings-link').attributes('href')).toBe(
+      '/workday-rhythm?settings=pet',
+    )
+    expect(wrapper.find('.pet-name').exists()).toBe(false)
     wrapper.unmount()
   })
 
