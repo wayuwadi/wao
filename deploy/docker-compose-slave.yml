@@ -21,6 +21,7 @@ services:
       - --skip-name-resolve
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
+      - --max-allowed-packet=1G
     ports:
       - "3306:3306"
     environment:

@@ -123,6 +123,7 @@ class DeploymentRoutingConfigTest {
                 .contains("wao-agent-server:")
                 .contains("target: agent-runtime")
                 .contains("WAO_AGENT_SERVER_URI: http://wao-agent-server:8081")
+                .contains("--max-allowed-packet=1G")
                 .doesNotContain("WAO_DAILY_GUIDANCE_WARMUP_ENABLED");
         assertThat(slaveCompose).doesNotContain("WAO_LIFE_REVIEW_SCHEDULER_ENABLED");
     }

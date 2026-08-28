@@ -59,7 +59,8 @@ DROP DATABASE IF EXISTS wao;
 SQL'
 
 gzip -dc "${snapshot}" |
-  docker exec -i "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -uroot'
+  docker exec -i "${mysql_id}" sh -c \
+    'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket --max-allowed-packet=1G -uroot'
 
 docker exec "${mysql_id}" sh /docker-entrypoint-initdb.d/10-replication.sh
 echo 'MySQL replica snapshot bootstrap completed.'
