@@ -71,9 +71,11 @@ class AiRunServiceTest {
     private final CodexQuotaService codexQuotas = mock(CodexQuotaService.class);
     private final ProjectMemoryService projectMemories = mock(ProjectMemoryService.class);
     private final AiSkillCapabilityService skillCapabilities = mock(AiSkillCapabilityService.class);
+    private final FeishuAiRunReactionNotifier runReactions = mock(FeishuAiRunReactionNotifier.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
-            tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas, projectMemories, skillCapabilities);
+            tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas, projectMemories, skillCapabilities,
+            runReactions);
 
     @BeforeEach
     void emptyProgressByDefault() {
@@ -314,6 +316,7 @@ class AiRunServiceTest {
         assertThat(run.getValue().getRequestedModel()).isEqualTo("gpt-5.6-sol");
         assertThat(run.getValue().getReasoningEffort()).isEqualTo("high");
         assertThat(run.getValue().getPlanMode()).isFalse();
+        verify(runReactions).reactAfterEnqueued(List.of("t1"));
     }
 
     @Test
