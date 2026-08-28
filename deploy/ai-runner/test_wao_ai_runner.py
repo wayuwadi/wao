@@ -923,6 +923,28 @@ class WorkspaceIsolationTest(unittest.TestCase):
         self.assertEqual("", self._git("branch", "--show-current", cwd=primary).stdout.strip())
         self._git("switch", "main", cwd=worktree)
 
+    def test_cross_system_core_worktree_is_removed_before_native_git_commands(self) -> None:
+        self._prepare()
+        primary = self.workspace / "wao"
+        self._git("config", "core.worktree", "/mnt/d/stale-run", cwd=primary)
+
+        second_claim = {**self.claim, "runId": "ar-second", "branchName": "ai/wao-ar-second"}
+        worktree = RUNNER.prepare_worktree(
+            second_claim, self.workspace, GIT, str(self.origin))
+
+        configured = subprocess.run(
+            [GIT, "config", "--file", str(primary / ".git" / "config"),
+             "--get-all", "core.worktree"],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        self.assertNotEqual(0, configured.returncode)
+        self.assertTrue(worktree.is_dir())
+
+    def test_same_project_uses_one_git_preparation_lock(self) -> None:
+        project = self.workspace / "wao"
+
+        self.assertIs(RUNNER.project_git_lock(project), RUNNER.project_git_lock(project / "."))
+
     def test_empty_remote_creates_an_unborn_task_worktree(self) -> None:
         empty_origin = self.root / "empty-origin.git"
         self._git("init", "--bare", str(empty_origin), cwd=self.root)
@@ -1179,6 +1201,52 @@ class FailureRetryTest(unittest.TestCase):
         self.assertEqual(1, len(complete_calls))
         self.assertEqual(0, complete_calls[0].args[1]["exitCode"])
         self.assertIn("重试后已完成", complete_calls[0].args[1]["resultSummary"])
+
+    @patch.object(RUNNER.time, "sleep")
+    @patch.object(RUNNER, "prepare_worktree")
+    @patch.object(RUNNER, "run_codex")
+    def test_git_workspace_failure_retries_then_runs_ai_once(self, run_codex: Mock,
+            prepare_worktree: Mock, sleep: Mock) -> None:
+        prepare_worktree.side_effect = [RuntimeError("fetch 临时锁冲突"), self.worktree]
+        run_codex.return_value = (
+            0, "WAO_RUN_STATUS: SUCCESS\n工作区恢复后已完成", "thread-recovered",
+            RUNNER._blank_usage())
+        api = Mock()
+        api.get.return_value = {"cancelled": False}
+
+        RUNNER.execute_claim(
+            api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
+
+        self.assertEqual(2, prepare_worktree.call_count)
+        run_codex.assert_called_once()
+        sleep.assert_called_once_with(1)
+        complete = [call for call in api.post.call_args_list
+                    if call.args and call.args[0].endswith("/complete")][-1]
+        self.assertEqual(0, complete.args[1]["exitCode"])
+        progress = [call.args[1]["content"] for call in api.post.call_args_list
+                    if call.args and call.args[0].endswith("/progress")]
+        self.assertTrue(any("正在自动恢复（1/2）" in message for message in progress))
+        self.assertTrue(any("Git 工作区已自动恢复" in message for message in progress))
+
+    @patch.object(RUNNER.time, "sleep")
+    @patch.object(RUNNER, "prepare_worktree")
+    @patch.object(RUNNER, "run_codex")
+    def test_git_workspace_failure_stops_after_configured_retries(self, run_codex: Mock,
+            prepare_worktree: Mock, sleep: Mock) -> None:
+        prepare_worktree.side_effect = RuntimeError("持续 Git 配置错误")
+        api = Mock()
+
+        RUNNER.execute_claim(
+            api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
+
+        self.assertEqual(3, prepare_worktree.call_count)
+        run_codex.assert_not_called()
+        self.assertEqual([call(1), call(2)], sleep.call_args_list)
+        complete = [call for call in api.post.call_args_list
+                    if call.args and call.args[0].endswith("/complete")][-1]
+        self.assertNotEqual(0, complete.args[1]["exitCode"])
+        self.assertIn("准备 Git 工作区", complete.args[1]["resultSummary"])
+        self.assertIn("持续 Git 配置错误", complete.args[1]["resultSummary"])
 
     @patch.object(RUNNER, "prepare_worktree")
     @patch.object(RUNNER, "run_codex")

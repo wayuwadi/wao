@@ -35,6 +35,8 @@ LOG_FILE = Path.home() / ".wao" / "ai-runner.log"
 # 本脚本自身的路径；后台一键更新时从服务端拉取新版本原地替换并重启。
 SCRIPT_PATH = Path(__file__).resolve()
 PRINT_LOCK = threading.Lock()
+PROJECT_GIT_LOCKS_GUARD = threading.Lock()
+PROJECT_GIT_LOCKS: dict[str, threading.Lock] = {}
 MAX_LOG_BYTES = 2 * 1024 * 1024
 REMOTE_LOG_LINES = 200
 REMOTE_LOG_CHARS = 30_000
@@ -554,6 +556,39 @@ def detach_primary_clone(project_dir: Path, git_command: str) -> None:
         log(f"主克隆 {project_dir} 无法切到游离 HEAD，AI 可能会遇到分支被占用：{result.stdout[-300:]}")
 
 
+def project_git_lock(project_dir: Path) -> threading.Lock:
+    """同一主克隆的复合 Git 操作必须串行，不能让并发任务互相 prune 或删分支。"""
+    key = os.path.normcase(str(project_dir.resolve()))
+    with PROJECT_GIT_LOCKS_GUARD:
+        return PROJECT_GIT_LOCKS.setdefault(key, threading.Lock())
+
+
+def repair_primary_clone_config(project_dir: Path, git_command: str) -> None:
+    """清掉主克隆被跨 Windows/WSL 操作写入的 ``core.worktree``。
+
+    Runner 的主克隆只提供对象库和 worktree 元数据，本来就不应绑定工作副本。若某次 AI
+    在 Windows worktree 中经 WSL Git 写入 ``core.worktree=/mnt/...``，后续原生 Windows
+    Git 连 fetch 都会报 ``Invalid path '/mnt'``。直接读配置文件可以绕开已经损坏的仓库
+    发现过程，并在下一次领取任务时原位自愈，不要求用户删库重克隆。
+    """
+    config_path = project_dir / ".git" / "config"
+    if not config_path.is_file():
+        return
+    configured = run(
+        [git_command, "config", "--file", str(config_path), "--get-all", "core.worktree"],
+        check=False,
+    )
+    if configured.returncode != 0 or not configured.stdout.strip():
+        return
+    repaired = run(
+        [git_command, "config", "--file", str(config_path), "--unset-all", "core.worktree"],
+        check=False,
+    )
+    if repaired.returncode != 0:
+        raise RuntimeError(f"无法清理主克隆中失效的 core.worktree：{repaired.stdout[-500:]}")
+    log(f"主克隆 {project_dir} 已清理跨系统残留的 core.worktree，恢复原生 Git 路径")
+
+
 def owning_repo(worktree: Path) -> Path | None:
     """从 worktree 的 .git 指针反查它属于哪个主克隆；`.wao-runs` 下混放着多个项目的工作区。"""
     pointer = worktree / ".git"
@@ -612,7 +647,7 @@ def has_remote_default_branch(project_dir: Path, git_command: str, default_branc
     return result.returncode == 0
 
 
-def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_url: str,
+def _prepare_worktree_locked(claim: dict[str, Any], root: Path, git_command: str, repo_url: str,
         git_environment: dict[str, str] | None = None) -> Path:
     project_dir = root / claim["workspaceDir"]
     if not (project_dir / ".git").exists():
@@ -624,6 +659,7 @@ def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_u
         # 主克隆不需要工作副本，只提供对象库和 worktree 元数据。
         run([git_command, "clone", "--no-checkout", repo_url, str(project_dir)],
             environment=git_environment)
+    repair_primary_clone_config(project_dir, git_command)
     # 本机认证方式变了（比如从 HTTPS 换成 SSH）时，把已有仓库的 origin 一并纠正。
     run([git_command, "remote", "set-url", "origin", repo_url], cwd=project_dir, check=False)
     run([git_command, "fetch", "--prune", "origin"], cwd=project_dir,
@@ -652,6 +688,14 @@ def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_u
             cwd=project_dir,
         )
     return worktree
+
+
+def prepare_worktree(claim: dict[str, Any], root: Path, git_command: str, repo_url: str,
+        git_environment: dict[str, str] | None = None) -> Path:
+    """串行准备同一项目的独立 worktree，允许不同项目继续并行。"""
+    project_dir = root / claim["workspaceDir"]
+    with project_git_lock(project_dir):
+        return _prepare_worktree_locked(claim, root, git_command, repo_url, git_environment)
 
 
 def find_engine_executable(engine: str, configured: str | None = None) -> str:
@@ -1748,9 +1792,27 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             skill_path.mkdir(parents=True, exist_ok=True)
             prompt = build_continuation_prompt(claim, continuation, report_path, memory_path, skill_path)
         else:
-            worktree = prepare_worktree(
-                claim, root, git_command, resolve_repo_url(claim["repoUrl"], git_protocol, https_ready),
-                cli_environment)
+            workspace_retries = 0
+            while True:
+                try:
+                    worktree = prepare_worktree(
+                        claim, root, git_command,
+                        resolve_repo_url(claim["repoUrl"], git_protocol, https_ready),
+                        cli_environment)
+                    if workspace_retries:
+                        reporter.send("message", "Git 工作区已自动恢复，继续执行任务", force=True)
+                    break
+                except Exception as exc:  # noqa: BLE001 - Git 锁、网络与跨系统路径均可能瞬时失败
+                    if workspace_retries >= max_failure_retries:
+                        raise
+                    workspace_retries += 1
+                    detail = redact_sensitive_text(str(exc))[-1000:]
+                    log(f"[{run_id}] Git 工作区准备失败，自动重试 "
+                        f"{workspace_retries}/{max_failure_retries}：{detail}")
+                    reporter.send(
+                        "message", "Git 工作区准备失败，正在自动恢复（"
+                        f"{workspace_retries}/{max_failure_retries}）", force=True)
+                    time.sleep(workspace_retries)
             report_path.parent.mkdir(parents=True, exist_ok=True)
             memory_path.parent.mkdir(parents=True, exist_ok=True)
             skill_path.mkdir(parents=True, exist_ok=True)
