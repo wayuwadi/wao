@@ -197,6 +197,12 @@ const router = createRouter({
           meta: { module: 'action-plans', tabKind: 'module' },
         },
         {
+          path: 'appearance',
+          name: 'appearance',
+          component: () => import('@/views/AppearanceView.vue'),
+          meta: { module: 'appearance', tabKind: 'module' },
+        },
+        {
           path: 'workday-rhythm',
           name: 'workday-rhythm',
           component: () => import('@/views/WorkdayRhythmView.vue'),
