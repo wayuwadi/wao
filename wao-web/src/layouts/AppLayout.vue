@@ -98,17 +98,18 @@ watch(
 
 /** 大体量文档只在会展示文档的路由按需读取；任务抽屉与搜索各自在打开时触发。 */
 function needsDocs() {
-  return route.name === 'project' || route.name === 'kb' || route.meta.module === 'knowledge'
-    || !!ui.openTaskId || ui.searchOpen
+  return (
+    route.name === 'project' ||
+    route.name === 'kb' ||
+    route.meta.module === 'knowledge' ||
+    !!ui.openTaskId ||
+    ui.searchOpen
+  )
 }
 function ensureVisibleHeavyDomains() {
   if (needsDocs()) void data.ensureDocsLoaded()
 }
-watch(
-  () => [route.name, route.meta.module],
-  ensureVisibleHeavyDomains,
-  { immediate: true },
-)
+watch(() => [route.name, route.meta.module], ensureVisibleHeavyDomains, { immediate: true })
 
 async function reloadAll() {
   await data.hydrate()
@@ -206,7 +207,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="shell" :data-control-style="preferences.effectiveControlStyle">
-    <SideNav @open-search="openSearch" @new-note="newNote" />
+    <SideNav @open-search="openSearch" />
 
     <main class="main">
       <header class="header">
@@ -264,10 +265,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
       </div>
     </main>
 
-    <!--
-      手机上的常驻新建入口：顶栏那个图标在屏幕最上沿，单手够不着；
-      录任务是移动端最高频的动作，按钮就该落在拇指自然停的位置。
-    -->
+    <!-- 手机保留拇指区新建入口；左栏恢复后不再为底部模块导航让位。 -->
     <button class="fab" aria-label="新建任务" title="新建任务" @click="newTask">
       <i class="ri-add-line"></i>
     </button>
@@ -473,11 +471,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 @media (max-width: 760px) {
   .fab {
     position: fixed;
-    right: 16px;
-    bottom: calc(78px + env(safe-area-inset-bottom));
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
     z-index: 71;
-    width: 52px;
-    height: 52px;
+    width: 42px;
+    height: 42px;
     border: none;
     border-radius: 50%;
     background: var(--wao-primary);
@@ -489,46 +487,80 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     cursor: pointer;
   }
   .fab i {
-    font-size: 26px;
+    font-size: 21px;
   }
   .fab:active {
     transform: scale(0.94);
   }
   .shell {
-    display: block;
+    display: flex;
     height: 100dvh;
     overflow: hidden;
   }
   .main {
     height: 100%;
-    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+    min-width: 0;
+    padding-bottom: 0;
   }
   .header {
-    height: 48px;
-    gap: 4px;
-    padding: 0 8px;
+    height: var(--wao-header-h);
+    gap: 2px;
+    padding: 0 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
   }
-  .fold,
+  .header::-webkit-scrollbar {
+    display: none;
+  }
   .crumb-sep,
-  .crumb-b,
-  .plus,
-  .plus.ghost,
-  .assistant-entry {
+  .crumb-b {
     display: none;
   }
   .crumb-a {
-    min-width: 0;
+    min-width: 34px;
+    max-width: 52px;
     overflow: hidden;
     text-overflow: ellipsis;
+    font-size: 10px;
     font-weight: 600;
     color: var(--wao-text);
   }
+  .fold,
+  .bell,
+  .plus,
+  .plus.ghost,
+  .assistant-entry {
+    width: 27px;
+    min-width: 27px;
+    height: 27px;
+    padding: 0;
+    border-radius: 6px;
+    font-size: 0;
+    justify-content: center;
+  }
+  .fold i,
+  .bell i,
+  .plus i,
+  .assistant-entry i {
+    font-size: 14px;
+  }
   .bell {
-    width: 36px;
-    height: 36px;
+    flex: 0 0 27px;
+  }
+  .spacer {
+    min-width: 1px;
   }
   .content {
+    font-size: 11px;
     overscroll-behavior: contain;
+  }
+  .data-status {
+    min-height: 32px;
+    margin: 5px 7px 0;
+    padding: 6px 7px;
+    border-radius: 7px;
+    font-size: 10px;
   }
 }
 </style>

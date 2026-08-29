@@ -177,33 +177,36 @@ function mCloseUnpinned() {
       <form v-if="renaming" class="rename-form" @submit.prevent="mSaveRename">
         <label for="tab-rename-input">重命名页签</label>
         <input id="tab-rename-input" v-model="renameDraft" maxlength="24" autofocus />
-        <div><button type="button" @click="renaming = false">返回</button><button class="primary" :disabled="!renameDraft.trim()">保存</button></div>
+        <div>
+          <button type="button" @click="renaming = false">返回</button
+          ><button class="primary" :disabled="!renameDraft.trim()">保存</button>
+        </div>
       </form>
       <template v-else>
-      <button class="menu-item" :disabled="!menuTargetClosable" @click="mRename">
-        <i class="ri-edit-line"></i>重命名页签
-      </button>
-      <button class="menu-item" :disabled="!menuTargetClosable" @click="mTogglePin">
-        <i :class="menuTargetPinned ? 'ri-pushpin-2-line' : 'ri-pushpin-line'"></i>
-        {{ menuTargetPinned ? '取消置顶' : '置顶页签' }}
-      </button>
-      <div class="menu-sep"></div>
-      <button class="menu-item" :disabled="!menuTargetClosable" @click="mCloseCurrent">
-        <i class="ri-close-line"></i>关闭当前
-      </button>
-      <button class="menu-item" @click="mCloseLeft">
-        <i class="ri-arrow-left-line"></i>关闭左边
-      </button>
-      <button class="menu-item" @click="mCloseRight">
-        <i class="ri-arrow-right-line"></i>关闭右边
-      </button>
-      <div class="menu-sep"></div>
-      <button class="menu-item" @click="mCloseUnpinned">
-        <i class="ri-filter-off-line"></i>关闭非置顶
-      </button>
-      <button class="menu-item danger" @click="mCloseAll">
-        <i class="ri-close-circle-line"></i>关闭全部
-      </button>
+        <button class="menu-item" :disabled="!menuTargetClosable" @click="mRename">
+          <i class="ri-edit-line"></i>重命名页签
+        </button>
+        <button class="menu-item" :disabled="!menuTargetClosable" @click="mTogglePin">
+          <i :class="menuTargetPinned ? 'ri-pushpin-2-line' : 'ri-pushpin-line'"></i>
+          {{ menuTargetPinned ? '取消置顶' : '置顶页签' }}
+        </button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" :disabled="!menuTargetClosable" @click="mCloseCurrent">
+          <i class="ri-close-line"></i>关闭当前
+        </button>
+        <button class="menu-item" @click="mCloseLeft">
+          <i class="ri-arrow-left-line"></i>关闭左边
+        </button>
+        <button class="menu-item" @click="mCloseRight">
+          <i class="ri-arrow-right-line"></i>关闭右边
+        </button>
+        <div class="menu-sep"></div>
+        <button class="menu-item" @click="mCloseUnpinned">
+          <i class="ri-filter-off-line"></i>关闭非置顶
+        </button>
+        <button class="menu-item danger" @click="mCloseAll">
+          <i class="ri-close-circle-line"></i>关闭全部
+        </button>
       </template>
     </div>
   </template>
@@ -329,13 +332,49 @@ function mCloseUnpinned() {
   width: 166px;
   animation: waoPop 0.14s ease;
 }
-.rename-form { display: grid; gap: 7px; padding: 4px; }
-.rename-form label { color: var(--wao-text-weak); font-size: 10px; }
-.rename-form input { width: 100%; height: 32px; box-sizing: border-box; padding: 0 8px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text); outline: none; }
-.rename-form div { display: flex; justify-content: flex-end; gap: 5px; }
-.rename-form button { min-height: 28px; padding: 0 9px; border: 1px solid var(--wao-line); border-radius: 6px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
-.rename-form button.primary { border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
-.rename-form button:disabled { opacity: .5; cursor: default; }
+.rename-form {
+  display: grid;
+  gap: 7px;
+  padding: 4px;
+}
+.rename-form label {
+  color: var(--wao-text-weak);
+  font-size: 10px;
+}
+.rename-form input {
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+  outline: none;
+}
+.rename-form div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.rename-form button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--wao-line);
+  border-radius: 6px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.rename-form button.primary {
+  border-color: var(--wao-primary);
+  background: var(--wao-primary);
+  color: #fff;
+}
+.rename-form button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .menu-item {
   width: 100%;
   display: flex;
@@ -374,9 +413,34 @@ function mCloseUnpinned() {
   margin: 4px 6px;
 }
 @media (max-width: 760px) {
-  /* 手机由底部模块导航承担切换；桌面多页签条只会重复信息并挤掉项目正文。 */
   .tabbar-shell {
-    display: none;
+    height: var(--wao-tabbar-h);
+  }
+  .tabbar {
+    padding: 0 2px;
+    gap: 1px;
+  }
+  .scroll-btn {
+    width: 20px;
+    flex-basis: 20px;
+    padding: 0;
+  }
+  .tab {
+    gap: 3px;
+    margin-top: 3px;
+    padding: 0 5px 0 6px;
+    border-radius: 6px 6px 0 0;
+    font-size: 9px;
+  }
+  .tab i {
+    font-size: 11px;
+  }
+  .close {
+    width: 14px;
+    height: 14px;
+  }
+  .close i {
+    font-size: 10px;
   }
 }
 </style>

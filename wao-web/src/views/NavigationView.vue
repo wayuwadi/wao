@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NAVIGATION_CATALOG, type NavigationCatalogModuleId } from '@/config/navigationCatalog'
-import { MOBILE_NAV_MAX_ITEMS, externalAppItemId, type MobileNavItemId } from '@/config/nav'
+import { externalAppItemId } from '@/config/nav'
 import { quickLinkPath, type QuickLink } from '@/config/quickLinks'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useNavStore } from '@/stores/nav'
@@ -13,9 +13,6 @@ const nav = useNavStore()
 const ui = useUiStore()
 const quickLinks = useQuickLinks()
 const query = ref('')
-const editingMobileNav = ref(false)
-const mobileDraft = ref<MobileNavItemId[]>([])
-const mobileEditError = ref('')
 
 function includesQuery(values: Array<string | undefined>) {
   const needle = query.value.trim().toLocaleLowerCase()
@@ -72,70 +69,6 @@ const loading = computed(
 const errors = computed(() =>
   [nav.builtinMenusError, nav.externalAppsError, quickLinks.loadError.value].filter(Boolean),
 )
-const mobileSaveStateLabel = computed(() => {
-  if (nav.mobileItemsState === 'loading') return '正在读取底栏配置…'
-  if (nav.mobileItemsState === 'saving') return '正在保存底栏…'
-  if (nav.mobileItemsState === 'saved') return '底栏已保存，并会同步到当前账号的其他设备'
-  if (nav.mobileItemsState === 'error') return `底栏同步失败：${nav.mobileItemsError}`
-  return ''
-})
-
-function isSelectedInMobileNav(id: MobileNavItemId) {
-  return mobileDraft.value.includes(id)
-}
-
-function toggleMobileNavItem(id: MobileNavItemId) {
-  mobileEditError.value = ''
-  const index = mobileDraft.value.indexOf(id)
-  if (index >= 0) {
-    if (mobileDraft.value.length === 1) {
-      mobileEditError.value = '底栏至少保留一个常用入口，“更多”会始终固定显示。'
-      return
-    }
-    mobileDraft.value.splice(index, 1)
-    return
-  }
-  if (mobileDraft.value.length >= MOBILE_NAV_MAX_ITEMS) {
-    mobileEditError.value = `底栏最多展示 ${MOBILE_NAV_MAX_ITEMS} 个常用入口，请先取消一个。`
-    return
-  }
-  mobileDraft.value.push(id)
-}
-
-function beginMobileNavEdit() {
-  mobileDraft.value = nav.mobileItems.filter((id) => id === 'action:note' || nav.itemMeta(id))
-  if (!mobileDraft.value.length) mobileDraft.value = ['projects', 'action:note']
-  mobileEditError.value = ''
-  editingMobileNav.value = true
-}
-
-function cancelMobileNavEdit() {
-  mobileDraft.value = [...nav.mobileItems]
-  mobileEditError.value = ''
-  editingMobileNav.value = false
-}
-
-async function saveMobileNav() {
-  mobileEditError.value = ''
-  try {
-    await nav.saveMobileItems(mobileDraft.value)
-    editingMobileNav.value = false
-  } catch (error) {
-    mobileEditError.value = error instanceof Error ? error.message : '保存失败，请重试'
-  }
-}
-
-function handleModule(id: NavigationCatalogModuleId) {
-  if (editingMobileNav.value) toggleMobileNavItem(id)
-  else openModule(id)
-}
-
-function handleApp(id: string) {
-  const itemId = externalAppItemId(id)
-  if (editingMobileNav.value) toggleMobileNavItem(itemId)
-  else openApp(id)
-}
-
 function openTarget(path: string, newPagePath: string | undefined, openMode: 'TAB' | 'NEW_PAGE') {
   if (openMode === 'NEW_PAGE') {
     const target = newPagePath ?? path
@@ -168,7 +101,6 @@ function retry() {
 }
 
 onMounted(() => {
-  void nav.loadMobileItems()
   void nav.loadBuiltinMenus()
   void nav.loadExternalApps()
   void quickLinks.load()
@@ -183,65 +115,7 @@ onMounted(() => {
         <h1>工作台</h1>
         <p>项目和小记留在手边；其他真实功能、接入应用和个人链接都从这里打开。</p>
       </div>
-      <div class="hero-actions">
-        <button
-          v-if="!editingMobileNav"
-          class="manage primary"
-          type="button"
-          @click="beginMobileNavEdit"
-        >
-          <i class="ri-drag-move-2-line"></i>编辑手机底栏
-        </button>
-        <template v-else>
-          <button
-            class="manage"
-            type="button"
-            :disabled="nav.mobileItemsState === 'saving'"
-            @click="cancelMobileNavEdit"
-          >
-            取消
-          </button>
-          <button
-            class="manage primary"
-            type="button"
-            :disabled="nav.mobileItemsState === 'saving'"
-            @click="saveMobileNav"
-          >
-            <i
-              :class="
-                nav.mobileItemsState === 'saving' ? 'ri-loader-4-line spin' : 'ri-save-3-line'
-              "
-            ></i
-            >保存底栏
-          </button>
-        </template>
-      </div>
     </header>
-
-    <div v-if="editingMobileNav" class="mobile-edit-help" role="status">
-      <i class="ri-information-line"></i>
-      <span
-        >点选要放到底栏的功能（{{ mobileDraft.length }}/{{
-          MOBILE_NAV_MAX_ITEMS
-        }}）；保存后可在底栏长按并拖动调整顺序，“更多”始终保留。</span
-      >
-    </div>
-    <div v-if="mobileEditError" class="load-status error" role="alert">{{ mobileEditError }}</div>
-    <div
-      v-else-if="mobileSaveStateLabel"
-      class="load-status"
-      :class="{ error: nav.mobileItemsState === 'error' }"
-      role="status"
-    >
-      {{ mobileSaveStateLabel }}
-      <button
-        v-if="nav.mobileItemsState === 'error' && !editingMobileNav"
-        type="button"
-        @click="beginMobileNavEdit"
-      >
-        重试
-      </button>
-    </div>
 
     <label class="search">
       <i class="ri-search-line"></i>
@@ -267,47 +141,22 @@ onMounted(() => {
         </div>
       </header>
       <div class="card-grid">
-        <button
-          v-if="showQuickNote"
-          class="nav-card"
-          :class="{ selected: editingMobileNav && isSelectedInMobileNav('action:note') }"
-          type="button"
-          @click="editingMobileNav ? toggleMobileNavItem('action:note') : ui.openModal('note')"
-        >
+        <button v-if="showQuickNote" class="nav-card" type="button" @click="ui.openModal('note')">
           <span class="card-icon"><i class="ri-sticky-note-line"></i></span>
-          <span class="card-copy"><b>小记</b><small>从手机底栏直接打开小记输入框。</small></span>
-          <span v-if="editingMobileNav" class="mobile-check"
-            ><i
-              :class="
-                isSelectedInMobileNav('action:note')
-                  ? 'ri-checkbox-circle-fill'
-                  : 'ri-checkbox-blank-circle-line'
-              "
-            ></i
-          ></span>
-          <i v-else class="ri-arrow-right-line card-arrow"></i>
+          <span class="card-copy"><b>小记</b><small>直接打开小记输入框。</small></span>
+          <i class="ri-arrow-right-line card-arrow"></i>
         </button>
         <button
           v-if="showSettings"
           class="nav-card"
-          :class="{ selected: editingMobileNav && isSelectedInMobileNav('settings') }"
           type="button"
-          @click="editingMobileNav ? toggleMobileNavItem('settings') : router.push('/settings')"
+          @click="router.push('/settings')"
         >
           <span class="card-icon"><i class="ri-settings-3-line"></i></span>
           <span class="card-copy"
             ><b>设置</b><small>管理账号、偏好、全局菜单和个人链接。</small></span
           >
-          <span v-if="editingMobileNav" class="mobile-check"
-            ><i
-              :class="
-                isSelectedInMobileNav('settings')
-                  ? 'ri-checkbox-circle-fill'
-                  : 'ri-checkbox-blank-circle-line'
-              "
-            ></i
-          ></span>
-          <i v-else class="ri-arrow-right-line card-arrow"></i>
+          <i class="ri-arrow-right-line card-arrow"></i>
         </button>
       </div>
     </section>
@@ -325,9 +174,8 @@ onMounted(() => {
           v-for="item in section.items"
           :key="item.id"
           class="nav-card"
-          :class="{ selected: editingMobileNav && isSelectedInMobileNav(item.id) }"
           type="button"
-          @click="handleModule(item.id)"
+          @click="openModule(item.id)"
         >
           <span class="card-icon"><i :class="item.meta.icon"></i></span>
           <span class="card-copy">
@@ -335,17 +183,7 @@ onMounted(() => {
             <small>{{ item.description }}</small>
           </span>
           <span v-if="!item.sidebarVisible" class="hidden-badge">侧栏已隐藏</span>
-          <span v-if="editingMobileNav" class="mobile-check"
-            ><i
-              :class="
-                isSelectedInMobileNav(item.id)
-                  ? 'ri-checkbox-circle-fill'
-                  : 'ri-checkbox-blank-circle-line'
-              "
-            ></i
-          ></span>
           <i
-            v-else
             :class="
               item.meta.openMode === 'NEW_PAGE' ? 'ri-arrow-right-up-line' : 'ri-arrow-right-line'
             "
@@ -368,11 +206,8 @@ onMounted(() => {
           v-for="app in apps"
           :key="app.id"
           class="nav-card"
-          :class="{
-            selected: editingMobileNav && isSelectedInMobileNav(externalAppItemId(app.id)),
-          }"
           type="button"
-          @click="handleApp(app.id)"
+          @click="openApp(app.id)"
         >
           <span class="card-icon"><i :class="app.icon"></i></span>
           <span class="card-copy"
@@ -380,17 +215,7 @@ onMounted(() => {
             ><small>{{ app.appUrl }}</small></span
           >
           <span v-if="!app.visible" class="hidden-badge">侧栏已隐藏</span>
-          <span v-if="editingMobileNav" class="mobile-check"
-            ><i
-              :class="
-                isSelectedInMobileNav(externalAppItemId(app.id))
-                  ? 'ri-checkbox-circle-fill'
-                  : 'ri-checkbox-blank-circle-line'
-              "
-            ></i
-          ></span>
           <i
-            v-else
             :class="app.openMode === 'NEW_PAGE' ? 'ri-arrow-right-up-line' : 'ri-arrow-right-line'"
             class="card-arrow"
           ></i>
@@ -466,50 +291,6 @@ onMounted(() => {
   color: var(--wao-text-weak);
   font-size: 12.5px;
   line-height: 1.6;
-}
-.manage {
-  min-height: 36px;
-  padding: 0 13px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 9px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-2);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.manage:hover {
-  border-color: var(--wao-primary);
-  color: var(--wao-primary);
-}
-.hero-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.manage.primary {
-  border-color: var(--wao-primary);
-  background: var(--wao-primary);
-  color: #fff;
-}
-.manage:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-.mobile-edit-help {
-  margin-top: 18px;
-  padding: 11px 13px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  border: 1px solid var(--wao-primary-line);
-  border-radius: 10px;
-  background: var(--wao-primary-soft);
-  color: var(--wao-primary-text);
-  font-size: 12px;
-  line-height: 1.55;
 }
 .search {
   height: 46px;
@@ -629,15 +410,6 @@ onMounted(() => {
   box-shadow: 0 8px 20px color-mix(in srgb, var(--wao-text) 6%, transparent);
   transform: translateY(-1px);
 }
-.nav-card.selected {
-  border-color: var(--wao-primary);
-  background: var(--wao-primary-soft);
-}
-.mobile-check {
-  flex: none;
-  color: var(--wao-primary);
-  font-size: 20px;
-}
 .card-icon {
   width: 38px;
   height: 38px;
@@ -726,15 +498,6 @@ onMounted(() => {
   .hero {
     align-items: stretch;
     flex-direction: column;
-  }
-  .hero-actions {
-    width: 100%;
-  }
-  .hero-actions .manage {
-    flex: 1;
-  }
-  .manage {
-    justify-content: center;
   }
   .search {
     margin-top: 18px;

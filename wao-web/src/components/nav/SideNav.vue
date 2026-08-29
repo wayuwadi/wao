@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/composables/toast'
 import { useIsMobile } from '@/composables/viewport'
@@ -8,15 +8,10 @@ import { useSessionStore } from '@/stores/session'
 import { useFavoritesStore } from '@/stores/favorites'
 import type { Favorite } from '@/api/favorites'
 import type { ModuleId } from '@/types'
-import {
-  externalAppItemId,
-  type BuiltinMenuGroupCode,
-  type MobileNavItemId,
-  type NavItemId,
-} from '@/config/nav'
+import { externalAppItemId, type BuiltinMenuGroupCode, type NavItemId } from '@/config/nav'
 import QuickLinks from '@/components/nav/QuickLinks.vue'
 
-const emit = defineEmits<{ (e: 'open-search'): void; (e: 'new-note'): void }>()
+const emit = defineEmits<{ (e: 'open-search'): void }>()
 
 const nav = useNavStore()
 const session = useSessionStore()
@@ -25,11 +20,6 @@ const route = useRoute()
 const router = useRouter()
 const isMobile = useIsMobile()
 const menuRef = ref<HTMLElement | null>(null)
-const mobileDragId = ref<MobileNavItemId | null>(null)
-let mobilePressTimer: number | null = null
-let mobilePressStart: { x: number; y: number } | null = null
-let mobileOrderBeforeDrag: MobileNavItemId[] | null = null
-let suppressMobileClick = false
 
 const activeItem = computed<NavItemId | undefined>(() =>
   route.meta.tabKind === 'external'
@@ -39,20 +29,16 @@ const activeItem = computed<NavItemId | undefined>(() =>
 
 const groups = computed(() => nav.groups)
 const groupFingerprint = computed(() => groups.value.flatMap((group) => group.items).join('|'))
-const mobileItems = computed(() => {
-  const valid = nav.mobileItems.filter((id) => id === 'action:note' || nav.itemMeta(id))
-  return valid.length ? valid : (['projects', 'action:note'] as MobileNavItemId[])
-})
 
 /**
- * 底部导航可能比屏幕宽；从地址栏、收藏或页面内跳转到后半段模块时，把当前入口带回视口。
+ * 手机左栏与正文分别滚动；从地址、收藏或页面内跳转时，把当前入口带回菜单可见区域。
  */
 function revealActiveMobileItem() {
   if (!isMobile.value) return
   void nextTick(() => {
     menuRef.value?.querySelector<HTMLElement>('.item.active')?.scrollIntoView({
       block: 'nearest',
-      inline: 'center',
+      inline: 'nearest',
     })
   })
 }
@@ -61,12 +47,10 @@ watch([isMobile, activeItem, groupFingerprint], revealActiveMobileItem, { immedi
 
 onMounted(() => {
   nav.loadPersonalOrder()
-  nav.loadMobileItems()
   nav.loadExternalApps()
   nav.loadBuiltinMenus()
   favorites.load()
 })
-onBeforeUnmount(cancelMobilePress)
 
 function go(id: NavItemId) {
   const meta = nav.itemMeta(id)
@@ -83,73 +67,6 @@ function goSettings() {
   router.push('/settings')
 }
 
-function mobileItemMeta(id: MobileNavItemId) {
-  if (id === 'action:note') {
-    return { label: '小记', icon: 'ri-sticky-note-line' }
-  }
-  return nav.itemMeta(id)
-}
-
-function goMobile(id: MobileNavItemId) {
-  if (suppressMobileClick) {
-    suppressMobileClick = false
-    return
-  }
-  if (id === 'action:note') emit('new-note')
-  else go(id)
-}
-
-function cancelMobilePress() {
-  if (mobilePressTimer !== null) window.clearTimeout(mobilePressTimer)
-  mobilePressTimer = null
-  mobilePressStart = null
-}
-
-function startMobilePress(id: MobileNavItemId, event: PointerEvent) {
-  if (event.pointerType === 'mouse' && event.button !== 0) return
-  cancelMobilePress()
-  mobilePressStart = { x: event.clientX, y: event.clientY }
-  mobilePressTimer = window.setTimeout(() => {
-    mobilePressTimer = null
-    mobileDragId.value = id
-    mobileOrderBeforeDrag = [...mobileItems.value]
-    suppressMobileClick = true
-    navigator.vibrate?.(18)
-  }, 420)
-}
-
-function moveMobilePress(event: PointerEvent) {
-  if (!mobileDragId.value) {
-    const start = mobilePressStart
-    if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8)
-      cancelMobilePress()
-    return
-  }
-  event.preventDefault()
-  const target = document
-    .elementFromPoint(event.clientX, event.clientY)
-    ?.closest<HTMLElement>('[data-mobile-nav-id]')?.dataset.mobileNavId as
-    MobileNavItemId | undefined
-  const from = mobileItems.value.indexOf(mobileDragId.value)
-  const to = target ? mobileItems.value.indexOf(target) : -1
-  if (from < 0 || to < 0 || from === to) return
-  const reordered = [...mobileItems.value]
-  const [item] = reordered.splice(from, 1)
-  if (item) reordered.splice(to, 0, item)
-  nav.mobileItems = reordered
-}
-
-function endMobilePress() {
-  cancelMobilePress()
-  const wasDragging = mobileDragId.value
-  mobileDragId.value = null
-  if (!wasDragging) return
-  const changed = mobileOrderBeforeDrag?.join('|') !== nav.mobileItems.join('|')
-  mobileOrderBeforeDrag = null
-  if (changed) {
-    void nav.saveMobileItems(nav.mobileItems).catch(() => toast('底栏顺序保存失败，请到工作台重试'))
-  }
-}
 function orgClick() {
   toast('组织切换将在设置 · 组织管理中提供')
 }
@@ -166,7 +83,13 @@ const renameDraft = ref<{
   saving: boolean
   error: string
 } | null>(null)
-const contextMenu = ref<{ id: NavItemId; x: number; y: number; busy: boolean; error: string } | null>(null)
+const contextMenu = ref<{
+  id: NavItemId
+  x: number
+  y: number
+  busy: boolean
+  error: string
+} | null>(null)
 
 function groupCode(label: string): BuiltinMenuGroupCode {
   return (
@@ -212,6 +135,7 @@ function onDragEnd() {
 }
 
 function openRename(event: MouseEvent, id: NavItemId) {
+  if (isMobile.value) return
   const label = nav.itemMeta(id)?.label
   if (!label) return
   renameDraft.value = {
@@ -326,42 +250,14 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     </div>
 
     <nav ref="menuRef" class="menu" aria-label="模块导航">
-      <template v-if="isMobile">
-        <button
-          v-for="id in mobileItems"
-          :key="id"
-          class="item mobile-nav-item"
-          :class="{ active: activeItem === id, dragging: mobileDragId === id }"
-          :title="mobileItemMeta(id)?.label"
-          :data-mobile-nav-id="id"
-          @click="goMobile(id)"
-          @pointerdown="startMobilePress(id, $event)"
-          @pointermove="moveMobilePress"
-          @pointerup="endMobilePress"
-          @pointercancel="endMobilePress"
-        >
-          <i :class="mobileItemMeta(id)?.icon"></i>
-          <span class="item-label">{{ mobileItemMeta(id)?.label }}</span>
-        </button>
-        <button
-          class="item mobile-more-item"
-          :class="{ active: activeItem === 'navigation' }"
-          title="更多"
-          @click="go('navigation')"
-        >
-          <i class="ri-apps-2-line"></i>
-          <span class="item-label">更多</span>
-        </button>
-      </template>
-
-      <template v-for="g in groups" v-else :key="g.label || 'root'">
+      <template v-for="g in groups" :key="g.label || 'root'">
         <button
           v-if="g.label && !nav.collapsed"
           class="group-label"
-          title="折叠 / 展开分组"
+          :title="isMobile ? g.label : '折叠 / 展开分组'"
           @dragover.prevent="onDragOver(g.items[0] ?? 'dock')"
           @drop.prevent="onDrop('MENU', groupCode(g.label))"
-          @click="nav.toggleGroup(g.label)"
+          @click="!isMobile && nav.toggleGroup(g.label)"
         >
           {{ g.label }}
           <i :class="nav.isFolded(g.label) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>
@@ -386,7 +282,7 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
               'drag-over': dragOverId === id,
             }"
             :title="nav.itemMeta(id)?.label"
-            :draggable="!nav.collapsed"
+            :draggable="!isMobile && !nav.collapsed"
             @click="go(id)"
             @contextmenu.prevent="openContextMenu($event, id)"
             @dragstart="onDragStart(id, $event)"
@@ -399,17 +295,17 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
           </button>
         </div>
 
-        <!-- 收藏分组紧跟首页之后：有收藏才出现，手机底栏不展示 -->
+        <!-- 收藏分组紧跟首页之后；手机与桌面复用同一份真实收藏。 -->
         <template v-if="!g.label && favorites.items.length && !nav.collapsed">
           <button
             class="group-label fav-group"
-            title="折叠 / 展开分组"
-            @click="nav.toggleGroup('收藏')"
+            :title="isMobile ? '收藏' : '折叠 / 展开分组'"
+            @click="!isMobile && nav.toggleGroup('收藏')"
           >
             收藏
             <i :class="nav.isFolded('收藏') ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i>
           </button>
-          <div v-if="!nav.isFolded('收藏')" class="items">
+          <div v-if="isMobile || !nav.isFolded('收藏')" class="items">
             <button
               v-for="f in favorites.items"
               :key="f.type + f.targetId"
@@ -489,11 +385,30 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
     </div>
 
     <Teleport to="body">
-      <div v-if="contextMenu" class="menu-action-mask" @mousedown.self="contextMenu = null" @contextmenu.prevent>
-        <div class="menu-actions" :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }">
-          <button type="button" :disabled="contextMenu.busy" @click="renameFromContext"><i class="ri-edit-line"></i>重命名</button>
-          <button type="button" :disabled="contextMenu.busy" @click="mutateContext('pin')"><i class="ri-pushpin-line"></i>置顶</button>
-          <button type="button" class="danger" :disabled="contextMenu.busy" @click="mutateContext('hide')"><i class="ri-eye-off-line"></i>隐藏</button>
+      <div
+        v-if="contextMenu"
+        class="menu-action-mask"
+        @mousedown.self="contextMenu = null"
+        @contextmenu.prevent
+      >
+        <div
+          class="menu-actions"
+          :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+        >
+          <button type="button" :disabled="contextMenu.busy" @click="renameFromContext">
+            <i class="ri-edit-line"></i>重命名
+          </button>
+          <button type="button" :disabled="contextMenu.busy" @click="mutateContext('pin')">
+            <i class="ri-pushpin-line"></i>置顶
+          </button>
+          <button
+            type="button"
+            class="danger"
+            :disabled="contextMenu.busy"
+            @click="mutateContext('hide')"
+          >
+            <i class="ri-eye-off-line"></i>隐藏
+          </button>
           <p v-if="contextMenu.error" role="alert">{{ contextMenu.error }}，可重试。</p>
         </div>
       </div>
@@ -792,10 +707,47 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
   z-index: 1300;
   inset: 0;
 }
-.menu-actions { position: fixed; width: 170px; box-sizing: border-box; padding: 6px; border: 1px solid var(--wao-line); border-radius: 10px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-pop-2); display: grid; gap: 2px; }
-.menu-actions button { min-height: 34px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text); cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.menu-actions button:hover:not(:disabled) { background: var(--wao-bg-hover-2); }.menu-actions button.danger { color: var(--wao-danger-strong); }.menu-actions button:disabled { opacity: .55; cursor: default; }
-.menu-actions p { margin: 5px; color: var(--wao-danger-strong); font-size: 10px; line-height: 1.4; }
+.menu-actions {
+  position: fixed;
+  width: 170px;
+  box-sizing: border-box;
+  padding: 6px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  background: var(--wao-bg-card);
+  box-shadow: var(--wao-shadow-pop-2);
+  display: grid;
+  gap: 2px;
+}
+.menu-actions button {
+  min-height: 34px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wao-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.menu-actions button:hover:not(:disabled) {
+  background: var(--wao-bg-hover-2);
+}
+.menu-actions button.danger {
+  color: var(--wao-danger-strong);
+}
+.menu-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.menu-actions p {
+  margin: 5px;
+  color: var(--wao-danger-strong);
+  font-size: 10px;
+  line-height: 1.4;
+}
 .rename-menu {
   position: fixed;
   width: 260px;
@@ -914,75 +866,140 @@ function removeFavorite(f: Favorite, event: MouseEvent) {
 @media (max-width: 760px) {
   .side,
   .side.collapsed {
-    position: fixed;
+    position: relative;
     z-index: 70;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    height: calc(64px + env(safe-area-inset-bottom));
+    width: clamp(88px, 24vw, 104px);
+    height: 100dvh;
     padding-bottom: env(safe-area-inset-bottom);
-    border-top: 1px solid var(--wao-line);
-    border-right: 0;
-    background: color-mix(in srgb, var(--wao-bg-card) 97%, transparent);
-    box-shadow: 0 -4px 18px rgba(16, 18, 28, 0.08);
-    overflow: visible;
+    border-top: 0;
+    border-right: 1px solid var(--wao-line);
+    background: var(--wao-bg-side);
+    box-shadow: 4px 0 14px rgba(16, 18, 28, 0.05);
+    overflow: hidden;
   }
-  .brand-row,
-  .search-row,
-  .group-label,
-  .group-gap,
-  .fav-item,
-  .user-row,
+  .side.collapsed {
+    width: 48px;
+  }
+  .brand-row {
+    gap: 5px;
+    padding: 8px 6px 5px;
+  }
+  .brand-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    font-size: 8px;
+  }
+  .org {
+    gap: 1px;
+    padding: 1px;
+  }
+  .org-name {
+    overflow: hidden;
+    font-size: 9.5px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+  }
+  .org i {
+    display: none;
+  }
+  .search-row {
+    padding: 1px 5px 4px;
+  }
+  .search {
+    height: 27px;
+    gap: 4px;
+    padding: 0 6px;
+    border-radius: 6px;
+    font-size: 9px;
+  }
+  .search-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .kbd,
   .quick-row {
     display: none;
   }
   .menu {
-    display: flex;
-    align-items: stretch;
-    justify-content: space-around;
-    gap: 2px;
+    display: block;
     overflow-x: hidden;
-    overflow-y: hidden;
-    padding: 4px 6px;
-    scrollbar-width: none;
+    overflow-y: auto;
+    padding: 1px 0 4px;
+    overscroll-behavior: contain;
   }
-  .menu::-webkit-scrollbar {
+  .group-label {
+    gap: 2px;
+    padding: 7px 7px 2px;
+    font-size: 8px;
+    letter-spacing: 0.08em;
+  }
+  .group-label i {
     display: none;
+  }
+  .group-gap {
+    height: 7px;
+    margin: 0 6px 5px;
+  }
+  .items {
+    gap: 0;
+    padding: 0 4px;
   }
   .item,
   .item.center {
-    width: auto;
-    min-width: 58px;
-    max-width: 88px;
-    flex: 1 1 0;
-    height: 54px;
-    padding: 4px 2px;
-    flex-direction: column;
-    justify-content: center;
-    gap: 2px;
-    border-radius: 9px;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    height: 27px;
+    padding: 0 5px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 4px;
+    border-radius: 6px;
+    font-size: 10px;
   }
   .item-label {
     display: block;
-    max-width: 54px;
-    flex: initial;
-    text-align: center;
+    min-width: 0;
+    max-width: none;
+    flex: 1;
+    text-align: left;
     font-size: 10px;
-    line-height: 14px;
+    line-height: 1.2;
   }
   .item i {
-    font-size: 18px;
+    font-size: 12px;
   }
-  .mobile-nav-item {
-    touch-action: pan-y;
-    user-select: none;
-    -webkit-user-select: none;
+  .side.collapsed .item.center {
+    justify-content: center;
+    padding: 0;
   }
-  .mobile-nav-item.dragging {
-    opacity: 0.82;
-    background: var(--wao-primary-soft);
-    transform: scale(1.06);
-    box-shadow: 0 4px 14px color-mix(in srgb, var(--wao-primary) 22%, transparent);
+  .fav-remove {
+    display: none;
+  }
+  .user-row {
+    padding: 4px;
+  }
+  .user {
+    min-height: 28px;
+    gap: 4px;
+    padding: 3px;
+  }
+  .avatar {
+    width: 21px;
+    height: 21px;
+    font-size: 9px;
+  }
+  .user-name {
+    overflow: hidden;
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .user-role,
+  .user-row .user > i {
+    display: none;
   }
 }
 </style>
