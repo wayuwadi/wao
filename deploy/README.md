@@ -246,7 +246,8 @@ https://wao.wayuwa.cn/api/music/netease/callback
 每个 WAO 成员需要在播放器中单独点击“绑定我的账号”。令牌按成员加密保存；解除绑定只删除当前成员记录。官方文档入口：[H5 OAuth](https://developer.music.163.com/st/platformDoc?docId=78eb8f6bec12427d90b120e21b569b16)、[公共参数与设备信息](https://developer.music.163.com/st/platformDoc?docId=0f7801d7d6d24180b8fc9058d1ffe593)、[播放数据回传](https://developer.music.163.com/st/platformDoc?docId=eb0ddaf2efc649e99dffe0677472466a)。
 
 - `MASTER_HOST=linux2.wayuwa.cn`，`SLAVE_HOST=linux1.wayuwa.cn`，云节点使用固定公网地址；
-- Jenkins 在 Linux2 本机构建并发布主节点，通过专用密钥 SSH 到 Linux1 与云节点；
+- Jenkins 在 Linux2 本机构建并发布主节点；Linux1 主动建立仅监听 Linux2
+  `127.0.0.1:2201` 的反向 SSH 通道，Jenkins 通过该通道和专用部署密钥发布从节点；
 - Maven 和 Node 测试使用固定工具容器；四个运行镜像一次构建后，本机直接复用并压缩传给 Linux1；
 - `slave-known-hosts` 与 `cloud-known-hosts` 必须保存人工核验后的 SSH 主机公钥；
 - 密码登录仅用于首次安装公钥，流水线只使用 `/etc/jenkins/secrets` 中的专用部署密钥；

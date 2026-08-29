@@ -441,6 +441,23 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
+    void jenkinsUsesTheLinux1ReverseSshTunnelWithoutChangingItsPublicIdentity() throws IOException {
+        String pipeline = readFromRepository("Jenkinsfile");
+        String deployment = readFromRepository("deploy/jenkins/ci-deploy.sh");
+
+        assertThat(pipeline)
+                .contains("SLAVE_HOST = 'linux1.wayuwa.cn'")
+                .contains("SLAVE_SSH_HOST = '127.0.0.1'")
+                .contains("SLAVE_SSH_PORT = '2201'");
+        assertThat(deployment)
+                .contains(": \"${SLAVE_SSH_HOST:?SLAVE_SSH_HOST is required}\"")
+                .contains(": \"${SLAVE_SSH_PORT:?SLAVE_SSH_PORT is required}\"")
+                .contains("HostName $SLAVE_SSH_HOST")
+                .contains("Port $SLAVE_SSH_PORT")
+                .contains("HostKeyAlias $SLAVE_HOST");
+    }
+
+    @Test
     void masterUsesHostNetworkProxyRestrictedToDockerSources() throws IOException {
         String compose = readFromRepository("deploy/docker-compose-master.yml");
         String deployScript = readFromRepository("deploy/scripts/deploy-linux.sh");
