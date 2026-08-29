@@ -15,6 +15,10 @@ sudo sh deploy/jenkins/prepare-controller-secrets.sh
 脚本只输出两把公钥。把 Linux1 从节点公钥加入 `wage` 的 OpenSSH `authorized_keys`，把云公钥加入云部署账号。
 私钥始终留在 `/etc/jenkins/secrets`。
 
+Linux1 的发布阶段直接使用控制器本地的 `slave-ed25519` 与 `slave-known-hosts`，两者必须保持
+`root:jenkins 0640`；这样首次切换拓扑的构建不依赖构建结束后才由 JCasC 注册的新凭据 ID。云节点继续通过
+Jenkins Credentials 绑定，密钥内容不会进入环境变量或构建日志。
+
 人工核对两台目标机器控制台上显示的 SSH 指纹后，把完整 `known_hosts` 行分别保存为：
 
 ```text
