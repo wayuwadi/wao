@@ -15,7 +15,8 @@ from users.models import User, UserGroup
 AUTHORIZED_MEMBER_NAMES = {"娃哥", "娃弟"}
 AUTHORIZED_GROUP_NAME = "WAO 基础设施维护者"
 SSH_PERMISSION_NAME = "WAO 双人 SSH 管理"
-RDP_PERMISSION_NAME = "WAO 双人 Windows 图形管理"
+RETIRED_WINDOWS_ASSET_NAME = "WAO Windows 从节点"
+RETIRED_RDP_PERMISSION_NAME = "WAO 双人 Windows 图形管理"
 
 
 def required(name):
@@ -32,26 +33,19 @@ if not private_key.startswith("-----BEGIN OPENSSH PRIVATE KEY-----"):
     raise RuntimeError("JumpServer asset private key is invalid")
 
 assets = [
-    ("WAO Linux 主节点", required("WAO_JMS_MASTER_ADDRESS"), required("WAO_JMS_MASTER_USER"), "linux"),
-    ("WAO Windows 从节点", required("WAO_JMS_WINDOWS_ADDRESS"), required("WAO_JMS_WINDOWS_USER"), "windows"),
-    ("WAO 阿里云入口", required("WAO_JMS_CLOUD_ADDRESS"), required("WAO_JMS_CLOUD_USER"), "linux"),
+    ("WAO Linux 主节点", required("WAO_JMS_MASTER_ADDRESS"), required("WAO_JMS_MASTER_USER")),
+    ("WAO Linux 从节点", required("WAO_JMS_SLAVE_ADDRESS"), required("WAO_JMS_SLAVE_USER")),
+    ("WAO 阿里云入口", required("WAO_JMS_CLOUD_ADDRESS"), required("WAO_JMS_CLOUD_USER")),
 ]
 
 with tmp_to_org(Organization.default()):
     node, _ = Node.org_root().get_or_create_child("WAO 基础设施")
+    platform = Platform.objects.filter(category="host", type="linux").first()
+    if platform is None:
+        raise RuntimeError("JumpServer Linux host platform is unavailable")
     registered_assets = {}
     ssh_usernames = set()
-    for name, address, username, platform_type in assets:
-        platform = Platform.objects.filter(category="host", type=platform_type).first()
-        if platform is None and platform_type == "windows":
-            platform = Platform.objects.filter(category="host", name__icontains="Windows").first()
-        if platform is None and platform_type == "linux":
-            platform = Platform.objects.filter(category="host", type="linux").first()
-        if platform is None:
-            raise RuntimeError("JumpServer host platform is unavailable: " + platform_type)
-        if platform_type == "windows" and not platform.protocols.filter(name="rdp").exists():
-            raise RuntimeError("JumpServer Windows platform does not support RDP")
-
+    for name, address, username in assets:
         asset, _ = Host.objects.update_or_create(
             name=name,
             defaults={
@@ -65,10 +59,6 @@ with tmp_to_org(Organization.default()):
         Protocol.objects.update_or_create(
             asset=asset, name="ssh", defaults={"port": 22}
         )
-        if platform_type == "windows":
-            Protocol.objects.update_or_create(
-                asset=asset, name="rdp", defaults={"port": 3389}
-            )
         Account.objects.update_or_create(
             asset=asset,
             name="wao-jumpserver",
@@ -84,7 +74,7 @@ with tmp_to_org(Organization.default()):
         registered_assets[name] = asset
         ssh_usernames.add(username)
 
-    if Host.objects.filter(name__startswith="WAO ").count() < 3:
+    if len(registered_assets) != 3:
         raise RuntimeError("WAO assets were not fully registered")
 
     authorized_users = list(User.objects.filter(
@@ -128,18 +118,24 @@ with tmp_to_org(Organization.default()):
     ssh_permission.assets.set(list(registered_assets.values()))
     ssh_permission.nodes.set([])
 
-    rdp_permission, _ = AssetPermission.objects.update_or_create(
-        name=RDP_PERMISSION_NAME,
-        defaults={
-            **permission_defaults,
-            "accounts": ["@INPUT"],
-            "protocols": ["rdp"],
-            "comment": "娃哥、娃弟连接时手动输入真实 Windows 凭据，不在 JumpServer 中复制密码。",
-        },
-    )
-    rdp_permission.users.set([])
-    rdp_permission.user_groups.set([group])
-    rdp_permission.assets.set([registered_assets["WAO Windows 从节点"]])
-    rdp_permission.nodes.set([])
+    retired_asset = Host.objects.filter(name=RETIRED_WINDOWS_ASSET_NAME).first()
+    if retired_asset is not None:
+        retired_asset.is_active = False
+        retired_asset.comment = "Windows1 已重装为 Linux1；该历史资产已退役。"
+        retired_asset.save(update_fields=["is_active", "comment"])
+        retired_asset.nodes.set([])
+        Account.objects.filter(asset=retired_asset).update(is_active=False)
 
-print("WAO JumpServer assets and dual-member SSH/RDP grants registered")
+    retired_rdp_permission = AssetPermission.objects.filter(
+        name=RETIRED_RDP_PERMISSION_NAME
+    ).first()
+    if retired_rdp_permission is not None:
+        retired_rdp_permission.is_active = False
+        retired_rdp_permission.comment = "Windows1 已退役；Linux1 仅使用 SSH。"
+        retired_rdp_permission.save(update_fields=["is_active", "comment"])
+        retired_rdp_permission.users.set([])
+        retired_rdp_permission.user_groups.set([])
+        retired_rdp_permission.assets.set([])
+        retired_rdp_permission.nodes.set([])
+
+print("WAO JumpServer Linux assets and dual-member SSH grants registered")

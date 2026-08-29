@@ -11,9 +11,9 @@ project_root="${1:?project root is required}"
 release_archive="${2:?release archive is required}"
 private_env="${3:?private env is required}"
 image_tag="${4:?image tag is required}"
-windows_user="${5:-wadi}"
+slave_user="${5:-wage}"
 cloud_user="${6:-root}"
-windows_address="${7:-windows1.wayuwa.cn}"
+slave_address="${7:-linux1.wayuwa.cn}"
 cloud_address="${8:-8.136.152.131}"
 
 case "$project_root" in ''|/) echo "Unsafe project root: $project_root" >&2; exit 2 ;; esac
@@ -36,6 +36,6 @@ setfacl -m u:jenkins:r "$project_root/deploy/.env.secrets"
 WAO_IMAGE_TAG="$image_tag" SKIP_IMAGE_BUILD=true \
   sh "$project_root/deploy/scripts/deploy-linux.sh" master
 sh "$project_root/deploy/scripts/validate-deployment-node.sh" master "$image_tag"
-JUMPSERVER_WINDOWS_USER="$windows_user" JUMPSERVER_CLOUD_USER="$cloud_user" \
-  JUMPSERVER_WINDOWS_ADDRESS="$windows_address" JUMPSERVER_CLOUD_ADDRESS="$cloud_address" \
+JUMPSERVER_SLAVE_USER="$slave_user" JUMPSERVER_CLOUD_USER="$cloud_user" \
+  JUMPSERVER_SLAVE_ADDRESS="$slave_address" JUMPSERVER_CLOUD_ADDRESS="$cloud_address" \
   sh "$project_root/deploy/jumpserver/deploy.sh" "$project_root"

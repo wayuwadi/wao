@@ -17,7 +17,7 @@ case "${role}" in
   slave)
     compose_file="deploy/docker-compose-slave.yml"
     compose_profile=""
-    : "${project_root:=/mnt/d/deploy/wao}"
+    : "${project_root:=${HOME}/deploy/wao}"
     ;;
   *) printf 'Unknown role: %s\n' "${role}" >&2; exit 2 ;;
 esac

@@ -22,7 +22,7 @@ set +a
 
 case "${role}" in
   master) public_host="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}" ;;
-  slave) public_host="${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}" ;;
+  slave) public_host="${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}" ;;
 esac
 
 current_ip="$(getent ahostsv4 "${public_host}" 2>/dev/null | awk '$2 == "STREAM" { print $1; exit }')"

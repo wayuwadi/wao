@@ -9,6 +9,9 @@ test -f "${env_file}" || { echo "Missing ${env_file}" >&2; exit 1; }
 
 set -a
 . "${env_file}"
+if [ -f "${project_root}/deploy/.env.secrets" ]; then
+  . "${project_root}/deploy/.env.secrets"
+fi
 set +a
 
 database="${DB_NAME:-wao}"

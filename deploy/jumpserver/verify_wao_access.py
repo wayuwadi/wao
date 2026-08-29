@@ -10,13 +10,14 @@ from users.models import User, UserGroup
 
 ASSET_NAMES = {
     "WAO Linux 主节点",
-    "WAO Windows 从节点",
+    "WAO Linux 从节点",
     "WAO 阿里云入口",
 }
 AUTHORIZED_MEMBER_NAMES = {"娃哥", "娃弟"}
 AUTHORIZED_GROUP_NAME = "WAO 基础设施维护者"
 SSH_PERMISSION_NAME = "WAO 双人 SSH 管理"
-RDP_PERMISSION_NAME = "WAO 双人 Windows 图形管理"
+RETIRED_WINDOWS_ASSET_NAME = "WAO Windows 从节点"
+RETIRED_RDP_PERMISSION_NAME = "WAO 双人 Windows 图形管理"
 
 
 def require(condition, message):
@@ -33,12 +34,6 @@ with tmp_to_org(Organization.default()):
         require(accounts.count() == 1, "Dedicated account is missing for " + asset.name)
         ssh = asset.protocols.filter(name="ssh", port=22)
         require(ssh.count() == 1, "SSH protocol is invalid for " + asset.name)
-
-    windows = assets["WAO Windows 从节点"]
-    require(
-        windows.protocols.filter(name="rdp", port=3389).count() == 1,
-        "Windows RDP protocol is missing",
-    )
 
     users = list(User.objects.filter(
         username__startswith="wao_",
@@ -79,21 +74,15 @@ with tmp_to_org(Organization.default()):
     )
     require(not ssh_permission.users.exists(), "WAO SSH permission has unmanaged direct users")
 
-    rdp_permission = AssetPermission.objects.get(name=RDP_PERMISSION_NAME)
-    require(rdp_permission.is_valid, "WAO RDP permission is not valid")
-    require(rdp_permission.actions == ActionChoices.all(), "WAO RDP actions are incomplete")
-    require(rdp_permission.protocols == ["rdp"], "WAO RDP protocol scope is invalid")
-    require(rdp_permission.accounts == ["@INPUT"], "WAO RDP must use manual credentials")
+    retired_assets = Host.objects.filter(name=RETIRED_WINDOWS_ASSET_NAME)
     require(
-        list(rdp_permission.assets.values_list("name", flat=True))
-        == ["WAO Windows 从节点"],
-        "WAO RDP asset scope is invalid",
+        not retired_assets.filter(is_active=True).exists(),
+        "Retired Windows asset is still active",
     )
+    retired_permissions = AssetPermission.objects.filter(name=RETIRED_RDP_PERMISSION_NAME)
     require(
-        list(rdp_permission.user_groups.values_list("name", flat=True))
-        == [AUTHORIZED_GROUP_NAME],
-        "WAO RDP user group scope is invalid",
+        not retired_permissions.filter(is_active=True).exists(),
+        "Retired Windows RDP permission is still active",
     )
-    require(not rdp_permission.users.exists(), "WAO RDP permission has unmanaged direct users")
 
 print("WAO JumpServer asset access verification passed")

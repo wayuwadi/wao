@@ -4,7 +4,8 @@ set -eu
 sh deploy/scripts/test-render-nginx-config.sh
 sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
-sh deploy/scripts/test-windows-node-availability.sh
+sh deploy/scripts/test-linux-slave-availability.sh
+sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
@@ -21,6 +22,7 @@ for script in \
   deploy/jumpserver/verify-assets.sh \
   deploy/scripts/test-ensure-jumpserver-certificate.sh \
   deploy/scripts/ensure-jumpserver-certificate.sh \
+  deploy/scripts/install-release-linux.sh \
   deploy/jenkins/ci-deploy.sh \
   deploy/jenkins/resolve-batch-base.sh \
   deploy/jenkins/test-resolve-batch-base.sh \
@@ -67,11 +69,7 @@ grep -Fq 'exec sudo -n sh "$project_root/deploy/jumpserver/verify-assets.sh"' \
 test "$(grep -Fc 'python /opt/jumpserver/apps/manage.py shell' \
   deploy/jumpserver/verify-assets.sh)" = 1
 ! grep -Fq 'python manage.py' deploy/jumpserver/verify-assets.sh
-grep -Fq 'enable-rdp.ps1' deploy/jenkins/ci-deploy.sh
-grep -Fq 'enable-rdp.ps1 -JumpServerHost $MASTER_HOST"' deploy/jenkins/ci-deploy.sh
-grep -Fq 'RemoteAddress = $remoteAddresses' deploy/jumpserver/enable-rdp.ps1
-! grep -Fq 'Enable-NetFirewallRule -DisplayGroup' deploy/jumpserver/enable-rdp.ps1
-python3 -c 'from pathlib import Path; Path("deploy/jumpserver/enable-rdp.ps1").read_bytes().decode("ascii")'
+! grep -Fq 'enable-rdp.ps1' deploy/jenkins/ci-deploy.sh
 python3 -m py_compile \
   deploy/jumpserver/bootstrap_wao_assets.py \
   deploy/jumpserver/verify_wao_access.py
@@ -95,9 +93,9 @@ test -n "${WAO_GIT_SHA:-}"
 printf '%s' "$WAO_GIT_SHA" | grep -Eq '^[0-9a-f]{40}$'
 test -n "${WAO_RUN_TEMP:-}"
 
-case "${BOOTSTRAP_WINDOWS:-false}" in
+case "${BOOTSTRAP_SLAVE:-false}" in
   true|false) ;;
-  *) echo 'BOOTSTRAP_WINDOWS must be true or false.' >&2; exit 2 ;;
+  *) echo 'BOOTSTRAP_SLAVE must be true or false.' >&2; exit 2 ;;
 esac
 
 case "${DEPLOY_PRODUCTION:-false}" in
@@ -105,12 +103,12 @@ case "${DEPLOY_PRODUCTION:-false}" in
   *) echo 'DEPLOY_PRODUCTION must be true or false.' >&2; exit 2 ;;
 esac
 
-case "${ALLOW_WINDOWS_OFFLINE:-false}" in
+case "${ALLOW_SLAVE_OFFLINE:-false}" in
   true|false) ;;
-  *) echo 'ALLOW_WINDOWS_OFFLINE must be true or false.' >&2; exit 2 ;;
+  *) echo 'ALLOW_SLAVE_OFFLINE must be true or false.' >&2; exit 2 ;;
 esac
 
-if [ "${BOOTSTRAP_WINDOWS:-false}" = true ] && [ "${ALLOW_WINDOWS_OFFLINE:-false}" = true ]; then
-  echo 'BOOTSTRAP_WINDOWS and ALLOW_WINDOWS_OFFLINE cannot both be true.' >&2
+if [ "${BOOTSTRAP_SLAVE:-false}" = true ] && [ "${ALLOW_SLAVE_OFFLINE:-false}" = true ]; then
+  echo 'BOOTSTRAP_SLAVE and ALLOW_SLAVE_OFFLINE cannot both be true.' >&2
   exit 2
 fi
