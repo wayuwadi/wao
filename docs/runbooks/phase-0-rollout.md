@@ -25,6 +25,12 @@ Jenkins 使用专用 Ed25519 密钥登录 `wage@linux1.wayuwa.cn`，严格校验
 
 MySQL GTID 从库只复制 `wao.%`，不会同步 Linux2 上的其他业务库。使用 `sh deploy/scripts/validate-slave.sh` 验证 MySQL、Redis、Sentinel 与 Gateway 全链路。Linux1 的独立 DDNS 程序每五分钟同时维护 A/AAAA 记录，只在地址变化或失败时向飞书通知；阿里云密钥仅保存在本机 `0600` 配置文件，不进入仓库或 Jenkins 日志。
 
+阿里云入口没有 IPv6 默认路由，Linux1 的家庭公网 IPv4 又不依赖 9000 端口映射。按 ADR-158 在
+Linux1 配置 `wao-cloud-tunnel.service`，主动建立到云机 loopback `127.0.0.1:9000` 的受限 SSH
+远程转发；云机专用账号只允许该 listen 地址，并在 `/etc/hosts` 将 `linux1.wayuwa.cn` 指向
+`127.0.0.1`。必须同时验证 Linux1 user service 为 `active`、云机仅在 loopback 监听 9000，且从
+云机执行 `curl -4 -kfsS https://linux1.wayuwa.cn:9000/api/hello` 返回 `code=0`。不得将转发监听到公网。
+
 ## Linux 主节点（娃弟）
 
 当前状态：已完成。公网 Gateway、App、Redis、Sentinel、既有 MySQL 9.7 与 Nacos 均已通过健康检查，云端可经 `linux2.wayuwa.cn:9000` 回源。
@@ -64,6 +70,8 @@ CD 流水线也会跑同一个探针，但只作为告警：失败时 run 摘要
 - 两个 SSH 主机公钥已人工核验并写入 Jenkins `slave-known-hosts`、`cloud-known-hosts`；
 - 两个 DDNS 域名、公网端口映射和 `wao.wayuwa.cn` DNS 已生效；
 - 主、从节点已拥有同一份私有 `deploy/.env` 和对应 Gateway 证书；
+- 共享 `.env` 明确包含 Linux2 master、Linux1 slave 与两台 Sentinel，且不再保留退役节点地址；
+- Linux1 到云入口的 loopback 反向 Gateway 通道已启用并通过云端 `/api/hello` 验收；
 - GitHub push webhook HMAC 验证和反向 SSH 隧道已通过验收；
 - 手工影子构建通过后，再让 `main` push 自动执行生产发布。
 

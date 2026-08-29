@@ -24,6 +24,19 @@ test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets"
 test -f "$WAO_MASTER_PROJECT_ROOT/deploy/certs/gateway.p12"
 
+require_shared_env_line() {
+  expected="$1"
+  if ! grep -Fqx "$expected" "$WAO_MASTER_PROJECT_ROOT/deploy/.env"; then
+    echo "生产共享环境缺少当前 Linux1/Linux2 拓扑：$expected"
+    return 1
+  fi
+}
+
+require_shared_env_line 'REDIS_MASTER_HOST=linux2.wayuwa.cn' || exit 1
+require_shared_env_line 'REDIS_SENTINEL_NODES=linux2.wayuwa.cn:26379,linux1.wayuwa.cn:26379' || exit 1
+require_shared_env_line 'MASTER_PUBLIC_HOST=linux2.wayuwa.cn' || exit 1
+require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn' || exit 1
+
 ln -sf "$WAO_RUN_TEMP/wao-release.tgz" wao-release.tgz
 ln -sf "$WAO_RUN_TEMP/wao-images.tar.gz" wao-images.tar.gz
 install -m 0640 "$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets" wao-secrets.env
@@ -604,6 +617,15 @@ fi
 set_status cloud_status success
 set_status cloud_detail "$WAO_GIT_SHA"
 printf '\n===== cloud =====\n'; cat cloud.log
+
+# 云端安装会重新渲染 Nginx 文件，并继承安装前的摘流状态。安装完成后立即恢复
+# 已验证节点，不能只依赖 EXIT trap，否则控制器安全重启可能让成功发布停留在单节点状态。
+set_upstream_state master up || exit 1
+if [ "$slave_available" = true ]; then
+  set_upstream_state slave up || exit 1
+else
+  set_upstream_state slave down || true
+fi
 
 gateway_ready_from_cloud "$MASTER_HOST"
 sh "$WAO_MASTER_PROJECT_ROOT/deploy/scripts/validate-deployment-node.sh" master "$WAO_GIT_SHA"

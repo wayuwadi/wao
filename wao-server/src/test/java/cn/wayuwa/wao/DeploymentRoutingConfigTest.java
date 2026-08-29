@@ -233,13 +233,20 @@ class DeploymentRoutingConfigTest {
         assertThat(rollout)
                 .contains("set-nginx-upstream-state.sh")
                 .contains("set_upstream_state slave down")
-                .contains("set_upstream_state master down");
+                .contains("set_upstream_state master down")
+                .contains("require_shared_env_line 'REDIS_MASTER_HOST=linux2.wayuwa.cn'")
+                .contains("require_shared_env_line 'REDIS_SENTINEL_NODES=linux2.wayuwa.cn:26379,linux1.wayuwa.cn:26379'")
+                .contains("require_shared_env_line 'MASTER_PUBLIC_HOST=linux2.wayuwa.cn'")
+                .contains("require_shared_env_line 'SLAVE_PUBLIC_HOST=linux1.wayuwa.cn'");
         assertThat(rollout.indexOf("prepare_cloud_routing >routing.log"))
                 .isLessThan(rollout.indexOf("retry_node_deploy Linux1 deploy_slave slave.log"));
         assertThat(rollout.indexOf("retry_node_deploy Linux1 deploy_slave slave.log"))
                 .isLessThan(rollout.indexOf("retry_node_deploy Linux2 deploy_master master.log"));
         assertThat(rollout.indexOf("retry_node_deploy Linux2 deploy_master master.log"))
                 .isLessThan(rollout.indexOf("deploy_cloud >cloud.log"));
+        assertThat(rollout.indexOf("deploy_cloud >cloud.log"))
+                .isLessThan(rollout.indexOf("set_upstream_state master up || exit 1",
+                        rollout.indexOf("deploy_cloud >cloud.log")));
         assertThat(rollout)
                 .contains("wao-release.tgz wao-secrets.env wao-shared.env wao-gateway.p12 wao-images.tar.gz")
                 .contains("sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh")
