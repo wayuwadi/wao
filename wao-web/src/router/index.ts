@@ -203,6 +203,12 @@ const router = createRouter({
           meta: { module: 'appearance', tabKind: 'module' },
         },
         {
+          path: 'food',
+          name: 'food',
+          component: () => import('@/views/FoodView.vue'),
+          meta: { module: 'food', tabKind: 'module' },
+        },
+        {
           path: 'workday-rhythm',
           name: 'workday-rhythm',
           component: () => import('@/views/WorkdayRhythmView.vue'),

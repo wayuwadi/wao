@@ -209,6 +209,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-shirt-line',
     path: '/appearance',
   },
+  food: {
+    id: 'food',
+    label: '饮食管理',
+    icon: 'ri-restaurant-2-line',
+    path: '/food',
+  },
   'weekly-report': {
     id: 'weekly-report',
     label: '周报生成',
@@ -301,6 +307,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-shirt-line',
       group: 'PERSONAL',
       order: 17,
+      visible: true,
+    },
+    {
+      id: 'food',
+      label: '饮食管理',
+      icon: 'ri-restaurant-2-line',
+      group: 'PERSONAL',
+      order: 18,
       visible: true,
     },
     {
@@ -464,6 +478,7 @@ export const PERSONAL_ITEMS: ModuleId[] = [
   'workday-rhythm',
   'action-plans',
   'appearance',
+  'food',
   'calendar',
   'weekly-report',
   'life-review',
