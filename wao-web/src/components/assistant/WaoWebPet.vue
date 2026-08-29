@@ -69,7 +69,13 @@ let noticeTimer: ReturnType<typeof setInterval> | null = null
 let rhythmSavedTimer: ReturnType<typeof setTimeout> | null = null
 let activityTimer: ReturnType<typeof setInterval> | null = null
 let deadlineTimer: ReturnType<typeof setInterval> | null = null
+let petLongPressTimer: ReturnType<typeof setTimeout> | null = null
+let petLongPressStart: { pointerId: number; x: number; y: number } | null = null
+let suppressPetClickUntil = 0
+let suppressPetContextUntil = 0
 let activitySequence = 0
+const PET_LONG_PRESS_MS = 520
+const PET_LONG_PRESS_MOVE_TOLERANCE = 8
 const {
   elementRef: petRef,
   style: petStyle,
@@ -494,9 +500,51 @@ function playPetActivity() {
 }
 
 function interactWithPet(event: MouseEvent) {
+  if (Date.now() < suppressPetClickUntil) {
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
   if (consumeClick(event)) return
   applyTrigger(webPet.settings.leftClickAction)
   if (webPet.settings.leftClickAction !== 'NONE') playPetActivity()
+}
+
+function cancelPetLongPress() {
+  if (petLongPressTimer) clearTimeout(petLongPressTimer)
+  petLongPressTimer = null
+  petLongPressStart = null
+}
+
+function startPetLongPress(event: PointerEvent) {
+  if (event.pointerType === 'mouse' || event.button !== 0) return
+  cancelPetLongPress()
+  petLongPressStart = { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+  petLongPressTimer = setTimeout(() => {
+    if (petLongPressStart?.pointerId !== event.pointerId) return
+    petLongPressTimer = null
+    suppressPetClickUntil = Date.now() + 1_000
+    suppressPetContextUntil = suppressPetClickUntil
+    applyTrigger(webPet.settings.rightClickAction)
+    if (webPet.settings.rightClickAction !== 'NONE') {
+      playPetActivity()
+      navigator.vibrate?.(18)
+    }
+  }, PET_LONG_PRESS_MS)
+}
+
+function movePetLongPress(event: PointerEvent) {
+  const start = petLongPressStart
+  if (!start || start.pointerId !== event.pointerId) return
+  if (
+    Math.hypot(event.clientX - start.x, event.clientY - start.y) > PET_LONG_PRESS_MOVE_TOLERANCE
+  ) {
+    cancelPetLongPress()
+  }
+}
+
+function endPetLongPress(event: PointerEvent) {
+  if (petLongPressStart?.pointerId === event.pointerId) cancelPetLongPress()
 }
 
 function openPetSettings() {
@@ -505,6 +553,7 @@ function openPetSettings() {
 }
 
 function openPetContext(event: MouseEvent) {
+  if (Date.now() < suppressPetContextUntil) return
   if (consumeClick(event)) return
   applyTrigger(webPet.settings.rightClickAction)
 }
@@ -542,6 +591,7 @@ onBeforeUnmount(() => {
   if (rhythmSavedTimer) clearTimeout(rhythmSavedTimer)
   if (activityTimer) clearInterval(activityTimer)
   if (deadlineTimer) clearInterval(deadlineTimer)
+  cancelPetLongPress()
 })
 </script>
 
@@ -613,12 +663,16 @@ onBeforeUnmount(() => {
         class="pet-avatar"
         :class="petActivity ? `activity-${petActivity}` : ''"
         type="button"
-        title="点击和宠物互动并打开快捷操作，拖动可调整位置"
-        aria-label="和宠物互动并打开快捷操作，拖动可调整宠物位置"
-        :aria-expanded="quickMenuActive"
-        aria-controls="pet-quick-actions"
+        title="点击打开快捷操作，拖动调整位置；手机长按执行右键动作"
+        aria-label="点击打开快捷操作，拖动调整宠物位置；手机长按执行右键动作"
+        :aria-expanded="quickMenuActive || settingsMenuActive"
+        aria-controls="pet-quick-actions pet-settings-actions"
         @click="interactWithPet"
         @contextmenu.prevent="openPetContext"
+        @pointerdown="startPetLongPress"
+        @pointermove="movePetLongPress"
+        @pointerup="endPetLongPress"
+        @pointercancel="endPetLongPress"
         @animationend="petActivity = null"
       >
         <span
@@ -712,6 +766,7 @@ onBeforeUnmount(() => {
       </nav>
 
       <nav
+        id="pet-settings-actions"
         class="pet-settings-actions"
         :class="{ open: settingsMenuActive }"
         aria-label="宠物功能气泡"
@@ -749,6 +804,8 @@ onBeforeUnmount(() => {
   min-height: 160px;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -1153,16 +1210,26 @@ onBeforeUnmount(() => {
     height: 82px;
   }
   .pet-quick-actions {
-    right: 66px;
-    bottom: 7px;
-    width: 158px;
+    right: 0;
+    bottom: 86px;
+    width: min(210px, calc(100vw - 24px));
+  }
+  .pet-settings-actions {
+    right: 0;
+    bottom: 86px;
+    width: min(210px, calc(100vw - 24px));
   }
   .pet-rhythm-action,
   .pet-rhythm-state,
   .pet-settings-link {
-    width: 152px;
+    width: 100%;
     min-height: 38px;
     padding: 5px 8px;
+    box-sizing: border-box;
+  }
+  .pet-settings-actions > button,
+  .pet-menu-group {
+    width: 100%;
   }
 }
 
