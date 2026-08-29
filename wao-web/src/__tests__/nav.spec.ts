@@ -244,6 +244,23 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.module).toBe('tianren')
   })
 
+  it('形象管理默认位于个人组并进入完整工作台目录', () => {
+    expect(MODULES.appearance).toMatchObject({
+      label: '形象管理',
+      path: '/appearance',
+    })
+    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'appearance')).toMatchObject({
+      group: 'PERSONAL',
+      visible: true,
+      openMode: 'TAB',
+    })
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('appearance')
+    expect(router.resolve('/appearance').meta).toMatchObject({
+      module: 'appearance',
+      tabKind: 'module',
+    })
+  })
+
   it('草图默认位于个人组并使用原生模块路由', () => {
     expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('drawings')
     const route = router.getRoutes().find((item) => item.name === 'drawings')

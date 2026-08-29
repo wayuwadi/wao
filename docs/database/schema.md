@@ -756,6 +756,13 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 | action_plan | member_id、title、start_date / target_date、reminder_time / reminder_enabled、status | 成员私有长期目标；完成只改状态，不删除历史 |
 | action_plan_item | plan_id、title、weekdays_json、active_from / active_until、active、ord | 周期行动的版本；有历史后调整会截止旧版本并新增当前版本，历史日期仍可还原 |
 
+### appearance_workspace / appearance_photo（V114）
+
+| 表 | 关键字段 / 唯一约束 | 说明 |
+|---|---|---|
+| appearance_workspace | member_id 主键、content_json、updated_at | 每位成员唯一的形象管理快照；JSON 内含物品、穿搭、个人档案、计划、穿着记录和笔记，服务端校验所有跨记录引用并从穿着记录重算统计 |
+| appearance_photo | id 主键、member_id、file_name、content_type、byte_size、file_content | 衣物与穿搭实拍原件；读取和删除都按当前成员校验，响应禁止公共缓存，不进入公开图床 |
+
 ### action_checkin / action_day_note / action_reminder_delivery
 
 | 表 | 唯一约束 | 说明 |
@@ -979,6 +986,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V110__batch_oldest_task_auto_run.sql`：为最早待办空闲自动推进增加单次推进数，并按所选项目并发上限回填（见 ADR-152）。
 - `V111__notification_center_login_events.sql`：逐次记录成功登录的最小事实，供通知中心统计真实成员使用频率（见 ADR-153）。
 - `V112__feishu_reaction_ai_run_trigger.sql`：飞书原消息飞机表情触发 AI Run 的事件级持久幂等；运行被清理后仍保留去重事实（见 ADR-155）。
+- `V114__appearance_management.sql`：保存成员私有形象管理工作区和按会话鉴权的衣物、穿搭实拍原件。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
