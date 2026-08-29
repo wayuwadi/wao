@@ -59,6 +59,22 @@ function task(id: string, title: string, status: TaskStatus, pr: Task['pr'] = 'P
   }
 }
 
+function touchPointerEvent(
+  type: string,
+  {
+    pointerId,
+    clientX = 0,
+    clientY = 0,
+  }: { pointerId: number; clientX?: number; clientY?: number },
+) {
+  const event = new MouseEvent(type, { bubbles: true, button: 0, clientX, clientY })
+  Object.defineProperties(event, {
+    pointerId: { value: pointerId },
+    pointerType: { value: 'touch' },
+  })
+  return event
+}
+
 describe('WaoWebPet', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -227,6 +243,68 @@ describe('WaoWebPet', () => {
     expect(wrapper.get('.pet-silent-dock').attributes('title')).toContain('点击立即恢复')
     await wrapper.get('.pet-silent-dock').trigger('click')
     expect(wrapper.find('.wao-web-pet').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('触屏长按复用右键动作且不再补发短按或上下文菜单', async () => {
+    vi.useFakeTimers()
+    const vibrate = vi.fn<(duration: number) => boolean>(() => true)
+    Object.defineProperty(navigator, 'vibrate', { configurable: true, value: vibrate })
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+    const avatar = wrapper.get('.pet-avatar')
+    Object.defineProperties(avatar.element, {
+      setPointerCapture: { configurable: true, value: vi.fn<(pointerId: number) => void>() },
+      hasPointerCapture: { configurable: true, value: () => true },
+      releasePointerCapture: { configurable: true, value: vi.fn<(pointerId: number) => void>() },
+    })
+
+    avatar.element.dispatchEvent(
+      touchPointerEvent('pointerdown', { pointerId: 9, clientX: 220, clientY: 520 }),
+    )
+    await vi.advanceTimersByTimeAsync(520)
+    await nextTick()
+
+    expect(wrapper.get('.pet-settings-actions').classes()).toContain('open')
+    expect(wrapper.get('.pet-quick-actions').classes()).not.toContain('open')
+    expect(vibrate).toHaveBeenCalledWith(18)
+
+    avatar.element.dispatchEvent(touchPointerEvent('pointerup', { pointerId: 9 }))
+    await avatar.trigger('click')
+    await avatar.trigger('contextmenu')
+
+    expect(wrapper.get('.pet-settings-actions').classes()).toContain('open')
+    expect(wrapper.get('.pet-quick-actions').classes()).not.toContain('open')
+
+    await vi.advanceTimersByTimeAsync(1_001)
+    await avatar.trigger('click')
+    expect(wrapper.get('.pet-settings-actions').classes()).not.toContain('open')
+    expect(wrapper.get('.pet-quick-actions').classes()).toContain('open')
+    wrapper.unmount()
+  })
+
+  it('触屏移动超过阈值时取消长按并保留拖动手势', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(WaoWebPet, {
+      props: { assistantStatus: { configured: true, message: '已连接本地 Codex' } },
+    })
+    const avatar = wrapper.get('.pet-avatar')
+    Object.defineProperties(avatar.element, {
+      setPointerCapture: { configurable: true, value: vi.fn<(pointerId: number) => void>() },
+      hasPointerCapture: { configurable: true, value: () => true },
+      releasePointerCapture: { configurable: true, value: vi.fn<(pointerId: number) => void>() },
+    })
+
+    avatar.element.dispatchEvent(
+      touchPointerEvent('pointerdown', { pointerId: 10, clientX: 220, clientY: 520 }),
+    )
+    avatar.element.dispatchEvent(
+      touchPointerEvent('pointermove', { pointerId: 10, clientX: 232, clientY: 520 }),
+    )
+    await vi.advanceTimersByTimeAsync(600)
+
+    expect(wrapper.get('.pet-settings-actions').classes()).not.toContain('open')
     wrapper.unmount()
   })
 
