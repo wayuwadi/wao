@@ -30,6 +30,9 @@ pipeline {
         WAO_RUN_TEMP = "${WORKSPACE}@tmp/wao-${BUILD_NUMBER}"
         MASTER_HOST = 'linux2.wayuwa.cn'
         SLAVE_HOST = 'linux1.wayuwa.cn'
+        // Linux1 主动回连 Linux2；Jenkins 只访问控制器本机的受限 loopback 转发。
+        SLAVE_SSH_HOST = '127.0.0.1'
+        SLAVE_SSH_PORT = '2201'
         CLOUD_HOST = '8.136.152.131'
     }
 

@@ -7,6 +7,8 @@ set -u
 : "${SLAVE_SSH_KEY:?SLAVE_SSH_KEY is required}"
 : "${SLAVE_KNOWN_HOSTS:?SLAVE_KNOWN_HOSTS is required}"
 : "${SLAVE_USER:?SLAVE_USER is required}"
+: "${SLAVE_SSH_HOST:?SLAVE_SSH_HOST is required}"
+: "${SLAVE_SSH_PORT:?SLAVE_SSH_PORT is required}"
 : "${CLOUD_SSH_KEY:?CLOUD_SSH_KEY is required}"
 : "${CLOUD_KNOWN_HOSTS:?CLOUD_KNOWN_HOSTS is required}"
 : "${CLOUD_USER:?CLOUD_USER is required}"
@@ -51,7 +53,9 @@ fi
 WAO_SSH_CONFIG="$WAO_RUN_TEMP/ssh_config"
 cat >"$WAO_SSH_CONFIG" <<EOF
 Host wao-slave
-  HostName $SLAVE_HOST
+  HostName $SLAVE_SSH_HOST
+  Port $SLAVE_SSH_PORT
+  HostKeyAlias $SLAVE_HOST
   User $SLAVE_USER
   IdentityFile $SLAVE_SSH_KEY
   IdentitiesOnly yes
