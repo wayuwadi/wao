@@ -72,10 +72,11 @@ generate_key() {
 
 generate_secret "$secret_dir/admin-password"
 generate_secret "$secret_dir/github-webhook-secret"
+generate_key "$secret_dir/github-scm-ed25519"
 generate_key "$secret_dir/slave-ed25519"
 generate_key "$secret_dir/cloud-ed25519"
 
-for required in github-pat slave-known-hosts cloud-known-hosts; do
+for required in github-pat github-known-hosts slave-known-hosts cloud-known-hosts; do
   if [ ! -s "$secret_dir/$required" ]; then
     printf 'Missing %s. Follow deploy/jenkins/README.md before installation.\n' \
       "$secret_dir/$required" >&2
@@ -159,6 +160,9 @@ if [ "$actual_plugin_manager_sha" != "$expected_plugin_manager_sha" ]; then
 fi
 
 install -d -o jenkins -g jenkins -m 0750 "$jenkins_home/plugins"
+install -d -o jenkins -g jenkins -m 0700 "$jenkins_home/.ssh"
+install -o jenkins -g jenkins -m 0600 "$secret_dir/github-known-hosts" \
+  "$jenkins_home/.ssh/known_hosts"
 java -jar "$plugin_manager" \
   --war /usr/share/java/jenkins.war \
   --plugin-download-directory "$jenkins_home/plugins" \
@@ -184,13 +188,6 @@ jenkins ALL=(wadi) NOPASSWD: /usr/local/lib/wao-jenkins/deploy-master-local.sh *
 EOF
 chmod 0440 /etc/sudoers.d/wao-jenkins
 visudo -cf /etc/sudoers.d/wao-jenkins
-
-# Jenkins Git client's temporary AskPass process is unreliable on the controller's
-# Git 2.53 package. Keep the same host-scoped PAT in a native credential helper;
-# neither the token nor its expansion appears in the process command line.
-runuser -u jenkins -- git config --global credential.https://github.com.username wayuwacn
-runuser -u jenkins -- git config --global credential.https://github.com.helper \
-  '!f() { printf "username=wayuwacn\npassword="; tr -d "\r\n" </etc/jenkins/secrets/github-pat; printf "\n\n"; }; f'
 
 systemctl daemon-reload
 systemctl enable --now jenkins.service
