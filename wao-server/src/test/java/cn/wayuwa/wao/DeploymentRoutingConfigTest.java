@@ -69,7 +69,10 @@ class DeploymentRoutingConfigTest {
                 .contains("GIT_PREVIOUS_COMMIT");
         assertThat(status)
                 .contains("WAO_STATUS_SHA_FILE")
-                .contains("done <\"$WAO_STATUS_SHA_FILE\"");
+                .contains("done <\"$WAO_STATUS_SHA_FILE\"")
+                .contains("--retry 5 --retry-delay 2 --retry-all-errors")
+                .contains("GitHub commit status delivery failed")
+                .contains("Jenkins result is unchanged");
         assertThat(pipeline)
                 .doesNotContain("WAO_PIPELINE_RESULT=success deploy/jenkins/notify-feishu.sh")
                 .contains("WAO_PIPELINE_RESULT=failure deploy/jenkins/notify-feishu.sh");

@@ -20,13 +20,19 @@ post_status() {
     echo "Invalid status SHA: $sha" >&2
     exit 2
   }
-  curl --fail --silent --show-error \
-    -X POST \
-    -H 'Accept: application/vnd.github+json' \
-    -H "Authorization: Bearer $GITHUB_PAT" \
-    -H 'X-GitHub-Api-Version: 2022-11-28' \
-    "https://api.github.com/repos/wayuwacn/wao/statuses/$sha" \
-    --data "$payload" >/dev/null
+  if ! curl --fail --silent --show-error \
+      --connect-timeout 10 --max-time 30 \
+      --retry 5 --retry-delay 2 --retry-all-errors \
+      -X POST \
+      -H 'Accept: application/vnd.github+json' \
+      -H "Authorization: Bearer $GITHUB_PAT" \
+      -H 'X-GitHub-Api-Version: 2022-11-28' \
+      "https://api.github.com/repos/wayuwacn/wao/statuses/$sha" \
+      --data "$payload" >/dev/null; then
+    # Commit status is observability metadata. A transient GitHub/TLS outage after a
+    # verified production rollout must not relabel that rollout as failed.
+    echo "WARNING: GitHub commit status delivery failed for $sha; Jenkins result is unchanged." >&2
+  fi
 }
 
 if [ -n "${WAO_STATUS_SHA_FILE:-}" ] && [ -s "$WAO_STATUS_SHA_FILE" ]; then
