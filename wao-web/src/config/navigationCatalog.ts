@@ -52,6 +52,11 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
         keywords: ['衣服', '鞋子', '搭配', '衣柜'],
       },
       {
+        id: 'food',
+        description: '安排工作日与休息日三餐，记录实际饮食、餐后感受和备餐事项。',
+        keywords: ['三餐', '吃饭', '备餐', '黄帝内经'],
+      },
+      {
         id: 'workspaces',
         description: '整理个人项目常用链接与工作资料。',
         keywords: ['链接', '空间'],

@@ -40,6 +40,7 @@ export type ModuleId =
   | 'workday-rhythm'
   | 'action-plans'
   | 'appearance'
+  | 'food'
   | 'weekly-report'
   | 'life-review'
   | 'chat'

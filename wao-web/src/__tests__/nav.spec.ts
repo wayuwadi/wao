@@ -261,6 +261,23 @@ describe('侧边栏导航配置', () => {
     })
   })
 
+  it('饮食管理默认位于个人组并进入完整工作台目录', () => {
+    expect(MODULES.food).toMatchObject({
+      label: '饮食管理',
+      path: '/food',
+    })
+    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'food')).toMatchObject({
+      label: '饮食管理',
+      group: 'PERSONAL',
+      visible: true,
+    })
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('food')
+    expect(router.resolve('/food').meta).toMatchObject({
+      module: 'food',
+      tabKind: 'module',
+    })
+  })
+
   it('草图默认位于个人组并使用原生模块路由', () => {
     expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('drawings')
     const route = router.getRoutes().find((item) => item.name === 'drawings')

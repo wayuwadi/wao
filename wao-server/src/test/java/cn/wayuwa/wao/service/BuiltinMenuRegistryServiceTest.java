@@ -23,7 +23,7 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(27);
+        assertThat(service.getRegistry().menus()).hasSize(28);
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "skills".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("Skill 市场");
@@ -37,9 +37,15 @@ class BuiltinMenuRegistryServiceTest {
                     assertThat(menu.group()).isEqualTo("PERSONAL");
                     assertThat(menu.visible()).isTrue();
                 });
+        assertThat(service.getRegistry().menus()).filteredOn(menu -> "food".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.label()).isEqualTo("饮食管理");
+                    assertThat(menu.group()).isEqualTo("PERSONAL");
+                    assertThat(menu.visible()).isTrue();
+                });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(27);
+        assertThat(service.getRegistry().menus()).hasSize(28);
     }
 
     @Test
@@ -105,7 +111,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(27);
+        assertThat(upgraded.menus()).hasSize(28);
         assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("工作台");
