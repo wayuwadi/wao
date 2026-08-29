@@ -269,11 +269,14 @@ class DeploymentRoutingConfigTest {
                 .contains("start_availability_monitor")
                 .contains("Linux1、Linux2、云端与公共入口检查通过");
         assertThat(pipeline)
-                .contains("credentialsId: 'wao-slave-ssh'")
+                .contains("SLAVE_SSH_KEY=/etc/jenkins/secrets/slave-ed25519")
+                .contains("SLAVE_KNOWN_HOSTS=/etc/jenkins/secrets/slave-known-hosts")
+                .contains("SLAVE_USER=wage")
                 .contains("credentialsId: 'wao-cloud-ssh'")
                 .contains("name: 'ALLOW_SLAVE_OFFLINE'")
                 .contains("disableConcurrentBuilds(abortPrevious: false)")
-                .doesNotContain("wao-windows-ssh", "BOOTSTRAP_WINDOWS", "ALLOW_WINDOWS_OFFLINE");
+                .doesNotContain("credentialsId: 'wao-slave-ssh'", "wao-windows-ssh",
+                        "BOOTSTRAP_WINDOWS", "ALLOW_WINDOWS_OFFLINE");
         assertThat(casc)
                 .contains("id: wao-slave-ssh")
                 .contains("id: wao-slave-known-hosts")

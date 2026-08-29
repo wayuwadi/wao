@@ -200,28 +200,27 @@ pipeline {
                 expression { params.DEPLOY_PRODUCTION && env.WAO_DEPLOY_REQUIRED == 'true' }
             }
             steps {
-                withCredentials([
-                    sshUserPrivateKey(
-                        credentialsId: 'wao-slave-ssh',
-                        keyFileVariable: 'SLAVE_SSH_KEY',
-                        usernameVariable: 'SLAVE_USER'
-                    ),
-                    file(
-                        credentialsId: 'wao-slave-known-hosts',
-                        variable: 'SLAVE_KNOWN_HOSTS'
-                    ),
-                    sshUserPrivateKey(
-                        credentialsId: 'wao-cloud-ssh',
-                        keyFileVariable: 'CLOUD_SSH_KEY',
-                        usernameVariable: 'CLOUD_USER'
-                    ),
-                    file(
-                        credentialsId: 'wao-cloud-known-hosts',
-                        variable: 'CLOUD_KNOWN_HOSTS'
-                    )
+                // 新 JCasC 凭据只能在当前构建结束后的 safeRestart 生效。Linux1 的控制器本地文件
+                // 已由安装脚本以 root:jenkins 0640 准备，直接绑定路径可让拓扑迁移的首个构建完成。
+                withEnv([
+                    'SLAVE_SSH_KEY=/etc/jenkins/secrets/slave-ed25519',
+                    'SLAVE_KNOWN_HOSTS=/etc/jenkins/secrets/slave-known-hosts',
+                    'SLAVE_USER=wage'
                 ]) {
-                    sh 'BOOTSTRAP_SLAVE="$BOOTSTRAP_SLAVE" ALLOW_SLAVE_OFFLINE="$ALLOW_SLAVE_OFFLINE" deploy/jenkins/ci-deploy.sh'
-                    sh 'deploy/jenkins/ci-production-verify.sh'
+                    withCredentials([
+                        sshUserPrivateKey(
+                            credentialsId: 'wao-cloud-ssh',
+                            keyFileVariable: 'CLOUD_SSH_KEY',
+                            usernameVariable: 'CLOUD_USER'
+                        ),
+                        file(
+                            credentialsId: 'wao-cloud-known-hosts',
+                            variable: 'CLOUD_KNOWN_HOSTS'
+                        )
+                    ]) {
+                        sh 'BOOTSTRAP_SLAVE="$BOOTSTRAP_SLAVE" ALLOW_SLAVE_OFFLINE="$ALLOW_SLAVE_OFFLINE" deploy/jenkins/ci-deploy.sh'
+                        sh 'deploy/jenkins/ci-production-verify.sh'
+                    }
                 }
             }
             post {
