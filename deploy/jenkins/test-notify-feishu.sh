@@ -32,12 +32,12 @@ assert_json() {
 }
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
-windows_status=success
-windows_attempts=1
-windows_detail=abc1234
-linux_status=success
-linux_attempts=1
-linux_detail=abc1234
+slave_status=success
+slave_attempts=1
+slave_detail=abc1234
+master_status=success
+master_attempts=1
+master_detail=abc1234
 cloud_status=success
 cloud_detail=abc1234
 verification_status=success
@@ -61,12 +61,12 @@ sh "$project_root/deploy/jenkins/notify-feishu.sh"
 test ! -e "$fixture/payload.json"
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
-windows_status=success
-windows_attempts=1
-windows_detail=abcdef12
-linux_status=failed
-linux_attempts=3
-linux_detail=健康检查未通过
+slave_status=success
+slave_attempts=1
+slave_detail=abcdef12
+master_status=failed
+master_attempts=3
+master_detail=健康检查未通过
 cloud_status=not_started
 cloud_detail=not_started
 verification_status=not_started
@@ -80,7 +80,7 @@ WAO_MASTER_PROJECT_ROOT="$fixture/master" \
 WAO_RUN_TEMP="$fixture/run" \
 WAO_DEPLOY_REQUIRED=true \
 DEPLOY_PRODUCTION=true \
-WAO_FAILURE_STAGE='Deploy Windows, Linux and cloud' \
+WAO_FAILURE_STAGE='Deploy Linux slave, master and cloud' \
 WAO_GIT_SHA=abcdef1234567890abcdef1234567890abcdef12 \
 WAO_BATCH_COMMIT_COUNT=1 \
 WAO_COMMIT_MESSAGE='- feat(task): 精简通知' \
@@ -95,12 +95,12 @@ assert_json '.card.elements[1].actions[0].text.content == "查看 Jenkins 详情
 assert_json '.card.elements[1].actions[0].url == "https://wao.wayuwa.cn/jenkins/job/wao-main-cd/322/"'
 
 cat >"$fixture/run/wao-deploy-status.env" <<'EOF'
-windows_status=not_started
-windows_attempts=0
-windows_detail=not_started
-linux_status=not_started
-linux_attempts=0
-linux_detail=not_started
+slave_status=not_started
+slave_attempts=0
+slave_detail=not_started
+master_status=not_started
+master_attempts=0
+master_detail=not_started
 cloud_status=not_started
 cloud_detail=not_started
 verification_status=not_started

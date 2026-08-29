@@ -8,18 +8,28 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 project_root="$(CDPATH= cd -- "${script_dir}/../.." && pwd)"
 env_file="${project_root}/deploy/.env"
 compose_file="${project_root}/deploy/docker-compose-slave.yml"
+secrets_file="${project_root}/deploy/.env.secrets"
 
-# BOOTSTRAP_WINDOWS is an explicit full replica rebuild. Recreate the data
+compose() {
+  if [ -f "${secrets_file}" ]; then
+    docker compose --env-file "${env_file}" --env-file "${secrets_file}" \
+      -f "${compose_file}" "$@"
+  else
+    docker compose --env-file "${env_file}" -f "${compose_file}" "$@"
+  fi
+}
+
+# BOOTSTRAP_SLAVE is an explicit full replica rebuild. Recreate the data
 # volume so stale root credentials or partial data from an interrupted prior
 # bootstrap cannot affect the new snapshot import.
-docker compose --env-file "${env_file}" -f "${compose_file}" stop mysql-slave
-docker compose --env-file "${env_file}" -f "${compose_file}" rm -f mysql-slave
+compose stop mysql-slave
+compose rm -f mysql-slave
 if docker volume inspect wao-slave_mysql-slave-data >/dev/null 2>&1; then
   docker volume rm wao-slave_mysql-slave-data
 fi
-docker compose --env-file "${env_file}" -f "${compose_file}" up -d mysql-slave
+compose up -d mysql-slave
 
-mysql_id="$(docker compose --env-file "${env_file}" -f "${compose_file}" ps -q mysql-slave)"
+mysql_id="$(compose ps -q mysql-slave)"
 test -n "${mysql_id}" || { echo 'MySQL replica container is not running.' >&2; exit 1; }
 
 mysql_ready=false
@@ -49,7 +59,8 @@ DROP DATABASE IF EXISTS wao;
 SQL'
 
 gzip -dc "${snapshot}" |
-  docker exec -i "${mysql_id}" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket -uroot'
+  docker exec -i "${mysql_id}" sh -c \
+    'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql --protocol=socket --max-allowed-packet=1G -uroot'
 
 docker exec "${mysql_id}" sh /docker-entrypoint-initdb.d/10-replication.sh
 echo 'MySQL replica snapshot bootstrap completed.'

@@ -122,7 +122,7 @@ fi
 detect_public_ipv4() {
   case "${role}" in
     master) host="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}" ;;
-    slave) host="${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}" ;;
+    slave) host="${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}" ;;
   esac
   getent ahostsv4 "${host}" 2>/dev/null | awk '$2 == "STREAM" { print $1; exit }'
 }
@@ -211,7 +211,7 @@ compose ps
 
 printf '%s\n' "${NODE_PUBLIC_IP}" >"${deploy_dir}/.public-ip"
 
-if [ "${role}" = "master" ] && command -v crontab >/dev/null 2>&1; then
+if command -v crontab >/dev/null 2>&1; then
   cron_marker='# WAO public IP refresh'
   existing_crontab="$(crontab -l 2>/dev/null || true)"
   {

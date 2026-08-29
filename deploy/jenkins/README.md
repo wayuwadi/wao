@@ -1,6 +1,6 @@
 # WAO Jenkins
 
-WAO 主站由 Linux 主节点上的单节点 Jenkins LTS 构建和发布。Windows 只接收已经构建好的源码包、
+WAO 主站由 Linux2 主节点上的单节点 Jenkins LTS 构建和发布。Linux1 从节点只接收已经构建好的源码包、
 镜像归档和私有配置；阿里云托管静态前端、Nginx、受 WAO 会话保护的 Jenkins UI 入口和唯一公开的
 GitHub webhook 路由。
 
@@ -12,13 +12,13 @@ GitHub webhook 路由。
 sudo sh deploy/jenkins/prepare-controller-secrets.sh
 ```
 
-脚本只输出两把公钥。把 Windows 公钥加入 `wage` 的 OpenSSH `authorized_keys`，把云公钥加入云部署账号。
+脚本只输出两把公钥。把 Linux1 从节点公钥加入 `wage` 的 OpenSSH `authorized_keys`，把云公钥加入云部署账号。
 私钥始终留在 `/etc/jenkins/secrets`。
 
 人工核对两台目标机器控制台上显示的 SSH 指纹后，把完整 `known_hosts` 行分别保存为：
 
 ```text
-/etc/jenkins/secrets/windows-known-hosts
+/etc/jenkins/secrets/slave-known-hosts
 /etc/jenkins/secrets/cloud-known-hosts
 ```
 
@@ -42,7 +42,7 @@ sudo WAO_JENKINS_SCM_BRANCH=codex/jenkins-cicd \
   WAO_JENKINS_PROXY_PORT=7897 sh deploy/jenkins/install-controller.sh
 ```
 
-安装脚本只接受本机端口，并为 Git 检出、GitHub 状态回写和 Jenkins 下载设置代理；Linux、Windows、
+安装脚本只接受本机端口，并为 Git 检出、GitHub 状态回写和 Jenkins 下载设置代理；Linux1、Linux2、
 阿里云以及 Jenkins 本机地址均通过 `NO_PROXY` 直连。代理进程必须在 Jenkins 启动和构建期间持续运行。
 
 这里的临时分支只用于合并前影子构建。首次手工构建必须设置 `DEPLOY_PRODUCTION=false`；验证通过后合并 PR，
@@ -92,15 +92,15 @@ sudo sh deploy/jenkins/verify-controller.sh
 Jenkins 合并到唯一待执行项，不会中断正在进行的 migration 或滚动发布。`Jenkinsfile` 从 `main` 拉取最新代码，
 以线上前端真实版本作为批次基线并生成可审计的变更范围：只运行受影响 Maven 模块和前端的测试，
 后端、WAO Web、Agent Web 三路并行；运行时代码变更仍构建完整的四个 SHA 镜像和两个前端，并执行
-Windows → Linux → 云端严格滚动发布、线上验收、GitHub commit status 和飞书通知。纯文档提交只完成
+Linux1 从节点 → Linux2 主节点 → 云端严格滚动发布、线上验收、GitHub commit status 和飞书通知。纯文档提交只完成
 输入校验并明确通知“无需部署”；只改自动化测试时仅运行对应模块测试。两者都不生成制品或触碰生产节点。
 无法识别的新路径自动回退全量验证和发布。变更规划结果不在 Declarative `environment` 中预声明，避免 Jenkins
 阻止运行时规划覆盖默认值；字段仍使用显式白名单赋值，不需要放宽 Groovy 沙箱或人工批准脚本签名。
 
 - `DEPLOY_PRODUCTION=false`：对需要发布的变更执行完整影子构建，不接触生产节点；纯文档仍只做校验。
-- `BOOTSTRAP_WINDOWS=true`：显式生成 GTID 快照并重建 Windows 从库；正常发布禁止开启。
-- `ALLOW_WINDOWS_OFFLINE=true`：仅当 Windows 在部署前预检不可达时，保持从节点摘流并继续发布 Linux 与云端；
-  Windows 已通过预检后的任何部署失败仍然 fail-closed。不得与 `BOOTSTRAP_WINDOWS` 同时开启。
+- `BOOTSTRAP_SLAVE=true`：显式生成 GTID 快照并重建 Linux1 从库；正常发布禁止开启。
+- `ALLOW_SLAVE_OFFLINE=true`：仅当 Linux1 在部署前预检不可达时，保持从节点摘流并继续发布 Linux2 与云端；
+  Linux1 已通过预检后的任何部署失败仍然 fail-closed。不得与 `BOOTSTRAP_SLAVE` 同时开启。
 - 同一任务不并发，新 push 排队且不取消正在进行的 migration 或发布。
 - GitHub 状态会写到线上版本之后、本批次头之前的每个提交；失败不会推进线上基线，后继成功批次会把其中已经随同
   上线的祖先提交更新为成功。成功批次不发飞书卡片；失败批次只发一张包含原因与详情入口的卡片。

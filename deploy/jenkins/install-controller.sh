@@ -35,7 +35,7 @@ if [ -n "$jenkins_proxy_port" ]; then
   fi
   HTTP_PROXY="http://127.0.0.1:${jenkins_proxy_port}"
   HTTPS_PROXY="$HTTP_PROXY"
-  NO_PROXY='127.0.0.1,localhost,linux2.wayuwa.cn,windows1.wayuwa.cn,8.136.152.131'
+  NO_PROXY='127.0.0.1,localhost,linux2.wayuwa.cn,linux1.wayuwa.cn,8.136.152.131'
   http_proxy="$HTTP_PROXY"
   https_proxy="$HTTPS_PROXY"
   no_proxy="$NO_PROXY"
@@ -72,10 +72,10 @@ generate_key() {
 
 generate_secret "$secret_dir/admin-password"
 generate_secret "$secret_dir/github-webhook-secret"
-generate_key "$secret_dir/windows-ed25519"
+generate_key "$secret_dir/slave-ed25519"
 generate_key "$secret_dir/cloud-ed25519"
 
-for required in github-pat windows-known-hosts cloud-known-hosts; do
+for required in github-pat slave-known-hosts cloud-known-hosts; do
   if [ ! -s "$secret_dir/$required" ]; then
     printf 'Missing %s. Follow deploy/jenkins/README.md before installation.\n' \
       "$secret_dir/$required" >&2
@@ -117,7 +117,7 @@ if [ -n "$jenkins_proxy_port" ]; then
   printf '%s\n' \
     "Environment=\"HTTP_PROXY=http://127.0.0.1:${jenkins_proxy_port}\"" \
     "Environment=\"HTTPS_PROXY=http://127.0.0.1:${jenkins_proxy_port}\"" \
-    'Environment="NO_PROXY=127.0.0.1,localhost,linux2.wayuwa.cn,windows1.wayuwa.cn,8.136.152.131"' \
+    'Environment="NO_PROXY=127.0.0.1,localhost,linux2.wayuwa.cn,linux1.wayuwa.cn,8.136.152.131"' \
     >>/etc/systemd/system/jenkins.service.d/override.conf
 fi
 
@@ -200,7 +200,7 @@ systemctl enable --now wao-jenkins-webhook-tunnel.service
 printf '%s\n' \
   'Jenkins controller installed.' \
   'Open UI through: ssh -L 8081:127.0.0.1:8081 wadi@linux2.wayuwa.cn' \
-  'Windows authorization key:'
-cat "$secret_dir/windows-ed25519.pub"
+  'Linux1 slave authorization key:'
+cat "$secret_dir/slave-ed25519.pub"
 printf '%s\n' 'Cloud authorization key:'
 cat "$secret_dir/cloud-ed25519.pub"

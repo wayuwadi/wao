@@ -42,13 +42,13 @@ validate_user() {
 }
 
 master_address="${JUMPSERVER_MASTER_ADDRESS:-${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}}"
-windows_address="${JUMPSERVER_WINDOWS_ADDRESS:-windows1.wayuwa.cn}"
+slave_address="${JUMPSERVER_SLAVE_ADDRESS:-${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}}"
 cloud_address="${JUMPSERVER_CLOUD_ADDRESS:-8.136.152.131}"
 master_user="${JUMPSERVER_MASTER_USER:-wadi}"
-windows_user="${JUMPSERVER_WINDOWS_USER:-wadi}"
+slave_user="${JUMPSERVER_SLAVE_USER:-wage}"
 cloud_user="${JUMPSERVER_CLOUD_USER:-root}"
-for host in "$master_address" "$windows_address" "$cloud_address"; do validate_host "$host"; done
-for user in "$master_user" "$windows_user" "$cloud_user"; do validate_user "$user"; done
+for host in "$master_address" "$slave_address" "$cloud_address"; do validate_host "$host"; done
+for user in "$master_user" "$slave_user" "$cloud_user"; do validate_user "$user"; done
 
 sudo -n install -d -m 0750 -o wadi -g wadi "$state_root" "$config_dir" "$volume_dir"
 if [ ! -x "$installer_dir/jmsctl.sh" ]; then
@@ -139,7 +139,7 @@ chmod 0644 "$published_public_key"
 asset_env_tmp="$(mktemp)"
 printf '%s\n' \
   "WAO_JMS_MASTER_ADDRESS=$master_address" "WAO_JMS_MASTER_USER=$master_user" \
-  "WAO_JMS_WINDOWS_ADDRESS=$windows_address" "WAO_JMS_WINDOWS_USER=$windows_user" \
+  "WAO_JMS_SLAVE_ADDRESS=$slave_address" "WAO_JMS_SLAVE_USER=$slave_user" \
   "WAO_JMS_CLOUD_ADDRESS=$cloud_address" "WAO_JMS_CLOUD_USER=$cloud_user" >"$asset_env_tmp"
 sudo -n install -m 0600 -o wadi -g wadi "$asset_env_tmp" "$asset_env"
 
@@ -199,8 +199,8 @@ set +a
 sudo -n docker exec \
   -e "WAO_JMS_MASTER_ADDRESS=$WAO_JMS_MASTER_ADDRESS" \
   -e "WAO_JMS_MASTER_USER=$WAO_JMS_MASTER_USER" \
-  -e "WAO_JMS_WINDOWS_ADDRESS=$WAO_JMS_WINDOWS_ADDRESS" \
-  -e "WAO_JMS_WINDOWS_USER=$WAO_JMS_WINDOWS_USER" \
+  -e "WAO_JMS_SLAVE_ADDRESS=$WAO_JMS_SLAVE_ADDRESS" \
+  -e "WAO_JMS_SLAVE_USER=$WAO_JMS_SLAVE_USER" \
   -e "WAO_JMS_CLOUD_ADDRESS=$WAO_JMS_CLOUD_ADDRESS" \
   -e "WAO_JMS_CLOUD_USER=$WAO_JMS_CLOUD_USER" \
   -i jms_core sh -c \

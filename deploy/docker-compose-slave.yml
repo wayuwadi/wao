@@ -21,6 +21,7 @@ services:
       - --skip-name-resolve
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
+      - --max-allowed-packet=1G
     ports:
       - "3306:3306"
     environment:
@@ -61,7 +62,7 @@ services:
     environment:
       REDIS_MASTER_HOST: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}
       REDIS_PASS: ${REDIS_PASS}
-      REDIS_REPLICA_ANNOUNCE_HOST: ${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}
+      REDIS_REPLICA_ANNOUNCE_HOST: ${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}
     command:
       - /bin/sh
       - -ec
@@ -91,7 +92,7 @@ services:
       REDIS_MASTER_HOST: ${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}
       REDIS_MASTER_NAME: ${REDIS_MASTER_NAME:-wao-master}
       REDIS_PASS: ${REDIS_PASS}
-      SENTINEL_ANNOUNCE_HOST: ${SLAVE_PUBLIC_HOST:-windows1.wayuwa.cn}
+      SENTINEL_ANNOUNCE_HOST: ${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}
     command: ["/bin/sh", "/opt/wao/start-sentinel.sh"]
     volumes:
       - ./redis/start-sentinel.sh:/opt/wao/start-sentinel.sh:ro

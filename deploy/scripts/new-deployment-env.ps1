@@ -1,6 +1,6 @@
 param(
     [string]$MasterPublicHost = 'linux2.wayuwa.cn',
-    [string]$SlavePublicHost = 'windows1.wayuwa.cn',
+    [string]$SlavePublicHost = 'linux1.wayuwa.cn',
 
     [string]$OutputPath = (Join-Path (Split-Path -Parent $PSScriptRoot) '.env')
 )
@@ -76,4 +76,4 @@ New-Item -ItemType Directory -Path $parent -Force | Out-Null
 )
 
 Write-Host "Created private deployment configuration at $destination"
-Write-Host 'Copy this same file to deploy/.env on the Linux master and Windows replica over an authenticated encrypted channel.'
+Write-Host 'Copy this same file to deploy/.env on the Linux2 master and Linux1 replica over an authenticated encrypted channel.'
