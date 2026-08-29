@@ -2844,7 +2844,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .spin { display: inline-block; animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {
-  .home { padding: 16px; }
+  .home { padding: 8px; }
   .run-detail-mask { padding: 12px; }
   .run-detail { max-height: calc(100dvh - 24px); padding: 16px; }
   .run-activity-detail > footer { align-items: stretch; }
@@ -2853,18 +2853,20 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .run-detail-actions { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .run-detail-actions button { width: 100%; min-width: 0; }
   .run-detail-actions .primary { grid-column: 1 / -1; }
-  .home-primary { grid-template-columns: minmax(0, 1fr); }
-  .hero { padding: 22px; flex-direction: column; align-items: stretch; }
-  .hero h1.slogan { font-size: 24px; letter-spacing: .5px; }
+  .home-primary { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .hero { padding: 12px; flex-direction: column; align-items: stretch; }
+  .hero h1.slogan { margin: 5px 0 3px; font-size: 18px; letter-spacing: .2px; }
+  .hero-signals, .hero-links { margin-top: 8px; gap: 4px; }
+  .hero-signals > span, .hero-link { min-height: 26px; padding: 4px 7px; font-size: 9px; }
   .hero-metrics { width: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hero-metrics.single { grid-template-columns: minmax(0, 1fr); }
-  .goal-launcher { grid-template-columns: 1fr; padding: 17px; gap: 14px; }
+  .goal-launcher { grid-template-columns: 1fr; padding: 10px; gap: 8px; }
   .goal-actions { flex-wrap: wrap; padding-left: 9px; }
   .goal-actions label { width: 100%; }
   .goal-actions select { flex: 1; max-width: none; }
   .goal-shortcut { margin-left: 0; }
   .goal-submit { margin-left: auto; }
-  .growth-coach { padding: 16px; }
+  .growth-coach { padding: 10px; }
   .growth-coach-head { flex-wrap: wrap; }
   .growth-coach-head .growth-coach-refresh { margin-left: 50px; }
   .growth-coach-ready, .growth-coach-state { margin-left: 0; }
@@ -2873,7 +2875,12 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .growth-coach-state { align-items: stretch; flex-wrap: wrap; }
   .growth-coach-state > div { flex-basis: calc(100% - 32px); }
   .growth-coach-state > button { flex: 1; }
-  .console-tabs { overflow-x: auto; }
+  .console-tabs { margin-top: 7px; padding: 3px; overflow-x: auto; }
+  .console-tabs button { padding: 6px 8px; font-size: 10px; }
+  .run-section, .recent-section { margin-top: 7px; padding: 8px; }
+  .section-head { margin-bottom: 8px; }
+  .section-head h2 { font-size: 14px; }
+  .section-head p { margin-top: 2px; font-size: 9.5px; }
   .recent-grid { grid-template-columns: 1fr; }
   .auto-run-controls { justify-content: flex-start; flex-wrap: wrap; }
   .auto-run-options { grid-template-columns: 1fr; }

@@ -10,6 +10,7 @@ import {
 } from '@/config/nav'
 import { NAVIGATION_CATALOG } from '@/config/navigationCatalog'
 import { MODULES } from '@/config/nav'
+import { useUiStore } from '@/stores/ui'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { fetchBuiltinMenuRegistry, fetchExternalAppRegistry } from '@/api/system'
 
@@ -120,22 +121,14 @@ describe('全量导航页', () => {
     wrapper.unmount()
   })
 
-  it('从完整工作台编辑并保存当前成员的手机底栏', async () => {
+  it('工作台不再展示失效的手机底栏编辑，并继续直达真实小记链路', async () => {
     const { wrapper } = await mountNavigation()
-    await wrapper.get('.manage.primary').trigger('click')
-    expect(wrapper.text()).toContain('点选要放到底栏的功能（2/4）')
+    expect(wrapper.find('.manage').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('编辑手机底栏')
+    expect(savePreference).not.toHaveBeenCalledWith('mobile-bottom-nav-v1', expect.any(String))
 
-    await wrapper.get('.search input').setValue('游戏厅')
-    await wrapper.get('.nav-card').trigger('click')
-    expect(wrapper.get('.nav-card').classes()).toContain('selected')
-
-    await wrapper.get('.manage.primary').trigger('click')
-    await flushPromises()
-    expect(savePreference).toHaveBeenCalledWith(
-      'mobile-bottom-nav-v1',
-      JSON.stringify(['projects', 'action:note', 'games']),
-    )
-    expect(wrapper.text()).toContain('底栏已保存')
+    await wrapper.get('.quick-actions-section .nav-card').trigger('click')
+    expect(useUiStore().modal).toBe('note')
     wrapper.unmount()
   })
 })

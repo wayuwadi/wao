@@ -22,9 +22,22 @@ body {
 }
 
 @media (max-width: 760px) {
-  html { -webkit-text-size-adjust: 100%; }
-  body { min-width: 320px; }
-  button, input, textarea, select { font-size: 16px; }
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    min-width: 320px;
+    font-size: 11px;
+  }
+  #app {
+    font-size: 11px;
+  }
+  button,
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }
 
 a {

@@ -96,6 +96,13 @@
   --wao-content-max: 1340px;
 }
 
+@media (max-width: 760px) {
+  :root {
+    --wao-header-h: 36px;
+    --wao-tabbar-h: 29px;
+  }
+}
+
 /* 深色模式 —— 与明亮模式保持相同的语义层级，仅反转亮度关系 */
 :root[data-theme='dark'] {
   /* 品牌主色：略微提亮，保证在深色背景上的可读性 */

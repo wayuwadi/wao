@@ -1,5 +1,8 @@
 # 规格：移动端应用壳导航与安全区修复
 
+> 状态说明：本规格的“底部导航”应用壳规则已由
+> [手机高密度桌面同构应用壳](phase-1-mobile-dense-desktop-shell.md) 取代；完整菜单可见、当前入口跟随和安全区目标继续有效。
+
 对应任务：`t1786662178915`（移动端显示有问题）。本规格收敛到跨页面的应用壳问题；各业务页既有的
 移动端布局继续遵循 `phase-1-task-groups-and-mobile.md` 与
 `phase-1-task-links-and-mobile-polish.md`。
