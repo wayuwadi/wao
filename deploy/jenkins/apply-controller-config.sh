@@ -22,6 +22,7 @@ needs_update() {
 }
 
 needs_update deploy/jenkins/jenkins.yaml /etc/jenkins/jenkins.yaml
+needs_update /etc/jenkins/secrets/github-known-hosts /var/lib/jenkins/.ssh/known_hosts
 if ! cmp -s deploy/jenkins/plugins.txt /etc/jenkins/plugins.txt; then
   changed=true
   plugins_changed=true
@@ -73,6 +74,10 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl show --property=FragmentPath jenkins.service >/dev/null
     cp /workspace/deploy/jenkins/jenkins.yaml /host/etc/jenkins/jenkins.yaml
+    install -d -o jenkins -g jenkins -m 0700 /host/var/lib/jenkins/.ssh
+    install -o jenkins -g jenkins -m 0600 \
+      /host/etc/jenkins/secrets/github-known-hosts \
+      /host/var/lib/jenkins/.ssh/known_hosts
     cp /workspace/deploy/jenkins/plugins.txt /host/etc/jenkins/plugins.txt
     cp /workspace/deploy/jenkins/backup-controller.sh \
       /host/usr/local/lib/wao-jenkins/backup-controller.sh

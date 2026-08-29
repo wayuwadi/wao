@@ -85,6 +85,27 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
+    void jenkinsScmUsesPinnedGithubSshCredentialsInsteadOfProxyTls() throws IOException {
+        String casc = readFromRepository("deploy/jenkins/jenkins.yaml");
+        String installer = readFromRepository("deploy/jenkins/install-controller.sh");
+        String updater = readFromRepository("deploy/jenkins/apply-controller-config.sh");
+
+        assertThat(casc)
+                .contains("id: wao-github-scm-ssh")
+                .contains("url('git@github.com:wayuwacn/wao.git')")
+                .contains("credentials('wao-github-scm-ssh')")
+                .doesNotContain("url('https://github.com/wayuwacn/wao.git')");
+        assertThat(installer)
+                .contains("generate_key \"$secret_dir/github-scm-ed25519\"")
+                .contains("github-known-hosts")
+                .contains("\"$jenkins_home/.ssh/known_hosts\"")
+                .doesNotContain("credential.https://github.com.helper");
+        assertThat(updater)
+                .contains("/etc/jenkins/secrets/github-known-hosts")
+                .contains("/var/lib/jenkins/.ssh/known_hosts");
+    }
+
+    @Test
     void jenkinsFailureStatusIdentifiesTheFailedStage() throws IOException {
         String pipeline = readFromRepository("Jenkinsfile");
 

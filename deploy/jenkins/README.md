@@ -12,7 +12,8 @@ GitHub webhook 路由。
 sudo sh deploy/jenkins/prepare-controller-secrets.sh
 ```
 
-脚本只输出两把公钥。把 Linux1 从节点公钥加入 `wage` 的 OpenSSH `authorized_keys`，把云公钥加入云部署账号。
+脚本输出三把公钥。把 Linux1 从节点公钥加入 `wage` 的 OpenSSH `authorized_keys`，把云公钥加入云部署账号，
+把 GitHub SCM 公钥作为独立的 Authentication key 加入用于 `wayuwacn/wao` 的 GitHub 账号。
 私钥始终留在 `/etc/jenkins/secrets`。
 
 Linux1 的发布阶段直接使用控制器本地的 `slave-ed25519` 与 `slave-known-hosts`，两者必须保持
@@ -26,11 +27,16 @@ Jenkins Credentials 绑定，密钥内容不会进入环境变量或构建日志
 /etc/jenkins/secrets/cloud-known-hosts
 ```
 
+仓库策略禁用了 Deploy key，因此 SCM 使用账号级但仅供 Jenkins 保存的独立密钥；Credential Store 只把它绑定到
+受信任 `main` 的仓库检出，不提供给流水线步骤。通过 GitHub 官方 Meta API 取得 SSH 主机公钥并与实际握手结果
+核对后，把 `github.com` 的完整行保存为
+`/etc/jenkins/secrets/github-known-hosts`。安装脚本会复制它到 Jenkins 用户的 OpenSSH `known_hosts`，SCM
+使用 `github-scm-ed25519` 专用凭据和 `git@github.com:wayuwacn/wao.git` 拉取代码，不再依赖易受代理 TLS
+中断影响的 HTTPS 检出。
+
 在 GitHub 创建仅限 `wayuwacn/wao` 的细粒度 PAT，权限为 `Contents: read`、
 `Commit statuses: read/write`，将令牌直接写入 `/etc/jenkins/secrets/github-pat`，不要粘贴到命令历史或日志。
-安装脚本会为 `jenkins` 用户配置仅匹配 `https://github.com` 的 Git credential helper；helper 运行时直接读取
-这个文件，Token 不进入 Git 配置、进程参数或控制台输出。Credential Store 中的同一 PAT 只用于 GitHub API
-和提交状态回写。
+PAT 只导入 Credential Store，用于 GitHub API 和提交状态回写，不再参与仓库检出。
 随后运行：
 
 ```sh
