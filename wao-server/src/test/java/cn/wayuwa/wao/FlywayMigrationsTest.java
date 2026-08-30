@@ -289,6 +289,24 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void httpInspectionTopTenMigrationOnlyUpgradesThePreviousDefaults() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V116__http_inspection_top_ten.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("'http.inspection.top-n', '10'")
+                .contains("IF(cfg_value = '5'")
+                .contains("'http.inspection.max-endpoints', '10'")
+                .contains("JOIN system_setting AS top_setting")
+                .contains("max_setting.cfg_value = '2'")
+                .contains("top_setting.cfg_value = '10'")
+                .doesNotContain("DELETE FROM system_setting", "UPDATE system_setting SET");
+    }
+
+    @Test
     void configurableTaskAutoRunMigrationDefaultsToWaoTodoAndKeepsWebhookOptional() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V97__configurable_task_auto_run.sql"))

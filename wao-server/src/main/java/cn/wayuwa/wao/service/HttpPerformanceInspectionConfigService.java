@@ -23,8 +23,8 @@ public class HttpPerformanceInspectionConfigService {
     private static final String DEFAULT_FREQUENCY = "DAILY";
     private static final String DEFAULT_TIME = "06:30";
     private static final int DEFAULT_WINDOW_HOURS = 24;
-    private static final int DEFAULT_TOP_N = 5;
-    private static final int DEFAULT_MAX_ENDPOINTS = 2;
+    private static final int DEFAULT_TOP_N = 10;
+    private static final int DEFAULT_MAX_ENDPOINTS = 10;
     private static final Set<String> FREQUENCIES = Set.of("DAILY", "WEEKDAYS", "WEEKLY");
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 

@@ -41,10 +41,10 @@ describe('FilesView', () => {
 
     await wrapper.findAll('.seg-btn')[2]!.trigger('click')
     expect(wrapper.findAll('.file-row')).toHaveLength(10)
-    expect(wrapper.text()).toContain('第 1 / 2 页')
+    expect(wrapper.find('.pagination').text()).toContain('跳至')
     expect(wrapper.text()).not.toContain('托管页 11')
 
-    await wrapper.find('.pagination').findAll('button')[1]!.trigger('click')
+    await wrapper.find('.pagination').get('[aria-label="第 2 页"]').trigger('click')
     expect(wrapper.findAll('.file-row')).toHaveLength(1)
     expect(wrapper.text()).toContain('托管页 11')
 

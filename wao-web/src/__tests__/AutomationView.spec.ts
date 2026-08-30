@@ -73,11 +73,11 @@ describe('AutomationView 导航', () => {
       .trigger('click')
 
     expect(wrapper.findAll('.grid-runs.row')).toHaveLength(10)
-    expect(wrapper.text()).toContain('第 1 / 2 页')
+    expect(wrapper.find('.run-pagination').text()).toContain('跳至')
     expect(wrapper.text()).toContain('第1次')
     expect(wrapper.text()).not.toContain('第11次')
 
-    await wrapper.find('.run-pagination').findAll('button')[1]!.trigger('click')
+    await wrapper.find('.run-pagination').get('[aria-label="第 2 页"]').trigger('click')
     expect(wrapper.findAll('.grid-runs.row')).toHaveLength(1)
     expect(wrapper.text()).toContain('第11次')
   })

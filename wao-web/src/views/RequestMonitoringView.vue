@@ -7,6 +7,9 @@ import {
 } from '@/api/requestMetrics'
 import { toast } from '@/composables/toast'
 import { apiRunJob } from '@/api/board'
+import HttpPerformanceConfigModal from '@/components/overlays/HttpPerformanceConfigModal.vue'
+import HttpInspectionHistoryModal from '@/components/overlays/HttpInspectionHistoryModal.vue'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import {
   pauseRequestMetricReporter,
   resumeRequestMetricReporter,
@@ -18,9 +21,13 @@ const error = ref('')
 const hours = ref(24)
 const clearing = ref(false)
 const startingInspection = ref(false)
+const configOpen = ref(false)
+const historyOpen = ref(false)
 const TABLE_PAGE_SIZE = 20
 const endpointPage = ref(1)
 const recentPage = ref(1)
+type EndpointSort = 'failedCount' | 'averageDurationMs' | 'p95DurationMs'
+const endpointSort = ref<EndpointSort>('failedCount')
 
 const cards = computed(() => {
   const value = overview.value
@@ -38,8 +45,20 @@ const endpointPageCount = computed(() =>
 const recentPageCount = computed(() =>
   Math.max(1, Math.ceil((overview.value?.recentRequests.length ?? 0) / TABLE_PAGE_SIZE)),
 )
+const sortedEndpoints = computed(() =>
+  [...(overview.value?.endpoints ?? [])].sort((left, right) => {
+    const selected = right[endpointSort.value] - left[endpointSort.value]
+    if (selected !== 0) return selected
+    const byFailures = right.failedCount - left.failedCount
+    if (byFailures !== 0) return byFailures
+    const byAverage = right.averageDurationMs - left.averageDurationMs
+    if (byAverage !== 0) return byAverage
+    const byP95 = right.p95DurationMs - left.p95DurationMs
+    return byP95 !== 0 ? byP95 : left.path.localeCompare(right.path)
+  }),
+)
 const visibleEndpoints = computed(() =>
-  (overview.value?.endpoints ?? []).slice(
+  sortedEndpoints.value.slice(
     (endpointPage.value - 1) * TABLE_PAGE_SIZE,
     endpointPage.value * TABLE_PAGE_SIZE,
   ),
@@ -81,6 +100,11 @@ async function startInspection() {
   } finally {
     startingInspection.value = false
   }
+}
+
+function sortEndpoints(field: EndpointSort) {
+  endpointSort.value = field
+  endpointPage.value = 1
 }
 
 async function clearHistory() {
@@ -136,6 +160,12 @@ onMounted(load)
           <i :class="startingInspection ? 'ri-loader-4-line spin' : 'ri-rocket-line'"></i>
           {{ startingInspection ? '启动中' : '启动 AI 巡检' }}
         </button>
+        <button class="secondary-button" @click="configOpen = true">
+          <i class="ri-settings-3-line"></i>巡检设置
+        </button>
+        <button class="secondary-button history-button" @click="historyOpen = true">
+          <i class="ri-history-line"></i>巡检历史
+        </button>
         <select v-model.number="hours" aria-label="统计时间范围" @change="load">
           <option :value="1">最近 1 小时</option>
           <option :value="6">最近 6 小时</option>
@@ -187,7 +217,7 @@ onMounted(load)
                 <span>ENDPOINTS</span>
                 <h2>优先关注的接口</h2>
               </div>
-              <small>按平均耗时降序 · 慢请求 ≥ 1000 ms</small>
+              <small>按所选指标倒序 · 慢请求 ≥ 1000 ms</small>
             </header>
             <div class="table-scroll">
               <table>
@@ -195,10 +225,37 @@ onMounted(load)
                   <tr>
                     <th>接口</th>
                     <th>次数</th>
-                    <th>平均</th>
-                    <th>P95</th>
+                    <th>
+                      <button
+                        type="button"
+                        class="sort-button"
+                        :class="{ active: endpointSort === 'averageDurationMs' }"
+                        @click="sortEndpoints('averageDurationMs')"
+                      >
+                        平均<i class="ri-arrow-down-line"></i>
+                      </button>
+                    </th>
+                    <th>
+                      <button
+                        type="button"
+                        class="sort-button"
+                        :class="{ active: endpointSort === 'p95DurationMs' }"
+                        @click="sortEndpoints('p95DurationMs')"
+                      >
+                        P95<i class="ri-arrow-down-line"></i>
+                      </button>
+                    </th>
                     <th>慢请求</th>
-                    <th>失败</th>
+                    <th>
+                      <button
+                        type="button"
+                        class="sort-button"
+                        :class="{ active: endpointSort === 'failedCount' }"
+                        @click="sortEndpoints('failedCount')"
+                      >
+                        失败<i class="ri-arrow-down-line"></i>
+                      </button>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -218,18 +275,14 @@ onMounted(load)
                 </tbody>
               </table>
             </div>
-            <footer v-if="overview.endpoints.length > TABLE_PAGE_SIZE" class="pagination">
-              <button :disabled="endpointPage <= 1" @click="endpointPage--">
-                <i class="ri-arrow-left-line"></i>上一页
-              </button>
-              <span
-                >第 {{ endpointPage }} / {{ endpointPageCount }} 页 · 共
-                {{ overview.endpoints.length }} 条</span
-              >
-              <button :disabled="endpointPage >= endpointPageCount" @click="endpointPage++">
-                下一页<i class="ri-arrow-right-line"></i>
-              </button>
-            </footer>
+            <WaoPagination
+              v-if="overview.endpoints.length > TABLE_PAGE_SIZE"
+              v-model:page="endpointPage"
+              class="pagination"
+              :page-count="endpointPageCount"
+              :total="overview.endpoints.length"
+              aria-label="监控接口分页"
+            />
           </section>
 
           <section class="table-card">
@@ -269,22 +322,20 @@ onMounted(load)
                 </tbody>
               </table>
             </div>
-            <footer v-if="overview.recentRequests.length > TABLE_PAGE_SIZE" class="pagination">
-              <button :disabled="recentPage <= 1" @click="recentPage--">
-                <i class="ri-arrow-left-line"></i>上一页
-              </button>
-              <span
-                >第 {{ recentPage }} / {{ recentPageCount }} 页 · 共
-                {{ overview.recentRequests.length }} 条</span
-              >
-              <button :disabled="recentPage >= recentPageCount" @click="recentPage++">
-                下一页<i class="ri-arrow-right-line"></i>
-              </button>
-            </footer>
+            <WaoPagination
+              v-if="overview.recentRequests.length > TABLE_PAGE_SIZE"
+              v-model:page="recentPage"
+              class="pagination"
+              :page-count="recentPageCount"
+              :total="overview.recentRequests.length"
+              aria-label="最近请求分页"
+            />
           </section>
         </div>
       </template>
     </template>
+    <HttpPerformanceConfigModal v-if="configOpen" @close="configOpen = false" />
+    <HttpInspectionHistoryModal v-if="historyOpen" @close="historyOpen = false" />
   </main>
 </template>
 
@@ -319,6 +370,8 @@ onMounted(load)
 }
 .actions {
   display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .actions select,
@@ -341,6 +394,11 @@ onMounted(load)
   background: var(--wao-bg-card);
   color: var(--wao-danger-strong);
   border-color: #dfaaa4;
+}
+.actions .secondary-button {
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  border-color: var(--wao-line-control);
 }
 .actions .clear-button {
   border-color: #d9b7b3;
@@ -426,25 +484,7 @@ table {
 }
 .pagination {
   min-height: 38px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  color: var(--wao-text-weak);
   font-size: 9px;
-}
-.pagination button {
-  height: 27px;
-  padding: 0 8px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 7px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-2);
-  cursor: pointer;
-}
-.pagination button:disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 th,
 td {
@@ -458,6 +498,28 @@ th {
   border-top: 0;
   color: var(--wao-text-weak);
   font-size: 9px;
+}
+.sort-button {
+  height: 25px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+}
+.sort-button i {
+  margin-left: 2px;
+  opacity: 0.35;
+}
+.sort-button.active {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+}
+.sort-button.active i {
+  opacity: 1;
 }
 th:first-child,
 td:first-child,

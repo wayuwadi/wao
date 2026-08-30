@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import ChatSyncConfigModal from '@/components/overlays/ChatSyncConfigModal.vue'
 import HttpPerformanceConfigModal from '@/components/overlays/HttpPerformanceConfigModal.vue'
 import type { HttpPerformanceInspectionConfig } from '@/api/board'
@@ -296,15 +297,14 @@ function onHttpConfigSaved(config: HttpPerformanceInspectionConfig) {
             }}</span>
           </div>
         </div>
-        <footer v-if="allRuns.length > RUN_PAGE_SIZE" class="run-pagination">
-          <button :disabled="runPage <= 1" @click="runPage--">
-            <i class="ri-arrow-left-line"></i>上一页
-          </button>
-          <span>第 {{ runPage }} / {{ runPageCount }} 页 · 共 {{ allRuns.length }} 条</span>
-          <button :disabled="runPage >= runPageCount" @click="runPage++">
-            下一页<i class="ri-arrow-right-line"></i>
-          </button>
-        </footer>
+        <WaoPagination
+          v-if="allRuns.length > RUN_PAGE_SIZE"
+          v-model:page="runPage"
+          class="run-pagination"
+          :page-count="runPageCount"
+          :total="allRuns.length"
+          aria-label="自动化运行记录分页"
+        />
       </div>
       <div class="foot-note">
         「飞书群聊消息同步知识库」点右侧
@@ -602,28 +602,6 @@ function onHttpConfigSaved(config: HttpPerformanceInspectionConfig) {
 }
 .grid-runs.link:hover {
   background: var(--wao-bg-sub-2);
-}
-.run-pagination {
-  min-height: 45px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-  color: var(--wao-text-weak);
-  font-size: 11px;
-}
-.run-pagination button {
-  height: 29px;
-  padding: 0 9px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 7px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-2);
-  cursor: pointer;
-}
-.run-pagination button:disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 .right {
   text-align: right;

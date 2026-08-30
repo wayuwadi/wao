@@ -50,6 +50,17 @@ class HttpPerformanceInspectionConfigServiceTest {
     }
 
     @Test
+    void defaultsToDailyTopTenWhenNoCustomSettingsExist() {
+        var config = service.get();
+
+        assertThat(config.enabled()).isTrue();
+        assertThat(config.frequency()).isEqualTo("DAILY");
+        assertThat(config.time()).isEqualTo("06:30");
+        assertThat(config.topN()).isEqualTo(10);
+        assertThat(config.maxEndpointsPerRun()).isEqualTo(10);
+    }
+
+    @Test
     void rejectsABatchThatExceedsTheCandidatePool() {
         var request = new SaveHttpPerformanceInspectionConfigRequest(
                 true, "DAILY", "06:30", 24, 3, 4, null);

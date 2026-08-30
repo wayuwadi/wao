@@ -139,7 +139,7 @@ describe('SystemReportsView', () => {
     expect(wrapper.findAll('.task-columns > div:nth-child(2) > a')).toHaveLength(20)
     expect(wrapper.findAll('.run-list > a')).toHaveLength(20)
 
-    await wrapper.get('.run-pagination button:last-child').trigger('click')
+    await wrapper.get('.run-pagination [aria-label="第 2 页"]').trigger('click')
     expect(wrapper.findAll('.run-list > a')).toHaveLength(5)
     expect(wrapper.text()).toContain('运行任务 25')
   })
