@@ -20,8 +20,10 @@ import cn.wayuwa.wao.dto.CreateProjectRequest;
 import cn.wayuwa.wao.dto.PatchProjectRequest;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.mapper.ProjectMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class ProjectServiceTest {
 
@@ -70,11 +72,14 @@ class ProjectServiceTest {
         ProjectEntity owned = project("p-owned", "wg", "[\"wg\"]");
         ProjectEntity shared = project("p-shared", "wd", "[\"wg\",\"wd\"]");
         ProjectEntity hidden = project("p-hidden", "wd", "[\"wd\"]");
-        when(mapper.selectList(null)).thenReturn(List.of(owned, shared, hidden));
+        when(mapper.selectList(any())).thenReturn(List.of(owned, shared, hidden));
 
         assertThat(service.visibleProjectIds("wg")).containsExactlyInAnyOrder("p-owned", "p-shared");
 
-        verify(mapper).selectList(null);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<QueryWrapper<ProjectEntity>> query = ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(mapper).selectList(query.capture());
+        assertThat(query.getValue().getSqlSelect()).isEqualTo("id,owner_id,detail_json");
         verify(activities, never()).forProjects(anyCollection());
     }
 

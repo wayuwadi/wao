@@ -18,6 +18,7 @@ import cn.wayuwa.wao.dto.ProjectDetail;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.TaskGroupDto;
 import cn.wayuwa.wao.mapper.ProjectMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -76,7 +77,9 @@ public class ProjectService {
      * @return 可见项目 id 集合
      */
     public Set<String> visibleProjectIds(String memberId) {
-        return projectMapper.selectList(null).stream()
+        return projectMapper.selectList(new QueryWrapper<ProjectEntity>()
+                        .select("id", "owner_id", "detail_json"))
+                .stream()
                 .filter(project -> visibleTo(project, memberId))
                 .map(ProjectEntity::getId)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());

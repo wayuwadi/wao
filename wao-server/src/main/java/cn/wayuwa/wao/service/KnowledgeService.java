@@ -54,6 +54,7 @@ import cn.wayuwa.wao.mapper.KbGroupMapper;
 import cn.wayuwa.wao.mapper.KbMapper;
 import cn.wayuwa.wao.mapper.MemberMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -175,7 +176,10 @@ public class KnowledgeService {
     public List<KbDto> listKbs() {
         List<KbEntity> kbs = kbMapper.selectList(aliveKbs().orderByAsc(KbEntity::getOrd));
         List<KbFolderEntity> folders = folderMapper.selectList(aliveFolders().orderByAsc(KbFolderEntity::getOrd));
-        List<DocEntity> docs = docMapper.selectList(aliveDocs().orderByAsc(DocEntity::getOrd));
+        List<DocEntity> docs = docMapper.selectList(new QueryWrapper<DocEntity>()
+                .select("id", "folder_id")
+                .isNull("deleted_at")
+                .orderByAsc("ord"));
 
         Map<String, List<String>> docIdsByFolder = docIdsByFolder(docs);
         Map<String, List<KbFolderEntity>> foldersByKb = folders.stream()

@@ -22,6 +22,7 @@ import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.dto.TaskDetail;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.mapper.TaskMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -62,8 +63,9 @@ public class TaskService {
      */
     public List<TaskDto> list(String memberId) {
         Set<String> visibleProjectIds = projects.visibleProjectIds(memberId);
-        return taskMapper.selectList(null).stream()
-                .filter(task -> visibleProjectIds.contains(task.getProjectId()))
+        if (visibleProjectIds.isEmpty()) return List.of();
+        return taskMapper.selectList(new QueryWrapper<TaskEntity>()
+                        .in("project_id", visibleProjectIds)).stream()
                 .map(this::toDto)
                 .toList();
     }
