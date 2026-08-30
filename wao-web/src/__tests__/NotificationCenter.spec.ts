@@ -73,6 +73,7 @@ async function mounted() {
       { path: '/system-reports', component: { template: '<div />' } },
       { path: '/request-monitoring', component: { template: '<div />' } },
       { path: '/settings', component: { template: '<div />' } },
+      { path: '/notification-settings', component: { template: '<div />' } },
     ],
   })
   await router.push('/')
@@ -176,7 +177,7 @@ describe('右上角通知中心', () => {
 
     await wrapper.get('[aria-label="打开通知设置"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=notifications')
+    expect(router.currentRoute.value.fullPath).toBe('/notification-settings')
   })
 
   it('Escape 可关闭已经就位的抽屉', async () => {

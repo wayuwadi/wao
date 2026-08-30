@@ -3,6 +3,9 @@ import AppLayout from '@/layouts/AppLayout.vue'
 import { useSessionStore } from '@/stores/session'
 
 export function legacyMemorySettingsRedirect(tab: unknown) {
+  if (String(tab || '') === 'notifications') {
+    return { path: '/notification-settings', replace: true } as const
+  }
   if (!['memory-mcp', 'api'].includes(String(tab || ''))) return
   return { path: '/memories', query: { section: 'mcp' }, replace: true } as const
 }
@@ -358,6 +361,12 @@ const router = createRouter({
           name: 'vault',
           component: () => import('@/views/VaultView.vue'),
           meta: { module: 'vault', tabKind: 'module' },
+        },
+        {
+          path: 'notification-settings',
+          name: 'notification-settings',
+          component: () => import('@/views/NotificationSettingsView.vue'),
+          meta: { module: 'settings', tabKind: 'module' },
         },
         {
           path: 'settings',

@@ -6,6 +6,7 @@ import java.util.Map;
 
 import cn.wayuwa.wao.service.SettingService;
 import cn.wayuwa.wao.service.FeishuWebhookConfigService;
+import cn.wayuwa.wao.service.NotificationSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,15 +29,17 @@ public class FeishuWebhookNotifier {
 
     private final SettingService settings;
     private final FeishuWebhookConfigService webhooks;
+    private final NotificationSettingsService notificationSettings;
     private final RestClient client;
     /** 老的部署级 webhook（{@code FEISHU_COMMENT_WEBHOOK_URL}）：界面上还没配时继续用它，线上通知不断档。 */
     private final String legacyUrl;
 
     public FeishuWebhookNotifier(SettingService settings, FeishuWebhookConfigService webhooks,
-            RestClient.Builder builder,
+            NotificationSettingsService notificationSettings, RestClient.Builder builder,
             @Value("${feishu.comment-webhook-url:}") String legacyUrl) {
         this.settings = settings;
         this.webhooks = webhooks;
+        this.notificationSettings = notificationSettings;
         this.client = builder.build();
         this.legacyUrl = legacyUrl;
     }
@@ -63,6 +66,7 @@ public class FeishuWebhookNotifier {
      * @return 是否真的发出去了
      */
     public boolean notifyCard(Card card) {
+        if (!notificationSettings.allows(policy -> true)) return false;
         EffectiveTarget target = target();
         if (!target.enabled()) {
             return false;
@@ -85,6 +89,7 @@ public class FeishuWebhookNotifier {
      * @return 是否真实发送成功
      */
     public boolean notifyCard(String webhookId, Card card) {
+        if (!notificationSettings.allows(policy -> true)) return false;
         if (webhookId == null || webhookId.isBlank()) return notifyCard(card);
         try {
             FeishuWebhookConfigService.NotificationTarget target = webhooks.enabledTarget(webhookId.trim());
@@ -103,6 +108,7 @@ public class FeishuWebhookNotifier {
      * @return 是否真的发出去了
      */
     public boolean notifyComicCard(ComicCard card) {
+        if (!notificationSettings.allows(policy -> true)) return false;
         EffectiveTarget target = target();
         if (!target.enabled()) {
             return false;

@@ -15,20 +15,40 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
 const savedAt = ref('')
+const clock = ref(new Date())
+let clockTimer: number | undefined
+type BooleanSystemPolicyKey = Exclude<keyof SystemNotificationPolicy, 'quietStart' | 'quietEnd'>
 
 const dirty = computed(() => Boolean(snapshot.value && system.value && personal.value)
   && (JSON.stringify(system.value) !== JSON.stringify(snapshot.value!.system)
     || JSON.stringify(personal.value) !== JSON.stringify(snapshot.value!.personal)))
 
-const systemRows: Array<{ key: keyof SystemNotificationPolicy; title: string; detail: string }> = [
-  { key: 'enabled', title: '群通知总开关', detail: '关闭后所有 WAO 业务群推送停止，站内记录不受影响' },
+const systemRows: Array<{ key: BooleanSystemPolicyKey; title: string; detail: string }> = [
   { key: 'taskActivity', title: '任务普通动态', detail: '新建、状态变化、子任务与普通评论；默认关闭以减少噪音' },
   { key: 'taskSuccess', title: '任务成功通知', detail: '任务进入已完成时推送；默认关闭' },
   { key: 'aiRunSuccess', title: 'AI Run 成功通知', detail: '成功后发待验收卡片；默认关闭，飞书原消息仍显示完成勾' },
   { key: 'aiRunFailure', title: 'AI Run 失败通知', detail: '失败或未报告终态时推送真实原因与处理入口' },
   { key: 'manualTask', title: '人工通知任务', detail: '允许成员在任务详情明确点击后发送一张任务卡片' },
+  { key: 'reminders', title: '群聊提醒', detail: '日历、今日节奏和自动化定时提醒；飞书私聊提醒不受影响' },
+  { key: 'deliveryFailure', title: 'Jenkins 失败通知', detail: '构建或部署失败时发送真实失败阶段；成功部署继续保持静默' },
   { key: 'automation', title: '自动触发说明', detail: '闲置派工、HTTP 巡检等无人操作场景说明为什么启动' },
 ]
+
+const quietNow = computed(() => {
+  if (!system.value?.enabled || !system.value.quietHoursEnabled) return false
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(clock.value)
+  const current = Number(parts.find((part) => part.type === 'hour')?.value ?? 0) * 60
+    + Number(parts.find((part) => part.type === 'minute')?.value ?? 0)
+  const minutes = (value: string) => {
+    const [hour = '0', minute = '0'] = value.split(':')
+    return Number(hour) * 60 + Number(minute)
+  }
+  const start = minutes(system.value.quietStart)
+  const end = minutes(system.value.quietEnd)
+  return start < end ? current >= start && current < end : current >= start || current < end
+})
 
 const personalRows: Array<{ key: keyof PersonalNotificationPolicy; title: string; detail: string }> = [
   { key: 'enabled', title: '我的站内通知', detail: '只影响当前账号的通知中心动态与未读数' },
@@ -86,9 +106,13 @@ function beforeUnload(event: BeforeUnloadEvent) {
 defineExpose({ confirmLeave })
 onMounted(() => {
   window.addEventListener('beforeunload', beforeUnload)
+  clockTimer = window.setInterval(() => { clock.value = new Date() }, 60_000)
   void load()
 })
-onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', beforeUnload)
+  if (clockTimer !== undefined) window.clearInterval(clockTimer)
+})
 </script>
 
 <template>
@@ -107,7 +131,24 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
       <div v-if="error" class="inline-error" role="alert">{{ error }}<button type="button" @click="save">重试保存</button></div>
 
       <section class="policy-card">
-        <div class="policy-head"><div><h2>系统 · 飞书群通知</h2><p>全组织共享，仍叠加 Webhook 总开关和项目静音。</p></div><span>{{ snapshot.canManageSystem ? '管理员可编辑' : '仅管理员可编辑' }}</span></div>
+        <div class="policy-head"><div><h2>系统 · 群聊通知</h2><p>全组织共享，覆盖 Jenkins、任务、提醒和其他 WAO Webhook 消息。</p></div><span>{{ snapshot.canManageSystem ? '管理员可编辑' : '仅管理员可编辑' }}</span></div>
+        <div class="effective-state" :class="{ quiet: quietNow, off: !system.enabled }">
+          <i :class="!system.enabled ? 'ri-notification-off-line' : quietNow ? 'ri-moon-clear-line' : 'ri-notification-3-line'"></i>
+          <span><b>{{ !system.enabled ? '全部群通知已关闭' : quietNow ? '当前处于沉默时段' : '当前允许群通知' }}</b><small>上海时间（UTC+8）· 私聊消息不受影响</small></span>
+        </div>
+        <label class="policy-row">
+          <span><b>群通知总开关</b><small>关闭后所有 WAO 业务群推送停止，站内记录和飞书私聊不受影响</small></span>
+          <input v-model="system.enabled" type="checkbox" :disabled="!snapshot.canManageSystem || saving" />
+        </label>
+        <div class="quiet-row">
+          <label><span><b>每日沉默时段</b><small>时段内所有群通知直接跳过，不积压到次日补发</small></span><input v-model="system.quietHoursEnabled" type="checkbox" :disabled="!snapshot.canManageSystem || saving" /></label>
+          <div class="quiet-times" :class="{ disabled: !system.quietHoursEnabled }">
+            <input v-model="system.quietStart" type="time" aria-label="沉默开始时间" :disabled="!snapshot.canManageSystem || saving || !system.quietHoursEnabled" />
+            <span>至</span>
+            <input v-model="system.quietEnd" type="time" aria-label="沉默结束时间" :disabled="!snapshot.canManageSystem || saving || !system.quietHoursEnabled" />
+            <small>上海时间，支持跨午夜</small>
+          </div>
+        </div>
         <label v-for="row in systemRows" :key="row.key" class="policy-row">
           <span><b>{{ row.title }}</b><small>{{ row.detail }}</small></span>
           <input v-model="system[row.key]" type="checkbox" :disabled="!snapshot.canManageSystem || saving" />
@@ -147,6 +188,20 @@ header p, .policy-head p { margin-top: 5px; color: var(--wao-text-weak); font-si
 .policy-row small { color: var(--wao-text-weak); font-size: 11px; line-height: 1.5; }
 .policy-row input { width: 36px; height: 20px; accent-color: var(--wao-primary); cursor: pointer; }
 .policy-row input:disabled { cursor: default; opacity: .55; }
+.effective-state { margin: 12px 16px 4px; padding: 10px 12px; border-radius: 9px; display: flex; align-items: center; gap: 9px; color: var(--wao-success); background: color-mix(in srgb, var(--wao-success) 9%, transparent); }
+.effective-state.quiet { color: var(--wao-warning-strong); background: var(--wao-warning-bg); }
+.effective-state.off { color: var(--wao-text-weak); background: var(--wao-bg-sub); }
+.effective-state > span { display: grid; gap: 2px; }
+.effective-state small { font-size: 10px; color: var(--wao-text-weak); }
+.quiet-row { padding: 10px 16px 14px; border-top: 1px solid var(--wao-divider); display: grid; gap: 10px; }
+.quiet-row > label { display: flex; align-items: center; gap: 12px; }
+.quiet-row > label > span { flex: 1; display: grid; gap: 3px; }
+.quiet-row b { font-size: 13px; }
+.quiet-row small { color: var(--wao-text-weak); font-size: 11px; }
+.quiet-row > label > input { width: 36px; height: 20px; accent-color: var(--wao-primary); }
+.quiet-times { display: flex; align-items: center; gap: 8px; padding-left: 12px; }
+.quiet-times.disabled { opacity: .55; }
+.quiet-times input { padding: 6px 8px; border: 1px solid var(--wao-line); border-radius: 7px; color: var(--wao-text); background: var(--wao-bg-card); }
 footer { position: sticky; bottom: 12px; padding: 10px 12px; border: 1px solid var(--wao-line); border-radius: 10px; background: color-mix(in srgb, var(--wao-bg-card) 94%, transparent); box-shadow: var(--wao-shadow-pop); display: flex; align-items: center; gap: 12px; }
 footer span { flex: 1; color: var(--wao-text-weak); font-size: 12px; }
 footer button, .panel-state button, .inline-error button { padding: 7px 12px; border: 0; border-radius: 7px; background: var(--wao-primary); color: #fff; cursor: pointer; }

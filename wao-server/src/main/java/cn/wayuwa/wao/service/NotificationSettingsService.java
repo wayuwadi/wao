@@ -1,7 +1,9 @@
 package cn.wayuwa.wao.service;
 
+import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.domain.MemberEntity;
+import cn.wayuwa.wao.dto.GroupNotificationDecisionDto;
 import cn.wayuwa.wao.dto.NotificationSettingsDto;
 import cn.wayuwa.wao.dto.NotificationSettingsDto.PersonalPolicy;
 import cn.wayuwa.wao.dto.NotificationSettingsDto.SystemPolicy;
@@ -10,6 +12,11 @@ import cn.wayuwa.wao.mapper.MemberMapper;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,9 +28,12 @@ public class NotificationSettingsService {
     public static final String SYSTEM_POLICY_KEY = SettingService.NOTIFICATION_POLICY;
     public static final String PERSONAL_POLICY_KEY = "notification-center-policy-v1";
     private static final Set<String> ADMIN_ROLES = Set.of("管理员", "超级管理员");
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
 
     private static final SystemPolicy DEFAULT_SYSTEM = new SystemPolicy(
-            true, false, false, false, true, true, true);
+            true, false, "22:00", "08:00",
+            false, false, false, true, true, true, true, true);
     private static final PersonalPolicy DEFAULT_PERSONAL = new PersonalPolicy(
             true, true, true, true, true, true);
 
@@ -57,7 +67,7 @@ public class NotificationSettingsService {
         if (request == null) return get(memberId);
         if (request.system() != null) {
             if (!canManageSystem(memberId)) throw new UnauthorizedException("只有管理员可以修改系统通知策略");
-            settings.put(SYSTEM_POLICY_KEY, write(request.system()));
+            settings.put(SYSTEM_POLICY_KEY, write(validate(request.system())));
         }
         if (request.personal() != null) {
             requireMember(memberId);
@@ -73,11 +83,16 @@ public class NotificationSettingsService {
         try {
             JsonNode node = json.readTree(value);
             return new SystemPolicy(bool(node, "enabled", DEFAULT_SYSTEM.enabled()),
+                    bool(node, "quietHoursEnabled", DEFAULT_SYSTEM.quietHoursEnabled()),
+                    time(node, "quietStart", DEFAULT_SYSTEM.quietStart()),
+                    time(node, "quietEnd", DEFAULT_SYSTEM.quietEnd()),
                     bool(node, "taskActivity", DEFAULT_SYSTEM.taskActivity()),
                     bool(node, "taskSuccess", DEFAULT_SYSTEM.taskSuccess()),
                     bool(node, "aiRunSuccess", DEFAULT_SYSTEM.aiRunSuccess()),
                     bool(node, "aiRunFailure", DEFAULT_SYSTEM.aiRunFailure()),
                     bool(node, "manualTask", DEFAULT_SYSTEM.manualTask()),
+                    bool(node, "reminders", DEFAULT_SYSTEM.reminders()),
+                    bool(node, "deliveryFailure", DEFAULT_SYSTEM.deliveryFailure()),
                     bool(node, "automation", DEFAULT_SYSTEM.automation()));
         } catch (Exception ignored) {
             return DEFAULT_SYSTEM;
@@ -103,8 +118,40 @@ public class NotificationSettingsService {
 
     /** 系统总开关和指定业务开关同时开启时才允许群推送。 */
     public boolean allows(java.util.function.Predicate<SystemPolicy> scene) {
+        return allows(scene, LocalDateTime.now(ZONE));
+    }
+
+    /** 在指定上海时间判断群通知，供跨午夜沉默窗口测试和定时任务复用。 */
+    public boolean allows(java.util.function.Predicate<SystemPolicy> scene, LocalDateTime now) {
         SystemPolicy policy = systemPolicy();
-        return policy.enabled() && scene.test(policy);
+        return policy.enabled() && !isQuiet(policy, now.toLocalTime()) && scene.test(policy);
+    }
+
+    /** 返回 Jenkins 等外部发送端可消费的门禁结果，不暴露完整组织配置。 */
+    public GroupNotificationDecisionDto deliveryFailureDecision() {
+        SystemPolicy policy = systemPolicy();
+        if (!policy.enabled()) return new GroupNotificationDecisionDto(false, "群通知总开关已关闭");
+        if (!policy.deliveryFailure()) return new GroupNotificationDecisionDto(false, "Jenkins 失败通知已关闭");
+        if (isQuiet(policy, LocalDateTime.now(ZONE).toLocalTime())) {
+            return new GroupNotificationDecisionDto(false,
+                    "当前处于沉默时段 " + policy.quietStart() + "–" + policy.quietEnd());
+        }
+        return new GroupNotificationDecisionDto(true, "允许发送");
+    }
+
+    /** 当前是否允许群提醒；私聊提醒不受系统群通知策略影响。 */
+    public boolean allowsReminders() {
+        return allows(SystemPolicy::reminders);
+    }
+
+    /** 当前群通知被总开关或沉默时段阻止时的可操作说明。 */
+    public String blockedReason() {
+        SystemPolicy policy = systemPolicy();
+        if (!policy.enabled()) return "群通知总开关已关闭";
+        if (isQuiet(policy, LocalDateTime.now(ZONE).toLocalTime())) {
+            return "当前处于群通知沉默时段 " + policy.quietStart() + "–" + policy.quietEnd();
+        }
+        return "该类群通知已关闭";
     }
 
     private boolean canManageSystem(String memberId) {
@@ -123,6 +170,42 @@ public class NotificationSettingsService {
             return json.writeValueAsString(value);
         } catch (Exception ex) {
             throw new IllegalStateException("通知设置无法序列化", ex);
+        }
+    }
+
+    private SystemPolicy validate(SystemPolicy policy) {
+        String start = normalizeTime(policy.quietStart(), "沉默开始时间");
+        String end = normalizeTime(policy.quietEnd(), "沉默结束时间");
+        if (policy.quietHoursEnabled() && start.equals(end)) {
+            throw new BadRequestException("沉默开始时间和结束时间不能相同");
+        }
+        return new SystemPolicy(policy.enabled(), policy.quietHoursEnabled(), start, end,
+                policy.taskActivity(), policy.taskSuccess(), policy.aiRunSuccess(), policy.aiRunFailure(),
+                policy.manualTask(), policy.reminders(), policy.deliveryFailure(), policy.automation());
+    }
+
+    private static boolean isQuiet(SystemPolicy policy, LocalTime now) {
+        if (!policy.quietHoursEnabled()) return false;
+        LocalTime start = LocalTime.parse(policy.quietStart(), TIME);
+        LocalTime end = LocalTime.parse(policy.quietEnd(), TIME);
+        if (start.isBefore(end)) return !now.isBefore(start) && now.isBefore(end);
+        return !now.isBefore(start) || now.isBefore(end);
+    }
+
+    private static String time(JsonNode node, String key, String fallback) {
+        if (!node.path(key).isTextual()) return fallback;
+        try {
+            return LocalTime.parse(node.path(key).asText(), TIME).format(TIME);
+        } catch (DateTimeParseException ignored) {
+            return fallback;
+        }
+    }
+
+    private static String normalizeTime(String value, String label) {
+        try {
+            return LocalTime.parse(value == null ? "" : value.trim(), TIME).format(TIME);
+        } catch (DateTimeParseException ex) {
+            throw new BadRequestException(label + "必须是 HH:mm 格式");
         }
     }
 

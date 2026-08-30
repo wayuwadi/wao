@@ -19,6 +19,11 @@ hello="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all
 printf '%s' "$hello" | grep -q '"code":0'
 printf '%s' "$hello" | grep -q '"service":"wao-server"'
 
+notification_policy="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+  https://wao.wayuwa.cn/api/public/notification-settings/jenkins-failure)"
+printf '%s' "$notification_policy" \
+  | jq -e '.code == 0 and (.data.allowed | type == "boolean") and (.data.reason | type == "string")' >/dev/null
+
 agent_health="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://wao.wayuwa.cn/api/agent/health)"
 printf '%s' "$agent_health" | grep -q '"status":"UP"'

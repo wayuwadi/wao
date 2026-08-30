@@ -4,8 +4,9 @@ package cn.wayuwa.wao.dto;
 public record NotificationSettingsDto(boolean canManageSystem, SystemPolicy system, PersonalPolicy personal) {
 
     /** 管理员维护、全组织共享的通知策略。 */
-    public record SystemPolicy(boolean enabled, boolean taskActivity, boolean taskSuccess,
-            boolean aiRunSuccess, boolean aiRunFailure, boolean manualTask, boolean automation) { }
+    public record SystemPolicy(boolean enabled, boolean quietHoursEnabled, String quietStart, String quietEnd,
+            boolean taskActivity, boolean taskSuccess, boolean aiRunSuccess, boolean aiRunFailure,
+            boolean manualTask, boolean reminders, boolean deliveryFailure, boolean automation) { }
 
     /** 当前登录成员自己的通知中心过滤偏好。 */
     public record PersonalPolicy(boolean enabled, boolean taskCreated, boolean taskCompleted,

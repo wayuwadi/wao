@@ -111,7 +111,8 @@ class FeishuTaskNotifierTest {
             java.util.function.Predicate<cn.wayuwa.wao.dto.NotificationSettingsDto.SystemPolicy> scene =
                     invocation.getArgument(0);
             return scene.test(new cn.wayuwa.wao.dto.NotificationSettingsDto.SystemPolicy(
-                    true, false, false, false, true, true, true));
+                    true, false, "22:00", "08:00",
+                    false, false, false, true, true, true, true, true));
         });
         when(webhook.notifyCard(any())).thenReturn(true);
 

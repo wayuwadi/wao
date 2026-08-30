@@ -3,6 +3,12 @@ info:
   title: WAO 通知设置 API
   version: 0.1.0
 paths:
+  /api/public/notification-settings/jenkins-failure:
+    get:
+      summary: 返回 Jenkins 失败群通知当前是否允许发送
+      responses:
+        '200':
+          description: 只返回最终门禁结论与原因，不公开完整系统策略
   /api/notification-settings:
     get:
       summary: 读取管理员共享群通知策略与当前成员站内偏好
@@ -41,14 +47,19 @@ components:
         personal: { $ref: '#/components/schemas/PersonalNotificationPolicy' }
     SystemNotificationPolicy:
       type: object
-      required: [enabled, taskActivity, taskSuccess, aiRunSuccess, aiRunFailure, manualTask, automation]
+      required: [enabled, quietHoursEnabled, quietStart, quietEnd, taskActivity, taskSuccess, aiRunSuccess, aiRunFailure, manualTask, reminders, deliveryFailure, automation]
       properties:
         enabled: { type: boolean }
+        quietHoursEnabled: { type: boolean }
+        quietStart: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', example: '22:00' }
+        quietEnd: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', example: '08:00' }
         taskActivity: { type: boolean }
         taskSuccess: { type: boolean }
         aiRunSuccess: { type: boolean }
         aiRunFailure: { type: boolean }
         manualTask: { type: boolean }
+        reminders: { type: boolean }
+        deliveryFailure: { type: boolean }
         automation: { type: boolean }
     PersonalNotificationPolicy:
       type: object

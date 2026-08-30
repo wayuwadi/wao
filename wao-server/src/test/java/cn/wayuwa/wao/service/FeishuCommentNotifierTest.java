@@ -30,7 +30,8 @@ class FeishuCommentNotifierTest {
         when(settings.allows(any())).thenAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             Predicate<SystemPolicy> scene = invocation.getArgument(0);
-            return scene.test(new SystemPolicy(true, false, false, false, true, true, true));
+            return scene.test(new SystemPolicy(true, false, "22:00", "08:00",
+                    false, false, false, true, true, true, true, true));
         });
         CommentDto comment = new CommentDto("c1", "wd", "2026-08-28T18:00:00+08:00", "请查看");
 

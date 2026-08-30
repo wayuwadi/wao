@@ -66,7 +66,7 @@ class WorkdayRhythmReminderServiceTest {
 
         WorkdayRhythmReminderService service = new WorkdayRhythmReminderService(items, occurrences, deliveries,
                 dashboard, accounts, identities, settings, feishu, mock(FeishuWebhookConfigService.class),
-                mock(FeishuWebhookNotifier.class), links);
+                mock(FeishuWebhookNotifier.class), links, mock(NotificationSettingsService.class));
         service.sendDue(now);
         service.sendDue(now.plusMinutes(1));
 

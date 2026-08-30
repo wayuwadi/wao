@@ -33,15 +33,18 @@ public class WorkdayRhythmReminderService {
     private final FeishuWebhookConfigService webhooks;
     private final FeishuWebhookNotifier webhookNotifier;
     private final FeishuAppLinks links;
+    private final NotificationSettingsService notificationSettings;
 
     public WorkdayRhythmReminderService(WorkdayRhythmChecklistItemMapper items,
             WorkdayRhythmChecklistOccurrenceMapper occurrences, WorkdayRhythmReminderDeliveryMapper deliveries,
             WorkdayRhythmDashboardService dashboard, AccountMapper accounts, AccountIdentityMapper identities,
             SettingService settings, FeishuOpenApiClient feishu, FeishuWebhookConfigService webhooks,
-            FeishuWebhookNotifier webhookNotifier, FeishuAppLinks links) {
+            FeishuWebhookNotifier webhookNotifier, FeishuAppLinks links,
+            NotificationSettingsService notificationSettings) {
         this.items=items; this.occurrences=occurrences; this.deliveries=deliveries; this.dashboard=dashboard;
         this.accounts=accounts; this.identities=identities; this.settings=settings; this.feishu=feishu;
         this.webhooks=webhooks; this.webhookNotifier=webhookNotifier; this.links=links;
+        this.notificationSettings=notificationSettings;
     }
 
     /** 每分钟固化今天和前一天的实例，仅向到点且未完成的项目投递。 */
@@ -63,6 +66,10 @@ public class WorkdayRhythmReminderService {
     }
 
     private void deliver(WorkdayRhythmChecklistOccurrenceEntity occurrence, String channel, LocalDateTime now) {
+        if (!"DIRECT".equals(channel) && !notificationSettings.allowsReminders()) {
+            skip(occurrence, channel, now, notificationSettings.blockedReason());
+            return;
+        }
         WorkdayRhythmReminderDeliveryEntity delivery = deliveries.selectOne(
                 new LambdaQueryWrapper<WorkdayRhythmReminderDeliveryEntity>()
                         .eq(WorkdayRhythmReminderDeliveryEntity::getOccurrenceId, occurrence.getId())
@@ -87,6 +94,21 @@ public class WorkdayRhythmReminderService {
             delivery.setErrorMessage(message.substring(0, Math.min(512, message.length())));
         }
         deliveries.updateById(delivery);
+    }
+
+    private void skip(WorkdayRhythmChecklistOccurrenceEntity occurrence, String channel,
+            LocalDateTime now, String reason) {
+        WorkdayRhythmReminderDeliveryEntity existing = deliveries.selectOne(
+                new LambdaQueryWrapper<WorkdayRhythmReminderDeliveryEntity>()
+                        .eq(WorkdayRhythmReminderDeliveryEntity::getOccurrenceId, occurrence.getId())
+                        .eq(WorkdayRhythmReminderDeliveryEntity::getChannel, channel)
+                        .last("LIMIT 1"));
+        if (existing != null) return;
+        WorkdayRhythmReminderDeliveryEntity skipped = new WorkdayRhythmReminderDeliveryEntity();
+        skipped.setId(id()); skipped.setOccurrenceId(occurrence.getId()); skipped.setChannel(channel);
+        skipped.setStatus("SKIPPED"); skipped.setAttempts(0); skipped.setAttemptedAt(now);
+        skipped.setErrorMessage(reason.substring(0, Math.min(512, reason.length())));
+        try { deliveries.insert(skipped); } catch (DuplicateKeyException ignored) { }
     }
 
     private void send(WorkdayRhythmChecklistOccurrenceEntity value, String channel) {

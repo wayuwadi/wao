@@ -7,8 +7,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import cn.wayuwa.wao.service.FeishuWebhookConfigService;
+import cn.wayuwa.wao.service.NotificationSettingsService;
 import cn.wayuwa.wao.service.SettingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -74,7 +76,8 @@ class FeishuWebhookNotifierTest {
         when(webhooks.defaultTarget()).thenReturn(Optional.of(
                 new FeishuWebhookConfigService.NotificationTarget("fw1", "默认机器人", url, true)));
         FeishuWebhookNotifier notifier = new FeishuWebhookNotifier(
-                settings, webhooks, RestClient.builder(), "https://legacy.invalid/hook");
+                settings, webhooks, mock(NotificationSettingsService.class),
+                RestClient.builder(), "https://legacy.invalid/hook");
 
         assertThat(notifier.resolvedUrl()).isEqualTo(url);
         assertThat(notifier.enabled()).isTrue();
@@ -87,9 +90,23 @@ class FeishuWebhookNotifierTest {
         when(webhooks.defaultTarget()).thenReturn(Optional.empty());
         when(webhooks.registryInitialized()).thenReturn(true);
         FeishuWebhookNotifier notifier = new FeishuWebhookNotifier(
-                settings, webhooks, RestClient.builder(), "https://legacy.invalid/hook");
+                settings, webhooks, mock(NotificationSettingsService.class),
+                RestClient.builder(), "https://legacy.invalid/hook");
 
         assertThat(notifier.resolvedUrl()).isEmpty();
         assertThat(notifier.enabled()).isFalse();
+    }
+
+    @Test
+    void globalQuietGateStopsBusinessWebhookBeforeResolvingAnySecretTarget() {
+        SettingService settings = mock(SettingService.class);
+        FeishuWebhookConfigService webhooks = mock(FeishuWebhookConfigService.class);
+        NotificationSettingsService notificationSettings = mock(NotificationSettingsService.class);
+        when(notificationSettings.allows(org.mockito.ArgumentMatchers.any())).thenReturn(false);
+        FeishuWebhookNotifier notifier = new FeishuWebhookNotifier(
+                settings, webhooks, notificationSettings, RestClient.builder(), "https://legacy.invalid/hook");
+
+        assertThat(notifier.notifyCard(FeishuWebhookNotifier.Card.simple("提醒", "orange", "正文"))).isFalse();
+        verifyNoInteractions(webhooks);
     }
 }

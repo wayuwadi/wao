@@ -41,16 +41,19 @@ public class FamilyImportantDateService {
     private final AccountIdentityMapper identities;
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
+    private final NotificationSettingsService notificationSettings;
 
     public FamilyImportantDateService(FamilyImportantDateMapper dates,
             FamilyImportantDateDeliveryMapper deliveries, AccountMapper accounts,
-            AccountIdentityMapper identities, SettingService settings, FeishuOpenApiClient feishu) {
+            AccountIdentityMapper identities, SettingService settings, FeishuOpenApiClient feishu,
+            NotificationSettingsService notificationSettings) {
         this.dates = dates;
         this.deliveries = deliveries;
         this.accounts = accounts;
         this.identities = identities;
         this.settings = settings;
         this.feishu = feishu;
+        this.notificationSettings = notificationSettings;
     }
 
     /** 返回当前成员的全部维护项和指定日期窗内按公历或农历展开的事件。 */
@@ -213,7 +216,8 @@ public class FamilyImportantDateService {
                 return;
             }
         } else {
-            if ("SENT".equals(delivery.getStatus()) || delivery.getAttempts() >= 6
+            if (("SENT".equals(delivery.getStatus()) || "SKIPPED".equals(delivery.getStatus()))
+                    || delivery.getAttempts() >= 6
                     || !delivery.getAttemptedAt().isBefore(now.minusMinutes(5))) return;
             int nextAttempts = delivery.getAttempts() + 1;
             if (deliveries.claimRetry(delivery.getId(), delivery.getAttemptedAt(), now, nextAttempts) == 0) return;
@@ -222,6 +226,13 @@ public class FamilyImportantDateService {
             delivery.setStatus("PROCESSING");
         }
         try {
+            if ("GROUP".equals(notificationType(entity.getNotificationType()))
+                    && !notificationSettings.allowsReminders()) {
+                delivery.setStatus("SKIPPED");
+                delivery.setErrorMessage(notificationSettings.blockedReason());
+                deliveries.updateById(delivery);
+                return;
+            }
             var account = accounts.findByMemberId(entity.getMemberId());
             var identity = account == null ? null : identities.findByAccountProvider(account.getId(), "feishu");
             String appId = appId();
@@ -265,7 +276,7 @@ public class FamilyImportantDateService {
     private boolean deliveryReady(FamilyImportantDateEntity entity, LocalDate occurrence, LocalDateTime now) {
         FamilyImportantDateDeliveryEntity delivery = findDelivery(entity.getId(), occurrence);
         if (delivery == null) return true;
-        if ("SENT".equals(delivery.getStatus())) return false;
+        if ("SENT".equals(delivery.getStatus()) || "SKIPPED".equals(delivery.getStatus())) return false;
         return delivery.getAttempts() < 6 && delivery.getAttemptedAt().isBefore(now.minusMinutes(5));
     }
 

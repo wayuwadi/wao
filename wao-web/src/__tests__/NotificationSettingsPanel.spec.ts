@@ -18,11 +18,16 @@ const settings: NotificationSettings = {
   canManageSystem: true,
   system: {
     enabled: true,
+    quietHoursEnabled: false,
+    quietStart: '22:00',
+    quietEnd: '08:00',
     taskActivity: false,
     taskSuccess: false,
     aiRunSuccess: false,
     aiRunFailure: true,
     manualTask: true,
+    reminders: true,
+    deliveryFailure: true,
     automation: true,
   },
   personal: {
@@ -53,6 +58,11 @@ describe('通知设置', () => {
     expect((systemRows[2]!.get('input').element as HTMLInputElement).checked).toBe(false)
     expect((systemRows[3]!.get('input').element as HTMLInputElement).checked).toBe(false)
     expect((systemRows[4]!.get('input').element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.text()).toContain('Jenkins 失败通知')
+    expect(wrapper.text()).toContain('每日沉默时段')
+    await wrapper.get('.quiet-row > label input').setValue(true)
+    await wrapper.get('input[aria-label="沉默开始时间"]').setValue('21:30')
+    expect(wrapper.text()).toContain('有未保存修改')
     await systemRows[3]!.get('input').setValue(true)
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     expect((wrapper.vm as unknown as { confirmLeave: () => boolean }).confirmLeave()).toBe(false)
