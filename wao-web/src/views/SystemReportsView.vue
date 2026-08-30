@@ -10,6 +10,7 @@ import {
   type SystemReportPeriod,
   type SystemReportSettings,
 } from '@/api/systemReports'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 
 const PERIODS: Array<{ id: SystemReportPeriod; label: string; hint: string }> = [
   { id: 'DAY', label: '日报', hint: '最近完整自然日' },
@@ -454,13 +455,14 @@ onMounted(() => Promise.all([load(), loadSettings()]))
                   ></span
                 ><i class="ri-arrow-right-up-line"></i
               ></a>
-              <div v-if="createdTaskPages > 1" class="pagination">
-                <button :disabled="createdTaskPage <= 1" @click="createdTaskPage--">上一页</button>
-                <span>{{ createdTaskPage }} / {{ createdTaskPages }}</span>
-                <button :disabled="createdTaskPage >= createdTaskPages" @click="createdTaskPage++">
-                  下一页
-                </button>
-              </div>
+              <WaoPagination
+                v-if="createdTaskPages > 1"
+                v-model:page="createdTaskPage"
+                class="pagination"
+                :page-count="createdTaskPages"
+                :total="createdTasks.length"
+                aria-label="新建任务分页"
+              />
             </div>
             <div v-if="includesCompleted">
               <h3>完成 · {{ completedTasks.length }}</h3>
@@ -476,18 +478,14 @@ onMounted(() => Promise.all([load(), loadSettings()]))
                   ></span
                 ><i class="ri-arrow-right-up-line"></i
               ></a>
-              <div v-if="completedTaskPages > 1" class="pagination">
-                <button :disabled="completedTaskPage <= 1" @click="completedTaskPage--">
-                  上一页
-                </button>
-                <span>{{ completedTaskPage }} / {{ completedTaskPages }}</span>
-                <button
-                  :disabled="completedTaskPage >= completedTaskPages"
-                  @click="completedTaskPage++"
-                >
-                  下一页
-                </button>
-              </div>
+              <WaoPagination
+                v-if="completedTaskPages > 1"
+                v-model:page="completedTaskPage"
+                class="pagination"
+                :page-count="completedTaskPages"
+                :total="completedTasks.length"
+                aria-label="完成任务分页"
+              />
             </div>
           </div>
           <p v-else class="empty-text">这个周期没有新建或完成的任务。</p>
@@ -517,11 +515,14 @@ onMounted(() => Promise.all([load(), loadSettings()]))
               <p v-if="run.resultSummary">{{ run.resultSummary }}</p>
             </a>
           </div>
-          <div v-if="runPages > 1" class="pagination run-pagination">
-            <button :disabled="runPage <= 1" @click="runPage--">上一页</button>
-            <span>第 {{ runPage }} / {{ runPages }} 页</span>
-            <button :disabled="runPage >= runPages" @click="runPage++">下一页</button>
-          </div>
+          <WaoPagination
+            v-if="runPages > 1"
+            v-model:page="runPage"
+            class="pagination run-pagination"
+            :page-count="runPages"
+            :total="report.runs.length"
+            aria-label="系统报告 AI 运行分页"
+          />
           <p v-if="!report.runs.length" class="empty-text">这个周期没有启动过 AI Run。</p>
         </section>
       </template>
@@ -941,24 +942,6 @@ onMounted(() => Promise.all([load(), loadSettings()]))
 }
 .pagination {
   margin-top: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: var(--wao-text-weak);
-  font-size: 9px;
-}
-.pagination button {
-  padding: 5px 8px;
-  border: 1px solid var(--wao-line);
-  border-radius: 7px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-3);
-  cursor: pointer;
-}
-.pagination button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 .run-pagination {
   margin-top: 12px;

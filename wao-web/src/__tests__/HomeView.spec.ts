@@ -827,7 +827,7 @@ describe('HomeView AI 控制台', () => {
     expect(fetchAiActivities).toHaveBeenCalledWith('ALL', 1, 20)
     expect(wrapper.find('.run-history-detail').text()).toContain('全部运行历史')
     expect(wrapper.find('.run-history-detail').text()).toContain('历史运行')
-    expect(wrapper.find('.history-pagination').text()).toContain('第 1 / 2 页')
+    expect(wrapper.find('.history-pagination').text()).toContain('跳至')
     await wrapper.find('.run-history-detail .recent-card').trigger('click')
     expect(wrapper.findAll('.run-detail')).toHaveLength(2)
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
@@ -852,7 +852,7 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.recent-pagination').text()).toContain('上一页')
     expect(wrapper.find('.recent-pagination').text()).toContain('下一页')
 
-    await wrapper.findAll('.recent-pagination button')[1]!.trigger('click')
+    await wrapper.find('.recent-pagination').get('[aria-label="第 2 页"]').trigger('click')
     await flushPromises()
     expect(fetchAiActivities).toHaveBeenCalledWith('ALL', 2, 8)
     wrapper.unmount()

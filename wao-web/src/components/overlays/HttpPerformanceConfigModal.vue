@@ -18,8 +18,8 @@ const form = reactive<HttpPerformanceInspectionConfig>({
   frequency: 'DAILY',
   time: '06:30',
   windowHours: 24,
-  topN: 5,
-  maxEndpointsPerRun: 2,
+  topN: 10,
+  maxEndpointsPerRun: 10,
   notificationWebhookId: null,
 })
 const webhooks = ref<FeishuWebhookEndpoint[]>([])
@@ -113,13 +113,13 @@ onMounted(load)
             </div></label
           >
           <label
-            ><span>Top N 候选接口</span
+            ><span>每轮候选接口数</span
             ><input v-model.number="form.topN" type="number" min="1" max="20" required /><small
               >按平均耗时从真实聚合指标选入任务上下文。</small
             ></label
           >
           <label
-            ><span>单次最多治理</span>
+            ><span>每轮最多治理数量</span>
             <div class="unit">
               <input
                 v-model.number="form.maxEndpointsPerRun"

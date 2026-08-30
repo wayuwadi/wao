@@ -5,6 +5,7 @@ import { copyText } from '@/utils/clipboard'
 import { absoluteUrl, fileShareUrl } from '@/utils/share'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import FileSettingsModal from '@/components/overlays/FileSettingsModal.vue'
 import { fetchFileSettings, type FileSettings } from '@/api/system'
 import type { HostedPage } from '@/types'
@@ -558,18 +559,14 @@ function onFileSettingsSaved(settings: FileSettings) {
             <i class="ri-delete-bin-line"></i>
           </button>
         </div>
-        <footer v-if="data.hostedPages.length > HOSTED_PAGE_SIZE" class="pagination">
-          <button :disabled="hostedPage <= 1" @click="hostedPage--">
-            <i class="ri-arrow-left-line"></i>上一页
-          </button>
-          <span
-            >第 {{ hostedPage }} / {{ hostedPageCount }} 页 · 共
-            {{ data.hostedPages.length }} 条</span
-          >
-          <button :disabled="hostedPage >= hostedPageCount" @click="hostedPage++">
-            下一页<i class="ri-arrow-right-line"></i>
-          </button>
-        </footer>
+        <WaoPagination
+          v-if="data.hostedPages.length > HOSTED_PAGE_SIZE"
+          v-model:page="hostedPage"
+          class="pagination"
+          :page-count="hostedPageCount"
+          :total="data.hostedPages.length"
+          aria-label="托管网页分页"
+        />
       </div>
     </template>
 
@@ -743,28 +740,6 @@ function onFileSettingsSaved(settings: FileSettings) {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-}
-.pagination {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: var(--wao-text-weak);
-  font-size: 11px;
-}
-.pagination button {
-  height: 29px;
-  padding: 0 9px;
-  border: 1px solid var(--wao-line-control);
-  border-radius: 7px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-2);
-  cursor: pointer;
-}
-.pagination button:disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 .btn-primary:hover {
   background: var(--wao-primary-hover);

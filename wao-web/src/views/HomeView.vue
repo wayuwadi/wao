@@ -33,6 +33,7 @@ import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
 import AiRunSkillCapabilities from '@/components/ai/AiRunSkillCapabilities.vue'
+import WaoPagination from '@/components/ui/WaoPagination.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
 import { formatCost, formatTokens, reasoningEffortLabel, shortModel } from '@/composables/aiUsage'
 import { toast } from '@/composables/toast'
@@ -1456,11 +1457,16 @@ onBeforeUnmount(() => {
         <div class="section-head">
           <div><h2>最近 AI 运行</h2><p>开发任务与聊天复盘按完成时间统一排列，类型可继续扩展。</p></div>
           <div class="recent-actions">
-            <nav v-if="recentActivitiesTotal > RECENT_ACTIVITY_PAGE_SIZE" class="recent-pagination" aria-label="最近 AI 运行分页">
-              <button :disabled="recentActivitiesLoading || recentActivitiesPage <= 1" @click="changeRecentActivitiesPage(recentActivitiesPage - 1)"><i class="ri-arrow-left-line"></i>上一页</button>
-              <span>{{ recentActivitiesPage }} / {{ recentActivitiesPages }}</span>
-              <button :disabled="recentActivitiesLoading || recentActivitiesPage >= recentActivitiesPages" @click="changeRecentActivitiesPage(recentActivitiesPage + 1)">下一页<i class="ri-arrow-right-line"></i></button>
-            </nav>
+            <WaoPagination
+              v-if="recentActivitiesTotal > RECENT_ACTIVITY_PAGE_SIZE"
+              class="recent-pagination"
+              :page="recentActivitiesPage"
+              :page-count="recentActivitiesPages"
+              :total="recentActivitiesTotal"
+              :disabled="recentActivitiesLoading"
+              aria-label="最近 AI 运行分页"
+              @update:page="changeRecentActivitiesPage"
+            />
             <button class="history-link" @click="openRunHistory()">查看全部<i class="ri-external-link-line"></i></button>
           </div>
         </div>
@@ -1950,11 +1956,15 @@ onBeforeUnmount(() => {
             <span class="recent-open">{{ activity.type === 'CHAT_REVIEW' ? '打开复盘' : '查看详情' }}<i class="ri-arrow-right-line"></i></span>
           </button>
         </div>
-        <footer v-if="!runHistoryLoading && !runHistoryError && runHistoryTotal > RUN_HISTORY_PAGE_SIZE" class="history-pagination">
-          <button class="secondary" :disabled="runHistoryPage <= 1" @click="openRunHistory(runHistoryPage - 1)"><i class="ri-arrow-left-line"></i>上一页</button>
-          <span>第 {{ runHistoryPage }} / {{ runHistoryPages }} 页</span>
-          <button class="secondary" :disabled="runHistoryPage >= runHistoryPages" @click="openRunHistory(runHistoryPage + 1)">下一页<i class="ri-arrow-right-line"></i></button>
-        </footer>
+        <WaoPagination
+          v-if="!runHistoryLoading && !runHistoryError && runHistoryTotal > RUN_HISTORY_PAGE_SIZE"
+          class="history-pagination"
+          :page="runHistoryPage"
+          :page-count="runHistoryPages"
+          :total="runHistoryTotal"
+          aria-label="全部 AI 运行历史分页"
+          @update:page="openRunHistory"
+        />
       </section>
     </div>
 
@@ -2663,11 +2673,7 @@ onBeforeUnmount(() => {
 .activity-filters button.active { border-color: var(--wao-primary-line); background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: 650; }
 .activity-filters button:disabled { opacity: .55; cursor: wait; }
 .recent-actions { flex: 0 0 auto !important; display: flex; align-items: center; gap: 7px; }
-.recent-pagination { height: 30px; padding: 0 3px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 10.5px; display: flex; align-items: center; gap: 2px; }
-.recent-pagination button { height: 24px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--wao-text-2); cursor: pointer; font-size: 10.5px; display: inline-flex; align-items: center; gap: 3px; }
-.recent-pagination button:hover:not(:disabled) { background: var(--wao-bg-card); color: var(--wao-primary-text); }
-.recent-pagination button:disabled { opacity: .38; cursor: not-allowed; }
-.recent-pagination span { min-width: 34px; text-align: center; }
+.recent-pagination { min-height: 34px; }
 .history-filters { margin: 14px 0 4px; }
 .recent-card {
   width: 100%;
@@ -2750,9 +2756,7 @@ onBeforeUnmount(() => {
 .recent-state { min-height: 150px; border: 1px dashed var(--wao-line); border-radius: 12px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 8px; }
 .recent-state.error { color: var(--wao-danger-strong); }
 .recent-state button { margin-left: 4px; padding: 5px 9px; border: 1px solid currentColor; border-radius: 7px; background: transparent; color: inherit; cursor: pointer; }
-.run-detail footer.history-pagination { justify-content: center; color: var(--wao-text-weak); font-size: 11px; }
-.history-pagination button { display: inline-flex; align-items: center; gap: 4px; }
-.history-pagination button:disabled { opacity: .5; cursor: not-allowed; }
+.run-detail .history-pagination { justify-content: center; }
 button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--wao-primary); outline-offset: 2px; }
 .run-detail header { display: flex; align-items: center; gap: 12px; }
 .run-detail header > div { flex: 1; min-width: 0; }

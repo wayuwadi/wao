@@ -276,7 +276,7 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 | cfg_value | TEXT | 配置值；敏感键加密存储，密文带 `enc:` 前缀 |
 | updated_at | DATETIME | 最后修改时间 |
 
-全局唯一一份的键值配置。敏感值（兼容期默认 webhook 地址、App Secret）复用 `VaultCryptoService` 的 AES-256-GCM 加密后落库，接口只回脱敏形态（`SettingService.mask`），明文只在服务端调飞书接口时解出来用；因此真实凭据既不进 Git 也不必写进环境变量。V78 后通用机器人以独立表为准，旧 `feishu.webhook.*` 只保留为滚动发布兼容镜像。每日断网窗口使用 `network.outage-window.enabled / start / end` 三个非敏感键，未保存时默认启用上海时间 `00:00–06:00`。文件模块使用 `files.upload-max-mb / images.upload-max-mb / files.download-captcha-enabled` 保存上传限制与算术题开关；HTTP 性能巡检使用 `http.inspection.*` 保存频率、时间、指标窗口、Top N、单次治理数和启动通知 Webhook，实际 Cron 同步写回 `automation_job`。V112 起 `notification.policy.v1` 保存管理员维护的全组织飞书通知 JSON；当前成员的站内过滤另存 `member_preference.notification-center-policy-v1`，系统设置和成员偏好不能互相覆盖。
+全局唯一一份的键值配置。敏感值（兼容期默认 webhook 地址、App Secret）复用 `VaultCryptoService` 的 AES-256-GCM 加密后落库，接口只回脱敏形态（`SettingService.mask`），明文只在服务端调飞书接口时解出来用；因此真实凭据既不进 Git 也不必写进环境变量。V78 后通用机器人以独立表为准，旧 `feishu.webhook.*` 只保留为滚动发布兼容镜像。每日断网窗口使用 `network.outage-window.enabled / start / end` 三个非敏感键，未保存时默认启用上海时间 `00:00–06:00`。文件模块使用 `files.upload-max-mb / images.upload-max-mb / files.download-captcha-enabled` 保存上传限制与算术题开关；HTTP 性能巡检使用 `http.inspection.*` 保存频率、时间、指标窗口、Top N、单次治理数和启动通知 Webhook，实际 Cron 同步写回 `automation_job`。V116 将仍沿用旧默认 5/2 的巡检数量升级为 10/10，已自定义值保持不变。V112 起 `notification.policy.v1` 保存管理员维护的全组织飞书通知 JSON；当前成员的站内过滤另存 `member_preference.notification-center-policy-v1`，系统设置和成员偏好不能互相覆盖。
 飞书同步配置保存多个 `feishu.chat-sync.*` 键时使用一个事务；读取 App、群、知识库和发送者映射时使用一次批量 SQL 的事务快照，避免调用方看到半套新配置。
 V77 首次发布临时使用 `deployment.v77.feishu-sync-status` 保留 automation 的最初状态，并用持久键 `deployment.v77.rollout-state` 记录 `in-progress / complete`。安全窗口只在 Flyway V77 成功记录与 `complete` 同时存在时结束；`complete-v77-rollout` 只在 Flyway V77 记录、状态保存键和目标 job 均恰好存在时，才在同一事务中恢复 job、写入 `complete` 并删除保存键；前置缺失时不写完成标记。
 
@@ -994,6 +994,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V112__feishu_reaction_ai_run_trigger.sql`：飞书原消息飞机表情触发 AI Run 的事件级持久幂等；运行被清理后仍保留去重事实（见 ADR-155）。
 - `V114__appearance_management.sql`：保存成员私有形象管理工作区和按会话鉴权的衣物、穿搭实拍原件。
 - `V115__food_management.sql`：保存成员私有饮食管理工作区，不预置演示餐单或医疗结论。
+- `V116__http_inspection_top_ten.sql`：将缺失或仍为旧默认 5/2 的 HTTP 巡检数量升级为 10/10，保留管理员已自定义的其他值（见 ADR-162）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
