@@ -181,3 +181,19 @@ export const saveQuickCollectConfig = (payload: {
   encryptKey?: string
   mentionOpenIds?: string[]
 }) => put<QuickCollectConfig>('/api/feishu/quick-collect/config', payload)
+
+/** 群聊 @润色机器人：现有应用负责读取，所选自定义机器人负责回群。 */
+export interface FeishuTextPolishConfig {
+  enabled: boolean
+  webhookId: string
+  webhookName: string
+  mentionName: string
+}
+
+export const fetchFeishuTextPolishConfig = () =>
+  get<FeishuTextPolishConfig>('/api/feishu/text-polish/config')
+export const saveFeishuTextPolishConfig = (payload: {
+  enabled?: boolean
+  webhookId?: string
+  mentionName?: string
+}) => put<FeishuTextPolishConfig>('/api/feishu/text-polish/config', payload)

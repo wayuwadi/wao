@@ -187,6 +187,22 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void feishuTextPolishMigrationKeepsMessageIdempotencyAndDeliveryStages() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V118__feishu_text_polish_bot.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE feishu_text_polish_run")
+                .contains("UNIQUE KEY uk_feishu_text_polish_message (message_id)")
+                .contains("prompt_snapshot TEXT", "polished_text   MEDIUMTEXT")
+                .contains("status          VARCHAR(24)")
+                .doesNotContain("open-apis/bot/v2/hook/");
+    }
+
+    @Test
     void systemPeriodicReportKeepsOneSnapshotPerNaturalPeriod() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V88__system_periodic_report.sql"))

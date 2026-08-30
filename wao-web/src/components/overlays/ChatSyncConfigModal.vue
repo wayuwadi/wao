@@ -14,13 +14,18 @@ import {
   fetchChatSyncConfig,
   fetchFeishuChatMembers,
   fetchFeishuChats,
+  fetchFeishuTextPolishConfig,
   fetchQuickCollectConfig,
+  fetchWebhookEndpoints,
   runChatSync,
   saveChatSyncConfig,
+  saveFeishuTextPolishConfig,
   saveQuickCollectConfig,
   type ChatSyncConfig,
   type FeishuChat,
   type FeishuSender,
+  type FeishuTextPolishConfig,
+  type FeishuWebhookEndpoint,
   type QuickCollectConfig,
 } from '@/api/system'
 
@@ -51,6 +56,13 @@ const verifyToken = ref('')
 const encryptKey = ref('')
 const mentionIds = ref<string[]>([])
 
+// ---- 群聊润色（现有应用读取 @消息，指定的自定义机器人 Webhook 回群） ----
+const textPolish = ref<FeishuTextPolishConfig | null>(null)
+const textPolishEnabled = ref(false)
+const textPolishWebhookId = ref('')
+const textPolishMentionName = ref('润色机器人')
+const webhookEndpoints = ref<FeishuWebhookEndpoint[]>([])
+
 /** 事件订阅地址：填到飞书开放平台「事件订阅」里，机器人收到的消息才会送到 WAO。 */
 const eventUrl = `${window.location.origin}/api/feishu/events`
 
@@ -69,7 +81,12 @@ async function copyEventUrl() {
 
 onMounted(async () => {
   try {
-    const [c, q] = await Promise.all([fetchChatSyncConfig(), fetchQuickCollectConfig()])
+    const [c, q, polish, webhooks] = await Promise.all([
+      fetchChatSyncConfig(),
+      fetchQuickCollectConfig(),
+      fetchFeishuTextPolishConfig(),
+      fetchWebhookEndpoints(),
+    ])
     cfg.value = c
     appId.value = c.appId
     chatId.value = c.chatId
@@ -80,6 +97,11 @@ onMounted(async () => {
     quickEnabled.value = q.enabled
     quickProjectId.value = q.projectId
     mentionIds.value = [...q.mentionOpenIds]
+    textPolish.value = polish
+    textPolishEnabled.value = polish.enabled
+    textPolishWebhookId.value = polish.webhookId
+    textPolishMentionName.value = polish.mentionName || '润色机器人'
+    webhookEndpoints.value = webhooks
   } catch (error) {
     toast(error instanceof Error ? error.message : '读取配置失败')
   } finally {
@@ -130,13 +152,22 @@ function removeSender(i: number) {
 
 /** 快速收集单独存一份：密文字段留空表示保留已存的那一份。 */
 async function persistQuick() {
-  quick.value = await saveQuickCollectConfig({
-    enabled: quickEnabled.value,
-    projectId: quickProjectId.value,
-    verificationToken: verifyToken.value.trim() || undefined,
-    encryptKey: encryptKey.value.trim() || undefined,
-    mentionOpenIds: mentionIds.value,
-  })
+  const [savedQuick, savedPolish] = await Promise.all([
+    saveQuickCollectConfig({
+      enabled: quickEnabled.value,
+      projectId: quickProjectId.value,
+      verificationToken: verifyToken.value.trim() || undefined,
+      encryptKey: encryptKey.value.trim() || undefined,
+      mentionOpenIds: mentionIds.value,
+    }),
+    saveFeishuTextPolishConfig({
+      enabled: textPolishEnabled.value,
+      webhookId: textPolishWebhookId.value,
+      mentionName: textPolishMentionName.value.trim(),
+    }),
+  ])
+  quick.value = savedQuick
+  textPolish.value = savedPolish
   verifyToken.value = ''
   encryptKey.value = ''
 }
@@ -330,6 +361,49 @@ async function runHistory() {
           <div v-if="!senders.filter((x) => x.id).length" class="empty">先在上面读取群成员，这里才能勾人</div>
         </div>
         <div class="tip">操作人自己永远不会被 @；一个人都不勾就只发通知不 @ 人。</div>
+      </div>
+
+      <div class="section">
+        <div class="label-row">
+          <div class="label">群聊润色机器人</div>
+          <div class="spacer"></div>
+          <label class="switch">
+            <input v-model="textPolishEnabled" type="checkbox" />
+            <span>在群里 @机器人 直接润色并回群</span>
+          </label>
+        </div>
+        <div class="tip">
+          WAO 使用上方自建应用读取群消息，精确识别触发名称；润色结果由所选自定义机器人 Webhook 发出。
+          发言人必须先用同一飞书账号登录 WAO，机器人会使用该成员在「润色」页面保存的提示词，成功结果也进入其个人历史。
+        </div>
+        <div class="two">
+          <input
+            v-model="textPolishMentionName"
+            class="input"
+            maxlength="64"
+            placeholder="群内机器人名称，如：润色机器人"
+          />
+          <select v-model="textPolishWebhookId" class="input">
+            <option value="">选择用于发送结果的 Webhook</option>
+            <option
+              v-for="endpoint in webhookEndpoints.filter((item) => item.enabled)"
+              :key="endpoint.id"
+              :value="endpoint.id"
+            >
+              {{ endpoint.name }}{{ endpoint.systemDefault ? ' · 系统默认' : '' }}
+            </option>
+            <option
+              v-if="textPolishWebhookId && !webhookEndpoints.some((item) => item.id === textPolishWebhookId && item.enabled)"
+              :value="textPolishWebhookId"
+              disabled
+            >
+              已保存的 Webhook 当前不可用
+            </option>
+          </select>
+        </div>
+        <div class="tip">
+          触发示例：@{{ textPolishMentionName || '润色机器人' }} 这段话帮我整理清楚。Webhook 地址请在系统设置中维护，页面不会读取明文。
+        </div>
       </div>
 
       <div class="foot">

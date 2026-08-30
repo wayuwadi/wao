@@ -29,21 +29,25 @@ public class FeishuQuickCollectPollingScheduler {
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
     private final FeishuQuickCollectService quickCollect;
+    private final FeishuTextPolishService textPolish;
     private volatile long lastSuccessfulEnd = Instant.now().getEpochSecond();
     private volatile String botOpenId;
     private volatile boolean readyLogged;
 
     public FeishuQuickCollectPollingScheduler(SettingService settings, FeishuOpenApiClient feishu,
-            FeishuQuickCollectService quickCollect) {
+            FeishuQuickCollectService quickCollect, FeishuTextPolishService textPolish) {
         this.settings = settings;
         this.feishu = feishu;
         this.quickCollect = quickCollect;
+        this.textPolish = textPolish;
     }
 
     /** 定时读取新消息；单次失败保留旧水位，下次仍有最多两分钟的恢复窗口。 */
     @Scheduled(fixedDelayString = "${wao.feishu.quick-collect-poll-ms:15000}", initialDelay = 15000)
     public void poll() {
-        if (!settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)) {
+        boolean quickEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
+        boolean textPolishEnabled = textPolish.enabled();
+        if (!quickEnabled && !textPolishEnabled) {
             lastSuccessfulEnd = Instant.now().getEpochSecond();
             readyLogged = false;
             return;
@@ -58,22 +62,33 @@ public class FeishuQuickCollectPollingScheduler {
         long start = Math.max(lastSuccessfulEnd - 2, end - LOOKBACK_SECONDS);
         try {
             String token = feishu.tenantAccessToken(appId, appSecret);
-            String currentBot = botOpenId;
-            if (!StringUtils.hasText(currentBot)) {
-                currentBot = feishu.botOpenId(token);
-                botOpenId = currentBot;
+            String currentBot = null;
+            if (quickEnabled) {
+                currentBot = botOpenId;
+                if (!StringUtils.hasText(currentBot)) {
+                    currentBot = feishu.botOpenId(token);
+                    botOpenId = currentBot;
+                }
             }
             List<FeishuMessage> messages = feishu.listMessages(token, chatId, start, end);
             if (!readyLogged) {
-                log.info("飞书个人收集轮询已就绪：已认证机器人并可读取目标群");
+                log.info("飞书群消息主动轮询已就绪：已认证应用并可读取目标群");
                 readyLogged = true;
             }
             for (FeishuMessage message : messages) {
-                if (eligible(message, currentBot)) {
+                if (quickEnabled && eligible(message, currentBot)) {
                     try {
                         quickCollect.collectPolled(chatId, message);
                     } catch (RuntimeException ex) {
                         log.warn("飞书轮询收集单条消息失败：message={} reason={}",
+                                message.messageId(), ex.getMessage());
+                    }
+                }
+                if (textPolishEnabled) {
+                    try {
+                        textPolish.collectPolled(chatId, message);
+                    } catch (RuntimeException ex) {
+                        log.warn("飞书轮询润色单条消息失败：message={} reason={}",
                                 message.messageId(), ex.getMessage());
                     }
                 }

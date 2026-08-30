@@ -295,6 +295,25 @@ V77 首次发布临时使用 `deployment.v77.feishu-sync-status` 保留 automati
 V78 只把旧 `enc:<nonce>:<ciphertext>` 拆列搬运，不在 migration 中解密。注册表始终最多一个 `SYSTEM`；
 删除默认项时由服务在同一事务中提升剩余项，删空后写入接管标记并停止旧环境变量回落，具体见 ADR-089。
 
+### feishu_text_polish_run（飞书群聊润色运行，V118）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | WAO 润色运行稳定 id |
+| message_id | VARCHAR(128) UNIQUE | 飞书原消息唯一身份；轮询重叠和双节点共用去重键 |
+| chat_id / sender_open_id | VARCHAR(128) | 目标群和发言人身份，不包含飞书令牌 |
+| member_id | VARCHAR(32) NULL FK→member | 已绑定的真实 WAO 成员；未绑定拒绝记录为空 |
+| webhook_id | VARCHAR(32) NULL | 收下消息时选择的通用 Webhook 稳定 id，不保存地址 |
+| original_text / prompt_snapshot | MEDIUMTEXT / TEXT | 已校验原文和成员提示词快照 |
+| polished_text | MEDIUMTEXT NULL | AI 终态成功结果；发送成功后用于历史收口 |
+| ai_run_id / record_id | VARCHAR(32) NULL | 只读 AI 运行和稳定润色历史 id |
+| status | VARCHAR(24) | QUEUED → AI_PENDING → GENERATED → DELIVERED → SUCCEEDED，或 FAILED |
+| error_message | VARCHAR(500) NULL | 有界失败原因，不含凭据和 Webhook 地址 |
+| created_at / updated_at | DATETIME(6) | 创建和最后状态推进时间 |
+
+入队与历史写入在数据库事务内完成，Webhook 外部发送通过 `GENERATED → SENDING` CAS 单独认领；发送状态不确定时不自动
+重放。网页润色历史仍只读取 `text_polish_record`，因此飞书与网页不会形成两套历史模型。
+
 ## AI Run 域（V18）
 
 ### ai_project_config
@@ -1001,6 +1020,8 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V114__appearance_management.sql`：保存成员私有形象管理工作区和按会话鉴权的衣物、穿搭实拍原件。
 - `V115__food_management.sql`：保存成员私有饮食管理工作区，不预置演示餐单或医疗结论。
 - `V116__http_inspection_top_ten.sql`：将缺失或仍为旧默认 5/2 的 HTTP 巡检数量升级为 10/10，保留管理员已自定义的其他值（见 ADR-162）。
+- `V117__quota_refresh_notification_state.sql`：保存额度刷新群通知的脱敏比较基线（见 ADR-164）。
+- `V118__feishu_text_polish_bot.sql`：按飞书原消息持久化成员润色、AI、Webhook 交付与历史收口状态（见 ADR-165）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
