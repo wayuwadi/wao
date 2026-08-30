@@ -34,11 +34,13 @@ class FamilyImportantDateServiceTest {
     private final AccountIdentityMapper identities = mock(AccountIdentityMapper.class);
     private final SettingService settings = mock(SettingService.class);
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
+    private final NotificationSettingsService notificationSettings = mock(NotificationSettingsService.class);
     private final FamilyImportantDateService service = new FamilyImportantDateService(
-            dates, deliveries, accounts, identities, settings, feishu);
+            dates, deliveries, accounts, identities, settings, feishu, notificationSettings);
 
     @BeforeEach
     void availableChannel() {
+        when(notificationSettings.allowsReminders()).thenReturn(true);
         AccountEntity account = new AccountEntity();
         account.setId("a1");
         AccountIdentityEntity identity = new AccountIdentityEntity();

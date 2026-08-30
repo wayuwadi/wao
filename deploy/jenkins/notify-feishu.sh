@@ -14,6 +14,19 @@ fi
 
 : "${WAO_MASTER_PROJECT_ROOT:?WAO_MASTER_PROJECT_ROOT is required}"
 
+# 应用只公开最终门禁结论，不向 Jenkins 暴露完整系统设置。首次发布旧版本尚无此接口、
+# 或应用本身故障时必须 fail-open，避免真正的发布故障连最后一条告警也丢失。
+policy_url="${WAO_NOTIFICATION_POLICY_URL:-http://127.0.0.1:8080/api/public/notification-settings/jenkins-failure}"
+policy_response="$(curl --fail --silent --show-error --max-time 3 "$policy_url" 2>/dev/null || true)"
+policy_allowed="$(printf '%s' "$policy_response" \
+  | jq -r '.data.allowed | if . == true then "true" elif . == false then "false" else empty end' \
+      2>/dev/null || true)"
+if [ "$policy_allowed" = false ]; then
+  policy_reason="$(printf '%s' "$policy_response" | jq -r '.data.reason // "系统通知策略已暂停"')"
+  echo "Jenkins failure notification skipped: $policy_reason"
+  exit 0
+fi
+
 private_env="$WAO_MASTER_PROJECT_ROOT/deploy/.env.secrets"
 if [ ! -f "$private_env" ]; then
   echo 'Jenkins notification skipped: production private environment is unavailable.' >&2

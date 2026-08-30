@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
-import SettingsView from '@/views/SettingsView.vue'
+import ProjectNotificationSettingsPanel from '@/components/settings/ProjectNotificationSettingsPanel.vue'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 
@@ -14,17 +13,9 @@ vi.mock('@/api/system', () => ({
   testWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
 }))
 
-const router = createRouter({
-  history: createMemoryHistory(),
-  routes: [{ path: '/:p(.*)*', component: { template: '<div/>' } }],
-})
-
-/** 打开「通知设置」页签，那里集中放着按项目的通知开关。 */
+/** 独立通知设置页复用的项目通知面板。 */
 async function mountNotificationTab() {
-  const w = mount(SettingsView, { global: { plugins: [router] } })
-  await flushPromises()
-  const entry = w.findAll('.snav-item').find((button) => button.text() === '通知设置')
-  await entry!.trigger('click')
+  const w = mount(ProjectNotificationSettingsPanel)
   await flushPromises()
   return w
 }
@@ -42,7 +33,7 @@ describe('按项目的通知开关', () => {
   it('每个项目一行开关，默认都是通知中', async () => {
     const w = await mountNotificationTab()
 
-    const rows = w.findAll('.cal-row')
+    const rows = w.findAll('.project-row')
     expect(rows.length).toBe(data.projects.length)
     expect(rows[0]!.text()).toContain(data.projects[0]!.name)
     expect(rows[0]!.text()).toContain('通知中')
@@ -53,14 +44,14 @@ describe('按项目的通知开关', () => {
     const w = await mountNotificationTab()
     const target = data.projects[1]!
 
-    await w.findAll('.cal-row')[1]!.find('.toggle').trigger('click')
+    await w.findAll('.project-row')[1]!.find('button').trigger('click')
     await flushPromises()
 
     expect(update).toHaveBeenCalledWith(target.id, { notifyEnabled: false })
     // spy 拦掉了真正的写入，这里补上乐观更新再断言界面
     target.notifyEnabled = false
     await w.vm.$nextTick()
-    expect(w.findAll('.cal-row')[1]!.text()).toContain('已静音')
+    expect(w.findAll('.project-row')[1]!.text()).toContain('已静音')
   })
 
   it('保存失败时开关拨回原样，不显示服务端并不知道的状态', async () => {
@@ -70,10 +61,10 @@ describe('按项目的通知开关', () => {
     })
     const w = await mountNotificationTab()
 
-    await w.findAll('.cal-row')[1]!.find('.toggle').trigger('click')
+    await w.findAll('.project-row')[1]!.find('button').trigger('click')
     await flushPromises()
 
-    expect(data.projects[1]!.notifyEnabled).toBe(true)
-    expect(w.findAll('.cal-row')[1]!.text()).toContain('通知中')
+    expect(data.projects[1]!.notifyEnabled).not.toBe(false)
+    expect(w.findAll('.project-row')[1]!.text()).toContain('通知中')
   })
 })

@@ -12,13 +12,25 @@ printf '%s\n' 'FEISHU_COMMENT_WEBHOOK_URL=https://example.invalid/webhook' \
 cat >"$fixture/bin/curl" <<'EOF'
 #!/bin/sh
 set -eu
+if [ -n "${WAO_TEST_POLICY_RESPONSE:-}" ]; then
+  printf '%s' "$WAO_TEST_POLICY_RESPONSE"
+  exit 0
+fi
+is_policy=false
 while [ "$#" -gt 0 ]; do
+  case "$1" in
+    */api/public/notification-settings/jenkins-failure) is_policy=true ;;
+  esac
   if [ "$1" = --data ]; then
     shift
     printf '%s' "$1" >"$WAO_TEST_PAYLOAD"
   fi
   shift
 done
+if [ "$is_policy" = true ]; then
+  printf '%s' '{"code":0}'
+  exit 0
+fi
 printf '%s' '{"code":0}'
 EOF
 chmod +x "$fixture/bin/curl"
@@ -122,5 +134,17 @@ BUILD_NUMBER=323 \
 sh "$project_root/deploy/jenkins/notify-feishu.sh"
 
 assert_json '[.card.elements[].text.content? // ""] | join("\n") | contains("**失败原因**\n后端测试")'
+
+rm -f "$fixture/payload.json"
+quiet_output="$(PATH="$fixture/bin:$PATH" \
+  WAO_TEST_PAYLOAD="$fixture/payload.json" \
+  WAO_TEST_POLICY_RESPONSE='{"code":0,"data":{"allowed":false,"reason":"当前处于沉默时段 22:00–08:00"}}' \
+  WAO_PIPELINE_RESULT=failure \
+  WAO_MASTER_PROJECT_ROOT="$fixture/master" \
+  WAO_RUN_TEMP="$fixture/run" \
+  WAO_FAILURE_STAGE='Backend tests' \
+  sh "$project_root/deploy/jenkins/notify-feishu.sh")"
+printf '%s' "$quiet_output" | grep -q 'Jenkins failure notification skipped: 当前处于沉默时段 22:00–08:00'
+test ! -e "$fixture/payload.json"
 
 echo 'Jenkins Feishu notification tests passed.'

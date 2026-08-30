@@ -24,7 +24,6 @@ import WaoAiCapabilitiesPanel from '@/components/settings/WaoAiCapabilitiesPanel
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
 import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
-import NotificationSettingsPanel from '@/components/settings/NotificationSettingsPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 
 const session = useSessionStore()
@@ -38,7 +37,6 @@ const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const waoAiCapabilitiesPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
-const notificationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
@@ -57,8 +55,6 @@ const tab = ref<string>(availableTabs.has(normalizedTab) ? normalizedTab : 'memb
 let skipWebhookRouteGuardOnce = false
 
 function selectTab(next: string) {
-  if (tab.value === 'notifications' && next !== 'notifications' && notificationPanel.value
-      && !notificationPanel.value.confirmLeave()) return
   if (tab.value === 'pet' && next !== 'pet' && webPetPanel.value
       && !webPetPanel.value.confirmLeave()) return
   if (tab.value === 'navigation' && next !== 'navigation' && navigationPanel.value
@@ -68,6 +64,10 @@ function selectTab(next: string) {
   if (tab.value === 'network-outage' && next !== 'network-outage' && !confirmNetworkOutageDraft()) return
   if (tab.value === 'wao-ai-capabilities' && next !== 'wao-ai-capabilities'
       && waoAiCapabilitiesPanel.value && !waoAiCapabilitiesPanel.value.confirmLeave()) return
+  if (next === 'notifications') {
+    void router.push('/notification-settings')
+    return
+  }
   tab.value = next
   void router.replace({ query: { ...route.query, tab: next === 'members' ? undefined : next } })
 }
@@ -86,8 +86,6 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
     return true
   }
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return false
-  if (tab.value === 'notifications' && notificationPanel.value
-      && !notificationPanel.value.confirmLeave()) return false
   if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return false
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return false
@@ -350,37 +348,6 @@ function confirmNetworkOutageDraft() {
   return !networkOutageDirty.value || window.confirm('断网时段还有未保存的修改，确认离开吗？')
 }
 
-// ---- 系统 · 按项目通知 ----
-// 群机器人原本对所有项目一视同仁地播报，可多数项目的新建、状态变化并不需要有人立刻知道；
-// 通知一多整块就被无视，真正等验收的那条也跟着被划过去。开关落在项目上，
-// 粒度正好等于「我关心哪个项目」，总开关仍然一票否决。
-const notifyBusy = ref<string | null>(null)
-const notifyProjects = computed(() =>
-  data.projects.map((p) => ({
-    id: p.id,
-    name: p.name,
-    color: data.areaColor(p.area),
-    on: p.notifyEnabled !== false,
-  })),
-)
-const notifyOnCount = computed(() => notifyProjects.value.filter((p) => p.on).length)
-
-async function toggleProjectNotify(id: string) {
-  const project = data.projectById(id)
-  if (!project || notifyBusy.value) return
-  const next = project.notifyEnabled === false
-  notifyBusy.value = id
-  const saved = await data.updateProject(id, { notifyEnabled: next })
-  notifyBusy.value = null
-  if (!saved) {
-    // 没落库就把开关拨回去，别让界面显示一个服务端并不知道的状态
-    project.notifyEnabled = !next
-    toast('保存失败，请重试', 'ri-error-warning-line')
-    return
-  }
-  toast(next ? `「${project.name}」的动静会发到飞书群` : `已静音「${project.name}」`, 'ri-notification-3-line')
-}
-
 watch(tab, (t) => {
   if (t === 'site' && !siteLoaded.value) loadSiteInfo()
   if (t === 'network-outage' && !networkOutageSaved.value && !networkOutageLoading.value) {
@@ -388,8 +355,6 @@ watch(tab, (t) => {
   }
 }, { immediate: true })
 async function logout() {
-  if (tab.value === 'notifications' && notificationPanel.value
-      && !notificationPanel.value.confirmLeave()) return
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return
@@ -550,35 +515,6 @@ async function bindFeishu() {
                 </button>
               </div>
             </form>
-          </div>
-        </template>
-
-        <!-- 系统与个人 · 通知设置 -->
-        <template v-else-if="tab === 'notifications'">
-          <NotificationSettingsPanel ref="notificationPanel" />
-
-          <div class="card">
-            <div class="card-row wrap">
-              <div class="card-title">按项目通知</div>
-              <div class="spacer"></div>
-              <span class="pn-count">{{ notifyOnCount }} / {{ notifyProjects.length }} 个项目会发通知</span>
-            </div>
-            <div class="sub-block">
-              <div v-for="p in notifyProjects" :key="p.id" class="cal-row">
-                <span class="cal-dot" :style="{ background: p.color }"></span>
-                <span class="cal-name pn-name">{{ p.name }}</span>
-                <span class="pn-state" :class="{ off: !p.on }">{{ p.on ? '通知中' : '已静音' }}</span>
-                <button
-                  class="toggle"
-                  :class="{ on: p.on }"
-                  :disabled="notifyBusy === p.id"
-                  :title="p.on ? '静音这个项目' : '开启这个项目的通知'"
-                  @click="toggleProjectNotify(p.id)"
-                ><span class="knob"></span></button>
-              </div>
-              <div v-if="!notifyProjects.length" class="hint">还没有项目。</div>
-            </div>
-            <div class="hint">静音的项目不再往群里发新建任务、状态变化、新增子任务、评论与 AI 执行的卡片，页面内的记录一条不少。系统默认机器人停用时，所有项目都不发。</div>
           </div>
         </template>
 

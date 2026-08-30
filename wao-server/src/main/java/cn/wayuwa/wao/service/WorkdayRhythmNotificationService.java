@@ -31,11 +31,13 @@ public class WorkdayRhythmNotificationService {
     private final FeishuAppLinks links;
     private final FeishuWebhookConfigService webhooks;
     private final FeishuWebhookNotifier webhookNotifier;
+    private final NotificationSettingsService notificationSettings;
     private final ObjectMapper json;
 
     public WorkdayRhythmNotificationService(MemberPreferenceMapper preferences, MemberMapper members,
             SettingService settings, FeishuOpenApiClient feishu, FeishuAppLinks links,
-            FeishuWebhookConfigService webhooks, FeishuWebhookNotifier webhookNotifier, ObjectMapper json) {
+            FeishuWebhookConfigService webhooks, FeishuWebhookNotifier webhookNotifier,
+            NotificationSettingsService notificationSettings, ObjectMapper json) {
         this.preferences = preferences;
         this.members = members;
         this.settings = settings;
@@ -43,6 +45,7 @@ public class WorkdayRhythmNotificationService {
         this.links = links;
         this.webhooks = webhooks;
         this.webhookNotifier = webhookNotifier;
+        this.notificationSettings = notificationSettings;
         this.json = json;
     }
 
@@ -110,6 +113,9 @@ public class WorkdayRhythmNotificationService {
     }
 
     private EnergyNotificationResultDto send(JsonNode notification, FeishuWebhookNotifier.Card card) {
+        if (!notificationSettings.allowsReminders()) {
+            throw new BadRequestException(notificationSettings.blockedReason());
+        }
         if ("WEBHOOK".equals(notification.path("channel").asText(""))) {
             String webhookId = notification.path("webhookId").asText("").trim();
             if (!StringUtils.hasText(webhookId)) {

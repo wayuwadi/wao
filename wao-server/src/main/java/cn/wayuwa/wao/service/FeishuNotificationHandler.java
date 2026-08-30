@@ -16,10 +16,18 @@ public class FeishuNotificationHandler implements JobHandler {
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
     private final FeishuNotificationMapper notifications;
-    public FeishuNotificationHandler(SettingService settings, FeishuOpenApiClient feishu, FeishuNotificationMapper notifications) { this.settings = settings; this.feishu = feishu; this.notifications = notifications; }
+    private final NotificationSettingsService notificationSettings;
+    public FeishuNotificationHandler(SettingService settings, FeishuOpenApiClient feishu,
+            FeishuNotificationMapper notifications, NotificationSettingsService notificationSettings) {
+        this.settings = settings; this.feishu = feishu; this.notifications = notifications;
+        this.notificationSettings = notificationSettings;
+    }
     @Override public String name() { return NAME; }
     @Override public String execute() { throw new IllegalStateException("通知任务缺少任务上下文"); }
     @Override public String execute(AutomationJobEntity job) {
+        if (!notificationSettings.allowsReminders()) {
+            return "已跳过 · " + notificationSettings.blockedReason();
+        }
         String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
         String secret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
         String chatId = settings.get(SettingService.CHAT_SYNC_CHAT_ID, "");

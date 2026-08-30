@@ -11,4 +11,10 @@ describe('记忆中心入口兼容', () => {
   it('不改写其他设置入口', () => {
     expect(legacyMemorySettingsRedirect('prefs')).toBeUndefined()
   })
+
+  it('把旧通知设置入口迁到独立页面', () => {
+    expect(legacyMemorySettingsRedirect('notifications')).toEqual({
+      path: '/notification-settings', replace: true,
+    })
+  })
 })

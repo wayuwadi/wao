@@ -2,11 +2,16 @@ import { http, type ApiResponse } from './http'
 
 export interface SystemNotificationPolicy {
   enabled: boolean
+  quietHoursEnabled: boolean
+  quietStart: string
+  quietEnd: string
   taskActivity: boolean
   taskSuccess: boolean
   aiRunSuccess: boolean
   aiRunFailure: boolean
   manualTask: boolean
+  reminders: boolean
+  deliveryFailure: boolean
   automation: boolean
 }
 

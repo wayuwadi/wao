@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.domain.MemberEntity;
 import cn.wayuwa.wao.dto.NotificationSettingsDto.PersonalPolicy;
@@ -16,6 +17,7 @@ import cn.wayuwa.wao.dto.SaveNotificationSettingsRequest;
 import cn.wayuwa.wao.mapper.MemberMapper;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.Test;
 
 class NotificationSettingsServiceTest {
@@ -38,6 +40,9 @@ class NotificationSettingsServiceTest {
         assertThat(result.system().aiRunSuccess()).isFalse();
         assertThat(result.system().aiRunFailure()).isTrue();
         assertThat(result.system().manualTask()).isTrue();
+        assertThat(result.system().reminders()).isTrue();
+        assertThat(result.system().deliveryFailure()).isTrue();
+        assertThat(result.system().quietHoursEnabled()).isFalse();
         assertThat(result.personal().enabled()).isTrue();
     }
 
@@ -57,7 +62,8 @@ class NotificationSettingsServiceTest {
     @Test
     void nonAdminCannotOverwriteSharedSystemPolicy() {
         when(members.selectById("wd")).thenReturn(member("wd", "成员"));
-        SystemPolicy system = new SystemPolicy(true, true, true, true, true, true, true);
+        SystemPolicy system = new SystemPolicy(true, false, "22:00", "08:00",
+                true, true, true, true, true, true, true, true);
 
         assertThatThrownBy(() -> service.save("wd", new SaveNotificationSettingsRequest(system, null)))
                 .isInstanceOf(UnauthorizedException.class).hasMessageContaining("管理员");
@@ -67,13 +73,43 @@ class NotificationSettingsServiceTest {
     @Test
     void administratorCanUpdateSharedPolicyWithoutTouchingOtherMembers() {
         when(members.selectById("wg")).thenReturn(member("wg", "管理员"));
-        SystemPolicy system = new SystemPolicy(true, false, false, false, true, true, false);
+        SystemPolicy system = new SystemPolicy(true, true, "22:00", "08:00",
+                false, false, false, true, true, true, true, false);
 
         service.save("wg", new SaveNotificationSettingsRequest(system, null));
 
         verify(settings).put(eq(SettingService.NOTIFICATION_POLICY), org.mockito.ArgumentMatchers.contains("aiRunFailure"));
         verify(preferences, never()).upsert(org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void readsLegacyPolicyWithSafeNewDefaultsAndBlocksAcrossMidnightQuietHours() {
+        when(settings.get(SettingService.NOTIFICATION_POLICY, "")).thenReturn("""
+                {"enabled":true,"quietHoursEnabled":true,"quietStart":"22:00","quietEnd":"08:00",
+                 "taskActivity":false,"aiRunFailure":true}
+                """);
+
+        SystemPolicy policy = service.systemPolicy();
+
+        assertThat(policy.reminders()).isTrue();
+        assertThat(policy.deliveryFailure()).isTrue();
+        assertThat(service.allows(SystemPolicy::reminders,
+                LocalDateTime.of(2026, 8, 30, 23, 0))).isFalse();
+        assertThat(service.allows(SystemPolicy::reminders,
+                LocalDateTime.of(2026, 8, 31, 7, 59))).isFalse();
+        assertThat(service.allows(SystemPolicy::reminders,
+                LocalDateTime.of(2026, 8, 31, 8, 0))).isTrue();
+    }
+
+    @Test
+    void rejectsAnAllDayAmbiguousQuietWindow() {
+        when(members.selectById("wg")).thenReturn(member("wg", "管理员"));
+        SystemPolicy system = new SystemPolicy(true, true, "08:00", "08:00",
+                false, false, false, true, true, true, true, true);
+
+        assertThatThrownBy(() -> service.save("wg", new SaveNotificationSettingsRequest(system, null)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("不能相同");
     }
 
     private static MemberEntity member(String id, String role) {

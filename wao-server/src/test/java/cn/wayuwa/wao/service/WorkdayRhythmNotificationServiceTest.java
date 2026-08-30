@@ -21,6 +21,7 @@ import cn.wayuwa.wao.mapper.MemberMapper;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentCaptor;
 
 class WorkdayRhythmNotificationServiceTest {
@@ -33,10 +34,17 @@ class WorkdayRhythmNotificationServiceTest {
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
     private final FeishuWebhookConfigService webhooks = mock(FeishuWebhookConfigService.class);
     private final FeishuWebhookNotifier webhookNotifier = mock(FeishuWebhookNotifier.class);
+    private final NotificationSettingsService notificationSettings = mock(NotificationSettingsService.class);
     private final FeishuAppLinks links = new FeishuAppLinks(
             new FeishuLoginProperties(false, "", "", "", "", "https://open.feishu.cn"));
     private final WorkdayRhythmNotificationService service = new WorkdayRhythmNotificationService(
-            preferences, members, settings, feishu, links, webhooks, webhookNotifier, new ObjectMapper());
+            preferences, members, settings, feishu, links, webhooks, webhookNotifier,
+            notificationSettings, new ObjectMapper());
+
+    @BeforeEach
+    void allowGroupReminders() {
+        when(notificationSettings.allowsReminders()).thenReturn(true);
+    }
 
     @Test
     void sendsPersistedWaterRecordToMembersOwnConfiguredChat() {
@@ -71,6 +79,19 @@ class WorkdayRhythmNotificationServiceTest {
 
         assertThat(result.sent()).isFalse();
         verify(preferences, never()).find("wd", "workday-rhythm-day-2026-08-18");
+        verify(feishu, never()).sendCard(any(), any(), any());
+    }
+
+    @Test
+    void groupPolicyBlockKeepsThePersistedActionAndReportsThatNothingWasSent() {
+        configured(true, true);
+        when(notificationSettings.allowsReminders()).thenReturn(false);
+        when(notificationSettings.blockedReason()).thenReturn("当前处于群通知沉默时段 22:00–08:00");
+        when(preferences.find("wd", "workday-rhythm-day-2026-08-18"))
+                .thenReturn("{\"waterCount\":3}");
+
+        assertThatThrownBy(() -> service.notifyEnergy("wd", new SendEnergyNotificationRequest("WATER", DAY)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("沉默时段");
         verify(feishu, never()).sendCard(any(), any(), any());
     }
 

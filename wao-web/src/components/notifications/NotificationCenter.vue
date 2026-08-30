@@ -153,7 +153,7 @@ onBeforeUnmount(() => {
             <h2 id="notification-title">通知中心</h2>
             <p>真实系统动态与使用入口</p>
           </div>
-          <button type="button" aria-label="打开通知设置" title="通知设置" @click="navigate('/settings?tab=notifications')">
+          <button type="button" aria-label="打开通知设置" title="通知设置" @click="navigate('/notification-settings')">
             <i class="ri-settings-3-line"></i>
           </button>
           <button type="button" aria-label="关闭通知中心" @click="close">
