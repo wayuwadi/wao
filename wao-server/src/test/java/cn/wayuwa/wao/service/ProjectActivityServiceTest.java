@@ -18,6 +18,9 @@ import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.KbMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import static org.mockito.Mockito.verify;
 
 class ProjectActivityServiceTest {
 
@@ -81,6 +84,17 @@ class ProjectActivityServiceTest {
         // 时间是 ISO 时间戳，前端 relativeTime 才能转成「x 分钟前」
         assertThat(acts.get(3).time()).startsWith("2026-07-01T08:00");
         assertThat(acts.get(0).time()).startsWith("2026-07-03T10:00");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<QueryWrapper<TaskEntity>> taskQuery = ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(taskMapper).selectList(taskQuery.capture());
+        assertThat(taskQuery.getValue().getSqlSelect())
+                .isEqualTo("id,project_id,title,owner_id,created_by,completed_at");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<QueryWrapper<DocEntity>> docQuery = ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(docMapper).selectList(docQuery.capture());
+        assertThat(docQuery.getValue().getSqlSelect())
+                .isEqualTo("id,kb_id,title,author_id,created_at");
     }
 
     @Test

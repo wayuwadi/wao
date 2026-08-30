@@ -24,7 +24,7 @@ import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.KbMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Service;
 
 /**
@@ -83,15 +83,19 @@ public class ProjectActivityService {
                 .collect(Collectors.toMap(MemberDto::id, MemberDto::name, (a, b) -> a));
 
         Map<String, List<TaskEntity>> tasksByProject = taskMapper.selectList(
-                new LambdaQueryWrapper<TaskEntity>().in(TaskEntity::getProjectId, ids))
+                new QueryWrapper<TaskEntity>()
+                        .select("id", "project_id", "title", "owner_id", "created_by", "completed_at")
+                        .in("project_id", ids))
                 .stream().collect(Collectors.groupingBy(TaskEntity::getProjectId));
-        List<KbEntity> kbs = kbMapper.selectList(new LambdaQueryWrapper<KbEntity>()
-                .in(KbEntity::getProjectId, ids).isNull(KbEntity::getDeletedAt));
+        List<KbEntity> kbs = kbMapper.selectList(new QueryWrapper<KbEntity>()
+                .select("id", "project_id")
+                .in("project_id", ids).isNull("deleted_at"));
         Map<String, String> kbToProject = kbs.stream()
                 .collect(Collectors.toMap(KbEntity::getId, KbEntity::getProjectId, (a, b) -> a));
         Map<String, List<DocEntity>> docsByProject = kbs.isEmpty() ? Map.of()
-                : docMapper.selectList(new LambdaQueryWrapper<DocEntity>()
-                        .in(DocEntity::getKbId, kbToProject.keySet()).isNull(DocEntity::getDeletedAt))
+                : docMapper.selectList(new QueryWrapper<DocEntity>()
+                        .select("id", "kb_id", "title", "author_id", "created_at")
+                        .in("kb_id", kbToProject.keySet()).isNull("deleted_at"))
                         .stream().collect(Collectors.groupingBy(d -> kbToProject.get(d.getKbId())));
 
         Map<String, List<Activity>> out = new HashMap<>();

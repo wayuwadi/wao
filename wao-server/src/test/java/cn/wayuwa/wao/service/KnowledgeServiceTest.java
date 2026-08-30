@@ -99,6 +99,25 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void listKbsReadsOnlyDocumentIdentityAndFolderOrder() {
+        KbEntity kb = kb("k1");
+        KbFolderEntity folder = folder("f1", kb.getId());
+        DocEntity doc = doc("d1", kb.getId(), folder.getId());
+        when(kbMapper.selectList(any())).thenReturn(List.of(kb));
+        when(folderMapper.selectList(any())).thenReturn(List.of(folder));
+        when(docMapper.selectList(any())).thenReturn(List.of(doc));
+
+        assertThat(service.listKbs()).singleElement().satisfies(result ->
+                assertThat(result.folders().get(0).docs()).containsExactly("d1"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<DocEntity>> query =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.query.QueryWrapper.class);
+        verify(docMapper).selectList(query.capture());
+        assertThat(query.getValue().getSqlSelect()).isEqualTo("id,folder_id");
+    }
+
+    @Test
     void olderChatSnapshotCannotOverwriteOrMasqueradeAsTheLatestArchive() {
         KbEntity kb = kb("kb-chat");
         KbFolderEntity folder = folder("f-chat", kb.getId());

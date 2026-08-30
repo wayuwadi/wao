@@ -24,7 +24,9 @@ import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.dto.PdcaCycle;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class TaskServiceTest {
 
@@ -255,12 +257,25 @@ class TaskServiceTest {
         TaskEntity hidden = todo();
         hidden.setId("t2");
         hidden.setProjectId("private-project");
-        when(mapper.selectList(null)).thenReturn(List.of(visible, hidden));
+        when(mapper.selectList(any())).thenReturn(List.of(visible));
         when(projects.visibleProjectIds("wg")).thenReturn(Set.of("p1"));
 
         assertThat(service.list("wg")).extracting(TaskDto::id).containsExactly("t1");
         verify(projects, times(1)).visibleProjectIds("wg");
         verify(projects, never()).get(any(), eq("wg"));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<QueryWrapper<TaskEntity>> query = ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(mapper).selectList(query.capture());
+        assertThat(query.getValue().getTargetSql()).contains("project_id IN");
+    }
+
+    @Test
+    void listSkipsTaskTableWhenMemberHasNoVisibleProjects() {
+        when(projects.visibleProjectIds("wg")).thenReturn(Set.of());
+
+        assertThat(service.list("wg")).isEmpty();
+
+        verify(mapper, never()).selectList(any());
     }
 
     @Test
