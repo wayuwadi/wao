@@ -33,12 +33,14 @@ public class CodexQuotaService {
     private final CodexRunnerQuotaMapper quotaMapper;
     private final AiRunnerNodeMapper runnerMapper;
     private final ObjectMapper json;
+    private final QuotaRefreshNotificationService quotaNotifications;
 
     public CodexQuotaService(CodexRunnerQuotaMapper quotaMapper, AiRunnerNodeMapper runnerMapper,
-            ObjectMapper json) {
+            ObjectMapper json, QuotaRefreshNotificationService quotaNotifications) {
         this.quotaMapper = quotaMapper;
         this.runnerMapper = runnerMapper;
         this.json = json;
+        this.quotaNotifications = quotaNotifications;
     }
 
     /**
@@ -70,6 +72,9 @@ public class CodexQuotaService {
             entity.setErrorMessage(limit(error.strip(), 500));
         }
         if (inserting) quotaMapper.insert(entity); else quotaMapper.updateById(entity);
+        if (report != null && entity.getErrorMessage() == null) {
+            quotaNotifications.observeRunner(runnerId, sanitize(report));
+        }
     }
 
     /** 首页按账号合并多台电脑的最近真实快照，并标明来源电脑与新鲜度。 */

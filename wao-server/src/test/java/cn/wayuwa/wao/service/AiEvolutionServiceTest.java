@@ -53,9 +53,10 @@ class AiEvolutionServiceTest {
     private final AiAssistantService assistant = mock(AiAssistantService.class);
     private final AiAssistantAssetService assets = mock(AiAssistantAssetService.class);
     private final CodexQuotaService codexQuotas = mock(CodexQuotaService.class);
+    private final QuotaRefreshNotificationService quotaNotifications = mock(QuotaRefreshNotificationService.class);
     private final AiEvolutionService service = new AiEvolutionService(
             accounts, runs, runMapper, stateMapper, notifier, suggestions, assistant, assets,
-            new ObjectMapper(), codexQuotas, "https://wao.example");
+            new ObjectMapper(), codexQuotas, quotaNotifications, "https://wao.example");
 
     @Test
     void overviewDoesNotTreatUnknownQuotaAsFullAllowance() {
@@ -122,6 +123,7 @@ class AiEvolutionServiceTest {
         service.checkAndLaunch();
 
         verify(accounts).refreshQuotaSnapshots();
+        verify(quotaNotifications).observeCentral(any(), any());
         ArgumentCaptor<String> goal = ArgumentCaptor.forClass(String.class);
         verify(runs).launchGoal(eq("p1"), goal.capture(), eq("system"), eq("https://wao.example"), eq("aa1"));
         assertThat(goal.getValue())

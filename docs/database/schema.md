@@ -433,6 +433,12 @@ OAuth 下发前会先把快过期的 access token 续期。
 标记为 `NO_API`。DeepSeek 与 `model_gateway` 供服务端文档润色使用，后者不进入 AI Run；两者都用真实
 `/models` 验证权限且不把未知配额伪造成 0%。详见 ADR-030 至 ADR-032、ADR-086、ADR-128。
 
+### quota_refresh_notification_state（V117）
+
+真实额度上升群通知的脱敏比较基线。`source_key` 区分集中账号与 Runner 本地账号；`snapshot_json` 只保存窗口标识、
+剩余百分比和重置时间，不保存 OAuth Token、Cookie 或供应商原始响应。首次采样建立基线，下降或持平时推进基线；真实发送
+失败时保留旧基线供下一次采样重试（见 ADR-164）。
+
 ### ai_assistant_run（V50）
 
 | 列 | 类型 | 说明 |
