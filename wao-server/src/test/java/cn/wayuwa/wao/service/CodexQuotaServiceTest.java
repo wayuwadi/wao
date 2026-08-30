@@ -25,8 +25,10 @@ class CodexQuotaServiceTest {
 
     private final CodexRunnerQuotaMapper quotaMapper = mock(CodexRunnerQuotaMapper.class);
     private final AiRunnerNodeMapper runnerMapper = mock(AiRunnerNodeMapper.class);
+    private final QuotaRefreshNotificationService quotaNotifications = mock(QuotaRefreshNotificationService.class);
     private final ObjectMapper json = new ObjectMapper();
-    private final CodexQuotaService service = new CodexQuotaService(quotaMapper, runnerMapper, json);
+    private final CodexQuotaService service = new CodexQuotaService(
+            quotaMapper, runnerMapper, json, quotaNotifications);
 
     @Test
     void heartbeatStoresOnlySanitizedQuotaInsteadOfCredentials() {
@@ -39,6 +41,9 @@ class CodexQuotaServiceTest {
         assertThat(saved.getValue().getAccountEmail()).isEqualTo("wage@example.com");
         assertThat(saved.getValue().getSnapshotJson()).contains("usedPercent").doesNotContain("token");
         assertThat(saved.getValue().getLastSuccessAt()).isNotNull();
+        ArgumentCaptor<RunnerCodexQuotaReport> observed = ArgumentCaptor.forClass(RunnerCodexQuotaReport.class);
+        verify(quotaNotifications).observeRunner(org.mockito.ArgumentMatchers.eq("rn1"), observed.capture());
+        assertThat(observed.getValue().accountEmail()).isEqualTo("wage@example.com");
     }
 
     @Test

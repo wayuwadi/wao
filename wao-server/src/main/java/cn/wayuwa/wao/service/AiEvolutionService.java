@@ -63,12 +63,13 @@ public class AiEvolutionService {
     private final ObjectMapper json;
     private final String publicBaseUrl;
     private final CodexQuotaService codexQuotas;
+    private final QuotaRefreshNotificationService quotaNotifications;
 
     public AiEvolutionService(AiAccountService accounts, AiRunService runs, AiTaskRunMapper runMapper,
             AiEvolutionStateMapper stateMapper, FeishuWebhookNotifier notifier,
             AiEvolutionSuggestionRepository suggestions, AiAssistantService assistant,
             AiAssistantAssetService assets, ObjectMapper json,
-            CodexQuotaService codexQuotas,
+            CodexQuotaService codexQuotas, QuotaRefreshNotificationService quotaNotifications,
             @Value("${wao.share.base-url:}") String configuredBaseUrl) {
         this.accounts = accounts;
         this.runs = runs;
@@ -80,6 +81,7 @@ public class AiEvolutionService {
         this.assets = assets;
         this.json = json;
         this.codexQuotas = codexQuotas;
+        this.quotaNotifications = quotaNotifications;
         this.publicBaseUrl = configuredBaseUrl == null || configuredBaseUrl.isBlank()
                 ? null : configuredBaseUrl.replaceFirst("/+$", "");
     }
@@ -203,7 +205,9 @@ public class AiEvolutionService {
 
         try {
             accounts.refreshQuotaSnapshots();
-            List<AiWeeklyQuotaDto> syncedQuotas = accounts.weeklyQuotas().stream()
+            List<AiWeeklyQuotaDto> weeklyQuotas = accounts.weeklyQuotas();
+            quotaNotifications.observeCentral(accounts.sessionQuotas(), weeklyQuotas);
+            List<AiWeeklyQuotaDto> syncedQuotas = weeklyQuotas.stream()
                     .filter(quota -> "SYNCED".equals(quota.status()))
                     .toList();
             notifyLowQuota(syncedQuotas);
