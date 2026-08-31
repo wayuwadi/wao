@@ -313,7 +313,7 @@ public class AutomationService {
                 : displayTime(runs.get(0)) + " · " + runs.get(0).getResult();
         return new AutomationJobDto(e.getId(), e.getName(), e.getIcon(), e.getScheduleLabel(), e.getStatus(),
                 last, e.getDescription(), e.getSource(), e.getTarget(), readSteps(e.getStepsJson()),
-                runPairs, e.getHandler());
+                runPairs, e.getCronExpr(), e.getNextFireAt(), e.getHandler());
     }
 
     /** 用真实时间戳按当前上海日期生成相对文案；无法恢复时间戳的旧记录保留原文案。 */

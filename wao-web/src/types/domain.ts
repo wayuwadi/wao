@@ -438,6 +438,9 @@ export interface AutomationJob {
   target: string
   steps: string[]
   runs: JobRun[]
+  /** 真实调度表达式与下一计划点；没有定时计划时为空。 */
+  cronExpr?: string | null
+  nextFireAt?: string | null
   /** 服务端真实执行器名（如 feishu-chat-sync）；为空或未知时运行会明确失败。 */
   handler?: string | null
 }

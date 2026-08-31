@@ -13,7 +13,6 @@ vi.mock('@/api/notificationSettings', async (importOriginal) => {
     saveNotificationSettings: api.save,
   }
 })
-
 const settings: NotificationSettings = {
   canManageSystem: true,
   system: {
@@ -51,7 +50,9 @@ describe('通知设置', () => {
   })
 
   it('展示低噪音系统默认值，保存管理员共享策略与当前成员偏好', async () => {
-    const wrapper = mount(NotificationSettingsPanel)
+    const wrapper = mount(NotificationSettingsPanel, {
+      global: { stubs: { DailyReminderSettingsPanel: true } },
+    })
     await flushPromises()
 
     const systemRows = wrapper.findAll('.policy-card')[0]!.findAll('.policy-row')
@@ -82,7 +83,9 @@ describe('通知设置', () => {
     api.save.mockRejectedValueOnce(new Error('网络不可用')).mockResolvedValueOnce({
       ...structuredClone(settings), canManageSystem: false, personal: { ...settings.personal, loginActivity: false },
     })
-    const wrapper = mount(NotificationSettingsPanel)
+    const wrapper = mount(NotificationSettingsPanel, {
+      global: { stubs: { DailyReminderSettingsPanel: true } },
+    })
     await flushPromises()
 
     expect(wrapper.findAll('.policy-card')[0]!.findAll('input').every((input) => input.attributes('disabled') !== undefined)).toBe(true)

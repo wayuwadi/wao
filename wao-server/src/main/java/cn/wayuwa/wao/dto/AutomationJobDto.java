@@ -1,5 +1,6 @@
 package cn.wayuwa.wao.dto;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -20,5 +21,7 @@ public record AutomationJobDto(
         String target,
         List<String> steps,
         List<AutomationRunDto> runs,
+        String cronExpr,
+        LocalDateTime nextFireAt,
         String handler) {
 }

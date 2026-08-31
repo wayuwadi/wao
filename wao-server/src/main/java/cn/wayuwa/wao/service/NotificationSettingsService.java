@@ -154,7 +154,8 @@ public class NotificationSettingsService {
         return "该类群通知已关闭";
     }
 
-    private boolean canManageSystem(String memberId) {
+    /** 当前成员是否可以维护全组织共享的通知策略和每日提醒。 */
+    public boolean canManageSystem(String memberId) {
         MemberEntity member = StringUtils.hasText(memberId) ? members.selectById(memberId) : null;
         return member != null && ADMIN_ROLES.contains(member.getRole());
     }
