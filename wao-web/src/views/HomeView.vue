@@ -156,6 +156,7 @@ const form = reactive({
   preferredRunnerId: '',
   maxParallelRuns: 2,
   failureRetryCount: 2,
+  executionPrompt: '',
 })
 let timer: ReturnType<typeof setInterval> | null = null
 let quotaTimer: ReturnType<typeof setInterval> | null = null
@@ -767,6 +768,7 @@ function startEditing(workflow: AiWorkflow) {
     preferredRunnerId: workflow.config.preferredRunnerId ?? '',
     maxParallelRuns: workflow.config.maxParallelRuns,
     failureRetryCount: workflow.config.failureRetryCount,
+    executionPrompt: workflow.config.executionPrompt ?? '',
   })
 }
 
@@ -782,6 +784,7 @@ async function saveWorkflow(projectId: string) {
       preferredRunnerId: form.preferredRunnerId || null,
       maxParallelRuns: form.maxParallelRuns,
       failureRetryCount: form.failureRetryCount,
+      executionPrompt: form.executionPrompt.trim(),
     })
     editingProjectId.value = null
     await refreshWorkflows()
@@ -1774,6 +1777,17 @@ onBeforeUnmount(() => {
                 <span>失败自动重试次数</span>
                 <input v-model.number="form.failureRetryCount" type="number" min="0" max="5" />
               </label>
+              <label class="form-field wide">
+                <span>AI 执行提示词 <small>{{ form.executionPrompt.length }}/4000</small></span>
+                <textarea
+                  v-model="form.executionPrompt"
+                  rows="7"
+                  maxlength="4000"
+                  aria-label="AI 执行提示词"
+                  placeholder="先完整阅读任务原文，核验根因，再按可验证结果连续完成实现。"
+                ></textarea>
+                <em>每次 AI Run 领取任务时先读取这段方法；任务原文和系统交付约束仍会完整保留。</em>
+              </label>
               <div class="flow-actions">
                 <button class="secondary" @click="editingProjectId = null">取消</button>
                 <button class="primary" :disabled="saving" @click="saveWorkflow(workflow.projectId)">
@@ -2676,7 +2690,7 @@ onBeforeUnmount(() => {
 .switch-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .form-field { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--wao-text-weak); }
 .form-field.wide { grid-column: 1 / -1; }
-.form-field input, .form-field select {
+.form-field input, .form-field select, .form-field textarea {
   height: 34px;
   padding: 0 10px;
   border: 1px solid var(--wao-line);
@@ -2685,7 +2699,10 @@ onBeforeUnmount(() => {
   color: var(--wao-text);
   font-size: 12px;
 }
-.form-field input:focus, .form-field select:focus { border-color: #8f9ee6; outline: none; }
+.form-field textarea { resize: vertical; min-height: 132px; line-height: 1.6; }
+.form-field span small { float: right; color: var(--wao-text-muted); font-weight: 500; }
+.form-field em { color: var(--wao-text-muted); font-size: 11px; font-style: normal; line-height: 1.5; }
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: #8f9ee6; outline: none; }
 .flow-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 9px; }
 .flow-actions button { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
 .flow-actions .secondary { border: 1px solid var(--wao-line); background: var(--wao-bg-card); }

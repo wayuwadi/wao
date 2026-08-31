@@ -120,6 +120,17 @@ public class AiRunService {
             "^data:(image/(?:png|jpeg|gif|webp|svg\\+xml|bmp));base64,([a-z0-9+/=]+)$",
             Pattern.CASE_INSENSITIVE);
     private static final int MAX_PREVIEW_IMAGES = 4;
+    private static final int MAX_EXECUTION_PROMPT = 4_000;
+    /**
+     * 首次接入即可使用的任务理解方法。它只改善 AI 阅读顺序，不改写任务原文或扩大任务边界。
+     */
+    public static final String DEFAULT_EXECUTION_PROMPT = """
+            请先完整阅读任务原文，再开始实现：
+            1. 区分用户描述的现象、期望结果与建议手段，结合规格和现有代码核验真实根因。
+            2. 保留原文中的事实、数字、链接和明确约束；不要擅自补充需求，也不要用演示数据伪装真实能力。
+            3. 把需求整理成可验证的用户结果和实现清单，先处理根因，再连续完成实现与验证。
+            4. 遇到不确定项时先检查仓库与真实数据源；只有缺少会改变结果的必要信息时才说明阻塞。
+            """.strip();
 
     private final AiProjectConfigMapper configMapper;
     private final AiRunnerNodeMapper runnerMapper;
@@ -201,7 +212,8 @@ public class AiRunService {
         requireProject(projectId);
         AiProjectConfigEntity entity = configMapper.selectById(projectId);
         return entity == null
-                ? new AiProjectConfigDto(projectId, false, "", "main", defaultFolder(projectId), DEFAULT_ENGINE, null, 2, 2)
+                ? new AiProjectConfigDto(projectId, false, "", "main", defaultFolder(projectId), DEFAULT_ENGINE,
+                        null, 2, 2, DEFAULT_EXECUTION_PROMPT)
                 : toConfigDto(entity);
     }
 
@@ -227,7 +239,8 @@ public class AiRunService {
             AiProjectConfigEntity config = configs.get(project.getId());
             AiProjectConfigDto dto = config == null
                     ? new AiProjectConfigDto(project.getId(), false, "", "main",
-                            safeFolder(project.getName(), project.getId()), DEFAULT_ENGINE, null, 2, 2)
+                            safeFolder(project.getName(), project.getId()), DEFAULT_ENGINE, null, 2, 2,
+                            DEFAULT_EXECUTION_PROMPT)
                     : toConfigDto(config);
             workflows.add(toWorkflow(project.getId(), project.getName(), dto, config != null, false,
                     runnerNames, runsByProject));
@@ -270,6 +283,10 @@ public class AiRunService {
         String folder = blankOr(request.workspaceDir(), safeFolder(project.getName(), projectId));
         int maxParallel = request.maxParallelRuns() == null ? 2 : request.maxParallelRuns();
         int failureRetries = request.failureRetryCount() == null ? 2 : request.failureRetryCount();
+        AiProjectConfigEntity entity = configMapper.selectById(projectId);
+        String executionPrompt = request.executionPrompt() == null
+                ? entity == null ? DEFAULT_EXECUTION_PROMPT : executionPrompt(entity)
+                : request.executionPrompt().trim();
         if (enabled && !StringUtils.hasText(repoUrl)) {
             throw new BadRequestException("启用 AI Run 前请填写 Git 仓库地址");
         }
@@ -289,6 +306,12 @@ public class AiRunService {
         if (failureRetries < 0 || failureRetries > 5) {
             throw new BadRequestException("失败自动重试次数必须在 0 到 5 之间");
         }
+        if (!StringUtils.hasText(executionPrompt)) {
+            throw new BadRequestException("AI 执行提示词不能为空");
+        }
+        if (executionPrompt.length() > MAX_EXECUTION_PROMPT) {
+            throw new BadRequestException("AI 执行提示词最多 4000 字");
+        }
         String engine = requireEngine(blankOr(request.defaultEngine(), DEFAULT_ENGINE));
         String preferred = trim(request.preferredRunnerId());
         if (StringUtils.hasText(preferred)) {
@@ -298,7 +321,6 @@ public class AiRunService {
                 throw new BadRequestException(runner.getName() + " 没有接入 " + label(engine) + "，请换一台电脑或改默认 AI 工具");
             }
         }
-        AiProjectConfigEntity entity = configMapper.selectById(projectId);
         if (entity == null) {
             entity = new AiProjectConfigEntity();
             entity.setProjectId(projectId);
@@ -311,6 +333,7 @@ public class AiRunService {
         entity.setPreferredRunnerId(StringUtils.hasText(preferred) ? preferred : null);
         entity.setMaxParallelRuns(maxParallel);
         entity.setFailureRetryCount(failureRetries);
+        entity.setExecutionPrompt(executionPrompt);
         entity.setUpdatedAt(LocalDateTime.now());
         if (configMapper.selectById(projectId) == null) configMapper.insert(entity);
         else configMapper.updateById(entity);
@@ -1389,7 +1412,7 @@ public class AiRunService {
                     previousFailure(run), run.getSessionId(), continuationInput,
                     accounts.runAccount(run.getAiAccountId(), engine), memoryContext,
                     memoryContext.stream().map(ProjectMemoryContextDto::id).toList(),
-                    runSkills);
+                    runSkills, executionPrompt(config));
         }
         return null;
     }
@@ -1925,7 +1948,12 @@ public class AiRunService {
                 blankOr(entity.getWorkspaceDir(), defaultFolder(entity.getProjectId())),
                 blankOr(entity.getDefaultEngine(), DEFAULT_ENGINE),
                 entity.getPreferredRunnerId(), valueOr(entity.getMaxParallelRuns(), 2),
-                clamp(entity.getFailureRetryCount(), 0, 5, 2));
+                clamp(entity.getFailureRetryCount(), 0, 5, 2), executionPrompt(entity));
+    }
+
+    private static String executionPrompt(AiProjectConfigEntity entity) {
+        return StringUtils.hasText(entity.getExecutionPrompt())
+                ? entity.getExecutionPrompt().trim() : DEFAULT_EXECUTION_PROMPT;
     }
 
     private AiWorkflowDto toWorkflow(String projectId, String projectName, AiProjectConfigDto config,

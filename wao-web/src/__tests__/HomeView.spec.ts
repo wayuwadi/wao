@@ -24,6 +24,7 @@ import {
   requestRunnerScriptUpdate,
   rerunAiRun,
   saveAiTaskAutoRunPolicy,
+  saveAiProjectConfig,
   createAiRuns,
 } from '@/api/ai'
 import { fetchWebhookEndpoints } from '@/api/system'
@@ -160,6 +161,7 @@ vi.mock('@/api/ai', () => ({
       config: {
         projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
         workspaceDir: 'wao', defaultEngine: 'claude', preferredRunnerId: 'rn2', maxParallelRuns: 3, failureRetryCount: 2,
+        executionPrompt: '先完整阅读原始任务，再按用户可见结果实施。',
       },
       configured: true,
       projectDeleted: false,
@@ -645,6 +647,7 @@ describe('HomeView AI 控制台', () => {
       config: {
         projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
         workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: 'rn1', maxParallelRuns: 3, failureRetryCount: 2,
+        executionPrompt: '先完整阅读任务原文。',
       },
       configured: true, projectDeleted: false, preferredRunnerName: '娃哥电脑',
       activeRuns: 1, succeededRuns: 4, failedRuns: 1, lastRunAt: '2026-07-25T20:18:00',
@@ -692,7 +695,7 @@ describe('HomeView AI 控制台', () => {
       config: {
         projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
         workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: 'rn1', maxParallelRuns: 3,
-        failureRetryCount: 2,
+        failureRetryCount: 2, executionPrompt: '先完整阅读任务原文。',
       },
       configured: true, projectDeleted: false, preferredRunnerName: '娃哥电脑',
       activeRuns: 1, succeededRuns: 4, failedRuns: 1, lastRunAt: '2026-07-25T20:18:00',
@@ -1167,7 +1170,7 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
-  it('工作流视图展示项目配置，点击后可以就地编辑默认 AI 工具', async () => {
+  it('工作流视图展示项目配置，并可就地编辑 AI 执行提示词', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
@@ -1183,6 +1186,14 @@ describe('HomeView AI 控制台', () => {
     await card.find('.link-btn').trigger('click')
     const engineSelect = card.findAll('.flow-form select')[0]!
     expect((engineSelect.element as HTMLSelectElement).value).toBe('claude')
+    const prompt = card.get('[aria-label="AI 执行提示词"]')
+    expect((prompt.element as HTMLTextAreaElement).value).toContain('完整阅读原始任务')
+    await prompt.setValue('先核验任务原文与现有代码，再连续完成实现和验收。')
+    await card.get('.flow-actions .primary').trigger('click')
+    await flushPromises()
+    expect(saveAiProjectConfig).toHaveBeenCalledWith('p1', expect.objectContaining({
+      executionPrompt: '先核验任务原文与现有代码，再连续完成实现和验收。',
+    }))
     wrapper.unmount()
   })
 

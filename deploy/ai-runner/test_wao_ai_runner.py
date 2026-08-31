@@ -314,6 +314,30 @@ class RunnerInvocationTest(unittest.TestCase):
         self.assertIn("不要伪造", prompt)
         self.assertIn("不算失败", prompt)
 
+    def test_prompt_uses_configured_ai_reading_method_before_task_and_keeps_guardrails(self) -> None:
+        prompt = RUNNER.build_prompt({
+            "defaultBranch": "main",
+            "promptUrl": "https://wao.example/task.md",
+            "branchName": "fix/example",
+            "executionPrompt": "先把原始需求整理成用户结果，再按验收证据实施。",
+        })
+
+        self.assertLess(prompt.index("先把原始需求整理成用户结果"), prompt.index("https://wao.example/task.md"))
+        self.assertIn("任务理解方法（项目配置）", prompt)
+        self.assertIn("不得覆盖后续交付、安全、权限和最终状态约束", prompt)
+        self.assertIn("WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT", prompt)
+
+    def test_prompt_falls_back_to_polished_default_for_old_claims(self) -> None:
+        prompt = RUNNER.build_prompt({
+            "defaultBranch": "main",
+            "promptUrl": "https://wao.example/task.md",
+            "branchName": "fix/example",
+        })
+
+        self.assertIn("完整阅读任务原文", prompt)
+        self.assertIn("不要擅自补充需求", prompt)
+        self.assertIn("# WAO 自动开发任务", prompt)
+
     def test_extracts_agent_message_but_filters_command(self) -> None:
         message = RUNNER.extract_progress({
             "type": "item.completed",

@@ -9,5 +9,14 @@ public record SaveAiProjectConfigRequest(
         String defaultEngine,
         String preferredRunnerId,
         Integer maxParallelRuns,
-        Integer failureRetryCount) {
+        Integer failureRetryCount,
+        String executionPrompt) {
+
+    /** 兼容滚动发布期间尚未提交提示词字段的旧页面。 */
+    public SaveAiProjectConfigRequest(Boolean enabled, String repoUrl, String defaultBranch,
+            String workspaceDir, String defaultEngine, String preferredRunnerId,
+            Integer maxParallelRuns, Integer failureRetryCount) {
+        this(enabled, repoUrl, defaultBranch, workspaceDir, defaultEngine, preferredRunnerId,
+                maxParallelRuns, failureRetryCount, null);
+    }
 }

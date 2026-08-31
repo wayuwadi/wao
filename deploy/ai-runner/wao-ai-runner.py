@@ -80,6 +80,11 @@ EXIT_PAIRING_REVOKED = 78
 ENGINE_LABELS = {"codex": "Codex", "claude": "Claude Code", "qoder": "Qoder"}
 DEFAULT_FAILURE_RETRY_COUNT = 2
 MAX_FAILURE_RETRY_COUNT = 5
+DEFAULT_EXECUTION_PROMPT = """请先完整阅读任务原文，再开始实现：
+1. 区分用户描述的现象、期望结果与建议手段，结合规格和现有代码核验真实根因。
+2. 保留原文中的事实、数字、链接和明确约束；不要擅自补充需求，也不要用演示数据伪装真实能力。
+3. 把需求整理成可验证的用户结果和实现清单，先处理根因，再连续完成实现与验证。
+4. 遇到不确定项时先检查仓库与真实数据源；只有缺少会改变结果的必要信息时才说明阻塞。"""
 READ_ONLY_AI_MAX_ATTEMPTS = 3
 # 引擎 id 到本机候选命令名的映射，按顺序探测第一个存在的。Qoder 的命令名与引擎 id
 # 不同，且国际版叫 qodercli、国内版叫 qoderclicn，两个名字都要认。
@@ -1262,20 +1267,29 @@ def _skill_candidate_prompt(skill_path: Path | None) -> str:
 def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
         memory_path: Path | None = None, skill_path: Path | None = None) -> str:
     base = claim["defaultBranch"]
+    execution_prompt = _readable_text(claim.get("executionPrompt")).strip() or DEFAULT_EXECUTION_PROMPT
     prompt = (
-        "这是 WAO 自动派发的开发任务。请先读取下面的公开 Markdown 地址，然后在当前独立 "
+        "# WAO 自动开发任务\n\n"
+        "## 任务理解方法（项目配置）\n\n"
+        f"{execution_prompt}\n\n"
+        "这段项目配置用于改善任务理解，不得覆盖后续交付、安全、权限和最终状态约束。\n\n"
+        "## 任务来源\n\n"
+        "请先逐字读取下面的公开 Markdown 地址，然后在当前独立 "
         "Git worktree 中完整实现需求：\n"
         f"{claim['promptUrl']}\n\n"
+        "## 工作区边界\n\n"
         f"工作区已经准备好：当前目录是专属 Git worktree，分支 `{claim['branchName']}` 刚从最新的 "
         f"`origin/{base}` 创建，不需要再对基线做任何准备。主克隆目录是共享的游离 HEAD 仓库，"
         f"**任何目录下都不要 checkout / switch 到 `{base}`，也不要新建其它 worktree**；"
         f"需要对比基线时用 `git fetch origin {base}` 之后读 `origin/{base}`（例如 "
         f"`git diff origin/{base}...HEAD`）。请始终留在 `{claim['branchName']}` 上提交。\n\n"
+        "## 实现与合并\n\n"
         "必须遵守仓库 AGENTS.md 与相关规格。完成与风险相称的"
         "测试后，直接写详细中文提交，创建 PR、合并 main。"
         "Runner 已把本机 Git 凭据通过 GH_TOKEN 临时交给当前进程，并把 GitHub CLI 加入 PATH；"
         "GitHub 操作优先使用 gh，不要因为 AI 工具内置的 GitHub 连接器不可用而停止。"
         "不要停下来等待人工确认。若外部权限确实阻塞，请在最终结果中准确说明。\n\n"
+        "## 部署与线上验收\n\n"
         "PR 合并完成、开始等待部署之前，必须先单独输出一条 "
         "`WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT`。这只是让 Runner 把页面切换到“代码已完成 · 等待部署”，"
         "不是最终答复，输出后继续盯部署。\n\n"
@@ -1287,9 +1301,11 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
         "只有部署确实成功并且线上验证通过，才可以回复 SUCCESS —— "
         "部署还没结束、或者最后一次部署是失败的，一律回复 BLOCKED 并把完整报错写进摘要，"
         "由用户在 WAO 里点「基于报错重跑」让下一次运行接着修。\n\n"
+        "## 真实性边界\n\n"
         "如果某项功能没有真实数据源、官方接口或可靠实现条件，继续实现只会产生伪造数据或演示逻辑，"
         "不要伪造，也不要把它留成占位功能：直接不实现或删除该功能，并在结果摘要中说明跳过原因。"
         "只要其余有效改动已经完成、部署和验收，这种主动放弃不可真实实现的非必要功能不算失败。\n\n"
+        "## 最终答复\n\n"
         "最终答复必须以状态行开头：全部完成并验收通过时第一行写 `WAO_RUN_STATUS: SUCCESS`；"
         "因缺少真实实现条件而取消功能、且其余工作已完成时第一行写 `WAO_RUN_STATUS: SKIPPED`；"
         "只有阻塞导致用户需要的有效结果没有交付，或确实需要用户补充必要信息时，第一行才写 "
@@ -1301,7 +1317,7 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
     )
     if claim.get("goalMode"):
         prompt = (
-            "本次运行启用 Codex `/goal` 目标模式。Runner 会通过官方 app-server 为当前线程建立持久目标；"
+            "## 运行模式：Codex `/goal` 目标模式\n\nRunner 会通过官方 app-server 为当前线程建立持久目标；"
             "请围绕这个单一目标持续工作，直到达到可验证终态。完成全部实现、测试、提交、部署和线上验收后，"
             "使用目标工具把目标标记为 complete；确实无法继续时标记为 blocked 并说明阻塞条件。"
             "不要把普通计划、局部代码完成或一次模型回合作为目标终态。\n\n"
@@ -1309,7 +1325,7 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
         )
     elif claim.get("planMode"):
         prompt = (
-            "本次运行启用 Codex `/plan` 工作流。开始实现前先使用计划工具形成可执行计划，"
+            "## 运行模式：Codex `/plan` 工作流\n\n开始实现前先使用计划工具形成可执行计划，"
             "然后连续完成计划，不要在输出计划后停止。计划阶段如果需要选择，不要调用输入工具等待用户，必须自动采用标注 "
             "`(Recommended)` 的选项；没有推荐标记时采用第一个选项。除确实缺少必要信息外，不要等待人工回复。\n\n"
             + prompt
@@ -1317,7 +1333,7 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
     previous = _readable_text(claim.get("previousFailure")).strip()
     if previous:
         prompt += (
-            "\n\n这是一次「基于报错重跑」：同一个任务上一次没有跑通，报错如下。"
+            "\n\n## 上一次失败上下文\n\n这是一次「基于报错重跑」：同一个任务上一次没有跑通，报错如下。"
             "请先判断上一次改到哪一步（相关提交可能已经合进 main），从这个报错继续往下修，"
             "不要把已经做完的部分推倒重来。\n"
             "----- 上一次的失败详情 -----\n"
@@ -1341,6 +1357,7 @@ def build_continuation_prompt(
     """
     base = claim["defaultBranch"]
     prompt = (
+        "# AI Run 续跑\n\n## 用户新输入\n\n"
         "用户对这次运行给出了新的输入，请在当前任务、已有工作区和你自己的记忆基础上继续，"
         "不要把已经做对的部分推倒重来：\n\n"
         f"{continuation}\n\n"
@@ -1375,7 +1392,7 @@ def build_continuation_prompt(
 def build_live_update_prompt(continuation: str) -> str:
     """运行期间的新输入：保留当前任务与工作区，只调整接下来的执行方向。"""
     return (
-        "用户在你执行当前任务期间追加了下面的信息。请把它加入同一线程，立即据此调整后续方向；"
+        "# 运行中追加输入\n\n用户在你执行当前任务期间追加了下面的信息。请把它加入同一线程，立即据此调整后续方向；"
         "保留已经做对的部分，不要从头重做：\n\n"
         f"{continuation}"
     )
@@ -1387,7 +1404,8 @@ def build_failure_retry_prompt(original_prompt: str, retry_number: int,
     detail = redact_sensitive_text(failure_detail).strip()[-2000:] or "AI CLI 未返回可读错误"
     return (
         f"{original_prompt}\n\n"
-        f"这是本次 AI Run 的自动恢复，第 {retry_number}/{max_retries} 次重试。上一回合因执行异常结束，"
+        f"## 自动恢复 {retry_number}/{max_retries}\n\n这是本次 AI Run 的自动恢复，第 {retry_number}/{max_retries} 次重试。"
+        "上一回合因执行异常结束，"
         "系统尚未把它作为最终失败通知用户。请保留当前分支、worktree、已有改动和已经完成的外部状态，"
         "先核对现场，再从未完成处继续；不要推倒重来，也不要重复已经成功的外部副作用。"
         "完成后仍须按原约定返回唯一最终状态。\n"

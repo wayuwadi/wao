@@ -531,6 +531,8 @@ export interface AiProjectConfig {
   maxParallelRuns: number
   /** AI CLI 异常或非零退出后，在同一次运行内自动重试的次数。 */
   failureRetryCount: number
+  /** Runner 在读取任务原文前使用的项目级理解与执行方法。 */
+  executionPrompt: string
 }
 
 /** 一台已和 WAO 配对的执行电脑，可能同时装了 Codex 和 Claude Code。 */
