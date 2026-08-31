@@ -72,8 +72,9 @@ public class FeishuQuickCollectPollingScheduler {
                 if (eligible(message, currentBot)) {
                     try {
                         quickCollect.collectPolled(chatId, message);
+                        quickCollect.triggerPolledReaction(token, message.messageId());
                     } catch (RuntimeException ex) {
-                        log.warn("飞书轮询收集单条消息失败：message={} reason={}",
+                        log.warn("飞书轮询收集或表情派工失败：message={} reason={}",
                                 message.messageId(), ex.getMessage());
                     }
                 }
@@ -115,8 +116,9 @@ public class FeishuQuickCollectPollingScheduler {
                 if (eligible(message, currentBot)) {
                     try {
                         quickCollect.collectPolled(chatId, message);
+                        quickCollect.triggerPolledReaction(token, message.messageId());
                     } catch (RuntimeException ex) {
-                        log.warn("飞书编辑消息同步失败：message={} reason={}",
+                        log.warn("飞书编辑消息或表情派工回看失败：message={} reason={}",
                                 message.messageId(), ex.getMessage());
                     }
                 }

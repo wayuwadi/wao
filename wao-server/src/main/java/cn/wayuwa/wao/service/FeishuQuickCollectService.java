@@ -24,6 +24,7 @@ import cn.wayuwa.wao.dto.SaveQuickCollectConfigRequest;
 import cn.wayuwa.wao.dto.TaskDto;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessageReaction;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
 import cn.wayuwa.wao.mapper.FeishuQuickCollectEventMapper;
@@ -59,6 +60,7 @@ public class FeishuQuickCollectService {
     /** 标题最多取多少字，超出的部分留在描述里。 */
     private static final int TITLE_LIMIT = 40;
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
+    private static final String PUBLIC_BASE_URL = "https://wao.wayuwa.cn";
 
     private static final Logger log = LoggerFactory.getLogger(FeishuQuickCollectService.class);
 
@@ -104,7 +106,8 @@ public class FeishuQuickCollectService {
                 settings.get(SettingService.QUICK_COLLECT_PROJECT_ID, ""),
                 SettingService.mask(token), StringUtils.hasText(token),
                 SettingService.mask(key), StringUtils.hasText(key),
-                mentionOpenIds(), reactionPolicy.receivedEmoji(), reactionPolicy.completedEmoji());
+                mentionOpenIds(), reactionPolicy.receivedEmoji(), reactionPolicy.triggerEmoji(),
+                reactionPolicy.completedEmoji());
     }
 
     /**
@@ -124,7 +127,7 @@ public class FeishuQuickCollectService {
             settings.put(SettingService.QUICK_COLLECT_MENTIONS, String.join(",", req.mentionOpenIds().stream()
                     .filter(StringUtils::hasText).map(String::trim).distinct().toList()));
         }
-        reactionPolicy.save(req.receivedEmoji(), req.completedEmoji());
+        reactionPolicy.save(req.receivedEmoji(), req.triggerEmoji(), req.completedEmoji());
         return config();
     }
 
@@ -138,7 +141,7 @@ public class FeishuQuickCollectService {
      * @return 要回给飞书的响应体（URL 校验时是 challenge，其余情况是空对象）
      */
     public Map<String, Object> handleEvent(String rawBody) {
-        return handleEvent(rawBody, "https://wao.wayuwa.cn");
+        return handleEvent(rawBody, PUBLIC_BASE_URL);
     }
 
     /**
@@ -218,6 +221,25 @@ public class FeishuQuickCollectService {
         source.mentions().forEach(mention -> mentions.addObject()
                 .put("key", mention.key()).put("name", mention.name()));
         collect(event, "");
+    }
+
+    /**
+     * 用已经认证的飞书应用令牌读取原消息上的人工派工表情。
+     *
+     * <p>事件订阅仍用于低延迟触发；此入口让没有配置 Verification Token / Encrypt Key 的部署也能
+     * 在现有消息轮询中可靠发现飞机表情。身份、原消息和幂等校验仍由派工服务统一执行。
+     *
+     * @param token tenant_access_token
+     * @param messageId 已进入快速收集链路的原消息 id
+     */
+    public void triggerPolledReaction(String token, String messageId) {
+        if (!StringUtils.hasText(messageId) || reactionAiRuns.hasTriggered(messageId)) return;
+        List<FeishuMessageReaction> reactions = feishu.listMessageReactions(
+                token, messageId, reactionPolicy.triggerEmoji());
+        for (FeishuMessageReaction reaction : reactions) {
+            reactionAiRuns.triggerPolled(messageId, reaction, PUBLIC_BASE_URL);
+            if (reactionAiRuns.hasTriggered(messageId)) return;
+        }
     }
 
     /** 真正把一条群消息变成任务。 */

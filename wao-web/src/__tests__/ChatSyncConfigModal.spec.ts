@@ -41,6 +41,7 @@ const config = {
   hasEncryptKey: false,
   mentionOpenIds: [],
   receivedEmoji: 'GET',
+  triggerEmoji: 'StatusInFlight',
   completedEmoji: 'DONE',
 }
 
@@ -50,36 +51,39 @@ describe('飞书快速收集表情工作流设置', () => {
     vi.mocked(saveQuickCollectConfig).mockReset().mockImplementation(async (payload) => ({
       ...config,
       receivedEmoji: payload.receivedEmoji ?? config.receivedEmoji,
+      triggerEmoji: payload.triggerEmoji ?? config.triggerEmoji,
       completedEmoji: payload.completedEmoji ?? config.completedEmoji,
     }))
   })
 
-  it('展示 Get → 保持 → Done 并说明表情事件订阅是必要条件', async () => {
+  it('展示 Get → 飞机 → Done 并说明轮询与低延迟事件通道', async () => {
     const wrapper = mount(ChatSyncConfigModal, { global: { plugins: [createPinia()] } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('已收下 / 人工派工')
-    expect(wrapper.text()).toContain('AI Run 中保持')
+    expect(wrapper.text()).toContain('已收下')
+    expect(wrapper.text()).toContain('人工派工 / AI Run 中')
     expect(wrapper.text()).toContain('完成待验收')
     expect(wrapper.text()).toContain('im.message.reaction.created_v1')
-    expect(wrapper.text()).toContain('仅靠 15 秒消息轮询无法收到表情事件')
+    expect(wrapper.text()).toContain('主动读取表情')
     expect(wrapper.findAll('.reaction-flow select')
       .map((select) => (select.element as HTMLSelectElement).value))
-      .toEqual(['GET', 'DONE'])
+      .toEqual(['GET', 'StatusInFlight', 'DONE'])
   })
 
-  it('保存时让回执与人工触发表情共用同一配置', async () => {
+  it('分别保存已收下、人工派工和待验收表情', async () => {
     const wrapper = mount(ChatSyncConfigModal, { global: { plugins: [createPinia()] } })
     await flushPromises()
     const selects = wrapper.findAll('.reaction-flow select')
-    await selects[0]!.setValue('StatusInFlight')
-    await selects[1]!.setValue('CheckMark')
+    await selects[0]!.setValue('CheckMark')
+    await selects[1]!.setValue('StatusInFlight')
+    await selects[2]!.setValue('DONE')
     await wrapper.get('.btn-primary').trigger('click')
     await flushPromises()
 
     expect(saveQuickCollectConfig).toHaveBeenCalledWith(expect.objectContaining({
-      receivedEmoji: 'StatusInFlight',
-      completedEmoji: 'CheckMark',
+      receivedEmoji: 'CheckMark',
+      triggerEmoji: 'StatusInFlight',
+      completedEmoji: 'DONE',
     }))
   })
 })

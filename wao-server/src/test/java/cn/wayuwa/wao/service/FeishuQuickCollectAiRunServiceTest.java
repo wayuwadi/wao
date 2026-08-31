@@ -66,13 +66,14 @@ class FeishuQuickCollectAiRunServiceTest {
     }
 
     @Test
-    void ownerGetReactionCreatesOnePlanRunAndPersistsTheRunLink() throws Exception {
+    void ownerFlightReactionCreatesOnePlanRunAndPersistsTheRunLink() throws Exception {
         AiRunDto run = mock(AiRunDto.class);
         when(run.id()).thenReturn("ar1");
         when(aiRuns.enqueue(eq(List.of("t1")), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
                 eq(true), eq(false), eq("wd"), eq("https://wao.example"))).thenReturn(List.of(run));
 
-        assertThat(service.trigger(event("ev1", "GET", "ou_owner"), "https://wao.example")).isTrue();
+        assertThat(service.trigger(event("ev1", "StatusInFlight", "ou_owner"),
+                "https://wao.example")).isTrue();
 
         verify(aiRuns).enqueue(eq(List.of("t1")), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
                 eq(true), eq(false), eq("wd"), eq("https://wao.example"));
@@ -88,7 +89,8 @@ class FeishuQuickCollectAiRunServiceTest {
         when(triggers.insert(any(FeishuQuickCollectAiRunTriggerEntity.class)))
                 .thenThrow(new DuplicateKeyException("duplicate"));
 
-        assertThat(service.trigger(event("ev1", "GET", "ou_owner"), "https://wao.example")).isTrue();
+        assertThat(service.trigger(event("ev1", "StatusInFlight", "ou_owner"),
+                "https://wao.example")).isTrue();
 
         verify(aiRuns, never()).enqueue(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
@@ -102,7 +104,8 @@ class FeishuQuickCollectAiRunServiceTest {
         other.setMemberId("wg");
         when(accounts.selectById("a2")).thenReturn(other);
 
-        assertThat(service.trigger(event("ev2", "GET", "ou_other"), "https://wao.example")).isTrue();
+        assertThat(service.trigger(event("ev2", "StatusInFlight", "ou_other"),
+                "https://wao.example")).isTrue();
 
         verify(triggers, never()).insert(any(FeishuQuickCollectAiRunTriggerEntity.class));
         verify(aiRuns, never()).enqueue(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
@@ -122,22 +125,42 @@ class FeishuQuickCollectAiRunServiceTest {
         when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
         when(feishu.tenantAccessToken("cli", "secret")).thenReturn("token");
 
-        assertThatThrownBy(() -> service.trigger(event("ev4", "GET", "ou_owner"),
+        assertThatThrownBy(() -> service.trigger(event("ev4", "StatusInFlight", "ou_owner"),
                 "https://wao.example")).hasMessageContaining("Runner");
         verify(feishu).addMessageReaction("token", "om_source", "ERROR");
     }
 
     @Test
-    void configuredReceivedReactionReplacesTheDefaultTrigger() throws Exception {
-        when(settings.get(SettingService.QUICK_COLLECT_RECEIVED_EMOJI,
-                FeishuQuickCollectReactionPolicy.DEFAULT_RECEIVED_EMOJI)).thenReturn("CheckMark");
+    void configuredTriggerReactionReplacesTheDefaultFlight() throws Exception {
+        when(settings.get(SettingService.QUICK_COLLECT_TRIGGER_EMOJI,
+                FeishuQuickCollectReactionPolicy.DEFAULT_TRIGGER_EMOJI)).thenReturn("CheckMark");
         AiRunDto run = mock(AiRunDto.class);
         when(run.id()).thenReturn("ar2");
         when(aiRuns.enqueue(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(List.of(run));
 
-        assertThat(service.trigger(event("ev5", "GET", "ou_owner"), "https://wao.example")).isFalse();
+        assertThat(service.trigger(event("ev5", "StatusInFlight", "ou_owner"),
+                "https://wao.example")).isFalse();
         assertThat(service.trigger(event("ev6", "CheckMark", "ou_owner"), "https://wao.example")).isTrue();
+    }
+
+    @Test
+    void authenticatedPolledFlightUsesReactionIdForDurableIdempotency() {
+        AiRunDto run = mock(AiRunDto.class);
+        when(run.id()).thenReturn("ar-polled");
+        when(aiRuns.enqueue(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(run));
+        var reaction = new FeishuOpenApiClient.FeishuMessageReaction(
+                "reaction-1", "ou_owner", "user", "1787900000000", "StatusInFlight");
+
+        assertThat(service.triggerPolled("om_source", reaction, "https://wao.example")).isTrue();
+
+        ArgumentCaptor<FeishuQuickCollectAiRunTriggerEntity> saved =
+                ArgumentCaptor.forClass(FeishuQuickCollectAiRunTriggerEntity.class);
+        verify(triggers).updateById(saved.capture());
+        assertThat(saved.getValue().getEventKey()).isEqualTo("reaction-id:reaction-1");
+        assertThat(saved.getValue().getEventId()).isNull();
+        assertThat(saved.getValue().getAiRunId()).isEqualTo("ar-polled");
     }
 
     private JsonNode event(String eventId, String emoji, String openId) throws Exception {

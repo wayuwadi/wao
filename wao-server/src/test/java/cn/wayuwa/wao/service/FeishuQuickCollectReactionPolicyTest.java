@@ -15,22 +15,24 @@ class FeishuQuickCollectReactionPolicyTest {
     private final FeishuQuickCollectReactionPolicy policy = new FeishuQuickCollectReactionPolicy(settings);
 
     @Test
-    void defaultsMatchGetToDoneWorkflow() {
+    void defaultsMatchGetToFlightToDoneWorkflow() {
         assertThat(policy.receivedEmoji()).isEqualTo("GET");
+        assertThat(policy.triggerEmoji()).isEqualTo("StatusInFlight");
         assertThat(policy.completedEmoji()).isEqualTo("DONE");
     }
 
     @Test
     void supportedWorkflowCanBeSaved() {
-        policy.save("StatusInFlight", "CheckMark");
+        policy.save("GET", "StatusInFlight", "CheckMark");
 
-        verify(settings).put(SettingService.QUICK_COLLECT_RECEIVED_EMOJI, "StatusInFlight");
+        verify(settings).put(SettingService.QUICK_COLLECT_RECEIVED_EMOJI, "GET");
+        verify(settings).put(SettingService.QUICK_COLLECT_TRIGGER_EMOJI, "StatusInFlight");
         verify(settings).put(SettingService.QUICK_COLLECT_COMPLETED_EMOJI, "CheckMark");
     }
 
     @Test
     void unsupportedEmojiIsRejectedInsteadOfSilentlyBreakingFeishu() {
-        assertThatThrownBy(() -> policy.save("NOT_REAL", "DONE"))
+        assertThatThrownBy(() -> policy.save("GET", "NOT_REAL", "DONE"))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("不受支持");
     }

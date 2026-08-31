@@ -51,6 +51,7 @@ const verifyToken = ref('')
 const encryptKey = ref('')
 const mentionIds = ref<string[]>([])
 const receivedEmoji = ref('GET')
+const triggerEmoji = ref('StatusInFlight')
 const completedEmoji = ref('DONE')
 const emojiOptions = [
   { value: 'GET', label: 'Get（已收到）' },
@@ -89,6 +90,7 @@ onMounted(async () => {
     quickProjectId.value = q.projectId
     mentionIds.value = [...q.mentionOpenIds]
     receivedEmoji.value = q.receivedEmoji
+    triggerEmoji.value = q.triggerEmoji
     completedEmoji.value = q.completedEmoji
   } catch (error) {
     toast(error instanceof Error ? error.message : '读取配置失败')
@@ -147,6 +149,7 @@ async function persistQuick() {
     encryptKey: encryptKey.value.trim() || undefined,
     mentionOpenIds: mentionIds.value,
     receivedEmoji: receivedEmoji.value,
+    triggerEmoji: triggerEmoji.value,
     completedEmoji: completedEmoji.value,
   })
   verifyToken.value = ''
@@ -314,8 +317,8 @@ async function runHistory() {
         <div class="event-requirement">
           <i class="ri-information-line"></i>
           <span>
-            人工表情派工必须在飞书开放平台订阅 <b>im.message.reaction.created_v1</b>，并在下方配置
-            Verification Token 或 Encrypt Key；仅靠 15 秒消息轮询无法收到表情事件。
+            WAO 会用已授权的应用主动读取表情；订阅 <b>im.message.reaction.created_v1</b> 并配置
+            Verification Token 或 Encrypt Key 可把人工派工延迟进一步降到事件级。
           </span>
         </div>
         <div class="two">
@@ -343,7 +346,7 @@ async function runHistory() {
         <div class="label sub-label">表情工作流</div>
         <div class="reaction-flow">
           <label>
-            <span>已收下 / 人工派工</span>
+            <span>已收下</span>
             <select v-model="receivedEmoji" class="input">
               <option v-for="option in emojiOptions" :key="option.value" :value="option.value">
                 {{ option.label }}
@@ -351,7 +354,14 @@ async function runHistory() {
             </select>
           </label>
           <i class="ri-arrow-right-line"></i>
-          <span class="keep-stage">AI Run 中保持</span>
+          <label>
+            <span>人工派工 / AI Run 中</span>
+            <select v-model="triggerEmoji" class="input">
+              <option v-for="option in emojiOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
           <i class="ri-arrow-right-line"></i>
           <label>
             <span>完成待验收</span>
@@ -362,7 +372,7 @@ async function runHistory() {
             </select>
           </label>
         </div>
-        <div class="tip">成员在原消息上添加“已收下 / 人工派工”表情即可启动 AI Run；运行期间不追加新表情，成功后添加“完成待验收”表情。</div>
+        <div class="tip">成员在原消息上添加“人工派工 / AI Run 中”表情即可启动 AI Run；默认流程为 Get（已收下）→ 飞机（执行中）→ Done（完成待验收）。</div>
         <div class="label sub-label">任务进入「收集中」时 @ 这些人</div>
         <div class="mention-list">
           <label v-for="s in senders.filter((x) => x.id)" :key="s.id" class="mention">
@@ -613,10 +623,9 @@ async function runHistory() {
 .event-url .mono { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--wao-text-2); }
 .event-requirement { margin-top: 8px; display: flex; align-items: flex-start; gap: 7px; padding: 8px 10px; border-radius: 9px; background: var(--wao-primary-soft); color: var(--wao-text-2); font-size: 11.5px; line-height: 1.65; }
 .event-requirement i { color: var(--wao-primary); margin-top: 2px; }
-.reaction-flow { margin-top: 8px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: end; gap: 8px; }
+.reaction-flow { margin-top: 8px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 8px; }
 .reaction-flow label { min-width: 0; display: grid; gap: 5px; color: var(--wao-text-weak); font-size: 11.5px; }
 .reaction-flow > i { align-self: center; margin-top: 18px; color: var(--wao-text-faint); }
-.keep-stage { align-self: center; margin-top: 18px; white-space: nowrap; color: var(--wao-text-2); font-size: 11.5px; }
 .mention-list { margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .mention { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wao-text-2); cursor: pointer; }
 .history-run { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--wao-divider); }
@@ -665,6 +674,5 @@ async function runHistory() {
 @media (max-width: 560px) {
   .reaction-flow { grid-template-columns: 1fr; align-items: stretch; }
   .reaction-flow > i { transform: rotate(90deg); margin: 0 auto; }
-  .keep-stage { margin: 0; text-align: center; }
 }
 </style>

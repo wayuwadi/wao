@@ -191,6 +191,7 @@ export interface QuickCollectConfig {
   hasEncryptKey: boolean
   mentionOpenIds: string[]
   receivedEmoji: string
+  triggerEmoji: string
   completedEmoji: string
 }
 
@@ -204,5 +205,6 @@ export const saveQuickCollectConfig = (payload: {
   encryptKey?: string
   mentionOpenIds?: string[]
   receivedEmoji?: string
+  triggerEmoji?: string
   completedEmoji?: string
 }) => put<QuickCollectConfig>('/api/feishu/quick-collect/config', payload)

@@ -33,14 +33,9 @@ public class FeishuAiRunReactionNotifier {
         this.reactionPolicy = reactionPolicy;
     }
 
-    /**
-     * AI Run 成功入队后保持原消息已有的“已收下”表情，不再追加容易被误解为另一阶段的表情。
-     *
-     * @param taskIds 本次真正创建运行的任务 id
-     */
+    /** AI Run 成功入队后给原消息添加当前配置的“执行中”表情。 */
     public void reactAfterEnqueued(Collection<String> taskIds) {
-        // 快速收集成功时机器人已添加 receivedEmoji；成员从飞书派工时也已经亲自添加了同一表情。
-        // 网页派工与人工表情派工都保持该状态，直到运行成功再切换为待验收表情。
+        reactAfterCommit(taskIds, reactionPolicy.triggerEmoji(), "执行中");
     }
 
     /**

@@ -7,6 +7,7 @@ import cn.wayuwa.wao.domain.FeishuQuickCollectEventEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessageReaction;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
 import cn.wayuwa.wao.mapper.FeishuQuickCollectAiRunTriggerMapper;
@@ -71,19 +72,55 @@ public class FeishuQuickCollectAiRunService {
         }
         JsonNode event = body.path("event");
         if (!"user".equals(event.path("operator_type").asText(""))
-                || !reactionPolicy.receivedEmoji()
+                || !reactionPolicy.triggerEmoji()
                         .equals(event.path("reaction_type").path("emoji_type").asText(""))) {
             return false;
         }
         String messageId = event.path("message_id").asText("");
+        JsonNode userIds = event.path("user_id");
+        String operatorOpenId = userIds.path("open_id").asText("");
+        String operatorUnionId = userIds.path("union_id").asText("");
+        String eventId = body.path("header").path("event_id").asText("");
+        return dispatch(messageId, operatorOpenId, operatorUnionId, eventId,
+                eventKey(eventId, messageId,
+                        StringUtils.hasText(operatorOpenId) ? operatorOpenId : operatorUnionId,
+                        event.path("action_time").asText("")), baseUrl);
+    }
+
+    /**
+     * 消费经 tenant_access_token 主动读取到的表情；其身份、原消息与幂等门禁和事件回调完全相同。
+     *
+     * @param messageId 原快速收集消息 id
+     * @param reaction 飞书开放 API 返回的表情事实
+     * @param baseUrl 当前 WAO 公网根地址
+     * @return true 表示该表情属于配置的派工动作（包括被身份门禁拒绝或重复）
+     */
+    @Transactional
+    public boolean triggerPolled(String messageId, FeishuMessageReaction reaction, String baseUrl) {
+        if (reaction == null || !"user".equals(reaction.operatorType())
+                || !reactionPolicy.triggerEmoji().equals(reaction.emojiType())) {
+            return false;
+        }
+        String key = StringUtils.hasText(reaction.reactionId())
+                ? "reaction-id:" + reaction.reactionId()
+                : eventKey("", messageId, reaction.operatorId(), reaction.actionTime());
+        return dispatch(messageId, reaction.operatorId(), "", "", key, baseUrl);
+    }
+
+    /** 是否已经为这条原消息消费过一次人工派工，供轮询入口避免无意义外部请求。 */
+    public boolean hasTriggered(String messageId) {
+        return StringUtils.hasText(messageId) && triggers.countByMessageId(messageId) > 0;
+    }
+
+    private boolean dispatch(String messageId, String operatorOpenId, String operatorUnionId,
+            String eventId, String eventKey, String baseUrl) {
         FeishuQuickCollectEventEntity collected = StringUtils.hasText(messageId)
                 ? collectEvents.findCreatedByMessageId(messageId) : null;
         if (collected == null) return false;
 
-        String operatorOpenId = event.path("user_id").path("open_id").asText("");
         String operatorSubject = StringUtils.hasText(operatorOpenId) ? operatorOpenId
-                : event.path("user_id").path("union_id").asText("");
-        String operatorMemberId = memberId(event.path("user_id"));
+                : operatorUnionId;
+        String operatorMemberId = memberId(operatorOpenId, operatorUnionId);
         TaskEntity task = tasks.selectById(collected.getTargetId());
         String creatorId = task == null ? null : task.getCreatedBy();
         if (!StringUtils.hasText(creatorId) && task != null) creatorId = task.getOwnerId();
@@ -92,9 +129,6 @@ public class FeishuQuickCollectAiRunService {
             return true;
         }
 
-        String eventId = body.path("header").path("event_id").asText("");
-        String eventKey = eventKey(eventId, messageId, operatorSubject,
-                event.path("action_time").asText(""));
         FeishuQuickCollectAiRunTriggerEntity trigger = new FeishuQuickCollectAiRunTriggerEntity();
         trigger.setEventKey(eventKey);
         trigger.setEventId(empty(eventId));
@@ -123,10 +157,6 @@ public class FeishuQuickCollectAiRunService {
             addErrorReaction(messageId);
             throw ex;
         }
-    }
-
-    private String memberId(JsonNode ids) {
-        return memberId(ids.path("open_id").asText(""), ids.path("union_id").asText(""));
     }
 
     private String memberId(String openId, String unionId) {
