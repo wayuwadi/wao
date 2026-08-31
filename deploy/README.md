@@ -216,6 +216,21 @@ WECHAT_REDIRECT_URI=https://wao.wayuwa.cn/api/auth/wechat/callback
 WECHAT_FRONTEND_URL=https://wao.wayuwa.cn
 ```
 
+登录页的“微信”入口使用认证公众号，不依赖上面的网站应用资质。先在公众号后台「设置与开发 → 基本配置」把
+服务器地址设为 `https://wao.wayuwa.cn/api/auth/wechat/official/callback`，消息加解密方式选择明文模式，Token
+使用独立随机值；再把同一组真实配置写入 Linux 主节点私有 `deploy/.env.secrets`（不要提交或输出到日志）：
+
+```dotenv
+WECHAT_OFFICIAL_LOGIN_ENABLED=true
+WECHAT_OFFICIAL_APP_ID=<认证公众号 App ID>
+WECHAT_OFFICIAL_APP_SECRET=<认证公众号 App Secret>
+WECHAT_OFFICIAL_TOKEN=<公众号服务器配置 Token>
+```
+
+公众号需要真实具备生成带参数二维码和接收消息权限。启用后用未关注、已关注两种微信账号分别验证：扫码后页面从
+“等待微信扫码”变为“等待公众号收到验证码”，发送正确验证码后浏览器进入 WAO；错误验证码、过期二维码、伪造签名
+均不得登录。未配置时页面会说明所缺条件，飞书和邮箱仍可使用。
+
 ## 密钥库加密密钥
 
 `WAO_VAULT_KEY` 是密钥库密码字段的 AES-256-GCM 加密密钥（base64 编码的 32 字节），主、从两个节点必须使用**同一个值**（`docs/adr/009-vault-server-side-encryption.md`）。缺失时 `wao-server` 会拒绝启动（`VaultCryptoService` 主动校验密钥长度），CD 会自动回滚到上一个能启动的镜像，不会造成线上不可用，但会一直部署失败直到补上这个变量：

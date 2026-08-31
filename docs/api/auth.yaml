@@ -59,6 +59,34 @@ paths:
       summary: 交换微信授权码并登录、绑定或进入成员认领
       responses:
         "200": { description: 返回统一账号或待认领结果 }
+  /api/auth/wechat/official/sessions:
+    post:
+      summary: 创建微信公众号带参二维码和四位验证码登录会话
+      responses:
+        "200": { description: 返回五分钟有效的二维码、验证码、会话 id 和过期时间 }
+        "502": { description: 认证公众号未配置或微信官方接口不可用 }
+  /api/auth/wechat/official/sessions/{sessionId}:
+    get:
+      summary: 轮询当前浏览器发起的公众号扫码与验证码状态
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: 返回 WAITING_SCAN、WAITING_CODE、COMPLETED 或 EXPIRED，完成时签发 WAO 会话 }
+        "401": { description: 会话不属于当前浏览器 }
+  /api/auth/wechat/official/callback:
+    get:
+      summary: 验证微信公众号服务器地址签名并回显 echostr
+      responses:
+        "200": { description: 签名有效 }
+        "401": { description: 签名无效 }
+    post:
+      summary: 接收已验签的公众号扫码、关注和文本验证码 XML 消息
+      responses:
+        "200": { description: 返回微信公众号被动回复 XML 或 success }
+        "401": { description: 签名无效 }
   /api/account/email:
     put:
       summary: 为当前账号绑定邮箱并设置或修改密码

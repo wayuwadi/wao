@@ -7,14 +7,16 @@ import cn.wayuwa.wao.auth.AuthProperties;
 import cn.wayuwa.wao.auth.JumpServerSsoProperties;
 import cn.wayuwa.wao.config.NeteaseMusicProperties;
 import cn.wayuwa.wao.auth.WechatLoginProperties;
+import cn.wayuwa.wao.auth.WechatOfficialAccountProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@EnableConfigurationProperties({FeishuLoginProperties.class, WechatLoginProperties.class, AuthProperties.class,
-        JumpServerSsoProperties.class, NeteaseMusicProperties.class})
+@EnableConfigurationProperties({FeishuLoginProperties.class, WechatLoginProperties.class,
+        WechatOfficialAccountProperties.class, AuthProperties.class, JumpServerSsoProperties.class,
+        NeteaseMusicProperties.class})
 @EnableScheduling
 public class WaoServerApplication {
 

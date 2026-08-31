@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { startFeishuLogin } from '@/api/feishu'
+import { createWechatOfficialSession, pollWechatOfficialSession, type WechatOfficialSession } from '@/api/wechat'
 import { useSessionStore } from '@/stores/session'
 import { mountFeishuQr } from '@/utils/feishuQr'
 import { feishuInAppLogin, isInFeishu } from '@/utils/feishuInApp'
@@ -10,7 +11,7 @@ import SiteFooter from '@/components/SiteFooter.vue'
 const route = useRoute()
 const router = useRouter()
 const session = useSessionStore()
-const method = ref<'feishu' | 'email'>('feishu')
+const method = ref<'feishu' | 'wechat' | 'email'>('feishu')
 const mode = ref<'login' | 'register'>('login')
 const name = ref('')
 const email = ref('')
@@ -19,9 +20,14 @@ const busy = ref(false)
 const error = ref('')
 const qrError = ref('')
 const inAppError = ref('')
+const wechatLogin = ref<WechatOfficialSession | null>(null)
+const wechatStatus = ref<'WAITING_SCAN' | 'WAITING_CODE' | 'COMPLETED'>('WAITING_SCAN')
+const wechatError = ref('')
+const wechatBusy = ref(false)
 // 飞书容器内免登：卡片按钮经 AppLink 打开时自动换会话，不用再扫码
 const inAppTrying = ref(isInFeishu())
 let unmountQr: (() => void) | undefined
+let wechatPollTimer: number | undefined
 
 async function submitEmail() {
   error.value = ''
@@ -44,11 +50,62 @@ async function loadQr() {
   catch { qrError.value = '飞书二维码暂时加载失败，请使用下方“飞书授权登录”。' }
 }
 
-async function switchMethod(next: 'feishu' | 'email') {
+function stopWechatPolling() {
+  if (wechatPollTimer !== undefined) window.clearTimeout(wechatPollTimer)
+  wechatPollTimer = undefined
+}
+
+async function pollWechat(sessionId: string) {
+  try {
+    const result = await pollWechatOfficialSession(sessionId)
+    if (wechatLogin.value?.sessionId !== sessionId || method.value !== 'wechat') return
+    if (result.status === 'EXPIRED') {
+      wechatLogin.value = null
+      wechatError.value = '二维码和验证码已过期，请重新获取。'
+      stopWechatPolling()
+      return
+    }
+    wechatStatus.value = result.status
+    if (result.status === 'COMPLETED' && result.resolution) {
+      stopWechatPolling()
+      await session.acceptResolution(result.resolution)
+      await router.replace(result.resolution.claimRequired ? '/auth/claim' : String(route.query.redirect || '/'))
+      return
+    }
+    wechatPollTimer = window.setTimeout(() => void pollWechat(sessionId), 1800)
+  } catch (reason) {
+    wechatLogin.value = null
+    wechatError.value = reason instanceof Error ? reason.message : '公众号登录状态读取失败，请重试。'
+    stopWechatPolling()
+  }
+}
+
+async function loadWechat() {
+  stopWechatPolling()
+  wechatLogin.value = null
+  wechatStatus.value = 'WAITING_SCAN'
+  wechatError.value = ''
+  wechatBusy.value = true
+  try {
+    wechatLogin.value = await createWechatOfficialSession()
+    wechatPollTimer = window.setTimeout(() => void pollWechat(wechatLogin.value!.sessionId), 1000)
+  } catch (reason) {
+    wechatError.value = reason instanceof Error ? reason.message : '公众号登录暂不可用，请改用飞书或邮箱。'
+  } finally { wechatBusy.value = false }
+}
+
+async function switchMethod(next: 'feishu' | 'wechat' | 'email') {
   method.value = next
   error.value = ''
-  if (next === 'feishu') await loadQr()
-  else { unmountQr?.(); unmountQr = undefined }
+  if (next === 'feishu') {
+    stopWechatPolling()
+    await loadQr()
+  } else {
+    unmountQr?.()
+    unmountQr = undefined
+    if (next === 'wechat') await loadWechat()
+    else stopWechatPolling()
+  }
 }
 
 async function tryInAppLogin() {
@@ -73,7 +130,7 @@ onMounted(async () => {
   }
   await loadQr()
 })
-onBeforeUnmount(() => unmountQr?.())
+onBeforeUnmount(() => { unmountQr?.(); stopWechatPolling() })
 </script>
 
 <template>
@@ -107,6 +164,21 @@ onBeforeUnmount(() => unmountQr?.())
           </template>
         </template>
 
+        <template v-else-if="method === 'wechat'">
+          <p class="subtitle">微信扫码关注公众号，发送页面验证码即可登录</p>
+          <div v-if="wechatBusy" class="wechat-loading"><i class="ri-loader-4-line"></i>正在生成公众号二维码…</div>
+          <template v-else-if="wechatLogin">
+            <img class="wechat-qr" :src="wechatLogin.qrCodeUrl" alt="微信公众号登录二维码" />
+            <ol class="wechat-steps">
+              <li :class="{ active: wechatStatus === 'WAITING_SCAN' }">使用微信扫描二维码并关注公众号</li>
+              <li :class="{ active: wechatStatus === 'WAITING_CODE' }">向公众号发送下方 4 位验证码</li>
+            </ol>
+            <div class="wechat-code" aria-label="微信公众号登录验证码">{{ wechatLogin.verificationCode }}</div>
+            <p class="wechat-state">{{ wechatStatus === 'WAITING_CODE' ? '已识别扫码，等待公众号收到验证码…' : wechatStatus === 'COMPLETED' ? '验证成功，正在进入 WAO…' : '等待微信扫码…' }}</p>
+          </template>
+          <div v-if="wechatError" class="wechat-unavailable"><i class="ri-wechat-fill"></i><span>{{ wechatError }}</span><button type="button" @click="loadWechat">重新获取</button></div>
+        </template>
+
         <template v-else>
           <p class="subtitle">{{ mode === 'login' ? '使用邮箱密码登录' : '创建一个新的 WAO 账号' }}</p>
           <form class="email-form" @submit.prevent="submitEmail">
@@ -124,6 +196,7 @@ onBeforeUnmount(() => unmountQr?.())
         <div class="other-methods">
           <span>其他登录方式</span>
           <button v-if="method !== 'feishu'" type="button" @click="switchMethod('feishu')"><i class="ri-feishu-line"></i>飞书</button>
+          <button v-if="method !== 'wechat'" type="button" @click="switchMethod('wechat')"><i class="ri-wechat-fill"></i>微信</button>
           <button v-if="method !== 'email'" type="button" @click="switchMethod('email')"><i class="ri-mail-line"></i>邮箱</button>
         </div>
         <p class="foot">首次使用第三方登录时只需确认一次成员身份，之后会自动进入同一账号。</p>
@@ -143,7 +216,9 @@ h1 { max-width: 540px; margin: 0; font-size: 31px; line-height: 1.45; } .brand p
 .qr { width: 100%; max-width: 302px; aspect-ratio: 1; margin: auto; overflow: hidden; border: 1px solid var(--wao-line); border-radius: 14px; }.qr-loading { height: 100%; display: grid; place-content: center; gap: 8px; text-align: center; color: var(--wao-text-weak); font-size: 12px; }.qr-loading i { font-size: 30px; color: var(--wao-primary); }.qr-error,.error { margin-top: 8px; color: var(--wao-danger-strong); font-size: 12px; text-align: center; }
 .qr-fallback { width: 100%; max-width: 302px; height: 160px; margin: auto; display: grid; place-content: center; gap: 8px; text-align: center; border: 1px dashed var(--wao-line-strong); border-radius: 14px; color: var(--wao-text-weak); font-size: 12px; }.qr-fallback i { color: var(--wao-primary); font-size: 30px; }
 .in-app-loading { min-height: 160px; display: grid; place-content: center; gap: 10px; text-align: center; color: var(--wao-text-weak); font-size: 13px; }.in-app-loading i { font-size: 30px; color: var(--wao-primary); animation: in-app-spin 1s linear infinite; }@keyframes in-app-spin { to { transform: rotate(360deg); } }
+.wechat-loading { min-height: 220px; display: grid; place-content: center; gap: 10px; text-align: center; color: var(--wao-text-weak); font-size: 13px; }.wechat-loading i { color: #07c160; font-size: 30px; animation: in-app-spin 1s linear infinite; }
+.wechat-qr { width: 216px; height: 216px; margin: 0 auto; display: block; object-fit: contain; border: 1px solid var(--wao-line); border-radius: 14px; background: #fff; }.wechat-steps { width: 244px; margin: 14px auto 10px; padding-left: 24px; color: var(--wao-text-weak); font-size: 12px; line-height: 1.8; }.wechat-steps li.active { color: var(--wao-text); font-weight: 600; }.wechat-code { width: 116px; margin: 0 auto; padding: 8px 0; border: 1px dashed var(--wao-primary); border-radius: 10px; color: var(--wao-primary); font-size: 25px; font-weight: 700; letter-spacing: 8px; text-align: center; text-indent: 8px; }.wechat-state { margin: 8px 0 0; color: var(--wao-text-weak); font-size: 12px; text-align: center; }.wechat-unavailable { min-height: 180px; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--wao-text-weak); font-size: 12px; line-height: 1.7; text-align: center; }.wechat-unavailable > i { color: #07c160; font-size: 34px; }.wechat-unavailable button { width: auto; height: 32px; padding: 0 14px; border: 1px solid var(--wao-line-control); background: var(--wao-bg-sub-2); color: var(--wao-text); }
 button,input { width: 100%; height: 42px; border-radius: 10px; font-size: 13px; } input { box-sizing: border-box; margin-top: 10px; padding: 0 13px; border: 1px solid var(--wao-line-control); outline: none; } input:focus { border-color: var(--wao-primary); box-shadow: 0 0 0 3px rgba(67,88,214,.12); } button { cursor: pointer; }.primary { margin-top: 12px; border: none; background: var(--wao-primary); color: #fff; font-weight: 600; }.primary:disabled { opacity: .6; }.switch { height: 32px; border: none; background: none; color: var(--wao-primary); }.authorization-cta { margin-top: 12px; padding: 0 13px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--wao-primary-line); background: var(--wao-primary-tint); color: var(--wao-primary-text); font-weight: 600; }.authorization-cta:hover { border-color: var(--wao-primary); background: var(--wao-primary-soft); box-shadow: 0 4px 12px rgba(51,112,255,.12); }.authorization-cta span { flex: 1; }.authorization-cta .ri-feishu-line { color: var(--wao-primary); font-size: 16px; }.authorization-cta .ri-arrow-right-s-line { font-size: 17px; }.email-form { padding-top: 4px; }
-.other-methods { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--wao-line); display: flex; align-items: center; justify-content: center; gap: 8px; }.other-methods span { margin-right: 4px; color: var(--wao-text-faint); font-size: 11px; }.other-methods button { width: auto; height: 30px; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-sub-2); color: var(--wao-text-weak); font-size: 12px; }.other-methods i { margin-right: 4px; }.other-methods .ri-feishu-line { color: var(--wao-primary); }.foot { margin: 14px 0 0; color: var(--wao-text-faint); font-size: 11px; line-height: 1.6; text-align: center; }
+.other-methods { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--wao-line); display: flex; align-items: center; justify-content: center; gap: 8px; }.other-methods span { margin-right: 4px; color: var(--wao-text-faint); font-size: 11px; }.other-methods button { width: auto; height: 30px; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-sub-2); color: var(--wao-text-weak); font-size: 12px; }.other-methods i { margin-right: 4px; }.other-methods .ri-feishu-line { color: var(--wao-primary); }.other-methods .ri-wechat-fill { color: #07c160; }.foot { margin: 14px 0 0; color: var(--wao-text-faint); font-size: 11px; line-height: 1.6; text-align: center; }
 @media (max-width: 760px) { .brand { display: none; }.panel { padding: 16px 16px 68px; }.card { width: min(368px, calc(100vw - 32px)); box-sizing: border-box; padding: 22px; } }
 </style>
