@@ -29,6 +29,14 @@ if ! cmp -s deploy/jenkins/plugins.txt /etc/jenkins/plugins.txt; then
 fi
 needs_update deploy/jenkins/backup-controller.sh /usr/local/lib/wao-jenkins/backup-controller.sh
 needs_update deploy/jenkins/deploy-master-local.sh /usr/local/lib/wao-jenkins/deploy-master-local.sh
+for backup_script in \
+  configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh webdav_client.py; do
+  needs_update "deploy/backup/$backup_script" "/usr/local/lib/wao-backup/$backup_script"
+done
+needs_update deploy/backup/wao-offsite-backup.service \
+  /etc/systemd/system/wao-offsite-backup.service
+needs_update deploy/backup/wao-offsite-backup.timer \
+  /etc/systemd/system/wao-offsite-backup.timer
 needs_update deploy/jenkins/wao-jenkins-webhook-tunnel.service \
   /etc/systemd/system/wao-jenkins-webhook-tunnel.service
 
@@ -73,6 +81,12 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
     # 先进入宿主 mount/pid namespace 验证 systemd 通道，避免复制配置后才发现无法 reload。
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl show --property=FragmentPath jenkins.service >/dev/null
+    for executable in /usr/bin/flock /usr/bin/gpg /usr/bin/python3 /usr/bin/split; do
+      test -x "/host$executable" || {
+        echo "Required offsite backup executable is missing on Linux2: $executable" >&2
+        exit 1
+      }
+    done
     cp /workspace/deploy/jenkins/jenkins.yaml /host/etc/jenkins/jenkins.yaml
     install -d -o jenkins -g jenkins -m 0700 /host/var/lib/jenkins/.ssh
     install -o jenkins -g jenkins -m 0600 \
@@ -83,6 +97,19 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/usr/local/lib/wao-jenkins/backup-controller.sh
     cp /workspace/deploy/jenkins/deploy-master-local.sh \
       /host/usr/local/lib/wao-jenkins/deploy-master-local.sh
+    install -d -m 0700 /host/etc/wao-backup
+    install -d -m 0755 /host/usr/local/lib/wao-backup
+    for backup_script in \
+      configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh; do
+      cp "/workspace/deploy/backup/$backup_script" \
+        "/host/usr/local/lib/wao-backup/$backup_script"
+    done
+    cp /workspace/deploy/backup/webdav_client.py \
+      /host/usr/local/lib/wao-backup/webdav_client.py
+    cp /workspace/deploy/backup/wao-offsite-backup.service \
+      /host/etc/systemd/system/wao-offsite-backup.service
+    cp /workspace/deploy/backup/wao-offsite-backup.timer \
+      /host/etc/systemd/system/wao-offsite-backup.timer
     awk '\''/^Environment="(WAO_MASTER_PROJECT_ROOT|WAO_JENKINS_SCM_BRANCH|HTTP_PROXY|HTTPS_PROXY|NO_PROXY)=/'\'' \
       /host/etc/systemd/system/jenkins.service.d/override.conf >/tmp/wao-jenkins-dynamic.conf
     cp /workspace/deploy/jenkins/jenkins.service.override.conf \
@@ -96,13 +123,24 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
       /host/etc/systemd/system/wao-jenkins-webhook-tunnel.service
     chown 0:0 /host/usr/local/lib/wao-jenkins/backup-controller.sh
     chown 0:0 /host/usr/local/lib/wao-jenkins/deploy-master-local.sh
+    chown -R 0:0 /host/usr/local/lib/wao-backup \
+      /host/etc/systemd/system/wao-offsite-backup.service \
+      /host/etc/systemd/system/wao-offsite-backup.timer
     chmod 0644 /host/etc/jenkins/jenkins.yaml /host/etc/jenkins/plugins.txt \
       /host/etc/systemd/system/jenkins.service.d/override.conf \
       /host/etc/systemd/system/wao-jenkins-webhook-tunnel.service
     chmod 0755 /host/usr/local/lib/wao-jenkins/backup-controller.sh
     chmod 0755 /host/usr/local/lib/wao-jenkins/deploy-master-local.sh
+    chmod 0755 /host/usr/local/lib/wao-backup/configure-offsite-backup.sh \
+      /host/usr/local/lib/wao-backup/create-offsite-backup.sh \
+      /host/usr/local/lib/wao-backup/restore-offsite-backup.sh \
+      /host/usr/local/lib/wao-backup/webdav_client.py
+    chmod 0644 /host/etc/systemd/system/wao-offsite-backup.service \
+      /host/etc/systemd/system/wao-offsite-backup.timer
     chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
       /usr/bin/systemctl daemon-reload
+    chroot /host /usr/bin/nsenter --target 1 --mount --pid -- \
+      /usr/bin/systemctl enable --now wao-offsite-backup.timer
   '
 
 jenkins_base=''

@@ -1,0 +1,18 @@
+[Unit]
+Description=Create and upload encrypted WAO offsite backup
+After=network-online.target docker.service wao-jenkins-backup.service
+Wants=network-online.target
+ConditionPathExists=/etc/wao-backup/webdav.env
+ConditionPathExists=/etc/wao-backup/encryption-passphrase
+StartLimitIntervalSec=3h
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/lib/wao-backup/create-offsite-backup.sh
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=12h
+Restart=on-failure
+RestartSec=30m

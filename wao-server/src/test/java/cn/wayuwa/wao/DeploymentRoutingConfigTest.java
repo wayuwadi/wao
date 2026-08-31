@@ -421,6 +421,8 @@ class DeploymentRoutingConfigTest {
                 .contains("localization-zh-cn:371.v23851f835d6b_")
                 .contains("locale:641.v84f22d75fd8b_");
         assertThat(backup)
+                .contains("jenkins_url='http://127.0.0.1:8081/jenkins'")
+                .contains("--require-created")
                 .contains("X-Forwarded-User: wao-controller-backup")
                 .contains("X-Forwarded-Groups: wao-members")
                 .doesNotContain("admin-password");
@@ -428,6 +430,52 @@ class DeploymentRoutingConfigTest {
         assertThat(verification)
                 .contains("https://wao.wayuwa.cn/jenkins)\" = 308")
                 .contains("https://wao.wayuwa.cn/jenkins/)\" = 401");
+    }
+
+    @Test
+    void offsiteBackupEncryptsCompleteLinuxRecoveryPointBeforeWebDavUpload() throws IOException {
+        String create = readFromRepository("deploy/backup/create-offsite-backup.sh");
+        String restore = readFromRepository("deploy/backup/restore-offsite-backup.sh");
+        String service = readFromRepository("deploy/backup/wao-offsite-backup.service");
+        String timer = readFromRepository("deploy/backup/wao-offsite-backup.timer");
+        String updater = readFromRepository("deploy/jenkins/apply-controller-config.sh");
+        String installer = readFromRepository("deploy/jenkins/install-controller.sh");
+
+        assertThat(create)
+                .contains("--single-transaction")
+                .contains("--set-gtid-purged=OFF")
+                .contains("--routines")
+                .contains("--events")
+                .contains("jenkins-home-*.tar.gz")
+                .contains("sha256sum -c")
+                .contains("jmsctl.sh\" stop")
+                .contains("jmsctl.sh\" start")
+                .contains("--symmetric --cipher-algo AES256")
+                .contains("| split -d -a 4")
+                .contains("# Upload the manifest last")
+                .contains("[[ \"$remote_entry\" =~ ^[0-9]{8}T[0-9]{6}Z$ ]]")
+                .doesNotContain("WAO_BACKUP_WEBDAV_PASSWORD=");
+        assertThat(restore)
+                .contains("Destination already exists and is not empty")
+                .contains("sha256sum -c parts")
+                .contains("--passphrase-file \"$passphrase_file\" --decrypt")
+                .contains("production was not modified");
+        assertThat(service)
+                .contains("ConditionPathExists=/etc/wao-backup/webdav.env")
+                .contains("ConditionPathExists=/etc/wao-backup/encryption-passphrase")
+                .contains("TimeoutStartSec=12h")
+                .contains("Restart=on-failure")
+                .contains("RestartSec=30m");
+        assertThat(timer)
+                .contains("OnCalendar=*-*-* 03:30:00 Asia/Shanghai")
+                .contains("Persistent=true");
+        assertThat(updater)
+                .contains("/host/usr/local/lib/wao-backup/create-offsite-backup.sh")
+                .contains("systemctl enable --now wao-offsite-backup.timer");
+        assertThat(installer)
+                .contains("gnupg")
+                .contains("python3")
+                .contains("systemctl enable --now wao-offsite-backup.timer");
     }
 
     @Test
