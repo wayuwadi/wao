@@ -43,7 +43,9 @@ public record AiRunnerClaimDto(
         /** 本次实际读取的记忆 id；旧 Runner 可忽略。 */
         List<String> projectMemoryIds,
         /** 入队时固化的审核 Skill；Runner 只装配这里列出的版本。 */
-        List<AiSkillCapabilityDto> skills) {
+        List<AiSkillCapabilityDto> skills,
+        /** 项目管理员配置的任务理解与执行方法；Runner 将其放在不可绕过的交付约束之前。 */
+        String executionPrompt) {
 
     public AiRunnerClaimDto(String runId, String taskId, String taskTitle, String projectId,
             String projectName, String engine, String promptUrl, String repoUrl, String defaultBranch,
@@ -51,7 +53,7 @@ public record AiRunnerClaimDto(
             String continuationInput, AiRunAccountDto account) {
         this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false, false, null,
                 promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, 2, previousFailure, sessionId,
-                continuationInput, account, List.of(), List.of(), List.of());
+                continuationInput, account, List.of(), List.of(), List.of(), null);
     }
 
     public AiRunnerClaimDto(String runId, String taskId, String taskTitle, String projectId,
@@ -60,6 +62,6 @@ public record AiRunnerClaimDto(
             String continuationInput) {
         this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false, false, null,
                 promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, 2, previousFailure, sessionId,
-                continuationInput, null, List.of(), List.of(), List.of());
+                continuationInput, null, List.of(), List.of(), List.of(), null);
     }
 }

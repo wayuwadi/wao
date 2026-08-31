@@ -155,12 +155,29 @@ class AiRunServiceTest {
         when(configMapper.selectById("p1")).thenReturn(null);
 
         var result = service.saveConfig("p1",
-                new SaveAiProjectConfigRequest(true, "https://github.com/acme/wao.git", "main", "wao", "claude", null, 3, 1));
+                new SaveAiProjectConfigRequest(true, "https://github.com/acme/wao.git", "main", "wao", "claude",
+                        null, 3, 1, "先核验用户结果，再完成真实链路验收。"));
 
         assertThat(result.enabled()).isTrue();
         assertThat(result.maxParallelRuns()).isEqualTo(3);
         assertThat(result.failureRetryCount()).isEqualTo(1);
+        assertThat(result.executionPrompt()).isEqualTo("先核验用户结果，再完成真实链路验收。");
         verify(configMapper).insert(any(AiProjectConfigEntity.class));
+    }
+
+    @Test
+    void oldWorkflowUsesDefaultExecutionPromptAndRejectsInvalidPrompt() {
+        when(projectMapper.selectById("p1")).thenReturn(project("p1", "WAO"));
+        AiProjectConfigEntity existing = config("p1");
+        when(configMapper.selectById("p1")).thenReturn(existing);
+
+        assertThat(service.getConfig("p1").executionPrompt())
+                .contains("完整阅读任务原文").contains("不要擅自补充需求");
+        assertThatThrownBy(() -> service.saveConfig("p1",
+                new SaveAiProjectConfigRequest(true, "https://github.com/acme/wao.git", "main", "wao",
+                        "codex", null, 2, 2, "   ")))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("不能为空");
     }
 
     @Test
@@ -747,6 +764,7 @@ class AiRunServiceTest {
         when(runMapper.selectCount(any())).thenReturn(0L);
         AiProjectConfigEntity retryConfig = config("p1");
         retryConfig.setFailureRetryCount(1);
+        retryConfig.setExecutionPrompt("先输出验收清单，再开始修改。");
         when(configMapper.selectById("p1")).thenReturn(retryConfig);
         when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "完成自动化"));
         when(projectMapper.selectById("p1")).thenReturn(project("p1", "WAO"));
@@ -760,6 +778,7 @@ class AiRunServiceTest {
         assertThat(result.serviceTier()).isEqualTo("default");
         assertThat(result.planMode()).isTrue();
         assertThat(result.failureRetryCount()).isEqualTo(1);
+        assertThat(result.executionPrompt()).isEqualTo("先输出验收清单，再开始修改。");
         assertThat(queued.getStatus()).isEqualTo("running");
         assertThat(queued.getRunnerId()).isEqualTo("rn1");
         verify(runMapper).claimQueuedRun(eq("ar1"), eq("rn1"), isNull(),

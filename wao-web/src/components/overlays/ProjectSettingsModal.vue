@@ -35,6 +35,7 @@ const defaultEngine = ref<AiEngine>('codex')
 const preferredRunnerId = ref('')
 const maxParallelRuns = ref(2)
 const failureRetryCount = ref(2)
+const executionPrompt = ref('')
 const runners = ref<AiRunner[]>([])
 const pairCode = ref('')
 const pairExpiresAt = ref('')
@@ -80,6 +81,7 @@ async function save() {
       preferredRunnerId: preferredRunnerId.value || null,
       maxParallelRuns: maxParallelRuns.value,
       failureRetryCount: failureRetryCount.value,
+      executionPrompt: executionPrompt.value.trim(),
     })
     await saveAiProjectSkills(props.project.id, selectedSkillVersions.value)
     toast('项目设置与 AI Run 配置已保存', 'ri-check-line')
@@ -112,6 +114,7 @@ async function loadAiConfig() {
     preferredRunnerId.value = config.preferredRunnerId ?? ''
     maxParallelRuns.value = config.maxParallelRuns
     failureRetryCount.value = config.failureRetryCount
+    executionPrompt.value = config.executionPrompt ?? ''
     runners.value = nodes
     waoApplicationSkills.value = applicationSkills
     const availableVersionIds = new Set(skills.map((item) => item.versionId))
@@ -223,6 +226,17 @@ onMounted(loadAiConfig)
         <label class="form-field">
           <span>失败自动重试次数</span>
           <input v-model.number="failureRetryCount" type="number" min="0" max="5" />
+        </label>
+        <label class="form-field wide">
+          <span>AI 执行提示词 <small>{{ executionPrompt.length }}/4000</small></span>
+          <textarea
+            v-model="executionPrompt"
+            rows="7"
+            maxlength="4000"
+            aria-label="AI 执行提示词"
+            placeholder="先完整阅读任务原文，核验根因，再按可验证结果连续完成实现。"
+          ></textarea>
+          <em>每次 AI Run 领取任务时先读取这段方法；任务原文和系统交付约束仍会完整保留。</em>
         </label>
         <label class="form-field">
           <span>优先执行电脑</span>
@@ -577,7 +591,8 @@ onMounted(loadAiConfig)
   grid-column: 1 / -1;
 }
 .form-field input,
-.form-field select {
+.form-field select,
+.form-field textarea {
   width: 100%;
   height: 34px;
   padding: 0 9px;
@@ -588,8 +603,12 @@ onMounted(loadAiConfig)
   font-size: 12px;
   outline: none;
 }
+.form-field textarea { resize: vertical; min-height: 132px; line-height: 1.6; }
+.form-field span small { float: right; color: var(--wao-text-muted); font-weight: 500; }
+.form-field em { color: var(--wao-text-muted); font-size: 11px; font-style: normal; line-height: 1.5; }
 .form-field input:focus,
-.form-field select:focus {
+.form-field select:focus,
+.form-field textarea:focus {
   border-color: var(--wao-primary);
 }
 .runner-box {

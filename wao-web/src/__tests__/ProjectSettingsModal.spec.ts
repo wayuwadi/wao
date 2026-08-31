@@ -25,6 +25,7 @@ vi.mock('@/api/ai', () => ({
     preferredRunnerId: null,
     maxParallelRuns: 2,
     failureRetryCount: 2,
+    executionPrompt: '先完整阅读任务原文，再按可验证结果实现。',
   })),
   saveAiProjectConfig: vi.fn(async () => ({})),
   saveAiProjectSkills: vi.fn(async () => []),
@@ -52,6 +53,7 @@ describe('项目设置', () => {
     expect(data.projectById(project.id)?.status).toBe('进行中')
     expect(vi.mocked(saveAiProjectConfig)).toHaveBeenCalledWith(project.id, expect.objectContaining({
       failureRetryCount: 2,
+      executionPrompt: '先完整阅读任务原文，再按可验证结果实现。',
     }))
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
@@ -64,6 +66,9 @@ describe('项目设置', () => {
 
     expect(wrapper.text()).toContain('代码审查')
     expect(wrapper.text()).toContain('失败自动重试次数')
+    expect(wrapper.get('[aria-label="AI 执行提示词"]').element).toHaveProperty(
+      'value', '先完整阅读任务原文，再按可验证结果实现。',
+    )
     await wrapper.get('.skill-option input').setValue(true)
     expect((wrapper.get('.skill-option input').element as HTMLInputElement).checked).toBe(true)
     wrapper.unmount()
