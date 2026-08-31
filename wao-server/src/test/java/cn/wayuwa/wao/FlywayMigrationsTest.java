@@ -324,6 +324,21 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void hostedPageSourceMigrationOnlyReclassifiesStableAiRunReportIds() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V120__hosted_page_source_type.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("source_type VARCHAR(32) NOT NULL DEFAULT 'MANUAL_UPLOAD'")
+                .contains("SET source_type = 'AI_RUN_REPORT'")
+                .contains("WHERE id LIKE 'run-report-%'")
+                .doesNotContain("DELETE FROM hosted_page", "TRUNCATE");
+    }
+
+    @Test
     void configurableTaskAutoRunMigrationDefaultsToWaoTodoAndKeepsWebhookOptional() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V97__configurable_task_auto_run.sql"))

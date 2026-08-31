@@ -1173,7 +1173,13 @@ paths:
     delete: { summary: 删除文件, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   # 单文件 HTML 托管（见 docs/adr/042-hosted-html-pages.md）
   /hosted-pages:
-    get: { summary: 托管页元数据列表（不读取 HTML 与 icon 正文）, responses: { '200': { description: OK } } }
+    get:
+      summary: 按来源类型读取托管页元数据列表（不读取 HTML 与 icon 正文）
+      parameters:
+        - { name: sourceType, in: query, required: false, schema: { type: string, enum: [ALL, MANUAL_UPLOAD, AI_RUN_REPORT], default: ALL } }
+      responses:
+        '200': { description: 每项 sourceType 为人工上传或 AI Run 报告 }
+        '400': { description: 来源类型不受支持 }
     post:
       summary: 上传 UTF-8 单文件 HTML 并配置唯一链接后缀、标题和可选 icon
       requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [html, slug, title], properties: { html: { type: string, format: binary }, slug: { type: string }, title: { type: string }, icon: { type: string, format: binary } } } } } }

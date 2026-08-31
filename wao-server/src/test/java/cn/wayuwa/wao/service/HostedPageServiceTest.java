@@ -22,6 +22,7 @@ class HostedPageServiceTest {
         var html = new MockMultipartFile("html", "demo.html", "text/html", "<html><head></head><body>你好</body></html>".getBytes(StandardCharsets.UTF_8));
         var item = service.create(html, " My-Demo ", "演示页", null, "wg");
         assertThat(item.slug()).isEqualTo("my-demo");
+        assertThat(item.sourceType()).isEqualTo("MANUAL_UPLOAD");
         assertThat(item.url()).isEqualTo("/api/pages/my-demo");
         verify(mapper).insert(any(HostedPageEntity.class));
     }
@@ -53,6 +54,7 @@ class HostedPageServiceTest {
         var html = new MockMultipartFile("html", "report.html", "text/html", "<p>第一版</p>".getBytes(StandardCharsets.UTF_8));
         var created = service.saveRunReport("ar123", html, "任务 · AI 报告", "wg");
         assertThat(created.id()).isEqualTo("run-report-ar123");
+        assertThat(created.sourceType()).isEqualTo("AI_RUN_REPORT");
         assertThat(created.url()).isEqualTo("/api/pages/ai-run-ar123");
 
         HostedPageEntity existing = new HostedPageEntity();
@@ -76,5 +78,16 @@ class HostedPageServiceTest {
 
         assertThat(service.runReportUrls(List.of("ar123", "missing")))
                 .isEqualTo(java.util.Map.of("ar123", "/api/pages/custom-report"));
+    }
+
+    @Test void listValidatesAndPassesTheStableSourceTypeToTheMetadataQuery() {
+        when(mapper.listMeta("AI_RUN_REPORT")).thenReturn(List.of());
+
+        assertThat(service.list("ai_run_report")).isEmpty();
+
+        verify(mapper).listMeta("AI_RUN_REPORT");
+        assertThatThrownBy(() -> service.list("inspection-report"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("来源类型");
     }
 }

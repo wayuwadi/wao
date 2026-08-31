@@ -58,7 +58,9 @@ class HttpPerformanceAiRunJobHandlerTest {
                 eq("p-wao"), prompt.capture(), eq("wg"), eq("https://wao.wayuwa.cn"));
         assertThat(prompt.getValue())
                 .contains("请求数：3968", "平均耗时：1413 ms", "P95：10005 ms")
-                .contains("`/api/tasks`", "5894", "Top N 候选接口：5", "本次最多治理接口数：2");
+                .contains("`/api/tasks`", "5894", "Top N 候选接口：5", "本次最多治理接口数：2")
+                .contains("实际优化了哪些接口", "各自根因", "是否已经彻底解决", "后续如何规避", "经验沉淀")
+                .contains("不能伪造已解决结论");
     }
 
     @Test

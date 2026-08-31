@@ -848,7 +848,10 @@ public class AiRunService {
                 .filter(StringUtils::hasText)
                 .findFirst()
                 .orElseGet(() -> MARKDOWN_IMAGE.matcher(goal).find() ? "基于图片完成自主目标" : "新的自主目标");
-        return firstLine.length() <= 80 ? firstLine : firstLine.substring(0, 79) + "…";
+        String concise = firstLine.replaceFirst("[\\s：:。！？!?；;，,]+$", "");
+        java.util.regex.Matcher boundary = Pattern.compile("[：:。！？!?；;]").matcher(concise);
+        if (boundary.find() && boundary.start() >= 4) concise = concise.substring(0, boundary.start()).trim();
+        return concise.length() <= 36 ? concise : concise.substring(0, 35) + "…";
     }
 
     /** 把旧客户端提交的内联 Base64 图片落入图床，任务正文从源头只保存稳定地址。 */

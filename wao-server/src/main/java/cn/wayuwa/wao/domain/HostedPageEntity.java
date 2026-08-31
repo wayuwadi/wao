@@ -11,6 +11,7 @@ public class HostedPageEntity {
     private String slug;
     private String title;
     private String fileName;
+    private String sourceType;
     private byte[] htmlContent;
     private byte[] iconContent;
     private String iconContentType;
@@ -21,6 +22,7 @@ public class HostedPageEntity {
     public String getSlug() { return slug; } public void setSlug(String value) { slug = value; }
     public String getTitle() { return title; } public void setTitle(String value) { title = value; }
     public String getFileName() { return fileName; } public void setFileName(String value) { fileName = value; }
+    public String getSourceType() { return sourceType; } public void setSourceType(String value) { sourceType = value; }
     public byte[] getHtmlContent() { return htmlContent; } public void setHtmlContent(byte[] value) { htmlContent = value; }
     public byte[] getIconContent() { return iconContent; } public void setIconContent(byte[] value) { iconContent = value; }
     public String getIconContentType() { return iconContentType; } public void setIconContentType(String value) { iconContentType = value; }
