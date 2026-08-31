@@ -482,6 +482,31 @@ class FeishuQuickCollectServiceTest {
     }
 
     @Test
+    void htmlParagraphsFromRichTextBecomeAReadableFirstParagraphTitle() {
+        assertThat(FeishuQuickCollectService.title(
+                "<p>测试修改问题，任务那边会不会同步更新</p><p></p><p>更新了吗？</p>"))
+                .isEqualTo("测试修改问题，任务那边会不会同步更新");
+        assertThat(FeishuQuickCollectService.title(
+                "<div><strong>修复 &amp; 验证</strong><br>不要进入标题</div>"))
+                .isEqualTo("修复 & 验证");
+    }
+
+    @Test
+    void richTextHtmlStillKeepsItsOriginalDescriptionWhileCreatingACleanTitle() {
+        enabled();
+        String html = "<p>测试修改问题，任务那边会不会同步更新</p><p></p><p>更新了吗？</p>";
+
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_html", "ou_sender", "user", "post",
+                "{\"title\":\"\",\"content\":[[{\"tag\":\"text\",\"text\":\"@_user_1 "
+                        + html.replace("\"", "\\\"") + "\"}]]}",
+                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+
+        verify(tasks).createFromChat("p1", "测试修改问题，任务那边会不会同步更新", html, "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+    }
+
+    @Test
     void emptyCommandDoesNotCreateAnEmptyTask() {
         enabled();
         service.handleEvent(message("ev-empty", "text",
