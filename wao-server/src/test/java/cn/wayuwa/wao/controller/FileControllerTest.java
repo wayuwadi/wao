@@ -11,6 +11,7 @@ import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.FileBlobEntity;
 import cn.wayuwa.wao.service.DownloadTicketService;
 import cn.wayuwa.wao.service.FileService;
+import cn.wayuwa.wao.service.ProjectService;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -19,7 +20,7 @@ import org.springframework.http.HttpStatus;
 class FileControllerTest {
     private final FileService files = mock(FileService.class);
     private final FileController controller = new FileController(files, mock(CurrentMember.class),
-            mock(DownloadTicketService.class), mock(AuthSessionManager.class));
+            mock(DownloadTicketService.class), mock(AuthSessionManager.class), mock(ProjectService.class));
 
     @Test
     void streamReturnsRequestedAudioRangeForSeeking() {

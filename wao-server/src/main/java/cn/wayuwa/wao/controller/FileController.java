@@ -14,8 +14,10 @@ import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.domain.FileBlobEntity;
 import cn.wayuwa.wao.dto.FileItemDto;
+import cn.wayuwa.wao.dto.FilePreviewDto;
 import cn.wayuwa.wao.service.DownloadTicketService;
 import cn.wayuwa.wao.service.FileService;
+import cn.wayuwa.wao.service.ProjectService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -48,20 +50,39 @@ public class FileController {
     private final CurrentMember currentMember;
     private final DownloadTicketService tickets;
     private final AuthSessionManager sessions;
+    private final ProjectService projects;
 
     public FileController(FileService files, CurrentMember currentMember, DownloadTicketService tickets,
-            AuthSessionManager sessions) {
+            AuthSessionManager sessions, ProjectService projects) {
         this.files = files;
         this.currentMember = currentMember;
         this.tickets = tickets;
         this.sessions = sessions;
+        this.projects = projects;
     }
 
-    @GetMapping public ApiResponse<List<FileItemDto>> list() { return ApiResponse.ok(files.list()); }
+    @GetMapping
+    public ApiResponse<List<FileItemDto>> list(@RequestParam(required = false) String projectId,
+            HttpServletRequest request) {
+        String memberId = currentMember.id(request);
+        if (projectId != null) projects.requireAccess(projectId, memberId);
+        return ApiResponse.ok(files.list(projects.visibleProjectIds(memberId), projectId));
+    }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ApiResponse<FileItemDto> upload(@RequestParam("file") MultipartFile file, HttpServletRequest request) {
-        return ApiResponse.ok(files.upload(file, currentMember.id(request)));
+    public ApiResponse<FileItemDto> upload(@RequestParam("file") MultipartFile file,
+            @RequestParam(required = false) String projectId, HttpServletRequest request) {
+        String memberId = currentMember.id(request);
+        if (projectId != null) projects.requireAccess(projectId, memberId);
+        return ApiResponse.ok(files.upload(file, memberId, projectId));
+    }
+
+    /** 登录成员在站内预览 UTF-8 Markdown；HTML 继续走隔离托管页。 */
+    @GetMapping("/{id}/preview")
+    public ApiResponse<FilePreviewDto> preview(@PathVariable String id, HttpServletRequest request) {
+        FileBlobEntity entity = files.raw(id);
+        requireAssetAccess(entity.getProjectId(), currentMember.id(request));
+        return ApiResponse.ok(files.preview(id));
     }
 
     /** 确认页要展示的文件信息（公开；只有文件名与大小，不含正文）。 */
@@ -131,7 +152,16 @@ public class FileController {
         }
     }
 
-    @DeleteMapping("/{id}") public ApiResponse<Void> delete(@PathVariable String id) { files.delete(id); return ApiResponse.ok(null); }
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest request) {
+        requireAssetAccess(files.raw(id).getProjectId(), currentMember.id(request));
+        files.delete(id);
+        return ApiResponse.ok(null);
+    }
+
+    private void requireAssetAccess(String projectId, String memberId) {
+        if (projectId != null) projects.requireAccess(projectId, memberId);
+    }
 
     private static ResponseEntity<byte[]> streamResponse(FileBlobEntity entity, MediaType mediaType, byte[] body,
             ByteRange range) {

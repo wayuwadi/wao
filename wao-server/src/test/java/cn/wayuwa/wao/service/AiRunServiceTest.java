@@ -107,14 +107,14 @@ class AiRunServiceTest {
     void runningNodeCanPublishPersistentReport() {
         runningRun();
         var html = new MockMultipartFile("html", "report.html", "text/html", "<html>报告</html>".getBytes());
-        when(hostedPages.saveRunReport(eq("ar1"), eq(html), eq("记录用量 · AI 报告"), isNull()))
+        when(hostedPages.saveRunReport(eq("ar1"), eq(html), eq("记录用量 · AI 报告"), isNull(), eq("p1")))
                 .thenReturn(new HostedPageDto("run-report-ar1", "ai-run-ar1", "记录用量 · AI 报告",
                         "report.html", false, "8月11日 19:00", "/api/pages/ai-run-ar1"));
 
         var report = service.saveReport("local-token", "ar1", html);
 
         assertThat(report.url()).isEqualTo("/api/pages/ai-run-ar1");
-        verify(hostedPages).saveRunReport("ar1", html, "记录用量 · AI 报告", null);
+        verify(hostedPages).saveRunReport("ar1", html, "记录用量 · AI 报告", null, "p1");
         verify(progressMapper).insert(any(AiRunProgressEntity.class));
     }
 

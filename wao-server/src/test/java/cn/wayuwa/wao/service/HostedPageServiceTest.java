@@ -27,6 +27,15 @@ class HostedPageServiceTest {
         verify(mapper).insert(any(HostedPageEntity.class));
     }
 
+    @Test void projectHtmlAndAiReportKeepProjectClassification() {
+        var html = new MockMultipartFile("html", "report.html", "text/html", "<p>报告</p>".getBytes(StandardCharsets.UTF_8));
+        var page = service.create(html, "project-report", "项目报告", null, "wg", "p1");
+        assertThat(page.projectId()).isEqualTo("p1");
+
+        var report = service.saveRunReport("ar-project", html, "AI 报告", "wg", "p1");
+        assertThat(report.projectId()).isEqualTo("p1");
+    }
+
     @Test void renderReplacesUploadedTitleAndIcon() {
         HostedPageEntity entity = new HostedPageEntity();
         entity.setSlug("demo"); entity.setTitle("新<title>"); entity.setIconContent(new byte[] { 1 });

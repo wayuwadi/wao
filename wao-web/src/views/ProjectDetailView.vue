@@ -27,6 +27,7 @@ import type { AiEngine, TaskStatus } from '@/types'
 import type { TaskDeliveryStage } from '@/utils/domain'
 import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
+import ProjectAssetsPanel from '@/components/files/ProjectAssetsPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -43,11 +44,10 @@ const showTime = (t: string) => relativeTime(t, now.value)
 
 const pid = computed(() => String(route.params.id))
 const project = computed(() => data.projectById(pid.value))
-// 「总览」标签页已下线：里程碑 / 趋势 / 阻塞项 / 成员权限都是没有落地的演示卡片，
-// 进项目直接看任务。老链接上的 ?tab=总览 也归到任务，不至于打开一片空白。
+// 「总览」标签页已下线：老链接归到任务。文件页签已经接入真实资产 id 后重新开放。
 const projTab = computed(() => {
   const t = route.query.tab as string | undefined
-  return t && !['总览', '文件'].includes(t) ? t : '任务'
+  return t && t !== '总览' ? t : '任务'
 })
 // URL 上写了 view 就听 URL 的（分享出去的链接要能指定视图）；没写时用记住的偏好。
 const pdTaskView = computed<TaskView>(() => {
@@ -188,7 +188,7 @@ const pdTabs = computed(() => {
   // 任务角标只数未完成的：一个跑了半年的项目里「25」几乎全是已完成，看不出还剩多少事。
   const openCount = ptasks.value.filter((t) => isOpenStatus(t.status)).length
   const counts: Record<string, number> = { 任务: openCount, 文档: linkedDocs.value.length }
-  return (['任务', '文档', '记忆', '动态'] as const).map((t) => ({
+  return (['任务', '文档', '文件', '记忆', '动态'] as const).map((t) => ({
     label: t, count: counts[t], showCount: ['任务', '文档'].includes(t), on: projTab.value === t,
     title: t === '任务' ? `${openCount} 个未完成 / 共 ${ptasks.value.length} 个` : '',
   }))
@@ -850,6 +850,9 @@ function onDropGroup(groupId: string, overId?: string) {
         </div>
       </div>
     </div>
+
+    <!-- 项目文件、图床与 HTML 复用全局真实存储 -->
+    <ProjectAssetsPanel v-else-if="projTab === '文件'" :project-id="pid" :project-name="project?.name || pid" />
 
     <!-- 项目级工程记忆与个人生活记忆严格分域 -->
     <ProjectMemoryPanel v-else-if="projTab === '记忆'" :project-id="pid" />

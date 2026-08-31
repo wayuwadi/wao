@@ -9,6 +9,7 @@ import WaoPagination from '@/components/ui/WaoPagination.vue'
 import FileSettingsModal from '@/components/overlays/FileSettingsModal.vue'
 import { fetchFileSettings, type FileSettings } from '@/api/system'
 import type { HostedPage } from '@/types'
+import AssetPreviewModal, { type AssetPreview } from '@/components/files/AssetPreviewModal.vue'
 
 const data = useDataStore()
 const tab = ref<'files' | 'img' | 'pages'>('files')
@@ -74,6 +75,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const unifiedInput = ref<HTMLInputElement | null>(null)
 const unifiedDragging = ref(false)
 const uploading = ref(0)
+const preview = ref<AssetPreview | null>(null)
 
 // 打开页面时重新拉一次，让其他标签页 / 其他人上传的图也出现
 onMounted(() => {
@@ -329,7 +331,14 @@ function copyImageLink(url: string) {
   copyText(absoluteUrl(url), '已复制公网链接')
 }
 function openImage(url: string) {
-  window.open(absoluteUrl(url), '_blank')
+  const image = data.imgs.find((item) => item.url === url)
+  preview.value = { kind: 'image', name: image?.name || '图片预览', url }
+}
+function isMarkdown(name: string) {
+  return /\.(?:md|markdown)$/i.test(name)
+}
+function projectName(projectId?: string | null) {
+  return projectId ? data.projectById(projectId)?.name || projectId : ''
 }
 async function removeImage(id: string | undefined, name: string) {
   if (!id) {
@@ -457,10 +466,21 @@ function onFileSettingsSaved(settings: FileSettings) {
               <div class="file-name">{{ f.name }}</div>
               <div class="file-sub">
                 {{ f.by }} · {{ f.time }} ·
+                <span v-if="f.projectId" class="project-badge"
+                  >项目 · {{ projectName(f.projectId) }}</span
+                >
                 <span class="wao-mono">{{ f.id ? fileShareUrl(f.id) : f.link }}</span>
               </div>
             </div>
             <span class="file-size">{{ f.size }}</span>
+            <button
+              v-if="f.id && isMarkdown(f.name)"
+              class="copy-btn"
+              title="站内预览 Markdown"
+              @click="preview = { kind: 'markdown', id: f.id, name: f.name }"
+            >
+              <i class="ri-eye-line"></i>预览
+            </button>
             <button
               class="copy-btn"
               title="复制分享链接（对方需人工点击并通过校验）"
@@ -522,6 +542,7 @@ function onFileSettingsSaved(settings: FileSettings) {
             <div class="img-info">
               <div class="img-name" :title="im.name">{{ im.name }}</div>
               <div class="img-meta">{{ im.size }} · {{ im.time }} · 来自 {{ im.from }}</div>
+              <div v-if="im.projectId" class="img-meta">项目 · {{ projectName(im.projectId) }}</div>
               <button class="img-copy" @click="copyImageLink(im.url)">
                 <i class="ri-links-line"></i>复制公网链接
               </button>
@@ -583,15 +604,22 @@ function onFileSettingsSaved(settings: FileSettings) {
             </div>
             <div class="file-sub">
               {{ page.fileName }} · {{ page.updatedAt }} ·
+              <span v-if="page.projectId" class="project-badge"
+                >项目 · {{ projectName(page.projectId) }}</span
+              >
               <span class="wao-mono">{{ absoluteUrl(page.url) }}</span>
             </div>
           </div>
           <button class="copy-btn" @click="copyText(absoluteUrl(page.url), '已复制公网链接')">
             <i class="ri-links-line"></i>复制链接
           </button>
-          <a class="dl-btn" title="打开页面" :href="absoluteUrl(page.url)" target="_blank"
-            ><i class="ri-external-link-line"></i
-          ></a>
+          <button
+            class="dl-btn"
+            title="站内预览"
+            @click="preview = { kind: 'html', name: page.title, url: page.url }"
+          >
+            <i class="ri-eye-line"></i>
+          </button>
           <button class="dl-btn" title="修改" @click="openPageDialog(page)">
             <i class="ri-edit-line"></i>
           </button>
@@ -709,6 +737,7 @@ function onFileSettingsSaved(settings: FileSettings) {
       @close="settingsOpen = false"
       @saved="onFileSettingsSaved"
     />
+    <AssetPreviewModal v-if="preview" :asset="preview" @close="preview = null" />
   </div>
 </template>
 
@@ -754,6 +783,14 @@ function onFileSettingsSaved(settings: FileSettings) {
   color: var(--wao-text);
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(16, 18, 28, 0.1);
+}
+.project-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--wao-primary-soft, #eef0ff);
+  color: var(--wao-primary);
 }
 .btn-primary {
   height: 32px;
@@ -885,7 +922,12 @@ function onFileSettingsSaved(settings: FileSettings) {
   color: var(--wao-primary-text);
   font-weight: 650;
 }
-.page-name { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.page-name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
 .page-source {
   padding: 2px 6px;
   border-radius: 999px;
@@ -894,7 +936,10 @@ function onFileSettingsSaved(settings: FileSettings) {
   font-size: 9.5px;
   font-weight: 650;
 }
-.page-source.ai_run_report { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
+.page-source.ai_run_report {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+}
 .dialog-mask {
   position: fixed;
   inset: 0;

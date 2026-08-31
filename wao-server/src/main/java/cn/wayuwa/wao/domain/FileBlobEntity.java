@@ -12,6 +12,7 @@ public class FileBlobEntity {
     private String contentType;
     private Long byteSize;
     private String createdBy;
+    private String projectId;
     private LocalDateTime createdAt;
     private byte[] content;
     public String getId() { return id; }
@@ -24,6 +25,8 @@ public class FileBlobEntity {
     public void setByteSize(Long byteSize) { this.byteSize = byteSize; }
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
+    public String getProjectId() { return projectId; }
+    public void setProjectId(String projectId) { this.projectId = projectId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public byte[] getContent() { return content; }

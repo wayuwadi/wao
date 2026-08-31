@@ -1402,12 +1402,12 @@ export const useDataStore = defineStore('data', () => {
   async function uploadImage(
     file: File,
     source?: string,
-    options?: { requirePersisted?: boolean },
+    options?: { requirePersisted?: boolean; projectId?: string },
   ): Promise<ImageRef | null> {
     if (!file.type.startsWith('image/') || file.size > MAX_IMAGE_BYTES) return null
     if (apiLive.value) {
       try {
-        const item = await apiUploadImage(file, source)
+        const item = await apiUploadImage(file, source, options?.projectId)
         imgs.value.unshift(item)
         return { name: item.name, url: item.url }
       } catch {
@@ -1455,10 +1455,10 @@ export const useDataStore = defineStore('data', () => {
       return false
     }
   }
-  async function uploadFile(file: File) {
+  async function uploadFile(file: File, projectId?: string) {
     if (!apiLive.value || file.size > MAX_FILE_BYTES) return null
     try {
-      const item = await apiUploadFile(file)
+      const item = await apiUploadFile(file, projectId)
       files.value.unshift(item)
       fileLoadState.value = 'loaded'
       fileLoadError.value = ''
@@ -1474,7 +1474,7 @@ export const useDataStore = defineStore('data', () => {
     if (!apiLive.value) return
     try { hostedPages.value = await fetchHostedPages() } catch { /* 保留当前列表 */ }
   }
-  async function saveHostedPage(payload: { id?: string; html?: File; icon?: File; slug: string; title: string }) {
+  async function saveHostedPage(payload: { id?: string; html?: File; icon?: File; slug: string; title: string; projectId?: string }) {
     const item = await apiSaveHostedPage(payload)
     hostedPages.value = [item, ...hostedPages.value.filter((page) => page.id !== item.id)]
     return item

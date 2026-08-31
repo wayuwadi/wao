@@ -6,6 +6,7 @@ import cn.wayuwa.wao.common.ApiResponse;
 import cn.wayuwa.wao.domain.HostedPageEntity;
 import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.service.HostedPageService;
+import cn.wayuwa.wao.service.ProjectService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -27,27 +28,45 @@ import org.springframework.web.multipart.MultipartFile;
 public class HostedPageController {
     private final HostedPageService pages;
     private final CurrentMember currentMember;
-    public HostedPageController(HostedPageService pages, CurrentMember currentMember) { this.pages = pages; this.currentMember = currentMember; }
+    private final ProjectService projects;
+    public HostedPageController(HostedPageService pages, CurrentMember currentMember, ProjectService projects) {
+        this.pages = pages; this.currentMember = currentMember; this.projects = projects;
+    }
 
     @GetMapping("/hosted-pages")
     public ApiResponse<List<HostedPageDto>> list(
-            @RequestParam(defaultValue = "ALL") String sourceType) {
-        return ApiResponse.ok(pages.list(sourceType));
+            @RequestParam(defaultValue = "ALL") String sourceType,
+            @RequestParam(required = false) String projectId, HttpServletRequest request) {
+        String memberId = currentMember.id(request);
+        if (projectId != null) projects.requireAccess(projectId, memberId);
+        return ApiResponse.ok(pages.list(sourceType, projects.visibleProjectIds(memberId), projectId));
     }
 
     @PostMapping(value = "/hosted-pages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<HostedPageDto> create(@RequestParam MultipartFile html, @RequestParam String slug,
-            @RequestParam String title, @RequestParam(required = false) MultipartFile icon, HttpServletRequest request) {
-        return ApiResponse.ok(pages.create(html, slug, title, icon, currentMember.id(request)));
+            @RequestParam String title, @RequestParam(required = false) MultipartFile icon,
+            @RequestParam(required = false) String projectId, HttpServletRequest request) {
+        String memberId = currentMember.id(request);
+        if (projectId != null) projects.requireAccess(projectId, memberId);
+        return ApiResponse.ok(pages.create(html, slug, title, icon, memberId, projectId));
     }
 
     @PutMapping(value = "/hosted-pages/{id}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<HostedPageDto> update(@PathVariable String id, @RequestParam(required = false) MultipartFile html,
-            @RequestParam String slug, @RequestParam String title, @RequestParam(required = false) MultipartFile icon) {
+            @RequestParam String slug, @RequestParam String title, @RequestParam(required = false) MultipartFile icon,
+            HttpServletRequest request) {
+        String projectId = pages.projectId(id);
+        if (projectId != null) projects.requireAccess(projectId, currentMember.id(request));
         return ApiResponse.ok(pages.update(id, html, slug, title, icon));
     }
 
-    @DeleteMapping("/hosted-pages/{id}") public ApiResponse<Void> delete(@PathVariable String id) { pages.delete(id); return ApiResponse.ok(null); }
+    @DeleteMapping("/hosted-pages/{id}")
+    public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest request) {
+        String projectId = pages.projectId(id);
+        if (projectId != null) projects.requireAccess(projectId, currentMember.id(request));
+        pages.delete(id);
+        return ApiResponse.ok(null);
+    }
 
     /** 公开直出页面；sandbox 刻意不含 allow-same-origin，隔离 WAO 会话与业务 API。 */
     @GetMapping(value = "/pages/{slug}", produces = MediaType.TEXT_HTML_VALUE)

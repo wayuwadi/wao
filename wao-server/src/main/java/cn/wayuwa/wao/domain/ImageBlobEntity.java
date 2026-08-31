@@ -15,6 +15,7 @@ public class ImageBlobEntity {
     private String contentType;
     private Long byteSize;
     private String source;
+    private String projectId;
     private String contentHash;
     private String dedupeKey;
     private LocalDateTime createdAt;
@@ -30,6 +31,8 @@ public class ImageBlobEntity {
     public void setByteSize(Long byteSize) { this.byteSize = byteSize; }
     public String getSource() { return source; }
     public void setSource(String source) { this.source = source; }
+    public String getProjectId() { return projectId; }
+    public void setProjectId(String projectId) { this.projectId = projectId; }
     public String getContentHash() { return contentHash; }
     public void setContentHash(String contentHash) { this.contentHash = contentHash; }
     public String getDedupeKey() { return dedupeKey; }

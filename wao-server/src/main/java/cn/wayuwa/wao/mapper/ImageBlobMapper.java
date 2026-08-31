@@ -13,7 +13,7 @@ import org.apache.ibatis.annotations.Select;
 public interface ImageBlobMapper extends BaseMapper<ImageBlobEntity> {
 
     /** 列出元数据，不含 {@code content}——图床列表不该把每张图的正文都读进内存。 */
-    @Select("SELECT id, name, content_type, byte_size, source, content_hash, created_at "
+    @Select("SELECT id, name, content_type, byte_size, source, project_id, content_hash, created_at "
             + "FROM image_blob ORDER BY created_at DESC")
     List<ImageBlobEntity> listMeta();
 
@@ -24,13 +24,13 @@ public interface ImageBlobMapper extends BaseMapper<ImageBlobEntity> {
      * @param byteSize 字节数，和摘要一起比对
      * @return 最早存下的那一份；没有则为 null
      */
-    @Select("SELECT id, name, content_type, byte_size, source, content_hash, created_at "
+    @Select("SELECT id, name, content_type, byte_size, source, project_id, content_hash, created_at "
             + "FROM image_blob WHERE content_hash = #{hash} AND byte_size = #{byteSize} "
             + "ORDER BY created_at LIMIT 1")
     ImageBlobEntity findByContentHash(@Param("hash") String hash, @Param("byteSize") long byteSize);
 
     /** 在并发去重写入冲突后读取已获胜的唯一记录。 */
-    @Select("SELECT id, name, content_type, byte_size, source, content_hash, dedupe_key, created_at "
+    @Select("SELECT id, name, content_type, byte_size, source, project_id, content_hash, dedupe_key, created_at "
             + "FROM image_blob WHERE dedupe_key = #{dedupeKey} LIMIT 1 FOR UPDATE")
     ImageBlobEntity findByDedupeKey(@Param("dedupeKey") String dedupeKey);
 }

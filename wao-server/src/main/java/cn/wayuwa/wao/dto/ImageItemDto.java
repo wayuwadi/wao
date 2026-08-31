@@ -20,5 +20,11 @@ public record ImageItemDto(
         String from,
         String url,
         String c1,
-        String c2) {
+        String c2,
+        String projectId) {
+    /** 滚动兼容：没有项目参数的既有内部调用视为未分类。 */
+    public ImageItemDto(String id, String name, String size, String time, String from, String url, String c1,
+            String c2) {
+        this(id, name, size, time, from, url, c1, c2, null);
+    }
 }
