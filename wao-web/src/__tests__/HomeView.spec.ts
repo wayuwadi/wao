@@ -1069,7 +1069,8 @@ describe('HomeView AI 控制台', () => {
     vi.useFakeTimers()
     const { fetchAiRuns } = await import('@/api/ai')
     vi.mocked(fetchAiRuns).mockResolvedValueOnce([{
-      id: 'ar-goal-native', taskId: 't1', taskTitle: '完成原生目标模式', previewImages: [],
+      id: 'ar-goal-native', taskId: 't1', taskTitle: '完成原生目标模式', subId: null, subTitle: null,
+      previewImages: [],
       projectId: 'p1', projectName: 'WAO', engine: 'codex', requestedModel: 'gpt-5.6-sol',
       reasoningEffort: 'high', planMode: false, goalMode: true,
       goalObjective: '完成原生目标模式，直到部署成功且线上验收通过', goalStatus: 'active',
