@@ -1023,6 +1023,8 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V120__hosted_page_source_type.sql`：固化人工托管页与 AI Run 报告来源，并按稳定报告 id 回填存量页面（见 ADR-170）。
 - `V121__ai_quota_snapshot_history.sql`：保存真实额度的脱敏采样历史，并回填集中账号已有最新基线（见 ADR-174）。
 - `V125__ai_run_execution_duration.sql`：保存 Runner 单调时钟实测的 AI CLI 执行耗时，与领取到终态总耗时分开（见 ADR-181）。
+- `V129__repair_feishu_html_task_titles.sql`：只对有快速收集事件关系且标题混入 HTML 的历史任务，
+  从原描述第一段重新提取纯文本标题；普通任务和原描述不变。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

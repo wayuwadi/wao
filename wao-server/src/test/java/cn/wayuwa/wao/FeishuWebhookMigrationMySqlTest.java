@@ -12,7 +12,7 @@ import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-/** 在真实 MySQL 9 上验证 V78 Webhook 搬运与 V79 任务创建时间回填。 */
+/** 在真实 MySQL 9 上验证飞书相关历史数据迁移。 */
 @Testcontainers(disabledWithoutDocker = true)
 class FeishuWebhookMigrationMySqlTest {
 
@@ -130,6 +130,52 @@ class FeishuWebhookMigrationMySqlTest {
              var result = statement.executeQuery()) {
             assertThat(result.next()).isTrue();
             assertThat(result.getTimestamp("created_at")).isNotNull();
+        }
+
+        migrateTo("128");
+        String originalDescription = "<p>测试修改问题，任务那边会不会同步更新</p><p></p><p>更新了吗？</p>";
+        try (var connection = DriverManager.getConnection(
+                MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
+             var tasks = connection.prepareStatement("""
+                     INSERT INTO task
+                         (id, title, description, project_id, status, pr, owner_id, detail_json)
+                     VALUES
+                         ('html-quick-capture', '<p>测试修改问题</p><p>更新了…', ?,
+                          'p1', '待办', 'P2', 'wg', '{}'),
+                         ('html-manual-task', '<p>用户手工保留的标题</p>', '<p>普通任务</p>',
+                          'p1', '待办', 'P2', 'wg', '{}')
+                     """);
+             var event = connection.prepareStatement("""
+                     INSERT INTO feishu_quick_collect_event
+                         (event_key, message_id, capture_kind, status, target_id, created_at, updated_at)
+                     VALUES ('message:html-title', 'html-title', 'TASK', 'CREATED',
+                             'html-quick-capture', CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
+                     """)) {
+            tasks.setString(1, originalDescription);
+            assertThat(tasks.executeUpdate()).isEqualTo(2);
+            assertThat(event.executeUpdate()).isEqualTo(1);
+        }
+
+        migrateTo("129");
+
+        try (var connection = DriverManager.getConnection(
+                MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
+             var statement = connection.prepareStatement("""
+                     SELECT id, title, description
+                       FROM task
+                      WHERE id IN ('html-quick-capture', 'html-manual-task')
+                      ORDER BY id
+                     """);
+             var result = statement.executeQuery()) {
+            assertThat(result.next()).isTrue();
+            assertThat(result.getString("id")).isEqualTo("html-manual-task");
+            assertThat(result.getString("title")).isEqualTo("<p>用户手工保留的标题</p>");
+
+            assertThat(result.next()).isTrue();
+            assertThat(result.getString("id")).isEqualTo("html-quick-capture");
+            assertThat(result.getString("title")).isEqualTo("测试修改问题，任务那边会不会同步更新");
+            assertThat(result.getString("description")).isEqualTo(originalDescription);
+            assertThat(result.next()).isFalse();
         }
     }
 

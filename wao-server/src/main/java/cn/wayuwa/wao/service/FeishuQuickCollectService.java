@@ -9,6 +9,7 @@ import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -36,6 +37,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.util.HtmlUtils;
 
 /**
  * 群聊快速收集：在飞书群里 @机器人 说一句话，WAO 直接把它变成一条任务。
@@ -61,6 +63,10 @@ public class FeishuQuickCollectService {
     private static final int TITLE_LIMIT = 40;
     /** 纯图片消息没有可诚实提取的文字时使用的稳定标题。 */
     private static final String IMAGE_ONLY_TITLE = "图片待办";
+    /** 飞书富文本偶尔把编辑器 HTML 放进 text 节点；标题必须只保留用户看见的文字。 */
+    private static final Pattern HTML_BLOCK_BOUNDARY = Pattern.compile(
+            "(?i)<\\s*/?\\s*(?:p|div|h[1-6]|li|ul|ol|blockquote)\\b[^>]*>|<\\s*br\\s*/?\\s*>");
+    private static final Pattern HTML_TAG = Pattern.compile("(?s)<\\s*/?\\s*[a-zA-Z][^>]*>");
     private static final String MESSAGE_RECALLED_EVENT = "im.message.recalled_v1";
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private static final String PUBLIC_BASE_URL = "https://wao.wayuwa.cn";
@@ -512,9 +518,17 @@ public class FeishuQuickCollectService {
         }
     }
 
-    /** 标题取第一行非图片文字；纯图片消息使用可读标题，绝不暴露 Markdown 路径。 */
+    /**
+     * 标题取第一段非图片可见文字；纯图片消息使用可读标题，绝不暴露 Markdown 路径或 HTML 标签。
+     *
+     * <p>飞书 {@code post} 的 {@code text} 节点通常是纯文本，但粘贴或机器人转发的内容偶尔会是
+     * {@code <p>正文</p>}。描述编辑器能渲染这段 HTML，任务标题却是纯文本字段，因此在标题边界统一
+     * 把块标签还原成换行、移除其余标签并解码实体；描述仍保留原文，不破坏已有段落格式。
+     */
     static String title(String text) {
-        String first = text.lines().map(String::trim)
+        String visible = HTML_BLOCK_BOUNDARY.matcher(text == null ? "" : text).replaceAll("\n");
+        visible = HtmlUtils.htmlUnescape(HTML_TAG.matcher(visible).replaceAll(""));
+        String first = visible.lines().map(String::trim)
                 .filter(StringUtils::hasText)
                 .filter(line -> !line.matches("^!\\[[^]]*]\\([^\\r\\n]+\\)$"))
                 .findFirst().orElse(IMAGE_ONLY_TITLE);
