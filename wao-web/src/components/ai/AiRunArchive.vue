@@ -128,8 +128,8 @@ async function continueRun(runId: string) {
         </div>
         <a v-if="run.reportUrl" class="ai-run-report" :href="run.reportUrl" target="_blank" rel="noopener">
           <span class="ai-run-report-icon"><i class="ri-file-chart-line"></i></span>
-          <span><b>持久化报告</b><small>完整前因后果与验收证据，可长期查看和分享</small></span>
-          <em>查看报告<i class="ri-arrow-right-up-line"></i></em>
+          <span><b>HTML 报告</b><small>公开 AI Plan、关键决定、功能入口与人工验收</small></span>
+          <em>打开报告<i class="ri-arrow-right-up-line"></i></em>
         </a>
         <div
           v-if="['queued', 'claimed', 'running'].includes(run.status)

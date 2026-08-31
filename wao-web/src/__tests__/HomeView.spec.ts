@@ -808,6 +808,8 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.run-detail').text()).toContain('-1')
     expect(wrapper.find('.run-detail').text()).not.toContain('等待第一条 AI 反馈')
     expect(wrapper.find('.run-report-link').attributes('href')).toBe('/api/pages/ai-run-ar1')
+    expect(wrapper.find('.run-report-link').text()).toContain('查看 HTML 报告')
+    expect(wrapper.find('.run-report-link').text()).toContain('公开 AI Plan')
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await wrapper.vm.$nextTick()
