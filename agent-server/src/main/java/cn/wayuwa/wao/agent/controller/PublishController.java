@@ -13,6 +13,13 @@ import cn.wayuwa.wao.agent.service.PublishTaskService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,6 +67,12 @@ public class PublishController {
         return ApiResponse.ok(publishTasks.submit(accountId(request), taskId));
     }
 
+    @PostMapping("/tasks/{taskId}/mark-published")
+    public ApiResponse<PublishTaskDto> markPublished(@PathVariable String taskId,
+                                                     HttpServletRequest request) {
+        return ApiResponse.ok(publishTasks.markPublished(accountId(request), taskId));
+    }
+
     @PostMapping("/media")
     public ApiResponse<MediaAssetDto> upload(@RequestParam("file") MultipartFile file, HttpServletRequest request) {
         return ApiResponse.ok(mediaAssets.store(accountId(request), file));
@@ -68,6 +81,25 @@ public class PublishController {
     @GetMapping("/media")
     public ApiResponse<List<MediaAssetDto>> media(HttpServletRequest request) {
         return ApiResponse.ok(mediaAssets.list(accountId(request)));
+    }
+
+    /** 在当前登录工作区内以内联方式返回真实素材，供编辑器实时预览。 */
+    @GetMapping("/media/{mediaAssetId}/content")
+    public ResponseEntity<Resource> mediaContent(@PathVariable String mediaAssetId, HttpServletRequest request) {
+        var asset = mediaAssets.requireLocal(accountId(request), mediaAssetId);
+        Resource resource = new FileSystemResource(asset.getStoragePath());
+        MediaType type;
+        try {
+            type = MediaType.parseMediaType(asset.getContentType());
+        } catch (IllegalArgumentException ignored) {
+            type = MediaType.APPLICATION_OCTET_STREAM;
+        }
+        return ResponseEntity.ok()
+                .contentType(type)
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.inline()
+                        .filename(asset.getOriginalName(), StandardCharsets.UTF_8).build().toString())
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=300")
+                .body(resource);
     }
 
     private String accountId(HttpServletRequest request) {

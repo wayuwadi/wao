@@ -12,6 +12,7 @@ import cn.wayuwa.wao.agent.hotspot.HotspotSourceStatus;
 import cn.wayuwa.wao.agent.hotspot.RawHotspot;
 import cn.wayuwa.wao.agent.mapper.HotspotMapper;
 import cn.wayuwa.wao.agent.mapper.WorkspaceProfileMapper;
+import cn.wayuwa.wao.agent.mapper.TopicSuggestionMapper;
 import cn.wayuwa.wao.agent.service.HotspotService;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import java.util.List;
@@ -35,12 +36,14 @@ class StudioFlowIntegrationTest {
     @Autowired private MockMvc mvc;
     @Autowired private HotspotMapper hotspotMapper;
     @Autowired private WorkspaceProfileMapper profileMapper;
+    @Autowired private TopicSuggestionMapper suggestionMapper;
 
     /** 同一个类里的用例共用一个 H2 库和同一个 acc-demo 工作区，不清理就会互相污染。 */
     @BeforeEach
     void clean() {
         hotspotMapper.delete(Wrappers.emptyWrapper());
         profileMapper.delete(Wrappers.emptyWrapper());
+        suggestionMapper.delete(Wrappers.emptyWrapper());
     }
 
     /** 可控的假来源。 */
@@ -129,14 +132,35 @@ class StudioFlowIntegrationTest {
         mvc.perform(post("/api/agent/studio/profile")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"niche":"户外露营装备测评","audience":"周末露营新手","tone":"实在不夸张","avoid":"绝对化用词"}
+                                {"niche":"户外露营装备测评","audience":"周末露营新手","tone":"实在不夸张","avoid":"绝对化用词",
+                                 "contentTopics":"装备实测、路线复盘","lengthStructure":"1200 字，先结论后实测",
+                                 "updateFrequency":"每周两篇","primaryPlatforms":"公众号、小红书","imageStyle":"户外实拍，少文字"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.configured", Matchers.is(true)))
-                .andExpect(jsonPath("$.data.niche", Matchers.equalTo("户外露营装备测评")));
+                .andExpect(jsonPath("$.data.niche", Matchers.equalTo("户外露营装备测评")))
+                .andExpect(jsonPath("$.data.imageStyle", Matchers.equalTo("户外实拍，少文字")));
 
         mvc.perform(get("/api/agent/studio"))
-                .andExpect(jsonPath("$.data.profile.audience", Matchers.equalTo("周末露营新手")));
+                .andExpect(jsonPath("$.data.profile.audience", Matchers.equalTo("周末露营新手")))
+                .andExpect(jsonPath("$.data.profile.updateFrequency", Matchers.equalTo("每周两篇")));
+    }
+
+    @Test
+    void manualTopicPersistsWithoutHotspotOrModel() throws Exception {
+        String response = mvc.perform(post("/api/agent/studio/topics")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"topic\":\"把这次工作流写成系列\",\"platform\":\"WECHAT_MP\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.reason", Matchers.equalTo("手动记录")))
+                .andExpect(jsonPath("$.data.hotspotId").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+
+        String id = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response).at("/data/id").asText();
+        mvc.perform(get("/api/agent/studio"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.suggestions[?(@.id=='" + id + "')].topic",
+                        Matchers.hasItem("把这次工作流写成系列")));
     }
 
     @Test
@@ -144,6 +168,15 @@ class StudioFlowIntegrationTest {
         mvc.perform(post("/api/agent/studio/recommend")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"platform\":\"DOUYIN\",\"count\":5}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", Matchers.containsString("AGENT_AI")));
+    }
+
+    @Test
+    void profileInitializationWithoutModelFailsInsteadOfCreatingDemoPositioning() throws Exception {
+        mvc.perform(post("/api/agent/studio/profile/initialize")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"needs\":\"面向上班族分享真实使用过的 AI 工作流\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message", Matchers.containsString("AGENT_AI")));
     }

@@ -157,6 +157,11 @@ CREATE TABLE IF NOT EXISTS agent_workspace_profile (
     audience VARCHAR(200),
     tone VARCHAR(200),
     avoid VARCHAR(500),
+    content_topics VARCHAR(500),
+    length_structure VARCHAR(500),
+    update_frequency VARCHAR(200),
+    primary_platforms VARCHAR(200),
+    image_style VARCHAR(500),
     updated_at TIMESTAMP NOT NULL,
     CONSTRAINT uk_local_agent_profile_workspace UNIQUE (workspace_id),
     CONSTRAINT fk_local_agent_profile_workspace FOREIGN KEY (workspace_id) REFERENCES agent_workspace(id)

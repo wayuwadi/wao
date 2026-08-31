@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 import cn.wayuwa.wao.agent.domain.PlatformAccountEntity;
 import cn.wayuwa.wao.agent.domain.PublishTaskEntity;
@@ -122,6 +124,12 @@ class PublishFlowIntegrationTest {
                 .andExpect(jsonPath("$.data[*].id", org.hamcrest.Matchers.hasItem(mediaId)))
                 .andExpect(jsonPath("$.data[?(@.id == '" + mediaId + "')].createdAt",
                         org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.notNullValue())));
+
+        mvc.perform(get("/api/agent/publish/media/{mediaId}/content", mediaId))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("video/mp4"))
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("inline")));
     }
 
     @Test
@@ -144,6 +152,18 @@ class PublishFlowIntegrationTest {
         mvc.perform(post("/api/agent/publish/tasks/" + taskId + "/submit"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("小红书")));
+    }
+
+    @Test
+    void memberCanMarkUnsupportedPlatformAsPublishedAfterManualPosting() throws Exception {
+        String taskId = createTask("站外发布记录", "XIAOHONGSHU");
+        updateTask(taskId, 1, null, null, "已经人工审核并在站外发布的正文");
+
+        mvc.perform(post("/api/agent/publish/tasks/" + taskId + "/mark-published"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status", org.hamcrest.Matchers.equalTo("PUBLISHED")))
+                .andExpect(jsonPath("$.data.progress", org.hamcrest.Matchers.equalTo(100)))
+                .andExpect(jsonPath("$.data.publishedAt", org.hamcrest.Matchers.notNullValue()));
     }
 
     @Test

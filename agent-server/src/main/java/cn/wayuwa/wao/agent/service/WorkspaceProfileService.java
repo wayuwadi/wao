@@ -46,6 +46,11 @@ public class WorkspaceProfileService {
         entity.setAudience(trim(request.audience(), 200));
         entity.setTone(trim(request.tone(), 200));
         entity.setAvoid(trim(request.avoid(), 500));
+        entity.setContentTopics(trim(request.contentTopics(), 500));
+        entity.setLengthStructure(trim(request.lengthStructure(), 500));
+        entity.setUpdateFrequency(trim(request.updateFrequency(), 200));
+        entity.setPrimaryPlatforms(trim(request.primaryPlatforms(), 200));
+        entity.setImageStyle(trim(request.imageStyle(), 500));
         entity.setUpdatedAt(LocalDateTime.now());
         if (existing == null) {
             try {
@@ -61,10 +66,12 @@ public class WorkspaceProfileService {
     }
 
     private WorkspaceProfileDto toDto(WorkspaceProfileEntity entity) {
-        if (entity == null) return new WorkspaceProfileDto(null, null, null, null, false);
+        if (entity == null) return new WorkspaceProfileDto(null, null, null, null,
+                null, null, null, null, null, false);
         boolean configured = entity.getNiche() != null && !entity.getNiche().isBlank();
         return new WorkspaceProfileDto(entity.getNiche(), entity.getAudience(), entity.getTone(),
-                entity.getAvoid(), configured);
+                entity.getAvoid(), entity.getContentTopics(), entity.getLengthStructure(),
+                entity.getUpdateFrequency(), entity.getPrimaryPlatforms(), entity.getImageStyle(), configured);
     }
 
     private String trim(String value, int max) {

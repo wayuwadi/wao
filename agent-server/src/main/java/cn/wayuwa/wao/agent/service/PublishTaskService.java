@@ -201,6 +201,33 @@ public class PublishTaskService {
         return toDto(require(workspaceId, taskId), workspaceId);
     }
 
+    /** 对没有官方发布接口的平台，由成员在站外发布后手动确认已发布。 */
+    public PublishTaskDto markPublished(String accountId, String taskId) {
+        String workspaceId = accounts.workspaceId(accountId);
+        PublishTaskEntity task = require(workspaceId, taskId);
+        PlatformCapability capability = registry.get(PlatformType.valueOf(task.getPlatform())).capability();
+        if (capability.publishSupported()) {
+            throw new BadRequestException("该平台已接入官方发布，请使用人工确认后的平台提交入口");
+        }
+        if (!List.of(WAITING_REVIEW, FAILED).contains(task.getStatus())) {
+            throw new ConflictException("只有待发布或发布失败的内容可以手动标记已发布");
+        }
+        int expected = task.getVersion();
+        int updated = taskMapper.update(null, Wrappers.<PublishTaskEntity>lambdaUpdate()
+                .eq(PublishTaskEntity::getId, taskId)
+                .eq(PublishTaskEntity::getWorkspaceId, workspaceId)
+                .eq(PublishTaskEntity::getVersion, expected)
+                .in(PublishTaskEntity::getStatus, List.of(WAITING_REVIEW, FAILED))
+                .set(PublishTaskEntity::getStatus, PUBLISHED)
+                .set(PublishTaskEntity::getProgress, 100)
+                .set(PublishTaskEntity::getPublishedAt, LocalDateTime.now())
+                .set(PublishTaskEntity::getErrorMessage, null)
+                .set(PublishTaskEntity::getVersion, expected + 1)
+                .set(PublishTaskEntity::getUpdatedAt, LocalDateTime.now()));
+        if (updated == 0) throw new ConflictException("任务已在别处更新，请刷新后重试");
+        return toDto(require(workspaceId, taskId), workspaceId);
+    }
+
     /** 推进生成中的任务；任意节点都可以执行，靠乐观锁抢占。 */
     @Scheduled(fixedDelayString = "${wao-agent.publish.generate-delay-ms:2000}")
     public void processGenerating() {

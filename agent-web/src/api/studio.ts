@@ -10,9 +10,15 @@ export const refreshHotspots = () =>
 export const saveProfile = (profile: Omit<WorkspaceProfile, 'configured'>) =>
   unwrap<WorkspaceProfile>(http.post('/api/agent/studio/profile', profile))
 
+export const initializeProfile = (needs: string) =>
+  unwrap<WorkspaceProfile>(http.post('/api/agent/studio/profile/initialize', { needs }, { timeout: 120_000 }))
+
 /** 推荐要过一次模型，可能要几十秒。 */
 export const recommendTopics = (platform: string, count: number) =>
   unwrap<TopicSuggestion[]>(http.post('/api/agent/studio/recommend', { platform, count }, { timeout: 120_000 }))
+
+export const addManualTopic = (topic: string, platform: string) =>
+  unwrap<TopicSuggestion>(http.post('/api/agent/studio/topics', { topic, platform }))
 
 export const markSuggestion = (suggestionId: string, status: 'USED' | 'DISMISSED') =>
   unwrap<void>(http.post(`/api/agent/studio/suggestions/${suggestionId}/mark?status=${status}`))

@@ -6,6 +6,7 @@ import cn.wayuwa.wao.agent.domain.HotspotEntity;
 import cn.wayuwa.wao.agent.domain.TopicSuggestionEntity;
 import cn.wayuwa.wao.agent.dto.HotspotDto;
 import cn.wayuwa.wao.agent.dto.RecommendRequest;
+import cn.wayuwa.wao.agent.dto.CreateManualTopicRequest;
 import cn.wayuwa.wao.agent.dto.StudioDto;
 import cn.wayuwa.wao.agent.dto.TopicSuggestionDto;
 import cn.wayuwa.wao.agent.hotspot.HotspotSourceStatus;
@@ -83,7 +84,8 @@ public class TopicService {
 
         suggestionMapper.delete(Wrappers.<TopicSuggestionEntity>lambdaQuery()
                 .eq(TopicSuggestionEntity::getWorkspaceId, workspaceId)
-                .eq(TopicSuggestionEntity::getStatus, STATUS_NEW));
+                .eq(TopicSuggestionEntity::getStatus, STATUS_NEW)
+                .isNotNull(TopicSuggestionEntity::getHotspotId));
         LocalDateTime now = LocalDateTime.now();
         for (var item : results) {
             TopicSuggestionEntity entity = new TopicSuggestionEntity();
@@ -100,6 +102,21 @@ public class TopicService {
             suggestionMapper.insert(entity);
         }
         return studio(accountId).suggestions();
+    }
+
+    /** 把成员输入的真实灵感保存到当前工作区话题池，不依赖模型或热点。 */
+    public TopicSuggestionDto add(String accountId, CreateManualTopicRequest request) {
+        TopicSuggestionEntity entity = new TopicSuggestionEntity();
+        entity.setId(UUID.randomUUID().toString());
+        entity.setWorkspaceId(accounts.workspaceId(accountId));
+        entity.setPlatform(PlatformType.parse(request.platform()).name());
+        entity.setTopic(request.topic().trim());
+        entity.setReason("手动记录");
+        entity.setFitScore(100);
+        entity.setStatus(STATUS_NEW);
+        entity.setCreatedAt(LocalDateTime.now());
+        suggestionMapper.insert(entity);
+        return toDto(entity);
     }
 
     /** 标记建议已被采用或忽略。 */

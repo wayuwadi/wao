@@ -17,6 +17,11 @@ public final class PromptLibrary {
         if (StringUtils.hasText(profile.getNiche())) sb.append("账号领域：").append(profile.getNiche()).append("。");
         if (StringUtils.hasText(profile.getAudience())) sb.append("目标受众：").append(profile.getAudience()).append("。");
         if (StringUtils.hasText(profile.getTone())) sb.append("语气风格：").append(profile.getTone()).append("。");
+        if (StringUtils.hasText(profile.getContentTopics())) sb.append("常用主题：").append(profile.getContentTopics()).append("。");
+        if (StringUtils.hasText(profile.getLengthStructure())) sb.append("篇幅结构：").append(profile.getLengthStructure()).append("。");
+        if (StringUtils.hasText(profile.getUpdateFrequency())) sb.append("更新频率：").append(profile.getUpdateFrequency()).append("。");
+        if (StringUtils.hasText(profile.getPrimaryPlatforms())) sb.append("主要平台：").append(profile.getPrimaryPlatforms()).append("。");
+        if (StringUtils.hasText(profile.getImageStyle())) sb.append("配图风格：").append(profile.getImageStyle()).append("。");
         if (StringUtils.hasText(profile.getAvoid())) sb.append("必须避免：").append(profile.getAvoid()).append("。");
         return sb.isEmpty() ? "" : "\n" + sb;
     }

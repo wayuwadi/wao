@@ -10,6 +10,7 @@ vi.mock('@/api/publish', () => ({
   getAuthorizeUrl: vi.fn(),
   getPublishCenter: vi.fn(),
   listMedia: vi.fn(),
+  markPublishTaskPublished: vi.fn(),
   submitPublishTask: vi.fn(),
   unbindAccount: vi.fn(),
   updatePublishTask: vi.fn(),
@@ -67,28 +68,23 @@ describe('真实发布中心', () => {
     wrapper.unmount()
   })
 
-  it('内容管理只编辑草稿，内容发布才展示平台提交入口', async () => {
+  it('统一工作台同时提供草稿编辑、实时预览和人工发布入口', async () => {
     vi.mocked(getPublishCenter).mockResolvedValue({ ...structuredClone(center), tasks: [task()] })
     vi.mocked(listMedia).mockResolvedValue([{
       id: 'asset-1', kind: 'VIDEO', originalName: '已上传成片.webm', contentType: 'video/webm',
       byteSize: 4096, createdAt: '2026-08-27T10:00:00',
     }])
 
-    const content = mount(PublishCenter, { props: { mode: 'content' } })
+    const content = mount(PublishCenter, { props: { mode: 'workbench' } })
     await flushPromises()
     expect(content.text()).toContain('新建内容')
     expect(content.text()).toContain('抖音内容稿')
     expect(content.text()).toContain('已上传成片.webm · 4.0 KB')
     expect(content.text()).not.toContain('连接账号')
-    expect(content.text()).not.toContain('确认发布到抖音')
+    expect(content.text()).toContain('确认发布到抖音')
+    expect(content.get('.live-preview iframe').attributes('srcdoc')).toContain('真实话题')
+    expect(content.text()).toContain('输入后立即同步')
     content.unmount()
-
-    const publishing = mount(PublishCenter, { props: { mode: 'publishing' } })
-    await flushPromises()
-    expect(publishing.text()).not.toContain('新建内容')
-    expect(publishing.text()).toContain('抖音发布稿')
-    expect(publishing.text()).toContain('确认发布到抖音')
-    publishing.unmount()
   })
 
   it('已保存图文可以预览 HTML 并原子存入真实知识库', async () => {
@@ -106,6 +102,7 @@ describe('真实发布中心', () => {
     const wrapper = mount(PublishCenter, { props: { mode: 'content' } })
     await flushPromises()
 
+    expect(wrapper.get('.live-preview iframe').attributes('srcdoc')).toContain('我的 WAO')
     await wrapper.findAll('.actions button').find((button) => button.text().includes('导出 HTML'))!.trigger('click')
     expect(wrapper.get('.export-dialog iframe').attributes('srcdoc')).toContain('/agent/article/my-wao-cover.png')
     await wrapper.get('.export-dialog header button').trigger('click')

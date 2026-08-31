@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { getSession } from '@/api/agent'
-import { getStudio, markSuggestion, recommendTopics, refreshHotspots, saveProfile } from '@/api/studio'
+import { addManualTopic, getStudio, initializeProfile, markSuggestion, recommendTopics, refreshHotspots, saveProfile } from '@/api/studio'
 import { ApiError } from '@/api/http'
 import MaterialLibrary from '@/components/MaterialLibrary.vue'
 import PublishCenter from '@/components/PublishCenter.vue'
@@ -17,22 +17,26 @@ const studioBusy = ref('')
 const studioMessage = ref('')
 const studioState = ref<StudioState>('idle')
 const studioError = ref('')
-const profileForm = reactive({ niche: '', audience: '', tone: '', avoid: '' })
+const profileForm = reactive({
+  niche: '', audience: '', tone: '', avoid: '', contentTopics: '', lengthStructure: '',
+  updateFrequency: '', primaryPlatforms: '', imageStyle: '',
+})
 const recommendForm = reactive({ platform: 'DOUYIN', count: 5 })
+const manualTopicForm = reactive({ topic: '', platform: 'WECHAT_MP' })
 const authState = ref<AuthState>('loading')
 const message = ref('正在读取 WAO 登录会话…')
-const activeSection = ref('内容创作')
+const activeSection = ref('内容工作台')
 const creationMode = ref<'topics' | 'video'>('topics')
 const publishTopic = ref('')
 const profileDirty = ref(false)
+const profileNeeds = ref('')
 const contentDirty = ref(false)
 
 const NAV_ITEMS = [
+  { id: '内容工作台', icon: 'ri-layout-column-line', badge: '' },
+  { id: '话题与热点', icon: 'ri-fire-line', badge: '' },
   { id: '账号管理', icon: 'ri-user-settings-line', badge: '' },
-  { id: '内容管理', icon: 'ri-file-list-3-line', badge: '' },
-  { id: '素材管理', icon: 'ri-gallery-line', badge: '' },
-  { id: '内容创作', icon: 'ri-quill-pen-line', badge: '' },
-  { id: '内容发布', icon: 'ri-send-plane-line', badge: '' },
+  { id: '素材库', icon: 'ri-gallery-line', badge: '' },
 ]
 
 function formatHeat(heat?: number) {
@@ -53,6 +57,11 @@ async function refreshStudio(force = false) {
     profileForm.audience = p.audience || ''
     profileForm.tone     = p.tone     || ''
     profileForm.avoid    = p.avoid    || ''
+    profileForm.contentTopics = p.contentTopics || ''
+    profileForm.lengthStructure = p.lengthStructure || ''
+    profileForm.updateFrequency = p.updateFrequency || ''
+    profileForm.primaryPlatforms = p.primaryPlatforms || ''
+    profileForm.imageStyle = p.imageStyle || ''
     profileDirty.value = false
     studioState.value = 'ready'
   } catch (error) {
@@ -103,6 +112,15 @@ function doSaveProfile() {
   })
 }
 
+function doInitializeProfile() {
+  if (!profileNeeds.value.trim()) return
+  return runStudio('profile-initialize', async () => {
+    await initializeProfile(profileNeeds.value)
+    profileNeeds.value = ''
+    studioMessage.value = '已按需求初始化账号定位，请检查并按需修改'
+  })
+}
+
 function markProfileDirty() {
   profileDirty.value = true
   studioMessage.value = '账号定位有未保存修改'
@@ -111,8 +129,7 @@ function markProfileDirty() {
 function switchSection(next: string) {
   if (next === activeSection.value) return
   const leavingProfile = activeSection.value === '账号管理' && profileDirty.value
-  const leavingContent = (activeSection.value === '内容管理' || activeSection.value === '内容发布')
-    && contentDirty.value
+  const leavingContent = activeSection.value === '内容工作台' && contentDirty.value
   if ((leavingProfile || leavingContent) && !window.confirm('当前内容还有未保存修改，仍要离开吗？')) return
   if (leavingProfile) {
     profileDirty.value = false
@@ -131,11 +148,20 @@ function doRecommend() {
   })
 }
 
+function addTopic() {
+  if (!manualTopicForm.topic.trim()) return
+  return runStudio('manual-topic', async () => {
+    await addManualTopic(manualTopicForm.topic, manualTopicForm.platform)
+    manualTopicForm.topic = ''
+    studioMessage.value = '灵感已加入话题池'
+  })
+}
+
 function useSuggestion(suggestion: TopicSuggestion) {
   return runStudio('use-' + suggestion.id, async () => {
     await markSuggestion(suggestion.id, 'USED')
     publishTopic.value = suggestion.topic
-    switchSection('内容管理')
+    switchSection('内容工作台')
   })
 }
 
@@ -211,7 +237,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       </div>
 
       <nav class="sidebar-menu">
-        <div class="menu-group-label">内容创作</div>
+        <div class="menu-group-label">创作者工作台</div>
         <div class="menu-items">
           <button
             v-for="item in NAV_ITEMS"
@@ -243,7 +269,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       <header class="main-header">
         <span class="page-title">{{ activeSection }}</span>
         <div class="header-spacer"></div>
-        <button v-if="activeSection === '账号管理' || activeSection === '内容创作'" class="btn-ghost" style="height:30px;font-size:12px;" :disabled="studioState === 'loading'" @click="retryStudio()">
+        <button v-if="activeSection === '账号管理' || activeSection === '话题与热点'" class="btn-ghost" style="height:30px;font-size:12px;" :disabled="studioState === 'loading'" @click="retryStudio()">
           <i class="ri-refresh-line"></i>{{ studioState === 'loading' ? '加载中…' : '刷新' }}
         </button>
       </header>
@@ -251,7 +277,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       <div class="main-body">
 
         <section
-          v-if="(activeSection === '账号管理' || activeSection === '内容创作') && !studio"
+          v-if="(activeSection === '账号管理' || activeSection === '话题与热点') && !studio"
           class="panel studio-load-state"
           :class="{ error: studioState === 'error' }"
         >
@@ -271,9 +297,19 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           <div class="account-layout">
             <section class="panel account-profile">
               <div class="panel-head"><div><h2>账号定位</h2><p>决定热点推荐和成稿语气，保存后按当前工作区持久化</p></div></div>
+              <div class="profile-initialize">
+                <label class="field-mini">我的实际需求<textarea v-model="profileNeeds" maxlength="2000" rows="3" placeholder="例如：我想面向忙碌的上班族，分享自己真实使用过的 AI 工作流；每周更新两篇公众号文章。"></textarea></label>
+                <button class="btn-ghost" :disabled="studioBusy === 'profile-initialize' || !profileNeeds.trim()" @click="doInitializeProfile"><i class="ri-sparkling-line"></i>{{ studioBusy === 'profile-initialize' ? '初始化中…' : '用已配置模型初始化' }}</button>
+                <small>只依据你填写的需求生成可编辑建议；未配置模型时会明确提示，不填演示数据。</small>
+              </div>
               <label class="field-mini">领域<input v-model="profileForm.niche" maxlength="200" placeholder="例如：程序员 AI 副业" @input="markProfileDirty" /></label>
               <label class="field-mini">受众<input v-model="profileForm.audience" maxlength="200" placeholder="例如：想用 AI 提效的开发者" @input="markProfileDirty" /></label>
               <label class="field-mini">语气<input v-model="profileForm.tone" maxlength="200" placeholder="例如：轻松吐槽，像和朋友聊天" @input="markProfileDirty" /></label>
+              <label class="field-mini">常用主题<input v-model="profileForm.contentTopics" maxlength="500" placeholder="例如：AI 工具实测、工作流复盘、效率方法" @input="markProfileDirty" /></label>
+              <label class="field-mini">篇幅与结构<input v-model="profileForm.lengthStructure" maxlength="500" placeholder="例如：1500 字，先结论后案例，结尾给行动清单" @input="markProfileDirty" /></label>
+              <label class="field-mini">更新频率<input v-model="profileForm.updateFrequency" maxlength="200" placeholder="例如：每周二、四各一篇" @input="markProfileDirty" /></label>
+              <label class="field-mini">主要平台<input v-model="profileForm.primaryPlatforms" maxlength="200" placeholder="例如：公众号、小红书" @input="markProfileDirty" /></label>
+              <label class="field-mini">封面与配图<input v-model="profileForm.imageStyle" maxlength="500" placeholder="例如：温暖插画，少文字，16:9 封面" @input="markProfileDirty" /></label>
               <label class="field-mini">避免<input v-model="profileForm.avoid" maxlength="500" placeholder="例如：绝对化用词、政治话题" @input="markProfileDirty" /></label>
               <button class="btn-primary profile-save" :disabled="studioBusy === 'profile' || !profileDirty" @click="doSaveProfile">
                 <i class="ri-save-line"></i>{{ studioBusy === 'profile' ? '保存中…' : '保存账号定位' }}
@@ -286,8 +322,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           </div>
         </template>
 
-        <!-- ===== 内容创作 ===== -->
-        <template v-else-if="activeSection === '内容创作' && studio">
+        <!-- ===== 话题与热点 ===== -->
+        <template v-else-if="activeSection === '话题与热点' && studio">
           <div class="creation-tabs" role="tablist" aria-label="内容创作方式">
             <button :class="{ active: creationMode === 'topics' }" role="tab" :aria-selected="creationMode === 'topics'" @click="creationMode = 'topics'">
               <i class="ri-fire-line"></i>热点选题
@@ -307,6 +343,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
               <span>还没填账号定位。不填也能推荐，但补全「领域」后推荐质量差别很大。</span>
               <b>去设置</b>
             </button>
+
+            <section class="panel manual-topic-card">
+              <div class="panel-head"><div><h2>随手记灵感</h2><p>保存到当前工作区话题池，之后可直接采用为内容草稿</p></div></div>
+              <div class="manual-topic-form">
+                <input v-model="manualTopicForm.topic" maxlength="200" placeholder="写下想法、选题或系列内容" @keyup.enter="addTopic" />
+                <select v-model="manualTopicForm.platform"><option value="WECHAT_MP">公众号</option><option value="XIAOHONGSHU">小红书</option><option value="DOUYIN">抖音</option><option value="WECHAT_CHANNELS">视频号</option></select>
+                <button class="btn-primary" :disabled="studioBusy === 'manual-topic' || !manualTopicForm.topic.trim()" @click="addTopic">{{ studioBusy === 'manual-topic' ? '保存中…' : '加入话题池' }}</button>
+              </div>
+            </section>
 
             <div class="studio-grid">
             <!-- 热点列 -->
@@ -409,14 +454,11 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
           </template>
         </template>
 
-        <!-- ===== 内容管理 ===== -->
-        <PublishCenter v-else-if="activeSection === '内容管理'" mode="content" :initial-topic="publishTopic" @topic-consumed="publishTopic = ''" @dirty-change="contentDirty = $event" />
+        <!-- ===== 内容工作台：创作、管理和发布统一在同一条状态流 ===== -->
+        <PublishCenter v-else-if="activeSection === '内容工作台'" mode="workbench" :initial-topic="publishTopic" @topic-consumed="publishTopic = ''" @dirty-change="contentDirty = $event" />
 
-        <!-- ===== 素材管理 ===== -->
-        <MaterialLibrary v-else-if="activeSection === '素材管理'" />
-
-        <!-- ===== 内容发布 ===== -->
-        <PublishCenter v-else-if="activeSection === '内容发布'" mode="publishing" @dirty-change="contentDirty = $event" />
+        <!-- ===== 素材库 ===== -->
+        <MaterialLibrary v-else-if="activeSection === '素材库'" />
 
       </div>
     </div>
