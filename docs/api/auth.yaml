@@ -99,6 +99,13 @@ paths:
         "200": { description: 已加密保存并返回脱敏配置 }
         "400": { description: 启用时缺少 App ID、App Secret 或回调 Token }
         "401": { description: 未登录 }
+  /api/settings/login/wechat-official/verify:
+    post:
+      summary: 通过微信稳定版令牌接口验证当前公众号凭据与主节点出口 IP 白名单
+      responses:
+        "200": { description: 微信真实接口验证通过并预热共享 access token }
+        "401": { description: 未登录 }
+        "502": { description: 返回精确的 App ID、App Secret、账号权限或出口 IP 白名单诊断 }
   /api/account/email:
     put:
       summary: 为当前账号绑定邮箱并设置或修改密码

@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import {
   fetchWechatOfficialLoginConfig,
   saveWechatOfficialLoginConfig,
+  verifyWechatOfficialLoginConfig,
   type WechatOfficialLoginConfig,
 } from '@/api/system'
 import { toast } from '@/composables/toast'
@@ -12,6 +13,8 @@ const form = reactive({ enabled: false, appId: '', appSecret: '', token: '' })
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
+const verification = ref<'idle' | 'checking' | 'ready' | 'error'>('idle')
+const verificationMessage = ref('')
 
 const dirty = computed(() => !!saved.value && (
   form.enabled !== saved.value.enabled
@@ -32,13 +35,33 @@ function accept(config: WechatOfficialLoginConfig) {
   form.appId = config.appId
   form.appSecret = ''
   form.token = ''
+  verification.value = 'idle'
+  verificationMessage.value = ''
+}
+
+async function verifyConnection() {
+  if (!saved.value?.configured || verification.value === 'checking') return
+  verification.value = 'checking'
+  verificationMessage.value = ''
+  try {
+    const result = await verifyWechatOfficialLoginConfig()
+    verification.value = result.ready ? 'ready' : 'error'
+    verificationMessage.value = result.message
+  } catch (cause) {
+    verification.value = 'error'
+    verificationMessage.value = cause instanceof Error
+      ? cause.message
+      : '微信接口验证失败，请重试'
+  }
 }
 
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    accept(await fetchWechatOfficialLoginConfig())
+    const config = await fetchWechatOfficialLoginConfig()
+    accept(config)
+    if (config.configured) void verifyConnection()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '系统登录配置读取失败，请重试'
   } finally {
@@ -57,7 +80,8 @@ async function save() {
       appSecret: form.appSecret.trim() || undefined,
       token: form.token.trim() || undefined,
     }))
-    toast('系统登录配置已保存并立即生效', 'ri-shield-check-line')
+    toast('系统登录配置已保存，正在验证微信接口', 'ri-shield-check-line')
+    await verifyConnection()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '系统登录配置保存失败，请重试'
   } finally {
@@ -144,13 +168,32 @@ onMounted(load)
         启用前需要完整填写 App ID、App Secret 与消息回调 Token；已有密钥可继续留空。
       </div>
       <div v-if="error" class="feedback error" role="alert">{{ error }}，表单草稿已保留。</div>
+      <div v-if="!dirty && verification === 'checking'" class="feedback checking" role="status">
+        <i class="ri-loader-4-line spin"></i>正在通过微信官方接口验证凭据与服务器出口 IP…
+      </div>
+      <div v-else-if="!dirty && verification === 'ready'" class="feedback success" role="status">
+        <i class="ri-checkbox-circle-fill"></i>{{ verificationMessage }}
+      </div>
+      <div v-else-if="!dirty && verification === 'error'" class="feedback error" role="alert">
+        <i class="ri-error-warning-line"></i>{{ verificationMessage }}
+      </div>
       <footer>
-        <span v-if="saved.configured && !dirty"><i class="ri-checkbox-circle-fill"></i>公众号登录配置完整，登录页可获取真实二维码。</span>
+        <span v-if="saved.configured && !dirty && verification === 'ready'"><i class="ri-checkbox-circle-fill"></i>公众号登录已通过真实接口验证。</span>
+        <span v-else-if="saved.configured && !dirty">字段已保存，需通过微信接口验证后才算可用。</span>
         <span v-else-if="!form.enabled">当前已停用，不影响飞书和邮箱登录。</span>
         <span v-else>保存完整配置后，登录页无需重启即可使用。</span>
-        <button type="submit" :disabled="!dirty || saving">
-          {{ saving ? '保存中…' : error ? '重试保存' : dirty ? '保存登录配置' : '已保存' }}
-        </button>
+        <div class="footer-actions">
+          <button
+            v-if="saved.configured && !dirty"
+            type="button"
+            class="secondary"
+            :disabled="verification === 'checking' || saving"
+            @click="verifyConnection"
+          >{{ verification === 'checking' ? '验证中…' : '重新验证' }}</button>
+          <button type="submit" :disabled="!dirty || saving">
+            {{ saving ? '保存中…' : error ? '重试保存' : dirty ? '保存登录配置' : '已保存' }}
+          </button>
+        </div>
       </footer>
     </form>
   </section>
@@ -172,8 +215,9 @@ onMounted(load)
 .wechat-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #e8f8ee; color: #07c160; font-size: 23px; }
 .toggle { position: relative; width: 42px; height: 24px; padding: 0; border: none; border-radius: 12px; background: var(--wao-line-control); cursor: pointer; transition: background .2s; }.toggle.on { background: #07c160; }.toggle span { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 1px 4px #0003; transition: transform .2s; }.toggle.on span { transform: translateX(18px); }
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 18px; }.fields label { display: grid; gap: 6px; }.fields label:first-child, .fields .wide { grid-column: 1 / -1; }.fields label > span { color: var(--wao-text-2); font-size: 11px; font-weight: 600; }.fields input { width: 100%; height: 38px; padding: 0 11px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-input); color: var(--wao-text); font-size: 12px; }.fields input:focus { border-color: var(--wao-primary); outline: none; }.fields input[readonly] { color: var(--wao-text-weak); }.fields small { color: var(--wao-text-faint); font-size: 10px; }
-.feedback { margin: 0 18px 14px; padding: 10px 12px; border-radius: 8px; font-size: 11px; line-height: 1.5; }.feedback.warning { background: var(--wao-warning-bg); color: var(--wao-warning-strong); }.feedback.error { background: var(--wao-danger-bg); color: var(--wao-danger-strong); }
+.feedback { display: flex; align-items: flex-start; gap: 6px; margin: 0 18px 14px; padding: 10px 12px; border-radius: 8px; font-size: 11px; line-height: 1.5; }.feedback.warning { background: var(--wao-warning-bg); color: var(--wao-warning-strong); }.feedback.error { background: var(--wao-danger-bg); color: var(--wao-danger-strong); }.feedback.checking { background: var(--wao-primary-soft); color: var(--wao-primary-text); }.feedback.success { background: var(--wao-success-bg); color: var(--wao-success-strong); }
 footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 18px; border-top: 1px solid var(--wao-divider); color: var(--wao-text-weak); font-size: 11px; }footer span { display: flex; align-items: center; gap: 5px; }footer span i { color: var(--wao-success); }footer button { height: 34px; padding: 0 15px; border: none; border-radius: 8px; background: var(--wao-primary); color: white; font-size: 12px; font-weight: 600; }footer button:disabled { opacity: .5; cursor: not-allowed; }
+.footer-actions { display: flex; flex: 0 0 auto; gap: 8px; }.footer-actions button.secondary { border: 1px solid var(--wao-line-control); background: var(--wao-bg-sub-2); color: var(--wao-text-2); }
 .spin { animation: spin 1s linear infinite; }@keyframes spin { to { transform: rotate(360deg); } }
-@media (max-width: 680px) { .panel-head { flex-direction: column; }.fields { grid-template-columns: 1fr; }.fields label { grid-column: 1 !important; }.provider-head { grid-template-columns: 40px 1fr auto; padding: 14px; }footer { align-items: stretch; flex-direction: column; }footer button { width: 100%; } }
+@media (max-width: 680px) { .panel-head { flex-direction: column; }.fields { grid-template-columns: 1fr; }.fields label { grid-column: 1 !important; }.provider-head { grid-template-columns: 40px 1fr auto; padding: 14px; }footer { align-items: stretch; flex-direction: column; }.footer-actions { width: 100%; }.footer-actions button { flex: 1; } }
 </style>

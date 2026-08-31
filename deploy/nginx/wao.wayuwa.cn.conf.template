@@ -387,6 +387,27 @@ server {
         add_header X-WAO-API-Route dual-gateway-ai always;
     }
 
+    # 微信公众号令牌受出口 IP 白名单约束；认证、回调和配置验证统一固定到 Linux 主节点，
+    # 避免双节点轮流要求不同白名单。配置读取与保存仍走共享数据库和普通双节点。
+    location ~ ^/api/(?:auth/wechat/official(?:/|$)|settings/login/wechat-official/verify$) {
+        proxy_pass https://wao_ai_gateway;
+        proxy_http_version 1.1;
+        proxy_ssl_verify off;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+        proxy_send_timeout 30s;
+        proxy_next_upstream off;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header X-WAO-API-Route wechat-official-master always;
+    }
+
     # 只有会读取集中凭据或访问供应商的接口固定到 Linux VPN 出口。AI 入队、目标创建、状态轮询、
     # Runner 心跳和结果回传都是共享数据库操作，继续走下方双节点 upstream，避免主节点发布时整条链路 502。
     # 天人解读是长连接专用链路，按 ADR-047 保持 Linux 主节点和 330 秒超时。

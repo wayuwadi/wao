@@ -120,6 +120,15 @@ export const saveWechatOfficialLoginConfig = (payload: {
   token?: string
 }) => put<WechatOfficialLoginConfig>('/api/settings/login/wechat-official', payload)
 
+export interface WechatOfficialLoginVerification {
+  ready: boolean
+  message: string
+}
+
+/** 使用微信官方稳定版令牌接口验证凭据与当前服务器出口 IP。 */
+export const verifyWechatOfficialLoginConfig = () =>
+  post<WechatOfficialLoginVerification>('/api/settings/login/wechat-official/verify')
+
 /** 文件与图床当前真实生效的上传限制和公开下载校验策略。 */
 export interface FileSettings {
   fileMaxMb: number
