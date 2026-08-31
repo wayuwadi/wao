@@ -56,9 +56,10 @@ class FeishuQuickCollectServiceTest {
     private final SharedChatFeishuBridge sharedChat = mock(SharedChatFeishuBridge.class);
     private final FeishuQuickCollectAiRunService reactionAiRuns = mock(FeishuQuickCollectAiRunService.class);
     private final FeishuQuickCollectReactionPolicy reactionPolicy = new FeishuQuickCollectReactionPolicy(settings);
+    private final FeishuQuickCollectRecallService recalls = mock(FeishuQuickCollectRecallService.class);
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
             settings, feishu, tasks, projects, accounts, identities, events, images, new ObjectMapper(), feedback,
-            sharedChat, reactionAiRuns, reactionPolicy);
+            sharedChat, reactionAiRuns, reactionPolicy, recalls);
 
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);
@@ -174,6 +175,25 @@ class FeishuQuickCollectServiceTest {
 
         verify(tasks).createFromChat(eq("p1"), eq("做一个群里 @ 机器人就能建任务的功能"),
                 eq("做一个群里 @ 机器人就能建任务的功能"), eq("wd"), eq(FeishuQuickCollectService.SOURCE_TAG));
+    }
+
+    @Test
+    void recalledMessageDeletesItsQuickCaptureEvenAfterCollectorWasDisabled() {
+        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_1");
+
+        service.handleEvent(recalled("ev-recall", "om_source", "oc_1"));
+
+        verify(recalls).recall("ev-recall", "om_source", "oc_1");
+        verify(tasks, never()).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void recalledMessageFromAnotherChatCannotDeleteATask() {
+        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_1");
+
+        service.handleEvent(recalled("ev-recall-other", "om_source", "oc_other"));
+
+        verify(recalls, never()).recall(any(), any(), any());
     }
 
     @Test
@@ -325,6 +345,17 @@ class FeishuQuickCollectServiceTest {
         });
         when(events.selectById(any())).thenAnswer(invocation -> stored.get());
         when(events.claimChangedMessage(any(), any(), any(LocalDateTime.class))).thenReturn(1);
+        when(events.finishUnlessRecalled(any(), any(), any(), any(), any(), any(), any(LocalDateTime.class)))
+                .thenAnswer(invocation -> {
+                    FeishuQuickCollectEventEntity event = stored.get();
+                    event.setStatus(invocation.getArgument(1));
+                    event.setCaptureKind(invocation.getArgument(2));
+                    String targetId = invocation.getArgument(3);
+                    if (targetId != null) event.setTargetId(targetId);
+                    String fingerprint = invocation.getArgument(4);
+                    if (fingerprint != null) event.setSourceFingerprint(fingerprint);
+                    return 1;
+                });
         when(tasks.updateFromChat(any(), any(), any(), any())).thenReturn(task("t9", "完善后的方案"));
 
         service.collectPolled("oc_1", polled("om_edit", "记录任务：先写方案"));
@@ -334,6 +365,25 @@ class FeishuQuickCollectServiceTest {
                 FeishuQuickCollectService.SOURCE_TAG);
         verify(tasks).updateFromChat("t9", "完善后的方案", "完善后的方案", "wd");
         verify(tasks, org.mockito.Mockito.times(1)).createFromChat(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void recallThatWinsWhileTaskIsBeingCreatedDeletesTheLateTask() {
+        enabled();
+        FeishuQuickCollectEventEntity recalled = new FeishuQuickCollectEventEntity();
+        recalled.setEventKey("message:om_ev-race");
+        recalled.setStatus("RECALLING");
+        when(events.selectById("message:om_ev-race")).thenReturn(recalled);
+        when(events.finishUnlessRecalled(any(), any(), any(), any(), any(), any(), any(LocalDateTime.class)))
+                .thenReturn(0);
+
+        service.handleEvent(message("ev-race", "text",
+                "{\\\"text\\\":\\\"@_user_1 记录任务：撤回竞态\\\"}"));
+
+        verify(tasks).deleteFromChat("t9");
+        verify(events).attachRecalledTarget(eq("message:om_ev-race"), eq("t9"), any(),
+                any(LocalDateTime.class));
+        verify(events).completeRecall(eq("message:om_ev-race"), any(LocalDateTime.class));
     }
 
     @Test
@@ -478,6 +528,13 @@ class FeishuQuickCollectServiceTest {
                 + "\"user_id\":{\"open_id\":\"ou_sender\"},"
                 + "\"reaction_type\":{\"emoji_type\":\"StatusInFlight\"},"
                 + "\"action_time\":\"1787900000000\"}}";
+    }
+
+    private static String recalled(String eventId, String messageId, String chatId) {
+        return "{\"schema\":\"2.0\",\"header\":{\"event_id\":\"" + eventId
+                + "\",\"event_type\":\"im.message.recalled_v1\"},\"event\":{"
+                + "\"message_id\":\"" + messageId + "\",\"chat_id\":\"" + chatId
+                + "\",\"recall_type\":\"message_owner\"}}";
     }
 
     /** 按飞书的规则加密：Base64(IV + AES-256-CBC(SHA256(key)))。 */

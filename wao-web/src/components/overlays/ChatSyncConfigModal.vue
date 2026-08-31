@@ -308,6 +308,7 @@ async function runHistory() {
           在群里 @ 机器人说「记录任务：…」、「记录想法：…」或直接说内容，会记入发言人自己的未排期任务列表。
           每个人需要先用同一飞书账号登录过 WAO；普通群聊不会被收集。
           开启后 WAO 会用上方已授权的应用凭据主动读取新消息，通常 15 秒内完成；下方事件订阅可作为更低延迟的可选入口。
+          撤回这条原消息时，对应任务也会自动删除。
           手机上直接用飞书的语音输入说完就发即可；发语音条我认不出来，会回一句提示让你转文字。
         </div>
         <div class="event-url">
@@ -317,8 +318,8 @@ async function runHistory() {
         <div class="event-requirement">
           <i class="ri-information-line"></i>
           <span>
-            WAO 会用已授权的应用主动读取表情；订阅 <b>im.message.reaction.created_v1</b> 并配置
-            Verification Token 或 Encrypt Key 可把人工派工延迟进一步降到事件级。
+            WAO 会主动读取表情和撤回状态；订阅 <b>im.message.reaction.created_v1</b> 与
+            <b>im.message.recalled_v1</b> 并配置 Verification Token 或 Encrypt Key，可把人工派工和任务删除延迟进一步降到事件级。
           </span>
         </div>
         <div class="two">

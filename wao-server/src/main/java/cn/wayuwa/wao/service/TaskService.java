@@ -545,6 +545,18 @@ public class TaskService {
         taskMapper.deleteById(id);
     }
 
+    /**
+     * 删除由飞书原消息创建的任务；调用方必须已经用持久消息关系确认来源。
+     *
+     * <p>任务可能已被成员手动删除，因此此入口保持幂等，不把“不存在”当成撤回失败。
+     *
+     * @param id 快速收集事件记录的任务 id
+     * @return 本次是否实际删除了一条任务
+     */
+    public boolean deleteFromChat(String id) {
+        return StringUtils.hasText(id) && taskMapper.deleteById(id) > 0;
+    }
+
     /** 评论定位：优先按 id，老评论（没有 id）回落到下标。 */
     private int indexOfComment(List<CommentDto> comments, String commentId) {
         for (int i = 0; i < comments.size(); i++) {

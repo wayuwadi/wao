@@ -15,8 +15,8 @@ import org.springframework.util.StringUtils;
  * 飞书个人快速收集的主动轮询入口。
  *
  * <p>现有群聊归档已具备读取目标群消息的真实应用权限。这里每 15 秒只读近两分钟，
- * 并只交给收集服务“用户发送、未撤回、精确 @ 当前应用机器人”的消息。Linux / Windows
- * 同时扫到也由 message_id 唯一键保证只创建一次。回调链路仍保留，两种入口共用去重。
+ * 并只交给收集服务“用户发送、精确 @ 当前应用机器人”的消息；已撤回消息则按 message_id 删除
+ * 原任务。Linux / Windows 同时扫到也由持久事件状态保证幂等。回调链路仍保留，两种入口共用去重。
  */
 @Component
 public class FeishuQuickCollectPollingScheduler {
@@ -69,7 +69,14 @@ public class FeishuQuickCollectPollingScheduler {
                 readyLogged = true;
             }
             for (FeishuMessage message : messages) {
-                if (eligible(message, currentBot)) {
+                if (message != null && message.deleted()) {
+                    try {
+                        quickCollect.recallPolled(chatId, message.messageId());
+                    } catch (RuntimeException ex) {
+                        log.warn("飞书轮询撤回同步失败：message={} reason={}",
+                                message.messageId(), ex.getMessage());
+                    }
+                } else if (eligible(message, currentBot)) {
                     try {
                         quickCollect.collectPolled(chatId, message);
                         quickCollect.triggerPolledReaction(token, message.messageId());
@@ -113,7 +120,14 @@ public class FeishuQuickCollectPollingScheduler {
                 botOpenId = currentBot;
             }
             for (FeishuMessage message : feishu.listMessages(token, chatId, end - EDIT_LOOKBACK_SECONDS, end)) {
-                if (eligible(message, currentBot)) {
+                if (message != null && message.deleted()) {
+                    try {
+                        quickCollect.recallPolled(chatId, message.messageId());
+                    } catch (RuntimeException ex) {
+                        log.warn("飞书撤回消息回看失败：message={} reason={}",
+                                message.messageId(), ex.getMessage());
+                    }
+                } else if (eligible(message, currentBot)) {
                     try {
                         quickCollect.collectPolled(chatId, message);
                         quickCollect.triggerPolledReaction(token, message.messageId());

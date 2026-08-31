@@ -48,6 +48,7 @@ class FeishuQuickCollectPollingSchedulerTest {
 
         verify(quickCollect).collectPolled("oc_chat", eligible);
         verify(quickCollect).triggerPolledReaction("token", "om_yes");
+        verify(quickCollect).recallPolled("oc_chat", "om_deleted");
         verify(quickCollect, org.mockito.Mockito.times(1)).collectPolled(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
@@ -74,6 +75,22 @@ class FeishuQuickCollectPollingSchedulerTest {
 
         verify(quickCollect).collectPolled("oc_chat", edited);
         verify(quickCollect).triggerPolledReaction("token", "om_edited");
+    }
+
+    @Test
+    void editSweepAlsoConvergesARecalledMessage() {
+        enabled();
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
+        when(feishu.botOpenId("token")).thenReturn("ou_bot");
+        when(feishu.listMessages(org.mockito.ArgumentMatchers.eq("token"),
+                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong()))
+                .thenReturn(List.of(message("om_recalled", "user", true, "ou_bot")));
+
+        scheduler.pollEdits();
+
+        verify(quickCollect).recallPolled("oc_chat", "om_recalled");
+        verify(quickCollect, never()).collectPolled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
     }
 
     private void enabled() {

@@ -61,6 +61,7 @@ public class FeishuQuickCollectService {
     private static final int TITLE_LIMIT = 40;
     /** 纯图片消息没有可诚实提取的文字时使用的稳定标题。 */
     private static final String IMAGE_ONLY_TITLE = "图片待办";
+    private static final String MESSAGE_RECALLED_EVENT = "im.message.recalled_v1";
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private static final String PUBLIC_BASE_URL = "https://wao.wayuwa.cn";
 
@@ -79,11 +80,13 @@ public class FeishuQuickCollectService {
     private final SharedChatFeishuBridge sharedChat;
     private final FeishuQuickCollectAiRunService reactionAiRuns;
     private final FeishuQuickCollectReactionPolicy reactionPolicy;
+    private final FeishuQuickCollectRecallService recalls;
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
             TaskService tasks, ProjectService projects, AccountMapper accounts,
             AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ImageService images,
             ObjectMapper json, NotificationFeedbackService feedback, SharedChatFeishuBridge sharedChat,
-            FeishuQuickCollectAiRunService reactionAiRuns, FeishuQuickCollectReactionPolicy reactionPolicy) {
+            FeishuQuickCollectAiRunService reactionAiRuns, FeishuQuickCollectReactionPolicy reactionPolicy,
+            FeishuQuickCollectRecallService recalls) {
         this.settings = settings;
         this.feishu = feishu;
         this.tasks = tasks;
@@ -97,6 +100,7 @@ public class FeishuQuickCollectService {
         this.sharedChat = sharedChat;
         this.reactionAiRuns = reactionAiRuns;
         this.reactionPolicy = reactionPolicy;
+        this.recalls = recalls;
     }
 
     /** 当前配置（Token / Encrypt Key 只回脱敏形态）。 */
@@ -161,8 +165,19 @@ public class FeishuQuickCollectService {
             return Map.of("challenge", body.path("challenge").asText(""));
         }
         requireToken(body.path("header").path("token").asText(body.path("token").asText("")));
-        if ("card.action.trigger".equals(body.path("header").path("event_type").asText(""))) {
+        String eventType = body.path("header").path("event_type").asText("");
+        if ("card.action.trigger".equals(eventType)) {
             feedback.collect(body.path("event"));
+            return Map.of();
+        }
+        if (MESSAGE_RECALLED_EVENT.equals(eventType)) {
+            try {
+                recall(body.path("event"), body.path("header").path("event_id").asText(""));
+            } catch (RuntimeException ex) {
+                // 回调仍按既有协议返回 200；一分钟回看会用 deleted=true 的真实消息状态再次收敛。
+                log.warn("飞书原消息撤回同步失败：{}", ex.getMessage());
+            }
+            sharedChat.handleEvent(body);
             return Map.of();
         }
         boolean quickCollectEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
@@ -187,7 +202,7 @@ public class FeishuQuickCollectService {
         if (!quickCollectEnabled) {
             return Map.of();
         }
-        if (!"im.message.receive_v1".equals(body.path("header").path("event_type").asText(""))) {
+        if (!"im.message.receive_v1".equals(eventType)) {
             return Map.of();
         }
         try {
@@ -223,6 +238,16 @@ public class FeishuQuickCollectService {
         source.mentions().forEach(mention -> mentions.addObject()
                 .put("key", mention.key()).put("name", mention.name()));
         collect(event, "");
+    }
+
+    /**
+     * 用主动轮询返回的 {@code deleted=true} 事实删除原消息创建的任务。
+     *
+     * @param chatId 当前已配置的飞书群 id
+     * @param messageId 已撤回的飞书消息 id
+     */
+    public void recallPolled(String chatId, String messageId) {
+        recall(chatId, messageId, "");
     }
 
     /**
@@ -368,21 +393,31 @@ public class FeishuQuickCollectService {
     }
 
     private void finish(String key, String status, String kind, String targetId, String fingerprint, String error) {
-        FeishuQuickCollectEventEntity event = events.selectById(key);
-        if (event == null) {
+        LocalDateTime updatedAt = LocalDateTime.now(SHANGHAI);
+        int updated = events.finishUnlessRecalled(key, status, kind, targetId, fingerprint, error, updatedAt);
+        if (updated != 0 || !StringUtils.hasText(targetId)) {
             return;
         }
-        event.setStatus(status);
-        event.setCaptureKind(kind);
-        if (StringUtils.hasText(targetId)) {
-            event.setTargetId(targetId);
+        FeishuQuickCollectEventEntity latest = events.selectById(key);
+        if (latest != null && ("RECALLING".equals(latest.getStatus())
+                || "RECALLED".equals(latest.getStatus()))) {
+            events.attachRecalledTarget(key, targetId, fingerprint, updatedAt);
+            tasks.deleteFromChat(targetId);
+            events.completeRecall(key, LocalDateTime.now(SHANGHAI));
         }
-        if (StringUtils.hasText(fingerprint)) {
-            event.setSourceFingerprint(fingerprint);
+    }
+
+    /** 只接受当前已配置群里的撤回，避免免登录事件入口扩大删除权限。 */
+    private void recall(JsonNode event, String eventId) {
+        recall(event.path("chat_id").asText(""), event.path("message_id").asText(""), eventId);
+    }
+
+    private void recall(String chatId, String messageId, String eventId) {
+        String configured = settings.get(SettingService.CHAT_SYNC_CHAT_ID, "");
+        if (!StringUtils.hasText(configured) || !configured.equals(chatId)) {
+            return;
         }
-        event.setErrorMessage(error);
-        event.setUpdatedAt(LocalDateTime.now(SHANGHAI));
-        events.updateById(event);
+        recalls.recall(eventId, messageId, chatId);
     }
 
     private String eventKey(String eventId, String messageId, JsonNode event) {

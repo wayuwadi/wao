@@ -64,6 +64,8 @@ describe('飞书快速收集表情工作流设置', () => {
     expect(wrapper.text()).toContain('人工派工 / AI Run 中')
     expect(wrapper.text()).toContain('完成待验收')
     expect(wrapper.text()).toContain('im.message.reaction.created_v1')
+    expect(wrapper.text()).toContain('im.message.recalled_v1')
+    expect(wrapper.text()).toContain('对应任务也会自动删除')
     expect(wrapper.text()).toContain('主动读取表情')
     expect(wrapper.findAll('.reaction-flow select')
       .map((select) => (select.element as HTMLSelectElement).value))
