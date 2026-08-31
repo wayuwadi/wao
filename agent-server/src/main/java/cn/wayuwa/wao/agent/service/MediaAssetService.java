@@ -96,6 +96,18 @@ public class MediaAssetService {
         return entity;
     }
 
+    /** 按当前账号工作区读取可预览素材，且只允许从实际持有文件的节点返回。 */
+    public MediaAssetEntity requireLocal(String accountId, String mediaAssetId) {
+        MediaAssetEntity entity = require(accounts.workspaceId(accountId), mediaAssetId);
+        if (!node.resolved().equals(entity.getNodeId())) {
+            throw new BadRequestException("素材保存在其他处理节点，当前节点无法预览，请重新上传后替换");
+        }
+        if (!Files.isRegularFile(Paths.get(entity.getStoragePath()))) {
+            throw new BadRequestException("素材文件不存在，请重新上传后替换");
+        }
+        return entity;
+    }
+
     /** 按标识读取素材；未传标识时返回 {@code null}。 */
     public MediaAssetEntity find(String mediaAssetId) {
         return mediaAssetId == null ? null : mediaMapper.selectById(mediaAssetId);

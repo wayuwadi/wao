@@ -31,6 +31,9 @@ export const updatePublishTask = (taskId: string, payload: {
 export const submitPublishTask = (taskId: string) =>
   unwrap<PublishTask>(http.post(`/api/agent/publish/tasks/${taskId}/submit`))
 
+export const markPublishTaskPublished = (taskId: string) =>
+  unwrap<PublishTask>(http.post(`/api/agent/publish/tasks/${taskId}/mark-published`))
+
 /** 视频可能上百 MB，这里必须绕开 http 实例默认的 10s 超时。 */
 export const uploadMedia = (file: File) => {
   const form = new FormData()

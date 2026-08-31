@@ -200,6 +200,19 @@ class DeploymentConfigTest {
                 .contains("proxy_next_upstream off");
     }
 
+    @Test
+    void articleMediaUploadAndPreviewStayOnOneLinuxMediaNode() throws IOException {
+        String nginx = read("deploy/nginx/wao.wayuwa.cn.conf.template");
+        String block = nginx.substring(nginx.indexOf("location ^~ /api/agent/publish/media"));
+        block = block.substring(0, block.indexOf("\n    }"));
+
+        assertThat(block)
+                .contains("proxy_pass https://wao_ai_gateway")
+                .contains("proxy_next_upstream off")
+                .contains("X-WAO-API-Route linux-master-agent-media")
+                .contains("proxy_request_buffering off");
+    }
+
     private static List<String> agentTables(String sql) {
         var matcher = java.util.regex.Pattern
                 .compile("CREATE TABLE (?:IF NOT EXISTS )?(agent_\\w+)", java.util.regex.Pattern.CASE_INSENSITIVE)

@@ -11,8 +11,8 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/api': { target: 'http://localhost:8081', changeOrigin: true },
-      '/actuator': { target: 'http://localhost:8081', changeOrigin: true },
+      '/api': { target: process.env.AGENT_API_TARGET ?? 'http://localhost:8081', changeOrigin: true },
+      '/actuator': { target: process.env.AGENT_API_TARGET ?? 'http://localhost:8081', changeOrigin: true },
     },
   },
 })

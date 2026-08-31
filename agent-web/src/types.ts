@@ -76,6 +76,11 @@ export interface WorkspaceProfile {
   audience?: string
   tone?: string
   avoid?: string
+  contentTopics?: string
+  lengthStructure?: string
+  updateFrequency?: string
+  primaryPlatforms?: string
+  imageStyle?: string
   configured: boolean
 }
 

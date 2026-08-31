@@ -388,6 +388,10 @@
 .account-profile { position: sticky; top: 0; }
 .account-platforms { min-width: 0; }
 .profile-save { width: 100%; min-height: 36px; margin-top: 5px; justify-content: center; }
+.profile-initialize { margin: 12px 0; padding: 10px; display: grid; gap: 8px; border-radius: 9px; background: var(--wao-bg-sub); }
+.profile-initialize textarea { width: 100%; padding: 8px 10px; resize: vertical; border: 1px solid var(--wao-line-control); border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text); font: inherit; line-height: 1.5; }
+.profile-initialize button { justify-content: center; }
+.profile-initialize small { color: var(--wao-text-weak); font-size: 9.5px; line-height: 1.5; }
 .section-heading.compact { margin: 0 0 10px; }
 .studio-load-state {
   min-height: 220px; padding: 28px; display: flex; align-items: center; justify-content: center; gap: 12px;
@@ -409,6 +413,12 @@
   cursor: pointer; font-size: 12px;
 }
 .creation-tabs button.active { background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: 600; }
+.manual-topic-card { margin-bottom: 14px; }
+.manual-topic-form { padding: 12px; display: grid; grid-template-columns: minmax(220px, 1fr) 130px auto; gap: 8px; }
+.manual-topic-form input, .manual-topic-form select {
+  min-height: 34px; padding: 0 10px; border: 1px solid var(--wao-line-control);
+  border-radius: var(--wao-radius-control); background: var(--wao-bg-card); color: var(--wao-text);
+}
 .source-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .source-chip {
   display: inline-flex; align-items: center; gap: 4px;
@@ -571,4 +581,5 @@ a.suggestion-origin:hover { color: var(--wao-primary); }
   .stats-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .creation-tabs { width: 100%; }
   .creation-tabs button { flex: 1; justify-content: center; }
+  .manual-topic-form { grid-template-columns: 1fr; }
 }

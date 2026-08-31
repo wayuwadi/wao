@@ -13,6 +13,11 @@ public class WorkspaceProfileEntity {
     private String audience;
     private String tone;
     private String avoid;
+    private String contentTopics;
+    private String lengthStructure;
+    private String updateFrequency;
+    private String primaryPlatforms;
+    private String imageStyle;
     private LocalDateTime updatedAt;
 
     public String getId() { return id; }
@@ -27,6 +32,16 @@ public class WorkspaceProfileEntity {
     public void setTone(String tone) { this.tone = tone; }
     public String getAvoid() { return avoid; }
     public void setAvoid(String avoid) { this.avoid = avoid; }
+    public String getContentTopics() { return contentTopics; }
+    public void setContentTopics(String contentTopics) { this.contentTopics = contentTopics; }
+    public String getLengthStructure() { return lengthStructure; }
+    public void setLengthStructure(String lengthStructure) { this.lengthStructure = lengthStructure; }
+    public String getUpdateFrequency() { return updateFrequency; }
+    public void setUpdateFrequency(String updateFrequency) { this.updateFrequency = updateFrequency; }
+    public String getPrimaryPlatforms() { return primaryPlatforms; }
+    public void setPrimaryPlatforms(String primaryPlatforms) { this.primaryPlatforms = primaryPlatforms; }
+    public String getImageStyle() { return imageStyle; }
+    public void setImageStyle(String imageStyle) { this.imageStyle = imageStyle; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   createPublishTask, getAuthorizeUrl, getPublishCenter, submitPublishTask,
-  listMedia, unbindAccount, updatePublishTask, uploadMedia,
+  listMedia, markPublishTaskPublished, unbindAccount, updatePublishTask, uploadMedia,
 } from '@/api/publish'
 import { createKnowledgeArticle, listKnowledgeBases } from '@/api/knowledge'
 import { articleBlocks, articleDocument, articleFragment } from '@/articleExport'
@@ -12,7 +12,7 @@ import {
 import type { MediaAsset, PlatformSummary, PublishCenter, PublishTask } from '@/types'
 import type { KnowledgeBaseOption } from '@/api/knowledge'
 
-type CenterMode = 'full' | 'accounts' | 'content' | 'publishing'
+type CenterMode = 'full' | 'accounts' | 'content' | 'publishing' | 'workbench'
 
 const props = withDefaults(defineProps<{ initialTopic?: string; mode?: CenterMode }>(), { mode: 'full' })
 const emit = defineEmits<{ 'topic-consumed': []; 'dirty-change': [dirty: boolean] }>()
@@ -37,13 +37,16 @@ let pollTimer: number | undefined
 
 const selected = computed(() => center.value?.tasks.find((task) => task.id === selectedId.value) ?? null)
 const selectedPlatform = computed(() => platform(selected.value?.platform))
+const selectedMedia = computed(() => mediaAssets.value.find((item) => item.id === editForm.mediaAssetId))
 const editable = computed(() => !!selected.value && isPublishEditable(selected.value.status))
 const canPublish = computed(() => !!selected.value && !!selectedPlatform.value
   && canSubmitPublish(selected.value.status, selectedPlatform.value.publishSupported))
+const canMarkPublished = computed(() => !!selected.value && !selectedPlatform.value?.publishSupported
+  && ['WAITING_REVIEW', 'FAILED'].includes(selected.value.status) && !dirty.value)
 const showAccounts = computed(() => props.mode === 'full' || props.mode === 'accounts')
-const showCreate = computed(() => props.mode === 'full' || props.mode === 'content')
-const showWorkspace = computed(() => props.mode === 'full' || props.mode === 'content' || props.mode === 'publishing')
-const showPublishControls = computed(() => props.mode === 'full' || props.mode === 'publishing')
+const showCreate = computed(() => props.mode === 'full' || props.mode === 'content' || props.mode === 'workbench')
+const showWorkspace = computed(() => props.mode !== 'accounts')
+const showPublishControls = computed(() => props.mode === 'full' || props.mode === 'publishing' || props.mode === 'workbench')
 const canExport = computed(() => !!selected.value && !dirty.value
   && !!(editForm.title.trim() || editForm.content.trim()))
 const targetKb = computed(() => knowledgeBases.value.find((item) => item.id === targetKbId.value))
@@ -51,17 +54,26 @@ const exportInput = computed(() => ({
   title: editForm.title.trim() || selected.value?.topic || '未命名图文',
   content: editForm.content,
   tags: editForm.tags.split(/[\s,，#]+/).filter(Boolean),
-  coverUrl: selected.value?.topic === '我的WAO首篇图文'
-    ? new URL('/agent/article/my-wao-cover.png', window.location.origin).href
-    : undefined,
+  coverUrl: selectedMedia.value?.kind === 'IMAGE'
+    ? new URL(`/api/agent/publish/media/${selectedMedia.value.id}/content`, window.location.origin).href
+    : selected.value?.topic === '我的WAO首篇图文'
+      ? new URL('/agent/article/my-wao-cover.png', window.location.origin).href
+      : undefined,
 }))
 const exportHtml = computed(() => articleDocument(exportInput.value))
 const loadingLabel = computed(() => ({
   accounts: '正在读取真实账号状态…',
   content: '正在读取真实内容…',
   publishing: '正在读取真实发布状态…',
+  workbench: '正在读取内容、素材与发布状态…',
   full: '正在读取真实发布状态…',
 })[props.mode])
+
+function formatDate(value?: string) {
+  if (!value) return '尚未发布'
+  return new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    .format(new Date(value))
+}
 
 watch(() => props.initialTopic, (topic) => {
   if (topic) createForm.topic = topic
@@ -275,6 +287,23 @@ async function submitTask() {
   }
 }
 
+async function markPublished() {
+  const task = selected.value
+  if (!task || !canMarkPublished.value) return
+  if (!window.confirm(`确认「${task.title || task.topic}」已经在${task.platformLabel}完成站外发布吗？`)) return
+  busy.value = 'mark-published'
+  error.value = ''
+  try {
+    await markPublishTaskPublished(task.id)
+    await refresh(true)
+    message.value = '已记录为已发布；WAO 没有伪造平台回执或数据'
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '状态更新失败'
+  } finally {
+    busy.value = ''
+  }
+}
+
 async function authorize(item: PlatformSummary) {
   busy.value = `auth-${item.platform}`
   error.value = ''
@@ -353,37 +382,45 @@ onBeforeUnmount(() => {
 
       <div v-if="showWorkspace" class="workspace">
         <aside class="task-list">
-          <div class="panel-head"><strong>{{ mode === 'publishing' ? '待发布与历史内容' : '最近内容' }}</strong><button @click="refresh()"><i class="ri-refresh-line"></i></button></div>
+          <div class="panel-head"><strong>{{ mode === 'workbench' ? '全部内容' : mode === 'publishing' ? '待发布与历史内容' : '最近内容' }}</strong><button aria-label="刷新内容" @click="refresh()"><i class="ri-refresh-line"></i></button></div>
           <button v-for="task in center.tasks" :key="task.id" class="task" :class="{ active: selectedId === task.id }" @click="selectTask(task)">
-            <span><strong>{{ task.title || task.topic }}</strong><small>{{ task.platformLabel }} · {{ publishStatusLabel(task.status) }}</small></span><em>{{ task.progress }}%</em>
+            <span><strong>{{ task.title || task.topic }}</strong><small>{{ task.platformLabel }} · {{ publishStatusLabel(task.status) }}</small><small>更新 {{ formatDate(task.updatedAt) }}</small></span><em>{{ task.progress }}%</em>
           </button>
-          <div v-if="!center.tasks.length" class="empty">{{ mode === 'publishing' ? '还没有可发布的内容，请先到内容管理创建。' : '还没有内容，从上方创建第一条。' }}</div>
+          <div v-if="!center.tasks.length" class="empty">还没有内容，从上方创建第一条。</div>
         </aside>
 
-        <main v-if="selected" class="editor">
-          <div class="editor-head">
-            <div><strong>{{ selected.platformLabel }}{{ mode === 'publishing' ? '发布稿' : '内容稿' }}</strong><span :class="`status ${selected.status.toLowerCase()}`">{{ publishStatusLabel(selected.status) }}</span></div>
-            <small>v{{ selected.version }} · {{ dirty ? '有未保存修改' : '已与服务端同步' }}</small>
-          </div>
-          <div v-if="selected.errorMessage" class="task-error">{{ selected.errorMessage }}</div>
-          <label>标题<input v-model="editForm.title" maxlength="200" :disabled="!editable" @input="markDirty" /></label>
-          <label>正文<textarea v-model="editForm.content" rows="10" :disabled="!editable" @input="markDirty"></textarea></label>
-          <label>标签<input v-model="editForm.tags" placeholder="用空格分隔" :disabled="!editable" @input="markDirty" /></label>
-          <div class="editor-grid">
-            <label v-if="showPublishControls">发布账号<select v-model="editForm.platformAccountId" :disabled="!editable" @change="markDirty"><option value="">暂不选择</option><option v-for="account in selectedPlatform?.accounts" :key="account.id" :value="account.id">{{ account.displayName }} · {{ account.status }}</option></select></label>
-            <label>素材库<select v-model="editForm.mediaAssetId" :disabled="!editable" @change="markDirty"><option value="">暂不选择</option><option v-for="asset in mediaAssets" :key="asset.id" :value="asset.id">{{ asset.originalName }} · {{ formatBytes(asset.byteSize) }}</option></select></label>
-            <label>上传新素材<span class="file"><input type="file" :disabled="!editable || busy === 'upload'" @change="upload" />{{ busy === 'upload' ? '上传中…' : '选择图片或视频' }}</span></label>
-          </div>
-          <div class="actions">
-            <button class="secondary" :disabled="!editable || !dirty || busy === 'save'" @click="saveTask">{{ busy === 'save' ? '保存中…' : '保存审核稿' }}</button>
-            <button class="secondary" :disabled="!canExport" @click="openHtmlExport"><i class="ri-code-s-slash-line"></i> 预览 / 导出 HTML</button>
-            <button class="secondary" :disabled="!canExport" @click="openKnowledgeExport"><i class="ri-book-2-line"></i> 存入知识库</button>
-            <template v-if="showPublishControls">
-              <button v-if="selectedPlatform?.publishSupported" :disabled="!canPublish || dirty || busy === 'submit'" @click="submitTask">{{ busy === 'submit' ? '提交中…' : `确认发布到${selected.platformLabel}` }}</button>
-              <span v-else>{{ selectedPlatform?.note }}</span>
-            </template>
-          </div>
-        </main>
+        <div v-if="selected" class="draft-workspace">
+          <main class="editor">
+            <div class="editor-head">
+              <div><strong>{{ selected.platformLabel }}内容稿</strong><span :class="`status ${selected.status.toLowerCase()}`">{{ publishStatusLabel(selected.status) }}</span></div>
+              <small>v{{ selected.version }} · {{ dirty ? '有未保存修改' : '已与服务端同步' }}</small>
+            </div>
+            <div class="content-meta"><span>目标账号：{{ selected.platformAccountName || '未选择' }}</span><span>发布：{{ formatDate(selected.publishedAt) }}</span></div>
+            <div v-if="selected.errorMessage" class="task-error">{{ selected.errorMessage }}</div>
+            <label>标题<input v-model="editForm.title" maxlength="200" :disabled="!editable" @input="markDirty" /></label>
+            <label class="body-field">正文<textarea v-model="editForm.content" rows="18" :disabled="!editable" @input="markDirty"></textarea></label>
+            <label>标签<input v-model="editForm.tags" placeholder="用空格分隔" :disabled="!editable" @input="markDirty" /></label>
+            <div class="editor-grid">
+              <label v-if="showPublishControls">发布账号<select v-model="editForm.platformAccountId" :disabled="!editable" @change="markDirty"><option value="">暂不选择</option><option v-for="account in selectedPlatform?.accounts" :key="account.id" :value="account.id">{{ account.displayName }} · {{ account.status }}</option></select></label>
+              <label>封面 / 发布素材<select v-model="editForm.mediaAssetId" :disabled="!editable" @change="markDirty"><option value="">暂不选择</option><option v-for="asset in mediaAssets" :key="asset.id" :value="asset.id">{{ asset.originalName }} · {{ formatBytes(asset.byteSize) }}</option></select></label>
+              <label>上传或替换素材<span class="file"><input type="file" accept="image/*,video/*" :disabled="!editable || busy === 'upload'" @change="upload" />{{ busy === 'upload' ? '上传中…' : '选择图片或视频' }}</span></label>
+            </div>
+            <div class="actions">
+              <button class="secondary" :disabled="!editable || !dirty || busy === 'save'" @click="saveTask">{{ busy === 'save' ? '保存中…' : '保存审核稿' }}</button>
+              <button class="secondary" :disabled="!canExport" @click="openHtmlExport"><i class="ri-code-s-slash-line"></i> 导出 HTML</button>
+              <button class="secondary" :disabled="!canExport" @click="openKnowledgeExport"><i class="ri-book-2-line"></i> 存入知识库</button>
+              <template v-if="showPublishControls">
+                <button v-if="selectedPlatform?.publishSupported" :disabled="!canPublish || dirty || busy === 'submit'" @click="submitTask">{{ busy === 'submit' ? '提交中…' : `确认发布到${selected.platformLabel}` }}</button>
+                <template v-else><span>{{ selectedPlatform?.note }}</span><button :disabled="!canMarkPublished || busy === 'mark-published'" @click="markPublished">{{ busy === 'mark-published' ? '记录中…' : '我已在站外发布' }}</button></template>
+              </template>
+            </div>
+          </main>
+          <section class="live-preview" aria-label="实时发布预览">
+            <header><div><strong>实时预览</strong><small>{{ selected.platformLabel }}最终排版 · 输入后立即同步</small></div><span :class="{ dirty }">{{ dirty ? '预览含未保存修改' : '已保存版本' }}</span></header>
+            <iframe :srcdoc="exportHtml" title="实时图文排版预览" sandbox=""></iframe>
+            <p v-if="selectedMedia && selectedMedia.kind !== 'IMAGE'" class="preview-media-note"><i class="ri-movie-line"></i>{{ selectedMedia.originalName }} 是发布视频，不嵌入图文预览。</p>
+          </section>
+        </div>
         <main v-else class="editor empty">选择一条任务查看成稿；创建后也会自动打开。</main>
       </div>
     </template>
@@ -418,4 +455,34 @@ onBeforeUnmount(() => {
 .publish-center{display:grid;gap:14px}.notice,.error{padding:10px 12px;display:flex;align-items:center;gap:8px;border-radius:9px;font-size:12px}.notice{color:var(--wao-primary-text);background:var(--wao-primary-soft);border:1px solid var(--wao-primary-line)}.error{color:var(--wao-danger-strong);background:var(--wao-danger-bg);border:1px solid var(--wao-danger-line)}.error span{flex:1}.error button{border:0;background:transparent;color:inherit;cursor:pointer}.loading{min-height:260px;display:grid;place-items:center;align-content:center;gap:10px;color:var(--wao-text-weak)}.loading span{width:28px;height:28px;border:3px solid var(--wao-primary-line);border-top-color:var(--wao-primary);border-radius:50%;animation:spin .8s linear infinite}.capabilities{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.capabilities article{padding:13px;display:flex;gap:10px;border:1px solid var(--wao-line);border-radius:11px;background:var(--wao-bg-card)}.capabilities article>div{display:grid;gap:4px}.capabilities strong{font-size:12px}.capabilities span{color:var(--wao-text-weak);font-size:10px;line-height:1.5}.ai-card>i{font-size:22px;color:var(--wao-primary-text)}.ai-card.unavailable{opacity:.72}.platform-card{flex-direction:column}.accounts{display:flex!important;flex-wrap:wrap;gap:5px}.accounts>span{padding:4px 6px;border-radius:6px;background:var(--wao-bg-sub)}.accounts button{margin-left:4px;border:0;background:transparent;color:var(--wao-danger-strong);cursor:pointer}.accounts .link{margin:0;color:var(--wao-primary-text)}.create-card{padding:14px;display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1.5fr) 120px auto auto;align-items:center;gap:9px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.create-card>div{display:grid;gap:3px}.create-card strong{font-size:13px}.create-card span{color:var(--wao-text-weak);font-size:9.5px;line-height:1.4}.create-card input,.create-card select,.editor input,.editor select,.editor textarea,.knowledge-dialog select{width:100%;padding:9px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text);font:inherit}.create-card>label{display:flex;align-items:center;gap:5px;font-size:11px;white-space:nowrap}.create-card>label input{width:auto}.create-card>button,.actions>button{min-height:36px;padding:0 13px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer;font-weight:650}.create-card button:disabled,.actions button:disabled{opacity:.45;cursor:not-allowed}.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:12px;align-items:start}.task-list,.editor{border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.panel-head{padding:11px 12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--wao-divider)}.panel-head button{border:0;background:transparent;color:var(--wao-text-weak);cursor:pointer}.task{width:100%;padding:10px 11px;display:flex;align-items:center;gap:8px;border:0;border-bottom:1px solid var(--wao-divider);background:transparent;color:var(--wao-text);cursor:pointer;text-align:left}.task.active{background:var(--wao-primary-soft)}.task>span{min-width:0;flex:1;display:grid;gap:3px}.task strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.task small{color:var(--wao-text-weak);font-size:9.5px}.task em{color:var(--wao-primary-text);font-size:10px;font-style:normal}.empty{padding:28px;color:var(--wao-text-weak);font-size:11px;text-align:center}.editor{padding:15px;display:grid;gap:12px}.editor-head{display:flex;justify-content:space-between;gap:10px}.editor-head>div{display:flex;align-items:center;gap:8px}.editor-head small{color:var(--wao-text-weak);font-size:10px}.status{padding:3px 6px;border-radius:999px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:9px}.status.published{background:var(--wao-success-bg);color:var(--wao-success-strong)}.status.failed{background:var(--wao-danger-bg);color:var(--wao-danger-strong)}.task-error{padding:8px 10px;color:var(--wao-danger-strong);background:var(--wao-danger-bg);border-radius:7px;font-size:11px}.editor label,.knowledge-dialog label,.export-dialog label{display:grid;gap:5px;color:var(--wao-text-3);font-size:10px}.editor textarea{resize:vertical;line-height:1.55}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.file{min-height:36px;padding:8px;position:relative;overflow:hidden;border:1px dashed var(--wao-line-control);border-radius:8px;color:var(--wao-text-weak);cursor:pointer}.file input{position:absolute;inset:0;opacity:0;cursor:pointer}.actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.actions .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.actions span{margin-right:auto;color:var(--wao-text-weak);font-size:10px}.dialog-mask{position:fixed;inset:0;z-index:50;padding:28px;display:grid;place-items:center;background:rgba(10,30,27,.58)}.export-dialog,.knowledge-dialog{width:min(920px,100%);max-height:calc(100vh - 56px);padding:18px;display:grid;gap:14px;overflow:auto;border-radius:16px;background:var(--wao-bg-card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.knowledge-dialog{width:min(520px,100%)}.export-dialog>header,.knowledge-dialog>header{display:flex;justify-content:space-between;gap:12px}.export-dialog header div,.knowledge-dialog header div{display:grid;gap:4px}.export-dialog header small,.knowledge-dialog header small{color:var(--wao-text-weak);font-size:10px}.export-dialog header button,.knowledge-dialog header button{border:0;background:transparent;color:var(--wao-text-weak);font-size:20px;cursor:pointer}.export-dialog iframe{width:100%;height:430px;border:1px solid var(--wao-line);border-radius:12px;background:#edf3f1}.export-dialog textarea{width:100%;padding:10px;border:1px solid var(--wao-line-control);border-radius:8px;box-sizing:border-box;font:11px/1.5 ui-monospace,monospace;resize:vertical}.export-dialog footer,.knowledge-dialog footer{display:flex;justify-content:flex-end;gap:8px}.export-dialog footer button,.knowledge-dialog footer button,.knowledge-success button{min-height:36px;padding:0 14px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer}.export-dialog footer .secondary,.knowledge-dialog footer .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.dialog-state{padding:30px;text-align:center;color:var(--wao-text-weak)}.knowledge-success{padding:28px;display:grid;place-items:center;gap:10px;color:var(--wao-success-strong)}.knowledge-success i{font-size:36px}@keyframes spin{to{transform:rotate(360deg)}}
 .dialog-error{padding:10px 12px;display:flex;justify-content:space-between;gap:10px;border-radius:8px;background:var(--wao-danger-bg);color:var(--wao-danger-strong);font-size:11px}.dialog-error button{border:0;background:transparent;color:inherit;cursor:pointer}
 @media(max-width:900px){.create-card{grid-template-columns:1fr 1fr}.create-card>div,.create-card>input{grid-column:1/-1}.workspace{grid-template-columns:1fr}.task-list{max-height:260px;overflow:auto}}@media(max-width:600px){.create-card{grid-template-columns:1fr}.create-card>*{grid-column:1!important}.editor-grid{grid-template-columns:1fr}.editor-head{display:grid}.actions{align-items:stretch;flex-direction:column}.actions span{margin:0}.actions button{width:100%}.dialog-mask{padding:10px}.export-dialog,.knowledge-dialog{max-height:calc(100vh - 20px);padding:14px}.export-dialog iframe{height:52vh}.export-dialog footer,.knowledge-dialog footer{flex-direction:column}.export-dialog footer button,.knowledge-dialog footer button{width:100%}}
+.workspace { grid-template-columns: 240px minmax(0, 1fr); }
+.draft-workspace {
+  min-width: 0; display: grid;
+  grid-template-columns: minmax(340px, 1fr) minmax(340px, 1fr);
+  gap: 12px; align-items: start;
+}
+.task-list { max-height: calc(100vh - 230px); overflow: auto; position: sticky; top: 0; }
+.live-preview { min-width: 0; overflow: hidden; position: sticky; top: 0; }
+.live-preview header {
+  min-height: 54px; padding: 10px 12px; display: flex; align-items: center;
+  justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--wao-divider);
+}
+.live-preview header > div { display: grid; gap: 3px; }
+.live-preview header strong { font-size: 12px; }
+.live-preview header small { color: var(--wao-text-weak); font-size: 9.5px; }
+.live-preview header > span { color: var(--wao-success-strong); font-size: 9.5px; white-space: nowrap; }
+.live-preview header > span.dirty { color: var(--wao-warning-strong); }
+.live-preview iframe { width: 100%; height: calc(100vh - 310px); min-height: 560px; border: 0; background: #edf3f1; }
+.preview-media-note { margin: 0; padding: 9px 12px; display: flex; gap: 6px; color: var(--wao-text-weak); font-size: 10px; border-top: 1px solid var(--wao-divider); }
+.content-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--wao-text-weak); font-size: 9.5px; }
+.body-field textarea { min-height: 360px; }
+@media(max-width: 1250px) {
+  .workspace { grid-template-columns: 1fr; }
+  .task-list { max-height: 220px; position: static; }
+}
+@media(max-width: 820px) {
+  .draft-workspace { grid-template-columns: 1fr; }
+  .live-preview { position: static; }
+  .live-preview iframe { height: 68vh; min-height: 480px; }
+}
 </style>

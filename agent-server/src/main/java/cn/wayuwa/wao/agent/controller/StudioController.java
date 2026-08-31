@@ -1,9 +1,12 @@
 package cn.wayuwa.wao.agent.controller;
 
 import cn.wayuwa.wao.agent.auth.AgentSessionManager;
+import cn.wayuwa.wao.agent.ai.ProfileInitializer;
 import cn.wayuwa.wao.agent.common.ApiResponse;
 import cn.wayuwa.wao.agent.common.UnauthorizedException;
 import cn.wayuwa.wao.agent.dto.RecommendRequest;
+import cn.wayuwa.wao.agent.dto.InitializeProfileRequest;
+import cn.wayuwa.wao.agent.dto.CreateManualTopicRequest;
 import cn.wayuwa.wao.agent.dto.StudioDto;
 import cn.wayuwa.wao.agent.dto.TopicSuggestionDto;
 import cn.wayuwa.wao.agent.dto.WorkspaceProfileDto;
@@ -28,12 +31,14 @@ public class StudioController {
     private final AgentSessionManager sessions;
     private final TopicService topics;
     private final WorkspaceProfileService profiles;
+    private final ProfileInitializer profileInitializer;
 
     public StudioController(AgentSessionManager sessions, TopicService topics,
-                            WorkspaceProfileService profiles) {
+                            WorkspaceProfileService profiles, ProfileInitializer profileInitializer) {
         this.sessions = sessions;
         this.topics = topics;
         this.profiles = profiles;
+        this.profileInitializer = profileInitializer;
     }
 
     @GetMapping
@@ -54,10 +59,23 @@ public class StudioController {
         return ApiResponse.ok(profiles.save(accountId(request), body));
     }
 
+    @PostMapping("/profile/initialize")
+    public ApiResponse<WorkspaceProfileDto> initializeProfile(
+            @Valid @RequestBody InitializeProfileRequest body, HttpServletRequest request) {
+        String accountId = accountId(request);
+        return ApiResponse.ok(profiles.save(accountId, profileInitializer.initialize(body.needs())));
+    }
+
     @PostMapping("/recommend")
     public ApiResponse<List<TopicSuggestionDto>> recommend(@Valid @RequestBody RecommendRequest body,
                                                            HttpServletRequest request) {
         return ApiResponse.ok(topics.recommend(accountId(request), body));
+    }
+
+    @PostMapping("/topics")
+    public ApiResponse<TopicSuggestionDto> addTopic(@Valid @RequestBody CreateManualTopicRequest body,
+                                                    HttpServletRequest request) {
+        return ApiResponse.ok(topics.add(accountId(request), body));
     }
 
     @PostMapping("/suggestions/{suggestionId}/mark")
