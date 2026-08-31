@@ -3,6 +3,7 @@ package cn.wayuwa.wao.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
@@ -33,8 +34,12 @@ class WechatOfficialAccountLoginServiceTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         WechatOfficialAccountLoginService service = new WechatOfficialAccountLoginService(PROPERTIES, store, builder);
-        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=wx-app&secret=app-secret"))
-                .andExpect(method(HttpMethod.GET))
+        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/stable_token"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("""
+                        {"grant_type":"client_credential","appid":"wx-app","secret":"app-secret",
+                         "force_refresh":false}
+                        """))
                 .andRespond(withSuccess("{\"access_token\":\"official-token\",\"expires_in\":7200}",
                         MediaType.APPLICATION_JSON));
         server.expect(requestTo(org.hamcrest.Matchers.startsWith(
@@ -50,6 +55,60 @@ class WechatOfficialAccountLoginServiceTest {
         assertThat(session.qrCodeUrl()).isEqualTo(
                 "https://mp.weixin.qq.com/cgi-bin/showqrcode?ticket=ticket%2B%2F%3D");
         assertThat(store.find(session.id())).contains(session);
+        server.verify();
+    }
+
+    @Test
+    void verifiesConfigurationThroughWechatStableTokenApi() {
+        FakeStore store = new FakeStore();
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        WechatOfficialAccountLoginService service = new WechatOfficialAccountLoginService(PROPERTIES, store, builder);
+        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/stable_token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"access_token\":\"verified-token\",\"expires_in\":600}",
+                        MediaType.APPLICATION_JSON));
+
+        WechatOfficialAccountLoginService.Verification verification = service.verifyConfiguration();
+
+        assertThat(verification.ready()).isTrue();
+        assertThat(verification.message()).contains("验证通过");
+        assertThat(store.accessToken()).contains("verified-token");
+        server.verify();
+    }
+
+    @Test
+    void reportsRejectedEgressIpFromWechatWithoutExposingCredentials() {
+        FakeStore store = new FakeStore();
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        WechatOfficialAccountLoginService service = new WechatOfficialAccountLoginService(PROPERTIES, store, builder);
+        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/stable_token"))
+                .andRespond(withSuccess("""
+                        {"errcode":40164,"errmsg":"invalid ip 171.83.123.164 ipv6 ::ffff:171.83.123.164, not in whitelist"}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(service::verifyConfiguration)
+                .isInstanceOf(WechatLoginException.class)
+                .hasMessage("微信拒绝服务器出口 IP 171.83.123.164，请将它加入公众号后台的 IP 白名单（微信错误码 40164）")
+                .hasMessageNotContaining("app-secret");
+        server.verify();
+    }
+
+    @Test
+    void distinguishesInvalidAppSecretFromIpWhitelistFailure() {
+        FakeStore store = new FakeStore();
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        WechatOfficialAccountLoginService service = new WechatOfficialAccountLoginService(PROPERTIES, store, builder);
+        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/stable_token"))
+                .andRespond(withSuccess("{\"errcode\":40125,\"errmsg\":\"invalid appsecret\"}",
+                        MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(service::verifyConfiguration)
+                .isInstanceOf(WechatLoginException.class)
+                .hasMessageContaining("App Secret 无效")
+                .hasMessageContaining("40125");
         server.verify();
     }
 

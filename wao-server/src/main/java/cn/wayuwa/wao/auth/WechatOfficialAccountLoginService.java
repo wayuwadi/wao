@@ -11,6 +11,8 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.xml.XMLConstants;
@@ -31,6 +33,8 @@ public class WechatOfficialAccountLoginService {
     private static final Logger log = LoggerFactory.getLogger(WechatOfficialAccountLoginService.class);
     private static final Duration SESSION_TTL = Duration.ofMinutes(5);
     private static final int MAX_XML_LENGTH = 64 * 1024;
+    private static final Pattern INVALID_IP = Pattern.compile("invalid ip\\s+([^,\\s]+)",
+            Pattern.CASE_INSENSITIVE);
     private final WechatOfficialAccountConfigService config;
     private final WechatOfficialLoginStore store;
     private final RestClient client;
@@ -77,6 +81,19 @@ public class WechatOfficialAccountLoginService {
     public Optional<WechatOfficialLoginStore.LoginSession> session(String sessionId) {
         if (!StringUtils.hasText(sessionId) || sessionId.length() > 64) return Optional.empty();
         return store.find(sessionId);
+    }
+
+    /**
+     * 通过微信稳定版令牌接口验证当前运行时凭据和本节点出口 IP，并预热共享令牌缓存。
+     *
+     * @return 可安全展示给管理员的真实验证结果
+     */
+    public Verification verifyConfiguration() {
+        WechatOfficialAccountConfigService.Effective effective = requireEnabled();
+        TokenResponse response = requestAccessToken(effective);
+        String token = requireAccessToken(response);
+        store.saveAccessToken(token, response.expiresIn() == null ? 7200 : response.expiresIn());
+        return new Verification(true, "微信接口验证通过，登录页可以获取真实公众号二维码");
     }
 
     /** 校验微信公众号服务器配置或消息回调签名。 */
@@ -145,22 +162,50 @@ public class WechatOfficialAccountLoginService {
         Optional<String> cached = store.accessToken();
         if (cached.isPresent()) return cached.get();
         try {
-            TokenResponse response = client.get().uri(uri -> uri.path("/cgi-bin/token")
-                    .queryParam("grant_type", "client_credential")
-                    .queryParam("appid", effective.appId())
-                    .queryParam("secret", effective.appSecret()).build()).retrieve().body(TokenResponse.class);
-            if (response == null || !StringUtils.hasText(response.accessToken())) {
-                log.warn("Wechat official access token request failed: code={}",
-                        response == null ? null : response.errcode());
-                throw new WechatLoginException("公众号接口认证失败，请检查 App ID、App Secret 与 IP 白名单");
-            }
-            store.saveAccessToken(response.accessToken(), response.expiresIn() == null ? 7200 : response.expiresIn());
-            return response.accessToken();
+            TokenResponse response = requestAccessToken(effective);
+            String token = requireAccessToken(response);
+            store.saveAccessToken(token, response.expiresIn() == null ? 7200 : response.expiresIn());
+            return token;
         } catch (WechatLoginException exception) {
             throw exception;
         } catch (RestClientException exception) {
             throw new WechatLoginException("微信公众号接口暂时不可用，请稍后重试", exception);
         }
+    }
+
+    private TokenResponse requestAccessToken(WechatOfficialAccountConfigService.Effective effective) {
+        try {
+            return client.post().uri("/cgi-bin/stable_token")
+                    .body(Map.of("grant_type", "client_credential", "appid", effective.appId(),
+                            "secret", effective.appSecret(), "force_refresh", false))
+                    .retrieve().body(TokenResponse.class);
+        } catch (RestClientException exception) {
+            throw new WechatLoginException("微信公众号接口暂时不可用，请稍后重试", exception);
+        }
+    }
+
+    private String requireAccessToken(TokenResponse response) {
+        if (response != null && StringUtils.hasText(response.accessToken())) return response.accessToken();
+        Integer code = response == null ? null : response.errcode();
+        log.warn("Wechat official stable access token request failed: code={}", code);
+        String message = switch (code == null ? Integer.MIN_VALUE : code) {
+            case 40013 -> "公众号 App ID 无效，请核对公众号后台的开发者 ID（微信错误码 40013）";
+            case 40125 -> "公众号 App Secret 无效，请重置后重新保存（微信错误码 40125）";
+            case 40164 -> invalidIpMessage(response.errmsg());
+            case 48001 -> "当前公众号没有调用该接口的权限，请确认账号已认证（微信错误码 48001）";
+            case 50004 -> "当前公众号的接口调用已被禁用，请在微信公众平台处理账号状态（微信错误码 50004）";
+            default -> code == null
+                    ? "微信公众号接口没有返回有效凭据，请稍后重试"
+                    : "微信公众号接口认证失败（微信错误码 " + code + "），请核对公众号后台配置";
+        };
+        throw new WechatLoginException(message);
+    }
+
+    private static String invalidIpMessage(String officialMessage) {
+        Matcher matcher = INVALID_IP.matcher(Optional.ofNullable(officialMessage).orElse(""));
+        String address = matcher.find() ? matcher.group(1) : "当前服务器出口 IP";
+        return "微信拒绝服务器出口 IP " + address
+                + "，请将它加入公众号后台的 IP 白名单（微信错误码 40164）";
     }
 
     private QrResponse createQr(String accessToken, String scene) {
@@ -248,4 +293,5 @@ public class WechatOfficialAccountLoginService {
                                 Integer errcode, String errmsg) { }
 
     public record OfficialProfile(String userId, String unionId, String name, String avatarUrl) { }
+    public record Verification(boolean ready, String message) { }
 }
