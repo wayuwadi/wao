@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 31;
+    private static final int VERSION = 32;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
@@ -57,6 +57,7 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("automation", "自动化", "ri-flashlight-line", "TOOLS", 10, false, "TAB"),
             new BuiltinMenuConfigDto("files", "文件与图床", "ri-hard-drive-2-line", "TOOLS", 20, false, "TAB"),
             new BuiltinMenuConfigDto("games", "游戏厅", "ri-gamepad-line", "TOOLS", 30, false, "TAB"),
+            new BuiltinMenuConfigDto("devices", "终端设备", "ri-webcam-line", "TOOLS", 35, true, "TAB"),
             new BuiltinMenuConfigDto("request-monitoring", "请求监控", "ri-pulse-line", "TOOLS", 40, false, "TAB"));
     private static final Map<String, BuiltinMenuConfigDto> BY_ID = DEFAULTS.stream()
             .collect(java.util.stream.Collectors.toUnmodifiableMap(BuiltinMenuConfigDto::id, item -> item));

@@ -296,6 +296,12 @@ const router = createRouter({
           meta: { module: 'games', tabKind: 'module' },
         },
         {
+          path: 'devices',
+          name: 'devices',
+          component: () => import('@/views/DevicesView.vue'),
+          meta: { module: 'devices', tabKind: 'module' },
+        },
+        {
           path: 'request-monitoring',
           name: 'request-monitoring',
           component: () => import('@/views/RequestMonitoringView.vue'),

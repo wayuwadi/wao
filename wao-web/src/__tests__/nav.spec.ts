@@ -24,6 +24,10 @@ describe('侧边栏导航配置', () => {
     })
     expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'todo')?.visible).toBe(true)
     expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'games')?.visible).toBe(false)
+    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'devices')).toMatchObject({
+      group: 'TOOLS',
+      visible: true,
+    })
   })
 
   it('默认导航不再提供独立点子库入口', () => {
@@ -82,6 +86,18 @@ describe('侧边栏导航配置', () => {
     )
     expect(router.resolve('/skill-connections').meta).toMatchObject({
       module: 'skill-connections',
+      tabKind: 'module',
+    })
+  })
+
+  it('终端设备入口使用独立工具菜单和受保护页签路由', () => {
+    expect(MODULES.devices).toMatchObject({
+      label: '终端设备',
+      path: '/devices',
+    })
+    expect(NAV_GROUPS.find((group) => group.label === '工具')?.items).toContain('devices')
+    expect(router.resolve('/devices').meta).toMatchObject({
+      module: 'devices',
       tabKind: 'module',
     })
   })

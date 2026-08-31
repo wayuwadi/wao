@@ -29,6 +29,7 @@ export type ModuleId =
   | 'files'
   | 'automation'
   | 'games'
+  | 'devices'
   | 'request-monitoring'
   | 'data-center'
   | 'text-polish'

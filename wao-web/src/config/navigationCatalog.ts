@@ -129,6 +129,11 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
         description: '检查接口请求、性能与失败情况。',
         keywords: ['监控', '性能'],
       },
+      {
+        id: 'devices',
+        description: '检测本机摄像头和麦克风，并完成实时预览与连通调试。',
+        keywords: ['摄像头', '麦克风', '相机', '音频'],
+      },
       { id: 'vault', description: '安全管理需要按需查看的账号资料。', keywords: ['密码'] },
       { id: 'games', description: '打开使用服务端真实存档的小游戏。', keywords: ['游戏'] },
       { id: 'tianren', description: '创建和回看天人一卦记录。', keywords: ['每日一卦'] },

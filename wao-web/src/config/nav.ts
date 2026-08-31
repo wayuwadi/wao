@@ -153,6 +153,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/automation',
   },
   games: { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', path: '/games' },
+  devices: {
+    id: 'devices',
+    label: '终端设备',
+    icon: 'ri-webcam-line',
+    path: '/devices',
+  },
   'request-monitoring': {
     id: 'request-monitoring',
     label: '请求监控',
@@ -462,6 +468,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
+      id: 'devices',
+      label: '终端设备',
+      icon: 'ri-webcam-line',
+      group: 'TOOLS',
+      order: 35,
+      visible: true,
+    },
+    {
       id: 'request-monitoring',
       label: '请求监控',
       icon: 'ri-pulse-line',
@@ -499,7 +513,10 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
     items: ['projects', 'ideas', 'skills', 'skill-connections'],
   },
   { label: '个人', items: PERSONAL_ITEMS },
-  { label: '工具', items: ['dashboard', 'automation', 'files', 'games', 'request-monitoring'] },
+  {
+    label: '工具',
+    items: ['dashboard', 'automation', 'files', 'games', 'devices', 'request-monitoring'],
+  },
 ]
 
 const GROUP_LABELS: Record<MenuGroupCode, string> = {
