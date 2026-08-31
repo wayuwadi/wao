@@ -189,6 +189,10 @@ services:
       WECHAT_APP_SECRET: ${WECHAT_APP_SECRET:-}
       WECHAT_REDIRECT_URI: ${WECHAT_REDIRECT_URI:-https://wao.wayuwa.cn/api/auth/wechat/callback}
       WECHAT_FRONTEND_URL: ${WECHAT_FRONTEND_URL:-https://wao.wayuwa.cn}
+      WECHAT_OFFICIAL_LOGIN_ENABLED: ${WECHAT_OFFICIAL_LOGIN_ENABLED:-false}
+      WECHAT_OFFICIAL_APP_ID: ${WECHAT_OFFICIAL_APP_ID:-}
+      WECHAT_OFFICIAL_APP_SECRET: ${WECHAT_OFFICIAL_APP_SECRET:-}
+      WECHAT_OFFICIAL_TOKEN: ${WECHAT_OFFICIAL_TOKEN:-}
     depends_on:
       mysql-slave:
         condition: service_healthy
