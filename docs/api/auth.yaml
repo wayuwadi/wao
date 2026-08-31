@@ -87,6 +87,18 @@ paths:
       responses:
         "200": { description: 返回微信公众号被动回复 XML 或 success }
         "401": { description: 签名无效 }
+  /api/settings/login/wechat-official:
+    get:
+      summary: 读取系统级微信公众号登录配置，密钥只返回脱敏状态
+      responses:
+        "200": { description: 返回开关、App ID、密钥脱敏值、完整状态与回调路径 }
+        "401": { description: 未登录 }
+    put:
+      summary: 保存微信公众号登录配置并立即用于后续登录会话
+      responses:
+        "200": { description: 已加密保存并返回脱敏配置 }
+        "400": { description: 启用时缺少 App ID、App Secret 或回调 Token }
+        "401": { description: 未登录 }
   /api/account/email:
     put:
       summary: 为当前账号绑定邮箱并设置或修改密码

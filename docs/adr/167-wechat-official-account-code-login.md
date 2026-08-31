@@ -26,6 +26,9 @@
 
 ## 配置与验收边界
 
+> 后续变更：日常配置入口已迁移到“系统设置 → 系统登录配置”，数据库加密存储并兼容本节环境变量回退，见
+> [ADR-168](168-system-managed-wechat-login-configuration.md)。
+
 生产需要认证公众号具备生成带参数二维码和接收消息的真实权限，并在私有环境文件中配置
 `WECHAT_OFFICIAL_LOGIN_ENABLED`、`WECHAT_OFFICIAL_APP_ID`、`WECHAT_OFFICIAL_APP_SECRET`、
 `WECHAT_OFFICIAL_TOKEN`。微信后台服务器地址使用

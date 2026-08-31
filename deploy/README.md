@@ -216,9 +216,9 @@ WECHAT_REDIRECT_URI=https://wao.wayuwa.cn/api/auth/wechat/callback
 WECHAT_FRONTEND_URL=https://wao.wayuwa.cn
 ```
 
-登录页的“微信”入口使用认证公众号，不依赖上面的网站应用资质。先在公众号后台「设置与开发 → 基本配置」把
-服务器地址设为 `https://wao.wayuwa.cn/api/auth/wechat/official/callback`，消息加解密方式选择明文模式，Token
-使用独立随机值；再把同一组真实配置写入 Linux 主节点私有 `deploy/.env.secrets`（不要提交或输出到日志）：
+登录页的“微信”入口使用认证公众号，不依赖上面的网站应用资质。先在 WAO“系统设置 → 系统登录配置”录入
+App ID、App Secret、独立随机 Token 并保存，再到公众号后台「设置与开发 → 基本配置」使用页面给出的服务器地址，
+消息加解密方式选择明文模式。以下私有环境变量只作为首次迁移和紧急回滚兼容来源（不要提交或输出到日志）：
 
 ```dotenv
 WECHAT_OFFICIAL_LOGIN_ENABLED=true
