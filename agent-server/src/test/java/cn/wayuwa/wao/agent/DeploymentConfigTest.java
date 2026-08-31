@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.DriverManager;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +42,39 @@ class DeploymentConfigTest {
                     .toList();
         }
         assertThat(versions).doesNotHaveDuplicates();
+    }
+
+    @Test
+    void firstArticleMigrationCreatesOneReviewDraftPerExistingWorkspace() throws Exception {
+        try (var connection = DriverManager.getConnection(
+                "jdbc:h2:mem:first_article_migration;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "")) {
+            try (var statement = connection.createStatement()) {
+                statement.execute("""
+                        CREATE TABLE agent_workspace (id VARCHAR(36) PRIMARY KEY, owner_account_id VARCHAR(36));
+                        CREATE TABLE agent_publish_task (
+                          id VARCHAR(36) PRIMARY KEY, workspace_id VARCHAR(36), requested_by_account_id VARCHAR(36),
+                          platform VARCHAR(32), topic VARCHAR(200), title VARCHAR(200), content CLOB,
+                          tags_json VARCHAR(1000), status VARCHAR(32), progress INT, version INT,
+                          created_at TIMESTAMP, updated_at TIMESTAMP);
+                        INSERT INTO agent_workspace VALUES ('workspace-1', 'account-1');
+                        """);
+                String migration = read(
+                        "agent-server/src/main/resources/db/migration/V6__my_wao_first_article.sql");
+                statement.execute(migration);
+                statement.execute(migration);
+            }
+            try (var result = connection.createStatement().executeQuery("""
+                    SELECT COUNT(*) AS total, MIN(title) AS title, MIN(status) AS status,
+                           MIN(content) AS content
+                    FROM agent_publish_task WHERE workspace_id = 'workspace-1'
+                    """)) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getInt("total")).isEqualTo(1);
+                assertThat(result.getString("title")).contains("AI Agent", "自己的生活");
+                assertThat(result.getString("status")).isEqualTo("WAITING_REVIEW");
+                assertThat(result.getString("content")).contains("这就是我的 WAO", "真实接口");
+            }
+        }
     }
 
     @Test

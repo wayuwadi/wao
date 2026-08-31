@@ -1681,12 +1681,13 @@ components:
     CreateDocRequest:
       type: object
       required: [kbId, folderId]
-      description: kbId + folderId 建立文档与知识库的关联；作者不在请求体里，由服务端按当前会话署名
+      description: kbId + folderId 建立文档与知识库的关联；作者不在请求体里，由服务端按当前会话署名；blocks 可用于一次原子导入成稿
       properties:
         kbId: { type: string }
         folderId: { type: string }
         title: { type: string }
         templateId: { type: string, description: 可选；从当前成员的该模板复制正文快照 }
+        blocks: { type: array, maxItems: 5000, description: 可选；与 templateId 互斥，随新文档原子写入, items: { $ref: '#/components/schemas/DocTemplateBlock' } }
     DocTemplateBlock:
       type: object
       description: 模板正文块；服务端忽略未知字段并限制整份 JSON 序列化长度

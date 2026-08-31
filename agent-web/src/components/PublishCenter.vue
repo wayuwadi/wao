@@ -4,10 +4,13 @@ import {
   createPublishTask, getAuthorizeUrl, getPublishCenter, submitPublishTask,
   listMedia, unbindAccount, updatePublishTask, uploadMedia,
 } from '@/api/publish'
+import { createKnowledgeArticle, listKnowledgeBases } from '@/api/knowledge'
+import { articleBlocks, articleDocument, articleFragment } from '@/articleExport'
 import {
   canSubmitPublish, formatBytes, isPublishEditable, isPublishInFlight, publishStatusLabel,
 } from '@/publishStatus'
 import type { MediaAsset, PlatformSummary, PublishCenter, PublishTask } from '@/types'
+import type { KnowledgeBaseOption } from '@/api/knowledge'
 
 type CenterMode = 'full' | 'accounts' | 'content' | 'publishing'
 
@@ -21,6 +24,13 @@ const busy = ref('')
 const message = ref('')
 const error = ref('')
 const dirty = ref(false)
+const htmlDialog = ref(false)
+const knowledgeDialog = ref(false)
+const knowledgeBases = ref<KnowledgeBaseOption[]>([])
+const knowledgeError = ref('')
+const targetKbId = ref('')
+const targetFolderId = ref('')
+const createdDocUrl = ref('')
 const createForm = reactive({ topic: '', platform: 'DOUYIN', generateCopy: true })
 const editForm = reactive({ version: 0, title: '', content: '', tags: '', platformAccountId: '', mediaAssetId: '' })
 let pollTimer: number | undefined
@@ -34,6 +44,18 @@ const showAccounts = computed(() => props.mode === 'full' || props.mode === 'acc
 const showCreate = computed(() => props.mode === 'full' || props.mode === 'content')
 const showWorkspace = computed(() => props.mode === 'full' || props.mode === 'content' || props.mode === 'publishing')
 const showPublishControls = computed(() => props.mode === 'full' || props.mode === 'publishing')
+const canExport = computed(() => !!selected.value && !dirty.value
+  && !!(editForm.title.trim() || editForm.content.trim()))
+const targetKb = computed(() => knowledgeBases.value.find((item) => item.id === targetKbId.value))
+const exportInput = computed(() => ({
+  title: editForm.title.trim() || selected.value?.topic || '未命名图文',
+  content: editForm.content,
+  tags: editForm.tags.split(/[\s,，#]+/).filter(Boolean),
+  coverUrl: selected.value?.topic === '我的WAO首篇图文'
+    ? new URL('/agent/article/my-wao-cover.png', window.location.origin).href
+    : undefined,
+}))
+const exportHtml = computed(() => articleDocument(exportInput.value))
 const loadingLabel = computed(() => ({
   accounts: '正在读取真实账号状态…',
   content: '正在读取真实内容…',
@@ -102,6 +124,94 @@ async function createTask() {
 function markDirty() {
   dirty.value = true
   message.value = '有未保存修改'
+}
+
+function openHtmlExport() {
+  if (!canExport.value) return
+  htmlDialog.value = true
+}
+
+async function copyHtmlSource() {
+  try {
+    await navigator.clipboard.writeText(exportHtml.value)
+    message.value = 'HTML 源码已复制，可粘贴到支持源码的编辑器'
+  } catch {
+    error.value = '浏览器未允许读取剪贴板，请在预览框中全选复制'
+  }
+}
+
+async function copyRichArticle() {
+  try {
+    if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([articleFragment(exportInput.value)], { type: 'text/html' }),
+        'text/plain': new Blob([`${exportInput.value.title}\n\n${exportInput.value.content}`], { type: 'text/plain' }),
+      })])
+      message.value = '排版图文已复制，可直接粘贴到公众号等富文本编辑器'
+    } else {
+      await navigator.clipboard.writeText(exportHtml.value)
+      message.value = '当前浏览器不支持富文本剪贴板，已改为复制 HTML 源码'
+    }
+  } catch {
+    error.value = '复制失败，请允许剪贴板权限后重试'
+  }
+}
+
+function downloadHtml() {
+  const url = URL.createObjectURL(new Blob([exportHtml.value], { type: 'text/html;charset=utf-8' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${exportInput.value.title.replace(/[\\/:*?"<>|]/g, '-').slice(0, 80) || 'article'}.html`
+  anchor.click()
+  URL.revokeObjectURL(url)
+  message.value = 'HTML 文件已下载'
+}
+
+async function openKnowledgeExport() {
+  if (!canExport.value) return
+  knowledgeDialog.value = true
+  createdDocUrl.value = ''
+  knowledgeError.value = ''
+  busy.value = 'knowledge-load'
+  error.value = ''
+  try {
+    knowledgeBases.value = await listKnowledgeBases()
+    const first = knowledgeBases.value.find((kb) => kb.folders.length)
+    targetKbId.value = first?.id ?? ''
+    targetFolderId.value = first?.folders[0]?.id ?? ''
+  } catch (cause) {
+    knowledgeError.value = cause instanceof Error ? cause.message : '知识库读取失败，请重试'
+  } finally {
+    busy.value = ''
+  }
+}
+
+function changeKnowledgeBase() {
+  targetFolderId.value = targetKb.value?.folders[0]?.id ?? ''
+}
+
+async function saveToKnowledge() {
+  if (!targetKbId.value || !targetFolderId.value || busy.value === 'knowledge-save') return
+  busy.value = 'knowledge-save'
+  knowledgeError.value = ''
+  try {
+    const doc = await createKnowledgeArticle({
+      kbId: targetKbId.value,
+      folderId: targetFolderId.value,
+      title: exportInput.value.title,
+      blocks: articleBlocks(exportInput.value.content),
+    })
+    createdDocUrl.value = `/kb/${doc.kbId}?doc=${encodeURIComponent(doc.id)}`
+    message.value = `已存入知识库「${targetKb.value?.name ?? ''}」`
+  } catch (cause) {
+    knowledgeError.value = cause instanceof Error ? cause.message : '存入知识库失败，成稿仍保留，可重试'
+  } finally {
+    busy.value = ''
+  }
+}
+
+function openCreatedDocument() {
+  if (createdDocUrl.value) window.open(createdDocUrl.value, '_blank', 'noopener,noreferrer')
 }
 
 async function saveTask() {
@@ -235,7 +345,7 @@ onBeforeUnmount(() => {
 
       <section v-if="showCreate" class="create-card">
         <div><strong>新建内容</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model} 可生成初稿，仍需人工审核。` : '尚未配置模型，创建后可手工写稿。' }}</span></div>
-        <input v-model="createForm.topic" maxlength="200" placeholder="这次想创作什么？" @keyup.enter="createTask" />
+        <input v-model="createForm.topic" maxlength="200" placeholder="写下话题，或直接给我几句话" @keyup.enter="createTask" />
         <select v-model="createForm.platform"><option v-for="item in center.platforms" :key="item.platform" :value="item.platform">{{ item.label }}</option></select>
         <label><input v-model="createForm.generateCopy" type="checkbox" :disabled="!center.ai.available" /> AI 生成</label>
         <button :disabled="busy === 'create' || !createForm.topic.trim()" @click="createTask">{{ busy === 'create' ? '创建中…' : '开始创作' }}</button>
@@ -266,6 +376,8 @@ onBeforeUnmount(() => {
           </div>
           <div class="actions">
             <button class="secondary" :disabled="!editable || !dirty || busy === 'save'" @click="saveTask">{{ busy === 'save' ? '保存中…' : '保存审核稿' }}</button>
+            <button class="secondary" :disabled="!canExport" @click="openHtmlExport"><i class="ri-code-s-slash-line"></i> 预览 / 导出 HTML</button>
+            <button class="secondary" :disabled="!canExport" @click="openKnowledgeExport"><i class="ri-book-2-line"></i> 存入知识库</button>
             <template v-if="showPublishControls">
               <button v-if="selectedPlatform?.publishSupported" :disabled="!canPublish || dirty || busy === 'submit'" @click="submitTask">{{ busy === 'submit' ? '提交中…' : `确认发布到${selected.platformLabel}` }}</button>
               <span v-else>{{ selectedPlatform?.note }}</span>
@@ -275,10 +387,35 @@ onBeforeUnmount(() => {
         <main v-else class="editor empty">选择一条任务查看成稿；创建后也会自动打开。</main>
       </div>
     </template>
+
+    <div v-if="htmlDialog" class="dialog-mask" @click.self="htmlDialog = false">
+      <section class="export-dialog" role="dialog" aria-modal="true" aria-label="HTML 图文预览">
+        <header><div><strong>HTML 图文预览</strong><small>内容来自已保存审核稿；封面使用 WAO 公网静态地址</small></div><button aria-label="关闭" @click="htmlDialog = false"><i class="ri-close-line"></i></button></header>
+        <iframe :srcdoc="exportHtml" title="图文排版预览" sandbox=""></iframe>
+        <label>单文件 HTML 源码<textarea :value="exportHtml" rows="5" readonly @focus="($event.target as HTMLTextAreaElement).select()"></textarea></label>
+        <footer><button class="secondary" @click="downloadHtml">下载 HTML</button><button class="secondary" @click="copyHtmlSource">复制 HTML 源码</button><button @click="copyRichArticle">复制排版图文</button></footer>
+      </section>
+    </div>
+
+    <div v-if="knowledgeDialog" class="dialog-mask" @click.self="knowledgeDialog = false">
+      <section class="knowledge-dialog" role="dialog" aria-modal="true" aria-label="存入知识库">
+        <header><div><strong>存入知识库</strong><small>标题与完整正文会在一次请求中写入，不留下空白半成品</small></div><button aria-label="关闭" @click="knowledgeDialog = false"><i class="ri-close-line"></i></button></header>
+        <div v-if="knowledgeError" class="dialog-error" role="alert"><span>{{ knowledgeError }}</span><button v-if="!knowledgeBases.length" @click="openKnowledgeExport">重试读取</button></div>
+        <div v-if="busy === 'knowledge-load'" class="dialog-state">正在读取真实知识库…</div>
+        <div v-else-if="!knowledgeBases.length" class="dialog-state">还没有可用知识库，请先在 WAO 新建知识库后重试。</div>
+        <template v-else-if="!createdDocUrl">
+          <label>知识库<select v-model="targetKbId" @change="changeKnowledgeBase"><option v-for="kb in knowledgeBases" :key="kb.id" :value="kb.id">{{ kb.name }}</option></select></label>
+          <label>文件夹<select v-model="targetFolderId"><option v-for="folder in targetKb?.folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option></select></label>
+          <footer><button class="secondary" @click="knowledgeDialog = false">取消</button><button :disabled="!targetFolderId || busy === 'knowledge-save'" @click="saveToKnowledge">{{ busy === 'knowledge-save' ? '保存中…' : '保存完整图文' }}</button></footer>
+        </template>
+        <div v-else class="knowledge-success"><i class="ri-checkbox-circle-line"></i><strong>完整图文已进入知识库</strong><button @click="openCreatedDocument">打开文档</button></div>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.publish-center{display:grid;gap:14px}.notice,.error{padding:10px 12px;display:flex;align-items:center;gap:8px;border-radius:9px;font-size:12px}.notice{color:var(--wao-primary-text);background:var(--wao-primary-soft);border:1px solid var(--wao-primary-line)}.error{color:var(--wao-danger-strong);background:var(--wao-danger-bg);border:1px solid var(--wao-danger-line)}.error span{flex:1}.error button{border:0;background:transparent;color:inherit;cursor:pointer}.loading{min-height:260px;display:grid;place-items:center;align-content:center;gap:10px;color:var(--wao-text-weak)}.loading span{width:28px;height:28px;border:3px solid var(--wao-primary-line);border-top-color:var(--wao-primary);border-radius:50%;animation:spin .8s linear infinite}.capabilities{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.capabilities article{padding:13px;display:flex;gap:10px;border:1px solid var(--wao-line);border-radius:11px;background:var(--wao-bg-card)}.capabilities article>div{display:grid;gap:4px}.capabilities strong{font-size:12px}.capabilities span{color:var(--wao-text-weak);font-size:10px;line-height:1.5}.ai-card>i{font-size:22px;color:var(--wao-primary-text)}.ai-card.unavailable{opacity:.72}.platform-card{flex-direction:column}.accounts{display:flex!important;flex-wrap:wrap;gap:5px}.accounts>span{padding:4px 6px;border-radius:6px;background:var(--wao-bg-sub)}.accounts button{margin-left:4px;border:0;background:transparent;color:var(--wao-danger-strong);cursor:pointer}.accounts .link{margin:0;color:var(--wao-primary-text)}.create-card{padding:14px;display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1.5fr) 120px auto auto;align-items:center;gap:9px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.create-card>div{display:grid;gap:3px}.create-card strong{font-size:13px}.create-card span{color:var(--wao-text-weak);font-size:9.5px;line-height:1.4}.create-card input,.create-card select,.editor input,.editor select,.editor textarea{width:100%;padding:9px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text);font:inherit}.create-card>label{display:flex;align-items:center;gap:5px;font-size:11px;white-space:nowrap}.create-card>label input{width:auto}.create-card>button,.actions>button{min-height:36px;padding:0 13px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer;font-weight:650}.create-card button:disabled,.actions button:disabled{opacity:.45;cursor:not-allowed}.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:12px;align-items:start}.task-list,.editor{border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.panel-head{padding:11px 12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--wao-divider)}.panel-head button{border:0;background:transparent;color:var(--wao-text-weak);cursor:pointer}.task{width:100%;padding:10px 11px;display:flex;align-items:center;gap:8px;border:0;border-bottom:1px solid var(--wao-divider);background:transparent;color:var(--wao-text);cursor:pointer;text-align:left}.task.active{background:var(--wao-primary-soft)}.task>span{min-width:0;flex:1;display:grid;gap:3px}.task strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.task small{color:var(--wao-text-weak);font-size:9.5px}.task em{color:var(--wao-primary-text);font-size:10px;font-style:normal}.empty{padding:28px;color:var(--wao-text-weak);font-size:11px;text-align:center}.editor{padding:15px;display:grid;gap:12px}.editor-head{display:flex;justify-content:space-between;gap:10px}.editor-head>div{display:flex;align-items:center;gap:8px}.editor-head small{color:var(--wao-text-weak);font-size:10px}.status{padding:3px 6px;border-radius:999px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:9px}.status.published{background:var(--wao-success-bg);color:var(--wao-success-strong)}.status.failed{background:var(--wao-danger-bg);color:var(--wao-danger-strong)}.task-error{padding:8px 10px;color:var(--wao-danger-strong);background:var(--wao-danger-bg);border-radius:7px;font-size:11px}.editor label{display:grid;gap:5px;color:var(--wao-text-3);font-size:10px}.editor textarea{resize:vertical;line-height:1.55}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.file{min-height:36px;padding:8px;position:relative;overflow:hidden;border:1px dashed var(--wao-line-control);border-radius:8px;color:var(--wao-text-weak);cursor:pointer}.file input{position:absolute;inset:0;opacity:0;cursor:pointer}.actions{display:flex;align-items:center;justify-content:flex-end;gap:9px}.actions .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.actions span{margin-right:auto;color:var(--wao-text-weak);font-size:10px}@keyframes spin{to{transform:rotate(360deg)}}
-@media(max-width:900px){.create-card{grid-template-columns:1fr 1fr}.create-card>div,.create-card>input{grid-column:1/-1}.workspace{grid-template-columns:1fr}.task-list{max-height:260px;overflow:auto}}@media(max-width:600px){.create-card{grid-template-columns:1fr}.create-card>*{grid-column:1!important}.editor-grid{grid-template-columns:1fr}.editor-head{display:grid}.actions{align-items:stretch;flex-direction:column}.actions span{margin:0}.actions button{width:100%}}
+.publish-center{display:grid;gap:14px}.notice,.error{padding:10px 12px;display:flex;align-items:center;gap:8px;border-radius:9px;font-size:12px}.notice{color:var(--wao-primary-text);background:var(--wao-primary-soft);border:1px solid var(--wao-primary-line)}.error{color:var(--wao-danger-strong);background:var(--wao-danger-bg);border:1px solid var(--wao-danger-line)}.error span{flex:1}.error button{border:0;background:transparent;color:inherit;cursor:pointer}.loading{min-height:260px;display:grid;place-items:center;align-content:center;gap:10px;color:var(--wao-text-weak)}.loading span{width:28px;height:28px;border:3px solid var(--wao-primary-line);border-top-color:var(--wao-primary);border-radius:50%;animation:spin .8s linear infinite}.capabilities{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.capabilities article{padding:13px;display:flex;gap:10px;border:1px solid var(--wao-line);border-radius:11px;background:var(--wao-bg-card)}.capabilities article>div{display:grid;gap:4px}.capabilities strong{font-size:12px}.capabilities span{color:var(--wao-text-weak);font-size:10px;line-height:1.5}.ai-card>i{font-size:22px;color:var(--wao-primary-text)}.ai-card.unavailable{opacity:.72}.platform-card{flex-direction:column}.accounts{display:flex!important;flex-wrap:wrap;gap:5px}.accounts>span{padding:4px 6px;border-radius:6px;background:var(--wao-bg-sub)}.accounts button{margin-left:4px;border:0;background:transparent;color:var(--wao-danger-strong);cursor:pointer}.accounts .link{margin:0;color:var(--wao-primary-text)}.create-card{padding:14px;display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1.5fr) 120px auto auto;align-items:center;gap:9px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.create-card>div{display:grid;gap:3px}.create-card strong{font-size:13px}.create-card span{color:var(--wao-text-weak);font-size:9.5px;line-height:1.4}.create-card input,.create-card select,.editor input,.editor select,.editor textarea,.knowledge-dialog select{width:100%;padding:9px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text);font:inherit}.create-card>label{display:flex;align-items:center;gap:5px;font-size:11px;white-space:nowrap}.create-card>label input{width:auto}.create-card>button,.actions>button{min-height:36px;padding:0 13px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer;font-weight:650}.create-card button:disabled,.actions button:disabled{opacity:.45;cursor:not-allowed}.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:12px;align-items:start}.task-list,.editor{border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.panel-head{padding:11px 12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--wao-divider)}.panel-head button{border:0;background:transparent;color:var(--wao-text-weak);cursor:pointer}.task{width:100%;padding:10px 11px;display:flex;align-items:center;gap:8px;border:0;border-bottom:1px solid var(--wao-divider);background:transparent;color:var(--wao-text);cursor:pointer;text-align:left}.task.active{background:var(--wao-primary-soft)}.task>span{min-width:0;flex:1;display:grid;gap:3px}.task strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.task small{color:var(--wao-text-weak);font-size:9.5px}.task em{color:var(--wao-primary-text);font-size:10px;font-style:normal}.empty{padding:28px;color:var(--wao-text-weak);font-size:11px;text-align:center}.editor{padding:15px;display:grid;gap:12px}.editor-head{display:flex;justify-content:space-between;gap:10px}.editor-head>div{display:flex;align-items:center;gap:8px}.editor-head small{color:var(--wao-text-weak);font-size:10px}.status{padding:3px 6px;border-radius:999px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:9px}.status.published{background:var(--wao-success-bg);color:var(--wao-success-strong)}.status.failed{background:var(--wao-danger-bg);color:var(--wao-danger-strong)}.task-error{padding:8px 10px;color:var(--wao-danger-strong);background:var(--wao-danger-bg);border-radius:7px;font-size:11px}.editor label,.knowledge-dialog label,.export-dialog label{display:grid;gap:5px;color:var(--wao-text-3);font-size:10px}.editor textarea{resize:vertical;line-height:1.55}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.file{min-height:36px;padding:8px;position:relative;overflow:hidden;border:1px dashed var(--wao-line-control);border-radius:8px;color:var(--wao-text-weak);cursor:pointer}.file input{position:absolute;inset:0;opacity:0;cursor:pointer}.actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.actions .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.actions span{margin-right:auto;color:var(--wao-text-weak);font-size:10px}.dialog-mask{position:fixed;inset:0;z-index:50;padding:28px;display:grid;place-items:center;background:rgba(10,30,27,.58)}.export-dialog,.knowledge-dialog{width:min(920px,100%);max-height:calc(100vh - 56px);padding:18px;display:grid;gap:14px;overflow:auto;border-radius:16px;background:var(--wao-bg-card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.knowledge-dialog{width:min(520px,100%)}.export-dialog>header,.knowledge-dialog>header{display:flex;justify-content:space-between;gap:12px}.export-dialog header div,.knowledge-dialog header div{display:grid;gap:4px}.export-dialog header small,.knowledge-dialog header small{color:var(--wao-text-weak);font-size:10px}.export-dialog header button,.knowledge-dialog header button{border:0;background:transparent;color:var(--wao-text-weak);font-size:20px;cursor:pointer}.export-dialog iframe{width:100%;height:430px;border:1px solid var(--wao-line);border-radius:12px;background:#edf3f1}.export-dialog textarea{width:100%;padding:10px;border:1px solid var(--wao-line-control);border-radius:8px;box-sizing:border-box;font:11px/1.5 ui-monospace,monospace;resize:vertical}.export-dialog footer,.knowledge-dialog footer{display:flex;justify-content:flex-end;gap:8px}.export-dialog footer button,.knowledge-dialog footer button,.knowledge-success button{min-height:36px;padding:0 14px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer}.export-dialog footer .secondary,.knowledge-dialog footer .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.dialog-state{padding:30px;text-align:center;color:var(--wao-text-weak)}.knowledge-success{padding:28px;display:grid;place-items:center;gap:10px;color:var(--wao-success-strong)}.knowledge-success i{font-size:36px}@keyframes spin{to{transform:rotate(360deg)}}
+.dialog-error{padding:10px 12px;display:flex;justify-content:space-between;gap:10px;border-radius:8px;background:var(--wao-danger-bg);color:var(--wao-danger-strong);font-size:11px}.dialog-error button{border:0;background:transparent;color:inherit;cursor:pointer}
+@media(max-width:900px){.create-card{grid-template-columns:1fr 1fr}.create-card>div,.create-card>input{grid-column:1/-1}.workspace{grid-template-columns:1fr}.task-list{max-height:260px;overflow:auto}}@media(max-width:600px){.create-card{grid-template-columns:1fr}.create-card>*{grid-column:1!important}.editor-grid{grid-template-columns:1fr}.editor-head{display:grid}.actions{align-items:stretch;flex-direction:column}.actions span{margin:0}.actions button{width:100%}.dialog-mask{padding:10px}.export-dialog,.knowledge-dialog{max-height:calc(100vh - 20px);padding:14px}.export-dialog iframe{height:52vh}.export-dialog footer,.knowledge-dialog footer{flex-direction:column}.export-dialog footer button,.knowledge-dialog footer button{width:100%}}
 </style>
