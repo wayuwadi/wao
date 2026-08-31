@@ -152,6 +152,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-flashlight-line',
     path: '/automation',
   },
+  'crawler-capabilities': {
+    id: 'crawler-capabilities',
+    label: '爬虫能力',
+    icon: 'ri-code-box-line',
+    path: '/crawler-capabilities',
+  },
   games: { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', path: '/games' },
   devices: {
     id: 'devices',
@@ -466,6 +472,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
+      id: 'crawler-capabilities',
+      label: '爬虫能力',
+      icon: 'ri-code-box-line',
+      group: 'TOOLS',
+      order: 15,
+      visible: true,
+    },
+    {
       id: 'files',
       label: '文件与图床',
       icon: 'ri-hard-drive-2-line',
@@ -530,7 +544,15 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '个人', items: PERSONAL_ITEMS },
   {
     label: '工具',
-    items: ['dashboard', 'automation', 'files', 'games', 'devices', 'request-monitoring'],
+    items: [
+      'dashboard',
+      'automation',
+      'crawler-capabilities',
+      'files',
+      'games',
+      'devices',
+      'request-monitoring',
+    ],
   },
 ]
 

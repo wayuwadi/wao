@@ -297,6 +297,12 @@ const router = createRouter({
           meta: { module: 'automation', tabKind: 'module' },
         },
         {
+          path: 'crawler-capabilities',
+          name: 'crawler-capabilities',
+          component: () => import('@/views/CrawlerCapabilitiesView.vue'),
+          meta: { module: 'crawler-capabilities', tabKind: 'module' },
+        },
+        {
           path: 'games',
           name: 'games',
           component: () => import('@/views/GamesView.vue'),
