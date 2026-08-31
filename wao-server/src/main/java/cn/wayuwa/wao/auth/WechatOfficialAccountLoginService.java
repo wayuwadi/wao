@@ -17,6 +17,7 @@ import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
@@ -30,34 +31,41 @@ public class WechatOfficialAccountLoginService {
     private static final Logger log = LoggerFactory.getLogger(WechatOfficialAccountLoginService.class);
     private static final Duration SESSION_TTL = Duration.ofMinutes(5);
     private static final int MAX_XML_LENGTH = 64 * 1024;
-    private final WechatOfficialAccountProperties properties;
+    private final WechatOfficialAccountConfigService config;
     private final WechatOfficialLoginStore store;
     private final RestClient client;
     private final SecureRandom random = new SecureRandom();
 
-    public WechatOfficialAccountLoginService(WechatOfficialAccountProperties properties,
+    @Autowired
+    public WechatOfficialAccountLoginService(WechatOfficialAccountConfigService config,
                                              WechatOfficialLoginStore store, RestClient.Builder builder) {
-        this.properties = properties;
+        this.config = config;
         this.store = store;
-        this.client = builder.baseUrl(properties.apiBaseUrl()).build();
+        this.client = builder.baseUrl(config.apiBaseUrl()).build();
+    }
+
+    /** 兼容认证状态机的独立单元测试。 */
+    WechatOfficialAccountLoginService(WechatOfficialAccountProperties properties,
+            WechatOfficialLoginStore store, RestClient.Builder builder) {
+        this(new WechatOfficialAccountConfigService(properties), store, builder);
     }
 
     /** 创建带参公众号二维码和仅对本次扫码有效的四位验证码。 */
     public WechatOfficialLoginStore.LoginSession createSession() {
-        requireEnabled();
+        WechatOfficialAccountConfigService.Effective effective = requireEnabled();
         String sessionId = randomHex(16);
         String verificationCode = String.format("%04d", random.nextInt(10_000));
-        QrResponse qr = createQr(accessToken(), sessionId);
+        QrResponse qr = createQr(accessToken(effective), sessionId);
         if (qr != null && tokenInvalid(qr.errcode())) {
             store.clearAccessToken();
-            qr = createQr(accessToken(), sessionId);
+            qr = createQr(accessToken(effective), sessionId);
         }
         if (qr == null || !StringUtils.hasText(qr.ticket())) {
             log.warn("Wechat official QR creation failed: code={}", qr == null ? null : qr.errcode());
             throw new WechatLoginException("公众号登录二维码生成失败，请检查接口权限与 IP 白名单");
         }
         Instant expiresAt = Instant.now().plus(SESSION_TTL);
-        String qrCodeUrl = properties.qrBaseUrl() + "/cgi-bin/showqrcode?ticket=" + encode(qr.ticket());
+        String qrCodeUrl = effective.qrBaseUrl() + "/cgi-bin/showqrcode?ticket=" + encode(qr.ticket());
         WechatOfficialLoginStore.LoginSession session = new WechatOfficialLoginStore.LoginSession(
                 sessionId, verificationCode, WechatOfficialLoginStore.Status.WAITING_SCAN, null,
                 expiresAt, qrCodeUrl);
@@ -73,10 +81,11 @@ public class WechatOfficialAccountLoginService {
 
     /** 校验微信公众号服务器配置或消息回调签名。 */
     public boolean validSignature(String signature, String timestamp, String nonce) {
-        if (!properties.configured() || !StringUtils.hasText(signature)
+        WechatOfficialAccountConfigService.Effective effective = config.current();
+        if (!effective.configured() || !StringUtils.hasText(signature)
                 || !StringUtils.hasText(timestamp) || !StringUtils.hasText(nonce)) return false;
         try {
-            String source = Stream.of(properties.token(), timestamp, nonce).sorted().collect(Collectors.joining());
+            String source = Stream.of(effective.token(), timestamp, nonce).sorted().collect(Collectors.joining());
             String expected = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1")
                     .digest(source.getBytes(StandardCharsets.UTF_8)));
             return MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
@@ -113,33 +122,33 @@ public class WechatOfficialAccountLoginService {
 
     /** 读取已扫码关注用户的真实资料；资料权限不足时仍使用回调已验证的 Open ID。 */
     public OfficialProfile profile(String openId) {
-        requireEnabled();
+        WechatOfficialAccountConfigService.Effective effective = requireEnabled();
         if (!StringUtils.hasText(openId)) throw new WechatLoginException("微信公众号没有返回有效用户身份");
         try {
-            UserResponse user = fetchUser(accessToken(), openId);
+            UserResponse user = fetchUser(accessToken(effective), openId);
             if (tokenInvalid(user == null ? null : user.errcode())) {
                 store.clearAccessToken();
-                user = fetchUser(accessToken(), openId);
+                user = fetchUser(accessToken(effective), openId);
             }
             if (user != null && StringUtils.hasText(user.openId())) {
-                return new OfficialProfile(officialSubject(user.openId()), user.unionId(), user.nickname(),
-                        user.headImageUrl());
+                return new OfficialProfile(officialSubject(effective.appId(), user.openId()), user.unionId(),
+                        user.nickname(), user.headImageUrl());
             }
         } catch (RestClientException | WechatLoginException exception) {
             log.warn("Wechat official profile lookup failed; falling back to verified Open ID: {}",
                     exception.getClass().getSimpleName());
         }
-        return new OfficialProfile(officialSubject(openId), null, null, null);
+        return new OfficialProfile(officialSubject(effective.appId(), openId), null, null, null);
     }
 
-    private synchronized String accessToken() {
+    private synchronized String accessToken(WechatOfficialAccountConfigService.Effective effective) {
         Optional<String> cached = store.accessToken();
         if (cached.isPresent()) return cached.get();
         try {
             TokenResponse response = client.get().uri(uri -> uri.path("/cgi-bin/token")
                     .queryParam("grant_type", "client_credential")
-                    .queryParam("appid", properties.appId())
-                    .queryParam("secret", properties.appSecret()).build()).retrieve().body(TokenResponse.class);
+                    .queryParam("appid", effective.appId())
+                    .queryParam("secret", effective.appSecret()).build()).retrieve().body(TokenResponse.class);
             if (response == null || !StringUtils.hasText(response.accessToken())) {
                 log.warn("Wechat official access token request failed: code={}",
                         response == null ? null : response.errcode());
@@ -195,10 +204,12 @@ public class WechatOfficialAccountLoginService {
         }
     }
 
-    private void requireEnabled() {
-        if (!properties.configured()) {
+    private WechatOfficialAccountConfigService.Effective requireEnabled() {
+        WechatOfficialAccountConfigService.Effective effective = config.current();
+        if (!effective.configured()) {
             throw new WechatLoginException("公众号登录待配置：需要认证公众号的 App ID、App Secret、Token 与消息回调");
         }
+        return effective;
     }
 
     private String randomHex(int bytes) {
@@ -207,8 +218,8 @@ public class WechatOfficialAccountLoginService {
         return HexFormat.of().formatHex(value);
     }
 
-    private String officialSubject(String openId) {
-        return "official:" + properties.appId() + ":" + openId;
+    private String officialSubject(String appId, String openId) {
+        return "official:" + appId + ":" + openId;
     }
 
     private static String text(Document document, String tag) {

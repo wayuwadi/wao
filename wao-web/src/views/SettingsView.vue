@@ -11,7 +11,6 @@ import {
   saveNetworkOutageWindow, saveSiteInfo,
   type NetworkOutageWindow, type SiteInfo,
 } from '@/api/system'
-import { useDataStore } from '@/stores/data'
 import {
   usePreferenceStore,
   type Celebration,
@@ -24,11 +23,11 @@ import WaoAiCapabilitiesPanel from '@/components/settings/WaoAiCapabilitiesPanel
 import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
 import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
+import LoginSettingsPanel from '@/components/settings/LoginSettingsPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 
 const session = useSessionStore()
 const theme = useTheme()
-const data = useDataStore()
 const preferences = usePreferenceStore()
 const ui = useUiStore()
 const router = useRouter()
@@ -37,10 +36,11 @@ const webhookPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const waoAiCapabilitiesPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
+const loginSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
-  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
+  { label: '系统', icon: 'ri-settings-4-line', items: [['网站信息 · 备案', 'site'], ['系统登录配置', 'login-settings'], ['断网时段', 'network-outage'], ['通知设置', 'notifications'], ['菜单配置', 'navigation'], ['Webhook配置', 'webhook'], ['AI 账号', 'ai-accounts'], ['WAO AI 能力', 'wao-ai-capabilities']] },
   { label: '个人', icon: 'ri-user-3-line', items: [['个人资料', 'profile'], ['账号与登录', 'account'], ['宠物设置', 'pet'], ['偏好', 'prefs']] },
 ] as const
 
@@ -57,6 +57,8 @@ let skipWebhookRouteGuardOnce = false
 function selectTab(next: string) {
   if (tab.value === 'pet' && next !== 'pet' && webPetPanel.value
       && !webPetPanel.value.confirmLeave()) return
+  if (tab.value === 'login-settings' && next !== 'login-settings' && loginSettingsPanel.value
+      && !loginSettingsPanel.value.confirmLeave()) return
   if (tab.value === 'navigation' && next !== 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return
   if (tab.value === 'webhook' && next !== 'webhook' && webhookPanel.value
@@ -90,6 +92,8 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return false
   if (tab.value === 'pet' && webPetPanel.value && !webPetPanel.value.confirmLeave()) return false
+  if (tab.value === 'login-settings' && loginSettingsPanel.value
+      && !loginSettingsPanel.value.confirmLeave()) return false
   return tab.value !== 'wao-ai-capabilities' || !waoAiCapabilitiesPanel.value
     || waoAiCapabilitiesPanel.value.confirmLeave()
 })
@@ -359,6 +363,8 @@ async function logout() {
       && !navigationPanel.value.confirmLeave()) return
   if (tab.value === 'webhook' && webhookPanel.value && !webhookPanel.value.confirmLeave()) return
   if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return
+  if (tab.value === 'login-settings' && loginSettingsPanel.value
+      && !loginSettingsPanel.value.confirmLeave()) return
   await session.logout()
   skipWebhookRouteGuardOnce = true
   await router.push('/login')
@@ -483,6 +489,11 @@ async function bindFeishu() {
             </div>
             <div class="hint">保存后，备案号会自动展示在登录页、公开任务分享页和登录后的系统页脚；无需修改代码或重新发布前端。</div>
           </div>
+        </template>
+
+        <!-- 系统 · 登录配置 -->
+        <template v-else-if="tab === 'login-settings'">
+          <LoginSettingsPanel ref="loginSettingsPanel" />
         </template>
 
         <!-- 系统 · 断网时段 -->
