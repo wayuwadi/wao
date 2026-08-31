@@ -21,8 +21,9 @@ public class AiActivityController {
     @GetMapping
     public ApiResponse<AiActivityPageDto> page(
             @RequestParam(defaultValue = "ALL") String type,
+            @RequestParam(defaultValue = "ALL") String status,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.ok(service.page(type, page, size));
+        return ApiResponse.ok(service.page(type, status, page, size));
     }
 }

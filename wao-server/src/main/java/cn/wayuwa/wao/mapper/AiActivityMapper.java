@@ -14,7 +14,7 @@ public interface AiActivityMapper {
     @Select("""
             SELECT activity.*
               FROM (
-                SELECT r.id, 'FEATURE_DEVELOPMENT' AS activity_type,
+                SELECT r.id, UPPER(COALESCE(r.activity_type, 'FEATURE_DEVELOPMENT')) AS activity_type,
                        COALESCE(t.title, '已删除的开发任务') AS title,
                        UPPER(r.status) AS status,
                        COALESCE(p.name, '未归属项目') AS subtitle,
@@ -45,23 +45,27 @@ public interface AiActivityMapper {
                  WHERE cr.stage IN ('SUCCEEDED', 'FAILED')
               ) activity
              WHERE (#{type} = 'ALL' OR activity.activity_type = #{type})
+               AND (#{status} = 'ALL' OR activity.status = #{status})
              ORDER BY COALESCE(activity.finished_at, activity.created_at) DESC, activity.id DESC
              LIMIT #{limit} OFFSET #{offset}
             """)
-    List<AiActivityRow> page(@Param("type") String type, @Param("offset") long offset,
+    List<AiActivityRow> page(@Param("type") String type, @Param("status") String status,
+            @Param("offset") long offset,
             @Param("limit") int limit);
 
     @Select("""
             SELECT COUNT(*) FROM (
-                SELECT r.id, 'FEATURE_DEVELOPMENT' AS activity_type
+                SELECT r.id, UPPER(COALESCE(r.activity_type, 'FEATURE_DEVELOPMENT')) AS activity_type,
+                       UPPER(r.status) AS status
                   FROM ai_task_run r
                  WHERE r.status NOT IN ('queued', 'claimed', 'running')
                 UNION ALL
-                SELECT cr.id, 'CHAT_REVIEW' AS activity_type
+                SELECT cr.id, 'CHAT_REVIEW' AS activity_type, cr.stage AS status
                   FROM chat_review_run cr
                  WHERE cr.stage IN ('SUCCEEDED', 'FAILED')
             ) activity
             WHERE (#{type} = 'ALL' OR activity.activity_type = #{type})
+              AND (#{status} = 'ALL' OR activity.status = #{status})
             """)
-    long count(@Param("type") String type);
+    long count(@Param("type") String type, @Param("status") String status);
 }

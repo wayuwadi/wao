@@ -1,11 +1,15 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fetchAiRun } from '@/api/ai'
 import { fetchAutomationJob } from '@/api/board'
 import HttpInspectionHistoryModal from '@/components/overlays/HttpInspectionHistoryModal.vue'
 import type { AutomationJob, JobRun } from '@/types'
 
 vi.mock('@/api/board', () => ({
   fetchAutomationJob: vi.fn<(typeof import('@/api/board'))['fetchAutomationJob']>(),
+}))
+vi.mock('@/api/ai', () => ({
+  fetchAiRun: vi.fn<(typeof import('@/api/ai'))['fetchAiRun']>(),
 }))
 
 function job(runs: JobRun[]): AutomationJob {
@@ -26,7 +30,10 @@ function job(runs: JobRun[]): AutomationJob {
 }
 
 describe('HttpInspectionHistoryModal', () => {
-  beforeEach(() => vi.mocked(fetchAutomationJob).mockReset())
+  beforeEach(() => {
+    vi.mocked(fetchAutomationJob).mockReset()
+    vi.mocked(fetchAiRun).mockReset()
+  })
 
   it('无真实运行时展示空历史而不填示例结果', async () => {
     vi.mocked(fetchAutomationJob).mockResolvedValue(job([]))
@@ -69,9 +76,48 @@ describe('HttpInspectionHistoryModal', () => {
     const wrapper = mount(HttpInspectionHistoryModal)
     await flushPromises()
 
-    expect(wrapper.findAll('.run-list article')).toHaveLength(10)
+    expect(wrapper.findAll('.run-list > button')).toHaveLength(10)
     expect(wrapper.find('.history-pagination').text()).toContain('跳至')
     await wrapper.get('[aria-label="第 2 页"]').trigger('click')
-    expect(wrapper.findAll('.run-list article')).toHaveLength(1)
+    expect(wrapper.findAll('.run-list > button')).toHaveLength(1)
+  })
+
+  it('展示真实汇总统计并可点开关联 AI Run 的详情和用量', async () => {
+    vi.mocked(fetchAutomationJob).mockResolvedValue(job([
+      { id: 'r1', time: '今天 06:30', executor: '定时任务',
+        result: '成功 · 已创建 AI Run ar1', aiRunId: 'ar1', durationMs: 1200 },
+      { id: 'r2', time: '昨天 06:30', executor: '定时任务',
+        result: '失败 · 工作流不可用', durationMs: 800 },
+      { id: 'r3', time: '8月28日 06:30', executor: '定时任务',
+        result: '跳过 · 没有真实 HTTP 指标', durationMs: 1000 },
+    ]))
+    vi.mocked(fetchAiRun).mockResolvedValue({
+      id: 'ar1', taskId: 't1', taskTitle: 'HTTP 请求性能夜间巡检', taskIds: ['t1'],
+      previewImages: [], subId: null, subTitle: null, projectId: 'p1', projectName: 'Wa All in One',
+      engine: 'codex', status: 'succeeded', runnerId: 'rn1', runnerName: 'Linux 主节点',
+      requestedRunnerId: null, branchName: 'ai/wao-ar1', retryOfRunId: null,
+      resultSummary: '完成 2 个接口治理', reportUrl: '/api/pages/ai-run-ar1',
+      latestProgress: null, progressUpdatedAt: null, progress: [],
+      usage: { model: 'gpt-5.6-sol', models: 'gpt-5.6-sol', inputTokens: 100,
+        outputTokens: 50, cachedInputTokens: 0, totalTokens: 150, costUsd: null, recorded: true },
+      continuationPending: false, sessionId: 's1', exitCode: 0,
+      createdAt: '2026-08-30T06:30:00', startedAt: '2026-08-30T06:31:00',
+      finishedAt: '2026-08-30T06:36:00', memoryReads: [], memoryWrites: [], skills: [], skillAudits: [],
+    })
+    const wrapper = mount(HttpInspectionHistoryModal)
+    await flushPromises()
+
+    expect(wrapper.find('.statistics').text()).toContain('总次数3')
+    expect(wrapper.find('.statistics').text()).toContain('已创建1')
+    expect(wrapper.find('.statistics').text()).toContain('启动失败1')
+    expect(wrapper.find('.statistics').text()).toContain('已跳过1')
+
+    await wrapper.find('.run-list > button').trigger('click')
+    await flushPromises()
+
+    expect(fetchAiRun).toHaveBeenCalledWith('ar1')
+    expect(wrapper.find('.run-detail').text()).toContain('ar1')
+    expect(wrapper.find('.ai-run-detail').text()).toContain('完成 2 个接口治理')
+    expect(wrapper.find('.ai-run-detail').text()).toContain('150')
   })
 })

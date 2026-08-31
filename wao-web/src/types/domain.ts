@@ -409,6 +409,8 @@ export interface KbGroup {
 }
 
 export interface JobRun {
+  /** 自动化运行记录 id。 */
+  id?: string
   time: string
   executor: string
   result: string
@@ -416,6 +418,8 @@ export interface JobRun {
   runAt?: string | null
   /** 服务端记录的真实执行耗时；旧数据可为空。 */
   durationMs?: number | null
+  /** 本次自动化创建的真实 AI Run；跳过和启动失败时为空。 */
+  aiRunId?: string | null
 }
 
 export interface AutomationJob {

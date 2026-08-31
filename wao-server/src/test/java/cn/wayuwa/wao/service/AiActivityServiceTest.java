@@ -26,10 +26,10 @@ class AiActivityServiceTest {
         row.setSubtitle("最近 20 条消息 · 20 条真实消息");
         row.setCapabilityLabel("DeepSeek");
         row.setTargetId("cr1");
-        when(mapper.count("CHAT_REVIEW")).thenReturn(17L);
-        when(mapper.page("CHAT_REVIEW", 8, 8)).thenReturn(List.of(row));
+        when(mapper.count("CHAT_REVIEW", "SUCCEEDED")).thenReturn(17L);
+        when(mapper.page("CHAT_REVIEW", "SUCCEEDED", 8, 8)).thenReturn(List.of(row));
 
-        var result = service.page("chat_review", 2, 3);
+        var result = service.page("chat_review", "succeeded", 2, 3);
 
         assertThat(result.total()).isEqualTo(17);
         assertThat(result.page()).isEqualTo(2);
@@ -38,12 +38,24 @@ class AiActivityServiceTest {
             assertThat(item.type()).isEqualTo("CHAT_REVIEW");
             assertThat(item.capabilityLabel()).isEqualTo("DeepSeek");
         });
-        verify(mapper).page("CHAT_REVIEW", 8, 8);
+        verify(mapper).page("CHAT_REVIEW", "SUCCEEDED", 8, 8);
     }
 
     @Test
     void rejectsUnknownFutureTypesUntilTheyHaveARealSource() {
-        assertThatThrownBy(() -> service.page("VIDEO", 1, 20))
+        assertThatThrownBy(() -> service.page("VIDEO", "ALL", 1, 20))
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("不支持");
+    }
+
+    @Test
+    void acceptsInspectionTypeAndRejectsUnknownResult() {
+        when(mapper.count("AI_INSPECTION", "FAILED")).thenReturn(0L);
+
+        var result = service.page("ai_inspection", "failed", 1, 20);
+
+        assertThat(result.total()).isZero();
+        verify(mapper).page("AI_INSPECTION", "FAILED", 0, 20);
+        assertThatThrownBy(() -> service.page("ALL", "CANCELLED", 1, 20))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("结果");
     }
 }

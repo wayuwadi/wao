@@ -15,6 +15,8 @@ public class AutomationRunEntity {
     private String runTimeLabel;
     private LocalDateTime runAt;
     private String result;
+    /** 本次自动化创建的真实 AI Run；跳过或执行失败时为空。 */
+    private String aiRunId;
     private String executorId;
     private Integer durationMs;
     private Integer ord;
@@ -29,6 +31,8 @@ public class AutomationRunEntity {
     public void setRunAt(LocalDateTime runAt) { this.runAt = runAt; }
     public String getResult() { return result; }
     public void setResult(String result) { this.result = result; }
+    public String getAiRunId() { return aiRunId; }
+    public void setAiRunId(String aiRunId) { this.aiRunId = aiRunId; }
     public String getExecutorId() { return executorId; }
     public void setExecutorId(String executorId) { this.executorId = executorId; }
     public Integer getDurationMs() { return durationMs; }

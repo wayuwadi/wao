@@ -46,14 +46,16 @@ class HttpPerformanceAiRunJobHandlerTest {
         when(run.id()).thenReturn("ar-nightly");
         when(run.taskId()).thenReturn("task-nightly");
         when(run.taskTitle()).thenReturn("HTTP 请求性能夜间巡检");
-        when(aiRuns.launchGoal(eq("p-wao"), anyString(), eq("wg"), eq("https://wao.wayuwa.cn")))
+        when(aiRuns.launchInspectionGoal(eq("p-wao"), anyString(), eq("wg"), eq("https://wao.wayuwa.cn")))
                 .thenReturn(run);
 
-        String result = handler.execute();
+        JobExecutionResult execution = handler.executeWithMetadata(null, null);
 
-        assertThat(result).isEqualTo("成功 · 已创建 AI Run ar-nightly");
+        assertThat(execution.message()).isEqualTo("成功 · 已创建 AI Run ar-nightly");
+        assertThat(execution.aiRunId()).isEqualTo("ar-nightly");
         ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
-        verify(aiRuns).launchGoal(eq("p-wao"), prompt.capture(), eq("wg"), eq("https://wao.wayuwa.cn"));
+        verify(aiRuns).launchInspectionGoal(
+                eq("p-wao"), prompt.capture(), eq("wg"), eq("https://wao.wayuwa.cn"));
         assertThat(prompt.getValue())
                 .contains("请求数：3968", "平均耗时：1413 ms", "P95：10005 ms")
                 .contains("`/api/tasks`", "5894", "Top N 候选接口：5", "本次最多治理接口数：2");
@@ -67,7 +69,7 @@ class HttpPerformanceAiRunJobHandlerTest {
 
         assertThat(handler.execute()).isEqualTo("跳过 · 最近 24 小时没有真实 HTTP 指标");
 
-        verify(aiRuns, never()).launchGoal(anyString(), anyString(), anyString(), anyString());
+        verify(aiRuns, never()).launchInspectionGoal(anyString(), anyString(), anyString(), anyString());
     }
 
     @Test

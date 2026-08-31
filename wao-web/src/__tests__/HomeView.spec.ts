@@ -77,7 +77,7 @@ vi.mock('@/api/ai', () => ({
       createdAt: '2026-07-25T20:19:00', startedAt: null, finishedAt: null,
     },
   ]),
-  fetchAiActivities: vi.fn<(type?: string, page?: number, size?: number) => Promise<Record<string, unknown>>>().mockImplementation(async (_type = 'ALL', _page = 1, size = 20) => ({
+  fetchAiActivities: vi.fn<(type?: string, status?: string, page?: number, size?: number) => Promise<Record<string, unknown>>>().mockImplementation(async (_type = 'ALL', _status = 'ALL', _page = 1, size = 20) => ({
     items: size === 8 ? [{
       id: 'ar1', type: 'FEATURE_DEVELOPMENT', title: '修复自动任务', status: 'FAILED',
       subtitle: 'WAO', capabilityLabel: 'Codex', targetId: 't1',
@@ -826,7 +826,7 @@ describe('HomeView AI 控制台', () => {
     await wrapper.find('.history-link').trigger('click')
     await flushPromises()
 
-    expect(fetchAiActivities).toHaveBeenCalledWith('ALL', 1, 20)
+    expect(fetchAiActivities).toHaveBeenCalledWith('ALL', 'ALL', 1, 20)
     expect(wrapper.find('.run-history-detail').text()).toContain('全部运行历史')
     expect(wrapper.find('.run-history-detail').text()).toContain('历史运行')
     expect(wrapper.find('.history-pagination').text()).toContain('跳至')
@@ -856,7 +856,7 @@ describe('HomeView AI 控制台', () => {
 
     await wrapper.find('.recent-pagination').get('[aria-label="第 2 页"]').trigger('click')
     await flushPromises()
-    expect(fetchAiActivities).toHaveBeenCalledWith('ALL', 2, 8)
+    expect(fetchAiActivities).toHaveBeenCalledWith('ALL', 'ALL', 2, 8)
     wrapper.unmount()
   })
 
@@ -880,6 +880,27 @@ describe('HomeView AI 控制台', () => {
     expect(ui.chatOpen).toBe(true)
     expect(ui.chatReviewId).toBe('cr-shared')
     expect(router.currentRoute.value.fullPath).toBe('/')
+    wrapper.unmount()
+  })
+
+  it('可组合筛选 AI 巡检类型和失败结果并使用服务端分页', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchAiActivities)
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, size: 8 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, size: 8 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, size: 8 })
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.findAll('[aria-label="AI 运行类型"] button')
+      .find((button) => button.text() === 'AI 巡检')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('[aria-label="AI 运行结果"] button')
+      .find((button) => button.text() === '失败')!.trigger('click')
+    await flushPromises()
+
+    expect(fetchAiActivities).toHaveBeenLastCalledWith('AI_INSPECTION', 'FAILED', 1, 8)
+    expect(wrapper.find('.recent-state').text()).toContain('当前筛选')
     wrapper.unmount()
   })
 

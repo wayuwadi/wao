@@ -50,7 +50,7 @@ public class AutomationService {
     private final Map<String, JobHandler> handlers;
     private final MemberService members;
 
-    private record ExecutionResult(String message, int durationMs) { }
+    private record ExecutionResult(String message, int durationMs, String aiRunId) { }
 
     public AutomationService(AutomationJobMapper jobMapper, AutomationRunMapper runMapper, ObjectMapper json,
             List<JobHandler> handlers, MemberService members) {
@@ -153,10 +153,10 @@ public class AutomationService {
     public AutomationJobDto runJob(String id, String executorId) {
         AutomationJobEntity e = requireJob(id);
         if ("待修复".equals(e.getStatus())) {
-            recordRun(e, "失败 · 需要先重新授权", executorId, 0);
+            recordRun(e, "失败 · 需要先重新授权", executorId, 0, null);
         } else {
             ExecutionResult execution = execute(e, null);
-            recordRun(e, execution.message(), executorId, execution.durationMs());
+            recordRun(e, execution.message(), executorId, execution.durationMs(), execution.aiRunId());
         }
         jobMapper.updateById(e);
         return getJob(id);
@@ -205,7 +205,7 @@ public class AutomationService {
         }
         e.setNextFireAt(nextFireAt);
         ExecutionResult execution = execute(e, scheduledFireAt);
-        recordRun(e, execution.message(), null, execution.durationMs());
+        recordRun(e, execution.message(), null, execution.durationMs(), execution.aiRunId());
         jobMapper.updateById(e);
     }
 
@@ -222,14 +222,15 @@ public class AutomationService {
     private ExecutionResult execute(AutomationJobEntity e, LocalDateTime scheduledFireAt) {
         JobHandler handler = e.getHandler() == null ? null : handlers.get(e.getHandler());
         if (handler == null) {
-            return new ExecutionResult("失败 · 未配置真实执行器", 0);
+            return new ExecutionResult("失败 · 未配置真实执行器", 0, null);
         }
         long startedAt = System.nanoTime();
         try {
-            return new ExecutionResult(handler.execute(e, scheduledFireAt), elapsedMillis(startedAt));
+            JobExecutionResult result = handler.executeWithMetadata(e, scheduledFireAt);
+            return new ExecutionResult(result.message(), elapsedMillis(startedAt), result.aiRunId());
         } catch (RuntimeException ex) {
             log.warn("自动化任务 {} 执行失败：{}", e.getId(), ex.getMessage());
-            return new ExecutionResult("失败 · " + shortReason(ex), elapsedMillis(startedAt));
+            return new ExecutionResult("失败 · " + shortReason(ex), elapsedMillis(startedAt), null);
         }
     }
 
@@ -253,7 +254,7 @@ public class AutomationService {
                 .le(AutomationJobEntity::getNextFireAt, now));
     }
 
-    private void recordRun(AutomationJobEntity e, String result, String executorId, int durationMs) {
+    private void recordRun(AutomationJobEntity e, String result, String executorId, int durationMs, String aiRunId) {
         LocalDateTime runAt = LocalDateTime.now(ZONE);
         AutomationRunEntity run = new AutomationRunEntity();
         run.setId("r" + System.currentTimeMillis());
@@ -261,6 +262,7 @@ public class AutomationService {
         run.setRunTimeLabel(runAt.format(STORED_TIME_LABEL));
         run.setRunAt(runAt);
         run.setResult(result);
+        run.setAiRunId(aiRunId);
         run.setExecutorId(executorId);
         run.setDurationMs(durationMs);
         run.setOrd(0);
@@ -304,8 +306,8 @@ public class AutomationService {
 
     private AutomationJobDto toDto(AutomationJobEntity e, List<AutomationRunEntity> runs) {
         List<AutomationRunDto> runPairs = runs.stream()
-                .map(r -> new AutomationRunDto(displayTime(r), executorName(r.getExecutorId()), r.getResult(),
-                        r.getRunAt(), r.getDurationMs()))
+                .map(r -> new AutomationRunDto(r.getId(), displayTime(r), executorName(r.getExecutorId()),
+                        r.getResult(), r.getRunAt(), r.getDurationMs(), r.getAiRunId()))
                 .toList();
         String last = runs.isEmpty() ? e.getLastRunLabel()
                 : displayTime(runs.get(0)) + " · " + runs.get(0).getResult();

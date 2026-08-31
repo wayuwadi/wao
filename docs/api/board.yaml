@@ -195,11 +195,12 @@ paths:
     get:
       summary: 分页读取首页统一 AI 活动
       parameters:
-        - { name: type, in: query, schema: { type: string, enum: [ALL, FEATURE_DEVELOPMENT, CHAT_REVIEW], default: ALL } }
+        - { name: type, in: query, schema: { type: string, enum: [ALL, FEATURE_DEVELOPMENT, AI_INSPECTION, CHAT_REVIEW], default: ALL } }
+        - { name: status, in: query, schema: { type: string, enum: [ALL, SUCCEEDED, FAILED], default: ALL } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
         - { name: size, in: query, schema: { type: integer, minimum: 8, maximum: 50, default: 20 } }
       responses:
-        '200': { description: 开发运行与聊天复盘按结束时间统一排序，返回真实总数和分页信息 }
+        '200': { description: 功能开发、AI 巡检与聊天复盘按结束时间统一排序，按类型和结果返回真实总数与分页信息 }
   /memory/tokens:
     get:
       summary: 列出当前成员有效的 Codex 记忆 MCP 设备令牌元数据
@@ -851,7 +852,7 @@ paths:
     get: { summary: 自动化任务列表（运行时间按真实时间戳动态显示今天 / 昨天 / 绝对日期）, responses: { '200': { description: OK } } }
     post: { summary: 新建自动化任务, responses: { '200': { description: OK }, '400': { description: cronExpr 不是合法 Cron 表达式 } } }
   /jobs/{id}:
-    get: { summary: 任务详情, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+    get: { summary: 任务详情（运行记录包含稳定 id 及其创建的可选 aiRunId）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     patch: { summary: 局部更新任务, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     delete: { summary: 删除任务（级联删除运行记录）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   /jobs/{id}/run: { post: { summary: 手动触发真实执行器并记录当前会话成员、结果与实测耗时；执行器缺失时写明确失败记录, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: 返回含最新真实运行结果的任务 } } } }
