@@ -15,7 +15,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class AiActivityService {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
-    private static final Set<String> TYPES = Set.of("ALL", "FEATURE_DEVELOPMENT", "CHAT_REVIEW");
+    private static final Set<String> TYPES = Set.of(
+            "ALL", "FEATURE_DEVELOPMENT", "AI_INSPECTION", "CHAT_REVIEW");
+    private static final Set<String> STATUSES = Set.of("ALL", "SUCCEEDED", "FAILED");
     private final AiActivityMapper mapper;
 
     public AiActivityService(AiActivityMapper mapper) {
@@ -23,14 +25,17 @@ public class AiActivityService {
     }
 
     /** 按类型返回真实终态活动；页大小限制为 8～50。 */
-    public AiActivityPageDto page(String requestedType, int requestedPage, int requestedSize) {
+    public AiActivityPageDto page(
+            String requestedType, String requestedStatus, int requestedPage, int requestedSize) {
         String type = requestedType == null ? "ALL" : requestedType.trim().toUpperCase(Locale.ROOT);
         if (!TYPES.contains(type)) throw new BadRequestException("不支持的 AI 活动类型");
+        String status = requestedStatus == null ? "ALL" : requestedStatus.trim().toUpperCase(Locale.ROOT);
+        if (!STATUSES.contains(status)) throw new BadRequestException("不支持的 AI 活动结果");
         int page = Math.max(1, requestedPage);
         int size = Math.max(8, Math.min(50, requestedSize));
-        long total = mapper.count(type);
+        long total = mapper.count(type, status);
         long offset = (long) (page - 1) * size;
-        return new AiActivityPageDto(mapper.page(type, offset, size).stream().map(this::dto).toList(),
+        return new AiActivityPageDto(mapper.page(type, status, offset, size).stream().map(this::dto).toList(),
                 total, page, size);
     }
 

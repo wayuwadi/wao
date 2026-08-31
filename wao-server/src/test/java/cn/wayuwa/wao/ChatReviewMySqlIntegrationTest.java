@@ -535,10 +535,10 @@ class ChatReviewMySqlIntegrationTest {
                  WHERE id = 'cr-lease-takeover'
                 """);
 
-        assertThat(activities.page("CHAT_REVIEW", 0, 50))
+        assertThat(activities.page("CHAT_REVIEW", "ALL", 0, 50))
                 .filteredOn(row -> "cr-lease-takeover".equals(row.getId()))
                 .singleElement()
                 .satisfies(row -> assertThat(row.getCapabilityLabel()).isEqualTo("DeepSeek 验收账号"));
-        assertThat(activities.count("ALL")).isGreaterThanOrEqualTo(1);
+        assertThat(activities.count("ALL", "ALL")).isGreaterThanOrEqualTo(1);
     }
 }

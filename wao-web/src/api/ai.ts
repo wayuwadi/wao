@@ -248,7 +248,8 @@ export interface AiRunPage {
   size: number
 }
 
-export type AiActivityType = 'ALL' | 'FEATURE_DEVELOPMENT' | 'CHAT_REVIEW'
+export type AiActivityType = 'ALL' | 'FEATURE_DEVELOPMENT' | 'AI_INSPECTION' | 'CHAT_REVIEW'
+export type AiActivityStatus = 'ALL' | 'SUCCEEDED' | 'FAILED'
 export interface AiActivity {
   id: string
   type: Exclude<AiActivityType, 'ALL'>
@@ -268,8 +269,12 @@ export interface AiActivityPage {
   size: number
 }
 
-export const fetchAiActivities = (type: AiActivityType = 'ALL', page = 1, size = 20) =>
-  data<AiActivityPage>(http.get('/api/ai/activities', { params: { type, page, size } }))
+export const fetchAiActivities = (
+  type: AiActivityType = 'ALL',
+  status: AiActivityStatus = 'ALL',
+  page = 1,
+  size = 20,
+) => data<AiActivityPage>(http.get('/api/ai/activities', { params: { type, status, page, size } }))
 
 /** 按页读取全部已结束运行；首页默认八条仍走轻量列表。 */
 export const fetchAiRunHistory = (page = 1, size = 20) =>

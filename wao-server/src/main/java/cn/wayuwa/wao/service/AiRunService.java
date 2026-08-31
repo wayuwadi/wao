@@ -573,6 +573,7 @@ public class AiRunService {
             run.setPlanMode("codex".equals(runEngine) && Boolean.TRUE.equals(planMode));
             run.setCapabilityManifestJson(capabilityManifest(task.getProjectId(), runEngine));
             run.setStatus("queued");
+            run.setActivityType("FEATURE_DEVELOPMENT");
             run.setRequestedRunnerId(runTarget == null ? null : runTarget.getId());
             run.setRequestedBy(requestedBy);
             run.setPromptUrl(promptUrl(baseUrl, taskId, sub));
@@ -648,6 +649,7 @@ public class AiRunService {
         run.setPlanMode("codex".equals(runEngine) && Boolean.TRUE.equals(planMode));
         run.setCapabilityManifestJson(capabilityManifest(first.getProjectId(), runEngine));
         run.setStatus("queued");
+        run.setActivityType("FEATURE_DEVELOPMENT");
         run.setRequestedRunnerId(runTarget == null ? null : runTarget.getId());
         run.setRequestedBy(requestedBy);
         run.setPromptUrl(mergedPromptUrl(baseUrl, run.getId()));
@@ -677,6 +679,26 @@ public class AiRunService {
     @Transactional
     public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl) {
         return launchGoal(projectId, goal, requestedBy, baseUrl, null, null);
+    }
+
+    /**
+     * 创建 HTTP 性能巡检运行，并在同一事务中固化首页活动来源。
+     *
+     * @param projectId 承载巡检任务的项目
+     * @param goal 基于真实指标组装的巡检目标
+     * @param requestedBy 项目负责人
+     * @param baseUrl Runner 可读取的公开任务地址
+     * @return 已入队并标记为 AI_INSPECTION 的运行
+     */
+    @Transactional
+    public synchronized AiRunDto launchInspectionGoal(
+            String projectId, String goal, String requestedBy, String baseUrl) {
+        AiRunDto run = launchGoal(projectId, goal, requestedBy, baseUrl);
+        AiTaskRunEntity entity = runMapper.selectById(run.id());
+        if (entity == null) throw new IllegalStateException("巡检 AI Run 创建后无法读取");
+        entity.setActivityType("AI_INSPECTION");
+        if (runMapper.updateById(entity) != 1) throw new IllegalStateException("巡检 AI Run 来源保存失败");
+        return run;
     }
 
     /**
@@ -944,6 +966,7 @@ public class AiRunService {
         run.setPlanMode(Boolean.TRUE.equals(source.getPlanMode()));
         run.setCapabilityManifestJson(capabilityManifest(source.getProjectId(), engine));
         run.setStatus("queued");
+        run.setActivityType(blankOr(source.getActivityType(), "FEATURE_DEVELOPMENT"));
         run.setRequestedRunnerId(source.getRequestedRunnerId());
         run.setRequestedBy(requestedBy);
         run.setPromptUrl(sourceTaskIds.size() > 1 ? mergedPromptUrl(baseUrl, run.getId())

@@ -49,7 +49,7 @@ public class HttpPerformanceAiRunJobHandler implements JobHandler {
     /** 手动触发时执行与夜间调度相同的真实巡检。 */
     @Override
     public String execute() {
-        return execute(null, null);
+        return executeInspection(null, null).message();
     }
 
     /**
@@ -61,6 +61,16 @@ public class HttpPerformanceAiRunJobHandler implements JobHandler {
      */
     @Override
     public String execute(AutomationJobEntity job, LocalDateTime scheduledFireAt) {
+        return executeInspection(job, scheduledFireAt).message();
+    }
+
+    /** 同时把本次创建的 AI Run id 交给自动化历史持久化。 */
+    @Override
+    public JobExecutionResult executeWithMetadata(AutomationJobEntity job, LocalDateTime scheduledFireAt) {
+        return executeInspection(job, scheduledFireAt);
+    }
+
+    private JobExecutionResult executeInspection(AutomationJobEntity job, LocalDateTime scheduledFireAt) {
         if (publicBaseUrl == null) {
             throw new IllegalStateException("未配置 WAO_SHARE_BASE_URL，无法生成公开任务地址");
         }
@@ -78,15 +88,19 @@ public class HttpPerformanceAiRunJobHandler implements JobHandler {
         HttpPerformanceInspectionConfigDto config = inspectionConfig.get();
         RequestMetricOverviewDto snapshot = metrics.overview(project.getOwnerId(), config.windowHours());
         if (snapshot.totalRequests() == 0) {
-            return "跳过 · 最近 " + config.windowHours() + " 小时没有真实 HTTP 指标";
+            return JobExecutionResult.messageOnly(
+                    "跳过 · 最近 " + config.windowHours() + " 小时没有真实 HTTP 指标");
         }
 
-        AiRunDto run = aiRuns.launchGoal(project.getId(), prompt(snapshot, config), project.getOwnerId(), publicBaseUrl);
+        AiRunDto run = aiRuns.launchInspectionGoal(
+                project.getId(), prompt(snapshot, config), project.getOwnerId(), publicBaseUrl);
         boolean notificationFailed = config.notificationWebhookId() != null
                 && !notifier.notifyHttpPerformanceInspectionStarted(run.taskId(), project.getId(), run.taskTitle(),
                         PROJECT_NAME, config.windowHours(), config.topN(), config.maxEndpointsPerRun(),
                         config.notificationWebhookId());
-        return "成功 · 已创建 AI Run " + run.id() + (notificationFailed ? "；启动通知未发出" : "");
+        return new JobExecutionResult(
+                "成功 · 已创建 AI Run " + run.id() + (notificationFailed ? "；启动通知未发出" : ""),
+                run.id());
     }
 
     private static String prompt(RequestMetricOverviewDto snapshot, HttpPerformanceInspectionConfigDto config) {

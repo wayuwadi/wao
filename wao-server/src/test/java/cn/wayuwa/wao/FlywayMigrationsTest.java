@@ -307,6 +307,23 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void aiInspectionHistoryMigrationBackfillsOnlyTheFixedRealJob() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V118__ai_inspection_activity_history.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("activity_type VARCHAR(32) NOT NULL DEFAULT 'FEATURE_DEVELOPMENT'")
+                .contains("ai_run_id VARCHAR(32) NULL")
+                .contains("WHERE job_id = 'job-http-performance-ai-run'")
+                .contains("result LIKE '成功 · 已创建 AI Run %'")
+                .contains("SET run.activity_type = 'AI_INSPECTION'")
+                .doesNotContain("UPDATE ai_task_run SET", "UPDATE automation_run SET ai_run_id = NULL");
+    }
+
+    @Test
     void configurableTaskAutoRunMigrationDefaultsToWaoTodoAndKeepsWebhookOptional() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V97__configurable_task_auto_run.sql"))

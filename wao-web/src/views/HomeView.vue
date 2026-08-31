@@ -27,6 +27,7 @@ import {
   type AiTaskAutoRunPolicy,
   type CodexQuotaAccount,
   type AiActivity,
+  type AiActivityStatus,
   type AiActivityType,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
@@ -65,6 +66,7 @@ const ui = useUiStore()
 const runs = ref<AiRun[]>([])
 const recentActivities = ref<AiActivity[]>([])
 const activityFilter = ref<AiActivityType>('ALL')
+const activityStatusFilter = ref<AiActivityStatus>('ALL')
 const recentActivitiesLoading = ref(true)
 const recentActivitiesError = ref('')
 const recentActivitiesPage = ref(1)
@@ -119,7 +121,13 @@ const startingQuickTaskId = ref<string | null>(null)
 const ACTIVITY_FILTERS: Array<{ id: AiActivityType; label: string }> = [
   { id: 'ALL', label: '全部' },
   { id: 'FEATURE_DEVELOPMENT', label: '功能开发' },
+  { id: 'AI_INSPECTION', label: 'AI 巡检' },
   { id: 'CHAT_REVIEW', label: '聊天复盘' },
+]
+const ACTIVITY_STATUS_FILTERS: Array<{ id: AiActivityStatus; label: string }> = [
+  { id: 'ALL', label: '全部结果' },
+  { id: 'SUCCEEDED', label: '成功' },
+  { id: 'FAILED', label: '失败' },
 ]
 const logRunner = ref<AiRunner | null>(null)
 const runnerLog = ref<AiRunnerLog | null>(null)
@@ -299,7 +307,12 @@ async function refresh() {
     const [nextRuns, nextRunners, activities] = await Promise.all([
       fetchAiRuns(false),
       fetchAiRunners(),
-      fetchAiActivities(activityFilter.value, recentActivitiesPage.value, RECENT_ACTIVITY_PAGE_SIZE).catch((error) => {
+      fetchAiActivities(
+        activityFilter.value,
+        activityStatusFilter.value,
+        recentActivitiesPage.value,
+        RECENT_ACTIVITY_PAGE_SIZE,
+      ).catch((error) => {
         recentActivitiesError.value = error instanceof Error ? error.message : '最近 AI 运行读取失败'
         return null
       }),
@@ -935,13 +948,24 @@ function inspectRun(run: AiRun) {
 
 function activityMeta(activity: AiActivity) {
   if (activity.status === 'FAILED') return { label: '运行失败', icon: 'ri-close-circle-line', color: 'var(--wao-danger-strong)', bg: 'var(--wao-danger-bg)' }
+  if (activity.status === 'CANCELLED') return { label: '已取消', icon: 'ri-stop-circle-line', color: 'var(--wao-warning-strong)', bg: 'var(--wao-warning-bg)' }
   return { label: '运行成功', icon: 'ri-checkbox-circle-line', color: 'var(--wao-success-strong)', bg: 'var(--wao-success-bg)' }
 }
 
 function activityTypeMeta(activity: AiActivity) {
-  return activity.type === 'CHAT_REVIEW'
-    ? { label: '聊天复盘', icon: 'ri-chat-history-line', color: 'var(--wao-success-strong)', bg: 'var(--wao-success-bg)' }
-    : { label: '功能开发', icon: 'ri-code-box-line', color: 'var(--wao-primary-text)', bg: 'var(--wao-primary-soft)' }
+  if (activity.type === 'CHAT_REVIEW') {
+    return { label: '聊天复盘', icon: 'ri-chat-history-line', color: 'var(--wao-success-strong)', bg: 'var(--wao-success-bg)' }
+  }
+  if (activity.type === 'AI_INSPECTION') {
+    return { label: 'AI 巡检', icon: 'ri-pulse-line', color: 'var(--wao-warning-strong)', bg: 'var(--wao-warning-bg)' }
+  }
+  return { label: '功能开发', icon: 'ri-code-box-line', color: 'var(--wao-primary-text)', bg: 'var(--wao-primary-soft)' }
+}
+
+function activitySubtitleIcon(activity: AiActivity) {
+  if (activity.type === 'CHAT_REVIEW') return 'ri-chat-3-line'
+  if (activity.type === 'AI_INSPECTION') return 'ri-speed-up-line'
+  return 'ri-stack-line'
 }
 
 async function openActivity(activity: AiActivity) {
@@ -957,14 +981,31 @@ async function openActivity(activity: AiActivity) {
 
 async function selectActivityFilter(type: AiActivityType) {
   activityFilter.value = type
-  await changeRecentActivitiesPage(1)
+  await refreshActivityFilters()
+}
+
+async function selectActivityStatusFilter(status: AiActivityStatus) {
+  activityStatusFilter.value = status
+  await refreshActivityFilters()
+}
+
+async function refreshActivityFilters() {
+  await Promise.all([
+    changeRecentActivitiesPage(1),
+    runHistoryOpen.value ? openRunHistory(1) : Promise.resolve(),
+  ])
 }
 
 async function changeRecentActivitiesPage(page: number) {
   recentActivitiesLoading.value = true
   recentActivitiesError.value = ''
   try {
-    const result = await fetchAiActivities(activityFilter.value, page, RECENT_ACTIVITY_PAGE_SIZE)
+    const result = await fetchAiActivities(
+      activityFilter.value,
+      activityStatusFilter.value,
+      page,
+      RECENT_ACTIVITY_PAGE_SIZE,
+    )
     recentActivities.value = result.items
     recentActivitiesPage.value = result.page
     recentActivitiesTotal.value = result.total
@@ -980,7 +1021,12 @@ async function openRunHistory(page = 1) {
   runHistoryLoading.value = true
   runHistoryError.value = ''
   try {
-    const result = await fetchAiActivities(activityFilter.value, page, RUN_HISTORY_PAGE_SIZE)
+    const result = await fetchAiActivities(
+      activityFilter.value,
+      activityStatusFilter.value,
+      page,
+      RUN_HISTORY_PAGE_SIZE,
+    )
     runHistory.value = result.items
     runHistoryPage.value = result.page
     runHistoryTotal.value = result.total
@@ -1455,7 +1501,7 @@ onBeforeUnmount(() => {
 
       <section class="recent-section">
         <div class="section-head">
-          <div><h2>最近 AI 运行</h2><p>开发任务与聊天复盘按完成时间统一排列，类型可继续扩展。</p></div>
+          <div><h2>最近 AI 运行</h2><p>功能开发、AI 巡检与聊天复盘按完成时间统一排列。</p></div>
           <div class="recent-actions">
             <WaoPagination
               v-if="recentActivitiesTotal > RECENT_ACTIVITY_PAGE_SIZE"
@@ -1473,9 +1519,12 @@ onBeforeUnmount(() => {
         <div class="activity-filters" role="tablist" aria-label="AI 运行类型">
           <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" :disabled="recentActivitiesLoading" @click="selectActivityFilter(option.id)">{{ option.label }}</button>
         </div>
+        <div class="activity-filters status-filters" role="tablist" aria-label="AI 运行结果">
+          <button v-for="option in ACTIVITY_STATUS_FILTERS" :key="option.id" :class="{ active: activityStatusFilter === option.id }" :disabled="recentActivitiesLoading" @click="selectActivityStatusFilter(option.id)">{{ option.label }}</button>
+        </div>
         <div v-if="recentActivitiesLoading" class="recent-state"><i class="ri-loader-4-line spin"></i>正在读取最近 AI 运行…</div>
         <div v-else-if="recentActivitiesError" class="recent-state error" role="alert"><i class="ri-error-warning-line"></i><span>{{ recentActivitiesError }}</span><button @click="changeRecentActivitiesPage(recentActivitiesPage)">重试</button></div>
-        <div v-else-if="!recentActivities.length" class="recent-state"><i class="ri-inbox-2-line"></i>该类型还没有已结束的运行。</div>
+        <div v-else-if="!recentActivities.length" class="recent-state"><i class="ri-inbox-2-line"></i>当前筛选下还没有已结束的运行。</div>
         <div v-else class="recent-grid">
           <button v-for="activity in recentActivities" :key="`${activity.type}-${activity.id}`" class="recent-card" @click="openActivity(activity)">
             <span class="recent-card-top">
@@ -1486,7 +1535,7 @@ onBeforeUnmount(() => {
             </span>
             <span class="recent-main">
               <b :title="activity.title">{{ activity.title }}</b>
-              <em><i :class="activity.type === 'CHAT_REVIEW' ? 'ri-chat-3-line' : 'ri-stack-line'"></i>{{ activity.subtitle }}</em>
+              <em><i :class="activitySubtitleIcon(activity)"></i>{{ activity.subtitle }}</em>
               <em><i class="ri-sparkling-2-line"></i>{{ activity.capabilityLabel }}</em>
               <small v-if="activity.status === 'FAILED'">{{ activity.resultPreview }}</small>
             </span>
@@ -1931,7 +1980,10 @@ onBeforeUnmount(() => {
           <button class="detail-close" aria-label="关闭运行历史" @click="runHistoryOpen = false"><i class="ri-close-line"></i></button>
         </header>
         <div class="activity-filters history-filters" role="tablist" aria-label="历史运行类型">
-          <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" @click="selectActivityFilter(option.id); openRunHistory(1)">{{ option.label }}</button>
+          <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" @click="selectActivityFilter(option.id)">{{ option.label }}</button>
+        </div>
+        <div class="activity-filters status-filters" role="tablist" aria-label="历史运行结果">
+          <button v-for="option in ACTIVITY_STATUS_FILTERS" :key="option.id" :class="{ active: activityStatusFilter === option.id }" @click="selectActivityStatusFilter(option.id)">{{ option.label }}</button>
         </div>
         <div v-if="runHistoryLoading" class="history-state"><i class="ri-loader-4-line spin"></i>正在读取运行历史…</div>
         <div v-else-if="runHistoryError" class="history-state error">
@@ -1949,7 +2001,7 @@ onBeforeUnmount(() => {
             </span>
             <span class="recent-main">
               <b :title="activity.title">{{ activity.title }}</b>
-              <em><i :class="activity.type === 'CHAT_REVIEW' ? 'ri-chat-3-line' : 'ri-stack-line'"></i>{{ activity.subtitle }}</em>
+              <em><i :class="activitySubtitleIcon(activity)"></i>{{ activity.subtitle }}</em>
               <em><i class="ri-sparkling-2-line"></i>{{ activity.capabilityLabel }}</em>
               <small v-if="activity.status === 'FAILED'">{{ activity.resultPreview }}</small>
             </span>

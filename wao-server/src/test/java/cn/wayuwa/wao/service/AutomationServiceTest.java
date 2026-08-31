@@ -181,6 +181,30 @@ class AutomationServiceTest {
     }
 
     @Test
+    void runJobPersistsStructuredAiRunLink() {
+        AutomationJobEntity e = job("正常");
+        e.setHandler("inspection");
+        when(jobMapper.selectById("j1")).thenReturn(e);
+        when(runMapper.selectList(any())).thenReturn(List.of());
+        JobHandler inspection = new JobHandler() {
+            @Override public String name() { return "inspection"; }
+            @Override public String execute() { return "兼容入口"; }
+            @Override public JobExecutionResult executeWithMetadata(
+                    AutomationJobEntity job, LocalDateTime scheduledFireAt) {
+                return new JobExecutionResult("成功 · 已创建 AI Run ar-inspection", "ar-inspection");
+            }
+        };
+        AutomationService withHandler = new AutomationService(jobMapper, runMapper, new ObjectMapper(),
+                List.of(inspection), mock(MemberService.class));
+
+        withHandler.runJob("j1", "wg");
+
+        ArgumentCaptor<cn.wayuwa.wao.domain.AutomationRunEntity> saved = ArgumentCaptor.captor();
+        verify(runMapper).insert(saved.capture());
+        assertThat(saved.getValue().getAiRunId()).isEqualTo("ar-inspection");
+    }
+
+    @Test
     void runJobWithFailingHandlerRecordsFailureInsteadOfThrowing() {
         AutomationJobEntity e = job("正常");
         e.setHandler("demo");

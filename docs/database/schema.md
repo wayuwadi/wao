@@ -263,6 +263,7 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 | run_time_label | VARCHAR(64) | 兼容旧数据的开始时间文案；新记录写绝对时间 |
 | run_at | DATETIME NULL | 上海时区的真实开始时间；接口按当前日期动态显示“今天 / 昨天 / M月d日” |
 | result | VARCHAR(64) | 结果文案（含「成功」/「失败」关键字供前端着色） |
+| ai_run_id | VARCHAR(32) NULL（V118） | 本次自动化创建的真实 AI Run；跳过或执行失败时为空 |
 | executor_id | VARCHAR(32) NULL | 手动触发的成员；定时任务为空，界面显示「定时任务」 |
 | duration_ms | INT | 服务端用单调时钟实测的执行耗时；旧记录可为空或为历史估算值 |
 | ord | INT | 顺序（0 = 最近一次） |
@@ -350,6 +351,7 @@ Runner 每五分钟在本机调用 Codex app-server。服务端按规范化邮�
 | engine | VARCHAR(24) | 本次使用的 AI 工具：codex / claude |
 | ai_account_id | VARCHAR(32) NULL（V40） | 本次固定使用的集中账号；为空时使用 Runner 本地登录态（见 ADR-032） |
 | status | VARCHAR(24) | queued / running / succeeded / failed / cancelled |
+| activity_type | VARCHAR(32)（V118） | 首页统一活动来源；普通任务为 FEATURE_DEVELOPMENT，HTTP 性能巡检为 AI_INSPECTION |
 | delivery_stage | VARCHAR(32)（V109） | coding / waiting_deployment / deployment_succeeded / deployment_failed / code_failed；与进程状态分开，等待部署时运行仍保持 active |
 | runner_id | VARCHAR(32) NULL | 实际领取的电脑 |
 | requested_runner_id | VARCHAR(32) NULL | 入队时点名的电脑；优先于项目的 preferred_runner_id |
@@ -1001,6 +1003,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V114__appearance_management.sql`：保存成员私有形象管理工作区和按会话鉴权的衣物、穿搭实拍原件。
 - `V115__food_management.sql`：保存成员私有饮食管理工作区，不预置演示餐单或医疗结论。
 - `V116__http_inspection_top_ten.sql`：将缺失或仍为旧默认 5/2 的 HTTP 巡检数量升级为 10/10，保留管理员已自定义的其他值（见 ADR-162）。
+- `V118__ai_inspection_activity_history.sql`：固化 AI Run 活动来源和自动化到 AI Run 的真实关联，并回填可证明的既有 HTTP 巡检记录（见 ADR-166）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

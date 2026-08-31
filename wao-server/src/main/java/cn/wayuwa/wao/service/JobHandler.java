@@ -41,4 +41,15 @@ public interface JobHandler {
     default String execute(AutomationJobEntity job, LocalDateTime scheduledFireAt) {
         return execute(job);
     }
+
+    /**
+     * 执行并返回可持久化的结构化关联。旧执行器继续只提供结果文案；创建 AI Run 的执行器覆盖此入口。
+     *
+     * @param job             自动化任务
+     * @param scheduledFireAt 本次 Cron 计划触发时间；手动触发时为 null
+     * @return 结果文案及可选 AI Run id
+     */
+    default JobExecutionResult executeWithMetadata(AutomationJobEntity job, LocalDateTime scheduledFireAt) {
+        return JobExecutionResult.messageOnly(execute(job, scheduledFireAt));
+    }
 }
