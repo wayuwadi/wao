@@ -52,6 +52,8 @@ export interface HostedPage {
   hasIcon: boolean
   updatedAt: string
   url: string
+  /** 为空表示全局未分类；有值时归入对应项目。 */
+  projectId?: string | null
 }
 
 export type ProjectStatus = '进行中' | '有风险' | '规划中' | '已完成' | '已搁置'
@@ -452,6 +454,7 @@ export interface FileItem {
   createdAt?: string | null
   by: string
   link: string
+  projectId?: string | null
 }
 
 export interface ImageItem {
@@ -464,6 +467,7 @@ export interface ImageItem {
   url: string
   c1: string
   c2: string
+  projectId?: string | null
 }
 
 /** 公开分享的任务 / 子任务视图（不含负责人、评论、活动等内部信息）。 */
@@ -586,7 +590,8 @@ export interface AiWorkflow {
 }
 
 export type AiRunStatus = 'queued' | 'claimed' | 'running' | 'succeeded' | 'failed' | 'cancelled'
-export type AiRunDeliveryStage = 'coding' | 'waiting_deployment' | 'deployment_succeeded' | 'deployment_failed' | 'code_failed'
+export type AiRunDeliveryStage =
+  'coding' | 'waiting_deployment' | 'deployment_succeeded' | 'deployment_failed' | 'code_failed'
 
 export interface AiRunProgress {
   id: string
@@ -679,7 +684,15 @@ export interface AiRun {
   planMode?: boolean
   goalMode?: boolean
   goalObjective?: string | null
-  goalStatus?: 'pending' | 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete' | null
+  goalStatus?:
+    | 'pending'
+    | 'active'
+    | 'paused'
+    | 'blocked'
+    | 'usageLimited'
+    | 'budgetLimited'
+    | 'complete'
+    | null
   goalTokensUsed?: number | null
   goalTimeUsedSeconds?: number | null
   serviceTier?: string | null

@@ -1,14 +1,21 @@
 package cn.wayuwa.wao.service;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.FileBlobEntity;
 import cn.wayuwa.wao.dto.FileItemDto;
+import cn.wayuwa.wao.dto.FilePreviewDto;
 import cn.wayuwa.wao.mapper.FileBlobMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -17,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class FileService {
     public static final long MAX_BYTES = 50L * 1024 * 1024;
+    public static final long MAX_PREVIEW_BYTES = 2L * 1024 * 1024;
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("M月d日 HH:mm");
     private final FileBlobMapper mapper;
     private final FileSettingsService settings;
@@ -28,8 +36,22 @@ public class FileService {
     /** 列出文件元数据，不把二进制正文加载进内存。 */
     public List<FileItemDto> list() { return mapper.listMeta().stream().map(this::toDto).toList(); }
 
+    /** 列出当前成员可见的全局/项目文件；指定项目时只返回该项目。 */
+    public List<FileItemDto> list(Set<String> visibleProjectIds, String projectId) {
+        return mapper.listMeta().stream()
+                .filter(entity -> projectId != null
+                        ? projectId.equals(entity.getProjectId())
+                        : entity.getProjectId() == null || visibleProjectIds.contains(entity.getProjectId()))
+                .map(this::toDto).toList();
+    }
+
     /** 上传一个不超过当前系统设置上限的文件并持久化。 */
     public FileItemDto upload(MultipartFile file, String memberId) {
+        return upload(file, memberId, null);
+    }
+
+    /** 上传一个文件并记录可空的项目归属。 */
+    public FileItemDto upload(MultipartFile file, String memberId, String projectId) {
         if (file == null || file.isEmpty()) throw new BadRequestException("请选择要上传的文件");
         int limitMb = settings.get().fileMaxMb();
         if (file.getSize() > limitMb * 1024L * 1024L) {
@@ -41,6 +63,7 @@ public class FileService {
         entity.setContentType(file.getContentType() == null ? "application/octet-stream" : file.getContentType());
         entity.setByteSize(file.getSize());
         entity.setCreatedBy(memberId == null ? "未知成员" : memberId);
+        entity.setProjectId(projectId);
         entity.setCreatedAt(LocalDateTime.now());
         try { entity.setContent(file.getBytes()); }
         catch (IOException ex) { throw new BadRequestException("读取上传文件失败，请重试"); }
@@ -67,6 +90,28 @@ public class FileService {
                 .orElseThrow(() -> new NotFoundException("文件不存在：" + id));
     }
 
+    /** 读取 UTF-8 Markdown 正文供登录后的站内安全渲染，不执行上传内容。 */
+    public FilePreviewDto preview(String id) {
+        FileBlobEntity entity = raw(id);
+        String lower = entity.getName() == null ? "" : entity.getName().toLowerCase(Locale.ROOT);
+        String type = entity.getContentType() == null ? "" : entity.getContentType().toLowerCase(Locale.ROOT);
+        if (!(lower.endsWith(".md") || lower.endsWith(".markdown") || type.equals("text/markdown"))) {
+            throw new BadRequestException("当前只支持 Markdown 文件站内预览");
+        }
+        if (entity.getContent().length > MAX_PREVIEW_BYTES) {
+            throw new BadRequestException("Markdown 文件超过 2MB，请下载后查看");
+        }
+        try {
+            String content = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(entity.getContent())).toString();
+            return new FilePreviewDto(entity.getId(), entity.getName(), entity.getContentType(), content);
+        } catch (CharacterCodingException exception) {
+            throw new BadRequestException("Markdown 文件必须使用 UTF-8 编码");
+        }
+    }
+
     /** 删除一个文件。 */
     public void delete(String id) { if (mapper.deleteById(id) == 0) throw new NotFoundException("文件不存在：" + id); }
 
@@ -74,7 +119,7 @@ public class FileService {
         return new FileItemDto(entity.getId(), entity.getName(), entity.getContentType(), humanSize(entity.getByteSize()),
                 icon(entity.getName()), entity.getCreatedAt() == null ? "" : entity.getCreatedAt().format(TIME_FMT),
                 entity.getCreatedBy(), "/api/files/" + entity.getId() + "/download",
-                entity.getCreatedAt() == null ? null : entity.getCreatedAt().toString());
+                entity.getCreatedAt() == null ? null : entity.getCreatedAt().toString(), entity.getProjectId());
     }
     private static String safeName(String original) {
         if (original == null || original.isBlank()) return "未命名文件";

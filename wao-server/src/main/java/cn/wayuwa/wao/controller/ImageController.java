@@ -3,9 +3,12 @@ package cn.wayuwa.wao.controller;
 import java.util.List;
 
 import cn.wayuwa.wao.common.ApiResponse;
+import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.domain.ImageBlobEntity;
 import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.service.ImageService;
+import cn.wayuwa.wao.service.ProjectService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -26,21 +29,31 @@ import java.time.Duration;
 public class ImageController {
 
     private final ImageService images;
+    private final CurrentMember currentMember;
+    private final ProjectService projects;
 
-    public ImageController(ImageService images) {
+    public ImageController(ImageService images, CurrentMember currentMember, ProjectService projects) {
         this.images = images;
+        this.currentMember = currentMember;
+        this.projects = projects;
     }
 
     @GetMapping
-    public ApiResponse<List<ImageItemDto>> list() {
-        return ApiResponse.ok(images.list());
+    public ApiResponse<List<ImageItemDto>> list(@RequestParam(required = false) String projectId,
+            HttpServletRequest request) {
+        String memberId = currentMember.id(request);
+        if (projectId != null) projects.requireAccess(projectId, memberId);
+        return ApiResponse.ok(images.list(projects.visibleProjectIds(memberId), projectId));
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<ImageItemDto> upload(
             @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "source", required = false) String source) {
-        return ApiResponse.ok(images.upload(file, source));
+            @RequestParam(value = "source", required = false) String source,
+            @RequestParam(required = false) String projectId, HttpServletRequest request) {
+        String memberId = currentMember.id(request);
+        if (projectId != null) projects.requireAccess(projectId, memberId);
+        return ApiResponse.ok(images.upload(file, source, projectId));
     }
 
     /** 直出图片正文；内容按 id 寻址且不可变，可长期缓存。 */
@@ -54,7 +67,9 @@ public class ImageController {
     }
 
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> delete(@PathVariable String id) {
+    public ApiResponse<Void> delete(@PathVariable String id, HttpServletRequest request) {
+        String projectId = images.raw(id).getProjectId();
+        if (projectId != null) projects.requireAccess(projectId, currentMember.id(request));
         images.delete(id);
         return ApiResponse.ok(null);
     }

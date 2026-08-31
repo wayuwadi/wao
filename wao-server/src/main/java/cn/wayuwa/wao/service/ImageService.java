@@ -60,6 +60,11 @@ public class ImageService {
      * @throws BadRequestException 文件为空、类型不是图片或超过当前用户上传设置时
      */
     public ImageItemDto upload(MultipartFile file, String source) {
+        return upload(file, source, null);
+    }
+
+    /** 上传图片并记录可空的项目归属。 */
+    public ImageItemDto upload(MultipartFile file, String source, String projectId) {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("请选择要上传的图片");
         }
@@ -78,7 +83,7 @@ public class ImageService {
         } catch (IOException ex) {
             throw new BadRequestException("读取上传文件失败，请重试");
         }
-        return store(content, type, file.getOriginalFilename(), source);
+        return store(content, type, file.getOriginalFilename(), source, false, projectId);
     }
 
     /**
@@ -107,6 +112,11 @@ public class ImageService {
      * @throws BadRequestException 内容为空或超过 {@value #MAX_BYTES} 字节时
      */
     public ImageItemDto store(byte[] content, String contentType, String name, String source, boolean deduplicate) {
+        return store(content, contentType, name, source, deduplicate, null);
+    }
+
+    private ImageItemDto store(byte[] content, String contentType, String name, String source, boolean deduplicate,
+            String projectId) {
         if (content == null || content.length == 0) {
             throw new BadRequestException("图片内容为空");
         }
@@ -132,6 +142,7 @@ public class ImageService {
         e.setContentType(type);
         e.setByteSize((long) content.length);
         e.setSource(source);
+        e.setProjectId(projectId);
         e.setContentHash(hash);
         e.setDedupeKey(deduplicate ? hash : null);
         e.setCreatedAt(LocalDateTime.now());
@@ -166,6 +177,17 @@ public class ImageService {
         return out;
     }
 
+    /** 列出当前成员可见的全局/项目图片；项目列表不混入历史演示条目。 */
+    public List<ImageItemDto> list(Set<String> visibleProjectIds, String projectId) {
+        List<ImageItemDto> out = new ArrayList<>(mapper.listMeta().stream()
+                .filter(entity -> projectId != null
+                        ? projectId.equals(entity.getProjectId())
+                        : entity.getProjectId() == null || visibleProjectIds.contains(entity.getProjectId()))
+                .map(this::toDto).toList());
+        if (projectId == null) content.images().forEach(node -> out.add(fromSeed(node)));
+        return out;
+    }
+
     /**
      * 读取图片正文（供 {@code GET /api/images/{id}/raw} 直出）。
      *
@@ -196,12 +218,12 @@ public class ImageService {
                 e.getId(), e.getName(), humanSize(e.getByteSize() == null ? 0 : e.getByteSize()),
                 e.getCreatedAt() == null ? "" : e.getCreatedAt().format(TIME_FMT),
                 e.getSource() == null ? "上传" : e.getSource(),
-                "/api/images/" + e.getId() + "/raw", tint[0], tint[1]);
+                "/api/images/" + e.getId() + "/raw", tint[0], tint[1], e.getProjectId());
     }
 
     private static ImageItemDto fromSeed(JsonNode n) {
         return new ImageItemDto(null, text(n, "name"), text(n, "size"), text(n, "time"),
-                text(n, "from"), text(n, "url"), text(n, "c1"), text(n, "c2"));
+                text(n, "from"), text(n, "url"), text(n, "c1"), text(n, "c2"), null);
     }
 
     private static String text(JsonNode n, String field) {

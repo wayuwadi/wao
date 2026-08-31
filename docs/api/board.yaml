@@ -1130,10 +1130,13 @@ paths:
   # 开启快速收集时，服务端另使用已配群聊归档 App 凭据每 15 秒主动读取目标群。
   # 主动轮询不新增 HTTP API；只处理精确提及当前机器人 open_id 的用户消息，并与事件回调共用 message_id 去重。
   /files:
-    get: { summary: 文件元数据列表（含 contentType，不读取二进制正文）, responses: { '200': { description: OK } } }
+    get:
+      summary: 当前成员可见的文件元数据列表（含 contentType 与可空 projectId，不读取二进制正文）
+      parameters: [ { name: projectId, in: query, required: false, schema: { type: string }, description: 指定时只返回该可见项目的文件 } ]
+      responses: { '200': { description: OK }, '404': { description: 项目不存在或不可见 } }
     post:
       summary: 上传通用文件（单个不超过系统设置，且最大 50MB）
-      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary } } } } } }
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [file], properties: { file: { type: string, format: binary }, projectId: { type: string, nullable: true } } } } } }
       responses: { '200': { description: 返回带直链的文件项 }, '400': { description: 空文件或超过限制 } }
   /files/{id}/meta:
     get: { summary: 公开：下载确认页要展示的文件信息（不含正文）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
@@ -1169,6 +1172,11 @@ paths:
         '400': { description: 文件不是受支持的音频 }
         '401': { description: 没有有效 WAO 登录会话 }
         '416': { description: Range 不合法或越界 }
+  /files/{id}/preview:
+    get:
+      summary: 登录成员站内读取 2MB 以内的 UTF-8 Markdown 正文
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: 返回 Markdown 原文，由前端净化渲染 }, '400': { description: 非 Markdown、超限或非 UTF-8 }, '404': { description: 不存在或所属项目不可见 } }
   /files/{id}:
     delete: { summary: 删除文件, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   # 单文件 HTML 托管（见 docs/adr/042-hosted-html-pages.md）
@@ -1177,12 +1185,13 @@ paths:
       summary: 按来源类型读取托管页元数据列表（不读取 HTML 与 icon 正文）
       parameters:
         - { name: sourceType, in: query, required: false, schema: { type: string, enum: [ALL, MANUAL_UPLOAD, AI_RUN_REPORT], default: ALL } }
+        - { name: projectId, in: query, required: false, schema: { type: string }, description: 指定时只返回该可见项目的页面 }
       responses:
         '200': { description: 每项 sourceType 为人工上传或 AI Run 报告 }
         '400': { description: 来源类型不受支持 }
     post:
       summary: 上传 UTF-8 单文件 HTML 并配置唯一链接后缀、标题和可选 icon
-      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [html, slug, title], properties: { html: { type: string, format: binary }, slug: { type: string }, title: { type: string }, icon: { type: string, format: binary } } } } } }
+      requestBody: { required: true, content: { multipart/form-data: { schema: { type: object, required: [html, slug, title], properties: { html: { type: string, format: binary }, slug: { type: string }, title: { type: string }, icon: { type: string, format: binary }, projectId: { type: string, nullable: true } } } } } }
       responses: { '200': { description: 已发布 }, '400': { description: 文件、后缀或标题无效 } }
   /hosted-pages/{id}:
     put:
@@ -1200,7 +1209,8 @@ paths:
   # 图床（见 docs/adr/012-markdown-rendering-and-image-store.md）
   /images:
     get:
-      summary: 图床列表（上传的图在前，随后是内置演示数据）
+      summary: 当前成员可见的图床列表；可按 projectId 读取项目图片
+      parameters: [ { name: projectId, in: query, required: false, schema: { type: string } } ]
       responses:
         '200':
           description: OK
@@ -1223,6 +1233,7 @@ paths:
               properties:
                 file: { type: string, format: binary }
                 source: { type: string, description: 来源描述，如「任务 · 整理证件盒」 }
+                projectId: { type: string, nullable: true, description: 可见项目归属 }
       responses:
         '200':
           description: OK
@@ -1574,6 +1585,7 @@ components:
         url: { type: string, description: "上传的图为 /api/images/{id}/raw" }
         c1: { type: string }
         c2: { type: string }
+        projectId: { type: string, nullable: true, description: 为空表示全局未分类 }
     FileItem:
       type: object
       description: 真实文件库元数据；列表不返回二进制正文
@@ -1587,6 +1599,7 @@ components:
         createdAt: { type: string, nullable: true, description: 文件真实创建时间；time 仅作本地化展示 }
         by: { type: string, description: 上传人成员 id }
         link: { type: string, description: 既有附件下载地址 }
+        projectId: { type: string, nullable: true, description: 为空表示全局未分类 }
     SharedTask:
       type: object
       description: 公开分享视图；刻意不含负责人、参与人、评论与活动时间线

@@ -51,6 +51,19 @@ class ImageServiceTest {
     }
 
     @Test
+    void projectUploadKeepsProjectClassification() {
+        defaultLimit();
+        MockMultipartFile file = new MockMultipartFile("file", "截图.png", "image/png", new byte[]{1, 2, 3});
+
+        ImageItemDto dto = service.upload(file, "项目 · WAO", "p1");
+
+        ArgumentCaptor<ImageBlobEntity> saved = ArgumentCaptor.forClass(ImageBlobEntity.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getProjectId()).isEqualTo("p1");
+        assertThat(dto.projectId()).isEqualTo("p1");
+    }
+
+    @Test
     void uploadRejectsNonImageContentType() {
         defaultLimit();
         MockMultipartFile file = new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[]{1});

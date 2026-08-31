@@ -10,12 +10,12 @@ import org.apache.ibatis.annotations.Select;
 
 @Mapper
 public interface HostedPageMapper extends BaseMapper<HostedPageEntity> {
-    @Select("SELECT id, slug, title, file_name, source_type, icon_content_type, created_by, created_at, updated_at "
+    @Select("SELECT id, slug, title, file_name, source_type, project_id, icon_content_type, created_by, created_at, updated_at "
             + "FROM hosted_page WHERE #{sourceType} = 'ALL' OR source_type = #{sourceType} ORDER BY updated_at DESC")
     List<HostedPageEntity> listMeta(@Param("sourceType") String sourceType);
     @Select({
             "<script>",
-            "SELECT id, slug, title, file_name, source_type, icon_content_type, created_by, created_at, updated_at",
+            "SELECT id, slug, title, file_name, source_type, project_id, icon_content_type, created_by, created_at, updated_at",
             "FROM hosted_page WHERE id IN",
             "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
             "</script>"

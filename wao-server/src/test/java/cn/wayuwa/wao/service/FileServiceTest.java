@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.FileBlobEntity;
@@ -55,5 +56,33 @@ class FileServiceTest {
         assertThatThrownBy(() -> service.upload(file, "wg"))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("1MB");
+    }
+
+    @Test
+    void projectUploadKeepsProjectClassificationAndMarkdownPreviewUsesUtf8() {
+        defaultLimit();
+        var file = new MockMultipartFile("file", "报告.md", "text/markdown", "# 验收\n内容".getBytes());
+
+        var item = service.upload(file, "wg", "p1");
+        ArgumentCaptor<FileBlobEntity> saved = ArgumentCaptor.forClass(FileBlobEntity.class);
+        verify(mapper).insert(saved.capture());
+        assertThat(saved.getValue().getProjectId()).isEqualTo("p1");
+        assertThat(item.projectId()).isEqualTo("p1");
+
+        when(mapper.selectById(item.id())).thenReturn(saved.getValue());
+        assertThat(service.preview(item.id()).content()).contains("# 验收", "内容");
+    }
+
+    @Test
+    void previewRejectsNonMarkdownAndInvalidUtf8() {
+        FileBlobEntity text = new FileBlobEntity();
+        text.setId("f1"); text.setName("说明.txt"); text.setContentType("text/plain"); text.setContent("ok".getBytes());
+        when(mapper.selectById("f1")).thenReturn(text);
+        assertThatThrownBy(() -> service.preview("f1")).isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Markdown");
+
+        text.setName("说明.md"); text.setContentType("text/markdown"); text.setContent(new byte[] {(byte) 0xc3, 0x28});
+        assertThatThrownBy(() -> service.preview("f1")).isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("UTF-8");
     }
 }

@@ -1489,7 +1489,7 @@ public class AiRunService {
                 ? taskTitle + " · " + scopeTitle + " · AI 报告"
                 : taskTitle + " · AI 报告";
         title = limit(title, 200);
-        var report = hostedPages.saveRunReport(runId, html, title, run.getRequestedBy());
+        var report = hostedPages.saveRunReport(runId, html, title, run.getRequestedBy(), run.getProjectId());
         appendProgress(run, "message", "已生成持久化报告，可随时查看和分享");
         runnerMapper.touchLastSeenAt(runner.getId());
         return report;

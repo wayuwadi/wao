@@ -49,13 +49,29 @@ public class HostedPageService {
         return mapper.listMeta(sourceType).stream().map(this::dto).toList();
     }
 
+    /** 按来源与项目归属列出当前成员可见的托管页。 */
+    public List<HostedPageDto> list(String requestedSourceType, Set<String> visibleProjectIds, String projectId) {
+        return list(requestedSourceType).stream()
+                .filter(page -> projectId != null
+                        ? projectId.equals(page.projectId())
+                        : page.projectId() == null || visibleProjectIds.contains(page.projectId()))
+                .toList();
+    }
+
     /** 新建一个公开托管页。 */
     public HostedPageDto create(MultipartFile html, String slug, String title, MultipartFile icon, String memberId) {
+        return create(html, slug, title, icon, memberId, null);
+    }
+
+    /** 新建一个公开托管页并记录可空的项目归属。 */
+    public HostedPageDto create(MultipartFile html, String slug, String title, MultipartFile icon, String memberId,
+            String projectId) {
         HostedPageEntity entity = new HostedPageEntity();
         entity.setId("page-" + UUID.randomUUID());
         entity.setSourceType(MANUAL_UPLOAD);
         entity.setCreatedAt(LocalDateTime.now());
         entity.setCreatedBy(memberId == null ? "未知成员" : memberId);
+        entity.setProjectId(projectId);
         fill(entity, html, slug, title, icon, true);
         try { mapper.insert(entity); } catch (DuplicateKeyException ex) { throw new BadRequestException("链接后缀已被使用，请换一个"); }
         return dto(entity);
@@ -68,6 +84,12 @@ public class HostedPageService {
      * 文件页改过标题或后缀，后续只替换 HTML 正文，不覆盖这些人工配置。
      */
     public HostedPageDto saveRunReport(String runId, MultipartFile html, String title, String memberId) {
+        return saveRunReport(runId, html, title, memberId, null);
+    }
+
+    /** 新建或更新 AI Run 报告，并让报告自动归入运行所属项目。 */
+    public HostedPageDto saveRunReport(String runId, MultipartFile html, String title, String memberId,
+            String projectId) {
         String pageId = runReportPageId(runId);
         HostedPageEntity entity = mapper.selectById(pageId);
         if (entity == null) {
@@ -76,6 +98,7 @@ public class HostedPageService {
             entity.setSourceType(AI_RUN_REPORT);
             entity.setCreatedAt(LocalDateTime.now());
             entity.setCreatedBy(memberId == null ? "AI Run" : memberId);
+            entity.setProjectId(projectId);
             fill(entity, html, "ai-run-" + runId, title, null, true);
             try {
                 mapper.insert(entity);
@@ -83,6 +106,7 @@ public class HostedPageService {
                 throw new BadRequestException("AI 报告公开地址已被占用，请删除冲突页面后重试");
             }
         } else {
+            if (!StringUtils.hasText(entity.getProjectId())) entity.setProjectId(projectId);
             fill(entity, html, entity.getSlug(), entity.getTitle(), null, true);
             mapper.updateById(entity);
         }
@@ -91,6 +115,12 @@ public class HostedPageService {
 
     /** 保存由服务端已校验业务结果生成的 UTF-8 HTML，不要求先伪装成浏览器上传文件。 */
     public HostedPageDto saveGeneratedReport(String runId, byte[] html, String title, String memberId) {
+        return saveGeneratedReport(runId, html, title, memberId, null);
+    }
+
+    /** 保存服务端生成的报告，并记录运行所属项目。 */
+    public HostedPageDto saveGeneratedReport(String runId, byte[] html, String title, String memberId,
+            String projectId) {
         if (html == null || html.length == 0) throw new BadRequestException("生成的 HTML 报告不能为空");
         if (html.length > MAX_HTML_BYTES) throw new BadRequestException("HTML 文件超过 10MB");
         decode(html);
@@ -104,6 +134,7 @@ public class HostedPageService {
             entity.setTitle(title);
             entity.setCreatedAt(LocalDateTime.now());
             entity.setCreatedBy(memberId == null ? "AI Run" : memberId);
+            entity.setProjectId(projectId);
             entity.setFileName("report.html");
             entity.setHtmlContent(html);
             entity.setUpdatedAt(LocalDateTime.now());
@@ -113,6 +144,7 @@ public class HostedPageService {
                 throw new BadRequestException("AI 报告公开地址已被占用，请删除冲突页面后重试");
             }
         } else {
+            if (!StringUtils.hasText(entity.getProjectId())) entity.setProjectId(projectId);
             entity.setHtmlContent(html);
             entity.setFileName("report.html");
             entity.setUpdatedAt(LocalDateTime.now());
@@ -138,6 +170,9 @@ public class HostedPageService {
         try { mapper.updateById(entity); } catch (DuplicateKeyException ex) { throw new BadRequestException("链接后缀已被使用，请换一个"); }
         return dto(entity);
     }
+
+    /** 返回管理操作所需的项目归属；不存在时与其它管理接口一致返回 404。 */
+    public String projectId(String id) { return required(id).getProjectId(); }
 
     /** 按公开后缀读取页面。 */
     public HostedPageEntity publicPage(String slug) {
@@ -192,7 +227,7 @@ public class HostedPageService {
     }
     private HostedPageDto dto(HostedPageEntity e) { return new HostedPageDto(e.getId(), e.getSlug(), e.getTitle(), e.getFileName(),
             sourceType(e), e.getIconContentType() != null,
-            e.getUpdatedAt() == null ? "" : e.getUpdatedAt().format(TIME), "/api/pages/" + e.getSlug()); }
+            e.getUpdatedAt() == null ? "" : e.getUpdatedAt().format(TIME), "/api/pages/" + e.getSlug(), e.getProjectId()); }
     private static String sourceType(HostedPageEntity entity) {
         if (StringUtils.hasText(entity.getSourceType())) return entity.getSourceType();
         return entity.getId() != null && entity.getId().startsWith(RUN_REPORT_ID_PREFIX)

@@ -76,27 +76,34 @@ export const fetchDocs = () => get<Doc[]>('/api/docs')
 export const fetchDoc = (id: string) => get<Doc>(`/api/docs/${id}`)
 export const fetchJobs = () => get<AutomationJob[]>('/api/jobs')
 export const fetchAutomationJob = (id: string) => get<AutomationJob>(`/api/jobs/${id}`)
-export const fetchFiles = () => get<FileItem[]>('/api/files')
-export async function apiUploadFile(file: File): Promise<FileItem> {
+export const fetchFiles = (projectId?: string) =>
+  get<FileItem[]>(`/api/files${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`)
+export async function apiUploadFile(file: File, projectId?: string): Promise<FileItem> {
   const form = new FormData()
   form.append('file', file)
+  if (projectId) form.append('projectId', projectId)
   const res = await http.post<ApiResponse<FileItem>>('/api/files', form, { timeout: 120_000 })
   return res.data.data
 }
 export const apiDeleteFile = (id: string) => del(`/api/files/${id}`)
-export const fetchHostedPages = () => get<HostedPage[]>('/api/hosted-pages')
+export const fetchHostedPages = (projectId?: string) =>
+  get<HostedPage[]>(
+    `/api/hosted-pages${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`,
+  )
 export async function apiSaveHostedPage(payload: {
   id?: string
   html?: File
   icon?: File
   slug: string
   title: string
+  projectId?: string
 }): Promise<HostedPage> {
   const form = new FormData()
   if (payload.html) form.append('html', payload.html)
   if (payload.icon) form.append('icon', payload.icon)
   form.append('slug', payload.slug)
   form.append('title', payload.title)
+  if (payload.projectId) form.append('projectId', payload.projectId)
   const res = payload.id
     ? await http.put<ApiResponse<HostedPage>>(`/api/hosted-pages/${payload.id}`, form, {
         timeout: 120_000,
@@ -107,6 +114,10 @@ export async function apiSaveHostedPage(payload: {
 export const apiDeleteHostedPage = (id: string) => del(`/api/hosted-pages/${id}`)
 /** 公开：下载确认页要展示的文件信息。 */
 export const fetchFileMeta = (id: string) => get<FileItem>(`/api/files/${id}/meta`)
+export const fetchFilePreview = (id: string) =>
+  get<{ id: string; name: string; contentType: string; content: string }>(
+    `/api/files/${id}/preview`,
+  )
 /** 公开：取一道人机校验题。 */
 export const apiDownloadChallenge = (id: string) =>
   post<{ challengeId: string; question: string; captchaEnabled: boolean }>(
@@ -115,7 +126,8 @@ export const apiDownloadChallenge = (id: string) =>
 /** 公开：用答案换一张一次性下载票据。 */
 export const apiDownloadTicket = (id: string, challengeId: string, answer: string) =>
   post<{ ticket: string }>(`/api/files/${id}/ticket`, { challengeId, answer })
-export const fetchImages = () => get<ImageItem[]>('/api/images')
+export const fetchImages = (projectId?: string) =>
+  get<ImageItem[]>(`/api/images${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`)
 export const fetchVault = () => get<VaultGroup[]>('/api/vault')
 export const fetchSchedule = () => get<ScheduleItem[]>('/api/schedule')
 export const fetchSuggestions = () => get<Suggestion[]>('/api/suggestions')
@@ -177,10 +189,15 @@ export async function notifyTaskManually(id: string): Promise<boolean> {
  * @param file   图片文件（后端按图床设置限制且最高 10MB，仅接受常见图片类型）
  * @param source 来源描述，如「任务 · 整理证件盒」，会显示在图床列表里
  */
-export async function apiUploadImage(file: File, source?: string): Promise<ImageItem> {
+export async function apiUploadImage(
+  file: File,
+  source?: string,
+  projectId?: string,
+): Promise<ImageItem> {
   const form = new FormData()
   form.append('file', file)
   if (source) form.append('source', source)
+  if (projectId) form.append('projectId', projectId)
   const res = await http.post<ApiResponse<ImageItem>>('/api/images', form, {
     // 上传比普通接口慢，用更宽的超时，避免大图在弱网下被 10s 直接掐断
     timeout: 60_000,
