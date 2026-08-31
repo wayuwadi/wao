@@ -73,13 +73,15 @@ class AiRunServiceTest {
     private final ProjectMemoryService projectMemories = mock(ProjectMemoryService.class);
     private final AiSkillCapabilityService skillCapabilities = mock(AiSkillCapabilityService.class);
     private final FeishuAiRunReactionNotifier runReactions = mock(FeishuAiRunReactionNotifier.class);
+    private final SettingService settings = mock(SettingService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
             tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas, projectMemories, skillCapabilities,
-            runReactions);
+            runReactions, settings);
 
     @BeforeEach
     void emptyProgressByDefault() {
+        when(settings.get(SettingService.AI_RUN_DEFAULT_EXECUTION_MODE, "plan")).thenReturn("plan");
         when(progressMapper.selectList(any())).thenReturn(List.of());
         when(hostedPages.runReportUrls(any())).thenReturn(Map.of());
         when(projectMemories.recall(any(), any())).thenReturn(List.of());
@@ -99,8 +101,27 @@ class AiRunServiceTest {
 
         assertThat(options.defaultCodexModel()).isEqualTo("gpt-5.6-sol");
         assertThat(options.defaultReasoningEffort()).isEqualTo("high");
+        assertThat(options.defaultExecutionMode()).isEqualTo("plan");
         assertThat(options.reasoningEfforts()).extracting("id")
                 .containsExactly("high", "medium", "low");
+    }
+
+    @Test
+    void savesAndReturnsConfigurableDefaultExecutionMode() {
+        when(settings.get(SettingService.AI_RUN_DEFAULT_EXECUTION_MODE, "plan")).thenReturn("goal");
+
+        var options = service.saveDefaultExecutionMode(" GOAL ");
+
+        verify(settings).put(SettingService.AI_RUN_DEFAULT_EXECUTION_MODE, "goal");
+        assertThat(options.defaultExecutionMode()).isEqualTo("goal");
+    }
+
+    @Test
+    void rejectsUnsupportedDefaultExecutionMode() {
+        assertThatThrownBy(() -> service.saveDefaultExecutionMode("automatic"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("direct、plan 或 goal");
+        verify(settings, never()).put(eq(SettingService.AI_RUN_DEFAULT_EXECUTION_MODE), any());
     }
 
     @Test
@@ -1415,6 +1436,22 @@ class AiRunServiceTest {
         assertThat(result.usage().recorded()).isTrue();
         assertThat(result.usage().model()).isEqualTo("claude-opus-5");
         assertThat(result.deliveryStage()).isEqualTo("deployment_succeeded");
+    }
+
+    @Test
+    void completionAccumulatesMeasuredAiExecutionTimeAndReturnsClaimTime() {
+        AiTaskRunEntity run = runningRun();
+        LocalDateTime firstClaim = LocalDateTime.of(2026, 8, 31, 9, 0);
+        run.setClaimedAt(firstClaim);
+        run.setAiExecutionDurationMs(1_250L);
+
+        AiRunDto result = service.complete("local-token", "ar1", new CompleteAiRunRequest(
+                0, "WAO_RUN_STATUS: SUCCESS", "sess-1", null, null,
+                null, null, null, null, 2_750L, null, List.of(), List.of()));
+
+        assertThat(run.getAiExecutionDurationMs()).isEqualTo(4_000L);
+        assertThat(result.aiExecutionDurationMs()).isEqualTo(4_000L);
+        assertThat(result.claimedAt()).startsWith("2026-08-31T09:00");
     }
 
     @Test

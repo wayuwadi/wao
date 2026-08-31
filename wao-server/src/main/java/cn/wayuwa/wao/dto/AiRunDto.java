@@ -57,8 +57,11 @@ public record AiRunDto(
         String sessionId,
         Integer exitCode,
         String createdAt,
+        String claimedAt,
         String startedAt,
         String finishedAt,
+        /** Runner 单调时钟累计的 AI CLI 实际执行毫秒数；旧记录为空。 */
+        Long aiExecutionDurationMs,
         /** 领取时实际注入给 AI 的项目工程记忆。 */
         List<ProjectMemoryReferenceDto> memoryReads,
         /** 本次成功运行实际沉淀的项目工程记忆。 */

@@ -22,8 +22,9 @@ public interface AiTaskRunMapper extends BaseMapper<AiTaskRunEntity> {
      */
     @Update("""
             UPDATE ai_task_run
-            SET status = 'running', runner_id = #{runnerId}, claimed_at = #{claimedAt},
-                started_at = #{claimedAt}, pending_input = NULL,
+            SET status = 'running', runner_id = #{runnerId},
+                claimed_at = COALESCE(claimed_at, #{claimedAt}),
+                started_at = COALESCE(started_at, #{claimedAt}), pending_input = NULL,
                 latest_progress = #{progress}, progress_updated_at = #{claimedAt}
             WHERE id = #{runId} AND status = 'queued'
               AND (pending_input = #{pendingInput}

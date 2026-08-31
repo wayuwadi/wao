@@ -708,9 +708,23 @@ paths:
         '404': { description: 任务或子任务不存在 }
   /ai/run-options:
     get:
-      summary: 返回后台允许的 Codex 模型、推理强度、默认值与固定服务档位
+      summary: 返回后台允许的 Codex 模型、推理强度、默认执行模式与固定服务档位
       responses:
         '200': { description: serviceTier 固定为 default，表示本次运行不启用 Fast }
+    put:
+      summary: 保存后续新建 Codex 运行默认选中的执行模式
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [defaultExecutionMode]
+              properties:
+                defaultExecutionMode: { type: string, enum: [direct, plan, goal] }
+      responses:
+        '200': { description: 返回更新后的完整运行选项 }
+        '400': { description: 执行模式不在允许范围内 }
   /ai/goals:
     post:
       summary: 把长 Markdown 目标创建为任务并立即交给项目默认 AI 工作流
@@ -804,12 +818,12 @@ paths:
         '401': { description: 节点令牌无效或运行不属于当前节点 }
   /ai/runner/runs/{runId}/complete:
     post:
-      summary: Runner 回传 AI CLI 退出码、摘要、会话 id 与本次用量
+      summary: Runner 回传 AI CLI 退出码、摘要、会话 id、本次用量与实测执行耗时
       description: |
         用量字段（model / models / inputTokens / outputTokens / cachedInputTokens /
         totalTokens / costUsd）由 Runner 从 CLI 的结束事件里解析，见 ADR-026。
         Codex 不回传花费，costUsd 为 null；解析失败时全部为 0，服务端不会覆盖已记录的账单。
-        续跑在同一条运行记录上累加。
+        aiExecutionDurationMs 只累计真实 AI 进程时间，不包含 Git 准备、报告上传和部署等待；续跑在同一条运行记录上累加。
       parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
       requestBody:
         required: true
@@ -1751,6 +1765,7 @@ components:
         outputTokens: { type: integer, format: int64 }
         cachedInputTokens: { type: integer, format: int64, description: 缓存读取与缓存写入之和 }
         totalTokens: { type: integer, format: int64, description: 三类 token 合计 }
+        aiExecutionDurationMs: { type: integer, format: int64, nullable: true, description: Runner 单调时钟实测的本回合 AI CLI / app-server 执行毫秒数 }
         costUsd: { type: number, nullable: true, description: 折算额度（美元）；Codex 不回传时为 null }
         skillAudits: { type: array, description: 固定 Skill 的实际 loaded / failed / incompatible 装配结果, items: { type: object } }
     CompleteAiAssistantRunRequest:

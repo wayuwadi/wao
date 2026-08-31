@@ -39,6 +39,7 @@ import AiRunSkillCapabilities from '@/components/ai/AiRunSkillCapabilities.vue'
 import WaoPagination from '@/components/ui/WaoPagination.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
 import { formatCost, formatTokens, reasoningEffortLabel, shortModel } from '@/composables/aiUsage'
+import { aiExecutionDuration, totalRunDuration } from '@/composables/aiRunDuration'
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
 import { fetchWebhookEndpoints, type FeishuWebhookEndpoint } from '@/api/system'
@@ -369,6 +370,9 @@ async function refreshGoalRunOptions() {
   try {
     const options = await fetchAiRunOptions()
     goalRunOptions.value = options
+    goalExecutionMode.value = options.defaultExecutionMode === 'direct' || options.defaultExecutionMode === 'goal'
+      ? options.defaultExecutionMode
+      : 'plan'
     if (!options.reasoningEfforts.some((item) => item.id === goalReasoningEffort.value)) {
       goalReasoningEffort.value = options.defaultReasoningEffort
     }
@@ -1069,15 +1073,6 @@ function capacityText(value?: number | null) {
 function resourcePercent(total?: number | null, available?: number | null) {
   if (!total || available == null) return 0
   return Math.max(0, Math.min(100, Math.round((total - available) * 100 / total)))
-}
-
-function durationText(startedAt: string | null, finishedAt: string | null) {
-  if (!startedAt) return '尚未开始'
-  const end = finishedAt ? new Date(finishedAt).getTime() : Date.now()
-  const seconds = Math.max(0, Math.floor((end - new Date(startedAt).getTime()) / 1000))
-  if (seconds < 60) return `${seconds} 秒`
-  const minutes = Math.floor(seconds / 60)
-  return minutes < 60 ? `${minutes} 分钟` : `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟`
 }
 
 function progressAge(value: string | null) {
@@ -2066,7 +2061,8 @@ onBeforeUnmount(() => {
           <div><dt>执行模式</dt><dd>{{ selectedRun.goalMode ? '目标（持续到可验证终态）' : selectedRun.planMode ? 'Plan（推荐项自动选择）' : '直接执行' }}</dd></div>
           <div><dt>执行电脑</dt><dd>{{ selectedRun.runnerName || '未分配电脑' }}</dd></div>
           <div><dt>触发人</dt><dd>{{ selectedRun.requestedBy || '系统未记录' }}</dd></div>
-          <div><dt>执行时长</dt><dd>{{ durationText(selectedRun.startedAt, selectedRun.finishedAt) }}</dd></div>
+          <div><dt>总耗时</dt><dd :title="'从执行电脑首次有效领取到运行完全结束'">{{ totalRunDuration(selectedRun) }}</dd></div>
+          <div><dt>AI 实际执行</dt><dd :title="'不含 Git 准备、报告上传和部署等待'">{{ aiExecutionDuration(selectedRun) }}</dd></div>
           <div><dt>退出码</dt><dd>{{ selectedRun.exitCode ?? '—' }}</dd></div>
           <div><dt>{{ selectedRun.finishedAt ? '结束时间' : '最近反馈' }}</dt><dd>{{ timeText(selectedRun.finishedAt || selectedRun.progressUpdatedAt) || '等待中' }}</dd></div>
         </dl>

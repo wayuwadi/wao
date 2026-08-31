@@ -515,6 +515,7 @@ export interface AiRunOptions {
   reasoningEfforts: AiRunOption[]
   defaultCodexModel: string
   defaultReasoningEffort: string
+  defaultExecutionMode: 'direct' | 'plan' | 'goal'
   serviceTier: 'default'
 }
 
@@ -727,8 +728,12 @@ export interface AiRun {
   /** Runner 实际装配结果；运行未结束时可能为空。 */
   skillAudits?: AiSkillAudit[]
   createdAt: string
+  /** Runner 首次有效领取时间；滚动升级期间旧服务端可缺省。 */
+  claimedAt?: string | null
   startedAt: string | null
   finishedAt: string | null
+  /** Runner 单调时钟累计的 AI CLI / app-server 实际执行毫秒数。 */
+  aiExecutionDurationMs?: number | null
   /** 旧服务端和历史运行没有这两个字段。 */
   memoryReads?: ProjectMemoryReference[]
   memoryWrites?: ProjectMemoryReference[]

@@ -58,6 +58,8 @@ public class AiTaskRunEntity {
     private Long outputTokens;
     private Long cachedInputTokens;
     private Long totalTokens;
+    /** Runner 用单调时钟累计的 AI CLI 进程实际运行毫秒数；旧记录为空。 */
+    private Long aiExecutionDurationMs;
     /** 折算额度（美元）；Codex 不回传花费，这里会是 null。 */
     private BigDecimal costUsd;
     private Integer exitCode;
@@ -138,6 +140,8 @@ public class AiTaskRunEntity {
     public void setCachedInputTokens(Long cachedInputTokens) { this.cachedInputTokens = cachedInputTokens; }
     public Long getTotalTokens() { return totalTokens; }
     public void setTotalTokens(Long totalTokens) { this.totalTokens = totalTokens; }
+    public Long getAiExecutionDurationMs() { return aiExecutionDurationMs; }
+    public void setAiExecutionDurationMs(Long value) { aiExecutionDurationMs = value; }
     public BigDecimal getCostUsd() { return costUsd; }
     public void setCostUsd(BigDecimal costUsd) { this.costUsd = costUsd; }
     public Integer getExitCode() { return exitCode; }
