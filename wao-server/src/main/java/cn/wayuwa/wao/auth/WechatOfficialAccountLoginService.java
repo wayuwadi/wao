@@ -179,8 +179,18 @@ public class WechatOfficialAccountLoginService {
                     .body(Map.of("grant_type", "client_credential", "appid", effective.appId(),
                             "secret", effective.appSecret(), "force_refresh", false))
                     .retrieve().body(TokenResponse.class);
-        } catch (RestClientException exception) {
-            throw new WechatLoginException("微信公众号接口暂时不可用，请稍后重试", exception);
+        } catch (RestClientException stableFailure) {
+            log.warn("Wechat stable token transport failed; falling back to legacy token endpoint: {}",
+                    stableFailure.getClass().getSimpleName());
+            try {
+                return client.get().uri(uri -> uri.path("/cgi-bin/token")
+                                .queryParam("grant_type", "client_credential")
+                                .queryParam("appid", effective.appId())
+                                .queryParam("secret", effective.appSecret()).build())
+                        .retrieve().body(TokenResponse.class);
+            } catch (RestClientException legacyFailure) {
+                throw new WechatLoginException("微信公众号接口暂时不可用，请稍后重试", legacyFailure);
+            }
         }
     }
 
