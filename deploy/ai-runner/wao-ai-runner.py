@@ -58,6 +58,11 @@ MAX_RUNNER_CONCURRENCY = 8
 # 避免心跳每十秒都启动本地进程。上报内容不包含 auth.json、Token 或 Cookie。
 CODEX_QUOTA_INTERVAL_SECONDS = 300
 CODEX_QUOTA_TIMEOUT_SECONDS = 20
+# `codex exec --json` 正常会很快给出 thread.started。启动后长时间一行事件都没有，
+# 说明 CLI 仍卡在认证或出站连接阶段；必须终止后交给现有重试收口，不能永久占住 Runner 槽位。
+CLI_FIRST_EVENT_TIMEOUT_SECONDS = 90
+CODEX_EGRESS_PROBE_TIMEOUT_SECONDS = 10
+CODEX_EGRESS_PROBE_URL = "https://chatgpt.com/backend-api/wham/usage"
 MAX_LOCAL_MEMORY_FILES = 32
 MAX_LOCAL_MEMORY_FILE_BYTES = 64 * 1024
 MAX_LOCAL_MEMORY_TOTAL_BYTES = 256 * 1024
@@ -289,12 +294,14 @@ def normalize_codex_quota(account_result: Any, rate_limit_result: Any) -> dict[s
     }
 
 
-def read_codex_quota(codex_command: str) -> dict[str, Any]:
+def read_codex_quota(codex_command: str,
+        environment: dict[str, str] | None = None) -> dict[str, Any]:
     """通过当前 Codex CLI 的本地 app-server 读取真实额度，不读取或上传认证文件。"""
     process = subprocess.Popen(
         [codex_command, "app-server", "--stdio"],
         text=True, encoding="utf-8", errors="replace",
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        env=environment,
         creationflags=windows_creation_flags(),
     )
     responses: queue.Queue[dict[str, Any] | None] = queue.Queue()
@@ -790,10 +797,51 @@ def assistant_cli_environment(environment: dict[str, str] | None) -> dict[str, s
     return sanitized
 
 
+def codex_cli_environment(environment: dict[str, str] | None,
+        proxy_url: str | None) -> dict[str, str]:
+    """只给 Codex 子进程叠加代理，不改变 Runner、Git 或其它 AI 工具的网络。"""
+    prepared = dict(environment or os.environ)
+    value = str(proxy_url or "").strip()
+    if not value:
+        return prepared
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise RuntimeError("Codex 代理地址必须是完整的 http(s) URL")
+    if parsed.username or parsed.password:
+        raise RuntimeError("Codex 代理地址不得在命令行中携带账号或密码")
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        prepared[key] = value
+    # 这个内部标记只存在于子进程环境，用于在启动官方 Codex 前执行真实出站探针。
+    prepared["WAO_CODEX_EGRESS_PROXY_CONFIGURED"] = "true"
+    return prepared
+
+
+def verify_codex_egress(environment: dict[str, str],
+        timeout_seconds: float = CODEX_EGRESS_PROBE_TIMEOUT_SECONDS) -> None:
+    """验证官方 Codex 所需的 ChatGPT 链路；401 表示网络已到达真实服务。"""
+    proxy_url = environment.get("HTTPS_PROXY") or environment.get("https_proxy")
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else {}
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler(proxies))
+    request = urllib.request.Request(
+        CODEX_EGRESS_PROBE_URL,
+        headers={"Accept": "application/json", "User-Agent": "WAO-AI-Runner/1"},
+    )
+    try:
+        with opener.open(request, timeout=timeout_seconds) as response:
+            status = int(response.getcode() or 0)
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+    except (OSError, urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError("Codex 出站不可用，无法连接 chatgpt.com；请检查节点代理或 VPN") from exc
+    if status not in {200, 401}:
+        raise RuntimeError(f"Codex 出站探针返回 HTTP {status}，节点暂不可执行官方 Codex")
+
+
 def invoke_cli(command: list[str], worktree: Path, prompt: str,
         on_event: Callable[[dict[str, Any]], None] | None = None,
         environment: dict[str, str] | None = None,
-        should_stop: Callable[[], bool] | None = None) -> tuple[int, str]:
+        should_stop: Callable[[], bool] | None = None,
+        first_event_timeout_seconds: float = CLI_FIRST_EVENT_TIMEOUT_SECONDS) -> tuple[int, str]:
     """通过标准输入传递提示，并逐行消费 AI CLI 的 JSONL 事件。"""
     process = subprocess.Popen(
         command, cwd=str(worktree), text=True, encoding="utf-8", errors="replace",
@@ -816,6 +864,8 @@ def invoke_cli(command: list[str], worktree: Path, prompt: str,
     threading.Thread(target=read_output, daemon=True).start()
     stopping = False
     stop_started_at: float | None = None
+    started_at = time.monotonic()
+    saw_output = False
     while True:
         if should_stop and should_stop() and not stopping:
             log("收到运行控制请求，正在结束当前本地 AI CLI 回合")
@@ -828,9 +878,23 @@ def invoke_cli(command: list[str], worktree: Path, prompt: str,
         try:
             line = output.get(timeout=1)
         except queue.Empty:
+            if (not saw_output and process.poll() is None
+                    and time.monotonic() - started_at >= first_event_timeout_seconds):
+                terminate_process_tree(process)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    force_kill_process_tree(process)
+                    process.wait(timeout=5)
+                close_output = getattr(process.stdout, "close", None)
+                if callable(close_output):
+                    close_output()
+                raise TimeoutError(
+                    f"AI CLI 启动后 {int(first_event_timeout_seconds)} 秒没有返回任何事件")
             continue
         if line is None:
             break
+        saw_output = True
         lines.append(line)
         try:
             event = json.loads(line)
@@ -1685,6 +1749,9 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         if codex_home is None:
             raise RuntimeError("无工具页面分析必须使用隔离的 CODEX_HOME")
         run_environment.update(prepare_tool_free_codex_home(codex_home, run_environment))
+    if (not custom_api
+            and run_environment.get("WAO_CODEX_EGRESS_PROXY_CONFIGURED") == "true"):
+        verify_codex_egress(run_environment)
     exit_code, output = invoke_cli(command, worktree, prompt, reporter.event, run_environment, should_stop)
     reporter.flush()
     session_id = None
@@ -1722,6 +1789,9 @@ def run_codex_goal(executable: str, worktree: Path, prompt: str, sandbox: str,
         if codex_home is None:
             raise RuntimeError("选择集中账号时缺少隔离的 CODEX_HOME")
         run_environment.update(prepare_codex_home(codex_home, account))
+    if (not account or str(account.get("authMethod") or "") != "api_key") \
+            and run_environment.get("WAO_CODEX_EGRESS_PROXY_CONFIGURED") == "true":
+        verify_codex_egress(run_environment)
     command = [executable, "app-server", "--enable", "goals", "--listen", "stdio://"]
     process = subprocess.Popen(
         command, cwd=str(worktree), text=True, encoding="utf-8", errors="replace",
@@ -1753,6 +1823,8 @@ def run_codex_goal(executable: str, worktree: Path, prompt: str, sandbox: str,
     usage = _blank_usage()
     request_id = 10
     stopping = False
+    started_at = time.monotonic()
+    saw_output = False
     try:
         while True:
             if should_stop and should_stop() and not stopping:
@@ -1764,9 +1836,14 @@ def run_codex_goal(executable: str, worktree: Path, prompt: str, sandbox: str,
             except queue.Empty:
                 if process.poll() is not None:
                     break
+                if (not saw_output
+                        and time.monotonic() - started_at >= CLI_FIRST_EVENT_TIMEOUT_SECONDS):
+                    raise TimeoutError(
+                        f"Codex app-server 启动后 {CLI_FIRST_EVENT_TIMEOUT_SECONDS} 秒没有返回任何事件")
                 continue
             if line is None:
                 break
+            saw_output = True
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
@@ -2060,7 +2137,8 @@ def collect_usage(output: str, engine: str) -> dict[str, Any]:
 def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, git_command: str,
         engine_commands: dict[str, str], cli_environment: dict[str, str] | None = None,
         claude_model: str | None = None, git_protocol: str = "auto",
-        https_ready: bool = False) -> None:
+        https_ready: bool = False,
+        codex_environment: dict[str, str] | None = None) -> None:
     run_id = claim["runId"]
     engine = str(claim.get("engine") or "codex")
     name = ENGINE_LABELS.get(engine, engine)
@@ -2172,12 +2250,14 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
                             executable, worktree, prompt, sandbox, reporter,
                             _readable_text(claim.get("goalObjective")) or
                             f"完成任务「{claim.get('taskTitle') or run_id}」并通过真实验收",
-                            cli_environment, session_id, control_requested, claim.get("account"), codex_home,
+                            codex_environment or cli_environment, session_id, control_requested,
+                            claim.get("account"), codex_home,
                             model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
                             service_tier=claim.get("serviceTier"))
                     else:
                         turn = run_codex(
-                            executable, worktree, prompt, sandbox, reporter, cli_environment, session_id,
+                            executable, worktree, prompt, sandbox, reporter,
+                            codex_environment or cli_environment, session_id,
                             control_requested, claim.get("account"), codex_home,
                             model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
                             service_tier=claim.get("serviceTier"))
@@ -2274,7 +2354,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
 
 
 def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, executable: str,
-        git_command: str, cli_environment: dict[str, str] | None = None) -> None:
+        git_command: str, cli_environment: dict[str, str] | None = None,
+        codex_environment: dict[str, str] | None = None) -> None:
     """在临时空仓库和只读沙箱中执行页面问答，结束后不保留用户上下文。"""
     run_id = claim["runId"]
     claim_token = str(claim.get("claimToken") or "")
@@ -2300,7 +2381,8 @@ def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, exec
             try:
                 exit_code, response, _, _ = run_codex(
                     executable, worktree, str(claim.get("prompt") or ""), "read-only",
-                    NoopProgressReporter(), assistant_cli_environment(cli_environment),
+                    NoopProgressReporter(), assistant_cli_environment(
+                        codex_environment or cli_environment),
                     should_stop=lambda: time.monotonic() >= deadline,
                     account=claim.get("account"), codex_home=codex_home,
                     tools_disabled=True, web_search_enabled=web_search_enabled)
@@ -2587,6 +2669,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pair-code", default=os.getenv("WAO_PAIR_CODE"))
     parser.add_argument("--git-command", default=os.getenv("WAO_GIT_COMMAND"))
     parser.add_argument("--codex-command", default=os.getenv("WAO_CODEX_COMMAND"))
+    parser.add_argument(
+        "--codex-proxy-url",
+        default=os.getenv("WAO_CODEX_PROXY_URL"),
+        help="只供 Codex 子进程使用的 http(s) 代理；不会改变 Runner、Git 或其它 AI 工具流量",
+    )
     parser.add_argument("--claude-command", default=os.getenv("WAO_CLAUDE_COMMAND"))
     parser.add_argument("--qoder-command", default=os.getenv("WAO_QODER_COMMAND"))
     parser.add_argument("--windows-task-name", default=os.getenv("WAO_WINDOWS_TASK_NAME"),
@@ -2666,6 +2753,8 @@ def main() -> int:
     root = Path(args.root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
     cli_environment, github_token_ready, github_cli = build_cli_environment(git_command)
+    codex_environment = codex_cli_environment(
+        cli_environment, getattr(args, "codex_proxy_url", None))
     log(f"WAO AI Runner 已启动：工作区 {root}，启动并发 {args.max_concurrency}，"
         f"后台配置将在心跳后动态生效，日志 {LOG_FILE}")
     log("运行环境：Git=" + git_command
@@ -2674,6 +2763,8 @@ def main() -> int:
         f"GitHub CLI={github_cli or '未找到'}，"
         f"克隆协议={args.git_protocol}"
         f"{'（无 HTTPS 凭据，改用 SSH）' if args.git_protocol == 'auto' and not github_token_ready else ''}")
+    if getattr(args, "codex_proxy_url", None):
+        log("Codex 专用出站代理已配置，任务启动前会执行真实连通性探针")
     if args.sync_ai_credentials:
         log("AI 账号凭据同步已启用")
         sync_ai_credentials(api, Path.home())
@@ -2694,7 +2785,8 @@ def main() -> int:
                 if "codex" in engine_commands and now - last_codex_quota_check >= CODEX_QUOTA_INTERVAL_SECONDS:
                     last_codex_quota_check = now
                     try:
-                        codex_quota_report = read_codex_quota(engine_commands["codex"])
+                        codex_quota_report = read_codex_quota(
+                            engine_commands["codex"], codex_environment)
                         codex_quota_error = None
                     except Exception as exc:  # noqa: BLE001 - 额度失败不能影响任务领取
                         codex_quota_report = None
@@ -2739,7 +2831,7 @@ def main() -> int:
                             and (memory_collection_future is None or memory_collection_future.done())):
                         memory_collection_future = executor.submit(
                             collect_codex_memory_report, api, args.name,
-                            engine_commands["codex"], cli_environment)
+                            engine_commands["codex"], codex_environment)
                     collection_slots = 1 if memory_collection_future and not memory_collection_future.done() else 0
                     while len(futures) + collection_slots < runtime_concurrency:
                         claim = api.post("/api/ai/runner/claim")
@@ -2750,14 +2842,15 @@ def main() -> int:
                             if assistant_claim:
                                 futures.add(executor.submit(
                                     execute_assistant_claim, api, assistant_claim, root,
-                                    engine_commands["codex"], git_command, cli_environment))
+                                    engine_commands["codex"], git_command, cli_environment,
+                                    codex_environment))
                                 continue
                         if not claim:
                             break
                         futures.add(executor.submit(
                             execute_claim, api, claim, root, args.sandbox, git_command,
                             engine_commands, cli_environment, args.claude_model,
-                            args.git_protocol, github_token_ready))
+                            args.git_protocol, github_token_ready, codex_environment))
             except PairingRevokedError as exc:
                 # WAO 后台解除了这台电脑的接入：令牌已经作废，重试没有意义，
                 # 清掉本地令牌后退出，需要重新接入时用新的配对码启动即可。

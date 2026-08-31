@@ -49,6 +49,18 @@ CD 不再下载、上传、安装或重启 Codex CLI/Runner，避免业务发布
 首次接入前需确认 `command -v codex` 可用，并在 Runner 启动参数或 systemd 环境中配置 `codex`
 能力和集中账号同步；节点身份仍必须通过 AI 控制台的一次性配对码建立。
 
+Linux1 自身没有可用的 `chatgpt.com` 出站时，不能只因为本机装了 `codex` 就直接接任务。按
+[ADR-171](../../docs/adr/171-linux1-codex-egress-and-startup-timeout.md) 复用到 Linux2 的既有 SSH 通道：
+以 `wao-linux2-tunnel.service.example` 为模板增加回环本地转发，再给 Linux1 Runner 增加
+`--codex-proxy-url http://127.0.0.1:17897`。Runner 只把该代理交给 Codex；WAO、Git 和其它 AI 工具
+不改路由。启动前会用真实 ChatGPT 接口探针验证转发，失败时自动重试并显示明确错误，不再无限停在
+“正在启动 Codex”。安装后执行以下无凭据检查，401 表示已经到达真实服务：
+
+```bash
+curl --proxy http://127.0.0.1:17897 --output /dev/null \
+  --write-out '%{http_code}\n' https://chatgpt.com/backend-api/wham/usage
+```
+
 `--engines` 留空表示自动探测（装了哪种就报哪种，可选 codex、claude、qoder）；显式指定时
 找不到对应命令会直接启动失败，避免电脑上报了自己其实跑不了的能力。需要固定模型时加
 `--claude-model opus`。Qoder 的引擎 id 是 `qoder`，命令名国际版叫 `qodercli`、国内版叫
