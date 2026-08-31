@@ -103,8 +103,8 @@ public class FeishuQuickCollectAiRunService {
         }
         String key = StringUtils.hasText(reaction.reactionId())
                 ? "reaction-id:" + reaction.reactionId()
-                : eventKey("", messageId, reaction.operatorId(), reaction.actionTime());
-        return dispatch(messageId, reaction.operatorId(), "", "", key, baseUrl);
+                : eventKey("", messageId, reaction.operatorUnionId(), reaction.actionTime());
+        return dispatch(messageId, "", reaction.operatorUnionId(), "", key, baseUrl);
     }
 
     /** 是否已经为这条原消息消费过一次人工派工，供轮询入口避免无意义外部请求。 */

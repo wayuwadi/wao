@@ -50,13 +50,13 @@ class FeishuOpenApiClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_source/reactions"
-                        + "?reaction_type=StatusInFlight&page_size=50&user_id_type=open_id"))
+                        + "?reaction_type=StatusInFlight&page_size=50&user_id_type=union_id"))
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header("Authorization", "Bearer token-test"))
                 .andRespond(withSuccess("""
                         {"code":0,"data":{"items":[{
                           "reaction_id":"reaction-1",
-                          "operator":{"operator_id":"ou_owner","operator_type":"user"},
+                          "operator":{"operator_id":"on_owner","operator_type":"user"},
                           "action_time":"1787900000000",
                           "reaction_type":{"emoji_type":"StatusInFlight"}
                         }],"has_more":false}}
@@ -66,7 +66,7 @@ class FeishuOpenApiClientTest {
 
         assertThat(client.listMessageReactions("token-test", "om_source", "StatusInFlight"))
                 .containsExactly(new FeishuOpenApiClient.FeishuMessageReaction(
-                        "reaction-1", "ou_owner", "user", "1787900000000", "StatusInFlight"));
+                        "reaction-1", "on_owner", "user", "1787900000000", "StatusInFlight"));
         server.verify();
     }
 
