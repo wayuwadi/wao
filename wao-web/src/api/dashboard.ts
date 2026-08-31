@@ -67,7 +67,7 @@ export interface AiQuotaHistory {
 }
 
 export interface AiUsageAdvice {
-  category: 'MODEL' | 'REASONING' | 'SPEED' | 'FREQUENCY' | 'DIRECTION'
+  category: 'OUTCOME' | 'QUALITY' | 'ROUTING' | 'RETRY' | 'ACCOUNTING'
   title: string
   recommendation: string
   evidence: string
@@ -79,7 +79,17 @@ export interface AiUsageInsights {
   totalRuns: number
   completedRuns: number
   meteredRuns: number
+  timedRuns: number
+  deliveredRuns: number
+  deliveredTasks: number
+  verifiedTasks: number
+  totalTokens: number
+  failedTokens: number
+  tokensPerDeliveredTask: number | null
+  retryRuns: number
+  retryTokens: number
   medianDurationSeconds: number | null
+  medianAiExecutionSeconds: number | null
   advice: AiUsageAdvice[]
 }
 

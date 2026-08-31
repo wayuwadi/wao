@@ -42,7 +42,7 @@ paths:
   /api/dashboard/usage-insights:
     get:
       operationId: getAiUsageInsights
-      summary: 根据已落库 AI Run 轨迹返回可解释的模型、思考深度、速度、频率与任务方向建议
+      summary: 根据已落库 AI Run 返回有效交付单位消耗、质量、重试、记账覆盖与同类配置建议
       parameters:
         - in: query
           name: days
@@ -50,7 +50,7 @@ paths:
           schema: { type: integer, minimum: 1, maximum: 90, default: 30 }
       responses:
         "200":
-          description: 每项均附样本证据；样本不足时 sufficientData 为 false，不声称存在最优配置
+          description: 有效交付按任务去重；配置仅在同活动类型且样本完整时返回帕累托候选
           content:
             application/json:
               schema:
@@ -170,20 +170,30 @@ components:
         timestamp: { type: integer, format: int64 }
         data:
           type: object
-          required: [windowDays, totalRuns, completedRuns, meteredRuns, advice]
+          required: [windowDays, totalRuns, completedRuns, meteredRuns, timedRuns, deliveredRuns, deliveredTasks, verifiedTasks, totalTokens, failedTokens, retryRuns, retryTokens, advice]
           properties:
             windowDays: { type: integer }
             totalRuns: { type: integer }
             completedRuns: { type: integer }
             meteredRuns: { type: integer }
-            medianDurationSeconds: { type: integer, format: int64, nullable: true }
+            timedRuns: { type: integer, description: 回传 AI 实际执行时长的已结束运行数 }
+            deliveredRuns: { type: integer, description: 成功且部署和线上验收通过的运行数 }
+            deliveredTasks: { type: integer, description: 有效交付运行覆盖并在窗口内去重的任务数 }
+            verifiedTasks: { type: integer, description: 有效交付任务中当前已由成员标记已完成的数量 }
+            totalTokens: { type: integer, format: int64, description: 窗口内全部已结束运行的真实 Token }
+            failedTokens: { type: integer, format: int64, description: 未形成有效交付且已真实回传的 Token 小计 }
+            tokensPerDeliveredTask: { type: integer, format: int64, nullable: true, description: 无有效交付或已结束运行记账不完整时为空 }
+            retryRuns: { type: integer, description: retryOfRunId 非空的已结束运行数 }
+            retryTokens: { type: integer, format: int64 }
+            medianDurationSeconds: { type: integer, format: int64, nullable: true, description: 端到端时长中位，仅观察不参与模型比较 }
+            medianAiExecutionSeconds: { type: integer, format: int64, nullable: true, description: Runner 单调时钟回传的 AI 实际执行时长中位 }
             advice:
               type: array
               items:
                 type: object
                 required: [category, title, recommendation, evidence, sufficientData]
                 properties:
-                  category: { type: string, enum: [MODEL, REASONING, SPEED, FREQUENCY, DIRECTION] }
+                  category: { type: string, enum: [OUTCOME, QUALITY, ROUTING, RETRY, ACCOUNTING] }
                   title: { type: string }
                   recommendation: { type: string }
                   evidence: { type: string }

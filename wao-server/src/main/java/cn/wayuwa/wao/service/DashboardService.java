@@ -12,15 +12,19 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import cn.wayuwa.wao.domain.AiQuotaSnapshotEntity;
 import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.domain.AiTaskRunEntity;
+import cn.wayuwa.wao.domain.AiTaskRunTaskEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiQuotaHistoryDto;
 import cn.wayuwa.wao.dto.AiRunTrendItem;
@@ -245,10 +249,10 @@ public class DashboardService {
     }
 
     /**
-     * 根据近 N 天已经落库的模型、思考深度、耗时、成功状态和活动类型生成可解释建议。
+     * 把近 N 天 AI Run 换算成有效交付、单位 Token、失败与重试消耗和真实 AI 执行时长。
      *
-     * <p>每项建议都返回样本证据；不足三次运行或不足三个活跃日时明确标记数据不足，
-     * 不把偶然一次成功包装成“当前最优”。
+     * <p>模型配置只在同一活动类型、每组至少三次且 Token 与 AI 单调时长均有记录时比较；
+     * 返回帕累托候选而不是跨任务类型挑一个伪“最优”。
      */
     public AiUsageInsightsDto usageInsights(int days) {
         int span = Math.max(1, Math.min(days, 90));
@@ -256,96 +260,183 @@ public class DashboardService {
         List<AiTaskRunEntity> runs = runMapper.selectList(new LambdaQueryWrapper<AiTaskRunEntity>()
                 .ge(AiTaskRunEntity::getCreatedAt, from));
         List<AiTaskRunEntity> completed = runs.stream().filter(DashboardService::terminal).toList();
-        List<Long> durations = completed.stream().filter(run -> run.getStartedAt() != null && run.getFinishedAt() != null)
+        List<Long> durations = completed.stream()
+                .filter(run -> run.getStartedAt() != null && run.getFinishedAt() != null)
                 .map(run -> Math.max(0L, java.time.Duration.between(run.getStartedAt(), run.getFinishedAt()).toSeconds()))
                 .sorted().toList();
-        Long median = durations.isEmpty() ? null : durations.get(durations.size() / 2);
+        List<Long> aiDurations = completed.stream()
+                .map(AiTaskRunEntity::getAiExecutionDurationMs)
+                .filter(Objects::nonNull).filter(value -> value >= 0)
+                .map(value -> Math.round(value / 1000.0)).sorted().toList();
+        Long median = median(durations);
+        Long medianAi = median(aiDurations);
+
+        Map<String, List<String>> taskIdsByRun = taskIdsByRun(completed);
+        List<AiTaskRunEntity> delivered = completed.stream().filter(DashboardService::delivered).toList();
+        Set<String> deliveredTaskIds = delivered.stream()
+                .flatMap(run -> taskIdsByRun.getOrDefault(run.getId(), List.of()).stream())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<TaskEntity> deliveredTasks = deliveredTaskIds.isEmpty() ? List.of()
+                : Objects.requireNonNullElse(taskMapper.selectBatchIds(deliveredTaskIds), List.of());
+        int verifiedTasks = (int) deliveredTasks.stream().filter(task -> "已完成".equals(task.getStatus())).count();
+
+        int metered = (int) completed.stream().filter(DashboardService::usageRecorded).count();
+        long totalTokens = completed.stream().mapToLong(run -> valueOrZero(run.getTotalTokens())).sum();
+        long failedTokens = completed.stream().filter(run -> !delivered(run))
+                .mapToLong(run -> valueOrZero(run.getTotalTokens())).sum();
+        List<AiTaskRunEntity> retries = completed.stream()
+                .filter(run -> run.getRetryOfRunId() != null && !run.getRetryOfRunId().isBlank()).toList();
+        long retryTokens = retries.stream().mapToLong(run -> valueOrZero(run.getTotalTokens())).sum();
+        Long tokensPerDeliveredTask = deliveredTaskIds.isEmpty() || metered < completed.size() ? null
+                : Math.round((double) totalTokens / deliveredTaskIds.size());
 
         List<AiUsageInsightsDto.Advice> advice = List.of(
-                rankedAdvice("MODEL", "模型选择", completed, DashboardService::effectiveModel,
-                        "优先在同类任务中使用 %s", "还没有至少 3 次带模型信息的已结束运行"),
-                rankedAdvice("REASONING", "思考深度", completed, AiTaskRunEntity::getReasoningEffort,
-                        "优先以 %s 思考深度作为同类任务起点", "还没有至少 3 次带思考深度的已结束运行"),
-                speedAdvice(completed, median),
-                frequencyAdvice(completed),
-                rankedAdvice("DIRECTION", "后续任务方向", completed, DashboardService::activityLabel,
-                        "近期可优先安排%s类任务", "还没有至少 3 次可分类的已结束运行"));
-        return new AiUsageInsightsDto(span, runs.size(), completed.size(),
-                (int) runs.stream().filter(DashboardService::usageRecorded).count(), median, advice);
+                outcomeAdvice(completed, deliveredTaskIds.size(), totalTokens, tokensPerDeliveredTask, medianAi),
+                qualityAdvice(completed, delivered.size(), deliveredTaskIds.size(), verifiedTasks, failedTokens),
+                routingAdvice(completed),
+                retryAdvice(completed.size(), retries.size(), retryTokens),
+                accountingAdvice(completed.size(), metered));
+        return new AiUsageInsightsDto(span, runs.size(), completed.size(), metered, aiDurations.size(),
+                delivered.size(), deliveredTaskIds.size(), verifiedTasks, totalTokens, failedTokens,
+                tokensPerDeliveredTask, retries.size(), retryTokens, median, medianAi, advice);
     }
 
-    private static AiUsageInsightsDto.Advice rankedAdvice(String category, String title,
-            List<AiTaskRunEntity> runs, java.util.function.Function<AiTaskRunEntity, String> classifier,
-            String recommendation, String insufficient) {
-        Map<String, RunStats> stats = new LinkedHashMap<>();
+    private Map<String, List<String>> taskIdsByRun(List<AiTaskRunEntity> runs) {
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        if (runs.isEmpty()) return result;
         for (AiTaskRunEntity run : runs) {
-            String key = classifier.apply(run);
-            if (key == null || key.isBlank()) continue;
-            stats.computeIfAbsent(key, unused -> new RunStats()).add(run);
+            List<String> fallback = new ArrayList<>();
+            if (run.getTaskId() != null && !run.getTaskId().isBlank()) fallback.add(run.getTaskId());
+            result.put(run.getId(), fallback);
         }
-        RunStatsChoice best = stats.entrySet().stream()
-                .map(entry -> new RunStatsChoice(entry.getKey(), entry.getValue()))
-                .max(Comparator.comparingDouble((RunStatsChoice value) -> value.stats.successRate())
-                        .thenComparingInt(value -> value.stats.count)
-                        .thenComparingLong(value -> -value.stats.averageTokens()))
-                .orElse(null);
-        int samples = stats.values().stream().mapToInt(value -> value.count).sum();
-        if (best == null || samples < 3 || best.stats.count < 2) {
-            return new AiUsageInsightsDto.Advice(category, title, "继续积累真实运行记录后再给建议",
-                    insufficient + "（当前 " + samples + " 次）", false);
+        List<AiTaskRunTaskEntity> links = runMapper.selectTaskLinks(
+                runs.stream().map(AiTaskRunEntity::getId).toList());
+        if (links == null) links = List.of();
+        Set<String> runsWithLinks = new HashSet<>();
+        for (var link : links) {
+            if (link.getRunId() == null || link.getTaskId() == null || link.getTaskId().isBlank()) continue;
+            if (runsWithLinks.add(link.getRunId())) result.put(link.getRunId(), new ArrayList<>());
+            List<String> taskIds = result.computeIfAbsent(link.getRunId(), unused -> new ArrayList<>());
+            if (!taskIds.contains(link.getTaskId())) taskIds.add(link.getTaskId());
         }
-        return new AiUsageInsightsDto.Advice(category, title,
-                recommendation.formatted(best.key),
-                best.key + "：" + best.stats.count + " 次，成功率 " + percent(best.stats.successRate())
-                        + (best.stats.metered == 0 ? "" : "，平均 " + best.stats.averageTokens() + " Token"), true);
+        return result;
     }
 
-    private static AiUsageInsightsDto.Advice speedAdvice(List<AiTaskRunEntity> completed, Long median) {
-        List<AiTaskRunEntity> timed = completed.stream()
-                .filter(run -> "succeeded".equals(run.getStatus()))
-                .filter(run -> run.getStartedAt() != null && run.getFinishedAt() != null).toList();
-        if (timed.size() < 3 || median == null) {
-            return new AiUsageInsightsDto.Advice("SPEED", "完成速度", "继续积累带起止时间的成功运行后再比较速度",
-                    "当前只有 " + timed.size() + " 次可用耗时样本", false);
+    private static AiUsageInsightsDto.Advice outcomeAdvice(List<AiTaskRunEntity> completed, int deliveredTasks,
+            long totalTokens, Long tokensPerDeliveredTask, Long medianAi) {
+        if (deliveredTasks == 0) {
+            return new AiUsageInsightsDto.Advice("OUTCOME", "单位交付消耗",
+                    "先完成一次部署与线上验收，再建立单位交付基线",
+                    completed.size() + " 次已结束运行，尚无有效交付任务", false);
         }
-        Map<String, List<Long>> byConfig = new LinkedHashMap<>();
-        for (AiTaskRunEntity run : timed) {
-            String model = Objects.requireNonNullElse(effectiveModel(run), "未记录模型");
-            String effort = Objects.requireNonNullElse(run.getReasoningEffort(), "未记录深度");
-            byConfig.computeIfAbsent(model + " · " + effort, unused -> new ArrayList<>())
-                    .add(java.time.Duration.between(run.getStartedAt(), run.getFinishedAt()).toSeconds());
+        if (tokensPerDeliveredTask == null) {
+            return new AiUsageInsightsDto.Advice("OUTCOME", "单位交付消耗",
+                    "先补齐已结束运行的 Token 回传，再计算单位交付基线",
+                    deliveredTasks + " 个任务已部署并线上验收，但记账覆盖不完整", false);
         }
-        Map.Entry<String, List<Long>> fastest = byConfig.entrySet().stream()
-                .filter(entry -> entry.getValue().size() >= 2)
-                .min(Comparator.comparingLong(entry -> average(entry.getValue()))).orElse(null);
-        if (fastest == null) {
-            return new AiUsageInsightsDto.Advice("SPEED", "完成速度", "先保持当前配置并继续积累同配置样本",
-                    "共 " + timed.size() + " 次成功耗时样本，但没有同配置至少 2 次的可比组；总体中位 "
-                            + duration(median), false);
-        }
-        return new AiUsageInsightsDto.Advice("SPEED", "完成速度", "同类任务需要速度时优先尝试 " + fastest.getKey(),
-                fastest.getValue().size() + " 次成功运行平均 " + duration(average(fastest.getValue()))
-                        + "；总体中位 " + duration(median), true);
+        return new AiUsageInsightsDto.Advice("OUTCOME", "单位交付消耗",
+                "以每个有效交付约 " + tokensPerDeliveredTask + " Token 作为当前基线",
+                deliveredTasks + " 个任务已部署并线上验收；窗口共 " + totalTokens + " Token"
+                        + (medianAi == null ? "；AI 实际时长仍未完整回传" : "；AI 实际执行中位 " + duration(medianAi)),
+                medianAi != null);
     }
 
-    private static AiUsageInsightsDto.Advice frequencyAdvice(List<AiTaskRunEntity> completed) {
-        Map<LocalDate, List<AiTaskRunEntity>> activeDays = completed.stream()
-                .filter(run -> run.getCreatedAt() != null)
-                .collect(Collectors.groupingBy(run -> run.getCreatedAt().toLocalDate()));
-        if (activeDays.size() < 3) {
-            return new AiUsageInsightsDto.Advice("FREQUENCY", "使用频率", "继续积累至少 3 个活跃日后再判断运行节奏",
-                    "当前只有 " + activeDays.size() + " 个活跃日", false);
+    private static AiUsageInsightsDto.Advice qualityAdvice(List<AiTaskRunEntity> completed, int deliveredRuns,
+            int deliveredTasks, int verifiedTasks, long failedTokens) {
+        if (completed.size() < 3) {
+            return new AiUsageInsightsDto.Advice("QUALITY", "交付质量",
+                    "继续积累至少 3 次已结束运行后再判断质量趋势",
+                    "当前 " + completed.size() + " 次已结束运行，其中 " + deliveredRuns + " 次完成交付", false);
         }
-        double average = activeDays.values().stream().mapToInt(List::size).average().orElse(0);
-        long succeeded = completed.stream().filter(run -> "succeeded".equals(run.getStatus())).count();
-        return new AiUsageInsightsDto.Advice("FREQUENCY", "使用频率",
-                "以当前每个活跃日约 %.1f 次作为观察基线，并结合额度下降趋势调整".formatted(average),
-                activeDays.size() + " 个活跃日共 " + completed.size() + " 次已结束运行，成功率 "
-                        + percent(completed.isEmpty() ? 0 : (double) succeeded / completed.size()), true);
+        double successRate = (double) deliveredRuns / completed.size();
+        String recommendation = deliveredRuns == completed.size()
+                ? "保持当前交付门禁，并继续由成员验收已交付任务"
+                : "先减少未通过部署或线上验收的运行，再比较 Token 和模型";
+        return new AiUsageInsightsDto.Advice("QUALITY", "交付质量", recommendation,
+                completed.size() + " 次已结束运行，交付成功率 " + percent(successRate) + "；"
+                        + deliveredTasks + " 个交付任务中 " + verifiedTasks + " 个已由成员验收；失败消耗 "
+                        + failedTokens + " Token（仅统计已回传用量）", true);
+    }
+
+    private static AiUsageInsightsDto.Advice routingAdvice(List<AiTaskRunEntity> completed) {
+        Map<String, Map<String, RunStats>> byActivity = new LinkedHashMap<>();
+        for (AiTaskRunEntity run : completed) {
+            String model = effectiveModel(run);
+            String effort = run.getReasoningEffort();
+            if (model == null || effort == null || effort.isBlank()) continue;
+            byActivity.computeIfAbsent(activityLabel(run), unused -> new LinkedHashMap<>())
+                    .computeIfAbsent(model + " · " + effort, unused -> new RunStats()).add(run);
+        }
+        Map.Entry<String, Map<String, RunStats>> comparable = byActivity.entrySet().stream()
+                .filter(entry -> entry.getValue().values().stream().filter(RunStats::comparable).count() >= 2)
+                .max(Comparator.comparingInt(entry -> entry.getValue().values().stream()
+                        .mapToInt(stats -> stats.count).sum())).orElse(null);
+        if (comparable == null) {
+            int comparableGroups = byActivity.values().stream().mapToInt(groups ->
+                    (int) groups.values().stream().filter(RunStats::comparable).count()).sum();
+            return new AiUsageInsightsDto.Advice("ROUTING", "模型与思考深度",
+                    "同一任务类型至少让两个配置各完成 3 次，再比较质量、Token 与 AI 实际时长",
+                    "当前可独立评测的配置组 " + comparableGroups + " 个；端到端耗时不参与模型快慢判断", false);
+        }
+        List<Map.Entry<String, RunStats>> candidates = comparable.getValue().entrySet().stream()
+                .filter(entry -> entry.getValue().comparable()).toList();
+        List<Map.Entry<String, RunStats>> frontier = candidates.stream()
+                .filter(candidate -> candidates.stream().noneMatch(other -> other != candidate
+                        && dominates(other.getValue(), candidate.getValue()))).toList();
+        String names = frontier.stream().map(Map.Entry::getKey).collect(Collectors.joining("、"));
+        String evidence = frontier.stream().map(entry -> entry.getKey() + "：" + entry.getValue().count
+                + " 次，成功率 " + percent(entry.getValue().successRate()) + "，平均 "
+                + entry.getValue().averageTokens() + " Token，AI " + duration(entry.getValue().averageAiSeconds()))
+                .collect(Collectors.joining("；"));
+        return new AiUsageInsightsDto.Advice("ROUTING", "模型与思考深度",
+                comparable.getKey() + "的帕累托候选为 " + names,
+                evidence + "；候选只表示当前样本中没有被质量、Token、时延同时支配", true);
+    }
+
+    private static boolean dominates(RunStats left, RunStats right) {
+        boolean noWorse = left.successRate() >= right.successRate()
+                && left.averageTokens() <= right.averageTokens()
+                && left.averageAiSeconds() <= right.averageAiSeconds();
+        boolean strictlyBetter = left.successRate() > right.successRate()
+                || left.averageTokens() < right.averageTokens()
+                || left.averageAiSeconds() < right.averageAiSeconds();
+        return noWorse && strictlyBetter;
+    }
+
+    private static AiUsageInsightsDto.Advice retryAdvice(int completed, int retries, long retryTokens) {
+        if (completed == 0) {
+            return new AiUsageInsightsDto.Advice("RETRY", "重试消耗", "等待真实运行后再检查重试开销",
+                    "当前没有已结束运行", false);
+        }
+        if (retries == 0) {
+            return new AiUsageInsightsDto.Advice("RETRY", "重试消耗", "当前没有可见的跨运行重试消耗",
+                    completed + " 次已结束运行均不是失败重跑；Runner 内部自动重试尚未单独计数", true);
+        }
+        return new AiUsageInsightsDto.Advice("RETRY", "重试消耗",
+                "优先复盘重复失败原因，把稳定轮询与恢复步骤下沉到确定性流程",
+                retries + " 次失败重跑共消耗 " + retryTokens + " Token", true);
+    }
+
+    private static AiUsageInsightsDto.Advice accountingAdvice(int completed, int metered) {
+        if (completed == 0) {
+            return new AiUsageInsightsDto.Advice("ACCOUNTING", "记账覆盖", "等待真实运行后再检查用量回传",
+                    "当前没有已结束运行", false);
+        }
+        double coverage = (double) metered / completed;
+        return new AiUsageInsightsDto.Advice("ACCOUNTING", "记账覆盖",
+                coverage >= 0.9 ? "当前用量覆盖可用于观察趋势" : "先修复未回传 Token 的 Runner 或 CLI 事件解析",
+                metered + "/" + completed + " 次已结束运行回传 Token（" + percent(coverage) + "）",
+                coverage >= 0.9);
     }
 
     private static boolean terminal(AiTaskRunEntity run) {
         return run != null && List.of("succeeded", "failed", "cancelled").contains(run.getStatus());
+    }
+
+    private static boolean delivered(AiTaskRunEntity run) {
+        if (!"succeeded".equals(run.getStatus())) return false;
+        String stage = run.getDeliveryStage();
+        return stage == null || stage.isBlank() || "deployment_succeeded".equals(stage);
     }
 
     private static String effectiveModel(AiTaskRunEntity run) {
@@ -365,8 +456,8 @@ public class DashboardService {
         return fallback != null && !fallback.isBlank() ? fallback : null;
     }
 
-    private static long average(List<Long> values) {
-        return Math.round(values.stream().mapToLong(Long::longValue).average().orElse(0));
+    private static Long median(List<Long> values) {
+        return values.isEmpty() ? null : values.get(values.size() / 2);
     }
 
     private static String duration(long seconds) {
@@ -393,25 +484,32 @@ public class DashboardService {
     }
 
     private record QuotaSeriesKey(String sourceKey, String windowKey) { }
-    private record RunStatsChoice(String key, RunStats stats) { }
 
     private static final class RunStats {
         private int count;
-        private int succeeded;
+        private int delivered;
         private int metered;
         private long tokens;
+        private int timed;
+        private long aiSeconds;
 
         void add(AiTaskRunEntity run) {
             count++;
-            if ("succeeded".equals(run.getStatus())) succeeded++;
+            if (DashboardService.delivered(run)) delivered++;
             if (usageRecorded(run)) {
                 metered++;
                 tokens += valueOrZero(run.getTotalTokens());
             }
+            if (run.getAiExecutionDurationMs() != null && run.getAiExecutionDurationMs() >= 0) {
+                timed++;
+                aiSeconds += Math.round(run.getAiExecutionDurationMs() / 1000.0);
+            }
         }
 
-        double successRate() { return count == 0 ? 0 : (double) succeeded / count; }
+        boolean comparable() { return count >= 3 && metered == count && timed == count; }
+        double successRate() { return count == 0 ? 0 : (double) delivered / count; }
         long averageTokens() { return metered == 0 ? Long.MAX_VALUE : Math.round((double) tokens / metered); }
+        long averageAiSeconds() { return timed == 0 ? Long.MAX_VALUE : Math.round((double) aiSeconds / timed); }
     }
 
     private static String label(String engine) {

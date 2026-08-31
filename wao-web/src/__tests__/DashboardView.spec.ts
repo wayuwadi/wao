@@ -103,20 +103,30 @@ vi.mock('@/api/dashboard', () => ({
     totalRuns: 5,
     completedRuns: 5,
     meteredRuns: 3,
+    timedRuns: 4,
+    deliveredRuns: 4,
+    deliveredTasks: 4,
+    verifiedTasks: 2,
+    totalTokens: 30_000,
+    failedTokens: 4_000,
+    tokensPerDeliveredTask: 7_500,
+    retryRuns: 1,
+    retryTokens: 4_000,
     medianDurationSeconds: 600,
+    medianAiExecutionSeconds: 180,
     advice: [
       {
-        category: 'MODEL',
-        title: '模型选择',
-        recommendation: '优先使用 gpt-5.6',
-        evidence: '3 次，成功率 100%',
+        category: 'OUTCOME',
+        title: '单位交付消耗',
+        recommendation: '以每个有效交付约 7500 Token 作为当前基线',
+        evidence: '4 个任务已部署并线上验收',
         sufficientData: true,
       },
       {
-        category: 'REASONING',
-        title: '思考深度',
-        recommendation: '继续积累真实运行记录后再给建议',
-        evidence: '当前 1 次',
+        category: 'ROUTING',
+        title: '模型与思考深度',
+        recommendation: '继续积累同类可比样本',
+        evidence: '当前可独立评测的配置组 1 个',
         sufficientData: false,
       },
     ],
@@ -152,8 +162,11 @@ describe('DashboardView AI 用量面板', () => {
     expect(wrapper.find('.usage-overview').text()).toContain('未回传2 次')
     expect(wrapper.text()).toContain('额度剩余与每日下降')
     expect(wrapper.find('.refresh-list').text()).toContain('70% → 100%')
-    expect(wrapper.find('.insight-card').text()).toContain('优先使用 gpt-5.6')
-    expect(wrapper.find('.insight-card').text()).toContain('样本不足时不会声称存在最优配置')
+    expect(wrapper.find('.insight-card').text()).toContain('AI 交付效能')
+    expect(wrapper.find('.insight-card').text()).toContain('7.5K')
+    expect(wrapper.find('.insight-card').text()).toContain('2 / 4')
+    expect(wrapper.find('.insight-card').text()).toContain('3 分 0 秒')
+    expect(wrapper.find('.insight-card').text()).toContain('端到端等待时间不会被当成模型速度')
     expect(initChart).toHaveBeenCalledTimes(5)
 
     const tokenOption = chart.setOption.mock.calls
