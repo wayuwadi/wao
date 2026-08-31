@@ -370,6 +370,14 @@ class TaskServiceTest {
     }
 
     @Test
+    void chatSourceDeletionIsIdempotent() {
+        when(mapper.deleteById("t1")).thenReturn(1, 0);
+
+        assertThat(service.deleteFromChat("t1")).isTrue();
+        assertThat(service.deleteFromChat("t1")).isFalse();
+    }
+
+    @Test
     void addCommentPersistsAndNotifiesFeishu() {
         when(mapper.selectById("t1")).thenReturn(todo());
         when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);

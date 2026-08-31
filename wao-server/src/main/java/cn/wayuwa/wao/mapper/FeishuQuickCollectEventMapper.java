@@ -38,4 +38,49 @@ public interface FeishuQuickCollectEventMapper extends BaseMapper<FeishuQuickCol
             WHERE event_key = #{eventKey} AND target_id IS NULL AND status = 'FAILED'
             """)
     int retryFailedCreate(@Param("eventKey") String eventKey, @Param("updatedAt") LocalDateTime updatedAt);
+
+    /** 先把原消息标成撤回处理中；后到的接收事件不得再把任务创建回来。 */
+    @Update("""
+            UPDATE feishu_quick_collect_event
+            SET status = 'RECALLING', error_message = NULL, updated_at = #{updatedAt}
+            WHERE event_key = #{eventKey} AND status <> 'RECALLED'
+            """)
+    int markRecallPending(@Param("eventKey") String eventKey, @Param("updatedAt") LocalDateTime updatedAt);
+
+    /** 任务已确认不存在后才完成撤回，后续轮询无需重复删除。 */
+    @Update("""
+            UPDATE feishu_quick_collect_event
+            SET status = 'RECALLED', error_message = NULL, updated_at = #{updatedAt}
+            WHERE event_key = #{eventKey} AND status = 'RECALLING'
+            """)
+    int completeRecall(@Param("eventKey") String eventKey, @Param("updatedAt") LocalDateTime updatedAt);
+
+    /**
+     * 完成一次创建或更新，但不覆盖并发到达的撤回墓碑。
+     *
+     * <p>撤回与首次创建可能落到不同节点；条件更新让撤回先胜时新建任务能在调用方立即清理。
+     */
+    @Update("""
+            UPDATE feishu_quick_collect_event
+            SET status = #{status}, capture_kind = #{kind},
+                target_id = COALESCE(#{targetId}, target_id),
+                source_fingerprint = COALESCE(#{fingerprint}, source_fingerprint),
+                error_message = #{error}, updated_at = #{updatedAt}
+            WHERE event_key = #{eventKey} AND status NOT IN ('RECALLING', 'RECALLED')
+            """)
+    int finishUnlessRecalled(@Param("eventKey") String eventKey, @Param("status") String status,
+            @Param("kind") String kind, @Param("targetId") String targetId,
+            @Param("fingerprint") String fingerprint, @Param("error") String error,
+            @Param("updatedAt") LocalDateTime updatedAt);
+
+    /** 撤回先到、创建后到时补齐审计目标，墓碑状态保持不变。 */
+    @Update("""
+            UPDATE feishu_quick_collect_event
+            SET target_id = COALESCE(target_id, #{targetId}),
+                source_fingerprint = COALESCE(#{fingerprint}, source_fingerprint),
+                updated_at = #{updatedAt}
+            WHERE event_key = #{eventKey} AND status IN ('RECALLING', 'RECALLED')
+            """)
+    int attachRecalledTarget(@Param("eventKey") String eventKey, @Param("targetId") String targetId,
+            @Param("fingerprint") String fingerprint, @Param("updatedAt") LocalDateTime updatedAt);
 }
