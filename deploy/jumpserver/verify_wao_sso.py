@@ -9,8 +9,11 @@ import re
 import time
 import uuid
 
-from django.contrib.auth import get_user_model
-from django.test import Client
+from data.auth.custom_sso import authenticate
+from django.conf import settings
+from django.contrib.auth import get_user_model, login
+from django.contrib.sessions.middleware import SessionMiddleware
+from django.test import RequestFactory
 
 
 def require(condition, message):
@@ -47,19 +50,26 @@ signature = base64.urlsafe_b64encode(
 ).rstrip(b"=").decode("ascii")
 
 user_count_before = User.objects.count()
-client = Client()
-response = client.get(
-    "/api/v1/authentication/custom-sso/login/",
-    {"token": f"{encoded}.{signature}"},
-    secure=True,
-    HTTP_HOST="jms.wayuwa.cn",
+userinfo, error = authenticate(f"{encoded}.{signature}")
+require(not error, "JumpServer Custom SSO rejected a valid WAO ticket")
+require(userinfo is not None, "JumpServer Custom SSO did not return an identity")
+require(userinfo.get("username") == user.username, "JumpServer Custom SSO returned another identity")
+
+# 使用生产会话中间件和实际认证后端验证登录态，不把 Django 测试客户端的
+# Host、URL 路由和响应渲染约束引入发布门禁。
+request = RequestFactory().get("/", secure=True, HTTP_HOST="jms.wayuwa.cn")
+SessionMiddleware(lambda current: None).process_request(request)
+request.session.save()
+login(
+    request,
+    user,
+    backend=settings.AUTH_BACKEND_CUSTOM_SSO,
 )
-require(response.status_code == 302, "JumpServer Custom SSO did not redirect after authentication")
 require(
-    str(client.session.get("_auth_user_id")) == str(user.pk),
+    str(request.session.get("_auth_user_id")) == str(user.pk),
     "JumpServer Custom SSO did not establish the expected user session",
 )
 require(User.objects.count() == user_count_before, "SSO verification unexpectedly created a user")
-client.logout()
+request.session.flush()
 
 print("JumpServer existing WAO identity SSO session verification passed")
