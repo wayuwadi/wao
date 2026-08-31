@@ -419,6 +419,60 @@ class RunnerConcurrencyTest(unittest.TestCase):
         self.assertEqual("wage@example.com", heartbeat.args[1]["codexQuota"]["accountEmail"])
 
 
+class CodexEgressTest(unittest.TestCase):
+    """Linux1 只给 Codex 复用代理，并在无首事件时释放任务槽位。"""
+
+    def test_codex_proxy_does_not_mutate_shared_runner_environment(self) -> None:
+        shared = {"PATH": "runner-path", "GH_TOKEN": "github-token"}
+
+        prepared = RUNNER.codex_cli_environment(shared, "http://127.0.0.1:17897")
+
+        self.assertEqual({"PATH": "runner-path", "GH_TOKEN": "github-token"}, shared)
+        self.assertEqual("http://127.0.0.1:17897", prepared["HTTPS_PROXY"])
+        self.assertEqual("http://127.0.0.1:17897", prepared["http_proxy"])
+        self.assertEqual("true", prepared["WAO_CODEX_EGRESS_PROXY_CONFIGURED"])
+
+    def test_proxy_url_rejects_credentials_from_process_arguments(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "不得.*账号或密码"):
+            RUNNER.codex_cli_environment({}, "http://user:secret@127.0.0.1:17897")
+
+    def test_unauthorized_probe_response_proves_chatgpt_is_reachable(self) -> None:
+        opener = Mock()
+        opener.open.side_effect = urllib.error.HTTPError(
+            RUNNER.CODEX_EGRESS_PROBE_URL, 401, "Unauthorized", {}, None)
+        with patch.object(RUNNER.urllib.request, "build_opener", return_value=opener):
+            RUNNER.verify_codex_egress({"HTTPS_PROXY": "http://127.0.0.1:17897"})
+
+    def test_probe_connection_failure_returns_stable_actionable_error(self) -> None:
+        opener = Mock()
+        opener.open.side_effect = urllib.error.URLError("timed out")
+        with patch.object(RUNNER.urllib.request, "build_opener", return_value=opener), \
+                self.assertRaisesRegex(RuntimeError, "检查节点代理或 VPN"):
+            RUNNER.verify_codex_egress({"HTTPS_PROXY": "http://127.0.0.1:17897"})
+
+    def test_cli_without_any_event_is_terminated_after_startup_timeout(self) -> None:
+        worktree = Path(tempfile.mkdtemp(prefix="wao-cli-timeout-"))
+        self.addCleanup(shutil.rmtree, worktree, ignore_errors=True)
+
+        with self.assertRaisesRegex(TimeoutError, "没有返回任何事件"):
+            RUNNER.invoke_cli(
+                [sys.executable, "-c", "import time; time.sleep(60)"],
+                worktree, "prompt", first_event_timeout_seconds=0.01)
+
+    @patch.object(RUNNER, "verify_codex_egress")
+    @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
+    def test_official_codex_checks_configured_proxy_before_launch(
+            self, invoke: Mock, verify: Mock) -> None:
+        root = Path(tempfile.mkdtemp(prefix="wao-codex-proxy-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        environment = RUNNER.codex_cli_environment({}, "http://127.0.0.1:17897")
+
+        RUNNER.run_codex("codex", root, "prompt", "workspace-write", Mock(), environment)
+
+        verify.assert_called_once_with(environment)
+        self.assertEqual(environment, invoke.call_args.args[4])
+
+
 class CodexQuotaTest(unittest.TestCase):
     """本地 Codex 额度只保留首页需要的脱敏字段。"""
 

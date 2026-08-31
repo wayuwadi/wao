@@ -1,0 +1,28 @@
+# Linux1 主动连接 Linux2：同时提供 Jenkins 反向入口和 Codex VPN 本地出口。
+# 复制前替换“用户名”、SSH 私钥路径、Linux2 地址以及 Linux2 本机代理端口。
+
+[Unit]
+Description=WAO Linux1 reverse SSH and Codex egress tunnel to Linux2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -NT \
+  -i /home/用户名/.ssh/id_ed25519_wao_linux2_tunnel \
+  -o BatchMode=yes \
+  -o IdentitiesOnly=yes \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 \
+  -o ServerAliveCountMax=3 \
+  -o StrictHostKeyChecking=yes \
+  -o UserKnownHostsFile=/home/用户名/.ssh/known_hosts \
+  -o HostKeyAlias=linux2.wayuwa.cn \
+  -R 127.0.0.1:2201:127.0.0.1:22 \
+  -L 127.0.0.1:17897:127.0.0.1:7897 \
+  wao-tunnel@linux2.wayuwa.cn
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
