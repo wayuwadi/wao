@@ -7,6 +7,7 @@ import {
   type PersonalNotificationPolicy,
   type SystemNotificationPolicy,
 } from '@/api/notificationSettings'
+import DailyReminderSettingsPanel from './DailyReminderSettingsPanel.vue'
 
 const snapshot = ref<NotificationSettings | null>(null)
 const system = ref<SystemNotificationPolicy | null>(null)
@@ -17,6 +18,7 @@ const error = ref('')
 const savedAt = ref('')
 const clock = ref(new Date())
 let clockTimer: number | undefined
+const reminderPanel = ref<{ hasDirty: boolean } | null>(null)
 type BooleanSystemPolicyKey = Exclude<keyof SystemNotificationPolicy, 'quietStart' | 'quietEnd'>
 
 const dirty = computed(() => Boolean(snapshot.value && system.value && personal.value)
@@ -95,11 +97,12 @@ async function save() {
 }
 
 function confirmLeave() {
-  return !dirty.value || window.confirm('通知设置还有未保存的修改，确认离开吗？')
+  return (!dirty.value && !reminderPanel.value?.hasDirty)
+    || window.confirm('通知设置还有未保存的修改，确认离开吗？')
 }
 
 function beforeUnload(event: BeforeUnloadEvent) {
-  if (!dirty.value) return
+  if (!dirty.value && !reminderPanel.value?.hasDirty) return
   event.preventDefault()
 }
 
@@ -162,6 +165,8 @@ onBeforeUnmount(() => {
           <input v-model="personal[row.key]" type="checkbox" :disabled="saving" />
         </label>
       </section>
+
+      <DailyReminderSettingsPanel ref="reminderPanel" />
 
       <footer><span>{{ dirty ? '有未保存修改' : '当前设置已同步' }}</span><button type="button" :disabled="!dirty || saving" @click="save">{{ saving ? '保存中…' : '保存通知设置' }}</button></footer>
     </template>

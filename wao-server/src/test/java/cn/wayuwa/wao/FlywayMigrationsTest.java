@@ -429,4 +429,19 @@ class FlywayMigrationsTest {
                 .contains("REFERENCES task (id) ON DELETE CASCADE")
                 .contains("REFERENCES ai_task_run (id) ON DELETE SET NULL");
     }
+
+    @Test
+    void dailyReminderMigrationSeedsAllRequestedTimesOnTheRealHandler() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V123__daily_notification_reminders.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("'0 50 8 * * *'", "'0 0 12 * * *'", "'0 30 12 * * *'", "'0 0 18 * * *'")
+                .contains("'feishu-notification'")
+                .contains("'通知设置 · 每日提醒'")
+                .doesNotContain("INSERT INTO automation_run");
+    }
 }
