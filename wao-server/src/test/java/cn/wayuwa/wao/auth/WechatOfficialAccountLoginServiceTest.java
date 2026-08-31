@@ -6,6 +6,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -19,6 +20,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -92,6 +94,28 @@ class WechatOfficialAccountLoginServiceTest {
                 .isInstanceOf(WechatLoginException.class)
                 .hasMessage("微信拒绝服务器出口 IP 171.83.123.164，请将它加入公众号后台的 IP 白名单（微信错误码 40164）")
                 .hasMessageNotContaining("app-secret");
+        server.verify();
+    }
+
+    @Test
+    void fallsBackToLegacyTokenEndpointWhenStableTransportIsUnavailable() {
+        FakeStore store = new FakeStore();
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        WechatOfficialAccountLoginService service = new WechatOfficialAccountLoginService(PROPERTIES, store, builder);
+        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/stable_token"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=wx-app&secret=app-secret"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"errcode":40164,"errmsg":"invalid ip 171.83.123.164 ipv6 ::ffff:171.83.123.164, not in whitelist"}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(service::verifyConfiguration)
+                .isInstanceOf(WechatLoginException.class)
+                .hasMessageContaining("171.83.123.164")
+                .hasMessageContaining("40164");
         server.verify();
     }
 
