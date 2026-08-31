@@ -179,7 +179,7 @@ public class WechatOfficialAccountLoginService {
                     .body(Map.of("grant_type", "client_credential", "appid", effective.appId(),
                             "secret", effective.appSecret(), "force_refresh", false))
                     .retrieve().body(TokenResponse.class);
-        } catch (RestClientException stableFailure) {
+        } catch (RuntimeException stableFailure) {
             log.warn("Wechat stable token transport failed; falling back to legacy token endpoint: {}",
                     stableFailure.getClass().getSimpleName());
             try {
@@ -188,7 +188,9 @@ public class WechatOfficialAccountLoginService {
                                 .queryParam("appid", effective.appId())
                                 .queryParam("secret", effective.appSecret()).build())
                         .retrieve().body(TokenResponse.class);
-            } catch (RestClientException legacyFailure) {
+            } catch (RuntimeException legacyFailure) {
+                log.warn("Wechat legacy token request failed after stable endpoint fallback: {}",
+                        legacyFailure.getClass().getSimpleName());
                 throw new WechatLoginException("微信公众号接口暂时不可用，请稍后重试", legacyFailure);
             }
         }
