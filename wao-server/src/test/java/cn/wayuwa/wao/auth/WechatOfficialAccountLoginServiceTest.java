@@ -120,6 +120,50 @@ class WechatOfficialAccountLoginServiceTest {
     }
 
     @Test
+    void fallsBackWhenStableClientLeaksUncheckedRuntimeFailure() {
+        FakeStore store = new FakeStore();
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        WechatOfficialAccountLoginService service = new WechatOfficialAccountLoginService(PROPERTIES, store, builder);
+        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/stable_token"))
+                .andRespond(request -> {
+                    throw new IllegalStateException("simulated client runtime failure");
+                });
+        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=wx-app&secret=app-secret"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"errcode":40164,"errmsg":"invalid ip 171.83.123.164, not in whitelist"}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(service::verifyConfiguration)
+                .isInstanceOf(WechatLoginException.class)
+                .hasMessageContaining("171.83.123.164")
+                .hasMessageContaining("40164");
+        server.verify();
+    }
+
+    @Test
+    void mapsUncheckedLegacyClientFailureToWechatServiceError() {
+        FakeStore store = new FakeStore();
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        WechatOfficialAccountLoginService service = new WechatOfficialAccountLoginService(PROPERTIES, store, builder);
+        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/stable_token"))
+                .andRespond(request -> {
+                    throw new IllegalStateException("simulated stable client runtime failure");
+                });
+        server.expect(requestTo("https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=wx-app&secret=app-secret"))
+                .andRespond(request -> {
+                    throw new IllegalArgumentException("simulated legacy client runtime failure");
+                });
+
+        assertThatThrownBy(service::verifyConfiguration)
+                .isInstanceOf(WechatLoginException.class)
+                .hasMessage("微信公众号接口暂时不可用，请稍后重试");
+        server.verify();
+    }
+
+    @Test
     void distinguishesInvalidAppSecretFromIpWhitelistFailure() {
         FakeStore store = new FakeStore();
         RestClient.Builder builder = RestClient.builder();
