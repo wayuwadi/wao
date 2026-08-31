@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AppearanceView from '@/views/AppearanceView.vue'
 import {
@@ -7,6 +8,7 @@ import {
   uploadAppearancePhoto,
   type AppearanceWorkspace,
 } from '@/api/appearance'
+import { useSessionStore } from '@/stores/session'
 
 vi.mock('@/api/appearance', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/api/appearance')>()
@@ -53,6 +55,13 @@ describe('AppearanceView', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     localStorage.clear()
+    setActivePinia(createPinia())
+    useSessionStore().accept({
+      accountId: 'account-wg',
+      member: { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '成员' },
+      identities: [],
+      createdAt: '2026-08-29T00:00:00',
+    })
     vi.mocked(fetchAppearanceWorkspace).mockReset().mockResolvedValue(workspace())
     vi.mocked(saveAppearanceWorkspace)
       .mockReset()
@@ -87,7 +96,7 @@ describe('AppearanceView', () => {
     expect(saveAppearanceWorkspace).toHaveBeenCalled()
     expect(wrapper.text()).toContain('网络已断开')
     expect(wrapper.text()).toContain('浅蓝衬衫')
-    expect(localStorage.getItem('wao-appearance-workspace-draft-v1')).toContain('浅蓝衬衫')
+    expect(localStorage.getItem('wao-appearance-workspace-draft-v2:wg')).toContain('浅蓝衬衫')
 
     vi.mocked(saveAppearanceWorkspace).mockImplementation(async (value) => ({
       ...value,
@@ -96,7 +105,7 @@ describe('AppearanceView', () => {
     await wrapper.get('.save-strip button').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('刷新或换设备仍可读取')
-    expect(localStorage.getItem('wao-appearance-workspace-draft-v1')).toBeNull()
+    expect(localStorage.getItem('wao-appearance-workspace-draft-v2:wg')).toBeNull()
   })
 
   it('优先恢复未同步草稿并明确提供重试', async () => {
@@ -108,7 +117,7 @@ describe('AppearanceView', () => {
       tags: ['版型'],
       createdAt: '2026-08-29T10:00:00',
     })
-    localStorage.setItem('wao-appearance-workspace-draft-v1', JSON.stringify(draft))
+    localStorage.setItem('wao-appearance-workspace-draft-v2:wg', JSON.stringify(draft))
 
     const wrapper = mount(AppearanceView)
     await flushPromises()
@@ -117,6 +126,40 @@ describe('AppearanceView', () => {
     expect(wrapper.get('.save-strip button').text()).toContain('重试保存')
     await wrapper.findAll('.section-tabs button')[4]!.trigger('click')
     expect(wrapper.text()).toContain('这条裤子坐下时紧')
+  })
+
+  it('只恢复当前成员的本机草稿，切换账号不泄露个人记录', async () => {
+    const otherDraft = workspace()
+    otherDraft.notes.push({
+      id: 'an-private',
+      title: '另一成员的私密记录',
+      content: '不应出现在当前成员页面。',
+      tags: ['私密'],
+      createdAt: '2026-08-29T10:00:00',
+    })
+    localStorage.setItem('wao-appearance-workspace-draft-v2:wd', JSON.stringify(otherDraft))
+    localStorage.setItem(
+      'wao-appearance-form-draft-v2:wd',
+      JSON.stringify({
+        kind: 'garment',
+        editingId: '',
+        form: { name: '另一成员未提交的外套', category: '上装' },
+      }),
+    )
+
+    const wrapper = mount(AppearanceView)
+    await flushPromises()
+    await wrapper.get('.content-section .primary').trigger('click')
+
+    expect(
+      wrapper.get('.editor-modal input[placeholder="如：浅蓝牛津纺衬衫"]').element,
+    ).toHaveProperty('value', '')
+    await wrapper.findAll('.editor-modal footer button')[0]!.trigger('click')
+    await wrapper.findAll('.section-tabs button')[4]!.trigger('click')
+
+    expect(wrapper.text()).not.toContain('另一成员的私密记录')
+    expect(wrapper.text()).not.toContain('已恢复上次未同步的本机草稿')
+    expect(fetchAppearanceWorkspace).toHaveBeenCalledOnce()
   })
 
   it('计划状态严格按真实日期显示站内提醒边界', async () => {
