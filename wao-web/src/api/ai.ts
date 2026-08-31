@@ -117,6 +117,10 @@ export const fetchAiWorkflows = () => data<AiWorkflow[]>(http.get('/api/ai/workf
 /** 后台受控的 Codex 模型、推理强度与服务档位。 */
 export const fetchAiRunOptions = () => data<AiRunOptions>(http.get('/api/ai/run-options'))
 
+/** 保存后续新建 Codex 运行默认选中的执行模式。 */
+export const saveAiRunDefaultExecutionMode = (defaultExecutionMode: AiRunOptions['defaultExecutionMode']) =>
+  data<AiRunOptions>(http.put('/api/ai/run-options', { defaultExecutionMode }))
+
 /** 删除工作流配置；历史运行记录不受影响。 */
 export const removeAiWorkflow = (projectId: string) =>
   data<void>(http.delete(`/api/ai/workflows/${projectId}`))

@@ -42,6 +42,8 @@ public class SettingService {
     public static final String BUILTIN_MENU_REGISTRY = "navigation.builtin-menus";
     /** 系统日报、周报和月报的团队共享自动刷新与汇总范围。 */
     public static final String SYSTEM_REPORT_SETTINGS = "system-report.settings";
+    /** 新建 Codex AI Run 首次打开时选中的执行模式。 */
+    public static final String AI_RUN_DEFAULT_EXECUTION_MODE = "ai-run.default-execution-mode";
     /** 飞书群聊同步：自建应用凭据、目标群与落点知识库。 */
     public static final String CHAT_SYNC_APP_ID = "feishu.chat-sync.app-id";
     public static final String CHAT_SYNC_APP_SECRET = "feishu.chat-sync.app-secret";

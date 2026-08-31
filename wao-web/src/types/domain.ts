@@ -515,6 +515,7 @@ export interface AiRunOptions {
   reasoningEfforts: AiRunOption[]
   defaultCodexModel: string
   defaultReasoningEffort: string
+  defaultExecutionMode: 'direct' | 'plan' | 'goal'
   serviceTier: 'default'
 }
 

@@ -30,8 +30,15 @@ vi.mock('@/api/ai', () => ({
       { id: 'medium', label: '中', description: '速度与推理深度均衡' },
       { id: 'low', label: '低', description: '优先速度与较低消耗' },
     ],
-    defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'high', serviceTier: 'default',
+    defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'high',
+    defaultExecutionMode: 'plan', serviceTier: 'default',
   }),
+  saveAiRunDefaultExecutionMode: vi.fn<(mode: string) => Promise<Record<string, unknown>>>().mockImplementation(
+    async (mode) => ({
+      codexModels: [], reasoningEfforts: [], defaultCodexModel: 'gpt-5.6-sol',
+      defaultReasoningEffort: 'high', defaultExecutionMode: mode, serviceTier: 'default',
+    }),
+  ),
 }))
 
 vi.mock('@/api/aiAccount', () => ({
@@ -173,5 +180,28 @@ describe('AiRunLauncher', () => {
     await wrapper.find('footer .primary').trigger('click')
 
     expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', false, true]])
+  })
+
+  it('读取服务端默认目标模式，并可在原位置把本次选择保存为后续默认', async () => {
+    const { fetchAiRunOptions, saveAiRunDefaultExecutionMode } = await import('@/api/ai')
+    vi.mocked(fetchAiRunOptions).mockResolvedValueOnce({
+      codexModels: [{ id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', description: '复杂开发任务的旗舰模型' }],
+      reasoningEfforts: [{ id: 'high', label: '高', description: '为复杂任务投入更多推理' }],
+      defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'high',
+      defaultExecutionMode: 'goal', serviceTier: 'default',
+    })
+    const wrapper = mount(AiRunLauncher, { props: { projectId: 'p1' } })
+    await flushPromises()
+
+    expect(wrapper.find('.goal-mode').attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('.default-mode-setting').text()).toContain('默认：目标模式')
+    await wrapper.find('.direct-mode').trigger('click')
+    expect(wrapper.find('.default-mode-setting button').text()).toContain('将直接执行设为默认')
+    await wrapper.find('.default-mode-setting button').trigger('click')
+    await flushPromises()
+
+    expect(saveAiRunDefaultExecutionMode).toHaveBeenCalledWith('direct')
+    expect(wrapper.find('.default-mode-setting').text()).toContain('默认：直接执行')
+    expect(wrapper.find('.default-mode-setting').text()).toContain('已保存')
   })
 })

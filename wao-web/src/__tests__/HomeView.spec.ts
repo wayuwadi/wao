@@ -132,7 +132,8 @@ vi.mock('@/api/ai', () => ({
       { id: 'medium', label: '中', description: '速度与推理深度均衡' },
       { id: 'low', label: '低', description: '优先速度与较低消耗' },
     ],
-    defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'high', serviceTier: 'default',
+    defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'high',
+    defaultExecutionMode: 'plan', serviceTier: 'default',
   }),
   fetchAiRunners: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
     {
