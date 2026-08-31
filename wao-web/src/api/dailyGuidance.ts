@@ -20,8 +20,7 @@ export const fetchDailyGuidance = () =>
     params: { _: Date.now() },
     headers: { 'Cache-Control': 'no-cache' },
   }))
-
-/** 结合当前成员真实进行中与最近完成 Task 生成成长启发；主动刷新时替换当天缓存。 */
+/** 结合当前成员已保存的今日重点、进行中与最近完成 Task 生成成长启发；主动刷新时替换当天缓存。 */
 export const generateDailyGuidance = (refresh = false) =>
   data<DailyGuidance>(http.post('/api/daily-guidance', undefined, {
     params: { refresh },
