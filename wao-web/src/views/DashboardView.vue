@@ -12,10 +12,14 @@ import {
 } from 'echarts/components'
 import {
   fetchAiRunTrend,
+  fetchAiQuotaHistory,
+  fetchAiUsageInsights,
   fetchDashboardSummary,
   fetchEngineUsage,
   fetchTaskTrend,
   type AiRunTrendItem,
+  type AiQuotaHistory,
+  type AiUsageInsights,
   type DashboardSummary,
   type EngineUsageItem,
   type TaskTrendItem,
@@ -39,6 +43,8 @@ const summary = ref<DashboardSummary | null>(null)
 const aiTrend = ref<AiRunTrendItem[]>([])
 const taskTrend = ref<TaskTrendItem[]>([])
 const engines = ref<EngineUsageItem[]>([])
+const quotaHistory = ref<AiQuotaHistory>({ recordedSamples: 0, series: [], refreshes: [] })
+const usageInsights = ref<AiUsageInsights | null>(null)
 const loading = ref(true)
 const refreshing = ref(false)
 const loadError = ref('')
@@ -51,10 +57,12 @@ const aiChartEl = ref<HTMLElement | null>(null)
 const taskChartEl = ref<HTMLElement | null>(null)
 const engineChartEl = ref<HTMLElement | null>(null)
 const tokenChartEl = ref<HTMLElement | null>(null)
+const quotaChartEl = ref<HTMLElement | null>(null)
 let aiChart: echarts.ECharts | null = null
 let taskChart: echarts.ECharts | null = null
 let engineChart: echarts.ECharts | null = null
 let tokenChart: echarts.ECharts | null = null
+let quotaChart: echarts.ECharts | null = null
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 let loadInFlight = false
 
@@ -86,6 +94,22 @@ function formatInteger(value: number): string {
 
 function axisTokens(value: number): string {
   return formatTokens(value).replace('K', '千').replace('M', '百万')
+}
+
+function formatTime(value: string | null): string {
+  if (!value) return '时间未知'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date)
+}
+
+function adviceIcon(category: string): string {
+  return ({
+    MODEL: 'ri-cpu-line', REASONING: 'ri-brain-line', SPEED: 'ri-speed-up-line',
+    FREQUENCY: 'ri-calendar-check-line', DIRECTION: 'ri-compass-3-line',
+  } as Record<string, string>)[category] ?? 'ri-lightbulb-line'
 }
 
 function renderAiChart() {
@@ -255,6 +279,66 @@ function renderTokenChart() {
   }, true)
 }
 
+function renderQuotaChart() {
+  if (!quotaChartEl.value) return
+  if (!quotaChart) quotaChart = echarts.init(quotaChartEl.value)
+  const c = themeColors()
+  if (!quotaHistory.value.series.length) {
+    quotaChart.clear()
+    quotaChart.setOption({
+      title: {
+        text: '等待首次真实额度采样', left: 'center', top: 'center',
+        textStyle: { color: c.textWeak, fontSize: 14, fontWeight: 400 },
+      },
+    })
+    return
+  }
+  const dates = [...new Set(quotaHistory.value.series.flatMap((series) =>
+    series.points.map((point) => point.date)))].sort()
+  const palette = [c.primary, c.brand2, c.brand3, c.success, c.warning]
+  quotaChart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: c.bgCard,
+      borderColor: c.line,
+      textStyle: { color: c.text, fontSize: 12 },
+      formatter: (params: Array<{
+        axisValue: string; marker: string; seriesName: string
+        data?: { value: number | null; decreasedPercent?: number }
+      }>) => [params[0]?.axisValue ?? '', ...params.filter((item) => item.data?.value !== null).map((item) =>
+        `${item.marker}${item.seriesName}：剩余 ${item.data?.value}%` +
+        (item.data?.decreasedPercent ? `（当日下降 ${item.data.decreasedPercent}%）` : ''))].join('<br/>'),
+    },
+    legend: {
+      type: 'scroll', top: 4, textStyle: { color: c.text2, fontSize: 11 },
+    },
+    grid: { left: 44, right: 18, top: 46, bottom: 28 },
+    xAxis: {
+      type: 'category', data: dates.map((date) => date.slice(5)),
+      axisLine: { lineStyle: { color: c.line } },
+      axisLabel: { color: c.textWeak, fontSize: 11 }, axisTick: { show: false },
+    },
+    yAxis: {
+      type: 'value', min: 0, max: 100,
+      axisLabel: { color: c.textWeak, fontSize: 11, formatter: '{value}%' },
+      splitLine: { lineStyle: { color: c.line, type: 'dashed' } },
+    },
+    series: quotaHistory.value.series.map((series, index) => {
+      const points = new Map(series.points.map((point) => [point.date, point]))
+      return {
+        name: `${series.accountLabel} · ${series.windowLabel}`,
+        type: 'line', smooth: true, connectNulls: true, showSymbol: true,
+        data: dates.map((date) => {
+          const point = points.get(date)
+          return { value: point?.remainingPercent ?? null, decreasedPercent: point?.decreasedPercent ?? 0 }
+        }),
+        lineStyle: { color: palette[index % palette.length], width: 2 },
+        itemStyle: { color: palette[index % palette.length] },
+      }
+    }),
+  }, true)
+}
+
 function renderEngineChart() {
   if (!engineChartEl.value) return
   if (!engineChart) {
@@ -306,6 +390,7 @@ function renderAll() {
   renderTokenChart()
   renderTaskChart()
   renderEngineChart()
+  renderQuotaChart()
 }
 
 function onResize() {
@@ -313,6 +398,7 @@ function onResize() {
   taskChart?.resize()
   engineChart?.resize()
   tokenChart?.resize()
+  quotaChart?.resize()
 }
 
 async function load() {
@@ -322,16 +408,20 @@ async function load() {
   if (initial) loading.value = true
   else refreshing.value = true
   try {
-    const [s, ai, t, eng] = await Promise.all([
+    const [s, ai, t, eng, quota, insights] = await Promise.all([
       fetchDashboardSummary(),
       fetchAiRunTrend(30),
       fetchTaskTrend(7),
       fetchEngineUsage(),
+      fetchAiQuotaHistory(30),
+      fetchAiUsageInsights(30),
     ])
     summary.value = s
     aiTrend.value = ai
     taskTrend.value = t
     engines.value = eng
+    quotaHistory.value = quota
+    usageInsights.value = insights
     loadError.value = ''
   } catch (error) {
     loadError.value = error instanceof Error ? error.message : '仪表盘数据加载失败'
@@ -362,6 +452,7 @@ onBeforeUnmount(() => {
   taskChart?.dispose()
   engineChart?.dispose()
   tokenChart?.dispose()
+  quotaChart?.dispose()
 })
 
 function goProjects() { router.push('/projects') }
@@ -374,7 +465,7 @@ function goHome() { router.push('/') }
       <div>
         <div class="eyebrow">DATA INSIGHTS</div>
         <h1>数据仪表盘</h1>
-        <p>每天的 AI 使用频次、真实 Token 消耗与任务完成情况。</p>
+        <p>每天的 AI 使用频次、真实 Token、额度变化与有证据的使用建议。</p>
       </div>
       <div class="dash-actions">
         <button class="ghost-btn" :disabled="refreshing" @click="load">
@@ -423,6 +514,65 @@ function goHome() { router.push('/') }
           <div class="kpi-label">近 30 天 Token</div>
           <div class="kpi-sub">已记账 <b>{{ recordedRuns }}</b> / {{ recentRuns }} 次运行</div>
         </div>
+      </section>
+
+      <section class="chart-row quota-row">
+        <div class="chart-card wide">
+          <div class="chart-head">
+            <h2><i class="ri-battery-charge-line"></i>额度剩余与每日下降</h2>
+            <span class="chart-hint">近 30 天 · {{ quotaHistory.recordedSamples }} 次真实采样</span>
+          </div>
+          <div ref="quotaChartEl" class="chart"></div>
+          <p class="chart-note">每天取最后一次真实采样；额度上升记为刷新，不会算成负消耗。</p>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head">
+            <h2><i class="ri-history-line"></i>额度刷新记录</h2>
+            <span class="chart-hint">最近 {{ Math.min(5, quotaHistory.refreshes.length) }} 条</span>
+          </div>
+          <div v-if="quotaHistory.refreshes.length" class="refresh-list">
+            <article v-for="item in quotaHistory.refreshes.slice(0, 5)"
+              :key="`${item.observedAt}-${item.accountLabel}-${item.windowLabel}`" class="refresh-item">
+              <div class="refresh-title">
+                <strong>{{ item.accountLabel }}</strong>
+                <span>+{{ item.refreshedPercent }}%</span>
+              </div>
+              <p>{{ item.windowLabel }}：{{ item.beforeRemainingPercent }}% → {{ item.afterRemainingPercent }}%</p>
+              <small>{{ formatTime(item.observedAt) }} 记录 · 下次重置 {{ formatTime(item.resetsAt) }}</small>
+            </article>
+          </div>
+          <div v-else class="empty-panel">
+            <i class="ri-history-line"></i>
+            <strong>还没有额度刷新记录</strong>
+            <span>系统会从后续真实采样开始记录；额度未上升时不会制造刷新事件。</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="chart-card insight-card">
+        <div class="chart-head">
+          <h2><i class="ri-route-line"></i>AI 使用轨迹建议</h2>
+          <span class="chart-hint">近 {{ usageInsights?.windowDays ?? 30 }} 天 · 基于真实运行</span>
+        </div>
+        <div v-if="usageInsights" class="insight-summary">
+          <span>{{ usageInsights.completedRuns }} 次已结束运行</span>
+          <span>{{ usageInsights.meteredRuns }} 次 Token 已记账</span>
+          <span v-if="usageInsights.medianDurationSeconds !== null">
+            中位耗时 {{ Math.round(usageInsights.medianDurationSeconds / 60) }} 分钟
+          </span>
+        </div>
+        <div class="advice-grid">
+          <article v-for="item in usageInsights?.advice ?? []" :key="item.category"
+            class="advice-item" :class="{ insufficient: !item.sufficientData }">
+            <i :class="adviceIcon(item.category)"></i>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.recommendation }}</p>
+              <small>{{ item.evidence }}</small>
+            </div>
+          </article>
+        </div>
+        <p class="insight-disclaimer">建议只比较已落库的成功状态、模型、思考深度、耗时、频率与任务类型；样本不足时不会声称存在最优配置。</p>
       </section>
 
       <section class="chart-row">
@@ -664,6 +814,86 @@ function goHome() { router.push('/') }
   height: 280px;
 }
 .chart.small { height: 260px; }
+.chart-note,
+.insight-disclaimer {
+  margin: -4px 0 0;
+  color: var(--wao-text-weak);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.quota-row .chart-card { min-width: 0; }
+.refresh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 306px;
+  overflow: auto;
+  padding-right: 2px;
+}
+.refresh-item {
+  padding: 10px 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 8px;
+  background: var(--wao-bg-hover-2);
+}
+.refresh-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--wao-text);
+  font-size: 12px;
+}
+.refresh-title span { color: var(--wao-success); font-weight: 600; }
+.refresh-item p { margin: 5px 0 3px; color: var(--wao-text-2); font-size: 12px; }
+.refresh-item small { color: var(--wao-text-weak); font-size: 10px; }
+.empty-panel {
+  min-height: 260px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+  color: var(--wao-text-weak);
+}
+.empty-panel i { font-size: 24px; }
+.empty-panel strong { color: var(--wao-text-2); font-size: 13px; }
+.empty-panel span { max-width: 260px; font-size: 11px; line-height: 1.6; }
+.insight-card { margin-bottom: 16px; }
+.insight-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 12px;
+}
+.insight-summary span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--wao-bg-hover-2);
+  color: var(--wao-text-2);
+  font-size: 11px;
+}
+.advice-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.advice-item {
+  display: flex;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 9px;
+  background: var(--wao-bg-hover-2);
+}
+.advice-item > i { color: var(--wao-primary); font-size: 17px; flex: 0 0 auto; }
+.advice-item strong { color: var(--wao-text); font-size: 12px; }
+.advice-item p { margin: 5px 0; color: var(--wao-text-2); font-size: 12px; line-height: 1.5; }
+.advice-item small { color: var(--wao-text-weak); font-size: 10px; line-height: 1.5; }
+.advice-item.insufficient { border-style: dashed; }
+.advice-item.insufficient > i { color: var(--wao-text-weak); }
 
 .usage-overview {
   display: flex;
@@ -735,10 +965,12 @@ function goHome() { router.push('/') }
 @media (max-width: 900px) {
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .chart-row { grid-template-columns: 1fr; }
+  .advice-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 600px) {
   .dashboard { padding: 16px; }
   .kpi-grid { grid-template-columns: 1fr; }
   .dash-head { flex-direction: column; }
+  .advice-grid { grid-template-columns: 1fr; }
 }
 </style>

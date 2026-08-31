@@ -339,6 +339,22 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void quotaSnapshotHistoryStoresOnlySanitizedRealPercentages() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V121__ai_quota_snapshot_history.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE ai_quota_snapshot")
+                .contains("remaining_percent TINYINT", "observed_at       DATETIME")
+                .contains("100 - quota_percent")
+                .contains("quota_status = 'SYNCED'", "quota_percent IS NOT NULL")
+                .doesNotContain("credential_json", "quota_raw_json");
+    }
+
+    @Test
     void configurableTaskAutoRunMigrationDefaultsToWaoTodoAndKeepsWebhookOptional() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V97__configurable_task_auto_run.sql"))

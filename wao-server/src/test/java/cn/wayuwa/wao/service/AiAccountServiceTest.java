@@ -44,8 +44,9 @@ class AiAccountServiceTest {
     private final AiCustomApiClient customApi = mock(AiCustomApiClient.class);
     private final DeepSeekApiClient deepSeekApi = mock(DeepSeekApiClient.class);
     private final AiOauthSessionMapper sessionMapper = mock(AiOauthSessionMapper.class);
+    private final AiQuotaSnapshotService quotaSnapshots = mock(AiQuotaSnapshotService.class);
     private final AiAccountService service = new AiAccountService(mapper, crypto, objectMapper,
-            anthropic, codex, customApi, deepSeekApi, sessionMapper);
+            anthropic, codex, customApi, deepSeekApi, sessionMapper, quotaSnapshots);
 
     private Map<String, AiAccountEntity> backedByMemory() {
         Map<String, AiAccountEntity> rows = new HashMap<>();

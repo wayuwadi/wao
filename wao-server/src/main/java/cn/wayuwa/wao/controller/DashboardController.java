@@ -3,7 +3,9 @@ package cn.wayuwa.wao.controller;
 import java.util.List;
 
 import cn.wayuwa.wao.common.ApiResponse;
+import cn.wayuwa.wao.dto.AiQuotaHistoryDto;
 import cn.wayuwa.wao.dto.AiRunTrendItem;
+import cn.wayuwa.wao.dto.AiUsageInsightsDto;
 import cn.wayuwa.wao.dto.DashboardSummaryDto;
 import cn.wayuwa.wao.dto.EngineUsageItem;
 import cn.wayuwa.wao.dto.TaskTrendItem;
@@ -42,5 +44,15 @@ public class DashboardController {
     @GetMapping("/engines")
     public ApiResponse<List<EngineUsageItem>> engines() {
         return ApiResponse.ok(service.engineUsage());
+    }
+
+    @GetMapping("/quota-history")
+    public ApiResponse<AiQuotaHistoryDto> quotaHistory(@RequestParam(defaultValue = "30") int days) {
+        return ApiResponse.ok(service.quotaHistory(days));
+    }
+
+    @GetMapping("/usage-insights")
+    public ApiResponse<AiUsageInsightsDto> usageInsights(@RequestParam(defaultValue = "30") int days) {
+        return ApiResponse.ok(service.usageInsights(days));
     }
 }

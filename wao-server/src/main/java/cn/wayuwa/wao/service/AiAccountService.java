@@ -75,11 +75,12 @@ public class AiAccountService {
     private final AiCustomApiClient customApi;
     private final DeepSeekApiClient deepSeekApi;
     private final AiOauthSessionMapper sessionMapper;
+    private final AiQuotaSnapshotService quotaSnapshots;
 
     public AiAccountService(AiAccountMapper mapper, VaultCryptoService crypto, ObjectMapper objectMapper,
             AnthropicOAuthClient anthropic, OpenAiCodexOAuthClient codex,
             AiCustomApiClient customApi, DeepSeekApiClient deepSeekApi,
-            AiOauthSessionMapper sessionMapper) {
+            AiOauthSessionMapper sessionMapper, AiQuotaSnapshotService quotaSnapshots) {
         this.mapper = mapper;
         this.crypto = crypto;
         this.objectMapper = objectMapper;
@@ -88,6 +89,7 @@ public class AiAccountService {
         this.customApi = customApi;
         this.deepSeekApi = deepSeekApi;
         this.sessionMapper = sessionMapper;
+        this.quotaSnapshots = quotaSnapshots;
     }
 
     public List<AiAccountDto> list() {
@@ -542,6 +544,8 @@ public class AiAccountService {
         entity.setLastSyncedAt(LocalDateTime.now());
         entity.setUpdatedAt(LocalDateTime.now());
         mapper.updateById(entity);
+        quotaSnapshots.recordCentral(entity.getId(), entity.getProvider(), entity.getLabel(),
+                sessionQuota(entity), weeklyQuota(entity), entity.getLastSyncedAt());
         return new AiAccountSyncResultDto(entity.getId(), entity.getProvider(), entity.getQuotaStatus(),
                 entity.getQuotaMessage(), entity.getQuotaRawJson(), entity.getLastSyncedAt().toString());
     }

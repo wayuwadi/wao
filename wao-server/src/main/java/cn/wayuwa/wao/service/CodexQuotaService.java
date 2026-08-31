@@ -34,13 +34,16 @@ public class CodexQuotaService {
     private final AiRunnerNodeMapper runnerMapper;
     private final ObjectMapper json;
     private final QuotaRefreshNotificationService quotaNotifications;
+    private final AiQuotaSnapshotService quotaSnapshots;
 
     public CodexQuotaService(CodexRunnerQuotaMapper quotaMapper, AiRunnerNodeMapper runnerMapper,
-            ObjectMapper json, QuotaRefreshNotificationService quotaNotifications) {
+            ObjectMapper json, QuotaRefreshNotificationService quotaNotifications,
+            AiQuotaSnapshotService quotaSnapshots) {
         this.quotaMapper = quotaMapper;
         this.runnerMapper = runnerMapper;
         this.json = json;
         this.quotaNotifications = quotaNotifications;
+        this.quotaSnapshots = quotaSnapshots;
     }
 
     /**
@@ -73,7 +76,9 @@ public class CodexQuotaService {
         }
         if (inserting) quotaMapper.insert(entity); else quotaMapper.updateById(entity);
         if (report != null && entity.getErrorMessage() == null) {
-            quotaNotifications.observeRunner(runnerId, sanitize(report));
+            RunnerCodexQuotaReport safe = sanitize(report);
+            quotaSnapshots.recordRunner(runnerId, safe, now);
+            quotaNotifications.observeRunner(runnerId, safe);
         }
     }
 
