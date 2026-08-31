@@ -446,6 +446,14 @@ OAuth 下发前会先把快过期的 access token 续期。
 剩余百分比和重置时间，不保存 OAuth Token、Cookie 或供应商原始响应。首次采样建立基线，下降或持平时推进基线；真实发送
 失败时保留旧基线供下一次采样重试（见 ADR-164）。
 
+### ai_quota_snapshot（V121）
+
+集中 OAuth 账号每次成功同步、Runner 每次成功上报额度时各保存一条脱敏历史点。`source_key + window_key`
+标识账号额度序列，`remaining_percent / resets_at / observed_at` 保存当时真实剩余比例、供应商重置时间与采样时间；
+`account_label / provider / window_label` 只用于回看展示。表内不保存供应商原始响应、OAuth Token、Cookie 或 API Key。
+V121 会把集中账号已有的最新真实额度补成首条基线，未知额度不补零；数据统计页按日取最后一次采样计算下降，
+并把相邻采样剩余比例上升单独解释为刷新事件。详见 ADR-174。
+
 ### ai_assistant_run（V50）
 
 | 列 | 类型 | 说明 |
@@ -1012,6 +1020,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V118__ai_inspection_activity_history.sql`：固化 AI Run 活动来源和自动化到 AI Run 的真实关联，并回填可证明的既有 HTTP 巡检记录（见 ADR-166）。
 - `V119__ai_run_goal_mode.sql`：固化 Codex 原生目标模式、可验证目标、状态与累计用量（见 ADR-169）。
 - `V120__hosted_page_source_type.sql`：固化人工托管页与 AI Run 报告来源，并按稳定报告 id 回填存量页面（见 ADR-170）。
+- `V121__ai_quota_snapshot_history.sql`：保存真实额度的脱敏采样历史，并回填集中账号已有最新基线（见 ADR-174）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
