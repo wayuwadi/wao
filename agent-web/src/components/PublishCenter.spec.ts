@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PublishCenter from './PublishCenter.vue'
 import { createPublishTask, getPublishCenter, listMedia } from '@/api/publish'
+import { createKnowledgeArticle, listKnowledgeBases } from '@/api/knowledge'
 import type { PublishCenter as PublishCenterData, PublishTask } from '@/types'
 
 vi.mock('@/api/publish', () => ({
@@ -13,6 +14,11 @@ vi.mock('@/api/publish', () => ({
   unbindAccount: vi.fn(),
   updatePublishTask: vi.fn(),
   uploadMedia: vi.fn(),
+}))
+
+vi.mock('@/api/knowledge', () => ({
+  createKnowledgeArticle: vi.fn(),
+  listKnowledgeBases: vi.fn(),
 }))
 
 const center: PublishCenterData = {
@@ -45,6 +51,7 @@ describe('真实发布中心', () => {
     vi.mocked(getPublishCenter).mockResolvedValue(structuredClone(center))
     vi.mocked(listMedia).mockResolvedValue([])
     vi.mocked(createPublishTask).mockResolvedValue(task())
+    vi.mocked(listKnowledgeBases).mockResolvedValue([])
   })
 
   it('模型未配置时如实降级为手写稿且不请求模拟生成', async () => {
@@ -82,5 +89,37 @@ describe('真实发布中心', () => {
     expect(publishing.text()).toContain('抖音发布稿')
     expect(publishing.text()).toContain('确认发布到抖音')
     publishing.unmount()
+  })
+
+  it('已保存图文可以预览 HTML 并原子存入真实知识库', async () => {
+    const article = {
+      ...task(), platform: 'WECHAT_MP', platformLabel: '公众号', topic: '我的WAO首篇图文',
+      title: '我的 WAO', content: '开场\n\n## 为什么\n\n- 任务闭环\n- 知识沉淀',
+    }
+    vi.mocked(getPublishCenter).mockResolvedValue({ ...structuredClone(center), tasks: [article] })
+    vi.mocked(listKnowledgeBases).mockResolvedValue([{
+      id: 'kb-1', name: '内容库', folders: [{ id: 'folder-1', name: '文章', docs: [] }],
+    }])
+    vi.mocked(createKnowledgeArticle).mockResolvedValue({
+      id: 'doc-1', kbId: 'kb-1', folderId: 'folder-1', title: '我的 WAO',
+    })
+    const wrapper = mount(PublishCenter, { props: { mode: 'content' } })
+    await flushPromises()
+
+    await wrapper.findAll('.actions button').find((button) => button.text().includes('导出 HTML'))!.trigger('click')
+    expect(wrapper.get('.export-dialog iframe').attributes('srcdoc')).toContain('/agent/article/my-wao-cover.png')
+    await wrapper.get('.export-dialog header button').trigger('click')
+
+    await wrapper.findAll('.actions button').find((button) => button.text().includes('存入知识库'))!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.knowledge-dialog footer button').find((button) => button.text().includes('保存完整图文'))!.trigger('click')
+    await flushPromises()
+
+    expect(createKnowledgeArticle).toHaveBeenCalledWith(expect.objectContaining({
+      kbId: 'kb-1', folderId: 'folder-1', title: '我的 WAO',
+      blocks: expect.arrayContaining([{ h: '为什么', hLevel: 2 }]),
+    }))
+    expect(wrapper.text()).toContain('完整图文已进入知识库')
+    wrapper.unmount()
   })
 })

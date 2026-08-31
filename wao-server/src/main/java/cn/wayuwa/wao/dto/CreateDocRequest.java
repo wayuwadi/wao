@@ -1,6 +1,8 @@
 package cn.wayuwa.wao.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import java.util.List;
 
 /**
  * 新建文档请求：必须指定归属的知识库与文件夹（文档与知识库的关联在创建时建立）。
@@ -11,9 +13,14 @@ public record CreateDocRequest(
         @NotBlank String kbId,
         @NotBlank String folderId,
         String title,
-        String templateId) {
+        String templateId,
+        @Size(max = 5000) List<DocBlockDto> blocks) {
 
     public CreateDocRequest(String kbId, String folderId, String title) {
-        this(kbId, folderId, title, null);
+        this(kbId, folderId, title, null, null);
+    }
+
+    public CreateDocRequest(String kbId, String folderId, String title, String templateId) {
+        this(kbId, folderId, title, templateId, null);
     }
 }

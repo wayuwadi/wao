@@ -406,6 +406,13 @@ public class KnowledgeService {
                 ? List.of()
                 : List.of(new DocLinkDto("project", kb.getProjectId()));
         List<DocBlockDto> blocks = List.of();
+        if (req.blocks() != null && !req.blocks().isEmpty()) {
+            if (StringUtils.hasText(req.templateId())) {
+                throw new BadRequestException("新建文档不能同时指定模板和正文");
+            }
+            writeTemplateBlocks(req.blocks());
+            blocks = req.blocks();
+        }
         if (req.templateId() != null && !req.templateId().isBlank()) {
             blocks = templateBlocks(requireTemplate(req.templateId(), author));
         }

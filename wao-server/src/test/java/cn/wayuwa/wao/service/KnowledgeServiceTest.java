@@ -187,6 +187,22 @@ class KnowledgeServiceTest {
     }
 
     @Test
+    void createDocImportsSuppliedArticleBlocksAtomically() {
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        when(folderMapper.selectById("f1")).thenReturn(folder("f1", "k1"));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+        List<DocBlockDto> blocks = List.of(
+                new DocBlockDto(null, "我的 WAO", null, null, null, 1),
+                new DocBlockDto(null, null, "这是一篇已经完成的图文成稿。", null, null));
+
+        DocDto dto = service.createDoc(new CreateDocRequest("k1", "f1", "我的 WAO", null, blocks), "m-wadi");
+
+        assertThat(dto.blocks()).containsExactlyElementsOf(blocks);
+        assertThat(dto.rev()).isEqualTo(1);
+    }
+
+    @Test
     void projectBriefIsCreatedLazilyAndReusedByStableId() {
         ProjectDto project = mock(ProjectDto.class);
         when(project.id()).thenReturn("p-idea");
