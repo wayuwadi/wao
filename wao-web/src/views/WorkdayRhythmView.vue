@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   fetchWorkdayRhythmHistory,
@@ -71,6 +71,8 @@ const tomorrowError = ref('')
 const editorOpen = ref(false)
 const editorBusy = ref(false)
 const editorError = ref('')
+type EditorSection = 'checklist' | 'notification' | 'energy' | 'timeline'
+const editorSection = ref<EditorSection>('checklist')
 const editorDraft = ref<WorkdayRhythmConfig>(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
 const notificationChats = ref<FeishuChat[]>([])
 const notificationChatsLoading = ref(false)
@@ -575,19 +577,19 @@ async function saveTomorrowFocus() {
   }
 }
 
-function openEditor() {
+function openEditor(section: EditorSection = 'checklist') {
   const savedDraft = parseRhythmConfigDraft(localStorage.getItem(CONFIG_DRAFT_KEY) ?? '')
   editorDraft.value = savedDraft ?? cloneRhythmConfig(config.value)
   editorError.value = ''
+  editorSection.value = section
   editorOpen.value = true
   if (editorDraft.value.energyNotification.enabled) loadNotificationTargets()
 }
 
 function openPetSettingsIfRequested() {
   if (route.query.settings !== 'pet' || loading.value || loadError.value || editorOpen.value) return
-  openEditor()
+  openEditor('energy')
   void router.replace({ query: { ...route.query, settings: undefined } })
-  void nextTick(() => document.querySelector('.energy-items-editor')?.scrollIntoView?.())
 }
 
 function monthRange(month: string) {
@@ -833,7 +835,7 @@ onBeforeUnmount(() => {
         <button class="history-button" type="button" @click="openHistory">
           <i class="ri-history-line"></i>历史记录
         </button>
-        <button class="settings-button" type="button" @click="openEditor">
+        <button class="settings-button" type="button" @click="openEditor()">
           <i class="ri-settings-4-line"></i>调整节奏
         </button>
       </div>
@@ -1214,10 +1216,59 @@ onBeforeUnmount(() => {
         </header>
         <div class="editor-body">
           <p class="editor-intro">
-            时间线与通知目标都按你的账号保存；编辑草稿会先留在本机，保存后才跨设备生效。
+            每次只调整一类配置；内容按你的账号保存，未提交的节奏草稿会先留在本机。
           </p>
-          <WorkdayRhythmDailySettings @saved="dailyPanelKey += 1" />
-          <section class="energy-editor" aria-labelledby="energy-editor-title">
+          <nav class="editor-nav" aria-label="节奏配置分类">
+            <button
+              type="button"
+              data-editor-section="checklist"
+              :class="{ active: editorSection === 'checklist' }"
+              @click="editorSection = 'checklist'"
+            >
+              <i class="ri-checkbox-multiple-line"></i
+              ><span><b>每日必做</b><small>项目与执行日</small></span>
+            </button>
+            <button
+              type="button"
+              data-editor-section="notification"
+              :class="{ active: editorSection === 'notification' }"
+              @click="editorSection = 'notification'"
+            >
+              <i class="ri-notification-3-line"></i
+              ><span><b>行动通知</b><small>飞书与 Webhook</small></span>
+            </button>
+            <button
+              type="button"
+              data-editor-section="energy"
+              :class="{ active: editorSection === 'energy' }"
+              @click="editorSection = 'energy'"
+            >
+              <i class="ri-battery-charge-line"></i
+              ><span
+                ><b>精力补给</b><small>{{ editorDraft.energyItems.length }} 个项目</small></span
+              >
+            </button>
+            <button
+              type="button"
+              data-editor-section="timeline"
+              :class="{ active: editorSection === 'timeline' }"
+              @click="editorSection = 'timeline'"
+            >
+              <i class="ri-time-line"></i
+              ><span
+                ><b>时间线</b><small>{{ editorDraft.blocks.length }} 个时段</small></span
+              >
+            </button>
+          </nav>
+          <WorkdayRhythmDailySettings
+            v-show="editorSection === 'checklist'"
+            @saved="dailyPanelKey += 1"
+          />
+          <section
+            v-show="editorSection === 'notification'"
+            class="energy-editor"
+            aria-labelledby="energy-editor-title"
+          >
             <header>
               <div>
                 <small>ACTION NOTIFICATION</small>
@@ -1323,7 +1374,11 @@ onBeforeUnmount(() => {
               >{{ notificationChatsError }}；请确认自动化中的飞书应用凭据可用。
             </p>
           </section>
-          <section class="energy-items-editor" aria-labelledby="energy-items-title">
+          <section
+            v-show="editorSection === 'energy'"
+            class="energy-items-editor"
+            aria-labelledby="energy-items-title"
+          >
             <header>
               <div>
                 <small>ENERGY ITEMS</small>
@@ -1378,35 +1433,49 @@ onBeforeUnmount(() => {
             </div>
             <small class="energy-item-limit">{{ editorDraft.energyItems.length }} / 8 个项目</small>
           </section>
-          <div class="timeline-editor-title">
-            <small>DAILY FLOW</small>
-            <h3>时间线与行动提示</h3>
-            <p>时间块必须首尾相接并完整覆盖一天。</p>
-          </div>
-          <div v-for="(block, index) in editorDraft.blocks" :key="block.id" class="block-editor">
-            <div class="block-number">{{ index + 1 }}</div>
-            <div class="time-fields">
-              <label><span>开始</span><input v-model="block.start" type="time" /></label
-              ><label><span>结束</span><input v-model="block.end" type="time" /></label>
+          <div v-show="editorSection === 'timeline'" class="timeline-section">
+            <div class="timeline-editor-title">
+              <small>DAILY FLOW</small>
+              <h3>时间线与行动提示</h3>
+              <p>时间块必须首尾相接并完整覆盖一天。</p>
             </div>
-            <label class="title-field"
-              ><span>名称</span><input v-model="block.title" maxlength="30"
-            /></label>
-            <label class="guidance-field"
-              ><span>行动提示</span
-              ><textarea v-model="block.guidance" maxlength="120" rows="2"></textarea>
-            </label>
+            <div v-for="(block, index) in editorDraft.blocks" :key="block.id" class="block-editor">
+              <div class="block-number">{{ index + 1 }}</div>
+              <div class="time-fields">
+                <label><span>开始</span><input v-model="block.start" type="time" /></label
+                ><label><span>结束</span><input v-model="block.end" type="time" /></label>
+              </div>
+              <label class="title-field"
+                ><span>名称</span><input v-model="block.title" maxlength="30"
+              /></label>
+              <label class="guidance-field"
+                ><span>行动提示</span
+                ><textarea v-model="block.guidance" maxlength="120" rows="2"></textarea>
+              </label>
+            </div>
           </div>
           <p v-if="editorError" class="editor-error" role="alert">
             <i class="ri-error-warning-line"></i>{{ editorError }}
           </p>
         </div>
         <footer>
-          <button class="reset" type="button" :disabled="editorBusy" @click="resetEditor">
+          <button
+            v-if="editorSection !== 'checklist'"
+            class="reset"
+            type="button"
+            :disabled="editorBusy"
+            @click="resetEditor"
+          >
             恢复原始模板</button
           ><span></span
           ><button type="button" :disabled="editorBusy" @click="editorOpen = false">稍后再说</button
-          ><button class="primary" type="button" :disabled="editorBusy" @click="submitEditor">
+          ><button
+            v-if="editorSection !== 'checklist'"
+            class="primary"
+            type="button"
+            :disabled="editorBusy"
+            @click="submitEditor"
+          >
             {{ editorBusy ? '保存中…' : '保存节奏' }}
           </button>
         </footer>
@@ -2817,6 +2886,54 @@ textarea {
   color: var(--wao-text-faint);
   font-size: 10.5px;
 }
+.editor-nav {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 16px;
+}
+.editor-nav button {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--wao-line);
+  border-radius: 11px;
+  background: var(--wao-bg-page);
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+.editor-nav button > i {
+  flex: none;
+  font-size: 16px;
+}
+.editor-nav button > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.editor-nav b,
+.editor-nav small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-nav b {
+  color: var(--wao-text-2);
+  font-size: 10.5px;
+}
+.editor-nav small {
+  color: var(--wao-text-faint);
+  font-size: 8.5px;
+}
+.editor-nav button.active {
+  border-color: #9fcaba;
+  background: var(--wao-success-bg);
+  color: #267c65;
+  box-shadow: inset 0 -2px #267c65;
+}
 .energy-editor {
   margin-bottom: 16px;
   border: 1px solid #b9d8cc;
@@ -3283,6 +3400,9 @@ textarea {
   }
   .editor-body {
     padding: 12px;
+  }
+  .editor-nav {
+    grid-template-columns: 1fr 1fr;
   }
   .energy-editor-fields {
     grid-template-columns: minmax(0, 1fr) auto;

@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { fetchFeishuChats, fetchWebhookEndpoints, type FeishuChat, type FeishuWebhookEndpoint } from '@/api/system'
+import { computed, onMounted, ref } from 'vue'
+import {
+  fetchFeishuChats,
+  fetchWebhookEndpoints,
+  type FeishuChat,
+  type FeishuWebhookEndpoint,
+} from '@/api/system'
 import {
   createRhythmChecklistItem,
   deleteRhythmChecklistItem,
@@ -12,6 +17,7 @@ import {
   type RhythmSettings,
   type SaveRhythmChecklistItem,
 } from '@/api/workdayRhythm'
+import { toast } from '@/composables/toast'
 
 const emit = defineEmits<{ saved: [] }>()
 const loading = ref(true)
@@ -22,17 +28,34 @@ const form = ref<RhythmSettings | null>(null)
 const items = ref<Array<RhythmChecklistItem & { fresh?: boolean }>>([])
 const chats = ref<FeishuChat[]>([])
 const webhooks = ref<FeishuWebhookEndpoint[]>([])
+const expandedId = ref<string | null>(null)
+const mutatingId = ref('')
 const weekdays = ['一', '二', '三', '四', '五', '六', '日']
+const orderedItems = computed(() => [
+  ...items.value.filter((item) => item.active),
+  ...items.value.filter((item) => !item.active),
+])
 
 function payload(item: RhythmChecklistItem): SaveRhythmChecklistItem {
   return {
-    category: item.category, title: item.title, scheduleType: item.scheduleType,
-    weekdays: item.weekdays, startTime: item.startTime, dueTime: item.dueTime,
-    dueNextDay: item.dueNextDay, active: item.active, order: item.order,
-    notifyDirect: item.notifyDirect, notifyChat: item.notifyChat,
-    chatId: item.chatId, chatName: item.chatName, notifyWebhook: item.notifyWebhook,
-    webhookId: item.webhookId, webhookName: item.webhookName,
-    reminderTime: item.reminderTime, reminderNextDay: item.reminderNextDay,
+    category: item.category,
+    title: item.title,
+    scheduleType: item.scheduleType,
+    weekdays: item.weekdays,
+    startTime: item.startTime,
+    dueTime: item.dueTime,
+    dueNextDay: item.dueNextDay,
+    active: item.active,
+    order: item.order,
+    notifyDirect: item.notifyDirect,
+    notifyChat: item.notifyChat,
+    chatId: item.chatId,
+    chatName: item.chatName,
+    notifyWebhook: item.notifyWebhook,
+    webhookId: item.webhookId,
+    webhookName: item.webhookName,
+    reminderTime: item.reminderTime,
+    reminderNextDay: item.reminderNextDay,
   }
 }
 
@@ -41,8 +64,10 @@ async function load() {
   error.value = ''
   try {
     const [settings, checklist, chatOptions, webhookOptions] = await Promise.all([
-      fetchRhythmSettings(), fetchRhythmChecklistItems(),
-      fetchFeishuChats().catch(() => []), fetchWebhookEndpoints().catch(() => []),
+      fetchRhythmSettings(),
+      fetchRhythmChecklistItems(),
+      fetchFeishuChats().catch(() => []),
+      fetchWebhookEndpoints().catch(() => []),
     ])
     form.value = structuredClone(settings)
     items.value = structuredClone(checklist)
@@ -56,13 +81,44 @@ async function load() {
 }
 
 function addItem() {
+  const id = `new-${Date.now()}`
   items.value.push({
-    id: `new-${Date.now()}`, kind: 'CUSTOM', category: 'LIFE', title: '', scheduleType: 'DAILY',
-    weekdays: [], startTime: '07:00', dueTime: '23:59', dueNextDay: false, active: true,
-    order: items.value.length * 10 + 50, notifyDirect: false, notifyChat: false,
-    chatId: null, chatName: null, notifyWebhook: false, webhookId: null, webhookName: null,
-    reminderTime: null, reminderNextDay: false, fresh: true,
+    id,
+    kind: 'CUSTOM',
+    category: 'LIFE',
+    title: '',
+    scheduleType: 'DAILY',
+    weekdays: [],
+    startTime: '07:00',
+    dueTime: '23:59',
+    dueNextDay: false,
+    active: true,
+    order: items.value.length * 10 + 50,
+    notifyDirect: false,
+    notifyChat: false,
+    chatId: null,
+    chatName: null,
+    notifyWebhook: false,
+    webhookId: null,
+    webhookName: null,
+    reminderTime: null,
+    reminderNextDay: false,
+    fresh: true,
   })
+  expandedId.value = id
+}
+
+function scheduleLabel(item: RhythmChecklistItem) {
+  if (item.scheduleType === 'WORKDAY') return '工作日'
+  if (item.scheduleType === 'DAILY') return '每天'
+  return item.weekdays.length
+    ? item.weekdays.map((day) => `周${weekdays[day - 1]}`).join('、')
+    : '未选择星期'
+}
+
+function notificationLabel(item: RhythmChecklistItem) {
+  const channels = [item.notifyDirect, item.notifyChat, item.notifyWebhook].filter(Boolean).length
+  return channels ? `${channels} 个提醒通道` : '不提醒'
 }
 
 function toggleWeekday(item: RhythmChecklistItem, day: number) {
@@ -80,20 +136,56 @@ function selectWebhook(item: RhythmChecklistItem) {
 }
 
 async function removeItem(item: RhythmChecklistItem & { fresh?: boolean }) {
-  if (item.kind !== 'CUSTOM') {
-    item.active = false
-    return
-  }
   if (item.fresh) {
     items.value = items.value.filter((entry) => entry.id !== item.id)
+    expandedId.value = null
     return
   }
-  if (!window.confirm(`删除“${item.title}”？历史完成记录会继续保留。`)) return
+  const systemItem = item.kind !== 'CUSTOM'
+  const prompt = systemItem
+    ? `从每日必做中移除“${item.title}”？系统联动和历史记录会保留，之后仍可恢复。`
+    : `删除“${item.title}”？历史完成记录会继续保留。`
+  if (!window.confirm(prompt)) return
+  mutatingId.value = item.id
+  error.value = ''
   try {
-    await deleteRhythmChecklistItem(item.id)
-    items.value = items.value.filter((entry) => entry.id !== item.id)
+    if (systemItem) {
+      const savedItem = await updateRhythmChecklistItem(
+        item.id,
+        payload({ ...item, active: false }),
+      )
+      const index = items.value.findIndex((entry) => entry.id === item.id)
+      if (index >= 0) items.value[index] = savedItem
+      toast(`已从每日必做中移除“${item.title}”`, 'ri-check-line')
+    } else {
+      await deleteRhythmChecklistItem(item.id)
+      items.value = items.value.filter((entry) => entry.id !== item.id)
+      toast(`已删除“${item.title}”`, 'ri-check-line')
+    }
+    expandedId.value = null
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : '清单项删除失败'
+    error.value = cause instanceof Error ? cause.message : '项目移除失败，请重试'
+  } finally {
+    mutatingId.value = ''
+  }
+}
+
+async function restoreItem(item: RhythmChecklistItem & { fresh?: boolean }) {
+  if (item.fresh) {
+    item.active = true
+    return
+  }
+  mutatingId.value = item.id
+  error.value = ''
+  try {
+    const savedItem = await updateRhythmChecklistItem(item.id, payload({ ...item, active: true }))
+    const index = items.value.findIndex((entry) => entry.id === item.id)
+    if (index >= 0) items.value[index] = savedItem
+    toast(`已恢复“${item.title}”`, 'ri-check-line')
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '项目恢复失败，请重试'
+  } finally {
+    mutatingId.value = ''
   }
 }
 
@@ -104,9 +196,13 @@ async function submit() {
   error.value = ''
   try {
     await saveRhythmSettings(form.value)
-    await Promise.all(items.value.map((item) => item.fresh
-      ? createRhythmChecklistItem(payload(item))
-      : updateRhythmChecklistItem(item.id, payload(item))))
+    await Promise.all(
+      items.value.map((item) =>
+        item.fresh
+          ? createRhythmChecklistItem(payload(item))
+          : updateRhythmChecklistItem(item.id, payload(item)),
+      ),
+    )
     saved.value = true
     emit('saved')
     await load()
@@ -122,40 +218,524 @@ onMounted(load)
 
 <template>
   <section class="daily-settings">
-    <header><div><small>DAILY DASHBOARD</small><h3>每日面板与必做清单</h3><p>把每天需要惦记的事情模板化；通知默认关闭，只有主动选择通道后才发送。</p></div><button type="button" @click="load"><i class="ri-refresh-line"></i>刷新</button></header>
-    <div v-if="loading" class="settings-state"><i class="ri-loader-4-line spin"></i>正在读取每日面板设置…</div>
-    <div v-else-if="!form" class="settings-state error"><i class="ri-error-warning-line"></i>{{ error }}<button @click="load">重试</button></div>
+    <header>
+      <div>
+        <small>DAILY DASHBOARD</small>
+        <h3>每日面板与必做清单</h3>
+        <p>把每天需要惦记的事情模板化；通知默认关闭，只有主动选择通道后才发送。</p>
+      </div>
+      <button type="button" @click="load"><i class="ri-refresh-line"></i>刷新</button>
+    </header>
+    <div v-if="loading" class="settings-state">
+      <i class="ri-loader-4-line spin"></i>正在读取每日面板设置…
+    </div>
+    <div v-else-if="!form" class="settings-state error">
+      <i class="ri-error-warning-line"></i>{{ error }}<button @click="load">重试</button>
+    </div>
     <template v-else>
       <div class="setting-grid">
-        <label class="switch-row"><input v-model="form.followAlternateWeek" type="checkbox" /><span><b>自动跟随大小周</b><small>周一至周五及大周周日执行；当天仍可手动覆盖</small></span></label>
-        <label class="switch-row"><input v-model="form.tianrenEnabled" type="checkbox" /><span><b>展示每日卦象</b><small>只展示入口，不会打开页面就自动起卦</small></span></label>
-        <label class="switch-row"><input v-model="form.tianrenRequired" type="checkbox" :disabled="!form.tianrenEnabled" /><span><b>卦象纳入每日必做</b><small>起卦成功后自动完成对应清单项</small></span></label>
+        <label class="switch-row"
+          ><input v-model="form.followAlternateWeek" type="checkbox" /><span
+            ><b>自动跟随大小周</b><small>周一至周五及大周周日执行；当天仍可手动覆盖</small></span
+          ></label
+        >
+        <label class="switch-row"
+          ><input v-model="form.tianrenEnabled" type="checkbox" /><span
+            ><b>展示每日卦象</b><small>只展示入口，不会打开页面就自动起卦</small></span
+          ></label
+        >
+        <label class="switch-row"
+          ><input
+            v-model="form.tianrenRequired"
+            type="checkbox"
+            :disabled="!form.tianrenEnabled"
+          /><span><b>卦象纳入每日必做</b><small>起卦成功后自动完成对应清单项</small></span></label
+        >
       </div>
 
-      <section class="items-settings"><header><div><h4><i class="ri-checkbox-multiple-line"></i>每日必做项目</h4><p>系统项保留自动联动行为，但名称、时间、适用日和通知都能调整。</p></div><button type="button" @click="addItem"><i class="ri-add-line"></i>添加项目</button></header>
-        <article v-for="(item,index) in items" :key="item.id" class="item-editor" :class="{ inactive: !item.active }">
-          <header><span>{{ index + 1 }}</span><input v-model="item.title" maxlength="80" placeholder="必做事项名称" /><em>{{ item.kind === 'CUSTOM' ? '自定义' : item.kind === 'PLAN' ? '计划联动' : item.kind === 'TIANREN' ? '卦象联动' : '手动确认' }}</em><label><input v-model="item.active" type="checkbox" />启用</label><button type="button" title="删除或停用" @click="removeItem(item)"><i class="ri-delete-bin-line"></i></button></header>
-          <div class="item-fields">
-            <label><span>分类</span><select v-model="item.category"><option value="WORK">工作</option><option value="LIFE">生活</option></select></label>
-            <label><span>适用日</span><select v-model="item.scheduleType"><option value="WORKDAY">工作日</option><option value="DAILY">每天</option><option value="WEEKDAYS">自选星期</option></select></label>
-            <label><span>开始</span><input v-model="item.startTime" type="time" /></label>
-            <label><span>截止</span><input v-model="item.dueTime" type="time" /></label>
-            <label class="inline"><input v-model="item.dueNextDay" type="checkbox" />截止在次日</label>
+      <section class="items-settings">
+        <header>
+          <div>
+            <h4><i class="ri-checkbox-multiple-line"></i>每日必做项目</h4>
+            <p>先浏览项目摘要，需要调整时再展开单项；系统项移除后保留联动与历史，可随时恢复。</p>
           </div>
-          <div v-if="item.scheduleType === 'WEEKDAYS'" class="weekday-row"><button v-for="(label,day) in weekdays" :key="day" type="button" :class="{ active: item.weekdays.includes(day+1) }" @click="toggleWeekday(item,day+1)">周{{ label }}</button></div>
-          <div class="notify-row"><b>未完成提醒</b><label><input v-model="item.notifyDirect" type="checkbox" />飞书私聊</label><label><input v-model="item.notifyChat" type="checkbox" />飞书群</label><label><input v-model="item.notifyWebhook" type="checkbox" />Webhook</label><label><span>提醒时间</span><input v-model="item.reminderTime" type="time" :disabled="!item.notifyDirect&&!item.notifyChat&&!item.notifyWebhook" /></label><label class="inline"><input v-model="item.reminderNextDay" type="checkbox" />次日提醒</label></div>
-          <div v-if="item.notifyChat || item.notifyWebhook" class="target-row"><label v-if="item.notifyChat"><span>通知群聊</span><select v-model="item.chatId" @change="selectChat(item)"><option :value="null">请选择群聊</option><option v-for="chat in chats" :key="chat.chatId" :value="chat.chatId">{{ chat.name }}</option></select></label><label v-if="item.notifyWebhook"><span>Webhook</span><select v-model="item.webhookId" @change="selectWebhook(item)"><option :value="null">请选择配置</option><option v-for="webhook in webhooks.filter(entry=>entry.enabled)" :key="webhook.id" :value="webhook.id">{{ webhook.name }}</option></select></label></div>
-        </article>
+          <button type="button" @click="addItem"><i class="ri-add-line"></i>添加项目</button>
+        </header>
+        <div class="project-list" role="list">
+          <article
+            v-for="(item, index) in orderedItems"
+            :key="item.id"
+            class="item-editor"
+            :class="{ inactive: !item.active, expanded: expandedId === item.id }"
+            role="listitem"
+          >
+            <header class="item-summary">
+              <span class="item-index">{{ index + 1 }}</span>
+              <span class="item-main"
+                ><b>{{ item.title || '未命名项目' }}</b
+                ><small
+                  >{{ scheduleLabel(item) }} · {{ item.startTime }}–{{
+                    item.dueNextDay ? '次日 ' : ''
+                  }}{{ item.dueTime }} · {{ notificationLabel(item) }}</small
+                ></span
+              >
+              <em>{{
+                item.kind === 'CUSTOM'
+                  ? '自定义'
+                  : item.kind === 'PLAN'
+                    ? '计划联动'
+                    : item.kind === 'TIANREN'
+                      ? '卦象联动'
+                      : '打卡联动'
+              }}</em>
+              <span class="item-status" :class="{ disabled: !item.active }">{{
+                item.active ? '已启用' : '已停用'
+              }}</span>
+              <button
+                class="edit-item"
+                type="button"
+                :aria-expanded="expandedId === item.id"
+                :aria-label="`${expandedId === item.id ? '收起' : '编辑'}${item.title}`"
+                @click="expandedId = expandedId === item.id ? null : item.id"
+              >
+                <i :class="expandedId === item.id ? 'ri-arrow-up-s-line' : 'ri-edit-line'"></i
+                >{{ expandedId === item.id ? '收起' : '编辑' }}
+              </button>
+              <button
+                v-if="item.active"
+                class="remove-item"
+                type="button"
+                :disabled="mutatingId === item.id"
+                :aria-label="`${item.kind === 'CUSTOM' ? '删除' : '移除'}${item.title}`"
+                :title="item.kind === 'CUSTOM' ? '删除项目' : '从每日必做中移除'"
+                @click="removeItem(item)"
+              >
+                <i
+                  :class="mutatingId === item.id ? 'ri-loader-4-line spin' : 'ri-delete-bin-line'"
+                ></i>
+              </button>
+              <button
+                v-else
+                class="restore-item"
+                type="button"
+                :disabled="mutatingId === item.id"
+                :aria-label="`恢复${item.title}`"
+                @click="restoreItem(item)"
+              >
+                <i :class="mutatingId === item.id ? 'ri-loader-4-line spin' : 'ri-restart-line'"></i
+                >恢复
+              </button>
+            </header>
+            <div v-if="expandedId === item.id" class="item-detail">
+              <label class="item-title-field"
+                ><span>项目名称</span
+                ><input v-model="item.title" maxlength="80" placeholder="必做事项名称"
+              /></label>
+              <div class="item-fields">
+                <label
+                  ><span>分类</span
+                  ><select v-model="item.category">
+                    <option value="WORK">工作</option>
+                    <option value="LIFE">生活</option>
+                  </select></label
+                >
+                <label
+                  ><span>适用日</span
+                  ><select v-model="item.scheduleType">
+                    <option value="WORKDAY">工作日</option>
+                    <option value="DAILY">每天</option>
+                    <option value="WEEKDAYS">自选星期</option>
+                  </select></label
+                >
+                <label><span>开始</span><input v-model="item.startTime" type="time" /></label>
+                <label><span>截止</span><input v-model="item.dueTime" type="time" /></label>
+                <label class="inline"
+                  ><input v-model="item.dueNextDay" type="checkbox" />截止在次日</label
+                >
+              </div>
+              <div v-if="item.scheduleType === 'WEEKDAYS'" class="weekday-row">
+                <button
+                  v-for="(label, day) in weekdays"
+                  :key="day"
+                  type="button"
+                  :class="{ active: item.weekdays.includes(day + 1) }"
+                  @click="toggleWeekday(item, day + 1)"
+                >
+                  周{{ label }}
+                </button>
+              </div>
+              <div class="notify-row">
+                <b>未完成提醒</b
+                ><label><input v-model="item.notifyDirect" type="checkbox" />飞书私聊</label
+                ><label><input v-model="item.notifyChat" type="checkbox" />飞书群</label
+                ><label><input v-model="item.notifyWebhook" type="checkbox" />Webhook</label
+                ><label
+                  ><span>提醒时间</span
+                  ><input
+                    v-model="item.reminderTime"
+                    type="time"
+                    :disabled="
+                      !item.notifyDirect && !item.notifyChat && !item.notifyWebhook
+                    " /></label
+                ><label class="inline"
+                  ><input v-model="item.reminderNextDay" type="checkbox" />次日提醒</label
+                >
+              </div>
+              <div v-if="item.notifyChat || item.notifyWebhook" class="target-row">
+                <label v-if="item.notifyChat"
+                  ><span>通知群聊</span
+                  ><select v-model="item.chatId" @change="selectChat(item)">
+                    <option :value="null">请选择群聊</option>
+                    <option v-for="chat in chats" :key="chat.chatId" :value="chat.chatId">
+                      {{ chat.name }}
+                    </option>
+                  </select></label
+                ><label v-if="item.notifyWebhook"
+                  ><span>Webhook</span
+                  ><select v-model="item.webhookId" @change="selectWebhook(item)">
+                    <option :value="null">请选择配置</option>
+                    <option
+                      v-for="webhook in webhooks.filter((entry) => entry.enabled)"
+                      :key="webhook.id"
+                      :value="webhook.id"
+                    >
+                      {{ webhook.name }}
+                    </option>
+                  </select></label
+                >
+              </div>
+            </div>
+          </article>
+        </div>
       </section>
-      <p v-if="error" class="save-error" role="alert"><i class="ri-error-warning-line"></i>{{ error }}</p>
-      <footer><span v-if="saved"><i class="ri-check-line"></i>每日面板设置已保存</span><button class="primary" type="button" :disabled="saving" @click="submit">{{ saving ? '保存中…' : '保存每日面板' }}</button></footer>
+      <p v-if="error" class="save-error" role="alert">
+        <i class="ri-error-warning-line"></i>{{ error }}
+      </p>
+      <footer>
+        <span v-if="saved"><i class="ri-check-line"></i>每日面板设置已保存</span
+        ><button class="primary" type="button" :disabled="saving" @click="submit">
+          {{ saving ? '保存中…' : '保存每日面板' }}
+        </button>
+      </footer>
     </template>
   </section>
 </template>
 
 <style scoped>
-.daily-settings{padding-bottom:20px;margin-bottom:20px;border-bottom:1px solid var(--wao-divider)}.daily-settings>header,.items-settings>header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.daily-settings h3,.daily-settings h4{margin:3px 0}.daily-settings p{margin:4px 0;color:var(--wao-text-weak);font-size:10.5px}.daily-settings>header small{font-size:9px;letter-spacing:.16em;color:var(--wao-primary)}.daily-settings button{border:0;background:none;color:var(--wao-primary);cursor:pointer}.settings-state{min-height:100px;display:flex;justify-content:center;align-items:center;gap:8px;color:var(--wao-text-weak)}.settings-state.error,.save-error{color:var(--wao-danger-strong)}
-.setting-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0}.switch-row{display:flex;gap:8px;padding:10px;border:1px solid var(--wao-line);border-radius:10px}.switch-row span{display:grid;gap:3px}.switch-row b{font-size:11px}.switch-row small{font-size:9px;color:var(--wao-text-weak)}.items-settings{margin-top:16px}.items-settings h4{font-size:12px}.item-fields label,.target-row label{display:grid;gap:4px}.item-fields span,.target-row span,.notify-row>label>span{font-size:9.5px;color:var(--wao-text-weak)}.item-editor input,.item-editor select{min-width:0;height:34px;box-sizing:border-box;border:1px solid var(--wao-line-control);border-radius:8px;padding:0 8px;background:var(--wao-bg-card);color:var(--wao-text)}
-.item-editor{margin-top:9px;padding:11px;border:1px solid var(--wao-line);border-radius:11px;background:var(--wao-bg-sub)}.item-editor.inactive{opacity:.65}.item-editor>header{display:grid;grid-template-columns:22px minmax(0,1fr) auto auto 25px;gap:7px;align-items:center}.item-editor>header>span{font-size:10px;color:var(--wao-text-faint)}.item-editor>header>em{font-style:normal;font-size:9px;color:var(--wao-primary)}.item-editor>header>label{font-size:9px}.item-editor>header input[type=text]{font-weight:650}.item-fields{display:grid;grid-template-columns:1fr 1fr .8fr .8fr auto;gap:7px;margin-top:9px}.inline{display:flex!important;align-items:end!important;grid-auto-flow:column;justify-content:start;font-size:9.5px}.inline input,.item-editor input[type=checkbox]{width:auto;height:auto}.weekday-row{display:flex;gap:5px;margin-top:8px}.weekday-row button{padding:5px 8px;border:1px solid var(--wao-line);border-radius:7px;color:var(--wao-text-weak)}.weekday-row button.active{border-color:var(--wao-primary);background:var(--wao-primary-soft);color:var(--wao-primary)}.notify-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:9px;padding-top:8px;border-top:1px dashed var(--wao-line)}.notify-row b{font-size:10px}.notify-row label{display:flex;align-items:center;gap:4px;font-size:9.5px}.target-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.daily-settings>footer{display:flex;justify-content:flex-end;align-items:center;gap:15px;margin-top:14px;font-size:10px;color:#267c65}.daily-settings>footer .primary{padding:8px 15px;border-radius:8px;background:var(--wao-primary);color:#fff}.save-error{font-size:10px}
-@media(max-width:700px){.setting-grid,.target-row{grid-template-columns:1fr}.item-fields{grid-template-columns:1fr 1fr}.item-editor>header{grid-template-columns:20px minmax(0,1fr) auto}.item-editor>header>em,.item-editor>header>label{display:none}.weekday-row{flex-wrap:wrap}}
+.daily-settings {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--wao-divider);
+}
+.daily-settings > header,
+.items-settings > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.daily-settings h3,
+.daily-settings h4 {
+  margin: 3px 0;
+}
+.daily-settings p {
+  margin: 4px 0;
+  color: var(--wao-text-weak);
+  font-size: 10.5px;
+}
+.daily-settings > header small {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--wao-primary);
+}
+.daily-settings button {
+  border: 0;
+  background: none;
+  color: var(--wao-primary);
+  cursor: pointer;
+}
+.settings-state {
+  min-height: 100px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  color: var(--wao-text-weak);
+}
+.settings-state.error,
+.save-error {
+  color: var(--wao-danger-strong);
+}
+.setting-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 14px 0;
+}
+.switch-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+}
+.switch-row span {
+  display: grid;
+  gap: 3px;
+}
+.switch-row b {
+  font-size: 11px;
+}
+.switch-row small {
+  font-size: 9px;
+  color: var(--wao-text-weak);
+}
+.items-settings {
+  margin-top: 16px;
+}
+.items-settings h4 {
+  font-size: 12px;
+}
+.project-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.item-fields label,
+.target-row label,
+.item-title-field {
+  display: grid;
+  gap: 4px;
+}
+.item-fields span,
+.target-row span,
+.notify-row > label > span,
+.item-title-field > span {
+  font-size: 9.5px;
+  color: var(--wao-text-weak);
+}
+.item-editor input,
+.item-editor select {
+  min-width: 0;
+  height: 34px;
+  box-sizing: border-box;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  padding: 0 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text);
+}
+.item-editor {
+  border: 1px solid var(--wao-line);
+  border-radius: 11px;
+  background: var(--wao-bg-sub);
+  overflow: hidden;
+}
+.item-editor.inactive {
+  background: var(--wao-bg-page);
+}
+.item-editor.expanded {
+  border-color: color-mix(in srgb, var(--wao-primary) 45%, var(--wao-line));
+  box-shadow: 0 8px 24px rgba(38, 124, 101, 0.07);
+}
+.item-summary {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto auto 34px;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+}
+.item-index {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary);
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 750;
+}
+.item-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.item-main b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+}
+.item-main small {
+  overflow: hidden;
+  color: var(--wao-text-weak);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.item-summary em {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--wao-primary);
+}
+.item-status {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--wao-success-bg);
+  color: #267c65;
+  font-size: 9px;
+}
+.item-status.disabled {
+  background: var(--wao-bg-hover);
+  color: var(--wao-text-weak);
+}
+.item-summary button {
+  height: 30px;
+  border-radius: 8px;
+}
+.edit-item {
+  padding: 0 9px;
+  border: 1px solid var(--wao-line-control) !important;
+  background: var(--wao-bg-card) !important;
+  color: var(--wao-text-2) !important;
+}
+.edit-item i {
+  margin-right: 4px;
+}
+.remove-item {
+  width: 32px;
+  border: 1px solid #e2c5c1 !important;
+  background: var(--wao-danger-bg) !important;
+  color: #a04f45 !important;
+}
+.restore-item {
+  padding: 0 9px;
+  border: 1px solid #9fcaba !important;
+  background: #eff8f4 !important;
+}
+.restore-item i {
+  margin-right: 4px;
+}
+.item-detail {
+  padding: 12px;
+  border-top: 1px solid var(--wao-divider);
+  background: var(--wao-bg-card);
+}
+.item-title-field input {
+  font-weight: 650;
+}
+.item-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.8fr 0.8fr auto;
+  gap: 7px;
+  margin-top: 9px;
+}
+.inline {
+  display: flex !important;
+  align-items: end !important;
+  grid-auto-flow: column;
+  justify-content: start;
+  font-size: 9.5px;
+}
+.inline input,
+.item-editor input[type='checkbox'] {
+  width: auto;
+  height: auto;
+}
+.weekday-row {
+  display: flex;
+  gap: 5px;
+  margin-top: 8px;
+}
+.weekday-row button {
+  padding: 5px 8px;
+  border: 1px solid var(--wao-line);
+  border-radius: 7px;
+  color: var(--wao-text-weak);
+}
+.weekday-row button.active {
+  border-color: var(--wao-primary);
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary);
+}
+.notify-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--wao-line);
+}
+.notify-row b {
+  font-size: 10px;
+}
+.notify-row label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+}
+.target-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.daily-settings > footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 15px;
+  margin-top: 14px;
+  font-size: 10px;
+  color: #267c65;
+}
+.daily-settings > footer .primary {
+  padding: 8px 15px;
+  border-radius: 8px;
+  background: var(--wao-primary);
+  color: #fff;
+}
+.save-error {
+  font-size: 10px;
+}
+@media (max-width: 700px) {
+  .setting-grid,
+  .target-row {
+    grid-template-columns: 1fr;
+  }
+  .item-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+  .item-summary {
+    grid-template-columns: 26px minmax(0, 1fr) auto 32px;
+  }
+  .item-summary > em,
+  .item-status {
+    display: none;
+  }
+  .edit-item {
+    font-size: 0;
+    width: 32px;
+    padding: 0;
+  }
+  .edit-item i {
+    margin: 0;
+    font-size: 14px;
+  }
+  .restore-item {
+    width: 32px;
+    padding: 0;
+    font-size: 0;
+  }
+  .restore-item i {
+    margin: 0;
+    font-size: 14px;
+  }
+  .weekday-row {
+    flex-wrap: wrap;
+  }
+}
 </style>
