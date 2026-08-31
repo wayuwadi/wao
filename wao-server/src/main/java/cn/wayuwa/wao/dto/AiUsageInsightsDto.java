@@ -8,7 +8,17 @@ public record AiUsageInsightsDto(
         int totalRuns,
         int completedRuns,
         int meteredRuns,
+        int timedRuns,
+        int deliveredRuns,
+        int deliveredTasks,
+        int verifiedTasks,
+        long totalTokens,
+        long failedTokens,
+        Long tokensPerDeliveredTask,
+        int retryRuns,
+        long retryTokens,
         Long medianDurationSeconds,
+        Long medianAiExecutionSeconds,
         List<Advice> advice) {
 
     public record Advice(

@@ -26,6 +26,7 @@ import {
 } from '@/api/dashboard'
 import { toast } from '@/composables/toast'
 import { formatTokens } from '@/composables/aiUsage'
+import { formatDuration } from '@/composables/aiRunDuration'
 
 echarts.use([
   CanvasRenderer,
@@ -107,8 +108,8 @@ function formatTime(value: string | null): string {
 
 function adviceIcon(category: string): string {
   return ({
-    MODEL: 'ri-cpu-line', REASONING: 'ri-brain-line', SPEED: 'ri-speed-up-line',
-    FREQUENCY: 'ri-calendar-check-line', DIRECTION: 'ri-compass-3-line',
+    OUTCOME: 'ri-checkbox-circle-line', QUALITY: 'ri-shield-check-line',
+    ROUTING: 'ri-route-line', RETRY: 'ri-loop-left-line', ACCOUNTING: 'ri-file-list-3-line',
   } as Record<string, string>)[category] ?? 'ri-lightbulb-line'
 }
 
@@ -551,15 +552,35 @@ function goHome() { router.push('/') }
 
       <section class="chart-card insight-card">
         <div class="chart-head">
-          <h2><i class="ri-route-line"></i>AI 使用轨迹建议</h2>
+          <h2><i class="ri-route-line"></i>AI 交付效能</h2>
           <span class="chart-hint">近 {{ usageInsights?.windowDays ?? 30 }} 天 · 基于真实运行</span>
         </div>
-        <div v-if="usageInsights" class="insight-summary">
-          <span>{{ usageInsights.completedRuns }} 次已结束运行</span>
-          <span>{{ usageInsights.meteredRuns }} 次 Token 已记账</span>
-          <span v-if="usageInsights.medianDurationSeconds !== null">
-            中位耗时 {{ Math.round(usageInsights.medianDurationSeconds / 60) }} 分钟
-          </span>
+        <div v-if="usageInsights" class="outcome-metrics">
+          <article>
+            <strong>{{ usageInsights.deliveredTasks }}</strong>
+            <span>有效交付任务</span>
+            <small>{{ usageInsights.deliveredRuns }} 次运行完成部署与线上验收</small>
+          </article>
+          <article>
+            <strong>{{ usageInsights.tokensPerDeliveredTask === null ? (usageInsights.deliveredTasks ? '记账不全' : '等待交付') : formatTokens(usageInsights.tokensPerDeliveredTask) }}</strong>
+            <span>每个有效交付 Token</span>
+            <small>窗口内全部已结束运行消耗 ÷ 有效交付任务</small>
+          </article>
+          <article>
+            <strong>{{ usageInsights.verifiedTasks }} / {{ usageInsights.deliveredTasks }}</strong>
+            <span>成员已验收</span>
+            <small>AI 成功不会代替成员最终验收</small>
+          </article>
+          <article>
+            <strong>{{ usageInsights.medianAiExecutionSeconds === null ? '未回传' : formatDuration(usageInsights.medianAiExecutionSeconds * 1000) }}</strong>
+            <span>AI 实际执行中位</span>
+            <small>{{ usageInsights.timedRuns }}/{{ usageInsights.completedRuns }} 次已回传 · 不含 Git、部署和验收等待</small>
+          </article>
+          <article>
+            <strong>{{ formatTokens(usageInsights.failedTokens) }}</strong>
+            <span>已记录未交付消耗</span>
+            <small>已记录重试 {{ usageInsights.retryRuns }} 次 · {{ formatTokens(usageInsights.retryTokens) }} Token</small>
+          </article>
         </div>
         <div class="advice-grid">
           <article v-for="item in usageInsights?.advice ?? []" :key="item.category"
@@ -572,7 +593,7 @@ function goHome() { router.push('/') }
             </div>
           </article>
         </div>
-        <p class="insight-disclaimer">建议只比较已落库的成功状态、模型、思考深度、耗时、频率与任务类型；样本不足时不会声称存在最优配置。</p>
+        <p class="insight-disclaimer">有效交付必须同时通过部署与线上验收；模型路由只在同一任务类型、每个配置至少 3 次且真实 Token 与 AI 执行时长完整时比较，端到端等待时间不会被当成模型速度。</p>
       </section>
 
       <section class="chart-row">
@@ -860,18 +881,35 @@ function goHome() { router.push('/') }
 .empty-panel strong { color: var(--wao-text-2); font-size: 13px; }
 .empty-panel span { max-width: 260px; font-size: 11px; line-height: 1.6; }
 .insight-card { margin-bottom: 16px; }
-.insight-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 2px 0 12px;
+.outcome-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 2px 0 14px;
 }
-.insight-summary span {
-  padding: 4px 8px;
-  border-radius: 999px;
+.outcome-metrics article {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 11px 12px;
+  border-radius: 9px;
   background: var(--wao-bg-hover-2);
+}
+.outcome-metrics strong {
+  color: var(--wao-text);
+  font-size: 18px;
+  line-height: 1.25;
+}
+.outcome-metrics span {
+  margin-top: 3px;
   color: var(--wao-text-2);
+  font-size: 12px;
+}
+.outcome-metrics small {
+  margin-top: 5px;
+  color: var(--wao-text-weak);
   font-size: 11px;
+  line-height: 1.45;
 }
 .advice-grid {
   display: grid;
@@ -965,12 +1003,14 @@ function goHome() { router.push('/') }
 @media (max-width: 900px) {
   .kpi-grid { grid-template-columns: 1fr 1fr; }
   .chart-row { grid-template-columns: 1fr; }
+  .outcome-metrics { grid-template-columns: 1fr 1fr; }
   .advice-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 600px) {
   .dashboard { padding: 16px; }
   .kpi-grid { grid-template-columns: 1fr; }
   .dash-head { flex-direction: column; }
+  .outcome-metrics { grid-template-columns: 1fr; }
   .advice-grid { grid-template-columns: 1fr; }
 }
 </style>

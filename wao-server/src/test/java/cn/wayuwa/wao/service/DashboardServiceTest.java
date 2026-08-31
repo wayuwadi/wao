@@ -12,7 +12,9 @@ import java.time.ZoneId;
 import java.util.List;
 
 import cn.wayuwa.wao.domain.AiTaskRunEntity;
+import cn.wayuwa.wao.domain.AiTaskRunTaskEntity;
 import cn.wayuwa.wao.domain.AiQuotaSnapshotEntity;
+import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiQuotaHistoryDto;
 import cn.wayuwa.wao.dto.AiRunTrendItem;
 import cn.wayuwa.wao.dto.AiUsageInsightsDto;
@@ -27,9 +29,10 @@ class DashboardServiceTest {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final AiTaskRunMapper runMapper = mock(AiTaskRunMapper.class);
+    private final TaskMapper taskMapper = mock(TaskMapper.class);
     private final AiQuotaSnapshotMapper quotaMapper = mock(AiQuotaSnapshotMapper.class);
     private final DashboardService service = new DashboardService(
-            runMapper, mock(TaskMapper.class), mock(AiRunnerNodeMapper.class), quotaMapper);
+            runMapper, taskMapper, mock(AiRunnerNodeMapper.class), quotaMapper);
 
     @Test
     void aiRunTrendAggregatesDailyFrequencyAndRealTokenUsage() {
@@ -108,22 +111,68 @@ class DashboardServiceTest {
     }
 
     @Test
-    void usageInsightsRanksOnlyGroundedRunFactsAndMarksSufficientSamples() {
+    void usageInsightsMeasuresDeliveredOutcomesAndOnlyComparesCompleteSameTypeSamples() {
         LocalDate today = LocalDate.now(ZONE);
-        AiTaskRunEntity first = analyzedRun(today.minusDays(2).atTime(9, 0), "gpt-5.6", "high", 600, true);
-        AiTaskRunEntity second = analyzedRun(today.minusDays(1).atTime(9, 0), "gpt-5.6", "high", 720, true);
-        AiTaskRunEntity third = analyzedRun(today.atTime(9, 0), "gpt-5.6", "high", 660, true);
-        when(runMapper.selectList(any())).thenReturn(List.of(first, second, third));
+        AiTaskRunEntity first = analyzedRun("r1", "t1", today.minusDays(5).atTime(9, 0),
+                "gpt-5.6-sol", "high", 1_800, 300, 10_000, true);
+        AiTaskRunEntity second = analyzedRun("r2", "t2", today.minusDays(4).atTime(9, 0),
+                "gpt-5.6-sol", "high", 2_400, 300, 10_000, true);
+        AiTaskRunEntity third = analyzedRun("r3", "t3", today.minusDays(3).atTime(9, 0),
+                "gpt-5.6-sol", "high", 3_000, 300, 10_000, true);
+        AiTaskRunEntity fourth = analyzedRun("r4", "t4", today.minusDays(2).atTime(9, 0),
+                "gpt-5.6-luna", "low", 600, 200, 8_000, true);
+        AiTaskRunEntity fifth = analyzedRun("r5", "t5", today.minusDays(1).atTime(9, 0),
+                "gpt-5.6-luna", "low", 660, 200, 8_000, true);
+        AiTaskRunEntity failed = analyzedRun("r6", "t6", today.atTime(9, 0),
+                "gpt-5.6-luna", "low", 720, 200, 8_000, false);
+        failed.setRetryOfRunId("older-failure");
+        when(runMapper.selectList(any())).thenReturn(List.of(first, second, third, fourth, fifth, failed));
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(
+                task("t1", "已完成"), task("t2", "已完成"), task("t3", "待验证"),
+                task("t4", "待验证"), task("t5", "待验证")));
 
         AiUsageInsightsDto insights = service.usageInsights(30);
 
-        assertThat(insights.completedRuns()).isEqualTo(3);
-        assertThat(insights.medianDurationSeconds()).isEqualTo(660);
+        assertThat(insights.completedRuns()).isEqualTo(6);
+        assertThat(insights.timedRuns()).isEqualTo(6);
+        assertThat(insights.deliveredRuns()).isEqualTo(5);
+        assertThat(insights.deliveredTasks()).isEqualTo(5);
+        assertThat(insights.verifiedTasks()).isEqualTo(2);
+        assertThat(insights.totalTokens()).isEqualTo(54_000);
+        assertThat(insights.failedTokens()).isEqualTo(8_000);
+        assertThat(insights.tokensPerDeliveredTask()).isEqualTo(10_800);
+        assertThat(insights.retryRuns()).isEqualTo(1);
+        assertThat(insights.retryTokens()).isEqualTo(8_000);
+        assertThat(insights.medianDurationSeconds()).isEqualTo(1_800);
+        assertThat(insights.medianAiExecutionSeconds()).isEqualTo(300);
         assertThat(insights.advice()).extracting(AiUsageInsightsDto.Advice::category)
-                .containsExactly("MODEL", "REASONING", "SPEED", "FREQUENCY", "DIRECTION");
+                .containsExactly("OUTCOME", "QUALITY", "ROUTING", "RETRY", "ACCOUNTING");
         assertThat(insights.advice()).allMatch(AiUsageInsightsDto.Advice::sufficientData);
-        assertThat(insights.advice().get(0).recommendation()).contains("gpt-5.6");
-        assertThat(insights.advice().get(1).recommendation()).contains("high");
+        assertThat(insights.advice().get(2).recommendation())
+                .contains("功能开发", "gpt-5.6-sol · high", "gpt-5.6-luna · low");
+        assertThat(insights.advice().get(2).evidence()).contains("AI 5.0 分钟", "AI 3.3 分钟");
+    }
+
+    @Test
+    void usageInsightsCountsMergedTasksButKeepsUnitCostUnknownWhenMeteringIsIncomplete() {
+        LocalDateTime now = LocalDate.now(ZONE).atTime(9, 0);
+        AiTaskRunEntity delivered = analyzedRun("r1", "t1", now.minusDays(1),
+                "gpt-5.6-sol", "high", 600, 300, 10_000, true);
+        AiTaskRunEntity unmeteredFailure = analyzedRun("r2", "t3", now,
+                "gpt-5.6-sol", "high", 600, 300, 1, false);
+        unmeteredFailure.setTotalTokens(null);
+        when(runMapper.selectList(any())).thenReturn(List.of(delivered, unmeteredFailure));
+        when(runMapper.selectTaskLinks(any())).thenReturn(List.of(
+                runTask("r1", "t1", 0), runTask("r1", "t2", 1), runTask("r2", "t3", 0)));
+
+        AiUsageInsightsDto insights = service.usageInsights(30);
+
+        assertThat(insights.deliveredRuns()).isEqualTo(1);
+        assertThat(insights.deliveredTasks()).isEqualTo(2);
+        assertThat(insights.meteredRuns()).isEqualTo(1);
+        assertThat(insights.tokensPerDeliveredTask()).isNull();
+        assertThat(insights.advice().get(0).sufficientData()).isFalse();
+        assertThat(insights.advice().get(0).recommendation()).contains("补齐");
     }
 
     private static AiQuotaSnapshotEntity quota(LocalDateTime at, int remaining) {
@@ -138,16 +187,36 @@ class DashboardServiceTest {
         return value;
     }
 
-    private static AiTaskRunEntity analyzedRun(LocalDateTime createdAt, String model, String effort,
-            long durationSeconds, boolean succeeded) {
+    private static AiTaskRunEntity analyzedRun(String id, String taskId, LocalDateTime createdAt,
+            String model, String effort, long durationSeconds, long aiDurationSeconds, long tokens,
+            boolean succeeded) {
         AiTaskRunEntity run = run(createdAt, succeeded ? "succeeded" : "failed");
+        run.setId(id);
+        run.setTaskId(taskId);
         run.setModel(model);
         run.setReasoningEffort(effort);
         run.setActivityType("FEATURE_DEVELOPMENT");
-        run.setTotalTokens(10_000L);
+        run.setDeliveryStage(succeeded ? "deployment_succeeded" : "code_failed");
+        run.setTotalTokens(tokens);
+        run.setAiExecutionDurationMs(aiDurationSeconds * 1_000);
         run.setStartedAt(createdAt);
         run.setFinishedAt(createdAt.plusSeconds(durationSeconds));
         return run;
+    }
+
+    private static TaskEntity task(String id, String status) {
+        TaskEntity task = new TaskEntity();
+        task.setId(id);
+        task.setStatus(status);
+        return task;
+    }
+
+    private static AiTaskRunTaskEntity runTask(String runId, String taskId, int order) {
+        AiTaskRunTaskEntity link = new AiTaskRunTaskEntity();
+        link.setRunId(runId);
+        link.setTaskId(taskId);
+        link.setOrd(order);
+        return link;
     }
 
     private static AiTaskRunEntity run(LocalDateTime createdAt, String status) {
