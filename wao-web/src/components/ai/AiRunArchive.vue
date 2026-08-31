@@ -8,6 +8,7 @@ import { continueAiRun } from '@/api/ai'
 import { toast } from '@/composables/toast'
 import { formatCost, formatTokens, reasoningEffortLabel, shortModel } from '@/composables/aiUsage'
 import { engineIcon, engineLabel } from '@/composables/aiEngines'
+import { aiExecutionDuration, totalRunDuration } from '@/composables/aiRunDuration'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import type { AiRun, AiRunStatus } from '@/types'
@@ -133,6 +134,10 @@ async function continueRun(runId: string) {
           <span class="usage-part">合计 <b>{{ formatTokens(run.usage.totalTokens) }}</b></span>
           <span v-if="formatCost(run.usage.costUsd)" class="usage-part">{{ formatCost(run.usage.costUsd) }}</span>
         </div>
+        <div class="ai-run-timing">
+          <span title="从执行电脑首次有效领取到本次运行完全结束"><i class="ri-timer-line"></i>总耗时 <b>{{ totalRunDuration(run, now) }}</b></span>
+          <span title="Runner 单调时钟累计的 AI CLI / app-server 实际运行时间"><i class="ri-robot-2-line"></i>AI 实际执行 <b>{{ aiExecutionDuration(run) }}</b></span>
+        </div>
         <section v-if="run.goalMode" class="ai-run-goal" :class="`goal-${run.goalStatus || 'pending'}`">
           <span class="goal-icon"><i class="ri-focus-3-line"></i></span>
           <div>
@@ -216,10 +221,13 @@ async function continueRun(runId: string) {
 .ai-run-latest { flex: 1; min-width: 0; overflow: hidden; color: var(--wao-text-2); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .ai-run-entry summary time { flex: 0 0 auto; color: var(--wao-text-faint); font-size: 10px; }
 .ai-run-body { padding: 0 10px 10px; }
-.ai-run-parameters, .ai-run-usage { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 8px; padding: 6px 9px; border-radius: 7px; background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: 10.5px; }
+.ai-run-parameters, .ai-run-usage, .ai-run-timing { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 8px; padding: 6px 9px; border-radius: 7px; background: var(--wao-bg-sub); color: var(--wao-text-3); font-size: 10.5px; }
 .ai-run-parameters i, .ai-run-usage i { margin-right: -3px; color: #a8862f; }
 .ai-run-parameters .usage-model, .ai-run-usage .usage-model { color: var(--wao-text-2); font-weight: 600; }
 .ai-run-usage .usage-part b { font-weight: 600; color: var(--wao-text-2); }
+.ai-run-timing span { display: inline-flex; align-items: center; gap: 4px; }
+.ai-run-timing i { color: #718096; }
+.ai-run-timing b { color: var(--wao-text-2); font-weight: 600; }
 .ai-run-goal { margin-bottom: 9px; padding: 10px; border: 1px solid #d8ddf8; border-radius: 9px; background: linear-gradient(135deg, #f5f7ff, var(--wao-bg-card)); display: flex; gap: 9px; }
 .ai-run-goal.goal-complete { border-color: #bde2cf; background: linear-gradient(135deg, #eef9f3, var(--wao-bg-card)); }
 .ai-run-goal.goal-blocked, .ai-run-goal.goal-usageLimited, .ai-run-goal.goal-budgetLimited { border-color: #f0d29e; background: linear-gradient(135deg, #fff8ec, var(--wao-bg-card)); }

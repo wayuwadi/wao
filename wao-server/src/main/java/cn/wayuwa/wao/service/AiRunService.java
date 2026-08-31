@@ -859,6 +859,12 @@ public class AiRunService {
         return value == null ? null : Math.max(0L, value);
     }
 
+    /** 续跑累计实测耗时时避免异常节点回传造成 long 溢出。 */
+    private static long saturatedAdd(Long recorded, long reported) {
+        long current = valueOr(recorded, 0L);
+        return reported > Long.MAX_VALUE - current ? Long.MAX_VALUE : current + reported;
+    }
+
     private static String goalTitle(String goal) {
         String firstLine = goal.lines()
                 .map(line -> MARKDOWN_IMAGE.matcher(line).replaceAll(""))
@@ -1361,8 +1367,8 @@ public class AiRunService {
             }
             run.setRunnerId(runner.getId());
             run.setStatus("running");
-            run.setClaimedAt(now);
-            run.setStartedAt(now);
+            if (run.getClaimedAt() == null) run.setClaimedAt(now);
+            if (run.getStartedAt() == null) run.setStartedAt(now);
             run.setPendingInput(null);
             insertProgress(run, "phase", claimProgress, now);
             setTaskStatuses(run, "AI 进行中");
@@ -1446,6 +1452,10 @@ public class AiRunService {
         int exitCode = request.exitCode() == null ? -1 : request.exitCode();
         if (StringUtils.hasText(request.sessionId())) run.setSessionId(limit(request.sessionId(), 128));
         applyUsage(run, request);
+        if (request.aiExecutionDurationMs() != null && request.aiExecutionDurationMs() >= 0) {
+            run.setAiExecutionDurationMs(saturatedAdd(run.getAiExecutionDurationMs(),
+                    request.aiExecutionDurationMs()));
+        }
         run.setCapabilityAuditJson(skillCapabilities.writeAudit(
                 skillCapabilities.normalizeAudit(run.getCapabilityManifestJson(), request.skillAudits())));
         // 用户输入可能恰好在 CLI 自然结束、Runner 尚未来得及轮询时到达。不要把它随终态清掉：
@@ -1723,7 +1733,8 @@ public class AiRunService {
                     progressByRun.getOrDefault(run.getId(), List.of()), toUsageDto(run),
                     StringUtils.hasText(run.getPendingInput()),
                     run.getSessionId(), run.getExitCode(), text(run.getCreatedAt()),
-                    text(run.getStartedAt()), text(run.getFinishedAt()),
+                    text(run.getClaimedAt()), text(run.getStartedAt()), text(run.getFinishedAt()),
+                    run.getAiExecutionDurationMs(),
                     memoryReadsByRun.getOrDefault(run.getId(), List.of()),
                     memoryWritesByRun.getOrDefault(run.getId(), List.of()),
                     skillCapabilities.manifest(run.getCapabilityManifestJson()),

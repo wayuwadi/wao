@@ -1238,7 +1238,7 @@ class PromptTest(unittest.TestCase):
     def test_completion_retries_without_candidates_for_old_server(self) -> None:
         api = Mock()
         api.post.side_effect = [RuntimeError("WAO 返回 HTTP 400: Unrecognized field"), None]
-        payload = {"exitCode": 0, "resultSummary": "SUCCESS"}
+        payload = {"exitCode": 0, "resultSummary": "SUCCESS", "aiExecutionDurationMs": 3210}
         candidates = [{"category": "context", "title": "背景", "content": "内容", "evidenceLinks": []}]
 
         RUNNER.post_run_completion(api, "ar1", payload, candidates)
@@ -1246,6 +1246,7 @@ class PromptTest(unittest.TestCase):
         self.assertEqual(api.post.call_count, 2)
         self.assertIn("projectMemoryCandidates", api.post.call_args_list[0].args[1])
         self.assertNotIn("projectMemoryCandidates", api.post.call_args_list[1].args[1])
+        self.assertNotIn("aiExecutionDurationMs", api.post.call_args_list[1].args[1])
 
     def test_publish_report_validates_and_returns_absolute_url(self) -> None:
         directory = Path(tempfile.mkdtemp(prefix="wao-report-"))
@@ -1376,14 +1377,23 @@ class FailureRetryTest(unittest.TestCase):
             prepare_worktree: Mock) -> None:
         prepare_worktree.return_value = self.worktree
         usage = RUNNER._blank_usage()
-        run_codex.side_effect = [
-            (1, "临时网络异常", "thread-retry", usage),
-            (0, "WAO_RUN_STATUS: SUCCESS\n重试后已完成", "thread-retry", usage),
-        ]
+        clock = [100.0]
+        results = iter([
+            (1, "临时网络异常", "thread-retry", usage, 0.125),
+            (0, "WAO_RUN_STATUS: SUCCESS\n重试后已完成", "thread-retry", usage, 0.375),
+        ])
+
+        def timed_turn(*args, **kwargs):
+            exit_code, text, session_id, turn_usage, elapsed = next(results)
+            clock[0] += elapsed
+            return exit_code, text, session_id, turn_usage
+
+        run_codex.side_effect = timed_turn
         api = self.runner_api()
 
-        RUNNER.execute_claim(
-            api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
+        with patch.object(RUNNER.time, "monotonic", side_effect=lambda: clock[0]):
+            RUNNER.execute_claim(
+                api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
 
         self.assertEqual(2, run_codex.call_count)
         self.assertIn("自动恢复，第 1/2 次重试", run_codex.call_args_list[1].args[2])
@@ -1391,6 +1401,7 @@ class FailureRetryTest(unittest.TestCase):
                           if call.args and call.args[0].endswith("/complete")]
         self.assertEqual(1, len(complete_calls))
         self.assertEqual(0, complete_calls[0].args[1]["exitCode"])
+        self.assertEqual(500, complete_calls[0].args[1]["aiExecutionDurationMs"])
         self.assertIn("重试后已完成", complete_calls[0].args[1]["resultSummary"])
         self.assertIn("HTML 报告：https://wao.example", complete_calls[0].args[1]["resultSummary"])
         api.post_file.assert_called_once()

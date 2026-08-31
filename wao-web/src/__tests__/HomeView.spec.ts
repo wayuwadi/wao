@@ -1022,7 +1022,8 @@ describe('HomeView AI 控制台', () => {
       usage: { model: 'gpt-5.6-sol', models: 'gpt-5.6-sol', inputTokens: 10_000,
         outputTokens: 2_345, cachedInputTokens: 0, totalTokens: 12_345, costUsd: null, recorded: true },
       sessionId: 'thread-goal-1', exitCode: 0, createdAt: '2026-08-31T12:00:00',
-      startedAt: '2026-08-31T12:00:00', finishedAt: null,
+      claimedAt: '2026-08-31T12:00:00', startedAt: '2026-08-31T12:00:00', finishedAt: null,
+      aiExecutionDurationMs: 65_000,
     }])
     const { wrapper } = mountHome()
     await flushPromises()
@@ -1030,6 +1031,8 @@ describe('HomeView AI 控制台', () => {
     await wrapper.find('.run-card').trigger('click')
     const goal = wrapper.get('.run-native-goal')
     expect(wrapper.get('.run-detail-meta').text()).toContain('目标（持续到可验证终态）')
+    expect(wrapper.get('.run-detail-meta').text()).toContain('总耗时')
+    expect(wrapper.get('.run-detail-meta').text()).toContain('AI 实际执行1 分 5 秒')
     expect(goal.text()).toContain('持续执行中')
     expect(goal.text()).toContain('完成原生目标模式，直到部署成功且线上验收通过')
     expect(goal.text()).toContain('12K Token')

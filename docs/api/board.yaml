@@ -818,12 +818,12 @@ paths:
         '401': { description: 节点令牌无效或运行不属于当前节点 }
   /ai/runner/runs/{runId}/complete:
     post:
-      summary: Runner 回传 AI CLI 退出码、摘要、会话 id 与本次用量
+      summary: Runner 回传 AI CLI 退出码、摘要、会话 id、本次用量与实测执行耗时
       description: |
         用量字段（model / models / inputTokens / outputTokens / cachedInputTokens /
         totalTokens / costUsd）由 Runner 从 CLI 的结束事件里解析，见 ADR-026。
         Codex 不回传花费，costUsd 为 null；解析失败时全部为 0，服务端不会覆盖已记录的账单。
-        续跑在同一条运行记录上累加。
+        aiExecutionDurationMs 只累计真实 AI 进程时间，不包含 Git 准备、报告上传和部署等待；续跑在同一条运行记录上累加。
       parameters: [ { name: runId, in: path, required: true, schema: { type: string } } ]
       requestBody:
         required: true
@@ -1765,6 +1765,7 @@ components:
         outputTokens: { type: integer, format: int64 }
         cachedInputTokens: { type: integer, format: int64, description: 缓存读取与缓存写入之和 }
         totalTokens: { type: integer, format: int64, description: 三类 token 合计 }
+        aiExecutionDurationMs: { type: integer, format: int64, nullable: true, description: Runner 单调时钟实测的本回合 AI CLI / app-server 执行毫秒数 }
         costUsd: { type: number, nullable: true, description: 折算额度（美元）；Codex 不回传时为 null }
         skillAudits: { type: array, description: 固定 Skill 的实际 loaded / failed / incompatible 装配结果, items: { type: object } }
     CompleteAiAssistantRunRequest:
