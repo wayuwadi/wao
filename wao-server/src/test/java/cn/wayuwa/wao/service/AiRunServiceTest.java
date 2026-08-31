@@ -422,6 +422,38 @@ class AiRunServiceTest {
     }
 
     @Test
+    void autonomousGoalPersistsNativeGoalModeWithVerifiableObjective() {
+        TaskEntity task = task("t1", "p1", "持续完成目标模式");
+        when(tasks.create(any(CreateTaskRequest.class), eq("wg"))).thenReturn(taskDto(null, null));
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "Linux 主节点", "codex")));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        AiRunDto result = service.launchGoal("p1", "持续完成目标模式", "wg", "https://wao.example",
+                null, null, false, true, "high");
+
+        assertThat(result.goalMode()).isTrue();
+        assertThat(result.planMode()).isFalse();
+        assertThat(result.goalStatus()).isEqualTo("pending");
+        assertThat(result.goalObjective()).contains("持续完成目标模式", "部署成功", "线上验收通过");
+        ArgumentCaptor<AiTaskRunEntity> run = ArgumentCaptor.forClass(AiTaskRunEntity.class);
+        verify(runMapper).insert(run.capture());
+        assertThat(run.getValue().getGoalMode()).isTrue();
+        assertThat(run.getValue().getGoalObjective()).contains("持续完成目标模式");
+    }
+
+    @Test
+    void planAndGoalModeCannotBeEnabledTogether() {
+        assertThatThrownBy(() -> service.enqueue(List.of("t1"), null, "codex", null, null,
+                null, null, true, true, false, "wg", "https://wao.example"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("不能同时开启");
+    }
+
+    @Test
     void autonomousGoalPersistsTheSelectedLowReasoningEffort() {
         TaskEntity task = task("t1", "p1", "快速完成低复杂度改动");
         when(tasks.create(any(CreateTaskRequest.class), eq("wg"))).thenReturn(taskDto(null, null));
@@ -1054,6 +1086,31 @@ class AiRunServiceTest {
         assertThat(progress.getValue().getContent()).isEqualTo("已定位失败原因，正在修复");
         assertThat(run.getLatestProgress()).isEqualTo("已定位失败原因，正在修复");
         assertThat(run.getProgressUpdatedAt()).isNotNull();
+    }
+
+    @Test
+    void nativeGoalProgressUpdatesStructuredGoalState() {
+        AiRunnerNodeEntity runner = new AiRunnerNodeEntity();
+        runner.setId("rn1");
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId("ar1");
+        run.setRunnerId("rn1");
+        run.setStatus("running");
+        run.setGoalMode(true);
+        run.setGoalObjective("旧目标");
+        when(runnerMapper.selectOne(any())).thenReturn(runner);
+        when(runMapper.selectById("ar1")).thenReturn(run);
+
+        service.reportProgress("local-token", "ar1", new ReportAiRunProgressRequest(
+                "goal", "目标持续执行中：完成目标模式", "完成目标模式", "active", 12_345L, 67L));
+
+        assertThat(run.getGoalStatus()).isEqualTo("active");
+        assertThat(run.getGoalObjective()).isEqualTo("完成目标模式");
+        assertThat(run.getGoalTokensUsed()).isEqualTo(12_345L);
+        assertThat(run.getGoalTimeUsedSeconds()).isEqualTo(67L);
+        ArgumentCaptor<AiRunProgressEntity> progress = ArgumentCaptor.forClass(AiRunProgressEntity.class);
+        verify(progressMapper).insert(progress.capture());
+        assertThat(progress.getValue().getKind()).isEqualTo("goal");
     }
 
     @Test

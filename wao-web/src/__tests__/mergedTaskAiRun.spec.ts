@@ -27,7 +27,7 @@ describe('项目任务合并为一次 AI Run', () => {
   const AiRunLauncherStub = defineComponent({
     name: 'AiRunLauncher',
     emits: ['start', 'close'],
-    template: '<button class="stub-ai-run-start" @click="$emit(\'start\', \'codex\', \'rn1\', null, \'gpt-5.6-sol\', \'high\', true)">确认派工</button>',
+    template: '<button class="stub-ai-run-start" @click="$emit(\'start\', \'codex\', \'rn1\', null, \'gpt-5.6-sol\', \'high\', true, false)">确认派工</button>',
   })
 
   function mountProject(router: ReturnType<typeof createRouter>) {
@@ -69,7 +69,7 @@ describe('项目任务合并为一次 AI Run', () => {
 
     expect(createAiRuns).toHaveBeenCalledWith(selectedIds, {
       mergeTasks: true, engine: 'codex', runnerId: 'rn1', accountId: null,
-      model: 'gpt-5.6-sol', reasoningEffort: 'high', planMode: true,
+      model: 'gpt-5.6-sol', reasoningEffort: 'high', planMode: true, goalMode: false,
     })
     expect(selectedIds.map((id) => data.taskById(id)?.status)).toEqual(['AI 进行中', 'AI 进行中'])
     expect(useToastHost().items.some((item) => item.text.includes('2 个任务合并为 1 次 AI Run'))).toBe(true)
@@ -102,7 +102,7 @@ describe('项目任务合并为一次 AI Run', () => {
 
     expect(createAiRuns).toHaveBeenCalledWith(selectedIds, {
       mergeTasks: false, engine: 'codex', runnerId: 'rn1', accountId: null,
-      model: 'gpt-5.6-sol', reasoningEffort: 'high', planMode: true,
+      model: 'gpt-5.6-sol', reasoningEffort: 'high', planMode: true, goalMode: false,
     })
     expect(selectedIds.map((id) => data.taskById(id)?.status)).toEqual(['AI 进行中', 'AI 进行中'])
     expect(useToastHost().items.some((item) => item.text.includes('2 个任务单独创建为 2 次 AI Run'))).toBe(true)

@@ -57,7 +57,7 @@ describe('AiRunLauncher', () => {
     expect(compact.find('.launcher').classes()).toContain('compact')
     expect(compact.findAll('.label')).toHaveLength(0)
     expect(compact.find('select[aria-label="执行电脑"]').exists()).toBe(true)
-    expect(compact.find('.plan-mode').text()).toContain('Plan 模式')
+    expect(compact.find('.plan-workflow-mode').text()).toContain('Plan 模式')
     compact.unmount()
 
     preferences.controlStyle = 'detailed'
@@ -88,7 +88,7 @@ describe('AiRunLauncher', () => {
     await wrapper.find('footer .primary').trigger('click')
 
     expect(wrapper.text()).toContain('CLI Proxy · gpt-5.4')
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-linux', 'aa-1', null, null, true]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-linux', 'aa-1', null, null, true, false]])
   })
 
   it('使用执行电脑本地登录态时保留项目首选 Windows 电脑', async () => {
@@ -102,7 +102,7 @@ describe('AiRunLauncher', () => {
     expect(wrapper.findAll('select')[3]!.element.value).toBe('rn-win')
     await wrapper.find('footer .primary').trigger('click')
 
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', true]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', true, false]])
   })
 
   it('集中账号没有对应 Linux CLI 时明确阻止静默落到 Windows', async () => {
@@ -135,7 +135,7 @@ describe('AiRunLauncher', () => {
     await wrapper.find('footer .primary').trigger('click')
 
     expect(wrapper.text()).toContain('标准速度（Fast 未开启）')
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', true]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', true, false]])
   })
 
   it('允许为低复杂度任务选择低思考深度', async () => {
@@ -146,20 +146,32 @@ describe('AiRunLauncher', () => {
     await wrapper.find('footer .primary').trigger('click')
 
     expect(wrapper.find('select[aria-label="推理强度"]').text()).toContain('低 · 优先速度与较低消耗')
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'low', true]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'low', true, false]])
   })
 
-  it('Codex 默认开启 Plan 模式，也允许本次手动关闭', async () => {
+  it('Codex 默认开启 Plan 模式，也允许切换为直接执行', async () => {
     const wrapper = mount(AiRunLauncher, { props: { projectId: 'p1' } })
     await flushPromises()
 
-    const toggle = wrapper.find('.plan-mode')
+    const toggle = wrapper.find('.plan-workflow-mode')
     expect(toggle.attributes('aria-checked')).toBe('true')
-    expect(toggle.text()).toContain('遇到问题自动选择推荐项')
-    await toggle.trigger('click')
+    expect(toggle.text()).toContain('推荐项自动选择')
+    await wrapper.find('.direct-mode').trigger('click')
     await wrapper.find('footer .primary').trigger('click')
 
     expect(toggle.attributes('aria-checked')).toBe('false')
-    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', false]])
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', false, false]])
+  })
+
+  it('目标模式与 Plan 互斥，并把真实目标模式随派工提交', async () => {
+    const wrapper = mount(AiRunLauncher, { props: { projectId: 'p1' } })
+    await flushPromises()
+
+    await wrapper.find('.goal-mode').trigger('click')
+    expect(wrapper.find('.goal-mode').attributes('aria-checked')).toBe('true')
+    expect(wrapper.find('.plan-workflow-mode').attributes('aria-checked')).toBe('false')
+    await wrapper.find('footer .primary').trigger('click')
+
+    expect(wrapper.emitted('start')).toEqual([['codex', 'rn-win', null, 'gpt-5.6-sol', 'high', false, true]])
   })
 })

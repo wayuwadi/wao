@@ -18,6 +18,10 @@ public record AiRunnerClaimDto(
         String serviceTier,
         /** 是否启用无人值守 Plan 工作流；仅 Codex 为 true。 */
         Boolean planMode,
+        /** 是否由 app-server 建立真实持久目标；仅 Codex 为 true。 */
+        Boolean goalMode,
+        /** Runner 创建目标时使用的稳定、可验证目标描述。 */
+        String goalObjective,
         String promptUrl,
         String repoUrl,
         String defaultBranch,
@@ -45,7 +49,7 @@ public record AiRunnerClaimDto(
             String projectName, String engine, String promptUrl, String repoUrl, String defaultBranch,
             String workspaceDir, String branchName, String previousFailure, String sessionId,
             String continuationInput, AiRunAccountDto account) {
-        this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false,
+        this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false, false, null,
                 promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, 2, previousFailure, sessionId,
                 continuationInput, account, List.of(), List.of(), List.of());
     }
@@ -54,7 +58,7 @@ public record AiRunnerClaimDto(
             String projectName, String engine, String promptUrl, String repoUrl, String defaultBranch,
             String workspaceDir, String branchName, String previousFailure, String sessionId,
             String continuationInput) {
-        this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false,
+        this(runId, taskId, taskTitle, projectId, projectName, engine, null, null, null, false, false, null,
                 promptUrl, repoUrl, defaultBranch, workspaceDir, branchName, 2, previousFailure, sessionId,
                 continuationInput, null, List.of(), List.of(), List.of());
     }

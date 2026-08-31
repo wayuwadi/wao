@@ -98,7 +98,7 @@ const goalDraftState = ref<'idle' | 'saved' | 'error'>('idle')
 const goalProjectId = ref('')
 const goalRunnerId = ref('')
 const goalRunnerManuallySelected = ref(false)
-const goalPlanMode = ref(true)
+const goalExecutionMode = ref<'direct' | 'plan' | 'goal'>('plan')
 const goalRunOptions = ref<AiRunOptions | null>(null)
 const goalRunOptionsLoading = ref(true)
 const goalRunOptionsError = ref('')
@@ -307,6 +307,19 @@ function metaFor(run: AiRun) {
 function resultTitle(run: AiRun) {
   if (statusUnreported(run)) return '结果待确认（AI 未报告任务状态）'
   return run.status === 'failed' ? '失败原因' : '最终结果'
+}
+
+function nativeGoalStatus(status: AiRun['goalStatus']) {
+  return ({
+    pending: '等待建立', active: '持续执行中', paused: '已暂停', blocked: '已阻塞',
+    usageLimited: '额度受限', budgetLimited: '预算用尽', complete: '目标已完成',
+  } as Record<string, string>)[status || 'pending'] ?? status
+}
+
+function nativeGoalTime(seconds?: number | null) {
+  if (!seconds) return '尚未开始计时'
+  if (seconds < 60) return `${seconds} 秒`
+  return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`
 }
 
 async function refresh() {
@@ -647,7 +660,8 @@ async function launchGoal() {
   try {
     const run = await launchAutonomousGoal(
       goalProjectId.value, normalizedGoal, goalRunnerId.value || null,
-      goalSupportsPlanMode.value && goalPlanMode.value,
+      goalSupportsPlanMode.value && goalExecutionMode.value === 'plan',
+      goalSupportsPlanMode.value && goalExecutionMode.value === 'goal',
       goalSupportsPlanMode.value ? goalReasoningEffort.value : null,
     )
     runs.value = [run, ...runs.value.filter((item) => item.id !== run.id)]
@@ -1339,14 +1353,27 @@ onBeforeUnmount(() => {
             <button
               v-if="goalSupportsPlanMode"
               class="goal-plan-mode"
-              :class="{ on: goalPlanMode }"
+              :class="{ on: goalExecutionMode === 'plan' }"
               type="button"
-              role="switch"
-              :aria-checked="goalPlanMode"
+              role="radio"
+              :aria-checked="goalExecutionMode === 'plan'"
               :disabled="launchingGoal"
-              @click="goalPlanMode = !goalPlanMode"
+              @click="goalExecutionMode = goalExecutionMode === 'plan' ? 'direct' : 'plan'"
             >
-              <span class="goal-switch"><i></i></span><span>Plan 模式</span>
+              <i class="ri-route-line"></i><span>Plan 模式</span>
+            </button>
+            <button
+              v-if="goalSupportsPlanMode"
+              class="goal-plan-mode"
+              :class="{ on: goalExecutionMode === 'goal' }"
+              type="button"
+              role="radio"
+              :aria-checked="goalExecutionMode === 'goal'"
+              :disabled="launchingGoal"
+              title="持续推进到完成或明确阻塞"
+              @click="goalExecutionMode = goalExecutionMode === 'goal' ? 'direct' : 'goal'"
+            >
+              <i class="ri-focus-3-line"></i><span>目标模式</span>
             </button>
             <span class="goal-shortcut">
               <template v-if="goalImageUploads">{{ goalImageUploads }} 张图片上传中 · </template>
@@ -2154,13 +2181,24 @@ onBeforeUnmount(() => {
           <div v-if="selectedRun.requestedModel"><dt>本次模型</dt><dd>{{ shortModel(selectedRun.requestedModel) }}</dd></div>
           <div v-if="selectedRun.reasoningEffort"><dt>推理强度</dt><dd>{{ reasoningEffortLabel(selectedRun.reasoningEffort) }}</dd></div>
           <div v-if="selectedRun.serviceTier"><dt>运行速度</dt><dd>{{ selectedRun.serviceTier === 'default' ? '标准（Fast 未开启）' : selectedRun.serviceTier }}</dd></div>
-          <div><dt>执行模式</dt><dd>{{ selectedRun.planMode ? 'Plan（推荐项自动选择）' : '直接执行' }}</dd></div>
+          <div><dt>执行模式</dt><dd>{{ selectedRun.goalMode ? '目标（持续到可验证终态）' : selectedRun.planMode ? 'Plan（推荐项自动选择）' : '直接执行' }}</dd></div>
           <div><dt>执行电脑</dt><dd>{{ selectedRun.runnerName || '未分配电脑' }}</dd></div>
           <div><dt>触发人</dt><dd>{{ selectedRun.requestedBy || '系统未记录' }}</dd></div>
           <div><dt>执行时长</dt><dd>{{ durationText(selectedRun.startedAt, selectedRun.finishedAt) }}</dd></div>
           <div><dt>退出码</dt><dd>{{ selectedRun.exitCode ?? '—' }}</dd></div>
           <div><dt>{{ selectedRun.finishedAt ? '结束时间' : '最近反馈' }}</dt><dd>{{ timeText(selectedRun.finishedAt || selectedRun.progressUpdatedAt) || '等待中' }}</dd></div>
         </dl>
+        <section v-if="selectedRun.goalMode" class="run-native-goal" :class="`goal-${selectedRun.goalStatus || 'pending'}`">
+          <span><i class="ri-focus-3-line"></i></span>
+          <div>
+            <header><b>{{ nativeGoalStatus(selectedRun.goalStatus) }}</b><small>Codex 原生目标</small></header>
+            <p>{{ selectedRun.goalObjective || '正在建立本次运行的持久目标' }}</p>
+            <footer>
+              <em><i class="ri-copper-coin-line"></i>{{ formatTokens(selectedRun.goalTokensUsed || 0) }} Token</em>
+              <em><i class="ri-time-line"></i>{{ nativeGoalTime(selectedRun.goalTimeUsedSeconds) }}</em>
+            </footer>
+          </div>
+        </section>
         <div class="result-title">本次消耗</div>
         <div v-if="selectedRun.usage?.recorded" class="usage-grid">
           <div><dt>模型</dt><dd :title="selectedRun.usage.models || ''">{{ shortModel(selectedRun.usage.model) || '未回传' }}</dd></div>
@@ -2417,10 +2455,6 @@ onBeforeUnmount(() => {
 .goal-plan-mode { height: 29px; padding: 0 8px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; font-size: 10.5px; white-space: nowrap; }
 .goal-plan-mode.on { border-color: var(--wao-primary); background: var(--wao-primary-soft); color: var(--wao-primary-text); }
 .goal-plan-mode:disabled { opacity: .55; cursor: default; }
-.goal-switch { width: 24px; height: 14px; flex: 0 0 auto; padding: 2px; border-radius: 8px; background: var(--wao-line); }
-.goal-switch i { display: block; width: 10px; height: 10px; border-radius: 50%; background: #fff; transition: transform .15s ease; }
-.goal-plan-mode.on .goal-switch { background: var(--wao-primary); }
-.goal-plan-mode.on .goal-switch i { transform: translateX(10px); }
 .goal-shortcut { margin-left: auto; color: var(--wao-text-faint); font-size: 9.5px; white-space: nowrap; }
 .goal-submit { min-width: 112px; height: 32px; padding: 0 12px; border: 1px solid var(--wao-primary); border-radius: 8px; background: var(--wao-primary); color: #fff; cursor: pointer; font-size: 11.5px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .goal-submit.setup { min-width: 140px; }
@@ -2959,6 +2993,18 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .run-detail dl > div { padding: 10px 12px; border-radius: 9px; background: var(--wao-bg-hover); }
 .run-detail dt { color: var(--wao-text-weak); font-size: 10px; }
 .run-detail dd { margin: 4px 0 0; font-size: 11.5px; font-weight: 600; }
+.run-native-goal { margin: -4px 0 16px; padding: 12px; border: 1px solid #d8ddf8; border-radius: 10px; background: linear-gradient(135deg, #f5f7ff, var(--wao-bg-card)); display: flex; gap: 10px; }
+.run-native-goal.goal-complete { border-color: #bde2cf; background: linear-gradient(135deg, #eef9f3, var(--wao-bg-card)); }
+.run-native-goal.goal-blocked, .run-native-goal.goal-usageLimited, .run-native-goal.goal-budgetLimited { border-color: #f0d29e; background: linear-gradient(135deg, #fff8ec, var(--wao-bg-card)); }
+.run-native-goal > span { width: 32px; height: 32px; flex: none; border-radius: 9px; background: var(--wao-primary-soft); color: var(--wao-primary-text); display: grid; place-items: center; }
+.run-native-goal > div { min-width: 0; flex: 1; }
+.run-native-goal header { display: flex; align-items: center; gap: 8px; }
+.run-native-goal header b { font-size: 12px; }
+.run-native-goal header small { color: var(--wao-text-faint); font-size: 10px; }
+.run-native-goal p { margin: 5px 0 7px; color: var(--wao-text-3); font-size: 11.5px; line-height: 1.55; }
+.run-detail .run-native-goal footer { margin: 0; justify-content: flex-start; gap: 14px; }
+.run-native-goal footer em { color: var(--wao-text-weak); font-size: 10px; font-style: normal; }
+.run-native-goal footer i { margin-right: 4px; }
 .result-title { margin-bottom: 7px; font-size: 12px; font-weight: 650; }
 .result-title.result-gap { margin-top: 16px; }
 .usage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }

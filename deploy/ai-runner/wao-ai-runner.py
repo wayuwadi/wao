@@ -1046,6 +1046,35 @@ class ProgressReporter:
         if self.pending:
             self.send(*self.pending, force=True)
 
+    def goal(self, goal: dict[str, Any]) -> None:
+        """把 app-server 的真实目标状态作为结构化进展回传。"""
+        status = str(goal.get("status") or "active")
+        labels = {
+            "pending": "等待建立", "active": "执行中", "paused": "已暂停",
+            "blocked": "已阻塞", "usageLimited": "额度受限",
+            "budgetLimited": "预算用尽", "complete": "已完成",
+        }
+        objective = _readable_text(goal.get("objective")).strip()
+        tokens = max(0, int(goal.get("tokensUsed") or 0))
+        seconds = max(0, int(goal.get("timeUsedSeconds") or 0))
+        content = f"目标{labels.get(status, status)}"
+        if objective:
+            content += f"：{objective}"
+        if tokens or seconds:
+            content += f"（{tokens} Token · {seconds} 秒）"
+        payload = {
+            "kind": "goal", "content": content,
+            "goalObjective": objective or None, "goalStatus": status,
+            "goalTokensUsed": tokens, "goalTimeUsedSeconds": seconds,
+        }
+        try:
+            self.api.post(f"/api/ai/runner/runs/{self.run_id}/progress", payload)
+            self.last_sent_at = time.monotonic()
+            self.last_content = content
+            self._remember_public("message", content)
+        except Exception as exc:  # noqa: BLE001 - 目标观测失败不能中断 Codex
+            log(f"[{self.run_id}] 目标状态上报失败，继续执行：{exc}")
+
 
 class NoopProgressReporter:
     """页面问答只回传最终答复，不保存 Codex 的中间分析或工具事件。"""
@@ -1176,7 +1205,15 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
         "注意：你一旦停止回复，本次会话就立即结束，不存在「稍后再汇报」；"
         "等待部署这类长任务必须持续轮询直到有结论，然后在同一次答复里给出状态行。"
     )
-    if claim.get("planMode"):
+    if claim.get("goalMode"):
+        prompt = (
+            "本次运行启用 Codex `/goal` 目标模式。Runner 会通过官方 app-server 为当前线程建立持久目标；"
+            "请围绕这个单一目标持续工作，直到达到可验证终态。完成全部实现、测试、提交、部署和线上验收后，"
+            "使用目标工具把目标标记为 complete；确实无法继续时标记为 blocked 并说明阻塞条件。"
+            "不要把普通计划、局部代码完成或一次模型回合作为目标终态。\n\n"
+            + prompt
+        )
+    elif claim.get("planMode"):
         prompt = (
             "本次运行启用 Codex `/plan` 工作流。开始实现前先使用计划工具形成可执行计划，"
             "然后连续完成计划，不要在输出计划后停止。计划阶段如果需要选择，不要调用输入工具等待用户，必须自动采用标注 "
@@ -1226,7 +1263,13 @@ def build_continuation_prompt(
         "你一旦停止回复会话就立即结束，不存在「稍后再汇报」；"
         "等待部署这类长任务要持续轮询到有结论，再在同一次答复里给出状态行。"
     ) + _project_memory_prompt(claim, memory_path) + _skill_candidate_prompt(skill_path) + _report_prompt(report_path)
-    if claim.get("planMode"):
+    if claim.get("goalMode"):
+        prompt = (
+            "本次续跑仍启用 Codex `/goal` 目标模式。Runner 会恢复同一线程并重新激活持久目标；"
+            "请根据用户的新输入继续到可验证终态，完成后标记 complete，确实无法继续时标记 blocked。\n\n"
+            + prompt
+        )
+    elif claim.get("planMode"):
         prompt = (
             "本次续跑仍启用 Codex `/plan` 工作流。先更新现有计划再连续执行；如果需要选择，"
             "自动采用标注 `(Recommended)` 的选项，没有推荐标记时采用第一个选项，不等待人工回复。\n\n"
@@ -1652,6 +1695,198 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
     return exit_code, result_text, session_id, collect_usage(output, "codex")
 
 
+def _goal_terminal_status(result_text: str) -> str:
+    """把 WAO 的唯一最终状态映射为目标终态；缺少状态时按阻塞收口。"""
+    for line in result_text.splitlines():
+        marker = line.strip()
+        if marker in {"WAO_RUN_STATUS: SUCCESS", "WAO_RUN_STATUS: SKIPPED"}:
+            return "complete"
+        if marker == "WAO_RUN_STATUS: BLOCKED":
+            return "blocked"
+    return "blocked"
+
+
+def run_codex_goal(executable: str, worktree: Path, prompt: str, sandbox: str,
+        reporter: "ProgressReporter", objective: str,
+        environment: dict[str, str] | None = None,
+        session_id: str | None = None,
+        should_stop: Callable[[], bool] | None = None,
+        account: dict[str, Any] | None = None,
+        codex_home: Path | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        service_tier: str | None = None) -> tuple[int, str, str | None, dict[str, Any]]:
+    """通过官方 app-server 建立真实线程目标并运行一轮 Codex。"""
+    run_environment = dict(environment or os.environ)
+    if account:
+        if codex_home is None:
+            raise RuntimeError("选择集中账号时缺少隔离的 CODEX_HOME")
+        run_environment.update(prepare_codex_home(codex_home, account))
+    command = [executable, "app-server", "--enable", "goals", "--listen", "stdio://"]
+    process = subprocess.Popen(
+        command, cwd=str(worktree), text=True, encoding="utf-8", errors="replace",
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        env=run_environment, start_new_session=os.name != "nt",
+        creationflags=windows_creation_flags(new_process_group=True),
+    )
+    if process.stdin is None or process.stdout is None:
+        raise RuntimeError("无法建立 Codex app-server 标准输入输出管道")
+    output: queue.Queue[str | None] = queue.Queue()
+
+    def read_output() -> None:
+        for line in process.stdout:
+            output.put(line)
+        output.put(None)
+
+    def send(message: dict[str, Any]) -> None:
+        process.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
+        process.stdin.flush()
+
+    threading.Thread(target=read_output, daemon=True).start()
+    send({"method": "initialize", "id": 1, "params": {"clientInfo": {
+        "name": "wao_ai_runner", "title": "WAO AI Runner", "version": "1.0.0"}}})
+    thread_id = session_id
+    final_text = ""
+    final_goal: dict[str, Any] = {}
+    turn_finished = False
+    exit_code = 0
+    usage = _blank_usage()
+    request_id = 10
+    stopping = False
+    try:
+        while True:
+            if should_stop and should_stop() and not stopping:
+                stopping = True
+                exit_code = 130
+                terminate_process_tree(process)
+            try:
+                line = output.get(timeout=1)
+            except queue.Empty:
+                if process.poll() is not None:
+                    break
+                continue
+            if line is None:
+                break
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if event.get("error") and event.get("id") in {1, 2, 3, 4, 5}:
+                raise RuntimeError(f"Codex app-server 请求失败：{_readable_text(event.get('error')) or event['error']}")
+            if event.get("id") == 1:
+                send({"method": "initialized", "params": {}})
+                params: dict[str, Any] = {
+                    "cwd": str(worktree), "approvalPolicy": "never", "sandbox": sandbox,
+                    "serviceName": "wao_ai_runner",
+                }
+                if model and not (account and str(account.get("authMethod") or "") == "api_key"):
+                    params["model"] = model
+                if service_tier:
+                    params["serviceTier"] = service_tier
+                if session_id:
+                    params["threadId"] = session_id
+                    send({"method": "thread/resume", "id": 2, "params": params})
+                else:
+                    send({"method": "thread/start", "id": 2, "params": params})
+            elif event.get("id") == 2:
+                thread = (event.get("result") or {}).get("thread") or {}
+                thread_id = str(thread.get("id") or thread_id or "")
+                if not thread_id:
+                    raise RuntimeError("Codex app-server 没有返回可恢复的线程 id")
+                send({"method": "thread/goal/set", "id": 3, "params": {
+                    "threadId": thread_id, "objective": objective[:4000], "status": "active"}})
+            elif event.get("id") == 3:
+                goal = (event.get("result") or {}).get("goal") or {}
+                if isinstance(goal, dict):
+                    final_goal = goal
+                    reporter.goal(goal)
+                turn_params: dict[str, Any] = {
+                    "threadId": thread_id,
+                    "input": [{"type": "text", "text": prompt}],
+                    "cwd": str(worktree), "approvalPolicy": "never",
+                }
+                if model and not (account and str(account.get("authMethod") or "") == "api_key"):
+                    turn_params["model"] = model
+                if reasoning_effort:
+                    turn_params["effort"] = reasoning_effort
+                if service_tier:
+                    turn_params["serviceTier"] = service_tier
+                send({"method": "turn/start", "id": 4, "params": turn_params})
+            elif event.get("id") == 5:
+                goal = (event.get("result") or {}).get("goal") or final_goal
+                if isinstance(goal, dict):
+                    final_goal = goal
+                    reporter.goal(goal)
+                break
+            method = str(event.get("method") or "")
+            params = event.get("params") if isinstance(event.get("params"), dict) else {}
+            if method == "thread/goal/updated":
+                goal = params.get("goal")
+                if isinstance(goal, dict):
+                    final_goal = goal
+                    reporter.goal(goal)
+            elif method == "thread/tokenUsage/updated":
+                total = ((params.get("tokenUsage") or {}).get("total") or {})
+                usage.update({
+                    "model": model, "models": model,
+                    "inputTokens": _count(total.get("inputTokens")),
+                    "outputTokens": _count(total.get("outputTokens")),
+                    "cachedInputTokens": _count(total.get("cachedInputTokens")),
+                    "totalTokens": _count(total.get("totalTokens")),
+                })
+            elif method == "item/completed":
+                item = params.get("item") if isinstance(params.get("item"), dict) else {}
+                item_type = str(item.get("type") or "")
+                text = _readable_text(item.get("text") or item.get("content"))
+                if item_type == "agentMessage" and text:
+                    final_text = text
+                    if any(part.strip() == "WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT"
+                           for part in text.splitlines()):
+                        if not reporter.delivery_reported:
+                            reporter.delivery_reported = True
+                            reporter.send("delivery", "代码已完成并合并，正在等待批量部署", force=True)
+                    else:
+                        reporter.send("message", text)
+                elif item_type in {"plan", "planUpdate"} and text:
+                    reporter.send("plan", text)
+            elif method == "turn/completed" and not turn_finished:
+                turn_finished = True
+                turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
+                if str(turn.get("status") or "").lower() in {"failed", "cancelled", "interrupted"}:
+                    exit_code = 1
+                    final_text = final_text or _readable_text(turn.get("error"))
+                current_status = str(final_goal.get("status") or "active")
+                terminal = {"blocked", "usageLimited", "budgetLimited", "complete"}
+                desired = current_status if current_status in terminal else _goal_terminal_status(final_text)
+                send({"method": "thread/goal/set", "id": 5, "params": {
+                    "threadId": thread_id, "status": desired}})
+            elif "id" in event and method:
+                # 无人值守运行不允许 app-server 请求悬空；当前提示已要求缺信息时以 blocked 收口。
+                send({"id": event["id"], "error": {"code": -32000,
+                    "message": "WAO AI Runner 无交互输入；请按目标约定继续或标记 blocked"}})
+            request_id += 1
+    finally:
+        reporter.flush()
+        if process.poll() is None:
+            terminate_process_tree(process)
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            force_kill_process_tree(process)
+            process.wait()
+        close_input = getattr(process.stdin, "close", None)
+        if callable(close_input):
+            close_input()
+        close_output = getattr(process.stdout, "close", None)
+        if callable(close_output):
+            close_output()
+    if not turn_finished and exit_code == 0:
+        exit_code = process.returncode or 1
+    return exit_code, final_text, thread_id, usage
+
+
 def run_claude(executable: str, worktree: Path, prompt: str, sandbox: str,
         reporter: "ProgressReporter", environment: dict[str, str] | None = None,
         model: str | None = None, repo_dir: Path | None = None,
@@ -1932,11 +2167,20 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
                         executable, worktree, prompt, sandbox, reporter, cli_environment,
                         root / claim["workspaceDir"], session_id, control_requested)
                 else:
-                    turn = run_codex(
-                        executable, worktree, prompt, sandbox, reporter, cli_environment, session_id,
-                        control_requested, claim.get("account"), codex_home,
-                        model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
-                        service_tier=claim.get("serviceTier"))
+                    if claim.get("goalMode"):
+                        turn = run_codex_goal(
+                            executable, worktree, prompt, sandbox, reporter,
+                            _readable_text(claim.get("goalObjective")) or
+                            f"完成任务「{claim.get('taskTitle') or run_id}」并通过真实验收",
+                            cli_environment, session_id, control_requested, claim.get("account"), codex_home,
+                            model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
+                            service_tier=claim.get("serviceTier"))
+                    else:
+                        turn = run_codex(
+                            executable, worktree, prompt, sandbox, reporter, cli_environment, session_id,
+                            control_requested, claim.get("account"), codex_home,
+                            model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
+                            service_tier=claim.get("serviceTier"))
             except Exception as exc:  # noqa: BLE001 - 项目配置允许在最终失败前自动恢复
                 if failure_retries >= max_failure_retries:
                     raise

@@ -671,6 +671,78 @@ class CodexAccountIsolationTest(unittest.TestCase):
         self.assertIn("采用第一个选项", prompt)
         self.assertIn("先更新现有计划再连续执行", continuation)
 
+    def test_goal_mode_prompt_uses_a_single_verifiable_terminal_goal(self) -> None:
+        claim = {
+            "defaultBranch": "main", "branchName": "ai/wao-ar-goal",
+            "promptUrl": "https://wao.example/task.md", "goalMode": True,
+        }
+
+        prompt = RUNNER.build_prompt(claim)
+        continuation = RUNNER.build_continuation_prompt(claim, "继续推进")
+
+        self.assertIn("Codex `/goal` 目标模式", prompt)
+        self.assertIn("持久目标", prompt)
+        self.assertIn("可验证终态", prompt)
+        self.assertIn("恢复同一线程", continuation)
+
+    @patch.object(RUNNER.subprocess, "Popen")
+    def test_goal_mode_drives_official_app_server_and_reports_native_state(self, popen: Mock) -> None:
+        goal = {
+            "threadId": "thread-goal-1", "objective": "完成目标模式", "status": "active",
+            "tokensUsed": 0, "timeUsedSeconds": 0, "createdAt": 1, "updatedAt": 1,
+            "tokenBudget": None,
+        }
+        completed = dict(goal, status="complete", tokensUsed=321, timeUsedSeconds=9)
+        lines = [json.dumps(event, ensure_ascii=False) + "\n" for event in [
+            {"id": 1, "result": {}},
+            {"id": 2, "result": {"thread": {"id": "thread-goal-1"}}},
+            {"id": 3, "result": {"goal": goal}},
+            {"method": "thread/goal/updated", "params": {"threadId": "thread-goal-1", "goal": goal}},
+            {"method": "item/completed", "params": {"item": {
+                "type": "agentMessage", "text": "WAO_RUN_STATUS: SUCCESS\n已完成",
+            }}},
+            {"method": "turn/completed", "params": {"turn": {"status": "completed"}}},
+            {"id": 5, "result": {"goal": completed}},
+        ]]
+
+        class OpenStringIO(io.StringIO):
+            def close(self) -> None:
+                pass
+
+        class FakeProcess:
+            def __init__(self) -> None:
+                self.stdin = OpenStringIO()
+                self.stdout = OpenStringIO("".join(lines))
+                self.returncode = 0
+
+            def poll(self) -> int:
+                return 0
+
+            def wait(self, timeout: int | None = None) -> int:
+                return 0
+
+        fake = FakeProcess()
+        popen.return_value = fake
+        reporter = Mock()
+
+        exit_code, result, thread_id, usage = RUNNER.run_codex_goal(
+            "codex", self.root, "完成任务", "workspace-write", reporter, "完成目标模式",
+            model="gpt-5.6-sol", reasoning_effort="high", service_tier="default",
+        )
+
+        requests = [json.loads(line) for line in fake.stdin.getvalue().splitlines()]
+        self.assertEqual(0, exit_code)
+        self.assertEqual("thread-goal-1", thread_id)
+        self.assertIn("WAO_RUN_STATUS: SUCCESS", result)
+        self.assertEqual("app-server", popen.call_args.args[0][1])
+        self.assertIn("goals", popen.call_args.args[0])
+        self.assertTrue(any(item.get("method") == "thread/goal/set"
+                            and item["params"].get("objective") == "完成目标模式" for item in requests))
+        self.assertTrue(any(item.get("method") == "thread/goal/set"
+                            and item["params"].get("status") == "complete" for item in requests))
+        reporter.goal.assert_called_with(completed)
+        self.assertEqual(0, usage["totalTokens"])
+
     @patch.object(RUNNER, "invoke_cli", return_value=(0, '{"thread_id":"thread-1"}'))
     def test_selected_account_preserves_existing_run_environment(self, invoke: Mock) -> None:
         reporter = Mock()

@@ -588,7 +588,7 @@ export type AiRunDeliveryStage = 'coding' | 'waiting_deployment' | 'deployment_s
 
 export interface AiRunProgress {
   id: string
-  kind: 'phase' | 'message' | 'plan' | 'result'
+  kind: 'phase' | 'message' | 'plan' | 'goal' | 'result'
   content: string
   createdAt: string
 }
@@ -675,6 +675,11 @@ export interface AiRun {
   requestedModel?: string | null
   reasoningEffort?: string | null
   planMode?: boolean
+  goalMode?: boolean
+  goalObjective?: string | null
+  goalStatus?: 'pending' | 'active' | 'paused' | 'blocked' | 'usageLimited' | 'budgetLimited' | 'complete' | null
+  goalTokensUsed?: number | null
+  goalTimeUsedSeconds?: number | null
   serviceTier?: string | null
   status: AiRunStatus
   /** 代码提交与生产发布分开展示；滚动升级期间旧 API 可暂时缺失。 */
