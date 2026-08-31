@@ -33,7 +33,16 @@ function updateActive() {
     activeId.value = ''
     return
   }
-  const containerTop = props.scrollContainer?.getBoundingClientRect().top ?? 0
+  const container = props.scrollContainer
+  if (
+    container &&
+    container.scrollHeight > container.clientHeight &&
+    container.scrollTop + container.clientHeight >= container.scrollHeight - 2
+  ) {
+    activeId.value = items.value[items.value.length - 1]!.id
+    return
+  }
+  const containerTop = container?.getBoundingClientRect().top ?? 0
   const threshold = containerTop + 32
   let current = items.value[0]!
   for (const item of items.value) {
