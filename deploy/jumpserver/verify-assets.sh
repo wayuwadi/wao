@@ -28,4 +28,6 @@ verify_ssh 'Cloud ingress' "$WAO_JMS_CLOUD_USER" "$WAO_JMS_CLOUD_ADDRESS"
 
 sudo -n docker exec -i jms_core sh -c \
   'python /opt/jumpserver/apps/manage.py shell < /opt/jumpserver/data/bootstrap/verify_wao_access.py'
-echo 'JumpServer three-host inventory, accounts, protocols, and dual-member grants verified.'
+sudo -n docker exec -i jms_core sh -c \
+  'python /opt/jumpserver/apps/manage.py shell < /opt/jumpserver/data/bootstrap/verify_wao_sso.py'
+echo 'JumpServer three-host inventory, accounts, grants, and WAO SSO session verified.'

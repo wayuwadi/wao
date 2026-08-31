@@ -23,6 +23,7 @@ test -f "$private_env"
 test -f "$project_root/deploy/jumpserver/custom_sso.py"
 test -f "$project_root/deploy/jumpserver/bootstrap_wao_assets.py"
 test -f "$project_root/deploy/jumpserver/verify_wao_access.py"
+test -f "$project_root/deploy/jumpserver/verify_wao_sso.py"
 
 set -a
 . "$project_root/deploy/.env"
@@ -104,6 +105,8 @@ sudo -n install -m 0644 "$project_root/deploy/jumpserver/bootstrap_wao_assets.py
   "$volume_dir/core/data/bootstrap/bootstrap_wao_assets.py"
 sudo -n install -m 0644 "$project_root/deploy/jumpserver/verify_wao_access.py" \
   "$volume_dir/core/data/bootstrap/verify_wao_access.py"
+sudo -n install -m 0644 "$project_root/deploy/jumpserver/verify_wao_sso.py" \
+  "$volume_dir/core/data/bootstrap/verify_wao_sso.py"
 
 set_config() {
   key="$1"
