@@ -26,10 +26,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
-/** 把快速收集原消息上的用户飞机表情转换为一次真实、幂等且有身份边界的 AI Run。 */
+/** 把快速收集原消息上的用户触发表情转换为一次真实、幂等且有身份边界的 AI Run。 */
 @Service
 public class FeishuQuickCollectAiRunService {
-    static final String TRIGGER_EMOJI = "StatusInFlight";
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private static final Logger log = LoggerFactory.getLogger(FeishuQuickCollectAiRunService.class);
 
@@ -41,11 +40,12 @@ public class FeishuQuickCollectAiRunService {
     private final AiRunService aiRuns;
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
+    private final FeishuQuickCollectReactionPolicy reactionPolicy;
 
     public FeishuQuickCollectAiRunService(FeishuQuickCollectEventMapper collectEvents,
             FeishuQuickCollectAiRunTriggerMapper triggers, AccountIdentityMapper identities,
             AccountMapper accounts, TaskMapper tasks, AiRunService aiRuns, SettingService settings,
-            FeishuOpenApiClient feishu) {
+            FeishuOpenApiClient feishu, FeishuQuickCollectReactionPolicy reactionPolicy) {
         this.collectEvents = collectEvents;
         this.triggers = triggers;
         this.identities = identities;
@@ -54,14 +54,15 @@ public class FeishuQuickCollectAiRunService {
         this.aiRuns = aiRuns;
         this.settings = settings;
         this.feishu = feishu;
+        this.reactionPolicy = reactionPolicy;
     }
 
     /**
-     * 消费一次 reaction.created 事件；只有原消息创建者本人添加飞机时才派工。
+     * 消费一次 reaction.created 事件；只有原消息创建者本人添加当前配置的触发表情时才派工。
      *
      * @param body 已完成飞书签名校验/解密的事件体
      * @param baseUrl 当前 WAO 公网根地址，用于生成 Runner 可读的 Markdown 地址
-     * @return true 表示事件是快速收集任务上的飞机触发（包括重复事件）
+     * @return true 表示事件是快速收集任务上的表情触发（包括重复事件）
      */
     @Transactional
     public boolean trigger(JsonNode body, String baseUrl) {
@@ -70,7 +71,8 @@ public class FeishuQuickCollectAiRunService {
         }
         JsonNode event = body.path("event");
         if (!"user".equals(event.path("operator_type").asText(""))
-                || !TRIGGER_EMOJI.equals(event.path("reaction_type").path("emoji_type").asText(""))) {
+                || !reactionPolicy.receivedEmoji()
+                        .equals(event.path("reaction_type").path("emoji_type").asText(""))) {
             return false;
         }
         String messageId = event.path("message_id").asText("");
@@ -86,7 +88,7 @@ public class FeishuQuickCollectAiRunService {
         String creatorId = task == null ? null : task.getCreatedBy();
         if (!StringUtils.hasText(creatorId) && task != null) creatorId = task.getOwnerId();
         if (!StringUtils.hasText(operatorMemberId) || !operatorMemberId.equals(creatorId)) {
-            log.warn("忽略非任务创建者添加的飞书 AI Run 飞机表情，消息 {}", messageId);
+            log.warn("忽略非任务创建者添加的飞书 AI Run 触发表情，消息 {}", messageId);
             return true;
         }
 

@@ -1106,7 +1106,7 @@ paths:
       summary: 快速收集配置（Verification Token / Encrypt Key 只回脱敏形态）
       responses: { '200': { description: OK } }
     put:
-      summary: 保存快速收集配置（密文字段省略表示保留原值）
+      summary: 保存快速收集配置与表情工作流（密文字段省略表示保留原值）
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/SaveQuickCollectConfigRequest' } } }
@@ -1787,6 +1787,14 @@ components:
           type: array
           items: { type: string }
           description: 任务进入「收集中」时要 @ 的成员 open_id；操作人自己永远会被排除
+        receivedEmoji:
+          type: string
+          enum: [GET, DONE, StatusInFlight, CheckMark]
+          description: 任务已保存回执及成员手工派工表情；默认 GET
+        completedEmoji:
+          type: string
+          enum: [GET, DONE, StatusInFlight, CheckMark]
+          description: AI Run 成功、任务待验收表情；默认 DONE
     SaveWebhookRequest:
       type: object
       deprecated: true

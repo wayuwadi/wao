@@ -39,8 +39,9 @@ class FeishuQuickCollectAiRunServiceTest {
     private final AiRunService aiRuns = mock(AiRunService.class);
     private final SettingService settings = mock(SettingService.class);
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
+    private final FeishuQuickCollectReactionPolicy reactionPolicy = new FeishuQuickCollectReactionPolicy(settings);
     private final FeishuQuickCollectAiRunService service = new FeishuQuickCollectAiRunService(
-            collectEvents, triggers, identities, accounts, tasks, aiRuns, settings, feishu);
+            collectEvents, triggers, identities, accounts, tasks, aiRuns, settings, feishu, reactionPolicy);
     private final ObjectMapper json = new ObjectMapper();
 
     @BeforeEach
@@ -65,13 +66,13 @@ class FeishuQuickCollectAiRunServiceTest {
     }
 
     @Test
-    void ownerFlightReactionCreatesOnePlanRunAndPersistsTheRunLink() throws Exception {
+    void ownerGetReactionCreatesOnePlanRunAndPersistsTheRunLink() throws Exception {
         AiRunDto run = mock(AiRunDto.class);
         when(run.id()).thenReturn("ar1");
         when(aiRuns.enqueue(eq(List.of("t1")), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
                 eq(true), eq(false), eq("wd"), eq("https://wao.example"))).thenReturn(List.of(run));
 
-        assertThat(service.trigger(event("ev1", "StatusInFlight", "ou_owner"), "https://wao.example")).isTrue();
+        assertThat(service.trigger(event("ev1", "GET", "ou_owner"), "https://wao.example")).isTrue();
 
         verify(aiRuns).enqueue(eq(List.of("t1")), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
                 eq(true), eq(false), eq("wd"), eq("https://wao.example"));
@@ -87,7 +88,7 @@ class FeishuQuickCollectAiRunServiceTest {
         when(triggers.insert(any(FeishuQuickCollectAiRunTriggerEntity.class)))
                 .thenThrow(new DuplicateKeyException("duplicate"));
 
-        assertThat(service.trigger(event("ev1", "StatusInFlight", "ou_owner"), "https://wao.example")).isTrue();
+        assertThat(service.trigger(event("ev1", "GET", "ou_owner"), "https://wao.example")).isTrue();
 
         verify(aiRuns, never()).enqueue(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
@@ -101,7 +102,7 @@ class FeishuQuickCollectAiRunServiceTest {
         other.setMemberId("wg");
         when(accounts.selectById("a2")).thenReturn(other);
 
-        assertThat(service.trigger(event("ev2", "StatusInFlight", "ou_other"), "https://wao.example")).isTrue();
+        assertThat(service.trigger(event("ev2", "GET", "ou_other"), "https://wao.example")).isTrue();
 
         verify(triggers, never()).insert(any(FeishuQuickCollectAiRunTriggerEntity.class));
         verify(aiRuns, never()).enqueue(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
@@ -121,9 +122,22 @@ class FeishuQuickCollectAiRunServiceTest {
         when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
         when(feishu.tenantAccessToken("cli", "secret")).thenReturn("token");
 
-        assertThatThrownBy(() -> service.trigger(event("ev4", "StatusInFlight", "ou_owner"),
+        assertThatThrownBy(() -> service.trigger(event("ev4", "GET", "ou_owner"),
                 "https://wao.example")).hasMessageContaining("Runner");
         verify(feishu).addMessageReaction("token", "om_source", "ERROR");
+    }
+
+    @Test
+    void configuredReceivedReactionReplacesTheDefaultTrigger() throws Exception {
+        when(settings.get(SettingService.QUICK_COLLECT_RECEIVED_EMOJI,
+                FeishuQuickCollectReactionPolicy.DEFAULT_RECEIVED_EMOJI)).thenReturn("CheckMark");
+        AiRunDto run = mock(AiRunDto.class);
+        when(run.id()).thenReturn("ar2");
+        when(aiRuns.enqueue(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(List.of(run));
+
+        assertThat(service.trigger(event("ev5", "GET", "ou_owner"), "https://wao.example")).isFalse();
+        assertThat(service.trigger(event("ev6", "CheckMark", "ou_owner"), "https://wao.example")).isTrue();
     }
 
     private JsonNode event(String eventId, String emoji, String openId) throws Exception {

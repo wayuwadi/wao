@@ -50,6 +50,14 @@ const quickProjectId = ref('')
 const verifyToken = ref('')
 const encryptKey = ref('')
 const mentionIds = ref<string[]>([])
+const receivedEmoji = ref('GET')
+const completedEmoji = ref('DONE')
+const emojiOptions = [
+  { value: 'GET', label: 'Get（已收到）' },
+  { value: 'DONE', label: 'Done（完成）' },
+  { value: 'StatusInFlight', label: '飞机（执行中）' },
+  { value: 'CheckMark', label: '勾选（已完成）' },
+]
 
 /** 事件订阅地址：填到飞书开放平台「事件订阅」里，机器人收到的消息才会送到 WAO。 */
 const eventUrl = `${window.location.origin}/api/feishu/events`
@@ -80,6 +88,8 @@ onMounted(async () => {
     quickEnabled.value = q.enabled
     quickProjectId.value = q.projectId
     mentionIds.value = [...q.mentionOpenIds]
+    receivedEmoji.value = q.receivedEmoji
+    completedEmoji.value = q.completedEmoji
   } catch (error) {
     toast(error instanceof Error ? error.message : '读取配置失败')
   } finally {
@@ -136,6 +146,8 @@ async function persistQuick() {
     verificationToken: verifyToken.value.trim() || undefined,
     encryptKey: encryptKey.value.trim() || undefined,
     mentionOpenIds: mentionIds.value,
+    receivedEmoji: receivedEmoji.value,
+    completedEmoji: completedEmoji.value,
   })
   verifyToken.value = ''
   encryptKey.value = ''
@@ -299,6 +311,13 @@ async function runHistory() {
           <span class="mono ellip">{{ eventUrl }}</span>
           <button class="mini-btn" @click="copyEventUrl"><i class="ri-file-copy-line"></i>复制事件订阅地址</button>
         </div>
+        <div class="event-requirement">
+          <i class="ri-information-line"></i>
+          <span>
+            人工表情派工必须在飞书开放平台订阅 <b>im.message.reaction.created_v1</b>，并在下方配置
+            Verification Token 或 Encrypt Key；仅靠 15 秒消息轮询无法收到表情事件。
+          </span>
+        </div>
         <div class="two">
           <select v-model="quickProjectId" class="input">
             <option value="">默认落到「Wa All in One」</option>
@@ -321,6 +340,29 @@ async function runHistory() {
             :placeholder="quick?.hasEncryptKey ? `Encrypt Key（已配置 ${quick.encryptKey}，留空不改）` : 'Encrypt Key（可选）'"
           />
         </div>
+        <div class="label sub-label">表情工作流</div>
+        <div class="reaction-flow">
+          <label>
+            <span>已收下 / 人工派工</span>
+            <select v-model="receivedEmoji" class="input">
+              <option v-for="option in emojiOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <i class="ri-arrow-right-line"></i>
+          <span class="keep-stage">AI Run 中保持</span>
+          <i class="ri-arrow-right-line"></i>
+          <label>
+            <span>完成待验收</span>
+            <select v-model="completedEmoji" class="input">
+              <option v-for="option in emojiOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <div class="tip">成员在原消息上添加“已收下 / 人工派工”表情即可启动 AI Run；运行期间不追加新表情，成功后添加“完成待验收”表情。</div>
         <div class="label sub-label">任务进入「收集中」时 @ 这些人</div>
         <div class="mention-list">
           <label v-for="s in senders.filter((x) => x.id)" :key="s.id" class="mention">
@@ -569,6 +611,12 @@ async function runHistory() {
   background: var(--wao-bg-sub);
 }
 .event-url .mono { flex: 1; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--wao-text-2); }
+.event-requirement { margin-top: 8px; display: flex; align-items: flex-start; gap: 7px; padding: 8px 10px; border-radius: 9px; background: var(--wao-primary-soft); color: var(--wao-text-2); font-size: 11.5px; line-height: 1.65; }
+.event-requirement i { color: var(--wao-primary); margin-top: 2px; }
+.reaction-flow { margin-top: 8px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: end; gap: 8px; }
+.reaction-flow label { min-width: 0; display: grid; gap: 5px; color: var(--wao-text-weak); font-size: 11.5px; }
+.reaction-flow > i { align-self: center; margin-top: 18px; color: var(--wao-text-faint); }
+.keep-stage { align-self: center; margin-top: 18px; white-space: nowrap; color: var(--wao-text-2); font-size: 11.5px; }
 .mention-list { margin-top: 8px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .mention { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--wao-text-2); cursor: pointer; }
 .history-run { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--wao-divider); }
@@ -613,5 +661,10 @@ async function runHistory() {
 .btn-primary:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+@media (max-width: 560px) {
+  .reaction-flow { grid-template-columns: 1fr; align-items: stretch; }
+  .reaction-flow > i { transform: rotate(90deg); margin: 0 auto; }
+  .keep-stage { margin: 0; text-align: center; }
 }
 </style>
