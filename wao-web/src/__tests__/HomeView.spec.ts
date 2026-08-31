@@ -339,6 +339,25 @@ function pasteInto(el: Element, files: File[]) {
 }
 
 describe('HomeView AI 控制台', () => {
+  it('为首页主要功能区提供稳定锚点，并随控制台视图更新动态分区', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    const anchorLabels = () => wrapper.findAll('[data-page-anchor]').map((item) => item.attributes('data-page-anchor'))
+    expect(anchorLabels()).toEqual([
+      'AI 控制中心', '自主目标', '成长教练', 'AI 运行控制台', '正在运行', '最近 AI 运行',
+    ])
+    expect(wrapper.findAll('[data-page-anchor]').every((item) => Boolean(item.attributes('id')))).toBe(true)
+
+    await wrapper.findAll('.console-tabs button')[1]!.trigger('click')
+    expect(anchorLabels()).toEqual(['AI 控制中心', '自主目标', '成长教练', 'AI 运行控制台', '执行电脑'])
+
+    await wrapper.findAll('.console-tabs button')[2]!.trigger('click')
+    expect(anchorLabels()).toEqual(['AI 控制中心', '自主目标', '成长教练', 'AI 运行控制台', '项目工作流'])
+    wrapper.unmount()
+  })
+
   afterEach(() => {
     vi.useRealTimers()
     sessionStorage.clear()

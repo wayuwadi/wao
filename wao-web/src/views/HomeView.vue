@@ -1168,7 +1168,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="home">
     <div class="home-primary">
-      <section class="hero">
+      <section id="home-ai-overview" class="hero" data-page-anchor="AI 控制中心">
       <div>
         <div class="eyebrow">AI CONTROL CENTER</div>
         <!-- 核心理念摆在首屏第一行：这套系统的用法就是「你敢想，AI 就敢做」 -->
@@ -1224,7 +1224,7 @@ onBeforeUnmount(() => {
       </div>
       </section>
 
-      <section id="ai-launcher" class="goal-launcher" aria-labelledby="goal-launcher-title">
+      <section id="ai-launcher" class="goal-launcher" data-page-anchor="自主目标" aria-labelledby="goal-launcher-title">
         <div class="goal-heading">
           <span class="goal-icon"><i class="ri-sparkling-2-line"></i></span>
           <div>
@@ -1331,7 +1331,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="growth-coach" aria-labelledby="growth-coach-title">
+      <section id="growth-coach" class="growth-coach" data-page-anchor="成长教练" aria-labelledby="growth-coach-title">
         <header class="growth-coach-head">
           <span class="growth-coach-icon"><i class="ri-compass-discover-line"></i></span>
           <div>
@@ -1384,7 +1384,7 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <nav id="ai-console" class="console-tabs">
+    <nav id="ai-console" class="console-tabs" data-page-anchor="AI 运行控制台">
       <button
         v-for="item in VIEWS"
         :key="item.id"
@@ -1399,7 +1399,7 @@ onBeforeUnmount(() => {
     </nav>
 
     <template v-if="view === 'runs'">
-      <section class="run-section">
+      <section id="active-ai-runs" class="run-section" data-page-anchor="正在运行">
         <div class="section-head">
           <div>
             <h2>正在运行</h2>
@@ -1499,7 +1499,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="recent-section">
+      <section id="recent-ai-runs" class="recent-section" data-page-anchor="最近 AI 运行">
         <div class="section-head">
           <div><h2>最近 AI 运行</h2><p>功能开发、AI 巡检与聊天复盘按完成时间统一排列。</p></div>
           <div class="recent-actions">
@@ -1546,7 +1546,7 @@ onBeforeUnmount(() => {
     </template>
 
     <template v-else-if="view === 'runners'">
-      <section class="run-section">
+      <section id="runner-resources" class="run-section" data-page-anchor="执行电脑">
         <div class="section-head">
           <div>
             <h2>执行电脑与服务器资源</h2>
@@ -1698,7 +1698,7 @@ onBeforeUnmount(() => {
     </template>
 
     <template v-else>
-      <section class="run-section">
+      <section id="project-workflows" class="run-section" data-page-anchor="项目工作流">
         <div class="section-head">
           <div>
             <h2>AI 工作流</h2>
@@ -2176,6 +2176,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
 }
 .home > * { order: 2; }
+.home [data-page-anchor] { scroll-margin-top: 16px; }
 .home-primary { order: 1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .hero {
   min-height: 118px;

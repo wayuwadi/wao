@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import SideNav from '@/components/nav/SideNav.vue'
 import TabBar from '@/components/tabs/TabBar.vue'
@@ -15,6 +15,7 @@ import AiAssistantPanel from '@/components/assistant/AiAssistantPanel.vue'
 import MusicPlayer from '@/components/music/MusicPlayer.vue'
 import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import FloatingChat from '@/components/chat/FloatingChat.vue'
+import PageSectionNav from '@/components/navigation/PageSectionNav.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -36,6 +37,8 @@ const preferences = usePreferenceStore()
 const session = useSessionStore()
 const theme = useTheme()
 const quickLinks = useQuickLinks()
+const contentRef = ref<HTMLElement | null>(null)
+const pageBodyRef = ref<HTMLElement | null>(null)
 
 const loadingDomainCount = computed(
   () => Object.values(data.loadStates).filter((state) => state === 'loading').length,
@@ -244,7 +247,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
       <TabBar />
 
-      <div class="content">
+      <div ref="contentRef" class="content">
         <div v-if="loadErrorMessages.length" class="data-status error" role="alert">
           <i class="ri-error-warning-line"></i>
           <span>
@@ -259,8 +262,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <i class="ri-loader-4-line spin"></i>
           正在加载业务数据…
         </div>
-        <!-- 页面主体撑满剩余高度，备案页脚被压在滚动区最底端：内容不够一屏时也贴住底部，不会跟着内容往上浮 -->
-        <div class="page-body"><RouterView /></div>
+        <!-- 页面主体撑满剩余高度；复杂页面声明分区后，桌面左侧自动出现本页锚点。 -->
+        <div class="page-stage">
+          <PageSectionNav :root="pageBodyRef" :scroll-container="contentRef" />
+          <div ref="pageBodyRef" class="page-body"><RouterView /></div>
+        </div>
         <SiteFooter reserve-mobile-actions />
       </div>
     </main>
@@ -461,6 +467,17 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 }
 .page-body {
   flex: 1 0 auto;
+  min-width: 0;
+}
+.page-stage {
+  flex: 1 0 auto;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+}
+.page-stage > .page-body {
+  width: auto;
+  flex: 1 1 0;
 }
 
 /* 悬浮新建按钮只在手机上出现；桌面顶栏已经有「新建任务」了 */
