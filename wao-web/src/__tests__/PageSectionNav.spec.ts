@@ -100,4 +100,25 @@ describe('页面分区锚点导航', () => {
     expect(wrapper.findAll('button')[1]!.attributes('aria-current')).toBe('location')
     wrapper.unmount()
   })
+
+  it('滚动到底部时高亮无法贴到顶部的最后一个分区', async () => {
+    const root = document.createElement('div')
+    const scrollContainer = document.createElement('div')
+    Object.defineProperties(scrollContainer, {
+      scrollTop: { configurable: true, value: 500 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollHeight: { configurable: true, value: 1_000 },
+    })
+    root.append(
+      section('first', '第一段', -400),
+      section('second', '第二段', 100),
+      section('last', '最后一段', 460),
+    )
+
+    const wrapper = mount(PageSectionNav, { props: { root, scrollContainer } })
+    await settleFrame()
+
+    expect(wrapper.findAll('button')[2]!.attributes('aria-current')).toBe('location')
+    wrapper.unmount()
+  })
 })
