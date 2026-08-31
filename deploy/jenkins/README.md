@@ -130,5 +130,10 @@ JCasC 只提交非敏感结构；启动时用 `readFile` 从 `/etc/jenkins/secre
 每日 02:30 在执行器空闲时停止 Jenkins，备份 `JENKINS_HOME` 与 `/etc/jenkins` 到
 `/var/backups/jenkins`，保存 SHA-256 并保留最近 7 份。备份不包含 workspace、Maven/npm 缓存。
 
+每日 03:30 的 `wao-offsite-backup.timer` 会要求最近 26 小时内存在且通过 SHA-256 校验的上述归档，再与 WAO
+MySQL、JumpServer 和部署恢复材料一起加密上传到 123 云盘。外部授权与恢复演练见
+[`deploy/backup/README.md`](../backup/README.md)；没有专用 WebDAV 凭据时 unit 因 `ConditionPathExists` 不运行，
+不能把“timer 已安装”当成异地备份成功。
+
 恢复时先安装相同 Jenkins LTS 与 `plugins.txt` 中的插件，再恢复归档；`secrets/master.key` 与
 `credentials.xml` 必须来自同一份备份。

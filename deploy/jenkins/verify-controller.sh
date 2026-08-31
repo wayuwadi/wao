@@ -6,6 +6,7 @@ secret_dir='/etc/jenkins/secrets'
 systemctl is-active --quiet jenkins.service
 systemctl is-active --quiet wao-jenkins-webhook-tunnel.service
 systemctl is-active --quiet wao-jenkins-backup.timer
+systemctl is-active --quiet wao-offsite-backup.timer
 
 listen="$(ss -H -lnt '( sport = :8081 )')"
 printf '%s' "$listen" | grep -q '127.0.0.1:8081'

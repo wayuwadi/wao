@@ -10,6 +10,9 @@ sh deploy/jenkins/test-ci-change-plan.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
 sh deploy/jenkins/test-github-status.sh
+sh deploy/jenkins/test-backup-controller.sh
+python3 -m unittest deploy/backup/test_webdav_client.py
+sh deploy/backup/test-offsite-backup.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py
 sh deploy/jumpserver/test-ensure-asset-key.sh
 sh deploy/jumpserver/test-ensure-sso-secret.sh
@@ -29,9 +32,17 @@ for script in \
   deploy/jenkins/test-resolve-batch-base.sh \
   deploy/jenkins/notify-feishu.sh \
   deploy/jenkins/test-notify-feishu.sh \
+  deploy/jenkins/test-backup-controller.sh \
   deploy/jenkins/test-github-status.sh \
   deploy/jenkins/deploy-master-local.sh; do
   sh -n "$script"
+done
+
+for script in \
+  deploy/backup/configure-offsite-backup.sh \
+  deploy/backup/create-offsite-backup.sh \
+  deploy/backup/restore-offsite-backup.sh; do
+  bash -n "$script"
 done
 
 grep -q 'server_name jms.wayuwa.cn;' deploy/nginx/jms.wayuwa.cn.conf

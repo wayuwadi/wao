@@ -1,21 +1,36 @@
 #!/bin/sh
 set -eu
 
-jenkins_url='http://127.0.0.1:8081'
+jenkins_url='http://127.0.0.1:8081/jenkins'
 backup_dir='/var/backups/jenkins'
+require_created=false
+if [ "${1:-}" = --require-created ]; then
+  require_created=true
+elif [ -n "${1:-}" ]; then
+  echo 'Usage: backup-controller.sh [--require-created]' >&2
+  exit 2
+fi
+
+skip_backup() {
+  echo "$1" >&2
+  if [ "$require_created" = true ]; then
+    return 1
+  fi
+  return 0
+}
 
 if ! state="$(curl --globoff --fail --silent --show-error \
     -H 'X-Forwarded-User: wao-controller-backup' \
     -H 'X-Forwarded-Groups: wao-members' \
     "$jenkins_url/computer/api/json?tree=computer[executors[currentExecutable[url]],oneOffExecutors[currentExecutable[url]]]" 2>/dev/null)"; then
-  echo 'Jenkins backup skipped: controller state could not be read.' >&2
-  exit 0
+  skip_backup 'Jenkins backup skipped: controller state could not be read.'
+  exit $?
 fi
 if printf '%s' "$state" | jq -e \
     '[.computer[] | (.executors[]?, .oneOffExecutors[]?) | select(.currentExecutable != null)] | length > 0' \
     >/dev/null; then
-  echo 'Jenkins backup skipped: at least one executor is busy.'
-  exit 0
+  skip_backup 'Jenkins backup skipped: at least one executor is busy.'
+  exit $?
 fi
 
 install -d -m 0700 "$backup_dir"

@@ -86,8 +86,8 @@ done
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl fontconfig git jq openssh-client openssl \
-  openjdk-21-jre acl sudo unzip zip
+apt-get install -y ca-certificates curl fontconfig git gnupg jq openssh-client openssl \
+  openjdk-21-jre python3 acl sudo unzip zip
 
 install -d -m 0755 /etc/apt/keyrings
 curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key \
@@ -128,6 +128,19 @@ install -m 0644 "$script_dir/wao-jenkins-backup.service" \
   /etc/systemd/system/wao-jenkins-backup.service
 install -m 0644 "$script_dir/wao-jenkins-backup.timer" \
   /etc/systemd/system/wao-jenkins-backup.timer
+install -d -m 0700 /etc/wao-backup
+install -d -m 0755 /usr/local/lib/wao-backup
+for backup_script in \
+  configure-offsite-backup.sh create-offsite-backup.sh restore-offsite-backup.sh; do
+  install -m 0755 "$script_dir/../backup/$backup_script" \
+    "/usr/local/lib/wao-backup/$backup_script"
+done
+install -m 0755 "$script_dir/../backup/webdav_client.py" \
+  /usr/local/lib/wao-backup/webdav_client.py
+install -m 0644 "$script_dir/../backup/wao-offsite-backup.service" \
+  /etc/systemd/system/wao-offsite-backup.service
+install -m 0644 "$script_dir/../backup/wao-offsite-backup.timer" \
+  /etc/systemd/system/wao-offsite-backup.timer
 
 cat >/etc/jenkins/tunnel-ssh-config <<EOF
 Host wao-cloud-webhook
@@ -192,6 +205,7 @@ visudo -cf /etc/sudoers.d/wao-jenkins
 systemctl daemon-reload
 systemctl enable --now jenkins.service
 systemctl enable --now wao-jenkins-backup.timer
+systemctl enable --now wao-offsite-backup.timer
 systemctl enable --now wao-jenkins-webhook-tunnel.service
 
 printf '%s\n' \

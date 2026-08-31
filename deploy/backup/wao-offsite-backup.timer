@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily encrypted WAO backup to 123 Cloud Drive
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=15m
+Unit=wao-offsite-backup.service
+
+[Install]
+WantedBy=timers.target
