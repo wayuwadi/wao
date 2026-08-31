@@ -315,7 +315,7 @@ public class FeishuOpenApiClient {
      * @param token tenant_access_token
      * @param messageId 原消息 id
      * @param emojiType 要读取的飞书表情类型
-     * @return 当前仍存在的表情回复
+     * @return 当前仍存在的表情回复；操作人按跨应用稳定的 union_id 返回
      */
     public List<FeishuMessageReaction> listMessageReactions(String token, String messageId,
             String emojiType) {
@@ -324,7 +324,7 @@ public class FeishuOpenApiClient {
         String pageToken = null;
         for (int page = 0; page < MAX_PAGES; page++) {
             String uri = "/open-apis/im/v1/messages/{messageId}/reactions"
-                    + "?reaction_type={reactionType}&page_size={pageSize}&user_id_type=open_id"
+                    + "?reaction_type={reactionType}&page_size={pageSize}&user_id_type=union_id"
                     + (pageToken == null ? "" : "&page_token={pageToken}");
             JsonNode data = pageToken == null
                     ? get(uri, token, messageId, emojiType, PAGE_SIZE)
@@ -569,7 +569,7 @@ public class FeishuOpenApiClient {
     /** 消息中一个 @ 对象；open_id 用来精确匹配当前应用机器人。 */
     public record FeishuMention(String key, String openId, String name) { }
 
-    /** 一次消息表情回复；operatorId 按 open_id 返回。 */
-    public record FeishuMessageReaction(String reactionId, String operatorId, String operatorType,
+    /** 一次消息表情回复；operatorUnionId 按 union_id 返回，避免不同飞书应用的 open_id 不一致。 */
+    public record FeishuMessageReaction(String reactionId, String operatorUnionId, String operatorType,
             String actionTime, String emojiType) { }
 }

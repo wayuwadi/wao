@@ -54,6 +54,7 @@ class FeishuQuickCollectAiRunServiceTest {
         AccountIdentityEntity identity = new AccountIdentityEntity();
         identity.setAccountId("a1");
         when(identities.findByProviderSubject("feishu", "ou_owner")).thenReturn(identity);
+        when(identities.findByProviderUnionSubject("feishu", "on_owner")).thenReturn(identity);
         AccountEntity account = new AccountEntity();
         account.setId("a1");
         account.setMemberId("wd");
@@ -151,7 +152,7 @@ class FeishuQuickCollectAiRunServiceTest {
         when(aiRuns.enqueue(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(List.of(run));
         var reaction = new FeishuOpenApiClient.FeishuMessageReaction(
-                "reaction-1", "ou_owner", "user", "1787900000000", "StatusInFlight");
+                "reaction-1", "on_owner", "user", "1787900000000", "StatusInFlight");
 
         assertThat(service.triggerPolled("om_source", reaction, "https://wao.example")).isTrue();
 

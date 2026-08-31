@@ -147,7 +147,7 @@ class FeishuQuickCollectServiceTest {
     @Test
     void authenticatedPollingReadsFlightAndReusesTheSameDispatchGate() {
         var reaction = new FeishuMessageReaction(
-                "reaction-1", "ou_sender", "user", "1787900000000", "StatusInFlight");
+                "reaction-1", "on_sender", "user", "1787900000000", "StatusInFlight");
         when(feishu.listMessageReactions("token", "om_source", "StatusInFlight"))
                 .thenReturn(List.of(reaction));
 
