@@ -40,6 +40,7 @@ export type ModuleId =
   | 'tianren'
   | 'workday-rhythm'
   | 'action-plans'
+  | 'decisions'
   | 'appearance'
   | 'food'
   | 'weekly-report'

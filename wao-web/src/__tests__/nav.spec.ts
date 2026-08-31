@@ -294,6 +294,23 @@ describe('侧边栏导航配置', () => {
     })
   })
 
+  it('决策管理默认位于个人组并使用独立页面', () => {
+    expect(MODULES.decisions).toMatchObject({
+      label: '决策管理',
+      path: '/decisions',
+    })
+    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'decisions')).toMatchObject({
+      group: 'PERSONAL',
+      visible: true,
+      openMode: 'TAB',
+    })
+    expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).toContain('decisions')
+    expect(router.resolve('/decisions').meta).toMatchObject({
+      module: 'decisions',
+      tabKind: 'module',
+    })
+  })
+
   it('草图默认位于个人组并使用原生模块路由', () => {
     expect(NAV_GROUPS.find((group) => group.label === '个人')?.items).not.toContain('drawings')
     const route = router.getRoutes().find((item) => item.name === 'drawings')

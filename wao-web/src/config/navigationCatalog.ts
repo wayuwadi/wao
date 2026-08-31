@@ -47,6 +47,11 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
       },
       { id: 'action-plans', description: '维护需要长期推进的行动计划和打卡。', keywords: ['计划'] },
       {
+        id: 'decisions',
+        description: '记录在相似情境中应如何选择，并保留决定依据。',
+        keywords: ['决定', '选择', '经验'],
+      },
+      {
         id: 'appearance',
         description: '管理衣橱、穿搭、个人档案、形象计划和穿着复盘。',
         keywords: ['衣服', '鞋子', '搭配', '衣柜'],
