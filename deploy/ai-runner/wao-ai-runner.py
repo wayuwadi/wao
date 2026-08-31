@@ -1427,10 +1427,11 @@ def post_run_completion(api: WaoApi, run_id: str, payload: dict[str, Any],
     try:
         api.post(f"/api/ai/runner/runs/{run_id}/complete", body)
     except RuntimeError as exc:
-        if (not candidates and not skill_audits) or "HTTP 400" not in str(exc):
+        if "HTTP 400" not in str(exc):
             raise
-        log(f"[{run_id}] 服务端尚未支持项目记忆候选，按旧完成契约重试")
-        api.post(f"/api/ai/runner/runs/{run_id}/complete", payload)
+        log(f"[{run_id}] 服务端尚未支持新完成字段，按旧完成契约重试")
+        legacy = {key: value for key, value in payload.items() if key != "aiExecutionDurationMs"}
+        api.post(f"/api/ai/runner/runs/{run_id}/complete", legacy)
 
 
 def install_run_skills(api: WaoApi, claim: dict[str, Any], codex_home: Path) -> list[dict[str, Any]]:
@@ -2167,6 +2168,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
     pending_update: str | None = None
     pause_requested = False
     failure_retries = 0
+    ai_execution_duration_ms = 0
     max_failure_retries = configured_failure_retries(claim.get("failureRetryCount"))
     skill_audits: list[dict[str, Any]] = []
     codex_home = root / ".wao-codex-homes" / run_id
@@ -2246,6 +2248,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         while True:
             pending_update = None
             pause_requested = False
+            ai_turn_started_at = time.monotonic()
             try:
                 if engine == "claude":
                     turn = run_claude(
@@ -2284,6 +2287,10 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
                 prompt = build_failure_retry_prompt(
                     turn_prompt_base, failure_retries, max_failure_retries, detail)
                 continue
+            finally:
+                # 只累计真正进入 AI CLI / app-server 的时间；Git 准备、报告上传和部署等待不混入。
+                ai_execution_duration_ms += max(
+                    0, round((time.monotonic() - ai_turn_started_at) * 1000))
             exit_code, result_text, turn_session_id, turn_usage = turn
             session_id = turn_session_id or session_id
             usage = merge_usage(usage, turn_usage)
@@ -2354,7 +2361,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         try:
             candidates = completion_memory_candidates(exit_code, memory_path)
             post_run_completion(api, run_id,
-                {"exitCode": exit_code, "resultSummary": summary, "sessionId": session_id, **usage},
+                {"exitCode": exit_code, "resultSummary": summary, "sessionId": session_id,
+                 "aiExecutionDurationMs": ai_execution_duration_ms, **usage},
                 candidates, skill_audits)
             log(f"[{run_id}] 已回传，退出码 {exit_code}")
         except Exception as exc:  # noqa: BLE001

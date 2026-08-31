@@ -1439,6 +1439,22 @@ class AiRunServiceTest {
     }
 
     @Test
+    void completionAccumulatesMeasuredAiExecutionTimeAndReturnsClaimTime() {
+        AiTaskRunEntity run = runningRun();
+        LocalDateTime firstClaim = LocalDateTime.of(2026, 8, 31, 9, 0);
+        run.setClaimedAt(firstClaim);
+        run.setAiExecutionDurationMs(1_250L);
+
+        AiRunDto result = service.complete("local-token", "ar1", new CompleteAiRunRequest(
+                0, "WAO_RUN_STATUS: SUCCESS", "sess-1", null, null,
+                null, null, null, null, 2_750L, null, List.of(), List.of()));
+
+        assertThat(run.getAiExecutionDurationMs()).isEqualTo(4_000L);
+        assertThat(result.aiExecutionDurationMs()).isEqualTo(4_000L);
+        assertThat(result.claimedAt()).startsWith("2026-08-31T09:00");
+    }
+
+    @Test
     void failureAfterCodeMergeIsClassifiedAsDeploymentFailure() {
         AiTaskRunEntity run = runningRun();
         run.setDeliveryStage("waiting_deployment");

@@ -355,6 +355,20 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void aiRunExecutionDurationMigrationStoresOnlyMeasuredRunnerTime() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString()
+                        .equals("V125__ai_run_execution_duration.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("ai_execution_duration_ms BIGINT NULL")
+                .contains("Runner 单调时钟累计")
+                .doesNotContain("UPDATE ai_task_run", "TIMESTAMPDIFF");
+    }
+
+    @Test
     void configurableTaskAutoRunMigrationDefaultsToWaoTodoAndKeepsWebhookOptional() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V97__configurable_task_auto_run.sql"))

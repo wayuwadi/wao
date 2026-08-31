@@ -39,6 +39,8 @@ class AiTaskRunMapperSqlTest {
                 "progress", "正在启动", "claimedAt", java.time.LocalDateTime.now()));
 
         assertThat(claim).contains("SET status = 'running'", "pending_input = NULL")
+                .contains("claimed_at = COALESCE(claimed_at, ?)",
+                        "started_at = COALESCE(started_at, ?)")
                 .contains("WHERE id = ? AND status = 'queued'")
                 .contains("pending_input = ?", "pending_input IS NULL AND ? IS NULL");
     }

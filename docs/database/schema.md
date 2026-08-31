@@ -368,6 +368,7 @@ Runner 每五分钟在本机调用 Codex app-server。服务端按规范化邮�
 | goal_tokens_used / goal_time_used_seconds | BIGINT NULL | app-server 报告的目标累计 Token 与持续秒数，不用普通运行用量伪造（V119） |
 | model / models | VARCHAR(120) / VARCHAR(500) NULL | 输出 token 最多的模型，以及本次用到的全部模型（逗号分隔） |
 | input_tokens / output_tokens / cached_input_tokens / total_tokens | BIGINT NULL | 本次运行的 token 用量；续跑在同一条记录上累加 |
+| ai_execution_duration_ms | BIGINT NULL（V125） | Runner 用单调时钟累计的 AI CLI / app-server 实际执行毫秒数；不包含 Git 准备、报告上传和部署等待，旧记录为空 |
 | cost_usd | DECIMAL(12,6) NULL | 折算额度（美元）；Codex 不回传花费时为空（见 ADR-026） |
 | latest_progress / progress_updated_at | VARCHAR(1000) / DATETIME | 首页快速读取的最近一条用户可读进展 |
 | created_at / claimed_at / started_at / finished_at | DATETIME | 完整运行时间线 |
@@ -1021,6 +1022,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V119__ai_run_goal_mode.sql`：固化 Codex 原生目标模式、可验证目标、状态与累计用量（见 ADR-169）。
 - `V120__hosted_page_source_type.sql`：固化人工托管页与 AI Run 报告来源，并按稳定报告 id 回填存量页面（见 ADR-170）。
 - `V121__ai_quota_snapshot_history.sql`：保存真实额度的脱敏采样历史，并回填集中账号已有最新基线（见 ADR-174）。
+- `V125__ai_run_execution_duration.sql`：保存 Runner 单调时钟实测的 AI CLI 执行耗时，与领取到终态总耗时分开（见 ADR-181）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

@@ -933,6 +933,41 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
+  it('执行记录区分领取至完成总耗时与 Runner 实测 AI 执行耗时', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({
+        id: 'ar-duration', taskId, status: 'succeeded',
+        claimedAt: '2026-08-31T09:00:00+08:00',
+        startedAt: '2026-08-31T09:00:00+08:00',
+        finishedAt: '2026-08-31T10:02:03+08:00',
+        aiExecutionDurationMs: 12 * 60_000 + 34_000,
+      }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    const timing = w.find('.ai-run-timing')
+    expect(timing.text()).toContain('总耗时 1 小时 2 分')
+    expect(timing.text()).toContain('AI 实际执行 12 分 34 秒')
+    w.unmount()
+  })
+
+  it('旧运行没有 Runner 实测值时不伪造 AI 执行耗时', async () => {
+    const { fetchTaskAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
+      aiRun({ id: 'ar-old-duration', taskId, status: 'succeeded',
+        startedAt: '2026-08-31T09:00:00+08:00', finishedAt: '2026-08-31T09:03:00+08:00' }),
+    ])
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await flushPromises()
+
+    expect(w.find('.ai-run-timing').text()).toContain('AI 实际执行 旧记录未记录')
+    w.unmount()
+  })
+
   it('运行生成持久化报告后提供可分享的新窗口入口', async () => {
     const { fetchTaskAiRuns } = await import('@/api/ai')
     vi.mocked(fetchTaskAiRuns).mockResolvedValueOnce([
