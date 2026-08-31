@@ -47,7 +47,7 @@ class DailyGuidanceServiceTest {
         LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
         when(preferenceMapper.find("wg", DailyGuidanceService.PREFERENCE_KEY)).thenReturn(
                 "{\"date\":\"" + today + "\",\"content\":\"保持好奇，先听后说\","
-                        + "\"generatedAt\":\"2026-08-13T08:00:00\"}");
+                        + "\"generatedAt\":\"2026-08-13T08:00:00\",\"focus\":[]}");
 
         var result = service.today("wg");
 
@@ -59,6 +59,9 @@ class DailyGuidanceServiceTest {
     @Test
     void generatesGrowthCoachFromActiveAndRecentCompletedTasksAndCachesIt() {
         when(preferenceMapper.find("wg", DailyGuidanceService.PREFERENCE_KEY)).thenReturn(null);
+        when(preferenceMapper.find("wg", WorkdayRhythmDashboardService.DAY_KEY_PREFIX
+                + LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"))))
+                .thenReturn("{\"focus\":[\"完成真实环境发布\",\"\",\"整理用户反馈\"]}");
         when(assistant.status()).thenReturn(new AssistantStatusDto(true, "已连接本地节点"));
         when(taskMapper.selectList(any())).thenReturn(List.of(
                 task(), completedTask("复盘一次架构返工", 2), completedTask("过期的旧任务", 40)));
@@ -76,9 +79,27 @@ class DailyGuidanceServiceTest {
         ArgumentCaptor<String> context = ArgumentCaptor.forClass(String.class);
         verify(assistant).dailyGuidanceAnswer(any(), eq("wg"), context.capture());
         assertThat(context.getValue())
-                .contains("## 正在进行", "准备去新公司上班", "## 最近 30 天完成", "复盘一次架构返工")
+                .contains("## 今天已保存的重点", "完成真实环境发布", "整理用户反馈",
+                        "## 正在进行", "准备去新公司上班", "## 最近 30 天完成", "复盘一次架构返工")
                 .doesNotContain("过期的旧任务");
-        verify(preferenceMapper).upsert(eq("wg"), eq(DailyGuidanceService.PREFERENCE_KEY), contains("今天看到的成长信号"));
+        verify(preferenceMapper).upsert(eq("wg"), eq(DailyGuidanceService.PREFERENCE_KEY),
+                contains("完成真实环境发布"));
+    }
+
+    @Test
+    void invalidatesTodayGuidanceWhenSavedFocusChanges() {
+        LocalDate today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        when(preferenceMapper.find("wg", DailyGuidanceService.PREFERENCE_KEY)).thenReturn(
+                "{\"date\":\"" + today + "\",\"content\":\"围绕旧重点生成\","
+                        + "\"generatedAt\":\"2026-08-31T08:00:00\",\"focus\":[\"旧重点\"]}");
+        when(preferenceMapper.find("wg", WorkdayRhythmDashboardService.DAY_KEY_PREFIX + today))
+                .thenReturn("{\"focus\":[\"新的今日重点\"]}");
+        when(assistant.status()).thenReturn(new AssistantStatusDto(true, "已连接本地节点"));
+
+        var result = service.today("wg");
+
+        assertThat(result.status()).isEqualTo("missing");
+        assertThat(result.content()).isNull();
     }
 
     @Test
@@ -117,7 +138,7 @@ class DailyGuidanceServiceTest {
         when(memberMapper.selectList(null)).thenReturn(List.of(member("cached"), member("failed"), member("ready")));
         when(preferenceMapper.find("cached", DailyGuidanceService.PREFERENCE_KEY)).thenReturn(
                 "{\"date\":\"" + today + "\",\"content\":\"已有建议\","
-                        + "\"generatedAt\":\"2026-08-13T08:00:00\"}");
+                        + "\"generatedAt\":\"2026-08-13T08:00:00\",\"focus\":[]}");
         when(assistant.status()).thenReturn(new AssistantStatusDto(true, "已连接本地节点"));
         when(taskMapper.selectList(any())).thenReturn(List.of());
         when(assistant.dailyGuidanceAnswer(any(), eq("failed"), any()))

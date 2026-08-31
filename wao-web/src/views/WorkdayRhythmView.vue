@@ -22,8 +22,12 @@ import {
   type FeishuChat,
   type FeishuWebhookEndpoint,
 } from '@/api/system'
+import { fetchDailyGuidance, generateDailyGuidance, type DailyGuidance } from '@/api/dailyGuidance'
 import { toast } from '@/composables/toast'
 import { useFavoritesStore } from '@/stores/favorites'
+import { useSessionStore } from '@/stores/session'
+import { useUiStore } from '@/stores/ui'
+import { renderMarkdown } from '@/utils/markdown'
 import {
   MAX_FOCUS_COUNT,
   DEFAULT_WORKDAY_RHYTHM,
@@ -47,6 +51,8 @@ import WorkdayRhythmHexagramSummary from '@/components/workday/WorkdayRhythmHexa
 const CONFIG_DRAFT_KEY = 'wao-workday-rhythm-config-draft-v1'
 const RHYTHM_FAVORITE_ID = 'workday-rhythm'
 const favorites = useFavoritesStore()
+const session = useSessionStore()
+const ui = useUiStore()
 const route = useRoute()
 const router = useRouter()
 const clock = ref(shanghaiClock())
@@ -86,6 +92,11 @@ const history = ref<WorkdayRhythmHistory | null>(null)
 const dailyPanelKey = ref(0)
 const tomorrowOpen = ref(false)
 const tianrenEnabled = ref(true)
+const growthCoachOpen = ref(false)
+const growthCoach = ref<DailyGuidance | null>(readCachedGrowthCoach())
+const growthCoachLoading = ref(false)
+const growthCoachRefreshing = ref(false)
+const growthCoachError = ref('')
 let clockTimer: ReturnType<typeof setInterval> | null = null
 
 const dayDraftKey = computed(() => `wao-workday-rhythm-day-draft-${clock.value.date}`)
@@ -153,6 +164,92 @@ let energyItemSequence = 0
 
 function toggleRhythmFavorite() {
   void favorites.toggle('module', RHYTHM_FAVORITE_ID, '今日节奏')
+}
+
+function growthCoachCacheKey() {
+  return `wao-growth-coach-v1:${session.currentUser.id || 'wg'}`
+}
+
+function readCachedGrowthCoach(): DailyGuidance | null {
+  try {
+    const raw = sessionStorage.getItem(growthCoachCacheKey())
+    if (!raw) return null
+    const cached = JSON.parse(raw) as DailyGuidance
+    return cached.status === 'ready' && cached.date === clock.value.date && cached.content
+      ? cached
+      : null
+  } catch {
+    return null
+  }
+}
+
+function rememberGrowthCoach(value: DailyGuidance | null) {
+  try {
+    if (value?.status === 'ready' && value.content && value.date === clock.value.date) {
+      sessionStorage.setItem(growthCoachCacheKey(), JSON.stringify(value))
+    } else {
+      sessionStorage.removeItem(growthCoachCacheKey())
+    }
+  } catch {
+    // 隐私模式禁用会话存储时仍以服务端结果为准。
+  }
+}
+
+async function openGrowthCoach() {
+  growthCoachOpen.value = true
+  await loadGrowthCoach()
+}
+
+async function loadGrowthCoach() {
+  growthCoachLoading.value = !growthCoach.value?.content
+  growthCoachError.value = ''
+  try {
+    const current = await fetchDailyGuidance()
+    growthCoach.value = current
+    rememberGrowthCoach(current)
+  } catch (error) {
+    growthCoachError.value = error instanceof Error ? error.message : '今天的成长启发读取失败'
+  } finally {
+    growthCoachLoading.value = false
+  }
+}
+
+async function refreshGrowthCoach(refresh = true) {
+  if (growthCoachRefreshing.value) return
+  growthCoachRefreshing.value = true
+  growthCoachError.value = ''
+  try {
+    growthCoach.value = await generateDailyGuidance(refresh)
+    rememberGrowthCoach(growthCoach.value)
+  } catch (error) {
+    growthCoachError.value =
+      error instanceof Error ? error.message : '今天的成长启发生成失败，请重试'
+  } finally {
+    growthCoachRefreshing.value = false
+    growthCoachLoading.value = false
+  }
+}
+
+function discussGrowthCoach() {
+  if (!growthCoach.value?.content) return
+  growthCoachOpen.value = false
+  ui.openAssistant(
+    `我想继续聊今天的成长启发。请不要急着给结论，先结合 WAO 里的真实今日重点、项目、Task 和个人记忆，用追问帮我把模糊困惑说清楚。\n\n今天的成长启发：\n${growthCoach.value.content}`,
+  )
+}
+
+function guidanceTime(value?: string | null) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toLocaleString('zh-CN', {
+        hour12: false,
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
 }
 
 function handleDailyPanelLoaded(dashboard: RhythmDashboard) {
@@ -834,6 +931,15 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="focus-header-actions">
                   <button
+                    class="growth-coach-trigger"
+                    type="button"
+                    aria-label="打开成长教练"
+                    title="结合已保存的今日重点获得成长启发"
+                    @click="openGrowthCoach"
+                  >
+                    <i class="ri-compass-discover-line"></i><span>成长教练</span>
+                  </button>
+                  <button
                     class="focus-save"
                     :class="dayState"
                     type="button"
@@ -1307,6 +1413,111 @@ onBeforeUnmount(() => {
       </section>
     </template>
 
+    <template v-if="growthCoachOpen">
+      <div class="mask" @click="growthCoachOpen = false"></div>
+      <section
+        class="growth-coach-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="growth-coach-title"
+      >
+        <header>
+          <span class="growth-coach-icon"><i class="ri-compass-discover-line"></i></span>
+          <div>
+            <small>GROWTH COACH · 今日重点</small>
+            <h2 id="growth-coach-title">从今天要完成的事，再想深一步</h2>
+            <p>结合你已保存的今日重点与真实 Task，找到一条值得刻意训练的能力。</p>
+          </div>
+          <button type="button" aria-label="关闭成长教练" @click="growthCoachOpen = false">
+            <i class="ri-close-line"></i>
+          </button>
+        </header>
+
+        <div class="growth-coach-body">
+          <div v-if="growthCoachLoading && !growthCoach?.content" class="growth-coach-state">
+            <i class="ri-loader-4-line spin"></i>
+            <div>
+              <b>正在读取今天的成长启发</b>
+              <span>只会使用你已保存到 WAO 账号的今日重点与真实 Task。</span>
+            </div>
+          </div>
+          <div
+            v-else-if="growthCoach?.status === 'ready' && growthCoach.content"
+            class="growth-coach-ready"
+          >
+            <div
+              class="growth-coach-content md-body"
+              v-html="renderMarkdown(growthCoach.content)"
+            ></div>
+            <div v-if="growthCoachError" class="growth-coach-error" role="alert">
+              <i class="ri-error-warning-line"></i><span>{{ growthCoachError }}</span>
+              <button
+                type="button"
+                :disabled="growthCoachRefreshing"
+                @click="refreshGrowthCoach(true)"
+              >
+                重试
+              </button>
+            </div>
+          </div>
+          <div
+            v-else
+            class="growth-coach-state"
+            :class="{ error: growthCoachError || growthCoach?.status === 'unavailable' }"
+          >
+            <i
+              :class="growthCoach?.status === 'missing' ? 'ri-time-line' : 'ri-error-warning-line'"
+            ></i>
+            <div>
+              <b>{{
+                growthCoach?.status === 'missing' ? '今天的成长启发等待生成' : '成长教练暂时不可用'
+              }}</b>
+              <span>{{
+                growthCoachError || growthCoach?.message || '稍后可以重新读取真实结果。'
+              }}</span>
+            </div>
+            <div class="growth-coach-state-actions">
+              <button type="button" @click="loadGrowthCoach">
+                <i class="ri-refresh-line"></i>重新读取
+              </button>
+              <button
+                v-if="growthCoach?.status === 'missing'"
+                class="primary"
+                type="button"
+                :disabled="growthCoachRefreshing"
+                @click="refreshGrowthCoach(false)"
+              >
+                <i
+                  :class="growthCoachRefreshing ? 'ri-loader-4-line spin' : 'ri-sparkling-line'"
+                ></i
+                >{{ growthCoachRefreshing ? '生成中…' : '现在生成' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <footer v-if="growthCoach?.status === 'ready' && growthCoach.content">
+          <small v-if="growthCoach.generatedAt">
+            <i class="ri-shield-check-line"></i>{{ guidanceTime(growthCoach.generatedAt) }} 生成 ·
+            已融合当时保存的今日重点
+          </small>
+          <span></span>
+          <button
+            class="growth-coach-refresh"
+            type="button"
+            :disabled="growthCoachRefreshing"
+            @click="refreshGrowthCoach(true)"
+          >
+            <i :class="growthCoachRefreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
+            {{ growthCoachRefreshing ? '正在换个角度…' : '换个角度' }}
+          </button>
+          <button class="growth-coach-discuss" type="button" @click="discussGrowthCoach">
+            <i class="ri-chat-smile-3-line"></i>带着这个问题继续聊
+          </button>
+        </footer>
+      </section>
+    </template>
+
     <template v-if="historyOpen">
       <div class="mask" @click="historyOpen = false"></div>
       <section
@@ -1771,7 +1982,8 @@ textarea {
   gap: 8px;
 }
 .focus-card header .focus-save,
-.focus-card header .tomorrow-toggle {
+.focus-card header .tomorrow-toggle,
+.focus-card header .growth-coach-trigger {
   width: 32px;
   height: 32px;
   border: 1px solid var(--wao-line-control);
@@ -1781,6 +1993,17 @@ textarea {
   display: grid;
   place-items: center;
   cursor: pointer;
+}
+.focus-card header .growth-coach-trigger {
+  width: auto;
+  padding: 0 9px;
+  border-color: color-mix(in srgb, #7558d8 36%, var(--wao-line-control));
+  background: color-mix(in srgb, #7558d8 8%, var(--wao-bg-card));
+  color: #6548c4;
+  display: inline-flex;
+  gap: 5px;
+  font-size: 10px;
+  white-space: nowrap;
 }
 .focus-card header .focus-save.dirty {
   border-color: color-mix(in srgb, var(--wao-primary) 42%, var(--wao-line-control));
@@ -2125,6 +2348,206 @@ textarea {
   inset: 0;
   z-index: 100;
   background: rgba(18, 29, 26, 0.44);
+}
+.growth-coach-dialog {
+  position: fixed;
+  z-index: 101;
+  top: 5vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 28px));
+  max-height: 90vh;
+  border: 1px solid color-mix(in srgb, #7558d8 30%, var(--wao-line));
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 92% 0, color-mix(in srgb, #7558d8 11%, transparent), transparent 35%),
+    var(--wao-bg-card);
+  box-shadow: var(--wao-shadow-modal);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.growth-coach-dialog > header {
+  min-height: 88px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--wao-divider);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.growth-coach-dialog > header > div {
+  min-width: 0;
+  flex: 1;
+}
+.growth-coach-dialog > header small {
+  color: #6548c4;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 1.4px;
+}
+.growth-coach-dialog > header h2 {
+  margin: 4px 0 3px;
+  font-size: 18px;
+}
+.growth-coach-dialog > header p {
+  margin: 0;
+  color: var(--wao-text-weak);
+  font-size: 10.5px;
+}
+.growth-coach-dialog > header > button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.growth-coach-icon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  background: color-mix(in srgb, #7558d8 14%, var(--wao-bg-card));
+  color: #7558d8;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+}
+.growth-coach-body {
+  min-height: 190px;
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+.growth-coach-state {
+  min-height: 140px;
+  border: 1px dashed var(--wao-line);
+  border-radius: 12px;
+  padding: 18px;
+  color: var(--wao-text-weak);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.growth-coach-state > i {
+  color: #7558d8;
+  font-size: 22px;
+}
+.growth-coach-state > div:not(.growth-coach-state-actions) {
+  min-width: 0;
+  flex: 1;
+}
+.growth-coach-state b,
+.growth-coach-state span {
+  display: block;
+}
+.growth-coach-state b {
+  color: var(--wao-text-2);
+  font-size: 12px;
+}
+.growth-coach-state span {
+  margin-top: 4px;
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+.growth-coach-state.error > i {
+  color: var(--wao-danger-strong);
+}
+.growth-coach-state-actions {
+  display: flex;
+  gap: 7px;
+}
+.growth-coach-state-actions button,
+.growth-coach-refresh,
+.growth-coach-discuss,
+.growth-coach-error button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  cursor: pointer;
+  font-size: 10.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.growth-coach-state-actions .primary,
+.growth-coach-discuss {
+  border-color: #7558d8;
+  background: #7558d8;
+  color: #fff;
+}
+.growth-coach-state-actions button:disabled,
+.growth-coach-refresh:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.growth-coach-content {
+  color: var(--wao-text-2);
+  font-size: 12px;
+  line-height: 1.75;
+}
+.growth-coach-content :deep(h2),
+.growth-coach-content :deep(h3) {
+  margin: 14px 0 5px;
+  color: var(--wao-text);
+  font-size: 13px;
+}
+.growth-coach-content :deep(h2:first-child),
+.growth-coach-content :deep(h3:first-child) {
+  margin-top: 0;
+}
+.growth-coach-content :deep(p) {
+  margin: 5px 0;
+}
+.growth-coach-content :deep(blockquote) {
+  margin: 8px 0;
+  padding: 9px 12px;
+  border-left: 3px solid #7558d8;
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, #7558d8 7%, var(--wao-bg-card));
+}
+.growth-coach-error {
+  margin-top: 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--wao-danger-line);
+  border-radius: 9px;
+  background: var(--wao-danger-bg);
+  color: var(--wao-danger-strong);
+  font-size: 10.5px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.growth-coach-error span {
+  min-width: 0;
+  flex: 1;
+}
+.growth-coach-error button {
+  min-height: 28px;
+  color: inherit;
+}
+.growth-coach-dialog > footer {
+  min-height: 64px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--wao-divider);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.growth-coach-dialog > footer small {
+  color: var(--wao-text-faint);
+  font-size: 9.5px;
+}
+.growth-coach-dialog > footer small i {
+  margin-right: 4px;
+  color: var(--wao-success-strong);
+}
+.growth-coach-dialog > footer > span {
+  flex: 1;
 }
 .history-dialog {
   position: fixed;
@@ -2809,6 +3232,45 @@ textarea {
     top: 10px;
     width: calc(100vw - 20px);
     max-height: calc(100dvh - 20px);
+  }
+  .growth-coach-dialog {
+    top: 10px;
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+  .growth-coach-dialog > header {
+    min-height: 76px;
+    padding: 12px 14px;
+  }
+  .growth-coach-dialog > header p {
+    display: none;
+  }
+  .growth-coach-body {
+    padding: 14px;
+  }
+  .growth-coach-state {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .growth-coach-state-actions {
+    width: 100%;
+  }
+  .growth-coach-state-actions button {
+    flex: 1;
+  }
+  .growth-coach-dialog > footer {
+    align-items: stretch;
+    flex-wrap: wrap;
+    padding: 11px 14px;
+  }
+  .growth-coach-dialog > footer small,
+  .growth-coach-dialog > footer > span {
+    width: 100%;
+    flex: auto;
+  }
+  .growth-coach-refresh,
+  .growth-coach-discuss {
+    flex: 1;
   }
   .history-dialog > header p {
     display: none;

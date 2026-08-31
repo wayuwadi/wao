@@ -15,7 +15,9 @@ import {
   setRhythmWorkdayStatus,
 } from '@/api/workdayRhythm'
 import { fetchFeishuChats, fetchWebhookEndpoints } from '@/api/system'
+import { fetchDailyGuidance, generateDailyGuidance } from '@/api/dailyGuidance'
 import { apiAddFavorite, apiRemoveFavorite, fetchFavorites } from '@/api/favorites'
+import { useUiStore } from '@/stores/ui'
 import {
   DEFAULT_WORKDAY_RHYTHM,
   cloneRhythmConfig,
@@ -38,6 +40,11 @@ vi.mock('@/api/workdayRhythm', () => ({
 vi.mock('@/api/system', () => ({
   fetchFeishuChats: vi.fn<typeof fetchFeishuChats>(),
   fetchWebhookEndpoints: vi.fn<typeof fetchWebhookEndpoints>(),
+}))
+
+vi.mock('@/api/dailyGuidance', () => ({
+  fetchDailyGuidance: vi.fn<typeof fetchDailyGuidance>(),
+  generateDailyGuidance: vi.fn<typeof generateDailyGuidance>(),
 }))
 
 vi.mock('@/api/favorites', () => ({
@@ -78,6 +85,7 @@ async function mountView(path = '/workday-rhythm') {
 describe('WorkdayRhythmView', () => {
   beforeEach(() => {
     localStorage.clear()
+    sessionStorage.clear()
     vi.mocked(fetchWorkdayRhythm).mockResolvedValue(cloneRhythmConfig(DEFAULT_WORKDAY_RHYTHM))
     vi.mocked(fetchWorkdayRhythmHistory).mockResolvedValue({
       from: `${clock.date.slice(0, 7)}-01`,
@@ -124,6 +132,21 @@ describe('WorkdayRhythmView', () => {
     vi.mocked(fetchFavorites).mockResolvedValue([])
     vi.mocked(apiAddFavorite).mockResolvedValue()
     vi.mocked(apiRemoveFavorite).mockResolvedValue()
+    vi.mocked(fetchDailyGuidance).mockResolvedValue({
+      date: clock.date,
+      status: 'ready',
+      content:
+        '## 今天看到的成长信号\n\n围绕「完成上线链路验收」，你正在从实现走向完整交付。\n\n## 换个角度\n\n先定义验收证据。\n\n## 问问自己\n\n> 哪个判断最影响今天的结果？\n\n## 今天做个小实验\n\n记录一次判断及结果。',
+      message: '已结合今日重点与真实 Task 生成',
+      generatedAt: '2026-08-31T08:00:00',
+    })
+    vi.mocked(generateDailyGuidance).mockResolvedValue({
+      date: clock.date,
+      status: 'ready',
+      content: '## 今天看到的成长信号\n\n换一个融合今日重点的真实视角。',
+      message: '已结合今日重点与真实 Task 生成',
+      generatedAt: '2026-08-31T09:00:00',
+    })
   })
   afterEach(() => vi.clearAllMocks())
 
@@ -177,6 +200,67 @@ describe('WorkdayRhythmView', () => {
       }),
     )
     expect(wrapper.text()).toContain('已保存到你的 WAO 账号')
+    wrapper.unmount()
+  })
+
+  it('只在今日重点旁按需打开成长教练并展示融合后的真实结果', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.growth-coach-trigger').text()).toContain('成长教练')
+    expect(wrapper.find('.growth-coach-dialog').exists()).toBe(false)
+    expect(fetchDailyGuidance).not.toHaveBeenCalled()
+
+    await wrapper.get('.growth-coach-trigger').trigger('click')
+    await flushPromises()
+
+    expect(fetchDailyGuidance).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.growth-coach-dialog').text()).toContain('从今天要完成的事，再想深一步')
+    expect(wrapper.get('.growth-coach-content').text()).toContain('完成上线链路验收')
+    expect(wrapper.get('.growth-coach-dialog').text()).toContain('已融合当时保存的今日重点')
+    wrapper.unmount()
+  })
+
+  it('成长教练支持换角度并把可编辑问题带入 WAO AI', async () => {
+    const wrapper = await mountView()
+    await flushPromises()
+    await wrapper.get('.growth-coach-trigger').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('.growth-coach-refresh').trigger('click')
+    await flushPromises()
+    expect(generateDailyGuidance).toHaveBeenCalledWith(true)
+    expect(wrapper.get('.growth-coach-content').text()).toContain('融合今日重点的真实视角')
+
+    await wrapper.get('.growth-coach-discuss').trigger('click')
+    const ui = useUiStore()
+    expect(wrapper.find('.growth-coach-dialog').exists()).toBe(false)
+    expect(ui.assistantOpen).toBe(true)
+    expect(ui.assistantDraft).toContain('真实今日重点')
+    expect(ui.assistantDraft).toContain('融合今日重点的真实视角')
+    wrapper.unmount()
+  })
+
+  it('重点变化使后台结果待生成时保留重新读取和立即生成入口', async () => {
+    vi.mocked(fetchDailyGuidance).mockResolvedValueOnce({
+      date: clock.date,
+      status: 'missing',
+      content: null,
+      message: '今日重点已变化，请按需生成新的成长启发',
+      generatedAt: null,
+    })
+    const wrapper = await mountView()
+    await flushPromises()
+
+    await wrapper.get('.growth-coach-trigger').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.growth-coach-state').text()).toContain('今天的成长启发等待生成')
+    expect(wrapper.get('.growth-coach-state').text()).toContain('现在生成')
+
+    await wrapper.get('.growth-coach-state .primary').trigger('click')
+    await flushPromises()
+    expect(generateDailyGuidance).toHaveBeenCalledWith(false)
+    expect(wrapper.get('.growth-coach-content').text()).toContain('融合今日重点的真实视角')
     wrapper.unmount()
   })
 

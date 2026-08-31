@@ -42,17 +42,11 @@ import { formatCost, formatTokens, reasoningEffortLabel, shortModel } from '@/co
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
 import { fetchWebhookEndpoints, type FeishuWebhookEndpoint } from '@/api/system'
-import {
-  fetchDailyGuidance,
-  generateDailyGuidance,
-  type DailyGuidance,
-} from '@/api/dailyGuidance'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import type { AiEngine, AiRun, AiRunOptions, AiRunStatus, AiRunner, AiRunnerLog, AiWorkflow, Task, TaskStatus } from '@/types'
-import { renderMarkdown } from '@/utils/markdown'
 
 type ConsoleView = 'runs' | 'runners' | 'workflows'
 
@@ -105,10 +99,6 @@ const goalRunOptionsError = ref('')
 const goalReasoningEffort = ref('')
 const launchingGoal = ref(false)
 const goalImageUploads = ref(0)
-const growthCoach = ref<DailyGuidance | null>(readCachedGrowthCoach())
-const growthCoachLoading = ref(!growthCoach.value)
-const growthCoachRefreshing = ref(false)
-const growthCoachError = ref('')
 const selectedRun = ref<AiRun | null>(null)
 const runHistoryOpen = ref(false)
 const runHistory = ref<AiActivity[]>([])
@@ -398,76 +388,6 @@ async function refreshQuotaOverview() {
   } catch {
     // 额度读取失败时隐藏入口，运行状态与目标派发继续可用。
   }
-}
-
-function growthCoachBusinessDate() {
-  const parts = new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date())
-  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
-  return `${value.year}-${value.month}-${value.day}`
-}
-
-function growthCoachCacheKey() {
-  return `wao-growth-coach-v1:${session.currentUser.id || 'wg'}`
-}
-
-function readCachedGrowthCoach(): DailyGuidance | null {
-  try {
-    const raw = sessionStorage.getItem(growthCoachCacheKey())
-    if (!raw) return null
-    const cached = JSON.parse(raw) as DailyGuidance
-    return cached.status === 'ready' && cached.date === growthCoachBusinessDate() && cached.content
-      ? cached : null
-  } catch {
-    return null
-  }
-}
-
-function rememberGrowthCoach(value: DailyGuidance | null) {
-  try {
-    if (value?.status === 'ready' && value.content && value.date === growthCoachBusinessDate()) {
-      sessionStorage.setItem(growthCoachCacheKey(), JSON.stringify(value))
-    } else {
-      sessionStorage.removeItem(growthCoachCacheKey())
-    }
-  } catch {
-    // 隐私模式禁用会话存储时仍以服务端预生成结果为准。
-  }
-}
-
-async function loadGrowthCoach() {
-  growthCoachLoading.value = !growthCoach.value?.content
-  growthCoachError.value = ''
-  try {
-    const current = await fetchDailyGuidance()
-    growthCoach.value = current
-    rememberGrowthCoach(current)
-  } catch (error) {
-    growthCoachError.value = error instanceof Error ? error.message : '今天的成长启发读取失败'
-  } finally {
-    growthCoachLoading.value = false
-  }
-}
-
-async function refreshGrowthCoach(refresh = true) {
-  if (growthCoachRefreshing.value) return
-  growthCoachRefreshing.value = true
-  growthCoachError.value = ''
-  try {
-    growthCoach.value = await generateDailyGuidance(refresh)
-    rememberGrowthCoach(growthCoach.value)
-  } catch (error) {
-    growthCoachError.value = error instanceof Error ? error.message : '今天的成长启发生成失败，请重试'
-  } finally {
-    growthCoachRefreshing.value = false
-    growthCoachLoading.value = false
-  }
-}
-
-function discussGrowthCoach() {
-  if (!growthCoach.value?.content) return
-  ui.openAssistant(`我想继续聊今天的成长启发。请不要急着给结论，先结合 WAO 里的真实项目、Task 和个人记忆，用追问帮我把模糊困惑说清楚。\n\n今天的成长启发：\n${growthCoach.value.content}`)
 }
 
 /** 后台轮询只在没有本地草稿时回填，避免覆盖用户正在修改的开关或小时数。 */
@@ -1197,7 +1117,6 @@ onMounted(() => {
   restoreGoalDraft()
   void refresh()
   void refreshWorkflows()
-  void loadGrowthCoach()
   void refreshGoalRunOptions()
   void refreshQuotaOverview()
   void refreshTaskAutoRunPolicy()
@@ -1397,57 +1316,6 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section id="growth-coach" class="growth-coach" data-page-anchor="成长教练" aria-labelledby="growth-coach-title">
-        <header class="growth-coach-head">
-          <span class="growth-coach-icon"><i class="ri-compass-discover-line"></i></span>
-          <div>
-            <div class="eyebrow dark">GROWTH COACH</div>
-            <h2 id="growth-coach-title">今天别只比 Coding</h2>
-            <p>从你真实做过和正在做的事里，找到一条值得刻意训练的 L2–L5 能力。</p>
-          </div>
-          <button
-            v-if="growthCoach?.status === 'ready'"
-            class="growth-coach-refresh"
-            :disabled="growthCoachRefreshing"
-            @click="refreshGrowthCoach(true)"
-          >
-            <i :class="growthCoachRefreshing ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>
-            {{ growthCoachRefreshing ? '正在换个角度…' : '换个角度' }}
-          </button>
-        </header>
-
-        <div v-if="growthCoachLoading && !growthCoach?.content" class="growth-coach-state">
-          <i class="ri-loader-4-line spin"></i>
-          <div><b>正在读取今天的成长启发</b><span>后台会结合你的真实 Task 提前准备。</span></div>
-        </div>
-        <div v-else-if="growthCoach?.status === 'ready' && growthCoach.content" class="growth-coach-ready">
-          <div class="growth-coach-content md-body" v-html="renderMarkdown(growthCoach.content)"></div>
-          <footer>
-            <small v-if="growthCoach.generatedAt"><i class="ri-shield-check-line"></i>{{ timeText(growthCoach.generatedAt) }} 生成 · 只使用你的 WAO 上下文</small>
-            <button class="growth-coach-discuss" @click="discussGrowthCoach">
-              <i class="ri-chat-smile-3-line"></i>带着这个问题继续聊
-            </button>
-          </footer>
-          <div v-if="growthCoachError" class="growth-coach-error" role="alert">
-            <i class="ri-error-warning-line"></i><span>{{ growthCoachError }}</span>
-            <button :disabled="growthCoachRefreshing" @click="refreshGrowthCoach(true)">重试</button>
-          </div>
-        </div>
-        <div v-else class="growth-coach-state" :class="{ error: growthCoachError || growthCoach?.status === 'unavailable' }">
-          <i :class="growthCoach?.status === 'missing' ? 'ri-time-line' : 'ri-error-warning-line'"></i>
-          <div>
-            <b>{{ growthCoach?.status === 'missing' ? '今天的成长启发正在准备' : '成长教练暂时不可用' }}</b>
-            <span>{{ growthCoachError || growthCoach?.message || '稍后可以重新读取真实结果。' }}</span>
-          </div>
-          <button @click="loadGrowthCoach"><i class="ri-refresh-line"></i>重新读取</button>
-          <button
-            v-if="growthCoach?.status === 'missing'"
-            class="primary"
-            :disabled="growthCoachRefreshing"
-            @click="refreshGrowthCoach(false)"
-          ><i :class="growthCoachRefreshing ? 'ri-loader-4-line spin' : 'ri-sparkling-line'"></i>{{ growthCoachRefreshing ? '生成中…' : '现在生成' }}</button>
-        </div>
-      </section>
     </div>
 
     <nav id="ai-console" class="console-tabs" data-page-anchor="AI 运行控制台">
@@ -2473,59 +2341,6 @@ onBeforeUnmount(() => {
 .goal-submit { min-width: 112px; height: 32px; padding: 0 12px; border: 1px solid var(--wao-primary); border-radius: 8px; background: var(--wao-primary); color: #fff; cursor: pointer; font-size: 11.5px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .goal-submit.setup { min-width: 140px; }
 .goal-submit:disabled { opacity: .55; cursor: not-allowed; }
-.growth-coach {
-  grid-column: 1 / -1;
-  overflow: hidden;
-  padding: 18px 20px;
-  border: 1px solid color-mix(in srgb, #7558d8 35%, var(--wao-line));
-  border-radius: 15px;
-  background:
-    radial-gradient(circle at 92% 0, color-mix(in srgb, #7558d8 12%, transparent), transparent 34%),
-    var(--wao-bg-card);
-  box-shadow: var(--wao-shadow-card);
-}
-.growth-coach-head { display: flex; align-items: flex-start; gap: 12px; }
-.growth-coach-head > div { min-width: 0; flex: 1; }
-.growth-coach-icon { width: 38px; height: 38px; flex: 0 0 auto; border-radius: 11px; background: color-mix(in srgb, #7558d8 13%, var(--wao-bg-card)); color: #7558d8; display: grid; place-items: center; font-size: 19px; }
-.growth-coach-head h2 { margin: 5px 0 4px; color: var(--wao-text); font-size: 17px; }
-.growth-coach-head p { margin: 0; color: var(--wao-text-weak); font-size: 11.5px; line-height: 1.6; }
-.growth-coach-refresh, .growth-coach-discuss, .growth-coach-state > button, .growth-coach-error button {
-  min-height: 32px;
-  padding: 0 11px;
-  border: 1px solid var(--wao-line);
-  border-radius: 8px;
-  background: var(--wao-bg-card);
-  color: var(--wao-text-2);
-  cursor: pointer;
-  font-size: 11px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-}
-.growth-coach-refresh:disabled, .growth-coach-state > button:disabled { opacity: .55; cursor: default; }
-.growth-coach-ready { margin: 15px 0 0 50px; }
-.growth-coach-content { color: var(--wao-text-2); font-size: 12px; line-height: 1.72; }
-.growth-coach-content :deep(h2), .growth-coach-content :deep(h3) { margin: 13px 0 4px; color: var(--wao-text); font-size: 13px; }
-.growth-coach-content :deep(h2:first-child), .growth-coach-content :deep(h3:first-child) { margin-top: 0; }
-.growth-coach-content :deep(p) { margin: 4px 0; }
-.growth-coach-content :deep(ul) { margin: 5px 0; padding-left: 19px; }
-.growth-coach-content :deep(blockquote) { margin: 7px 0; padding: 8px 11px; border-left: 3px solid #7558d8; border-radius: 0 8px 8px 0; background: color-mix(in srgb, #7558d8 7%, var(--wao-bg-card)); }
-.growth-coach-ready footer { margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--wao-divider); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.growth-coach-ready footer small { color: var(--wao-text-faint); font-size: 10px; }
-.growth-coach-ready footer small i { margin-right: 4px; color: var(--wao-success-strong); }
-.growth-coach-discuss { border-color: color-mix(in srgb, #7558d8 45%, var(--wao-line)); color: #6548c4; }
-.growth-coach-state { min-height: 74px; margin: 14px 0 0 50px; padding: 13px 14px; border: 1px dashed var(--wao-line); border-radius: 10px; color: var(--wao-text-weak); display: flex; align-items: center; gap: 10px; }
-.growth-coach-state > i { color: #7558d8; font-size: 19px; }
-.growth-coach-state > div { min-width: 0; flex: 1; }
-.growth-coach-state b, .growth-coach-state span { display: block; }
-.growth-coach-state b { color: var(--wao-text-2); font-size: 12px; }
-.growth-coach-state span { margin-top: 3px; font-size: 10.5px; line-height: 1.5; }
-.growth-coach-state.error > i { color: var(--wao-danger-strong); }
-.growth-coach-state > button.primary { border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
-.growth-coach-error { margin-top: 10px; padding: 9px 10px; border: 1px solid var(--wao-danger-line); border-radius: 8px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); font-size: 10.5px; display: flex; align-items: center; gap: 7px; }
-.growth-coach-error span { min-width: 0; flex: 1; }
-.growth-coach-error button { min-height: 27px; color: inherit; }
 .console-tabs {
   margin-top: 10px;
   padding: 5px;
@@ -3153,15 +2968,6 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .goal-actions select { flex: 1; max-width: none; }
   .goal-shortcut { margin-left: 0; }
   .goal-submit { margin-left: auto; }
-  .growth-coach { padding: 10px; }
-  .growth-coach-head { flex-wrap: wrap; }
-  .growth-coach-head .growth-coach-refresh { margin-left: 50px; }
-  .growth-coach-ready, .growth-coach-state { margin-left: 0; }
-  .growth-coach-ready footer { align-items: stretch; flex-direction: column; }
-  .growth-coach-discuss { width: 100%; }
-  .growth-coach-state { align-items: stretch; flex-wrap: wrap; }
-  .growth-coach-state > div { flex-basis: calc(100% - 32px); }
-  .growth-coach-state > button { flex: 1; }
   .console-tabs { margin-top: 7px; padding: 3px; overflow-x: auto; }
   .console-tabs button { padding: 6px 8px; font-size: 10px; }
   .run-section, .recent-section { margin-top: 7px; padding: 8px; }
