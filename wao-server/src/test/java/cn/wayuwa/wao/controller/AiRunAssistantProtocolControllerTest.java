@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -12,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.GlobalExceptionHandler;
 import cn.wayuwa.wao.dto.AiAssistantClaimDto;
+import cn.wayuwa.wao.dto.ReviewableTaskDto;
 import cn.wayuwa.wao.service.AiAccountService;
 import cn.wayuwa.wao.service.AiAssistantService;
 import cn.wayuwa.wao.service.AiEvolutionService;
@@ -19,6 +21,7 @@ import cn.wayuwa.wao.service.AiRunService;
 import cn.wayuwa.wao.service.AiTaskAutoRunService;
 import cn.wayuwa.wao.service.AiSkillCapabilityService;
 import cn.wayuwa.wao.service.SkillMarketService;
+import cn.wayuwa.wao.service.TaskReviewService;
 import cn.wayuwa.wao.service.AiRunnerLifecycleService;
 import cn.wayuwa.wao.service.AiRunnerWakeService;
 import org.junit.jupiter.api.Test;
@@ -45,6 +48,21 @@ class AiRunAssistantProtocolControllerTest {
     @MockBean private AiTaskAutoRunService taskAutoRunService;
     @MockBean private AiSkillCapabilityService skillCapabilities;
     @MockBean private SkillMarketService skillMarket;
+    @MockBean private TaskReviewService taskReviews;
+
+    @Test
+    void reviewableTasksUseTheCurrentMembersVisibleScope() throws Exception {
+        when(currentMember.idOr(org.mockito.ArgumentMatchers.any(), eq("wg"))).thenReturn("wd");
+        when(taskReviews.list("wd")).thenReturn(java.util.List.of(
+                new ReviewableTaskDto("t1", "等待验收", "p1", "WAO", "P1", "待验证",
+                        "ACCEPTANCE", "ar1", "deployment_succeeded", "部署成功", "2026-08-31T10:00:00+08:00")));
+
+        mockMvc.perform(get("/api/ai/reviewable-tasks"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].taskId").value("t1"))
+                .andExpect(jsonPath("$.data[0].action").value("ACCEPTANCE"));
+        verify(taskReviews).list("wd");
+    }
 
     @Test
     void claimReturnsTheAttemptTokenToTheRunner() throws Exception {

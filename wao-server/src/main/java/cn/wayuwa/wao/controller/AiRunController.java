@@ -36,6 +36,7 @@ import cn.wayuwa.wao.dto.AiSkillCapabilityDto;
 import cn.wayuwa.wao.dto.SaveAiEvolutionScheduleRequest;
 import cn.wayuwa.wao.dto.SaveAiTaskAutoRunPolicyRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
+import cn.wayuwa.wao.dto.ReviewableTaskDto;
 import cn.wayuwa.wao.dto.RunnerScriptDto;
 import cn.wayuwa.wao.dto.RunnerHeartbeatRequest;
 import cn.wayuwa.wao.dto.UpdateRunnerConcurrencyRequest;
@@ -50,6 +51,7 @@ import cn.wayuwa.wao.service.AiEvolutionService;
 import cn.wayuwa.wao.service.AiTaskAutoRunService;
 import cn.wayuwa.wao.service.AiSkillCapabilityService;
 import cn.wayuwa.wao.service.SkillMarketService;
+import cn.wayuwa.wao.service.TaskReviewService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -85,13 +87,14 @@ public class AiRunController {
     private final AiTaskAutoRunService taskAutoRunService;
     private final AiSkillCapabilityService skillCapabilities;
     private final SkillMarketService skillMarket;
+    private final TaskReviewService taskReviews;
 
     public AiRunController(AiRunService service, AiAccountService aiAccountService,
             AiAssistantService assistantService,
             AiRunnerWakeService wakeService, AiRunnerLifecycleService lifecycleService,
             CurrentMember currentMember, AiEvolutionService evolutionService,
             AiTaskAutoRunService taskAutoRunService, AiSkillCapabilityService skillCapabilities,
-            SkillMarketService skillMarket) {
+            SkillMarketService skillMarket, TaskReviewService taskReviews) {
         this.service = service;
         this.aiAccountService = aiAccountService;
         this.assistantService = assistantService;
@@ -102,6 +105,7 @@ public class AiRunController {
         this.taskAutoRunService = taskAutoRunService;
         this.skillCapabilities = skillCapabilities;
         this.skillMarket = skillMarket;
+        this.taskReviews = taskReviews;
     }
 
     @GetMapping("/projects/{projectId}/config")
@@ -279,6 +283,12 @@ public class AiRunController {
     @GetMapping("/runs")
     public ApiResponse<List<AiRunDto>> runs(@RequestParam(defaultValue = "false") boolean active) {
         return ApiResponse.ok(service.listRuns(active));
+    }
+
+    /** 首页集中读取当前成员需要验收或基于报错重跑的任务。 */
+    @GetMapping("/reviewable-tasks")
+    public ApiResponse<List<ReviewableTaskDto>> reviewableTasks(HttpServletRequest http) {
+        return ApiResponse.ok(taskReviews.list(currentMember.idOr(http, "wg")));
     }
 
     /** 已结束运行的完整分页历史；首页只取八条，用户主动打开时才读取。 */

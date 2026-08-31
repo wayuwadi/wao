@@ -16,6 +16,7 @@ import {
   fetchAiTaskAutoRunPolicy,
   fetchAiRunners,
   fetchAiWorkflows,
+  fetchReviewableTasks,
   launchAutonomousGoal,
   pauseAiRun,
   removeAiRunner,
@@ -100,6 +101,18 @@ vi.mock('@/api/ai', () => ({
     sessionId: null, exitCode: 0, createdAt: '2026-07-24T10:00:00',
     startedAt: '2026-07-24T10:00:00', finishedAt: '2026-07-24T10:10:00',
   }),
+  fetchReviewableTasks: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
+    {
+      taskId: 't2', title: '根据截图修复展示', projectId: 'p1', projectName: 'Wa All in One',
+      priority: 'P1', taskStatus: '进行中', action: 'RETRY', runId: 'ar1', deliveryStage: 'code_failed',
+      resultPreview: '失败阶段：准备 Git 工作区', finishedAt: '2026-07-25T18:51:00',
+    },
+    {
+      taskId: 't1', title: '设计任务详情抽屉交互稿', projectId: 'p1', projectName: 'Wa All in One',
+      priority: 'P0', taskStatus: '待验证', action: 'ACCEPTANCE', runId: 'ar-success',
+      deliveryStage: 'deployment_succeeded', resultPreview: '部署成功', finishedAt: '2026-07-25T18:40:00',
+    },
+  ]),
   fetchAiRunHistory: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
     items: [{
       id: 'ar-history', taskId: 't3', taskTitle: '历史运行', previewImages: [],
@@ -498,6 +511,67 @@ describe('HomeView AI 控制台', () => {
     expect(dialog.text()).not.toContain('根据截图修复展示')
     expect(dialog.findAll('.quick-task-list-item').length).toBeGreaterThan(0)
     mounted.wrapper.unmount()
+  })
+
+  it('在最近 AI 运行旁集中区分待验收与需重试任务', async () => {
+    vi.useFakeTimers()
+    const { router, wrapper } = mountHome()
+    await flushPromises()
+
+    const trigger = wrapper.find('.reviewable-task-trigger')
+    expect(trigger.text()).toContain('可验收的任务')
+    expect(trigger.text()).toContain('2')
+    await trigger.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('.reviewable-task-dialog')
+    expect(fetchReviewableTasks).toHaveBeenCalled()
+    expect(dialog.text()).toContain('需重试')
+    expect(dialog.text()).toContain('待验收')
+    expect(dialog.text()).toContain('失败阶段：准备 Git 工作区')
+    expect(dialog.findAll('.reviewable-task-item')).toHaveLength(2)
+
+    await dialog.find('.reviewable-task-group:last-child .reviewable-task-action').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/projects/p1?task=t1')
+    wrapper.unmount()
+  })
+
+  it('需重试任务先打开失败档案并保留基于报错重跑入口', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.reviewable-task-trigger').trigger('click')
+    await flushPromises()
+    await wrapper.find('.reviewable-task-action.retry').trigger('click')
+    await flushPromises()
+
+    const runDetail = wrapper.find('.run-activity-detail')
+    expect(runDetail.text()).toContain('失败阶段：准备 Git 工作区')
+    expect(runDetail.text()).toContain('基于报错重跑')
+    wrapper.unmount()
+  })
+
+  it('可验收任务读取失败时保留弹层并可原地重试', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchReviewableTasks)
+      .mockRejectedValueOnce(new Error('验收队列暂时不可用'))
+      .mockRejectedValueOnce(new Error('验收队列暂时不可用'))
+      .mockResolvedValueOnce([])
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.reviewable-task-trigger').trigger('click')
+    await flushPromises()
+    const dialog = wrapper.find('.reviewable-task-dialog')
+    expect(dialog.text()).toContain('验收队列暂时不可用')
+    expect(dialog.find('.quick-task-dialog-state.error button').text()).toBe('重试')
+
+    await dialog.find('.quick-task-dialog-state.error button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.reviewable-task-dialog').text()).toContain('当前没有待验收或需重试的任务')
+    wrapper.unmount()
   })
 
   it('从可 AI Run 清单启动任务后保持弹层并继续展示下一条', async () => {
