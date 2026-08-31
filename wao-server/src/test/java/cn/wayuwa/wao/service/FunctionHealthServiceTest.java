@@ -32,6 +32,7 @@ class FunctionHealthServiceTest {
         var overview = service.overview("member-a");
 
         assertThat(overview.recentOpens()).isZero();
+        assertThat(overview.functions()).extracting("featureId").contains("crawler-capabilities");
         assertThat(overview.functions()).allSatisfy(item -> {
             assertThat(item.score()).isEqualTo(1);
             assertThat(item.recentOpens()).isZero();
@@ -68,6 +69,17 @@ class FunctionHealthServiceTest {
 
         verify(products).incrementIteration("navigation");
         verify(products, never()).incrementIteration("deploy");
+    }
+
+    @Test
+    void crawlerScopeMapsToCrawlerCapabilityFeature() {
+        when(iterations.insertIgnore("run-crawler", "crawler-capabilities", "crawler-sha",
+                "feat(crawler): 新增爬虫能力管理")).thenReturn(1);
+
+        service.recordIterations("run-crawler", List.of(new FunctionIterationInput(
+                "crawler-sha", "crawler", "feat(crawler): 新增爬虫能力管理")));
+
+        verify(products).incrementIteration("crawler-capabilities");
     }
 
     @Test

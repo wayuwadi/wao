@@ -237,6 +237,22 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 
 ## 自动化域
 
+### crawler_capability（爬虫能力源码资产，V130）
+
+| 列 | 类型 | 说明 |
+|---|---|---|
+| id | VARCHAR(32) PK | `cc` 前缀的随机稳定 id |
+| name / description | VARCHAR | 能力名称与输入、输出、限制说明 |
+| language | VARCHAR(16) | `PYTHON` / `JAVASCRIPT` |
+| source_code | MEDIUMTEXT | 真实源码，最大 256KB；不允许保存凭据 |
+| enabled | TINYINT(1) | 是否允许后续受控执行器引用，不表示已经执行 |
+| revision | INT | 每次更新 +1，用于并发写入检查 |
+| created_by / updated_by | VARCHAR(32) | 服务端会话确定的创建人与最后修改人 |
+| created_at / updated_at | DATETIME(3) | 上海时区创建与更新时间 |
+
+爬虫能力与 `automation_job` 分离：前者是源码资产，后者是绑定已登记 `JobHandler` 的调度实例。
+当前服务只编目源码，不直接执行任意代码；运行边界见 ADR-187。
+
 `feishu_notification` 记录每次由自动化实际发出的飞书通知；`feishu_notification_feedback` 记录卡片按钮的真实回调（通知、事件、点击人和正/负反馈）。未点击不产生反馈行，因此报表不会伪造「没做到」。
 
 ### automation_job（任务）
