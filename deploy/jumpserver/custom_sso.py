@@ -28,7 +28,10 @@ def grant_wao_asset_group(sender, user, **kwargs):
 
     with tmp_to_org(Organization.default()):
         group = UserGroup.objects.filter(name=_AUTHORIZED_ASSET_GROUP_NAME).first()
-        if group is not None:
+        # Django 会在重复 add 已有关联时发送 pk_set 为空的 m2m_changed 信号；
+        # JumpServer v4.10.19 的权限缓存接收器会直接读取首个 group id，进而
+        # 抛出 IndexError。登录是高频且天然幂等的，这里先确认缺失再补关系。
+        if group is not None and not user.groups.filter(pk=group.pk).exists():
             user.groups.add(group)
 
 

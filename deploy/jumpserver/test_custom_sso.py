@@ -96,7 +96,7 @@ class CustomSsoTest(unittest.TestCase):
         self.assertIn("shared secret", custom_sso._decode_ticket(self.ticket(), 1_800_000_000)[1])
 
     def test_adds_only_named_wao_members_to_asset_group(self):
-        group = types.SimpleNamespace(name="WAO 基础设施维护者")
+        group = types.SimpleNamespace(pk="group-1", name="WAO 基础设施维护者")
 
         class GroupQuery:
             @staticmethod
@@ -132,22 +132,47 @@ class CustomSsoTest(unittest.TestCase):
             "users.models": users_models,
         })
 
-        added = []
+        class Membership:
+            def __init__(self, existing=False):
+                self.existing = existing
+                self.added = []
+
+            def filter(self, **kwargs):
+                self.assert_filter = kwargs
+                return self
+
+            def exists(self):
+                return self.existing
+
+            def add(self, value):
+                self.added.append(value)
+
+        authorized_groups = Membership(existing=False)
+        existing_groups = Membership(existing=True)
         authorized = types.SimpleNamespace(
             username="wao_member-1",
             name="娃哥",
-            groups=types.SimpleNamespace(add=added.append),
+            groups=authorized_groups,
+        )
+        already_authorized = types.SimpleNamespace(
+            username="wao_member-3",
+            name="娃弟",
+            groups=existing_groups,
         )
         unrelated = types.SimpleNamespace(
             username="wao_member-2",
             name="其他成员",
-            groups=types.SimpleNamespace(add=added.append),
+            groups=Membership(existing=False),
         )
 
         custom_sso.grant_wao_asset_group(None, authorized)
+        custom_sso.grant_wao_asset_group(None, already_authorized)
         custom_sso.grant_wao_asset_group(None, unrelated)
 
-        self.assertEqual(added, [group])
+        self.assertEqual(authorized_groups.assert_filter, {"pk": group.pk})
+        self.assertEqual(authorized_groups.added, [group])
+        self.assertEqual(existing_groups.assert_filter, {"pk": group.pk})
+        self.assertEqual(existing_groups.added, [])
 
 
 if __name__ == "__main__":
