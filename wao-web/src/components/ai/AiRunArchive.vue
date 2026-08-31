@@ -61,6 +61,19 @@ function resultTitle(run: AiRun) {
   return run.status === 'failed' ? '失败原因' : '最终结果'
 }
 
+function goalStatusLabel(status: AiRun['goalStatus']) {
+  return ({
+    pending: '等待建立', active: '持续执行中', paused: '已暂停', blocked: '已阻塞',
+    usageLimited: '额度受限', budgetLimited: '预算用尽', complete: '目标已完成',
+  } as Record<string, string>)[status || 'pending'] ?? status
+}
+
+function goalTime(seconds?: number | null) {
+  if (!seconds) return '尚未开始计时'
+  if (seconds < 60) return `${seconds} 秒`
+  return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`
+}
+
 async function continueRun(runId: string) {
   const input = continuation.value[runId]?.trim()
   if (!input) return toast('请先输入要补充给 AI 的信息', 'ri-information-line')
@@ -103,12 +116,13 @@ async function continueRun(runId: string) {
       </summary>
       <div class="ai-run-body">
         <AiRunDeliverySteps v-if="run.deliveryStage" :stage="run.deliveryStage" />
-        <div v-if="run.requestedModel || run.planMode" class="ai-run-parameters">
+        <div v-if="run.requestedModel || run.planMode || run.goalMode" class="ai-run-parameters">
           <i class="ri-cpu-line"></i>
           <span v-if="run.requestedModel" class="usage-model">{{ shortModel(run.requestedModel) }}</span>
           <span v-if="run.reasoningEffort">推理{{ reasoningEffortLabel(run.reasoningEffort) }}</span>
           <span v-if="run.serviceTier">{{ run.serviceTier === 'priority' ? 'Fast' : '标准速度（Fast 未开启）' }}</span>
           <span v-if="run.planMode"><i class="ri-route-line"></i>Plan 模式</span>
+          <span v-if="run.goalMode"><i class="ri-focus-3-line"></i>目标模式</span>
         </div>
         <div v-if="run.usage?.recorded" class="ai-run-usage" :title="run.usage.models || ''">
           <i class="ri-copper-coin-line"></i>
@@ -119,6 +133,17 @@ async function continueRun(runId: string) {
           <span class="usage-part">合计 <b>{{ formatTokens(run.usage.totalTokens) }}</b></span>
           <span v-if="formatCost(run.usage.costUsd)" class="usage-part">{{ formatCost(run.usage.costUsd) }}</span>
         </div>
+        <section v-if="run.goalMode" class="ai-run-goal" :class="`goal-${run.goalStatus || 'pending'}`">
+          <span class="goal-icon"><i class="ri-focus-3-line"></i></span>
+          <div>
+            <header><b>{{ goalStatusLabel(run.goalStatus) }}</b><small>Codex 原生目标</small></header>
+            <p>{{ run.goalObjective || '正在建立本次运行的持久目标' }}</p>
+            <footer>
+              <span><i class="ri-copper-coin-line"></i>{{ formatTokens(run.goalTokensUsed || 0) }} Token</span>
+              <span><i class="ri-time-line"></i>{{ goalTime(run.goalTimeUsedSeconds) }}</span>
+            </footer>
+          </div>
+        </section>
         <AiRunProgressTimeline :run="run" />
         <AiRunMemoryReferences :reads="run.memoryReads" :writes="run.memoryWrites" />
         <AiRunSkillCapabilities :skills="run.skills" :audits="run.skillAudits" />
@@ -195,6 +220,17 @@ async function continueRun(runId: string) {
 .ai-run-parameters i, .ai-run-usage i { margin-right: -3px; color: #a8862f; }
 .ai-run-parameters .usage-model, .ai-run-usage .usage-model { color: var(--wao-text-2); font-weight: 600; }
 .ai-run-usage .usage-part b { font-weight: 600; color: var(--wao-text-2); }
+.ai-run-goal { margin-bottom: 9px; padding: 10px; border: 1px solid #d8ddf8; border-radius: 9px; background: linear-gradient(135deg, #f5f7ff, var(--wao-bg-card)); display: flex; gap: 9px; }
+.ai-run-goal.goal-complete { border-color: #bde2cf; background: linear-gradient(135deg, #eef9f3, var(--wao-bg-card)); }
+.ai-run-goal.goal-blocked, .ai-run-goal.goal-usageLimited, .ai-run-goal.goal-budgetLimited { border-color: #f0d29e; background: linear-gradient(135deg, #fff8ec, var(--wao-bg-card)); }
+.ai-run-goal .goal-icon { width: 30px; height: 30px; flex: none; border-radius: 9px; background: var(--wao-primary-soft); color: var(--wao-primary-text); display: grid; place-items: center; }
+.ai-run-goal > div { flex: 1; min-width: 0; }
+.ai-run-goal header { display: flex; align-items: center; gap: 7px; }
+.ai-run-goal header b { color: var(--wao-text); font-size: 11.5px; }
+.ai-run-goal header small { color: var(--wao-text-faint); font-size: 9.5px; }
+.ai-run-goal p { margin: 4px 0 6px; color: var(--wao-text-3); font-size: 11px; line-height: 1.55; }
+.ai-run-goal footer { display: flex; gap: 12px; color: var(--wao-text-weak); font-size: 9.5px; }
+.ai-run-goal footer i { margin-right: 3px; }
 .ai-final-result { margin-top: 10px; padding: 10px 12px; border-radius: 9px; background: var(--wao-bg-sub); }
 .ai-final-result b { font-size: 11px; }
 .ai-final-result p { max-height: 180px; margin: 5px 0 0; overflow: auto; color: var(--wao-text-3); font-size: 11px; line-height: 1.65; white-space: pre-wrap; }

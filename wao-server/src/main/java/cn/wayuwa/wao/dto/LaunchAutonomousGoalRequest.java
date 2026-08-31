@@ -8,5 +8,6 @@ public record LaunchAutonomousGoalRequest(
         @NotBlank String projectId,
         String runnerId,
         Boolean planMode,
+        Boolean goalMode,
         String reasoningEffort) {
 }

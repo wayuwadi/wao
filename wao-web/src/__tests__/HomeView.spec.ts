@@ -16,6 +16,7 @@ import {
   fetchAiTaskAutoRunPolicy,
   fetchAiRunners,
   fetchAiWorkflows,
+  fetchReviewableTasks,
   launchAutonomousGoal,
   pauseAiRun,
   removeAiRunner,
@@ -100,6 +101,18 @@ vi.mock('@/api/ai', () => ({
     sessionId: null, exitCode: 0, createdAt: '2026-07-24T10:00:00',
     startedAt: '2026-07-24T10:00:00', finishedAt: '2026-07-24T10:10:00',
   }),
+  fetchReviewableTasks: vi.fn<() => Promise<Array<Record<string, unknown>>>>().mockResolvedValue([
+    {
+      taskId: 't2', title: '根据截图修复展示', projectId: 'p1', projectName: 'Wa All in One',
+      priority: 'P1', taskStatus: '进行中', action: 'RETRY', runId: 'ar1', deliveryStage: 'code_failed',
+      resultPreview: '失败阶段：准备 Git 工作区', finishedAt: '2026-07-25T18:51:00',
+    },
+    {
+      taskId: 't1', title: '设计任务详情抽屉交互稿', projectId: 'p1', projectName: 'Wa All in One',
+      priority: 'P0', taskStatus: '待验证', action: 'ACCEPTANCE', runId: 'ar-success',
+      deliveryStage: 'deployment_succeeded', resultPreview: '部署成功', finishedAt: '2026-07-25T18:40:00',
+    },
+  ]),
   fetchAiRunHistory: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
     items: [{
       id: 'ar-history', taskId: 't3', taskTitle: '历史运行', previewImages: [],
@@ -500,6 +513,67 @@ describe('HomeView AI 控制台', () => {
     mounted.wrapper.unmount()
   })
 
+  it('在最近 AI 运行旁集中区分待验收与需重试任务', async () => {
+    vi.useFakeTimers()
+    const { router, wrapper } = mountHome()
+    await flushPromises()
+
+    const trigger = wrapper.find('.reviewable-task-trigger')
+    expect(trigger.text()).toContain('可验收的任务')
+    expect(trigger.text()).toContain('2')
+    await trigger.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('.reviewable-task-dialog')
+    expect(fetchReviewableTasks).toHaveBeenCalled()
+    expect(dialog.text()).toContain('需重试')
+    expect(dialog.text()).toContain('待验收')
+    expect(dialog.text()).toContain('失败阶段：准备 Git 工作区')
+    expect(dialog.findAll('.reviewable-task-item')).toHaveLength(2)
+
+    await dialog.find('.reviewable-task-group:last-child .reviewable-task-action').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/projects/p1?task=t1')
+    wrapper.unmount()
+  })
+
+  it('需重试任务先打开失败档案并保留基于报错重跑入口', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.reviewable-task-trigger').trigger('click')
+    await flushPromises()
+    await wrapper.find('.reviewable-task-action.retry').trigger('click')
+    await flushPromises()
+
+    const runDetail = wrapper.find('.run-activity-detail')
+    expect(runDetail.text()).toContain('失败阶段：准备 Git 工作区')
+    expect(runDetail.text()).toContain('基于报错重跑')
+    wrapper.unmount()
+  })
+
+  it('可验收任务读取失败时保留弹层并可原地重试', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchReviewableTasks)
+      .mockRejectedValueOnce(new Error('验收队列暂时不可用'))
+      .mockRejectedValueOnce(new Error('验收队列暂时不可用'))
+      .mockResolvedValueOnce([])
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.reviewable-task-trigger').trigger('click')
+    await flushPromises()
+    const dialog = wrapper.find('.reviewable-task-dialog')
+    expect(dialog.text()).toContain('验收队列暂时不可用')
+    expect(dialog.find('.quick-task-dialog-state.error button').text()).toBe('重试')
+
+    await dialog.find('.quick-task-dialog-state.error button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.reviewable-task-dialog').text()).toContain('当前没有待验收或需重试的任务')
+    wrapper.unmount()
+  })
+
   it('从可 AI Run 清单启动任务后保持弹层并继续展示下一条', async () => {
     vi.useFakeTimers()
     vi.mocked(createAiRuns).mockResolvedValueOnce([{
@@ -604,7 +678,7 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
 
     expect(launchAutonomousGoal).toHaveBeenCalledWith(
-      'p1', '把黄帝内经和易经结合 AI，做成每日一卦产品', 'rn2', false, null,
+      'p1', '把黄帝内经和易经结合 AI，做成每日一卦产品', 'rn2', false, false, null,
     )
     expect(editor.props('modelValue')).toBe('')
     expect(wrapper.findAll('.run-card').some((card) => card.text().includes('把黄帝内经和易经结合 AI'))).toBe(true)
@@ -629,7 +703,7 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
-  it('Codex 自主目标默认开启 Plan 模式并允许本次关闭', async () => {
+  it('Codex 自主目标可在 Plan、直接执行和目标模式之间互斥切换', async () => {
     vi.useFakeTimers()
     vi.mocked(fetchAiWorkflows).mockResolvedValueOnce([{
       projectId: 'p1', projectName: 'Wa All in One',
@@ -651,7 +725,7 @@ describe('HomeView AI 控制台', () => {
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
     expect(launchAutonomousGoal).toHaveBeenLastCalledWith(
-      'p1', '先梳理步骤再完成首页体验优化', 'rn1', true, 'high',
+      'p1', '先梳理步骤再完成首页体验优化', 'rn1', true, false, 'high',
     )
 
     editor.vm.$emit('update:modelValue', '直接完成第二个目标')
@@ -660,7 +734,19 @@ describe('HomeView AI 控制台', () => {
     expect(planMode.attributes('aria-checked')).toBe('false')
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
-    expect(launchAutonomousGoal).toHaveBeenLastCalledWith('p1', '直接完成第二个目标', 'rn1', false, 'high')
+    expect(launchAutonomousGoal).toHaveBeenLastCalledWith('p1', '直接完成第二个目标', 'rn1', false, false, 'high')
+
+    editor.vm.$emit('update:modelValue', '持续推进第三个目标直到验收')
+    const goalMode = wrapper.findAll('.goal-plan-mode')[1]!
+    await goalMode.trigger('click')
+    await flushPromises()
+    expect(goalMode.attributes('aria-checked')).toBe('true')
+    expect(planMode.attributes('aria-checked')).toBe('false')
+    await wrapper.find('.goal-submit').trigger('click')
+    await flushPromises()
+    expect(launchAutonomousGoal).toHaveBeenLastCalledWith(
+      'p1', '持续推进第三个目标直到验收', 'rn1', false, true, 'high',
+    )
     wrapper.unmount()
   })
 
@@ -691,7 +777,7 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
 
     expect(launchAutonomousGoal).toHaveBeenLastCalledWith(
-      'p1', '快速完成一个低复杂度目标', 'rn1', true, 'low',
+      'p1', '快速完成一个低复杂度目标', 'rn1', true, false, 'low',
     )
     wrapper.unmount()
   })
@@ -741,7 +827,7 @@ describe('HomeView AI 控制台', () => {
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
 
-    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', '只在备用电脑执行这个目标', 'rn3', false, null)
+    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', '只在备用电脑执行这个目标', 'rn3', false, false, null)
     wrapper.unmount()
   })
 
@@ -761,7 +847,7 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.goal-submit').attributes('disabled')).toBeUndefined()
     await wrapper.find('.goal-submit').trigger('click')
     await flushPromises()
-    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', longGoal, 'rn2', false, null)
+    expect(launchAutonomousGoal).toHaveBeenCalledWith('p1', longGoal, 'rn2', false, false, null)
     wrapper.unmount()
   })
 
@@ -976,6 +1062,36 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.run-detail-actions').text()).toContain('停止任务')
     expect(wrapper.find('.run-detail-actions').text()).toContain('打开对应任务')
     expect(router.currentRoute.value.fullPath).toBe('/')
+    wrapper.unmount()
+  })
+
+  it('目标模式在首页运行详情展示原生目标状态和累计量', async () => {
+    vi.useFakeTimers()
+    const { fetchAiRuns } = await import('@/api/ai')
+    vi.mocked(fetchAiRuns).mockResolvedValueOnce([{
+      id: 'ar-goal-native', taskId: 't1', taskTitle: '完成原生目标模式', previewImages: [],
+      projectId: 'p1', projectName: 'WAO', engine: 'codex', requestedModel: 'gpt-5.6-sol',
+      reasoningEffort: 'high', planMode: false, goalMode: true,
+      goalObjective: '完成原生目标模式，直到部署成功且线上验收通过', goalStatus: 'active',
+      goalTokensUsed: 12_345, goalTimeUsedSeconds: 67, status: 'running',
+      runnerId: 'rn1', runnerName: '娃哥电脑', requestedRunnerId: 'rn1', branchName: 'ai/goal',
+      retryOfRunId: null, resultSummary: null, reportUrl: null, latestProgress: '目标持续执行中',
+      progressUpdatedAt: '2026-08-31T12:01:07', progress: [],
+      usage: { model: 'gpt-5.6-sol', models: 'gpt-5.6-sol', inputTokens: 10_000,
+        outputTokens: 2_345, cachedInputTokens: 0, totalTokens: 12_345, costUsd: null, recorded: true },
+      sessionId: 'thread-goal-1', exitCode: 0, createdAt: '2026-08-31T12:00:00',
+      startedAt: '2026-08-31T12:00:00', finishedAt: null,
+    }])
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    await wrapper.find('.run-card').trigger('click')
+    const goal = wrapper.get('.run-native-goal')
+    expect(wrapper.get('.run-detail-meta').text()).toContain('目标（持续到可验证终态）')
+    expect(goal.text()).toContain('持续执行中')
+    expect(goal.text()).toContain('完成原生目标模式，直到部署成功且线上验收通过')
+    expect(goal.text()).toContain('12K Token')
+    expect(goal.text()).toContain('1 分 7 秒')
     wrapper.unmount()
   })
 

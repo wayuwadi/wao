@@ -168,6 +168,7 @@ export const createAiRuns = (
     model?: string | null
     reasoningEffort?: string | null
     planMode?: boolean
+    goalMode?: boolean
     mergeTasks?: boolean
   } = {},
 ) =>
@@ -180,6 +181,7 @@ export const createAiRuns = (
     model: options.model ?? null,
     reasoningEffort: options.reasoningEffort ?? null,
     planMode: options.planMode ?? false,
+    goalMode: options.goalMode ?? false,
     mergeTasks: options.mergeTasks ?? false,
   }))
 
@@ -189,8 +191,9 @@ export const launchAutonomousGoal = (
   goal: string,
   runnerId: string | null = null,
   planMode = false,
+  goalMode = false,
   reasoningEffort: string | null = null,
-) => data<AiRun>(http.post('/api/ai/goals', { projectId, goal, runnerId, planMode, reasoningEffort }))
+) => data<AiRun>(http.post('/api/ai/goals', { projectId, goal, runnerId, planMode, goalMode, reasoningEffort }))
 
 /** 首页真实会话/周额度、自主进化状态和最近一批真实资产建议。 */
 export const fetchAiEvolution = () => data<AiEvolutionOverview>(http.get('/api/ai/evolution', {
@@ -247,6 +250,24 @@ export interface AiRunPage {
   page: number
   size: number
 }
+
+export interface ReviewableTask {
+  taskId: string
+  title: string
+  projectId: string
+  projectName: string
+  priority: string
+  taskStatus: string
+  action: 'ACCEPTANCE' | 'RETRY'
+  runId: string | null
+  deliveryStage: string | null
+  resultPreview: string | null
+  finishedAt: string | null
+}
+
+/** 当前成员可见的待验收任务，以及最近一次 AI Run 失败后需要处理的任务。 */
+export const fetchReviewableTasks = () =>
+  data<ReviewableTask[]>(http.get('/api/ai/reviewable-tasks'))
 
 export type AiActivityType = 'ALL' | 'FEATURE_DEVELOPMENT' | 'AI_INSPECTION' | 'CHAT_REVIEW'
 export type AiActivityStatus = 'ALL' | 'SUCCEEDED' | 'FAILED'

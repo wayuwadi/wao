@@ -668,6 +668,23 @@ paths:
         '200': { description: 返回解除后剩下的执行电脑 }
         '400': { description: 这台电脑还有 AI 任务在执行 }
         '404': { description: 执行电脑不存在 }
+  /ai/reviewable-tasks:
+    get:
+      summary: 当前成员可见的待验收任务与最近一次 AI Run 失败后需重试的任务
+      description: |
+        任务状态为“待验证”时 action 为 ACCEPTANCE；否则仅当尚未完成且最近一次真实 AI Run 为 failed 时
+        action 为 RETRY。合并运行按 ai_task_run_task 分别派生，活动的新运行会覆盖更早的失败记录。
+      responses:
+        '200':
+          description: 需重试项优先、同组内按最近运行结束时间倒序
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data: { type: array, items: { $ref: '#/components/schemas/ReviewableTask' } }
   /ai/runs:
     get:
       summary: 最近 100 条 AI 运行
@@ -1300,6 +1317,21 @@ components:
       scheme: bearer
       bearerFormat: wao_mcp
   schemas:
+    ReviewableTask:
+      type: object
+      required: [taskId, title, projectId, projectName, priority, taskStatus, action]
+      properties:
+        taskId: { type: string }
+        title: { type: string }
+        projectId: { type: string }
+        projectName: { type: string }
+        priority: { type: string, enum: [P0, P1, P2, P3] }
+        taskStatus: { type: string }
+        action: { type: string, enum: [ACCEPTANCE, RETRY] }
+        runId: { type: string, nullable: true, description: 人工标记待验证且没有运行时为空 }
+        deliveryStage: { type: string, nullable: true }
+        resultPreview: { type: string, nullable: true, description: 最近运行结果摘要的首行，不伪造缺失内容 }
+        finishedAt: { type: string, format: date-time, nullable: true }
     WorkspaceLink:
       type: object
       required: [id, title, url, description, environment, icon, order, favorite]

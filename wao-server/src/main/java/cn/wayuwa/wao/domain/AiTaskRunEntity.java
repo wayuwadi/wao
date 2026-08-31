@@ -40,6 +40,12 @@ public class AiTaskRunEntity {
     private String reasoningEffort;
     /** Codex 是否先形成计划再连续执行；问题由 Runner 指示其自动采用推荐项。 */
     private Boolean planMode;
+    /** 是否由 Codex app-server 建立并跟踪原生持久目标。 */
+    private Boolean goalMode;
+    private String goalObjective;
+    private String goalStatus;
+    private Long goalTokensUsed;
+    private Long goalTimeUsedSeconds;
     /** 入队时固化的项目 Skill 版本清单。 */
     private String capabilityManifestJson;
     /** Runner 对各 Skill 的实际装配结果。 */
@@ -106,6 +112,16 @@ public class AiTaskRunEntity {
     public void setReasoningEffort(String reasoningEffort) { this.reasoningEffort = reasoningEffort; }
     public Boolean getPlanMode() { return planMode; }
     public void setPlanMode(Boolean planMode) { this.planMode = planMode; }
+    public Boolean getGoalMode() { return goalMode; }
+    public void setGoalMode(Boolean goalMode) { this.goalMode = goalMode; }
+    public String getGoalObjective() { return goalObjective; }
+    public void setGoalObjective(String goalObjective) { this.goalObjective = goalObjective; }
+    public String getGoalStatus() { return goalStatus; }
+    public void setGoalStatus(String goalStatus) { this.goalStatus = goalStatus; }
+    public Long getGoalTokensUsed() { return goalTokensUsed; }
+    public void setGoalTokensUsed(Long goalTokensUsed) { this.goalTokensUsed = goalTokensUsed; }
+    public Long getGoalTimeUsedSeconds() { return goalTimeUsedSeconds; }
+    public void setGoalTimeUsedSeconds(Long goalTimeUsedSeconds) { this.goalTimeUsedSeconds = goalTimeUsedSeconds; }
     public String getCapabilityManifestJson() { return capabilityManifestJson; }
     public void setCapabilityManifestJson(String value) { capabilityManifestJson = value; }
     public String getCapabilityAuditJson() { return capabilityAuditJson; }

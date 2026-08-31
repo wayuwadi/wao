@@ -95,7 +95,7 @@ public class AiRunService {
     private static final int MAX_PROGRESS_PER_RUN = 50;
     /** 首页只展示最近八条结束记录，完整历史由分页接口按需读取。 */
     private static final int HOMEPAGE_FINISHED_RUNS = 8;
-    private static final Set<String> PROGRESS_KINDS = Set.of("phase", "message", "plan", "result");
+    private static final Set<String> PROGRESS_KINDS = Set.of("phase", "message", "plan", "goal", "result");
     private static final String DELIVERY_WAITING = "waiting_deployment";
     private static final String DELIVERY_SUCCEEDED = "deployment_succeeded";
     private static final String DELIVERY_FAILED = "deployment_failed";
@@ -473,7 +473,8 @@ public class AiRunService {
     @Transactional
     public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
             String accountId, String requestedBy, String baseUrl) {
-        return enqueue(taskIds, subId, engine, runnerId, accountId, null, null, false, requestedBy, baseUrl);
+        return enqueue(taskIds, subId, engine, runnerId, accountId, null, null, false, false, false,
+                requestedBy, baseUrl);
     }
 
     /**
@@ -486,8 +487,19 @@ public class AiRunService {
     @Transactional
     public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
             String accountId, String model, String reasoningEffort, Boolean planMode, String requestedBy, String baseUrl) {
-        return enqueue(taskIds, subId, engine, runnerId, accountId, model, reasoningEffort, planMode, false,
+        return enqueue(taskIds, subId, engine, runnerId, accountId, model, reasoningEffort, planMode, false, false,
                 requestedBy, baseUrl);
+    }
+
+    /**
+     * 使用旧版 Plan / 合并参数派发任务；保留该入口供站内快捷派工兼容调用。
+     */
+    @Transactional
+    public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
+            String accountId, String model, String reasoningEffort, Boolean planMode, Boolean mergeTasks,
+            String requestedBy, String baseUrl) {
+        return enqueue(taskIds, subId, engine, runnerId, accountId, model, reasoningEffort, planMode, false,
+                mergeTasks, requestedBy, baseUrl);
     }
 
     /**
@@ -497,8 +509,12 @@ public class AiRunService {
      */
     @Transactional
     public synchronized List<AiRunDto> enqueue(List<String> taskIds, String subId, String engine, String runnerId,
-            String accountId, String model, String reasoningEffort, Boolean planMode, Boolean mergeTasks,
+            String accountId, String model, String reasoningEffort, Boolean planMode, Boolean goalMode,
+            Boolean mergeTasks,
             String requestedBy, String baseUrl) {
+        if (Boolean.TRUE.equals(planMode) && Boolean.TRUE.equals(goalMode)) {
+            throw new BadRequestException("Plan 模式和目标模式不能同时开启，请选择一种执行方式");
+        }
         String requestedEngine = StringUtils.hasText(engine) && !"auto".equals(engine)
                 ? requireEngine(engine) : null;
         String sub = trim(subId);
@@ -518,7 +534,7 @@ public class AiRunService {
         }
         if (Boolean.TRUE.equals(mergeTasks) && distinctTaskIds.size() > 1) {
             return List.of(enqueueMerged(distinctTaskIds, requestedEngine, target, accountId, model,
-                    reasoningEffort, planMode, requestedBy, baseUrl));
+                    reasoningEffort, planMode, goalMode, requestedBy, baseUrl));
         }
         List<AiTaskRunEntity> created = new ArrayList<>();
         for (String taskId : distinctTaskIds) {
@@ -533,6 +549,7 @@ public class AiRunService {
             }
             String runEngine = requestedEngine != null
                     ? requestedEngine : requireEngine(blankOr(config.getDefaultEngine(), DEFAULT_ENGINE));
+            requireGoalSupported(runEngine, goalMode);
             if (StringUtils.hasText(accountId)) accounts.validateRunAccount(accountId.trim(), runEngine);
             boolean customApi = accounts.usesCustomApi(accountId, runEngine);
             String requestedModel = "codex".equals(runEngine) && !customApi ? requireCodexModel(model) : null;
@@ -570,7 +587,8 @@ public class AiRunService {
             run.setAiAccountId(StringUtils.hasText(accountId) ? accountId.trim() : null);
             run.setRequestedModel(requestedModel);
             run.setReasoningEffort(requestedEffort);
-            run.setPlanMode("codex".equals(runEngine) && Boolean.TRUE.equals(planMode));
+            configureRunMode(run, runEngine, planMode, goalMode,
+                    goalObjective(task.getTitle(), subTitle));
             run.setCapabilityManifestJson(capabilityManifest(task.getProjectId(), runEngine));
             run.setStatus("queued");
             run.setActivityType("FEATURE_DEVELOPMENT");
@@ -593,7 +611,7 @@ public class AiRunService {
 
     /** 合并派工在落库前完整校验所有任务，避免一条运行只带上部分用户选择。 */
     private AiRunDto enqueueMerged(List<String> taskIds, String requestedEngine, AiRunnerNodeEntity target,
-            String accountId, String model, String reasoningEffort, Boolean planMode,
+            String accountId, String model, String reasoningEffort, Boolean planMode, Boolean goalMode,
             String requestedBy, String baseUrl) {
         List<TaskEntity> selected = new ArrayList<>();
         for (String taskId : taskIds) {
@@ -612,6 +630,7 @@ public class AiRunService {
         if (!StringUtils.hasText(config.getRepoUrl())) throw new BadRequestException("项目尚未配置 Git 仓库地址");
         String runEngine = requestedEngine != null
                 ? requestedEngine : requireEngine(blankOr(config.getDefaultEngine(), DEFAULT_ENGINE));
+        requireGoalSupported(runEngine, goalMode);
         if (StringUtils.hasText(accountId)) accounts.validateRunAccount(accountId.trim(), runEngine);
         boolean customApi = accounts.usesCustomApi(accountId, runEngine);
         String requestedModel = "codex".equals(runEngine) && !customApi ? requireCodexModel(model) : null;
@@ -646,7 +665,8 @@ public class AiRunService {
         run.setAiAccountId(StringUtils.hasText(accountId) ? accountId.trim() : null);
         run.setRequestedModel(requestedModel);
         run.setReasoningEffort(requestedEffort);
-        run.setPlanMode("codex".equals(runEngine) && Boolean.TRUE.equals(planMode));
+        configureRunMode(run, runEngine, planMode, goalMode,
+                "完成合并派发的 " + taskIds.size() + " 个任务，直到代码合并、部署成功且线上验收通过");
         run.setCapabilityManifestJson(capabilityManifest(first.getProjectId(), runEngine));
         run.setStatus("queued");
         run.setActivityType("FEATURE_DEVELOPMENT");
@@ -749,7 +769,7 @@ public class AiRunService {
     @Transactional
     public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl,
             String runnerId, String aiAccountId, Boolean planMode) {
-        return launchGoal(projectId, goal, requestedBy, baseUrl, runnerId, aiAccountId, planMode, null);
+        return launchGoal(projectId, goal, requestedBy, baseUrl, runnerId, aiAccountId, planMode, false, null);
     }
 
     /**
@@ -768,6 +788,18 @@ public class AiRunService {
     @Transactional
     public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl,
             String runnerId, String aiAccountId, Boolean planMode, String reasoningEffort) {
+        return launchGoal(projectId, goal, requestedBy, baseUrl, runnerId, aiAccountId,
+                planMode, false, reasoningEffort);
+    }
+
+    /**
+     * 使用本次选择的执行模式和 Codex 推理强度创建自主目标。
+     *
+     * @param goalMode 是否启用 Codex 原生目标模式；与 Plan 模式互斥
+     */
+    @Transactional
+    public synchronized AiRunDto launchGoal(String projectId, String goal, String requestedBy, String baseUrl,
+            String runnerId, String aiAccountId, Boolean planMode, Boolean goalMode, String reasoningEffort) {
         String normalizedGoal = persistGoalImages(trim(goal));
         if (!StringUtils.hasText(normalizedGoal)) throw new BadRequestException("请先写下想让 AI 完成的目标");
 
@@ -775,9 +807,37 @@ public class AiRunService {
                 goalTitle(normalizedGoal), projectId, "P2", requestedBy, "",
                 autonomousGoalDescription(normalizedGoal), List.of(), null, null, null), requestedBy);
         List<AiRunDto> runs = enqueue(List.of(task.id()), null, null, runnerId, aiAccountId,
-                null, reasoningEffort, planMode, requestedBy, baseUrl);
+                null, reasoningEffort, planMode, goalMode, false, requestedBy, baseUrl);
         if (runs.isEmpty()) throw new IllegalStateException("自主目标创建后未生成 AI 运行");
         return runs.get(0);
+    }
+
+    private static void configureRunMode(AiTaskRunEntity run, String engine, Boolean planMode,
+            Boolean goalMode, String goalObjective) {
+        boolean codex = "codex".equals(engine);
+        run.setPlanMode(codex && Boolean.TRUE.equals(planMode));
+        run.setGoalMode(codex && Boolean.TRUE.equals(goalMode));
+        if (Boolean.TRUE.equals(run.getGoalMode())) {
+            run.setGoalObjective(limit(goalObjective, 1000));
+            run.setGoalStatus("pending");
+        }
+    }
+
+    private static void requireGoalSupported(String engine, Boolean goalMode) {
+        if (Boolean.TRUE.equals(goalMode) && !"codex".equals(engine)) {
+            throw new BadRequestException("目标模式只支持 Codex，请改用 Codex 或选择直接执行");
+        }
+    }
+
+    private static String goalObjective(String taskTitle, String subTitle) {
+        String scope = StringUtils.hasText(subTitle)
+                ? "完成任务「" + taskTitle + "」的子任务「" + subTitle + "」"
+                : "完成任务「" + taskTitle + "」";
+        return scope + "，直到代码合并、部署成功且线上验收通过";
+    }
+
+    private static Long nonNegative(Long value) {
+        return value == null ? null : Math.max(0L, value);
     }
 
     private static String goalTitle(String goal) {
@@ -964,6 +1024,9 @@ public class AiRunService {
         run.setRequestedModel(source.getRequestedModel());
         run.setReasoningEffort(source.getReasoningEffort());
         run.setPlanMode(Boolean.TRUE.equals(source.getPlanMode()));
+        run.setGoalMode(Boolean.TRUE.equals(source.getGoalMode()));
+        run.setGoalObjective(source.getGoalObjective());
+        run.setGoalStatus(Boolean.TRUE.equals(source.getGoalMode()) ? "pending" : null);
         run.setCapabilityManifestJson(capabilityManifest(source.getProjectId(), engine));
         run.setStatus("queued");
         run.setActivityType(blankOr(source.getActivityType(), "FEATURE_DEVELOPMENT"));
@@ -1290,6 +1353,7 @@ public class AiRunService {
                     "codex".equals(engine) && StringUtils.hasText(run.getRequestedModel())
                             ? CODEX_SERVICE_TIER : null,
                     Boolean.TRUE.equals(run.getPlanMode()),
+                    Boolean.TRUE.equals(run.getGoalMode()), run.getGoalObjective(),
                     run.getPromptUrl(),
                     config.getRepoUrl(), blankOr(config.getDefaultBranch(), "main"),
                     blankOr(config.getWorkspaceDir(), defaultFolder(run.getProjectId())), run.getBranchName(),
@@ -1320,8 +1384,28 @@ public class AiRunService {
             return;
         }
         if (!PROGRESS_KINDS.contains(kind)) throw new BadRequestException("不支持的进展类型：" + kind);
+        if ("goal".equals(kind)) {
+            if (!Boolean.TRUE.equals(run.getGoalMode())) {
+                throw new BadRequestException("这次运行没有启用目标模式");
+            }
+            String goalStatus = trim(request.goalStatus());
+            if (!Set.of("pending", "active", "paused", "blocked", "usageLimited", "budgetLimited", "complete")
+                    .contains(goalStatus)) {
+                throw new BadRequestException("不支持的目标状态：" + goalStatus);
+            }
+            run.setGoalStatus(goalStatus);
+            if (StringUtils.hasText(request.goalObjective())) {
+                run.setGoalObjective(limit(request.goalObjective(), 1000));
+            }
+            run.setGoalTokensUsed(nonNegative(request.goalTokensUsed()));
+            run.setGoalTimeUsedSeconds(nonNegative(request.goalTimeUsedSeconds()));
+        }
         String content = limit(request.content(), MAX_PROGRESS);
-        if (!StringUtils.hasText(content) || content.equals(run.getLatestProgress())) return;
+        if (!StringUtils.hasText(content)) return;
+        if (content.equals(run.getLatestProgress())) {
+            if ("goal".equals(kind)) runMapper.updateById(run);
+            return;
+        }
         appendProgress(run, kind, content);
         runnerMapper.touchLastSeenAt(runner.getId());
     }
@@ -1606,7 +1690,9 @@ public class AiRunService {
                     run.getProjectId(), project == null ? run.getProjectId() : project.getName(),
                     blankOr(run.getEngine(), DEFAULT_ENGINE), run.getRequestedModel(),
                     run.getReasoningEffort(), StringUtils.hasText(run.getRequestedModel())
-                            ? CODEX_SERVICE_TIER : null, Boolean.TRUE.equals(run.getPlanMode()), run.getStatus(),
+                            ? CODEX_SERVICE_TIER : null, Boolean.TRUE.equals(run.getPlanMode()),
+                    Boolean.TRUE.equals(run.getGoalMode()), run.getGoalObjective(), run.getGoalStatus(),
+                    run.getGoalTokensUsed(), run.getGoalTimeUsedSeconds(), run.getStatus(),
                     blankOr(run.getDeliveryStage(), deliveryStageForLegacy(run)),
                     run.getRunnerId(), runnerName(run, runner), run.getRequestedRunnerId(), run.getRequestedBy(),
                     run.getBranchName(), run.getRetryOfRunId(),

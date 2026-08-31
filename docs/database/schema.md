@@ -363,6 +363,9 @@ Runner 每五分钟在本机调用 Codex app-server。服务端按规范化邮�
 | pending_input | TEXT | 等待 AI 会话消费的用户补充输入；排队时并入首次提示，执行中由原电脑中断当前回合并恢复同一 session（ADR-111） |
 | requested_model / reasoning_effort | VARCHAR(128) / VARCHAR(16) NULL | 派工时固化的 Codex 模型与推理强度；历史、其它引擎和自定义 API 为空（V80） |
 | plan_mode | BOOLEAN | 是否启用 Codex Plan 工作流；旧运行和其它引擎为 false（V81） |
+| goal_mode | BOOLEAN | 是否通过 Codex app-server 建立原生持久目标；与 Plan 互斥（V119） |
+| goal_objective / goal_status | VARCHAR(1000) / VARCHAR(24) NULL | 可验证目标正文及原生目标状态；非目标模式为空（V119） |
+| goal_tokens_used / goal_time_used_seconds | BIGINT NULL | app-server 报告的目标累计 Token 与持续秒数，不用普通运行用量伪造（V119） |
 | model / models | VARCHAR(120) / VARCHAR(500) NULL | 输出 token 最多的模型，以及本次用到的全部模型（逗号分隔） |
 | input_tokens / output_tokens / cached_input_tokens / total_tokens | BIGINT NULL | 本次运行的 token 用量；续跑在同一条记录上累加 |
 | cost_usd | DECIMAL(12,6) NULL | 折算额度（美元）；Codex 不回传花费时为空（见 ADR-026） |
@@ -1006,6 +1009,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V115__food_management.sql`：保存成员私有饮食管理工作区，不预置演示餐单或医疗结论。
 - `V116__http_inspection_top_ten.sql`：将缺失或仍为旧默认 5/2 的 HTTP 巡检数量升级为 10/10，保留管理员已自定义的其他值（见 ADR-162）。
 - `V118__ai_inspection_activity_history.sql`：固化 AI Run 活动来源和自动化到 AI Run 的真实关联，并回填可证明的既有 HTTP 巡检记录（见 ADR-166）。
+- `V119__ai_run_goal_mode.sql`：固化 Codex 原生目标模式、可验证目标、状态与累计用量（见 ADR-169）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
