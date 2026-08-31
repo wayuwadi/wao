@@ -96,7 +96,7 @@ class CustomSsoTest(unittest.TestCase):
         self.assertIn("shared secret", custom_sso._decode_ticket(self.ticket(), 1_800_000_000)[1])
 
     def test_adds_only_named_wao_members_to_asset_group(self):
-        group = types.SimpleNamespace(name="WAO 基础设施维护者")
+        group = types.SimpleNamespace(pk="group-1", name="WAO 基础设施维护者")
 
         class GroupQuery:
             @staticmethod
@@ -132,22 +132,40 @@ class CustomSsoTest(unittest.TestCase):
             "users.models": users_models,
         })
 
-        added = []
+        class UserGroups:
+            def __init__(self):
+                self.added = []
+
+            def filter(self, **kwargs):
+                self.assert_group(kwargs)
+                return types.SimpleNamespace(exists=lambda: group in self.added)
+
+            def assert_group(self, kwargs):
+                self_test.assertEqual(kwargs, {"pk": "group-1"})
+
+            def add(self, value):
+                self.added.append(value)
+
+        self_test = self
+        authorized_groups = UserGroups()
+        unrelated_groups = UserGroups()
         authorized = types.SimpleNamespace(
             username="wao_member-1",
             name="娃哥",
-            groups=types.SimpleNamespace(add=added.append),
+            groups=authorized_groups,
         )
         unrelated = types.SimpleNamespace(
             username="wao_member-2",
             name="其他成员",
-            groups=types.SimpleNamespace(add=added.append),
+            groups=unrelated_groups,
         )
 
         custom_sso.grant_wao_asset_group(None, authorized)
+        custom_sso.grant_wao_asset_group(None, authorized)
         custom_sso.grant_wao_asset_group(None, unrelated)
 
-        self.assertEqual(added, [group])
+        self.assertEqual(authorized_groups.added, [group])
+        self.assertEqual(unrelated_groups.added, [])
 
 
 if __name__ == "__main__":

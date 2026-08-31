@@ -28,7 +28,9 @@ def grant_wao_asset_group(sender, user, **kwargs):
 
     with tmp_to_org(Organization.default()):
         group = UserGroup.objects.filter(name=_AUTHORIZED_ASSET_GROUP_NAME).first()
-        if group is not None:
+        # JumpServer v4.10.19 的权限刷新信号不能处理 add() 在关系已存在时
+        # 发送的空 pk_set；重复登录必须保持幂等，避免发布验收触发 IndexError。
+        if group is not None and not user.groups.filter(pk=group.pk).exists():
             user.groups.add(group)
 
 
