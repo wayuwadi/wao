@@ -12,6 +12,7 @@ import {
   fetchAiRunnerLog,
   fetchAiRunners,
   fetchAiRuns,
+  fetchReviewableTasks,
   fetchAiWorkflows,
   launchAutonomousGoal,
   pauseAiRun,
@@ -29,6 +30,7 @@ import {
   type AiActivity,
   type AiActivityStatus,
   type AiActivityType,
+  type ReviewableTask,
 } from '@/api/ai'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
@@ -116,6 +118,10 @@ const runHistoryPage = ref(1)
 const runHistoryTotal = ref(0)
 const RUN_HISTORY_PAGE_SIZE = 20
 const quickTaskListOpen = ref(false)
+const reviewableTaskListOpen = ref(false)
+const reviewableTasks = ref<ReviewableTask[]>([])
+const reviewableTasksLoading = ref(true)
+const reviewableTasksError = ref('')
 const taskAutoRunSettingsOpen = ref(false)
 const startingQuickTaskId = ref<string | null>(null)
 const ACTIVITY_FILTERS: Array<{ id: AiActivityType; label: string }> = [
@@ -197,6 +203,8 @@ const runnableTasks = computed(() => data.tasks
     return left.id.localeCompare(right.id)
   }))
 const recommendedTasks = computed(() => runnableTasks.value.slice(0, 3))
+const acceptanceTasks = computed(() => reviewableTasks.value.filter((task) => task.action === 'ACCEPTANCE'))
+const retryTasks = computed(() => reviewableTasks.value.filter((task) => task.action === 'RETRY'))
 const goalWorkflow = computed(() => activeWorkflows.value.find(
   (workflow) => workflow.projectId === goalProjectId.value,
 ) ?? null)
@@ -979,6 +987,34 @@ async function openActivity(activity: AiActivity) {
   }
 }
 
+async function refreshReviewableTasks(open = false) {
+  if (open) reviewableTaskListOpen.value = true
+  reviewableTasksLoading.value = true
+  reviewableTasksError.value = ''
+  try {
+    reviewableTasks.value = await fetchReviewableTasks()
+  } catch (error) {
+    reviewableTasksError.value = error instanceof Error ? error.message : '可验收任务读取失败'
+  } finally {
+    reviewableTasksLoading.value = false
+  }
+}
+
+function openAcceptanceTask(task: ReviewableTask) {
+  reviewableTaskListOpen.value = false
+  void router.push({ path: `/projects/${task.projectId}`, query: { task: task.taskId } })
+}
+
+/** 先展示真实失败原因，再复用运行详情里已有的“基于报错重跑”，避免误触直接创建新运行。 */
+async function inspectRetryTask(task: ReviewableTask) {
+  if (!task.runId) return
+  try {
+    selectedRun.value = runs.value.find((run) => run.id === task.runId) ?? await fetchAiRun(task.runId)
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '失败运行详情读取失败', 'ri-error-warning-line')
+  }
+}
+
 async function selectActivityFilter(type: AiActivityType) {
   activityFilter.value = type
   await refreshActivityFilters()
@@ -1048,6 +1084,7 @@ async function rerun(run: AiRun) {
     const next = await rerunAiRun(run.id)
     selectedRun.value = null
     await refresh()
+    await refreshReviewableTasks()
     toast(`已带着上次的报错重新排队：${next.taskTitle}`, 'ri-refresh-line')
   } catch (error) {
     toast(error instanceof Error ? error.message : '重跑失败', 'ri-error-warning-line')
@@ -1134,6 +1171,7 @@ function onDialogKeydown(event: KeyboardEvent) {
   if (selectedRun.value) selectedRun.value = null
   else if (logRunner.value) closeRunnerLog()
   else if (runHistoryOpen.value) runHistoryOpen.value = false
+  else if (reviewableTaskListOpen.value) reviewableTaskListOpen.value = false
   else if (quickTaskListOpen.value) quickTaskListOpen.value = false
   else if (taskAutoRunSettingsOpen.value) taskAutoRunSettingsOpen.value = false
   else return
@@ -1150,6 +1188,7 @@ onMounted(() => {
   void refreshQuotaOverview()
   void refreshTaskAutoRunPolicy()
   void refreshTaskAutoRunWebhooks()
+  void refreshReviewableTasks()
   timer = setInterval(refresh, 5_000)
   quotaTimer = setInterval(() => {
     void refreshQuotaOverview()
@@ -1503,6 +1542,10 @@ onBeforeUnmount(() => {
         <div class="section-head">
           <div><h2>最近 AI 运行</h2><p>功能开发、AI 巡检与聊天复盘按完成时间统一排列。</p></div>
           <div class="recent-actions">
+            <button class="reviewable-task-trigger" :disabled="reviewableTasksLoading" @click="refreshReviewableTasks(true)">
+              <i :class="reviewableTasksLoading ? 'ri-loader-4-line spin' : 'ri-task-line'"></i>可验收的任务
+              <em v-if="!reviewableTasksLoading && reviewableTasks.length">{{ reviewableTasks.length }}</em>
+            </button>
             <WaoPagination
               v-if="recentActivitiesTotal > RECENT_ACTIVITY_PAGE_SIZE"
               class="recent-pagination"
@@ -1965,6 +2008,71 @@ onBeforeUnmount(() => {
         <footer>
           <span class="retry-note"><i class="ri-shield-check-line"></i>重复运行、执行电脑能力和项目配置仍由服务端校验</span>
           <button class="secondary" @click="quickTaskListOpen = false">关闭</button>
+        </footer>
+      </section>
+    </div>
+
+    <div v-if="reviewableTaskListOpen" class="run-detail-mask" @click.self="reviewableTaskListOpen = false">
+      <section class="run-detail reviewable-task-dialog" role="dialog" aria-modal="true" aria-labelledby="reviewable-task-dialog-title">
+        <header>
+          <span class="recent-icon reviewable-task-dialog-icon"><i class="ri-task-line"></i></span>
+          <div>
+            <h2 id="reviewable-task-dialog-title">可验收的任务</h2>
+            <p>集中处理 AI Run 完成后的待验收结果与最近失败运行。</p>
+          </div>
+          <button class="detail-close" aria-label="关闭可验收的任务清单" @click="reviewableTaskListOpen = false"><i class="ri-close-line"></i></button>
+        </header>
+        <div v-if="reviewableTasksLoading" class="quick-task-dialog-state">
+          <i class="ri-loader-4-line spin"></i>正在读取可验收任务…
+        </div>
+        <div v-else-if="reviewableTasksError" class="quick-task-dialog-state error" role="alert">
+          <i class="ri-error-warning-line"></i><span>{{ reviewableTasksError }}</span>
+          <button class="secondary" @click="refreshReviewableTasks()">重试</button>
+        </div>
+        <div v-else-if="reviewableTasks.length" class="reviewable-task-content">
+          <section v-if="retryTasks.length" class="reviewable-task-group" aria-labelledby="retry-task-title">
+            <div class="reviewable-task-group-title">
+              <span><i class="ri-error-warning-line"></i></span>
+              <div><h3 id="retry-task-title">需重试</h3><p>最近一次 AI Run 失败，先查看报错再决定是否重跑。</p></div>
+              <em>{{ retryTasks.length }}</em>
+            </div>
+            <article v-for="task in retryTasks" :key="task.taskId" class="reviewable-task-item retry-item">
+              <div class="reviewable-task-copy">
+                <div class="quick-task-meta">
+                  <span :class="`priority ${task.priority.toLowerCase()}`">{{ task.priority }}</span>
+                  <span>需重试</span><span><i class="ri-stack-line"></i>{{ task.projectName }}</span>
+                </div>
+                <b :title="task.title">{{ task.title }}</b>
+                <p>{{ task.resultPreview || '本次运行未返回可读错误摘要，请打开运行详情查看完整记录。' }}</p>
+              </div>
+              <button class="reviewable-task-action retry" :disabled="!task.runId" @click="inspectRetryTask(task)"><i class="ri-error-warning-line"></i>查看并重试</button>
+            </article>
+          </section>
+          <section v-if="acceptanceTasks.length" class="reviewable-task-group" aria-labelledby="acceptance-task-title">
+            <div class="reviewable-task-group-title acceptance-title">
+              <span><i class="ri-checkbox-circle-line"></i></span>
+              <div><h3 id="acceptance-task-title">待验收</h3><p>结果已交付但尚未人工确认，打开任务核对真实效果。</p></div>
+              <em>{{ acceptanceTasks.length }}</em>
+            </div>
+            <article v-for="task in acceptanceTasks" :key="task.taskId" class="reviewable-task-item">
+              <div class="reviewable-task-copy">
+                <div class="quick-task-meta">
+                  <span :class="`priority ${task.priority.toLowerCase()}`">{{ task.priority }}</span>
+                  <span>{{ task.taskStatus }}</span><span><i class="ri-stack-line"></i>{{ task.projectName }}</span>
+                </div>
+                <b :title="task.title">{{ task.title }}</b>
+                <p>{{ task.finishedAt ? `${timeText(task.finishedAt)} 完成运行，等待人工验收。` : '任务已进入待验证，等待人工验收。' }}</p>
+              </div>
+              <button class="reviewable-task-action" @click="openAcceptanceTask(task)"><i class="ri-checkbox-circle-line"></i>打开验收</button>
+            </article>
+          </section>
+        </div>
+        <div v-else class="quick-task-dialog-state">
+          <i class="ri-checkbox-circle-line"></i><span>当前没有待验收或需重试的任务。</span>
+        </div>
+        <footer>
+          <span class="retry-note"><i class="ri-shield-check-line"></i>只展示当前成员可见项目中的真实任务与最新运行</span>
+          <button class="secondary" @click="reviewableTaskListOpen = false">关闭</button>
         </footer>
       </section>
     </div>
@@ -2452,6 +2560,14 @@ onBeforeUnmount(() => {
 .quick-task-list-trigger:hover { background: var(--wao-primary-soft); }
 .quick-task-list-trigger:disabled { opacity: .58; cursor: wait; }
 .quick-task-list-trigger em { min-width: 18px; padding: 1px 5px; border-radius: 999px; background: var(--wao-primary); color: #fff; font-size: 9.5px; font-style: normal; }
+.reviewable-task-trigger {
+  min-height: 32px; padding: 0 10px; border: 1px solid var(--wao-success-line); border-radius: 8px;
+  background: var(--wao-success-bg); color: var(--wao-success-strong); cursor: pointer; font-size: 11.5px;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.reviewable-task-trigger:hover { filter: brightness(.98); }
+.reviewable-task-trigger:disabled { opacity: .62; cursor: wait; }
+.reviewable-task-trigger em { min-width: 18px; padding: 1px 5px; border-radius: 999px; background: var(--wao-success-strong); color: #fff; font-size: 9.5px; font-style: normal; }
 .history-link { padding: 6px 9px; border: 0; border-radius: 8px; background: transparent; color: var(--wao-primary); cursor: pointer; font-size: 11.5px; display: inline-flex; align-items: center; gap: 3px; }
 .history-link:hover { background: var(--wao-primary-tint); }
 .live { color: var(--wao-text-weak); font-size: 10.5px; }
@@ -2782,6 +2898,7 @@ onBeforeUnmount(() => {
 }
 .run-history-detail { width: min(1080px, 100%); }
 .quick-task-dialog { width: min(860px, 100%); }
+.reviewable-task-dialog { width: min(880px, 100%); }
 .auto-run-dialog { width: min(820px, 100%); }
 .auto-run-dialog-icon { background: var(--wao-primary-tint); color: var(--wao-primary); }
 .auto-run-summary { margin-top: 16px; padding: 12px 13px; border: 1px solid var(--wao-line); border-radius: 11px; background: var(--wao-bg-sub); color: var(--wao-text-weak); display: flex; align-items: flex-start; gap: 10px; }
@@ -2801,6 +2918,25 @@ onBeforeUnmount(() => {
 .quick-task-dialog-state { min-height: 280px; margin-top: 16px; border: 1px dashed var(--wao-line); border-radius: 12px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 8px; }
 .quick-task-dialog-state.error { color: var(--wao-danger-strong); }
 .quick-task-dialog-state button { margin-left: 4px; padding: 6px 10px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); cursor: pointer; }
+.reviewable-task-dialog-icon { background: var(--wao-success-bg); color: var(--wao-success-strong); }
+.reviewable-task-content { max-height: min(540px, calc(100vh - 220px)); margin-top: 16px; overflow-y: auto; display: grid; gap: 16px; }
+.reviewable-task-group { min-width: 0; }
+.reviewable-task-group-title { margin-bottom: 8px; display: flex; align-items: center; gap: 9px; }
+.reviewable-task-group-title > span { width: 30px; height: 30px; flex: 0 0 auto; border-radius: 8px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); display: grid; place-items: center; }
+.reviewable-task-group-title.acceptance-title > span { background: var(--wao-success-bg); color: var(--wao-success-strong); }
+.reviewable-task-group-title > div { flex: 1; min-width: 0; }
+.reviewable-task-group-title h3 { margin: 0; color: var(--wao-text-2); font-size: 13px; }
+.reviewable-task-group-title p { margin: 2px 0 0; color: var(--wao-text-weak); font-size: 10.5px; }
+.reviewable-task-group-title em { min-width: 22px; padding: 2px 7px; border-radius: 999px; background: var(--wao-bg-hover); color: var(--wao-text-2); font-size: 10px; font-style: normal; text-align: center; }
+.reviewable-task-item { margin-top: 7px; padding: 11px 12px; border: 1px solid var(--wao-success-line); border-radius: 10px; background: var(--wao-bg-card); display: flex; align-items: center; gap: 14px; }
+.reviewable-task-item.retry-item { border-color: var(--wao-danger-line); }
+.reviewable-task-copy { min-width: 0; flex: 1; }
+.reviewable-task-copy > b { display: block; margin-top: 7px; overflow: hidden; color: var(--wao-text-1); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.reviewable-task-copy > p { margin: 4px 0 0; overflow: hidden; color: var(--wao-text-weak); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.reviewable-task-item.retry-item .reviewable-task-copy > p { color: var(--wao-danger-strong); }
+.reviewable-task-action { min-height: 31px; flex: 0 0 auto; padding: 0 10px; border: 1px solid var(--wao-success-line); border-radius: 7px; background: var(--wao-success-bg); color: var(--wao-success-strong); cursor: pointer; font-size: 10.5px; display: inline-flex; align-items: center; gap: 5px; }
+.reviewable-task-action.retry { border-color: var(--wao-danger-line); background: var(--wao-danger-bg); color: var(--wao-danger-strong); }
+.reviewable-task-action:disabled { opacity: .55; cursor: not-allowed; }
 .history-icon { background: var(--wao-primary-tint); color: var(--wao-primary); }
 .history-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 18px; }
 .history-state { min-height: 260px; margin-top: 18px; border: 1px dashed var(--wao-line); border-radius: 12px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -2945,15 +3081,18 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .section-head { align-items: flex-start; flex-wrap: wrap; }
   .run-section-actions, .recent-actions { width: 100%; }
   .run-section-actions > button { flex: 1; justify-content: center; }
-  .recent-actions { justify-content: space-between; }
+  .recent-actions { justify-content: space-between; flex-wrap: wrap; }
+  .reviewable-task-trigger { flex: 1 1 auto; justify-content: center; }
   .recent-pagination { flex: 1; justify-content: space-between; }
   .recent-pagination button { min-height: 28px; }
-  .auto-run-dialog header p, .quick-task-dialog header p { white-space: normal; }
+  .auto-run-dialog header p, .quick-task-dialog header p, .reviewable-task-dialog header p { white-space: normal; }
   .auto-run-dialog footer { align-items: stretch; flex-wrap: wrap; }
   .auto-run-dialog footer .retry-note { width: 100%; margin: 0 0 2px; }
   .quick-task-grid { grid-template-columns: 1fr; }
   .quick-task-list-item { align-items: stretch; flex-direction: column; gap: 9px; }
   .quick-task-list-item .quick-task-start { align-self: flex-end; }
+  .reviewable-task-item { align-items: stretch; flex-direction: column; gap: 9px; }
+  .reviewable-task-action { align-self: flex-end; }
   .history-grid { grid-template-columns: 1fr; }
   .flow-meta { grid-template-columns: 1fr; }
   .flow-form { grid-template-columns: 1fr; }

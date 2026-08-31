@@ -25,4 +25,20 @@ class TaskMapperSqlTest {
                 .contains("ORDER BY t.created_at IS NULL, t.created_at, t.id")
                 .endsWith("LIMIT ?");
     }
+
+    @Test
+    void latestTaskRunsIncludeActiveStatesAndMergedTaskLinks() {
+        Configuration mybatis = new Configuration();
+        mybatis.addMapper(AiTaskRunMapper.class);
+
+        String sql = mybatis.getMappedStatement(AiTaskRunMapper.class.getName() + ".selectLatestRunsForTasks")
+                .getBoundSql(Map.of("taskIds", List.of("t1", "t2")))
+                .getSql().replaceAll("\\s+", " ").trim();
+
+        assertThat(sql)
+                .contains("rt.task_id IN ( ? , ? )")
+                .contains("ai_task_run_task newer_rt")
+                .contains("newer.created_at > r.created_at")
+                .doesNotContain("r.status IN");
+    }
 }

@@ -248,6 +248,24 @@ export interface AiRunPage {
   size: number
 }
 
+export interface ReviewableTask {
+  taskId: string
+  title: string
+  projectId: string
+  projectName: string
+  priority: string
+  taskStatus: string
+  action: 'ACCEPTANCE' | 'RETRY'
+  runId: string | null
+  deliveryStage: string | null
+  resultPreview: string | null
+  finishedAt: string | null
+}
+
+/** 当前成员可见的待验收任务，以及最近一次 AI Run 失败后需要处理的任务。 */
+export const fetchReviewableTasks = () =>
+  data<ReviewableTask[]>(http.get('/api/ai/reviewable-tasks'))
+
 export type AiActivityType = 'ALL' | 'FEATURE_DEVELOPMENT' | 'AI_INSPECTION' | 'CHAT_REVIEW'
 export type AiActivityStatus = 'ALL' | 'SUCCEEDED' | 'FAILED'
 export interface AiActivity {

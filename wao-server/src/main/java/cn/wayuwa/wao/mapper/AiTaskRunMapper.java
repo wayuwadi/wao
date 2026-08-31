@@ -2,6 +2,7 @@ package cn.wayuwa.wao.mapper;
 
 import cn.wayuwa.wao.domain.AiTaskRunEntity;
 import cn.wayuwa.wao.domain.AiTaskRunTaskEntity;
+import cn.wayuwa.wao.domain.ReviewableTaskRunRow;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -62,6 +63,31 @@ public interface AiTaskRunMapper extends BaseMapper<AiTaskRunEntity> {
             LIMIT #{limit}
             """)
     List<AiTaskRunEntity> selectTaskRuns(@Param("taskId") String taskId, @Param("limit") int limit);
+
+    /**
+     * 批量读取每条任务最近创建的 AI Run；包含活动态，避免旧失败运行在新运行期间仍被误报为需重试。
+     */
+    @Select("""
+            <script>
+            SELECT rt.task_id AS review_task_id, r.id AS run_id, r.status, r.delivery_stage,
+                   r.result_summary, r.finished_at
+            FROM ai_task_run_task rt
+            JOIN ai_task_run r ON r.id = rt.run_id
+            WHERE rt.task_id IN
+            <foreach collection="taskIds" item="taskId" open="(" separator="," close=")">
+              #{taskId}
+            </foreach>
+              AND NOT EXISTS (
+                SELECT 1
+                FROM ai_task_run_task newer_rt
+                JOIN ai_task_run newer ON newer.id = newer_rt.run_id
+                WHERE newer_rt.task_id = rt.task_id
+                  AND (newer.created_at &gt; r.created_at
+                    OR (newer.created_at = r.created_at AND newer.id &gt; r.id))
+              )
+            </script>
+            """)
+    List<ReviewableTaskRunRow> selectLatestRunsForTasks(@Param("taskIds") List<String> taskIds);
 
     /** 一条主任务是否已属于任何活动运行；合并入队必须整体判断，不能静默漏项。 */
     @Select("""
