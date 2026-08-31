@@ -201,6 +201,12 @@ const router = createRouter({
           meta: { module: 'action-plans', tabKind: 'module' },
         },
         {
+          path: 'decisions',
+          name: 'decisions',
+          component: () => import('@/views/DecisionsView.vue'),
+          meta: { module: 'decisions', tabKind: 'module' },
+        },
+        {
           path: 'appearance',
           name: 'appearance',
           component: () => import('@/views/AppearanceView.vue'),
