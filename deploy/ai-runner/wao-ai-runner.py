@@ -7,6 +7,7 @@ import argparse
 import base64
 import ctypes
 import hashlib
+import html as html_lib
 import io
 import json
 import os
@@ -1000,8 +1001,22 @@ class ProgressReporter:
         self.last_content = ""
         self.pending: tuple[str, str] | None = None
         self.delivery_reported = False
+        # 这里只保留本来就允许显示在 WAO 时间线里的公开计划与消息，供异常时生成报告。
+        # thinking、命令、文件和工具调用在 extract_progress 阶段已经被排除。
+        self.public_entries: list[tuple[str, str]] = []
+
+    def _remember_public(self, kind: str, content: str) -> None:
+        if kind not in {"plan", "message"}:
+            return
+        safe = redact_sensitive_text(content).strip()[:4000]
+        if not safe or (self.public_entries and self.public_entries[-1] == (kind, safe)):
+            return
+        self.public_entries.append((kind, safe))
+        if len(self.public_entries) > 50:
+            self.public_entries = self.public_entries[-50:]
 
     def send(self, kind: str, content: str, force: bool = False) -> None:
+        self._remember_public(kind, content)
         content = " ".join(content.split())[:1000]
         if not content or content == self.last_content:
             return
@@ -1070,11 +1085,16 @@ def _report_prompt(report_path: Path | None) -> str:
     if report_path is None:
         return ""
     return (
-        "\n\n如果本次工作有值得长期查阅或分享的分析、调研、方案、决策依据或验收证据，"
-        "请额外生成一份自包含的 UTF-8 单文件 HTML 报告（资源内联或使用公网绝对地址，最大 10MB），"
+        "\n\n每次 AI Run 都必须生成一份自包含的 UTF-8 单文件 HTML 报告"
+        "（资源内联或使用公网绝对地址，最大 10MB），"
         f"写到 `{report_path}`。这是运行产物路径，不要把它加入 Git 提交。"
-        "Runner 会在会话结束后自动持久化并关联到 AI Run 结果。"
-        "普通小改动没有额外报告价值时不要为了凑数生成占位报告。"
+        "Runner 会在会话结束后自动持久化，并把同一入口关联到任务执行档案和 AI Run 详情。"
+        "报告必须包含：本次面向用户公开的 AI Plan 原文；关键判断、取舍与决定依据；"
+        "改动功能在应用中的具体入口；用户可直接执行的验收步骤与真实结果。"
+        "不得披露模型内部隐藏推理或逐步思维链，只能整理已经面向用户公开的计划、判断和证据；"
+        "不得写入密码、Token、私钥、工具参数或临时对话。"
+        "单元测试、自动化测试、构建、CI 和部署等系统级验收继续记录在提交、PR 与运行摘要中，"
+        "不要放进这份面向功能验收的报告。即使任务失败，也要如实生成报告并标明未完成项，不能伪造结果。"
     )
 
 
@@ -1421,7 +1441,7 @@ def upload_skill_candidates(api: WaoApi, run_id: str, skill_path: Path) -> list[
 
 
 def publish_run_report(api: WaoApi, run_id: str, report_path: Path) -> str | None:
-    """校验并上传可选报告；返回可直接分享的绝对地址。"""
+    """校验并上传报告；返回可直接分享的绝对地址。"""
     if not report_path.is_file():
         return None
     size = report_path.stat().st_size
@@ -1439,6 +1459,78 @@ def publish_run_report(api: WaoApi, run_id: str, report_path: Path) -> str | Non
     if not url:
         raise RuntimeError("WAO 已接收持久化报告，但没有返回公开地址")
     return api.absolute_url(url)
+
+
+SYSTEM_VERIFICATION_PATTERN = re.compile(
+    r"(?:单元测试|单测|自动化测试|测试命令|pytest|vitest|Jenkins|\bCI\b|"
+    r"mvnw?\s|npm\s+(?:test|run\s+build)|pnpm\s+(?:test|build)|gh\s+run|构建|编译|部署)",
+    re.IGNORECASE,
+)
+
+
+def _fallback_report_entries(reporter: ProgressReporter, kind: str) -> list[str]:
+    """读取公开进展；面向功能的兜底报告不重复系统级验收记录。"""
+    entries: list[str] = []
+    for entry_kind, content in reporter.public_entries:
+        if entry_kind != kind:
+            continue
+        # Plan 需要保留原文；这里只过滤公开进展中单独出现的系统级验收细节。
+        if kind == "message" and SYSTEM_VERIFICATION_PATTERN.search(content):
+            continue
+        if content not in entries:
+            entries.append(content)
+    return entries
+
+
+def write_fallback_run_report(report_path: Path, claim: dict[str, Any],
+        reporter: ProgressReporter, exit_code: int) -> bool:
+    """AI 未写文件时，用已公开信息生成诚实的最小 HTML 报告。"""
+    if report_path.exists():
+        return False
+    plans = _fallback_report_entries(reporter, "plan")
+    decisions = _fallback_report_entries(reporter, "message")
+    escape = html_lib.escape
+    task_title = escape(_readable_text(claim.get("taskTitle")) or "未命名任务")
+    task_url = _readable_text(claim.get("promptUrl"))
+    state = "已完成" if exit_code == 0 else "未完成"
+
+    def text_blocks(values: list[str], empty: str) -> str:
+        if not values:
+            return f'<p class="empty">{escape(empty)}</p>'
+        return "".join(f"<pre>{escape(value)}</pre>" for value in values)
+
+    plan_html = text_blocks(plans, "本次运行未取得可公开的 AI Plan；可能在形成计划前已经结束。")
+    decision_html = text_blocks(
+        decisions[-12:], "本次运行未取得更多可公开的关键判断；不会用猜测补齐。")
+    task_link = (f'<a href="{escape(task_url, quote=True)}" target="_blank" rel="noopener">查看任务原文</a>'
+                 if task_url else "任务原文地址未提供")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{task_title} · AI Run 报告</title>
+  <style>
+    :root {{ color-scheme: light; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; color: #24332d; background: #f4f7f5; }}
+    body {{ margin: 0; }} main {{ width: min(900px, calc(100% - 32px)); margin: 32px auto; }}
+    header, section {{ background: #fff; border: 1px solid #dfe9e3; border-radius: 16px; padding: 22px; margin-bottom: 16px; box-shadow: 0 8px 28px rgba(31, 67, 50, .05); }}
+    h1 {{ margin: 0 0 10px; font-size: clamp(24px, 4vw, 36px); }} h2 {{ margin: 0 0 14px; font-size: 18px; }}
+    p {{ line-height: 1.75; }} .meta {{ color: #5d7168; }} .state {{ color: {'#19734b' if exit_code == 0 else '#a24b36'}; font-weight: 700; }}
+    pre {{ margin: 10px 0; padding: 14px; border-radius: 10px; background: #f6f9f7; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; font: inherit; }}
+    .empty {{ color: #7a8b84; }} a {{ color: #16704a; }} ul {{ line-height: 1.8; padding-left: 22px; }}
+  </style>
+</head>
+<body><main>
+  <header><p class="meta">AI Run 自动兜底报告 · <span class="state">{state}</span></p><h1>{task_title}</h1><p>{task_link}</p></header>
+  <section><h2>本次 AI Plan</h2>{plan_html}</section>
+  <section><h2>关键判断与决定</h2>{decision_html}</section>
+  <section><h2>功能入口与人工验收</h2>
+    <ul><li>报告入口：WAO 首页 → AI Run → 本次运行 → HTML 报告。</li><li>任务入口：打开对应任务 → AI 执行档案 → HTML 报告。</li></ul>
+    <p class="empty">AI 未在结束前写出更具体的功能入口或人工验收结果，请结合任务原文和上述公开记录判断；本页不补写未验证内容。</p>
+  </section>
+</main></body></html>""", encoding="utf-8")
+    return True
 
 
 def prepare_codex_home(codex_home: Path, account: dict[str, Any]) -> dict[str, str]:
@@ -1892,25 +1984,6 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             if created_skills:
                 reporter.send("message", f"已把 {len(created_skills)} 个可复用方法收进 Skill 市场草稿", force=True)
                 result_text = (result_text + "\n\nSkill 市场草稿：" + "、".join(created_skills)).strip()
-        try:
-            report_url = publish_run_report(api, run_id, report_path)
-            if report_url:
-                reporter.send("message", "持久化报告已发布，可在运行结果中随时查看和分享", force=True)
-                result_text = f"{result_text}\n\n持久化报告：{report_url}".strip()
-                shutil.rmtree(report_path.parent, ignore_errors=True)
-        except Exception as exc:  # noqa: BLE001 - 报告既然已生成，就不能静默丢失
-            report_error = f"持久化报告上传失败：{exc}"
-            log(f"[{run_id}] {report_error}")
-            result_text = f"{result_text}\n\n{report_error}".strip()
-            if exit_code == 0:
-                exit_code = 2
-        if exit_code == 0:
-            closing = f"{name} 已执行完成，正在整理结果"
-        elif exit_code == 3:
-            closing = f"{name} 已结束会话但未报告任务状态，需要人工确认结果"
-        else:
-            closing = f"{name} 执行未完成，正在整理失败原因"
-        reporter.send("result", closing, force=True)
         summary = f"执行工具：{name}\n工作目录：{worktree}\n\n{result_text}"[-30000:]
     except Exception as exc:  # noqa: BLE001 - 必须把节点错误回传给 WAO
         if isinstance(exc, SkillInstallError):
@@ -1921,6 +1994,28 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
                    f"工作目录：{worktree or '尚未创建'}\n本机日志：{LOG_FILE}")[-30000:]
         log(f"[{run_id}] {stage}失败：{exc}")
     finally:
+        try:
+            generated_fallback = write_fallback_run_report(report_path, claim, reporter, exit_code)
+            report_url = publish_run_report(api, run_id, report_path)
+            if not report_url:
+                raise RuntimeError("本次运行没有生成可上传的 HTML 报告")
+            source = "兜底 HTML 报告" if generated_fallback else "HTML 报告"
+            reporter.send("message", f"{source}已发布，可在任务和运行详情中查看", force=True)
+            summary = f"{summary}\n\nHTML 报告：{report_url}".strip()[-30000:]
+            shutil.rmtree(report_path.parent, ignore_errors=True)
+        except Exception as exc:  # noqa: BLE001 - 每次运行都必须有报告，失败不能静默丢失
+            report_error = f"HTML 报告上传失败：{exc}"
+            log(f"[{run_id}] {report_error}")
+            summary = f"{summary}\n\n{report_error}".strip()[-30000:]
+            if exit_code == 0:
+                exit_code = 2
+        if exit_code == 0:
+            closing = f"{name} 已执行完成，正在整理结果"
+        elif exit_code == 3:
+            closing = f"{name} 已结束会话但未报告任务状态，需要人工确认结果"
+        else:
+            closing = f"{name} 执行未完成，正在整理失败原因"
+        reporter.send("result", closing, force=True)
         try:
             candidates = completion_memory_candidates(exit_code, memory_path)
             post_run_completion(api, run_id,

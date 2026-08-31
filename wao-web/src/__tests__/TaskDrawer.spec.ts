@@ -946,7 +946,8 @@ describe('TaskDrawer', () => {
     await flushPromises()
 
     const report = w.find('.ai-run-report')
-    expect(report.text()).toContain('持久化报告')
+    expect(report.text()).toContain('HTML 报告')
+    expect(report.text()).toContain('公开 AI Plan')
     expect(report.attributes('href')).toBe('/api/pages/ai-run-ar-report')
     expect(report.attributes('target')).toBe('_blank')
     w.unmount()

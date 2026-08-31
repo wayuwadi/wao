@@ -2028,7 +2028,7 @@ onBeforeUnmount(() => {
           rel="noopener"
         >
           <span><i class="ri-file-chart-line"></i></span>
-          <div><b>查看持久化报告</b><small>完整报告已关联本次运行，可直接分享公开链接</small></div>
+          <div><b>查看 HTML 报告</b><small>公开 AI Plan、关键决定、功能入口与人工验收</small></div>
           <i class="ri-arrow-right-up-line"></i>
         </a>
         <footer class="run-detail-footer">

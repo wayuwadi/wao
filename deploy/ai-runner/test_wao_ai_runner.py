@@ -1019,7 +1019,7 @@ class PromptTest(unittest.TestCase):
         self.assertIn("WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT", self.PROMPT)
         self.assertIn("队列中更旧的构建失败时继续等待", self.PROMPT)
 
-    def test_prompt_exposes_optional_report_path_outside_git(self) -> None:
+    def test_prompt_requires_user_facing_report_outside_git(self) -> None:
         path = Path("C:/wao/.wao-run-reports/ar1/report.html")
 
         prompt = RUNNER.build_prompt({
@@ -1029,7 +1029,11 @@ class PromptTest(unittest.TestCase):
 
         self.assertIn(str(path), prompt)
         self.assertIn("不要把它加入 Git 提交", prompt)
-        self.assertIn("不要为了凑数生成占位报告", prompt)
+        self.assertIn("每次 AI Run 都必须生成", prompt)
+        self.assertIn("AI Plan 原文", prompt)
+        self.assertIn("功能在应用中的具体入口", prompt)
+        self.assertIn("不得披露模型内部隐藏推理", prompt)
+        self.assertIn("单元测试、自动化测试、构建、CI 和部署", prompt)
 
     def test_live_update_keeps_the_current_thread_and_changes_direction(self) -> None:
         prompt = RUNNER.build_live_update_prompt("先修移动端，桌面端保持现状")
@@ -1113,6 +1117,39 @@ class PromptTest(unittest.TestCase):
         api.post_file.assert_called_once_with(
             "/api/ai/runner/runs/ar1/report", "html", report, "text/html; charset=UTF-8")
 
+    def test_missing_report_uses_only_public_plan_and_user_progress(self) -> None:
+        directory = Path(tempfile.mkdtemp(prefix="wao-fallback-report-"))
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        report = directory / "report.html"
+        reporter = RUNNER.ProgressReporter(Mock(), "ar1", interval=0)
+        reporter.send("plan", "1. 阅读规格\n2. 实现任务入口", force=True)
+        reporter.send("message", "决定复用已有报告地址，避免新增数据链路", force=True)
+        reporter.send("message", "vitest 与构建已经通过", force=True)
+
+        created = RUNNER.write_fallback_run_report(report, {
+            "taskTitle": "每次运行生成报告", "promptUrl": "https://wao.example/task.md",
+        }, reporter, 0)
+        html = report.read_text(encoding="utf-8")
+
+        self.assertTrue(created)
+        self.assertIn("1. 阅读规格", html)
+        self.assertIn("决定复用已有报告地址", html)
+        self.assertNotIn("vitest", html)
+        self.assertIn("AI Run → 本次运行 → HTML 报告", html)
+        self.assertIn("不补写未验证内容", html)
+
+    def test_existing_invalid_report_is_not_replaced_by_fallback(self) -> None:
+        directory = Path(tempfile.mkdtemp(prefix="wao-existing-report-"))
+        self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        report = directory / "report.html"
+        report.write_bytes(b"")
+
+        created = RUNNER.write_fallback_run_report(
+            report, {"taskTitle": "坏报告"}, RUNNER.ProgressReporter(Mock(), "ar1"), 0)
+
+        self.assertFalse(created)
+        self.assertEqual(b"", report.read_bytes())
+
 
 class ActiveContinuationTest(unittest.TestCase):
     """运行中输入必须真实停止当前回合并恢复同一 CLI 会话。"""
@@ -1131,6 +1168,8 @@ class ActiveContinuationTest(unittest.TestCase):
         usage = RUNNER._blank_usage()
         api = Mock()
         api.get.return_value = {"cancelled": False, "continuationInput": "请先修手机端跳动"}
+        api.post_file.return_value = {"url": "/api/pages/ai-run-ar-live"}
+        api.absolute_url.return_value = "https://wao.example/api/pages/ai-run-ar-live"
         calls = 0
 
         def turn(*args, **kwargs):
@@ -1178,6 +1217,14 @@ class FailureRetryTest(unittest.TestCase):
             "promptUrl": "https://wao.example/task.md", "failureRetryCount": 2,
         }
 
+    @staticmethod
+    def runner_api() -> Mock:
+        api = Mock()
+        api.get.return_value = {"cancelled": False}
+        api.post_file.return_value = {"url": "/api/pages/ai-run-ar-retry"}
+        api.absolute_url.return_value = "https://wao.example/api/pages/ai-run-ar-retry"
+        return api
+
     @patch.object(RUNNER, "prepare_worktree")
     @patch.object(RUNNER, "run_codex")
     def test_nonzero_exit_retries_then_only_reports_success(self, run_codex: Mock,
@@ -1188,8 +1235,7 @@ class FailureRetryTest(unittest.TestCase):
             (1, "临时网络异常", "thread-retry", usage),
             (0, "WAO_RUN_STATUS: SUCCESS\n重试后已完成", "thread-retry", usage),
         ]
-        api = Mock()
-        api.get.return_value = {"cancelled": False}
+        api = self.runner_api()
 
         RUNNER.execute_claim(
             api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
@@ -1201,6 +1247,8 @@ class FailureRetryTest(unittest.TestCase):
         self.assertEqual(1, len(complete_calls))
         self.assertEqual(0, complete_calls[0].args[1]["exitCode"])
         self.assertIn("重试后已完成", complete_calls[0].args[1]["resultSummary"])
+        self.assertIn("HTML 报告：https://wao.example", complete_calls[0].args[1]["resultSummary"])
+        api.post_file.assert_called_once()
 
     @patch.object(RUNNER.time, "sleep")
     @patch.object(RUNNER, "prepare_worktree")
@@ -1211,8 +1259,7 @@ class FailureRetryTest(unittest.TestCase):
         run_codex.return_value = (
             0, "WAO_RUN_STATUS: SUCCESS\n工作区恢复后已完成", "thread-recovered",
             RUNNER._blank_usage())
-        api = Mock()
-        api.get.return_value = {"cancelled": False}
+        api = self.runner_api()
 
         RUNNER.execute_claim(
             api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
@@ -1234,7 +1281,7 @@ class FailureRetryTest(unittest.TestCase):
     def test_git_workspace_failure_stops_after_configured_retries(self, run_codex: Mock,
             prepare_worktree: Mock, sleep: Mock) -> None:
         prepare_worktree.side_effect = RuntimeError("持续 Git 配置错误")
-        api = Mock()
+        api = self.runner_api()
 
         RUNNER.execute_claim(
             api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
@@ -1247,6 +1294,8 @@ class FailureRetryTest(unittest.TestCase):
         self.assertNotEqual(0, complete.args[1]["exitCode"])
         self.assertIn("准备 Git 工作区", complete.args[1]["resultSummary"])
         self.assertIn("持续 Git 配置错误", complete.args[1]["resultSummary"])
+        api.post_file.assert_called_once()
+        self.assertIn("HTML 报告：https://wao.example", complete.args[1]["resultSummary"])
 
     @patch.object(RUNNER, "prepare_worktree")
     @patch.object(RUNNER, "run_codex")
@@ -1254,8 +1303,7 @@ class FailureRetryTest(unittest.TestCase):
             prepare_worktree: Mock) -> None:
         prepare_worktree.return_value = self.worktree
         run_codex.side_effect = RuntimeError("本地 CLI 异常")
-        api = Mock()
-        api.get.return_value = {"cancelled": False}
+        api = self.runner_api()
 
         RUNNER.execute_claim(
             api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
@@ -1273,8 +1321,7 @@ class FailureRetryTest(unittest.TestCase):
         prepare_worktree.return_value = self.worktree
         run_codex.return_value = (
             0, "WAO_RUN_STATUS: BLOCKED\n缺少必要权限", "thread-blocked", RUNNER._blank_usage())
-        api = Mock()
-        api.get.return_value = {"cancelled": False}
+        api = self.runner_api()
 
         RUNNER.execute_claim(
             api, self.claim, self.root, "workspace-write", "git", {"codex": "codex"})
