@@ -168,6 +168,7 @@ describe('WorkdayRhythmView', () => {
 
     expect(wrapper.find('.editor').exists()).toBe(true)
     expect(wrapper.vm.$route.query.settings).toBeUndefined()
+    expect(wrapper.get('[data-editor-section="energy"]').classes()).toContain('active')
     expect(wrapper.get('#energy-items-title').text()).toBe('精力补给项目')
     expect(wrapper.findAll('.energy-item-editor')).toHaveLength(
       DEFAULT_WORKDAY_RHYTHM.energyItems.length,
@@ -340,6 +341,8 @@ describe('WorkdayRhythmView', () => {
     expect(wrapper.text()).not.toContain('累计项目可反复记录')
 
     await wrapper.get('.settings-button').trigger('click')
+    expect(wrapper.get('[data-editor-section="checklist"]').classes()).toContain('active')
+    await wrapper.get('[data-editor-section="notification"]').trigger('click')
     await wrapper.get('.toggle-field input').setValue(true)
     await flushPromises()
     await wrapper.get('.channel-field select').setValue('CHAT')
@@ -388,6 +391,7 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
 
     await wrapper.get('.settings-button').trigger('click')
+    await wrapper.get('[data-editor-section="notification"]').trigger('click')
     await wrapper.get('.channel-field select').setValue('WEBHOOK')
     await flushPromises()
     await wrapper.get('.chat-field select').setValue('fw_daily')
@@ -544,6 +548,7 @@ describe('WorkdayRhythmView', () => {
     const wrapper = await mountView()
     await flushPromises()
     await wrapper.get('.settings-button').trigger('click')
+    await wrapper.get('[data-editor-section="timeline"]').trigger('click')
     const timeInputs = wrapper.findAll('.block-editor input[type="time"]')
     await timeInputs[1]!.setValue('08:30')
     await wrapper.get('.editor .primary').trigger('click')
@@ -571,6 +576,7 @@ describe('WorkdayRhythmView', () => {
 
     await wrapper.get('.settings-button').trigger('click')
     await flushPromises()
+    await wrapper.get('[data-editor-section="notification"]').trigger('click')
     await wrapper.get('.toggle-field input').setValue(true)
     await flushPromises()
     await wrapper.get('.channel-field select').setValue('CHAT')
@@ -627,6 +633,7 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
 
     await wrapper.get('.settings-button').trigger('click')
+    await wrapper.get('[data-editor-section="notification"]').trigger('click')
     await wrapper.get('.toggle-field input').setValue(true)
     await flushPromises()
     await wrapper.get('.chat-field select').setValue('fw_daily')
@@ -653,6 +660,7 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
 
     await wrapper.get('.settings-button').trigger('click')
+    await wrapper.get('[data-editor-section="energy"]').trigger('click')
     await wrapper.get('.energy-items-editor > header button').trigger('click')
     const rows = wrapper.findAll('.energy-item-editor')
     expect(rows).toHaveLength(3)
@@ -696,6 +704,7 @@ describe('WorkdayRhythmView', () => {
     await flushPromises()
 
     await wrapper.get('.settings-button').trigger('click')
+    await wrapper.get('[data-editor-section="energy"]').trigger('click')
     await wrapper.findAll('.remove-energy-item')[2]!.trigger('click')
     await wrapper.get('.editor .primary').trigger('click')
     await flushPromises()
