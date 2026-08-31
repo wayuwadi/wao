@@ -706,7 +706,7 @@ describe('TaskDrawer', () => {
 
     expect(createAiRuns).toHaveBeenCalledWith([taskId], {
       subId: null, engine: 'claude', runnerId: null, accountId: null,
-      model: null, reasoningEffort: null, planMode: false,
+      model: null, reasoningEffort: null, planMode: false, goalMode: false,
     })
     w.unmount()
   })
@@ -730,7 +730,7 @@ describe('TaskDrawer', () => {
 
     expect(createAiRuns).toHaveBeenCalledWith([taskId], {
       subId, engine: 'codex', runnerId: null, accountId: null,
-      model: null, reasoningEffort: null, planMode: true,
+      model: null, reasoningEffort: null, planMode: true, goalMode: false,
     })
     w.unmount()
   })
@@ -745,12 +745,12 @@ describe('TaskDrawer', () => {
 
     await w.find('.ai-run-btn').trigger('click')
     await flushPromises()
-    await w.find('.plan-mode').trigger('click')
+    await w.find('.direct-mode').trigger('click')
     await w.find('.launcher footer .primary').trigger('click')
     await flushPromises()
 
     expect(createAiRuns).toHaveBeenCalledWith([taskId], expect.objectContaining({
-      engine: 'codex', planMode: false,
+      engine: 'codex', planMode: false, goalMode: false,
     }))
     w.unmount()
   })

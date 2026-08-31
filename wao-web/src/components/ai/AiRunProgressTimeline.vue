@@ -26,7 +26,7 @@ function emptyText(run: AiRun) {
     </div>
     <ol v-else>
       <li v-for="item in run.progress" :key="item.id" :class="`kind-${item.kind}`">
-        <span class="progress-dot"><i :class="item.kind === 'result' ? 'ri-check-line' : 'ri-sparkling-2-line'"></i></span>
+        <span class="progress-dot"><i :class="item.kind === 'result' ? 'ri-check-line' : item.kind === 'goal' ? 'ri-focus-3-line' : 'ri-sparkling-2-line'"></i></span>
         <div><p>{{ item.content }}</p><time>{{ timeText(item.createdAt) }}</time></div>
       </li>
     </ol>
@@ -41,6 +41,7 @@ function emptyText(run: AiRun) {
 .progress-dot { position: absolute; left: 0; top: 0; width: 21px; height: 21px; border-radius: 50%; background: var(--wao-primary-soft); color: var(--wao-primary); display: grid; place-items: center; font-size: 10px; }
 .active li:last-child .progress-dot, .active .progress-empty i { animation: pulse 1.5s infinite; }
 .kind-result .progress-dot { background: var(--wao-success-bg); color: var(--wao-success); }
+.kind-goal .progress-dot { background: #e8ecff; color: #4358d6; }
 .ai-progress p { margin: 0; color: var(--wao-text-2); font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
 .ai-progress time { display: block; margin-top: 3px; color: var(--wao-text-weak); font-size: 10px; }
 .progress-empty { color: var(--wao-text-3); font-size: 12px; display: flex; align-items: center; gap: 8px; }

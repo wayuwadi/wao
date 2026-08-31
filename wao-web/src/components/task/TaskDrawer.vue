@@ -575,7 +575,7 @@ async function notifyTask() {
   }
 }
 async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: string | null,
-  model: string | null, reasoningEffort: string | null, planMode: boolean) {
+  model: string | null, reasoningEffort: string | null, planMode: boolean, goalMode: boolean) {
   const t = task.value
   if (!t || aiStarting.value) return
   // 子任务派工是独立的一条运行，任务整体正在跑也不该拦着
@@ -584,7 +584,8 @@ async function runWithAi(engine: AiEngine, runnerId: string | null, accountId: s
   aiStarting.value = true
   try {
     const created = await createAiRuns([t.id], {
-      subId, engine, runnerId, accountId, model: model || null, reasoningEffort: reasoningEffort || null, planMode,
+      subId, engine, runnerId, accountId, model: model || null, reasoningEffort: reasoningEffort || null,
+      planMode, goalMode,
     })
     if (created.length) {
       // 接口响应本身就是已落库的真实运行，先显示它，再由轮询补齐后续状态。

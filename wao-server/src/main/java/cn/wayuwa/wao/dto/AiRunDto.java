@@ -26,6 +26,13 @@ public record AiRunDto(
         String serviceTier,
         /** 是否启用先规划再连续执行的 Codex Plan 工作流。 */
         Boolean planMode,
+        /** 是否启用由 Codex app-server 持久化状态的原生目标模式。 */
+        Boolean goalMode,
+        String goalObjective,
+        /** pending / active / paused / blocked / usageLimited / budgetLimited / complete。 */
+        String goalStatus,
+        Long goalTokensUsed,
+        Long goalTimeUsedSeconds,
         String status,
         /** 代码与部署的细分阶段：coding / waiting_deployment / deployment_succeeded / deployment_failed / code_failed。 */
         String deliveryStage,

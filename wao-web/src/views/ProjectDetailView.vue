@@ -248,6 +248,7 @@ async function runSelectedWithAi(
   model: string | null,
   reasoningEffort: string | null,
   planMode: boolean,
+  goalMode: boolean,
 ) {
   if (!selectedTaskIds.value.length || aiBatchStarting.value) return
   const taskIds = [...selectedTaskIds.value]
@@ -255,7 +256,7 @@ async function runSelectedWithAi(
   aiBatchStarting.value = true
   try {
     const created = await createAiRuns(taskIds, {
-      mergeTasks, engine, runnerId, accountId, model, reasoningEffort, planMode,
+      mergeTasks, engine, runnerId, accountId, model, reasoningEffort, planMode, goalMode,
     })
     taskIds.forEach((taskId) => data.patchTask(taskId, { status: 'AI 进行中' },
       mergeTasks ? '已合并到同一次 AI Run' : '已单独创建 AI Run'))
