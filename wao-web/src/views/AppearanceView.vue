@@ -15,13 +15,15 @@ import {
   type GarmentStatus,
 } from '@/api/appearance'
 import { toast } from '@/composables/toast'
+import { useSessionStore } from '@/stores/session'
 
 type Section = 'wardrobe' | 'outfits' | 'profile' | 'plans' | 'notes'
 type EditorKind = 'garment' | 'outfit' | 'wear' | 'plan' | 'note' | ''
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
-const WORKSPACE_DRAFT_KEY = 'wao-appearance-workspace-draft-v1'
-const FORM_DRAFT_KEY = 'wao-appearance-form-draft-v1'
+const WORKSPACE_DRAFT_KEY_PREFIX = 'wao-appearance-workspace-draft-v2'
+const FORM_DRAFT_KEY_PREFIX = 'wao-appearance-form-draft-v2'
+const session = useSessionStore()
 const today = isoDate(new Date())
 const sections: Array<{ id: Section; label: string; icon: string }> = [
   { id: 'wardrobe', label: '服饰物品库', icon: 'ri-shirt-line' },
@@ -251,16 +253,29 @@ function readJson<T>(key: string): T | null {
     return null
   }
 }
+function memberDraftKey(prefix: string) {
+  return session.userId ? `${prefix}:${encodeURIComponent(session.userId)}` : ''
+}
+function workspaceDraftKey() {
+  return memberDraftKey(WORKSPACE_DRAFT_KEY_PREFIX)
+}
+function formDraftKey() {
+  return memberDraftKey(FORM_DRAFT_KEY_PREFIX)
+}
 function writeWorkspaceDraft() {
+  const key = workspaceDraftKey()
+  if (!key) return
   try {
-    localStorage.setItem(WORKSPACE_DRAFT_KEY, JSON.stringify(workspace.value))
+    localStorage.setItem(key, JSON.stringify(workspace.value))
   } catch {
     /* 内存继续保留。 */
   }
 }
 function clearWorkspaceDraft() {
+  const key = workspaceDraftKey()
+  if (!key) return
   try {
-    localStorage.removeItem(WORKSPACE_DRAFT_KEY)
+    localStorage.removeItem(key)
   } catch {
     /* 忽略。 */
   }
@@ -271,7 +286,7 @@ async function load() {
   loadError.value = ''
   try {
     const server = await fetchAppearanceWorkspace()
-    const draft = readJson<AppearanceWorkspace>(WORKSPACE_DRAFT_KEY)
+    const draft = readJson<AppearanceWorkspace>(workspaceDraftKey())
     applyingServer = true
     workspace.value = draft ?? server
     await nextTick()
@@ -282,7 +297,7 @@ async function load() {
       saveError.value = '已恢复上次未同步的本机草稿，请重试保存。'
     }
   } catch (error) {
-    const draft = readJson<AppearanceWorkspace>(WORKSPACE_DRAFT_KEY)
+    const draft = readJson<AppearanceWorkspace>(workspaceDraftKey())
     if (draft) {
       applyingServer = true
       workspace.value = draft
@@ -380,7 +395,7 @@ function openCreate(kind: Exclude<EditorKind, ''>) {
   editingId.value = ''
   editorKind.value = kind
   const draft = readJson<{ kind: EditorKind; editingId?: string; form: Record<string, unknown> }>(
-    FORM_DRAFT_KEY,
+    formDraftKey(),
   )
   if (draft?.kind === kind && !draft.editingId) Object.assign(editorForm()!, draft.form)
 }
@@ -397,7 +412,7 @@ function editGarment(item: AppearanceGarment) {
     purchaseDate: item.purchaseDate ?? '',
   })
   const draft = readJson<{ kind: EditorKind; editingId?: string; form: Record<string, unknown> }>(
-    FORM_DRAFT_KEY,
+    formDraftKey(),
   )
   if (draft?.kind === 'garment' && draft.editingId === item.id)
     Object.assign(garmentForm, draft.form)
@@ -412,14 +427,15 @@ function editOutfit(item: AppearanceOutfit) {
     scenarios: joinTags(item.scenarios),
   })
   const draft = readJson<{ kind: EditorKind; editingId?: string; form: Record<string, unknown> }>(
-    FORM_DRAFT_KEY,
+    formDraftKey(),
   )
   if (draft?.kind === 'outfit' && draft.editingId === item.id) Object.assign(outfitForm, draft.form)
 }
 function closeEditor(clearDraft = false) {
-  if (clearDraft)
+  const key = formDraftKey()
+  if (clearDraft && key)
     try {
-      localStorage.removeItem(FORM_DRAFT_KEY)
+      localStorage.removeItem(key)
     } catch {
       /* 忽略。 */
     }
@@ -607,10 +623,11 @@ watch(
   [garmentForm, outfitForm, wearForm, planForm, noteForm],
   () => {
     const form = editorForm()
-    if (!form) return
+    const key = formDraftKey()
+    if (!form || !key) return
     try {
       localStorage.setItem(
-        FORM_DRAFT_KEY,
+        key,
         JSON.stringify({ kind: editorKind.value, editingId: editingId.value, form }),
       )
     } catch {
