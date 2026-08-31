@@ -369,6 +369,9 @@ async function refreshGoalRunOptions() {
   try {
     const options = await fetchAiRunOptions()
     goalRunOptions.value = options
+    goalExecutionMode.value = options.defaultExecutionMode === 'direct' || options.defaultExecutionMode === 'goal'
+      ? options.defaultExecutionMode
+      : 'plan'
     if (!options.reasoningEfforts.some((item) => item.id === goalReasoningEffort.value)) {
       goalReasoningEffort.value = options.defaultReasoningEffort
     }

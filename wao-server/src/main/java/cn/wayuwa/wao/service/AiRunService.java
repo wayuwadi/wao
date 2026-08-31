@@ -112,6 +112,7 @@ public class AiRunService {
     private static final Set<String> CODEX_MODELS = Set.of(
             "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
     private static final Set<String> CODEX_REASONING_EFFORTS = Set.of("low", "medium", "high");
+    private static final Set<String> EXECUTION_MODES = Set.of("direct", "plan", "goal");
     private static final Map<String, String> ENGINE_LABELS = Map.of("codex", "Codex", "claude", "Claude Code",
             "qoder", "Qoder");
     private static final Pattern MARKDOWN_IMAGE = Pattern.compile("!\\[([^\\]]*)]\\(([^\\s)]+)\\)");
@@ -137,6 +138,7 @@ public class AiRunService {
     private final ProjectMemoryService projectMemories;
     private final AiSkillCapabilityService skillCapabilities;
     private final FeishuAiRunReactionNotifier runReactions;
+    private final SettingService settings;
 
     /** 返回后台受控的单次运行参数；前端不自行维护模型标识。 */
     public AiRunOptionsDto runOptions() {
@@ -149,7 +151,22 @@ public class AiRunService {
                         new AiRunReasoningOptionDto("high", "高", "为复杂任务投入更多推理"),
                         new AiRunReasoningOptionDto("medium", "中", "速度与推理深度均衡"),
                         new AiRunReasoningOptionDto("low", "低", "优先速度与较低消耗")),
-                DEFAULT_CODEX_MODEL, DEFAULT_REASONING_EFFORT, CODEX_SERVICE_TIER);
+                DEFAULT_CODEX_MODEL, DEFAULT_REASONING_EFFORT, defaultExecutionMode(), CODEX_SERVICE_TIER);
+    }
+
+    /** 保存新建 Codex 运行的默认执行模式，并返回服务端规范化后的完整选项。 */
+    public AiRunOptionsDto saveDefaultExecutionMode(String executionMode) {
+        String normalized = executionMode == null ? "" : executionMode.trim().toLowerCase();
+        if (!EXECUTION_MODES.contains(normalized)) {
+            throw new BadRequestException("默认执行模式只支持 direct、plan 或 goal");
+        }
+        settings.put(SettingService.AI_RUN_DEFAULT_EXECUTION_MODE, normalized);
+        return runOptions();
+    }
+
+    private String defaultExecutionMode() {
+        String configured = settings.get(SettingService.AI_RUN_DEFAULT_EXECUTION_MODE, "plan").trim().toLowerCase();
+        return EXECUTION_MODES.contains(configured) ? configured : "plan";
     }
 
     public AiRunService(AiProjectConfigMapper configMapper, AiRunnerNodeMapper runnerMapper,
@@ -157,7 +174,8 @@ public class AiRunService {
             TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier,
             RunnerScriptService scripts, AiAccountService accounts, HostedPageService hostedPages,
             ImageService images, CodexQuotaService codexQuotas, ProjectMemoryService projectMemories,
-            AiSkillCapabilityService skillCapabilities, FeishuAiRunReactionNotifier runReactions) {
+            AiSkillCapabilityService skillCapabilities, FeishuAiRunReactionNotifier runReactions,
+            SettingService settings) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
         this.pairMapper = pairMapper;
@@ -175,6 +193,7 @@ public class AiRunService {
         this.projectMemories = projectMemories;
         this.skillCapabilities = skillCapabilities;
         this.runReactions = runReactions;
+        this.settings = settings;
     }
 
     /** 读取项目配置；尚未保存过时返回安全的关闭状态。 */

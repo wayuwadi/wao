@@ -708,9 +708,23 @@ paths:
         '404': { description: 任务或子任务不存在 }
   /ai/run-options:
     get:
-      summary: 返回后台允许的 Codex 模型、推理强度、默认值与固定服务档位
+      summary: 返回后台允许的 Codex 模型、推理强度、默认执行模式与固定服务档位
       responses:
         '200': { description: serviceTier 固定为 default，表示本次运行不启用 Fast }
+    put:
+      summary: 保存后续新建 Codex 运行默认选中的执行模式
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [defaultExecutionMode]
+              properties:
+                defaultExecutionMode: { type: string, enum: [direct, plan, goal] }
+      responses:
+        '200': { description: 返回更新后的完整运行选项 }
+        '400': { description: 执行模式不在允许范围内 }
   /ai/goals:
     post:
       summary: 把长 Markdown 目标创建为任务并立即交给项目默认 AI 工作流

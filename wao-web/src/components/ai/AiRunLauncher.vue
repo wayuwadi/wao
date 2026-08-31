@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { fetchAiProjectConfig, fetchAiRunners, fetchAiRunOptions } from '@/api/ai'
+import { fetchAiProjectConfig, fetchAiRunners, fetchAiRunOptions, saveAiRunDefaultExecutionMode } from '@/api/ai'
 import { fetchAiAccounts, type AiAccount } from '@/api/aiAccount'
 import { AI_ENGINES, engineColor } from '@/composables/aiEngines'
 import { usePreferenceStore } from '@/stores/preferences'
@@ -23,9 +23,20 @@ const accountId = ref('')
 const runOptions = ref<AiRunOptions | null>(null)
 const model = ref('')
 const reasoningEffort = ref('')
-const executionMode = ref<'direct' | 'plan' | 'goal'>('plan')
+type ExecutionMode = 'direct' | 'plan' | 'goal'
+const executionMode = ref<ExecutionMode>('plan')
+const defaultExecutionMode = ref<ExecutionMode>('plan')
+const defaultModeState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const defaultModeError = ref('')
 const preferredRunnerId = ref('')
 let runnerRefreshTimer: ReturnType<typeof setInterval> | null = null
+const executionModeLabels: Record<ExecutionMode, string> = {
+  direct: '直接执行', plan: 'Plan 模式', goal: '目标模式',
+}
+
+function normalizeExecutionMode(value: unknown): ExecutionMode {
+  return value === 'direct' || value === 'goal' ? value : 'plan'
+}
 
 /** 装了这种 AI 工具的电脑；离线的也列出来，选中后任务会排队等它上线。 */
 const candidates = computed(() => runners.value.filter((runner) => runner.engines.includes(engine.value)))
@@ -78,6 +89,20 @@ function startRun() {
     engine.value === 'codex' && executionMode.value === 'goal')
 }
 
+async function saveSelectedModeAsDefault() {
+  defaultModeState.value = 'saving'
+  defaultModeError.value = ''
+  try {
+    const options = await saveAiRunDefaultExecutionMode(executionMode.value)
+    defaultExecutionMode.value = normalizeExecutionMode(options.defaultExecutionMode)
+    if (runOptions.value) runOptions.value = options
+    defaultModeState.value = 'saved'
+  } catch (error) {
+    defaultModeError.value = error instanceof Error ? error.message : '默认执行模式保存失败'
+    defaultModeState.value = 'error'
+  }
+}
+
 watch(accountId, (next) => {
   if (next) {
     runnerId.value = linuxCandidate.value?.id ?? ''
@@ -86,6 +111,10 @@ watch(accountId, (next) => {
   runnerId.value = candidates.value.some((runner) => runner.id === preferredRunnerId.value)
     ? preferredRunnerId.value
     : ''
+})
+
+watch(executionMode, () => {
+  if (defaultModeState.value === 'saved') defaultModeState.value = 'idle'
 })
 
 async function refreshRunners() {
@@ -106,6 +135,8 @@ onMounted(async () => {
     runOptions.value = options
     model.value = options.defaultCodexModel
     reasoningEffort.value = options.defaultReasoningEffort
+    executionMode.value = normalizeExecutionMode(options.defaultExecutionMode)
+    defaultExecutionMode.value = executionMode.value
     // 项目默认工具一台电脑都没装时，直接落到已经接入的那种，省得用户先撞一次 400。
     const supported = AI_ENGINES.map((item) => item.id)
       .filter((id) => nodes.some((runner) => runner.engines.includes(id)))
@@ -192,6 +223,21 @@ onBeforeUnmount(() => {
             title="目标模式：持续工作到可验证终态" @click="executionMode = 'goal'">
             <i class="ri-focus-3-line"></i><span><b>目标模式</b><small>持续推进到完成或明确阻塞</small></span>
           </button>
+        </div>
+        <div class="default-mode-setting" :class="{ error: defaultModeState === 'error' }">
+          <span>
+            <i :class="defaultModeState === 'saving' ? 'ri-loader-4-line spin' : defaultModeState === 'saved' ? 'ri-checkbox-circle-line' : 'ri-pushpin-line'"></i>
+            默认：{{ executionModeLabels[defaultExecutionMode] }}
+            <small v-if="defaultModeState === 'saving'">保存中…</small>
+            <small v-else-if="defaultModeState === 'saved'">已保存</small>
+            <small v-else-if="defaultModeState === 'error'" :title="defaultModeError">保存失败</small>
+          </span>
+          <button
+            v-if="executionMode !== defaultExecutionMode || defaultModeState === 'error'"
+            type="button"
+            :disabled="defaultModeState === 'saving'"
+            @click="saveSelectedModeAsDefault"
+          >{{ defaultModeState === 'error' ? '重试' : `将${executionModeLabels[executionMode]}设为默认` }}</button>
         </div>
       </template>
 
@@ -280,6 +326,12 @@ onBeforeUnmount(() => {
   color: var(--wao-text-1);
   font-size: 12px;
 }
+.default-mode-setting { min-height: 28px; margin-top: 7px; padding: 5px 7px; border-radius: 7px; background: var(--wao-bg-sub); color: var(--wao-text-weak); font-size: 10px; display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+.default-mode-setting span { min-width: 0; display: inline-flex; align-items: center; gap: 4px; }
+.default-mode-setting small { color: var(--wao-success-strong); font-size: 9px; }
+.default-mode-setting button { flex: none; min-height: 22px; padding: 0 6px; border: 1px solid var(--wao-primary-line); border-radius: 6px; background: var(--wao-primary-tint); color: var(--wao-primary-text); cursor: pointer; font-size: 9.5px; }
+.default-mode-setting button:disabled { cursor: default; opacity: .55; }
+.default-mode-setting.error,.default-mode-setting.error small { color: var(--wao-danger-strong); }
 .launcher.compact .runner-select, .launcher.compact .execution-modes { margin-top: 10px; }
 .execution-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
 .plan-mode {

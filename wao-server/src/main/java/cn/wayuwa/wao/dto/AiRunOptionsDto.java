@@ -8,4 +8,5 @@ public record AiRunOptionsDto(
         List<AiRunReasoningOptionDto> reasoningEfforts,
         String defaultCodexModel,
         String defaultReasoningEffort,
+        String defaultExecutionMode,
         String serviceTier) { }

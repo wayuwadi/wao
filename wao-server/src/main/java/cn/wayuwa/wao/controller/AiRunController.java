@@ -35,6 +35,7 @@ import cn.wayuwa.wao.dto.SaveWaoApplicationSkillsRequest;
 import cn.wayuwa.wao.dto.AiSkillCapabilityDto;
 import cn.wayuwa.wao.dto.SaveAiEvolutionScheduleRequest;
 import cn.wayuwa.wao.dto.SaveAiTaskAutoRunPolicyRequest;
+import cn.wayuwa.wao.dto.SaveAiRunOptionsRequest;
 import cn.wayuwa.wao.dto.ReportAiRunProgressRequest;
 import cn.wayuwa.wao.dto.ReviewableTaskDto;
 import cn.wayuwa.wao.dto.RunnerScriptDto;
@@ -225,6 +226,13 @@ public class AiRunController {
     @GetMapping("/run-options")
     public ApiResponse<cn.wayuwa.wao.dto.AiRunOptionsDto> runOptions() {
         return ApiResponse.ok(service.runOptions());
+    }
+
+    /** 保存后续新建 Codex 运行首次打开时使用的默认执行模式。 */
+    @PutMapping("/run-options")
+    public ApiResponse<cn.wayuwa.wao.dto.AiRunOptionsDto> saveRunOptions(
+            @Valid @RequestBody SaveAiRunOptionsRequest request) {
+        return ApiResponse.ok(service.saveDefaultExecutionMode(request.defaultExecutionMode()));
     }
 
     /** 首页读取“空闲后执行最早待办”的开关、阈值和最近检查结果。 */
