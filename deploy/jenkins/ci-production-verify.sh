@@ -38,6 +38,12 @@ test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.
 jumpserver_health="$(curl --fail --silent --show-error --retry 12 --retry-delay 5 --retry-all-errors \
   https://jms.wayuwa.cn/api/health/)"
 printf '%s' "$jumpserver_health" | grep -q '"status":true'
+jumpserver_certificate="$WAO_RUN_TEMP/jumpserver-certificate.pem"
+openssl s_client -connect jms.wayuwa.cn:443 -servername jms.wayuwa.cn </dev/null 2>/dev/null \
+  | openssl x509 -out "$jumpserver_certificate"
+openssl x509 -in "$jumpserver_certificate" -noout -checkhost jms.wayuwa.cn >/dev/null
+openssl x509 -in "$jumpserver_certificate" -noout -checkend 1209600 >/dev/null
+echo 'JumpServer public TLS certificate covers jms.wayuwa.cn and remains valid for at least 14 days.'
 jumpserver_login_static="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://jms.wayuwa.cn/static/js/jquery-3.6.1.min.js)"
 printf '%s' "$jumpserver_login_static" | grep -q 'jQuery'

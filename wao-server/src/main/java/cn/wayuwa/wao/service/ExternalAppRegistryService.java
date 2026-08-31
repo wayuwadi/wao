@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExternalAppRegistryService {
 
-    private static final int REGISTRY_VERSION = 6;
+    private static final int REGISTRY_VERSION = 7;
     private static final int GETNOTE_INTRODUCED_VERSION = 4;
     private static final int JUMPSERVER_INTRODUCED_VERSION = 5;
     private static final int MAX_APPS = 30;
@@ -36,6 +36,8 @@ public class ExternalAppRegistryService {
     private static final int DEFAULT_MEDIA_AGENT_ORDER = 20;
     private static final String GETNOTE_ID = "getnote";
     private static final String JUMPSERVER_ID = "jumpserver";
+    private static final String JUMPSERVER_APP_URL = "/api/auth/jumpserver";
+    private static final String JUMPSERVER_HEALTH_URL = "/api/external/jumpserver/health";
     private static final Pattern APP_ID = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*");
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("PUBLIC", "PERSONAL", "TOOLS");
@@ -197,6 +199,14 @@ public class ExternalAppRegistryService {
             if (!PLACEMENTS.contains(placement)) {
                 throw new IllegalArgumentException("展示位置不正确");
             }
+            String appUrl = validateUrl(request.appUrl(), "应用入口", false);
+            String healthUrl = validateUrl(request.healthUrl(), "健康检查地址", true);
+            // JumpServer 是带 WAO 身份交换的系统入口，不能被历史注册表值降级成直达密码页。
+            // 名称、分组、排序、显隐和打开方式仍由成员自行配置。
+            if (JUMPSERVER_ID.equals(id)) {
+                appUrl = JUMPSERVER_APP_URL;
+                healthUrl = JUMPSERVER_HEALTH_URL;
+            }
             apps.add(new ExternalAppConfigDto(
                     id,
                     label,
@@ -204,8 +214,8 @@ public class ExternalAppRegistryService {
                     request.group(),
                     request.order(),
                     request.visible(),
-                    validateUrl(request.appUrl(), "应用入口", false),
-                    validateUrl(request.healthUrl(), "健康检查地址", true),
+                    appUrl,
+                    healthUrl,
                     openMode,
                     placement));
         }
@@ -275,8 +285,8 @@ public class ExternalAppRegistryService {
                 "TOOLS",
                 15,
                 true,
-                "/api/auth/jumpserver",
-                "/api/external/jumpserver/health",
+                JUMPSERVER_APP_URL,
+                JUMPSERVER_HEALTH_URL,
                 "NEW_PAGE");
     }
 

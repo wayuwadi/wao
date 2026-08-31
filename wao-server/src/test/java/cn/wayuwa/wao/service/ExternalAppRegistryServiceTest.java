@@ -35,7 +35,7 @@ class ExternalAppRegistryServiceTest {
 
         var registry = service.getRegistry();
 
-        assertThat(registry.version()).isEqualTo(6);
+        assertThat(registry.version()).isEqualTo(7);
         assertThat(registry.apps()).hasSize(3);
         assertThat(registry.apps().get(0)).satisfies(app -> {
             assertThat(app.id()).isEqualTo("media-agent");
@@ -135,6 +135,42 @@ class ExternalAppRegistryServiceTest {
         assertThatThrownBy(() -> service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(invalid))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("打开方式");
+    }
+
+    @Test
+    void repairsHistoricalJumpServerDirectUrlWithoutOverwritingMenuPreferences() throws Exception {
+        var direct = new ExternalAppConfigDto(
+                "jumpserver", "我的主机", "ri-server-line", "PERSONAL", 7, false,
+                "https://jms.wayuwa.cn/", "https://jms.wayuwa.cn/api/health/", "TAB", "DOCK");
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
+                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(6, List.of(direct))));
+
+        assertThat(service.getRegistry()).satisfies(registry -> {
+            assertThat(registry.version()).isEqualTo(7);
+            assertThat(registry.apps()).singleElement().satisfies(app -> {
+                assertThat(app.label()).isEqualTo("我的主机");
+                assertThat(app.group()).isEqualTo("PERSONAL");
+                assertThat(app.order()).isEqualTo(7);
+                assertThat(app.visible()).isFalse();
+                assertThat(app.openMode()).isEqualTo("TAB");
+                assertThat(app.placement()).isEqualTo("DOCK");
+                assertThat(app.appUrl()).isEqualTo("/api/auth/jumpserver");
+                assertThat(app.healthUrl()).isEqualTo("/api/external/jumpserver/health");
+            });
+        });
+    }
+
+    @Test
+    void keepsJumpServerIdentityExchangeEndpointWhenRegistryIsSaved() {
+        var direct = new SaveExternalAppConfigRequest(
+                "jumpserver", "资源管理", "ri-server-line", "TOOLS", 15, true,
+                "https://jms.wayuwa.cn/", "https://jms.wayuwa.cn/api/health/", "NEW_PAGE");
+
+        assertThat(service.saveRegistry(new SaveExternalAppRegistryRequest(List.of(direct))).apps())
+                .singleElement().satisfies(app -> {
+                    assertThat(app.appUrl()).isEqualTo("/api/auth/jumpserver");
+                    assertThat(app.healthUrl()).isEqualTo("/api/external/jumpserver/health");
+                });
     }
 
     @Test
