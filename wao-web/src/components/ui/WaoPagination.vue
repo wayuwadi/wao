@@ -61,62 +61,69 @@ function jump() {
 
 <template>
   <nav class="wao-pagination" :aria-label="ariaLabel">
-    <button
-      type="button"
-      class="wao-pagination__direction"
-      :disabled="disabled || page <= 1"
-      aria-label="上一页"
-      @click="changePage(page - 1)"
-    >
-      <i class="ri-arrow-left-line"></i><span>上一页</span>
-    </button>
+    <div class="wao-pagination__navigation">
+      <button
+        type="button"
+        class="wao-pagination__direction"
+        :disabled="disabled || page <= 1"
+        aria-label="上一页"
+        @click="changePage(page - 1)"
+      >
+        <i class="ri-arrow-left-line"></i><span>上一页</span>
+      </button>
 
-    <div class="wao-pagination__pages" aria-label="页码">
-      <template v-for="item in pageItems" :key="item">
-        <span v-if="typeof item !== 'number'" class="wao-pagination__ellipsis" aria-hidden="true"
-          >…</span
-        >
-        <button
-          v-else
-          type="button"
-          class="wao-pagination__page"
-          :class="{ active: item === page }"
-          :disabled="disabled"
-          :aria-current="item === page ? 'page' : undefined"
-          :aria-label="`第 ${item} 页`"
-          @click="changePage(item)"
-        >
-          {{ item }}
-        </button>
-      </template>
+      <div class="wao-pagination__pages" aria-label="页码">
+        <template v-for="item in pageItems" :key="item">
+          <span
+            v-if="typeof item !== 'number'"
+            class="wao-pagination__ellipsis"
+            aria-hidden="true"
+            >…</span
+          >
+          <button
+            v-else
+            type="button"
+            class="wao-pagination__page"
+            :class="{ active: item === page }"
+            :disabled="disabled"
+            :aria-current="item === page ? 'page' : undefined"
+            :aria-label="`第 ${item} 页`"
+            @click="changePage(item)"
+          >
+            {{ item }}
+          </button>
+        </template>
+      </div>
+
+      <button
+        type="button"
+        class="wao-pagination__direction"
+        :disabled="disabled || page >= normalizedPageCount"
+        aria-label="下一页"
+        @click="changePage(page + 1)"
+      >
+        <span>下一页</span><i class="ri-arrow-right-line"></i>
+      </button>
     </div>
 
-    <button
-      type="button"
-      class="wao-pagination__direction"
-      :disabled="disabled || page >= normalizedPageCount"
-      aria-label="下一页"
-      @click="changePage(page + 1)"
-    >
-      <span>下一页</span><i class="ri-arrow-right-line"></i>
-    </button>
-
-    <span v-if="total !== undefined" class="wao-pagination__total">共 {{ total }} 条</span>
-    <label class="wao-pagination__jump">
-      <span>跳至</span>
-      <input
-        v-model="jumpPage"
-        type="number"
-        inputmode="numeric"
-        min="1"
-        :max="normalizedPageCount"
-        :disabled="disabled"
-        aria-label="要跳转的页数"
-        @keydown.enter.prevent="jump"
-      />
-      <span>页</span>
-      <button type="button" :disabled="disabled" @click="jump">跳转</button>
-    </label>
+    <div class="wao-pagination__meta">
+      <span v-if="total !== undefined" class="wao-pagination__total">共 {{ total }} 条</span>
+      <label class="wao-pagination__jump">
+        <span>跳至</span>
+        <input
+          v-model="jumpPage"
+          type="number"
+          inputmode="numeric"
+          min="1"
+          :max="normalizedPageCount"
+          :disabled="disabled"
+          aria-label="要跳转的页数"
+          @keydown.enter.prevent="jump"
+        />
+        <span>页</span>
+        <button type="button" :disabled="disabled" @click="jump">跳转</button>
+      </label>
+    </div>
   </nav>
 </template>
 
@@ -130,6 +137,12 @@ function jump() {
   gap: 6px;
   color: var(--wao-text-weak);
   font-size: 11px;
+}
+.wao-pagination__navigation,
+.wao-pagination__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .wao-pagination button,
 .wao-pagination input {
@@ -195,14 +208,42 @@ function jump() {
 }
 @media (max-width: 560px) {
   .wao-pagination {
-    justify-content: flex-start;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    flex: 1 0 100%;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 8px;
+  }
+  .wao-pagination__navigation {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 29px minmax(0, 1fr) 29px;
+    gap: 4px;
+  }
+  .wao-pagination__pages {
+    min-width: 0;
+    justify-content: center;
+    gap: 2px;
   }
   .wao-pagination__direction span {
     display: none;
   }
-  .wao-pagination__total {
+  .wao-pagination__direction {
+    justify-content: center;
+    padding: 0 !important;
+  }
+  .wao-pagination__page {
+    min-width: 27px;
+  }
+  .wao-pagination__meta {
     width: 100%;
-    margin-left: 0;
+    justify-content: space-between;
+  }
+  .wao-pagination__jump {
+    margin-left: auto;
   }
 }
 </style>

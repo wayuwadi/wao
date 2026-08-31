@@ -11,6 +11,18 @@ describe('WaoPagination', () => {
     expect(wrapper.get('[aria-current="page"]').text()).toBe('1')
   })
 
+  it('把翻页导航和数量跳转分成稳定的移动端行组', () => {
+    const wrapper = mount(WaoPagination, { props: { page: 5, pageCount: 10, total: 100 } })
+    const navigation = wrapper.get('.wao-pagination__navigation')
+    const meta = wrapper.get('.wao-pagination__meta')
+
+    expect(navigation.find('[aria-label="上一页"]').exists()).toBe(true)
+    expect(navigation.get('[aria-label="页码"]').text()).toBe('1…456…10')
+    expect(navigation.find('[aria-label="下一页"]').exists()).toBe(true)
+    expect(meta.text()).toContain('共 100 条')
+    expect(meta.get('[aria-label="要跳转的页数"]').element).toBeInstanceOf(HTMLInputElement)
+  })
+
   it('可以通过页码和指定页输入跳转并把越界值收口到末页', async () => {
     const wrapper = mount(WaoPagination, { props: { page: 1, pageCount: 10 } })
 
