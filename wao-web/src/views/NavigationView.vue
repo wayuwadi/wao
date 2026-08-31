@@ -5,6 +5,7 @@ import { NAVIGATION_CATALOG, type NavigationCatalogModuleId } from '@/config/nav
 import { externalAppItemId } from '@/config/nav'
 import { quickLinkPath, type QuickLink } from '@/config/quickLinks'
 import { useQuickLinks } from '@/composables/quickLinks'
+import { useFunctionHealth } from '@/composables/functionHealth'
 import { useNavStore } from '@/stores/nav'
 import { useUiStore } from '@/stores/ui'
 
@@ -12,6 +13,7 @@ const router = useRouter()
 const nav = useNavStore()
 const ui = useUiStore()
 const quickLinks = useQuickLinks()
+const health = useFunctionHealth()
 const query = ref('')
 
 function includesQuery(values: Array<string | undefined>) {
@@ -26,7 +28,12 @@ const sections = computed(() =>
       .map((item) => {
         const meta = nav.itemMeta(item.id)!
         const configured = nav.builtinMenus.find((menu) => menu.id === item.id)
-        return { ...item, meta, sidebarVisible: configured?.visible ?? false }
+        return {
+          ...item,
+          meta,
+          sidebarVisible: configured?.visible ?? false,
+          health: health.byId.value[item.id],
+        }
       })
       .filter((item) =>
         includesQuery([
@@ -64,10 +71,16 @@ const loading = computed(
   () =>
     nav.builtinMenusState === 'loading' ||
     nav.externalAppsState === 'loading' ||
-    quickLinks.loading.value,
+    quickLinks.loading.value ||
+    health.loading.value,
 )
 const errors = computed(() =>
-  [nav.builtinMenusError, nav.externalAppsError, quickLinks.loadError.value].filter(Boolean),
+  [
+    nav.builtinMenusError,
+    nav.externalAppsError,
+    quickLinks.loadError.value,
+    health.error.value,
+  ].filter(Boolean),
 )
 function openTarget(path: string, newPagePath: string | undefined, openMode: 'TAB' | 'NEW_PAGE') {
   if (openMode === 'NEW_PAGE') {
@@ -98,12 +111,14 @@ function retry() {
   void nav.loadBuiltinMenus(true)
   void nav.loadExternalApps(true)
   void quickLinks.load(true)
+  void health.load(true)
 }
 
 onMounted(() => {
   void nav.loadBuiltinMenus()
   void nav.loadExternalApps()
   void quickLinks.load()
+  void health.load()
 })
 </script>
 
@@ -122,6 +137,23 @@ onMounted(() => {
       <input v-model="query" type="search" placeholder="搜索功能、应用或链接" />
       <span v-if="query.trim()">{{ resultCount }} 个结果</span>
     </label>
+
+    <section class="health-summary" aria-label="功能健康度概览">
+      <div>
+        <b>{{ health.overview.value?.recentOpens ?? 0 }}</b
+        ><span>近 30 天真实打开</span>
+      </div>
+      <div>
+        <b>{{
+          health.overview.value?.functions.filter((item) => item.recentOpens > 0).length ?? 0
+        }}</b
+        ><span>近期使用功能</span>
+      </div>
+      <p>
+        <i class="ri-pulse-line"></i> AI
+        巡检会同时读取这份真实使用快照，分析低频、路径和功能重叠；没有数据时不会补演示结论。
+      </p>
+    </section>
 
     <div v-if="errors.length" class="load-status error" role="alert">
       <i class="ri-error-warning-line"></i>
@@ -181,6 +213,16 @@ onMounted(() => {
           <span class="card-copy">
             <b>{{ item.meta.label }}</b>
             <small>{{ item.description }}</small>
+            <em v-if="item.health" :class="item.health.insightLevel.toLowerCase()">{{
+              item.health.insight
+            }}</em>
+          </span>
+          <span v-if="item.health" class="health-badges">
+            <b>{{ item.health.score }} 分</b>
+            <small
+              >30 天 {{ item.health.recentOpens }} 次 ·
+              {{ item.health.recentShare.toFixed(1) }}%</small
+            >
           </span>
           <span v-if="!item.sidebarVisible" class="hidden-badge">侧栏已隐藏</span>
           <i
@@ -303,6 +345,74 @@ onMounted(() => {
   border-radius: 12px;
   background: var(--wao-bg-card);
   box-shadow: 0 8px 28px color-mix(in srgb, var(--wao-text) 5%, transparent);
+}
+.health-summary {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 10px;
+  margin: 10px 0 20px;
+}
+.health-summary > div,
+.health-summary > p {
+  margin: 0;
+  padding: 11px 13px;
+  border: 1px solid var(--wao-line);
+  border-radius: 11px;
+  background: var(--wao-bg-card);
+}
+.health-summary > div {
+  min-width: 110px;
+  display: grid;
+}
+.health-summary > div b {
+  font-size: 18px;
+  color: var(--wao-primary-text);
+}
+.health-summary > div span {
+  font-size: 9px;
+  color: var(--wao-text-weak);
+}
+.health-summary > p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--wao-text-2);
+  font-size: 10px;
+  line-height: 1.55;
+}
+.health-summary > p i {
+  font-size: 18px;
+  color: var(--wao-primary);
+}
+.card-copy em {
+  display: block;
+  margin-top: 5px;
+  color: var(--wao-text-weak);
+  font-size: 9px;
+  font-style: normal;
+}
+.card-copy em.low,
+.card-copy em.high {
+  color: var(--wao-warning-strong);
+}
+.card-copy em.mature,
+.card-copy em.stable {
+  color: var(--wao-success-strong);
+}
+.health-badges {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.health-badges b {
+  color: var(--wao-primary-text);
+  font-size: 11px;
+}
+.health-badges small {
+  color: var(--wao-text-faint);
+  font-size: 8px;
 }
 .search:focus-within {
   border-color: var(--wao-primary);
@@ -501,6 +611,15 @@ onMounted(() => {
   }
   .search {
     margin-top: 18px;
+  }
+  .health-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .health-summary > p {
+    grid-column: 1 / -1;
+  }
+  .health-badges {
+    display: none;
   }
   .card-grid {
     grid-template-columns: 1fr;

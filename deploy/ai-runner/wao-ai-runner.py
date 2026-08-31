@@ -1468,6 +1468,27 @@ def completion_memory_candidates(exit_code: int, memory_path: Path) -> list[dict
     return parse_memory_candidates(memory_path) if exit_code == 0 else []
 
 
+def function_iterations(worktree: Path | None, base_sha: str | None,
+        git_command: str) -> list[dict[str, str]]:
+    """从本次新提交提取 scope；归属映射和幂等最终由服务端裁决。"""
+    if worktree is None or not base_sha:
+        return []
+    result = run([git_command, "log", "--format=%H%x1f%s", f"{base_sha}..HEAD"],
+                 cwd=worktree, check=False)
+    if result.returncode != 0:
+        return []
+    items: list[dict[str, str]] = []
+    pattern = re.compile(r"^[a-z][a-z0-9-]*\(([^)]+)\):\s+(.+)$")
+    for line in result.stdout.splitlines()[:50]:
+        sha, separator, subject = line.partition("\x1f")
+        match = pattern.match(subject.strip())
+        if not separator or not match:
+            continue
+        items.append({"commitSha": sha.strip(), "scope": match.group(1).strip(),
+                      "subject": subject.strip()})
+    return items
+
+
 def post_run_completion(api: WaoApi, run_id: str, payload: dict[str, Any],
         candidates: list[dict[str, Any]], skill_audits: list[dict[str, Any]] | None = None) -> None:
     """新服务端接收候选和 Skill 审计；旧服务端拒绝未知字段时回退原契约。"""
@@ -1478,7 +1499,8 @@ def post_run_completion(api: WaoApi, run_id: str, payload: dict[str, Any],
         if "HTTP 400" not in str(exc):
             raise
         log(f"[{run_id}] 服务端尚未支持新完成字段，按旧完成契约重试")
-        legacy = {key: value for key, value in payload.items() if key != "aiExecutionDurationMs"}
+        legacy = {key: value for key, value in payload.items()
+                  if key not in {"aiExecutionDurationMs", "functionIterations"}}
         api.post(f"/api/ai/runner/runs/{run_id}/complete", legacy)
 
 
@@ -2220,6 +2242,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
     max_failure_retries = configured_failure_retries(claim.get("failureRetryCount"))
     skill_audits: list[dict[str, Any]] = []
     codex_home = root / ".wao-codex-homes" / run_id
+    base_sha_path = root / ".wao-run-bases" / run_id
+    base_sha: str | None = None
 
     def control_requested() -> bool:
         nonlocal last_cancel_check, pending_update, pause_requested
@@ -2256,6 +2280,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             report_path.parent.mkdir(parents=True, exist_ok=True)
             memory_path.parent.mkdir(parents=True, exist_ok=True)
             skill_path.mkdir(parents=True, exist_ok=True)
+            if base_sha_path.exists():
+                base_sha = base_sha_path.read_text(encoding="utf-8").strip() or None
             prompt = build_continuation_prompt(claim, continuation, report_path, memory_path, skill_path)
         else:
             workspace_retries = 0
@@ -2279,6 +2305,11 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
                         "message", "Git 工作区准备失败，正在自动恢复（"
                         f"{workspace_retries}/{max_failure_retries}）", force=True)
                     time.sleep(workspace_retries)
+            head = run([git_command, "rev-parse", "HEAD"], cwd=worktree, check=False)
+            if head.returncode == 0:
+                base_sha = head.stdout.strip()
+                base_sha_path.parent.mkdir(parents=True, exist_ok=True)
+                base_sha_path.write_text(base_sha + "\n", encoding="utf-8")
             report_path.parent.mkdir(parents=True, exist_ok=True)
             memory_path.parent.mkdir(parents=True, exist_ok=True)
             skill_path.mkdir(parents=True, exist_ok=True)
@@ -2408,9 +2439,11 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         reporter.send("result", closing, force=True)
         try:
             candidates = completion_memory_candidates(exit_code, memory_path)
+            delivered_iterations = function_iterations(worktree, base_sha, git_command) if exit_code == 0 else []
             post_run_completion(api, run_id,
                 {"exitCode": exit_code, "resultSummary": summary, "sessionId": session_id,
-                 "aiExecutionDurationMs": ai_execution_duration_ms, **usage},
+                 "aiExecutionDurationMs": ai_execution_duration_ms,
+                 "functionIterations": delivered_iterations, **usage},
                 candidates, skill_audits)
             log(f"[{run_id}] 已回传，退出码 {exit_code}")
         except Exception as exc:  # noqa: BLE001
@@ -2418,6 +2451,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         finally:
             shutil.rmtree(memory_path.parent, ignore_errors=True)
             shutil.rmtree(skill_path, ignore_errors=True)
+            if exit_code == 0:
+                base_sha_path.unlink(missing_ok=True)
 
 
 def execute_assistant_claim(api: WaoApi, claim: dict[str, Any], root: Path, executable: str,

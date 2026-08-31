@@ -24,6 +24,8 @@ public record CompleteAiRunRequest(
         BigDecimal costUsd,
         /** Runner 从非 Git JSON 产物解析出的结构化项目记忆候选；旧 Runner 缺省为空。 */
         List<ProjectMemoryCandidate> projectMemoryCandidates,
+        /** 成功交付后从本次新提交提取的功能 scope；服务端负责白名单映射与幂等。 */
+        List<FunctionIterationInput> functionIterations,
         /** Runner 实际加载、失败或不兼容的 Skill 结果。 */
         List<AiSkillAuditDto> skillAudits) {
 
@@ -31,13 +33,22 @@ public record CompleteAiRunRequest(
             String models, Long inputTokens, Long outputTokens, Long cachedInputTokens, Long totalTokens,
             BigDecimal costUsd) {
         this(exitCode, resultSummary, sessionId, model, models, inputTokens, outputTokens,
-                cachedInputTokens, totalTokens, null, costUsd, List.of(), List.of());
+                cachedInputTokens, totalTokens, null, costUsd, List.of(), List.of(), List.of());
     }
 
     public CompleteAiRunRequest(Integer exitCode, String resultSummary, String sessionId, String model,
             String models, Long inputTokens, Long outputTokens, Long cachedInputTokens, Long totalTokens,
             BigDecimal costUsd, List<ProjectMemoryCandidate> projectMemoryCandidates) {
         this(exitCode, resultSummary, sessionId, model, models, inputTokens, outputTokens,
-                cachedInputTokens, totalTokens, null, costUsd, projectMemoryCandidates, List.of());
+                cachedInputTokens, totalTokens, null, costUsd, projectMemoryCandidates, List.of(), List.of());
+    }
+
+    public CompleteAiRunRequest(Integer exitCode, String resultSummary, String sessionId, String model,
+            String models, Long inputTokens, Long outputTokens, Long cachedInputTokens, Long totalTokens,
+            Long aiExecutionDurationMs, BigDecimal costUsd,
+            List<ProjectMemoryCandidate> projectMemoryCandidates, List<AiSkillAuditDto> skillAudits) {
+        this(exitCode, resultSummary, sessionId, model, models, inputTokens, outputTokens,
+                cachedInputTokens, totalTokens, aiExecutionDurationMs, costUsd,
+                projectMemoryCandidates, List.of(), skillAudits);
     }
 }

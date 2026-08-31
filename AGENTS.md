@@ -23,6 +23,7 @@ WAO 是一个前后端分离的 Web 系统，采用 Spec-Driven Development。�
 - Vue 组件使用 `<script setup lang="ts">`，组件命名使用 PascalCase
 - API 调用统一放在 `wao-web/src/api/`，组件内不直接发起 HTTP 请求
 - 提交信息遵循 Conventional Commits，但除 `type(scope):` 前缀、代码标识、路径和命令外必须使用中文。正文固定包含“改动：”“原因：”“验收：”。Jenkins 的 `notify-feishu.sh` 只把提交标题整理成精简改动清单，完整正文保留在 Git 历史中供链接查阅
+- 面向某个用户功能的提交，`scope` 使用该功能在路由 / 功能地图中的稳定 id（例如 `navigation`、`projects`、`workday-rhythm`）；Runner 只对可映射且最终线上交付成功的提交自动为该功能 +1 分，平台、部署和无法确认归属的 scope 不猜测加分
 - 完成与变更相称的本地验证后，AI 应直接创建详细提交；提交正文必须说明改动、原因和验收结果。开发测试阶段按「一个需求 / 一个 BUG 一个 PR」交付（见下节）；不得提交任何私有环境文件或凭据。
 
 ## 快速交付策略（开发测试阶段，临时）

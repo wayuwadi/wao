@@ -16,6 +16,7 @@ import MusicPlayer from '@/components/music/MusicPlayer.vue'
 import NotificationCenter from '@/components/notifications/NotificationCenter.vue'
 import FloatingChat from '@/components/chat/FloatingChat.vue'
 import PageSectionNav from '@/components/navigation/PageSectionNav.vue'
+import FunctionScoreControl from '@/components/navigation/FunctionScoreControl.vue'
 import { externalAppItemId, tabFromRoute } from '@/config/nav'
 import { useNavStore } from '@/stores/nav'
 import { useTabsStore } from '@/stores/tabs'
@@ -26,6 +27,7 @@ import { useSessionStore } from '@/stores/session'
 import { useTheme } from '@/composables/theme'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useShortcuts } from '@/composables/shortcuts'
+import { useFunctionHealth } from '@/composables/functionHealth'
 import type { ModuleId } from '@/types'
 
 const route = useRoute()
@@ -37,6 +39,42 @@ const preferences = usePreferenceStore()
 const session = useSessionStore()
 const theme = useTheme()
 const quickLinks = useQuickLinks()
+const functionHealth = useFunctionHealth()
+const TRACKED_FEATURES = new Set([
+  'home',
+  'navigation',
+  'projects',
+  'ideas',
+  'decisions',
+  'todo',
+  'calendar',
+  'workday-rhythm',
+  'action-plans',
+  'appearance',
+  'food',
+  'workspaces',
+  'weekly-report',
+  'life-review',
+  'knowledge',
+  'memory',
+  'english-learning',
+  'vocabulary',
+  'skills',
+  'skill-connections',
+  'drawings',
+  'files',
+  'automation',
+  'text-polish',
+  'data-center',
+  'dashboard',
+  'system-reports',
+  'request-monitoring',
+  'devices',
+  'vault',
+  'games',
+  'tianren',
+  'settings',
+])
 const contentRef = ref<HTMLElement | null>(null)
 const pageBodyRef = ref<HTMLElement | null>(null)
 
@@ -70,6 +108,10 @@ const crumbB = computed(() => {
   if (kind === 'project' || kind === 'kb') return tabs.activeTab()?.label ?? ''
   return ''
 })
+const scoredFeatureId = computed(() => {
+  const featureId = String(route.meta.module || '')
+  return functionHealth.byId.value[featureId] ? featureId : ''
+})
 
 /** 路由变化即同步页签（覆盖点击导航 / 直接 URL / 前进后退）。 */
 watch(
@@ -95,6 +137,15 @@ watch(
       }
       tabs.open(tab)
     }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => String(route.meta.module || ''),
+  (featureId, previous) => {
+    if (TRACKED_FEATURES.has(featureId) && featureId !== previous)
+      void functionHealth.record(featureId, 'PAGE')
   },
   { immediate: true },
 )
@@ -223,6 +274,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <div class="crumb-b">{{ crumbB }}</div>
         </template>
         <div class="spacer"></div>
+
+        <FunctionScoreControl
+          v-if="scoredFeatureId"
+          :feature-id="scoredFeatureId"
+          :label="crumbA"
+        />
 
         <button class="assistant-entry" title="问问 AI（Ctrl/⌘ + J）" @click="ui.openAssistant()">
           <i class="ri-robot-2-line"></i>问问 AI

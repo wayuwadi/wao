@@ -23,6 +23,31 @@ RUNNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNNER)
 
 
+class FunctionIterationTest(unittest.TestCase):
+
+    def test_extracts_only_conventional_scoped_commits_after_run_baseline(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="wao-function-iterations-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "WAO Test"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
+        (root / "a.txt").write_text("base", encoding="utf-8")
+        subprocess.run(["git", "add", "a.txt"], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "chore: 基线"], cwd=root, check=True)
+        base = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True,
+                              capture_output=True, text=True).stdout.strip()
+        (root / "a.txt").write_text("navigation", encoding="utf-8")
+        subprocess.run(["git", "commit", "-qam", "feat(navigation): 改进工作台"], cwd=root, check=True)
+        (root / "a.txt").write_text("unscoped", encoding="utf-8")
+        subprocess.run(["git", "commit", "-qam", "补充说明"], cwd=root, check=True)
+
+        result = RUNNER.function_iterations(root, base, "git")
+
+        self.assertEqual(1, len(result))
+        self.assertEqual("navigation", result[0]["scope"])
+        self.assertEqual("feat(navigation): 改进工作台", result[0]["subject"])
+
+
 class SystemMetricsTest(unittest.TestCase):
 
     def test_collects_bounded_capacity_and_interval_cpu_without_process_details(self) -> None:

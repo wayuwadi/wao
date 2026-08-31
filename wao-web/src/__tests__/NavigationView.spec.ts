@@ -13,6 +13,7 @@ import { MODULES } from '@/config/nav'
 import { useUiStore } from '@/stores/ui'
 import { fetchPreference, savePreference } from '@/api/favorites'
 import { fetchBuiltinMenuRegistry, fetchExternalAppRegistry } from '@/api/system'
+import { fetchFunctionHealth } from '@/api/functionHealth'
 
 vi.mock('@/api/favorites', () => ({
   fetchPreference: vi.fn<() => Promise<string>>(),
@@ -22,6 +23,19 @@ vi.mock('@/api/favorites', () => ({
 vi.mock('@/api/system', () => ({
   fetchBuiltinMenuRegistry: vi.fn<() => Promise<BuiltinMenuRegistry>>(),
   fetchExternalAppRegistry: vi.fn<() => Promise<ExternalAppRegistry>>(),
+}))
+
+vi.mock('@/api/functionHealth', () => ({
+  fetchFunctionHealth:
+    vi.fn<() => Promise<import('@/api/functionHealth').FunctionHealthOverview>>(),
+  recordFunctionOpen: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  adjustFunctionScore:
+    vi.fn<
+      (
+        featureId: string,
+        delta: -1 | 1,
+      ) => Promise<import('@/api/functionHealth').FunctionHealthItem>
+    >(),
 }))
 
 async function mountNavigation() {
@@ -84,6 +98,25 @@ describe('全量导航页', () => {
         ],
       }),
     )
+    vi.mocked(fetchFunctionHealth).mockResolvedValue({
+      windowDays: 30,
+      generatedAt: '2026-08-31T10:00:00',
+      recentOpens: 40,
+      functions: [
+        {
+          featureId: 'games',
+          score: 12,
+          iterationCount: 11,
+          manualAdjustment: 0,
+          totalOpens: 20,
+          recentOpens: 10,
+          recentShare: 25,
+          lastOpenedAt: '2026-08-31T09:00:00',
+          insightLevel: 'HIGH',
+          insight: '使用较频繁但未到 60 分，优先缩短高频操作路径',
+        },
+      ],
+    })
   })
 
   it('完整目录覆盖所有非兼容模块，且不受侧栏显隐影响', async () => {
@@ -129,6 +162,16 @@ describe('全量导航页', () => {
 
     await wrapper.get('.quick-actions-section .nav-card').trigger('click')
     expect(useUiStore().modal).toBe('note')
+    wrapper.unmount()
+  })
+
+  it('使用真实快照展示分数、次数、占比和优化提示', async () => {
+    const { wrapper } = await mountNavigation()
+    expect(wrapper.text()).toContain('40')
+    await wrapper.get('.search input').setValue('游戏厅')
+    expect(wrapper.get('.nav-card').text()).toContain('12 分')
+    expect(wrapper.get('.nav-card').text()).toContain('30 天 10 次 · 25.0%')
+    expect(wrapper.get('.nav-card').text()).toContain('优先缩短高频操作路径')
     wrapper.unmount()
   })
 })

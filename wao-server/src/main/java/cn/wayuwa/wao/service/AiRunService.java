@@ -148,6 +148,7 @@ public class AiRunService {
     private final CodexQuotaService codexQuotas;
     private final ProjectMemoryService projectMemories;
     private final AiSkillCapabilityService skillCapabilities;
+    private final FunctionHealthService functionHealth;
     private final FeishuAiRunReactionNotifier runReactions;
     private final SettingService settings;
 
@@ -185,7 +186,8 @@ public class AiRunService {
             TaskMapper taskMapper, ProjectMapper projectMapper, TaskService tasks, FeishuTaskNotifier notifier,
             RunnerScriptService scripts, AiAccountService accounts, HostedPageService hostedPages,
             ImageService images, CodexQuotaService codexQuotas, ProjectMemoryService projectMemories,
-            AiSkillCapabilityService skillCapabilities, FeishuAiRunReactionNotifier runReactions,
+            AiSkillCapabilityService skillCapabilities, FunctionHealthService functionHealth,
+            FeishuAiRunReactionNotifier runReactions,
             SettingService settings) {
         this.configMapper = configMapper;
         this.runnerMapper = runnerMapper;
@@ -203,6 +205,7 @@ public class AiRunService {
         this.codexQuotas = codexQuotas;
         this.projectMemories = projectMemories;
         this.skillCapabilities = skillCapabilities;
+        this.functionHealth = functionHealth;
         this.runReactions = runReactions;
         this.settings = settings;
     }
@@ -1509,6 +1512,7 @@ public class AiRunService {
         appendProgress(run, "result", completion);
         if (verifiedMemoryCompletion(exitCode, request.resultSummary())) {
             projectMemories.persistCandidates(run, request.projectMemoryCandidates());
+            functionHealth.recordIterations(runId, request.functionIterations());
         }
         setTaskStatuses(run, exitCode == 0 ? "待验证" : "进行中");
         runnerMapper.touchLastSeenAt(runner.getId());
