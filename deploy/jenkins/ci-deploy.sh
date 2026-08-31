@@ -606,11 +606,17 @@ if ! provision_jumpserver_asset_access; then
   set_status master_detail 'JumpServer 专用资产公钥安装失败'
   exit 1
 fi
-if ! verify_jumpserver_assets; then
+jumpserver_verify_log="$WAO_RUN_TEMP/jumpserver-verify.log"
+if ! verify_jumpserver_assets >"$jumpserver_verify_log" 2>&1; then
+  cat "$jumpserver_verify_log"
+  jumpserver_verify_detail="$(tail -n 1 "$jumpserver_verify_log" \
+    | tr '\r\n=' '   ' | cut -c1-300)"
   set_status master_status failed
-  set_status master_detail 'JumpServer 三节点 SSH 或资产登记验收失败'
+  set_status master_detail \
+    "JumpServer 三节点 SSH、资产登记或 SSO 验收失败：${jumpserver_verify_detail:-无错误摘要}"
   exit 1
 fi
+cat "$jumpserver_verify_log"
 
 if ! deploy_cloud >cloud.log 2>&1; then
   set_status cloud_status failed
