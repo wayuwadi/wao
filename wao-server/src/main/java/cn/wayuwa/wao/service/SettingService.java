@@ -67,8 +67,10 @@ public class SettingService {
     public static final String QUICK_COLLECT_ENCRYPT_KEY = "feishu.quick-collect.encrypt-key";
     /** 任务进入「收集中」时要 @ 的协作成员 open_id，逗号分隔；留空即只发通知不 @ 人。 */
     public static final String QUICK_COLLECT_MENTIONS = "feishu.quick-collect.mention-open-ids";
-    /** 快速收集成功回执，同时也是成员在原消息上手工触发 AI Run 的表情。 */
+    /** 快速收集成功回执。 */
     public static final String QUICK_COLLECT_RECEIVED_EMOJI = "feishu.quick-collect.received-emoji";
+    /** 成员在原消息上手工触发 AI Run、以及执行中展示的表情。 */
+    public static final String QUICK_COLLECT_TRIGGER_EMOJI = "feishu.quick-collect.trigger-emoji";
     /** AI Run 成功、任务进入待验收阶段时的表情。 */
     public static final String QUICK_COLLECT_COMPLETED_EMOJI = "feishu.quick-collect.completed-emoji";
     /** 文件与图床的运行时限制；上限仍受网关和 Spring multipart 部署基线约束。 */

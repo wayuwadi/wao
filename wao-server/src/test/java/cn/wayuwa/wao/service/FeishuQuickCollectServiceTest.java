@@ -34,6 +34,7 @@ import cn.wayuwa.wao.feishu.FeishuApiException;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMention;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessage;
+import cn.wayuwa.wao.feishu.FeishuOpenApiClient.FeishuMessageReaction;
 import cn.wayuwa.wao.mapper.AccountIdentityMapper;
 import cn.wayuwa.wao.mapper.AccountMapper;
 import cn.wayuwa.wao.mapper.FeishuQuickCollectEventMapper;
@@ -141,6 +142,27 @@ class FeishuQuickCollectServiceTest {
         service.handleEvent("{\"encrypt\":\"" + encrypted + "\"}", "https://wao.example");
 
         verify(reactionAiRuns).trigger(any(), eq("https://wao.example"));
+    }
+
+    @Test
+    void authenticatedPollingReadsFlightAndReusesTheSameDispatchGate() {
+        var reaction = new FeishuMessageReaction(
+                "reaction-1", "ou_sender", "user", "1787900000000", "StatusInFlight");
+        when(feishu.listMessageReactions("token", "om_source", "StatusInFlight"))
+                .thenReturn(List.of(reaction));
+
+        service.triggerPolledReaction("token", "om_source");
+
+        verify(reactionAiRuns).triggerPolled("om_source", reaction, "https://wao.wayuwa.cn");
+    }
+
+    @Test
+    void pollingSkipsExternalApiAfterMessageWasAlreadyDispatched() {
+        when(reactionAiRuns.hasTriggered("om_source")).thenReturn(true);
+
+        service.triggerPolledReaction("token", "om_source");
+
+        verify(feishu, never()).listMessageReactions(any(), any(), any());
     }
 
     @Test
@@ -406,7 +428,7 @@ class FeishuQuickCollectServiceTest {
                 + "\"event_type\":\"im.message.reaction.created_v1\",\"token\":\"" + token + "\"},"
                 + "\"event\":{\"message_id\":\"om_source\",\"operator_type\":\"user\","
                 + "\"user_id\":{\"open_id\":\"ou_sender\"},"
-                + "\"reaction_type\":{\"emoji_type\":\"GET\"},"
+                + "\"reaction_type\":{\"emoji_type\":\"StatusInFlight\"},"
                 + "\"action_time\":\"1787900000000\"}}";
     }
 

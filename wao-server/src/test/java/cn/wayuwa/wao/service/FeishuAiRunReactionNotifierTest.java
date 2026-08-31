@@ -27,13 +27,13 @@ class FeishuAiRunReactionNotifierTest {
             events, settings, feishu, reactionPolicy);
 
     @Test
-    void enqueuedRunKeepsTheExistingReceivedReaction() {
+    void enqueuedRunAddsFlightReaction() {
         enabled();
         when(events.selectList(any())).thenReturn(List.of(event("t1", "om_source")));
 
         notifier.reactAfterEnqueued(List.of("t1"));
 
-        verify(feishu, never()).addMessageReaction(any(), any(), any());
+        verify(feishu).addMessageReaction("token", "om_source", "StatusInFlight");
     }
 
     @Test
@@ -69,7 +69,7 @@ class FeishuAiRunReactionNotifierTest {
     }
 
     @Test
-    void enqueuedReactionNeverAddsAnotherStageInsideOrAfterATransaction() {
+    void enqueuedReactionWaitsUntilCommit() {
         enabled();
         when(events.selectList(any())).thenReturn(List.of(event("t1", "om_source")));
         TransactionSynchronizationManager.initSynchronization();
@@ -79,7 +79,7 @@ class FeishuAiRunReactionNotifierTest {
             verify(feishu, never()).addMessageReaction(any(), any(), any());
             TransactionSynchronizationManager.getSynchronizations()
                     .forEach(TransactionSynchronization::afterCommit);
-            verify(feishu, never()).addMessageReaction(any(), any(), any());
+            verify(feishu).addMessageReaction("token", "om_source", "StatusInFlight");
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }

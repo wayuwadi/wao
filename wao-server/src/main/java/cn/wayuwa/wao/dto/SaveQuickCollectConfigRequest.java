@@ -10,7 +10,8 @@ import java.util.List;
  * @param verificationToken  Verification Token 明文，null 表示不改
  * @param encryptKey         Encrypt Key 明文，null 表示不改
  * @param mentionOpenIds     任务进入「收集中」时要 @ 的成员 open_id；null 表示不改
- * @param receivedEmoji      任务已保存回执及成员手工派工表情；null 表示不改
+ * @param receivedEmoji      任务已保存回执表情；null 表示不改
+ * @param triggerEmoji       成员手工派工及 AI Run 执行中表情；null 表示不改
  * @param completedEmoji     AI Run 完成待验收表情；null 表示不改
  */
 public record SaveQuickCollectConfigRequest(
@@ -20,5 +21,6 @@ public record SaveQuickCollectConfigRequest(
         String encryptKey,
         List<String> mentionOpenIds,
         String receivedEmoji,
+        String triggerEmoji,
         String completedEmoji) {
 }

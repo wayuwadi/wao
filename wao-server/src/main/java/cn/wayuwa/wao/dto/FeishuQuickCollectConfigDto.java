@@ -12,7 +12,8 @@ import java.util.List;
  * @param encryptKey         Encrypt Key 脱敏值
  * @param hasEncryptKey      是否已配置 Encrypt Key
  * @param mentionOpenIds     任务进入「收集中」时要 @ 的成员 open_id
- * @param receivedEmoji      任务已保存回执及成员手工派工使用的表情类型
+ * @param receivedEmoji      任务已保存回执使用的表情类型
+ * @param triggerEmoji       成员手工派工及 AI Run 执行中使用的表情类型
  * @param completedEmoji     AI Run 完成、任务待验收时使用的表情类型
  */
 public record FeishuQuickCollectConfigDto(
@@ -24,5 +25,6 @@ public record FeishuQuickCollectConfigDto(
         boolean hasEncryptKey,
         List<String> mentionOpenIds,
         String receivedEmoji,
+        String triggerEmoji,
         String completedEmoji) {
 }

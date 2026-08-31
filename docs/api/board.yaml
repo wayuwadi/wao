@@ -1127,8 +1127,8 @@ paths:
       responses:
         '200': { description: OK }
         '400': { description: Verification Token 不匹配或事件解密失败 }
-  # 开启快速收集时，服务端另使用已配群聊归档 App 凭据每 15 秒主动读取目标群。
-  # 主动轮询不新增 HTTP API；只处理精确提及当前机器人 open_id 的用户消息，并与事件回调共用 message_id 去重。
+  # 开启快速收集时，服务端另使用已配群聊归档 App 凭据主动读取目标群消息及其人工派工表情。
+  # 主动轮询不新增 HTTP API；只处理精确提及当前机器人 open_id 的用户消息，表情派工仍校验创建者身份并持久去重。
   /files:
     get:
       summary: 当前成员可见的文件元数据列表（含 contentType 与可空 projectId，不读取二进制正文）
@@ -1804,7 +1804,11 @@ components:
         receivedEmoji:
           type: string
           enum: [GET, DONE, StatusInFlight, CheckMark]
-          description: 任务已保存回执及成员手工派工表情；默认 GET
+          description: 任务已保存回执表情；默认 GET
+        triggerEmoji:
+          type: string
+          enum: [GET, DONE, StatusInFlight, CheckMark]
+          description: 成员手工派工及 AI Run 执行中表情；默认 StatusInFlight
         completedEmoji:
           type: string
           enum: [GET, DONE, StatusInFlight, CheckMark]

@@ -306,6 +306,57 @@ public class FeishuOpenApiClient {
         return text(data, "reaction_id");
     }
 
+    /**
+     * 读取一条消息上的指定表情回复。
+     *
+     * <p>该接口使用 tenant_access_token 鉴权，作为事件回调之外的可靠兜底。调用方仍须校验
+     * 原消息、操作人身份和持久去重，不能只凭一个表情字符串派工。
+     *
+     * @param token tenant_access_token
+     * @param messageId 原消息 id
+     * @param emojiType 要读取的飞书表情类型
+     * @return 当前仍存在的表情回复
+     */
+    public List<FeishuMessageReaction> listMessageReactions(String token, String messageId,
+            String emojiType) {
+        List<FeishuMessageReaction> out = new ArrayList<>();
+        Set<String> seenPageTokens = new HashSet<>();
+        String pageToken = null;
+        for (int page = 0; page < MAX_PAGES; page++) {
+            String uri = "/open-apis/im/v1/messages/{messageId}/reactions"
+                    + "?reaction_type={reactionType}&page_size={pageSize}&user_id_type=open_id"
+                    + (pageToken == null ? "" : "&page_token={pageToken}");
+            JsonNode data = pageToken == null
+                    ? get(uri, token, messageId, emojiType, PAGE_SIZE)
+                    : get(uri, token, messageId, emojiType, PAGE_SIZE, pageToken);
+            for (JsonNode item : data.path("items")) {
+                JsonNode operator = item.path("operator");
+                out.add(new FeishuMessageReaction(
+                        text(item, "reaction_id"),
+                        text(operator, "operator_id"),
+                        text(operator, "operator_type"),
+                        text(item, "action_time"),
+                        item.path("reaction_type").path("emoji_type").asText("")));
+            }
+            boolean hasMore = data.path("has_more").asBoolean(false);
+            if (page == MAX_PAGES - 1 && hasMore) {
+                throw new FeishuApiException("已达到飞书表情分页上限 " + MAX_PAGES
+                        + " 页，但飞书仍有更多表情；已停止避免遗漏派工事实");
+            }
+            String nextPageToken = nextPageToken(data);
+            if (hasMore && nextPageToken == null) {
+                throw new FeishuApiException("飞书表情分页返回 has_more=true，但 page_token 为空；"
+                        + "已停止避免遗漏派工事实");
+            }
+            if (nextPageToken != null && !seenPageTokens.add(nextPageToken)) {
+                throw new FeishuApiException("飞书表情分页返回了重复 page_token；已停止避免重复派工");
+            }
+            pageToken = nextPageToken;
+            if (pageToken == null) break;
+        }
+        return out;
+    }
+
     /** 删除当前应用创建的一次表情回复。 */
     public void deleteMessageReaction(String token, String messageId, String reactionId) {
         delete("/open-apis/im/v1/messages/{messageId}/reactions/{reactionId}", token,
@@ -517,4 +568,8 @@ public class FeishuOpenApiClient {
 
     /** 消息中一个 @ 对象；open_id 用来精确匹配当前应用机器人。 */
     public record FeishuMention(String key, String openId, String name) { }
+
+    /** 一次消息表情回复；operatorId 按 open_id 返回。 */
+    public record FeishuMessageReaction(String reactionId, String operatorId, String operatorType,
+            String actionTime, String emojiType) { }
 }

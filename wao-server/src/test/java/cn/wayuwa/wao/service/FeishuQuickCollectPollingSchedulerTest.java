@@ -47,6 +47,7 @@ class FeishuQuickCollectPollingSchedulerTest {
         scheduler.poll();
 
         verify(quickCollect).collectPolled("oc_chat", eligible);
+        verify(quickCollect).triggerPolledReaction("token", "om_yes");
         verify(quickCollect, org.mockito.Mockito.times(1)).collectPolled(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
@@ -72,6 +73,7 @@ class FeishuQuickCollectPollingSchedulerTest {
         scheduler.pollEdits();
 
         verify(quickCollect).collectPolled("oc_chat", edited);
+        verify(quickCollect).triggerPolledReaction("token", "om_edited");
     }
 
     private void enabled() {
