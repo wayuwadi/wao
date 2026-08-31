@@ -381,6 +381,27 @@ class AiRunServiceTest {
     }
 
     @Test
+    void autonomousGoalPersistsAConciseTaskTitleBeforeTheRunIsCreated() {
+        TaskEntity task = task("t1", "p1", "最近 AI 运行视觉优化");
+        when(tasks.create(any(CreateTaskRequest.class), eq("wg"))).thenReturn(taskDto(null, null));
+        when(taskMapper.selectById("t1")).thenReturn(task);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(any())).thenReturn(List.of(runner("rn1", "Linux 主节点", "codex")));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(task));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        service.launchGoal("p1",
+                "## 最近 AI 运行视觉优化：把筛选合并成一行并压缩卡片空间，同时保持类型和结果分组清晰",
+                "wg", "https://wao.example");
+
+        ArgumentCaptor<CreateTaskRequest> request = ArgumentCaptor.forClass(CreateTaskRequest.class);
+        verify(tasks).create(request.capture(), eq("wg"));
+        assertThat(request.getValue().title()).isEqualTo("最近 AI 运行视觉优化");
+        assertThat(request.getValue().desc()).contains("把筛选合并成一行并压缩卡片空间");
+    }
+
+    @Test
     void autonomousGoalCanTargetTheComputerSelectedForThisLaunch() {
         TaskEntity task = task("t1", "p1", "在指定电脑执行");
         when(tasks.create(any(CreateTaskRequest.class), eq("wg"))).thenReturn(taskDto(null, null));

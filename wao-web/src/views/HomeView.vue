@@ -1586,21 +1586,28 @@ onBeforeUnmount(() => {
             <button class="history-link" @click="openRunHistory()">查看全部<i class="ri-external-link-line"></i></button>
           </div>
         </div>
-        <div class="activity-filters" role="tablist" aria-label="AI 运行类型">
-          <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" :disabled="recentActivitiesLoading" @click="selectActivityFilter(option.id)">{{ option.label }}</button>
-        </div>
-        <div class="activity-filters status-filters" role="tablist" aria-label="AI 运行结果">
-          <button v-for="option in ACTIVITY_STATUS_FILTERS" :key="option.id" :class="{ active: activityStatusFilter === option.id }" :disabled="recentActivitiesLoading" @click="selectActivityStatusFilter(option.id)">{{ option.label }}</button>
+        <div class="activity-filter-bar">
+          <div class="activity-filter-group">
+            <span>类型</span>
+            <div class="activity-filters" role="tablist" aria-label="AI 运行类型">
+              <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" :disabled="recentActivitiesLoading" @click="selectActivityFilter(option.id)">{{ option.label }}</button>
+            </div>
+          </div>
+          <div class="activity-filter-group status-filter-group">
+            <span>结果</span>
+            <div class="activity-filters" role="tablist" aria-label="AI 运行结果">
+              <button v-for="option in ACTIVITY_STATUS_FILTERS" :key="option.id" :class="{ active: activityStatusFilter === option.id }" :disabled="recentActivitiesLoading" @click="selectActivityStatusFilter(option.id)">{{ option.label }}</button>
+            </div>
+          </div>
         </div>
         <div v-if="recentActivitiesLoading" class="recent-state"><i class="ri-loader-4-line spin"></i>正在读取最近 AI 运行…</div>
         <div v-else-if="recentActivitiesError" class="recent-state error" role="alert"><i class="ri-error-warning-line"></i><span>{{ recentActivitiesError }}</span><button @click="changeRecentActivitiesPage(recentActivitiesPage)">重试</button></div>
         <div v-else-if="!recentActivities.length" class="recent-state"><i class="ri-inbox-2-line"></i>当前筛选下还没有已结束的运行。</div>
         <div v-else class="recent-grid">
-          <button v-for="activity in recentActivities" :key="`${activity.type}-${activity.id}`" class="recent-card" @click="openActivity(activity)">
+          <button v-for="activity in recentActivities" :key="`${activity.type}-${activity.id}`" class="recent-card" :aria-label="`${activity.title}，${activityMeta(activity).label}，打开详情`" @click="openActivity(activity)">
             <span class="recent-card-top">
-              <span class="recent-icon" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }"><i :class="activityTypeMeta(activity).icon"></i></span>
-              <span class="recent-type" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }">{{ activityTypeMeta(activity).label }}</span>
-              <span class="recent-status" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i>{{ activityMeta(activity).label }}</span>
+              <span class="recent-icon" :title="activityTypeMeta(activity).label" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }"><i :class="activityTypeMeta(activity).icon"></i></span>
+              <span class="recent-outcome" :title="activityMeta(activity).label" :aria-label="activityMeta(activity).label" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i></span>
               <span class="run-time">{{ timeText(activity.finishedAt || activity.createdAt) }}</span>
             </span>
             <span class="recent-main">
@@ -1609,7 +1616,7 @@ onBeforeUnmount(() => {
               <em><i class="ri-sparkling-2-line"></i>{{ activity.capabilityLabel }}</em>
               <small v-if="activity.status === 'FAILED'">{{ activity.resultPreview }}</small>
             </span>
-            <span class="recent-open">{{ activity.type === 'CHAT_REVIEW' ? '打开复盘' : '查看详情' }}<i class="ri-arrow-right-line"></i></span>
+            <span class="recent-hover-action" aria-hidden="true"><i :class="activity.type === 'CHAT_REVIEW' ? 'ri-chat-check-line' : 'ri-arrow-right-up-line'"></i>{{ activity.type === 'CHAT_REVIEW' ? '打开复盘' : '查看详情' }}</span>
           </button>
         </div>
       </section>
@@ -2114,11 +2121,19 @@ onBeforeUnmount(() => {
           </div>
           <button class="detail-close" aria-label="关闭运行历史" @click="runHistoryOpen = false"><i class="ri-close-line"></i></button>
         </header>
-        <div class="activity-filters history-filters" role="tablist" aria-label="历史运行类型">
-          <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" @click="selectActivityFilter(option.id)">{{ option.label }}</button>
-        </div>
-        <div class="activity-filters status-filters" role="tablist" aria-label="历史运行结果">
-          <button v-for="option in ACTIVITY_STATUS_FILTERS" :key="option.id" :class="{ active: activityStatusFilter === option.id }" @click="selectActivityStatusFilter(option.id)">{{ option.label }}</button>
+        <div class="activity-filter-bar history-filter-bar">
+          <div class="activity-filter-group">
+            <span>类型</span>
+            <div class="activity-filters" role="tablist" aria-label="历史运行类型">
+              <button v-for="option in ACTIVITY_FILTERS" :key="option.id" :class="{ active: activityFilter === option.id }" @click="selectActivityFilter(option.id)">{{ option.label }}</button>
+            </div>
+          </div>
+          <div class="activity-filter-group status-filter-group">
+            <span>结果</span>
+            <div class="activity-filters" role="tablist" aria-label="历史运行结果">
+              <button v-for="option in ACTIVITY_STATUS_FILTERS" :key="option.id" :class="{ active: activityStatusFilter === option.id }" @click="selectActivityStatusFilter(option.id)">{{ option.label }}</button>
+            </div>
+          </div>
         </div>
         <div v-if="runHistoryLoading" class="history-state"><i class="ri-loader-4-line spin"></i>正在读取运行历史…</div>
         <div v-else-if="runHistoryError" class="history-state error">
@@ -2127,11 +2142,10 @@ onBeforeUnmount(() => {
         </div>
         <div v-else-if="!runHistory.length" class="history-state"><i class="ri-inbox-2-line"></i>还没有已结束的运行。</div>
         <div v-else class="recent-grid history-grid">
-          <button v-for="activity in runHistory" :key="`${activity.type}-${activity.id}`" class="recent-card" @click="openActivity(activity)">
+          <button v-for="activity in runHistory" :key="`${activity.type}-${activity.id}`" class="recent-card" :aria-label="`${activity.title}，${activityMeta(activity).label}，打开详情`" @click="openActivity(activity)">
             <span class="recent-card-top">
-              <span class="recent-icon" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }"><i :class="activityTypeMeta(activity).icon"></i></span>
-              <span class="recent-type" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }">{{ activityTypeMeta(activity).label }}</span>
-              <span class="recent-status" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i>{{ activityMeta(activity).label }}</span>
+              <span class="recent-icon" :title="activityTypeMeta(activity).label" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }"><i :class="activityTypeMeta(activity).icon"></i></span>
+              <span class="recent-outcome" :title="activityMeta(activity).label" :aria-label="activityMeta(activity).label" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i></span>
               <span class="run-time">{{ timeText(activity.finishedAt || activity.createdAt) }}</span>
             </span>
             <span class="recent-main">
@@ -2140,7 +2154,7 @@ onBeforeUnmount(() => {
               <em><i class="ri-sparkling-2-line"></i>{{ activity.capabilityLabel }}</em>
               <small v-if="activity.status === 'FAILED'">{{ activity.resultPreview }}</small>
             </span>
-            <span class="recent-open">{{ activity.type === 'CHAT_REVIEW' ? '打开复盘' : '查看详情' }}<i class="ri-arrow-right-line"></i></span>
+            <span class="recent-hover-action" aria-hidden="true"><i :class="activity.type === 'CHAT_REVIEW' ? 'ri-chat-check-line' : 'ri-arrow-right-up-line'"></i>{{ activity.type === 'CHAT_REVIEW' ? '打开复盘' : '查看详情' }}</span>
           </button>
         </div>
         <WaoPagination
@@ -2871,17 +2885,33 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
-.activity-filters { margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.activity-filter-bar {
+  margin: 0 0 12px;
+  padding: 7px;
+  border: 1px solid var(--wao-line);
+  border-radius: 11px;
+  background: var(--wao-bg-card);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.activity-filter-group { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.activity-filter-group > span { padding-left: 4px; color: var(--wao-text-weak); font-size: 10.5px; font-weight: 650; }
+.activity-filter-group.status-filter-group { padding-left: 9px; border-left: 1px solid var(--wao-divider); }
+.activity-filters { display: flex; flex-wrap: wrap; gap: 5px; }
 .activity-filters button { min-height: 30px; padding: 0 11px; border: 1px solid var(--wao-line); border-radius: 999px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; font-size: 11px; }
 .activity-filters button.active { border-color: var(--wao-primary-line); background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: 650; }
 .activity-filters button:disabled { opacity: .55; cursor: wait; }
 .recent-actions { flex: 0 0 auto !important; display: flex; align-items: center; gap: 7px; }
 .recent-pagination { min-height: 34px; }
-.history-filters { margin: 14px 0 4px; }
+.history-filter-bar { margin-top: 14px; }
 .recent-card {
+  position: relative;
   width: 100%;
   min-width: 0;
-  min-height: 150px;
+  min-height: 118px;
+  overflow: hidden;
   padding: 12px;
   border: 1px solid var(--wao-line);
   border-radius: 12px;
@@ -2895,19 +2925,37 @@ onBeforeUnmount(() => {
   gap: 9px;
   transition: transform .16s, border-color .16s, box-shadow .16s;
 }
-.recent-card:hover { transform: translateY(-2px); border-color: var(--wao-primary-line); box-shadow: 0 8px 22px #27366c14; }
+.recent-card:hover, .recent-card:focus-visible { transform: translateY(-2px); border-color: var(--wao-primary-line); box-shadow: 0 8px 22px #27366c14; outline: none; }
 .recent-card-top { min-height: 28px; display: flex; align-items: center; gap: 6px; }
 .recent-icon { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 8px; display: grid; place-items: center; }
 .recent-icon.recent-image { overflow: hidden; border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
 .recent-icon.recent-image img { width: 100%; height: 100%; object-fit: cover; }
 .recent-main { min-width: 0; }
-.recent-main b { min-height: 36px; overflow: hidden; font-size: 12.5px; line-height: 1.45; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.recent-main b { display: block; overflow: hidden; font-size: 12.5px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .recent-main em { display: block; margin-top: 4px; overflow: hidden; color: var(--wao-text-weak); font-size: 10.5px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .recent-main em i { margin-right: 5px; }
 .recent-main small { display: block; margin-top: 4px; overflow: hidden; color: var(--wao-danger-strong); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
-.recent-type, .recent-status { padding: 3px 6px; border-radius: 999px; font-size: 9.5px; font-weight: 650; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; }
+.recent-outcome { width: 24px; height: 24px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; font-size: 11px; }
 .recent-card-top .run-time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.recent-open { margin-top: auto; padding-top: 7px; border-top: 1px solid var(--wao-bg-tab); color: var(--wao-primary); font-size: 10.5px; display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.recent-hover-action {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--wao-primary) 82%, transparent);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  transform: translateY(8px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+.recent-hover-action i { font-size: 17px; }
+.recent-card:hover .recent-hover-action, .recent-card:focus-visible .recent-hover-action { opacity: 1; transform: translateY(0); }
 .run-detail-mask {
   position: fixed;
   inset: 0;

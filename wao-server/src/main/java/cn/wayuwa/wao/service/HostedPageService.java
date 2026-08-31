@@ -10,6 +10,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.regex.Pattern;
@@ -20,6 +21,7 @@ import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.mapper.HostedPageMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 /** 单文件 HTML 页面的校验、持久化和安全渲染。 */
@@ -28,6 +30,9 @@ public class HostedPageService {
     public static final long MAX_HTML_BYTES = 10L * 1024 * 1024;
     public static final long MAX_ICON_BYTES = 1024 * 1024;
     private static final String RUN_REPORT_ID_PREFIX = "run-report-";
+    private static final String MANUAL_UPLOAD = "MANUAL_UPLOAD";
+    private static final String AI_RUN_REPORT = "AI_RUN_REPORT";
+    private static final Set<String> SOURCE_TYPES = Set.of("ALL", MANUAL_UPLOAD, AI_RUN_REPORT);
     private static final Pattern SLUG = Pattern.compile("[a-z0-9](?:[a-z0-9-]{0,78}[a-z0-9])?");
     private static final Pattern HEAD = Pattern.compile("(?i)<head(?:\\s[^>]*)?>");
     private static final Pattern TITLE = Pattern.compile("(?is)<title(?:\\s[^>]*)?>.*?</title\\s*>");
@@ -36,13 +41,19 @@ public class HostedPageService {
     private final HostedPageMapper mapper;
     public HostedPageService(HostedPageMapper mapper) { this.mapper = mapper; }
 
-    /** 列出托管页元数据，避免读取 HTML 与图标正文。 */
-    public List<HostedPageDto> list() { return mapper.listMeta().stream().map(this::dto).toList(); }
+    /** 按来源类型列出托管页元数据，避免读取 HTML 与图标正文。 */
+    public List<HostedPageDto> list(String requestedSourceType) {
+        String sourceType = requestedSourceType == null
+                ? "ALL" : requestedSourceType.trim().toUpperCase(Locale.ROOT);
+        if (!SOURCE_TYPES.contains(sourceType)) throw new BadRequestException("不支持的托管页来源类型");
+        return mapper.listMeta(sourceType).stream().map(this::dto).toList();
+    }
 
     /** 新建一个公开托管页。 */
     public HostedPageDto create(MultipartFile html, String slug, String title, MultipartFile icon, String memberId) {
         HostedPageEntity entity = new HostedPageEntity();
         entity.setId("page-" + UUID.randomUUID());
+        entity.setSourceType(MANUAL_UPLOAD);
         entity.setCreatedAt(LocalDateTime.now());
         entity.setCreatedBy(memberId == null ? "未知成员" : memberId);
         fill(entity, html, slug, title, icon, true);
@@ -62,6 +73,7 @@ public class HostedPageService {
         if (entity == null) {
             entity = new HostedPageEntity();
             entity.setId(pageId);
+            entity.setSourceType(AI_RUN_REPORT);
             entity.setCreatedAt(LocalDateTime.now());
             entity.setCreatedBy(memberId == null ? "AI Run" : memberId);
             fill(entity, html, "ai-run-" + runId, title, null, true);
@@ -87,6 +99,7 @@ public class HostedPageService {
         if (entity == null) {
             entity = new HostedPageEntity();
             entity.setId(pageId);
+            entity.setSourceType(AI_RUN_REPORT);
             entity.setSlug("ai-run-" + runId);
             entity.setTitle(title);
             entity.setCreatedAt(LocalDateTime.now());
@@ -178,7 +191,13 @@ public class HostedPageService {
         return entity;
     }
     private HostedPageDto dto(HostedPageEntity e) { return new HostedPageDto(e.getId(), e.getSlug(), e.getTitle(), e.getFileName(),
-            e.getIconContentType() != null, e.getUpdatedAt() == null ? "" : e.getUpdatedAt().format(TIME), "/api/pages/" + e.getSlug()); }
+            sourceType(e), e.getIconContentType() != null,
+            e.getUpdatedAt() == null ? "" : e.getUpdatedAt().format(TIME), "/api/pages/" + e.getSlug()); }
+    private static String sourceType(HostedPageEntity entity) {
+        if (StringUtils.hasText(entity.getSourceType())) return entity.getSourceType();
+        return entity.getId() != null && entity.getId().startsWith(RUN_REPORT_ID_PREFIX)
+                ? AI_RUN_REPORT : MANUAL_UPLOAD;
+    }
     private static String normalizeSlug(String value) {
         String slug = value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
         if (!SLUG.matcher(slug).matches()) throw new BadRequestException("链接后缀只能包含小写字母、数字和中划线，长度 1～80，首尾不能是中划线");

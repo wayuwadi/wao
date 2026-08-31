@@ -902,7 +902,7 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
 
     expect(wrapper.find('.recent-grid').exists()).toBe(true)
-    expect(wrapper.find('.recent-card').text()).toContain('查看详情')
+    expect(wrapper.find('.recent-hover-action').text()).toContain('查看详情')
     expect(wrapper.find('.recent-card').text()).toContain('Codex')
     expect(wrapper.find('.recent-main small').text()).toBe('失败阶段：准备 Git 工作区')
 
@@ -947,15 +947,21 @@ describe('HomeView AI 控制台', () => {
     wrapper.unmount()
   })
 
-  it('最近运行原位翻页，并把类型与运行结果放在各自固定标签中', async () => {
+  it('最近运行原位翻页，并用紧凑图标与悬浮蒙层替代上下标签', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
     await flushPromises()
 
     const card = wrapper.find('.recent-card')
-    expect(card.find('.recent-type').text()).toBe('功能开发')
-    expect(card.find('.recent-status').text()).toContain('运行失败')
+    expect(card.find('.recent-type').exists()).toBe(false)
+    expect(card.find('.recent-status').exists()).toBe(false)
+    expect(card.find('.recent-icon').attributes('title')).toBe('功能开发')
+    expect(card.find('.recent-outcome').attributes('title')).toBe('运行失败')
+    expect(card.find('.recent-hover-action').text()).toContain('查看详情')
     expect(card.find('.recent-main b').attributes('title')).toBe('修复自动任务')
+    expect(wrapper.findAll('.activity-filter-bar')).toHaveLength(1)
+    expect(wrapper.find('.activity-filter-bar').text()).toContain('类型')
+    expect(wrapper.find('.activity-filter-bar').text()).toContain('结果')
     expect(wrapper.find('.recent-pagination').text()).toContain('上一页')
     expect(wrapper.find('.recent-pagination').text()).toContain('下一页')
 
@@ -1069,7 +1075,8 @@ describe('HomeView AI 控制台', () => {
     vi.useFakeTimers()
     const { fetchAiRuns } = await import('@/api/ai')
     vi.mocked(fetchAiRuns).mockResolvedValueOnce([{
-      id: 'ar-goal-native', taskId: 't1', taskTitle: '完成原生目标模式', previewImages: [],
+      id: 'ar-goal-native', taskId: 't1', subId: null, subTitle: null,
+      taskTitle: '完成原生目标模式', previewImages: [],
       projectId: 'p1', projectName: 'WAO', engine: 'codex', requestedModel: 'gpt-5.6-sol',
       reasoningEffort: 'high', planMode: false, goalMode: true,
       goalObjective: '完成原生目标模式，直到部署成功且线上验收通过', goalStatus: 'active',

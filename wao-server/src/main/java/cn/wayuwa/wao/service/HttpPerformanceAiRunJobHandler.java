@@ -134,7 +134,10 @@ public class HttpPerformanceAiRunJobHandler implements JobHandler {
                         .append(endpoint.failedCount()).append(" |\n"));
         prompt.append("\n请从上述候选中最多治理 ").append(config.maxEndpointsPerRun())
                 .append(" 个确有代码根因的接口。验收必须保持接口结果、权限隔离和用户链路不变，并用下一次真实监控窗口对比；")
-                .append("不得把编译通过或未经测量的百分比当作线上提速证据。");
+                .append("不得把编译通过或未经测量的百分比当作线上提速证据。\n\n")
+                .append("本次 HTML 报告除 AI Run 通用内容外，必须逐项写明：实际优化了哪些接口、各自根因、")
+                .append("是否已经彻底解决及仍存边界、后续如何规避、对后续开发有指导作用的经验沉淀。")
+                .append("没有可靠代码优化时也要在报告中如实说明证据和跳过原因，不能伪造已解决结论。");
         return prompt.toString();
     }
 }

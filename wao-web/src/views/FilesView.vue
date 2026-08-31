@@ -36,11 +36,26 @@ const fileSettingsError = ref(false)
 
 const HOSTED_PAGE_SIZE = 10
 const hostedPage = ref(1)
+type HostedPageSourceFilter = 'ALL' | 'MANUAL_UPLOAD' | 'AI_RUN_REPORT'
+const hostedPageSource = ref<HostedPageSourceFilter>('ALL')
+const hostedPageSourceFilters: Array<{ id: HostedPageSourceFilter; label: string }> = [
+  { id: 'ALL', label: '全部类型' },
+  { id: 'MANUAL_UPLOAD', label: '人工上传' },
+  { id: 'AI_RUN_REPORT', label: 'AI Run 报告' },
+]
+function hostedPageSourceType(page: HostedPage) {
+  return page.sourceType ?? (page.id.startsWith('run-report-') ? 'AI_RUN_REPORT' : 'MANUAL_UPLOAD')
+}
+const filteredHostedPages = computed(() =>
+  hostedPageSource.value === 'ALL'
+    ? data.hostedPages
+    : data.hostedPages.filter((page) => hostedPageSourceType(page) === hostedPageSource.value),
+)
 const hostedPageCount = computed(() =>
-  Math.max(1, Math.ceil(data.hostedPages.length / HOSTED_PAGE_SIZE)),
+  Math.max(1, Math.ceil(filteredHostedPages.value.length / HOSTED_PAGE_SIZE)),
 )
 const visibleHostedPages = computed(() =>
-  data.hostedPages.slice(
+  filteredHostedPages.value.slice(
     (hostedPage.value - 1) * HOSTED_PAGE_SIZE,
     hostedPage.value * HOSTED_PAGE_SIZE,
   ),
@@ -77,11 +92,16 @@ onMounted(() => {
 })
 
 watch(
-  () => data.hostedPages.length,
+  () => [filteredHostedPages.value.length, hostedPageSource.value],
   () => {
     if (hostedPage.value > hostedPageCount.value) hostedPage.value = hostedPageCount.value
   },
 )
+
+function selectHostedPageSource(source: HostedPageSourceFilter) {
+  hostedPageSource.value = source
+  hostedPage.value = 1
+}
 
 /** 从图床页直接上传，来源标成「图床」以便和任务里粘贴的图区分。 */
 async function uploadImages(files: FileList | File[]) {
@@ -532,15 +552,35 @@ function onFileSettingsSaved(settings: FileSettings) {
         上传单文件 HTML，自定义公网链接后缀、浏览器标题和 icon。页面脚本在隔离环境中运行，无法读取
         WAO 登录态。
       </div>
+      <div class="page-source-bar" role="tablist" aria-label="网页托管类型">
+        <span>类型</span>
+        <button
+          v-for="option in hostedPageSourceFilters"
+          :key="option.id"
+          :class="{ active: hostedPageSource === option.id }"
+          @click="selectHostedPageSource(option.id)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
       <div v-if="!data.hostedPages.length" class="img-empty page-empty">
         <i class="ri-global-line"></i>
         <div>还没有托管网页——点右上角“托管 HTML”快速发布</div>
+      </div>
+      <div v-else-if="!filteredHostedPages.length" class="img-empty page-empty">
+        <i class="ri-filter-off-line"></i>
+        <div>当前类型下还没有托管网页</div>
       </div>
       <div v-else class="file-list">
         <div v-for="page in visibleHostedPages" :key="page.id" class="file-row">
           <div class="file-icon"><i class="ri-html5-line"></i></div>
           <div class="file-main">
-            <div class="file-name">{{ page.title }}</div>
+            <div class="file-name page-name">
+              {{ page.title }}
+              <span :class="['page-source', hostedPageSourceType(page).toLowerCase()]">
+                {{ hostedPageSourceType(page) === 'AI_RUN_REPORT' ? 'AI Run 报告' : '人工上传' }}
+              </span>
+            </div>
             <div class="file-sub">
               {{ page.fileName }} · {{ page.updatedAt }} ·
               <span class="wao-mono">{{ absoluteUrl(page.url) }}</span>
@@ -560,11 +600,11 @@ function onFileSettingsSaved(settings: FileSettings) {
           </button>
         </div>
         <WaoPagination
-          v-if="data.hostedPages.length > HOSTED_PAGE_SIZE"
+          v-if="filteredHostedPages.length > HOSTED_PAGE_SIZE"
           v-model:page="hostedPage"
           class="pagination"
           :page-count="hostedPageCount"
-          :total="data.hostedPages.length"
+          :total="filteredHostedPages.length"
           aria-label="托管网页分页"
         />
       </div>
@@ -812,6 +852,49 @@ function onFileSettingsSaved(settings: FileSettings) {
 .page-empty {
   margin-top: 16px;
 }
+.page-source-bar {
+  margin-top: 12px;
+  padding: 7px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  background: var(--wao-bg-card);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.page-source-bar > span {
+  padding: 0 6px;
+  color: var(--wao-text-weak);
+  font-size: 11px;
+  font-weight: 650;
+}
+.page-source-bar button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wao-text-weak);
+  cursor: pointer;
+  font-size: 11px;
+}
+.page-source-bar button.active {
+  border-color: var(--wao-primary-line);
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+  font-weight: 650;
+}
+.page-name { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.page-source {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--wao-bg-hover);
+  color: var(--wao-text-weak);
+  font-size: 9.5px;
+  font-weight: 650;
+}
+.page-source.ai_run_report { background: var(--wao-primary-soft); color: var(--wao-primary-text); }
 .dialog-mask {
   position: fixed;
   inset: 0;

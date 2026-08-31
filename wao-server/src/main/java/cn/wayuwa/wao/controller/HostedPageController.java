@@ -29,7 +29,11 @@ public class HostedPageController {
     private final CurrentMember currentMember;
     public HostedPageController(HostedPageService pages, CurrentMember currentMember) { this.pages = pages; this.currentMember = currentMember; }
 
-    @GetMapping("/hosted-pages") public ApiResponse<List<HostedPageDto>> list() { return ApiResponse.ok(pages.list()); }
+    @GetMapping("/hosted-pages")
+    public ApiResponse<List<HostedPageDto>> list(
+            @RequestParam(defaultValue = "ALL") String sourceType) {
+        return ApiResponse.ok(pages.list(sourceType));
+    }
 
     @PostMapping(value = "/hosted-pages", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<HostedPageDto> create(@RequestParam MultipartFile html, @RequestParam String slug,

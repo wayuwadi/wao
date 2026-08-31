@@ -47,6 +47,8 @@ export interface HostedPage {
   slug: string
   title: string
   fileName: string
+  /** 滚动发布兼容期可能缺失；页面会用稳定的报告 id 做只读兜底识别。 */
+  sourceType?: 'MANUAL_UPLOAD' | 'AI_RUN_REPORT'
   hasIcon: boolean
   updatedAt: string
   url: string

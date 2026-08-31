@@ -107,6 +107,36 @@ describe('FilesView', () => {
     expect(saveHostedPage).toHaveBeenCalledWith(expect.objectContaining({ html }))
   })
 
+  it('网页托管按持久化来源区分人工上传与 AI Run 报告', async () => {
+    const pinia = createPinia()
+    const data = useDataStore(pinia)
+    data.hostedPages = [
+      {
+        id: 'page-manual', slug: 'manual', title: '人工页面', fileName: 'manual.html',
+        sourceType: 'MANUAL_UPLOAD', hasIcon: false, updatedAt: '8月31日 10:00', url: '/api/pages/manual',
+      },
+      {
+        id: 'run-report-ar1', slug: 'ai-run-ar1', title: '视觉优化 · AI 报告', fileName: 'report.html',
+        sourceType: 'AI_RUN_REPORT', hasIcon: false, updatedAt: '8月31日 11:00', url: '/api/pages/ai-run-ar1',
+      },
+    ]
+    const wrapper = mount(FilesView, {
+      global: { plugins: [pinia], stubs: { DemoBanner: true, FileSettingsModal: true } },
+    })
+    await flushPromises()
+
+    await wrapper.findAll('.seg-btn')[2]!.trigger('click')
+    expect(wrapper.findAll('.page-source')).toHaveLength(2)
+    expect(wrapper.text()).toContain('人工上传')
+    expect(wrapper.text()).toContain('AI Run 报告')
+
+    await wrapper.findAll('[aria-label="网页托管类型"] button')
+      .find((button) => button.text() === 'AI Run 报告')!.trigger('click')
+    expect(wrapper.findAll('.file-row')).toHaveLength(1)
+    expect(wrapper.text()).toContain('视觉优化 · AI 报告')
+    expect(wrapper.text()).not.toContain('人工页面')
+  })
+
   it('网页托管直接选择 HTML 后也自动补齐默认值', async () => {
     const pinia = createPinia()
     const wrapper = mount(FilesView, {

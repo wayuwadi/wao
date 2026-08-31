@@ -659,6 +659,7 @@ V84 在不改写上述兼容数据的前提下增加每日面板：
 | id | VARCHAR(64) PK | 托管页 id |
 | slug | VARCHAR(80) UNIQUE | 公网地址唯一后缀 |
 | title / file_name | VARCHAR | 服务端注入的标题与原 HTML 文件名 |
+| source_type | VARCHAR(32)（V119） | `MANUAL_UPLOAD` 人工上传 / `AI_RUN_REPORT` AI Run 报告；汇总列表的稳定筛选维度 |
 | html_content | MEDIUMBLOB | UTF-8 单文件 HTML，最大 10MB |
 | icon_content / icon_content_type | MEDIUMBLOB / VARCHAR NULL | 可选 favicon 正文与 MIME 类型，最大 1MB |
 | created_by | VARCHAR(64) | 创建成员 |
@@ -666,7 +667,7 @@ V84 在不改写上述兼容数据的前提下增加每日面板：
 
 公开出口 `/api/pages/{slug}` 返回注入标题与 favicon 的 HTML，并以不含 `allow-same-origin`、`allow-forms` 的 CSP sandbox 隔离 WAO 会话（见 ADR-042）。
 AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report-<run-id>`，运行列表据此批量读取元数据并
-返回 `reportUrl`；用户删除页面后关联自然消失。同一次运行续跑只更新正文，人工修改过的标题与后缀保留
+返回 `reportUrl`；报告同时固化 `AI_RUN_REPORT` 来源，用户删除页面后关联自然消失。同一次运行续跑只更新正文，人工修改过的标题与后缀保留
 （见 ADR-055）。
 
 ## CalDAV 日历域
@@ -1010,6 +1011,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V116__http_inspection_top_ten.sql`：将缺失或仍为旧默认 5/2 的 HTTP 巡检数量升级为 10/10，保留管理员已自定义的其他值（见 ADR-162）。
 - `V118__ai_inspection_activity_history.sql`：固化 AI Run 活动来源和自动化到 AI Run 的真实关联，并回填可证明的既有 HTTP 巡检记录（见 ADR-166）。
 - `V119__ai_run_goal_mode.sql`：固化 Codex 原生目标模式、可验证目标、状态与累计用量（见 ADR-169）。
+- `V120__hosted_page_source_type.sql`：固化人工托管页与 AI Run 报告来源，并按稳定报告 id 回填存量页面（见 ADR-170）。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
