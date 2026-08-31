@@ -24,6 +24,8 @@ import WebhookConfigPanel from '@/components/settings/WebhookConfigPanel.vue'
 import NavigationLinkSettingsPanel from '@/components/settings/NavigationLinkSettingsPanel.vue'
 import WebPetSettingsPanel from '@/components/settings/WebPetSettingsPanel.vue'
 import LoginSettingsPanel from '@/components/settings/LoginSettingsPanel.vue'
+import NotificationSettingsPanel from '@/components/settings/NotificationSettingsPanel.vue'
+import ProjectNotificationSettingsPanel from '@/components/settings/ProjectNotificationSettingsPanel.vue'
 import { useTheme, type ThemeMode } from '@/composables/theme'
 
 const session = useSessionStore()
@@ -37,6 +39,7 @@ const waoAiCapabilitiesPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const navigationPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const webPetPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 const loginSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(null)
+const notificationSettingsPanel = ref<{ confirmLeave: () => boolean } | null>(null)
 
 const NAV = [
   { label: '组织管理', icon: 'ri-community-line', items: [['组织与成员', 'members']] },
@@ -61,15 +64,13 @@ function selectTab(next: string) {
       && !loginSettingsPanel.value.confirmLeave()) return
   if (tab.value === 'navigation' && next !== 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return
+  if (tab.value === 'notifications' && next !== 'notifications' && notificationSettingsPanel.value
+      && !notificationSettingsPanel.value.confirmLeave()) return
   if (tab.value === 'webhook' && next !== 'webhook' && webhookPanel.value
       && !webhookPanel.value.confirmLeave()) return
   if (tab.value === 'network-outage' && next !== 'network-outage' && !confirmNetworkOutageDraft()) return
   if (tab.value === 'wao-ai-capabilities' && next !== 'wao-ai-capabilities'
       && waoAiCapabilitiesPanel.value && !waoAiCapabilitiesPanel.value.confirmLeave()) return
-  if (next === 'notifications') {
-    void router.push('/notification-settings')
-    return
-  }
   tab.value = next
   void router.replace({ query: { ...route.query, tab: next === 'members' ? undefined : next } })
 }
@@ -91,6 +92,8 @@ const removeWebhookRouteGuard = router.beforeEach(() => {
   if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return false
   if (tab.value === 'navigation' && navigationPanel.value
       && !navigationPanel.value.confirmLeave()) return false
+  if (tab.value === 'notifications' && notificationSettingsPanel.value
+      && !notificationSettingsPanel.value.confirmLeave()) return false
   if (tab.value === 'pet' && webPetPanel.value && !webPetPanel.value.confirmLeave()) return false
   if (tab.value === 'login-settings' && loginSettingsPanel.value
       && !loginSettingsPanel.value.confirmLeave()) return false
@@ -365,6 +368,8 @@ async function logout() {
   if (tab.value === 'network-outage' && !confirmNetworkOutageDraft()) return
   if (tab.value === 'login-settings' && loginSettingsPanel.value
       && !loginSettingsPanel.value.confirmLeave()) return
+  if (tab.value === 'notifications' && notificationSettingsPanel.value
+      && !notificationSettingsPanel.value.confirmLeave()) return
   await session.logout()
   skipWebhookRouteGuardOnce = true
   await router.push('/login')
@@ -526,6 +531,14 @@ async function bindFeishu() {
                 </button>
               </div>
             </form>
+          </div>
+        </template>
+
+        <!-- 系统 · 通知设置 -->
+        <template v-else-if="tab === 'notifications'">
+          <div class="notification-settings-stack">
+            <NotificationSettingsPanel ref="notificationSettingsPanel" />
+            <ProjectNotificationSettingsPanel />
           </div>
         </template>
 
@@ -848,6 +861,7 @@ async function bindFeishu() {
   max-width: 860px;
 }
 .scontent.navigation-wide { max-width: 1420px; }
+.notification-settings-stack { display: grid; gap: 14px; }
 .s-h1 {
   font-size: 18px;
   font-weight: 700;

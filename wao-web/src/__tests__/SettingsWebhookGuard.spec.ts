@@ -5,6 +5,17 @@ import { createPinia, setActivePinia } from 'pinia'
 import SettingsView from '@/views/SettingsView.vue'
 import { fetchNetworkOutageWindow, saveNetworkOutageWindow } from '@/api/system'
 
+const notificationApi = vi.hoisted(() => ({ fetch: vi.fn(), save: vi.fn() }))
+
+vi.mock('@/api/notificationSettings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/notificationSettings')>()
+  return {
+    ...actual,
+    fetchNotificationSettings: notificationApi.fetch,
+    saveNotificationSettings: notificationApi.save,
+  }
+})
+
 vi.mock('@/api/system', () => ({
   fetchWebhookEndpoints: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
   createWebhookEndpoint: vi.fn<() => Promise<unknown>>(),
@@ -30,6 +41,20 @@ describe('设置页 Webhook 草稿路由保护', () => {
   let router: Router
 
   beforeEach(async () => {
+    const notificationSettings = {
+      canManageSystem: true,
+      system: {
+        enabled: true, quietHoursEnabled: false, quietStart: '22:00', quietEnd: '08:00',
+        taskActivity: false, taskSuccess: false, aiRunSuccess: false, aiRunFailure: true,
+        manualTask: true, reminders: true, deliveryFailure: true, automation: true,
+      },
+      personal: {
+        enabled: true, taskCreated: true, taskCompleted: true, aiRunSuccess: true,
+        aiRunFailure: true, loginActivity: true,
+      },
+    }
+    notificationApi.fetch.mockReset().mockResolvedValue(structuredClone(notificationSettings))
+    notificationApi.save.mockReset().mockResolvedValue(structuredClone(notificationSettings))
     setActivePinia(createPinia())
     router = createRouter({
       history: createMemoryHistory(),
@@ -84,5 +109,27 @@ describe('设置页 Webhook 草稿路由保护', () => {
       enabled: true, startTime: '00:00', endTime: '06:30',
     })
     expect(wrapper.text()).toContain('已保存')
+  })
+
+  it('通知设置保留设置侧栏，并在切换菜单配置时保护未保存草稿', async () => {
+    const notificationEntry = wrapper.findAll('.snav-item')
+      .find((button) => button.text() === '通知设置')
+    await notificationEntry!.trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=notifications')
+    expect(wrapper.get('.notification-settings').text()).toContain('系统 · 群聊通知')
+    expect(wrapper.get('.project-policy').text()).toContain('按项目通知')
+    expect(notificationEntry!.classes()).toContain('on')
+
+    await wrapper.get('.quiet-row > label input').setValue(true)
+    window.confirm = vi.fn<(message?: string) => boolean>(() => false)
+    const navigationEntry = wrapper.findAll('.snav-item')
+      .find((button) => button.text() === '菜单配置')
+    await navigationEntry!.trigger('click')
+
+    expect(window.confirm).toHaveBeenCalledOnce()
+    expect(router.currentRoute.value.fullPath).toBe('/settings?tab=notifications')
+    expect((wrapper.get('.quiet-row > label input').element as HTMLInputElement).checked).toBe(true)
   })
 })
