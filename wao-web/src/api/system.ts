@@ -190,6 +190,8 @@ export interface QuickCollectConfig {
   encryptKey: string
   hasEncryptKey: boolean
   mentionOpenIds: string[]
+  receivedEmoji: string
+  completedEmoji: string
 }
 
 export const fetchQuickCollectConfig = () =>
@@ -201,4 +203,6 @@ export const saveQuickCollectConfig = (payload: {
   verificationToken?: string
   encryptKey?: string
   mentionOpenIds?: string[]
+  receivedEmoji?: string
+  completedEmoji?: string
 }) => put<QuickCollectConfig>('/api/feishu/quick-collect/config', payload)

@@ -33,6 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
@@ -73,11 +74,12 @@ public class FeishuQuickCollectService {
     private final NotificationFeedbackService feedback;
     private final SharedChatFeishuBridge sharedChat;
     private final FeishuQuickCollectAiRunService reactionAiRuns;
+    private final FeishuQuickCollectReactionPolicy reactionPolicy;
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
             TaskService tasks, ProjectService projects, AccountMapper accounts,
             AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ImageService images,
             ObjectMapper json, NotificationFeedbackService feedback, SharedChatFeishuBridge sharedChat,
-            FeishuQuickCollectAiRunService reactionAiRuns) {
+            FeishuQuickCollectAiRunService reactionAiRuns, FeishuQuickCollectReactionPolicy reactionPolicy) {
         this.settings = settings;
         this.feishu = feishu;
         this.tasks = tasks;
@@ -90,6 +92,7 @@ public class FeishuQuickCollectService {
         this.feedback = feedback;
         this.sharedChat = sharedChat;
         this.reactionAiRuns = reactionAiRuns;
+        this.reactionPolicy = reactionPolicy;
     }
 
     /** 当前配置（Token / Encrypt Key 只回脱敏形态）。 */
@@ -101,7 +104,7 @@ public class FeishuQuickCollectService {
                 settings.get(SettingService.QUICK_COLLECT_PROJECT_ID, ""),
                 SettingService.mask(token), StringUtils.hasText(token),
                 SettingService.mask(key), StringUtils.hasText(key),
-                mentionOpenIds());
+                mentionOpenIds(), reactionPolicy.receivedEmoji(), reactionPolicy.completedEmoji());
     }
 
     /**
@@ -110,6 +113,7 @@ public class FeishuQuickCollectService {
      * @param req 配置表单
      * @return 保存后的配置（脱敏）
      */
+    @Transactional
     public FeishuQuickCollectConfigDto saveConfig(SaveQuickCollectConfigRequest req) {
         settings.put(SettingService.QUICK_COLLECT_ENABLED,
                 req.enabled() == null ? null : String.valueOf(req.enabled()));
@@ -120,6 +124,7 @@ public class FeishuQuickCollectService {
             settings.put(SettingService.QUICK_COLLECT_MENTIONS, String.join(",", req.mentionOpenIds().stream()
                     .filter(StringUtils::hasText).map(String::trim).distinct().toList()));
         }
+        reactionPolicy.save(req.receivedEmoji(), req.completedEmoji());
         return config();
     }
 
@@ -166,7 +171,7 @@ public class FeishuQuickCollectService {
                 reactionTriggered = reactionAiRuns.trigger(body, baseUrl);
             } catch (RuntimeException ex) {
                 // 回调必须保持 200；事务会回滚，用户重新添加表情即可再派工，并已尽力在原消息加 ERROR。
-                log.warn("飞书飞机表情触发 AI Run 失败：{}", ex.getMessage());
+                log.warn("飞书触发表情启动 AI Run 失败：{}", ex.getMessage());
                 reactionTriggered = true;
             }
         }
@@ -279,7 +284,7 @@ public class FeishuQuickCollectService {
                 finish(eventKey, "CREATED", capture.kind(), task.id(), fingerprint, null);
                 log.info("群聊个人收集：已创建任务 {}（项目 {}）", task.id(), project.id());
             }
-            react(messageId, "DONE");
+            react(messageId, reactionPolicy.receivedEmoji());
         } catch (RuntimeException ex) {
             finish(eventKey, "FAILED", capture.kind(), null, null, abbreviated(ex.getMessage()));
             react(messageId, "ERROR");

@@ -22,26 +22,28 @@ class FeishuAiRunReactionNotifierTest {
     private final FeishuQuickCollectEventMapper events = mock(FeishuQuickCollectEventMapper.class);
     private final SettingService settings = mock(SettingService.class);
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
-    private final FeishuAiRunReactionNotifier notifier = new FeishuAiRunReactionNotifier(events, settings, feishu);
+    private final FeishuQuickCollectReactionPolicy reactionPolicy = new FeishuQuickCollectReactionPolicy(settings);
+    private final FeishuAiRunReactionNotifier notifier = new FeishuAiRunReactionNotifier(
+            events, settings, feishu, reactionPolicy);
 
     @Test
-    void capturedTaskAddsInFlightReactionToItsOriginalMessage() {
+    void enqueuedRunKeepsTheExistingReceivedReaction() {
         enabled();
         when(events.selectList(any())).thenReturn(List.of(event("t1", "om_source")));
 
         notifier.reactAfterEnqueued(List.of("t1"));
 
-        verify(feishu).addMessageReaction("token", "om_source", "StatusInFlight");
+        verify(feishu, never()).addMessageReaction(any(), any(), any());
     }
 
     @Test
-    void succeededRunAddsDistinctCompletionCheckToItsOriginalMessage() {
+    void succeededRunAddsDoneToItsOriginalMessage() {
         enabled();
         when(events.selectList(any())).thenReturn(List.of(event("t1", "om_source")));
 
         notifier.reactAfterSucceeded(List.of("t1"));
 
-        verify(feishu).addMessageReaction("token", "om_source", "CheckMark");
+        verify(feishu).addMessageReaction("token", "om_source", "DONE");
     }
 
     @Test
@@ -55,19 +57,19 @@ class FeishuAiRunReactionNotifierTest {
     }
 
     @Test
-    void reactionFailureDoesNotFailAiRunDispatch() {
+    void completionReactionFailureDoesNotFailAiRun() {
         enabled();
         when(events.selectList(any())).thenReturn(List.of(event("t1", "om_source")));
         doThrow(new FeishuApiException("飞书暂不可用"))
-                .when(feishu).addMessageReaction("token", "om_source", "StatusInFlight");
+                .when(feishu).addMessageReaction("token", "om_source", "DONE");
 
-        notifier.reactAfterEnqueued(List.of("t1"));
+        notifier.reactAfterSucceeded(List.of("t1"));
 
-        verify(feishu).addMessageReaction("token", "om_source", "StatusInFlight");
+        verify(feishu).addMessageReaction("token", "om_source", "DONE");
     }
 
     @Test
-    void activeTransactionWaitsUntilCommitBeforeAddingReaction() {
+    void enqueuedReactionNeverAddsAnotherStageInsideOrAfterATransaction() {
         enabled();
         when(events.selectList(any())).thenReturn(List.of(event("t1", "om_source")));
         TransactionSynchronizationManager.initSynchronization();
@@ -77,7 +79,7 @@ class FeishuAiRunReactionNotifierTest {
             verify(feishu, never()).addMessageReaction(any(), any(), any());
             TransactionSynchronizationManager.getSynchronizations()
                     .forEach(TransactionSynchronization::afterCommit);
-            verify(feishu).addMessageReaction("token", "om_source", "StatusInFlight");
+            verify(feishu, never()).addMessageReaction(any(), any(), any());
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }
@@ -94,7 +96,7 @@ class FeishuAiRunReactionNotifierTest {
             verify(feishu, never()).addMessageReaction(any(), any(), any());
             TransactionSynchronizationManager.getSynchronizations()
                     .forEach(TransactionSynchronization::afterCommit);
-            verify(feishu).addMessageReaction("token", "om_source", "CheckMark");
+            verify(feishu).addMessageReaction("token", "om_source", "DONE");
         } finally {
             TransactionSynchronizationManager.clearSynchronization();
         }

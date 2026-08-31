@@ -54,9 +54,10 @@ class FeishuQuickCollectServiceTest {
     private final NotificationFeedbackService feedback = mock(NotificationFeedbackService.class);
     private final SharedChatFeishuBridge sharedChat = mock(SharedChatFeishuBridge.class);
     private final FeishuQuickCollectAiRunService reactionAiRuns = mock(FeishuQuickCollectAiRunService.class);
+    private final FeishuQuickCollectReactionPolicy reactionPolicy = new FeishuQuickCollectReactionPolicy(settings);
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
             settings, feishu, tasks, projects, accounts, identities, events, images, new ObjectMapper(), feedback,
-            sharedChat, reactionAiRuns);
+            sharedChat, reactionAiRuns, reactionPolicy);
 
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);
@@ -154,14 +155,14 @@ class FeishuQuickCollectServiceTest {
     }
 
     @Test
-    void successfulCaptureAddsDoneReactionWithoutSendingAGroupCard() {
+    void successfulCaptureAddsGetReactionWithoutSendingAGroupCard() {
         enabled();
         reactionsEnabled();
 
         service.handleEvent(message("ev-reaction", "text",
                 "{\\\"text\\\":\\\"@_user_1 记录任务：整理方案\\\"}"));
 
-        verify(feishu).addMessageReaction("token", "om_ev-reaction", "DONE");
+        verify(feishu).addMessageReaction("token", "om_ev-reaction", "GET");
         verify(feishu, never()).sendCard(any(), any(), any());
     }
 
@@ -170,7 +171,7 @@ class FeishuQuickCollectServiceTest {
         enabled();
         reactionsEnabled();
         doThrow(new FeishuApiException("表情回执失败"))
-                .when(feishu).addMessageReaction("token", "om_ev-reaction-failed", "DONE");
+                .when(feishu).addMessageReaction("token", "om_ev-reaction-failed", "GET");
 
         service.handleEvent(message("ev-reaction-failed", "text",
                 "{\\\"text\\\":\\\"@_user_1 记录任务：整理方案\\\"}"));
@@ -405,7 +406,7 @@ class FeishuQuickCollectServiceTest {
                 + "\"event_type\":\"im.message.reaction.created_v1\",\"token\":\"" + token + "\"},"
                 + "\"event\":{\"message_id\":\"om_source\",\"operator_type\":\"user\","
                 + "\"user_id\":{\"open_id\":\"ou_sender\"},"
-                + "\"reaction_type\":{\"emoji_type\":\"StatusInFlight\"},"
+                + "\"reaction_type\":{\"emoji_type\":\"GET\"},"
                 + "\"action_time\":\"1787900000000\"}}";
     }
 

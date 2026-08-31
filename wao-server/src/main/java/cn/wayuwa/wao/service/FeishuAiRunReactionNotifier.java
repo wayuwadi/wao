@@ -18,32 +18,29 @@ import org.springframework.util.StringUtils;
 @Service
 public class FeishuAiRunReactionNotifier {
 
-    /** 飞书官方表情枚举中与飞机图标对应的类型。 */
-    static final String AI_RUN_STARTED_EMOJI_TYPE = "StatusInFlight";
-
-    /** 飞书官方表情枚举中用于区分 AI 完成与任务已收集 {@code DONE} 的勾选类型。 */
-    static final String AI_RUN_SUCCEEDED_EMOJI_TYPE = "CheckMark";
-
     private static final Logger log = LoggerFactory.getLogger(FeishuAiRunReactionNotifier.class);
 
     private final FeishuQuickCollectEventMapper events;
     private final SettingService settings;
     private final FeishuOpenApiClient feishu;
+    private final FeishuQuickCollectReactionPolicy reactionPolicy;
 
     public FeishuAiRunReactionNotifier(FeishuQuickCollectEventMapper events, SettingService settings,
-            FeishuOpenApiClient feishu) {
+            FeishuOpenApiClient feishu, FeishuQuickCollectReactionPolicy reactionPolicy) {
         this.events = events;
         this.settings = settings;
         this.feishu = feishu;
+        this.reactionPolicy = reactionPolicy;
     }
 
     /**
-     * AI Run 成功入队后给对应的飞书原消息加飞机表情；事务回滚、网页创建的任务和表情接口失败均不误报。
+     * AI Run 成功入队后保持原消息已有的“已收下”表情，不再追加容易被误解为另一阶段的表情。
      *
      * @param taskIds 本次真正创建运行的任务 id
      */
     public void reactAfterEnqueued(Collection<String> taskIds) {
-        reactAfterCommit(taskIds, AI_RUN_STARTED_EMOJI_TYPE, "已派工");
+        // 快速收集成功时机器人已添加 receivedEmoji；成员从飞书派工时也已经亲自添加了同一表情。
+        // 网页派工与人工表情派工都保持该状态，直到运行成功再切换为待验收表情。
     }
 
     /**
@@ -52,7 +49,7 @@ public class FeishuAiRunReactionNotifier {
      * @param taskIds 本次成功运行覆盖的任务 id
      */
     public void reactAfterSucceeded(Collection<String> taskIds) {
-        reactAfterCommit(taskIds, AI_RUN_SUCCEEDED_EMOJI_TYPE, "已完成");
+        reactAfterCommit(taskIds, reactionPolicy.completedEmoji(), "已完成待验收");
     }
 
     private void reactAfterCommit(Collection<String> taskIds, String emojiType, String stage) {
