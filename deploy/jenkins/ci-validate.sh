@@ -9,6 +9,7 @@ sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
+sh deploy/jenkins/test-github-status.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py
 sh deploy/jumpserver/test-ensure-asset-key.sh
 sh deploy/jumpserver/test-ensure-sso-secret.sh
@@ -28,6 +29,7 @@ for script in \
   deploy/jenkins/test-resolve-batch-base.sh \
   deploy/jenkins/notify-feishu.sh \
   deploy/jenkins/test-notify-feishu.sh \
+  deploy/jenkins/test-github-status.sh \
   deploy/jenkins/deploy-master-local.sh; do
   sh -n "$script"
 done
@@ -55,6 +57,8 @@ grep -Fq 'Production frontend did not converge to version' \
   deploy/jenkins/ci-production-verify.sh
 grep -Fq 'cleanup {' Jenkinsfile
 ! grep -A1 -F 'always {' Jenkinsfile | grep -Fq 'deploy/jenkins/cleanup-workspace.sh'
+grep -Fq 'jumpserver-verify.log' deploy/jenkins/ci-deploy.sh
+grep -Fq 'description="$description：$detail"' deploy/jenkins/github-status.sh
 grep -Fq "printf 'DOCKER_IMAGE_MIRROR=1\\n'" deploy/jumpserver/deploy.sh
 grep -Fqx 'set_config DOCKER_IMAGE_MIRROR 1' deploy/jumpserver/deploy.sh
 grep -Fq 'python /opt/jumpserver/apps/manage.py shell' deploy/jumpserver/deploy.sh
