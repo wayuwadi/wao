@@ -59,6 +59,8 @@ public class FeishuQuickCollectService {
     private static final String DEFAULT_PROJECT_NAME = "Wa All in One";
     /** 标题最多取多少字，超出的部分留在描述里。 */
     private static final int TITLE_LIMIT = 40;
+    /** 纯图片消息没有可诚实提取的文字时使用的稳定标题。 */
+    private static final String IMAGE_ONLY_TITLE = "图片待办";
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private static final String PUBLIC_BASE_URL = "https://wao.wayuwa.cn";
 
@@ -418,30 +420,36 @@ public class FeishuQuickCollectService {
         return text.trim();
     }
 
-    /** 富文本消息：把段落里的文字拼起来。 */
+    /** 富文本消息：先保留全部文字段落，再把图片按原有顺序追加到正文末尾。 */
     private String postText(JsonNode content, String messageId) {
-        StringBuilder sb = new StringBuilder();
+        StringBuilder text = new StringBuilder();
+        List<String> imageMarkdown = new ArrayList<>();
         String title = content.path("title").asText("");
         if (StringUtils.hasText(title)) {
-            sb.append(title).append('\n');
+            text.append(title).append('\n');
         }
         for (JsonNode line : content.path("content")) {
             for (JsonNode span : line) {
                 if ("text".equals(span.path("tag").asText(""))) {
-                    sb.append(span.path("text").asText(""));
+                    text.append(span.path("text").asText(""));
                 } else if ("a".equals(span.path("tag").asText(""))) {
-                    sb.append(span.path("text").asText("")).append(' ')
+                    text.append(span.path("text").asText("")).append(' ')
                             .append(span.path("href").asText(""));
                 } else if ("img".equals(span.path("tag").asText(""))) {
                     String key = span.path("image_key").asText("");
                     if (StringUtils.hasText(key)) {
-                        sb.append("\n\n![飞书图片](").append(storeImage(messageId, key)).append(")\n\n");
+                        imageMarkdown.add("![任务图片](" + storeImage(messageId, key) + ")");
                     }
                 }
             }
-            sb.append('\n');
+            text.append('\n');
         }
-        return sb.toString().trim();
+        String body = text.toString().trim();
+        if (imageMarkdown.isEmpty()) {
+            return body;
+        }
+        String images = String.join("\n\n", imageMarkdown);
+        return body.isEmpty() ? images : body + "\n\n" + images;
     }
 
     /** 用当前应用的真实消息资源权限下载图片并转存 WAO 图床。 */
@@ -469,9 +477,12 @@ public class FeishuQuickCollectService {
         }
     }
 
-    /** 标题取第一行；一行太长就截断，全文仍然留在描述里。 */
+    /** 标题取第一行非图片文字；纯图片消息使用可读标题，绝不暴露 Markdown 路径。 */
     static String title(String text) {
-        String first = text.lines().map(String::trim).filter(StringUtils::hasText).findFirst().orElse(text.trim());
+        String first = text.lines().map(String::trim)
+                .filter(StringUtils::hasText)
+                .filter(line -> !line.matches("^!\\[[^]]*]\\([^\\r\\n]+\\)$"))
+                .findFirst().orElse(IMAGE_ONLY_TITLE);
         return first.length() <= TITLE_LIMIT ? first : first.substring(0, TITLE_LIMIT) + "…";
     }
 

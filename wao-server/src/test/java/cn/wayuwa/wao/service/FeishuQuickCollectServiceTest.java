@@ -352,7 +352,51 @@ class FeishuQuickCollectServiceTest {
                 1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
 
         verify(tasks).createFromChat("p1", "看设计图",
-                "看设计图\n\n![飞书图片](/api/images/img1/raw)", "wd",
+                "看设计图\n\n![任务图片](/api/images/img1/raw)", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+    }
+
+    @Test
+    void imageBeforeTextIsMovedBehindTextAndDoesNotPolluteTheTitle() {
+        enabled();
+        reactionsEnabled();
+        when(feishu.downloadImage("token", "om_image_first", "img_key")).thenReturn(new byte[]{1, 2, 3});
+        when(images.store(any(), eq("image/png"), eq("img_key.png"), eq("飞书任务 · om_image_first"), eq(true)))
+                .thenReturn(new ImageItemDto("img1", "img_key.png", "3 B", "", "",
+                        "/api/images/img1/raw", "", ""));
+
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_image_first", "ou_sender", "user", "post",
+                "{\"title\":\"\",\"content\":[[{\"tag\":\"img\",\"image_key\":\"img_key\"}],"
+                        + "[{\"tag\":\"text\",\"text\":\"@_user_1 记录任务：核对新版布局\"}]]}",
+                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+
+        verify(tasks).createFromChat("p1", "核对新版布局",
+                "核对新版布局\n\n![任务图片](/api/images/img1/raw)", "wd",
+                FeishuQuickCollectService.SOURCE_TAG);
+    }
+
+    @Test
+    void imageOnlyMessageUsesReadableTitleAndKeepsAllImagesAtTheEnd() {
+        enabled();
+        reactionsEnabled();
+        when(feishu.downloadImage(eq("token"), eq("om_images"), any())).thenReturn(new byte[]{1, 2, 3});
+        when(images.store(any(), eq("image/png"), eq("img_a.png"), eq("飞书任务 · om_images"), eq(true)))
+                .thenReturn(new ImageItemDto("img1", "img_a.png", "3 B", "", "",
+                        "/api/images/img1/raw", "", ""));
+        when(images.store(any(), eq("image/png"), eq("img_b.png"), eq("飞书任务 · om_images"), eq(true)))
+                .thenReturn(new ImageItemDto("img2", "img_b.png", "3 B", "", "",
+                        "/api/images/img2/raw", "", ""));
+
+        service.collectPolled("oc_1", new FeishuMessage(
+                "om_images", "ou_sender", "user", "post",
+                "{\"title\":\"\",\"content\":[[{\"tag\":\"text\",\"text\":\"@_user_1\"},"
+                        + "{\"tag\":\"img\",\"image_key\":\"img_a\"}],"
+                        + "[{\"tag\":\"img\",\"image_key\":\"img_b\"}]]}",
+                1L, false, List.of(new FeishuMention("@_user_1", "ou_bot", "WAO"))));
+
+        verify(tasks).createFromChat("p1", "图片待办",
+                "![任务图片](/api/images/img1/raw)\n\n![任务图片](/api/images/img2/raw)", "wd",
                 FeishuQuickCollectService.SOURCE_TAG);
     }
 
@@ -380,6 +424,10 @@ class FeishuQuickCollectServiceTest {
     @Test
     void titleFallsBackToTheFirstLineAndIsTruncated() {
         assertThat(FeishuQuickCollectService.title("第一行\n第二行")).isEqualTo("第一行");
+        assertThat(FeishuQuickCollectService.title("![任务图片](/api/images/img1/raw)\n第二行"))
+                .isEqualTo("第二行");
+        assertThat(FeishuQuickCollectService.title("![任务图片](/api/images/img1/raw)"))
+                .isEqualTo("图片待办");
         assertThat(FeishuQuickCollectService.title("一".repeat(60))).hasSize(41).endsWith("…");
     }
 
