@@ -839,6 +839,25 @@ class CodexAccountIsolationTest(unittest.TestCase):
         self.assertIn('service_tier="default"', command)
         self.assertNotIn('service_tier="fast"', command)
 
+    @patch.object(RUNNER, "invoke_cli", return_value=(0, '{"thread_id":"thread-1"}'))
+    def test_codex_resume_only_uses_resume_supported_arguments(self, invoke: Mock) -> None:
+        reporter = Mock()
+
+        RUNNER.run_codex(
+            "codex", self.root, "继续执行", "danger-full-access", reporter,
+            session_id="thread-1", model="gpt-5.6-sol", reasoning_effort="high",
+            service_tier="default",
+        )
+
+        command = invoke.call_args.args[0]
+        self.assertEqual(["codex", "exec", "resume"], command[:3])
+        self.assertIn("thread-1", command)
+        self.assertIn('sandbox_mode="danger-full-access"', command)
+        self.assertIn('approval_policy="never"', command)
+        self.assertNotIn("--color", command)
+        self.assertNotIn("--sandbox", command)
+        self.assertNotIn("-C", command)
+
     @patch.object(RUNNER, "invoke_cli", return_value=(0, ""))
     def test_custom_api_account_ignores_official_model_override(self, invoke: Mock) -> None:
         reporter = Mock()

@@ -1718,12 +1718,23 @@ def run_codex(executable: str, worktree: Path, prompt: str, sandbox: str,
         model_args += ["-c", f"model_reasoning_effort={json.dumps(reasoning_effort)}"]
     if model_args and service_tier:
         model_args += ["-c", f"service_tier={json.dumps(service_tier)}"]
-    command = [
-        executable, "exec", *( ["resume", session_id] if session_id else []), *model_args,
-        "--json", "--color", "never", "--sandbox", sandbox,
-        "-c", 'approval_policy="never"', "-C", str(worktree),
-        "--output-last-message", str(result_file), "-",
-    ]
+    if session_id:
+        # `codex exec resume` 不是普通 `exec` 的参数透传：新版 CLI 不接受
+        # `--color`、`--sandbox` 或 `-C`。工作目录已经由 Popen.cwd 固定，沙箱与
+        # 审批策略通过 resume 支持的 `-c` 保持和首次执行一致。
+        command = [
+            executable, "exec", "resume", *model_args,
+            "--json", "-c", f"sandbox_mode={json.dumps(sandbox)}",
+            "-c", 'approval_policy="never"',
+            "--output-last-message", str(result_file), session_id, "-",
+        ]
+    else:
+        command = [
+            executable, "exec", *model_args,
+            "--json", "--color", "never", "--sandbox", sandbox,
+            "-c", 'approval_policy="never"', "-C", str(worktree),
+            "--output-last-message", str(result_file), "-",
+        ]
     if tools_disabled:
         # 页面分析只需要模型生成文字。关闭能读取本机文件或扩散执行面的工具，避免不可信
         # 聊天正文通过提示注入读取 CODEX_HOME/auth.json 或 API Key 环境变量。
