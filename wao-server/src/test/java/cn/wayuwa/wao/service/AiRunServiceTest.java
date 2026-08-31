@@ -72,11 +72,12 @@ class AiRunServiceTest {
     private final CodexQuotaService codexQuotas = mock(CodexQuotaService.class);
     private final ProjectMemoryService projectMemories = mock(ProjectMemoryService.class);
     private final AiSkillCapabilityService skillCapabilities = mock(AiSkillCapabilityService.class);
+    private final FunctionHealthService functionHealth = mock(FunctionHealthService.class);
     private final FeishuAiRunReactionNotifier runReactions = mock(FeishuAiRunReactionNotifier.class);
     private final SettingService settings = mock(SettingService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
-            tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas, projectMemories, skillCapabilities,
+            tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas, projectMemories, skillCapabilities, functionHealth,
             runReactions, settings);
 
     @BeforeEach

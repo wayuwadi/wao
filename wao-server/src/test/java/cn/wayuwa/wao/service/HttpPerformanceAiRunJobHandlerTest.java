@@ -14,6 +14,7 @@ import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.HttpPerformanceInspectionConfigDto;
+import cn.wayuwa.wao.dto.FunctionHealthOverviewDto;
 import cn.wayuwa.wao.dto.RequestMetricEndpointDto;
 import cn.wayuwa.wao.dto.RequestMetricOverviewDto;
 import cn.wayuwa.wao.mapper.ProjectMapper;
@@ -28,9 +29,10 @@ class HttpPerformanceAiRunJobHandlerTest {
     private final AiRunService aiRuns = mock(AiRunService.class);
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final HttpPerformanceInspectionConfigService config = mock(HttpPerformanceInspectionConfigService.class);
+    private final FunctionHealthService functionHealth = mock(FunctionHealthService.class);
     private final FeishuTaskNotifier notifier = mock(FeishuTaskNotifier.class);
     private final HttpPerformanceAiRunJobHandler handler = new HttpPerformanceAiRunJobHandler(
-            metrics, aiRuns, projects, config, notifier, "https://wao.wayuwa.cn/");
+            metrics, aiRuns, projects, config, functionHealth, notifier, "https://wao.wayuwa.cn/");
 
     private void inspectionConfig() {
         when(config.get()).thenReturn(new HttpPerformanceInspectionConfigDto(
@@ -69,7 +71,7 @@ class HttpPerformanceAiRunJobHandlerTest {
         workflow();
         when(metrics.overview("wg", 24)).thenReturn(snapshot(0));
 
-        assertThat(handler.execute()).isEqualTo("跳过 · 最近 24 小时没有真实 HTTP 指标");
+        assertThat(handler.execute()).isEqualTo("跳过 · 当前没有真实 HTTP 指标或功能使用记录");
 
         verify(aiRuns, never()).launchInspectionGoal(anyString(), anyString(), anyString(), anyString());
     }
@@ -93,6 +95,8 @@ class HttpPerformanceAiRunJobHandlerTest {
         project.setId("p-wao");
         project.setOwnerId("wg");
         when(projects.selectById("p-wao")).thenReturn(project);
+        when(functionHealth.overview("wg")).thenReturn(new FunctionHealthOverviewDto(
+                30, LocalDateTime.of(2026, 8, 25, 1, 30), 0, List.of()));
     }
 
     private RequestMetricOverviewDto snapshot(int total) {
