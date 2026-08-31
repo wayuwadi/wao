@@ -58,6 +58,10 @@ MAX_RUNNER_CONCURRENCY = 8
 # 避免心跳每十秒都启动本地进程。上报内容不包含 auth.json、Token 或 Cookie。
 CODEX_QUOTA_INTERVAL_SECONDS = 300
 CODEX_QUOTA_TIMEOUT_SECONDS = 20
+# 远端 Git 操作受网络、认证服务和 SSH 链路影响，必须有硬截止时间。否则同一项目的 Git 锁会
+# 把后续任务全部串行堵住，Runner 自更新也会一直等待这些任务退出。
+GIT_CLONE_TIMEOUT_SECONDS = 300
+GIT_FETCH_TIMEOUT_SECONDS = 60
 # `codex exec --json` 正常会很快给出 thread.started。启动后长时间一行事件都没有，
 # 说明 CLI 仍卡在认证或出站连接阶段；必须终止后交给现有重试收口，不能永久占住 Runner 槽位。
 CLI_FIRST_EVENT_TIMEOUT_SECONDS = 90
@@ -510,12 +514,38 @@ def pair(api: WaoApi, args: argparse.Namespace, engines: list[str]) -> dict[str,
 
 
 def run(command: list[str], cwd: Path | None = None, check: bool = True,
-        environment: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
-        command, cwd=str(cwd) if cwd else None, text=True, encoding="utf-8", errors="replace",
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment,
-        creationflags=windows_creation_flags(),
-    )
+        environment: dict[str, str] | None = None,
+        timeout_seconds: float | None = None) -> subprocess.CompletedProcess[str]:
+    if timeout_seconds is None:
+        result = subprocess.run(
+            command, cwd=str(cwd) if cwd else None, text=True, encoding="utf-8", errors="replace",
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment,
+            creationflags=windows_creation_flags(),
+        )
+    else:
+        process = subprocess.Popen(
+            command, cwd=str(cwd) if cwd else None, text=True, encoding="utf-8",
+            errors="replace", stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment,
+            creationflags=windows_creation_flags(new_process_group=True),
+            start_new_session=os.name != "nt",
+        )
+        try:
+            stdout, _ = process.communicate(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            terminate_process_tree(process)
+            try:
+                stdout, _ = process.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                force_kill_process_tree(process)
+                stdout, _ = process.communicate()
+            if stdout is None:
+                stdout = exc.output or ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"命令超时（{timeout_seconds:g} 秒）：{' '.join(command[:3])}\n{stdout[-2000:]}"
+            ) from exc
+        result = subprocess.CompletedProcess(command, process.returncode or 0, stdout)
     if check and result.returncode != 0:
         raise RuntimeError(f"命令失败（{result.returncode}）：{' '.join(command[:3])}\n{result.stdout[-2000:]}")
     return result
@@ -666,12 +696,12 @@ def _prepare_worktree_locked(claim: dict[str, Any], root: Path, git_command: str
             shutil.rmtree(project_dir)
         # 主克隆不需要工作副本，只提供对象库和 worktree 元数据。
         run([git_command, "clone", "--no-checkout", repo_url, str(project_dir)],
-            environment=git_environment)
+            environment=git_environment, timeout_seconds=GIT_CLONE_TIMEOUT_SECONDS)
     repair_primary_clone_config(project_dir, git_command)
     # 本机认证方式变了（比如从 HTTPS 换成 SSH）时，把已有仓库的 origin 一并纠正。
     run([git_command, "remote", "set-url", "origin", repo_url], cwd=project_dir, check=False)
     run([git_command, "fetch", "--prune", "origin"], cwd=project_dir,
-        environment=git_environment)
+        environment=git_environment, timeout_seconds=GIT_FETCH_TIMEOUT_SECONDS)
     run([git_command, "worktree", "prune"], cwd=project_dir)
     detach_primary_clone(project_dir, git_command)
     runs_root = root / ".wao-runs"

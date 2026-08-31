@@ -183,6 +183,22 @@ class RunnerInvocationTest(unittest.TestCase):
 
         self.assertIs(environment, run.call_args.kwargs["env"])
 
+    @patch.object(RUNNER, "terminate_process_tree")
+    @patch.object(RUNNER.subprocess, "Popen")
+    def test_timed_out_command_terminates_process_tree(self, popen: Mock, terminate: Mock) -> None:
+        process = popen.return_value
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(["git", "fetch"], 60, output="正在连接"),
+            ("远端连接没有响应", None),
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "命令超时（60 秒）") as raised:
+            RUNNER.run(["git", "fetch"], timeout_seconds=60)
+
+        self.assertIn("远端连接没有响应", str(raised.exception))
+        terminate.assert_called_once_with(process)
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+
     @patch.object(RUNNER.subprocess, "run")
     def test_windows_cancellation_kills_process_tree_without_console(self, run: Mock) -> None:
         process = Mock(pid=4321)
@@ -1056,6 +1072,10 @@ class WorkspaceIsolationTest(unittest.TestCase):
         ]
         self.assertEqual(["clone", "fetch"], [item.args[0][1] for item in remote_calls])
         self.assertTrue(all(item.kwargs.get("environment") is environment for item in remote_calls))
+        self.assertEqual(RUNNER.GIT_CLONE_TIMEOUT_SECONDS,
+                         remote_calls[0].kwargs.get("timeout_seconds"))
+        self.assertEqual(RUNNER.GIT_FETCH_TIMEOUT_SECONDS,
+                         remote_calls[1].kwargs.get("timeout_seconds"))
 
     def test_existing_clone_on_default_branch_is_repaired_in_place(self) -> None:
         primary = self.workspace / "wao"
