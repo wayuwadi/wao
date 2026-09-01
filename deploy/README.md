@@ -211,6 +211,11 @@ SESSION_COOKIE_SECURE=true
 
 在飞书开发者后台的安全设置中添加同一个重定向 URL。网页应用的工作台在线网页主页配置为 `https://wao.wayuwa.cn/api/auth/feishu/workbench`；PC 端“跳转至浏览器打开新页面”配置为 `https://wao.wayuwa.cn/api/auth/feishu/browser`。修改 Secret 后手动运行一次 Jenkins `wao-main-cd`，或随下一次 `main` push 自动下发并重建 `wao-server` 容器。
 
+自动化的“做到了 / 没做到”卡片按钮还需要在同一个自建应用的「事件与回调 → 回调配置」中
+单独配置「卡片回传交互」`card.action.trigger`，请求地址为
+`https://wao.wayuwa.cn/api/feishu/events`。它不是「事件配置」里的事件订阅；只配置群消息事件时，
+飞书客户端会提示“该应用尚未配置卡片交互功能”。
+
 微信扫码登录需在微信开放平台创建“网站应用”，将授权回调域配置为 `wao.wayuwa.cn`，并在 Linux 主节点私有 `deploy/.env.secrets` 中配置 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`。CD 会自动下发以下配置：
 
 ```dotenv

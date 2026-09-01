@@ -16,6 +16,7 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -99,6 +100,26 @@ class FeishuQuickCollectServiceTest {
         assertThatThrownBy(() -> service.handleEvent(
                 "{\"type\":\"url_verification\",\"challenge\":\"abc\",\"token\":\"fake\"}"))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void cardActionPersistsFeedbackAndReturnsVisibleSuccessToast() {
+        when(feedback.collect(any())).thenReturn("做到了");
+
+        var out = service.handleEvent("""
+                {
+                  "schema":"2.0",
+                  "header":{"event_type":"card.action.trigger","token":""},
+                  "event":{
+                    "operator":{"open_id":"ou_member","user_id":"member"},
+                    "action":{"value":{"kind":"automation-feedback","notificationId":"n1","action":"done"}}
+                  }
+                }
+                """);
+
+        verify(feedback).collect(any());
+        assertThat(out).containsEntry("toast",
+                Map.of("type", "success", "content", "已记录：做到了"));
     }
 
     @Test
