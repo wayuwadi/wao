@@ -109,6 +109,10 @@ const runHistoryPage = ref(1)
 const runHistoryTotal = ref(0)
 const RUN_HISTORY_PAGE_SIZE = 20
 const quickTaskListOpen = ref(false)
+const quickTaskSettingsOpen = ref(false)
+const quickTaskModel = ref('')
+const quickTaskReasoningEffort = ref('')
+const quickTaskExecutionMode = ref<'direct' | 'plan' | 'goal'>('plan')
 const reviewableTaskListOpen = ref(false)
 const reviewableTasks = ref<ReviewableTask[]>([])
 const reviewableTasksLoading = ref(true)
@@ -374,6 +378,13 @@ async function refreshGoalRunOptions() {
     goalExecutionMode.value = options.defaultExecutionMode === 'direct' || options.defaultExecutionMode === 'goal'
       ? options.defaultExecutionMode
       : 'plan'
+    quickTaskExecutionMode.value = goalExecutionMode.value
+    if (!options.codexModels.some((item) => item.id === quickTaskModel.value)) {
+      quickTaskModel.value = options.defaultCodexModel
+    }
+    if (!options.reasoningEfforts.some((item) => item.id === quickTaskReasoningEffort.value)) {
+      quickTaskReasoningEffort.value = options.defaultReasoningEffort
+    }
     if (!options.reasoningEfforts.some((item) => item.id === goalReasoningEffort.value)) {
       goalReasoningEffort.value = options.defaultReasoningEffort
     }
@@ -835,8 +846,13 @@ function openRun(run: AiRun) {
 }
 
 function openTask(task: Task) {
-  quickTaskListOpen.value = false
+  closeQuickTaskList()
   void router.push({ path: `/projects/${task.project}`, query: { task: task.id } })
+}
+
+function closeQuickTaskList() {
+  quickTaskListOpen.value = false
+  quickTaskSettingsOpen.value = false
 }
 
 function taskProjectName(task: Task) {
@@ -855,7 +871,22 @@ function taskExcerpt(task: Task) {
   return text || '打开任务可查看完整描述和未完成子任务。'
 }
 
-/** 一次点击沿用项目默认工作流直接入队；后端继续负责 Runner 能力、重复运行和权限的最终校验。 */
+const quickTaskExecutionModeLabel = computed(() => ({
+  direct: '直接执行', plan: 'Plan 模式', goal: '目标模式',
+})[quickTaskExecutionMode.value])
+const quickTaskModelLabel = computed(() => goalRunOptions.value?.codexModels
+  .find((item) => item.id === quickTaskModel.value)?.label
+  ?? shortModel(quickTaskModel.value)
+  ?? quickTaskModel.value)
+
+function quickTaskRunSummary(task: Task) {
+  const engine = runnableWorkflowByProject.value.get(task.project)?.config.defaultEngine
+  if (engine !== 'codex') return `${engineLabel(engine ?? 'codex')} · 项目默认配置`
+  if (!goalRunOptions.value) return 'Codex · 运行选项读取失败'
+  return `${quickTaskModelLabel.value} · ${quickTaskExecutionModeLabel.value}`
+}
+
+/** 快捷入口沿用项目工具和首选电脑，并把弹层中可见的 Codex 参数固化到本次运行。 */
 async function startQuickTask(task: Task) {
   if (startingQuickTaskId.value) return
   const workflow = runnableWorkflowByProject.value.get(task.project)
@@ -863,12 +894,21 @@ async function startQuickTask(task: Task) {
     toast('这个项目当前没有可用的 AI 工作流，请先完成接入', 'ri-information-line')
     return
   }
+  const codex = workflow.config.defaultEngine === 'codex'
+  if (codex && !goalRunOptions.value) {
+    quickTaskSettingsOpen.value = true
+    toast(goalRunOptionsError.value || '正在读取模型与执行模式，请稍候再派发', 'ri-information-line')
+    return
+  }
   startingQuickTaskId.value = task.id
   try {
     const created = await createAiRuns([task.id], {
       engine: workflow.config.defaultEngine,
       runnerId: workflow.config.preferredRunnerId,
-      planMode: workflow.config.defaultEngine === 'codex',
+      model: codex ? quickTaskModel.value : null,
+      reasoningEffort: codex ? quickTaskReasoningEffort.value : null,
+      planMode: codex && quickTaskExecutionMode.value === 'plan',
+      goalMode: codex && quickTaskExecutionMode.value === 'goal',
     })
     if (!created.length) {
       await refresh()
@@ -1104,7 +1144,8 @@ function onDialogKeydown(event: KeyboardEvent) {
   else if (logRunner.value) closeRunnerLog()
   else if (runHistoryOpen.value) runHistoryOpen.value = false
   else if (reviewableTaskListOpen.value) reviewableTaskListOpen.value = false
-  else if (quickTaskListOpen.value) quickTaskListOpen.value = false
+  else if (quickTaskSettingsOpen.value) quickTaskSettingsOpen.value = false
+  else if (quickTaskListOpen.value) closeQuickTaskList()
   else if (taskAutoRunSettingsOpen.value) taskAutoRunSettingsOpen.value = false
   else return
   event.preventDefault()
@@ -1877,16 +1918,70 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <div v-if="quickTaskListOpen" class="run-detail-mask" @click.self="quickTaskListOpen = false">
+    <div v-if="quickTaskListOpen" class="run-detail-mask" @click.self="closeQuickTaskList">
       <section class="run-detail quick-task-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-task-dialog-title">
         <header>
           <span class="recent-icon quick-task-dialog-icon"><i class="ri-list-check-3"></i></span>
           <div>
             <h2 id="quick-task-dialog-title">可 AI Run 的任务</h2>
-            <p>来自已启用的真实工作流；按优先级和录入时间排序，一次点击即可按项目默认配置运行。</p>
+            <p>来自已启用的真实工作流；按优先级和录入时间排序，开始前可核对本次模型与执行模式。</p>
           </div>
-          <button class="detail-close" aria-label="关闭可 AI Run 的任务清单" @click="quickTaskListOpen = false"><i class="ri-close-line"></i></button>
+          <div class="quick-task-header-actions">
+            <button
+              class="quick-task-settings-trigger"
+              :class="{ on: quickTaskSettingsOpen }"
+              type="button"
+              :aria-expanded="quickTaskSettingsOpen"
+              aria-controls="quick-task-run-settings"
+              @click="quickTaskSettingsOpen = !quickTaskSettingsOpen"
+            >
+              <i class="ri-settings-3-line"></i>
+              <span>{{ goalRunOptions ? `${quickTaskModelLabel} · ${quickTaskExecutionModeLabel}` : '运行设置' }}</span>
+            </button>
+            <button class="detail-close" aria-label="关闭可 AI Run 的任务清单" @click="closeQuickTaskList"><i class="ri-close-line"></i></button>
+          </div>
         </header>
+        <section v-if="quickTaskSettingsOpen" id="quick-task-run-settings" class="quick-task-run-settings" aria-label="快捷 AI Run 设置">
+          <div class="quick-task-setting-copy">
+            <b>本次 Codex 运行设置</b>
+            <p>当前页面内保留；每条 Codex 任务入队时都会固化当前选择。</p>
+          </div>
+          <template v-if="goalRunOptions">
+            <label>
+              <span>模型</span>
+              <select v-model="quickTaskModel" aria-label="快捷运行模型">
+                <option v-for="option in goalRunOptions.codexModels" :key="option.id" :value="option.id">
+                  {{ option.label }} · {{ option.description }}
+                </option>
+              </select>
+            </label>
+            <label>
+              <span>思考深度</span>
+              <select v-model="quickTaskReasoningEffort" aria-label="快捷运行思考深度">
+                <option v-for="option in goalRunOptions.reasoningEfforts" :key="option.id" :value="option.id">
+                  {{ option.label }} · {{ option.description }}
+                </option>
+              </select>
+            </label>
+            <fieldset>
+              <legend>执行模式</legend>
+              <button v-for="mode in ([
+                { id: 'direct', label: '直接执行' },
+                { id: 'plan', label: 'Plan 模式' },
+                { id: 'goal', label: '目标模式' },
+              ] as const)" :key="mode.id" type="button" role="radio"
+                :class="{ on: quickTaskExecutionMode === mode.id }"
+                :aria-checked="quickTaskExecutionMode === mode.id"
+                @click="quickTaskExecutionMode = mode.id">{{ mode.label }}</button>
+            </fieldset>
+          </template>
+          <div v-else class="quick-task-settings-error" role="alert">
+            <span><i class="ri-error-warning-line"></i>{{ goalRunOptionsError || '正在读取模型与执行模式…' }}</span>
+            <button type="button" :disabled="goalRunOptionsLoading" @click="refreshGoalRunOptions">
+              <i :class="goalRunOptionsLoading ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ goalRunOptionsLoading ? '读取中' : '重试' }}
+            </button>
+          </div>
+        </section>
         <div v-if="data.taskLoadState === 'loading' || workflowsLoading" class="quick-task-dialog-state">
           <i class="ri-loader-4-line spin"></i>正在读取可执行任务…
         </div>
@@ -1905,6 +2000,7 @@ onBeforeUnmount(() => {
               </div>
               <button class="quick-task-title" :title="`打开任务：${task.title}`" @click="openTask(task)">{{ task.title }}</button>
               <p>{{ taskExcerpt(task) }}</p>
+              <small class="quick-task-run-summary"><i :class="engineIcon(runnableWorkflowByProject.get(task.project)?.config.defaultEngine ?? 'codex')"></i>{{ quickTaskRunSummary(task) }}</small>
             </div>
             <button class="quick-task-start" :disabled="startingQuickTaskId !== null" @click="startQuickTask(task)">
               <i :class="startingQuickTaskId === task.id ? 'ri-loader-4-line spin' : 'ri-play-circle-line'"></i>
@@ -1918,7 +2014,7 @@ onBeforeUnmount(() => {
         </div>
         <footer>
           <span class="retry-note"><i class="ri-shield-check-line"></i>重复运行、执行电脑能力和项目配置仍由服务端校验</span>
-          <button class="secondary" @click="quickTaskListOpen = false">关闭</button>
+          <button class="secondary" @click="closeQuickTaskList">关闭</button>
         </footer>
       </section>
     </div>
@@ -2808,6 +2904,20 @@ onBeforeUnmount(() => {
 }
 .run-history-detail { width: min(1080px, 100%); }
 .quick-task-dialog { width: min(860px, 100%); }
+.quick-task-header-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.quick-task-settings-trigger { min-height: 34px; padding: 0 10px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; }
+.quick-task-settings-trigger:hover, .quick-task-settings-trigger.on { border-color: var(--wao-primary-line); background: var(--wao-primary-tint); color: var(--wao-primary-text); }
+.quick-task-run-settings { margin-top: 14px; padding: 12px; border: 1px solid var(--wao-primary-line); border-radius: 11px; background: var(--wao-primary-tint); display: grid; grid-template-columns: minmax(160px, .8fr) repeat(2, minmax(150px, 1fr)) minmax(210px, 1.15fr); align-items: end; gap: 10px; }
+.quick-task-setting-copy { align-self: center; }
+.quick-task-setting-copy b { color: var(--wao-text-2); font-size: 11.5px; }
+.quick-task-setting-copy p { margin: 3px 0 0; color: var(--wao-text-weak); font-size: 9.5px; line-height: 1.45; }
+.quick-task-run-settings label > span, .quick-task-run-settings legend { display: block; margin-bottom: 5px; color: var(--wao-text-weak); font-size: 9.5px; }
+.quick-task-run-settings select { width: 100%; height: 32px; padding: 0 7px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 10px; }
+.quick-task-run-settings fieldset { min-width: 0; margin: 0; padding: 0; border: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.quick-task-run-settings fieldset button { min-height: 32px; padding: 0 5px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; font-size: 9.5px; }
+.quick-task-run-settings fieldset button.on { border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
+.quick-task-settings-error { grid-column: 2 / -1; min-height: 32px; color: var(--wao-danger-strong); display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10.5px; }
+.quick-task-settings-error button { min-height: 28px; padding: 0 8px; border: 1px solid currentColor; border-radius: 7px; background: transparent; color: inherit; cursor: pointer; }
 .reviewable-task-dialog { width: min(880px, 100%); }
 .auto-run-dialog { width: min(820px, 100%); }
 .auto-run-dialog-icon { background: var(--wao-primary-tint); color: var(--wao-primary); }
@@ -2825,6 +2935,7 @@ onBeforeUnmount(() => {
 .quick-task-list-copy { min-width: 0; flex: 1; }
 .quick-task-list-copy .quick-task-title { font-size: 13px; }
 .quick-task-list-copy > p { -webkit-line-clamp: 1; }
+.quick-task-run-summary { margin-top: 5px; color: var(--wao-primary-text); font-size: 9.5px; display: inline-flex; align-items: center; gap: 4px; }
 .quick-task-dialog-state { min-height: 280px; margin-top: 16px; border: 1px dashed var(--wao-line); border-radius: 12px; color: var(--wao-text-weak); display: flex; align-items: center; justify-content: center; gap: 8px; }
 .quick-task-dialog-state.error { color: var(--wao-danger-strong); }
 .quick-task-dialog-state button { margin-left: 4px; padding: 6px 10px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); cursor: pointer; }
@@ -2999,6 +3110,11 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .recent-pagination { flex: 1; justify-content: space-between; }
   .recent-pagination button { min-height: 28px; }
   .auto-run-dialog header p, .quick-task-dialog header p, .reviewable-task-dialog header p { white-space: normal; }
+  .quick-task-dialog header { flex-wrap: wrap; }
+  .quick-task-header-actions { width: 100%; }
+  .quick-task-settings-trigger { min-width: 0; flex: 1; justify-content: center; }
+  .quick-task-run-settings { grid-template-columns: 1fr; align-items: stretch; }
+  .quick-task-settings-error { grid-column: auto; }
   .auto-run-dialog footer { align-items: stretch; flex-wrap: wrap; }
   .auto-run-dialog footer .retry-note { width: 100%; margin: 0 0 2px; }
   .quick-task-grid { grid-template-columns: 1fr; }

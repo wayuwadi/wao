@@ -424,7 +424,8 @@ describe('HomeView AI 控制台', () => {
     await flushPromises()
 
     expect(createAiRuns).toHaveBeenCalledWith(['t1'], {
-      engine: 'claude', runnerId: 'rn2', planMode: false,
+      engine: 'claude', runnerId: 'rn2', model: null, reasoningEffort: null,
+      planMode: false, goalMode: false,
     })
     expect(mounted.data.taskById('t1')?.status).toBe('AI 进行中')
     expect(mounted.wrapper.findAll('.run-card').some((card) => card.text().includes('设计任务详情抽屉交互稿'))).toBe(true)
@@ -444,9 +445,60 @@ describe('HomeView AI 控制台', () => {
     const dialog = mounted.wrapper.find('.quick-task-dialog')
     expect(dialog.exists()).toBe(true)
     expect(dialog.attributes('role')).toBe('dialog')
-    expect(dialog.text()).toContain('一次点击即可按项目默认配置运行')
+    expect(dialog.text()).toContain('开始前可核对本次模型与执行模式')
+    expect(dialog.find('.quick-task-settings-trigger').text()).toContain('GPT-5.6 Sol · Plan 模式')
+    expect(dialog.find('.quick-task-run-summary').text()).toContain('Claude Code · 项目默认配置')
     expect(dialog.text()).not.toContain('根据截图修复展示')
     expect(dialog.findAll('.quick-task-list-item').length).toBeGreaterThan(0)
+    mounted.wrapper.unmount()
+  })
+
+  it('可 AI Run 清单右上角调整 Codex 模型和模式后按所见参数入队', async () => {
+    vi.useFakeTimers()
+    const { fetchAiRunOptions } = await import('@/api/ai')
+    vi.mocked(fetchAiWorkflows).mockResolvedValueOnce([{
+      projectId: 'p1', projectName: 'Wa All in One', configured: true, projectDeleted: false,
+      preferredRunnerName: 'Linux 主节点', activeRuns: 0, succeededRuns: 4, failedRuns: 1, lastRunAt: null,
+      config: {
+        projectId: 'p1', enabled: true, repoUrl: 'https://github.com/acme/wao.git', defaultBranch: 'main',
+        workspaceDir: 'wao', defaultEngine: 'codex', preferredRunnerId: 'rn2', maxParallelRuns: 3,
+        failureRetryCount: 2, executionPrompt: '先完整阅读原始任务。',
+      },
+    }])
+    vi.mocked(fetchAiRunOptions).mockResolvedValueOnce({
+      codexModels: [
+        { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', description: '复杂开发任务的旗舰模型' },
+        { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', description: '兼顾能力与成本' },
+      ],
+      reasoningEfforts: [
+        { id: 'high', label: '高', description: '为复杂任务投入更多推理' },
+        { id: 'medium', label: '中', description: '速度与推理深度均衡' },
+      ],
+      defaultCodexModel: 'gpt-5.6-sol', defaultReasoningEffort: 'high',
+      defaultExecutionMode: 'plan', serviceTier: 'default',
+    })
+    vi.mocked(createAiRuns).mockResolvedValueOnce([])
+    const mounted = mountHome()
+    seedDataStore(mounted.data)
+    await flushPromises()
+
+    await mounted.wrapper.find('.quick-task-list-trigger').trigger('click')
+    const dialog = mounted.wrapper.find('.quick-task-dialog')
+    await dialog.find('.quick-task-settings-trigger').trigger('click')
+    const settings = dialog.find('.quick-task-run-settings')
+    expect(settings.exists()).toBe(true)
+    await settings.find('select[aria-label="快捷运行模型"]').setValue('gpt-5.6-terra')
+    await settings.find('select[aria-label="快捷运行思考深度"]').setValue('medium')
+    await settings.findAll('fieldset button')[0]!.trigger('click')
+    expect(dialog.find('.quick-task-settings-trigger').text()).toContain('GPT-5.6 Terra · 直接执行')
+    expect(dialog.find('.quick-task-run-summary').text()).toContain('GPT-5.6 Terra · 直接执行')
+
+    await dialog.find('.quick-task-start').trigger('click')
+    await flushPromises()
+    expect(createAiRuns).toHaveBeenLastCalledWith(['t1'], {
+      engine: 'codex', runnerId: 'rn2', model: 'gpt-5.6-terra', reasoningEffort: 'medium',
+      planMode: false, goalMode: false,
+    })
     mounted.wrapper.unmount()
   })
 
