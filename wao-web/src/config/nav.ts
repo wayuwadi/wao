@@ -158,6 +158,12 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-code-box-line',
     path: '/crawler-capabilities',
   },
+  'account-resources': {
+    id: 'account-resources',
+    label: '账号资源库',
+    icon: 'ri-contacts-book-2-line',
+    path: '/account-resources',
+  },
   games: { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', path: '/games' },
   devices: {
     id: 'devices',
@@ -480,6 +486,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: true,
     },
     {
+      id: 'account-resources',
+      label: '账号资源库',
+      icon: 'ri-contacts-book-2-line',
+      group: 'TOOLS',
+      order: 16,
+      visible: true,
+    },
+    {
       id: 'files',
       label: '文件与图床',
       icon: 'ri-hard-drive-2-line',
@@ -548,6 +562,7 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
       'dashboard',
       'automation',
       'crawler-capabilities',
+      'account-resources',
       'files',
       'games',
       'devices',

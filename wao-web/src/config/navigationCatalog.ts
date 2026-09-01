@@ -111,6 +111,11 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
         keywords: ['爬虫', '脚本', '采集'],
       },
       {
+        id: 'account-resources',
+        description: '共享管理平台账号，并把手机验证码转发给飞书和爬虫。',
+        keywords: ['账号', '手机号', '验证码', '短信'],
+      },
+      {
         id: 'text-polish',
         description: '用可编辑的方法提示词润色长文，并回看每次前后对照。',
         keywords: ['润色', '改写', '表达'],

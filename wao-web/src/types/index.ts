@@ -29,6 +29,7 @@ export type ModuleId =
   | 'files'
   | 'automation'
   | 'crawler-capabilities'
+  | 'account-resources'
   | 'games'
   | 'devices'
   | 'request-monitoring'

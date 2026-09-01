@@ -1,0 +1,89 @@
+openapi: 3.0.3
+info:
+  title: WAO 账号资源与验证码转发 API
+  version: 1.0.0
+paths:
+  /api/account-resources:
+    get:
+      summary: 列出组织共享账号（不含密码明文）
+      responses:
+        '200': { description: 账号列表 }
+    post:
+      summary: 新建组织共享账号
+      responses:
+        '200': { description: 已创建账号 }
+  /api/account-resources/{id}:
+    put:
+      summary: 按 revision 更新账号，secret 留空时保留旧密码
+      responses:
+        '200': { description: 已更新账号 }
+        '409': { description: 账号已被其他成员更新 }
+    delete:
+      summary: 按 revision 删除账号
+      parameters:
+        - { name: revision, in: query, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: 已删除 }
+        '409': { description: 账号已被其他成员更新 }
+  /api/account-resources/{id}/reveal:
+    post:
+      summary: 显式查看一次加密账号密码
+      responses:
+        '200': { description: 密码或 null }
+  /api/account-resources/messages:
+    get:
+      summary: 按收到时间倒序读取最近 100 条验证码消息
+      responses:
+        '200': { description: 已解密的短信、验证码、匹配账号与飞书状态 }
+  /api/account-resources/messages/{id}/forward:
+    post:
+      summary: 重试一条未成功消息的飞书转发；已成功时不重复发送
+      responses:
+        '200': { description: 最新转发状态 }
+  /api/account-resources/integration:
+    get:
+      summary: 读取令牌是否配置、飞书目标和机器接口路径，不返回令牌明文
+      responses:
+        '200': { description: 集成状态 }
+    put:
+      summary: 选择验证码飞书 Webhook；空 id 使用系统默认机器人
+      responses:
+        '200': { description: 已保存集成状态 }
+  /api/account-resources/integration/tokens/{type}/rotate:
+    post:
+      summary: 轮换 ingest 或 crawler Token，明文只在本次响应返回
+      responses:
+        '200': { description: 新 Token }
+  /api/public/account-resources/messages:
+    post:
+      summary: 手机短信转发器幂等提交标准 JSON
+      parameters:
+        - { name: Authorization, in: header, required: true, schema: { type: string, example: 'Bearer <ingest-token>' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phoneNumber, message]
+              properties:
+                phoneNumber: { type: string }
+                sender: { type: string }
+                source: { type: string }
+                message: { type: string, maxLength: 4096 }
+                externalId: { type: string, description: 推荐传入的外部唯一消息 id }
+                receivedAt: { type: string, format: date-time, description: 可省略；上海本地时间且不带时区 }
+      responses:
+        '200': { description: 保存、识别、幂等与真实转发结果 }
+        '401': { description: 入站 Token 缺失、未配置或无效 }
+  /api/public/account-resources/codes/latest:
+    get:
+      summary: 爬虫按手机号读取最近验证码
+      parameters:
+        - { name: Authorization, in: header, required: true, schema: { type: string, example: 'Bearer <crawler-token>' } }
+        - { name: phone, in: query, required: true, schema: { type: string } }
+        - { name: maxAgeSeconds, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 600, default: 300 } }
+      responses:
+        '200': { description: 最近验证码、发送方、来源、时间和匹配账号 }
+        '401': { description: 爬虫 Token 缺失、未配置或无效 }
+        '404': { description: 指定时间内没有验证码 }
