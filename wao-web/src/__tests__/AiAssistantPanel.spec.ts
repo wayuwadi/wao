@@ -56,6 +56,26 @@ describe('AiAssistantPanel', () => {
     document.body.innerHTML = ''
   })
 
+  it('关闭状态不预取来源选项，首次打开时再读取真实数据', async () => {
+    vi.mocked(fetchAssistantStatus).mockResolvedValue({ configured: true, message: '已连接本地 Codex' })
+    vi.mocked(fetchAssistantConversations).mockResolvedValue([])
+    const testRouter = await router()
+    const wrapper = mount(AiAssistantPanel, {
+      props: { modelValue: false },
+      global: { plugins: [createPinia(), testRouter] },
+      attachTo: document.body,
+    })
+
+    await flushPromises()
+    expect(fetchAssistantSourceOptions).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ modelValue: true })
+    await flushPromises()
+    expect(fetchAssistantSourceOptions).toHaveBeenCalledOnce()
+    expect(document.body.textContent).toContain('全部 WAO 资产')
+    wrapper.unmount()
+  })
+
   it('面板打开时会在短暂断开后自动重新连接本地 Codex', async () => {
     vi.useFakeTimers()
     vi.mocked(fetchAssistantStatus)

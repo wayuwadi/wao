@@ -390,12 +390,12 @@ watch(capabilityId, (value) => {
 onMounted(() => {
   void loadStatus()
   void loadCapabilities()
-  void loadSourceOptions()
   if (props.modelValue) {
     open.value = true
     sidebarOpen.value = window.innerWidth > 760
     const hasDraft = applyAssistantDraft()
     void loadConversations(!hasDraft)
+    void loadSourceOptions()
     startStatusRefresh()
   }
 })

@@ -32,6 +32,7 @@ import cn.wayuwa.wao.mapper.PersonalMemoryMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -91,7 +92,8 @@ public class AiAssistantAssetService {
         List<AssistantSourceOptionDto> chats = StringUtils.hasText(chatId)
                 ? List.of(new AssistantSourceOptionDto(chatId, text(chatName, "飞书群聊"))) : List.of();
         List<AssistantSourceOptionDto> projects = projectMapper.selectList(
-                        new LambdaQueryWrapper<ProjectEntity>().orderByAsc(ProjectEntity::getName).last("LIMIT 300"))
+                        new QueryWrapper<ProjectEntity>()
+                                .select("id", "name").orderByAsc("name").last("LIMIT 300"))
                 .stream().map(project -> new AssistantSourceOptionDto(project.getId(), project.getName())).toList();
         LocalDate storedEarliest = chatBoundary(chatKbId, true);
         LocalDate storedLatest = chatBoundary(chatKbId, false);
@@ -299,25 +301,27 @@ public class AiAssistantAssetService {
 
     private List<DocEntity> chatDocuments(String kbId, LocalDate dateFrom, LocalDate dateTo, int limit) {
         if (!StringUtils.hasText(kbId)) return List.of();
-        LambdaQueryWrapper<DocEntity> query = new LambdaQueryWrapper<DocEntity>()
-                .eq(DocEntity::getKbId, kbId)
-                .eq(DocEntity::getAuto, true)
-                .isNull(DocEntity::getDeletedAt)
-                .likeRight(DocEntity::getTitle, "飞书群聊 · ");
-        if (dateFrom != null) query.ge(DocEntity::getTitle, "飞书群聊 · " + dateFrom);
-        if (dateTo != null) query.le(DocEntity::getTitle, "飞书群聊 · " + dateTo);
-        return docMapper.selectList(query.orderByDesc(DocEntity::getTitle).last("LIMIT " + limit));
+        QueryWrapper<DocEntity> query = new QueryWrapper<DocEntity>()
+                .select("id", "kb_id", "title", "blocks_json", "updated_at")
+                .eq("kb_id", kbId)
+                .eq("auto", true)
+                .isNull("deleted_at")
+                .likeRight("title", "飞书群聊 · ");
+        if (dateFrom != null) query.ge("title", "飞书群聊 · " + dateFrom);
+        if (dateTo != null) query.le("title", "飞书群聊 · " + dateTo);
+        return docMapper.selectList(query.orderByDesc("title").last("LIMIT " + limit));
     }
 
     private LocalDate chatBoundary(String kbId, boolean earliest) {
         if (!StringUtils.hasText(kbId)) return null;
-        LambdaQueryWrapper<DocEntity> query = new LambdaQueryWrapper<DocEntity>()
-                .eq(DocEntity::getKbId, kbId)
-                .eq(DocEntity::getAuto, true)
-                .isNull(DocEntity::getDeletedAt)
-                .likeRight(DocEntity::getTitle, "飞书群聊 · ")
+        QueryWrapper<DocEntity> query = new QueryWrapper<DocEntity>()
+                .select("title")
+                .eq("kb_id", kbId)
+                .eq("auto", true)
+                .isNull("deleted_at")
+                .likeRight("title", "飞书群聊 · ")
                 .last("LIMIT 1");
-        if (earliest) query.orderByAsc(DocEntity::getTitle); else query.orderByDesc(DocEntity::getTitle);
+        if (earliest) query.orderByAsc("title"); else query.orderByDesc("title");
         return docMapper.selectList(query).stream().map(AiAssistantAssetService::chatDate)
                 .filter(java.util.Objects::nonNull)
                 .reduce((left, right) -> earliest
