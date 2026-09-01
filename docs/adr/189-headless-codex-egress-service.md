@@ -22,9 +22,9 @@ Linux1 通过 SSH 回环转发复用 Linux2 的 `7897`，因此同一个桌面�
   镜像或日志。配置缺失或校验失败时拒绝启动。
 - 服务不依赖图形会话，异常退出后由 Docker 自动重启。每次主节点部署都会校验配置并强制重建它，再通过
   本机 `127.0.0.1:7897` 请求真实 ChatGPT 额度端点；只有 HTTP 200 或未带登录态时的 401 表示链路可用。
-- host-network tinyproxy 不再假设系统 TUN 一直存在，而是显式把 HTTPS 请求上送到
-  `127.0.0.1:7897`。Docker bridge 内的 `wao-server` 仍只访问 ACL 受限的 `18888`，Linux1 仍只通过 SSH
-  回环转发访问 `7897`，不增加公网或局域网监听。
+- tinyproxy 加入 WAO bridge 网络，让 `wao-server` 通过服务名访问 ACL 受限的 `18888`；tinyproxy 再经
+  `host.docker.internal` 显式把 HTTPS 请求上送到宿主 `127.0.0.1:7897`。这避免部分 Linux 防火墙阻断
+  bridge 容器回连宿主物理网卡地址。Linux1 仍只通过 SSH 回环转发访问 `7897`，不增加公网或局域网监听。
 - `codex-egress-proxy` 的容器健康检查改为经 `18888 -> 7897` 访问真实 ChatGPT；只检查本地端口不再算健康。
   `codex-vpn` 和内部代理的真实链路健康检查是主节点代理重建门禁，发布后继续暴露出口失效。
 - 全站业务部署终态仍不由 Codex 出口决定：生产总体验证保留明确告警，普通 API 不因外部 AI 服务波动被
@@ -39,5 +39,5 @@ Linux1 通过 SSH 回环转发复用 Linux2 的 `7897`，因此同一个桌面�
 
 ## 回退
 
-移除 tinyproxy 的 `Upstream` 配置并停用 `codex-vpn`，即可回到主机 TUN 路由。回退前必须
+移除 tinyproxy 的 `Upstream` 配置、恢复其 host 网络并停用 `codex-vpn`，即可回到主机 TUN 路由。回退前必须
 确认图形 Clash Verge 已常驻且真实 ChatGPT 探针通过；不得通过放宽 tinyproxy ACL 或增加直连回退绕过区域策略。
