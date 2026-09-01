@@ -158,14 +158,11 @@ services:
   codex-vpn:
     image: wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}
     user: "${CODEX_MIHOMO_UID:-1000}:${CODEX_MIHOMO_GID:-1000}"
-    entrypoint:
-      - /usr/local/bin/verge-mihomo
-      - -d
-      - /config
-      - -f
-      - /config/clash-verge.yaml
+    entrypoint: ["/usr/local/bin/start-codex-vpn"]
     restart: unless-stopped
-    network_mode: host
+    networks: [wao]
+    ports:
+      - "127.0.0.1:7897:7897"
     volumes:
       - "${CODEX_MIHOMO_BIN:-/usr/bin/verge-mihomo}:/usr/local/bin/verge-mihomo:ro"
       - "${CODEX_MIHOMO_CONFIG_DIR:-/home/wadi/.local/share/io.github.clash-verge-rev.clash-verge-rev}:/config"
@@ -194,8 +191,6 @@ services:
     image: wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
     networks: [wao]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       codex-vpn:
         condition: service_healthy

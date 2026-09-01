@@ -29,4 +29,16 @@ WAO_TEST_MIHOMO_LOG="${fixture}/mihomo.log" \
 grep -Fq -- "-d ${config_dir} -f ${config_dir}/clash-verge.yaml -t" "${fixture}/mihomo.log"
 PATH="${fake_bin}:${PATH}" sh "${script_dir}/healthcheck-codex-egress.sh"
 
+printf '%s\n' \
+  '#!/bin/sh' \
+  'cp "$4" "${WAO_TEST_RUNTIME_CONFIG}"' >"${fake_bin}/runtime-mihomo"
+chmod +x "${fake_bin}/runtime-mihomo"
+WAO_CODEX_CONFIG_DIR="${config_dir}" \
+WAO_CODEX_RUNTIME_CONFIG="${fixture}/runtime.yaml" \
+WAO_CODEX_RUNTIME_BIN="${fake_bin}/runtime-mihomo" \
+WAO_TEST_RUNTIME_CONFIG="${fixture}/captured-runtime.yaml" \
+  sh "${script_dir}/start-codex-vpn.sh"
+grep -Fq 'allow-lan: true' "${fixture}/captured-runtime.yaml"
+grep -Fq 'bind-address: "*"' "${fixture}/captured-runtime.yaml"
+
 echo 'Codex 无桌面出站配置测试通过。'

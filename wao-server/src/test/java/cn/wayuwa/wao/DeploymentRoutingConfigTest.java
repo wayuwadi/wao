@@ -554,17 +554,17 @@ class DeploymentRoutingConfigTest {
         String tinyproxy = readFromRepository("deploy/tinyproxy/codex-egress.conf");
 
         assertThat(vpnService)
-                .contains("/usr/local/bin/verge-mihomo")
+                .contains("/usr/local/bin/start-codex-vpn")
                 .contains("${CODEX_MIHOMO_BIN:-/usr/bin/verge-mihomo}:/usr/local/bin/verge-mihomo:ro")
                 .contains("${CODEX_MIHOMO_CONFIG_DIR:-/home/wadi/.local/share/io.github.clash-verge-rev.clash-verge-rev}:/config")
-                .contains("network_mode: host")
+                .contains("networks: [wao]")
+                .contains("127.0.0.1:7897:7897")
                 .contains("WAO_CODEX_HEALTH_PROXY_URL: http://127.0.0.1:7897")
                 .contains("/usr/local/bin/healthcheck-codex-egress")
-                .doesNotContain("ports:");
+                .doesNotContain("network_mode: host");
         assertThat(proxyService)
                 .contains("target: codex-egress-proxy")
                 .contains("networks: [wao]")
-                .contains("host.docker.internal:host-gateway")
                 .contains("codex-vpn:")
                 .contains("condition: service_healthy")
                 .contains("/usr/local/bin/healthcheck-codex-egress")
@@ -578,6 +578,7 @@ class DeploymentRoutingConfigTest {
                 .contains("AS codex-egress-proxy")
                 .contains("apk add --no-cache curl tinyproxy")
                 .contains("healthcheck-codex-egress.sh")
+                .contains("start-codex-vpn.sh")
                 .contains("USER tinyproxy");
         assertThat(deployScript)
                 .contains("requested_image_tag=\"${WAO_IMAGE_TAG:-}\"")
@@ -593,7 +594,7 @@ class DeploymentRoutingConfigTest {
                 .contains("Allow 127.0.0.1")
                 .contains("Allow 172.16.0.0/12")
                 .contains("ConnectPort 443")
-                .contains("Upstream http host.docker.internal:7897")
+                .contains("Upstream http codex-vpn:7897")
                 .doesNotContain("Allow 0.0.0.0/0");
     }
 

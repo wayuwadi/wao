@@ -43,8 +43,8 @@ Linux1 配置 `wao-cloud-tunnel.service`，主动建立到云机 loopback `127.0
 6. 确认现有 DDNS-Go 持续更新 `linux2.wayuwa.cn`，完成路由器端口映射并验证跨节点连通。
 
 Codex 出站由 Compose 的 `codex-vpn` 服务无桌面运行 Clash Verge 已生成的私有 mihomo 配置，
-`codex-egress-proxy` 在 WAO bridge 内接收应用请求，再经 `host.docker.internal` 显式上送到宿主 `7897`。
-该服务不配置 `ports`，tinyproxy ACL 只允许
+`codex-egress-proxy` 在 WAO bridge 内接收应用请求，再显式上送到 `codex-vpn:7897`。代理不配置 `ports`，
+`codex-vpn` 只把 7897 发布到宿主回环供 Linux1 SSH 转发；tinyproxy ACL 只允许
 `127.0.0.1` 和 Docker `172.16.0.0/12` 来源；主机防火墙与路由器也不得放行 18888。`wao-server` 通过
 Compose 服务名连接代理，不再回连可能被主机防火墙阻断的物理网卡地址。部署后执行
 `sh deploy/scripts/probe-codex-egress.sh`，必须由 `wao-server` 经 `WAO_AI_CODEX_PROXY_URL` 请求真实 ChatGPT
@@ -52,7 +52,7 @@ Compose 服务名连接代理，不再回连可能被主机防火墙阻断的物
 到代理的完整链路，并在失败时输出 tinyproxy 末尾日志。若连接被拒绝或返回其它状态，先检查
 `docker compose -f deploy/docker-compose-master.yml ps codex-vpn` 与本机 `7897`，再检查
 `docker compose -f deploy/docker-compose-master.yml ps codex-egress-proxy` 及其日志，并核对
-`host.docker.internal:7897` 上游，不要给 Linux1 从节点或阿里云节点增加直连回退路由。
+`codex-vpn:7897` 上游，不要给 Linux1 从节点或阿里云节点增加直连回退路由。
 CD 流水线也会跑同一个探针，但只作为告警：失败时 run 摘要出现 warning 注解，部署本身照常算成功（见 ADR-034）。
 所以 Codex 登录报区域错误时，先去 Jenkins 最近一次部署日志查看这条 warning，而不是等流水线变红。
 每次主节点发布都会显式构建并强制重建无状态代理，避免复用同一镜像标签时旧容器仍指向上一版镜像。
