@@ -53,7 +53,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class ChatReviewMySqlIntegrationTest {
 
     @Container
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:9.0")
+    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:9.7.0")
+            .withConfigurationOverride("mysql-9-test-conf")
             .withDatabaseName("wao_chat_review_test")
             .withUsername("wao_test")
             .withPassword("wao_test");
@@ -85,6 +86,7 @@ class ChatReviewMySqlIntegrationTest {
                 .target("77").load().migrate();
 
         assertLegacyArchiveBackfilledWithoutChangingItsId();
+        migrateLatest();
         assertGlobalActiveRunAndLeaseAreDatabaseSerialized();
         assertLeaseTakeoverFencesTheOldWorker();
         assertArchiveIdentityVersionAndSoftDeleteAreStable();
@@ -93,7 +95,7 @@ class ChatReviewMySqlIntegrationTest {
         assertAiInsertRollsBackWhenLeaseLinkIsLost();
         assertSecureCompletionAndDatabaseTimeoutAreSerialized();
         assertDatabaseClockExpiresAndClearsReadOnlyPrompts();
-        migrateLatestAndAssertUnifiedAiActivityCollations();
+        assertUnifiedAiActivityCollations();
     }
 
     private void seedLegacyArchiveBeforeV77() {
@@ -441,7 +443,7 @@ class ChatReviewMySqlIntegrationTest {
                         """, runId, claimToken);
                 assertThat(aiRuns.findExpiredReadOnlyRunningIds(30 * 60)).contains(runId);
                 String timeoutUpdateKey = jdbc.queryForObject("""
-                        EXPLAIN UPDATE ai_assistant_run
+                        EXPLAIN FORMAT=TRADITIONAL UPDATE ai_assistant_run
                            SET status = 'failed'
                          WHERE id = ?
                            AND status = 'secure_running'
@@ -523,8 +525,11 @@ class ChatReviewMySqlIntegrationTest {
                 .containsEntry("claim_token", null);
     }
 
-    private void migrateLatestAndAssertUnifiedAiActivityCollations() {
+    private void migrateLatest() {
         Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
+    }
+
+    private void assertUnifiedAiActivityCollations() {
         jdbc.update("""
                 INSERT INTO ai_account (id, provider, label, credential_json)
                 VALUES ('activity-collation-account', 'deepseek', 'DeepSeek 验收账号', '{}')

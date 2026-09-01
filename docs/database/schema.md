@@ -1040,8 +1040,10 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V121__ai_quota_snapshot_history.sql`：保存真实额度的脱敏采样历史，并回填集中账号已有最新基线（见 ADR-174）。
 - `V125__ai_run_execution_duration.sql`：保存 Runner 单调时钟实测的 AI CLI 执行耗时，与领取到终态总耗时分开（见 ADR-181）。
 - `V129__repair_feishu_html_task_titles.sql`：只对有快速收集事件关系且标题混入 HTML 的历史任务，
-  从原描述第一段重新提取纯文本标题；普通任务和原描述不变。
+  从原描述第一段重新提取纯文本标题；普通任务和原描述不变。换行替换值显式转换为 `utf8mb4`，避免
+  MySQL 9.7 把 `CHAR(10)` 视为 binary 后拒绝 `REGEXP_REPLACE`；提取前清除段落标签产生的开头换行，
+  保证首段不是空字符串。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
-V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
-并覆盖全局活动唯一抢占、lease、归档身份与同步 / scoped 文档 `PATCH` 的全局版本 CAS、树拖拽窄更新不回写正文或版本、AI 入队关联回滚和 DB-time 超时清理；Docker 不可用时显式跳过。
+V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.7.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
+并覆盖全局活动唯一抢占、lease、归档身份与同步 / scoped 文档 `PATCH` 的全局版本 CAS、树拖拽窄更新不回写正文或版本、AI 入队关联回滚和 DB-time 超时清理；开发机 Docker 不可用时显式跳过，Jenkins 必须挂载 Docker socket 并确认两个 MySQL 契约测试均未跳过。
