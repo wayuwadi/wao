@@ -6,6 +6,7 @@ import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.domain.WorkdayRhythmChecklistItemEntity;
 import cn.wayuwa.wao.domain.WorkdayRhythmChecklistOccurrenceEntity;
 import cn.wayuwa.wao.domain.WorkdayRhythmDayEntity;
+import cn.wayuwa.wao.domain.WorkdayRhythmReminderDeliveryEntity;
 import cn.wayuwa.wao.domain.WorkdayRhythmSettingEntity;
 import cn.wayuwa.wao.dto.CreateWorkdayRhythmDocumentRequest;
 import cn.wayuwa.wao.dto.DocDto;
@@ -37,7 +38,10 @@ import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -83,14 +87,15 @@ public class WorkdayRhythmDashboardService {
         requireDate(date);
         WorkdayRhythmSettingEntity setting = ensureSetting(memberId);
         ensureDefaults(memberId, setting);
+        List<WorkdayRhythmChecklistItemEntity> templates = itemEntities(memberId);
         Workday day = workday(memberId, date, setting);
-        materialize(memberId, date, day.active());
-        List<WorkdayRhythmChecklistOccurrenceEntity> result = occurrences(memberId, date);
+        List<WorkdayRhythmChecklistOccurrenceEntity> result = materialize(
+                memberId, date, day.active(), templates);
         // 次日凌晨仍展示前一天未结束的跨午夜项。
         LocalDateTime now = LocalDateTime.now(ZONE);
         if (date.equals(now.toLocalDate())) {
-            materialize(memberId, date.minusDays(1), workday(memberId, date.minusDays(1), setting).active());
-            occurrences(memberId, date.minusDays(1)).stream()
+            materialize(memberId, date.minusDays(1),
+                    workday(memberId, date.minusDays(1), setting).active(), templates).stream()
                     .filter(value -> Boolean.TRUE.equals(value.getDueNextDay()) && value.getCompletedAt() == null
                             && !dueAt(value).isBefore(now))
                     .forEach(result::add);
@@ -208,8 +213,9 @@ public class WorkdayRhythmDashboardService {
     public void completeSystemItem(String memberId, LocalDate date, String kind) {
         WorkdayRhythmSettingEntity setting = ensureSetting(memberId);
         ensureDefaults(memberId, setting);
-        materialize(memberId, date, workday(memberId, date, setting).active());
-        occurrences(memberId, date).stream().filter(value -> kind.equals(value.getKind()))
+        List<WorkdayRhythmChecklistItemEntity> templates = itemEntities(memberId);
+        materialize(memberId, date, workday(memberId, date, setting).active(), templates).stream()
+                .filter(value -> kind.equals(value.getKind()))
                 .filter(value -> value.getCompletedAt() == null).findFirst().ifPresent(value -> {
                     LocalDateTime now = LocalDateTime.now(ZONE); value.setCompletedAt(now);
                     value.setCompletedOnTime(!now.isAfter(dueAt(value))); value.setUpdatedAt(now);
@@ -251,54 +257,112 @@ public class WorkdayRhythmDashboardService {
     }
 
     private void ensureDefaults(String memberId, WorkdayRhythmSettingEntity setting) {
-        ensureSystemItem(memberId, "PLAN", "制定今日计划", LocalTime.of(7, 0), LocalTime.of(9, 0), false, 10);
-        ensureSystemItem(memberId, "CLOCK_IN", "上班打卡", LocalTime.of(7, 0), LocalTime.of(9, 0), false, 20);
-        ensureSystemItem(memberId, "CLOCK_OUT", "下班打卡", LocalTime.of(18, 0), LocalTime.of(7, 0), true, 30);
-        ensureTianrenItem(memberId, Boolean.TRUE.equals(setting.getTianrenRequired()));
+        Map<String, WorkdayRhythmChecklistItemEntity> existing = new HashMap<>();
+        items.selectList(new LambdaQueryWrapper<WorkdayRhythmChecklistItemEntity>()
+                        .eq(WorkdayRhythmChecklistItemEntity::getMemberId, memberId)
+                        .in(WorkdayRhythmChecklistItemEntity::getSystemKey, SYSTEM_KINDS))
+                .forEach(item -> existing.put(item.getSystemKey(), item));
+        ensureSystemItem(existing, memberId, "PLAN", "制定今日计划",
+                LocalTime.of(7, 0), LocalTime.of(9, 0), false, 10);
+        ensureSystemItem(existing, memberId, "CLOCK_IN", "上班打卡",
+                LocalTime.of(7, 0), LocalTime.of(9, 0), false, 20);
+        ensureSystemItem(existing, memberId, "CLOCK_OUT", "下班打卡",
+                LocalTime.of(18, 0), LocalTime.of(7, 0), true, 30);
+        WorkdayRhythmChecklistItemEntity tianren = ensureSystemItem(existing, memberId, "TIANREN", "每日一卦",
+                LocalTime.of(7, 0), LocalTime.of(7, 0), true, 40);
+        configureTianren(tianren, Boolean.TRUE.equals(setting.getTianrenRequired()));
     }
 
-    private void ensureSystemItem(String memberId, String kind, String title, LocalTime start, LocalTime due,
-            boolean nextDay, int order) {
-        Long count = items.selectCount(new LambdaQueryWrapper<WorkdayRhythmChecklistItemEntity>()
-                .eq(WorkdayRhythmChecklistItemEntity::getMemberId, memberId)
-                .eq(WorkdayRhythmChecklistItemEntity::getSystemKey, kind));
-        if (count > 0) return;
+    private void ensureTianrenItem(String memberId, boolean required) {
+        Map<String, WorkdayRhythmChecklistItemEntity> existing = new HashMap<>();
+        WorkdayRhythmChecklistItemEntity stored = items.selectOne(
+                new LambdaQueryWrapper<WorkdayRhythmChecklistItemEntity>()
+                        .eq(WorkdayRhythmChecklistItemEntity::getMemberId, memberId)
+                        .eq(WorkdayRhythmChecklistItemEntity::getSystemKey, "TIANREN").last("LIMIT 1"));
+        if (stored != null) existing.put("TIANREN", stored);
+        WorkdayRhythmChecklistItemEntity tianren = ensureSystemItem(existing, memberId, "TIANREN", "每日一卦",
+                LocalTime.of(7, 0), LocalTime.of(7, 0), true, 40);
+        configureTianren(tianren, required);
+    }
+
+    private void configureTianren(WorkdayRhythmChecklistItemEntity tianren, boolean required) {
+        if (tianren != null && !Objects.equals(tianren.getActive(), required)) {
+            tianren.setActive(required); tianren.setScheduleType("DAILY"); tianren.setCategory("LIFE");
+            tianren.setUpdatedAt(LocalDateTime.now(ZONE)); items.updateById(tianren);
+        }
+    }
+
+    private WorkdayRhythmChecklistItemEntity ensureSystemItem(
+            Map<String, WorkdayRhythmChecklistItemEntity> existing, String memberId, String kind, String title,
+            LocalTime start, LocalTime due, boolean nextDay, int order) {
+        WorkdayRhythmChecklistItemEntity stored = existing.get(kind);
+        if (stored != null) return stored;
         LocalDateTime now = LocalDateTime.now(ZONE); WorkdayRhythmChecklistItemEntity value = new WorkdayRhythmChecklistItemEntity();
         value.setId(id("wri")); value.setMemberId(memberId); value.setKind(kind); value.setSystemKey(kind);
         value.setCategory("WORK"); value.setTitle(title); value.setScheduleType("WORKDAY"); value.setWeekdaysJson("[]");
         value.setStartTime(start); value.setDueTime(due); value.setDueNextDay(nextDay); value.setActive(true); value.setOrd(order);
         value.setNotifyDirect(false); value.setNotifyChat(false); value.setNotifyWebhook(false);
         value.setReminderTime(null); value.setReminderNextDay(false); value.setCreatedAt(now); value.setUpdatedAt(now);
-        try { items.insert(value); } catch (DuplicateKeyException ignored) { /* 并发首次读取由唯一键收敛 */ }
-    }
-
-    private void ensureTianrenItem(String memberId, boolean required) {
-        ensureSystemItem(memberId, "TIANREN", "每日一卦", LocalTime.of(7, 0), LocalTime.of(7, 0), true, 40);
-        WorkdayRhythmChecklistItemEntity value = items.selectOne(new LambdaQueryWrapper<WorkdayRhythmChecklistItemEntity>()
-                .eq(WorkdayRhythmChecklistItemEntity::getMemberId, memberId)
-                .eq(WorkdayRhythmChecklistItemEntity::getSystemKey, "TIANREN").last("LIMIT 1"));
-        if (value != null && !Objects.equals(value.getActive(), required)) {
-            value.setActive(required); value.setScheduleType("DAILY"); value.setCategory("LIFE");
-            value.setUpdatedAt(LocalDateTime.now(ZONE)); items.updateById(value);
+        try {
+            items.insert(value);
+        } catch (DuplicateKeyException ignored) {
+            value = items.selectOne(new LambdaQueryWrapper<WorkdayRhythmChecklistItemEntity>()
+                    .eq(WorkdayRhythmChecklistItemEntity::getMemberId, memberId)
+                    .eq(WorkdayRhythmChecklistItemEntity::getSystemKey, kind).last("LIMIT 1"));
         }
+        if (value != null) existing.put(kind, value);
+        return value;
     }
 
-    private void materialize(String memberId, LocalDate date, boolean workday) {
-        for (WorkdayRhythmChecklistItemEntity item : itemEntities(memberId)) {
+    private List<WorkdayRhythmChecklistOccurrenceEntity> materialize(String memberId, LocalDate date,
+            boolean workday, List<WorkdayRhythmChecklistItemEntity> templates) {
+        List<WorkdayRhythmChecklistOccurrenceEntity> existing = occurrences(memberId, date);
+        Map<String, WorkdayRhythmChecklistOccurrenceEntity> byItem = new HashMap<>();
+        existing.forEach(value -> byItem.put(value.getItemId(), value));
+        List<String> pendingIds = existing.stream().filter(value -> value.getCompletedAt() == null)
+                .map(WorkdayRhythmChecklistOccurrenceEntity::getId).toList();
+        Set<String> delivered = pendingIds.isEmpty() ? Set.of() : deliveries.selectList(
+                        new LambdaQueryWrapper<WorkdayRhythmReminderDeliveryEntity>()
+                                .in(WorkdayRhythmReminderDeliveryEntity::getOccurrenceId, pendingIds))
+                .stream().map(WorkdayRhythmReminderDeliveryEntity::getOccurrenceId)
+                .collect(java.util.stream.Collectors.toCollection(HashSet::new));
+        boolean raced = false;
+        for (WorkdayRhythmChecklistItemEntity item : templates) {
             if (!applies(item, date, workday)) continue;
-            WorkdayRhythmChecklistOccurrenceEntity existing = occurrences.selectOne(
-                    new LambdaQueryWrapper<WorkdayRhythmChecklistOccurrenceEntity>()
-                            .eq(WorkdayRhythmChecklistOccurrenceEntity::getItemId, item.getId())
-                            .eq(WorkdayRhythmChecklistOccurrenceEntity::getOccurrenceDate, date).last("LIMIT 1"));
-            if (existing == null) {
-                try { occurrences.insert(snapshot(item, date)); } catch (DuplicateKeyException ignored) { }
-            } else if (existing.getCompletedAt() == null && deliveries.selectCount(
-                    new LambdaQueryWrapper<cn.wayuwa.wao.domain.WorkdayRhythmReminderDeliveryEntity>()
-                            .eq(cn.wayuwa.wao.domain.WorkdayRhythmReminderDeliveryEntity::getOccurrenceId,
-                                    existing.getId())) == 0) {
-                copySnapshot(item, existing); existing.setUpdatedAt(LocalDateTime.now(ZONE)); occurrences.updateById(existing);
+            WorkdayRhythmChecklistOccurrenceEntity occurrence = byItem.get(item.getId());
+            if (occurrence == null) {
+                WorkdayRhythmChecklistOccurrenceEntity created = snapshot(item, date);
+                try {
+                    occurrences.insert(created); existing.add(created); byItem.put(item.getId(), created);
+                } catch (DuplicateKeyException ignored) {
+                    raced = true;
+                }
+            } else if (occurrence.getCompletedAt() == null && !delivered.contains(occurrence.getId())
+                    && !snapshotMatches(item, occurrence)) {
+                copySnapshot(item, occurrence); occurrence.setUpdatedAt(LocalDateTime.now(ZONE));
+                occurrences.updateById(occurrence);
             }
         }
+        return raced ? occurrences(memberId, date) : existing;
+    }
+
+    private boolean snapshotMatches(WorkdayRhythmChecklistItemEntity item,
+            WorkdayRhythmChecklistOccurrenceEntity occurrence) {
+        return Objects.equals(item.getKind(), occurrence.getKind())
+                && Objects.equals(item.getCategory(), occurrence.getCategory())
+                && Objects.equals(item.getTitle(), occurrence.getTitle())
+                && Objects.equals(item.getStartTime(), occurrence.getStartTime())
+                && Objects.equals(item.getDueTime(), occurrence.getDueTime())
+                && Objects.equals(item.getDueNextDay(), occurrence.getDueNextDay())
+                && Objects.equals(item.getReminderTime(), occurrence.getReminderTime())
+                && Objects.equals(item.getReminderNextDay(), occurrence.getReminderNextDay())
+                && Objects.equals(item.getNotifyDirect(), occurrence.getNotifyDirect())
+                && Objects.equals(item.getNotifyChat(), occurrence.getNotifyChat())
+                && Objects.equals(item.getChatId(), occurrence.getChatId())
+                && Objects.equals(item.getChatName(), occurrence.getChatName())
+                && Objects.equals(item.getNotifyWebhook(), occurrence.getNotifyWebhook())
+                && Objects.equals(item.getWebhookId(), occurrence.getWebhookId())
+                && Objects.equals(item.getWebhookName(), occurrence.getWebhookName());
     }
 
     private void syncTodayOccurrence(WorkdayRhythmChecklistItemEntity item, LocalDate date) {

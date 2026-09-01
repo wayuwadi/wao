@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -65,6 +67,8 @@ class WorkdayRhythmDashboardServiceTest {
         planOccurrence.setKind("PLAN"); planOccurrence.setCategory("WORK"); planOccurrence.setTitle("制定今日计划");
         planOccurrence.setStartTime(LocalTime.of(7, 0)); planOccurrence.setDueTime(LocalTime.of(9, 0));
         planOccurrence.setDueNextDay(false);
+        planOccurrence.setReminderNextDay(false); planOccurrence.setNotifyDirect(false);
+        planOccurrence.setNotifyChat(false); planOccurrence.setNotifyWebhook(false);
         when(occurrences.selectOne(any(Wrapper.class))).thenReturn(planOccurrence);
         when(occurrences.selectList(any(Wrapper.class))).thenReturn(List.of(planOccurrence));
         when(deliveries.selectCount(any(Wrapper.class))).thenReturn(0L);
@@ -98,5 +102,21 @@ class WorkdayRhythmDashboardServiceTest {
         assertThat(dashboard.workday()).isTrue();
         assertThat(dashboard.workWeekLabel()).contains("大周", "周日上班");
         assertThat(dashboard.checklist()).extracting(value -> value.kind()).contains("PLAN");
+    }
+
+    @Test
+    void dashboardMaterializesAllItemsWithBoundedQueriesAndSkipsUnchangedWrites() {
+        LocalDate date = LocalDate.parse("2026-08-24");
+        planOccurrence.setOccurrenceDate(date);
+
+        var dashboard = service.dashboard("m1", date);
+
+        assertThat(dashboard.checklist()).extracting(value -> value.id()).containsExactly("occ-plan");
+        verify(items, times(2)).selectList(any(Wrapper.class));
+        verify(occurrences).selectList(any(Wrapper.class));
+        verify(deliveries).selectList(any(Wrapper.class));
+        verify(occurrences, never()).selectOne(any(Wrapper.class));
+        verify(deliveries, never()).selectCount(any(Wrapper.class));
+        verify(occurrences, never()).updateById(any(WorkdayRhythmChecklistOccurrenceEntity.class));
     }
 }

@@ -116,10 +116,12 @@ const DATA_DOMAINS: DataDomain[] = [
   'files', 'images', 'vault', 'schedule', 'suggestions', 'goals',
 ]
 /**
- * 文档列表含全部正文与反向链接，图床列表也会随历史图片增长；二者只在对应功能真正出现时读取。
+ * 文档列表含全部正文与反向链接，图床与自动化历史也会随时间增长；三者只在对应功能真正出现时读取。
  * 其余小型领域继续随壳层启动，保持原有页面可用性。
  */
-const EAGER_DATA_DOMAINS = DATA_DOMAINS.filter((domain) => !['docs', 'images'].includes(domain))
+const EAGER_DATA_DOMAINS = DATA_DOMAINS.filter(
+  (domain) => !['docs', 'images', 'automation'].includes(domain),
+)
 
 /**
  * 多端数据同步在连续无变化时逐级退避，避免可见页面每 15 秒永久下载完整项目与任务。
@@ -207,6 +209,7 @@ export const useDataStore = defineStore('data', () => {
     // 已经进入过知识库 / 图床后，手动“重新加载”要继续刷新这些可见数据；首次启动仍保持按需。
     const reloadDocs = loadStates.docs === 'loaded'
     const reloadImages = loadStates.images === 'loaded'
+    const reloadAutomation = loadStates.automation === 'loaded'
     const settle = async <T>(domain: DataDomain, p: Promise<T>): Promise<T | null> => {
       try {
         const result = await p
@@ -246,6 +249,7 @@ export const useDataStore = defineStore('data', () => {
     goals.value = []
     const docsReloadRequest = reloadDocs ? refreshDocs() : null
     const imagesReloadRequest = reloadImages ? refreshImages() : null
+    const automationReloadRequest = reloadAutomation ? refreshAutomation() : null
     // 任务请求单独处理结果，不等知识库、文件、密码库等无关域的最慢请求全部结束。
     const taskRequest = fetchTasks()
       .then((loadedTasks) => {
@@ -287,9 +291,9 @@ export const useDataStore = defineStore('data', () => {
         return null
       })
     const knowledgeRequest = settle('knowledge', Promise.all([fetchKbs(), fetchKbGroups()]))
-    const [a, p, t, knowledge, jb, fl, va, sc, sg, gl] = await Promise.all([
+    const [a, p, t, knowledge, fl, va, sc, sg, gl] = await Promise.all([
       settle('areas', fetchAreas()), settle('projects', fetchProjects()), taskRequest,
-      knowledgeRequest, settle('automation', fetchJobs()), fileRequest,
+      knowledgeRequest, fileRequest,
       settle('vault', fetchVault()), settle('schedule', fetchSchedule()),
       settle('suggestions', fetchSuggestions()), settle('goals', fetchGoals()),
     ])
@@ -298,7 +302,6 @@ export const useDataStore = defineStore('data', () => {
     if (p !== null) projects.value = p
     if (kb !== null) kbs.value = kb
     if (kg !== null) myGroups.value = kg
-    if (jb !== null) autos.value = jb
     if (fl !== null) files.value = fl
     if (va !== null) vault.value = va
     if (sc !== null) schedule.value = sc
@@ -312,7 +315,7 @@ export const useDataStore = defineStore('data', () => {
       startSync()
       Object.keys(taskDrafts.value).forEach(persistTask)
     }
-    await Promise.all([docsReloadRequest, imagesReloadRequest])
+    await Promise.all([docsReloadRequest, imagesReloadRequest, automationReloadRequest])
   }
 
   /**
@@ -1536,6 +1539,42 @@ export const useDataStore = defineStore('data', () => {
   }
 
   // ---- 自动化 ----
+  let automationRequest: Promise<boolean> | null = null
+
+  /** 首次进入自动化功能时读取任务与历史；并发入口共享同一个真实请求。 */
+  async function ensureAutomationLoaded(): Promise<boolean> {
+    if (loadStates.automation === 'loaded') return true
+    return loadAutomation()
+  }
+
+  /** 强制刷新自动化任务与运行记录，失败时保留上一帧并允许原地重试。 */
+  async function refreshAutomation(): Promise<boolean> {
+    return loadAutomation()
+  }
+
+  function loadAutomation(): Promise<boolean> {
+    if (automationRequest) return automationRequest
+    loadStates.automation = 'loading'
+    delete loadErrors.automation
+    automationRequest = fetchJobs()
+      .then((jobs) => {
+        autos.value = jobs
+        loadStates.automation = 'loaded'
+        return true
+      })
+      .catch((cause: unknown) => {
+        loadStates.automation = 'error'
+        loadErrors.automation = cause instanceof Error && cause.message
+          ? cause.message
+          : DOMAIN_ERROR_MESSAGES.automation
+        return false
+      })
+      .finally(() => {
+        automationRequest = null
+      })
+    return automationRequest
+  }
+
   const jobById = (id: string) => autos.value.find((j) => j.id === id)
 
   function requireAutomationApi() {
@@ -1740,7 +1779,8 @@ export const useDataStore = defineStore('data', () => {
     uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES, hostedPages, refreshHostedPages, saveHostedPage, deleteHostedPage,
     updateProject, deleteProject, syncFromServer, applyAiRunStatuses,
     taskGroupsOf, setTaskGroups, moveTaskToGroup,
-    jobById, createJob, updateJob, deleteJob, runJob, pauseJob, resumeJob, reauthJob,
+    jobById, ensureAutomationLoaded, refreshAutomation,
+    createJob, updateJob, deleteJob, runJob, pauseJob, resumeJob, reauthJob,
     vaultItemById, addVaultGroup, renameVaultGroup, deleteVaultGroup, reorderVaultGroups,
     addVaultItem, updateVaultItem, deleteVaultItem, revealVaultItem, vaultError, reloadVault,
   }

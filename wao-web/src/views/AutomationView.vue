@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { toast } from '@/composables/toast'
 import DemoBanner from '@/components/ui/DemoBanner.vue'
@@ -187,6 +187,10 @@ function onHttpConfigSaved(config: HttpPerformanceInspectionConfig) {
   job.schedule = `${frequency} ${config.time}`
   job.status = config.enabled ? '正常' : '已暂停'
 }
+
+onMounted(() => {
+  void data.ensureAutomationLoaded()
+})
 </script>
 
 <template>
@@ -197,6 +201,13 @@ function onHttpConfigSaved(config: HttpPerformanceInspectionConfig) {
       text="自动化任务已接入真实后端：手动触发、暂停与恢复均会保存并产生真实的运行记录，填写 Cron 表达式的任务由服务端按计划自动执行。自动化属于系统功能，不提供删除入口；不再需要时请暂停。"
       storage-key="automation"
     />
+    <div v-if="data.loadStates.automation === 'loading'" class="automation-state" role="status">
+      <i class="ri-loader-4-line spin"></i>正在读取自动化任务与真实运行记录…
+    </div>
+    <div v-else-if="data.loadStates.automation === 'error'" class="automation-state error" role="alert">
+      <span>{{ data.loadErrors.automation || '自动化读取失败' }}</span>
+      <button @click="data.refreshAutomation()">重新读取</button>
+    </div>
     <!-- 列表 -->
     <template v-if="!sel">
       <div class="atop">
@@ -449,6 +460,34 @@ function onHttpConfigSaved(config: HttpPerformanceInspectionConfig) {
   max-width: var(--wao-content-max);
   margin: 0 auto;
   animation: waoFadeUp 0.25s ease;
+}
+.automation-state {
+  min-height: 48px;
+  margin: 12px 0;
+  padding: 0 14px;
+  border: 1px solid var(--wao-line);
+  border-radius: 10px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-weak);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.automation-state.error {
+  color: var(--wao-danger-strong);
+}
+.automation-state button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--wao-primary);
+  cursor: pointer;
+}
+.automation-state .spin {
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 .spacer {
   flex: 1;

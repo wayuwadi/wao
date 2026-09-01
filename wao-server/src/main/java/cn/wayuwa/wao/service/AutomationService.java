@@ -15,6 +15,7 @@ import cn.wayuwa.wao.domain.AutomationRunEntity;
 import cn.wayuwa.wao.dto.AutomationJobDto;
 import cn.wayuwa.wao.dto.AutomationRunDto;
 import cn.wayuwa.wao.dto.CreateJobRequest;
+import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.dto.PatchJobRequest;
 import cn.wayuwa.wao.mapper.AutomationJobMapper;
 import cn.wayuwa.wao.mapper.AutomationRunMapper;
@@ -69,7 +70,8 @@ public class AutomationService {
                 new LambdaQueryWrapper<AutomationRunEntity>().orderByAsc(AutomationRunEntity::getOrd));
         Map<String, List<AutomationRunEntity>> runsByJob = runs.stream()
                 .collect(Collectors.groupingBy(AutomationRunEntity::getJobId));
-        return jobs.stream().map(j -> toDto(j, runsByJob.getOrDefault(j.getId(), List.of()))).toList();
+        Map<String, String> memberNames = memberNames(runs);
+        return jobs.stream().map(j -> toDto(j, runsByJob.getOrDefault(j.getId(), List.of()), memberNames)).toList();
     }
 
     /** 按 id 获取任务详情。 */
@@ -77,7 +79,7 @@ public class AutomationService {
         AutomationJobEntity e = requireJob(id);
         List<AutomationRunEntity> runs = runMapper.selectList(new LambdaQueryWrapper<AutomationRunEntity>()
                 .eq(AutomationRunEntity::getJobId, id).orderByAsc(AutomationRunEntity::getOrd));
-        return toDto(e, runs);
+        return toDto(e, runs, memberNames(runs));
     }
 
     /** 新建自动化任务。 */
@@ -99,7 +101,7 @@ public class AutomationService {
         e.setHandler(req.handler());
         e.setOrd(nextOrd(jobMapper.selectCount(null)));
         jobMapper.insert(e);
-        return toDto(e, List.of());
+        return toDto(e, List.of(), Map.of());
     }
 
     /** 局部更新自动化任务。 */
@@ -304,9 +306,10 @@ public class AutomationService {
         }
     }
 
-    private AutomationJobDto toDto(AutomationJobEntity e, List<AutomationRunEntity> runs) {
+    private AutomationJobDto toDto(AutomationJobEntity e, List<AutomationRunEntity> runs,
+            Map<String, String> memberNames) {
         List<AutomationRunDto> runPairs = runs.stream()
-                .map(r -> new AutomationRunDto(r.getId(), displayTime(r), executorName(r.getExecutorId()),
+                .map(r -> new AutomationRunDto(r.getId(), displayTime(r), executorName(r.getExecutorId(), memberNames),
                         r.getResult(), r.getRunAt(), r.getDurationMs(), r.getAiRunId()))
                 .toList();
         String last = runs.isEmpty() ? e.getLastRunLabel()
@@ -330,10 +333,17 @@ public class AutomationService {
         return value.getYear() + "年" + value.getMonthValue() + "月" + value.getDayOfMonth() + "日 " + clock;
     }
 
-    private String executorName(String executorId) {
+    private Map<String, String> memberNames(List<AutomationRunEntity> runs) {
+        boolean hasMemberExecutor = runs.stream()
+                .anyMatch(run -> run.getExecutorId() != null && !run.getExecutorId().isBlank());
+        if (!hasMemberExecutor) return Map.of();
+        return members.list().stream().collect(Collectors.toUnmodifiableMap(
+                MemberDto::id, MemberDto::name, (left, right) -> left));
+    }
+
+    private String executorName(String executorId, Map<String, String> memberNames) {
         if (executorId == null || executorId.isBlank()) return "定时任务";
-        return members.list().stream().filter(member -> executorId.equals(member.id()))
-                .map(member -> member.name()).findFirst().orElse(executorId);
+        return memberNames.getOrDefault(executorId, executorId);
     }
 
     private List<String> readSteps(String value) {
