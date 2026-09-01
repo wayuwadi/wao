@@ -33,6 +33,7 @@ import cn.wayuwa.wao.domain.ProjectEntity;
 import cn.wayuwa.wao.domain.TaskEntity;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
 import cn.wayuwa.wao.dto.AiRunImageContent;
+import cn.wayuwa.wao.dto.AiRunBatchRerunDto;
 import cn.wayuwa.wao.dto.AiRunModelOptionDto;
 import cn.wayuwa.wao.dto.AiRunOptionsDto;
 import cn.wayuwa.wao.dto.AiRunPageDto;
@@ -1101,6 +1102,75 @@ public class AiRunService {
     }
 
     /**
+     * 将同一执行节点上、仍未被新运行替代的同原因基础设施失败一次性重新排队。
+     *
+     * <p>故障指纹完全由服务端根据失败摘要计算，调用方不能自行传入匹配条件。查询最多检查最近
+     * 100 条同节点失败记录；同一任务若已有活动运行，会安全跳过而不是让整批操作失败。
+     *
+     * @param sourceRunId 用来确定故障指纹和执行节点的失败运行
+     * @param requestedBy 触发批量重跑的成员 id
+     * @param baseUrl 当前站点地址
+     * @return 匹配、成功排队和跳过数量
+     */
+    @Transactional
+    public synchronized AiRunBatchRerunDto rerunSameFailure(
+            String sourceRunId, String requestedBy, String baseUrl) {
+        AiTaskRunEntity source = runMapper.selectById(sourceRunId);
+        if (source == null) throw new NotFoundException("AI 运行不存在：" + sourceRunId);
+        AiRunFailureClassifier.Failure sourceFailure = AiRunFailureClassifier
+                .classify(source.getStatus(), source.getResultSummary())
+                .orElseThrow(() -> new BadRequestException("这次失败不是可批量恢复的基础设施异常"));
+
+        String failedRunnerId = StringUtils.hasText(source.getRunnerId())
+                ? source.getRunnerId() : source.getRequestedRunnerId();
+        LambdaQueryWrapper<AiTaskRunEntity> query = new LambdaQueryWrapper<AiTaskRunEntity>()
+                .eq(AiTaskRunEntity::getStatus, "failed")
+                .orderByDesc(AiTaskRunEntity::getCreatedAt)
+                .last("LIMIT 100");
+        if (StringUtils.hasText(failedRunnerId)) {
+            query.and(wrapper -> wrapper.eq(AiTaskRunEntity::getRunnerId, failedRunnerId)
+                    .or().eq(AiTaskRunEntity::getRequestedRunnerId, failedRunnerId));
+        }
+        List<AiTaskRunEntity> matches = runMapper.selectList(query).stream()
+                .filter(candidate -> AiRunFailureClassifier
+                        .classify(candidate.getStatus(), candidate.getResultSummary())
+                        .map(failure -> sourceFailure.code().equals(failure.code()))
+                        .orElse(false))
+                .toList();
+
+        List<String> createdRunIds = new ArrayList<>();
+        int skipped = 0;
+        for (AiTaskRunEntity candidate : matches) {
+            if (hasNewerRunForSameTarget(candidate)) {
+                skipped++;
+                continue;
+            }
+            try {
+                createdRunIds.add(rerun(candidate.getId(), requestedBy, baseUrl).id());
+            } catch (BadRequestException exception) {
+                // 已有更新运行、项目已停用或节点暂时不可用时，保留其它任务的恢复机会。
+                skipped++;
+            }
+        }
+        return new AiRunBatchRerunDto(sourceFailure.code(), sourceFailure.label(), matches.size(),
+                createdRunIds.size(), skipped, createdRunIds);
+    }
+
+    /** 历史失败若已有更新档案，就不再作为当前待恢复任务重新唤醒。 */
+    private boolean hasNewerRunForSameTarget(AiTaskRunEntity source) {
+        if (source.getCreatedAt() == null) return false;
+        LambdaQueryWrapper<AiTaskRunEntity> query = new LambdaQueryWrapper<AiTaskRunEntity>()
+                .eq(AiTaskRunEntity::getTaskId, source.getTaskId());
+        if (StringUtils.hasText(source.getSubId())) query.eq(AiTaskRunEntity::getSubId, source.getSubId());
+        else query.isNull(AiTaskRunEntity::getSubId);
+        query.and(newer -> newer.gt(AiTaskRunEntity::getCreatedAt, source.getCreatedAt())
+                .or(tied -> tied.eq(AiTaskRunEntity::getCreatedAt, source.getCreatedAt())
+                        .gt(AiTaskRunEntity::getId, source.getId())));
+        Long count = runMapper.selectCount(query);
+        return count != null && count > 0;
+    }
+
+    /**
      * 带着一段新的提示词让 AI 在原会话里接着跑。
      *
      * <p>失败和成功都能续：跑完不符合预期时，用户要的是「基于这次的记忆再优化一版」，
@@ -1742,6 +1812,7 @@ public class AiRunService {
             ProjectEntity project = projects.get(run.getProjectId());
             AiRunnerNodeEntity runner = StringUtils.hasText(run.getRunnerId())
                     ? runners.get(run.getRunnerId()) : null;
+            var failure = AiRunFailureClassifier.classify(run.getStatus(), run.getResultSummary());
             return new AiRunDto(run.getId(), run.getTaskId(), runTaskTitle(run, task, taskIds, tasks), taskIds,
                     previewImages(run, task),
                     run.getSubId(),
@@ -1755,6 +1826,9 @@ public class AiRunService {
                     blankOr(run.getDeliveryStage(), deliveryStageForLegacy(run)),
                     run.getRunnerId(), runnerName(run, runner), run.getRequestedRunnerId(), run.getRequestedBy(),
                     run.getBranchName(), run.getRetryOfRunId(),
+                    failure.map(AiRunFailureClassifier.Failure::kind).orElse(null),
+                    failure.map(AiRunFailureClassifier.Failure::code).orElse(null),
+                    failure.map(AiRunFailureClassifier.Failure::label).orElse(null),
                     run.getResultSummary(), reportUrls.get(run.getId()), run.getLatestProgress(),
                     text(run.getProgressUpdatedAt()),
                     progressByRun.getOrDefault(run.getId(), List.of()), toUsageDto(run),

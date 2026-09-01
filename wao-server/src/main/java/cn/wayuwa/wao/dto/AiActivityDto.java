@@ -12,5 +12,8 @@ public record AiActivityDto(
         String capabilityLabel,
         String targetId,
         String resultPreview,
+        String failureKind,
+        String failureCode,
+        String failureLabel,
         OffsetDateTime createdAt,
         OffsetDateTime finishedAt) { }

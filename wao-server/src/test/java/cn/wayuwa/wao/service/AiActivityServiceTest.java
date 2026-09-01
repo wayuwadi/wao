@@ -58,4 +58,21 @@ class AiActivityServiceTest {
         assertThatThrownBy(() -> service.page("ALL", "CANCELLED", 1, 20))
                 .isInstanceOf(BadRequestException.class).hasMessageContaining("结果");
     }
+
+    @Test
+    void marksRunnerCredentialFailureAsInfrastructureActivity() {
+        AiActivityRow row = new AiActivityRow();
+        row.setId("ar1");
+        row.setActivityType("FEATURE_DEVELOPMENT");
+        row.setStatus("FAILED");
+        row.setFailureDetail("PR 创建失败：GitHub 返回 HTTP 401 Requires authentication，GH_TOKEN 不可用");
+        when(mapper.count("ALL", "FAILED")).thenReturn(1L);
+        when(mapper.page("ALL", "FAILED", 0, 20)).thenReturn(List.of(row));
+
+        var item = service.page("ALL", "FAILED", 1, 20).items().get(0);
+
+        assertThat(item.failureKind()).isEqualTo("INFRASTRUCTURE");
+        assertThat(item.failureCode()).isEqualTo("RUNNER_GITHUB_CREDENTIALS");
+        assertThat(item.failureLabel()).isEqualTo("执行节点 GitHub 凭据不可用");
+    }
 }

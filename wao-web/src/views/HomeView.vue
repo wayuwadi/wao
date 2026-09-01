@@ -20,6 +20,7 @@ import {
   removeAiWorkflow,
   requestRunnerScriptUpdate,
   rerunAiRun,
+  rerunSameFailureAiRuns,
   saveAiTaskAutoRunPolicy,
   saveAiProjectConfig,
   updateRunnerMaxConcurrency,
@@ -139,6 +140,7 @@ const pairExpiresAt = ref('')
 const editingProjectId = ref<string | null>(null)
 const saving = ref(false)
 const rerunning = ref(false)
+const batchRerunning = ref(false)
 const pausingRunId = ref<string | null>(null)
 const editingRunnerId = ref<string | null>(null)
 const editingRunnerValue = ref(2)
@@ -274,6 +276,7 @@ const statusMeta: Record<AiRunStatus, { label: string; icon: string; color: stri
 // 退出码 3 是 Runner 的约定：AI 结束了会话但没报告任务状态，成败需要人判断，
 // 不能直接挂一个「运行失败」让人分不清到底成没成。
 const UNCONFIRMED_META = { label: '结果待确认', icon: 'ri-question-line', color: 'var(--wao-warning-strong)', bg: 'var(--wao-warning-bg)' }
+const INFRASTRUCTURE_META = { label: '基础设施异常', icon: 'ri-server-line', color: 'var(--wao-warning-strong)', bg: 'var(--wao-warning-bg)' }
 
 function statusUnreported(run: AiRun) {
   return run.status === 'failed' && run.exitCode === 3
@@ -281,6 +284,7 @@ function statusUnreported(run: AiRun) {
 
 function metaFor(run: AiRun) {
   if (statusUnreported(run)) return UNCONFIRMED_META
+  if (run.failureKind === 'INFRASTRUCTURE') return INFRASTRUCTURE_META
   if (run.deliveryStage === 'waiting_deployment') {
     return { label: '代码已完成 · 等待部署', icon: 'ri-upload-cloud-2-line', color: 'var(--wao-warning-strong)', bg: 'var(--wao-warning-bg)' }
   }
@@ -298,6 +302,7 @@ function metaFor(run: AiRun) {
 
 function resultTitle(run: AiRun) {
   if (statusUnreported(run)) return '结果待确认（AI 未报告任务状态）'
+  if (run.failureKind === 'INFRASTRUCTURE') return '基础设施异常原因'
   return run.status === 'failed' ? '失败原因' : '最终结果'
 }
 
@@ -896,10 +901,24 @@ function inspectRun(run: AiRun) {
 }
 
 function activityMeta(activity: AiActivity) {
+  if (activity.failureKind === 'INFRASTRUCTURE') return INFRASTRUCTURE_META
   if (activity.status === 'FAILED') return { label: '运行失败', icon: 'ri-close-circle-line', color: 'var(--wao-danger-strong)', bg: 'var(--wao-danger-bg)' }
   if (activity.status === 'CANCELLED') return { label: '已取消', icon: 'ri-stop-circle-line', color: 'var(--wao-warning-strong)', bg: 'var(--wao-warning-bg)' }
   return { label: '运行成功', icon: 'ri-checkbox-circle-line', color: 'var(--wao-success-strong)', bg: 'var(--wao-success-bg)' }
 }
+
+function infrastructureFailureGroup(activities: AiActivity[]) {
+  const source = activities.find((activity) => activity.failureKind === 'INFRASTRUCTURE' && activity.failureCode)
+  if (!source) return null
+  return {
+    source,
+    count: activities.filter((activity) => activity.failureCode === source.failureCode).length,
+    label: source.failureLabel || '执行基础设施异常',
+  }
+}
+
+const recentInfrastructureFailure = computed(() => infrastructureFailureGroup(recentActivities.value))
+const historyInfrastructureFailure = computed(() => infrastructureFailureGroup(runHistory.value))
 
 function activityTypeMeta(activity: AiActivity) {
   if (activity.type === 'CHAT_REVIEW') {
@@ -1031,6 +1050,25 @@ async function rerun(run: AiRun) {
     toast(error instanceof Error ? error.message : '重跑失败', 'ri-error-warning-line')
   } finally {
     rerunning.value = false
+  }
+}
+
+/** 同原因批量恢复由服务端决定范围；页面只提交一条真实失败记录作为指纹来源。 */
+async function rerunSameFailure(source: Pick<AiRun, 'id' | 'failureLabel'> | AiActivity) {
+  if (batchRerunning.value) return
+  batchRerunning.value = true
+  try {
+    const result = await rerunSameFailureAiRuns(source.id)
+    selectedRun.value = null
+    await refresh()
+    if (runHistoryOpen.value) await openRunHistory(runHistoryPage.value)
+    await refreshReviewableTasks()
+    const skipped = result.skippedCount ? `，跳过 ${result.skippedCount} 项已有新运行的任务` : ''
+    toast(`已重跑 ${result.queuedCount} 项「${result.failureLabel}」任务${skipped}`, 'ri-refresh-line')
+  } catch (error) {
+    toast(error instanceof Error ? error.message : '批量重跑失败', 'ri-error-warning-line')
+  } finally {
+    batchRerunning.value = false
   }
 }
 
@@ -1469,8 +1507,16 @@ onBeforeUnmount(() => {
         <div v-if="recentActivitiesLoading" class="recent-state"><i class="ri-loader-4-line spin"></i>正在读取最近 AI 运行…</div>
         <div v-else-if="recentActivitiesError" class="recent-state error" role="alert"><i class="ri-error-warning-line"></i><span>{{ recentActivitiesError }}</span><button @click="changeRecentActivitiesPage(recentActivitiesPage)">重试</button></div>
         <div v-else-if="!recentActivities.length" class="recent-state"><i class="ri-inbox-2-line"></i>当前筛选下还没有已结束的运行。</div>
-        <div v-else class="recent-grid">
-          <button v-for="activity in recentActivities" :key="`${activity.type}-${activity.id}`" class="recent-card" :aria-label="`${activity.title}，${activityMeta(activity).label}，打开详情`" @click="openActivity(activity)">
+        <template v-else>
+          <aside v-if="recentInfrastructureFailure" class="infrastructure-failure-banner">
+            <span><i class="ri-server-line"></i></span>
+            <div><b>当前页 {{ recentInfrastructureFailure.count }} 项基础设施异常</b><p>{{ recentInfrastructureFailure.label }}，任务本身不计为失败。</p></div>
+            <button :disabled="batchRerunning" @click="rerunSameFailure(recentInfrastructureFailure.source)">
+              <i :class="batchRerunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ batchRerunning ? '正在重跑…' : '一键重跑同原因任务' }}
+            </button>
+          </aside>
+          <div class="recent-grid">
+          <button v-for="activity in recentActivities" :key="`${activity.type}-${activity.id}`" class="recent-card" :class="{ infrastructure: activity.failureKind === 'INFRASTRUCTURE' }" :aria-label="`${activity.title}，${activityMeta(activity).label}，打开详情`" @click="openActivity(activity)">
             <span class="recent-card-top">
               <span class="recent-icon" :title="activityTypeMeta(activity).label" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }"><i :class="activityTypeMeta(activity).icon"></i></span>
               <span class="recent-outcome" :title="activityMeta(activity).label" :aria-label="activityMeta(activity).label" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i></span>
@@ -1480,11 +1526,12 @@ onBeforeUnmount(() => {
               <b :title="activity.title">{{ activity.title }}</b>
               <em><i :class="activitySubtitleIcon(activity)"></i>{{ activity.subtitle }}</em>
               <em><i class="ri-sparkling-2-line"></i>{{ activity.capabilityLabel }}</em>
-              <small v-if="activity.status === 'FAILED'">{{ activity.resultPreview }}</small>
+              <small v-if="activity.status === 'FAILED'" :class="{ infrastructure: activity.failureKind === 'INFRASTRUCTURE' }">{{ activity.failureLabel || activity.resultPreview }}</small>
             </span>
             <span class="recent-hover-action" aria-hidden="true"><i :class="activity.type === 'CHAT_REVIEW' ? 'ri-chat-check-line' : 'ri-arrow-right-up-line'"></i>{{ activity.type === 'CHAT_REVIEW' ? '打开复盘' : '查看详情' }}</span>
           </button>
-        </div>
+          </div>
+        </template>
       </section>
     </template>
 
@@ -2018,8 +2065,16 @@ onBeforeUnmount(() => {
           <button class="secondary" @click="openRunHistory(runHistoryPage)">重试</button>
         </div>
         <div v-else-if="!runHistory.length" class="history-state"><i class="ri-inbox-2-line"></i>还没有已结束的运行。</div>
-        <div v-else class="recent-grid history-grid">
-          <button v-for="activity in runHistory" :key="`${activity.type}-${activity.id}`" class="recent-card" :aria-label="`${activity.title}，${activityMeta(activity).label}，打开详情`" @click="openActivity(activity)">
+        <template v-else>
+          <aside v-if="historyInfrastructureFailure" class="infrastructure-failure-banner history-infrastructure-banner">
+            <span><i class="ri-server-line"></i></span>
+            <div><b>当前页 {{ historyInfrastructureFailure.count }} 项基础设施异常</b><p>{{ historyInfrastructureFailure.label }}，任务本身不计为失败。</p></div>
+            <button :disabled="batchRerunning" @click="rerunSameFailure(historyInfrastructureFailure.source)">
+              <i :class="batchRerunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ batchRerunning ? '正在重跑…' : '一键重跑同原因任务' }}
+            </button>
+          </aside>
+          <div class="recent-grid history-grid">
+          <button v-for="activity in runHistory" :key="`${activity.type}-${activity.id}`" class="recent-card" :class="{ infrastructure: activity.failureKind === 'INFRASTRUCTURE' }" :aria-label="`${activity.title}，${activityMeta(activity).label}，打开详情`" @click="openActivity(activity)">
             <span class="recent-card-top">
               <span class="recent-icon" :title="activityTypeMeta(activity).label" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }"><i :class="activityTypeMeta(activity).icon"></i></span>
               <span class="recent-outcome" :title="activityMeta(activity).label" :aria-label="activityMeta(activity).label" :style="{ color: activityMeta(activity).color, background: activityMeta(activity).bg }"><i :class="activityMeta(activity).icon"></i></span>
@@ -2029,11 +2084,12 @@ onBeforeUnmount(() => {
               <b :title="activity.title">{{ activity.title }}</b>
               <em><i :class="activitySubtitleIcon(activity)"></i>{{ activity.subtitle }}</em>
               <em><i class="ri-sparkling-2-line"></i>{{ activity.capabilityLabel }}</em>
-              <small v-if="activity.status === 'FAILED'">{{ activity.resultPreview }}</small>
+              <small v-if="activity.status === 'FAILED'" :class="{ infrastructure: activity.failureKind === 'INFRASTRUCTURE' }">{{ activity.failureLabel || activity.resultPreview }}</small>
             </span>
             <span class="recent-hover-action" aria-hidden="true"><i :class="activity.type === 'CHAT_REVIEW' ? 'ri-chat-check-line' : 'ri-arrow-right-up-line'"></i>{{ activity.type === 'CHAT_REVIEW' ? '打开复盘' : '查看详情' }}</span>
           </button>
-        </div>
+          </div>
+        </template>
         <WaoPagination
           v-if="!runHistoryLoading && !runHistoryError && runHistoryTotal > RUN_HISTORY_PAGE_SIZE"
           class="history-pagination"
@@ -2066,6 +2122,10 @@ onBeforeUnmount(() => {
             :alt="`${selectedRun.taskTitle} · 图片 ${index + 1}`"
           />
         </div>
+        <aside v-if="selectedRun.failureKind === 'INFRASTRUCTURE'" class="infrastructure-failure-banner detail-infrastructure-banner">
+          <span><i class="ri-server-line"></i></span>
+          <div><b>任务本身没有失败</b><p>{{ selectedRun.failureLabel }}，修复节点后可一次重跑全部同原因任务。</p></div>
+        </aside>
         <AiRunDeliverySteps v-if="selectedRun.deliveryStage" :stage="selectedRun.deliveryStage" />
         <dl class="run-detail-meta">
           <div><dt>AI 工具</dt><dd>{{ engineLabel(selectedRun.engine) }}</dd></div>
@@ -2108,7 +2168,7 @@ onBeforeUnmount(() => {
         <AiRunSkillCapabilities :skills="selectedRun.skills" :audits="selectedRun.skillAudits" />
         <template v-if="selectedRun.resultSummary">
           <div class="result-title result-gap">{{ resultTitle(selectedRun) }}</div>
-          <pre>{{ selectedRun.resultSummary }}</pre>
+          <pre :class="{ infrastructure: selectedRun.failureKind === 'INFRASTRUCTURE' }">{{ selectedRun.resultSummary }}</pre>
         </template>
         <a
           v-if="selectedRun.reportUrl"
@@ -2152,12 +2212,20 @@ onBeforeUnmount(() => {
               {{ pausingRunId === selectedRun.id ? '停止中…' : '停止任务' }}
             </button>
             <button
-              v-if="selectedRun.status === 'failed'"
+              v-if="selectedRun.status === 'failed' && selectedRun.failureKind !== 'INFRASTRUCTURE'"
               class="secondary retry"
               :disabled="rerunning"
               @click="rerun(selectedRun)"
             >
               <i :class="rerunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>基于报错重跑
+            </button>
+            <button
+              v-if="selectedRun.failureKind === 'INFRASTRUCTURE'"
+              class="secondary infrastructure-retry"
+              :disabled="batchRerunning"
+              @click="rerunSameFailure(selectedRun)"
+            >
+              <i :class="batchRerunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ batchRerunning ? '正在重跑…' : '一键重跑同原因任务' }}
             </button>
             <button class="primary" @click="openRun(selectedRun)">打开对应任务</button>
           </div>
@@ -2734,6 +2802,15 @@ onBeforeUnmount(() => {
 .recent-actions { flex: 0 0 auto !important; display: flex; align-items: center; gap: 7px; }
 .recent-pagination { min-height: 34px; }
 .history-filter-bar { margin-top: 14px; }
+.infrastructure-failure-banner { margin: 0 0 12px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--wao-warning-strong) 32%, var(--wao-line)); border-radius: 11px; background: var(--wao-warning-bg); display: flex; align-items: center; gap: 10px; }
+.infrastructure-failure-banner > span { width: 32px; height: 32px; flex: 0 0 auto; border-radius: 9px; background: color-mix(in srgb, var(--wao-warning-strong) 12%, transparent); color: var(--wao-warning-strong); display: grid; place-items: center; }
+.infrastructure-failure-banner > div { min-width: 0; flex: 1; }
+.infrastructure-failure-banner b { display: block; color: var(--wao-text-2); font-size: 12px; }
+.infrastructure-failure-banner p { margin: 2px 0 0; color: var(--wao-text-weak); font-size: 10.5px; line-height: 1.45; }
+.infrastructure-failure-banner button { min-height: 32px; flex: 0 0 auto; padding: 0 11px; border: 1px solid color-mix(in srgb, var(--wao-warning-strong) 45%, var(--wao-line)); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-warning-strong); cursor: pointer; font-size: 10.5px; font-weight: 650; display: inline-flex; align-items: center; gap: 5px; }
+.infrastructure-failure-banner button:disabled { opacity: .6; cursor: wait; }
+.history-infrastructure-banner { margin-top: 14px; margin-bottom: -4px; }
+.detail-infrastructure-banner { margin-top: 16px; margin-bottom: 0; }
 .recent-card {
   position: relative;
   width: 100%;
@@ -2754,6 +2831,7 @@ onBeforeUnmount(() => {
   transition: transform .16s, border-color .16s, box-shadow .16s;
 }
 .recent-card:hover, .recent-card:focus-visible { transform: translateY(-2px); border-color: var(--wao-primary-line); box-shadow: 0 8px 22px #27366c14; outline: none; }
+.recent-card.infrastructure { border-color: color-mix(in srgb, var(--wao-warning-strong) 28%, var(--wao-line)); }
 .recent-card-top { min-height: 28px; display: flex; align-items: center; gap: 6px; }
 .recent-icon { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 8px; display: grid; place-items: center; }
 .recent-icon.recent-image { overflow: hidden; border: 1px solid var(--wao-line); background: var(--wao-bg-sub); }
@@ -2763,6 +2841,7 @@ onBeforeUnmount(() => {
 .recent-main em { display: block; margin-top: 4px; overflow: hidden; color: var(--wao-text-weak); font-size: 10.5px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .recent-main em i { margin-right: 5px; }
 .recent-main small { display: block; margin-top: 4px; overflow: hidden; color: var(--wao-danger-strong); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.recent-main small.infrastructure { color: var(--wao-warning-strong); }
 .recent-outcome { width: 24px; height: 24px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; font-size: 11px; }
 .recent-card-top .run-time { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-hover-action {
@@ -2890,6 +2969,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .usage-empty { margin: 0; padding: 11px; border: 1px dashed #dfe2ec; border-radius: 9px; color: var(--wao-text-weak); font-size: 11.5px; }
 .recent-usage { color: var(--wao-text-3); }
 .run-detail pre { max-height: 360px; margin: 0; overflow: auto; padding: 14px; border: 1px solid var(--wao-danger-line); border-radius: 10px; background: var(--wao-danger-bg); color: var(--wao-danger-strong); font: 11.5px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.run-detail pre.infrastructure { border-color: color-mix(in srgb, var(--wao-warning-strong) 32%, var(--wao-line)); background: var(--wao-warning-bg); color: var(--wao-text-2); }
 .run-report-link { margin-top: 12px; padding: 11px 13px; border: 1px solid var(--wao-success-line); border-radius: 10px; background: linear-gradient(135deg, var(--wao-success-bg), var(--wao-bg-card)); color: inherit; text-decoration: none; display: flex; align-items: center; gap: 10px; }
 .run-report-link:hover { border-color: #89c9aa; box-shadow: 0 5px 16px rgba(27, 126, 83, .08); }
 .run-report-link > span { width: 31px; height: 31px; flex: none; border-radius: 8px; background: var(--wao-success-bg); color: var(--wao-success-strong); display: grid; place-items: center; }
@@ -2908,6 +2988,8 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 .run-detail footer button { padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; }
 .run-detail footer .retry { display: inline-flex; align-items: center; gap: 6px; color: var(--wao-danger-strong); border-color: var(--wao-danger-line); }
 .run-detail footer .retry:disabled { opacity: .6; cursor: not-allowed; }
+.run-detail footer .infrastructure-retry { display: inline-flex; align-items: center; gap: 6px; color: var(--wao-warning-strong); border-color: color-mix(in srgb, var(--wao-warning-strong) 45%, var(--wao-line)); }
+.run-detail footer .infrastructure-retry:disabled { opacity: .6; cursor: wait; }
 .run-detail footer .stop-run { display: inline-flex; align-items: center; gap: 6px; border-color: var(--wao-danger-line); color: var(--wao-danger-strong); }
 .run-detail footer .stop-run:disabled { opacity: .6; cursor: not-allowed; }
 .gh-branch-link {
@@ -2988,6 +3070,8 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .section-head h2 { font-size: 14px; }
   .section-head p { margin-top: 2px; font-size: 9.5px; }
   .recent-grid { grid-template-columns: 1fr; }
+  .infrastructure-failure-banner { align-items: flex-start; flex-wrap: wrap; }
+  .infrastructure-failure-banner button { width: 100%; justify-content: center; }
   .auto-run-controls { justify-content: flex-start; flex-wrap: wrap; }
   .auto-run-options { grid-template-columns: 1fr; }
   .auto-run-statuses { flex-wrap: wrap; }

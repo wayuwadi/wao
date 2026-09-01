@@ -44,6 +44,12 @@ public record AiRunDto(
         String branchName,
         /** 本次是在修哪一次失败的运行；不是重跑时为 null。 */
         String retryOfRunId,
+        /** 基础设施故障为 INFRASTRUCTURE；普通任务失败为 null。 */
+        String failureKind,
+        /** 可用于归并同原因故障的稳定代码；普通任务失败为 null。 */
+        String failureCode,
+        /** 面向用户的故障原因名称；普通任务失败为 null。 */
+        String failureLabel,
         String resultSummary,
         /** AI 为本次运行产出的持久化单文件 HTML 报告；没有报告时为 null。 */
         String reportUrl,
