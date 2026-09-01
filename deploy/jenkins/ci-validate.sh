@@ -98,6 +98,9 @@ grep -Fq -- '--network host' deploy/jenkins/ci-backend-test.sh
 grep -Fq -- '-v "$docker_socket:$docker_socket"' deploy/jenkins/ci-backend-test.sh
 grep -Fq -- '"-Dapi.version=${WAO_DOCKER_API_VERSION:-1.40}"' deploy/jenkins/ci-backend-test.sh
 grep -Fq 'Required MySQL contract test did not run successfully' deploy/jenkins/ci-backend-test.sh
+grep -Fq 'chroot /host /usr/bin/id -u jenkins' deploy/jenkins/apply-controller-config.sh
+grep -Fq 'install -d -o "$jenkins_uid" -g "$jenkins_gid"' deploy/jenkins/apply-controller-config.sh
+! grep -Fq 'install -d -o jenkins -g jenkins' deploy/jenkins/apply-controller-config.sh
 grep -Fq 'mysql:9.7.0' wao-server/src/test/java/cn/wayuwa/wao/FeishuWebhookMigrationMySqlTest.java
 grep -Fq '.withConfigurationOverride("mysql-9-test-conf")' wao-server/src/test/java/cn/wayuwa/wao/FeishuWebhookMigrationMySqlTest.java
 

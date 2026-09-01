@@ -87,9 +87,20 @@ docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
         exit 1
       }
     done
+    # The release image intentionally has only the unprivileged "wao" user;
+    # resolve Jenkins ownership from the mounted host instead of asking the
+    # container-side install(1) to resolve a user that does not exist there.
+    jenkins_uid="$(chroot /host /usr/bin/id -u jenkins)"
+    jenkins_gid="$(chroot /host /usr/bin/id -g jenkins)"
+    case "$jenkins_uid:$jenkins_gid" in
+      *[!0-9:]*|:|*:|:*)
+        echo "Invalid Jenkins host ownership: $jenkins_uid:$jenkins_gid" >&2
+        exit 1
+        ;;
+    esac
     cp /workspace/deploy/jenkins/jenkins.yaml /host/etc/jenkins/jenkins.yaml
-    install -d -o jenkins -g jenkins -m 0700 /host/var/lib/jenkins/.ssh
-    install -o jenkins -g jenkins -m 0600 \
+    install -d -o "$jenkins_uid" -g "$jenkins_gid" -m 0700 /host/var/lib/jenkins/.ssh
+    install -o "$jenkins_uid" -g "$jenkins_gid" -m 0600 \
       /host/etc/jenkins/secrets/github-known-hosts \
       /host/var/lib/jenkins/.ssh/known_hosts
     cp /workspace/deploy/jenkins/plugins.txt /host/etc/jenkins/plugins.txt
