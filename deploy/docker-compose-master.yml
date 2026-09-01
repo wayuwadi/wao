@@ -193,7 +193,9 @@ services:
         ALPINE_MIRROR_HOST: ${ALPINE_MIRROR_HOST:-mirrors.aliyun.com}
     image: wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
-    network_mode: host
+    networks: [wao]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       codex-vpn:
         condition: service_healthy
@@ -285,7 +287,7 @@ services:
       WECHAT_OFFICIAL_APP_ID: ${WECHAT_OFFICIAL_APP_ID:-}
       WECHAT_OFFICIAL_APP_SECRET: ${WECHAT_OFFICIAL_APP_SECRET:-}
       WECHAT_OFFICIAL_TOKEN: ${WECHAT_OFFICIAL_TOKEN:-}
-      WAO_AI_CODEX_PROXY_URL: http://${MASTER_BIND_IP:-host.docker.internal}:18888
+      WAO_AI_CODEX_PROXY_URL: http://codex-egress-proxy:18888
     depends_on:
       redis-master:
         condition: service_healthy

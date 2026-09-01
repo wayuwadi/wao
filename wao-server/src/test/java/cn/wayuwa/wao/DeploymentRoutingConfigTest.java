@@ -544,7 +544,7 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void masterUsesHeadlessVpnAndHostNetworkProxyRestrictedToDockerSources() throws IOException {
+    void masterUsesHeadlessVpnAndBridgeProxyRestrictedToDockerSources() throws IOException {
         String compose = readFromRepository("deploy/docker-compose-master.yml");
         String deployScript = readFromRepository("deploy/scripts/deploy-linux.sh");
         String vpnService = section(compose, "  codex-vpn:", "\n  codex-egress-proxy:");
@@ -563,13 +563,14 @@ class DeploymentRoutingConfigTest {
                 .doesNotContain("ports:");
         assertThat(proxyService)
                 .contains("target: codex-egress-proxy")
-                .contains("network_mode: host")
+                .contains("networks: [wao]")
+                .contains("host.docker.internal:host-gateway")
                 .contains("codex-vpn:")
                 .contains("condition: service_healthy")
                 .contains("/usr/local/bin/healthcheck-codex-egress")
-                .doesNotContain("ports:");
+                .doesNotContain("ports:", "network_mode: host");
         assertThat(serverService)
-                .contains("WAO_AI_CODEX_PROXY_URL: http://${MASTER_BIND_IP:-host.docker.internal}:18888")
+                .contains("WAO_AI_CODEX_PROXY_URL: http://codex-egress-proxy:18888")
                 .contains("codex-egress-proxy:")
                 .contains("condition: service_healthy")
                 .contains("host.docker.internal:host-gateway");
@@ -592,7 +593,7 @@ class DeploymentRoutingConfigTest {
                 .contains("Allow 127.0.0.1")
                 .contains("Allow 172.16.0.0/12")
                 .contains("ConnectPort 443")
-                .contains("Upstream http 127.0.0.1:7897")
+                .contains("Upstream http host.docker.internal:7897")
                 .doesNotContain("Allow 0.0.0.0/0");
     }
 
