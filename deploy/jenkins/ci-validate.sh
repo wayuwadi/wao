@@ -5,6 +5,7 @@ sh deploy/scripts/test-render-nginx-config.sh
 sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
 sh deploy/scripts/test-linux-slave-availability.sh
+sh deploy/scripts/test-redis-sentinel-policy.sh
 sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
@@ -27,6 +28,7 @@ for script in \
   deploy/scripts/test-ensure-jumpserver-certificate.sh \
   deploy/scripts/ensure-jumpserver-certificate.sh \
   deploy/scripts/install-release-linux.sh \
+  deploy/scripts/test-redis-sentinel-policy.sh \
   deploy/jenkins/ci-deploy.sh \
   deploy/jenkins/resolve-batch-base.sh \
   deploy/jenkins/test-resolve-batch-base.sh \

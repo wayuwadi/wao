@@ -56,7 +56,16 @@ printf '%s\n' "${redis_status}" |
 
 sentinel_master="$(docker exec "${sentinel_id}" sh -c 'redis-cli --no-auth-warning -p 26379 -a "$REDIS_PASS" SENTINEL get-master-addr-by-name "${REDIS_MASTER_NAME:-wao-master}"')"
 test -n "${sentinel_master}" || { echo 'Sentinel did not return a master address.' >&2; exit 1; }
-printf 'sentinel_master=%s\n' "$(printf '%s' "${sentinel_master}" | tr '\n' ':' | sed 's/:$//')"
+expected_master_host="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "${sentinel_id}" |
+  sed -n 's/^REDIS_MASTER_HOST=//p')"
+sentinel_master_host="$(printf '%s\n' "${sentinel_master}" | sed -n '1p' | tr -d '\r')"
+sentinel_master_port="$(printf '%s\n' "${sentinel_master}" | sed -n '2p' | tr -d '\r')"
+test -n "${expected_master_host}" || { echo 'Sentinel has no declared Redis master host.' >&2; exit 1; }
+if [ "${sentinel_master_host}:${sentinel_master_port}" != "${expected_master_host}:6379" ]; then
+  echo "Sentinel points to ${sentinel_master_host}:${sentinel_master_port}; expected ${expected_master_host}:6379." >&2
+  exit 1
+fi
+printf 'sentinel_master=%s:%s\n' "${sentinel_master_host}" "${sentinel_master_port}"
 
 health="$(docker exec "${gateway_id}" curl -kfsS https://127.0.0.1:9000/actuator/health)"
 hello="$(docker exec "${gateway_id}" curl -kfsS https://127.0.0.1:9000/api/hello)"
