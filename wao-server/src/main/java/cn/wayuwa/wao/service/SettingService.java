@@ -75,6 +75,12 @@ public class SettingService {
     public static final String QUICK_COLLECT_TRIGGER_EMOJI = "feishu.quick-collect.trigger-emoji";
     /** AI Run 成功、任务进入待验收阶段时的表情。 */
     public static final String QUICK_COLLECT_COMPLETED_EMOJI = "feishu.quick-collect.completed-emoji";
+    /** 群聊润色：精确 @ 自定义机器人后，把结果写回当前成员润色历史。 */
+    public static final String FEISHU_TEXT_POLISH_ENABLED = "feishu.text-polish.enabled";
+    /** 群聊里用于触发润色的自定义机器人显示名。 */
+    public static final String FEISHU_TEXT_POLISH_MENTION_NAME = "feishu.text-polish.mention-name";
+    /** 润色结果发送使用的通用 Webhook 注册表稳定 id。 */
+    public static final String FEISHU_TEXT_POLISH_WEBHOOK_ID = "feishu.text-polish.webhook-id";
     /** 文件与图床的运行时限制；上限仍受网关和 Spring multipart 部署基线约束。 */
     public static final String FILE_UPLOAD_MAX_MB = "files.upload-max-mb";
     public static final String IMAGE_UPLOAD_MAX_MB = "images.upload-max-mb";

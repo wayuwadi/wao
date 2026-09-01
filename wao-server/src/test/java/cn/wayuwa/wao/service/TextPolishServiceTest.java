@@ -83,4 +83,25 @@ class TextPolishServiceTest {
 
         verify(records).listOwned("wg");
     }
+
+    @Test
+    void asynchronousResultUsesStableIdAndDoesNotDuplicateHistory() {
+        var created = service.recordResult("tp-stable", "wg", "先结论", "原文", "结果");
+
+        assertThat(created.id()).isEqualTo("tp-stable");
+        verify(records).insert(any(TextPolishRecordEntity.class));
+
+        TextPolishRecordEntity existing = new TextPolishRecordEntity();
+        existing.setId("tp-stable");
+        existing.setMemberId("wg");
+        existing.setPromptSnapshot("先结论");
+        existing.setOriginalText("原文");
+        existing.setPolishedText("结果");
+        existing.setCreatedAt(java.time.LocalDateTime.now());
+        when(records.selectById("tp-stable")).thenReturn(existing);
+
+        assertThat(service.recordResult("tp-stable", "wg", "先结论", "原文", "结果").id())
+                .isEqualTo("tp-stable");
+        verify(records, org.mockito.Mockito.times(1)).insert(any(TextPolishRecordEntity.class));
+    }
 }
