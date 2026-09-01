@@ -15,6 +15,10 @@ test -s "${config_file}" || {
   echo "Codex 出站缺少 Clash Verge 运行配置：${config_file}" >&2
   exit 1
 }
+grep -Eq '^mixed-port:[[:space:]]*7897([[:space:]]|$)' "${config_file}" || {
+  echo 'Codex 出站的 Clash Verge mixed-port 必须为 7897。' >&2
+  exit 1
+}
 
 if ! "${mihomo_bin}" -d "${config_dir}" -f "${config_file}" -t >/dev/null 2>&1; then
   echo 'Codex 出站的 Clash Verge 运行配置无效。' >&2

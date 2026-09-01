@@ -20,11 +20,11 @@ Linux1 通过 SSH 回环转发复用 Linux2 的 `7897`，因此同一个桌面�
 - Linux2 发布时由 Compose 启动 `codex-vpn` 服务。容器只读挂载系统已安装的静态 `verge-mihomo`，并以
   部署用户 UID/GID 读取 Clash Verge 已生成的私有 `clash-verge.yaml`；订阅、节点和账号数据不复制到仓库、
   镜像或日志。配置缺失或校验失败时拒绝启动。
-- 服务不依赖图形会话，异常退出后由 Docker 自动重启。每次主节点部署都会校验配置并强制重建它，再通过
-  本机 `127.0.0.1:7897` 请求真实 ChatGPT 额度端点；只有 HTTP 200 或未带登录态时的 401 表示链路可用。
-- tinyproxy 加入 WAO bridge 网络，让 `wao-server` 通过服务名访问 ACL 受限的 `18888`；tinyproxy 再经
-  `host.docker.internal` 显式把 HTTPS 请求上送到宿主 `127.0.0.1:7897`。这避免部分 Linux 防火墙阻断
-  bridge 容器回连宿主物理网卡地址。Linux1 仍只通过 SSH 回环转发访问 `7897`，不增加公网或局域网监听。
+- 服务不依赖图形会话，异常退出后由 Docker 自动重启。每次主节点部署都会校验配置并强制重建它；启动脚本
+  只在容器临时配置中允许 WAO bridge 访问，宿主的 Clash Verge 私有配置不被改写。
+- `codex-vpn` 与 tinyproxy 都加入 WAO bridge，tinyproxy 直接把 HTTPS 请求上送到 `codex-vpn:7897`；
+  `wao-server` 再通过服务名访问 ACL 受限的 `18888`，整条应用链路不穿越主机防火墙。mihomo 的 7897 只发布到
+  宿主 `127.0.0.1` 供 Linux1 SSH 回环转发复用，不增加公网或局域网监听。
 - `codex-egress-proxy` 的容器健康检查改为经 `18888 -> 7897` 访问真实 ChatGPT；只检查本地端口不再算健康。
   `codex-vpn` 和内部代理的真实链路健康检查是主节点代理重建门禁，发布后继续暴露出口失效。
 - 全站业务部署终态仍不由 Codex 出口决定：生产总体验证保留明确告警，普通 API 不因外部 AI 服务波动被

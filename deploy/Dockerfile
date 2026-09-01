@@ -5,7 +5,8 @@ RUN sed -i "s/dl-cdn.alpinelinux.org/${ALPINE_MIRROR_HOST}/g" /etc/apk/repositor
     && install -d -o tinyproxy -g tinyproxy /run/tinyproxy
 COPY deploy/tinyproxy/codex-egress.conf /etc/tinyproxy/tinyproxy.conf
 COPY deploy/scripts/healthcheck-codex-egress.sh /usr/local/bin/healthcheck-codex-egress
-RUN chmod 0755 /usr/local/bin/healthcheck-codex-egress
+COPY deploy/scripts/start-codex-vpn.sh /usr/local/bin/start-codex-vpn
+RUN chmod 0755 /usr/local/bin/healthcheck-codex-egress /usr/local/bin/start-codex-vpn
 USER tinyproxy
 ENTRYPOINT ["tinyproxy", "-d", "-c", "/etc/tinyproxy/tinyproxy.conf"]
 
