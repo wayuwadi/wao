@@ -16,6 +16,10 @@ class AiRunFailureClassifierTest {
             assertThat(value.code()).isEqualTo("RUNNER_GITHUB_CREDENTIALS");
             assertThat(value.label()).isEqualTo("执行节点 GitHub 凭据不可用");
         });
+        assertThat(AiRunFailureClassifier.classify("failed",
+                "PR 创建失败：gh 命令返回 401，GitHub 无法完成认证"))
+                .hasValueSatisfying(value -> assertThat(value.code())
+                        .isEqualTo("RUNNER_GITHUB_CREDENTIALS"));
     }
 
     @Test

@@ -22,7 +22,7 @@ public final class AiRunFailureClassifier {
                 || normalized.contains("gh_token")
                 || normalized.contains("requires authentication");
         boolean credentialSymptom = normalized.contains("requires authentication")
-                || normalized.contains("http 401")
+                || normalized.contains("401")
                 || normalized.contains("gh_token")
                 || normalized.contains("github 凭据")
                 || normalized.contains("github 认证")
