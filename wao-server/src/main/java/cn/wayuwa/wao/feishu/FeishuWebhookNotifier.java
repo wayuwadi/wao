@@ -165,6 +165,45 @@ public class FeishuWebhookNotifier {
     }
 
     /**
+     * 以业务显式选择的自定义机器人发送普通文本。
+     *
+     * <p>这是用户主动 @ 机器人的直接答复，不受自动通知静默策略影响；目标仍必须存在且启用。
+     * Webhook 地址只在本方法内解密使用，不返回给调用方。
+     *
+     * @param webhookId 通用 Webhook 注册表稳定 id
+     * @param text 要直接显示在群里的文字
+     */
+    public void sendText(String webhookId, String text) {
+        if (webhookId == null || webhookId.isBlank()) {
+            throw new FeishuApiException("请选择飞书 webhook 配置");
+        }
+        FeishuWebhookConfigService.NotificationTarget target = webhooks.enabledTarget(webhookId.trim());
+        sendTextToUrl(target.url(), text);
+    }
+
+    private void sendTextToUrl(String url, String text) {
+        if (url == null || url.isBlank()) {
+            throw new FeishuApiException("请先填写飞书 webhook 地址");
+        }
+        if (text == null || text.isBlank()) {
+            throw new FeishuApiException("飞书文本消息不能为空");
+        }
+        JsonNode res;
+        try {
+            res = client.post().uri(url).contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("msg_type", "text", "content", Map.of("text", text)))
+                    .retrieve().body(JsonNode.class);
+        } catch (RestClientException ex) {
+            throw new FeishuApiException("无法连接飞书 webhook，请检查地址是否正确", ex);
+        }
+        int code = res == null ? -1 : res.path("code").asInt(res.path("StatusCode").asInt(0));
+        if (code != 0) {
+            throw new FeishuApiException("飞书 webhook 返回错误："
+                    + (res == null ? "空响应" : res.path("msg").asText("")));
+        }
+    }
+
+    /**
      * 往指定 webhook 发一张漫画风格卡片。
      *
      * @param url  webhook 地址

@@ -1125,6 +1125,23 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/SaveQuickCollectConfigRequest' } } }
       responses: { '200': { description: OK } }
+  /feishu/text-polish/config:
+    get:
+      summary: 群聊润色机器人配置；只返回 Webhook 稳定 id 和名称，不返回地址
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { schema: { $ref: '#/components/schemas/FeishuTextPolishConfigResponse' } } }
+    put:
+      summary: 保存群聊润色开关、精确触发名称和出站 Webhook
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SaveFeishuTextPolishConfigRequest' } } }
+      responses:
+        '200':
+          description: 保存后的安全配置
+          content: { application/json: { schema: { $ref: '#/components/schemas/FeishuTextPolishConfigResponse' } } }
+        '400': { description: 触发名称为空/超长，或启用时未选择真实可用的 Webhook }
   /feishu/events:
     post:
       summary: 公开：飞书事件订阅回调（URL 校验与群消息都走这里）
@@ -1141,8 +1158,9 @@ paths:
       responses:
         '200': { description: OK }
         '400': { description: Verification Token 不匹配或事件解密失败 }
-  # 开启快速收集时，服务端另使用已配群聊归档 App 凭据主动读取目标群消息及其人工派工表情。
-  # 主动轮询不新增 HTTP API；只处理精确提及当前机器人 open_id 的用户消息，表情派工仍校验创建者身份并持久去重。
+  # 开启快速收集或群聊润色时，服务端使用已配群聊归档 App 凭据每 15 秒主动读取目标群。
+  # 快速收集精确匹配应用机器人 open_id，并主动读取人工派工表情和撤回状态；群聊润色精确匹配配置的 mention 名称。
+  # 两条链路分别持久去重，表情派工仍校验任务创建者身份。
   /files:
     get:
       summary: 当前成员可见的文件元数据列表（含 contentType 与可空 projectId，不读取二进制正文）
@@ -1828,6 +1846,26 @@ components:
           type: string
           enum: [GET, DONE, StatusInFlight, CheckMark]
           description: AI Run 成功、任务待验收表情；默认 DONE
+    SaveFeishuTextPolishConfigRequest:
+      type: object
+      properties:
+        enabled: { type: boolean, description: 是否读取目标群中的 @润色机器人 消息 }
+        webhookId: { type: string, description: 通用 Webhook 注册表稳定 id；接口不接受或返回地址明文 }
+        mentionName: { type: string, minLength: 1, maxLength: 64, description: 群内自定义机器人精确显示名 }
+    FeishuTextPolishConfig:
+      type: object
+      required: [enabled, webhookId, webhookName, mentionName]
+      properties:
+        enabled: { type: boolean }
+        webhookId: { type: string }
+        webhookName: { type: string, description: 当前稳定 id 对应的安全显示名；配置已删除时为空 }
+        mentionName: { type: string, minLength: 1, maxLength: 64 }
+    FeishuTextPolishConfigResponse:
+      type: object
+      required: [code, data]
+      properties:
+        code: { type: integer }
+        data: { $ref: '#/components/schemas/FeishuTextPolishConfig' }
     SaveWebhookRequest:
       type: object
       deprecated: true
