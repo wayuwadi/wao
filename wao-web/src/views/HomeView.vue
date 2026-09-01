@@ -68,7 +68,9 @@ const recentActivitiesLoading = ref(true)
 const recentActivitiesError = ref('')
 const recentActivitiesPage = ref(1)
 const recentActivitiesTotal = ref(0)
-const RECENT_ACTIVITY_PAGE_SIZE = 8
+const RUN_GRID_PAGE_SIZE = 10
+const activeRunsPage = ref(1)
+const RECENT_ACTIVITY_PAGE_SIZE = RUN_GRID_PAGE_SIZE
 const runners = ref<AiRunner[]>([])
 const workflows = ref<AiWorkflow[]>([])
 const loading = ref(true)
@@ -162,6 +164,11 @@ let timer: ReturnType<typeof setInterval> | null = null
 let quotaTimer: ReturnType<typeof setInterval> | null = null
 
 const activeRuns = computed(() => runs.value.filter((run) => ['queued', 'claimed', 'running'].includes(run.status)))
+const activeRunsPages = computed(() => Math.max(1, Math.ceil(activeRuns.value.length / RUN_GRID_PAGE_SIZE)))
+const visibleActiveRuns = computed(() => {
+  const offset = (activeRunsPage.value - 1) * RUN_GRID_PAGE_SIZE
+  return activeRuns.value.slice(offset, offset + RUN_GRID_PAGE_SIZE)
+})
 const onlineRunners = computed(() => runners.value.filter((runner) => runner.online))
 const totalSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.maxConcurrency, 0))
 const usedSlots = computed(() => onlineRunners.value.reduce((sum, runner) => sum + runner.activeRuns, 0))
@@ -1017,6 +1024,10 @@ async function openRunHistory(page = 1) {
 const runHistoryPages = computed(() => Math.max(1, Math.ceil(runHistoryTotal.value / RUN_HISTORY_PAGE_SIZE)))
 const recentActivitiesPages = computed(() => Math.max(1, Math.ceil(recentActivitiesTotal.value / RECENT_ACTIVITY_PAGE_SIZE)))
 
+watch(activeRunsPages, (pageCount) => {
+  if (activeRunsPage.value > pageCount) activeRunsPage.value = pageCount
+})
+
 /** 失败的运行可以带着报错重跑一次：AI 接着这个错往下修，不用从头再来。 */
 async function rerun(run: AiRun) {
   if (rerunning.value) return
@@ -1396,8 +1407,8 @@ onBeforeUnmount(() => {
             <button v-if="!runnableAutoRunWorkflows.length" @click="view = 'workflows'">接入工作流</button>
           </div>
         </div>
-        <div v-else class="run-grid">
-          <button v-for="run in activeRuns" :key="run.id" class="run-card" @click="inspectRun(run)">
+        <div v-else class="run-grid" data-layout="5x2">
+          <button v-for="run in visibleActiveRuns" :key="run.id" class="run-card" @click="inspectRun(run)">
             <div class="run-top">
               <span class="status" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">
                 <i :class="[metaFor(run).icon, { spin: run.status === 'running' && run.deliveryStage !== 'waiting_deployment' }]"></i>
@@ -1429,6 +1440,15 @@ onBeforeUnmount(() => {
             </div>
           </button>
         </div>
+        <WaoPagination
+          v-if="activeRuns.length > RUN_GRID_PAGE_SIZE"
+          class="active-runs-pagination"
+          :page="activeRunsPage"
+          :page-count="activeRunsPages"
+          :total="activeRuns.length"
+          aria-label="正在运行分页"
+          @update:page="activeRunsPage = $event"
+        />
       </section>
 
       <section id="recent-ai-runs" class="recent-section" data-page-anchor="最近 AI 运行">
@@ -1469,7 +1489,7 @@ onBeforeUnmount(() => {
         <div v-if="recentActivitiesLoading" class="recent-state"><i class="ri-loader-4-line spin"></i>正在读取最近 AI 运行…</div>
         <div v-else-if="recentActivitiesError" class="recent-state error" role="alert"><i class="ri-error-warning-line"></i><span>{{ recentActivitiesError }}</span><button @click="changeRecentActivitiesPage(recentActivitiesPage)">重试</button></div>
         <div v-else-if="!recentActivities.length" class="recent-state"><i class="ri-inbox-2-line"></i>当前筛选下还没有已结束的运行。</div>
-        <div v-else class="recent-grid">
+        <div v-else class="recent-grid" data-layout="5x2">
           <button v-for="activity in recentActivities" :key="`${activity.type}-${activity.id}`" class="recent-card" :aria-label="`${activity.title}，${activityMeta(activity).label}，打开详情`" @click="openActivity(activity)">
             <span class="recent-card-top">
               <span class="recent-icon" :title="activityTypeMeta(activity).label" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }"><i :class="activityTypeMeta(activity).icon"></i></span>
@@ -2445,7 +2465,8 @@ onBeforeUnmount(() => {
 .history-link:hover { background: var(--wao-primary-tint); }
 .live { color: var(--wao-text-weak); font-size: 10.5px; }
 .live i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #35a86e; }
-.run-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+.run-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.active-runs-pagination { margin-top: 10px; }
 .run-card {
   padding: 12px;
   border: 1px solid var(--wao-line);
@@ -2710,7 +2731,7 @@ onBeforeUnmount(() => {
 .flow-actions .primary:disabled { opacity: .6; cursor: not-allowed; }
 .recent-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 .activity-filter-bar {
@@ -2987,7 +3008,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .section-head { margin-bottom: 8px; }
   .section-head h2 { font-size: 14px; }
   .section-head p { margin-top: 2px; font-size: 9.5px; }
-  .recent-grid { grid-template-columns: 1fr; }
+  .run-grid, .recent-grid { grid-template-columns: 1fr; }
   .auto-run-controls { justify-content: flex-start; flex-wrap: wrap; }
   .auto-run-options { grid-template-columns: 1fr; }
   .auto-run-statuses { flex-wrap: wrap; }
@@ -3016,7 +3037,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
 }
 @media (min-width: 761px) and (max-width: 1180px) {
   .home-primary { grid-template-columns: minmax(0, 1fr); }
-  .recent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .run-grid, .recent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
