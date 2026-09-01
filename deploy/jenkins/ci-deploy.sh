@@ -132,6 +132,30 @@ slave_deploy_ssh() {
   command timeout --foreground --signal=TERM 30m ssh -F "$WAO_SSH_CONFIG" "$@"
 }
 
+run_slave_installer() {
+  local remote_command installer_exit
+  remote_command="$1"
+  if slave_deploy_ssh -o ConnectTimeout=15 "wao-slave" "$remote_command"; then
+    return 0
+  else
+    installer_exit="$?"
+  fi
+
+  # The Linux1 reverse tunnel can reconnect after the remote installer has
+  # already committed the release. The installer deliberately deletes its
+  # one-time inputs on exit, so rerunning the same command turns a completed
+  # deployment into a misleading "Release input not found" failure. Verify
+  # the desired immutable version instead; the outer node retry will upload a
+  # fresh release only when this post-check also fails.
+  echo 'Linux1 部署连接异常，正在按目标版本执行远端完成态验收。'
+  if retry_remote "Linux1 部署完成态验收" slave_ssh -o ConnectTimeout=15 "wao-slave" \
+    "cd \"\$HOME/deploy/wao\" && sh deploy/scripts/validate-deployment-node.sh slave '$WAO_GIT_SHA'"; then
+    echo 'Linux1 部署连接虽已中断，但目标版本与节点健康检查均已通过。'
+    return 0
+  fi
+  return "$installer_exit"
+}
+
 # After the Linux-local calls below are handled explicitly, every plain SSH/SCP
 # operation in this script targets the cloud alias from the strict config.
 ssh() { command ssh -F "$WAO_SSH_CONFIG" "$@"; }
@@ -229,7 +253,7 @@ deploy_slave() {
       "wao-slave:$remote_dir/$remote_snapshot" || return
     snapshot_argument="$remote_dir/$remote_snapshot"
   fi
-  retry_remote "Linux1 从节点" slave_deploy_ssh -o ConnectTimeout=15 "wao-slave" \
+  run_slave_installer \
     "sh '$remote_dir/$remote_installer' '$remote_dir/$remote_release' '$remote_dir/$remote_secrets' '$remote_dir/$remote_shared_env' '$remote_dir/$remote_certificate' '$remote_dir/$remote_images' '$WAO_GIT_SHA' '$snapshot_argument'" || return
   slave_deployed=true
 }
