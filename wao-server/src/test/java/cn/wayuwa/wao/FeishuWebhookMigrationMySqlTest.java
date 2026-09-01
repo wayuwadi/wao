@@ -20,7 +20,8 @@ class FeishuWebhookMigrationMySqlTest {
     private static final String URL = "https://open.feishu.cn/open-apis/bot/v2/hook/migration-secret-9012";
 
     @Container
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:9.0")
+    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:9.7.0")
+            .withConfigurationOverride("mysql-9-test-conf")
             .withDatabaseName("wao_webhook_migration_test")
             .withUsername("wao_test")
             .withPassword("wao_test");

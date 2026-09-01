@@ -93,6 +93,13 @@ python3 -m py_compile \
   deploy/jumpserver/verify_wao_sso.py
 grep -Fq 'checkend 1209600' deploy/jenkins/ci-production-verify.sh
 ! grep -Fq '.clear()' deploy/jumpserver/bootstrap_wao_assets.py
+grep -Fq -- '--group-add "$docker_socket_gid"' deploy/jenkins/ci-backend-test.sh
+grep -Fq -- '--network host' deploy/jenkins/ci-backend-test.sh
+grep -Fq -- '-v "$docker_socket:$docker_socket"' deploy/jenkins/ci-backend-test.sh
+grep -Fq -- '"-Dapi.version=${WAO_DOCKER_API_VERSION:-1.40}"' deploy/jenkins/ci-backend-test.sh
+grep -Fq 'Required MySQL contract test did not run successfully' deploy/jenkins/ci-backend-test.sh
+grep -Fq 'mysql:9.7.0' wao-server/src/test/java/cn/wayuwa/wao/FeishuWebhookMigrationMySqlTest.java
+grep -Fq '.withConfigurationOverride("mysql-9-test-conf")' wao-server/src/test/java/cn/wayuwa/wao/FeishuWebhookMigrationMySqlTest.java
 
 check_migration_versions() {
   migration_dir="$1"

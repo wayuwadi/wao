@@ -184,7 +184,7 @@
   以及安全运行不经 3 分钟 JVM stale requeue、只经 DB 30 分钟硬超时的终态竞争；
   空请求体、重复 JSON 键、尾随 JSON token、非法 JSON、缺失 / 额外字段、无体动作携带正文、越界引用、三个非空结论分类的句界 / 列表 / 标题形式、
   建议字段开头的“AI 建议：”/ 同名标题、提示注入和 AI 终态提示正文清空。
-- MySQL 集成验收使用 `mysql:9.0` Testcontainers；Docker 可用时执行 Flyway V1–V76、预置同标题存活 / 软删重复旧归档后迁到 V77，验证优先存活 `MIN(id)` 与全删回退，并在真实 MySQL 上覆盖全局活动唯一抢占、数据库 lease、
+- MySQL 集成验收使用与生产一致的 `mysql:9.7.0` Testcontainers；Docker 可用时执行 Flyway V1–V76、预置同标题存活 / 软删重复旧归档后迁到 V77，验证优先存活 `MIN(id)` 与全删回退，并在真实 MySQL 上覆盖全局活动唯一抢占、数据库 lease、
   归档身份 / CAS / 软删复用、AI 入队关联丢失时事务回滚，以及数据库时间驱动的 `secure_*` 超时清理。Docker 不可用时通过 `disabledWithoutDocker` 显式跳过，不能改用 H2 冒充 MySQL 9 验收。
 - Runner 验收覆盖：只读分析使用临时空仓库、`read-only` 与全部强制无工具开关；环境剥离 GitHub Token；正常、非零、单调时钟超时及 v2 回传失败时均清理临时仓库和 `CODEX_HOME`；恶意聊天要求读取本机、联网、
   调用子代理或 GitHub 时仍无对应工具能力；旧 CLI 不支持开关时失败关闭且不降级；非零退出的部分报告不回传，服务端只落稳定错误。

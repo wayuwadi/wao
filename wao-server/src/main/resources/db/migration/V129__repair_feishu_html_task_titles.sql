@@ -2,20 +2,22 @@
 -- 可见文字从原始描述重新提取，避免旧标题已经截断后丢失第一段；描述本身继续保留原有富文本格式。
 WITH visible_text AS (
     SELECT t.id,
-           TRIM(REGEXP_REPLACE(
+           REGEXP_REPLACE(
                REGEXP_REPLACE(
                    t.description,
                    '<[[:space:]]*/?[[:space:]]*(p|div|h[1-6]|li|ul|ol|blockquote)[^>]*>|<[[:space:]]*br[[:space:]]*/?[[:space:]]*>',
-                   CHAR(10), 1, 0, 'i'),
+                   CONVERT(CHAR(10) USING utf8mb4), 1, 0, 'i'),
                '<[[:space:]]*/?[[:space:]]*[[:alpha:]][^>]*>',
-               '', 1, 0, 'i')) AS body
+               '', 1, 0, 'i') AS body
     FROM task t
     JOIN feishu_quick_collect_event e ON e.target_id = t.id
     WHERE t.title REGEXP '<[[:space:]]*/?[[:space:]]*[[:alpha:]][^>]*>'
       AND t.description IS NOT NULL
 ), first_paragraph AS (
     SELECT id,
-           TRIM(SUBSTRING_INDEX(body, CHAR(10), 1)) AS line
+           TRIM(SUBSTRING_INDEX(
+               REGEXP_REPLACE(body, '^[[:space:]]+', ''),
+               CONVERT(CHAR(10) USING utf8mb4), 1)) AS line
     FROM visible_text
     WHERE body REGEXP '[^[:space:]]'
 ), decoded AS (
