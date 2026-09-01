@@ -28,7 +28,7 @@ public class FunctionHealthService {
             "home", "navigation", "projects", "ideas", "decisions", "todo", "calendar", "workday-rhythm",
             "action-plans", "appearance", "food", "workspaces", "weekly-report", "life-review",
             "knowledge", "memory", "english-learning", "vocabulary", "skills", "skill-connections",
-            "drawings", "files", "automation", "crawler-capabilities", "text-polish", "data-center", "dashboard",
+            "drawings", "files", "automation", "crawler-capabilities", "account-resources", "text-polish", "data-center", "dashboard",
             "system-reports", "request-monitoring", "devices", "vault", "games", "tianren", "settings");
     private static final Set<String> FEATURE_SET = Set.copyOf(FEATURES);
     private static final Map<String, String> SCOPE_FEATURE = Map.ofEntries(
@@ -48,6 +48,7 @@ public class FunctionHealthService {
             Map.entry("drawings", "drawings"), Map.entry("files", "files"),
             Map.entry("automation", "automation"), Map.entry("crawler", "crawler-capabilities"),
             Map.entry("crawler-capabilities", "crawler-capabilities"), Map.entry("polish", "text-polish"),
+            Map.entry("account-resources", "account-resources"),
             Map.entry("data-center", "data-center"), Map.entry("dashboard", "dashboard"),
             Map.entry("report", "system-reports"), Map.entry("monitoring", "request-monitoring"),
             Map.entry("http", "request-monitoring"), Map.entry("devices", "devices"),

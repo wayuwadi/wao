@@ -253,6 +253,16 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 爬虫能力与 `automation_job` 分离：前者是源码资产，后者是绑定已登记 `JobHandler` 的调度实例。
 当前服务只编目源码，不直接执行任意代码；运行边界见 ADR-187。
 
+### account_resource / verification_message（账号资源与验证码转发，V131）
+
+`account_resource` 保存组织共享平台账号：平台、可识别名称、登录标识、规范化手机号、备注、启停状态、递增版本以及
+创建/修改成员。账号密码使用 `secret_ciphertext` + `secret_nonce` 做 AES-256-GCM 加密，普通列表只返回
+`hasSecret`，不返回密文或明文。
+
+`verification_message` 保存手机转发器的真实入站：消息指纹、规范化手机号、发送方、来源、加密短信正文、加密验证码、
+收到时间和飞书转发状态。`fingerprint` 唯一键阻止设备重试导致重复群消息，`(phone_number, received_at)` 支持爬虫按
+手机号与时效读取最近验证码。入站/爬虫 Token 只以 SHA-256 摘要保存在 `system_setting`；飞书目标保存通用 Webhook
+注册表的稳定 id。详见 [ADR-190](../adr/190-account-resource-verification-forwarding.md)。
 `feishu_notification` 记录每次由自动化实际发出的飞书通知；`feishu_notification_feedback` 记录卡片按钮的真实回调（通知、事件、点击人和正/负反馈）。未点击不产生反馈行，因此报表不会伪造「没做到」。
 
 ### automation_job（任务）

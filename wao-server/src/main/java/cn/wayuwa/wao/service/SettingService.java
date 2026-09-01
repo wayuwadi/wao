@@ -86,6 +86,10 @@ public class SettingService {
     public static final String HTTP_INSPECTION_TOP_N = "http.inspection.top-n";
     public static final String HTTP_INSPECTION_MAX_ENDPOINTS = "http.inspection.max-endpoints";
     public static final String HTTP_INSPECTION_NOTIFICATION_WEBHOOK_ID = "http.inspection.notification-webhook-id";
+    /** 账号资源库的机器集成：令牌只保存 SHA-256 摘要，飞书目标保存稳定配置 id。 */
+    public static final String ACCOUNT_RESOURCE_INGEST_TOKEN_HASH = "account-resources.ingest-token-hash";
+    public static final String ACCOUNT_RESOURCE_CRAWLER_TOKEN_HASH = "account-resources.crawler-token-hash";
+    public static final String ACCOUNT_RESOURCE_NOTIFICATION_WEBHOOK_ID = "account-resources.notification-webhook-id";
     /** 管理员维护的全组织飞书通知策略；成员级站内偏好另存 member_preference。 */
     public static final String NOTIFICATION_POLICY = "notification.policy.v1";
     /** 微信公众号扫码登录；数据库值优先，未保存时兼容部署环境变量。 */

@@ -303,6 +303,12 @@ const router = createRouter({
           meta: { module: 'crawler-capabilities', tabKind: 'module' },
         },
         {
+          path: 'account-resources',
+          name: 'account-resources',
+          component: () => import('@/views/AccountResourcesView.vue'),
+          meta: { module: 'account-resources', tabKind: 'module' },
+        },
+        {
           path: 'games',
           name: 'games',
           component: () => import('@/views/GamesView.vue'),
