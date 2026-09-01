@@ -229,7 +229,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
   },
   appearance: {
     id: 'appearance',
-    label: '形象管理',
+    label: '电子衣库',
     icon: 'ri-shirt-line',
     path: '/appearance',
   },
@@ -335,7 +335,7 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
     },
     {
       id: 'appearance',
-      label: '形象管理',
+      label: '电子衣库',
       icon: 'ri-shirt-line',
       group: 'PERSONAL',
       order: 17,

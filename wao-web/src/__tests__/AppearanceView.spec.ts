@@ -36,6 +36,7 @@ const workspace = (): AppearanceWorkspace => ({
     shoulderCm: null,
     waistCm: null,
     measuredOn: null,
+    imageId: null,
     skinTone: '',
     faceShape: '',
     hairTexture: '',
@@ -76,10 +77,18 @@ describe('AppearanceView', () => {
     const wrapper = mount(AppearanceView)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('衣橱还是空的')
+    expect(wrapper.text()).toContain('电子衣库还是空的')
     expect(wrapper.text()).toContain('所有记录仅当前成员可见')
     expect(wrapper.findAll('.garment-card')).toHaveLength(0)
     expect(wrapper.text()).toContain('整体结构分')
+    expect(wrapper.findAll('.category-summary button').map((item) => item.text())).toEqual([
+      '上衣0',
+      '裤子0',
+      '鞋子0',
+      '外套0',
+      '配饰0',
+      '床品0',
+    ])
   })
 
   it('录入物品后自动持久化且失败时保留完整本机草稿', async () => {
@@ -182,5 +191,74 @@ describe('AppearanceView', () => {
     expect(wrapper.text()).toContain('1 项已逾期')
     expect(wrapper.text()).toContain('本页提醒')
     expect(wrapper.text()).not.toContain('已推送')
+  })
+
+  it('可上传个人形象照并把本次实拍保存到真实穿着记录', async () => {
+    const data = workspace()
+    data.garments.push({
+      id: 'ag-coat',
+      name: '通勤外套',
+      category: '外套',
+      seasons: ['秋'],
+      styles: ['通勤'],
+      colors: ['深蓝'],
+      occasions: ['上班'],
+      material: '棉',
+      status: 'WARDROBE',
+      imageId: null,
+      purchaseDate: null,
+      lastWornDate: null,
+      wearCount: 0,
+      note: '',
+    })
+    vi.mocked(fetchAppearanceWorkspace).mockResolvedValue(data)
+    vi.mocked(uploadAppearancePhoto)
+      .mockResolvedValueOnce({
+        id: 'ap-profile',
+        fileName: 'profile.webp',
+        contentType: 'image/webp',
+        byteSize: 3,
+        url: '/api/appearance/photos/ap-profile',
+      })
+      .mockResolvedValueOnce({
+        id: 'ap-wear',
+        fileName: 'wear.webp',
+        contentType: 'image/webp',
+        byteSize: 3,
+        url: '/api/appearance/photos/ap-wear',
+      })
+    const wrapper = mount(AppearanceView)
+    await flushPromises()
+
+    await wrapper.findAll('.section-tabs button')[2]!.trigger('click')
+    const profileInput = wrapper.get('.profile-photo-upload input').element as HTMLInputElement
+    Object.defineProperty(profileInput, 'files', {
+      configurable: true,
+      value: [new File(['img'], 'profile.webp', { type: 'image/webp' })],
+    })
+    await wrapper.get('.profile-photo-upload input').trigger('change')
+    await flushPromises()
+    expect(wrapper.get('.profile-photo-upload img').attributes('src')).toContain('ap-profile')
+
+    await wrapper.findAll('.section-tabs button')[1]!.trigger('click')
+    await wrapper.get('.head-actions button').trigger('click')
+    await wrapper.get('.editor-modal input[type="checkbox"]').setValue(true)
+    const wearInput = wrapper.get('.editor-modal .photo-upload input').element as HTMLInputElement
+    Object.defineProperty(wearInput, 'files', {
+      configurable: true,
+      value: [new File(['img'], 'wear.webp', { type: 'image/webp' })],
+    })
+    await wrapper.get('.editor-modal .photo-upload input').trigger('change')
+    await flushPromises()
+    await wrapper.get('.editor-modal footer .primary').trigger('click')
+    await vi.advanceTimersByTimeAsync(750)
+    await flushPromises()
+
+    expect(saveAppearanceWorkspace).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        profile: expect.objectContaining({ imageId: 'ap-profile' }),
+        wearLogs: [expect.objectContaining({ imageId: 'ap-wear', garmentIds: ['ag-coat'] })],
+      }),
+    )
   })
 })

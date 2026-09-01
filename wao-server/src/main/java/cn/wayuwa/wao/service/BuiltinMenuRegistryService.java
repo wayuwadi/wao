@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 35;
+    private static final int VERSION = 36;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
@@ -39,7 +39,7 @@ public class BuiltinMenuRegistryService {
             new BuiltinMenuConfigDto("workday-rhythm", "今日节奏", "ri-timer-flash-line", "PERSONAL", 12, true, "TAB"),
             new BuiltinMenuConfigDto("action-plans", "行动计划", "ri-footprint-line", "PERSONAL", 15, false, "TAB"),
             new BuiltinMenuConfigDto("decisions", "决策管理", "ri-route-line", "PERSONAL", 16, true, "TAB"),
-            new BuiltinMenuConfigDto("appearance", "形象管理", "ri-shirt-line", "PERSONAL", 17, true, "TAB"),
+            new BuiltinMenuConfigDto("appearance", "电子衣库", "ri-shirt-line", "PERSONAL", 17, true, "TAB"),
             new BuiltinMenuConfigDto("food", "饮食管理", "ri-restaurant-2-line", "PERSONAL", 18, true, "TAB"),
             new BuiltinMenuConfigDto("calendar", "日历", "ri-calendar-2-line", "PERSONAL", 20, true, "TAB"),
             new BuiltinMenuConfigDto("weekly-report", "周报生成", "ri-file-list-3-line", "PERSONAL", 25, false, "TAB"),
@@ -82,6 +82,7 @@ public class BuiltinMenuRegistryService {
             List<BuiltinMenuConfigDto> menus = canonicalize(stored.menus(), false);
             if (stored.version() < 25) menus = applyWorkbenchDefault(menus);
             if (stored.version() < VERSION) menus = applyCompactDefaults(menus);
+            if (stored.version() < 36) menus = applyElectronicWardrobeDefault(menus);
             return new BuiltinMenuRegistryDto(VERSION, menus);
         } catch (RuntimeException | JsonProcessingException exception) {
             return defaults();
@@ -166,6 +167,18 @@ public class BuiltinMenuRegistryService {
                 return menu;
             }
             return BY_ID.get("navigation");
+        }).toList();
+    }
+
+    /** V36 只把未经定制的旧“形象管理”改名为“电子衣库”，继续保留稳定 id 和用户自定义入口。 */
+    private List<BuiltinMenuConfigDto> applyElectronicWardrobeDefault(List<BuiltinMenuConfigDto> menus) {
+        return menus.stream().map(menu -> {
+            if (!"appearance".equals(menu.id()) || !"形象管理".equals(menu.label())
+                    || !"ri-shirt-line".equals(menu.icon()) || !"PERSONAL".equals(menu.group())
+                    || menu.order() != 17 || !menu.visible() || !"TAB".equals(menu.openMode())) {
+                return menu;
+            }
+            return BY_ID.get("appearance");
         }).toList();
     }
 }

@@ -39,7 +39,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "appearance".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
-                    assertThat(menu.label()).isEqualTo("形象管理");
+                    assertThat(menu.label()).isEqualTo("电子衣库");
                     assertThat(menu.group()).isEqualTo("PERSONAL");
                     assertThat(menu.visible()).isTrue();
                 });
@@ -238,6 +238,29 @@ class BuiltinMenuRegistryServiceTest {
                 new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(24, oldMenus)));
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("我的入口"));
+    }
+
+    @Test
+    void upgradesOnlyTheUntouchedAppearanceLabelToElectronicWardrobe() throws Exception {
+        var oldMenus = new ArrayList<>(service.getRegistry().menus());
+        var appearance = oldMenus.stream().filter(menu -> "appearance".equals(menu.id())).findFirst().orElseThrow();
+        oldMenus.set(oldMenus.indexOf(appearance), new BuiltinMenuConfigDto(
+                appearance.id(), "形象管理", appearance.icon(), appearance.group(), appearance.order(),
+                appearance.visible(), appearance.openMode(), appearance.placement()));
+        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(new ObjectMapper().writeValueAsString(
+                new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(35, oldMenus)));
+
+        assertThat(service.getRegistry().menus()).filteredOn(menu -> "appearance".equals(menu.id()))
+                .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("电子衣库"));
+
+        oldMenus.set(oldMenus.indexOf(oldMenus.stream()
+                        .filter(menu -> "appearance".equals(menu.id())).findFirst().orElseThrow()),
+                new BuiltinMenuConfigDto("appearance", "我的衣橱", "ri-shirt-line",
+                        "PERSONAL", 17, true, "TAB", "MENU"));
+        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(new ObjectMapper().writeValueAsString(
+                new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(35, oldMenus)));
+        assertThat(service.getRegistry().menus()).filteredOn(menu -> "appearance".equals(menu.id()))
+                .singleElement().satisfies(menu -> assertThat(menu.label()).isEqualTo("我的衣橱"));
     }
 
     @Test

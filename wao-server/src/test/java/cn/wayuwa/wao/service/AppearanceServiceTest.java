@@ -60,8 +60,8 @@ class AppearanceServiceTest {
         Outfit outfit = new Outfit("ao-work", "清爽通勤", List.of(shirt.id(), shoes.id()),
                 List.of("通勤"), null, "舒服且容易保持整洁");
         var request = workspace(List.of(shirt, shoes), List.of(outfit), List.of(
-                new WearLog("aw1", yesterday, outfit.id(), List.of(), "行动方便"),
-                new WearLog("aw2", today, outfit.id(), List.of(shirt.id()), "没有短期不适")));
+                new WearLog("aw1", yesterday, outfit.id(), List.of(), "ap-wear-1", "行动方便"),
+                new WearLog("aw2", today, outfit.id(), List.of(shirt.id()), null, "没有短期不适")));
         AppearanceWorkspaceEntity saved = new AppearanceWorkspaceEntity();
         saved.setMemberId("wg");
         saved.setUpdatedAt(LocalDateTime.now());
@@ -75,6 +75,7 @@ class AppearanceServiceTest {
         verify(workspaces).upsert(eq("wg"), content.capture());
         AppearanceWorkspaceDto persisted = json.readValue(content.getValue(), AppearanceWorkspaceDto.class);
         assertThat(persisted.garments()).extracting(Garment::wearCount).containsExactly(2, 2);
+        assertThat(persisted.wearLogs().get(1).imageId()).isEqualTo("ap-wear-1");
     }
 
     @Test
@@ -116,7 +117,7 @@ class AppearanceServiceTest {
 
     private static AppearanceWorkspaceDto workspace(List<Garment> garments, List<Outfit> outfits,
             List<WearLog> logs) {
-        Profile profile = new Profile(null, null, null, null, null, "", "", "", "", "", "",
+        Profile profile = new Profile(null, null, null, null, null, null, "", "", "", "", "", "",
                 60, 80, 60, null, null, null);
         return new AppearanceWorkspaceDto(garments, outfits, profile, List.<Plan>of(), logs, List.<Note>of(),
                 AppearanceService.DEFAULT_PRINCIPLES, null);

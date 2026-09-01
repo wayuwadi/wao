@@ -24,7 +24,7 @@ public record AppearanceWorkspaceDto(
             String imageId, String note) { }
 
     public record Profile(Double heightCm, Double weightKg, Double shoulderCm, Double waistCm,
-            LocalDate measuredOn, String skinTone, String faceShape, String hairTexture,
+            LocalDate measuredOn, String imageId, String skinTone, String faceShape, String hairTexture,
             String stylePreferences, String avoidances, String postureGoal, Integer hairScore,
             Integer clothingScore, Integer shoesScore, Integer accessoryScore, Integer bodyScore,
             Integer presenceScore) { }
@@ -33,7 +33,7 @@ public record AppearanceWorkspaceDto(
             String outfitId, String status, String note) { }
 
     public record WearLog(String id, LocalDate date, String outfitId, List<String> garmentIds,
-            String feeling) { }
+            String imageId, String feeling) { }
 
     public record Note(String id, String title, String content, List<String> tags,
             LocalDateTime createdAt) { }

@@ -26,14 +26,15 @@ const FORM_DRAFT_KEY_PREFIX = 'wao-appearance-form-draft-v2'
 const session = useSessionStore()
 const today = isoDate(new Date())
 const sections: Array<{ id: Section; label: string; icon: string }> = [
-  { id: 'wardrobe', label: '服饰物品库', icon: 'ri-shirt-line' },
+  { id: 'wardrobe', label: '电子衣库', icon: 'ri-shirt-line' },
   { id: 'outfits', label: '穿搭与日历', icon: 'ri-layout-masonry-line' },
   { id: 'profile', label: '个人档案', icon: 'ri-user-star-line' },
   { id: 'plans', label: '计划与提醒', icon: 'ri-notification-3-line' },
   { id: 'notes', label: '搭配参考', icon: 'ri-palette-line' },
 ]
+const suggestedCategories = ['上衣', '裤子', '鞋子', '外套', '配饰', '床品']
 const statusOptions: Array<{ value: GarmentStatus; label: string }> = [
-  { value: 'WARDROBE', label: '在衣柜' },
+  { value: 'WARDROBE', label: '在库' },
   { value: 'CLEANING', label: '待清洗' },
   { value: 'IDLE', label: '闲置' },
   { value: 'DONATED', label: '已捐赠' },
@@ -71,7 +72,7 @@ let applyingServer = false
 
 const garmentForm = reactive({
   name: '',
-  category: '上装',
+  category: '上衣',
   seasons: '',
   styles: '',
   colors: '',
@@ -89,7 +90,13 @@ const outfitForm = reactive({
   imageId: null as string | null,
   note: '',
 })
-const wearForm = reactive({ date: today, outfitId: '', garmentIds: [] as string[], feeling: '' })
+const wearForm = reactive({
+  date: today,
+  outfitId: '',
+  garmentIds: [] as string[],
+  imageId: null as string | null,
+  feeling: '',
+})
 const planForm = reactive({
   type: 'EVENT' as AppearancePlanType,
   title: '',
@@ -116,8 +123,14 @@ const wardrobeItems = computed(() =>
 )
 const categories = computed(() => [
   '全部',
-  ...new Set(workspace.value.garments.map((item) => item.category)),
+  ...new Set([...suggestedCategories, ...workspace.value.garments.map((item) => item.category)]),
 ])
+const categorySummary = computed(() =>
+  categories.value.slice(1).map((name) => ({
+    name,
+    count: workspace.value.garments.filter((item) => item.category === name).length,
+  })),
+)
 const activeGarments = computed(() =>
   workspace.value.garments.filter((item) => item.status !== 'DONATED'),
 )
@@ -199,6 +212,7 @@ function emptyWorkspace(): AppearanceWorkspace {
       shoulderCm: null,
       waistCm: null,
       measuredOn: null,
+      imageId: null,
       skinTone: '',
       faceShape: '',
       hairTexture: '',
@@ -359,7 +373,7 @@ function savePayload(value: AppearanceWorkspace) {
 function resetForms() {
   Object.assign(garmentForm, {
     name: '',
-    category: '上装',
+    category: '上衣',
     seasons: '',
     styles: '',
     colors: '',
@@ -371,7 +385,7 @@ function resetForms() {
     note: '',
   })
   Object.assign(outfitForm, { name: '', garmentIds: [], scenarios: '', imageId: null, note: '' })
-  Object.assign(wearForm, { date: today, outfitId: '', garmentIds: [], feeling: '' })
+  Object.assign(wearForm, { date: today, outfitId: '', garmentIds: [], imageId: null, feeling: '' })
   Object.assign(planForm, {
     type: 'EVENT',
     title: '',
@@ -498,6 +512,7 @@ function submitEditor() {
       date: wearForm.date,
       outfitId: wearForm.outfitId || null,
       garmentIds: [...wearForm.garmentIds],
+      imageId: wearForm.imageId,
       feeling: wearForm.feeling.trim(),
     })
   } else if (editorKind.value === 'plan') {
@@ -535,7 +550,7 @@ function upsert<T extends { id: string }>(items: T[], value: T) {
   if (index >= 0) items.splice(index, 1, value)
   else items.push(value)
 }
-async function uploadPhoto(event: Event, target: 'garment' | 'outfit') {
+async function uploadPhoto(event: Event, target: 'garment' | 'outfit' | 'wear' | 'profile') {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
@@ -544,7 +559,9 @@ async function uploadPhoto(event: Event, target: 'garment' | 'outfit') {
   try {
     const photo = await uploadAppearancePhoto(file)
     if (target === 'garment') garmentForm.imageId = photo.id
-    else outfitForm.imageId = photo.id
+    else if (target === 'outfit') outfitForm.imageId = photo.id
+    else if (target === 'wear') wearForm.imageId = photo.id
+    else workspace.value.profile.imageId = photo.id
     toast('实拍图已私密保存', 'ri-image-add-line')
   } catch (error) {
     toast(errorMessage(error, '实拍图上传失败'), 'ri-error-warning-line')
@@ -649,9 +666,9 @@ onBeforeUnmount(() => {
   <main class="appearance-page">
     <header class="hero">
       <div class="hero-copy">
-        <span class="eyebrow">PERSONAL STYLE SYSTEM</span>
-        <h1>形象管理</h1>
-        <p>提前把选择做好，让清爽、舒服、合时宜成为稳定标准，而不是临到出门再按旧惯性决定。</p>
+        <span class="eyebrow">PERSONAL WARDROBE</span>
+        <h1>电子衣库</h1>
+        <p>把自己的形象、单品和真实穿搭放进同一个私密衣库，出门前能按品类快速找到已有选择。</p>
         <textarea
           v-model="workspace.principles"
           maxlength="2000"
@@ -690,10 +707,10 @@ onBeforeUnmount(() => {
     </div>
 
     <section v-if="loading" class="state-card">
-      <i class="ri-loader-4-line spin"></i>正在读取衣橱和档案…
+      <i class="ri-loader-4-line spin"></i>正在读取电子衣库和档案…
     </section>
     <section v-else-if="loadError" class="state-card error">
-      <i class="ri-error-warning-line"></i><strong>形象管理加载失败</strong
+      <i class="ri-error-warning-line"></i><strong>电子衣库加载失败</strong
       ><span>{{ loadError }}</span
       ><button @click="load">重试</button>
     </section>
@@ -730,7 +747,7 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
-      <nav class="section-tabs" aria-label="形象管理分区">
+      <nav class="section-tabs" aria-label="电子衣库分区">
         <button
           v-for="section in sections"
           :key="section.id"
@@ -744,8 +761,8 @@ onBeforeUnmount(() => {
       <section v-if="activeSection === 'wardrobe'" class="content-section">
         <div class="section-head">
           <div>
-            <span>衣橱全貌</span>
-            <h2>服饰物品库</h2>
+            <span>我的全部物品</span>
+            <h2>电子衣库</h2>
           </div>
           <button class="primary" @click="openCreate('garment')">
             <i class="ri-add-line"></i>录入物品
@@ -767,10 +784,21 @@ onBeforeUnmount(() => {
             </option>
           </select>
         </div>
+        <div class="category-summary" aria-label="衣库品类总览">
+          <button
+            v-for="item in categorySummary"
+            :key="item.name"
+            :class="{ active: filterCategory === item.name }"
+            @click="filterCategory = filterCategory === item.name ? '全部' : item.name"
+          >
+            <span>{{ item.name }}</span
+            ><strong>{{ item.count }}</strong>
+          </button>
+        </div>
         <div v-if="!workspace.garments.length" class="empty-state">
           <i class="ri-shirt-line"></i>
-          <h3>衣橱还是空的</h3>
-          <p>先录入下一次真正会穿的一件衣服或鞋子，不需要一次整理完。</p>
+          <h3>电子衣库还是空的</h3>
+          <p>先录入一件上衣、裤子、鞋子、外套或床品；品类也可以直接填写并继续扩展。</p>
           <button @click="openCreate('garment')">录入第一件</button>
         </div>
         <div v-else-if="!wardrobeItems.length" class="empty-state compact">
@@ -884,6 +912,13 @@ onBeforeUnmount(() => {
             </div>
             <article v-for="item in recentWear" :key="item.id">
               <time>{{ formatDate(item.date) }}</time>
+              <div class="wear-photo">
+                <img
+                  v-if="item.imageId"
+                  :src="appearancePhotoUrl(item.imageId)"
+                  alt="当日穿着实拍"
+                /><i v-else class="ri-camera-off-line"></i>
+              </div>
               <div>
                 <strong>{{
                   outfitName(item.outfitId) || item.garmentIds.map(garmentName).join(' + ')
@@ -935,6 +970,31 @@ onBeforeUnmount(() => {
           <span class="autosave-copy">修改后自动保存</span>
         </div>
         <div class="profile-grid">
+          <article class="profile-card profile-photo-card">
+            <h3>我的形象</h3>
+            <label class="profile-photo-upload">
+              <img
+                v-if="workspace.profile.imageId"
+                :src="appearancePhotoUrl(workspace.profile.imageId)"
+                alt="我的形象照"
+              /><i v-else class="ri-user-smile-line"></i>
+              <strong>{{
+                uploading
+                  ? '正在私密上传…'
+                  : workspace.profile.imageId
+                    ? '更换形象照'
+                    : '上传形象照'
+              }}</strong>
+              <span>照片仅当前登录成员可读取</span>
+              <input
+                hidden
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                :disabled="uploading"
+                @change="uploadPhoto($event, 'profile')"
+              />
+            </label>
+          </article>
           <article class="profile-card">
             <h3>身材数据</h3>
             <div class="input-grid">
@@ -1197,8 +1257,16 @@ onBeforeUnmount(() => {
           ><label
             >品类<input
               v-model="garmentForm.category"
+              list="appearance-category-options"
               maxlength="32"
-              placeholder="上装、裤子、鞋子、配饰" /></label
+              placeholder="上衣、裤子、鞋子、外套、床品" /><datalist
+              id="appearance-category-options"
+            >
+              <option
+                v-for="item in suggestedCategories"
+                :key="item"
+                :value="item"
+              ></option></datalist></label
           ><label
             >状态<select v-model="garmentForm.status">
               <option v-for="item in statusOptions" :key="item.value" :value="item.value">
@@ -1300,6 +1368,22 @@ onBeforeUnmount(() => {
               }}</span></label
             >
           </fieldset>
+          <label class="photo-upload wide"
+            ><span>本次穿着实拍（可选）</span
+            ><img
+              v-if="wearForm.imageId"
+              :src="appearancePhotoUrl(wearForm.imageId)"
+              alt="本次穿着实拍预览" /><i v-else class="ri-camera-3-line"></i
+            ><strong>{{
+              uploading ? '正在私密上传…' : wearForm.imageId ? '更换本次实拍' : '上传本次实拍'
+            }}</strong
+            ><input
+              hidden
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              :disabled="uploading"
+              @change="uploadPhoto($event, 'wear')"
+          /></label>
           <label class="wide"
             >穿着感受<textarea
               v-model="wearForm.feeling"
@@ -1570,7 +1654,40 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: minmax(240px, 1fr) 180px 180px;
   gap: 10px;
+  margin-bottom: 10px;
+}
+.category-summary {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
   margin-bottom: 18px;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.category-summary button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--wao-bg-elevated, #fff);
+  color: var(--muted);
+  padding: 7px 10px 7px 13px;
+  cursor: pointer;
+}
+.category-summary button strong {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--sage-soft);
+  color: var(--sage);
+  font-size: 11px;
+}
+.category-summary button.active {
+  border-color: var(--sage);
+  color: var(--sage);
+  box-shadow: inset 0 0 0 1px var(--sage);
 }
 .filters input,
 .filters select,
@@ -1786,10 +1903,26 @@ onBeforeUnmount(() => {
 }
 .wear-calendar > article {
   display: grid;
-  grid-template-columns: 92px 1fr 24px;
+  grid-template-columns: 72px 46px minmax(0, 1fr) 24px;
   gap: 10px;
+  align-items: center;
   padding: 12px 0;
   border-top: 1px solid var(--line);
+}
+.wear-photo {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--sage-soft);
+  color: var(--sage);
+}
+.wear-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .wear-calendar time {
   font-size: 11px;
@@ -1837,6 +1970,32 @@ onBeforeUnmount(() => {
 }
 .profile-card h3 {
   margin: 0 0 15px;
+}
+.profile-photo-upload {
+  min-height: 210px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 9px;
+  overflow: hidden;
+  border: 1px dashed #b9c8bf;
+  border-radius: 13px;
+  background: var(--cream);
+  color: var(--sage);
+  cursor: pointer;
+  text-align: center;
+}
+.profile-photo-upload img {
+  width: 100%;
+  height: 210px;
+  object-fit: cover;
+}
+.profile-photo-upload i {
+  font-size: 48px;
+}
+.profile-photo-upload span {
+  color: var(--muted);
+  font-size: 11px;
 }
 .input-grid {
   display: grid;

@@ -260,9 +260,9 @@ describe('侧边栏导航配置', () => {
     expect(route?.meta.module).toBe('tianren')
   })
 
-  it('形象管理默认位于个人组并进入完整工作台目录', () => {
+  it('电子衣库默认位于个人组并进入完整工作台目录', () => {
     expect(MODULES.appearance).toMatchObject({
-      label: '形象管理',
+      label: '电子衣库',
       path: '/appearance',
     })
     expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'appearance')).toMatchObject({
