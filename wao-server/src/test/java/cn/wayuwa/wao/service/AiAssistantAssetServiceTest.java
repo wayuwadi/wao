@@ -3,6 +3,8 @@ package cn.wayuwa.wao.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
@@ -22,9 +24,11 @@ import cn.wayuwa.wao.mapper.PersonalMemoryMapper;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import cn.wayuwa.wao.mapper.TaskMapper;
 import cn.wayuwa.wao.service.AiAssistantAssetService.TaskMiningContext;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class AiAssistantAssetServiceTest {
 
@@ -140,6 +144,21 @@ class AiAssistantAssetServiceTest {
         assertThat(options.senders()).containsExactly("娃哥", "娃弟");
         assertThat(options.earliestChatDate()).isEqualTo(LocalDate.of(2026, 6, 1));
         assertThat(options.latestChatDate()).isEqualTo(LocalDate.of(2026, 8, 10));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<QueryWrapper<DocEntity>> docQueries = ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(docMapper, times(3)).selectList(docQueries.capture());
+        assertThat(docQueries.getAllValues().get(0).getSqlSelect())
+                .contains("id", "kb_id", "title", "blocks_json", "updated_at")
+                .doesNotContain("links_json", "author_id");
+        assertThat(docQueries.getAllValues().get(1).getSqlSelect()).isEqualTo("title");
+        assertThat(docQueries.getAllValues().get(2).getSqlSelect()).isEqualTo("title");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<QueryWrapper<ProjectEntity>> projectQuery =
+                ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(projectMapper).selectList(projectQuery.capture());
+        assertThat(projectQuery.getValue().getSqlSelect()).contains("id", "name").doesNotContain("detail_json");
     }
 
     @Test
