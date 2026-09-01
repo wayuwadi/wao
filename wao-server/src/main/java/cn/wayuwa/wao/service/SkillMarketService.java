@@ -91,9 +91,26 @@ public class SkillMarketService {
         return new SkillDtos.PublisherProfile(item.getHandle(), item.getDisplayName());
     }
 
+    /** 只读预检 ZIP 并返回可预填信息；包内容不会持久化。 */
+    public SkillDtos.PackageInspection inspectZip(String memberId, MultipartFile archive) {
+        requiredMember(memberId);
+        try {
+            return toInspection(inspector.inspectZip(archive == null ? null : archive.getBytes()));
+        } catch (java.io.IOException ex) {
+            throw new BadRequestException("读取 Skill ZIP 失败，请重试");
+        }
+    }
+
+    /** 只读预检浏览器文件夹并返回可预填信息；包内容不会持久化。 */
+    public SkillDtos.PackageInspection inspectFolder(String memberId, List<MultipartFile> files, List<String> paths) {
+        requiredMember(memberId);
+        return toInspection(inspector.inspectFiles(files, paths));
+    }
+
     /** 上传 ZIP 并建立不可变草稿版本。 */
     @Transactional
     public SkillDtos.MySkill createZipDraft(String memberId, SkillRequests.Draft request, MultipartFile archive) {
+        memberId = requiredMember(memberId);
         try {
             return createDraft(memberId, request, inspector.inspectZip(archive == null ? null : archive.getBytes()));
         } catch (java.io.IOException ex) {
@@ -105,6 +122,7 @@ public class SkillMarketService {
     @Transactional
     public SkillDtos.MySkill createFolderDraft(String memberId, SkillRequests.Draft request,
             List<MultipartFile> files, List<String> paths) {
+        memberId = requiredMember(memberId);
         return createDraft(memberId, request, inspector.inspectFiles(files, paths));
     }
 
@@ -114,6 +132,7 @@ public class SkillMarketService {
      */
     @Transactional
     public SkillDtos.MySkill createAiDraft(String memberId, MultipartFile archive, String runId) {
+        memberId = requiredMember(memberId);
         try {
             SkillPackageInspector.Inspection packageInfo = inspector.inspectZip(archive == null ? null : archive.getBytes());
             String slug = aiSlug(packageInfo.name(), packageInfo.sha256());
@@ -132,6 +151,7 @@ public class SkillMarketService {
 
     private SkillDtos.MySkill createDraft(String memberId, SkillRequests.Draft request,
             SkillPackageInspector.Inspection packageInfo) {
+        assertSafe(packageInfo);
         memberId = requiredMember(memberId); validateDraft(request);
         SkillPublisherEntity publisher = publishers.findByMember(memberId);
         if (publisher == null) throw new BadRequestException("请先设置公开发布者昵称和 handle");
@@ -162,6 +182,18 @@ public class SkillMarketService {
         try { versions.insert(version); } catch (DuplicateKeyException ex) { throw new ConflictException("版本 " + version.getVersion() + " 已存在"); }
         skill.setUpdatedAt(now); skills.updateById(skill);
         return mySkill(skill, memberId);
+    }
+
+    private SkillDtos.PackageInspection toInspection(SkillPackageInspector.Inspection packageInfo) {
+        return new SkillDtos.PackageInspection(packageInfo.name(), packageInfo.description(),
+                aiSlug(packageInfo.name(), packageInfo.sha256()), packageInfo.unpackedSize(), packageInfo.files().size(),
+                packageInfo.sha256(), packageInfo.findings());
+    }
+
+    private void assertSafe(SkillPackageInspector.Inspection packageInfo) {
+        if (!packageInfo.findings().isEmpty()) {
+            throw new BadRequestException("安全检查未通过，未创建草稿：" + packageInfo.findings().get(0));
+        }
     }
 
     /** 草稿元数据自动保存，不允许修改已提交快照。 */

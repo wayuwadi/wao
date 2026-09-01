@@ -9,6 +9,7 @@ import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.List;
 import cn.wayuwa.wao.common.UnauthorizedException;
+import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.dto.SkillRequests;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
@@ -74,6 +75,24 @@ class SkillMarketServiceIntegrationTest {
         assertThatThrownBy(() -> market.reviews("author")).isInstanceOf(UnauthorizedException.class);
     }
 
+    @Test void preflightPrefillsManifestWithoutPersistenceAndUnsafeDraftIsRejected() throws Exception {
+        market.savePublisher("author", new SkillRequests.PublisherProfile("wao-author", "WAO 作者"));
+
+        var inspection = market.inspectZip("author", file("preflight"));
+
+        assertThat(inspection.name()).isEqualTo("Meeting Helper");
+        assertThat(inspection.description()).isEqualTo("Release preflight");
+        assertThat(inspection.suggestedSlug()).isEqualTo("meeting-helper");
+        assertThat(inspection.fileCount()).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM skill_version", Integer.class)).isZero();
+
+        assertThatThrownBy(() -> market.createZipDraft("author", draft(null, "1.0.0"), unsafeFile()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("安全检查未通过").hasMessageContaining("Bearer Token");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM skill", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM skill_version", Integer.class)).isZero();
+    }
+
     @Test void aiCandidateBecomesUnconfirmedDraftAndIteratesPatchVersion() throws Exception {
         market.savePublisher("author", new SkillRequests.PublisherProfile("wao-author", "WAO 作者"));
 
@@ -103,5 +122,16 @@ class SkillMarketServiceIntegrationTest {
             zip.closeArchiveEntry();
         }
         return new MockMultipartFile("archive", "meeting.zip", "application/zip", out.toByteArray());
+    }
+
+    private static MockMultipartFile unsafeFile() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (ZipArchiveOutputStream zip = new ZipArchiveOutputStream(out)) {
+            zip.putArchiveEntry(new ZipArchiveEntry("meeting/SKILL.md"));
+            zip.write(("---\nname: Meeting Helper\ndescription: Unsafe package must never persist\n---\n"
+                    + "Authorization: Bearer abcdefghijklmnop").getBytes(StandardCharsets.UTF_8));
+            zip.closeArchiveEntry();
+        }
+        return new MockMultipartFile("archive", "unsafe.zip", "application/zip", out.toByteArray());
     }
 }

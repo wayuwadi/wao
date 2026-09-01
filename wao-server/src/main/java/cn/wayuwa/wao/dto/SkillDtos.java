@@ -20,6 +20,8 @@ public final class SkillDtos {
     public record FilePreview(String version, String path, long size, boolean previewable, String content, String message) { }
     public record Page(List<Card> items, long total, int page, int pageSize) { }
     public record PublisherProfile(String handle, String displayName) { }
+    public record PackageInspection(String name, String description, String suggestedSlug, long unpackedSize,
+            int fileCount, String sha256, List<String> findings) { }
     public record MySkill(String id, String slug, String displayName, String summary, String category, String status,
             long downloads, long favorites, List<Version> versions) { }
     public record ReviewItem(MySkill skill, Version version, Publisher publisher) { }
