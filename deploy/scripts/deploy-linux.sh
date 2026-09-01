@@ -40,6 +40,16 @@ if [ -n "${requested_skip_image_build}" ]; then
   export SKIP_IMAGE_BUILD
 fi
 
+if [ "${role}" = "master" ]; then
+  deploy_user="$(id -un)"
+  deploy_user_home="$(getent passwd "${deploy_user}" | cut -d: -f6)"
+  CODEX_MIHOMO_BIN="${CODEX_MIHOMO_BIN:-/usr/bin/verge-mihomo}"
+  CODEX_MIHOMO_CONFIG_DIR="${CODEX_MIHOMO_CONFIG_DIR:-${deploy_user_home}/.local/share/io.github.clash-verge-rev.clash-verge-rev}"
+  CODEX_MIHOMO_UID="${CODEX_MIHOMO_UID:-$(id -u)}"
+  CODEX_MIHOMO_GID="${CODEX_MIHOMO_GID:-$(id -g)}"
+  export CODEX_MIHOMO_BIN CODEX_MIHOMO_CONFIG_DIR CODEX_MIHOMO_UID CODEX_MIHOMO_GID
+fi
+
 run_docker() {
   if docker info >/dev/null 2>&1; then
     docker "$@"
@@ -81,7 +91,7 @@ print_deployment_diagnostics() {
   compose ps -a >&2 || true
   diagnostic_services="wao-server wao-agent-server wao-gateway"
   if [ "${role}" = "master" ]; then
-    diagnostic_services="codex-egress-proxy ${diagnostic_services}"
+    diagnostic_services="codex-vpn codex-egress-proxy ${diagnostic_services}"
   fi
   for service in ${diagnostic_services}; do
     container_id="$(compose ps -aq "${service}" 2>/dev/null || true)"
@@ -192,9 +202,10 @@ start_services() {
     run_docker rm -f "${legacy_agent_id}" >/dev/null || return 1
   fi
   if [ "${role}" = "master" ]; then
+    sh "${script_dir}/ensure-codex-egress.sh" || return 1
     # The proxy tag is reused between releases. Force recreation so Docker does
     # not keep a healthy container that still points at the previous image ID.
-    compose up -d --force-recreate --wait codex-egress-proxy || return 1
+    compose up -d --force-recreate --wait codex-vpn codex-egress-proxy || return 1
     sentinel_service=sentinel-master
   else
     sentinel_service=sentinel-slave

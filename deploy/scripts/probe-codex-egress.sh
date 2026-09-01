@@ -28,26 +28,27 @@ if ! run_docker exec "${proxy_id}" curl --version >/dev/null 2>&1; then
   exit 1
 fi
 
-probe_openai() {
+probe_chatgpt() {
   container_id="$1"
   shift
   run_docker exec "${container_id}" curl --silent --show-error --connect-timeout 10 --max-time 30 \
-    --output /dev/null --write-out '%{http_code}' "$@"
+    --output /dev/null --write-out '%{http_code}' "$@" \
+    https://chatgpt.com/backend-api/wham/usage
 }
 
-direct_status="$(probe_openai "${proxy_id}" \
-  --request POST https://auth.openai.com/api/accounts/deviceauth/usercode \
-  --header 'Content-Type: application/json' \
-  --data '{"client_id":"app_EMoamEEZ73f0CkXaXp7hrann"}')" || {
-  echo 'Codex 出站代理容器无法通过 Linux 主机网络访问 OpenAI。' >&2
+direct_status="$(probe_chatgpt "${proxy_id}" --proxy http://127.0.0.1:18888)" || {
+  echo 'Codex 出站代理容器无法通过无桌面 VPN 服务访问 ChatGPT。' >&2
   run_docker logs --tail 50 "${proxy_id}" >&2
   exit 1
 }
-if [ "${direct_status}" != '200' ]; then
-  printf 'Codex 出站代理容器的主机 VPN 直连探针失败：HTTP %s\n' "${direct_status}" >&2
-  run_docker logs --tail 50 "${proxy_id}" >&2
-  exit 1
-fi
+case "${direct_status}" in
+  200|401) ;;
+  *)
+    printf 'Codex 出站代理容器的真实 ChatGPT 探针失败：HTTP %s\n' "${direct_status}" >&2
+    run_docker logs --tail 50 "${proxy_id}" >&2
+    exit 1
+    ;;
+esac
 
 proxy_url="$(run_docker exec "${server_id}" sh -c 'printf "%s" "$WAO_AI_CODEX_PROXY_URL"')"
 test -n "${proxy_url}" || {
@@ -55,21 +56,19 @@ test -n "${proxy_url}" || {
   exit 1
 }
 
-status="$(run_docker exec "${server_id}" curl --silent --show-error --connect-timeout 10 --max-time 30 \
-  --output /dev/null --write-out '%{http_code}' \
-  --proxy "${proxy_url}" \
-  --request POST https://auth.openai.com/api/accounts/deviceauth/usercode \
-  --header 'Content-Type: application/json' \
-  --data '{"client_id":"app_EMoamEEZ73f0CkXaXp7hrann"}')" || {
+status="$(probe_chatgpt "${server_id}" --proxy "${proxy_url}")" || {
   printf 'wao-server 无法连接 Codex 内部代理：%s\n' "${proxy_url}" >&2
   run_docker logs --tail 50 "${proxy_id}" >&2
   exit 1
 }
 
-if [ "${status}" != '200' ]; then
-  printf 'Linux 主节点 wao-server 经内部代理执行 Codex 出站探针失败：HTTP %s\n' "${status}" >&2
-  run_docker logs --tail 50 "${proxy_id}" >&2
-  exit 1
-fi
+case "${status}" in
+  200|401) ;;
+  *)
+    printf 'Linux 主节点 wao-server 经内部代理执行 Codex 出站探针失败：HTTP %s\n' "${status}" >&2
+    run_docker logs --tail 50 "${proxy_id}" >&2
+    exit 1
+    ;;
+esac
 
-echo 'Linux 主节点 wao-server 经内部代理执行的 Codex VPN 出站探针通过。'
+echo 'Linux 主节点 wao-server 经无桌面 VPN 服务执行的 Codex 出站探针通过。'
