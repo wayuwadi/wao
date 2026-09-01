@@ -53,8 +53,8 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
       },
       {
         id: 'appearance',
-        description: '管理衣橱、穿搭、个人档案、形象计划和穿着复盘。',
-        keywords: ['衣服', '鞋子', '搭配', '衣柜'],
+        description: '管理个人电子衣库、实拍、穿搭、个人档案和穿着复盘。',
+        keywords: ['衣服', '上衣', '裤子', '鞋子', '外套', '床品', '床单被罩', '搭配', '衣柜'],
       },
       {
         id: 'food',

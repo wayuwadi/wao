@@ -136,7 +136,8 @@ public class AppearanceService {
         Map<String, Outfit> outfitsById = new HashMap<>();
         outfits.forEach(outfit -> outfitsById.put(outfit.id(), outfit));
         List<WearLog> wearLogs = list(source.wearLogs()).stream().map(log -> new WearLog(
-                text(log.id()), log.date(), nullable(log.outfitId()), distinct(log.garmentIds()), text(log.feeling())))
+                text(log.id()), log.date(), nullable(log.outfitId()), distinct(log.garmentIds()),
+                nullable(log.imageId()), text(log.feeling())))
                 .sorted((left, right) -> compareDates(right.date(), left.date())).toList();
 
         Map<String, Integer> counts = new HashMap<>();
@@ -200,6 +201,7 @@ public class AppearanceService {
                 throw new BadRequestException("穿着记录引用了不存在的组合");
             }
             requireReferences(log.garmentIds(), garmentIds, "穿着记录引用了不存在的物品");
+            maxText(log.imageId(), 32, "穿着实拍标识");
             maxText(log.feeling(), 2000, "穿着感受");
         }
         for (Plan plan : workspace.plans()) {
@@ -222,9 +224,9 @@ public class AppearanceService {
 
     private static Profile normalizeProfile(Profile p) {
         return new Profile(p.heightCm(), p.weightKg(), p.shoulderCm(), p.waistCm(), p.measuredOn(),
-                text(p.skinTone()), text(p.faceShape()), text(p.hairTexture()), text(p.stylePreferences()),
-                text(p.avoidances()), text(p.postureGoal()), p.hairScore(), p.clothingScore(), p.shoesScore(),
-                p.accessoryScore(), p.bodyScore(), p.presenceScore());
+                nullable(p.imageId()), text(p.skinTone()), text(p.faceShape()), text(p.hairTexture()),
+                text(p.stylePreferences()), text(p.avoidances()), text(p.postureGoal()), p.hairScore(),
+                p.clothingScore(), p.shoesScore(), p.accessoryScore(), p.bodyScore(), p.presenceScore());
     }
 
     private static void validateProfile(Profile p) {
@@ -232,6 +234,7 @@ public class AppearanceService {
         validateMeasure(p.weightKg(), 10, 500, "体重");
         validateMeasure(p.shoulderCm(), 10, 100, "肩宽");
         validateMeasure(p.waistCm(), 20, 300, "腰围");
+        maxText(p.imageId(), 32, "个人形象照标识");
         for (Integer score : List.of(nullToZero(p.hairScore()), nullToZero(p.clothingScore()),
                 nullToZero(p.shoesScore()), nullToZero(p.accessoryScore()), nullToZero(p.bodyScore()),
                 nullToZero(p.presenceScore()))) {
@@ -250,7 +253,7 @@ public class AppearanceService {
     }
 
     private static Profile emptyProfile() {
-        return new Profile(null, null, null, null, null, "", "", "", "", "", "",
+        return new Profile(null, null, null, null, null, null, "", "", "", "", "", "",
                 null, null, null, null, null, null);
     }
 

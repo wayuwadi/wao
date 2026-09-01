@@ -36,6 +36,7 @@ export interface AppearanceProfile {
   shoulderCm: number | null
   waistCm: number | null
   measuredOn: string | null
+  imageId: string | null
   skinTone: string
   faceShape: string
   hairTexture: string
@@ -66,6 +67,7 @@ export interface AppearanceWearLog {
   date: string
   outfitId: string | null
   garmentIds: string[]
+  imageId: string | null
   feeling: string
 }
 

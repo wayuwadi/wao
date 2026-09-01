@@ -809,8 +809,8 @@ AI Run 报告复用本表，不新增重复正文列：页面 id 为 `run-report
 
 | 表 | 关键字段 / 唯一约束 | 说明 |
 |---|---|---|
-| appearance_workspace | member_id 主键、content_json、updated_at | 每位成员唯一的形象管理快照；JSON 内含物品、穿搭、个人档案、计划、穿着记录和笔记，服务端校验所有跨记录引用并从穿着记录重算统计 |
-| appearance_photo | id 主键、member_id、file_name、content_type、byte_size、file_content | 衣物与穿搭实拍原件；读取和删除都按当前成员校验，响应禁止公共缓存，不进入公开图床 |
+| appearance_workspace | member_id 主键、content_json、updated_at | 每位成员唯一的电子衣库快照；JSON 内含可扩展品类物品、穿搭、个人形象照引用、计划、带实拍的穿着记录和笔记，服务端校验所有跨记录引用并从穿着记录重算统计 |
+| appearance_photo | id 主键、member_id、file_name、content_type、byte_size、file_content | 个人形象、物品、穿搭与当次穿着实拍原件；读取和删除都按当前成员校验，响应禁止公共缓存，不进入公开图床 |
 
 ### food_workspace（V115）
 
