@@ -132,10 +132,49 @@ slave_deploy_ssh() {
   command timeout --foreground --signal=TERM 30m ssh -F "$WAO_SSH_CONFIG" "$@"
 }
 
+run_marked_slave_command() {
+  local ssh_runner success_marker output_file status_file remote_command ssh_exit
+  ssh_runner="$1"
+  success_marker="$2"
+  output_file="$3"
+  remote_command="$4"
+  status_file="$output_file.status"
+  : >"$output_file"
+  : >"$status_file"
+
+  # Linux1's reverse tunnel can report a reset while the remote shell is
+  # closing even though the command itself completed. Emit the verified Git
+  # SHA before that close and treat only the exact marker as success.
+  (
+    set +e
+    "$ssh_runner" -o ConnectTimeout=15 "wao-slave" \
+      "$remote_command && printf '\\n%s\\n' '$success_marker' && sleep 2"
+    printf '%s\n' "$?" >"$status_file"
+  ) 2>&1 | tee "$output_file"
+  ssh_exit="$(sed -n '1p' "$status_file")"
+  rm -f -- "$status_file"
+  case "$ssh_exit" in
+    ''|*[!0-9]*) ssh_exit=255 ;;
+  esac
+  if grep -Fqx "$success_marker" "$output_file"; then
+    if [ "$ssh_exit" -ne 0 ]; then
+      echo 'Linux1 SSH 关闭状态异常，但远端目标版本成功标记已确认。'
+    fi
+    return 0
+  fi
+  if [ "$ssh_exit" -eq 0 ]; then
+    return 1
+  fi
+  return "$ssh_exit"
+}
+
 run_slave_installer() {
-  local remote_command installer_exit
+  local remote_command installer_exit installer_marker verification_marker
   remote_command="$1"
-  if slave_deploy_ssh -o ConnectTimeout=15 "wao-slave" "$remote_command"; then
+  installer_marker="WAO_LINUX1_INSTALL_VERIFIED=$WAO_GIT_SHA"
+  verification_marker="WAO_LINUX1_RELEASE_VERIFIED=$WAO_GIT_SHA"
+  if run_marked_slave_command slave_deploy_ssh "$installer_marker" \
+    "$WAO_RUN_TEMP/linux1-installer-output.log" "$remote_command"; then
     return 0
   else
     installer_exit="$?"
@@ -148,7 +187,8 @@ run_slave_installer() {
   # the desired immutable version instead; the outer node retry will upload a
   # fresh release only when this post-check also fails.
   echo 'Linux1 部署连接异常，正在按目标版本执行远端完成态验收。'
-  if retry_remote "Linux1 部署完成态验收" slave_ssh -o ConnectTimeout=15 "wao-slave" \
+  if retry_remote "Linux1 部署完成态验收" run_marked_slave_command \
+    slave_ssh "$verification_marker" "$WAO_RUN_TEMP/linux1-verification-output.log" \
     "cd \"\$HOME/deploy/wao\" && sh deploy/scripts/validate-deployment-node.sh slave '$WAO_GIT_SHA'"; then
     echo 'Linux1 部署连接虽已中断，但目标版本与节点健康检查均已通过。'
     return 0
