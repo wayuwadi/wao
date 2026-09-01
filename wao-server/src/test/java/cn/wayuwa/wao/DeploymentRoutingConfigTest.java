@@ -335,8 +335,9 @@ class DeploymentRoutingConfigTest {
                 .contains("direct_status")
                 .contains("run_docker logs --tail 50")
                 .contains("--connect-timeout 10 --max-time 30")
-                .contains("https://auth.openai.com/api/accounts/deviceauth/usercode")
-                .contains("if [ \"${status}\" != '200' ]");
+                .contains("https://chatgpt.com/backend-api/wham/usage")
+                .contains("case \"${status}\" in")
+                .contains("200|401)");
     }
 
     @Test
@@ -543,18 +544,29 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void masterUsesHostNetworkProxyRestrictedToDockerSources() throws IOException {
+    void masterUsesHeadlessVpnAndHostNetworkProxyRestrictedToDockerSources() throws IOException {
         String compose = readFromRepository("deploy/docker-compose-master.yml");
         String deployScript = readFromRepository("deploy/scripts/deploy-linux.sh");
+        String vpnService = section(compose, "  codex-vpn:", "\n  codex-egress-proxy:");
         String proxyService = section(compose, "  codex-egress-proxy:", "\n  wao-server:");
         String serverService = section(compose, "  wao-server:", "\n  wao-gateway:");
         String dockerfile = readFromRepository("deploy/Dockerfile");
         String tinyproxy = readFromRepository("deploy/tinyproxy/codex-egress.conf");
 
+        assertThat(vpnService)
+                .contains("/usr/local/bin/verge-mihomo")
+                .contains("${CODEX_MIHOMO_BIN:-/usr/bin/verge-mihomo}:/usr/local/bin/verge-mihomo:ro")
+                .contains("${CODEX_MIHOMO_CONFIG_DIR:-/home/wadi/.local/share/io.github.clash-verge-rev.clash-verge-rev}:/config")
+                .contains("network_mode: host")
+                .contains("WAO_CODEX_HEALTH_PROXY_URL: http://127.0.0.1:7897")
+                .contains("/usr/local/bin/healthcheck-codex-egress")
+                .doesNotContain("ports:");
         assertThat(proxyService)
                 .contains("target: codex-egress-proxy")
                 .contains("network_mode: host")
-                .contains("127.0.0.1\", \"18888\"")
+                .contains("codex-vpn:")
+                .contains("condition: service_healthy")
+                .contains("/usr/local/bin/healthcheck-codex-egress")
                 .doesNotContain("ports:");
         assertThat(serverService)
                 .contains("WAO_AI_CODEX_PROXY_URL: http://${MASTER_BIND_IP:-host.docker.internal}:18888")
@@ -564,6 +576,7 @@ class DeploymentRoutingConfigTest {
         assertThat(dockerfile)
                 .contains("AS codex-egress-proxy")
                 .contains("apk add --no-cache curl tinyproxy")
+                .contains("healthcheck-codex-egress.sh")
                 .contains("USER tinyproxy");
         assertThat(deployScript)
                 .contains("requested_image_tag=\"${WAO_IMAGE_TAG:-}\"")
@@ -571,13 +584,15 @@ class DeploymentRoutingConfigTest {
                 .contains("requested_skip_image_build=\"${SKIP_IMAGE_BUILD:-}\"")
                 .contains("SKIP_IMAGE_BUILD=\"${requested_skip_image_build}\"")
                 .contains("compose build codex-egress-proxy wao-server wao-agent-server wao-gateway")
-                .contains("compose up -d --force-recreate --wait codex-egress-proxy")
-                .contains("diagnostic_services=\"codex-egress-proxy ${diagnostic_services}\"")
+                .contains("compose up -d --force-recreate --wait codex-vpn codex-egress-proxy")
+                .contains("diagnostic_services=\"codex-vpn codex-egress-proxy ${diagnostic_services}\"")
+                .contains("ensure-codex-egress.sh")
                 .doesNotContain("install-linux-codex.sh");
         assertThat(tinyproxy)
                 .contains("Allow 127.0.0.1")
                 .contains("Allow 172.16.0.0/12")
                 .contains("ConnectPort 443")
+                .contains("Upstream http 127.0.0.1:7897")
                 .doesNotContain("Allow 0.0.0.0/0");
     }
 
