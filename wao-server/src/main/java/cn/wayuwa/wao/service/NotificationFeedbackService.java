@@ -20,20 +20,28 @@ public class NotificationFeedbackService {
     private final AutomationJobMapper jobs;
     private final FeishuNotificationMapper notifications;
     public NotificationFeedbackService(FeishuNotificationFeedbackMapper mapper, AutomationJobMapper jobs, FeishuNotificationMapper notifications) { this.mapper = mapper; this.jobs = jobs; this.notifications = notifications; }
-    public void collect(JsonNode event) {
+    /**
+     * 保存一次飞书卡片按钮回传。
+     *
+     * @param event 飞书 {@code card.action.trigger} 的 event 节点
+     * @return 已保存的中文反馈；不是本功能按钮或回传无效时返回 {@code null}
+     */
+    public String collect(JsonNode event) {
         JsonNode action = event.path("action");
-        if (!"automation-feedback".equals(action.path("value").path("kind").asText())) return;
+        if (!"automation-feedback".equals(action.path("value").path("kind").asText())) return null;
         String notificationId = action.path("value").path("notificationId").asText();
         String outcome = action.path("value").path("action").asText();
         String openId = event.path("operator").path("open_id").asText();
-        if (!StringUtils.hasText(notificationId) || !StringUtils.hasText(openId) || !("done".equals(outcome) || "missed".equals(outcome))) return;
+        if (!StringUtils.hasText(notificationId) || !StringUtils.hasText(openId)
+                || !("done".equals(outcome) || "missed".equals(outcome))) return null;
         FeishuNotificationEntity p = notifications.selectById(notificationId);
-        if (p == null) return; // 未知卡片不接受，避免伪造数据。
+        if (p == null) return null; // 未知卡片不接受，避免伪造数据。
         FeishuNotificationFeedbackEntity row = mapper.selectOne(new LambdaQueryWrapper<FeishuNotificationFeedbackEntity>()
                 .eq(FeishuNotificationFeedbackEntity::getNotificationId, notificationId).eq(FeishuNotificationFeedbackEntity::getOperatorOpenId, openId));
         if (row == null) { row = new FeishuNotificationFeedbackEntity(); row.setId("f" + System.currentTimeMillis()); row.setNotificationId(notificationId); row.setJobId(p.getJobId()); row.setNotificationAt(p.getSentAt()); row.setOperatorOpenId(openId); }
         row.setAction(outcome); row.setOperatorName(event.path("operator").path("user_id").asText(openId)); row.setActedAt(LocalDateTime.now());
         if (mapper.selectById(row.getId()) == null) mapper.insert(row); else mapper.updateById(row);
+        return "done".equals(outcome) ? "做到了" : "没做到";
     }
     /** 按日、周、月或全部范围汇总真实点击反馈。 */
     public NotificationFeedbackReportDto report(String period) {
