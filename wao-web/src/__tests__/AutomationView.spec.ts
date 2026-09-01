@@ -7,7 +7,9 @@ import type { AutomationJob } from '@/types'
 
 function mountView(autos: AutomationJob[] = []) {
   const pinia = createPinia()
-  useDataStore(pinia).autos = autos
+  const data = useDataStore(pinia)
+  data.autos = autos
+  data.loadStates.automation = 'loaded'
   return mount(AutomationView, {
     global: {
       plugins: [pinia],

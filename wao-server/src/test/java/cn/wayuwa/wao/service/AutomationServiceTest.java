@@ -16,6 +16,7 @@ import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.AutomationJobEntity;
 import cn.wayuwa.wao.dto.AutomationJobDto;
 import cn.wayuwa.wao.dto.CreateJobRequest;
+import cn.wayuwa.wao.dto.MemberDto;
 import cn.wayuwa.wao.mapper.AutomationJobMapper;
 import cn.wayuwa.wao.mapper.AutomationRunMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -29,8 +30,9 @@ class AutomationServiceTest {
 
     private final AutomationJobMapper jobMapper = mock(AutomationJobMapper.class);
     private final AutomationRunMapper runMapper = mock(AutomationRunMapper.class);
+    private final MemberService memberService = mock(MemberService.class);
     private final AutomationService service =
-            new AutomationService(jobMapper, runMapper, new ObjectMapper(), List.of(), mock(MemberService.class));
+            new AutomationService(jobMapper, runMapper, new ObjectMapper(), List.of(), memberService);
 
     private AutomationJobEntity job(String status) {
         AutomationJobEntity e = new AutomationJobEntity();
@@ -109,6 +111,25 @@ class AutomationServiceTest {
                 .isEqualTo(runAt.getMonthValue() + "月" + runAt.getDayOfMonth() + "日 "
                         + String.format("%02d:%02d", runAt.getHour(), runAt.getMinute()));
         assertThat(dto.last()).startsWith(dto.runs().get(0).time()).doesNotStartWith("今天");
+    }
+
+    @Test
+    void listJobsLoadsMemberNamesOnceForAllHistoricalRuns() {
+        AutomationJobEntity e = job("正常");
+        var first = new cn.wayuwa.wao.domain.AutomationRunEntity();
+        first.setJobId("j1"); first.setExecutorId("m1"); first.setResult("成功"); first.setOrd(1);
+        var second = new cn.wayuwa.wao.domain.AutomationRunEntity();
+        second.setJobId("j1"); second.setExecutorId("m2"); second.setResult("成功"); second.setOrd(2);
+        when(jobMapper.selectList(any())).thenReturn(List.of(e));
+        when(runMapper.selectList(any())).thenReturn(List.of(first, second));
+        when(memberService.list()).thenReturn(List.of(
+                new MemberDto("m1", "娃哥", "娃", "#fff", "成员"),
+                new MemberDto("m2", "娃弟", "弟", "#000", "成员")));
+
+        AutomationJobDto dto = service.listJobs().get(0);
+
+        assertThat(dto.runs()).extracting(run -> run.executor()).containsExactly("娃哥", "娃弟");
+        verify(memberService).list();
     }
 
     @Test
