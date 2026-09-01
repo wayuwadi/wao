@@ -713,6 +713,12 @@ export interface AiRun {
   branchName: string | null
   /** 本次是在修哪一次失败的运行；不是重跑时为 null。 */
   retryOfRunId: string | null
+  /** 基础设施故障不会按普通任务失败标红；旧服务端可缺省。 */
+  failureKind?: 'INFRASTRUCTURE' | null
+  /** 服务端计算的同原因故障稳定指纹。 */
+  failureCode?: string | null
+  /** 面向用户的基础设施故障名称。 */
+  failureLabel?: string | null
   resultSummary: string | null
   /** AI 为本次运行额外产出的持久化单文件 HTML 报告。 */
   reportUrl: string | null

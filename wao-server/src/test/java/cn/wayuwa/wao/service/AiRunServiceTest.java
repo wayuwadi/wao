@@ -1243,6 +1243,72 @@ class AiRunServiceTest {
     }
 
     @Test
+    void rerunSameFailureQueuesEveryCurrentRunnerCredentialFailure() {
+        AiTaskRunEntity first = failedCredentialRun("ar1", "t1", LocalDateTime.of(2026, 9, 1, 14, 58));
+        AiTaskRunEntity second = failedCredentialRun("ar2", "t2", LocalDateTime.of(2026, 9, 1, 14, 54));
+        when(runMapper.selectById("ar1")).thenReturn(first);
+        when(runMapper.selectById("ar2")).thenReturn(second);
+        when(runMapper.selectList(any())).thenReturn(List.of(first, second));
+        when(runMapper.selectCount(any())).thenReturn(0L);
+        when(configMapper.selectById("p1")).thenReturn(config("p1"));
+        when(runnerMapper.selectList(null)).thenReturn(List.of(runner("rn-linux1", "Linux1", "codex")));
+        when(taskMapper.selectById("t1")).thenReturn(task("t1", "p1", "任务一"));
+        when(taskMapper.selectById("t2")).thenReturn(task("t2", "p1", "任务二"));
+        when(taskMapper.selectBatchIds(any())).thenReturn(List.of(
+                task("t1", "p1", "任务一"), task("t2", "p1", "任务二")));
+        when(projectMapper.selectBatchIds(any())).thenReturn(List.of(project("p1", "WAO")));
+
+        var result = service.rerunSameFailure("ar1", "wg", "https://wao.example");
+
+        assertThat(result.matchedCount()).isEqualTo(2);
+        assertThat(result.queuedCount()).isEqualTo(2);
+        assertThat(result.skippedCount()).isZero();
+        assertThat(result.runIds()).hasSize(2);
+        verify(runMapper, times(2)).insert(any(AiTaskRunEntity.class));
+    }
+
+    @Test
+    void rerunSameFailureRejectsOrdinaryTaskFailure() {
+        AiTaskRunEntity source = failedCredentialRun("ar1", "t1", LocalDateTime.now());
+        source.setResultSummary("123 网盘账号尚未配置，等待管理员输入真实凭据");
+        when(runMapper.selectById("ar1")).thenReturn(source);
+
+        assertThatThrownBy(() -> service.rerunSameFailure("ar1", "wg", "https://wao.example"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("不是可批量恢复");
+        verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
+    }
+
+    @Test
+    void rerunSameFailureSkipsAFailureThatAlreadyHasANewerRun() {
+        AiTaskRunEntity source = failedCredentialRun("ar1", "t1", LocalDateTime.now().minusMinutes(5));
+        when(runMapper.selectById("ar1")).thenReturn(source);
+        when(runMapper.selectList(any())).thenReturn(List.of(source));
+        when(runMapper.selectCount(any())).thenReturn(1L);
+
+        var result = service.rerunSameFailure("ar1", "wg", "https://wao.example");
+
+        assertThat(result.matchedCount()).isEqualTo(1);
+        assertThat(result.queuedCount()).isZero();
+        assertThat(result.skippedCount()).isEqualTo(1);
+        verify(runMapper, never()).insert(any(AiTaskRunEntity.class));
+    }
+
+    private static AiTaskRunEntity failedCredentialRun(String id, String taskId, LocalDateTime createdAt) {
+        AiTaskRunEntity run = new AiTaskRunEntity();
+        run.setId(id);
+        run.setTaskId(taskId);
+        run.setProjectId("p1");
+        run.setEngine("codex");
+        run.setRunnerId("rn-linux1");
+        run.setStatus("failed");
+        run.setCreatedAt(createdAt);
+        run.setPromptUrl("https://wao.example/api/share/tasks/" + taskId + ".md");
+        run.setResultSummary("PR 创建失败：GitHub 返回 HTTP 401 Requires authentication，GH_TOKEN 不可用");
+        return run;
+    }
+
+    @Test
     void continueRunQueuesOriginalSessionOnItsOriginalRunner() {
         AiTaskRunEntity failed = new AiTaskRunEntity();
         failed.setId("ar1");

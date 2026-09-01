@@ -10,6 +10,7 @@ import cn.wayuwa.wao.dto.AiAssistantClaimDto;
 import cn.wayuwa.wao.dto.AiPairCodeDto;
 import cn.wayuwa.wao.dto.AiProjectConfigDto;
 import cn.wayuwa.wao.dto.AiRunDto;
+import cn.wayuwa.wao.dto.AiRunBatchRerunDto;
 import cn.wayuwa.wao.dto.AiRunControlDto;
 import cn.wayuwa.wao.dto.AiRunImageContent;
 import cn.wayuwa.wao.dto.AiRunPageDto;
@@ -329,6 +330,15 @@ public class AiRunController {
     public ApiResponse<AiRunDto> rerun(@PathVariable String runId, HttpServletRequest http) {
         String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         return ApiResponse.ok(service.rerun(runId, currentMember.idOr(http, "unknown"), baseUrl));
+    }
+
+    /** 按服务端识别的同一基础设施故障批量恢复，前端不参与拼接筛选条件。 */
+    @PostMapping("/runs/{runId}/rerun-same-failure")
+    public ApiResponse<AiRunBatchRerunDto> rerunSameFailure(
+            @PathVariable String runId, HttpServletRequest http) {
+        String baseUrl = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
+        return ApiResponse.ok(service.rerunSameFailure(
+                runId, currentMember.idOr(http, "unknown"), baseUrl));
     }
 
     @PostMapping("/runs/{runId}/continue")

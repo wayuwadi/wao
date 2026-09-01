@@ -21,6 +21,7 @@ public interface AiActivityMapper {
                        CASE r.engine WHEN 'codex' THEN 'Codex' WHEN 'claude' THEN 'Claude Code'
                             WHEN 'qoder' THEN 'Qoder' ELSE r.engine END AS capability_label,
                        r.task_id AS target_id, SUBSTRING_INDEX(r.result_summary, '\n', 1) AS result_preview,
+                       r.result_summary AS failure_detail,
                        r.created_at, r.finished_at
                   FROM ai_task_run r
                   LEFT JOIN task t ON t.id = r.task_id
@@ -37,7 +38,7 @@ public interface AiActivityMapper {
                        CASE WHEN cr.ai_capability_id = 'local-codex' THEN '本地 Codex'
                             ELSE COALESCE(account.label,
                                     cr.ai_capability_id COLLATE utf8mb4_unicode_ci) END AS capability_label,
-                       cr.id AS target_id, cr.error_text AS result_preview,
+                       cr.id AS target_id, cr.error_text AS result_preview, NULL AS failure_detail,
                        cr.created_at, cr.finished_at
                   FROM chat_review_run cr
                   LEFT JOIN ai_account account

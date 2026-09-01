@@ -239,6 +239,19 @@ export const launchEvolutionSuggestion = (suggestionId: string, projectId: strin
 /** 基于一次失败运行重跑：AI 会拿到上次的报错接着修，不用从零重来。 */
 export const rerunAiRun = (runId: string) => data<AiRun>(http.post(`/api/ai/runs/${runId}/rerun`))
 
+export interface AiRunBatchRerunResult {
+  failureCode: string
+  failureLabel: string
+  matchedCount: number
+  queuedCount: number
+  skippedCount: number
+  runIds: string[]
+}
+
+/** 由服务端按故障指纹和执行节点筛选，避免前端误扩大重跑范围。 */
+export const rerunSameFailureAiRuns = (runId: string) =>
+  data<AiRunBatchRerunResult>(http.post(`/api/ai/runs/${encodeURIComponent(runId)}/rerun-same-failure`))
+
 export const continueAiRun = (runId: string, input: string) =>
   data<AiRun>(http.post(`/api/ai/runs/${runId}/continue`, { input }))
 
@@ -284,6 +297,9 @@ export interface AiActivity {
   capabilityLabel: string
   targetId: string
   resultPreview?: string | null
+  failureKind?: 'INFRASTRUCTURE' | null
+  failureCode?: string | null
+  failureLabel?: string | null
   createdAt: string
   finishedAt?: string | null
 }

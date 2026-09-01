@@ -23,6 +23,7 @@ import {
   removeAiWorkflow,
   requestRunnerScriptUpdate,
   rerunAiRun,
+  rerunSameFailureAiRuns,
   saveAiTaskAutoRunPolicy,
   saveAiProjectConfig,
   createAiRuns,
@@ -292,6 +293,15 @@ vi.mock('@/api/ai', () => ({
   removeAiWorkflow: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
   rerunAiRun: vi.fn<() => Promise<Record<string, unknown>>>()
     .mockResolvedValue({ id: 'ar3', taskId: 't1', taskTitle: '修复自动任务', retryOfRunId: 'ar1' }),
+  rerunSameFailureAiRuns: vi.fn<() => Promise<Record<string, unknown>>>()
+    .mockResolvedValue({
+      failureCode: 'RUNNER_GITHUB_CREDENTIALS',
+      failureLabel: '执行节点 GitHub 凭据不可用',
+      matchedCount: 5,
+      queuedCount: 5,
+      skippedCount: 0,
+      runIds: ['next-1', 'next-2', 'next-3', 'next-4', 'next-5'],
+    }),
 }))
 
 vi.mock('@/api/system', () => ({
@@ -973,6 +983,38 @@ describe('HomeView AI 控制台', () => {
     // 进行中的运行不该出现这个按钮
     await wrapper.find('.run-card').trigger('click')
     expect(wrapper.find('.run-detail footer .retry').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('节点凭据故障显示为基础设施异常并可一键重跑同原因任务', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchAiActivities).mockResolvedValueOnce({
+      items: [
+        { id: 'infra-1', type: 'FEATURE_DEVELOPMENT', title: '任务一', status: 'FAILED',
+          subtitle: 'WAO', capabilityLabel: 'Codex', targetId: 't1',
+          resultPreview: 'PR 创建失败', failureKind: 'INFRASTRUCTURE',
+          failureCode: 'RUNNER_GITHUB_CREDENTIALS', failureLabel: '执行节点 GitHub 凭据不可用',
+          createdAt: '2026-09-01T14:58:00+08:00', finishedAt: '2026-09-01T14:59:00+08:00' },
+        { id: 'infra-2', type: 'FEATURE_DEVELOPMENT', title: '任务二', status: 'FAILED',
+          subtitle: 'WAO', capabilityLabel: 'Codex', targetId: 't2',
+          resultPreview: 'HTTP 401', failureKind: 'INFRASTRUCTURE',
+          failureCode: 'RUNNER_GITHUB_CREDENTIALS', failureLabel: '执行节点 GitHub 凭据不可用',
+          createdAt: '2026-09-01T14:54:00+08:00', finishedAt: '2026-09-01T14:55:00+08:00' },
+      ],
+      total: 2, page: 1, size: 8,
+    })
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    const banner = wrapper.find('.infrastructure-failure-banner')
+    expect(banner.text()).toContain('当前页 2 项基础设施异常')
+    expect(wrapper.find('.recent-outcome').attributes('title')).toBe('基础设施异常')
+    expect(wrapper.find('.recent-main small').classes()).toContain('infrastructure')
+
+    await banner.get('button').trigger('click')
+    await flushPromises()
+
+    expect(rerunSameFailureAiRuns).toHaveBeenCalledWith('infra-1')
     wrapper.unmount()
   })
 

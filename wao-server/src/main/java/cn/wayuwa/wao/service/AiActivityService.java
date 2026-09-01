@@ -40,8 +40,14 @@ public class AiActivityService {
     }
 
     private AiActivityDto dto(AiActivityRow row) {
+        var failure = "CHAT_REVIEW".equals(row.getActivityType())
+                ? java.util.Optional.<AiRunFailureClassifier.Failure>empty()
+                : AiRunFailureClassifier.classify(row.getStatus(), row.getFailureDetail());
         return new AiActivityDto(row.getId(), row.getActivityType(), row.getTitle(), row.getStatus(),
                 row.getSubtitle(), row.getCapabilityLabel(), row.getTargetId(), row.getResultPreview(),
+                failure.map(AiRunFailureClassifier.Failure::kind).orElse(null),
+                failure.map(AiRunFailureClassifier.Failure::code).orElse(null),
+                failure.map(AiRunFailureClassifier.Failure::label).orElse(null),
                 offset(row.getCreatedAt()), offset(row.getFinishedAt()));
     }
 

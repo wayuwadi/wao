@@ -12,6 +12,7 @@ public class AiActivityRow {
     private String capabilityLabel;
     private String targetId;
     private String resultPreview;
+    private String failureDetail;
     private LocalDateTime createdAt;
     private LocalDateTime finishedAt;
 
@@ -31,6 +32,8 @@ public class AiActivityRow {
     public void setTargetId(String targetId) { this.targetId = targetId; }
     public String getResultPreview() { return resultPreview; }
     public void setResultPreview(String resultPreview) { this.resultPreview = resultPreview; }
+    public String getFailureDetail() { return failureDetail; }
+    public void setFailureDetail(String failureDetail) { this.failureDetail = failureDetail; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getFinishedAt() { return finishedAt; }
