@@ -4,6 +4,8 @@ RUN sed -i "s/dl-cdn.alpinelinux.org/${ALPINE_MIRROR_HOST}/g" /etc/apk/repositor
     && apk add --no-cache curl tinyproxy \
     && install -d -o tinyproxy -g tinyproxy /run/tinyproxy
 COPY deploy/tinyproxy/codex-egress.conf /etc/tinyproxy/tinyproxy.conf
+COPY deploy/scripts/healthcheck-codex-egress.sh /usr/local/bin/healthcheck-codex-egress
+RUN chmod 0755 /usr/local/bin/healthcheck-codex-egress
 USER tinyproxy
 ENTRYPOINT ["tinyproxy", "-d", "-c", "/etc/tinyproxy/tinyproxy.conf"]
 

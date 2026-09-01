@@ -155,6 +155,35 @@ services:
     logging: *default-logging
     networks: [wao]
 
+  codex-vpn:
+    image: wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}
+    user: "${CODEX_MIHOMO_UID:-1000}:${CODEX_MIHOMO_GID:-1000}"
+    entrypoint:
+      - /usr/local/bin/verge-mihomo
+      - -d
+      - /config
+      - -f
+      - /config/clash-verge.yaml
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - "${CODEX_MIHOMO_BIN:-/usr/bin/verge-mihomo}:/usr/local/bin/verge-mihomo:ro"
+      - "${CODEX_MIHOMO_CONFIG_DIR:-/home/wadi/.local/share/io.github.clash-verge-rev.clash-verge-rev}:/config"
+    environment:
+      WAO_CODEX_HEALTH_PROXY_URL: http://127.0.0.1:7897
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck-codex-egress"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    logging: *default-logging
+
   codex-egress-proxy:
     build:
       context: ..
@@ -165,11 +194,15 @@ services:
     image: wao-codex-egress-proxy:${WAO_IMAGE_TAG:-latest}
     restart: unless-stopped
     network_mode: host
+    depends_on:
+      codex-vpn:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "18888"]
-      interval: 10s
-      timeout: 3s
-      retries: 10
+      test: ["CMD", "/usr/local/bin/healthcheck-codex-egress"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 20s
     deploy:
       resources:
         limits:

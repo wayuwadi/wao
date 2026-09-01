@@ -6,6 +6,7 @@ sh deploy/scripts/test-set-nginx-upstream-state.sh
 sh deploy/scripts/test-quiesce-wao-server.sh
 sh deploy/scripts/test-linux-slave-availability.sh
 sh deploy/scripts/test-redis-sentinel-policy.sh
+sh deploy/scripts/test-ensure-codex-egress.sh
 sh deploy/scripts/test-install-release-linux.sh
 sh deploy/jenkins/test-ci-change-plan.sh
 sh deploy/jenkins/test-resolve-batch-base.sh
@@ -27,6 +28,9 @@ for script in \
   deploy/jumpserver/verify-assets.sh \
   deploy/scripts/test-ensure-jumpserver-certificate.sh \
   deploy/scripts/ensure-jumpserver-certificate.sh \
+  deploy/scripts/ensure-codex-egress.sh \
+  deploy/scripts/healthcheck-codex-egress.sh \
+  deploy/scripts/test-ensure-codex-egress.sh \
   deploy/scripts/install-release-linux.sh \
   deploy/scripts/test-redis-sentinel-policy.sh \
   deploy/jenkins/ci-deploy.sh \
@@ -100,6 +104,9 @@ grep -Fq -- '--network host' deploy/jenkins/ci-backend-test.sh
 grep -Fq -- '-v "$docker_socket:$docker_socket"' deploy/jenkins/ci-backend-test.sh
 grep -Fq -- '"-Dapi.version=${WAO_DOCKER_API_VERSION:-1.40}"' deploy/jenkins/ci-backend-test.sh
 grep -Fq 'Required MySQL contract test did not run successfully' deploy/jenkins/ci-backend-test.sh
+grep -Fq 'Upstream http 127.0.0.1:7897' deploy/tinyproxy/codex-egress.conf
+grep -Fq 'healthcheck-codex-egress' deploy/docker-compose-master.yml
+grep -Fq 'ensure-codex-egress.sh' deploy/scripts/deploy-linux.sh
 grep -Fq 'chroot /host /usr/bin/id -u jenkins' deploy/jenkins/apply-controller-config.sh
 grep -Fq 'install -d -o "$jenkins_uid" -g "$jenkins_gid"' deploy/jenkins/apply-controller-config.sh
 ! grep -Fq 'install -d -o jenkins -g jenkins' deploy/jenkins/apply-controller-config.sh
