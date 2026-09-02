@@ -12,7 +12,7 @@ public class SkillVersionEntity {
     private String tagsJson; private String changelog; private String licenseCode; private Boolean rightsConfirmed;
     private String testedPlatformsJson; private String compatiblePlatformsJson; private String state;
     private String packageName; private Long packageSize; private Long unpackedSize; private Integer fileCount;
-    private String sha256; private String fileManifestJson; private String scanFindingsJson; private String skillMd;
+    private String sha256; private String fileManifestJson; private String scanFindingsJson; private Boolean scanOverrideConfirmed; private String skillMd;
     private byte[] packageContent; private LocalDateTime submittedAt; private LocalDateTime reviewedAt;
     private String reviewerId; private String reviewNote; private LocalDateTime createdAt; private LocalDateTime updatedAt;
     public String getId(){return id;} public void setId(String v){id=v;}
@@ -35,6 +35,7 @@ public class SkillVersionEntity {
     public String getSha256(){return sha256;} public void setSha256(String v){sha256=v;}
     public String getFileManifestJson(){return fileManifestJson;} public void setFileManifestJson(String v){fileManifestJson=v;}
     public String getScanFindingsJson(){return scanFindingsJson;} public void setScanFindingsJson(String v){scanFindingsJson=v;}
+    public Boolean getScanOverrideConfirmed(){return scanOverrideConfirmed;} public void setScanOverrideConfirmed(Boolean v){scanOverrideConfirmed=v;}
     public String getSkillMd(){return skillMd;} public void setSkillMd(String v){skillMd=v;}
     public byte[] getPackageContent(){return packageContent;} public void setPackageContent(byte[] v){packageContent=v;}
     public LocalDateTime getSubmittedAt(){return submittedAt;} public void setSubmittedAt(LocalDateTime v){submittedAt=v;}

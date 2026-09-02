@@ -142,7 +142,7 @@ public class SkillMarketService {
                     limitText(packageInfo.name(), 100), limitText(packageInfo.description(), 500),
                     "agent-automation", List.of("ai-run", "candidate"), version,
                     "由 AI Run " + limitText(text(runId), 64) + " 根据已验收工作生成，等待作者复核适用范围与授权。",
-                    "ALL-RIGHTS-RESERVED", List.of("codex"), false);
+                    "ALL-RIGHTS-RESERVED", List.of("codex"), false, false);
             return createDraft(memberId, request, packageInfo);
         } catch (java.io.IOException ex) {
             throw new BadRequestException("读取 AI Skill 候选失败，请重试");
@@ -151,7 +151,7 @@ public class SkillMarketService {
 
     private SkillDtos.MySkill createDraft(String memberId, SkillRequests.Draft request,
             SkillPackageInspector.Inspection packageInfo) {
-        assertSafe(packageInfo);
+        assertSafe(packageInfo, request != null && request.scanOverrideConfirmed());
         memberId = requiredMember(memberId); validateDraft(request);
         SkillPublisherEntity publisher = publishers.findByMember(memberId);
         if (publisher == null) throw new BadRequestException("请先设置公开发布者昵称和 handle");
@@ -177,7 +177,9 @@ public class SkillMarketService {
         version.setPackageContent(packageInfo.packageContent()); version.setPackageSize((long) packageInfo.packageContent().length);
         version.setUnpackedSize(packageInfo.unpackedSize()); version.setFileCount(packageInfo.files().size());
         version.setSha256(packageInfo.sha256()); version.setFileManifestJson(write(packageInfo.files()));
-        version.setScanFindingsJson(write(packageInfo.findings())); version.setSkillMd(packageInfo.skillMd());
+        version.setScanFindingsJson(write(packageInfo.findings()));
+        version.setScanOverrideConfirmed(!packageInfo.findings().isEmpty() && request.scanOverrideConfirmed());
+        version.setSkillMd(packageInfo.skillMd());
         version.setCreatedAt(now); version.setUpdatedAt(now);
         try { versions.insert(version); } catch (DuplicateKeyException ex) { throw new ConflictException("版本 " + version.getVersion() + " 已存在"); }
         skill.setUpdatedAt(now); skills.updateById(skill);
@@ -190,9 +192,9 @@ public class SkillMarketService {
                 packageInfo.sha256(), packageInfo.findings());
     }
 
-    private void assertSafe(SkillPackageInspector.Inspection packageInfo) {
-        if (!packageInfo.findings().isEmpty()) {
-            throw new BadRequestException("安全检查未通过，未创建草稿：" + packageInfo.findings().get(0));
+    private void assertSafe(SkillPackageInspector.Inspection packageInfo, boolean overrideConfirmed) {
+        if (!packageInfo.findings().isEmpty() && !overrideConfirmed) {
+            throw new BadRequestException("安全检查未通过，请确认拦截点后选择 Pass：" + packageInfo.findings().get(0));
         }
     }
 
@@ -216,7 +218,9 @@ public class SkillMarketService {
         if (!"DRAFT".equals(version.getState())) throw new BadRequestException("只能提交草稿版本");
         if (!Boolean.TRUE.equals(version.getRightsConfirmed())) throw new BadRequestException("请确认拥有公开发布权");
         List<String> findings = readStrings(version.getScanFindingsJson());
-        if (!findings.isEmpty()) throw new BadRequestException("包内存在疑似凭据，请清理后上传新版本：" + findings.get(0));
+        if (!findings.isEmpty() && !Boolean.TRUE.equals(version.getScanOverrideConfirmed())) {
+            throw new BadRequestException("包内存在未确认的安全拦截点：" + findings.get(0));
+        }
         LocalDateTime now = LocalDateTime.now(); version.setState("PENDING_REVIEW"); version.setSubmittedAt(now); version.setUpdatedAt(now);
         versions.updateById(version);
         if (skill.getPublishedVersionId() == null) { skill.setStatus("PENDING_REVIEW"); skill.setUpdatedAt(now); skills.updateById(skill); }
@@ -334,6 +338,10 @@ public class SkillMarketService {
     public SkillDtos.Version approve(String memberId, String versionId) {
         requireAdmin(memberId);
         SkillVersionEntity version = pending(versionId); SkillEntity skill = requiredSkill(version.getSkillId());
+        if (!readStrings(version.getScanFindingsJson()).isEmpty()
+                && !Boolean.TRUE.equals(version.getScanOverrideConfirmed())) {
+            throw new BadRequestException("该版本存在未确认的安全拦截点，不能通过审核");
+        }
         LocalDateTime now = LocalDateTime.now(); version.setState("PUBLISHED"); version.setReviewedAt(now);
         version.setReviewerId(memberId); version.setReviewNote(null); version.setUpdatedAt(now); versions.updateById(version);
         skill.setDisplayName(version.getDisplayName()); skill.setSummary(version.getSummary()); skill.setCategory(version.getCategory());
@@ -442,7 +450,8 @@ public class SkillMarketService {
                 version.getState(),version.getChangelog(),version.getLicenseCode(),
                 readStrings(version.getTestedPlatformsJson()),readStrings(version.getCompatiblePlatformsJson()),n(version.getPackageSize()),
                 n(version.getUnpackedSize()),version.getFileCount()==null?0:version.getFileCount(),version.getSha256(),
-                readMaps(version.getFileManifestJson()),readStrings(version.getScanFindingsJson()),version.getSkillMd(),version.getReviewNote(),
+                readMaps(version.getFileManifestJson()),readStrings(version.getScanFindingsJson()),
+                Boolean.TRUE.equals(version.getScanOverrideConfirmed()),version.getSkillMd(),version.getReviewNote(),
                 version.getSubmittedAt(),version.getReviewedAt());
     }
 

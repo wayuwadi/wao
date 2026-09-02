@@ -11,7 +11,7 @@ export interface SkillVersion {
   id: string; version: string; displayName: string; summary: string; state: string; changelog: string; license: string
   testedPlatforms: string[]; compatiblePlatforms: string[]; packageSize: number; unpackedSize: number
   fileCount: number; sha256: string; files: { path: string; size: number }[]; findings: string[]
-  skillMd: string; reviewNote: string; submittedAt: string; reviewedAt: string
+  scanOverrideConfirmed: boolean; skillMd: string; reviewNote: string; submittedAt: string; reviewedAt: string
 }
 export interface SkillDetail { skill: SkillCard; publishedVersion: SkillVersion; versions: SkillVersion[]; favorite: boolean }
 export interface SkillFilePreview { version: string; path: string; size: number; previewable: boolean; content: string | null; message: string | null }
@@ -28,6 +28,7 @@ export interface SkillPackageInspection {
 export interface DraftMetadata {
   skillId?: string; slug: string; displayName: string; summary: string; category: string; tags: string[]
   version: string; changelog: string; license: string; testedPlatforms: string[]; rightsConfirmed: boolean
+  scanOverrideConfirmed: boolean
 }
 
 const data = <T>(response: { data: ApiResponse<T> }) => response.data.data
@@ -57,7 +58,7 @@ export async function createSkillDraft(metadata: DraftMetadata, archive: File | 
     onUploadProgress: (event) => onProgress(event.total ? Math.round(event.loaded * 100 / event.total) : 0),
   }))
 }
-export async function patchSkillDraft(skillId: string, versionId: string, body: Omit<DraftMetadata, 'skillId' | 'slug' | 'version'>) { return data(await http.patch<ApiResponse<SkillVersion>>(`/api/skills/${skillId}/versions/${versionId}`, body)) }
+export async function patchSkillDraft(skillId: string, versionId: string, body: Omit<DraftMetadata, 'skillId' | 'slug' | 'version' | 'scanOverrideConfirmed'>) { return data(await http.patch<ApiResponse<SkillVersion>>(`/api/skills/${skillId}/versions/${versionId}`, body)) }
 export async function submitSkill(skillId: string, versionId: string) { return data(await http.post<ApiResponse<SkillVersion>>(`/api/skills/${skillId}/versions/${versionId}/submit`)) }
 export async function deleteSkillDraft(skillId: string, versionId: string) { await http.delete(`/api/skills/${skillId}/versions/${versionId}`) }
 export async function setSkillListed(skillId: string, value: boolean) { await http.put(`/api/skills/${skillId}/listed`, null, { params: { value } }) }

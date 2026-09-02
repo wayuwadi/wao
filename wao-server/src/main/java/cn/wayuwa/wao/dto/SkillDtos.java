@@ -14,7 +14,7 @@ public final class SkillDtos {
             String version, List<String> compatiblePlatforms) { }
     public record Version(String id, String version, String displayName, String summary, String state, String changelog, String license,
             List<String> testedPlatforms, List<String> compatiblePlatforms, long packageSize, long unpackedSize,
-            int fileCount, String sha256, List<Map<String, Object>> files, List<String> findings,
+            int fileCount, String sha256, List<Map<String, Object>> files, List<String> findings, boolean scanOverrideConfirmed,
             String skillMd, String reviewNote, LocalDateTime submittedAt, LocalDateTime reviewedAt) { }
     public record Detail(Card skill, Version publishedVersion, List<Version> versions, boolean favorite) { }
     public record FilePreview(String version, String path, long size, boolean previewable, String content, String message) { }

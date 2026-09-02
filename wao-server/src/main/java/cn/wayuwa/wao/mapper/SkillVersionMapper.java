@@ -9,7 +9,7 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface SkillVersionMapper extends BaseMapper<SkillVersionEntity> {
     String META = "id,skill_id,version,display_name,summary,category,tags_json,changelog,license_code,rights_confirmed,tested_platforms_json,compatible_platforms_json,state," +
-            "package_name,package_size,unpacked_size,file_count,sha256,file_manifest_json,scan_findings_json,skill_md," +
+            "package_name,package_size,unpacked_size,file_count,sha256,file_manifest_json,scan_findings_json,scan_override_confirmed,skill_md," +
             "submitted_at,reviewed_at,reviewer_id,review_note,created_at,updated_at";
     @Select("SELECT " + META + " FROM skill_version WHERE skill_id=#{skillId} ORDER BY created_at DESC")
     List<SkillVersionEntity> listMeta(String skillId);

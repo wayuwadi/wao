@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import cn.wayuwa.wao.common.BadRequestException;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
@@ -151,7 +152,7 @@ public class SkillPackageInspector {
         Map<String, Object> frontmatter = frontmatter(skillMd);
         String name = required(frontmatter, "name");
         String description = required(frontmatter, "description");
-        List<String> findings = scanSecrets(normalized);
+        List<String> findings = scanSecrets(normalized, entries);
         List<FileMeta> manifest = normalized.entrySet().stream()
                 .map(e -> new FileMeta(actualPath(entries, e.getKey()), e.getValue().length)).toList();
         byte[] canonical = canonicalZip(entries);
@@ -219,24 +220,36 @@ public class SkillPackageInspector {
         return value;
     }
 
-    private static List<String> scanSecrets(Map<String, byte[]> files) {
+    private static List<String> scanSecrets(Map<String, byte[]> files, List<EntryData> entries) {
         List<String> findings = new ArrayList<>();
         for (Map.Entry<String, byte[]> entry : files.entrySet()) {
             if (containsNul(entry.getValue())) continue;
             String text = new String(entry.getValue(), StandardCharsets.UTF_8);
-            if (PRIVATE_KEY.matcher(text).find()) findings.add(entry.getKey() + "：检测到私钥");
-            if (OPENAI_TOKEN.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 OpenAI Token");
-            if (GITHUB_TOKEN.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 GitHub Token");
-            if (GITHUB_FINE_GRAINED_TOKEN.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 GitHub Token");
-            if (AWS_KEY.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 AWS Access Key");
-            if (BEARER_TOKEN.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 Bearer Token");
+            String path = actualPath(entries, entry.getKey());
+            addFirstFinding(findings, path, text, PRIVATE_KEY, "检测到私钥");
+            addFirstFinding(findings, path, text, OPENAI_TOKEN, "检测到疑似 OpenAI Token");
+            addFirstFinding(findings, path, text, GITHUB_TOKEN, "检测到疑似 GitHub Token");
+            addFirstFinding(findings, path, text, GITHUB_FINE_GRAINED_TOKEN, "检测到疑似 GitHub Token");
+            addFirstFinding(findings, path, text, AWS_KEY, "检测到疑似 AWS Access Key");
+            addFirstFinding(findings, path, text, BEARER_TOKEN, "检测到疑似 Bearer Token");
             var assigned = ASSIGNED_SECRET.matcher(text);
             while (assigned.find()) if (!isPlaceholder(assigned.group(1))) {
-                findings.add(entry.getKey() + "：检测到疑似密码或密钥配置");
+                findings.add(finding(path, text, assigned.start(), "检测到疑似密码或密钥配置"));
                 break;
             }
         }
         return findings.stream().distinct().toList();
+    }
+
+    private static void addFirstFinding(List<String> findings, String path, String text, Pattern pattern, String message) {
+        Matcher matcher = pattern.matcher(text);
+        if (matcher.find()) findings.add(finding(path, text, matcher.start(), message));
+    }
+
+    private static String finding(String path, String text, int offset, String message) {
+        int line = 1;
+        for (int i = 0; i < offset; i++) if (text.charAt(i) == '\n') line++;
+        return path + ":" + line + "：" + message;
     }
 
     private static boolean isPlaceholder(String value) {

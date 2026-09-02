@@ -93,6 +93,28 @@ class SkillMarketServiceIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM skill_version", Integer.class)).isZero();
     }
 
+    @Test void authorCanPassLocatedFindingWithoutUploadingAgainAndReviewKeepsTheAuditTrail() throws Exception {
+        market.savePublisher("author", new SkillRequests.PublisherProfile("wao-author", "WAO 作者"));
+        var request = new SkillRequests.Draft(null, "meeting-helper", "Meeting Helper",
+                "Summarize meetings and decisions safely", "office-efficiency", List.of("meeting"),
+                "1.0.0", "Pass reviewed false positive", "MIT", List.of("codex"), true, true);
+
+        var created = market.createZipDraft("author", request, unsafeFile());
+        var version = created.versions().get(0);
+
+        assertThat(version.scanOverrideConfirmed()).isTrue();
+        assertThat(version.findings()).singleElement().asString().contains("SKILL.md:5").contains("Bearer Token");
+        market.submit("author", created.id(), version.id());
+        var review = market.reviews("admin").get(0).version();
+        assertThat(review.scanOverrideConfirmed()).isTrue();
+        assertThat(review.findings()).isEqualTo(version.findings());
+        jdbc.update("UPDATE skill_version SET scan_override_confirmed=FALSE WHERE id=?", version.id());
+        assertThatThrownBy(() -> market.approve("admin", version.id()))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("未确认的安全拦截点");
+        jdbc.update("UPDATE skill_version SET scan_override_confirmed=TRUE WHERE id=?", version.id());
+        assertThat(market.approve("admin", version.id()).state()).isEqualTo("PUBLISHED");
+    }
+
     @Test void aiCandidateBecomesUnconfirmedDraftAndIteratesPatchVersion() throws Exception {
         market.savePublisher("author", new SkillRequests.PublisherProfile("wao-author", "WAO 作者"));
 
@@ -109,7 +131,7 @@ class SkillMarketServiceIntegrationTest {
 
     private static SkillRequests.Draft draft(String skillId, String version) {
         return new SkillRequests.Draft(skillId, "meeting-helper", "Meeting Helper", "Summarize meetings and decisions safely",
-                "office-efficiency", List.of("meeting", "notes"), version, "Release " + version, "MIT", List.of("codex", "claude-code"), true);
+                "office-efficiency", List.of("meeting", "notes"), version, "Release " + version, "MIT", List.of("codex", "claude-code"), true, false);
     }
     private static MockMultipartFile file(String version) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();

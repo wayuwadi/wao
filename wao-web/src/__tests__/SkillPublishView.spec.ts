@@ -80,7 +80,10 @@ describe('Skill 发布预检', () => {
     )
   })
 
-  it('敏感信息命中时不展示草稿表单和创建入口', async () => {
+  it('敏感信息命中时展示具体位置并可复用已选文件 Pass', async () => {
+    api.createSkillDraft.mockResolvedValue({
+      id: 'skill-1', displayName: 'Unsafe', summary: 'Unsafe package', versions: [],
+    })
     api.inspectSkillPackage.mockResolvedValue({
       name: 'Unsafe',
       description: 'Unsafe package',
@@ -88,16 +91,36 @@ describe('Skill 发布预检', () => {
       unpackedSize: 80,
       fileCount: 1,
       sha256: 'b'.repeat(64),
-      findings: ['skill.md：检测到疑似 Bearer Token'],
+      findings: ['scripts/geo_db.py:42：检测到疑似密码或密钥配置'],
     })
     const wrapper = await render()
 
     await selectFolder(wrapper)
 
-    expect(wrapper.text()).toContain('安全检查未通过，未创建草稿')
-    expect(wrapper.text()).toContain('检测到疑似 Bearer Token')
+    expect(wrapper.text()).toContain('安全扫描拦截了以下位置')
+    expect(wrapper.text()).toContain('scripts/geo_db.py:42')
     expect(wrapper.find('input[maxlength="80"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('确认信息并创建草稿')
+
+    await wrapper.get('.warning-pass').trigger('click')
+
+    expect(wrapper.text()).toContain('已 Pass 安全扫描警告')
+    expect(wrapper.find('input[maxlength="80"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('确认信息并创建草稿')
+    expect(api.inspectSkillPackage).toHaveBeenCalledOnce()
+
+    await wrapper.get('select').setValue('office-efficiency')
+    await wrapper.get('.rights input').setValue(true)
+    await wrapper.get('.actions button').trigger('click')
+    await flushPromises()
+
+    expect(api.createSkillDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ scanOverrideConfirmed: true }),
+      null,
+      expect.arrayContaining([expect.any(File)]),
+      expect.any(Function),
+    )
+    expect(api.inspectSkillPackage).toHaveBeenCalledOnce()
   })
 
   it('连续选择时只采用最后一个包的预检结果', async () => {
