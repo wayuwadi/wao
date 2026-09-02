@@ -12,7 +12,12 @@ import { NAVIGATION_CATALOG } from '@/config/navigationCatalog'
 import { MODULES } from '@/config/nav'
 import { useUiStore } from '@/stores/ui'
 import { fetchPreference, savePreference } from '@/api/favorites'
-import { fetchBuiltinMenuRegistry, fetchExternalAppRegistry } from '@/api/system'
+import {
+  fetchBuiltinMenuRegistry,
+  fetchExternalAppRegistry,
+  saveBuiltinMenuRegistry,
+  saveExternalAppRegistry,
+} from '@/api/system'
 import { fetchFunctionHealth } from '@/api/functionHealth'
 
 vi.mock('@/api/favorites', () => ({
@@ -23,6 +28,10 @@ vi.mock('@/api/favorites', () => ({
 vi.mock('@/api/system', () => ({
   fetchBuiltinMenuRegistry: vi.fn<() => Promise<BuiltinMenuRegistry>>(),
   fetchExternalAppRegistry: vi.fn<() => Promise<ExternalAppRegistry>>(),
+  saveBuiltinMenuRegistry:
+    vi.fn<(menus: BuiltinMenuRegistry['menus']) => Promise<BuiltinMenuRegistry>>(),
+  saveExternalAppRegistry:
+    vi.fn<(apps: ExternalAppRegistry['apps']) => Promise<ExternalAppRegistry>>(),
 }))
 
 vi.mock('@/api/functionHealth', () => ({
@@ -82,6 +91,8 @@ describe('全量导航页', () => {
         },
       ],
     })
+    vi.mocked(saveBuiltinMenuRegistry).mockImplementation(async (menus) => ({ version: 24, menus }))
+    vi.mocked(saveExternalAppRegistry).mockImplementation(async (apps) => ({ version: 1, apps }))
     vi.mocked(fetchPreference).mockResolvedValue(
       JSON.stringify({
         version: 2,
@@ -142,13 +153,13 @@ describe('全量导航页', () => {
     expect(wrapper.get('.nav-card').text()).toContain('记忆中心')
 
     await wrapper.get('.search input').setValue('游戏厅')
-    await wrapper.get('.nav-card').trigger('click')
+    await wrapper.get('.card-open').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/games')
 
     await router.push('/navigation')
     await wrapper.get('.search input').setValue('隐藏应用')
-    await wrapper.get('.nav-card').trigger('click')
+    await wrapper.get('.card-open').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/apps/hidden-app')
     wrapper.unmount()
@@ -172,6 +183,63 @@ describe('全量导航页', () => {
     expect(wrapper.get('.nav-card').text()).toContain('12 分')
     expect(wrapper.get('.nav-card').text()).toContain('30 天 10 次 · 25.0%')
     expect(wrapper.get('.nav-card').text()).toContain('优先缩短高频操作路径')
+    wrapper.unmount()
+  })
+
+  it('从工作台直接隐藏内置菜单，保存后仍留在当前工作台恢复', async () => {
+    const { router, wrapper } = await mountNavigation()
+    await wrapper.get('.search input').setValue('项目')
+    const card = wrapper.get('.manageable-card')
+    expect(card.get('.menu-visibility').text()).toContain('隐藏菜单')
+
+    await card.get('.menu-visibility').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/navigation')
+    expect(saveBuiltinMenuRegistry).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ id: 'projects', visible: false })]),
+    )
+    expect(card.text()).toContain('侧栏已隐藏')
+    expect(card.get('.menu-visibility').text()).toContain('显示菜单')
+    wrapper.unmount()
+  })
+
+  it('从工作台直接恢复已隐藏的接入应用', async () => {
+    const { router, wrapper } = await mountNavigation()
+    await wrapper.get('.search input').setValue('隐藏应用')
+    const card = wrapper.get('.manageable-card')
+    expect(card.text()).toContain('侧栏已隐藏')
+
+    await card.get('.menu-visibility').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/navigation')
+    expect(saveExternalAppRegistry).toHaveBeenCalledWith([
+      expect.objectContaining({ id: 'hidden-app', visible: true }),
+    ])
+    expect(card.text()).not.toContain('侧栏已隐藏')
+    expect(card.get('.menu-visibility').text()).toContain('隐藏菜单')
+    wrapper.unmount()
+  })
+
+  it('菜单保存失败时恢复服务端状态并可原地重试', async () => {
+    vi.mocked(saveBuiltinMenuRegistry)
+      .mockRejectedValueOnce(new Error('网络不可用'))
+      .mockImplementationOnce(async (menus) => ({ version: 24, menus }))
+    const { wrapper } = await mountNavigation()
+    await wrapper.get('.search input').setValue('项目')
+
+    await wrapper.get('.menu-visibility').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.menu-action-error').text()).toContain('网络不可用')
+    expect(wrapper.get('.menu-visibility').text()).toContain('隐藏菜单')
+    await wrapper.get('.menu-action-error button').trigger('click')
+    await flushPromises()
+
+    expect(saveBuiltinMenuRegistry).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.menu-action-error').exists()).toBe(false)
+    expect(wrapper.get('.menu-visibility').text()).toContain('显示菜单')
     wrapper.unmount()
   })
 })
