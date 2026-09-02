@@ -34,6 +34,7 @@ const interpretation = ref('')
 const interpretationError = ref('')
 const conversationError = ref('')
 const conversationLoading = ref(false)
+let assistantStatusRequest: Promise<boolean> | null = null
 
 const localDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date())
 const draftKey = `wao-tianren-focus-v1:${localDate}`
@@ -87,18 +88,25 @@ function loadDraft() {
   }
 }
 
-async function loadAssistant() {
+function loadAssistant(): Promise<boolean> {
+  if (assistantStatusRequest) return assistantStatusRequest
   assistantLoading.value = true
-  try {
-    const status = await fetchAssistantStatus()
-    assistantConfigured.value = status.configured
-    assistantMessage.value = status.message
-  } catch (cause) {
-    assistantConfigured.value = false
-    assistantMessage.value = cause instanceof Error ? cause.message : '无法读取 AI 状态'
-  } finally {
-    assistantLoading.value = false
-  }
+  assistantStatusRequest = (async () => {
+    try {
+      const status = await fetchAssistantStatus()
+      assistantConfigured.value = status.configured
+      assistantMessage.value = status.message
+      return status.configured
+    } catch (cause) {
+      assistantConfigured.value = false
+      assistantMessage.value = cause instanceof Error ? cause.message : '无法读取 AI 状态'
+      return false
+    } finally {
+      assistantLoading.value = false
+      assistantStatusRequest = null
+    }
+  })()
+  return assistantStatusRequest
 }
 
 async function loadConversation(current: TianrenReading | null) {
@@ -180,6 +188,10 @@ async function castToday() {
     reading.value = todayReading.value
     history.value = await fetchTianrenHistory(14)
     syncState.value = 'saved'
+    const canStartInterpretation = assistantLoading.value
+      ? await loadAssistant()
+      : assistantConfigured.value
+    if (canStartInterpretation) await interpretToday()
   } catch (cause) {
     pageError.value = cause instanceof Error ? cause.message : '今天的一卦没有保存成功'
     syncState.value = 'error'
@@ -387,9 +399,9 @@ onMounted(() => {
 
               <button class="interpret-button" type="button" :disabled="!canInterpret" @click="interpretToday">
                 <i :class="interpreting ? 'ri-loader-4-line spin' : 'ri-sparkling-2-line'"></i>
-                {{ interpreting ? '本地 AI 正在结合卦象与四时生成反思' : interpretation ? '继续问今日卦象' : '请 AI 解读今日一卦' }}
+                {{ interpreting ? '本地 AI 正在结合卦象与四时生成反思' : interpretation ? '根据关注点重新解读' : '请 AI 解读今日一卦' }}
               </button>
-              <small class="privacy-note"><i class="ri-shield-user-line"></i> 解读保存在你的成员私有 AI 会话；主动分享本卦后，同一公开链接会展示当前最新一条 AI 自照。</small>
+              <small class="privacy-note"><i class="ri-shield-user-line"></i> 起卦后会自动生成首次解读；之后可填写关注点重新解读。内容保存在你的成员私有 AI 会话，主动分享后公开链接会展示当前最新一条 AI 自照。</small>
             </section>
 
             <section v-else class="reflection-card history-reflection card">

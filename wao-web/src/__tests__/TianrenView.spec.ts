@@ -53,15 +53,20 @@ describe('TianrenView', () => {
     vi.mocked(fetchAssistantStatus).mockResolvedValue({ configured: true, message: '已连接本地 Codex' })
     vi.mocked(fetchTianrenHistory).mockResolvedValue([])
     vi.mocked(fetchTodayTianrenReading).mockResolvedValue(null)
+    vi.mocked(streamTianrenInterpretation).mockImplementation(async function* () {})
   })
 
   afterEach(() => {
     vi.clearAllMocks()
   })
 
-  it('今日为空时由用户主动起卦并展示服务端返回的本卦与之卦', async () => {
+  it('今日为空时由用户主动起卦并自动生成首次解读', async () => {
     vi.mocked(createTodayTianrenReading).mockResolvedValue(reading)
-    vi.mocked(fetchTianrenHistory).mockResolvedValueOnce([]).mockResolvedValueOnce([reading])
+    vi.mocked(fetchTianrenHistory).mockResolvedValueOnce([]).mockResolvedValue([reading])
+    vi.mocked(fetchTodayTianrenReading).mockResolvedValueOnce(null).mockResolvedValueOnce(reading)
+    vi.mocked(streamTianrenInterpretation).mockImplementation(async function* () {
+      yield '## 自动解读\n稳住今天的节奏。'
+    })
     const wrapper = mount(TianrenView)
     await flushPromises()
 
@@ -70,9 +75,49 @@ describe('TianrenView', () => {
     await flushPromises()
 
     expect(createTodayTianrenReading).toHaveBeenCalledTimes(1)
+    expect(streamTianrenInterpretation).toHaveBeenCalledWith('')
     expect(wrapper.text()).toContain('第 11 卦 · 泰')
     expect(wrapper.text()).toContain('泰 → 升')
+    expect(wrapper.text()).toContain('自动解读')
+    expect(wrapper.text()).toContain('根据关注点重新解读')
     expect(wrapper.findAll('.yao-row')).toHaveLength(6)
+  })
+
+  it('自动解读失败时保留已保存卦象并提供重新解读入口', async () => {
+    vi.mocked(createTodayTianrenReading).mockResolvedValue(reading)
+    vi.mocked(fetchTianrenHistory).mockResolvedValueOnce([]).mockResolvedValueOnce([reading])
+    vi.mocked(streamTianrenInterpretation).mockImplementation(async function* () {
+      throw new Error('Runner 暂时离线')
+    })
+    const wrapper = mount(TianrenView)
+    await flushPromises()
+
+    await wrapper.get('.cast-button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('第 11 卦 · 泰')
+    expect(wrapper.text()).toContain('Runner 暂时离线')
+    expect(wrapper.text()).toContain('保留关注点并重试')
+  })
+
+  it('起卦早于 Codex 状态返回时等待同一次检查并自动解读', async () => {
+    let finishStatus!: (value: { configured: boolean, message: string }) => void
+    vi.mocked(fetchAssistantStatus).mockReturnValue(new Promise((resolve) => {
+      finishStatus = resolve
+    }))
+    vi.mocked(createTodayTianrenReading).mockResolvedValue(reading)
+    vi.mocked(fetchTianrenHistory).mockResolvedValueOnce([]).mockResolvedValue([reading])
+    const wrapper = mount(TianrenView)
+    await flushPromises()
+
+    await wrapper.get('.cast-button').trigger('click')
+    expect(streamTianrenInterpretation).not.toHaveBeenCalled()
+
+    finishStatus({ configured: true, message: '已连接本地 Codex' })
+    await flushPromises()
+
+    expect(fetchAssistantStatus).toHaveBeenCalledTimes(1)
+    expect(streamTianrenInterpretation).toHaveBeenCalledWith('')
   })
 
   it('本地 Codex 离线时仍展示卦象但禁用 AI 解读', async () => {
