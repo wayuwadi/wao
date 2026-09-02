@@ -21,6 +21,10 @@ export interface MySkill {
   downloads: number; favorites: number; versions: SkillVersion[]
 }
 export interface ReviewItem { skill: MySkill; version: SkillVersion; publisher: SkillPublisher }
+export interface SkillPackageInspection {
+  name: string; description: string; suggestedSlug: string; unpackedSize: number
+  fileCount: number; sha256: string; findings: string[]
+}
 export interface DraftMetadata {
   skillId?: string; slug: string; displayName: string; summary: string; category: string; tags: string[]
   version: string; changelog: string; license: string; testedPlatforms: string[]; rightsConfirmed: boolean
@@ -36,11 +40,18 @@ export const skillDownloadUrl = (handle: string, slug: string, version?: string)
 export async function fetchPublisher() { return data(await http.get<ApiResponse<SkillPublisher | null>>('/api/skills/publisher/me')) }
 export async function savePublisher(body: SkillPublisher) { return data(await http.put<ApiResponse<SkillPublisher>>('/api/skills/publisher/me', body)) }
 export async function fetchMySkills() { return data(await http.get<ApiResponse<MySkill[]>>('/api/skills/mine')) }
-export async function createSkillDraft(metadata: DraftMetadata, archive: File | null, files: File[], onProgress: (value: number) => void) {
+function packageForm(archive: File | null, files: File[]) {
   const form = new FormData()
-  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }))
   if (archive) form.append('archive', archive)
   else files.forEach((file) => { form.append('files', file); form.append('paths', file.webkitRelativePath || file.name) })
+  return form
+}
+export async function inspectSkillPackage(archive: File | null, files: File[]) {
+  return data(await http.post<ApiResponse<SkillPackageInspection>>('/api/skills/inspect', packageForm(archive, files), { timeout: 60_000 }))
+}
+export async function createSkillDraft(metadata: DraftMetadata, archive: File | null, files: File[], onProgress: (value: number) => void) {
+  const form = packageForm(archive, files)
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }))
   return data(await http.post<ApiResponse<MySkill>>('/api/skills', form, {
     timeout: 60_000,
     onUploadProgress: (event) => onProgress(event.total ? Math.round(event.loaded * 100 / event.total) : 0),

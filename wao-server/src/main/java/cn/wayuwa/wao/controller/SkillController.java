@@ -37,6 +37,16 @@ public class SkillController {
     @GetMapping("/mine")
     public ApiResponse<List<SkillDtos.MySkill>> mine(HttpServletRequest request) { return ApiResponse.ok(market.mine(member(request))); }
 
+    @PostMapping(value="/inspect",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<SkillDtos.PackageInspection> inspect(
+            @RequestPart(value="archive",required=false) MultipartFile archive,
+            @RequestPart(value="files",required=false) List<MultipartFile> files,
+            @RequestParam(value="paths",required=false) List<String> paths,HttpServletRequest request) {
+        if(archive!=null&&!archive.isEmpty())return ApiResponse.ok(market.inspectZip(member(request),archive));
+        if(files!=null&&!files.isEmpty())return ApiResponse.ok(market.inspectFolder(member(request),files,paths));
+        throw new BadRequestException("请上传 ZIP 或选择 Skill 文件夹");
+    }
+
     @PostMapping(consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<SkillDtos.MySkill> createDraft(@RequestPart("metadata") SkillRequests.Draft metadata,
             @RequestPart(value="archive",required=false) MultipartFile archive,

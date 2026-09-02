@@ -39,7 +39,11 @@ public class SkillPackageInspector {
     private static final Pattern PRIVATE_KEY = Pattern.compile("-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----");
     private static final Pattern OPENAI_TOKEN = Pattern.compile("\\bsk-[A-Za-z0-9_-]{20,}\\b");
     private static final Pattern GITHUB_TOKEN = Pattern.compile("\\bgh[pousr]_[A-Za-z0-9]{20,}\\b");
+    private static final Pattern GITHUB_FINE_GRAINED_TOKEN = Pattern.compile("\\bgithub_pat_[A-Za-z0-9_]{20,}\\b");
     private static final Pattern AWS_KEY = Pattern.compile("\\bAKIA[A-Z0-9]{16}\\b");
+    private static final Pattern BEARER_TOKEN = Pattern.compile("(?i)\\bBearer\\s+[A-Za-z0-9._~+/=-]{12,}");
+    private static final Pattern ASSIGNED_SECRET = Pattern.compile(
+            "(?i)\\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret)\\s*[=:]\\s*[\\\"']?([^\\s,;\\\"']{8,})");
 
     /** 解析一个 ZIP，规范化为可下载的稳定 ZIP。 */
     public Inspection inspectZip(byte[] source) {
@@ -218,14 +222,33 @@ public class SkillPackageInspector {
     private static List<String> scanSecrets(Map<String, byte[]> files) {
         List<String> findings = new ArrayList<>();
         for (Map.Entry<String, byte[]> entry : files.entrySet()) {
-            if (entry.getValue().length > 1024 * 1024 || containsNul(entry.getValue())) continue;
+            if (containsNul(entry.getValue())) continue;
             String text = new String(entry.getValue(), StandardCharsets.UTF_8);
             if (PRIVATE_KEY.matcher(text).find()) findings.add(entry.getKey() + "：检测到私钥");
             if (OPENAI_TOKEN.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 OpenAI Token");
             if (GITHUB_TOKEN.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 GitHub Token");
+            if (GITHUB_FINE_GRAINED_TOKEN.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 GitHub Token");
             if (AWS_KEY.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 AWS Access Key");
+            if (BEARER_TOKEN.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 Bearer Token");
+            var assigned = ASSIGNED_SECRET.matcher(text);
+            while (assigned.find()) if (!isPlaceholder(assigned.group(1))) {
+                findings.add(entry.getKey() + "：检测到疑似密码或密钥配置");
+                break;
+            }
         }
-        return findings;
+        return findings.stream().distinct().toList();
+    }
+
+    private static boolean isPlaceholder(String value) {
+        String lower = value.toLowerCase(Locale.ROOT);
+        return (lower.startsWith("${") && lower.endsWith("}"))
+                || (lower.startsWith("{{") && lower.endsWith("}}"))
+                || (lower.startsWith("<") && lower.endsWith(">"))
+                || lower.contains("placeholder") || lower.contains("example") || lower.contains("changeme")
+                || lower.contains("replace-me") || lower.contains("replace_me")
+                || lower.startsWith("your-") || lower.startsWith("your_")
+                || lower.contains("dummy") || lower.contains("sample") || lower.contains("redacted")
+                || lower.contains("已脱敏") || lower.matches("x{8,}");
     }
 
     private static String decodeText(String name, byte[] content) {
