@@ -6,8 +6,10 @@ import { externalAppItemId } from '@/config/nav'
 import { quickLinkPath, type QuickLink } from '@/config/quickLinks'
 import { useQuickLinks } from '@/composables/quickLinks'
 import { useFunctionHealth } from '@/composables/functionHealth'
+import { toast } from '@/composables/toast'
 import { useNavStore } from '@/stores/nav'
 import { useUiStore } from '@/stores/ui'
+import type { NavItemId } from '@/config/nav'
 
 const router = useRouter()
 const nav = useNavStore()
@@ -15,6 +17,8 @@ const ui = useUiStore()
 const quickLinks = useQuickLinks()
 const health = useFunctionHealth()
 const query = ref('')
+const menuActionId = ref<NavItemId | null>(null)
+const failedMenuAction = ref<{ id: NavItemId; visible: boolean; message: string } | null>(null)
 
 function includesQuery(values: Array<string | undefined>) {
   const needle = query.value.trim().toLocaleLowerCase()
@@ -107,6 +111,27 @@ function openLink(link: QuickLink) {
   else window.open(link.url, '_blank', 'noopener,noreferrer')
 }
 
+async function setMenuVisibility(id: NavItemId, visible: boolean) {
+  if (menuActionId.value) return
+  menuActionId.value = id
+  failedMenuAction.value = null
+  try {
+    await nav.setMenuVisibility(id, visible)
+    toast(visible ? '菜单已显示' : '菜单已隐藏，仍可从工作台恢复', 'ri-check-line')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '菜单保存失败'
+    failedMenuAction.value = { id, visible, message }
+    toast(`${message}，可在工作台重试`, 'ri-error-warning-line')
+  } finally {
+    menuActionId.value = null
+  }
+}
+
+function retryMenuAction() {
+  const failed = failedMenuAction.value
+  if (failed) void setMenuVisibility(failed.id, failed.visible)
+}
+
 function retry() {
   void nav.loadBuiltinMenus(true)
   void nav.loadExternalApps(true)
@@ -163,6 +188,11 @@ onMounted(() => {
     <div v-else-if="loading" class="load-status" role="status">
       <i class="ri-loader-4-line spin"></i>正在同步最新导航…
     </div>
+    <div v-if="failedMenuAction" class="load-status error menu-action-error" role="alert">
+      <i class="ri-error-warning-line"></i>
+      <span>菜单修改未保存：{{ failedMenuAction.message }}</span>
+      <button type="button" :disabled="!!menuActionId" @click="retryMenuAction">重试</button>
+    </div>
 
     <section v-if="showQuickNote || showSettings" class="catalog-section quick-actions-section">
       <header>
@@ -202,36 +232,51 @@ onMounted(() => {
         </div>
       </header>
       <div class="card-grid">
-        <button
-          v-for="item in section.items"
-          :key="item.id"
-          class="nav-card"
-          type="button"
-          @click="openModule(item.id)"
-        >
-          <span class="card-icon"><i :class="item.meta.icon"></i></span>
-          <span class="card-copy">
-            <b>{{ item.meta.label }}</b>
-            <small>{{ item.description }}</small>
-            <em v-if="item.health" :class="item.health.insightLevel.toLowerCase()">{{
-              item.health.insight
-            }}</em>
-          </span>
-          <span v-if="item.health" class="health-badges">
-            <b>{{ item.health.score }} 分</b>
-            <small
-              >30 天 {{ item.health.recentOpens }} 次 ·
-              {{ item.health.recentShare.toFixed(1) }}%</small
-            >
-          </span>
-          <span v-if="!item.sidebarVisible" class="hidden-badge">侧栏已隐藏</span>
-          <i
-            :class="
-              item.meta.openMode === 'NEW_PAGE' ? 'ri-arrow-right-up-line' : 'ri-arrow-right-line'
-            "
-            class="card-arrow"
-          ></i>
-        </button>
+        <article v-for="item in section.items" :key="item.id" class="nav-card manageable-card">
+          <button class="card-open" type="button" @click="openModule(item.id)">
+            <span class="card-icon"><i :class="item.meta.icon"></i></span>
+            <span class="card-copy">
+              <b>{{ item.meta.label }}</b>
+              <small>{{ item.description }}</small>
+              <em v-if="item.health" :class="item.health.insightLevel.toLowerCase()">{{
+                item.health.insight
+              }}</em>
+            </span>
+            <span v-if="item.health" class="health-badges">
+              <b>{{ item.health.score }} 分</b>
+              <small
+                >30 天 {{ item.health.recentOpens }} 次 ·
+                {{ item.health.recentShare.toFixed(1) }}%</small
+              >
+            </span>
+            <span v-if="!item.sidebarVisible" class="hidden-badge">侧栏已隐藏</span>
+            <i
+              :class="
+                item.meta.openMode === 'NEW_PAGE' ? 'ri-arrow-right-up-line' : 'ri-arrow-right-line'
+              "
+              class="card-arrow"
+            ></i>
+          </button>
+          <button
+            type="button"
+            class="menu-visibility"
+            :class="{ on: item.sidebarVisible }"
+            :disabled="!!menuActionId"
+            :aria-label="`${item.meta.label}：${item.sidebarVisible ? '隐藏菜单' : '显示菜单'}`"
+            @click="setMenuVisibility(item.id, !item.sidebarVisible)"
+          >
+            <i
+              :class="
+                menuActionId === item.id
+                  ? 'ri-loader-4-line spin'
+                  : item.sidebarVisible
+                    ? 'ri-eye-line'
+                    : 'ri-eye-off-line'
+              "
+            ></i>
+            <span>{{ item.sidebarVisible ? '隐藏菜单' : '显示菜单' }}</span>
+          </button>
+        </article>
       </div>
     </section>
 
@@ -244,24 +289,41 @@ onMounted(() => {
         </div>
       </header>
       <div class="card-grid">
-        <button
-          v-for="app in apps"
-          :key="app.id"
-          class="nav-card"
-          type="button"
-          @click="openApp(app.id)"
-        >
-          <span class="card-icon"><i :class="app.icon"></i></span>
-          <span class="card-copy"
-            ><b>{{ app.label }}</b
-            ><small>{{ app.appUrl }}</small></span
+        <article v-for="app in apps" :key="app.id" class="nav-card manageable-card">
+          <button class="card-open" type="button" @click="openApp(app.id)">
+            <span class="card-icon"><i :class="app.icon"></i></span>
+            <span class="card-copy"
+              ><b>{{ app.label }}</b
+              ><small>{{ app.appUrl }}</small></span
+            >
+            <span v-if="!app.visible" class="hidden-badge">侧栏已隐藏</span>
+            <i
+              :class="
+                app.openMode === 'NEW_PAGE' ? 'ri-arrow-right-up-line' : 'ri-arrow-right-line'
+              "
+              class="card-arrow"
+            ></i>
+          </button>
+          <button
+            type="button"
+            class="menu-visibility"
+            :class="{ on: app.visible }"
+            :disabled="!!menuActionId"
+            :aria-label="`${app.label}：${app.visible ? '隐藏菜单' : '显示菜单'}`"
+            @click="setMenuVisibility(externalAppItemId(app.id), !app.visible)"
           >
-          <span v-if="!app.visible" class="hidden-badge">侧栏已隐藏</span>
-          <i
-            :class="app.openMode === 'NEW_PAGE' ? 'ri-arrow-right-up-line' : 'ri-arrow-right-line'"
-            class="card-arrow"
-          ></i>
-        </button>
+            <i
+              :class="
+                menuActionId === externalAppItemId(app.id)
+                  ? 'ri-loader-4-line spin'
+                  : app.visible
+                    ? 'ri-eye-line'
+                    : 'ri-eye-off-line'
+              "
+            ></i>
+            <span>{{ app.visible ? '隐藏菜单' : '显示菜单' }}</span>
+          </button>
+        </article>
       </div>
     </section>
 
@@ -519,6 +581,62 @@ onMounted(() => {
   border-color: color-mix(in srgb, var(--wao-primary) 50%, var(--wao-line));
   box-shadow: 0 8px 20px color-mix(in srgb, var(--wao-text) 6%, transparent);
   transform: translateY(-1px);
+}
+.manageable-card {
+  padding: 0;
+  overflow: hidden;
+}
+.card-open {
+  min-width: 0;
+  min-height: 82px;
+  padding: 14px 8px 14px 14px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 1;
+  align-self: stretch;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.menu-visibility {
+  width: 70px;
+  min-height: 82px;
+  padding: 9px 6px;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 5px;
+  align-self: stretch;
+  border: 0;
+  border-left: 1px solid var(--wao-divider);
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-faint);
+  font-size: 9px;
+  cursor: pointer;
+}
+.menu-visibility i {
+  font-size: 16px;
+}
+.menu-visibility.on {
+  color: var(--wao-primary-text);
+}
+.menu-visibility:hover:not(:disabled) {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary);
+}
+.menu-visibility:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.card-open:focus-visible,
+.menu-visibility:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--wao-primary);
+  outline-offset: -2px;
 }
 .card-icon {
   width: 38px;
