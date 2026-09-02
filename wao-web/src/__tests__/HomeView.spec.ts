@@ -10,6 +10,7 @@ import { usePreferenceStore } from '@/stores/preferences'
 import { useUiStore } from '@/stores/ui'
 import type { AiRunner } from '@/types'
 import {
+  fetchAiRuns,
   fetchAiRunnerLog,
   fetchAiActivities,
   fetchAiEvolution,
@@ -80,7 +81,7 @@ vi.mock('@/api/ai', () => ({
     },
   ]),
   fetchAiActivities: vi.fn<(type?: string, status?: string, page?: number, size?: number) => Promise<Record<string, unknown>>>().mockImplementation(async (_type = 'ALL', _status = 'ALL', _page = 1, size = 20) => ({
-    items: size === 8 ? [{
+    items: size === 10 ? [{
       id: 'ar1', type: 'FEATURE_DEVELOPMENT', title: '修复自动任务', status: 'FAILED',
       subtitle: 'WAO', capabilityLabel: 'Codex', targetId: 't1',
       resultPreview: '失败阶段：准备 Git 工作区', createdAt: '2026-07-25T18:50:00',
@@ -510,6 +511,34 @@ describe('HomeView AI 控制台', () => {
       planMode: false, goalMode: false,
     })
     mounted.wrapper.unmount()
+  })
+
+  it('正在运行以五列两行的十条为一页，并保留超出部分的分页入口', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchAiRuns).mockResolvedValueOnce(Array.from({ length: 11 }, (_, index) => ({
+      id: `ar-active-${index + 1}`,
+      taskId: `t-active-${index + 1}`,
+      taskTitle: `活动运行 ${index + 1}`,
+      projectId: 'p1', projectName: 'WAO', engine: 'codex', status: 'running',
+      runnerId: 'rn1', runnerName: '娃哥电脑', requestedRunnerId: null,
+      branchName: `ai/wao-active-${index + 1}`, subId: null, subTitle: null, retryOfRunId: null,
+      resultSummary: null, reportUrl: null, latestProgress: '正在实现', progressUpdatedAt: '2026-08-31T10:00:00',
+      progress: [], usage: { model: null, models: null, inputTokens: 0, outputTokens: 0,
+        cachedInputTokens: 0, totalTokens: 0, costUsd: null, recorded: false },
+      sessionId: null, exitCode: null, createdAt: '2026-08-31T10:00:00',
+      startedAt: '2026-08-31T10:00:01', finishedAt: null,
+    })))
+    const { wrapper } = mountHome()
+    await flushPromises()
+
+    expect(wrapper.find('.run-grid').attributes('data-layout')).toBe('5x2')
+    expect(wrapper.findAll('.run-card')).toHaveLength(10)
+    expect(wrapper.find('[aria-label="正在运行分页"]').text()).toContain('共 11 条')
+
+    await wrapper.find('[aria-label="正在运行分页"] [aria-label="第 2 页"]').trigger('click')
+    expect(wrapper.findAll('.run-card')).toHaveLength(1)
+    expect(wrapper.find('.run-card').text()).toContain('活动运行 11')
+    wrapper.unmount()
   })
 
   it('在最近 AI 运行旁集中区分待验收与需重试任务', async () => {
@@ -958,6 +987,7 @@ describe('HomeView AI 控制台', () => {
     expect(card.find('.recent-icon').attributes('title')).toBe('功能开发')
     expect(card.find('.recent-outcome').attributes('title')).toBe('运行失败')
     expect(card.find('.recent-hover-action').text()).toContain('查看详情')
+    expect(wrapper.find('.recent-grid').attributes('data-layout')).toBe('5x2')
     expect(card.find('.recent-main b').attributes('title')).toBe('修复自动任务')
     expect(wrapper.findAll('.activity-filter-bar')).toHaveLength(1)
     expect(wrapper.find('.activity-filter-bar').text()).toContain('类型')
@@ -967,7 +997,7 @@ describe('HomeView AI 控制台', () => {
 
     await wrapper.find('.recent-pagination').get('[aria-label="第 2 页"]').trigger('click')
     await flushPromises()
-    expect(fetchAiActivities).toHaveBeenCalledWith('ALL', 'ALL', 2, 8)
+    expect(fetchAiActivities).toHaveBeenCalledWith('ALL', 'ALL', 2, 10)
     wrapper.unmount()
   })
 
@@ -978,7 +1008,7 @@ describe('HomeView AI 控制台', () => {
         subtitle: '最近 20 条消息 · 20 条真实消息', capabilityLabel: '本地 Codex',
         targetId: 'cr-shared', resultPreview: null, createdAt: '2026-08-26T10:00:00+08:00',
         finishedAt: '2026-08-26T10:01:00+08:00' }],
-      total: 1, page: 1, size: 8,
+      total: 1, page: 1, size: 10,
     })
     const { pinia, router, wrapper } = mountHome()
     await flushPromises()
@@ -997,9 +1027,9 @@ describe('HomeView AI 控制台', () => {
   it('可组合筛选 AI 巡检类型和失败结果并使用服务端分页', async () => {
     vi.useFakeTimers()
     vi.mocked(fetchAiActivities)
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, size: 8 })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, size: 8 })
-      .mockResolvedValueOnce({ items: [], total: 0, page: 1, size: 8 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, size: 10 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, size: 10 })
+      .mockResolvedValueOnce({ items: [], total: 0, page: 1, size: 10 })
     const { wrapper } = mountHome()
     await flushPromises()
 
@@ -1010,7 +1040,7 @@ describe('HomeView AI 控制台', () => {
       .find((button) => button.text() === '失败')!.trigger('click')
     await flushPromises()
 
-    expect(fetchAiActivities).toHaveBeenLastCalledWith('AI_INSPECTION', 'FAILED', 1, 8)
+    expect(fetchAiActivities).toHaveBeenLastCalledWith('AI_INSPECTION', 'FAILED', 1, 10)
     expect(wrapper.find('.recent-state').text()).toContain('当前筛选')
     wrapper.unmount()
   })
