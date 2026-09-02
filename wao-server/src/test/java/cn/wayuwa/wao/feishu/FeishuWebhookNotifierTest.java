@@ -16,6 +16,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
+import org.springframework.test.web.client.MockRestServiceServer;
+
+import static org.springframework.http.HttpMethod.POST;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class FeishuWebhookNotifierTest {
 
@@ -108,5 +115,29 @@ class FeishuWebhookNotifierTest {
 
         assertThat(notifier.notifyCard(FeishuWebhookNotifier.Card.simple("提醒", "orange", "正文"))).isFalse();
         verifyNoInteractions(webhooks);
+    }
+
+    @Test
+    void explicitTextReplyUsesSelectedWebhookAndTextPayload() {
+        SettingService settings = mock(SettingService.class);
+        FeishuWebhookConfigService webhooks = mock(FeishuWebhookConfigService.class);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        String url = "https://open.feishu.cn/open-apis/bot/v2/hook/server-only-secret";
+        when(webhooks.enabledTarget("fw-polish")).thenReturn(
+                new FeishuWebhookConfigService.NotificationTarget(
+                        "fw-polish", "润色机器人", url, true));
+        server.expect(requestTo(url)).andExpect(method(POST))
+                .andExpect(content().json("""
+                        {"msg_type":"text","content":{"text":"润色结果：\\n整理后的正文"}}
+                        """))
+                .andRespond(withSuccess("{\"code\":0,\"msg\":\"success\"}",
+                        org.springframework.http.MediaType.APPLICATION_JSON));
+        FeishuWebhookNotifier notifier = new FeishuWebhookNotifier(
+                settings, webhooks, mock(NotificationSettingsService.class), builder, "");
+
+        notifier.sendText("fw-polish", "润色结果：\n整理后的正文");
+
+        server.verify();
     }
 }

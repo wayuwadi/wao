@@ -54,21 +54,36 @@ public class TextPolishService {
 
     /** 使用当前服务端提示词完成一次真实润色，成功后原子地写入可追溯历史。 */
     public TextPolishRecordDto run(String memberId, String originalText) {
+        PreparedPolish prepared = prepare(memberId, originalText);
+        String polished = assistant.polishTextWithPrompt(
+                prepared.originalText(), memberId, prepared.promptSnapshot());
+        if (!StringUtils.hasText(polished)) throw new BadRequestException("AI 没有返回有效润色结果");
+        return recordResult(newRecordId(), memberId, prepared.promptSnapshot(),
+                prepared.originalText(), polished);
+    }
+
+    /** 校验原文并冻结当前成员的提示词，供网页与异步飞书链路共同使用。 */
+    public PreparedPolish prepare(String memberId, String originalText) {
         String original = originalText == null ? "" : originalText.trim();
         if (!StringUtils.hasText(original)) throw new BadRequestException("请先输入需要润色的原文");
         if (original.length() > ORIGINAL_LIMIT) {
             throw new BadRequestException("一次最多润色 12000 字，请拆分后重试");
         }
-        String prompt = prompt(memberId);
-        String polished = assistant.polishTextWithPrompt(original, memberId, prompt);
-        if (!StringUtils.hasText(polished)) throw new BadRequestException("AI 没有返回有效润色结果");
+        return new PreparedPolish(original, prompt(memberId));
+    }
 
+    /** 用指定稳定 id 保存一次已经真实完成的润色；重复收口不会新增第二条历史。 */
+    public TextPolishRecordDto recordResult(String recordId, String memberId, String promptSnapshot,
+            String originalText, String polishedText) {
+        if (!StringUtils.hasText(polishedText)) throw new BadRequestException("AI 没有返回有效润色结果");
+        TextPolishRecordEntity existing = records.selectById(recordId);
+        if (existing != null) return dto(existing);
         TextPolishRecordEntity entity = new TextPolishRecordEntity();
-        entity.setId("tp" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
+        entity.setId(recordId);
         entity.setMemberId(memberId);
-        entity.setPromptSnapshot(prompt);
-        entity.setOriginalText(original);
-        entity.setPolishedText(polished.trim());
+        entity.setPromptSnapshot(promptSnapshot);
+        entity.setOriginalText(originalText);
+        entity.setPolishedText(polishedText.trim());
         entity.setCreatedAt(LocalDateTime.now());
         records.insert(entity);
         return dto(entity);
@@ -95,5 +110,12 @@ public class TextPolishService {
     private static TextPolishRecordDto dto(TextPolishRecordEntity entity) {
         return new TextPolishRecordDto(entity.getId(), entity.getPromptSnapshot(), entity.getOriginalText(),
                 entity.getPolishedText(), entity.getCreatedAt());
+    }
+
+    /** 经过长度校验并冻结提示词的润色输入。 */
+    public record PreparedPolish(String originalText, String promptSnapshot) { }
+
+    private static String newRecordId() {
+        return "tp" + UUID.randomUUID().toString().replace("-", "").substring(0, 24);
     }
 }

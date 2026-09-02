@@ -19,8 +19,9 @@ class FeishuQuickCollectPollingSchedulerTest {
     private final SettingService settings = mock(SettingService.class);
     private final FeishuOpenApiClient feishu = mock(FeishuOpenApiClient.class);
     private final FeishuQuickCollectService quickCollect = mock(FeishuQuickCollectService.class);
+    private final FeishuTextPolishService textPolish = mock(FeishuTextPolishService.class);
     private final FeishuQuickCollectPollingScheduler scheduler =
-            new FeishuQuickCollectPollingScheduler(settings, feishu, quickCollect);
+            new FeishuQuickCollectPollingScheduler(settings, feishu, quickCollect, textPolish);
 
     @Test
     void disabledCollectorDoesNotCallFeishu() {
@@ -51,6 +52,24 @@ class FeishuQuickCollectPollingSchedulerTest {
         verify(quickCollect).recallPolled("oc_chat", "om_deleted");
         verify(quickCollect, org.mockito.Mockito.times(1)).collectPolled(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void polishCanReusePollingWhenQuickCollectIsDisabled() {
+        when(textPolish.enabled()).thenReturn(true);
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_chat");
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
+        FeishuMessage source = message("om_polish", "user", false, "ou_custom_bot");
+        when(feishu.listMessages(org.mockito.ArgumentMatchers.eq("token"),
+                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong()))
+                .thenReturn(List.of(source));
+
+        scheduler.poll();
+
+        verify(textPolish).collectPolled("oc_chat", source);
+        verify(feishu, never()).botOpenId("token");
     }
 
     @Test
