@@ -6,7 +6,6 @@ import cn.wayuwa.wao.dto.AiRunDto;
 import cn.wayuwa.wao.dto.AiWorkflowDto;
 import cn.wayuwa.wao.dto.HttpPerformanceInspectionConfigDto;
 import cn.wayuwa.wao.dto.FunctionHealthOverviewDto;
-import cn.wayuwa.wao.dto.RequestMetricEndpointDto;
 import cn.wayuwa.wao.dto.RequestMetricOverviewDto;
 import cn.wayuwa.wao.mapper.ProjectMapper;
 import java.time.LocalDateTime;
@@ -90,7 +89,8 @@ public class HttpPerformanceAiRunJobHandler implements JobHandler {
         }
 
         HttpPerformanceInspectionConfigDto config = inspectionConfig.get();
-        RequestMetricOverviewDto snapshot = metrics.overview(project.getOwnerId(), config.windowHours());
+        RequestMetricOverviewDto snapshot = metrics.inspectionOverview(
+                project.getOwnerId(), config.windowHours(), config.topN());
         FunctionHealthOverviewDto health = functionHealth.overview(project.getOwnerId());
         if (snapshot.totalRequests() == 0 && health.recentOpens() == 0) {
             return JobExecutionResult.messageOnly(
@@ -131,7 +131,6 @@ public class HttpPerformanceAiRunJobHandler implements JobHandler {
                 .append("| 方法 | 路径 | 次数 | 平均 ms | P95 ms | 慢请求 | 失败 |\n")
                 .append("| --- | --- | ---: | ---: | ---: | ---: | ---: |\n");
         snapshot.endpoints().stream()
-                .sorted(Comparator.comparingInt(RequestMetricEndpointDto::averageDurationMs).reversed())
                 .limit(config.topN())
                 .forEach(endpoint -> prompt.append("| ").append(endpoint.method()).append(" | `")
                         .append(endpoint.path().replace("|", "%7C")).append("` | ")

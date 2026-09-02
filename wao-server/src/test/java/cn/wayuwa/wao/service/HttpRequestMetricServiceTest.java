@@ -75,6 +75,24 @@ class HttpRequestMetricServiceTest {
     }
 
     @Test
+    void inspectionCandidatesKeepFastFailuresAheadOfSlowSuccessfulRequests() {
+        when(mapper.listOwnedSince(eq("member-a"), any(LocalDateTime.class))).thenReturn(List.of(
+                metric(3, "GET", "/api/slow-success", 200, 3_000),
+                metric(2, "GET", "/api/fast-failure", 503, 80),
+                metric(1, "GET", "/api/fast-failure", 503, 100)));
+
+        var overview = service.inspectionOverview("member-a", 24, 1);
+
+        assertThat(overview.totalRequests()).isEqualTo(3);
+        assertThat(overview.failedRequests()).isEqualTo(2);
+        assertThat(overview.endpoints()).singleElement().satisfies(endpoint -> {
+            assertThat(endpoint.path()).isEqualTo("/api/fast-failure");
+            assertThat(endpoint.failedCount()).isEqualTo(2);
+            assertThat(endpoint.averageDurationMs()).isEqualTo(90);
+        });
+    }
+
+    @Test
     void returnsRealEmptyStateAndPurgesThirtyDayRetention() {
         when(mapper.listOwnedSince(eq("member-a"), any(LocalDateTime.class))).thenReturn(List.of());
         var overview = service.overview("member-a", 24);

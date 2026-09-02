@@ -43,7 +43,7 @@ class HttpPerformanceAiRunJobHandlerTest {
     void createsRealAiRunWithTheMeasuredSnapshot() {
         inspectionConfig();
         workflow();
-        when(metrics.overview("wg", 24)).thenReturn(snapshot(3968));
+        when(metrics.inspectionOverview("wg", 24, 5)).thenReturn(snapshot(3968));
         AiRunDto run = mock(AiRunDto.class);
         when(run.id()).thenReturn("ar-nightly");
         when(run.taskId()).thenReturn("task-nightly");
@@ -69,11 +69,34 @@ class HttpPerformanceAiRunJobHandlerTest {
     void skipsWithoutCreatingAPlaceholderTaskWhenTheWindowIsEmpty() {
         inspectionConfig();
         workflow();
-        when(metrics.overview("wg", 24)).thenReturn(snapshot(0));
+        when(metrics.inspectionOverview("wg", 24, 5)).thenReturn(snapshot(0));
 
         assertThat(handler.execute()).isEqualTo("跳过 · 当前没有真实 HTTP 指标或功能使用记录");
 
         verify(aiRuns, never()).launchInspectionGoal(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void keepsInspectionSnapshotPriorityInsteadOfResortingByAverageDuration() {
+        when(config.get()).thenReturn(new HttpPerformanceInspectionConfigDto(
+                true, "DAILY", "06:30", 24, 1, 1, null));
+        workflow();
+        List<RequestMetricEndpointDto> endpoints = List.of(
+                new RequestMetricEndpointDto("GET", "/api/fast-failure", 20, 90, 120, 0, 20));
+        RequestMetricOverviewDto snapshot = new RequestMetricOverviewDto(
+                24, LocalDateTime.of(2026, 9, 3, 7, 30), 20, 90, 120, 0, 20, endpoints, List.of());
+        when(metrics.inspectionOverview("wg", 24, 1)).thenReturn(snapshot);
+        AiRunDto run = mock(AiRunDto.class);
+        when(run.id()).thenReturn("ar-failures");
+        when(aiRuns.launchInspectionGoal(eq("p-wao"), anyString(), eq("wg"), eq("https://wao.wayuwa.cn")))
+                .thenReturn(run);
+
+        handler.executeWithMetadata(null, null);
+
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(aiRuns).launchInspectionGoal(
+                eq("p-wao"), prompt.capture(), eq("wg"), eq("https://wao.wayuwa.cn"));
+        assertThat(prompt.getValue()).contains("`/api/fast-failure`", "| 20 | 90 | 120 | 0 | 20 |");
     }
 
     @Test
@@ -83,7 +106,7 @@ class HttpPerformanceAiRunJobHandlerTest {
         assertThatThrownBy(handler::execute)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("尚未启用 AI 工作流");
-        verify(metrics, never()).overview(anyString(), eq(24));
+        verify(metrics, never()).inspectionOverview(anyString(), eq(24), eq(5));
     }
 
     private void workflow() {
