@@ -99,4 +99,26 @@ describe('Skill 发布预检', () => {
     expect(wrapper.find('input[maxlength="80"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('确认信息并创建草稿')
   })
+
+  it('连续选择时只采用最后一个包的预检结果', async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined
+    api.inspectSkillPackage
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve }))
+      .mockResolvedValueOnce({
+        name: 'Latest Skill', description: 'Latest summary', suggestedSlug: 'latest-skill',
+        unpackedSize: 80, fileCount: 1, sha256: 'c'.repeat(64), findings: [],
+      })
+    const wrapper = await render()
+
+    await selectFolder(wrapper)
+    await selectFolder(wrapper)
+    expect((wrapper.get('input[maxlength="80"]').element as HTMLInputElement).value).toBe('Latest Skill')
+
+    resolveFirst?.({
+      name: 'Stale Skill', description: 'Stale summary', suggestedSlug: 'stale-skill',
+      unpackedSize: 80, fileCount: 1, sha256: 'd'.repeat(64), findings: [],
+    })
+    await flushPromises()
+    expect((wrapper.get('input[maxlength="80"]').element as HTMLInputElement).value).toBe('Latest Skill')
+  })
 })

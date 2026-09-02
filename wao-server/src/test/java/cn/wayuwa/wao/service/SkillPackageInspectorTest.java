@@ -57,6 +57,21 @@ class SkillPackageInspectorTest {
     }
 
     @Test
+    void scansSecretsInTextFilesLargerThanOneMebibyte() throws Exception {
+        byte[] largeText = new byte[1024 * 1024 + 128];
+        java.util.Arrays.fill(largeText, (byte) 'a');
+        byte[] secret = "\nPASSWORD=correct-horse-battery-staple\n".getBytes(StandardCharsets.UTF_8);
+        System.arraycopy(secret, 0, largeText, largeText.length - secret.length, secret.length);
+
+        var result = inspector.inspectZip(zipBytes(Map.of(
+                "SKILL.md", valid().getBytes(StandardCharsets.UTF_8),
+                "references/large.txt", largeText)));
+
+        assertThat(result.findings()).anyMatch(item -> item.contains("references/large.txt")
+                && item.contains("密码或密钥配置"));
+    }
+
+    @Test
     void previewsUtf8FilesAndClosesBinaryOrOversizedContent() throws Exception {
         Map<String, byte[]> entries = new LinkedHashMap<>();
         entries.put("SKILL.md", valid().getBytes(StandardCharsets.UTF_8));

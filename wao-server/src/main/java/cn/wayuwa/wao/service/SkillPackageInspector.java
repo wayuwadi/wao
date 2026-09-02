@@ -222,7 +222,7 @@ public class SkillPackageInspector {
     private static List<String> scanSecrets(Map<String, byte[]> files) {
         List<String> findings = new ArrayList<>();
         for (Map.Entry<String, byte[]> entry : files.entrySet()) {
-            if (entry.getValue().length > 1024 * 1024 || containsNul(entry.getValue())) continue;
+            if (containsNul(entry.getValue())) continue;
             String text = new String(entry.getValue(), StandardCharsets.UTF_8);
             if (PRIVATE_KEY.matcher(text).find()) findings.add(entry.getKey() + "：检测到私钥");
             if (OPENAI_TOKEN.matcher(text).find()) findings.add(entry.getKey() + "：检测到疑似 OpenAI Token");

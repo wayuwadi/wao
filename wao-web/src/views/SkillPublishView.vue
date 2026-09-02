@@ -9,6 +9,7 @@ const marketRoutes = useSkillMarketRoutes()
 const categories = ref<SkillCategory[]>([]), publisher = ref<SkillPublisher | null>(null), result = ref<MySkill | null>(null)
 const loading = ref(true), savingPublisher = ref(false), inspecting = ref(false), uploading = ref(false), submitting = ref(false), progress = ref(0), error = ref('')
 const archive = ref<File | null>(null), folderFiles = ref<File[]>([]), inspection = ref<SkillPackageInspection | null>(null)
+let inspectionSequence = 0
 const publisherForm = reactive({ handle: '', displayName: '' })
 const form = reactive<DraftMetadata>({ skillId: undefined, slug: '', displayName: '', summary: '', category: '', tags: [], version: '1.0.0', changelog: '', license: 'MIT', testedPlatforms: ['codex'], rightsConfirmed: false })
 const tagsText = ref(''), storageKey = 'wao-skill-publish-draft-v1'
@@ -21,15 +22,21 @@ watch([() => ({ ...form, tags: tagsText.value }), tagsText], () => {
 
 function message(value: unknown) { return value instanceof Error ? value.message : '操作失败，请稍后重试' }
 async function inspectSelectedPackage() {
+  const sequence = ++inspectionSequence
   error.value = ''; inspection.value = null; inspecting.value = true
   try {
     const value = await inspectSkillPackage(archive.value, folderFiles.value)
+    if (sequence !== inspectionSequence) return
     inspection.value = value
     if (!value.findings.length) {
       form.displayName = value.name.slice(0, 80); form.summary = value.description.slice(0, 500)
       if (!form.skillId) form.slug = value.suggestedSlug
     }
-  } catch (e) { error.value = message(e) } finally { inspecting.value = false }
+  } catch (e) {
+    if (sequence === inspectionSequence) error.value = message(e)
+  } finally {
+    if (sequence === inspectionSequence) inspecting.value = false
+  }
 }
 async function chooseArchive(event: Event) {
   const input = event.target as HTMLInputElement
