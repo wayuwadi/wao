@@ -173,8 +173,11 @@ public class FeishuQuickCollectService {
         requireToken(body.path("header").path("token").asText(body.path("token").asText("")));
         String eventType = body.path("header").path("event_type").asText("");
         if ("card.action.trigger".equals(eventType)) {
-            feedback.collect(body.path("event"));
-            return Map.of();
+            String result = feedback.collect(body.path("event"));
+            if (result == null) {
+                return Map.of("toast", Map.of("type", "warning", "content", "反馈未记录，请稍后重试"));
+            }
+            return Map.of("toast", Map.of("type", "success", "content", "已记录：" + result));
         }
         if (MESSAGE_RECALLED_EVENT.equals(eventType)) {
             try {
