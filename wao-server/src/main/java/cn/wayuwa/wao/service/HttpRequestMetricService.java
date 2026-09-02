@@ -63,13 +63,46 @@ public class HttpRequestMetricService {
      * @return 总览、接口聚合和最近 100 条明细
      */
     public RequestMetricOverviewDto overview(String memberId, int hours) {
+        return overview(memberId, hours,
+                Comparator.comparingInt(RequestMetricEndpointDto::averageDurationMs).reversed()
+                        .thenComparing(RequestMetricEndpointDto::path),
+                ENDPOINT_LIMIT);
+    }
+
+    /**
+     * 为自动巡检返回按真实用户影响排序的候选接口。
+     *
+     * <p>失败次数优先，其次是慢请求次数、P95 和平均耗时。普通监控总览仍保持原来的平均耗时排序，
+     * 此专用入口避免快失败接口在截取候选前被慢成功请求排除。
+     *
+     * @param memberId 项目负责人 id
+     * @param hours 1～168 小时
+     * @param endpointLimit 本轮候选接口数，1～50
+     * @return 与普通总览口径相同、但候选按巡检优先级筛选的真实快照
+     */
+    public RequestMetricOverviewDto inspectionOverview(String memberId, int hours, int endpointLimit) {
+        if (endpointLimit < 1 || endpointLimit > ENDPOINT_LIMIT) {
+            throw new BadRequestException("endpointLimit 必须在 1 到 " + ENDPOINT_LIMIT + " 之间");
+        }
+        Comparator<RequestMetricEndpointDto> priority =
+                Comparator.comparingInt(RequestMetricEndpointDto::failedCount).reversed()
+                        .thenComparing(Comparator.comparingInt(RequestMetricEndpointDto::slowCount).reversed())
+                        .thenComparing(Comparator.comparingInt(RequestMetricEndpointDto::p95DurationMs).reversed())
+                        .thenComparing(Comparator.comparingInt(RequestMetricEndpointDto::averageDurationMs).reversed())
+                        .thenComparing(Comparator.comparingInt(RequestMetricEndpointDto::requestCount).reversed())
+                        .thenComparing(RequestMetricEndpointDto::method)
+                        .thenComparing(RequestMetricEndpointDto::path);
+        return overview(memberId, hours, priority, endpointLimit);
+    }
+
+    private RequestMetricOverviewDto overview(String memberId, int hours,
+            Comparator<RequestMetricEndpointDto> endpointOrder, int endpointLimit) {
         if (hours < 1 || hours > 168) throw new BadRequestException("hours 必须在 1 到 168 之间");
         LocalDateTime now = LocalDateTime.now(ZONE);
         List<HttpRequestMetricEntity> metrics = mapper.listOwnedSince(memberId, now.minusHours(hours));
         List<RequestMetricEndpointDto> endpoints = endpointStats(metrics).stream()
-                .sorted(Comparator.comparingInt(RequestMetricEndpointDto::averageDurationMs).reversed()
-                        .thenComparing(RequestMetricEndpointDto::path))
-                .limit(ENDPOINT_LIMIT)
+                .sorted(endpointOrder)
+                .limit(endpointLimit)
                 .toList();
         List<RequestMetricItemDto> recent = metrics.stream().limit(RECENT_LIMIT).map(this::item).toList();
         return new RequestMetricOverviewDto(hours, now, metrics.size(), average(metrics), percentile95(metrics),
