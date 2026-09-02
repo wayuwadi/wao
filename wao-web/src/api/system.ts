@@ -218,7 +218,7 @@ export const saveQuickCollectConfig = (payload: {
   completedEmoji?: string
 }) => put<QuickCollectConfig>('/api/feishu/quick-collect/config', payload)
 
-/** 群聊 @润色机器人：现有应用负责读取，所选自定义机器人负责回群。 */
+/** 群聊 @润色机器人：现有应用负责读取并默认回复，也可选择独立 Webhook 回群。 */
 export interface FeishuTextPolishConfig {
   enabled: boolean
   webhookId: string

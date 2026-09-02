@@ -383,6 +383,23 @@ public class FeishuOpenApiClient {
         return messageId;
     }
 
+    /** 发送普通文本；传 parentMessageId 时回复原消息，uuid 保证网络重试不会重复发送。 */
+    public String sendTextMessage(String token, String chatId, String text, String uuid,
+            String parentMessageId) {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        if (parentMessageId == null || parentMessageId.isBlank()) body.put("receive_id", chatId);
+        body.put("msg_type", "text");
+        body.put("content", writeJson(Map.of("text", text)));
+        JsonNode data = parentMessageId == null || parentMessageId.isBlank()
+                ? post("/open-apis/im/v1/messages?receive_id_type=chat_id&uuid={uuid}", body,
+                        token, uuid)
+                : post("/open-apis/im/v1/messages/{messageId}/reply?uuid={uuid}", body,
+                        token, parentMessageId, uuid);
+        String messageId = text(data, "message_id");
+        if (messageId.isBlank()) throw new FeishuApiException("飞书没有返回消息 id");
+        return messageId;
+    }
+
     /** 上传一张用于普通图文消息的图片，返回可放进 post img 元素的 image_key。 */
     public String uploadMessageImage(String token, byte[] bytes, String contentType, String filename) {
         try {

@@ -137,6 +137,27 @@ class FeishuTextPolishServiceTest {
     }
 
     @Test
+    void deliversThroughOfficialAppReplyWhenWebhookIsNotSelected() {
+        FeishuTextPolishRunEntity generated = run("fp-app", "GENERATED");
+        generated.setWebhookId("");
+        generated.setChatId("oc-chat");
+        generated.setMessageId("om-source");
+        generated.setPolishedText("应用直接回复结果");
+        when(runs.findAdvanceable()).thenReturn(List.of(generated));
+        when(runs.claimGenerated(eq("fp-app"), any())).thenReturn(1);
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
+
+        service.advance();
+
+        verify(feishu).sendTextMessage("token", "oc-chat", "润色结果：\n应用直接回复结果",
+                "fp-app-0", "om-source");
+        verify(runs).markDelivered(eq("fp-app"), any());
+        verify(notifier, never()).sendText(anyString(), anyString());
+    }
+
+    @Test
     void disabledWorkerDoesNotTouchRunTable() {
         when(config.enabled()).thenReturn(false);
 

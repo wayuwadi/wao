@@ -110,4 +110,18 @@ describe('飞书群聊同步扩展配置', () => {
     })
     expect(api.saveChatSyncConfig).toHaveBeenCalled()
   })
+
+  it('没有独立 Webhook 时明确使用 WAO 应用回复原消息', async () => {
+    api.fetchFeishuTextPolishConfig.mockResolvedValue({
+      enabled: false, webhookId: '', webhookName: '', mentionName: '润色机器人',
+    })
+    const wrapper = mount(ChatSyncConfigModal, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    const polishSection = wrapper.findAll('.section')
+      .find((item) => item.text().includes('群聊润色机器人'))!
+    expect(polishSection.get('select').find('option:checked').text())
+      .toContain('WAO 应用直接回复原消息')
+    expect(polishSection.text()).toContain('默认由同一应用回复原消息')
+  })
 })

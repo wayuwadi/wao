@@ -120,6 +120,32 @@ class FeishuOpenApiClientTest {
     }
 
     @Test
+    void repliesWithPlainTextAndStableUuid() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_parent/reply?uuid=polish-1"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(header("Authorization", "Bearer token-test"))
+                .andExpect(request -> {
+                    ObjectMapper mapper = new ObjectMapper();
+                    JsonNode body = mapper.readTree(((MockClientHttpRequest) request).getBodyAsString());
+                    assertThat(body.path("msg_type").asText()).isEqualTo("text");
+                    assertThat(mapper.readTree(body.path("content").asText()).path("text").asText())
+                            .isEqualTo("润色结果：\n清楚的结果");
+                })
+                .andRespond(withSuccess("""
+                        {"code":0,"data":{"message_id":"om_text_reply","parent_id":"om_parent"}}
+                        """, MediaType.APPLICATION_JSON));
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+
+        String id = client.sendTextMessage("token-test", "oc_chat", "润色结果：\n清楚的结果",
+                "polish-1", "om_parent");
+
+        assertThat(id).isEqualTo("om_text_reply");
+        server.verify();
+    }
+
+    @Test
     void deletesReactionByTheReturnedReactionId() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();

@@ -110,16 +110,16 @@ public class FeishuQuickCollectPollingScheduler {
     }
 
     /**
-     * 每分钟回看近 24 小时消息，捕获飞书不会再次投递接收事件的客户端编辑。
+     * 每分钟回看近 24 小时消息，捕获客户端编辑，并补收启用润色前尚未处理的真实提及。
      *
-     * <p>内容是否变化、双节点谁负责更新由数据库中的消息指纹原子判定；这里读取当前正文，
-     * 不用创建时间或随机数据推测编辑结果。
+     * <p>快速收集的内容变化和双节点互斥由消息指纹原子判定；润色以 message_id 唯一键去重，
+     * 因此两类入口都读取真实当前正文，不用时间或随机数据推测结果。
      */
     @Scheduled(fixedDelayString = "${wao.feishu.quick-collect-edit-poll-ms:60000}", initialDelay = 30000)
     public void pollEdits() {
-        if (!settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)) {
-            return;
-        }
+        boolean quickEnabled = settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED);
+        boolean textPolishEnabled = textPolish.enabled();
+        if (!quickEnabled && !textPolishEnabled) return;
         String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
         String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
         String chatId = settings.get(SettingService.CHAT_SYNC_CHAT_ID, "");
@@ -130,24 +130,34 @@ public class FeishuQuickCollectPollingScheduler {
         try {
             String token = feishu.tenantAccessToken(appId, appSecret);
             String currentBot = botOpenId;
-            if (!StringUtils.hasText(currentBot)) {
+            if (quickEnabled && !StringUtils.hasText(currentBot)) {
                 currentBot = feishu.botOpenId(token);
                 botOpenId = currentBot;
             }
             for (FeishuMessage message : feishu.listMessages(token, chatId, end - EDIT_LOOKBACK_SECONDS, end)) {
                 if (message != null && message.deleted()) {
-                    try {
-                        quickCollect.recallPolled(chatId, message.messageId());
-                    } catch (RuntimeException ex) {
-                        log.warn("飞书撤回消息回看失败：message={} reason={}",
-                                message.messageId(), ex.getMessage());
+                    if (quickEnabled) {
+                        try {
+                            quickCollect.recallPolled(chatId, message.messageId());
+                        } catch (RuntimeException ex) {
+                            log.warn("飞书撤回消息回看失败：message={} reason={}",
+                                    message.messageId(), ex.getMessage());
+                        }
                     }
-                } else if (eligible(message, currentBot)) {
+                } else if (quickEnabled && eligible(message, currentBot)) {
                     try {
                         quickCollect.collectPolled(chatId, message);
                         quickCollect.triggerPolledReaction(token, message.messageId());
                     } catch (RuntimeException ex) {
                         log.warn("飞书编辑消息或表情派工回看失败：message={} reason={}",
+                                message.messageId(), ex.getMessage());
+                    }
+                }
+                if (textPolishEnabled && message != null && !message.deleted()) {
+                    try {
+                        textPolish.collectPolled(chatId, message);
+                    } catch (RuntimeException ex) {
+                        log.warn("飞书润色消息回看失败：message={} reason={}",
                                 message.messageId(), ex.getMessage());
                     }
                 }
