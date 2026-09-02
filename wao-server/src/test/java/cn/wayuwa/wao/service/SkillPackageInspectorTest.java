@@ -46,8 +46,8 @@ class SkillPackageInspectorTest {
         assertThat(result.findings()).singleElement().asString().contains("OpenAI Token");
         var commonCredentials = inspector.inspectZip(zip(Map.of("SKILL.md", valid(), "config.env",
                 "PASSWORD=correct-horse-battery-staple\nAuthorization: Bearer abcdefghijklmnop")));
-        assertThat(commonCredentials.findings()).anyMatch(item -> item.contains("密码或密钥配置"));
-        assertThat(commonCredentials.findings()).anyMatch(item -> item.contains("Bearer Token"));
+        assertThat(commonCredentials.findings()).anyMatch(item -> item.equals("config.env:1：检测到疑似密码或密钥配置"));
+        assertThat(commonCredentials.findings()).anyMatch(item -> item.equals("config.env:2：检测到疑似 Bearer Token"));
         assertThat(inspector.inspectZip(zip(Map.of("SKILL.md", valid(), "example.env",
                 "PASSWORD=${PASSWORD}\nAPI_KEY=your-api-key"))).findings()).isEmpty();
         assertThatThrownBy(() -> inspector.inspectZip(zip(Map.of("SKILL.md", "---\nname: only\n---"))))

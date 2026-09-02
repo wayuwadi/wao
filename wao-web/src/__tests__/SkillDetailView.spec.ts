@@ -47,6 +47,7 @@ const latest = {
     { path: 'references/guide.md', size: 32 },
   ],
   findings: [],
+  scanOverrideConfirmed: false,
   skillMd:
     '---\nname: archery-sql-check\ndescription: safe\n---\n# Archery SQL 检查\n\n先本地检查。',
   reviewNote: '',

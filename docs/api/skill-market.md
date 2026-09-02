@@ -11,7 +11,7 @@
 ## 成员接口
 
 - `GET|PUT /api/skills/publisher/me`：查看或创建独立公开身份。`handle` 创建后不可变。
-- `POST /api/skills/inspect`：`multipart/form-data`，接收单个 `archive` 或对齐的 `files` + `paths`；只读解析并安全扫描，不持久化包，返回 `SKILL.md` 的名称、简介、建议 slug、文件统计、哈希和扫描结果。
+- `POST /api/skills/inspect`：`multipart/form-data`，接收单个 `archive` 或对齐的 `files` + `paths`；只读解析并安全扫描，不持久化包，返回 `SKILL.md` 的名称、简介、建议 slug、文件统计、哈希，以及精确到文件和行号的扫描结果。
 - `POST /api/skills`：`multipart/form-data`，`metadata` 为 JSON，文件为单个 `archive` 或对齐的 `files` + `paths`。
 - `GET /api/skills/mine`：返回当前作者的 Skill 与全部版本。
 - `PATCH /api/skills/{skillId}/versions/{versionId}`：自动保存未提交草稿元数据。
@@ -27,4 +27,4 @@
 - `POST /api/admin/skill-reviews/{versionId}/reject`：驳回，`note` 必填。
 
 所有 JSON 接口使用 `ApiResponse<T>`。公共下载、文件预览与成员上传会经过 Redis 限速；Redis 短时故障时业务不被中断。
-预检不会持久化包；正式创建草稿会再次执行相同检查，发现疑似凭据时直接拒绝且不写入数据库。
+预检不会持久化包；正式创建草稿会再次执行相同检查。`metadata.scanOverrideConfirmed=false` 时，发现疑似凭据会拒绝写入；作者核对拦截点并明确 `Pass` 后传 `true`，服务端保存原始命中与放行决定，后续提交和管理员审核继续显示这份审计记录。
