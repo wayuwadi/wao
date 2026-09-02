@@ -87,8 +87,6 @@ public class FeishuTextPolishService {
             run.setMemberId(memberId);
             if (!StringUtils.hasText(memberId)) {
                 failure = "请先使用同一飞书账号登录 WAO 完成成员绑定";
-            } else if (!StringUtils.hasText(run.getWebhookId())) {
-                failure = "群聊润色尚未选择可用的 Webhook";
             } else {
                 TextPolishService.PreparedPolish prepared = textPolish.prepare(memberId, original);
                 run.setOriginalText(prepared.originalText());
@@ -144,9 +142,7 @@ public class FeishuTextPolishService {
 
     private void deliver(FeishuTextPolishRunEntity run) {
         if (runs.claimGenerated(run.getId(), LocalDateTime.now()) != 1) return;
-        for (String message : resultMessages(run.getPolishedText())) {
-            notifier.sendText(run.getWebhookId(), message);
-        }
+        sendMessages(run, resultMessages(run.getPolishedText()));
         runs.markDelivered(run.getId(), LocalDateTime.now());
     }
 
@@ -163,11 +159,27 @@ public class FeishuTextPolishService {
     }
 
     private void notifyFailure(FeishuTextPolishRunEntity run, String error) {
-        if (!StringUtils.hasText(run.getWebhookId())) return;
         try {
-            notifier.sendText(run.getWebhookId(), "润色失败：" + abbreviated(error));
+            sendMessages(run, List.of("润色失败：" + abbreviated(error)));
         } catch (RuntimeException exception) {
-            log.warn("飞书润色失败回执未发出（Webhook 与错误详情已隐藏）");
+            log.warn("飞书润色失败回执未发出（凭据与错误详情已隐藏）");
+        }
+    }
+
+    private void sendMessages(FeishuTextPolishRunEntity run, List<String> messages) {
+        if (StringUtils.hasText(run.getWebhookId())) {
+            for (String message : messages) notifier.sendText(run.getWebhookId(), message);
+            return;
+        }
+        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+        String appSecret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
+        if (!StringUtils.hasText(appId) || !StringUtils.hasText(appSecret)) {
+            throw new IllegalStateException("飞书自建应用尚未配置");
+        }
+        String token = feishu.tenantAccessToken(appId, appSecret);
+        for (int index = 0; index < messages.size(); index++) {
+            feishu.sendTextMessage(token, run.getChatId(), messages.get(index),
+                    run.getId() + "-" + index, run.getMessageId());
         }
     }
 

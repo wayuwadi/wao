@@ -36,7 +36,7 @@ public class FeishuTextPolishConfigService {
                 settings.get(SettingService.FEISHU_TEXT_POLISH_MENTION_NAME, DEFAULT_MENTION_NAME));
     }
 
-    /** 保存配置；启用时必须选择真实可用的 Webhook。 */
+    /** 保存配置；Webhook 可选，未选择时由现有飞书应用直接回复原消息。 */
     @Transactional
     public FeishuTextPolishConfigDto save(SaveFeishuTextPolishConfigRequest request) {
         boolean enabled = request.enabled() == null
@@ -54,12 +54,7 @@ public class FeishuTextPolishConfigService {
         if (mentionName.length() > MENTION_NAME_LIMIT) {
             throw new BadRequestException("润色机器人触发名称最多 64 个字符");
         }
-        if (enabled) {
-            if (!StringUtils.hasText(webhookId)) {
-                throw new BadRequestException("开启群聊润色前请选择润色机器人 Webhook");
-            }
-            webhooks.enabledTarget(webhookId);
-        }
+        if (StringUtils.hasText(webhookId)) webhooks.enabledTarget(webhookId);
         settings.put(SettingService.FEISHU_TEXT_POLISH_ENABLED, String.valueOf(enabled));
         settings.put(SettingService.FEISHU_TEXT_POLISH_WEBHOOK_ID, webhookId);
         settings.put(SettingService.FEISHU_TEXT_POLISH_MENTION_NAME, mentionName);

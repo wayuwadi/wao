@@ -65,7 +65,7 @@ const emojiOptions = [
   { value: 'CheckMark', label: '勾选（已完成）' },
 ]
 
-// ---- 群聊润色（现有应用读取 @消息，指定的自定义机器人 Webhook 回群） ----
+// ---- 群聊润色（现有应用读取 @消息并默认直接回复，可选独立 Webhook） ----
 const textPolish = ref<FeishuTextPolishConfig | null>(null)
 const textPolishEnabled = ref(false)
 const textPolishWebhookId = ref('')
@@ -426,7 +426,7 @@ async function runHistory() {
           </label>
         </div>
         <div class="tip">
-          WAO 使用上方自建应用读取群消息，精确识别触发名称；润色结果由所选自定义机器人 Webhook 发出。
+          WAO 使用上方自建应用读取群消息，精确识别触发名称；默认由同一应用回复原消息，也可以选择独立 Webhook 发出。
           发言人必须先用同一飞书账号登录 WAO，机器人会使用该成员在「润色」页面保存的提示词，成功结果也进入其个人历史。
         </div>
         <div class="two">
@@ -437,7 +437,7 @@ async function runHistory() {
             placeholder="群内机器人名称，如：润色机器人"
           />
           <select v-model="textPolishWebhookId" class="input">
-            <option value="">选择用于发送结果的 Webhook</option>
+            <option value="">WAO 应用直接回复原消息（推荐）</option>
             <option
               v-for="endpoint in webhookEndpoints.filter((item) => item.enabled)"
               :key="endpoint.id"
@@ -455,7 +455,7 @@ async function runHistory() {
           </select>
         </div>
         <div class="tip">
-          触发示例：@{{ textPolishMentionName || '润色机器人' }} 这段话帮我整理清楚。Webhook 地址请在系统设置中维护，页面不会读取明文。
+          触发示例：@{{ textPolishMentionName || '润色机器人' }} 这段话帮我整理清楚。需要独立发件机器人时，可选择系统设置中已登记的 Webhook。
         </div>
       </div>
 

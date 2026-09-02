@@ -112,6 +112,26 @@ class FeishuQuickCollectPollingSchedulerTest {
                 org.mockito.ArgumentMatchers.any());
     }
 
+    @Test
+    void polishOnlyEditSweepBackfillsRealMentionsWithoutQuickCollect() {
+        when(textPolish.enabled()).thenReturn(true);
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(settings.get(SettingService.CHAT_SYNC_CHAT_ID, "")).thenReturn("oc_chat");
+        when(feishu.tenantAccessToken("app", "secret")).thenReturn("token");
+        FeishuMessage source = message("om_polish_backfill", "user", false, "ou_custom_bot");
+        when(feishu.listMessages(org.mockito.ArgumentMatchers.eq("token"),
+                org.mockito.ArgumentMatchers.eq("oc_chat"), anyLong(), anyLong()))
+                .thenReturn(List.of(source));
+
+        scheduler.pollEdits();
+
+        verify(textPolish).collectPolled("oc_chat", source);
+        verify(feishu, never()).botOpenId("token");
+        verify(quickCollect, never()).collectPolled(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any());
+    }
+
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);
         when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("app");
