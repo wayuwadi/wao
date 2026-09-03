@@ -1,7 +1,7 @@
 import { http, type ApiResponse } from './http'
 
 export type AttendanceDayType = 'WORKDAY' | 'LEAVE' | 'REST'
-export interface AttendanceConfig { enabled: boolean; username: string | null; vaultItemId: string | null; status: 'UNCONFIGURED'|'DISABLED'|'READY'|'SYNCING'|'OK'|'NEEDS_LOGIN'|'ERROR'; lastSyncedAt: string|null; lastError: string|null }
+export interface AttendanceConfig { enabled: boolean; username: string | null; vaultItemId: string | null; status: 'UNCONFIGURED'|'DISABLED'|'READY'|'SYNCING'|'OK'|'NEEDS_LOGIN'|'ERROR'; lastSyncedAt: string|null; lastError: string|null; historySyncedFrom:string|null; historyTargetFrom:string; historyComplete:boolean }
 export interface AttendanceDay { date:string; clockInAt:string|null; clockOutAt:string|null; dayType:AttendanceDayType; anomaly:string|null; manualOverride:boolean; workHours:number|null; expectedWorkday:boolean; workWeekLabel:string }
 export interface AttendanceWeek { from:string; to:string; label:string; averageHours:number; validDays:number }
 export interface AttendanceView { from:string; to:string; config:AttendanceConfig; days:AttendanceDay[]; totalHours:number; monthDailyAverageHours:number; validDays:number; weeks:AttendanceWeek[] }

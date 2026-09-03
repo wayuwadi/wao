@@ -541,7 +541,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     const previous = previousDate.toISOString().slice(0, 10)
     const attendance = {
       from: `${data.today.slice(0, 7)}-01`, to: data.today,
-      config: { enabled: true, username: 's008500@nl-ds.cn', vaultItemId: 'vi1', status: 'OK', lastSyncedAt: `${data.today}T09:05:00`, lastError: null },
+      config: { enabled: true, username: 's008500@nl-ds.cn', vaultItemId: 'vi1', status: 'OK', lastSyncedAt: `${data.today}T09:05:00`, lastError: null, historySyncedFrom: '2026-08-01', historyTargetFrom: '2025-10-01', historyComplete: false },
       days: [
         { date: previous, clockInAt: `${previous}T09:00:00`, clockOutAt: `${previous}T18:00:00`, dayType: 'WORKDAY', anomaly: null, manualOverride: false, workHours: 8, expectedWorkday: true, workWeekLabel: '大周 · 周日上班' },
         { date: data.today, clockInAt: `${data.today}T09:00:00`, clockOutAt: `${data.today}T21:00:00`, dayType: 'WORKDAY', anomaly: null, manualOverride: false, workHours: 11, expectedWorkday: true, workWeekLabel: '大周 · 周日上班' },
@@ -566,6 +566,8 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.find('.attendance-goals').text()).toContain('1 / 4 天')
     expect(wrapper.find('.attendance-goals').text()).toContain('本月还可使用 3 天')
     expect(wrapper.find('.attendance-goals').text()).toContain('已满足 19:30 最低下班要求')
+    expect(wrapper.find('.attendance-history').text()).toContain('已回溯至 2026-08-01')
+    expect(wrapper.find('.attendance-history').text()).toContain('失败后从原进度续跑')
     await wrapper.find('.attendance-toggle').trigger('click')
     expect(wrapper.find('.attendance-panel').exists()).toBe(false)
   })
@@ -581,7 +583,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     }))
     vi.mocked(fetchAttendance).mockResolvedValue({
       from: data.today, to: data.today,
-      config: { enabled: false, username: null, vaultItemId: null, status: 'UNCONFIGURED', lastSyncedAt: null, lastError: null },
+      config: { enabled: false, username: null, vaultItemId: null, status: 'UNCONFIGURED', lastSyncedAt: null, lastError: null, historySyncedFrom: null, historyTargetFrom: '2025-10-01', historyComplete: false },
       days: [], totalHours: 0, monthDailyAverageHours: 0, validDays: 0, weeks: [],
     })
 

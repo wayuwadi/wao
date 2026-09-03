@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -34,6 +35,7 @@ import org.springframework.util.StringUtils;
 @Service
 public class AttendanceService {
     static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    static final int HISTORY_MONTHS = 12;
     private static final Set<String> DAY_TYPES = Set.of("WORKDAY", "LEAVE", "REST");
     private final AttendanceConnectorMapper connectors; private final AttendanceDayMapper days;
     private final VaultService vault; private final VaultCryptoService crypto; private final MokaAttendanceClient moka;
@@ -77,7 +79,9 @@ public class AttendanceService {
         value.setUsername(username); value.setVaultItemId(vaultId); value.setEnabled(request.enabled()); value.setUpdatedAt(now);
         if (changed) { value.setSessionCiphertext(null); value.setSessionNonce(null); value.setRemoteEmployeeId(null); }
         value.setStatus(request.enabled()?"READY":"DISABLED"); value.setLastError(null);
-        if (connectors.selectById(memberId)==null) connectors.insert(value); else connectors.updateById(value);
+        boolean inserting=connectors.selectById(memberId)==null;
+        if (inserting) connectors.insert(value); else connectors.updateById(value);
+        if (changed&&!inserting) { connectors.resetHistoryBackfill(memberId,now); value.setHistorySyncedFrom(null); }
         return configDto(value);
     }
 
@@ -152,6 +156,25 @@ public class AttendanceService {
     /** 定时同步入口使用的已启用成员列表。 */
     public List<String> enabledMembers() { return connectors.selectList(new LambdaQueryWrapper<AttendanceConnectorEntity>().eq(AttendanceConnectorEntity::getEnabled,true)).stream().filter(this::automaticSyncAllowed).map(AttendanceConnectorEntity::getMemberId).toList(); }
 
+    /** 每次在分布式租约保护下向前补齐一个自然月，直至覆盖包含本月在内的近十二个月。 */
+    public void backfillNextPeriod(String memberId, LocalDate today) {
+        AttendanceConnectorEntity current=connectors.selectById(memberId); LocalDate target=historyTarget(today);
+        if(!automaticSyncAllowed(current)||(current.getHistorySyncedFrom()!=null&&!current.getHistorySyncedFrom().isAfter(target))) return;
+        LocalDateTime now=LocalDateTime.now(ZONE); String token=UUID.randomUUID().toString();
+        if(connectors.claimHistoryBackfill(memberId,token,now,now.minusMinutes(20))!=1) return;
+        try {
+            current=connectors.selectById(memberId); LocalDate cursor=current==null?null:current.getHistorySyncedFrom();
+            if(cursor!=null&&!cursor.isAfter(target)) return;
+            LocalDate from; LocalDate to;
+            if(cursor==null) { from=today.withDayOfMonth(1); to=today.minusDays(1); }
+            else { to=cursor.minusDays(1); from=to.withDayOfMonth(1); if(from.isBefore(target)) from=target; }
+            if(!to.isBefore(from)) sync(memberId,from,to);
+            connectors.advanceHistoryBackfill(memberId,from,token,LocalDateTime.now(ZONE));
+        } finally {
+            connectors.releaseHistoryBackfill(memberId,token);
+        }
+    }
+
     private void upsertRemote(String memberId,MokaAttendanceClient.RemoteDay remote) {
         AttendanceDayEntity value=new AttendanceDayEntity(); LocalDateTime now=LocalDateTime.now(ZONE);
         value.setMemberId(memberId); value.setAttendanceDate(remote.date()); value.setRemoteClockInAt(remote.clockInAt()); value.setRemoteClockOutAt(remote.clockOutAt());
@@ -174,7 +197,7 @@ public class AttendanceService {
     private boolean valid(AttendanceDto.Day day){return !"LEAVE".equals(day.dayType())&&day.workHours()!=null;}
     private BigDecimal average(List<AttendanceDto.Day> valid){return valid.isEmpty()?BigDecimal.ZERO.setScale(2):valid.stream().map(AttendanceDto.Day::workHours).reduce(BigDecimal.ZERO,BigDecimal::add).divide(BigDecimal.valueOf(valid.size()),2,RoundingMode.HALF_UP);}
     private BigDecimal hours(LocalDateTime in,LocalDateTime out,String type){if(in==null||out==null||"LEAVE".equals(type)||!out.isAfter(in))return null; long minutes=Math.max(0,Duration.between(in,out).toMinutes()-60); return BigDecimal.valueOf(minutes).divide(BigDecimal.valueOf(60),2,RoundingMode.HALF_UP);}
-    private AttendanceDto.Config configDto(AttendanceConnectorEntity value){if(value==null)return new AttendanceDto.Config(false,null,null,"UNCONFIGURED",null,null); return new AttendanceDto.Config(Boolean.TRUE.equals(value.getEnabled()),value.getUsername(),value.getVaultItemId(),value.getStatus(),string(value.getLastSyncedAt()),value.getLastError());}
+    private AttendanceDto.Config configDto(AttendanceConnectorEntity value){LocalDate target=historyTarget(LocalDate.now(ZONE));if(value==null)return new AttendanceDto.Config(false,null,null,"UNCONFIGURED",null,null,null,target,false);LocalDate synced=value.getHistorySyncedFrom();return new AttendanceDto.Config(Boolean.TRUE.equals(value.getEnabled()),value.getUsername(),value.getVaultItemId(),value.getStatus(),string(value.getLastSyncedAt()),value.getLastError(),synced,target,synced!=null&&!synced.isAfter(target));}
     private AttendanceConnectorEntity requireEnabled(String memberId){AttendanceConnectorEntity value=connectors.selectById(memberId); if(value==null||!Boolean.TRUE.equals(value.getEnabled()))throw new BadRequestException("请先在考勤设置中启用 Moka 同步"); if(!StringUtils.hasText(value.getVaultItemId()))throw new BadRequestException("请先选择 Moka 密码本条目"); return value;}
     private MokaAttendanceClient.Session session(AttendanceConnectorEntity value){if(value.getSessionCiphertext()==null||value.getSessionNonce()==null)return login(value.getMemberId(),value); try{return json.readValue(crypto.decrypt(value.getSessionCiphertext(),value.getSessionNonce()),MokaAttendanceClient.Session.class);}catch(Exception ex){return login(value.getMemberId(),value);}}
     private MokaAttendanceClient.Session login(String memberId,AttendanceConnectorEntity value){String password=vault.revealSecret(value.getVaultItemId(),memberId); if(!StringUtils.hasText(password))throw new MokaAttendanceClient.AuthenticationRequiredException("密码本里的 Moka 条目还没有密码"); MokaAttendanceClient.Session session=moka.login(value.getUsername(),password); try{VaultCryptoService.Encrypted encrypted=crypto.encrypt(json.writeValueAsString(session));value.setSessionCiphertext(encrypted.ciphertext());value.setSessionNonce(encrypted.nonce());connectors.updateById(value);return session;}catch(Exception ex){throw new IllegalStateException("Moka 会话保存失败",ex);}}
@@ -187,6 +210,7 @@ public class AttendanceService {
     private LocalDateTime parseTime(LocalDate date,String raw,boolean nextDay){if(!StringUtils.hasText(raw))return null;try{return date.plusDays(nextDay?1:0).atTime(LocalTime.parse(raw.trim()));}catch(Exception ex){throw new BadRequestException("请填写有效的打卡时间");}}
     private void validateRange(LocalDate from,LocalDate to,long max){if(from==null||to==null||to.isBefore(from)||ChronoUnit.DAYS.between(from,to)>max)throw new BadRequestException("考勤日期范围不正确或过大");}
     private void validateDate(LocalDate date){if(date==null||Math.abs(ChronoUnit.DAYS.between(LocalDate.now(ZONE),date))>366)throw new BadRequestException("只能维护前后 366 天内的考勤");}
+    private LocalDate historyTarget(LocalDate today){return today.minusMonths(HISTORY_MONTHS-1L).withDayOfMonth(1);}
     private static String string(LocalDateTime value){return value==null?null:value.toString();} private static String trim(String v){return v==null?"":v.trim();} private static String blank(String v){String x=trim(v);return x.isEmpty()?null:x;}
     private static String join(String left,String right){return StringUtils.hasText(left)?left+"、"+right:right;} private static String clean(String v){if(!StringUtils.hasText(v))return "Moka 同步失败";return v.length()>500?v.substring(0,500):v;}
 }
