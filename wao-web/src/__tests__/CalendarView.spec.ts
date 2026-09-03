@@ -569,5 +569,18 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.find('.attendance-modal fieldset').attributes('disabled')).toBeUndefined()
     expect((wrapper.find('.attendance-modal input[type="email"]').element as HTMLInputElement).disabled).toBe(false)
     expect((wrapper.find('.attendance-modal select').element as HTMLSelectElement).disabled).toBe(false)
+
+    data.vault = [{
+      id: 'vg1', group: '工作', items: [{
+        id: 'vi1', name: '摩卡-工时登录系统', icon: 'ri-key-line', user: 's008500@nl-ds.cn',
+        site: 'https://core.mokahr.com', note: '', updated: '刚刚', hasSecret: true,
+      }],
+    }]
+    await flushPromises()
+    await wrapper.find('.attendance-modal select').setValue('vi1')
+
+    const email = wrapper.find('.attendance-modal input[type="email"]')
+    expect(email.attributes('readonly')).toBeDefined()
+    expect((email.element as HTMLInputElement).value).toBe('s008500@nl-ds.cn')
   })
 })
