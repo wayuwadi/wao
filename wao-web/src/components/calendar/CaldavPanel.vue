@@ -15,22 +15,31 @@ const emit = defineEmits<{ (e: 'changed'): void }>()
 // null = 还没加载过；加载失败落成 []，界面上有重试入口。
 const accounts = ref<CaldavAccount[] | null>(null)
 const loading = ref(false)
+const loadError = ref('')
 const busy = ref<string | null>(null)
 const showForm = ref(false)
 const form = reactive({ name: '', serverUrl: '', username: '', password: '' })
 
 async function load() {
   loading.value = true
+  loadError.value = ''
   try {
     accounts.value = await fetchCaldavAccounts()
   } catch (error) {
     accounts.value = accounts.value ?? []
-    toast(error instanceof Error ? error.message : '读取 CalDAV 账户失败')
+    loadError.value = error instanceof Error ? error.message : '读取 CalDAV 账户失败'
+    toast(loadError.value)
   } finally {
     loading.value = false
   }
 }
 onMounted(load)
+
+function useWecomPreset() {
+  showForm.value = true
+  if (!form.name) form.name = '企业微信日程'
+  form.serverUrl = 'caldav.wecom.work'
+}
 
 async function addAccount() {
   if (!form.serverUrl.trim() || !form.username.trim() || !form.password) {
@@ -108,9 +117,19 @@ async function toggleCalendar(cal: CaldavCalendar) {
   </div>
 
   <template v-else>
-    <div v-if="(accounts ?? []).length === 0" class="card">
+    <div v-if="loadError" class="card state-card error-state" role="alert">
+      <div>
+        <div class="card-title">CalDAV 账户读取失败</div>
+        <div class="hint">{{ loadError }}</div>
+      </div>
+      <button class="btn-ghost sm" :disabled="loading" @click="load">
+        <i :class="loading ? 'ri-loader-4-line spinning' : 'ri-refresh-line'"></i>{{ loading ? '重试中…' : '重新读取' }}
+      </button>
+    </div>
+
+    <div v-if="!loadError && (accounts ?? []).length === 0" class="card">
       <div class="card-title">还没有连接日历账户</div>
-      <div class="hint">连接 iCloud、飞书、Nextcloud 等支持 CalDAV 的日历后，事件会与系统日历合并显示，每 15 分钟自动同步一次。账户按登录人隔离，只影响你自己的日历。</div>
+      <div class="hint">连接企业微信日程、iCloud、飞书、Nextcloud 等支持 CalDAV 的日历后，事件会与系统日历合并显示，每 15 分钟自动同步一次。账户按登录人隔离，只影响你自己的日历。</div>
     </div>
 
     <div v-for="account in accounts ?? []" :key="account.id" class="card">
@@ -151,8 +170,13 @@ async function toggleCalendar(cal: CaldavCalendar) {
         <button v-if="!showForm" class="btn-primary sm" @click="showForm = true"><i class="ri-add-line"></i>连接 CalDAV</button>
       </div>
       <form v-if="showForm" class="site-form" @submit.prevent="addAccount">
+        <div class="provider-guide">
+          <div><b>连接企业微信日程</b><span>可直接使用官方页面取得的账号、密码和服务器信息。</span></div>
+          <button type="button" class="btn-ghost sm" @click="useWecomPreset">填入企业微信服务器</button>
+          <a href="https://open.work.weixin.qq.com/help2/pc/20223" target="_blank" rel="noopener noreferrer">查看账号获取方法</a>
+        </div>
         <label><span>显示名称</span><input v-model.trim="form.name" maxlength="64" placeholder="例如 家庭日历（可留空）" /></label>
-        <label><span>服务器地址</span><input v-model.trim="form.serverUrl" required placeholder="https://caldav.example.com" /></label>
+        <label><span>服务器地址</span><input v-model.trim="form.serverUrl" required placeholder="caldav.wecom.work 或 https://…" /></label>
         <label><span>账号</span><input v-model.trim="form.username" required placeholder="登录邮箱或用户名" /></label>
         <label><span>密码</span><input v-model="form.password" type="password" required placeholder="账户密码或应用专用密码" /></label>
         <div class="hint form-hint">密码加密存储，仅用于向你的日历服务器同步；iCloud 等需使用「应用专用密码」。</div>
@@ -161,7 +185,10 @@ async function toggleCalendar(cal: CaldavCalendar) {
           <button type="button" class="btn-ghost" :disabled="busy === 'add'" @click="showForm = false">取消</button>
         </div>
       </form>
-      <div v-else class="hint">支持 iCloud、飞书、Nextcloud、Fastmail 等标准 CalDAV 服务。</div>
+      <div v-else class="account-options">
+        <div class="hint">支持企业微信日程、iCloud、飞书、Nextcloud、Fastmail 等标准 CalDAV 服务。</div>
+        <button type="button" class="wecom-entry" @click="useWecomPreset"><i class="ri-wechat-2-line"></i><span><b>企业微信日程</b><small>使用官方账号信息快速填写</small></span><i class="ri-arrow-right-s-line"></i></button>
+      </div>
     </div>
   </template>
 </template>
@@ -183,6 +210,16 @@ async function toggleCalendar(cal: CaldavCalendar) {
 .card-row {
   display: flex;
   align-items: center;
+}
+.state-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.error-state {
+  border-color: color-mix(in srgb, var(--wao-danger) 35%, var(--wao-line));
+  background: color-mix(in srgb, var(--wao-danger) 5%, var(--wao-bg-card));
 }
 .card-row.wrap {
   flex-wrap: wrap;
@@ -363,6 +400,67 @@ async function toggleCalendar(cal: CaldavCalendar) {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 13px 16px;
+}
+.provider-guide {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 9px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-2);
+  font-size: 12px;
+}
+.provider-guide > div {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+}
+.provider-guide span {
+  color: var(--wao-text-weak);
+}
+.provider-guide a {
+  color: var(--wao-primary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.account-options {
+  display: grid;
+  gap: 10px;
+}
+.wecom-entry {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 9px;
+  background: var(--wao-bg-sub);
+  color: var(--wao-text-2);
+  text-align: left;
+  cursor: pointer;
+}
+.wecom-entry:hover {
+  border-color: var(--wao-primary);
+  background: var(--wao-primary-tint);
+}
+.wecom-entry > i:first-child {
+  color: #07c160;
+  font-size: 20px;
+}
+.wecom-entry span {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+.wecom-entry small {
+  color: var(--wao-text-weak);
+}
+@media (max-width: 720px) {
+  .site-form { grid-template-columns: 1fr; }
+  .provider-guide { align-items: flex-start; flex-wrap: wrap; }
 }
 .site-form label {
   display: grid;
