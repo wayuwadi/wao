@@ -103,7 +103,54 @@ class FeishuQuickCollectServiceTest {
     }
 
     @Test
-    void cardActionPersistsFeedbackAndReturnsVisibleSuccessToast() {
+    void cardActionPersistsFeedbackAndMarksTheOriginalGroupCard() {
+        when(feedback.collect(any())).thenReturn("做到了");
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_test");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(feishu.tenantAccessToken("cli_test", "secret")).thenReturn("token");
+
+        var out = service.handleEvent("""
+                {
+                  "schema":"2.0",
+                  "header":{"event_type":"card.action.trigger","token":""},
+                  "event":{
+                    "operator":{"open_id":"ou_member","user_id":"member"},
+                    "context":{"open_message_id":"om_reminder"},
+                    "action":{"value":{"kind":"automation-feedback","notificationId":"n1","action":"done"}}
+                  }
+                }
+                """);
+
+        verify(feedback).collect(any());
+        verify(feishu).addMessageReaction("token", "om_reminder", "CheckMark");
+        assertThat(out).containsEntry("toast",
+                Map.of("type", "success", "content", "已记录：做到了，群卡片已标记"));
+    }
+
+    @Test
+    void missedCardActionUsesACrossMarkOnTheOriginalGroupCard() {
+        when(feedback.collect(any())).thenReturn("没做到");
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_test");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(feishu.tenantAccessToken("cli_test", "secret")).thenReturn("token");
+
+        service.handleEvent("""
+                {
+                  "schema":"2.0",
+                  "header":{"event_type":"card.action.trigger","token":""},
+                  "event":{
+                    "operator":{"open_id":"ou_member","user_id":"member"},
+                    "context":{"open_message_id":"om_reminder"},
+                    "action":{"value":{"kind":"automation-feedback","notificationId":"n1","action":"missed"}}
+                  }
+                }
+                """);
+
+        verify(feishu).addMessageReaction("token", "om_reminder", "CrossMark");
+    }
+
+    @Test
+    void savedFeedbackReportsRetryWhenTheGroupCardCannotBeMarked() {
         when(feedback.collect(any())).thenReturn("做到了");
 
         var out = service.handleEvent("""
@@ -118,8 +165,35 @@ class FeishuQuickCollectServiceTest {
                 """);
 
         verify(feedback).collect(any());
-        assertThat(out).containsEntry("toast",
-                Map.of("type", "success", "content", "已记录：做到了"));
+        verify(feishu, never()).addMessageReaction(any(), any(), any());
+        assertThat(out).containsEntry("toast", Map.of("type", "warning", "content",
+                "已记录：做到了；群卡片反馈暂未显示，请重试"));
+    }
+
+    @Test
+    void savedFeedbackReportsRetryWhenFeishuRejectsTheReaction() {
+        when(feedback.collect(any())).thenReturn("做到了");
+        when(settings.get(SettingService.CHAT_SYNC_APP_ID, "")).thenReturn("cli_test");
+        when(settings.get(SettingService.CHAT_SYNC_APP_SECRET, "")).thenReturn("secret");
+        when(feishu.tenantAccessToken("cli_test", "secret")).thenReturn("token");
+        doThrow(new FeishuApiException("表情回执失败"))
+                .when(feishu).addMessageReaction("token", "om_reminder", "CheckMark");
+
+        var out = service.handleEvent("""
+                {
+                  "schema":"2.0",
+                  "header":{"event_type":"card.action.trigger","token":""},
+                  "event":{
+                    "operator":{"open_id":"ou_member","user_id":"member"},
+                    "context":{"open_message_id":"om_reminder"},
+                    "action":{"value":{"kind":"automation-feedback","notificationId":"n1","action":"done"}}
+                  }
+                }
+                """);
+
+        verify(feedback).collect(any());
+        assertThat(out).containsEntry("toast", Map.of("type", "warning", "content",
+                "已记录：做到了；群卡片反馈暂未显示，请重试"));
     }
 
     @Test

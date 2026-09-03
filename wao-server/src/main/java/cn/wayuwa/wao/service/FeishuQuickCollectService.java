@@ -173,11 +173,17 @@ public class FeishuQuickCollectService {
         requireToken(body.path("header").path("token").asText(body.path("token").asText("")));
         String eventType = body.path("header").path("event_type").asText("");
         if ("card.action.trigger".equals(eventType)) {
-            String result = feedback.collect(body.path("event"));
+            JsonNode event = body.path("event");
+            String result = feedback.collect(event);
             if (result == null) {
                 return Map.of("toast", Map.of("type", "warning", "content", "反馈未记录，请稍后重试"));
             }
-            return Map.of("toast", Map.of("type", "success", "content", "已记录：" + result));
+            if (!reactToFeedbackCard(event, result)) {
+                return Map.of("toast", Map.of("type", "warning", "content",
+                        "已记录：" + result + "；群卡片反馈暂未显示，请重试"));
+            }
+            return Map.of("toast", Map.of("type", "success", "content",
+                    "已记录：" + result + "，群卡片已标记"));
         }
         if (MESSAGE_RECALLED_EVENT.equals(eventType)) {
             try {
@@ -221,6 +227,31 @@ public class FeishuQuickCollectService {
             log.warn("群聊快速收集处理失败：{}", ex.getMessage());
         }
         return Map.of();
+    }
+
+    /**
+     * 给发生点击的群卡片添加共享可见的结果表情；失败时保留已落库反馈并允许用户再次点击重试。
+     *
+     * @param event 飞书卡片回传事件
+     * @param result 已持久化的中文反馈
+     * @return 原卡片成功显示结果表情时返回 {@code true}
+     */
+    private boolean reactToFeedbackCard(JsonNode event, String result) {
+        String messageId = event.path("context").path("open_message_id").asText("");
+        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
+        String secret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
+        if (!StringUtils.hasText(messageId) || !StringUtils.hasText(appId) || !StringUtils.hasText(secret)) {
+            log.warn("飞书通知反馈已保存，但群卡片缺少消息标识或应用凭据，未能添加表情");
+            return false;
+        }
+        try {
+            String emojiType = "做到了".equals(result) ? "CheckMark" : "CrossMark";
+            feishu.addMessageReaction(feishu.tenantAccessToken(appId, secret), messageId, emojiType);
+            return true;
+        } catch (RuntimeException ex) {
+            log.warn("飞书通知反馈已保存，但群卡片表情添加失败：{}", ex.getMessage());
+            return false;
+        }
     }
 
     /**
