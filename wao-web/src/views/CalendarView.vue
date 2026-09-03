@@ -41,7 +41,7 @@ import {
 // 配置面板打开才需要，不进日历页首屏包。
 const CaldavPanel = defineAsyncComponent(() => import('@/components/calendar/CaldavPanel.vue'))
 
-/** 日历格子里的一条事件（任务截止 / 里程碑 / CalDAV）。 */
+/** 日历格子里的一条事件（任务截止 / 里程碑 / CalDAV / 考勤）。 */
 interface CalEvt {
   date: string
   title: string
@@ -55,6 +55,7 @@ interface CalEvt {
   importantDate?: FamilyImportantDateEvent
   kind?: string
   sourceLabel?: string
+  sortOrder?: number
   go?: () => void
 }
 
@@ -421,20 +422,26 @@ const events = computed<CalEvt[]>(() => {
   if (attendanceMode.value) attendanceDays.value.filter((day) => (day.expectedWorkday && day.date <= data.today) || day.clockInAt || day.clockOutAt || day.dayType === 'LEAVE' || day.manualOverride).forEach((day) => {
     const clockIn = day.clockInAt?.slice(11, 16)
     const clockOut = day.clockOutAt?.slice(11, 16)
-    const label = day.dayType === 'LEAVE' ? '请假 · 不计日均'
-      : day.dayType === 'REST' && !clockIn && !clockOut ? '休息日'
-        : !clockIn && !clockOut ? (day.anomaly || '等待打卡')
-        : `${clockIn || '缺上班卡'}–${clockOut || '缺下班卡'}${day.workHours === null ? '' : ` · ${day.workHours.toFixed(2)}h`}`
-    evs.push({
-      date: day.date,
-      title: `考勤 · ${label}${day.manualOverride ? ' · 模拟' : ''}`,
-      color: day.anomaly ? '#D9634C' : day.dayType === 'LEAVE' ? '#B9821F' : '#2C8A5B',
-      time: clockIn,
-      endTime: clockOut,
+    const sourceLabel = day.manualOverride ? '手工模拟' : 'Moka'
+    const manualLabel = day.manualOverride ? ' · 模拟' : ''
+    const openDay = () => { selectedAttendanceDate.value = day.date }
+    const pushAttendance = (title: string, sortOrder: number, color: string, time?: string) => evs.push({
+      date: day.date, title, color, time, sortOrder,
       kind: '考勤',
-      sourceLabel: day.manualOverride ? '手工模拟' : 'Moka',
-      go: () => { selectedAttendanceDate.value = day.date },
+      sourceLabel,
+      go: openDay,
     })
+    if (day.dayType === 'LEAVE') {
+      pushAttendance(`请假 · 不计日均${manualLabel}`, 0, '#B9821F')
+      return
+    }
+    if (day.dayType === 'REST' && !clockIn && !clockOut) {
+      pushAttendance(`休息日${manualLabel}`, 0, '#79808F')
+      return
+    }
+    pushAttendance(`${clockIn ? '上班打卡' : '上班 · 缺卡'}${clockIn && day.anomaly ? ` · ${day.anomaly}` : ''}${manualLabel}`, 0, clockIn ? (day.anomaly ? '#D9634C' : '#2C8A5B') : '#D9634C', clockIn)
+    pushAttendance(`${clockOut ? '下班打卡' : '下班 · 缺卡'}${manualLabel}`, 1, clockOut ? '#2C8A5B' : '#D9634C', clockOut)
+    if (day.workHours !== null) pushAttendance(`当日工时 · ${day.workHours.toFixed(2)} h${manualLabel}`, 2, '#4358D6')
   })
   return evs
 })
@@ -471,9 +478,10 @@ const month = computed(() => {
   events.value.forEach((e) => (byDate[e.date] = byDate[e.date] || []).push(e))
   for (const k of Object.keys(byDate)) {
     byDate[k]!.sort((a, b) => {
-      const holidayPriority = Number(!a.holidayDayType) - Number(!b.holidayDayType)
       const attendancePriority = Number(a.kind !== '考勤') - Number(b.kind !== '考勤')
-      return holidayPriority || attendancePriority || (a.time ?? '').localeCompare(b.time ?? '')
+      const attendanceOrder = (a.sortOrder ?? 99) - (b.sortOrder ?? 99)
+      const holidayPriority = Number(!a.holidayDayType) - Number(!b.holidayDayType)
+      return attendancePriority || attendanceOrder || holidayPriority || (a.time ?? '').localeCompare(b.time ?? '')
     })
   }
   const total = Math.ceil((off + dim) / 7) * 7
