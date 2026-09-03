@@ -44,14 +44,14 @@ describe('全局音乐播放器', () => {
     const data = useDataStore()
     data.fileLoadState = 'loaded'
     data.files = [
-      { ...base, id: 'song-1', name: '雨夜.mp3', contentType: 'audio/mpeg' },
+      { ...base, id: 'song-1', name: '雨夜.mp3', displayName: '窗边雨声', contentType: 'audio/mpeg' },
       { ...base, id: 'doc-1', name: '说明.pdf', contentType: 'application/pdf' },
       { ...base, id: 'song-2', name: '清晨.flac', contentType: 'application/octet-stream' },
     ]
 
     const wrapper = mount(MusicPlayer)
     expect(wrapper.findAll('.playlist li')).toHaveLength(2)
-    expect(wrapper.find('.track-copy strong').text()).toBe('雨夜')
+    expect(wrapper.find('.track-copy strong').text()).toBe('窗边雨声')
     expect(wrapper.find('.playlist').text()).not.toContain('说明')
 
     await wrapper.find('.main-play').trigger('click')

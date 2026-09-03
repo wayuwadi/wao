@@ -700,7 +700,7 @@ V84 在不改写上述兼容数据的前提下增加每日面板：
 | 列 | 类型 | 说明 |
 |---|---|---|
 | id | VARCHAR(64) PK | 文件 id |
-| name / content_type | VARCHAR | 安全文件名与 MIME 类型 |
+| name / display_name / content_type | VARCHAR | 安全原文件名、可空的 WAO 展示名与 MIME 类型；展示名为空时回退原文件名 |
 | byte_size | BIGINT | 字节数，单个文件最大 50MB |
 | created_by / created_at | VARCHAR / DATETIME(3) | 上传成员与上海时间 |
 | content | LONGBLOB | 文件二进制正文，列表查询不读取 |

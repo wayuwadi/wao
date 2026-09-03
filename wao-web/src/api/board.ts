@@ -85,6 +85,8 @@ export async function apiUploadFile(file: File, projectId?: string): Promise<Fil
   const res = await http.post<ApiResponse<FileItem>>('/api/files', form, { timeout: 120_000 })
   return res.data.data
 }
+export const apiRenameFile = (id: string, displayName: string) =>
+  patch<FileItem>(`/api/files/${id}`, { displayName })
 export const apiDeleteFile = (id: string) => del(`/api/files/${id}`)
 export const fetchHostedPages = (projectId?: string) =>
   get<HostedPage[]>(

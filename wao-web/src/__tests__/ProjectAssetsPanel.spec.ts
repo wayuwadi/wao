@@ -75,7 +75,10 @@ describe('ProjectAssetsPanel', () => {
 
     expect(wrapper.text()).toContain('报告.md')
     expect(wrapper.text()).not.toContain('其它.md')
-    await wrapper.find('.asset-row button').trigger('click')
+    await wrapper
+      .findAll('.asset-row button')
+      .find((button) => button.text().includes('预览'))!
+      .trigger('click')
     expect(wrapper.findComponent({ name: 'AssetPreviewModal' }).attributes('asset')).toBeDefined()
 
     await wrapper.findAll('.asset-tabs button')[1]!.trigger('click')

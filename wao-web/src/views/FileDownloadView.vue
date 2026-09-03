@@ -10,6 +10,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiDownloadChallenge, apiDownloadTicket, fetchFileMeta } from '@/api/board'
 import type { FileItem } from '@/types'
+import { fileDisplayName } from '@/utils/files'
 
 const route = useRoute()
 const fileId = String(route.params.id ?? '')
@@ -81,7 +82,8 @@ async function download() {
         <div class="file">
           <div class="file-icon"><i :class="file.icon || 'ri-file-line'"></i></div>
           <div class="file-main">
-            <div class="file-name">{{ file.name }}</div>
+            <div class="file-name">{{ fileDisplayName(file) }}</div>
+            <div v-if="file.displayName" class="file-sub">原文件：{{ file.name }}</div>
             <div class="file-sub">{{ file.size }} · {{ file.time }}</div>
           </div>
         </div>

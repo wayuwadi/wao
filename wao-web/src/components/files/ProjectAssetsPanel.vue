@@ -5,6 +5,8 @@ import { toast } from '@/composables/toast'
 import { copyText } from '@/utils/clipboard'
 import { absoluteUrl, fileShareUrl } from '@/utils/share'
 import AssetPreviewModal, { type AssetPreview } from './AssetPreviewModal.vue'
+import FileDisplayNameEditor from './FileDisplayNameEditor.vue'
+import { fileDisplayName } from '@/utils/files'
 import type { HostedPage } from '@/types'
 
 const props = defineProps<{ projectId: string; projectName: string }>()
@@ -214,12 +216,12 @@ async function removePage(page: HostedPage) {
       <div v-for="file in files" :key="file.id" class="asset-row">
         <i :class="file.icon"></i>
         <div>
-          <b>{{ file.name }}</b
-          ><span>{{ file.size }} · {{ file.by }} · {{ file.time }}</span>
+          <FileDisplayNameEditor :file="file" />
+          <span>{{ file.size }} · {{ file.by }} · {{ file.time }}</span>
         </div>
         <button
           v-if="isMarkdown(file.name)"
-          @click="preview = { kind: 'markdown', id: file.id, name: file.name }"
+          @click="preview = { kind: 'markdown', id: file.id, name: fileDisplayName(file) }"
         >
           <i class="ri-eye-line"></i>预览
         </button>
@@ -227,7 +229,7 @@ async function removePage(page: HostedPage) {
           <i class="ri-links-line"></i>分享
         </button>
         <a :href="absoluteUrl(file.link)" title="下载"><i class="ri-download-2-line"></i></a>
-        <button class="danger" @click="removeFile(file.id, file.name)">
+        <button class="danger" @click="removeFile(file.id, fileDisplayName(file))">
           <i class="ri-delete-bin-line"></i>
         </button>
       </div>

@@ -10,6 +10,8 @@ import FileSettingsModal from '@/components/overlays/FileSettingsModal.vue'
 import { fetchFileSettings, type FileSettings } from '@/api/system'
 import type { HostedPage } from '@/types'
 import AssetPreviewModal, { type AssetPreview } from '@/components/files/AssetPreviewModal.vue'
+import FileDisplayNameEditor from '@/components/files/FileDisplayNameEditor.vue'
+import { fileDisplayName } from '@/utils/files'
 
 const data = useDataStore()
 const tab = ref<'files' | 'img' | 'pages'>('files')
@@ -463,7 +465,7 @@ function onFileSettingsSaved(settings: FileSettings) {
           <div v-for="(f, i) in data.files" :key="i" class="file-row">
             <div class="file-icon"><i :class="f.icon"></i></div>
             <div class="file-main">
-              <div class="file-name">{{ f.name }}</div>
+              <FileDisplayNameEditor :file="f" />
               <div class="file-sub">
                 {{ f.by }} · {{ f.time }} ·
                 <span v-if="f.projectId" class="project-badge"
@@ -477,7 +479,7 @@ function onFileSettingsSaved(settings: FileSettings) {
               v-if="f.id && isMarkdown(f.name)"
               class="copy-btn"
               title="站内预览 Markdown"
-              @click="preview = { kind: 'markdown', id: f.id, name: f.name }"
+              @click="preview = { kind: 'markdown', id: f.id, name: fileDisplayName(f) }"
             >
               <i class="ri-eye-line"></i>预览
             </button>
@@ -491,7 +493,7 @@ function onFileSettingsSaved(settings: FileSettings) {
             <a class="dl-btn" title="直接下载" :href="absoluteUrl(f.link)"
               ><i class="ri-download-2-line"></i
             ></a>
-            <button class="dl-btn danger" title="删除" @click="removeFile(f.id, f.name)">
+            <button class="dl-btn danger" title="删除" @click="removeFile(f.id, fileDisplayName(f))">
               <i class="ri-delete-bin-line"></i>
             </button>
           </div>

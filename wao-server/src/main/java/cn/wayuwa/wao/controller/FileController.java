@@ -15,10 +15,12 @@ import cn.wayuwa.wao.common.UnauthorizedException;
 import cn.wayuwa.wao.domain.FileBlobEntity;
 import cn.wayuwa.wao.dto.FileItemDto;
 import cn.wayuwa.wao.dto.FilePreviewDto;
+import cn.wayuwa.wao.dto.RenameFileRequest;
 import cn.wayuwa.wao.service.DownloadTicketService;
 import cn.wayuwa.wao.service.FileService;
 import cn.wayuwa.wao.service.ProjectService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -27,6 +29,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -89,6 +92,15 @@ public class FileController {
     @GetMapping("/{id}/meta")
     public ApiResponse<FileItemDto> meta(@PathVariable String id) {
         return ApiResponse.ok(files.meta(id));
+    }
+
+    /** 修改 WAO 内展示名；原始文件名、正文与分享地址保持不变。 */
+    @PatchMapping("/{id}")
+    public ApiResponse<FileItemDto> rename(@PathVariable String id,
+            @Valid @RequestBody RenameFileRequest request, HttpServletRequest http) {
+        FileBlobEntity entity = files.metadata(id);
+        requireAssetAccess(entity.getProjectId(), currentMember.id(http));
+        return ApiResponse.ok(files.renameDisplayName(id, request.displayName()));
     }
 
     /** 取一次公开下载挑战；算术题可关闭，一次性票据不可关闭。 */

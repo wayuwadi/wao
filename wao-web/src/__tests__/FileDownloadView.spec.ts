@@ -15,6 +15,7 @@ describe('FileDownloadView', () => {
     vi.mocked(fetchFileMeta).mockResolvedValue({
       id: 'file-1',
       name: '验收.zip',
+      displayName: '上线验收材料',
       size: '2 MB',
       icon: 'ri-file-zip-line',
       time: '刚刚',
@@ -33,5 +34,7 @@ describe('FileDownloadView', () => {
     expect(wrapper.find('.captcha').exists()).toBe(false)
     expect(wrapper.find('.btn-primary').attributes('disabled')).toBeUndefined()
     expect(wrapper.text()).toContain('一次性票据')
+    expect(wrapper.text()).toContain('上线验收材料')
+    expect(wrapper.text()).toContain('原文件：验收.zip')
   })
 })

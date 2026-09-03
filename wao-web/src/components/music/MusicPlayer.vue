@@ -4,6 +4,7 @@ import { toast } from '@/composables/toast'
 import { useDataStore } from '@/stores/data'
 import { usePreferenceStore } from '@/stores/preferences'
 import { audioStreamUrl, audioTitle, formatPlaybackTime, isAudioFile } from '@/utils/audio'
+import { fileDisplayName } from '@/utils/files'
 import { useFloatingDrag } from '@/composables/floatingDrag'
 import {
   beginNeteaseAuthorization,
@@ -106,7 +107,7 @@ watch(() => preferences.loaded, (loaded) => {
 
 const localTracks = computed<PlayerTrack[]>(() => data.files.filter(isAudioFile).map((track) => ({
   id: track.id!,
-  name: audioTitle(track.name),
+  name: audioTitle(fileDisplayName(track)),
   artist: track.by || 'WAO 成员',
   detail: track.size,
   source: 'local',

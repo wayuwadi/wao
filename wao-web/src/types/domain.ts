@@ -447,7 +447,10 @@ export interface AutomationJob {
 
 export interface FileItem {
   id?: string
+  /** 上传时的真实文件名，用于下载、扩展名识别与兼容历史附件。 */
   name: string
+  /** 用户自定义的 WAO 站内展示名；为空时显示 name。 */
+  displayName?: string | null
   /** 服务端保存的 MIME；旧接口数据可能缺失，调用方需按扩展名兜底。 */
   contentType?: string
   size: string
