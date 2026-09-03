@@ -21,4 +21,27 @@ describe('图文导出', () => {
     expect(html).toContain('https://wao.example/cover.png')
     expect(articleFragment({ title: '标题', content: '正文', tags: [] })).not.toContain('<html')
   })
+
+  it('按所选语言渲染代码块，并对代码内容做 HTML 转义', () => {
+    const content = '```typescript\nconst tag = "<script>"\n```'
+    const html = articleFragment({ title: '代码文章', content, tags: [] })
+
+    expect(html).toContain('typescript')
+    expect(html).toContain('const tag = &quot;&lt;script&gt;&quot;')
+    expect(html).not.toContain('<script>')
+    expect(articleBlocks(content)).toEqual([{ p: content }])
+  })
+
+  it.each([
+    ['流程图', 'flowchart LR\n  A[开始] --> B[完成]', '开始'],
+    ['时序图', 'sequenceDiagram\n  用户->>WAO: 保存文章', '保存文章'],
+    ['思维导图', 'mindmap\n  root((文章))\n    代码', '文章'],
+  ])('把 Mermaid %s渲染成无需脚本的可导出图形', (label, source, expected) => {
+    const content = `\`\`\`mermaid\n${source}\n\`\`\``
+    const html = articleDocument({ title: '带图文章', content, tags: [] })
+
+    expect(html).toContain(label)
+    expect(html).toContain(expected)
+    expect(articleBlocks(content)).toEqual([{ p: content }])
+  })
 })

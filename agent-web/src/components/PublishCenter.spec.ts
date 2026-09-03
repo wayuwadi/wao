@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PublishCenter from './PublishCenter.vue'
-import { createPublishTask, getPublishCenter, listMedia } from '@/api/publish'
+import { createPublishTask, getPublishCenter, listMedia, updatePublishTask } from '@/api/publish'
 import { createKnowledgeArticle, listKnowledgeBases } from '@/api/knowledge'
 import type { PublishCenter as PublishCenterData, PublishTask } from '@/types'
 
@@ -118,5 +118,41 @@ describe('真实发布中心', () => {
     }))
     expect(wrapper.text()).toContain('完整图文已进入知识库')
     wrapper.unmount()
+  })
+
+  it('公众号文章插入带语言代码与画图后实时预览，并沿既有保存接口持久化', async () => {
+    const article = {
+      ...task(), platform: 'WECHAT_MP', platformLabel: '公众号', title: '嵌入能力', content: '开场',
+    }
+    vi.mocked(getPublishCenter).mockResolvedValue({ ...structuredClone(center), tasks: [article] })
+    vi.mocked(updatePublishTask).mockResolvedValue({
+      ...article,
+      version: 2,
+      content: '开场\n\n```python\nprint("WAO")\n```\n\n```mermaid\nflowchart LR\n A[开始] --> B[完成]\n```',
+    })
+    const wrapper = mount(PublishCenter, { props: { mode: 'content' } })
+    await flushPromises()
+
+    const toolbar = wrapper.get('.embed-toolbar')
+    await toolbar.findAll('button')[1]!.trigger('click')
+    await wrapper.get('.embed-dialog select').setValue('python')
+    await wrapper.get('.embed-dialog textarea').setValue('print("WAO")')
+    await wrapper.get('.embed-dialog').trigger('submit')
+    expect(wrapper.get('.live-preview iframe').attributes('srcdoc')).toContain('python')
+    expect(wrapper.get('.live-preview iframe').attributes('srcdoc')).toContain('print(&quot;WAO&quot;)')
+
+    await toolbar.findAll('button')[0]!.trigger('click')
+    await wrapper.get('.embed-dialog').trigger('submit')
+    expect(wrapper.get('.live-preview iframe').attributes('srcdoc')).toContain('流程图')
+    expect(wrapper.text()).toContain('有未保存修改')
+
+    await wrapper.findAll('.actions button').find((button) => button.text().includes('保存审核稿'))!.trigger('click')
+    await flushPromises()
+    expect(updatePublishTask).toHaveBeenCalledWith('pt-1', expect.objectContaining({
+      content: expect.stringContaining('```python\nprint("WAO")\n```'),
+    }))
+    expect(updatePublishTask).toHaveBeenCalledWith('pt-1', expect.objectContaining({
+      content: expect.stringContaining('```mermaid\nflowchart LR'),
+    }))
   })
 })
