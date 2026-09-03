@@ -214,6 +214,7 @@ public class WorkdayRhythmDashboardService {
         LocalDateTime now = LocalDateTime.now(ZONE);
         value.setCompletedAt(completed ? now : null);
         value.setCompletedOnTime(completed ? !now.isAfter(dueAt(value)) : null);
+        value.setCompletionSource(completed ? "MANUAL" : null);
         if (!completed && "COUNTDOWN".equals(value.getItemType())) {
             value.setTimerStartedAt(null); value.setTimerElapsedSeconds(0);
         }
@@ -232,7 +233,7 @@ public class WorkdayRhythmDashboardService {
         String normalized = trim(action).toUpperCase(java.util.Locale.ROOT);
         if ("RESET".equals(normalized)) {
             value.setTimerStartedAt(null); value.setTimerElapsedSeconds(0);
-            value.setCompletedAt(null); value.setCompletedOnTime(null);
+            value.setCompletedAt(null); value.setCompletedOnTime(null); value.setCompletionSource(null);
         } else if ("START".equals(normalized)) {
             if (value.getCompletedAt() == null && value.getTimerStartedAt() == null) value.setTimerStartedAt(now);
         } else if ("PAUSE".equals(normalized)) {
@@ -255,9 +256,40 @@ public class WorkdayRhythmDashboardService {
                 .filter(value -> kind.equals(value.getKind()))
                 .filter(value -> value.getCompletedAt() == null).findFirst().ifPresent(value -> {
                     LocalDateTime now = LocalDateTime.now(ZONE); value.setCompletedAt(now);
-                    value.setCompletedOnTime(!now.isAfter(dueAt(value))); value.setUpdatedAt(now);
+                    value.setCompletedOnTime(!now.isAfter(dueAt(value))); value.setCompletionSource("SYSTEM"); value.setUpdatedAt(now);
                     occurrences.updateById(value);
                 });
+    }
+
+    /**
+     * 用考勤事实同步上下班清单的完成时间；只覆盖或撤销此前同样来自考勤的值，绝不覆盖用户手动完成。
+     *
+     * @param memberId 成员 id
+     * @param date 考勤日期
+     * @param kind CLOCK_IN 或 CLOCK_OUT
+     * @param completedAt 有打卡时为真实时间，无打卡时为 null
+     */
+    @Transactional
+    public void syncAttendanceCompletion(String memberId, LocalDate date, String kind, LocalDateTime completedAt) {
+        if (!Set.of("CLOCK_IN", "CLOCK_OUT").contains(kind)) throw new BadRequestException("考勤只能联动上下班项");
+        WorkdayRhythmSettingEntity setting = ensureSetting(memberId);
+        ensureDefaults(memberId, setting);
+        List<WorkdayRhythmChecklistItemEntity> templates = itemEntities(memberId);
+        materialize(memberId, date, workday(memberId, date, setting).active(), templates).stream()
+                .filter(value -> kind.equals(value.getKind())).findFirst().ifPresent(value -> {
+            if (value.getCompletedAt() != null && !"ATTENDANCE".equals(value.getCompletionSource())) return;
+            value.setCompletedAt(completedAt);
+            value.setCompletedOnTime(completedAt == null ? null : !completedAt.isAfter(dueAt(value)));
+            value.setCompletionSource(completedAt == null ? null : "ATTENDANCE");
+            value.setUpdatedAt(LocalDateTime.now(ZONE));
+            occurrences.updateById(value);
+        });
+    }
+
+    /** 返回某天结合大小周与手工覆盖后的工作日判断，供考勤统计与缺卡提示共用。 */
+    public WorkdayInfo workdayInfo(String memberId, LocalDate date) {
+        Workday value = workday(memberId, date, ensureSetting(memberId));
+        return new WorkdayInfo(value.active(), value.label());
     }
 
     /** 首次输入时在所选知识库幂等创建当天唯一文档。 */
@@ -531,7 +563,7 @@ public class WorkdayRhythmDashboardService {
                 "COUNTDOWN".equals(itemType(value)) ? remaining : null, value.getTimerStartedAt() != null,
                 minute(value.getStartTime()), minute(value.getDueTime()),
                 Boolean.TRUE.equals(value.getDueNextDay()), value.getCompletedAt() == null ? null : value.getCompletedAt().toString(),
-                value.getCompletedOnTime(), status);
+                value.getCompletedOnTime(), value.getCompletionSource(), status);
     }
 
     private WorkdayRhythmChecklistItemDto itemDto(WorkdayRhythmChecklistItemEntity value) {
@@ -611,8 +643,10 @@ public class WorkdayRhythmDashboardService {
     private void refreshCountdown(WorkdayRhythmChecklistOccurrenceEntity value, LocalDateTime now) {
         if (!"COUNTDOWN".equals(itemType(value)) || value.getCompletedAt() != null || timerRemaining(value, now) > 0) return;
         pauseTimer(value, now); value.setCompletedAt(now); value.setCompletedOnTime(!now.isAfter(dueAt(value)));
+        value.setCompletionSource("SYSTEM");
         value.setUpdatedAt(now); occurrences.updateById(value);
     }
     private String id(String prefix) { return prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 32 - prefix.length()); }
     private record Workday(boolean active, Boolean override, String label) { }
+    public record WorkdayInfo(boolean active, String label) { }
 }

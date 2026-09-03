@@ -222,7 +222,7 @@ onBeforeUnmount(() => {
               </small>
             </span>
             <strong v-if="item.itemType !== 'COUNTDOWN'">{{
-              item.kind === 'PLAN' ? '自动联动' : item.completedAt ? '撤销' : '完成'
+              item.completionSource === 'ATTENDANCE' ? '考勤同步' : item.kind === 'PLAN' ? '自动联动' : item.completedAt ? '撤销' : '完成'
             }}</strong>
             <div v-else class="timer-controls" :aria-label="`${item.title}倒计时`">
               <b class="timer-value" aria-live="polite">{{ timerText(item) }}</b>

@@ -167,6 +167,7 @@ export interface RhythmOccurrence {
   dueNextDay: boolean
   completedAt: string | null
   completedOnTime: boolean | null
+  completionSource: 'MANUAL' | 'SYSTEM' | 'ATTENDANCE' | null
   status: RhythmChecklistStatus
 }
 

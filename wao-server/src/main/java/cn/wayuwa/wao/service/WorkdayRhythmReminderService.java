@@ -14,8 +14,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -34,6 +36,7 @@ public class WorkdayRhythmReminderService {
     private final FeishuWebhookNotifier webhookNotifier;
     private final FeishuAppLinks links;
     private final NotificationSettingsService notificationSettings;
+    private AttendanceService attendance;
 
     public WorkdayRhythmReminderService(WorkdayRhythmChecklistItemMapper items,
             WorkdayRhythmChecklistOccurrenceMapper occurrences, WorkdayRhythmReminderDeliveryMapper deliveries,
@@ -58,12 +61,26 @@ public class WorkdayRhythmReminderService {
                         .isNotNull(WorkdayRhythmChecklistOccurrenceEntity::getReminderTime)
                         .between(WorkdayRhythmChecklistOccurrenceEntity::getOccurrenceDate,
                                 now.toLocalDate().minusDays(1), now.toLocalDate()));
-        candidates.stream().filter(value -> !reminderAt(value).isAfter(now)).forEach(value -> {
-            if (Boolean.TRUE.equals(value.getNotifyDirect())) deliver(value, "DIRECT", now);
-            if (Boolean.TRUE.equals(value.getNotifyChat())) deliver(value, "CHAT", now);
-            if (Boolean.TRUE.equals(value.getNotifyWebhook())) deliver(value, "WEBHOOK", now);
+        List<WorkdayRhythmChecklistOccurrenceEntity> due = candidates.stream()
+                .filter(value -> !reminderAt(value).isAfter(now)).toList();
+        if (attendance != null) due.stream().filter(value -> Set.of("CLOCK_IN", "CLOCK_OUT").contains(value.getKind()))
+                .map(value -> value.getMemberId() + "\0" + value.getOccurrenceDate() + "\0" + reminderAt(value))
+                .distinct().forEach(key -> {
+                    String[] parts=key.split("\0");
+                    attendance.refreshBeforeReminder(parts[0], LocalDate.parse(parts[1]), LocalDateTime.parse(parts[2]));
+                });
+        due.forEach(value -> {
+            WorkdayRhythmChecklistOccurrenceEntity fresh=attendance!=null&&Set.of("CLOCK_IN","CLOCK_OUT").contains(value.getKind())
+                    ? occurrences.findOwned(value.getId(),value.getMemberId()) : value;
+            if(fresh==null||fresh.getCompletedAt()!=null) return;
+            if (Boolean.TRUE.equals(fresh.getNotifyDirect())) deliver(fresh, "DIRECT", now);
+            if (Boolean.TRUE.equals(fresh.getNotifyChat())) deliver(fresh, "CHAT", now);
+            if (Boolean.TRUE.equals(fresh.getNotifyWebhook())) deliver(fresh, "WEBHOOK", now);
         });
     }
+
+    @Autowired(required=false)
+    void setAttendance(AttendanceService attendance) { this.attendance=attendance; }
 
     private void deliver(WorkdayRhythmChecklistOccurrenceEntity occurrence, String channel, LocalDateTime now) {
         if (!"DIRECT".equals(channel) && !notificationSettings.allowsReminders()) {

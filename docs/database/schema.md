@@ -604,6 +604,13 @@ V84 在不改写上述兼容数据的前提下增加每日面板：
 - `workday_rhythm_setting` 保存大小周联动、每日文档目标和卦象模块开关。
 - `workday_rhythm_checklist_item` 保存可维护模板，`system_key` 只对系统联动项唯一，自定义项可有多条。
 - `workday_rhythm_checklist_occurrence` 保存日期快照、完成时间和准时状态，模板修改不改写历史。
+- `workday_rhythm_checklist_occurrence.completion_source` 区分成员手动、系统联动与考勤同步；考勤只能改写自身来源的完成事实。
+
+### attendance_connector / attendance_day（我的考勤，V136）
+
+- `attendance_connector` 每成员一行，保存 Moka 邮箱、个人密码本条目引用、加密会话、远端员工 id 和同步状态；不复制密码明文。
+- `attendance_day` 以 `(member_id, attendance_date)` 唯一，远端值与手工模拟值分栏保存，`manual_override` 决定有效值并支持无损恢复。
+- 只保存打卡时间、日期类型和异常摘要，不保存定位、照片、附件或 Moka 原始响应。
 - `workday_rhythm_day` 以成员和日期为主键，保存当天工作日覆盖和唯一每日文档。
 - `workday_rhythm_reminder_delivery` 以实例和通道去重，保存尝试、失败与成功时间。
 

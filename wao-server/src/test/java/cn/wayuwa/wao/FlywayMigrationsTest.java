@@ -187,6 +187,22 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void attendanceKeepsRemoteFactsSeparateFromReversibleManualOverrides() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V136__member_attendance.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("CREATE TABLE attendance_connector")
+                .contains("session_ciphertext", "vault_item_id")
+                .contains("CREATE TABLE attendance_day")
+                .contains("PRIMARY KEY (member_id, attendance_date)")
+                .contains("remote_clock_in_at", "manual_clock_in_at", "manual_override")
+                .contains("completion_source VARCHAR(16)");
+    }
+
+    @Test
     void feishuPersonalQuickCaptureUsesDatabaseLevelEventIdempotency() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V85__feishu_personal_quick_capture.sql"))

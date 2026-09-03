@@ -18,7 +18,7 @@ public class WorkdayRhythmChecklistOccurrenceEntity {
     private LocalTime reminderTime; private Boolean reminderNextDay;
     private Boolean notifyDirect; private Boolean notifyChat; private String chatId; private String chatName;
     private Boolean notifyWebhook; private String webhookId; private String webhookName;
-    private LocalDateTime completedAt; private Boolean completedOnTime;
+    private LocalDateTime completedAt; private Boolean completedOnTime; private String completionSource;
     private LocalDateTime createdAt; private LocalDateTime updatedAt;
 
     public String getId(){return id;} public void setId(String v){id=v;}
@@ -46,6 +46,7 @@ public class WorkdayRhythmChecklistOccurrenceEntity {
     public String getWebhookName(){return webhookName;} public void setWebhookName(String v){webhookName=v;}
     public LocalDateTime getCompletedAt(){return completedAt;} public void setCompletedAt(LocalDateTime v){completedAt=v;}
     public Boolean getCompletedOnTime(){return completedOnTime;} public void setCompletedOnTime(Boolean v){completedOnTime=v;}
+    public String getCompletionSource(){return completionSource;} public void setCompletionSource(String v){completionSource=v;}
     public LocalDateTime getCreatedAt(){return createdAt;} public void setCreatedAt(LocalDateTime v){createdAt=v;}
     public LocalDateTime getUpdatedAt(){return updatedAt;} public void setUpdatedAt(LocalDateTime v){updatedAt=v;}
 }
