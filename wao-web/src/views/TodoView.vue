@@ -570,10 +570,14 @@ function onDropStatus(status: TaskStatus) {
 }
 .board-cards {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 8px;
 }
 .board-card {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 10px;
@@ -588,16 +592,22 @@ function onDropStatus(status: TaskStatus) {
   box-shadow: 0 2px 8px rgba(16, 18, 28, 0.06);
 }
 .bc-title {
+  min-width: 0;
   font-size: 13px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .bc-proj {
+  min-width: 0;
   margin-top: 6px;
   font-size: 11.5px;
   color: var(--wao-text-weak);
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.bc-proj .ellip {
+  min-width: 0;
 }
 .bc-foot {
   margin-top: 8px;

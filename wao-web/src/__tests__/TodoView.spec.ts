@@ -5,6 +5,7 @@ import TodoView from '@/views/TodoView.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { seedDataStore } from './helpers/seedDataStore'
+import todoViewSource from '@/views/TodoView.vue?raw'
 
 describe('TodoView', () => {
   let data: ReturnType<typeof useDataStore>
@@ -59,6 +60,22 @@ describe('TodoView', () => {
     expect(wrapper.findAll('.seg-btn').map((button) => button.text())).toEqual(['列表', '看板'])
     expect(wrapper.find('.pdca-view').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('PDCA')
+    wrapper.unmount()
+  })
+
+  it('看板卡片中的长链接会在列内断行且保留完整内容', async () => {
+    const longUrl = `https://open.work.weixin.qq.com/help2/${'unbroken-path-'.repeat(30)}`
+    const task = data.tasks.find((item) => item.owner === 'wg')!
+    task.title = `参考：${longUrl}`
+    const wrapper = mount(TodoView)
+
+    await wrapper.findAll('.seg-btn')[1]!.trigger('click')
+    const card = wrapper.findAll('.board-card').find((item) => item.text().includes(longUrl))!
+    const title = card.get('.bc-title')
+
+    expect(title.text()).toBe(`参考：${longUrl}`)
+    expect(todoViewSource).toMatch(/\.board-card\s*{[^}]*max-width:\s*100%/s)
+    expect(todoViewSource).toMatch(/\.bc-title\s*{[^}]*overflow-wrap:\s*anywhere/s)
     wrapper.unmount()
   })
 })
