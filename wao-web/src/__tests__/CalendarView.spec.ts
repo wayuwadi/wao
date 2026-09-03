@@ -530,7 +530,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.find('.important-date-form input[type="text"]').element).toHaveProperty('value', '农历生日')
   })
 
-  it('考勤模式可独立开关，并在日历显示打卡与两位小数工时', async () => {
+  it('考勤模式可独立开关，并在日历分开显示上下班与两位小数工时', async () => {
     const data = useDataStore()
     const session = useSessionStore()
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
@@ -552,7 +552,10 @@ describe('日历成员隔离、清单与时间轴', () => {
     await flushPromises()
     expect(fetchAttendance).toHaveBeenCalled()
     expect(wrapper.text()).toContain('11.00 h')
-    expect(wrapper.findAll('.event').some((event) => event.text().includes('考勤'))).toBe(true)
+    const attendanceEvents = wrapper.findAll('.event').map((event) => event.text())
+    expect(attendanceEvents).toContain('09:00上班打卡')
+    expect(attendanceEvents).toContain('21:00下班打卡')
+    expect(attendanceEvents).toContain('当日工时 · 11.00 h')
     await wrapper.find('.attendance-toggle').trigger('click')
     expect(wrapper.find('.attendance-panel').exists()).toBe(false)
   })
