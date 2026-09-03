@@ -543,4 +543,31 @@ describe('日历成员隔离、清单与时间轴', () => {
     await wrapper.find('.attendance-toggle').trigger('click')
     expect(wrapper.find('.attendance-panel').exists()).toBe(false)
   })
+
+  it('首次配置考勤时自动启用表单并忽略旧的禁用草稿', async () => {
+    const data = useDataStore()
+    const session = useSessionStore()
+    const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me]
+    localStorage.setItem('wao-attendance-config-draft:wg', JSON.stringify({
+      enabled: false, username: '', vaultItemId: '',
+    }))
+    vi.mocked(fetchAttendance).mockResolvedValue({
+      from: data.today, to: data.today,
+      config: { enabled: false, username: null, vaultItemId: null, status: 'UNCONFIGURED', lastSyncedAt: null, lastError: null },
+      days: [], totalHours: 0, monthDailyAverageHours: 0, validDays: 0, weeks: [],
+    })
+
+    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    await flushPromises()
+    await wrapper.find('.attendance-toggle').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.attendance-actions button').find((button) => button.text().includes('设置'))!.trigger('click')
+
+    expect((wrapper.find('.attendance-modal .toggle input').element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.find('.attendance-modal fieldset').attributes('disabled')).toBeUndefined()
+    expect((wrapper.find('.attendance-modal input[type="email"]').element as HTMLInputElement).disabled).toBe(false)
+    expect((wrapper.find('.attendance-modal select').element as HTMLSelectElement).disabled).toBe(false)
+  })
 })
