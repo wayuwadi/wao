@@ -8,6 +8,22 @@ umask 077
 install -d "$WAO_RUN_TEMP"
 git archive --format=tar.gz -o "$WAO_RUN_TEMP/wao-release.tgz" HEAD
 
+pull_image() {
+  image="$1"
+  attempt=1
+  max_attempts=3
+  while ! docker pull "$image"; do
+    if [ "$attempt" -ge "$max_attempts" ]; then
+      printf 'Failed to pull %s after %s attempts.\n' "$image" "$attempt" >&2
+      return 1
+    fi
+    printf 'Failed to pull %s (attempt %s/%s); retrying in 5 seconds.\n' \
+      "$image" "$attempt" "$max_attempts" >&2
+    attempt=$((attempt + 1))
+    sleep 5
+  done
+}
+
 docker build --target server-runtime -t "wao-server:$WAO_GIT_SHA" -f deploy/Dockerfile .
 docker build --target agent-runtime -t "wao-agent-server:$WAO_GIT_SHA" -f deploy/Dockerfile .
 docker build --target gateway-runtime -t "wao-gateway:$WAO_GIT_SHA" -f deploy/Dockerfile .
@@ -16,7 +32,7 @@ docker build --target codex-egress-proxy -t "wao-codex-egress-proxy:$WAO_GIT_SHA
 # Linux1 生产从节点不能依赖 Docker Hub 在发布窗口内保持可达。把 Compose
 # 所需的固定第三方镜像和应用镜像一起打进不可变发布包。
 for image in mysql:9.7.0 redis:7-alpine jeessy/ddns-go:v6.17.2; do
-  docker pull "$image"
+  pull_image "$image"
 done
 
 docker save \
