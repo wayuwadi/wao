@@ -120,6 +120,18 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
+    void immutableReleaseRetriesTransientRegistryPullFailures() throws IOException {
+        String packager = readFromRepository("deploy/jenkins/ci-package.sh");
+
+        assertThat(packager)
+                .contains("pull_image()")
+                .contains("max_attempts=3")
+                .contains("while ! docker pull \"$image\"")
+                .contains("retrying in 5 seconds")
+                .contains("pull_image \"$image\"");
+    }
+
+    @Test
     void agentUsesBundledStaticDirectoryServiceAndDedicatedGatewayRoute() throws IOException {
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
         String gateway = readFromRepository("wao-gateway/src/main/resources/application.yml");
