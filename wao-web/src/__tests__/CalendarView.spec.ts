@@ -259,6 +259,12 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(marks).toContain('小周 · 双休')
     expect(marks).toContain('大周 · 周日上班')
 
+    await wrapper.find('.calendar-display-menu summary').trigger('click')
+    await wrapper.find('.work-week-visibility').trigger('click')
+    expect(wrapper.findAll('.work-week-mark')).toHaveLength(0)
+    expect(wrapper.find('.work-week-visibility').text()).toContain('隐藏')
+    expect(localStorage.getItem('wao-calendar-work-week-visible:wg')).toBe('false')
+
     await wrapper.find('.work-schedule').trigger('click')
     expect(wrapper.find('.work-schedule-modal').exists()).toBe(true)
     await wrapper.find('.work-schedule-field input').setValue(data.today)

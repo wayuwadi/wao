@@ -100,6 +100,11 @@ const workScheduleSaving = ref(false)
 const workScheduleSaveError = ref('')
 const workScheduleDraft = reactive<AlternateWorkWeekSchedule>(defaultAlternateWorkWeek(data.today))
 const workScheduleDraftKey = computed(() => `wao-work-week-draft:${session.currentUser.id || 'anonymous'}`)
+const showWorkWeek = ref(localStorage.getItem(`wao-calendar-work-week-visible:${session.currentUser.id}`) !== 'false')
+watch(showWorkWeek, (visible) => localStorage.setItem(`wao-calendar-work-week-visible:${session.currentUser.id}`, String(visible)))
+watch(() => session.currentUser.id, (memberId) => {
+  showWorkWeek.value = localStorage.getItem(`wao-calendar-work-week-visible:${memberId}`) !== 'false'
+})
 
 const thisWeekInfo = computed(() => workWeekForDate(data.today, workSchedule.value))
 const workScheduleState = computed(() => {
@@ -509,7 +514,7 @@ const month = computed(() => {
       numBg: isToday ? '#4358D6' : 'transparent',
       numColor: isToday ? '#FFFFFF' : inM ? '#3E414D' : '#C4C7D2',
       bg: inM ? '#FFFFFF' : '#FBFBFC',
-      workWeek: d.getDay() === 0 ? workWeekForDate(dayIso, workSchedule.value) : null,
+      workWeek: showWorkWeek.value && d.getDay() === 0 ? workWeekForDate(dayIso, workSchedule.value) : null,
     })
   }
   const weeks: (typeof cells)[] = []
@@ -567,7 +572,7 @@ const weekDays = computed(() => {
       label: `${date.getMonth() + 1}月${date.getDate()}日`,
       isToday: day === data.today,
       items: events.value.filter((event) => event.date === day),
-      workWeek: date.getDay() === 0 ? workWeekForDate(day, workSchedule.value) : null,
+      workWeek: showWorkWeek.value && date.getDay() === 0 ? workWeekForDate(day, workSchedule.value) : null,
     }
   })
 })
@@ -579,7 +584,7 @@ const dayView = computed(() => {
     label: `${date.getMonth() + 1}月${date.getDate()}日`,
     isToday: day === data.today,
     items: events.value.filter((event) => event.date === day),
-    workWeek: workWeekForDate(day, workSchedule.value),
+    workWeek: showWorkWeek.value ? workWeekForDate(day, workSchedule.value) : null,
   }]
 })
 const timelineDays = computed(() => viewMode.value === 'day' ? dayView.value : weekDays.value)
@@ -1128,59 +1133,37 @@ function onDropDay(dayIso: string) {
 <template>
   <div class="cal">
     <div class="cal-top">
-      <div class="cal-title">日历</div>
-      <div class="legend">
-        <span v-for="l in legend" :key="l.label" class="leg"><span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}</span>
-      </div>
-      <span v-if="holidayState === 'loading'" class="holiday-status"><i class="ri-loader-4-line spin"></i>节假日加载中</span>
-      <button v-else-if="holidayState === 'error'" class="holiday-status error" @click="loadHolidays"><i class="ri-refresh-line"></i>节假日加载失败 · 重试</button>
-      <button class="holiday-settings-entry" title="选择国际节日范围" @click="openHolidaySettings">
-        <i class="ri-earth-line"></i>节日设置 · {{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类
-      </button>
-      <button class="important-date-entry" title="维护公历或农历提醒事项" @click="openImportantDateManager">
-        <i :class="importantDateState === 'loading' ? 'ri-loader-4-line spinning' : importantDateState === 'error' ? 'ri-error-warning-line' : 'ri-heart-3-line'"></i>
-        提醒事项 · {{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}
-      </button>
-      <button class="caldav" title="配置 CalDAV 日历账户" @click="showCaldavConfig = true">
-        <span class="cd-dot" :style="{ background: caldavState.dot }"></span>{{ caldavState.label }}<i class="ri-settings-3-line"></i>
-      </button>
-      <button class="work-schedule" title="配置我的大小周" @click="openWorkScheduleConfig">
-        <span class="cd-dot" :style="{ background: workScheduleState.dot }"></span>{{ workScheduleState.label }}<i class="ri-settings-3-line"></i>
-      </button>
-      <button class="attendance-toggle" :class="{ on: attendanceMode }" title="开启或关闭考勤数据，不影响其他日历内容" @click="toggleAttendanceMode">
-        <i :class="attendanceMode ? 'ri-calendar-check-line' : 'ri-calendar-line'"></i>
-        {{ attendanceMode ? '关闭我的考勤' : '开启我的考勤' }}
-      </button>
-      <label class="member-calendar">
-        <i class="ri-user-line"></i>
-        <select v-model="calendarMemberId" title="选择要查看的成员日历">
-          <option v-for="member in session.members" :key="member.id" :value="member.id">
-            {{ member.id === session.currentUser.id ? `我的日历 · ${member.name}` : member.name }}
-          </option>
-        </select>
-      </label>
-      <button class="completed-toggle" :class="{ on: showCompletedTasks }" type="button" @click="showCompletedTasks = !showCompletedTasks">
-        <i :class="showCompletedTasks ? 'ri-eye-line' : 'ri-eye-off-line'"></i>
-        {{ showCompletedTasks ? '隐藏已完成任务' : '显示已完成任务' }}
-      </button>
-      <div class="calendar-search">
-        <i class="ri-search-line"></i>
-        <input v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、考勤、提醒、节日…" @keydown.esc="calendarSearch = ''" />
-        <div v-if="calendarSearch.trim()" class="calendar-search-results">
-          <button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)">
-            <span class="search-result-date">{{ result.date }}</span>
-            <span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span>
-          </button>
-          <div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div>
+      <div class="cal-heading-row">
+        <div class="cal-title">日历</div>
+        <div class="legend">
+          <span v-for="l in legend" :key="l.label" class="leg"><span class="leg-dot" :style="{ background: l.color }"></span>{{ l.label }}</span>
         </div>
+        <span v-if="holidayState === 'loading'" class="holiday-status"><i class="ri-loader-4-line spin"></i>节假日加载中</span>
+        <button v-else-if="holidayState === 'error'" class="holiday-status error" @click="loadHolidays"><i class="ri-refresh-line"></i>节假日加载失败 · 重试</button>
+        <div class="spacer"></div>
+        <div class="view-switch"><button :class="{ on: viewMode === 'year' }" @click="viewMode = 'year'">年</button><button :class="{ on: viewMode === 'month' }" @click="viewMode = 'month'">月</button><button :class="{ on: viewMode === 'week' }" @click="viewMode = 'week'">周</button><button :class="{ on: viewMode === 'day' }" @click="viewMode = 'day'">日</button></div>
+        <select v-model.number="calY" class="jump-select" title="快速切换年份"><option v-for="y in Array.from({ length: 21 }, (_, i) => now.getFullYear() - 10 + i)" :key="y" :value="y">{{ y }} 年</option></select>
+        <select v-if="viewMode !== 'year'" v-model.number="calM" class="jump-select" title="快速切换月份"><option v-for="m in 12" :key="m" :value="m - 1">{{ m }} 月</option></select>
+        <button class="nav-btn" @click="shift(-1)"><i class="ri-arrow-left-s-line"></i></button>
+        <button class="today-btn" @click="goToday">今天</button>
+        <button class="nav-btn" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
       </div>
-      <div class="spacer"></div>
-      <div class="view-switch"><button :class="{ on: viewMode === 'year' }" @click="viewMode = 'year'">年</button><button :class="{ on: viewMode === 'month' }" @click="viewMode = 'month'">月</button><button :class="{ on: viewMode === 'week' }" @click="viewMode = 'week'">周</button><button :class="{ on: viewMode === 'day' }" @click="viewMode = 'day'">日</button></div>
-      <select v-model.number="calY" class="jump-select" title="快速切换年份"><option v-for="y in Array.from({ length: 21 }, (_, i) => now.getFullYear() - 10 + i)" :key="y" :value="y">{{ y }} 年</option></select>
-      <select v-if="viewMode !== 'year'" v-model.number="calM" class="jump-select" title="快速切换月份"><option v-for="m in 12" :key="m" :value="m - 1">{{ m }} 月</option></select>
-      <button class="nav-btn" @click="shift(-1)"><i class="ri-arrow-left-s-line"></i></button>
-      <button class="today-btn" @click="goToday">今天</button>
-      <button class="nav-btn" @click="shift(1)"><i class="ri-arrow-right-s-line"></i></button>
+      <div class="cal-control-row">
+        <label class="member-calendar"><i class="ri-user-line"></i><select v-model="calendarMemberId" title="选择要查看的成员日历"><option v-for="member in session.members" :key="member.id" :value="member.id">{{ member.id === session.currentUser.id ? `我的日历 · ${member.name}` : member.name }}</option></select></label>
+        <div class="calendar-search"><i class="ri-search-line"></i><input v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、考勤、提醒、节日…" @keydown.esc="calendarSearch = ''" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
+        <div class="spacer"></div>
+        <details class="calendar-menu calendar-display-menu"><summary><i class="ri-eye-line"></i>显示</summary><div class="calendar-menu-popover">
+          <button class="work-week-visibility" :class="{ on: showWorkWeek }" type="button" @click="showWorkWeek = !showWorkWeek"><i :class="showWorkWeek ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>大小周标记</b><small>只控制日历显示，不关闭配置</small></span><em>{{ showWorkWeek ? '显示' : '隐藏' }}</em></button>
+          <button class="attendance-toggle" :class="{ on: attendanceMode }" type="button" @click="toggleAttendanceMode"><i :class="attendanceMode ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>我的考勤</b><small>上下班、工时与异常</small></span><em>{{ attendanceMode ? '显示' : '隐藏' }}</em></button>
+          <button class="completed-toggle" :class="{ on: showCompletedTasks }" type="button" @click="showCompletedTasks = !showCompletedTasks"><i :class="showCompletedTasks ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>{{ showCompletedTasks ? '隐藏已完成任务' : '显示已完成任务' }}</b><small>保留或隐藏历史完成项</small></span><em>{{ showCompletedTasks ? '显示中' : '已隐藏' }}</em></button>
+        </div></details>
+        <details class="calendar-menu calendar-settings-menu"><summary><i class="ri-settings-3-line"></i>日历设置</summary><div class="calendar-menu-popover">
+          <button class="holiday-settings-entry" type="button" @click="openHolidaySettings"><i class="ri-earth-line"></i><span><b>节日设置</b><small>{{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类国际节日</small></span></button>
+          <button class="important-date-entry" type="button" @click="openImportantDateManager"><i :class="importantDateState === 'loading' ? 'ri-loader-4-line spinning' : importantDateState === 'error' ? 'ri-error-warning-line' : 'ri-heart-3-line'"></i><span><b>提醒事项</b><small>{{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}</small></span></button>
+          <button class="caldav" type="button" @click="showCaldavConfig = true"><span class="cd-dot" :style="{ background: caldavState.dot }"></span><span><b>CalDAV</b><small>{{ caldavState.label }}</small></span></button>
+          <button class="work-schedule" type="button" @click="openWorkScheduleConfig"><span class="cd-dot" :style="{ background: workScheduleState.dot }"></span><span><b>大小周配置</b><small>{{ workScheduleState.label }}</small></span></button>
+        </div></details>
+      </div>
     </div>
 
     <div class="cal-body">
@@ -1748,11 +1731,14 @@ function onDropDay(dayIso: string) {
   flex: 1;
 }
 .cal-top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  display: grid;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid var(--wao-line);
+  border-radius: 12px;
+  background: var(--wao-bg-card);
 }
+.cal-heading-row, .cal-control-row { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .cal-title {
   font-size: 20px;
   font-weight: 700;
@@ -1787,32 +1773,25 @@ button.holiday-status { cursor: pointer; }
 .holiday-status.error { color: var(--wao-danger); }
 .holiday-status .spin { display: inline-block; animation: holiday-spin .9s linear infinite; }
 @keyframes holiday-spin { to { transform: rotate(360deg); } }
-.caldav, .work-schedule, .holiday-settings-entry, .important-date-entry, .attendance-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--wao-line-control);
-  background: var(--wao-bg-card);
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 12px;
-  color: var(--wao-text-2);
-  cursor: pointer;
-}
-.caldav:hover, .work-schedule:hover, .holiday-settings-entry:hover, .important-date-entry:hover, .attendance-toggle:hover {
-  border-color: #c9cdda;
-  background: var(--wao-bg-sub);
-}
 .cd-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
 }
-.caldav i, .work-schedule i, .holiday-settings-entry i, .important-date-entry i, .attendance-toggle i {
-  font-size: 12px;
-  color: var(--wao-text-weak);
-}
-.attendance-toggle.on { border-color: #9acbb2; background: #eef8f2; color: #226f49; }
+.calendar-menu { position: relative; }
+.calendar-menu summary { display: inline-flex; height: 30px; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); font-size: 11.5px; cursor: pointer; list-style: none; }
+.calendar-menu summary::-webkit-details-marker { display: none; }
+.calendar-menu[open] summary { border-color: var(--wao-primary); color: var(--wao-primary); background: var(--wao-primary-soft); }
+.calendar-menu-popover { position: absolute; z-index: 30; top: 36px; right: 0; display: grid; width: min(310px, calc(100vw - 32px)); padding: 6px; border: 1px solid var(--wao-line); border-radius: 11px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-modal); }
+.calendar-menu-popover button { display: grid; grid-template-columns: 20px minmax(0,1fr) auto; align-items: center; gap: 8px; width: 100%; padding: 9px; border: 0; border-radius: 8px; background: transparent; color: var(--wao-text-2); text-align: left; cursor: pointer; }
+.calendar-menu-popover button:hover { background: var(--wao-bg-hover); }
+.calendar-menu-popover button > i { color: var(--wao-text-weak); }
+.calendar-menu-popover button > span { min-width: 0; }
+.calendar-menu-popover button b, .calendar-menu-popover button small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-menu-popover button b { font-size: 12px; }
+.calendar-menu-popover button small { margin-top: 2px; color: var(--wao-text-weak); font-size: 10.5px; }
+.calendar-menu-popover button em { color: var(--wao-text-weak); font-size: 10.5px; font-style: normal; }
+.calendar-menu-popover button.on em { color: var(--wao-primary); }
 .member-calendar {
   height: 30px;
   display: inline-flex;
@@ -2493,6 +2472,8 @@ button.holiday-status { cursor: pointer; }
   .holiday-facts div { grid-template-columns: 58px 1fr; }
   .holiday-reminder-form .work-schedule-field { grid-template-columns: 1fr; }
   .important-date-body { padding-inline: 14px; }
+  .cal-heading-row, .cal-control-row { flex-wrap: wrap; }
+  .cal-control-row .spacer { display: none; }
   .important-date-reminder-fields { grid-template-columns: 1fr; }
   .important-date-list-head { align-items: flex-start; }
   .important-date-list-head span { max-width: 190px; }
