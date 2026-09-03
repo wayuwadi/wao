@@ -87,12 +87,13 @@ public class FeishuQuickCollectService {
     private final FeishuQuickCollectAiRunService reactionAiRuns;
     private final FeishuQuickCollectReactionPolicy reactionPolicy;
     private final FeishuQuickCollectRecallService recalls;
+    private final FeishuLinkPreviewService linkPreviews;
     public FeishuQuickCollectService(SettingService settings, FeishuOpenApiClient feishu,
             TaskService tasks, ProjectService projects, AccountMapper accounts,
             AccountIdentityMapper identities, FeishuQuickCollectEventMapper events, ImageService images,
             ObjectMapper json, NotificationFeedbackService feedback, SharedChatFeishuBridge sharedChat,
             FeishuQuickCollectAiRunService reactionAiRuns, FeishuQuickCollectReactionPolicy reactionPolicy,
-            FeishuQuickCollectRecallService recalls) {
+            FeishuQuickCollectRecallService recalls, FeishuLinkPreviewService linkPreviews) {
         this.settings = settings;
         this.feishu = feishu;
         this.tasks = tasks;
@@ -107,6 +108,7 @@ public class FeishuQuickCollectService {
         this.reactionAiRuns = reactionAiRuns;
         this.reactionPolicy = reactionPolicy;
         this.recalls = recalls;
+        this.linkPreviews = linkPreviews;
     }
 
     /** 当前配置（Token / Encrypt Key 只回脱敏形态）。 */
@@ -172,6 +174,9 @@ public class FeishuQuickCollectService {
         }
         requireToken(body.path("header").path("token").asText(body.path("token").asText("")));
         String eventType = body.path("header").path("event_type").asText("");
+        if ("url.preview.get".equals(eventType)) {
+            return linkPreviews.preview(body.path("event"), baseUrl);
+        }
         if ("card.action.trigger".equals(eventType)) {
             JsonNode event = body.path("event");
             String result = feedback.collect(event);
