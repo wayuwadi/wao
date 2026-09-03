@@ -29,6 +29,7 @@ import {
   type SaveFamilyImportantDate,
 } from '@/api/importantDates'
 import { fetchFeishuChats } from '@/api/system'
+import { fetchAttendance, syncAttendance } from '@/api/attendance'
 
 vi.mock('@/api/caldav', () => ({
   fetchCaldavAccounts: vi.fn<() => Promise<never[]>>(async () => []),
@@ -59,6 +60,14 @@ vi.mock('@/api/importantDates', () => ({
 
 vi.mock('@/api/system', () => ({
   fetchFeishuChats: vi.fn(async () => [{ chatId: 'oc_family', name: '家人群' }]),
+}))
+
+vi.mock('@/api/attendance', () => ({
+  fetchAttendance: vi.fn(),
+  syncAttendance: vi.fn(),
+  saveAttendanceConfig: vi.fn(),
+  saveAttendanceDay: vi.fn(),
+  clearAttendanceDay: vi.fn(),
 }))
 
 const emptyHolidayCalendar: HolidayCalendar = { events: [], years: [] }
@@ -119,6 +128,8 @@ describe('日历成员隔离、清单与时间轴', () => {
       solarLabel: value.solarDate ?? '2026-02-17',
       lunarLabel: '农历二〇二六年正月初一',
     }))
+    vi.mocked(fetchAttendance).mockReset()
+    vi.mocked(syncAttendance).mockReset()
   })
 
   it('默认只看当前人，待安排清单只含未排期与已逾期任务并可集中筛选', async () => {
@@ -504,5 +515,32 @@ describe('日历成员隔离、清单与时间轴', () => {
     await flushPromises()
     expect(wrapper.find('.important-date-modal').exists()).toBe(true)
     expect(wrapper.find('.important-date-form input[type="text"]').element).toHaveProperty('value', '农历生日')
+  })
+
+  it('考勤模式可独立开关，并在日历显示打卡与两位小数工时', async () => {
+    const data = useDataStore()
+    const session = useSessionStore()
+    const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
+    session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
+    session.members = [me]
+    const attendance = {
+      from: data.today, to: data.today,
+      config: { enabled: true, username: 's008500@nl-ds.cn', vaultItemId: 'vi1', status: 'OK', lastSyncedAt: `${data.today}T09:05:00`, lastError: null },
+      days: [{ date: data.today, clockInAt: `${data.today}T09:00:00`, clockOutAt: `${data.today}T21:00:00`, dayType: 'WORKDAY', anomaly: null, manualOverride: false, workHours: 11, expectedWorkday: true, workWeekLabel: '大周 · 周日上班' }],
+      totalHours: 11, monthDailyAverageHours: 11, validDays: 1,
+      weeks: [{ from: data.today, to: data.today, label: '大周 · 周日上班', averageHours: 11, validDays: 1 }],
+    } as const
+    vi.mocked(fetchAttendance).mockResolvedValue(attendance as never)
+
+    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('11.00 h')
+    await wrapper.find('.attendance-toggle').trigger('click')
+    await flushPromises()
+    expect(fetchAttendance).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('11.00 h')
+    expect(wrapper.findAll('.event').some((event) => event.text().includes('考勤'))).toBe(true)
+    await wrapper.find('.attendance-toggle').trigger('click')
+    expect(wrapper.find('.attendance-panel').exists()).toBe(false)
   })
 })

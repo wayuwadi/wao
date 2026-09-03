@@ -17,6 +17,7 @@ import cn.wayuwa.wao.dto.WorkdayRhythmHistoryDto;
 import cn.wayuwa.wao.dto.WorkdayRhythmStatusRequest;
 import cn.wayuwa.wao.dto.WorkdayRhythmTimerRequest;
 import cn.wayuwa.wao.service.WorkdayRhythmDashboardService;
+import cn.wayuwa.wao.service.AttendanceService;
 import cn.wayuwa.wao.service.WorkdayRhythmHistoryService;
 import cn.wayuwa.wao.service.WorkdayRhythmNotificationService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -46,14 +47,16 @@ public class WorkdayRhythmController {
     private final WorkdayRhythmNotificationService notifications;
     private final WorkdayRhythmHistoryService history;
     private final WorkdayRhythmDashboardService dashboard;
+    private final AttendanceService attendance;
     private final CurrentMember currentMember;
 
     public WorkdayRhythmController(WorkdayRhythmNotificationService notifications,
-            WorkdayRhythmHistoryService history, WorkdayRhythmDashboardService dashboard,
+            WorkdayRhythmHistoryService history, WorkdayRhythmDashboardService dashboard, AttendanceService attendance,
             CurrentMember currentMember) {
         this.notifications = notifications;
         this.history = history;
         this.dashboard = dashboard;
+        this.attendance = attendance;
         this.currentMember = currentMember;
     }
 
@@ -61,7 +64,8 @@ public class WorkdayRhythmController {
     public ApiResponse<WorkdayRhythmDashboardDto> dashboard(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             HttpServletRequest http) {
-        return ApiResponse.ok(dashboard.dashboard(member(http), date));
+        String member=member(http); attendance.refreshTodayIfStale(member,date);
+        return ApiResponse.ok(dashboard.dashboard(member, date));
     }
 
     @GetMapping("/settings")

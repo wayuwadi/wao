@@ -30,6 +30,8 @@ import { fetchFeishuChats, type FeishuChat } from '@/api/system'
 import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
 import type { Task } from '@/types'
+import AttendancePanel from '@/components/calendar/AttendancePanel.vue'
+import type { AttendanceDay } from '@/api/attendance'
 import {
   defaultAlternateWorkWeek,
   parseAlternateWorkWeek,
@@ -67,11 +69,25 @@ const calY = ref(now.getFullYear())
 const calM = ref(now.getMonth())
 const calD = ref(now.getDate())
 const viewMode = ref<'year' | 'month' | 'week' | 'day'>('month')
+const attendanceMode = ref(localStorage.getItem(`wao-attendance-mode:${session.currentUser.id}`) === 'true')
+const attendanceDays = ref<AttendanceDay[]>([])
+const selectedAttendanceDate = ref<string | null>(null)
 /** 日历默认只看当前人；切换后才加载另一成员的任务，避免跨成员任务默认混在一起。 */
 const calendarMemberId = ref(session.currentUser.id)
 watch(() => session.currentUser.id, (memberId) => {
   if (!calendarMemberId.value && memberId) calendarMemberId.value = memberId
+  attendanceMode.value = localStorage.getItem(`wao-attendance-mode:${memberId}`) === 'true'
 }, { immediate: true })
+watch(attendanceMode, (enabled) => {
+  localStorage.setItem(`wao-attendance-mode:${session.currentUser.id}`, String(enabled))
+  if (!enabled) { attendanceDays.value = []; selectedAttendanceDate.value = null }
+})
+watch(calendarMemberId, (memberId) => {
+  if (memberId !== session.currentUser.id) {
+    attendanceMode.value = false
+    attendanceDays.value = []
+  }
+})
 
 const DOWS = computed(() => preferences.weekStart === '周日' ? ['日', '一', '二', '三', '四', '五', '六'] : ['一', '二', '三', '四', '五', '六', '日'])
 
@@ -219,6 +235,22 @@ function visibleRange() {
   return { from, to }
 }
 
+const attendanceRange = computed(() => {
+  if (viewMode.value === 'month') {
+    return { from: iso(new Date(calY.value, calM.value, 1)), to: iso(new Date(calY.value, calM.value + 1, 0)) }
+  }
+  const { from, to } = visibleRange()
+  return { from: iso(from), to: iso(to) }
+})
+
+function toggleAttendanceMode() {
+  if (calendarMemberId.value !== session.currentUser.id) {
+    toast('考勤是私密数据，请先切回“我的日历”', 'ri-lock-line')
+    return
+  }
+  attendanceMode.value = !attendanceMode.value
+}
+
 /** 拉取当前视图可见日期窗内的 CalDAV 订阅事件。 */
 async function loadEvents() {
   const { from, to } = visibleRange()
@@ -309,6 +341,7 @@ const legend = computed(() => {
   if (importantDateItems.value.length || importantDateEvents.value.length) {
     items.push({ label: '提醒事项', color: '#D0527F' })
   }
+  if (attendanceMode.value) items.push({ label: '我的考勤', color: '#2C8A5B' })
   for (const a of accounts.value) {
     for (const c of a.calendars) {
       if (c.enabled) items.push({ label: c.name, color: c.color })
@@ -380,6 +413,24 @@ const events = computed<CalEvt[]>(() => {
       go: () => openImportantDateEvent(importantDate),
     })
   })
+  if (attendanceMode.value) attendanceDays.value.filter((day) => (day.expectedWorkday && day.date <= data.today) || day.clockInAt || day.clockOutAt || day.dayType === 'LEAVE' || day.manualOverride).forEach((day) => {
+    const clockIn = day.clockInAt?.slice(11, 16)
+    const clockOut = day.clockOutAt?.slice(11, 16)
+    const label = day.dayType === 'LEAVE' ? '请假 · 不计日均'
+      : day.dayType === 'REST' && !clockIn && !clockOut ? '休息日'
+        : !clockIn && !clockOut ? (day.anomaly || '等待打卡')
+        : `${clockIn || '缺上班卡'}–${clockOut || '缺下班卡'}${day.workHours === null ? '' : ` · ${day.workHours.toFixed(2)}h`}`
+    evs.push({
+      date: day.date,
+      title: `考勤 · ${label}${day.manualOverride ? ' · 模拟' : ''}`,
+      color: day.anomaly ? '#D9634C' : day.dayType === 'LEAVE' ? '#B9821F' : '#2C8A5B',
+      time: clockIn,
+      endTime: clockOut,
+      kind: '考勤',
+      sourceLabel: day.manualOverride ? '手工模拟' : 'Moka',
+      go: () => { selectedAttendanceDate.value = day.date },
+    })
+  })
   return evs
 })
 
@@ -416,7 +467,8 @@ const month = computed(() => {
   for (const k of Object.keys(byDate)) {
     byDate[k]!.sort((a, b) => {
       const holidayPriority = Number(!a.holidayDayType) - Number(!b.holidayDayType)
-      return holidayPriority || (a.time ?? '').localeCompare(b.time ?? '')
+      const attendancePriority = Number(a.kind !== '考勤') - Number(b.kind !== '考勤')
+      return holidayPriority || attendancePriority || (a.time ?? '').localeCompare(b.time ?? '')
     })
   }
   const total = Math.ceil((off + dim) / 7) * 7
@@ -1095,6 +1147,10 @@ function onDropDay(dayIso: string) {
       <button class="work-schedule" title="配置我的大小周" @click="openWorkScheduleConfig">
         <span class="cd-dot" :style="{ background: workScheduleState.dot }"></span>{{ workScheduleState.label }}<i class="ri-settings-3-line"></i>
       </button>
+      <button class="attendance-toggle" :class="{ on: attendanceMode }" title="开启或关闭考勤数据，不影响其他日历内容" @click="toggleAttendanceMode">
+        <i :class="attendanceMode ? 'ri-calendar-check-line' : 'ri-calendar-line'"></i>
+        {{ attendanceMode ? '关闭我的考勤' : '开启我的考勤' }}
+      </button>
       <label class="member-calendar">
         <i class="ri-user-line"></i>
         <select v-model="calendarMemberId" title="选择要查看的成员日历">
@@ -1109,7 +1165,7 @@ function onDropDay(dayIso: string) {
       </button>
       <div class="calendar-search">
         <i class="ri-search-line"></i>
-        <input v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、提醒、节日…" @keydown.esc="calendarSearch = ''" />
+        <input v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、考勤、提醒、节日…" @keydown.esc="calendarSearch = ''" />
         <div v-if="calendarSearch.trim()" class="calendar-search-results">
           <button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)">
             <span class="search-result-date">{{ result.date }}</span>
@@ -1133,6 +1189,14 @@ function onDropDay(dayIso: string) {
           <div class="month-title">{{ viewMode === 'year' ? `${calY} 年` : viewMode === 'week' ? `${weekDays[0]?.label} - ${weekDays[6]?.label}` : viewMode === 'day' ? dayView[0]?.label : month.title }}</div>
           <span class="cal-hint">任务、提醒事项、二十四节气、节假日与订阅日历合并显示</span>
         </div>
+        <AttendancePanel
+          :active="attendanceMode"
+          :from="attendanceRange.from"
+          :to="attendanceRange.to"
+          :selected-date="selectedAttendanceDate"
+          @loaded="attendanceDays = $event"
+          @close-day="selectedAttendanceDate = null"
+        />
         <div v-if="missingHolidayYears.length" class="holiday-source-warning">
           <i class="ri-information-line"></i>
           <span>{{ missingHolidayYears.map((year) => `${year.year} 年`).join('、') }}法定放假调休安排尚未收录；当前只显示可由历法确定的节日本日，不推测调休。</span>
@@ -1723,7 +1787,7 @@ button.holiday-status { cursor: pointer; }
 .holiday-status.error { color: var(--wao-danger); }
 .holiday-status .spin { display: inline-block; animation: holiday-spin .9s linear infinite; }
 @keyframes holiday-spin { to { transform: rotate(360deg); } }
-.caldav, .work-schedule, .holiday-settings-entry, .important-date-entry {
+.caldav, .work-schedule, .holiday-settings-entry, .important-date-entry, .attendance-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1735,7 +1799,7 @@ button.holiday-status { cursor: pointer; }
   color: var(--wao-text-2);
   cursor: pointer;
 }
-.caldav:hover, .work-schedule:hover, .holiday-settings-entry:hover, .important-date-entry:hover {
+.caldav:hover, .work-schedule:hover, .holiday-settings-entry:hover, .important-date-entry:hover, .attendance-toggle:hover {
   border-color: #c9cdda;
   background: var(--wao-bg-sub);
 }
@@ -1744,10 +1808,11 @@ button.holiday-status { cursor: pointer; }
   height: 6px;
   border-radius: 50%;
 }
-.caldav i, .work-schedule i, .holiday-settings-entry i, .important-date-entry i {
+.caldav i, .work-schedule i, .holiday-settings-entry i, .important-date-entry i, .attendance-toggle i {
   font-size: 12px;
   color: var(--wao-text-weak);
 }
+.attendance-toggle.on { border-color: #9acbb2; background: #eef8f2; color: #226f49; }
 .member-calendar {
   height: 30px;
   display: inline-flex;

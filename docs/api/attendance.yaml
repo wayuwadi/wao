@@ -1,0 +1,66 @@
+openapi: 3.0.3
+info:
+  title: WAO 我的考勤 API
+  version: 1.0.0
+  description: 当前成员自己的 Moka 考勤、模拟覆盖、统计与同步状态；从不返回密码或会话。
+servers: [{ url: /api }]
+paths:
+  /attendance:
+    get:
+      summary: 读取日期窗内逐日考勤与周均、日均统计
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: 最多 367 个自然日；无记录的日期仍返回预期工作日与缺卡状态 }
+        '400': { description: 日期窗无效或过大 }
+  /attendance/config:
+    put:
+      summary: 保存当前成员的 Moka 邮箱、密码本引用和自动同步开关
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, username]
+              properties:
+                enabled: { type: boolean }
+                username: { type: string, format: email }
+                vaultItemId: { type: string, nullable: true, description: 必须属于当前成员且已设置密码 }
+      responses:
+        '200': { description: 返回脱敏配置状态 }
+        '400': { description: 启用时账号、密码本条目或密码缺失 }
+  /attendance/sync:
+    post:
+      summary: 立即从 Moka 同步日期窗
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: 同步后完整考勤视图；最多 63 个自然日 }
+        '400': { description: 未配置、需要验证码/处理会话或远端失败 }
+  /attendance/days/{date}:
+    put:
+      summary: 保存某日手工模拟覆盖
+      parameters: [{ name: date, in: path, required: true, schema: { type: string, format: date } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clockOutNextDay, dayType]
+              properties:
+                clockInTime: { type: string, format: time, nullable: true }
+                clockOutTime: { type: string, format: time, nullable: true }
+                clockOutNextDay: { type: boolean }
+                dayType: { type: string, enum: [WORKDAY, LEAVE, REST] }
+      responses:
+        '200': { description: 重算后的单日有效值 }
+  /attendance/days/{date}/manual-override:
+    delete:
+      summary: 清除某日模拟覆盖并恢复远端值
+      parameters: [{ name: date, in: path, required: true, schema: { type: string, format: date } }]
+      responses:
+        '200': { description: 恢复后的单日有效值 }
