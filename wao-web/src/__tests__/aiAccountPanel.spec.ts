@@ -260,7 +260,7 @@ describe('AiAccountPanel', () => {
     }))
   })
 
-  it('模型网关固定可信地址和当前授权模型且不会把 Token 写入草稿', async () => {
+  it('模型网关固定可信地址、允许编辑模型且不会把 Token 写入草稿', async () => {
     fetchAiAccounts.mockResolvedValue([])
     createAiAccount.mockResolvedValue({})
     const wrapper = mount(AiAccountPanel)
@@ -269,7 +269,9 @@ describe('AiAccountPanel', () => {
     await wrapper.findAll('button').find((button) => button.text().includes('添加模型网关'))!.trigger('click')
 
     const form = wrapper.find('.account-form')
-    expect(form.text()).toContain('DeepSeek V4 Flash（每日共享额度）')
+    expect(form.text()).toContain('模型标识')
+    const model = form.find('input[placeholder="例如 xingshi"]')
+    expect((model.element as HTMLInputElement).value).toBe('xingshi')
     expect(form.text()).toContain('不会进入 AI Run')
     const endpoint = form.find(
       'input[value="https://ai.xingshiapp.cn/api/model-credentials/litellm-proxy/v1"]',
@@ -285,9 +287,33 @@ describe('AiAccountPanel', () => {
     expect(createAiAccount).toHaveBeenCalledWith(expect.objectContaining({
       provider: 'model_gateway',
       baseUrl: 'https://ai.xingshiapp.cn/api/model-credentials/litellm-proxy/v1',
-      model: 'deepseek-v4-flash',
+      model: 'xingshi',
       apiProtocol: 'chat_completions',
       apiKey: 'gateway-token-input',
+    }))
+  })
+
+  it('编辑已有模型网关时把成员填写的模型原样保存', async () => {
+    fetchAiAccounts.mockResolvedValue([account({
+      provider: 'model_gateway', label: '醒市模型网关', email: null,
+      authMethod: 'api_key',
+      baseUrl: 'https://ai.xingshiapp.cn/api/model-credentials/litellm-proxy/v1',
+      model: 'deepseek-v4-flash', apiProtocol: 'chat_completions', quotaPercent: null,
+    })])
+    updateAiAccount.mockResolvedValue({})
+    const wrapper = mount(AiAccountPanel)
+    await flushPromises()
+
+    await wrapper.find('button[title="编辑"]').trigger('click')
+    const form = wrapper.find('.account-form')
+    await form.find('input[placeholder="例如 xingshi"]').setValue('xingshi')
+    await form.trigger('submit')
+    await flushPromises()
+
+    expect(updateAiAccount).toHaveBeenCalledWith('aa-1', expect.objectContaining({
+      provider: 'model_gateway',
+      model: 'xingshi',
+      apiKey: undefined,
     }))
   })
 

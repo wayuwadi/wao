@@ -13,6 +13,8 @@ const renaming = ref(false)
 const scroller = ref<HTMLElement | null>(null)
 const canLeft = ref(false)
 const canRight = ref(false)
+const homeTab = computed(() => tabs.tabs.find((tab) => tab.key === 'home'))
+const scrollableTabs = computed(() => tabs.tabs.filter((tab) => tab.key !== 'home'))
 
 function measureScroll() {
   const el = scroller.value
@@ -135,12 +137,25 @@ function mCloseUnpinned() {
 
 <template>
   <div class="tabbar-shell">
+    <div
+      v-if="homeTab"
+      class="tab home-tab"
+      :class="{ active: homeTab.key === tabs.activeKey, over: overKey === homeTab.key }"
+      title="首页固定在页签栏左侧"
+      @click="selectTab(homeTab)"
+      @contextmenu.prevent="openMenu($event, homeTab)"
+      @dragover.prevent="onDragOver(homeTab)"
+      @drop.prevent="onDrop(homeTab)"
+    >
+      <i :class="homeTab.icon"></i>
+      <span class="tab-label">{{ homeTab.label }}</span>
+    </div>
     <button class="scroll-btn" :disabled="!canLeft" title="查看左侧页签" @click="scrollByPage(-1)">
       <i class="ri-arrow-left-s-line"></i>
     </button>
     <div ref="scroller" class="tabbar" @scroll.passive="measureScroll" @wheel="scrollWithWheel">
       <div
-        v-for="tab in tabs.tabs"
+        v-for="tab in scrollableTabs"
         :key="tab.key"
         class="tab"
         :class="{
@@ -229,6 +244,10 @@ function mCloseUnpinned() {
   padding: 0 10px;
   gap: 2px;
   overflow-x: auto;
+}
+.home-tab {
+  flex: 0 0 auto;
+  margin-left: 10px;
 }
 .tabbar::-webkit-scrollbar {
   height: 0;
@@ -419,6 +438,9 @@ function mCloseUnpinned() {
   .tabbar {
     padding: 0 2px;
     gap: 1px;
+  }
+  .home-tab {
+    margin-left: 2px;
   }
   .scroll-btn {
     width: 20px;

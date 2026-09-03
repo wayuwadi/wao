@@ -474,10 +474,16 @@ class AiAccountServiceTest {
         assertThat(stored.getCredentialJson()).startsWith("enc:").doesNotContain("gateway-secret");
         assertThat(stored.getApiProtocol()).isEqualTo("chat_completions");
 
+        service.update(created.id(), new AiAccountFormRequest(
+                "model_gateway", "醒市模型网关", null, null, true,
+                DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "xingshi",
+                "chat_completions", null));
+
         var selected = service.defaultDocumentPolishAccount();
         assertThat(selected.id()).isEqualTo(created.id());
         assertThat(selected.provider()).isEqualTo("model_gateway");
         assertThat(selected.apiKey()).isEqualTo("gateway-secret");
+        assertThat(selected.model()).isEqualTo("xingshi");
     }
 
     @Test
@@ -489,13 +495,13 @@ class AiAccountServiceTest {
                 .thenReturn(List.of("another-model"));
         var created = service.create(new AiAccountFormRequest(
                 "model_gateway", "醒市模型网关", null, null, true,
-                DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "deepseek-v4-flash",
+                DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "xingshi",
                 "chat_completions", "gateway-secret"));
 
         AiAccountSyncResultDto result = service.sync(created.id());
 
         assertThat(result.status()).isEqualTo("FAILED");
-        assertThat(result.message()).contains("不支持模型 deepseek-v4-flash");
+        assertThat(result.message()).contains("不支持模型 xingshi");
     }
 
     @Test

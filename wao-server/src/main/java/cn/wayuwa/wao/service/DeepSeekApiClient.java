@@ -23,7 +23,6 @@ public class DeepSeekApiClient {
     public static final String MODEL_GATEWAY_BASE_URL =
             "https://ai.xingshiapp.cn/api/model-credentials/litellm-proxy/v1";
     public static final List<String> POLISH_MODELS = List.of("deepseek-v4-flash", "deepseek-v4-pro");
-    public static final List<String> MODEL_GATEWAY_POLISH_MODELS = List.of("deepseek-v4-flash");
 
     private static final String POLISH_SYSTEM_PROMPT = """
             你是 WAO 的文档润色助手。只改进用户所给文字的清晰度、流畅度和语气自然度，
@@ -102,11 +101,7 @@ public class DeepSeekApiClient {
 
     /** 使用对应 provider 的 Chat Completions 接口润色一段文档文字。 */
     public String polish(String provider, String baseUrl, String apiKey, String model, String selectedText) {
-        List<String> allowedModels = MODEL_GATEWAY_PROVIDER.equals(provider)
-                ? MODEL_GATEWAY_POLISH_MODELS : POLISH_MODELS;
-        if (!allowedModels.contains(model)) {
-            throw new BadRequestException("请选择" + providerLabel(provider) + "当前支持的文档润色模型");
-        }
+        validateCompletionModel(provider, model);
         Map<String, Object> body = Map.of(
                 "model", model,
                 "messages", List.of(
@@ -126,11 +121,7 @@ public class DeepSeekApiClient {
      */
     public String complete(String provider, String baseUrl, String apiKey, String model,
             String systemPrompt, String userPrompt) {
-        List<String> allowedModels = MODEL_GATEWAY_PROVIDER.equals(provider)
-                ? MODEL_GATEWAY_POLISH_MODELS : POLISH_MODELS;
-        if (!allowedModels.contains(model)) {
-            throw new BadRequestException("请选择" + providerLabel(provider) + "当前已验证的模型");
-        }
+        validateCompletionModel(provider, model);
         Map<String, Object> body = Map.of(
                 "model", model,
                 "messages", List.of(
@@ -141,6 +132,15 @@ public class DeepSeekApiClient {
                 "max_tokens", 16384,
                 "stream", false);
         return completion(provider, baseUrl, apiKey, body, false);
+    }
+
+    private static void validateCompletionModel(String provider, String model) {
+        if (!StringUtils.hasText(model)) {
+            throw new BadRequestException("请填写" + providerLabel(provider) + "模型标识");
+        }
+        if (!MODEL_GATEWAY_PROVIDER.equals(provider) && !POLISH_MODELS.contains(model)) {
+            throw new BadRequestException("请选择" + providerLabel(provider) + "当前已验证的模型");
+        }
     }
 
     private String completion(String provider, String baseUrl, String apiKey,

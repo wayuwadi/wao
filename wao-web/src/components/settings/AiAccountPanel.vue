@@ -36,9 +36,6 @@ const deepSeekModels = [
   { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro（质量优先）' },
 ]
 const modelGatewayBaseUrl = 'https://ai.xingshiapp.cn/api/model-credentials/litellm-proxy/v1'
-const modelGatewayModels = [
-  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash（每日共享额度）' },
-]
 const draftKey = 'wao:ai-account-form-draft'
 
 const accounts = ref<AiAccount[]>([])
@@ -319,7 +316,7 @@ function openAdd(mode: FormMode) {
   })
   if (mode === 'model_gateway') Object.assign(form, {
     provider: 'model_gateway', label: '醒市模型网关', baseUrl: modelGatewayBaseUrl,
-    model: 'deepseek-v4-flash', apiProtocol: 'chat_completions',
+    model: 'xingshi', apiProtocol: 'chat_completions',
   })
   showForm.value = true
   const saved = sessionStorage.getItem(draftKey)
@@ -356,7 +353,7 @@ async function save() {
   if (!isEditing.value && formMode.value === 'credentials' && !form.credentials?.trim()) return toast('请粘贴凭据 JSON')
   const payload: AiAccountForm = formMode.value === 'model_gateway' ? {
     provider: 'model_gateway', label, enabled: form.enabled,
-    baseUrl: modelGatewayBaseUrl, model: 'deepseek-v4-flash', apiProtocol: 'chat_completions',
+    baseUrl: modelGatewayBaseUrl, model: form.model?.trim(), apiProtocol: 'chat_completions',
     apiKey: form.apiKey?.trim() || undefined,
   } : formMode.value === 'deepseek' ? {
     provider: 'deepseek', label, enabled: form.enabled,
@@ -636,7 +633,7 @@ watch(() => true, load, { immediate: true })
         </template>
         <template v-if="formMode === 'model_gateway'">
           <label class="wide"><span>受信网关地址</span><input :value="modelGatewayBaseUrl" readonly /><small>Token 只会由服务端发送到该固定 HTTPS 路径，且不会进入 AI Run</small></label>
-          <label><span>文档润色模型</span><select v-model="form.model"><option v-for="model in modelGatewayModels" :key="model.value" :value="model.value">{{ model.label }}</option></select></label>
+          <label><span>模型标识</span><input v-model.trim="form.model" maxlength="128" placeholder="例如 xingshi" required /><small>填写网关 /models 返回且当前 Token 有权使用的模型标识</small></label>
           <label><span>协议</span><input value="Chat Completions" readonly /></label>
           <label class="wide"><span>网关 Token</span><input v-model.trim="form.apiKey" type="password" autocomplete="new-password" :placeholder="isEditing ? '留空表示保留原 Token' : '只会加密保存，不会在页面回显'" /></label>
         </template>

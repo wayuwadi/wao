@@ -17,6 +17,21 @@ describe('TabBar', () => {
     localStorage.clear()
   })
 
+  it('首页固定在滚动容器外，其余页签仍放在滚动区域', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const tabs = useTabsStore()
+    tabs.open({
+      key: 'proj:p1', label: '项目一', icon: 'ri-stack-line', path: '/projects/p1', closable: true,
+    })
+    const wrapper = mount(TabBar, { global: { plugins: [pinia, testRouter()] } })
+
+    expect(wrapper.get('.home-tab').text()).toContain('首页')
+    expect(wrapper.get('.home-tab').element.parentElement).toBe(wrapper.get('.tabbar-shell').element)
+    expect(wrapper.get('.tabbar').text()).not.toContain('首页')
+    expect(wrapper.get('.tabbar').text()).toContain('项目一')
+  })
+
   it('可从右键菜单置顶页签，并在关闭全部后保留它', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

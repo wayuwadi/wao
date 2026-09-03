@@ -935,10 +935,6 @@ public class AiAccountService {
         if ("deepseek".equals(provider) && !DeepSeekApiClient.POLISH_MODELS.contains(value)) {
             throw new BadRequestException("请选择可用的 DeepSeek V4 模型");
         }
-        if (DeepSeekApiClient.MODEL_GATEWAY_PROVIDER.equals(provider)
-                && !DeepSeekApiClient.MODEL_GATEWAY_POLISH_MODELS.contains(value)) {
-            throw new BadRequestException("请选择醒市模型网关当前支持的文档润色模型");
-        }
         return value;
     }
 
