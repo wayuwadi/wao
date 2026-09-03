@@ -400,10 +400,10 @@ onBeforeUnmount(() => {
             <div class="content-meta"><span>目标账号：{{ selected.platformAccountName || '未选择' }}</span><span>发布：{{ formatDate(selected.publishedAt) }}</span></div>
             <div v-if="selected.errorMessage" class="task-error">{{ selected.errorMessage }}</div>
             <label>标题<input v-model="editForm.title" maxlength="200" :disabled="!editable" @input="markDirty" /></label>
-            <label class="body-field">正文
+            <div class="body-field"><span>正文</span>
               <ArticleBodyEditor v-if="articleContent" v-model="editForm.content" :disabled="!editable" @change="markDirty" />
               <textarea v-else v-model="editForm.content" rows="18" :disabled="!editable" @input="markDirty"></textarea>
-            </label>
+            </div>
             <label>标签<input v-model="editForm.tags" placeholder="用空格分隔" :disabled="!editable" @input="markDirty" /></label>
             <div class="editor-grid">
               <label v-if="showPublishControls">发布账号<select v-model="editForm.platformAccountId" :disabled="!editable" @change="markDirty"><option value="">暂不选择</option><option v-for="account in selectedPlatform?.accounts" :key="account.id" :value="account.id">{{ account.displayName }} · {{ account.status }}</option></select></label>
@@ -480,6 +480,7 @@ onBeforeUnmount(() => {
 .live-preview iframe { width: 100%; height: calc(100vh - 310px); min-height: 560px; border: 0; background: #edf3f1; }
 .preview-media-note { margin: 0; padding: 9px 12px; display: flex; gap: 6px; color: var(--wao-text-weak); font-size: 10px; border-top: 1px solid var(--wao-divider); }
 .content-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--wao-text-weak); font-size: 9.5px; }
+.body-field { display: grid; gap: 5px; color: var(--wao-text-3); font-size: 10px; }
 .body-field :deep(.article-body-editor) { color: var(--wao-text); }
 @media(max-width: 1250px) {
   .workspace { grid-template-columns: 1fr; }
