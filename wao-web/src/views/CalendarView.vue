@@ -242,11 +242,7 @@ function visibleRange() {
 }
 
 const attendanceRange = computed(() => {
-  if (viewMode.value === 'month') {
-    return { from: iso(new Date(calY.value, calM.value, 1)), to: iso(new Date(calY.value, calM.value + 1, 0)) }
-  }
-  const { from, to } = visibleRange()
-  return { from: iso(from), to: iso(to) }
+  return { from: iso(new Date(calY.value, calM.value, 1)), to: iso(new Date(calY.value, calM.value + 1, 0)) }
 })
 
 function toggleAttendanceMode() {

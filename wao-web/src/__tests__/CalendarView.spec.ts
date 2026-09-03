@@ -536,12 +536,18 @@ describe('日历成员隔离、清单与时间轴', () => {
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
+    const previousDate = new Date(`${data.today}T12:00:00Z`)
+    previousDate.setUTCDate(previousDate.getUTCDate() - 1)
+    const previous = previousDate.toISOString().slice(0, 10)
     const attendance = {
-      from: data.today, to: data.today,
+      from: `${data.today.slice(0, 7)}-01`, to: data.today,
       config: { enabled: true, username: 's008500@nl-ds.cn', vaultItemId: 'vi1', status: 'OK', lastSyncedAt: `${data.today}T09:05:00`, lastError: null },
-      days: [{ date: data.today, clockInAt: `${data.today}T09:00:00`, clockOutAt: `${data.today}T21:00:00`, dayType: 'WORKDAY', anomaly: null, manualOverride: false, workHours: 11, expectedWorkday: true, workWeekLabel: '大周 · 周日上班' }],
-      totalHours: 11, monthDailyAverageHours: 11, validDays: 1,
-      weeks: [{ from: data.today, to: data.today, label: '大周 · 周日上班', averageHours: 11, validDays: 1 }],
+      days: [
+        { date: previous, clockInAt: `${previous}T09:00:00`, clockOutAt: `${previous}T18:00:00`, dayType: 'WORKDAY', anomaly: null, manualOverride: false, workHours: 8, expectedWorkday: true, workWeekLabel: '大周 · 周日上班' },
+        { date: data.today, clockInAt: `${data.today}T09:00:00`, clockOutAt: `${data.today}T21:00:00`, dayType: 'WORKDAY', anomaly: null, manualOverride: false, workHours: 11, expectedWorkday: true, workWeekLabel: '大周 · 周日上班' },
+      ],
+      totalHours: 19, monthDailyAverageHours: 9.5, validDays: 2,
+      weeks: [{ from: previous, to: data.today, label: '大周 · 周日上班', averageHours: 9.5, validDays: 2 }],
     } as const
     vi.mocked(fetchAttendance).mockResolvedValue(attendance as never)
 
@@ -556,6 +562,10 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(attendanceEvents).toContain('09:00上班打卡')
     expect(attendanceEvents).toContain('21:00下班打卡')
     expect(attendanceEvents).toContain('当日工时 · 11.00 h')
+    expect(wrapper.find('.attendance-goals').text()).toContain('9.50 / 10.00 h')
+    expect(wrapper.find('.attendance-goals').text()).toContain('1 / 4 天')
+    expect(wrapper.find('.attendance-goals').text()).toContain('本月还可使用 3 天')
+    expect(wrapper.find('.attendance-goals').text()).toContain('已满足 19:30 最低下班要求')
     await wrapper.find('.attendance-toggle').trigger('click')
     expect(wrapper.find('.attendance-panel').exists()).toBe(false)
   })
