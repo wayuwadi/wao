@@ -163,12 +163,12 @@ class DeepSeekApiClientTest {
         server.expect(requestTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/models"))
                 .andExpect(header(AUTHORIZATION, "Bearer gateway-token"))
                 .andRespond(withSuccess("""
-                        {"object":"list","data":[{"id":"deepseek-v4-flash"}]}
+                        {"object":"list","data":[{"id":"xingshi"}]}
                         """, MediaType.APPLICATION_JSON));
         server.expect(requestTo(DeepSeekApiClient.MODEL_GATEWAY_BASE_URL + "/chat/completions"))
                 .andExpect(header(AUTHORIZATION, "Bearer gateway-token"))
                 .andExpect(content().json("""
-                        {"model":"deepseek-v4-flash","stream":false}
+                        {"model":"xingshi","stream":false}
                         """, false))
                 .andRespond(withSuccess("""
                         {"choices":[{"finish_reason":"stop","message":{"content":"网关润色结果。"}}]}
@@ -176,9 +176,9 @@ class DeepSeekApiClientTest {
         DeepSeekApiClient client = new DeepSeekApiClient(builder);
 
         assertThat(client.models("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL, "gateway-token"))
-                .containsExactly("deepseek-v4-flash");
+                .containsExactly("xingshi");
         assertThat(client.polish("model_gateway", DeepSeekApiClient.MODEL_GATEWAY_BASE_URL,
-                "gateway-token", "deepseek-v4-flash", "待润色内容。"))
+                "gateway-token", "xingshi", "待润色内容。"))
                 .isEqualTo("网关润色结果。");
         server.verify();
     }
