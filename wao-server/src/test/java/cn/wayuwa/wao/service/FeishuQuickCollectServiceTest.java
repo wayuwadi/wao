@@ -58,9 +58,10 @@ class FeishuQuickCollectServiceTest {
     private final FeishuQuickCollectAiRunService reactionAiRuns = mock(FeishuQuickCollectAiRunService.class);
     private final FeishuQuickCollectReactionPolicy reactionPolicy = new FeishuQuickCollectReactionPolicy(settings);
     private final FeishuQuickCollectRecallService recalls = mock(FeishuQuickCollectRecallService.class);
+    private final FeishuLinkPreviewService linkPreviews = mock(FeishuLinkPreviewService.class);
     private final FeishuQuickCollectService service = new FeishuQuickCollectService(
             settings, feishu, tasks, projects, accounts, identities, events, images, new ObjectMapper(), feedback,
-            sharedChat, reactionAiRuns, reactionPolicy, recalls);
+            sharedChat, reactionAiRuns, reactionPolicy, recalls, linkPreviews);
 
     private void enabled() {
         when(settings.getBoolean(SettingService.QUICK_COLLECT_ENABLED)).thenReturn(true);
@@ -100,6 +101,25 @@ class FeishuQuickCollectServiceTest {
         assertThatThrownBy(() -> service.handleEvent(
                 "{\"type\":\"url_verification\",\"challenge\":\"abc\",\"token\":\"fake\"}"))
                 .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void linkPreviewUsesTheDedicatedReadOnlyPathWithoutEnteringMessageHandlers() {
+        Map<String, Object> preview = Map.of("inline", Map.of("title", "WAO 任务 · 整理证件盒"));
+        when(linkPreviews.preview(any(), eq("https://wao.example"))).thenReturn(preview);
+
+        var out = service.handleEvent("""
+                {
+                  "schema":"2.0",
+                  "header":{"event_type":"url.preview.get","token":""},
+                  "event":{"context":{"url":"https://wao.example/s/t/t1"}}
+                }
+                """, "https://wao.example");
+
+        assertThat(out).isEqualTo(preview);
+        verify(linkPreviews).preview(any(), eq("https://wao.example"));
+        verify(sharedChat, never()).handleEvent(any());
+        verify(reactionAiRuns, never()).trigger(any(), any());
     }
 
     @Test

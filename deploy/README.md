@@ -218,6 +218,22 @@ SESSION_COOKIE_SECURE=true
 `https://wao.wayuwa.cn/api/feishu/events`。它不是「事件配置」里的事件订阅；只配置群消息事件时，
 飞书客户端会提示“该应用尚未配置卡片交互功能”。
 
+### WAO 分享链接预览
+
+让任务、子任务、文档、小记和“天人一卦”的公开链接在飞书会话及群置顶中显示摘要卡片，需要在同一个企业自建应用中：
+
+1. 添加「链接预览」能力，注册 `wao.wayuwa.cn/s/**` 与 `wao.wayuwa.cn/api/share/**` 两条 URL 规则；规则不能带
+   `https://` 前缀。不要注册整个 `wao.wayuwa.cn/**`，避免登录后私有页面误触发公开预览。
+2. 在「事件与回调」订阅 `url.preview.get`，回调地址继续使用
+   `https://wao.wayuwa.cn/api/feishu/events`；Verification Token / Encrypt Key 与群聊快速收集保持一致。
+3. 发布应用正式版本。测试版本不支持链接预览，未发布的能力和 URL 规则也不会生效。
+
+发布后分别把 `/s/t/<taskId>`、`/api/share/tasks/<taskId>.md`、`/s/d/<docId>` 和已有的
+`/s/tianren/<token>` 粘贴到真实飞书会话：应显示对应内容类型、标题和只读摘要卡片，按钮打开原分享地址；外域、
+已删除或不受支持的 WAO 路径只保留飞书默认 URL 展示。预览严格沿用原公开分享字段，不能用私有 API 补充负责人、评论、
+成员身份、关注点或完整 AI 会话。官方配置与回调约束见
+[飞书链接预览开发指南](https://open.feishu.cn/document/development-link-preview/link-preview-development-guide?lang=zh-CN)。
+
 微信扫码登录需在微信开放平台创建“网站应用”，将授权回调域配置为 `wao.wayuwa.cn`，并在 Linux 主节点私有 `deploy/.env.secrets` 中配置 `WECHAT_APP_ID`、`WECHAT_APP_SECRET`。CD 会自动下发以下配置：
 
 ```dotenv

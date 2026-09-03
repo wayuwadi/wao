@@ -1144,10 +1144,12 @@ paths:
         '400': { description: 触发名称为空/超长，或启用时未选择真实可用的 Webhook }
   /feishu/events:
     post:
-      summary: 公开：飞书事件订阅回调（URL 校验与群消息都走这里）
+      summary: 公开：飞书统一回调（URL 校验、链接预览、群消息与卡片交互）
       description: |
         免登录接口，请求真实性由 Verification Token / Encrypt Key 保证。
-        不返回 ApiResponse 包装：url_verification 时按飞书协议回 { challenge }，其余回空对象。
+        不返回 ApiResponse 包装：url_verification 时按飞书协议回 { challenge }；url.preview.get 命中
+        当前站点的任务/子任务、文档/小记或天人一卦公开分享地址时，返回 inline + raw card，外域、
+        未知、无效或已删除地址回空对象；其余事件按各自飞书协议响应。
         普通群聊不处理。群里 @机器人 的文本 / 富文本消息会根据发言人已绑定的飞书身份，
         建成其本人的未排期任务；“记录任务”与“记录想法”前缀会被去除并区分来源标签。
         未绑定发言人时只回复绑定指引，不回退到默认负责人；事件结果持久化去重。
@@ -1156,7 +1158,7 @@ paths:
         required: false
         content: { application/json: { schema: { type: object } } }
       responses:
-        '200': { description: OK }
+        '200': { description: URL 校验 challenge、链接预览内容、卡片反馈 toast 或空对象 }
         '400': { description: Verification Token 不匹配或事件解密失败 }
   # 开启快速收集或群聊润色时，服务端使用已配群聊归档 App 凭据每 15 秒主动读取目标群。
   # 快速收集精确匹配应用机器人 open_id，并主动读取人工派工表情和撤回状态；群聊润色精确匹配配置的 mention 名称。
@@ -1339,6 +1341,23 @@ paths:
       responses:
         '200': { description: OK, content: { text/markdown: { schema: { type: string } } } }
         '404': { description: 任务或子任务不存在 }
+  /share/docs/{id}:
+    get:
+      summary: 文档或小记的公开只读投影（不含作者、关联、反向链接和协同状态）
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK }, '404': { description: 文档不存在或已删除 } }
+  /share/docs/{id}.md:
+    get:
+      summary: 文档或小记的 Markdown 直读地址（站内图片和链接为绝对地址）
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses:
+        '200': { description: OK, content: { text/markdown: { schema: { type: string } } } }
+        '404': { description: 文档不存在或已删除 }
+  /share/tianren/{token}:
+    get:
+      summary: 以不可猜测凭据读取公开卦象及该卦最新一条 AI 自照投影
+      parameters: [ { name: token, in: path, required: true, schema: { type: string, pattern: '^[0-9a-f]{32}$' } } ]
+      responses: { '200': { description: OK }, '404': { description: 凭据无效或分享不存在 } }
   # 密钥库域（关系表；密码以 AES-256-GCM 服务端加密存储，见 docs/adr/009-vault-server-side-encryption.md）
   # 归属到人：所有 /vault/* 接口只在当前登录成员自己的分组范围内生效，别人的分组一律按 404 处理
   # （见 docs/adr/024-vault-per-member-ownership.md）。
