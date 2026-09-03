@@ -38,6 +38,15 @@ curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://wao.wayuwa.cn/amer_demo_1/app.js | grep -q 'IT 安全风险管理'
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_1)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_1/not-found.js)" = 404
+amer_demo_v2="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+  https://wao.wayuwa.cn/amer_demo_2/)"
+printf '%s' "$amer_demo_v2" | grep -q '<title>IT Risk Management · Power Apps Demo</title>'
+curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+  https://wao.wayuwa.cn/amer_demo_2/styles.css | grep -q -- '--power:'
+curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+  https://wao.wayuwa.cn/amer_demo_2/app.js | grep -q 'amer-risk-demo-v2'
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_2)" = 308
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_2/not-found.js)" = 404
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/game/)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/insight/)" = 410
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins)" = 308
