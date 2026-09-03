@@ -86,14 +86,24 @@ public class AttendanceService {
         validateRange(from,to,62); AttendanceConnectorEntity connector=requireEnabled(memberId);
         connector.setStatus("SYNCING"); connector.setLastError(null); connector.setUpdatedAt(LocalDateTime.now(ZONE)); connectors.updateById(connector);
         try {
-            MokaAttendanceClient.Session session=session(connector); String employeeId=connector.getRemoteEmployeeId();
+            MokaAttendanceClient.Session session=session(connector); String employeeId=connector.getRemoteEmployeeId(); boolean relogged=false;
             try { if (!StringUtils.hasText(employeeId)) employeeId=moka.employeeId(session); }
-            catch (MokaAttendanceClient.SessionExpiredException ex) { session=login(memberId,connector); employeeId=moka.employeeId(session); }
+            catch (MokaAttendanceClient.SessionExpiredException ex) {
+                session=login(memberId,connector); relogged=true;
+                try { employeeId=moka.employeeId(session); }
+                catch (MokaAttendanceClient.SessionExpiredException repeated) { throw repeatedSessionExpiry(); }
+            }
             connector.setRemoteEmployeeId(employeeId);
             for (LocalDate date=from; !date.isAfter(to); date=date.plusDays(1)) {
                 MokaAttendanceClient.RemoteDay remote;
                 try { remote=moka.day(session,employeeId,date); }
-                catch (MokaAttendanceClient.SessionExpiredException ex) { session=login(memberId,connector); employeeId=moka.employeeId(session); connector.setRemoteEmployeeId(employeeId); remote=moka.day(session,employeeId,date); }
+                catch (MokaAttendanceClient.SessionExpiredException ex) {
+                    if (relogged) throw repeatedSessionExpiry();
+                    session=login(memberId,connector); relogged=true;
+                    try { employeeId=moka.employeeId(session); remote=moka.day(session,employeeId,date); }
+                    catch (MokaAttendanceClient.SessionExpiredException repeated) { throw repeatedSessionExpiry(); }
+                    connector.setRemoteEmployeeId(employeeId);
+                }
                 upsertRemote(memberId,remote);
             }
             LocalDateTime now=LocalDateTime.now(ZONE); connector.setStatus("OK"); connector.setLastSyncedAt(now); connector.setLastError(null); connector.setUpdatedAt(now); connectors.updateById(connector);
@@ -126,7 +136,7 @@ public class AttendanceService {
     /** 打开每日节奏时，若今天数据超过五分钟未刷新则尝试刷新；失败不阻断原面板。 */
     public void refreshTodayIfStale(String memberId, LocalDate date) {
         if (!date.equals(LocalDate.now(ZONE))) return; AttendanceConnectorEntity value=connectors.selectById(memberId);
-        if (value==null||!Boolean.TRUE.equals(value.getEnabled())) return;
+        if (!automaticSyncAllowed(value)) return;
         if (value.getLastSyncedAt()!=null&&value.getLastSyncedAt().isAfter(LocalDateTime.now(ZONE).minusMinutes(5))) return;
         try { sync(memberId,date,date); } catch (RuntimeException ignored) { }
     }
@@ -134,13 +144,13 @@ public class AttendanceService {
     /** 提醒发送前确保考勤刷新时间不早于该提醒时间；失败时保留提醒链路，避免外部故障吞掉提醒。 */
     public void refreshBeforeReminder(String memberId, LocalDate date, LocalDateTime reminderAt) {
         AttendanceConnectorEntity value=connectors.selectById(memberId);
-        if(value==null||!Boolean.TRUE.equals(value.getEnabled())) return;
+        if(!automaticSyncAllowed(value)) return;
         if(value.getLastSyncedAt()!=null&&!value.getLastSyncedAt().isBefore(reminderAt)) return;
         try{sync(memberId,date,date);}catch(RuntimeException ignored){ }
     }
 
     /** 定时同步入口使用的已启用成员列表。 */
-    public List<String> enabledMembers() { return connectors.selectList(new LambdaQueryWrapper<AttendanceConnectorEntity>().eq(AttendanceConnectorEntity::getEnabled,true)).stream().map(AttendanceConnectorEntity::getMemberId).toList(); }
+    public List<String> enabledMembers() { return connectors.selectList(new LambdaQueryWrapper<AttendanceConnectorEntity>().eq(AttendanceConnectorEntity::getEnabled,true)).stream().filter(this::automaticSyncAllowed).map(AttendanceConnectorEntity::getMemberId).toList(); }
 
     private void upsertRemote(String memberId,MokaAttendanceClient.RemoteDay remote) {
         AttendanceDayEntity value=new AttendanceDayEntity(); LocalDateTime now=LocalDateTime.now(ZONE);
@@ -169,6 +179,8 @@ public class AttendanceService {
     private MokaAttendanceClient.Session session(AttendanceConnectorEntity value){if(value.getSessionCiphertext()==null||value.getSessionNonce()==null)return login(value.getMemberId(),value); try{return json.readValue(crypto.decrypt(value.getSessionCiphertext(),value.getSessionNonce()),MokaAttendanceClient.Session.class);}catch(Exception ex){return login(value.getMemberId(),value);}}
     private MokaAttendanceClient.Session login(String memberId,AttendanceConnectorEntity value){String password=vault.revealSecret(value.getVaultItemId(),memberId); if(!StringUtils.hasText(password))throw new MokaAttendanceClient.AuthenticationRequiredException("密码本里的 Moka 条目还没有密码"); MokaAttendanceClient.Session session=moka.login(value.getUsername(),password); try{VaultCryptoService.Encrypted encrypted=crypto.encrypt(json.writeValueAsString(session));value.setSessionCiphertext(encrypted.ciphertext());value.setSessionNonce(encrypted.nonce());connectors.updateById(value);return session;}catch(Exception ex){throw new IllegalStateException("Moka 会话保存失败",ex);}}
     private void fail(AttendanceConnectorEntity value,String status,String message){value.setStatus(status);value.setLastError(message);value.setUpdatedAt(LocalDateTime.now(ZONE));connectors.updateById(value);}
+    private boolean automaticSyncAllowed(AttendanceConnectorEntity value){return value!=null&&Boolean.TRUE.equals(value.getEnabled())&&!"NEEDS_LOGIN".equals(value.getStatus());}
+    private MokaAttendanceClient.AuthenticationRequiredException repeatedSessionExpiry(){return new MokaAttendanceClient.AuthenticationRequiredException("Moka 会话反复失效，已停止自动登录；请先在浏览器完成一次登录后手动重试");}
     private LocalDateTime effectiveIn(AttendanceDayEntity value){return value==null?null:Boolean.TRUE.equals(value.getManualOverride())?value.getManualClockInAt():value.getRemoteClockInAt();}
     private LocalDateTime effectiveOut(AttendanceDayEntity value){return value==null?null:Boolean.TRUE.equals(value.getManualOverride())?value.getManualClockOutAt():value.getRemoteClockOutAt();}
     private String effectiveType(AttendanceDayEntity value){return value==null?null:Boolean.TRUE.equals(value.getManualOverride())?value.getManualDayType():value.getRemoteDayType();}
