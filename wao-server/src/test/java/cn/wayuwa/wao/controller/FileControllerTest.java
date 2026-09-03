@@ -3,12 +3,14 @@ package cn.wayuwa.wao.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import cn.wayuwa.wao.auth.AuthSessionManager;
 import cn.wayuwa.wao.auth.CurrentMember;
 import cn.wayuwa.wao.common.BadRequestException;
 import cn.wayuwa.wao.domain.FileBlobEntity;
+import cn.wayuwa.wao.dto.RenameFileRequest;
 import cn.wayuwa.wao.service.DownloadTicketService;
 import cn.wayuwa.wao.service.FileService;
 import cn.wayuwa.wao.service.ProjectService;
@@ -19,8 +21,10 @@ import org.springframework.http.HttpStatus;
 
 class FileControllerTest {
     private final FileService files = mock(FileService.class);
-    private final FileController controller = new FileController(files, mock(CurrentMember.class),
-            mock(DownloadTicketService.class), mock(AuthSessionManager.class), mock(ProjectService.class));
+    private final CurrentMember currentMember = mock(CurrentMember.class);
+    private final ProjectService projects = mock(ProjectService.class);
+    private final FileController controller = new FileController(files, currentMember,
+            mock(DownloadTicketService.class), mock(AuthSessionManager.class), projects);
 
     @Test
     void streamReturnsRequestedAudioRangeForSeeking() {
@@ -55,6 +59,19 @@ class FileControllerTest {
         assertThatThrownBy(() -> controller.stream("doc-1", null))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("不是可播放的音频");
+    }
+
+    @Test
+    void renameRequiresProjectAccessBeforeChangingDisplayName() {
+        FileBlobEntity entity = audio("architecture.html", "text/html", "<h1>architecture</h1>");
+        entity.setProjectId("p1");
+        when(files.metadata("file-1")).thenReturn(entity);
+        when(currentMember.id(null)).thenReturn("wg");
+
+        controller.rename("file-1", new RenameFileRequest("产品架构"), null);
+
+        verify(projects).requireAccess("p1", "wg");
+        verify(files).renameDisplayName("file-1", "产品架构");
     }
 
     private static FileBlobEntity audio(String name, String contentType, String body) {

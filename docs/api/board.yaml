@@ -1210,6 +1210,11 @@ paths:
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: 返回 Markdown 原文，由前端净化渲染 }, '400': { description: 非 Markdown、超限或非 UTF-8 }, '404': { description: 不存在或所属项目不可见 } }
   /files/{id}:
+    patch:
+      summary: 修改文件在 WAO 内的展示名称，原始下载文件名保持不变
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [displayName], properties: { displayName: { type: string, minLength: 1, maxLength: 255 } } } } } }
+      responses: { '200': { description: 返回更新后的文件项 }, '400': { description: 展示名为空或超长 }, '404': { description: 文件不存在或所属项目不可见 } }
     delete: { summary: 删除文件, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   # 单文件 HTML 托管（见 docs/adr/042-hosted-html-pages.md）
   /hosted-pages:
@@ -1624,6 +1629,7 @@ components:
       properties:
         id: { type: string }
         name: { type: string }
+        displayName: { type: string, nullable: true, description: WAO 内自定义展示名；为空时界面显示原始 name }
         contentType: { type: string, description: 上传时持久化的 MIME，用于识别音频等文件种类 }
         size: { type: string, description: 人类可读大小 }
         icon: { type: string }

@@ -86,8 +86,26 @@ public class FileService {
      * @throws NotFoundException 文件不存在时
      */
     public FileItemDto meta(String id) {
-        return list().stream().filter(f -> f.id().equals(id)).findFirst()
-                .orElseThrow(() -> new NotFoundException("文件不存在：" + id));
+        return toDto(metadata(id));
+    }
+
+    /** 只读取单个文件的元数据，供权限判断使用，不把二进制正文载入内存。 */
+    public FileBlobEntity metadata(String id) {
+        FileBlobEntity entity = mapper.findMeta(id);
+        if (entity == null) throw new NotFoundException("文件不存在：" + id);
+        return entity;
+    }
+
+    /** 修改文件在 WAO 内的展示名称；原始文件名和正文均不变。 */
+    public FileItemDto renameDisplayName(String id, String displayName) {
+        String normalized = displayName == null ? "" : displayName.trim();
+        if (normalized.isEmpty() || normalized.length() > 255) {
+            throw new BadRequestException("文件展示名称须为 1～255 个字符");
+        }
+        if (mapper.updateDisplayName(id, normalized) == 0) {
+            throw new NotFoundException("文件不存在：" + id);
+        }
+        return toDto(metadata(id));
     }
 
     /** 读取 UTF-8 Markdown 正文供登录后的站内安全渲染，不执行上传内容。 */
@@ -116,9 +134,10 @@ public class FileService {
     public void delete(String id) { if (mapper.deleteById(id) == 0) throw new NotFoundException("文件不存在：" + id); }
 
     private FileItemDto toDto(FileBlobEntity entity) {
-        return new FileItemDto(entity.getId(), entity.getName(), entity.getContentType(), humanSize(entity.getByteSize()),
-                icon(entity.getName()), entity.getCreatedAt() == null ? "" : entity.getCreatedAt().format(TIME_FMT),
-                entity.getCreatedBy(), "/api/files/" + entity.getId() + "/download",
+        return new FileItemDto(entity.getId(), entity.getName(), entity.getDisplayName(), entity.getContentType(),
+                humanSize(entity.getByteSize()), icon(entity.getName()),
+                entity.getCreatedAt() == null ? "" : entity.getCreatedAt().format(TIME_FMT), entity.getCreatedBy(),
+                "/api/files/" + entity.getId() + "/download",
                 entity.getCreatedAt() == null ? null : entity.getCreatedAt().toString(), entity.getProjectId());
     }
     private static String safeName(String original) {

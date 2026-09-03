@@ -85,4 +85,27 @@ class FileServiceTest {
         assertThatThrownBy(() -> service.preview("f1")).isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("UTF-8");
     }
+
+    @Test
+    void renamePersistsTrimmedDisplayNameWithoutChangingOriginalName() {
+        FileBlobEntity metadata = new FileBlobEntity();
+        metadata.setId("f1"); metadata.setName("architecture.html"); metadata.setDisplayName("产品架构");
+        metadata.setContentType("text/html"); metadata.setByteSize(10L);
+        when(mapper.updateDisplayName("f1", "产品架构")).thenReturn(1);
+        when(mapper.findMeta("f1")).thenReturn(metadata);
+
+        var item = service.renameDisplayName("f1", "  产品架构  ");
+
+        assertThat(item.name()).isEqualTo("architecture.html");
+        assertThat(item.displayName()).isEqualTo("产品架构");
+        verify(mapper).updateDisplayName("f1", "产品架构");
+    }
+
+    @Test
+    void renameRejectsBlankOrOversizedDisplayName() {
+        assertThatThrownBy(() -> service.renameDisplayName("f1", "  "))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("1～255");
+        assertThatThrownBy(() -> service.renameDisplayName("f1", "x".repeat(256)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("1～255");
+    }
 }

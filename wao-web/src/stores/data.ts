@@ -36,6 +36,7 @@ import {
   apiUploadFile,
   apiSaveHostedPage,
   apiPurgeTrash,
+  apiRenameFile,
   apiRenameFolder,
   apiRenameKbGroup,
   apiRenameVaultGroup,
@@ -1468,6 +1469,12 @@ export const useDataStore = defineStore('data', () => {
       return item
     } catch { return null }
   }
+  async function renameFileDisplayName(id: string, displayName: string) {
+    const updated = await apiRenameFile(id, displayName)
+    const index = files.value.findIndex((file) => file.id === id)
+    if (index >= 0) files.value.splice(index, 1, updated)
+    return updated
+  }
   async function deleteFile(id: string) {
     if (!apiLive.value) return
     await apiDeleteFile(id)
@@ -1776,7 +1783,7 @@ export const useDataStore = defineStore('data', () => {
     taskSaveState, taskSavedAt, flushTask, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
-    uploadFile, refreshFiles, deleteFile, MAX_FILE_BYTES, hostedPages, refreshHostedPages, saveHostedPage, deleteHostedPage,
+    uploadFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES, hostedPages, refreshHostedPages, saveHostedPage, deleteHostedPage,
     updateProject, deleteProject, syncFromServer, applyAiRunStatuses,
     taskGroupsOf, setTaskGroups, moveTaskToGroup,
     jobById, ensureAutomationLoaded, refreshAutomation,

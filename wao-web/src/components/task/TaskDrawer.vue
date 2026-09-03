@@ -23,6 +23,7 @@ import { useSettle } from '@/composables/completion'
 import { useNow } from '@/composables/now'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { activitySentence } from '@/utils/activity'
+import { fileDisplayName } from '@/utils/files'
 import { useIsMobile } from '@/composables/viewport'
 import { useFavoritesStore } from '@/stores/favorites'
 import { nextTaskAiRunPollDelay, taskAiRunFingerprint } from '@/utils/taskAiRunPolling'
@@ -297,11 +298,15 @@ const relationTasks = computed(() => data.tasks
 const relationFiles = computed(() => data.files
   .filter((file) => typeof file.id === 'string' && file.id.length > 0)
   .map((file) => ({
-    id: file.id!, name: file.name, size: file.size, icon: file.icon, createdAt: file.createdAt,
+    id: file.id!, name: fileDisplayName(file), size: file.size, icon: file.icon, createdAt: file.createdAt,
   })))
 const selectedFileIds = computed(() => (task.value?.files ?? [])
   .map((file) => file.id)
   .filter((id): id is string => !!id))
+const taskFileDisplayName = (file: { id?: string | null; name: string }) => {
+  const current = file.id ? data.files.find((item) => item.id === file.id) : undefined
+  return current ? fileDisplayName(current) : file.name
+}
 const saveState = computed(() => (task.value ? data.taskSaveState(task.value.id) : 'idle'))
 /** 上一次写透成功的时刻，给「自动保存成功 14:32」用。 */
 const savedAt = computed(() => (task.value ? data.taskSavedAt(task.value.id) : null))
@@ -820,11 +825,12 @@ function toggleRelation(type: 'doc' | 'task' | 'file', id: string) {
   const file = data.files.find((item) => item.id === id)
   if (!file) return
   const selected = t.files.some((item) => item.id === id)
+  const displayName = fileDisplayName(file)
   data.patchTask(t.id, {
     files: selected
       ? t.files.filter((item) => item.id !== id)
-      : [...t.files, { id, name: file.name, size: file.size, icon: file.icon }],
-  }, `${selected ? '取消关联' : '关联了'}文件「${file.name}」`)
+      : [...t.files, { id, name: displayName, size: file.size, icon: file.icon }],
+  }, `${selected ? '取消关联' : '关联了'}文件「${displayName}」`)
 }
 async function uploadAttachment(event: Event) {
   const input = event.target as HTMLInputElement
@@ -1061,7 +1067,7 @@ async function uploadAttachment(event: Event) {
                 @click="openLinkedFile(f.id)"
               >
                 <i :class="f.icon"></i>
-                <span class="attach-name ellip">{{ f.name }}</span>
+                <span class="attach-name ellip">{{ taskFileDisplayName(f) }}</span>
                 <span class="attach-size">{{ f.id ? f.size : `${f.size} · 仅历史记录` }}</span>
                 <i :class="f.id ? 'ri-arrow-right-s-line dl' : 'ri-information-line dl'"></i>
               </button>
