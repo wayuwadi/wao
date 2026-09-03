@@ -188,7 +188,7 @@ public class TaskService {
 
         TaskDetail updated = new TaskDetail(d.parts(), d.steps(), d.subs(), d.files(), d.docs(),
                 d.linkTasks(), d.comments(), d.custom(), activity, d.images(), d.groupId(),
-                d.startAt(), d.endAt(), d.pdcaCycles());
+                d.startAt(), d.endAt(), d.pdcaCycles(), d.hostedPages());
         e.setDetailJson(write(updated));
         taskMapper.updateById(e);
         announceCollecting(e, previousStatus, memberId);
@@ -243,7 +243,7 @@ public class TaskService {
         List<PdcaCycle> pdcaCycles = validatePdca(dto.pdcaCycles());
         TaskDetail detail = new TaskDetail(dto.parts(), dto.steps(), dto.subs(), dto.files(),
                 dto.docs(), dto.linkTasks(), dto.comments(), dto.custom(), dto.activity(), dto.images(),
-                dto.groupId(), startAt, endAt, pdcaCycles);
+                dto.groupId(), startAt, endAt, pdcaCycles, dto.hostedPages());
         e.setDetailJson(write(detail));
         if (previous == null) {
             taskMapper.insert(e);
@@ -588,7 +588,7 @@ public class TaskService {
         activity.add(0, edit(activityText, memberId));
         entity.setDetailJson(write(new TaskDetail(detail.parts(), detail.steps(), detail.subs(), detail.files(), detail.docs(),
                 detail.linkTasks(), comments, detail.custom(), activity, detail.images(), detail.groupId(),
-                detail.startAt(), detail.endAt(), detail.pdcaCycles())));
+                detail.startAt(), detail.endAt(), detail.pdcaCycles(), detail.hostedPages())));
         taskMapper.updateById(entity);
     }
 
@@ -641,7 +641,7 @@ public class TaskService {
                 nn(d.linkTasks()), nn(d.comments()), nn(d.custom()), nn(d.activity()), nn(d.images()),
                 e.getCreatedBy(), e.getCompletedAt() == null ? null : e.getCompletedAt().toString(),
                 d.groupId(), d.startAt(), d.endAt(), nn(d.pdcaCycles()),
-                e.getCreatedAt() == null ? null : e.getCreatedAt().toString());
+                e.getCreatedAt() == null ? null : e.getCreatedAt().toString(), nn(d.hostedPages()));
     }
 
     /**

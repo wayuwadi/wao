@@ -294,6 +294,8 @@ export interface Task {
   steps: TaskStep[]
   subs: TaskStep[]
   files: FileRef[]
+  /** 关联的人工上传 HTML 托管页 id；历史任务缺省为空。 */
+  hostedPages?: string[]
   docs: string[]
   linkTasks: TaskLink[]
   comments: Comment[]

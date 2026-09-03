@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 
-type RelationType = 'all' | 'doc' | 'task' | 'file'
+type RelationType = 'all' | 'doc' | 'task' | 'file' | 'page'
 interface RelationCandidate {
   id: string
   type: Exclude<RelationType, 'all'>
@@ -16,13 +16,18 @@ const props = defineProps<{
   docs: Array<{ id: string; title: string; kbName: string; createdAt?: string | null }>
   tasks: Array<{ id: string; title: string; projectName: string; createdAt?: string | null }>
   files: Array<{ id: string; name: string; size: string; icon: string; createdAt?: string | null }>
+  pages: Array<{ id: string; title: string; fileName: string }>
   selectedDocIds: string[]
   selectedTaskIds: string[]
   selectedFileIds: string[]
+  selectedPageIds: string[]
+  pageLoadState: 'idle' | 'loading' | 'loaded' | 'error'
+  pageLoadError: string
 }>()
 const emit = defineEmits<{
   close: []
-  toggle: [type: 'doc' | 'task' | 'file', id: string]
+  toggle: [type: 'doc' | 'task' | 'file' | 'page', id: string]
+  retryPages: []
 }>()
 
 const type = ref<RelationType>('all')
@@ -53,6 +58,10 @@ const items = computed<RelationCandidate[]>(() => {
       id: file.id, type: 'file' as const, title: file.name, meta: file.size,
       icon: file.icon || 'ri-file-line', selected: props.selectedFileIds.includes(file.id), createdAt: file.createdAt,
     })),
+    ...props.pages.map((page) => ({
+      id: page.id, type: 'page' as const, title: page.title, meta: page.fileName,
+      icon: 'ri-html5-line', selected: props.selectedPageIds.includes(page.id),
+    })),
   ]
   return candidates
     .map((item, index) => ({ item, index, createdAt: createdMillis(item.createdAt) }))
@@ -76,10 +85,12 @@ const counts = computed(() => ({
   doc: props.docs.length,
   task: props.tasks.length,
   file: props.files.length,
+  page: props.pages.length,
 }))
 const labels: Array<{ type: RelationType; label: string }> = [
   { type: 'all', label: '全部' }, { type: 'doc', label: '知识' },
   { type: 'task', label: '任务' }, { type: 'file', label: '文件' },
+  { type: 'page', label: 'HTML' },
 ]
 
 void nextTick(() => search.value?.focus())
@@ -87,11 +98,11 @@ void nextTick(() => search.value?.focus())
 
 <template>
   <div class="relation-mask" @click="emit('close')"></div>
-  <section class="relation-picker" role="dialog" aria-modal="true" aria-label="关联知识、任务或文件">
+  <section class="relation-picker" role="dialog" aria-modal="true" aria-label="关联知识、任务、文件或 HTML">
     <header>
       <div>
         <b>关联到任务</b>
-        <p>从真实知识库、未完成任务和文件库中选择，最近创建的排在前面</p>
+        <p>从真实知识库、未完成任务、文件库和人工上传 HTML 中选择</p>
       </div>
       <button class="close" aria-label="关闭关联选择器" @click="emit('close')"><i class="ri-close-line"></i></button>
     </header>
@@ -114,6 +125,8 @@ void nextTick(() => search.value?.focus())
         :key="`${item.type}:${item.id}`"
         class="relation-row"
         :class="{ selected: item.selected }"
+        :aria-pressed="item.selected"
+        :title="item.selected ? '点击取消关联' : '点击关联到任务'"
         @click="emit('toggle', item.type, item.id)"
       >
         <span class="type-icon" :class="item.type"><i :class="item.icon"></i></span>
@@ -123,9 +136,18 @@ void nextTick(() => search.value?.focus())
         </span>
         <span class="choice"><i :class="item.selected ? 'ri-check-line' : 'ri-add-line'"></i></span>
       </button>
-      <div v-if="!filtered.length" class="empty">
+      <div v-if="type === 'page' && pageLoadState === 'loading' && !filtered.length" class="empty">
+        <i class="ri-loader-4-line spin"></i>
+        <span>正在读取人工上传的 HTML…</span>
+      </div>
+      <div v-else-if="type === 'page' && pageLoadState === 'error' && !filtered.length" class="empty">
+        <i class="ri-error-warning-line"></i>
+        <span>{{ pageLoadError || 'HTML 读取失败，已关联内容不会被改动' }}</span>
+        <button class="retry" @click="emit('retryPages')">重试</button>
+      </div>
+      <div v-else-if="!filtered.length" class="empty">
         <i class="ri-links-line"></i>
-        <span>{{ query ? '没有匹配的内容' : type === 'file' ? '文件库里还没有可关联的真实文件' : '暂无可关联内容' }}</span>
+        <span>{{ query ? '没有匹配的内容' : type === 'file' ? '文件库里还没有可关联的真实文件' : type === 'page' ? '还没有人工上传的 HTML' : '暂无可关联内容' }}</span>
       </div>
     </div>
 
@@ -168,6 +190,7 @@ nav span { margin-left: 5px; color: var(--wao-text-faint); font-size: 10px; }
 .type-icon { width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; border-radius: 9px; background: var(--wao-bg-tab); color: var(--wao-area-finance); }
 .type-icon.task { background: #edf1ff; color: #4358d6; }
 .type-icon.file { background: #ecf7f1; color: #31805a; }
+.type-icon.page { background: #fff0e8; color: #d55c22; }
 .relation-main { flex: 1; min-width: 0; }
 .relation-main b, .relation-main em { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .relation-main b { color: var(--wao-text); font-size: 12.5px; }
@@ -176,6 +199,9 @@ nav span { margin-left: 5px; color: var(--wao-text-faint); font-size: 10px; }
 .selected .choice { border-color: var(--wao-primary); background: var(--wao-primary); color: #fff; }
 .empty { min-height: 210px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--wao-text-weak); font-size: 12px; }
 .empty i { font-size: 28px; color: var(--wao-text-faint); }
+.empty .retry { height: 32px; padding: 0 14px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-primary-text); cursor: pointer; }
+.spin { animation: waoSpin .9s linear infinite; }
+@keyframes waoSpin { to { transform: rotate(360deg); } }
 footer { min-height: 54px; display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 18px; border-top: 1px solid var(--wao-divider); }
 footer span { flex: 1; color: var(--wao-text-weak); font-size: 10.5px; }
 footer button { height: 36px; padding: 0 18px; border: 0; border-radius: 9px; background: var(--wao-primary); color: #fff; cursor: pointer; }

@@ -10,7 +10,7 @@ describe('ProjectAssetsPanel', () => {
     const data = useDataStore(pinia)
     vi.spyOn(data, 'refreshFiles').mockResolvedValue(true)
     vi.spyOn(data, 'refreshImages').mockResolvedValue(true)
-    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue()
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     return {
       data,
       wrapper: mount(ProjectAssetsPanel, {

@@ -482,6 +482,29 @@ class TaskServiceTest {
         assertThat(patched.groupId()).isEqualTo("tg-domain");
     }
 
+    /** 人工 HTML 关联写进任务详情，后续局部更新不能顺手抹掉。 */
+    @Test
+    void hostedPageLinksSurviveReplaceAndPatch() {
+        TaskEntity entity = todo();
+        when(mapper.selectById("t1")).thenReturn(entity);
+        when(mapper.updateById(any(TaskEntity.class))).thenReturn(1);
+        when(projects.get("p1")).thenThrow(new NotFoundException("项目不存在：p1"));
+        when(projects.get("p1", "wg")).thenReturn(null);
+        TaskDto dto = new TaskDto(
+                "t1", "关联 HTML", "p1", "待办", "P2", "wg", List.of(), null,
+                "2026-09-03", null, "", List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(), List.of(), List.of(), List.of(), "wg", null, null, null, null, List.of(),
+                "2026-09-03T10:00:00", List.of("page-manual-1"));
+
+        TaskDto saved = service.replace("t1", dto, "wg");
+        assertThat(saved.hostedPages()).containsExactly("page-manual-1");
+
+        entity.setDetailJson("{\"activity\":[],\"hostedPages\":[\"page-manual-1\"]}");
+        TaskDto patched = service.patch("t1",
+                new PatchTaskRequest(null, "进行中", null, null, null, null, null), "wg");
+        assertThat(patched.hostedPages()).containsExactly("page-manual-1");
+    }
+
     private TaskDto dtoWithSubs(List<cn.wayuwa.wao.dto.Step> subs) {
         return new TaskDto("t1", "设计任务详情抽屉交互稿", "p1", "待办", "P0", "wd", List.of(), null,
                 "2026-07-24", null, "desc", List.of(), subs, List.of(), List.of(), List.of(), List.of(),
