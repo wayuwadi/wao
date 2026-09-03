@@ -174,6 +174,8 @@ https://wao.wayuwa.cn/api/hello
 
 额外同域应用的静态路由仍可放在 `/etc/nginx/wao-external-apps.d/*.conf`。自媒体 Agent 已并入 WAO 主仓库和主 CD，随主站一起更新 `/var/www/wao-agent/dist` 与 `wao-agent-server`；游戏已进入原生 `/games`，不再依赖 `/game/` 独立入口。目录继续保留给真正需要独立路由的第三方或后续模块。
 
+Amer 风险管理 HTML Demo 位于 `wao-web/public/amer_demo_1/`，随 WAO Web 制品发布到 `/amer_demo_1/`。Nginx 为该前缀使用独立静态路由和 404 边界，不回退到 WAO SPA；更新 Demo 时保持入口、样式和脚本使用相对路径。
+
 图片正文进了 MySQL，`backup-mysql.ps1` 的备份体积会随图片增长，留意 `deploy\backups` 的磁盘占用。
 
 ## 任务分享链接

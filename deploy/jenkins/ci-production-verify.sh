@@ -29,6 +29,15 @@ agent_health="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --re
 printf '%s' "$agent_health" | grep -q '"status":"UP"'
 curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://wao.wayuwa.cn/agent/ | grep -q 'id="app"'
+amer_demo="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+  https://wao.wayuwa.cn/amer_demo_1/)"
+printf '%s' "$amer_demo" | grep -q '<title>IT 安全风险管理 Demo</title>'
+curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+  https://wao.wayuwa.cn/amer_demo_1/styles.css | grep -q -- '--navy:'
+curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+  https://wao.wayuwa.cn/amer_demo_1/app.js | grep -q 'IT 安全风险管理'
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_1)" = 308
+test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_1/not-found.js)" = 404
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/game/)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/insight/)" = 410
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins)" = 308

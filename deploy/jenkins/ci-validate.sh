@@ -61,6 +61,11 @@ grep -q 'location = /api/auth/jumpserver' deploy/nginx/wao.wayuwa.cn.conf.templa
 grep -q 'X-WAO-API-Route linux-jumpserver-sso' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'X-WAO-API-Route wechat-official-master' deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'location = /api/external/jumpserver/health' deploy/nginx/wao.wayuwa.cn.conf.template
+grep -q 'location = /amer_demo_1' deploy/nginx/wao.wayuwa.cn.conf.template
+grep -q 'location \^~ /amer_demo_1/' deploy/nginx/wao.wayuwa.cn.conf.template
+test -f wao-web/public/amer_demo_1/index.html
+test -f wao-web/public/amer_demo_1/styles.css
+test -f wao-web/public/amer_demo_1/app.js
 grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
   deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
