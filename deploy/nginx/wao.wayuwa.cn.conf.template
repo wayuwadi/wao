@@ -247,6 +247,16 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    # 第二版只依据客户原始需求，继续以独立静态前缀与第一版并存。
+    location = /amer_demo_2 {
+        return 308 /amer_demo_2/;
+    }
+
+    location ^~ /amer_demo_2/ {
+        try_files $uri $uri/ =404;
+        add_header Cache-Control "no-cache";
+    }
+
     # 旧游戏入口收敛到 WAO 原生游戏厅；无真实接口的 Insight 明确退役。
     location = /game {
         return 308 /games;
