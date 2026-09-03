@@ -90,6 +90,19 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void knowledgeDocumentArchiveKeepsArchiveSeparateFromTrash() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V138__knowledge_document_archive.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("archived_at DATETIME NULL", "archived_by VARCHAR(32) NULL")
+                .contains("idx_doc_kb_archive")
+                .doesNotContain("deleted_at = CURRENT_TIMESTAMP");
+    }
+
+    @Test
     void chatReviewMigrationKeepsDatabaseEnforcedSingleActiveRunAndLeaseColumns() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V77__chat_review.sql"))

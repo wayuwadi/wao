@@ -11,17 +11,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-/** 用真实 SQL 验证知识库回收站恢复，防止 NULL 被 ORM 更新策略忽略。 */
+/** 用真实 SQL 验证知识库回收站与文档归档恢复，防止 NULL 被 ORM 更新策略忽略。 */
 @SpringBootTest(properties =
         "spring.datasource.url=jdbc:h2:mem:knowledgetrashrestore;DB_CLOSE_DELAY=-1;MODE=MySQL")
 class KnowledgeTrashMapperIntegrationTest {
 
     @Autowired private KbMapper kbMapper;
     @Autowired private KbFolderMapper folderMapper;
+    @Autowired private DocMapper docMapper;
     @Autowired private JdbcTemplate jdbc;
 
     @BeforeEach
     void recreateTables() {
+        jdbc.execute("DROP TABLE IF EXISTS doc");
         jdbc.execute("DROP TABLE IF EXISTS kb_folder");
         jdbc.execute("DROP TABLE IF EXISTS kb");
         jdbc.execute("""
@@ -31,6 +33,17 @@ class KnowledgeTrashMapperIntegrationTest {
                     project_id VARCHAR(32),
                     deleted_at TIMESTAMP NULL,
                     deleted_by VARCHAR(32) NULL
+                )
+                """);
+        jdbc.execute("""
+                CREATE TABLE doc (
+                    id VARCHAR(32) PRIMARY KEY,
+                    kb_id VARCHAR(32) NOT NULL,
+                    folder_id VARCHAR(32) NOT NULL,
+                    title VARCHAR(256) NOT NULL,
+                    deleted_at TIMESTAMP NULL,
+                    archived_at TIMESTAMP NULL,
+                    archived_by VARCHAR(32) NULL
                 )
                 """);
         jdbc.execute("""
@@ -77,5 +90,27 @@ class KnowledgeTrashMapperIntegrationTest {
         assertThat(restored)
                 .containsEntry("DELETED_AT", null)
                 .containsEntry("CASCADE_DEL", 0);
+    }
+
+    @Test
+    void archivingAndRestoringPreservesTheDocumentAndItsOriginalFolder() {
+        jdbc.update("INSERT INTO doc (id, kb_id, folder_id, title) VALUES (?, ?, ?, ?)",
+                "d1", "k1", "f1", "一次性文章");
+        LocalDateTime archivedAt = LocalDateTime.of(2026, 9, 3, 11, 30);
+
+        assertThat(docMapper.markArchived("d1", archivedAt, "wg")).isEqualTo(1);
+        assertThat(jdbc.queryForMap(
+                "SELECT kb_id, folder_id, title, archived_at, archived_by, deleted_at FROM doc WHERE id = ?", "d1"))
+                .containsEntry("KB_ID", "k1")
+                .containsEntry("FOLDER_ID", "f1")
+                .containsEntry("TITLE", "一次性文章")
+                .containsEntry("ARCHIVED_BY", "wg")
+                .containsEntry("DELETED_AT", null);
+
+        assertThat(docMapper.clearArchived("d1")).isEqualTo(1);
+        assertThat(jdbc.queryForMap("SELECT archived_at, archived_by, folder_id FROM doc WHERE id = ?", "d1"))
+                .containsEntry("ARCHIVED_AT", null)
+                .containsEntry("ARCHIVED_BY", null)
+                .containsEntry("FOLDER_ID", "f1");
     }
 }

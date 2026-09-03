@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -47,6 +48,12 @@ public class DocController {
     @GetMapping
     public ApiResponse<List<DocDto>> list() {
         return ApiResponse.ok(knowledge.listDocs());
+    }
+
+    /** 列出一个知识库中长期保留、但已退出日常文档树的归档文档。 */
+    @GetMapping("/archived")
+    public ApiResponse<List<DocDto>> archived(@RequestParam String kbId) {
+        return ApiResponse.ok(knowledge.listArchivedDocs(kbId));
     }
 
     @GetMapping("/{id}")
@@ -77,6 +84,18 @@ public class DocController {
     @PatchMapping("/{id}")
     public ApiResponse<DocDto> patch(@PathVariable String id, @RequestBody PatchDocRequest request) {
         return ApiResponse.ok(knowledge.updateDoc(id, request));
+    }
+
+    /** 把一次性文档移出日常文档树并长期保留。 */
+    @PostMapping("/{id}/archive")
+    public ApiResponse<DocDto> archive(@PathVariable String id, HttpServletRequest http) {
+        return ApiResponse.ok(knowledge.archiveDoc(id, currentMember.id(http)));
+    }
+
+    /** 取消归档，把文档放回原文件夹。 */
+    @DeleteMapping("/{id}/archive")
+    public ApiResponse<DocDto> unarchive(@PathVariable String id) {
+        return ApiResponse.ok(knowledge.unarchiveDoc(id));
     }
 
     /** 删除文档 —— 移入回收站，7 天内可恢复。 */

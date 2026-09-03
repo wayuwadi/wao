@@ -53,6 +53,7 @@ const groups = computed(() => {
       go: () => { close(); ui.openTask(t.id) },
     }))
   const ds = Object.values(data.docs)
+    .filter((d) => !data.isDocArchived(d.id))
     .filter((d) => !kw || d.title.toLowerCase().includes(kw))
     .slice(0, 4)
     .map<Item>((d) => ({

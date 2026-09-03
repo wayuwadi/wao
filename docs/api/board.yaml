@@ -472,12 +472,12 @@ paths:
     delete: { summary: 删除文件夹（移入回收站，其下文档一并带走）, parameters: [ { name: id, in: path, required: true, schema: { type: string } }, { name: folderId, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
   /kbs/{id}/document-order:
     put:
-      summary: 原子保存知识库完整文档树顺序，支持同文件夹排序与跨文件夹移动
-      description: 完整校验后用一条批量语句窄更新每篇文档的 folder_id / ord；即使命中 scoped 自动归档，也不回写正文、链接或 auto_sync_version、不签发归档序列。后续自动同步可将归档恢复到固定月目录
+      summary: 原子保存知识库完整日常文档树顺序，支持同文件夹排序与跨文件夹移动
+      description: 请求必须包含当前全部未归档文档，已归档文档不参与排序；完整校验后用一条批量语句窄更新每篇文档的 folder_id / ord。即使命中飞书 scoped 自动同步文档，也不回写正文、链接或 auto_sync_version、不签发同步序列，后续自动同步可将文档恢复到固定月目录
       parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
       responses: { '200': { description: OK }, '400': { description: 文件夹或文档缺失、重复或不属于该知识库 } }
   /docs:
-    get: { summary: 文档列表（含正文块与动态计算的反向链接）, responses: { '200': { description: OK } } }
+    get: { summary: 日常文档列表（含正文块与动态计算的反向链接，不含已删除或已归档文档）, responses: { '200': { description: OK } } }
     post:
       summary: 新建文档（必须指定 kbId + folderId，创建即完成与知识库的关联）
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateDocRequest' } } } }
@@ -489,6 +489,20 @@ paths:
       responses: { '200': { description: OK }, '404': { description: 不存在 } }
     patch: { summary: 局部更新文档（标题 / 正文块 / 出链 / 所在文件夹）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
     delete: { summary: 删除文档（移入回收站，7 天内可恢复）, parameters: [ { name: id, in: path, required: true, schema: { type: string } } ], responses: { '200': { description: OK }, '404': { description: 不存在 } } }
+  /docs/archived:
+    get:
+      summary: 指定知识库的归档文档列表（长期保留，可打开和恢复）
+      parameters: [ { name: kbId, in: query, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK }, '404': { description: 知识库不存在 } }
+  /docs/{id}/archive:
+    post:
+      summary: 归档文档（退出日常树、搜索、项目资料与 AI 知识检索，不进入回收站）
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: 返回保留正文和原目录身份的文档 }, '404': { description: 文档不存在 }, '409': { description: 归档状态已并发变化 } }
+    delete:
+      summary: 取消归档并恢复到原文件夹
+      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+      responses: { '200': { description: 返回已恢复文档 }, '404': { description: 文档、知识库或原文件夹不存在 }, '409': { description: 归档状态已并发变化 } }
   /docs/notes:
     post:
       summary: 兼容旧客户端的新建小记（服务端生成文档 ID）

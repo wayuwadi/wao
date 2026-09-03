@@ -38,6 +38,8 @@ public class DocEntity {
     private LocalDateTime deletedAt;
     private String deletedBy;
     private Boolean cascadeDel;
+    private LocalDateTime archivedAt;
+    private String archivedBy;
     /** 只能由 DocMapper 的归档 CAS SQL 更新，普通整实体保存永不回写这些归档标识。 */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private String autoSyncScope;
@@ -80,6 +82,10 @@ public class DocEntity {
     public void setDeletedBy(String deletedBy) { this.deletedBy = deletedBy; }
     public Boolean getCascadeDel() { return cascadeDel; }
     public void setCascadeDel(Boolean cascadeDel) { this.cascadeDel = cascadeDel; }
+    public LocalDateTime getArchivedAt() { return archivedAt; }
+    public void setArchivedAt(LocalDateTime archivedAt) { this.archivedAt = archivedAt; }
+    public String getArchivedBy() { return archivedBy; }
+    public void setArchivedBy(String archivedBy) { this.archivedBy = archivedBy; }
     public String getAutoSyncScope() { return autoSyncScope; }
     public void setAutoSyncScope(String autoSyncScope) { this.autoSyncScope = autoSyncScope; }
     public LocalDate getAutoSyncDate() { return autoSyncDate; }

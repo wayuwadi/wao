@@ -234,6 +234,7 @@ public class AiAssistantAssetService {
         List<DocEntity> docs = docMapper.selectList(new LambdaQueryWrapper<DocEntity>()
                 .ne(StringUtils.hasText(chatKbId), DocEntity::getKbId, chatKbId)
                 .isNull(DocEntity::getDeletedAt)
+                .isNull(DocEntity::getArchivedAt)
                 .orderByDesc(DocEntity::getUpdatedAt)
                 .last("LIMIT 300"));
         for (DocEntity doc : docs) {
@@ -306,6 +307,7 @@ public class AiAssistantAssetService {
                 .eq("kb_id", kbId)
                 .eq("auto", true)
                 .isNull("deleted_at")
+                .isNull("archived_at")
                 .likeRight("title", "飞书群聊 · ");
         if (dateFrom != null) query.ge("title", "飞书群聊 · " + dateFrom);
         if (dateTo != null) query.le("title", "飞书群聊 · " + dateTo);
@@ -318,6 +320,7 @@ public class AiAssistantAssetService {
                 .select("title")
                 .eq("kb_id", kbId)
                 .eq("auto", true)
+                .isNull("archived_at")
                 .isNull("deleted_at")
                 .likeRight("title", "飞书群聊 · ")
                 .last("LIMIT 1");
