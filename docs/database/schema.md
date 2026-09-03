@@ -608,7 +608,7 @@ V84 在不改写上述兼容数据的前提下增加每日面板：
 
 ### attendance_connector / attendance_day（我的考勤，V136）
 
-- `attendance_connector` 每成员一行，保存 Moka 邮箱、个人密码本条目引用、加密会话、远端员工 id 和同步状态；不复制密码明文。
+- `attendance_connector` 每成员一行，保存 Moka 邮箱、个人密码本条目引用、加密会话、远端员工 id、同步状态与历史补齐游标；历史补齐租约避免多应用节点重复拉取，不复制密码明文。
 - `attendance_day` 以 `(member_id, attendance_date)` 唯一，远端值与手工模拟值分栏保存，`manual_override` 决定有效值并支持无损恢复。
 - 只保存打卡时间、日期类型和异常摘要，不保存定位、照片、附件或 Moka 原始响应。
 - `workday_rhythm_day` 以成员和日期为主键，保存当天工作日覆盖和唯一每日文档。

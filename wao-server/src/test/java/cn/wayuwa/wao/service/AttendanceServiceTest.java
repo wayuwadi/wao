@@ -25,13 +25,16 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class AttendanceServiceTest {
-    private AttendanceDayMapper days; private WorkdayRhythmDashboardService rhythm; private AttendanceService service;
+    private AttendanceConnectorMapper connectors; private AttendanceDayMapper days; private VaultService vault;
+    private VaultCryptoService crypto; private MokaAttendanceClient moka;
+    private WorkdayRhythmDashboardService rhythm; private AttendanceService service;
 
     @BeforeEach void setUp() {
-        days=mock(AttendanceDayMapper.class); rhythm=mock(WorkdayRhythmDashboardService.class);
+        connectors=mock(AttendanceConnectorMapper.class); days=mock(AttendanceDayMapper.class); vault=mock(VaultService.class);
+        crypto=mock(VaultCryptoService.class); moka=mock(MokaAttendanceClient.class); rhythm=mock(WorkdayRhythmDashboardService.class);
+        when(days.findRange(any(),any(),any())).thenReturn(List.of());
         when(rhythm.workdayInfo(any(),any())).thenReturn(new WorkdayRhythmDashboardService.WorkdayInfo(true,"大周 · 周日上班"));
-        service=new AttendanceService(mock(AttendanceConnectorMapper.class),days,mock(VaultService.class),
-                mock(VaultCryptoService.class),mock(MokaAttendanceClient.class),rhythm,new ObjectMapper());
+        service=new AttendanceService(connectors,days,vault,crypto,moka,rhythm,new ObjectMapper());
     }
 
     @Test void calculatesElevenHoursForNineToNineAndExcludesLeaveFromAverage() {
@@ -98,6 +101,49 @@ class AttendanceServiceTest {
 
         assertThat(guarded.enabledMembers()).isEmpty();
         verifyNoInteractions(moka);
+    }
+
+    @Test void historyBackfillClaimsAndAdvancesExactlyOnePreviousMonth() {
+        LocalDate today=LocalDate.of(2026,9,3); AttendanceConnectorEntity connector=connector("OK");
+        connector.setHistorySyncedFrom(LocalDate.of(2026,9,1));
+        when(connectors.selectById("wg")).thenReturn(connector);
+        when(connectors.claimHistoryBackfill(org.mockito.ArgumentMatchers.eq("wg"),any(),any(),any())).thenReturn(1);
+        when(vault.revealSecret("vault-1","wg")).thenReturn("secret");
+        when(moka.login("s008500@nl-ds.cn","secret")).thenReturn(new MokaAttendanceClient.Session("uid-1","jwt-1"));
+        when(crypto.encrypt(any())).thenReturn(new VaultCryptoService.Encrypted(new byte[]{1},new byte[]{2}));
+        when(moka.employeeId(any())).thenReturn("employee-1");
+        when(moka.day(any(),any(),any())).thenAnswer(invocation -> {
+            LocalDate date=invocation.getArgument(2);
+            return new MokaAttendanceClient.RemoteDay(date,date.atTime(9,0),date.atTime(21,0),"WORKDAY","");
+        });
+
+        service.backfillNextPeriod("wg",today);
+
+        ArgumentCaptor<LocalDate> dates=ArgumentCaptor.forClass(LocalDate.class);
+        verify(moka,times(31)).day(any(),org.mockito.ArgumentMatchers.eq("employee-1"),dates.capture());
+        assertThat(dates.getAllValues().get(0)).isEqualTo(LocalDate.of(2026,8,1));
+        assertThat(dates.getAllValues().get(30)).isEqualTo(LocalDate.of(2026,8,31));
+        verify(connectors).advanceHistoryBackfill(org.mockito.ArgumentMatchers.eq("wg"),
+                org.mockito.ArgumentMatchers.eq(LocalDate.of(2026,8,1)),any(),any());
+    }
+
+    @Test void failedHistoryBackfillReleasesLeaseWithoutAdvancingCursor() {
+        LocalDate today=LocalDate.of(2026,9,3); AttendanceConnectorEntity connector=connector("OK");
+        connector.setHistorySyncedFrom(LocalDate.of(2026,9,1));
+        when(connectors.selectById("wg")).thenReturn(connector);
+        when(connectors.claimHistoryBackfill(org.mockito.ArgumentMatchers.eq("wg"),any(),any(),any())).thenReturn(1);
+        when(vault.revealSecret("vault-1","wg")).thenReturn("secret");
+        when(moka.login("s008500@nl-ds.cn","secret")).thenReturn(new MokaAttendanceClient.Session("uid-1","jwt-1"));
+        when(crypto.encrypt(any())).thenReturn(new VaultCryptoService.Encrypted(new byte[]{1},new byte[]{2}));
+        when(moka.employeeId(any())).thenReturn("employee-1");
+        when(moka.day(any(),any(),any())).thenThrow(new IllegalStateException("temporary remote failure"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(()->service.backfillNextPeriod("wg",today))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(connectors,org.mockito.Mockito.never()).advanceHistoryBackfill(any(),any(),any(),any());
+        verify(connectors).releaseHistoryBackfill(org.mockito.ArgumentMatchers.eq("wg"),any());
+        assertThat(connector.getStatus()).isEqualTo("ERROR");
     }
 
     private AttendanceDayEntity day(LocalDate date,String in,String out,String type){AttendanceDayEntity value=new AttendanceDayEntity();value.setMemberId("wg");value.setAttendanceDate(date);value.setRemoteClockInAt(in==null?null:LocalDateTime.parse(in));value.setRemoteClockOutAt(out==null?null:LocalDateTime.parse(out));value.setRemoteDayType(type);value.setManualOverride(false);return value;}
