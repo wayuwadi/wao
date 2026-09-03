@@ -1540,6 +1540,10 @@ components:
           type: array
           description: 关联文件；真实文件带 file_blob 的稳定 id，历史展示附件可能没有 id
           items: { $ref: '#/components/schemas/FileRef' }
+        hostedPages:
+          type: array
+          description: 关联的人工上传 HTML 托管页 id；历史任务缺省为空数组
+          items: { type: string }
         docs:
           type: array
           description: 关联知识文档 id

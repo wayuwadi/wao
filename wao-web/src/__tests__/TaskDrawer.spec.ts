@@ -289,7 +289,7 @@ describe('TaskDrawer', () => {
     ui.openTask(current.id)
     const w = mountDrawer()
     await w.vm.$nextTick()
-    await w.findAll('.text-btn').find((button) => button.text().includes('关联知识、任务或文件'))!.trigger('click')
+    await w.findAll('.text-btn').find((button) => button.text().includes('关联知识、任务、文件或 HTML'))!.trigger('click')
 
     const allRows = w.findAll('.relation-row').map((row) => row.text())
     expect(dateParse).toHaveBeenCalledWith('2026-08-20T09:00:00+08:00')
@@ -323,7 +323,7 @@ describe('TaskDrawer', () => {
     w.unmount()
   })
 
-  it('关联选择器使用真实知识、任务和文件，并支持再次点击解除', async () => {
+  it('关联选择器使用真实知识、任务、文件和人工 HTML，并在详情中明确解除', async () => {
     const current = data.taskById(taskId)!
     const doc = Object.values(data.docs).find((item) => !current.docs.includes(item.id))!
     const linkedTask = data.tasks.find((item) => item.id !== taskId && !current.linkTasks.some((link) => link.id === item.id))!
@@ -331,11 +331,25 @@ describe('TaskDrawer', () => {
       id: 'file-real-1', name: '真实验收记录.pdf', size: '12 KB', icon: 'ri-file-pdf-2-line',
       time: '刚刚', by: '娃哥', link: '/api/files/file-real-1/raw',
     })
+    data.hostedPages = [
+      {
+        id: 'page-manual-1', slug: 'manual-check', title: '人工验收页面', fileName: 'check.html',
+        sourceType: 'MANUAL_UPLOAD', hasIcon: false, updatedAt: '9月3日 10:00',
+        url: '/api/pages/manual-check', projectId: 'p1',
+      },
+      {
+        id: 'run-report-ar1', slug: 'ai-run-ar1', title: 'AI Run 报告', fileName: 'report.html',
+        sourceType: 'AI_RUN_REPORT', hasIcon: false, updatedAt: '9月3日 09:00',
+        url: '/api/pages/ai-run-ar1', projectId: 'p1',
+      },
+    ]
+    data.hostedPageLoadState = 'loaded'
+    vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(true)
     ui.openTask(taskId)
     const w = mountDrawer()
     await w.vm.$nextTick()
 
-    await w.findAll('.text-btn').find((button) => button.text().includes('关联知识、任务或文件'))!.trigger('click')
+    await w.findAll('.text-btn').find((button) => button.text().includes('关联知识、任务、文件或 HTML'))!.trigger('click')
     expect(w.find('.relation-picker').exists()).toBe(true)
 
     const clickCandidate = async (text: string) => {
@@ -346,13 +360,42 @@ describe('TaskDrawer', () => {
     await clickCandidate(doc.title)
     await clickCandidate(linkedTask.title)
     await clickCandidate('真实验收记录.pdf')
+    const htmlTab = w.findAll('.relation-picker nav button').find((button) => button.text().startsWith('HTML'))!
+    await htmlTab.trigger('click')
+    expect(w.findAll('.relation-row').map((row) => row.text()).join('')).not.toContain('AI Run 报告')
+    await clickCandidate('人工验收页面')
 
     expect(current.docs).toContain(doc.id)
     expect(current.linkTasks.map((item) => item.id)).toContain(linkedTask.id)
     expect(current.files.map((item) => item.id)).toContain('file-real-1')
+    expect(current.hostedPages).toEqual(['page-manual-1'])
 
-    await clickCandidate('真实验收记录.pdf')
+    await w.get('.relation-picker footer button').trigger('click')
+    await w.get('[aria-label="取消关联文件 真实验收记录.pdf"]').trigger('click')
+    await w.get('[aria-label="取消关联 HTML 人工验收页面"]').trigger('click')
     expect(current.files.map((item) => item.id)).not.toContain('file-real-1')
+    expect(current.hostedPages).toEqual([])
+    w.unmount()
+  })
+
+  it('人工 HTML 读取失败时保留重试入口且不改动既有关联', async () => {
+    const current = data.taskById(taskId)!
+    current.hostedPages = ['page-existing']
+    data.hostedPages = []
+    data.hostedPageLoadState = 'error'
+    const refresh = vi.spyOn(data, 'refreshHostedPages').mockResolvedValue(false)
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    await w.findAll('.text-btn').find((button) => button.text().includes('关联知识、任务、文件或 HTML'))!.trigger('click')
+    await w.findAll('.relation-picker nav button').find((button) => button.text().startsWith('HTML'))!.trigger('click')
+
+    expect(w.get('.relation-picker .empty').text()).toContain('HTML 读取失败')
+    expect(current.hostedPages).toEqual(['page-existing'])
+    await w.get('.relation-picker .retry').trigger('click')
+    expect(refresh).toHaveBeenCalledTimes(2)
+    expect(current.hostedPages).toEqual(['page-existing'])
     w.unmount()
   })
 

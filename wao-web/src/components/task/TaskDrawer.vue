@@ -282,6 +282,12 @@ const linkTasks = computed(() =>
 const linkedDocs = computed(() =>
   (task.value?.docs ?? []).map((id) => ({ id, title: data.docById(id)?.title ?? '' })),
 )
+const manualHostedPages = computed(() => data.hostedPages.filter((page) =>
+  (page.sourceType ?? (page.id.startsWith('run-report-') ? 'AI_RUN_REPORT' : 'MANUAL_UPLOAD')) === 'MANUAL_UPLOAD'))
+const linkedHostedPages = computed(() => (task.value?.hostedPages ?? []).map((id) => {
+  const page = data.hostedPages.find((item) => item.id === id)
+  return { id, title: page?.title ?? 'HTML 已删除或暂不可见', url: page?.url ?? null }
+}))
 const relationDocs = computed(() => Object.values(data.docs).map((doc) => {
   const kb = data.kbs.find((item) => item.id === doc.kbId || item.folders.some((folder) => folder.docs.includes(doc.id)))
   return { id: doc.id, title: doc.title, kbName: kb?.name ?? '知识文档', createdAt: doc.created }
@@ -306,6 +312,10 @@ const selectedFileIds = computed(() => (task.value?.files ?? [])
 const taskFileDisplayName = (file: { id?: string | null; name: string }) => {
   const current = file.id ? data.files.find((item) => item.id === file.id) : undefined
   return current ? fileDisplayName(current) : file.name
+}
+async function openRelationPicker() {
+  relationOpen.value = true
+  await data.refreshHostedPages()
 }
 const saveState = computed(() => (task.value ? data.taskSaveState(task.value.id) : 'idle'))
 /** 上一次写透成功的时刻，给「自动保存成功 14:32」用。 */
@@ -804,7 +814,18 @@ function openLinkedFile(id: string | null | undefined) {
   close()
   router.push(`/f/${encodeURIComponent(id)}`)
 }
-function toggleRelation(type: 'doc' | 'task' | 'file', id: string) {
+function openHostedPage(url: string | null) {
+  if (!url) return
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+function removeAttachedFile(index: number) {
+  const t = task.value
+  const file = t?.files[index]
+  if (!t || !file) return
+  data.patchTask(t.id, { files: t.files.filter((_, itemIndex) => itemIndex !== index) },
+    `取消关联了文件「${taskFileDisplayName(file)}」`)
+}
+function toggleRelation(type: 'doc' | 'task' | 'file' | 'page', id: string) {
   const t = task.value
   if (!t) return
   if (type === 'doc') {
@@ -820,6 +841,16 @@ function toggleRelation(type: 'doc' | 'task' | 'file', id: string) {
     data.patchTask(t.id, {
       linkTasks: selected ? t.linkTasks.filter((item) => item.id !== id) : [...t.linkTasks, { id, rel: '相关任务' }],
     }, `${selected ? '取消关联' : '关联了'}任务「${title}」`)
+    return
+  }
+  if (type === 'page') {
+    const selected = (t.hostedPages ?? []).includes(id)
+    const title = data.hostedPages.find((item) => item.id === id)?.title ?? 'HTML'
+    data.patchTask(t.id, {
+      hostedPages: selected
+        ? (t.hostedPages ?? []).filter((item) => item !== id)
+        : [...(t.hostedPages ?? []), id],
+    }, `${selected ? '取消关联' : '关联了'} HTML「${title}」`)
     return
   }
   const file = data.files.find((item) => item.id === id)
@@ -1056,21 +1087,26 @@ async function uploadAttachment(event: Event) {
           <div v-if="task.files.length" class="field">
             <div class="field-label">附件</div>
             <div class="attach-list">
-              <button
+              <div
                 v-for="(f, i) in task.files"
                 :key="f.id ?? i"
-                type="button"
                 class="attach"
                 :class="{ legacy: !f.id }"
-                :disabled="!f.id"
-                :title="f.id ? '打开真实文件下载页' : '历史附件没有可下载的文件正文'"
-                @click="openLinkedFile(f.id)"
               >
-                <i :class="f.icon"></i>
-                <span class="attach-name ellip">{{ taskFileDisplayName(f) }}</span>
-                <span class="attach-size">{{ f.id ? f.size : `${f.size} · 仅历史记录` }}</span>
-                <i :class="f.id ? 'ri-arrow-right-s-line dl' : 'ri-information-line dl'"></i>
-              </button>
+                <button
+                  type="button"
+                  class="attach-open"
+                  :disabled="!f.id"
+                  :title="f.id ? '打开真实文件下载页' : '历史附件没有可下载的文件正文'"
+                  @click="openLinkedFile(f.id)"
+                >
+                  <i :class="f.icon"></i>
+                  <span class="attach-name ellip">{{ taskFileDisplayName(f) }}</span>
+                  <span class="attach-size">{{ f.id ? f.size : `${f.size} · 仅历史记录` }}</span>
+                  <i :class="f.id ? 'ri-arrow-right-s-line dl' : 'ri-information-line dl'"></i>
+                </button>
+                <button class="relation-unlink" :aria-label="`取消关联文件 ${taskFileDisplayName(f)}`" title="取消关联" @click="removeAttachedFile(i)"><i class="ri-link-unlink-m"></i></button>
+              </div>
             </div>
             <button class="text-btn" :disabled="attachmentUploading" @click="attachmentInput?.click()">
               <i :class="attachmentUploading ? 'ri-loader-4-line spin' : 'ri-upload-2-line'"></i>
@@ -1087,15 +1123,24 @@ async function uploadAttachment(event: Event) {
                 <span class="attach-name ellip">{{ ld.title }}</span>
                 <span class="attach-size">知识库</span>
                 <i class="ri-arrow-right-s-line dl"></i>
+                <button class="relation-unlink" :aria-label="`取消关联知识文档 ${ld.title}`" title="取消关联" @click.stop="toggleRelation('doc', ld.id)"><i class="ri-link-unlink-m"></i></button>
               </div>
               <div v-for="lk in linkTasks" :key="lk.id" class="attach link" @click="openLinkTask(lk.id)">
                 <i class="ri-checkbox-circle-line" style="color: #5a5e6b"></i>
                 <span class="attach-name ellip">{{ lk.title }}</span>
                 <span class="rel">{{ lk.rel }}</span>
                 <span class="mini" :style="{ background: lk.stBg, color: lk.stColor }">{{ lk.status }}</span>
+                <button class="relation-unlink" :aria-label="`取消关联任务 ${lk.title}`" title="取消关联" @click.stop="toggleRelation('task', lk.id)"><i class="ri-link-unlink-m"></i></button>
+              </div>
+              <div v-for="page in linkedHostedPages" :key="page.id" class="attach link" :class="{ legacy: !page.url }" @click="openHostedPage(page.url)">
+                <i class="ri-html5-line" style="color: #d55c22"></i>
+                <span class="attach-name ellip">{{ page.title }}</span>
+                <span class="attach-size">HTML</span>
+                <i :class="page.url ? 'ri-external-link-line dl' : 'ri-information-line dl'"></i>
+                <button class="relation-unlink" :aria-label="`取消关联 HTML ${page.title}`" title="取消关联" @click.stop="toggleRelation('page', page.id)"><i class="ri-link-unlink-m"></i></button>
               </div>
             </div>
-            <button class="text-btn" @click="relationOpen = true"><i class="ri-links-line"></i>关联知识、任务或文件</button>
+            <button class="text-btn" @click="openRelationPicker"><i class="ri-links-line"></i>关联知识、任务、文件或 HTML</button>
           </div>
 
           <AiRunArchive
@@ -1427,10 +1472,15 @@ async function uploadAttachment(event: Event) {
       :docs="relationDocs"
       :tasks="relationTasks"
       :files="relationFiles"
+      :pages="manualHostedPages"
       :selected-doc-ids="task.docs"
       :selected-task-ids="task.linkTasks.map((item) => item.id)"
       :selected-file-ids="selectedFileIds"
+      :selected-page-ids="task.hostedPages ?? []"
+      :page-load-state="data.hostedPageLoadState"
+      :page-load-error="data.hostedPageLoadError"
       @toggle="toggleRelation"
+      @retry-pages="data.refreshHostedPages"
       @close="relationOpen = false"
     />
   </template>
@@ -2161,6 +2211,11 @@ async function uploadAttachment(event: Event) {
   text-align: left;
   cursor: pointer;
 }
+.attach-open {
+  min-width: 0; flex: 1; display: flex; align-items: center; gap: 9px; padding: 0; border: 0;
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.attach-open:disabled { cursor: default; }
 .attach:hover {
   border-color: #d9dce5;
   background: var(--wao-bg-sub);
@@ -2171,7 +2226,7 @@ async function uploadAttachment(event: Event) {
 }
 .attach.legacy { cursor: default; opacity: .72; }
 .attach.legacy:hover { border-color: var(--wao-divider); background: var(--wao-bg-card); }
-.attach > i {
+.attach > i, .attach-open > i {
   font-size: 15px;
   color: var(--wao-text-3);
 }
@@ -2188,6 +2243,14 @@ async function uploadAttachment(event: Event) {
 .attach .dl {
   font-size: 14px;
   color: var(--wao-text-faint-2);
+}
+.relation-unlink {
+  width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center;
+  border: 1px solid transparent; border-radius: 8px; background: transparent;
+  color: var(--wao-text-weak); cursor: pointer;
+}
+.relation-unlink:hover, .relation-unlink:focus-visible {
+  border-color: var(--wao-danger-line); background: var(--wao-danger-bg); color: var(--wao-danger-strong);
 }
 .rel {
   font-size: 11px;

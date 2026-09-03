@@ -95,7 +95,7 @@ erDiagram
 | due_date | VARCHAR(16) | 截止；同上 |
 | waiting | VARCHAR(64) NULL | 等待他人标记 |
 | description | MEDIUMTEXT | 描述；V60 起支持不受 4000 字人为上限的长 Markdown，图片仍应存图床并只保留稳定 URL |
-| detail_json | JSON | parts[], steps[], subs[], files[]（真实文件引用含 `file_blob.id`，历史展示附件可为空）, docs[], linkTasks[], comments[], custom[], activity[]（条目含 by=操作人成员 id）, images[], groupId（所属任务分组）, startAt/endAt（可选日历时间段，格式 `yyyy-MM-ddTHH:mm`，endAt 必须晚于 startAt）, pdcaCycles[]（历史兼容数据；前端已停止新增、编辑和展示，既有轮次仍按 ADR-048 保留） |
+| detail_json | JSON | parts[], steps[], subs[], files[]（真实文件引用含 `file_blob.id`，历史展示附件可为空）, hostedPages[]（人工上传 `hosted_page.id`）, docs[], linkTasks[], comments[], custom[], activity[]（条目含 by=操作人成员 id）, images[], groupId（所属任务分组）, startAt/endAt（可选日历时间段，格式 `yyyy-MM-ddTHH:mm`，endAt 必须晚于 startAt）, pdcaCycles[]（历史兼容数据；前端已停止新增、编辑和展示，既有轮次仍按 ADR-048 保留） |
 
 ## 内容 / 参考域（文档表，只读）
 

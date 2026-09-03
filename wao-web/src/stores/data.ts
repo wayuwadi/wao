@@ -170,6 +170,8 @@ export const useDataStore = defineStore('data', () => {
   const autos = ref<AutomationJob[]>([])
   const files = ref<FileItem[]>([])
   const hostedPages = ref<HostedPage[]>([])
+  const hostedPageLoadState = ref<DataLoadState>('idle')
+  const hostedPageLoadError = ref('')
   const imgs = ref<ImageItem[]>([])
   const vault = ref<VaultGroup[]>([])
   const schedule = ref<ScheduleItem[]>([])
@@ -1481,8 +1483,24 @@ export const useDataStore = defineStore('data', () => {
     files.value = files.value.filter((file) => file.id !== id)
   }
   async function refreshHostedPages() {
-    if (!apiLive.value) return
-    try { hostedPages.value = await fetchHostedPages() } catch { /* 保留当前列表 */ }
+    if (!apiLive.value) {
+      hostedPageLoadState.value = 'error'
+      hostedPageLoadError.value = '服务暂不可用，请稍后重试'
+      return false
+    }
+    hostedPageLoadState.value = 'loading'
+    hostedPageLoadError.value = ''
+    try {
+      hostedPages.value = await fetchHostedPages()
+      hostedPageLoadState.value = 'loaded'
+      return true
+    } catch (cause: unknown) {
+      hostedPageLoadState.value = 'error'
+      hostedPageLoadError.value = cause instanceof Error && cause.message
+        ? cause.message
+        : '人工上传的 HTML 读取失败'
+      return false
+    }
   }
   async function saveHostedPage(payload: { id?: string; html?: File; icon?: File; slug: string; title: string; projectId?: string }) {
     const item = await apiSaveHostedPage(payload)
@@ -1783,7 +1801,8 @@ export const useDataStore = defineStore('data', () => {
     taskSaveState, taskSavedAt, flushTask, addTaskComment, updateTaskComment, deleteTaskComment, deleteTask,
     subById, subKey, addSub, reorderSub, updateSub, removeSub, addSubImage, removeSubImage,
     uploadImage, refreshImages, deleteImage, MAX_IMAGE_BYTES,
-    uploadFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES, hostedPages, refreshHostedPages, saveHostedPage, deleteHostedPage,
+    uploadFile, refreshFiles, renameFileDisplayName, deleteFile, MAX_FILE_BYTES,
+    hostedPages, hostedPageLoadState, hostedPageLoadError, refreshHostedPages, saveHostedPage, deleteHostedPage,
     updateProject, deleteProject, syncFromServer, applyAiRunStatuses,
     taskGroupsOf, setTaskGroups, moveTaskToGroup,
     jobById, ensureAutomationLoaded, refreshAutomation,

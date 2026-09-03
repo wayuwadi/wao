@@ -35,7 +35,21 @@ public record TaskDto(
         /** 按时间顺序保存的 PDCA 轮次；空列表表示这条任务未启用 PDCA。 */
         List<PdcaCycle> pdcaCycles,
         /** 任务真实创建时间；极早期没有可靠来源的历史任务可能为空。 */
-        String createdAt) {
+        String createdAt,
+        /** 关联的人工上传 HTML 托管页 id；历史任务缺省为空。 */
+        List<String> hostedPages) {
+
+    /** 兼容尚未引入 HTML 关联的既有调用。 */
+    public TaskDto(String id, String title, String project, String status, String pr, String owner,
+            List<String> parts, String start, String due, String waiting, String desc,
+            List<Step> steps, List<Step> subs, List<FileRef> files, List<String> docs,
+            List<TaskLink> linkTasks, List<CommentDto> comments, List<CustomProp> custom,
+            List<Activity> activity, List<ImageRef> images, String createdBy, String completedAt,
+            String groupId, String startAt, String endAt, List<PdcaCycle> pdcaCycles, String createdAt) {
+        this(id, title, project, status, pr, owner, parts, start, due, waiting, desc, steps, subs,
+                files, docs, linkTasks, comments, custom, activity, images, createdBy, completedAt,
+                groupId, startAt, endAt, pdcaCycles, createdAt, null);
+    }
 
     /** 兼容尚未引入任务创建时间的既有调用。 */
     public TaskDto(String id, String title, String project, String status, String pr, String owner,
