@@ -131,4 +131,83 @@ describe('ProjectAssetsPanel', () => {
     await flushPromises()
     expect(saveHostedPage).toHaveBeenCalledWith(expect.objectContaining({ html, projectId: 'p1' }))
   })
+
+  it('上传后的项目 HTML 可修改 WAO 显示名称且保留文件和分享地址', async () => {
+    const { data, wrapper } = mountPanel()
+    data.hostedPages = [
+      {
+        id: 'h1',
+        slug: 'architecture',
+        title: 'product_model_architecture',
+        fileName: 'product_model_architecture.html',
+        hasIcon: false,
+        updatedAt: '刚刚',
+        url: '/api/pages/architecture',
+        projectId: 'p1',
+      },
+    ]
+    const saveHostedPage = vi.spyOn(data, 'saveHostedPage').mockImplementation(async (payload) => ({
+      ...data.hostedPages[0]!,
+      title: payload.title,
+    }))
+    await flushPromises()
+
+    await wrapper.findAll('.asset-tabs button')[2]!.trigger('click')
+    await wrapper.find('button[title="修改 WAO 显示名称"]').trigger('click')
+    expect(wrapper.find('.html-dialog h3').text()).toBe('修改 WAO 显示名称')
+    expect((wrapper.find('input[autofocus]').element as HTMLInputElement).value).toBe(
+      'product_model_architecture',
+    )
+
+    await wrapper.find('input[autofocus]').setValue('商品模型架构')
+    await wrapper.find('.html-dialog').trigger('submit')
+    await flushPromises()
+
+    expect(saveHostedPage).toHaveBeenCalledWith({
+      id: 'h1',
+      html: undefined,
+      title: '商品模型架构',
+      slug: 'architecture',
+      projectId: undefined,
+    })
+    expect(wrapper.find('.html-dialog').exists()).toBe(false)
+  })
+
+  it('项目 HTML 改名失败时保留输入并提供重试', async () => {
+    const { data, wrapper } = mountPanel()
+    data.hostedPages = [
+      {
+        id: 'h1',
+        slug: 'architecture',
+        title: '旧名称',
+        fileName: 'architecture.html',
+        hasIcon: false,
+        updatedAt: '刚刚',
+        url: '/api/pages/architecture',
+        projectId: 'p1',
+      },
+    ]
+    const saveHostedPage = vi
+      .spyOn(data, 'saveHostedPage')
+      .mockRejectedValueOnce(new Error('名称保存失败，请重试'))
+      .mockResolvedValueOnce({ ...data.hostedPages[0]!, title: '新名称' })
+    await flushPromises()
+
+    await wrapper.findAll('.asset-tabs button')[2]!.trigger('click')
+    await wrapper.find('button[title="修改 WAO 显示名称"]').trigger('click')
+    await wrapper.find('input[autofocus]').setValue('   ')
+    await wrapper.find('.html-dialog').trigger('submit')
+    expect(saveHostedPage).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').text()).toContain('请填写页面标题')
+
+    await wrapper.find('input[autofocus]').setValue('新名称')
+    await wrapper.find('.html-dialog').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('名称保存失败')
+    expect((wrapper.find('input[autofocus]').element as HTMLInputElement).value).toBe('新名称')
+    await wrapper.find('.html-dialog').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('.html-dialog').exists()).toBe(false)
+  })
 })

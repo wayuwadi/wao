@@ -18,10 +18,12 @@ const uploadError = ref('')
 const dragging = ref(false)
 const preview = ref<AssetPreview | null>(null)
 const htmlDialog = ref(false)
+const editingPage = ref<HostedPage | null>(null)
 const htmlFile = ref<File | null>(null)
 const htmlTitle = ref('')
 const htmlSlug = ref('')
 const htmlSaving = ref(false)
+const htmlFormError = ref('')
 
 const files = computed(() => data.files.filter((item) => item.projectId === props.projectId))
 const images = computed(() => data.imgs.filter((item) => item.projectId === props.projectId))
@@ -60,11 +62,28 @@ function suggestedSlug(name: string) {
   return `${candidate}-${Math.random().toString(36).slice(2, 7)}`
 }
 function openHtmlDialog(file: File) {
+  editingPage.value = null
   htmlFile.value = file
   htmlTitle.value = baseName(file.name) || '未命名页面'
   htmlSlug.value = suggestedSlug(file.name)
+  htmlFormError.value = ''
   htmlDialog.value = true
   tab.value = 'pages'
+}
+
+function editPage(page: HostedPage) {
+  editingPage.value = page
+  htmlFile.value = null
+  htmlTitle.value = page.title
+  htmlSlug.value = page.slug
+  htmlFormError.value = ''
+  htmlDialog.value = true
+}
+
+function closeHtmlDialog() {
+  if (htmlSaving.value) return
+  htmlDialog.value = false
+  htmlFormError.value = ''
 }
 
 async function uploadFiles(selected: File[]) {
@@ -126,24 +145,38 @@ function drop(event: DragEvent) {
 }
 
 async function saveHtml() {
-  if (!htmlFile.value || !htmlTitle.value.trim() || !htmlSlug.value.trim()) {
-    uploadError.value = '请填写页面标题、链接后缀并选择 HTML 文件'
+  if (
+    (!editingPage.value && !htmlFile.value) ||
+    !htmlTitle.value.trim() ||
+    !htmlSlug.value.trim()
+  ) {
+    htmlFormError.value = editingPage.value
+      ? '请填写页面标题和链接后缀'
+      : '请填写页面标题、链接后缀并选择 HTML 文件'
     return
   }
   htmlSaving.value = true
-  uploadError.value = ''
+  htmlFormError.value = ''
   try {
     const page = await data.saveHostedPage({
-      html: htmlFile.value,
+      id: editingPage.value?.id,
+      html: htmlFile.value ?? undefined,
       title: htmlTitle.value,
       slug: htmlSlug.value,
-      projectId: props.projectId,
+      projectId: editingPage.value ? undefined : props.projectId,
     })
     htmlDialog.value = false
-    preview.value = { kind: 'html', name: page.title, url: page.url }
-    toast('HTML 已归入项目并可站内预览', 'ri-html5-line')
+    if (editingPage.value) {
+      toast('WAO 显示名称已保存', 'ri-check-line')
+    } else {
+      preview.value = { kind: 'html', name: page.title, url: page.url }
+      toast('HTML 已归入项目并可站内预览', 'ri-html5-line')
+    }
   } catch (cause) {
-    uploadError.value = cause instanceof Error ? cause.message : 'HTML 发布失败，请重试'
+    htmlFormError.value =
+      cause instanceof Error
+        ? cause.message
+        : `${editingPage.value ? '名称保存' : 'HTML 发布'}失败，请重试`
   } finally {
     htmlSaving.value = false
   }
@@ -275,6 +308,9 @@ async function removePage(page: HostedPage) {
         <button @click="copyText(absoluteUrl(page.url), '已复制公网分享链接')">
           <i class="ri-links-line"></i>分享
         </button>
+        <button title="修改 WAO 显示名称" @click="editPage(page)">
+          <i class="ri-edit-line"></i>改名
+        </button>
         <button class="danger" @click="removePage(page)"><i class="ri-delete-bin-line"></i></button>
       </div>
       <div v-if="!pages.length" class="asset-empty">
@@ -282,17 +318,23 @@ async function removePage(page: HostedPage) {
       </div>
     </div>
 
-    <div v-if="htmlDialog" class="html-mask" @click.self="!htmlSaving && (htmlDialog = false)">
+    <div v-if="htmlDialog" class="html-mask" @click.self="closeHtmlDialog">
       <form class="html-dialog" @submit.prevent="saveHtml">
-        <h3>托管项目 HTML</h3>
-        <p>页面会归入当前项目，并在受限 iframe 内站内预览；公网分享链接保持可用。</p>
-        <label>页面标题<input v-model="htmlTitle" maxlength="200" /></label>
-        <label>分享链接后缀<input v-model="htmlSlug" maxlength="80" /></label>
-        <div class="selected-file"><i class="ri-file-check-line"></i>{{ htmlFile?.name }}</div>
+        <h3>{{ editingPage ? '修改 WAO 显示名称' : '托管项目 HTML' }}</h3>
+        <p v-if="editingPage">
+          修改后会同步到项目列表、站内预览和浏览器标题；HTML 内容和公网分享地址保持不变。
+        </p>
+        <p v-else>页面会归入当前项目，并在受限 iframe 内站内预览；公网分享链接保持可用。</p>
+        <label>WAO 显示名称<input v-model="htmlTitle" maxlength="200" autofocus /></label>
+        <label v-if="!editingPage">分享链接后缀<input v-model="htmlSlug" maxlength="80" /></label>
+        <div v-if="htmlFile" class="selected-file">
+          <i class="ri-file-check-line"></i>{{ htmlFile.name }}
+        </div>
+        <div v-if="htmlFormError" class="html-form-error" role="alert">{{ htmlFormError }}</div>
         <footer>
-          <button type="button" :disabled="htmlSaving" @click="htmlDialog = false">取消</button
+          <button type="button" :disabled="htmlSaving" @click="closeHtmlDialog">取消</button
           ><button class="primary" :disabled="htmlSaving">
-            {{ htmlSaving ? '发布中…' : '发布并预览' }}
+            {{ htmlSaving ? '保存中…' : editingPage ? '保存名称' : '发布并预览' }}
           </button>
         </footer>
       </form>
@@ -524,6 +566,11 @@ async function removePage(page: HostedPage) {
   border-radius: 8px;
   background: var(--wao-bg-page);
   overflow-wrap: anywhere;
+}
+.html-form-error {
+  margin-top: 12px;
+  color: var(--wao-danger);
+  font-size: 12px;
 }
 .html-dialog footer {
   margin-top: 18px;
