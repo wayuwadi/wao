@@ -12,6 +12,8 @@ public class WorkdayRhythmChecklistOccurrenceEntity {
     @TableId private String id;
     private String itemId; private String memberId; private LocalDate occurrenceDate;
     private String kind; private String category; private String title;
+    private String itemType; private Integer durationSeconds;
+    private LocalDateTime timerStartedAt; private Integer timerElapsedSeconds;
     private LocalTime startTime; private LocalTime dueTime; private Boolean dueNextDay;
     private LocalTime reminderTime; private Boolean reminderNextDay;
     private Boolean notifyDirect; private Boolean notifyChat; private String chatId; private String chatName;
@@ -26,6 +28,10 @@ public class WorkdayRhythmChecklistOccurrenceEntity {
     public String getKind(){return kind;} public void setKind(String v){kind=v;}
     public String getCategory(){return category;} public void setCategory(String v){category=v;}
     public String getTitle(){return title;} public void setTitle(String v){title=v;}
+    public String getItemType(){return itemType;} public void setItemType(String v){itemType=v;}
+    public Integer getDurationSeconds(){return durationSeconds;} public void setDurationSeconds(Integer v){durationSeconds=v;}
+    public LocalDateTime getTimerStartedAt(){return timerStartedAt;} public void setTimerStartedAt(LocalDateTime v){timerStartedAt=v;}
+    public Integer getTimerElapsedSeconds(){return timerElapsedSeconds;} public void setTimerElapsedSeconds(Integer v){timerElapsedSeconds=v;}
     public LocalTime getStartTime(){return startTime;} public void setStartTime(LocalTime v){startTime=v;}
     public LocalTime getDueTime(){return dueTime;} public void setDueTime(LocalTime v){dueTime=v;}
     public Boolean getDueNextDay(){return dueNextDay;} public void setDueNextDay(Boolean v){dueNextDay=v;}

@@ -37,6 +37,8 @@ const plan: RhythmChecklistItem = {
   kind: 'PLAN',
   category: 'WORK',
   title: '制定今日计划',
+  itemType: 'CHECK',
+  durationMinutes: null,
   scheduleType: 'WORKDAY',
   weekdays: [],
   startTime: '07:00',
@@ -151,5 +153,20 @@ describe('WorkdayRhythmDailySettings', () => {
     await flushPromises()
     expect(deleteRhythmChecklistItem).toHaveBeenCalledWith('custom')
     expect(wrapper.text()).not.toContain('整理桌面')
+  })
+
+  it('自定义项目可选择固定分钟倒计时并持久化', async () => {
+    const wrapper = await mountSettings()
+    await wrapper.findAll('.edit-item')[1]!.trigger('click')
+    const selects = wrapper.findAll('.item-fields select')
+    await selects[0]!.setValue('COUNTDOWN')
+    await wrapper.get('input[type="number"]').setValue(20)
+    await wrapper.get('footer .primary').trigger('click')
+    await flushPromises()
+
+    expect(updateRhythmChecklistItem).toHaveBeenCalledWith(
+      'custom',
+      expect.objectContaining({ itemType: 'COUNTDOWN', durationMinutes: 20 }),
+    )
   })
 })

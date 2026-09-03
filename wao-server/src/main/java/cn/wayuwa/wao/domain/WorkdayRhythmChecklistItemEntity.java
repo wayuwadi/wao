@@ -14,6 +14,8 @@ public class WorkdayRhythmChecklistItemEntity {
     private String systemKey;
     private String category;
     private String title;
+    private String itemType;
+    private Integer durationSeconds;
     private String scheduleType;
     private String weekdaysJson;
     private LocalTime startTime;
@@ -40,6 +42,8 @@ public class WorkdayRhythmChecklistItemEntity {
     public String getSystemKey() { return systemKey; } public void setSystemKey(String v) { systemKey = v; }
     public String getCategory() { return category; } public void setCategory(String v) { category = v; }
     public String getTitle() { return title; } public void setTitle(String v) { title = v; }
+    public String getItemType() { return itemType; } public void setItemType(String v) { itemType = v; }
+    public Integer getDurationSeconds() { return durationSeconds; } public void setDurationSeconds(Integer v) { durationSeconds = v; }
     public String getScheduleType() { return scheduleType; } public void setScheduleType(String v) { scheduleType = v; }
     public String getWeekdaysJson() { return weekdaysJson; } public void setWeekdaysJson(String v) { weekdaysJson = v; }
     public LocalTime getStartTime() { return startTime; } public void setStartTime(LocalTime v) { startTime = v; }

@@ -58,6 +58,7 @@ public class WorkdayRhythmDashboardService {
     private static final String ALTERNATE_WEEK_KEY = "alternate-work-week";
     private static final Set<String> CATEGORIES = Set.of("WORK", "LIFE");
     private static final Set<String> SCHEDULES = Set.of("DAILY", "WORKDAY", "WEEKDAYS");
+    private static final Set<String> ITEM_TYPES = Set.of("CHECK", "COUNTDOWN");
     private static final Set<String> SYSTEM_KINDS = Set.of("PLAN", "CLOCK_IN", "CLOCK_OUT", "TIANREN");
     private static final int MIN_FOCUS_COUNT = 3;
     private static final int MAX_FOCUS_COUNT = 20;
@@ -100,6 +101,7 @@ public class WorkdayRhythmDashboardService {
                             && !dueAt(value).isBefore(now))
                     .forEach(result::add);
         }
+        result.forEach(value -> refreshCountdown(value, now));
         result.sort(Comparator.comparing((WorkdayRhythmChecklistOccurrenceEntity value) ->
                 value.getCompletedAt() != null).thenComparing(this::dueAt));
         List<WorkdayRhythmDashboardDto.Occurrence> dto = result.stream().map(value -> occurrenceDto(value, now)).toList();
@@ -129,6 +131,10 @@ public class WorkdayRhythmDashboardService {
     public WorkdayRhythmChecklistItemDto updateItem(String memberId, String id,
             SaveWorkdayRhythmChecklistItemRequest request) {
         WorkdayRhythmChecklistItemEntity value = ownedItem(memberId, id);
+        if (!"CUSTOM".equals(value.getKind()) && StringUtils.hasText(request.itemType())
+                && !"CHECK".equals(request.itemType())) {
+            throw new BadRequestException("系统联动项只能使用普通打卡类型");
+        }
         apply(value, request); items.updateById(value);
         syncTodayOccurrence(value, LocalDate.now(ZONE));
         return itemDto(value);
@@ -198,12 +204,43 @@ public class WorkdayRhythmDashboardService {
     }
 
     /** 成员手动完成或撤销当天项，完成时根据快照截止时间判定是否准时。 */
+    @Transactional
     public WorkdayRhythmDashboardDto.Occurrence setCompleted(String memberId, String id, boolean completed) {
         WorkdayRhythmChecklistOccurrenceEntity value = occurrences.findOwned(id, memberId);
         if (value == null) throw new NotFoundException("今日必做项不存在");
+        if (completed && "COUNTDOWN".equals(value.getItemType())) {
+            throw new BadRequestException("倒计时项目需要计时结束后完成");
+        }
         LocalDateTime now = LocalDateTime.now(ZONE);
         value.setCompletedAt(completed ? now : null);
         value.setCompletedOnTime(completed ? !now.isAfter(dueAt(value)) : null);
+        if (!completed && "COUNTDOWN".equals(value.getItemType())) {
+            value.setTimerStartedAt(null); value.setTimerElapsedSeconds(0);
+        }
+        value.setUpdatedAt(now); occurrences.updateById(value);
+        return occurrenceDto(value, now);
+    }
+
+    /** 开始、暂停或重置倒计时，状态按成员和每日实例持久化。 */
+    @Transactional
+    public WorkdayRhythmDashboardDto.Occurrence updateTimer(String memberId, String id, String action) {
+        WorkdayRhythmChecklistOccurrenceEntity value = occurrences.lockOwned(id, memberId);
+        if (value == null) throw new NotFoundException("今日必做项不存在");
+        if (!"COUNTDOWN".equals(value.getItemType())) throw new BadRequestException("这个项目不是倒计时类型");
+        LocalDateTime now = LocalDateTime.now(ZONE);
+        refreshCountdown(value, now);
+        String normalized = trim(action).toUpperCase(java.util.Locale.ROOT);
+        if ("RESET".equals(normalized)) {
+            value.setTimerStartedAt(null); value.setTimerElapsedSeconds(0);
+            value.setCompletedAt(null); value.setCompletedOnTime(null);
+        } else if ("START".equals(normalized)) {
+            if (value.getCompletedAt() == null && value.getTimerStartedAt() == null) value.setTimerStartedAt(now);
+        } else if ("PAUSE".equals(normalized)) {
+            pauseTimer(value, now);
+        } else {
+            throw new BadRequestException("倒计时操作只支持 START、PAUSE 或 RESET");
+        }
+        refreshCountdown(value, now);
         value.setUpdatedAt(now); occurrences.updateById(value);
         return occurrenceDto(value, now);
     }
@@ -300,6 +337,7 @@ public class WorkdayRhythmDashboardService {
         LocalDateTime now = LocalDateTime.now(ZONE); WorkdayRhythmChecklistItemEntity value = new WorkdayRhythmChecklistItemEntity();
         value.setId(id("wri")); value.setMemberId(memberId); value.setKind(kind); value.setSystemKey(kind);
         value.setCategory("WORK"); value.setTitle(title); value.setScheduleType("WORKDAY"); value.setWeekdaysJson("[]");
+        value.setItemType("CHECK"); value.setDurationSeconds(null);
         value.setStartTime(start); value.setDueTime(due); value.setDueNextDay(nextDay); value.setActive(true); value.setOrd(order);
         value.setNotifyDirect(false); value.setNotifyChat(false); value.setNotifyWebhook(false);
         value.setReminderTime(null); value.setReminderNextDay(false); value.setCreatedAt(now); value.setUpdatedAt(now);
@@ -351,6 +389,8 @@ public class WorkdayRhythmDashboardService {
         return Objects.equals(item.getKind(), occurrence.getKind())
                 && Objects.equals(item.getCategory(), occurrence.getCategory())
                 && Objects.equals(item.getTitle(), occurrence.getTitle())
+                && Objects.equals(item.getItemType(), occurrence.getItemType())
+                && Objects.equals(item.getDurationSeconds(), occurrence.getDurationSeconds())
                 && Objects.equals(item.getStartTime(), occurrence.getStartTime())
                 && Objects.equals(item.getDueTime(), occurrence.getDueTime())
                 && Objects.equals(item.getDueNextDay(), occurrence.getDueNextDay())
@@ -440,7 +480,11 @@ public class WorkdayRhythmDashboardService {
     }
 
     private void copySnapshot(WorkdayRhythmChecklistItemEntity from, WorkdayRhythmChecklistOccurrenceEntity to) {
+        boolean timerDefinitionChanged = !Objects.equals(itemType(from), itemType(to))
+                || !Objects.equals(from.getDurationSeconds(), to.getDurationSeconds());
         to.setKind(from.getKind()); to.setCategory(from.getCategory()); to.setTitle(from.getTitle());
+        to.setItemType(from.getItemType()); to.setDurationSeconds(from.getDurationSeconds());
+        if (timerDefinitionChanged) { to.setTimerStartedAt(null); to.setTimerElapsedSeconds(0); }
         to.setStartTime(from.getStartTime()); to.setDueTime(from.getDueTime()); to.setDueNextDay(from.getDueNextDay());
         to.setReminderTime(from.getReminderTime()); to.setReminderNextDay(from.getReminderNextDay());
         to.setNotifyDirect(from.getNotifyDirect()); to.setNotifyChat(from.getNotifyChat()); to.setChatId(from.getChatId());
@@ -451,6 +495,15 @@ public class WorkdayRhythmDashboardService {
     private void apply(WorkdayRhythmChecklistItemEntity value, SaveWorkdayRhythmChecklistItemRequest request) {
         String title = trim(request.title()); if (!StringUtils.hasText(title) || title.length() > 80) throw new BadRequestException("清单名称必填且最多 80 字");
         if (!CATEGORIES.contains(request.category())) throw new BadRequestException("请选择工作或生活分类");
+        String itemType = StringUtils.hasText(request.itemType()) ? request.itemType() : "CHECK";
+        if (!ITEM_TYPES.contains(itemType)) throw new BadRequestException("请选择普通打卡或倒计时类型");
+        Integer durationSeconds = null;
+        if ("COUNTDOWN".equals(itemType)) {
+            if (request.durationMinutes() == null || request.durationMinutes() < 1 || request.durationMinutes() > 1440) {
+                throw new BadRequestException("倒计时时长需要在 1 到 1440 分钟之间");
+            }
+            durationSeconds = request.durationMinutes() * 60;
+        }
         if (!SCHEDULES.contains(request.scheduleType())) throw new BadRequestException("清单适用日规则不正确");
         List<Integer> weekdays = request.weekdays() == null ? List.of() : request.weekdays().stream().distinct().sorted().toList();
         if ("WEEKDAYS".equals(request.scheduleType()) && (weekdays.isEmpty() || weekdays.stream().anyMatch(day -> day < 1 || day > 7))) throw new BadRequestException("请至少选择一个适用星期");
@@ -460,7 +513,8 @@ public class WorkdayRhythmDashboardService {
         if (anyNotify && reminder == null) throw new BadRequestException("开启外部提醒后请选择提醒时间");
         if (request.notifyChat() && !StringUtils.hasText(request.chatId())) throw new BadRequestException("请选择飞书群聊");
         if (request.notifyWebhook() && !StringUtils.hasText(request.webhookId())) throw new BadRequestException("请选择 Webhook 配置");
-        value.setCategory(request.category()); value.setTitle(title); value.setScheduleType(request.scheduleType());
+        value.setCategory(request.category()); value.setTitle(title); value.setItemType(itemType);
+        value.setDurationSeconds(durationSeconds); value.setScheduleType(request.scheduleType());
         value.setWeekdaysJson(write(weekdays)); value.setStartTime(start); value.setDueTime(due); value.setDueNextDay(request.dueNextDay());
         value.setActive(request.active()); value.setOrd(Math.max(0, Math.min(request.order(), 999)));
         value.setNotifyDirect(request.notifyDirect()); value.setNotifyChat(request.notifyChat()); value.setChatId(blank(request.chatId())); value.setChatName(blank(request.chatName()));
@@ -469,16 +523,20 @@ public class WorkdayRhythmDashboardService {
     }
 
     private WorkdayRhythmDashboardDto.Occurrence occurrenceDto(WorkdayRhythmChecklistOccurrenceEntity value, LocalDateTime now) {
+        int remaining = timerRemaining(value, now);
         String status = value.getCompletedAt() != null ? (Boolean.TRUE.equals(value.getCompletedOnTime()) ? "ON_TIME" : "COMPLETED_LATE")
                 : now.isAfter(dueAt(value)) ? "LATE" : now.isBefore(startAt(value)) ? "UPCOMING" : "DUE";
         return new WorkdayRhythmDashboardDto.Occurrence(value.getId(), value.getItemId(), value.getOccurrenceDate(),
-                value.getKind(), value.getCategory(), value.getTitle(), minute(value.getStartTime()), minute(value.getDueTime()),
+                value.getKind(), value.getCategory(), value.getTitle(), itemType(value), value.getDurationSeconds(),
+                "COUNTDOWN".equals(itemType(value)) ? remaining : null, value.getTimerStartedAt() != null,
+                minute(value.getStartTime()), minute(value.getDueTime()),
                 Boolean.TRUE.equals(value.getDueNextDay()), value.getCompletedAt() == null ? null : value.getCompletedAt().toString(),
                 value.getCompletedOnTime(), status);
     }
 
     private WorkdayRhythmChecklistItemDto itemDto(WorkdayRhythmChecklistItemEntity value) {
         return new WorkdayRhythmChecklistItemDto(value.getId(), value.getKind(), value.getCategory(), value.getTitle(),
+                itemType(value), value.getDurationSeconds() == null ? null : value.getDurationSeconds() / 60,
                 value.getScheduleType(), weekdays(value.getWeekdaysJson()), minute(value.getStartTime()), minute(value.getDueTime()),
                 Boolean.TRUE.equals(value.getDueNextDay()), Boolean.TRUE.equals(value.getActive()), value.getOrd() == null ? 0 : value.getOrd(),
                 Boolean.TRUE.equals(value.getNotifyDirect()), Boolean.TRUE.equals(value.getNotifyChat()), value.getChatId(), value.getChatName(),
@@ -535,6 +593,26 @@ public class WorkdayRhythmDashboardService {
     private String minute(LocalTime value) { return value == null ? null : value.toString().substring(0, 5); }
     private String trim(String value) { return value == null ? "" : value.trim(); }
     private String blank(String value) { String result = trim(value); return result.isEmpty() ? null : result; }
+    private String itemType(WorkdayRhythmChecklistItemEntity value) { return StringUtils.hasText(value.getItemType()) ? value.getItemType() : "CHECK"; }
+    private String itemType(WorkdayRhythmChecklistOccurrenceEntity value) { return StringUtils.hasText(value.getItemType()) ? value.getItemType() : "CHECK"; }
+    private int timerRemaining(WorkdayRhythmChecklistOccurrenceEntity value, LocalDateTime now) {
+        int duration = value.getDurationSeconds() == null ? 0 : value.getDurationSeconds();
+        int elapsed = value.getTimerElapsedSeconds() == null ? 0 : value.getTimerElapsedSeconds();
+        if (value.getTimerStartedAt() != null) elapsed += Math.max(0, (int) ChronoUnit.SECONDS.between(value.getTimerStartedAt(), now));
+        return Math.max(0, duration - elapsed);
+    }
+    private void pauseTimer(WorkdayRhythmChecklistOccurrenceEntity value, LocalDateTime now) {
+        if (value.getTimerStartedAt() == null) return;
+        int elapsed = value.getTimerElapsedSeconds() == null ? 0 : value.getTimerElapsedSeconds();
+        elapsed += Math.max(0, (int) ChronoUnit.SECONDS.between(value.getTimerStartedAt(), now));
+        value.setTimerElapsedSeconds(Math.min(elapsed, value.getDurationSeconds()));
+        value.setTimerStartedAt(null);
+    }
+    private void refreshCountdown(WorkdayRhythmChecklistOccurrenceEntity value, LocalDateTime now) {
+        if (!"COUNTDOWN".equals(itemType(value)) || value.getCompletedAt() != null || timerRemaining(value, now) > 0) return;
+        pauseTimer(value, now); value.setCompletedAt(now); value.setCompletedOnTime(!now.isAfter(dueAt(value)));
+        value.setUpdatedAt(now); occurrences.updateById(value);
+    }
     private String id(String prefix) { return prefix + UUID.randomUUID().toString().replace("-", "").substring(0, 32 - prefix.length()); }
     private record Workday(boolean active, Boolean override, String label) { }
 }

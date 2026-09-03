@@ -14,6 +14,7 @@ import cn.wayuwa.wao.domain.WorkdayRhythmChecklistItemEntity;
 import cn.wayuwa.wao.domain.WorkdayRhythmChecklistOccurrenceEntity;
 import cn.wayuwa.wao.domain.WorkdayRhythmSettingEntity;
 import cn.wayuwa.wao.dto.SaveWorkdayRhythmFocusRequest;
+import cn.wayuwa.wao.dto.SaveWorkdayRhythmChecklistItemRequest;
 import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import cn.wayuwa.wao.mapper.WorkdayRhythmChecklistItemMapper;
@@ -25,6 +26,7 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,6 +62,7 @@ class WorkdayRhythmDashboardServiceTest {
         plan.setReminderNextDay(false); plan.setActive(true); plan.setOrd(10);
         plan.setNotifyDirect(false); plan.setNotifyChat(false); plan.setNotifyWebhook(false);
         when(items.selectList(any(Wrapper.class))).thenReturn(List.of(plan));
+        when(items.findOwned("plan", "m1")).thenReturn(plan);
 
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
         planOccurrence = new WorkdayRhythmChecklistOccurrenceEntity(); planOccurrence.setId("occ-plan");
@@ -72,6 +75,7 @@ class WorkdayRhythmDashboardServiceTest {
         when(occurrences.selectOne(any(Wrapper.class))).thenReturn(planOccurrence);
         when(occurrences.selectList(any(Wrapper.class))).thenReturn(List.of(planOccurrence));
         when(deliveries.selectCount(any(Wrapper.class))).thenReturn(0L);
+        when(occurrences.lockOwned("occ-plan", "m1")).thenReturn(planOccurrence);
     }
 
     @Test
@@ -118,5 +122,36 @@ class WorkdayRhythmDashboardServiceTest {
         verify(occurrences, never()).selectOne(any(Wrapper.class));
         verify(deliveries, never()).selectCount(any(Wrapper.class));
         verify(occurrences, never()).updateById(any(WorkdayRhythmChecklistOccurrenceEntity.class));
+    }
+
+    @Test
+    void countdownCompletionUsesPersistedServerElapsedTime() {
+        planOccurrence.setItemType("COUNTDOWN");
+        planOccurrence.setDurationSeconds(20 * 60);
+        planOccurrence.setTimerElapsedSeconds(0);
+        planOccurrence.setTimerStartedAt(LocalDateTime.now(ZoneId.of("Asia/Shanghai")).minusMinutes(21));
+
+        var result = service.updateTimer("m1", "occ-plan", "PAUSE");
+
+        assertThat(result.completedAt()).isNotNull();
+        assertThat(result.timerRemainingSeconds()).isZero();
+        assertThat(result.timerRunning()).isFalse();
+        verify(occurrences, atLeastOnce()).updateById(planOccurrence);
+    }
+
+    @Test
+    void countdownTemplatePersistsFixedDurationInSeconds() {
+        var request = new SaveWorkdayRhythmChecklistItemRequest("LIFE", "晚间复盘", "COUNTDOWN", 20,
+                "DAILY", List.of(), "21:00", "23:00", false, true, 50,
+                false, false, null, null, false, null, null, null, false);
+
+        var result = service.createItem("m1", request);
+
+        ArgumentCaptor<WorkdayRhythmChecklistItemEntity> saved =
+                ArgumentCaptor.forClass(WorkdayRhythmChecklistItemEntity.class);
+        verify(items).insert(saved.capture());
+        assertThat(saved.getValue().getItemType()).isEqualTo("COUNTDOWN");
+        assertThat(saved.getValue().getDurationSeconds()).isEqualTo(1200);
+        assertThat(result.durationMinutes()).isEqualTo(20);
     }
 }

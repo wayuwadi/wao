@@ -15,6 +15,7 @@ import cn.wayuwa.wao.dto.WorkdayRhythmCompletionRequest;
 import cn.wayuwa.wao.dto.WorkdayRhythmDashboardDto;
 import cn.wayuwa.wao.dto.WorkdayRhythmHistoryDto;
 import cn.wayuwa.wao.dto.WorkdayRhythmStatusRequest;
+import cn.wayuwa.wao.dto.WorkdayRhythmTimerRequest;
 import cn.wayuwa.wao.service.WorkdayRhythmDashboardService;
 import cn.wayuwa.wao.service.WorkdayRhythmHistoryService;
 import cn.wayuwa.wao.service.WorkdayRhythmNotificationService;
@@ -115,6 +116,12 @@ public class WorkdayRhythmController {
     public ApiResponse<WorkdayRhythmDashboardDto.Occurrence> completion(@PathVariable String id,
             @RequestBody WorkdayRhythmCompletionRequest request, HttpServletRequest http) {
         return ApiResponse.ok(dashboard.setCompleted(member(http), id, request.completed()));
+    }
+
+    @PutMapping("/occurrences/{id}/timer")
+    public ApiResponse<WorkdayRhythmDashboardDto.Occurrence> timer(@PathVariable String id,
+            @RequestBody WorkdayRhythmTimerRequest request, HttpServletRequest http) {
+        return ApiResponse.ok(dashboard.updateTimer(member(http), id, request.action()));
     }
 
     @PutMapping("/days/{date}/document")

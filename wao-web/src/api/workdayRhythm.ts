@@ -114,6 +114,7 @@ export async function sendFocusNotification(date: string): Promise<EnergyNotific
 export type RhythmChecklistStatus = 'UPCOMING' | 'DUE' | 'LATE' | 'ON_TIME' | 'COMPLETED_LATE'
 export type RhythmChecklistKind = 'PLAN' | 'CLOCK_IN' | 'CLOCK_OUT' | 'TIANREN' | 'CUSTOM'
 export type RhythmScheduleType = 'DAILY' | 'WORKDAY' | 'WEEKDAYS'
+export type RhythmChecklistItemType = 'CHECK' | 'COUNTDOWN'
 
 export interface RhythmSettings {
   followAlternateWeek: boolean
@@ -130,6 +131,8 @@ export interface RhythmChecklistItem {
   kind: RhythmChecklistKind
   category: 'WORK' | 'LIFE'
   title: string
+  itemType: RhythmChecklistItemType
+  durationMinutes: number | null
   scheduleType: RhythmScheduleType
   weekdays: number[]
   startTime: string
@@ -155,6 +158,10 @@ export interface RhythmOccurrence {
   kind: RhythmChecklistKind
   category: 'WORK' | 'LIFE'
   title: string
+  itemType: RhythmChecklistItemType
+  durationSeconds: number | null
+  timerRemainingSeconds: number | null
+  timerRunning: boolean
   startTime: string
   dueTime: string
   dueNextDay: boolean
@@ -210,6 +217,10 @@ export const saveRhythmFocus = (date: string, focus: string[]) =>
 export const setRhythmOccurrenceCompleted = (id: string, completed: boolean) =>
   responseData<RhythmOccurrence>(
     http.put(`/api/workday-rhythm/occurrences/${id}/completion`, { completed }),
+  )
+export const updateRhythmTimer = (id: string, action: 'START' | 'PAUSE' | 'RESET') =>
+  responseData<RhythmOccurrence>(
+    http.put(`/api/workday-rhythm/occurrences/${id}/timer`, { action }),
   )
 export const createRhythmDocument = (date: string, title: string, blocks: DocBlock[]) =>
   responseData<Doc>(http.put(`/api/workday-rhythm/days/${date}/document`, { title, blocks }))

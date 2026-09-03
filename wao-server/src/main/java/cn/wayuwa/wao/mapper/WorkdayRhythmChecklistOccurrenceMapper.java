@@ -7,4 +7,6 @@ import org.apache.ibatis.annotations.Select;
 @Mapper public interface WorkdayRhythmChecklistOccurrenceMapper extends BaseMapper<WorkdayRhythmChecklistOccurrenceEntity> {
     @Select("SELECT * FROM workday_rhythm_checklist_occurrence WHERE id=#{id} AND member_id=#{memberId}")
     WorkdayRhythmChecklistOccurrenceEntity findOwned(@Param("id") String id, @Param("memberId") String memberId);
+    @Select("SELECT * FROM workday_rhythm_checklist_occurrence WHERE id=#{id} AND member_id=#{memberId} FOR UPDATE")
+    WorkdayRhythmChecklistOccurrenceEntity lockOwned(@Param("id") String id, @Param("memberId") String memberId);
 }

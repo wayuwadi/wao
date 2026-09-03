@@ -6,12 +6,14 @@ import {
   fetchRhythmDashboard,
   setRhythmOccurrenceCompleted,
   setRhythmWorkdayStatus,
+  updateRhythmTimer,
 } from '@/api/workdayRhythm'
 
 vi.mock('@/api/workdayRhythm', () => ({
   fetchRhythmDashboard: vi.fn<typeof fetchRhythmDashboard>(),
   setRhythmOccurrenceCompleted: vi.fn<typeof setRhythmOccurrenceCompleted>(),
   setRhythmWorkdayStatus: vi.fn<typeof setRhythmWorkdayStatus>(),
+  updateRhythmTimer: vi.fn<typeof updateRhythmTimer>(),
 }))
 
 const dashboard = {
@@ -29,6 +31,10 @@ const dashboard = {
       kind: 'PLAN',
       category: 'WORK',
       title: '制定今日计划',
+      itemType: 'CHECK',
+      durationSeconds: null,
+      timerRemainingSeconds: null,
+      timerRunning: false,
       startTime: '07:00',
       dueTime: '09:00',
       dueNextDay: false,
@@ -43,6 +49,10 @@ const dashboard = {
       kind: 'CLOCK_OUT',
       category: 'WORK',
       title: '下班打卡',
+      itemType: 'CHECK',
+      durationSeconds: null,
+      timerRemainingSeconds: null,
+      timerRunning: false,
       startTime: '18:00',
       dueTime: '07:00',
       dueNextDay: true,
@@ -114,11 +124,45 @@ describe('WorkdayRhythmDailyPanel', () => {
     expect(wrapper.text()).toContain('大周 · 周日上班')
     expect(wrapper.text()).toContain('2026-08-22 的跨日事项')
     expect(wrapper.text()).toContain('已逾期')
-    await wrapper.findAll('.check-row')[0]!.trigger('click')
+    await wrapper.findAll('.check-toggle')[0]!.trigger('click')
     await flushPromises()
     expect(setRhythmOccurrenceCompleted).toHaveBeenCalledWith('plan', true)
     expect(wrapper.find('.completion').exists()).toBe(false)
     expect(wrapper.findAll('.check-row')[0]!.text()).toContain('准时完成')
+  })
+
+  it('展示服务端倒计时状态并支持开始与重置', async () => {
+    const countdown = {
+      ...dashboard.checklist[0],
+      id: 'review',
+      itemId: 'review-template',
+      kind: 'CUSTOM',
+      category: 'LIFE',
+      title: '晚间复盘',
+      itemType: 'COUNTDOWN',
+      durationSeconds: 1200,
+      timerRemainingSeconds: 1200,
+      timerRunning: false,
+    } as const
+    vi.mocked(fetchRhythmDashboard).mockResolvedValue({
+      ...structuredClone(dashboard),
+      checklist: [countdown],
+      totalCount: 1,
+    } as never)
+    vi.mocked(updateRhythmTimer).mockResolvedValue({
+      ...countdown,
+      timerRunning: true,
+    } as never)
+
+    const wrapper = await mountPanel()
+    await flushPromises()
+    expect(wrapper.text()).toContain('20:00')
+    expect(wrapper.get('.timer-controls button').text()).toContain('开始')
+
+    await wrapper.get('.timer-controls button').trigger('click')
+    await flushPromises()
+    expect(updateRhythmTimer).toHaveBeenCalledWith('review', 'START')
+    expect(wrapper.text()).toContain('暂停')
   })
 
   it('不再加载或展示每日工作记录', async () => {

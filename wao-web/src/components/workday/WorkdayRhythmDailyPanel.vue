@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   fetchRhythmDashboard,
   setRhythmOccurrenceCompleted,
   setRhythmWorkdayStatus,
+  updateRhythmTimer,
   type RhythmDashboard,
   type RhythmOccurrence,
 } from '@/api/workdayRhythm'
@@ -15,6 +16,10 @@ const dashboard = ref<RhythmDashboard | null>(null)
 const loading = ref(true)
 const error = ref('')
 const toggling = ref('')
+const timerTick = ref(0)
+const timerAnchors = new Map<string, { remaining: number; receivedAt: number }>()
+const timerFinishFailed = new Set<string>()
+let timerInterval: ReturnType<typeof setInterval> | null = null
 
 function statusText(item: RhythmOccurrence) {
   if (item.status === 'ON_TIME') return '准时完成'
@@ -30,6 +35,7 @@ async function load() {
   try {
     const result = await fetchRhythmDashboard(props.date)
     dashboard.value = result
+    result.checklist.forEach(anchorTimer)
     emit('loaded', result)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '每日面板暂时无法读取'
@@ -38,18 +44,75 @@ async function load() {
   }
 }
 
+function anchorTimer(item: RhythmOccurrence) {
+  if (item.timerRemainingSeconds === null) return
+  timerAnchors.set(item.id, { remaining: item.timerRemainingSeconds, receivedAt: Date.now() })
+}
+
+function remainingSeconds(item: RhythmOccurrence) {
+  timerTick.value
+  const anchor = timerAnchors.get(item.id)
+  if (!anchor) return item.timerRemainingSeconds ?? 0
+  if (!item.timerRunning) return anchor.remaining
+  return Math.max(0, anchor.remaining - Math.floor((Date.now() - anchor.receivedAt) / 1000))
+}
+
+function timerText(item: RhythmOccurrence) {
+  const total = remainingSeconds(item)
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+function replaceOccurrence(saved: RhythmOccurrence) {
+  const index = dashboard.value?.checklist.findIndex((entry) => entry.id === saved.id) ?? -1
+  if (!dashboard.value || index < 0) return
+  dashboard.value.checklist[index] = saved
+  dashboard.value.completedCount = dashboard.value.checklist.filter(
+    (entry) => entry.completedAt,
+  ).length
+  anchorTimer(saved)
+}
+
+async function timerAction(
+  item: RhythmOccurrence,
+  action: 'START' | 'PAUSE' | 'RESET',
+  finished = false,
+) {
+  if (toggling.value) return
+  if (!finished) timerFinishFailed.delete(item.id)
+  toggling.value = item.id
+  try {
+    const saved = await updateRhythmTimer(item.id, action)
+    timerFinishFailed.delete(item.id)
+    replaceOccurrence(saved)
+    if (saved.completedAt) {
+      toast(`${saved.title}倒计时结束，今天的仪式完成了`, 'ri-timer-flash-line')
+    } else if (!finished) {
+      toast(
+        action === 'START'
+          ? `已开始${saved.title}`
+          : action === 'PAUSE'
+            ? `已暂停${saved.title}`
+            : `已重置${saved.title}`,
+        action === 'START' ? 'ri-play-line' : 'ri-check-line',
+      )
+    }
+  } catch (cause) {
+    if (finished) timerFinishFailed.add(item.id)
+    toast(
+      cause instanceof Error ? cause.message : '倒计时状态保存失败，请重试',
+      'ri-error-warning-line',
+    )
+  } finally {
+    toggling.value = ''
+  }
+}
+
 async function toggle(item: RhythmOccurrence) {
   if (toggling.value) return
   toggling.value = item.id
   try {
     const saved = await setRhythmOccurrenceCompleted(item.id, !item.completedAt)
-    const index = dashboard.value?.checklist.findIndex((entry) => entry.id === item.id) ?? -1
-    if (dashboard.value && index >= 0) {
-      dashboard.value.checklist[index] = saved
-      dashboard.value.completedCount = dashboard.value.checklist.filter(
-        (entry) => entry.completedAt,
-      ).length
-    }
+    replaceOccurrence(saved)
     toast(saved.completedAt ? `${saved.title}已完成` : `已撤销${saved.title}`, 'ri-check-line')
   } catch (cause) {
     toast(cause instanceof Error ? cause.message : '清单状态保存失败', 'ri-error-warning-line')
@@ -75,7 +138,26 @@ watch(
   () => [props.date, props.reloadKey],
   () => void load(),
 )
-onMounted(load)
+onMounted(() => {
+  void load()
+  timerInterval = setInterval(() => {
+    timerTick.value += 1
+    dashboard.value?.checklist.forEach((item) => {
+      if (
+        item.itemType === 'COUNTDOWN' &&
+        item.timerRunning &&
+        !item.completedAt &&
+        remainingSeconds(item) === 0 &&
+        !timerFinishFailed.has(item.id)
+      ) {
+        void timerAction(item, 'PAUSE', true)
+      }
+    })
+  }, 250)
+})
+onBeforeUnmount(() => {
+  if (timerInterval) clearInterval(timerInterval)
+})
 </script>
 
 <template>
@@ -109,31 +191,66 @@ onMounted(load)
           <i class="ri-checkbox-circle-line"></i>今天没有适用的必做项
         </div>
         <div v-else class="checklist-list">
-          <button
+          <article
             v-for="item in dashboard.checklist"
             :key="item.id"
             class="check-row"
             :class="[item.status.toLowerCase(), { done: item.completedAt }]"
-            :disabled="toggling === item.id"
-            @click="toggle(item)"
           >
-            <i
-              :class="
-                item.completedAt ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'
-              "
-            ></i
-            ><span
-              ><b>{{ item.title }}</b
-              ><small
-                >· {{ statusText(item)
+            <button
+              v-if="item.itemType !== 'COUNTDOWN'"
+              class="check-toggle"
+              type="button"
+              :disabled="toggling === item.id"
+              :aria-label="item.completedAt ? `撤销${item.title}` : `完成${item.title}`"
+              @click="toggle(item)"
+            >
+              <i
+                :class="
+                  item.completedAt ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'
+                "
+              ></i>
+            </button>
+            <i v-else class="ri-timer-line timer-icon"></i>
+            <span>
+              <b>{{ item.title }}</b>
+              <small>
+                · {{ statusText(item)
                 }}<em v-if="item.occurrenceDate !== date">
                   · {{ item.occurrenceDate }} 的跨日事项</em
-                ></small
-              ></span
-            ><strong>{{
+                >
+              </small>
+            </span>
+            <strong v-if="item.itemType !== 'COUNTDOWN'">{{
               item.kind === 'PLAN' ? '自动联动' : item.completedAt ? '撤销' : '完成'
             }}</strong>
-          </button>
+            <div v-else class="timer-controls" :aria-label="`${item.title}倒计时`">
+              <b class="timer-value" aria-live="polite">{{ timerText(item) }}</b>
+              <button
+                v-if="!item.completedAt"
+                type="button"
+                :disabled="toggling === item.id"
+                @click="timerAction(item, item.timerRunning ? 'PAUSE' : 'START')"
+              >
+                <i :class="item.timerRunning ? 'ri-pause-line' : 'ri-play-line'"></i
+                >{{
+                  item.timerRunning
+                    ? '暂停'
+                    : remainingSeconds(item) < (item.durationSeconds ?? 0)
+                      ? '继续'
+                      : '开始'
+                }}
+              </button>
+              <button
+                v-if="remainingSeconds(item) < (item.durationSeconds ?? 0)"
+                type="button"
+                :disabled="toggling === item.id"
+                @click="timerAction(item, 'RESET')"
+              >
+                <i class="ri-restart-line"></i>重置
+              </button>
+            </div>
+          </article>
         </div>
       </article>
     </template>
@@ -217,8 +334,8 @@ onMounted(load)
   background: var(--wao-bg-page);
   color: inherit;
   text-align: left;
-  cursor: pointer;
 }
+.check-toggle,
 .check-row > i {
   width: 33px;
   height: 33px;
@@ -228,6 +345,13 @@ onMounted(load)
   place-items: center;
   font-size: 17px;
   color: #267c65;
+}
+.check-toggle {
+  border: 0;
+  cursor: pointer;
+}
+.timer-icon {
+  box-sizing: border-box;
 }
 .check-row span {
   min-width: 0;
@@ -255,6 +379,32 @@ onMounted(load)
 .check-row strong {
   font-size: 9.5px;
   color: #267c65;
+}
+.timer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.timer-controls .timer-value {
+  min-width: 48px;
+  color: var(--wao-primary);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.timer-controls button {
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-primary);
+  cursor: pointer;
+  font-size: 9px;
+}
+.timer-controls button i {
+  margin-right: 3px;
 }
 .check-row.late {
   border-color: color-mix(in srgb, var(--wao-danger) 42%, var(--wao-line));
@@ -290,7 +440,12 @@ onMounted(load)
     padding: 14px;
   }
   .check-row {
-    grid-template-columns: 33px minmax(0, 1fr) auto;
+    grid-template-columns: 33px minmax(0, 1fr);
+  }
+  .check-row > strong,
+  .timer-controls {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 </style>
