@@ -1890,11 +1890,15 @@ function onDropGroup(groupId: string, overId?: string) {
 }
 .board-cards {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 8px;
 }
 .board-card {
   position: relative;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 10px;
@@ -1909,8 +1913,10 @@ function onDropGroup(groupId: string, overId?: string) {
   box-shadow: 0 2px 8px rgba(16, 18, 28, 0.06);
 }
 .bc-title {
+  min-width: 0;
   font-size: 13px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 .bc-foot {
   margin-top: 8px;

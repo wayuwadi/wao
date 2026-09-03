@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
+import projectDetailSource from '@/views/ProjectDetailView.vue?raw'
 
 vi.mock('@/api/ai', () => ({ createAiRuns: vi.fn<() => Promise<never[]>>().mockResolvedValue([]) }))
 
@@ -64,5 +65,22 @@ describe('项目页聚焦任务', () => {
     expect(restored.get('.delivery-filter-button.on').text()).toContain('待验收')
     expect(restored.findAll('.board-col')).toHaveLength(1)
     restored.unmount()
+  })
+
+  it('项目看板卡片中的连续长文本不会撑出状态列', async () => {
+    const data = useDataStore()
+    const task = data.tasksByProject('p1')[0]!
+    task.title = `https://example.com/${'continuous-segment-'.repeat(30)}`
+    await router.push('/projects/p1?view=board')
+    await router.isReady()
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+
+    const card = wrapper.findAll('.board-card').find((item) => item.text().includes(task.title))!
+    const title = card.get('.bc-title')
+    expect(title.text()).toBe(task.title)
+    expect(projectDetailSource).toMatch(/\.board-card\s*{[^}]*max-width:\s*100%/s)
+    expect(projectDetailSource).toMatch(/\.bc-title\s*{[^}]*overflow-wrap:\s*anywhere/s)
+    wrapper.unmount()
   })
 })
