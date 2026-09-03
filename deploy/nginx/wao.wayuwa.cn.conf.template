@@ -237,6 +237,16 @@ server {
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
+    # Amer 风险管理演示是随主站制品发布的独立静态页面；精确前缀避免落入 WAO SPA。
+    location = /amer_demo_1 {
+        return 308 /amer_demo_1/;
+    }
+
+    location ^~ /amer_demo_1/ {
+        try_files $uri $uri/ =404;
+        add_header Cache-Control "no-cache";
+    }
+
     # 旧游戏入口收敛到 WAO 原生游戏厅；无真实接口的 Insight 明确退役。
     location = /game {
         return 308 /games;
