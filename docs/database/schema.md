@@ -184,6 +184,7 @@ erDiagram
 | ord | INT | 展示顺序 |
 | deleted_at / deleted_by | DATETIME / VARCHAR(32) NULL | 回收站：删除时间与删除人 |
 | cascade_del | TINYINT(1) | 1 = 随父级一起被删，恢复父级时一并恢复 |
+| archived_at / archived_by | DATETIME / VARCHAR(32) NULL（V138） | 文档归档时间与操作人；归档长期保留、退出日常列表，取消归档时清空 |
 | auto_sync_scope | VARCHAR(128) NULL（V77） | 自动归档稳定来源；飞书群聊写 `chat_id`，普通文档和 migration 未匹配的旧自动文档为空 |
 | auto_sync_date | DATE NULL（V77） | 自动归档对应的上海自然日；与 scope 一起区分不同群的同日文档 |
 | auto_sync_version | BIGINT NULL（V77） | 数据库签发的飞书自动归档抓取版本；普通文档为空，只有更大版本能 CAS 覆盖自动归档正文 |
@@ -1083,6 +1084,7 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
   MySQL 9.7 把 `CHAR(10)` 视为 binary 后拒绝 `REGEXP_REPLACE`；提取前清除段落标签产生的开头换行，
   保证首段不是空字符串。
 - `V132__feishu_text_polish_bot.sql`：按飞书原消息持久化成员润色、AI、Webhook 交付与历史收口状态（见 ADR-191）。
+- `V138__knowledge_document_archive.sql`：为知识库文档增加独立、可恢复的长期归档状态及知识库归档查询索引。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.7.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

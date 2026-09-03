@@ -280,7 +280,10 @@ const linkTasks = computed(() =>
   }),
 )
 const linkedDocs = computed(() =>
-  (task.value?.docs ?? []).map((id) => ({ id, title: data.docById(id)?.title ?? '' })),
+  (task.value?.docs ?? []).flatMap((id) => {
+    const document = data.docById(id)
+    return document && !data.isDocArchived(id) ? [{ id, title: document.title }] : []
+  }),
 )
 const manualHostedPages = computed(() => data.hostedPages.filter((page) =>
   (page.sourceType ?? (page.id.startsWith('run-report-') ? 'AI_RUN_REPORT' : 'MANUAL_UPLOAD')) === 'MANUAL_UPLOAD'))
@@ -288,7 +291,7 @@ const linkedHostedPages = computed(() => (task.value?.hostedPages ?? []).map((id
   const page = data.hostedPages.find((item) => item.id === id)
   return { id, title: page?.title ?? 'HTML 已删除或暂不可见', url: page?.url ?? null }
 }))
-const relationDocs = computed(() => Object.values(data.docs).map((doc) => {
+const relationDocs = computed(() => Object.values(data.docs).filter((doc) => !data.isDocArchived(doc.id)).map((doc) => {
   const kb = data.kbs.find((item) => item.id === doc.kbId || item.folders.some((folder) => folder.docs.includes(doc.id)))
   return { id: doc.id, title: doc.title, kbName: kb?.name ?? '知识文档', createdAt: doc.created }
 }))

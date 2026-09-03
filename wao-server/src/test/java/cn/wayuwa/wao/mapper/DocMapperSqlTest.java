@@ -24,7 +24,7 @@ class DocMapperSqlTest {
 
         assertThat(sql).startsWith("UPDATE doc SET folder_id = CASE id")
                 .contains("WHEN ? THEN ? WHEN ? THEN ? END, ord = CASE id")
-                .contains("WHERE kb_id = ? AND deleted_at IS NULL AND id IN ( ? , ? )")
+                .contains("WHERE kb_id = ? AND deleted_at IS NULL AND archived_at IS NULL AND id IN ( ? , ? )")
                 .doesNotContain("blocks_json", "links_json", "auto_sync_version");
         assertThat(bound.getParameterMappings()).hasSize(11);
     }

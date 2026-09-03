@@ -51,6 +51,9 @@ const scrollEl = ref<HTMLElement | null>(null)
 const titleEl = ref<HTMLInputElement | null>(null)
 /** 正在重命名的文件夹 id。 */
 const renamingFolder = ref<string | null>(null)
+const archivedOpen = ref(false)
+const archivedLoading = ref(false)
+const archivedError = ref(false)
 const { peers, setCaretLine, markTyping } = useDocPresence(docId)
 /** 相对时间文案要自己走起来，否则「刚刚」会一直停在打开那一刻。 */
 const now = useNow()
@@ -74,6 +77,20 @@ watch(
 
 const doc = computed(() => (docId.value ? data.docOf(docId.value) : null))
 const base = computed(() => doc.value?.base ?? null)
+const archivedDocs = computed(() => data.archivedDocsOf(kbId.value))
+const currentArchived = computed(() => Boolean(docId.value && data.isDocArchived(docId.value)))
+
+async function loadArchivedDocs() {
+  if (!data.apiLive || archivedLoading.value) return
+  archivedLoading.value = true
+  archivedError.value = false
+  archivedError.value = !(await data.refreshArchivedDocs(kbId.value))
+  archivedLoading.value = false
+  if (docId.value && data.isDocArchived(docId.value)) archivedOpen.value = true
+}
+watch([() => data.apiLive, kbId], ([live]) => {
+  if (live) void loadArchivedDocs()
+}, { immediate: true })
 const author = computed(() => {
   const a = base.value?.author ?? ''
   if (a === 'auto') return { name: '自动化', initial: '自', color: '#B9821F' }
@@ -539,7 +556,8 @@ function commitFolderName(folderId: string, e: Event) {
 async function removeFolder(folderId: string) {
   const folder = kb.value?.folders.find((f) => f.id === folderId)
   if (!folder) return
-  if (!window.confirm(`删除文件夹「${folder.name}」及其中 ${folder.docs.length} 篇文档？删除后会进入回收站，7 天内可恢复。`)) return
+  const archivedCount = archivedDocs.value.filter((item) => item.folderId === folderId).length
+  if (!window.confirm(`删除文件夹「${folder.name}」及其中 ${folder.docs.length + archivedCount} 篇文档（含已归档）？删除后会进入回收站，7 天内可恢复。`)) return
   const gone = folder.docs.includes(docId.value ?? '')
   await data.deleteFolder(kbId.value, folderId)
   if (gone) docId.value = firstDocId()
@@ -555,7 +573,8 @@ async function removeKb() {
   const target = kb.value
   if (!target) return
   const docTotal = target.folders.reduce((total, folder) => total + folder.docs.length, 0)
-  if (!window.confirm(`删除知识库「${target.name}」及其中 ${docTotal} 篇文档？删除后会进入回收站，7 天内可恢复。`)) return
+    + archivedDocs.value.length
+  if (!window.confirm(`删除知识库「${target.name}」及其中 ${docTotal} 篇文档（含已归档）？删除后会进入回收站，7 天内可恢复。`)) return
   const name = target.name
   await data.deleteKb(target.id)
   const next = tabs.close(`kb:${kbId.value}`)
@@ -569,6 +588,26 @@ async function removeDoc(id: string) {
   await data.deleteDoc(id)
   if (docId.value === id) docId.value = firstDocId()
   toast(`已把「${title}」放进回收站，7 天内可恢复`, 'ri-delete-bin-line')
+}
+async function archiveDoc(id: string) {
+  const title = data.docOf(id).title || '未命名文档'
+  if (!window.confirm(`归档文档「${title}」？正文会长期保留，并可随时从“已归档”恢复。`)) return
+  if (await data.archiveDoc(id)) {
+    archivedOpen.value = true
+    toast(`已归档「${title}」`, 'ri-archive-line')
+  } else {
+    toast('文档归档失败，内容和目录未改变，请重试', 'ri-error-warning-line')
+  }
+}
+async function unarchiveDoc(id: string) {
+  const title = data.docOf(id).title || '未命名文档'
+  if (await data.unarchiveDoc(id)) {
+    const folderId = data.docById(id)?.folderId
+    if (folderId) folderOpen[folderId] = true
+    toast(`已把「${title}」恢复到原文件夹`, 'ri-inbox-unarchive-line')
+  } else {
+    toast('取消归档失败，文档仍在归档中，请重试', 'ri-error-warning-line')
+  }
 }
 function tocGo(index: number) {
   const el = scrollEl.value?.querySelectorAll('.doc-body h1, .doc-body h2, .doc-body h3')[index] as HTMLElement | undefined
@@ -718,6 +757,9 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
                 ></i>
                 <span class="doc-node-title">{{ data.docOf(dId).title || '未命名文档' }}</span>
               </button>
+              <button class="row-act" title="归档文档（长期保留）" @click="archiveDoc(dId)">
+                <i class="ri-archive-line"></i>
+              </button>
               <button class="row-act danger" title="删除文档（进回收站）" @click="removeDoc(dId)">
                 <i class="ri-delete-bin-line"></i>
               </button>
@@ -725,6 +767,31 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             <div v-if="!f.docs.length" class="folder-empty" @dragover.prevent @drop="dropDoc(f.id, 0)">还没有文档 —— 点右侧 + 新建，也可把文档拖到这里</div>
           </div>
         </div>
+
+        <section class="archive-tree">
+          <button class="archive-head" @click="archivedOpen = !archivedOpen">
+            <i :class="archivedOpen ? 'ri-arrow-down-s-line' : 'ri-arrow-right-s-line'"></i>
+            <i class="ri-archive-line"></i>
+            <span>已归档</span>
+            <span class="folder-count wao-tabular">{{ archivedDocs.length }}</span>
+          </button>
+          <div v-if="archivedOpen" class="doc-tree archived-list">
+            <div v-if="archivedLoading" class="archive-state"><i class="ri-loader-4-line spin"></i>正在读取归档…</div>
+            <div v-else-if="archivedError" class="archive-state error">归档读取失败<button @click="loadArchivedDocs">重试</button></div>
+            <div v-else-if="!archivedDocs.length" class="archive-state">还没有归档文档</div>
+            <template v-else>
+              <div v-for="item in archivedDocs" :key="item.id" class="doc-row archived-row">
+                <button class="doc-node" :class="{ on: docId === item.id }" @click="selectDoc(item.id)">
+                  <i class="ri-file-text-line doc-node-icon"></i>
+                  <span class="doc-node-title">{{ item.title || '未命名文档' }}</span>
+                </button>
+                <button class="row-act" title="恢复到原文件夹" @click="unarchiveDoc(item.id)">
+                  <i class="ri-inbox-unarchive-line"></i>
+                </button>
+              </div>
+            </template>
+          </div>
+        </section>
       </div>
 
       <div v-if="kb.auto" class="sync-bar">
@@ -745,6 +812,7 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             <i class="ri-arrow-right-s-line b-sep"></i>
             <span class="ellip">{{ doc.title || '未命名文档' }}</span>
             <span v-if="base?.auto" class="tag-auto">自动沉淀</span>
+            <span v-if="currentArchived" class="tag-archived">已归档</span>
             <div class="spacer"></div>
 
             <!-- 协同：只有此刻真的打开着这篇文档的人才会出现 -->
@@ -801,6 +869,14 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
                 </button>
               </div>
             </div>
+            <button
+              v-if="docId"
+              class="icon-act"
+              :title="currentArchived ? '恢复到原文件夹' : '归档文档（长期保留）'"
+              @click="currentArchived ? unarchiveDoc(docId) : archiveDoc(docId)"
+            >
+              <i :class="currentArchived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'"></i>
+            </button>
             <button
               class="icon-act danger"
               title="删除这篇文档（进回收站）"
@@ -1250,6 +1326,31 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   font-size: 11.5px;
   color: var(--wao-text-faint-2);
 }
+.archive-tree {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--wao-divider);
+}
+.archive-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  padding: 6px;
+  color: var(--wao-text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.archive-head:hover { background: var(--wao-bg-tab); }
+.archive-head span:first-of-type { flex: 1; text-align: left; }
+.archive-state { padding: 7px 8px 7px 28px; color: var(--wao-text-faint); font-size: 11.5px; }
+.archive-state.error { color: var(--wao-danger-strong); }
+.archive-state button { margin-left: 5px; border: 0; background: none; color: inherit; text-decoration: underline; cursor: pointer; }
+.archived-row .doc-node { padding-left: 28px; }
 .sync-bar {
   border-top: 1px solid var(--wao-line);
   padding: 10px 12px;
@@ -1319,6 +1420,14 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   font-size: 10.5px;
   background: var(--wao-warning-bg);
   color: var(--wao-warning-strong);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.tag-archived {
+  font-size: 10.5px;
+  color: var(--wao-text-weak);
+  background: var(--wao-bg-sub);
+  border: 1px solid var(--wao-line-control);
   border-radius: 4px;
   padding: 1px 6px;
 }

@@ -95,7 +95,7 @@ public class ProjectActivityService {
         Map<String, List<DocEntity>> docsByProject = kbs.isEmpty() ? Map.of()
                 : docMapper.selectList(new QueryWrapper<DocEntity>()
                         .select("id", "kb_id", "title", "author_id", "created_at")
-                        .in("kb_id", kbToProject.keySet()).isNull("deleted_at"))
+                        .in("kb_id", kbToProject.keySet()).isNull("deleted_at").isNull("archived_at"))
                         .stream().collect(Collectors.groupingBy(d -> kbToProject.get(d.getKbId())));
 
         Map<String, List<Activity>> out = new HashMap<>();

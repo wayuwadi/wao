@@ -276,6 +276,7 @@ public class LifeReviewService {
                         .eq(DocEntity::getKbId, chatKbId)
                         .eq(DocEntity::getAuto, true)
                         .isNull(DocEntity::getDeletedAt)
+                        .isNull(DocEntity::getArchivedAt)
                         .ge(DocEntity::getTitle, "飞书群聊 · " + scope.start())
                         .le(DocEntity::getTitle, "飞书群聊 · " + scope.end())
                         .likeRight(DocEntity::getTitle, "飞书群聊 · ")

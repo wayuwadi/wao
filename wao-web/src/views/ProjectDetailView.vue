@@ -120,11 +120,14 @@ const linkedDocs = computed(() => {
   const ids = new Set(project.value?.docs ?? [])
   kb.value?.folders.forEach((folder) => folder.docs.forEach((id) => ids.add(id)))
   Object.values(data.docs).forEach((doc) => {
+    if (data.isDocArchived(doc.id)) return
     if (doc.links.some((link) => link.type === 'project' && link.id === pid.value)) ids.add(doc.id)
   })
   return [...ids].flatMap((id) => {
     const doc = data.docById(id)
-    return doc ? [{ id, title: doc.title || '未命名文档', updated: doc.updated }] : []
+    return doc && !data.isDocArchived(id)
+      ? [{ id, title: doc.title || '未命名文档', updated: doc.updated }]
+      : []
   })
 })
 // ---- 已完成任务的收起 / 缓冲 ----

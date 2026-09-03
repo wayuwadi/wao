@@ -34,7 +34,7 @@ public interface DocMapper extends BaseMapper<DocEntity> {
             "WHEN #{doc.id} THEN #{doc.ord}",
             "</foreach>",
             "END",
-            "WHERE kb_id = #{kbId} AND deleted_at IS NULL",
+            "WHERE kb_id = #{kbId} AND deleted_at IS NULL AND archived_at IS NULL",
             "AND id IN",
             "<foreach collection='docs' item='doc' open='(' separator=',' close=')'>",
             "#{doc.id}",
@@ -57,6 +57,21 @@ public interface DocMapper extends BaseMapper<DocEntity> {
              WHERE id = #{id}
             """)
     int clearDeleted(@Param("id") String id);
+
+    /** 归档只写生命周期元数据，正文、目录位置与回收站状态都保持不变。 */
+    @Update("""
+            UPDATE doc SET archived_at = #{archivedAt}, archived_by = #{archivedBy}
+             WHERE id = #{id} AND deleted_at IS NULL AND archived_at IS NULL
+            """)
+    int markArchived(@Param("id") String id, @Param("archivedAt") LocalDateTime archivedAt,
+            @Param("archivedBy") String archivedBy);
+
+    /** 取消归档时显式清空元数据，避免 ORM 的 NULL 更新策略漏写。 */
+    @Update("""
+            UPDATE doc SET archived_at = NULL, archived_by = NULL
+             WHERE id = #{id} AND deleted_at IS NULL AND archived_at IS NOT NULL
+            """)
+    int clearArchived(@Param("id") String id);
 
     /** 新建自动文档后在同一事务中初始化稳定归档身份与版本。 */
     @Update("""

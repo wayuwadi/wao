@@ -2,9 +2,11 @@ import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
   apiAddTaskComment,
+  apiArchiveDoc,
   apiDeleteTask,
   apiDeleteTaskComment,
   apiUpdateTaskComment,
+  apiUnarchiveDoc,
   apiCreateDoc,
   apiCreateFolder,
   apiCreateJob,
@@ -47,6 +49,7 @@ import {
   apiRevealVaultItem,
   apiRunJob,
   fetchAreas,
+  fetchArchivedDocs,
   fetchDocs,
   fetchFiles,
   fetchHostedPages,
@@ -167,6 +170,8 @@ export const useDataStore = defineStore('data', () => {
   const tasks = ref<Task[]>([])
   const kbs = ref<KnowledgeBase[]>([])
   const docs = reactive<Record<string, Doc>>({})
+  /** 各知识库的归档文档 id；正文仍放在 docs 中，便于打开与恢复。 */
+  const archivedDocIds = ref<Record<string, string[]>>({})
   const autos = ref<AutomationJob[]>([])
   const files = ref<FileItem[]>([])
   const hostedPages = ref<HostedPage[]>([])
@@ -437,6 +442,10 @@ export const useDataStore = defineStore('data', () => {
   const tasksByProject = (pid: string) => tasks.value.filter((t) => t.project === pid)
   const kbById = (id: string) => kbs.value.find((k) => k.id === id)
   const docById = (id: string): Doc | undefined => docs[id]
+  const isDocArchived = (id: string): boolean =>
+    Object.values(archivedDocIds.value).some((ids) => ids.includes(id))
+  const archivedDocsOf = (kbId: string): Doc[] =>
+    (archivedDocIds.value[kbId] ?? []).flatMap((id) => docs[id] ? [docs[id]!] : [])
 
   /** 领域色（找不到用弱灰）。 */
   const areaColor = (id: string) => areaById(id)?.color ?? '#9A9DA9'
@@ -746,6 +755,9 @@ export const useDataStore = defineStore('data', () => {
     if (kb?.notes) return
     kbs.value = kbs.value.filter((k) => k.id !== id)
     kb?.folders.forEach((f) => f.docs.forEach((docId) => delete docs[docId]))
+    for (const docId of archivedDocIds.value[id] ?? []) delete docs[docId]
+    const { [id]: _archived, ...remainingArchives } = archivedDocIds.value
+    archivedDocIds.value = remainingArchives
     if (apiLive.value) {
       try {
         await apiDeleteKb(id)
@@ -770,6 +782,13 @@ export const useDataStore = defineStore('data', () => {
     const folder = kb?.folders.find((f) => f.id === folderId)
     if (!kb || !folder) return
     folder.docs.forEach((docId) => delete docs[docId])
+    const archivedInFolder = (archivedDocIds.value[kbId] ?? [])
+      .filter((docId) => docs[docId]?.folderId === folderId)
+    archivedInFolder.forEach((docId) => delete docs[docId])
+    archivedDocIds.value = {
+      ...archivedDocIds.value,
+      [kbId]: (archivedDocIds.value[kbId] ?? []).filter((docId) => !archivedInFolder.includes(docId)),
+    }
     kb.folders = kb.folders.filter((f) => f.id !== folderId)
     if (apiLive.value) {
       try {
@@ -785,6 +804,8 @@ export const useDataStore = defineStore('data', () => {
   async function deleteDoc(id: string) {
     kbs.value.forEach((k) => k.folders.forEach((f) => (f.docs = f.docs.filter((d) => d !== id))))
     delete docs[id]
+    archivedDocIds.value = Object.fromEntries(Object.entries(archivedDocIds.value)
+      .map(([kbId, ids]) => [kbId, ids.filter((docId) => docId !== id)]))
     const { [id]: _dropped, ...rest } = docEdits.value
     docEdits.value = rest
     localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
@@ -798,13 +819,86 @@ export const useDataStore = defineStore('data', () => {
     void refreshTrash()
   }
 
+  /** 把文档移出普通文件夹列表；服务端成功后才改变本地状态，失败可直接重试。 */
+  async function archiveDoc(id: string): Promise<boolean> {
+    const current = docs[id]
+    if (!current?.kbId) return false
+    let saved = current
+    if (apiLive.value) {
+      try {
+        saved = await apiArchiveDoc(id)
+      } catch {
+        return false
+      }
+    }
+    docs[id] = saved
+    kbs.value.forEach((knowledgeBase) => knowledgeBase.folders.forEach((folder) => {
+      folder.docs = folder.docs.filter((docId) => docId !== id)
+    }))
+    const known = archivedDocIds.value[current.kbId] ?? []
+    archivedDocIds.value = {
+      ...archivedDocIds.value,
+      [current.kbId]: known.includes(id) ? known : [id, ...known],
+    }
+    return true
+  }
+
+  /** 取消归档并把文档放回其原文件夹；失败时归档列表保持原样。 */
+  async function unarchiveDoc(id: string): Promise<boolean> {
+    const current = docs[id]
+    if (!current?.kbId || !current.folderId) return false
+    let saved = current
+    if (apiLive.value) {
+      try {
+        saved = await apiUnarchiveDoc(id)
+      } catch {
+        return false
+      }
+    }
+    const folder = kbById(saved.kbId ?? current.kbId)?.folders
+      .find((item) => item.id === (saved.folderId ?? current.folderId))
+    if (!folder) return false
+    docs[id] = saved
+    if (!folder.docs.includes(id)) folder.docs.push(id)
+    archivedDocIds.value = {
+      ...archivedDocIds.value,
+      [current.kbId]: (archivedDocIds.value[current.kbId] ?? []).filter((docId) => docId !== id),
+    }
+    return true
+  }
+
+  /** 拉取一个知识库的真实归档；失败保留上一帧并返回 false 供页面展示重试。 */
+  async function refreshArchivedDocs(kbId: string): Promise<boolean> {
+    if (!apiLive.value) return true
+    try {
+      const list = await fetchArchivedDocs(kbId)
+      const previous = archivedDocIds.value[kbId] ?? []
+      const next = list.map((doc) => doc.id)
+      previous.filter((id) => !next.includes(id)).forEach((id) => {
+        const returnedToTree = kbs.value.some((knowledgeBase) =>
+          knowledgeBase.folders.some((folder) => folder.docs.includes(id)))
+        if (!returnedToTree) delete docs[id]
+      })
+      list.forEach((doc) => (docs[doc.id] = doc))
+      archivedDocIds.value = { ...archivedDocIds.value, [kbId]: next }
+      return true
+    } catch {
+      return false
+    }
+  }
+
   // ---- 回收站 ----
 
   let docsRequest: Promise<boolean> | null = null
 
   function replaceDocs(list: Doc[]) {
+    const archived = Object.values(archivedDocIds.value).flat()
+      .flatMap((id) => docs[id] ? [docs[id]!] : [])
     Object.keys(docs).forEach((id) => delete docs[id])
     list.forEach((doc) => (docs[doc.id] = doc))
+    archived.forEach((doc) => {
+      if (!docs[doc.id]) docs[doc.id] = doc
+    })
   }
 
   /**
@@ -1788,13 +1882,15 @@ export const useDataStore = defineStore('data', () => {
   }
 
   return {
-    today, areas, projects, tasks, kbs, docs, autos, files, imgs, vault,
+    today, areas, projects, tasks, kbs, docs, archivedDocIds, autos, files, imgs, vault,
     schedule, suggestions, goals, myGroups, apiLive, taskLoadState, taskLoadError,
     fileLoadState, fileLoadError, loadStates, loadErrors, hydrate,
-    areaById, projectById, taskById, tasksByProject, kbById, docById, areaColor,
+    areaById, projectById, taskById, tasksByProject, kbById, docById,
+    isDocArchived, archivedDocsOf, areaColor,
     docEdits, setDocEdit, docOf, docPending, saveState, markSaving, markSaved,
     applyRemoteDoc, addDoc, addNote, notesKb, reorderDocs,
     addGroup, renameGroup, addFolder, renameFolder, deleteFolder, deleteDoc,
+    archiveDoc, unarchiveDoc, refreshArchivedDocs,
     addKb, updateKb, deleteKb, trash, refreshTrash, restoreTrash, purgeTrash, refreshKnowledge,
     ensureDocsLoaded, refreshDocs,
     patchTask, toggleComplete, toggleStep, reorderTask, addTask, addProject,

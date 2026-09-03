@@ -73,6 +73,8 @@ export const fetchTasks = () => get<Task[]>('/api/tasks')
 export const fetchKbs = () => get<KnowledgeBase[]>('/api/kbs')
 export const fetchKbGroups = () => get<KbGroup[]>('/api/kb-groups')
 export const fetchDocs = () => get<Doc[]>('/api/docs')
+export const fetchArchivedDocs = (kbId: string) =>
+  get<Doc[]>(`/api/docs/archived?kbId=${encodeURIComponent(kbId)}`)
 export const fetchDoc = (id: string) => get<Doc>(`/api/docs/${id}`)
 export const fetchJobs = () => get<AutomationJob[]>('/api/jobs')
 export const fetchAutomationJob = (id: string) => get<AutomationJob>(`/api/jobs/${id}`)
@@ -319,6 +321,12 @@ export interface PatchDocPayload {
 }
 export const apiPatchDoc = (id: string, payload: PatchDocPayload) =>
   patch<Doc>(`/api/docs/${id}`, payload)
+/** 归档文档会退出日常文档树，但长期保留且可恢复。 */
+export const apiArchiveDoc = (id: string) => post<Doc>(`/api/docs/${id}/archive`)
+export async function apiUnarchiveDoc(id: string): Promise<Doc> {
+  const res = await http.delete<ApiResponse<Doc>>(`/api/docs/${id}/archive`)
+  return res.data.data
+}
 /** 删除文档 —— 后端移入回收站，7 天内可恢复。 */
 export const apiDeleteDoc = (id: string) => del(`/api/docs/${id}`)
 

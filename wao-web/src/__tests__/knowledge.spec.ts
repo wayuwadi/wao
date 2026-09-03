@@ -106,6 +106,26 @@ describe('data store · 知识库', () => {
     expect(data.docEdits[id]).toBeUndefined()
   })
 
+  it('归档文档会退出普通目录但保留正文，并可恢复到原文件夹', async () => {
+    const kb = data.kbs.find((k) => k.folders.length)!
+    const folder = kb.folders[0]!
+    const id = (await data.addDoc(kb.id, folder.id))!
+    data.setDocEdit(id, { text: '一次性使用但需要长期留存的正文' })
+
+    expect(await data.archiveDoc(id)).toBe(true)
+
+    expect(folder.docs).not.toContain(id)
+    expect(data.archivedDocsOf(kb.id).map((doc) => doc.id)).toContain(id)
+    expect(data.docOf(id).text).toContain('长期留存')
+    expect(data.isDocArchived(id)).toBe(true)
+
+    expect(await data.unarchiveDoc(id)).toBe(true)
+
+    expect(folder.docs).toContain(id)
+    expect(data.archivedDocsOf(kb.id)).toHaveLength(0)
+    expect(data.docOf(id).text).toContain('长期留存')
+  })
+
   it('删除文件夹会带走它下面的文档', async () => {
     const kb = data.kbs.find((k) => k.folders.length)!
     const folderId = (await data.addFolder(kb.id))!

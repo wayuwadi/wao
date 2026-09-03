@@ -151,6 +151,8 @@ class AiAssistantAssetServiceTest {
         assertThat(docQueries.getAllValues().get(0).getSqlSelect())
                 .contains("id", "kb_id", "title", "blocks_json", "updated_at")
                 .doesNotContain("links_json", "author_id");
+        assertThat(docQueries.getAllValues())
+                .allSatisfy(query -> assertThat(query.getCustomSqlSegment()).contains("archived_at IS NULL"));
         assertThat(docQueries.getAllValues().get(1).getSqlSelect()).isEqualTo("title");
         assertThat(docQueries.getAllValues().get(2).getSqlSelect()).isEqualTo("title");
 

@@ -179,6 +179,7 @@ public class KnowledgeService {
         List<DocEntity> docs = docMapper.selectList(new QueryWrapper<DocEntity>()
                 .select("id", "folder_id")
                 .isNull("deleted_at")
+                .isNull("archived_at")
                 .orderByAsc("ord"));
 
         Map<String, List<String>> docIdsByFolder = docIdsByFolder(docs);
@@ -194,7 +195,7 @@ public class KnowledgeService {
         KbEntity kb = requireKb(id);
         List<KbFolderEntity> folders = folderMapper.selectList(
                 aliveFolders().eq(KbFolderEntity::getKbId, id).orderByAsc(KbFolderEntity::getOrd));
-        List<DocEntity> docs = docMapper.selectList(aliveDocs().eq(DocEntity::getKbId, id).orderByAsc(DocEntity::getOrd));
+        List<DocEntity> docs = docMapper.selectList(activeDocs().eq(DocEntity::getKbId, id).orderByAsc(DocEntity::getOrd));
         return toDto(kb, folders, docIdsByFolder(docs));
     }
 
@@ -372,9 +373,9 @@ public class KnowledgeService {
 
     // ---------------- 文档 ----------------
 
-    /** 列出全部文档（含正文与反向链接），不含回收站里的。 */
+    /** 列出全部日常文档（含正文与反向链接），不含回收站与归档里的。 */
     public List<DocDto> listDocs() {
-        List<DocEntity> docs = docMapper.selectList(aliveDocs());
+        List<DocEntity> docs = docMapper.selectList(activeDocs());
         Map<String, List<DocLinkDto>> linksById = docs.stream().collect(Collectors.toMap(
                 DocEntity::getId, doc -> readList(doc.getLinksJson(), LINKS_TYPE)));
         Map<String, List<DocBlockDto>> blocksById = docs.stream().collect(Collectors.toMap(
@@ -384,6 +385,17 @@ public class KnowledgeService {
         return docs.stream().map(doc -> toDtoWithBacklinks(
                 doc, backlinks.getOrDefault(doc.getId(), List.of()),
                 linksById.get(doc.getId()), blocksById.get(doc.getId()))).toList();
+    }
+
+    /** 列出指定知识库的归档文档，归档内容长期保留且可继续打开。 */
+    public List<DocDto> listArchivedDocs(String kbId) {
+        requireKb(kbId);
+        List<DocEntity> archived = docMapper.selectList(aliveDocs()
+                .eq(DocEntity::getKbId, kbId)
+                .isNotNull(DocEntity::getArchivedAt)
+                .orderByDesc(DocEntity::getArchivedAt));
+        List<DocEntity> retained = docMapper.selectList(aliveDocs());
+        return archived.stream().map(doc -> toDto(doc, retained)).toList();
     }
 
     /** 按 id 获取单篇文档。 */
@@ -627,7 +639,7 @@ public class KnowledgeService {
         }
         List<KbFolderEntity> folders = folderMapper.selectList(aliveFolders().eq(KbFolderEntity::getKbId, kbId));
         Set<String> validFolderIds = folders.stream().map(KbFolderEntity::getId).collect(Collectors.toSet());
-        List<DocEntity> docs = docMapper.selectList(aliveDocs().eq(DocEntity::getKbId, kbId));
+        List<DocEntity> docs = docMapper.selectList(activeDocs().eq(DocEntity::getKbId, kbId));
         Map<String, DocEntity> docById = docs.stream().collect(Collectors.toMap(DocEntity::getId, d -> d));
         Set<String> seenFolders = new HashSet<>();
         Set<String> seenDocs = new HashSet<>();
@@ -1296,6 +1308,46 @@ public class KnowledgeService {
         markDocDeleted(e, LocalDateTime.now(), memberId, false);
     }
 
+    /**
+     * 归档文档：保留正文、链接和原目录位置，只把它移出普通列表与知识检索。
+     *
+     * @param id 文档 id
+     * @param memberId 操作人 member id
+     * @return 已归档文档
+     */
+    public DocDto archiveDoc(String id, String memberId) {
+        DocEntity e = requireDoc(id);
+        if (e.getArchivedAt() == null) {
+            LocalDateTime now = LocalDateTime.now();
+            if (docMapper.markArchived(id, now, memberId) != 1) {
+                throw new ConflictException("文档归档状态已变化，请刷新后重试");
+            }
+            e.setArchivedAt(now);
+            e.setArchivedBy(memberId);
+        }
+        return toDto(e, docMapper.selectList(aliveDocs()));
+    }
+
+    /**
+     * 取消归档：校验原知识库和文件夹仍可用后，将文档放回原目录。
+     *
+     * @param id 文档 id
+     * @return 已恢复到日常文档树的文档
+     */
+    public DocDto unarchiveDoc(String id) {
+        DocEntity e = requireDoc(id);
+        requireKb(e.getKbId());
+        requireFolder(e.getKbId(), e.getFolderId());
+        if (e.getArchivedAt() != null) {
+            if (docMapper.clearArchived(id) != 1) {
+                throw new ConflictException("文档归档状态已变化，请刷新后重试");
+            }
+            e.setArchivedAt(null);
+            e.setArchivedBy(null);
+        }
+        return toDto(e, docMapper.selectList(aliveDocs()));
+    }
+
     private DocEntity requireDoc(String id) {
         DocEntity e = docMapper.selectById(id);
         if (e == null || e.getDeletedAt() != null) {
@@ -1497,6 +1549,11 @@ public class KnowledgeService {
 
     private LambdaQueryWrapper<DocEntity> aliveDocs() {
         return new LambdaQueryWrapper<DocEntity>().isNull(DocEntity::getDeletedAt);
+    }
+
+    /** 日常使用的文档：既没有删除，也没有被用户归档。 */
+    private LambdaQueryWrapper<DocEntity> activeDocs() {
+        return aliveDocs().isNull(DocEntity::getArchivedAt);
     }
 
     private Map<String, List<String>> docIdsByFolder(List<DocEntity> docs) {

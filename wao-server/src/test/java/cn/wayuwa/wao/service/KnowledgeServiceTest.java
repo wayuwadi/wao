@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -115,6 +116,46 @@ class KnowledgeServiceTest {
                 ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.query.QueryWrapper.class);
         verify(docMapper).selectList(query.capture());
         assertThat(query.getValue().getSqlSelect()).isEqualTo("id,folder_id");
+        assertThat(query.getValue().getCustomSqlSegment()).contains("archived_at IS NULL");
+    }
+
+    @Test
+    void archiveKeepsDocumentAndRestoreReturnsItToTheOriginalFolder() {
+        DocEntity document = doc("d1", "k1", "f1");
+        when(docMapper.selectById("d1")).thenReturn(document);
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        when(folderMapper.selectById("f1")).thenReturn(folder("f1", "k1"));
+        when(docMapper.markArchived(eq("d1"), any(LocalDateTime.class), eq("wg"))).thenReturn(1);
+        when(docMapper.clearArchived("d1")).thenReturn(1);
+        when(docMapper.selectList(any())).thenReturn(List.of(document));
+
+        DocDto archived = service.archiveDoc("d1", "wg");
+
+        assertThat(archived.id()).isEqualTo("d1");
+        assertThat(document.getArchivedAt()).isNotNull();
+        assertThat(document.getArchivedBy()).isEqualTo("wg");
+        assertThat(document.getDeletedAt()).isNull();
+
+        DocDto restored = service.unarchiveDoc("d1");
+
+        assertThat(restored.folderId()).isEqualTo("f1");
+        assertThat(document.getArchivedAt()).isNull();
+        assertThat(document.getArchivedBy()).isNull();
+        verify(docMapper).clearArchived("d1");
+        verify(docMapper, never()).markDeleted(anyString(), any(LocalDateTime.class), anyString(), anyBoolean());
+    }
+
+    @Test
+    void archivedListRequiresAnExistingKnowledgeBaseAndReturnsItsDocuments() {
+        KbEntity knowledgeBase = kb("k1");
+        DocEntity archived = doc("d-old", "k1", "f1");
+        archived.setArchivedAt(LocalDateTime.of(2026, 9, 3, 10, 0));
+        when(kbMapper.selectById("k1")).thenReturn(knowledgeBase);
+        when(docMapper.selectList(any())).thenReturn(List.of(archived), List.of(archived));
+
+        assertThat(service.listArchivedDocs("k1")).extracting(DocDto::id).containsExactly("d-old");
+        verify(kbMapper).selectById("k1");
+        verify(docMapper, times(2)).selectList(any());
     }
 
     @Test
