@@ -1065,7 +1065,11 @@ function continueCreateReminder() {
 }
 
 // ---------- 待安排任务：只收未排期与已逾期；按优先级、具体时间排序 ----------
-const showBacklog = ref(true)
+const showBacklog = ref(localStorage.getItem(`wao-calendar-backlog-visible:${session.currentUser.id}`) !== 'false')
+watch(showBacklog, (visible) => localStorage.setItem(`wao-calendar-backlog-visible:${session.currentUser.id}`, String(visible)))
+watch(() => session.currentUser.id, (memberId) => {
+  showBacklog.value = localStorage.getItem(`wao-calendar-backlog-visible:${memberId}`) !== 'false'
+})
 const backlogFilter = ref<'attention' | 'unplanned' | 'overdue'>('attention')
 const unfinishedForMember = computed(() =>
   data.tasks.filter((t) => t.status !== '已完成' && t.owner === calendarMemberId.value))
@@ -1278,7 +1282,7 @@ function onDropDay(dayIso: string) {
       <!-- 未排期与已逾期任务 -->
       <aside class="backlog" :class="{ folded: !showBacklog }">
         <div class="bl-head">
-          <button class="bl-toggle" aria-label="展开或收起待安排任务" @click="showBacklog = !showBacklog">
+          <button class="bl-toggle" type="button" :aria-expanded="showBacklog" :aria-label="showBacklog ? '收起待安排任务' : `展开待安排任务，共 ${backlog.length} 项`" :title="showBacklog ? '收起待安排任务' : `展开待安排任务 · ${backlog.length} 项`" @click="showBacklog = !showBacklog">
             <i class="ri-inbox-line"></i>
             <span class="bl-title">待安排任务</span>
             <span class="bl-count wao-tabular">{{ backlog.length }}</span>
@@ -2025,6 +2029,21 @@ button.holiday-status { cursor: pointer; }
   padding: 10px;
   position: sticky;
   top: 16px;
+  transition: width .16s ease, padding .16s ease;
+}
+.backlog.folded {
+  width: 42px;
+  padding: 6px;
+}
+.backlog.folded .bl-toggle {
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+}
+.backlog.folded .bl-title,
+.backlog.folded .bl-count,
+.backlog.folded .bl-chev {
+  display: none;
 }
 .bl-head {
   display: flex;
@@ -2140,6 +2159,10 @@ button.holiday-status { cursor: pointer; }
   .backlog {
     width: 100%;
     position: static;
+  }
+  .backlog.folded {
+    width: 42px;
+    align-self: flex-end;
   }
 }
 

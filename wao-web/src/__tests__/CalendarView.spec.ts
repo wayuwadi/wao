@@ -169,6 +169,13 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.findAll('.bl-item')).toHaveLength(1)
     expect(wrapper.find('.bl-item').text()).toContain('我的逾期 P1')
 
+    await wrapper.find('.bl-toggle').trigger('click')
+    expect(wrapper.find('.backlog').classes()).toContain('folded')
+    expect(wrapper.find('.bl-toggle').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('.bl-toggle').attributes('title')).toContain('1 项')
+    expect(localStorage.getItem('wao-calendar-backlog-visible:wg')).toBe('false')
+    await wrapper.find('.bl-toggle').trigger('click')
+
     await wrapper.find('.view-switch button:last-child').trigger('click')
     const slots = wrapper.findAll('.time-day .time-slot')
     expect(slots).toHaveLength(24)
