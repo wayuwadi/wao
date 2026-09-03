@@ -52,10 +52,13 @@ public class CaldavClient {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    /** 校验并规范化服务器地址：必须是 http/https 且带主机名。 */
+    /** 校验并规范化服务器地址：省略协议时补 HTTPS，最终必须是 http/https 且带主机名。 */
     public String normalizeServerUrl(String raw) {
         String value = raw == null ? "" : raw.trim();
         if (!StringUtils.hasText(value)) throw new BadRequestException("请填写 CalDAV 服务器地址");
+        // 企业微信等服务商给用户展示的是 caldav.wecom.work 这类“服务器”值，
+        // 而不是完整 URL。CalDAV 凭据不应走明文链路，因此缺省协议统一补 HTTPS。
+        if (!value.contains("://")) value = "https://" + value;
         URI uri;
         try {
             uri = URI.create(value);

@@ -71,7 +71,10 @@ components:
       required: [serverUrl, username, password]
       properties:
         name: { type: string, description: 展示名，留空取服务器主机名 }
-        serverUrl: { type: string, example: 'https://caldav.example.com' }
+        serverUrl:
+          type: string
+          example: 'caldav.wecom.work'
+          description: CalDAV 服务器地址；服务商只提供主机名时自动使用 HTTPS
         username: { type: string }
         password: { type: string, description: 仅此一次上送，AES-256-GCM 加密存储 }
     Account:

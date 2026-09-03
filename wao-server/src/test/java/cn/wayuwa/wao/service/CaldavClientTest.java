@@ -15,9 +15,11 @@ class CaldavClientTest {
     @Test
     void 规范化服务器地址只接受http和https() {
         assertThat(client.normalizeServerUrl(" https://caldav.example.com ")).isEqualTo("https://caldav.example.com");
+        assertThat(client.normalizeServerUrl("caldav.wecom.work")).isEqualTo("https://caldav.wecom.work");
+        assertThat(client.normalizeServerUrl("calendar.example.com/dav/user"))
+                .isEqualTo("https://calendar.example.com/dav/user");
         assertThatThrownBy(() -> client.normalizeServerUrl("")).isInstanceOf(BadRequestException.class);
         assertThatThrownBy(() -> client.normalizeServerUrl("ftp://x.example.com")).isInstanceOf(BadRequestException.class);
-        assertThatThrownBy(() -> client.normalizeServerUrl("caldav.example.com")).isInstanceOf(BadRequestException.class);
     }
 
     @Test
