@@ -40,6 +40,8 @@ function payload(item: RhythmChecklistItem): SaveRhythmChecklistItem {
   return {
     category: item.category,
     title: item.title,
+    itemType: item.itemType ?? 'CHECK',
+    durationMinutes: item.itemType === 'COUNTDOWN' ? item.durationMinutes : null,
     scheduleType: item.scheduleType,
     weekdays: item.weekdays,
     startTime: item.startTime,
@@ -70,7 +72,11 @@ async function load() {
       fetchWebhookEndpoints().catch(() => []),
     ])
     form.value = structuredClone(settings)
-    items.value = structuredClone(checklist)
+    items.value = structuredClone(checklist).map((item) => ({
+      ...item,
+      itemType: item.itemType ?? 'CHECK',
+      durationMinutes: item.durationMinutes ?? null,
+    }))
     chats.value = chatOptions
     webhooks.value = webhookOptions
   } catch (cause) {
@@ -87,6 +93,8 @@ function addItem() {
     kind: 'CUSTOM',
     category: 'LIFE',
     title: '',
+    itemType: 'CHECK',
+    durationMinutes: null,
     scheduleType: 'DAILY',
     weekdays: [],
     startTime: '07:00',
@@ -119,6 +127,10 @@ function scheduleLabel(item: RhythmChecklistItem) {
 function notificationLabel(item: RhythmChecklistItem) {
   const channels = [item.notifyDirect, item.notifyChat, item.notifyWebhook].filter(Boolean).length
   return channels ? `${channels} 个提醒通道` : '不提醒'
+}
+
+function typeLabel(item: RhythmChecklistItem) {
+  return item.itemType === 'COUNTDOWN' ? `${item.durationMinutes} 分钟倒计时` : '普通打卡'
 }
 
 function toggleWeekday(item: RhythmChecklistItem, day: number) {
@@ -274,7 +286,7 @@ onMounted(load)
               <span class="item-main"
                 ><b>{{ item.title || '未命名项目' }}</b
                 ><small
-                  >{{ scheduleLabel(item) }} · {{ item.startTime }}–{{
+                  >{{ typeLabel(item) }} · {{ scheduleLabel(item) }} · {{ item.startTime }}–{{
                     item.dueNextDay ? '次日 ' : ''
                   }}{{ item.dueTime }} · {{ notificationLabel(item) }}</small
                 ></span
@@ -332,6 +344,17 @@ onMounted(load)
                 ><input v-model="item.title" maxlength="80" placeholder="必做事项名称"
               /></label>
               <div class="item-fields">
+                <label
+                  ><span>完成方式</span
+                  ><select v-model="item.itemType" :disabled="item.kind !== 'CUSTOM'">
+                    <option value="CHECK">普通打卡</option>
+                    <option value="COUNTDOWN">倒计时</option>
+                  </select></label
+                >
+                <label v-if="item.itemType === 'COUNTDOWN'"
+                  ><span>固定时长（分钟）</span
+                  ><input v-model.number="item.durationMinutes" type="number" min="1" max="1440"
+                /></label>
                 <label
                   ><span>分类</span
                   ><select v-model="item.category">

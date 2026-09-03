@@ -173,6 +173,20 @@ class FlywayMigrationsTest {
     }
 
     @Test
+    void workdayRhythmCountdownMigrationKeepsTemplateAndRuntimeState() throws Exception {
+        Path migration = migrations().stream()
+                .filter(path -> path.getFileName().toString().equals("V135__workday_rhythm_countdown.sql"))
+                .findFirst().orElseThrow();
+        String sql = Files.readString(migration);
+
+        assertThat(sql)
+                .contains("item_type VARCHAR(16) NOT NULL DEFAULT 'CHECK'")
+                .contains("duration_seconds INT NULL")
+                .contains("timer_started_at DATETIME(6) NULL")
+                .contains("timer_elapsed_seconds INT NOT NULL DEFAULT 0");
+    }
+
+    @Test
     void feishuPersonalQuickCaptureUsesDatabaseLevelEventIdempotency() throws Exception {
         Path migration = migrations().stream()
                 .filter(path -> path.getFileName().toString().equals("V85__feishu_personal_quick_capture.sql"))

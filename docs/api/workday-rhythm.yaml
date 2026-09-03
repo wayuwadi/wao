@@ -26,7 +26,7 @@ paths:
       responses:
         "200": { description: 首次读取会幂等补齐三个默认系统项 }
     post:
-      summary: 新增自定义每日必做项
+      summary: 新增自定义每日必做项，支持普通打卡或固定时长倒计时
       responses:
         "200": { description: 已创建 }
         "400": { description: 适用日、时间窗或通知配置不合法 }
@@ -57,6 +57,24 @@ paths:
       summary: 完成或撤销一条当日必做
       responses:
         "200": { description: 返回完成时间、准时结果和当前状态 }
+        "404": { description: 实例不存在或不属于当前成员 }
+  /api/workday-rhythm/occurrences/{id}/timer:
+    put:
+      summary: 开始、暂停或重置当前成员的倒计时实例
+      description: 服务端根据已保存开始时刻计算真实耗时；客户端不能自报耗时或完成结果。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [action]
+              properties:
+                action: { type: string, enum: [START, PAUSE, RESET] }
+      responses:
+        "200": { description: 返回服务端计算后的剩余秒数、运行状态和完成状态 }
+        "400": { description: 实例不是倒计时或操作不合法 }
         "404": { description: 实例不存在或不属于当前成员 }
   /api/workday-rhythm/days/{date}/document:
     put:
