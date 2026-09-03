@@ -134,6 +134,8 @@ describe('真实发布中心', () => {
     await flushPromises()
 
     const toolbar = wrapper.get('.embed-toolbar')
+    expect(wrapper.get('.body-field').element.tagName).toBe('DIV')
+    expect(wrapper.find('.body-field > label').exists()).toBe(false)
     await toolbar.findAll('button')[1]!.trigger('click')
     await wrapper.get('.embed-dialog select').setValue('python')
     await wrapper.get('.embed-dialog textarea').setValue('print("WAO")')
