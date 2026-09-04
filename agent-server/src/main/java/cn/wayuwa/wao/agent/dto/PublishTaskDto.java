@@ -19,6 +19,7 @@ public record PublishTaskDto(String id, String platform, String platformLabel, S
                              String sourceNotes, boolean useWaoContext, List<ContentSourceDto> contextSources,
                              String status, int progress, String platformItemId, String publicationUrl,
                              List<ContentMetricSnapshotDto> metricHistory, String errorMessage,
+                             boolean generationRetryable,
                              int version, LocalDateTime createdAt, LocalDateTime updatedAt,
                              LocalDateTime publishedAt) {
 }

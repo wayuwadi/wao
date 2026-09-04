@@ -973,6 +973,18 @@ AI 运行插入与 `ai_run_id` 关联处在同一事务中，关联还要求当�
 聊天复盘固定知识库 id 为 `kb-chat-reviews`、文件夹 id 为 `kb-chat-reviews-f`，文档 id 由 `crd-<runId>` 稳定派生；固定 id
 用于 worker 接管后的幂等覆盖，不按名称猜测或复用用户自建同名知识库。
 
+## 自媒体 Agent 推荐模型成稿队列（Agent Flyway V10）
+
+`agent_publish_task` 在既有发布状态机上增加以下生成字段：
+
+- `generation_executor`：`AGENT_LOCAL` 或 `WAO_RECOMMENDED`，明确由哪一侧执行模型调用。
+- `generation_system_prompt`、`generation_user_prompt`：创建时固化的有界模型请求；生成成功或成员改为手工保存后清除。
+- `generation_claim_token`、`generation_lease_until`：主服务多节点领取互斥和进程中断恢复依据。
+
+推荐模型 API Key 不进入该表。Agent 只读取 `ai_account` 的非敏感模型元数据；`wao-server` 在领取任务后通过
+`AiAccountService` 解密并调用模型。失败任务保留固化请求供当前工作区成员重试，成功任务只保留来源快照与成稿。
+该 migration 属于独立的 `flyway_agent_schema_history`。
+
 ## 已退役的自媒体 Agent 视频生成域（Agent Flyway V4）
 
 `agent_video_generation` 曾按工作区保存 OpenAI Videos API 任务。能力已按

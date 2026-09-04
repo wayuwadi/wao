@@ -140,6 +140,7 @@ export interface PublishTask {
   publicationUrl?: string
   metricHistory: ContentMetricSnapshot[]
   errorMessage?: string
+  generationRetryable: boolean
   version: number
   createdAt: string
   updatedAt: string
