@@ -21,6 +21,58 @@ VALUES ('demo', '本地演示用户', '演', '#6556D8', 'owner');
 MERGE INTO account (id, member_id, status, created_at, updated_at) KEY(id)
 VALUES ('acc-demo', 'demo', 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
+-- 内容创作只读复用的 WAO 个人资产投影；生产由 wao-server migration 建表。
+CREATE TABLE IF NOT EXISTS kb (
+    id VARCHAR(32) PRIMARY KEY,
+    name VARCHAR(128) NOT NULL,
+    perm VARCHAR(16) NOT NULL DEFAULT '仅自己',
+    deleted_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS doc (
+    id VARCHAR(32) PRIMARY KEY,
+    kb_id VARCHAR(32) NOT NULL,
+    title VARCHAR(256) NOT NULL,
+    author_id VARCHAR(32) NOT NULL,
+    blocks_json CLOB,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    deleted_at TIMESTAMP,
+    archived_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS memory_document (
+    id VARCHAR(64) PRIMARY KEY,
+    scope_type VARCHAR(24) NOT NULL,
+    scope_id VARCHAR(64) NOT NULL,
+    state VARCHAR(24) NOT NULL,
+    current_published_revision_id VARCHAR(64),
+    updated_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS memory_revision (
+    id VARCHAR(64) PRIMARY KEY,
+    memory_id VARCHAR(64) NOT NULL,
+    title VARCHAR(256) NOT NULL,
+    content_md CLOB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ai_assistant_conversation (
+    id VARCHAR(32) PRIMARY KEY,
+    member_id VARCHAR(32) NOT NULL,
+    title VARCHAR(128) NOT NULL,
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ai_assistant_message (
+    id VARCHAR(32) PRIMARY KEY,
+    conversation_id VARCHAR(32) NOT NULL,
+    role VARCHAR(16) NOT NULL,
+    content CLOB NOT NULL,
+    created_at TIMESTAMP NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS agent_workspace (
     id VARCHAR(36) PRIMARY KEY,
     name VARCHAR(128) NOT NULL,
@@ -129,6 +181,10 @@ CREATE TABLE IF NOT EXISTS agent_publish_task (
     structure_json CLOB,
     cover_text VARCHAR(200),
     source_hotspot_id VARCHAR(36),
+    source_notes CLOB,
+    use_wao_context BOOLEAN NOT NULL DEFAULT TRUE,
+    source_context_json CLOB,
+    publication_url VARCHAR(1000),
     CONSTRAINT fk_local_agent_publish_workspace FOREIGN KEY (workspace_id) REFERENCES agent_workspace(id),
     CONSTRAINT fk_local_agent_publish_requester FOREIGN KEY (requested_by_account_id) REFERENCES account(id),
     CONSTRAINT fk_local_agent_publish_platform_account FOREIGN KEY (platform_account_id) REFERENCES agent_platform_account(id),
@@ -189,6 +245,23 @@ CREATE INDEX IF NOT EXISTS idx_agent_platform_account_ws ON agent_platform_accou
 CREATE INDEX IF NOT EXISTS idx_agent_media_workspace ON agent_media_asset(workspace_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_publish_workspace ON agent_publish_task(workspace_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_publish_status ON agent_publish_task(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS agent_publish_metric_snapshot (
+    id VARCHAR(36) PRIMARY KEY,
+    publish_task_id VARCHAR(36) NOT NULL,
+    workspace_id VARCHAR(36) NOT NULL,
+    views_count BIGINT,
+    likes_count BIGINT,
+    comments_count BIGINT,
+    favorites_count BIGINT,
+    shares_count BIGINT,
+    recorded_at TIMESTAMP NOT NULL,
+    CONSTRAINT fk_local_agent_metric_task FOREIGN KEY (publish_task_id) REFERENCES agent_publish_task(id),
+    CONSTRAINT fk_local_agent_metric_workspace FOREIGN KEY (workspace_id) REFERENCES agent_workspace(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_metric_task_time
+    ON agent_publish_metric_snapshot(publish_task_id, recorded_at);
 
 -- 与 db/migration/V4__video_generation.sql 对应。
 CREATE TABLE IF NOT EXISTS agent_video_generation (

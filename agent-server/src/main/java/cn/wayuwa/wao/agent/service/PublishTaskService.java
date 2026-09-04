@@ -8,12 +8,17 @@ import cn.wayuwa.wao.agent.config.NodeProperties;
 import cn.wayuwa.wao.agent.domain.HotspotEntity;
 import cn.wayuwa.wao.agent.domain.MediaAssetEntity;
 import cn.wayuwa.wao.agent.domain.PlatformAccountEntity;
+import cn.wayuwa.wao.agent.domain.PublishMetricSnapshotEntity;
 import cn.wayuwa.wao.agent.domain.PublishTaskEntity;
 import cn.wayuwa.wao.agent.dto.AiStatusDto;
+import cn.wayuwa.wao.agent.dto.ContentMetricSnapshotDto;
+import cn.wayuwa.wao.agent.dto.ContentSourceDto;
 import cn.wayuwa.wao.agent.dto.CreatePublishTaskRequest;
 import cn.wayuwa.wao.agent.dto.PublishCenterDto;
 import cn.wayuwa.wao.agent.dto.PublishTaskDto;
+import cn.wayuwa.wao.agent.dto.UpdatePublicationDataRequest;
 import cn.wayuwa.wao.agent.dto.UpdatePublishTaskRequest;
+import cn.wayuwa.wao.agent.mapper.PublishMetricSnapshotMapper;
 import cn.wayuwa.wao.agent.mapper.PublishTaskMapper;
 import cn.wayuwa.wao.agent.platform.MediaKind;
 import cn.wayuwa.wao.agent.platform.PlatformCapability;
@@ -27,6 +32,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Paths;
+import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -34,6 +40,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 /**
@@ -62,12 +69,15 @@ public class PublishTaskService {
     private final WorkspaceProfileService profiles;
     private final HotspotService hotspots;
     private final NodeProperties node;
+    private final CreatorContextService creatorContext;
+    private final PublishMetricSnapshotMapper metrics;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public PublishTaskService(SharedAccountService accounts, PlatformAccountService platformAccounts,
                               MediaAssetService mediaAssets, PublishTaskMapper taskMapper,
                               PlatformRegistry registry, ContentGenerator generator,
-                              WorkspaceProfileService profiles, HotspotService hotspots, NodeProperties node) {
+                              WorkspaceProfileService profiles, HotspotService hotspots, NodeProperties node,
+                              CreatorContextService creatorContext, PublishMetricSnapshotMapper metrics) {
         this.accounts = accounts;
         this.platformAccounts = platformAccounts;
         this.mediaAssets = mediaAssets;
@@ -77,6 +87,8 @@ public class PublishTaskService {
         this.profiles = profiles;
         this.hotspots = hotspots;
         this.node = node;
+        this.creatorContext = creatorContext;
+        this.metrics = metrics;
     }
 
     /** 发布中心聚合数据：会话、模型状态、平台能力和最近任务。 */
@@ -107,6 +119,8 @@ public class PublishTaskService {
         task.setPlatform(type.name());
         task.setTopic(request.topic().trim());
         task.setSourceHotspotId(request.sourceHotspotId());
+        task.setSourceNotes(emptyToNull(request.sourceNotes()));
+        task.setUseWaoContext(!Boolean.FALSE.equals(request.useWaoContext()));
         task.setStatus(generate ? GENERATING : DRAFT);
         task.setProgress(generate ? 10 : 0);
         task.setVersion(1);
@@ -228,6 +242,42 @@ public class PublishTaskService {
         return toDto(require(workspaceId, taskId), workspaceId);
     }
 
+    /** 已发布后保存真实链接，并在填写了指标时追加一条不可变数据快照。 */
+    @Transactional
+    public PublishTaskDto updatePublicationData(String accountId, String taskId,
+                                                UpdatePublicationDataRequest request) {
+        String workspaceId = accounts.workspaceId(accountId);
+        PublishTaskEntity task = require(workspaceId, taskId);
+        if (!PUBLISHED.equals(task.getStatus())) {
+            throw new ConflictException("只有已发布内容可以记录发布链接和数据");
+        }
+        String publicationUrl = safePublicationUrl(request.publicationUrl());
+        int expected = request.version();
+        int updated = taskMapper.update(null, Wrappers.<PublishTaskEntity>lambdaUpdate()
+                .eq(PublishTaskEntity::getId, taskId)
+                .eq(PublishTaskEntity::getWorkspaceId, workspaceId)
+                .eq(PublishTaskEntity::getVersion, expected)
+                .eq(PublishTaskEntity::getStatus, PUBLISHED)
+                .set(PublishTaskEntity::getPublicationUrl, publicationUrl)
+                .set(PublishTaskEntity::getVersion, expected + 1)
+                .set(PublishTaskEntity::getUpdatedAt, LocalDateTime.now()));
+        if (updated == 0) throw new ConflictException("内容已在别处更新，请刷新后重试");
+        if (request.hasMetrics()) {
+            PublishMetricSnapshotEntity row = new PublishMetricSnapshotEntity();
+            row.setId(UUID.randomUUID().toString());
+            row.setPublishTaskId(taskId);
+            row.setWorkspaceId(workspaceId);
+            row.setViewsCount(request.views());
+            row.setLikesCount(request.likes());
+            row.setCommentsCount(request.comments());
+            row.setFavoritesCount(request.favorites());
+            row.setSharesCount(request.shares());
+            row.setRecordedAt(LocalDateTime.now());
+            metrics.insert(row);
+        }
+        return toDto(require(workspaceId, taskId), workspaceId);
+    }
+
     /** 推进生成中的任务；任意节点都可以执行，靠乐观锁抢占。 */
     @Scheduled(fixedDelayString = "${wao-agent.publish.generate-delay-ms:2000}")
     public void processGenerating() {
@@ -239,8 +289,13 @@ public class PublishTaskService {
         for (PublishTaskEntity task : pending) {
             if (!claim(task)) continue;
             try {
+                CreatorContextService.Context context = Boolean.FALSE.equals(task.getUseWaoContext())
+                        ? new CreatorContextService.Context("", List.of())
+                        : creatorContext.find(accounts.memberId(task.getRequestedByAccountId()), task.getWorkspaceId(),
+                        task.getTopic(), task.getSourceNotes());
                 GeneratedContent copy = generator.generate(task.getTopic(),
-                        PlatformType.valueOf(task.getPlatform()), profiles.find(task.getWorkspaceId()));
+                        PlatformType.valueOf(task.getPlatform()), profiles.find(task.getWorkspaceId()),
+                        task.getSourceNotes(), context.prompt());
                 taskMapper.update(null, Wrappers.<PublishTaskEntity>lambdaUpdate()
                         .eq(PublishTaskEntity::getId, task.getId())
                         .set(PublishTaskEntity::getTitle, trim(copy.title(), 200))
@@ -248,6 +303,7 @@ public class PublishTaskService {
                         .set(PublishTaskEntity::getTagsJson, writeTags(copy.tags()))
                         .set(PublishTaskEntity::getCoverText, trim(copy.coverText(), 200))
                         .set(PublishTaskEntity::getStructureJson, writeJson(copy.blocks()))
+                        .set(PublishTaskEntity::getSourceContextJson, writeSources(context.sources()))
                         .set(PublishTaskEntity::getStatus, WAITING_REVIEW)
                         .set(PublishTaskEntity::getProgress, 45)
                         .set(PublishTaskEntity::getNodeId, null)
@@ -344,8 +400,35 @@ public class PublishTaskService {
                 task.getTopic(), task.getTitle(), task.getContent(), readTags(task.getTagsJson()),
                 task.getCoverText(), readBlocks(task.getStructureJson()),
                 task.getSourceHotspotId(), hotspot == null ? null : hotspot.getTitle(),
-                task.getStatus(), task.getProgress(), task.getPlatformItemId(), task.getErrorMessage(),
+                task.getSourceNotes(), !Boolean.FALSE.equals(task.getUseWaoContext()),
+                readSources(task.getSourceContextJson()), task.getStatus(), task.getProgress(),
+                task.getPlatformItemId(), task.getPublicationUrl(), metricDtos(task.getId(), workspaceId),
+                task.getErrorMessage(),
                 task.getVersion(), task.getCreatedAt(), task.getUpdatedAt(), task.getPublishedAt());
+    }
+
+    private List<ContentMetricSnapshotDto> metricDtos(String taskId, String workspaceId) {
+        return metrics.recent(taskId, workspaceId).stream().map(row -> new ContentMetricSnapshotDto(
+                row.getId(), row.getViewsCount(), row.getLikesCount(), row.getCommentsCount(),
+                row.getFavoritesCount(), row.getSharesCount(), row.getRecordedAt())).toList();
+    }
+
+    private String writeSources(List<ContentSourceDto> sources) {
+        if (sources == null || sources.isEmpty()) return null;
+        try {
+            return mapper.writeValueAsString(sources);
+        } catch (Exception ex) {
+            throw new IllegalStateException("生成来源快照保存失败", ex);
+        }
+    }
+
+    private List<ContentSourceDto> readSources(String raw) {
+        if (!StringUtils.hasText(raw)) return List.of();
+        try {
+            return mapper.readValue(raw, new TypeReference<List<ContentSourceDto>>() { });
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 
     private String writeJson(List<GeneratedContent.Block> blocks) {
@@ -396,5 +479,18 @@ public class PublishTaskService {
 
     private String emptyToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private String safePublicationUrl(String value) {
+        if (!StringUtils.hasText(value)) return null;
+        try {
+            URI uri = URI.create(value.trim());
+            if (!List.of("http", "https").contains(uri.getScheme()) || !StringUtils.hasText(uri.getHost())) {
+                throw new IllegalArgumentException();
+            }
+            return uri.toString();
+        } catch (IllegalArgumentException ignored) {
+            throw new BadRequestException("发布链接必须是完整的 http 或 https 地址");
+        }
     }
 }

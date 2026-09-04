@@ -29,6 +29,10 @@ public class PublishTaskEntity {
     private String structureJson;
     private String coverText;
     private String sourceHotspotId;
+    private String sourceNotes;
+    private Boolean useWaoContext;
+    private String sourceContextJson;
+    private String publicationUrl;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -74,4 +78,12 @@ public class PublishTaskEntity {
     public void setCoverText(String coverText) { this.coverText = coverText; }
     public String getSourceHotspotId() { return sourceHotspotId; }
     public void setSourceHotspotId(String sourceHotspotId) { this.sourceHotspotId = sourceHotspotId; }
+    public String getSourceNotes() { return sourceNotes; }
+    public void setSourceNotes(String value) { sourceNotes = value; }
+    public Boolean getUseWaoContext() { return useWaoContext; }
+    public void setUseWaoContext(Boolean value) { useWaoContext = value; }
+    public String getSourceContextJson() { return sourceContextJson; }
+    public void setSourceContextJson(String value) { sourceContextJson = value; }
+    public String getPublicationUrl() { return publicationUrl; }
+    public void setPublicationUrl(String value) { publicationUrl = value; }
 }

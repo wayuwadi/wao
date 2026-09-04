@@ -16,7 +16,9 @@ public record PublishTaskDto(String id, String platform, String platformLabel, S
                              String topic, String title, String content, List<String> tags,
                              String coverText, List<GeneratedContent.Block> blocks,
                              String sourceHotspotId, String sourceHotspotTitle,
-                             String status, int progress, String platformItemId, String errorMessage,
+                             String sourceNotes, boolean useWaoContext, List<ContentSourceDto> contextSources,
+                             String status, int progress, String platformItemId, String publicationUrl,
+                             List<ContentMetricSnapshotDto> metricHistory, String errorMessage,
                              int version, LocalDateTime createdAt, LocalDateTime updatedAt,
                              LocalDateTime publishedAt) {
 }

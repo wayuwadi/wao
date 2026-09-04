@@ -16,8 +16,10 @@ export const createPublishTask = (
   platform: string,
   generateCopy: boolean,
   sourceHotspotId?: string,
+  sourceNotes?: string,
+  useWaoContext = true,
 ) => unwrap<PublishTask>(http.post('/api/agent/publish/tasks',
-  { topic, platform, generateCopy, sourceHotspotId }))
+  { topic, platform, generateCopy, sourceHotspotId, sourceNotes, useWaoContext }))
 
 export const updatePublishTask = (taskId: string, payload: {
   version: number
@@ -33,6 +35,16 @@ export const submitPublishTask = (taskId: string) =>
 
 export const markPublishTaskPublished = (taskId: string) =>
   unwrap<PublishTask>(http.post(`/api/agent/publish/tasks/${taskId}/mark-published`))
+
+export const updatePublicationData = (taskId: string, payload: {
+  version: number
+  publicationUrl?: string
+  views?: number
+  likes?: number
+  comments?: number
+  favorites?: number
+  shares?: number
+}) => unwrap<PublishTask>(http.post(`/api/agent/publish/tasks/${taskId}/publication-data`, payload))
 
 /** 视频可能上百 MB，这里必须绕开 http 实例默认的 10s 超时。 */
 export const uploadMedia = (file: File) => {

@@ -164,6 +164,33 @@ class PublishFlowIntegrationTest {
                 .andExpect(jsonPath("$.data.status", org.hamcrest.Matchers.equalTo("PUBLISHED")))
                 .andExpect(jsonPath("$.data.progress", org.hamcrest.Matchers.equalTo(100)))
                 .andExpect(jsonPath("$.data.publishedAt", org.hamcrest.Matchers.notNullValue()));
+
+        mvc.perform(post("/api/agent/publish/tasks/" + taskId + "/publication-data")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"version":3,"publicationUrl":"https://example.com/posts/wao",
+                                 "views":128,"likes":9,"comments":2,"favorites":3,"shares":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.publicationUrl",
+                        org.hamcrest.Matchers.equalTo("https://example.com/posts/wao")))
+                .andExpect(jsonPath("$.data.metricHistory[0].views", org.hamcrest.Matchers.equalTo(128)))
+                .andExpect(jsonPath("$.data.metricHistory[0].likes", org.hamcrest.Matchers.equalTo(9)));
+    }
+
+    @Test
+    void sourceNotesAndContextPreferenceArePersistedWithTheDraft() throws Exception {
+        mvc.perform(post("/api/agent/publish/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"topic":"为什么做 WAO","platform":"WECHAT_MP","generateCopy":false,
+                                 "sourceNotes":"朋友说不会使用 Codex","useWaoContext":false}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sourceNotes",
+                        org.hamcrest.Matchers.equalTo("朋友说不会使用 Codex")))
+                .andExpect(jsonPath("$.data.useWaoContext", org.hamcrest.Matchers.is(false)))
+                .andExpect(jsonPath("$.data.contextSources", org.hamcrest.Matchers.hasSize(0)));
     }
 
     @Test

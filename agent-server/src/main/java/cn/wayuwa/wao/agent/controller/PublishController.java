@@ -7,6 +7,7 @@ import cn.wayuwa.wao.agent.dto.CreatePublishTaskRequest;
 import cn.wayuwa.wao.agent.dto.MediaAssetDto;
 import cn.wayuwa.wao.agent.dto.PublishCenterDto;
 import cn.wayuwa.wao.agent.dto.PublishTaskDto;
+import cn.wayuwa.wao.agent.dto.UpdatePublicationDataRequest;
 import cn.wayuwa.wao.agent.dto.UpdatePublishTaskRequest;
 import cn.wayuwa.wao.agent.service.MediaAssetService;
 import cn.wayuwa.wao.agent.service.PublishTaskService;
@@ -71,6 +72,13 @@ public class PublishController {
     public ApiResponse<PublishTaskDto> markPublished(@PathVariable String taskId,
                                                      HttpServletRequest request) {
         return ApiResponse.ok(publishTasks.markPublished(accountId(request), taskId));
+    }
+
+    @PostMapping("/tasks/{taskId}/publication-data")
+    public ApiResponse<PublishTaskDto> updatePublicationData(
+            @PathVariable String taskId, @Valid @RequestBody UpdatePublicationDataRequest body,
+            HttpServletRequest request) {
+        return ApiResponse.ok(publishTasks.updatePublicationData(accountId(request), taskId, body));
     }
 
     @PostMapping("/media")

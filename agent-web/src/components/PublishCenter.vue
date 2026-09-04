@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   createPublishTask, getAuthorizeUrl, getPublishCenter, submitPublishTask,
-  listMedia, markPublishTaskPublished, unbindAccount, updatePublishTask, uploadMedia,
+  listMedia, markPublishTaskPublished, unbindAccount, updatePublicationData,
+  updatePublishTask, uploadMedia,
 } from '@/api/publish'
 import { createKnowledgeArticle, listKnowledgeBases } from '@/api/knowledge'
 import { articleBlocks, articleDocument, articleFragment } from '@/articleExport'
@@ -25,6 +26,7 @@ const busy = ref('')
 const message = ref('')
 const error = ref('')
 const dirty = ref(false)
+const publicationDirty = ref(false)
 const htmlDialog = ref(false)
 const knowledgeDialog = ref(false)
 const knowledgeBases = ref<KnowledgeBaseOption[]>([])
@@ -32,13 +34,20 @@ const knowledgeError = ref('')
 const targetKbId = ref('')
 const targetFolderId = ref('')
 const createdDocUrl = ref('')
-const createForm = reactive({ topic: '', platform: 'DOUYIN', generateCopy: true })
+const createForm = reactive({
+  topic: '', platform: 'WECHAT_MP', generateCopy: true, sourceNotes: '', useWaoContext: true,
+})
 const editForm = reactive({ version: 0, title: '', content: '', tags: '', platformAccountId: '', mediaAssetId: '' })
+const publicationForm = reactive<{
+  url: string; views: number | null; likes: number | null; comments: number | null;
+  favorites: number | null; shares: number | null
+}>({ url: '', views: null, likes: null, comments: null, favorites: null, shares: null })
 let pollTimer: number | undefined
 
 const selected = computed(() => center.value?.tasks.find((task) => task.id === selectedId.value) ?? null)
 const selectedPlatform = computed(() => platform(selected.value?.platform))
 const selectedMedia = computed(() => mediaAssets.value.find((item) => item.id === editForm.mediaAssetId))
+const hasUnsaved = computed(() => dirty.value || publicationDirty.value)
 const editable = computed(() => !!selected.value && isPublishEditable(selected.value.status))
 const articleContent = computed(() => selected.value?.platform === 'WECHAT_MP')
 const canPublish = computed(() => !!selected.value && !!selectedPlatform.value
@@ -58,7 +67,7 @@ const exportInput = computed(() => ({
   tags: editForm.tags.split(/[\s,，#]+/).filter(Boolean),
   coverUrl: selectedMedia.value?.kind === 'IMAGE'
     ? new URL(`/api/agent/publish/media/${selectedMedia.value.id}/content`, window.location.origin).href
-    : selected.value?.topic === '我的WAO首篇图文'
+    : ['我的WAO首篇图文', '为什么我要做 WAO'].includes(selected.value?.topic ?? '')
       ? new URL('/agent/article/my-wao-cover.png', window.location.origin).href
       : undefined,
 }))
@@ -80,14 +89,14 @@ function formatDate(value?: string) {
 watch(() => props.initialTopic, (topic) => {
   if (topic) createForm.topic = topic
 }, { immediate: true })
-watch(dirty, (value) => emit('dirty-change', value))
+watch(hasUnsaved, (value) => emit('dirty-change', value))
 
 function platform(code?: string): PlatformSummary | undefined {
   return center.value?.platforms.find((item) => item.platform === code)
 }
 
 function selectTask(task: PublishTask, force = false) {
-  if (dirty.value && !force && !window.confirm('当前编辑内容还没保存，仍要切换任务吗？')) return
+  if (hasUnsaved.value && !force && !window.confirm('当前内容还有未保存修改，仍要切换任务吗？')) return
   selectedId.value = task.id
   editForm.version = task.version
   editForm.title = task.title ?? ''
@@ -95,7 +104,14 @@ function selectTask(task: PublishTask, force = false) {
   editForm.tags = task.tags.join(' ')
   editForm.platformAccountId = task.platformAccountId ?? ''
   editForm.mediaAssetId = task.mediaAssetId ?? ''
+  publicationForm.url = task.publicationUrl ?? ''
+  publicationForm.views = null
+  publicationForm.likes = null
+  publicationForm.comments = null
+  publicationForm.favorites = null
+  publicationForm.shares = null
   dirty.value = false
+  publicationDirty.value = false
 }
 
 async function refresh(silent = false) {
@@ -105,7 +121,7 @@ async function refresh(silent = false) {
     center.value = await getPublishCenter()
     if (showWorkspace.value) mediaAssets.value = await listMedia()
     const current = center.value.tasks.find((task) => task.id === selectedId.value)
-    if (!dirty.value && current) selectTask(current, true)
+    if (!hasUnsaved.value && current) selectTask(current, true)
     else if (!selectedId.value && center.value.tasks[0]) selectTask(center.value.tasks[0], true)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '发布中心读取失败'
@@ -121,11 +137,13 @@ async function createTask() {
   error.value = ''
   try {
     const created = await createPublishTask(createForm.topic, createForm.platform,
-      createForm.generateCopy && !!center.value?.ai.available)
+      createForm.generateCopy && !!center.value?.ai.available, undefined,
+      createForm.sourceNotes, createForm.useWaoContext)
     await refresh(true)
     const current = center.value?.tasks.find((task) => task.id === created.id) ?? created
     selectTask(current, true)
     createForm.topic = ''
+    createForm.sourceNotes = ''
     emit('topic-consumed')
     message.value = created.status === 'GENERATING' ? '已开始生成文案' : '已创建草稿，请人工完善后保存'
   } catch (cause) {
@@ -306,6 +324,46 @@ async function markPublished() {
   }
 }
 
+function metricValue(value: number | null) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function markPublicationDirty() {
+  publicationDirty.value = true
+  message.value = '发布数据有未保存修改'
+}
+
+async function savePublicationData() {
+  const task = selected.value
+  if (!task || task.status !== 'PUBLISHED' || !publicationDirty.value) return
+  busy.value = 'publication-data'
+  error.value = ''
+  try {
+    const saved = await updatePublicationData(task.id, {
+      version: task.version,
+      publicationUrl: publicationForm.url.trim() || undefined,
+      views: metricValue(publicationForm.views), likes: metricValue(publicationForm.likes),
+      comments: metricValue(publicationForm.comments), favorites: metricValue(publicationForm.favorites),
+      shares: metricValue(publicationForm.shares),
+    })
+    await refresh(true)
+    selectTask(center.value?.tasks.find((item) => item.id === saved.id) ?? saved, true)
+    message.value = saved.metricHistory.length ? '发布链接和最新数据已记录' : '发布链接已保存'
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '发布数据保存失败，请重试'
+  } finally {
+    busy.value = ''
+  }
+}
+
+function sourceType(type: string) {
+  return ({ MEMORY: '个人记忆', KNOWLEDGE: '知识库', CONVERSATION: 'AI 对话', STYLE: '过往成稿' } as Record<string, string>)[type] ?? type
+}
+
+function formatMetric(value?: number) {
+  return value === null || value === undefined ? '—' : new Intl.NumberFormat('zh-CN').format(value)
+}
+
 async function authorize(item: PlatformSummary) {
   busy.value = `auth-${item.platform}`
   error.value = ''
@@ -343,7 +401,7 @@ onMounted(async () => {
   }
 })
 function warnBeforeUnload(event: BeforeUnloadEvent) {
-  if (!dirty.value) return
+  if (!hasUnsaved.value) return
   event.preventDefault()
 }
 
@@ -375,11 +433,13 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-if="showCreate" class="create-card">
-        <div><strong>新建内容</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model} 可生成初稿，仍需人工审核。` : '尚未配置模型，创建后可手工写稿。' }}</span></div>
-        <input v-model="createForm.topic" maxlength="200" placeholder="写下话题，或直接给我几句话" @keyup.enter="createTask" />
+        <div><strong>新建图文</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model} 会结合你的输入和授权资料生成初稿，仍需人工审核。` : '尚未配置模型，想法会随草稿保存，可继续手工写稿。' }}</span></div>
+        <input v-model="createForm.topic" maxlength="200" placeholder="写下这篇准备解决的问题或主题" @keyup.enter="createTask" />
         <select v-model="createForm.platform"><option v-for="item in center.platforms" :key="item.platform" :value="item.platform">{{ item.label }}</option></select>
         <label><input v-model="createForm.generateCopy" type="checkbox" :disabled="!center.ai.available" /> AI 生成</label>
         <button :disabled="busy === 'create' || !createForm.topic.trim()" @click="createTask">{{ busy === 'create' ? '创建中…' : '开始创作' }}</button>
+        <label class="source-notes"><span>我的想法或对话摘录</span><textarea v-model="createForm.sourceNotes" maxlength="20000" rows="4" placeholder="把刚想到的话、聊天片段、经历或必须保留的判断直接放进来。创建失败时内容不会清空。"></textarea></label>
+        <label class="context-toggle"><input v-model="createForm.useWaoContext" type="checkbox" /> 结合 WAO 个人记忆、知识库、私人 AI 对话和过往成稿</label>
       </section>
 
       <div v-if="showWorkspace" class="workspace">
@@ -399,6 +459,20 @@ onBeforeUnmount(() => {
             </div>
             <div class="content-meta"><span>目标账号：{{ selected.platformAccountName || '未选择' }}</span><span>发布：{{ formatDate(selected.publishedAt) }}</span></div>
             <div v-if="selected.errorMessage" class="task-error">{{ selected.errorMessage }}</div>
+            <details v-if="selected.sourceNotes" class="source-details">
+              <summary>本篇最初想法 / 对话摘录</summary><p>{{ selected.sourceNotes }}</p>
+            </details>
+            <details v-if="selected.contextSources.length" class="source-details">
+              <summary>AI 生成时参考了 {{ selected.contextSources.length }} 条 WAO 内容</summary>
+              <article v-for="(source, index) in selected.contextSources" :key="`${source.type}-${index}`">
+                <span>{{ sourceType(source.type) }}</span>
+                <a v-if="source.url" :href="source.url" target="_blank" rel="noopener">{{ source.title }}</a>
+                <b v-else>{{ source.title }}</b>
+                <p>{{ source.excerpt }}</p>
+              </article>
+            </details>
+            <p v-else-if="selected.useWaoContext && selected.status === 'GENERATING'" class="context-state">正在从你的 WAO 内容中筛选相关资料…</p>
+            <p v-else-if="!selected.useWaoContext" class="context-state">本篇未读取 WAO 个人上下文。</p>
             <label>标题<input v-model="editForm.title" maxlength="200" :disabled="!editable" @input="markDirty" /></label>
             <div class="body-field"><span>正文</span>
               <ArticleBodyEditor v-if="articleContent" v-model="editForm.content" :disabled="!editable" @change="markDirty" />
@@ -419,6 +493,26 @@ onBeforeUnmount(() => {
                 <template v-else><span>{{ selectedPlatform?.note }}</span><button :disabled="!canMarkPublished || busy === 'mark-published'" @click="markPublished">{{ busy === 'mark-published' ? '记录中…' : '我已在站外发布' }}</button></template>
               </template>
             </div>
+            <section v-if="selected.status === 'PUBLISHED'" class="publication-data">
+              <header><div><strong>发布结果与数据</strong><small>手工录入会按时间保留快照，没填的指标保持未知</small></div><span>{{ selected.metricHistory.length }} 次记录</span></header>
+              <label>发布链接<input v-model="publicationForm.url" type="url" placeholder="https://..." @input="markPublicationDirty" /></label>
+              <div class="metric-grid">
+                <label>阅读 / 播放<input v-model.number="publicationForm.views" type="number" min="0" placeholder="未知" @input="markPublicationDirty" /></label>
+                <label>点赞<input v-model.number="publicationForm.likes" type="number" min="0" placeholder="未知" @input="markPublicationDirty" /></label>
+                <label>评论<input v-model.number="publicationForm.comments" type="number" min="0" placeholder="未知" @input="markPublicationDirty" /></label>
+                <label>收藏<input v-model.number="publicationForm.favorites" type="number" min="0" placeholder="未知" @input="markPublicationDirty" /></label>
+                <label>分享<input v-model.number="publicationForm.shares" type="number" min="0" placeholder="未知" @input="markPublicationDirty" /></label>
+              </div>
+              <button :disabled="!publicationDirty || busy === 'publication-data'" @click="savePublicationData">{{ busy === 'publication-data' ? '保存中…' : '保存链接和本次数据' }}</button>
+              <div v-if="selected.metricHistory.length" class="metric-history">
+                <article v-for="snapshot in selected.metricHistory" :key="snapshot.id">
+                  <time>{{ formatDate(snapshot.recordedAt) }}</time>
+                  <span>阅读 {{ formatMetric(snapshot.views) }}</span><span>赞 {{ formatMetric(snapshot.likes) }}</span>
+                  <span>评 {{ formatMetric(snapshot.comments) }}</span><span>藏 {{ formatMetric(snapshot.favorites) }}</span>
+                  <span>分享 {{ formatMetric(snapshot.shares) }}</span>
+                </article>
+              </div>
+            </section>
           </main>
           <section class="live-preview" aria-label="实时发布预览">
             <header><div><strong>实时预览</strong><small>{{ selected.platformLabel }}最终排版 · 输入后立即同步</small></div><span :class="{ dirty }">{{ dirty ? '预览含未保存修改' : '已保存版本' }}</span></header>
@@ -457,8 +551,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.publish-center{display:grid;gap:14px}.notice,.error{padding:10px 12px;display:flex;align-items:center;gap:8px;border-radius:9px;font-size:12px}.notice{color:var(--wao-primary-text);background:var(--wao-primary-soft);border:1px solid var(--wao-primary-line)}.error{color:var(--wao-danger-strong);background:var(--wao-danger-bg);border:1px solid var(--wao-danger-line)}.error span{flex:1}.error button{border:0;background:transparent;color:inherit;cursor:pointer}.loading{min-height:260px;display:grid;place-items:center;align-content:center;gap:10px;color:var(--wao-text-weak)}.loading span{width:28px;height:28px;border:3px solid var(--wao-primary-line);border-top-color:var(--wao-primary);border-radius:50%;animation:spin .8s linear infinite}.capabilities{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.capabilities article{padding:13px;display:flex;gap:10px;border:1px solid var(--wao-line);border-radius:11px;background:var(--wao-bg-card)}.capabilities article>div{display:grid;gap:4px}.capabilities strong{font-size:12px}.capabilities span{color:var(--wao-text-weak);font-size:10px;line-height:1.5}.ai-card>i{font-size:22px;color:var(--wao-primary-text)}.ai-card.unavailable{opacity:.72}.platform-card{flex-direction:column}.accounts{display:flex!important;flex-wrap:wrap;gap:5px}.accounts>span{padding:4px 6px;border-radius:6px;background:var(--wao-bg-sub)}.accounts button{margin-left:4px;border:0;background:transparent;color:var(--wao-danger-strong);cursor:pointer}.accounts .link{margin:0;color:var(--wao-primary-text)}.create-card{padding:14px;display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1.5fr) 120px auto auto;align-items:center;gap:9px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.create-card>div{display:grid;gap:3px}.create-card strong{font-size:13px}.create-card span{color:var(--wao-text-weak);font-size:9.5px;line-height:1.4}.create-card input,.create-card select,.editor input,.editor select,.editor textarea,.knowledge-dialog select{width:100%;padding:9px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text);font:inherit}.create-card>label{display:flex;align-items:center;gap:5px;font-size:11px;white-space:nowrap}.create-card>label input{width:auto}.create-card>button,.actions>button{min-height:36px;padding:0 13px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer;font-weight:650}.create-card button:disabled,.actions button:disabled{opacity:.45;cursor:not-allowed}.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:12px;align-items:start}.task-list,.editor{border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.panel-head{padding:11px 12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--wao-divider)}.panel-head button{border:0;background:transparent;color:var(--wao-text-weak);cursor:pointer}.task{width:100%;padding:10px 11px;display:flex;align-items:center;gap:8px;border:0;border-bottom:1px solid var(--wao-divider);background:transparent;color:var(--wao-text);cursor:pointer;text-align:left}.task.active{background:var(--wao-primary-soft)}.task>span{min-width:0;flex:1;display:grid;gap:3px}.task strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.task small{color:var(--wao-text-weak);font-size:9.5px}.task em{color:var(--wao-primary-text);font-size:10px;font-style:normal}.empty{padding:28px;color:var(--wao-text-weak);font-size:11px;text-align:center}.editor{padding:15px;display:grid;gap:12px}.editor-head{display:flex;justify-content:space-between;gap:10px}.editor-head>div{display:flex;align-items:center;gap:8px}.editor-head small{color:var(--wao-text-weak);font-size:10px}.status{padding:3px 6px;border-radius:999px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:9px}.status.published{background:var(--wao-success-bg);color:var(--wao-success-strong)}.status.failed{background:var(--wao-danger-bg);color:var(--wao-danger-strong)}.task-error{padding:8px 10px;color:var(--wao-danger-strong);background:var(--wao-danger-bg);border-radius:7px;font-size:11px}.editor label,.knowledge-dialog label,.export-dialog label{display:grid;gap:5px;color:var(--wao-text-3);font-size:10px}.editor textarea{resize:vertical;line-height:1.55}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.file{min-height:36px;padding:8px;position:relative;overflow:hidden;border:1px dashed var(--wao-line-control);border-radius:8px;color:var(--wao-text-weak);cursor:pointer}.file input{position:absolute;inset:0;opacity:0;cursor:pointer}.actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.actions .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.actions span{margin-right:auto;color:var(--wao-text-weak);font-size:10px}.dialog-mask{position:fixed;inset:0;z-index:50;padding:28px;display:grid;place-items:center;background:rgba(10,30,27,.58)}.export-dialog,.knowledge-dialog{width:min(920px,100%);max-height:calc(100vh - 56px);padding:18px;display:grid;gap:14px;overflow:auto;border-radius:16px;background:var(--wao-bg-card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.knowledge-dialog{width:min(520px,100%)}.export-dialog>header,.knowledge-dialog>header{display:flex;justify-content:space-between;gap:12px}.export-dialog header div,.knowledge-dialog header div{display:grid;gap:4px}.export-dialog header small,.knowledge-dialog header small{color:var(--wao-text-weak);font-size:10px}.export-dialog header button,.knowledge-dialog header button{border:0;background:transparent;color:var(--wao-text-weak);font-size:20px;cursor:pointer}.export-dialog iframe{width:100%;height:430px;border:1px solid var(--wao-line);border-radius:12px;background:#edf3f1}.export-dialog textarea{width:100%;padding:10px;border:1px solid var(--wao-line-control);border-radius:8px;box-sizing:border-box;font:11px/1.5 ui-monospace,monospace;resize:vertical}.export-dialog footer,.knowledge-dialog footer{display:flex;justify-content:flex-end;gap:8px}.export-dialog footer button,.knowledge-dialog footer button,.knowledge-success button{min-height:36px;padding:0 14px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer}.export-dialog footer .secondary,.knowledge-dialog footer .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.dialog-state{padding:30px;text-align:center;color:var(--wao-text-weak)}.knowledge-success{padding:28px;display:grid;place-items:center;gap:10px;color:var(--wao-success-strong)}.knowledge-success i{font-size:36px}@keyframes spin{to{transform:rotate(360deg)}}
+.publish-center{display:grid;gap:14px}.notice,.error{padding:10px 12px;display:flex;align-items:center;gap:8px;border-radius:9px;font-size:12px}.notice{color:var(--wao-primary-text);background:var(--wao-primary-soft);border:1px solid var(--wao-primary-line)}.error{color:var(--wao-danger-strong);background:var(--wao-danger-bg);border:1px solid var(--wao-danger-line)}.error span{flex:1}.error button{border:0;background:transparent;color:inherit;cursor:pointer}.loading{min-height:260px;display:grid;place-items:center;align-content:center;gap:10px;color:var(--wao-text-weak)}.loading span{width:28px;height:28px;border:3px solid var(--wao-primary-line);border-top-color:var(--wao-primary);border-radius:50%;animation:spin .8s linear infinite}.capabilities{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.capabilities article{padding:13px;display:flex;gap:10px;border:1px solid var(--wao-line);border-radius:11px;background:var(--wao-bg-card)}.capabilities article>div{display:grid;gap:4px}.capabilities strong{font-size:12px}.capabilities span{color:var(--wao-text-weak);font-size:10px;line-height:1.5}.ai-card>i{font-size:22px;color:var(--wao-primary-text)}.ai-card.unavailable{opacity:.72}.platform-card{flex-direction:column}.accounts{display:flex!important;flex-wrap:wrap;gap:5px}.accounts>span{padding:4px 6px;border-radius:6px;background:var(--wao-bg-sub)}.accounts button{margin-left:4px;border:0;background:transparent;color:var(--wao-danger-strong);cursor:pointer}.accounts .link{margin:0;color:var(--wao-primary-text)}.create-card{padding:14px;display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1.5fr) 120px auto auto;align-items:center;gap:9px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.create-card>div{display:grid;gap:3px}.create-card strong{font-size:13px}.create-card span{color:var(--wao-text-weak);font-size:9.5px;line-height:1.4}.create-card input,.create-card select,.create-card textarea,.editor input,.editor select,.editor textarea,.knowledge-dialog select{width:100%;padding:9px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text);font:inherit}.create-card>label{display:flex;align-items:center;gap:5px;font-size:11px;white-space:nowrap}.create-card>label input{width:auto}.create-card .source-notes{grid-column:1/-1;display:grid;align-items:stretch;white-space:normal}.create-card .source-notes textarea{box-sizing:border-box;resize:vertical;line-height:1.55}.create-card .context-toggle{grid-column:1/-1}.create-card>button,.actions>button{min-height:36px;padding:0 13px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer;font-weight:650}.create-card button:disabled,.actions button:disabled{opacity:.45;cursor:not-allowed}.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:12px;align-items:start}.task-list,.editor{border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.panel-head{padding:11px 12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--wao-divider)}.panel-head button{border:0;background:transparent;color:var(--wao-text-weak);cursor:pointer}.task{width:100%;padding:10px 11px;display:flex;align-items:center;gap:8px;border:0;border-bottom:1px solid var(--wao-divider);background:transparent;color:var(--wao-text);cursor:pointer;text-align:left}.task.active{background:var(--wao-primary-soft)}.task>span{min-width:0;flex:1;display:grid;gap:3px}.task strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.task small{color:var(--wao-text-weak);font-size:9.5px}.task em{color:var(--wao-primary-text);font-size:10px;font-style:normal}.empty{padding:28px;color:var(--wao-text-weak);font-size:11px;text-align:center}.editor{padding:15px;display:grid;gap:12px}.editor-head{display:flex;justify-content:space-between;gap:10px}.editor-head>div{display:flex;align-items:center;gap:8px}.editor-head small{color:var(--wao-text-weak);font-size:10px}.status{padding:3px 6px;border-radius:999px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:9px}.status.published{background:var(--wao-success-bg);color:var(--wao-success-strong)}.status.failed{background:var(--wao-danger-bg);color:var(--wao-danger-strong)}.task-error{padding:8px 10px;color:var(--wao-danger-strong);background:var(--wao-danger-bg);border-radius:7px;font-size:11px}.editor label,.knowledge-dialog label,.export-dialog label{display:grid;gap:5px;color:var(--wao-text-3);font-size:10px}.editor textarea{resize:vertical;line-height:1.55}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.file{min-height:36px;padding:8px;position:relative;overflow:hidden;border:1px dashed var(--wao-line-control);border-radius:8px;color:var(--wao-text-weak);cursor:pointer}.file input{position:absolute;inset:0;opacity:0;cursor:pointer}.actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.actions .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.actions span{margin-right:auto;color:var(--wao-text-weak);font-size:10px}.dialog-mask{position:fixed;inset:0;z-index:50;padding:28px;display:grid;place-items:center;background:rgba(10,30,27,.58)}.export-dialog,.knowledge-dialog{width:min(920px,100%);max-height:calc(100vh - 56px);padding:18px;display:grid;gap:14px;overflow:auto;border-radius:16px;background:var(--wao-bg-card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.knowledge-dialog{width:min(520px,100%)}.export-dialog>header,.knowledge-dialog>header{display:flex;justify-content:space-between;gap:12px}.export-dialog header div,.knowledge-dialog header div{display:grid;gap:4px}.export-dialog header small,.knowledge-dialog header small{color:var(--wao-text-weak);font-size:10px}.export-dialog header button,.knowledge-dialog header button{border:0;background:transparent;color:var(--wao-text-weak);font-size:20px;cursor:pointer}.export-dialog iframe{width:100%;height:430px;border:1px solid var(--wao-line);border-radius:12px;background:#edf3f1}.export-dialog textarea{width:100%;padding:10px;border:1px solid var(--wao-line-control);border-radius:8px;box-sizing:border-box;font:11px/1.5 ui-monospace,monospace;resize:vertical}.export-dialog footer,.knowledge-dialog footer{display:flex;justify-content:flex-end;gap:8px}.export-dialog footer button,.knowledge-dialog footer button,.knowledge-success button{min-height:36px;padding:0 14px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer}.export-dialog footer .secondary,.knowledge-dialog footer .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.dialog-state{padding:30px;text-align:center;color:var(--wao-text-weak)}.knowledge-success{padding:28px;display:grid;place-items:center;gap:10px;color:var(--wao-success-strong)}.knowledge-success i{font-size:36px}@keyframes spin{to{transform:rotate(360deg)}}
 .dialog-error{padding:10px 12px;display:flex;justify-content:space-between;gap:10px;border-radius:8px;background:var(--wao-danger-bg);color:var(--wao-danger-strong);font-size:11px}.dialog-error button{border:0;background:transparent;color:inherit;cursor:pointer}
+.context-state{margin:0;padding:8px 10px;border-radius:8px;background:var(--wao-bg-sub);color:var(--wao-text-weak);font-size:10px}.source-details{border:1px solid var(--wao-line);border-radius:9px;background:var(--wao-bg-sub)}.source-details summary{padding:9px 10px;color:var(--wao-primary-text);font-size:10px;cursor:pointer}.source-details>p,.source-details article{margin:0;padding:9px 10px;border-top:1px solid var(--wao-divider);font-size:10px;line-height:1.65;white-space:pre-wrap}.source-details article{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 7px}.source-details article>span{padding:1px 5px;border-radius:999px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:8px}.source-details article>a,.source-details article>b{overflow:hidden;color:var(--wao-text-2);text-overflow:ellipsis;white-space:nowrap}.source-details article>p{grid-column:1/-1;margin:0;color:var(--wao-text-weak);display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3}.publication-data{padding:13px;display:grid;gap:10px;border:1px solid var(--wao-line);border-radius:10px;background:var(--wao-bg-sub)}.publication-data>header{display:flex;align-items:start;justify-content:space-between;gap:10px}.publication-data header>div{display:grid;gap:3px}.publication-data header small,.publication-data header>span{color:var(--wao-text-weak);font-size:9px}.metric-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.publication-data>button{width:max-content;min-height:34px;padding:0 12px;justify-self:end;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer}.publication-data>button:disabled{opacity:.45}.metric-history{display:grid;gap:5px}.metric-history article{display:grid;grid-template-columns:minmax(90px,1.4fr) repeat(5,1fr);gap:6px;padding:7px 8px;border-radius:7px;background:var(--wao-bg-card);color:var(--wao-text-weak);font-size:9px}.metric-history time{color:var(--wao-text-3)}
 @media(max-width:900px){.create-card{grid-template-columns:1fr 1fr}.create-card>div,.create-card>input{grid-column:1/-1}.workspace{grid-template-columns:1fr}.task-list{max-height:260px;overflow:auto}}@media(max-width:600px){.create-card{grid-template-columns:1fr}.create-card>*{grid-column:1!important}.editor-grid{grid-template-columns:1fr}.editor-head{display:grid}.actions{align-items:stretch;flex-direction:column}.actions span{margin:0}.actions button{width:100%}.dialog-mask{padding:10px}.export-dialog,.knowledge-dialog{max-height:calc(100vh - 20px);padding:14px}.export-dialog iframe{height:52vh}.export-dialog footer,.knowledge-dialog footer{flex-direction:column}.export-dialog footer button,.knowledge-dialog footer button{width:100%}}
 .workspace { grid-template-columns: 240px minmax(0, 1fr); }
 .draft-workspace {
@@ -490,5 +585,7 @@ onBeforeUnmount(() => {
   .draft-workspace { grid-template-columns: 1fr; }
   .live-preview { position: static; }
   .live-preview iframe { height: 68vh; min-height: 480px; }
+  .metric-grid { grid-template-columns:1fr 1fr; }
+  .metric-history article { grid-template-columns:1fr 1fr; }
 }
 </style>

@@ -2,6 +2,8 @@ package cn.wayuwa.wao.agent.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -27,12 +29,20 @@ class ContentGeneratorTest {
     }
 
     private ContentGenerator generator(String apiKey, MockRestServiceServer[] out, String body) {
+        return generator(apiKey, out, body, new String[0]);
+    }
+
+    private ContentGenerator generator(String apiKey, MockRestServiceServer[] out, String body,
+                                       String... expectedRequestFragments) {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         if (body != null) {
-            server.expect(requestTo("https://ai.test/v1/chat/completions"))
-                    .andExpect(header("Authorization", "Bearer " + apiKey))
-                    .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+            var expectation = server.expect(requestTo("https://ai.test/v1/chat/completions"))
+                    .andExpect(header("Authorization", "Bearer " + apiKey));
+            for (String fragment : expectedRequestFragments) {
+                expectation.andExpect(content().string(containsString(fragment)));
+            }
+            expectation.andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
         }
         if (out != null) out[0] = server;
         return new ContentGenerator(new ChatClient(props(apiKey), builder.build()));
@@ -131,5 +141,20 @@ class ContentGeneratorTest {
 
         assertThat(prompt).contains("户外露营装备测评", "一线城市周末露营新手", "绝对化用词");
         assertThat(PromptLibrary.content(PlatformType.DOUYIN, null)).doesNotContain("账号领域");
+    }
+
+    @Test
+    void sourceNotesAndGroundedContextAreSentToTheModel() {
+        MockRestServiceServer[] out = new MockRestServiceServer[1];
+        ContentGenerator gen = generator("key-1", out,
+                reply("{\"title\":\"标题\",\"body\":\"正文\",\"tags\":[],\"blocks\":[]}"),
+                "我的想法或对话摘录", "朋友说不会使用 Codex",
+                "wao_creator_context", "过往成稿只用于表达风格");
+
+        gen.generate("为什么做 WAO", PlatformType.WECHAT_MP, null,
+                "朋友说不会使用 Codex",
+                "<wao_creator_context>过往成稿只用于表达风格</wao_creator_context>");
+
+        out[0].verify();
     }
 }

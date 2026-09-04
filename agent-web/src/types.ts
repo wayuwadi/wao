@@ -98,6 +98,23 @@ export interface ContentBlock {
   seconds?: number
 }
 
+export interface ContentSource {
+  type: 'MEMORY' | 'KNOWLEDGE' | 'CONVERSATION' | 'STYLE'
+  title: string
+  url?: string
+  excerpt: string
+}
+
+export interface ContentMetricSnapshot {
+  id: string
+  views?: number
+  likes?: number
+  comments?: number
+  favorites?: number
+  shares?: number
+  recordedAt: string
+}
+
 export interface PublishTask {
   id: string
   platform: string
@@ -114,9 +131,14 @@ export interface PublishTask {
   blocks: ContentBlock[]
   sourceHotspotId?: string
   sourceHotspotTitle?: string
+  sourceNotes?: string
+  useWaoContext: boolean
+  contextSources: ContentSource[]
   status: string
   progress: number
   platformItemId?: string
+  publicationUrl?: string
+  metricHistory: ContentMetricSnapshot[]
   errorMessage?: string
   version: number
   createdAt: string
