@@ -1,5 +1,19 @@
 # 自媒体 Agent API 补充契约
 
+## AI 图文生成与重试
+
+`POST /api/agent/publish/tasks`
+
+- `generateCopy=true` 时必须返回 `GENERATING`，或在没有可用模型时返回明确的 `400`；不得改写为手工草稿。
+- `GET /api/agent/publish/center` 的 `ai` 返回本地模型或 WAO 推荐模型的非敏感供应商与模型标识。
+- 任务返回 `generationRetryable`，只有生成失败且仍保留固化请求时为 `true`。
+
+`POST /api/agent/publish/tasks/{taskId}/retry-generation`
+
+- 仅重试当前登录工作区内 `generationRetryable=true` 的任务。
+- 沿用首次创建时的用户材料和来源快照，不重新读取可能已变化的个人上下文。
+- 成功返回重新进入 `GENERATING` 的任务；无可用模型返回 `400`，任务状态已变化返回 `409`。
+
 ## 内容素材预览
 
 `GET /api/agent/publish/media/{mediaAssetId}/content`
