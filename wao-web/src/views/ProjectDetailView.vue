@@ -22,7 +22,6 @@ import { toast } from '@/composables/toast'
 import { createAiRuns } from '@/api/ai'
 import ProjectSettingsModal from '@/components/overlays/ProjectSettingsModal.vue'
 import { useFavoritesStore } from '@/stores/favorites'
-import { MAX_TASK_GROUPS } from '@/types'
 import type { AiEngine, TaskStatus } from '@/types'
 import type { TaskDeliveryStage } from '@/utils/domain'
 import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
@@ -334,7 +333,20 @@ async function createProjectDoc() {
 
 /** 分组列表；项目还没建过分组时是一个「未分组」兜底（不落库，改名或加组才写透）。 */
 const groups = computed(() => data.taskGroupsOf(pid.value))
-const canAddGroup = computed(() => groups.value.length < MAX_TASK_GROUPS)
+const groupsSaving = ref(false)
+const collapsedGroups = ref<string[]>([])
+const collapseKey = computed(() => `wao-project-collapsed-groups-v1:${session.currentUser.id}:${pid.value}`)
+watch(collapseKey, (key) => {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(key) || '[]')
+    collapsedGroups.value = Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : []
+  } catch { collapsedGroups.value = [] }
+}, { immediate: true })
+function toggleGroup(id: string) {
+  collapsedGroups.value = collapsedGroups.value.includes(id)
+    ? collapsedGroups.value.filter((value) => value !== id) : [...collapsedGroups.value, id]
+  try { localStorage.setItem(collapseKey.value, JSON.stringify(collapsedGroups.value)) } catch { /* 存储不可用时仍可折叠 */ }
+}
 /** 分组视图里正在改名的分组 id。 */
 const renamingGroup = ref<string | null>(null)
 const renameText = ref('')
@@ -370,13 +382,17 @@ const groupSections = computed(() =>
 )
 
 async function persistGroups(next: { id: string; name: string }[], failHint: string) {
-  if (!(await data.setTaskGroups(pid.value, next))) toast(failHint, 'ri-error-warning-line')
+  if (groupsSaving.value) return false
+  groupsSaving.value = true
+  try {
+    const saved = await data.setTaskGroups(pid.value, next)
+    if (!saved) toast(failHint, 'ri-error-warning-line')
+    return saved
+  } finally { groupsSaving.value = false }
 }
 async function addGroup() {
-  if (!canAddGroup.value) return toast(`最多 ${MAX_TASK_GROUPS} 个分组`, 'ri-information-line')
   const created = { id: `tg${Date.now()}`, name: `分组 ${groups.value.length + 1}` }
-  await persistGroups([...groups.value, created], '分组创建失败，请重试')
-  startRename(created.id, created.name)
+  if (await persistGroups([...groups.value, created], '分组创建失败，请重试')) startRename(created.id, created.name)
 }
 function startRename(id: string, name: string) {
   renamingGroup.value = id
@@ -386,9 +402,12 @@ function startRename(id: string, name: string) {
 async function commitRename() {
   const id = renamingGroup.value
   const name = renameText.value.trim()
+  if (!id || !name || groupsSaving.value) return
+  // 先结束本次编辑，避免输入框卸载时的 blur 重复提交或覆盖下一次改名。
   renamingGroup.value = null
-  if (!id || !name) return
-  await persistGroups(groups.value.map((g) => (g.id === id ? { ...g, name } : g)), '分组改名失败，请重试')
+  if (!(await persistGroups(groups.value.map((g) => (g.id === id ? { ...g, name } : g)), '分组改名失败，名称仍保留，请重试'))) {
+    startRename(id, name)
+  }
 }
 /** 删掉一个分组：里面的任务不删，落回第一个分组。最后一个分组不给删，否则没地方放任务。 */
 async function removeGroup(id: string) {
@@ -396,8 +415,8 @@ async function removeGroup(id: string) {
   const group = groups.value.find((item) => item.id === id)
   if (!group || !window.confirm(`删除分组“${group.name}”？其中任务会归入第一个分组。`)) return
   const rest = groups.value.filter((g) => g.id !== id)
+  if (!(await persistGroups(rest, '分组删除失败，请重试'))) return
   ptasks.value.filter((t) => t.groupId === id).forEach((t) => data.patchTask(t.id, { groupId: rest[0]!.id }))
-  await persistGroups(rest, '分组删除失败，请重试')
   toast('分组已删除，里面的任务已归到第一个分组', 'ri-inbox-unarchive-line')
 }
 function toggleGroupDone(id: string) {
@@ -407,6 +426,7 @@ function toggleGroupDone(id: string) {
 }
 /** 分组头上的「+」：就地展开一行输入框，回车即建，手机上不用再进弹窗。 */
 function startQuickAdd(groupId: string) {
+  if (collapsedGroups.value.includes(groupId)) toggleGroup(groupId)
   quickAddGroup.value = groupId
   quickAddText.value = ''
   quickAddState.value = 'idle'
@@ -702,6 +722,7 @@ watch(visibleTaskIds, (ids) => {
           @drop="onDropGroup(g.id)"
         >
           <div class="group-head">
+            <button class="group-collapse" :aria-label="`${collapsedGroups.includes(g.id) ? '展开' : '折叠'}分组 ${g.name}`" :aria-expanded="!collapsedGroups.includes(g.id)" @click="toggleGroup(g.id)"><i :class="collapsedGroups.includes(g.id) ? 'ri-arrow-right-s-line' : 'ri-arrow-down-s-line'"></i></button>
             <input
               v-if="renamingGroup === g.id"
               ref="renameInput"
@@ -733,6 +754,7 @@ watch(visibleTaskIds, (ids) => {
             </button>
           </div>
 
+          <div v-show="!collapsedGroups.includes(g.id)" class="group-body">
           <div v-if="quickAddGroup === g.id" class="group-add-wrap">
             <div class="group-add-row" :class="{ error: quickAddState === 'error' }">
               <i :class="quickAddState === 'submitting' ? 'ri-loader-4-line spinning' : 'ri-add-line'"></i>
@@ -786,12 +808,12 @@ watch(visibleTaskIds, (ids) => {
           </template>
 
           <div v-if="!g.total" class="group-empty">点右上角的「+」往这里加第一条任务</div>
+          </div>
         </div>
 
-        <button v-if="canAddGroup" class="group-add" @click="addGroup">
-          <i class="ri-add-line"></i>新建分组<em>还能建 {{ MAX_TASK_GROUPS - groups.length }} 个</em>
+        <button class="group-add" :disabled="groupsSaving" @click="addGroup">
+          <i class="ri-add-line"></i>{{ groupsSaving ? '保存中…' : '新建分组' }}
         </button>
-        <div v-else class="group-full">已经有 {{ MAX_TASK_GROUPS }} 个分组了——再多就一屏扫不完了</div>
       </div>
 
       <div v-else class="board">
@@ -1615,6 +1637,7 @@ watch(visibleTaskIds, (ids) => {
   align-items: start;
 }
 .group-card {
+  align-self: start;
   background: var(--wao-bg-card);
   border: 1px solid var(--wao-line);
   border-radius: 12px;
@@ -1631,6 +1654,16 @@ watch(visibleTaskIds, (ids) => {
   gap: 8px;
   padding: 4px 2px 8px;
   border-bottom: 1px solid var(--wao-divider);
+}
+.group-collapse {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wao-text-2);
+  cursor: pointer;
 }
 .group-name {
   border: none;

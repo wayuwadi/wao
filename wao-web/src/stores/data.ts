@@ -77,7 +77,6 @@ import { readDocumentDraft, removeDocumentDraft, writeDocumentDraft, type Docume
 import { nowIso, todayIso } from '@/utils/time'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
-import { MAX_TASK_GROUPS } from '@/types'
 import type {
   AiRun, Area, AutomationJob, Comment, Doc, DocBlock, FileItem, HostedPage, ImageItem, ImageRef, RichDocContent,
   KnowledgeBase, Project, ScheduleItem, Suggestion, Task, TaskGroup, TaskStep, TrashEntry, VaultGroup, VaultItem,
@@ -1459,17 +1458,20 @@ export const useDataStore = defineStore('data', () => {
    * 整表替换某个项目的任务分组（新建 / 改名 / 删除都走这里）。
    *
    * @param projectId 项目 id
-   * @param groups    完整分组列表，超过上限的部分由服务端截断
+   * @param groups    完整分组列表，不按数量截断
    * @return 是否写透成功；离线演示态直接返回 true
    */
   async function setTaskGroups(projectId: string, groups: TaskGroup[]): Promise<boolean> {
     const p = projectById(projectId)
     if (!p) return false
-    const next = groups.slice(0, MAX_TASK_GROUPS)
-    p.taskGroups = next
-    if (!apiLive.value) return true
+    const next = groups.map((group) => ({ ...group }))
+    if (!apiLive.value) {
+      p.taskGroups = next
+      return true
+    }
     try {
       await apiPatchProject(projectId, { taskGroups: next })
+      p.taskGroups = next
       return true
     } catch {
       return false
