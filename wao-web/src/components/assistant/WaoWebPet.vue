@@ -10,6 +10,7 @@ import {
 } from '@/api/workdayRhythm'
 import raccoonUrl from '@/assets/wao-fruit-kernel-raccoon.png'
 import { useFloatingDrag } from '@/composables/floatingDrag'
+import { useIsMobile } from '@/composables/viewport'
 import { toast } from '@/composables/toast'
 import { useDataStore } from '@/stores/data'
 import { useUiStore } from '@/stores/ui'
@@ -43,6 +44,8 @@ const router = useRouter()
 const data = useDataStore()
 const ui = useUiStore()
 const webPet = useWebPetStore()
+const isMobile = useIsMobile()
+const mobileExpanded = ref(readMobileExpanded())
 const noticeIndex = ref(0)
 const quickPointerActive = ref(false)
 const quickFocusActive = ref(false)
@@ -190,7 +193,7 @@ const noticeVisible = computed(() =>
   && !quickMenuActive.value
   && !settingsMenuActive.value,
 )
-const petHidden = computed(() => petHiddenUntil.value > clockTick.value)
+const petHidden = computed(() => petHiddenUntil.value > clockTick.value || (isMobile.value && !mobileExpanded.value))
 const rhythmActions = computed(() => rhythmConfig.value?.energyItems.slice(0, 3) ?? [])
 const actionableCount = computed(
   () => data.tasks.filter((task) => ['AI 进行中', '待验证', '待办'].includes(task.status)).length,
@@ -199,6 +202,11 @@ const actionableCount = computed(
 function readDeadline(key: string) {
   const value = Number(localStorage.getItem(key))
   return Number.isFinite(value) ? value : 0
+}
+
+function readMobileExpanded() {
+  try { return sessionStorage.getItem('wao-web-pet-mobile-expanded-v1') === 'true' }
+  catch { return false }
 }
 
 function keepDeadline(key: string, minutes: number) {
@@ -222,6 +230,10 @@ function hidePet(minutes: number) {
 }
 
 function restorePet() {
+  if (isMobile.value) {
+    mobileExpanded.value = true
+    try { sessionStorage.setItem('wao-web-pet-mobile-expanded-v1', 'true') } catch { /* 当前页面仍可恢复。 */ }
+  }
   localStorage.removeItem('wao-web-pet-hidden-until')
   petHiddenUntil.value = 0
   clockTick.value = Date.now()
@@ -706,6 +718,9 @@ onBeforeUnmount(() => {
         @pointerdown.stop
       >
         <span class="quick-actions-label">快捷操作</span>
+        <button type="button" class="pet-settings-link pet-quick-silence" @click="hidePet(webPet.settings.petSnoozeMinutes)">
+          <i class="ri-moon-clear-line"></i><span><b>宠物静默</b><small>收起 {{ webPet.settings.petSnoozeMinutes }} 分钟，可随时恢复</small></span>
+        </button>
         <a
           v-if="rhythmPageDraftConflict && pendingRhythmStage !== 'notifying'"
           class="pet-rhythm-state conflict"
