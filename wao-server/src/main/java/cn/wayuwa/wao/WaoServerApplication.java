@@ -11,13 +11,11 @@ import cn.wayuwa.wao.auth.WechatOfficialAccountProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableConfigurationProperties({FeishuLoginProperties.class, WechatLoginProperties.class,
         WechatOfficialAccountProperties.class, AuthProperties.class, JumpServerSsoProperties.class,
         NeteaseMusicProperties.class})
-@EnableScheduling
 public class WaoServerApplication {
 
     static {

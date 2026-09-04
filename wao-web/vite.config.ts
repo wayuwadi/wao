@@ -12,7 +12,7 @@ const buildVersion = buildCommitSha ? buildCommitSha.slice(0, 7) : undefined
 export default defineConfig({
   plugins: [
     vue(),
-    vueDevTools(),
+    process.env.WAO_VUE_DEVTOOLS === 'false' ? undefined : vueDevTools(),
     webUpdateNotice({
       ...(buildVersion
         ? { versionType: 'custom', customVersion: buildVersion }

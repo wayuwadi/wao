@@ -1,0 +1,42 @@
+# 本机运行真实业务服务，数据库由环境变量指向服务器或 SSH 隧道。
+# 不注册到线上服务发现，不执行迁移或共享后台任务。
+server:
+  address: 127.0.0.1
+  servlet:
+    session:
+      cookie:
+        name: WAO_LOCAL_SESSION
+spring:
+  session:
+    jdbc:
+      cleanup-cron: "-"
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT:3306}/${DB_NAME}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USER}
+    password: ${DB_PASS}
+  flyway:
+    enabled: false
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+management:
+  health:
+    redis:
+      enabled: false
+wao:
+  scheduling:
+    enabled: false
+  system-report:
+    scheduler-enabled: false
+  ai:
+    daily-guidance-warmup-enabled: false
+    life-review-scheduler-enabled: false
+    evolution:
+      scheduler-enabled: false
+    task-auto-run:
+      scheduler-enabled: false
