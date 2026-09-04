@@ -32,7 +32,6 @@ public class ProjectService {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(ProjectService.class);
     private static final Set<String> PROJECT_STATUSES = Set.of("规划中", "进行中", "有风险", "已完成", "已搁置");
     /** 一个项目最多能建的任务分组数。 */
-    public static final int MAX_TASK_GROUPS = 6;
     /** 分组名长度上限，防止一行名字把分组头撑破。 */
     private static final int MAX_GROUP_NAME = 20;
 
@@ -258,10 +257,7 @@ public class ProjectService {
     }
 
     /**
-     * 规整前端送来的任务分组：去掉空名、补齐 id、按 id 去重，并砍到上限 {@value #MAX_TASK_GROUPS} 个。
-     *
-     * <p>上限是需求定的（「最多也只要 6 个分组吧」），在服务端也拦一道：分组视图一屏能扫完
-     * 才有意义，靠前端约束挡不住直接打接口的调用。
+     * 规整前端送来的任务分组：去掉空名、补齐 id、按 id 去重，保留全部有效分组。
      *
      * @param groups 前端送来的完整分组列表
      * @return 规整后的分组列表
@@ -279,9 +275,6 @@ public class ProjectService {
             }
             String name = g.name().trim();
             out.add(new TaskGroupDto(id, name.length() > MAX_GROUP_NAME ? name.substring(0, MAX_GROUP_NAME) : name));
-            if (out.size() >= MAX_TASK_GROUPS) {
-                break;
-            }
         }
         return out;
     }

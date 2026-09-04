@@ -808,6 +808,7 @@ watch(
   () => clock.value.date,
   (date, previous) => {
     if (date !== previous) {
+      undoPendingIndex.value = null
       pendingEnergyNotification.value = null
       energyNotificationState.value = 'idle'
       pendingFocusNotification.value = null

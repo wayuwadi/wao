@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   createPublishTask, getAuthorizeUrl, getPublishCenter, submitPublishTask,
   listMedia, markPublishTaskPublished, unbindAccount, updatePublicationData,
-  updatePublishTask, uploadMedia,
+  retryPublishGeneration, updatePublishTask, uploadMedia,
 } from '@/api/publish'
 import { createKnowledgeArticle, listKnowledgeBases } from '@/api/knowledge'
 import { articleBlocks, articleDocument, articleFragment } from '@/articleExport'
@@ -137,7 +137,7 @@ async function createTask() {
   error.value = ''
   try {
     const created = await createPublishTask(createForm.topic, createForm.platform,
-      createForm.generateCopy && !!center.value?.ai.available, undefined,
+      createForm.generateCopy, undefined,
       createForm.sourceNotes, createForm.useWaoContext)
     await refresh(true)
     const current = center.value?.tasks.find((task) => task.id === created.id) ?? created
@@ -148,6 +148,23 @@ async function createTask() {
     message.value = created.status === 'GENERATING' ? '已开始生成文案' : '已创建草稿，请人工完善后保存'
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '创建发布任务失败'
+  } finally {
+    busy.value = ''
+  }
+}
+
+async function retryGeneration() {
+  const task = selected.value
+  if (!task?.generationRetryable) return
+  busy.value = 'retry-generation'
+  message.value = ''
+  error.value = ''
+  try {
+    await retryPublishGeneration(task.id)
+    await refresh(true)
+    message.value = '已重新开始生成文案'
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '重新生成失败，请重试'
   } finally {
     busy.value = ''
   }
@@ -421,7 +438,7 @@ onBeforeUnmount(() => {
     <template v-else-if="center">
       <section v-if="showAccounts" class="capabilities">
         <article v-if="mode === 'full'" class="ai-card" :class="{ unavailable: !center.ai.available }">
-          <i class="ri-sparkling-2-line"></i><div><strong>AI 文案</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model}` : '尚未配置模型，只能手工写稿' }}</span></div>
+          <i class="ri-sparkling-2-line"></i><div><strong>AI 文案</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model}` : '当前没有可用模型；开始创作会明确提示，也可关闭 AI 生成后创建手稿' }}</span></div>
         </article>
         <article v-for="item in center.platforms" :key="item.platform" class="platform-card">
           <div><strong>{{ item.label }}</strong><span>{{ item.note }}</span></div>
@@ -433,10 +450,10 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-if="showCreate" class="create-card">
-        <div><strong>新建图文</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model} 会结合你的输入和授权资料生成初稿，仍需人工审核。` : '尚未配置模型，想法会随草稿保存，可继续手工写稿。' }}</span></div>
+        <div><strong>新建图文</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model} 会结合你的输入和授权资料生成初稿，仍需人工审核。` : '当前没有可用模型；如需先写手稿，请关闭 AI 生成。' }}</span></div>
         <input v-model="createForm.topic" maxlength="200" placeholder="写下这篇准备解决的问题或主题" @keyup.enter="createTask" />
         <select v-model="createForm.platform"><option v-for="item in center.platforms" :key="item.platform" :value="item.platform">{{ item.label }}</option></select>
-        <label><input v-model="createForm.generateCopy" type="checkbox" :disabled="!center.ai.available" /> AI 生成</label>
+        <label><input v-model="createForm.generateCopy" type="checkbox" /> AI 生成</label>
         <button :disabled="busy === 'create' || !createForm.topic.trim()" @click="createTask">{{ busy === 'create' ? '创建中…' : '开始创作' }}</button>
         <label class="source-notes"><span>我的想法或对话摘录</span><textarea v-model="createForm.sourceNotes" maxlength="20000" rows="4" placeholder="把刚想到的话、聊天片段、经历或必须保留的判断直接放进来。创建失败时内容不会清空。"></textarea></label>
         <label class="context-toggle"><input v-model="createForm.useWaoContext" type="checkbox" /> 结合 WAO 个人记忆、知识库、私人 AI 对话和过往成稿</label>
@@ -458,7 +475,10 @@ onBeforeUnmount(() => {
               <small>v{{ selected.version }} · {{ dirty ? '有未保存修改' : '已与服务端同步' }}</small>
             </div>
             <div class="content-meta"><span>目标账号：{{ selected.platformAccountName || '未选择' }}</span><span>发布：{{ formatDate(selected.publishedAt) }}</span></div>
-            <div v-if="selected.errorMessage" class="task-error">{{ selected.errorMessage }}</div>
+            <div v-if="selected.status === 'GENERATING'" class="generation-state" role="status">
+              <span></span><div><strong>AI 正在生成标题和正文</strong><small>完成后会自动回填到编辑器，无需手动刷新。</small></div>
+            </div>
+            <div v-if="selected.errorMessage" class="task-error"><span>{{ selected.errorMessage }}</span><button v-if="selected.generationRetryable" :disabled="busy === 'retry-generation'" @click="retryGeneration">{{ busy === 'retry-generation' ? '重试中…' : '重新生成' }}</button></div>
             <details v-if="selected.sourceNotes" class="source-details">
               <summary>本篇最初想法 / 对话摘录</summary><p>{{ selected.sourceNotes }}</p>
             </details>
@@ -553,6 +573,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .publish-center{display:grid;gap:14px}.notice,.error{padding:10px 12px;display:flex;align-items:center;gap:8px;border-radius:9px;font-size:12px}.notice{color:var(--wao-primary-text);background:var(--wao-primary-soft);border:1px solid var(--wao-primary-line)}.error{color:var(--wao-danger-strong);background:var(--wao-danger-bg);border:1px solid var(--wao-danger-line)}.error span{flex:1}.error button{border:0;background:transparent;color:inherit;cursor:pointer}.loading{min-height:260px;display:grid;place-items:center;align-content:center;gap:10px;color:var(--wao-text-weak)}.loading span{width:28px;height:28px;border:3px solid var(--wao-primary-line);border-top-color:var(--wao-primary);border-radius:50%;animation:spin .8s linear infinite}.capabilities{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}.capabilities article{padding:13px;display:flex;gap:10px;border:1px solid var(--wao-line);border-radius:11px;background:var(--wao-bg-card)}.capabilities article>div{display:grid;gap:4px}.capabilities strong{font-size:12px}.capabilities span{color:var(--wao-text-weak);font-size:10px;line-height:1.5}.ai-card>i{font-size:22px;color:var(--wao-primary-text)}.ai-card.unavailable{opacity:.72}.platform-card{flex-direction:column}.accounts{display:flex!important;flex-wrap:wrap;gap:5px}.accounts>span{padding:4px 6px;border-radius:6px;background:var(--wao-bg-sub)}.accounts button{margin-left:4px;border:0;background:transparent;color:var(--wao-danger-strong);cursor:pointer}.accounts .link{margin:0;color:var(--wao-primary-text)}.create-card{padding:14px;display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1.5fr) 120px auto auto;align-items:center;gap:9px;border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.create-card>div{display:grid;gap:3px}.create-card strong{font-size:13px}.create-card span{color:var(--wao-text-weak);font-size:9.5px;line-height:1.4}.create-card input,.create-card select,.create-card textarea,.editor input,.editor select,.editor textarea,.knowledge-dialog select{width:100%;padding:9px;border:1px solid var(--wao-line-control);border-radius:8px;background:var(--wao-bg-card);color:var(--wao-text);font:inherit}.create-card>label{display:flex;align-items:center;gap:5px;font-size:11px;white-space:nowrap}.create-card>label input{width:auto}.create-card .source-notes{grid-column:1/-1;display:grid;align-items:stretch;white-space:normal}.create-card .source-notes textarea{box-sizing:border-box;resize:vertical;line-height:1.55}.create-card .context-toggle{grid-column:1/-1}.create-card>button,.actions>button{min-height:36px;padding:0 13px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer;font-weight:650}.create-card button:disabled,.actions button:disabled{opacity:.45;cursor:not-allowed}.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:12px;align-items:start}.task-list,.editor{border:1px solid var(--wao-line);border-radius:12px;background:var(--wao-bg-card)}.panel-head{padding:11px 12px;display:flex;justify-content:space-between;border-bottom:1px solid var(--wao-divider)}.panel-head button{border:0;background:transparent;color:var(--wao-text-weak);cursor:pointer}.task{width:100%;padding:10px 11px;display:flex;align-items:center;gap:8px;border:0;border-bottom:1px solid var(--wao-divider);background:transparent;color:var(--wao-text);cursor:pointer;text-align:left}.task.active{background:var(--wao-primary-soft)}.task>span{min-width:0;flex:1;display:grid;gap:3px}.task strong{overflow:hidden;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.task small{color:var(--wao-text-weak);font-size:9.5px}.task em{color:var(--wao-primary-text);font-size:10px;font-style:normal}.empty{padding:28px;color:var(--wao-text-weak);font-size:11px;text-align:center}.editor{padding:15px;display:grid;gap:12px}.editor-head{display:flex;justify-content:space-between;gap:10px}.editor-head>div{display:flex;align-items:center;gap:8px}.editor-head small{color:var(--wao-text-weak);font-size:10px}.status{padding:3px 6px;border-radius:999px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:9px}.status.published{background:var(--wao-success-bg);color:var(--wao-success-strong)}.status.failed{background:var(--wao-danger-bg);color:var(--wao-danger-strong)}.task-error{padding:8px 10px;color:var(--wao-danger-strong);background:var(--wao-danger-bg);border-radius:7px;font-size:11px}.editor label,.knowledge-dialog label,.export-dialog label{display:grid;gap:5px;color:var(--wao-text-3);font-size:10px}.editor textarea{resize:vertical;line-height:1.55}.editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.file{min-height:36px;padding:8px;position:relative;overflow:hidden;border:1px dashed var(--wao-line-control);border-radius:8px;color:var(--wao-text-weak);cursor:pointer}.file input{position:absolute;inset:0;opacity:0;cursor:pointer}.actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}.actions .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.actions span{margin-right:auto;color:var(--wao-text-weak);font-size:10px}.dialog-mask{position:fixed;inset:0;z-index:50;padding:28px;display:grid;place-items:center;background:rgba(10,30,27,.58)}.export-dialog,.knowledge-dialog{width:min(920px,100%);max-height:calc(100vh - 56px);padding:18px;display:grid;gap:14px;overflow:auto;border-radius:16px;background:var(--wao-bg-card);box-shadow:0 24px 70px rgba(0,0,0,.3)}.knowledge-dialog{width:min(520px,100%)}.export-dialog>header,.knowledge-dialog>header{display:flex;justify-content:space-between;gap:12px}.export-dialog header div,.knowledge-dialog header div{display:grid;gap:4px}.export-dialog header small,.knowledge-dialog header small{color:var(--wao-text-weak);font-size:10px}.export-dialog header button,.knowledge-dialog header button{border:0;background:transparent;color:var(--wao-text-weak);font-size:20px;cursor:pointer}.export-dialog iframe{width:100%;height:430px;border:1px solid var(--wao-line);border-radius:12px;background:#edf3f1}.export-dialog textarea{width:100%;padding:10px;border:1px solid var(--wao-line-control);border-radius:8px;box-sizing:border-box;font:11px/1.5 ui-monospace,monospace;resize:vertical}.export-dialog footer,.knowledge-dialog footer{display:flex;justify-content:flex-end;gap:8px}.export-dialog footer button,.knowledge-dialog footer button,.knowledge-success button{min-height:36px;padding:0 14px;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer}.export-dialog footer .secondary,.knowledge-dialog footer .secondary{border:1px solid var(--wao-line-control);background:var(--wao-bg-card);color:var(--wao-text-3)}.dialog-state{padding:30px;text-align:center;color:var(--wao-text-weak)}.knowledge-success{padding:28px;display:grid;place-items:center;gap:10px;color:var(--wao-success-strong)}.knowledge-success i{font-size:36px}@keyframes spin{to{transform:rotate(360deg)}}
 .dialog-error{padding:10px 12px;display:flex;justify-content:space-between;gap:10px;border-radius:8px;background:var(--wao-danger-bg);color:var(--wao-danger-strong);font-size:11px}.dialog-error button{border:0;background:transparent;color:inherit;cursor:pointer}
+.generation-state{padding:11px 12px;display:flex;align-items:center;gap:10px;border-radius:9px;background:var(--wao-primary-soft);color:var(--wao-primary-text)}.generation-state>span{width:18px;height:18px;border:2px solid var(--wao-primary-line);border-top-color:var(--wao-primary);border-radius:50%;animation:spin .8s linear infinite}.generation-state>div{display:grid;gap:2px}.generation-state small{color:var(--wao-text-weak);font-size:9.5px}.task-error{display:flex;align-items:center;justify-content:space-between;gap:10px}.task-error button{min-height:30px;padding:0 10px;border:0;border-radius:7px;background:var(--wao-danger-strong);color:#fff;cursor:pointer;white-space:nowrap}.task-error button:disabled{opacity:.5}
 .context-state{margin:0;padding:8px 10px;border-radius:8px;background:var(--wao-bg-sub);color:var(--wao-text-weak);font-size:10px}.source-details{border:1px solid var(--wao-line);border-radius:9px;background:var(--wao-bg-sub)}.source-details summary{padding:9px 10px;color:var(--wao-primary-text);font-size:10px;cursor:pointer}.source-details>p,.source-details article{margin:0;padding:9px 10px;border-top:1px solid var(--wao-divider);font-size:10px;line-height:1.65;white-space:pre-wrap}.source-details article{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 7px}.source-details article>span{padding:1px 5px;border-radius:999px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:8px}.source-details article>a,.source-details article>b{overflow:hidden;color:var(--wao-text-2);text-overflow:ellipsis;white-space:nowrap}.source-details article>p{grid-column:1/-1;margin:0;color:var(--wao-text-weak);display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3}.publication-data{padding:13px;display:grid;gap:10px;border:1px solid var(--wao-line);border-radius:10px;background:var(--wao-bg-sub)}.publication-data>header{display:flex;align-items:start;justify-content:space-between;gap:10px}.publication-data header>div{display:grid;gap:3px}.publication-data header small,.publication-data header>span{color:var(--wao-text-weak);font-size:9px}.metric-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.publication-data>button{width:max-content;min-height:34px;padding:0 12px;justify-self:end;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer}.publication-data>button:disabled{opacity:.45}.metric-history{display:grid;gap:5px}.metric-history article{display:grid;grid-template-columns:minmax(90px,1.4fr) repeat(5,1fr);gap:6px;padding:7px 8px;border-radius:7px;background:var(--wao-bg-card);color:var(--wao-text-weak);font-size:9px}.metric-history time{color:var(--wao-text-3)}
 @media(max-width:900px){.create-card{grid-template-columns:1fr 1fr}.create-card>div,.create-card>input{grid-column:1/-1}.workspace{grid-template-columns:1fr}.task-list{max-height:260px;overflow:auto}}@media(max-width:600px){.create-card{grid-template-columns:1fr}.create-card>*{grid-column:1!important}.editor-grid{grid-template-columns:1fr}.editor-head{display:grid}.actions{align-items:stretch;flex-direction:column}.actions span{margin:0}.actions button{width:100%}.dialog-mask{padding:10px}.export-dialog,.knowledge-dialog{max-height:calc(100vh - 20px);padding:14px}.export-dialog iframe{height:52vh}.export-dialog footer,.knowledge-dialog footer{flex-direction:column}.export-dialog footer button,.knowledge-dialog footer button{width:100%}}
 .workspace { grid-template-columns: 240px minmax(0, 1fr); }

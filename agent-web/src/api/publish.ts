@@ -33,6 +33,9 @@ export const updatePublishTask = (taskId: string, payload: {
 export const submitPublishTask = (taskId: string) =>
   unwrap<PublishTask>(http.post(`/api/agent/publish/tasks/${taskId}/submit`))
 
+export const retryPublishGeneration = (taskId: string) =>
+  unwrap<PublishTask>(http.post(`/api/agent/publish/tasks/${taskId}/retry-generation`))
+
 export const markPublishTaskPublished = (taskId: string) =>
   unwrap<PublishTask>(http.post(`/api/agent/publish/tasks/${taskId}/mark-published`))
 

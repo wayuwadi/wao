@@ -29,13 +29,16 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -59,6 +62,17 @@ class PublishFlowIntegrationTest {
     @Autowired private PublishTaskMapper taskMapper;
     @Autowired private CredentialCipher cipher;
     @Autowired private SharedAccountService accounts;
+    @Autowired private JdbcTemplate jdbc;
+
+    @BeforeEach
+    void clearRecommendedModels() {
+        jdbc.update("DELETE FROM ai_account");
+    }
+
+    @AfterEach
+    void removeRecommendedModels() {
+        jdbc.update("DELETE FROM ai_account");
+    }
 
     @BeforeAll
     static void startStub() throws IOException {
@@ -140,7 +154,66 @@ class PublishFlowIntegrationTest {
                                 {"topic":"夏天露营装备","platform":"DOUYIN","generateCopy":true}
                                 """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("AGENT_AI")));
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("AI 账号")));
+    }
+
+    @Test
+    void centralRecommendedModelQueuesPreparedGenerationInsteadOfBlankDraft() throws Exception {
+        enableRecommendedModel();
+
+        mvc.perform(get("/api/agent/publish/center"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.ai.available", org.hamcrest.Matchers.is(true)))
+                .andExpect(jsonPath("$.data.ai.provider", org.hamcrest.Matchers.equalTo("WAO 推荐模型")))
+                .andExpect(jsonPath("$.data.ai.model", org.hamcrest.Matchers.equalTo("deepseek-v4-pro")));
+
+        String body = mvc.perform(post("/api/agent/publish/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"topic":"什么是 AI、Skill 和 MCP","platform":"WECHAT_MP",
+                                 "generateCopy":true,"sourceNotes":"用程序员朋友的口吻讲清楚",
+                                 "useWaoContext":false}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status", org.hamcrest.Matchers.equalTo("GENERATING")))
+                .andExpect(jsonPath("$.data.progress", org.hamcrest.Matchers.equalTo(10)))
+                .andReturn().getResponse().getContentAsString();
+
+        PublishTaskEntity queued = taskMapper.selectById(json.readTree(body).path("data").path("id").asText());
+        assertThat(queued.getGenerationExecutor()).isEqualTo("WAO_RECOMMENDED");
+        assertThat(queued.getGenerationSystemPrompt()).contains("微信公众号", "只返回一个 JSON 对象");
+        assertThat(queued.getGenerationUserPrompt()).contains("什么是 AI、Skill 和 MCP", "程序员朋友");
+        assertThat(queued.getTitle()).isNull();
+        assertThat(queued.getContent()).isNull();
+    }
+
+    @Test
+    void failedGenerationCanBeRequeuedWithoutLosingPreparedMaterial() throws Exception {
+        enableRecommendedModel();
+        String body = mvc.perform(post("/api/agent/publish/tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"topic":"失败重试","platform":"WECHAT_MP","generateCopy":true,
+                                 "useWaoContext":false}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String taskId = json.readTree(body).path("data").path("id").asText();
+        PublishTaskEntity failed = taskMapper.selectById(taskId);
+        String prepared = failed.getGenerationUserPrompt();
+        failed.setStatus(PublishTaskService.FAILED);
+        failed.setErrorMessage("生成文案失败：上游暂时繁忙");
+        taskMapper.updateById(failed);
+
+        mvc.perform(post("/api/agent/publish/tasks/{taskId}/retry-generation", taskId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status", org.hamcrest.Matchers.equalTo("GENERATING")))
+                .andExpect(jsonPath("$.data.errorMessage").doesNotExist());
+
+        PublishTaskEntity retried = taskMapper.selectById(taskId);
+        assertThat(retried.getGenerationUserPrompt()).isEqualTo(prepared);
+        assertThat(retried.getGenerationClaimToken()).isNull();
+        assertThat(retried.getGenerationLeaseUntil()).isNull();
     }
 
     @Test
@@ -305,6 +378,13 @@ class PublishFlowIntegrationTest {
                 .andExpect(jsonPath("$.data.kind", org.hamcrest.Matchers.equalTo("VIDEO")))
                 .andReturn().getResponse().getContentAsString();
         return json.readTree(body).path("data").path("id").asText();
+    }
+
+    private void enableRecommendedModel() {
+        jdbc.update("""
+                INSERT INTO ai_account(id, provider, model, auth_method, enabled, created_at)
+                VALUES ('aa-recommended', 'model_gateway', 'deepseek-v4-pro', 'api_key', 1, CURRENT_TIMESTAMP)
+                """);
     }
 
     /** 直接落一条已授权的抖音账号，绕开需要真实用户交互的 OAuth 跳转。 */

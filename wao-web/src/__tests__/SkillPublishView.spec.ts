@@ -14,7 +14,7 @@ const api = vi.hoisted(() => ({
 }))
 vi.mock('@/api/skills', () => api)
 
-async function render() {
+async function render(path = '/skills/publish') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -22,7 +22,7 @@ async function render() {
       { path: '/skills/manage', component: { template: '<div />' } },
     ],
   })
-  await router.push('/skills/publish')
+  await router.push(path)
   await router.isReady()
   const wrapper = mount(SkillPublishView, {
     global: { plugins: [router], stubs: { RouterLink: false } },
@@ -49,6 +49,56 @@ describe('Skill 发布预检', () => {
     api.fetchPublisher.mockResolvedValue({ handle: 'wao-author', displayName: 'WAO 作者' })
     api.fetchSkillCategories.mockResolvedValue([{ key: 'office-efficiency', name: '办公效率' }])
     api.fetchMySkills.mockResolvedValue([])
+    api.inspectSkillPackage.mockResolvedValue({ name: 'New Skill', description: 'New package', suggestedSlug: 'new-skill', unpackedSize: 80, fileCount: 1, sha256: 'a'.repeat(64), findings: [] })
+  })
+
+  it('首次发布忽略上一次上传新版本留下的 Skill 身份', async () => {
+    localStorage.setItem('wao-skill-publish-draft-v1', JSON.stringify({ skillId: 'old-skill', slug: 'old-slug', version: '1.0.0' }))
+    api.createSkillDraft.mockResolvedValue({ id: 'new-skill', displayName: 'New Skill', versions: [] })
+    const wrapper = await render()
+    await selectFolder(wrapper)
+    expect(wrapper.get('input[placeholder="meeting-summary"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('.actions button').trigger('click')
+    await flushPromises()
+    expect(api.createSkillDraft).toHaveBeenCalledWith(expect.objectContaining({ skillId: undefined, slug: 'new-skill', version: '1.0.0' }), null, expect.any(Array), expect.any(Function))
+  })
+
+  it('显式更新保持原 Skill，提示已存在版本，并可切换为首次发布', async () => {
+    api.fetchMySkills.mockResolvedValue([{ id: 'old-skill', slug: 'old-slug', displayName: 'Original', versions: [{ version: '1.0.0' }] }])
+    const wrapper = await render('/skills/publish?skillId=old-skill')
+    await selectFolder(wrapper)
+    expect(wrapper.text()).toContain('正在为 Original 上传新版本')
+    expect(wrapper.get('input[placeholder="meeting-summary"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('.actions button').trigger('click')
+    expect(wrapper.text()).toContain('Original 的版本 1.0.0 已存在')
+    expect(api.createSkillDraft).not.toHaveBeenCalled()
+    await wrapper.vm.$router.push('/skills/publish')
+    await flushPromises()
+    expect(wrapper.text()).toContain('发布新 Skill')
+    expect(wrapper.text()).not.toContain('正在为 Original')
+    await selectFolder(wrapper)
+    expect((wrapper.get('input[placeholder="meeting-summary"]').element as HTMLInputElement).value).toBe('new-skill')
+  })
+
+  it('保存失败保留新 Skill 草稿，重开后不串入另一个 Skill 的版本草稿', async () => {
+    api.createSkillDraft.mockRejectedValue(new Error('网络暂不可用'))
+    const wrapper = await render()
+    await selectFolder(wrapper)
+    await wrapper.get('input[placeholder="1.0.0"]').setValue('2.0.0')
+    await wrapper.get('.actions button').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('网络暂不可用')
+    expect(localStorage.getItem('wao-skill-publish-draft-v2:wao-author:new')).toContain('2.0.0')
+    wrapper.unmount()
+    const reopened = await render()
+    await selectFolder(reopened)
+    expect((reopened.get('input[placeholder="1.0.0"]').element as HTMLInputElement).value).toBe('2.0.0')
+  })
+
+  it('找不到显式更新目标时不回退成新建，也不开放上传', async () => {
+    const wrapper = await render('/skills/publish?skillId=missing')
+    expect(wrapper.text()).toContain('找不到要更新的 Skill')
+    expect(wrapper.find('input[webkitdirectory]').exists()).toBe(false)
   })
 
   it('先选文件夹，再用 SKILL.md 自动预填发布信息', async () => {

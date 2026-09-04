@@ -244,7 +244,7 @@ class ProjectServiceTest {
     // ---------------- 任务分组 ----------------
 
     @Test
-    void taskGroupsAreTrimmedDeduplicatedAndCappedAtSix() {
+    void taskGroupsAreTrimmedDeduplicatedWithoutCountLimit() {
         ProjectEntity e = project("p1", "wg", "[\"wg\"]");
         when(mapper.selectById("p1")).thenReturn(e);
 
@@ -262,10 +262,10 @@ class ProjectServiceTest {
         ProjectDto dto = service.update("p1",
                 new PatchProjectRequest(null, null, null, null, null, requested), "wg");
 
-        assertThat(dto.taskGroups()).hasSize(ProjectService.MAX_TASK_GROUPS);
+        assertThat(dto.taskGroups()).hasSize(7);
         assertThat(dto.taskGroups().get(0).name()).isEqualTo("证件");
         assertThat(dto.taskGroups()).extracting(cn.wayuwa.wao.dto.TaskGroupDto::id)
-                .containsExactly("g1", "g3", "g4", "g5", "g6", "g7");
+                .containsExactly("g1", "g3", "g4", "g5", "g6", "g7", "g8");
     }
 
     @Test

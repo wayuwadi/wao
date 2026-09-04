@@ -46,9 +46,13 @@ public class ContentGenerator {
     /** 结合成员本次想法和经过权限收窄的 WAO 资料生成成稿。 */
     public GeneratedContent generate(String topic, PlatformType platform, WorkspaceProfileEntity profile,
                                      String sourceNotes, String creatorContext) {
-        StringBuilder input = new StringBuilder("话题：").append(topic);
-        if (StringUtils.hasText(sourceNotes)) input.append("\n\n我的想法或对话摘录：\n").append(sourceNotes.trim());
-        String raw = chat.complete(PromptLibrary.content(platform, profile, creatorContext), input.toString(), 0.8);
+        return generatePrepared(PromptLibrary.content(platform, profile, creatorContext),
+                userPrompt(topic, sourceNotes), topic);
+    }
+
+    /** 执行已经固化并等待领取的生成请求。 */
+    public GeneratedContent generatePrepared(String systemPrompt, String userPrompt, String fallbackTitle) {
+        String raw = chat.complete(systemPrompt, userPrompt, 0.8);
         JsonNode node = chat.readJson(raw, false);
 
         String title = node.path("title").asText("").trim();
@@ -62,8 +66,17 @@ public class ContentGenerator {
             body = blocks.stream().map(GeneratedContent.Block::text)
                     .filter(StringUtils::hasText).reduce((a, b) -> a + "\n\n" + b).orElse("");
         }
-        return new GeneratedContent(title.isBlank() ? topic : title, body, readTags(node),
+        return new GeneratedContent(title.isBlank() ? fallbackTitle : title, body, readTags(node),
                 blankToNull(node.path("coverText").asText(null)), blocks);
+    }
+
+    /** 用户材料与系统规则分开发给模型，避免把个人摘录误当成指令。 */
+    public static String userPrompt(String topic, String sourceNotes) {
+        StringBuilder input = new StringBuilder("话题：").append(topic);
+        if (StringUtils.hasText(sourceNotes)) {
+            input.append("\n\n我的想法或对话摘录：\n").append(sourceNotes.trim());
+        }
+        return input.toString();
     }
 
     private List<GeneratedContent.Block> readBlocks(JsonNode node) {
