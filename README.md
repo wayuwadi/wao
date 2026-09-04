@@ -74,6 +74,26 @@ mvn -pl wao-gateway spring-boot:run -Dspring-boot.run.profiles=dev
 cd wao-web && npm run dev
 ```
 
+### 本机开发，连接服务器 MySQL
+
+前端和 Java 服务在本机运行时，后端使用 `local-cloud` Profile，网关使用 `local` Profile。
+通过运行进程的环境变量提供 `MYSQL_HOST`、`MYSQL_PORT`、`DB_NAME`、`DB_USER`、`DB_PASS`；
+优先通过 SSH 本地端口转发访问服务器数据库。凭据不要写入仓库、命令历史或日志。
+
+```bash
+mvn -pl wao-server spring-boot:run -Dspring-boot.run.profiles=local-cloud
+mvn -pl wao-gateway spring-boot:run -Dspring-boot.run.profiles=local
+cd wao-web && npm run dev -- --host 127.0.0.1 --port 5174 --strictPort
+```
+
+打开 `http://127.0.0.1:5174` 完成编辑、保存、刷新及失败恢复验收，再提交 PR 和发布。
+该配置关闭 Flyway、Nacos 注册、Redis 自动配置和全部 `@Scheduled` 任务；独立的本地会话 Cookie
+仍通过数据库持久化。文档、文件等业务数据直接落到指定服务器数据库，请使用专门的验收内容。
+依赖 Redis 的微信公众号登录和 Skill 限速不属于此配置的验收范围。生产节点的定时任务默认保持启用。
+
+连接完整业务数据时，若 Vue DevTools 注入影响开发页面响应，可在启动前设置
+`WAO_VUE_DEVTOOLS=false` 关闭调试面板，Vite 热更新仍保留；不设置时维持原有行为。
+
 ## 工程结构
 
 ```text
