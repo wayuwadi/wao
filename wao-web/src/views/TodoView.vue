@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
@@ -7,6 +7,7 @@ import { useDeco } from '@/composables/deco'
 import { useCompletionSettle } from '@/composables/completion'
 import { TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import type { Task, TaskStatus } from '@/types'
+import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
 
 const data = useDataStore()
 const session = useSessionStore()
@@ -67,6 +68,15 @@ const boardCols = computed(() =>
 )
 
 const tasksEmpty = computed(() => taskGroups.value.length === 0)
+const selectedTaskIds = ref<string[]>([])
+const visibleTaskIds = computed(() => myList.value.filter((task) => task.status !== '已完成'
+  || showDone.value || (taskView.value === 'list' && isSettling(task.id))).map((task) => task.id))
+const selectedCopyTasks = computed(() => myList.value.filter((task) => selectedTaskIds.value.includes(task.id)))
+watch(visibleTaskIds, (ids) => { selectedTaskIds.value = selectedTaskIds.value.filter((id) => ids.includes(id)) })
+function toggleSelection(id: string) {
+  selectedTaskIds.value = selectedTaskIds.value.includes(id)
+    ? selectedTaskIds.value.filter((value) => value !== id) : [...selectedTaskIds.value, id]
+}
 
 function openTask(id: string) {
   ui.openTask(id)
@@ -121,6 +131,12 @@ function onDropStatus(status: TaskStatus) {
       </div>
     </div>
 
+    <div v-if="data.taskLoadState === 'loaded'" class="copy-selection-actions">
+      <button class="chip" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
+      <button v-if="selectedTaskIds.length" class="chip" @click="selectedTaskIds = []">清空选择</button>
+    </div>
+    <TaskBatchCopy v-if="data.taskLoadState === 'loaded'" :tasks="selectedCopyTasks" />
+
     <div v-if="data.taskLoadState === 'loading'" class="task-state" role="status" aria-live="polite">
       <i class="ri-loader-4-line spinning"></i>
       <b>正在加载中</b>
@@ -145,6 +161,7 @@ function onDropStatus(status: TaskStatus) {
         <div v-if="tg.collapsible && !showDone" class="tgroup-collapsed">已收起 {{ tg.items.length }} 项</div>
         <div v-else class="tlist">
           <div v-for="t in tg.items" :key="t.id" class="trow" :class="{ settling: isSettling(t.id) }" @click="openTask(t.id)">
+            <button class="task-select" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" title="完成 / 重新打开" @click.stop="toggleTask(t.id)">
               <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
             </button>
@@ -186,6 +203,7 @@ function onDropStatus(status: TaskStatus) {
             @click="openTask(t.id)"
             @dragstart="onDragStart(t.id)"
           >
+            <button class="task-select" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
             <div class="bc-proj"><span class="proj-dot" :style="{ background: t.projColor }"></span><span class="ellip">{{ t.projName }}</span></div>
             <div class="bc-foot">
@@ -203,6 +221,9 @@ function onDropStatus(status: TaskStatus) {
 </template>
 
 <style scoped>
+.copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
+.task-select { flex-shrink: 0; width: 28px; height: 28px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; }
+.task-select[aria-pressed='true'] { color: var(--wao-primary); background: var(--wao-primary-soft); }
 .todo {
   padding: 16px 24px 40px;
   max-width: var(--wao-content-max);

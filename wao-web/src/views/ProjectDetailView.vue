@@ -28,6 +28,7 @@ import type { TaskDeliveryStage } from '@/utils/domain'
 import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 import ProjectAssetsPanel from '@/components/files/ProjectAssetsPanel.vue'
+import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -205,6 +206,15 @@ function toggleSelection(id: string) {
     ? selectedTaskIds.value.filter((item) => item !== id)
     : [...selectedTaskIds.value, id]
 }
+const visibleTaskIds = computed(() => {
+  if (pdTaskView.value === 'group') return groupSections.value.flatMap((group) => [
+    ...group.open, ...(openedDoneGroups.value.includes(group.id) ? group.done : []),
+  ]).map((task) => task.id)
+  return allTasks.value.filter((task) => task.status !== '已完成' || showDone.value
+    || (pdTaskView.value === 'list' && deliveryStageFilter.value === 'verified')
+    || (pdTaskView.value === 'list' && isSettling(task.id))).map((task) => task.id)
+})
+const selectedCopyTasks = computed(() => allTasks.value.filter((task) => selectedTaskIds.value.includes(task.id)))
 function toggleStatusMenu(id: string) {
   if (statusSavingTaskId.value === id) return
   openStatusTaskId.value = openStatusTaskId.value === id ? null : id
@@ -440,6 +450,10 @@ function onDropGroup(groupId: string, overId?: string) {
   // 同组内落到某条任务上就是排序；空白处只改变分组，保持该组已有顺序。
   if (overId && overId !== id) data.reorderTask(id, overId)
 }
+watch(visibleTaskIds, (ids) => {
+  selectedTaskIds.value = selectedTaskIds.value.filter((id) => ids.includes(id))
+  aiBatchMode.value = null
+})
 </script>
 
 <template>
@@ -554,6 +568,11 @@ function onDropGroup(groupId: string, overId?: string) {
           @click="setDeliveryStage(deliveryStageFilter === stage.id ? null : stage.id)"
         >{{ stage.label }} <em class="wao-tabular">{{ stage.count }}</em></button>
       </div>
+      <div class="copy-selection-actions">
+        <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
+        <button v-if="selectedTaskIds.length" class="creator-filter-btn" @click="selectedTaskIds = []">清空选择</button>
+      </div>
+      <TaskBatchCopy :tasks="selectedCopyTasks" />
       <div v-if="pdTaskView === 'list'" class="task-list-card">
         <div
           v-for="t in openTasks"
@@ -570,10 +589,12 @@ function onDropGroup(groupId: string, overId?: string) {
           <button
             class="select-dot"
             :class="{ on: selectedTaskIds.includes(t.id) }"
-            title="选择后可单独或合并交给 AI"
+            :aria-label="`选择任务 ${t.title}`"
+            :aria-pressed="selectedTaskIds.includes(t.id)"
+            title="选择后可合并复制或交给 AI"
             @click.stop="toggleSelection(t.id)"
           >
-            <i class="ri-robot-2-line"></i>
+            <i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i>
           </button>
           <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
           <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
@@ -627,6 +648,7 @@ function onDropGroup(groupId: string, overId?: string) {
         <template v-if="showDone || deliveryStageFilter === 'verified'">
           <div v-for="t in doneTasks" :key="t.id" class="trow done" @click="openTask(t.id)">
             <i class="drag-grip ri-draggable placeholder"></i>
+            <button class="select-dot" :class="{ on: selectedTaskIds.includes(t.id) }" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i class="ri-checkbox-blank-circle-line"></i></button>
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)"><i class="ri-check-line" :style="{ opacity: t.checkOp }"></i></button>
             <span class="trow-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</span>
             <div class="task-status" @click.stop>
@@ -740,6 +762,7 @@ function onDropGroup(groupId: string, overId?: string) {
             @dragover.prevent.stop
             @drop.stop="onDropGroup(g.id, t.id)"
           >
+            <button class="select-dot" :class="{ on: selectedTaskIds.includes(t.id) }" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i class="ri-checkbox-blank-circle-line"></i></button>
             <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)">
               <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
             </button>
@@ -753,6 +776,7 @@ function onDropGroup(groupId: string, overId?: string) {
           </button>
           <template v-if="openedDoneGroups.includes(g.id)">
             <div v-for="t in g.done" :key="t.id" class="grow done" @click="openTask(t.id)">
+              <button class="select-dot" :class="{ on: selectedTaskIds.includes(t.id) }" :aria-label="`选择任务 ${t.title}`" :aria-pressed="selectedTaskIds.includes(t.id)" @click.stop="toggleSelection(t.id)"><i class="ri-checkbox-blank-circle-line"></i></button>
               <button class="check" :style="{ borderColor: t.checkBorder, background: t.checkBg }" @click.stop="toggleTask(t.id)">
                 <i class="ri-check-line" :style="{ opacity: t.checkOp }"></i>
               </button>
@@ -808,10 +832,12 @@ function onDropGroup(groupId: string, overId?: string) {
               <button
                 class="select-dot board-select"
                 :class="{ on: selectedTaskIds.includes(t.id) }"
-                title="选择后可单独或合并交给 AI"
+                :aria-label="`选择任务 ${t.title}`"
+                :aria-pressed="selectedTaskIds.includes(t.id)"
+                title="选择后可合并复制或交给 AI"
                 @click.stop="toggleSelection(t.id)"
               >
-                <i class="ri-robot-2-line"></i>
+                <i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i>
               </button>
               <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
               <div class="bc-foot">
@@ -882,6 +908,7 @@ function onDropGroup(groupId: string, overId?: string) {
 </template>
 
 <style scoped>
+.copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
 .missing {
   padding: 60px 24px;
   text-align: center;
