@@ -78,6 +78,19 @@ function pasteHtmlInto(el: Element, html: string) {
 }
 
 describe('MarkdownEditor（所见即所得）', () => {
+  it('高级小记保存期间切换只读、失败后恢复编辑不破坏浮层与正文', async () => {
+    const w = await mountEditor({ modelValue: '保存后仍可继续编辑', advanced: true, compact: true })
+    await w.setProps({ readonly: true })
+    await flushPromises()
+    expect(w.find('.tiptap').attributes('contenteditable')).toBe('false')
+    await w.setProps({ readonly: false })
+    await flushPromises()
+    expect(w.find('.tiptap').attributes('contenteditable')).toBe('true')
+    expect(w.find('.tiptap').text()).toBe('保存后仍可继续编辑')
+    expect(w.find('.advanced-toolbar').exists()).toBe(true)
+    w.unmount()
+  })
+
   it('没有编辑 / 预览两态——挂载即是可编辑的富文本，标题直接渲染成 h2', async () => {
     const w = await mountEditor({ modelValue: '## 目标\n\n正文' })
 
