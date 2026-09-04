@@ -15,7 +15,9 @@ public interface DocTemplateMapper extends BaseMapper<DocTemplateEntity> {
     @Update("""
             UPDATE doc_template
                SET name = #{template.name}, description = #{template.description},
-                   blocks_json = #{template.blocksJson}, updated_at = #{template.updatedAt}
+                   blocks_json = #{template.blocksJson}, content_json = #{template.contentJson},
+                   content_markdown = #{template.contentMarkdown}, content_version = #{template.contentVersion},
+                   updated_at = #{template.updatedAt}
              WHERE id = #{template.id} AND created_by = #{template.createdBy}
                AND updated_at = #{expectedUpdatedAt}
             """)

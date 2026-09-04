@@ -97,7 +97,10 @@ public class ShareService {
     public SharedDocDto shareDoc(String docId) {
         DocDto d = knowledge.getDoc(docId);
         boolean note = KnowledgeService.NOTES_KB_ID.equals(d.kbId());
-        return new SharedDocDto(d.id(), nz(d.title()), note, d.kbId(), d.updated(), docMarkdown(nn(d.blocks())));
+        String markdown = d.content() != null && d.content().markdown() != null
+                ? d.content().markdown()
+                : docMarkdown(nn(d.blocks()));
+        return new SharedDocDto(d.id(), nz(d.title()), note, d.kbId(), d.updated(), markdown, d.content());
     }
 
     /**

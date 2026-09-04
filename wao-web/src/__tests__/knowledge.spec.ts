@@ -73,6 +73,21 @@ describe('data store · 知识库', () => {
     expect(await data.addNote('   ')).toBeNull()
   })
 
+  it('小记和文档保留高级 JSON，同时继续提供 Markdown 与旧块投影', async () => {
+    const content = {
+      version: 1 as const,
+      document: { type: 'doc', content: [{ type: 'callout', attrs: { kind: 'info', uid: 'c1' }, content: [{ type: 'paragraph', content: [{ type: 'text', text: '完整结构' }] }] }] },
+      markdown: '> [!INFO]\n> 完整结构',
+    }
+
+    const id = await data.addNote(content.markdown, '', undefined, content)
+    const saved = data.docOf(id!)
+
+    expect(saved.content.document?.content?.[0]?.type).toBe('callout')
+    expect(saved.text).toContain('完整结构')
+    expect(saved.blocks.length).toBeGreaterThan(0)
+  })
+
   it('新建文档署当前登录成员的名，不再一律算在娃哥头上', async () => {
     const kb = data.kbs.find((k) => k.folders.length)!
     const id = await data.addDoc(kb.id, kb.folders[0]!.id)

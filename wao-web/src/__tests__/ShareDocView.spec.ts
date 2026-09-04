@@ -28,7 +28,8 @@ describe('ShareDocView', () => {
     await flushPromises()
 
     expect(apiShareDoc).toHaveBeenCalledWith('d-sized')
-    expect(wrapper.get('.doc-body img').attributes('style')).toBe('width:75%;height:auto')
+    expect(wrapper.get('.doc-body img').attributes('style')).toContain('width: 75%')
+    expect(wrapper.get('.doc-body img').attributes('style')).toContain('height: auto')
     expect(wrapper.get('.doc-body img').attributes('title')).toBeUndefined()
     wrapper.unmount()
   })

@@ -30,6 +30,9 @@ public class DocEntity {
     private String createdLabel;
     private String updatedLabel;
     private String blocksJson;
+    private String contentJson;
+    private String contentMarkdown;
+    private Integer contentVersion;
     private String linksJson;
     private Integer ord;
     private LocalDateTime createdAt;
@@ -66,6 +69,12 @@ public class DocEntity {
     public void setUpdatedLabel(String updatedLabel) { this.updatedLabel = updatedLabel; }
     public String getBlocksJson() { return blocksJson; }
     public void setBlocksJson(String blocksJson) { this.blocksJson = blocksJson; }
+    public String getContentJson() { return contentJson; }
+    public void setContentJson(String contentJson) { this.contentJson = contentJson; }
+    public String getContentMarkdown() { return contentMarkdown; }
+    public void setContentMarkdown(String contentMarkdown) { this.contentMarkdown = contentMarkdown; }
+    public Integer getContentVersion() { return contentVersion; }
+    public void setContentVersion(Integer contentVersion) { this.contentVersion = contentVersion; }
     public String getLinksJson() { return linksJson; }
     public void setLinksJson(String linksJson) { this.linksJson = linksJson; }
     public Integer getOrd() { return ord; }

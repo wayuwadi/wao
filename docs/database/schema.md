@@ -180,6 +180,9 @@ erDiagram
 | created_at / updated_at | DATETIME NULL | 真实时间戳，对外优先取它，缺失才回落上面的文案 |
 | rev | INT | 正文版本号，每次内容更新 +1，供协同端判断服务端有没有更新的版本 |
 | blocks_json | JSON | 正文块数组（call/h/p/ul/q 互斥） |
+| content_json | JSON NULL（V139） | 高级文档的版本化 Tiptap JSON；完整排版事实源 |
+| content_markdown | MEDIUMTEXT NULL（V139） | 分享、搜索、AI 与旧客户端使用的可读投影 |
+| content_version | INT NULL（V139） | 高级正文结构版本，当前为 1 |
 | links_json | JSON | 出链数组 `[{type, id}]`，指向 project/task/doc |
 | ord | INT | 展示顺序 |
 | deleted_at / deleted_by | DATETIME / VARCHAR(32) NULL | 回收站：删除时间与删除人 |
@@ -218,6 +221,9 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 | id | VARCHAR(32) PK | 模板 id |
 | name / description | VARCHAR | 模板名称与使用说明 |
 | blocks_json | JSON | 创建模板时的文档正文快照 |
+| content_json | JSON NULL（V139） | 模板的完整高级正文快照 |
+| content_markdown | MEDIUMTEXT NULL（V139） | 模板正文 Markdown 投影 |
+| content_version | INT NULL（V139） | 模板高级正文结构版本，当前为 1 |
 | source_doc_id | VARCHAR(32) NULL | 来源文档，仅用于追溯；来源删除不影响模板 |
 | created_by | VARCHAR(32) | 模板创建成员；列表与增删改均按当前成员隔离 |
 | created_at / updated_at | DATETIME | 真实创建、更新时间 |

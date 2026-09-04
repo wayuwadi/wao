@@ -7,6 +7,7 @@ import type {
   DocBlock,
   DocLink,
   DocPeer,
+  RichDocContent,
   DocTemplate,
   FileItem,
   Folder,
@@ -305,19 +306,23 @@ export interface CreateDocPayload {
   folderId: string
   title?: string
   templateId?: string
+  blocks?: DocBlock[]
+  content?: RichDocContent
 }
 /** 新建文档：kbId + folderId 必填，创建即完成与知识库的关联。作者由服务端按会话推导。 */
 export const apiCreateDoc = (payload: CreateDocPayload) => post<Doc>('/api/docs', payload)
 
 /** 幂等新建小记：草稿重试沿用同一个 id，服务端不会插入重复小记。 */
-export const apiCreateNote = (id: string, payload: { title?: string; blocks: DocBlock[] }) =>
+export const apiCreateNote = (id: string, payload: { title?: string; blocks: DocBlock[]; content?: RichDocContent }) =>
   put<Doc>(`/api/docs/notes/${id}`, payload)
 
 export interface PatchDocPayload {
   title?: string
   blocks?: DocBlock[]
+  content?: RichDocContent
   links?: DocLink[]
   folderId?: string
+  expectedRev?: number
 }
 export const apiPatchDoc = (id: string, payload: PatchDocPayload) =>
   patch<Doc>(`/api/docs/${id}`, payload)
@@ -338,10 +343,11 @@ export const apiCreateDocTemplate = (payload: {
   description?: string
   sourceDocId: string
   blocks: DocBlock[]
+  content?: RichDocContent
 }) => post<DocTemplate>('/api/doc-templates', payload)
 export const apiPatchDocTemplate = (
   id: string,
-  payload: { name?: string; description?: string; blocks?: DocBlock[]; expectedUpdatedAt: string },
+  payload: { name?: string; description?: string; blocks?: DocBlock[]; content?: RichDocContent; expectedUpdatedAt: string },
 ) => patch<DocTemplate>(`/api/doc-templates/${id}`, payload)
 export const apiDeleteDocTemplate = (id: string) => del(`/api/doc-templates/${id}`)
 export interface DocumentOrderPayload {

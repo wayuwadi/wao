@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import { polishDocumentText } from '@/api/assistant'
+import type { RichDocNode } from '@/types'
 
 vi.mock('@/api/assistant', () => ({
   polishDocumentText: vi.fn<(text: string) => Promise<{ polished: string }>>(),
@@ -25,6 +26,9 @@ async function mountEditor(props: {
   polishable?: boolean
   linkControls?: boolean
   imageControls?: boolean
+  advanced?: boolean
+  compact?: boolean
+  document?: RichDocNode | null
 }) {
   // jsdom 的 Range 缺少布局 API；BubbleMenu 只需要一个稳定空矩形完成挂载。
   if (!Range.prototype.getClientRects) {
@@ -91,6 +95,56 @@ describe('MarkdownEditor（所见即所得）', () => {
 
     expect(w.find('.md-body h1').text()).toBe('每日计划')
     expect(w.find('.md-body h2').text()).toBe('今日重点')
+    w.unmount()
+  })
+
+  it('高级文档显示固定工具栏并把表格同时输出为 JSON 与 Markdown', async () => {
+    const w = await mountEditor({ modelValue: '', allowH1: true, advanced: true })
+    expect(w.find('.advanced-toolbar').exists()).toBe(true)
+
+    ;(w.vm as unknown as { insertTable: () => void }).insertTable()
+    await nextTick()
+
+    const changes = w.emitted('content-change') as [{ document: RichDocNode; markdown: string }][]
+    const latest = changes[changes.length - 1]?.[0]
+    expect(latest?.document.content?.some((node: RichDocNode) => node.type === 'table')).toBe(true)
+    expect(latest?.markdown).toContain('|')
+    w.unmount()
+  })
+
+  it('高级插入菜单覆盖四类提示块、公式、图表与双三栏，并提供快捷键帮助', async () => {
+    const w = await mountEditor({ modelValue: '', allowH1: true, advanced: true })
+    const instance = w.vm as unknown as { slashActions: { id: string }[] }
+    const ids = instance.slashActions.map((item) => item.id)
+    expect(ids).toEqual(expect.arrayContaining([
+      'callout-info', 'callout-success', 'callout-warning', 'callout-danger',
+      'math-inline', 'math-block', 'diagram-flowchart', 'diagram-sequence', 'diagram-mindmap',
+      'columns-2', 'columns-3',
+    ]))
+
+    await w.get('button[title^="快捷键帮助"]').trigger('click')
+    expect(w.get('.shortcut-dialog').text()).toContain('Ctrl/⌘ + F')
+    expect(w.get('.shortcut-dialog').text()).toContain('插入内容块')
+    w.unmount()
+  })
+
+  it('保存的高级 JSON 可直接恢复提示块与分栏，小记菜单不暴露重型块', async () => {
+    const document: RichDocNode = {
+      type: 'doc',
+      content: [
+        { type: 'callout', attrs: { kind: 'warning', uid: 'callout-1' }, content: [{ type: 'paragraph', content: [{ type: 'text', text: '注意事项' }] }] },
+        { type: 'columns', attrs: { uid: 'columns-1' }, content: [
+          { type: 'column', content: [{ type: 'paragraph', content: [{ type: 'text', text: '左栏' }] }] },
+          { type: 'column', content: [{ type: 'paragraph', content: [{ type: 'text', text: '右栏' }] }] },
+        ] },
+      ],
+    }
+    const w = await mountEditor({ modelValue: '', document, advanced: true, compact: true })
+    expect(w.find('aside[data-callout="warning"]').text()).toContain('注意事项')
+    expect(w.find('div[data-columns="2"]').text()).toContain('左栏')
+    const actions = (w.vm as unknown as { slashActions: { id: string }[] }).slashActions
+    expect(actions.map((item) => item.id)).not.toContain('table')
+    expect(actions.map((item) => item.id)).toContain('image')
     w.unmount()
   })
 

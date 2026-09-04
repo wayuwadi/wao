@@ -17,8 +17,15 @@ public record DocDto(
         Boolean auto,
         List<DocLinkDto> links,
         List<DocBlockDto> blocks,
+        RichDocContentDto content,
         List<BacklinkDto> backlinks,
         String kbId,
         String folderId,
         Integer rev) {
+    /** 旧调用方兼容构造；高级正文为空时继续使用 blocks。 */
+    public DocDto(String id, String title, String author, String created, String updated, Boolean auto,
+            List<DocLinkDto> links, List<DocBlockDto> blocks, List<BacklinkDto> backlinks,
+            String kbId, String folderId, Integer rev) {
+        this(id, title, author, created, updated, auto, links, blocks, null, backlinks, kbId, folderId, rev);
+    }
 }

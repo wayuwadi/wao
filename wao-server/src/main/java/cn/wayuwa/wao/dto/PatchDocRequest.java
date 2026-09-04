@@ -6,6 +6,11 @@ import java.util.List;
 public record PatchDocRequest(
         String title,
         List<DocBlockDto> blocks,
+        RichDocContentDto content,
         List<DocLinkDto> links,
-        String folderId) {
+        String folderId,
+        Integer expectedRev) {
+    public PatchDocRequest(String title, List<DocBlockDto> blocks, List<DocLinkDto> links, String folderId) {
+        this(title, blocks, null, links, folderId, null);
+    }
 }

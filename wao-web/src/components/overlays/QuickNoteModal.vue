@@ -11,6 +11,7 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { toast } from '@/composables/toast'
+import type { RichDocContent } from '@/types'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
@@ -19,7 +20,7 @@ const session = useSessionStore()
 const ui = useUiStore()
 const router = useRouter()
 
-type QuickNoteDraft = { id: string; text: string }
+type QuickNoteDraft = { id: string; text: string; content?: RichDocContent }
 
 /** UUID 去掉连字符后正好 32 位，符合 doc.id 列长度，也足以避免跨设备草稿碰撞。 */
 function newNoteId(): string {
@@ -32,7 +33,7 @@ function loadDraft(): QuickNoteDraft {
     const saved = JSON.parse(localStorage.getItem(draftKey) || '{}') as Partial<QuickNoteDraft>
     if (typeof saved.id === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(saved.id)
         && typeof saved.text === 'string') {
-      return { id: saved.id, text: saved.text }
+      return { id: saved.id, text: saved.text, content: saved.content }
     }
   } catch {
     /* 损坏的本地草稿直接忽略。 */
@@ -43,6 +44,7 @@ function loadDraft(): QuickNoteDraft {
 const draft = loadDraft()
 const noteId = ref(draft.id)
 const text = ref(draft.text)
+const content = ref<RichDocContent | null>(draft.content ?? null)
 const draftState = ref<'idle' | 'saving' | 'saved'>(draft.text ? 'saved' : 'idle')
 const saveState = ref<'idle' | 'submitting' | 'error'>('idle')
 const saveError = ref('')
@@ -53,7 +55,7 @@ const archiveName = computed(() => session.currentUser.id && session.currentUser
   ? `小记 / ${session.currentUser.name}`
   : '小记')
 
-watch(text, (value) => {
+watch([text, content], ([value]) => {
   saveState.value = 'idle'
   saveError.value = ''
   if (!value) {
@@ -62,10 +64,14 @@ watch(text, (value) => {
     return
   }
   draftState.value = 'saving'
-  localStorage.setItem(draftKey, JSON.stringify({ id: noteId.value, text: value } satisfies QuickNoteDraft))
+  localStorage.setItem(draftKey, JSON.stringify({ id: noteId.value, text: value, content: content.value ?? undefined } satisfies QuickNoteDraft))
   if (draftTimer) clearTimeout(draftTimer)
   draftTimer = setTimeout(() => (draftState.value = 'saved'), 180)
 }, { flush: 'sync' })
+
+function onContentChange(value: RichDocContent) {
+  content.value = value
+}
 
 /** AppLayout 也监听 Escape；请求飞行时在捕获阶段拦住，避免父层先把弹窗卸载。 */
 function guardSubmittingEscape(event: KeyboardEvent) {
@@ -101,7 +107,9 @@ async function save(open = false) {
   saveState.value = 'submitting'
   saveError.value = ''
   try {
-    const id = await data.addNote(text.value, '', noteId.value)
+    const id = content.value
+      ? await data.addNote(text.value, '', noteId.value, content.value)
+      : await data.addNote(text.value, '', noteId.value)
     if (!id) throw new Error('小记正文为空')
     const doc = data.docById(id)
     localStorage.removeItem(draftKey)
@@ -135,9 +143,13 @@ function requestClose() {
     <div ref="editorWrap" class="body" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
       <MarkdownEditor
         v-model="text"
+        :document="content?.document"
+        advanced
+        compact
         placeholder="随手记点什么…敲 ## 变标题、- 变列表，可直接粘贴截图"
         :min-height="180"
         :readonly="saveState === 'submitting'"
+        @content-change="onContentChange"
         @upload-image="onUploadImage"
       />
     </div>

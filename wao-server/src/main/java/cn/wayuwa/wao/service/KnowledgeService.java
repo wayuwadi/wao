@@ -46,6 +46,7 @@ import cn.wayuwa.wao.dto.PatchFolderRequest;
 import cn.wayuwa.wao.dto.PatchKbGroupRequest;
 import cn.wayuwa.wao.dto.PatchKbRequest;
 import cn.wayuwa.wao.dto.ReorderDocsRequest;
+import cn.wayuwa.wao.dto.RichDocContentDto;
 import cn.wayuwa.wao.dto.TrashEntryDto;
 import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.DocTemplateMapper;
@@ -58,6 +59,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -97,6 +99,24 @@ public class KnowledgeService {
     private static final int MAX_TEMPLATE_BLOCK_COUNT = 5_000;
     /** 防止嵌套块绕过集合长度校验，限制最终准备写入 JSON 列的字符数。 */
     private static final int MAX_TEMPLATE_BLOCKS_JSON_LENGTH = 1_000_000;
+    private static final int RICH_CONTENT_VERSION = 1;
+    private static final int MAX_RICH_NODE_COUNT = 5_000;
+    private static final int MAX_RICH_CONTENT_LENGTH = 1_000_000;
+    private static final Set<String> RICH_NODE_TYPES = Set.of(
+            "doc", "text", "paragraph", "heading", "bulletList", "orderedList", "listItem",
+            "taskList", "taskItem", "blockquote", "codeBlock", "hardBreak", "horizontalRule",
+            "image", "table", "tableRow", "tableHeader", "tableCell", "inlineMath", "blockMath",
+            "callout", "details", "detailsSummary", "detailsContent", "columns", "column",
+            "fileCard", "mediaCard", "linkCard", "drawingCard", "mermaid");
+    private static final Set<String> RICH_MARK_TYPES = Set.of(
+            "bold", "italic", "underline", "strike", "code", "link", "textStyle", "highlight");
+    private static final Set<String> RICH_COLORS = Set.of(
+            "#1f2329", "#646a73", "#d83931", "#de7802", "#2ea121", "#245bdb", "#6425d0",
+            "#f5f6f7", "#fde2e2", "#feead2", "#d9f5d6", "#dbeafe", "#ede2fe");
+    private static final Set<String> RICH_ATTRS = Set.of(
+            "uid", "level", "textAlign", "start", "checked", "colspan", "rowspan", "colwidth",
+            "backgroundColor", "color", "language", "latex", "src", "alt", "title", "width", "height", "align",
+            "kind", "id", "name", "size", "mime", "url", "snapshot", "source", "href", "target", "rel", "class");
     private static final TypeReference<List<DocLinkDto>> LINKS_TYPE = new TypeReference<>() { };
 
     private final KbGroupMapper groupMapper;
@@ -418,6 +438,7 @@ public class KnowledgeService {
                 ? List.of()
                 : List.of(new DocLinkDto("project", kb.getProjectId()));
         List<DocBlockDto> blocks = List.of();
+        RichDocContentDto content = null;
         if (req.blocks() != null && !req.blocks().isEmpty()) {
             if (StringUtils.hasText(req.templateId())) {
                 throw new BadRequestException("新建文档不能同时指定模板和正文");
@@ -425,10 +446,18 @@ public class KnowledgeService {
             writeTemplateBlocks(req.blocks());
             blocks = req.blocks();
         }
-        if (req.templateId() != null && !req.templateId().isBlank()) {
-            blocks = templateBlocks(requireTemplate(req.templateId(), author));
+        if (req.content() != null) {
+            if (StringUtils.hasText(req.templateId())) {
+                throw new BadRequestException("新建文档不能同时指定模板和正文");
+            }
+            content = checkedRichContent(req.content());
         }
-        return insertDoc(req.kbId(), folder.getId(), req.title(), author, blocks, links);
+        if (req.templateId() != null && !req.templateId().isBlank()) {
+            DocTemplateEntity template = requireTemplate(req.templateId(), author);
+            blocks = templateBlocks(template);
+            content = richContentOf(template);
+        }
+        return insertDoc(req.kbId(), folder.getId(), req.title(), author, blocks, content, links);
     }
 
     /**
@@ -458,10 +487,13 @@ public class KnowledgeService {
         requireKb(kbId);
         requireFolder(kbId, folderId);
         List<DocBlockDto> blocks = suppliedBlocks == null ? List.of() : suppliedBlocks;
+        RichDocContentDto content = null;
         if (blocks.isEmpty() && StringUtils.hasText(templateId)) {
-            blocks = templateBlocks(requireTemplate(templateId, author));
+            DocTemplateEntity template = requireTemplate(templateId, author);
+            blocks = templateBlocks(template);
+            content = richContentOf(template);
         }
-        return insertDoc(id, kbId, folderId, title, author, blocks, List.of());
+        return insertDoc(id, kbId, folderId, title, author, blocks, content, List.of());
     }
 
     /**
@@ -505,6 +537,12 @@ public class KnowledgeService {
         template.setBlocksJson(req.blocks() == null
                 ? writeSourceTemplateBlocks(source.getBlocksJson())
                 : writeTemplateBlocks(req.blocks()));
+        if (req.content() != null) applyRichContent(template, req.content());
+        else if (req.blocks() == null) {
+            template.setContentJson(source.getContentJson());
+            template.setContentMarkdown(source.getContentMarkdown());
+            template.setContentVersion(source.getContentVersion());
+        }
         template.setSourceDocId(source.getId());
         template.setCreatedBy(memberId);
         template.setCreatedAt(now);
@@ -530,6 +568,8 @@ public class KnowledgeService {
         String blocksJson = req.blocks() == null
                 ? template.getBlocksJson()
                 : writeTemplateBlocks(req.blocks());
+        if (req.content() != null) applyRichContent(template, req.content());
+        else if (req.blocks() != null) applyRichContent(template, null);
         LocalDateTime nextUpdatedAt = LocalDateTime.now().withNano(0);
         if (!nextUpdatedAt.isAfter(expectedUpdatedAt)) {
             // DATETIME 只有秒精度；快速连续保存也必须生成不同版本，否则 CAS 会失去作用。
@@ -622,7 +662,7 @@ public class KnowledgeService {
 
     private DocTemplateDto toTemplateDto(DocTemplateEntity template) {
         return new DocTemplateDto(template.getId(), template.getName(), template.getDescription(),
-                templateBlocks(template), template.getSourceDocId(), iso(template.getCreatedAt()),
+                templateBlocks(template), richContentOf(template), template.getSourceDocId(), iso(template.getCreatedAt()),
                 iso(template.getUpdatedAt()));
     }
 
@@ -712,23 +752,28 @@ public class KnowledgeService {
                 throw new BadRequestException("小记文档 id 已被占用");
             }
             List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
-            String title = blankOr(req.title(), titleFrom(blocks));
+            RichDocContentDto content = req.content() == null ? null : checkedRichContent(req.content());
+            String title = blankOr(req.title(), titleFrom(content, blocks));
             String blocksJson = write(blocks);
             boolean changed = !Objects.equals(title, existing.getTitle())
-                    || !Objects.equals(blocksJson, existing.getBlocksJson());
+                    || !Objects.equals(blocksJson, existing.getBlocksJson())
+                    || !sameRichContent(existing, content);
             if (changed) {
                 existing.setTitle(title);
                 existing.setBlocksJson(blocksJson);
+                applyRichContent(existing, content);
                 existing.setRev(rev(existing) + 1);
                 existing.setUpdatedAt(LocalDateTime.now());
-                docMapper.updateById(existing);
+                docMapper.updateContentSnapshot(existing);
             }
             return toDto(existing, docMapper.selectList(aliveDocs()));
         }
         KbEntity kb = notesKb();
         KbFolderEntity folder = authorFolder(kb.getId(), author);
         List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
-        DocDto doc = insertDoc(id, kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(blocks)), author, blocks);
+        RichDocContentDto content = req.content() == null ? null : checkedRichContent(req.content());
+        DocDto doc = insertDoc(id, kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(content, blocks)),
+                author, blocks, content, List.of());
         announceNote(kb.getId(), doc, author);
         return doc;
     }
@@ -906,13 +951,14 @@ public class KnowledgeService {
         existingDoc.setAuthorId(blankOr(author, "auto"));
         existingDoc.setAuto(true);
         existingDoc.setBlocksJson(write(blocks));
+        applyRichContent(existingDoc, null);
         existingDoc.setLinksJson("[]");
         existingDoc.setDeletedAt(null);
         existingDoc.setDeletedBy(null);
         existingDoc.setCascadeDel(false);
         existingDoc.setRev(rev(existingDoc) + 1);
         existingDoc.setUpdatedAt(LocalDateTime.now());
-        docMapper.updateById(existingDoc);
+        docMapper.updateContentSnapshot(existingDoc);
         return toDto(existingDoc, docMapper.selectList(aliveDocs()));
     }
 
@@ -1116,16 +1162,27 @@ public class KnowledgeService {
     private DocDto insertDoc(String kbId, String folderId, String title, String author, List<DocBlockDto> blocks,
             List<DocLinkDto> links) {
         return insertDoc("d" + UUID.randomUUID().toString().replace("-", "").substring(0, 31),
-                kbId, folderId, title, author, blocks, links);
+                kbId, folderId, title, author, blocks, null, links);
+    }
+
+    private DocDto insertDoc(String kbId, String folderId, String title, String author, List<DocBlockDto> blocks,
+            RichDocContentDto content, List<DocLinkDto> links) {
+        return insertDoc("d" + UUID.randomUUID().toString().replace("-", "").substring(0, 31),
+                kbId, folderId, title, author, blocks, content, links);
     }
 
     private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
             List<DocBlockDto> blocks) {
-        return insertDoc(id, kbId, folderId, title, author, blocks, List.of());
+        return insertDoc(id, kbId, folderId, title, author, blocks, null, List.of());
     }
 
     private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
             List<DocBlockDto> blocks, List<DocLinkDto> links) {
+        return insertDoc(id, kbId, folderId, title, author, blocks, null, links);
+    }
+
+    private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
+            List<DocBlockDto> blocks, RichDocContentDto content, List<DocLinkDto> links) {
         Long count = docMapper.selectCount(aliveDocs().eq(DocEntity::getFolderId, folderId));
         LocalDateTime now = LocalDateTime.now();
 
@@ -1141,6 +1198,7 @@ public class KnowledgeService {
         e.setRev(1);
         e.setCascadeDel(false);
         e.setBlocksJson(write(blocks));
+        applyRichContent(e, content);
         e.setLinksJson(write(links));
         e.setOrd(nextOrd(count));
         docMapper.insert(e);
@@ -1178,10 +1236,11 @@ public class KnowledgeService {
             throw new ConflictException("该文档已绑定稳定归档身份，必须使用带版本的同步路径");
         }
         existing.setBlocksJson(write(blocks));
+        applyRichContent(existing, null);
         existing.setAuto(true);
         existing.setRev(rev(existing) + 1);
         existing.setUpdatedAt(LocalDateTime.now());
-        docMapper.updateById(existing);
+        docMapper.updateContentSnapshot(existing);
         return toDto(existing, docMapper.selectList(aliveDocs()));
     }
 
@@ -1247,6 +1306,10 @@ public class KnowledgeService {
                 && e.getAutoSyncVersion() != null) {
             return updateVersionedArchive(e, req);
         }
+        int currentRev = rev(e);
+        if (req.expectedRev() != null && req.expectedRev() != currentRev) {
+            throw new ConflictException("文档已在其他窗口更新，请刷新后处理本机草稿");
+        }
         boolean contentChanged = false;
         if (req.title() != null && !req.title().equals(e.getTitle())) {
             e.setTitle(req.title());
@@ -1257,6 +1320,15 @@ public class KnowledgeService {
             contentChanged |= !next.equals(e.getBlocksJson());
             e.setBlocksJson(next);
         }
+        if (req.content() != null) {
+            RichDocContentDto content = checkedRichContent(req.content());
+            contentChanged |= !sameRichContent(e, content);
+            applyRichContent(e, content);
+        } else if (req.blocks() != null) {
+            contentChanged |= e.getContentJson() != null || e.getContentMarkdown() != null
+                    || e.getContentVersion() != null;
+            applyRichContent(e, null);
+        }
         if (req.links() != null) {
             e.setLinksJson(write(req.links()));
         }
@@ -1265,16 +1337,35 @@ public class KnowledgeService {
             e.setFolderId(req.folderId());
         }
         if (contentChanged) {
-            e.setRev(rev(e) + 1);
+            e.setRev(currentRev + 1);
             e.setUpdatedAt(LocalDateTime.now());
         }
-        docMapper.updateById(e);
+        if (req.expectedRev() != null) {
+            if (docMapper.updateIfRevision(e, currentRev) != 1) {
+                throw new ConflictException("文档已在其他窗口更新，请刷新后处理本机草稿");
+            }
+        } else {
+            docMapper.updateContentSnapshot(e);
+        }
         return toDto(e, docMapper.selectList(aliveDocs()));
     }
 
     private DocDto updateVersionedArchive(DocEntity e, PatchDocRequest req) {
+        if (req.expectedRev() != null && req.expectedRev() != rev(e)) {
+            throw new ConflictException("文档已在其他窗口更新，请刷新后处理本机草稿");
+        }
         String title = req.title() == null ? e.getTitle() : req.title();
         String blocks = req.blocks() == null ? e.getBlocksJson() : write(req.blocks());
+        RichDocContentDto content = req.content() == null ? null : checkedRichContent(req.content());
+        String contentJson = req.content() == null
+                ? (req.blocks() == null ? e.getContentJson() : null)
+                : (content.document() == null ? null : write(content.document()));
+        String contentMarkdown = req.content() == null
+                ? (req.blocks() == null ? e.getContentMarkdown() : null)
+                : content.markdown();
+        Integer contentVersion = req.content() == null
+                ? (req.blocks() == null ? e.getContentVersion() : null)
+                : content.version();
         String links = req.links() == null ? e.getLinksJson() : write(req.links());
         String folderId = e.getFolderId();
         if (req.folderId() != null && !req.folderId().isBlank()) {
@@ -1282,15 +1373,23 @@ public class KnowledgeService {
             folderId = req.folderId();
         }
         boolean contentChanged = !Objects.equals(title, e.getTitle())
-                || !Objects.equals(blocks, e.getBlocksJson());
+                || !Objects.equals(blocks, e.getBlocksJson())
+                || !Objects.equals(contentJson, e.getContentJson())
+                || !Objects.equals(contentMarkdown, e.getContentMarkdown())
+                || !Objects.equals(contentVersion, e.getContentVersion());
         boolean changed = contentChanged || !Objects.equals(links, e.getLinksJson())
                 || !Objects.equals(folderId, e.getFolderId());
         if (!changed) return toDto(e, docMapper.selectList(aliveDocs()));
 
         long nextVersion = archiveVersions.nextVersion();
         int nextRev = contentChanged ? rev(e) + 1 : rev(e);
-        if (docMapper.updateAutoArchiveManually(e.getId(), folderId, title, blocks, links, nextRev,
-                e.getAutoSyncScope(), e.getAutoSyncDate(), e.getAutoSyncVersion(), nextVersion) != 1) {
+        int updated = req.content() == null
+                ? docMapper.updateAutoArchiveManually(e.getId(), folderId, title, blocks, links, nextRev,
+                        e.getAutoSyncScope(), e.getAutoSyncDate(), e.getAutoSyncVersion(), nextVersion)
+                : docMapper.updateAutoArchiveManuallyRich(e.getId(), folderId, title, blocks, links,
+                        contentJson, contentMarkdown, contentVersion, nextRev,
+                        e.getAutoSyncScope(), e.getAutoSyncDate(), e.getAutoSyncVersion(), nextVersion);
+        if (updated != 1) {
             throw new ConflictException("飞书聊天归档已被同步更新，请刷新后重试");
         }
         DocEntity saved = requireDoc(e.getId());
@@ -1615,7 +1714,7 @@ public class KnowledgeService {
             List<DocLinkDto> links, List<DocBlockDto> blocks) {
         return new DocDto(e.getId(), e.getTitle(), e.getAuthorId(),
                 stamp(e.getCreatedAt(), e.getCreatedLabel()), stamp(e.getUpdatedAt(), e.getUpdatedLabel()),
-                e.getAuto(), links, blocks, backlinks, e.getKbId(), e.getFolderId(), rev(e));
+                e.getAuto(), links, blocks, richContentOf(e), backlinks, e.getKbId(), e.getFolderId(), rev(e));
     }
 
     /** 时间戳优先，老数据回落到升级前写死的展示文案。 */
@@ -1648,6 +1747,25 @@ public class KnowledgeService {
         return "未命名小记";
     }
 
+    private static String titleFrom(RichDocContentDto content, List<DocBlockDto> blocks) {
+        if (content != null && content.markdown() != null) {
+            String plain = markdownPlainText(content.markdown());
+            if (!plain.isBlank()) return plain.length() > 30 ? plain.substring(0, 30) + "…" : plain;
+        }
+        return titleFrom(blocks);
+    }
+
+    private boolean sameRichContent(DocEntity entity, RichDocContentDto content) {
+        if (content == null) {
+            return entity.getContentJson() == null && entity.getContentMarkdown() == null
+                    && entity.getContentVersion() == null;
+        }
+        String document = content.document() == null ? null : write(content.document());
+        return Objects.equals(document, entity.getContentJson())
+                && Objects.equals(content.markdown(), entity.getContentMarkdown())
+                && Objects.equals(content.version(), entity.getContentVersion());
+    }
+
     private static String firstText(DocBlockDto b) {
         if (b.h() != null) {
             return b.h();
@@ -1672,6 +1790,10 @@ public class KnowledgeService {
     }
 
     private String snippetOf(DocEntity e, List<DocBlockDto> blocks) {
+        if (e.getContentMarkdown() != null && !e.getContentMarkdown().isBlank()) {
+            String plain = markdownPlainText(e.getContentMarkdown());
+            return plain.length() > 60 ? plain.substring(0, 60) + "…" : plain;
+        }
         for (DocBlockDto b : blocks) {
             String text = b.p() != null ? b.p() : b.h() != null ? b.h() : b.call();
             if (text != null && !text.isBlank()) {
@@ -1679,6 +1801,160 @@ public class KnowledgeService {
             }
         }
         return e.getTitle();
+    }
+
+    /** 高级正文请求的版本、规模、节点和危险 URL 白名单校验。 */
+    private RichDocContentDto checkedRichContent(RichDocContentDto content) {
+        if (content == null) return null;
+        if (!Objects.equals(content.version(), RICH_CONTENT_VERSION)) {
+            throw new BadRequestException("暂不支持该文档正文版本");
+        }
+        String markdown = content.markdown() == null ? "" : content.markdown();
+        if (markdown.length() > MAX_RICH_CONTENT_LENGTH) {
+            throw new BadRequestException("文档正文不能超过 1000000 个字符");
+        }
+        if (markdown.regionMatches(true, 0, "data:", 0, 5)
+                || Pattern.compile("(?i)\\]\\(\\s*(?:javascript|data):").matcher(markdown).find()) {
+            throw new BadRequestException("文档正文包含不安全的链接或内嵌数据");
+        }
+        String proseMarkdown = markdown.replaceAll("(?s)```.*?```", "").replaceAll("`[^`]*`", "");
+        if (Pattern.compile("(?i)<\\s*/?\\s*[a-z][^>]*>").matcher(proseMarkdown).find()) {
+            throw new BadRequestException("高级文档正文不接受原始 HTML");
+        }
+        JsonNode document = content.document();
+        if (document != null && !document.isNull()) {
+            String serialized = write(document);
+            if (serialized.length() > MAX_RICH_CONTENT_LENGTH) {
+                throw new BadRequestException("文档结构不能超过 1000000 个字符");
+            }
+            int[] count = {0};
+            validateRichNode(document, count);
+            if (!"doc".equals(document.path("type").asText())) {
+                throw new BadRequestException("文档结构必须以 doc 节点开始");
+            }
+        }
+        return new RichDocContentDto(RICH_CONTENT_VERSION,
+                document == null || document.isNull() ? null : document, markdown);
+    }
+
+    private void validateRichNode(JsonNode node, int[] count) {
+        if (!node.isObject() || ++count[0] > MAX_RICH_NODE_COUNT) {
+            throw new BadRequestException("文档结构不合法或超过 5000 个节点");
+        }
+        String type = node.path("type").asText();
+        if (!RICH_NODE_TYPES.contains(type)) {
+            throw new BadRequestException("文档包含不支持的节点：" + type);
+        }
+        JsonNode marks = node.get("marks");
+        if (marks != null) {
+            if (!marks.isArray()) throw new BadRequestException("文档文字样式不合法");
+            for (JsonNode mark : marks) {
+                String markType = mark.path("type").asText();
+                if (!RICH_MARK_TYPES.contains(markType)) {
+                    throw new BadRequestException("文档包含不支持的文字样式：" + markType);
+                }
+                validateRichAttrs(mark.get("attrs"));
+            }
+        }
+        validateRichAttrs(node.get("attrs"));
+        JsonNode children = node.get("content");
+        if (children != null) {
+            if (!children.isArray()) throw new BadRequestException("文档子节点不合法");
+            children.forEach(child -> validateRichNode(child, count));
+        }
+    }
+
+    private void validateRichAttrs(JsonNode attrs) {
+        if (attrs == null || attrs.isNull()) return;
+        if (!attrs.isObject()) throw new BadRequestException("文档节点属性不合法");
+        attrs.fields().forEachRemaining(entry -> {
+            if (!RICH_ATTRS.contains(entry.getKey())) {
+                throw new BadRequestException("文档包含不支持的节点属性：" + entry.getKey());
+            }
+            JsonNode value = entry.getValue();
+            if (value.isTextual() && value.asText().length() > 20_000) {
+                throw new BadRequestException("文档节点属性过长");
+            }
+            if (("href".equals(entry.getKey()) || "src".equals(entry.getKey()) || "url".equals(entry.getKey())
+                    || "snapshot".equals(entry.getKey()))
+                    && value.isTextual() && !value.asText().isBlank() && !safeRichUrl(value.asText())) {
+                throw new BadRequestException("文档包含不安全的资源地址");
+            }
+            if (("color".equals(entry.getKey()) || "backgroundColor".equals(entry.getKey()))
+                    && value.isTextual() && !RICH_COLORS.contains(value.asText().toLowerCase())) {
+                throw new BadRequestException("文档颜色不在允许的色板中");
+            }
+            if ("textAlign".equals(entry.getKey()) && value.isTextual()
+                    && !Set.of("left", "center", "right").contains(value.asText())) {
+                throw new BadRequestException("文档对齐方式不受支持");
+            }
+            if ("align".equals(entry.getKey()) && value.isTextual()
+                    && !Set.of("left", "center", "right").contains(value.asText())) {
+                throw new BadRequestException("图片对齐方式不受支持");
+            }
+            if ("kind".equals(entry.getKey()) && value.isTextual()
+                    && !Set.of("info", "success", "warning", "danger").contains(value.asText())) {
+                throw new BadRequestException("提示块类型不受支持");
+            }
+            if ("target".equals(entry.getKey()) && value.isTextual() && !"_blank".equals(value.asText())) {
+                throw new BadRequestException("链接打开方式不受支持");
+            }
+            if ("rel".equals(entry.getKey()) && value.isTextual()
+                    && !"noopener noreferrer".equals(value.asText())) {
+                throw new BadRequestException("链接安全属性不受支持");
+            }
+        });
+    }
+
+    private static boolean safeRichUrl(String raw) {
+        String value = raw == null ? "" : raw.trim().toLowerCase();
+        return value.startsWith("https://") || value.startsWith("http://") || value.startsWith("/")
+                || value.startsWith("./") || value.startsWith("../") || value.startsWith("#")
+                || value.startsWith("mailto:") || value.startsWith("tel:");
+    }
+
+    private void applyRichContent(DocEntity entity, RichDocContentDto supplied) {
+        RichDocContentDto content = checkedRichContent(supplied);
+        entity.setContentVersion(content == null ? null : content.version());
+        entity.setContentJson(content == null || content.document() == null ? null : write(content.document()));
+        entity.setContentMarkdown(content == null ? null : content.markdown());
+    }
+
+    private void applyRichContent(DocTemplateEntity entity, RichDocContentDto supplied) {
+        RichDocContentDto content = checkedRichContent(supplied);
+        entity.setContentVersion(content == null ? null : content.version());
+        entity.setContentJson(content == null || content.document() == null ? null : write(content.document()));
+        entity.setContentMarkdown(content == null ? null : content.markdown());
+    }
+
+    private RichDocContentDto richContentOf(DocEntity entity) {
+        return richContent(entity.getContentVersion(), entity.getContentJson(), entity.getContentMarkdown());
+    }
+
+    private RichDocContentDto richContentOf(DocTemplateEntity entity) {
+        return richContent(entity.getContentVersion(), entity.getContentJson(), entity.getContentMarkdown());
+    }
+
+    private RichDocContentDto richContent(Integer version, String document, String markdown) {
+        if (version == null && document == null && markdown == null) return null;
+        JsonNode parsed = null;
+        if (document != null && !document.isBlank()) {
+            try {
+                parsed = json.readTree(document);
+            } catch (JsonProcessingException ignored) {
+                // 历史损坏的高级结构不阻断整篇文档，前端会回落 Markdown 或旧块。
+            }
+        }
+        return new RichDocContentDto(version == null ? RICH_CONTENT_VERSION : version, parsed,
+                markdown == null ? "" : markdown);
+    }
+
+    private static String markdownPlainText(String markdown) {
+        return markdown
+                .replaceAll("(?s)```.*?```", " ")
+                .replaceAll("!\\[[^]]*]|[>#*_`~|]", " ")
+                .replaceAll("\\[([^]]+)]\\([^)]*\\)", "$1")
+                .replaceAll("\\s+", " ").trim();
     }
 
     private <T> List<T> readList(String value, TypeReference<List<T>> type) {

@@ -50,6 +50,7 @@ import {
   apiRunJob,
   fetchAreas,
   fetchArchivedDocs,
+  fetchDoc,
   fetchDocs,
   fetchFiles,
   fetchHostedPages,
@@ -71,12 +72,14 @@ import {
   type PatchKbPayload,
 } from '@/api/board'
 import { blocksToText, textToBlocks } from '@/utils/doc'
+import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
+import { readDocumentDraft, removeDocumentDraft, writeDocumentDraft } from '@/utils/documentDrafts'
 import { nowIso, todayIso } from '@/utils/time'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import { MAX_TASK_GROUPS } from '@/types'
 import type {
-  AiRun, Area, AutomationJob, Comment, Doc, DocBlock, FileItem, HostedPage, ImageItem, ImageRef,
+  AiRun, Area, AutomationJob, Comment, Doc, DocBlock, FileItem, HostedPage, ImageItem, ImageRef, RichDocContent,
   KnowledgeBase, Project, ScheduleItem, Suggestion, Task, TaskGroup, TaskStep, TrashEntry, VaultGroup, VaultItem,
 } from '@/types'
 
@@ -87,6 +90,8 @@ export const DEFAULT_TASK_GROUP = 'tg-default'
 interface DocEdit {
   title?: string
   text?: string
+  content?: RichDocContent
+  baseRev?: number
 }
 /** 解析后的可编辑文档视图。 */
 export interface ResolvedDoc {
@@ -94,6 +99,7 @@ export interface ResolvedDoc {
   title: string
   text: string
   blocks: DocBlock[]
+  content: RichDocContent
 }
 
 function emptyDoc(id: string): Doc {
@@ -102,7 +108,7 @@ function emptyDoc(id: string): Doc {
 
 /**
  * 领域数据 store —— 真实 API 数据的前端单一数据源。
- * 变更先在内存内生效；文档 Markdown 编辑额外持久化到 localStorage（对齐 wao-docs-v1）。
+ * 变更先在内存内生效；文档高级正文优先写入 IndexedDB，并保留 localStorage 兼容迁移。
  */
 
 const DOC_KEY = 'wao-docs-v1'
@@ -458,20 +464,26 @@ export const useDataStore = defineStore('data', () => {
    * 右上角的 {@code SaveHint} 据此显示「自动保存成功 14:32」——不给回执，用户没法
    * 确认东西真的写进去了。
    */
-  const saveStates = reactive<Record<string, { saving: boolean; savedAt: string | null }>>({})
-  const EMPTY_SAVE = { saving: false, savedAt: null }
+  const saveStates = reactive<Record<string, { saving: boolean; savedAt: string | null; failed: boolean }>>({})
+  const EMPTY_SAVE = { saving: false, savedAt: null, failed: false }
   /** 读某个编辑区的保存状态（没登记过就是「没存过也没在存」）。 */
   const saveState = (key: string) => saveStates[key] ?? EMPTY_SAVE
   function markSaving(key: string) {
-    saveStates[key] = { saving: true, savedAt: saveStates[key]?.savedAt ?? null }
+    saveStates[key] = { saving: true, savedAt: saveStates[key]?.savedAt ?? null, failed: false }
   }
   /** 一次写透结束：成功才推进「上次保存成功」的时间。 */
   function markSaved(key: string, ok: boolean) {
-    saveStates[key] = { saving: false, savedAt: ok ? nowIso() : (saveStates[key]?.savedAt ?? null) }
+    saveStates[key] = {
+      saving: false,
+      savedAt: ok ? nowIso() : (saveStates[key]?.savedAt ?? null),
+      failed: !ok,
+    }
   }
 
-  // ---- 文档 Markdown 编辑（持久化，对齐原型 wao-docs-v1） ----
+  // ---- 文档高级正文编辑（IndexedDB 草稿 + localStorage 兼容） ----
   const docEdits = ref<Record<string, DocEdit>>(loadDocEdits())
+  const docConflicts = reactive<Record<string, Doc | null>>({})
+  const docDraftErrors = reactive<Record<string, boolean>>({})
   function loadDocEdits(): Record<string, DocEdit> {
     try {
       return JSON.parse(localStorage.getItem(DOC_KEY) || '{}')
@@ -481,6 +493,7 @@ export const useDataStore = defineStore('data', () => {
   }
   /** 待写透的文档 patch 计时器（按文档 id 去抖，避免每次按键都请求后端）。 */
   const docPersistTimers: Record<string, ReturnType<typeof setTimeout>> = {}
+  const docSavePromises: Record<string, Promise<boolean> | undefined> = {}
   /** 有未写透编辑的文档 id —— 协同拉取时不能用服务端版本盖掉这些文档。 */
   const docDirty = reactive<Record<string, boolean>>({})
   /**
@@ -490,29 +503,132 @@ export const useDataStore = defineStore('data', () => {
    * 只在停顿处发一次请求，停手不到一秒内容就已经在服务端了。
    */
   function setDocEdit(id: string, patch: DocEdit) {
-    docEdits.value = { ...docEdits.value, [id]: { ...docEdits.value[id], ...patch } }
-    localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
-    if (!apiLive.value) return
+    const base = docs[id] ?? emptyDoc(id)
+    const previous = docEdits.value[id]
+    const content = patch.content ?? (patch.text != null
+      ? { version: 1 as const, document: null, markdown: patch.text }
+      : previous?.content ?? resolvedRichContent(base))
+    const next: DocEdit = {
+      ...previous,
+      ...patch,
+      content,
+      text: content?.markdown ?? patch.text ?? previous?.text,
+      baseRev: previous?.baseRev ?? base.rev ?? 1,
+    }
+    docEdits.value = { ...docEdits.value, [id]: next }
+    try {
+      localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
+    } catch {
+      docDraftErrors[id] = true
+    }
+    const memberId = useSessionStore().userId || 'anonymous'
+    if (next.content) {
+      void writeDocumentDraft({
+        id,
+        memberId,
+        title: next.title ?? base.title,
+        content: next.content,
+        baseRev: next.baseRev ?? 1,
+        updatedAt: Date.now(),
+      }).then(() => (docDraftErrors[id] = false)).catch(() => (docDraftErrors[id] = true))
+    }
     docDirty[id] = true
+    delete docConflicts[id]
+    if (!apiLive.value) return
     markSaving(`doc:${id}`)
     clearTimeout(docPersistTimers[id])
-    docPersistTimers[id] = setTimeout(() => {
-      const resolved = docOf(id)
-      // 落库后只更新 base（版本号要跟上，否则下一次心跳会把自己的内容当成过期的拉回来），
-      // 本地覆盖**不清**：清了 docOf 就会改从 blocks 反推正文，编辑器会当成外部改动
-      // 重新灌一遍内容，光标当场跳回开头。覆盖由 applyRemoteDoc 在真的收到别人的
-      // 版本时才清。
-      apiPatchDoc(id, { title: resolved.title, blocks: resolved.blocks })
-        .then((saved) => {
-          docs[id] = saved
-          markSaved(`doc:${id}`, true)
-        })
-        .catch(() => markSaved(`doc:${id}`, false))
-        .finally(() => (docDirty[id] = false))
-    }, 600)
+    docPersistTimers[id] = setTimeout(() => void persistDocNow(id), 600)
+  }
+
+  /** 立即写透一篇文档；飞行中再次修改会在本次响应后自动补交最新草稿。 */
+  async function persistDocNow(id: string): Promise<boolean> {
+    clearTimeout(docPersistTimers[id])
+    if (docConflicts[id]) return false
+    if (docSavePromises[id]) return docSavePromises[id]!
+    const pending = docEdits.value[id]
+    if (!pending) return true
+    const captured = clone(pending)
+    if (!captured?.content) return true
+    const resolved = docOf(id)
+    markSaving(`doc:${id}`)
+    const request = apiPatchDoc(id, {
+      title: resolved.title,
+      blocks: legacyProjection(captured.content),
+      content: captured.content,
+      expectedRev: captured.baseRev ?? resolved.base.rev ?? 1,
+    }).then(async (saved) => {
+      docs[id] = saved
+      markSaved(`doc:${id}`, true)
+      const latest = docEdits.value[id]
+      if (latest && JSON.stringify(latest) === JSON.stringify(captured)) {
+        const { [id]: _dropped, ...rest } = docEdits.value
+        docEdits.value = rest
+        docDirty[id] = false
+        try { localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value)) } catch { /* IndexedDB remains */ }
+        await removeDocumentDraft(useSessionStore().userId || 'anonymous', id).catch(() => undefined)
+      } else if (latest) {
+        latest.baseRev = saved.rev ?? (captured.baseRev ?? 1) + 1
+        clearTimeout(docPersistTimers[id])
+        docPersistTimers[id] = setTimeout(() => void persistDocNow(id), 100)
+      }
+      return true
+    }).catch(async (cause: unknown) => {
+      markSaved(`doc:${id}`, false)
+      const message = cause instanceof Error ? cause.message : ''
+      if (message.includes('其他窗口') || message.includes('刷新后处理')) {
+        try { docConflicts[id] = await fetchDoc(id) } catch { docConflicts[id] = docs[id] ?? null }
+      }
+      return false
+    }).finally(() => {
+      docSavePromises[id] = undefined
+    })
+    docSavePromises[id] = request
+    return request
   }
   /** 是否有还没写透后端的本地编辑。 */
   const docPending = (id: string) => docDirty[id] === true
+
+  /** 从 IndexedDB 找回浏览器草稿；版本落后时先进入冲突处理，不自动覆盖服务器。 */
+  async function restoreDocumentDraft(id: string): Promise<boolean> {
+    const memberId = useSessionStore().userId || 'anonymous'
+    const legacy = docEdits.value[id]
+    if (legacy) {
+      const base = docs[id] ?? emptyDoc(id)
+      const content = legacy.content ?? { version: 1 as const, document: null, markdown: legacy.text ?? resolvedRichContent(base).markdown }
+      legacy.content = content
+      legacy.text = content.markdown
+      legacy.baseRev ??= base.rev ?? 1
+      await writeDocumentDraft({
+        id, memberId, title: legacy.title ?? base.title, content,
+        baseRev: legacy.baseRev, updatedAt: Date.now(),
+      }).catch(() => (docDraftErrors[id] = true))
+      return true
+    }
+    const draft = await readDocumentDraft(memberId, id).catch(() => null)
+    if (!draft) return false
+    const base = docs[id] ?? emptyDoc(id)
+    const sameAsServer = JSON.stringify(draft.content) === JSON.stringify(resolvedRichContent(base))
+      && draft.title === base.title
+    if (sameAsServer) {
+      await removeDocumentDraft(memberId, id).catch(() => undefined)
+      return false
+    }
+    docEdits.value = {
+      ...docEdits.value,
+      [id]: { title: draft.title, text: draft.content.markdown, content: draft.content, baseRev: draft.baseRev },
+    }
+    docDirty[id] = true
+    try { localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value)) } catch { docDraftErrors[id] = true }
+    if ((base.rev ?? 1) !== draft.baseRev) {
+      docConflicts[id] = base
+      markSaved(`doc:${id}`, false)
+    } else if (apiLive.value) {
+      markSaving(`doc:${id}`)
+      clearTimeout(docPersistTimers[id])
+      docPersistTimers[id] = setTimeout(() => void persistDocNow(id), 100)
+    }
+    return true
+  }
   /**
    * 用服务端版本替换本地文档（协同心跳发现别人改过时）。
    *
@@ -525,7 +641,8 @@ export const useDataStore = defineStore('data', () => {
     docs[doc.id] = doc
     // 内容其实一样（多半是自己刚存的那一版转了一圈回来）就别动覆盖，
     // 否则编辑器会因为文本换了个写法而重灌一次内容，光标白跳。
-    if (override && override.text != null && override.text !== blocksToText(doc.blocks)) {
+    const remoteMarkdown = resolvedRichContent(doc).markdown
+    if (override && override.text != null && override.text !== remoteMarkdown) {
       const { [doc.id]: _dropped, ...rest } = docEdits.value
       docEdits.value = rest
       localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
@@ -537,9 +654,50 @@ export const useDataStore = defineStore('data', () => {
     const d = docs[id] ?? emptyDoc(id)
     const o = docEdits.value[id]
     const title = o?.title != null ? o.title : d.title
-    const text = o?.text != null ? o.text : blocksToText(d.blocks)
-    const blocks = o?.text != null ? textToBlocks(o.text) : d.blocks
-    return { base: d, title, text, blocks }
+    const content = o?.content ?? (o?.text != null
+      ? { version: 1 as const, document: null, markdown: o.text }
+      : resolvedRichContent(d))
+    const text = content.markdown
+    const blocks = o?.content || o?.text != null ? legacyProjection(content) : d.blocks
+    return { base: d, title, text, blocks, content }
+  }
+
+  /** 放弃发生冲突的本机草稿并载入服务器版；只由用户明确操作触发。 */
+  async function useServerDoc(id: string): Promise<boolean> {
+    const remote = docConflicts[id]
+    if (!remote) return false
+    docs[id] = remote
+    const { [id]: _dropped, ...rest } = docEdits.value
+    docEdits.value = rest
+    docDirty[id] = false
+    delete docConflicts[id]
+    try { localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value)) } catch { /* 已有云端版本 */ }
+    await removeDocumentDraft(useSessionStore().userId || 'anonymous', id).catch(() => undefined)
+    markSaved(`doc:${id}`, true)
+    return true
+  }
+
+  /** 把冲突本机草稿作为同目录新文档保存，原服务器文档保持不变。 */
+  async function saveDocConflictCopy(id: string): Promise<string | null> {
+    const local = docOf(id)
+    const kbId = local.base.kbId
+    const folderId = local.base.folderId
+    if (!kbId || !folderId || !apiLive.value) return null
+    try {
+      const created = await apiCreateDoc({
+        kbId,
+        folderId,
+        title: `${local.title || '未命名文档'}（冲突副本）`,
+        blocks: legacyProjection(local.content),
+        content: local.content,
+      })
+      docs[created.id] = created
+      kbById(kbId)?.folders.find((folder) => folder.id === folderId)?.docs.push(created.id)
+      await useServerDoc(id)
+      return created.id
+    } catch {
+      return null
+    }
   }
   /** 新建自建分组，返回 id；apiLive 时经后端创建。 */
   async function addGroup(): Promise<string> {
@@ -685,11 +843,12 @@ export const useDataStore = defineStore('data', () => {
    * @param noteId 草稿持有的稳定文档 id；重试时沿用，避免重复创建
    * @return 新建的文档 id；正文与标题都为空时返回 null
    */
-  async function addNote(text: string, title = '', noteId?: string): Promise<string | null> {
-    const blocks = textToBlocks(text)
-    if (!blocks.length && !title.trim()) return null
+  async function addNote(text: string, title = '', noteId?: string, rich?: RichDocContent): Promise<string | null> {
+    const content = rich ?? { version: 1 as const, document: null, markdown: text }
+    const blocks = legacyProjection(content)
+    if (!blocks.length && !content.document?.content?.length && !title.trim()) return null
     if (apiLive.value) {
-      const d = await apiCreateNote(noteId ?? uid('d'), { title: title.trim(), blocks })
+      const d = await apiCreateNote(noteId ?? uid('d'), { title: title.trim(), blocks, content })
       docs[d.id] = d
       const kb = kbs.value.find((k) => k.id === d.kbId) ?? notesKb()
       const folder = noteFolderOf(kb, d.folderId)
@@ -702,7 +861,7 @@ export const useDataStore = defineStore('data', () => {
     docs[id] = {
       id, title: title.trim() || noteTitleOf(text), author: currentAuthor(),
       created: nowIso(), updated: nowIso(), links: [], blocks, backlinks: [],
-      kbId: kb.id, folderId: folder.id, rev: 1,
+      content, kbId: kb.id, folderId: folder.id, rev: 1,
     }
     folder.docs.push(id)
     return id
@@ -809,6 +968,7 @@ export const useDataStore = defineStore('data', () => {
     const { [id]: _dropped, ...rest } = docEdits.value
     docEdits.value = rest
     localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value))
+    void removeDocumentDraft(useSessionStore().userId || 'anonymous', id).catch(() => undefined)
     if (apiLive.value) {
       try {
         await apiDeleteDoc(id)
@@ -1887,7 +2047,8 @@ export const useDataStore = defineStore('data', () => {
     fileLoadState, fileLoadError, loadStates, loadErrors, hydrate,
     areaById, projectById, taskById, tasksByProject, kbById, docById,
     isDocArchived, archivedDocsOf, areaColor,
-    docEdits, setDocEdit, docOf, docPending, saveState, markSaving, markSaved,
+    docEdits, docConflicts, docDraftErrors, setDocEdit, persistDocNow, restoreDocumentDraft, docOf, docPending, saveState, markSaving, markSaved,
+    useServerDoc, saveDocConflictCopy,
     applyRemoteDoc, addDoc, addNote, notesKb, reorderDocs,
     addGroup, renameGroup, addFolder, renameFolder, deleteFolder, deleteDoc,
     archiveDoc, unarchiveDoc, refreshArchivedDocs,

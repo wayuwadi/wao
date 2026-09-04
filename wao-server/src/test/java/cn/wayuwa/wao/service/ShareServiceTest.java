@@ -13,6 +13,7 @@ import cn.wayuwa.wao.dto.DocDto;
 import cn.wayuwa.wao.dto.ImageRef;
 import cn.wayuwa.wao.dto.PdcaCycle;
 import cn.wayuwa.wao.dto.SharedDocDto;
+import cn.wayuwa.wao.dto.RichDocContentDto;
 import cn.wayuwa.wao.dto.SharedTaskDto;
 import cn.wayuwa.wao.dto.Step;
 import cn.wayuwa.wao.dto.TaskDto;
@@ -269,6 +270,23 @@ class ShareServiceTest {
         assertThat(shared.md()).contains("> 宁多勿少 —— 包工头");
         // JSON 视图给同域分享页用，图片保持相对路径即可
         assertThat(shared.md()).contains("](/api/images/img9/raw)");
+    }
+
+    @Test
+    void shareDocKeepsRichJsonAndUsesItsMarkdownProjection() throws Exception {
+        DocDto legacy = doc("kb1");
+        RichDocContentDto rich = new RichDocContentDto(1, new com.fasterxml.jackson.databind.ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"mermaid","attrs":{"source":"flowchart TD\\nA-->B"}}]}
+                """), "```mermaid\nflowchart TD\nA-->B\n```");
+        when(knowledge.getDoc("d1")).thenReturn(new DocDto(legacy.id(), legacy.title(), legacy.author(),
+                legacy.created(), legacy.updated(), legacy.auto(), legacy.links(), legacy.blocks(), rich,
+                legacy.backlinks(), legacy.kbId(), legacy.folderId(), legacy.rev()));
+
+        SharedDocDto shared = service.shareDoc("d1");
+
+        assertThat(shared.md()).isEqualTo(rich.markdown());
+        assertThat(shared.content()).isEqualTo(rich);
+        assertThat(service.toMarkdown(shared, BASE)).contains("```mermaid");
     }
 
     @Test

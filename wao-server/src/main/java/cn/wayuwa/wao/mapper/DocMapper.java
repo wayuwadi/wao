@@ -43,6 +43,29 @@ public interface DocMapper extends BaseMapper<DocEntity> {
     })
     int updateTreeOrders(@Param("kbId") String kbId, @Param("docs") List<DocEntity> docs);
 
+    /** 新客户端按正文 revision 原子保存；显式写 NULL，避免高级正文与旧块投影发生漂移。 */
+    @Update("""
+            UPDATE doc
+               SET folder_id = #{doc.folderId}, title = #{doc.title}, blocks_json = #{doc.blocksJson},
+                   content_json = #{doc.contentJson}, content_markdown = #{doc.contentMarkdown},
+                   content_version = #{doc.contentVersion}, links_json = #{doc.linksJson},
+                   rev = #{doc.rev}, updated_at = #{doc.updatedAt}
+             WHERE id = #{doc.id} AND deleted_at IS NULL AND rev = #{expectedRev}
+            """)
+    int updateIfRevision(@Param("doc") DocEntity doc, @Param("expectedRev") int expectedRev);
+
+    /** 兼容无 expectedRev 的旧客户端与自动生成入口，同时显式写 NULL 清理过期高级快照。 */
+    @Update("""
+            UPDATE doc
+               SET folder_id = #{doc.folderId}, title = #{doc.title}, author_id = #{doc.authorId}, auto = #{doc.auto},
+                   blocks_json = #{doc.blocksJson}, content_json = #{doc.contentJson},
+                   content_markdown = #{doc.contentMarkdown}, content_version = #{doc.contentVersion},
+                   links_json = #{doc.linksJson}, rev = #{doc.rev}, updated_at = #{doc.updatedAt},
+                   deleted_at = #{doc.deletedAt}, deleted_by = #{doc.deletedBy}, cascade_del = #{doc.cascadeDel}
+             WHERE id = #{doc.id}
+            """)
+    int updateContentSnapshot(@Param("doc") DocEntity doc);
+
     /** 软删除只改回收站元数据，不覆盖文档正文与归档版本。 */
     @Update("""
             UPDATE doc SET deleted_at = #{deletedAt}, deleted_by = #{deletedBy}, cascade_del = #{cascade}
@@ -89,6 +112,7 @@ public interface DocMapper extends BaseMapper<DocEntity> {
     @Update("""
             UPDATE doc
                SET folder_id = #{folderId}, title = #{title}, blocks_json = #{blocksJson}, auto = 1,
+                   content_json = NULL, content_markdown = NULL, content_version = NULL,
                    rev = rev + 1, auto_sync_scope = #{syncScope}, auto_sync_date = #{syncDate},
                    deleted_at = NULL, deleted_by = NULL, cascade_del = 0,
                    updated_at = CURRENT_TIMESTAMP(6), auto_sync_version = #{syncVersion}
@@ -102,10 +126,11 @@ public interface DocMapper extends BaseMapper<DocEntity> {
             @Param("syncScope") String syncScope, @Param("syncDate") LocalDate syncDate,
             @Param("syncVersion") long syncVersion);
 
-    /** 手动编辑已绑定的归档也要提升同一全局版本，旧节点无法绕过写栅。 */
+    /** 旧块客户端编辑已绑定归档时清掉高级快照，并提升同一全局版本。 */
     @Update("""
             UPDATE doc
                SET folder_id = #{folderId}, title = #{title}, blocks_json = #{blocksJson},
+                   content_json = NULL, content_markdown = NULL, content_version = NULL,
                    links_json = #{linksJson}, rev = #{rev}, updated_at = CURRENT_TIMESTAMP(6),
                    auto_sync_version = #{nextVersion}
              WHERE id = #{id} AND deleted_at IS NULL
@@ -115,6 +140,27 @@ public interface DocMapper extends BaseMapper<DocEntity> {
     int updateAutoArchiveManually(@Param("id") String id,
             @Param("folderId") String folderId, @Param("title") String title,
             @Param("blocksJson") String blocksJson, @Param("linksJson") String linksJson,
+            @Param("rev") int rev, @Param("syncScope") String syncScope,
+            @Param("syncDate") LocalDate syncDate, @Param("expectedVersion") long expectedVersion,
+            @Param("nextVersion") long nextVersion);
+
+    /** 高级正文客户端手动编辑已绑定归档，完整 JSON 与 Markdown 在同一条 CAS 中写入。 */
+    @Update("""
+            UPDATE doc
+               SET folder_id = #{folderId}, title = #{title}, blocks_json = #{blocksJson},
+                   content_json = #{contentJson}, content_markdown = #{contentMarkdown},
+                   content_version = #{contentVersion},
+                   links_json = #{linksJson}, rev = #{rev}, updated_at = CURRENT_TIMESTAMP(6),
+                   auto_sync_version = #{nextVersion}
+             WHERE id = #{id} AND deleted_at IS NULL
+               AND auto_sync_scope = #{syncScope} AND auto_sync_date = #{syncDate}
+               AND auto_sync_version = #{expectedVersion}
+            """)
+    int updateAutoArchiveManuallyRich(@Param("id") String id,
+            @Param("folderId") String folderId, @Param("title") String title,
+            @Param("blocksJson") String blocksJson, @Param("linksJson") String linksJson,
+            @Param("contentJson") String contentJson, @Param("contentMarkdown") String contentMarkdown,
+            @Param("contentVersion") Integer contentVersion,
             @Param("rev") int rev, @Param("syncScope") String syncScope,
             @Param("syncDate") LocalDate syncDate, @Param("expectedVersion") long expectedVersion,
             @Param("nextVersion") long nextVersion);

@@ -53,6 +53,17 @@ class FileControllerTest {
     }
 
     @Test
+    void streamAllowsVideoForAuthenticatedDocumentPlayback() {
+        when(files.raw("video-1")).thenReturn(audio("演示.mp4", "video/mp4", "video-bytes"));
+
+        var response = controller.stream("video-1", null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getHeaders().getContentType().toString()).isEqualTo("video/mp4");
+        assertThat(response.getHeaders().getFirst(HttpHeaders.CACHE_CONTROL)).isEqualTo("private, no-store");
+    }
+
+    @Test
     void streamRefusesNonAudioFiles() {
         when(files.raw("doc-1")).thenReturn(audio("说明.html", "text/html", "<h1>no</h1>"));
 

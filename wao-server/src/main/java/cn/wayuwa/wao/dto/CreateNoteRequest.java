@@ -8,5 +8,8 @@ import java.util.List;
  * @param title  标题，留空时由正文首行推导
  * @param blocks 正文块
  */
-public record CreateNoteRequest(String title, List<DocBlockDto> blocks) {
+public record CreateNoteRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content) {
+    public CreateNoteRequest(String title, List<DocBlockDto> blocks) {
+        this(title, blocks, null);
+    }
 }

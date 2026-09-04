@@ -1,10 +1,12 @@
 package cn.wayuwa.wao.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -20,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import cn.wayuwa.wao.common.BadRequestException;
+import cn.wayuwa.wao.common.ConflictException;
 import cn.wayuwa.wao.common.NotFoundException;
 import cn.wayuwa.wao.domain.DocEntity;
 import cn.wayuwa.wao.domain.DocTemplateEntity;
@@ -40,6 +43,7 @@ import cn.wayuwa.wao.dto.PatchDocTemplateRequest;
 import cn.wayuwa.wao.dto.PatchKbRequest;
 import cn.wayuwa.wao.dto.ProjectDto;
 import cn.wayuwa.wao.dto.ReorderDocsRequest;
+import cn.wayuwa.wao.dto.RichDocContentDto;
 import cn.wayuwa.wao.dto.TrashEntryDto;
 import cn.wayuwa.wao.mapper.DocMapper;
 import cn.wayuwa.wao.mapper.DocTemplateMapper;
@@ -241,6 +245,61 @@ class KnowledgeServiceTest {
 
         assertThat(dto.blocks()).containsExactlyElementsOf(blocks);
         assertThat(dto.rev()).isEqualTo(1);
+    }
+
+    @Test
+    void richDocumentPersistsJsonAndMarkdownAsOneVersionedSnapshot() throws Exception {
+        when(kbMapper.selectById("k1")).thenReturn(kb("k1"));
+        when(folderMapper.selectById("f1")).thenReturn(folder("f1", "k1"));
+        when(docMapper.selectCount(any())).thenReturn(0L);
+        when(docMapper.selectList(any())).thenReturn(List.of());
+        RichDocContentDto rich = new RichDocContentDto(1, new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"callout","attrs":{"kind":"warning","uid":"c1"},
+                "content":[{"type":"paragraph","content":[{"type":"text","text":"当心"}]}]}]}
+                """), "> [!WARNING]\n> 当心");
+
+        DocDto dto = service.createDoc(new CreateDocRequest("k1", "f1", "高级文档", null,
+                List.of(new DocBlockDto(null, null, "当心", null, null)), rich), "m1");
+
+        ArgumentCaptor<DocEntity> inserted = ArgumentCaptor.forClass(DocEntity.class);
+        verify(docMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getContentVersion()).isEqualTo(1);
+        assertThat(inserted.getValue().getContentJson()).contains("callout");
+        assertThat(inserted.getValue().getContentMarkdown()).isEqualTo("> [!WARNING]\n> 当心");
+        assertThat(dto.content()).isEqualTo(rich);
+
+        RichDocContentDto card = new RichDocContentDto(1, new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"linkCard","attrs":{"uid":"l1","id":"","name":"示例",
+                "size":"","mime":"","url":"http://example.com","title":"兼容链接","snapshot":""}}]}
+                """), "[兼容链接](http://example.com)");
+        assertThatCode(() -> service.createDoc(new CreateDocRequest("k1", "f1", "链接卡片", null,
+                List.of(new DocBlockDto(null, null, "兼容链接", null, null)), card), "m1"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void richDocumentRejectsExecutableUrlsAndStaleRevision() throws Exception {
+        DocEntity existing = doc("d-rich", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        when(docMapper.selectList(any())).thenReturn(List.of(existing));
+        RichDocContentDto unsafe = new RichDocContentDto(1, new ObjectMapper().readTree("""
+                {"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"危险",
+                "marks":[{"type":"link","attrs":{"href":"javascript:alert(1)"}}]}]}]}
+                """), "[危险](javascript:alert(1))");
+
+        assertThatThrownBy(() -> service.updateDoc(existing.getId(),
+                new PatchDocRequest(null, List.of(), unsafe, null, null, 1)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("不安全");
+        RichDocContentDto rawHtml = new RichDocContentDto(1,
+                new ObjectMapper().readTree("{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\"}]}"),
+                "<script>alert(1)</script>");
+        assertThatThrownBy(() -> service.updateDoc(existing.getId(),
+                new PatchDocRequest(null, List.of(), rawHtml, null, null, 1)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("原始 HTML");
+        assertThatThrownBy(() -> service.updateDoc(existing.getId(),
+                new PatchDocRequest(null, null, null, null, null, 0)))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("其他窗口");
+        verify(docMapper, never()).updateIfRevision(any(), anyInt());
     }
 
     @Test
@@ -1001,7 +1060,7 @@ class KnowledgeServiceTest {
         assertThat(dto.id()).isEqualTo(id);
         assertThat(dto.title()).isEqualTo("重试前补充过");
         assertThat(dto.rev()).isEqualTo(2);
-        verify(docMapper).updateById(existing);
+        verify(docMapper).updateContentSnapshot(existing);
         verify(docMapper, never()).insert(any(DocEntity.class));
         verify(taskNotifier, never()).notifyNoteCreated(any(), any(), any(), any());
     }
