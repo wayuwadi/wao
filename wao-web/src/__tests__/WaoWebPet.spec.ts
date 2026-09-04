@@ -79,6 +79,7 @@ describe('WaoWebPet', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    sessionStorage.clear()
     const clock = shanghaiClock()
     rhythmApi.fetchWorkdayRhythm.mockReset()
     rhythmApi.fetchWorkdayRhythmDay.mockReset()
@@ -91,8 +92,35 @@ describe('WaoWebPet', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllGlobals()
     vi.useRealTimers()
     document.body.innerHTML = ''
+  })
+
+  it('手机默认静默，主动恢复在本次会话保留，快捷气泡仍能再次静默', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(max-width: 760px)', addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+    const props = { assistantStatus: { configured: true, message: '已连接本地 Codex' } }
+    const wrapper = mount(WaoWebPet, { props })
+    expect(wrapper.find('.wao-web-pet').exists()).toBe(false)
+    await wrapper.get('.pet-silent-dock').trigger('click')
+    expect(wrapper.find('.wao-web-pet').exists()).toBe(true)
+    expect(sessionStorage.getItem('wao-web-pet-mobile-expanded-v1')).toBe('true')
+    await wrapper.get('.pet-quick-silence').trigger('click')
+    expect(wrapper.find('.pet-silent-dock').exists()).toBe(true)
+    await wrapper.get('.pet-silent-dock').trigger('click')
+    wrapper.unmount()
+    const reopened = mount(WaoWebPet, { props })
+    expect(reopened.find('.wao-web-pet').exists()).toBe(true)
+    reopened.unmount()
+  })
+
+  it('桌面默认展开，手机默认静默不改写已有成员设置或桌面期限', () => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+    const wrapper = mount(WaoWebPet, { props: { assistantStatus: { configured: true, message: '已连接' } } })
+    expect(wrapper.find('.wao-web-pet').exists()).toBe(true)
+    expect(localStorage.getItem('wao-web-pet-hidden-until')).toBeNull()
+    expect(sessionStorage.getItem('wao-web-pet-mobile-expanded-v1')).toBeNull()
+    wrapper.unmount()
   })
 
   it('优先展示真实待验收任务并可直接打开详情', async () => {
@@ -220,7 +248,7 @@ describe('WaoWebPet', () => {
       global: { plugins: [router] },
     })
 
-    await wrapper.get('.pet-settings-link').trigger('click')
+    await wrapper.get('.pet-settings-link:not(.pet-quick-silence)').trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/settings?tab=pet')

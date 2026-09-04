@@ -1160,12 +1160,12 @@ function onDropDay(dayIso: string) {
         <label class="member-calendar"><i class="ri-user-line"></i><select v-model="calendarMemberId" title="选择要查看的成员日历"><option v-for="member in session.members" :key="member.id" :value="member.id">{{ member.id === session.currentUser.id ? `我的日历 · ${member.name}` : member.name }}</option></select></label>
         <div class="calendar-search"><i class="ri-search-line"></i><input v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、考勤、提醒、节日…" @keydown.esc="calendarSearch = ''" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
         <div class="spacer"></div>
-        <details class="calendar-menu calendar-display-menu"><summary><i class="ri-eye-line"></i>显示</summary><div class="calendar-menu-popover">
+        <details name="calendar-toolbar-menu" class="calendar-menu calendar-display-menu"><summary><i class="ri-eye-line"></i>显示</summary><div class="calendar-menu-popover">
           <button class="work-week-visibility" :class="{ on: showWorkWeek }" type="button" @click="showWorkWeek = !showWorkWeek"><i :class="showWorkWeek ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>大小周标记</b><small>只控制日历显示，不关闭配置</small></span><em>{{ showWorkWeek ? '显示' : '隐藏' }}</em></button>
           <button class="attendance-toggle" :class="{ on: attendanceMode }" type="button" @click="toggleAttendanceMode"><i :class="attendanceMode ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>我的考勤</b><small>上下班、工时与异常</small></span><em>{{ attendanceMode ? '显示' : '隐藏' }}</em></button>
           <button class="completed-toggle" :class="{ on: showCompletedTasks }" type="button" @click="showCompletedTasks = !showCompletedTasks"><i :class="showCompletedTasks ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>{{ showCompletedTasks ? '隐藏已完成任务' : '显示已完成任务' }}</b><small>保留或隐藏历史完成项</small></span><em>{{ showCompletedTasks ? '显示中' : '已隐藏' }}</em></button>
         </div></details>
-        <details class="calendar-menu calendar-settings-menu"><summary><i class="ri-settings-3-line"></i>日历设置</summary><div class="calendar-menu-popover">
+        <details name="calendar-toolbar-menu" class="calendar-menu calendar-settings-menu"><summary><i class="ri-settings-3-line"></i>日历设置</summary><div class="calendar-menu-popover">
           <button class="holiday-settings-entry" type="button" @click="openHolidaySettings"><i class="ri-earth-line"></i><span><b>节日设置</b><small>{{ holidaySettings?.selectedInternationalCategories.length ?? 0 }} 类国际节日</small></span></button>
           <button class="important-date-entry" type="button" @click="openImportantDateManager"><i :class="importantDateState === 'loading' ? 'ri-loader-4-line spinning' : importantDateState === 'error' ? 'ri-error-warning-line' : 'ri-heart-3-line'"></i><span><b>提醒事项</b><small>{{ importantDateState === 'error' ? '读取失败' : `${importantDateItems.length} 个` }}</small></span></button>
           <button class="caldav" type="button" @click="showCaldavConfig = true"><span class="cd-dot" :style="{ background: caldavState.dot }"></span><span><b>CalDAV</b><small>{{ caldavState.label }}</small></span></button>
@@ -2501,6 +2501,9 @@ button.holiday-status { cursor: pointer; }
   .important-date-body { padding-inline: 14px; }
   .cal-heading-row, .cal-control-row { flex-wrap: wrap; }
   .cal-control-row .spacer { display: none; }
+  .cal-control-row { position: relative; }
+  .calendar-menu { position: static; }
+  .calendar-menu-popover { top: calc(100% + 6px); left: 0; right: auto; width: 100%; box-sizing: border-box; max-height: 60dvh; overflow-y: auto; }
   .important-date-reminder-fields { grid-template-columns: 1fr; }
   .important-date-list-head { align-items: flex-start; }
   .important-date-list-head span { max-width: 190px; }
