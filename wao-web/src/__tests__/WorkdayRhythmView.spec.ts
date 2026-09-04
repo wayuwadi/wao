@@ -298,6 +298,17 @@ describe('WorkdayRhythmView', () => {
       expect.objectContaining({ focusCompleted: [true, false, false] }),
     )
     expect(wrapper.findAll('.focus-row')[1]!.classes()).toContain('active')
+    vi.mocked(saveWorkdayRhythmDay).mockRejectedValueOnce(new Error('网络中断'))
+    await wrapper.get('.focus-undo').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.focus-undo-retry').text()).toContain('重试')
+    await wrapper.get('.focus-undo-retry').trigger('click')
+    await flushPromises()
+    expect(saveWorkdayRhythmDay).toHaveBeenLastCalledWith(
+      expect.objectContaining({ focusCompleted: [false, false, false] }),
+    )
+    expect(wrapper.findAll('.focus-row')[0]!.classes()).toContain('active')
+    expect(sendFocusNotification).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
