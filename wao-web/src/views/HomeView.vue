@@ -2916,8 +2916,12 @@ onBeforeUnmount(() => {
 .activity-filters button { min-height: 30px; padding: 0 11px; border: 1px solid var(--wao-line); border-radius: 999px; background: var(--wao-bg-card); color: var(--wao-text-weak); cursor: pointer; font-size: 11px; }
 .activity-filters button.active { border-color: var(--wao-primary-line); background: var(--wao-primary-soft); color: var(--wao-primary-text); font-weight: 650; }
 .activity-filters button:disabled { opacity: .55; cursor: wait; }
-.recent-actions { flex: 0 0 auto !important; display: flex; align-items: center; gap: 7px; }
-.recent-pagination { min-height: 34px; }
+.recent-section > .section-head { flex-wrap: wrap; }
+.recent-section > .section-head > div:first-child { flex: 1 1 240px; min-width: 0; }
+.recent-section > .section-head > .recent-actions { flex: 0 1 auto; }
+.recent-actions { min-width: 0; max-width: 100%; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.recent-actions > button { flex-shrink: 0; }
+.recent-pagination { min-height: 34px; min-width: 0; max-width: 100%; }
 .history-filter-bar { margin-top: 14px; }
 .infrastructure-failure-banner { margin: 0 0 12px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--wao-warning-strong) 32%, var(--wao-line)); border-radius: 11px; background: var(--wao-warning-bg); display: flex; align-items: center; gap: 10px; }
 .infrastructure-failure-banner > span { width: 32px; height: 32px; flex: 0 0 auto; border-radius: 9px; background: color-mix(in srgb, var(--wao-warning-strong) 12%, transparent); color: var(--wao-warning-strong); display: grid; place-items: center; }
@@ -3212,7 +3216,7 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .run-section-actions > button { flex: 1; justify-content: center; }
   .recent-actions { justify-content: space-between; flex-wrap: wrap; }
   .reviewable-task-trigger { flex: 1 1 auto; justify-content: center; }
-  .recent-pagination { flex: 1; justify-content: space-between; }
+  .recent-actions .recent-pagination { flex: 1 0 100%; width: 100%; justify-content: space-between; }
   .recent-pagination button { min-height: 28px; }
   .auto-run-dialog header p, .quick-task-dialog header p, .reviewable-task-dialog header p { white-space: normal; }
   .quick-task-dialog header { flex-wrap: wrap; }
