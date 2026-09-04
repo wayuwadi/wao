@@ -50,12 +50,12 @@ export async function readDocumentDraft(memberId: string, id: string): Promise<D
 }
 
 export async function writeDocumentDraft(draft: DocumentDraft): Promise<void> {
+  // 恢复路径可能传入 Pinia/Vue 的嵌套 Proxy。文档契约本身是 JSON，
+  // 在持久化边界创建普通数据快照，避免 IndexedDB 的结构化克隆拒绝 Proxy。
+  const row = JSON.parse(JSON.stringify({ ...draft, key: key(draft.memberId, draft.id) }))
   const db = await database()
   try {
-    await result(db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put({
-      ...draft,
-      key: key(draft.memberId, draft.id),
-    }))
+    await result(db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(row))
   } finally {
     db.close()
   }

@@ -101,6 +101,19 @@ describe('知识库详情目录体验', () => {
     wrapper.unmount()
   })
 
+  it('切换文档后同步地址，刷新仍打开所选文档', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7')
+    await wrapper.findAll('.folder-row')[1]!.get('.folder-btn').trigger('click')
+    const target = wrapper.findAll('.doc-node').find((node) => node.text().includes('阅读笔记：卡片盒笔记法'))!
+    await target.trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.$router.currentRoute.value.query.doc).toBe('d8')
+    const path = wrapper.vm.$router.currentRoute.value.fullPath
+    wrapper.unmount()
+    const reopened = await mountView(path)
+    expect(reopened.get('.doc-node.on').text()).toContain('阅读笔记：卡片盒笔记法')
+  })
+
   it('删除文档必须二次确认，取消时不修改持久数据', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     const data = useDataStore(pinia)

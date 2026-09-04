@@ -197,6 +197,7 @@ onBeforeUnmount(() => {
 })
 function selectDoc(id: string) {
   docId.value = id
+  void router.replace({ query: { ...route.query, doc: id } })
 }
 function openDoc(id: string) {
   const k = data.kbs.find((kk) => kk.folders.some((f) => f.docs.includes(id)))
@@ -217,7 +218,7 @@ async function createDocFrom(templateId?: string) {
   if (id) {
     newDocFolderId.value = null
     folderOpen[folderId] = true
-    docId.value = id
+    selectDoc(id)
     toast(templateId ? '已从模板创建文档' : '已创建空白文档', 'ri-file-add-line')
     // 新文档标题是空的，光标直接落在标题上，敲进去就是自己的标题
     nextTick(() => titleEl.value?.focus())
@@ -730,7 +731,7 @@ async function keepConflictCopy() {
     toast('副本保存失败，本机草稿仍保留', 'ri-error-warning-line')
     return
   }
-  docId.value = copyId
+  selectDoc(copyId)
   toast('本机草稿已另存为冲突副本', 'ri-file-copy-2-line')
 }
 </script>
