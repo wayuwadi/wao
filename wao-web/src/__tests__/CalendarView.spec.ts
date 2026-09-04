@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import CalendarView from '@/views/CalendarView.vue'
@@ -30,6 +30,12 @@ import {
 } from '@/api/importantDates'
 import { fetchFeishuChats } from '@/api/system'
 import { fetchAttendance, syncAttendance } from '@/api/attendance'
+import { fetchVault } from '@/api/board'
+
+vi.mock('@/api/board', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/board')>(),
+  fetchVault: vi.fn(),
+}))
 
 vi.mock('@/api/caldav', () => ({
   fetchCaldavAccounts: vi.fn<() => Promise<never[]>>(async () => []),
@@ -95,15 +101,20 @@ function holiday(patch: Partial<HolidayEvent>): HolidayEvent {
   }
 }
 
-const router = createRouter({
-  history: createMemoryHistory(),
-  routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
-})
+let router: ReturnType<typeof createRouter>
+
+enableAutoUnmount(afterEach)
+let pinia: ReturnType<typeof createPinia>
 
 describe('日历成员隔离、清单与时间轴', () => {
   beforeEach(() => {
     localStorage.clear()
-    setActivePinia(createPinia())
+    pinia = createPinia()
+    setActivePinia(pinia)
+    router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
+    })
     vi.mocked(fetchAlternateWorkWeek).mockImplementation(async (today) => ({ enabled: false, anchorWeek: today, anchorType: 'small' }))
     vi.mocked(saveAlternateWorkWeek).mockImplementation(async (value) => value)
     vi.mocked(fetchHolidayEvents).mockReset().mockResolvedValue(emptyHolidayCalendar)
@@ -130,12 +141,13 @@ describe('日历成员隔离、清单与时间轴', () => {
     }))
     vi.mocked(fetchAttendance).mockReset()
     vi.mocked(syncAttendance).mockReset()
+    vi.mocked(fetchVault).mockReset().mockResolvedValue([])
   })
 
   it('默认只看当前人，待安排清单只含未排期与已逾期任务并可集中筛选', async () => {
-    const data = useDataStore()
-    const session = useSessionStore()
-    const ui = useUiStore()
+    const data = useDataStore(pinia)
+    const session = useSessionStore(pinia)
+    const ui = useUiStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     const other = { id: 'wd', name: '娃弟', initial: '弟', color: '#2C8A5B', role: '成员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
@@ -155,7 +167,7 @@ describe('日历成员隔离、清单与时间轴', () => {
       task({ title: '他人的任务', owner: other.id, pr: 'P0', due: data.today }),
     ]
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
 
     const backlog = wrapper.findAll('.bl-item')
@@ -191,8 +203,8 @@ describe('日历成员隔离、清单与时间轴', () => {
   })
 
   it('已完成任务保留在原日期，月视图和时间轴均以删除线显示', async () => {
-    const data = useDataStore()
-    const session = useSessionStore()
+    const data = useDataStore(pinia)
+    const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
@@ -221,7 +233,7 @@ describe('日历成员隔离、清单与时间轴', () => {
       comments: [], custom: [], activity: [], images: [],
     }]
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
 
     const monthEvents = wrapper.findAll('.event.completed')
@@ -247,8 +259,8 @@ describe('日历成员隔离、清单与时间轴', () => {
   })
 
   it('保存本周双休基准后，月视图可查询交替的大小周并持久化成员偏好', async () => {
-    const data = useDataStore()
-    const session = useSessionStore()
+    const data = useDataStore(pinia)
+    const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
@@ -258,7 +270,7 @@ describe('日历成员隔离、清单与时间轴', () => {
       anchorType: 'small',
     })
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
 
     expect(wrapper.find('.work-schedule').text()).toContain('本周 · 小周 · 双休')
@@ -288,14 +300,14 @@ describe('日历成员隔离、清单与时间轴', () => {
   })
 
   it('大小周保存失败时保留浮层与草稿，并提供原位重试', async () => {
-    const data = useDataStore()
-    const session = useSessionStore()
+    const data = useDataStore(pinia)
+    const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
     vi.mocked(saveAlternateWorkWeek).mockRejectedValueOnce(new Error('网络暂不可用'))
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
     await wrapper.find('.work-schedule').trigger('click')
     await wrapper.find('.work-schedule-toggle input').setValue(true)
@@ -310,8 +322,8 @@ describe('日历成员隔离、清单与时间轴', () => {
   })
 
   it('合并展示中国与国际节日，并与大小周共同标记法定休息日和调休上班日', async () => {
-    const data = useDataStore()
-    const session = useSessionStore()
+    const data = useDataStore(pinia)
+    const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
@@ -330,7 +342,7 @@ describe('日历成员隔离、清单与时间轴', () => {
       sourceName: '2026年国务院办公厅节假日安排', sourceUrl: 'https://www.gov.cn/',
       message: '该年度法定放假与调休安排已收录' }] })
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('中国节假日')
@@ -342,7 +354,7 @@ describe('日历成员隔离、清单与时间轴', () => {
   })
 
   it('节假日加载失败时给出可用的重试入口', async () => {
-    const session = useSessionStore()
+    const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
@@ -350,7 +362,7 @@ describe('日历成员隔离、清单与时间轴', () => {
       .mockRejectedValueOnce(new Error('网络失败'))
       .mockResolvedValueOnce(emptyHolidayCalendar)
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
     const retry = wrapper.find('button.holiday-status.error')
     expect(retry.text()).toContain('节假日加载失败')
@@ -362,8 +374,8 @@ describe('日历成员隔离、清单与时间轴', () => {
   })
 
   it('国际节日默认不添加，用户可主动订阅类别并从节日详情创建和关闭提醒', async () => {
-    const data = useDataStore()
-    const session = useSessionStore()
+    const data = useDataStore(pinia)
+    const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
@@ -376,7 +388,7 @@ describe('日历成员隔离、清单与时间轴', () => {
       .mockResolvedValueOnce(emptyHolidayCalendar)
       .mockResolvedValueOnce({ events: [mothersDay], years: [] })
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
     expect(wrapper.text()).not.toContain('母亲节')
     expect(wrapper.find('.holiday-settings-entry').text()).toContain('0 类')
@@ -413,8 +425,8 @@ describe('日历成员隔离、清单与时间轴', () => {
   })
 
   it('可维护每年显示的家庭重要日，并设置提前飞书提醒', async () => {
-    const data = useDataStore()
-    const session = useSessionStore()
+    const data = useDataStore(pinia)
+    const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
@@ -446,7 +458,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     vi.mocked(deleteFamilyImportantDate).mockImplementation(async () => { items.splice(0) })
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
     await wrapper.find('.important-date-entry').trigger('click')
     expect(wrapper.find('.important-date-empty').text()).toContain('还没有提醒事项')
@@ -484,8 +496,8 @@ describe('日历成员隔离、清单与时间轴', () => {
   })
 
   it('从日历可分流创建农历群提醒，并可搜索后跳到当日预览', async () => {
-    const data = useDataStore()
-    const session = useSessionStore()
+    const data = useDataStore(pinia)
+    const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
@@ -505,7 +517,7 @@ describe('日历成员隔离、清单与时间轴', () => {
       }],
     })
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
 
     await wrapper.find('.day-num').trigger('dblclick')
@@ -531,8 +543,8 @@ describe('日历成员隔离、清单与时间轴', () => {
   })
 
   it('考勤模式可独立开关，并在日历分开显示上下班与两位小数工时', async () => {
-    const data = useDataStore()
-    const session = useSessionStore()
+    const data = useDataStore(pinia)
+    const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
@@ -551,7 +563,7 @@ describe('日历成员隔离、清单与时间轴', () => {
     } as const
     vi.mocked(fetchAttendance).mockResolvedValue(attendance as never)
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
     expect(wrapper.text()).not.toContain('11.00 h')
     await wrapper.find('.attendance-toggle').trigger('click')
@@ -573,8 +585,8 @@ describe('日历成员隔离、清单与时间轴', () => {
   })
 
   it('首次配置考勤时自动启用表单并忽略旧的禁用草稿', async () => {
-    const data = useDataStore()
-    const session = useSessionStore()
+    const data = useDataStore(pinia)
+    const session = useSessionStore(pinia)
     const me = { id: 'wg', name: '娃哥', initial: '哥', color: '#4358D6', role: '管理员' }
     session.accept({ accountId: 'a1', member: me, identities: [], createdAt: '2026-01-01T00:00:00' })
     session.members = [me]
@@ -587,7 +599,13 @@ describe('日历成员隔离、清单与时间轴', () => {
       days: [], totalHours: 0, monthDailyAverageHours: 0, validDays: 0, weeks: [],
     })
 
-    const wrapper = mount(CalendarView, { global: { plugins: [router] } })
+    vi.mocked(fetchVault).mockResolvedValue([{
+      id: 'vg1', group: '工作', items: [{
+        id: 'vi1', name: '摩卡-工时登录系统', icon: 'ri-key-line', user: 's008500@nl-ds.cn',
+        site: 'https://core.mokahr.com', note: '', updated: '刚刚', hasSecret: true,
+      }],
+    }])
+    const wrapper = mount(CalendarView, { global: { plugins: [pinia, router] } })
     await flushPromises()
     await wrapper.find('.attendance-toggle').trigger('click')
     await flushPromises()
@@ -597,15 +615,9 @@ describe('日历成员隔离、清单与时间轴', () => {
     expect(wrapper.find('.attendance-modal fieldset').attributes('disabled')).toBeUndefined()
     expect((wrapper.find('.attendance-modal input[type="email"]').element as HTMLInputElement).disabled).toBe(false)
     expect((wrapper.find('.attendance-modal select').element as HTMLSelectElement).disabled).toBe(false)
-
-    data.vault = [{
-      id: 'vg1', group: '工作', items: [{
-        id: 'vi1', name: '摩卡-工时登录系统', icon: 'ri-key-line', user: 's008500@nl-ds.cn',
-        site: 'https://core.mokahr.com', note: '', updated: '刚刚', hasSecret: true,
-      }],
-    }]
     await flushPromises()
     await wrapper.find('.attendance-modal select').setValue('vi1')
+    await flushPromises()
 
     const email = wrapper.find('.attendance-modal input[type="email"]')
     expect(email.attributes('readonly')).toBeDefined()

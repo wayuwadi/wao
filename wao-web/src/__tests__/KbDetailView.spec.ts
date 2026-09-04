@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent } from 'vue'
@@ -40,10 +40,14 @@ const MarkdownEditorStub = defineComponent({
     '<textarea class="markdown-editor-stub" :value="modelValue" :readonly="readonly" @input="input" />',
 })
 
+enableAutoUnmount(afterEach)
+let pinia: ReturnType<typeof createPinia>
+
 describe('知识库详情目录体验', () => {
   beforeEach(() => {
     localStorage.clear()
-    setActivePinia(createPinia())
+    pinia = createPinia()
+    setActivePinia(pinia)
     seedDataStore()
     vi.mocked(fetchDocTemplates).mockReset()
     vi.mocked(apiPatchDocTemplate).mockReset()
@@ -56,16 +60,16 @@ describe('知识库详情目录体验', () => {
     })
     await router.push(path)
     await router.isReady()
-    useSessionStore().accept({
+    useSessionStore(pinia).accept({
       accountId: `account-${memberId}`,
       member: { id: memberId, name: memberId, initial: memberId[0]!, color: '#64748b', role: '' },
       identities: [],
       createdAt: '2026-08-01T00:00:00',
     })
-    useDataStore().apiLive = apiLive
+    useDataStore(pinia).apiLive = apiLive
     const wrapper = mount(KbDetailView, {
       global: {
-        plugins: [router],
+        plugins: [pinia, router],
         stubs: { MarkdownEditor: realEditorStub ? MarkdownEditorStub : true },
       },
     })
@@ -99,7 +103,7 @@ describe('知识库详情目录体验', () => {
 
   it('删除文档必须二次确认，取消时不修改持久数据', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
-    const data = useDataStore()
+    const data = useDataStore(pinia)
     const remove = vi.spyOn(data, 'deleteDoc').mockResolvedValue(undefined)
     const confirm = vi.spyOn(window, 'confirm')
       .mockReturnValueOnce(false)
@@ -119,7 +123,7 @@ describe('知识库详情目录体验', () => {
 
   it('右侧目录展示一至三级标题，并按三级缩进表达层级', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
-    useDataStore().docs.d7!.blocks = [
+    useDataStore(pinia).docs.d7!.blocks = [
       { h: '一级标题', hLevel: 1 },
       { h: '二级标题', hLevel: 2 },
       { h: '三级标题', hLevel: 3 },
@@ -239,7 +243,7 @@ describe('知识库详情目录体验', () => {
 
   it('文档和模板粘贴图片都要求真实图床地址，失败时不插入 data URL', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
-    const data = useDataStore()
+    const data = useDataStore(pinia)
     const upload = vi.spyOn(data, 'uploadImage').mockResolvedValue(null)
     const done = vi.fn<(url: string | null, name: string) => void>()
     const file = new File(['png'], '离线截图.png', { type: 'image/png' })
