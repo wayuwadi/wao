@@ -73,7 +73,7 @@ import {
 } from '@/api/board'
 import { blocksToText, textToBlocks } from '@/utils/doc'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
-import { readDocumentDraft, removeDocumentDraft, writeDocumentDraft } from '@/utils/documentDrafts'
+import { readDocumentDraft, removeDocumentDraft, writeDocumentDraft, type DocumentDraft } from '@/utils/documentDrafts'
 import { nowIso, todayIso } from '@/utils/time'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
@@ -534,7 +534,10 @@ export const useDataStore = defineStore('data', () => {
     }
     docDirty[id] = true
     delete docConflicts[id]
-    if (!apiLive.value) return
+    if (!apiLive.value) {
+      markSaved(`doc:${id}`, false)
+      return
+    }
     markSaving(`doc:${id}`)
     clearTimeout(docPersistTimers[id])
     docPersistTimers[id] = setTimeout(() => void persistDocNow(id), 600)
@@ -564,6 +567,7 @@ export const useDataStore = defineStore('data', () => {
         const { [id]: _dropped, ...rest } = docEdits.value
         docEdits.value = rest
         docDirty[id] = false
+        delete docDraftErrors[id]
         try { localStorage.setItem(DOC_KEY, JSON.stringify(docEdits.value)) } catch { /* IndexedDB remains */ }
         await removeDocumentDraft(useSessionStore().userId || 'anonymous', id).catch(() => undefined)
       } else if (latest) {
@@ -592,24 +596,28 @@ export const useDataStore = defineStore('data', () => {
   async function restoreDocumentDraft(id: string): Promise<boolean> {
     const memberId = useSessionStore().userId || 'anonymous'
     const legacy = docEdits.value[id]
-    if (legacy) {
-      const base = docs[id] ?? emptyDoc(id)
-      const content = legacy.content ?? { version: 1 as const, document: null, markdown: legacy.text ?? resolvedRichContent(base).markdown }
-      legacy.content = content
-      legacy.text = content.markdown
-      legacy.baseRev ??= base.rev ?? 1
-      await writeDocumentDraft({
-        id, memberId, title: legacy.title ?? base.title, content,
-        baseRev: legacy.baseRev, updatedAt: Date.now(),
-      }).catch(() => (docDraftErrors[id] = true))
-      return true
-    }
-    const draft = await readDocumentDraft(memberId, id).catch(() => null)
-    if (!draft) return false
     const base = docs[id] ?? emptyDoc(id)
+    let draft: DocumentDraft | null
+    if (legacy) {
+      const content = legacy.content ?? { version: 1 as const, document: null, markdown: legacy.text ?? resolvedRichContent(base).markdown }
+      draft = {
+        id, memberId, title: legacy.title ?? base.title, content,
+        baseRev: legacy.baseRev ?? base.rev ?? 1, updatedAt: Date.now(),
+      }
+      await writeDocumentDraft(draft)
+        .then(() => (docDraftErrors[id] = false)).catch(() => (docDraftErrors[id] = true))
+    } else {
+      draft = await readDocumentDraft(memberId, id).catch(() => null)
+    }
+    if (!draft) return false
     const sameAsServer = JSON.stringify(draft.content) === JSON.stringify(resolvedRichContent(base))
       && draft.title === base.title
     if (sameAsServer) {
+      const { [id]: _dropped, ...rest } = docEdits.value
+      docEdits.value = rest
+      docDirty[id] = false
+      delete docDraftErrors[id]
+      try { localStorage.setItem(DOC_KEY, JSON.stringify(rest)) } catch { /* 正文已经落库 */ }
       await removeDocumentDraft(memberId, id).catch(() => undefined)
       return false
     }
@@ -626,6 +634,8 @@ export const useDataStore = defineStore('data', () => {
       markSaving(`doc:${id}`)
       clearTimeout(docPersistTimers[id])
       docPersistTimers[id] = setTimeout(() => void persistDocNow(id), 100)
+    } else {
+      markSaved(`doc:${id}`, false)
     }
     return true
   }
