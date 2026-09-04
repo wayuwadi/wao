@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
 import {
   fetchWorkdayRhythmHistory,
   fetchWorkdayRhythm,
@@ -922,6 +923,8 @@ onBeforeUnmount(() => {
         </div>
         <WorkdayRhythmHexagramSummary v-if="tianrenEnabled" :date="clock.date" />
       </section>
+
+      <WeatherPanel surface="rhythm" :date="clock.date" />
 
       <div v-if="dayState === 'error'" class="save-banner error" role="alert">
         <i class="ri-cloud-off-line"></i><span>上次保存失败，未提交内容仍在本机。</span

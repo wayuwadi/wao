@@ -31,6 +31,10 @@ import { toast } from '@/composables/toast'
 import { usePreferenceStore } from '@/stores/preferences'
 import type { Task } from '@/types'
 import AttendancePanel from '@/components/calendar/AttendancePanel.vue'
+import WeatherPanel from '@/components/calendar/WeatherPanel.vue'
+import { useWeatherStore } from '@/stores/weather'
+import { fetchCalendarTianrenReadings, type TianrenReading } from '@/api/tianren'
+import { weatherAdvice, weatherName, weatherTemperature } from '@/utils/weather'
 import type { AttendanceDay } from '@/api/attendance'
 import {
   defaultAlternateWorkWeek,
@@ -64,6 +68,11 @@ const session = useSessionStore()
 const ui = useUiStore()
 const preferences = usePreferenceStore()
 const router = useRouter()
+const weather = useWeatherStore()
+const weatherPanel = ref<InstanceType<typeof WeatherPanel> | null>(null)
+const calendarReadings = ref<TianrenReading[]>([])
+const readingsLoading = ref(false), readingsError = ref('')
+let readingsSequence = 0
 
 const now = new Date(`${data.today}T00:00:00`)
 const calY = ref(now.getFullYear())
@@ -311,7 +320,22 @@ function loadCalendarSources() {
   loadEvents()
   loadHolidays()
   loadImportantDates()
+  loadCalendarReadings()
 }
+
+async function loadCalendarReadings() {
+  const request = ++readingsSequence
+  calendarReadings.value = []; readingsError.value = ''; readingsLoading.value = false
+  if (!weather.loaded || !weather.prefs.readingsVisible || calendarMemberId.value !== session.currentUser.id) return
+  const { from, to } = visibleRange()
+  readingsLoading.value = true
+  try {
+    const rows = await fetchCalendarTianrenReadings(iso(from), iso(to))
+    if (request === readingsSequence) calendarReadings.value = rows
+  } catch (e) { if (request === readingsSequence) readingsError.value = e instanceof Error ? e.message : '卦名读取失败' }
+  finally { if (request === readingsSequence) readingsLoading.value = false }
+}
+watch([() => weather.loaded, () => weather.prefs.readingsVisible, calendarMemberId, () => session.currentUser.id], loadCalendarReadings)
 
 function iso(d: Date) {
   const p = (n: number) => String(n).padStart(2, '0')
@@ -356,6 +380,14 @@ const legend = computed(() => {
 const showCompletedTasks = ref(true)
 const events = computed<CalEvt[]>(() => {
   const evs: CalEvt[] = []
+  if (weather.prefs.calendarVisible) weather.days.forEach(day => {
+    const event: CalEvt = { date: day.date, title: `${weatherName(day.code)} · ${weatherTemperature(day)}`, color: '#348498', kind: '天气', sourceLabel: `${weather.prefs.location?.name} · Open-Meteo 预报（北京时间）${weatherAdvice(day) ? ` · 出行提醒：${weatherAdvice(day)}` : ''}` }
+    event.go = () => { searchPreview.value = event }; evs.push(event)
+  })
+  if (weather.prefs.readingsVisible && calendarMemberId.value === session.currentUser.id) calendarReadings.value.forEach(reading => {
+    const event: CalEvt = { date: reading.date, title: `卦 · ${reading.primary.name}`, color: '#8A5BD9', kind: '每日卦象', sourceLabel: `我的已保存卦象 · 第 ${reading.primary.number} 卦${reading.relating ? ` · 之卦：${reading.relating.name}` : ''}` }
+    event.go = () => { searchPreview.value = event }; evs.push(event)
+  })
   data.tasks
     .filter((t) => t.owner === calendarMemberId.value && (t.due || t.startAt)
       && (showCompletedTasks.value || t.status !== '已完成'))
@@ -1161,6 +1193,7 @@ function onDropDay(dayIso: string) {
         <div class="calendar-search"><i class="ri-search-line"></i><input v-model="calendarSearch" type="search" aria-label="搜索日历事项" placeholder="搜索任务、考勤、提醒、节日…" @keydown.esc="calendarSearch = ''" /><div v-if="calendarSearch.trim()" class="calendar-search-results"><button v-for="(result, index) in searchResults" :key="`${result.date}-${result.title}-${index}`" type="button" @click="selectSearchResult(result)"><span class="search-result-date">{{ result.date }}</span><span><b>{{ result.title }}</b><small>{{ result.kind }}<template v-if="result.sourceLabel"> · {{ result.sourceLabel }}</template></small></span></button><div v-if="!searchResults.length" class="calendar-search-empty">没有找到匹配事项</div></div></div>
         <div class="spacer"></div>
         <details name="calendar-toolbar-menu" class="calendar-menu calendar-display-menu"><summary><i class="ri-eye-line"></i>显示</summary><div class="calendar-menu-popover">
+          <button type="button" @click="weatherPanel?.openSettings()"><i class="ri-sun-line"></i><span><b>天气与卦名</b><small>位置选择、分别显示或隐藏</small></span></button>
           <button class="work-week-visibility" :class="{ on: showWorkWeek }" type="button" @click="showWorkWeek = !showWorkWeek"><i :class="showWorkWeek ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>大小周标记</b><small>只控制日历显示，不关闭配置</small></span><em>{{ showWorkWeek ? '显示' : '隐藏' }}</em></button>
           <button class="attendance-toggle" :class="{ on: attendanceMode }" type="button" @click="toggleAttendanceMode"><i :class="attendanceMode ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>我的考勤</b><small>上下班、工时与异常</small></span><em>{{ attendanceMode ? '显示' : '隐藏' }}</em></button>
           <button class="completed-toggle" :class="{ on: showCompletedTasks }" type="button" @click="showCompletedTasks = !showCompletedTasks"><i :class="showCompletedTasks ? 'ri-eye-line' : 'ri-eye-off-line'"></i><span><b>{{ showCompletedTasks ? '隐藏已完成任务' : '显示已完成任务' }}</b><small>保留或隐藏历史完成项</small></span><em>{{ showCompletedTasks ? '显示中' : '已隐藏' }}</em></button>
@@ -1174,6 +1207,9 @@ function onDropDay(dayIso: string) {
       </div>
     </div>
 
+    <WeatherPanel ref="weatherPanel" surface="calendar" :date="data.today" />
+    <p v-if="readingsLoading" class="holiday-status">正在读取已保存卦名…</p>
+    <p v-else-if="readingsError" class="holiday-status error" role="alert">{{ readingsError }} <button @click="loadCalendarReadings">重试读取卦名</button></p>
     <div class="cal-body">
       <div class="cal-card">
         <div class="cal-head">

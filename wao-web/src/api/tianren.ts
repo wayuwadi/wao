@@ -57,6 +57,9 @@ export const createTodayTianrenReading = () =>
 export const fetchTianrenHistory = (limit = 14) =>
   data<TianrenReading[]>(http.get('/api/tianren/readings', { params: { limit } }))
 
+export const fetchCalendarTianrenReadings = (from: string, to: string) =>
+  data<TianrenReading[]>(http.get('/api/tianren/readings/calendar', { params: { from, to } }))
+
 export async function createTianrenShareLink(readingId: string): Promise<string> {
   const { token } = await data<{ token: string }>(http.post(`/api/tianren/readings/${readingId}/share`))
   return `${window.location.origin}/s/tianren/${token}`
