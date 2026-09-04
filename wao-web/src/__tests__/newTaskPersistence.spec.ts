@@ -9,6 +9,7 @@ import { useToastHost } from '@/composables/toast'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 import type { Task } from '@/types'
+import { useUiStore } from '@/stores/ui'
 
 vi.mock('@/api/board', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/api/board')>(),
@@ -59,6 +60,59 @@ describe('新建任务的落库反馈', () => {
     await flushPromises()
 
     expect(useToastHost().items.some((item) => item.text.includes('已创建'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('文档待办使用来源项目和完整文字，不覆盖普通任务草稿；失败后同一任务重试', async () => {
+    const original = JSON.stringify({ title: '普通任务未提交草稿', project: 'p1' })
+    localStorage.setItem('wao-new-task-draft-v1', original)
+    const ui = useUiStore()
+    const target = data.projects.find((p) => p.id !== 'p1' && p.status !== '已完成')!
+    ui.openModal('task', target.id)
+    ui.modalTaskSeed = { draftKey: 'document-selection-test', title: '文档里的待办', desc: '完整选区\n\n来源文档：/kb/k3?doc=d7', sourceTitle: '来源文档', sourceUrl: '/kb/k3?doc=d7', sourceDocId: 'd7' }
+    const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    expect(wrapper.get('.title-input').element).toHaveProperty('value', '文档里的待办')
+    expect(wrapper.findAll('.pill.on').some((pill) => pill.text().includes(target.name))).toBe(true)
+    await wrapper.get('.title-input').setValue('文档待办修改后标题')
+    putTask.mockRejectedValueOnce(new Error('网络中断'))
+    await wrapper.get('.foot .btn-primary').trigger('click')
+    await flushPromises()
+    const firstId = putTask.mock.calls[0]![0]
+    expect(putTask.mock.calls[0]![1]).toMatchObject({ title: '文档待办修改后标题', project: target.id, docs: ['d7'], desc: '完整选区\n\n来源文档：/kb/k3?doc=d7' })
+    expect(wrapper.get('[role="alert"]').text()).toContain('未保存')
+    expect(localStorage.getItem('wao-new-task-draft-v1')).toBe(original)
+    expect(localStorage.getItem('document-selection-test')).toContain('文档待办修改后标题')
+    putTask.mockImplementationOnce(savedTask)
+    await wrapper.get('.foot .btn-primary').trigger('click')
+    await flushPromises()
+    expect(putTask.mock.calls[1]![0]).toBe(firstId)
+    expect(localStorage.getItem('document-selection-test')).toBeNull()
+    expect(localStorage.getItem('wao-new-task-draft-v1')).toBe(original)
+    wrapper.unmount()
+  })
+
+  it('无关联项目的文档要求明确选择，不能默认投到其他项目', async () => {
+    const ui = useUiStore()
+    ui.openModal('task')
+    ui.modalTaskSeed = { draftKey: 'unbound-document-selection', title: '无项目待办', desc: '选区正文', sourceTitle: '个人文档', sourceUrl: '/kb/k3?doc=d7' }
+    const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    expect(wrapper.text()).toContain('请选择要存入的项目')
+    await wrapper.get('.foot .btn-primary').trigger('click')
+    expect(putTask).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('浏览器拒绝草稿写入时保留表单并允许重试，不假报草稿已保存', async () => {
+    const ui = useUiStore()
+    ui.openModal('task', 'p1')
+    ui.modalTaskSeed = { draftKey: 'blocked-document-draft', title: '草稿保存失败仍保留', desc: '完整原文', sourceTitle: '文档', sourceUrl: '/kb/k3?doc=d7' }
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('QuotaExceededError') })
+    const wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    expect(wrapper.get('[role="alert"]').text()).toContain('草稿未能写入本机')
+    expect(wrapper.get('.title-input').element).toHaveProperty('value', '草稿保存失败仍保留')
+    storage.mockRestore()
+    await wrapper.get('[role="alert"] button').trigger('click')
+    expect(localStorage.getItem('blocked-document-draft')).toContain('完整原文')
     wrapper.unmount()
   })
 

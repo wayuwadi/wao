@@ -100,6 +100,8 @@ const props = withDefaults(
     peers?: EditorPeer[]
     /** 文档正文允许选中文字后调用设置页配置的真实 AI 润色。 */
     polishable?: boolean
+    /** 允许从文档选中文字创建待办，由文档页面提供项目上下文。 */
+    taskable?: boolean
     /** 文档正文允许点击打开、创建和维护链接。 */
     linkControls?: boolean
     /** 文档正文允许按比例或像素长宽调整图片。 */
@@ -119,6 +121,7 @@ const props = withDefaults(
     allowH1: false,
     peers: () => [],
     polishable: false,
+    taskable: false,
     linkControls: false,
     imageControls: false,
     advanced: false,
@@ -135,6 +138,7 @@ const emit = defineEmits<{
   'update:document': [value: RichDocNode]
   'content-change': [value: RichDocContent]
   'upload-file': [file: File, done: (item: FileItem | null) => void]
+  'add-task': [text: string]
 }>()
 
 const previewImage = ref<{ src: string; alt: string } | null>(null)
@@ -387,22 +391,29 @@ const editor = useEditor({
   onBlur: () => flushExternal(),
 })
 
-/** 只在可编辑文档有非空文字选区时展示润色入口。 */
-function shouldShowPolish({
-  from,
-  to,
-  state,
-}: {
-  from: number
-  to: number
-  state: { doc: { textBetween: (from: number, to: number, separator?: string) => string } }
-}) {
-  return (
-    props.polishable &&
-    !props.readonly &&
-    from !== to &&
-    state.doc.textBetween(from, to, '\n').trim().length > 0
-  )
+const selectionMenuEl = ref<HTMLElement | null>(null)
+const selectedText = ref('')
+const selectionCanLink = ref(false)
+const selectionMenuParent = () => window.document.body
+
+/** 所有文字与块操作共享一个浮层，图片使用互斥的尺寸编辑器。 */
+function shouldShowSelection({ editor: e, from, to, state }: MenuContext) {
+  if (props.readonly || e.isActive('image') || linkDialog.value || polishDialog.value || slashOpen.value) return false
+  if (!e.isFocused && !selectionMenuEl.value?.contains(document.activeElement)) return false
+  const text = from !== to && state.doc.textBetween(from, to, '\n').trim().length > 0
+  return text || (props.linkControls && e.isActive('link'))
+    || (props.advanced && (e.isActive('table') || e.isActive('codeBlock')))
+}
+
+function addSelectionTask() {
+  const e = editor.value
+  if (!e || props.readonly || !props.taskable) return
+  const { from, to } = e.state.selection
+  const text = e.state.doc.textBetween(from, to, '\n').trim()
+  if (from === to || !text) return
+  emit('add-task', text)
+  e.commands.setTextSelection(to)
+  e.commands.blur()
 }
 
 /**
@@ -433,6 +444,7 @@ async function startPolish() {
     error: '',
   }
   polishDialog.value = dialog
+  e.commands.blur()
   // ref 会把对象转成响应式代理；后续异步状态必须写代理，界面才能及时更新。
   const current = polishDialog.value
   if (!current.original) {
@@ -524,6 +536,9 @@ const selectedImageScale = ref<number | null>(null)
 const imageSizeError = ref('')
 
 function syncSelectionControls(e: Editor) {
+  const { from, to } = e.state.selection
+  selectedText.value = from === to ? '' : e.state.doc.textBetween(from, to, '\n').trim()
+  selectionCanLink.value = shouldShowLink({ editor: e, from, to, state: e.state })
   linkSelectionActive.value = e.isActive('link')
   if (!e.isActive('image')) return
   const attrs = e.getAttributes('image')
@@ -539,7 +554,7 @@ function syncSelectionControls(e: Editor) {
 
 /** 只给同一文本块内的选区提供链接维护，跨段选区不能成为一个 HTML 链接。 */
 function shouldShowLink({ editor: e, from, to, state }: MenuContext) {
-  if (!props.linkControls || props.readonly) return false
+  if (!(props.linkControls || props.advanced) || props.readonly) return false
   if (e.isActive('image')) return false
   if (e.isActive('link')) return true
   return from !== to && state.doc.resolve(from).sameParent(state.doc.resolve(to))
@@ -568,6 +583,7 @@ function openLinkEditor() {
       .map((mark) => mark.toJSON()),
     error: '',
   }
+  e.commands.blur()
 }
 
 /** 补全常见裸域名，同时拒绝会执行脚本或读取本地数据的协议。 */
@@ -1389,82 +1405,43 @@ onBeforeUnmount(() => {
     <div class="md-editor-wrap">
       <!-- BubbleMenu 会把自己的根节点移出原位置；保留 Vue 管理的外壳，
            避免保存时切换 readonly 后 v-if 在已脱离 DOM 的节点上插入占位符。 -->
-      <div v-if="editor && advanced && !readonly" class="bubble-menu-anchor">
+      <div v-if="editor && (advanced || linkControls || polishable || taskable) && !readonly" class="bubble-menu-anchor">
         <BubbleMenu
           :editor="editor"
-          plugin-key="advancedTextMenu"
-          :should-show="({ from, to }) => from !== to"
-          :options="{ placement: 'top', offset: 8 }"
+          plugin-key="documentSelectionMenu"
+          style="z-index: 40"
+          :append-to="selectionMenuParent"
+          :should-show="shouldShowSelection"
+          :options="{ strategy: 'fixed', placement: 'top', offset: 8, flip: true, shift: { padding: 8 } }"
         >
-          <div class="selection-toolbar" role="toolbar" aria-label="选中文字格式">
-            <button type="button" title="粗体" :class="{ active: editor.isActive('bold') }" @click="editor.chain().focus().toggleBold().run()"><i class="ri-bold"></i></button>
-            <button type="button" title="斜体" :class="{ active: editor.isActive('italic') }" @click="editor.chain().focus().toggleItalic().run()"><i class="ri-italic"></i></button>
-            <button type="button" title="下划线" :class="{ active: editor.isActive('underline') }" @click="editor.chain().focus().toggleUnderline().run()"><i class="ri-underline"></i></button>
-            <button type="button" title="删除线" :class="{ active: editor.isActive('strike') }" @click="editor.chain().focus().toggleStrike().run()"><i class="ri-strikethrough"></i></button>
-            <button type="button" title="代码" :class="{ active: editor.isActive('code') }" @click="editor.chain().focus().toggleCode().run()"><i class="ri-code-line"></i></button>
-            <button type="button" title="链接" @click="toggleLinkFromToolbar"><i class="ri-link"></i></button>
-            <button v-if="polishable" type="button" title="AI 润色" @click="startPolish"><i class="ri-magic-line"></i></button>
-          </div>
-        </BubbleMenu>
-      </div>
-      <div v-if="editor && advanced && !readonly" class="bubble-menu-anchor">
-        <BubbleMenu
-          :editor="editor"
-          plugin-key="tableMenu"
-          :should-show="({ editor: current }) => current.isActive('table')"
-          :options="{ placement: 'bottom', offset: 8 }"
-        >
-          <div class="context-toolbar" role="toolbar" aria-label="表格操作">
-            <button type="button" @click="editor.chain().focus().addRowAfter().run()">+ 行</button><button type="button" @click="editor.chain().focus().deleteRow().run()">− 行</button>
-            <button type="button" @click="editor.chain().focus().addColumnAfter().run()">+ 列</button><button type="button" @click="editor.chain().focus().deleteColumn().run()">− 列</button>
-            <button type="button" @click="editor.chain().focus().toggleHeaderRow().run()">表头</button><button type="button" @click="editor.chain().focus().mergeCells().run()">合并</button><button type="button" @click="editor.chain().focus().splitCell().run()">拆分</button><button type="button" class="danger" @click="editor.chain().focus().deleteTable().run()">删除表格</button>
-          </div>
-        </BubbleMenu>
-      </div>
-      <div v-if="editor && advanced && !readonly" class="bubble-menu-anchor">
-        <BubbleMenu
-          :editor="editor"
-          plugin-key="codeMenu"
-          :should-show="({ editor: current }) => current.isActive('codeBlock')"
-          :options="{ placement: 'top', offset: 8 }"
-        >
-          <div class="context-toolbar" role="toolbar" aria-label="代码块操作">
-            <select aria-label="代码语言" :value="editor.getAttributes('codeBlock').language || 'plaintext'" @change="setCodeLanguage"><option v-for="language in CODE_LANGUAGES" :key="language" :value="language">{{ language }}</option></select>
-            <button type="button" @click="copyCodeBlock"><i class="ri-file-copy-line"></i>复制代码</button>
-          </div>
-        </BubbleMenu>
-      </div>
-      <div v-if="editor && linkControls" class="bubble-menu-anchor">
-        <BubbleMenu
-          :editor="editor"
-          plugin-key="documentLinkMenu"
-          :should-show="shouldShowLink"
-          :options="{ placement: 'bottom', offset: 8 }"
-        >
-          <div class="link-toolbar" role="toolbar" aria-label="链接操作">
-            <button type="button" @mousedown.prevent @click="openLinkEditor">
-              <i class="ri-edit-line"></i>{{ linkSelectionActive ? '编辑链接' : '添加链接' }}
-            </button>
-            <button
-              v-if="linkSelectionActive"
-              type="button"
-              title="在新窗口打开"
-              aria-label="在新窗口打开链接"
-              @mousedown.prevent
-              @click="openActiveLink"
-            >
-              <i class="ri-external-link-line"></i>
-            </button>
-            <button
-              v-if="linkSelectionActive"
-              type="button"
-              title="移除链接"
-              aria-label="移除链接"
-              @mousedown.prevent
-              @click="removeActiveLink"
-            >
-              <i class="ri-link-unlink-m"></i>
-            </button>
+          <div ref="selectionMenuEl" class="selection-menu" role="toolbar" aria-label="选中文字操作" @keydown.esc="editor.commands.blur()">
+            <button type="button" title="添加到待办" aria-label="添加到待办" v-if="taskable && selectedText" class="selection-task" @mousedown.prevent @click="addSelectionTask"><i class="ri-checkbox-circle-line" aria-hidden="true"></i></button>
+            <button type="button" title="润色选中文字" aria-label="润色选中文字" v-if="polishable && selectedText" @mousedown.prevent @click="startPolish"><i class="ri-magic-line" aria-hidden="true"></i></button>
+            <button v-if="selectionCanLink" type="button" :title="linkSelectionActive ? '编辑链接' : '添加链接'" :aria-label="linkSelectionActive ? '编辑链接' : '添加链接'" @mousedown.prevent @click="openLinkEditor"><i class="ri-link" aria-hidden="true"></i></button>
+            <button type="button" title="在新窗口打开链接" aria-label="在新窗口打开链接" v-if="selectionCanLink && linkSelectionActive" @mousedown.prevent @click="openActiveLink"><i class="ri-external-link-line" aria-hidden="true"></i></button>
+            <button type="button" title="移除链接" aria-label="移除链接" v-if="selectionCanLink && linkSelectionActive" @mousedown.prevent @click="removeActiveLink"><i class="ri-link-unlink-m" aria-hidden="true"></i></button>
+            <template v-if="advanced && selectedText"><span class="selection-divider" aria-hidden="true"></span>
+            <button type="button" title="粗体" aria-label="粗体" :aria-pressed="editor.isActive('bold')" @mousedown.prevent @click="editor.chain().focus().toggleBold().run()"><i class="ri-bold" aria-hidden="true"></i></button>
+            <button type="button" title="斜体" aria-label="斜体" :aria-pressed="editor.isActive('italic')" @mousedown.prevent @click="editor.chain().focus().toggleItalic().run()"><i class="ri-italic" aria-hidden="true"></i></button>
+            <button type="button" title="下划线" aria-label="下划线" :aria-pressed="editor.isActive('underline')" @mousedown.prevent @click="editor.chain().focus().toggleUnderline().run()"><i class="ri-underline" aria-hidden="true"></i></button>
+            <button type="button" title="删除线" aria-label="删除线" :aria-pressed="editor.isActive('strike')" @mousedown.prevent @click="editor.chain().focus().toggleStrike().run()"><i class="ri-strikethrough" aria-hidden="true"></i></button>
+            <button type="button" title="行内代码" aria-label="行内代码" :aria-pressed="editor.isActive('code')" @mousedown.prevent @click="editor.chain().focus().toggleCode().run()"><i class="ri-code-line" aria-hidden="true"></i></button>
+            <button type="button" title="清除格式" aria-label="清除格式"  @mousedown.prevent @click="clearFormatting"><i class="ri-format-clear" aria-hidden="true"></i></button>
+            </template>
+            <template v-if="advanced && editor.isActive('table')"><span class="selection-divider" aria-hidden="true"></span>
+            <button type="button" title="添加行" aria-label="添加行"  @mousedown.prevent @click="editor.chain().focus().addRowAfter().run()"><i class="ri-insert-row-bottom" aria-hidden="true"></i></button>
+            <button type="button" title="删除行" aria-label="删除行"  @mousedown.prevent @click="editor.chain().focus().deleteRow().run()"><i class="ri-delete-row" aria-hidden="true"></i></button>
+            <button type="button" title="添加列" aria-label="添加列"  @mousedown.prevent @click="editor.chain().focus().addColumnAfter().run()"><i class="ri-insert-column-right" aria-hidden="true"></i></button>
+            <button type="button" title="删除列" aria-label="删除列"  @mousedown.prevent @click="editor.chain().focus().deleteColumn().run()"><i class="ri-delete-column" aria-hidden="true"></i></button>
+            <button type="button" title="切换表头" aria-label="切换表头"  @mousedown.prevent @click="editor.chain().focus().toggleHeaderRow().run()"><i class="ri-table-line" aria-hidden="true"></i></button>
+            <button type="button" title="合并单元格" aria-label="合并单元格"  @mousedown.prevent @click="editor.chain().focus().mergeCells().run()"><i class="ri-merge-cells-horizontal" aria-hidden="true"></i></button>
+            <button type="button" title="拆分单元格" aria-label="拆分单元格"  @mousedown.prevent @click="editor.chain().focus().splitCell().run()"><i class="ri-split-cells-horizontal" aria-hidden="true"></i></button>
+            <button type="button" title="删除表格" aria-label="删除表格"  @mousedown.prevent @click="editor.chain().focus().deleteTable().run()"><i class="ri-delete-bin-line" aria-hidden="true"></i></button>
+            </template>
+            <template v-if="advanced && editor.isActive('codeBlock')"><span class="selection-divider" aria-hidden="true"></span>
+              <label class="selection-language" title="选择代码语言"><i class="ri-code-box-line" aria-hidden="true"></i><select aria-label="代码语言" :value="editor.getAttributes('codeBlock').language || 'plaintext'" @change="setCodeLanguage"><option v-for="language in CODE_LANGUAGES" :key="language" :value="language">{{ language }}</option></select></label>
+            <button type="button" title="复制代码" aria-label="复制代码"  @mousedown.prevent @click="copyCodeBlock"><i class="ri-file-copy-line" aria-hidden="true"></i></button>
+            </template>
           </div>
         </BubbleMenu>
       </div>
@@ -1510,24 +1487,6 @@ onBeforeUnmount(() => {
               <button type="button" @click="openSelectedImage"><i class="ri-zoom-in-line"></i>查看原图</button>
             </div>
           </form>
-        </BubbleMenu>
-      </div>
-      <div v-if="editor && polishable" class="bubble-menu-anchor">
-        <BubbleMenu
-          :editor="editor"
-          plugin-key="documentPolishMenu"
-          :should-show="shouldShowPolish"
-          :options="{ placement: 'top', offset: 8 }"
-        >
-          <button
-            type="button"
-            class="polish-trigger"
-            aria-label="润色选中文字"
-            @mousedown.prevent
-            @click="startPolish"
-          >
-            <i class="ri-magic-line"></i><span>润色</span>
-          </button>
         </BubbleMenu>
       </div>
       <EditorContent
@@ -1778,9 +1737,13 @@ onBeforeUnmount(() => {
 .find-panel input { min-width: 100px; flex: 1; height: 30px; border: 1px solid var(--wao-line-control); border-radius: 6px; padding: 0 8px; background: var(--wao-bg-card); color: var(--wao-text); }
 .find-panel button { height: 30px; border: 0; border-radius: 6px; padding: 0 9px; background: var(--wao-primary-soft); color: var(--wao-primary); cursor: pointer; white-space: nowrap; }
 .find-panel span { color: var(--wao-text-weak); font-size: 11px; white-space: nowrap; }
-.selection-toolbar { display: flex; gap: 2px; padding: 4px; border-radius: 9px; background: #292b35; box-shadow: 0 8px 24px rgba(0,0,0,.24); }
-.selection-toolbar button { width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; }
-.selection-toolbar button:hover,.selection-toolbar button.active { background: rgba(255,255,255,.16); }
+.selection-menu { display: flex; align-items: center; gap: 1px; width: max-content; max-width: min(560px, calc(100vw - 24px)); overflow-x: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #747783 transparent; padding: 4px; border-radius: 9px; background: #292b35; color: #fff; box-shadow: 0 6px 20px rgba(0,0,0,.22); }
+.selection-menu button,.selection-language { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; height: 32px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: inherit; font-size: 16px; cursor: pointer; }
+.selection-menu button:hover,.selection-language:hover,.selection-menu button[aria-pressed="true"] { background: rgba(255,255,255,.16); }
+.selection-menu :focus-visible { outline: 2px solid #9dbbff; outline-offset: -2px; }
+.selection-divider { flex: 0 0 1px; height: 17px; background: rgba(255,255,255,.22); margin: 0 4px; }
+.selection-language { position: relative; }
+.selection-language select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
 .context-toolbar { display:flex; gap:3px; padding:5px; border-radius:9px; background:#292b35; box-shadow:0 8px 24px rgba(0,0,0,.24); }
 .context-toolbar button,.context-toolbar select { height:30px; border:0; border-radius:6px; padding:0 8px; background:rgba(255,255,255,.08); color:#fff; cursor:pointer; font-size:11px; }.context-toolbar button:hover { background:rgba(255,255,255,.17); }.context-toolbar button.danger { color:#ffb7b7; }.context-toolbar select option { color:#222; }
 .slash-menu {

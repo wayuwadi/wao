@@ -27,7 +27,8 @@ function dueDate(label: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-const DRAFT_KEY = 'wao-new-task-draft-v1'
+const source = ui.modalTaskSeed
+const DRAFT_KEY = source?.draftKey || 'wao-new-task-draft-v1'
 type Draft = {
   title: string; project: string; owner: string; pr: Priority; due: string; desc: string
   scheduleMode: 'deadline' | 'range'; startAt: string; endAt: string
@@ -41,11 +42,11 @@ const draft = loadDraft()
  * 否则首页入口被快速点击时，会继续显示并提交已经被替换掉的演示项目。
  */
 const openProjects = computed(() => data.projects.filter((p) => p.status !== '已完成'))
-const title = ref(draft.title ?? '')
+const title = ref(draft.title ?? source?.title ?? '')
 // modalProject 未预选时是空串（不是 null），必须用 || 兜底到第一个进行中的项目，
 // 否则从顶栏全局入口建出的任务 project 为空，在所有项目列表里都看不见。
 const project = ref(
-  draft.project || ui.modalProject || preferences.defaultProject || openProjects.value[0]?.id || '',
+  draft.project || ui.modalProject || (source ? '' : preferences.defaultProject || openProjects.value[0]?.id || ''),
 )
 
 /**
@@ -54,13 +55,17 @@ const project = ref(
  */
 watch(openProjects, (projects) => {
   if (!projects.some((item) => item.id === project.value)) {
+    if (source) {
+      project.value = projects.some((item) => item.id === ui.modalProject) ? ui.modalProject : ''
+      return
+    }
     project.value = projects.some((item) => item.id === preferences.defaultProject)
       ? preferences.defaultProject
       : projects[0]?.id || ''
   }
 }, { immediate: true })
 watch(() => preferences.defaultProject, (value) => {
-  if (!draft.project && !ui.modalProject && value && openProjects.value.some((item) => item.id === value)) {
+  if (!source && !draft.project && !ui.modalProject && value && openProjects.value.some((item) => item.id === value)) {
     project.value = value
   }
 })
@@ -76,22 +81,28 @@ const scheduleMode = ref<'deadline' | 'range'>(
 )
 const startAt = ref(ui.modalStartAt || draft.startAt || `${dueDate(due.value)}T09:00`)
 const endAt = ref(ui.modalEndAt || draft.endAt || `${dueDate(due.value)}T10:00`)
-const desc = ref(draft.desc ?? '')
-const draftState = ref<'saving' | 'saved'>('saved')
+const desc = ref(draft.desc ?? source?.desc ?? '')
+const draftState = ref<'saving' | 'saved' | 'error'>('saved')
 const createState = ref<'idle' | 'submitting' | 'error'>('idle')
 const pendingTaskId = ref<string | null>(null)
 let draftTimer: ReturnType<typeof setTimeout> | null = null
 
-watch([title, project, owner, pr, due, desc, scheduleMode, startAt, endAt], () => {
+function saveDraft() {
   draftState.value = 'saving'
-  localStorage.setItem(DRAFT_KEY, JSON.stringify({
-    title: title.value, project: project.value, owner: owner.value,
-    pr: pr.value, due: due.value, desc: desc.value,
-    scheduleMode: scheduleMode.value, startAt: startAt.value, endAt: endAt.value,
-  } satisfies Draft))
   if (draftTimer) clearTimeout(draftTimer)
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({
+      title: title.value, project: project.value, owner: owner.value,
+      pr: pr.value, due: due.value, desc: desc.value,
+      scheduleMode: scheduleMode.value, startAt: startAt.value, endAt: endAt.value,
+    } satisfies Draft))
+  } catch {
+    draftState.value = 'error'
+    return
+  }
   draftTimer = setTimeout(() => (draftState.value = 'saved'), 180)
-}, { flush: 'sync' })
+}
+watch([title, project, owner, pr, due, desc, scheduleMode, startAt, endAt], saveDraft, { flush: 'sync', immediate: !!source })
 
 onBeforeUnmount(() => { if (draftTimer) clearTimeout(draftTimer) })
 
@@ -139,6 +150,7 @@ async function create() {
     startAt: scheduleMode.value === 'range' ? startAt.value : null,
     endAt: scheduleMode.value === 'range' ? endAt.value : null,
     desc: desc.value.trim(), images: [],
+    docs: source?.sourceDocId ? [source.sourceDocId] : [],
   }
   createState.value = 'submitting'
   let persisted = false
@@ -157,7 +169,7 @@ async function create() {
     toast('任务没有保存到服务器，请检查网络后重试', 'ri-error-warning-line')
     return
   }
-  localStorage.removeItem(DRAFT_KEY)
+  try { localStorage.removeItem(DRAFT_KEY) } catch { /* 服务器已确认保存，不阻止关闭表单。 */ }
   ui.closeModal()
   toast(`任务「${name}」已创建`, 'ri-checkbox-circle-fill')
   ui.celebrate()
@@ -183,7 +195,7 @@ function requestClose() {
   <div class="mask" @click="requestClose"></div>
   <div class="modal task">
     <div class="head">
-      <div class="title">新建任务</div>
+      <div class="title">{{ source ? '添加到待办' : '新建任务' }}</div>
       <div class="spacer"></div>
       <button class="close" :disabled="createState === 'submitting'" @click="requestClose"><i class="ri-close-line"></i></button>
     </div>
@@ -196,7 +208,8 @@ function requestClose() {
       @keydown.enter.prevent="create"
     />
 
-    <div class="label">所属项目</div>
+    <p v-if="source" class="source-note">来自文档：<a :href="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceTitle }}</a>。原文保留不变。</p>
+    <div class="label">所属项目 <span v-if="source && !project" class="label-hint">请选择要存入的项目</span></div>
     <div class="pills">
       <button
         v-for="p in openProjects"
@@ -267,7 +280,8 @@ function requestClose() {
     </div>
 
     <div class="foot">
-      <span v-if="createState === 'error'" class="create-error" role="alert"><i class="ri-error-warning-line"></i>未保存到服务器，内容和草稿仍在</span>
+      <span v-if="createState === 'error'" class="create-error" role="alert"><i class="ri-error-warning-line"></i>未保存到服务器，输入仍保留在当前窗口</span>
+      <span v-else-if="draftState === 'error'" class="draft-state" role="alert">草稿未能写入本机，请保持弹窗打开。<button type="button" @click="saveDraft">重试</button></span>
       <span v-else class="draft-state"><i :class="draftState === 'saving' ? 'ri-loader-4-line spin' : 'ri-checkbox-circle-line'"></i>{{ draftState === 'saving' ? '正在保存草稿' : '草稿已保存' }}</span>
       <div class="spacer"></div>
       <button class="btn-ghost" :disabled="createState === 'submitting'" @click="requestClose">取消</button>
@@ -280,6 +294,8 @@ function requestClose() {
 </template>
 
 <style scoped>
+.source-note { margin: 8px 0 14px; font-size: 12px; line-height: 1.6; color: var(--wao-text-weak); overflow-wrap: anywhere; }
+.source-note a { color: var(--wao-primary); }
 .mask {
   position: fixed;
   inset: 0;
