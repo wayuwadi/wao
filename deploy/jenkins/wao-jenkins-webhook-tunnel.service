@@ -2,7 +2,8 @@
 Description=WAO Jenkins UI and webhook reverse SSH tunnel
 After=network-online.target jenkins.service
 Wants=network-online.target
-Requires=jenkins.service
+# 反向转发不依赖 Jenkins 端口在整个连接周期内可用。备份会短暂停止
+# Jenkins；隧道必须保持运行，待控制器恢复后继续接收 UI 和 Webhook 流量。
 
 [Service]
 Type=simple

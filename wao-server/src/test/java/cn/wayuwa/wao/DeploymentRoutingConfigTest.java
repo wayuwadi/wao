@@ -359,6 +359,8 @@ class DeploymentRoutingConfigTest {
         String casc = readFromRepository("deploy/jenkins/jenkins.yaml");
         String updater = readFromRepository("deploy/jenkins/apply-controller-config.sh");
         String backup = readFromRepository("deploy/jenkins/backup-controller.sh");
+        String webhookTunnel = readFromRepository(
+                "deploy/jenkins/wao-jenkins-webhook-tunnel.service");
         String plugins = readFromRepository("deploy/jenkins/plugins.txt");
         String pipeline = readFromRepository("Jenkinsfile");
         String verification = readFromRepository("deploy/jenkins/ci-production-verify.sh");
@@ -439,6 +441,10 @@ class DeploymentRoutingConfigTest {
                 .contains("X-Forwarded-User: wao-controller-backup")
                 .contains("X-Forwarded-Groups: wao-members")
                 .doesNotContain("admin-password");
+        assertThat(webhookTunnel)
+                .contains("After=network-online.target jenkins.service")
+                .contains("Restart=always")
+                .doesNotContain("Requires=jenkins.service", "PartOf=jenkins.service");
         assertThat(pipeline).contains("deploy/jenkins/apply-controller-config.sh");
         assertThat(verification)
                 .contains("https://wao.wayuwa.cn/jenkins)\" = 308")

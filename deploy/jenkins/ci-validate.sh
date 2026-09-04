@@ -122,6 +122,10 @@ grep -Fq 'ensure-codex-egress.sh' deploy/scripts/deploy-linux.sh
 grep -Fq 'chroot /host /usr/bin/id -u jenkins' deploy/jenkins/apply-controller-config.sh
 grep -Fq 'install -d -o "$jenkins_uid" -g "$jenkins_gid"' deploy/jenkins/apply-controller-config.sh
 ! grep -Fq 'install -d -o jenkins -g jenkins' deploy/jenkins/apply-controller-config.sh
+grep -Fq 'After=network-online.target jenkins.service' \
+  deploy/jenkins/wao-jenkins-webhook-tunnel.service
+! grep -Eq '^(Requires|PartOf)=jenkins\.service$' \
+  deploy/jenkins/wao-jenkins-webhook-tunnel.service
 grep -Fq 'mysql:9.7.0' wao-server/src/test/java/cn/wayuwa/wao/FeishuWebhookMigrationMySqlTest.java
 grep -Fq '.withConfigurationOverride("mysql-9-test-conf")' wao-server/src/test/java/cn/wayuwa/wao/FeishuWebhookMigrationMySqlTest.java
 

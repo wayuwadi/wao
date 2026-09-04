@@ -129,6 +129,8 @@ Linux1 从节点 → Linux2 主节点 → 云端严格滚动发布、线上验�
 JCasC 只提交非敏感结构；启动时用 `readFile` 从 `/etc/jenkins/secrets` 导入 Credential Store。
 每日 02:30 在执行器空闲时停止 Jenkins，备份 `JENKINS_HOME` 与 `/etc/jenkins` 到
 `/var/backups/jenkins`，保存 SHA-256 并保留最近 7 份。备份不包含 workspace、Maven/npm 缓存。
+公网 UI 与 Webhook 的反向 SSH 隧道在这段控制器停机窗口内保持连接；Jenkins 恢复后无需重启隧道即可继续转发，
+避免每日备份结束后入口持续返回 502。
 
 每日 03:30 的 `wao-offsite-backup.timer` 会要求最近 26 小时内存在且通过 SHA-256 校验的上述归档，再与 WAO
 MySQL、JumpServer 和部署恢复材料一起加密上传到 123 云盘。外部授权与恢复演练见
