@@ -124,6 +124,39 @@ describe('知识库详情目录体验', () => {
     wrapper.unmount()
   })
 
+  it('展示所有关联当前文档的可见任务，并能直接打开任务详情', async () => {
+    const data = useDataStore(pinia)
+    data.tasks[0]!.docs = ['d7']
+    data.tasks[1]!.docs = ['d7']
+    const wrapper = await mountView('/kb/k3?doc=d7')
+
+    const taskLinks = wrapper.findAll('.linked-tasks .dl-chip')
+    expect(wrapper.get('.linked-tasks .dl-label').text()).toBe('关联任务')
+    expect(taskLinks.map((link) => link.text())).toEqual([
+      data.tasks[0]!.title,
+      data.tasks[1]!.title,
+    ])
+
+    await taskLinks[1]!.trigger('click')
+    expect(useUiStore(pinia).openTaskId).toBe(data.tasks[1]!.id)
+
+    data.tasks[0]!.docs = []
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAll('.linked-tasks .dl-chip').map((link) => link.text())).toEqual([
+      data.tasks[1]!.title,
+    ])
+    wrapper.unmount()
+  })
+
+  it('没有任务关联当前文档时不显示空入口', async () => {
+    const data = useDataStore(pinia)
+    data.tasks.forEach((task) => { task.docs = task.docs.filter((id) => id !== 'd7') })
+    const wrapper = await mountView('/kb/k3?doc=d7')
+
+    expect(wrapper.find('.linked-tasks').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('切换文档后同步地址，刷新仍打开所选文档', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     await wrapper.findAll('.folder-row')[1]!.get('.folder-btn').trigger('click')
