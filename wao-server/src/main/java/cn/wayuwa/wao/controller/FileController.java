@@ -138,16 +138,16 @@ public class FileController {
     }
 
     /**
-     * 向已登录的 WAO 页面提供可拖动进度的音频流。
+     * 向已登录的 WAO 页面提供可拖动进度的音视频流。
      *
      * <p>该路径不在 {@link cn.wayuwa.wao.auth.AuthInterceptor} 的公开白名单中，因此必须有有效会话；
-     * 同时只接受音频 MIME 或常见音频扩展名，避免把任意上传文件以内联方式暴露。
+     * 同时只接受音视频 MIME 或常见媒体扩展名，避免把任意上传文件以内联方式暴露。
      */
     @GetMapping("/{id}/stream")
     public ResponseEntity<byte[]> stream(@PathVariable String id,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
         FileBlobEntity entity = files.raw(id);
-        MediaType mediaType = audioMediaType(entity);
+        MediaType mediaType = playableMediaType(entity);
         byte[] content = entity.getContent();
         if (rangeHeader == null || rangeHeader.isBlank()) {
             return streamResponse(entity, mediaType, content, null);
@@ -192,13 +192,20 @@ public class FileController {
                 .body(body);
     }
 
-    private static MediaType audioMediaType(FileBlobEntity entity) {
+    private static MediaType playableMediaType(FileBlobEntity entity) {
         String contentType = entity.getContentType() == null ? "" : entity.getContentType().trim().toLowerCase(Locale.ROOT);
         if (contentType.startsWith("audio/")) {
             try {
                 return MediaType.parseMediaType(contentType);
             } catch (IllegalArgumentException ignored) {
                 // 上传端给出损坏 MIME 时继续按扩展名识别，不能把播放器变成 500。
+            }
+        }
+        if (contentType.startsWith("video/")) {
+            try {
+                return MediaType.parseMediaType(contentType);
+            } catch (IllegalArgumentException ignored) {
+                // 与音频一致，损坏 MIME 继续按扩展名识别。
             }
         }
         String name = entity.getName() == null ? "" : entity.getName().toLowerCase(Locale.ROOT);
@@ -210,8 +217,11 @@ public class FileController {
             return MediaType.parseMediaType("audio/ogg");
         }
         if (name.endsWith(".flac")) return MediaType.parseMediaType("audio/flac");
-        if (name.endsWith(".webm")) return MediaType.parseMediaType("audio/webm");
-        throw new BadRequestException("该文件不是可播放的音频");
+        if (name.endsWith(".mp4") || name.endsWith(".m4v")) return MediaType.parseMediaType("video/mp4");
+        if (name.endsWith(".mov")) return MediaType.parseMediaType("video/quicktime");
+        if (name.endsWith(".webm")) return contentType.startsWith("video/")
+                ? MediaType.parseMediaType("video/webm") : MediaType.parseMediaType("audio/webm");
+        throw new BadRequestException("该文件不是可播放的音频或视频");
     }
 
     private static ByteRange parseRange(String header, long total) {

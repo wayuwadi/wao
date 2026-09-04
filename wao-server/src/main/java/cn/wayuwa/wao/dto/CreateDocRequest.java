@@ -14,13 +14,19 @@ public record CreateDocRequest(
         @NotBlank String folderId,
         String title,
         String templateId,
-        @Size(max = 5000) List<DocBlockDto> blocks) {
+        @Size(max = 5000) List<DocBlockDto> blocks,
+        RichDocContentDto content) {
 
     public CreateDocRequest(String kbId, String folderId, String title) {
-        this(kbId, folderId, title, null, null);
+        this(kbId, folderId, title, null, null, null);
     }
 
     public CreateDocRequest(String kbId, String folderId, String title, String templateId) {
-        this(kbId, folderId, title, templateId, null);
+        this(kbId, folderId, title, templateId, null, null);
+    }
+
+    public CreateDocRequest(String kbId, String folderId, String title, String templateId,
+            List<DocBlockDto> blocks) {
+        this(kbId, folderId, title, templateId, blocks, null);
     }
 }

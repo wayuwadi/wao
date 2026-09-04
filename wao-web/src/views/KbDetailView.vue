@@ -5,7 +5,7 @@
  * 文档不再有「查看 / 编辑」两态 —— 打开就能写，跟任务描述一个手感（ADR-015）。
  * 输入停顿即自动保存，右上角显示保存状态与此刻同在这篇文档里的人（ADR-017）。
  */
-import { computed, defineAsyncComponent, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -17,6 +17,7 @@ import { copyToClipboard } from '@/utils/clipboard'
 import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { blocksToText, textToBlocks } from '@/utils/doc'
+import { legacyProjection, resolvedRichContent, richHeadings } from '@/utils/richDoc'
 import { useNow } from '@/composables/now'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { useFavoritesStore } from '@/stores/favorites'
@@ -26,7 +27,7 @@ import {
   apiPatchDocTemplate,
   fetchDocTemplates,
 } from '@/api/board'
-import type { DocLink, DocTemplate } from '@/types'
+import type { DocLink, DocTemplate, FileItem, RichDocContent } from '@/types'
 // 异步加载，理由同 TaskDrawer：ProseMirror 不进首屏包。
 const MarkdownEditor = defineAsyncComponent(() => import('@/components/ui/MarkdownEditor.vue'))
 
@@ -105,7 +106,15 @@ const body = computed({
     markTyping()
   },
 })
-const saving = computed(() => (docId.value ? data.docPending(docId.value) : false))
+const bodyContent = computed(() => doc.value?.content ?? null)
+function onContentChange(content: RichDocContent) {
+  if (!docId.value) return
+  data.setDocEdit(docId.value, { content })
+  markTyping()
+}
+const currentSaveState = computed(() => docId.value ? data.saveState(`doc:${docId.value}`) : null)
+const saving = computed(() => currentSaveState.value?.saving ?? false)
+const saveFailed = computed(() => currentSaveState.value?.failed ?? false)
 /** 上一次写透成功的时刻，给「自动保存成功 14:32」用。 */
 const docSavedAt = computed(() =>
   docId.value ? data.saveState(`doc:${docId.value}`).savedAt : null,
@@ -145,9 +154,7 @@ const backlinks = computed(() =>
 )
 
 /** 目录展示一至三级标题；旧文档标题没有层级时按二级处理。 */
-const toc = computed(() => (doc.value?.blocks ?? [])
-  .filter((block) => block.h && (block.hLevel == null || block.hLevel <= 3))
-  .map((block) => ({ text: block.h!, level: block.hLevel ?? 2 })))
+const toc = computed(() => doc.value ? richHeadings(doc.value.content).filter((item) => item.level <= 3) : [])
 const activeToc = ref(0)
 
 function isOpen(fid: string) {
@@ -168,6 +175,26 @@ watch(
   },
   { immediate: true },
 )
+
+watch([docId, () => data.loadStates.docs], ([id, state]) => {
+  if (id && state === 'loaded') void data.restoreDocumentDraft(id)
+}, { immediate: true })
+
+function flushCurrentDoc() {
+  if (docId.value && data.docPending(docId.value)) void data.persistDocNow(docId.value)
+}
+function onVisibilityChange() {
+  if (document.visibilityState === 'hidden') flushCurrentDoc()
+}
+onMounted(() => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  window.addEventListener('pagehide', flushCurrentDoc)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('pagehide', flushCurrentDoc)
+  flushCurrentDoc()
+})
 function selectDoc(id: string) {
   docId.value = id
 }
@@ -211,11 +238,13 @@ const templateForm = reactive({ name: '', description: '' })
 const editingTemplateId = ref<string | null>(null)
 const editingTemplateSaving = ref(false)
 const editTemplateForm = reactive({ name: '', description: '', content: '' })
+const editTemplateRichContent = ref<RichDocContent | null>(null)
 type TemplateEditState = 'saved' | 'dirty' | 'saving' | 'error' | 'conflict'
 interface StoredTemplateDraft {
   name: string
   description: string
   content: string
+  richContent?: RichDocContent
   templateUpdatedAt: string
   savedAt: string
 }
@@ -248,7 +277,8 @@ function templateDraftKey(templateId: string) {
 function sameAsTemplate(template: DocTemplate) {
   return editTemplateForm.name === template.name
     && editTemplateForm.description === template.description
-    && editTemplateForm.content === blocksToText(template.blocks)
+    && JSON.stringify(editTemplateRichContent.value ?? { markdown: editTemplateForm.content })
+      === JSON.stringify(template.content ?? { markdown: blocksToText(template.blocks) })
 }
 
 function removeTemplateDraft(templateId: string) {
@@ -284,6 +314,7 @@ function readTemplateDraft(template: DocTemplate): StoredTemplateDraft | null {
       name: draft.name,
       description: draft.description,
       content: draft.content,
+      richContent: draft.richContent,
       templateUpdatedAt: typeof draft.templateUpdatedAt === 'string' ? draft.templateUpdatedAt : '',
       savedAt: typeof draft.savedAt === 'string' ? draft.savedAt : '',
     }
@@ -315,6 +346,7 @@ function persistTemplateDraft(template?: DocTemplate) {
       name: editTemplateForm.name,
       description: editTemplateForm.description,
       content: editTemplateForm.content,
+      richContent: editTemplateRichContent.value ?? undefined,
       templateUpdatedAt: editingTemplateExpectedUpdatedAt.value || current.updatedAt,
       savedAt: new Date().toISOString(),
     } satisfies StoredTemplateDraft))
@@ -331,6 +363,7 @@ watch(
     () => editTemplateForm.name,
     () => editTemplateForm.description,
     () => editTemplateForm.content,
+    () => editTemplateRichContent.value,
   ],
   () => persistTemplateDraft(),
   { flush: 'sync' },
@@ -366,6 +399,7 @@ async function saveAsTemplate() {
       description: templateForm.description.trim(),
       sourceDocId: docId.value,
       blocks: doc.value?.blocks ?? [],
+      content: doc.value?.content,
     })
     templates.value.push(created)
     saveTemplateOpen.value = false
@@ -401,6 +435,7 @@ function beginEditTemplate(template: DocTemplate) {
   editTemplateForm.name = draft?.name ?? template.name
   editTemplateForm.description = draft?.description ?? template.description
   editTemplateForm.content = draft?.content ?? blocksToText(template.blocks)
+  editTemplateRichContent.value = draft?.richContent ?? template.content ?? null
   editingTemplateExpectedUpdatedAt.value = draft?.templateUpdatedAt || template.updatedAt
   editingTemplateId.value = template.id
   templateEditState.value = draft?.templateUpdatedAt && draft.templateUpdatedAt !== template.updatedAt
@@ -409,6 +444,10 @@ function beginEditTemplate(template: DocTemplate) {
   templateDraftRestored.value = draft !== null
   templateDraftStorageError.value = false
   hydratingTemplateEdit = false
+}
+function onTemplateContentChange(value: RichDocContent) {
+  editTemplateRichContent.value = value
+  editTemplateForm.content = value.markdown
 }
 async function saveTemplateMeta(template: DocTemplate) {
   if (!editTemplateForm.name.trim()
@@ -422,6 +461,7 @@ async function saveTemplateMeta(template: DocTemplate) {
       name: editTemplateForm.name.trim(),
       description: editTemplateForm.description.trim(),
       blocks: textToBlocks(editTemplateForm.content),
+      ...(editTemplateRichContent.value ? { content: editTemplateRichContent.value } : {}),
       expectedUpdatedAt: editingTemplateExpectedUpdatedAt.value,
     })
     Object.assign(template, updated)
@@ -429,6 +469,7 @@ async function saveTemplateMeta(template: DocTemplate) {
     editTemplateForm.name = updated.name
     editTemplateForm.description = updated.description
     editTemplateForm.content = blocksToText(updated.blocks)
+    editTemplateRichContent.value = updated.content ?? resolvedRichContent({ blocks: updated.blocks })
     editingTemplateExpectedUpdatedAt.value = updated.updatedAt
     hydratingTemplateEdit = false
     removeTemplateDraft(template.id)
@@ -467,6 +508,7 @@ async function discardConflictedTemplateDraft(templateId: string) {
   editTemplateForm.name = latest.name
   editTemplateForm.description = latest.description
   editTemplateForm.content = blocksToText(latest.blocks)
+  editTemplateRichContent.value = latest.content ?? resolvedRichContent({ blocks: latest.blocks })
   editingTemplateExpectedUpdatedAt.value = latest.updatedAt
   hydratingTemplateEdit = false
   removeTemplateDraft(templateId)
@@ -663,6 +705,34 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   if (!ref) toast('图片上传失败，请重试', 'ri-error-warning-line')
   done(ref?.url ?? null, ref?.name ?? file.name)
 }
+async function onUploadFile(file: File, done: (item: FileItem | null) => void) {
+  if (file.size > data.MAX_FILE_BYTES) {
+    toast('文件超过 50MB，已跳过', 'ri-error-warning-line')
+    done(null)
+    return
+  }
+  const item = await data.uploadFile(file, kb.value?.project ?? undefined)
+  if (!item) toast('文件上传失败，正文仍可继续编辑', 'ri-error-warning-line')
+  done(item)
+}
+async function retryDocSave() {
+  if (docId.value && !(await data.persistDocNow(docId.value))) {
+    toast('仍未保存到服务器，本机草稿保持完整', 'ri-error-warning-line')
+  }
+}
+async function loadServerConflict() {
+  if (docId.value && await data.useServerDoc(docId.value)) toast('已载入服务器版本', 'ri-refresh-line')
+}
+async function keepConflictCopy() {
+  if (!docId.value) return
+  const copyId = await data.saveDocConflictCopy(docId.value)
+  if (!copyId) {
+    toast('副本保存失败，本机草稿仍保留', 'ri-error-warning-line')
+    return
+  }
+  docId.value = copyId
+  toast('本机草稿已另存为冲突副本', 'ri-file-copy-2-line')
+}
 </script>
 
 <template>
@@ -837,7 +907,8 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
               ><span class="rt-dot"></span>{{ peers.length + 1 }} 人在线</span
             >
 
-            <SaveHint :saving="saving" :saved-at="docSavedAt" />
+            <SaveHint :saving="saving" :saved-at="docSavedAt" :failed="saveFailed" />
+            <button v-if="saveFailed && !data.docConflicts[docId!]" class="save-retry" @click="retryDocSave">重试</button>
             <button class="icon-act" title="另存为模板" @click="openSaveTemplate"><i class="ri-file-copy-2-line"></i></button>
             <button
               v-if="docId"
@@ -910,11 +981,22 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
             </div>
             <div class="doc-hr"></div>
 
+            <div v-if="docId && data.docConflicts[docId]" class="doc-conflict" role="alert">
+              <i class="ri-git-merge-line"></i>
+              <span><b>服务器已有另一版</b><small>本机草稿没有被覆盖，请选择载入服务器版，或把本机内容另存为副本。</small></span>
+              <button @click="loadServerConflict">载入服务器版</button>
+              <button class="primary" @click="keepConflictCopy">本机草稿另存副本</button>
+            </div>
+            <div v-else-if="docId && data.docDraftErrors[docId]" class="doc-draft-warning" role="alert"><i class="ri-error-warning-line"></i>浏览器暂时无法写入离线草稿；请保持页面打开，并在网络恢复后点击保存重试。</div>
+
             <MarkdownEditor
-              v-model="body"
+              :key="docId ?? 'empty-doc'"
+              :model-value="body"
+              :document="bodyContent?.document"
               class="doc-body"
               bare
               allow-h1
+              advanced
               polishable
               link-controls
               image-controls
@@ -922,7 +1004,9 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
               :min-height="360"
               :peers="peers"
               @caret-line="setCaretLine"
+              @content-change="onContentChange"
               @upload-image="onUploadImage"
+              @upload-file="onUploadFile"
             />
 
             <div v-if="backlinks.length" class="backlinks">
@@ -985,14 +1069,18 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
               <label class="template-content-field">模板内容</label>
               <MarkdownEditor
                 v-model="editTemplateForm.content"
+                :document="editTemplateRichContent?.document"
                 class="template-content-editor"
                 allow-h1
+                advanced
                 link-controls
                 image-controls
                 :readonly="editingTemplateSaving"
                 placeholder="模板正文可以为空；支持标题、链接与图片"
                 :min-height="180"
+                @content-change="onTemplateContentChange"
                 @upload-image="onUploadImage"
+                @upload-file="onUploadFile"
               />
               <div class="template-edit-footer">
                 <span class="template-edit-status" :class="templateEditState">
@@ -1013,11 +1101,13 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
               </div>
               <div class="template-content-preview">
                 <MarkdownEditor
-                  v-if="item.blocks.length"
-                  :model-value="blocksToText(item.blocks)"
+                  v-if="item.blocks.length || item.content?.document"
+                  :model-value="item.content?.markdown ?? blocksToText(item.blocks)"
+                  :document="item.content?.document"
                   readonly
                   bare
                   allow-h1
+                  advanced
                   :min-height="0"
                 />
                 <span v-else>暂无正文内容</span>
@@ -1052,6 +1142,12 @@ async function onUploadImage(file: File, done: (url: string | null, name: string
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.save-retry { border: 0; background: transparent; color: var(--wao-danger-strong); font-size: 11px; font-weight: 700; cursor: pointer; }
+.doc-conflict { display:flex; align-items:center; gap:10px; margin:0 0 14px; padding:11px 12px; border:1px solid color-mix(in srgb,var(--wao-danger-strong) 35%,var(--wao-line)); border-radius:10px; background:var(--wao-danger-bg); color:var(--wao-danger-strong); }
+.doc-conflict > i { font-size:20px; }.doc-conflict > span { min-width:0; flex:1; display:flex; flex-direction:column; }.doc-conflict small { color:var(--wao-text-2); }
+.doc-conflict button { min-height:30px; border:1px solid var(--wao-line-control); border-radius:7px; padding:0 10px; background:var(--wao-bg-card); color:var(--wao-text-2); cursor:pointer; white-space:nowrap; }.doc-conflict button.primary { border:0; background:var(--wao-primary); color:#fff; }
+.doc-draft-warning { display:flex; align-items:center; gap:7px; margin:0 0 12px; padding:9px 11px; border-radius:8px; background:var(--wao-danger-bg); color:var(--wao-danger-strong); font-size:11px; }
+@media (max-width: 760px) { .doc-conflict { align-items:stretch; flex-wrap:wrap; }.doc-conflict > span { flex-basis:calc(100% - 34px); }.doc-conflict button { flex:1; } }
 
 /* 左栏 */
 .side {

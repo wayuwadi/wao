@@ -323,12 +323,29 @@ export interface DocBlock {
   q?: [string, string]
 }
 
+/** 可序列化的 Tiptap 节点；服务端会按允许的节点与属性白名单再次校验。 */
+export interface RichDocNode {
+  type: string
+  text?: string
+  attrs?: Record<string, unknown>
+  marks?: { type: string; attrs?: Record<string, unknown> }[]
+  content?: RichDocNode[]
+}
+
+/** 高级正文：JSON 保留完整编辑结构，Markdown 供分享、搜索、AI 和旧客户端读取。 */
+export interface RichDocContent {
+  version: 1
+  document?: RichDocNode | null
+  markdown: string
+}
+
 /** 当前成员可复用的文档正文模板。 */
 export interface DocTemplate {
   id: string
   name: string
   description: string
   blocks: DocBlock[]
+  content?: RichDocContent | null
   sourceDocId: string | null
   createdAt: string
   updatedAt: string
@@ -356,6 +373,8 @@ export interface Doc {
   auto?: boolean
   links: DocLink[]
   blocks: DocBlock[]
+  /** 高级编辑器正文；缺失时继续按 blocks 读取历史文档。 */
+  content?: RichDocContent | null
   backlinks: Backlink[]
   /** 归属知识库 / 文件夹（后端返回，本地乐观创建时也会补上）。 */
   kbId?: string
@@ -503,6 +522,7 @@ export interface SharedDoc {
   kbId: string
   updated: string | null
   md: string
+  content?: RichDocContent | null
 }
 
 /** 可以托管任务的本地 AI 工具。 */

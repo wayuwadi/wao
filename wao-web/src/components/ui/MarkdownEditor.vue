@@ -4,12 +4,12 @@
  *
  * 没有「编辑 / 预览」两态：敲 `## ` 当场变标题、`- ` 当场变列表，看到的就是最终样子
  * （对齐飞书文档的手感）。底层是 Tiptap/ProseMirror，中文输入法的合成事件、撤销栈、
- * 选区都由它处理；对外仍然以 Markdown 收发，落库格式不变（见 ADR-015）。
+ * 选区都由它处理；普通描述仍以 Markdown 收发，知识库文档额外输出版本化 JSON
+ * 与 Markdown 投影（见 ADR-015、ADR-197）。
  *
  * 粘贴 / 拖入图片会上传到图床，并**内联插入到光标处**，不再堆到底部的附件区。
  *
- * 刻意不提供格式工具条：所有格式都能用 Markdown 快捷输入敲出来，一排按钮只是
- * 噪音，去掉后描述区更干净。
+ * 普通描述场景保持无工具条；`advanced` 文档场景提供固定工具栏、选区浮层和 `/` 菜单。
  *
  * 传入 `peers` 时会在左侧落一条协作者轨道：每个人的头像贴在他光标所在的那一行，
  * 正在输入的还会给那一行加一道颜色条（见 ADR-017）。不传就是普通编辑器，行为不变。
@@ -17,13 +17,62 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
+import { DragHandle } from '@tiptap/extension-drag-handle-vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Placeholder from '@tiptap/extension-placeholder'
 import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Markdown } from '@tiptap/markdown'
 import { Extension, mergeAttributes, type Editor } from '@tiptap/core'
+import { TableKit } from '@tiptap/extension-table'
+import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
+import { Mathematics } from '@tiptap/extension-mathematics'
+import { Color, TextStyle } from '@tiptap/extension-text-style'
+import Highlight from '@tiptap/extension-highlight'
+import TextAlign from '@tiptap/extension-text-align'
+import Underline from '@tiptap/extension-underline'
+import { Details, DetailsContent, DetailsSummary } from '@tiptap/extension-details'
+import UniqueID from '@tiptap/extension-unique-id'
+import { common, createLowlight } from 'lowlight'
+import DOMPurify from 'dompurify'
+import 'katex/dist/katex.min.css'
 import { polishDocumentText } from '@/api/assistant'
+import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
+import type { FileItem, RichDocContent, RichDocNode } from '@/types'
+import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, MermaidBlock } from './richEditorExtensions'
+
+const lowlight = createLowlight(common)
+const PASTE_COLORS = new Set(['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0', '#fde2e2', '#feead2', '#d9f5d6', '#dbeafe', '#ede2fe'])
+
+/** 清理 Word / 飞书粘贴 HTML：保留语义标签，去掉脚本、事件、任意样式和危险 URL。 */
+function sanitizePastedHtml(source: string): string {
+  const safe = DOMPurify.sanitize(source, {
+    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form'],
+    FORBID_ATTR: ['srcdoc'],
+  })
+  const document = new DOMParser().parseFromString(safe, 'text/html')
+  document.body.querySelectorAll<HTMLElement>('*').forEach((element) => {
+    for (const attribute of [...element.attributes]) {
+      if (attribute.name.startsWith('on')) element.removeAttribute(attribute.name)
+    }
+    const style = element.getAttribute('style') ?? ''
+    element.removeAttribute('style')
+    const kept: string[] = []
+    for (const declaration of style.split(';')) {
+      const [rawName, rawValue] = declaration.split(':', 2)
+      const name = rawName?.trim().toLowerCase()
+      const value = rawValue?.trim().toLowerCase()
+      if ((name === 'color' || name === 'background-color') && value && PASTE_COLORS.has(value)) kept.push(`${name}:${value}`)
+      if (name === 'text-align' && ['left', 'center', 'right'].includes(value ?? '')) kept.push(`${name}:${value}`)
+    }
+    if (kept.length) element.setAttribute('style', kept.join(';'))
+    for (const name of ['href', 'src']) {
+      const value = element.getAttribute(name)
+      if (value && /^(?:javascript|data):/i.test(value.trim())) element.removeAttribute(name)
+    }
+  })
+  return document.body.innerHTML
+}
 
 /** 协作者标记：把某个人钉在他光标所在的那一行（顶层块序号）。 */
 export interface EditorPeer {
@@ -55,6 +104,12 @@ const props = withDefaults(
     linkControls?: boolean
     /** 文档正文允许按比例或像素长宽调整图片。 */
     imageControls?: boolean
+    /** 知识库文档的完整工具栏、斜杠菜单和高级内容块。 */
+    advanced?: boolean
+    /** 小记使用紧凑工具栏，并隐藏需要进入完整文档继续编辑的重型内容块。 */
+    compact?: boolean
+    /** 已持久化的完整 Tiptap JSON；存在时优先于 Markdown 装载。 */
+    document?: RichDocNode | null
   }>(),
   {
     placeholder: '写点什么…支持 Markdown 快捷输入',
@@ -66,6 +121,9 @@ const props = withDefaults(
     polishable: false,
     linkControls: false,
     imageControls: false,
+    advanced: false,
+    compact: false,
+    document: null,
   },
 )
 const emit = defineEmits<{
@@ -74,6 +132,9 @@ const emit = defineEmits<{
   'upload-image': [file: File, done: (url: string | null, name: string) => void]
   /** 自己的光标落在第几个顶层块上（-1 = 没有落点），供上报协同在场。 */
   'caret-line': [line: number]
+  'update:document': [value: RichDocNode]
+  'content-change': [value: RichDocContent]
+  'upload-file': [file: File, done: (item: FileItem | null) => void]
 }>()
 
 const previewImage = ref<{ src: string; alt: string } | null>(null)
@@ -145,6 +206,9 @@ function imageStyle(attributes: Record<string, unknown>): string {
   const width = parseImageDimension(attributes.width)
   const height = parseImageDimension(attributes.height)
   const styles: string[] = []
+  if (attributes.align === 'center') styles.push('margin-left:auto', 'margin-right:auto')
+  else if (attributes.align === 'right') styles.push('margin-left:auto', 'margin-right:0')
+  else if (attributes.align === 'left') styles.push('margin-left:0', 'margin-right:auto')
   if (typeof width === 'string') {
     styles.push(`width:${width}`, 'height:auto')
   } else if (width != null && height != null) {
@@ -160,6 +224,9 @@ function imageStyle(attributes: Record<string, unknown>): string {
 
 /** Tiptap 自带 Image 已有 width/height 属性；这里只补 Markdown 往返和百分比渲染。 */
 const DocumentImage = Image.extend({
+  addAttributes() {
+    return { ...this.parent?.(), align: { default: null } }
+  },
   parseMarkdown: (token, helpers) => {
     const size = decodeImageTitle(token.title)
     return helpers.createNode('image', {
@@ -223,15 +290,18 @@ interface PolishDialog {
   error: string
 }
 const polishDialog = ref<PolishDialog | null>(null)
+const editorReady = ref(!props.advanced)
 
 const editor = useEditor({
-  content: props.modelValue,
-  contentType: 'markdown',
+  content: props.document ?? props.modelValue,
+  contentType: props.document ? 'json' : 'markdown',
   editable: !props.readonly,
   extensions: [
     StarterKit.configure({
       // 只有知识库文档开放 h1；描述场景仍限制成 h2–h4，避免压过页面标题。
       heading: { levels: props.allowH1 ? [1, 2, 3, 4] : [2, 3, 4] },
+      codeBlock: false,
+      underline: false,
       link: {
         // 可编辑态由下方 handleClick 统一“选中整段 + 安全新开窗口”，避免插件与编辑菜单各开一次。
         openOnClick: false,
@@ -245,8 +315,35 @@ const editor = useEditor({
     Placeholder.configure({ placeholder: () => props.placeholder }),
     Markdown,
     TabIndent,
+    Underline,
+    TextStyle,
+    Color,
+    Highlight.configure({ multicolor: true }),
+    TextAlign.configure({ types: ['heading', 'paragraph'] }),
+    TableKit.configure({ table: { resizable: true } }),
+    CodeBlockLowlight.configure({ lowlight, enableTabIndentation: true, tabSize: 2 }),
+    Mathematics.configure({ katexOptions: { throwOnError: false, strict: 'warn' } }),
+    Details.configure({ persist: false }),
+    DetailsSummary,
+    DetailsContent,
+    UniqueID.configure({
+      attributeName: 'uid',
+      types: props.advanced
+        ? ['paragraph', 'heading', 'blockquote', 'codeBlock', 'callout', 'columns', 'table',
+          'horizontalRule', 'details', 'fileCard', 'mediaCard', 'linkCard', 'drawingCard', 'mermaid']
+        : [],
+    }),
+    Callout,
+    Columns,
+    Column,
+    FileCard,
+    MediaCard,
+    LinkCard,
+    DrawingCard,
+    MermaidBlock,
   ],
   editorProps: {
+    transformPastedHTML: sanitizePastedHtml,
     handlePaste: (_view, event) => consumeImages(event.clipboardData),
     handleDrop: (_view, event) => consumeImages((event as DragEvent).dataTransfer),
     handleClick: (_view, pos, event) => {
@@ -271,10 +368,17 @@ const editor = useEditor({
       return true
     },
   },
+  onCreate: () => nextTick(() => (editorReady.value = true)),
   onUpdate: ({ editor: e }) => {
-    emit('update:modelValue', e.getMarkdown())
+    if (!editorReady.value) return
+    const markdown = e.getMarkdown()
+    const document = e.getJSON() as RichDocNode
+    emit('update:modelValue', markdown)
+    emit('update:document', document)
+    emit('content-change', { version: 1, document, markdown })
     syncSelectionControls(e)
     scheduleMeasure()
+    updateSlashMenu(e)
   },
   onSelectionUpdate: ({ editor: e }) => {
     emit('caret-line', caretLine(e))
@@ -414,6 +518,8 @@ const linkDialog = ref<LinkDialog | null>(null)
 const linkSelectionActive = ref(false)
 const imageWidthInput = ref('')
 const imageHeightInput = ref('')
+const imageAltInput = ref('')
+const imageTitleInput = ref('')
 const selectedImageScale = ref<number | null>(null)
 const imageSizeError = ref('')
 
@@ -426,6 +532,8 @@ function syncSelectionControls(e: Editor) {
   selectedImageScale.value = typeof width === 'string' ? Number(width.slice(0, -1)) : null
   imageWidthInput.value = typeof width === 'number' ? String(width) : ''
   imageHeightInput.value = typeof height === 'number' ? String(height) : ''
+  imageAltInput.value = typeof attrs.alt === 'string' ? attrs.alt : ''
+  imageTitleInput.value = typeof attrs.title === 'string' ? attrs.title : ''
   imageSizeError.value = ''
 }
 
@@ -591,6 +699,13 @@ function clearImageSize() {
   imageSizeError.value = ''
 }
 
+function applyImageDescription() {
+  editor.value?.chain().focus().updateAttributes('image', {
+    alt: imageAltInput.value.trim(),
+    title: imageTitleInput.value.trim() || null,
+  }).run()
+}
+
 function openSelectedImage() {
   const attrs = editor.value?.getAttributes('image')
   if (typeof attrs?.src === 'string' && attrs.src) {
@@ -602,6 +717,372 @@ function openSelectedImage() {
 
 const shell = ref<HTMLElement | null>(null)
 const imagePicker = ref<HTMLInputElement | null>(null)
+const filePicker = ref<HTMLInputElement | null>(null)
+const slashOpen = ref(false)
+const slashFromInput = ref(false)
+const slashQuery = ref('')
+const slashIndex = ref(0)
+const composing = ref(false)
+const findOpen = ref(false)
+const helpOpen = ref(false)
+const findText = ref('')
+const replaceText = ref('')
+const findStatus = ref('')
+const drawingsOpen = ref(false)
+const drawingsLoading = ref(false)
+const drawingsError = ref('')
+const drawings = ref<DrawingFileSummary[]>([])
+interface PendingUpload { id: string; file: File; state: 'uploading' | 'failed' }
+const pendingUploads = ref<PendingUpload[]>([])
+const COLOR_OPTIONS = ['#1f2329', '#646a73', '#d83931', '#de7802', '#2ea121', '#245bdb', '#6425d0']
+const HIGHLIGHT_OPTIONS = ['#fde2e2', '#feead2', '#d9f5d6', '#dbeafe', '#ede2fe']
+const CODE_LANGUAGES = ['plaintext', 'bash', 'json', 'yaml', 'java', 'javascript', 'typescript', 'html', 'css', 'sql', 'python', 'markdown']
+
+interface SlashAction {
+  id: string
+  label: string
+  hint: string
+  icon: string
+  run: () => void
+  full?: boolean
+}
+
+function insertBlock(content: Record<string, unknown>) {
+  editor.value?.chain().focus().insertContent(content).run()
+}
+
+function insertCallout(kind = 'info') {
+  insertBlock({ type: 'callout', attrs: { kind }, content: [{ type: 'paragraph' }] })
+}
+
+function insertColumns(count: 2 | 3) {
+  insertBlock({
+    type: 'columns',
+    content: Array.from({ length: count }, () => ({
+      type: 'column', content: [{ type: 'paragraph' }],
+    })),
+  })
+}
+
+function insertDetails() {
+  insertBlock({
+    type: 'details',
+    content: [
+      { type: 'detailsSummary', content: [{ type: 'text', text: '折叠标题' }] },
+      { type: 'detailsContent', content: [{ type: 'paragraph' }] },
+    ],
+  })
+}
+
+function insertMath(block: boolean) {
+  const latex = window.prompt(block ? '输入块级 LaTeX 公式' : '输入行内 LaTeX 公式', 'E = mc^2')
+  if (latex == null) return
+  if (block) editor.value?.chain().focus().insertBlockMath({ latex }).run()
+  else editor.value?.chain().focus().insertInlineMath({ latex }).run()
+}
+
+function insertMermaid(type: 'flowchart' | 'sequence' | 'mindmap' = 'flowchart') {
+  const source = type === 'sequence'
+    ? 'sequenceDiagram\n  participant A as 用户\n  participant B as WAO\n  A->>B: 发起请求\n  B-->>A: 返回结果'
+    : type === 'mindmap'
+      ? 'mindmap\n  root((主题))\n    分支一\n    分支二'
+      : 'flowchart TD\n  A[开始] --> B{判断}\n  B -->|是| C[完成]\n  B -->|否| D[继续]'
+  insertBlock({ type: 'mermaid', attrs: { source } })
+}
+
+function insertTable() {
+  editor.value?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
+}
+
+function insertLinkCard() {
+  const raw = window.prompt('输入 HTTPS 或 WAO 站内地址')?.trim()
+  if (!raw) return
+  const url = normalizedLinkUrl(raw)
+  if (!url || (!url.startsWith('https://') && !url.startsWith('/'))) return
+  const title = window.prompt('卡片显示名称', raw)?.trim() || raw
+  let host = url
+  try { host = new URL(url, window.location.origin).host } catch { /* 站内相对地址 */ }
+  insertBlock({ type: 'linkCard', attrs: { title, url, name: host } })
+}
+
+function openDrawings() {
+  drawingsOpen.value = true
+  drawingsError.value = ''
+  drawingsLoading.value = true
+  void fetchDrawings()
+    .then((items) => (drawings.value = items))
+    .catch(() => (drawingsError.value = '画板列表加载失败，请重试'))
+    .finally(() => (drawingsLoading.value = false))
+}
+
+async function createDrawingSnapshot(item: DrawingFileSummary): Promise<string> {
+  try {
+    const drawing = await fetchDrawing(item.id)
+    const scene = JSON.parse(drawing.sceneJson) as { elements?: unknown[]; appState?: Record<string, unknown>; viewBackgroundColor?: string; files?: Record<string, unknown> }
+    if (!scene.elements?.length) return ''
+    const { exportToBlob } = await import('@excalidraw/excalidraw')
+    const blob = await exportToBlob({
+      elements: scene.elements as never,
+      appState: { ...(scene.appState ?? {}), viewBackgroundColor: scene.viewBackgroundColor ?? scene.appState?.viewBackgroundColor ?? '#ffffff', exportBackground: true } as never,
+      files: (scene.files ?? {}) as never,
+      mimeType: 'image/png',
+    })
+    const file = new File([blob], `${item.title || '画板'}.png`, { type: 'image/png' })
+    return await new Promise<string>((resolve) => {
+      emit('upload-image', file, (url) => resolve(url ?? ''))
+    })
+  } catch {
+    return ''
+  }
+}
+
+async function insertDrawing(item: DrawingFileSummary) {
+  drawingsLoading.value = true
+  const snapshot = await createDrawingSnapshot(item)
+  insertBlock({
+    type: 'drawingCard',
+    attrs: { id: item.id, title: item.title, snapshot, url: `/drawings?drawing=${encodeURIComponent(item.id)}` },
+  })
+  drawingsLoading.value = false
+  drawingsOpen.value = false
+}
+
+async function createAndInsertDrawing() {
+  drawingsLoading.value = true
+  drawingsError.value = ''
+  try {
+    const item = await createDrawing('文档画板')
+    await insertDrawing(item)
+  } catch {
+    drawingsError.value = '新建画板失败，请重试'
+  } finally {
+    drawingsLoading.value = false
+  }
+}
+
+function onFilePicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files ?? [])
+  input.value = ''
+  for (const file of files) {
+    const upload: PendingUpload = { id: crypto.randomUUID(), file, state: 'uploading' }
+    pendingUploads.value.push(upload)
+    runFileUpload(upload.id)
+  }
+}
+
+function runFileUpload(uploadId: string) {
+  const upload = pendingUploads.value.find((item) => item.id === uploadId)
+  if (!upload) return
+  upload.state = 'uploading'
+  emit('upload-file', upload.file, (item) => {
+    if (!item) {
+      upload.state = 'failed'
+      return
+    }
+    const mime = item.contentType || upload.file.type || 'application/octet-stream'
+    const media = mime.startsWith('audio/') || mime.startsWith('video/')
+    const id = item.id ?? ''
+    insertBlock({
+      type: media ? 'mediaCard' : 'fileCard',
+      attrs: {
+        id,
+        name: item.displayName || item.name,
+        title: item.displayName || item.name,
+        size: item.size,
+        mime,
+        url: media && id ? `/api/files/${encodeURIComponent(id)}/stream` : item.link,
+      },
+    })
+    pendingUploads.value = pendingUploads.value.filter((entry) => entry.id !== uploadId)
+  })
+}
+
+function clearFormatting() {
+  editor.value?.chain().focus().unsetAllMarks().clearNodes().run()
+}
+
+function runFind(next = true) {
+  const needle = findText.value
+  const e = editor.value
+  if (!needle || !e) {
+    findStatus.value = ''
+    return
+  }
+  const matches: number[] = []
+  e.state.doc.descendants((node, pos) => {
+    if (!node.isText || !node.text) return
+    let offset = node.text.indexOf(needle)
+    while (offset >= 0) {
+      matches.push(pos + offset)
+      offset = node.text.indexOf(needle, offset + Math.max(1, needle.length))
+    }
+  })
+  const start = next ? e.state.selection.to : 0
+  const from = matches.find((position) => position >= start) ?? matches[0]
+  if (from == null) {
+    findStatus.value = '未找到'
+    return
+  }
+  const to = Math.min(e.state.doc.content.size, from + needle.length)
+  e.chain().focus().setTextSelection({ from, to }).scrollIntoView().run()
+  findStatus.value = `${matches.indexOf(from) + 1} / ${matches.length}`
+}
+
+function replaceCurrent() {
+  const e = editor.value
+  if (!e || !findText.value) return
+  const { from, to } = e.state.selection
+  if (e.state.doc.textBetween(from, to, '\n') === findText.value) {
+    e.chain().focus().insertContent(replaceText.value).run()
+  }
+  runFind()
+}
+
+const slashActions = computed<SlashAction[]>(() => [
+  { id: 'h1', label: '一级标题', hint: '章节主标题', icon: 'ri-h-1', run: () => editor.value?.chain().focus().setHeading({ level: 1 }).run() },
+  { id: 'h2', label: '二级标题', hint: '章节标题', icon: 'ri-h-2', run: () => editor.value?.chain().focus().setHeading({ level: 2 }).run() },
+  { id: 'bullet', label: '无序列表', hint: '项目清单', icon: 'ri-list-unordered', run: () => editor.value?.chain().focus().toggleBulletList().run() },
+  { id: 'number', label: '有序列表', hint: '步骤清单', icon: 'ri-list-ordered-2', run: () => editor.value?.chain().focus().toggleOrderedList().run() },
+  { id: 'task', label: '任务列表', hint: '可勾选事项', icon: 'ri-list-check-3', run: () => editor.value?.chain().focus().toggleTaskList().run() },
+  { id: 'quote', label: '引用', hint: '引用一段文字', icon: 'ri-double-quotes-l', run: () => editor.value?.chain().focus().toggleBlockquote().run() },
+  { id: 'callout-info', label: '信息提示块', hint: '补充说明与背景', icon: 'ri-information-line', run: () => insertCallout('info'), full: true },
+  { id: 'callout-success', label: '成功提示块', hint: '已完成或推荐做法', icon: 'ri-checkbox-circle-line', run: () => insertCallout('success'), full: true },
+  { id: 'callout-warning', label: '警告提示块', hint: '风险与注意事项', icon: 'ri-alert-line', run: () => insertCallout('warning'), full: true },
+  { id: 'callout-danger', label: '危险提示块', hint: '高风险或禁止事项', icon: 'ri-error-warning-line', run: () => insertCallout('danger'), full: true },
+  { id: 'table', label: '表格', hint: '3 × 3 可调整表格', icon: 'ri-table-2', run: insertTable, full: true },
+  { id: 'code', label: '代码块', hint: '带语言与高亮', icon: 'ri-code-box-line', run: () => editor.value?.chain().focus().toggleCodeBlock().run(), full: true },
+  { id: 'math-inline', label: '行内公式', hint: 'LaTeX 行内公式', icon: 'ri-functions', run: () => insertMath(false), full: true },
+  { id: 'math-block', label: '块级公式', hint: '独立展示 LaTeX 公式', icon: 'ri-functions', run: () => insertMath(true), full: true },
+  { id: 'diagram-flowchart', label: '流程图', hint: 'Mermaid 流程可视化', icon: 'ri-flow-chart', run: () => insertMermaid('flowchart'), full: true },
+  { id: 'diagram-sequence', label: '时序图', hint: 'Mermaid 交互时序', icon: 'ri-git-branch-line', run: () => insertMermaid('sequence'), full: true },
+  { id: 'diagram-mindmap', label: '思维导图', hint: 'Mermaid 层级脑图', icon: 'ri-node-tree', run: () => insertMermaid('mindmap'), full: true },
+  { id: 'columns-2', label: '双栏', hint: '窄屏自动纵向排列', icon: 'ri-layout-column-line', run: () => insertColumns(2), full: true },
+  { id: 'columns-3', label: '三栏', hint: '三列内容，窄屏自动纵排', icon: 'ri-layout-grid-line', run: () => insertColumns(3), full: true },
+  { id: 'details', label: '折叠块', hint: '收起补充内容', icon: 'ri-arrow-right-s-line', run: insertDetails, full: true },
+  { id: 'image', label: '图片', hint: '上传、粘贴或拖入', icon: 'ri-image-add-line', run: chooseImage },
+  { id: 'file', label: '附件 / 音视频', hint: '上传到 WAO 文件库', icon: 'ri-attachment-2', run: () => filePicker.value?.click(), full: true },
+  { id: 'link-card', label: '链接卡片', hint: '安全展示外部地址', icon: 'ri-links-line', run: insertLinkCard, full: true },
+  { id: 'drawing', label: '画板', hint: '引用个人 Excalidraw 草图', icon: 'ri-shape-line', run: openDrawings, full: true },
+  { id: 'divider', label: '分隔线', hint: '分隔章节', icon: 'ri-separator', run: () => editor.value?.chain().focus().setHorizontalRule().run() },
+].filter((action) => (props.advanced && !props.compact) || !action.full))
+
+const filteredSlashActions = computed(() => {
+  const query = slashQuery.value.trim().toLowerCase()
+  return slashActions.value.filter((item) => !query || `${item.label} ${item.hint} ${item.id}`.toLowerCase().includes(query))
+})
+
+function updateSlashMenu(e: Editor) {
+  if (!props.advanced || composing.value) return
+  const { $from } = e.state.selection
+  const text = $from.parent.textBetween(0, $from.parentOffset, undefined, '\ufffc')
+  const match = /^\/([^\s/]*)$/.exec(text)
+  slashOpen.value = !!match
+  slashFromInput.value = !!match
+  slashQuery.value = match?.[1] ?? ''
+  slashIndex.value = 0
+}
+
+function chooseSlash(action: SlashAction) {
+  const e = editor.value
+  if (!e) return
+  if (slashFromInput.value) {
+    const { $from } = e.state.selection
+    const from = $from.start()
+    e.chain().focus().deleteRange({ from, to: e.state.selection.from }).run()
+  }
+  slashOpen.value = false
+  slashFromInput.value = false
+  action.run()
+}
+
+function toggleInsertMenu() {
+  slashFromInput.value = false
+  slashQuery.value = ''
+  slashIndex.value = 0
+  slashOpen.value = !slashOpen.value
+}
+
+function onEditorKeydown(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key === '/' && props.advanced) {
+    event.preventDefault()
+    helpOpen.value = !helpOpen.value
+    return
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && props.linkControls) {
+    event.preventDefault()
+    openLinkEditor()
+    return
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && props.advanced) {
+    event.preventDefault()
+    findOpen.value = true
+    nextTick(() => shell.value?.querySelector<HTMLInputElement>('.find-panel input')?.focus())
+    return
+  }
+  if (!slashOpen.value || !filteredSlashActions.value.length) return
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault()
+    const delta = event.key === 'ArrowDown' ? 1 : -1
+    slashIndex.value = (slashIndex.value + delta + filteredSlashActions.value.length) % filteredSlashActions.value.length
+  } else if (event.key === 'Enter') {
+    event.preventDefault()
+    chooseSlash(filteredSlashActions.value[slashIndex.value]!)
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    slashOpen.value = false
+  }
+}
+
+function setBlockType(value: string) {
+  const chain = editor.value?.chain().focus()
+  if (!chain) return
+  if (value === 'paragraph') chain.setParagraph().run()
+  else chain.setHeading({ level: Number(value.slice(1)) as 1 | 2 | 3 | 4 }).run()
+}
+
+function setCodeLanguage(event: Event) {
+  const language = (event.target as HTMLSelectElement).value
+  editor.value?.chain().focus().updateAttributes('codeBlock', { language }).run()
+}
+
+async function copyCodeBlock() {
+  const e = editor.value
+  if (!e) return
+  const { $from } = e.state.selection
+  for (let depth = $from.depth; depth > 0; depth--) {
+    const node = $from.node(depth)
+    if (node.type.name === 'codeBlock') {
+      await navigator.clipboard.writeText(node.textContent)
+      return
+    }
+  }
+}
+
+function toggleLinkFromToolbar() {
+  if (editor.value?.isActive('link')) openLinkEditor()
+  else openLinkEditor()
+}
+
+function duplicateSelectedBlock() {
+  const e = editor.value
+  if (!e) return
+  const { $from } = e.state.selection
+  const depth = Math.max(1, $from.depth)
+  const node = $from.node(depth)
+  const pos = $from.before(depth)
+  e.chain().focus().insertContentAt(pos + node.nodeSize, node.toJSON()).run()
+}
+
+function deleteSelectedBlock() {
+  const e = editor.value
+  if (!e) return
+  const { $from } = e.state.selection
+  const depth = Math.max(1, $from.depth)
+  const node = $from.node(depth)
+  const from = $from.before(depth)
+  e.chain().focus().deleteRange({ from, to: from + node.nodeSize }).run()
+}
 /** 协作者头像在编辑区里的纵向位置（顶层块序号 → px）。 */
 const lineTops = ref<Record<number, number>>({})
 
@@ -783,6 +1264,7 @@ function onImagePicked(event: Event) {
  * 结果就是内容重复。错过的外部更新记在 {@link pendingExternal}，等失焦再补上。
  */
 let pendingExternal: string | null = null
+let pendingExternalDocument: RichDocNode | null = null
 function applyExternal(next: string) {
   const e = editor.value
   if (!e || next === e.getMarkdown()) return
@@ -791,17 +1273,35 @@ function applyExternal(next: string) {
     return
   }
   pendingExternal = null
-  e.commands.setContent(next, { contentType: 'markdown' })
+  e.commands.setContent(next, { contentType: 'markdown', emitUpdate: false })
+}
+function applyExternalDocument(next: RichDocNode | null) {
+  const e = editor.value
+  if (!e || !next || JSON.stringify(next) === JSON.stringify(e.getJSON())) return
+  if (e.isFocused) {
+    pendingExternalDocument = next
+    return
+  }
+  pendingExternalDocument = null
+  e.commands.setContent(next, { emitUpdate: false })
 }
 /** 失焦时把输入期间错过的外部更新补灌回来。 */
 function flushExternal() {
+  const nextDocument = pendingExternalDocument
+  pendingExternalDocument = null
+  if (nextDocument && editor.value && JSON.stringify(nextDocument) !== JSON.stringify(editor.value.getJSON())) {
+    editor.value.commands.setContent(nextDocument, { emitUpdate: false })
+    pendingExternal = null
+    return
+  }
   const next = pendingExternal
   pendingExternal = null
   if (next != null && editor.value && next !== editor.value.getMarkdown()) {
-    editor.value.commands.setContent(next, { contentType: 'markdown' })
+    editor.value.commands.setContent(next, { contentType: 'markdown', emitUpdate: false })
   }
 }
 watch(() => props.modelValue, applyExternal)
+watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
   () => props.readonly,
   (ro) => editor.value?.setEditable(!ro),
@@ -825,6 +1325,50 @@ onBeforeUnmount(() => {
       aria-hidden="true"
       @change="onImagePicked"
     />
+    <input
+      ref="filePicker"
+      class="image-picker"
+      type="file"
+      multiple
+      tabindex="-1"
+      aria-hidden="true"
+      @change="onFilePicked"
+    />
+    <div v-if="advanced && !readonly && editor" class="advanced-toolbar" role="toolbar" aria-label="文档格式工具栏">
+      <button type="button" title="撤销" :disabled="!editor.can().undo()" @click="editor.chain().focus().undo().run()"><i class="ri-arrow-go-back-line"></i></button>
+      <button type="button" title="重做" :disabled="!editor.can().redo()" @click="editor.chain().focus().redo().run()"><i class="ri-arrow-go-forward-line"></i></button>
+      <span class="tool-sep"></span>
+      <select aria-label="段落样式" :value="editor.isActive('heading', { level: 1 }) ? 'h1' : editor.isActive('heading', { level: 2 }) ? 'h2' : editor.isActive('heading', { level: 3 }) ? 'h3' : editor.isActive('heading', { level: 4 }) ? 'h4' : 'paragraph'" @change="setBlockType(($event.target as HTMLSelectElement).value)">
+        <option value="paragraph">正文</option><option value="h1">一级标题</option><option value="h2">二级标题</option><option value="h3">三级标题</option><option value="h4">四级标题</option>
+      </select>
+      <button type="button" title="粗体" :class="{ active: editor.isActive('bold') }" @click="editor.chain().focus().toggleBold().run()"><i class="ri-bold"></i></button>
+      <button type="button" title="斜体" :class="{ active: editor.isActive('italic') }" @click="editor.chain().focus().toggleItalic().run()"><i class="ri-italic"></i></button>
+      <button type="button" title="下划线" :class="{ active: editor.isActive('underline') }" @click="editor.chain().focus().toggleUnderline().run()"><i class="ri-underline"></i></button>
+      <button type="button" title="删除线" :class="{ active: editor.isActive('strike') }" @click="editor.chain().focus().toggleStrike().run()"><i class="ri-strikethrough"></i></button>
+      <button type="button" title="行内代码" :class="{ active: editor.isActive('code') }" @click="editor.chain().focus().toggleCode().run()"><i class="ri-code-line"></i></button>
+      <details class="tool-palette"><summary title="文字颜色"><i class="ri-font-color"></i></summary><div><button v-for="color in COLOR_OPTIONS" :key="color" type="button" :style="{ background: color }" :aria-label="`文字颜色 ${color}`" @click="editor.chain().focus().setColor(color).run()"></button></div></details>
+      <details class="tool-palette"><summary title="高亮颜色"><i class="ri-mark-pen-line"></i></summary><div><button v-for="color in HIGHLIGHT_OPTIONS" :key="color" type="button" :style="{ background: color }" :aria-label="`高亮颜色 ${color}`" @click="editor.chain().focus().toggleHighlight({ color }).run()"></button></div></details>
+      <span class="tool-sep"></span>
+      <button type="button" title="左对齐" :class="{ active: editor.isActive({ textAlign: 'left' }) }" @click="editor.chain().focus().setTextAlign('left').run()"><i class="ri-align-left"></i></button>
+      <button type="button" title="居中" :class="{ active: editor.isActive({ textAlign: 'center' }) }" @click="editor.chain().focus().setTextAlign('center').run()"><i class="ri-align-center"></i></button>
+      <button type="button" title="右对齐" :class="{ active: editor.isActive({ textAlign: 'right' }) }" @click="editor.chain().focus().setTextAlign('right').run()"><i class="ri-align-right"></i></button>
+      <button type="button" title="无序列表" :class="{ active: editor.isActive('bulletList') }" @click="editor.chain().focus().toggleBulletList().run()"><i class="ri-list-unordered"></i></button>
+      <button type="button" title="有序列表" :class="{ active: editor.isActive('orderedList') }" @click="editor.chain().focus().toggleOrderedList().run()"><i class="ri-list-ordered-2"></i></button>
+      <button type="button" title="任务列表" :class="{ active: editor.isActive('taskList') }" @click="editor.chain().focus().toggleTaskList().run()"><i class="ri-list-check-3"></i></button>
+      <button type="button" title="链接" @click="toggleLinkFromToolbar"><i class="ri-link"></i></button>
+      <button type="button" title="图片" @click="chooseImage"><i class="ri-image-add-line"></i></button>
+      <button v-if="!compact" type="button" title="表格" @click="insertTable"><i class="ri-table-2"></i></button>
+      <button type="button" title="更多内容块（输入 / 也可打开）" @click="toggleInsertMenu"><i class="ri-add-circle-line"></i></button>
+      <button type="button" title="查找替换（Ctrl/⌘+F）" @click="findOpen = !findOpen"><i class="ri-search-line"></i></button>
+      <button type="button" title="清除格式" @click="clearFormatting"><i class="ri-format-clear"></i></button>
+      <button type="button" title="快捷键帮助（Ctrl/⌘+/）" @click="helpOpen = true"><i class="ri-question-line"></i></button>
+    </div>
+    <form v-if="advanced && findOpen" class="find-panel" @submit.prevent="runFind()">
+      <input v-model="findText" placeholder="查找" aria-label="查找内容" />
+      <input v-model="replaceText" placeholder="替换为" aria-label="替换内容" />
+      <button type="submit">下一个</button><button type="button" @click="replaceCurrent">替换</button>
+      <span>{{ findStatus }}</span><button type="button" aria-label="关闭查找替换" @click="findOpen = false"><i class="ri-close-line"></i></button>
+    </form>
     <div v-if="peerMarks.length" class="peer-track" aria-hidden="true">
       <template v-for="m in peerMarks" :key="m.id">
         <span
@@ -842,6 +1386,48 @@ onBeforeUnmount(() => {
       </template>
     </div>
     <div class="md-editor-wrap">
+      <BubbleMenu
+        v-if="editor && advanced && !readonly"
+        :editor="editor"
+        plugin-key="advancedTextMenu"
+        :should-show="({ from, to }) => from !== to"
+        :options="{ placement: 'top', offset: 8 }"
+      >
+        <div class="selection-toolbar" role="toolbar" aria-label="选中文字格式">
+          <button type="button" title="粗体" :class="{ active: editor.isActive('bold') }" @click="editor.chain().focus().toggleBold().run()"><i class="ri-bold"></i></button>
+          <button type="button" title="斜体" :class="{ active: editor.isActive('italic') }" @click="editor.chain().focus().toggleItalic().run()"><i class="ri-italic"></i></button>
+          <button type="button" title="下划线" :class="{ active: editor.isActive('underline') }" @click="editor.chain().focus().toggleUnderline().run()"><i class="ri-underline"></i></button>
+          <button type="button" title="删除线" :class="{ active: editor.isActive('strike') }" @click="editor.chain().focus().toggleStrike().run()"><i class="ri-strikethrough"></i></button>
+          <button type="button" title="代码" :class="{ active: editor.isActive('code') }" @click="editor.chain().focus().toggleCode().run()"><i class="ri-code-line"></i></button>
+          <button type="button" title="链接" @click="toggleLinkFromToolbar"><i class="ri-link"></i></button>
+          <button v-if="polishable" type="button" title="AI 润色" @click="startPolish"><i class="ri-magic-line"></i></button>
+        </div>
+      </BubbleMenu>
+      <BubbleMenu
+        v-if="editor && advanced && !readonly"
+        :editor="editor"
+        plugin-key="tableMenu"
+        :should-show="({ editor: current }) => current.isActive('table')"
+        :options="{ placement: 'bottom', offset: 8 }"
+      >
+        <div class="context-toolbar" role="toolbar" aria-label="表格操作">
+          <button type="button" @click="editor.chain().focus().addRowAfter().run()">+ 行</button><button type="button" @click="editor.chain().focus().deleteRow().run()">− 行</button>
+          <button type="button" @click="editor.chain().focus().addColumnAfter().run()">+ 列</button><button type="button" @click="editor.chain().focus().deleteColumn().run()">− 列</button>
+          <button type="button" @click="editor.chain().focus().toggleHeaderRow().run()">表头</button><button type="button" @click="editor.chain().focus().mergeCells().run()">合并</button><button type="button" @click="editor.chain().focus().splitCell().run()">拆分</button><button type="button" class="danger" @click="editor.chain().focus().deleteTable().run()">删除表格</button>
+        </div>
+      </BubbleMenu>
+      <BubbleMenu
+        v-if="editor && advanced && !readonly"
+        :editor="editor"
+        plugin-key="codeMenu"
+        :should-show="({ editor: current }) => current.isActive('codeBlock')"
+        :options="{ placement: 'top', offset: 8 }"
+      >
+        <div class="context-toolbar" role="toolbar" aria-label="代码块操作">
+          <select aria-label="代码语言" :value="editor.getAttributes('codeBlock').language || 'plaintext'" @change="setCodeLanguage"><option v-for="language in CODE_LANGUAGES" :key="language" :value="language">{{ language }}</option></select>
+          <button type="button" @click="copyCodeBlock"><i class="ri-file-copy-line"></i>复制代码</button>
+        </div>
+      </BubbleMenu>
       <BubbleMenu
         v-if="editor && linkControls"
         :editor="editor"
@@ -900,6 +1486,17 @@ onBeforeUnmount(() => {
             <label>高 <input v-model="imageHeightInput" type="number" min="1" max="4000" inputmode="numeric" aria-label="图片高度（像素）" /></label>
             <button type="submit">应用</button>
           </div>
+          <div class="image-description-fields">
+            <label>替代文字<input v-model="imageAltInput" maxlength="300" placeholder="为无法查看图片的人说明内容" /></label>
+            <label>图片标题<input v-model="imageTitleInput" maxlength="300" placeholder="可选" /></label>
+            <button type="button" @click="applyImageDescription">应用说明</button>
+          </div>
+          <div class="image-align-actions">
+            <span>对齐</span>
+            <button type="button" @click="editor?.chain().focus().updateAttributes('image', { align: 'left' }).run()">左</button>
+            <button type="button" @click="editor?.chain().focus().updateAttributes('image', { align: 'center' }).run()">中</button>
+            <button type="button" @click="editor?.chain().focus().updateAttributes('image', { align: 'right' }).run()">右</button>
+          </div>
           <div v-if="imageSizeError" class="image-size-error" role="alert">{{ imageSizeError }}</div>
           <div class="image-size-actions">
             <button type="button" @click="clearImageSize">原始大小</button>
@@ -928,8 +1525,32 @@ onBeforeUnmount(() => {
         :editor="editor"
         class="md-body"
         :style="{ minHeight: minHeight + 'px' }"
+        @keydown.capture="onEditorKeydown"
+        @compositionstart="composing = true"
+        @compositionend="composing = false; editor && updateSlashMenu(editor)"
         @click="onEditorContentClick"
       />
+      <DragHandle v-if="editor && advanced && !readonly" :editor="editor" class="block-drag-handle">
+        <i class="ri-draggable"></i>
+        <div class="block-actions">
+          <button type="button" @click="duplicateSelectedBlock">复制块</button>
+          <button type="button" @click="deleteSelectedBlock">删除块</button>
+        </div>
+      </DragHandle>
+      <div v-if="slashOpen && !readonly" class="slash-menu" role="listbox" aria-label="插入内容块">
+        <button v-for="(action, index) in filteredSlashActions" :key="action.id" type="button" :class="{ active: slashIndex === index }" @mousedown.prevent="chooseSlash(action)">
+          <i :class="action.icon"></i><span><b>{{ action.label }}</b><small>{{ action.hint }}</small></span>
+        </button>
+        <div v-if="!filteredSlashActions.length" class="slash-empty">没有匹配的内容块</div>
+      </div>
+      <div v-if="pendingUploads.length" class="upload-queue" aria-live="polite">
+        <div v-for="upload in pendingUploads" :key="upload.id" :class="upload.state">
+          <i :class="upload.state === 'uploading' ? 'ri-loader-4-line spin' : 'ri-error-warning-line'"></i>
+          <span><b>{{ upload.file.name }}</b><small>{{ upload.state === 'uploading' ? '正在上传，正文可继续编辑' : '上传失败，本地文件尚未插入' }}</small></span>
+          <button v-if="upload.state === 'failed'" type="button" @click="runFileUpload(upload.id)">重试</button>
+          <button v-if="upload.state === 'failed'" type="button" @click="pendingUploads = pendingUploads.filter((item) => item.id !== upload.id)">移除</button>
+        </div>
+      </div>
       <button
         v-if="!readonly"
         type="button"
@@ -941,6 +1562,27 @@ onBeforeUnmount(() => {
       >
         <i class="ri-image-add-line"></i><span>图片</span>
       </button>
+    </div>
+    <div v-if="drawingsOpen" class="link-dialog-mask" @click.self="drawingsOpen = false">
+      <section class="link-dialog drawing-dialog" role="dialog" aria-modal="true" aria-label="插入画板">
+        <header><div><small>个人画板</small><h2>引用 Excalidraw 草图</h2></div><button type="button" aria-label="关闭" @click="drawingsOpen = false"><i class="ri-close-line"></i></button></header>
+        <div v-if="drawingsLoading" class="drawing-state">正在加载…</div>
+        <div v-else-if="drawingsError" class="drawing-state error">{{ drawingsError }} <button type="button" @click="openDrawings">重试</button></div>
+        <div v-else class="drawing-list"><button v-for="item in drawings" :key="item.id" type="button" @click="insertDrawing(item)"><i class="ri-shape-line"></i><span><b>{{ item.title }}</b><small>修订 {{ item.revision }}</small></span></button><p v-if="!drawings.length">还没有画板，可以直接新建一个。</p></div>
+        <footer><button type="button" class="link-save" @click="createAndInsertDrawing"><i class="ri-add-line"></i>新建并插入</button></footer>
+      </section>
+    </div>
+    <div v-if="helpOpen" class="link-dialog-mask" @click.self="helpOpen = false">
+      <section class="link-dialog shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcut-dialog-title">
+        <header><div><small>文档快捷键</small><h2 id="shortcut-dialog-title">更快地编辑内容</h2></div><button type="button" aria-label="关闭快捷键帮助" @click="helpOpen = false"><i class="ri-close-line"></i></button></header>
+        <div class="shortcut-grid">
+          <span><b>Ctrl/⌘ + B</b><small>粗体</small></span><span><b>Ctrl/⌘ + I</b><small>斜体</small></span>
+          <span><b>Ctrl/⌘ + U</b><small>下划线</small></span><span><b>Ctrl/⌘ + K</b><small>添加或编辑链接</small></span>
+          <span><b>Ctrl/⌘ + Z</b><small>撤销</small></span><span><b>Ctrl/⌘ + Shift + Z</b><small>重做</small></span>
+          <span><b>Ctrl/⌘ + F</b><small>查找与替换</small></span><span><b>/</b><small>插入内容块</small></span>
+          <span><b>Tab / Shift + Tab</b><small>列表缩进 / 减少缩进</small></span><span><b>Ctrl/⌘ + /</b><small>打开本帮助</small></span>
+        </div>
+      </section>
     </div>
     <div
       v-if="previewImage"
@@ -1054,6 +1696,117 @@ onBeforeUnmount(() => {
   width: 100%;
   position: relative;
 }
+.advanced-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px;
+  overflow-x: auto;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--wao-bg-card) 96%, transparent);
+  box-shadow: 0 4px 16px rgba(20, 23, 35, 0.06);
+  scrollbar-width: thin;
+}
+.advanced-toolbar button,
+.advanced-toolbar select,
+.tool-palette summary {
+  flex: 0 0 auto;
+  height: 30px;
+  min-width: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--wao-text-2);
+  cursor: pointer;
+}
+.advanced-toolbar button:hover,
+.advanced-toolbar button.active,
+.tool-palette summary:hover {
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary);
+}
+.advanced-toolbar button:disabled { opacity: .35; cursor: default; }
+.advanced-toolbar select { min-width: 76px; padding: 0 7px; }
+.tool-sep { width: 1px; height: 20px; margin: 0 3px; background: var(--wao-divider); }
+.tool-palette { position: relative; }
+.tool-palette summary { display: grid; place-items: center; list-style: none; }
+.tool-palette summary::-webkit-details-marker { display: none; }
+.tool-palette > div {
+  position: absolute;
+  z-index: 30;
+  top: 34px;
+  left: 0;
+  width: 154px;
+  padding: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 9px;
+  background: var(--wao-bg-card);
+  box-shadow: var(--wao-shadow-modal);
+}
+.tool-palette > div button { width: 28px; min-width: 28px; height: 28px; border: 2px solid var(--wao-bg-card); box-shadow: 0 0 0 1px var(--wao-line-control); }
+.find-panel {
+  position: sticky;
+  top: 43px;
+  z-index: 7;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px;
+  border: 1px solid var(--wao-line-control);
+  border-top: 0;
+  border-radius: 0 0 9px 9px;
+  background: var(--wao-bg-card);
+  box-shadow: 0 8px 20px rgba(20, 23, 35, .08);
+}
+.find-panel input { min-width: 100px; flex: 1; height: 30px; border: 1px solid var(--wao-line-control); border-radius: 6px; padding: 0 8px; background: var(--wao-bg-card); color: var(--wao-text); }
+.find-panel button { height: 30px; border: 0; border-radius: 6px; padding: 0 9px; background: var(--wao-primary-soft); color: var(--wao-primary); cursor: pointer; white-space: nowrap; }
+.find-panel span { color: var(--wao-text-weak); font-size: 11px; white-space: nowrap; }
+.selection-toolbar { display: flex; gap: 2px; padding: 4px; border-radius: 9px; background: #292b35; box-shadow: 0 8px 24px rgba(0,0,0,.24); }
+.selection-toolbar button { width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; }
+.selection-toolbar button:hover,.selection-toolbar button.active { background: rgba(255,255,255,.16); }
+.context-toolbar { display:flex; gap:3px; padding:5px; border-radius:9px; background:#292b35; box-shadow:0 8px 24px rgba(0,0,0,.24); }
+.context-toolbar button,.context-toolbar select { height:30px; border:0; border-radius:6px; padding:0 8px; background:rgba(255,255,255,.08); color:#fff; cursor:pointer; font-size:11px; }.context-toolbar button:hover { background:rgba(255,255,255,.17); }.context-toolbar button.danger { color:#ffb7b7; }.context-toolbar select option { color:#222; }
+.slash-menu {
+  position: absolute;
+  z-index: 20;
+  left: 12px;
+  top: min(55%, 360px);
+  width: min(340px, calc(100vw - 48px));
+  max-height: 360px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 11px;
+  background: var(--wao-bg-card);
+  box-shadow: var(--wao-shadow-modal);
+}
+.slash-menu > button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 9px; border: 0; border-radius: 8px; background: transparent; color: var(--wao-text-2); text-align: left; cursor: pointer; }
+.slash-menu > button:hover,.slash-menu > button.active { background: var(--wao-primary-soft); }
+.slash-menu > button > i { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; background: var(--wao-bg-sub); font-size: 16px; }
+.slash-menu span { min-width: 0; display: flex; flex-direction: column; }
+.slash-menu b { font-size: 12px; }.slash-menu small,.slash-empty { color: var(--wao-text-weak); font-size: 10.5px; }.slash-empty { padding: 16px; text-align: center; }
+.upload-queue { margin:8px 0; display:grid; gap:6px; }.upload-queue > div { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--wao-line); border-radius:8px; background:var(--wao-bg-sub); }.upload-queue > div.failed { border-color:color-mix(in srgb,var(--wao-danger-strong) 35%,var(--wao-line)); }.upload-queue span { min-width:0; flex:1; display:flex; flex-direction:column; }.upload-queue b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }.upload-queue small { color:var(--wao-text-weak); font-size:10px; }.upload-queue button { border:0; background:transparent; color:var(--wao-primary); font-size:11px; cursor:pointer; }
+.block-drag-handle { z-index: 9; display: flex; align-items: center; gap: 3px; padding: 3px; border: 1px solid var(--wao-line-control); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-weak); box-shadow: 0 4px 12px rgba(20,23,35,.1); cursor: grab; }
+.block-actions { display: none; position: absolute; left: 100%; top: 0; padding-left: 4px; }
+.block-drag-handle:hover .block-actions { display: flex; }
+.block-actions button { border: 1px solid var(--wao-line-control); background: var(--wao-bg-card); color: var(--wao-text-2); padding: 5px 7px; white-space: nowrap; cursor: pointer; }
+.drawing-dialog { max-height: min(600px, calc(100vh - 40px)); overflow: auto; }
+.drawing-state { padding: 28px; text-align: center; color: var(--wao-text-weak); }.drawing-state.error { color: var(--wao-danger-strong); }
+.drawing-list { margin-top: 12px; display: grid; gap: 6px; }
+.drawing-list > button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px; border: 1px solid var(--wao-line); border-radius: 9px; background: var(--wao-bg-card); color: var(--wao-text-2); text-align: left; cursor: pointer; }
+.drawing-list > button:hover { border-color: var(--wao-primary); background: var(--wao-primary-soft); }.drawing-list > button > i { font-size: 20px; }.drawing-list span { display:flex; flex-direction:column; }.drawing-list small { color:var(--wao-text-weak); }
+.shortcut-dialog { max-width: 620px; }
+.shortcut-grid { margin-top: 16px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.shortcut-grid span { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 11px; border:1px solid var(--wao-line); border-radius:9px; background:var(--wao-bg-sub); }
+.shortcut-grid b { color:var(--wao-text-2); font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace; }.shortcut-grid small { color:var(--wao-text-weak); font-size:10.5px; text-align:right; }
 .image-picker {
   display: none;
 }
@@ -1127,7 +1880,7 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.14);
 }
 .image-size-toolbar {
-  width: min(330px, calc(100vw - 20px));
+  width: min(390px, calc(100vw - 20px));
   padding: 9px;
 }
 .image-scale-options,
@@ -1137,6 +1890,11 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 5px;
 }
+.image-description-fields { margin-top:7px; display:grid; grid-template-columns:1fr 1fr auto; gap:5px; align-items:end; }
+.image-description-fields label { display:flex; flex-direction:column; gap:3px; color:rgba(255,255,255,.7); font-size:9.5px; }
+.image-description-fields input { min-width:0; height:28px; border:1px solid rgba(255,255,255,.18); border-radius:6px; padding:0 6px; background:rgba(255,255,255,.08); color:#fff; font:inherit; }
+.image-description-fields button,.image-align-actions button { height:28px; border:0; border-radius:6px; padding:0 8px; background:rgba(255,255,255,.09); color:#fff; cursor:pointer; }
+.image-align-actions { margin-top:7px; display:flex; align-items:center; justify-content:flex-end; gap:5px; font-size:9.5px; color:rgba(255,255,255,.7); }
 .image-scale-options button,
 .image-size-actions button,
 .image-pixel-fields > button {
@@ -1738,5 +2496,19 @@ onBeforeUnmount(() => {
   border: none;
   border-top: 1px solid var(--wao-divider);
   margin: 12px 0;
+}
+.md-body :deep(aside[data-callout]) { margin: 12px 0; padding: 10px 13px; border-left: 4px solid #245bdb; border-radius: 8px; background: #eef4ff; }
+.md-body :deep(aside[data-callout='success']) { border-color:#2ea121; background:#edf9ed; }.md-body :deep(aside[data-callout='warning']) { border-color:#de7802; background:#fff7e8; }.md-body :deep(aside[data-callout='danger']) { border-color:#d83931; background:#fff0f0; }
+.md-body :deep(div[data-columns]) { display:grid; grid-template-columns:repeat(var(--columns, 2),minmax(0,1fr)); gap:14px; margin:12px 0; }
+.md-body :deep(div[data-columns='2']) { grid-template-columns:repeat(2,minmax(0,1fr)); }.md-body :deep(div[data-columns='3']) { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.md-body :deep(section[data-column]) { min-width:0; padding:10px; border:1px dashed var(--wao-line-control); border-radius:8px; }
+.md-body :deep(.tableWrapper) { overflow-x:auto; margin:12px 0; }.md-body :deep(table) { border-collapse:collapse; width:100%; min-width:440px; }.md-body :deep(th),.md-body :deep(td) { min-width:90px; padding:7px 9px; border:1px solid var(--wao-line-control); vertical-align:top; }.md-body :deep(th) { background:var(--wao-bg-sub); }
+.md-body :deep(details) { margin:12px 0; padding:8px 11px; border:1px solid var(--wao-line-control); border-radius:9px; }.md-body :deep(summary) { cursor:pointer; font-weight:650; }
+@media (max-width: 680px) {
+  .advanced-toolbar { top: 0; border-radius: 8px; }
+  .find-panel { flex-wrap: wrap; top: 43px; }
+  .find-panel span { display:none; }
+  .md-body :deep(div[data-columns]) { grid-template-columns:1fr !important; }
+  .shortcut-grid { grid-template-columns:1fr; }
 }
 </style>

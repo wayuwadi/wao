@@ -74,7 +74,9 @@ async function loadList() {
   error.value = ''
   try {
     files.value = await fetchDrawings()
-    if (files.value.length) await openFile(files.value[0]!.id)
+    const requested = new URLSearchParams(window.location.search).get('drawing') ?? ''
+    const first = files.value.find((item) => item.id === requested) ?? files.value[0]
+    if (first) await openFile(first.id)
     else syncState.value = 'saved'
   } catch (cause) {
     error.value = message(cause, '草图文件列表读取失败')

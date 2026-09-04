@@ -8,11 +8,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiShareDoc } from '@/api/board'
-import { renderMarkdown } from '@/utils/markdown'
 import { docShareMarkdownUrl } from '@/utils/share'
 import { copyToClipboard } from '@/utils/clipboard'
 import { toast } from '@/composables/toast'
 import type { SharedDoc } from '@/types'
+import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 
 const route = useRoute()
 const docId = computed(() => String(route.params.id))
@@ -36,7 +36,6 @@ async function load() {
 onMounted(load)
 watch(docId, load)
 
-const bodyHtml = computed(() => renderMarkdown(shared.value?.md ?? ''))
 const mdUrl = computed(() => docShareMarkdownUrl(docId.value))
 const originalUrl = computed(() =>
   shared.value ? `/kb/${shared.value.kbId}?doc=${encodeURIComponent(shared.value.id)}` : '/kb',
@@ -67,7 +66,17 @@ async function copyMd() {
           <span v-if="shared.updated" class="chip plain">更新于 {{ shared.updated.slice(0, 10) }}</span>
         </div>
 
-        <div v-if="bodyHtml" class="md-body doc-body" v-html="bodyHtml"></div>
+        <MarkdownEditor
+          v-if="shared.md || shared.content?.document"
+          class="doc-body"
+          :model-value="shared.md"
+          :document="shared.content?.document"
+          readonly
+          bare
+          allow-h1
+          advanced
+          :min-height="0"
+        />
         <div v-else class="empty">（暂无内容）</div>
 
         <div class="foot">

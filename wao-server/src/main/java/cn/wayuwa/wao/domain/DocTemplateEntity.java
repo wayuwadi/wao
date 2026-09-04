@@ -13,6 +13,9 @@ public class DocTemplateEntity {
     private String name;
     private String description;
     private String blocksJson;
+    private String contentJson;
+    private String contentMarkdown;
+    private Integer contentVersion;
     private String sourceDocId;
     private String createdBy;
     private LocalDateTime createdAt;
@@ -27,6 +30,12 @@ public class DocTemplateEntity {
     public void setDescription(String description) { this.description = description; }
     public String getBlocksJson() { return blocksJson; }
     public void setBlocksJson(String blocksJson) { this.blocksJson = blocksJson; }
+    public String getContentJson() { return contentJson; }
+    public void setContentJson(String contentJson) { this.contentJson = contentJson; }
+    public String getContentMarkdown() { return contentMarkdown; }
+    public void setContentMarkdown(String contentMarkdown) { this.contentMarkdown = contentMarkdown; }
+    public Integer getContentVersion() { return contentVersion; }
+    public void setContentVersion(Integer contentVersion) { this.contentVersion = contentVersion; }
     public String getSourceDocId() { return sourceDocId; }
     public void setSourceDocId(String sourceDocId) { this.sourceDocId = sourceDocId; }
     public String getCreatedBy() { return createdBy; }

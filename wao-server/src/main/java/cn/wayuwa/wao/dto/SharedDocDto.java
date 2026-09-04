@@ -14,5 +14,9 @@ package cn.wayuwa.wao.dto;
  * @param updated 最近更新时间（ISO-8601，老数据可能是现成文案）
  * @param md      正文 Markdown（站内图片地址保持相对路径，由 .md 端点再绝对化）
  */
-public record SharedDocDto(String id, String title, boolean note, String kbId, String updated, String md) {
+public record SharedDocDto(String id, String title, boolean note, String kbId, String updated, String md,
+        RichDocContentDto content) {
+    public SharedDocDto(String id, String title, boolean note, String kbId, String updated, String md) {
+        this(id, title, note, kbId, updated, md, null);
+    }
 }

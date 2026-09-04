@@ -11,5 +11,10 @@ public record CreateDocTemplateRequest(
         @Size(max = 128, message = "模板名称不能超过 128 个字符") String name,
         @Size(max = 512, message = "模板说明不能超过 512 个字符") String description,
         @NotBlank String sourceDocId,
-        @Size(max = 5_000, message = "模板正文不能超过 5000 个块") List<DocBlockDto> blocks) {
+        @Size(max = 5_000, message = "模板正文不能超过 5000 个块") List<DocBlockDto> blocks,
+        RichDocContentDto content) {
+    public CreateDocTemplateRequest(String name, String description, String sourceDocId,
+            List<DocBlockDto> blocks) {
+        this(name, description, sourceDocId, blocks, null);
+    }
 }
