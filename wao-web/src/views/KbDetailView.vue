@@ -144,6 +144,22 @@ function goLink(l: DocLink) {
 const docLinks = computed(() =>
   (base.value?.links ?? []).map((l) => ({ icon: TYPE_ICON[l.type]!, label: linkName(l), link: l })),
 )
+/**
+ * 任务把文档 id 保存在自己的 docs 中，因此这里按当前成员可见任务动态反查。
+ * 不向文档再写一份任务关系，避免一端解除关联后另一端留下过期入口。
+ */
+const linkedTasks = computed(() => {
+  if (!docId.value) return []
+  return data.tasks
+    .filter((task) => task.docs.includes(docId.value!))
+    .map((task) => ({
+      id: task.id,
+      title: task.title || '未命名任务',
+    }))
+})
+function openLinkedTask(id: string) {
+  ui.openTask(id)
+}
 const backlinks = computed(() =>
   (base.value?.backlinks ?? []).map((b) => ({
     icon: TYPE_ICON[b.type]!,
@@ -1004,6 +1020,18 @@ async function keepConflictCopy() {
               <span class="dl-label">关联</span>
               <button v-for="(l, i) in docLinks" :key="i" class="dl-chip" @click="goLink(l.link)">
                 <i :class="l.icon"></i><span class="ellip">{{ l.label }}</span>
+              </button>
+            </div>
+            <div v-if="linkedTasks.length" class="doc-links linked-tasks">
+              <span class="dl-label">关联任务</span>
+              <button
+                v-for="task in linkedTasks"
+                :key="task.id"
+                class="dl-chip"
+                :title="`打开任务：${task.title}`"
+                @click="openLinkedTask(task.id)"
+              >
+                <i class="ri-checkbox-circle-line"></i><span class="ellip">{{ task.title }}</span>
               </button>
             </div>
             <div class="doc-hr"></div>
