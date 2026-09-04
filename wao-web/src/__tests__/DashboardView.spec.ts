@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { createPinia } from 'pinia'
 import DashboardView from '@/views/DashboardView.vue'
+import { fetchCodexMemberships } from '@/api/codexMemberships'
 import {
   fetchAiRunTrend,
   fetchAiQuotaHistory,
@@ -24,6 +26,11 @@ const chart = vi.hoisted(() => ({
   dispose: vi.fn<() => void>(),
 }))
 const initChart = vi.hoisted(() => vi.fn<() => typeof chart>(() => chart))
+
+vi.mock('@/api/codexMemberships', () => ({
+  fetchCodexMemberships: vi.fn().mockResolvedValue([]),
+  saveCodexMembership: vi.fn(),
+}))
 
 vi.mock('echarts/core', () => ({
   use: vi.fn<(components: unknown[]) => void>(),
@@ -138,7 +145,7 @@ function mountDashboard() {
     history: createMemoryHistory(),
     routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
   })
-  return mount(DashboardView, { global: { plugins: [router] } })
+  return mount(DashboardView, { global: { plugins: [router, createPinia()] } })
 }
 
 describe('DashboardView AI 用量面板', () => {
@@ -156,6 +163,8 @@ describe('DashboardView AI 用量面板', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('每日 AI 使用频次')
+    expect(fetchCodexMemberships).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('.membership-panel').text()).toContain('暂无已同步的 Codex 账号')
     expect(wrapper.text()).toContain('每日 Token 消耗')
     expect(wrapper.find('.kpi-grid').text()).toContain('30K')
     expect(wrapper.find('.kpi-grid').text()).toContain('已记账 3 / 5 次运行')
