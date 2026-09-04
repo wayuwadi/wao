@@ -70,6 +70,10 @@ const tomorrowState = ref<'loading' | 'idle' | 'dirty' | 'saving' | 'saved' | 'e
 const tomorrowError = ref('')
 const editorOpen = ref(false)
 const editorBusy = ref(false)
+const dailySettings = ref<InstanceType<typeof WorkdayRhythmDailySettings> | null>(null)
+const editorSaving = computed(
+  () => editorBusy.value || !!dailySettings.value?.saving || !!dailySettings.value?.mutatingId,
+)
 const editorError = ref('')
 type EditorSection = 'checklist' | 'notification' | 'energy' | 'timeline'
 const editorSection = ref<EditorSection>('checklist')
@@ -1203,14 +1207,19 @@ onBeforeUnmount(() => {
     </template>
 
     <template v-if="editorOpen">
-      <div class="mask" @click="!editorBusy && (editorOpen = false)"></div>
+      <div class="mask" @click="!editorSaving && (editorOpen = false)"></div>
       <section class="editor" role="dialog" aria-modal="true" aria-labelledby="rhythm-editor-title">
         <header>
           <div>
             <small>个人工作日配置</small>
             <h2 id="rhythm-editor-title">调整每日节奏</h2>
           </div>
-          <button type="button" aria-label="关闭" @click="editorOpen = false">
+          <button
+            type="button"
+            aria-label="关闭"
+            :disabled="editorSaving"
+            @click="editorOpen = false"
+          >
             <i class="ri-close-line"></i>
           </button>
         </header>
@@ -1261,6 +1270,8 @@ onBeforeUnmount(() => {
             </button>
           </nav>
           <WorkdayRhythmDailySettings
+            ref="dailySettings"
+            external-save
             v-show="editorSection === 'checklist'"
             @saved="dailyPanelKey += 1"
           />
@@ -1467,8 +1478,18 @@ onBeforeUnmount(() => {
             @click="resetEditor"
           >
             恢复原始模板</button
-          ><span></span
-          ><button type="button" :disabled="editorBusy" @click="editorOpen = false">稍后再说</button
+          ><span role="status" v-if="editorSection === 'checklist'">{{
+            dailySettings?.error || (dailySettings?.saved ? '每日面板设置已保存' : '')
+          }}</span
+          ><span v-else></span
+          ><button
+            v-if="editorSection === 'checklist'"
+            class="primary"
+            type="button"
+            :disabled="editorSaving || !dailySettings?.form || dailySettings?.loading"
+            @click="dailySettings?.submit()"
+          >
+            {{ dailySettings?.saving ? '保存中…' : '保存每日面板' }}</button
           ><button
             v-if="editorSection !== 'checklist'"
             class="primary"
