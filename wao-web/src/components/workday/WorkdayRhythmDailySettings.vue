@@ -19,6 +19,7 @@ import {
 } from '@/api/workdayRhythm'
 import { toast } from '@/composables/toast'
 
+defineProps<{ externalSave?: boolean }>()
 const emit = defineEmits<{ saved: [] }>()
 const loading = ref(true)
 const saving = ref(false)
@@ -225,6 +226,7 @@ async function submit() {
   }
 }
 
+defineExpose({ submit, saving, loading, mutatingId, form, saved, error })
 onMounted(load)
 </script>
 
@@ -434,7 +436,7 @@ onMounted(load)
       <p v-if="error" class="save-error" role="alert">
         <i class="ri-error-warning-line"></i>{{ error }}
       </p>
-      <footer>
+      <footer v-if="!externalSave">
         <span v-if="saved"><i class="ri-check-line"></i>每日面板设置已保存</span
         ><button class="primary" type="button" :disabled="saving" @click="submit">
           {{ saving ? '保存中…' : '保存每日面板' }}
