@@ -660,6 +660,14 @@ onBeforeUnmount(() => {
       @focusout="leaveQuickFocus"
     >
       <button
+        class="pet-silence-close"
+        type="button"
+        title="让宠物静默"
+        aria-label="让宠物静默"
+        @pointerdown.stop
+        @click.stop="hidePet(webPet.settings.petSnoozeMinutes)"
+      ><i class="ri-close-line"></i></button>
+      <button
         class="pet-avatar"
         :class="petActivity ? `activity-${petActivity}` : ''"
         type="button"
@@ -895,6 +903,31 @@ onBeforeUnmount(() => {
   position: relative;
   width: 102px;
   height: 100px;
+}
+.pet-silence-close {
+  position: absolute;
+  z-index: 2;
+  top: -8px;
+  right: -2px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--wao-line);
+  border-radius: 50%;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  box-shadow: var(--wao-shadow-pop);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+.pet-control:hover .pet-silence-close,
+.pet-control:focus-within .pet-silence-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .pet-silence-close { opacity: 1; pointer-events: auto; width: 36px; height: 36px; }
 }
 .pet-notice-close { position: absolute; z-index: 1; top: 5px; right: 5px; width: 23px; height: 23px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--wao-text-faint); cursor: pointer; }
 .pet-notice-close:hover { background: var(--wao-bg-hover-2); color: var(--wao-text-2); }
