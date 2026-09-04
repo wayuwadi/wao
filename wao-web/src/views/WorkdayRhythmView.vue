@@ -66,6 +66,7 @@ const tomorrowDay = ref<WorkdayRhythmDay>(
 const loading = ref(true)
 const loadError = ref('')
 const dayState = ref<'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('idle')
+const undoPendingIndex = ref<number | null>(null)
 const tomorrowState = ref<'loading' | 'idle' | 'dirty' | 'saving' | 'saved' | 'error'>('loading')
 const tomorrowError = ref('')
 const editorOpen = ref(false)
@@ -563,6 +564,18 @@ async function completeFocus(index: number) {
   )
 }
 
+async function undoFocus(index: number) {
+  if (
+    (!day.value.focusCompleted[index] && undoPendingIndex.value !== index) ||
+    dayState.value === 'saving'
+  )
+    return
+  undoPendingIndex.value = index
+  day.value.focusCompleted[index] = false
+  markDayDirty()
+  if (await persistDay(`已撤销重点 ${index + 1} 的完成状态`)) undoPendingIndex.value = null
+}
+
 async function saveTomorrowFocus() {
   if (tomorrowState.value === 'saving' || tomorrowState.value === 'loading') return
   tomorrowDay.value.focus = tomorrowDay.value.focus.map((item) => item.trim())
@@ -985,7 +998,16 @@ onBeforeUnmount(() => {
                     @input="focusInput(index)"
                 /></label>
                 <button
-                  v-if="focusReady && index === activeFocusIndex"
+                  v-if="undoPendingIndex === index"
+                  class="focus-undo focus-undo-retry"
+                  type="button"
+                  :disabled="dayState === 'saving'"
+                  @click="undoFocus(index)"
+                >
+                  {{ dayState === 'saving' ? '撤销保存中…' : '撤销未保存 · 重试' }}
+                </button>
+                <button
+                  v-else-if="focusReady && index === activeFocusIndex"
                   class="focus-complete"
                   type="button"
                   :disabled="dayState === 'saving'"
@@ -1001,9 +1023,16 @@ onBeforeUnmount(() => {
                       : '完成今日重点'
                   }}
                 </button>
-                <small v-else-if="day.focusCompleted[index]" class="focus-done"
-                  ><i class="ri-check-line"></i>已完成</small
+                <button
+                  v-else-if="day.focusCompleted[index]"
+                  class="focus-undo"
+                  type="button"
+                  :aria-label="`撤销重点 ${index + 1} 的完成`"
+                  :disabled="dayState === 'saving'"
+                  @click="undoFocus(index)"
                 >
+                  <i class="ri-arrow-go-back-line"></i>已完成 · 撤销
+                </button>
                 <small v-else-if="focusReady">等待当前项完成</small>
                 <button
                   v-if="day.focus.length > 3"
@@ -2170,8 +2199,18 @@ textarea {
   opacity: 0.55;
   cursor: wait;
 }
-.focus-done {
+.focus-undo {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
   color: #267c65 !important;
+}
+.focus-undo:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.focus-undo-retry {
+  color: var(--wao-danger-strong);
 }
 .focus-add {
   width: 32px;
