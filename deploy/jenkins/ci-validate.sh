@@ -71,6 +71,13 @@ grep -q 'location \^~ /amer_demo_2/' deploy/nginx/wao.wayuwa.cn.conf.template
 test -f wao-web/public/amer_demo_2/index.html
 test -f wao-web/public/amer_demo_2/styles.css
 test -f wao-web/public/amer_demo_2/app.js
+grep -q 'location = /amer_demo_3' deploy/nginx/wao.wayuwa.cn.conf.template
+grep -q 'location \^~ /amer_demo_3/' deploy/nginx/wao.wayuwa.cn.conf.template
+test -f wao-web/public/amer_demo_3/index.html
+test -f wao-web/public/amer_demo_3/styles.css
+test -f wao-web/public/amer_demo_3/app.js
+grep -q 'amer-risk-demo-v3' wao-web/public/amer_demo_3/app.js
+grep -q 'register_risk' wao-web/public/amer_demo_3/app.js
 grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
   deploy/nginx/wao.wayuwa.cn.conf.template
 grep -q 'location = /pluginWebUpdateNotice/web_version_by_plugin.json' \
