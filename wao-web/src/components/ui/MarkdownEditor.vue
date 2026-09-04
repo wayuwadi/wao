@@ -9,7 +9,7 @@
  *
  * 粘贴 / 拖入图片会上传到图床，并**内联插入到光标处**，不再堆到底部的附件区。
  *
- * 普通描述场景保持无工具条；`advanced` 文档场景提供固定工具栏、选区浮层和 `/` 菜单。
+ * 普通描述场景保持无工具条；`advanced` 文档场景提供可展开工具栏、选区浮层和 `/` 菜单。
  *
  * 传入 `peers` 时会在左侧落一条协作者轨道：每个人的头像贴在他光标所在的那一行，
  * 正在输入的还会给那一行加一道颜色条（见 ADR-017）。不传就是普通编辑器，行为不变。
@@ -295,6 +295,7 @@ interface PolishDialog {
 }
 const polishDialog = ref<PolishDialog | null>(null)
 const editorReady = ref(!props.advanced)
+const toolbarOpen = ref(false)
 
 const editor = useEditor({
   content: props.document ?? props.modelValue,
@@ -1351,7 +1352,13 @@ onBeforeUnmount(() => {
       aria-hidden="true"
       @change="onFilePicked"
     />
-    <div v-if="advanced && !readonly && editor" class="advanced-toolbar" role="toolbar" aria-label="文档格式工具栏">
+    <div v-if="advanced && !readonly && editor" class="editor-tools">
+      <button type="button" class="toolbar-toggle" :aria-expanded="toolbarOpen" :title="toolbarOpen ? '收起编辑工具' : '展开编辑工具'" @mousedown.prevent @click="toolbarOpen = !toolbarOpen">
+        <i class="ri-equalizer-line" aria-hidden="true"></i>
+        <span>编辑工具</span>
+        <i :class="toolbarOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" aria-hidden="true"></i>
+      </button>
+    <div v-show="toolbarOpen" class="advanced-toolbar" role="toolbar" aria-label="文档格式工具栏">
       <button type="button" title="撤销" :disabled="!editor.can().undo()" @click="editor.chain().focus().undo().run()"><i class="ri-arrow-go-back-line"></i></button>
       <button type="button" title="重做" :disabled="!editor.can().redo()" @click="editor.chain().focus().redo().run()"><i class="ri-arrow-go-forward-line"></i></button>
       <span class="tool-sep"></span>
@@ -1379,6 +1386,7 @@ onBeforeUnmount(() => {
       <button type="button" title="查找替换（Ctrl/⌘+F）" @click="findOpen = !findOpen"><i class="ri-search-line"></i></button>
       <button type="button" title="清除格式" @click="clearFormatting"><i class="ri-format-clear"></i></button>
       <button type="button" title="快捷键帮助（Ctrl/⌘+/）" @click="helpOpen = true"><i class="ri-question-line"></i></button>
+    </div>
     </div>
     <form v-if="advanced && findOpen" class="find-panel" @submit.prevent="runFind()">
       <input v-model="findText" placeholder="查找" aria-label="查找内容" />
@@ -1664,21 +1672,42 @@ onBeforeUnmount(() => {
   width: 100%;
   position: relative;
 }
-.advanced-toolbar {
+.editor-tools {
   position: sticky;
   top: 0;
   z-index: 8;
+  margin-bottom: 6px;
+}
+.toolbar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 7px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.toolbar-toggle:hover,
+.toolbar-toggle[aria-expanded="true"] {
+  color: var(--wao-primary);
+  background: var(--wao-primary-soft);
+}
+.advanced-toolbar {
+  margin-top: 6px;
   min-height: 42px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   padding: 5px 6px;
-  overflow-x: auto;
   border: 1px solid var(--wao-line-control);
   border-radius: 10px;
   background: color-mix(in srgb, var(--wao-bg-card) 96%, transparent);
   box-shadow: 0 4px 16px rgba(20, 23, 35, 0.06);
-  scrollbar-width: thin;
 }
 .advanced-toolbar button,
 .advanced-toolbar select,
