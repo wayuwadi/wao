@@ -1304,7 +1304,8 @@ watch(() => props.modelValue, applyExternal)
 watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
   () => props.readonly,
-  (ro) => editor.value?.setEditable(!ro),
+  // 只读切换不是正文修改；不能回发 content-change 把父组件的保存中状态重置为 idle。
+  (ro) => editor.value?.setEditable(!ro, false),
 )
 
 onBeforeUnmount(() => {
@@ -1386,141 +1387,149 @@ onBeforeUnmount(() => {
       </template>
     </div>
     <div class="md-editor-wrap">
-      <BubbleMenu
-        v-if="editor && advanced && !readonly"
-        :editor="editor"
-        plugin-key="advancedTextMenu"
-        :should-show="({ from, to }) => from !== to"
-        :options="{ placement: 'top', offset: 8 }"
-      >
-        <div class="selection-toolbar" role="toolbar" aria-label="选中文字格式">
-          <button type="button" title="粗体" :class="{ active: editor.isActive('bold') }" @click="editor.chain().focus().toggleBold().run()"><i class="ri-bold"></i></button>
-          <button type="button" title="斜体" :class="{ active: editor.isActive('italic') }" @click="editor.chain().focus().toggleItalic().run()"><i class="ri-italic"></i></button>
-          <button type="button" title="下划线" :class="{ active: editor.isActive('underline') }" @click="editor.chain().focus().toggleUnderline().run()"><i class="ri-underline"></i></button>
-          <button type="button" title="删除线" :class="{ active: editor.isActive('strike') }" @click="editor.chain().focus().toggleStrike().run()"><i class="ri-strikethrough"></i></button>
-          <button type="button" title="代码" :class="{ active: editor.isActive('code') }" @click="editor.chain().focus().toggleCode().run()"><i class="ri-code-line"></i></button>
-          <button type="button" title="链接" @click="toggleLinkFromToolbar"><i class="ri-link"></i></button>
-          <button v-if="polishable" type="button" title="AI 润色" @click="startPolish"><i class="ri-magic-line"></i></button>
-        </div>
-      </BubbleMenu>
-      <BubbleMenu
-        v-if="editor && advanced && !readonly"
-        :editor="editor"
-        plugin-key="tableMenu"
-        :should-show="({ editor: current }) => current.isActive('table')"
-        :options="{ placement: 'bottom', offset: 8 }"
-      >
-        <div class="context-toolbar" role="toolbar" aria-label="表格操作">
-          <button type="button" @click="editor.chain().focus().addRowAfter().run()">+ 行</button><button type="button" @click="editor.chain().focus().deleteRow().run()">− 行</button>
-          <button type="button" @click="editor.chain().focus().addColumnAfter().run()">+ 列</button><button type="button" @click="editor.chain().focus().deleteColumn().run()">− 列</button>
-          <button type="button" @click="editor.chain().focus().toggleHeaderRow().run()">表头</button><button type="button" @click="editor.chain().focus().mergeCells().run()">合并</button><button type="button" @click="editor.chain().focus().splitCell().run()">拆分</button><button type="button" class="danger" @click="editor.chain().focus().deleteTable().run()">删除表格</button>
-        </div>
-      </BubbleMenu>
-      <BubbleMenu
-        v-if="editor && advanced && !readonly"
-        :editor="editor"
-        plugin-key="codeMenu"
-        :should-show="({ editor: current }) => current.isActive('codeBlock')"
-        :options="{ placement: 'top', offset: 8 }"
-      >
-        <div class="context-toolbar" role="toolbar" aria-label="代码块操作">
-          <select aria-label="代码语言" :value="editor.getAttributes('codeBlock').language || 'plaintext'" @change="setCodeLanguage"><option v-for="language in CODE_LANGUAGES" :key="language" :value="language">{{ language }}</option></select>
-          <button type="button" @click="copyCodeBlock"><i class="ri-file-copy-line"></i>复制代码</button>
-        </div>
-      </BubbleMenu>
-      <BubbleMenu
-        v-if="editor && linkControls"
-        :editor="editor"
-        plugin-key="documentLinkMenu"
-        :should-show="shouldShowLink"
-        :options="{ placement: 'bottom', offset: 8 }"
-      >
-        <div class="link-toolbar" role="toolbar" aria-label="链接操作">
-          <button type="button" @mousedown.prevent @click="openLinkEditor">
-            <i class="ri-edit-line"></i>{{ linkSelectionActive ? '编辑链接' : '添加链接' }}
-          </button>
-          <button
-            v-if="linkSelectionActive"
-            type="button"
-            title="在新窗口打开"
-            aria-label="在新窗口打开链接"
-            @mousedown.prevent
-            @click="openActiveLink"
-          >
-            <i class="ri-external-link-line"></i>
-          </button>
-          <button
-            v-if="linkSelectionActive"
-            type="button"
-            title="移除链接"
-            aria-label="移除链接"
-            @mousedown.prevent
-            @click="removeActiveLink"
-          >
-            <i class="ri-link-unlink-m"></i>
-          </button>
-        </div>
-      </BubbleMenu>
-      <BubbleMenu
-        v-if="editor && imageControls"
-        :editor="editor"
-        plugin-key="documentImageMenu"
-        :should-show="shouldShowImage"
-        :options="{ placement: 'bottom', offset: 8 }"
-      >
-        <form class="image-size-toolbar" aria-label="调整图片大小" @submit.prevent="applyImageDimensions">
-          <div class="image-scale-options">
+      <!-- BubbleMenu 会把自己的根节点移出原位置；保留 Vue 管理的外壳，
+           避免保存时切换 readonly 后 v-if 在已脱离 DOM 的节点上插入占位符。 -->
+      <div v-if="editor && advanced && !readonly" class="bubble-menu-anchor">
+        <BubbleMenu
+          :editor="editor"
+          plugin-key="advancedTextMenu"
+          :should-show="({ from, to }) => from !== to"
+          :options="{ placement: 'top', offset: 8 }"
+        >
+          <div class="selection-toolbar" role="toolbar" aria-label="选中文字格式">
+            <button type="button" title="粗体" :class="{ active: editor.isActive('bold') }" @click="editor.chain().focus().toggleBold().run()"><i class="ri-bold"></i></button>
+            <button type="button" title="斜体" :class="{ active: editor.isActive('italic') }" @click="editor.chain().focus().toggleItalic().run()"><i class="ri-italic"></i></button>
+            <button type="button" title="下划线" :class="{ active: editor.isActive('underline') }" @click="editor.chain().focus().toggleUnderline().run()"><i class="ri-underline"></i></button>
+            <button type="button" title="删除线" :class="{ active: editor.isActive('strike') }" @click="editor.chain().focus().toggleStrike().run()"><i class="ri-strikethrough"></i></button>
+            <button type="button" title="代码" :class="{ active: editor.isActive('code') }" @click="editor.chain().focus().toggleCode().run()"><i class="ri-code-line"></i></button>
+            <button type="button" title="链接" @click="toggleLinkFromToolbar"><i class="ri-link"></i></button>
+            <button v-if="polishable" type="button" title="AI 润色" @click="startPolish"><i class="ri-magic-line"></i></button>
+          </div>
+        </BubbleMenu>
+      </div>
+      <div v-if="editor && advanced && !readonly" class="bubble-menu-anchor">
+        <BubbleMenu
+          :editor="editor"
+          plugin-key="tableMenu"
+          :should-show="({ editor: current }) => current.isActive('table')"
+          :options="{ placement: 'bottom', offset: 8 }"
+        >
+          <div class="context-toolbar" role="toolbar" aria-label="表格操作">
+            <button type="button" @click="editor.chain().focus().addRowAfter().run()">+ 行</button><button type="button" @click="editor.chain().focus().deleteRow().run()">− 行</button>
+            <button type="button" @click="editor.chain().focus().addColumnAfter().run()">+ 列</button><button type="button" @click="editor.chain().focus().deleteColumn().run()">− 列</button>
+            <button type="button" @click="editor.chain().focus().toggleHeaderRow().run()">表头</button><button type="button" @click="editor.chain().focus().mergeCells().run()">合并</button><button type="button" @click="editor.chain().focus().splitCell().run()">拆分</button><button type="button" class="danger" @click="editor.chain().focus().deleteTable().run()">删除表格</button>
+          </div>
+        </BubbleMenu>
+      </div>
+      <div v-if="editor && advanced && !readonly" class="bubble-menu-anchor">
+        <BubbleMenu
+          :editor="editor"
+          plugin-key="codeMenu"
+          :should-show="({ editor: current }) => current.isActive('codeBlock')"
+          :options="{ placement: 'top', offset: 8 }"
+        >
+          <div class="context-toolbar" role="toolbar" aria-label="代码块操作">
+            <select aria-label="代码语言" :value="editor.getAttributes('codeBlock').language || 'plaintext'" @change="setCodeLanguage"><option v-for="language in CODE_LANGUAGES" :key="language" :value="language">{{ language }}</option></select>
+            <button type="button" @click="copyCodeBlock"><i class="ri-file-copy-line"></i>复制代码</button>
+          </div>
+        </BubbleMenu>
+      </div>
+      <div v-if="editor && linkControls" class="bubble-menu-anchor">
+        <BubbleMenu
+          :editor="editor"
+          plugin-key="documentLinkMenu"
+          :should-show="shouldShowLink"
+          :options="{ placement: 'bottom', offset: 8 }"
+        >
+          <div class="link-toolbar" role="toolbar" aria-label="链接操作">
+            <button type="button" @mousedown.prevent @click="openLinkEditor">
+              <i class="ri-edit-line"></i>{{ linkSelectionActive ? '编辑链接' : '添加链接' }}
+            </button>
             <button
-              v-for="percent in IMAGE_SCALES"
-              :key="percent"
+              v-if="linkSelectionActive"
               type="button"
-              :class="{ active: selectedImageScale === percent }"
-              @click="setImageScale(percent)"
+              title="在新窗口打开"
+              aria-label="在新窗口打开链接"
+              @mousedown.prevent
+              @click="openActiveLink"
             >
-              {{ percent }}%
+              <i class="ri-external-link-line"></i>
+            </button>
+            <button
+              v-if="linkSelectionActive"
+              type="button"
+              title="移除链接"
+              aria-label="移除链接"
+              @mousedown.prevent
+              @click="removeActiveLink"
+            >
+              <i class="ri-link-unlink-m"></i>
             </button>
           </div>
-          <div class="image-pixel-fields">
-            <label>宽 <input v-model="imageWidthInput" type="number" min="1" max="4000" inputmode="numeric" aria-label="图片宽度（像素）" /></label>
-            <span>×</span>
-            <label>高 <input v-model="imageHeightInput" type="number" min="1" max="4000" inputmode="numeric" aria-label="图片高度（像素）" /></label>
-            <button type="submit">应用</button>
-          </div>
-          <div class="image-description-fields">
-            <label>替代文字<input v-model="imageAltInput" maxlength="300" placeholder="为无法查看图片的人说明内容" /></label>
-            <label>图片标题<input v-model="imageTitleInput" maxlength="300" placeholder="可选" /></label>
-            <button type="button" @click="applyImageDescription">应用说明</button>
-          </div>
-          <div class="image-align-actions">
-            <span>对齐</span>
-            <button type="button" @click="editor?.chain().focus().updateAttributes('image', { align: 'left' }).run()">左</button>
-            <button type="button" @click="editor?.chain().focus().updateAttributes('image', { align: 'center' }).run()">中</button>
-            <button type="button" @click="editor?.chain().focus().updateAttributes('image', { align: 'right' }).run()">右</button>
-          </div>
-          <div v-if="imageSizeError" class="image-size-error" role="alert">{{ imageSizeError }}</div>
-          <div class="image-size-actions">
-            <button type="button" @click="clearImageSize">原始大小</button>
-            <button type="button" @click="openSelectedImage"><i class="ri-zoom-in-line"></i>查看原图</button>
-          </div>
-        </form>
-      </BubbleMenu>
-      <BubbleMenu
-        v-if="editor && polishable"
-        :editor="editor"
-        plugin-key="documentPolishMenu"
-        :should-show="shouldShowPolish"
-        :options="{ placement: 'top', offset: 8 }"
-      >
-        <button
-          type="button"
-          class="polish-trigger"
-          aria-label="润色选中文字"
-          @mousedown.prevent
-          @click="startPolish"
+        </BubbleMenu>
+      </div>
+      <div v-if="editor && imageControls" class="bubble-menu-anchor">
+        <BubbleMenu
+          :editor="editor"
+          plugin-key="documentImageMenu"
+          :should-show="shouldShowImage"
+          :options="{ placement: 'bottom', offset: 8 }"
         >
-          <i class="ri-magic-line"></i><span>润色</span>
-        </button>
-      </BubbleMenu>
+          <form class="image-size-toolbar" aria-label="调整图片大小" @submit.prevent="applyImageDimensions">
+            <div class="image-scale-options">
+              <button
+                v-for="percent in IMAGE_SCALES"
+                :key="percent"
+                type="button"
+                :class="{ active: selectedImageScale === percent }"
+                @click="setImageScale(percent)"
+              >
+                {{ percent }}%
+              </button>
+            </div>
+            <div class="image-pixel-fields">
+              <label>宽 <input v-model="imageWidthInput" type="number" min="1" max="4000" inputmode="numeric" aria-label="图片宽度（像素）" /></label>
+              <span>×</span>
+              <label>高 <input v-model="imageHeightInput" type="number" min="1" max="4000" inputmode="numeric" aria-label="图片高度（像素）" /></label>
+              <button type="submit">应用</button>
+            </div>
+            <div class="image-description-fields">
+              <label>替代文字<input v-model="imageAltInput" maxlength="300" placeholder="为无法查看图片的人说明内容" /></label>
+              <label>图片标题<input v-model="imageTitleInput" maxlength="300" placeholder="可选" /></label>
+              <button type="button" @click="applyImageDescription">应用说明</button>
+            </div>
+            <div class="image-align-actions">
+              <span>对齐</span>
+              <button type="button" @click="editor?.chain().focus().updateAttributes('image', { align: 'left' }).run()">左</button>
+              <button type="button" @click="editor?.chain().focus().updateAttributes('image', { align: 'center' }).run()">中</button>
+              <button type="button" @click="editor?.chain().focus().updateAttributes('image', { align: 'right' }).run()">右</button>
+            </div>
+            <div v-if="imageSizeError" class="image-size-error" role="alert">{{ imageSizeError }}</div>
+            <div class="image-size-actions">
+              <button type="button" @click="clearImageSize">原始大小</button>
+              <button type="button" @click="openSelectedImage"><i class="ri-zoom-in-line"></i>查看原图</button>
+            </div>
+          </form>
+        </BubbleMenu>
+      </div>
+      <div v-if="editor && polishable" class="bubble-menu-anchor">
+        <BubbleMenu
+          :editor="editor"
+          plugin-key="documentPolishMenu"
+          :should-show="shouldShowPolish"
+          :options="{ placement: 'top', offset: 8 }"
+        >
+          <button
+            type="button"
+            class="polish-trigger"
+            aria-label="润色选中文字"
+            @mousedown.prevent
+            @click="startPolish"
+          >
+            <i class="ri-magic-line"></i><span>润色</span>
+          </button>
+        </BubbleMenu>
+      </div>
       <EditorContent
         :editor="editor"
         class="md-body"

@@ -128,4 +128,35 @@ describe('新建小记弹窗', () => {
     await flushPromises()
     wrapper.unmount()
   })
+
+  it('真实高级编辑器保存并打开后完整卸载弹窗，不留下遮罩或失效菜单', async () => {
+    const ui = useUiStore()
+    ui.openModal('note')
+    localStorage.setItem('wao-quick-note-draft-v1:wg', JSON.stringify({
+      id: 'editor-lifecycle-note', text: '高级编辑器保存与跳转验收',
+    }))
+    let finish!: (id: string) => void
+    vi.spyOn(useDataStore(), 'addNote').mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    const router = testRouter()
+    await router.push('/')
+    const Host = defineComponent({
+      components: { QuickNoteModal },
+      setup: () => ({ ui }),
+      template: '<div><QuickNoteModal v-if="ui.modal === \'note\'" /><p v-else>弹窗已关闭</p></div>',
+    })
+    const wrapper = mount(Host, { attachTo: document.body, global: { plugins: [router] } })
+    // 保留真实异步编辑器及浮层插件；原来的 textarea 替身无法发现卸载错误。
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    await wrapper.find('.btn-ghost').trigger('click')
+    expect(wrapper.find('.tiptap').attributes('contenteditable')).toBe('false')
+    finish('editor-lifecycle-note')
+    await flushPromises()
+    expect(wrapper.find('.modal').exists()).toBe(false)
+    expect(wrapper.find('.mask').exists()).toBe(false)
+    expect(wrapper.text()).toBe('弹窗已关闭')
+    expect(router.currentRoute.value.query.doc).toBe('editor-lifecycle-note')
+    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
+    wrapper.unmount()
+  })
 })
