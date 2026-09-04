@@ -17,7 +17,7 @@ import { copyToClipboard } from '@/utils/clipboard'
 import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
 import { absoluteTime, relativeTime } from '@/utils/time'
 import { blocksToText, textToBlocks } from '@/utils/doc'
-import { legacyProjection, resolvedRichContent, richHeadings } from '@/utils/richDoc'
+import { resolvedRichContent, richHeadings } from '@/utils/richDoc'
 import { useNow } from '@/composables/now'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import { useFavoritesStore } from '@/stores/favorites'
@@ -1925,7 +1925,23 @@ async function keepConflictCopy() {
 @media (max-width: 760px) {
   .kb-detail {
     height: calc(100dvh - 48px - 64px - env(safe-area-inset-bottom));
-    padding: 16px 12px 28px;
+    flex-direction: column;
+  }
+  .side {
+    width: 100%;
+    flex: 0 0 auto;
+    max-height: 200px;
+    border-right: 0;
+    border-bottom: 1px solid var(--wao-line);
+  }
+  .doc-scroll {
+    min-height: 0;
+  }
+  .doc-wrap {
+    padding: 16px 12px 40px;
+  }
+  .doc-col {
+    min-width: 0;
   }
   .doc-head {
     align-items: flex-start;
