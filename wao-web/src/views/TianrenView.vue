@@ -11,6 +11,7 @@ import {
 import { fetchAssistantConversation, fetchAssistantStatus } from '@/api/assistant'
 import { copyToClipboard } from '@/utils/clipboard'
 import { renderMarkdown } from '@/utils/markdown'
+import TianrenNotificationStatus from '@/components/workday/TianrenNotificationStatus.vue'
 
 type SyncState = 'loading' | 'casting' | 'saved' | 'error'
 
@@ -289,6 +290,7 @@ onMounted(() => {
         <button type="button" @click="loadPage(false)">重试同步</button>
       </div>
 
+      <TianrenNotificationStatus v-if="reading" :reading-id="reading.id" :interpreting="interpreting" />
       <div class="content-grid">
         <main class="main-column">
           <section v-if="!reading" class="empty-cast card">

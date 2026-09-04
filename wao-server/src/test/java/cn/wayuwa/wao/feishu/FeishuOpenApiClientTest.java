@@ -22,6 +22,22 @@ import org.springframework.web.client.RestClient;
 class FeishuOpenApiClientTest {
 
     private static final String BASE_URL = "https://open.feishu.test";
+
+    @Test
+    void sendsJsonV2CardWithUuidInBodyAndRequiresReceipt() throws Exception {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages?receive_id_type=chat_id"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("""
+                    {"receive_id":"oc_group","msg_type":"interactive","content":"{\\"schema\\":\\"2.0\\"}","uuid":"tianren-reading"}
+                    """))
+                .andRespond(withSuccess("{\"code\":0,\"data\":{\"message_id\":\"om-real\"}}", MediaType.APPLICATION_JSON));
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+        assertThat(client.sendRawCard("test-token", "oc_group", new ObjectMapper().readTree("{\"schema\":\"2.0\"}"),
+                "tianren-reading")).isEqualTo("om-real");
+        server.verify();
+    }
     private static final String MESSAGES_URL = BASE_URL
             + "/open-apis/im/v1/messages?container_id_type=chat&container_id=oc_chat"
             + "&start_time=100&end_time=200&sort_type=ByCreateTimeAsc&page_size=50";

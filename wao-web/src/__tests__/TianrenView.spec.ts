@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TianrenView from '@/views/TianrenView.vue'
+vi.mock('@/components/workday/TianrenNotificationStatus.vue', () => ({ default: { template: '<div />' } }))
 import {
   createTodayTianrenReading,
   createTianrenShareLink,

@@ -29,6 +29,8 @@ management:
     redis:
       enabled: false
 wao:
+  tianren:
+    notification-scheduler-enabled: false
   scheduling:
     enabled: false
   system-report:

@@ -292,6 +292,15 @@ public class FeishuOpenApiClient {
                 token);
     }
 
+    /** 发送业务提供的 JSON 2.0 卡片，携带稳定 uuid 并要求真实消息回执。 */
+    public String sendRawCard(String token, String chatId, JsonNode card, String uuid) {
+        JsonNode data = post("/open-apis/im/v1/messages?receive_id_type=chat_id",
+                Map.of("receive_id", chatId, "msg_type", "interactive", "content", writeJson(card), "uuid", uuid), token);
+        String messageId = text(data, "message_id");
+        if (messageId == null || messageId.isBlank()) throw new FeishuApiException("飞书未返回消息回执");
+        return messageId;
+    }
+
     /**
      * 以当前机器人身份给一条消息添加表情回复。
      *

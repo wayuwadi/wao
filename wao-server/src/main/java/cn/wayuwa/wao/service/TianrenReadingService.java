@@ -217,6 +217,14 @@ public class TianrenReadingService {
                 .last("LIMIT 1"));
     }
 
+    /** 读取指定成员拥有的真实卦象，供受控群通知生成快照。 */
+    public TianrenReadingDto getOwned(String memberId, String readingId) {
+        requireMember(memberId);
+        TianrenDailyReadingEntity row = findOwned(memberId, readingId);
+        if (row == null) throw new NotFoundException("卦象不存在");
+        return view(row);
+    }
+
     private TianrenDailyReadingEntity findOwned(String memberId, String readingId) {
         return mapper.selectOne(new LambdaQueryWrapper<TianrenDailyReadingEntity>()
                 .eq(TianrenDailyReadingEntity::getId, readingId)

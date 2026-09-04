@@ -16,6 +16,8 @@ export interface WorkdayRhythmConfig {
 export interface WorkdayRhythmEnergyNotification {
   enabled: boolean
   notifyFocus: boolean
+  /** 旧配置默认关闭，开启即允许把当天解读分享到所选群。 */
+  notifyTianren?: boolean
   channel: 'WEBHOOK' | 'CHAT'
   webhookId: string
   webhookName: string
@@ -64,6 +66,7 @@ export const DEFAULT_WORKDAY_RHYTHM: WorkdayRhythmConfig = {
   energyNotification: {
     enabled: false,
     notifyFocus: true,
+    notifyTianren: false,
     channel: 'WEBHOOK',
     webhookId: '',
     webhookName: '',
@@ -207,6 +210,7 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
     if (
       typeof notification.enabled !== 'boolean' ||
       typeof notification.notifyFocus !== 'boolean' ||
+      (notification.notifyTianren !== undefined && typeof notification.notifyTianren !== 'boolean') ||
       (notification.channel !== 'WEBHOOK' && notification.channel !== 'CHAT') ||
       typeof notification.webhookId !== 'string' ||
       notification.webhookId.length > 64 ||
@@ -254,6 +258,7 @@ export function rhythmConfigError(value: WorkdayRhythmConfig): string {
   if (
     notification.enabled &&
     !notification.notifyFocus &&
+    !notification.notifyTianren &&
     !value.energyItems.some((item) => item.notify)
   )
     return '请至少选择一个需要通知的今日行动'
@@ -283,6 +288,7 @@ export function normalizeRhythmConfig(value: WorkdayRhythmConfig): WorkdayRhythm
     energyNotification: {
       enabled: notification.enabled === true,
       notifyFocus: notification.notifyFocus !== false,
+      notifyTianren: notification.notifyTianren === true,
       channel,
       webhookId: notification.webhookId?.trim() ?? '',
       webhookName: notification.webhookName?.trim() ?? '',
