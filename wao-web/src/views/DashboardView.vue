@@ -27,6 +27,7 @@ import {
 import { toast } from '@/composables/toast'
 import { formatTokens } from '@/composables/aiUsage'
 import { formatDuration } from '@/composables/aiRunDuration'
+import CodexMembershipPanel from '@/components/dashboard/CodexMembershipPanel.vue'
 
 echarts.use([
   CanvasRenderer,
@@ -477,6 +478,8 @@ function goHome() { router.push('/') }
         </button>
       </div>
     </header>
+
+    <CodexMembershipPanel />
 
     <section v-if="loading" class="loading">
       <i class="ri-loader-4-line spin"></i>正在读取统计数据…

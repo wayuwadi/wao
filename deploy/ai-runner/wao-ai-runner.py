@@ -294,12 +294,25 @@ def normalize_codex_quota(account_result: Any, rate_limit_result: Any) -> dict[s
             "balance": str(balance)[:40] if balance is not None else None,
         }
     email = account.get("email") if isinstance(account.get("email"), str) else None
+    reset_summary = rates.get("rateLimitResetCredits")
+    reset_credits = None
+    if isinstance(reset_summary, dict):
+        count = reset_summary.get("availableCount")
+        if isinstance(count, int) and not isinstance(count, bool) and 0 <= count <= 1_000_000:
+            def epoch(value: Any) -> int | None:
+                return value if isinstance(value, int) and not isinstance(value, bool) and 0 < value <= 253402300799 else None
+            rows = reset_summary.get("credits")
+            reset_credits = {"availableCount": count, "credits": [
+                {"grantedAt": epoch(row.get("grantedAt")), "expiresAt": epoch(row.get("expiresAt"))}
+                for row in (rows if isinstance(rows, list) else [])[:50] if isinstance(row, dict)
+            ]}
     plan = default_rate.get("planType") or account.get("planType")
     return {
         "accountEmail": email.strip()[:255] if email else None,
         "plan": str(plan)[:32] if plan else None,
         "credits": safe_credits,
         "limits": limits,
+        "resetCredits": reset_credits,
     }
 
 

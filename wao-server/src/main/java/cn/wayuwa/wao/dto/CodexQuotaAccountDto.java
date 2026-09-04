@@ -11,5 +11,10 @@ public record CodexQuotaAccountDto(
         List<CodexQuotaLimitDto> limits,
         List<String> runnerNames,
         String lastSyncedAt,
-        boolean fresh) {
+        boolean fresh,
+        CodexResetCreditsDto resetCredits) {
+    public CodexQuotaAccountDto(String key, String email, String plan, CodexQuotaCreditsDto credits,
+            List<CodexQuotaLimitDto> limits, List<String> runnerNames, String lastSyncedAt, boolean fresh) {
+        this(key, email, plan, credits, limits, runnerNames, lastSyncedAt, fresh, null);
+    }
 }

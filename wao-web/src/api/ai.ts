@@ -39,6 +39,7 @@ export interface CodexQuotaAccount {
   runnerNames: string[]
   lastSyncedAt: string
   fresh: boolean
+  resetCredits?: { availableCount: number; credits: { grantedAt: number | null; expiresAt: number | null }[] } | null
 }
 
 export interface AiEvolutionSuggestion {

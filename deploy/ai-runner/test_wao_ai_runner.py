@@ -541,6 +541,17 @@ class CodexEgressTest(unittest.TestCase):
 class CodexQuotaTest(unittest.TestCase):
     """本地 Codex 额度只保留首页需要的脱敏字段。"""
 
+    def test_reset_count_uses_official_total_and_never_money_balance(self) -> None:
+        rates = {"rateLimits": {"primary": {"usedPercent": 1}, "credits": {"balance": "500"}},
+                 "rateLimitResetCredits": {"availableCount": 123, "credits": [{"grantedAt": 1788500000, "expiresAt": None, "id": "not-uploaded"}]}}
+        result = RUNNER.normalize_codex_quota({}, rates)
+        self.assertEqual(123, result["resetCredits"]["availableCount"])
+        self.assertEqual([{"grantedAt": 1788500000, "expiresAt": None}], result["resetCredits"]["credits"])
+        del rates["rateLimitResetCredits"]
+        self.assertIsNone(RUNNER.normalize_codex_quota({}, rates)["resetCredits"])
+        rates["rateLimitResetCredits"] = {"availableCount": 0, "credits": None}
+        self.assertEqual(0, RUNNER.normalize_codex_quota({}, rates)["resetCredits"]["availableCount"])
+
     def test_normalizes_general_and_model_specific_weekly_limits(self) -> None:
         result = RUNNER.normalize_codex_quota(
             {"account": {"type": "chatgpt", "email": "wage@example.com", "planType": "pro"}},

@@ -7,5 +7,10 @@ public record RunnerCodexQuotaReport(
         String accountEmail,
         String plan,
         CodexQuotaCreditsDto credits,
-        List<CodexQuotaLimitDto> limits) {
+        List<CodexQuotaLimitDto> limits,
+        CodexResetCreditsDto resetCredits) {
+    public RunnerCodexQuotaReport(String accountEmail, String plan, CodexQuotaCreditsDto credits,
+            List<CodexQuotaLimitDto> limits) {
+        this(accountEmail, plan, credits, limits, null);
+    }
 }
