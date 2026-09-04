@@ -11,6 +11,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -31,17 +34,35 @@ public class FeishuWebhookNotifier {
     private final FeishuWebhookConfigService webhooks;
     private final NotificationSettingsService notificationSettings;
     private final RestClient client;
+    private final RestClient rawCardClient;
     /** 老的部署级 webhook（{@code FEISHU_COMMENT_WEBHOOK_URL}）：界面上还没配时继续用它，线上通知不断档。 */
     private final String legacyUrl;
 
+    @Autowired
     public FeishuWebhookNotifier(SettingService settings, FeishuWebhookConfigService webhooks,
             NotificationSettingsService notificationSettings, RestClient.Builder builder,
             @Value("${feishu.comment-webhook-url:}") String legacyUrl) {
+        this(settings, webhooks, notificationSettings, builder, legacyUrl, rawCardRequestFactory());
+    }
+
+    FeishuWebhookNotifier(SettingService settings, FeishuWebhookConfigService webhooks,
+            NotificationSettingsService notificationSettings, RestClient.Builder builder,
+            String legacyUrl, ClientHttpRequestFactory requestFactory) {
         this.settings = settings;
         this.webhooks = webhooks;
         this.notificationSettings = notificationSettings;
         this.client = builder.build();
+        RestClient.Builder rawBuilder = builder.clone();
+        if (requestFactory != null) rawBuilder.requestFactory(requestFactory);
+        this.rawCardClient = rawBuilder.build();
         this.legacyUrl = legacyUrl;
+    }
+
+    private static ClientHttpRequestFactory rawCardRequestFactory() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(java.time.Duration.ofSeconds(10));
+        factory.setReadTimeout(java.time.Duration.ofSeconds(30));
+        return factory;
     }
 
     /** 实际要用的地址：优先注册表默认项；尚未接管时才回落旧单例或部署环境变量。 */
@@ -134,6 +155,22 @@ public class FeishuWebhookNotifier {
             return new EffectiveTarget(configured, settings.getBoolean(SettingService.FEISHU_WEBHOOK_ENABLED));
         }
         return new EffectiveTarget(legacyUrl, legacyUrl != null && !legacyUrl.isBlank());
+    }
+
+    /** 向业务已校验的指定 Webhook 发送 JSON 2.0 卡片；不回落默认群。 */
+    public void sendRawCard(String url, JsonNode card) {
+        if (url == null || url.isBlank()) throw new FeishuApiException("未选择通知 Webhook");
+        JsonNode response;
+        try {
+            response = rawCardClient.post().uri(url).contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("msg_type", "interactive", "card", card)).retrieve().body(JsonNode.class);
+        } catch (RestClientException ex) {
+            throw new FeishuApiException("未能确认飞书卡片接收结果");
+        }
+        if (response == null || (!response.has("code") && !response.has("StatusCode"))
+                || response.path("code").asInt(response.path("StatusCode").asInt(-1)) != 0) {
+            throw new FeishuApiException("飞书未确认接收卡片，请检查图片及机器人配置");
+        }
     }
 
     private record EffectiveTarget(String url, boolean enabled) {

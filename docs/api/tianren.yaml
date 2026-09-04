@@ -77,6 +77,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ShareTokenEnvelope"
+  /api/tianren/readings/{id}/notification:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getTianrenNotification
+      summary: 只读返回当前成员该卦的群卡片投递状态
+      responses:
+        "200":
+          description: 状态及目标显示名，不包含卡片快照或凭据
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationEnvelope"
+        "404": { description: 卦象不存在或不属于当前成员 }
+  /api/tianren/readings/{id}/notification/retry:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      operationId: retryTianrenNotification
+      summary: 重新安排失败的原群卡片快照，已发送记录不重发
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirmNotReceived:
+                  type: boolean
+                  default: false
+                  description: UNKNOWN 状态必须为 true，确认群中未收到后才可重试
+      responses:
+        "200":
+          description: 当前投递状态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationEnvelope"
+        "400": { description: 未确认未知结果、策略阻止、目标改变或没有可重试记录 }
+        "404": { description: 卦象不存在或不属于当前成员 }
   /api/share/tianren/{token}:
     get:
       operationId: getSharedTianrenReading
@@ -99,6 +145,21 @@ paths:
           description: 分享凭据无效
 components:
   schemas:
+    NotificationEnvelope:
+      type: object
+      properties:
+        code: { type: integer }
+        message: { type: string }
+        data:
+          type: object
+          required: [state, targetName, message, retryable]
+          properties:
+            state:
+              type: string
+              enum: [DISABLED, CONFIGURATION_REQUIRED, WAITING, PENDING, SENDING, SENT, FAILED, SKIPPED, UNKNOWN]
+            targetName: { type: string }
+            message: { type: string }
+            retryable: { type: boolean }
     ReadingEnvelope:
       type: object
       required: [code, message, timestamp]

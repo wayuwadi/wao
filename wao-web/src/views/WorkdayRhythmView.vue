@@ -1327,6 +1327,13 @@ onBeforeUnmount(() => {
                 <span>今日重点保存后发群</span>
               </label>
               <label class="channel-field">
+                <span class="energy-notify-field">
+                  <input v-model="editorDraft.energyNotification.notifyTianren" type="checkbox" />
+                  <span>卦象解读完成后发群</span>
+                </span>
+                <small>开启后，当天已保存的解读和公开结果链接会发到下方所选群；每天一张，重新解读不重复发送。</small>
+              </label>
+              <label class="channel-field">
                 <span>发送方式</span>
                 <select v-model="editorDraft.energyNotification.channel">
                   <option value="WEBHOOK">系统 Webhook</option>

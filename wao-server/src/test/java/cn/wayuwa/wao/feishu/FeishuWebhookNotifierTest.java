@@ -29,6 +29,20 @@ class FeishuWebhookNotifierTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     @Test
+    void rawCardRequiresExplicitSuccessNotEmptyBody() throws Exception {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://open.feishu.test/hook"))
+                .andExpect(content().json("{\"msg_type\":\"interactive\",\"card\":{\"schema\":\"2.0\"}}"))
+                .andRespond(withSuccess("{}", org.springframework.http.MediaType.APPLICATION_JSON));
+        var sender = new FeishuWebhookNotifier(mock(SettingService.class), mock(FeishuWebhookConfigService.class),
+                mock(NotificationSettingsService.class), builder, "", null);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> sender.sendRawCard("https://open.feishu.test/hook",
+                mapper.readTree("{\"schema\":\"2.0\"}"))).isInstanceOf(FeishuApiException.class);
+        server.verify();
+    }
+
+    @Test
     void comicCardPutsImageAsMarkdownAndKeepsButton() throws Exception {
         FeishuWebhookNotifier.ComicCard card = new FeishuWebhookNotifier.ComicCard(
                 "AI 洞察报告", "blue",

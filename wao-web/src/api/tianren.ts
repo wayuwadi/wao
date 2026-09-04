@@ -26,6 +26,19 @@ export interface TianrenReading {
   createdAt: string
 }
 
+export interface TianrenNotification {
+  state: 'DISABLED' | 'CONFIGURATION_REQUIRED' | 'WAITING' | 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'SKIPPED' | 'UNKNOWN'
+  targetName: string
+  message: string
+  retryable: boolean
+}
+
+export const fetchTianrenNotification = (id: string) =>
+  data<TianrenNotification>(http.get(`/api/tianren/readings/${encodeURIComponent(id)}/notification`))
+
+export const retryTianrenNotification = (id: string, confirmNotReceived = false) =>
+  data<TianrenNotification>(http.post(`/api/tianren/readings/${encodeURIComponent(id)}/notification/retry`, { confirmNotReceived }))
+
 export type SharedTianrenReading = Omit<TianrenReading, 'id' | 'conversationId'> & {
   /** 卦象专属会话最新一条 AI 自照；不包含用户关注点或完整会话。 */
   interpretation: string | null
