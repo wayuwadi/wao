@@ -68,6 +68,12 @@ public class PublishController {
         return ApiResponse.ok(publishTasks.submit(accountId(request), taskId));
     }
 
+    @PostMapping("/tasks/{taskId}/retry-generation")
+    public ApiResponse<PublishTaskDto> retryGeneration(@PathVariable String taskId,
+                                                       HttpServletRequest request) {
+        return ApiResponse.ok(publishTasks.retryGeneration(accountId(request), taskId));
+    }
+
     @PostMapping("/tasks/{taskId}/mark-published")
     public ApiResponse<PublishTaskDto> markPublished(@PathVariable String taskId,
                                                      HttpServletRequest request) {

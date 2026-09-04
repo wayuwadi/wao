@@ -32,6 +32,11 @@ public class PublishTaskEntity {
     private String sourceNotes;
     private Boolean useWaoContext;
     private String sourceContextJson;
+    private String generationExecutor;
+    private String generationSystemPrompt;
+    private String generationUserPrompt;
+    private String generationClaimToken;
+    private LocalDateTime generationLeaseUntil;
     private String publicationUrl;
 
     public String getId() { return id; }
@@ -84,6 +89,16 @@ public class PublishTaskEntity {
     public void setUseWaoContext(Boolean value) { useWaoContext = value; }
     public String getSourceContextJson() { return sourceContextJson; }
     public void setSourceContextJson(String value) { sourceContextJson = value; }
+    public String getGenerationExecutor() { return generationExecutor; }
+    public void setGenerationExecutor(String value) { generationExecutor = value; }
+    public String getGenerationSystemPrompt() { return generationSystemPrompt; }
+    public void setGenerationSystemPrompt(String value) { generationSystemPrompt = value; }
+    public String getGenerationUserPrompt() { return generationUserPrompt; }
+    public void setGenerationUserPrompt(String value) { generationUserPrompt = value; }
+    public String getGenerationClaimToken() { return generationClaimToken; }
+    public void setGenerationClaimToken(String value) { generationClaimToken = value; }
+    public LocalDateTime getGenerationLeaseUntil() { return generationLeaseUntil; }
+    public void setGenerationLeaseUntil(LocalDateTime value) { generationLeaseUntil = value; }
     public String getPublicationUrl() { return publicationUrl; }
     public void setPublicationUrl(String value) { publicationUrl = value; }
 }

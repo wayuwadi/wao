@@ -16,6 +16,16 @@ CREATE TABLE IF NOT EXISTS account (
     CONSTRAINT fk_local_account_member FOREIGN KEY (member_id) REFERENCES member(id)
 );
 
+-- 只保留 Agent 判断推荐模型可用所需的非敏感字段；生产由 WAO migration 管理。
+CREATE TABLE IF NOT EXISTS ai_account (
+    id VARCHAR(32) PRIMARY KEY,
+    provider VARCHAR(24) NOT NULL,
+    model VARCHAR(128),
+    auth_method VARCHAR(16) NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL
+);
+
 MERGE INTO member (id, name, initial, color, role) KEY(id)
 VALUES ('demo', '本地演示用户', '演', '#6556D8', 'owner');
 MERGE INTO account (id, member_id, status, created_at, updated_at) KEY(id)
@@ -184,6 +194,11 @@ CREATE TABLE IF NOT EXISTS agent_publish_task (
     source_notes CLOB,
     use_wao_context BOOLEAN NOT NULL DEFAULT TRUE,
     source_context_json CLOB,
+    generation_executor VARCHAR(24),
+    generation_system_prompt CLOB,
+    generation_user_prompt CLOB,
+    generation_claim_token VARCHAR(64),
+    generation_lease_until TIMESTAMP,
     publication_url VARCHAR(1000),
     CONSTRAINT fk_local_agent_publish_workspace FOREIGN KEY (workspace_id) REFERENCES agent_workspace(id),
     CONSTRAINT fk_local_agent_publish_requester FOREIGN KEY (requested_by_account_id) REFERENCES account(id),
@@ -245,6 +260,8 @@ CREATE INDEX IF NOT EXISTS idx_agent_platform_account_ws ON agent_platform_accou
 CREATE INDEX IF NOT EXISTS idx_agent_media_workspace ON agent_media_asset(workspace_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_publish_workspace ON agent_publish_task(workspace_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_agent_publish_status ON agent_publish_task(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_agent_publish_generation
+    ON agent_publish_task(status, generation_executor, generation_lease_until, updated_at);
 
 CREATE TABLE IF NOT EXISTS agent_publish_metric_snapshot (
     id VARCHAR(36) PRIMARY KEY,

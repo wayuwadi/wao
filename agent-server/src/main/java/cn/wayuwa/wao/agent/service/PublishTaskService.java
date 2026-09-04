@@ -2,6 +2,8 @@ package cn.wayuwa.wao.agent.service;
 
 import cn.wayuwa.wao.agent.ai.ContentGenerator;
 import cn.wayuwa.wao.agent.ai.GeneratedContent;
+import cn.wayuwa.wao.agent.ai.PromptLibrary;
+import cn.wayuwa.wao.agent.ai.RecommendedModelCatalog;
 import cn.wayuwa.wao.agent.common.BadRequestException;
 import cn.wayuwa.wao.agent.common.ConflictException;
 import cn.wayuwa.wao.agent.config.NodeProperties;
@@ -59,6 +61,8 @@ public class PublishTaskService {
     public static final String PUBLISHING = "PUBLISHING";
     public static final String PUBLISHED = "PUBLISHED";
     public static final String FAILED = "FAILED";
+    private static final String LOCAL_EXECUTOR = "AGENT_LOCAL";
+    private static final String CENTRAL_EXECUTOR = "WAO_RECOMMENDED";
 
     private final SharedAccountService accounts;
     private final PlatformAccountService platformAccounts;
@@ -66,6 +70,7 @@ public class PublishTaskService {
     private final PublishTaskMapper taskMapper;
     private final PlatformRegistry registry;
     private final ContentGenerator generator;
+    private final RecommendedModelCatalog recommendedModels;
     private final WorkspaceProfileService profiles;
     private final HotspotService hotspots;
     private final NodeProperties node;
@@ -76,7 +81,8 @@ public class PublishTaskService {
     public PublishTaskService(SharedAccountService accounts, PlatformAccountService platformAccounts,
                               MediaAssetService mediaAssets, PublishTaskMapper taskMapper,
                               PlatformRegistry registry, ContentGenerator generator,
-                              WorkspaceProfileService profiles, HotspotService hotspots, NodeProperties node,
+                              RecommendedModelCatalog recommendedModels, WorkspaceProfileService profiles,
+                              HotspotService hotspots, NodeProperties node,
                               CreatorContextService creatorContext, PublishMetricSnapshotMapper metrics) {
         this.accounts = accounts;
         this.platformAccounts = platformAccounts;
@@ -84,6 +90,7 @@ public class PublishTaskService {
         this.taskMapper = taskMapper;
         this.registry = registry;
         this.generator = generator;
+        this.recommendedModels = recommendedModels;
         this.profiles = profiles;
         this.hotspots = hotspots;
         this.node = node;
@@ -97,8 +104,8 @@ public class PublishTaskService {
         List<PublishTaskEntity> tasks = taskMapper.selectList(Wrappers.<PublishTaskEntity>lambdaQuery()
                 .eq(PublishTaskEntity::getWorkspaceId, workspaceId)
                 .orderByDesc(PublishTaskEntity::getCreatedAt).last("LIMIT 20"));
-        return new PublishCenterDto(accounts.session(accountId),
-                new AiStatusDto(generator.available(), generator.provider(), generator.model()),
+        AiStatusDto ai = aiStatus();
+        return new PublishCenterDto(accounts.session(accountId), ai,
                 platformAccounts.summaries(accountId),
                 tasks.stream().map(task -> toDto(task, workspaceId)).toList());
     }
@@ -108,8 +115,9 @@ public class PublishTaskService {
         String workspaceId = accounts.workspaceId(accountId);
         PlatformType type = PlatformType.parse(request.platform());
         boolean generate = Boolean.TRUE.equals(request.generateCopy());
-        if (generate && !generator.available()) {
-            throw new BadRequestException("尚未配置文案生成模型，请先配置 AGENT_AI_* 环境变量，或关闭自动生成后手工填写文案");
+        String generationExecutor = generate ? generationExecutor() : null;
+        if (generate && generationExecutor == null) {
+            throw new BadRequestException("当前没有可用的推荐模型，请在 WAO 的 AI 账号中启用模型后重试，或关闭 AI 生成创建手稿");
         }
         LocalDateTime now = LocalDateTime.now();
         PublishTaskEntity task = new PublishTaskEntity();
@@ -123,11 +131,40 @@ public class PublishTaskService {
         task.setUseWaoContext(!Boolean.FALSE.equals(request.useWaoContext()));
         task.setStatus(generate ? GENERATING : DRAFT);
         task.setProgress(generate ? 10 : 0);
+        if (generate) prepareGeneration(task, type, generationExecutor);
         task.setVersion(1);
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
         taskMapper.insert(task);
         return toDto(task, workspaceId);
+    }
+
+    /** 生成失败后沿用当时固化的资料再次入队，不重新读取可能已变化的上下文。 */
+    public PublishTaskDto retryGeneration(String accountId, String taskId) {
+        String workspaceId = accounts.workspaceId(accountId);
+        PublishTaskEntity task = require(workspaceId, taskId);
+        if (!FAILED.equals(task.getStatus()) || !StringUtils.hasText(task.getGenerationSystemPrompt())
+                || !StringUtils.hasText(task.getGenerationUserPrompt())) {
+            throw new ConflictException("当前任务没有可重试的文案生成请求");
+        }
+        String executor = generationExecutor();
+        if (executor == null) {
+            throw new BadRequestException("当前没有可用的推荐模型，请先在 WAO 的 AI 账号中启用模型");
+        }
+        int updated = taskMapper.update(null, Wrappers.<PublishTaskEntity>lambdaUpdate()
+                .eq(PublishTaskEntity::getId, taskId)
+                .eq(PublishTaskEntity::getWorkspaceId, workspaceId)
+                .eq(PublishTaskEntity::getStatus, FAILED)
+                .set(PublishTaskEntity::getGenerationExecutor, executor)
+                .set(PublishTaskEntity::getGenerationClaimToken, null)
+                .set(PublishTaskEntity::getGenerationLeaseUntil, null)
+                .set(PublishTaskEntity::getNodeId, null)
+                .set(PublishTaskEntity::getStatus, GENERATING)
+                .set(PublishTaskEntity::getProgress, 10)
+                .set(PublishTaskEntity::getErrorMessage, null)
+                .set(PublishTaskEntity::getUpdatedAt, LocalDateTime.now()));
+        if (updated == 0) throw new ConflictException("任务状态已经变化，请刷新后重试");
+        return toDto(require(workspaceId, taskId), workspaceId);
     }
 
     /** 人工审核阶段修改文案、素材和目标账号，按 version 乐观锁。 */
@@ -157,6 +194,11 @@ public class PublishTaskService {
                 .set(PublishTaskEntity::getPlatformAccountId, emptyToNull(request.platformAccountId()))
                 .set(PublishTaskEntity::getMediaAssetId, emptyToNull(request.mediaAssetId()))
                 .set(PublishTaskEntity::getStatus, WAITING_REVIEW)
+                .set(PublishTaskEntity::getGenerationSystemPrompt, null)
+                .set(PublishTaskEntity::getGenerationUserPrompt, null)
+                .set(PublishTaskEntity::getGenerationClaimToken, null)
+                .set(PublishTaskEntity::getGenerationLeaseUntil, null)
+                .set(PublishTaskEntity::getErrorMessage, null)
                 .set(PublishTaskEntity::getVersion, expected + 1)
                 .set(PublishTaskEntity::getUpdatedAt, LocalDateTime.now()));
         if (updated == 0) throw new ConflictException("任务已在别处更新，请刷新后重试");
@@ -278,24 +320,20 @@ public class PublishTaskService {
         return toDto(require(workspaceId, taskId), workspaceId);
     }
 
-    /** 推进生成中的任务；任意节点都可以执行，靠乐观锁抢占。 */
+    /** 推进由 Agent 本地模型执行的生成任务；WAO 推荐模型任务由主服务领取。 */
     @Scheduled(fixedDelayString = "${wao-agent.publish.generate-delay-ms:2000}")
     public void processGenerating() {
         if (!generator.available()) return;
         List<PublishTaskEntity> pending = taskMapper.selectList(Wrappers.<PublishTaskEntity>lambdaQuery()
                 .eq(PublishTaskEntity::getStatus, GENERATING)
+                .eq(PublishTaskEntity::getGenerationExecutor, LOCAL_EXECUTOR)
                 .isNull(PublishTaskEntity::getNodeId)
                 .orderByAsc(PublishTaskEntity::getUpdatedAt).last("LIMIT 5"));
         for (PublishTaskEntity task : pending) {
             if (!claim(task)) continue;
             try {
-                CreatorContextService.Context context = Boolean.FALSE.equals(task.getUseWaoContext())
-                        ? new CreatorContextService.Context("", List.of())
-                        : creatorContext.find(accounts.memberId(task.getRequestedByAccountId()), task.getWorkspaceId(),
-                        task.getTopic(), task.getSourceNotes());
-                GeneratedContent copy = generator.generate(task.getTopic(),
-                        PlatformType.valueOf(task.getPlatform()), profiles.find(task.getWorkspaceId()),
-                        task.getSourceNotes(), context.prompt());
+                GeneratedContent copy = generator.generatePrepared(task.getGenerationSystemPrompt(),
+                        task.getGenerationUserPrompt(), task.getTopic());
                 taskMapper.update(null, Wrappers.<PublishTaskEntity>lambdaUpdate()
                         .eq(PublishTaskEntity::getId, task.getId())
                         .set(PublishTaskEntity::getTitle, trim(copy.title(), 200))
@@ -303,7 +341,10 @@ public class PublishTaskService {
                         .set(PublishTaskEntity::getTagsJson, writeTags(copy.tags()))
                         .set(PublishTaskEntity::getCoverText, trim(copy.coverText(), 200))
                         .set(PublishTaskEntity::getStructureJson, writeJson(copy.blocks()))
-                        .set(PublishTaskEntity::getSourceContextJson, writeSources(context.sources()))
+                        .set(PublishTaskEntity::getGenerationSystemPrompt, null)
+                        .set(PublishTaskEntity::getGenerationUserPrompt, null)
+                        .set(PublishTaskEntity::getGenerationClaimToken, null)
+                        .set(PublishTaskEntity::getGenerationLeaseUntil, null)
                         .set(PublishTaskEntity::getStatus, WAITING_REVIEW)
                         .set(PublishTaskEntity::getProgress, 45)
                         .set(PublishTaskEntity::getNodeId, null)
@@ -403,8 +444,36 @@ public class PublishTaskService {
                 task.getSourceNotes(), !Boolean.FALSE.equals(task.getUseWaoContext()),
                 readSources(task.getSourceContextJson()), task.getStatus(), task.getProgress(),
                 task.getPlatformItemId(), task.getPublicationUrl(), metricDtos(task.getId(), workspaceId),
-                task.getErrorMessage(),
+                task.getErrorMessage(), FAILED.equals(task.getStatus())
+                        && StringUtils.hasText(task.getGenerationSystemPrompt()),
                 task.getVersion(), task.getCreatedAt(), task.getUpdatedAt(), task.getPublishedAt());
+    }
+
+    private AiStatusDto aiStatus() {
+        if (generator.available()) {
+            return new AiStatusDto(true, generator.provider(), generator.model());
+        }
+        RecommendedModelCatalog.ModelMetadata central = recommendedModels.current();
+        return central == null
+                ? new AiStatusDto(false, null, null)
+                : new AiStatusDto(true, central.displayProvider(), central.model());
+    }
+
+    private String generationExecutor() {
+        if (generator.available()) return LOCAL_EXECUTOR;
+        return recommendedModels.current() == null ? null : CENTRAL_EXECUTOR;
+    }
+
+    private void prepareGeneration(PublishTaskEntity task, PlatformType platform, String executor) {
+        CreatorContextService.Context context = Boolean.FALSE.equals(task.getUseWaoContext())
+                ? new CreatorContextService.Context("", List.of())
+                : creatorContext.find(accounts.memberId(task.getRequestedByAccountId()), task.getWorkspaceId(),
+                task.getTopic(), task.getSourceNotes());
+        task.setGenerationExecutor(executor);
+        task.setGenerationSystemPrompt(PromptLibrary.content(platform, profiles.find(task.getWorkspaceId()),
+                context.prompt()));
+        task.setGenerationUserPrompt(ContentGenerator.userPrompt(task.getTopic(), task.getSourceNotes()));
+        task.setSourceContextJson(writeSources(context.sources()));
     }
 
     private List<ContentMetricSnapshotDto> metricDtos(String taskId, String workspaceId) {

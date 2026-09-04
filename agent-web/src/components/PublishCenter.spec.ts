@@ -1,7 +1,10 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import PublishCenter from './PublishCenter.vue'
-import { createPublishTask, getPublishCenter, listMedia, updatePublicationData, updatePublishTask } from '@/api/publish'
+import {
+  createPublishTask, getPublishCenter, listMedia, retryPublishGeneration,
+  updatePublicationData, updatePublishTask,
+} from '@/api/publish'
 import { createKnowledgeArticle, listKnowledgeBases } from '@/api/knowledge'
 import type { PublishCenter as PublishCenterData, PublishTask } from '@/types'
 
@@ -15,6 +18,7 @@ vi.mock('@/api/publish', () => ({
   unbindAccount: vi.fn(),
   updatePublicationData: vi.fn(),
   updatePublishTask: vi.fn(),
+  retryPublishGeneration: vi.fn(),
   uploadMedia: vi.fn(),
 }))
 
@@ -46,7 +50,7 @@ function task(): PublishTask {
   return {
     id: 'pt-1', platform: 'DOUYIN', platformLabel: '抖音', topic: '真实话题',
     tags: [], blocks: [], sourceNotes: '', useWaoContext: true, contextSources: [],
-    metricHistory: [], status: 'DRAFT', progress: 0, version: 1,
+    metricHistory: [], status: 'DRAFT', progress: 0, generationRetryable: false, version: 1,
     createdAt: '2026-08-11T12:00:00', updatedAt: '2026-08-11T12:00:00',
   }
 }
@@ -60,18 +64,66 @@ describe('真实发布中心', () => {
     vi.mocked(listKnowledgeBases).mockResolvedValue([])
   })
 
-  it('模型未配置时如实降级为手写稿且不请求模拟生成', async () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('模型未配置时保留用户的生成意图，不静默创建空白手稿', async () => {
     const wrapper = mount(PublishCenter, { props: { initialTopic: '从真实热点生成内容' } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('尚未配置模型，只能手工写稿')
+    expect(wrapper.text()).toContain('当前没有可用模型')
     expect(wrapper.text()).toContain('没有第三方内容发布接口，只能导出后人工发布')
     await wrapper.get('.create-card > button').trigger('click')
     await flushPromises()
 
     expect(createPublishTask).toHaveBeenCalledWith(
-      '从真实热点生成内容', 'WECHAT_MP', false, undefined, '', true,
+      '从真实热点生成内容', 'WECHAT_MP', true, undefined, '', true,
     )
+    wrapper.unmount()
+  })
+
+  it('生成任务完成后自动轮询并把标题正文回填到编辑器', async () => {
+    vi.useFakeTimers()
+    const generating = {
+      ...task(), status: 'GENERATING', progress: 10, topic: '什么是 AI、Skill 和 MCP',
+    }
+    const completed = {
+      ...generating, status: 'WAITING_REVIEW', progress: 45,
+      title: 'AI、Skill 与 MCP：程序员朋友讲明白', content: '先说结论：它们分别解决不同层次的问题。',
+    }
+    const available = { ...structuredClone(center), ai: { available: true, provider: 'WAO 推荐模型', model: 'deepseek-v4-pro' } }
+    vi.mocked(getPublishCenter)
+      .mockResolvedValueOnce(available)
+      .mockResolvedValueOnce({ ...available, tasks: [generating] })
+      .mockResolvedValueOnce({ ...available, tasks: [completed] })
+    vi.mocked(createPublishTask).mockResolvedValue(generating)
+
+    const wrapper = mount(PublishCenter, { props: { initialTopic: generating.topic, mode: 'content' } })
+    await flushPromises()
+    await wrapper.get('.create-card > button').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('AI 正在生成标题和正文')
+
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+    expect(wrapper.get('.editor input[maxlength="200"]').element).toHaveProperty('value', completed.title)
+    expect(wrapper.get('.live-preview iframe').attributes('srcdoc')).toContain(completed.content)
+    wrapper.unmount()
+  })
+
+  it('生成失败时提供原任务的一键重试', async () => {
+    const failed = {
+      ...task(), status: 'FAILED', progress: 25, generationRetryable: true,
+      errorMessage: '生成文案失败：模型暂时繁忙',
+    }
+    vi.mocked(getPublishCenter).mockResolvedValue({ ...structuredClone(center), tasks: [failed] })
+    vi.mocked(retryPublishGeneration).mockResolvedValue({
+      ...failed, status: 'GENERATING', errorMessage: undefined, generationRetryable: true,
+    })
+    const wrapper = mount(PublishCenter, { props: { mode: 'content' } })
+    await flushPromises()
+    await wrapper.get('.task-error button').trigger('click')
+    await flushPromises()
+    expect(retryPublishGeneration).toHaveBeenCalledWith('pt-1')
     wrapper.unmount()
   })
 
