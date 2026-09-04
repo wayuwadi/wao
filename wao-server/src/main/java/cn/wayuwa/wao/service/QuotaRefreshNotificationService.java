@@ -94,6 +94,10 @@ public class QuotaRefreshNotificationService {
             }
         }
         safelyObserve(sourceKey, label, points);
+        if (report.resetCredits() != null && report.resetCredits().availableCount() != null) {
+            safelyObserve(sourceKey + ":reset-cards", label, List.of(new QuotaPoint("reset-cards",
+                    "可用重置卡", report.resetCredits().availableCount(), null)));
+        }
     }
 
     private void safelyObserve(String sourceKey, String accountLabel, List<QuotaPoint> points) {
@@ -109,7 +113,8 @@ public class QuotaRefreshNotificationService {
     private void observe(String sourceKey, String accountLabel, List<QuotaPoint> points) {
         List<QuotaPoint> current = points.stream()
                 .filter(point -> point != null && StringUtils.hasText(point.key()))
-                .map(point -> new QuotaPoint(point.key(), point.label(), clamp(point.remainingPercent()),
+                .map(point -> new QuotaPoint(point.key(), point.label(), "reset-cards".equals(point.key())
+                        ? Math.max(0, point.remainingPercent()) : clamp(point.remainingPercent()),
                         point.resetsAt()))
                 .sorted(Comparator.comparing(QuotaPoint::key))
                 .toList();
@@ -141,12 +146,14 @@ public class QuotaRefreshNotificationService {
             updateBaseline(state, accountLabel, current);
             return;
         }
+        boolean resetCards = current.stream().allMatch(point -> "reset-cards".equals(point.key()));
+        String unit = resetCards ? " 张" : "%";
         String changes = increases.stream().map(increase -> "- **" + increase.current.label() + "**："
-                        + increase.previous.remainingPercent() + "% → " + increase.current.remainingPercent() + "%"
+                        + increase.previous.remainingPercent() + unit + " → " + increase.current.remainingPercent() + unit
                         + resetSuffix(increase.current.resetsAt()))
                 .collect(java.util.stream.Collectors.joining("\n"));
         FeishuWebhookNotifier.Card card = new FeishuWebhookNotifier.Card(
-                "AI 额度已刷新", "green", List.of(List.of("账号", safeLabel(accountLabel))),
+                resetCards ? "Codex 重置卡已增加" : "AI 额度已刷新", "green", List.of(List.of("账号", safeLabel(accountLabel))),
                 changes + "\n\n额度来自最新真实采样，可以继续安排需要消耗额度的任务。",
                 homeUrl == null ? null : "查看首页额度", homeUrl);
         if (notifier.notifyCard(card)) updateBaseline(state, accountLabel, current);

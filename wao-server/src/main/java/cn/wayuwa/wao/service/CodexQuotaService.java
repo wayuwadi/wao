@@ -11,6 +11,7 @@ import java.util.Map;
 import cn.wayuwa.wao.domain.AiRunnerNodeEntity;
 import cn.wayuwa.wao.domain.CodexRunnerQuotaEntity;
 import cn.wayuwa.wao.dto.CodexQuotaAccountDto;
+import cn.wayuwa.wao.dto.CodexResetCreditsDto;
 import cn.wayuwa.wao.dto.CodexQuotaCreditsDto;
 import cn.wayuwa.wao.dto.CodexQuotaLimitDto;
 import cn.wayuwa.wao.dto.CodexQuotaWindowDto;
@@ -118,7 +119,8 @@ public class CodexQuotaService {
                     .anyMatch(runner -> runner.getLastSeenAt() != null && runner.getLastSeenAt().isAfter(onlineCutoff));
             boolean fresh = online && latest.getLastSuccessAt().isAfter(freshCutoff);
             result.add(new CodexQuotaAccountDto(entry.getKey(), report.accountEmail(), report.plan(),
-                    report.credits(), report.limits(), names, latest.getLastSuccessAt().toString(), fresh));
+                    report.credits(), report.limits(), names, latest.getLastSuccessAt().toString(), fresh,
+                    report.resetCredits()));
         }
         return result;
     }
@@ -135,7 +137,18 @@ public class CodexQuotaService {
                 .map(this::sanitizeLimit)
                 .filter(item -> !item.windows().isEmpty())
                 .toList();
-        return new RunnerCodexQuotaReport(email, plan, credits, limits);
+        CodexResetCreditsDto reset = report.resetCredits();
+        if (reset != null) {
+            if (reset.availableCount() == null || reset.availableCount() < 0 || reset.availableCount() > 1_000_000) reset = null;
+            else reset = new CodexResetCreditsDto(reset.availableCount(), reset.credits() == null ? List.of()
+                    : reset.credits().stream().filter(java.util.Objects::nonNull).limit(50)
+                    .map(item -> new CodexResetCreditsDto.Credit(validEpoch(item.grantedAt()), validEpoch(item.expiresAt()))).toList());
+        }
+        return new RunnerCodexQuotaReport(email, plan, credits, limits, reset);
+    }
+
+    private static Long validEpoch(Long value) {
+        return value != null && value > 0 && value <= 253402300799L ? value : null;
     }
 
     private CodexQuotaLimitDto sanitizeLimit(CodexQuotaLimitDto limit) {

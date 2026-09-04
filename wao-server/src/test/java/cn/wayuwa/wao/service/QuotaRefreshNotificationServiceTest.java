@@ -29,6 +29,24 @@ class QuotaRefreshNotificationServiceTest {
             mapper, notifier, notificationSettings, new ObjectMapper(), "https://wao.example/");
 
     @Test
+    void resetCardIncreaseUsesCountAboveOneHundredAndSharedAccountBaseline() {
+        var resetState = new QuotaRefreshNotificationStateEntity();
+        resetState.setSnapshotJson("[{\"key\":\"reset-cards\",\"label\":\"可用重置卡\",\"remainingPercent\":123,\"resetsAt\":null}]");
+        when(mapper.selectForUpdate("runner-account:wage@example.com:reset-cards")).thenReturn(resetState);
+        when(notificationSettings.allows(any())).thenReturn(true);
+        when(notifier.notifyCard(any())).thenReturn(true);
+        var base = report(20);
+        var current = new RunnerCodexQuotaReport(base.accountEmail(), base.plan(), base.credits(), base.limits(),
+                new cn.wayuwa.wao.dto.CodexResetCreditsDto(125, List.of()));
+        service.observeRunner("rn1", current);
+        service.observeRunner("rn2", current);
+        var card = ArgumentCaptor.forClass(FeishuWebhookNotifier.Card.class);
+        verify(notifier).notifyCard(card.capture());
+        assertThat(card.getValue().title()).isEqualTo("Codex 重置卡已增加");
+        assertThat(card.getValue().body()).contains("123 张 → 125 张").doesNotContain("125%");
+    }
+
+    @Test
     void firstRealSnapshotOnlyCreatesBaseline() {
         service.observeRunner("rn1", report(20));
 
