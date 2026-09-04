@@ -5,7 +5,12 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
-import { MAX_TASK_GROUPS } from '@/types'
+import { apiPatchProject } from '@/api/board'
+
+vi.mock('@/api/board', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/api/board')>(),
+  apiPatchProject: vi.fn(),
+}))
 
 vi.mock('@/api/ai', () => ({
   createAiRuns: vi.fn<() => Promise<unknown[]>>().mockResolvedValue([]),
@@ -78,7 +83,7 @@ describe('项目分组视图', () => {
     wrapper.unmount()
   })
 
-  it('分组名可以改，最多只能建 6 个', async () => {
+  it('分组名可以改，超过 6 个仍可继续新建', async () => {
     const wrapper = await mountGroupView()
 
     await wrapper.find('.group-name').trigger('click')
@@ -88,15 +93,37 @@ describe('项目分组视图', () => {
     await flushPromises()
     expect(data.taskGroupsOf('p1')[0]!.name).toBe('证件')
 
-    for (let i = data.taskGroupsOf('p1').length; i < MAX_TASK_GROUPS; i++) {
+    for (let i = data.taskGroupsOf('p1').length; i < 8; i++) {
       await wrapper.find('.group-add').trigger('click')
       await flushPromises()
     }
-    expect(data.taskGroupsOf('p1')).toHaveLength(MAX_TASK_GROUPS)
-    // 满了以后加号消失，换成一句说明
-    expect(wrapper.find('.group-add').exists()).toBe(false)
-    expect(wrapper.find('.group-full').text()).toContain(String(MAX_TASK_GROUPS))
+    expect(data.taskGroupsOf('p1')).toHaveLength(8)
+    expect(wrapper.find('.group-add').exists()).toBe(true)
     wrapper.unmount()
+  })
+
+  it('分组独立折叠并在重新进入时恢复，快速新建会展开', async () => {
+    await data.setTaskGroups('p1', [{ id: 'g1', name: '证件' }, { id: 'g2', name: '装修' }])
+    let wrapper = await mountGroupView()
+    await wrapper.findAll('.group-collapse')[0]!.trigger('click')
+    expect(wrapper.findAll('.group-body')[0]!.isVisible()).toBe(false)
+    expect(wrapper.findAll('.group-body')[1]!.isVisible()).toBe(true)
+    wrapper.unmount()
+    wrapper = await mountGroupView()
+    expect(wrapper.findAll('.group-body')[0]!.isVisible()).toBe(false)
+    await wrapper.find('.group-head .group-op').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.group-collapse')[0]!.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('.group-add-row').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('服务器保存失败时不把新分组冒充已保存', async () => {
+    const before = data.taskGroupsOf('p1')
+    data.apiLive = true
+    vi.mocked(apiPatchProject).mockRejectedValueOnce(new Error('网络中断'))
+    expect(await data.setTaskGroups('p1', [...before, { id: 'failed', name: '尚未保存' }])).toBe(false)
+    expect(data.taskGroupsOf('p1')).toEqual(before)
   })
 
   it('删掉分组不会连带删任务——里面的任务落回第一个分组', async () => {

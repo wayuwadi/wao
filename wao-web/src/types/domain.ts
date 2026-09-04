@@ -69,8 +69,6 @@ export interface TaskGroup {
   name: string
 }
 
-/** 一个项目最多能建的任务分组数，与后端 ProjectService.MAX_TASK_GROUPS 一致。 */
-export const MAX_TASK_GROUPS = 6
 
 /** 任务 / 项目内嵌图片（url 为 data: 或远程链接）。 */
 export interface ImageRef {
@@ -103,7 +101,7 @@ export interface Project {
   activity: Activity[]
   /** 这个项目的动静要不要发飞书群；老数据没有这个字段时按开处理。 */
   notifyEnabled?: boolean
-  /** 自定义任务分组（分组视图），最多 {@link MAX_TASK_GROUPS} 个；没建过时为空。 */
+  /** 自定义任务分组（分组视图）；没建过时为空。 */
   taskGroups?: TaskGroup[]
 }
 
