@@ -1,4 +1,4 @@
-# ADR-197：高级文档以版本化 JSON 为事实源并保留 Markdown 投影
+# ADR-198：高级文档以版本化 JSON 为事实源并保留 Markdown 投影
 
 ## 状态
 
