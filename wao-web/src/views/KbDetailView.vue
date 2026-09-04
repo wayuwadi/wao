@@ -199,6 +199,32 @@ function selectDoc(id: string) {
   docId.value = id
   void router.replace({ query: { ...route.query, doc: id } })
 }
+let preparingDocumentTask = false
+async function addSelectionToTask(text: string) {
+  if (!text.trim() || !docId.value || preparingDocumentTask) return
+  preparingDocumentTask = true
+  try {
+    const id = docId.value
+    const sourceTitle = doc.value?.title || '未命名文档'
+    const projectId = kb.value?.project || ''
+    const sourceUrl = `/kb/${encodeURIComponent(kbId.value)}?doc=${encodeURIComponent(id)}`
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+    const selectionId = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+    ui.openModal('task', projectId)
+    ui.modalTaskSeed = {
+      draftKey: `wao-document-task-draft:${session.userId}:${id}:${selectionId}`,
+      title: text.trim().replace(/\s+/g, ' ').slice(0, 200),
+      desc: `${text.trim()}\n\n[查看来源文档](${sourceUrl})`,
+      sourceTitle,
+      sourceUrl,
+      sourceDocId: id,
+    }
+  } catch {
+    toast('暂时无法准备待办，请重试；文档内容未改变', 'ri-error-warning-line')
+  } finally {
+    preparingDocumentTask = false
+  }
+}
 function openDoc(id: string) {
   const k = data.kbs.find((kk) => kk.folders.some((f) => f.docs.includes(id)))
   if (k && k.id !== kbId.value) router.push({ path: `/kb/${k.id}`, query: { doc: id } })
@@ -999,6 +1025,7 @@ async function keepConflictCopy() {
               allow-h1
               advanced
               polishable
+              taskable
               link-controls
               image-controls
               placeholder="开始写作…敲 # / ## 变标题、Tab 缩进，可直接粘贴截图"
@@ -1006,6 +1033,7 @@ async function keepConflictCopy() {
               :peers="peers"
               @caret-line="setCaretLine"
               @content-change="onContentChange"
+              @add-task="addSelectionToTask"
               @upload-image="onUploadImage"
               @upload-file="onUploadFile"
             />

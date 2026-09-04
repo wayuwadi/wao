@@ -9,6 +9,7 @@ import KbDetailView from '@/views/KbDetailView.vue'
 import { useDataStore } from '@/stores/data'
 import { seedDataStore } from './helpers/seedDataStore'
 import { useSessionStore } from '@/stores/session'
+import { useUiStore } from '@/stores/ui'
 import { apiPatchDocTemplate, fetchDocTemplates } from '@/api/board'
 
 vi.mock('@/api/board', async (importOriginal) => {
@@ -89,6 +90,28 @@ describe('知识库详情目录体验', () => {
     await folders[1]!.get('.folder-btn').trigger('click')
     expect(wrapper.findAll('.doc-tree')).toHaveLength(2)
     wrapper.unmount()
+  })
+
+  it('从文档选区创建待办时带入知识库真实项目和完整原文，并隔离不同选区草稿', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7')
+    useDataStore(pinia).kbById('k3')!.project = 'p2'
+    const vm = wrapper.vm as unknown as { addSelectionToTask: (text: string) => Promise<void> }
+    const text = '需要处理的事项\n' + '完整正文'.repeat(80)
+    await vm.addSelectionToTask(text)
+    const ui = useUiStore(pinia)
+    expect(ui.modal).toBe('task')
+    expect(ui.modalProject).toBe('p2')
+    expect(ui.modalTaskSeed?.title).toHaveLength(200)
+    expect(ui.modalTaskSeed?.desc).toContain(text)
+    expect(ui.modalTaskSeed?.desc).toContain('[查看来源文档](/kb/k3?doc=d7)')
+    expect(ui.modalTaskSeed?.sourceUrl).toBe('/kb/k3?doc=d7')
+    const key = ui.modalTaskSeed?.draftKey
+    await vm.addSelectionToTask('另一个待办')
+    expect(ui.modalTaskSeed?.draftKey).not.toBe(key)
+    await vm.addSelectionToTask(text)
+    expect(ui.modalTaskSeed?.draftKey).toBe(key)
+    ui.openModal('task')
+    expect(ui.modalTaskSeed).toBeNull()
   })
 
   it('从链接直达另一篇文档时展开它所在的文件夹', async () => {

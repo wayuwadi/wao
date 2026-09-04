@@ -4,6 +4,8 @@ import { nextTick } from 'vue'
 import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
 import { polishDocumentText } from '@/api/assistant'
 import type { RichDocNode } from '@/types'
+import type { Editor } from '@tiptap/core'
+import { BubbleMenu } from '@tiptap/vue-3/menus'
 
 vi.mock('@/api/assistant', () => ({
   polishDocumentText: vi.fn<(text: string) => Promise<{ polished: string }>>(),
@@ -24,6 +26,7 @@ async function mountEditor(props: {
     editing: boolean
   }[]
   polishable?: boolean
+  taskable?: boolean
   linkControls?: boolean
   imageControls?: boolean
   advanced?: boolean
@@ -500,6 +503,26 @@ describe('MarkdownEditor（所见即所得）', () => {
       '/api/images/first/raw',
       '/api/images/second/raw',
     ])
+    w.unmount()
+  })
+
+  it('划词格式、链接、润色和待办只使用一份清单，添加待办不改正文', async () => {
+    const w = await mountEditor({ modelValue: '记录明天的待办', advanced: true, polishable: true, linkControls: true, taskable: true })
+    const instance = w.vm as unknown as { editor: Editor; addSelectionTask: () => void }
+    instance.editor.commands.setTextSelection({ from: 1, to: 8 })
+    await nextTick()
+    expect(w.findAllComponents(BubbleMenu)).toHaveLength(1)
+    expect(w.findAllComponents(BubbleMenu)[0]!.props('pluginKey')).toBe('documentSelectionMenu')
+    const before = instance.editor.getJSON()
+    instance.addSelectionTask()
+    expect(w.emitted('add-task')).toEqual([['记录明天的待办']])
+    expect(instance.editor.getJSON()).toEqual(before)
+    instance.addSelectionTask()
+    expect(w.emitted('add-task')).toHaveLength(1)
+    await w.setProps({ readonly: true })
+    instance.editor.commands.setTextSelection({ from: 1, to: 8 })
+    instance.addSelectionTask()
+    expect(w.emitted('add-task')).toHaveLength(1)
     w.unmount()
   })
 

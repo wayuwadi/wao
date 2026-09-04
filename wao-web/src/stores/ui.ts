@@ -10,6 +10,15 @@ import { usePreferenceStore } from '@/stores/preferences'
  */
 export type TaskView = 'list' | 'board' | 'group'
 
+export interface DocumentTaskSeed {
+  draftKey: string
+  title: string
+  desc: string
+  sourceTitle: string
+  sourceUrl: string
+  sourceDocId?: string
+}
+
 const TASK_VIEW_KEY = 'wao-task-view-v1'
 const CREATOR_FILTER_KEY = 'wao-proj-creator-filter-v1'
 
@@ -71,6 +80,7 @@ export const useUiStore = defineStore('ui', () => {
 
   const modal = ref<'task' | 'project' | 'note' | null>(null)
   const modalProject = ref<string>('') // 新建任务时预选的项目
+  const modalTaskSeed = ref<DocumentTaskSeed | null>(null)
   const modalDue = ref<string>('') // 新建任务时预设的截止日期（ISO，日历双击带入）
   const modalStartAt = ref<string>('') // 日/周时间轴框选后的开始时间
   const modalEndAt = ref<string>('') // 日/周时间轴框选后的结束时间
@@ -107,6 +117,7 @@ export const useUiStore = defineStore('ui', () => {
     presetStartAt = '',
     presetEndAt = '',
   ) {
+    modalTaskSeed.value = null
     modal.value = kind
     modalProject.value = presetProject
     modalDue.value = presetDue
@@ -203,7 +214,7 @@ export const useUiStore = defineStore('ui', () => {
   }
 
   return {
-    openTaskId, modal, modalProject, modalDue, modalStartAt, modalEndAt,
+    openTaskId, modal, modalProject, modalTaskSeed, modalDue, modalStartAt, modalEndAt,
     searchOpen, celebrating, helpOpen, assistantOpen, assistantDraft,
     chatOpen, chatReviewId, chatReviewRequestVersion, taskViews,
     openTask, closeTask, openModal, closeModal, openSearch, closeSearch, celebrate, stopCelebrate,
