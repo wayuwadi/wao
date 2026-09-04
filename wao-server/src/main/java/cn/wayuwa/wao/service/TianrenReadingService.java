@@ -106,6 +106,17 @@ public class TianrenReadingService {
                 .stream().map(this::view).toList();
     }
 
+    /** 按日历可见范围读取本人真实卦象，最多覆盖一个闰年，不生成新记录。 */
+    public List<TianrenReadingDto> calendar(String memberId, LocalDate from, LocalDate to) {
+        requireMember(memberId);
+        if (from == null || to == null || to.isBefore(from) || java.time.temporal.ChronoUnit.DAYS.between(from, to) > 365)
+            throw new BadRequestException("卦象查询日期范围应为 1–366 天");
+        return mapper.selectList(new LambdaQueryWrapper<TianrenDailyReadingEntity>()
+                .eq(TianrenDailyReadingEntity::getMemberId, memberId)
+                .between(TianrenDailyReadingEntity::getReadingDate, from, to)
+                .orderByDesc(TianrenDailyReadingEntity::getReadingDate)).stream().map(this::view).toList();
+    }
+
     /**
      * 为当前成员拥有的一份卦象按需生成稳定的公开分享凭据。
      *

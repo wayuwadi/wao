@@ -65,6 +65,14 @@ public class TianrenController {
         return ApiResponse.ok(readings.history(member(http), limit));
     }
 
+    /** 日历只读取登录成员已经保存的卦象。 */
+    @GetMapping("/calendar")
+    public ApiResponse<List<TianrenReadingDto>> calendar(@RequestParam LocalDate from, @RequestParam LocalDate to, HttpServletRequest http) {
+        String id = currentMember.id(http);
+        if (id == null) throw new cn.wayuwa.wao.common.UnauthorizedException("请先登录");
+        return ApiResponse.ok(readings.calendar(id, from, to));
+    }
+
     /** 为当前成员拥有的卦象生成或返回同一个公开分享凭据。 */
     @PostMapping("/{id}/share")
     public ApiResponse<TianrenShareTokenDto> share(@PathVariable String id, HttpServletRequest http) {

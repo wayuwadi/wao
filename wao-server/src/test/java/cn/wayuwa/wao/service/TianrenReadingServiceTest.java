@@ -19,6 +19,17 @@ import org.junit.jupiter.api.Test;
 
 class TianrenReadingServiceTest {
 
+    @Test void calendarRejectsInvalidOrExcessiveDateRanges() {
+        assertThatThrownBy(() -> service.calendar("wg", LocalDate.of(2026, 1, 1), LocalDate.of(2027, 1, 2))).hasMessageContaining("日期范围");
+        assertThatThrownBy(() -> service.calendar("wg", LocalDate.of(2026, 2, 1), LocalDate.of(2026, 1, 1))).hasMessageContaining("日期范围");
+    }
+
+    @Test void calendarOnlyReadsSavedRowsWithoutCreatingReading() {
+        when(mapper.selectList(any())).thenReturn(java.util.List.of(row()));
+        assertThat(service.calendar("wg", LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31))).hasSize(1);
+        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).insert(any(TianrenDailyReadingEntity.class));
+    }
+
     private final TianrenDailyReadingMapper mapper = mock(TianrenDailyReadingMapper.class);
     private final AiAssistantConversationService conversations = mock(AiAssistantConversationService.class);
     private final TianrenReadingService service = new TianrenReadingService(
