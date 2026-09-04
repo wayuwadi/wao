@@ -28,8 +28,16 @@ public final class PromptLibrary {
 
     /** 成稿提示词。要求模型只返回 JSON，字段随平台形态变化。 */
     public static String content(PlatformType platform, WorkspaceProfileEntity profile) {
+        return content(platform, profile, null);
+    }
+
+    /** 成稿提示词。creatorContext 只包含服务端按当前成员权限筛出的有界资料。 */
+    public static String content(PlatformType platform, WorkspaceProfileEntity profile, String creatorContext) {
         String base = "你是资深自媒体内容编辑。根据用户给的话题产出可直接使用的成稿。"
-                + "只返回一个 JSON 对象，不要代码块，不要任何解释文字。" + profileClause(profile);
+                + "文章中的个人经历、结果和数据必须有用户想法或 WAO 资料支持，不得补造。"
+                + "保留用户本人的判断和说话方式，AI 只负责整理、结构和表达。"
+                + "只返回一个 JSON 对象，不要代码块，不要任何解释文字。"
+                + profileClause(profile) + (StringUtils.hasText(creatorContext) ? creatorContext : "");
         return base + "\n" + switch (platform) {
             case DOUYIN -> """
                     平台：抖音短视频。产出口播脚本，总时长控制在 45 秒以内。

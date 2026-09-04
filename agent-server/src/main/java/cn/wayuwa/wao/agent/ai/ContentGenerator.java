@@ -40,7 +40,15 @@ public class ContentGenerator {
 
     /** 生成成稿。profile 可为 null，此时不带账号定位约束。 */
     public GeneratedContent generate(String topic, PlatformType platform, WorkspaceProfileEntity profile) {
-        String raw = chat.complete(PromptLibrary.content(platform, profile), "话题：" + topic, 0.8);
+        return generate(topic, platform, profile, null, null);
+    }
+
+    /** 结合成员本次想法和经过权限收窄的 WAO 资料生成成稿。 */
+    public GeneratedContent generate(String topic, PlatformType platform, WorkspaceProfileEntity profile,
+                                     String sourceNotes, String creatorContext) {
+        StringBuilder input = new StringBuilder("话题：").append(topic);
+        if (StringUtils.hasText(sourceNotes)) input.append("\n\n我的想法或对话摘录：\n").append(sourceNotes.trim());
+        String raw = chat.complete(PromptLibrary.content(platform, profile, creatorContext), input.toString(), 0.8);
         JsonNode node = chat.readJson(raw, false);
 
         String title = node.path("title").asText("").trim();

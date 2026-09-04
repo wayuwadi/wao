@@ -82,6 +82,15 @@ public class SharedAccountService {
         return session(accountId).workspaceId();
     }
 
+    /** 返回当前 WAO 账号对应的成员 id，供读取严格按成员隔离的创作上下文。 */
+    public String memberId(String accountId) {
+        SharedAccountDto account = accountMapper.findById(accountId);
+        if (account == null || !"ACTIVE".equals(account.status())) {
+            throw new UnauthorizedException("WAO 账号不存在或已停用");
+        }
+        return account.memberId();
+    }
+
     private String stableId(String type, String accountId) {
         return UUID.nameUUIDFromBytes(("wao-agent:" + type + ":" + accountId)
                 .getBytes(StandardCharsets.UTF_8)).toString();

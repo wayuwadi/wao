@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PublishCenter from './PublishCenter.vue'
-import { createPublishTask, getPublishCenter, listMedia, updatePublishTask } from '@/api/publish'
+import { createPublishTask, getPublishCenter, listMedia, updatePublicationData, updatePublishTask } from '@/api/publish'
 import { createKnowledgeArticle, listKnowledgeBases } from '@/api/knowledge'
 import type { PublishCenter as PublishCenterData, PublishTask } from '@/types'
 
@@ -13,6 +13,7 @@ vi.mock('@/api/publish', () => ({
   markPublishTaskPublished: vi.fn(),
   submitPublishTask: vi.fn(),
   unbindAccount: vi.fn(),
+  updatePublicationData: vi.fn(),
   updatePublishTask: vi.fn(),
   uploadMedia: vi.fn(),
 }))
@@ -34,6 +35,9 @@ const center: PublishCenterData = {
   }, {
     platform: 'WECHAT_VIDEO', label: '视频号', oauthSupported: false, publishSupported: false,
     mediaKinds: [], note: '没有第三方内容发布接口，只能导出后人工发布', accounts: [],
+  }, {
+    platform: 'WECHAT_MP', label: '公众号', oauthSupported: false, publishSupported: false,
+    mediaKinds: ['IMAGE'], note: '导出图文后人工发布', accounts: [],
   }],
   tasks: [],
 }
@@ -41,7 +45,8 @@ const center: PublishCenterData = {
 function task(): PublishTask {
   return {
     id: 'pt-1', platform: 'DOUYIN', platformLabel: '抖音', topic: '真实话题',
-    tags: [], blocks: [], status: 'DRAFT', progress: 0, version: 1,
+    tags: [], blocks: [], sourceNotes: '', useWaoContext: true, contextSources: [],
+    metricHistory: [], status: 'DRAFT', progress: 0, version: 1,
     createdAt: '2026-08-11T12:00:00', updatedAt: '2026-08-11T12:00:00',
   }
 }
@@ -64,7 +69,9 @@ describe('真实发布中心', () => {
     await wrapper.get('.create-card > button').trigger('click')
     await flushPromises()
 
-    expect(createPublishTask).toHaveBeenCalledWith('从真实热点生成内容', 'DOUYIN', false)
+    expect(createPublishTask).toHaveBeenCalledWith(
+      '从真实热点生成内容', 'WECHAT_MP', false, undefined, '', true,
+    )
     wrapper.unmount()
   })
 
@@ -77,7 +84,7 @@ describe('真实发布中心', () => {
 
     const content = mount(PublishCenter, { props: { mode: 'workbench' } })
     await flushPromises()
-    expect(content.text()).toContain('新建内容')
+    expect(content.text()).toContain('新建图文')
     expect(content.text()).toContain('抖音内容稿')
     expect(content.text()).toContain('已上传成片.webm · 4.0 KB')
     expect(content.text()).not.toContain('连接账号')
@@ -155,6 +162,32 @@ describe('真实发布中心', () => {
     }))
     expect(updatePublishTask).toHaveBeenCalledWith('pt-1', expect.objectContaining({
       content: expect.stringContaining('```mermaid\nflowchart LR'),
+    }))
+  })
+
+  it('已发布内容保存链接并追加一组效果数据', async () => {
+    const published = {
+      ...task(), status: 'PUBLISHED', progress: 100, version: 3,
+      publishedAt: '2026-09-04T10:00:00', publicationUrl: '',
+    }
+    vi.mocked(getPublishCenter).mockResolvedValue({ ...structuredClone(center), tasks: [published] })
+    vi.mocked(updatePublicationData).mockResolvedValue({
+      ...published, version: 4, publicationUrl: 'https://example.com/article',
+      metricHistory: [{
+        id: 'metric-1', views: 128, likes: 9, comments: 2, favorites: 3, shares: 1,
+        recordedAt: '2026-09-04T12:00:00',
+      }],
+    })
+    const wrapper = mount(PublishCenter, { props: { mode: 'workbench' } })
+    await flushPromises()
+
+    await wrapper.get('.publication-data input[type="url"]').setValue('https://example.com/article')
+    await wrapper.get('.publication-data input[type="number"]').setValue('128')
+    await wrapper.get('.publication-data > button').trigger('click')
+    await flushPromises()
+
+    expect(updatePublicationData).toHaveBeenCalledWith('pt-1', expect.objectContaining({
+      version: 3, publicationUrl: 'https://example.com/article', views: 128,
     }))
   })
 })
