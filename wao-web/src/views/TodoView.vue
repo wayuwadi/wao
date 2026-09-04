@@ -8,6 +8,8 @@ import { useCompletionSettle } from '@/composables/completion'
 import { TASK_STATUSES, TASK_STATUS_DOTS } from '@/utils/domain'
 import type { Task, TaskStatus } from '@/types'
 import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
+import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
+import { readTodoTaskView, type TodoTaskView } from '@/utils/taskQuadrants'
 
 const data = useDataStore()
 const session = useSessionStore()
@@ -15,7 +17,10 @@ const ui = useUiStore()
 const { decoTask } = useDeco()
 
 const taskFilter = ref<'全部' | '我负责' | '我参与' | '等待他人'>('全部')
-const taskView = ref<'list' | 'board'>('list')
+const taskView = ref<TodoTaskView>(readTodoTaskView())
+watch(taskView, (view) => {
+  try { localStorage.setItem('wao-todo-view-v1', view) } catch { /* 存储不可用不阻断视图 */ }
+})
 
 const myList = computed(() => {
   const me = session.currentUser.id
@@ -120,7 +125,7 @@ function onDropStatus(status: TaskStatus) {
       <div class="spacer"></div>
       <div class="seg">
         <button
-          v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board']] as const)"
+          v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)"
           :key="v[2]"
           class="seg-btn icon"
           :class="{ on: taskView === v[2] }"
@@ -176,6 +181,8 @@ function onDropStatus(status: TaskStatus) {
       </div>
       <div v-if="tasksEmpty" class="empty simple">这个筛选下没有任务</div>
     </template>
+
+    <TaskQuadrantView v-else-if="taskView === 'quadrant'" v-model:show-done="showDone" :tasks="myList" :selected-ids="selectedTaskIds" @select="toggleSelection" />
 
     <div v-else class="board">
       <div
@@ -642,6 +649,8 @@ function onDropStatus(status: TaskStatus) {
 
 @media (max-width: 760px) {
   .todo { padding: 16px 12px 28px; }
+  .seg { flex-wrap: wrap; }
+  .seg-btn { min-height: 36px; }
   .btn-primary { min-height: 36px; }
   .trow { align-items: flex-start; flex-wrap: wrap; }
   .trow-title { flex-basis: calc(100% - 30px); white-space: normal; }

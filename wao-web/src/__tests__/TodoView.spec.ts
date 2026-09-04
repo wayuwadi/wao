@@ -50,14 +50,14 @@ describe('TodoView', () => {
     wrapper.unmount()
   })
 
-  it('只保留列表和看板入口，历史 PDCA 数据不再形成用户可见视图', () => {
+  it('提供列表、看板和四象限入口，历史 PDCA 数据不再形成用户可见视图', () => {
     data.tasks[0]!.pdcaCycles = [{
       id: 'pc-history', plan: '旧计划', check: '旧复盘', act: '旧行动', outcome: '达成',
       startedAt: '2026-08-11T09:00:00+08:00', reviewedAt: '2026-08-11T20:00:00+08:00',
     }]
     const wrapper = mount(TodoView)
 
-    expect(wrapper.findAll('.seg-btn').map((button) => button.text())).toEqual(['列表', '看板'])
+    expect(wrapper.findAll('.seg-btn').map((button) => button.text())).toEqual(['列表', '看板', '四象限'])
     expect(wrapper.find('.pdca-view').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('PDCA')
     wrapper.unmount()
