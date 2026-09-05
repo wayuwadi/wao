@@ -7,7 +7,12 @@ import { TASK_QUADRANTS } from '@/utils/taskQuadrants'
 import SaveHint from '@/components/ui/SaveHint.vue'
 import type { Priority, Task } from '@/types'
 
-const props = defineProps<{ tasks: Task[]; selectedIds: string[]; showDone: boolean }>()
+const props = withDefaults(defineProps<{
+  tasks: Task[]
+  selectedIds: string[]
+  showDone: boolean
+  showProject?: boolean
+}>(), { showProject: true })
 const emit = defineEmits<{ select: [id: string]; 'update:showDone': [value: boolean] }>()
 const data = useDataStore()
 const ui = useUiStore()
@@ -51,7 +56,7 @@ function drop(priority: Priority) {
             <button class="quadrant-select" :aria-label="`选择任务 ${task.title}`" :aria-pressed="selectedIds.includes(task.id)" @click="emit('select', task.id)"><i :class="selectedIds.includes(task.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <button class="quadrant-title" @click="ui.openTask(task.id)">{{ task.title }}</button>
           </div>
-          <div class="quadrant-meta"><span>{{ task.projName }}</span><span>{{ task.status }}</span><span>{{ task.dueStr }}</span></div>
+          <div class="quadrant-meta"><span v-if="showProject">{{ task.projName }}</span><span>{{ task.status }}</span><span>{{ task.dueStr }}</span></div>
           <select :value="task.pr" :aria-label="`调整象限 ${task.title}`" :disabled="savingIds.includes(task.id)" @change="setPriority(task.id, ($event.target as HTMLSelectElement).value as Priority)">
             <option v-for="option in TASK_QUADRANTS" :key="option.priority" :value="option.priority">{{ option.priority }} · {{ option.label }}</option>
           </select>

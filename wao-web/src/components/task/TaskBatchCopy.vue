@@ -6,7 +6,7 @@ import { exportTasksMarkdown } from '@/utils/taskExport'
 import { copyToClipboard } from '@/utils/clipboard'
 import type { Task } from '@/types'
 
-const props = defineProps<{ tasks: Task[] }>()
+const props = withDefaults(defineProps<{ tasks: Task[]; inline?: boolean }>(), { inline: false })
 const data = useDataStore()
 const session = useSessionStore()
 const preview = ref('')
@@ -35,7 +35,7 @@ function generate() {
 </script>
 
 <template>
-  <div class="task-batch-copy">
+  <div class="task-batch-copy" :class="{ inline }">
     <button class="copy-tasks" :disabled="!tasks.length || pending || copying" @click="generate">
       <i class="ri-file-copy-line"></i>{{ copying ? '复制中…' : `合并复制 · ${tasks.length}` }}
     </button>
@@ -54,6 +54,8 @@ function generate() {
 
 <style scoped>
 .task-batch-copy { min-width: 0; }
+.task-batch-copy.inline { display: contents; }
+.task-batch-copy.inline .copy-preview { flex: 1 0 100%; }
 button { min-height: 34px; border: 1px solid var(--wao-line-control); border-radius: 8px; background: var(--wao-bg-card); color: var(--wao-text-2); padding: 6px 12px; cursor: pointer; }
 button:disabled { opacity: .55; cursor: not-allowed; }
 .copy-tasks { color: var(--wao-primary-text); display: inline-flex; gap: 6px; align-items: center; }

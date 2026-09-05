@@ -28,6 +28,7 @@ import { useIsMobile } from '@/composables/viewport'
 import { useFavoritesStore } from '@/stores/favorites'
 import { nextTaskAiRunPollDelay, taskAiRunFingerprint } from '@/utils/taskAiRunPolling'
 import { notifyTaskManually } from '@/api/board'
+import { TASK_QUADRANTS } from '@/utils/taskQuadrants'
 import type { AiEngine, AiRun, Priority, TaskStatus } from '@/types'
 
 const ui = useUiStore()
@@ -325,12 +326,10 @@ const saveState = computed(() => (task.value ? data.taskSaveState(task.value.id)
 const savedAt = computed(() => (task.value ? data.taskSavedAt(task.value.id) : null))
 
 const STATUS_OPTS: TaskStatus[] = TASK_STATUSES
-const PR_OPTS: { key: Priority; sub: string }[] = [
-  { key: 'P0', sub: '当天必须处理' },
-  { key: 'P1', sub: '影响里程碑' },
-  { key: 'P2', sub: '常规' },
-  { key: 'P3', sub: '有空再说' },
-]
+const PR_OPTS: { key: Priority; sub: string }[] = TASK_QUADRANTS.map((quadrant) => ({
+  key: quadrant.priority,
+  sub: quadrant.label,
+}))
 const PROP_TYPES = ['文本', '数字', '单选', '链接']
 
 function close() {

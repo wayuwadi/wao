@@ -129,6 +129,18 @@ describe('TaskDrawer', () => {
     expect(await waitFor(w, '.md-body')).toBe(true)
   })
 
+  it('优先级下拉使用四象限语义描述', async () => {
+    ui.openTask(taskId)
+    const w = mountDrawer()
+    await w.vm.$nextTick()
+
+    const priorityRow = w.findAll('.prop-row').find((row) => row.text().startsWith('优先级'))!
+    await priorityRow.get('.pill').trigger('click')
+    expect(priorityRow.findAll('.pmenu-sub').map((item) => item.text())).toEqual([
+      '重要紧急', '重要不紧急', '不重要紧急', '不重要不紧急',
+    ])
+  })
+
   it('属性栏展示真实 JOBID，点击后复制任务稳定标识', async () => {
     const { copyToClipboard } = await import('@/utils/clipboard')
     ui.openTask(taskId)

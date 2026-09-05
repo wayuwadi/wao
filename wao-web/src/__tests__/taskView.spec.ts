@@ -35,10 +35,10 @@ describe('ui store · 任务视图记忆', () => {
 
   it('各项目分别记住自己的视图，不会彼此带着切换', () => {
     const ui = useUiStore()
-    ui.setTaskView('p1', 'group')
+    ui.setTaskView('p1', 'quadrant')
     ui.setTaskView('p2', 'list')
 
-    expect(ui.taskViewOf('p1')).toBe('group')
+    expect(ui.taskViewOf('p1')).toBe('quadrant')
     expect(ui.taskViewOf('p2')).toBe('list')
   })
 })

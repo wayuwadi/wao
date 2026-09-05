@@ -28,6 +28,7 @@ import ProjectMemoryPanel from '@/components/ai/ProjectMemoryPanel.vue'
 import AiRunLauncher from '@/components/ai/AiRunLauncher.vue'
 import ProjectAssetsPanel from '@/components/files/ProjectAssetsPanel.vue'
 import TaskBatchCopy from '@/components/task/TaskBatchCopy.vue'
+import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -52,7 +53,7 @@ const projTab = computed(() => {
 // URL 上写了 view 就听 URL 的（分享出去的链接要能指定视图）；没写时用记住的偏好。
 const pdTaskView = computed<TaskView>(() => {
   const q = route.query.view
-  return q === 'list' || q === 'board' || q === 'group' ? q : ui.taskViewOf(pid.value)
+  return q === 'list' || q === 'board' || q === 'group' || q === 'quadrant' ? q : ui.taskViewOf(pid.value)
 })
 
 function setTab(t: string) {
@@ -214,6 +215,11 @@ const visibleTaskIds = computed(() => {
     || (pdTaskView.value === 'list' && isSettling(task.id))).map((task) => task.id)
 })
 const selectedCopyTasks = computed(() => allTasks.value.filter((task) => selectedTaskIds.value.includes(task.id)))
+const allVisibleSelected = computed(() => visibleTaskIds.value.length > 0
+  && visibleTaskIds.value.every((id) => selectedTaskIds.value.includes(id)))
+function toggleVisibleSelection() {
+  selectedTaskIds.value = allVisibleSelected.value ? [] : [...visibleTaskIds.value]
+}
 function toggleStatusMenu(id: string) {
   if (statusSavingTaskId.value === id) return
   openStatusTaskId.value = openStatusTaskId.value === id ? null : id
@@ -516,7 +522,7 @@ watch(visibleTaskIds, (ids) => {
     <div v-if="projTab === '任务'">
       <div class="tab-toolbar">
         <div class="seg">
-          <button v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
+          <button v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
             <i :class="v[1]"></i>{{ v[0] }}
           </button>
         </div>
@@ -541,32 +547,45 @@ watch(visibleTaskIds, (ids) => {
           </div>
         </div>
         <div class="spacer"></div>
-        <div v-if="selectedTaskIds.length" class="batch-ai-actions" aria-label="批量 AI Run 执行方式">
+        <div class="task-selection-actions" aria-label="当前可见任务的批量操作">
           <button
-            class="batch-ai separate"
-            :disabled="aiBatchStarting"
-            @click="openBatchAiLauncher(false)"
+            class="selection-action"
+            :class="{ on: allVisibleSelected }"
+            :disabled="!visibleTaskIds.length"
+            :aria-pressed="allVisibleSelected"
+            @click="toggleVisibleSelection"
           >
-            <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-send-plane-line'"></i>
-            单独给 AI · {{ selectedTaskIds.length }}
+            <i :class="allVisibleSelected ? 'ri-checkbox-circle-fill' : 'ri-checkbox-multiple-blank-line'"></i>
+            {{ allVisibleSelected ? '取消全选' : '全选当前可见' }} · {{ visibleTaskIds.length }}
           </button>
-          <button
-            v-if="selectedTaskIds.length > 1"
-            class="batch-ai merge"
-            :disabled="aiBatchStarting"
-            @click="openBatchAiLauncher(true)"
-          >
-            <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-node-tree'"></i>
-            合并给 AI · {{ selectedTaskIds.length }}
-          </button>
-          <AiRunLauncher
-            v-if="aiBatchMode"
-            :project-id="pid"
-            :starting="aiBatchStarting"
-            :scope="`${aiBatchMode === 'merge' ? '合并' : '单独'}派发 ${selectedTaskIds.length} 个任务：${selectedTaskScope}`"
-            @close="aiBatchMode = null"
-            @start="runSelectedWithAi"
-          />
+          <TaskBatchCopy v-if="selectedTaskIds.length" inline :tasks="selectedCopyTasks" />
+          <div v-if="selectedTaskIds.length" class="batch-ai-actions" aria-label="批量 AI Run 执行方式">
+            <button
+              class="batch-ai separate"
+              :disabled="aiBatchStarting"
+              @click="openBatchAiLauncher(false)"
+            >
+              <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-send-plane-line'"></i>
+              单独给 AI · {{ selectedTaskIds.length }}
+            </button>
+            <button
+              v-if="selectedTaskIds.length > 1"
+              class="batch-ai merge"
+              :disabled="aiBatchStarting"
+              @click="openBatchAiLauncher(true)"
+            >
+              <i :class="aiBatchStarting ? 'ri-loader-4-line spin' : 'ri-node-tree'"></i>
+              合并给 AI · {{ selectedTaskIds.length }}
+            </button>
+            <AiRunLauncher
+              v-if="aiBatchMode"
+              :project-id="pid"
+              :starting="aiBatchStarting"
+              :scope="`${aiBatchMode === 'merge' ? '合并' : '单独'}派发 ${selectedTaskIds.length} 个任务：${selectedTaskScope}`"
+              @close="aiBatchMode = null"
+              @start="runSelectedWithAi"
+            />
+          </div>
         </div>
       </div>
       <div class="delivery-filter" role="group" aria-label="按交付阶段筛选任务">
@@ -588,11 +607,6 @@ watch(visibleTaskIds, (ids) => {
           @click="setDeliveryStage(deliveryStageFilter === stage.id ? null : stage.id)"
         >{{ stage.label }} <em class="wao-tabular">{{ stage.count }}</em></button>
       </div>
-      <div class="copy-selection-actions">
-        <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
-        <button v-if="selectedTaskIds.length" class="creator-filter-btn" @click="selectedTaskIds = []">清空选择</button>
-      </div>
-      <TaskBatchCopy :tasks="selectedCopyTasks" />
       <div v-if="pdTaskView === 'list'" class="task-list-card">
         <div
           v-for="t in openTasks"
@@ -816,6 +830,15 @@ watch(visibleTaskIds, (ids) => {
         </button>
       </div>
 
+      <TaskQuadrantView
+        v-else-if="pdTaskView === 'quadrant'"
+        v-model:show-done="showDone"
+        :tasks="allTasks"
+        :selected-ids="selectedTaskIds"
+        :show-project="false"
+        @select="toggleSelection"
+      />
+
       <div v-else class="board">
         <div
           v-for="col in board"
@@ -930,7 +953,6 @@ watch(visibleTaskIds, (ids) => {
 </template>
 
 <style scoped>
-.copy-selection-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; }
 .missing {
   padding: 60px 24px;
   text-align: center;
@@ -1211,6 +1233,42 @@ watch(visibleTaskIds, (ids) => {
   margin-top: 14px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.task-selection-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.selection-action {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--wao-line-control);
+  border-radius: 8px;
+  background: var(--wao-bg-card);
+  color: var(--wao-text-3);
+  font-size: 12px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.selection-action:hover:not(:disabled),
+.selection-action.on {
+  border-color: #c7d0f1;
+  background: var(--wao-primary-soft);
+  color: var(--wao-primary-text);
+}
+.selection-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .batch-ai-actions {
   position: relative;
@@ -2031,15 +2089,16 @@ watch(visibleTaskIds, (ids) => {
   .ptab { min-width: max-content; height: 42px; padding: 0 12px; }
 
   .tab-toolbar { margin-top: 10px; flex-wrap: wrap; align-items: center; gap: 8px; }
-  .tab-toolbar > .seg { order: 1; width: 100%; }
+  .tab-toolbar > .seg { order: 1; width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .tab-toolbar > .seg::-webkit-scrollbar { display: none; }
   .seg-btn { flex: 1; justify-content: center; height: 36px; }
   .creator-filter { order: 2; margin-left: 0; }
-  .creator-filter-btn, .batch-ai { min-height: 40px; }
+  .creator-filter-btn, .selection-action, .batch-ai { min-height: 40px; }
   .delivery-filter { margin-top: 8px; }
   .delivery-filter-button { min-height: 36px; padding: 0 11px; }
-  .tab-toolbar > .spacer { order: 3; }
-  .batch-ai-actions { order: 5; width: 100%; }
-  .batch-ai-actions .batch-ai { flex: 1; justify-content: center; }
+  .tab-toolbar > .spacer { display: none; }
+  .task-selection-actions { order: 3; width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .batch-ai-actions { flex: 1 1 auto; flex-wrap: wrap; }
   .creator-filter-menu { min-width: 160px; }
 
   .task-list-card, .doc-list-card, .file-list-card { margin-top: 8px; padding: 4px; border-radius: 11px; }

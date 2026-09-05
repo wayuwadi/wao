@@ -131,7 +131,10 @@ describe('WorkdayRhythmDailySettings', () => {
     expect(wrapper.get('.item-editor.inactive').text()).toContain('已停用')
     expect(toast).toHaveBeenCalledWith('已从每日必做中移除“制定今日计划”', 'ri-check-line')
 
-    await wrapper.get('[aria-label="恢复制定今日计划"]').trigger('click')
+    const restore = wrapper.get<HTMLButtonElement>('[aria-label="恢复制定今日计划"]')
+    expect(restore.text()).toBe('恢复')
+
+    await restore.trigger('click')
     await flushPromises()
     expect(updateRhythmChecklistItem).toHaveBeenLastCalledWith(
       'plan',

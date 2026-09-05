@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import TaskQuadrantView from '@/components/task/TaskQuadrantView.vue'
 import TodoView from '@/views/TodoView.vue'
+import ProjectDetailView from '@/views/ProjectDetailView.vue'
 import { TASK_QUADRANTS, readTodoTaskView } from '@/utils/taskQuadrants'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
@@ -122,5 +124,36 @@ describe('TODO 四象限', () => {
     const broken = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('禁止存储') })
     expect(readTodoTaskView()).toBe('list')
     broken.mockRestore()
+  })
+
+  it('项目任务可切换四象限，并把全选、复制与 AI 操作收在同一行', async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/projects/:id', component: { template: '<div />' } },
+        { path: '/projects', component: { template: '<div />' } },
+      ],
+    })
+    await router.push('/projects/p1?view=quadrant')
+    await router.isReady()
+    const wrapper = mount(ProjectDetailView, {
+      global: { plugins: [router], stubs: { AiRunLauncher: true } },
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('.tab-toolbar .seg-btn').map((button) => button.text())).toContain('四象限')
+    expect(wrapper.findAll('.quadrant')).toHaveLength(4)
+    expect(wrapper.get('.quadrant-meta').text()).not.toContain('WAO')
+
+    const actionRow = wrapper.get('.task-selection-actions')
+    await actionRow.get('.selection-action').trigger('click')
+    expect(actionRow.get('.copy-tasks').text()).toContain('合并复制')
+    expect(actionRow.get('.batch-ai.separate').text()).toContain('单独给 AI')
+    expect(actionRow.get('.batch-ai.merge').text()).toContain('合并给 AI')
+    expect(wrapper.find('.copy-selection-actions').exists()).toBe(false)
+    expect(actionRow.get('.selection-action').text()).toContain('取消全选')
+    await actionRow.get('.selection-action').trigger('click')
+    expect(actionRow.find('.copy-tasks').exists()).toBe(false)
+    wrapper.unmount()
   })
 })

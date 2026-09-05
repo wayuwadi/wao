@@ -565,7 +565,7 @@ onMounted(load)
 }
 .item-summary {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto auto auto 34px;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto auto auto;
   gap: 8px;
   align-items: center;
   padding: 10px;
@@ -635,9 +635,11 @@ onMounted(load)
   color: #a04f45 !important;
 }
 .restore-item {
+  min-width: 62px;
   padding: 0 9px;
   border: 1px solid #9fcaba !important;
   background: #eff8f4 !important;
+  white-space: nowrap;
 }
 .restore-item i {
   margin-right: 4px;
@@ -751,6 +753,7 @@ onMounted(load)
     font-size: 14px;
   }
   .restore-item {
+    min-width: 32px;
     width: 32px;
     padding: 0;
     font-size: 0;
