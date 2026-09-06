@@ -30,7 +30,7 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { renderMarkdown } from '@/utils/markdown'
 import {
-  MAX_FOCUS_COUNT,
+  DEFAULT_FOCUS_COUNT,
   DEFAULT_WORKDAY_RHYTHM,
   blockProgress,
   cloneRhythmConfig,
@@ -134,7 +134,9 @@ const energyActionBusy = computed(
     energyNotificationState.value === 'sending' ||
     energyNotificationState.value === 'error',
 )
-const focusReady = computed(() => day.value.focus.filter((item) => !!item.trim()).length >= 3)
+const todayFocus = computed(() => day.value.focus.slice(0, DEFAULT_FOCUS_COUNT))
+const tomorrowFocus = computed(() => tomorrowDay.value.focus.slice(0, DEFAULT_FOCUS_COUNT))
+const focusReady = computed(() => todayFocus.value.every((item) => !!item.trim()))
 const focusSaveLabel = computed(() => {
   if (dayState.value === 'saving') return '正在保存今日重点'
   if (dayState.value === 'error') return '重试保存今日重点'
@@ -149,7 +151,7 @@ const focusSaveIcon = computed(() => {
 })
 const activeFocusIndex = computed(() => {
   if (!focusReady.value) return -1
-  return day.value.focus.findIndex(
+  return todayFocus.value.findIndex(
     (item, index) => !!item.trim() && day.value.focusCompleted[index] !== true,
   )
 })
@@ -458,28 +460,12 @@ async function toggleWorkday() {
 }
 
 function focusInput(index: number) {
-  day.value.focus = day.value.focus.map((item) => item.slice(0, 100))
-  day.value.focusCompleted = day.value.focusCompleted.map(
-    (completed, completedIndex) => completedIndex < index && completed,
+  day.value.focus = day.value.focus.map((item, i) =>
+    i < DEFAULT_FOCUS_COUNT ? item.slice(0, 100) : item,
   )
-  focusNotificationState.value = 'idle'
-  pendingFocusNotification.value = null
-  markDayDirty()
-}
-
-function addFocus() {
-  if (day.value.focus.length >= MAX_FOCUS_COUNT) return
-  day.value.focus.push('')
-  day.value.focusCompleted.push(false)
-  markDayDirty()
-}
-
-function removeFocus(index: number) {
-  if (day.value.focus.length <= 3) return
-  day.value.focus.splice(index, 1)
-  day.value.focusCompleted.splice(index, 1)
   day.value.focusCompleted = day.value.focusCompleted.map(
-    (completed, completedIndex) => completedIndex < index && completed,
+    (completed, completedIndex) =>
+      completedIndex >= DEFAULT_FOCUS_COUNT ? completed : completedIndex < index && completed,
   )
   focusNotificationState.value = 'idle'
   pendingFocusNotification.value = null
@@ -487,27 +473,17 @@ function removeFocus(index: number) {
 }
 
 function tomorrowFocusInput() {
-  tomorrowDay.value.focus = tomorrowDay.value.focus.map((item) => item.slice(0, 100))
+  tomorrowDay.value.focus = tomorrowDay.value.focus.map((item, i) =>
+    i < DEFAULT_FOCUS_COUNT ? item.slice(0, 100) : item,
+  )
   if (tomorrowState.value !== 'saving') tomorrowState.value = 'dirty'
   localStorage.setItem(tomorrowDraftKey.value, JSON.stringify(tomorrowDay.value))
 }
 
-function addTomorrowFocus() {
-  if (tomorrowDay.value.focus.length >= MAX_FOCUS_COUNT) return
-  tomorrowDay.value.focus.push('')
-  tomorrowDay.value.focusCompleted.push(false)
-  tomorrowFocusInput()
-}
-
-function removeTomorrowFocus(index: number) {
-  if (tomorrowDay.value.focus.length <= 3) return
-  tomorrowDay.value.focus.splice(index, 1)
-  tomorrowDay.value.focusCompleted.splice(index, 1)
-  tomorrowFocusInput()
-}
-
 async function saveFocus() {
-  day.value.focus = day.value.focus.map((item) => item.trim())
+  day.value.focus = day.value.focus.map((item, i) =>
+    i < DEFAULT_FOCUS_COUNT ? item.trim() : item,
+  )
   markDayDirty()
   if (!(await persistDay('今日重点已保存'))) return
   try {
@@ -557,7 +533,7 @@ async function completeFocus(index: number) {
   if (index !== activeFocusIndex.value || dayState.value === 'saving') return
   day.value.focusCompleted[index] = true
   markDayDirty()
-  const nextIndex = day.value.focus.findIndex(
+  const nextIndex = todayFocus.value.findIndex(
     (item, itemIndex) => itemIndex > index && !!item.trim() && !day.value.focusCompleted[itemIndex],
   )
   const hasNext = nextIndex >= 0
@@ -580,7 +556,9 @@ async function undoFocus(index: number) {
 
 async function saveTomorrowFocus() {
   if (tomorrowState.value === 'saving' || tomorrowState.value === 'loading') return
-  tomorrowDay.value.focus = tomorrowDay.value.focus.map((item) => item.trim())
+  tomorrowDay.value.focus = tomorrowDay.value.focus.map((item, i) =>
+    i < DEFAULT_FOCUS_COUNT ? item.trim() : item,
+  )
   tomorrowState.value = 'saving'
   localStorage.setItem(tomorrowDraftKey.value, JSON.stringify(tomorrowDay.value))
   try {
@@ -986,9 +964,8 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </header>
-              <PendingRhythmFocus :date="clock.date" />
               <div
-                v-for="(_, index) in day.focus"
+                v-for="(_, index) in todayFocus"
                 :key="index"
                 class="focus-row"
                 :class="{ active: index === activeFocusIndex, done: day.focusCompleted[index] }"
@@ -1020,7 +997,7 @@ onBeforeUnmount(() => {
                 >
                   <i class="ri-check-line"></i
                   >{{
-                    day.focus.some(
+                    todayFocus.some(
                       (item, itemIndex) =>
                         itemIndex > index && !!item.trim() && !day.focusCompleted[itemIndex],
                     )
@@ -1039,27 +1016,8 @@ onBeforeUnmount(() => {
                   <i class="ri-arrow-go-back-line"></i>已完成 · 撤销
                 </button>
                 <small v-else-if="focusReady">等待当前项完成</small>
-                <button
-                  v-if="day.focus.length > 3"
-                  class="focus-remove"
-                  type="button"
-                  :aria-label="`删除重点 ${index + 1}`"
-                  :disabled="dayState === 'saving'"
-                  @click="removeFocus(index)"
-                >
-                  <i class="ri-delete-bin-line"></i>
-                </button>
               </div>
-              <button
-                class="focus-add"
-                type="button"
-                aria-label="添加一个今日重点"
-                title="添加一个今日重点"
-                :disabled="day.focus.length >= MAX_FOCUS_COUNT || dayState === 'saving'"
-                @click="addFocus"
-              >
-                <i class="ri-add-line"></i>
-              </button>
+              <PendingRhythmFocus :date="clock.date" />
               <div
                 v-if="focusNotificationState !== 'idle'"
                 class="focus-notice"
@@ -1107,7 +1065,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <template v-else>
-                <div v-for="(_, index) in tomorrowDay.focus" :key="index" class="tomorrow-row">
+                <div v-for="(_, index) in tomorrowFocus" :key="index" class="tomorrow-row">
                   <label>
                     <span>{{ index + 1 }}</span>
                     <input
@@ -1120,29 +1078,7 @@ onBeforeUnmount(() => {
                       @input="tomorrowFocusInput"
                     />
                   </label>
-                  <button
-                    v-if="tomorrowDay.focus.length > 3"
-                    class="focus-remove"
-                    type="button"
-                    :aria-label="`删除明日重点 ${index + 1}`"
-                    :disabled="tomorrowState === 'saving'"
-                    @click="removeTomorrowFocus(index)"
-                  >
-                    <i class="ri-delete-bin-line"></i>
-                  </button>
                 </div>
-                <button
-                  class="focus-add"
-                  type="button"
-                  aria-label="添加一个明日重点"
-                  title="添加一个明日重点"
-                  :disabled="
-                    tomorrowDay.focus.length >= MAX_FOCUS_COUNT || tomorrowState === 'saving'
-                  "
-                  @click="addTomorrowFocus"
-                >
-                  <i class="ri-add-line"></i>
-                </button>
                 <footer>
                   <small v-if="tomorrowState === 'dirty'"
                     ><i class="ri-draft-line"></i>待保存</small

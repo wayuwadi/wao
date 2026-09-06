@@ -64,12 +64,12 @@ onBeforeUnmount(() => { sequence++ })
 </script>
 
 <template>
-  <section v-if="loading || error || skippedCount || rows.length" class="pending-focus" aria-label="往日未完成重点" :aria-busy="loading">
-    <header><b>往日未完成 <span v-if="rows.length">{{ rows.filter(row => !row.completed).length }}</span></b><button type="button" :disabled="loading || rows.some(row => row.saving)" @click="load">刷新</button></header>
+  <section v-if="loading || error || skippedCount || rows.length" class="pending-focus" aria-label="昨日未完成目标提醒" :aria-busy="loading">
+    <header><b>昨日未完成 <span v-if="rows.length">{{ rows.filter(row => !row.completed).length }}</span></b><button type="button" :disabled="loading || rows.some(row => row.saving)" @click="load">刷新</button></header>
     <p v-if="loading" role="status">正在读取未完成事项…</p>
     <p v-if="error" role="alert">{{ error }} <button type="button" @click="load">重试读取</button></p>
-    <p v-if="skippedCount" role="alert">{{ skippedCount }} 天存档无法读取，请到历史记录检查。</p>
-    <div v-if="rows.length" class="pending-list" tabindex="0" aria-label="往日未完成事项列表">
+    <p v-if="skippedCount" role="alert">昨日存档无法读取，请到历史记录检查。</p>
+    <div v-if="rows.length" class="pending-list" tabindex="0" aria-label="昨日未完成目标列表">
     <div v-for="row in rows" :key="`${row.date}:${row.index}`" class="pending-row" :class="{ done: row.completed }">
       <div><time :datetime="row.date">{{ sourceLabel(row.date) }}</time><span>{{ row.title }}</span></div>
       <button type="button" :disabled="loading || row.saving" :aria-label="`${row.completed ? '撤销完成' : '完成'}：${row.title}`" @click="setCompleted(row, row.retry ?? !row.completed)">
@@ -78,7 +78,6 @@ onBeforeUnmount(() => { sequence++ })
       <p v-if="row.error" role="alert">{{ row.error }}</p>
     </div>
     </div>
-    <small v-if="rows.length > 3" class="scroll-hint">可在列表内滚动查看全部事项</small>
   </section>
 </template>
 
