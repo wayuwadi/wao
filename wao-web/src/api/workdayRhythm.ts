@@ -42,6 +42,22 @@ export async function saveWorkdayRhythmDay(value: WorkdayRhythmDay): Promise<voi
   await savePreference(dayKey(value.date), JSON.stringify(value))
 }
 
+export interface PendingRhythmFocusItem { date: string; index: number; title: string }
+export interface PendingRhythmFocus { date: string; items: PendingRhythmFocusItem[]; skippedCount: number }
+
+/** 读取当前成员今日之前仍未完成的原始重点，不复制到今日输入。 */
+export async function fetchPendingRhythmFocus(): Promise<PendingRhythmFocus> {
+  const result = await http.get<ApiResponse<PendingRhythmFocus>>('/api/workday-rhythm/focus/pending')
+  return result.data.data
+}
+
+/** 只更新原事项完成状态，原文本用于发现跨页面编辑冲突。 */
+export async function completePendingRhythmFocus(item: PendingRhythmFocusItem, completed: boolean): Promise<void> {
+  await http.put(`/api/workday-rhythm/focus/pending/${item.date}/${item.index}/completion`, {
+    expectedTitle: item.title, completed,
+  })
+}
+
 export type WorkdayRhythmEnergyAction = string
 
 export interface EnergyNotificationResult {

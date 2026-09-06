@@ -1,0 +1,70 @@
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import PendingRhythmFocus from '@/components/workday/PendingRhythmFocus.vue'
+const api = vi.hoisted(() => ({ fetchPendingRhythmFocus: vi.fn(), completePendingRhythmFocus: vi.fn() }))
+vi.mock('@/api/workdayRhythm', () => api)
+vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ currentUser: { id: 'm1' } }) }))
+const item = { date: '2026-12-31', index: 1, title: '跨年仍需完成的真实事项' }
+const result = () => ({ date: '2027-01-01', items: [item], skippedCount: 0 })
+
+describe('往日未完成重点', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.fetchPendingRhythmFocus.mockResolvedValue(result())
+    api.completePendingRhythmFocus.mockResolvedValue(undefined)
+  })
+  it('标注昨日与来源日期，完成原项并保留撤销，重新读取后不重复出现', async () => {
+    const wrapper = mount(PendingRhythmFocus, { props: { date: '2027-01-01' } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('昨日 · 12-31')
+    await wrapper.get('.pending-row button').trigger('click'); await flushPromises()
+    expect(api.completePendingRhythmFocus.mock.calls[0]?.[0]).toMatchObject(item)
+    expect(api.completePendingRhythmFocus.mock.calls[0]?.[1]).toBe(true)
+    expect(wrapper.text()).toContain('已完成 · 撤销')
+    await wrapper.get('.pending-row button').trigger('click'); await flushPromises()
+    expect(api.completePendingRhythmFocus.mock.calls[1]?.[1]).toBe(false)
+    await wrapper.get('.pending-row button').trigger('click'); await flushPromises()
+    api.fetchPendingRhythmFocus.mockResolvedValue({ ...result(), items: [] })
+    await wrapper.get('header button').trigger('click'); await flushPromises()
+    expect(wrapper.find('section').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('保存中禁止重复操作，完成和撤销失败都可按原意重试', async () => {
+    const wrapper = mount(PendingRhythmFocus, { props: { date: '2027-01-01' } })
+    await flushPromises()
+    let finish!: () => void
+    api.completePendingRhythmFocus.mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve }))
+    await wrapper.get('.pending-row button').trigger('click')
+    expect(wrapper.get('.pending-row button').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('保存中')
+    finish(); await flushPromises()
+    api.completePendingRhythmFocus.mockRejectedValueOnce(new Error('网络断开'))
+    await wrapper.get('.pending-row button').trigger('click'); await flushPromises()
+    expect(wrapper.get('.pending-row').classes()).toContain('done')
+    expect(wrapper.text()).toContain('网络断开')
+    await wrapper.get('.pending-row button').trigger('click'); await flushPromises()
+    expect(api.completePendingRhythmFocus.mock.calls[api.completePendingRhythmFocus.mock.calls.length - 1]?.[1]).toBe(false)
+    expect(wrapper.get('.pending-row').classes()).not.toContain('done')
+    wrapper.unmount()
+  })
+  it('读取失败可重试，损坏存档明确提示', async () => {
+    api.fetchPendingRhythmFocus.mockRejectedValueOnce(new Error('读取失败'))
+    const wrapper = mount(PendingRhythmFocus, { props: { date: '2027-01-01' } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('重试读取')
+    api.fetchPendingRhythmFocus.mockResolvedValue({ ...result(), skippedCount: 2 })
+    await wrapper.get('p button').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('2 天存档无法读取')
+    wrapper.unmount()
+  })
+  it('跨日切换后迟到的读取不能覆盖新日期列表', async () => {
+    let finish!: (value: ReturnType<typeof result>) => void
+    api.fetchPendingRhythmFocus.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(PendingRhythmFocus, { props: { date: '2027-01-01' } })
+    api.fetchPendingRhythmFocus.mockResolvedValue({ date: '2027-01-02', items: [], skippedCount: 0 })
+    await wrapper.setProps({ date: '2027-01-02' }); await flushPromises()
+    finish(result()); await flushPromises()
+    expect(wrapper.find('section').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})

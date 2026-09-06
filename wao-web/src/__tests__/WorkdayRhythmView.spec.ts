@@ -77,6 +77,7 @@ async function mountView(path = '/workday-rhythm') {
         WorkdayRhythmDailyPanel: true,
         WorkdayRhythmDailySettings: true,
         WorkdayRhythmHexagramSummary: true,
+        PendingRhythmFocus: true,
       },
     },
   })

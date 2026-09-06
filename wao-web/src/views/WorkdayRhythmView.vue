@@ -46,6 +46,7 @@ import {
   type WorkdayRhythmEnergyItem,
 } from '@/utils/workdayRhythm'
 import WorkdayRhythmDailyPanel from '@/components/workday/WorkdayRhythmDailyPanel.vue'
+import PendingRhythmFocus from '@/components/workday/PendingRhythmFocus.vue'
 import WorkdayRhythmDailySettings from '@/components/workday/WorkdayRhythmDailySettings.vue'
 import WorkdayRhythmHexagramSummary from '@/components/workday/WorkdayRhythmHexagramSummary.vue'
 
@@ -985,6 +986,7 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </header>
+              <PendingRhythmFocus :date="clock.date" />
               <div
                 v-for="(_, index) in day.focus"
                 :key="index"

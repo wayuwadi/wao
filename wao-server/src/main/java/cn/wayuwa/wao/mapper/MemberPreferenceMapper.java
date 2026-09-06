@@ -5,9 +5,16 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 @Mapper
 public interface MemberPreferenceMapper {
+
+    @Update("UPDATE member_preference SET pref_value = #{value}, updated_at = NOW() "
+            + "WHERE member_id = #{memberId} AND pref_key = #{key} "
+            + "AND CAST(pref_value AS BINARY) = CAST(#{expected} AS BINARY)")
+    int compareAndSet(@Param("memberId") String memberId, @Param("key") String key,
+            @Param("expected") String expected, @Param("value") String value);
 
     @Select("SELECT pref_value FROM member_preference WHERE member_id = #{memberId} AND pref_key = #{prefKey}")
     String find(@Param("memberId") String memberId, @Param("prefKey") String prefKey);
