@@ -25,6 +25,8 @@ import { TaskItem, TaskList } from '@tiptap/extension-list'
 import { Markdown } from '@tiptap/markdown'
 import { Extension, mergeAttributes, type Editor } from '@tiptap/core'
 import { TableKit } from '@tiptap/extension-table'
+import { CellSelection } from '@tiptap/pm/tables'
+import { closeHistory } from '@tiptap/pm/history'
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight'
 import { Mathematics } from '@tiptap/extension-mathematics'
 import { Color, TextStyle } from '@tiptap/extension-text-style'
@@ -269,11 +271,13 @@ const TabIndent = Extension.create({
   addKeyboardShortcuts() {
     return {
       Tab: () => {
+        if (this.editor.isActive('table') || this.editor.isActive('codeBlock')) return false
         if (this.editor.isActive('taskItem')) return this.editor.commands.sinkListItem('taskItem') || true
         if (this.editor.isActive('listItem')) return this.editor.commands.sinkListItem('listItem') || true
         return this.editor.commands.insertContent('\t') || true
       },
       'Shift-Tab': () => {
+        if (this.editor.isActive('table') || this.editor.isActive('codeBlock')) return false
         if (this.editor.isActive('taskItem')) return this.editor.commands.liftListItem('taskItem') || true
         if (this.editor.isActive('listItem')) return this.editor.commands.liftListItem('listItem') || true
         return true
@@ -375,6 +379,8 @@ const editor = useEditor({
   },
   onCreate: () => nextTick(() => (editorReady.value = true)),
   onUpdate: ({ editor: e }) => {
+    tableMenu.value = null
+    selectionDismissed.value = false
     if (!editorReady.value) return
     const markdown = e.getMarkdown()
     const document = e.getJSON() as RichDocNode
@@ -386,6 +392,8 @@ const editor = useEditor({
     updateSlashMenu(e)
   },
   onSelectionUpdate: ({ editor: e }) => {
+    tableMenu.value = null
+    selectionDismissed.value = false
     emit('caret-line', caretLine(e))
     syncSelectionControls(e)
   },
@@ -396,14 +404,121 @@ const selectionMenuEl = ref<HTMLElement | null>(null)
 const selectedText = ref('')
 const selectionCanLink = ref(false)
 const selectionMenuParent = () => window.document.body
+const selectionDismissed = ref(false)
+const tableMenu = ref<{ x: number; y: number; ready: boolean } | null>(null)
+const tableMenuEl = ref<HTMLElement | null>(null)
+
+function multipleCells(e: Editor) {
+  const selection = e.state.selection
+  return selection instanceof CellSelection && selection.$anchorCell.pos !== selection.$headCell.pos
+}
+
+type TableCommand = 'addRowBefore' | 'addRowAfter' | 'addColumnBefore' | 'addColumnAfter'
+  | 'deleteRow' | 'deleteColumn' | 'toggleHeaderRow' | 'mergeCells' | 'splitCell' | 'deleteTable'
+const tableActions: { command: TableCommand; label: string; icon: string; danger?: boolean }[] = [
+  { command: 'addRowBefore', label: '向上插入行', icon: 'ri-insert-row-top' },
+  { command: 'addRowAfter', label: '向下插入行', icon: 'ri-insert-row-bottom' },
+  { command: 'addColumnBefore', label: '向左插入列', icon: 'ri-insert-column-left' },
+  { command: 'addColumnAfter', label: '向右插入列', icon: 'ri-insert-column-right' },
+  { command: 'mergeCells', label: '合并单元格', icon: 'ri-merge-cells-horizontal' },
+  { command: 'splitCell', label: '拆分单元格', icon: 'ri-split-cells-horizontal' },
+  { command: 'toggleHeaderRow', label: '切换表头', icon: 'ri-table-line' },
+  { command: 'deleteRow', label: '删除行', icon: 'ri-delete-row', danger: true },
+  { command: 'deleteColumn', label: '删除列', icon: 'ri-delete-column', danger: true },
+  { command: 'deleteTable', label: '删除表格', icon: 'ri-delete-bin-line', danger: true },
+]
+
+function hideSelectionMenu() {
+  selectionDismissed.value = true
+  editor.value?.commands.setMeta('documentSelectionMenu', 'hide')
+}
+
+function closeTableMenu(restoreFocus = false) {
+  if (!tableMenu.value) return
+  tableMenu.value = null
+  hideSelectionMenu()
+  if (restoreFocus) editor.value?.commands.focus()
+}
+
+function runTableAction(command: TableCommand) {
+  const e = editor.value
+  if (!e || props.readonly || !e.can()[command]()) return
+  tableMenu.value = null
+  e.view.dispatch(closeHistory(e.state.tr))
+  e.chain().focus()[command]().run()
+  e.view.dispatch(closeHistory(e.state.tr))
+  hideSelectionMenu()
+}
+
+/** 右键以实际命中的单元格为目标；在已有多选范围内右键保留整组选区。 */
+async function openTableMenu(event: MouseEvent) {
+  const e = editor.value
+  const cell = event.target instanceof Element ? event.target.closest('td, th') : null
+  if (!e || !props.advanced || props.readonly || !cell || !e.view.dom.contains(cell)) return
+  event.preventDefault()
+  const $pos = e.state.doc.resolve(e.view.posAtDOM(cell, 0))
+  let cellPos: number | null = null
+  for (let depth = $pos.depth; depth > 0; depth--) {
+    if (['tableCell', 'tableHeader'].includes($pos.node(depth).type.name)) {
+      cellPos = $pos.before(depth)
+      break
+    }
+  }
+  if (cellPos == null) return
+  let selected = false
+  if (e.state.selection instanceof CellSelection) {
+    e.state.selection.forEachCell((_node, pos) => { if (pos === cellPos) selected = true })
+  }
+  if (!selected) e.commands.setCellSelection({ anchorCell: cellPos })
+  hideSelectionMenu()
+  const menu = { x: event.clientX, y: event.clientY, ready: false }
+  tableMenu.value = menu
+  await nextTick()
+  if (!tableMenu.value || !tableMenuEl.value) return
+  const rect = tableMenuEl.value.getBoundingClientRect()
+  tableMenu.value = {
+    x: Math.max(8, Math.min(menu.x, window.innerWidth - rect.width - 8)),
+    y: Math.max(8, Math.min(menu.y, window.innerHeight - rect.height - 8)),
+    ready: true,
+  }
+  await nextTick()
+  tableMenuEl.value?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+}
+
+function onTableMenuKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' || event.key === 'Tab') {
+    event.preventDefault()
+    closeTableMenu(true)
+    return
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  const buttons = [...(tableMenuEl.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])]
+  const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+    : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+  buttons[next]?.focus()
+}
+
+function dismissTableMenu(event: Event) {
+  if (event.target instanceof Node && tableMenuEl.value?.contains(event.target)) return
+  closeTableMenu()
+}
+
+function preserveTableSelection(event: MouseEvent) {
+  if (event.button === 2 && editor.value?.state.selection instanceof CellSelection
+    && event.target instanceof Element && event.target.closest('td, th')) event.preventDefault()
+}
 
 /** 所有文字与块操作共享一个浮层，图片使用互斥的尺寸编辑器。 */
 function shouldShowSelection({ editor: e, from, to, state }: MenuContext) {
-  if (props.readonly || e.isActive('image') || linkDialog.value || polishDialog.value || slashOpen.value) return false
+  if (props.readonly || selectionDismissed.value || tableMenu.value || e.isActive('image') || linkDialog.value || polishDialog.value || slashOpen.value) return false
   if (!e.isFocused && !selectionMenuEl.value?.contains(document.activeElement)) return false
+  if (e.state.selection instanceof CellSelection) return props.advanced && multipleCells(e)
+  if (e.isActive('table') && from === to) return false
   const text = from !== to && state.doc.textBetween(from, to, '\n').trim().length > 0
   return text || (props.linkControls && e.isActive('link'))
-    || (props.advanced && (e.isActive('table') || e.isActive('codeBlock')))
+    || (props.advanced && e.isActive('codeBlock'))
 }
 
 function addSelectionTask() {
@@ -538,7 +653,7 @@ const imageSizeError = ref('')
 
 function syncSelectionControls(e: Editor) {
   const { from, to } = e.state.selection
-  selectedText.value = from === to ? '' : e.state.doc.textBetween(from, to, '\n').trim()
+  selectedText.value = from === to || e.state.selection instanceof CellSelection ? '' : e.state.doc.textBetween(from, to, '\n').trim()
   selectionCanLink.value = shouldShowLink({ editor: e, from, to, state: e.state })
   linkSelectionActive.value = e.isActive('link')
   if (!e.isActive('image')) return
@@ -556,6 +671,7 @@ function syncSelectionControls(e: Editor) {
 /** 只给同一文本块内的选区提供链接维护，跨段选区不能成为一个 HTML 链接。 */
 function shouldShowLink({ editor: e, from, to, state }: MenuContext) {
   if (!(props.linkControls || props.advanced) || props.readonly) return false
+  if (state.selection instanceof CellSelection) return false
   if (e.isActive('image')) return false
   if (e.isActive('link')) return true
   return from !== to && state.doc.resolve(from).sameParent(state.doc.resolve(to))
@@ -1021,6 +1137,26 @@ function toggleInsertMenu() {
 }
 
 function onEditorKeydown(event: KeyboardEvent) {
+  if (event.isComposing || composing.value) return
+  if (event.key === 'Escape') {
+    closeTableMenu()
+    hideSelectionMenu()
+    slashOpen.value = false
+    findOpen.value = false
+    helpOpen.value = false
+    return
+  }
+  if ((event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) && editor.value?.isActive('table')) {
+    const cell = editor.value.view.domAtPos(editor.value.state.selection.from).node
+    const element = (cell instanceof Element ? cell : cell.parentElement)?.closest('td, th')
+    if (element) {
+      event.preventDefault()
+      const rect = element.getBoundingClientRect()
+      const context = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom })
+      element.dispatchEvent(context)
+    }
+    return
+  }
   if ((event.ctrlKey || event.metaKey) && event.key === '/' && props.advanced) {
     event.preventDefault()
     helpOpen.value = !helpOpen.value
@@ -1159,6 +1295,9 @@ watch(() => props.peers, scheduleMeasure, { deep: true })
 onMounted(() => {
   scheduleMeasure()
   window.addEventListener('resize', scheduleMeasure)
+  document.addEventListener('pointerdown', dismissTableMenu, true)
+  document.addEventListener('scroll', dismissTableMenu, true)
+  window.addEventListener('resize', dismissTableMenu)
 })
 
 /**
@@ -1322,11 +1461,14 @@ watch(() => props.document, applyExternalDocument, { deep: true })
 watch(
   () => props.readonly,
   // 只读切换不是正文修改；不能回发 content-change 把父组件的保存中状态重置为 idle。
-  (ro) => editor.value?.setEditable(!ro, false),
+  (ro) => { closeTableMenu(); editor.value?.setEditable(!ro, false) },
 )
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleMeasure)
+  document.removeEventListener('pointerdown', dismissTableMenu, true)
+  document.removeEventListener('scroll', dismissTableMenu, true)
+  window.removeEventListener('resize', dismissTableMenu)
   editor.value?.destroy()
 })
 </script>
@@ -1422,7 +1564,7 @@ onBeforeUnmount(() => {
           :should-show="shouldShowSelection"
           :options="{ strategy: 'fixed', placement: 'top', offset: 8, flip: true, shift: { padding: 8 } }"
         >
-          <div ref="selectionMenuEl" class="selection-menu" role="toolbar" aria-label="选中文字操作" @keydown.esc="editor.commands.blur()">
+          <div ref="selectionMenuEl" class="selection-menu" role="toolbar" :aria-label="multipleCells(editor) ? '选中单元格操作' : '选中文字操作'" @keydown.esc="hideSelectionMenu(); editor.commands.focus()">
             <button type="button" title="添加到待办" aria-label="添加到待办" v-if="taskable && selectedText" class="selection-task" @mousedown.prevent @click="addSelectionTask"><i class="ri-checkbox-circle-line" aria-hidden="true"></i></button>
             <button type="button" title="润色选中文字" aria-label="润色选中文字" v-if="polishable && selectedText" @mousedown.prevent @click="startPolish"><i class="ri-magic-line" aria-hidden="true"></i></button>
             <button v-if="selectionCanLink" type="button" :title="linkSelectionActive ? '编辑链接' : '添加链接'" :aria-label="linkSelectionActive ? '编辑链接' : '添加链接'" @mousedown.prevent @click="openLinkEditor"><i class="ri-link" aria-hidden="true"></i></button>
@@ -1436,15 +1578,8 @@ onBeforeUnmount(() => {
             <button type="button" title="行内代码" aria-label="行内代码" :aria-pressed="editor.isActive('code')" @mousedown.prevent @click="editor.chain().focus().toggleCode().run()"><i class="ri-code-line" aria-hidden="true"></i></button>
             <button type="button" title="清除格式" aria-label="清除格式"  @mousedown.prevent @click="clearFormatting"><i class="ri-format-clear" aria-hidden="true"></i></button>
             </template>
-            <template v-if="advanced && editor.isActive('table')"><span class="selection-divider" aria-hidden="true"></span>
-            <button type="button" title="添加行" aria-label="添加行"  @mousedown.prevent @click="editor.chain().focus().addRowAfter().run()"><i class="ri-insert-row-bottom" aria-hidden="true"></i></button>
-            <button type="button" title="删除行" aria-label="删除行"  @mousedown.prevent @click="editor.chain().focus().deleteRow().run()"><i class="ri-delete-row" aria-hidden="true"></i></button>
-            <button type="button" title="添加列" aria-label="添加列"  @mousedown.prevent @click="editor.chain().focus().addColumnAfter().run()"><i class="ri-insert-column-right" aria-hidden="true"></i></button>
-            <button type="button" title="删除列" aria-label="删除列"  @mousedown.prevent @click="editor.chain().focus().deleteColumn().run()"><i class="ri-delete-column" aria-hidden="true"></i></button>
-            <button type="button" title="切换表头" aria-label="切换表头"  @mousedown.prevent @click="editor.chain().focus().toggleHeaderRow().run()"><i class="ri-table-line" aria-hidden="true"></i></button>
-            <button type="button" title="合并单元格" aria-label="合并单元格"  @mousedown.prevent @click="editor.chain().focus().mergeCells().run()"><i class="ri-merge-cells-horizontal" aria-hidden="true"></i></button>
-            <button type="button" title="拆分单元格" aria-label="拆分单元格"  @mousedown.prevent @click="editor.chain().focus().splitCell().run()"><i class="ri-split-cells-horizontal" aria-hidden="true"></i></button>
-            <button type="button" title="删除表格" aria-label="删除表格"  @mousedown.prevent @click="editor.chain().focus().deleteTable().run()"><i class="ri-delete-bin-line" aria-hidden="true"></i></button>
+            <template v-if="advanced && multipleCells(editor)"><span class="selection-divider" aria-hidden="true"></span>
+            <button v-for="action in tableActions" :key="action.command" type="button" :title="action.label" :aria-label="action.label" :disabled="!editor.can()[action.command]()" @mousedown.prevent @click="runTableAction(action.command)"><i :class="action.icon" aria-hidden="true"></i></button>
             </template>
             <template v-if="advanced && editor.isActive('codeBlock')"><span class="selection-divider" aria-hidden="true"></span>
               <label class="selection-language" title="选择代码语言"><i class="ri-code-box-line" aria-hidden="true"></i><select aria-label="代码语言" :value="editor.getAttributes('codeBlock').language || 'plaintext'" @change="setCodeLanguage"><option v-for="language in CODE_LANGUAGES" :key="language" :value="language">{{ language }}</option></select></label>
@@ -1500,6 +1635,8 @@ onBeforeUnmount(() => {
       <EditorContent
         :editor="editor"
         class="md-body"
+        @contextmenu="openTableMenu"
+        @mousedown.capture="preserveTableSelection"
         :style="{ minHeight: minHeight + 'px' }"
         @keydown.capture="onEditorKeydown"
         @compositionstart="composing = true"
@@ -1664,10 +1801,24 @@ onBeforeUnmount(() => {
         </footer>
       </section>
     </div>
+  <Teleport to="body">
+    <div v-if="tableMenu && editor && !readonly" ref="tableMenuEl" class="table-context-menu" role="menu" aria-label="表格操作" :style="{ left: `${tableMenu.x}px`, top: `${tableMenu.y}px`, visibility: tableMenu.ready ? 'visible' : 'hidden' }" @keydown="onTableMenuKeydown" @contextmenu.prevent>
+      <button v-for="action in tableActions" :key="action.command" type="button" role="menuitem" :class="{ danger: action.danger }" :disabled="!editor.can()[action.command]()" @mousedown.prevent @click="runTableAction(action.command)"><i :class="action.icon" aria-hidden="true"></i>{{ action.label }}</button>
+    </div>
+  </Teleport>
   </div>
 </template>
 
 <style scoped>
+.table-context-menu { position:fixed; z-index:1000; width:210px; max-width:calc(100vw - 16px); max-height:calc(100vh - 16px); overflow-y:auto; padding:6px; border:1px solid var(--wao-line-control); border-radius:10px; background:var(--wao-bg-card,#fff); box-shadow:0 8px 28px #0002; }
+.table-context-menu button { display:flex; align-items:center; gap:10px; width:100%; border:0; border-radius:6px; padding:8px 10px; background:transparent; color:var(--wao-text); font:inherit; font-size:13px; text-align:left; cursor:pointer; }
+.table-context-menu button:hover,.table-context-menu button:focus-visible { background:var(--wao-bg-sub); outline:2px solid var(--wao-line-control); outline-offset:-2px; }
+.table-context-menu button:disabled { opacity:.35; cursor:default; }
+.table-context-menu button.danger { color:var(--wao-danger,#d83931); }
+.md-body :deep(td),.md-body :deep(th) { position:relative; }
+.md-body :deep(.selectedCell)::after { content:''; position:absolute; inset:0; background:rgba(36,91,219,.13); pointer-events:none; }
+.md-body :deep(.column-resize-handle) { position:absolute; right:-2px; top:0; bottom:0; width:4px; background:#245bdb; pointer-events:none; }
+.md-body :deep(.resize-cursor) { cursor:col-resize; }
 .md {
   width: 100%;
   position: relative;
