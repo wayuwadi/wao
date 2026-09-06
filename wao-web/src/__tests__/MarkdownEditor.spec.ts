@@ -6,6 +6,7 @@ import { polishDocumentText } from '@/api/assistant'
 import type { RichDocNode } from '@/types'
 import type { Editor } from '@tiptap/core'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
+import { CellSelection } from '@tiptap/pm/tables'
 
 vi.mock('@/api/assistant', () => ({
   polishDocumentText: vi.fn<(text: string) => Promise<{ polished: string }>>(),
@@ -81,6 +82,114 @@ function pasteHtmlInto(el: Element, html: string) {
 }
 
 describe('MarkdownEditor（所见即所得）', () => {
+  async function tableEditor() {
+    const w = await mountEditor({ modelValue: '', advanced: true, linkControls: true })
+    const instance = w.vm as unknown as { editor: Editor; shouldShowSelection: (context: unknown) => boolean }
+    instance.editor.commands.insertTable({ rows: 2, cols: 2, withHeaderRow: false })
+    await nextTick()
+    const cells: number[] = []
+    instance.editor.state.doc.descendants((node, pos) => { if (node.type.name === 'tableCell') cells.push(pos) })
+    const show = () => {
+      instance.editor.view.focus()
+      const { state } = instance.editor
+      return instance.shouldShowSelection({ editor: instance.editor, state, from: state.selection.from, to: state.selection.to })
+    }
+    return { w, e: instance.editor, cells, show }
+  }
+
+  it('单元格光标及单格选择保持安静，空白多单元格选择才显示表格操作', async () => {
+    const { w, e, cells, show } = await tableEditor()
+    e.commands.setTextSelection(cells[0]! + 2)
+    expect(show()).toBe(false)
+    e.commands.setCellSelection({ anchorCell: cells[0]! })
+    expect(show()).toBe(false)
+    e.commands.setCellSelection({ anchorCell: cells[0]!, headCell: cells[1]! })
+    expect(show()).toBe(true)
+    await nextTick()
+    expect(document.querySelectorAll('.selectedCell')).toHaveLength(2)
+    w.unmount()
+  })
+
+  it('右键命中另一个单元格，禁用不可合并和不可拆分操作；新增行可撤销', async () => {
+    const { w, e, cells, show } = await tableEditor()
+    e.commands.setTextSelection(cells[0]! + 2)
+    await w.findAll('td')[3]!.trigger('contextmenu', { clientX: 10000, clientY: 10000 })
+    await flushPromises()
+    expect((e.state.selection as CellSelection).$anchorCell.pos).toBe(cells[3])
+    expect(show()).toBe(false)
+    const menu = document.querySelector<HTMLElement>('.table-context-menu')!
+    const buttons = [...menu.querySelectorAll<HTMLButtonElement>('button')]
+    expect(buttons.find(b => b.textContent === '合并单元格')!.disabled).toBe(true)
+    expect(buttons.find(b => b.textContent === '拆分单元格')!.disabled).toBe(true)
+    expect(Number.parseFloat(menu.style.left)).toBeLessThanOrEqual(window.innerWidth - 8)
+    buttons.find(b => b.textContent === '向下插入行')!.click()
+    await nextTick()
+    expect(w.findAll('tr')).toHaveLength(3)
+    expect(document.querySelector('.table-context-menu')).toBeNull()
+    e.commands.undo()
+    await nextTick()
+    expect(w.findAll('tr')).toHaveLength(2)
+    w.unmount()
+  })
+
+  it('已有多选范围内右键保留选区，合并和拆分均保留表格内容', async () => {
+    const { w, e, cells } = await tableEditor()
+    e.commands.setCellSelection({ anchorCell: cells[0]!, headCell: cells[1]! })
+    await w.findAll('td')[1]!.trigger('mousedown', { button: 2 })
+    await w.findAll('td')[1]!.trigger('contextmenu')
+    await flushPromises()
+    expect((e.state.selection as CellSelection).$anchorCell.pos).toBe(cells[0])
+    expect((e.state.selection as CellSelection).$headCell.pos).toBe(cells[1])
+    const clickMenu = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('.table-context-menu button')].find(b => b.textContent === label)!.click()
+    clickMenu('合并单元格')
+    await nextTick()
+    expect(w.find('td').attributes('colspan')).toBe('2')
+    await w.find('td').trigger('contextmenu')
+    await flushPromises()
+    clickMenu('拆分单元格')
+    await nextTick()
+    expect(w.findAll('td')).toHaveLength(4)
+    w.unmount()
+  })
+
+  it('Esc 和点击外部收起右键菜单，只读切换与卸载不残留浮层', async () => {
+    const { w } = await tableEditor()
+    await w.find('td').trigger('contextmenu')
+    await flushPromises()
+    document.querySelector('.table-context-menu')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    expect(document.querySelector('.table-context-menu')).toBeNull()
+    await w.find('td').trigger('contextmenu')
+    await flushPromises()
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await nextTick()
+    expect(document.querySelector('.table-context-menu')).toBeNull()
+    await w.find('td').trigger('contextmenu')
+    await flushPromises()
+    await w.setProps({ readonly: true })
+    expect(document.querySelector('.table-context-menu')).toBeNull()
+    await w.find('td').trigger('contextmenu')
+    expect(document.querySelector('.table-context-menu')).toBeNull()
+    w.unmount()
+  })
+
+  it('表格 Tab 和 Shift+Tab 切换单元格，Esc 不丢焦点且不改变正文', async () => {
+    const { w, e, cells, show } = await tableEditor()
+    e.commands.setTextSelection(cells[0]! + 2)
+    const before = e.getJSON()
+    await w.find('.tiptap').trigger('keydown', { key: 'Tab' })
+    expect(e.state.selection.from).toBe(cells[1]! + 2)
+    await w.find('.tiptap').trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(e.state.selection.from).toBe(cells[0]! + 2)
+    e.commands.setCellSelection({ anchorCell: cells[0]!, headCell: cells[1]! })
+    expect(show()).toBe(true)
+    await w.find('.tiptap').trigger('keydown', { key: 'Escape' })
+    expect(show()).toBe(false)
+    expect(e.getJSON()).toEqual(before)
+    expect(e.isFocused).toBe(true)
+    w.unmount()
+  })
+
   it('高级小记保存期间切换只读、失败后恢复编辑不破坏浮层与正文', async () => {
     const w = await mountEditor({ modelValue: '保存后仍可继续编辑', advanced: true, compact: true })
     await w.setProps({ readonly: true })
