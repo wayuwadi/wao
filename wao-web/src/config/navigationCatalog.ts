@@ -29,7 +29,11 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
         description: '管理项目、任务、成员和 AI 工作流。',
         keywords: ['任务', '团队'],
       },
-      { id: 'ideas', description: '收集点子并逐步归并到项目执行。', keywords: ['灵感'] },
+      {
+        id: 'ideas',
+        description: '归并旧版点子档案；新想法直接进入项目任务。',
+        keywords: ['历史点子', '灵感'],
+      },
       { id: 'todo', description: '集中处理个人待办和需要跟进的事项。', keywords: ['清单'] },
       { id: 'calendar', description: '按日、周、月安排任务和时间段。', keywords: ['日程'] },
     ],

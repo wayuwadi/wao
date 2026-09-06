@@ -27,6 +27,7 @@ import {
 } from '@/api/chat'
 import { useSessionStore } from '@/stores/session'
 import { renderMarkdown } from '@/utils/markdown'
+import { createVisibilityPoller } from '@/composables/visibilityPolling'
 
 const props = withDefaults(
   defineProps<{
@@ -85,9 +86,6 @@ const pollIntervalAmount = ref(15)
 const pollIntervalUnit = ref<'SECONDS' | 'MINUTES'>('SECONDS')
 const reviewOpen = ref(false)
 const initialReviewId = ref('')
-let pollTimer: ReturnType<typeof setTimeout> | null = null
-let alive = true
-
 const storageKey = computed(() => `wao-shared-chat-draft-v2:${session.userId || 'unknown'}`)
 const contentLength = computed(() => Array.from(draft.value).length)
 const canSend = computed(
@@ -174,10 +172,14 @@ async function load(initial = false) {
 }
 
 async function poll() {
-  if (!alive) return
-  if (document.visibilityState === 'visible' && !sending.value) await load(false)
-  if (alive) pollTimer = setTimeout(poll, POLL_MS)
+  if (!sending.value) await load(false)
 }
+
+// 展开时保留 5 秒消息反馈；最小化后只为未读角标每分钟检查一次。
+const messagePolling = createVisibilityPoller(
+  poll,
+  () => props.visible ? POLL_MS : 60_000,
+)
 
 async function loadConfig() {
   configLoading.value = true
@@ -377,7 +379,11 @@ watch(unreadCount, (count) => emit('unread-change', count), { immediate: true })
 watch(
   () => props.visible,
   async (visible) => {
-    if (!visible) return
+    if (!visible) {
+      messagePolling.reschedule()
+      return
+    }
+    await messagePolling.trigger()
     if (!unreadBoundaryId.value) {
       unreadBoundaryId.value = messages.value.find((message) => !message.read)?.id ?? ''
     }
@@ -420,12 +426,11 @@ onMounted(async () => {
   await Promise.all([load(true), loadConfig()])
   if (restoredReplyId)
     replyingTo.value = messages.value.find((message) => message.id === restoredReplyId) ?? null
-  pollTimer = setTimeout(poll, POLL_MS)
+  messagePolling.start(false)
 })
 
 onBeforeUnmount(() => {
-  alive = false
-  if (pollTimer) clearTimeout(pollTimer)
+  messagePolling.stop()
 })
 </script>
 

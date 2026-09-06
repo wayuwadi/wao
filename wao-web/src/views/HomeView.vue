@@ -41,6 +41,7 @@ import WaoPagination from '@/components/ui/WaoPagination.vue'
 import { AI_ENGINES, engineColor, engineIcon, engineLabel } from '@/composables/aiEngines'
 import { formatCost, formatTokens, reasoningEffortLabel, shortModel } from '@/composables/aiUsage'
 import { aiExecutionDuration, totalRunDuration } from '@/composables/aiRunDuration'
+import { createVisibilityPoller } from '@/composables/visibilityPolling'
 import { toast } from '@/composables/toast'
 import { githubBrowseUrl, githubSubPage } from '@/config/quickLinks'
 import { fetchWebhookEndpoints, type FeishuWebhookEndpoint } from '@/api/system'
@@ -166,9 +167,6 @@ const form = reactive({
   failureRetryCount: 2,
   executionPrompt: '',
 })
-let timer: ReturnType<typeof setInterval> | null = null
-let quotaTimer: ReturnType<typeof setInterval> | null = null
-
 const activeRuns = computed(() => runs.value.filter((run) => ['queued', 'claimed', 'running'].includes(run.status)))
 const activeRunsPages = computed(() => Math.max(1, Math.ceil(activeRuns.value.length / RUN_GRID_PAGE_SIZE)))
 const visibleActiveRuns = computed(() => {
@@ -331,29 +329,19 @@ function nativeGoalTime(seconds?: number | null) {
 }
 
 async function refresh() {
+  await Promise.all([refreshRuntime(), refreshRecentActivities()])
+}
+
+/** 运行与执行电脑是首页唯一需要跟随活动任务快速变化的数据。 */
+async function refreshRuntime() {
   try {
     const prevSucceededIds = new Set(runs.value.filter((run) => run.status === 'succeeded').map((run) => run.id))
-    const [nextRuns, nextRunners, activities] = await Promise.all([
+    const [nextRuns, nextRunners] = await Promise.all([
       fetchAiRuns(false),
       fetchAiRunners(),
-      fetchAiActivities(
-        activityFilter.value,
-        activityStatusFilter.value,
-        recentActivitiesPage.value,
-        RECENT_ACTIVITY_PAGE_SIZE,
-      ).catch((error) => {
-        recentActivitiesError.value = error instanceof Error ? error.message : '最近 AI 运行读取失败'
-        return null
-      }),
     ])
     runs.value = nextRuns
     runners.value = nextRunners
-    if (activities) {
-      recentActivities.value = activities.items
-      recentActivitiesPage.value = activities.page
-      recentActivitiesTotal.value = activities.total
-      recentActivitiesError.value = ''
-    }
     if (selectedRun.value) selectedRun.value = nextRuns.find((run) => run.id === selectedRun.value?.id) ?? selectedRun.value
     // 首次加载时不庆祝；检测到本次轮询有运行刚变成 succeeded 时触发庆祝。
     if (!loading.value) {
@@ -364,6 +352,25 @@ async function refresh() {
     // 首页轮询失败时保留上一帧，避免网络抖动让运行面板闪空。
   } finally {
     loading.value = false
+  }
+}
+
+/** 终态活动不会像运行进度一样秒级变化，单独低频刷新以免重复执行分页统计。 */
+async function refreshRecentActivities() {
+  try {
+    const activities = await fetchAiActivities(
+      activityFilter.value,
+      activityStatusFilter.value,
+      recentActivitiesPage.value,
+      RECENT_ACTIVITY_PAGE_SIZE,
+    )
+    recentActivities.value = activities.items
+    recentActivitiesPage.value = activities.page
+    recentActivitiesTotal.value = activities.total
+    recentActivitiesError.value = ''
+  } catch (error) {
+    recentActivitiesError.value = error instanceof Error ? error.message : '最近 AI 运行读取失败'
+  } finally {
     recentActivitiesLoading.value = false
   }
 }
@@ -1201,26 +1208,38 @@ function onDialogKeydown(event: KeyboardEvent) {
   event.stopPropagation()
 }
 
+// 活动任务保留原有 5 秒反馈；空闲时退避，终态列表独立低频刷新。
+const runtimePolling = createVisibilityPoller(
+  refreshRuntime,
+  () => activeRuns.value.length ? 5_000 : 30_000,
+)
+const activityPolling = createVisibilityPoller(refreshRecentActivities, () => 30_000)
+// Runner 的额度源最快五分钟才更新；自动派发设置打开时另行即时刷新。
+const overviewPolling = createVisibilityPoller(
+  async () => { await Promise.allSettled([refreshQuotaOverview(), refreshTaskAutoRunPolicy()]) },
+  () => 5 * 60_000,
+)
+
+watch(taskAutoRunSettingsOpen, (open) => {
+  if (open) void refreshTaskAutoRunPolicy()
+})
+
 onMounted(() => {
   restoreGoalDraft()
-  void refresh()
   void refreshWorkflows()
   void refreshGoalRunOptions()
-  void refreshQuotaOverview()
-  void refreshTaskAutoRunPolicy()
   void refreshTaskAutoRunWebhooks()
   void refreshReviewableTasks()
-  timer = setInterval(refresh, 5_000)
-  quotaTimer = setInterval(() => {
-    void refreshQuotaOverview()
-    void refreshTaskAutoRunPolicy()
-  }, 60_000)
+  runtimePolling.start()
+  activityPolling.start()
+  overviewPolling.start()
   window.addEventListener('keydown', onDialogKeydown)
   if (route.query.console) revealAiArea()
 })
 onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
-  if (quotaTimer) clearInterval(quotaTimer)
+  runtimePolling.stop()
+  activityPolling.stop()
+  overviewPolling.stop()
   window.removeEventListener('keydown', onDialogKeydown)
 })
 </script>

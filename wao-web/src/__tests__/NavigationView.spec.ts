@@ -165,6 +165,16 @@ describe('全量导航页', () => {
     wrapper.unmount()
   })
 
+  it('点子库入口明确只处理旧档案，新想法回到项目任务', async () => {
+    const { wrapper } = await mountNavigation()
+    await wrapper.get('.search input').setValue('历史点子')
+
+    expect(wrapper.findAll('.nav-card')).toHaveLength(1)
+    expect(wrapper.get('.nav-card').text()).toContain('归并旧版点子档案')
+    expect(wrapper.get('.nav-card').text()).toContain('新想法直接进入项目任务')
+    wrapper.unmount()
+  })
+
   it('工作台不再展示失效的手机底栏编辑，并继续直达真实小记链路', async () => {
     const { wrapper } = await mountNavigation()
     expect(wrapper.find('.manage').exists()).toBe(false)

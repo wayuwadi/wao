@@ -7,6 +7,7 @@ import {
   type NotificationCenterSnapshot,
   type NotificationEvent,
 } from '@/api/notificationCenter'
+import { createVisibilityPoller } from '@/composables/visibilityPolling'
 
 const router = useRouter()
 const open = ref(false)
@@ -16,7 +17,6 @@ const loading = ref(false)
 const refreshing = ref(false)
 const loadError = ref('')
 const readError = ref('')
-let refreshTimer: number | null = null
 let loadPromise: Promise<boolean> | null = null
 
 const unreadLabel = computed(() => {
@@ -82,6 +82,8 @@ async function refresh() {
   if (loaded && open.value) await markRead()
 }
 
+const notificationPolling = createVisibilityPoller(refresh, () => 60_000)
+
 async function navigate(path: string | null) {
   if (!path) return
   close()
@@ -108,16 +110,12 @@ function onKeydown(event: KeyboardEvent) {
 onMounted(() => {
   void load()
   window.addEventListener('keydown', onKeydown)
-  refreshTimer = window.setInterval(() => {
-    void load(true).then((loaded) => {
-      if (loaded && open.value) void markRead()
-    })
-  }, 60_000)
+  notificationPolling.start(false)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
-  if (refreshTimer !== null) window.clearInterval(refreshTimer)
+  notificationPolling.stop()
 })
 </script>
 
