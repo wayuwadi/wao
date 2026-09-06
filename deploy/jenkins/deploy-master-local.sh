@@ -15,6 +15,7 @@ slave_user="${5:-wage}"
 cloud_user="${6:-root}"
 slave_address="${7:-linux1.wayuwa.cn}"
 cloud_address="${8:-8.136.152.131}"
+slave_port="${9:-22}"
 
 case "$project_root" in ''|/) echo "Unsafe project root: $project_root" >&2; exit 2 ;; esac
 case "$image_tag" in *[!A-Za-z0-9_.-]*|'') echo 'Invalid image tag.' >&2; exit 2 ;; esac
@@ -38,4 +39,5 @@ WAO_IMAGE_TAG="$image_tag" SKIP_IMAGE_BUILD=true \
 sh "$project_root/deploy/scripts/validate-deployment-node.sh" master "$image_tag"
 JUMPSERVER_SLAVE_USER="$slave_user" JUMPSERVER_CLOUD_USER="$cloud_user" \
   JUMPSERVER_SLAVE_ADDRESS="$slave_address" JUMPSERVER_CLOUD_ADDRESS="$cloud_address" \
+  JUMPSERVER_SLAVE_PORT="$slave_port" \
   sh "$project_root/deploy/jumpserver/deploy.sh" "$project_root"

@@ -229,7 +229,7 @@ retry_node_deploy() {
 deploy_master() {
   sudo -n -u wadi /usr/local/lib/wao-jenkins/deploy-master-local.sh \
     "$WAO_MASTER_PROJECT_ROOT" wao-release.tgz wao-secrets.env "$WAO_GIT_SHA" \
-    "$SLAVE_USER" "$CLOUD_USER" "$SLAVE_HOST" "$CLOUD_HOST"
+    "$SLAVE_USER" "$CLOUD_USER" "$SLAVE_SSH_HOST" "$CLOUD_HOST" "$SLAVE_SSH_PORT"
 }
 
 install_master_deploy_helper() {

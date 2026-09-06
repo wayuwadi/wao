@@ -44,6 +44,11 @@ validate_user() {
 
 master_address="${JUMPSERVER_MASTER_ADDRESS:-${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}}"
 slave_address="${JUMPSERVER_SLAVE_ADDRESS:-${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}}"
+slave_port="${JUMPSERVER_SLAVE_PORT:-22}"
+case "$slave_port" in ''|*[!0-9]*) echo 'Invalid slave SSH port.' >&2; exit 2 ;; esac
+test "$slave_port" -ge 1 && test "$slave_port" -le 65535
+slave_via_master=false
+case "$slave_address" in 127.0.0.1|localhost) slave_via_master=true ;; esac
 cloud_address="${JUMPSERVER_CLOUD_ADDRESS:-8.136.152.131}"
 master_user="${JUMPSERVER_MASTER_USER:-wadi}"
 slave_user="${JUMPSERVER_SLAVE_USER:-wage}"
@@ -105,6 +110,8 @@ sudo -n install -m 0644 "$project_root/deploy/jumpserver/bootstrap_wao_assets.py
   "$volume_dir/core/data/bootstrap/bootstrap_wao_assets.py"
 sudo -n install -m 0644 "$project_root/deploy/jumpserver/verify_wao_access.py" \
   "$volume_dir/core/data/bootstrap/verify_wao_access.py"
+sudo -n install -m 0644 "$project_root/deploy/jumpserver/verify_wao_ssh.py" \
+  "$volume_dir/core/data/bootstrap/verify_wao_ssh.py"
 sudo -n install -m 0644 "$project_root/deploy/jumpserver/verify_wao_sso.py" \
   "$volume_dir/core/data/bootstrap/verify_wao_sso.py"
 
@@ -143,6 +150,7 @@ asset_env_tmp="$(mktemp)"
 printf '%s\n' \
   "WAO_JMS_MASTER_ADDRESS=$master_address" "WAO_JMS_MASTER_USER=$master_user" \
   "WAO_JMS_SLAVE_ADDRESS=$slave_address" "WAO_JMS_SLAVE_USER=$slave_user" \
+  "WAO_JMS_SLAVE_PORT=$slave_port" "WAO_JMS_SLAVE_VIA_MASTER=$slave_via_master" \
   "WAO_JMS_CLOUD_ADDRESS=$cloud_address" "WAO_JMS_CLOUD_USER=$cloud_user" >"$asset_env_tmp"
 sudo -n install -m 0600 -o wadi -g wadi "$asset_env_tmp" "$asset_env"
 
@@ -204,6 +212,8 @@ sudo -n docker exec \
   -e "WAO_JMS_MASTER_USER=$WAO_JMS_MASTER_USER" \
   -e "WAO_JMS_SLAVE_ADDRESS=$WAO_JMS_SLAVE_ADDRESS" \
   -e "WAO_JMS_SLAVE_USER=$WAO_JMS_SLAVE_USER" \
+  -e "WAO_JMS_SLAVE_PORT=$WAO_JMS_SLAVE_PORT" \
+  -e "WAO_JMS_SLAVE_VIA_MASTER=$WAO_JMS_SLAVE_VIA_MASTER" \
   -e "WAO_JMS_CLOUD_ADDRESS=$WAO_JMS_CLOUD_ADDRESS" \
   -e "WAO_JMS_CLOUD_USER=$WAO_JMS_CLOUD_USER" \
   -i jms_core sh -c \
