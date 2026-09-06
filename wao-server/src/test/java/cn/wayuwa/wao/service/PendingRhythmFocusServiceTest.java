@@ -10,7 +10,6 @@ import cn.wayuwa.wao.domain.MemberPreferenceEntity;
 import cn.wayuwa.wao.mapper.MemberPreferenceMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -23,23 +22,39 @@ class PendingRhythmFocusServiceTest {
     private final String key = PendingRhythmFocusService.PREFIX + yesterday;
 
     @Test
-    void findsYesterdayAndEarlierUnfinishedItemsWithoutCopyingOrMergingEqualTitles() {
-        when(preferences.findRange("m1", PendingRhythmFocusService.PREFIX, key)).thenReturn(List.of(
-                entry(yesterday, "[\"已完成\",\"同名事项\",\" \"]", "[true,false,false]"),
-                entry(today.minusDays(4), "[\"同名事项\",\"旧版重点\"]", null),
-                entry(today.minusDays(7), "[\"全部完成\"]", "[true]")));
+    void readsOnlyYesterdayThreeGoalsAndNeverScansPersonalOrEarlierTasks() {
+        when(preferences.find("m1", key)).thenReturn(
+                entry(yesterday, "[\"已完成\",\"昨日目标\",\" \",\"旧版第四项\"]", "[true,false,false,false]").getPrefValue());
         var result = service.pending("m1", today);
-        assertThat(result.items()).extracting(item -> item.title()).containsExactly("同名事项", "同名事项", "旧版重点");
+        assertThat(result.items()).extracting(item -> item.title()).containsExactly("昨日目标");
         assertThat(result.items().get(0).index()).isEqualTo(1);
-        assertThat(result.items().get(1).date()).isEqualTo(today.minusDays(4));
+        assertThat(result.items().get(0).date()).isEqualTo(yesterday);
         assertThat(result.skippedCount()).isZero();
-        verify(preferences, never()).upsert(anyString(), anyString(), anyString());
+        verify(preferences).find("m1", key);
+        verifyNoMoreInteractions(preferences);
+    }
+
+    @Test
+    void missingYesterdayDoesNotFallBackToOlderArchives() {
+        assertThat(service.pending("m1", today).items()).isEmpty();
+        assertThat(service.pending("m1", today).skippedCount()).isZero();
+        verify(preferences, times(2)).find("m1", key);
+        verifyNoMoreInteractions(preferences);
+    }
+
+    @Test
+    void yesterdayAcrossYearBoundaryUsesTheExactPreviousNaturalDay() {
+        var newYear = LocalDate.of(2027, 1, 1);
+        var previous = newYear.minusDays(1);
+        when(preferences.find("m1", PendingRhythmFocusService.PREFIX + previous)).thenReturn(
+                entry(previous, "[\"跨年目标\"]", null).getPrefValue());
+        assertThat(service.pending("m1", newYear).items()).extracting(item -> item.date()).containsExactly(previous);
     }
 
     @Test
     void corruptRecordsAreCountedAndNeverInventedAsEmptySuccess() {
         var corrupt = entry(yesterday, "[\"待办\"]", "[\"true\"]");
-        when(preferences.findRange("m1", PendingRhythmFocusService.PREFIX, key)).thenReturn(List.of(corrupt));
+        when(preferences.find("m1", key)).thenReturn(corrupt.getPrefValue());
         assertThat(service.pending("m1", today).skippedCount()).isEqualTo(1);
     }
 
@@ -61,7 +76,6 @@ class PendingRhythmFocusServiceTest {
     @Test
     void completionRoundTripDisappearsAndUndoReturnsOriginalWithoutDuplicates() {
         var entry = entry(yesterday, "[\"遗留重点\"]", null);
-        when(preferences.findRange("m1", PendingRhythmFocusService.PREFIX, key)).thenReturn(List.of(entry));
         when(preferences.find("m1", key)).thenAnswer(call -> entry.getPrefValue());
         when(preferences.compareAndSet(eq("m1"), eq(key), anyString(), anyString())).thenAnswer(call -> {
             entry.setPrefValue(call.getArgument(3)); return 1;
@@ -85,10 +99,12 @@ class PendingRhythmFocusServiceTest {
     }
 
     @Test
-    void cannotWriteTodayFutureOrOutOfRangeIndex() {
+    void cannotWriteEarlierTodayFutureOrBeyondThreeGoals() {
         assertThatThrownBy(() -> service.complete("m1", today, today, 0, "今日草稿", true)).isInstanceOf(BadRequestException.class);
         assertThatThrownBy(() -> service.complete("m1", today.plusDays(1), today, 0, "明日计划", true)).isInstanceOf(BadRequestException.class);
         assertThatThrownBy(() -> service.complete("m1", yesterday, today, 20, "无效", true)).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.complete("m1", today.minusDays(2), today, 0, "更早目标", true)).isInstanceOf(BadRequestException.class);
+        assertThatThrownBy(() -> service.complete("m1", yesterday, today, 3, "第四项", true)).isInstanceOf(BadRequestException.class);
         verifyNoInteractions(preferences);
     }
 

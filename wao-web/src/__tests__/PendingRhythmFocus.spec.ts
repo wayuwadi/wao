@@ -7,7 +7,7 @@ vi.mock('@/stores/session', () => ({ useSessionStore: () => ({ currentUser: { id
 const item = { date: '2026-12-31', index: 1, title: '跨年仍需完成的真实事项' }
 const result = () => ({ date: '2027-01-01', items: [item], skippedCount: 0 })
 
-describe('往日未完成重点', () => {
+describe('昨日未完成目标提醒', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     api.fetchPendingRhythmFocus.mockResolvedValue(result())
@@ -52,9 +52,9 @@ describe('往日未完成重点', () => {
     const wrapper = mount(PendingRhythmFocus, { props: { date: '2027-01-01' } })
     await flushPromises()
     expect(wrapper.text()).toContain('重试读取')
-    api.fetchPendingRhythmFocus.mockResolvedValue({ ...result(), skippedCount: 2 })
+    api.fetchPendingRhythmFocus.mockResolvedValue({ ...result(), skippedCount: 1 })
     await wrapper.get('p button').trigger('click'); await flushPromises()
-    expect(wrapper.text()).toContain('2 天存档无法读取')
+    expect(wrapper.text()).toContain('昨日存档无法读取')
     wrapper.unmount()
   })
   it('跨日切换后迟到的读取不能覆盖新日期列表', async () => {

@@ -313,30 +313,30 @@ describe('WorkdayRhythmView', () => {
     wrapper.unmount()
   })
 
-  it('默认保留三个重点并把追加项完整保存到服务端', async () => {
+  it('今日只显示三个目标且保存不会抹掉旧版额外存档', async () => {
+    vi.mocked(fetchWorkdayRhythmDay).mockImplementation(async (date, weekday) => ({
+      ...defaultRhythmDay(date, weekday),
+      focus: ['重点一', '重点二', '重点三', '旧版额外目标'],
+      focusCompleted: [false, false, false, true],
+    }))
     const wrapper = await mountView()
     await flushPromises()
-
     expect(wrapper.findAll('.focus-row')).toHaveLength(3)
-    await wrapper.get('.focus-add').trigger('click')
-    const inputs = wrapper.findAll('.focus-row input')
-    expect(inputs).toHaveLength(4)
-    await inputs[0]!.setValue('重点一')
-    await inputs[1]!.setValue('重点二')
-    await inputs[2]!.setValue('重点三')
-    await inputs[3]!.setValue('临时插入事项')
+    expect(wrapper.find('[aria-label="添加一个今日重点"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('旧版额外目标')
+    await wrapper.findAll('.focus-row input')[0]!.setValue('修改后的重点一')
     await wrapper.get('.focus-save').trigger('click')
     await flushPromises()
-
-    expect(saveRhythmFocus).toHaveBeenCalledWith(clock.date, [
-      '重点一',
-      '重点二',
-      '重点三',
-      '临时插入事项',
-    ])
-    expect(saveWorkdayRhythmDay).toHaveBeenCalledWith(
-      expect.objectContaining({ focusCompleted: [false, false, false, false] }),
-    )
+    expect(saveWorkdayRhythmDay).toHaveBeenCalledWith(expect.objectContaining({
+      focus: ['修改后的重点一', '重点二', '重点三', '旧版额外目标'],
+      focusCompleted: [false, false, false, true],
+    }))
+    const card = wrapper.get('.focus-card').element
+    expect(card.querySelector('.focus-row')!.compareDocumentPosition(card.querySelector('pending-rhythm-focus-stub')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await wrapper.get('.tomorrow-toggle').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.tomorrow-row')).toHaveLength(3)
+    expect(wrapper.find('[aria-label="添加一个明日重点"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
