@@ -143,6 +143,22 @@ describe('ChatView', () => {
     expect(wrapper.text()).not.toContain('1 条未读')
   })
 
+  it('最小化后退避到每分钟读取，重新打开时立即同步', async () => {
+    vi.useFakeTimers()
+    const wrapper = await mountView({ floating: true, visible: false })
+    const initialCalls = vi.mocked(fetchSharedChatMessages).mock.calls.length
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(fetchSharedChatMessages).toHaveBeenCalledTimes(initialCalls)
+
+    await vi.advanceTimersByTimeAsync(55_000)
+    expect(fetchSharedChatMessages).toHaveBeenCalledTimes(initialCalls + 1)
+
+    await wrapper.setProps({ visible: true })
+    await flushPromises()
+    expect(fetchSharedChatMessages).toHaveBeenCalledTimes(initialCalls + 2)
+  })
+
   it('悬浮模式提供最小化按钮', async () => {
     const wrapper = await mountView({ floating: true })
 

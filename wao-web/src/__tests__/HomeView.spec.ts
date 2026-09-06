@@ -350,6 +350,36 @@ function pasteInto(el: Element, files: File[]) {
 }
 
 describe('HomeView AI 控制台', () => {
+  it('活动运行保持五秒刷新，终态活动不再跟随高频轮询', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = mountHome()
+    await flushPromises()
+    const runCalls = vi.mocked(fetchAiRuns).mock.calls.length
+    const activityCalls = vi.mocked(fetchAiActivities).mock.calls.length
+
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    expect(fetchAiRuns).toHaveBeenCalledTimes(runCalls + 1)
+    expect(fetchAiRunners).toHaveBeenCalledTimes(runCalls + 1)
+    expect(fetchAiActivities).toHaveBeenCalledTimes(activityCalls)
+    wrapper.unmount()
+  })
+
+  it('没有活动运行时退避到三十秒刷新', async () => {
+    vi.useFakeTimers()
+    vi.mocked(fetchAiRuns).mockResolvedValueOnce([])
+    const { wrapper } = mountHome()
+    await flushPromises()
+    const runCalls = vi.mocked(fetchAiRuns).mock.calls.length
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(fetchAiRuns).toHaveBeenCalledTimes(runCalls)
+
+    await vi.advanceTimersByTimeAsync(25_000)
+    expect(fetchAiRuns).toHaveBeenCalledTimes(runCalls + 1)
+    wrapper.unmount()
+  })
+
   it('为首页主要功能区提供稳定锚点，并随控制台视图更新动态分区', async () => {
     vi.useFakeTimers()
     const { wrapper } = mountHome()
