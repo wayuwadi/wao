@@ -907,6 +907,7 @@ onBeforeUnmount(() => {
             <h2>今天不追赶进度</h2>
             <p>休息日不会自动记为失败。需要加班或调休时，再手动启用今天的工作日节奏。</p>
           </template>
+          <WeatherPanel surface="rhythm" :date="clock.date" />
         </div>
         <div class="hero-flow" aria-label="完整的一天指导列表">
           <div class="hero-flow-head"><small>完整的一天</small><span>仅作当下指导</span></div>
@@ -923,8 +924,6 @@ onBeforeUnmount(() => {
         </div>
         <WorkdayRhythmHexagramSummary v-if="tianrenEnabled" :date="clock.date" />
       </section>
-
-      <WeatherPanel surface="rhythm" :date="clock.date" />
 
       <div v-if="dayState === 'error'" class="save-banner error" role="alert">
         <i class="ri-cloud-off-line"></i><span>上次保存失败，未提交内容仍在本机。</span
