@@ -1,5 +1,7 @@
 """Fail-closed production verification for WAO JumpServer asset access."""
 
+import os
+
 from accounts.models import Account
 from assets.models import Host
 from orgs.models import Organization
@@ -32,8 +34,24 @@ with tmp_to_org(Organization.default()):
     for asset in assets.values():
         accounts = Account.objects.filter(asset=asset, name="wao-jumpserver", is_active=True)
         require(accounts.count() == 1, "Dedicated account is missing for " + asset.name)
-        ssh = asset.protocols.filter(name="ssh", port=22)
+        port = int(os.environ["WAO_JMS_SLAVE_PORT"]) if asset.name == "WAO Linux 从节点" else 22
+        ssh = asset.protocols.filter(name="ssh", port=port)
         require(ssh.count() == 1, "SSH protocol is invalid for " + asset.name)
+
+    slave = assets["WAO Linux 从节点"]
+    require(slave.address == os.environ["WAO_JMS_SLAVE_ADDRESS"], "Slave SSH address is stale")
+    if os.environ["WAO_JMS_SLAVE_VIA_MASTER"] == "true":
+        require(slave.zone is not None, "Slave tunnel zone is missing")
+        gateways = list(slave.zone.active_gateways)
+        require(len(gateways) == 1, "Slave tunnel must have exactly one gateway")
+        gateway = gateways[0]
+        require(gateway.name == "WAO Linux2 隧道网关"
+                and gateway.address == os.environ["WAO_JMS_MASTER_ADDRESS"]
+                and gateway.username == os.environ["WAO_JMS_MASTER_USER"]
+                and int(gateway.port) == 22, "Slave tunnel gateway is invalid")
+        require(slave.gateway is not None, "Slave platform cannot use its gateway")
+    else:
+        require(slave.zone is None, "Direct slave retains a stale gateway")
 
     users = list(User.objects.filter(
         username__startswith="wao_",

@@ -16,6 +16,8 @@ sh deploy/jenkins/test-backup-controller.sh
 python3 -m unittest deploy/backup/test_webdav_client.py
 sh deploy/backup/test-offsite-backup.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py
+python3 -m unittest deploy/jumpserver/test_verify_wao_ssh.py
+sh deploy/jumpserver/test-verify-assets.sh
 sh deploy/jumpserver/test-ensure-asset-key.sh
 sh deploy/jumpserver/test-ensure-sso-secret.sh
 sh deploy/scripts/test-ensure-jumpserver-certificate.sh
@@ -108,12 +110,13 @@ grep -Fq 'https://jms.wayuwa.cn/static/js/jquery-3.6.1.min.js' \
 grep -Fq 'exec sudo -n sh "$project_root/deploy/jumpserver/verify-assets.sh"' \
   deploy/jenkins/deploy-master-local.sh
 test "$(grep -Fc 'python /opt/jumpserver/apps/manage.py shell' \
-  deploy/jumpserver/verify-assets.sh)" = 2
+  deploy/jumpserver/verify-assets.sh)" = 3
 ! grep -Fq 'python manage.py' deploy/jumpserver/verify-assets.sh
 ! grep -Fq 'enable-rdp.ps1' deploy/jenkins/ci-deploy.sh
 python3 -m py_compile \
   deploy/jumpserver/bootstrap_wao_assets.py \
   deploy/jumpserver/verify_wao_access.py \
+  deploy/jumpserver/verify_wao_ssh.py \
   deploy/jumpserver/verify_wao_sso.py
 grep -Fq 'checkend 1209600' deploy/jenkins/ci-production-verify.sh
 ! grep -Fq '.clear()' deploy/jumpserver/bootstrap_wao_assets.py

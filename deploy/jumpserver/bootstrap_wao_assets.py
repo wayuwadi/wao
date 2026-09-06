@@ -3,7 +3,7 @@
 import os
 
 from accounts.models import Account
-from assets.models import Host, Node, Platform, Protocol
+from assets.models import Gateway, Host, Node, Platform, Protocol, Zone
 from common.utils import asset_permission_date_expired_default
 from django.utils import timezone
 from orgs.models import Organization
@@ -37,12 +37,40 @@ assets = [
     ("WAO Linux 从节点", required("WAO_JMS_SLAVE_ADDRESS"), required("WAO_JMS_SLAVE_USER")),
     ("WAO 阿里云入口", required("WAO_JMS_CLOUD_ADDRESS"), required("WAO_JMS_CLOUD_USER")),
 ]
+slave_port = int(required("WAO_JMS_SLAVE_PORT"))
+if not 1 <= slave_port <= 65535:
+    raise RuntimeError("Invalid slave SSH port")
+slave_via_master = required("WAO_JMS_SLAVE_VIA_MASTER") == "true"
+gateway_name = "WAO Linux2 隧道网关"
 
 with tmp_to_org(Organization.default()):
     node, _ = Node.org_root().get_or_create_child("WAO 基础设施")
-    platform = Platform.objects.filter(category="host", type="linux").first()
+    platform = Platform.objects.filter(name="Linux", category="host", type="linux").first()
     if platform is None:
         raise RuntimeError("JumpServer Linux host platform is unavailable")
+    slave_zone = None
+    if slave_via_master:
+        if not platform.gateway_enabled:
+            raise RuntimeError("Linux platform does not support SSH gateways")
+        slave_zone, _ = Zone.objects.update_or_create(
+            name="WAO Linux1 反向隧道", defaults={"comment": "经 Linux2 访问既有 loopback SSH 隧道。"},
+        )
+        gateway, _ = Gateway.objects.update_or_create(
+            name=gateway_name,
+            defaults={"address": required("WAO_JMS_MASTER_ADDRESS"),
+                      "platform": Gateway.default_platform(), "zone": slave_zone,
+                      "is_active": True},
+        )
+        Protocol.objects.update_or_create(asset=gateway, name="ssh", defaults={"port": 22})
+        Account.objects.update_or_create(
+            asset=gateway, name="wao-jumpserver",
+            defaults={"username": required("WAO_JMS_MASTER_USER"), "secret_type": "ssh_key",
+                      "secret": private_key, "privileged": True, "is_active": True},
+        )
+        # 网关仅用于既有从节点的传输，不加入用户可登录的三项资产授权。
+        gateway.nodes.set([])
+    else:
+        Gateway.objects.filter(name=gateway_name).update(is_active=False)
     registered_assets = {}
     ssh_usernames = set()
     for name, address, username in assets:
@@ -52,12 +80,13 @@ with tmp_to_org(Organization.default()):
                 "address": address,
                 "platform": platform,
                 "is_active": True,
+                "zone": slave_zone if name == "WAO Linux 从节点" else None,
                 "comment": "由 WAO 主发布链路纳管；账号使用独立 SSH 密钥。",
             },
         )
         asset.nodes.set([node])
         Protocol.objects.update_or_create(
-            asset=asset, name="ssh", defaults={"port": 22}
+            asset=asset, name="ssh", defaults={"port": slave_port if name == "WAO Linux 从节点" else 22}
         )
         Account.objects.update_or_create(
             asset=asset,
