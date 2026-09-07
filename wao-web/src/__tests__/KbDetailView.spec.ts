@@ -78,6 +78,19 @@ describe('知识库详情目录体验', () => {
     return wrapper
   }
 
+  it('保存失败显示服务端原因，成功后撤下错误与重试入口', async () => {
+    const wrapper = await mountView('/kb/k3?doc=d7')
+    const data = useDataStore(pinia)
+    data.markSaved('doc:d7', false, '有序列表编号样式不受支持')
+    await flushPromises()
+    expect(wrapper.get('.doc-draft-warning').text()).toContain('有序列表编号样式不受支持')
+    expect(wrapper.get('.save-retry').text()).toBe('重试')
+    data.markSaved('doc:d7', true)
+    await flushPromises()
+    expect(wrapper.find('.doc-draft-warning').exists()).toBe(false)
+    expect(wrapper.find('.save-retry').exists()).toBe(false)
+  })
+
   it('首次进入只展开当前文档所在文件夹，其余文件夹默认收起', async () => {
     const wrapper = await mountView('/kb/k3?doc=d7')
     const folders = wrapper.findAll('.folder-row')

@@ -53,6 +53,8 @@ import cn.wayuwa.wao.mapper.KbMapper;
 import cn.wayuwa.wao.mapper.MemberMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 class KnowledgeServiceTest {
@@ -275,6 +277,72 @@ class KnowledgeServiceTest {
         assertThatCode(() -> service.createDoc(new CreateDocRequest("k1", "f1", "链接卡片", null,
                 List.of(new DocBlockDto(null, null, "兼容链接", null, null)), card), "m1"))
                 .doesNotThrowAnyException();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "\"1\"", "\"a\"", "\"A\"", "\"i\"", "\"I\""})
+    void orderedListFromEditorSavesAndReloadsWithNumberingStyle(String style) throws Exception {
+        DocEntity existing = doc("d-list", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        when(docMapper.selectList(any())).thenReturn(List.of(existing));
+        when(docMapper.updateIfRevision(any(), eq(1))).thenReturn(1);
+        RichDocContentDto content = orderedListContent(style);
+
+        DocDto saved = service.updateDoc(existing.getId(),
+                new PatchDocRequest(null, List.of(), content, null, null, 1));
+
+        assertThat(saved.rev()).isEqualTo(2);
+        assertThat(saved.content()).isEqualTo(content);
+        assertThat(new ObjectMapper().readTree(existing.getContentJson())).isEqualTo(content.document());
+        assertThat(existing.getContentMarkdown()).isEqualTo("今日完成：\n\n1. 完成方案\n\n2. ");
+        verify(docMapper).updateIfRevision(existing, 1);
+
+        var template = service.createTemplate(new CreateDocTemplateRequest(
+                "列表模板", "", existing.getId(), List.of(), content), "m1");
+        assertThat(template.content()).isEqualTo(content);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\"disc\"", "\"javascript:alert(1)\"", "1", "true", "{}", "[]"})
+    void orderedListRejectsUnknownOrMalformedNumberingStyle(String style) throws Exception {
+        DocEntity existing = doc("d-list", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+
+        assertThatThrownBy(() -> service.updateDoc(existing.getId(),
+                new PatchDocRequest(null, null, orderedListContent(style), null, null, 1)))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("编号样式不受支持");
+        verify(docMapper, never()).updateIfRevision(any(), anyInt());
+    }
+
+    @Test
+    void listTypeAttributeDoesNotBroadenOtherNodesOrMarks() throws Exception {
+        DocEntity existing = doc("d-list", "k1", "f1");
+        when(docMapper.selectById(existing.getId())).thenReturn(existing);
+        for (String node : List.of(
+                "{\"type\":\"paragraph\",\"attrs\":{\"type\":null}}",
+                "{\"type\":\"text\",\"text\":\"正文\",\"marks\":[{\"type\":\"bold\",\"attrs\":{\"type\":\"1\"}}]}",
+                "{\"type\":\"orderedList\",\"attrs\":{\"onclick\":null}}")) {
+            var content = new RichDocContentDto(1, new ObjectMapper().readTree(
+                    "{\"type\":\"doc\",\"content\":[" + node + "]}"), "正文");
+            assertThatThrownBy(() -> service.updateDoc(existing.getId(),
+                    new PatchDocRequest(null, null, content, null, null, 1)))
+                    .isInstanceOf(BadRequestException.class).hasMessageContaining("不支持的节点属性");
+        }
+        verify(docMapper, never()).updateIfRevision(any(), anyInt());
+    }
+
+    private RichDocContentDto orderedListContent(String style) throws Exception {
+        return new RichDocContentDto(1, new ObjectMapper().readTree("""
+                {"type":"doc","content":[
+                  {"type":"paragraph","attrs":{"uid":"heading","textAlign":null},
+                   "content":[{"type":"text","text":"今日完成："}]},
+                  {"type":"orderedList","attrs":{"start":1,"type":%s},"content":[
+                    {"type":"listItem","content":[{"type":"paragraph","attrs":{"textAlign":null},
+                     "content":[{"type":"text","text":"完成方案"}]}]},
+                    {"type":"listItem","content":[{"type":"paragraph","attrs":{"textAlign":null}}]}
+                  ]}
+                ]}
+                """.formatted(style)), "今日完成：\n\n1. 完成方案\n\n2. ");
     }
 
     @Test
