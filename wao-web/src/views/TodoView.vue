@@ -74,6 +74,12 @@ const boardCols = computed(() =>
 
 const tasksEmpty = computed(() => taskGroups.value.length === 0)
 const selectedTaskIds = ref<string[]>([])
+const quadrantSelectionMode = ref(false)
+const selectionMode = computed(() => taskView.value !== 'quadrant' || quadrantSelectionMode.value)
+function toggleQuadrantSelection() {
+  quadrantSelectionMode.value = !quadrantSelectionMode.value
+  if (!quadrantSelectionMode.value) selectedTaskIds.value = []
+}
 const visibleTaskIds = computed(() => myList.value.filter((task) => task.status !== '已完成'
   || showDone.value || (taskView.value === 'list' && isSettling(task.id))).map((task) => task.id))
 const selectedCopyTasks = computed(() => myList.value.filter((task) => selectedTaskIds.value.includes(task.id)))
@@ -102,7 +108,7 @@ function onDropStatus(status: TaskStatus) {
 </script>
 
 <template>
-  <div class="todo">
+  <div class="todo" :class="{ 'todo-quadrant': taskView === 'quadrant' }">
     <div class="ptop">
       <div class="ptitle">TODO</div>
       <span class="ptip">跨项目任务汇总 · 任务归属于各自项目</span>
@@ -123,6 +129,7 @@ function onDropStatus(status: TaskStatus) {
         {{ c }}
       </button>
       <div class="spacer"></div>
+      <button v-if="taskView === 'quadrant'" class="chip" :aria-pressed="quadrantSelectionMode" @click="toggleQuadrantSelection">{{ quadrantSelectionMode ? '退出批量选择' : '批量选择' }}</button>
       <div class="seg">
         <button
           v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['四象限', 'ri-layout-grid-line', 'quadrant']] as const)"
@@ -136,11 +143,11 @@ function onDropStatus(status: TaskStatus) {
       </div>
     </div>
 
-    <div v-if="data.taskLoadState === 'loaded'" class="copy-selection-actions">
+    <div v-if="data.taskLoadState === 'loaded' && selectionMode" class="copy-selection-actions">
       <button class="chip" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
       <button v-if="selectedTaskIds.length" class="chip" @click="selectedTaskIds = []">清空选择</button>
     </div>
-    <TaskBatchCopy v-if="data.taskLoadState === 'loaded'" :tasks="selectedCopyTasks" />
+    <TaskBatchCopy v-if="data.taskLoadState === 'loaded' && selectionMode" :tasks="selectedCopyTasks" />
 
     <div v-if="data.taskLoadState === 'loading'" class="task-state" role="status" aria-live="polite">
       <i class="ri-loader-4-line spinning"></i>
@@ -182,7 +189,7 @@ function onDropStatus(status: TaskStatus) {
       <div v-if="tasksEmpty" class="empty simple">这个筛选下没有任务</div>
     </template>
 
-    <TaskQuadrantView v-else-if="taskView === 'quadrant'" v-model:show-done="showDone" :tasks="myList" :selected-ids="selectedTaskIds" @select="toggleSelection" />
+    <TaskQuadrantView v-else-if="taskView === 'quadrant'" v-model:show-done="showDone" :tasks="myList" :selected-ids="quadrantSelectionMode ? selectedTaskIds : []" :selection-mode="quadrantSelectionMode" @select="toggleSelection" />
 
     <div v-else class="board">
       <div
@@ -240,6 +247,9 @@ function onDropStatus(status: TaskStatus) {
 .spacer {
   flex: 1;
 }
+.todo.todo-quadrant { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; max-width: none; margin: 0; padding: 16px 20px 12px; }
+.todo-quadrant > :not(.quadrant-view) { flex-shrink: 0; }
+.todo-quadrant :deep(.copy-preview) { max-height: 25vh; overflow: auto; }
 .ellip {
   white-space: nowrap;
   overflow: hidden;
@@ -649,6 +659,8 @@ function onDropStatus(status: TaskStatus) {
 
 @media (max-width: 760px) {
   .todo { padding: 16px 12px 28px; }
+  .todo.todo-quadrant { padding: 10px 8px 8px; }
+  .todo-quadrant .ptip { display: none; }
   .seg { flex-wrap: wrap; }
   .seg-btn { min-height: 36px; }
   .btn-primary { min-height: 36px; }

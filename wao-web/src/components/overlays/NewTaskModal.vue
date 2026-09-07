@@ -28,7 +28,8 @@ function dueDate(label: string): string {
 }
 
 const source = ui.modalTaskSeed
-const DRAFT_KEY = source?.draftKey || 'wao-new-task-draft-v1'
+const DRAFT_KEY = source?.draftKey || (ui.modalPriority
+  ? `wao-new-task-quadrant-${ui.modalPriority}-draft-v1` : 'wao-new-task-draft-v1')
 type Draft = {
   title: string; project: string; owner: string; pr: Priority; due: string; desc: string
   scheduleMode: 'deadline' | 'range'; startAt: string; endAt: string
@@ -70,7 +71,7 @@ watch(() => preferences.defaultProject, (value) => {
   }
 })
 const owner = ref(draft.owner ?? session.currentUser.id)
-const pr = ref<Priority>(draft.pr ?? 'P2')
+const pr = ref<Priority>(draft.pr ?? ui.modalPriority ?? 'P2')
 // 日历双击某天进来时，截止日直接锁定那一天，优先于草稿里存的快捷选项。
 // 草稿里的 ISO 日期（上次从日历带入的）没有对应 pill，回落到「今天」。
 const QUICK_DUES = ['今天', '明天', '周日', '下周一']
