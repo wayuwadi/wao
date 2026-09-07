@@ -14,6 +14,19 @@ trap 'mark_verification failed' EXIT HUP INT TERM
 : "${WAO_GIT_SHA:?WAO_GIT_SHA is required}"
 short_sha="$(printf '%.7s' "$WAO_GIT_SHA")"
 
+# 完整下载后再检查正文，避免 grep 提前关闭管道让 curl 报写入失败并反复重试。
+require_public_content() {
+  asset_url="$1"
+  expected_content="$2"
+  asset_file="$WAO_RUN_TEMP/public-asset-probe.txt"
+  curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
+    --output "$asset_file" "$asset_url" || return 1
+  if ! grep -Fq -- "$expected_content" "$asset_file"; then
+    printf 'Public asset content did not match: %s\n' "$asset_url" >&2
+    return 1
+  fi
+}
+
 hello="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://wao.wayuwa.cn/api/hello)"
 printf '%s' "$hello" | grep -q '"code":0'
@@ -27,35 +40,29 @@ printf '%s' "$notification_policy" \
 agent_health="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://wao.wayuwa.cn/api/agent/health)"
 printf '%s' "$agent_health" | grep -q '"status":"UP"'
-curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/agent/ | grep -q 'id="app"'
+require_public_content https://wao.wayuwa.cn/agent/ 'id="app"'
 amer_demo="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://wao.wayuwa.cn/amer_demo_1/)"
 printf '%s' "$amer_demo" | grep -q '<title>IT 安全风险管理 Demo</title>'
-curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/amer_demo_1/styles.css | grep -q -- '--navy:'
-curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/amer_demo_1/app.js | grep -q 'IT 安全风险管理'
+require_public_content https://wao.wayuwa.cn/amer_demo_1/styles.css '--navy:'
+require_public_content https://wao.wayuwa.cn/amer_demo_1/app.js 'IT 安全风险管理'
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_1)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_1/not-found.js)" = 404
 amer_demo_v2="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
   https://wao.wayuwa.cn/amer_demo_2/)"
 printf '%s' "$amer_demo_v2" | grep -q '<title>IT Risk Management · Power Apps Demo</title>'
-curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/amer_demo_2/styles.css | grep -q -- '--power:'
-curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/amer_demo_2/app.js | grep -q 'amer-risk-demo-v2'
+require_public_content https://wao.wayuwa.cn/amer_demo_2/styles.css '--power:'
+require_public_content https://wao.wayuwa.cn/amer_demo_2/app.js 'amer-risk-demo-v2'
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_2)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_2/not-found.js)" = 404
-amer_demo_v3="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/amer_demo_3/)"
-printf '%s' "$amer_demo_v3" | grep -q '<title>IT Risk Management v3 · Power Apps Demo</title>'
-curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/amer_demo_3/styles.css | grep -q -- '.score-journey'
-curl --fail --silent --show-error --retry 6 --retry-delay 5 --retry-all-errors \
-  https://wao.wayuwa.cn/amer_demo_3/app.js | grep -q 'amer-risk-demo-v3'
-test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_3)" = 308
-test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/amer_demo_3/not-found.js)" = 404
+# V4 同时服务新入口和原 V3 地址；存储键继续沿用 V3，保留用户的演示数据。
+for demo_path in amer_demo_3 amer_demo_4; do
+  require_public_content "https://wao.wayuwa.cn/$demo_path/" '<title>IT Risk Management v4 · Power Apps Demo</title>'
+  require_public_content "https://wao.wayuwa.cn/$demo_path/styles.css" '.score-journey'
+  require_public_content "https://wao.wayuwa.cn/$demo_path/app.js" 'amer-risk-demo-v3'
+  test "$(curl --silent --output /dev/null --write-out '%{http_code}' "https://wao.wayuwa.cn/$demo_path")" = 308
+  test "$(curl --silent --output /dev/null --write-out '%{http_code}' "https://wao.wayuwa.cn/$demo_path/not-found.js")" = 404
+done
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/game/)" = 308
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/insight/)" = 410
 test "$(curl --silent --output /dev/null --write-out '%{http_code}' https://wao.wayuwa.cn/jenkins)" = 308

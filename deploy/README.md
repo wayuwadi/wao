@@ -296,6 +296,7 @@ https://wao.wayuwa.cn/api/music/netease/callback
 - Jenkins 在 Linux2 本机构建并发布主节点；Linux1 主动建立仅监听 Linux2
   `127.0.0.1:2201` 的反向 SSH 通道，Jenkins 通过该通道和专用部署密钥发布从节点；
 - Maven 和 Node 测试使用固定工具容器；四个运行镜像一次构建后，本机直接复用并压缩传给 Linux1；
+- 生产验收同时检查 V4 新入口与原 V3 兼容入口的 V4 标题、样式、脚本、重定向和缺失资源状态。静态资源先完整下载再匹配内容，下载失败仍中断验收，避免管道提前关闭造成误报和重复下载。
 - `slave-known-hosts` 与 `cloud-known-hosts` 必须保存人工核验后的 SSH 主机公钥；
 - 密码登录仅用于首次安装公钥，流水线只使用 `/etc/jenkins/secrets` 中的专用部署密钥；
 - 飞书 Webhook 保存在主节点 `deploy/.env.secrets`，同时用于 main 部署结果和 WAO 任务新评论通知。
