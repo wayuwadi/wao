@@ -2,7 +2,7 @@ import type { ModuleId } from '@/types'
 
 export type NavigationCatalogModuleId = Exclude<
   ModuleId,
-  'home' | 'navigation' | 'settings' | 'chat' | 'chat-reviews'
+  'home' | 'notes' | 'navigation' | 'settings' | 'chat' | 'chat-reviews'
 >
 
 export interface NavigationCatalogSection {

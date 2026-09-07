@@ -16,6 +16,23 @@ import org.mockito.ArgumentCaptor;
 
 class BuiltinMenuRegistryServiceTest {
 
+    @Test
+    void oldRegistryAddsNotesBelowHomeWithoutOverwritingCustomMenus() throws Exception {
+        var customized = new BuiltinMenuConfigDto("home", "我的首页", "ri-home-5-line", "ROOT", 10, true, "TAB");
+        var old = new cn.wayuwa.wao.dto.BuiltinMenuRegistryDto(36, java.util.List.of(customized));
+        when(settings.get(SettingService.BUILTIN_MENU_REGISTRY))
+                .thenReturn(new ObjectMapper().writeValueAsString(old));
+        var menus = service.getRegistry().menus();
+        assertThat(menus).filteredOn(menu -> "notes".equals(menu.id())).singleElement().satisfies(menu -> {
+            assertThat(menu.label()).isEqualTo("小记");
+            assertThat(menu.group()).isEqualTo("ROOT");
+            assertThat(menu.order()).isEqualTo(15);
+            assertThat(menu.visible()).isTrue();
+        });
+        assertThat(menus).filteredOn(menu -> "home".equals(menu.id())).singleElement()
+                .satisfies(menu -> assertThat(menu.label()).isEqualTo("我的首页"));
+    }
+
     private final SettingService settings = mock(SettingService.class);
     private final BuiltinMenuRegistryService service =
             new BuiltinMenuRegistryService(settings, new ObjectMapper().findAndRegisterModules());
@@ -23,7 +40,7 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(32);
+        assertThat(service.getRegistry().menus()).hasSize(33);
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "decisions".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("决策管理");
@@ -69,7 +86,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(32);
+        assertThat(service.getRegistry().menus()).hasSize(33);
     }
 
     @Test
@@ -135,7 +152,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(32);
+        assertThat(upgraded.menus()).hasSize(33);
         assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("工作台");
