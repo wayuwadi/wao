@@ -63,6 +63,28 @@ describe('新建任务的落库反馈', () => {
     wrapper.unmount()
   })
 
+  it('象限入口预设优先级，隔离普通草稿并恢复自己的未提交内容', async () => {
+    const original = JSON.stringify({ title: '普通入口草稿', pr: 'P2' })
+    localStorage.setItem('wao-new-task-draft-v1', original)
+    const ui = useUiStore()
+    ui.openModal('task')
+    ui.modalPriority = 'P1'
+    let wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    expect(wrapper.get('.title-input').element).toHaveProperty('value', '')
+    await wrapper.get('.title-input').setValue('象限中的草稿')
+    wrapper.unmount()
+    expect(localStorage.getItem('wao-new-task-draft-v1')).toBe(original)
+    wrapper = mount(NewTaskModal, { global: { stubs: { MarkdownEditor: true } } })
+    expect(wrapper.get('.title-input').element).toHaveProperty('value', '象限中的草稿')
+    putTask.mockImplementation(savedTask)
+    await wrapper.get('.foot .btn-primary').trigger('click')
+    await flushPromises()
+    expect(data.tasks.find((task) => task.title === '象限中的草稿')?.pr).toBe('P1')
+    expect(localStorage.getItem('wao-new-task-draft-v1')).toBe(original)
+    expect(localStorage.getItem('wao-new-task-quadrant-P1-draft-v1')).toBeNull()
+    wrapper.unmount()
+  })
+
   it('文档待办使用来源项目和完整文字，不覆盖普通任务草稿；失败后同一任务重试', async () => {
     const original = JSON.stringify({ title: '普通任务未提交草稿', project: 'p1' })
     localStorage.setItem('wao-new-task-draft-v1', original)

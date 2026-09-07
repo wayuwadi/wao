@@ -544,6 +544,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   width: auto;
   flex: 1 1 0;
 }
+/* 四象限占据可用视口，列表分别滚动；不让某一格的长清单撑走其他象限。 */
+.page-stage:has(.todo-quadrant) { flex: 1 1 0; min-height: 360px; align-items: stretch; }
+.page-body:has(.todo-quadrant) { display: flex; min-height: 0; }
 
 /* 悬浮新建按钮只在手机上出现；桌面顶栏已经有「新建任务」了 */
 .fab {
