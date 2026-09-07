@@ -8,12 +8,10 @@ import { useQuickLinks } from '@/composables/quickLinks'
 import { useFunctionHealth } from '@/composables/functionHealth'
 import { toast } from '@/composables/toast'
 import { useNavStore } from '@/stores/nav'
-import { useUiStore } from '@/stores/ui'
 import type { NavItemId } from '@/config/nav'
 
 const router = useRouter()
 const nav = useNavStore()
-const ui = useUiStore()
 const quickLinks = useQuickLinks()
 const health = useFunctionHealth()
 const query = ref('')
@@ -203,9 +201,9 @@ onMounted(() => {
         </div>
       </header>
       <div class="card-grid">
-        <button v-if="showQuickNote" class="nav-card" type="button" @click="ui.openModal('note')">
+        <button v-if="showQuickNote" class="nav-card" type="button" @click="router.push('/notes')">
           <span class="card-icon"><i class="ri-sticky-note-line"></i></span>
-          <span class="card-copy"><b>小记</b><small>直接打开小记输入框。</small></span>
+          <span class="card-copy"><b>小记</b><small>直接记录、搜索和回看全部小记。</small></span>
           <i class="ri-arrow-right-line card-arrow"></i>
         </button>
         <button

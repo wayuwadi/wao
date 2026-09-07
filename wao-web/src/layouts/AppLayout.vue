@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { RouterView, useRoute } from 'vue-router'
+import { RouterView, useRoute, useRouter } from 'vue-router'
 import SideNav from '@/components/nav/SideNav.vue'
 import TabBar from '@/components/tabs/TabBar.vue'
 import TaskDrawer from '@/components/task/TaskDrawer.vue'
 import NewTaskModal from '@/components/overlays/NewTaskModal.vue'
 import NewProjectModal from '@/components/overlays/NewProjectModal.vue'
-import QuickNoteModal from '@/components/overlays/QuickNoteModal.vue'
 import GlobalSearch from '@/components/overlays/GlobalSearch.vue'
 import Celebration from '@/components/overlays/CelebrationOverlay.vue'
 import SiteFooter from '@/components/SiteFooter.vue'
@@ -31,6 +30,7 @@ import { useFunctionHealth } from '@/composables/functionHealth'
 import type { ModuleId } from '@/types'
 
 const route = useRoute()
+const router = useRouter()
 const nav = useNavStore()
 const tabs = useTabsStore()
 const ui = useUiStore()
@@ -89,6 +89,14 @@ const loadErrorMessages = computed(() => [
 preferences.prepareForMember(session.currentUser.id)
 
 useShortcuts()
+
+// 兼容旧动作调用，所有小记入口都回到同一个记录空间。
+watch(() => ui.modal, (modal) => {
+  if (modal === 'note') {
+    ui.closeModal()
+    void router.push('/notes')
+  }
+})
 
 const crumbA = computed(() => {
   if (route.meta.tabKind === 'external') {
@@ -156,6 +164,7 @@ function needsDocs() {
     route.name === 'project' ||
     route.name === 'kb' ||
     route.meta.module === 'knowledge' ||
+    route.meta.module === 'notes' ||
     !!ui.openTaskId ||
     ui.searchOpen
   )
@@ -205,7 +214,7 @@ function newTask() {
 }
 /** 小记：不用先选知识库，打开就是一个空白输入框，存进小记知识库。 */
 function newNote() {
-  ui.openModal('note')
+  void router.push('/notes')
 }
 const themeIcon = computed(() => {
   if (theme.mode.value === 'system') return 'ri-contrast-line'
@@ -336,7 +345,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <TaskDrawer />
     <NewTaskModal v-if="ui.modal === 'task'" />
     <NewProjectModal v-if="ui.modal === 'project'" />
-    <QuickNoteModal v-if="ui.modal === 'note'" />
     <GlobalSearch v-if="ui.searchOpen" />
     <ShortcutsHelp v-if="ui.helpOpen" />
     <Celebration v-if="ui.celebrating" />

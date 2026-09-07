@@ -20,6 +20,7 @@ export interface Org {
 /** 顶部模块 id —— 与左侧导航一一对应。 */
 export type ModuleId =
   | 'home'
+  | 'notes'
   | 'navigation'
   | 'projects'
   | 'ideas'

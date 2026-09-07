@@ -133,7 +133,7 @@ describe('全量导航页', () => {
   it('完整目录覆盖所有非兼容模块，且不受侧栏显隐影响', async () => {
     const catalogIds = NAVIGATION_CATALOG.flatMap((section) => section.items.map((item) => item.id))
     const expected = Object.keys(MODULES).filter(
-      (id) => !['home', 'navigation', 'settings', 'chat', 'chat-reviews'].includes(id),
+      (id) => !['home', 'notes', 'navigation', 'settings', 'chat', 'chat-reviews'].includes(id),
     )
     expect(new Set(catalogIds)).toEqual(new Set(expected))
 
@@ -176,13 +176,15 @@ describe('全量导航页', () => {
   })
 
   it('工作台不再展示失效的手机底栏编辑，并继续直达真实小记链路', async () => {
-    const { wrapper } = await mountNavigation()
+    const { router, wrapper } = await mountNavigation()
     expect(wrapper.find('.manage').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('编辑手机底栏')
     expect(savePreference).not.toHaveBeenCalledWith('mobile-bottom-nav-v1', expect.any(String))
 
     await wrapper.get('.quick-actions-section .nav-card').trigger('click')
-    expect(useUiStore().modal).toBe('note')
+    await flushPromises()
+    expect(useUiStore().modal).toBeNull()
+    expect(router.currentRoute.value.path).toBe('/notes')
     wrapper.unmount()
   })
 
