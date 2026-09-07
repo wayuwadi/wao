@@ -183,11 +183,11 @@ const commands = computed<Command[]>(() => {
     {
       id: 'action-note',
       title: '快速小记',
-      subtitle: '打开快速笔记弹窗',
+      subtitle: '打开小记，直接记录和回看',
       icon: 'ri-sticky-note-line',
       keywords: ['note', 'xiaoji', 'biji'],
       action: () => {
-        ui.openModal('note')
+        void router.push('/notes')
         close()
       },
     },
