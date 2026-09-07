@@ -1853,10 +1853,10 @@ public class KnowledgeService {
                 if (!RICH_MARK_TYPES.contains(markType)) {
                     throw new BadRequestException("文档包含不支持的文字样式：" + markType);
                 }
-                validateRichAttrs(mark.get("attrs"));
+                validateRichAttrs(mark.get("attrs"), null);
             }
         }
-        validateRichAttrs(node.get("attrs"));
+        validateRichAttrs(node.get("attrs"), type);
         JsonNode children = node.get("content");
         if (children != null) {
             if (!children.isArray()) throw new BadRequestException("文档子节点不合法");
@@ -1864,10 +1864,19 @@ public class KnowledgeService {
         }
     }
 
-    private void validateRichAttrs(JsonNode attrs) {
+    private void validateRichAttrs(JsonNode attrs, String nodeType) {
         if (attrs == null || attrs.isNull()) return;
         if (!attrs.isObject()) throw new BadRequestException("文档节点属性不合法");
         attrs.fields().forEachRemaining(entry -> {
+            // 编辑器会为普通有序列表生成 type:null；粘贴列表还可能带 HTML 编号样式。
+            if ("orderedList".equals(nodeType) && "type".equals(entry.getKey())) {
+                JsonNode style = entry.getValue();
+                if (!style.isNull() && (!style.isTextual()
+                        || !Set.of("1", "a", "A", "i", "I").contains(style.asText()))) {
+                    throw new BadRequestException("有序列表编号样式不受支持");
+                }
+                return;
+            }
             if (!RICH_ATTRS.contains(entry.getKey())) {
                 throw new BadRequestException("文档包含不支持的节点属性：" + entry.getKey());
             }

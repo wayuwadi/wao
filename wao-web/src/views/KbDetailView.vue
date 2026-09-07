@@ -760,7 +760,8 @@ async function onUploadFile(file: File, done: (item: FileItem | null) => void) {
 }
 async function retryDocSave() {
   if (docId.value && !(await data.persistDocNow(docId.value))) {
-    toast('仍未保存到服务器，本机草稿保持完整', 'ri-error-warning-line')
+    const reason = data.saveState(`doc:${docId.value}`).errorMessage
+    toast(reason ? `${reason}；本机草稿保持完整` : '仍未保存到服务器，本机草稿保持完整', 'ri-error-warning-line')
   }
 }
 async function loadServerConflict() {
@@ -1043,6 +1044,7 @@ async function keepConflictCopy() {
               <button class="primary" @click="keepConflictCopy">本机草稿另存副本</button>
             </div>
             <div v-else-if="docId && data.docDraftErrors[docId]" class="doc-draft-warning" role="alert"><i class="ri-error-warning-line"></i>浏览器暂时无法写入离线草稿；请保持页面打开，并在网络恢复后点击保存重试。</div>
+            <div v-if="saveFailed && currentSaveState?.errorMessage && docId && !data.docConflicts[docId]" class="doc-draft-warning" role="alert">保存失败：{{ currentSaveState.errorMessage }}。本机草稿已保留，可点击上方“重试”。</div>
 
             <MarkdownEditor
               :key="docId ?? 'empty-doc'"

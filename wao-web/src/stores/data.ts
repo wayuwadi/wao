@@ -463,19 +463,20 @@ export const useDataStore = defineStore('data', () => {
    * 右上角的 {@code SaveHint} 据此显示「自动保存成功 14:32」——不给回执，用户没法
    * 确认东西真的写进去了。
    */
-  const saveStates = reactive<Record<string, { saving: boolean; savedAt: string | null; failed: boolean }>>({})
-  const EMPTY_SAVE = { saving: false, savedAt: null, failed: false }
+  const saveStates = reactive<Record<string, { saving: boolean; savedAt: string | null; failed: boolean; errorMessage: string }>>({})
+  const EMPTY_SAVE = { saving: false, savedAt: null, failed: false, errorMessage: '' }
   /** 读某个编辑区的保存状态（没登记过就是「没存过也没在存」）。 */
   const saveState = (key: string) => saveStates[key] ?? EMPTY_SAVE
   function markSaving(key: string) {
-    saveStates[key] = { saving: true, savedAt: saveStates[key]?.savedAt ?? null, failed: false }
+    saveStates[key] = { saving: true, savedAt: saveStates[key]?.savedAt ?? null, failed: false, errorMessage: '' }
   }
   /** 一次写透结束：成功才推进「上次保存成功」的时间。 */
-  function markSaved(key: string, ok: boolean) {
+  function markSaved(key: string, ok: boolean, errorMessage = '') {
     saveStates[key] = {
       saving: false,
       savedAt: ok ? nowIso() : (saveStates[key]?.savedAt ?? null),
       failed: !ok,
+      errorMessage: ok ? '' : errorMessage,
     }
   }
 
@@ -576,8 +577,8 @@ export const useDataStore = defineStore('data', () => {
       }
       return true
     }).catch(async (cause: unknown) => {
-      markSaved(`doc:${id}`, false)
       const message = cause instanceof Error ? cause.message : ''
+      markSaved(`doc:${id}`, false, message)
       if (message.includes('其他窗口') || message.includes('刷新后处理')) {
         try { docConflicts[id] = await fetchDoc(id) } catch { docConflicts[id] = docs[id] ?? null }
       }
