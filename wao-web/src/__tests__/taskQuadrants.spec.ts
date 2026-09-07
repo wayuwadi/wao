@@ -95,6 +95,19 @@ describe('TODO 四象限', () => {
     wrapper.unmount()
   })
 
+  it('任务标题自身可启动拖动，批量选择期间禁止拖动', async () => {
+    const wrapper = mountQuadrants()
+    const title = wrapper.get('.quadrant-title')
+    expect(title.attributes('draggable')).toBe('true')
+    await title.trigger('dragstart')
+    await wrapper.findAll('.quadrant')[1]!.trigger('drop')
+    await flushPromises()
+    expect(useDataStore().tasks[0]!.pr).toBe('P1')
+    await wrapper.setProps({ selectionMode: true })
+    expect(wrapper.findAll('.quadrant-title').every((button) => button.attributes('draggable') === 'false')).toBe(true)
+    wrapper.unmount()
+  })
+
   it('完成默认收起，展开后可选择，收起和筛选清除隐藏选择', async () => {
     const data = useDataStore()
     data.tasks[0]!.status = '已完成'

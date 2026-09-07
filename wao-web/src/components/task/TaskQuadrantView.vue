@@ -99,7 +99,7 @@ function createTask(priority: Priority) {
             <button v-else class="quadrant-complete" :aria-label="`${task.status === '已完成' ? '重新打开' : '完成任务'} ${task.title}`"
               :aria-pressed="task.status === '已完成'" :disabled="busy(task.id)" @click="toggleComplete(task.id)"><i :class="task.status === '已完成' ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i></button>
             <div class="quadrant-task-body">
-              <button class="quadrant-title" :title="task.title" @click="ui.openTask(task.id)">{{ task.title }}</button>
+              <button class="quadrant-title" :title="task.title" :draggable="!busy(task.id) && !selectionMode" @click="ui.openTask(task.id)">{{ task.title }}</button>
               <div class="quadrant-meta">
                 <span v-if="task.due" class="quadrant-due" :style="{ color: task.dueColor }">{{ task.dueStr }}</span>
                 <span v-if="task.status !== '待办' && task.status !== '已完成'" class="quadrant-status">{{ task.status }}</span>
