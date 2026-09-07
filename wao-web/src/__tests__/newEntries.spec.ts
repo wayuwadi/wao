@@ -12,6 +12,7 @@ import { seedDataStore } from './helpers/seedDataStore'
 // 本文件只验证入口与表单外壳，不验证编辑器。模块级 mock 可阻止 AppLayout 静态导入
 // NewTaskModal 时在用例结束后继续解析 Tiptap，避免 CI 并行运行时发生环境销毁竞态。
 vi.mock('@/components/ui/MarkdownEditor.vue', () => ({
+  __esModule: true,
   default: { name: 'MarkdownEditor', template: '<div class="markdown-editor-stub" />' },
 }))
 
@@ -51,6 +52,7 @@ async function mountLayout() {
         ShortcutsHelp: true,
         Celebration: true,
         NotificationCenter: true,
+        FloatingChat: true,
         RouterView: true,
       },
     },
@@ -75,7 +77,7 @@ describe('右上角新建入口', () => {
     wrapper.unmount()
   })
 
-  it('点一次就打开对应弹窗，中间没有第二次点击', async () => {
+  it('新建任务打开弹窗，小记一步进入固定记录页面', async () => {
     const ui = useUiStore()
     const wrapper = await mountLayout()
 
@@ -84,7 +86,9 @@ describe('右上角新建入口', () => {
 
     ui.closeModal()
     await wrapper.findAll('.header .plus')[1]!.trigger('click')
-    expect(ui.modal).toBe('note')
+    await flushPromises()
+    expect(ui.modal).toBeNull()
+    expect(wrapper.vm.$router.currentRoute.value.path).toBe('/notes')
     wrapper.unmount()
   })
 
