@@ -174,7 +174,9 @@ https://wao.wayuwa.cn/api/hello
 
 额外同域应用的静态路由仍可放在 `/etc/nginx/wao-external-apps.d/*.conf`。自媒体 Agent 已并入 WAO 主仓库和主 CD，随主站一起更新 `/var/www/wao-agent/dist` 与 `wao-agent-server`；游戏已进入原生 `/games`，不再依赖 `/game/` 独立入口。目录继续保留给真正需要独立路由的第三方或后续模块。
 
-Amer 风险管理 HTML Demo 位于 `wao-web/public/amer_demo_1/`、`wao-web/public/amer_demo_2/` 和 `wao-web/public/amer_demo_3/`，随 WAO Web 制品发布到同名路径。Nginx 为三个前缀分别使用独立静态路由和 404 边界，不回退到 WAO SPA；更新 Demo 时保持入口、样式和脚本使用相对路径。第三版反映最新客户访谈中的安全部门集中维护、Owner 只读和 Assessment 版本历史，前两版保留用于方案对比。
+Amer 风险管理 HTML Demo 位于 `wao-web/public/amer_demo_1/` 至 `wao-web/public/amer_demo_4/`，随 WAO Web 制品发布到同名路径。Nginx 为四个前缀分别使用独立静态路由和 404 边界，不回退到 WAO SPA；更新 Demo 时保持入口、样式和脚本使用相对路径。V4 基于本地 V3 最新工作副本，移除列表流程条、展开 Risk 原位编辑表单并修复 Action 面板关闭。`amer_demo_3/` 同步 V4 内容以保留原链接，`amer_demo_4/` 是新的版本入口，前两版不变。V3/V4 两条路径均沿用 `amer-risk-demo-v3` 浏览器存储键，以保留并共享同域现有演示数据；HTML 引用的 JS/CSS 带版本查询参数防止旧缓存。它们仍是模拟数据页面，不连接真实 Power Platform。
+
+V4 回归可在安装 WAO Web 开发依赖后运行 `node wao-web/scripts/test-amer-demo-v4.mjs`；用 `DEMO_ROOT` 指向 `wao-web/public/amer_demo_3` 可验证原链接对应的同版资源。Nginx 路由验证使用 `sh deploy/scripts/test-render-nginx-config.sh`。窄窗口下关联表格使用横向滚动，避免内容压成竖排。
 
 图片正文进了 MySQL，`backup-mysql.ps1` 的备份体积会随图片增长，留意 `deploy\backups` 的磁盘占用。
 

@@ -1,3 +1,4 @@
+// V4 changes presentation only. Keep the V3 key to preserve existing demo records.
 const STORAGE_KEY = 'amer-risk-demo-v3';
 const SCHEMA_VERSION = 3;
 
@@ -242,14 +243,6 @@ function visibleActions() {
   return data.actions.filter((action) => ownedRisks.has(action.riskId));
 }
 
-function processStage(risk) {
-  if (risk.status === 'Registered') return 1;
-  if (risk.status === 'Assessing') return 2;
-  if (risk.status === 'Closed') return 5;
-  const hasResidual = assessmentsFor(risk.id).some((item) => item.type === 'Residual');
-  return hasResidual ? 4 : 3;
-}
-
 function shell() {
   const role = roles[state.role];
   return `
@@ -257,7 +250,7 @@ function shell() {
       <header class="powerbar">
         <div class="waffle" aria-hidden="true">⠿</div>
         <div class="powerbrand"><div class="powerlogo"><span>P</span></div><strong>Power Apps</strong></div>
-        <div class="appname"><span>IT Risk Management v3</span><b class="demo-tag">HTML Demo · 模拟数据</b></div>
+        <div class="appname"><span>IT Risk Management v4</span><b class="demo-tag">HTML Demo · 模拟数据</b></div>
         <label class="role-label" for="role-switch">查看身份</label>
         <select class="role-select" id="role-switch" aria-label="切换演示用户身份">
           ${Object.entries(roles).map(([key, item]) => `<option value="${key}" ${state.role === key ? 'selected' : ''}>${item.label}</option>`).join('')}
@@ -295,7 +288,7 @@ function commandBar() {
     commands = `<button class="cmd-btn primary" data-action="open-drawer" data-drawer="risk" ${role.canCreateRisk ? '' : 'disabled'}><span>＋</span> New Risk</button><span class="cmd-sep"></span><button class="cmd-btn" data-action="refresh">↻ Refresh</button>`;
   } else if (state.page === 'detail') {
     const risk = selectedRisk();
-    commands = `<button class="cmd-btn" data-action="back">‹ Back</button><span class="cmd-sep"></span><button class="cmd-btn" data-action="open-drawer" data-drawer="editRisk" ${state.role === 'security' ? '' : 'disabled'}>✎ Edit Risk</button><button class="cmd-btn primary" data-action="open-drawer" data-drawer="action" ${role.canCreateAction ? '' : 'disabled'}>＋ New Action</button><button class="cmd-btn" data-action="open-drawer" data-drawer="assessment" ${role.canAssess ? '' : 'disabled'}>＋ New Assessment</button><button class="cmd-btn close-risk" data-action="open-drawer" data-drawer="closeRisk" ${state.role === 'security' && risk?.status !== 'Closed' ? '' : 'disabled'}>✓ Close Risk</button>`;
+    commands = `<button class="cmd-btn" data-action="back">‹ Back</button><span class="cmd-sep"></span><button class="cmd-btn primary" data-action="open-drawer" data-drawer="action" ${role.canCreateAction ? '' : 'disabled'}>＋ New Action</button><button class="cmd-btn" data-action="open-drawer" data-drawer="assessment" ${role.canAssess ? '' : 'disabled'}>＋ New Assessment</button><button class="cmd-btn close-risk" data-action="open-drawer" data-drawer="closeRisk" ${state.role === 'security' && risk?.status !== 'Closed' ? '' : 'disabled'}>✓ Close Risk</button>`;
   } else if (state.page === 'actions') {
     commands = `<button class="cmd-btn" data-action="refresh">↻ Refresh</button>`;
   } else {
@@ -313,21 +306,6 @@ function page() {
   return risksPage();
 }
 
-function flowStrip(active = 1) {
-  const steps = [
-    ['邮件反馈', '统一进入安全部门'],
-    ['登记与初评', '创建 Risk 和 Initial'],
-    ['执行 Action', '安全部门登记进展'],
-    ['Residual 复评', '新增版本，不覆盖'],
-    ['关闭 Risk', '记录日期与原因'],
-  ];
-  return `<div class="flow-strip">${steps.map((step, index) => {
-    const no = index + 1;
-    const mode = no < active ? 'done' : no === active ? 'current' : '';
-    return `<div class="flow-step ${mode}"><span class="step-no">${no < active ? '✓' : no}</span><div><strong>${step[0]}</strong><small>${step[1]}</small></div></div>`;
-  }).join('')}</div>`;
-}
-
 function risksPage() {
   const risks = visibleRisks();
   const role = roles[state.role];
@@ -337,7 +315,6 @@ function risksPage() {
   const dueSoon = visibleActions().filter((action) => dueState(action).key === 'due-soon').length;
   return `
     <div class="page-title"><div><h1>Risk Register</h1><p>${state.role === 'security' ? '安全部门统一登记、评估、跟踪并关闭风险' : `只读显示与 ${role.user} 相关的记录`}</p></div><span class="scope-chip">${state.role === 'security' ? 'ALL RECORDS' : 'MY SCOPE · READ ONLY'}</span></div>
-    ${flowStrip(1)}
     <div class="kpis">
       ${kpi('开放 Risk', open, '▤')}${kpi('高风险', high, '⚠')}${kpi('逾期 Action', overdue, '!')}${kpi('3 天内到期', dueSoon, '◷')}
     </div>
@@ -389,13 +366,12 @@ function detailPage() {
         <div class="field"><label>Target Close Date</label><strong>${risk.targetDate}</strong></div>
       </div>
     </div>
-    ${flowStrip(processStage(risk))}
+    ${riskDetailsPanel(risk)}
     <div class="detail-grid">
       <section class="panel">
         <div class="tabs" role="tablist">
           <button class="tab ${state.detailTab === 'actions' ? 'active' : ''}" data-action="tab" data-tab="actions" role="tab">Actions (${riskActions.length})</button>
           ${state.role === 'actionOwner' ? '' : `<button class="tab ${state.detailTab === 'assessments' ? 'active' : ''}" data-action="tab" data-tab="assessments" role="tab">Assessments (${riskAssessments.length})</button>`}
-          <button class="tab ${state.detailTab === 'overview' ? 'active' : ''}" data-action="tab" data-tab="overview" role="tab">Risk details</button>
           <button class="tab ${state.detailTab === 'activity' ? 'active' : ''}" data-action="tab" data-tab="activity" role="tab">Activity</button>
         </div>
         <div class="tab-body">${detailTab(risk, riskActions, riskAssessments)}</div>
@@ -408,8 +384,45 @@ function detailPage() {
     </div>`;
 }
 
+function riskDetailsPanel(risk) {
+  const canEdit = state.role === 'security';
+  const readOnly = canEdit ? '' : 'readonly';
+  const disabled = canEdit ? '' : 'disabled';
+  const statusDisabled = !canEdit || risk.status === 'Closed' ? 'disabled' : '';
+  const detailInput = (label, name, value, extraClass = '') => `<label class="risk-detail-field ${extraClass}"><span>${label}</span><input name="${name}" value="${esc(value || '')}" ${readOnly}></label>`;
+  const detailTextarea = (label, name, value, extraClass = '') => `<label class="risk-detail-field ${extraClass}"><span>${label}</span><textarea name="${name}" ${readOnly}>${esc(value || '')}</textarea></label>`;
+  const detailSelect = (label, name, values, selected, extraDisabled = '') => `<label class="risk-detail-field"><span>${label}</span><select name="${name}" ${disabled || extraDisabled}>${values.map((value) => `<option value="${value}" ${value === selected ? 'selected' : ''}>${value}</option>`).join('')}</select></label>`;
+  return `<section class="panel risk-detail-panel">
+    <form data-form="inlineEditRisk">
+      <div class="panel-head risk-detail-head"><div><h2>Risk details</h2><p>${canEdit ? '可直接修改下方字段，保存后更新 Risk 记录。' : '当前身份仅可查看，如需修改请联系安全部门。'}</p></div><span class="panel-spacer"></span>${canEdit ? '<button class="btn primary" type="submit">Save changes</button>' : '<span class="read-only-badge">只读</span>'}</div>
+      <div class="risk-detail-grid">
+        <label class="risk-detail-field"><span>Risk Number</span><input value="${risk.id}" readonly></label>
+        ${detailSelect('Status', 'status', ['Registered','Assessing','Mitigating','Closed'], risk.status, statusDisabled)}
+        <label class="risk-detail-field"><span>Risk Level</span><input value="${levelText[risk.level]}" readonly></label>
+        <label class="risk-detail-field"><span>Registration Date</span><input value="${risk.createdDate}" readonly></label>
+        ${detailInput('Risk title', 'title', risk.title, 'span-2')}
+        ${detailTextarea('Description', 'description', risk.description, 'span-2')}
+        ${detailSelect('Source', 'source', ['安全部门检测','内部审计邮件','业务部门邮件','漏洞扫描邮件','外部反馈邮件'], risk.source)}
+        ${detailSelect('Category', 'category', ['访问控制','身份管理','漏洞管理','业务连续性','安全监控'], risk.category)}
+        ${detailSelect('Risk Domain', 'domain', ['Application Security','Access Control','Vulnerability Management','Business Continuity','Security Monitoring'], risk.domain)}
+        ${detailSelect('Risk Treatment', 'treatment', ['Remediation','Mitigate','Transfer','Accept','Avoid'], risk.treatment)}
+        ${detailSelect('Risk Owner', 'owner', ['陈晨','刘洋','王蕾','周宁'], risk.owner)}
+        ${detailInput('IT Risk Owner Team', 'ownerTeam', risk.ownerTeam)}
+        ${detailSelect('Business Risk Owner', 'businessOwner', ['王琳','刘洋','周宁','陈晨'], risk.businessOwner)}
+        ${detailInput('Business Owner Team', 'businessTeam', risk.businessTeam)}
+        ${detailInput('Impacted Location', 'impactedLocation', risk.impactedLocation)}
+        ${detailInput('Impacted Asset', 'impactedAsset', risk.impactedAsset, 'span-2')}
+        <label class="risk-detail-field"><span>Risk Analyst</span><input value="${esc(risk.analyst || '林晓红')}" readonly></label>
+        <label class="risk-detail-field"><span>Target Close Date</span><input name="targetDate" type="date" value="${risk.targetDate}" ${readOnly}></label>
+        <label class="risk-detail-field"><span>Reassessment Due Date</span><input name="reassessmentDate" type="date" value="${risk.reassessmentDate}" ${readOnly}></label>
+        ${risk.closeDate ? `<label class="risk-detail-field"><span>Risk Close Date</span><input value="${risk.closeDate}" readonly></label>` : ''}
+        ${detailTextarea('Notes', 'notes', risk.notes, 'span-all')}
+      </div>
+    </form>
+  </section>`;
+}
+
 function detailTab(risk, riskActions, riskAssessments) {
-  if (state.detailTab === 'overview') return `<div class="overview-grid"><div class="summary-card wide"><h3>Risk description</h3><div class="description">${esc(risk.description)}</div></div>${[['Source',risk.source],['Registration Date',risk.createdDate],['Impacted Location',risk.impactedLocation],['Impacted Asset',risk.impactedAsset],['IT Risk Owner Team',risk.ownerTeam],['Business Risk Owner',risk.businessOwner],['Business Owner Team',risk.businessTeam],['Risk Treatment',risk.treatment],['Reassessment Due',risk.reassessmentDate],['Notes',risk.notes]].map(([label,value]) => `<div class="summary-card"><label>${label}</label><strong>${esc(value || '—')}</strong></div>`).join('')}</div>`;
   if (state.detailTab === 'activity') {
     const events = data.activity.filter((item) => item.riskId === risk.id);
     return `<div class="timeline">${events.map((item) => `<div class="timeline-item"><span></span><div><strong>${esc(item.event)}</strong><small>${item.date} · ${esc(item.actor)}</small></div></div>`).join('') || '<div class="empty">暂无操作记录。</div>'}</div>`;
@@ -436,7 +449,6 @@ function actionsPage() {
   const completed = actions.filter((action) => action.status === 'Completed').length;
   return `
     <div class="page-title"><div><h1>My Actions</h1><p>${state.role === 'security' ? '安全部门可查看并维护全部整改措施' : `只读显示 ${roles[state.role].user} 权限范围内的 Action`}</p></div><span class="scope-chip">${state.role === 'security' ? 'ALL ACTIONS' : 'READ ONLY'}</span></div>
-    ${flowStrip(3)}
     <div class="kpis">${kpi('我的 Action', actions.length, '✓')}${kpi('逾期', overdue, '!')}${kpi('3 天内到期', dueSoon, '◷')}${kpi('已完成', completed, '✓')}</div>
     <section class="panel"><div class="panel-head"><h2>Risk Actions <span class="count">(${actions.length})</span></h2></div><div class="table-scroll"><table class="data-table"><thead><tr><th style="width:25%">Action</th><th>Related Risk</th><th>Owner</th><th>Due Date</th><th>Reminder</th><th>Work performed</th><th>Status</th><th></th></tr></thead><tbody>${actions.map((action) => {
       const risk = data.risks.find((item) => item.id === action.riskId);
@@ -519,7 +531,6 @@ function entity(name, tag, fields) {
 function drawer() {
   if (!state.drawer) return '';
   if (state.drawer === 'risk') return drawerFrame('New Risk', riskForm());
-  if (state.drawer === 'editRisk') return drawerFrame('Edit Risk', editRiskForm());
   if (state.drawer === 'action') return drawerFrame('New Action', actionForm());
   if (state.drawer === 'assessment') return drawerFrame('New Assessment', assessmentForm());
   if (state.drawer === 'editAction') return drawerFrame('Update Action', editActionForm());
@@ -528,7 +539,7 @@ function drawer() {
 }
 
 function drawerFrame(title, body) {
-  return `<div class="drawer-backdrop" data-action="close-drawer"><section class="drawer" role="dialog" aria-modal="true" aria-label="${title}" onclick="event.stopPropagation()"><div class="drawer-head"><h2>${title}</h2><button class="close-btn" data-action="close-drawer" aria-label="关闭">×</button></div>${body}</section></div>`;
+  return `<div class="drawer-backdrop" data-action="close-drawer"><section class="drawer" role="dialog" aria-modal="true" aria-label="${title}"><div class="drawer-head"><h2>${title}</h2><button class="close-btn" data-action="close-drawer" aria-label="关闭">×</button></div>${body}</section></div>`;
 }
 
 function riskForm() {
@@ -548,20 +559,6 @@ function riskForm() {
     ${inputField('Target Close Date', 'targetDate', 'date', true, '', isoDay(30))}
     ${inputField('Reassessment Due Date', 'reassessmentDate', 'date', true, '', isoDay(14))}
   </div></div><div class="drawer-foot"><button type="button" class="btn" data-action="close-drawer">Cancel</button><button class="btn primary" type="submit">Save Risk</button></div></form>`;
-}
-
-function editRiskForm() {
-  const risk = selectedRisk();
-  return `<form data-form="editRisk" class="form-grid" style="display:contents"><div class="drawer-body"><div class="form-grid">
-    <div class="form-field"><label>Risk Number</label><input readonly value="${risk.id}"></div>
-    ${inputField('Risk title', 'title', 'text', true, '', risk.title)}
-    ${textareaField('Description', 'description', true, risk.description)}
-    ${selectField('Status', 'status', ['Registered','Assessing','Mitigating'], risk.status === 'Closed' ? 'Mitigating' : risk.status)}
-    ${selectField('Risk Owner', 'owner', ['陈晨','刘洋','王蕾','周宁'], risk.owner)}
-    ${inputField('Target Close Date', 'targetDate', 'date', true, '', risk.targetDate)}
-    ${inputField('Reassessment Due Date', 'reassessmentDate', 'date', true, '', risk.reassessmentDate)}
-    ${textareaField('Notes', 'notes', false, risk.notes)}
-  </div></div><div class="drawer-foot"><button type="button" class="btn" data-action="close-drawer">Cancel</button><button class="btn primary" type="submit">Save changes</button></div></form>`;
 }
 
 function actionForm() {
@@ -694,7 +691,7 @@ function registerWebMcp() {
       const risk = createRiskRecord(input);
       state.selectedRiskId = risk.id;
       state.page = 'detail';
-      state.detailTab = 'overview';
+      state.detailTab = 'actions';
       render();
       return { riskNumber: risk.id, status: risk.status, owner: risk.owner };
     },
@@ -704,6 +701,7 @@ function registerWebMcp() {
 root.addEventListener('click', (event) => {
   const target = event.target.closest('[data-action]');
   if (!target) return;
+  if (target.classList.contains('drawer-backdrop') && event.target !== target) return;
   const action = target.dataset.action;
   if (action === 'nav') {
     state.page = target.dataset.page;
@@ -721,7 +719,7 @@ root.addEventListener('click', (event) => {
     state.detailTab = target.dataset.tab;
     render();
   } else if (action === 'open-drawer') {
-    if (state.role !== 'security' && ['risk','editRisk','action','assessment','closeRisk'].includes(target.dataset.drawer)) {
+    if (state.role !== 'security' && ['risk','action','assessment','closeRisk'].includes(target.dataset.drawer)) {
       showToast('当前角色为只读，请联系安全部门修改');
       return;
     }
@@ -789,17 +787,25 @@ root.addEventListener('submit', (event) => {
     state.detailTab = 'actions';
     state.drawer = null;
     render(); showToast(`${risk.id} 已登记`);
-  } else if (form.dataset.form === 'editRisk') {
+  } else if (form.dataset.form === 'inlineEditRisk') {
     const risk = selectedRisk();
     risk.title = values.title.trim();
     risk.description = values.description.trim();
-    risk.status = values.status;
+    risk.source = values.source;
+    risk.category = values.category;
+    risk.domain = values.domain;
+    risk.impactedLocation = values.impactedLocation.trim();
+    risk.impactedAsset = values.impactedAsset.trim();
+    risk.status = values.status || risk.status;
     risk.owner = values.owner;
+    risk.ownerTeam = values.ownerTeam.trim();
+    risk.businessOwner = values.businessOwner;
+    risk.businessTeam = values.businessTeam.trim();
+    risk.treatment = values.treatment;
     risk.targetDate = values.targetDate;
     risk.reassessmentDate = values.reassessmentDate;
     risk.notes = values.notes.trim();
     data.activity.unshift({ riskId: risk.id, date: isoDay(0), actor: roles.security.user, event: 'Risk 基本信息已更新' });
-    state.drawer = null;
     save(); render(); showToast(`${risk.id} 已更新`);
   } else if (form.dataset.form === 'action') {
     const id = `ACT-${today.getFullYear()}-${String(data.actions.length + 1).padStart(4, '0')}`;
