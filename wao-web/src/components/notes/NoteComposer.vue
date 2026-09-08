@@ -4,7 +4,7 @@ import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { apiPatchDoc } from '@/api/board'
 import { legacyProjection, resolvedRichContent } from '@/utils/richDoc'
-import type { Doc, RichDocContent } from '@/types'
+import type { Doc, FileItem, RichDocContent } from '@/types'
 
 const props = defineProps<{ note?: Doc; loading?: boolean; tagOptions?: string[] }>()
 const emit = defineEmits<{ saved: [id: string]; close: [] }>()
@@ -128,12 +128,25 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
   try {
     if (!data.apiLive) throw new Error('服务尚未连接，请稍后重试上传')
     if (file.size > data.MAX_IMAGE_BYTES) throw new Error('图片超过 10MB，请选择较小的图片')
-    const image = await data.uploadImage(file, '小记')
+    const image = await data.uploadImage(file, '小记', { requirePersisted: true })
     if (!image) throw new Error('图片上传失败，请重试')
     done(image.url, image.name)
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '图片上传失败，请重试'
     done(null, file.name)
+  }
+}
+
+async function uploadFile(file: File, done: (item: FileItem | null) => void) {
+  try {
+    if (!data.apiLive) throw new Error('服务尚未连接，请稍后重试上传')
+    if (file.size > data.MAX_FILE_BYTES) throw new Error('文件超过 50MB，请选择较小的文件')
+    const item = await data.uploadFile(file)
+    if (!item) throw new Error('文件上传失败，请重试')
+    done(item)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '文件上传失败，请重试'
+    done(null)
   }
 }
 </script>
@@ -142,9 +155,9 @@ async function uploadImage(file: File, done: (url: string | null, name: string) 
   <section ref="composerElement" class="note-composer" :class="{ fullscreen }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
     <div class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? '继续编辑' : '此刻，想记点什么？' }}</b><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
-      <MarkdownEditor :key="id" v-model="text" :document="content?.document" advanced compact
+      <MarkdownEditor :key="id" v-model="text" :document="content?.document" advanced allow-h1 polishable link-controls image-controls
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
-        @content-change="content = $event" @upload-image="uploadImage" />
+        @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile" />
     </div>
     <div class="composer-tags">
       <button v-for="tag in tags" :key="tag" class="tag-chip" type="button" :disabled="saving" :aria-label="`移除标签 ${tag}`" @click="toggleTag(tag)"># {{ tag }} <i class="ri-close-line"></i></button>
