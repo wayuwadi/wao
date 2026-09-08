@@ -270,6 +270,8 @@ V77 migration 读取执行当时 `system_setting` 中的 `feishu.chat-sync.kb-id
 收到时间和飞书转发状态。`fingerprint` 唯一键阻止设备重试导致重复群消息，`(phone_number, received_at)` 支持爬虫按
 手机号与时效读取最近验证码。入站/爬虫 Token 只以 SHA-256 摘要保存在 `system_setting`；飞书目标保存通用 Webhook
 注册表的稳定 id。详见 [ADR-190](../adr/190-account-resource-verification-forwarding.md)。
+`feishu_notification` 通过 V146 增加发送时标题 `card_title`、正文 `card_body`、原消息 ID `message_id` 和旧卡共享回复 ID `feedback_message_id`（均可空，兼容旧通知，见 ADR-214）。通知行锁串行保存和更新共享成员反馈。
+
 `feishu_notification` 记录每次由自动化实际发出的飞书通知；`feishu_notification_feedback` 记录卡片按钮的真实回调（通知、事件、点击人和正/负反馈）。未点击不产生反馈行，因此报表不会伪造「没做到」。
 
 ### automation_job（任务）

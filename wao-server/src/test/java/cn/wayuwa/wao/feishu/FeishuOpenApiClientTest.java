@@ -38,6 +38,65 @@ class FeishuOpenApiClientTest {
                 "tianren-reading")).isEqualTo("om-real");
         server.verify();
     }
+    @Test
+    void feedbackCardsAreSharedAndPatchPreservesBothMemberIdentities() throws Exception {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        ObjectMapper json = new ObjectMapper();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages?receive_id_type=chat_id"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(request -> {
+                    var body = json.readTree(((MockClientHttpRequest) request).getBodyAsString());
+                    assertThat(body.path("uuid").asText()).isEqualTo("n1");
+                    var card = json.readTree(body.path("content").asText());
+                    assertThat(card.path("config").path("update_multi").asBoolean()).isTrue();
+                    assertThat(card.path("elements").get(1).path("actions")).hasSize(2);
+                    assertThat(card.toString()).doesNotContain("成员反馈");
+                }).andRespond(withSuccess("{\"code\":0,\"data\":{\"message_id\":\"om_original\"}}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_original"))
+                .andExpect(method(HttpMethod.PATCH))
+                .andExpect(header("Authorization", "Bearer token"))
+                .andExpect(request -> {
+                    var body = json.readTree(((MockClientHttpRequest) request).getBodyAsString());
+                    var card = json.readTree(body.path("content").asText());
+                    assertThat(card.path("config").path("update_multi").asBoolean()).isTrue();
+                    assertThat(card.toString()).contains("✅ <at id=ou_one></at>：做到了", "❌ <at id=ou_two></at>：没做到", "原始正文");
+                }).andRespond(withSuccess("{\"code\":0}", MediaType.APPLICATION_JSON));
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+        assertThat(client.sendFeedbackCard("token", "oc_group", "提醒", "原始正文", "n1")).isEqualTo("om_original");
+        client.updateFeedbackCard("token", "om_original", client.feedbackCard("提醒", "原始正文", "n1",
+                "✅ <at id=ou_one></at>：做到了\n❌ <at id=ou_two></at>：没做到"));
+        server.verify();
+    }
+
+    @Test
+    void legacyFeedbackReplyHasStableDeduplicationIdAndRequiresReceipt() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_original/reply"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().json("{\"msg_type\":\"interactive\",\"uuid\":\"feedback-n1\"}"))
+                .andRespond(withSuccess("{\"code\":0,\"data\":{}}", MediaType.APPLICATION_JSON));
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+        assertThatThrownBy(() -> client.replyFeedbackCard("token", "om_original",
+                client.feedbackCard("成员反馈", "", "n1", ""), "feedback-n1"))
+                .isInstanceOf(FeishuApiException.class).hasMessageContaining("回执");
+        server.verify();
+    }
+
+    @Test
+    void rejectedFeedbackUpdateIsNotReportedAsSuccess() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_original"))
+                .andRespond(withSuccess("{\"code\":230001,\"msg\":\"rejected\"}", MediaType.APPLICATION_JSON));
+        FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
+        assertThatThrownBy(() -> client.updateFeedbackCard("token", "om_original",
+                client.feedbackCard("提醒", "", "n1", "")))
+                .isInstanceOf(FeishuApiException.class).hasMessageContaining("230001");
+        server.verify();
+    }
+
     private static final String MESSAGES_URL = BASE_URL
             + "/open-apis/im/v1/messages?container_id_type=chat&container_id=oc_chat"
             + "&start_time=100&end_time=200&sort_type=ByCreateTimeAsc&page_size=50";

@@ -34,11 +34,13 @@ public class FeishuNotificationHandler implements JobHandler {
         if (!StringUtils.hasText(appId) || !StringUtils.hasText(secret) || !StringUtils.hasText(chatId)) {
             throw new IllegalStateException("请先在自动化的飞书群聊配置中填写应用凭据并选择目标群");
         }
-        String notificationId = "n" + System.currentTimeMillis();
+        String notificationId = "n" + java.util.UUID.randomUUID().toString().replace("-", "");
         String content = StringUtils.hasText(job.getDescription()) ? job.getDescription() : job.getName();
         LocalDateTime now = LocalDateTime.now();
-        feishu.sendFeedbackCard(feishu.tenantAccessToken(appId, secret), chatId, job.getName(), content, notificationId);
-        FeishuNotificationEntity sent = new FeishuNotificationEntity(); sent.setId(notificationId); sent.setJobId(job.getId()); sent.setSentAt(now); notifications.insert(sent);
+        String messageId = feishu.sendFeedbackCard(feishu.tenantAccessToken(appId, secret), chatId, job.getName(), content, notificationId);
+        FeishuNotificationEntity sent = new FeishuNotificationEntity(); sent.setId(notificationId); sent.setJobId(job.getId()); sent.setSentAt(now);
+        sent.setCardTitle(job.getName()); sent.setCardBody(content); sent.setMessageId(messageId);
+        notifications.insert(sent);
         return "成功 · 已发送飞书通知";
     }
 }
