@@ -9,7 +9,12 @@ public record PatchDocRequest(
         RichDocContentDto content,
         List<DocLinkDto> links,
         String folderId,
-        Integer expectedRev) {
+        Integer expectedRev,
+        List<String> tags) {
+    public PatchDocRequest(String title, List<DocBlockDto> blocks, RichDocContentDto content,
+            List<DocLinkDto> links, String folderId, Integer expectedRev) {
+        this(title, blocks, content, links, folderId, expectedRev, null);
+    }
     public PatchDocRequest(String title, List<DocBlockDto> blocks, List<DocLinkDto> links, String folderId) {
         this(title, blocks, null, links, folderId, null);
     }

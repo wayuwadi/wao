@@ -33,6 +33,7 @@ public class DocEntity {
     private String contentJson;
     private String contentMarkdown;
     private Integer contentVersion;
+    private String tagsJson;
     private String linksJson;
     private Integer ord;
     private LocalDateTime createdAt;
@@ -75,6 +76,8 @@ public class DocEntity {
     public void setContentMarkdown(String contentMarkdown) { this.contentMarkdown = contentMarkdown; }
     public Integer getContentVersion() { return contentVersion; }
     public void setContentVersion(Integer contentVersion) { this.contentVersion = contentVersion; }
+    public String getTagsJson() { return tagsJson; }
+    public void setTagsJson(String tagsJson) { this.tagsJson = tagsJson; }
     public String getLinksJson() { return linksJson; }
     public void setLinksJson(String linksJson) { this.linksJson = linksJson; }
     public Integer getOrd() { return ord; }

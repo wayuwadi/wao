@@ -1150,4 +1150,38 @@ class KnowledgeServiceTest {
                 .hasMessageContaining("不合法");
         verify(docMapper, never()).insert(any(DocEntity.class));
     }
+    @Test
+    void noteTagsParticipateInRevisionAndLegacyUpdatesPreserveThem() {
+        DocEntity note = doc("tagged", "kb-notes", "f");
+        note.setRev(3);
+        note.setTagsJson("[\"工作\"]");
+        when(docMapper.selectById("tagged")).thenReturn(note);
+        when(docMapper.updateIfRevision(any(), eq(3))).thenReturn(1);
+        DocDto updated = service.updateDoc("tagged", new PatchDocRequest(null, null, null, null, null, 3,
+                List.of(" 灵感 ", "灵感")));
+        assertThat(updated.tags()).containsExactly("灵感");
+        assertThat(updated.rev()).isEqualTo(4);
+        verify(docMapper).updateIfRevision(any(), eq(3));
+        service.updateDoc("tagged", new PatchDocRequest("旧端修改正文", null, null, null));
+        assertThat(note.getTagsJson()).isEqualTo("[\"灵感\"]");
+        assertThatThrownBy(() -> service.updateDoc("tagged",
+                new PatchDocRequest(null, null, null, null, null, 3, List.of())))
+                .isInstanceOf(ConflictException.class);
+        service.updateDoc("tagged", new PatchDocRequest(null, null, null, null, null, null, List.of()));
+        assertThat(note.getTagsJson()).isEqualTo("[]");
+    }
+
+    @Test
+    void idempotentNoteRetryPreservesOmittedTagsAndAcceptsExplicitTags() {
+        DocEntity note = doc("tag-retry", "kb-notes", "f");
+        note.setTagsJson("[\"工作\"]");
+        note.setAuthorId("wg");
+        when(docMapper.selectById("tag-retry")).thenReturn(note);
+        DocDto legacy = service.createNote("tag-retry", new CreateNoteRequest("重试", List.of()), "wg");
+        assertThat(legacy.tags()).containsExactly("工作");
+        DocDto tagged = service.createNote("tag-retry", new CreateNoteRequest("重试", List.of(), null, List.of("灵感")), "wg");
+        assertThat(tagged.tags()).containsExactly("灵感");
+        verify(docMapper, never()).insert(any(DocEntity.class));
+    }
+
 }

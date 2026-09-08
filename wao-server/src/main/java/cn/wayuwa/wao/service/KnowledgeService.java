@@ -744,6 +744,7 @@ public class KnowledgeService {
         if (id == null || !CLIENT_DOC_ID.matcher(id).matches()) {
             throw new BadRequestException("小记文档 id 不合法");
         }
+        List<String> tags = req.tags() == null ? null : NoteTagService.normalize(req.tags());
         String resolvedAuthor = blankOr(author, "wg");
         DocEntity existing = docMapper.selectById(id);
         if (existing != null) {
@@ -755,10 +756,13 @@ public class KnowledgeService {
             RichDocContentDto content = req.content() == null ? null : checkedRichContent(req.content());
             String title = blankOr(req.title(), titleFrom(content, blocks));
             String blocksJson = write(blocks);
-            boolean changed = !Objects.equals(title, existing.getTitle())
+            String tagsJson = tags == null ? existing.getTagsJson() : write(tags);
+            boolean changed = !Objects.equals(tagsJson, existing.getTagsJson())
+                    || !Objects.equals(title, existing.getTitle())
                     || !Objects.equals(blocksJson, existing.getBlocksJson())
                     || !sameRichContent(existing, content);
             if (changed) {
+                existing.setTagsJson(tagsJson);
                 existing.setTitle(title);
                 existing.setBlocksJson(blocksJson);
                 applyRichContent(existing, content);
@@ -773,7 +777,7 @@ public class KnowledgeService {
         List<DocBlockDto> blocks = req.blocks() == null ? List.of() : req.blocks();
         RichDocContentDto content = req.content() == null ? null : checkedRichContent(req.content());
         DocDto doc = insertDoc(id, kb.getId(), folder.getId(), blankOr(req.title(), titleFrom(content, blocks)),
-                author, blocks, content, List.of());
+                author, blocks, content, List.of(), tags);
         announceNote(kb.getId(), doc, author);
         return doc;
     }
@@ -1183,6 +1187,11 @@ public class KnowledgeService {
 
     private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
             List<DocBlockDto> blocks, RichDocContentDto content, List<DocLinkDto> links) {
+        return insertDoc(id, kbId, folderId, title, author, blocks, content, links, null);
+    }
+
+    private DocDto insertDoc(String id, String kbId, String folderId, String title, String author,
+            List<DocBlockDto> blocks, RichDocContentDto content, List<DocLinkDto> links, List<String> tags) {
         Long count = docMapper.selectCount(aliveDocs().eq(DocEntity::getFolderId, folderId));
         LocalDateTime now = LocalDateTime.now();
 
@@ -1200,6 +1209,7 @@ public class KnowledgeService {
         e.setBlocksJson(write(blocks));
         applyRichContent(e, content);
         e.setLinksJson(write(links));
+        e.setTagsJson(tags == null ? null : write(tags));
         e.setOrd(nextOrd(count));
         docMapper.insert(e);
         return toDto(e, docMapper.selectList(aliveDocs()));
@@ -1311,6 +1321,12 @@ public class KnowledgeService {
             throw new ConflictException("文档已在其他窗口更新，请刷新后处理本机草稿");
         }
         boolean contentChanged = false;
+        if (req.tags() != null) {
+            if (!NOTES_KB_ID.equals(e.getKbId())) throw new BadRequestException("只有小记支持标签");
+            String nextTags = write(NoteTagService.normalize(req.tags()));
+            contentChanged = !Objects.equals(nextTags, e.getTagsJson());
+            e.setTagsJson(nextTags);
+        }
         if (req.title() != null && !req.title().equals(e.getTitle())) {
             e.setTitle(req.title());
             contentChanged = true;
@@ -1714,7 +1730,8 @@ public class KnowledgeService {
             List<DocLinkDto> links, List<DocBlockDto> blocks) {
         return new DocDto(e.getId(), e.getTitle(), e.getAuthorId(),
                 stamp(e.getCreatedAt(), e.getCreatedLabel()), stamp(e.getUpdatedAt(), e.getUpdatedLabel()),
-                e.getAuto(), links, blocks, richContentOf(e), backlinks, e.getKbId(), e.getFolderId(), rev(e));
+                e.getAuto(), links, blocks, richContentOf(e), backlinks, e.getKbId(), e.getFolderId(), rev(e),
+                readList(e.getTagsJson(), new TypeReference<List<String>>() {}));
     }
 
     /** 时间戳优先，老数据回落到升级前写死的展示文案。 */

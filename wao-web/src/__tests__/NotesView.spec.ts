@@ -7,10 +7,10 @@ import NotesView from '@/views/NotesView.vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
-import { apiPatchDoc } from '@/api/board'
+import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import type { Doc } from '@/types'
 
-vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn() }))
+vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn() }))
 const Editor = defineComponent({
   props: ['modelValue', 'readonly'], emits: ['update:modelValue'],
   template: '<textarea :value="modelValue" :readonly="readonly" @input="$emit(\'update:modelValue\', $event.target.value)" />',
@@ -31,6 +31,8 @@ describe('小记集中记录空间', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.mocked(apiPatchDoc).mockReset()
+    vi.mocked(fetchNoteTags).mockResolvedValue([])
+    vi.mocked(apiCreateNoteTag).mockReset()
     localStorage.clear()
     setActivePinia(createPinia())
     useSessionStore().accept({ member: { id: 'wg', name: '娃哥', initial: '哥', color: '#4358d6', role: '成员' } } as never)
@@ -59,7 +61,7 @@ describe('小记集中记录空间', () => {
     const data = useDataStore()
     vi.spyOn(data, 'addNote').mockImplementation(async (text, _title, id) => { data.docs[id!] = doc(id!, text); return id! })
     const wrapper = await view()
-    await wrapper.find('input').setValue('找不到的词')
+    await wrapper.find('input[type="search"]').setValue('找不到的词')
     await wrapper.find('textarea').setValue('即时显示的想法')
     const original = JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).id
     await wrapper.find('.save-note').trigger('click')
@@ -151,4 +153,67 @@ describe('小记集中记录空间', () => {
     expect(wrapper.emitted('saved')).toEqual([['real-editor']])
     wrapper.unmount()
   })
+  it('标签字典保存失败保留名称、重试去重，标签与搜索组合并切换两种排序', async () => {
+    const data = useDataStore()
+    data.docs.a = { ...doc('a', '工作备忘', '2026-09-05T08:00:00'), updated: '2026-09-08T08:00:00', tags: ['工作'] }
+    data.docs.b = { ...doc('b', '工作想法', '2026-09-07T08:00:00'), tags: ['想法'] }
+    vi.mocked(fetchNoteTags).mockResolvedValue(['工作', '想法'])
+    const wrapper = await view()
+    await flushPromises()
+    expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['a', 'b'])
+    await wrapper.find('select').setValue('created')
+    expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['b', 'a'])
+    await wrapper.findAll('.tag-filter').find(tag => tag.text().includes('工作'))!.trigger('click')
+    await wrapper.find('input[type="search"]').setValue('备忘')
+    expect(wrapper.findAll('.note-card').map(card => card.attributes('data-note-id'))).toEqual(['a'])
+    await wrapper.find('.new-tag-toggle').trigger('click')
+    await wrapper.find('[aria-label="新标签名称"]').setValue('灵感')
+    vi.mocked(apiCreateNoteTag).mockRejectedValueOnce(new Error('网关不可达')).mockResolvedValueOnce('灵感')
+    await wrapper.find('.new-tag-form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('.new-tag-form').text()).toContain('重试新增')
+    expect((wrapper.find('[aria-label="新标签名称"]').element as HTMLInputElement).value).toBe('灵感')
+    await wrapper.find('.new-tag-form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.findAll('.tag-filter').some(tag => tag.text().includes('灵感'))).toBe(true)
+    expect(apiCreateNoteTag).toHaveBeenNthCalledWith(2, '灵感')
+    wrapper.unmount()
+  })
+
+  it('全屏保持编辑器实例、正文和标签草稿，刷新恢复后同请求提交标签', async () => {
+    const add = vi.spyOn(useDataStore(), 'addNote').mockResolvedValue('tagged-note')
+    const first = mount(NoteComposer, { props: { tagOptions: ['灵感'] }, global: { stubs: { MarkdownEditor: Editor } } })
+    await first.find('textarea').setValue('全屏仍在的想法')
+    await first.find('.add-tag').trigger('click')
+    await first.find('.tag-picker button').trigger('click')
+    const editorElement = first.find('textarea').element
+    await first.find('.fullscreen-toggle').trigger('click')
+    expect(first.classes()).toContain('fullscreen')
+    expect(first.find('textarea').element).toBe(editorElement)
+    await first.trigger('keydown', { key: 'Escape' })
+    expect(first.classes()).not.toContain('fullscreen')
+    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).tags).toEqual(['灵感'])
+    first.unmount()
+    const second = composer()
+    expect((second.find('textarea').element as HTMLTextAreaElement).value).toBe('全屏仍在的想法')
+    expect(second.find('.tag-chip').text()).toContain('灵感')
+    await second.find('.save-note').trigger('click')
+    await flushPromises()
+    expect(add.mock.calls[0]![4]).toEqual(['灵感'])
+    expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toBeNull()
+    second.unmount()
+  })
+
+  it('清单编辑使用左侧编辑器，返回新建恢复原来的草稿', async () => {
+    useDataStore().docs.a = { ...doc('a', '旧记录'), tags: ['工作'] }
+    const wrapper = await view()
+    await wrapper.find('textarea').setValue('正在写的新草稿')
+    await wrapper.find('.note-actions button').trigger('click')
+    expect(wrapper.findAll('textarea')).toHaveLength(1)
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('旧记录')
+    await wrapper.find('.editing-bar button').trigger('click')
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('正在写的新草稿')
+    wrapper.unmount()
+  })
+
 })
