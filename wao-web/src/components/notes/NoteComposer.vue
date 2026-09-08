@@ -155,7 +155,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
   <section ref="composerElement" class="note-composer" :class="{ fullscreen }" @keydown="editorKeys" :aria-label="note ? '编辑小记' : '记录小记'">
     <div class="composer-heading"><i class="ri-quill-pen-line"></i><b>{{ note ? '继续编辑' : '此刻，想记点什么？' }}</b><button class="fullscreen-toggle" type="button" :aria-label="fullscreen ? '退出全屏' : '全屏编辑'" :title="fullscreen ? '退出全屏（Esc）' : '全屏编辑'" :aria-pressed="fullscreen" @click="fullscreen = !fullscreen"><i :class="fullscreen ? 'ri-fullscreen-exit-line' : 'ri-fullscreen-line'"></i></button></div>
     <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
-      <MarkdownEditor :key="id" v-model="text" :document="content?.document" advanced allow-h1 polishable link-controls image-controls
+      <MarkdownEditor :key="id" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile" />
     </div>
