@@ -16,7 +16,7 @@ import type { RouteLocationNormalized } from 'vue-router'
 
 describe('侧边栏导航配置', () => {
   it('首页后固定提供全量导航入口，默认侧栏只保留高频功能', () => {
-    expect(NAV_GROUPS.find((group) => group.label === '')?.items).toEqual(['home', 'notes', 'navigation'])
+    expect(NAV_GROUPS.find((group) => group.label === '')?.items).toEqual(['home', 'ai-sessions', 'notes', 'navigation'])
     expect(MODULES.navigation.path).toBe('/navigation')
     expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'navigation')).toMatchObject({
       group: 'ROOT',

@@ -42,6 +42,7 @@ const quickLinks = useQuickLinks()
 const functionHealth = useFunctionHealth()
 const TRACKED_FEATURES = new Set([
   'home',
+  'ai-sessions',
   'navigation',
   'updates',
   'projects',

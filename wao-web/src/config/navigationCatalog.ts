@@ -24,6 +24,7 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
     description: '把想法变成项目、任务和持续协作。',
     icon: 'ri-team-line',
     items: [
+      { id: 'ai-sessions', description: '集中查看 AiRun 会话、执行历史，直接继续与 Codex 对话。', keywords: ['Codex', 'session', 'AI Run', '会话'] },
       {
         id: 'projects',
         description: '管理项目、任务、成员和 AI 工作流。',
