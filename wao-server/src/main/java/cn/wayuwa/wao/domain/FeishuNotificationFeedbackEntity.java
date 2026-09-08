@@ -12,6 +12,12 @@ public class FeishuNotificationFeedbackEntity {
     private String notificationId;
     private String jobId;
     private LocalDateTime notificationAt;
+    @com.baomidou.mybatisplus.annotation.TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
+    private String reactionId;
+    @com.baomidou.mybatisplus.annotation.TableField(updateStrategy = com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS)
+    private String reactionAction;
+    public String getReactionId() { return reactionId; } public void setReactionId(String v) { reactionId = v; }
+    public String getReactionAction() { return reactionAction; } public void setReactionAction(String v) { reactionAction = v; }
     private String action;
     private String operatorOpenId;
     private String operatorName;
