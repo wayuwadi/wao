@@ -33,6 +33,7 @@ import cn.wayuwa.wao.dto.AiRunnerClaimDto;
 import cn.wayuwa.wao.dto.AiRunnerDto;
 import cn.wayuwa.wao.dto.CompleteAiRunRequest;
 import cn.wayuwa.wao.dto.CreateTaskRequest;
+import cn.wayuwa.wao.dto.FunctionIterationInput;
 import cn.wayuwa.wao.dto.HostedPageDto;
 import cn.wayuwa.wao.dto.ImageItemDto;
 import cn.wayuwa.wao.dto.PairedAiRunnerDto;
@@ -73,11 +74,13 @@ class AiRunServiceTest {
     private final ProjectMemoryService projectMemories = mock(ProjectMemoryService.class);
     private final AiSkillCapabilityService skillCapabilities = mock(AiSkillCapabilityService.class);
     private final FunctionHealthService functionHealth = mock(FunctionHealthService.class);
+    private final UpdateDiaryService updateDiary = mock(UpdateDiaryService.class);
     private final FeishuAiRunReactionNotifier runReactions = mock(FeishuAiRunReactionNotifier.class);
     private final SettingService settings = mock(SettingService.class);
     private final AiRunService service = new AiRunService(
             configMapper, runnerMapper, pairMapper, runMapper, progressMapper, taskMapper, projectMapper,
             tasks, notifier, scripts, accounts, hostedPages, images, codexQuotas, projectMemories, skillCapabilities, functionHealth,
+            updateDiary,
             runReactions, settings);
 
     @BeforeEach
@@ -1875,6 +1878,20 @@ class AiRunServiceTest {
     }
 
     @Test
+    void onlyVerifiedSuccessRecordsGitCommitsForHealthAndUpdateDiary() {
+        runningRun();
+        var iterations = List.of(new FunctionIterationInput("sha-1", "updates",
+                "feat(updates): 新增更新日记", "2026-09-08T10:30:00+08:00"));
+
+        service.complete("local-token", "ar1", new CompleteAiRunRequest(
+                0, "WAO_RUN_STATUS: SUCCESS", "sess-1", null, null,
+                null, null, null, null, null, null, List.of(), iterations, List.of()));
+
+        verify(functionHealth).recordIterations("ar1", iterations);
+        verify(updateDiary).recordVerifiedCommits("ar1", iterations);
+    }
+
+    @Test
     void failedRunNeverPersistsMemoryCandidates() {
         runningRun();
         var candidates = List.of(new ProjectMemoryCandidate("context", "未经验证结论",
@@ -1885,6 +1902,7 @@ class AiRunServiceTest {
                         null, null, null, null, null, candidates));
 
         verify(projectMemories, never()).persistCandidates(any(), any());
+        verify(updateDiary, never()).recordVerifiedCommits(any(), any());
     }
 
     @Test

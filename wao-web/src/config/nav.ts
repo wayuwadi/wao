@@ -128,6 +128,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     icon: 'ri-compass-discover-line',
     path: '/navigation',
   },
+  updates: { id: 'updates', label: '更新日记', icon: 'ri-history-line', path: '/updates' },
   projects: { id: 'projects', label: '项目', icon: 'ri-stack-line', path: '/projects' },
   ideas: { id: 'ideas', label: '点子库', icon: 'ri-lightbulb-flash-line', path: '/ideas' },
   skills: {
@@ -293,6 +294,14 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       icon: 'ri-stack-line',
       group: 'PUBLIC',
       order: 10,
+      visible: true,
+    },
+    {
+      id: 'updates',
+      label: '更新日记',
+      icon: 'ri-history-line',
+      group: 'PUBLIC',
+      order: 11,
       visible: true,
     },
     {
@@ -555,7 +564,7 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
   { label: '', items: ['home', 'notes', 'navigation'] },
   {
     label: '公共',
-    items: ['projects', 'ideas', 'skills', 'skill-connections'],
+    items: ['projects', 'updates', 'ideas', 'skills', 'skill-connections'],
   },
   { label: '个人', items: PERSONAL_ITEMS },
   {

@@ -20,17 +20,23 @@ class DataCenterServiceTest {
         when(mapper.snapshots()).thenReturn(List.of(
                 row("tasks", 12L, LocalDateTime.of(2026, 8, 28, 9, 30)),
                 row("projects", 3L, null),
+                row("product-updates", 5L, LocalDateTime.of(2026, 8, 28, 10, 0)),
                 row("git-repositories", 2L, LocalDateTime.of(2026, 8, 27, 18, 0)),
                 row("ai-runs", 0L, null)));
 
         var overview = service.overview();
 
-        assertThat(overview.sourceCount()).isEqualTo(8);
-        assertThat(overview.populatedSourceCount()).isEqualTo(3);
-        assertThat(overview.totalRecords()).isEqualTo(17);
+        assertThat(overview.sourceCount()).isEqualTo(9);
+        assertThat(overview.populatedSourceCount()).isEqualTo(4);
+        assertThat(overview.totalRecords()).isEqualTo(22);
         assertThat(overview.sources()).extracting(source -> source.id())
                 .containsExactly("projects", "tasks", "ai-runs", "knowledge-documents", "memory-revisions",
-                        "shared-chat-messages", "http-request-metrics", "git-repositories");
+                        "shared-chat-messages", "http-request-metrics", "product-updates", "git-repositories");
+        assertThat(overview.sources()).filteredOn(source -> "product-updates".equals(source.id()))
+                .singleElement().satisfies(source -> {
+                    assertThat(source.status()).isEqualTo("READY");
+                    assertThat(source.boundary()).contains("不读取作者、diff");
+                });
         assertThat(overview.sources()).filteredOn(source -> "projects".equals(source.id()))
                 .singleElement().satisfies(source -> assertThat(source.status()).isEqualTo("TIME_UNKNOWN"));
         assertThat(overview.sources()).filteredOn(source -> "tasks".equals(source.id()))
@@ -38,7 +44,7 @@ class DataCenterServiceTest {
         assertThat(overview.sources()).filteredOn(source -> "git-repositories".equals(source.id()))
                 .singleElement().satisfies(source -> {
                     assertThat(source.status()).isEqualTo("REGISTERED_ONLY");
-                    assertThat(source.boundary()).contains("未采集 commit");
+                    assertThat(source.boundary()).contains("不镜像仓库");
                 });
     }
 

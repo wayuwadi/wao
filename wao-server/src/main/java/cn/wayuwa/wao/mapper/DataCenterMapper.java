@@ -13,7 +13,7 @@ public interface DataCenterMapper {
     /**
      * 返回每个稳定数据源的记录量和最近写入时间。
      *
-     * @return 八类数据源的聚合快照
+     * @return 九类数据源的聚合快照
      */
     @Select("""
             SELECT 'projects' AS source_id, COUNT(*) AS record_count,
@@ -48,6 +48,9 @@ public interface DataCenterMapper {
             UNION ALL
             SELECT 'http-request-metrics', COUNT(*), MAX(started_at)
               FROM http_request_metric
+            UNION ALL
+            SELECT 'product-updates', COUNT(*), MAX(committed_at)
+              FROM product_update_event
             UNION ALL
             SELECT 'git-repositories', COUNT(*), MAX(updated_at)
               FROM ai_project_config

@@ -42,13 +42,17 @@ class DataCenterMapperIntegrationTest {
                 + "('c1', TIMESTAMP '2026-08-28 09:50:00')");
         jdbc.update("INSERT INTO http_request_metric (id, started_at) VALUES "
                 + "(1, TIMESTAMP '2026-08-28 10:00:00')");
+        jdbc.update("INSERT INTO product_update_event "
+                + "(id, run_id, commit_sha, scope, commit_subject, committed_at) VALUES "
+                + "(1, 'r1', 'sha1', 'updates', 'feat(updates): 新增更新日记', "
+                + "TIMESTAMP '2026-08-28 10:05:00')");
         jdbc.update("INSERT INTO ai_project_config (project_id, repo_url, updated_at) VALUES "
                 + "('p1', 'https://github.com/example/project.git', TIMESTAMP '2026-08-28 10:10:00')");
 
         Map<String, DataCenterSnapshotRow> rows = mapper.snapshots().stream()
                 .collect(Collectors.toMap(DataCenterSnapshotRow::getSourceId, Function.identity()));
 
-        assertThat(rows).hasSize(8);
+        assertThat(rows).hasSize(9);
         assertThat(rows.values()).allSatisfy(row -> assertThat(row.getRecordCount()).isEqualTo(1L));
         assertThat(rows.get("projects").getLatestAt()).isNull();
         assertThat(rows.get("ai-runs").getLatestAt()).isEqualTo(LocalDateTime.of(2026, 8, 28, 9, 20));

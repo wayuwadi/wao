@@ -40,7 +40,7 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(33);
+        assertThat(service.getRegistry().menus()).hasSize(34);
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "decisions".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("决策管理");
@@ -53,6 +53,12 @@ class BuiltinMenuRegistryServiceTest {
                     assertThat(menu.group()).isEqualTo("PUBLIC");
                     assertThat(menu.visible()).isFalse();
                     assertThat(menu.openMode()).isEqualTo("TAB");
+                });
+        assertThat(service.getRegistry().menus()).filteredOn(menu -> "updates".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.label()).isEqualTo("更新日记");
+                    assertThat(menu.group()).isEqualTo("PUBLIC");
+                    assertThat(menu.visible()).isTrue();
                 });
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "appearance".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
@@ -86,7 +92,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(33);
+        assertThat(service.getRegistry().menus()).hasSize(34);
     }
 
     @Test
@@ -152,7 +158,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(33);
+        assertThat(upgraded.menus()).hasSize(34);
         assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("工作台");

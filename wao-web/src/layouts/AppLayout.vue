@@ -43,6 +43,7 @@ const functionHealth = useFunctionHealth()
 const TRACKED_FEATURES = new Set([
   'home',
   'navigation',
+  'updates',
   'projects',
   'ideas',
   'decisions',

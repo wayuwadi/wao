@@ -1550,19 +1550,22 @@ def function_iterations(worktree: Path | None, base_sha: str | None,
     """从本次新提交提取 scope；归属映射和幂等最终由服务端裁决。"""
     if worktree is None or not base_sha:
         return []
-    result = run([git_command, "log", "--format=%H%x1f%s", f"{base_sha}..HEAD"],
+    result = run([git_command, "log", "--format=%H%x1f%cI%x1f%s", f"{base_sha}..HEAD"],
                  cwd=worktree, check=False)
     if result.returncode != 0:
         return []
     items: list[dict[str, str]] = []
-    pattern = re.compile(r"^[a-z][a-z0-9-]*\(([^)]+)\):\s+(.+)$")
+    pattern = re.compile(r"^[a-z][a-z0-9-]*\(([^)]+)\)!?:\s+(.+)$")
     for line in result.stdout.splitlines()[:50]:
-        sha, separator, subject = line.partition("\x1f")
+        parts = line.split("\x1f", 2)
+        if len(parts) != 3:
+            continue
+        sha, committed_at, subject = parts
         match = pattern.match(subject.strip())
-        if not separator or not match:
+        if not match:
             continue
         items.append({"commitSha": sha.strip(), "scope": match.group(1).strip(),
-                      "subject": subject.strip()})
+                      "subject": subject.strip(), "committedAt": committed_at.strip()})
     return items
 
 
