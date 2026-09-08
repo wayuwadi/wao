@@ -33,6 +33,7 @@ import {
   type AiActivityType,
   type ReviewableTask,
 } from '@/api/ai'
+import CodexBenefitsPanel from '@/components/ai/CodexBenefitsPanel.vue'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
@@ -1278,16 +1279,16 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
-      <div class="hero-metrics" :class="{ single: !heroWeeklyQuota }">
+      <div class="hero-metrics">
         <div
-          v-if="heroWeeklyQuota"
           class="quota-card weekly-quota"
-          :class="quotaClass(heroWeeklyQuota.remainingPercent)"
-          :title="`Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}`"
+          :class="heroWeeklyQuota ? quotaClass(heroWeeklyQuota.remainingPercent) : ''"
+          :title="heroWeeklyQuota ? `Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}` : '周额度暂不可用'"
         >
           <span><i class="ri-speed-up-line"></i>Codex 周剩余额度</span>
-          <strong>{{ heroWeeklyQuota.remainingPercent }}<em>%</em></strong>
-          <small>{{ resetText(heroWeeklyQuota.resetsAt) }}</small>
+          <strong>{{ heroWeeklyQuota ? heroWeeklyQuota.remainingPercent : '—' }}<em v-if="heroWeeklyQuota">%</em></strong>
+          <small>{{ heroWeeklyQuota ? resetText(heroWeeklyQuota.resetsAt) : '等待额度同步' }}</small>
+          <CodexBenefitsPanel />
         </div>
         <div
           class="capacity"
