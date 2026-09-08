@@ -112,6 +112,8 @@ const props = withDefaults(
     advanced?: boolean
     /** 小记使用紧凑工具栏，并隐藏需要进入完整文档继续编辑的重型内容块。 */
     compact?: boolean
+    /** 挂到 body 的菜单层级；全屏容器需显式提升，避免菜单被遮挡。 */
+    menuZIndex?: number
     /** 已持久化的完整 Tiptap JSON；存在时优先于 Markdown 装载。 */
     document?: RichDocNode | null
   }>(),
@@ -128,6 +130,7 @@ const props = withDefaults(
     imageControls: false,
     advanced: false,
     compact: false,
+    menuZIndex: 1000,
     document: null,
   },
 )
@@ -1802,7 +1805,7 @@ onBeforeUnmount(() => {
       </section>
     </div>
   <Teleport to="body">
-    <div v-if="tableMenu && editor && !readonly" ref="tableMenuEl" class="table-context-menu" role="menu" aria-label="表格操作" :style="{ left: `${tableMenu.x}px`, top: `${tableMenu.y}px`, visibility: tableMenu.ready ? 'visible' : 'hidden' }" @keydown="onTableMenuKeydown" @contextmenu.prevent>
+    <div v-if="tableMenu && editor && !readonly" ref="tableMenuEl" class="table-context-menu" role="menu" aria-label="表格操作" :style="{ left: `${tableMenu.x}px`, top: `${tableMenu.y}px`, visibility: tableMenu.ready ? 'visible' : 'hidden', zIndex: menuZIndex }" @keydown="onTableMenuKeydown" @contextmenu.prevent>
       <button v-for="action in tableActions" :key="action.command" type="button" role="menuitem" :class="{ danger: action.danger }" :disabled="!editor.can()[action.command]()" @mousedown.prevent @click="runTableAction(action.command)"><i :class="action.icon" aria-hidden="true"></i>{{ action.label }}</button>
     </div>
   </Teleport>
