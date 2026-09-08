@@ -95,6 +95,8 @@ drain_reloaded_workers() {
 }
 
 install -d -m 0755 "${runtime_dir}"
+exec 9>"${runtime_dir}/config.lock"
+flock -w 60 9 || { echo 'Timed out waiting for Nginx configuration lock.' >&2; exit 1; }
 touch "${lock_file}"
 if [ "${state}" = down ]; then
   touch "${runtime_dir}/${node}.down"

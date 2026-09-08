@@ -9,16 +9,22 @@ fi
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 project_root="$(CDPATH= cd -- "${script_dir}/../.." && pwd)"
 deploy_dir="${project_root}/deploy"
-final_config='/etc/nginx/conf.d/wao.wayuwa.cn.conf'
-pending_config='/etc/nginx/conf.d/wao.pending.conf'
-bootstrap_config='/etc/nginx/conf.d/wao.bootstrap.conf'
-external_apps_dir='/etc/nginx/wao-external-apps.d'
-deployment_drain_lock='/run/wao-nginx-upstreams/deployment.lock'
+final_config="${WAO_NGINX_FINAL_CONFIG:-/etc/nginx/conf.d/wao.wayuwa.cn.conf}"
+pending_config="${WAO_NGINX_PENDING_CONFIG:-/etc/nginx/conf.d/wao.pending.conf}"
+bootstrap_config="${WAO_NGINX_BOOTSTRAP_CONFIG:-/etc/nginx/conf.d/wao.bootstrap.conf}"
+external_apps_dir="${WAO_NGINX_EXTERNAL_APPS_DIR:-/etc/nginx/wao-external-apps.d}"
+runtime_dir="${WAO_NGINX_RUNTIME_DIR:-/run/wao-nginx-upstreams}"
 
-if [ -f "${deployment_drain_lock}" ]; then
-  echo 'A rolling deployment is draining a Gateway; automatic DDNS activation is deferred.'
-  exit 0
-fi
+# 摘流状态可以长期保留，不能用它暂停健康节点的 DDNS 更新。
+# 与摘流脚本共用进程锁，仅串行化一次配置读写和重载，进程退出自动释放。
+install -d -m 0755 "${runtime_dir}"
+exec 9>"${runtime_dir}/config.lock"
+flock -n 9 || exit 0
+MASTER_GATEWAY_STATE=''
+SLAVE_GATEWAY_STATE=''
+[ -f "${runtime_dir}/master.down" ] && MASTER_GATEWAY_STATE=' down'
+[ -f "${runtime_dir}/slave.down" ] && SLAVE_GATEWAY_STATE=' down'
+export MASTER_GATEWAY_STATE SLAVE_GATEWAY_STATE
 
 MASTER_PUBLIC_HOST="${MASTER_PUBLIC_HOST:-linux2.wayuwa.cn}"
 SLAVE_PUBLIC_HOST="${SLAVE_PUBLIC_HOST:-linux1.wayuwa.cn}"
@@ -30,7 +36,8 @@ gateway_ready() {
     curl -4 -kfsS --max-time 5 "https://${host}:9000/api/hello" | grep -q '"code":0'
 }
 
-if gateway_ready "${MASTER_PUBLIC_HOST}" || gateway_ready "${SLAVE_PUBLIC_HOST}"; then
+if { [ -z "${MASTER_GATEWAY_STATE}" ] && gateway_ready "${MASTER_PUBLIC_HOST}"; } ||
+   { [ -z "${SLAVE_GATEWAY_STATE}" ] && gateway_ready "${SLAVE_PUBLIC_HOST}"; }; then
   # 外部应用路由由独立仓库维护；目录必须先存在，Nginx 才能安全加载通用 include。
   install -d -m 0755 "${external_apps_dir}"
   sh "${script_dir}/render-nginx-config.sh"
