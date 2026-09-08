@@ -155,6 +155,11 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
         keywords: ['监控', '性能'],
       },
       {
+        id: 'infrastructure',
+        description: '查看三台服务器的资源余量、部署应用与历史趋势。',
+        keywords: ['基础设施', '服务器', 'Linux', 'Jenkins', 'JumpServer', 'WeKnora', '磁盘', '内存'],
+      },
+      {
         id: 'devices',
         description: '检测本机摄像头和麦克风，并完成实时预览与连通调试。',
         keywords: ['摄像头', '麦克风', '相机', '音频'],
