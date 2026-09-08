@@ -170,6 +170,93 @@ server {
         add_header X-WAO-API-Route jumpserver-health-tunnel always;
     }
 
+    # WeKnora uses an isolated runtime on Linux2. Every entry, API and file
+    # request must pass WAO authentication before reaching that runtime.
+    location = /_wao_weknora_auth {
+        internal;
+        proxy_pass https://wao_gateway/api/auth/session;
+        proxy_ssl_verify off;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header Host $host;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 10s;
+    }
+    location = /weknora { return 308 /weknora/; }
+    location ^~ /weknora/ {
+        auth_request /_wao_weknora_auth;
+        proxy_pass http://127.0.0.1:18781/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        client_max_body_size 50m;
+        add_header Cache-Control "no-store" always;
+    }
+    location ^~ /api/v1/ {
+        auth_request /_wao_weknora_auth;
+        proxy_pass http://127.0.0.1:18781;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        client_max_body_size 50m;
+        add_header Cache-Control "no-store" always;
+    }
+    location = /files {
+        # Preserve WAO's native /files page; WeKnora legacy downloads always carry file_path.
+        if ($arg_file_path = "") { rewrite ^ /index.html last; }
+        auth_request /_wao_weknora_auth;
+        proxy_pass http://127.0.0.1:18781;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        client_max_body_size 50m;
+        add_header Cache-Control "no-store" always;
+    }
+    location ^~ /r/ {
+        auth_request /_wao_weknora_auth;
+        proxy_pass http://127.0.0.1:18781;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        client_max_body_size 50m;
+        add_header Cache-Control "no-store" always;
+    }
+    location = /api/external/weknora/health {
+        auth_request /_wao_weknora_auth;
+        proxy_pass http://127.0.0.1:18781/api/v1/auth/config;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        client_max_body_size 50m;
+        add_header Cache-Control "no-store" always;
+    }
+
     root /var/www/wao/dist;
     index index.html;
 

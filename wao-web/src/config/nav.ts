@@ -107,6 +107,10 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
     openMode: 'NEW_PAGE',
   },
   {
+    id: 'weknora', label: 'WeKnora', icon: 'ri-book-open-line', group: 'PUBLIC', order: 35,
+    visible: true, appUrl: '/weknora/', healthUrl: '/api/external/weknora/health', openMode: 'TAB',
+  },
+  {
     id: 'jumpserver',
     label: '资源管理',
     icon: 'ri-server-line',

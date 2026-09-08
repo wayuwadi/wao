@@ -35,8 +35,8 @@ class ExternalAppRegistryServiceTest {
 
         var registry = service.getRegistry();
 
-        assertThat(registry.version()).isEqualTo(7);
-        assertThat(registry.apps()).hasSize(3);
+        assertThat(registry.version()).isEqualTo(8);
+        assertThat(registry.apps()).hasSize(4);
         assertThat(registry.apps().get(0)).satisfies(app -> {
             assertThat(app.id()).isEqualTo("media-agent");
             assertThat(app.label()).isEqualTo("内容助手");
@@ -95,7 +95,7 @@ class ExternalAppRegistryServiceTest {
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY)).thenReturn(stored);
 
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent", "getnote", "jumpserver");
+                .containsExactly("media-agent", "getnote", "jumpserver", "weknora");
         assertThat(service.getRegistry().apps().get(0).openMode()).isEqualTo("TAB");
     }
 
@@ -108,17 +108,31 @@ class ExternalAppRegistryServiceTest {
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(3, List.of(mediaAgent))));
 
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent", "getnote", "jumpserver");
+                .containsExactly("media-agent", "getnote", "jumpserver", "weknora");
 
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(4, List.of(mediaAgent))));
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent", "jumpserver");
+                .containsExactly("media-agent", "jumpserver", "weknora");
 
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(5, List.of(mediaAgent))));
         assertThat(service.getRegistry().apps()).extracting("id")
-                .containsExactly("media-agent");
+                .containsExactly("media-agent", "weknora");
+    }
+
+    @Test
+    void introducesWeKnoraForExistingUsersAndHonorsRemovalAfterUpgrade() throws Exception {
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
+                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(7, List.of())));
+        assertThat(service.getRegistry().apps()).singleElement().satisfies(app -> {
+            assertThat(app.id()).isEqualTo("weknora");
+            assertThat(app.appUrl()).isEqualTo("/weknora/");
+            assertThat(app.openMode()).isEqualTo("TAB");
+        });
+        when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
+                .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(8, List.of())));
+        assertThat(service.getRegistry().apps()).isEmpty();
     }
 
     @Test
@@ -146,8 +160,8 @@ class ExternalAppRegistryServiceTest {
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(6, List.of(direct))));
 
         assertThat(service.getRegistry()).satisfies(registry -> {
-            assertThat(registry.version()).isEqualTo(7);
-            assertThat(registry.apps()).singleElement().satisfies(app -> {
+            assertThat(registry.version()).isEqualTo(8);
+            assertThat(registry.apps()).filteredOn(app -> "jumpserver".equals(app.id())).singleElement().satisfies(app -> {
                 assertThat(app.label()).isEqualTo("我的主机");
                 assertThat(app.group()).isEqualTo("PERSONAL");
                 assertThat(app.order()).isEqualTo(7);
@@ -186,7 +200,7 @@ class ExternalAppRegistryServiceTest {
                 "/agent/", "/api/agent/health", "TAB", null);
         when(settings.get(SettingService.EXTERNAL_APP_REGISTRY))
                 .thenReturn(json.writeValueAsString(new ExternalAppRegistryDto(5, List.of(legacy))));
-        assertThat(service.getRegistry().apps()).singleElement()
+        assertThat(service.getRegistry().apps()).filteredOn(app -> "media-agent".equals(app.id())).singleElement()
                 .satisfies(app -> assertThat(app.placement()).isEqualTo("MENU"));
 
         var invalid = new SaveExternalAppConfigRequest(

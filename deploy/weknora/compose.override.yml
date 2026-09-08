@@ -1,0 +1,24 @@
+services:
+  frontend:
+    volumes:
+      - ../frontend-dist:/usr/share/nginx/html:ro
+    mem_limit: 256m
+    cpus: 0.5
+  app:
+    volumes:
+      - ./config/builtin_models.yaml:/app/config/builtin_models.yaml:ro
+    mem_limit: 2g
+    cpus: 2
+  docreader:
+    mem_limit: 3g
+    cpus: 2
+  postgres:
+    mem_limit: 2g
+    cpus: 2
+  redis:
+    mem_limit: 256m
+    cpus: 0.5
+    volumes:
+      - redis-data:/data
+volumes:
+  redis-data:

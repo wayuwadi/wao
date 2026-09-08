@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExternalAppRegistryService {
 
-    private static final int REGISTRY_VERSION = 7;
+    private static final int REGISTRY_VERSION = 8;
     private static final int GETNOTE_INTRODUCED_VERSION = 4;
     private static final int JUMPSERVER_INTRODUCED_VERSION = 5;
     private static final int MAX_APPS = 30;
@@ -80,6 +80,10 @@ public class ExternalAppRegistryService {
             if (stored.version() < JUMPSERVER_INTRODUCED_VERSION
                     && requests.stream().noneMatch(app -> JUMPSERVER_ID.equals(app.id()))) {
                 requests.add(jumpServerRequest());
+            }
+            if (stored.version() < 8 && requests.stream().noneMatch(app -> "weknora".equals(app.id()))) {
+                requests.add(new SaveExternalAppConfigRequest("weknora", "WeKnora", "ri-book-open-line",
+                        "PUBLIC", 35, true, "/weknora/", "/api/external/weknora/health", "TAB"));
             }
             return new ExternalAppRegistryDto(REGISTRY_VERSION, activeApps(canonicalize(requests)));
         } catch (JsonProcessingException | IllegalArgumentException | NullPointerException exception) {
@@ -254,7 +258,9 @@ public class ExternalAppRegistryService {
     }
 
     private List<ExternalAppConfigDto> defaultApps() {
-        return List.of(legacyMediaAgent(), getNoteApp(), jumpServerApp());
+        return List.of(legacyMediaAgent(), getNoteApp(), jumpServerApp(),
+                new ExternalAppConfigDto("weknora", "WeKnora", "ri-book-open-line", "PUBLIC", 35,
+                        true, "/weknora/", "/api/external/weknora/health", "TAB"));
     }
 
     private static ExternalAppConfigDto getNoteApp() {
