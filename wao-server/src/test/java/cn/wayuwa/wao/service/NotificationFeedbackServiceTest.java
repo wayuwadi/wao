@@ -108,8 +108,23 @@ class NotificationFeedbackServiceTest {
         when(mapper.selectOne(any())).thenReturn(rows.get(0));
         service.collect(event("ou_brother", "missed", "om_original"));
         verify(feishu).replyFeedbackCard(eq("token"), eq("om_original"), any(), eq("feedback-n1"));
-        verify(feishu, times(2)).updateFeedbackCard(eq("token"), eq("om_reply"), any());
-        verify(notifications).updateById(notification);
+        verify(feishu, times(3)).updateFeedbackCard(eq("token"), eq("om_reply"), any());
+        verify(notifications, times(2)).updateById(notification);
+    }
+
+    @Test
+    void lostLegacyReceiptRetryRefreshesAllMembersAfterDeduplication() throws Exception {
+        notification.setCardTitle(null); notification.setCardBody(null); notification.setMessageId(null);
+        when(feishu.replyFeedbackCard(any(), any(), any(), any()))
+                .thenThrow(new FeishuApiException("发送成功但回执丢失"))
+                .thenReturn("om_deduplicated");
+        assertThat(service.collect(event("ou_brother", "done", "om_original")).displayed()).isFalse();
+        assertThat(notification.getMessageId()).isEqualTo("om_original");
+        assertThat(service.collect(event("ou_younger", "missed", "om_original")).displayed()).isTrue();
+        var card = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(feishu).updateFeedbackCard(eq("token"), eq("om_deduplicated"), card.capture());
+        assertThat(json.writeValueAsString(card.getValue()))
+                .contains("✅ <at id=ou_brother></at>：做到了", "❌ <at id=ou_younger></at>：没做到");
     }
 
     @Test

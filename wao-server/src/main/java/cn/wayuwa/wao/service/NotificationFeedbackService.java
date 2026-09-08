@@ -101,10 +101,15 @@ public class NotificationFeedbackService {
             var card = feishu.feedbackCard(job == null ? "通知反馈" : job.getName() + " · 成员反馈",
                     "每人保留最新选择，再次点击可修改。", notification.getId(), summary);
             if (!StringUtils.hasText(notification.getFeedbackMessageId())) {
-                String replyId = feishu.replyFeedbackCard(token, sourceMessageId, card, "feedback-" + notification.getId());
-                notification.setMessageId(sourceMessageId);
+                if (!StringUtils.hasText(notification.getMessageId())) {
+                    notification.setMessageId(sourceMessageId);
+                    notifications.updateById(notification);
+                }
+                String replyId = feishu.replyFeedbackCard(token, notification.getMessageId(), card, "feedback-" + notification.getId());
                 notification.setFeedbackMessageId(replyId);
                 notifications.updateById(notification);
+                // 上一次发送可能成功但回执丢失；去重返回的卡片仍是旧摘要，必须刷新为全部最新反馈。
+                feishu.updateFeedbackCard(token, replyId, card);
             } else {
                 feishu.updateFeedbackCard(token, notification.getFeedbackMessageId(), card);
             }
