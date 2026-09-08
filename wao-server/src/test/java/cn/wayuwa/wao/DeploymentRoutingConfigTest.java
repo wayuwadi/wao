@@ -512,7 +512,7 @@ class DeploymentRoutingConfigTest {
                 .contains("return 410;")
                 .contains("include /etc/nginx/wao-external-apps.d/*.conf;");
         assertThat(activation)
-                .contains("external_apps_dir='/etc/nginx/wao-external-apps.d'")
+                .contains("${WAO_NGINX_EXTERNAL_APPS_DIR:-/etc/nginx/wao-external-apps.d}")
                 .contains("install -d -m 0755 \"${external_apps_dir}\"");
         assertThat(rollout)
                 .contains("install -d -m 0755 /etc/nginx/wao-external-apps.d")
@@ -526,14 +526,17 @@ class DeploymentRoutingConfigTest {
     }
 
     @Test
-    void automaticDdnsReloadDefersWhileGatewayIsDrained() throws IOException {
+    void automaticDdnsReloadPreservesDrainedGatewaysUnderTheSharedLock() throws IOException {
         String activation = readFromRepository("deploy/scripts/activate-nginx-config.sh");
         String stateScript = readFromRepository("deploy/scripts/set-nginx-upstream-state.sh");
         String nginx = readFromRepository("deploy/nginx/wao.wayuwa.cn.conf.template");
 
         assertThat(activation)
-                .contains("deployment_drain_lock='/run/wao-nginx-upstreams/deployment.lock'")
-                .contains("automatic DDNS activation is deferred");
+                .contains("flock -n 9")
+                .contains("MASTER_GATEWAY_STATE=' down'")
+                .contains("SLAVE_GATEWAY_STATE=' down'")
+                .doesNotContain("automatic DDNS activation is deferred");
+        assertThat(stateScript).contains("flock -w 60 9");
         assertThat(stateScript)
                 .contains("MASTER_GATEWAY_STATE=' down'")
                 .contains("SLAVE_GATEWAY_STATE=' down'")
