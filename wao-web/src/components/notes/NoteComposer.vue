@@ -54,6 +54,13 @@ function toggleTag(tag: string) {
 }
 const choices = computed(() => [...new Set([...(props.tagOptions ?? []), ...tags.value])])
 const id = ref(initial.id)
+const taskSource = computed(() => ({
+  id: props.note?.id ?? id.value,
+  title: props.note?.title || '未保存小记',
+  url: props.note ? `/kb/${encodeURIComponent(props.note.kbId ?? '')}?doc=${encodeURIComponent(props.note.id)}` : undefined,
+  docId: props.note?.id,
+  projectId: data.kbs.find(kb => kb.id === props.note?.kbId)?.project ?? undefined,
+}))
 const text = ref(initial.text)
 const content = ref<RichDocContent | undefined>(initial.content)
 // 恢复草稿必须沿用开始编辑时的版本，防止跨设备更新被旧草稿覆盖。
@@ -157,6 +164,7 @@ async function uploadFile(file: File, done: (item: FileItem | null) => void) {
     <div class="editor-space" @keydown.ctrl.enter.prevent="save()" @keydown.meta.enter.prevent="save()">
       <MarkdownEditor :key="id" v-model="text" :document="content?.document" bare advanced allow-h1 polishable link-controls image-controls
         :menu-z-index="fullscreen ? 2200 : 1000"
+        :task-source="taskSource" @task-opened="fullscreen = false"
         :readonly="saving" :min-height="note ? 320 : 360" placeholder="想法、灵感、工作备忘…随手记在这里，也可以粘贴图片"
         @content-change="content = $event" @upload-image="uploadImage" @upload-file="uploadFile" />
     </div>

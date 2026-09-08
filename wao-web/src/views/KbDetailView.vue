@@ -12,6 +12,7 @@ import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { useTabsStore } from '@/stores/tabs'
 import { useDocPresence } from '@/composables/docPresence'
+import { openEditorSelectionTask } from '@/composables/editorSelectionTask'
 import { toast } from '@/composables/toast'
 import { copyToClipboard } from '@/utils/clipboard'
 import { docShareMarkdownUrl, docShareUrl } from '@/utils/share'
@@ -224,17 +225,7 @@ async function addSelectionToTask(text: string) {
     const sourceTitle = doc.value?.title || '未命名文档'
     const projectId = kb.value?.project || ''
     const sourceUrl = `/kb/${encodeURIComponent(kbId.value)}?doc=${encodeURIComponent(id)}`
-    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-    const selectionId = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
-    ui.openModal('task', projectId)
-    ui.modalTaskSeed = {
-      draftKey: `wao-document-task-draft:${session.userId}:${id}:${selectionId}`,
-      title: text.trim().replace(/\s+/g, ' ').slice(0, 200),
-      desc: `${text.trim()}\n\n[查看来源文档](${sourceUrl})`,
-      sourceTitle,
-      sourceUrl,
-      sourceDocId: id,
-    }
+    await openEditorSelectionTask(text, { id, title: sourceTitle, url: sourceUrl, docId: id, projectId })
   } catch {
     toast('暂时无法准备待办，请重试；文档内容未改变', 'ri-error-warning-line')
   } finally {
@@ -1055,7 +1046,6 @@ async function keepConflictCopy() {
               allow-h1
               advanced
               polishable
-              taskable
               link-controls
               image-controls
               placeholder="开始写作…敲 # / ## 变标题、Tab 缩进，可直接粘贴截图"

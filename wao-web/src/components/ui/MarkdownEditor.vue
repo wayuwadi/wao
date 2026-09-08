@@ -14,7 +14,7 @@
  * 传入 `peers` 时会在左侧落一条协作者轨道：每个人的头像贴在他光标所在的那一行，
  * 正在输入的还会给那一行加一道颜色条（见 ADR-017）。不传就是普通编辑器，行为不变。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { DragHandle } from '@tiptap/extension-drag-handle-vue-3'
@@ -39,6 +39,8 @@ import { common, createLowlight } from 'lowlight'
 import DOMPurify from 'dompurify'
 import 'katex/dist/katex.min.css'
 import { polishDocumentText } from '@/api/assistant'
+import { openEditorSelectionTask, type EditorTaskSource } from '@/composables/editorSelectionTask'
+import { toast } from '@/composables/toast'
 import { createDrawing, fetchDrawing, fetchDrawings, type DrawingFileSummary } from '@/api/drawings'
 import type { FileItem, RichDocContent, RichDocNode } from '@/types'
 import { Callout, Column, Columns, DrawingCard, FileCard, LinkCard, MediaCard, MermaidBlock } from './richEditorExtensions'
@@ -100,10 +102,12 @@ const props = withDefaults(
     allowH1?: boolean
     /** 此刻也在这篇文档里的人；空数组即不显示协作轨道。 */
     peers?: EditorPeer[]
-    /** 文档正文允许选中文字后调用设置页配置的真实 AI 润色。 */
+    /** 通用选区操作：润色与记录待办绑定显示。 */
     polishable?: boolean
-    /** 允许从文档选中文字创建待办，由文档页面提供项目上下文。 */
+    /** 兼容旧调用；与 polishable 一样开启润色和待办这一组选区操作。 */
     taskable?: boolean
+    /** 可选来源；新草稿不传 docId，避免关联尚未保存的文档。 */
+    taskSource?: EditorTaskSource
     /** 文档正文允许点击打开、创建和维护链接。 */
     linkControls?: boolean
     /** 文档正文允许按比例或像素长宽调整图片。 */
@@ -144,6 +148,7 @@ const emit = defineEmits<{
   'content-change': [value: RichDocContent]
   'upload-file': [file: File, done: (item: FileItem | null) => void]
   'add-task': [text: string]
+  'task-opened': []
 }>()
 
 const previewImage = ref<{ src: string; alt: string } | null>(null)
@@ -524,15 +529,28 @@ function shouldShowSelection({ editor: e, from, to, state }: MenuContext) {
     || (props.advanced && e.isActive('codeBlock'))
 }
 
-function addSelectionTask() {
+const component = getCurrentInstance()
+const selectionActionsEnabled = computed(() => props.polishable || props.taskable)
+let preparingTask = false
+async function addSelectionTask() {
   const e = editor.value
-  if (!e || props.readonly || !props.taskable) return
+  if (!e || props.readonly || !selectionActionsEnabled.value || preparingTask) return
   const { from, to } = e.state.selection
   const text = e.state.doc.textBetween(from, to, '\n').trim()
   if (from === to || !text) return
-  emit('add-task', text)
-  e.commands.setTextSelection(to)
-  e.commands.blur()
+  preparingTask = true
+  try {
+    // 保留已有宿主事件扩展；没有处理器的编辑器直接使用通用待办表单。
+    if (component?.vnode.props?.onAddTask) emit('add-task', text)
+    else await openEditorSelectionTask(text, props.taskSource)
+    e.commands.setTextSelection(to)
+    e.commands.blur()
+    emit('task-opened')
+  } catch (cause) {
+    toast(cause instanceof Error ? cause.message : '暂时无法准备待办，请重试；正文未改变', 'ri-error-warning-line')
+  } finally {
+    preparingTask = false
+  }
 }
 
 /**
@@ -1568,8 +1586,8 @@ onBeforeUnmount(() => {
           :options="{ strategy: 'fixed', placement: 'top', offset: 8, flip: true, shift: { padding: 8 } }"
         >
           <div ref="selectionMenuEl" class="selection-menu" role="toolbar" :aria-label="multipleCells(editor) ? '选中单元格操作' : '选中文字操作'" @keydown.esc="hideSelectionMenu(); editor.commands.focus()">
-            <button type="button" title="添加到待办" aria-label="添加到待办" v-if="taskable && selectedText" class="selection-task" @mousedown.prevent @click="addSelectionTask"><i class="ri-checkbox-circle-line" aria-hidden="true"></i></button>
-            <button type="button" title="润色选中文字" aria-label="润色选中文字" v-if="polishable && selectedText" @mousedown.prevent @click="startPolish"><i class="ri-magic-line" aria-hidden="true"></i></button>
+            <button type="button" title="添加到待办" aria-label="添加到待办" v-if="selectionActionsEnabled && selectedText" class="selection-task" @mousedown.prevent @click="addSelectionTask"><i class="ri-checkbox-circle-line" aria-hidden="true"></i></button>
+            <button type="button" title="润色选中文字" aria-label="润色选中文字" v-if="selectionActionsEnabled && selectedText" @mousedown.prevent @click="startPolish"><i class="ri-magic-line" aria-hidden="true"></i></button>
             <button v-if="selectionCanLink" type="button" :title="linkSelectionActive ? '编辑链接' : '添加链接'" :aria-label="linkSelectionActive ? '编辑链接' : '添加链接'" @mousedown.prevent @click="openLinkEditor"><i class="ri-link" aria-hidden="true"></i></button>
             <button type="button" title="在新窗口打开链接" aria-label="在新窗口打开链接" v-if="selectionCanLink && linkSelectionActive" @mousedown.prevent @click="openActiveLink"><i class="ri-external-link-line" aria-hidden="true"></i></button>
             <button type="button" title="移除链接" aria-label="移除链接" v-if="selectionCanLink && linkSelectionActive" @mousedown.prevent @click="removeActiveLink"><i class="ri-link-unlink-m" aria-hidden="true"></i></button>
