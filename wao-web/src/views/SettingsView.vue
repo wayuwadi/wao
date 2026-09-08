@@ -607,6 +607,11 @@ async function bindFeishu() {
             </div>
           </div>
           <div class="card">
+            <div class="card-title">飞书个人表情</div>
+            <div class="hint">让提醒上的「做到了 / 没做到」以你本人的表情回复显示。首次使用需本人授权，不会另发群消息。</div>
+            <a class="btn-ghost" href="/api/auth/feishu/reactions">授权个人表情</a>
+          </div>
+          <div class="card">
             <div class="card-title">设置邮箱与密码</div>
             <form class="credential-form" @submit.prevent="saveEmailCredential">
               <input v-model.trim="accountForm.email" type="email" autocomplete="email" required placeholder="登录邮箱" />

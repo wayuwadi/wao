@@ -1132,3 +1132,10 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.7.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，
 并覆盖全局活动唯一抢占、lease、归档身份与同步 / scoped 文档 `PATCH` 的全局版本 CAS、树拖拽窄更新不回写正文或版本、AI 入队关联回滚和 DB-time 超时清理；开发机 Docker 不可用时显式跳过，Jenkins 必须挂载 Docker socket 并确认两个 MySQL 契约测试均未跳过。
+
+
+### 原生个人表情授权（ADR-215 / V147）
+
+`feishu_reaction_grant` 按 `app_id + open_id` 唯一保存真实飞书成员授权，`access_cipher/access_nonce` 与 `refresh_cipher/refresh_nonce` 使用既有 AES-GCM 密钥库加密；`expires_at/refresh_expires_at` 取接口实际有效期。刷新在独立事务内锁定授权行，保证轮换凭证不会被卡片失败回滚。表不能作为浏览器 DTO 返回。
+
+`feishu_notification_feedback.reaction_id/reaction_action` 只追踪本功能以该成员身份添加的原生表情，改选时仅移除对应本人的旧表情。ADR-214 的共享摘要回复逻辑停止执行，历史数据保留。

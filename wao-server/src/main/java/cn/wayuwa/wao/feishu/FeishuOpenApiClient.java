@@ -447,22 +447,44 @@ public class FeishuOpenApiClient {
         return openId;
     }
 
-    /** 构造共享通知卡片；摘要内的身份由调用者从已验证回调生成。 */
-    public Map<String, Object> feedbackCard(String title, String body, String notificationId, String summary) {
+    /** 构造通知按钮和个人授权入口，不展示成员摘要或另发反馈消息。 */
+    public Map<String, Object> feedbackCard(String title, String body, String notificationId, String ignoredSummary) {
         Map<String, Object> button = Map.of("tag", "button", "text", Map.of("tag", "plain_text", "content", "做到了"),
                 "type", "primary", "value", Map.of("kind", "automation-feedback", "notificationId", notificationId, "action", "done"));
         Map<String, Object> missed = Map.of("tag", "button", "text", Map.of("tag", "plain_text", "content", "没做到"),
                 "type", "danger", "value", Map.of("kind", "automation-feedback", "notificationId", notificationId, "action", "missed"));
-        List<Object> elements = new java.util.ArrayList<>();
-        if (body != null && !body.isBlank()) elements.add(Map.of("tag", "div", "text", Map.of("tag", "lark_md", "content", body)));
-        elements.add(Map.of("tag", "action", "actions", List.of(button, missed)));
-        if (summary != null && !summary.isBlank()) {
-            elements.add(Map.of("tag", "hr"));
-            elements.add(Map.of("tag", "div", "text", Map.of("tag", "lark_md", "content", "**成员反馈**\n" + summary)));
-        }
         return Map.of("config", Map.of("wide_screen_mode", true, "update_multi", true),
                 "header", Map.of("template", "blue", "title", Map.of("tag", "plain_text", "content", title)),
-                "elements", elements);
+                "elements", List.of(Map.of("tag", "div", "text", Map.of("tag", "lark_md", "content", body == null ? "" : body)),
+                        Map.of("tag", "action", "actions", List.of(button, missed)),
+                        Map.of("tag", "note", "elements", List.of(Map.of("tag", "lark_md", "content",
+                                "首次使用：[授权个人表情](https://wao.wayuwa.cn/api/auth/feishu/reactions)，让表情显示为你本人。")))));
+    }
+
+    /** 改选时移除本人旧表情；已被本人手工取消（231011）视为完成，其余错误仍失败。 */
+    public void deleteOwnFeedbackReaction(String token, String messageId, String reactionId) {
+        try {
+            client.delete().uri("/open-apis/im/v1/messages/{messageId}/reactions/{reactionId}", messageId, reactionId)
+                    .header("Authorization", "Bearer " + token).exchange((request, response) -> {
+                        JsonNode result = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.getBody());
+                        if (result != null && result.path("code").asInt() == 231011) return null;
+                        if (response.getStatusCode().isError()) throw new FeishuApiException("删除本人旧表情失败");
+                        requireOk(result); return null;
+                    });
+        } catch (RestClientException ex) { throw new FeishuApiException("删除本人旧表情失败"); }
+    }
+
+    /** 使用个人凭证贴表情并核对飞书回执作者；绝不接受机器人回执冒充成员。 */
+    public String addUserMessageReaction(String token, String messageId, String emojiType, String expectedOpenId) {
+        JsonNode data = post("/open-apis/im/v1/messages/{messageId}/reactions",
+                Map.of("reaction_type", Map.of("emoji_type", emojiType)), token, messageId);
+        String reactionId = data.path("reaction_id").asText("");
+        if (!"user".equals(data.path("operator").path("operator_type").asText())
+                || !expectedOpenId.equals(data.path("operator").path("operator_id").asText()) || reactionId.isBlank()) {
+            if (!reactionId.isBlank()) deleteMessageReaction(token, messageId, reactionId);
+            throw new FeishuApiException("表情作者与点击者不一致，请重新授权个人表情");
+        }
+        return reactionId;
     }
 
     /** 发送共享反馈卡，要求消息回执用于后续身份校验和原卡更新。 */

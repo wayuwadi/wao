@@ -39,7 +39,7 @@ class FeishuOpenApiClientTest {
         server.verify();
     }
     @Test
-    void feedbackCardsAreSharedAndPatchPreservesBothMemberIdentities() throws Exception {
+    void feedbackCardsLinkToPersonalAuthorizationWithoutMemberSummary() throws Exception {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         ObjectMapper json = new ObjectMapper();
@@ -60,7 +60,7 @@ class FeishuOpenApiClientTest {
                     var body = json.readTree(((MockClientHttpRequest) request).getBodyAsString());
                     var card = json.readTree(body.path("content").asText());
                     assertThat(card.path("config").path("update_multi").asBoolean()).isTrue();
-                    assertThat(card.toString()).contains("✅ <at id=ou_one></at>：做到了", "❌ <at id=ou_two></at>：没做到", "原始正文");
+                    assertThat(card.toString()).contains("授权个人表情", "原始正文").doesNotContain("成员反馈", "ou_one", "ou_two");
                 }).andRespond(withSuccess("{\"code\":0}", MediaType.APPLICATION_JSON));
         FeishuOpenApiClient client = new FeishuOpenApiClient(builder, BASE_URL, null);
         assertThat(client.sendFeedbackCard("token", "oc_group", "提醒", "原始正文", "n1")).isEqualTo("om_original");
@@ -94,6 +94,46 @@ class FeishuOpenApiClientTest {
         assertThatThrownBy(() -> client.updateFeedbackCard("token", "om_original",
                 client.feedbackCard("提醒", "", "n1", "")))
                 .isInstanceOf(FeishuApiException.class).hasMessageContaining("230001");
+        server.verify();
+    }
+
+    @Test
+    void personalReactionRequiresMatchingUserReceipt() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_one/reactions"))
+                .andExpect(header("Authorization", "Bearer personal-token"))
+                .andExpect(content().json("{\"reaction_type\":{\"emoji_type\":\"CheckMark\"}}"))
+                .andRespond(withSuccess("{\"code\":0,\"data\":{\"reaction_id\":\"r1\",\"operator\":{\"operator_type\":\"user\",\"operator_id\":\"ou_one\"}}}", MediaType.APPLICATION_JSON));
+        var client = new FeishuOpenApiClient(builder, BASE_URL, null);
+        assertThat(client.addUserMessageReaction("personal-token", "om_one", "CheckMark", "ou_one")).isEqualTo("r1");
+        server.verify();
+    }
+
+    @Test
+    void botOrWrongUserReceiptIsRemovedAndNeverReportedAsPersonalSuccess() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_one/reactions"))
+                .andRespond(withSuccess("{\"code\":0,\"data\":{\"reaction_id\":\"r-wrong\",\"operator\":{\"operator_type\":\"app\",\"operator_id\":\"bot\"}}}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_one/reactions/r-wrong"))
+                .andExpect(method(HttpMethod.DELETE)).andRespond(withSuccess("{\"code\":0}", MediaType.APPLICATION_JSON));
+        var client = new FeishuOpenApiClient(builder, BASE_URL, null);
+        assertThatThrownBy(() -> client.addUserMessageReaction("token", "om_one", "CheckMark", "ou_one"))
+                .isInstanceOf(FeishuApiException.class).hasMessageContaining("作者与点击者不一致");
+        server.verify();
+    }
+
+    @Test
+    void manuallyRemovedOldReactionDoesNotBlockChangingChoice() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE_URL + "/open-apis/im/v1/messages/om_one/reactions/r-gone"))
+                .andExpect(header("Authorization", "Bearer personal-token"))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest()
+                        .contentType(MediaType.APPLICATION_JSON).body("{\"code\":231011}"));
+        var client = new FeishuOpenApiClient(builder, BASE_URL, null);
+        client.deleteOwnFeedbackReaction("personal-token", "om_one", "r-gone");
         server.verify();
     }
 

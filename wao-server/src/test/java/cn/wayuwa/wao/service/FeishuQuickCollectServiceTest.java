@@ -130,7 +130,7 @@ class FeishuQuickCollectServiceTest {
                 """);
         verify(feedback).collect(any());
         verify(feishu, never()).addMessageReaction(any(), any(), any());
-        assertThat(out).containsEntry("toast", Map.of("type", "success", "content", "已记录：做到了，已显示实际反馈人"));
+        assertThat(out).containsEntry("toast", Map.of("type", "success", "content", "已记录：做到了，已用你的身份贴表情"));
     }
 
     @Test
@@ -140,7 +140,7 @@ class FeishuQuickCollectServiceTest {
                 {"header":{"event_type":"card.action.trigger","token":""},"event":{}}
                 """);
         verify(feishu, never()).addMessageReaction(any(), any(), any());
-        assertThat(out).containsEntry("toast", Map.of("type", "warning", "content", "已记录：没做到；群卡片反馈暂未显示，请重试"));
+        assertThat(out).containsEntry("toast", Map.of("type", "warning", "content", "已记录：没做到；个人表情暂未显示，请重试或重新授权"));
     }
 
     @Test

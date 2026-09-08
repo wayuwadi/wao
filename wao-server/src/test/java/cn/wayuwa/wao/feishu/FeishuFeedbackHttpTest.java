@@ -28,7 +28,7 @@ class FeishuFeedbackHttpTest {
             var client = new FeishuOpenApiClient(RestClient.builder(), "http://127.0.0.1:" + server.getAddress().getPort());
             client.updateFeedbackCard("test-token", "om_one", client.feedbackCard("提醒", "正文", "n1", "✅ <at id=ou_one></at>：做到了"));
             assertThat(method.get()).isEqualTo("PATCH");
-            assertThat(payload.get()).contains("update_multi", "ou_one", "做到了");
+            assertThat(payload.get()).contains("update_multi", "授权个人表情", "做到了");
         } finally { server.stop(0); }
     }
 }

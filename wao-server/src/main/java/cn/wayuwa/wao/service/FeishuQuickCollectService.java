@@ -185,10 +185,10 @@ public class FeishuQuickCollectService {
             }
             if (!result.displayed()) {
                 return Map.of("toast", Map.of("type", "warning", "content",
-                        "已记录：" + result.outcome() + "；群卡片反馈暂未显示，请重试"));
+                        "已记录：" + result.outcome() + "；" + result.hint()));
             }
             return Map.of("toast", Map.of("type", "success", "content",
-                    "已记录：" + result.outcome() + "，已显示实际反馈人"));
+                    "已记录：" + result.outcome() + "，已用你的身份贴表情"));
         }
         if (MESSAGE_RECALLED_EVENT.equals(eventType)) {
             try {

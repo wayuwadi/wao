@@ -25,18 +25,21 @@ public class FeishuLoginController {
     private final FeishuLoginService service;
     private final AccountAuthService accountAuth;
     private final AuthSessionManager sessions;
+    private final FeishuReactionAuthorizationController reactions;
     public FeishuLoginController(FeishuLoginService service, AccountAuthService accountAuth,
-                                 AuthSessionManager sessions) {
+                                 AuthSessionManager sessions, FeishuReactionAuthorizationController reactions) {
         this.service = service;
         this.accountAuth = accountAuth;
         this.sessions = sessions;
+        this.reactions = reactions;
     }
     @GetMapping("/authorize")
     public ApiResponse<Map<String, String>> authorize(@RequestParam(defaultValue = "authorization") String scene) {
         return ApiResponse.ok(Map.of("authorizationUrl", service.authorizationUrl(scene)));
     }
     @GetMapping("/callback")
-    public ResponseEntity<Void> callback(@RequestParam String code, @RequestParam String state) {
+    public ResponseEntity<?> callback(@RequestParam(required = false) String code, @RequestParam String state, HttpServletRequest request) {
+        if (state.startsWith("reaction.")) return reactions.callback(request, state, code);
         return ResponseEntity.status(302).header(HttpHeaders.LOCATION, service.callbackUri(code, state).toString()).build();
     }
     @GetMapping("/workbench")

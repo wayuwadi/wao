@@ -2,7 +2,6 @@ package cn.wayuwa.wao.service;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import cn.wayuwa.wao.feishu.FeishuOpenApiClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,20 +25,22 @@ public class NotificationFeedbackService {
     private final FeishuNotificationFeedbackMapper mapper;
     private final AutomationJobMapper jobs;
     private final FeishuNotificationMapper notifications;
-    private final SettingService settings;
+    private final FeishuReactionAuthorizationService authorization;
     private final FeishuOpenApiClient feishu;
 
     public NotificationFeedbackService(FeishuNotificationFeedbackMapper mapper, AutomationJobMapper jobs,
-            FeishuNotificationMapper notifications, SettingService settings, FeishuOpenApiClient feishu) {
+            FeishuNotificationMapper notifications, FeishuReactionAuthorizationService authorization, FeishuOpenApiClient feishu) {
         this.mapper = mapper; this.jobs = jobs; this.notifications = notifications;
-        this.settings = settings; this.feishu = feishu;
+        this.authorization = authorization; this.feishu = feishu;
     }
 
     /** 已落库的实际选择，以及共享反馈是否成功显示。 */
-    public record Result(String outcome, boolean displayed) { }
+    public record Result(String outcome, boolean displayed, String hint) {
+        public Result(String outcome, boolean displayed) { this(outcome, displayed, "个人表情暂未显示，请重试或重新授权"); }
+    }
 
     /**
-     * 保存真实按钮回传并刷新所有人的最新选择。通知行锁覆盖保存与外部显示，避免多节点交叉覆盖。
+     * 保存真实按钮回传并以本人身份贴表情。通知行锁串行处理，改选只处理本人的表情。
      * 展示失败保留实际反馈，让同一人再次点击重试；未知或身份不匹配的回传返回 null。
      */
     @Transactional
@@ -69,53 +70,31 @@ public class NotificationFeedbackService {
         row.setAction(outcome); row.setOperatorName(event.path("operator").path("user_id").asText(openId));
         row.setActedAt(LocalDateTime.now());
         if (isNew) mapper.insert(row); else mapper.updateById(row);
-        boolean displayed = false;
         try {
-            displayed = display(notification, messageId);
+            if (!StringUtils.hasText(messageId)) return new Result(label(outcome), false);
+            if (!StringUtils.hasText(notification.getMessageId())) {
+                notification.setMessageId(messageId);
+                notifications.updateById(notification);
+            }
+            String token = authorization.accessToken(openId);
+            if (!StringUtils.hasText(token)) return new Result(label(outcome), false,
+                    "请先在 WAO 设置 → 账号与登录中授权个人表情，再点击一次");
+            String originalMessageId = notification.getMessageId();
+            if (StringUtils.hasText(row.getReactionId()) && !outcome.equals(row.getReactionAction())) {
+                feishu.deleteOwnFeedbackReaction(token, originalMessageId, row.getReactionId());
+                row.setReactionId(null); row.setReactionAction(null); mapper.updateById(row);
+            }
+            String reactionId = feishu.addUserMessageReaction(token, originalMessageId,
+                    "done".equals(outcome) ? "CheckMark" : "CrossMark", openId);
+            row.setReactionId(reactionId); row.setReactionAction(outcome); mapper.updateById(row);
+            return new Result(label(outcome), true);
         } catch (RuntimeException ex) {
-            // 飞书显示失败不能撤销用户已经提交的真实选择。
-            log.warn("飞书通知 {} 反馈已保存，但实名摘要更新失败：{}", notificationId, ex.getMessage());
+            log.warn("飞书通知 {} 反馈已保存，个人表情未显示，错误类型：{}", notificationId, ex.getClass().getSimpleName());
+            return new Result(label(outcome), false);
         }
-        return new Result("done".equals(outcome) ? "做到了" : "没做到", displayed);
     }
 
-    private boolean display(FeishuNotificationEntity notification, String sourceMessageId) {
-        String appId = settings.get(SettingService.CHAT_SYNC_APP_ID, "");
-        String secret = settings.get(SettingService.CHAT_SYNC_APP_SECRET, "");
-        if (!StringUtils.hasText(sourceMessageId) || !StringUtils.hasText(appId) || !StringUtils.hasText(secret)) return false;
-        var rows = mapper.selectList(new LambdaQueryWrapper<FeishuNotificationFeedbackEntity>()
-                .eq(FeishuNotificationFeedbackEntity::getNotificationId, notification.getId())
-                .orderByAsc(FeishuNotificationFeedbackEntity::getOperatorOpenId));
-        String summary = rows.stream()
-                .filter(row -> row.getOperatorOpenId() != null && row.getOperatorOpenId().matches("ou_[A-Za-z0-9_-]+"))
-                .map(row -> ("done".equals(row.getAction()) ? "✅ " : "❌ ")
-                        + "<at id=" + row.getOperatorOpenId() + "></at>："
-                        + ("done".equals(row.getAction()) ? "做到了" : "没做到"))
-                .collect(Collectors.joining("\n"));
-        String token = feishu.tenantAccessToken(appId, secret);
-        if (notification.getCardTitle() != null) {
-            feishu.updateFeedbackCard(token, notification.getMessageId(), feishu.feedbackCard(
-                    notification.getCardTitle(), notification.getCardBody(), notification.getId(), summary));
-        } else {
-            var job = jobs.selectById(notification.getJobId());
-            var card = feishu.feedbackCard(job == null ? "通知反馈" : job.getName() + " · 成员反馈",
-                    "每人保留最新选择，再次点击可修改。", notification.getId(), summary);
-            if (!StringUtils.hasText(notification.getFeedbackMessageId())) {
-                if (!StringUtils.hasText(notification.getMessageId())) {
-                    notification.setMessageId(sourceMessageId);
-                    notifications.updateById(notification);
-                }
-                String replyId = feishu.replyFeedbackCard(token, notification.getMessageId(), card, "feedback-" + notification.getId());
-                notification.setFeedbackMessageId(replyId);
-                notifications.updateById(notification);
-                // 上一次发送可能成功但回执丢失；去重返回的卡片仍是旧摘要，必须刷新为全部最新反馈。
-                feishu.updateFeedbackCard(token, replyId, card);
-            } else {
-                feishu.updateFeedbackCard(token, notification.getFeedbackMessageId(), card);
-            }
-        }
-        return true;
-    }
+    private static String label(String outcome) { return "done".equals(outcome) ? "做到了" : "没做到"; }
 
     /** 按日、周、月或全部范围汇总真实点击反馈。 */
     public NotificationFeedbackReportDto report(String period) {
