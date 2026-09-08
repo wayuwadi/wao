@@ -68,7 +68,7 @@ describe('TianrenView', () => {
     vi.mocked(streamTianrenInterpretation).mockImplementation(async function* () {
       yield '## 自动解读\n稳住今天的节奏。'
     })
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('今天还没有起卦')
@@ -90,7 +90,7 @@ describe('TianrenView', () => {
     vi.mocked(streamTianrenInterpretation).mockImplementation(async function* () {
       throw new Error('Runner 暂时离线')
     })
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     await wrapper.get('.cast-button').trigger('click')
@@ -108,7 +108,7 @@ describe('TianrenView', () => {
     }))
     vi.mocked(createTodayTianrenReading).mockResolvedValue(reading)
     vi.mocked(fetchTianrenHistory).mockResolvedValueOnce([]).mockResolvedValue([reading])
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     await wrapper.get('.cast-button').trigger('click')
@@ -125,7 +125,7 @@ describe('TianrenView', () => {
     vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
     vi.mocked(fetchTianrenHistory).mockResolvedValue([reading])
     vi.mocked(fetchAssistantStatus).mockResolvedValue({ configured: false, message: '未检测到在线 Codex' })
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('未检测到在线 Codex')
@@ -144,7 +144,7 @@ describe('TianrenView', () => {
         { id: 'm2', role: 'assistant', content: '## 今日卦意\n稳住节奏。', createdAt: '2026-08-11T10:01:00' },
       ],
     })
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     expect(fetchAssistantConversation).toHaveBeenCalledWith('cv1')
@@ -177,7 +177,7 @@ describe('TianrenView', () => {
         { id: 'm1', role: 'assistant', content: '## 《易经》卦意（AI 概括）\n以承载与顺势自照。', createdAt: '2026-08-10T10:01:00' },
       ],
     })
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     await wrapper.findAll('.history-row')[1]!.trigger('click')
@@ -202,7 +202,7 @@ describe('TianrenView', () => {
     const past = { ...reading, id: 'tr-old', date: '2026-08-09', conversationId: null }
     vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
     vi.mocked(fetchTianrenHistory).mockResolvedValue([reading, past])
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     await wrapper.findAll('.history-row')[1]!.trigger('click')
@@ -220,7 +220,7 @@ describe('TianrenView', () => {
     vi.mocked(streamTianrenInterpretation).mockImplementation(async function* () {
       throw new Error('Runner 暂时离线')
     })
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     await wrapper.get('textarea').setValue('最近总在赶进度')
@@ -238,7 +238,7 @@ describe('TianrenView', () => {
     vi.mocked(fetchTianrenHistory).mockResolvedValue([reading])
     vi.mocked(createTianrenShareLink).mockResolvedValue('https://wao.example/s/tianren/token1')
     const { copyToClipboard } = await import('@/utils/clipboard')
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     await wrapper.get('.share-button').trigger('click')
@@ -255,7 +255,7 @@ describe('TianrenView', () => {
     vi.mocked(createTianrenShareLink).mockResolvedValue('https://wao.example/s/tianren/token2')
     const { copyToClipboard } = await import('@/utils/clipboard')
     vi.mocked(copyToClipboard).mockResolvedValueOnce(false)
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     await wrapper.get('.share-button').trigger('click')
@@ -270,7 +270,7 @@ describe('TianrenView', () => {
     vi.mocked(fetchTodayTianrenReading).mockResolvedValue(reading)
     vi.mocked(fetchTianrenHistory).mockResolvedValue([reading])
     vi.mocked(createTianrenShareLink).mockRejectedValue(new Error('分享服务暂不可用'))
-    const wrapper = mount(TianrenView)
+    const wrapper = mount(TianrenView, { global: { stubs: { RouterLink: true } } })
     await flushPromises()
 
     await wrapper.get('.share-button').trigger('click')

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import {
   createTodayTianrenReading,
   createTianrenShareLink,
@@ -266,8 +267,14 @@ onMounted(() => {
         <h1>天人一卦</h1>
         <p>每天只起一卦，用变化的象征照见当下，再把四时、起居与情志化成一件今天做得到的小事。</p>
       </div>
-      <div class="sync-pill" :class="syncState">
-        <span class="sync-dot"></span>{{ syncText }}
+      <div class="hero-actions">
+        <div class="sync-pill" :class="syncState">
+          <span class="sync-dot"></span>{{ syncText }}
+        </div>
+        <TianrenNotificationStatus v-if="reading" :reading-id="reading.id" :interpreting="interpreting" />
+        <RouterLink v-else class="notification-settings" to="/workday-rhythm">
+          <i class="ri-settings-3-line"></i> 配置通知群
+        </RouterLink>
       </div>
     </header>
 
@@ -290,7 +297,6 @@ onMounted(() => {
         <button type="button" @click="loadPage(false)">重试同步</button>
       </div>
 
-      <TianrenNotificationStatus v-if="reading" :reading-id="reading.id" :interpreting="interpreting" />
       <div class="content-grid">
         <main class="main-column">
           <section v-if="!reading" class="empty-cast card">
@@ -506,6 +512,7 @@ onMounted(() => {
 <style scoped>
 .tianren-page { min-height: 100%; padding: 28px clamp(16px, 3vw, 42px) 46px; color: var(--wao-text); background: radial-gradient(circle at 3% 0%, color-mix(in srgb, #b68745 13%, transparent), transparent 30%), radial-gradient(circle at 96% 12%, color-mix(in srgb, #3b887b 11%, transparent), transparent 26%), var(--wao-bg-page); }
 .hero { max-width: 1180px; margin: 0 auto 20px; display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }.eyebrow { margin-bottom: 7px; color: #8e6534; font-size: 12px; font-weight: 650; letter-spacing: .04em; }.eyebrow i { margin-right: 6px; }.hero h1 { margin: 0; font-family: 'STKaiti', 'KaiTi', serif; font-size: clamp(32px, 4vw, 45px); font-weight: 700; letter-spacing: .05em; }.hero p { max-width: 720px; margin: 9px 0 0; color: var(--wao-text-3); font-size: 13px; line-height: 1.75; }
+.hero-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; flex-shrink: 0; max-width: 100%; }.notification-settings { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; color: var(--wao-text-3); font-size: 11px; white-space: nowrap; }
 .sync-pill { height: 30px; padding: 0 11px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--wao-success-line); border-radius: 999px; background: var(--wao-success-bg); color: var(--wao-success-strong); font-size: 11px; white-space: nowrap; }.sync-pill.loading,.sync-pill.casting { border-color: var(--wao-primary-line); background: var(--wao-primary-soft); color: var(--wao-primary-text); }.sync-pill.error { border-color: var(--wao-danger-line); background: var(--wao-danger-bg); color: var(--wao-danger-strong); }.sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }.sync-pill.loading .sync-dot,.sync-pill.casting .sync-dot { animation: pulse 1s ease infinite; }
 .card { border: 1px solid var(--wao-line); border-radius: 16px; background: color-mix(in srgb, var(--wao-bg-card) 96%, #f2e5cf); box-shadow: var(--wao-shadow-card-hover); }.content-grid { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, .72fr); gap: 16px; align-items: start; }.main-column,.side-column { min-width: 0; display: grid; gap: 16px; }
 .state-card { min-height: 420px; max-width: 1180px; margin: 0 auto; display: grid; place-items: center; align-content: center; gap: 10px; border: 1px solid var(--wao-line); border-radius: 16px; background: var(--wao-bg-card); color: var(--wao-text-3); }.state-card strong { color: var(--wao-text); font-size: 15px; }.state-card small { color: var(--wao-text-weak); }.state-card > i { font-size: 38px; color: var(--wao-danger); }.state-card button,.cast-button { border: 0; border-radius: 10px; background: #3d756b; color: #fff; cursor: pointer; }.state-card button { margin-top: 8px; padding: 9px 15px; }.spinner { width: 28px; height: 28px; border: 3px solid color-mix(in srgb, #3d756b 20%, transparent); border-top-color: #3d756b; border-radius: 50%; animation: spin .8s linear infinite; }
@@ -526,6 +533,6 @@ onMounted(() => {
 .boundary-card { padding: 15px; display: flex; align-items: flex-start; gap: 10px; }.boundary-icon { width: 34px; height: 34px; flex: none; border-radius: 9px; display: grid; place-items: center; background: var(--wao-warning-bg); color: var(--wao-warning-strong); }.boundary-card strong { font-size: 11px; }.boundary-card p { margin: 5px 0 0; color: var(--wao-text-weak); font-size: 9.5px; line-height: 1.65; }.method-card { padding: 16px; }.method-card > span { color: var(--wao-text-weak); font-size: 9px; }.method-card > strong { margin-top: 2px; display: block; font-size: 12px; }.method-card ol { margin: 11px 0 0; padding-left: 18px; color: var(--wao-text-weak); font-size: 9.5px; line-height: 1.75; }
 .spin { animation: spin .9s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } } @keyframes pulse { 50% { opacity: .35; transform: scale(.7); } } @keyframes typing { 50% { opacity: .25; transform: translateY(-2px); } }
 @media (max-width: 940px) { .content-grid { grid-template-columns: 1fr; }.side-column { grid-template-columns: repeat(2, minmax(0, 1fr)); }.history-card { grid-row: span 2; }.cast-layout { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 650px) { .tianren-page { padding: 18px 12px 34px; }.hero { display: grid; gap: 12px; }.sync-pill { justify-self: start; }.hero h1 { font-size: 34px; }.content-grid { gap: 12px; }.main-column,.side-column { gap: 12px; }.side-column { grid-template-columns: 1fr; }.history-card { grid-row: auto; }.cast-card,.reflection-card,.answer-card { border-radius: 13px; }.card-head { display: grid; }.card-actions { justify-content: flex-start; }.cast-layout { grid-template-columns: 1fr; }.hexagram-flow { gap: 8px; }.reflection-head { grid-template-columns: 42px 1fr; }.reflection-head p { grid-column: 1 / -1; margin: 0; }.yao-row { grid-template-columns: 20px minmax(100px, 1fr) 62px 21px; gap: 6px; }.answer-error { align-items: flex-start; flex-wrap: wrap; }.answer-error span { min-width: calc(100% - 25px); } }
+@media (max-width: 650px) { .tianren-page { padding: 18px 12px 34px; }.hero { display: grid; gap: 12px; }.hero-actions { justify-content: space-between; width: 100%; }.sync-pill { justify-self: start; }.hero h1 { font-size: 34px; }.content-grid { gap: 12px; }.main-column,.side-column { gap: 12px; }.side-column { grid-template-columns: 1fr; }.history-card { grid-row: auto; }.cast-card,.reflection-card,.answer-card { border-radius: 13px; }.card-head { display: grid; }.card-actions { justify-content: flex-start; }.cast-layout { grid-template-columns: 1fr; }.hexagram-flow { gap: 8px; }.reflection-head { grid-template-columns: 42px 1fr; }.reflection-head p { grid-column: 1 / -1; margin: 0; }.yao-row { grid-template-columns: 20px minmax(100px, 1fr) 62px 21px; gap: 6px; }.answer-error { align-items: flex-start; flex-wrap: wrap; }.answer-error span { min-width: calc(100% - 25px); } }
 @media (prefers-reduced-motion: reduce) { .spinner,.spin,.sync-dot,.typing i { animation: none !important; } }
 </style>
