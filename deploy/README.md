@@ -186,6 +186,14 @@ V4 回归可在安装 WAO Web 开发依赖后运行 `node wao-web/scripts/test-a
 
 ## Jenkins CD
 
+### Amer Risk Demo V5
+
+`wao-web/public/amer_demo_5/` 发布到 `/amer_demo_5/`，无斜线入口 308 跳转，缺失静态资源返回 404。V1–V4 文件不改动。V5 包含最新确认的登记字段、紧凑可编辑基本信息、多选域/区域与邮箱校验；移除重复评估卡片，仅保留多条 Actions / Assessments 页签。Assessment 记录单独保存风险处置，初始评估仅允许一次，复评追加历史。未保存的基本信息草稿在页签切换时保留，浏览器刷新则丢弃；保存失败可重试。
+
+V5 仍为纯模拟页面，沿用 `amer-risk-demo-v3` 浏览器存储键以兼容旧数据，因此同域 V3/V4/V5 共享演示记录。避免用旧版本交替编辑含新字段的记录。不连接真实 Dataverse、Entra ID 或邮件。样例邮箱使用 `example.invalid`；旧字段和历史值不清空，历史 Assessment 未记录处置时显示“未记录”。评分按 20–25 Critical、15–19 High、6–14 Medium；需求截图未给出 1–5 标签，暂沿用 Low。
+
+测试：安装 WAO Web 开发依赖后执行 `node wao-web/scripts/test-amer-demo-v5.mjs`，以及 `sh deploy/scripts/test-render-nginx-config.sh`。静态文件与本地 V5 构建逐文件校验。
+
 主站 `main` 由 Linux 主节点上的 Jenkins 构建和发布，GitHub 只负责仓库、签名 Webhook 和提交状态。
 Jenkins 使用 Linux1、云节点两套独立 SSH 密钥与严格 `known_hosts`；生产 `.env`、`.env.secrets` 和网关证书
 以 Linux2 主节点私有部署目录为准。CD 一次构建带 Git SHA 标签的镜像，按 Linux1 → Linux2 → 云前端顺序
