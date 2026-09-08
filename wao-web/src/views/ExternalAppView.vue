@@ -92,7 +92,7 @@ onMounted(() => nav.loadExternalApps())
       <div v-if="state === 'checking' || state === 'loading'" class="state-card overlay">
         <span class="spinner"></span>
         <strong>正在打开{{ app?.label ? `「${app.label}」` : '外部应用' }}</strong>
-        <p>同域应用会直接沿用当前 WAO 账号和登录状态。</p>
+        <p>{{ appId === 'weknora' ? '首次使用需建立 WeKnora 账号，并在模型管理中配置对话和向量化 API。' : '正在加载应用，请稍候。' }}</p>
       </div>
 
       <div v-else-if="state === 'missing'" class="state-card">

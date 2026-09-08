@@ -1,0 +1,14 @@
+[Unit]
+Description=WAO WeKnora reverse SSH tunnel
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=jenkins
+Group=jenkins
+ExecStart=/usr/bin/ssh -F /etc/jenkins/tunnel-ssh-config -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:18781:127.0.0.1:18781 wao-cloud-webhook
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
