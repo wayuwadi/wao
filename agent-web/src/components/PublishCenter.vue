@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
-  createPublishTask, getAuthorizeUrl, getPublishCenter, submitPublishTask,
+  createContentGroup, createPublishTask, getAuthorizeUrl, getPublishCenter, submitPublishTask,
   listMedia, markPublishTaskPublished, unbindAccount, updatePublicationData,
   retryPublishGeneration, updatePublishTask, uploadMedia,
 } from '@/api/publish'
@@ -13,6 +13,7 @@ import {
 import type { MediaAsset, PlatformSummary, PublishCenter, PublishTask } from '@/types'
 import type { KnowledgeBaseOption } from '@/api/knowledge'
 import ArticleBodyEditor from './ArticleBodyEditor.vue'
+import PlatformPhonePreview from './PlatformPhonePreview.vue'
 
 type CenterMode = 'full' | 'accounts' | 'content' | 'publishing' | 'workbench'
 
@@ -35,7 +36,7 @@ const targetKbId = ref('')
 const targetFolderId = ref('')
 const createdDocUrl = ref('')
 const createForm = reactive({
-  topic: '', platform: 'WECHAT_MP', generateCopy: true, sourceNotes: '', useWaoContext: true,
+  topic: '', platform: 'CONTENT_GROUP', generateCopy: true, sourceNotes: '', useWaoContext: true,
 })
 const editForm = reactive({ version: 0, title: '', content: '', tags: '', platformAccountId: '', mediaAssetId: '' })
 const publicationForm = reactive<{
@@ -46,6 +47,13 @@ let pollTimer: number | undefined
 
 const selected = computed(() => center.value?.tasks.find((task) => task.id === selectedId.value) ?? null)
 const selectedPlatform = computed(() => platform(selected.value?.platform))
+const selectedGroupTasks = computed(() => {
+  const task = selected.value
+  if (!task?.contentGroupId) return task ? [task] : []
+  const order = ['DOUYIN', 'XIAOHONGSHU', 'WECHAT_MP']
+  return (center.value?.tasks.filter((item) => item.contentGroupId === task.contentGroupId) ?? [])
+    .sort((a, b) => order.indexOf(a.platform) - order.indexOf(b.platform))
+})
 const selectedMedia = computed(() => mediaAssets.value.find((item) => item.id === editForm.mediaAssetId))
 const hasUnsaved = computed(() => dirty.value || publicationDirty.value)
 const editable = computed(() => !!selected.value && isPublishEditable(selected.value.status))
@@ -136,21 +144,33 @@ async function createTask() {
   message.value = ''
   error.value = ''
   try {
-    const created = await createPublishTask(createForm.topic, createForm.platform,
-      createForm.generateCopy, undefined,
-      createForm.sourceNotes, createForm.useWaoContext)
+    const creatingGroup = createForm.platform === 'CONTENT_GROUP'
+    const createdTasks = creatingGroup
+      ? await createContentGroup(createForm.topic, createForm.sourceNotes, createForm.useWaoContext)
+      : [await createPublishTask(createForm.topic, createForm.platform,
+          createForm.generateCopy, undefined,
+          createForm.sourceNotes, createForm.useWaoContext)]
     await refresh(true)
+    const created = createdTasks[0]
+    if (!created) throw new Error('服务端没有返回已创建的内容')
     const current = center.value?.tasks.find((task) => task.id === created.id) ?? created
     selectTask(current, true)
     createForm.topic = ''
     createForm.sourceNotes = ''
     emit('topic-consumed')
-    message.value = created.status === 'GENERATING' ? '已开始生成文案' : '已创建草稿，请人工完善后保存'
+    message.value = creatingGroup
+      ? '已开始生成抖音、小红书和公众号三端内容'
+      : created.status === 'GENERATING' ? '已开始生成文案' : '已创建草稿，请人工完善后保存'
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : '创建发布任务失败'
   } finally {
     busy.value = ''
   }
+}
+
+function selectPreviewTask(taskId: string) {
+  const task = center.value?.tasks.find((item) => item.id === taskId)
+  if (task) selectTask(task)
 }
 
 async function retryGeneration() {
@@ -450,12 +470,13 @@ onBeforeUnmount(() => {
       </section>
 
       <section v-if="showCreate" class="create-card">
-        <div><strong>新建图文</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model} 会结合你的输入和授权资料生成初稿，仍需人工审核。` : '当前没有可用模型；如需先写手稿，请关闭 AI 生成。' }}</span></div>
-        <input v-model="createForm.topic" maxlength="200" placeholder="写下这篇准备解决的问题或主题" @keyup.enter="createTask" />
-        <select v-model="createForm.platform"><option v-for="item in center.platforms" :key="item.platform" :value="item.platform">{{ item.label }}</option></select>
-        <label><input v-model="createForm.generateCopy" type="checkbox" /> AI 生成</label>
-        <button :disabled="busy === 'create' || !createForm.topic.trim()" @click="createTask">{{ busy === 'create' ? '创建中…' : '开始创作' }}</button>
-        <label class="source-notes"><span>我的想法或对话摘录</span><textarea v-model="createForm.sourceNotes" maxlength="20000" rows="4" placeholder="把刚想到的话、聊天片段、经历或必须保留的判断直接放进来。创建失败时内容不会清空。"></textarea></label>
+        <div><strong>新建内容</strong><span>{{ center.ai.available ? `${center.ai.provider} · ${center.ai.model} 会结合你的输入和授权资料生成初稿，仍需人工审核。` : '当前没有可用模型；三端生成会明确失败，也可选择单一平台并关闭 AI 生成写手稿。' }}</span></div>
+        <input v-model="createForm.topic" maxlength="200" placeholder="输入创作标题或准备解决的问题" @keyup.enter="createTask" />
+        <select v-model="createForm.platform"><option value="CONTENT_GROUP">抖音 + 小红书 + 公众号</option><option v-for="item in center.platforms" :key="item.platform" :value="item.platform">仅{{ item.label }}</option></select>
+        <label v-if="createForm.platform !== 'CONTENT_GROUP'"><input v-model="createForm.generateCopy" type="checkbox" /> AI 生成</label>
+        <span v-else class="audience-hint">三端分别适配受众</span>
+        <button :disabled="busy === 'create' || !createForm.topic.trim()" @click="createTask">{{ busy === 'create' ? '创建中…' : createForm.platform === 'CONTENT_GROUP' ? '生成三端内容' : '开始创作' }}</button>
+        <label class="source-notes"><span>内容参考</span><textarea v-model="createForm.sourceNotes" maxlength="20000" rows="4" placeholder="粘贴资料、聊天片段、经历或必须保留的判断。创建失败时内容不会清空。"></textarea></label>
         <label class="context-toggle"><input v-model="createForm.useWaoContext" type="checkbox" /> 结合 WAO 个人记忆、知识库、私人 AI 对话和过往成稿</label>
       </section>
 
@@ -534,9 +555,9 @@ onBeforeUnmount(() => {
               </div>
             </section>
           </main>
-          <section class="live-preview" aria-label="实时发布预览">
-            <header><div><strong>实时预览</strong><small>{{ selected.platformLabel }}最终排版 · 输入后立即同步</small></div><span :class="{ dirty }">{{ dirty ? '预览含未保存修改' : '已保存版本' }}</span></header>
-            <iframe :srcdoc="exportHtml" title="实时图文排版预览" sandbox=""></iframe>
+          <section class="live-preview" aria-label="手机端多平台实时预览">
+            <header><div><strong>手机端预览</strong><small>{{ selected.contentGroupId ? '切换平台可查看同一主题的不同成稿' : `${selected.platformLabel}最终排版` }}</small></div><span :class="{ dirty }">{{ dirty ? '预览含未保存修改' : '已保存版本' }}</span></header>
+            <PlatformPhonePreview :tasks="selectedGroupTasks" :active-task-id="selected.id" :draft="{ title: editForm.title, content: editForm.content, tags: editForm.tags }" @select="selectPreviewTask" />
             <p v-if="selectedMedia && selectedMedia.kind !== 'IMAGE'" class="preview-media-note"><i class="ri-movie-line"></i>{{ selectedMedia.originalName }} 是发布视频，不嵌入图文预览。</p>
           </section>
         </div>
@@ -577,6 +598,8 @@ onBeforeUnmount(() => {
 .context-state{margin:0;padding:8px 10px;border-radius:8px;background:var(--wao-bg-sub);color:var(--wao-text-weak);font-size:10px}.source-details{border:1px solid var(--wao-line);border-radius:9px;background:var(--wao-bg-sub)}.source-details summary{padding:9px 10px;color:var(--wao-primary-text);font-size:10px;cursor:pointer}.source-details>p,.source-details article{margin:0;padding:9px 10px;border-top:1px solid var(--wao-divider);font-size:10px;line-height:1.65;white-space:pre-wrap}.source-details article{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 7px}.source-details article>span{padding:1px 5px;border-radius:999px;background:var(--wao-primary-soft);color:var(--wao-primary-text);font-size:8px}.source-details article>a,.source-details article>b{overflow:hidden;color:var(--wao-text-2);text-overflow:ellipsis;white-space:nowrap}.source-details article>p{grid-column:1/-1;margin:0;color:var(--wao-text-weak);display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3}.publication-data{padding:13px;display:grid;gap:10px;border:1px solid var(--wao-line);border-radius:10px;background:var(--wao-bg-sub)}.publication-data>header{display:flex;align-items:start;justify-content:space-between;gap:10px}.publication-data header>div{display:grid;gap:3px}.publication-data header small,.publication-data header>span{color:var(--wao-text-weak);font-size:9px}.metric-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.publication-data>button{width:max-content;min-height:34px;padding:0 12px;justify-self:end;border:0;border-radius:8px;background:var(--wao-primary);color:#fff;cursor:pointer}.publication-data>button:disabled{opacity:.45}.metric-history{display:grid;gap:5px}.metric-history article{display:grid;grid-template-columns:minmax(90px,1.4fr) repeat(5,1fr);gap:6px;padding:7px 8px;border-radius:7px;background:var(--wao-bg-card);color:var(--wao-text-weak);font-size:9px}.metric-history time{color:var(--wao-text-3)}
 @media(max-width:900px){.create-card{grid-template-columns:1fr 1fr}.create-card>div,.create-card>input{grid-column:1/-1}.workspace{grid-template-columns:1fr}.task-list{max-height:260px;overflow:auto}}@media(max-width:600px){.create-card{grid-template-columns:1fr}.create-card>*{grid-column:1!important}.editor-grid{grid-template-columns:1fr}.editor-head{display:grid}.actions{align-items:stretch;flex-direction:column}.actions span{margin:0}.actions button{width:100%}.dialog-mask{padding:10px}.export-dialog,.knowledge-dialog{max-height:calc(100vh - 20px);padding:14px}.export-dialog iframe{height:52vh}.export-dialog footer,.knowledge-dialog footer{flex-direction:column}.export-dialog footer button,.knowledge-dialog footer button{width:100%}}
 .workspace { grid-template-columns: 240px minmax(0, 1fr); }
+.create-card { grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.5fr) 180px auto auto; }
+.create-card > .audience-hint { white-space: nowrap; color: var(--wao-primary-text); }
 .draft-workspace {
   min-width: 0; display: grid;
   grid-template-columns: minmax(340px, 1fr) minmax(340px, 1fr);
@@ -603,6 +626,8 @@ onBeforeUnmount(() => {
   .task-list { max-height: 220px; position: static; }
 }
 @media(max-width: 820px) {
+  .create-card { grid-template-columns: 1fr; }
+  .create-card > * { grid-column: 1 !important; }
   .draft-workspace { grid-template-columns: 1fr; }
   .live-preview { position: static; }
   .live-preview iframe { height: 68vh; min-height: 480px; }

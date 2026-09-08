@@ -117,6 +117,8 @@ export interface ContentMetricSnapshot {
 
 export interface PublishTask {
   id: string
+  /** 同一次三端生成共享的分组 id；历史单平台内容为空。 */
+  contentGroupId?: string
   platform: string
   platformLabel: string
   platformAccountId?: string

@@ -11,7 +11,7 @@ import java.util.List;
  * @param content 提交给平台的正文（抖音是简短文案，公众号是全文）
  * @param blocks  创作用的结构化分段：短视频是口播脚本，公众号是小标题段落，小红书为空
  */
-public record PublishTaskDto(String id, String platform, String platformLabel, String platformAccountId,
+public record PublishTaskDto(String id, String contentGroupId, String platform, String platformLabel, String platformAccountId,
                              String platformAccountName, String mediaAssetId, String mediaName,
                              String topic, String title, String content, List<String> tags,
                              String coverText, List<GeneratedContent.Block> blocks,

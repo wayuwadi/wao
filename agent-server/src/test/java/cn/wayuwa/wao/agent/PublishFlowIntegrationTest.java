@@ -26,6 +26,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
@@ -185,6 +186,43 @@ class PublishFlowIntegrationTest {
         assertThat(queued.getGenerationUserPrompt()).contains("什么是 AI、Skill 和 MCP", "程序员朋友");
         assertThat(queued.getTitle()).isNull();
         assertThat(queued.getContent()).isNull();
+    }
+
+    @Test
+    void oneRequestCreatesThreeAudienceSpecificTasksInTheSameContentGroup() throws Exception {
+        enableRecommendedModel();
+
+        String body = mvc.perform(post("/api/agent/publish/content-groups")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"topic":"把复杂技术讲给普通人","sourceNotes":"先讲生活例子，再解释原理",
+                                 "useWaoContext":false}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", org.hamcrest.Matchers.hasSize(3)))
+                .andExpect(jsonPath("$.data[*].platform", org.hamcrest.Matchers.contains(
+                        "DOUYIN", "XIAOHONGSHU", "WECHAT_MP")))
+                .andExpect(jsonPath("$.data[*].status", org.hamcrest.Matchers.everyItem(
+                        org.hamcrest.Matchers.equalTo("GENERATING"))))
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode tasks = json.readTree(body).path("data");
+        String groupId = tasks.get(0).path("contentGroupId").asText();
+        assertThat(groupId).isNotBlank();
+        assertThat(tasks.get(1).path("contentGroupId").asText()).isEqualTo(groupId);
+        assertThat(tasks.get(2).path("contentGroupId").asText()).isEqualTo(groupId);
+
+        List<String> prompts = jdbc.queryForList("""
+                SELECT generation_system_prompt FROM agent_publish_task
+                WHERE content_group_id = ? ORDER BY platform
+                """, String.class, groupId);
+        assertThat(prompts).hasSize(3);
+        assertThat(prompts).anyMatch(prompt -> prompt.contains("抖音短视频"));
+        assertThat(prompts).anyMatch(prompt -> prompt.contains("小红书"));
+        assertThat(prompts).anyMatch(prompt -> prompt.contains("微信公众号"));
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(DISTINCT source_notes) FROM agent_publish_task WHERE content_group_id = ?
+                """, Integer.class, groupId)).isEqualTo(1);
     }
 
     @Test

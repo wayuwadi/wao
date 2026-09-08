@@ -10,6 +10,7 @@ public class PublishTaskEntity {
     private String id;
     private String workspaceId;
     private String requestedByAccountId;
+    private String contentGroupId;
     private String platform;
     private String platformAccountId;
     private String mediaAssetId;
@@ -45,6 +46,8 @@ public class PublishTaskEntity {
     public void setWorkspaceId(String workspaceId) { this.workspaceId = workspaceId; }
     public String getRequestedByAccountId() { return requestedByAccountId; }
     public void setRequestedByAccountId(String requestedByAccountId) { this.requestedByAccountId = requestedByAccountId; }
+    public String getContentGroupId() { return contentGroupId; }
+    public void setContentGroupId(String value) { contentGroupId = value; }
     public String getPlatform() { return platform; }
     public void setPlatform(String platform) { this.platform = platform; }
     public String getPlatformAccountId() { return platformAccountId; }
