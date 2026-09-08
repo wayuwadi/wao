@@ -14,6 +14,7 @@ sh deploy/jenkins/test-resolve-batch-base.sh
 sh deploy/jenkins/test-notify-feishu.sh
 sh deploy/jenkins/test-github-status.sh
 sh deploy/jenkins/test-backup-controller.sh
+python3 -m unittest deploy/ai-runner/test_linux2_tunnel.py
 python3 -m unittest deploy/backup/test_webdav_client.py
 sh deploy/backup/test-offsite-backup.sh
 python3 -m unittest deploy/jumpserver/test_custom_sso.py

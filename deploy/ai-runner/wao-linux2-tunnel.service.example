@@ -8,19 +8,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/ssh -NT \
-  -i /home/用户名/.ssh/id_ed25519_wao_linux2_tunnel \
-  -o BatchMode=yes \
-  -o IdentitiesOnly=yes \
-  -o ExitOnForwardFailure=yes \
-  -o ServerAliveInterval=30 \
-  -o ServerAliveCountMax=3 \
-  -o StrictHostKeyChecking=yes \
-  -o UserKnownHostsFile=/home/用户名/.ssh/known_hosts \
-  -o HostKeyAlias=linux2.wayuwa.cn \
-  -R 127.0.0.1:2201:127.0.0.1:22 \
-  -L 127.0.0.1:17897:127.0.0.1:7897 \
-  wao-tunnel@linux2.wayuwa.cn
+# 先把同目录 wao-linux2-tunnel.py 安装到 ~/.local/libexec/；仅解析连接地址，密钥身份仍使用域名。
+ExecStart=/usr/bin/python3 /home/用户名/.local/libexec/wao-linux2-tunnel.py \
+  --identity /home/用户名/.ssh/id_ed25519_wao_linux2_tunnel \
+  --known-hosts /home/用户名/.ssh/known_hosts \
+  --host linux2.wayuwa.cn \
+  --egress-port 7897
 Restart=always
 RestartSec=5
 
