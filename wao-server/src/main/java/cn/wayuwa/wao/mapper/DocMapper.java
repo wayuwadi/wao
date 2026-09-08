@@ -48,7 +48,7 @@ public interface DocMapper extends BaseMapper<DocEntity> {
             UPDATE doc
                SET folder_id = #{doc.folderId}, title = #{doc.title}, blocks_json = #{doc.blocksJson},
                    content_json = #{doc.contentJson}, content_markdown = #{doc.contentMarkdown},
-                   content_version = #{doc.contentVersion}, links_json = #{doc.linksJson},
+                   content_version = #{doc.contentVersion}, links_json = #{doc.linksJson}, tags_json = #{doc.tagsJson},
                    rev = #{doc.rev}, updated_at = #{doc.updatedAt}
              WHERE id = #{doc.id} AND deleted_at IS NULL AND rev = #{expectedRev}
             """)
@@ -60,7 +60,7 @@ public interface DocMapper extends BaseMapper<DocEntity> {
                SET folder_id = #{doc.folderId}, title = #{doc.title}, author_id = #{doc.authorId}, auto = #{doc.auto},
                    blocks_json = #{doc.blocksJson}, content_json = #{doc.contentJson},
                    content_markdown = #{doc.contentMarkdown}, content_version = #{doc.contentVersion},
-                   links_json = #{doc.linksJson}, rev = #{doc.rev}, updated_at = #{doc.updatedAt},
+                   links_json = #{doc.linksJson}, tags_json = #{doc.tagsJson}, rev = #{doc.rev}, updated_at = #{doc.updatedAt},
                    deleted_at = #{doc.deletedAt}, deleted_by = #{doc.deletedBy}, cascade_del = #{doc.cascadeDel}
              WHERE id = #{doc.id}
             """)

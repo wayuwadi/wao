@@ -361,6 +361,7 @@ export interface Backlink {
 }
 
 export interface Doc {
+  tags?: string[]
   id: string
   title: string
   author: string
