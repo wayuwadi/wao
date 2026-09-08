@@ -85,15 +85,14 @@ function mountDrawer() {
  * 等异步组件（描述编辑器）解析完成。
  *
  * 动态 import 的解析要跨若干个微 / 宏任务，固定睡一个时长要么慢要么偶发失败，
- * 所以这里轮询到出现为止，超时才判失败。
+ * 所以这里等待实际 DOM 就绪，留出并行测试下动态模块转换的时间；就绪后立即返回。
  */
-async function waitFor(w: ReturnType<typeof mountDrawer>, selector: string, tries = 150) {
-  for (let i = 0; i < tries; i++) {
+async function waitFor(w: ReturnType<typeof mountDrawer>, selector: string) {
+  await vi.waitFor(async () => {
     await flushPromises()
-    if (w.find(selector).exists()) return true
-    await new Promise((r) => setTimeout(r, 2))
-  }
-  return false
+    expect(w.find(selector).exists()).toBe(true)
+  }, { timeout: 4_000, interval: 25 })
+  return true
 }
 
 describe('TaskDrawer', () => {
