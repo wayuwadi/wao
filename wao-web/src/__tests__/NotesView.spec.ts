@@ -188,6 +188,27 @@ describe('小记集中记录空间', () => {
     reopened.unmount()
   })
 
+  it('全屏表格右键菜单位于全屏容器之上，可插入行并保留草稿', async () => {
+    const wrapper = mount(NoteComposer, { attachTo: document.body })
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    await wrapper.find('.fullscreen-toggle').trigger('click')
+    await wrapper.find('button[title="表格"]').trigger('click')
+    const rows = wrapper.findAll('tr').length
+    await wrapper.find('td').trigger('contextmenu', { clientX: 100, clientY: 100 })
+    await flushPromises()
+    const menu = document.querySelector<HTMLElement>('.table-context-menu')!
+    expect(Number(menu.style.zIndex)).toBeGreaterThan(2100)
+    Array.from(menu.querySelectorAll('button')).find(button => button.textContent === '向下插入行')!.click()
+    await flushPromises()
+    expect(wrapper.findAll('tr')).toHaveLength(rows + 1)
+    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).content.document).toBeTruthy()
+    await wrapper.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.classes()).not.toContain('fullscreen')
+    expect(wrapper.findAll('tr')).toHaveLength(rows + 1)
+    wrapper.unmount()
+  })
+
   it('标签字典保存失败保留名称、重试去重，标签与搜索组合并切换两种排序', async () => {
     const data = useDataStore()
     data.docs.a = { ...doc('a', '工作备忘', '2026-09-05T08:00:00'), updated: '2026-09-08T08:00:00', tags: ['工作'] }
