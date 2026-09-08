@@ -21,6 +21,7 @@ export interface Org {
 export type ModuleId =
   | 'home'
   | 'ai-sessions'
+  | 'chatgpt'
   | 'notes'
   | 'navigation'
   | 'updates'

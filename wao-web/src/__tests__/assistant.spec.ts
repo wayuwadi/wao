@@ -45,4 +45,16 @@ describe('AI assistant SSE', () => {
     )
     vi.unstubAllGlobals()
   })
+  it('流未返回完成事件时报告中断，不能把半段回复标记为已保存', async () => {
+    const body = new ReadableStream<Uint8Array>({ start(controller) {
+      controller.enqueue(new TextEncoder().encode('event:token\ndata:半段回复\n\n'))
+      controller.close()
+    } })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })))
+    try {
+      const consume = async () => { for await (const _chunk of streamChat('问题', [])) { /* 接收直到结束 */ } }
+      await expect(consume()).rejects.toThrow('回复连接提前结束')
+    } finally { vi.unstubAllGlobals() }
+  })
+
 })

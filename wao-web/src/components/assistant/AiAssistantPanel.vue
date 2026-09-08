@@ -22,6 +22,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import WaoWebPet from '@/components/assistant/WaoWebPet.vue'
 import { useUiStore } from '@/stores/ui'
+import { useSessionStore } from '@/stores/session'
 
 interface Msg {
   id?: string
@@ -30,20 +31,56 @@ interface Msg {
   streaming?: boolean
 }
 
-const props = defineProps<{ modelValue: boolean }>()
+const props = defineProps<{ modelValue: boolean; embedded?: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: boolean): void }>()
 
 const router = useRouter()
 const ui = useUiStore()
+const session = useSessionStore()
 const open = ref(false)
 const messages = ref<Msg[]>([])
 const conversations = ref<AssistantConversation[]>([])
 const activeConversationId = ref<string | null>(null)
 const input = ref('')
+const draftError = ref('')
+const sendError = ref('')
+const savedReply = ref(false)
+let selectionVersion = 0
+const draftCache = new Map<string, string>()
+function draftKey(id: string | null = activeConversationId.value) {
+  return `wao-assistant-draft-v1:${session.userId}:${id || 'new'}`
+}
+function readDraft(id: string | null) {
+  const key = draftKey(id)
+  if (draftCache.has(key)) return draftCache.get(key) || ''
+  try { return localStorage.getItem(key) || '' } catch { return '' }
+}
+function saveDraft(value: string, id: string | null = activeConversationId.value) {
+  const key = draftKey(id)
+  draftCache.set(key, value)
+  try {
+    if (value) localStorage.setItem(key, value)
+    else localStorage.removeItem(key)
+    draftError.value = ''
+  } catch { draftError.value = '本机草稿保存失败，请保留输入后再刷新' }
+}
+function activateConversation(id: string | null) {
+  saveDraft(input.value)
+  activeConversationId.value = id
+  input.value = readDraft(id)
+  sendError.value = ''
+  savedReply.value = false
+  try { localStorage.setItem(`wao-assistant-active-v1:${session.userId}`, id || 'new') } catch { /* 草稿仍在内存 */ }
+}
+watch(input, value => saveDraft(value), { flush: 'sync' })
 const historySearch = ref('')
 const sending = ref(false)
 const statusLoading = ref(false)
-const historyLoading = ref(false)
+const listLoading = ref(false)
+const conversationLoading = ref(false)
+const historyLoading = computed(() => listLoading.value || conversationLoading.value)
+let listVersion = 0
+let statusVersion = 0
 const historyError = ref('')
 const sidebarOpen = ref(true)
 const sourcePanelOpen = ref(false)
@@ -60,7 +97,10 @@ const sourceFilter = reactive<{
 }>({ assetTypes: ['memory', 'chat', 'knowledge', 'project', 'task'], chatIds: [], senders: [], dateFrom: '', dateTo: '', projectIds: [] })
 const assistantStatus = ref<AssistantStatus>({ configured: false, message: '正在检查本地 Codex…' })
 const capabilities = ref<AiCapability[]>([])
-const capabilityId = ref(localStorage.getItem('wao-assistant-capability-v1') || 'local-codex')
+function initialCapability() {
+  try { return localStorage.getItem('wao-assistant-capability-v1') || 'local-codex' } catch { return 'local-codex' }
+}
+const capabilityId = ref(initialCapability())
 const listRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 let statusRefreshTimer: ReturnType<typeof setInterval> | null = null
@@ -138,14 +178,15 @@ function focusInput() {
 }
 
 async function loadStatus() {
-  if (statusLoading.value) return
+  const version = ++statusVersion
   statusLoading.value = true
   try {
-    assistantStatus.value = await fetchAssistantStatus(capabilityId.value)
+    const status = await fetchAssistantStatus(capabilityId.value)
+    if (version === statusVersion) assistantStatus.value = status
   } catch {
-    assistantStatus.value = { configured: false, message: '无法读取 AI 状态，请稍后重试' }
+    if (version === statusVersion) assistantStatus.value = { configured: false, message: '无法读取 AI 状态，请稍后重试' }
   } finally {
-    statusLoading.value = false
+    if (version === statusVersion) statusLoading.value = false
   }
 }
 
@@ -211,28 +252,39 @@ function currentSourceFilter(): AssistantSourceFilter {
 }
 
 async function loadConversations(selectLatest = false) {
-  historyLoading.value = true
+  const version = selectionVersion
+  const listRequest = ++listVersion
+  listLoading.value = true
   historyError.value = ''
   try {
-    conversations.value = await fetchAssistantConversations()
-    const activeStillExists = conversations.value.some((item) => item.id === activeConversationId.value)
-    if (!activeStillExists) activeConversationId.value = null
+    const items = await fetchAssistantConversations()
+    if (listRequest !== listVersion) return
+    conversations.value = items
+    if (version !== selectionVersion) return
     const latest = conversations.value[0]
-    if (selectLatest && !activeConversationId.value && latest) await selectConversation(latest.id)
+    if (selectLatest && !activeConversationId.value && !input.value) {
+      let preferred: string | null = null
+      try { preferred = localStorage.getItem(`wao-assistant-active-v1:${session.userId}`) } catch { /* 使用最近会话 */ }
+      const selected = conversations.value.find(item => item.id === preferred) || latest
+      if (preferred !== 'new' && selected) await selectConversation(selected.id)
+    }
   } catch {
-    historyError.value = '历史会话加载失败'
+    if (listRequest === listVersion) historyError.value = '历史会话加载失败'
   } finally {
-    historyLoading.value = false
+    if (listRequest === listVersion) listLoading.value = false
   }
 }
 
 async function selectConversation(conversationId: string) {
-  if (sending.value || conversationId === activeConversationId.value) return
-  activeConversationId.value = conversationId
-  historyLoading.value = true
+  if (sending.value) return
+  const version = ++selectionVersion
+  activateConversation(conversationId)
+  messages.value = []
+  conversationLoading.value = true
   historyError.value = ''
   try {
     const detail = await fetchAssistantConversation(conversationId)
+    if (version !== selectionVersion) return
     messages.value = detail.messages.map((item) => ({
       id: item.id,
       role: item.role,
@@ -242,17 +294,19 @@ async function selectConversation(conversationId: string) {
     scrollToBottom()
     focusInput()
   } catch {
-    historyError.value = '这条会话暂时无法读取，请重试'
+    if (version === selectionVersion) historyError.value = '这条会话暂时无法读取，请重试'
   } finally {
-    historyLoading.value = false
+    if (version === selectionVersion) conversationLoading.value = false
   }
 }
 
 function newChat() {
   if (sending.value) return
-  activeConversationId.value = null
+  ++selectionVersion
+  activateConversation(null)
+  conversationLoading.value = false
+  historyError.value = ''
   messages.value = []
-  input.value = ''
   sidebarOpen.value = window.innerWidth > 760
   focusInput()
 }
@@ -261,9 +315,10 @@ function newChat() {
 function applyAssistantDraft() {
   const draft = ui.assistantDraft.trim()
   if (!draft || !open.value || sending.value) return false
-  activeConversationId.value = null
+  ++selectionVersion
+  activateConversation(null)
   messages.value = []
-  input.value = draft
+  input.value = input.value ? `${input.value}\n\n${draft}` : draft
   sidebarOpen.value = window.innerWidth > 760
   ui.consumeAssistantDraft()
   focusInput()
@@ -278,7 +333,8 @@ async function removeConversation(event: MouseEvent, conversation: AssistantConv
     await deleteAssistantConversation(conversation.id)
     const wasActive = activeConversationId.value === conversation.id
     conversations.value = conversations.value.filter((item) => item.id !== conversation.id)
-    if (wasActive) newChat()
+    if (wasActive) { input.value = ''; newChat() }
+    saveDraft('', conversation.id)
   } catch (error) {
     historyError.value = error instanceof Error ? error.message : '删除失败，请重试'
   }
@@ -288,46 +344,66 @@ async function ensureConversation(): Promise<string> {
   if (activeConversationId.value) return activeConversationId.value
   const created = await createAssistantConversation()
   conversations.value.unshift(created)
-  activeConversationId.value = created.id
+  const draft = input.value
+  activateConversation(created.id)
+  input.value = draft
+  saveDraft('', null)
   return created.id
 }
 
 async function send(text?: string, context?: string) {
   const msg = (text ?? input.value).trim()
-  if (!msg || sending.value || !assistantStatus.value.configured) return
+  if (!msg || sending.value || historyLoading.value || historyError.value || !assistantStatus.value.configured) return
   sending.value = true
+  sendError.value = ''
+  savedReply.value = false
   sourcePanelOpen.value = false
+  const originalDraftId = activeConversationId.value
+  // 在服务端返回完整答复前保留问题，刷新或网络失败后仍可恢复。
+  input.value = msg
   try {
     const conversationId = await ensureConversation()
-    const history: ChatMessage[] = messages.value
-      .filter((item) => !item.streaming)
-      .slice(-10)
-      .map((item) => ({ role: item.role, content: item.content }))
+    input.value = msg
+    const history: ChatMessage[] = messages.value.slice(-10).map(item => ({ role: item.role, content: item.content }))
     messages.value.push({ role: 'user', content: msg })
-    input.value = ''
-    const assistantMsg: Msg = { role: 'assistant', content: '', streaming: true }
+    const assistantMsg = reactive<Msg>({ role: 'assistant', content: '', streaming: true })
     messages.value.push(assistantMsg)
     scrollToBottom()
-
     try {
       for await (const token of streamChat(msg, history, context, conversationId,
         currentSourceFilter(), capabilityId.value)) {
         assistantMsg.content += token
         scrollToBottom()
       }
-      assistantMsg.streaming = false
+      input.value = ''
+      saveDraft('', originalDraftId)
+      savedReply.value = true
     } catch (error) {
-      assistantMsg.content = error instanceof Error ? error.message : '请求失败，请重试'
-      assistantMsg.streaming = false
-    }
+      sendError.value = error instanceof Error ? error.message : '请求失败，请重试'
+      // 错误不伪装成模型回复；重新读取持久化历史，避免把乐观消息带入下一轮。
+      try {
+        const detail = await fetchAssistantConversation(conversationId)
+        messages.value = detail.messages.map(item => ({ ...item }))
+      } catch { messages.value = messages.value.filter(item => item !== assistantMsg) }
+    } finally { assistantMsg.streaming = false }
     await loadConversations()
   } catch (error) {
-    historyError.value = error instanceof Error ? error.message : '无法创建会话，请重试'
+    sendError.value = error instanceof Error ? error.message : '无法创建会话，请重试'
   } finally {
     sending.value = false
     scrollToBottom()
     focusInput()
   }
+}
+
+function retryHistory() {
+  if (activeConversationId.value) void selectConversation(activeConversationId.value)
+  else void loadConversations(true)
+}
+function handleEnter(event: KeyboardEvent) {
+  if (event.isComposing || event.keyCode === 229 || event.shiftKey) return
+  event.preventDefault()
+  void send()
 }
 
 function quick(cmd: typeof QUICK_COMMANDS[number]) {
@@ -362,8 +438,8 @@ function renderMarkdown(text: string): string {
   return DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
 }
 
-watch(() => props.modelValue, (value) => {
-  open.value = value
+watch(() => props.modelValue || props.embedded, (value) => {
+  open.value = Boolean(value)
   if (value) {
     sidebarOpen.value = window.innerWidth > 760
     void loadStatus()
@@ -390,7 +466,8 @@ watch(capabilityId, (value) => {
 onMounted(() => {
   void loadStatus()
   void loadCapabilities()
-  if (props.modelValue) {
+  input.value = readDraft(null)
+  if (props.modelValue || props.embedded) {
     open.value = true
     sidebarOpen.value = window.innerWidth > 760
     const hasDraft = applyAssistantDraft()
@@ -403,14 +480,14 @@ onBeforeUnmount(stopStatusRefresh)
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body" :disabled="embedded">
     <Transition name="assistant">
-      <div v-if="open" class="assistant-overlay" @click.self="close">
+      <div v-if="open" class="assistant-overlay" :class="{ embedded }" @click.self="!embedded && close()">
         <section class="assistant-workspace">
           <aside class="history-sidebar" :class="{ visible: sidebarOpen }">
             <div class="history-brand">
               <span class="brand-icon"><i class="ri-robot-2-line"></i></span>
-              <div><b>WAO AI</b><small>我的问答知识库</small></div>
+              <div><b>{{ embedded ? 'ChatGPT对话' : 'WAO AI' }}</b><small>我的问答知识库</small></div>
             </div>
             <button class="new-chat-btn" :disabled="sending" @click="newChat">
               <i class="ri-add-line"></i><span>新对话</span>
@@ -470,7 +547,7 @@ onBeforeUnmount(stopStatusRefresh)
               </div>
               <div class="head-actions">
                 <button class="head-new" :disabled="sending" @click="newChat"><i class="ri-add-line"></i>新对话</button>
-                <button class="icon-btn" title="关闭" @click="close"><i class="ri-close-line"></i></button>
+                <button v-if="!embedded" class="icon-btn" title="关闭" @click="close"><i class="ri-close-line"></i></button>
               </div>
             </header>
 
@@ -481,7 +558,7 @@ onBeforeUnmount(stopStatusRefresh)
                 <button :disabled="statusLoading" @click="loadStatus">重试</button>
               </div>
               <div v-if="historyError && conversations.length > 0" class="inline-error">
-                <i class="ri-error-warning-line"></i>{{ historyError }}
+                <i class="ri-error-warning-line"></i>{{ historyError }}<button @click="retryHistory">重试</button>
               </div>
               <div v-if="historyLoading && activeConversationId && messages.length === 0" class="chat-loading">
                 <i class="ri-loader-4-line spin"></i>正在读取聊天记录…
@@ -514,6 +591,8 @@ onBeforeUnmount(stopStatusRefresh)
             </div>
 
             <footer class="composer-wrap">
+              <div v-if="sendError" class="inline-error" role="alert">{{ sendError }}<button :disabled="sending" @click="send()">重试发送</button></div>
+              <div class="draft-state" role="status">{{ draftError || (sending ? '正在回复 · 问题已保留在本机' : input ? '草稿已保存在本机' : savedReply ? '对话已保存到 WAO' : '') }}</div>
               <div v-if="sourcePanelOpen" class="source-filter-panel">
                 <div class="source-filter-head">
                   <div><b>检索 WAO 资产</b><small>筛选只影响下一次及后续提问</small></div>
@@ -598,12 +677,13 @@ onBeforeUnmount(stopStatusRefresh)
                   v-model="input"
                   placeholder="给 WAO AI 发送消息"
                   rows="2"
-                  :disabled="sending || !assistantStatus.configured"
-                  @keydown.enter.exact.prevent="send()"
+                  :disabled="sending"
+                  maxlength="8000"
+                  @keydown.enter="handleEnter"
                 ></textarea>
                 <div class="composer-foot">
                   <span><i class="ri-global-line"></i>只读对话 · 按需联网 · Enter 发送，Shift+Enter 换行</span>
-                  <button class="send-btn" :disabled="!input.trim() || sending || !assistantStatus.configured" @click="send()">
+                  <button class="send-btn" :disabled="!input.trim() || sending || historyLoading || !!historyError || !assistantStatus.configured" @click="send()">
                     <i :class="sending ? 'ri-loader-4-line spin' : 'ri-arrow-up-line'"></i>
                   </button>
                 </div>
@@ -614,11 +694,22 @@ onBeforeUnmount(stopStatusRefresh)
       </div>
     </Transition>
 
-    <WaoWebPet v-if="!open" :assistant-status="assistantStatus" />
+    <WaoWebPet v-if="!open && !embedded" :assistant-status="assistantStatus" />
   </Teleport>
 </template>
 
 <style scoped>
+.assistant-overlay.embedded { position: absolute; inset: 0; z-index: 0; padding: 0; background: transparent; backdrop-filter: none; }
+.embedded .assistant-workspace { width: 100%; border-radius: 12px; box-shadow: none; }
+.draft-state { width: min(780px, 100%); min-height: 18px; margin: 0 auto 4px; color: var(--wao-text-weak); font-size: 11px; }
+.inline-error button { border: 0; background: transparent; color: inherit; cursor: pointer; flex-shrink: 0; }
+.chat-heading > div { min-width: 0; }
+.chat-head { flex-shrink: 0; gap: 8px; }
+.head-actions { flex-shrink: 0; }
+.bubble { min-width: 0; overflow-wrap: anywhere; }
+.md { overflow-x: auto; }
+.history-delete { opacity: 1; }
+
 .assistant-overlay {
   position: fixed;
   inset: 0;

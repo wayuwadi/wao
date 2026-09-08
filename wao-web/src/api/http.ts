@@ -83,6 +83,7 @@ export async function* streamTextEvents(url: string, body: unknown): AsyncGenera
       else if (eventName === 'error') throw new Error(payload)
     }
   }
+  throw new Error('回复连接提前结束，请重试；原问题已保留')
 }
 
 http.interceptors.request.use((config: RetriableRequestConfig) => {

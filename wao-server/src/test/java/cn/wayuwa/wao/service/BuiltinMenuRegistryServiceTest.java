@@ -40,7 +40,13 @@ class BuiltinMenuRegistryServiceTest {
     @Test
     void missingOrBrokenConfigFallsBackToAllBuiltins() {
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn(null);
-        assertThat(service.getRegistry().menus()).hasSize(36);
+        assertThat(service.getRegistry().menus()).hasSize(37);
+        assertThat(service.getRegistry().menus()).filteredOn(menu -> "chatgpt".equals(menu.id()))
+                .singleElement().satisfies(menu -> {
+                    assertThat(menu.label()).isEqualTo("ChatGPT对话");
+                    assertThat(menu.visible()).isTrue();
+                    assertThat(menu.group()).isEqualTo("ROOT");
+                });
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "ai-sessions".equals(menu.id())).singleElement()
                 .satisfies(menu -> { assertThat(menu.visible()).isTrue(); assertThat(menu.group()).isEqualTo("ROOT"); });
         assertThat(service.getRegistry().menus()).filteredOn(menu -> "decisions".equals(menu.id()))
@@ -94,7 +100,7 @@ class BuiltinMenuRegistryServiceTest {
                 });
 
         when(settings.get(SettingService.BUILTIN_MENU_REGISTRY)).thenReturn("{broken");
-        assertThat(service.getRegistry().menus()).hasSize(36);
+        assertThat(service.getRegistry().menus()).hasSize(37);
     }
 
     @Test
@@ -160,7 +166,7 @@ class BuiltinMenuRegistryServiceTest {
 
         var upgraded = service.getRegistry();
 
-        assertThat(upgraded.menus()).hasSize(36);
+        assertThat(upgraded.menus()).hasSize(37);
         assertThat(upgraded.menus()).filteredOn(menu -> "navigation".equals(menu.id()))
                 .singleElement().satisfies(menu -> {
                     assertThat(menu.label()).isEqualTo("工作台");

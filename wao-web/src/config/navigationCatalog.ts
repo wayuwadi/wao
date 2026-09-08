@@ -24,6 +24,7 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
     description: '把想法变成项目、任务和持续协作。',
     icon: 'ri-team-line',
     items: [
+      { id: 'chatgpt', description: '直接提问、继续日常对话，聊天记录保存在个人历史中。', keywords: ['ChatGPT', '问答', '聊天'] },
       { id: 'ai-sessions', description: '集中查看 AiRun 会话、执行历史，直接继续与 Codex 对话。', keywords: ['Codex', 'session', 'AI Run', '会话'] },
       {
         id: 'projects',

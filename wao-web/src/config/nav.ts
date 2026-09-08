@@ -124,6 +124,7 @@ export const DEFAULT_EXTERNAL_APPS: ExternalAppConfig[] = [
 ]
 
 export const MODULES: Record<ModuleId, ModuleMeta> = {
+  chatgpt: { id: 'chatgpt', label: 'ChatGPT对话', icon: 'ri-openai-line', path: '/chatgpt' },
   'ai-sessions': { id: 'ai-sessions', label: 'AI 会话', icon: 'ri-chat-history-line', path: '/ai-sessions' },
   notes: { id: 'notes', label: '小记', icon: 'ri-sticky-note-line', path: '/notes' },
   home: { id: 'home', label: '首页', icon: 'ri-home-5-line', path: '/' },
@@ -284,6 +285,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
 }
 export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
   [
+    { id: 'chatgpt', label: 'ChatGPT对话', icon: 'ri-openai-line', group: 'ROOT', order: 13, visible: true },
     { id: 'ai-sessions', label: 'AI 会话', icon: 'ri-chat-history-line', group: 'ROOT', order: 12, visible: true },
     { id: 'home', label: '首页', icon: 'ri-home-5-line', group: 'ROOT', order: 10, visible: true },
     { id: 'notes', label: '小记', icon: 'ri-sticky-note-line', group: 'ROOT', order: 15, visible: true },
