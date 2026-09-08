@@ -1,5 +1,9 @@
 import { http, type ApiResponse } from './http'
-import type { AiEngine, AiProjectConfig, AiRun, AiRunner, AiRunnerLog, AiRunOptions, AiSkillCapability, AiWorkflow } from '@/types'
+import type { AiEngine, AiProjectConfig, AiRun, AiRunProgress, AiRunner, AiRunnerLog, AiRunOptions, AiSkillCapability, AiWorkflow } from '@/types'
+
+export const fetchAiRunConversation = (runId: string, before?: string) =>
+  data<{ items: AiRunProgress[]; nextCursor: string | null }>(
+    http.get(`/api/ai/runs/${runId}/conversation`, { params: { before } }))
 
 export interface AiWeeklyQuota {
   accountId: string

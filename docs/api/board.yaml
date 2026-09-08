@@ -784,7 +784,7 @@ paths:
       summary: 向活动或已结束的 AI Run 追加提示词；活动回合立即转向，结束后固定派回原电脑恢复
       description: |
         queued 输入进入首次提示；running 输入让 Runner 结束当前回合并恢复同一 session/worktree。
-        失败的运行用它补充信息接着修；成功但不符合预期的运行用它继续优化（见 ADR-027、ADR-111）。
+        失败的运行用它补充信息接着修；成功或暂停的运行可继续原会话（见 ADR-027、ADR-111、ADR-208）。
       requestBody:
         required: true
         content: { application/json: { schema: { type: object, required: [input], properties: { input: { type: string, maxLength: 4000 } } } } }
@@ -792,6 +792,24 @@ paths:
         '200': { description: 输入已进入活动运行的待接收状态，或结束的原运行已重新进入队列 }
         '400': { description: 上一条输入尚未接收，或结束的运行无法恢复原会话 }
         '404': { description: 运行不存在 }
+  /ai/runs/{runId}/conversation:
+    get:
+      summary: 分页补读公开对话，每页最多 50 条，按创建时间和 ID 稳定排序
+      parameters:
+        - { in: path, name: runId, required: true, schema: { type: string } }
+        - { in: query, name: before, schema: { type: string }, description: 上页 nextCursor 或当前最早消息 ID }
+      responses:
+        '200': { description: '返回 items（id、kind、content、createdAt）及 nextCursor；末页游标为 null。user 标识用户输入，正文最多 16000 字，首页摘要仍为 1000 字。' }
+        '400': { description: 游标无效或属于其他运行 }
+        '404': { description: 运行不存在 }
+  /ai/runner/runs/{runId}/progress:
+    post:
+      summary: 保存公开进展或立即绑定原生会话
+      description: 'kind=session 时 content 为最长 128 字的会话 ID，只允许当前执行节点幂等绑定相同 ID；不能覆盖已有会话。其他公开进度保持原协议。'
+      responses:
+        '200': { description: 已保存 }
+        '400': { description: 运行已结束、会话冲突或字段无效 }
+        '401': { description: 非所属节点 }
   /ai/runner/pair:
     post: { summary: Runner 用一次性配对码换取只返回一次的本机令牌（含本机可用的 AI 工具）, responses: { '200': { description: OK }, '401': { description: 配对码无效 } } }
   /ai/runner/heartbeat:
@@ -1893,7 +1911,7 @@ components:
         engine: { type: string, nullable: true, enum: [codex, claude, qoder, auto], description: 留空沿用项目默认工具 }
         runnerId: { type: string, nullable: true, description: 留空表示由任意在线且支持该工具的电脑领取 }
         accountId: { type: string, nullable: true, description: 留空使用执行电脑本地登录态 }
-        model: { type: string, nullable: true, enum: [gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna], description: 仅 Codex 官方登录态生效；留空使用后台默认模型 }
+        model: { type: string, nullable: true, enum: [gpt-6-astra, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna], description: 仅 Codex 官方登录态生效；新运行留空默认 GPT-6 Astra，续聊保留原模型 }
         reasoningEffort: { type: string, nullable: true, enum: [high, medium, low], description: 仅 Codex 官方登录态生效；留空使用后台默认值 }
         planMode: { type: boolean, default: false, description: 仅 Codex 生效；先形成计划再连续执行，问题自动采用推荐项 }
         mergeTasks: { type: boolean, default: false, description: true 时把同一项目的多条主任务合并为一次运行；false 时逐条创建独立运行 }

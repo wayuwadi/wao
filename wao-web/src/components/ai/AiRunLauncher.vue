@@ -89,6 +89,14 @@ function startRun() {
     engine.value === 'codex' && executionMode.value === 'goal')
 }
 
+function applyPreset(kind: 'economy' | 'balanced' | 'quality') {
+  const target = kind === 'economy' ? 'gpt-5.6-luna' : kind === 'balanced' ? 'gpt-5.6-terra' : 'gpt-6-astra'
+  if (!runOptions.value?.codexModels.some((option) => option.id === target)) return
+  model.value = target
+  reasoningEffort.value = kind === 'quality' ? 'high' : 'medium'
+  executionMode.value = kind === 'economy' ? 'direct' : 'plan'
+}
+
 async function saveSelectedModeAsDefault() {
   defaultModeState.value = 'saving'
   defaultModeError.value = ''
@@ -190,6 +198,12 @@ onBeforeUnmount(() => {
 
       <template v-if="engine === 'codex'">
         <template v-if="codexParametersEnabled && runOptions">
+          <div class="cost-presets" aria-label="任务配置建议">
+            <button @click="applyPreset('economy')">轻量修改</button>
+            <button @click="applyPreset('balanced')">日常开发</button>
+            <button @click="applyPreset('quality')">复杂任务</button>
+          </div>
+          <p class="hint">轻量修改用 Luna · 中推理，日常开发用 Terra · 中推理，复杂任务用 GPT-6 · 高推理。续聊请回原运行，减少重复背景。</p>
           <div v-if="!preferences.compactControls" class="label">本次模型</div>
           <select v-model="model" class="runner-select" aria-label="本次模型" title="本次模型">
             <option v-for="item in runOptions.codexModels" :key="item.id" :value="item.id">
@@ -273,6 +287,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.cost-presets { display: flex; gap: 7px; margin-top: 12px; flex-wrap: wrap; }
+.cost-presets button { flex: 1; border: 1px solid var(--wao-line); border-radius: 8px; padding: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); cursor: pointer; }
 .launcher-mask { position: fixed; inset: 0; z-index: 40; }
 .launcher {
   position: absolute;

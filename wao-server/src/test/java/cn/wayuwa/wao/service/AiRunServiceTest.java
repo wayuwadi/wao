@@ -84,6 +84,8 @@ class AiRunServiceTest {
     void emptyProgressByDefault() {
         when(settings.get(SettingService.AI_RUN_DEFAULT_EXECUTION_MODE, "plan")).thenReturn("plan");
         when(progressMapper.selectList(any())).thenReturn(List.of());
+        when(progressMapper.selectRecentForRuns(any())).thenAnswer(call -> progressMapper.selectList(null));
+        when(runMapper.selectForUpdate(any())).thenAnswer(call -> runMapper.selectById((String) call.getArgument(0)));
         when(hostedPages.runReportUrls(any())).thenReturn(Map.of());
         when(projectMemories.recall(any(), any())).thenReturn(List.of());
         when(projectMemories.readReferences(any())).thenReturn(Map.of());
@@ -94,13 +96,14 @@ class AiRunServiceTest {
         when(skillCapabilities.writeAudit(any())).thenReturn("[]");
         when(skillCapabilities.readAudit(nullable(String.class))).thenReturn(List.of());
         when(runMapper.claimQueuedRun(any(), any(), nullable(String.class), any(), any())).thenReturn(1);
+        when(runMapper.recoverSession(any(), any(), any(), any(), any(), any())).thenReturn(1);
     }
 
     @Test
     void runOptionsDefaultToHighReasoningEffort() {
         var options = service.runOptions();
 
-        assertThat(options.defaultCodexModel()).isEqualTo("gpt-5.6-sol");
+        assertThat(options.defaultCodexModel()).isEqualTo("gpt-6-astra");
         assertThat(options.defaultReasoningEffort()).isEqualTo("high");
         assertThat(options.defaultExecutionMode()).isEqualTo("plan");
         assertThat(options.reasoningEfforts()).extracting("id")
@@ -272,7 +275,7 @@ class AiRunServiceTest {
         assertThat(run.getValue().getPromptUrl())
                 .isEqualTo("https://wao.example/api/share/tasks/t1.md?openOnly=true");
         assertThat(run.getValue().getSubId()).isNull();
-        assertThat(run.getValue().getRequestedModel()).isEqualTo("gpt-5.6-sol");
+        assertThat(run.getValue().getRequestedModel()).isEqualTo("gpt-6-astra");
         assertThat(run.getValue().getReasoningEffort()).isEqualTo("high");
         assertThat(result.get(0).serviceTier()).isEqualTo("default");
     }
@@ -1328,6 +1331,112 @@ class AiRunServiceTest {
         assertThat(failed.getRequestedRunnerId()).isEqualTo("rn1");
         assertThat(failed.getPendingInput()).isEqualTo("请按测试报错继续修复");
         verify(runMapper, times(2)).updateById(failed);
+    }
+
+    @Test
+    void sessionIsBoundImmediatelyWithoutOverwritingConcurrentInput() {
+        AiTaskRunEntity run = runningRun();
+        run.setPendingInput("刚提交的新要求");
+        when(runMapper.bindSession("ar1", "rn1", "thread-live")).thenReturn(1);
+        service.reportProgress("local-token", "ar1", new ReportAiRunProgressRequest("session", "thread-live"));
+        verify(runMapper).bindSession("ar1", "rn1", "thread-live");
+        verify(runMapper, never()).updateById(any(AiTaskRunEntity.class));
+        assertThat(run.getPendingInput()).isEqualTo("刚提交的新要求");
+    }
+
+    @Test
+    void sessionConflictIsRejectedWithoutReplacingTheOriginal() {
+        runningRun();
+        when(runMapper.bindSession("ar1", "rn1", "thread-other")).thenReturn(0);
+        assertThatThrownBy(() -> service.reportProgress("local-token", "ar1",
+                new ReportAiRunProgressRequest("session", "thread-other")))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("不能覆盖原会话");
+    }
+
+    @Test
+    void discussionCompletesWithoutClaimingADeployment() {
+        AiTaskRunEntity run = runningRun();
+        service.reportProgress("local-token", "ar1", new ReportAiRunProgressRequest("delivery_not_required", "无需部署"));
+        service.complete("local-token", "ar1", new CompleteAiRunRequest(0, "WAO_RUN_STATUS: SUCCESS\n已回答", null,
+                null, null, null, null, null, null, null));
+        assertThat(run.getDeliveryStage()).isEqualTo("not_required");
+    }
+
+    @Test
+    void mergedCodeCannotUseDiscussionMarkerToSkipDeployment() {
+        AiTaskRunEntity run = runningRun();
+        run.setDeliveryStage("waiting_deployment");
+        assertThatThrownBy(() -> service.reportProgress("local-token", "ar1",
+                new ReportAiRunProgressRequest("delivery_not_required", "无需部署")))
+                .isInstanceOf(BadRequestException.class).hasMessageContaining("不能跳过");
+    }
+
+    @Test
+    void pausedConversationCanResumeOnTheSameNode() {
+        AiTaskRunEntity run = runningRun();
+        run.setStatus("cancelled");
+        run.setSessionId("thread-paused");
+        when(runnerMapper.selectById("rn1")).thenReturn(runner("rn1", "Linux", "codex"));
+        service.continueRun("ar1", "继续刚才的工作", "wg", "https://wao.example");
+        assertThat(run.getStatus()).isEqualTo("queued");
+        assertThat(run.getSessionId()).isEqualTo("thread-paused");
+        assertThat(run.getRequestedRunnerId()).isEqualTo("rn1");
+    }
+
+    @Test
+    void offlineConversationKeepsItsNodeAndSessionForRecovery() {
+        AiTaskRunEntity run = runningRun();
+        run.setSessionId("thread-offline");
+        AiRunnerNodeEntity node = runner("rn1", "Linux", "codex");
+        node.setLastSeenAt(LocalDateTime.now().minusMinutes(10));
+        when(runnerMapper.selectById("rn1")).thenReturn(node);
+        when(runMapper.selectList(any())).thenReturn(List.of(run));
+        service.listRuns(true);
+        assertThat(run.getStatus()).isEqualTo("queued");
+        assertThat(run.getRunnerId()).isEqualTo("rn1");
+        assertThat(run.getRequestedRunnerId()).isEqualTo("rn1");
+        assertThat(run.getSessionId()).isEqualTo("thread-offline");
+    }
+
+    @Test
+    void longMultilineConversationKeepsTextButBoundsTheHomepageSummary() {
+        AiTaskRunEntity run = runningRun();
+        String message = "公开消息\n".repeat(800);
+        service.reportProgress("local-token", "ar1", new ReportAiRunProgressRequest("message", message));
+        ArgumentCaptor<AiRunProgressEntity> progress = ArgumentCaptor.forClass(AiRunProgressEntity.class);
+        verify(progressMapper).insert(progress.capture());
+        assertThat(progress.getValue().getContent()).isEqualTo(message);
+        assertThat(run.getLatestProgress()).hasSize(1000);
+    }
+
+    @Test
+    void historyRejectsCursorFromAnotherRun() {
+        runningRun();
+        AiRunProgressEntity other = new AiRunProgressEntity();
+        other.setRunId("ar-other");
+        when(progressMapper.selectById("foreign")).thenReturn(other);
+        assertThatThrownBy(() -> service.conversation("ar1", "foreign"))
+                .isInstanceOf(BadRequestException.class);
+    }
+
+    @Test
+    void historyPageIsBoundedAndReturnsAnOlderCursor() {
+        runningRun();
+        var rows = java.util.stream.IntStream.range(0, 51).mapToObj(index -> {
+            AiRunProgressEntity item = new AiRunProgressEntity();
+            item.setId("ap-" + index);
+            item.setRunId("ar1");
+            item.setKind("message");
+            item.setContent("公开消息 " + index);
+            item.setCreatedAt(LocalDateTime.now().minusSeconds(index));
+            return item;
+        }).toList();
+        when(progressMapper.selectList(any())).thenReturn(rows);
+        var page = service.conversation("ar1", null);
+        assertThat(page.items()).hasSize(50);
+        assertThat(page.nextCursor()).isEqualTo("ap-49");
+        assertThat(page.items().get(0).id()).isEqualTo("ap-49");
+        assertThat(page.items().get(49).id()).isEqualTo("ap-0");
     }
 
     @Test

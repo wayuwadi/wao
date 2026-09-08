@@ -22,6 +22,8 @@ vi.mock('@/api/ai', () => ({
   }),
   fetchAiRunOptions: vi.fn<() => Promise<Record<string, unknown>>>().mockResolvedValue({
     codexModels: [
+      { id: 'gpt-6-astra', label: 'GPT-6 Astra', description: '复杂任务' },
+      { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', description: '轻量任务' },
       { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', description: '复杂开发任务的旗舰模型' },
       { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', description: '兼顾能力与成本' },
     ],
@@ -55,6 +57,18 @@ vi.mock('@/api/aiAccount', () => ({
 
 describe('AiRunLauncher', () => {
   beforeEach(() => setActivePinia(createPinia()))
+
+  it('按任务选配置，降低简单任务推理开销且复杂任务可用 GPT-6', async () => {
+    const wrapper = mount(AiRunLauncher, { props: { projectId: 'p1' } })
+    await flushPromises()
+    await wrapper.get('.cost-presets button:first-child').trigger('click')
+    await wrapper.get('footer .primary').trigger('click')
+    expect(wrapper.emitted('start')?.[0]).toEqual(['codex', 'rn-win', null, 'gpt-5.6-luna', 'medium', false, false])
+    await wrapper.get('.cost-presets button:last-child').trigger('click')
+    await wrapper.get('footer .primary').trigger('click')
+    expect(wrapper.emitted('start')?.[1]).toEqual(['codex', 'rn-win', null, 'gpt-6-astra', 'high', true, false])
+    wrapper.unmount()
+  })
 
   it('极简风格收起自描述标签，详细风格恢复标签', async () => {
     const preferences = usePreferenceStore()

@@ -5,6 +5,7 @@ import type { AiRunDeliveryStage } from '@/types'
 const props = defineProps<{ stage: AiRunDeliveryStage }>()
 
 const steps = computed(() => {
+  if (props.stage === 'not_required') return [{ label: '本轮无需部署', state: 'done' }]
   const deploymentDone = ['deployment_succeeded', 'deployment_failed'].includes(props.stage)
   const codeDone = props.stage === 'waiting_deployment' || deploymentDone
   return [

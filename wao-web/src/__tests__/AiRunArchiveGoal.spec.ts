@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import AiRunArchive from '@/components/ai/AiRunArchive.vue'
 import type { AiRun } from '@/types'
 
@@ -25,6 +26,7 @@ describe('AI Run 目标模式档案', () => {
     const wrapper = mount(AiRunArchive, {
       props: { runs: [goalRun()], loaded: true },
       global: {
+        plugins: [createPinia()],
         stubs: {
           AiRunProgressTimeline: true,
           AiRunDeliverySteps: true,
