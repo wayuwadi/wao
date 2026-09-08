@@ -44,11 +44,14 @@ public class WeKnoraSyncService {
             view.put("kbId",config.get("kb_id"));view.put("modules",modules(config));view.put("batchLimit",config.get("batch_limit"));
             view.put("syncDeletes",flag(config.get("sync_deletes")));view.put("revision",config.get("revision"));view.put("hasKey",true);
         }
-        var job=db.queryForList("SELECT status,cron_expr,next_fire_at FROM automation_job WHERE id=?",JOB_ID);
+        if(config!=null)view.put("enabled",false);
+        var job=db.queryForList("SELECT status,cron_expr,next_fire_at,schedule_label FROM automation_job WHERE id=?",JOB_ID);
         if (!job.isEmpty()) {
             var j=job.get(0);String[] cron=Objects.toString(j.get("cron_expr"),"0 0 2 * * *").split(" ");
             view.put("enabled",!"已暂停".equals(j.get("status")));
-            view.put("time",String.format("%02d:%02d",Integer.parseInt(cron[2]),Integer.parseInt(cron[1])));
+            boolean daily=cron.length==6 && cron[1].matches("[0-9]{1,2}") && cron[2].matches("[0-9]{1,2}") && cron[3].equals("*") && cron[4].equals("*") && cron[5].equals("*");
+            view.put("time",daily?String.format("%02d:%02d",Integer.parseInt(cron[2]),Integer.parseInt(cron[1])):"02:00");
+            view.put("customSchedule",!daily);
             view.put("nextFireAt",j.get("next_fire_at"));
         }
         return Map.of("ownerId",owner,"configured",config!=null,"settings",view,"catalog",sources.catalog(owner),"runs",runs(),

@@ -8,6 +8,7 @@ export interface SyncSettings {
   enabled: boolean
   time: string
   revision: number
+  customSchedule?: boolean
   hasKey?: boolean
   nextFireAt?: string
 }

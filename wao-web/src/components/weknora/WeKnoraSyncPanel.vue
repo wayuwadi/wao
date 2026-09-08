@@ -25,6 +25,7 @@ const form = reactive<SyncSettings>({
   revision: 0,
 })
 const apiKey = ref('')
+const customSchedule = ref(false)
 const catalog = ref<SyncModule[]>([]),
   runs = ref<SyncRun[]>([]),
   items = ref<SyncItem[]>([])
@@ -94,6 +95,8 @@ async function load() {
       ...data.settings,
       modules: data.settings.modules ?? data.catalog.map((m) => m.id),
     })
+    customSchedule.value=!!data.settings.customSchedule
+    delete form.customSchedule
     delete form.hasKey
     delete form.nextFireAt
     savedSignature.value = signature()
@@ -270,7 +273,8 @@ onUnmounted(() => {
           <p class="muted">
             目标使用独立的「WAO 同步知识库」。WeKnora API Key 与模型 API Key 是两种不同凭据。
           </p>
-          <fieldset :disabled="saving || active">
+          <p v-if="customSchedule" class="alert">自动化任务中已有自定义计划；保存本页会改为每天指定时间。</p>
+        <fieldset :disabled="saving || active">
             <label class="field"
               >目标知识库 ID<input
                 v-model.trim="form.kbId"
