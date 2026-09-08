@@ -41,3 +41,6 @@ JUMPSERVER_SLAVE_USER="$slave_user" JUMPSERVER_CLOUD_USER="$cloud_user" \
   JUMPSERVER_SLAVE_ADDRESS="$slave_address" JUMPSERVER_CLOUD_ADDRESS="$cloud_address" \
   JUMPSERVER_SLAVE_PORT="$slave_port" \
   sh "$project_root/deploy/jumpserver/deploy.sh" "$project_root"
+
+# Read-only inventory is independent of the application containers.
+sudo -n sh "$project_root/deploy/infrastructure/install.sh"

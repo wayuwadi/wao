@@ -84,6 +84,19 @@ class AccountAuthControllerTest {
                 .hasMessage("登录已过期，请重新登录");
     }
 
+    @Test
+    void infrastructureRequiresAuthenticatedAdministrator() {
+        assertThatThrownBy(() -> controller.infrastructure(new MockHttpServletRequest(), new MockHttpServletResponse()))
+                .isInstanceOf(UnauthorizedException.class);
+        for (String role : List.of("成员", "管理员", "超级管理员")) {
+            MockHttpServletRequest request = requestFor("infra-" + role);
+            when(auth.session("infra-" + role)).thenReturn(session("member", role));
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            controller.infrastructure(request, response);
+            assertThat(response.getStatus()).isEqualTo("成员".equals(role) ? 403 : 200);
+        }
+    }
+
     private MockHttpServletRequest requestFor(String accountId) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         when(sessions.currentAccountId(request)).thenReturn(accountId);

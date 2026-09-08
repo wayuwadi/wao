@@ -172,6 +172,7 @@ export const MODULES: Record<ModuleId, ModuleMeta> = {
     path: '/account-resources',
   },
   games: { id: 'games', label: '游戏厅', icon: 'ri-gamepad-line', path: '/games' },
+  infrastructure: { id: 'infrastructure', label: '基础设施', icon: 'ri-server-line', path: '/infrastructure' },
   devices: {
     id: 'devices',
     label: '终端设备',
@@ -527,6 +528,9 @@ export const DEFAULT_BUILTIN_MENUS: BuiltinMenuConfig[] = (
       visible: false,
     },
     {
+      id: 'infrastructure', label: '基础设施', icon: 'ri-server-line', group: 'TOOLS', order: 34, visible: true, openMode: 'TAB',
+    },
+    {
       id: 'devices',
       label: '终端设备',
       icon: 'ri-webcam-line',
@@ -582,6 +586,7 @@ const BASE_NAV_GROUPS: { label: string; items: ModuleId[] }[] = [
       'account-resources',
       'files',
       'games',
+      'infrastructure',
       'devices',
       'request-monitoring',
     ],

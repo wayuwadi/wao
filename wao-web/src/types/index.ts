@@ -34,6 +34,7 @@ export type ModuleId =
   | 'crawler-capabilities'
   | 'account-resources'
   | 'games'
+  | 'infrastructure'
   | 'devices'
   | 'request-monitoring'
   | 'data-center'
