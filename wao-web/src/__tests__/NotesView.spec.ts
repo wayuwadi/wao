@@ -10,6 +10,7 @@ import { polishDocumentText } from '@/api/assistant'
 import type { Editor as TiptapEditor } from '@tiptap/core'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
+import { useUiStore } from '@/stores/ui'
 import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import type { Doc } from '@/types'
 
@@ -206,6 +207,37 @@ describe('小记集中记录空间', () => {
     await wrapper.trigger('keydown', { key: 'Escape' })
     expect(wrapper.classes()).not.toContain('fullscreen')
     expect(wrapper.findAll('tr')).toHaveLength(rows + 1)
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('小记选区通用待办保留正文与草稿，正确区分已保存来源：%s', async saved => {
+    const source = '整理明天的计划'
+    if (!saved) localStorage.setItem('wao-quick-note-draft-v1:wg', JSON.stringify({ id: 'task-note', text: source }))
+    const wrapper = mount(NoteComposer, { props: { note: saved ? doc('task-note', source) : undefined }, attachTo: document.body })
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    await wrapper.find('.fullscreen-toggle').trigger('click')
+    const instance = wrapper.findComponent(MarkdownEditor).vm as unknown as { editor: TiptapEditor; addSelectionTask: () => Promise<void> }
+    const before = instance.editor.getJSON()
+    instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
+    await instance.addSelectionTask()
+    await flushPromises()
+    const ui = useUiStore()
+    expect(ui.modal).toBe('task')
+    expect(ui.modalProject).toBe('')
+    expect(ui.modalTaskSeed?.title).toBe(source)
+    expect(ui.modalTaskSeed?.desc).toContain(source)
+    expect(ui.modalTaskSeed?.sourceDocId).toBe(saved ? 'task-note' : undefined)
+    expect(ui.modalTaskSeed?.sourceUrl).toBe(saved ? '/kb/kb-notes?doc=task-note' : '')
+    expect(ui.modalTaskSeed?.draftKey).toContain(':wg:task-note:')
+    expect(wrapper.classes()).not.toContain('fullscreen')
+    expect(instance.editor.getJSON()).toEqual(before)
+    if (!saved) expect(localStorage.getItem('wao-quick-note-draft-v1:wg')).toContain(source)
+    const key = ui.modalTaskSeed?.draftKey
+    ui.closeModal()
+    instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
+    await instance.addSelectionTask()
+    expect(ui.modalTaskSeed?.draftKey).toBe(key)
     wrapper.unmount()
   })
 

@@ -7,6 +7,8 @@ import type { RichDocNode } from '@/types'
 import type { Editor } from '@tiptap/core'
 import { BubbleMenu } from '@tiptap/vue-3/menus'
 import { CellSelection } from '@tiptap/pm/tables'
+import { createPinia, setActivePinia } from 'pinia'
+import { useUiStore } from '@/stores/ui'
 
 vi.mock('@/api/assistant', () => ({
   polishDocumentText: vi.fn<(text: string) => Promise<{ polished: string }>>(),
@@ -616,22 +618,30 @@ describe('MarkdownEditor（所见即所得）', () => {
   })
 
   it('划词格式、链接、润色和待办只使用一份清单，添加待办不改正文', async () => {
-    const w = await mountEditor({ modelValue: '记录明天的待办', advanced: true, polishable: true, linkControls: true, taskable: true })
-    const instance = w.vm as unknown as { editor: Editor; addSelectionTask: () => void }
+    setActivePinia(createPinia())
+    const ui = useUiStore()
+    const w = await mountEditor({ modelValue: '记录明天的待办', advanced: true, polishable: true, linkControls: true })
+    const instance = w.vm as unknown as { editor: Editor; addSelectionTask: () => Promise<void> }
+    instance.editor.view.focus()
     instance.editor.commands.setTextSelection({ from: 1, to: 8 })
     await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 300))
     expect(w.findAllComponents(BubbleMenu)).toHaveLength(1)
     expect(w.findAllComponents(BubbleMenu)[0]!.props('pluginKey')).toBe('documentSelectionMenu')
     const before = instance.editor.getJSON()
-    instance.addSelectionTask()
-    expect(w.emitted('add-task')).toEqual([['记录明天的待办']])
+    expect(document.querySelector('[aria-label="添加到待办"]')).not.toBeNull()
+    expect(document.querySelector('[aria-label="润色选中文字"]')).not.toBeNull()
+    await instance.addSelectionTask()
+    expect(ui.modalTaskSeed?.desc).toBe('记录明天的待办')
+    expect(ui.modal).toBe('task')
+    expect(w.emitted('task-opened')).toHaveLength(1)
     expect(instance.editor.getJSON()).toEqual(before)
-    instance.addSelectionTask()
-    expect(w.emitted('add-task')).toHaveLength(1)
+    await instance.addSelectionTask()
+    expect(w.emitted('task-opened')).toHaveLength(1)
     await w.setProps({ readonly: true })
     instance.editor.commands.setTextSelection({ from: 1, to: 8 })
-    instance.addSelectionTask()
-    expect(w.emitted('add-task')).toHaveLength(1)
+    await instance.addSelectionTask()
+    expect(w.emitted('task-opened')).toHaveLength(1)
     w.unmount()
   })
 

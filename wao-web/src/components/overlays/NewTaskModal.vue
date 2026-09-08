@@ -209,7 +209,7 @@ function requestClose() {
       @keydown.enter.prevent="create"
     />
 
-    <p v-if="source" class="source-note">来自文档：<a :href="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceTitle }}</a>。原文保留不变。</p>
+    <p v-if="source" class="source-note">来自：<a v-if="source.sourceUrl" :href="source.sourceUrl" target="_blank" rel="noopener noreferrer">{{ source.sourceTitle }}</a><span v-else>{{ source.sourceTitle }}</span>。原文保留不变。</p>
     <div class="label">所属项目 <span v-if="source && !project" class="label-hint">请选择要存入的项目</span></div>
     <div class="pills">
       <button
