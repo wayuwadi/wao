@@ -34,6 +34,29 @@ describe('项目页聚焦任务', () => {
     wrapper.unmount()
   })
 
+  it('批量操作按需显示，空列可展开且拖拽时保留全部目标状态', async () => {
+    const data = useDataStore()
+    data.tasks.forEach((task) => { if (task.project === 'p1') task.status = '待办' })
+    await router.push('/projects/p1?view=board')
+    const wrapper = mount(ProjectDetailView, { global: { plugins: [router] } })
+    await flushPromises()
+    expect(wrapper.find('.copy-selection-actions').exists()).toBe(false)
+    expect(wrapper.findAll('.board-col')).toHaveLength(2)
+    await wrapper.get('.batch-selection-toggle').trigger('click')
+    await wrapper.get('.select-dot').trigger('click')
+    expect(wrapper.get('.selection-count').text()).toBe('已选 1 项')
+    await wrapper.findAll('.copy-selection-actions > button').find((button) => button.text() === '完成选择')!.trigger('click')
+    expect(wrapper.find('.copy-selection-actions').exists()).toBe(false)
+    await wrapper.get('.empty-columns-control button').trigger('click')
+    expect(wrapper.findAll('.board-col')).toHaveLength(6)
+    await wrapper.get('.empty-columns-control button').trigger('click')
+    await wrapper.get('.board-card').trigger('dragstart')
+    expect(wrapper.findAll('.board-col')).toHaveLength(6)
+    await wrapper.get('.board-card').trigger('dragend')
+    expect(wrapper.findAll('.board-col')).toHaveLength(2)
+    wrapper.unmount()
+  })
+
   it('按派生交付阶段展示真实数量并用 URL 恢复筛选', async () => {
     const data = useDataStore()
     data.taskById('t1')!.status = '进行中'

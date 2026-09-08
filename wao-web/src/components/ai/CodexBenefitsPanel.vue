@@ -4,6 +4,7 @@ import { benefitDaysLeft, emptyCodexBenefits, fetchCodexBenefits, saveCodexBenef
 import { useSessionStore } from '@/stores/session'
 
 const session = useSessionStore()
+defineProps<{ compact?: boolean }>()
 const saved = ref(emptyCodexBenefits())
 const loading = ref(true)
 const loaded = ref(false)
@@ -110,7 +111,7 @@ async function save() {
 </script>
 
 <template>
-  <section class="codex-benefits" aria-label="我的 Codex 权益">
+  <section class="codex-benefits" :class="{ compact }" aria-label="我的 Codex 权益">
     <header><span>我的 Codex 权益</span><button type="button" :disabled="!loaded || saving" aria-label="编辑 Codex 权益" @click="openEditor"><i class="ri-edit-line"></i>编辑</button></header>
     <p v-if="loading" role="status">正在读取权益…</p>
     <template v-else-if="loaded">
@@ -149,4 +150,17 @@ label { display: grid; gap: 4px; font-size: 11px; }
 input { box-sizing: border-box; width: 100%; min-width: 0; padding: 6px; border: 1px solid #d9def6; border-radius: 5px; background: #fff; color: #20264c; font: inherit; color-scheme: light; }
 footer { justify-content: flex-end; font-size: 11px; }
 .benefit-error { color: #ffe9a9; }
+.compact { position: relative; margin: 0; padding: 0; border: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 24px; align-content: start; }
+.compact header { grid-column: 1 / -1; order: 3; margin: 4px 0 0; justify-content: flex-end; }
+.compact header > span { display: none; }
+.compact header button { padding: 1px 5px; border: 0; background: transparent; font-size: 11px; }
+.compact .benefit-line { margin: 0; display: grid; justify-content: start; gap: 5px; font-size: 11px; }
+.compact .benefit-line b { font-size: 19px; line-height: 1.2; }
+.compact .benefit-line:nth-of-type(2) b { font-size: 14px; padding-top: 3px; }
+.compact .benefit-countdown { grid-column: 2; margin-top: 3px; font-size: 11px; }
+.compact .benefit-countdown > span { display: none; }
+.compact .benefit-editor, .compact .benefit-error, .compact > p:not(.benefit-countdown) { grid-column: 1 / -1; }
+.compact .benefit-editor { order: 4; }
+.compact > [role] { order: 5; }
+@media (max-width: 520px) { .compact { column-gap: 12px; } .compact .benefit-line b { font-size: 17px; } .compact .benefit-line:nth-of-type(2) b { font-size: 12px; } }
 </style>

@@ -73,6 +73,15 @@ watch(
 )
 
 const settingsOpen = ref(false)
+const projectInfoOpen = ref(false)
+const projectMenuOpen = ref(false)
+const batchSelectionOpen = ref(false)
+const showEmptyColumns = ref(false)
+function finishSelection() {
+  batchSelectionOpen.value = false
+  selectedTaskIds.value = []
+  aiBatchMode.value = null
+}
 const selectedTaskIds = ref<string[]>([])
 const aiBatchStarting = ref(false)
 const aiBatchMode = ref<'separate' | 'merge' | null>(null)
@@ -187,6 +196,8 @@ const board = computed(() =>
       : allTasks.value.filter((t) => t.status === st),
   })),
 )
+const emptyBoardColumns = computed(() => board.value.filter((col) => !col.items.length && !col.collapsible && !col.addable))
+const visibleBoard = computed(() => board.value.filter((col) => showEmptyColumns.value || dragId.value || col.items.length || col.collapsible || col.addable))
 const pdTabs = computed(() => {
   // 任务角标只数未完成的：一个跑了半年的项目里「25」几乎全是已完成，看不出还剩多少事。
   const openCount = ptasks.value.filter((t) => isOpenStatus(t.status)).length
@@ -478,43 +489,40 @@ watch(visibleTaskIds, (ids) => {
 
 <template>
   <div v-if="!pd" class="missing">项目不存在或已被移除。</div>
-  <div v-else class="detail">
-    <button class="back" @click="router.push('/projects')"><i class="ri-arrow-left-line"></i>全部项目</button>
+  <div v-else class="detail" :class="{ 'selecting-tasks': batchSelectionOpen || selectedTaskIds.length }">
 
     <div class="phead">
+      <button class="back" aria-label="全部项目" title="全部项目" @click="router.push('/projects')"><i class="ri-arrow-left-line"></i></button>
       <div class="phead-icon" :style="{ background: pd.areaColor }"><i :class="pd.icon || 'ri-stack-line'"></i></div>
       <div class="phead-name-wrap">
         <div class="phead-name-row">
           <div class="phead-name">{{ pd.name }}</div>
           <span class="phead-status" :style="{ background: pd.stBg, color: pd.stColor }">{{ pd.status }}</span>
         </div>
-        <div class="phead-sub">{{ pd.areaName }} · {{ fmtDate(pd.start) }} – {{ fmtDate(pd.due) }}</div>
       </div>
       <div class="spacer"></div>
       <div class="phead-avs">
         <span v-for="(mv, i) in pd.memberAvs" :key="i" class="phead-av" :style="{ background: mv.color }">{{ mv.initial }}</span>
       </div>
-      <button
-        class="btn-icon"
-        :class="{ faved: favorites.isFav('project', pid) }"
-        :title="favorites.isFav('project', pid) ? '取消收藏' : '收藏到左侧菜单'"
-        @click="favorites.toggle('project', pid, pd.name)"
-      >
-        <i :class="favorites.isFav('project', pid) ? 'ri-star-fill' : 'ri-star-line'"></i>
-      </button>
-      <button class="btn-icon" title="项目设置" @click="settingsOpen = true"><i class="ri-settings-3-line"></i></button>
+      <div class="project-more">
+        <button class="btn-icon" aria-label="项目更多操作" :aria-expanded="projectMenuOpen" @click="projectMenuOpen = !projectMenuOpen"><i class="ri-more-line"></i></button>
+        <div v-if="projectMenuOpen" class="project-more-menu" @keydown.esc="projectMenuOpen = false">
+          <button @click="projectInfoOpen = !projectInfoOpen; projectMenuOpen = false"><i class="ri-information-line"></i>项目简介与周期</button>
+          <button @click="settingsOpen = true; projectMenuOpen = false"><i class="ri-settings-3-line"></i>项目设置</button>
+          <button @click="favorites.toggle('project', pid, pd.name); projectMenuOpen = false"><i class="ri-star-line"></i>{{ favorites.isFav('project', pid) ? '取消收藏' : '收藏到左侧菜单' }}</button>
+          <button @click="setTab('记忆'); projectMenuOpen = false"><i class="ri-brain-line"></i>项目记忆</button>
+          <button @click="setTab('动态'); projectMenuOpen = false"><i class="ri-history-line"></i>项目动态</button>
+        </div>
+      </div>
       <button class="btn-primary sm" @click="ui.openModal('task', pid)"><i class="ri-add-line"></i>新建任务</button>
     </div>
 
+    <div v-if="projectInfoOpen" class="project-info">{{ pd.areaName }} · {{ fmtDate(pd.start) }} – {{ fmtDate(pd.due) }}</div>
     <div class="ptabs">
-      <button v-for="tb in pdTabs" :key="tb.label" class="ptab" :class="{ on: tb.on }" :title="tb.title" @click="setTab(tb.label)">
+      <button v-for="tb in pdTabs.filter((item) => ['任务', '文档', '文件'].includes(item.label) || item.on)" :key="tb.label" class="ptab" :class="{ on: tb.on }" :title="tb.title" @click="setTab(tb.label)">
         {{ tb.label }}<span v-if="tb.showCount" class="ptab-count wao-tabular">{{ tb.count }}</span>
       </button>
-    </div>
-
-    <!-- 任务 -->
-    <div v-if="projTab === '任务'">
-      <div class="tab-toolbar">
+      <div v-if="projTab === '任务'" class="tab-toolbar task-view-toolbar">
         <div class="seg">
           <button v-for="v in ([['列表', 'ri-list-check-2', 'list'], ['看板', 'ri-layout-column-line', 'board'], ['分组', 'ri-folder-2-line', 'group']] as const)" :key="v[2]" class="seg-btn icon" :class="{ on: pdTaskView === v[2] }" @click="setView(v[2])">
             <i :class="v[1]"></i>{{ v[0] }}
@@ -540,7 +548,37 @@ watch(visibleTaskIds, (ids) => {
             >{{ creator.name }}</button>
           </div>
         </div>
-        <div class="spacer"></div>
+      </div>
+    </div>
+
+    <!-- 任务 -->
+    <div v-if="projTab === '任务'">
+      <div class="delivery-filter" role="group" aria-label="按交付阶段筛选任务">
+        <span class="delivery-filter-label">交付阶段</span>
+        <button
+          class="delivery-filter-button"
+          :class="{ on: !deliveryStageFilter }"
+          :aria-pressed="!deliveryStageFilter"
+          title="查看当前创建人范围内的全部任务"
+          @click="setDeliveryStage(null)"
+        >全部 <em class="wao-tabular">{{ creatorTasks.length }}</em></button>
+        <button
+          v-for="stage in deliveryStageOptions"
+          :key="stage.id"
+          class="delivery-filter-button"
+          :class="{ on: deliveryStageFilter === stage.id }"
+          :aria-pressed="deliveryStageFilter === stage.id"
+          :title="stage.description"
+          @click="setDeliveryStage(deliveryStageFilter === stage.id ? null : stage.id)"
+        >{{ stage.label }} <em class="wao-tabular">{{ stage.count }}</em></button>
+        <span class="spacer"></span>
+        <button v-if="!batchSelectionOpen && !selectedTaskIds.length" class="creator-filter-btn batch-selection-toggle" @click="batchSelectionOpen = true"><i class="ri-checkbox-multiple-line"></i>批量选择</button>
+      </div>
+      <div v-if="batchSelectionOpen || selectedTaskIds.length" class="copy-selection-actions">
+        <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
+        <button v-if="selectedTaskIds.length" class="creator-filter-btn" @click="selectedTaskIds = []">清空选择</button>
+        <span class="selection-count">已选 {{ selectedTaskIds.length }} 项</span>
+        <button class="creator-filter-btn" :disabled="aiBatchStarting" @click="finishSelection">完成选择</button>
         <div v-if="selectedTaskIds.length" class="batch-ai-actions" aria-label="批量 AI Run 执行方式">
           <button
             class="batch-ai separate"
@@ -568,31 +606,8 @@ watch(visibleTaskIds, (ids) => {
             @start="runSelectedWithAi"
           />
         </div>
+        <TaskBatchCopy :tasks="selectedCopyTasks" />
       </div>
-      <div class="delivery-filter" role="group" aria-label="按交付阶段筛选任务">
-        <span class="delivery-filter-label">交付阶段</span>
-        <button
-          class="delivery-filter-button"
-          :class="{ on: !deliveryStageFilter }"
-          :aria-pressed="!deliveryStageFilter"
-          title="查看当前创建人范围内的全部任务"
-          @click="setDeliveryStage(null)"
-        >全部 <em class="wao-tabular">{{ creatorTasks.length }}</em></button>
-        <button
-          v-for="stage in deliveryStageOptions"
-          :key="stage.id"
-          class="delivery-filter-button"
-          :class="{ on: deliveryStageFilter === stage.id }"
-          :aria-pressed="deliveryStageFilter === stage.id"
-          :title="stage.description"
-          @click="setDeliveryStage(deliveryStageFilter === stage.id ? null : stage.id)"
-        >{{ stage.label }} <em class="wao-tabular">{{ stage.count }}</em></button>
-      </div>
-      <div class="copy-selection-actions">
-        <button class="creator-filter-btn" :disabled="!visibleTaskIds.length" @click="selectedTaskIds = [...visibleTaskIds]">全选当前可见 · {{ visibleTaskIds.length }}</button>
-        <button v-if="selectedTaskIds.length" class="creator-filter-btn" @click="selectedTaskIds = []">清空选择</button>
-      </div>
-      <TaskBatchCopy :tasks="selectedCopyTasks" />
       <div v-if="pdTaskView === 'list'" class="task-list-card">
         <div
           v-for="t in openTasks"
@@ -602,6 +617,7 @@ watch(visibleTaskIds, (ids) => {
           draggable="true"
           @click="openTask(t.id)"
           @dragstart="onDragStart(t.id)"
+          @dragend="dragId = null"
           @dragover.prevent
           @drop="onDropReorder(t.id)"
         >
@@ -781,6 +797,7 @@ watch(visibleTaskIds, (ids) => {
             draggable="true"
             @click="openTask(t.id)"
             @dragstart="onDragStart(t.id)"
+            @dragend="dragId = null"
             @dragover.prevent.stop
             @drop.stop="onDropGroup(g.id, t.id)"
           >
@@ -818,10 +835,10 @@ watch(visibleTaskIds, (ids) => {
 
       <div v-else class="board">
         <div
-          v-for="col in board"
+          v-for="col in visibleBoard"
           :key="col.label"
           class="board-col"
-          :class="{ 'drop-hint': dragId }"
+          :class="{ 'drop-hint': dragId, 'is-collapsed': col.collapsible && !showDone }"
           @dragover.prevent
           @drop="onDropStatus(col.label)"
         >
@@ -850,6 +867,7 @@ watch(visibleTaskIds, (ids) => {
               draggable="true"
               @click="openTask(t.id)"
               @dragstart="onDragStart(t.id)"
+              @dragend="dragId = null"
             >
               <button
                 class="select-dot board-select"
@@ -861,7 +879,7 @@ watch(visibleTaskIds, (ids) => {
               >
                 <i :class="selectedTaskIds.includes(t.id) ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'"></i>
               </button>
-              <div class="bc-title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
+              <div class="bc-title" :title="t.title" :style="{ color: t.titleColor, textDecoration: t.deco }">{{ t.title }}</div>
               <div class="bc-foot">
                 <span class="mini" :style="{ background: t.prBg, color: t.prColor }">{{ t.pr }}</span>
                 <span class="bc-due" :style="{ color: t.dueColor }">{{ t.dueStr }}</span>
@@ -872,6 +890,10 @@ watch(visibleTaskIds, (ids) => {
             <div v-if="!col.items.length" class="board-empty">拖到此处标记为「{{ col.label }}」</div>
           </div>
         </div>
+      </div>
+      <div v-if="pdTaskView === 'board' && emptyBoardColumns.length" class="empty-columns-control">
+        <span>空列：{{ emptyBoardColumns.map((col) => `${col.label} 0`).join(' · ') }}</span>
+        <button :aria-expanded="showEmptyColumns" @click="showEmptyColumns = !showEmptyColumns">{{ showEmptyColumns ? '折叠空列' : '显示空列' }}</button>
       </div>
     </div>
 
@@ -2074,5 +2096,48 @@ watch(visibleTaskIds, (ids) => {
   .doc-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .doc-time { flex-shrink: 0; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tab-toolbar.gap .kb-chip { max-width: 100%; min-height: 38px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+/* 任务优先：项目标题、页签与视图、交付筛选合为三条紧凑工具栏。 */
+.detail { padding-top: 12px; }
+.phead { margin-top: 0; gap: 9px; }
+.phead-icon { width: 30px; height: 30px; font-size: 16px; border-radius: 8px; }
+.phead-name { font-size: 18px; overflow-wrap: anywhere; }
+.phead-name-wrap { flex: 0 1 auto; }
+.phead-name-row { gap: 7px; }
+.ptabs { margin-top: 10px; align-items: center; gap: 8px; flex-wrap: wrap; overflow: visible; padding-bottom: 7px; }
+.ptab { padding: 7px 9px; }
+.task-view-toolbar { margin: 0 0 0 auto; flex-wrap: wrap; gap: 6px; }
+.task-view-toolbar .creator-filter { margin-left: 0; }
+.delivery-filter { margin: 8px 0; flex-wrap: wrap; overflow: visible; }
+.delivery-filter-label { display: none; }
+.delivery-filter-button { border-radius: 6px; }
+.copy-selection-actions { align-items: center; margin: 8px 0; padding: 8px; border-radius: 8px; background: var(--wao-primary-soft); }
+.copy-selection-actions .selection-count { font-size: 12px; color: var(--wao-primary-text); }
+.copy-selection-actions :deep(.task-batch-copy) { display: contents; }
+.copy-selection-actions :deep(.copy-preview) { flex-basis: 100%; }
+.detail:not(.selecting-tasks) .select-dot { display: none; }
+.project-more { position: relative; }
+.project-more-menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; min-width: 168px; padding: 5px; border: 1px solid var(--wao-line); border-radius: 8px; background: var(--wao-bg-card); box-shadow: var(--wao-shadow-modal); }
+.project-more-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; background: none; color: var(--wao-text-2); text-align: left; font-size: 12px; cursor: pointer; }
+.project-more-menu button:hover { background: var(--wao-primary-soft); }
+.project-info { margin-top: 9px; padding: 9px 12px; background: var(--wao-bg-card); border: 1px solid var(--wao-line); border-radius: 7px; color: var(--wao-text-weak); font-size: 12px; }
+.board { margin-top: 8px; }
+.board-col { max-width: 440px; }
+.board-col.is-collapsed { flex: 0 0 148px; min-width: 148px; }
+.bc-title { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.empty-columns-control { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--wao-text-weak); font-size: 11px; margin-top: 8px; }
+.empty-columns-control button { padding: 3px; border: 0; background: none; color: var(--wao-primary-text); cursor: pointer; font: inherit; }
+@media (max-width: 760px) {
+  .phead-name-wrap { flex: 1; }
+  .phead .phead-avs { display: none; }
+  .phead-name { font-size: 16px; }
+  .phead { gap: 6px; }
+  .ptabs { margin: 9px 0 0; padding: 0 0 6px; }
+  .task-view-toolbar { margin-left: 0; flex-basis: 100%; }
+  .task-view-toolbar .seg-btn { padding: 0 9px; }
+  .task-view-toolbar .creator-filter { margin-left: auto; }
+  .board-col.is-collapsed { min-width: 0; }
+  .phead-status { display: none; }
+  .project-more-menu { right: 0; }
 }
 </style>

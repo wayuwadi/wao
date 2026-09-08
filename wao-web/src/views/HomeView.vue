@@ -93,6 +93,18 @@ const taskAutoRunWebhookError = ref('')
 const taskAutoRunDirty = ref(false)
 const taskAutoRunSaving = ref(false)
 const taskAutoRunError = ref('')
+const heroDetailsOpen = ref(false)
+const goalSettingsOpen = ref(false)
+const runLayout = ref<'list' | 'card'>('list')
+watch(() => session.userId, (memberId) => {
+  try { runLayout.value = localStorage.getItem(`wao-home-run-layout:${memberId}`) === 'card' ? 'card' : 'list' }
+  catch { runLayout.value = 'list' }
+}, { immediate: true })
+function setRunLayout(layout: 'list' | 'card') {
+  runLayout.value = layout
+  try { localStorage.setItem(`wao-home-run-layout:${session.userId}`, layout) }
+  catch { toast('视图已切换，但本机无法记住选择', 'ri-information-line') }
+}
 const goal = ref('')
 const goalDraftState = ref<'idle' | 'saved' | 'error'>('idle')
 const goalProjectId = ref('')
@@ -1246,79 +1258,55 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="home">
+  <div class="home" :class="{ 'run-list-view': runLayout === 'list' }">
     <div class="home-primary">
       <section id="home-ai-overview" class="hero" data-page-anchor="AI 控制中心">
-      <div>
-        <div class="eyebrow">AI CONTROL CENTER</div>
-        <!-- 核心理念摆在首屏第一行：这套系统的用法就是「你敢想，AI 就敢做」 -->
-        <h1 class="slogan">娃有多大胆，AI 有多大产</h1>
-        <div class="hero-signals" aria-label="AI 控制中心状态">
-          <span :title="`正在运行 ${activeRuns.length} 个任务`" :aria-label="`正在运行 ${activeRuns.length} 个任务`">
-            <i class="ri-pulse-line"></i><b>{{ activeRuns.length }}</b>
-          </span>
-          <span
-            v-for="engine in engineStatus"
-            :key="engine.id"
-            :class="{ dim: !engine.online }"
-            :title="`${engine.label}：${engine.online ? `${engine.online} 台在线` : engine.total ? '全部离线' : '未接入'}`"
-            :aria-label="`${engine.label}：${engine.online ? `${engine.online} 台在线` : engine.total ? '全部离线' : '未接入'}`"
-          >
-            <i :class="engine.icon"></i><i class="signal-dot"></i>
-          </span>
-          <span :title="`执行槽位 ${usedSlots}/${totalSlots}`" :aria-label="`执行槽位 ${usedSlots}/${totalSlots}`">
-            <i class="ri-server-line"></i><b>{{ usedSlots }}/{{ totalSlots }}</b>
-          </span>
+        <div class="hero-heading">
+          <div class="eyebrow">AI CONTROL CENTER</div>
+          <h1 class="slogan">娃有多大胆，AI 有多大产</h1>
         </div>
-        <div class="hero-links">
-          <button class="hero-link" type="button" @click="router.push('/ai-sessions')"><i class="ri-chat-history-line"></i>打开 AI 会话</button>
-          <button class="hero-link" type="button" @click="router.push('/dashboard')">
-            <i class="ri-line-chart-line"></i>查看 AI 详情
-          </button>
-          <button class="hero-link" type="button" @click="router.push('/system-reports')">
-            <i class="ri-bar-chart-box-line"></i>查看系统报告
-          </button>
+        <div class="hero-metrics">
+          <div class="quota-card weekly-quota" :class="heroWeeklyQuota ? quotaClass(heroWeeklyQuota.remainingPercent) : ''"
+            :title="heroWeeklyQuota ? `Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}` : '周额度暂不可用'">
+            <span>Codex 周剩余额度</span>
+            <strong>{{ heroWeeklyQuota ? heroWeeklyQuota.remainingPercent : '—' }}<em v-if="heroWeeklyQuota">%</em></strong>
+            <small>{{ heroWeeklyQuota ? resetText(heroWeeklyQuota.resetsAt) : '等待额度同步' }}</small>
+          </div>
+          <CodexBenefitsPanel compact />
         </div>
-      </div>
-      <div class="hero-metrics">
-        <div
-          class="quota-card weekly-quota"
-          :class="heroWeeklyQuota ? quotaClass(heroWeeklyQuota.remainingPercent) : ''"
-          :title="heroWeeklyQuota ? `Codex 真实周剩余额度，${resetText(heroWeeklyQuota.resetsAt)}` : '周额度暂不可用'"
-        >
-          <span><i class="ri-speed-up-line"></i>Codex 周剩余额度</span>
-          <strong>{{ heroWeeklyQuota ? heroWeeklyQuota.remainingPercent : '—' }}<em v-if="heroWeeklyQuota">%</em></strong>
-          <small>{{ heroWeeklyQuota ? resetText(heroWeeklyQuota.resetsAt) : '等待额度同步' }}</small>
-          <CodexBenefitsPanel />
+        <div class="hero-status">
+          <span><i class="signal-dot"></i>{{ onlineRunners.length }} 台在线</span>
+          <span>执行 {{ usedSlots }} / {{ totalSlots }}</span>
+          <button type="button" :aria-expanded="heroDetailsOpen" @click="heroDetailsOpen = !heroDetailsOpen">详情与设置<i :class="heroDetailsOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'"></i></button>
         </div>
-        <div
-          class="capacity"
-          :style="{ '--capacity': `${totalSlots ? Math.min(100, usedSlots / totalSlots * 100) : 0}%` }"
-        >
-          <div class="capacity-orbit" aria-hidden="true"><i></i><b></b><em></em></div>
-          <div class="capacity-copy">
-            <div class="capacity-num">{{ usedSlots }}<span>/ {{ totalSlots }}</span></div>
-            <div>执行槽位占用</div>
-            <div class="capacity-bar"><i></i></div>
+        <div v-show="heroDetailsOpen" class="hero-details">
+          <div class="hero-signals" aria-label="AI 控制中心状态">
+            <span v-for="engine in engineStatus" :key="engine.id" :class="{ dim: !engine.online }"
+              :title="`${engine.label}：${engine.online ? `${engine.online} 台在线` : engine.total ? '全部离线' : '未接入'}`">
+              <i :class="engine.icon"></i>{{ engine.label }}<i class="signal-dot"></i>
+            </span>
+          </div>
+          <div class="hero-links">
+            <button class="hero-link" type="button" @click="router.push('/ai-sessions')"><i class="ri-chat-history-line"></i>打开 AI 会话</button>
+            <button class="hero-link" type="button" @click="router.push('/dashboard')"><i class="ri-line-chart-line"></i>查看 AI 详情</button>
+            <button class="hero-link" type="button" @click="router.push('/system-reports')"><i class="ri-bar-chart-box-line"></i>查看系统报告</button>
           </div>
         </div>
-      </div>
       </section>
 
       <section id="ai-launcher" class="goal-launcher" data-page-anchor="自主目标" aria-labelledby="goal-launcher-title">
         <div class="goal-heading">
           <span class="goal-icon"><i class="ri-sparkling-2-line"></i></span>
           <div>
-            <div class="eyebrow dark">AUTONOMOUS GOAL</div>
             <h2 id="goal-launcher-title">给我一个目标，剩下的交给 AI</h2>
-            <p>AI 会先盘点项目里的代码、文档和工具，自己拆解、执行和验证。</p>
           </div>
+          <button class="goal-settings-toggle" type="button" aria-label="执行设置" :aria-expanded="goalSettingsOpen" @click="goalSettingsOpen = !goalSettingsOpen"><i class="ri-equalizer-line"></i></button>
         </div>
         <div class="goal-compose">
           <MarkdownEditor
             v-model="goal"
-            placeholder="例如：把《黄帝内经》和《易经》结合 AI，做成一个每天可以给自己算一卦的产品……可直接粘贴多张图片"
-            :min-height="78"
+            placeholder="写下你想完成的事，也可以粘贴图片…"
+            :min-height="52"
             :readonly="launchingGoal"
             @keydown.ctrl.enter.prevent="launchGoal"
             @keydown.meta.enter.prevent="launchGoal"
@@ -1339,7 +1327,7 @@ onBeforeUnmount(() => {
                 </option>
               </select>
             </label>
-            <label class="goal-runner-field goal-control-field" :title="`执行电脑：${goalRunnerHint}`">
+            <label v-show="goalSettingsOpen" class="goal-runner-field goal-control-field goal-advanced-field" :title="`执行电脑：${goalRunnerHint}`">
               <span v-if="!preferences.compactControls">执行电脑</span>
               <select
                 v-model="goalRunnerId"
@@ -1354,7 +1342,7 @@ onBeforeUnmount(() => {
                 </option>
               </select>
             </label>
-            <label v-if="goalSupportsPlanMode" class="goal-control-field" title="为本次 Codex AI Run 选择模型思考深度">
+            <label v-if="goalSupportsPlanMode" v-show="goalSettingsOpen" class="goal-control-field goal-advanced-field" title="为本次 Codex AI Run 选择模型思考深度">
               <span v-if="!preferences.compactControls">思考深度</span>
               <select
                 v-if="goalRunOptions"
@@ -1403,7 +1391,7 @@ onBeforeUnmount(() => {
             >
               <i class="ri-focus-3-line"></i><span>目标模式</span>
             </button>
-            <span class="goal-shortcut">
+            <span class="goal-shortcut" :class="{ 'has-draft': goal.length || goalImageUploads || goalDraftState === 'error' }">
               <template v-if="goalImageUploads">{{ goalImageUploads }} 张图片上传中 · </template>
               <template v-else-if="goalDraftState === 'saved'">草稿已保存在本机 · </template>
               <template v-else-if="goalDraftState === 'error'">本机草稿保存失败 · </template>
@@ -1439,6 +1427,10 @@ onBeforeUnmount(() => {
         <em v-else-if="item.id === 'runners' && onlineRunners.length">{{ onlineRunners.length }}</em>
       </button>
       <span class="live"><i></i>每 5 秒刷新</span>
+      <div v-if="view === 'runs'" class="run-view-switch" role="group" aria-label="运行记录视图">
+        <button type="button" :class="{ on: runLayout === 'list' }" :aria-pressed="runLayout === 'list'" @click="setRunLayout('list')"><i class="ri-list-check"></i>列表</button>
+        <button type="button" :class="{ on: runLayout === 'card' }" :aria-pressed="runLayout === 'card'" @click="setRunLayout('card')"><i class="ri-grid-line"></i>卡片</button>
+      </div>
     </nav>
 
     <template v-if="view === 'runs'">
@@ -1446,7 +1438,7 @@ onBeforeUnmount(() => {
         <div class="section-head">
           <div>
             <h2>正在运行</h2>
-            <p>点击卡片查看 AI 的实时反馈和执行档案。</p>
+            <p>查看 AI 的实时反馈和执行档案。</p>
           </div>
           <div class="run-section-actions">
             <button
@@ -1507,7 +1499,7 @@ onBeforeUnmount(() => {
             <button v-if="!runnableAutoRunWorkflows.length" @click="view = 'workflows'">接入工作流</button>
           </div>
         </div>
-        <div v-else class="run-grid" data-layout="5x2">
+        <div v-else class="run-grid" :data-layout="runLayout === 'card' ? '5x2' : 'list'">
           <button v-for="run in visibleActiveRuns" :key="run.id" class="run-card" @click="inspectRun(run)">
             <div class="run-top">
               <span class="status" :style="{ color: metaFor(run).color, background: metaFor(run).bg }">
@@ -1597,7 +1589,7 @@ onBeforeUnmount(() => {
               <i :class="batchRerunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ batchRerunning ? '正在重跑…' : '一键重跑同原因任务' }}
             </button>
           </aside>
-          <div class="recent-grid" data-layout="5x2">
+          <div class="recent-grid" :data-layout="runLayout === 'card' ? '5x2' : 'list'">
           <button v-for="activity in recentActivities" :key="`${activity.type}-${activity.id}`" class="recent-card" :class="{ infrastructure: activity.failureKind === 'INFRASTRUCTURE' }" :aria-label="`${activity.title}，${activityMeta(activity).label}，打开详情`" @click="openActivity(activity)">
             <span class="recent-card-top">
               <span class="recent-icon" :title="activityTypeMeta(activity).label" :style="{ color: activityTypeMeta(activity).color, background: activityTypeMeta(activity).bg }"><i :class="activityTypeMeta(activity).icon"></i></span>
@@ -3265,5 +3257,81 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   .home-primary { grid-template-columns: minmax(0, 1fr); }
   .run-grid, .recent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .history-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* 已确认的紧凑首页：详情按需展开，列表与原卡片共用内容和操作。 */
+.home-primary { grid-template-columns: minmax(0, .9fr) minmax(0, 1.2fr); gap: 14px; align-items: start; }
+.hero { min-width: 0; min-height: 196px; padding: 16px 20px; display: flex; flex-direction: column; align-items: stretch; gap: 12px; box-shadow: none; }
+.hero > div:first-child { flex: none; }
+.hero h1.slogan { font-size: 22px; margin: 5px 0 0; }
+.hero-metrics { display: flex; align-items: flex-start; gap: 22px; width: 100%; }
+.hero-metrics > .codex-benefits { flex: 1; }
+.quota-card { flex: 0 0 auto; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; align-content: start; }
+.quota-card strong { font-size: 26px; margin-top: 5px; }
+.quota-card strong em { font-size: 14px; }
+.quota-card small { max-width: 110px; font-size: 10px; }
+.hero-status { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 11px; color: #e0e5ff; margin-top: auto; }
+.hero-status > span { display: inline-flex; align-items: center; gap: 5px; }
+.hero-status > button { margin-left: auto; border: 0; padding: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.hero-details { border-top: 1px solid #ffffff30; }
+.hero-signals { flex-wrap: wrap; }
+.hero-signals > span { font-size: 11px; }
+.hero-link { font-size: 11px; padding: 5px 8px; }
+.home-primary .goal-launcher { min-height: 196px; padding: 12px 14px; gap: 9px; align-content: start; box-shadow: none; }
+.goal-heading { align-items: center; gap: 8px; }
+.goal-heading h2 { font-size: 16px; margin: 0; }
+.goal-icon { width: 28px; height: 28px; font-size: 16px; border-radius: 8px; }
+.goal-settings-toggle { margin-left: auto; flex: none; width: 30px; height: 30px; border: 0; border-radius: 6px; background: var(--wao-primary-soft); color: var(--wao-primary-text); cursor: pointer; }
+.goal-compose :deep(.md-body .tiptap) { min-height: 52px; padding-top: 8px; }
+.goal-actions { gap: 6px; padding: 7px 8px; min-height: 43px; }
+.goal-actions .goal-control-field { width: auto; max-width: 100%; }
+.goal-actions .goal-workflow-select { max-width: 185px; }
+.goal-advanced-field { order: 4; }
+.goal-shortcut { order: 5; flex-basis: 100%; white-space: normal; font-size: 10px; }
+.goal-shortcut:not(.has-draft) { display: none; }
+.goal-submit { margin-left: auto; min-width: 100px; }
+.console-tabs { flex-wrap: wrap; overflow: visible; gap: 5px; }
+.run-view-switch { display: flex; padding: 2px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-sub); }
+.console-tabs .run-view-switch button { padding: 4px 8px; border-radius: 5px; font-size: 11px; }
+.run-view-switch button.on { background: var(--wao-bg-card); }
+.run-list-view .run-grid, .run-list-view .recent-grid { grid-template-columns: minmax(0, 1fr); gap: 7px; }
+.run-list-view .run-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, .65fr); gap: 4px 16px; padding: 11px 13px; }
+.run-list-view .run-card .run-media { display: none; }
+.run-list-view .run-card .run-top { grid-column: 2; grid-row: 1; justify-content: flex-end; }
+.run-list-view .run-card h3 { grid-column: 1; grid-row: 1; min-height: 0; max-height: none; margin: 0; display: block; white-space: nowrap; text-overflow: ellipsis; align-self: center; }
+.run-list-view .run-card .run-project { grid-column: 1; grid-row: 3; }
+.run-list-view .run-card .live-progress { grid-column: 1; grid-row: 2; min-height: 0; margin: 0; padding: 0; background: none; }
+.run-list-view .run-card .live-progress small { display: none; }
+.run-list-view .run-card .run-foot { grid-column: 2; grid-row: 2 / 4; align-self: center; margin: 0; padding: 0; border: 0; }
+.run-list-view .recent-card { display: grid; grid-template-columns: 172px minmax(0, 1fr) 72px; align-items: center; min-height: 0; gap: 12px; padding: 10px 12px; }
+.run-list-view .recent-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(60px, .25fr); gap: 3px 12px; }
+.run-list-view .recent-main b { grid-column: 1; }
+.run-list-view .recent-main em { margin: 0; }
+.run-list-view .recent-main em:nth-of-type(1) { grid-column: 1; grid-row: 2; }
+.run-list-view .recent-main em:nth-of-type(2) { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+.run-list-view .recent-main small { grid-column: 1 / -1; }
+.run-list-view .recent-hover-action { position: static; background: none; opacity: 1; transform: none; color: var(--wao-primary-text); font-size: 11px; font-weight: 400; }
+.run-list-view .run-card:hover, .run-list-view .recent-card:hover { transform: none; }
+@media (max-width: 1180px) { .home-primary { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) {
+  .hero { padding: 12px; min-height: 178px; gap: 9px; }
+  .hero h1.slogan { font-size: 18px; }
+  .hero-metrics { gap: 12px; }
+  .quota-card > span { font-size: 10px; }
+  .quota-card small { max-width: 90px; }
+  .home-primary .goal-launcher { min-height: 0; padding: 10px; }
+  .goal-heading h2 { font-size: 14px; }
+  .goal-actions .goal-workflow-select { max-width: 150px; }
+  .console-tabs .live { display: none; }
+  .run-view-switch { margin-left: auto; }
+  .run-list-view .run-card { grid-template-columns: minmax(0, 1fr); }
+  .run-list-view .run-card .run-top { grid-column: 1; grid-row: 1; justify-content: space-between; }
+  .run-list-view .run-card h3 { grid-row: 2; white-space: normal; }
+  .run-list-view .run-card .live-progress { grid-row: 3; }
+  .run-list-view .run-card .run-project { grid-row: 4; }
+  .run-list-view .run-card .run-foot { grid-column: 1; grid-row: 5; }
+  .run-list-view .recent-card { grid-template-columns: minmax(0, 1fr) 72px; gap: 6px; }
+  .run-list-view .recent-card-top { grid-column: 1; }
+  .run-list-view .recent-main { grid-column: 1 / -1; grid-row: 2; }
+  .run-list-view .recent-hover-action { grid-column: 2; grid-row: 1; }
 }
 </style>

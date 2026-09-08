@@ -85,6 +85,7 @@ describe('批量复制任务全文', () => {
     await router.push(`/projects/p1?view=${view}`)
     const wrapper = mount(ProjectDetailView, { global: { plugins: [router], stubs: { ProjectMemoryPanel: true, ProjectAssetsPanel: true } } })
     await flushPromises()
+    await wrapper.get('.batch-selection-toggle').trigger('click')
     await wrapper.get('.select-dot').trigger('click')
     await wrapper.get('.copy-tasks').trigger('click')
     expect(copyToClipboard).toHaveBeenCalledOnce()
