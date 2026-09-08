@@ -1,0 +1,50 @@
+openapi: 3.0.3
+info:
+  title: WAO WeKnora 内容同步
+  version: 1.0.0
+paths:
+  /api/weknora-sync:
+    get:
+      summary: 管理员所属配置、来源数量及近期运行记录；不返回密钥
+      responses:
+        '200': {description: ApiResponse，data 包含 ownerId、configured、settings、catalog、runs、items、totals}
+        '401': {description: 非管理员或不属于配置者}
+    put:
+      summary: CAS 保存并验证连接；apiKey 为空保留现有加密密钥
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kbId, modules, batchLimit, syncDeletes, enabled, time, revision]
+              properties:
+                kbId: {type: string, format: uuid}
+                apiKey: {type: string, writeOnly: true}
+                modules: {type: array, items: {type: string}}
+                batchLimit: {type: integer, minimum: 1, maximum: 100}
+                syncDeletes: {type: boolean}
+                enabled: {type: boolean}
+                time: {type: string, example: '02:00'}
+                revision: {type: integer}
+      responses:
+        '200': {description: 已保存，已验证 Wiki-only 目标库可访问}
+        '409': {description: 版本冲突、同步正在执行或已有副本不允许改绑}
+  /api/weknora-sync/run:
+    post:
+      summary: 持久化手动入队，重复触发返回同一活动任务 ID
+      responses:
+        '200': {description: ApiResponse data.id；此时仅表示入队，不表示已同步}
+  /api/weknora-sync/progress:
+    get:
+      summary: 最近 20 次运行和最近 100 项处理结果，供轮询使用
+      responses:
+        '200': {description: ApiResponse data.runs 与 data.items}
+  /api/weknora-sync/source:
+    get:
+      summary: 在同一权限边界内查看当前来源分段
+      parameters:
+        - {name: key, in: query, required: true, schema: {type: string}}
+      responses:
+        '200': {description: ApiResponse data 包含 key、module、title、url、content、hash}
+        '404': {description: 来源已删除或不在所选范围}

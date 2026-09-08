@@ -15,7 +15,9 @@ restore() { compose up -d app frontend >/dev/null; }
 trap restore EXIT HUP INT TERM
 compose stop frontend app >/dev/null
 docker exec WeKnora-postgres sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' >"$destination/database.dump"
-tar -czf "$destination/config.tgz" .env config/config.yaml config/builtin_models.yaml ../compose.override.yml
+set -- .env config/config.yaml config/builtin_models.yaml ../compose.override.yml
+[ ! -f weknora-sync.private.json ] || set -- "$@" weknora-sync.private.json
+tar -czf "$destination/config.tgz" "$@"
 for volume in data-files redis-data; do
   source=$(docker volume inspect "wao-weknora_$volume" --format '{{.Mountpoint}}')
   tar -czf "$destination/$volume.tgz" -C "$source" .

@@ -42,4 +42,15 @@ class AutomationControllerTest {
         verify(automation, never()).runJob("reminder", "member");
         verify(automation, never()).createJob(org.mockito.ArgumentMatchers.any());
     }
+    @Test
+    void knowledgeSyncCannotBeTriggeredByNonAdminThroughGenericAutomation() {
+        when(currentMember.id(http)).thenReturn("member");
+        when(automation.getJob("sync")).thenReturn(new AutomationJobDto(
+                "sync", "同步", "", "", "正常", "", "", "", "",
+                List.of(), List.of(), "0 0 2 * * *", null,
+                cn.wayuwa.wao.service.WeKnoraSyncService.HANDLER));
+        assertThatThrownBy(() -> controller.run("sync", http)).isInstanceOf(UnauthorizedException.class);
+        verify(automation, never()).runJob("sync", "member");
+    }
+
 }
