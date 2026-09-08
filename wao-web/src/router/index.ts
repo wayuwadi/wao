@@ -333,6 +333,12 @@ const router = createRouter({
           meta: { module: 'games', tabKind: 'module' },
         },
         {
+          path: 'infrastructure',
+          name: 'infrastructure',
+          component: () => import('@/views/InfrastructureView.vue'),
+          meta: { module: 'infrastructure', tabKind: 'module' },
+        },
+        {
           path: 'devices',
           name: 'devices',
           component: () => import('@/views/DevicesView.vue'),
