@@ -89,10 +89,11 @@ public class AiRunService {
     private static final String PAIR_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final List<String> ACTIVE = List.of("queued", "claimed", "running");
     /** 已经有结论、因而可以在原会话上继续对话的状态。 */
-    private static final List<String> FINISHED = List.of("succeeded", "failed");
+    private static final List<String> FINISHED = List.of("succeeded", "failed", "cancelled");
     private static final int MAX_RESULT = 32_000;
     private static final int MAX_RUNNER_LOG = 30_000;
     private static final int MAX_PROGRESS = 1_000;
+    private static final int MAX_MESSAGE = 16_000;
     private static final int MAX_PROGRESS_PER_RUN = 50;
     /** 首页只展示最近八条结束记录，完整历史由分页接口按需读取。 */
     private static final int HOMEPAGE_FINISHED_RUNS = 8;
@@ -105,13 +106,13 @@ public class AiRunService {
     /** 目前支持的本地 AI 工具；顺序即页面默认展示顺序。 */
     public static final List<String> ENGINES = List.of("codex", "claude", "qoder");
     private static final String DEFAULT_ENGINE = "codex";
-    private static final String DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
+    private static final String DEFAULT_CODEX_MODEL = "gpt-6-astra";
     private static final String DEFAULT_REASONING_EFFORT = "high";
     private static final String CODEX_SERVICE_TIER = "default";
     /** 空闲自动派发使用独立通知卡片，避免与通用入队通知重复。 */
     static final String IDLE_AUTO_RUN_REQUESTED_BY = "system:idle-auto-run";
     private static final Set<String> CODEX_MODELS = Set.of(
-            "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
+            "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna");
     private static final Set<String> CODEX_REASONING_EFFORTS = Set.of("low", "medium", "high");
     private static final Set<String> EXECUTION_MODES = Set.of("direct", "plan", "goal");
     private static final Map<String, String> ENGINE_LABELS = Map.of("codex", "Codex", "claude", "Claude Code",
@@ -157,7 +158,8 @@ public class AiRunService {
     public AiRunOptionsDto runOptions() {
         return new AiRunOptionsDto(
                 List.of(
-                        new AiRunModelOptionDto("gpt-5.6-sol", "GPT-5.6 Sol", "复杂开发任务的旗舰模型"),
+                        new AiRunModelOptionDto("gpt-6-astra", "GPT-6 Astra", "复杂开发、长任务与持续迭代"),
+                        new AiRunModelOptionDto("gpt-5.6-sol", "GPT-5.6 Sol", "保留上一代开发模型"),
                         new AiRunModelOptionDto("gpt-5.6-terra", "GPT-5.6 Terra", "兼顾能力与成本"),
                         new AiRunModelOptionDto("gpt-5.6-luna", "GPT-5.6 Luna", "适合高频、成本敏感任务")),
                 List.of(
@@ -1186,9 +1188,10 @@ public class AiRunService {
      */
     @Transactional
     public synchronized AiRunDto continueRun(String runId, String input, String requestedBy, String baseUrl) {
-        AiTaskRunEntity run = runMapper.selectById(runId);
+        AiTaskRunEntity run = runMapper.selectForUpdate(runId);
         if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
         String normalizedInput = limit(ShareService.absolutizeMarkdown(input, baseUrl), 4000);
+        if (!StringUtils.hasText(normalizedInput)) throw new BadRequestException("请输入要补充的信息");
         if (ACTIVE.contains(run.getStatus())) {
             if (StringUtils.hasText(run.getPendingInput())) {
                 throw new BadRequestException("上一条补充正在等待执行电脑接收，请稍后再发");
@@ -1196,7 +1199,7 @@ public class AiRunService {
             run.setPendingInput(normalizedInput);
             run.setRequestedBy(requestedBy);
             run.setDeliveryStage(DELIVERY_CODING);
-            appendProgress(run, "message", "用户在执行中补充：" + run.getPendingInput());
+            appendProgress(run, "user", run.getPendingInput());
             appendProgress(run, "phase", "已收到新输入，执行电脑将更新当前 AI 会话方向");
             return toRunDtos(List.of(run)).get(0);
         }
@@ -1216,7 +1219,7 @@ public class AiRunService {
         run.setDeliveryStage(DELIVERY_CODING);
         run.setExitCode(null);
         run.setFinishedAt(null);
-        appendProgress(run, "message", (optimizing ? "用户要求继续优化：" : "用户补充：") + run.getPendingInput());
+        appendProgress(run, "user", run.getPendingInput());
         appendProgress(run, "phase", "已收到" + (optimizing ? "优化要求" : "补充") + "，等待原执行电脑恢复 AI 会话");
         setTaskStatuses(run, "AI 进行中");
         return toRunDtos(List.of(run)).get(0);
@@ -1470,7 +1473,8 @@ public class AiRunService {
             setTaskStatuses(run, "AI 进行中");
             TaskEntity task = taskMapper.selectById(run.getTaskId());
             ProjectEntity project = projectMapper.selectById(run.getProjectId());
-            List<ProjectMemoryContextDto> memoryContext = projectMemories.recall(run, task);
+            List<ProjectMemoryContextDto> memoryContext = StringUtils.hasText(run.getSessionId())
+                    ? List.of() : projectMemories.recall(run, task);
             return new AiRunnerClaimDto(run.getId(), run.getTaskId(), task.getTitle(), run.getProjectId(),
                     project == null ? run.getProjectId() : project.getName(), engine,
                     run.getRequestedModel(), run.getReasoningEffort(),
@@ -1494,17 +1498,36 @@ public class AiRunService {
     @Transactional
     public synchronized void reportProgress(String token, String runId, ReportAiRunProgressRequest request) {
         AiRunnerNodeEntity runner = requireRunner(token);
-        AiTaskRunEntity run = runMapper.selectById(runId);
+        AiTaskRunEntity run = runMapper.selectForUpdate(runId);
         if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
         if (!runner.getId().equals(run.getRunnerId())) {
             throw new UnauthorizedException("该运行不属于当前执行节点");
         }
         if (!ACTIVE.contains(run.getStatus())) throw new BadRequestException("该运行已经结束，不能继续回传进展");
         String kind = trim(request.kind()).toLowerCase();
+        if ("session".equals(kind)) {
+            String sessionId = trim(request.content());
+            if (!sessionId.matches("[A-Za-z0-9][A-Za-z0-9_-]{0,127}")) {
+                throw new BadRequestException("无效的 AI 会话 ID");
+            }
+            if (runMapper.bindSession(runId, runner.getId(), sessionId) != 1) {
+                throw new BadRequestException("会话绑定已变化或运行已结束，不能覆盖原会话");
+            }
+            runnerMapper.touchLastSeenAt(runner.getId());
+            return;
+        }
         if ("delivery".equals(kind)) {
             run.setDeliveryStage(DELIVERY_WAITING);
             appendProgress(run, "phase", "代码已完成并合并，正在等待批量部署");
             runnerMapper.touchLastSeenAt(runner.getId());
+            return;
+        }
+        if ("delivery_not_required".equals(kind)) {
+            if (DELIVERY_WAITING.equals(run.getDeliveryStage())) {
+                throw new BadRequestException("代码已合并等待部署，不能跳过发布验收");
+            }
+            run.setDeliveryStage("not_required");
+            appendProgress(run, "phase", "本轮无需部署");
             return;
         }
         if (!PROGRESS_KINDS.contains(kind)) throw new BadRequestException("不支持的进展类型：" + kind);
@@ -1524,7 +1547,7 @@ public class AiRunService {
             run.setGoalTokensUsed(nonNegative(request.goalTokensUsed()));
             run.setGoalTimeUsedSeconds(nonNegative(request.goalTimeUsedSeconds()));
         }
-        String content = limit(request.content(), MAX_PROGRESS);
+        String content = limit(request.content(), MAX_MESSAGE);
         if (!StringUtils.hasText(content)) return;
         if (content.equals(run.getLatestProgress())) {
             if ("goal".equals(kind)) runMapper.updateById(run);
@@ -1538,7 +1561,7 @@ public class AiRunService {
     @Transactional
     public synchronized AiRunDto complete(String token, String runId, CompleteAiRunRequest request) {
         AiRunnerNodeEntity runner = requireRunner(token);
-        AiTaskRunEntity run = runMapper.selectById(runId);
+        AiTaskRunEntity run = runMapper.selectForUpdate(runId);
         if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
         if (!runner.getId().equals(run.getRunnerId())) {
             throw new UnauthorizedException("该运行不属于当前执行节点");
@@ -1546,7 +1569,12 @@ public class AiRunService {
         // 用户已暂停时，Runner 可能正好在回传退出结果；保留暂停结论，不让迟到回传覆盖它。
         if ("cancelled".equals(run.getStatus())) return toRunDtos(List.of(run)).get(0);
         int exitCode = request.exitCode() == null ? -1 : request.exitCode();
-        if (StringUtils.hasText(request.sessionId())) run.setSessionId(limit(request.sessionId(), 128));
+        if (StringUtils.hasText(request.sessionId())) {
+            if (StringUtils.hasText(run.getSessionId()) && !run.getSessionId().equals(request.sessionId())) {
+                throw new BadRequestException("完成结果的会话 ID 与原会话不一致");
+            }
+            run.setSessionId(limit(request.sessionId(), 128));
+        }
         applyUsage(run, request);
         if (request.aiExecutionDurationMs() != null && request.aiExecutionDurationMs() >= 0) {
             run.setAiExecutionDurationMs(saturatedAdd(run.getAiExecutionDurationMs(),
@@ -1568,7 +1596,7 @@ public class AiRunService {
         }
         run.setExitCode(exitCode);
         run.setStatus(exitCode == 0 ? "succeeded" : "failed");
-        run.setDeliveryStage(exitCode == 0 ? DELIVERY_SUCCEEDED
+        run.setDeliveryStage(exitCode == 0 ? ("not_required".equals(run.getDeliveryStage()) ? "not_required" : DELIVERY_SUCCEEDED)
                 : DELIVERY_WAITING.equals(run.getDeliveryStage()) ? DELIVERY_FAILED : DELIVERY_CODE_FAILED);
         run.setResultSummary(limit(request.resultSummary(), MAX_RESULT));
         run.setPendingInput(null);
@@ -1598,7 +1626,7 @@ public class AiRunService {
     @Transactional
     public synchronized HostedPageDto saveReport(String token, String runId, MultipartFile html) {
         AiRunnerNodeEntity runner = requireRunner(token);
-        AiTaskRunEntity run = runMapper.selectById(runId);
+        AiTaskRunEntity run = runMapper.selectForUpdate(runId);
         if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
         if (!runner.getId().equals(run.getRunnerId())) {
             throw new UnauthorizedException("该运行不属于当前执行节点");
@@ -1624,7 +1652,7 @@ public class AiRunService {
     /** 用户暂停一条等待中或正在执行的 AI 运行。 */
     @Transactional
     public synchronized AiRunDto pause(String runId) {
-        AiTaskRunEntity run = runMapper.selectById(runId);
+        AiTaskRunEntity run = runMapper.selectForUpdate(runId);
         if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
         if (!ACTIVE.contains(run.getStatus())) {
             throw new BadRequestException("该 AI 运行已经结束，不能暂停");
@@ -1656,7 +1684,7 @@ public class AiRunService {
     @Transactional
     public synchronized void consumeContinuation(String token, String runId, String input) {
         AiRunnerNodeEntity runner = requireRunner(token);
-        AiTaskRunEntity run = runMapper.selectById(runId);
+        AiTaskRunEntity run = runMapper.selectForUpdate(runId);
         if (run == null) throw new NotFoundException("AI 运行不存在：" + runId);
         if (!runner.getId().equals(run.getRunnerId())) {
             throw new UnauthorizedException("该运行不属于当前执行节点");
@@ -1756,6 +1784,29 @@ public class AiRunService {
                 valueOr(run.getCachedInputTokens(), 0L), total, run.getCostUsd(), recorded);
     }
 
+    /** 分页补读原会话的公开历史，不将整段对话塞进首页轮询。 */
+    public cn.wayuwa.wao.dto.AiRunProgressPageDto conversation(String runId, String before) {
+        if (runMapper.selectById(runId) == null) throw new NotFoundException("AI 运行不存在：" + runId);
+        var query = new LambdaQueryWrapper<AiRunProgressEntity>().eq(AiRunProgressEntity::getRunId, runId);
+        if (StringUtils.hasText(before)) {
+            AiRunProgressEntity cursor = progressMapper.selectById(before);
+            if (cursor == null || !runId.equals(cursor.getRunId())) {
+                throw new BadRequestException("对话历史游标无效");
+            }
+            query.and(older -> older.lt(AiRunProgressEntity::getCreatedAt, cursor.getCreatedAt())
+                    .or(tied -> tied.eq(AiRunProgressEntity::getCreatedAt, cursor.getCreatedAt())
+                            .lt(AiRunProgressEntity::getId, cursor.getId())));
+        }
+        var rows = progressMapper.selectList(query.orderByDesc(AiRunProgressEntity::getCreatedAt)
+                .orderByDesc(AiRunProgressEntity::getId).last("LIMIT 51"));
+        var page = new java.util.ArrayList<>(rows.subList(0, Math.min(rows.size(), 50)));
+        String next = rows.size() > 50 ? page.get(page.size() - 1).getId() : null;
+        java.util.Collections.reverse(page);
+        return new cn.wayuwa.wao.dto.AiRunProgressPageDto(page.stream().map(item ->
+                new AiRunProgressDto(item.getId(), item.getKind(), item.getContent(), text(item.getCreatedAt())))
+                .toList(), next);
+    }
+
     private void recoverStaleRuns() {
         LocalDateTime cutoff = LocalDateTime.now().minusMinutes(3);
         List<AiTaskRunEntity> activeRuns = runMapper.selectList(new LambdaQueryWrapper<AiTaskRunEntity>()
@@ -1764,6 +1815,24 @@ public class AiRunService {
         for (AiTaskRunEntity run : activeRuns) {
             AiRunnerNodeEntity runner = runnerMapper.selectById(run.getRunnerId());
             if (runner == null || runner.getLastSeenAt() == null || runner.getLastSeenAt().isBefore(cutoff)) {
+                if (StringUtils.hasText(run.getSessionId())) {
+                    LocalDateTime now = LocalDateTime.now();
+                    String recoveryStatus = runner == null ? "failed" : "queued";
+                    String summary = runner == null ? "原执行电脑已解除接入，无法恢复会话，请基于报错重跑"
+                            : "执行电脑离线，等待原节点恢复同一会话";
+                    if (runMapper.recoverSession(run.getId(), run.getRunnerId(), run.getSessionId(),
+                            recoveryStatus, summary, now) != 1) continue;
+                    run.setRequestedRunnerId(run.getRunnerId());
+                    run.setStatus(recoveryStatus);
+                    if (runner == null) {
+                        run.setExitCode(-1);
+                        run.setFinishedAt(LocalDateTime.now());
+                    }
+                    run.setResultSummary(summary);
+                    insertProgress(run, "phase", summary, now);
+                    setTaskStatuses(run, "进行中");
+                    continue;
+                }
                 run.setStatus("queued");
                 run.setRunnerId(null);
                 run.setClaimedAt(null);
@@ -1781,10 +1850,7 @@ public class AiRunService {
         Map<String, List<String>> taskIdsByRun = taskIdsByRun(runs);
         var memoryReadsByRun = projectMemories.readReferences(runIds);
         var memoryWritesByRun = projectMemories.writeReferences(runIds);
-        Map<String, List<AiRunProgressDto>> progressByRun = progressMapper.selectList(
-                        new LambdaQueryWrapper<AiRunProgressEntity>()
-                                .in(AiRunProgressEntity::getRunId, runIds)
-                                .orderByAsc(AiRunProgressEntity::getCreatedAt))
+        Map<String, List<AiRunProgressDto>> progressByRun = progressMapper.selectRecentForRuns(runIds)
                 .stream().collect(Collectors.groupingBy(AiRunProgressEntity::getRunId,
                         Collectors.collectingAndThen(Collectors.toList(), items -> {
                             int from = Math.max(0, items.size() - MAX_PROGRESS_PER_RUN);
@@ -1950,10 +2016,10 @@ public class AiRunService {
         progress.setId(id("ap"));
         progress.setRunId(run.getId());
         progress.setKind(kind);
-        progress.setContent(limit(content, MAX_PROGRESS));
+        progress.setContent(limit(content, MAX_MESSAGE));
         progress.setCreatedAt(now);
         progressMapper.insert(progress);
-        run.setLatestProgress(progress.getContent());
+        run.setLatestProgress(limit(progress.getContent(), MAX_PROGRESS));
         run.setProgressUpdatedAt(now);
     }
 

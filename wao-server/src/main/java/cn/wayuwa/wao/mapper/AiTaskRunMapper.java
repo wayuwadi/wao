@@ -16,6 +16,32 @@ import java.util.List;
 @Mapper
 public interface AiTaskRunMapper extends BaseMapper<AiTaskRunEntity> {
 
+    /** 跨 API 节点串行化对话状态写入，避免进度回传覆盖刚保存的用户输入。 */
+    @Select("SELECT * FROM ai_task_run WHERE id = #{runId} FOR UPDATE")
+    AiTaskRunEntity selectForUpdate(@Param("runId") String runId);
+
+    /** 仅更新当前节点的会话绑定，不覆盖并发到达的用户输入或取消状态。 */
+    @Update("""
+            UPDATE ai_task_run SET session_id = #{sessionId}, requested_runner_id = #{runnerId}
+            WHERE id = #{runId} AND runner_id = #{runnerId} AND status IN ('claimed', 'running')
+              AND (session_id IS NULL OR session_id = '' OR session_id = #{sessionId})
+            """)
+    int bindSession(@Param("runId") String runId, @Param("runnerId") String runnerId,
+            @Param("sessionId") String sessionId);
+
+    /** 离线恢复只更新调度字段，不覆盖并发输入、刚结束的运行或新的会话绑定。 */
+    @Update("""
+            UPDATE ai_task_run SET status = #{status}, requested_runner_id = #{runnerId},
+              result_summary = #{summary}, latest_progress = #{summary}, progress_updated_at = #{now},
+              exit_code = CASE WHEN #{status} = 'failed' THEN -1 ELSE exit_code END,
+              finished_at = CASE WHEN #{status} = 'failed' THEN #{now} ELSE finished_at END
+            WHERE id = #{runId} AND runner_id = #{runnerId} AND session_id = #{sessionId}
+              AND status IN ('claimed', 'running')
+            """)
+    int recoverSession(@Param("runId") String runId, @Param("runnerId") String runnerId,
+            @Param("sessionId") String sessionId, @Param("status") String status,
+            @Param("summary") String summary, @Param("now") LocalDateTime now);
+
     /**
      * 用数据库条件更新抢占一条排队运行，防止多 API 节点同时把同一次运行交给多个 Runner。
      * 待续输入也参与比较，避免领取与用户补充并发时静默丢掉新输入。

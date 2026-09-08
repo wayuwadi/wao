@@ -676,6 +676,9 @@ def prune_stale_worktrees(runs_root: Path, git_command: str, keep: set[str]) -> 
     for entry in runs_root.iterdir():
         if not entry.is_dir() or entry.name in keep:
             continue
+        # 可续聊运行的工作区和隔离会话目录必须一起保留，不能仅按目录 mtime 清掉上下文。
+        if (runs_root.parent / ".wao-run-sessions" / entry.name).is_file():
+            continue
         try:
             if entry.stat().st_mtime >= deadline:
                 continue
@@ -1009,7 +1012,8 @@ def extract_progress(event: dict[str, Any], engine: str = "codex") -> tuple[str,
     return extract_codex_progress(event)
 
 
-def reports_waiting_deployment(event: dict[str, Any], engine: str = "codex") -> bool:
+def reports_waiting_deployment(event: dict[str, Any], engine: str = "codex",
+        marker: str = "WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT") -> bool:
     """只从 AI 的文字消息识别结构化交付阶段，不扫描命令或工具参数里的提示词。"""
     texts: list[str] = []
     if engine in CLAUDE_STYLE_ENGINES:
@@ -1024,7 +1028,7 @@ def reports_waiting_deployment(event: dict[str, Any], engine: str = "codex") -> 
         if (event.get("type") or "").startswith("item.") and isinstance(item, dict) \
                 and item.get("type") == "agent_message":
             texts = [_readable_text(item.get("text") or item.get("content"))]
-    return any(line.strip() == "WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT"
+    return any(line.strip() == marker
                for value in texts for line in value.splitlines())
 
 
@@ -1116,6 +1120,29 @@ class ProgressReporter:
         # 这里只保留本来就允许显示在 WAO 时间线里的公开计划与消息，供异常时生成报告。
         # thinking、命令、文件和工具调用在 extract_progress 阶段已经被排除。
         self.public_entries: list[tuple[str, str]] = []
+        self.session_id: str | None = None
+        self.session_path: Path | None = None
+        self.session_reported = False
+
+    def bind_session(self, session_id: str) -> None:
+        """先保存本机检查点，再立即绑定服务端；断网时在后续事件和结束前重试。"""
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", session_id):
+            raise RuntimeError("AI 返回了无效的会话 ID")
+        if self.session_id and self.session_id != session_id:
+            raise RuntimeError("AI 返回了不同的会话 ID，拒绝覆盖原会话")
+        self.session_id = session_id
+        if self.session_path and not self.session_path.is_file():
+            self.session_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.session_path.with_suffix(".tmp")
+            temporary.write_text(session_id, encoding="utf-8")
+            temporary.replace(self.session_path)
+        if not self.session_reported:
+            try:
+                self.api.post(f"/api/ai/runner/runs/{self.run_id}/progress",
+                              {"kind": "session", "content": session_id})
+                self.session_reported = True
+            except Exception as exc:  # noqa: BLE001 - 本机检查点仍可用于下一轮恢复
+                log(f"[{self.run_id}] 会话绑定回传失败，已保留本机检查点：{exc}")
 
     def _remember_public(self, kind: str, content: str) -> None:
         if kind not in {"plan", "message"}:
@@ -1129,7 +1156,18 @@ class ProgressReporter:
 
     def send(self, kind: str, content: str, force: bool = False) -> None:
         self._remember_public(kind, content)
-        content = " ".join(content.split())[:1000]
+        content = redact_sensitive_text(content).strip()
+        if kind in {"message", "plan", "result"}:
+            # 已完成消息不能被后续阶段提示覆盖；超长消息按有界正文分片保存。
+            if self.pending:
+                self.flush()
+            if len(content) > 16000:
+                for offset in range(0, len(content), 16000):
+                    self.send(kind, content[offset:offset + 16000], force=True)
+                return
+            force = True
+        else:
+            content = content[:1000]
         if not content or content == self.last_content:
             return
         now = time.monotonic()
@@ -1145,6 +1183,13 @@ class ProgressReporter:
             log(f"[{self.run_id}] 进展上报失败，继续执行：{exc}")
 
     def event(self, event: dict[str, Any]) -> None:
+        session = event.get("thread_id") or event.get("session_id")
+        if session:
+            self.bind_session(str(session))
+        elif self.session_id and not self.session_reported:
+            self.bind_session(self.session_id)
+        if reports_waiting_deployment(event, self.engine, "WAO_DELIVERY_STAGE: NOT_REQUIRED"):
+            self.send("delivery_not_required", "本轮无需部署", force=True)
         if reports_waiting_deployment(event, self.engine):
             if not self.delivery_reported:
                 self.delivery_reported = True
@@ -1155,8 +1200,11 @@ class ProgressReporter:
             self.send(*progress)
 
     def flush(self) -> None:
+        if self.session_id and not self.session_reported:
+            self.bind_session(self.session_id)
         if self.pending:
-            self.send(*self.pending, force=True)
+            pending, self.pending = self.pending, None
+            self.send(*pending, force=True)
 
     def goal(self, goal: dict[str, Any]) -> None:
         """把 app-server 的真实目标状态作为结构化进展回传。"""
@@ -1277,6 +1325,21 @@ def _skill_candidate_prompt(skill_path: Path | None) -> str:
     )
 
 
+def _efficient_execution_prompt() -> str:
+    return (
+        "\n\n## 节省 Token 与验证时间\n\n"
+        "同一任务优先续接会话，只读本轮相关代码与变更，不重复全文读取历史、AGENTS 或无关目录。"
+        "先按改动范围选择测试；同一代码和环境已通过的检查直接复用证据，只在代码变化、失败或新风险时复测，"
+        "不要例行 clean、重复安装依赖或为小改动重跑全仓构建。"
+        "纯问答、解释和方案讨论只回答本轮问题，不为凑交付创建空提交或触发构建；实际改代码才走提交与发布。"
+        "本轮确实没有运行时代码变更且无需部署时，单独输出 `WAO_DELIVERY_STAGE: NOT_REQUIRED`，再给出最终状态。"
+        "发布以仓库实际配置为准：WAO 使用 Jenkins，不用 gh run watch 查询不存在的 GitHub Actions 发布。"
+        "main 已有五分钟合批与唯一待执行批次，不手动重复 Build、取消或重跑；"
+        "复用同一发布协调者与已检出 SHA 的证据，等待期间按预计耗时和退避间隔检查，避免高频读取日志。"
+        "完成时按实际用量和重复工作给出一条可执行的节省建议，不编造节省比例。"
+    )
+
+
 def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
         memory_path: Path | None = None, skill_path: Path | None = None) -> str:
     base = claim["defaultBranch"]
@@ -1306,8 +1369,8 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
         "PR 合并完成、开始等待部署之前，必须先单独输出一条 "
         "`WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT`。这只是让 Runner 把页面切换到“代码已完成 · 等待部署”，"
         "不是最终答复，输出后继续盯部署。\n\n"
-        "合并只是做完了一半：合并后必须用 gh（如 `gh run watch` / `gh run view --log-failed`）"
-        "盯住 main 上的这次部署，直到它跑完为止，再验证线上结果与飞书通知。"
+        "合并只是做完了一半：合并后必须按仓库发布流程跟进 main 上的这次部署，"
+        "直到它跑完为止，再验证线上结果与通知。"
         "部署失败时先读报错、修好、重新走一次提交与合并，直到部署成功；"
         "只把包含本次合并提交（或其后继提交）的部署当成本次结果；队列中更旧的构建失败时继续等待，"
         "后续批次成功且包含本次改动时即视为部署成功，不要把旧构建失败误报到所有任务。"
@@ -1353,7 +1416,7 @@ def build_prompt(claim: dict[str, Any], report_path: Path | None = None,
             f"{previous[-8000:]}\n"
             "----- 失败详情结束 -----"
         )
-    return (prompt + _project_memory_prompt(claim, memory_path)
+    return (prompt + _efficient_execution_prompt() + _project_memory_prompt(claim, memory_path)
             + _skill_candidate_prompt(skill_path) + _report_prompt(report_path))
 
 
@@ -1376,9 +1439,10 @@ def build_continuation_prompt(
         f"{continuation}\n\n"
         f"仍然留在分支 `{claim['branchName']}` 上工作；需要对比基线时用 "
         f"`git fetch origin {base}` 之后读 `origin/{base}`。"
-        "如果上一次的改动已经合并进 main，这次就在它的基础上继续改。\n\n"
-        "改完同样要跑与风险相称的测试、写详细中文提交、创建 PR 并合并 main，"
-        "PR 合并后先单独输出 `WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT`，再用 gh 盯住这次部署直到成功并验证线上结果；"
+        "如果上一次的改动已经合并进 main，先保留本地未提交工作，把最新基线合入当前分支后继续，"
+        "避免 squash 合并后的旧差异重复进入新 PR；不要强制重置或丢弃已有改动。\n\n"
+        "如果本轮修改代码，同样要跑与风险相称的测试、写详细中文提交、创建 PR 并合并 main，"
+        "PR 合并后先单独输出 `WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT`，再按仓库发布流程跟进这次部署直到成功并验证线上结果；"
         "只认包含本次合并提交或其后继提交的部署，忽略队列里更旧构建的失败。\n\n"
         "最终答复仍以状态行开头：完成并验收通过写 `WAO_RUN_STATUS: SUCCESS`；"
         "因缺少真实实现条件而取消功能、其余已完成写 `WAO_RUN_STATUS: SKIPPED`；"
@@ -1386,7 +1450,7 @@ def build_continuation_prompt(
         "状态行后的摘要仍固定分为 `改动：` 和 `验收：` 两段，每段最多三条，写清用户变化与真实验收结果。"
         "你一旦停止回复会话就立即结束，不存在「稍后再汇报」；"
         "等待部署这类长任务要持续轮询到有结论，再在同一次答复里给出状态行。"
-    ) + _project_memory_prompt(claim, memory_path) + _skill_candidate_prompt(skill_path) + _report_prompt(report_path)
+    ) + _efficient_execution_prompt() + _report_prompt(report_path)
     if claim.get("goalMode"):
         prompt = (
             "本次续跑仍启用 Codex `/goal` 目标模式。Runner 会恢复同一线程并重新激活持久目标；"
@@ -1967,6 +2031,7 @@ def run_codex_goal(executable: str, worktree: Path, prompt: str, sandbox: str,
                 thread_id = str(thread.get("id") or thread_id or "")
                 if not thread_id:
                     raise RuntimeError("Codex app-server 没有返回可恢复的线程 id")
+                reporter.bind_session(thread_id)
                 send({"method": "thread/goal/set", "id": 3, "params": {
                     "threadId": thread_id, "objective": objective[:4000], "status": "active"}})
             elif event.get("id") == 3:
@@ -2014,6 +2079,8 @@ def run_codex_goal(executable: str, worktree: Path, prompt: str, sandbox: str,
                 text = _readable_text(item.get("text") or item.get("content"))
                 if item_type == "agentMessage" and text:
                     final_text = text
+                    if any(part.strip() == "WAO_DELIVERY_STAGE: NOT_REQUIRED" for part in text.splitlines()):
+                        reporter.send("delivery_not_required", "本轮无需部署", force=True)
                     if any(part.strip() == "WAO_DELIVERY_STAGE: WAITING_DEPLOYMENT"
                            for part in text.splitlines()):
                         if not reporter.delivery_reported:
@@ -2247,6 +2314,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
     skill_path = root / RUN_SKILL_DIR / run_id
     stage = "准备 Git 工作区"
     reporter = ProgressReporter(api, run_id, engine)
+    reporter.session_path = root / ".wao-run-sessions" / run_id
     last_cancel_check = 0.0
     pending_update: str | None = None
     pause_requested = False
@@ -2285,7 +2353,13 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
         reporter.send("phase", "正在准备独立工作区", force=True)
         continuation = _readable_text(claim.get("continuationInput")).strip()
         session_id = _readable_text(claim.get("sessionId")).strip() or None
-        if continuation and session_id:
+        if reporter.session_path.is_file():
+            saved_session = reporter.session_path.read_text(encoding="utf-8").strip()
+            if session_id and saved_session != session_id:
+                raise RuntimeError("本机会话检查点与服务端不一致，拒绝覆盖工作区或创建新会话")
+            session_id = saved_session or session_id
+        if session_id:
+            reporter.bind_session(session_id)
             worktree = root / ".wao-runs" / run_id
             if not worktree.exists():
                 raise RuntimeError("原 AI 工作区不存在，无法安全恢复会话；请使用基于报错重跑")
@@ -2295,7 +2369,9 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
             skill_path.mkdir(parents=True, exist_ok=True)
             if base_sha_path.exists():
                 base_sha = base_sha_path.read_text(encoding="utf-8").strip() or None
-            prompt = build_continuation_prompt(claim, continuation, report_path, memory_path, skill_path)
+            prompt = build_continuation_prompt(claim, continuation or
+                "执行节点中断后自动恢复。先核对上一轮已完成的工作和正在等待的发布，再从中断处继续；不要重复执行已成功的操作。",
+                report_path, memory_path, skill_path)
         else:
             workspace_retries = 0
             while True:
@@ -2368,6 +2444,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
                             model=claim.get("model"), reasoning_effort=claim.get("reasoningEffort"),
                             service_tier=claim.get("serviceTier"))
             except Exception as exc:  # noqa: BLE001 - 项目配置允许在最终失败前自动恢复
+                session_id = reporter.session_id or session_id
                 if failure_retries >= max_failure_retries:
                     raise
                 failure_retries += 1
@@ -2385,6 +2462,8 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
                     0, round((time.monotonic() - ai_turn_started_at) * 1000))
             exit_code, result_text, turn_session_id, turn_usage = turn
             session_id = turn_session_id or session_id
+            if session_id:
+                reporter.bind_session(session_id)
             usage = merge_usage(usage, turn_usage)
             if pause_requested:
                 break
@@ -2428,6 +2507,7 @@ def execute_claim(api: WaoApi, claim: dict[str, Any], root: Path, sandbox: str, 
                    f"工作目录：{worktree or '尚未创建'}\n本机日志：{LOG_FILE}")[-30000:]
         log(f"[{run_id}] {stage}失败：{exc}")
     finally:
+        session_id = reporter.session_id or session_id
         try:
             generated_fallback = write_fallback_run_report(report_path, claim, reporter, exit_code)
             report_url = publish_run_report(api, run_id, report_path)

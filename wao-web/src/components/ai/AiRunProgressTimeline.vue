@@ -1,7 +1,36 @@
 <script setup lang="ts">
-import type { AiRun } from '@/types'
+import { computed, ref, watch } from 'vue'
+import { fetchAiRunConversation } from '@/api/ai'
+import type { AiRun, AiRunProgress } from '@/types'
 
-defineProps<{ run: AiRun }>()
+const props = defineProps<{ run: AiRun }>()
+const older = ref<AiRunProgress[]>([])
+const loading = ref(false)
+const error = ref('')
+const exhausted = ref(false)
+const items = computed(() => [...new Map([...older.value, ...props.run.progress]
+  .map((item) => [item.id, item])).values()]
+  .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)))
+watch(() => props.run.id, () => { older.value = []; exhausted.value = false; error.value = '' })
+
+async function loadEarlier() {
+  const runId = props.run.id
+  loading.value = true
+  error.value = ''
+  try {
+    const page = await fetchAiRunConversation(runId, items.value[0]?.id)
+    if (props.run.id !== runId) return
+    older.value = [...page.items, ...items.value]
+    exhausted.value = !page.nextCursor
+  } catch (cause) {
+    if (props.run.id === runId) error.value = cause instanceof Error ? cause.message : '读取失败，请重试'
+  } finally { loading.value = false }
+}
+
+function speaker(item: AiRunProgress) {
+  if (item.kind === 'user' || /^(用户在执行中补充：|用户要求继续优化：|用户补充：)/.test(item.content)) return '你'
+  return item.kind === 'message' ? 'AI' : item.kind === 'plan' ? '计划' : '运行状态'
+}
 
 function timeText(value: string) {
   const date = new Date(value)
@@ -21,13 +50,16 @@ function emptyText(run: AiRun) {
 
 <template>
   <div class="ai-progress" :class="{ active: ['queued', 'claimed', 'running'].includes(run.status) }">
-    <div v-if="!run.progress.length" class="progress-empty">
+    <button v-if="!exhausted && items.length >= 50" class="history-button" :disabled="loading" @click="loadEarlier">
+      {{ loading ? '正在读取…' : error || '查看更早的对话' }}
+    </button>
+    <div v-if="!items.length" class="progress-empty">
       <i :class="['queued', 'claimed', 'running'].includes(run.status) ? 'ri-loader-4-line' : 'ri-history-line'"></i>{{ emptyText(run) }}
     </div>
     <ol v-else>
-      <li v-for="item in run.progress" :key="item.id" :class="`kind-${item.kind}`">
+      <li v-for="item in items" :key="item.id" :class="[`kind-${item.kind}`, { 'from-user': speaker(item) === '你' }]">
         <span class="progress-dot"><i :class="item.kind === 'result' ? 'ri-check-line' : item.kind === 'goal' ? 'ri-focus-3-line' : 'ri-sparkling-2-line'"></i></span>
-        <div><p>{{ item.content }}</p><time>{{ timeText(item.createdAt) }}</time></div>
+        <div><b class="speaker">{{ speaker(item) }}</b><p>{{ item.content }}</p><time>{{ timeText(item.createdAt) }}</time></div>
       </li>
     </ol>
   </div>
@@ -36,6 +68,10 @@ function emptyText(run: AiRun) {
 <style scoped>
 .ai-progress { max-height: 330px; overflow: auto; padding: 13px 14px; border: 1px solid var(--wao-line); border-radius: 11px; background: var(--wao-bg-sub); }
 .ai-progress ol { margin: 0; padding: 0; list-style: none; }
+.history-button { width: 100%; margin-bottom: 14px; border: 1px solid var(--wao-line); border-radius: 7px; background: var(--wao-bg-card); color: var(--wao-text-2); padding: 7px; cursor: pointer; }
+.speaker { display: block; margin-bottom: 4px; font-size: 10px; color: var(--wao-text-weak); }
+.from-user > div { padding: 8px 10px; border-radius: 9px; background: var(--wao-primary-soft); }
+.ai-progress li > div { min-width: 0; overflow-wrap: anywhere; }
 .ai-progress li { position: relative; min-height: 42px; padding: 0 0 14px 30px; display: flex; }
 .ai-progress li:not(:last-child)::after { content: ''; position: absolute; left: 10px; top: 22px; bottom: 0; width: 1px; background: var(--wao-line); }
 .progress-dot { position: absolute; left: 0; top: 0; width: 21px; height: 21px; border-radius: 50%; background: var(--wao-primary-soft); color: var(--wao-primary); display: grid; place-items: center; font-size: 10px; }

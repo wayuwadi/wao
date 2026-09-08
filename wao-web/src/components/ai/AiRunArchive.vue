@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { useSessionStore } from '@/stores/session'
 import AiRunProgressTimeline from '@/components/ai/AiRunProgressTimeline.vue'
 import AiRunDeliverySteps from '@/components/ai/AiRunDeliverySteps.vue'
 import AiRunMemoryReferences from '@/components/ai/AiRunMemoryReferences.vue'
@@ -35,6 +36,34 @@ const emit = defineEmits<{
 }>()
 
 const continuation = ref<Record<string, string>>({})
+const session = useSessionStore()
+const draftErrors = ref<Record<string, string>>({})
+const sendErrors = ref<Record<string, string>>({})
+const draftKey = (id: string) => `wao:airun-draft:${session.userId}:${id}`
+watch(() => session.userId, () => { continuation.value = {}; draftErrors.value = {} })
+watch(() => [session.userId, props.runs.map((run) => run.id).join(',')], () => {
+  if (!session.userId) return
+  for (const run of props.runs) {
+    if (run.id in continuation.value) continue
+    try { continuation.value[run.id] = localStorage.getItem(draftKey(run.id)) || '' }
+    catch { draftErrors.value[run.id] = '本机草稿读取失败，输入仍可发送' }
+  }
+}, { immediate: true })
+
+function updateDraft(id: string, value: string) {
+  continuation.value[id] = value
+  try {
+    if (!session.userId) throw new Error('未登录')
+    if (value) localStorage.setItem(draftKey(id), value)
+    else localStorage.removeItem(draftKey(id))
+    delete draftErrors.value[id]
+  } catch { draftErrors.value[id] = '本机草稿保存失败，请保留页面并重试' }
+}
+
+async function copySession(id: string) {
+  try { await navigator.clipboard.writeText(id); toast('会话 ID 已复制') }
+  catch { toast('复制失败，可选中会话 ID 手动复制', 'ri-error-warning-line') }
+}
 const continuingRunId = ref<string | null>(null)
 const now = useNow()
 const activeRun = computed(() => props.runs.find((run) => ['queued', 'claimed', 'running'].includes(run.status)))
@@ -50,6 +79,7 @@ function statusUnreported(run: AiRun) {
 
 function stateLabel(run: AiRun) {
   if (statusUnreported(run)) return '结果待确认'
+  if (run.deliveryStage === 'not_required') return run.status === 'succeeded' ? '已完成 · 无需部署' : '本轮无需部署'
   if (run.deliveryStage === 'waiting_deployment') return '代码已完成 · 等待部署'
   if (run.deliveryStage === 'deployment_succeeded') return '部署成功 · 等待验收'
   if (run.deliveryStage === 'deployment_failed') return '部署失败'
@@ -82,14 +112,16 @@ async function continueRun(runId: string) {
   const optimizing = targetRun?.status === 'succeeded'
   const active = !!targetRun && ['queued', 'claimed', 'running'].includes(targetRun.status)
   continuingRunId.value = runId
+  delete sendErrors.value[runId]
   try {
     await continueAiRun(runId, input)
-    continuation.value[runId] = ''
+    if (continuation.value[runId]?.trim() === input) updateDraft(runId, '')
     toast(active ? '补充已发送，执行电脑接收后会立即调整当前 AI 会话方向'
       : optimizing ? '已发送，AI 将带着这次的记忆继续优化' : '补充已发送，AI 将在原会话中继续执行',
     'ri-robot-2-line')
     emit('refresh')
   } catch (error) {
+    sendErrors.value[runId] = error instanceof Error ? error.message : '发送失败，请重试；草稿已保留'
     toast(error instanceof Error ? error.message : '发送补充失败，请重试', 'ri-error-warning-line')
   } finally {
     continuingRunId.value = null
@@ -116,6 +148,12 @@ async function continueRun(runId: string) {
         <i class="ri-arrow-down-s-line"></i>
       </summary>
       <div class="ai-run-body">
+        <div v-if="run.sessionId" class="ai-session">
+          <span><i class="ri-chat-history-line"></i>原会话 · {{ run.runnerName || '原执行电脑' }}</span>
+          <code>{{ run.sessionId }}</code>
+          <button @click="copySession(run.sessionId)">复制 ID</button>
+          <small>继续对话会恢复此会话；本地接续需在原电脑使用同一 Codex 配置目录。</small>
+        </div>
         <AiRunDeliverySteps v-if="run.deliveryStage" :stage="run.deliveryStage" />
         <div v-if="run.requestedModel || run.planMode || run.goalMode" class="ai-run-parameters">
           <i class="ri-cpu-line"></i>
@@ -163,7 +201,7 @@ async function continueRun(runId: string) {
         </a>
         <div
           v-if="['queued', 'claimed', 'running'].includes(run.status)
-            || (['failed', 'succeeded'].includes(run.status) && run.sessionId && run.runnerId)"
+            || (['failed', 'succeeded', 'cancelled'].includes(run.status) && run.sessionId && run.runnerId)"
           class="ai-continue"
           :class="{ pending: run.continuationPending }"
         >
@@ -180,7 +218,7 @@ async function continueRun(runId: string) {
             <MarkdownEditor
               :model-value="continuation[run.id] ?? ''"
               :min-height="56"
-              :readonly="!!run.continuationPending"
+              :readonly="!!run.continuationPending || continuingRunId === run.id"
               :placeholder="run.continuationPending
                 ? '上一条补充正在投递…'
                 : ['queued', 'claimed', 'running'].includes(run.status)
@@ -188,10 +226,11 @@ async function continueRun(runId: string) {
                   : run.status === 'succeeded'
                   ? '跑完了但不符合预期？写下要优化的地方，AI 带着这次的记忆接着改；截图可直接粘贴'
                   : '补充信息后，让 AI 在原会话中继续执行；截图可直接粘贴'"
-              @update:model-value="(value: string) => (continuation[run.id] = value)"
+              @update:model-value="(value: string) => updateDraft(run.id, value)"
               @upload-image="(file, done) => emit('uploadImage', file, done)"
             />
           </div>
+          <small class="draft-state" role="status">{{ sendErrors[run.id] || draftErrors[run.id] || (continuation[run.id] ? '草稿已保存在本机，关闭后可继续填写' : '同一任务继续在这里输入，可减少重复说明背景') }}</small>
           <button :disabled="run.continuationPending || continuingRunId === run.id || !continuation[run.id]?.trim()" @click="continueRun(run.id)">
             <i :class="continuingRunId === run.id || run.continuationPending ? 'ri-loader-4-line spin' : 'ri-send-plane-2-line'"></i>{{ run.continuationPending ? '等待接收…' : continuingRunId === run.id ? '发送中…' : ['queued', 'claimed', 'running'].includes(run.status) ? '发送到当前线程' : run.status === 'succeeded' ? '继续优化' : '继续对话' }}
           </button>
@@ -203,6 +242,11 @@ async function continueRun(runId: string) {
 
 <style scoped>
 .ai-archive { margin-top: 18px; padding-top: 14px; border-top: 1px solid #f0f0f3; }
+.ai-session { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 9px; margin-bottom: 10px; background: var(--wao-bg-sub); border-radius: 8px; font-size: 11px; }
+.ai-session code { overflow-wrap: anywhere; user-select: all; min-width: 0; }
+.ai-session button { border: 1px solid var(--wao-line); border-radius: 5px; background: var(--wao-bg-card); color: var(--wao-primary); cursor: pointer; }
+.ai-session small { flex-basis: 100%; color: var(--wao-text-weak); }
+.draft-state { display: block; margin-top: 7px; color: var(--wao-text-weak); font-size: 10px; }
 .ai-archive-title { margin-bottom: 4px; color: var(--wao-text-weak); font-size: 11px; letter-spacing: 1.5px; display: flex; align-items: center; }
 .ai-archive-title span { flex: 1; }
 .ai-archive-title em { color: #278159; font-size: 10.5px; font-style: normal; letter-spacing: 0; }

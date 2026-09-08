@@ -301,6 +301,13 @@ public class AiRunController {
     }
 
     /** 已结束运行的完整分页历史；首页只取八条，用户主动打开时才读取。 */
+    /** 按需补读原会话较早的公开消息。 */
+    @GetMapping("/runs/{runId}/conversation")
+    public ApiResponse<cn.wayuwa.wao.dto.AiRunProgressPageDto> conversation(
+            @PathVariable String runId, @RequestParam(required = false) String before) {
+        return ApiResponse.ok(service.conversation(runId, before));
+    }
+
     @GetMapping("/runs/history")
     public ApiResponse<AiRunPageDto> runHistory(
             @RequestParam(defaultValue = "1") int page,

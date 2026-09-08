@@ -621,11 +621,11 @@ export interface AiWorkflow {
 
 export type AiRunStatus = 'queued' | 'claimed' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 export type AiRunDeliveryStage =
-  'coding' | 'waiting_deployment' | 'deployment_succeeded' | 'deployment_failed' | 'code_failed'
+  'coding' | 'waiting_deployment' | 'deployment_succeeded' | 'deployment_failed' | 'code_failed' | 'not_required'
 
 export interface AiRunProgress {
   id: string
-  kind: 'phase' | 'message' | 'plan' | 'goal' | 'result'
+  kind: 'phase' | 'user' | 'message' | 'plan' | 'goal' | 'result'
   content: string
   createdAt: string
 }
