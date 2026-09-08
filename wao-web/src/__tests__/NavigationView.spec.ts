@@ -201,7 +201,7 @@ describe('全量导航页', () => {
   it('从工作台直接隐藏内置菜单，保存后仍留在当前工作台恢复', async () => {
     const { router, wrapper } = await mountNavigation()
     await wrapper.get('.search input').setValue('项目')
-    const card = wrapper.get('.manageable-card')
+    const card = wrapper.findAll('.manageable-card').find(card => card.find('.card-copy > b').text().trim() === '项目')!
     expect(card.get('.menu-visibility').text()).toContain('隐藏菜单')
 
     await card.get('.menu-visibility').trigger('click')

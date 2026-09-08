@@ -1271,6 +1271,7 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <div class="hero-links">
+          <button class="hero-link" type="button" @click="router.push('/ai-sessions')"><i class="ri-chat-history-line"></i>打开 AI 会话</button>
           <button class="hero-link" type="button" @click="router.push('/dashboard')">
             <i class="ri-line-chart-line"></i>查看 AI 详情
           </button>
@@ -2363,7 +2364,8 @@ onBeforeUnmount(() => {
             >
               <i :class="batchRerunning ? 'ri-loader-4-line spin' : 'ri-refresh-line'"></i>{{ batchRerunning ? '正在重跑…' : '一键重跑同原因任务' }}
             </button>
-            <button class="primary" @click="openRun(selectedRun)">打开对应任务</button>
+            <button class="secondary" @click="openRun(selectedRun)">打开对应任务</button>
+            <button class="primary" @click="router.push({ path: '/ai-sessions', query: { session: selectedRun.id } }); selectedRun = null">打开会话继续聊</button>
           </div>
         </footer>
       </section>

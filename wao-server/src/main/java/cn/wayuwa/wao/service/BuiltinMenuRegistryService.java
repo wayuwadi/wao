@@ -17,7 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class BuiltinMenuRegistryService {
 
-    private static final int VERSION = 38;
+    private static final int VERSION = 39;
     private static final Pattern ICON = Pattern.compile("ri-[a-z0-9-]+-(?:line|fill)");
     private static final Set<String> GROUPS = Set.of("ROOT", "PUBLIC", "PERSONAL", "TOOLS");
     private static final Set<String> OPEN_MODES = Set.of("TAB", "NEW_PAGE");
@@ -30,6 +30,7 @@ public class BuiltinMenuRegistryService {
     /** 已融合进其它模块的旧入口；读取旧注册表时忽略，不能因此丢掉用户的其它菜单定制。 */
     private static final Set<String> RETIRED_IDS = Set.of("ideas", "chat", "chat-reviews", "system-reports");
     private static final List<BuiltinMenuConfigDto> DEFAULTS = List.of(
+            new BuiltinMenuConfigDto("ai-sessions", "AI 会话", "ri-chat-history-line", "ROOT", 12, true, "TAB"),
             new BuiltinMenuConfigDto("home", "首页", "ri-home-5-line", "ROOT", 10, true, "TAB"),
             new BuiltinMenuConfigDto("notes", "小记", "ri-sticky-note-line", "ROOT", 15, true, "TAB"),
             new BuiltinMenuConfigDto("navigation", "工作台", "ri-compass-discover-line", "ROOT", 20, true, "TAB"),
@@ -83,7 +84,7 @@ public class BuiltinMenuRegistryService {
             BuiltinMenuRegistryDto stored = json.readValue(raw, BuiltinMenuRegistryDto.class);
             List<BuiltinMenuConfigDto> menus = canonicalize(stored.menus(), false);
             if (stored.version() < 25) menus = applyWorkbenchDefault(menus);
-            if (stored.version() < VERSION) menus = applyCompactDefaults(menus);
+            if (stored.version() < 37) menus = applyCompactDefaults(menus);
             if (stored.version() < 36) menus = applyElectronicWardrobeDefault(menus);
             return new BuiltinMenuRegistryDto(VERSION, menus);
         } catch (RuntimeException | JsonProcessingException exception) {

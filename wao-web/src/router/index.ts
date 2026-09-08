@@ -120,6 +120,12 @@ const router = createRouter({
           meta: { module: 'home', tabKind: 'module' },
         },
         {
+          path: 'ai-sessions',
+          name: 'ai-sessions',
+          component: () => import('@/views/AiSessionsView.vue'),
+          meta: { module: 'ai-sessions', tabKind: 'module' },
+        },
+        {
           path: 'navigation',
           name: 'navigation',
           component: () => import('@/views/NavigationView.vue'),

@@ -432,8 +432,8 @@ describe('HomeView AI 控制台', () => {
     expect(wrapper.find('.hero .weekly-quota').text()).toContain('38%')
     expect(wrapper.find('.console-quota').exists()).toBe(false)
     expect(wrapper.find('.capacity-orbit').exists()).toBe(true)
-    expect(wrapper.find('.hero-link').text()).toContain('查看 AI 详情')
-    expect(wrapper.findAll('.hero-link')[1]!.text()).toContain('查看系统报告')
+    expect(wrapper.findAll('.hero-link').find(button => button.text().includes('查看 AI 详情'))!.text()).toContain('查看 AI 详情')
+    expect(wrapper.findAll('.hero-link').find(button => button.text().includes('查看系统报告'))!.text()).toContain('查看系统报告')
     wrapper.unmount()
   })
 
@@ -700,7 +700,7 @@ describe('HomeView AI 控制台', () => {
     const { router, wrapper } = mountHome()
     await flushPromises()
 
-    await wrapper.find('.hero-link').trigger('click')
+    await wrapper.findAll('.hero-link').find(button => button.text().includes('查看 AI 详情'))!.trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/dashboard')
@@ -712,7 +712,7 @@ describe('HomeView AI 控制台', () => {
     const { router, wrapper } = mountHome()
     await flushPromises()
 
-    await wrapper.findAll('.hero-link')[1]!.trigger('click')
+    await wrapper.findAll('.hero-link').find(button => button.text().includes('查看系统报告'))!.trigger('click')
     await flushPromises()
 
     expect(router.currentRoute.value.path).toBe('/system-reports')
