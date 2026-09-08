@@ -199,6 +199,9 @@ server {
         proxy_pass https://wao_gateway/api/auth/session;
         proxy_ssl_verify off;
         proxy_pass_request_body off;
+        # The session endpoint returns JSON; an SSE client's Accept header
+        # must not cause Spring content negotiation to reject this subrequest.
+        proxy_set_header Accept "application/json";
         proxy_set_header Content-Length "";
         proxy_set_header Cookie $http_cookie;
         proxy_set_header Host $host;
