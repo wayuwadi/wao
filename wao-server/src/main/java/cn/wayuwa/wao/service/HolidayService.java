@@ -8,6 +8,7 @@ import com.nlf.calendar.util.HolidayUtil;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.DayOfWeek;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -85,6 +86,16 @@ public class HolidayService {
     /** 调度提醒时读取全部确定性节日；仅供服务端匹配已开启的提醒。 */
     public List<HolidayEventDto> allEvents(LocalDate from, LocalDate to) {
         return events(from, to, INTERNATIONAL_CATEGORIES);
+    }
+
+    /**
+     * 判断指定日期是否是中国工作日；已收录年份优先遵循国务院放假调休安排，
+     * 没有特殊安排时按周一至周五判断。
+     */
+    public boolean isWorkday(LocalDate date) {
+        Holiday holiday = HolidayUtil.getHoliday(date.getYear(), date.getMonthValue(), date.getDayOfMonth());
+        if (holiday != null) return holiday.isWork();
+        return date.getDayOfWeek() != DayOfWeek.SATURDAY && date.getDayOfWeek() != DayOfWeek.SUNDAY;
     }
 
     /** 判断 lunar 当前版本是否收录了指定年份的国务院放假调休安排。 */

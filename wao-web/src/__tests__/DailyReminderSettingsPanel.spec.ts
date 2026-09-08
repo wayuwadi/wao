@@ -26,6 +26,7 @@ const reminders: NotificationReminder[] = [
     content: '记得打卡',
     time: '08:50',
     enabled: true,
+    workdayOnly: false,
     lastResult: '尚未运行',
     nextFireAt: '2026-09-01T08:50:00',
   },
@@ -35,6 +36,7 @@ const reminders: NotificationReminder[] = [
     content: '去吃饭',
     time: '12:00',
     enabled: true,
+    workdayOnly: false,
     lastResult: '尚未运行',
     nextFireAt: '2026-09-01T12:00:00',
   },
@@ -44,6 +46,7 @@ const reminders: NotificationReminder[] = [
     content: '准备睡觉',
     time: '12:30',
     enabled: true,
+    workdayOnly: false,
     lastResult: '尚未运行',
     nextFireAt: '2026-09-01T12:30:00',
   },
@@ -53,6 +56,7 @@ const reminders: NotificationReminder[] = [
     content: '休息并打卡',
     time: '18:00',
     enabled: true,
+    workdayOnly: true,
     lastResult: '尚未运行',
     nextFireAt: '2026-09-01T18:00:00',
   },
@@ -73,6 +77,12 @@ describe('每日提醒设置', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.reminder-row')).toHaveLength(4)
+    expect(wrapper.findAll('.time-field span').map((item) => item.text())).toEqual([
+      '每日',
+      '每日',
+      '每日',
+      '工作日',
+    ])
     expect(
       wrapper
         .findAll('input[type="time"]')

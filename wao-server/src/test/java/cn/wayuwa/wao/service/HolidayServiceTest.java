@@ -84,4 +84,12 @@ class HolidayServiceTest {
                     assertThat(event.sourceUrl()).contains("gov.cn");
                 });
     }
+
+    @Test
+    void classifiesWeekdaysWeekendsAndOfficialAdjustments() {
+        assertThat(service.isWorkday(LocalDate.of(2026, 5, 8))).isTrue();
+        assertThat(service.isWorkday(LocalDate.of(2026, 5, 10))).isFalse();
+        assertThat(service.isWorkday(LocalDate.of(2026, 5, 1))).isFalse();
+        assertThat(service.isWorkday(LocalDate.of(2026, 5, 9))).isTrue();
+    }
 }
