@@ -32,8 +32,10 @@ public class DataCenterService {
                     "目录不返回消息正文、发送人或表情回执。"),
             new Definition("http-request-metrics", "请求指标", "系统", "浏览器上报的 HTTP 耗时与状态指标。", "条", FULL,
                     "目录不返回成员、接口路径或单次请求明细。"),
+            new Definition("product-updates", "产品更新", "开发交付", "成功运行从 Git 提交提取的产品更新。", "条", FULL,
+                    "只保存提交 SHA、scope、标题和时间；不读取作者、diff、分支历史或仓库凭据。"),
             new Definition("git-repositories", "项目 Git 源", "外部来源", "项目 AI 工作流登记的仓库地址。", "个", REGISTRY_ONLY,
-                    "仅登记仓库地址与分支；未采集 commit、作者、diff 或提交时间。"));
+                    "仅登记仓库地址与分支；不镜像仓库、作者、diff 或完整提交历史。"));
 
     private final DataCenterMapper mapper;
 

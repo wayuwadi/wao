@@ -104,13 +104,22 @@ describe('侧边栏导航配置', () => {
 
   it('公共组保留兼容模块顺序，自媒体 Agent 保留旧地址重定向', () => {
     const publicGroup = NAV_GROUPS.find((group) => group.label === '公共')
-    expect(publicGroup?.items).toEqual(['projects', externalAppItemId('media-agent')])
+    expect(publicGroup?.items).toEqual(['projects', 'updates', externalAppItemId('media-agent')])
     expect(router.getRoutes().find((route) => route.path === '/media-agent')?.redirect).toBe(
       '/apps/media-agent',
     )
     const route = router.getRoutes().find((item) => item.name === 'external-app')
     expect(route?.path).toBe('/apps/:appId')
     expect(route?.meta.tabKind).toBe('external')
+  })
+
+  it('更新日记默认显示在公共菜单并使用独立受保护路由', () => {
+    expect(MODULES.updates).toMatchObject({ label: '更新日记', path: '/updates' })
+    expect(DEFAULT_BUILTIN_MENUS.find((menu) => menu.id === 'updates')).toMatchObject({
+      group: 'PUBLIC',
+      visible: true,
+    })
+    expect(router.resolve('/updates').meta).toMatchObject({ module: 'updates', tabKind: 'module' })
   })
 
   it('聊天从菜单和页签退休，旧地址改为打开首页悬浮框', () => {

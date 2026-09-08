@@ -57,13 +57,13 @@ describe('DataCenterView', () => {
     vi.mocked(fetchDataCenterOverview).mockReset().mockResolvedValue(overview)
   })
 
-  it('展示真实记录量和 Git 仅登记边界', async () => {
+  it('展示真实记录量和 Git 最小采集边界', async () => {
     const wrapper = mount(DataCenterView)
     await flushPromises()
     expect(wrapper.text()).toContain('目录内记录总量')
     expect(wrapper.text()).toContain('15 条')
-    expect(wrapper.text()).toContain('Git 数据当前只登记来源')
-    expect(wrapper.text()).toContain('不会生成贡献频率和业务方向等伪统计')
+    expect(wrapper.text()).toContain('Git 只采集成功交付所需的最小更新字段')
+    expect(wrapper.text()).toContain('不会生成贡献排行等伪统计')
     expect(wrapper.text()).toContain('仅登记')
   })
 

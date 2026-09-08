@@ -25,14 +25,14 @@ import org.springframework.util.StringUtils;
 public class FunctionHealthService {
     private static final int WINDOW_DAYS = 30;
     private static final List<String> FEATURES = List.of(
-            "home", "navigation", "projects", "ideas", "decisions", "todo", "calendar", "workday-rhythm",
+            "home", "navigation", "updates", "projects", "ideas", "decisions", "todo", "calendar", "workday-rhythm",
             "action-plans", "appearance", "food", "workspaces", "weekly-report", "life-review",
             "knowledge", "memory", "english-learning", "vocabulary", "skills", "skill-connections",
             "drawings", "files", "automation", "crawler-capabilities", "account-resources", "text-polish", "data-center", "dashboard",
             "system-reports", "request-monitoring", "devices", "vault", "games", "tianren", "settings");
     private static final Set<String> FEATURE_SET = Set.copyOf(FEATURES);
     private static final Map<String, String> SCOPE_FEATURE = Map.ofEntries(
-            Map.entry("home", "home"), Map.entry("navigation", "navigation"),
+            Map.entry("home", "home"), Map.entry("navigation", "navigation"), Map.entry("updates", "updates"),
             Map.entry("project", "projects"), Map.entry("projects", "projects"),
             Map.entry("task", "projects"), Map.entry("tasks", "projects"),
             Map.entry("ideas", "ideas"), Map.entry("decision", "decisions"),

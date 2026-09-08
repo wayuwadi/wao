@@ -27,6 +27,15 @@ CREATE TABLE http_request_metric (
     id BIGINT PRIMARY KEY,
     started_at DATETIME(3)
 );
+CREATE TABLE product_update_event (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    run_id VARCHAR(32) NOT NULL,
+    commit_sha VARCHAR(64) NOT NULL,
+    scope VARCHAR(64) NOT NULL,
+    commit_subject VARCHAR(255) NOT NULL,
+    committed_at DATETIME(3) NOT NULL,
+    UNIQUE (commit_sha)
+);
 CREATE TABLE ai_project_config (
     project_id VARCHAR(32) PRIMARY KEY,
     repo_url VARCHAR(512),

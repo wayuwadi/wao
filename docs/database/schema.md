@@ -997,6 +997,21 @@ Agent Flyway V11 为 `agent_publish_task` 增加可空的 `content_group_id`。�
 V4 和已有表继续保留，但应用不再写入或提供访问入口。该表属于独立的
 `flyway_agent_schema_history`，版本号不与下方 WAO Server migration 混用。
 
+## 产品更新日记（WAO Server Flyway V144）
+
+`product_update_event` 只在 AI Run 报告完整交付成功后写入本次 Git 产品提交，并以 `commit_sha` 唯一避免重试重复展示。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| id | BIGINT PK AUTO_INCREMENT | 更新事件内部主键 |
+| run_id | VARCHAR(32) | 验证本次提交成功交付的 AI Run |
+| commit_sha | VARCHAR(64) UNIQUE | Runner 从 Git 读取的提交 SHA |
+| scope | VARCHAR(64) | Conventional Commit scope；工程维护 scope 不写入 |
+| commit_subject | VARCHAR(255) | Git 提交标题；页面只显示去除语法后的结果 |
+| committed_at | DATETIME | 新记录为 Git 提交时间；迁入的历史基线为原事件记录时间，日记按其自然日分组 |
+
+表不保存任务正文、作者、diff、仓库凭据或完整分支历史；既有 `function_iteration_event` 中可证明成功的功能提交在 V144 一次性迁入，并保留其原事件记录时间作为历史交付日期。
+
 ## 迁移
 - `V1__core_schema.sql` 核心域建表 + `V2__seed_demo.sql` 种子。
 - `V3__content_schema.sql` 内容域建表 + `V4__content_seed.sql` 种子。
@@ -1109,6 +1124,8 @@ V4 和已有表继续保留，但应用不再写入或提供访问入口。该�
 - `V132__feishu_text_polish_bot.sql`：按飞书原消息持久化成员润色、AI、Webhook 交付与历史收口状态（见 ADR-191）。
 - `V138__knowledge_document_archive.sql`：为知识库文档增加独立、可恢复的长期归档状态及知识库归档查询索引。
 - `V142__clock_out_reminder_workdays.sql`：将下班休息与打卡提醒迁到工作日执行器，保留每日计划点并按法定休息/调休事实发送或跳过（见 ADR-207）。
+- `V143__ai_run_conversation_text.sql`：为可持续恢复的 AI Run 保存会话文本。
+- `V144__product_update_diary.sql`：保存成功 AI Run 从 Git 提交提取的 SHA、scope、标题与提交时间，供更新日记按日期展示；从既有功能迭代事件迁入可证明的起始记录。
 - 已执行的 migration 不可修改；后续数据库变更新增 migration。
 
 V77 的 MySQL 专属生成列、唯一 NULL 语义、租约 / CAS 与数据库时钟不能只靠 H2 或文本断言验收。`mysql:9.7.0` Testcontainers 用例在 Docker 可用时执行完整 V1–V89 链路，

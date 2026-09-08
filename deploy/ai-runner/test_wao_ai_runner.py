@@ -46,6 +46,7 @@ class FunctionIterationTest(unittest.TestCase):
         self.assertEqual(1, len(result))
         self.assertEqual("navigation", result[0]["scope"])
         self.assertEqual("feat(navigation): 改进工作台", result[0]["subject"])
+        self.assertRegex(result[0]["committedAt"], r"^\d{4}-\d{2}-\d{2}T")
 
 
 class SystemMetricsTest(unittest.TestCase):

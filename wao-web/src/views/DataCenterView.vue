@@ -109,10 +109,10 @@ onMounted(load)
       <section class="git-boundary">
         <i class="ri-git-repository-line"></i>
         <div>
-          <b>Git 数据当前只登记来源</b>
+          <b>Git 只采集成功交付所需的最小更新字段</b>
           <p>
-            WAO 已保存项目仓库地址，但凭据只在 Runner 本机；当前没有采集 commit、作者、diff
-            或提交时间，因此不会生成贡献频率和业务方向等伪统计。
+            Runner 会把成功运行中的提交 SHA、scope、标题和时间写入更新日记；仓库凭据仍只在 Runner
+            本机，WAO 不镜像作者、diff、分支历史，也不会生成贡献排行等伪统计。
           </p>
         </div>
       </section>

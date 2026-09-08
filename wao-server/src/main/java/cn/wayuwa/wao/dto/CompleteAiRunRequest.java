@@ -24,7 +24,7 @@ public record CompleteAiRunRequest(
         BigDecimal costUsd,
         /** Runner 从非 Git JSON 产物解析出的结构化项目记忆候选；旧 Runner 缺省为空。 */
         List<ProjectMemoryCandidate> projectMemoryCandidates,
-        /** 成功交付后从本次新提交提取的功能 scope；服务端负责白名单映射与幂等。 */
+        /** 从本次 Git 新提交提取的 SHA、scope、标题和时间；成功后分别进入更新日记与功能评分。 */
         List<FunctionIterationInput> functionIterations,
         /** Runner 实际加载、失败或不兼容的 Skill 结果。 */
         List<AiSkillAuditDto> skillAudits) {

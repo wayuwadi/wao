@@ -8,6 +8,22 @@ info:
 servers:
   - url: /api
 paths:
+  /update-diary:
+    get:
+      summary: 按有成功功能交付的日期读取 WAO 更新日记
+      parameters:
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: size, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 31, default: 12 } }
+      responses:
+        '200':
+          description: 只含 feat、fix、perf 功能结果；没有更新的日期不返回
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ApiResponse' }
+                  - type: object
+                    properties: { data: { $ref: '#/components/schemas/UpdateDiaryPage' } }
   /ideas:
     get:
       summary: 列出团队全部点子
@@ -1427,6 +1443,27 @@ components:
       scheme: bearer
       bearerFormat: wao_mcp
   schemas:
+    UpdateDiaryEntry:
+      type: object
+      required: [scope, kind, title]
+      properties:
+        scope: { type: string, description: Git Conventional Commit 的具体 scope }
+        kind: { type: string, enum: [FEATURE, FIX, PERFORMANCE] }
+        title: { type: string, description: 已移除提交语法和合并编号的用户可读结果 }
+    UpdateDiaryDay:
+      type: object
+      required: [date, entries]
+      properties:
+        date: { type: string, format: date, description: 产品更新日期；新记录采用 Git 提交日期，迁入基线沿用既有成功事件日期 }
+        entries: { type: array, minItems: 1, items: { $ref: '#/components/schemas/UpdateDiaryEntry' } }
+    UpdateDiaryPage:
+      type: object
+      required: [days, totalDays, page, size]
+      properties:
+        days: { type: array, items: { $ref: '#/components/schemas/UpdateDiaryDay' } }
+        totalDays: { type: integer, format: int64, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        size: { type: integer, minimum: 1, maximum: 31 }
     ReviewableTask:
       type: object
       required: [taskId, title, projectId, projectName, priority, taskStatus, action]
@@ -2059,7 +2096,7 @@ components:
       type: object
       required: [id, label, icon, group, order, visible, openMode]
       properties:
-        id: { type: string, enum: [home, navigation, projects, skills, skill-connections, chat, todo, workday-rhythm, action-plans, calendar, weekly-report, life-review, workspaces, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, dashboard, automation, files, games, request-monitoring] }
+        id: { type: string, enum: [home, notes, navigation, projects, updates, skills, skill-connections, todo, workday-rhythm, action-plans, decisions, appearance, food, calendar, weekly-report, life-review, workspaces, memory, knowledge, english-learning, vocabulary, drawings, vault, tianren, data-center, text-polish, dashboard, automation, crawler-capabilities, account-resources, files, games, devices, request-monitoring] }
         label: { type: string, maxLength: 24 }
         icon: { type: string, description: Remix Icon 类名 }
         group: { type: string, enum: [ROOT, PUBLIC, PERSONAL, TOOLS] }
@@ -2071,7 +2108,7 @@ components:
       required: [version, menus]
       properties:
         version: { type: integer, minimum: 1 }
-        menus: { type: array, minItems: 25, maxItems: 25, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
+        menus: { type: array, minItems: 34, maxItems: 34, items: { $ref: '#/components/schemas/BuiltinMenuConfig' } }
     SavePersonalMemory:
       type: object
       required: [title, content, category]

@@ -126,6 +126,12 @@ const router = createRouter({
           meta: { module: 'navigation', tabKind: 'module' },
         },
         {
+          path: 'updates',
+          name: 'updates',
+          component: () => import('@/views/UpdateDiaryView.vue'),
+          meta: { module: 'updates', tabKind: 'module' },
+        },
+        {
           path: 'projects',
           name: 'projects',
           component: () => import('@/views/ProjectsView.vue'),

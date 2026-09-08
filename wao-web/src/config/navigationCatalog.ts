@@ -30,6 +30,11 @@ export const NAVIGATION_CATALOG: NavigationCatalogSection[] = [
         keywords: ['任务', '团队'],
       },
       {
+        id: 'updates',
+        description: '按时间线查看 WAO 已经完成并验收的功能变化。',
+        keywords: ['更新', '日记', '版本', '发布'],
+      },
+      {
         id: 'ideas',
         description: '归并旧版点子档案；新想法直接进入项目任务。',
         keywords: ['历史点子', '灵感'],
