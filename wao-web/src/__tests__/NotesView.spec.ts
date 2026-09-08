@@ -5,11 +5,15 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import NotesView from '@/views/NotesView.vue'
 import NoteComposer from '@/components/notes/NoteComposer.vue'
+import MarkdownEditor from '@/components/ui/MarkdownEditor.vue'
+import { polishDocumentText } from '@/api/assistant'
+import type { Editor as TiptapEditor } from '@tiptap/core'
 import { useDataStore } from '@/stores/data'
 import { useSessionStore } from '@/stores/session'
 import { apiCreateNoteTag, fetchNoteTags, apiPatchDoc } from '@/api/board'
 import type { Doc } from '@/types'
 
+vi.mock('@/api/assistant', () => ({ polishDocumentText: vi.fn() }))
 vi.mock('@/api/board', async importOriginal => ({ ...await importOriginal<object>(), apiPatchDoc: vi.fn(), fetchNoteTags: vi.fn().mockResolvedValue([]), apiCreateNoteTag: vi.fn() }))
 const Editor = defineComponent({
   props: ['modelValue', 'readonly'], emits: ['update:modelValue'],
@@ -153,6 +157,37 @@ describe('小记集中记录空间', () => {
     expect(wrapper.emitted('saved')).toEqual([['real-editor']])
     wrapper.unmount()
   })
+  it('小记润色确认后进入富文本草稿，保存并重新编辑仍保留结果', async () => {
+    const source = '这句话写得不是特别顺。'
+    localStorage.setItem('wao-quick-note-draft-v1:wg', JSON.stringify({ id: 'polish-note', text: source }))
+    vi.mocked(polishDocumentText).mockResolvedValue({ polished: '这句话表达得更加自然。' })
+    const add = vi.spyOn(useDataStore(), 'addNote').mockResolvedValue('polish-note')
+    const wrapper = mount(NoteComposer, { attachTo: document.body })
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    const editor = wrapper.findComponent(MarkdownEditor)
+    expect(editor.props()).toMatchObject({ advanced: true, compact: false, allowH1: true, polishable: true, linkControls: true, imageControls: true })
+    expect(editor.find('button[title="表格"]').exists()).toBe(true)
+    const instance = editor.vm as unknown as { editor: TiptapEditor; startPolish: () => Promise<void> }
+    instance.editor.commands.setTextSelection({ from: 1, to: source.length + 1 })
+    await instance.startPolish()
+    await flushPromises()
+    expect(polishDocumentText).toHaveBeenCalledWith(source)
+    expect(wrapper.find('.tiptap').text()).toBe(source)
+    await wrapper.find('.polish-apply').trigger('click')
+    expect(JSON.parse(localStorage.getItem('wao-quick-note-draft-v1:wg')!).text).toContain('更加自然')
+    await wrapper.find('.save-note').trigger('click')
+    await flushPromises()
+    const rich = add.mock.calls[0]![3]!
+    expect(rich.markdown).toContain('更加自然')
+    expect(rich.document).toBeTruthy()
+    wrapper.unmount()
+    const reopened = mount(NoteComposer, { props: { note: { ...doc('polish-note', rich.markdown), content: rich } }, attachTo: document.body })
+    await flushPromises()
+    expect(reopened.find('.tiptap').text()).toContain('更加自然')
+    reopened.unmount()
+  })
+
   it('标签字典保存失败保留名称、重试去重，标签与搜索组合并切换两种排序', async () => {
     const data = useDataStore()
     data.docs.a = { ...doc('a', '工作备忘', '2026-09-05T08:00:00'), updated: '2026-09-08T08:00:00', tags: ['工作'] }
